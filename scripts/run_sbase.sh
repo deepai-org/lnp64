@@ -9,6 +9,9 @@ lnp64=(cargo run --release --quiet --)
 "${lnp64[@]}" cc third_party/sbase/yes.c -o /tmp/sbase_yes.s
 "${lnp64[@]}" cc third_party/sbase/basename.c -o /tmp/sbase_basename.s
 "${lnp64[@]}" cc third_party/sbase/dirname.c -o /tmp/sbase_dirname.s
+"${lnp64[@]}" cc third_party/sbase/head.c -o /tmp/sbase_head.s
+"${lnp64[@]}" cc third_party/sbase/tee.c -o /tmp/sbase_tee.s
+"${lnp64[@]}" cc third_party/sbase/cksum.c -o /tmp/sbase_cksum.s
 
 echo "== sbase echo.c =="
 echo_out=$("${lnp64[@]}" run /tmp/sbase_echo.s -- echo hello world)
@@ -49,3 +52,23 @@ echo "== sbase dirname.c =="
 dir_out=$("${lnp64[@]}" run /tmp/sbase_dirname.s -- dirname /usr/bin/example.txt)
 test "$dir_out" = "/usr/bin"
 echo "$dir_out"
+
+echo "== sbase head.c =="
+head_input=/tmp/sbase_head_input.txt
+for i in 1 2 3 4 5 6; do printf 'line%s\n' "$i"; done > "$head_input"
+head_out=$("${lnp64[@]}" run /tmp/sbase_head.s -- head -n 3 "$head_input")
+test "$head_out" = $'line1\nline2\nline3'
+echo "$head_out"
+
+echo "== sbase tee.c =="
+rm -f /tmp/sbase_tee_file.txt
+tee_out=$(printf 'tee ok\n' | "${lnp64[@]}" run /tmp/sbase_tee.s -- tee /tmp/sbase_tee_file.txt)
+test "$tee_out" = "tee ok"
+test "$(cat /tmp/sbase_tee_file.txt)" = "tee ok"
+echo "$tee_out"
+
+echo "== sbase cksum.c =="
+cksum_out=$("${lnp64[@]}" run /tmp/sbase_cksum.s -- cksum demos/cat_input.txt)
+cksum_expected=$(cksum demos/cat_input.txt)
+test "$cksum_out" = "$cksum_expected"
+echo "$cksum_out"
