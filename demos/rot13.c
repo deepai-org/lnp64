@@ -6,6 +6,7 @@ int main() {
     p = start;
     while (loadb(p) != 0) {
         c = loadb(p);
+        c = bitxor(bitxor(c, 32), 32);
         if (c >= 97) {
             if (c <= 122) {
                 c = c + 13;
