@@ -2,6 +2,8 @@ use std::fmt;
 
 pub const GPR_COUNT: usize = 32;
 pub const FDR_COUNT: usize = 256;
+pub const FPR_COUNT: usize = 32;
+pub const VR_COUNT: usize = 16;
 pub const DATA_BASE: u64 = 0x10_000;
 pub const STACK_TOP: u64 = 0x80_000;
 pub const HEAP_BASE: u64 = 0x100_000;
@@ -12,6 +14,12 @@ pub struct Reg(pub usize);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FdReg(pub usize);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FReg(pub usize);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VReg(pub usize);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pcr {
@@ -103,11 +111,11 @@ pub enum Instr {
     LoadUcode(Reg, Reg),
     MsgSend(Reg, Reg, Reg),
     MsgRecv(Reg, Reg),
-    FAdd(Reg, Reg, Reg),
-    FSub(Reg, Reg, Reg),
-    FMul(Reg, Reg, Reg),
-    FDiv(Reg, Reg, Reg),
-    VAdd32(Reg, Reg, Reg),
+    FAdd(FReg, FReg, FReg),
+    FSub(FReg, FReg, FReg),
+    FMul(FReg, FReg, FReg),
+    FDiv(FReg, FReg, FReg),
+    VAdd32(VReg, VReg, VReg),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -157,6 +165,32 @@ pub fn parse_fd(text: &str) -> Result<FdReg, String> {
         return Err(format!("fd register out of range: {text}"));
     }
     Ok(FdReg(idx))
+}
+
+pub fn parse_freg(text: &str) -> Result<FReg, String> {
+    let Some(rest) = text.strip_prefix('f') else {
+        return Err(format!("expected FPU register, got {text:?}"));
+    };
+    let idx = rest
+        .parse::<usize>()
+        .map_err(|_| format!("invalid FPU register {text:?}"))?;
+    if idx >= FPR_COUNT {
+        return Err(format!("FPU register out of range: {text}"));
+    }
+    Ok(FReg(idx))
+}
+
+pub fn parse_vreg(text: &str) -> Result<VReg, String> {
+    let Some(rest) = text.strip_prefix('v') else {
+        return Err(format!("expected vector register, got {text:?}"));
+    };
+    let idx = rest
+        .parse::<usize>()
+        .map_err(|_| format!("invalid vector register {text:?}"))?;
+    if idx >= VR_COUNT {
+        return Err(format!("vector register out of range: {text}"));
+    }
+    Ok(VReg(idx))
 }
 
 pub fn parse_pcr(text: &str) -> Result<Pcr, String> {

@@ -337,11 +337,11 @@ impl Parser {
                 arity(2)?;
                 Instr::MsgRecv(reg(&args[0])?, reg(&args[1])?)
             }
-            "FADD" => alu3(&args, Instr::FAdd)?,
-            "FSUB" => alu3(&args, Instr::FSub)?,
-            "FMUL" => alu3(&args, Instr::FMul)?,
-            "FDIV" => alu3(&args, Instr::FDiv)?,
-            "VADD.32" => alu3(&args, Instr::VAdd32)?,
+            "FADD" => fpu3(&args, Instr::FAdd)?,
+            "FSUB" => fpu3(&args, Instr::FSub)?,
+            "FMUL" => fpu3(&args, Instr::FMul)?,
+            "FDIV" => fpu3(&args, Instr::FDiv)?,
+            "VADD.32" => vec3(&args, Instr::VAdd32)?,
             _ => return Err(self.err(format!("unknown instruction {op_raw:?}"))),
         };
         Ok(instr)
@@ -360,6 +360,26 @@ fn alu3(args: &[String], ctor: fn(Reg, Reg, Reg) -> Instr) -> Result<Instr, Stri
         ));
     }
     Ok(ctor(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?))
+}
+
+fn fpu3(args: &[String], ctor: fn(FReg, FReg, FReg) -> Instr) -> Result<Instr, String> {
+    if args.len() != 3 {
+        return Err(format!(
+            "FPU instruction expects 3 operands, got {}",
+            args.len()
+        ));
+    }
+    Ok(ctor(freg(&args[0])?, freg(&args[1])?, freg(&args[2])?))
+}
+
+fn vec3(args: &[String], ctor: fn(VReg, VReg, VReg) -> Instr) -> Result<Instr, String> {
+    if args.len() != 3 {
+        return Err(format!(
+            "vector instruction expects 3 operands, got {}",
+            args.len()
+        ));
+    }
+    Ok(ctor(vreg(&args[0])?, vreg(&args[1])?, vreg(&args[2])?))
 }
 
 fn branch(args: &[String], condition: Condition) -> Result<Instr, String> {
@@ -389,6 +409,14 @@ fn reg(text: &str) -> Result<Reg, String> {
 
 fn fd(text: &str) -> Result<FdReg, String> {
     parse_fd(text)
+}
+
+fn freg(text: &str) -> Result<FReg, String> {
+    parse_freg(text)
+}
+
+fn vreg(text: &str) -> Result<VReg, String> {
+    parse_vreg(text)
 }
 
 fn value(text: &str) -> Value {

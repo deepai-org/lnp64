@@ -37,6 +37,10 @@ for src in demos/*.c; do
   echo "== $src =="
   cargo run --quiet -- run "$asm"
 done
+for src in demos/*.s; do
+  echo "== $src =="
+  cargo run --quiet -- run "$src"
+done
 ```
 
 ## Docker
