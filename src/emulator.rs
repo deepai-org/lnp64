@@ -1,11 +1,15 @@
 use std::collections::{HashMap, VecDeque};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::net::{TcpListener, TcpStream};
+use std::thread;
+use std::time::Duration;
 
 use crate::asm::Program;
 use crate::isa::*;
 
 const STACK_SIZE: u64 = 64 * 1024;
+const CALL_FRAME_SIZE: u64 = 256;
 const MMAP_BASE: u64 = 0x200_000;
 const SIGCHLD: u64 = 17;
 const SIGSEGV: u64 = 11;
@@ -22,6 +26,10 @@ enum FdHandle {
     Stdout,
     Stderr,
     File(File),
+    TcpListener {
+        listener: TcpListener,
+        pending: Option<TcpStream>,
+    },
     Closed,
 }
 
@@ -35,6 +43,19 @@ impl FdHandle {
                 .try_clone()
                 .map(FdHandle::File)
                 .map_err(|err| format!("failed to clone fd: {err}")),
+            FdHandle::TcpListener { listener, pending } => Ok(FdHandle::TcpListener {
+                listener: listener
+                    .try_clone()
+                    .map_err(|err| format!("failed to clone listener fd: {err}"))?,
+                pending: match pending {
+                    Some(stream) => Some(
+                        stream
+                            .try_clone()
+                            .map_err(|err| format!("failed to clone pending stream: {err}"))?,
+                    ),
+                    None => None,
+                },
+            }),
             FdHandle::Closed => Ok(FdHandle::Closed),
         }
     }
@@ -222,7 +243,7 @@ struct Thread {
 impl Thread {
     fn new(tid: u64, pid: u64) -> Self {
         let mut regs = [0; GPR_COUNT];
-        regs[31] = STACK_TOP;
+        regs[31] = STACK_TOP - CALL_FRAME_SIZE;
         Self {
             tid,
             pid,
@@ -242,6 +263,7 @@ pub struct Machine {
     ready: VecDeque<u64>,
     sleepers: Vec<(u64, u64)>,
     futex_waiters: HashMap<u64, VecDeque<u64>>,
+    fd_waiters: Vec<(u64, usize)>,
     current_tid: u64,
     next_pid: u64,
     next_tid: u64,
@@ -269,6 +291,7 @@ impl Machine {
             ready,
             sleepers: Vec::new(),
             futex_waiters: HashMap::new(),
+            fd_waiters: Vec::new(),
             current_tid: root_tid,
             next_pid: 2,
             next_tid: 2,
@@ -284,10 +307,14 @@ impl Machine {
             }
             steps += 1;
             self.tick_sleepers();
+            self.poll_fd_waiters();
 
             let Some(tid) = self.ready.pop_front() else {
-                if self.sleepers.is_empty() {
+                if self.sleepers.is_empty() && self.fd_waiters.is_empty() {
                     return Err("hardware runqueue deadlock: no ready threads".to_string());
+                }
+                if !self.fd_waiters.is_empty() {
+                    thread::sleep(Duration::from_millis(10));
                 }
                 continue;
             };
@@ -382,7 +409,7 @@ impl Machine {
             Instr::Call(target) => {
                 let ip = self.resolve_target(target)?;
                 let ret = self.thread()?.ip as u64;
-                let sp = self.thread()?.regs[31].wrapping_sub(8);
+                let sp = self.thread()?.regs[31].wrapping_sub(CALL_FRAME_SIZE);
                 self.thread_mut()?.regs[31] = sp;
                 self.store_u64(sp, ret)?;
                 self.thread_mut()?.ip = ip;
@@ -390,7 +417,7 @@ impl Machine {
             Instr::Ret => {
                 let sp = self.thread()?.regs[31];
                 let next = self.load_u64(sp)?;
-                self.thread_mut()?.regs[31] = sp.wrapping_add(8);
+                self.thread_mut()?.regs[31] = sp.wrapping_add(CALL_FRAME_SIZE);
                 self.thread_mut()?.ip = next as usize;
             }
             Instr::Ld(dst, mem, width) => {
@@ -429,18 +456,30 @@ impl Machine {
             Instr::OpenFd(dst, path_reg, flags_reg) => {
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
                 let flags = self.read_reg(flags_reg)?;
-                let file = if flags & 1 == 1 {
-                    OpenOptions::new()
-                        .create(true)
-                        .truncate(false)
-                        .append(true)
-                        .read(true)
-                        .open(&path)
+                if let Some(addr) = path.strip_prefix("tcp-listen:") {
+                    let listener = TcpListener::bind(addr)
+                        .map_err(|err| format!("OPEN_FD TCP listener {addr:?}: {err}"))?;
+                    listener
+                        .set_nonblocking(true)
+                        .map_err(|err| format!("OPEN_FD TCP nonblocking {addr:?}: {err}"))?;
+                    self.process_mut()?.fds[dst.0] = FdHandle::TcpListener {
+                        listener,
+                        pending: None,
+                    };
                 } else {
-                    File::open(&path)
+                    let file = if flags & 1 == 1 {
+                        OpenOptions::new()
+                            .create(true)
+                            .truncate(false)
+                            .append(true)
+                            .read(true)
+                            .open(&path)
+                    } else {
+                        File::open(&path)
+                    }
+                    .map_err(|err| format!("OPEN_FD {path:?}: {err}"))?;
+                    self.process_mut()?.fds[dst.0] = FdHandle::File(file);
                 }
-                .map_err(|err| format!("OPEN_FD {path:?}: {err}"))?;
-                self.process_mut()?.fds[dst.0] = FdHandle::File(file);
             }
             Instr::ReadFd(fd, buf, len) => {
                 let addr = self.read_reg(buf)?;
@@ -453,9 +492,33 @@ impl Machine {
                     FdHandle::File(file) => file
                         .read(&mut tmp)
                         .map_err(|err| format!("READ_FD fd{}: {err}", fd.0))?,
+                    FdHandle::TcpListener { listener, pending } => {
+                        if pending.is_none() {
+                            match listener.accept() {
+                                Ok((stream, _)) => {
+                                    stream.set_nonblocking(false).map_err(|err| {
+                                        format!("READ_FD fd{} stream blocking: {err}", fd.0)
+                                    })?;
+                                    *pending = Some(stream);
+                                }
+                                Err(err) if err.kind() == io::ErrorKind::WouldBlock => {}
+                                Err(err) => {
+                                    return Err(format!("READ_FD fd{} accept: {err}", fd.0));
+                                }
+                            };
+                        }
+                        if let Some(stream) = pending {
+                            stream
+                                .read(&mut tmp)
+                                .map_err(|err| format!("READ_FD fd{} stream: {err}", fd.0))?
+                        } else {
+                            0
+                        }
+                    }
                     FdHandle::Stdout | FdHandle::Stderr | FdHandle::Closed => 0,
                 };
                 self.write_bytes(addr, &tmp[..count])?;
+                self.write_reg(Reg(1), count as u64)?;
             }
             Instr::WriteFd(fd, buf, len) => {
                 let data = self.read_bytes(self.read_reg(buf)?, self.read_reg(len)? as usize)?;
@@ -475,12 +538,26 @@ impl Machine {
                     FdHandle::File(file) => file
                         .write_all(&data)
                         .map_err(|err| format!("WRITE_FD fd{}: {err}", fd.0))?,
+                    FdHandle::TcpListener { pending, .. } => {
+                        let Some(stream) = pending else {
+                            return Err(format!("WRITE_FD fd{} has no accepted stream", fd.0));
+                        };
+                        stream
+                            .write_all(&data)
+                            .map_err(|err| format!("WRITE_FD fd{} stream: {err}", fd.0))?;
+                    }
                     FdHandle::Stdin | FdHandle::Closed => {
                         return Err(format!("WRITE_FD on non-writable fd{}", fd.0));
                     }
                 }
             }
-            Instr::WaitOnFd(_, _) => return Ok(true),
+            Instr::WaitOnFd(fd, _) => {
+                if !self.fd_ready(fd.0)? {
+                    self.fd_waiters.push((self.current_tid, fd.0));
+                    self.ready.retain(|tid| *tid != self.current_tid);
+                    return Ok(false);
+                }
+            }
             Instr::FdDup(dst, src) => {
                 let cloned = self.process()?.fds[src.0].clone_handle()?;
                 self.process_mut()?.fds[dst.0] = cloned;
@@ -527,6 +604,7 @@ impl Machine {
                 let mut child = self.thread()?.clone();
                 child.tid = tid;
                 child.ip = self.read_reg(entry)? as usize;
+                child.regs[31] = STACK_TOP - CALL_FRAME_SIZE - ((tid - 1) * 4096);
                 self.threads.insert(tid, child);
                 self.ready.push_back(tid);
                 self.write_reg(dst, tid)?;
@@ -689,6 +767,7 @@ impl Machine {
             }
             Instr::MsgRecv(dst1, dst2) => {
                 let Some((v1, v2)) = self.process_mut()?.inbox.pop_front() else {
+                    self.thread_mut()?.ip = self.thread()?.ip.saturating_sub(1);
                     self.ready.retain(|tid| *tid != self.current_tid);
                     return Ok(false);
                 };
@@ -992,6 +1071,56 @@ impl Machine {
         self.sleepers.retain(|(_, ticks)| *ticks != 0);
         for tid in woke {
             self.wake_thread(tid);
+        }
+    }
+
+    fn poll_fd_waiters(&mut self) {
+        let waiters = std::mem::take(&mut self.fd_waiters);
+        for (tid, fd) in waiters {
+            let ready = self
+                .with_thread_process(tid, |machine| machine.fd_ready(fd))
+                .unwrap_or(false);
+            if ready {
+                self.wake_thread(tid);
+            } else if self.threads.contains_key(&tid) {
+                self.fd_waiters.push((tid, fd));
+            }
+        }
+    }
+
+    fn with_thread_process<T>(
+        &mut self,
+        tid: u64,
+        f: impl FnOnce(&mut Self) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let saved = self.current_tid;
+        self.current_tid = tid;
+        let result = f(self);
+        self.current_tid = saved;
+        result
+    }
+
+    fn fd_ready(&mut self, fd: usize) -> Result<bool, String> {
+        let handle = &mut self.process_mut()?.fds[fd];
+        match handle {
+            FdHandle::Stdin | FdHandle::Stdout | FdHandle::Stderr | FdHandle::File(_) => Ok(true),
+            FdHandle::Closed => Ok(false),
+            FdHandle::TcpListener { listener, pending } => {
+                if pending.is_some() {
+                    return Ok(true);
+                }
+                match listener.accept() {
+                    Ok((stream, _)) => {
+                        stream
+                            .set_nonblocking(false)
+                            .map_err(|err| format!("TCP accepted stream blocking failed: {err}"))?;
+                        *pending = Some(stream);
+                        Ok(true)
+                    }
+                    Err(err) if err.kind() == io::ErrorKind::WouldBlock => Ok(false),
+                    Err(err) => Err(format!("TCP accept failed: {err}")),
+                }
+            }
         }
     }
 

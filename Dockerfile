@@ -4,13 +4,6 @@ WORKDIR /work
 COPY . .
 
 RUN cargo test
-RUN for src in demos/*.c; do \
-      asm="/tmp/$(basename "$src" .c).s"; \
-      cargo run --quiet -- cc "$src" -o "$asm"; \
-      cargo run --quiet -- run "$asm"; \
-    done
-RUN for src in demos/*.s; do \
-      cargo run --quiet -- run "$src"; \
-    done
+RUN bash scripts/run_demos.sh
 
-CMD ["bash", "-c", "cargo test && for src in demos/*.c; do asm=\"/tmp/$(basename \"$src\" .c).s\"; cargo run --quiet -- cc \"$src\" -o \"$asm\"; echo \"== $src ==\"; cargo run --quiet -- run \"$asm\"; done && for src in demos/*.s; do echo \"== $src ==\"; cargo run --quiet -- run \"$src\"; done"]
+CMD ["bash", "-c", "cargo test && bash scripts/run_demos.sh"]

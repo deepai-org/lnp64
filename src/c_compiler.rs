@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 #[derive(Debug, Clone, PartialEq)]
 enum Token {
@@ -28,6 +28,19 @@ enum Token {
     Semi,
     Comma,
     Eof,
+}
+
+#[derive(Debug, Clone)]
+struct CProgram {
+    globals: Vec<String>,
+    functions: Vec<Function>,
+}
+
+#[derive(Debug, Clone)]
+struct Function {
+    name: String,
+    params: Vec<String>,
+    body: Vec<Stmt>,
 }
 
 #[derive(Debug, Clone)]
@@ -73,23 +86,21 @@ enum BinOp {
 pub fn compile(source: &str) -> Result<String, String> {
     let tokens = Lexer::new(source).lex()?;
     let mut parser = Parser::new(tokens);
-    let body = parser.parse_program()?;
+    let program = parser.parse_program()?;
     let mut codegen = CodeGen::default();
-    codegen.emit_program(&body)
+    codegen.emit_program(&program)
 }
 
-struct Lexer<'a> {
+struct Lexer {
     chars: Vec<char>,
     pos: usize,
-    source: &'a str,
 }
 
-impl<'a> Lexer<'a> {
-    fn new(source: &'a str) -> Self {
+impl Lexer {
+    fn new(source: &str) -> Self {
         Self {
             chars: source.chars().collect(),
             pos: 0,
-            source,
         }
     }
 
@@ -97,9 +108,7 @@ impl<'a> Lexer<'a> {
         let mut tokens = Vec::new();
         while let Some(ch) = self.peek() {
             match ch {
-                c if c.is_whitespace() => {
-                    self.pos += 1;
-                }
+                c if c.is_whitespace() => self.pos += 1,
                 '/' if self.peek_next() == Some('/') => {
                     while self.peek().is_some_and(|c| c != '\n') {
                         self.pos += 1;
@@ -176,13 +185,7 @@ impl<'a> Lexer<'a> {
                     self.pos += 1;
                     tokens.push(Token::Comma);
                 }
-                other => {
-                    return Err(format!(
-                        "unexpected character {other:?} at byte-like offset {} in source of {} bytes",
-                        self.pos,
-                        self.source.len()
-                    ));
-                }
+                other => return Err(format!("unexpected character {other:?}")),
             }
         }
         tokens.push(Token::Eof);
@@ -266,12 +269,43 @@ impl Parser {
         Self { tokens, pos: 0 }
     }
 
-    fn parse_program(&mut self) -> Result<Vec<Stmt>, String> {
-        self.expect(Token::Int)?;
-        self.expect_ident("main")?;
-        self.expect(Token::LParen)?;
-        self.expect(Token::RParen)?;
-        self.parse_block()
+    fn parse_program(&mut self) -> Result<CProgram, String> {
+        let mut globals = Vec::new();
+        let mut functions = Vec::new();
+        while !self.check(&Token::Eof) {
+            self.expect(Token::Int)?;
+            let name = self.take_ident()?;
+            if self.check(&Token::Semi) {
+                self.advance();
+                globals.push(name);
+                continue;
+            }
+            self.expect(Token::LParen)?;
+            let params = self.parse_params()?;
+            self.expect(Token::RParen)?;
+            let body = self.parse_block()?;
+            functions.push(Function { name, params, body });
+        }
+        if !functions.iter().any(|f| f.name == "main") {
+            return Err("missing int main()".to_string());
+        }
+        Ok(CProgram { globals, functions })
+    }
+
+    fn parse_params(&mut self) -> Result<Vec<String>, String> {
+        let mut params = Vec::new();
+        if self.check(&Token::RParen) {
+            return Ok(params);
+        }
+        loop {
+            self.expect(Token::Int)?;
+            params.push(self.take_ident()?);
+            if !self.check(&Token::Comma) {
+                break;
+            }
+            self.advance();
+        }
+        Ok(params)
     }
 
     fn parse_block(&mut self) -> Result<Vec<Stmt>, String> {
@@ -353,8 +387,7 @@ impl Parser {
                 _ => break,
             };
             self.advance();
-            let rhs = self.parse_relational()?;
-            expr = Expr::Binary(Box::new(expr), op, Box::new(rhs));
+            expr = Expr::Binary(Box::new(expr), op, Box::new(self.parse_relational()?));
         }
         Ok(expr)
     }
@@ -370,8 +403,7 @@ impl Parser {
                 _ => break,
             };
             self.advance();
-            let rhs = self.parse_additive()?;
-            expr = Expr::Binary(Box::new(expr), op, Box::new(rhs));
+            expr = Expr::Binary(Box::new(expr), op, Box::new(self.parse_additive()?));
         }
         Ok(expr)
     }
@@ -385,8 +417,7 @@ impl Parser {
                 _ => break,
             };
             self.advance();
-            let rhs = self.parse_term()?;
-            expr = Expr::Binary(Box::new(expr), op, Box::new(rhs));
+            expr = Expr::Binary(Box::new(expr), op, Box::new(self.parse_term()?));
         }
         Ok(expr)
     }
@@ -400,8 +431,7 @@ impl Parser {
                 _ => break,
             };
             self.advance();
-            let rhs = self.parse_factor()?;
-            expr = Expr::Binary(Box::new(expr), op, Box::new(rhs));
+            expr = Expr::Binary(Box::new(expr), op, Box::new(self.parse_factor()?));
         }
         Ok(expr)
     }
@@ -466,16 +496,6 @@ impl Parser {
         }
     }
 
-    fn expect_ident(&mut self, expected: &str) -> Result<(), String> {
-        match self.peek() {
-            Token::Ident(name) if name == expected => {
-                self.advance();
-                Ok(())
-            }
-            other => Err(format!("expected identifier {expected:?}, got {other:?}")),
-        }
-    }
-
     fn take_ident(&mut self) -> Result<String, String> {
         match self.peek() {
             Token::Ident(name) => {
@@ -508,35 +528,41 @@ impl Parser {
 struct CodeGen {
     text: Vec<String>,
     data: BTreeMap<String, String>,
-    vars: HashMap<String, String>,
+    globals: HashMap<String, String>,
+    function_names: HashSet<String>,
+    locals: HashMap<String, i64>,
+    next_local_offset: i64,
     temp_reg: usize,
     label_id: usize,
     string_id: usize,
+    current_fn: String,
 }
 
 impl CodeGen {
-    fn emit_program(&mut self, body: &[Stmt]) -> Result<String, String> {
-        self.text.push(".text".to_string());
-        self.text.push("main:".to_string());
-        for stmt in body {
-            self.emit_stmt(stmt)?;
+    fn emit_program(&mut self, program: &CProgram) -> Result<String, String> {
+        for global in &program.globals {
+            let label = format!("global_{global}");
+            self.globals.insert(global.clone(), label.clone());
+            self.data.insert(label, ".quad 0".to_string());
         }
-        self.text.push("  EXIT r0".to_string());
+        self.function_names = program.functions.iter().map(|f| f.name.clone()).collect();
+
+        self.text.push(".text".to_string());
+        if let Some(main) = program.functions.iter().find(|f| f.name == "main") {
+            self.emit_function(main)?;
+        }
+        for function in program.functions.iter().filter(|f| f.name != "main") {
+            self.emit_function(function)?;
+        }
 
         let mut out = String::new();
-        if !self.data.is_empty() || !self.vars.is_empty() {
+        if !self.data.is_empty() {
             out.push_str(".data\n");
             for (label, init) in &self.data {
                 out.push_str(label);
                 out.push_str(": ");
                 out.push_str(init);
                 out.push('\n');
-            }
-            let mut vars = self.vars.values().cloned().collect::<Vec<_>>();
-            vars.sort();
-            for label in vars {
-                out.push_str(&label);
-                out.push_str(": .quad 0\n");
             }
         }
         for line in &self.text {
@@ -546,20 +572,46 @@ impl CodeGen {
         Ok(out)
     }
 
+    fn emit_function(&mut self, function: &Function) -> Result<(), String> {
+        self.current_fn = function.name.clone();
+        self.locals.clear();
+        self.next_local_offset = 8;
+        self.temp_reg = 0;
+        self.text.push(format!("{}:", function.name));
+        for (idx, param) in function.params.iter().enumerate() {
+            let offset = self.declare_local(param)?;
+            self.text
+                .push(format!("  ST [r31, {offset}], r{}", idx + 1));
+        }
+        for stmt in &function.body {
+            self.emit_stmt(stmt)?;
+        }
+        if self.current_fn == "main" {
+            self.text.push("  EXIT r0".to_string());
+        } else {
+            self.text.push("  RET".to_string());
+        }
+        Ok(())
+    }
+
     fn emit_stmt(&mut self, stmt: &Stmt) -> Result<(), String> {
         self.temp_reg = 0;
         match stmt {
             Stmt::VarDecl(name) => {
-                self.declare_var(name)?;
+                self.declare_local(name)?;
             }
             Stmt::Assign(name, expr) => {
                 let reg = self.emit_expr(expr)?;
-                let label = self.var_label(name)?;
-                self.text.push(format!("  ST {label}, r{reg}"));
+                self.store_name(name, reg)?;
             }
             Stmt::Return(expr) => {
                 let reg = self.emit_expr(expr)?;
-                self.text.push(format!("  EXIT r{reg}"));
+                if self.current_fn == "main" {
+                    self.text.push(format!("  EXIT r{reg}"));
+                } else {
+                    self.text.push(format!("  MOV r1, r{reg}"));
+                    self.text.push("  RET".to_string());
+                }
             }
             Stmt::Expr(expr) => {
                 self.emit_expr(expr)?;
@@ -614,12 +666,7 @@ impl CodeGen {
                 self.text.push(format!("  LI r{reg}, {label}"));
                 Ok(reg)
             }
-            Expr::Var(name) => {
-                let label = self.var_label(name)?;
-                let reg = self.alloc_reg()?;
-                self.text.push(format!("  LD r{reg}, {label}"));
-                Ok(reg)
-            }
+            Expr::Var(name) => self.load_name(name),
             Expr::Binary(lhs, op, rhs) => self.emit_binary(lhs, *op, rhs),
             Expr::Call(name, args) => self.emit_call(name, args),
         }
@@ -661,33 +708,94 @@ impl CodeGen {
     fn emit_call(&mut self, name: &str, args: &[Expr]) -> Result<usize, String> {
         match name {
             "write" => {
-                if args.len() != 3 {
-                    return Err("write(fd, buffer, len) expects 3 arguments".to_string());
-                }
-                let fd_num = match &args[0] {
-                    Expr::Num(v) if (0..=255).contains(v) => *v as usize,
-                    _ => return Err("write first argument must be a numeric fd".to_string()),
-                };
-                let buf = self.emit_expr(&args[1])?;
-                let len = self.emit_expr(&args[2])?;
+                let (fd_num, buf, len) = self.fd_buf_len_args(name, args)?;
                 self.text
                     .push(format!("  WRITE_FD fd{fd_num}, r{buf}, r{len}"));
                 Ok(0)
             }
-            "alloc" => {
-                if args.len() != 1 {
-                    return Err("alloc(bytes) expects 1 argument".to_string());
+            "open" => {
+                if args.len() != 3 {
+                    return Err("open(fd, path, flags) expects 3 arguments".to_string());
                 }
-                let len = self.emit_expr(&args[0])?;
+                let fd_num = self.numeric_fd(&args[0], "open")?;
+                let path = self.emit_expr(&args[1])?;
+                let flags = self.emit_expr(&args[2])?;
+                let dst = self.alloc_reg()?;
+                self.text
+                    .push(format!("  OPEN_FD fd{fd_num}, r{path}, r{flags}"));
+                self.text.push(format!("  LI r{dst}, {fd_num}"));
+                Ok(dst)
+            }
+            "read" => {
+                let (fd_num, buf, len) = self.fd_buf_len_args(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text
+                    .push(format!("  READ_FD fd{fd_num}, r{buf}, r{len}"));
+                self.text.push(format!("  MOV r{dst}, r1"));
+                Ok(dst)
+            }
+            "wait_on_fd" => {
+                if args.len() != 1 {
+                    return Err("wait_on_fd(fd) expects 1 argument".to_string());
+                }
+                let fd_num = self.numeric_fd(&args[0], "wait_on_fd")?;
+                self.text.push(format!("  WAIT_ON_FD fd{fd_num}, r0"));
+                Ok(0)
+            }
+            "load" => {
+                let ptr = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LD r{dst}, [r{ptr}, 0]"));
+                Ok(dst)
+            }
+            "store" => {
+                if args.len() != 2 {
+                    return Err("store(ptr, value) expects 2 arguments".to_string());
+                }
+                let ptr = self.emit_expr(&args[0])?;
+                let value = self.emit_expr(&args[1])?;
+                self.text.push(format!("  ST [r{ptr}, 0], r{value}"));
+                Ok(0)
+            }
+            "loadb" => {
+                let ptr = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LD.B r{dst}, [r{ptr}, 0]"));
+                Ok(dst)
+            }
+            "storeb" => {
+                if args.len() != 2 {
+                    return Err("storeb(ptr, value) expects 2 arguments".to_string());
+                }
+                let ptr = self.emit_expr(&args[0])?;
+                let value = self.emit_expr(&args[1])?;
+                self.text.push(format!("  ST.B [r{ptr}, 0], r{value}"));
+                Ok(0)
+            }
+            "bitand" | "bitor" | "bitxor" => {
+                if args.len() != 2 {
+                    return Err(format!("{name}(a, b) expects 2 arguments"));
+                }
+                let left = self.emit_expr(&args[0])?;
+                let right = self.emit_expr(&args[1])?;
+                let dst = self.alloc_reg()?;
+                let op = match name {
+                    "bitand" => "AND",
+                    "bitor" => "OR",
+                    "bitxor" => "XOR",
+                    _ => unreachable!(),
+                };
+                self.text.push(format!("  {op} r{dst}, r{left}, r{right}"));
+                Ok(dst)
+            }
+            "alloc" => {
+                let len = self.one_arg(name, args)?;
                 let dst = self.alloc_reg()?;
                 self.text.push(format!("  ALLOC r{dst}, r{len}"));
                 Ok(dst)
             }
             "free" => {
-                if args.len() != 1 {
-                    return Err("free(ptr) expects 1 argument".to_string());
-                }
-                let ptr = self.emit_expr(&args[0])?;
+                let ptr = self.one_arg(name, args)?;
                 self.text.push(format!("  FREE r{ptr}"));
                 Ok(0)
             }
@@ -699,32 +807,199 @@ impl CodeGen {
                 self.text.push(format!("  GET_PCR r{dst}, PID"));
                 Ok(dst)
             }
-            "exit" => {
-                if args.len() != 1 {
-                    return Err("exit(code) expects 1 argument".to_string());
+            "fork" => {
+                if !args.is_empty() {
+                    return Err("fork() expects no arguments".to_string());
                 }
-                let code = self.emit_expr(&args[0])?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  FORK r{dst}"));
+                Ok(dst)
+            }
+            "spawn" => {
+                if args.len() != 1 {
+                    return Err("spawn(function_name) expects 1 argument".to_string());
+                }
+                let Expr::Var(label) = &args[0] else {
+                    return Err("spawn argument must be a function name".to_string());
+                };
+                if !self.function_names.contains(label) {
+                    return Err(format!("unknown spawn target {label:?}"));
+                }
+                let target = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{target}, {label}"));
+                self.text.push(format!("  SPAWN r{dst}, r{target}"));
+                Ok(dst)
+            }
+            "yield_cpu" => {
+                self.no_args(name, args)?;
+                self.text.push("  YIELD".to_string());
+                Ok(0)
+            }
+            "sleep" => {
+                let ticks = self.one_arg(name, args)?;
+                self.text.push(format!("  SLEEP r{ticks}"));
+                Ok(0)
+            }
+            "exit" => {
+                let code = self.one_arg(name, args)?;
                 self.text.push(format!("  EXIT r{code}"));
                 Ok(0)
+            }
+            "msg_send" => {
+                if args.len() != 3 {
+                    return Err("msg_send(pid, v1, v2) expects 3 arguments".to_string());
+                }
+                let pid = self.emit_expr(&args[0])?;
+                let v1 = self.emit_expr(&args[1])?;
+                let v2 = self.emit_expr(&args[2])?;
+                self.text.push(format!("  MSG_SEND r{pid}, r{v1}, r{v2}"));
+                Ok(0)
+            }
+            "msg_recv" => {
+                self.no_args(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  MSG_RECV r{dst}, r30"));
+                Ok(dst)
+            }
+            "cmpxchg" => {
+                if args.len() != 3 {
+                    return Err("cmpxchg(ptr, expected, new) expects 3 arguments".to_string());
+                }
+                let ptr = self.emit_expr(&args[0])?;
+                let expected = self.emit_expr(&args[1])?;
+                let new = self.emit_expr(&args[2])?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!(
+                    "  LOCK.CMPXCHG r{dst}, r{ptr}, r{expected}, r{new}"
+                ));
+                Ok(dst)
+            }
+            "futex_wait" => {
+                if args.len() != 2 {
+                    return Err("futex_wait(ptr, expected) expects 2 arguments".to_string());
+                }
+                let ptr = self.emit_expr(&args[0])?;
+                let expected = self.emit_expr(&args[1])?;
+                self.text.push(format!("  FUTEX_WAIT r{ptr}, r{expected}"));
+                Ok(0)
+            }
+            "futex_wake" => {
+                if args.len() != 2 {
+                    return Err("futex_wake(ptr, count) expects 2 arguments".to_string());
+                }
+                let ptr = self.emit_expr(&args[0])?;
+                let count = self.emit_expr(&args[1])?;
+                self.text.push(format!("  FUTEX_WAKE r{ptr}, r{count}"));
+                Ok(0)
+            }
+            "mmap" => {
+                if args.len() != 3 {
+                    return Err("mmap(fd, len, prot) expects 3 arguments".to_string());
+                }
+                let fd_num = self.numeric_fd(&args[0], "mmap")?;
+                let len = self.emit_expr(&args[1])?;
+                let prot = self.emit_expr(&args[2])?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!(
+                    "  MMAP r{dst}, r0, r{len}, r{prot}, fd{fd_num}, r0"
+                ));
+                Ok(dst)
+            }
+            "fence" => {
+                self.no_args(name, args)?;
+                self.text.push("  FENCE".to_string());
+                Ok(0)
+            }
+            _ if self.function_names.contains(name) => {
+                if args.len() > 6 {
+                    return Err("function calls support at most 6 arguments".to_string());
+                }
+                let mut regs = Vec::new();
+                for arg in args {
+                    regs.push(self.emit_expr(arg)?);
+                }
+                for (idx, reg) in regs.iter().enumerate() {
+                    self.text.push(format!("  MOV r{}, r{reg}", idx + 1));
+                }
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  CALL {name}"));
+                self.text.push(format!("  MOV r{dst}, r1"));
+                Ok(dst)
             }
             _ => Err(format!("unsupported function call {name:?}")),
         }
     }
 
-    fn declare_var(&mut self, name: &str) -> Result<(), String> {
-        if self.vars.contains_key(name) {
-            return Err(format!("duplicate variable {name:?}"));
+    fn fd_buf_len_args(
+        &mut self,
+        name: &str,
+        args: &[Expr],
+    ) -> Result<(usize, usize, usize), String> {
+        if args.len() != 3 {
+            return Err(format!("{name}(fd, buffer, len) expects 3 arguments"));
         }
-        let label = format!("var_{name}");
-        self.vars.insert(name.to_string(), label);
-        Ok(())
+        let fd_num = self.numeric_fd(&args[0], name)?;
+        let buf = self.emit_expr(&args[1])?;
+        let len = self.emit_expr(&args[2])?;
+        Ok((fd_num, buf, len))
     }
 
-    fn var_label(&self, name: &str) -> Result<String, String> {
-        self.vars
-            .get(name)
-            .cloned()
-            .ok_or_else(|| format!("unknown variable {name:?}"))
+    fn numeric_fd(&self, expr: &Expr, name: &str) -> Result<usize, String> {
+        match expr {
+            Expr::Num(v) if (0..=255).contains(v) => Ok(*v as usize),
+            _ => Err(format!("{name} fd argument must be a numeric fd")),
+        }
+    }
+
+    fn one_arg(&mut self, name: &str, args: &[Expr]) -> Result<usize, String> {
+        if args.len() != 1 {
+            return Err(format!("{name} expects 1 argument"));
+        }
+        self.emit_expr(&args[0])
+    }
+
+    fn no_args(&self, name: &str, args: &[Expr]) -> Result<(), String> {
+        if args.is_empty() {
+            Ok(())
+        } else {
+            Err(format!("{name} expects no arguments"))
+        }
+    }
+
+    fn declare_local(&mut self, name: &str) -> Result<i64, String> {
+        if self.locals.contains_key(name) {
+            return Err(format!("duplicate local {name:?}"));
+        }
+        let offset = self.next_local_offset;
+        self.next_local_offset += 8;
+        self.locals.insert(name.to_string(), offset);
+        Ok(offset)
+    }
+
+    fn load_name(&mut self, name: &str) -> Result<usize, String> {
+        let reg = self.alloc_reg()?;
+        if let Some(offset) = self.locals.get(name) {
+            self.text.push(format!("  LD r{reg}, [r31, {offset}]"));
+            Ok(reg)
+        } else if let Some(label) = self.globals.get(name) {
+            self.text.push(format!("  LD r{reg}, {label}"));
+            Ok(reg)
+        } else {
+            Err(format!("unknown variable {name:?}"))
+        }
+    }
+
+    fn store_name(&mut self, name: &str, reg: usize) -> Result<(), String> {
+        if let Some(offset) = self.locals.get(name) {
+            self.text.push(format!("  ST [r31, {offset}], r{reg}"));
+            Ok(())
+        } else if let Some(label) = self.globals.get(name) {
+            self.text.push(format!("  ST {label}, r{reg}"));
+            Ok(())
+        } else {
+            Err(format!("unknown variable {name:?}"))
+        }
     }
 
     fn intern_string(&mut self, value: &str) -> String {
@@ -744,7 +1019,7 @@ impl CodeGen {
     }
 
     fn alloc_reg(&mut self) -> Result<usize, String> {
-        if self.temp_reg >= 30 {
+        if self.temp_reg >= 28 {
             return Err("expression is too complex for the simple register allocator".to_string());
         }
         let reg = 1 + self.temp_reg;
@@ -792,6 +1067,35 @@ mod tests {
             } else {
                 return 1;
             }
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn compiles_recursive_function_calls() {
+        let source = r#"
+        int fib(int n) {
+            int a;
+            int b;
+            if (n < 2) {
+                return n;
+            }
+            a = fib(n - 1);
+            b = fib(n - 2);
+            return a + b;
+        }
+
+        int main() {
+            int value;
+            value = fib(8);
+            if (value == 21) {
+                return 0;
+            }
+            return 1;
         }
         "#;
         let asm = compile(source).unwrap();

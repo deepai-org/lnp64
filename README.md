@@ -35,16 +35,7 @@ cargo run -- run /tmp/hello.lnp64.s
 Run all demos:
 
 ```sh
-for src in demos/*.c; do
-  asm="/tmp/$(basename "$src" .c).s"
-  cargo run --quiet -- cc "$src" -o "$asm"
-  echo "== $src =="
-  cargo run --quiet -- run "$asm"
-done
-for src in demos/*.s; do
-  echo "== $src =="
-  cargo run --quiet -- run "$src"
-done
+bash scripts/run_demos.sh
 ```
 
 ## Docker
