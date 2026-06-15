@@ -39,10 +39,25 @@ fn run() -> Result<(), String> {
         }
         "run" => {
             let input = take_input(&mut args)?;
+            if args.first().is_some_and(|arg| arg == "--") {
+                args.remove(0);
+            }
             let source = fs::read_to_string(&input)
                 .map_err(|err| format!("failed to read {}: {err}", input.display()))?;
             let program = Program::parse(&source)?;
             let mut machine = Machine::new(program);
+            let run_args = if args.is_empty() {
+                vec![
+                    input
+                        .file_stem()
+                        .and_then(|stem| stem.to_str())
+                        .unwrap_or("lnp64-program")
+                        .to_string(),
+                ]
+            } else {
+                args
+            };
+            machine.set_args(&run_args)?;
             let code = machine.run()?;
             if code != 0 {
                 std::process::exit(code.clamp(1, 255));

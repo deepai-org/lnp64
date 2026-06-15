@@ -7,6 +7,8 @@ pub const VR_COUNT: usize = 16;
 pub const DATA_BASE: u64 = 0x10_000;
 pub const STACK_TOP: u64 = 0x80_000;
 pub const HEAP_BASE: u64 = 0x100_000;
+pub const ARG_BASE: u64 = 0x700_000;
+pub const ARG_SIZE: u64 = 0x20_000;
 pub const MEMORY_SIZE: usize = 8 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

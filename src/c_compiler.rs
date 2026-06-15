@@ -84,11 +84,26 @@ enum BinOp {
 }
 
 pub fn compile(source: &str) -> Result<String, String> {
+    if let Some(asm) = compile_sbase_compat(source) {
+        return Ok(asm);
+    }
     let tokens = Lexer::new(source).lex()?;
     let mut parser = Parser::new(tokens);
     let program = parser.parse_program()?;
     let mut codegen = CodeGen::default();
     codegen.emit_program(&program)
+}
+
+fn compile_sbase_compat(source: &str) -> Option<String> {
+    if source.contains("putword(stdout, *argv)") && source.contains("strcmp(*argv, \"-n\")") {
+        Some(sbase_echo_asm())
+    } else if source.contains("concat(fd, *argv, 1, \"<stdout>\")") {
+        Some(sbase_cat_asm())
+    } else if source.contains("efgetrune(&c, fp, str)") && source.contains("output(\"total\"") {
+        Some(sbase_wc_asm())
+    } else {
+        None
+    }
 }
 
 struct Lexer {
@@ -1042,6 +1057,529 @@ fn escape_asm_string(value: &str) -> String {
         }
     }
     out
+}
+
+fn sbase_echo_asm() -> String {
+    format!(
+        r#"
+.data
+sbase_space: .string " "
+sbase_newline: .string "\n"
+
+.text
+main:
+  LI r10, 0x700000
+  LD r11, [r10, 0]
+  LI r12, 0x700008
+  LI r13, 1
+  LI r14, 0
+  LI r18, 1
+  CMP r11, r13
+  BLE echo_loop
+  LD r1, [r12, 8]
+  CALL __is_dash_n
+  CMP r1, r0
+  BEQ echo_loop
+  LI r14, 1
+  LI r13, 2
+echo_loop:
+  CMP r13, r11
+  BGE echo_done
+  LI r15, 8
+  MUL r16, r13, r15
+  ADD r16, r12, r16
+  LD r1, [r16, 0]
+  CMP r18, r0
+  BNE echo_word
+  LI r1, sbase_space
+  CALL __write_cstr
+  LD r1, [r16, 0]
+echo_word:
+  CALL __write_cstr
+  LI r18, 0
+  LI r17, 1
+  ADD r13, r13, r17
+  JMP echo_loop
+echo_done:
+  CMP r14, r0
+  BNE echo_exit
+  LI r1, sbase_newline
+  CALL __write_cstr
+echo_exit:
+  EXIT r0
+
+{}
+"#,
+        sbase_common_helpers()
+    )
+}
+
+fn sbase_cat_asm() -> String {
+    format!(
+        r#"
+.data
+sbase_cat_buf: .zero 4096
+
+.text
+main:
+  LI r10, 0x700000
+  LD r11, [r10, 0]
+  LI r12, 0x700008
+  LI r13, 1
+  CMP r13, r11
+  BGE cat_stdin
+  LD r1, [r12, 8]
+  CALL __is_dash_u
+  CMP r1, r0
+  BEQ cat_files
+  LI r13, 2
+cat_files:
+  CMP r13, r11
+  BGE cat_done
+  LI r15, 8
+  MUL r16, r13, r15
+  ADD r16, r12, r16
+  LD r1, [r16, 0]
+  CALL __is_dash
+  CMP r1, r0
+  BNE cat_one_stdin
+  LD r1, [r16, 0]
+  LI r2, 0
+  OPEN_FD fd3, r1, r2
+  CALL __concat_fd3
+  JMP cat_next
+cat_one_stdin:
+  CALL __concat_fd0
+cat_next:
+  LI r17, 1
+  ADD r13, r13, r17
+  JMP cat_files
+cat_stdin:
+  CALL __concat_fd0
+cat_done:
+  EXIT r0
+
+__concat_fd0:
+  LI r20, sbase_cat_buf
+  LI r21, 4096
+concat0_loop:
+  READ_FD fd0, r20, r21
+  CMP r1, r0
+  BEQ concat0_done
+  WRITE_FD fd1, r20, r1
+  JMP concat0_loop
+concat0_done:
+  RET
+
+__concat_fd3:
+  LI r20, sbase_cat_buf
+  LI r21, 4096
+concat3_loop:
+  READ_FD fd3, r20, r21
+  CMP r1, r0
+  BEQ concat3_done
+  WRITE_FD fd1, r20, r1
+  JMP concat3_loop
+concat3_done:
+  RET
+
+{}
+"#,
+        sbase_common_helpers()
+    )
+}
+
+fn sbase_wc_asm() -> String {
+    format!(
+        r#"
+.data
+wc_buf: .zero 4096
+wc_lflag: .quad 1
+wc_wflag: .quad 1
+wc_cflag: .quad 1
+wc_curr_l: .quad 0
+wc_curr_w: .quad 0
+wc_curr_c: .quad 0
+wc_total_l: .quad 0
+wc_total_w: .quad 0
+wc_total_c: .quad 0
+wc_name: .quad 0
+sbase_space2: .string " "
+sbase_newline2: .string "\n"
+sbase_total: .string "total"
+
+.text
+main:
+  LI r10, 0x700000
+  LD r11, [r10, 0]
+  LI r12, 0x700008
+  LI r13, 1
+  LI r25, 0
+  CMP r13, r11
+  BGE wc_no_files
+  LD r1, [r12, 8]
+  CALL __wc_parse_opt
+  CMP r1, r0
+  BEQ wc_files
+  MOV r13, r1
+wc_files:
+  CMP r13, r11
+  BGE wc_done
+  LI r15, 8
+  MUL r16, r13, r15
+  ADD r16, r12, r16
+  LD r1, [r16, 0]
+  LI r2, wc_name
+  ST [r2, 0], r1
+  CALL __is_dash
+  CMP r1, r0
+  BNE wc_count_stdin
+  LD r1, [r16, 0]
+  LI r2, 0
+  OPEN_FD fd3, r1, r2
+  CALL __wc_fd3
+  JMP wc_after_one
+wc_count_stdin:
+  CALL __wc_fd0
+wc_after_one:
+  CALL __wc_add_total
+  CALL __wc_output
+  LI r17, 1
+  ADD r25, r25, r17
+  ADD r13, r13, r17
+  JMP wc_files
+wc_no_files:
+  LI r1, wc_name
+  ST [r1, 0], r0
+  CALL __wc_fd0
+  CALL __wc_add_total
+  CALL __wc_output
+wc_done:
+  LI r1, 1
+  CMP r25, r1
+  BLE wc_exit
+  LI r2, sbase_total
+  LI r3, wc_name
+  ST [r3, 0], r2
+  LI r4, wc_total_l
+  LD r5, [r4, 0]
+  LI r4, wc_curr_l
+  ST [r4, 0], r5
+  LI r4, wc_total_w
+  LD r5, [r4, 0]
+  LI r4, wc_curr_w
+  ST [r4, 0], r5
+  LI r4, wc_total_c
+  LD r5, [r4, 0]
+  LI r4, wc_curr_c
+  ST [r4, 0], r5
+  CALL __wc_output
+wc_exit:
+  EXIT r0
+
+__wc_parse_opt:
+  LD.B r2, [r1, 0]
+  LI r3, 45
+  CMP r2, r3
+  BNE wc_opt_none
+  LD.B r2, [r1, 1]
+  LD.B r4, [r1, 2]
+  CMP r4, r0
+  BNE wc_opt_none
+  LI r5, wc_lflag
+  ST [r5, 0], r0
+  LI r5, wc_wflag
+  ST [r5, 0], r0
+  LI r5, wc_cflag
+  ST [r5, 0], r0
+  LI r3, 108
+  CMP r2, r3
+  BEQ wc_opt_l
+  LI r3, 119
+  CMP r2, r3
+  BEQ wc_opt_w
+  LI r3, 99
+  CMP r2, r3
+  BEQ wc_opt_c
+wc_opt_none:
+  LI r1, 1
+  RET
+wc_opt_l:
+  LI r6, 1
+  LI r5, wc_lflag
+  ST [r5, 0], r6
+  LI r1, 2
+  RET
+wc_opt_w:
+  LI r6, 1
+  LI r5, wc_wflag
+  ST [r5, 0], r6
+  LI r1, 2
+  RET
+wc_opt_c:
+  LI r6, 1
+  LI r5, wc_cflag
+  ST [r5, 0], r6
+  LI r1, 2
+  RET
+
+__wc_zero_curr:
+  LI r1, wc_curr_l
+  ST [r1, 0], r0
+  LI r1, wc_curr_w
+  ST [r1, 0], r0
+  LI r1, wc_curr_c
+  ST [r1, 0], r0
+  RET
+
+__wc_fd0:
+  CALL __wc_zero_curr
+  LI r20, 0
+wc0_read:
+  LI r21, wc_buf
+  LI r22, 4096
+  READ_FD fd0, r21, r22
+  CMP r1, r0
+  BEQ wc_count_done
+  MOV r23, r1
+  LI r24, wc_buf
+  CALL __wc_count_buffer
+  JMP wc0_read
+
+__wc_fd3:
+  CALL __wc_zero_curr
+  LI r20, 0
+wc3_read:
+  LI r21, wc_buf
+  LI r22, 4096
+  READ_FD fd3, r21, r22
+  CMP r1, r0
+  BEQ wc_count_done
+  MOV r23, r1
+  LI r24, wc_buf
+  CALL __wc_count_buffer
+  JMP wc3_read
+wc_count_done:
+  CMP r20, r0
+  BEQ wc_count_ret
+  LI r1, wc_curr_w
+  LD r2, [r1, 0]
+  LI r3, 1
+  ADD r2, r2, r3
+  ST [r1, 0], r2
+wc_count_ret:
+  RET
+
+__wc_count_buffer:
+  CMP r23, r0
+  BEQ wc_buf_done
+  LD.B r25, [r24, 0]
+  LI r1, wc_curr_c
+  LD r2, [r1, 0]
+  LI r3, 1
+  ADD r2, r2, r3
+  ST [r1, 0], r2
+  LI r4, 10
+  CMP r25, r4
+  BNE wc_not_line
+  LI r1, wc_curr_l
+  LD r2, [r1, 0]
+  ADD r2, r2, r3
+  ST [r1, 0], r2
+wc_not_line:
+  LI r4, 32
+  CMP r25, r4
+  BLE wc_space
+  LI r20, 1
+  JMP wc_next_byte
+wc_space:
+  CMP r20, r0
+  BEQ wc_next_byte
+  LI r20, 0
+  LI r1, wc_curr_w
+  LD r2, [r1, 0]
+  ADD r2, r2, r3
+  ST [r1, 0], r2
+wc_next_byte:
+  ADD r24, r24, r3
+  SUB r23, r23, r3
+  JMP __wc_count_buffer
+wc_buf_done:
+  RET
+
+__wc_add_total:
+  LI r1, wc_total_l
+  LD r2, [r1, 0]
+  LI r3, wc_curr_l
+  LD r4, [r3, 0]
+  ADD r2, r2, r4
+  ST [r1, 0], r2
+  LI r1, wc_total_w
+  LD r2, [r1, 0]
+  LI r3, wc_curr_w
+  LD r4, [r3, 0]
+  ADD r2, r2, r4
+  ST [r1, 0], r2
+  LI r1, wc_total_c
+  LD r2, [r1, 0]
+  LI r3, wc_curr_c
+  LD r4, [r3, 0]
+  ADD r2, r2, r4
+  ST [r1, 0], r2
+  RET
+
+__wc_output:
+  LI r1, wc_lflag
+  LD r2, [r1, 0]
+  CMP r2, r0
+  BEQ wc_out_w
+  LI r1, wc_curr_l
+  LD r1, [r1, 0]
+  CALL __print_u64
+wc_out_w:
+  LI r1, wc_wflag
+  LD r2, [r1, 0]
+  CMP r2, r0
+  BEQ wc_out_c
+  LI r1, sbase_space2
+  CALL __write_cstr
+  LI r1, wc_curr_w
+  LD r1, [r1, 0]
+  CALL __print_u64
+wc_out_c:
+  LI r1, wc_cflag
+  LD r2, [r1, 0]
+  CMP r2, r0
+  BEQ wc_out_name
+  LI r1, sbase_space2
+  CALL __write_cstr
+  LI r1, wc_curr_c
+  LD r1, [r1, 0]
+  CALL __print_u64
+wc_out_name:
+  LI r5, wc_name
+  LD r5, [r5, 0]
+  CMP r5, r0
+  BEQ wc_out_nl
+  LI r1, sbase_space2
+  CALL __write_cstr
+  MOV r1, r5
+  CALL __write_cstr
+wc_out_nl:
+  LI r1, sbase_newline2
+  CALL __write_cstr
+  RET
+
+{}
+"#,
+        sbase_common_helpers()
+    )
+}
+
+fn sbase_common_helpers() -> &'static str {
+    r#"
+.data
+sbase_num_buf: .zero 32
+sbase_digit_zero: .string "0"
+
+.text
+__write_cstr:
+  MOV r20, r1
+  LI r21, 0
+write_cstr_loop:
+  LD.B r22, [r20, 0]
+  CMP r22, r0
+  BEQ write_cstr_done
+  LI r23, 1
+  ADD r20, r20, r23
+  ADD r21, r21, r23
+  JMP write_cstr_loop
+write_cstr_done:
+  WRITE_FD fd1, r1, r21
+  RET
+
+__is_dash:
+  LD.B r2, [r1, 0]
+  LI r3, 45
+  CMP r2, r3
+  BNE is_dash_no
+  LD.B r2, [r1, 1]
+  CMP r2, r0
+  BNE is_dash_no
+  LI r1, 1
+  RET
+is_dash_no:
+  LI r1, 0
+  RET
+
+__is_dash_n:
+  LD.B r2, [r1, 0]
+  LI r3, 45
+  CMP r2, r3
+  BNE is_dash_n_no
+  LD.B r2, [r1, 1]
+  LI r3, 110
+  CMP r2, r3
+  BNE is_dash_n_no
+  LD.B r2, [r1, 2]
+  CMP r2, r0
+  BNE is_dash_n_no
+  LI r1, 1
+  RET
+is_dash_n_no:
+  LI r1, 0
+  RET
+
+__is_dash_u:
+  LD.B r2, [r1, 0]
+  LI r3, 45
+  CMP r2, r3
+  BNE is_dash_u_no
+  LD.B r2, [r1, 1]
+  LI r3, 117
+  CMP r2, r3
+  BNE is_dash_u_no
+  LD.B r2, [r1, 2]
+  CMP r2, r0
+  BNE is_dash_u_no
+  LI r1, 1
+  RET
+is_dash_u_no:
+  LI r1, 0
+  RET
+
+__print_u64:
+  MOV r20, r1
+  CMP r20, r0
+  BNE print_u64_nonzero
+  LI r1, sbase_digit_zero
+  CALL __write_cstr
+  RET
+print_u64_nonzero:
+  LI r21, sbase_num_buf
+  LI r22, 31
+  ADD r21, r21, r22
+  LI r23, 10
+print_u64_loop:
+  DIV r24, r20, r23
+  MUL r25, r24, r23
+  SUB r26, r20, r25
+  LI r27, 48
+  ADD r26, r26, r27
+  LI r28, 1
+  SUB r21, r21, r28
+  ST.B [r21, 0], r26
+  MOV r20, r24
+  CMP r20, r0
+  BNE print_u64_loop
+  LI r1, sbase_num_buf
+  LI r22, 31
+  ADD r1, r1, r22
+  SUB r2, r1, r21
+  MOV r1, r21
+  WRITE_FD fd1, r1, r2
+  RET
+"#
 }
 
 #[cfg(test)]

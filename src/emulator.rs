@@ -156,6 +156,7 @@ impl Process {
         let mut vmas = vec![
             Vma::anonymous(DATA_BASE, program.data.len().max(1) as u64, 0b11),
             Vma::anonymous(STACK_TOP - STACK_SIZE, STACK_SIZE, 0b11),
+            Vma::anonymous(ARG_BASE, ARG_SIZE, 0b11),
         ];
         vmas.sort_by_key(|vma| vma.start);
 
@@ -297,6 +298,35 @@ impl Machine {
             next_tid: 2,
             last_exit: 0,
         }
+    }
+
+    pub fn set_args(&mut self, args: &[String]) -> Result<(), String> {
+        let pid = self.thread()?.pid;
+        let process = self
+            .processes
+            .get_mut(&pid)
+            .ok_or_else(|| format!("missing process {pid}"))?;
+        let argc_addr = ARG_BASE as usize;
+        let argv_addr = (ARG_BASE + 8) as usize;
+        let mut str_addr = ARG_BASE + 0x1000;
+        process.memory[argc_addr..argc_addr + 8]
+            .copy_from_slice(&(args.len() as u64).to_le_bytes());
+        for (idx, arg) in args.iter().enumerate() {
+            let ptr_slot = argv_addr + idx * 8;
+            process.memory[ptr_slot..ptr_slot + 8].copy_from_slice(&str_addr.to_le_bytes());
+            let bytes = arg.as_bytes();
+            let start = str_addr as usize;
+            let end = start + bytes.len();
+            if end + 1 >= (ARG_BASE + ARG_SIZE) as usize {
+                return Err("argv data exceeds emulated argument page".to_string());
+            }
+            process.memory[start..end].copy_from_slice(bytes);
+            process.memory[end] = 0;
+            str_addr += bytes.len() as u64 + 1;
+        }
+        let null_slot = argv_addr + args.len() * 8;
+        process.memory[null_slot..null_slot + 8].copy_from_slice(&0u64.to_le_bytes());
+        Ok(())
     }
 
     pub fn run(&mut self) -> Result<i32, String> {
