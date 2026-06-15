@@ -302,7 +302,7 @@ impl Machine {
     pub fn run(&mut self) -> Result<i32, String> {
         let mut steps = 0usize;
         while !self.threads.is_empty() {
-            if steps > 10_000_000 {
+            if steps > 200_000_000 {
                 return Err("execution step limit exceeded".to_string());
             }
             steps += 1;

@@ -1,8 +1,14 @@
 int handler() {
     int buf;
+    int filebuf;
+    int n;
     buf = alloc(256);
     read(3, buf, 256);
-    write(3, "HTTP/1.1 200 OK\r\nContent-Length: 15\r\n\r\nhello from http", 54);
+    open(4, "demos/index.html", 0);
+    filebuf = alloc(64);
+    n = read(4, filebuf, 64);
+    write(3, "HTTP/1.1 200 OK\r\nContent-Length: 16\r\n\r\n", 39);
+    write(3, filebuf, n);
     exit(0);
 }
 
