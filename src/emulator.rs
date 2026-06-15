@@ -504,6 +504,13 @@ impl Machine {
                             .append(true)
                             .read(true)
                             .open(&path)
+                    } else if flags & 2 == 2 {
+                        OpenOptions::new()
+                            .create(true)
+                            .truncate(true)
+                            .write(true)
+                            .read(true)
+                            .open(&path)
                     } else {
                         File::open(&path)
                     }
