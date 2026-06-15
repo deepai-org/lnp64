@@ -547,6 +547,7 @@ impl CodeGen {
     }
 
     fn emit_stmt(&mut self, stmt: &Stmt) -> Result<(), String> {
+        self.temp_reg = 0;
         match stmt {
             Stmt::VarDecl(name) => {
                 self.declare_var(name)?;
@@ -743,11 +744,11 @@ impl CodeGen {
     }
 
     fn alloc_reg(&mut self) -> Result<usize, String> {
-        let reg = 1 + (self.temp_reg % 27);
-        self.temp_reg += 1;
-        if reg == 31 {
-            return Err("internal register allocator selected locked stack pointer".to_string());
+        if self.temp_reg >= 30 {
+            return Err("expression is too complex for the simple register allocator".to_string());
         }
+        let reg = 1 + self.temp_reg;
+        self.temp_reg += 1;
         Ok(reg)
     }
 }

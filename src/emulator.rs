@@ -522,4 +522,46 @@ mod tests {
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
     }
+
+    #[test]
+    fn runs_system_primitive_subset() {
+        let program = Program::parse(
+            r#"
+            .text
+              GET_PCR r1, PID
+              LI r2, 1
+              CMP r1, r2
+              BNE bad
+
+              LI r3, 16
+              ALLOC r4, r3
+              CMP r4, r0
+              BEQ bad
+
+              LI r5, 41
+              ST [r4, 0], r5
+              LI r6, 41
+              LI r7, 42
+              LOCK.CMPXCHG r8, r4, r6, r7
+              LD r9, [r4, 0]
+              CMP r9, r7
+              BNE bad
+
+              MSG_SEND r1, r6, r7
+              MSG_RECV r10, r11
+              CMP r10, r6
+              BNE bad
+              CMP r11, r7
+              BNE bad
+              FREE r4
+              EXIT r0
+            bad:
+              LI r1, 1
+              EXIT r1
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
 }
