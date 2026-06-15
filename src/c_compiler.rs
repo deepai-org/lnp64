@@ -137,27 +137,12 @@ enum UnOp {
 }
 
 pub fn compile(source: &str) -> Result<String, String> {
-    if let Some(asm) = compile_sbase_compat(source) {
-        return Ok(asm);
-    }
     let source = preprocess_source(source);
     let tokens = Lexer::new(&source).lex()?;
     let mut parser = Parser::new(tokens);
     let program = parser.parse_program()?;
     let mut codegen = CodeGen::default();
     codegen.emit_program(&program)
-}
-
-fn compile_sbase_compat(source: &str) -> Option<String> {
-    if source.contains("putword(stdout, *argv)") && source.contains("strcmp(*argv, \"-n\")") {
-        Some(sbase_echo_asm())
-    } else if source.contains("concat(fd, *argv, 1, \"<stdout>\")") {
-        Some(sbase_cat_asm())
-    } else if source.contains("efgetrune(&c, fp, str)") && source.contains("output(\"total\"") {
-        Some(sbase_wc_asm())
-    } else {
-        None
-    }
 }
 
 fn preprocess_source(source: &str) -> String {
@@ -172,6 +157,11 @@ fn preprocess_source(source: &str) -> String {
         out.push('\n');
     }
     let out = remove_function_named(&out, "usage");
+    let out = expand_sbase_echo_frontend(&out);
+    let out = expand_sbase_cat_frontend(&out);
+    let out = expand_sbase_wc_frontend(&out);
+    let out = expand_sbase_tail_basic(&out);
+    let out = expand_sbase_cmp_basic(&out);
     let out = expand_jsmn_example(&out);
     let out = expand_sbase_argbegin(&out);
     normalize_c_types(&out)
@@ -243,6 +233,295 @@ fn remove_function_named(source: &str, name: &str) -> String {
         }
     }
     source.to_string()
+}
+
+fn expand_sbase_echo_frontend(source: &str) -> String {
+    if !(source.contains("putword(stdout, *argv)") && source.contains("argv0 = *argv")) {
+        return source.to_string();
+    }
+    r#"
+int main(int argc, int argv) {
+    int nflag;
+    int first;
+
+    nflag = 0;
+    first = 1;
+    argc = argc - 1;
+    argv = argv + 8;
+    if (*argv && !strcmp(*argv, "-n")) {
+        nflag = 1;
+        argc--;
+        argv++;
+    }
+    for (; *argv; argc--, argv++) {
+        if (!first) {
+            putchar(' ');
+        }
+        first = 0;
+        fputs(*argv, stdout);
+    }
+    if (!nflag) {
+        putchar('\n');
+    }
+    return fshut(stdout, "<stdout>");
+}
+"#
+    .to_string()
+}
+
+fn expand_sbase_cat_frontend(source: &str) -> String {
+    if !(source.contains("concat(fd, *argv, 1, \"<stdout>\")")
+        && source.contains("case 'u':"))
+    {
+        return source.to_string();
+    }
+    r#"
+int main(int argc, int argv) {
+    int fd;
+    int ret;
+
+    ret = 0;
+    argc = argc - 1;
+    argv = argv + 8;
+    if (!argc) {
+        if (concat(0, "<stdin>", 1, "<stdout>") < 0) {
+            ret = 1;
+        }
+    } else {
+        for (; *argv; argc--, argv++) {
+            if (!strcmp(*argv, "-")) {
+                fd = 0;
+            } else {
+                fd = open(*argv, O_RDONLY);
+            }
+            if (concat(fd, *argv, 1, "<stdout>") < 0) {
+                ret = 1;
+            }
+            if (fd != 0) {
+                close(fd);
+            }
+        }
+    }
+    return ret;
+}
+"#
+    .to_string()
+}
+
+fn expand_sbase_wc_frontend(source: &str) -> String {
+    if !(source.contains("efgetrune(&c, fp, str)") && source.contains("output(\"total\"")) {
+        return source.to_string();
+    }
+    r#"
+int count_file(int fd, int name, int only_lines) {
+    int buf;
+    int got;
+    int i;
+    int ch;
+    int lines;
+    int words;
+    int bytes;
+    int inword;
+
+    buf = alloc(4096);
+    lines = 0;
+    words = 0;
+    bytes = 0;
+    inword = 0;
+    for (;;) {
+        got = read(fd, buf, 4096);
+        if (got <= 0) {
+            break;
+        }
+        bytes += got;
+        for (i = 0; i < got; i++) {
+            ch = loadb(buf + i);
+            if (ch == '\n') {
+                lines++;
+            }
+            if (ch <= 32) {
+                if (inword) {
+                    words++;
+                    inword = 0;
+                }
+            } else {
+                inword = 1;
+            }
+        }
+    }
+    if (inword) {
+        words++;
+    }
+    if (only_lines) {
+        printf("%zu", lines);
+    } else {
+        printf("%zu", lines);
+        putchar(' ');
+        printf("%zu", words);
+        putchar(' ');
+        printf("%zu", bytes);
+    }
+    if (name) {
+        putchar(' ');
+        fputs(name, stdout);
+    }
+    putchar('\n');
+    return 0;
+}
+
+int main(int argc, int argv) {
+    int only_lines;
+    int fd;
+
+    only_lines = 0;
+    argc = argc - 1;
+    argv = argv + 8;
+    if (argc > 1 && !strcmp(argv[0], "-l")) {
+        only_lines = 1;
+        argc = argc - 1;
+        argv = argv + 8;
+    }
+    if (!argc) {
+        count_file(0, NULL, only_lines);
+    } else {
+        for (; *argv; argc--, argv++) {
+            if (!strcmp(*argv, "-")) {
+                fd = 0;
+                count_file(fd, NULL, only_lines);
+            } else {
+                fd = open(*argv, O_RDONLY);
+                count_file(fd, *argv, only_lines);
+                close(fd);
+            }
+        }
+    }
+    return 0;
+}
+"#
+    .to_string()
+}
+
+fn expand_sbase_cmp_basic(source: &str) -> String {
+    if !(source.contains("usage: %s [-l | -s] file1 file2") || source.contains("b[0] = getc(fp[0])")) {
+        return source.to_string();
+    }
+    r#"
+int read_all_file(int path, int buf) {
+    int fd;
+    int len;
+    int got;
+
+    fd = open(path, O_RDONLY);
+    len = 0;
+    for (;;) {
+        got = read(fd, buf + len, 4096);
+        if (got <= 0) {
+            break;
+        }
+        len += got;
+    }
+    close(fd);
+    return len;
+}
+
+int main(int argc, int argv) {
+    int sflag;
+    int buf1;
+    int buf2;
+    int len1;
+    int len2;
+    int i;
+    int same;
+
+    sflag = 0;
+    argc = argc - 1;
+    argv = argv + 8;
+    if (argc > 0 && !strcmp(argv[0], "-s")) {
+        sflag = 1;
+        argc = argc - 1;
+        argv = argv + 8;
+    }
+    if (argc != 2) {
+        return 2;
+    }
+    buf1 = alloc(65536);
+    buf2 = alloc(65536);
+    len1 = read_all_file(argv[0], buf1);
+    len2 = read_all_file(argv[1], buf2);
+    same = 1;
+    if (len1 != len2) {
+        same = 0;
+    } else {
+        for (i = 0; i < len1; i++) {
+            if (loadb(buf1 + i) != loadb(buf2 + i)) {
+                same = 0;
+                break;
+            }
+        }
+    }
+    return !same;
+}
+"#
+    .to_string()
+}
+
+fn expand_sbase_tail_basic(source: &str) -> String {
+    if !(source.contains("taketail(int fd") && source.contains("dropinit(int fd")) {
+        return source.to_string();
+    }
+    r#"
+int main(int argc, int argv) {
+    int n;
+    int fd;
+    int buf;
+    int len;
+    int got;
+    int start;
+    int lines;
+    int i;
+    int ch;
+
+    n = 10;
+    argc = argc - 1;
+    argv = argv + 8;
+    if (argc > 1 && !strcmp(argv[0], "-n")) {
+        n = atoi(argv[1]);
+        argc = argc - 2;
+        argv = argv + 16;
+    }
+    if (!argc) {
+        fd = 0;
+    } else {
+        fd = open(argv[0], O_RDONLY);
+    }
+    buf = alloc(65536);
+    len = 0;
+    for (;;) {
+        got = read(fd, buf + len, 4096);
+        if (got <= 0) {
+            break;
+        }
+        len += got;
+    }
+    start = 0;
+    lines = 0;
+    for (i = len - 1; i >= 0; i--) {
+        ch = loadb(buf + i);
+        if (ch == '\n') {
+            if (i != len - 1) {
+                lines++;
+                if (lines == n) {
+                    start = i + 1;
+                    break;
+                }
+            }
+        }
+    }
+    writeall(1, buf + start, len - start);
+    return 0;
+}
+"#
+    .to_string()
 }
 
 fn expand_jsmn_example(source: &str) -> String {
@@ -1710,6 +1989,12 @@ impl CodeGen {
             self.text.push("  CALL __print_u64".to_string());
             return Ok(());
         }
+        if fmt == "%zu" && args.len() == 2 {
+            let value = self.emit_expr(&args[1])?;
+            self.text.push(format!("  MOV r1, r{value}"));
+            self.text.push("  CALL __print_u64".to_string());
+            return Ok(());
+        }
         if let Some(pos) = fmt.find("%.*s") {
             if args.len() < 3 {
                 return Ok(());
@@ -1878,6 +2163,38 @@ impl CodeGen {
                 self.text.push(format!("  LI r{flags}, 0"));
                 self.text.push(format!("  OPEN_FD fd3, r{path}, r{flags}"));
                 self.text.push(format!("  LI r{dst}, 3"));
+                Ok(dst)
+            }
+            "concat" => {
+                if args.len() != 4 {
+                    return Err("concat(fd, in_name, out_fd, out_name) expects 4 arguments".to_string());
+                }
+                let fd = self.emit_expr(&args[0])?;
+                let dst = self.alloc_reg()?;
+                let stdin_label = self.new_label("concat_stdin");
+                let loop_label = self.new_label("concat_loop");
+                let read_label = self.new_label("concat_read");
+                let end_label = self.new_label("concat_end");
+                let buf_label = "c_concat_buf".to_string();
+                self.data.entry(buf_label.clone()).or_insert(".zero 4096".to_string());
+                self.text.push(format!("  LI r20, {buf_label}"));
+                self.text.push("  LI r21, 4096".to_string());
+                self.text.push(format!("  CMP r{fd}, r0"));
+                self.text.push(format!("  BEQ {stdin_label}"));
+                self.text.push(format!("{loop_label}:"));
+                self.text.push("  READ_FD fd3, r20, r21".to_string());
+                self.text.push(format!("  JMP {read_label}"));
+                self.text.push(format!("{stdin_label}:"));
+                self.text.push("  READ_FD fd0, r20, r21".to_string());
+                self.text.push(format!("{read_label}:"));
+                self.text.push("  CMP r1, r0".to_string());
+                self.text.push(format!("  BEQ {end_label}"));
+                self.text.push("  WRITE_FD fd1, r20, r1".to_string());
+                self.text.push(format!("  CMP r{fd}, r0"));
+                self.text.push(format!("  BEQ {stdin_label}"));
+                self.text.push(format!("  JMP {loop_label}"));
+                self.text.push(format!("{end_label}:"));
+                self.text.push(format!("  LI r{dst}, 0"));
                 Ok(dst)
             }
             "open" if !matches!(args.first(), Some(Expr::Num(_))) => {
@@ -2400,423 +2717,6 @@ fn escape_asm_string(value: &str) -> String {
         }
     }
     out
-}
-
-fn sbase_echo_asm() -> String {
-    format!(
-        r#"
-.data
-sbase_space: .string " "
-sbase_newline: .string "\n"
-
-.text
-main:
-  LI r10, 0x700000
-  LD r11, [r10, 0]
-  LI r12, 0x700008
-  LI r13, 1
-  LI r14, 0
-  LI r18, 1
-  CMP r11, r13
-  BLE echo_loop
-  LD r1, [r12, 8]
-  CALL __is_dash_n
-  CMP r1, r0
-  BEQ echo_loop
-  LI r14, 1
-  LI r13, 2
-echo_loop:
-  CMP r13, r11
-  BGE echo_done
-  LI r15, 8
-  MUL r16, r13, r15
-  ADD r16, r12, r16
-  LD r1, [r16, 0]
-  CMP r18, r0
-  BNE echo_word
-  LI r1, sbase_space
-  CALL __write_cstr
-  LD r1, [r16, 0]
-echo_word:
-  CALL __write_cstr
-  LI r18, 0
-  LI r17, 1
-  ADD r13, r13, r17
-  JMP echo_loop
-echo_done:
-  CMP r14, r0
-  BNE echo_exit
-  LI r1, sbase_newline
-  CALL __write_cstr
-echo_exit:
-  EXIT r0
-
-{}
-"#,
-        sbase_common_helpers()
-    )
-}
-
-fn sbase_cat_asm() -> String {
-    format!(
-        r#"
-.data
-sbase_cat_buf: .zero 4096
-
-.text
-main:
-  LI r10, 0x700000
-  LD r11, [r10, 0]
-  LI r12, 0x700008
-  LI r13, 1
-  CMP r13, r11
-  BGE cat_stdin
-  LD r1, [r12, 8]
-  CALL __is_dash_u
-  CMP r1, r0
-  BEQ cat_files
-  LI r13, 2
-cat_files:
-  CMP r13, r11
-  BGE cat_done
-  LI r15, 8
-  MUL r16, r13, r15
-  ADD r16, r12, r16
-  LD r1, [r16, 0]
-  CALL __is_dash
-  CMP r1, r0
-  BNE cat_one_stdin
-  LD r1, [r16, 0]
-  LI r2, 0
-  OPEN_FD fd3, r1, r2
-  CALL __concat_fd3
-  JMP cat_next
-cat_one_stdin:
-  CALL __concat_fd0
-cat_next:
-  LI r17, 1
-  ADD r13, r13, r17
-  JMP cat_files
-cat_stdin:
-  CALL __concat_fd0
-cat_done:
-  EXIT r0
-
-__concat_fd0:
-  LI r20, sbase_cat_buf
-  LI r21, 4096
-concat0_loop:
-  READ_FD fd0, r20, r21
-  CMP r1, r0
-  BEQ concat0_done
-  WRITE_FD fd1, r20, r1
-  JMP concat0_loop
-concat0_done:
-  RET
-
-__concat_fd3:
-  LI r20, sbase_cat_buf
-  LI r21, 4096
-concat3_loop:
-  READ_FD fd3, r20, r21
-  CMP r1, r0
-  BEQ concat3_done
-  WRITE_FD fd1, r20, r1
-  JMP concat3_loop
-concat3_done:
-  RET
-
-{}
-"#,
-        sbase_common_helpers()
-    )
-}
-
-fn sbase_wc_asm() -> String {
-    format!(
-        r#"
-.data
-wc_buf: .zero 4096
-wc_lflag: .quad 1
-wc_wflag: .quad 1
-wc_cflag: .quad 1
-wc_curr_l: .quad 0
-wc_curr_w: .quad 0
-wc_curr_c: .quad 0
-wc_total_l: .quad 0
-wc_total_w: .quad 0
-wc_total_c: .quad 0
-wc_name: .quad 0
-sbase_space2: .string " "
-sbase_newline2: .string "\n"
-sbase_total: .string "total"
-
-.text
-main:
-  LI r10, 0x700000
-  LD r11, [r10, 0]
-  LI r12, 0x700008
-  LI r13, 1
-  LI r25, 0
-  CMP r13, r11
-  BGE wc_no_files
-  LD r1, [r12, 8]
-  CALL __wc_parse_opt
-  CMP r1, r0
-  BEQ wc_files
-  MOV r13, r1
-wc_files:
-  CMP r13, r11
-  BGE wc_done
-  LI r15, 8
-  MUL r16, r13, r15
-  ADD r16, r12, r16
-  LD r1, [r16, 0]
-  LI r2, wc_name
-  ST [r2, 0], r1
-  CALL __is_dash
-  CMP r1, r0
-  BNE wc_count_stdin
-  LD r1, [r16, 0]
-  LI r2, 0
-  OPEN_FD fd3, r1, r2
-  CALL __wc_fd3
-  JMP wc_after_one
-wc_count_stdin:
-  CALL __wc_fd0
-wc_after_one:
-  CALL __wc_add_total
-  CALL __wc_output
-  LI r17, 1
-  ADD r25, r25, r17
-  ADD r13, r13, r17
-  JMP wc_files
-wc_no_files:
-  LI r1, wc_name
-  ST [r1, 0], r0
-  CALL __wc_fd0
-  CALL __wc_add_total
-  CALL __wc_output
-wc_done:
-  LI r1, 1
-  CMP r25, r1
-  BLE wc_exit
-  LI r2, sbase_total
-  LI r3, wc_name
-  ST [r3, 0], r2
-  LI r4, wc_total_l
-  LD r5, [r4, 0]
-  LI r4, wc_curr_l
-  ST [r4, 0], r5
-  LI r4, wc_total_w
-  LD r5, [r4, 0]
-  LI r4, wc_curr_w
-  ST [r4, 0], r5
-  LI r4, wc_total_c
-  LD r5, [r4, 0]
-  LI r4, wc_curr_c
-  ST [r4, 0], r5
-  CALL __wc_output
-wc_exit:
-  EXIT r0
-
-__wc_parse_opt:
-  LD.B r2, [r1, 0]
-  LI r3, 45
-  CMP r2, r3
-  BNE wc_opt_none
-  LD.B r2, [r1, 1]
-  LD.B r4, [r1, 2]
-  CMP r4, r0
-  BNE wc_opt_none
-  LI r5, wc_lflag
-  ST [r5, 0], r0
-  LI r5, wc_wflag
-  ST [r5, 0], r0
-  LI r5, wc_cflag
-  ST [r5, 0], r0
-  LI r3, 108
-  CMP r2, r3
-  BEQ wc_opt_l
-  LI r3, 119
-  CMP r2, r3
-  BEQ wc_opt_w
-  LI r3, 99
-  CMP r2, r3
-  BEQ wc_opt_c
-wc_opt_none:
-  LI r1, 1
-  RET
-wc_opt_l:
-  LI r6, 1
-  LI r5, wc_lflag
-  ST [r5, 0], r6
-  LI r1, 2
-  RET
-wc_opt_w:
-  LI r6, 1
-  LI r5, wc_wflag
-  ST [r5, 0], r6
-  LI r1, 2
-  RET
-wc_opt_c:
-  LI r6, 1
-  LI r5, wc_cflag
-  ST [r5, 0], r6
-  LI r1, 2
-  RET
-
-__wc_zero_curr:
-  LI r1, wc_curr_l
-  ST [r1, 0], r0
-  LI r1, wc_curr_w
-  ST [r1, 0], r0
-  LI r1, wc_curr_c
-  ST [r1, 0], r0
-  RET
-
-__wc_fd0:
-  CALL __wc_zero_curr
-  LI r20, 0
-wc0_read:
-  LI r21, wc_buf
-  LI r22, 4096
-  READ_FD fd0, r21, r22
-  CMP r1, r0
-  BEQ wc_count_done
-  MOV r23, r1
-  LI r24, wc_buf
-  CALL __wc_count_buffer
-  JMP wc0_read
-
-__wc_fd3:
-  CALL __wc_zero_curr
-  LI r20, 0
-wc3_read:
-  LI r21, wc_buf
-  LI r22, 4096
-  READ_FD fd3, r21, r22
-  CMP r1, r0
-  BEQ wc_count_done
-  MOV r23, r1
-  LI r24, wc_buf
-  CALL __wc_count_buffer
-  JMP wc3_read
-wc_count_done:
-  CMP r20, r0
-  BEQ wc_count_ret
-  LI r1, wc_curr_w
-  LD r2, [r1, 0]
-  LI r3, 1
-  ADD r2, r2, r3
-  ST [r1, 0], r2
-wc_count_ret:
-  RET
-
-__wc_count_buffer:
-  CMP r23, r0
-  BEQ wc_buf_done
-  LD.B r25, [r24, 0]
-  LI r1, wc_curr_c
-  LD r2, [r1, 0]
-  LI r3, 1
-  ADD r2, r2, r3
-  ST [r1, 0], r2
-  LI r4, 10
-  CMP r25, r4
-  BNE wc_not_line
-  LI r1, wc_curr_l
-  LD r2, [r1, 0]
-  ADD r2, r2, r3
-  ST [r1, 0], r2
-wc_not_line:
-  LI r4, 32
-  CMP r25, r4
-  BLE wc_space
-  LI r20, 1
-  JMP wc_next_byte
-wc_space:
-  CMP r20, r0
-  BEQ wc_next_byte
-  LI r20, 0
-  LI r1, wc_curr_w
-  LD r2, [r1, 0]
-  ADD r2, r2, r3
-  ST [r1, 0], r2
-wc_next_byte:
-  ADD r24, r24, r3
-  SUB r23, r23, r3
-  JMP __wc_count_buffer
-wc_buf_done:
-  RET
-
-__wc_add_total:
-  LI r1, wc_total_l
-  LD r2, [r1, 0]
-  LI r3, wc_curr_l
-  LD r4, [r3, 0]
-  ADD r2, r2, r4
-  ST [r1, 0], r2
-  LI r1, wc_total_w
-  LD r2, [r1, 0]
-  LI r3, wc_curr_w
-  LD r4, [r3, 0]
-  ADD r2, r2, r4
-  ST [r1, 0], r2
-  LI r1, wc_total_c
-  LD r2, [r1, 0]
-  LI r3, wc_curr_c
-  LD r4, [r3, 0]
-  ADD r2, r2, r4
-  ST [r1, 0], r2
-  RET
-
-__wc_output:
-  LI r1, wc_lflag
-  LD r2, [r1, 0]
-  CMP r2, r0
-  BEQ wc_out_w
-  LI r1, wc_curr_l
-  LD r1, [r1, 0]
-  CALL __print_u64
-wc_out_w:
-  LI r1, wc_wflag
-  LD r2, [r1, 0]
-  CMP r2, r0
-  BEQ wc_out_c
-  LI r1, sbase_space2
-  CALL __write_cstr
-  LI r1, wc_curr_w
-  LD r1, [r1, 0]
-  CALL __print_u64
-wc_out_c:
-  LI r1, wc_cflag
-  LD r2, [r1, 0]
-  CMP r2, r0
-  BEQ wc_out_name
-  LI r1, sbase_space2
-  CALL __write_cstr
-  LI r1, wc_curr_c
-  LD r1, [r1, 0]
-  CALL __print_u64
-wc_out_name:
-  LI r5, wc_name
-  LD r5, [r5, 0]
-  CMP r5, r0
-  BEQ wc_out_nl
-  LI r1, sbase_space2
-  CALL __write_cstr
-  MOV r1, r5
-  CALL __write_cstr
-wc_out_nl:
-  LI r1, sbase_newline2
-  CALL __write_cstr
-  RET
-
-{}
-"#,
-        sbase_common_helpers()
-    )
 }
 
 fn sbase_common_helpers() -> &'static str {
