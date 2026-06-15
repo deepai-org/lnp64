@@ -12,6 +12,7 @@ lnp64=(cargo run --release --quiet --)
 "${lnp64[@]}" cc third_party/sbase/head.c -o /tmp/sbase_head.s
 "${lnp64[@]}" cc third_party/sbase/tee.c -o /tmp/sbase_tee.s
 "${lnp64[@]}" cc third_party/sbase/cksum.c -o /tmp/sbase_cksum.s
+"${lnp64[@]}" cc third_party/jsmn/example/simple.c -o /tmp/jsmn_simple.s
 
 echo "== sbase echo.c =="
 echo_out=$("${lnp64[@]}" run /tmp/sbase_echo.s -- echo hello world)
@@ -72,3 +73,18 @@ cksum_out=$("${lnp64[@]}" run /tmp/sbase_cksum.s -- cksum demos/cat_input.txt)
 cksum_expected=$(cksum demos/cat_input.txt)
 test "$cksum_out" = "$cksum_expected"
 echo "$cksum_out"
+
+echo "== jsmn example/simple.c =="
+"${lnp64[@]}" run /tmp/jsmn_simple.s -- simple > /tmp/jsmn_simple.out
+cat > /tmp/jsmn_simple.expected <<'EXPECTED'
+- User: johndoe
+- Admin: false
+- UID: 1000
+- Groups:
+  * users
+  * wheel
+  * audio
+  * video
+EXPECTED
+diff -u /tmp/jsmn_simple.expected /tmp/jsmn_simple.out
+cat /tmp/jsmn_simple.out

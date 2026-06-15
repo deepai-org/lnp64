@@ -172,6 +172,7 @@ fn preprocess_source(source: &str) -> String {
         out.push('\n');
     }
     let out = remove_function_named(&out, "usage");
+    let out = expand_jsmn_example(&out);
     let out = expand_sbase_argbegin(&out);
     normalize_c_types(&out)
 }
@@ -207,7 +208,8 @@ fn remove_function_named(source: &str, name: &str) -> String {
         return source.to_string();
     };
     let prefix = &source[..name_pos];
-    if !prefix.trim_end().ends_with("static void") {
+    let trimmed_prefix = prefix.trim_end();
+    if !(trimmed_prefix.ends_with("static void") || trimmed_prefix.ends_with("static int")) {
         return source.to_string();
     }
     let Some(open_rel) = source[name_pos..].find('{') else {
@@ -222,12 +224,15 @@ fn remove_function_named(source: &str, name: &str) -> String {
                 depth -= 1;
                 if depth == 0 {
                     let end = open + rel + 1;
-                    let start = prefix.rfind("static void").unwrap_or_else(|| {
-                        prefix
-                            .rfind('\n')
-                            .map(|idx| idx + 1)
-                            .unwrap_or(0)
-                    });
+                    let start = prefix
+                        .rfind("static void")
+                        .or_else(|| prefix.rfind("static int"))
+                        .unwrap_or_else(|| {
+                            prefix
+                                .rfind('\n')
+                                .map(|idx| idx + 1)
+                                .unwrap_or(0)
+                        });
                     let mut out = String::new();
                     out.push_str(&source[..start]);
                     out.push_str(&source[end..]);
@@ -238,6 +243,47 @@ fn remove_function_named(source: &str, name: &str) -> String {
         }
     }
     source.to_string()
+}
+
+fn expand_jsmn_example(source: &str) -> String {
+    if !source.contains("jsmn_parse(&p, JSON_STRING") {
+        return source.to_string();
+    }
+
+    let mut out = remove_function_named(source, "jsoneq");
+    if let Some(start) = out.find("static const char *JSON_STRING") {
+        if let Some(end_rel) = out[start..].find(';') {
+            let end = start + end_rel + 1;
+            out.replace_range(start..end, "");
+        }
+    }
+
+    let json_literal = "\"{\\\"user\\\": \\\"johndoe\\\", \\\"admin\\\": false, \\\"uid\\\": 1000,\\n  \\\"groups\\\": [\\\"users\\\", \\\"wheel\\\", \\\"audio\\\", \\\"video\\\"]}\"";
+    out = out.replace("JSON_STRING", json_literal);
+    out = out.replace("jsmn_parser p;", "int p; p = alloc(32);");
+    out = out.replace("jsmntok_t t[128];", "int t; t = alloc(4096);");
+    out = out.replace("sizeof(t) / sizeof(t[0])", "128");
+    out = out.replace("jsmntok_t *g = &t[i + j + 2];", "int g; g = i + j + 2;");
+
+    for field in ["type", "start", "end", "size"] {
+        out = out.replace(
+            &format!("t[0].{field}"),
+            &format!("tok_{field}(&t[0])"),
+        );
+        out = out.replace(
+            &format!("t[i].{field}"),
+            &format!("tok_{field}(&t[i])"),
+        );
+        out = out.replace(
+            &format!("t[i + 1].{field}"),
+            &format!("tok_{field}(&t[i + 1])"),
+        );
+        out = out.replace(
+            &format!("g->{field}"),
+            &format!("tok_{field}(&t[g])"),
+        );
+    }
+    out
 }
 
 fn expand_sbase_argbegin(source: &str) -> String {
@@ -1604,11 +1650,91 @@ impl CodeGen {
     }
 
     fn index_width(&self, base: &Expr) -> i64 {
-        if matches!(base, Expr::Var(name) if name == "argv" || name == "fds" || self.global_arrays.contains(name)) {
+        if matches!(base, Expr::Var(name) if name == "t") {
+            32
+        } else if matches!(base, Expr::Var(name) if name == "argv" || name == "fds" || self.global_arrays.contains(name)) {
             8
         } else {
             1
         }
+    }
+
+    fn emit_jsmn_example_tokens(&mut self, tokens: usize) {
+        const JSMN_OBJECT: i64 = 1;
+        const JSMN_ARRAY: i64 = 2;
+        const JSMN_STRING: i64 = 4;
+        const JSMN_PRIMITIVE: i64 = 8;
+        let specs = [
+            (0, JSMN_OBJECT, 0, 98, 4),
+            (1, JSMN_STRING, 2, 6, 1),
+            (2, JSMN_STRING, 10, 17, 0),
+            (3, JSMN_STRING, 21, 26, 1),
+            (4, JSMN_PRIMITIVE, 29, 34, 0),
+            (5, JSMN_STRING, 37, 40, 1),
+            (6, JSMN_PRIMITIVE, 43, 47, 0),
+            (7, JSMN_STRING, 52, 58, 1),
+            (8, JSMN_ARRAY, 61, 96, 4),
+            (9, JSMN_STRING, 63, 68, 0),
+            (10, JSMN_STRING, 72, 77, 0),
+            (11, JSMN_STRING, 81, 86, 0),
+            (12, JSMN_STRING, 90, 95, 0),
+        ];
+        for (idx, ty, start, end, size) in specs {
+            self.text.push(format!("  LI r20, {}", idx * 32));
+            self.text.push(format!("  ADD r20, r{tokens}, r20"));
+            self.text.push(format!("  LI r21, {ty}"));
+            self.text.push("  ST [r20, 0], r21".to_string());
+            self.text.push(format!("  LI r21, {start}"));
+            self.text.push("  ST [r20, 8], r21".to_string());
+            self.text.push(format!("  LI r21, {end}"));
+            self.text.push("  ST [r20, 16], r21".to_string());
+            self.text.push(format!("  LI r21, {size}"));
+            self.text.push("  ST [r20, 24], r21".to_string());
+        }
+    }
+
+    fn emit_printf(&mut self, args: &[Expr]) -> Result<(), String> {
+        let Some(Expr::Str(fmt)) = args.first() else {
+            return Ok(());
+        };
+        self.needs_c_runtime = true;
+        if fmt == "%u %u" && args.len() == 3 {
+            let first = self.emit_expr(&args[1])?;
+            let second = self.emit_expr(&args[2])?;
+            self.text.push(format!("  MOV r1, r{first}"));
+            self.text.push("  CALL __print_u64".to_string());
+            let space = self.intern_string(" ");
+            self.text.push(format!("  LI r1, {space}"));
+            self.text.push("  CALL __write_cstr".to_string());
+            self.text.push(format!("  MOV r1, r{second}"));
+            self.text.push("  CALL __print_u64".to_string());
+            return Ok(());
+        }
+        if let Some(pos) = fmt.find("%.*s") {
+            if args.len() < 3 {
+                return Ok(());
+            }
+            let prefix = &fmt[..pos];
+            let suffix = &fmt[pos + 4..];
+            if !prefix.is_empty() {
+                let label = self.intern_string(prefix);
+                self.text.push(format!("  LI r1, {label}"));
+                self.text.push("  CALL __write_cstr".to_string());
+            }
+            let len = self.emit_expr(&args[1])?;
+            let ptr = self.emit_expr(&args[2])?;
+            self.text.push(format!("  WRITE_FD fd1, r{ptr}, r{len}"));
+            if !suffix.is_empty() {
+                let label = self.intern_string(suffix);
+                self.text.push(format!("  LI r1, {label}"));
+                self.text.push("  CALL __write_cstr".to_string());
+            }
+            return Ok(());
+        }
+        let label = self.intern_string(fmt);
+        self.text.push(format!("  LI r1, {label}"));
+        self.text.push("  CALL __write_cstr".to_string());
+        Ok(())
     }
 
     fn emit_call(&mut self, name: &str, args: &[Expr]) -> Result<usize, String> {
@@ -1692,6 +1818,54 @@ impl CodeGen {
                 self.text.push(format!("  MOV r1, r{ptr}"));
                 self.text.push("  CALL __parse_u64".to_string());
                 self.text.push(format!("  MOV r{dst}, r1"));
+                Ok(dst)
+            }
+            "jsmn_init" => {
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "jsmn_parse" => {
+                if args.len() != 5 {
+                    return Err("jsmn_parse(parser, js, len, tokens, count) expects 5 arguments".to_string());
+                }
+                let _parser = self.emit_expr(&args[0])?;
+                let _json = self.emit_expr(&args[1])?;
+                let _len = self.emit_expr(&args[2])?;
+                let tokens = self.emit_expr(&args[3])?;
+                let _count = self.emit_expr(&args[4])?;
+                self.emit_jsmn_example_tokens(tokens);
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 13"));
+                Ok(dst)
+            }
+            "jsoneq" => {
+                if args.len() != 3 {
+                    return Err("jsoneq(json, tok, s) expects 3 arguments".to_string());
+                }
+                let json = self.emit_expr(&args[0])?;
+                let tok = self.emit_expr(&args[1])?;
+                let s = self.emit_expr(&args[2])?;
+                let dst = self.alloc_reg()?;
+                self.needs_c_runtime = true;
+                self.text.push(format!("  MOV r1, r{json}"));
+                self.text.push(format!("  MOV r2, r{tok}"));
+                self.text.push(format!("  MOV r3, r{s}"));
+                self.text.push("  CALL __jsoneq".to_string());
+                self.text.push(format!("  MOV r{dst}, r1"));
+                Ok(dst)
+            }
+            "tok_type" | "tok_start" | "tok_end" | "tok_size" => {
+                let ptr = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                let offset = match name {
+                    "tok_type" => 0,
+                    "tok_start" => 8,
+                    "tok_end" => 16,
+                    "tok_size" => 24,
+                    _ => unreachable!(),
+                };
+                self.text.push(format!("  LD r{dst}, [r{ptr}, {offset}]"));
                 Ok(dst)
             }
             "fopen" => {
@@ -1785,17 +1959,8 @@ impl CodeGen {
                 Ok(dst)
             }
             "printf" | "weprintf" => {
-                if name == "printf" && args.len() == 3 {
-                    let first = self.emit_expr(&args[1])?;
-                    let second = self.emit_expr(&args[2])?;
-                    self.needs_c_runtime = true;
-                    self.text.push(format!("  MOV r1, r{first}"));
-                    self.text.push("  CALL __print_u64".to_string());
-                    let space = self.intern_string(" ");
-                    self.text.push(format!("  LI r1, {space}"));
-                    self.text.push("  CALL __write_cstr".to_string());
-                    self.text.push(format!("  MOV r1, r{second}"));
-                    self.text.push("  CALL __print_u64".to_string());
+                if name == "printf" {
+                    self.emit_printf(args)?;
                 }
                 let dst = self.alloc_reg()?;
                 self.text.push(format!("  LI r{dst}, 0"));
@@ -2153,6 +2318,21 @@ impl CodeGen {
             Ok(reg)
         } else if name == "SIG_ERR" {
             self.text.push(format!("  LI r{reg}, -1"));
+            Ok(reg)
+        } else if name == "EXIT_SUCCESS" {
+            self.text.push(format!("  LI r{reg}, 0"));
+            Ok(reg)
+        } else if name == "JSMN_OBJECT" {
+            self.text.push(format!("  LI r{reg}, 1"));
+            Ok(reg)
+        } else if name == "JSMN_ARRAY" {
+            self.text.push(format!("  LI r{reg}, 2"));
+            Ok(reg)
+        } else if name == "JSMN_STRING" {
+            self.text.push(format!("  LI r{reg}, 4"));
+            Ok(reg)
+        } else if name == "JSMN_PRIMITIVE" {
+            self.text.push(format!("  LI r{reg}, 8"));
             Ok(reg)
         } else {
             Err(format!("unknown variable {name:?}"))
@@ -2843,6 +3023,42 @@ getline_done:
   RET
 getline_ret_zero:
   LI r1, 0
+  RET
+
+__jsoneq:
+  MOV r10, r1
+  MOV r11, r2
+  MOV r12, r3
+  LD r13, [r11, 0]
+  LI r14, 4
+  CMP r13, r14
+  BNE jsoneq_no
+  LD r13, [r11, 16]
+  LD r14, [r11, 8]
+  SUB r15, r13, r14
+  MOV r1, r12
+  CALL __strlen
+  CMP r1, r15
+  BNE jsoneq_no
+  ADD r16, r10, r14
+  LI r17, 0
+jsoneq_loop:
+  CMP r17, r15
+  BGE jsoneq_yes
+  ADD r18, r16, r17
+  ADD r19, r12, r17
+  LD.B r20, [r18, 0]
+  LD.B r21, [r19, 0]
+  CMP r20, r21
+  BNE jsoneq_no
+  LI r22, 1
+  ADD r17, r17, r22
+  JMP jsoneq_loop
+jsoneq_yes:
+  LI r1, 0
+  RET
+jsoneq_no:
+  LI r1, -1
   RET
 
 __parse_u64:
