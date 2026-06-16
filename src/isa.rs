@@ -5,7 +5,7 @@ pub const FDR_COUNT: usize = 256;
 pub const FPR_COUNT: usize = 32;
 pub const VR_COUNT: usize = 16;
 pub const DATA_BASE: u64 = 0x10_000;
-pub const STACK_TOP: u64 = 0x80_000;
+pub const STACK_TOP: u64 = 0x680_000;
 pub const HEAP_BASE: u64 = 0x100_000;
 pub const ARG_BASE: u64 = 0x700_000;
 pub const ARG_SIZE: u64 = 0x20_000;
@@ -89,13 +89,40 @@ pub enum Instr {
     Free(Reg),
     OpenFd(FdReg, Reg, Reg),
     OpenFdDyn(Reg, Reg, Reg),
+    OpenDir(FdReg, Reg, Reg),
+    OpenDirDyn(Reg, Reg, Reg),
     ReadFd(FdReg, Reg, Reg),
     ReadFdDyn(Reg, Reg, Reg),
+    ReaddirFd(FdReg, Reg),
+    ReaddirFdDyn(Reg, Reg),
+    RewinddirFd(FdReg),
+    RewinddirFdDyn(Reg),
     WriteFd(FdReg, Reg, Reg),
+    WriteFdDyn(Reg, Reg, Reg),
     MkdirPath(Reg, Reg),
     UnlinkPath(Reg),
+    RenamePath(Reg, Reg),
+    LinkPath(Reg, Reg, Reg),
+    SymlinkPath(Reg, Reg),
+    ReadlinkPath(Reg, Reg, Reg),
+    ChdirPath(Reg),
+    GetcwdPath(Reg, Reg),
+    ChmodPath(Reg, Reg, Reg),
+    ChownPath(Reg, Reg, Reg, Reg),
+    StatPath(Reg, Reg, Reg),
+    StatFd(Reg, FdReg),
+    StatFdDyn(Reg, Reg),
+    FdClose(FdReg),
+    FdCloseDyn(Reg),
+    FdSeek(FdReg, Reg, Reg),
+    FdSeekDyn(Reg, Reg, Reg),
     WaitOnFd(FdReg, Reg),
     FdDup(FdReg, FdReg),
+    FdDup2(FdReg, FdReg),
+    Pipe(FdReg, FdReg),
+    ErrnoGet(Reg),
+    ErrnoSet(Reg),
+    WaitPid(Reg, Reg),
     GetPcr(Reg, Pcr),
     SetPcr(Pcr, Reg),
     Fork(Reg),

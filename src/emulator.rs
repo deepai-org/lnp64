@@ -1,15 +1,20 @@
+use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::net::{TcpListener, TcpStream};
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::thread;
 use std::time::Duration;
 
 use crate::asm::Program;
 use crate::isa::*;
 
-const STACK_SIZE: u64 = 64 * 1024;
-const CALL_FRAME_SIZE: u64 = 256;
+const STACK_SIZE: u64 = 4 * 1024 * 1024;
+const CALL_FRAME_SIZE: u64 = 32 * 1024;
+const THREAD_STACK_STRIDE: u64 = 0x100_000;
 const MMAP_BASE: u64 = 0x200_000;
 const SIGCHLD: u64 = 17;
 const SIGSEGV: u64 = 11;
@@ -26,6 +31,13 @@ enum FdHandle {
     Stdout,
     Stderr,
     File(File),
+    Dir {
+        path: String,
+        entries: Vec<String>,
+        pos: usize,
+    },
+    PipeReader(Rc<RefCell<VecDeque<u8>>>),
+    PipeWriter(Rc<RefCell<VecDeque<u8>>>),
     TcpListener {
         listener: TcpListener,
         pending: Option<TcpStream>,
@@ -43,6 +55,13 @@ impl FdHandle {
                 .try_clone()
                 .map(FdHandle::File)
                 .map_err(|err| format!("failed to clone fd: {err}")),
+            FdHandle::Dir { path, entries, pos } => Ok(FdHandle::Dir {
+                path: path.clone(),
+                entries: entries.clone(),
+                pos: *pos,
+            }),
+            FdHandle::PipeReader(buffer) => Ok(FdHandle::PipeReader(Rc::clone(buffer))),
+            FdHandle::PipeWriter(buffer) => Ok(FdHandle::PipeWriter(Rc::clone(buffer))),
             FdHandle::TcpListener { listener, pending } => Ok(FdHandle::TcpListener {
                 listener: listener
                     .try_clone()
@@ -134,6 +153,8 @@ struct Process {
     pending_signals: VecDeque<u64>,
     inbox: VecDeque<(u64, u64)>,
     ucode_ports: HashMap<u64, u8>,
+    errno: u64,
+    cwd: PathBuf,
 }
 
 impl Process {
@@ -177,6 +198,8 @@ impl Process {
             pending_signals: VecDeque::new(),
             inbox: VecDeque::new(),
             ucode_ports: HashMap::new(),
+            errno: 0,
+            cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
         }
     }
 
@@ -206,6 +229,8 @@ impl Process {
             pending_signals: VecDeque::new(),
             inbox: VecDeque::new(),
             ucode_ports: self.ucode_ports.clone(),
+            errno: self.errno,
+            cwd: self.cwd.clone(),
         })
     }
 
@@ -217,6 +242,8 @@ impl Process {
         replacement.uid = self.uid;
         replacement.gid = self.gid;
         replacement.sigmask = self.sigmask;
+        replacement.cwd = self.cwd.clone();
+        replacement.errno = self.errno;
         replacement.ucode_ports = std::mem::take(&mut self.ucode_ports);
         *self = replacement;
     }
@@ -357,7 +384,7 @@ impl Machine {
                 continue;
             }
 
-            let instr = {
+            let (ip, instr) = {
                 let thread = self.thread()?;
                 let process = self
                     .processes
@@ -367,10 +394,13 @@ impl Machine {
                     self.exit_current(0)?;
                     continue;
                 };
-                instr
+                (thread.ip, instr)
             };
             self.thread_mut()?.ip += 1;
-            let keep_ready = self.exec(instr)?;
+            let keep_ready = self.exec(instr.clone()).map_err(|err| {
+                let context = self.fault_context(tid);
+                format!("{err} at tid {tid} ip {ip}: {instr:?}{context}")
+            })?;
             if keep_ready && self.threads.contains_key(&tid) {
                 self.wake_thread(tid);
             }
@@ -437,9 +467,16 @@ impl Machine {
                 }
             }
             Instr::Call(target) => {
-                let ip = self.resolve_target(target)?;
                 let ret = self.thread()?.ip as u64;
                 let sp = self.thread()?.regs[31].wrapping_sub(CALL_FRAME_SIZE);
+                if std::env::var_os("LNP64_TRACE_CALLS").is_some() {
+                    let thread = self.thread()?;
+                    eprintln!(
+                        "CALL {target:?} ret={ret} sp={sp:#x} r1={} r2={} r3={}",
+                        thread.regs[1], thread.regs[2], thread.regs[3]
+                    );
+                }
+                let ip = self.resolve_target(target)?;
                 self.thread_mut()?.regs[31] = sp;
                 self.store_u64(sp, ret)?;
                 self.thread_mut()?.ip = ip;
@@ -448,6 +485,13 @@ impl Machine {
                 let ip = self.read_reg(target)? as usize;
                 let ret = self.thread()?.ip as u64;
                 let sp = self.thread()?.regs[31].wrapping_sub(CALL_FRAME_SIZE);
+                if std::env::var_os("LNP64_TRACE_CALLS").is_some() {
+                    let thread = self.thread()?;
+                    eprintln!(
+                        "CALL_REG {ip} ret={ret} sp={sp:#x} r1={} r2={} r3={}",
+                        thread.regs[1], thread.regs[2], thread.regs[3]
+                    );
+                }
                 self.thread_mut()?.regs[31] = sp;
                 self.store_u64(sp, ret)?;
                 self.thread_mut()?.ip = ip;
@@ -455,6 +499,9 @@ impl Machine {
             Instr::Ret => {
                 let sp = self.thread()?.regs[31];
                 let next = self.load_u64(sp)?;
+                if std::env::var_os("LNP64_TRACE_CALLS").is_some() {
+                    eprintln!("RET next={next} sp={sp:#x}");
+                }
                 self.thread_mut()?.regs[31] = sp.wrapping_add(CALL_FRAME_SIZE);
                 self.thread_mut()?.ip = next as usize;
             }
@@ -493,17 +540,63 @@ impl Machine {
             }
             Instr::OpenFd(dst, path_reg, flags_reg) => {
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
+                let path = self.resolve_process_path(&path)?;
                 let flags = self.read_reg(flags_reg)?;
-                let handle = Self::open_fd_handle(&path, flags)?;
-                self.process_mut()?.fds[dst.0] = handle;
+                match Self::open_fd_handle(&path, flags) {
+                    Ok(handle) => {
+                        self.process_mut()?.fds[dst.0] = handle;
+                        self.set_status_ok()?;
+                    }
+                    Err(_) => self.set_status_errno(5)?,
+                }
             }
-            Instr::OpenFdDyn(dst, path_reg, flags_reg) => {
+            Instr::OpenFdDyn(dst_reg, path_reg, flags_reg) => {
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
+                let path = self.resolve_process_path(&path)?;
                 let flags = self.read_reg(flags_reg)?;
-                let handle = Self::open_fd_handle(&path, flags)?;
-                let fd = self.alloc_fd()?;
-                self.process_mut()?.fds[fd] = handle;
-                self.write_reg(dst, fd as u64)?;
+                match Self::open_fd_handle(&path, flags) {
+                    Ok(handle) => match self.alloc_fd_handle(handle)? {
+                        Some(fd) => {
+                            self.set_errno(0)?;
+                            self.write_reg(dst_reg, fd as u64)?;
+                            self.write_reg(Reg(1), fd as u64)?;
+                        }
+                        None => self.write_reg(dst_reg, -1i64 as u64)?,
+                    },
+                    Err(_) => {
+                        self.write_reg(dst_reg, -1i64 as u64)?;
+                        self.set_status_errno(5)?;
+                    }
+                }
+            }
+            Instr::OpenDir(dst, path_reg, _flags_reg) => {
+                let path = self.read_c_string(self.read_reg(path_reg)?)?;
+                let path = self.resolve_process_path(&path)?;
+                match Self::open_dir_handle(&path) {
+                    Ok(handle) => {
+                        self.process_mut()?.fds[dst.0] = handle;
+                        self.set_status_ok()?;
+                    }
+                    Err(err) => self.set_status_io_error(err)?,
+                }
+            }
+            Instr::OpenDirDyn(dst_reg, path_reg, _flags_reg) => {
+                let path = self.read_c_string(self.read_reg(path_reg)?)?;
+                let path = self.resolve_process_path(&path)?;
+                match Self::open_dir_handle(&path) {
+                    Ok(handle) => match self.alloc_fd_handle(handle)? {
+                        Some(fd) => {
+                            self.set_errno(0)?;
+                            self.write_reg(dst_reg, fd as u64)?;
+                            self.write_reg(Reg(1), fd as u64)?;
+                        }
+                        None => self.write_reg(dst_reg, -1i64 as u64)?,
+                    },
+                    Err(err) => {
+                        self.write_reg(dst_reg, -1i64 as u64)?;
+                        self.set_status_io_error(err)?;
+                    }
+                }
             }
             Instr::ReadFd(fd, buf, len) => {
                 let addr = self.read_reg(buf)?;
@@ -512,58 +605,221 @@ impl Machine {
                 self.write_reg(Reg(1), count as u64)?;
             }
             Instr::ReadFdDyn(fd_reg, buf, len) => {
-                let fd = self.read_reg(fd_reg)? as usize;
+                let fd = self.read_reg(fd_reg)?;
                 let addr = self.read_reg(buf)?;
                 let len = self.read_reg(len)? as usize;
-                let count = self.read_fd_index(fd, addr, len)?;
-                self.write_reg(Reg(1), count as u64)?;
+                if let Some(fd) = self.checked_fd_index(fd)? {
+                    let count = self.read_fd_index(fd, addr, len)?;
+                    self.write_reg(Reg(1), count as u64)?;
+                }
+            }
+            Instr::ReaddirFd(fd, dirent_buf) => {
+                let addr = self.read_reg(dirent_buf)?;
+                self.readdir_fd_index(fd.0, addr)?;
+            }
+            Instr::ReaddirFdDyn(fd_reg, dirent_buf) => {
+                let fd = self.read_reg(fd_reg)?;
+                let addr = self.read_reg(dirent_buf)?;
+                if let Some(fd) = self.checked_fd_index(fd)? {
+                    self.readdir_fd_index(fd, addr)?;
+                }
+            }
+            Instr::RewinddirFd(fd) => match &mut self.process_mut()?.fds[fd.0] {
+                FdHandle::Dir { pos, .. } => {
+                    *pos = 0;
+                    self.set_status_ok()?;
+                }
+                _ => self.set_status_errno(20)?,
+            },
+            Instr::RewinddirFdDyn(fd_reg) => {
+                let fd = self.read_reg(fd_reg)?;
+                if let Some(fd) = self.checked_fd_index(fd)? {
+                    self.rewinddir_fd_index(fd)?;
+                }
             }
             Instr::WriteFd(fd, buf, len) => {
-                let data = self.read_bytes(self.read_reg(buf)?, self.read_reg(len)? as usize)?;
-                match &mut self.process_mut()?.fds[fd.0] {
-                    FdHandle::Stdout => {
-                        io::stdout()
-                            .write_all(&data)
-                            .map_err(|err| format!("WRITE_FD fd1: {err}"))?;
-                        io::stdout().flush().map_err(|err| err.to_string())?;
-                    }
-                    FdHandle::Stderr => {
-                        io::stderr()
-                            .write_all(&data)
-                            .map_err(|err| format!("WRITE_FD fd2: {err}"))?;
-                        io::stderr().flush().map_err(|err| err.to_string())?;
-                    }
-                    FdHandle::File(file) => file
-                        .write_all(&data)
-                        .map_err(|err| format!("WRITE_FD fd{}: {err}", fd.0))?,
-                    FdHandle::TcpListener { pending, .. } => {
-                        let Some(stream) = pending else {
-                            return Err(format!("WRITE_FD fd{} has no accepted stream", fd.0));
-                        };
-                        stream
-                            .write_all(&data)
-                            .map_err(|err| format!("WRITE_FD fd{} stream: {err}", fd.0))?;
-                    }
-                    FdHandle::Stdin | FdHandle::Closed => {
-                        return Err(format!("WRITE_FD on non-writable fd{}", fd.0));
-                    }
+                let addr = self.read_reg(buf)?;
+                let len = self.read_reg(len)? as usize;
+                self.write_fd_index(fd.0, addr, len)?;
+            }
+            Instr::WriteFdDyn(fd_reg, buf, len) => {
+                let fd = self.read_reg(fd_reg)?;
+                let addr = self.read_reg(buf)?;
+                let len = self.read_reg(len)? as usize;
+                if let Some(fd) = self.checked_fd_index(fd)? {
+                    self.write_fd_index(fd, addr, len)?;
                 }
             }
             Instr::MkdirPath(path_reg, _mode_reg) => {
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
-                let status = match fs::create_dir(&path) {
-                    Ok(()) => 0,
-                    Err(_) => -1i64 as u64,
-                };
-                self.write_reg(Reg(1), status)?;
+                let path = self.resolve_process_path(&path)?;
+                match fs::create_dir(&path) {
+                    Ok(()) => self.set_status_ok()?,
+                    Err(err) => self.set_status_io_error(err)?,
+                }
             }
             Instr::UnlinkPath(path_reg) => {
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
-                let status = match fs::remove_file(&path) {
-                    Ok(()) => 0,
-                    Err(_) => -1i64 as u64,
+                let path = self.resolve_process_path(&path)?;
+                match fs::remove_file(&path) {
+                    Ok(()) => self.set_status_ok()?,
+                    Err(file_err) => match fs::remove_dir(&path) {
+                        Ok(()) => self.set_status_ok()?,
+                        Err(_) => self.set_status_io_error(file_err)?,
+                    },
+                }
+            }
+            Instr::RenamePath(old_reg, new_reg) => {
+                let old = self.read_c_string(self.read_reg(old_reg)?)?;
+                let new = self.read_c_string(self.read_reg(new_reg)?)?;
+                let old = self.resolve_process_path(&old)?;
+                let new = self.resolve_process_path(&new)?;
+                match fs::rename(&old, &new) {
+                    Ok(()) => self.set_status_ok()?,
+                    Err(err) => self.set_status_io_error(err)?,
+                }
+            }
+            Instr::LinkPath(old_reg, new_reg, flags_reg) => {
+                let old = self.read_c_string(self.read_reg(old_reg)?)?;
+                let new = self.read_c_string(self.read_reg(new_reg)?)?;
+                let flags = self.read_reg(flags_reg)?;
+                let old_path = self.resolve_process_path(&old)?;
+                let new = self.resolve_process_path(&new)?;
+                let result = if flags & 1 == 1 {
+                    std::os::unix::fs::symlink(&old, &new)
+                } else {
+                    fs::hard_link(&old_path, &new)
                 };
-                self.write_reg(Reg(1), status)?;
+                match result {
+                    Ok(()) => self.set_status_ok()?,
+                    Err(err) => self.set_status_io_error(err)?,
+                }
+            }
+            Instr::SymlinkPath(target_reg, link_reg) => {
+                let target = self.read_c_string(self.read_reg(target_reg)?)?;
+                let link = self.read_c_string(self.read_reg(link_reg)?)?;
+                let link = self.resolve_process_path(&link)?;
+                match std::os::unix::fs::symlink(&target, &link) {
+                    Ok(()) => self.set_status_ok()?,
+                    Err(err) => self.set_status_io_error(err)?,
+                }
+            }
+            Instr::ReadlinkPath(path_reg, buf_reg, len_reg) => {
+                let path = self.read_c_string(self.read_reg(path_reg)?)?;
+                let path = self.resolve_process_path(&path)?;
+                let buf = self.read_reg(buf_reg)?;
+                let len = self.read_reg(len_reg)? as usize;
+                match fs::read_link(&path) {
+                    Ok(target) => {
+                        let bytes = target.to_string_lossy();
+                        let data = bytes.as_bytes();
+                        let count = data.len().min(len);
+                        self.write_bytes(buf, &data[..count])?;
+                        self.set_errno(0)?;
+                        self.write_reg(Reg(1), count as u64)?;
+                    }
+                    Err(err) => self.set_status_io_error(err)?,
+                }
+            }
+            Instr::ChdirPath(path_reg) => {
+                let path = self.read_c_string(self.read_reg(path_reg)?)?;
+                let path = self.resolve_process_path(&path)?;
+                match fs::metadata(&path) {
+                    Ok(metadata) if metadata.is_dir() => {
+                        self.process_mut()?.cwd = PathBuf::from(path);
+                        self.set_status_ok()?;
+                    }
+                    Ok(_) => self.set_status_errno(20)?,
+                    Err(err) => self.set_status_io_error(err)?,
+                }
+            }
+            Instr::GetcwdPath(buf_reg, len_reg) => {
+                let buf = self.read_reg(buf_reg)?;
+                let len = self.read_reg(len_reg)? as usize;
+                let cwd = self.process()?.cwd.to_string_lossy().into_owned();
+                let bytes = cwd.as_bytes();
+                if len == 0 || bytes.len() + 1 > len {
+                    self.set_status_errno(34)?;
+                } else {
+                    self.write_bytes(buf, bytes)?;
+                    self.write_bytes(buf + bytes.len() as u64, &[0])?;
+                    self.set_errno(0)?;
+                    self.write_reg(Reg(1), buf)?;
+                }
+            }
+            Instr::ChmodPath(path_reg, mode_reg, _flags_reg) => {
+                let path = self.read_c_string(self.read_reg(path_reg)?)?;
+                let path = self.resolve_process_path(&path)?;
+                let mode = self.read_reg(mode_reg)? as u32;
+                match fs::set_permissions(&path, fs::Permissions::from_mode(mode)) {
+                    Ok(()) => self.set_status_ok()?,
+                    Err(err) => self.set_status_io_error(err)?,
+                }
+            }
+            Instr::ChownPath(path_reg, uid_reg, gid_reg, _flags_reg) => {
+                let path = self.read_c_string(self.read_reg(path_reg)?)?;
+                let path = self.resolve_process_path(&path)?;
+                let uid = self.read_reg(uid_reg)?;
+                let gid = self.read_reg(gid_reg)?;
+                let uid = (uid != -1i64 as u64).then_some(uid as u32);
+                let gid = (gid != -1i64 as u64).then_some(gid as u32);
+                match std::os::unix::fs::chown(&path, uid, gid) {
+                    Ok(()) => self.set_status_ok()?,
+                    Err(err) => self.set_status_io_error(err)?,
+                }
+            }
+            Instr::StatPath(statbuf_reg, path_reg, flags_reg) => {
+                let statbuf = self.read_reg(statbuf_reg)?;
+                let path = self.read_c_string(self.read_reg(path_reg)?)?;
+                let path = self.resolve_process_path(&path)?;
+                let flags = self.read_reg(flags_reg)?;
+                let result = if flags & 1 == 1 {
+                    fs::symlink_metadata(&path)
+                } else {
+                    fs::metadata(&path)
+                };
+                match result {
+                    Ok(metadata) => {
+                        self.write_lnp64_stat(statbuf, &metadata)?;
+                        self.set_status_ok()?;
+                    }
+                    Err(err) => self.set_status_io_error(err)?,
+                }
+            }
+            Instr::StatFd(statbuf_reg, fd) => {
+                let statbuf = self.read_reg(statbuf_reg)?;
+                self.stat_fd_index(statbuf, fd.0)?;
+            }
+            Instr::StatFdDyn(statbuf_reg, fd_reg) => {
+                let statbuf = self.read_reg(statbuf_reg)?;
+                let fd = self.read_reg(fd_reg)?;
+                if let Some(fd) = self.checked_fd_index(fd)? {
+                    self.stat_fd_index(statbuf, fd)?;
+                }
+            }
+            Instr::FdClose(fd) => {
+                self.process_mut()?.fds[fd.0] = FdHandle::Closed;
+                self.set_status_ok()?;
+            }
+            Instr::FdCloseDyn(fd_reg) => {
+                let fd = self.read_reg(fd_reg)?;
+                if let Some(fd) = self.checked_fd_index(fd)? {
+                    self.process_mut()?.fds[fd] = FdHandle::Closed;
+                    self.set_status_ok()?;
+                }
+            }
+            Instr::FdSeek(fd, offset_reg, whence_reg) => {
+                let offset = self.read_reg(offset_reg)? as i64;
+                let whence = self.read_reg(whence_reg)?;
+                self.fd_seek_index(fd.0, offset, whence)?;
+            }
+            Instr::FdSeekDyn(fd_reg, offset_reg, whence_reg) => {
+                let fd = self.read_reg(fd_reg)?;
+                let offset = self.read_reg(offset_reg)? as i64;
+                let whence = self.read_reg(whence_reg)?;
+                if let Some(fd) = self.checked_fd_index(fd)? {
+                    self.fd_seek_index(fd, offset, whence)?;
+                }
             }
             Instr::WaitOnFd(fd, _) => {
                 if !self.fd_ready(fd.0)? {
@@ -575,6 +831,35 @@ impl Machine {
             Instr::FdDup(dst, src) => {
                 let cloned = self.process()?.fds[src.0].clone_handle()?;
                 self.process_mut()?.fds[dst.0] = cloned;
+            }
+            Instr::FdDup2(dst, src) => {
+                let cloned = self.process()?.fds[src.0].clone_handle()?;
+                self.process_mut()?.fds[dst.0] = cloned;
+                self.set_status_ok()?;
+            }
+            Instr::Pipe(read_fd, write_fd) => {
+                let buffer = Rc::new(RefCell::new(VecDeque::new()));
+                let process = self.process_mut()?;
+                process.fds[read_fd.0] = FdHandle::PipeReader(Rc::clone(&buffer));
+                process.fds[write_fd.0] = FdHandle::PipeWriter(buffer);
+                self.set_status_ok()?;
+            }
+            Instr::ErrnoGet(dst) => {
+                let errno = self.process()?.errno;
+                self.write_reg(dst, errno)?;
+            }
+            Instr::ErrnoSet(src) => {
+                let errno = self.read_reg(src)?;
+                self.set_errno(errno)?;
+            }
+            Instr::WaitPid(status_dst, pid_reg) => {
+                let pid = self.read_reg(pid_reg)?;
+                if pid == 0 || !self.processes.contains_key(&pid) {
+                    self.write_reg(status_dst, self.last_exit as u64)?;
+                    self.set_status_ok()?;
+                } else {
+                    self.set_status_errno(10)?;
+                }
             }
             Instr::GetPcr(dst, pcr) => {
                 let value = self.read_pcr(pcr)?;
@@ -618,7 +903,7 @@ impl Machine {
                 let mut child = self.thread()?.clone();
                 child.tid = tid;
                 child.ip = self.read_reg(entry)? as usize;
-                child.regs[31] = STACK_TOP - CALL_FRAME_SIZE - ((tid - 1) * 4096);
+                child.regs[31] = STACK_TOP - CALL_FRAME_SIZE - ((tid - 1) * THREAD_STACK_STRIDE);
                 self.threads.insert(tid, child);
                 self.ready.push_back(tid);
                 self.write_reg(dst, tid)?;
@@ -838,21 +1123,26 @@ impl Machine {
             .ok_or_else(|| format!("missing process {pid}"))
     }
 
+    fn fault_context(&mut self, tid: u64) -> String {
+        let Some(thread) = self.threads.get(&tid) else {
+            return String::new();
+        };
+        let sp = thread.regs[31];
+        let r1 = thread.regs[1];
+        let r2 = thread.regs[2];
+        let r3 = thread.regs[3];
+        let ret = self
+            .load_u64(sp)
+            .map(|value| format!(" ret={value}"))
+            .unwrap_or_default();
+        format!(" r1={r1} r2={r2} r3={r3} r31={sp}{ret}")
+    }
+
     fn process_mut(&mut self) -> Result<&mut Process, String> {
         let pid = self.thread()?.pid;
         self.processes
             .get_mut(&pid)
             .ok_or_else(|| format!("missing process {pid}"))
-    }
-
-    fn alloc_fd(&mut self) -> Result<usize, String> {
-        let process = self.process_mut()?;
-        for fd in 3..process.fds.len() {
-            if matches!(process.fds[fd], FdHandle::Closed) {
-                return Ok(fd);
-            }
-        }
-        Err("no free file descriptors".to_string())
     }
 
     fn open_fd_handle(path: &str, flags: u64) -> Result<FdHandle, String> {
@@ -889,6 +1179,254 @@ impl Machine {
         }
     }
 
+    fn open_dir_handle(path: &str) -> io::Result<FdHandle> {
+        let mut entries = Vec::new();
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            entries.push(entry.file_name().to_string_lossy().into_owned());
+        }
+        entries.sort();
+        Ok(FdHandle::Dir {
+            path: path.to_string(),
+            entries,
+            pos: 0,
+        })
+    }
+
+    fn errno_from_io(err: &io::Error) -> u64 {
+        err.raw_os_error()
+            .filter(|errno| *errno > 0)
+            .map(|errno| errno as u64)
+            .unwrap_or(5)
+    }
+
+    fn set_errno(&mut self, errno: u64) -> Result<(), String> {
+        self.process_mut()?.errno = errno;
+        Ok(())
+    }
+
+    fn set_status_ok(&mut self) -> Result<(), String> {
+        self.set_errno(0)?;
+        self.write_reg(Reg(1), 0)
+    }
+
+    fn set_status_errno(&mut self, errno: u64) -> Result<(), String> {
+        self.set_errno(errno)?;
+        self.write_reg(Reg(1), -1i64 as u64)
+    }
+
+    fn set_status_io_error(&mut self, err: io::Error) -> Result<(), String> {
+        self.set_status_errno(Self::errno_from_io(&err))
+    }
+
+    fn resolve_process_path(&self, path: &str) -> Result<String, String> {
+        if path.is_empty() || Path::new(path).is_absolute() {
+            return Ok(path.to_string());
+        }
+        Ok(self
+            .process()?
+            .cwd
+            .join(path)
+            .to_string_lossy()
+            .into_owned())
+    }
+
+    fn write_lnp64_stat(&mut self, addr: u64, metadata: &fs::Metadata) -> Result<(), String> {
+        let fields = [
+            (0, metadata.mode() as u64),
+            (8, metadata.size()),
+            (16, metadata.dev()),
+            (24, metadata.ino()),
+            (32, metadata.mtime() as u64),
+            (40, metadata.nlink()),
+            (48, metadata.uid() as u64),
+            (56, metadata.gid() as u64),
+            (64, metadata.atime() as u64),
+            (72, metadata.ctime() as u64),
+        ];
+        for (offset, value) in fields {
+            self.store_u64(addr + offset, value)?;
+        }
+        Ok(())
+    }
+
+    fn write_synthetic_stat(&mut self, addr: u64, mode: u64, size: u64) -> Result<(), String> {
+        let fields = [
+            (0, mode),
+            (8, size),
+            (16, 0),
+            (24, 0),
+            (32, 0),
+            (40, 1),
+            (48, self.process()?.uid),
+            (56, self.process()?.gid),
+            (64, 0),
+            (72, 0),
+        ];
+        for (offset, value) in fields {
+            self.store_u64(addr + offset, value)?;
+        }
+        Ok(())
+    }
+
+    fn checked_fd_index(&mut self, fd: u64) -> Result<Option<usize>, String> {
+        if fd < FDR_COUNT as u64 {
+            Ok(Some(fd as usize))
+        } else {
+            self.set_status_errno(9)?;
+            Ok(None)
+        }
+    }
+
+    fn alloc_fd_handle(&mut self, handle: FdHandle) -> Result<Option<usize>, String> {
+        let fd = {
+            let process = self.process_mut()?;
+            process
+                .fds
+                .iter()
+                .position(|candidate| matches!(candidate, FdHandle::Closed))
+        };
+        if let Some(fd) = fd {
+            self.process_mut()?.fds[fd] = handle;
+            Ok(Some(fd))
+        } else {
+            self.set_status_errno(24)?;
+            Ok(None)
+        }
+    }
+
+    fn write_fd_index(&mut self, fd: usize, addr: u64, len: usize) -> Result<(), String> {
+        let data = self.read_bytes(addr, len)?;
+        let result = match &mut self.process_mut()?.fds[fd] {
+            FdHandle::Stdout => {
+                let mut out = io::stdout();
+                out.write_all(&data).and_then(|()| out.flush())
+            }
+            FdHandle::Stderr => {
+                let mut err = io::stderr();
+                err.write_all(&data).and_then(|()| err.flush())
+            }
+            FdHandle::File(file) => file.write_all(&data),
+            FdHandle::PipeWriter(buffer) => {
+                buffer.borrow_mut().extend(data.iter().copied());
+                Ok(())
+            }
+            FdHandle::TcpListener { pending, .. } => {
+                if let Some(stream) = pending {
+                    stream.write_all(&data)
+                } else {
+                    Err(io::Error::new(
+                        io::ErrorKind::NotConnected,
+                        "listener has no accepted stream",
+                    ))
+                }
+            }
+            FdHandle::Stdin | FdHandle::Dir { .. } | FdHandle::PipeReader(_) | FdHandle::Closed => {
+                Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "fd is not writable",
+                ))
+            }
+        };
+        match result {
+            Ok(()) => {
+                self.set_errno(0)?;
+                self.write_reg(Reg(1), data.len() as u64)?;
+            }
+            Err(err) => self.set_status_io_error(err)?,
+        }
+        Ok(())
+    }
+
+    fn readdir_fd_index(&mut self, fd: usize, addr: u64) -> Result<(), String> {
+        let entry = match &mut self.process_mut()?.fds[fd] {
+            FdHandle::Dir { entries, pos, .. } => {
+                if *pos >= entries.len() {
+                    None
+                } else {
+                    let entry = entries[*pos].clone();
+                    *pos += 1;
+                    Some(entry)
+                }
+            }
+            _ => {
+                self.set_status_errno(20)?;
+                None
+            }
+        };
+        if let Some(entry) = entry {
+            let mut bytes = entry.into_bytes();
+            bytes.push(0);
+            self.write_bytes(addr, &bytes)?;
+            self.set_errno(0)?;
+            self.write_reg(Reg(1), 1)?;
+        } else if self.read_reg(Reg(1))? != -1i64 as u64 {
+            self.set_errno(0)?;
+            self.write_reg(Reg(1), 0)?;
+        }
+        Ok(())
+    }
+
+    fn rewinddir_fd_index(&mut self, fd: usize) -> Result<(), String> {
+        match &mut self.process_mut()?.fds[fd] {
+            FdHandle::Dir { pos, .. } => {
+                *pos = 0;
+                self.set_status_ok()
+            }
+            _ => self.set_status_errno(20),
+        }
+    }
+
+    fn stat_fd_index(&mut self, statbuf: u64, fd: usize) -> Result<(), String> {
+        let metadata = match &self.process()?.fds[fd] {
+            FdHandle::File(file) => Some(file.metadata().map_err(|err| Self::errno_from_io(&err))),
+            FdHandle::Dir { path, .. } => {
+                Some(fs::metadata(path).map_err(|err| Self::errno_from_io(&err)))
+            }
+            _ => None,
+        };
+        match metadata {
+            Some(Ok(metadata)) => {
+                self.write_lnp64_stat(statbuf, &metadata)?;
+                self.set_status_ok()?;
+            }
+            Some(Err(errno)) => self.set_status_errno(errno)?,
+            None => {
+                self.write_synthetic_stat(statbuf, 0o020000, 0)?;
+                self.set_status_ok()?;
+            }
+        }
+        Ok(())
+    }
+
+    fn fd_seek_index(&mut self, fd: usize, offset: i64, whence: u64) -> Result<(), String> {
+        let seek_from = match whence {
+            0 => Some(SeekFrom::Start(offset as u64)),
+            1 => Some(SeekFrom::Current(offset)),
+            2 => Some(SeekFrom::End(offset)),
+            _ => None,
+        };
+        if let Some(seek_from) = seek_from {
+            let result = match &mut self.process_mut()?.fds[fd] {
+                FdHandle::File(file) => file.seek(seek_from),
+                _ => Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "fd is not seekable",
+                )),
+            };
+            match result {
+                Ok(pos) => {
+                    self.set_errno(0)?;
+                    self.write_reg(Reg(1), pos)?;
+                }
+                Err(err) => self.set_status_io_error(err)?,
+            }
+        } else {
+            self.set_status_errno(22)?;
+        }
+        Ok(())
+    }
+
     fn read_fd_index(&mut self, fd: usize, addr: u64, len: usize) -> Result<usize, String> {
         let mut tmp = vec![0; len];
         let count = match &mut self.process_mut()?.fds[fd] {
@@ -898,6 +1436,18 @@ impl Machine {
             FdHandle::File(file) => file
                 .read(&mut tmp)
                 .map_err(|err| format!("READ_FD fd{fd}: {err}"))?,
+            FdHandle::PipeReader(buffer) => {
+                let mut buffer = buffer.borrow_mut();
+                let mut count = 0;
+                while count < len {
+                    let Some(byte) = buffer.pop_front() else {
+                        break;
+                    };
+                    tmp[count] = byte;
+                    count += 1;
+                }
+                count
+            }
             FdHandle::TcpListener { listener, pending } => {
                 if pending.is_none() {
                     match listener.accept() {
@@ -921,7 +1471,11 @@ impl Machine {
                     0
                 }
             }
-            FdHandle::Stdout | FdHandle::Stderr | FdHandle::Closed => 0,
+            FdHandle::Stdout
+            | FdHandle::Stderr
+            | FdHandle::Dir { .. }
+            | FdHandle::PipeWriter(_)
+            | FdHandle::Closed => 0,
         };
         self.write_bytes(addr, &tmp[..count])?;
         Ok(count)
@@ -936,7 +1490,10 @@ impl Machine {
     }
 
     fn write_reg(&mut self, reg: Reg, value: u64) -> Result<(), String> {
-        if reg.0 != 0 && reg.0 != 31 {
+        if reg.0 == 31 {
+            return Err("write to hardware-locked stack pointer r31".to_string());
+        }
+        if reg.0 != 0 {
             self.thread_mut()?.regs[reg.0] = value;
         }
         Ok(())
@@ -1199,7 +1756,13 @@ impl Machine {
     fn fd_ready(&mut self, fd: usize) -> Result<bool, String> {
         let handle = &mut self.process_mut()?.fds[fd];
         match handle {
-            FdHandle::Stdin | FdHandle::Stdout | FdHandle::Stderr | FdHandle::File(_) => Ok(true),
+            FdHandle::Stdin
+            | FdHandle::Stdout
+            | FdHandle::Stderr
+            | FdHandle::File(_)
+            | FdHandle::Dir { .. }
+            | FdHandle::PipeWriter(_) => Ok(true),
+            FdHandle::PipeReader(buffer) => Ok(!buffer.borrow().is_empty()),
             FdHandle::Closed => Ok(false),
             FdHandle::TcpListener { listener, pending } => {
                 if pending.is_some() {
@@ -1522,5 +2085,21 @@ mod tests {
         let thread = machine.threads.get(&1).unwrap();
         assert_eq!(f64::from_bits(thread.fregs[3]), 3.75);
         assert_eq!(thread.vregs[3], 11 | (22 << 32) | (33 << 64) | (44 << 96));
+    }
+
+    #[test]
+    fn rejects_writes_to_locked_stack_pointer() {
+        let program = Program::parse(
+            r#"
+            .text
+              LI r1, 123
+              MOV r31, r1
+              EXIT r0
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        let err = machine.run().unwrap_err();
+        assert!(err.contains("hardware-locked stack pointer"), "{err}");
     }
 }

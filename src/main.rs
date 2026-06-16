@@ -1,5 +1,10 @@
 mod asm;
 mod c_compiler;
+mod c_constants;
+mod c_escapes;
+mod c_queue_rewrites;
+mod c_support_sources;
+mod c_type_rewrites;
 mod emulator;
 mod isa;
 
@@ -70,9 +75,7 @@ fn run() -> Result<(), String> {
             if !args.is_empty() {
                 return Err(format!("unexpected arguments: {}", args.join(" ")));
             }
-            let source = fs::read_to_string(&input)
-                .map_err(|err| format!("failed to read {}: {err}", input.display()))?;
-            let asm = c_compiler::compile(&source)?;
+            let asm = c_compiler::compile_file(&input)?;
             if let Some(output) = output {
                 fs::write(&output, asm)
                     .map_err(|err| format!("failed to write {}: {err}", output.display()))?;

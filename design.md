@@ -34,12 +34,50 @@ System calls are replaced by direct VFS-microcode instructions.
 
 *   **`OPEN_FD fd_dest, r_path_ptr, r_flags`**
     *   *Action:* Hardware path-resolution unit traverses the silicon VFS. On success, binds the internal object reference to `fd_dest`.
+*   **`OPEN_FD_DYN r_fd_dest, r_path_ptr, r_flags`**
+    *   *Action:* Dynamic fd allocation form. On success, binds the first available FDR and returns its runtime integer in both `r_fd_dest` and `r1`; failures return `-1` and update `ERRNO`.
 *   **`READ_FD fd_src, r_buf_ptr, r_len`**
     *   *Action:* Initiates a DMA transfer from the device backing `fd_src` directly to `r_buf_ptr`. 
+*   **`READ_FD_DYN r_fd_src, r_buf_ptr, r_len`**
+    *   *Action:* Dynamic-fd read for POSIX/libc code where the fd is a runtime integer. Returns the byte count in `r1`, or `-1` with `ERRNO` set.
 *   **`WRITE_FD fd_dest, r_buf_ptr, r_len`**
     *   *Action:* Initiates a DMA transfer from `r_buf_ptr` to the device backing `fd_dest`.
+*   **`WRITE_FD_DYN r_fd_dest, r_buf_ptr, r_len`**
+    *   *Action:* Dynamic-fd write. Returns the byte count in `r1`, or `-1` with `ERRNO` set.
 *   **`WAIT_ON_FD fd_src, r_events_mask`**
     *   *Action:* The ultimate hardware `epoll`. The current thread is immediately removed from the hardware runqueue and parked. When the NIC or NVMe controller fires an interrupt matching the `fd_src` and `r_events_mask`, the thread is instantly pushed to the top of the runqueue.
+*   **`FD_CLOSE fd_src`**
+    *   *Action:* Releases the hardware VFS object bound to `fd_src` and marks the descriptor closed.
+*   **`FD_CLOSE_DYN r_fd_src`**
+    *   *Action:* Dynamic-fd close. Returns `0` in `r1`, or `-1` with `ERRNO` set.
+*   **`FD_SEEK fd_src, r_offset, r_whence`**
+    *   *Action:* Repositions a seekable file object. The resulting offset is returned in `r1`; failures return `-1` in `r1` and update hardware `ERRNO`.
+*   **`FD_SEEK_DYN r_fd_src, r_offset, r_whence`**
+    *   *Action:* Dynamic-fd seek form for runtime integer fd values.
+*   **`STAT_PATH r_statbuf, r_path_ptr, r_flags`** / **`STAT_FD r_statbuf, fd_src`**
+    *   *Action:* Fills the stable LNP64 stat layout at `r_statbuf`: mode, size, device, inode, mtime, nlink, uid, gid, atime, ctime. Path flags include no-follow semantics for symlink-aware operations.
+*   **`STAT_FD_DYN r_statbuf, r_fd_src`**
+    *   *Action:* Dynamic-fd metadata form for runtime integer fd values.
+*   **`RENAME_PATH r_old_path_ptr, r_new_path_ptr`**
+    *   *Action:* Atomically renames a VFS namespace entry.
+*   **`LINK_PATH r_old_path_ptr, r_new_path_ptr, r_flags`** / **`SYMLINK_PATH r_target_ptr, r_link_ptr`**
+    *   *Action:* Creates hard or symbolic links in the silicon VFS. `LINK_PATH` flag bit 0 selects symbolic-link creation for compact runtimes that prefer one lowering target.
+*   **`READLINK_PATH r_path_ptr, r_buf_ptr, r_len`**
+    *   *Action:* Reads a symbolic link target into memory and returns the byte count in `r1`.
+*   **`CHDIR_PATH r_path_ptr`** / **`GETCWD_PATH r_buf_ptr, r_len`**
+    *   *Action:* Updates or reads the process-local hardware VFS working directory used to resolve relative path operands. `CHDIR_PATH` returns `0` or `-1`; `GETCWD_PATH` returns `r_buf_ptr` or `-1` and sets `ERRNO`.
+*   **`CHMOD_PATH r_path_ptr, r_mode, r_flags`** / **`CHOWN_PATH r_path_ptr, r_uid, r_gid, r_flags`**
+    *   *Action:* Updates VFS permission and ownership metadata directly through hardware path resolution. A UID or GID value of `-1` leaves that field unchanged.
+*   **`OPEN_DIR fd_dest, r_path_ptr, r_flags`** / **`READDIR_FD fd_dir, r_dirent_buf`** / **`REWINDDIR_FD fd_dir`**
+    *   *Action:* Opens and iterates directory streams. `READDIR_FD` returns positive in `r1` for an entry, `0` at end-of-directory, and `-1` on error.
+*   **`OPEN_DIR_DYN r_fd_dest, r_path_ptr, r_flags`** / **`READDIR_FD_DYN r_fd_dir, r_dirent_buf`** / **`REWINDDIR_FD_DYN r_fd_dir`**
+    *   *Action:* Dynamic directory stream forms for compiler-generated POSIX shims. `OPEN_DIR_DYN` returns the runtime fd number in `r_fd_dest` and `r1`.
+*   **`PIPE fd_read, fd_write`**
+    *   *Action:* Creates a hardware pipe pair bound to two file descriptor registers.
+*   **`ERRNO_GET r_dest`** / **`ERRNO_SET r_src`**
+    *   *Action:* Reads or writes the process-local POSIX error register. Fallible VFS instructions return `0` or a nonnegative byte count on success, `-1` on failure, and set `ERRNO`.
+*   **`WAIT_PID r_status_dest, r_pid`**
+    *   *Action:* Observes child process completion and writes the exit status to `r_status_dest`. This is the process-side companion to hardware `FORK` and `EXEC`.
 
 ## 4. Memory Management (Silicon VMAs)
 Page tables are managed entirely by the CPU's MMU microcode via a hardware Red-Black/Maple tree.

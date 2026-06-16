@@ -36,10 +36,22 @@ struct Parser {
     labels: HashMap<String, usize>,
     data_labels: HashMap<String, u64>,
     data: Vec<u8>,
+    data_relocs: Vec<(usize, String)>,
 }
 
 impl Parser {
-    fn finish(self) -> Result<Program, String> {
+    fn finish(mut self) -> Result<Program, String> {
+        for (offset, label) in &self.data_relocs {
+            let Some(value) = self
+                .data_labels
+                .get(label)
+                .copied()
+                .or_else(|| self.labels.get(label).map(|addr| *addr as u64))
+            else {
+                return Err(format!("unknown data label {label:?}"));
+            };
+            self.data[*offset..*offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
         Ok(Program {
             instructions: self.instructions,
             labels: self.labels,
@@ -117,7 +129,14 @@ impl Parser {
                 }
             }
             ".quad" => {
-                let value = parse_i64(rest.trim()).map_err(|err| self.err(err))? as u64;
+                let text = rest.trim();
+                let value = if let Ok(value) = parse_i64(text) {
+                    value as u64
+                } else {
+                    let offset = self.data.len();
+                    self.data_relocs.push((offset, text.to_string()));
+                    0
+                };
                 self.data.extend_from_slice(&value.to_le_bytes());
             }
             ".zero" => {
@@ -223,6 +242,14 @@ impl Parser {
                 arity(3)?;
                 Instr::OpenFdDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
+            "OPEN_DIR" => {
+                arity(3)?;
+                Instr::OpenDir(fd(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
+            "OPEN_DIR_DYN" => {
+                arity(3)?;
+                Instr::OpenDirDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
             "READ_FD" => {
                 arity(3)?;
                 Instr::ReadFd(fd(&args[0])?, reg(&args[1])?, reg(&args[2])?)
@@ -231,9 +258,29 @@ impl Parser {
                 arity(3)?;
                 Instr::ReadFdDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
+            "READDIR_FD" => {
+                arity(2)?;
+                Instr::ReaddirFd(fd(&args[0])?, reg(&args[1])?)
+            }
+            "READDIR_FD_DYN" => {
+                arity(2)?;
+                Instr::ReaddirFdDyn(reg(&args[0])?, reg(&args[1])?)
+            }
+            "REWINDDIR_FD" => {
+                arity(1)?;
+                Instr::RewinddirFd(fd(&args[0])?)
+            }
+            "REWINDDIR_FD_DYN" => {
+                arity(1)?;
+                Instr::RewinddirFdDyn(reg(&args[0])?)
+            }
             "WRITE_FD" => {
                 arity(3)?;
                 Instr::WriteFd(fd(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
+            "WRITE_FD_DYN" => {
+                arity(3)?;
+                Instr::WriteFdDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
             "MKDIR_PATH" => {
                 arity(2)?;
@@ -243,6 +290,71 @@ impl Parser {
                 arity(1)?;
                 Instr::UnlinkPath(reg(&args[0])?)
             }
+            "RENAME_PATH" => {
+                arity(2)?;
+                Instr::RenamePath(reg(&args[0])?, reg(&args[1])?)
+            }
+            "LINK_PATH" => {
+                arity(3)?;
+                Instr::LinkPath(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
+            "SYMLINK_PATH" => {
+                arity(2)?;
+                Instr::SymlinkPath(reg(&args[0])?, reg(&args[1])?)
+            }
+            "READLINK_PATH" => {
+                arity(3)?;
+                Instr::ReadlinkPath(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
+            "CHDIR_PATH" => {
+                arity(1)?;
+                Instr::ChdirPath(reg(&args[0])?)
+            }
+            "GETCWD_PATH" => {
+                arity(2)?;
+                Instr::GetcwdPath(reg(&args[0])?, reg(&args[1])?)
+            }
+            "CHMOD_PATH" => {
+                arity(3)?;
+                Instr::ChmodPath(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
+            "CHOWN_PATH" => {
+                arity(4)?;
+                Instr::ChownPath(
+                    reg(&args[0])?,
+                    reg(&args[1])?,
+                    reg(&args[2])?,
+                    reg(&args[3])?,
+                )
+            }
+            "STAT_PATH" => {
+                arity(3)?;
+                Instr::StatPath(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
+            "STAT_FD" => {
+                arity(2)?;
+                Instr::StatFd(reg(&args[0])?, fd(&args[1])?)
+            }
+            "STAT_FD_DYN" => {
+                arity(2)?;
+                Instr::StatFdDyn(reg(&args[0])?, reg(&args[1])?)
+            }
+            "FD_CLOSE" => {
+                arity(1)?;
+                Instr::FdClose(fd(&args[0])?)
+            }
+            "FD_CLOSE_DYN" => {
+                arity(1)?;
+                Instr::FdCloseDyn(reg(&args[0])?)
+            }
+            "FD_SEEK" => {
+                arity(3)?;
+                Instr::FdSeek(fd(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
+            "FD_SEEK_DYN" => {
+                arity(3)?;
+                Instr::FdSeekDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
             "WAIT_ON_FD" => {
                 arity(2)?;
                 Instr::WaitOnFd(fd(&args[0])?, reg(&args[1])?)
@@ -250,6 +362,26 @@ impl Parser {
             "FD_DUP" => {
                 arity(2)?;
                 Instr::FdDup(fd(&args[0])?, fd(&args[1])?)
+            }
+            "FD_DUP2" => {
+                arity(2)?;
+                Instr::FdDup2(fd(&args[0])?, fd(&args[1])?)
+            }
+            "PIPE" => {
+                arity(2)?;
+                Instr::Pipe(fd(&args[0])?, fd(&args[1])?)
+            }
+            "ERRNO_GET" => {
+                arity(1)?;
+                Instr::ErrnoGet(reg(&args[0])?)
+            }
+            "ERRNO_SET" => {
+                arity(1)?;
+                Instr::ErrnoSet(reg(&args[0])?)
+            }
+            "WAIT_PID" => {
+                arity(2)?;
+                Instr::WaitPid(reg(&args[0])?, reg(&args[1])?)
             }
             "GET_PCR" => {
                 arity(2)?;
