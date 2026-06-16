@@ -32,6 +32,7 @@ LNP64 v1 must support:
 - POSIX-like file, directory, process, signal, futex, mmap, exec, fork, and
   scheduling instructions from day one.
 - True multi-context hardware scheduling with a real hardware runqueue.
+- Coherent multicore execution across multiple fabric CPU tiles.
 - External DDR virtual memory with hardware-managed translation and VMAs.
 - Hardware-backed UART, SD, SPI flash, and simplified Ethernet file objects.
 - Deterministic instruction decode with a fixed binary encoding.
@@ -48,24 +49,28 @@ LNP64 v1 does not attempt:
 
 - Out-of-order execution.
 - Speculative branch prediction.
-- Coherent multicore.
 - Full Linux ABI compatibility.
 - Full POSIX edge-case compatibility.
 - A general PCIe device ecosystem.
 - Loadable microcode in the first FPGA implementation.
 
-`LOAD_UCODE` is decoded in v1, but it should update tables used by existing
-hardware adapters rather than install arbitrary executable control logic.
+`LOAD_UCODE` is decoded in v1 as a reserved device-driver hook, but the FPGA v1
+behavior is a stub. It must not install arbitrary executable control logic until
+a separate driver safety model is specified.
 
 ## 4. Top-Level Hardware Blocks
 
 The chip is organized as these blocks:
 
-- Instruction Fetch Unit.
-- Decode and Issue Unit.
-- Integer Execute Unit.
-- Load/Store Unit.
-- FPU and Vector Unit.
+- Multiple LNP64 core tiles.
+- Per-core Instruction Fetch Unit.
+- Per-core Decode and Issue Unit.
+- Per-core Integer Execute Unit.
+- Per-core Load/Store Unit.
+- Per-core FPU and Vector Unit.
+- Per-core L1 instruction and data caches.
+- Shared coherent interconnect.
+- Inclusive shared L2 cache and MSI coherence controller.
 - Thread Context Store.
 - Hardware Scheduler and Runqueue.
 - MMU, TLB, VMA Engine, and Page Allocator.
@@ -87,7 +92,10 @@ park the issuing thread. Completion events write architectural results, update
 
 ## 5. Execution Model
 
-The core is an in-order, multi-context, barrel-style processor.
+The v1 processor contains a small number of identical in-order, multi-context,
+barrel-style core tiles. A practical FPGA target is 2 to 4 tiles. Each tile can
+execute one selected ready thread per cycle from its local issue lane, subject to
+cache and engine availability.
 
 Each hardware thread context contains:
 
@@ -100,13 +108,17 @@ Each hardware thread context contains:
 - signal-delivery state.
 - blocked/runnable/waiting state.
 
-The datapath executes one selected ready thread at a time. On each cycle, the
-scheduler supplies a runnable TID to fetch/issue. Simple ALU instructions retire
-quickly. Complex instructions enqueue work and remove the TID from the ready
-queue.
+Each core tile executes one selected ready thread at a time. On each cycle, the
+local scheduler front end supplies a runnable TID to fetch/issue. Simple ALU
+instructions retire quickly. Complex instructions enqueue work and remove the
+TID from the issuing core's active set.
 
 This is not microcode: `OPEN_FD`, `FORK`, `EXEC`, `MMAP`, and similar operations
 are implemented by fixed hardware state machines and shared engines.
+
+The global scheduler assigns runnable TIDs to core tiles. A thread may migrate
+between tiles at scheduling boundaries. Migration transfers only ownership of
+the thread context; cache coherence handles memory visibility.
 
 ## 6. Fixed Instruction Encoding
 
@@ -337,15 +349,18 @@ context store.
 
 Recommended v1 capacities:
 
-- 64 hardware thread contexts.
-- 16 process contexts.
-- 256 FDR slots per process.
-- 64 pending event records per process.
-- 64 futex wait buckets.
+- 2 to 4 coherent core tiles.
+- 64 to 256 active hardware thread contexts on chip, with DDR-backed spill for
+  inactive contexts.
+- DDR-backed process contexts, with at least 4096 architectural PIDs.
+- DDR-backed FDR tables, defaulting to 4096 descriptors per process and
+  expandable higher.
+- DDR-backed pending event queues, with at least 4096 records per process.
+- 4096 or more global futex hash buckets, with DDR-backed waiter records.
 
 The GPR/FPR/VR files may be implemented as multi-ported block RAM or replicated
-distributed RAM. Since only one hardware thread issues into the main datapath per
-cycle in v1, the port pressure is manageable.
+distributed RAM. Since each core tile issues only one hardware thread into its
+local datapath per cycle in v1, the port pressure is manageable.
 
 `r31` remains the architectural stack pointer. In this hardware design it is
 ordinary register state saved per thread context. The implementation may enforce
@@ -353,7 +368,7 @@ stack-region bounds through the MMU rather than making `r31` unwriteable.
 
 ## 8. Pipeline
 
-The v1 pipeline is intentionally conservative:
+Each v1 core tile uses an intentionally conservative pipeline:
 
 1. Select runnable TID.
 2. Fetch instruction through instruction TLB.
@@ -369,7 +384,122 @@ ready thread while the LSU waits on DDR.
 Branches update only the issuing thread's PC. No global pipeline flush is needed
 if fetch is tagged by TID and valid bits.
 
-## 9. External DDR Memory Model
+## 9. Coherent Multicore
+
+Coherent multicore is a v1 feature, but it is deliberately bounded. The initial
+target is 2 to 4 identical LNP64 core tiles connected to a shared coherence
+fabric and external DDR. The goal is not high-end server performance; the goal
+is that ordinary shared-memory programs, futexes, copy-on-write VM, FDR metadata,
+and DMA-backed file operations have correct cross-core visibility.
+
+### 9.1 Cache Hierarchy
+
+Each core tile has:
+
+- private L1 instruction cache.
+- private L1 data cache.
+- private instruction and data TLBs.
+
+FPGA v1 uses a shared L2 cache with inclusive tags. Directory-based coherence is
+a later scaling option, not part of the frozen v1 baseline. L1 data caches are
+write-back and coherent. L1 instruction caches are coherent through explicit
+instruction-cache invalidation events during `EXEC`, page remap, and executable
+file updates.
+
+### 9.2 Coherence Protocol
+
+The frozen v1 data coherence protocol is MSI. MESI is a later optimization.
+
+Minimum line states:
+
+- `I`: invalid.
+- `S`: shared clean.
+- `M`: modified and owned by one core.
+
+Operations:
+
+- load miss requests shared ownership.
+- store miss or store upgrade requests modified ownership.
+- modified owner supplies or writes back data before another core reads it.
+- invalidations acknowledge before the requesting store can retire.
+
+All coherence requests are tagged with core id, thread id, process id, physical
+cache-line address, and operation type.
+
+### 9.3 Memory Ordering
+
+LNP64 v1 uses a conservative ordering model:
+
+- each core observes its own loads and stores in program order.
+- ordinary stores become globally visible when accepted by the coherent cache
+  fabric.
+- `FENCE` drains the issuing core's store buffer, completes prior DMA visibility
+  requirements, and waits for coherence acknowledgements.
+- atomic operations are sequentially ordered per physical address.
+- POSIX engine completions are ordered after their DMA writes and metadata
+  updates.
+
+This is stronger than many commercial relaxed models, but it reduces the risk of
+subtle hardware/software mismatches in the first implementation.
+
+### 9.4 Atomics and Futexes
+
+`LOCK_CMPXCHG` enters the coherence fabric as a read-modify-write transaction.
+The target cache line must be held in modified ownership by the atomic unit
+before comparison and writeback.
+
+`FUTEX_WAIT` and `FUTEX_WAKE` use physical addresses after translation. This is
+important: two processes mapping the same shared page must wait on the same
+futex key even if their virtual addresses differ.
+
+The Futex Engine snoops or receives explicit notifications for atomic writes to
+futex-backed addresses only when needed. It does not need to observe every store
+in the system.
+
+### 9.5 TLB and VMA Coherence
+
+Page table and VMA changes are coherent across cores.
+
+For `MMAP`, `MUNMAP`, copy-on-write breaks, `EXEC`, and permission changes, the
+VMA Engine emits TLB invalidation commands:
+
+- target all TLBs for a process.
+- target one virtual page in one process.
+- target all executable mappings for instruction-cache invalidation.
+
+The issuing hardware operation completes only after all relevant core tiles
+acknowledge invalidation. Threads in the affected process cannot resume on stale
+translations.
+
+### 9.6 DMA Coherence
+
+Device DMA is coherent by construction. In v1, the DMA Fabric participates at
+the inclusive shared L2 boundary:
+
+- DMA reads observe dirty CPU-owned lines by forcing writeback or intervention.
+- DMA writes invalidate or update matching CPU cache lines before completion.
+- completion events are not delivered until cache visibility is correct.
+
+This rule is mandatory for `READ_FD`, `WRITE_FD`, file-backed page faults,
+Ethernet RX/TX, and SD/SPI transfers.
+
+### 9.7 Shared POSIX Metadata
+
+FDR tables, process tables, VMA descriptors, VFS namespace nodes, inode metadata,
+pipe buffers, socket queues, and wait queues are shared hardware data
+structures. They are protected with hardware locks or single-writer engine
+ownership:
+
+- FDR table entry updates are serialized per process and fd index.
+- VFS namespace mutation is serialized per directory object.
+- process table mutation is serialized per PID slot.
+- runqueue updates are serialized by the scheduler fabric.
+- pipe and socket queue updates are serialized per queue object.
+
+The hardware engines may be internally pipelined, but they must expose atomic
+architectural transitions to threads.
+
+## 10. External DDR Memory Model
 
 External DDR holds:
 
@@ -401,13 +531,48 @@ On a page fault, the issuing thread is parked. The VMA Engine decides whether to
 allocate a zero page, fetch a file-backed page through DMA, signal `SIGSEGV`, or
 complete a copy-on-write break.
 
-## 10. Hardware Scheduler and Runqueue
+### 10.1 Frozen Memory Model Constants
 
-The scheduler is a fabric block, not software.
+LNP64 v1 fixes these constants:
+
+- byte order: little-endian.
+- address size: 64-bit virtual addresses.
+- physical address size: implementation-defined, at least 40 bits for v1.
+- page size: 4 KiB.
+- cache line size: 64 bytes.
+- instruction size: 64 bits, naturally aligned.
+- integer load/store widths: 8, 32, and 64 bits.
+- atomic width for `LOCK_CMPXCHG`: 64 bits in v1.
+- vector register width: 128 bits.
+- floating point format: IEEE-754 binary64.
+
+Alignment rules:
+
+- instruction fetch from a non-8-byte-aligned PC raises `SIGBUS`.
+- aligned loads and stores are single architectural memory operations.
+- unaligned integer loads and stores are supported if contained within one page.
+- unaligned accesses crossing a page boundary may complete only if both pages
+  translate and permit the access; otherwise the instruction faults without a
+  partial architectural write.
+- `LOCK_CMPXCHG` requires 8-byte alignment; misalignment raises `SIGBUS`.
+
+`FENCE` semantics:
+
+- drains prior stores from the issuing core into the coherent fabric.
+- waits for invalidation acknowledgements required by prior stores.
+- orders prior DMA-visible writes before later DMA or device operations.
+- orders prior POSIX engine completions before later ordinary memory operations.
+- does not flush unrelated cache lines.
+
+## 11. Hardware Scheduler and Runqueue
+
+The scheduler is a fabric block, not software. In the coherent multicore design,
+it has per-core ready queues plus a global scheduler arbiter.
 
 State:
 
-- Ready queue of TIDs.
+- Per-core ready queues of TIDs.
+- Global runnable overflow queue.
 - Sleeping timer wheel.
 - fd wait queues.
 - futex wait queues.
@@ -436,35 +601,51 @@ Instruction behavior:
 - engine completion: writes result registers, updates errno, returns TID to
   ready queue unless a signal must be delivered first.
 
-The scheduler chooses the next ready TID every cycle if available. It should use
-round-robin in v1. Priority can be added later.
+Each core-local scheduler chooses the next ready TID every cycle if available.
+The global arbiter handles wakeups, new threads, thread migration, load
+balancing, and work stealing. It should use round-robin in v1. Priority can be
+added later.
 
-## 11. Capability File Descriptor Registers
+## 12. Capability File Descriptor Registers
 
-FDRs are not integer registers. Each process owns a hardware FDR table with 256
-capability entries.
+FDRs are not integer registers. Each process owns a DDR-backed hardware FDR
+capability table. The default architectural table has 4096 descriptor entries
+per process and can be expanded by implementation.
 
 Each FDR entry contains:
 
 - valid bit.
-- object type: `closed`, `uart`, `block_file`, `directory`, `pipe_read`,
-  `pipe_write`, `ethernet_socket`, `listener`, `special`.
-- rights: read, write, seek, stat, directory, execute.
+- object class: `closed`, `regular_file`, `directory`, `char_stream`,
+  `block_device`, `pipe_read`, `pipe_write`, `socket`, `listener`,
+  `event_queue`, `control`.
+- backend id: `none`, `uart0`, `sd0`, `spi_flash0`, `eth0`, `ramfs`,
+  `pipe_engine`, `socket_engine`, `vfs_engine`.
+- protocol or subtype: `raw_frame`, `udp_datagram`, `stream`, `block_extent`,
+  `tty`, `control`, or backend-defined.
+- rights: read, write, seek, stat, directory, execute, poll.
 - object id.
 - current offset.
 - flags.
 - reference count pointer.
 - event mask.
-- backend adapter id.
 - metadata cache pointer.
+- backend-private pointer.
 
-Static FDR instructions address the table directly with the 8-bit FDR field.
-Dynamic FDR instructions use a GPR containing the runtime descriptor index. The
-hardware validates range, valid bit, and rights before issuing the operation.
+Static FDR instructions address only the low 256 descriptors with the 8-bit FDR
+field. They are a compact fast form for stdin/stdout/stderr, common runtime
+handles, and compiler-selected hot descriptors.
+
+The architectural FDR table is larger than the static encoding range. Dynamic
+FDR instructions use a GPR containing the runtime descriptor index and can
+address the full DDR-backed descriptor table. Any descriptor index above 255
+must use a `*_DYN` instruction form.
+
+The hardware validates range, valid bit, and rights before issuing the
+operation.
 
 Invalid descriptors return `-1` in `r1` where applicable and set `ERRNO=EBADF`.
 
-## 12. Silicon VFS Namespace Engine
+## 13. Silicon VFS Namespace Engine
 
 The VFS engine resolves paths and manages namespace metadata in hardware.
 
@@ -495,9 +676,9 @@ The path resolver is a hardwired FSM. It walks each component, performs director
 lookup, checks permissions, follows symlinks when permitted, and emits either an
 object id or an errno.
 
-## 13. Device Backends
+## 14. Device Backends
 
-### 13.1 UART
+### 14.1 UART
 
 UART exposes character stream objects:
 
@@ -509,7 +690,7 @@ UART exposes character stream objects:
 set. `WRITE_FD` pushes bytes into the transmit FIFO and parks the thread if the
 FIFO is full.
 
-### 13.2 SD Card
+### 14.2 SD Card
 
 The SD adapter provides block storage for the primary filesystem. The hardware
 does not need a complete commercial filesystem in v1; it can use an LNP64-native
@@ -524,13 +705,57 @@ simple filesystem:
 The File Operation Engine translates VFS object ids and offsets into SD block
 DMA commands. The SD adapter streams sectors to and from DDR buffers.
 
-### 13.3 SPI Flash
+### 14.3 Static Filesystem Format Options
+
+The v1 storage format is not frozen yet. The hardware needs a format simple
+enough for deterministic path walking, `EXEC`, `MMAP`, metadata mutation, links,
+symlinks, permissions, and crash recovery. Candidate options:
+
+Option A: LNPFS, a purpose-built extent filesystem.
+
+- Hardware-friendly fixed-endian superblock, inode table, extent arrays, and
+  directory-entry blocks.
+- Directly matches the VFS engine's object ids and metadata cache.
+- Easiest option for real hardware path resolution and `EXEC`.
+- Weakness: requires custom tooling and is not directly mountable on normal
+  hosts without a userspace tool.
+
+Option B: read-only boot filesystem plus mutable append log.
+
+- Boot image contains a simple read-only tree for `/sbin/init`, libraries, and
+  base files.
+- Runtime mutations append records to a hardware-readable log.
+- Simplifies early boot and recovery.
+- Weakness: rename, unlink, chmod, chown, and directory compaction become
+  log-replay operations, so long-running systems need garbage collection.
+
+Option C: FAT-like filesystem profile.
+
+- Easier host-side image creation and debugging.
+- Simple block layout, but weak POSIX metadata.
+- Requires hardware side tables for uid, gid, mode, symlink, hard link, and
+  inode-like behavior.
+- Better as an import/export or bootstrapping format than as the main cloud
+  filesystem.
+
+Option D: ext2-like restricted profile.
+
+- Existing concepts for inodes, directories, permissions, links, and symlinks.
+- Host tooling is easier than a custom format.
+- Weakness: path walking and allocation logic are more complex in hardware than
+  an LNP64-native extent format.
+
+Recommended direction before freeze: use LNPFS for the native writable root
+filesystem, plus a read-only SPI flash boot image format for recovery. Keep a
+host-side image builder mandatory from day one.
+
+### 14.4 SPI Flash
 
 SPI flash is used for boot ROM assets and optional read-mostly files. It exposes
 a block-like backend with slower writes. The boot path may fetch initial VFS
 metadata and `/sbin/init` from SPI flash if SD is absent.
 
-### 13.4 Simplified Ethernet
+### 14.5 Simplified Ethernet
 
 Ethernet v1 is a simplified packet device, not a full TCP/IP offload engine.
 
@@ -545,7 +770,7 @@ Supported model:
 The VFS can expose network endpoints under paths such as `/dev/eth0` or
 `/net/udp/<port>`.
 
-## 14. File and Directory Instructions
+## 15. File and Directory Instructions
 
 All file instructions are decoded into File Operation Engine commands.
 
@@ -584,7 +809,7 @@ All file instructions are decoded into File Operation Engine commands.
 `CHDIR_PATH`, and `GETCWD_PATH` are VFS engine operations with fixed state
 machines for metadata mutation and buffer DMA.
 
-## 15. Process Engine
+## 16. Process Engine
 
 The Process Engine owns PID allocation, process table entries, parent-child
 relationships, and process-wide resources.
@@ -644,7 +869,7 @@ Each process entry contains:
 - if last thread in process, closes process resources, marks process zombie,
   stores exit status, and signals parent with `SIGCHLD`.
 
-## 16. MMAP and MUNMAP
+## 17. MMAP and MUNMAP
 
 `MMAP` is a real hardware VMA operation.
 
@@ -669,7 +894,7 @@ The VMA tree can be a hardware-walked B-tree or interval tree in DDR. For FPGA
 v1, a sorted VMA array per process is acceptable if bounded and checked in
 hardware.
 
-## 17. Signals
+## 18. Signals
 
 The Signal Engine handles asynchronous delivery.
 
@@ -699,7 +924,7 @@ Signal delivery:
 Fatal signals without handlers terminate the process through the same path as
 `EXIT`.
 
-## 18. Futex and Atomic Engine
+## 19. Futex and Atomic Engine
 
 `LOCK_CMPXCHG` is implemented in the LSU/DDR atomic path:
 
@@ -723,7 +948,7 @@ Fatal signals without handlers terminate the process through the same path as
 - moves up to requested count of TIDs to ready queue.
 - returns wake count.
 
-## 19. PCRs and Credentials
+## 20. PCRs and Credentials
 
 PCRs are stored in process context:
 
@@ -740,7 +965,54 @@ the operation is a permitted drop in privilege.
 All VFS permission checks consume a snapshot of UID/GID from PCR state at command
 issue time.
 
-## 20. DMA Fabric
+### 20.1 Privilege and Security Model Options
+
+The privilege model is not frozen yet. Because there is no kernel supervising
+these operations, the hardware needs a crisp authority model before RTL.
+
+Option A: Unix-like UID/GID plus capability bits.
+
+- Familiar model for file permissions, signals, ownership, and setuid-like
+  transitions.
+- Root-equivalent UID 0 can mount devices, bind privileged endpoints, change
+  ownership, and configure global hardware tables.
+- Add per-process capability bits for narrower authority such as network
+  binding, adapter configuration, raw device access, and process inspection.
+- Good default if LNP64 wants to run conventional cloud software with minimal
+  runtime changes.
+
+Option B: pure object capabilities.
+
+- FDRs and process handles carry all authority.
+- No global root user; authority is delegated by passing capabilities.
+- Strong fit for hardware FDRs and least-privilege services.
+- Weakness: conventional POSIX software expects UID/GID checks and ambient
+  process authority.
+
+Option C: hybrid cloud profile.
+
+- Keep UID/GID and POSIX permission checks for compatibility.
+- Represent privileged powers as hardware capability bits attached to process
+  context.
+- Require both UID/GID permission and specific capability bits for dangerous
+  operations such as raw network access, mounting, adapter table loading,
+  cross-user `KILL`, and process memory inspection.
+- Best candidate for v1 because it preserves POSIX shape while avoiding a single
+  all-powerful root path in hardware.
+
+Recommended direction before freeze: use the hybrid cloud profile. Define a
+small capability bitmap in process context and require it for:
+
+- mount or remount device backends.
+- configure Ethernet filters and privileged ports.
+- access raw block devices.
+- load or replace device-driver support tables.
+- change UID/GID upward.
+- send signals across UID boundaries.
+- inspect or mutate another process.
+- alter global VFS metadata outside normal file permissions.
+
+## 21. DMA Fabric
 
 The DMA Fabric moves bytes between:
 
@@ -764,7 +1036,7 @@ The DMA fabric uses the MMU for user virtual addresses. If translation faults,
 the fault is routed back to the VMA Engine. The original operation remains
 blocked until the page fault resolves or fails.
 
-## 21. Boot Flow
+## 22. Boot Flow
 
 There is no boot CPU.
 
@@ -784,7 +1056,7 @@ Reset sequence:
 If no boot image is found, the reset controller enters a hardware panic state
 that emits a UART diagnostic and blinks a board LED pattern.
 
-## 22. Error Reporting
+## 23. Error Reporting
 
 Fallible POSIX-like instructions follow the emulator convention:
 
@@ -796,13 +1068,54 @@ Hardware engines write result registers only at command completion. If a thread
 is killed while an engine command is in flight, the Event Router cancels or
 detaches the command according to object type.
 
-## 23. FPGA Resource Strategy
+### 23.1 Failure and Cancellation Semantics
+
+Every long-latency hardware command has an operation id, owner PID, owner TID,
+target object id, cancellation policy, and completion record.
+
+Default rules:
+
+- If the issuing thread receives a fatal signal, cancellable operations are
+  canceled before signal termination completes.
+- If the issuing thread receives a handled signal while blocked in an
+  interruptible operation, the operation returns `-1` with `ERRNO=EINTR`.
+- Non-interruptible metadata commits run to completion once they pass their
+  commit point.
+- Closing an fd from another thread detaches future access immediately but does
+  not corrupt an operation that already holds an object reference.
+- Process exit cancels all cancellable operations owned by that process and
+  drops object references after completions or cancellations acknowledge.
+- `FORK` does not clone in-flight operation ownership into the child.
+- `EXEC` cancels or waits for all operations tied to the old address space
+  before replacing mappings.
+
+Operation classes:
+
+- `READ_FD`, `WRITE_FD`, Ethernet receive/transmit, UART waits, and file-backed
+  page reads are interruptible before DMA commit and return `EINTR` if canceled.
+- `RENAME_PATH`, `LINK_PATH`, `UNLINK_PATH`, `CHMOD_PATH`, `CHOWN_PATH`, and
+  directory entry mutations become non-interruptible after the VFS engine reaches
+  its serialized metadata commit point.
+- `MMAP` and `MUNMAP` are cancelable before page table publication; after
+  publication they complete and then report success or fault.
+- `EXEC` is cancelable before the new image commit point; after commit, the old
+  image no longer resumes.
+- `FORK` is cancelable before PID publication; after PID publication the child
+  must either become runnable or be reaped as a failed child with status.
+- `FUTEX_WAIT` is interruptible and returns `EINTR`; `FUTEX_WAKE` is
+  nonblocking and noncancelable once issued.
+
+Hardware engines must never deliver partial architectural writes to user memory
+unless the instruction's POSIX result reports the number of bytes actually
+transferred. Metadata operations are atomic at their documented commit point.
+
+## 24. FPGA Resource Strategy
 
 Likely expensive blocks:
 
 - VFS path resolver.
 - VMA and page table walker.
-- 256-entry FDR tables.
+- DDR-backed FDR table cache and descriptor walkers.
 - multi-context register storage.
 - DMA buffers.
 - SD and Ethernet adapters.
@@ -811,26 +1124,30 @@ To keep v1 feasible:
 
 - Use one shared POSIX engine pipeline rather than duplicating per thread.
 - Limit path length and component count.
-- Bound open files, processes, threads, VMAs, and wait queues.
+- Bound FPGA-local active windows for files, processes, threads, VMAs, and wait
+  queues while keeping architectural state in DDR.
 - Use DDR for large tables and FPGA RAM for hot caches.
 - Keep Ethernet simple.
-- Use a single in-order execution lane.
+- Use a small number of in-order coherent core tiles.
 
 Suggested v1 limits:
 
 ```text
-threads:          64
-processes:        16
-fdrs/process:     256
-vmas/process:     128
-path bytes:       512
-path components:  32
-open objects:     512
-futex buckets:    64
-pipe buffers:     DDR-backed, 4 KiB default
+core tiles:                      2-4 coherent in-order tiles for FPGA v1
+active hardware thread contexts: 64-256 on chip, DDR-backed spill
+architectural threads:           DDR-backed, at least 16384 system-wide
+process contexts:                DDR-backed, at least 4096 architectural PIDs
+fdrs/process:                    DDR-backed, default 4096, expandable higher
+pending events/process:          DDR-backed event queues, at least 4096
+futex buckets:                   4096+ global hash buckets, DDR-backed waiters
+vmas/process:                    DDR-backed, at least 4096
+path bytes:                      4096
+path components:                 256
+open objects:                    DDR-backed, at least 262144 system-wide
+pipe buffers:                    DDR-backed, 64 KiB default, resizable
 ```
 
-## 24. Verification Plan
+## 25. Verification Plan
 
 Verification should start at the architectural level before RTL:
 
@@ -856,7 +1173,7 @@ RTL simulation milestones:
 9. signals and futexes.
 10. Ethernet packet objects.
 
-## 25. Main Architectural Risk
+## 26. Main Architectural Risk
 
 The hard part is not the integer CPU. The hard part is bounding POSIX semantics
 so they fit into fixed hardware controllers. LNP64 v1 should deliberately define
