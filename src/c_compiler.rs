@@ -659,6 +659,7 @@ fn normalize_c_types(source: &str) -> String {
     out = out.replace("sizeof(regmatch_t)", "16");
     out = out.replace("sizeof(*pmatch)", "16");
     out = out.replace("sizeof(fd_set)", "8");
+    out = out.replace("sizeof(sigset_t)", "8");
     out = out.replace("sizeof(regex_t)", "16");
     out = out.replace("sizeof(*addr->u.re)", "16");
     out = out.replace("sizeof(*c->u.s.re)", "16");
@@ -697,6 +698,8 @@ fn normalize_c_types(source: &str) -> String {
         ("struct tm", "int"),
         ("fd_set *", "int "),
         ("fd_set", "int"),
+        ("sigset_t *", "int "),
+        ("sigset_t", "int"),
         ("struct recursor *", "int "),
         ("struct recursor", "int"),
         ("struct arg *", "int "),
@@ -6905,16 +6908,17 @@ impl CodeGen {
                     .push(format!("  RET_CAP r0, r{value0}, r{value1}"));
                 Ok(0)
             }
-            "pid" | "tid" | "uid" | "gid" => {
+            "pid" | "tid" | "uid" | "gid" | "getpid" | "gettid" | "getuid" | "geteuid"
+            | "getgid" | "getegid" => {
                 if !args.is_empty() {
                     return Err(format!("{name}() expects no arguments"));
                 }
                 let dst = self.alloc_reg()?;
                 let pcr = match name {
-                    "pid" => "PID",
-                    "tid" => "TID",
-                    "uid" => "UID",
-                    "gid" => "GID",
+                    "pid" | "getpid" => "PID",
+                    "tid" | "gettid" => "TID",
+                    "uid" | "getuid" | "geteuid" => "UID",
+                    "gid" | "getgid" | "getegid" => "GID",
                     _ => unreachable!(),
                 };
                 self.text.push(format!("  GET_PCR r{dst}, {pcr}"));
@@ -7318,6 +7322,39 @@ impl CodeGen {
                 let mask = self.one_arg(name, args)?;
                 self.text.push(format!("  SIGMASK_SET r{mask}"));
                 Ok(0)
+            }
+            "sigemptyset" => {
+                let set = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  ST [r{set}, 0], r0"));
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "sigfillset" => {
+                let set = self.one_arg(name, args)?;
+                let mask = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{mask}, -1"));
+                self.text.push(format!("  ST [r{set}, 0], r{mask}"));
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "sigaddset" | "sigdelset" | "sigismember" => {
+                if args.len() != 2 {
+                    return Err(format!("{name}(set, signum) expects 2 arguments"));
+                }
+                let set = self.emit_expr(&args[0])?;
+                let signum = self.emit_expr(&args[1])?;
+                self.emit_sigset_op(name, set, signum)
+            }
+            "sigprocmask" => {
+                if args.len() != 3 {
+                    return Err("sigprocmask(how, set, oldset) expects 3 arguments".to_string());
+                }
+                let how = self.emit_expr(&args[0])?;
+                let set = self.emit_expr(&args[1])?;
+                let oldset = self.emit_expr(&args[2])?;
+                self.emit_sigprocmask(how, set, oldset)
             }
             "kill" => {
                 if args.len() != 2 {
@@ -8575,6 +8612,102 @@ impl CodeGen {
             }
             _ => unreachable!(),
         }
+    }
+
+    fn emit_sigset_op(&mut self, name: &str, set: usize, signum: usize) -> Result<usize, String> {
+        let current = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let mask = self.alloc_reg()?;
+        let value = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        self.text.push(format!("  LD r{current}, [r{set}, 0]"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("  LSL r{mask}, r{one}, r{signum}"));
+        match name {
+            "sigaddset" => {
+                self.text
+                    .push(format!("  OR r{value}, r{current}, r{mask}"));
+                self.text.push(format!("  ST [r{set}, 0], r{value}"));
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "sigdelset" => {
+                self.text.push(format!("  NOT r{mask}, r{mask}"));
+                self.text
+                    .push(format!("  AND r{value}, r{current}, r{mask}"));
+                self.text.push(format!("  ST [r{set}, 0], r{value}"));
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "sigismember" => {
+                let false_label = self.new_label("sigismember_false");
+                let done = self.new_label("sigismember_done");
+                self.text
+                    .push(format!("  AND r{value}, r{current}, r{mask}"));
+                self.text.push(format!("  CMP r{value}, r0"));
+                self.text.push(format!("  BEQ {false_label}"));
+                self.text.push(format!("  LI r{dst}, 1"));
+                self.text.push(format!("  JMP {done}"));
+                self.text.push(format!("{false_label}:"));
+                self.text.push(format!("  LI r{dst}, 0"));
+                self.text.push(format!("{done}:"));
+                Ok(dst)
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn emit_sigprocmask(&mut self, how: usize, set: usize, oldset: usize) -> Result<usize, String> {
+        let current = self.alloc_reg()?;
+        let incoming = self.alloc_reg()?;
+        let updated = self.alloc_reg()?;
+        let block_value = self.alloc_reg()?;
+        let unblock_value = self.alloc_reg()?;
+        let setmask_value = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let skip_old = self.new_label("sigprocmask_skip_old");
+        let skip_set = self.new_label("sigprocmask_skip_set");
+        let do_block = self.new_label("sigprocmask_block");
+        let do_unblock = self.new_label("sigprocmask_unblock");
+        let do_setmask = self.new_label("sigprocmask_setmask");
+        let apply = self.new_label("sigprocmask_apply");
+        let done = self.new_label("sigprocmask_done");
+
+        self.text.push(format!("  GET_PCR r{current}, SIGMASK"));
+        self.text.push(format!("  CMP r{oldset}, r0"));
+        self.text.push(format!("  BEQ {skip_old}"));
+        self.text.push(format!("  ST [r{oldset}, 0], r{current}"));
+        self.text.push(format!("{skip_old}:"));
+        self.text.push(format!("  CMP r{set}, r0"));
+        self.text.push(format!("  BEQ {skip_set}"));
+        self.text.push(format!("  LD r{incoming}, [r{set}, 0]"));
+        self.text.push(format!("  LI r{block_value}, 0"));
+        self.text.push(format!("  CMP r{how}, r{block_value}"));
+        self.text.push(format!("  BEQ {do_block}"));
+        self.text.push(format!("  LI r{unblock_value}, 1"));
+        self.text.push(format!("  CMP r{how}, r{unblock_value}"));
+        self.text.push(format!("  BEQ {do_unblock}"));
+        self.text.push(format!("  LI r{setmask_value}, 2"));
+        self.text.push(format!("  CMP r{how}, r{setmask_value}"));
+        self.text.push(format!("  BEQ {do_setmask}"));
+        self.text.push(format!("  JMP {skip_set}"));
+        self.text.push(format!("{do_block}:"));
+        self.text
+            .push(format!("  OR r{updated}, r{current}, r{incoming}"));
+        self.text.push(format!("  JMP {apply}"));
+        self.text.push(format!("{do_unblock}:"));
+        self.text.push(format!("  NOT r{incoming}, r{incoming}"));
+        self.text
+            .push(format!("  AND r{updated}, r{current}, r{incoming}"));
+        self.text.push(format!("  JMP {apply}"));
+        self.text.push(format!("{do_setmask}:"));
+        self.text.push(format!("  MOV r{updated}, r{incoming}"));
+        self.text.push(format!("{apply}:"));
+        self.text.push(format!("  SET_PCR SIGMASK, r{updated}"));
+        self.text.push(format!("{skip_set}:"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("{done}:"));
+        Ok(dst)
     }
 
     fn emit_select(
@@ -11281,6 +11414,43 @@ int main() {
     }
 
     #[test]
+    fn c_posix_process_and_signal_mask_surface_runs() {
+        let source = r#"
+        int main() {
+            sigset_t set;
+            sigset_t old;
+            if (getpid() != pid()) return 1;
+            if (gettid() != tid()) return 2;
+            if (getuid() != uid()) return 3;
+            if (geteuid() != uid()) return 4;
+            if (getgid() != gid()) return 5;
+            if (getegid() != gid()) return 6;
+            if (sigemptyset(&set) != 0) return 7;
+            if (sigismember(&set, SIGINT) != 0) return 8;
+            if (sigaddset(&set, SIGINT) != 0) return 9;
+            if (sigismember(&set, SIGINT) != 1) return 10;
+            if (sigprocmask(SIG_BLOCK, &set, &old) != 0) return 11;
+            if (sigismember(&old, SIGINT) != 0) return 12;
+            if (sigprocmask(SIG_UNBLOCK, &set, &old) != 0) return 13;
+            if (sigismember(&old, SIGINT) != 1) return 14;
+            if (sigdelset(&set, SIGINT) != 0) return 15;
+            if (sigismember(&set, SIGINT) != 0) return 16;
+            if (sigfillset(&set) != 0) return 17;
+            if (sigismember(&set, SIGALRM) != 1) return 18;
+            if (sigemptyset(&set) != 0) return 19;
+            if (sigprocmask(SIG_SETMASK, &set, 0) != 0) return 20;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("GET_PCR"), "{asm}");
+        assert!(asm.contains("SET_PCR SIGMASK"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn efgetrune_reads_stdin_from_static_fd0() {
         let source = r#"
         int main() {
@@ -11327,6 +11497,7 @@ int main() {
             int ptr;
             int out;
             fd_set set;
+            sigset_t sigset;
             struct pollfd p[1];
             struct timespec ts;
             struct timeval tv;
@@ -11377,7 +11548,19 @@ int main() {
             tid();
             uid();
             gid();
+            getpid();
+            gettid();
+            getuid();
+            geteuid();
+            getgid();
+            getegid();
             set_sigmask(0);
+            sigemptyset(&sigset);
+            sigaddset(&sigset, SIGINT);
+            sigismember(&sigset, SIGINT);
+            sigprocmask(SIG_BLOCK, &sigset, &out);
+            sigdelset(&sigset, SIGINT);
+            sigfillset(&sigset);
             fork();
             waitpid(0, slot, 0);
             spawn(child);
