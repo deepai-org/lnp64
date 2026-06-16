@@ -35,6 +35,10 @@ LNP64 v1 must support:
 - Coherent multicore execution across multiple fabric CPU tiles.
 - External DDR virtual memory with hardware-managed translation and VMAs.
 - Hardware-backed UART, SD, SPI flash, and simplified Ethernet file objects.
+- PCIe host support through a hardware Root Complex, IOMMU, MSI routing, and a
+  privileged software Bus Master domain that mints FDR capabilities.
+- Paravirtual Unix guest support through supervisor domains and hardware
+  upcalls, without adding traditional hosted-OS rings or syscall traps.
 - Deterministic instruction decode with a fixed binary encoding.
 
 The v1 design is allowed to be slow for complex POSIX operations. For example,
@@ -49,9 +53,11 @@ LNP64 v1 does not attempt:
 
 - Out-of-order execution.
 - Speculative branch prediction.
-- Full Linux ABI compatibility.
-- Full POSIX edge-case compatibility.
-- A general PCIe device ecosystem.
+- Full Linux ABI compatibility directly in hardware; Linux compatibility is
+  provided by targeted runtimes or paravirtual personalities.
+- Full POSIX edge-case compatibility directly in hardware.
+- A fully general PCIe device ecosystem with arbitrary hotplug and every
+  vendor-specific quirk solved in hardware.
 - Loadable microcode in the first FPGA implementation.
 
 `LOAD_UCODE` is decoded in v1 as a reserved device-driver hook, but the FPGA v1
@@ -81,6 +87,10 @@ The chip is organized as these blocks:
 - Process Engine.
 - Signal Engine.
 - Futex and Atomic Engine.
+- Supervisor Domain and Upcall Engine.
+- PCIe Root Complex.
+- PCIe IOMMU / DMA Remapper.
+- PCIe MSI/MSI-X Event Router.
 - DMA Fabric.
 - Device adapters for UART, SD card, SPI flash, and Ethernet.
 - DDR Memory Controller Interface.
@@ -146,7 +156,7 @@ fields use the low bits of the 8-bit slots:
 - FDR: 8 bits, values `0..255`.
 - PCR: 4 bits.
 - condition: 3 bits.
-- width: 2 bits, `0=byte`, `1=word32`, `2=double64`.
+- width: 2 bits, `0=byte`, `1=half16`, `2=word32`, `3=double64`.
 
 ### 6.1 Formats
 
@@ -208,6 +218,8 @@ a=gpr value, b=base gpr, width=flags[1:0], imm24=signed byte offset
 ```
 
 Used by `LD` and `ST`. For `ST`, `a` is source. For `LD`, `a` is destination.
+The assembler exposes width suffixes `LD.B`, `LD.H`, `LD.W`, `LD.D`, `ST.B`,
+`ST.H`, `ST.W`, and `ST.D`.
 
 `F6`: static FDR operation.
 
@@ -305,6 +317,10 @@ The opcode map is fixed, but sparse:
 43 PIPE
 44 ERRNO_GET
 45 ERRNO_SET
+46 PREAD_FD
+47 PREAD_FD_DYN
+48 PWRITE_FD
+49 PWRITE_FD_DYN
 
 50 WAIT_PID
 51 GET_PCR
@@ -322,6 +338,7 @@ The opcode map is fixed, but sparse:
 63 SIGMASK_SET
 64 KILL
 65 SIGRET
+66 MPROTECT
 
 70 LOCK_CMPXCHG
 71 FUTEX_WAIT
@@ -541,10 +558,12 @@ LNP64 v1 fixes these constants:
 - page size: 4 KiB.
 - cache line size: 64 bytes.
 - instruction size: 64 bits, naturally aligned.
-- integer load/store widths: 8, 32, and 64 bits.
+- integer load/store widths: 8, 16, 32, and 64 bits.
 - atomic width for `LOCK_CMPXCHG`: 64 bits in v1.
 - vector register width: 128 bits.
 - floating point format: IEEE-754 binary64.
+- VMA memory types: `normal_cached`, `uncached`, `device_ordered`,
+  `write_combining`.
 
 Alignment rules:
 
@@ -556,11 +575,26 @@ Alignment rules:
   partial architectural write.
 - `LOCK_CMPXCHG` requires 8-byte alignment; misalignment raises `SIGBUS`.
 
+Device VMA rules:
+
+- `device_ordered` mappings are uncached and strongly ordered for CPU
+  loads/stores.
+- `write_combining` mappings may combine writes but must not cache reads; this
+  is required for GPU framebuffers and high-throughput device windows.
+- device mappings are never executable.
+- device mappings are created only by `MMAP` on an FDR whose object class grants
+  device memory authority, such as `pcie_bar`.
+- after a device mapping is installed, ordinary `LD` and `ST` instructions use
+  the TLB/PTE memory type; there is no FDR lookup or capability check on every
+  device access.
+
 `FENCE` semantics:
 
 - drains prior stores from the issuing core into the coherent fabric.
 - waits for invalidation acknowledgements required by prior stores.
 - orders prior DMA-visible writes before later DMA or device operations.
+- orders device MMIO loads/stores against DMA and normal memory when required
+  by the mapped memory type.
 - orders prior POSIX engine completions before later ordinary memory operations.
 - does not flush unrelated cache lines.
 
@@ -606,6 +640,19 @@ The global arbiter handles wakeups, new threads, thread migration, load
 balancing, and work stealing. It should use round-robin in v1. Priority can be
 added later.
 
+Timer and event-queue FDRs:
+
+- A `timer` FDR represents a one-shot or periodic monotonic/realtime timer.
+- An `event_queue` FDR aggregates readiness from other FDRs: file/device
+  readiness, timers, child exit, signal delivery, futex events, supervisor
+  upcalls, and PCIe IRQ event FDRs.
+- `WAIT_ON_FD` can block on an `event_queue` FDR and wake when any member source
+  becomes ready.
+- Event queue records are fixed-width, versioned, and carry source fd/object id,
+  event mask, result code, and optional operation id.
+- This is the hardware substrate for `poll`, `select`, `epoll`, `kqueue`,
+  timeout waits, and supervisor-domain event dispatch.
+
 ## 12. Capability File Descriptor Registers
 
 FDRs are not integer registers. Each process owns a DDR-backed hardware FDR
@@ -617,11 +664,17 @@ Each FDR entry contains:
 - valid bit.
 - object class: `closed`, `regular_file`, `directory`, `char_stream`,
   `block_device`, `pipe_read`, `pipe_write`, `socket`, `listener`,
-  `event_queue`, `control`.
+  `event_queue`, `timer`, `control`, `pci_function`, `pcie_bar`, `dma_buffer`,
+  `irq_event`, `gpu_device`, `accelerator`.
 - backend id: `none`, `uart0`, `sd0`, `spi_flash0`, `eth0`, `ramfs`,
-  `pipe_engine`, `socket_engine`, `vfs_engine`.
+  `pipe_engine`, `socket_engine`, `vfs_engine`, `supervisor_engine`,
+  `pcie_root`, `pcie_iommu`, `pcie_msi`, `nvme_driver`, `ethernet_driver`,
+  `gpu_driver`.
 - protocol or subtype: `raw_frame`, `udp_datagram`, `stream`, `block_extent`,
-  `tty`, `control`, or backend-defined.
+  `block_image`, `tty`, `control`, `pci_config`, `bar_mmio`,
+  `timer_oneshot`, `timer_periodic`, `msi_vector`, `msix_vector`,
+  `pinned_dma`, `framebuffer`, or
+  backend-defined.
 - rights: read, write, seek, stat, directory, execute, poll.
 - object id.
 - current offset.
@@ -770,6 +823,74 @@ Supported model:
 The VFS can expose network endpoints under paths such as `/dev/eth0` or
 `/net/udp/<port>`.
 
+### 14.6 PCIe Host Support
+
+PCIe support preserves the POSIX-native model by exposing devices as FDR
+capabilities. The FPGA v1 hardware includes the pieces that must be in hardware
+for safety and link operation, while PCIe enumeration and quirks are handled by
+a trusted software Bus Master process.
+
+Hardware responsibilities:
+
+- PCIe Root Complex link management, transaction layer, and physical interface,
+  likely using vendor FPGA IP.
+- IOMMU / DMA remapper so PCIe devices can DMA only into buffers explicitly
+  exported by the VMA/DMA engine.
+- MSI/MSI-X event routing into `irq_event` FDRs.
+- device-memory PTE attributes for BAR mappings.
+- reset-time creation of a single Bus Master authority domain.
+
+Bus Master responsibilities:
+
+- enumerate PCIe bus/device/function topology.
+- read and write config space through its privileged root-complex mapping.
+- assign BARs and handle device quirks in software.
+- configure IOMMU mappings and MSI/MSI-X vectors.
+- mint `pci_function`, `pcie_bar`, `dma_buffer`, and `irq_event` FDRs.
+- delegate those FDRs to driver processes through normal capability passing.
+- publish higher-level device FDRs such as block, network, GPU, or accelerator
+  objects under the hardware VFS.
+
+Raw PCIe config and BAR access is granted only to the Bus Master at boot. Normal
+applications never receive ambient MMIO authority. Driver processes receive only
+the FDRs explicitly delegated to them.
+
+`pcie_bar` FDRs:
+
+- are pure capabilities; possession of a valid `pcie_bar` FDR is the authority
+  to map that BAR range.
+- are page-granular: BAR offset and length must be multiples of the system page
+  size.
+- carry device/function id, BAR number, page base, page count, allowed read/write
+  permissions, memory type, and ordering domain.
+- may use `device_ordered`, `uncached`, or `write_combining` VMA memory types.
+- are mapped with `MMAP`; after mapping, driver code uses ordinary `LD` and
+  `ST` instructions for doorbells and status registers.
+- are never executable.
+
+The VMA engine enforces `pcie_bar` authority only at `MMAP` time. It does not
+perform sub-page bounds checks or FDR checks on every load/store. After mapping,
+access control and memory type are represented by standard PTE bits.
+
+`dma_buffer` FDRs:
+
+- represent pinned, device-visible memory ranges.
+- are exported to a specific PCIe requester id through the IOMMU.
+- may be shared between a driver process and a device without exposing unrelated
+  physical memory.
+- must be revoked or quiesced before their backing pages are unmapped.
+
+`irq_event` FDRs:
+
+- receive MSI/MSI-X events as fixed-size records.
+- support `WAIT_ON_FD` for interrupt-driven drivers.
+- may be delegated per-vector so a driver receives only interrupts for its
+  assigned device/function.
+
+This model deliberately avoids a large hardware PCIe enumerator or BAR command
+parser. PCIe complexity and quirks live in one isolated Bus Master process, but
+the rest of the system still sees devices as POSIX-native capabilities.
+
 ## 15. File and Directory Instructions
 
 All file instructions are decoded into File Operation Engine commands.
@@ -796,6 +917,15 @@ All file instructions are decoded into File Operation Engine commands.
 - DMA from user buffer to backend.
 - update offset or append metadata.
 - write byte count to `r1`.
+
+`PREAD_FD`, `PREAD_FD_DYN`, `PWRITE_FD`, and `PWRITE_FD_DYN`:
+
+- validate capability and read/write rights.
+- use an explicit byte offset register instead of the descriptor's current
+  offset.
+- do not mutate the descriptor offset.
+- are the preferred interface for paravirtual block devices, concurrent file
+  servers, and Linux/NetBSD guest block layers.
 
 `READDIR_FD`:
 
@@ -880,7 +1010,23 @@ The VMA Engine:
 - allocates a VMA descriptor in DDR.
 - inserts it into the process VMA tree.
 - marks pages nonresident for file-backed mappings or zero-fill for anonymous.
+- for `pcie_bar` FDRs, validates page-granular BAR bounds and installs device
+  PTEs with the FDR's allowed permissions and memory type.
+- for `dma_buffer` FDRs, maps pinned DMA-safe pages with normal cached or
+  device-appropriate attributes as specified by the FDR.
 - returns the virtual address in `r_dest`.
+
+`MMAP` protection flags include:
+
+- read, write, execute.
+- private or shared.
+- requested memory type: `normal_cached`, `uncached`, `device_ordered`, or
+  `write_combining`.
+
+For normal files and anonymous memory, unsupported memory type requests fail
+with `EINVAL`. For `pcie_bar` FDRs, the requested memory type must be permitted
+by the FDR and the mapping must be page-aligned. No sub-page BAR capability is
+architectural in v1.
 
 `MUNMAP`:
 
@@ -889,6 +1035,15 @@ The VMA Engine:
 - decrements page refcounts.
 - invalidates matching TLB entries for that process.
 - writes success or errno.
+
+`MPROTECT`:
+
+- finds existing VMAs covering the requested range.
+- updates read/write/execute and sharing permission bits.
+- invalidates matching TLB and instruction-cache entries where permissions
+  require it.
+- is required for ELF loaders, language runtimes, JIT policy, guard pages, and
+  paravirtual Unix guests mapping their own process abstractions onto LNP64 VMAs.
 
 The VMA tree can be a hardware-walked B-tree or interval tree in DDR. For FPGA
 v1, a sorted VMA array per process is acceptable if bounded and checked in
@@ -1007,10 +1162,150 @@ small capability bitmap in process context and require it for:
 - configure Ethernet filters and privileged ports.
 - access raw block devices.
 - load or replace device-driver support tables.
+- hold the PCIe Root Complex control FDR used by the Bus Master.
 - change UID/GID upward.
 - send signals across UID boundaries.
 - inspect or mutate another process.
 - alter global VFS metadata outside normal file permissions.
+
+PCIe delegation follows pure capability rules after bootstrapping. The Bus
+Master is trusted because reset grants it the PCIe Root Complex and config-space
+authority. Driver processes do not need a separate `driver_domain` bit to map a
+BAR: possession of a valid `pcie_bar` FDR is the authority. The hardware VMA
+engine checks only the FDR class, rights, page-granular bounds, and memory type
+permissions at `MMAP` time.
+
+### 20.2 Paravirtual Unix Guest Profile
+
+LNP64 does not add a conventional hosted-OS profile with kernel rings, software
+page tables, mandatory syscall traps, or an OS-owned scheduler. A future
+Linux/NetBSD port is made plausible by treating the kernel as a paravirtual Unix
+personality process running on top of native LNP64 POSIX hardware.
+
+The silicon remains authoritative for:
+
+- hardware process and thread creation.
+- runqueue scheduling and context storage.
+- VMA creation, teardown, page faults, and copy-on-write.
+- FDR capabilities and hardware VFS object references.
+- signals, futex queues, fd readiness, and DMA completion.
+
+The guest kernel/personality owns:
+
+- Linux/BSD-specific process metadata.
+- namespaces, cgroups, jails, credentials, and policy state.
+- emulation of APIs not directly represented by LNP64 opcodes.
+- Linux syscall-number compatibility where a syscall-compatible runtime is used.
+- filesystem images mounted inside hardware VFS files.
+- network stack policy above raw frame or datagram hardware objects.
+- compatibility ABIs and userland conventions.
+
+Targeted compatibility approaches:
+
+- Linux as a paravirtual personality: a Linux kernel port runs as a supervisor
+  process over a delegated LNP64 process subtree. It maps Linux tasks, files,
+  memory mappings, futexes, signals, and devices onto native hardware
+  primitives.
+- Linux syscall compatibility runtime: a loader/libc/runtime maps Linux syscall
+  ABI calls onto native LNP64 instructions without booting a full Linux kernel.
+  This is the shortest path to running many cloud-oriented programs.
+- NetBSD rump-kernel style: selected NetBSD filesystem, networking, or device
+  stacks run as LNP64 service processes. They receive block, network, PCIe, or
+  delegated namespace FDRs and expose services back through native FDRs.
+
+Non-targeted approach:
+
+- A full traditional Linux/NetBSD port that owns page tables, context switching,
+  interrupts, and raw devices is not a v1 design target.
+
+Supervisor domains:
+
+- A process with the `supervisor_domain` capability may create a delegated
+  process subtree.
+- Native processes inside that subtree are bound to the supervisor's policy
+  domain.
+- The supervisor may receive upcalls for selected events from its subtree.
+- Hardware still executes native opcodes directly; the supervisor is a policy
+  and compatibility layer, not the scheduler or MMU owner.
+
+Upcall events:
+
+- unsupported or disabled opcode attempted by a supervised process.
+- Linux syscall-ABI event emitted by a syscall compatibility runtime.
+- permission denial that the domain policy may virtualize.
+- child exit, signal delivery, fd readiness, futex wait/wake, timer expiry.
+- namespace lookup events for paths delegated to the guest personality.
+- block-image completion events for guest filesystems.
+- process creation, exec, exit, and memory map changes.
+
+Upcalls are delivered through a domain control FDR with object class `control`
+and backend `vfs_engine` or `supervisor_engine`. The control FDR exposes event
+records through `READ_FD` and accepts policy commands through `WRITE_FD`. This
+keeps the mechanism inside the FDR model instead of introducing a traditional
+syscall path.
+
+The upcall record format must be fixed-width, versioned, and endian-stable. At
+minimum it carries event type, source PID/TID, domain id, object id or fd index,
+operation id, errno/result fields, and four 64-bit argument slots. Larger event
+payloads are referenced by FDR-backed buffers rather than embedded in the event
+record.
+
+Delegated namespaces:
+
+- The hardware VFS may delegate a subtree to a supervisor domain.
+- Native path resolution enters the domain policy only at configured delegation
+  points.
+- The guest may implement Linux mount namespaces, bind mounts, procfs-like
+  synthetic trees, or BSD jail views above those delegated roots.
+- Non-delegated hardware paths remain resolved directly by the Silicon VFS.
+
+Block-image FDRs:
+
+- A regular hardware file may be opened as an object class `block_device` with
+  subtype `block_image`.
+- The guest block layer uses `PREAD_FD` and `PWRITE_FD` against explicit byte
+  offsets rather than descriptor seek state.
+- Linux ext4, NetBSD FFS, or other guest filesystems can live inside one or more
+  large hardware VFS files.
+- Hardware does not need to understand those guest filesystem formats.
+
+Task mapping:
+
+- Linux/BSD threads map one-to-one to LNP64 hardware threads where practical.
+- The guest scheduler becomes a policy layer that creates, parks, wakes, and
+  accounts for native hardware threads.
+- The hardware scheduler still performs actual dispatch and context switching.
+- Guest preemption can be modeled through cooperative yield points, timer
+  upcalls to the supervisor domain, and hardware thread park/wake commands.
+
+Memory mapping:
+
+- The guest memory manager uses `MMAP`, `MUNMAP`, and `MPROTECT` to request
+  hardware VMAs.
+- It does not write page tables directly.
+- Guest copy-on-write and process isolation are represented as LNP64 VMA and
+  COW operations inside the delegated domain.
+
+ABI requirements:
+
+- LNP64 needs a stable psABI: calling convention, callee-saved registers, stack
+  alignment, process entry layout, `argv`/`envp`/auxv layout, TLS register or
+  TLS lookup mechanism, errno convention, and signal frame layout.
+- The Linux syscall compatibility runtime needs a stable Linux-call dispatch
+  ABI even if the hardware itself has no `SYSCALL` instruction. A conventional
+  trap is not required; the runtime may use a reserved illegal opcode, a call
+  gate function, or a control-FDR command path.
+- Time support must include monotonic time, realtime clock, timer FDRs, and
+  timer upcalls so `clock_gettime`, sleeps, timeouts, poll/epoll emulation, and
+  scheduler accounting can be implemented.
+- Event waiting needs a stable aggregation object that can wait on fd readiness,
+  timer expiry, child exit, signal delivery, futex events, and supervisor
+  upcalls. `WAIT_ON_FD` is the primitive, but runtimes need a way to construct
+  event-queue FDRs that represent sets of wait sources.
+
+This profile preserves the LNP64 thesis: Linux/NetBSD can become personalities
+that project their semantics onto native POSIX hardware, rather than forcing the
+chip to become a conventional trap-and-kernel machine.
 
 ## 21. DMA Fabric
 
@@ -1021,6 +1316,7 @@ The DMA Fabric moves bytes between:
 - SPI flash streams.
 - UART FIFOs.
 - Ethernet RX/TX buffers.
+- PCIe DMA buffers.
 - VFS metadata buffers.
 
 Every DMA command carries:
@@ -1031,10 +1327,16 @@ Every DMA command carries:
 - direction.
 - fault policy.
 - completion target TID or engine.
+- optional PCIe requester id and IOMMU context.
 
 The DMA fabric uses the MMU for user virtual addresses. If translation faults,
 the fault is routed back to the VMA Engine. The original operation remains
 blocked until the page fault resolves or fails.
+
+For PCIe, the DMA Fabric and IOMMU jointly enforce that a device can access only
+pages exported through a valid `dma_buffer` FDR. Revocation requires the Bus
+Master or driver to quiesce the device, tear down IOMMU entries, and wait for
+in-flight DMA completion before the VMA Engine releases the backing pages.
 
 ## 22. Boot Flow
 
@@ -1048,10 +1350,12 @@ Reset sequence:
 4. VFS engine mounts boot backend from SD or SPI flash.
 5. Process Engine creates PID 1, TID 1, UID 0.
 6. FDR table binds `fd0`, `fd1`, `fd2` to UART.
-7. VFS resolves `/sbin/init`.
-8. `EXEC` engine loads `/sbin/init` into PID 1.
-9. Scheduler marks TID 1 ready.
-10. Fetch begins at PID 1 entry point.
+7. If PCIe is present, Root Complex link training completes and a privileged
+   PCIe Bus Master process is created or scheduled from the boot image.
+8. VFS resolves `/sbin/init`.
+9. `EXEC` engine loads `/sbin/init` into PID 1.
+10. Scheduler marks TID 1 ready.
+11. Fetch begins at PID 1 entry point.
 
 If no boot image is found, the reset controller enters a hardware panic state
 that emits a UART diagnostic and blinks a board LED pattern.
@@ -1172,6 +1476,21 @@ RTL simulation milestones:
 8. `EXEC` from SD.
 9. signals and futexes.
 10. Ethernet packet objects.
+11. `PREAD_FD`/`PWRITE_FD` block-image object.
+12. supervisor-domain control FDR and upcall delivery.
+13. minimal paravirtual Unix personality that boots a guest init process over
+    native LNP64 tasks and a block-image filesystem.
+14. Linux syscall compatibility runtime for a static userland smoke test:
+    open/read/write/mmap/futex/clock/wait/exec paths mapped to native opcodes.
+15. NetBSD rump-kernel style filesystem service over a block-image FDR, exposed
+    back through delegated native FDRs.
+16. PCIe Root Complex smoke test with Bus Master config-space enumeration.
+17. page-granular `pcie_bar` FDR minting and `MMAP` to device-ordered and
+    write-combining VMAs.
+18. `dma_buffer` FDR export through IOMMU and revocation after DMA quiesce.
+19. MSI/MSI-X delivery through `irq_event` FDRs and `WAIT_ON_FD`.
+20. simple NVMe or NIC driver domain using BAR `LD`/`ST`, DMA buffers, and IRQ
+    events to publish high-level block or network FDRs.
 
 ## 26. Main Architectural Risk
 

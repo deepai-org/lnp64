@@ -44,8 +44,13 @@ System calls are replaced by direct VFS-microcode instructions.
     *   *Action:* Initiates a DMA transfer from `r_buf_ptr` to the device backing `fd_dest`.
 *   **`WRITE_FD_DYN r_fd_dest, r_buf_ptr, r_len`**
     *   *Action:* Dynamic-fd write. Returns the byte count in `r1`, or `-1` with `ERRNO` set.
+*   **`PREAD_FD fd_src, r_buf_ptr, r_len, r_offset`** / **`PREAD_FD_DYN r_fd_src, r_buf_ptr, r_len, r_offset`**
+    *   *Action:* Reads from an explicit file offset without changing the descriptor's current offset. This is the preferred primitive for concurrent file servers and paravirtual block devices.
+*   **`PWRITE_FD fd_dest, r_buf_ptr, r_len, r_offset`** / **`PWRITE_FD_DYN r_fd_dest, r_buf_ptr, r_len, r_offset`**
+    *   *Action:* Writes to an explicit file offset without changing the descriptor's current offset. Hardware validates descriptor rights and performs DMA through the VMA engine.
 *   **`WAIT_ON_FD fd_src, r_events_mask`**
     *   *Action:* The ultimate hardware `epoll`. The current thread is immediately removed from the hardware runqueue and parked. When the NIC or NVMe controller fires an interrupt matching the `fd_src` and `r_events_mask`, the thread is instantly pushed to the top of the runqueue.
+    *   *Event Queues:* `fd_src` may name an `event_queue` FDR aggregating file readiness, timer expiry, child exit, signal delivery, futex events, PCIe IRQ events, and supervisor upcalls. This is the native substrate for `poll`, `epoll`, `kqueue`, and timeout waits.
 *   **`FD_CLOSE fd_src`**
     *   *Action:* Releases the hardware VFS object bound to `fd_src` and marks the descriptor closed.
 *   **`FD_CLOSE_DYN r_fd_src`**
@@ -84,8 +89,11 @@ Page tables are managed entirely by the CPU's MMU microcode via a hardware Red-B
 
 *   **`MMAP r_dest, r_hint_addr, r_len, r_prot, fd_src, r_offset`**
     *   *Action:* Hardware allocates physical pages and inserts a new VMA node into the current PID's silicon VMA tree. If `fd_src` is valid, configures hardware page-fault handlers to fetch from the storage controller. Returns the mapped virtual address in `r_dest`.
+    *   *Protection Flags:* `r_prot` includes read/write/execute, shared/private, and memory type: `normal_cached`, `uncached`, `device_ordered`, or `write_combining`.
 *   **`MUNMAP r_addr, r_len`**
     *   *Action:* CPU instantly invalidates the VMA range, flushes the relevant TLB entries, and marks the physical pages as free in the hardware memory allocator.
+*   **`MPROTECT r_addr, r_len, r_prot`**
+    *   *Action:* Updates the protection bits for an existing VMA range and invalidates affected translations. This supports ELF loaders, guard pages, W^X policy, and paravirtual Unix guests that map their process abstractions onto LNP64 VMAs.
 
 ## 5. Signal Handling
 Signals are no longer software constructs; they are asynchronous hardware interrupts delivered directly to the thread.
@@ -112,10 +120,12 @@ The LNP64 is a strict Load/Store architecture. ALUs only operate on registers. H
 
 *   **`LD r_dest, [r_base, r_offset]`**
     *   *Action:* Loads a 64-bit word from the virtual address `r_base + r_offset` into `r_dest`.
-*   **`LD.B`, `LD.W`, `LD.D`**
-    *   *Action:* Byte (8-bit), Word (32-bit), and Double-word (64-bit) load variants.
+*   **`LD.B`, `LD.H`, `LD.W`, `LD.D`**
+    *   *Action:* Byte (8-bit), Half-word (16-bit), Word (32-bit), and Double-word (64-bit) load variants.
 *   **`ST [r_base, r_offset], r_src`**
     *   *Action:* Stores the contents of `r_src` into memory. Hardware automatically updates the "Dirty" bit in the silicon page table.
+*   **`ST.B`, `ST.H`, `ST.W`, `ST.D`**
+    *   *Action:* Byte, half-word, word, and double-word store variants. Half-word access is included so PCIe BAR mappings can use native 16-bit register accesses when required.
 *   **`FENCE`**
     *   *Action:* Memory barrier. Ensures all previous memory operations and hardware DMA transfers (from `READ_FD`/`WRITE_FD`) are globally visible before proceeding.
 
@@ -176,13 +186,36 @@ Because the CPU manages threads in a hardware runqueue, traditional software spi
 *   **`FUTEX_WAKE [r_addr], r_num_threads`**
     *   *Action:* The memory controller checks if any threads are parked on `[r_addr]`. If so, it instantly pushes `r_num_threads` back onto the active runqueue.
 
-### 11. The Device Driver Problem (Microcode Modules)
-If the VFS is baked into silicon, how does the CPU know how to talk to a newly released GPU or a weird USB accessory? We cannot hardwire every PCIe device into the CPU. We solve this with **Loadable Microcode Modules** (the hardware equivalent of Linux Kernel Modules / eBPF).
+### 11. The Device Driver Problem (PCIe Bus Master + Capability Devices)
+If the VFS is baked into silicon, how does the CPU know how to talk to a newly released GPU, NVMe drive, or network card? We do **not** hardwire the full PCIe enumeration and quirk universe into the CPU. The hardware provides the safety-critical substrate, and a trusted software **PCIe Bus Master** domain handles the messy device-specific reality.
+
+The v1 hardware includes:
+
+*   PCIe Root Complex link support.
+*   IOMMU / DMA remapping.
+*   MSI/MSI-X interrupt routing into FDR event objects.
+*   Page-table memory types for device mappings: `device_ordered`, `uncached`, and `write_combining`.
+
+The PCIe Bus Master is a privileged process created from the boot image. It alone receives the PCIe Root Complex control capability. It enumerates bus/device/function topology, assigns BARs, handles quirks, configures IOMMU entries, and mints FDR capabilities for driver processes.
+
+Driver processes receive capabilities such as:
+
+*   `pci_function` FDRs for device identity and config ownership.
+*   `pcie_bar` FDRs for page-granular BAR windows.
+*   `dma_buffer` FDRs for pinned, IOMMU-exported memory.
+*   `irq_event` FDRs for MSI/MSI-X vectors.
+*   Higher-level `block_device`, `net_device`, `gpu_device`, or `accelerator` FDRs published after a driver binds.
+
+For high-performance MMIO, a driver calls `MMAP` on a `pcie_bar` FDR. The VMA engine maps that BAR range into the driver's address space with `device_ordered` or `write_combining` PTE attributes. The driver then uses ordinary `LD` and `ST` instructions for doorbells, status registers, and framebuffers. There is no `READ_FD`/`WRITE_FD` command wrapper per register access.
+
+PCIe BAR capabilities are page-granular. The Bus Master may mint only BAR FDRs whose offset and length are multiples of the system page size. The VMA engine checks the FDR at `MMAP` time and then relies on PTE permissions and memory type bits; it does not add sub-page bounds checks to every load/store.
+
+This preserves the rule that ambient MMIO is forbidden. A process cannot load/store arbitrary physical device addresses. But if it holds a specific `pcie_bar` FDR, that FDR is the capability granting the right to map and access that device page range.
 
 *   **`INB r_dest, r_port` / `OUTB r_port, r_src`**
-    *   *Action:* Raw hardware port I/O for fallback communication.
+    *   *Action:* Reserved fallback/debug port I/O for trusted boot or Bus Master code. Normal applications and ordinary drivers use FDR capabilities and `MMAP`-mapped BARs instead.
 *   **`LOAD_UCODE r_buf_ptr, r_len`**
-    *   *Action:* (Requires `UID == 0`). Loads a blob of microcode into the CPU's internal VFS translation unit. This teaches the hardware how to translate standard `READ_FD` / `WRITE_FD` instructions into the specific PCIe memory-mapped I/O required by a new device.
+    *   *Action:* Reserved device-driver acceleration hook. In FPGA v1 this is a stub; it does not replace the Bus Master, IOMMU, BAR FDR, or capability-delegation model.
 
 ### 12. Floating Point & Vector Math (FPU/SIMD)
 General compute isn't just integers. We need a standard IEEE 754 Floating Point Unit and SIMD (Single Instruction, Multiple Data) for multimedia and AI.
@@ -198,43 +231,89 @@ How does this machine actually turn on if there is no bootloader or kernel to lo
 Upon receiving power, the LNP64 executes a hardwired microcode sequence:
 1.  Initializes the hardware VMA tree and runqueue.
 2.  Creates a root hardware `task_struct` (PID 1, UID 0).
-3.  Probes the PCIe bus for the primary NVMe drive.
-4.  Automatically executes an internal equivalent of `OPEN_FD fd0, "/sbin/init"` and `EXEC fd0`.
-5.  If `/sbin/init` is missing, the CPU halts with a hardware `#PANIC` interrupt (flashing an LED on the motherboard).
+3.  Mounts the boot VFS from SD, SPI flash, or another already-described boot backend.
+4.  Starts the PCIe Bus Master if a PCIe fabric is present, allowing it to enumerate NVMe, NICs, GPUs, and other devices.
+5.  Automatically executes an internal equivalent of `OPEN_FD fd0, "/sbin/init"` and `EXEC fd0`.
+6.  If `/sbin/init` is missing, the CPU halts with a hardware `#PANIC` interrupt (flashing an LED on the motherboard).
+
+### 14. Paravirtual Unix Guest Profile
+LNP64 does **not** add traditional kernel rings, mandatory syscall traps, or OS-owned page tables just to make Linux or NetBSD feel at home. The hardware remains POSIX-native. A Unix kernel port is plausible by treating Linux/NetBSD as a paravirtual personality process, similar in spirit to User-Mode Linux or a microkernel guest.
+
+In this model, the silicon remains authoritative for:
+
+*   Hardware process and thread creation.
+*   Runqueue scheduling and context switching.
+*   VMA creation, teardown, page faults, and copy-on-write.
+*   File descriptor capabilities and Silicon VFS object references.
+*   Signals, futex queues, fd readiness, and DMA completion.
+
+The Linux/NetBSD personality owns:
+
+*   Linux/BSD-specific process metadata, namespaces, cgroups, jails, and policy.
+*   Compatibility APIs not directly represented by LNP64 opcodes.
+*   Guest filesystems mounted inside large hardware VFS files.
+*   Network stack policy above raw frame or datagram hardware objects.
+*   Userland ABI conventions.
+
+The targeted compatibility approaches are:
+
+*   **Linux as a paravirtual personality:** A Linux kernel port runs as a supervisor process over a delegated LNP64 process subtree. Linux tasks, files, memory mappings, signals, futexes, and devices are projected onto native hardware primitives.
+*   **Linux syscall compatibility runtime:** A loader/libc/runtime maps Linux syscall ABI calls onto native LNP64 instructions without booting a full Linux kernel. This is the shortest path to running many cloud-oriented programs.
+*   **NetBSD rump-kernel style:** Selected NetBSD filesystem, networking, or device stacks run as LNP64 service processes. They receive block, network, PCIe, or delegated namespace FDRs and expose services back through native FDRs.
+
+A full traditional Linux/NetBSD port that owns page tables, context switching, interrupts, and raw devices is not the v1 target.
+
+The key hardware mechanism is a **supervisor domain**, not a privilege ring. A capability-marked process can create a delegated process subtree and receive upcalls for selected events: unsupported opcodes, delegated namespace lookups, permission decisions, child exit, signal delivery, fd readiness, timer expiry, futex events, block-image completion, and process lifecycle changes.
+
+Upcalls are delivered through a normal FDR with object class `control`. The supervisor reads event records with `READ_FD` and writes policy commands with `WRITE_FD`. This keeps the design inside the FDR/VFS model instead of reintroducing a syscall path.
+
+For this to be practical, LNP64 needs a stable psABI: calling convention, process entry layout, TLS, signal frame layout, errno convention, time/timer FDRs, and event-queue FDRs that can aggregate fd readiness, timers, child exit, signals, futex events, and supervisor upcalls.
+
+For storage, a guest kernel can treat a large hardware VFS file as a paravirtual block device. It uses `PREAD_FD` and `PWRITE_FD` with explicit offsets, then mounts ext4, FFS, or another guest filesystem inside that image. The hardware VFS provides the outer object and DMA; the guest kernel provides the inner filesystem semantics.
+
+For physical PCIe devices, the PCIe Bus Master delegates `pcie_bar`, `dma_buffer`, and `irq_event` FDRs to guest or native driver processes. Drivers map BARs with `MMAP`, use `LD`/`ST` for device registers, use DMA buffer FDRs for device-visible memory, and wait on IRQ event FDRs for MSI/MSI-X completion.
+
+For memory, the guest uses `MMAP`, `MUNMAP`, and `MPROTECT` to request native hardware VMAs. It does not write page tables directly. Linux/BSD tasks map one-to-one to hardware threads where practical, while the guest scheduler becomes an accounting and policy layer over the hardware runqueue.
+
+This preserves the vision: Linux and NetBSD can be personalities projected onto native POSIX silicon, rather than forcing LNP64 to become another trap-and-kernel RISC machine.
 
 ### The Final Verdict
 With these additions, the LNP64 is complete. You have a processor that boots straight into an `init` process, natively understands files and threads, handles page faults in microcode, and routes network packets directly to userspace registers without a single kernel context switch. 
 
 It would be the fastest, most violently uncompromising server chip ever designed.
-To effectively force developers to use the LNP64’s silicon OS primitives, we have to employ a mix of **architectural carrots** (making our way mathematically unbeatable) and **draconian sticks** (making the traditional software-bypass methods physically impossible). 
+To make developers use the LNP64's silicon OS primitives, we should make the
+native path faster, safer, and easier than recreating the same behavior in
+software. The design should block ambient authority bypasses, but it should not
+make language runtimes, Linux compatibility personalities, or NetBSD service
+processes impossible.
 
 Software developers love to build abstractions. If you give them a fast hardware thread, they will inevitably try to run a software coroutine scheduler (like Go's runtime or Tokio for Rust) on top of it. If you give them memory, they will write their own `malloc`. 
 
-Here is how we modify the LNP64 ISA to violently enforce the "Silicon OS" paradigm:
+Here is how we tune the LNP64 ISA to prefer the "Silicon OS" paradigm without
+breaking practical runtimes:
 
-### 1. Lock the Stack Pointer (Killing Software Coroutines)
+### 1. Hardware-Owned Thread Contexts (Without Locking the Stack Pointer)
 To build a software scheduler (green threads/coroutines), a developer must be able to save the CPU registers to memory, change the Stack Pointer (`r31`), and jump to a new function. 
-*   **The Fix:** Make `r31` (The Stack Pointer) a **Hardware-Locked Register**. 
-*   **ISA Change:** You cannot execute `MOV r31, r_new_stack`. The *only* way the stack pointer changes is when the hardware runqueue swaps the entire thread context via the `YIELD` or `WAIT_ON_FD` instructions. 
-*   **The Result:** It is now physically impossible to write a software context-switch. If a developer wants concurrency, they *must* use the hardware `SPAWN` instruction. Hardware threads are now the *only* threads.
+*   **The Fix:** Keep `r31` as an ordinary architectural register, but make hardware thread contexts, stacks, guard pages, and runqueue state first-class kernel-less objects.
+*   **ISA Change:** `SPAWN`, `YIELD`, `WAIT_ON_FD`, futex waits, signal delivery, and supervisor upcalls operate on hardware-owned thread contexts. The MMU enforces stack VMA bounds and guard pages.
+*   **The Result:** Language runtimes and compatibility layers can set up stacks normally, but native hardware threads are the efficient scheduling unit. Linux and NetBSD personalities can map tasks onto hardware threads instead of fighting a locked stack pointer.
 
-### 2. Abolish the Timer Interrupt (Killing Preemption)
+### 2. Timer FDRs Instead of Ambient Timer Interrupts
 Preemptive software schedulers (like the Linux kernel or Erlang's BEAM VM) rely on a periodic timer interrupt (e.g., every 1 millisecond) to pause the current task and run the scheduler logic.
-*   **The Fix:** The LNP64 ISA simply **does not expose a timer interrupt to userspace**. There is no `SIGALRM`. 
-*   **ISA Change:** We introduce `SLEEP r_milliseconds`. This tells the hardware runqueue to park the thread for a set time. But you cannot request a periodic background tick.
-*   **The Result:** Developers cannot write preemptive schedulers. The hardware runqueue is the absolute dictator of time.
+*   **The Fix:** Do not expose an ambient periodic interrupt to every process. Expose time through `SLEEP`, monotonic/realtime reads, timer FDRs, and supervisor-domain timer upcalls.
+*   **ISA Change:** Timer objects are FDR-backed wait sources. `WAIT_ON_FD` and event-queue FDRs can wait on timers alongside fd readiness, signals, child exit, futex events, and supervisor upcalls.
+*   **The Result:** Normal programs get POSIX-style sleep and timeout behavior, compatibility personalities can implement scheduler accounting and `clock_gettime`, and hardware still owns the actual runqueue.
 
-### 3. Hardware `MALLOC` (Killing `glibc`)
+### 3. Hardware Allocation as a Fast Path (Not a libc Killer)
 If we only provide page-level `MMAP` (e.g., 4KB blocks), developers will still write software memory allocators (like `jemalloc` or `tcmalloc`) to hand out smaller chunks of memory, keeping a layer of software abstraction.
-*   **The Fix:** Shrink the hardware VMA granularity to the cache-line level (64 bytes) and introduce a hardware allocator.
+*   **The Fix:** Keep VMAs page-granular for MMU practicality, but provide `ALLOC` and `FREE` as native heap operations backed by hardware allocation metadata and page-granular VMAs.
 *   **ISA Change:** Introduce **`ALLOC r_dest, r_bytes`** and **`FREE r_ptr`**. 
-    *   Because the hardware memory controller has a dedicated silicon allocation tree, `ALLOC` executes in exactly **2 clock cycles**. 
-*   **The Result:** No software allocator can beat 2 clock cycles. Writing a custom memory allocator in software becomes economically stupid. Developers are forced to use the CPU's native memory manager for everything from massive files to 16-byte strings.
+*   **The Result:** Native programs can use the hardware allocator directly, while libc, language runtimes, and Linux syscall compatibility layers can either delegate to it or layer their own allocation policy above page-granular `MMAP`.
 
-### 4. Banish MMIO (Killing User-Space Drivers)
-Projects like DPDK (Data Plane Development Kit) bypass the OS entirely by mapping the Network Card's raw memory directly into user-space and polling it in software. This bypasses the VFS.
-*   **The Fix:** The LNP64 has no concept of Memory-Mapped I/O (MMIO) in the general compute pipeline. The Memory Management Unit (MMU) microcode simply drops any general `LOAD` or `STORE` instruction that attempts to access a physical device address, throwing a `SIGSEGV`.
-*   **The Result:** The *only* way to talk to a peripheral is via a File Descriptor Register (FDR). You must use `READ_FD` and `WAIT_ON_FD`. The hardware VFS becomes an inescapable choke point for all I/O. 
+### 4. Banish Ambient MMIO (Keeping Capability-Scoped MMIO)
+Projects like DPDK (Data Plane Development Kit) bypass the OS entirely by mapping a network card's raw memory directly into user-space and polling it in software. Unchecked physical MMIO would bypass the VFS and the capability model.
+*   **The Fix:** LNP64 forbids ambient MMIO. A general `LOAD` or `STORE` cannot target arbitrary physical device addresses. Device memory becomes accessible only when a process holds an FDR capability such as `pcie_bar` and maps it with `MMAP`.
+*   **The Result:** Drivers can still get bare-metal register performance, but authority flows through the VFS. The Bus Master mints page-granular BAR capabilities, the VMA engine installs `device_ordered` or `write_combining` PTEs, and only then do ordinary `LD`/`ST` instructions reach the device.
 
 ### 5. The "Carrot": Zero-Cycle IPC (Inter-Process Communication)
 To ensure developers don't try to invent complex shared-memory ring buffers to pass data between processes, we make hardware IPC unbelievably fast.
@@ -243,4 +322,7 @@ To ensure developers don't try to invent complex shared-memory ring buffers to p
 *   **The Result:** Passing a message between two completely isolated processes takes zero memory reads/writes. It is faster than calling a function in the same program. Developers will enthusiastically abandon their custom IPC frameworks to use this.
 
 ### Summary of the Strategy
-By locking the stack pointer, withholding timer interrupts, and banning raw device memory access, the LNP64 ISA makes software-defined OS abstractions technically impossible. By simultaneously providing 2-cycle hardware `ALLOC` and zero-memory IPC, we make the hardware primitives so overwhelmingly fast that developers wouldn't *want* to bypass them even if they could.
+By avoiding ambient device memory, making hardware wait queues and FDRs the
+natural event model, and providing fast native allocation and IPC, LNP64 makes
+the hardware primitives the path of least resistance without blocking practical
+language runtimes or Unix compatibility personalities.
