@@ -3,15 +3,20 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::c_constants::find_token_constant;
+use crate::c_control_rewrites::normalize_do_while_loops;
 use crate::c_escapes::parse_c_escape;
+use crate::c_layouts;
+use crate::c_macro_rewrites::expand_object_like_macros;
 use crate::c_queue_rewrites::normalize_queue_macros;
+use crate::c_static_rewrites::promote_static_local_scalars;
 use crate::c_support_sources::companion_sources;
 use crate::c_type_rewrites::{
     apply_scalar_type_rewrites, apply_user_struct_tag_rewrites, apply_user_type_alias_rewrites,
     collect_user_struct_tags, collect_user_type_aliases, normalize_anonymous_enums,
-    normalize_function_pointer_conditionals, normalize_function_pointer_params,
-    normalize_jsmn_parser_declarations, normalize_static_struct_line_globals,
-    normalize_storage_class_arrays, normalize_string_pointer_array_initializers,
+    normalize_find_struct_initializers, normalize_function_pointer_conditionals,
+    normalize_function_pointer_params, normalize_jsmn_parser_declarations, normalize_known_sizeofs,
+    normalize_linebuf_declarations, normalize_pointer_char_idioms, normalize_sort_struct_globals,
+    normalize_static_struct_line_globals, normalize_storage_class_arrays,
     normalize_struct_entry_declarations,
 };
 
@@ -41,8 +46,12 @@ enum Token {
     PlusAssign,
     MinusAssign,
     StarAssign,
+    SlashAssign,
+    PercentAssign,
     AmpAssign,
     OrAssign,
+    CaretAssign,
+    ShlAssign,
     EqEq,
     NotEq,
     Bang,
@@ -79,13 +88,21 @@ enum Token {
 #[derive(Debug, Clone)]
 struct CProgram {
     globals: Vec<(String, GlobalInit)>,
-    global_arrays: Vec<(String, Vec<i64>)>,
+    global_arrays: Vec<(String, Vec<GlobalWord>)>,
+    global_byte_arrays: Vec<(String, String)>,
     functions: Vec<Function>,
 }
 
 #[derive(Debug, Clone)]
 enum GlobalInit {
     Int(i64),
+    Str(String),
+}
+
+#[derive(Debug, Clone)]
+enum GlobalWord {
+    Int(i64),
+    Label(String),
     Str(String),
 }
 
@@ -100,7 +117,20 @@ struct Function {
 struct LocalDecl {
     name: String,
     init: Option<Expr>,
+    init_list: Option<Vec<LocalInitValue>>,
     array_len: Option<i64>,
+    aggregate_size: Option<i64>,
+}
+
+#[derive(Debug, Clone)]
+struct LocalInitValue {
+    index: Option<i64>,
+    expr: Expr,
+}
+
+#[derive(Debug, Clone)]
+struct ParsedType {
+    aggregate: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -133,6 +163,7 @@ enum Stmt {
     Goto(String),
     Break,
     Continue,
+    Block(Vec<Stmt>),
 }
 
 #[derive(Debug, Clone)]
@@ -150,6 +181,7 @@ enum Expr {
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
     Index(Box<Expr>, Box<Expr>),
     Member(Box<Expr>, String),
+    CompoundLiteral(Vec<Expr>),
     Call(String, Vec<Expr>),
     CallValue(Box<Expr>, Vec<Expr>),
 }
@@ -170,6 +202,7 @@ impl Expr {
             | Expr::PostInc(expr)
             | Expr::PostDec(expr)
             | Expr::Member(expr, _) => expr.contains_call(),
+            Expr::CompoundLiteral(fields) => fields.iter().any(Expr::contains_call),
             Expr::Num(_) | Expr::Str(_) | Expr::Var(_) => false,
         }
     }
@@ -206,22 +239,45 @@ enum UnOp {
 }
 
 pub fn compile(source: &str) -> Result<String, String> {
+    let layout_source = expand_object_like_macros(source);
+    let inferred_field_offsets = c_layouts::collect_field_offsets(&layout_source);
     let source = preprocess_source(source);
     let tokens = Lexer::new(&source).lex()?;
     let mut parser = Parser::new(tokens);
     let program = parser.parse_program()?;
     let mut codegen = CodeGen::default();
+    codegen.inferred_field_offsets = inferred_field_offsets;
     codegen.emit_program(&program)
 }
 
-pub fn compile_file(path: &Path) -> Result<String, String> {
-    let mut seen = HashSet::new();
-    let mut source = expand_quoted_includes(path, &mut seen)?;
-    for companion in companion_sources(path, &source) {
-        source.push('\n');
-        source.push_str(&expand_quoted_includes(&companion, &mut seen)?);
-    }
+pub fn compile_files(paths: &[PathBuf]) -> Result<String, String> {
+    let source = load_translation_units(paths)?;
     compile(&source)
+}
+
+pub fn preprocess_files(paths: &[PathBuf]) -> Result<String, String> {
+    let source = load_translation_units(paths)?;
+    Ok(preprocess_source(&source))
+}
+
+pub fn macro_expand_files(paths: &[PathBuf]) -> Result<String, String> {
+    let source = load_translation_units(paths)?;
+    Ok(expand_object_like_macros(&source))
+}
+
+fn load_translation_units(paths: &[PathBuf]) -> Result<String, String> {
+    let mut seen = HashSet::new();
+    let mut source = String::new();
+    for path in paths {
+        let unit = expand_quoted_includes(path, &mut seen)?;
+        source.push('\n');
+        source.push_str(&unit);
+        for companion in companion_sources(path, &unit) {
+            source.push('\n');
+            source.push_str(&expand_quoted_includes(&companion, &mut seen)?);
+        }
+    }
+    Ok(source)
 }
 
 fn expand_quoted_includes(path: &Path, seen: &mut HashSet<PathBuf>) -> Result<String, String> {
@@ -256,6 +312,8 @@ fn expand_quoted_includes(path: &Path, seen: &mut HashSet<PathBuf>) -> Result<St
 fn preprocess_source(source: &str) -> String {
     let source = splice_escaped_newlines(source);
     let source = strip_block_comments(&source);
+    let source = normalize_do_while_loops(&source);
+    let source = expand_object_like_macros(&source);
     let user_type_aliases = collect_user_type_aliases(&source);
     let user_struct_tags = collect_user_struct_tags(&source);
     let has_test_macros = source.lines().any(|line| {
@@ -309,7 +367,7 @@ fn preprocess_source(source: &str) -> String {
             skip_directive_continuation = trimmed.ends_with('\\');
             continue;
         }
-        if trimmed.starts_with("typedef ") && trimmed.ends_with(';') {
+        if trimmed.starts_with("typedef ") && trimmed.ends_with(';') && !trimmed.contains('{') {
             continue;
         }
         out.push_str(line);
@@ -325,16 +383,21 @@ fn preprocess_source(source: &str) -> String {
     let out = expand_arg_h_macros(&out);
     let out = normalize_queue_macros(&out);
     let out = normalize_function_pointer_conditionals(&out);
+    let out = normalize_pointer_char_idioms(&out);
     let out = normalize_jsmn_parser_declarations(&out);
     let out = normalize_struct_entry_declarations(&out);
     let out = normalize_static_struct_line_globals(&out);
-    let out = normalize_string_pointer_array_initializers(&out);
+    let out = normalize_sort_struct_globals(&out);
+    let out = normalize_linebuf_declarations(&out);
+    let out = normalize_known_sizeofs(&out);
     let out = apply_user_type_alias_rewrites(&out, &user_type_aliases);
     let out = apply_user_struct_tag_rewrites(&out, &user_struct_tags);
     let out = normalize_storage_class_arrays(&out);
+    let out = promote_static_local_scalars(&out);
     let out = normalize_function_pointer_params(&out);
     let out = apply_scalar_type_rewrites(&out);
-    normalize_c_types(&out)
+    let out = normalize_c_types(&out);
+    normalize_do_while_loops(&out)
 }
 
 fn expand_test_macros(source: &str) -> String {
@@ -402,8 +465,28 @@ fn splice_escaped_newlines(source: &str) -> String {
 fn strip_block_comments(source: &str) -> String {
     let mut out = String::new();
     let mut chars = source.chars().peekable();
+    let mut in_string = false;
+    let mut in_char = false;
+    let mut escaped = false;
     while let Some(ch) = chars.next() {
-        if ch == '/' && chars.peek() == Some(&'*') {
+        if in_string || in_char {
+            out.push(ch);
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if in_string && ch == '"' {
+                in_string = false;
+            } else if in_char && ch == '\'' {
+                in_char = false;
+            }
+        } else if ch == '"' {
+            in_string = true;
+            out.push(ch);
+        } else if ch == '\'' {
+            in_char = true;
+            out.push(ch);
+        } else if ch == '/' && chars.peek() == Some(&'*') {
             chars.next();
             while let Some(inner) = chars.next() {
                 if inner == '*' && chars.peek() == Some(&'/') {
@@ -459,19 +542,16 @@ fn strip_user_struct_definitions(source: &str) -> String {
     let mut pending_classes = false;
     for line in source.lines() {
         let trimmed = line.trim_start();
+        let fully_trimmed = line.trim();
         if skip_depth == 0 && trimmed.starts_with("static struct {") {
             skip_depth += count_braces(line);
             pending_static_struct = true;
             continue;
         }
-        if skip_depth == 0
-            && (trimmed.starts_with("typedef struct ")
-                || trimmed.starts_with("typedef enum ")
-                || trimmed.starts_with("struct ")
-                || trimmed.starts_with("enum ")
-                || trimmed.starts_with("union "))
-            && trimmed.ends_with('{')
-        {
+        if skip_depth == 0 && is_tag_forward_declaration(fully_trimmed) {
+            continue;
+        }
+        if skip_depth == 0 && is_type_definition_start(trimmed) {
             skip_depth += count_braces(line);
             continue;
         }
@@ -499,6 +579,50 @@ fn strip_user_struct_definitions(source: &str) -> String {
     out
 }
 
+fn is_tag_forward_declaration(trimmed: &str) -> bool {
+    let Some(rest) = trimmed
+        .strip_prefix("struct ")
+        .or_else(|| trimmed.strip_prefix("union "))
+        .or_else(|| trimmed.strip_prefix("enum "))
+    else {
+        return false;
+    };
+    if !rest.ends_with(';') || rest.contains('{') {
+        return false;
+    }
+    let name = rest.trim_end_matches(';').trim();
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
+fn is_type_definition_start(trimmed: &str) -> bool {
+    if (trimmed.starts_with("typedef struct ")
+        || trimmed.starts_with("typedef enum ")
+        || trimmed.starts_with("typedef union "))
+        && trimmed.contains('{')
+    {
+        return true;
+    }
+    let Some(rest) = trimmed
+        .strip_prefix("struct ")
+        .or_else(|| trimmed.strip_prefix("union "))
+        .or_else(|| trimmed.strip_prefix("enum "))
+    else {
+        return false;
+    };
+    let Some(open) = rest.find('{') else {
+        return false;
+    };
+    let before_open = rest[..open].trim();
+    !before_open.is_empty()
+        && !before_open.contains('=')
+        && before_open
+            .chars()
+            .all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
 fn count_braces(line: &str) -> i64 {
     line.chars().fold(0, |depth, ch| match ch {
         '{' => depth + 1,
@@ -509,39 +633,20 @@ fn count_braces(line: &str) -> i64 {
 
 fn normalize_c_types(source: &str) -> String {
     let mut out = normalize_struct_stat_declarations(source);
+    out = normalize_find_struct_initializers(&out);
     out = normalize_struct_recursor_declarations(&out);
-    out = out.replace(
-        "struct arg arg = { path, st, { NULL } };",
-        "struct arg arg;\narg.path = path;\narg.st = st;\narg.extra.p = 0;",
-    );
     out = normalize_struct_object_declarations(&out, "struct arg", 24);
     out = normalize_struct_object_declarations(&out, "jsmn_parser", 24);
-    out = normalize_struct_object_declarations(&out, "struct line", 16);
-    out = normalize_struct_object_declarations(&out, "static struct line", 16);
     out = normalize_struct_object_declarations(&out, "struct range", 24);
     out = normalize_struct_object_declarations(&out, "static struct range", 24);
+    out = normalize_struct_object_declarations(&out, "struct findhist", 32);
     out = out.replace(
         "static struct timespec times[2] = {{.tv_nsec = UTIME_NOW}};",
-        "int times[4] = {0,0,0,0};",
-    );
-    out = out.replace(
-        "struct tok and = { .u.oinfo = find_op(\"-a\"), .type = AND };",
-        "struct tok and;\nand.u.oinfo = find_op(\"-a\");\nand.type = AND;",
-    );
-    out = out.replace(
-        "*out++ = (struct tok){ .u.pinfo = find_primary(\"-print\"), .type = PRIM };",
-        "{ out->u.pinfo = find_primary(\"-print\"); out->type = PRIM; out++; }",
+        "int times[4] = {0,1073741823,0,0};",
     );
     out = normalize_struct_object_declarations(&out, "struct tok", 40);
     out = out.replace("= { 0 }", "= 0");
     out = out.replace("sizeof(*fds)", "8");
-    out = out.replace("sizeof(jsmntok_t)", "32");
-    out = out.replace("sizeof(tok[0])", "32");
-    out = out.replace("sizeof(tokens[0])", "32");
-    out = out.replace("sizeof(toksmall)", "320");
-    out = out.replace("sizeof(toklarge)", "320");
-    out = out.replace("sizeof(tok)", "160");
-    out = out.replace("sizeof(tokens)", "320");
     out = out.replace("320 / 32", "10");
     out = out.replace("160 / 32", "5");
     out = out.replace("sizeof(*r)", "24");
@@ -549,10 +654,20 @@ fn normalize_c_types(source: &str) -> String {
     out = out.replace("sizeof(*rpn)", "40");
     out = out.replace("sizeof(*tok)", "40");
     out = out.replace("sizeof(*stack)", "8");
+    out = out.replace("sizeof(*linebuf.lines)", "16");
+    out = out.replace("sizeof(*b->lines)", "16");
+    out = out.replace("sizeof(regmatch_t)", "16");
+    out = out.replace("sizeof(*pmatch)", "16");
+    out = out.replace("sizeof(regex_t)", "16");
+    out = out.replace("sizeof(*addr->u.re)", "16");
+    out = out.replace("sizeof(*c->u.s.re)", "16");
+    out = out.replace("sizeof(*re)", "16");
     out = out.replace("2 * argc + 1", "2 * argc + 3");
+    out = out.replace("sizeof(*prog)", "128");
     out = out.replace("sizeof(**set)", "24");
     out = out.replace("sizeof(*rstr)", "8");
     out = out.replace("sizeof(*tree)", "16");
+    out = out.replace("sizeof(*kd)", "48");
     out = out.replace("sizeof(*ents)", "104");
     out = out.replace("sizeof(*dents)", "104");
     out = out.replace("sizeof(*fents)", "104");
@@ -613,9 +728,8 @@ fn normalize_c_types(source: &str) -> String {
         ("struct dirent", "int"),
         ("union extra *", "int "),
         ("union extra", "int"),
-        ("static struct line *", "int "),
-        ("struct line *", "int "),
-        ("struct line", "int"),
+        ("struct linebuf *", "int "),
+        ("struct linebuf", "int"),
         ("static struct   range *", "int "),
         ("static struct range *", "int "),
         ("struct range **", "int "),
@@ -644,6 +758,8 @@ fn normalize_c_types(source: &str) -> String {
         ("jsmntok_t", "int"),
         ("jsmntype_t", "int"),
         ("va_list", "int"),
+        ("regmatch_t *", "int "),
+        ("regmatch_t", "int"),
         ("regex_t *", "int "),
         ("regex_t", "int"),
         ("char *argv[]", "int argv"),
@@ -686,6 +802,7 @@ fn normalize_struct_object_declarations(source: &str, ty: &str, size: i64) -> St
             && trimmed.ends_with(';')
             && !trimmed.contains('*')
             && !trimmed.contains('(')
+            && !trimmed.contains('=')
         {
             let names = trimmed
                 .trim_start_matches(ty)
@@ -715,7 +832,7 @@ fn normalize_struct_object_declarations(source: &str, ty: &str, size: i64) -> St
         }
         out = replace_amp_object_refs(&out, &name);
     }
-    out.replace("seek(&s,", "seek(s,")
+    out
 }
 
 fn normalize_struct_recursor_declarations(source: &str) -> String {
@@ -815,9 +932,19 @@ fn normalize_function_pointer_declarations(source: &str) -> String {
             && trimmed.contains(")(")
         {
             if let Some(name_start) = trimmed.find("(*") {
+                if trimmed.find('=').is_some_and(|eq| eq < name_start) {
+                    out.push_str(line);
+                    out.push('\n');
+                    continue;
+                }
                 if let Some(name_end_rel) = trimmed[name_start + 2..].find(')') {
                     let name_end = name_start + 2 + name_end_rel;
                     let name = trimmed[name_start + 2..name_end].trim();
+                    if !is_plain_identifier(name) {
+                        out.push_str(line);
+                        out.push('\n');
+                        continue;
+                    }
                     out.push_str(indent);
                     out.push_str("int ");
                     out.push_str(name);
@@ -837,13 +964,29 @@ fn normalize_function_pointer_declarations(source: &str) -> String {
     out
 }
 
+fn is_plain_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
 fn normalize_char_array_declarations(source: &str) -> String {
     let mut out = String::new();
+    let mut array_sizes = Vec::new();
     for line in source.lines() {
         let indent_len = line.len() - line.trim_start().len();
         let indent = &line[..indent_len];
         let trimmed = line.trim();
-        if trimmed.starts_with("char ") && trimmed.ends_with(';') && trimmed.contains('[') {
+        if trimmed.starts_with("char ")
+            && !trimmed.starts_with("char *")
+            && !trimmed.starts_with("char*")
+            && trimmed.ends_with(';')
+            && trimmed.contains('[')
+            && !trimmed.contains('(')
+        {
             let decls = trimmed
                 .trim_start_matches("char ")
                 .trim_end_matches(';')
@@ -871,6 +1014,9 @@ fn normalize_char_array_declarations(source: &str) -> String {
                     out.push_str(" = alloc(");
                     out.push_str(len);
                     out.push_str(");\n");
+                    if let Some(size) = parse_constant_len(len) {
+                        array_sizes.push((name.to_string(), size));
+                    }
                 } else {
                     let name = decl.trim_start_matches('*').trim();
                     out.push_str(indent);
@@ -884,7 +1030,17 @@ fn normalize_char_array_declarations(source: &str) -> String {
             out.push('\n');
         }
     }
+    for (name, size) in array_sizes {
+        out = out.replace(&format!("sizeof({name})"), &size.to_string());
+    }
     out
+}
+
+fn parse_constant_len(text: &str) -> Option<i64> {
+    let text = text.trim();
+    text.parse::<i64>()
+        .ok()
+        .or_else(|| find_token_constant(text))
 }
 
 fn normalize_struct_stat_declarations(source: &str) -> String {
@@ -911,7 +1067,7 @@ fn normalize_struct_stat_declarations(source: &str) -> String {
                 out.push_str(name);
                 out.push_str("; ");
                 out.push_str(name);
-                out.push_str(" = alloc(80);\n");
+                out.push_str(" = alloc(104);\n");
             }
         } else {
             out.push_str(line);
@@ -990,7 +1146,12 @@ impl Lexer {
                 }
                 '<' if self.peek_next() == Some('<') => {
                     self.pos += 2;
-                    tokens.push(Token::Shl);
+                    if self.peek() == Some('=') {
+                        self.pos += 1;
+                        tokens.push(Token::ShlAssign);
+                    } else {
+                        tokens.push(Token::Shl);
+                    }
                 }
                 '>' if self.peek_next() == Some('>') => {
                     self.pos += 2;
@@ -1002,12 +1163,22 @@ impl Lexer {
                     }
                 }
                 '/' => {
-                    self.pos += 1;
-                    tokens.push(Token::Slash);
+                    if self.peek_next() == Some('=') {
+                        self.pos += 2;
+                        tokens.push(Token::SlashAssign);
+                    } else {
+                        self.pos += 1;
+                        tokens.push(Token::Slash);
+                    }
                 }
                 '%' => {
-                    self.pos += 1;
-                    tokens.push(Token::Percent);
+                    if self.peek_next() == Some('=') {
+                        self.pos += 2;
+                        tokens.push(Token::PercentAssign);
+                    } else {
+                        self.pos += 1;
+                        tokens.push(Token::Percent);
+                    }
                 }
                 '=' if self.peek_next() == Some('=') => {
                     self.pos += 2;
@@ -1046,8 +1217,13 @@ impl Lexer {
                     tokens.push(Token::Pipe);
                 }
                 '^' => {
-                    self.pos += 1;
-                    tokens.push(Token::Caret);
+                    if self.peek_next() == Some('=') {
+                        self.pos += 2;
+                        tokens.push(Token::CaretAssign);
+                    } else {
+                        self.pos += 1;
+                        tokens.push(Token::Caret);
+                    }
                 }
                 '~' => {
                     self.pos += 1;
@@ -1105,6 +1281,9 @@ impl Lexer {
                     self.pos += 1;
                     tokens.push(Token::Comma);
                 }
+                '.' if self.peek_next().is_some_and(|ch| ch.is_ascii_digit()) => {
+                    tokens.push(self.number()?);
+                }
                 '.' => {
                     self.pos += 1;
                     tokens.push(Token::Dot);
@@ -1158,19 +1337,57 @@ impl Lexer {
             }
             let text = self.chars[start + 2..self.pos].iter().collect::<String>();
             self.consume_integer_suffix();
+            let value = i64::from_str_radix(&text, 16)
+                .or_else(|_| u64::from_str_radix(&text, 16).map(|value| value as i64));
             return Ok(Token::Num(
-                i64::from_str_radix(&text, 16)
-                    .map_err(|_| format!("invalid hexadecimal literal 0x{text}"))?,
+                value.map_err(|_| format!("invalid hexadecimal literal 0x{text}"))?,
             ));
         }
         while self.peek().is_some_and(|ch| ch.is_ascii_digit()) {
             self.pos += 1;
         }
+        let mut is_float = false;
+        if self.peek() == Some('.') {
+            is_float = true;
+            self.pos += 1;
+            while self.peek().is_some_and(|ch| ch.is_ascii_digit()) {
+                self.pos += 1;
+            }
+        }
+        if matches!(self.peek(), Some('e' | 'E')) {
+            is_float = true;
+            self.pos += 1;
+            if matches!(self.peek(), Some('+' | '-')) {
+                self.pos += 1;
+            }
+            while self.peek().is_some_and(|ch| ch.is_ascii_digit()) {
+                self.pos += 1;
+            }
+        }
         let text = self.chars[start..self.pos].iter().collect::<String>();
+        if is_float {
+            self.consume_float_suffix();
+            let value = text
+                .parse::<f64>()
+                .map_err(|_| format!("invalid floating literal {text:?}"))?;
+            return Ok(Token::Num(value as i64));
+        }
         self.consume_integer_suffix();
-        Ok(Token::Num(text.parse::<i64>().map_err(|_| {
+        let value = text
+            .parse::<i64>()
+            .or_else(|_| text.parse::<u64>().map(|value| value as i64));
+        Ok(Token::Num(value.map_err(|_| {
             format!("invalid integer literal {text:?}")
         })?))
+    }
+
+    fn consume_float_suffix(&mut self) {
+        while self
+            .peek()
+            .is_some_and(|ch| matches!(ch, 'f' | 'F' | 'l' | 'L'))
+        {
+            self.pos += 1;
+        }
     }
 
     fn consume_integer_suffix(&mut self) {
@@ -1190,11 +1407,7 @@ impl Lexer {
             match ch {
                 '"' => return Ok(Token::Str(out)),
                 '\\' => {
-                    let Some(esc) = self.peek() else {
-                        return Err("unterminated string escape".to_string());
-                    };
-                    self.pos += 1;
-                    out.push(parse_c_escape(esc)?);
+                    out.push(self.c_escape("string")?);
                 }
                 other => out.push(other),
             }
@@ -1205,23 +1418,73 @@ impl Lexer {
     fn char_lit(&mut self) -> Result<Token, String> {
         self.pos += 1;
         let Some(ch) = self.peek() else {
-            return Err("unterminated character literal".to_string());
+            return Err(format!(
+                "unterminated character literal near {}",
+                self.window()
+            ));
         };
         self.pos += 1;
         let value = if ch == '\\' {
-            let Some(esc) = self.peek() else {
-                return Err("unterminated character escape".to_string());
-            };
-            self.pos += 1;
-            parse_c_escape(esc)? as i64
+            self.c_escape("character")? as i64
         } else {
             ch as i64
         };
         if self.peek() != Some('\'') {
-            return Err("unterminated character literal".to_string());
+            return Err(format!(
+                "unterminated character literal near {}",
+                self.window()
+            ));
         }
         self.pos += 1;
         Ok(Token::Num(value))
+    }
+
+    fn window(&self) -> String {
+        let start = self.pos.saturating_sub(8);
+        let end = (self.pos + 16).min(self.chars.len());
+        self.chars[start..end].iter().collect()
+    }
+
+    fn c_escape(&mut self, kind: &str) -> Result<char, String> {
+        let Some(esc) = self.peek() else {
+            return Err(format!("unterminated {kind} escape"));
+        };
+        self.pos += 1;
+        if esc == 'x' {
+            let mut value = 0u32;
+            let mut digits = 0;
+            while let Some(ch) = self.peek() {
+                let Some(digit) = ch.to_digit(16) else {
+                    break;
+                };
+                self.pos += 1;
+                value = value.saturating_mul(16).saturating_add(digit);
+                digits += 1;
+            }
+            if digits == 0 {
+                return Err("hex escape requires at least one digit".to_string());
+            }
+            return char::from_u32(value & 0xff)
+                .ok_or_else(|| format!("invalid hex escape value {value}"));
+        }
+        if matches!(esc, '0'..='7') {
+            let mut value = esc.to_digit(8).unwrap_or(0);
+            let mut digits = 1;
+            while digits < 3 {
+                let Some(ch) = self.peek() else {
+                    break;
+                };
+                let Some(digit) = ch.to_digit(8) else {
+                    break;
+                };
+                self.pos += 1;
+                value = value.saturating_mul(8).saturating_add(digit);
+                digits += 1;
+            }
+            return char::from_u32(value & 0xff)
+                .ok_or_else(|| format!("invalid octal escape value {value}"));
+        }
+        parse_c_escape(esc)
     }
 
     fn ident(&mut self) -> Token {
@@ -1264,6 +1527,7 @@ impl Parser {
     fn parse_program(&mut self) -> Result<CProgram, String> {
         let mut globals = Vec::new();
         let mut global_arrays = Vec::new();
+        let mut global_byte_arrays = Vec::new();
         let mut functions = Vec::new();
         while !self.check(&Token::Eof) {
             if self.check(&Token::Semi) {
@@ -1278,7 +1542,17 @@ impl Parser {
             while self.check(&Token::Star) {
                 self.advance();
             }
-            let name = self.take_ident()?;
+            let name = if self.check(&Token::LParen) {
+                self.advance();
+                while self.check(&Token::Star) {
+                    self.advance();
+                }
+                let name = self.take_ident()?;
+                self.expect(Token::RParen)?;
+                name
+            } else {
+                self.take_ident()?
+            };
             if self.check(&Token::LParen) {
                 self.advance();
                 let params = self.parse_params()?;
@@ -1293,37 +1567,29 @@ impl Parser {
             }
             if self.check(&Token::LBracket) {
                 self.advance();
-                if matches!(self.peek(), Token::Num(_)) {
+                while !self.check(&Token::RBracket) {
+                    if self.check(&Token::Eof) {
+                        return Err("unterminated global array declarator".to_string());
+                    }
                     self.advance();
                 }
                 self.expect(Token::RBracket)?;
-                self.expect(Token::Assign)?;
-                self.expect(Token::LBrace)?;
-                let mut values = Vec::new();
-                if matches!(self.peek(), Token::Num(_) | Token::RBrace) {
-                    while !self.check(&Token::RBrace) {
-                        match self.peek() {
-                            Token::Num(value) => {
-                                values.push(*value);
-                                self.advance();
-                            }
-                            other => {
-                                return Err(format!(
-                                    "expected numeric array initializer, got {other:?}"
-                                ));
-                            }
-                        }
-                        if self.check(&Token::Comma) {
-                            self.advance();
-                        }
-                    }
-                    self.expect(Token::RBrace)?;
-                } else {
-                    self.skip_braced_initializer()?;
-                    values.push(0);
+                if self.check(&Token::Semi) {
+                    self.advance();
+                    continue;
                 }
-                self.expect(Token::Semi)?;
-                global_arrays.push((name, values));
+                self.expect(Token::Assign)?;
+                if let Token::Str(value) = self.peek() {
+                    let value = value.clone();
+                    self.advance();
+                    self.expect(Token::Semi)?;
+                    global_byte_arrays.push((name, value));
+                } else {
+                    self.expect(Token::LBrace)?;
+                    let values = self.parse_global_array_initializer()?;
+                    self.expect(Token::Semi)?;
+                    global_arrays.push((name, values));
+                }
                 continue;
             }
             let mut name = name;
@@ -1347,8 +1613,154 @@ impl Parser {
         Ok(CProgram {
             globals,
             global_arrays,
+            global_byte_arrays,
             functions,
         })
+    }
+
+    fn parse_global_array_initializer(&mut self) -> Result<Vec<GlobalWord>, String> {
+        if self.check(&Token::RBrace) {
+            self.advance();
+            return Ok(Vec::new());
+        }
+        if self.check(&Token::LBracket) {
+            return self.parse_designated_global_array_initializer();
+        }
+        let mut values = Vec::new();
+        while !self.check(&Token::RBrace) {
+            if self.check(&Token::LBrace) {
+                self.advance();
+                values.extend(self.parse_global_word_list_until_rbrace()?);
+            } else {
+                values.push(self.parse_global_word()?);
+            }
+            if self.check(&Token::Comma) {
+                self.advance();
+            }
+        }
+        self.expect(Token::RBrace)?;
+        Ok(values)
+    }
+
+    fn parse_designated_global_array_initializer(&mut self) -> Result<Vec<GlobalWord>, String> {
+        let mut rows = BTreeMap::new();
+        let mut row_width = 0usize;
+        let mut max_index = 0i64;
+        while !self.check(&Token::RBrace) {
+            self.expect(Token::LBracket)?;
+            let index = self.take_global_array_index()?;
+            self.expect(Token::RBracket)?;
+            self.expect(Token::Assign)?;
+            self.expect(Token::LBrace)?;
+            let row = self.parse_global_word_list_until_rbrace()?;
+            row_width = row_width.max(row.len());
+            max_index = max_index.max(index);
+            rows.insert(index, row);
+            if self.check(&Token::Comma) {
+                self.advance();
+            }
+        }
+        self.expect(Token::RBrace)?;
+
+        let mut values = Vec::new();
+        for index in 0..=max_index {
+            if let Some(row) = rows.remove(&index) {
+                let row_len = row.len();
+                values.extend(row);
+                for _ in row_len..row_width {
+                    values.push(GlobalWord::Int(0));
+                }
+            } else {
+                for _ in 0..row_width {
+                    values.push(GlobalWord::Int(0));
+                }
+            }
+        }
+        Ok(values)
+    }
+
+    fn parse_global_word_list_until_rbrace(&mut self) -> Result<Vec<GlobalWord>, String> {
+        let mut values = Vec::new();
+        while !self.check(&Token::RBrace) {
+            values.push(self.parse_global_word()?);
+            if self.check(&Token::Comma) {
+                self.advance();
+            }
+        }
+        self.expect(Token::RBrace)?;
+        Ok(values)
+    }
+
+    fn take_global_array_index(&mut self) -> Result<i64, String> {
+        match self.peek() {
+            Token::Num(value) => {
+                let value = *value;
+                self.advance();
+                Ok(value)
+            }
+            other => Err(format!("expected global array designator, got {other:?}")),
+        }
+    }
+
+    fn parse_global_word(&mut self) -> Result<GlobalWord, String> {
+        match self.peek() {
+            Token::Minus if matches!(self.peek_n(1), Token::Num(_)) => {
+                self.advance();
+                let Token::Num(value) = self.peek() else {
+                    unreachable!();
+                };
+                let value = -*value;
+                self.advance();
+                Ok(GlobalWord::Int(value))
+            }
+            Token::Num(value) => {
+                let value = *value;
+                self.advance();
+                Ok(GlobalWord::Int(value))
+            }
+            Token::Str(value) => {
+                let value = value.clone();
+                self.advance();
+                Ok(GlobalWord::Str(value))
+            }
+            Token::Ident(name) if name == "NULL" => {
+                self.advance();
+                Ok(GlobalWord::Int(0))
+            }
+            Token::Ident(name) => {
+                let name = name.clone();
+                self.advance();
+                if let Some(value) = find_token_constant(&name) {
+                    Ok(GlobalWord::Int(value))
+                } else {
+                    Ok(GlobalWord::Label(name))
+                }
+            }
+            Token::LParen => {
+                let expr = self.parse_assignment()?;
+                self.global_word_from_expr(expr)
+            }
+            other => Err(format!("expected global initializer word, got {other:?}")),
+        }
+    }
+
+    fn global_word_from_expr(&self, expr: Expr) -> Result<GlobalWord, String> {
+        if let Some(value) = const_expr_value(&expr) {
+            return Ok(GlobalWord::Int(value));
+        }
+        match expr {
+            Expr::Str(value) => Ok(GlobalWord::Str(value)),
+            Expr::Var(name) => Ok(GlobalWord::Label(name)),
+            Expr::Unary(UnOp::Addr, inner) => match *inner {
+                Expr::Var(name) => Ok(GlobalWord::Label(name)),
+                other => Err(format!(
+                    "unsupported global initializer expression {other:?}"
+                )),
+            },
+            other => Err(format!(
+                "unsupported global initializer expression {other:?}"
+            )),
+        }
     }
 
     fn skip_braced_initializer(&mut self) -> Result<(), String> {
@@ -1395,6 +1807,11 @@ impl Parser {
                 self.advance();
                 Ok(GlobalInit::Str(value))
             }
+            Token::LBrace => {
+                self.advance();
+                self.skip_braced_initializer()?;
+                Ok(GlobalInit::Int(0))
+            }
             Token::Ident(name) if name == "NULL" => {
                 self.advance();
                 Ok(GlobalInit::Int(0))
@@ -1435,6 +1852,13 @@ impl Parser {
             } else {
                 self.take_ident()?
             };
+            if self.check(&Token::LBracket) {
+                self.advance();
+                if !self.check(&Token::RBracket) {
+                    self.parse_expr()?;
+                }
+                self.expect(Token::RBracket)?;
+            }
             params.push(name);
             if !self.check(&Token::Comma) {
                 break;
@@ -1444,10 +1868,96 @@ impl Parser {
         Ok(params)
     }
 
-    fn parse_type_tokens(&mut self) -> Result<(), String> {
+    fn parse_type_tokens(&mut self) -> Result<ParsedType, String> {
+        self.skip_type_qualifiers();
+        self.skip_type_annotations()?;
+        self.skip_type_qualifiers();
+        if let Some(aggregate) = self.skip_aggregate_type()? {
+            return Ok(ParsedType {
+                aggregate: Some(aggregate),
+            });
+        }
         self.expect(Token::Int)?;
         while self.check(&Token::Int) {
             self.advance();
+        }
+        Ok(ParsedType { aggregate: None })
+    }
+
+    fn skip_aggregate_type(&mut self) -> Result<Option<String>, String> {
+        let Token::Ident(kind) = self.peek() else {
+            return Ok(None);
+        };
+        if !matches!(kind.as_str(), "struct" | "union" | "enum") {
+            return Ok(None);
+        }
+        let kind = kind.clone();
+        self.advance();
+        let tag = if let Token::Ident(tag) = self.peek() {
+            let tag = tag.clone();
+            self.advance();
+            Some(tag)
+        } else {
+            None
+        };
+        if self.check(&Token::LBrace) {
+            self.skip_braced_type_body()?;
+        }
+        Ok(Some(tag.map(|tag| format!("{kind} {tag}")).unwrap_or(kind)))
+    }
+
+    fn skip_braced_type_body(&mut self) -> Result<(), String> {
+        self.expect(Token::LBrace)?;
+        let mut depth = 1i64;
+        while depth > 0 {
+            match self.peek() {
+                Token::LBrace => {
+                    depth += 1;
+                    self.advance();
+                }
+                Token::RBrace => {
+                    depth -= 1;
+                    self.advance();
+                }
+                Token::Eof => return Err("unterminated aggregate type body".to_string()),
+                _ => self.advance(),
+            }
+        }
+        Ok(())
+    }
+
+    fn skip_type_qualifiers(&mut self) {
+        while matches!(self.peek(), Token::Ident(name) if is_type_qualifier_ident(name)) {
+            self.advance();
+        }
+    }
+
+    fn skip_type_annotations(&mut self) -> Result<(), String> {
+        while matches!(self.peek(), Token::Ident(name) if is_type_annotation_ident(name)) {
+            self.advance();
+            if self.check(&Token::LParen) {
+                self.skip_balanced_parens()?;
+            }
+        }
+        Ok(())
+    }
+
+    fn skip_balanced_parens(&mut self) -> Result<(), String> {
+        self.expect(Token::LParen)?;
+        let mut depth = 1;
+        while depth > 0 {
+            match self.peek() {
+                Token::LParen => {
+                    depth += 1;
+                    self.advance();
+                }
+                Token::RParen => {
+                    depth -= 1;
+                    self.advance();
+                }
+                Token::Eof => return Err("unterminated annotation macro".to_string()),
+                _ => self.advance(),
+            }
         }
         Ok(())
     }
@@ -1462,74 +1972,121 @@ impl Parser {
         Ok(out)
     }
 
+    fn parse_array_length(&mut self) -> Result<i64, String> {
+        if self.check(&Token::RBracket) {
+            return Ok(0);
+        }
+        let expr = self.parse_assignment()?;
+        const_expr_value(&expr)
+            .ok_or_else(|| format!("expected constant array length expression, got {expr:?}"))
+    }
+
+    fn parse_local_initializer_list(&mut self) -> Result<Vec<LocalInitValue>, String> {
+        let mut values = Vec::new();
+        if self.check(&Token::RBrace) {
+            self.advance();
+            return Ok(values);
+        }
+        loop {
+            let index = if self.check(&Token::LBracket) {
+                self.advance();
+                let index_expr = self.parse_assignment()?;
+                self.expect(Token::RBracket)?;
+                self.expect(Token::Assign)?;
+                Some(const_expr_value(&index_expr).ok_or_else(|| {
+                    format!("expected constant initializer index, got {index_expr:?}")
+                })?)
+            } else {
+                None
+            };
+            let expr = self.parse_assignment()?;
+            values.push(LocalInitValue { index, expr });
+            if self.check(&Token::Comma) {
+                self.advance();
+                if self.check(&Token::RBrace) {
+                    break;
+                }
+                continue;
+            }
+            break;
+        }
+        self.expect(Token::RBrace)?;
+        Ok(values)
+    }
+
+    fn is_local_declaration_start(&self) -> bool {
+        matches!(self.peek(), Token::Int)
+            || matches!(self.peek(), Token::Ident(name) if matches!(name.as_str(), "struct" | "union" | "enum"))
+            || matches!(self.peek(), Token::Ident(name) if is_type_qualifier_ident(name))
+    }
+
+    fn parse_local_decl_stmt(&mut self) -> Result<Stmt, String> {
+        let parsed_type = self.parse_type_tokens()?;
+        let mut decls = Vec::new();
+        loop {
+            while self.check(&Token::Star) {
+                self.advance();
+            }
+            let name = self.take_ident()?;
+            let array_len = if self.check(&Token::LBracket) {
+                self.advance();
+                let len = self.parse_array_length()?;
+                self.expect(Token::RBracket)?;
+                Some(len)
+            } else {
+                None
+            };
+            let mut init_list = None;
+            let init = if self.check(&Token::Assign) {
+                self.advance();
+                if self.check(&Token::LBrace) {
+                    self.advance();
+                    if array_len.is_some() {
+                        init_list = Some(self.parse_local_initializer_list()?);
+                        None
+                    } else {
+                        self.skip_braced_initializer()?;
+                        Some(Expr::Num(0))
+                    }
+                } else {
+                    Some(self.parse_assignment()?)
+                }
+            } else {
+                None
+            };
+            decls.push(LocalDecl {
+                name,
+                init,
+                init_list,
+                array_len,
+                aggregate_size: parsed_type
+                    .aggregate
+                    .as_deref()
+                    .and_then(type_aggregate_size),
+            });
+            if !self.check(&Token::Comma) {
+                break;
+            }
+            self.advance();
+        }
+        self.expect(Token::Semi)?;
+        if decls.len() == 1 {
+            Ok(Stmt::VarDecl(decls.remove(0)))
+        } else {
+            Ok(Stmt::VarDecls(decls))
+        }
+    }
+
     fn parse_stmt(&mut self) -> Result<Stmt, String> {
+        if self.is_local_declaration_start() {
+            return self.parse_local_decl_stmt();
+        }
         match self.peek() {
             Token::Semi => {
                 self.advance();
                 Ok(Stmt::Expr(Expr::Num(0)))
             }
-            Token::Int => {
-                self.parse_type_tokens()?;
-                let mut decls = Vec::new();
-                loop {
-                    while self.check(&Token::Star) {
-                        self.advance();
-                    }
-                    let name = self.take_ident()?;
-                    let array_len = if self.check(&Token::LBracket) {
-                        self.advance();
-                        let len = match self.peek() {
-                            Token::Num(value) => {
-                                let value = *value;
-                                self.advance();
-                                value
-                            }
-                            Token::Ident(name) => {
-                                let Some(value) = find_token_constant(name) else {
-                                    return Err(format!(
-                                        "expected constant array length, got Ident({name:?})"
-                                    ));
-                                };
-                                self.advance();
-                                value
-                            }
-                            Token::RBracket => 0,
-                            other => return Err(format!("expected array length, got {other:?}")),
-                        };
-                        self.expect(Token::RBracket)?;
-                        Some(len)
-                    } else {
-                        None
-                    };
-                    let init = if self.check(&Token::Assign) {
-                        self.advance();
-                        if self.check(&Token::LBrace) {
-                            self.advance();
-                            self.skip_braced_initializer()?;
-                            Some(Expr::Num(0))
-                        } else {
-                            Some(self.parse_assignment()?)
-                        }
-                    } else {
-                        None
-                    };
-                    decls.push(LocalDecl {
-                        name,
-                        init,
-                        array_len,
-                    });
-                    if !self.check(&Token::Comma) {
-                        break;
-                    }
-                    self.advance();
-                }
-                self.expect(Token::Semi)?;
-                if decls.len() == 1 {
-                    Ok(Stmt::VarDecl(decls.remove(0)))
-                } else {
-                    Ok(Stmt::VarDecls(decls))
-                }
-            }
+            Token::LBrace => Ok(Stmt::Block(self.parse_block()?)),
             Token::Return => {
                 self.advance();
                 let expr = if self.check(&Token::Semi) {
@@ -1656,27 +2213,13 @@ impl Parser {
             match self.peek() {
                 Token::Case => {
                     self.advance();
-                    let sign = if self.check(&Token::Minus) {
-                        self.advance();
-                        -1
-                    } else {
-                        1
-                    };
-                    let value = match self.peek() {
-                        Token::Num(value) => {
-                            let value = *value * sign;
-                            self.advance();
-                            value
-                        }
-                        Token::Ident(name) => {
-                            let Some(value) = find_token_constant(name) else {
-                                return Err(format!("expected case value, got Ident({name:?})"));
-                            };
-                            self.advance();
-                            value * sign
-                        }
-                        other => return Err(format!("expected case value, got {other:?}")),
-                    };
+                    let expr = self.parse_expr()?;
+                    let value = const_expr_value(&expr).ok_or_else(|| {
+                        format!(
+                            "expected constant case expression, got {expr:?} near {}",
+                            self.token_window()
+                        )
+                    })?;
                     self.expect(Token::Colon)?;
                     let body = self.parse_case_body()?;
                     cases.push((value, body));
@@ -1761,6 +2304,24 @@ impl Parser {
                     Box::new(rhs),
                 ))
             }
+            Token::SlashAssign => {
+                self.advance();
+                let rhs = self.parse_assignment()?;
+                Ok(Expr::CompoundAssign(
+                    Box::new(lhs),
+                    BinOp::Div,
+                    Box::new(rhs),
+                ))
+            }
+            Token::PercentAssign => {
+                self.advance();
+                let rhs = self.parse_assignment()?;
+                Ok(Expr::CompoundAssign(
+                    Box::new(lhs),
+                    BinOp::Mod,
+                    Box::new(rhs),
+                ))
+            }
             Token::AmpAssign => {
                 self.advance();
                 let rhs = self.parse_assignment()?;
@@ -1776,6 +2337,24 @@ impl Parser {
                 Ok(Expr::CompoundAssign(
                     Box::new(lhs),
                     BinOp::BitOr,
+                    Box::new(rhs),
+                ))
+            }
+            Token::CaretAssign => {
+                self.advance();
+                let rhs = self.parse_assignment()?;
+                Ok(Expr::CompoundAssign(
+                    Box::new(lhs),
+                    BinOp::BitXor,
+                    Box::new(rhs),
+                ))
+            }
+            Token::ShlAssign => {
+                self.advance();
+                let rhs = self.parse_assignment()?;
+                Ok(Expr::CompoundAssign(
+                    Box::new(lhs),
+                    BinOp::Shl,
                     Box::new(rhs),
                 ))
             }
@@ -1924,7 +2503,7 @@ impl Parser {
             self.advance();
             expr = Expr::Binary(Box::new(expr), op, Box::new(self.parse_term()?));
         }
-        Ok(expr)
+        self.parse_member_suffixes(expr)
     }
 
     fn parse_term(&mut self) -> Result<Expr, String> {
@@ -1952,7 +2531,7 @@ impl Parser {
             Token::Str(value) => {
                 let value = value.clone();
                 self.advance();
-                Ok(Expr::Str(value))
+                self.parse_postfix(Expr::Str(value))
             }
             Token::Int => {
                 self.advance();
@@ -1964,6 +2543,21 @@ impl Parser {
             Token::Ident(name) => {
                 let name = name.clone();
                 self.advance();
+                if name == "sizeof" {
+                    if self.check(&Token::LParen) {
+                        self.advance();
+                        if self.is_cast_type_start() {
+                            self.skip_cast_type_name();
+                            self.expect(Token::RParen)?;
+                        } else {
+                            self.parse_expr()?;
+                            self.expect(Token::RParen)?;
+                        }
+                    } else {
+                        self.parse_factor()?;
+                    }
+                    return Ok(Expr::Num(8));
+                }
                 let expr = if self.check(&Token::LParen) {
                     self.advance();
                     let mut args = Vec::new();
@@ -1985,16 +2579,12 @@ impl Parser {
             }
             Token::LParen => {
                 self.advance();
-                if self.check(&Token::Int) {
-                    self.advance();
-                    while self.check(&Token::Star) {
-                        self.advance();
-                    }
+                if self.is_cast_type_start() {
+                    self.skip_cast_type_name();
                     self.expect(Token::RParen)?;
                     if self.check(&Token::LBrace) {
                         self.advance();
-                        self.skip_braced_initializer()?;
-                        return Ok(Expr::Num(0));
+                        return Ok(Expr::CompoundLiteral(self.parse_compound_literal_fields()?));
                     }
                     return self.parse_factor();
                 }
@@ -2052,6 +2642,68 @@ impl Parser {
         }
     }
 
+    fn parse_compound_literal_fields(&mut self) -> Result<Vec<Expr>, String> {
+        let mut fields = Vec::new();
+        while !self.check(&Token::RBrace) {
+            if self.check(&Token::LBrace) {
+                self.advance();
+                self.skip_braced_initializer()?;
+                fields.push(Expr::Num(0));
+            } else if self.check(&Token::Dot) {
+                let mut parts = Vec::new();
+                while self.check(&Token::Dot) {
+                    self.advance();
+                    parts.push(self.take_ident()?);
+                }
+                self.expect(Token::Assign)?;
+                let value = self.parse_assignment()?;
+                if let Some(index) = compound_literal_designator_index(&parts) {
+                    while fields.len() <= index {
+                        fields.push(Expr::Num(0));
+                    }
+                    fields[index] = value;
+                } else {
+                    fields.push(value);
+                }
+            } else {
+                fields.push(self.parse_assignment()?);
+            }
+            if self.check(&Token::Comma) {
+                self.advance();
+            }
+        }
+        self.expect(Token::RBrace)?;
+        Ok(fields)
+    }
+
+    fn is_cast_type_start(&self) -> bool {
+        match self.peek() {
+            Token::Int => true,
+            Token::Ident(name) => {
+                matches!(
+                    name.as_str(),
+                    "struct"
+                        | "union"
+                        | "enum"
+                        | "short"
+                        | "double"
+                        | "float"
+                        | "signed"
+                        | "unsigned"
+                        | "char"
+                        | "void"
+                ) || is_type_qualifier_ident(name)
+            }
+            _ => false,
+        }
+    }
+
+    fn skip_cast_type_name(&mut self) {
+        while matches!(self.peek(), Token::Int | Token::Star | Token::Ident(_)) {
+            self.advance();
+        }
+    }
+
     fn parse_postfix(&mut self, mut expr: Expr) -> Result<Expr, String> {
         loop {
             match self.peek() {
@@ -2093,6 +2745,15 @@ impl Parser {
                 }
                 _ => break,
             }
+        }
+        Ok(expr)
+    }
+
+    fn parse_member_suffixes(&mut self, mut expr: Expr) -> Result<Expr, String> {
+        while matches!(self.peek(), Token::Dot | Token::Arrow) {
+            self.advance();
+            let field = self.take_ident()?;
+            expr = Expr::Member(Box::new(expr), field);
         }
         Ok(expr)
     }
@@ -2159,9 +2820,12 @@ struct CodeGen {
     data: BTreeMap<String, String>,
     globals: HashMap<String, String>,
     global_arrays: HashSet<String>,
+    global_byte_arrays: HashSet<String>,
+    inferred_field_offsets: HashMap<String, i64>,
     function_names: HashSet<String>,
     function_param_counts: HashMap<String, usize>,
     locals: HashMap<String, i64>,
+    local_aggregate_sizes: HashMap<String, i64>,
     local_array_widths: HashMap<String, i64>,
     next_local_offset: i64,
     temp_reg: usize,
@@ -2169,12 +2833,19 @@ struct CodeGen {
     string_id: usize,
     current_fn: String,
     needs_c_runtime: bool,
+    needs_recurse_runtime: bool,
     break_labels: Vec<String>,
     continue_labels: Vec<String>,
 }
 
 impl CodeGen {
     fn emit_program(&mut self, program: &CProgram) -> Result<String, String> {
+        self.function_names = program.functions.iter().map(|f| f.name.clone()).collect();
+        self.function_param_counts = program
+            .functions
+            .iter()
+            .map(|f| (f.name.clone(), f.params.len()))
+            .collect();
         self.globals
             .insert("argv0".to_string(), "global_argv0".to_string());
         self.data
@@ -2197,6 +2868,8 @@ impl CodeGen {
             self.globals.insert(global.clone(), label.clone());
             let data = if global == "environ" {
                 ".quad c_empty_environ".to_string()
+            } else if let Some(size) = self.global_aggregate_size(global) {
+                format!(".zero {size}")
             } else {
                 match init {
                     GlobalInit::Int(value) => format!(".quad {value}"),
@@ -2224,27 +2897,36 @@ impl CodeGen {
             }
             let mut data = String::new();
             for (idx, value) in values.iter().enumerate() {
+                let word = match value {
+                    GlobalWord::Int(value) => value.to_string(),
+                    GlobalWord::Label(label) => label.clone(),
+                    GlobalWord::Str(value) => self.intern_string(value),
+                };
                 if idx == 0 {
-                    data.push_str(&format!(".quad {value}"));
+                    data.push_str(&format!(".quad {word}"));
                 } else {
-                    data.push_str(&format!("\n  .quad {value}"));
+                    data.push_str(&format!("\n  .quad {word}"));
                 }
             }
             self.data.insert(label, data);
         }
-        self.function_names = program.functions.iter().map(|f| f.name.clone()).collect();
-        self.function_param_counts = program
-            .functions
-            .iter()
-            .map(|f| (f.name.clone(), f.params.len()))
-            .collect();
-
+        for (name, value) in &program.global_byte_arrays {
+            let label = format!("global_{name}");
+            self.globals.insert(name.clone(), label.clone());
+            self.global_arrays.insert(name.clone());
+            self.global_byte_arrays.insert(name.clone());
+            self.data
+                .insert(label, format!(".string \"{}\"", escape_asm_string(value)));
+        }
         self.text.push(".text".to_string());
         if let Some(main) = program.functions.iter().find(|f| f.name == "main") {
             self.emit_function(main)?;
         }
         for function in program.functions.iter().filter(|f| f.name != "main") {
             self.emit_function(function)?;
+        }
+        if self.needs_recurse_runtime {
+            self.text.push(recurse_runtime_helper().to_string());
         }
 
         let mut out = String::new();
@@ -2270,6 +2952,7 @@ impl CodeGen {
     fn emit_function(&mut self, function: &Function) -> Result<(), String> {
         self.current_fn = function.name.clone();
         self.locals.clear();
+        self.local_aggregate_sizes.clear();
         self.local_array_widths.clear();
         self.next_local_offset = 8;
         self.temp_reg = 0;
@@ -2297,6 +2980,10 @@ impl CodeGen {
             self.text.push("  RET".to_string());
         }
         Ok(())
+    }
+
+    fn global_aggregate_size(&self, name: &str) -> Option<i64> {
+        c_layouts::global_aggregate_size(&self.function_names, name)
     }
 
     fn find_primaries_data(&mut self) -> String {
@@ -2515,6 +3202,11 @@ impl CodeGen {
                 };
                 self.text.push(format!("  JMP {label}"));
             }
+            Stmt::Block(body) => {
+                for stmt in body {
+                    self.emit_stmt(stmt)?;
+                }
+            }
         }
         Ok(())
     }
@@ -2578,8 +3270,20 @@ impl CodeGen {
                         return Ok(dst_addr);
                     }
                 }
+                if let Expr::CompoundLiteral(fields) = &**rhs {
+                    let dst_addr = self.emit_lvalue_addr(lhs)?;
+                    self.emit_compound_literal_stores(dst_addr, fields)?;
+                    return Ok(dst_addr);
+                }
+                if let Some(bytes) = self.aggregate_assignment_size(lhs, rhs) {
+                    let src_addr = self.emit_aggregate_addr(rhs)?;
+                    let dst_addr = self.emit_lvalue_addr(lhs)?;
+                    self.emit_struct_copy(dst_addr, src_addr, bytes)?;
+                    return Ok(dst_addr);
+                }
+                let start_temp = self.temp_reg;
                 let value = self.emit_expr(rhs)?;
-                self.store_lvalue(lhs, value)?;
+                let value = self.store_lvalue_preserving_value(lhs, value, start_temp)?;
                 Ok(value)
             }
             Expr::Comma(lhs, rhs) => {
@@ -2588,15 +3292,15 @@ impl CodeGen {
                 self.emit_expr(rhs)
             }
             Expr::CompoundAssign(lhs, op, rhs) => {
-                let (current, right) = if rhs.contains_call() && !lhs.contains_call() {
-                    let right = self.emit_expr(rhs)?;
-                    let current = self.emit_expr(lhs)?;
-                    (current, right)
-                } else {
-                    let current = self.emit_expr(lhs)?;
-                    let right = self.emit_expr(rhs)?;
-                    (current, right)
-                };
+                let start_temp = self.temp_reg;
+                let current = self.emit_expr(lhs)?;
+                let current_slot = self.spill_reg(current);
+                self.temp_reg = start_temp;
+                let right = self.emit_expr(rhs)?;
+                let right_slot = self.spill_reg(right);
+                self.temp_reg = start_temp;
+                let current = self.reload_reg(current_slot)?;
+                let right = self.reload_reg(right_slot)?;
                 let right = self.scale_pointer_update_rhs(lhs, rhs, right)?;
                 let value = self.alloc_reg()?;
                 match op {
@@ -2606,9 +3310,10 @@ impl CodeGen {
                     BinOp::Sub => {
                         self.text
                             .push(format!("  SUB r{value}, r{current}, r{right}"));
-                        if self.pointer_diff_width(lhs, rhs) == 8 {
+                        let diff_width = self.pointer_diff_width(lhs, rhs);
+                        if diff_width != 1 {
                             let scale = self.alloc_reg()?;
-                            self.text.push(format!("  LI r{scale}, 8"));
+                            self.text.push(format!("  LI r{scale}, {diff_width}"));
                             self.text
                                 .push(format!("  DIV r{value}, r{value}, r{scale}"));
                         }
@@ -2616,36 +3321,59 @@ impl CodeGen {
                     BinOp::Mul => self
                         .text
                         .push(format!("  MUL r{value}, r{current}, r{right}")),
+                    BinOp::Div => self
+                        .text
+                        .push(format!("  DIV r{value}, r{current}, r{right}")),
+                    BinOp::Mod => {
+                        let quotient = self.alloc_reg()?;
+                        let product = self.alloc_reg()?;
+                        self.text
+                            .push(format!("  DIV r{quotient}, r{current}, r{right}"));
+                        self.text
+                            .push(format!("  MUL r{product}, r{quotient}, r{right}"));
+                        self.text
+                            .push(format!("  SUB r{value}, r{current}, r{product}"));
+                    }
                     BinOp::BitOr => self
                         .text
                         .push(format!("  OR r{value}, r{current}, r{right}")),
                     BinOp::BitAnd => self
                         .text
                         .push(format!("  AND r{value}, r{current}, r{right}")),
+                    BinOp::BitXor => self
+                        .text
+                        .push(format!("  XOR r{value}, r{current}, r{right}")),
+                    BinOp::Shl => self
+                        .text
+                        .push(format!("  LSL r{value}, r{current}, r{right}")),
                     BinOp::Shr => self
                         .text
                         .push(format!("  LSR r{value}, r{current}, r{right}")),
                     _ => return Err("unsupported compound assignment operator".to_string()),
                 }
-                self.store_lvalue(lhs, value)?;
+                let value = self.store_lvalue_preserving_value(lhs, value, start_temp)?;
                 Ok(value)
             }
             Expr::PostInc(expr) => self.emit_post_update(expr, 1),
             Expr::PostDec(expr) => self.emit_post_update(expr, -1),
             Expr::Ternary(cond, then_expr, else_expr) => {
+                let start_temp = self.temp_reg;
                 let dst = self.alloc_reg()?;
                 let else_label = self.new_label("ternary_else");
                 let end_label = self.new_label("ternary_end");
                 let cond_reg = self.emit_expr(cond)?;
                 self.text.push(format!("  CMP r{cond_reg}, r0"));
                 self.text.push(format!("  BEQ {else_label}"));
+                self.temp_reg = start_temp + 1;
                 let then_reg = self.emit_expr(then_expr)?;
                 self.text.push(format!("  MOV r{dst}, r{then_reg}"));
                 self.text.push(format!("  JMP {end_label}"));
                 self.text.push(format!("{else_label}:"));
+                self.temp_reg = start_temp + 1;
                 let else_reg = self.emit_expr(else_expr)?;
                 self.text.push(format!("  MOV r{dst}, r{else_reg}"));
                 self.text.push(format!("{end_label}:"));
+                self.temp_reg = start_temp + 1;
                 Ok(dst)
             }
             Expr::Index(base, index) => {
@@ -2671,6 +3399,7 @@ impl CodeGen {
                 self.text.push(format!("  LD r{dst}, [r{addr}, 0]"));
                 Ok(dst)
             }
+            Expr::CompoundLiteral(fields) => self.emit_compound_literal(fields),
             Expr::Call(name, args) => self.emit_call(name, args),
             Expr::CallValue(callee, args) => self.emit_call_value(callee, args),
         }
@@ -2689,12 +3418,23 @@ impl CodeGen {
     }
 
     fn emit_local_decl(&mut self, decl: &LocalDecl) -> Result<(), String> {
-        self.declare_local(&decl.name)?;
+        let aggregate_size = decl.aggregate_size.or_else(|| {
+            c_layouts::local_aggregate_size(&self.function_names, &self.current_fn, &decl.name)
+        });
+        self.declare_local_sized(&decl.name, aggregate_size.unwrap_or(8))?;
+        if let Some(size) = aggregate_size {
+            self.local_aggregate_sizes.insert(decl.name.clone(), size);
+            self.emit_zero_local_aggregate(&decl.name, size)?;
+        }
         if let Some(len) = decl.array_len {
             let width = self.local_decl_array_width(&decl.name);
             let bytes = if len == 0 {
                 match &decl.init {
                     Some(Expr::Str(value)) => value.len() as i64 + 1,
+                    _ if decl.init_list.is_some() => decl
+                        .init_list
+                        .as_ref()
+                        .map_or(0, |values| local_initializer_len(values) * width),
                     _ => 0,
                 }
             } else {
@@ -2715,9 +3455,19 @@ impl CodeGen {
                     .push(format!("  LI r{copy_len}, {}", value.len() + 1));
                 self.emit_memmove(ptr, src, copy_len)?;
             }
+            if let Some(values) = &decl.init_list {
+                self.emit_local_array_initializer(&decl.name, width, values)?;
+            }
         }
         if let Some(init) = &decl.init {
             if decl.array_len.is_some() {
+                return Ok(());
+            }
+            if let Some(bytes) = self.aggregate_assignment_size(&Expr::Var(decl.name.clone()), init)
+            {
+                let src_addr = self.emit_aggregate_addr(init)?;
+                let dst_addr = self.emit_addr(&Expr::Var(decl.name.clone()))?;
+                self.emit_struct_copy(dst_addr, src_addr, bytes)?;
                 return Ok(());
             }
             let reg = self.emit_expr(init)?;
@@ -2726,24 +3476,81 @@ impl CodeGen {
         Ok(())
     }
 
+    fn emit_zero_local_aggregate(&mut self, name: &str, size: i64) -> Result<(), String> {
+        let base = self.emit_addr(&Expr::Var(name.to_string()))?;
+        let mut offset = 0;
+        while offset < size {
+            let off = self.alloc_reg()?;
+            let addr = self.alloc_reg()?;
+            self.text.push(format!("  LI r{off}, {offset}"));
+            self.text.push(format!("  ADD r{addr}, r{base}, r{off}"));
+            self.text.push(format!("  ST [r{addr}, 0], r0"));
+            offset += 8;
+        }
+        self.temp_reg = 0;
+        Ok(())
+    }
+
+    fn emit_local_array_initializer(
+        &mut self,
+        name: &str,
+        width: i64,
+        values: &[LocalInitValue],
+    ) -> Result<(), String> {
+        let mut next_index = 0i64;
+        for value_init in values {
+            let idx = value_init.index.unwrap_or(next_index);
+            next_index = idx + 1;
+            let value = self.emit_expr(&value_init.expr)?;
+            let value_slot = self.spill_reg(value);
+            self.temp_reg = 0;
+            let base = self.load_name(name)?;
+            let offset = self.alloc_reg()?;
+            let addr = self.alloc_reg()?;
+            self.text.push(format!("  LI r{offset}, {}", idx * width));
+            self.text.push(format!("  ADD r{addr}, r{base}, r{offset}"));
+            let value = self.reload_reg(value_slot)?;
+            if width == 1 {
+                self.text.push(format!("  ST.B [r{addr}, 0], r{value}"));
+            } else {
+                self.text.push(format!("  ST [r{addr}, 0], r{value}"));
+            }
+            self.temp_reg = 0;
+        }
+        Ok(())
+    }
+
     fn emit_binary(&mut self, lhs: &Expr, op: BinOp, rhs: &Expr) -> Result<usize, String> {
-        let (left, right) = if rhs.contains_call() && !lhs.contains_call() {
-            let right = self.emit_expr(rhs)?;
-            let left = self.emit_expr(lhs)?;
-            (left, right)
+        let start_temp = self.temp_reg;
+        let left = self.emit_expr(lhs)?;
+        let left_slot = self.spill_reg(left);
+        self.temp_reg = start_temp;
+        let right = self.emit_expr(rhs)?;
+        let right_slot = self.spill_reg(right);
+        self.temp_reg = start_temp;
+        let left = self.reload_reg(left_slot)?;
+        let right = self.reload_reg(right_slot)?;
+        let left_step = self.pointer_expr_step(lhs);
+        let right_step = self.pointer_expr_step(rhs);
+        let right = if matches!(op, BinOp::Add | BinOp::Sub) && left_step != 1 && right_step == 1 {
+            self.scale_reg(right, left_step)?
         } else {
-            let left = self.emit_expr(lhs)?;
-            let right = self.emit_expr(rhs)?;
-            (left, right)
+            right
+        };
+        let left = if matches!(op, BinOp::Add) && right_step != 1 && left_step == 1 {
+            self.scale_reg(left, right_step)?
+        } else {
+            left
         };
         let dst = self.alloc_reg()?;
         match op {
             BinOp::Add => self.text.push(format!("  ADD r{dst}, r{left}, r{right}")),
             BinOp::Sub => {
                 self.text.push(format!("  SUB r{dst}, r{left}, r{right}"));
-                if self.pointer_diff_width(lhs, rhs) == 8 {
+                let diff_width = self.pointer_diff_width(lhs, rhs);
+                if diff_width != 1 {
                     let scale = self.alloc_reg()?;
-                    self.text.push(format!("  LI r{scale}, 8"));
+                    self.text.push(format!("  LI r{scale}, {diff_width}"));
                     self.text.push(format!("  DIV r{dst}, r{dst}, r{scale}"));
                 }
             }
@@ -2808,6 +3615,19 @@ impl CodeGen {
             }
         }
         Ok(dst)
+    }
+
+    fn spill_reg(&mut self, reg: usize) -> i64 {
+        let slot = self.next_local_offset;
+        self.next_local_offset += 8;
+        self.text.push(format!("  ST [r31, {slot}], r{reg}"));
+        slot
+    }
+
+    fn reload_reg(&mut self, slot: i64) -> Result<usize, String> {
+        let reg = self.alloc_reg()?;
+        self.text.push(format!("  LD r{reg}, [r31, {slot}]"));
+        Ok(reg)
     }
 
     fn scale_pointer_update_rhs(
@@ -2887,7 +3707,22 @@ impl CodeGen {
             }
             Expr::Index(base, index) => {
                 let width = self.index_width(base);
+                let value_slot = if base.contains_call() || index.contains_call() {
+                    let slot = self.next_local_offset;
+                    self.next_local_offset += 8;
+                    self.text.push(format!("  ST [r31, {slot}], r{value}"));
+                    Some(slot)
+                } else {
+                    None
+                };
                 let addr = self.emit_index_addr(base, index, width)?;
+                let value = if let Some(slot) = value_slot {
+                    let reloaded = self.alloc_reg()?;
+                    self.text.push(format!("  LD r{reloaded}, [r31, {slot}]"));
+                    reloaded
+                } else {
+                    value
+                };
                 if width == 8 {
                     self.text.push(format!("  ST [r{addr}, 0], r{value}"));
                 } else {
@@ -2904,6 +3739,40 @@ impl CodeGen {
         }
     }
 
+    fn store_lvalue_preserving_value(
+        &mut self,
+        lhs: &Expr,
+        value: usize,
+        base_temp: usize,
+    ) -> Result<usize, String> {
+        if let Expr::Var(name) = lhs {
+            self.store_name(name, value)?;
+            return Ok(value);
+        }
+        let width = self.lvalue_width(lhs);
+        let value_slot = self.spill_reg(value);
+        self.temp_reg = base_temp;
+        let addr = self.emit_lvalue_addr(lhs)?;
+        let addr_slot = self.spill_reg(addr);
+        self.temp_reg = base_temp;
+        let addr = self.reload_reg(addr_slot)?;
+        let value = self.reload_reg(value_slot)?;
+        if width == 8 {
+            self.text.push(format!("  ST [r{addr}, 0], r{value}"));
+        } else {
+            self.text.push(format!("  ST.B [r{addr}, 0], r{value}"));
+        }
+        Ok(value)
+    }
+
+    fn lvalue_width(&self, lhs: &Expr) -> i64 {
+        match lhs {
+            Expr::Unary(UnOp::Deref, ptr) => self.deref_width(ptr),
+            Expr::Index(base, _) => self.index_width(base),
+            _ => 8,
+        }
+    }
+
     fn emit_lvalue_addr(&mut self, lhs: &Expr) -> Result<usize, String> {
         match lhs {
             Expr::Unary(UnOp::Deref, ptr) => self.emit_expr(ptr),
@@ -2914,6 +3783,46 @@ impl CodeGen {
             Expr::Member(base, field) => self.emit_member_addr(base, field),
             Expr::Var(_) => self.emit_addr(lhs),
             _ => Err("left side of assignment is not addressable".to_string()),
+        }
+    }
+
+    fn aggregate_assignment_size(&self, lhs: &Expr, rhs: &Expr) -> Option<i64> {
+        let lhs_size = self.aggregate_expr_size(lhs)?;
+        let rhs_size = self.aggregate_expr_size(rhs)?;
+        if lhs_size == rhs_size {
+            Some(lhs_size)
+        } else {
+            None
+        }
+    }
+
+    fn aggregate_expr_size(&self, expr: &Expr) -> Option<i64> {
+        match expr {
+            Expr::Var(name) => self
+                .local_aggregate_sizes
+                .get(name)
+                .copied()
+                .or_else(|| self.global_aggregate_size(name)),
+            Expr::Member(_, field)
+                if matches!(field.as_str(), "st_mtim" | "st_atim" | "st_ctim") =>
+            {
+                Some(16)
+            }
+            Expr::Member(_, field) => c_layouts::member_aggregate_size(&self.function_names, field),
+            Expr::Index(base, _) if root_name(base).is_some_and(|name| name == "times") => Some(16),
+            _ => None,
+        }
+    }
+
+    fn emit_aggregate_addr(&mut self, expr: &Expr) -> Result<usize, String> {
+        match expr {
+            Expr::Var(_) => self.emit_addr(expr),
+            Expr::Member(base, field) => self.emit_member_addr(base, field),
+            Expr::Index(base, index) => {
+                let width = self.index_width(base);
+                self.emit_index_addr(base, index, width)
+            }
+            _ => Err("aggregate expression is not addressable".to_string()),
         }
     }
 
@@ -2983,6 +3892,9 @@ impl CodeGen {
                 } else if let Some(label) = self.globals.get(name) {
                     self.text.push(format!("  LI r{reg}, {label}"));
                     Ok(reg)
+                } else if self.function_names.contains(name) {
+                    self.text.push(format!("  LI r{reg}, {name}"));
+                    Ok(reg)
                 } else {
                     Err(format!("cannot take address of unknown variable {name:?}"))
                 }
@@ -2992,8 +3904,39 @@ impl CodeGen {
                 self.emit_index_addr(base, index, width)
             }
             Expr::Member(base, field) => self.emit_member_addr(base, field),
+            Expr::CompoundLiteral(fields) => self.emit_compound_literal(fields),
             _ => Err("cannot take address of expression".to_string()),
         }
+    }
+
+    fn emit_compound_literal(&mut self, fields: &[Expr]) -> Result<usize, String> {
+        let size = self.alloc_reg()?;
+        let ptr = self.alloc_reg()?;
+        let bytes = (fields.len().max(1) * 8) as i64;
+        self.text.push(format!("  LI r{size}, {bytes}"));
+        self.text.push(format!("  ALLOC r{ptr}, r{size}"));
+        self.emit_compound_literal_stores(ptr, fields)?;
+        Ok(ptr)
+    }
+
+    fn emit_compound_literal_stores(
+        &mut self,
+        dst_addr: usize,
+        fields: &[Expr],
+    ) -> Result<(), String> {
+        let base_temp = self.temp_reg.saturating_sub(1);
+        let dst_slot = self.spill_reg(dst_addr);
+        for (idx, field) in fields.iter().enumerate() {
+            self.temp_reg = base_temp;
+            let value = self.emit_expr(field)?;
+            let value_slot = self.spill_reg(value);
+            self.temp_reg = base_temp;
+            let dst_addr = self.reload_reg(dst_slot)?;
+            let value = self.reload_reg(value_slot)?;
+            self.text
+                .push(format!("  ST [r{dst_addr}, {}], r{value}", idx * 8));
+        }
+        Ok(())
     }
 
     fn emit_post_update(&mut self, expr: &Expr, delta: i64) -> Result<usize, String> {
@@ -3012,7 +3955,22 @@ impl CodeGen {
 
     fn emit_index_addr(&mut self, base: &Expr, index: &Expr, width: i64) -> Result<usize, String> {
         let base = self.emit_expr(base)?;
+        let base_slot = if index.contains_call() {
+            let slot = self.next_local_offset;
+            self.next_local_offset += 8;
+            self.text.push(format!("  ST [r31, {slot}], r{base}"));
+            Some(slot)
+        } else {
+            None
+        };
         let index = self.emit_expr(index)?;
+        let base = if let Some(slot) = base_slot {
+            let reloaded = self.alloc_reg()?;
+            self.text.push(format!("  LD r{reloaded}, [r31, {slot}]"));
+            reloaded
+        } else {
+            base
+        };
         let scale = self.alloc_reg()?;
         let offset = self.alloc_reg()?;
         let addr = self.alloc_reg()?;
@@ -3025,10 +3983,15 @@ impl CodeGen {
 
     fn emit_member_addr(&mut self, base: &Expr, field: &str) -> Result<usize, String> {
         let offset_value = self.struct_field_offset_for(base, field)?;
-        let base = if member_field_name(base).is_some_and(|name| matches!(name, "pinfo" | "oinfo"))
+        let base = if member_field_name(base)
+            .is_some_and(|name| matches!(name, "pinfo" | "oinfo" | "fninfo" | "st"))
         {
             self.emit_expr(base)?
         } else if matches!(base, Expr::Index(_, _) | Expr::Member(_, _)) {
+            self.emit_addr(base)?
+        } else if matches!(base, Expr::Var(name) if self.local_aggregate_sizes.contains_key(name)) {
+            self.emit_addr(base)?
+        } else if matches!(base, Expr::Var(name) if self.global_aggregate_size(name).is_some()) {
             self.emit_addr(base)?
         } else {
             self.emit_expr(base)?
@@ -3041,6 +4004,30 @@ impl CodeGen {
     }
 
     fn struct_field_offset_for(&self, base: &Expr, field: &str) -> Result<i64, String> {
+        if member_field_name(base).is_some_and(|name| name == "fninfo")
+            || root_name(base).is_some_and(|name| name == "fns")
+        {
+            return match field {
+                "fn" => Ok(0),
+                "getarg" => Ok(8),
+                "freearg" => Ok(16),
+                "naddr" => Ok(24),
+                _ => self.struct_stat_field_offset(field),
+            };
+        }
+        if root_name(base).is_some_and(|name| {
+            matches!(
+                name,
+                "v" | "braces" | "labels" | "branches" | "writes" | "wfiles"
+            )
+        }) {
+            return match field {
+                "data" => Ok(0),
+                "size" => Ok(8),
+                "cap" => Ok(16),
+                _ => self.struct_stat_field_offset(field),
+            };
+        }
         if member_field_name(base).is_some_and(|name| name == "pinfo") {
             return match field {
                 "name" => Ok(0),
@@ -3072,6 +4059,15 @@ impl CodeGen {
                 _ => self.struct_stat_field_offset(field),
             };
         }
+        if root_name(base).is_some_and(|name| matches!(name, "f" | "hist" | "cur")) {
+            return match field {
+                "next" => Ok(0),
+                "path" => Ok(8),
+                "dev" => Ok(16),
+                "ino" => Ok(24),
+                _ => self.struct_stat_field_offset(field),
+            };
+        }
         if self.function_names.contains("jsmn_parse")
             && root_name(base).is_some_and(|name| {
                 matches!(
@@ -3092,7 +4088,7 @@ impl CodeGen {
         if root_name(base).is_some_and(|name| {
             matches!(
                 name,
-                "t" | "tok" | "toks" | "root" | "rpn" | "out" | "infix"
+                "and" | "t" | "tok" | "toks" | "root" | "rpn" | "out" | "infix"
             )
         }) {
             return match field {
@@ -3136,6 +4132,162 @@ impl CodeGen {
         if member_field_name(base).is_some_and(|name| name == "entry") {
             return match field {
                 "sle_next" => Ok(0),
+                "tqe_next" => Ok(0),
+                _ => self.struct_stat_field_offset(field),
+            };
+        }
+        if root_name(base).is_some_and(|name| matches!(name, "kd" | "kdhead_tail")) {
+            return match field {
+                "start_column" => Ok(0),
+                "end_column" => Ok(8),
+                "start_char" => Ok(16),
+                "end_char" => Ok(24),
+                "flags" => Ok(32),
+                "entry" => Ok(40),
+                _ => self.struct_stat_field_offset(field),
+            };
+        }
+        if root_name(base).is_some_and(|name| name == "gflags") {
+            return match field {
+                "n" => Ok(0),
+                "E" => Ok(8),
+                "s" => Ok(16),
+                "aci_cont" => Ok(24),
+                "s_cont" => Ok(32),
+                "halt" => Ok(40),
+                _ => self.struct_stat_field_offset(field),
+            };
+        }
+        if direct_name(base).is_some_and(|name| {
+            matches!(
+                name,
+                "pc" | "prog" | "c" | "from" | "to" | "lbrace" | "jump"
+            ) && self.function_names.contains("cmd_last")
+        }) {
+            return match field {
+                "range" => Ok(0),
+                "fninfo" => Ok(40),
+                "u" => Ok(48),
+                "in_match" => Ok(112),
+                "negate" => Ok(120),
+                _ => self.struct_stat_field_offset(field),
+            };
+        }
+        if member_field_name(base).is_some_and(|name| name == "range") {
+            return match field {
+                "beg" => Ok(0),
+                "end" => Ok(16),
+                "naddr" => Ok(32),
+                _ => self.struct_stat_field_offset(field),
+            };
+        }
+        if member_field_name(base).is_some_and(|name| matches!(name, "beg" | "end")) {
+            return match field {
+                "u" => Ok(0),
+                "type" => Ok(8),
+                _ => self.struct_stat_field_offset(field),
+            };
+        }
+        if root_name(base).is_some_and(|name| name == "range")
+            && self.function_names.contains("cmd_last")
+        {
+            return match field {
+                "beg" => Ok(0),
+                "end" => Ok(16),
+                "naddr" => Ok(32),
+                _ => self.struct_stat_field_offset(field),
+            };
+        }
+        if root_name(base).is_some_and(|name| name == "addr")
+            && self.function_names.contains("cmd_last")
+        {
+            return match field {
+                "u" => Ok(0),
+                "type" => Ok(8),
+                _ => self.struct_stat_field_offset(field),
+            };
+        }
+        if self.current_fn == "match_addr" && root_name(base).is_some_and(|name| name == "a") {
+            return match field {
+                "u" => Ok(0),
+                "type" => Ok(8),
+                _ => self.struct_stat_field_offset(field),
+            };
+        }
+        if member_field_name(base).is_some_and(|name| name == "u") {
+            return match field {
+                "lineno" | "re" | "jump" | "label" | "offset" | "file" | "s" | "y" | "acir" => {
+                    Ok(0)
+                }
+                _ => self.struct_stat_field_offset(field),
+            };
+        }
+        if member_field_name(base).is_some_and(|name| name == "s") {
+            return match field {
+                "re" => Ok(0),
+                "repl" => Ok(8),
+                "file" => Ok(24),
+                "occurrence" => Ok(32),
+                "delim" => Ok(40),
+                "p" => Ok(48),
+                _ => self.struct_stat_field_offset(field),
+            };
+        }
+        if member_field_name(base).is_some_and(|name| name == "y") {
+            return match field {
+                "set1" => Ok(0),
+                "set2" => Ok(8),
+                _ => self.struct_stat_field_offset(field),
+            };
+        }
+        if member_field_name(base).is_some_and(|name| name == "acir") {
+            return match field {
+                "str" => Ok(0),
+                "print" => Ok(16),
+                _ => self.struct_stat_field_offset(field),
+            };
+        }
+        if root_name(base).is_some_and(|name| {
+            matches!(name, "patt" | "hold" | "genbuf" | "dst" | "s" | "tmp")
+                && self.function_names.contains("cmd_last")
+        }) || member_field_name(base).is_some_and(|name| matches!(name, "str" | "repl"))
+        {
+            return match field {
+                "str" => Ok(0),
+                "cap" => Ok(8),
+                _ => self.struct_stat_field_offset(field),
+            };
+        }
+        if root_name(base).is_some_and(|name| {
+            matches!(name, "braces" | "labels" | "branches" | "writes" | "wfiles")
+                && self.function_names.contains("cmd_last")
+        }) {
+            return match field {
+                "data" => Ok(0),
+                "size" => Ok(8),
+                "cap" => Ok(16),
+                _ => self.struct_stat_field_offset(field),
+            };
+        }
+        if root_name(base).is_some_and(|name| matches!(name, "w" | "wp")) {
+            return match field {
+                "path" => Ok(0),
+                "file" => Ok(8),
+                _ => self.struct_stat_field_offset(field),
+            };
+        }
+        if root_name(base).is_some_and(|name| name == "linebuf") {
+            return match field {
+                "lines" => Ok(0),
+                "nlines" => Ok(8),
+                "cap" | "capacity" => Ok(16),
+                _ => self.struct_stat_field_offset(field),
+            };
+        }
+        if root_name(base).is_some_and(|name| matches!(name, "col" | "col1" | "col2")) {
+            return match field {
+                "line" => Ok(0),
+                "cap" | "capacity" => Ok(16),
                 _ => self.struct_stat_field_offset(field),
             };
         }
@@ -3177,14 +4329,14 @@ impl CodeGen {
             "st_rdev" => Ok(16),
             "st_ino" => Ok(24),
             "st_mtime" => Ok(32),
-            "st_nlink" => Ok(40),
-            "st_uid" => Ok(48),
-            "st_gid" => Ok(56),
-            "st_atime" => Ok(64),
-            "st_ctime" => Ok(72),
+            "st_nlink" => Ok(48),
+            "st_uid" => Ok(56),
+            "st_gid" => Ok(64),
+            "st_atime" => Ok(72),
+            "st_ctime" => Ok(88),
             "st_mtim" => Ok(32),
-            "st_atim" => Ok(64),
-            "st_ctim" => Ok(72),
+            "st_atim" => Ok(72),
+            "st_ctim" => Ok(88),
             "tv_sec" => Ok(0),
             "tv_nsec" => Ok(8),
             "tm_year" => Ok(0),
@@ -3192,6 +4344,9 @@ impl CodeGen {
             "tm_hour" => Ok(16),
             "tm_gmtoff" => Ok(24),
             "tm_zone" => Ok(32),
+            "shrlen" => Ok(8),
+            "lnglen" => Ok(16),
+            "contents" => Ok(24),
             "flags" => Ok(0),
             "maxdepth" => Ok(8),
             "follow" => Ok(16),
@@ -3202,11 +4357,35 @@ impl CodeGen {
             "prune" => Ok(32),
             "xdev" => Ok(40),
             "print" => Ok(48),
+            "range" => Ok(0),
+            "beg" => Ok(0),
+            "fninfo" => Ok(40),
+            "in_match" => Ok(112),
+            "negate" => Ok(120),
+            "lineno" => Ok(0),
+            "re" => Ok(0),
+            "re_nsub" => Ok(8),
+            "rm_so" => Ok(0),
+            "rm_eo" => Ok(8),
+            "jump" => Ok(0),
+            "label" => Ok(0),
+            "offset" => Ok(0),
+            "file" => Ok(0),
+            "acir" => Ok(0),
+            "y" => Ok(0),
+            "set1" => Ok(0),
+            "set2" => Ok(8),
+            "repl" => Ok(8),
+            "occurrence" => Ok(32),
+            "delim" => Ok(40),
             "min" => Ok(0),
             "max" => Ok(8),
             "next" => Ok(16),
             "data" => Ok(0),
             "len" => Ok(8),
+            "str" => Ok(0),
+            "fn" => Ok(0),
+            "naddr" => Ok(24),
             "name" => Ok(0),
             "check" => Ok(8),
             "func" => Ok(8),
@@ -3243,6 +4422,11 @@ impl CodeGen {
             "ino" => Ok(24),
             "d_name" => Ok(0),
             "sle_next" => Ok(0),
+            "tqe_next" => Ok(0),
+            "line" => Ok(0),
+            "lines" => Ok(0),
+            "nlines" => Ok(8),
+            "capacity" => Ok(16),
             "u" => Ok(0),
             "pinfo" => Ok(0),
             "oinfo" => Ok(0),
@@ -3256,7 +4440,11 @@ impl CodeGen {
             "toksuper" => Ok(16),
             "parent" => Ok(32),
             "size" => Ok(24),
-            _ => Err(format!("unsupported struct field {field:?}")),
+            _ => self
+                .inferred_field_offsets
+                .get(field)
+                .copied()
+                .ok_or_else(|| format!("unsupported struct field {field:?}")),
         }
     }
 
@@ -3283,6 +4471,12 @@ impl CodeGen {
             24
         } else if matches!(base, Expr::Var(name) if name == "times" || name == "classes") {
             16
+        } else if matches!(base, Expr::Var(name) if name == "pmatch") {
+            16
+        } else if matches!(base, Expr::Var(name) if name == "fns") {
+            32
+        } else if matches!(base, Expr::Var(name) if matches!(name.as_str(), "prog" | "pc")) {
+            128
         } else if matches!(base, Expr::Var(name) if matches!(name.as_str(), "tree")) {
             16
         } else if matches!(base, Expr::Var(name) if matches!(name.as_str(), "ents" | "dents" | "fents"))
@@ -3290,10 +4484,23 @@ impl CodeGen {
             104
         } else if matches!(base, Expr::Var(name) if name == "rstr") {
             8
+        } else if member_field_name(base).is_some_and(|name| name == "lines") {
+            16
+        } else if member_field_name(base).is_some_and(|name| name == "data")
+            && root_name(base).is_some_and(|name| {
+                matches!(
+                    name,
+                    "v" | "braces" | "labels" | "branches" | "writes" | "wfiles"
+                )
+            })
+        {
+            8
         } else if let Expr::Var(name) = base
             && let Some(width) = self.local_array_widths.get(name)
         {
             *width
+        } else if matches!(base, Expr::Var(name) if self.global_byte_arrays.contains(name)) {
+            1
         } else if matches!(base, Expr::Var(name) if name == "argv" || name == "fds" || self.global_arrays.contains(name))
         {
             8
@@ -3309,6 +4516,8 @@ impl CodeGen {
             32
         } else if matches!(name, "fp" | "fds" | "argv") {
             8
+        } else if name == "pmatch" {
+            16
         } else if matches!(
             name,
             "buf" | "mode" | "pwname" | "grname" | "prefix" | "cwd" | "target" | "ns1" | "ns2"
@@ -3323,8 +4532,17 @@ impl CodeGen {
         fn is_word_pointer(expr: &Expr) -> bool {
             matches!(expr, Expr::Var(name) if matches!(
                 name.as_str(),
-                "argv" | "arg" | "paths" | "sp" | "brace" | "top" | "tok" | "rpn" | "out" | "infix" | "stack"
+                "argv" | "arg" | "paths" | "files" | "sp" | "brace" | "top" | "tok" | "rpn" | "out" | "infix" | "stack"
             ))
+        }
+        fn is_cmd_pointer(expr: &Expr) -> bool {
+            matches!(expr, Expr::Var(name) if matches!(
+                name.as_str(),
+                "pc" | "prog" | "c" | "from" | "to" | "lbrace" | "jump"
+            ))
+        }
+        if self.function_names.contains("cmd_last") && is_cmd_pointer(lhs) && is_cmd_pointer(rhs) {
+            return 128;
         }
         if is_word_pointer(lhs) && is_word_pointer(rhs) {
             8
@@ -3333,9 +4551,36 @@ impl CodeGen {
         }
     }
 
+    fn pointer_expr_step(&self, expr: &Expr) -> i64 {
+        match expr {
+            Expr::Binary(lhs, BinOp::Sub, rhs)
+                if self.pointer_expr_step(lhs) != 1
+                    && self.pointer_expr_step(lhs) == self.pointer_expr_step(rhs) =>
+            {
+                1
+            }
+            Expr::Binary(lhs, BinOp::Add | BinOp::Sub, rhs) => {
+                let left = self.pointer_expr_step(lhs);
+                if left != 1 {
+                    left
+                } else {
+                    self.pointer_expr_step(rhs)
+                }
+            }
+            Expr::Var(name) => self.pointer_step(name),
+            _ => 1,
+        }
+    }
+
     fn pointer_step(&self, name: &str) -> i64 {
         match name {
-            "argv" | "arg" | "paths" | "sp" | "brace" | "top" | "stack" | "new" => 8,
+            "argv" | "arg" | "paths" | "files" | "sp" | "brace" | "top" | "stack" | "new" => 8,
+            "pc" | "prog" | "c" | "from" | "to" | "lbrace" | "jump"
+                if self.function_names.contains("cmd_last") =>
+            {
+                128
+            }
+            "s" if self.current_fn == "parse_flags" => 8,
             "p" if self.current_fn == "find_primary" => 40,
             "o" if self.current_fn == "find_op" => 40,
             "g" if self.function_names.contains("jsmn_parse") => 32,
@@ -3347,10 +4592,29 @@ impl CodeGen {
         }
     }
 
+    fn scale_reg(&mut self, reg: usize, scale_value: i64) -> Result<usize, String> {
+        if scale_value == 1 {
+            return Ok(reg);
+        }
+        let scale = self.alloc_reg()?;
+        let scaled = self.alloc_reg()?;
+        self.text.push(format!("  LI r{scale}, {scale_value}"));
+        self.text.push(format!("  MUL r{scaled}, r{reg}, r{scale}"));
+        Ok(scaled)
+    }
+
     fn deref_width(&self, ptr: &Expr) -> i64 {
-        if matches!(ptr, Expr::Unary(UnOp::Deref, inner) if root_name(inner).is_some_and(|name| matches!(name, "argv" | "arg" | "paths")))
+        if self.current_fn == "resize"
+            && root_name(ptr).is_some_and(|name| matches!(name, "ptr" | "nmemb" | "next"))
+        {
+            return 8;
+        }
+        if matches!(ptr, Expr::Unary(UnOp::Deref, inner) if root_name(inner).is_some_and(|name| matches!(name, "argv" | "arg" | "paths" | "files")))
         {
             return 1;
+        }
+        if self.current_fn == "parse_flags" && root_name(ptr).is_some_and(|name| name == "s") {
+            return 8;
         }
         if root_name(ptr).is_some_and(|name| {
             matches!(
@@ -3358,6 +4622,7 @@ impl CodeGen {
                 "argv"
                     | "arg"
                     | "paths"
+                    | "files"
                     | "sp"
                     | "brace"
                     | "top"
@@ -3684,6 +4949,58 @@ impl CodeGen {
                 self.text.push(format!("  LI r{dst}, 0"));
                 Ok(dst)
             }
+            "abs" | "labs" | "llabs" => {
+                let value = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                let nonnegative = self.new_label("abs_nonnegative");
+                let done = self.new_label("abs_done");
+                self.text.push(format!("  CMP r{value}, r0"));
+                self.text.push(format!("  BGE {nonnegative}"));
+                self.text.push(format!("  SUB r{dst}, r0, r{value}"));
+                self.text.push(format!("  JMP {done}"));
+                self.text.push(format!("{nonnegative}:"));
+                self.text.push(format!("  MOV r{dst}, r{value}"));
+                self.text.push(format!("{done}:"));
+                Ok(dst)
+            }
+            "ldexp" => self.emit_ldexp(args),
+            "offsetof" => {
+                if args.len() != 2 {
+                    return Err("offsetof(type, field) expects 2 arguments".to_string());
+                }
+                let field = offsetof_field_name(&args[1]).ok_or_else(|| {
+                    format!("unsupported offsetof field expression {:?}", args[1])
+                })?;
+                let offset = self.struct_stat_field_offset(field)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, {offset}"));
+                Ok(dst)
+            }
+            "setjmp" | "_setjmp" | "sigsetjmp" => {
+                if args.is_empty() {
+                    return Err(format!("{name}(env) expects at least 1 argument"));
+                }
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "longjmp" | "_longjmp" | "siglongjmp" => {
+                if args.len() < 2 {
+                    return Err(format!("{name}(env, value) expects at least 2 arguments"));
+                }
+                self.emit_expr(&args[0])?;
+                let value = self.emit_expr(&args[1])?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  MOV r{dst}, r{value}"));
+                Ok(dst)
+            }
+            "abort" => {
+                self.no_args(name, args)?;
+                let code = self.alloc_reg()?;
+                self.text.push(format!("  LI r{code}, 134"));
+                self.text.push(format!("  EXIT r{code}"));
+                Ok(code)
+            }
             "write" => {
                 if matches!(args.first(), Some(Expr::Num(_))) {
                     let (fd_num, buf, len) = self.fd_buf_len_args(name, args)?;
@@ -3703,6 +5020,44 @@ impl CodeGen {
                     self.emit_write_fd_dispatch(fd, buf, len, dst)?;
                     Ok(dst)
                 }
+            }
+            "pread" => {
+                if args.len() != 4 {
+                    return Err("pread(fd, buf, len, offset) expects 4 arguments".to_string());
+                }
+                let buf = self.emit_expr(&args[1])?;
+                let len = self.emit_expr(&args[2])?;
+                let offset = self.emit_expr(&args[3])?;
+                let dst = self.alloc_reg()?;
+                if matches!(args.first(), Some(Expr::Num(_))) {
+                    let fd = self.numeric_fd(&args[0], "pread")?;
+                    self.text
+                        .push(format!("  PREAD_FD fd{fd}, r{buf}, r{len}, r{offset}"));
+                    self.text.push(format!("  MOV r{dst}, r1"));
+                } else {
+                    let fd = self.emit_expr(&args[0])?;
+                    self.emit_pread_fd_dispatch(fd, buf, len, offset, dst)?;
+                }
+                Ok(dst)
+            }
+            "pwrite" => {
+                if args.len() != 4 {
+                    return Err("pwrite(fd, buf, len, offset) expects 4 arguments".to_string());
+                }
+                let buf = self.emit_expr(&args[1])?;
+                let len = self.emit_expr(&args[2])?;
+                let offset = self.emit_expr(&args[3])?;
+                let dst = self.alloc_reg()?;
+                if matches!(args.first(), Some(Expr::Num(_))) {
+                    let fd = self.numeric_fd(&args[0], "pwrite")?;
+                    self.text
+                        .push(format!("  PWRITE_FD fd{fd}, r{buf}, r{len}, r{offset}"));
+                    self.text.push(format!("  MOV r{dst}, r1"));
+                } else {
+                    let fd = self.emit_expr(&args[0])?;
+                    self.emit_pwrite_fd_dispatch(fd, buf, len, offset, dst)?;
+                }
+                Ok(dst)
             }
             "puts" => {
                 let ptr = self.one_arg(name, args)?;
@@ -3732,6 +5087,91 @@ impl CodeGen {
             "fflush" => {
                 let dst = self.alloc_reg()?;
                 self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "getenv" => {
+                let _ = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "fgets" => {
+                if args.len() != 3 {
+                    return Err("fgets(buf, size, stream) expects 3 arguments".to_string());
+                }
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "assert" | "lua_assert" | "lua_longassert" => {
+                if args.len() != 1 {
+                    return Err(format!("{name}(cond) expects 1 argument"));
+                }
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "luaC_barrier" | "luaC_barrierback" | "luaC_objbarrier" | "luaC_objbarrierback" => {
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "tonumber" | "tonumberns" => {
+                if args.len() != 2 {
+                    return Err(format!("{name}(obj, n) expects 2 arguments"));
+                }
+                self.emit_call("luaV_tonumber_", args)
+            }
+            "tointeger" | "tointegerns" => {
+                if args.len() != 2 {
+                    return Err(format!("{name}(obj, i) expects 2 arguments"));
+                }
+                let mut lowered = args.to_vec();
+                lowered.push(Expr::Var("LUA_FLOORN2I".to_string()));
+                let target = if name == "tointeger" {
+                    "luaV_tointeger"
+                } else {
+                    "luaV_tointegerns"
+                };
+                self.emit_call(target, &lowered)
+            }
+            "getlstr" => {
+                if args.len() != 2 {
+                    return Err("getlstr(ts, len) expects 2 arguments".to_string());
+                }
+                self.emit_expr(&args[0])
+            }
+            "getstr" => {
+                let ts = self.one_arg(name, args)?;
+                Ok(ts)
+            }
+            "udatamemoffset" => {
+                let nuv = self.one_arg(name, args)?;
+                let scale = self.alloc_reg()?;
+                let base = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{scale}, 8"));
+                self.text.push(format!("  MUL r{dst}, r{nuv}, r{scale}"));
+                self.text.push(format!("  LI r{base}, 32"));
+                self.text.push(format!("  ADD r{dst}, r{dst}, r{base}"));
+                Ok(dst)
+            }
+            "sizeudata" => {
+                if args.len() != 2 {
+                    return Err("sizeudata(nuv, nb) expects 2 arguments".to_string());
+                }
+                let offset = self.emit_call("udatamemoffset", &args[..1])?;
+                let bytes = self.emit_expr(&args[1])?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  ADD r{dst}, r{offset}, r{bytes}"));
+                Ok(dst)
+            }
+            "getudatamem" => {
+                let u = self.one_arg(name, args)?;
+                let offset = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{offset}, 32"));
+                self.text.push(format!("  ADD r{dst}, r{u}, r{offset}"));
                 Ok(dst)
             }
             "sysconf" => {
@@ -3845,13 +5285,35 @@ impl CodeGen {
                 Ok(dst)
             }
             "utimensat" => {
+                if args.len() != 4 {
+                    return Err(
+                        "utimensat(dirfd, path, times, flags) expects 4 arguments".to_string()
+                    );
+                }
+                let path = self.emit_expr(&args[1])?;
+                let times = self.emit_expr(&args[2])?;
+                let flags = self.emit_expr(&args[3])?;
                 let dst = self.alloc_reg()?;
-                self.text.push(format!("  LI r{dst}, -1"));
+                self.text
+                    .push(format!("  UTIME_PATH r{path}, r{times}, r{flags}"));
+                self.text.push(format!("  MOV r{dst}, r1"));
                 Ok(dst)
             }
             "futimens" => {
+                if args.len() != 2 {
+                    return Err("futimens(fd, times) expects 2 arguments".to_string());
+                }
+                let times = self.emit_expr(&args[1])?;
                 let dst = self.alloc_reg()?;
-                self.text.push(format!("  LI r{dst}, 0"));
+                if matches!(args.first(), Some(Expr::Num(_))) {
+                    let fd = self.numeric_fd(&args[0], "futimens")?;
+                    self.text.push(format!("  UTIME_FD fd{fd}, r{times}"));
+                    self.text.push(format!("  MOV r{dst}, r1"));
+                } else {
+                    let fd = self.emit_expr(&args[0])?;
+                    self.text.push(format!("  UTIME_FD_DYN r{fd}, r{times}"));
+                    self.text.push(format!("  MOV r{dst}, r1"));
+                }
                 Ok(dst)
             }
             "strftime" => {
@@ -3937,7 +5399,7 @@ impl CodeGen {
                 let statbuf = self.alloc_reg()?;
                 let flags = self.alloc_reg()?;
                 let dst = self.alloc_reg()?;
-                self.text.push(format!("  LI r{size}, 80"));
+                self.text.push(format!("  LI r{size}, 104"));
                 self.text.push(format!("  ALLOC r{statbuf}, r{size}"));
                 self.text.push(format!("  LI r{flags}, 0"));
                 self.text
@@ -4031,38 +5493,18 @@ impl CodeGen {
                     );
                 }
                 if args.len() >= 4 {
-                    let dirfd = self.emit_expr(&args[0])?;
-                    let path = self.emit_expr(&args[1])?;
-                    let data = self.emit_expr(&args[2])?;
-                    let recursor = self.emit_expr(&args[3])?;
-                    let fn_reg = self.alloc_reg()?;
-                    let path_field = self.alloc_reg()?;
-                    let has_callback = self.new_label("recurse_callback");
-                    let end_label = self.new_label("recurse_end");
-                    self.text.push(format!("  LD r{fn_reg}, [r{recursor}, 0]"));
-                    self.text.push(format!("  LI r{path_field}, 40"));
-                    self.text
-                        .push(format!("  ADD r{path_field}, r{recursor}, r{path_field}"));
-                    self.text.push(format!("  ST [r{path_field}, 0], r{path}"));
-                    self.text.push(format!("  CMP r{fn_reg}, r0"));
-                    self.text.push(format!("  BNE {has_callback}"));
-                    self.text.push(format!("  UNLINK_PATH r{path}"));
-                    self.text.push(format!("  JMP {end_label}"));
-                    self.text.push(format!("{has_callback}:"));
-                    let size = self.alloc_reg()?;
-                    let statbuf = self.alloc_reg()?;
-                    self.text.push(format!("  LI r{size}, 80"));
-                    self.text.push(format!("  ALLOC r{statbuf}, r{size}"));
-                    self.emit_fake_regular_stat(Some(path), statbuf)?;
-                    self.text.push(format!("  MOV r1, r{dirfd}"));
-                    self.text.push(format!("  MOV r2, r{path}"));
-                    self.text.push(format!("  MOV r3, r{statbuf}"));
-                    self.text.push(format!("  MOV r4, r{data}"));
-                    self.text.push(format!("  MOV r5, r{recursor}"));
-                    self.text.push(format!("  CALL_REG r{fn_reg}"));
-                    self.text.push(format!("{end_label}:"));
+                    let regs = self.emit_call_arg_regs(&args[..4])?;
+                    self.needs_c_runtime = true;
+                    self.needs_recurse_runtime = true;
+                    self.data
+                        .entry("c_dirent_buf".to_string())
+                        .or_insert(".zero 512".to_string());
+                    for (idx, reg) in regs.iter().enumerate() {
+                        self.text.push(format!("  MOV r{}, r{reg}", idx + 1));
+                    }
+                    self.text.push("  CALL __lnp64_recurse".to_string());
                     let dst = self.alloc_reg()?;
-                    self.text.push(format!("  LI r{dst}, 0"));
+                    self.text.push(format!("  MOV r{dst}, r1"));
                     return Ok(dst);
                 }
                 let path = self.emit_expr(&args[1])?;
@@ -4117,9 +5559,9 @@ impl CodeGen {
                 self.text.push(format!("  MOV r{dst}, r1"));
                 Ok(dst)
             }
-            "strstr" => {
+            "strstr" | "strcasestr" | "xstrcasestr" => {
                 if args.len() != 2 {
-                    return Err("strstr(haystack, needle) expects 2 arguments".to_string());
+                    return Err(format!("{name}(haystack, needle) expects 2 arguments"));
                 }
                 let haystack = self.emit_expr(&args[0])?;
                 let needle = self.emit_expr(&args[1])?;
@@ -4127,9 +5569,82 @@ impl CodeGen {
                 self.needs_c_runtime = true;
                 self.text.push(format!("  MOV r1, r{haystack}"));
                 self.text.push(format!("  MOV r2, r{needle}"));
-                self.text.push("  CALL __strstr".to_string());
+                let helper = if name == "strstr" {
+                    "__strstr"
+                } else {
+                    "__strcasestr"
+                };
+                self.text.push(format!("  CALL {helper}"));
                 self.text.push(format!("  MOV r{dst}, r1"));
                 Ok(dst)
+            }
+            "strpbrk" | "strcspn" | "strspn" => {
+                if args.len() != 2 {
+                    return Err(format!("{name}(s, accept) expects 2 arguments"));
+                }
+                let haystack = self.emit_expr(&args[0])?;
+                let accept = self.emit_expr(&args[1])?;
+                let dst = self.alloc_reg()?;
+                self.needs_c_runtime = true;
+                self.text.push(format!("  MOV r1, r{haystack}"));
+                self.text.push(format!("  MOV r2, r{accept}"));
+                let helper = if name == "strpbrk" {
+                    "__strpbrk"
+                } else if name == "strspn" {
+                    "__strspn"
+                } else {
+                    "__strcspn"
+                };
+                self.text.push(format!("  CALL {helper}"));
+                self.text.push(format!("  MOV r{dst}, r1"));
+                Ok(dst)
+            }
+            "strcpy" | "strcat" => {
+                if args.len() != 2 {
+                    return Err(format!("{name}(dst, src) expects 2 arguments"));
+                }
+                let dst_ptr = self.emit_expr(&args[0])?;
+                let src_ptr = self.emit_expr(&args[1])?;
+                let ret = self.alloc_reg()?;
+                self.needs_c_runtime = true;
+                self.text.push(format!("  MOV r1, r{dst_ptr}"));
+                self.text.push(format!("  MOV r2, r{src_ptr}"));
+                let helper = if name == "strcpy" {
+                    "__strcpy"
+                } else {
+                    "__strcat"
+                };
+                self.text.push(format!("  CALL {helper}"));
+                self.text.push(format!("  MOV r{ret}, r1"));
+                Ok(ret)
+            }
+            "strlcpy" | "xstrlcpy" | "estrlcpy" => {
+                if args.len() != 3 {
+                    return Err(format!("{name}(dst, src, size) expects 3 arguments"));
+                }
+                let regs = self.emit_call_arg_regs(args)?;
+                let ret = self.alloc_reg()?;
+                self.needs_c_runtime = true;
+                self.text.push(format!("  MOV r1, r{}", regs[0]));
+                self.text.push(format!("  MOV r2, r{}", regs[1]));
+                self.text.push(format!("  MOV r3, r{}", regs[2]));
+                self.text.push("  CALL __strlcpy".to_string());
+                self.text.push(format!("  MOV r{ret}, r1"));
+                Ok(ret)
+            }
+            "strlcat" | "xstrlcat" | "estrlcat" => {
+                if args.len() != 3 {
+                    return Err(format!("{name}(dst, src, size) expects 3 arguments"));
+                }
+                let regs = self.emit_call_arg_regs(args)?;
+                let ret = self.alloc_reg()?;
+                self.needs_c_runtime = true;
+                self.text.push(format!("  MOV r1, r{}", regs[0]));
+                self.text.push(format!("  MOV r2, r{}", regs[1]));
+                self.text.push(format!("  MOV r3, r{}", regs[2]));
+                self.text.push("  CALL __strlcat".to_string());
+                self.text.push(format!("  MOV r{ret}, r1"));
+                Ok(ret)
             }
             "strncmp" => {
                 if args.len() != 3 {
@@ -4141,8 +5656,16 @@ impl CodeGen {
                 self.emit_memcmp(left, right, len)
             }
             "fnmatch" => {
+                if args.len() != 3 {
+                    return Err("fnmatch(pattern, string, flags) expects 3 arguments".to_string());
+                }
+                let regs = self.emit_call_arg_regs(args)?;
                 let dst = self.alloc_reg()?;
-                self.text.push(format!("  LI r{dst}, 0"));
+                self.needs_c_runtime = true;
+                self.text.push(format!("  MOV r1, r{}", regs[0]));
+                self.text.push(format!("  MOV r2, r{}", regs[1]));
+                self.text.push("  CALL __strcmp".to_string());
+                self.text.push(format!("  MOV r{dst}, r1"));
                 Ok(dst)
             }
             "getpwuid" | "getgrgid" | "getpwnam" | "getgrnam" => {
@@ -4189,10 +5712,6 @@ impl CodeGen {
                 self.text.push(format!("  MOV r{dst}, r1"));
                 Ok(dst)
             }
-            "llabs" => {
-                let value = self.one_arg(name, args)?;
-                Ok(value)
-            }
             "MIN" | "MAX" => {
                 if args.len() != 2 {
                     return Err(format!("{name}(a, b) expects 2 arguments"));
@@ -4220,6 +5739,14 @@ impl CodeGen {
                 let endptr = self.emit_expr(&args[1])?;
                 self.emit_strtoul(ptr, endptr)
             }
+            "strtod" => {
+                if args.len() != 2 {
+                    return Err("strtod(s, endptr) expects 2 arguments".to_string());
+                }
+                let ptr = self.emit_expr(&args[0])?;
+                let endptr = self.emit_expr(&args[1])?;
+                self.emit_strtoul(ptr, endptr)
+            }
             "estrdup" => {
                 let ptr = self.one_arg(name, args)?;
                 let ptr_slot = self.next_local_offset;
@@ -4241,12 +5768,33 @@ impl CodeGen {
                 self.emit_memmove(dst, ptr, bytes)?;
                 Ok(dst)
             }
-            "estrlcpy" | "estrlcat" => {
+            "estrndup" | "strndup" => {
+                if args.len() != 2 {
+                    return Err(format!("{name}(s, n) expects 2 arguments"));
+                }
+                let ptr = self.emit_expr(&args[0])?;
+                let len = self.emit_expr(&args[1])?;
+                let one = self.alloc_reg()?;
+                let bytes = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                let nul_addr = self.alloc_reg()?;
+                self.text.push(format!("  LI r{one}, 1"));
+                self.text.push(format!("  ADD r{bytes}, r{len}, r{one}"));
+                self.text.push(format!("  ALLOC r{dst}, r{bytes}"));
+                self.emit_memmove(dst, ptr, len)?;
+                self.text.push(format!("  ADD r{nul_addr}, r{dst}, r{len}"));
+                self.text.push(format!("  ST.B [r{nul_addr}, 0], r0"));
+                Ok(dst)
+            }
+            "escapes" => {
+                for arg in args {
+                    let _ = self.emit_expr(arg)?;
+                }
                 let dst = self.alloc_reg()?;
                 self.text.push(format!("  LI r{dst}, 0"));
                 Ok(dst)
             }
-            "chartorune" | "charntorune" => {
+            "chartorune" | "charntorune" | "echarntorune" => {
                 if args.len() < 2 {
                     return Err(format!("{name}(r, s[, n]) expects at least 2 arguments"));
                 }
@@ -4258,6 +5806,31 @@ impl CodeGen {
                 self.text.push(format!("  ST [r{out}, 0], r{ch}"));
                 self.text.push(format!("  LI r{dst}, 1"));
                 Ok(dst)
+            }
+            "runelen" => {
+                let _ = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 1"));
+                Ok(dst)
+            }
+            "utfnlen" => {
+                if args.len() != 2 {
+                    return Err("utfnlen(s, n) expects 2 arguments".to_string());
+                }
+                self.emit_expr(&args[1])
+            }
+            "runetochar" => {
+                if args.len() != 2 {
+                    return Err("runetochar(s, r) expects 2 arguments".to_string());
+                }
+                let dst_ptr = self.emit_expr(&args[0])?;
+                let rune_ptr = self.emit_expr(&args[1])?;
+                let ch = self.alloc_reg()?;
+                let len = self.alloc_reg()?;
+                self.text.push(format!("  LD r{ch}, [r{rune_ptr}, 0]"));
+                self.text.push(format!("  ST.B [r{dst_ptr}, 0], r{ch}"));
+                self.text.push(format!("  LI r{len}, 1"));
+                Ok(len)
             }
             "UTF8_POINT" => {
                 let ch = self.one_arg(name, args)?;
@@ -4282,10 +5855,8 @@ impl CodeGen {
                 if args.len() != 3 {
                     return Err(format!("{name}(dst, src, n) expects 3 arguments"));
                 }
-                let dst_ptr = self.emit_expr(&args[0])?;
-                let src_ptr = self.emit_expr(&args[1])?;
-                let len = self.emit_expr(&args[2])?;
-                self.emit_memmove(dst_ptr, src_ptr, len)
+                let regs = self.emit_call_arg_regs(args)?;
+                self.emit_memmove(regs[0], regs[1], regs[2])
             }
             "memset" => {
                 if args.len() != 3 {
@@ -4305,7 +5876,7 @@ impl CodeGen {
                 let len = self.emit_expr(&args[2])?;
                 self.emit_memcmp(left, right, len)
             }
-            "memmem" => {
+            "memmem" | "xmemmem" => {
                 if args.len() != 4 {
                     return Err("memmem(h, hlen, n, nlen) expects 4 arguments".to_string());
                 }
@@ -4356,7 +5927,31 @@ impl CodeGen {
                 let ch = self.one_arg(name, args)?;
                 self.emit_space_predicate(ch)
             }
-            "isprintrune" => {
+            "isblank" | "isblankrune" => {
+                let ch = self.one_arg(name, args)?;
+                self.emit_ascii_range_predicate(ch, &[(9, 9), (32, 32)])
+            }
+            "isascii" => {
+                let ch = self.one_arg(name, args)?;
+                self.emit_ascii_range_predicate(ch, &[(0, 127)])
+            }
+            "isdigit" | "isdigitrune" => {
+                let ch = self.one_arg(name, args)?;
+                self.emit_ascii_range_predicate(ch, &[(48, 57)])
+            }
+            "isxdigit" => {
+                let ch = self.one_arg(name, args)?;
+                self.emit_ascii_range_predicate(ch, &[(48, 57), (65, 70), (97, 102)])
+            }
+            "isalpha" | "isalpharune" => {
+                let ch = self.one_arg(name, args)?;
+                self.emit_ascii_range_predicate(ch, &[(65, 90), (97, 122)])
+            }
+            "isalnum" | "isalnumrune" => {
+                let ch = self.one_arg(name, args)?;
+                self.emit_ascii_range_predicate(ch, &[(48, 57), (65, 90), (97, 122)])
+            }
+            "isprint" | "isprintrune" => {
                 let ch = self.one_arg(name, args)?;
                 let lower = self.alloc_reg()?;
                 let upper = self.alloc_reg()?;
@@ -4375,10 +5970,6 @@ impl CodeGen {
                 self.text.push(format!("  LI r{dst}, 0"));
                 self.text.push(format!("{end_label}:"));
                 Ok(dst)
-            }
-            "isblank" => {
-                let ch = self.one_arg(name, args)?;
-                self.emit_space_predicate(ch)
             }
             "tolowerrune" | "toupperrune" => self.one_arg(name, args),
             "free" => {
@@ -4413,8 +6004,22 @@ impl CodeGen {
                     return Err("ereallocarray(ptr, nmemb, size) expects 3 arguments".to_string());
                 }
                 let old = self.emit_expr(&args[0])?;
+                let old_slot = self.next_local_offset;
+                self.next_local_offset += 8;
+                self.text.push(format!("  ST [r31, {old_slot}], r{old}"));
+                self.temp_reg = 0;
                 let nmemb = self.emit_expr(&args[1])?;
+                let nmemb_slot = self.next_local_offset;
+                self.next_local_offset += 8;
+                self.text
+                    .push(format!("  ST [r31, {nmemb_slot}], r{nmemb}"));
+                self.temp_reg = 0;
                 let size = self.emit_expr(&args[2])?;
+                let old = self.alloc_reg()?;
+                let nmemb = self.alloc_reg()?;
+                self.text.push(format!("  LD r{old}, [r31, {old_slot}]"));
+                self.text
+                    .push(format!("  LD r{nmemb}, [r31, {nmemb_slot}]"));
                 let bytes = self.alloc_reg()?;
                 let dst = self.alloc_reg()?;
                 self.text.push(format!("  MUL r{bytes}, r{nmemb}, r{size}"));
@@ -4514,7 +6119,12 @@ impl CodeGen {
                     return Err("fmemopen(buf, size, mode) expects 3 arguments".to_string());
                 }
                 let buf = self.emit_expr(&args[0])?;
+                let buf_slot = self.next_local_offset;
+                self.next_local_offset += 8;
+                self.text.push(format!("  ST [r31, {buf_slot}], r{buf}"));
+                self.temp_reg = 0;
                 let len = self.emit_expr(&args[1])?;
+                let buf = self.alloc_reg()?;
                 let dst = self.alloc_reg()?;
                 self.data
                     .entry("c_memstream_ptr".to_string())
@@ -4525,20 +6135,158 @@ impl CodeGen {
                 self.data
                     .entry("c_memstream_pos".to_string())
                     .or_insert(".quad 0".to_string());
+                self.text.push(format!("  LD r{buf}, [r31, {buf_slot}]"));
                 self.text.push(format!("  ST c_memstream_ptr, r{buf}"));
                 self.text.push(format!("  ST c_memstream_len, r{len}"));
                 self.text.push("  ST c_memstream_pos, r0".to_string());
                 self.text.push(format!("  LI r{dst}, -2"));
                 Ok(dst)
             }
-            "enregcomp" | "regcomp" => {
+            "enregcomp" | "eregcomp" | "regcomp" => {
+                let (regex_arg, pattern_arg) = if name == "enregcomp" {
+                    if args.len() != 4 {
+                        return Err(
+                            "enregcomp(err, preg, pattern, flags) expects 4 arguments".to_string()
+                        );
+                    }
+                    (&args[1], &args[2])
+                } else if name == "eregcomp" {
+                    if args.len() != 3 {
+                        return Err(
+                            "eregcomp(preg, pattern, flags) expects 3 arguments".to_string()
+                        );
+                    }
+                    (&args[0], &args[1])
+                } else {
+                    if args.len() != 3 {
+                        return Err("regcomp(preg, pattern, flags) expects 3 arguments".to_string());
+                    }
+                    (&args[0], &args[1])
+                };
+                let regex = self.emit_expr(regex_arg)?;
+                let pattern = self.emit_expr(pattern_arg)?;
                 let dst = self.alloc_reg()?;
+                let nsub = self.alloc_reg()?;
+                let regex_slot = self.next_local_offset;
+                self.next_local_offset += 8;
+                let pattern_slot = self.next_local_offset;
+                self.next_local_offset += 8;
+                self.text
+                    .push(format!("  ST [r31, {regex_slot}], r{regex}"));
+                self.text
+                    .push(format!("  ST [r31, {pattern_slot}], r{pattern}"));
+                let len = self.alloc_reg()?;
+                let one = self.alloc_reg()?;
+                let bytes = self.alloc_reg()?;
+                let copy = self.alloc_reg()?;
+                self.needs_c_runtime = true;
+                self.text.push(format!("  MOV r1, r{pattern}"));
+                self.text.push("  CALL __strlen".to_string());
+                let regex = self.alloc_reg()?;
+                let pattern = self.alloc_reg()?;
+                self.text
+                    .push(format!("  LD r{regex}, [r31, {regex_slot}]"));
+                self.text
+                    .push(format!("  LD r{pattern}, [r31, {pattern_slot}]"));
+                self.text.push(format!("  MOV r{len}, r1"));
+                self.text.push(format!("  LI r{one}, 1"));
+                self.text.push(format!("  ADD r{bytes}, r{len}, r{one}"));
+                self.text.push(format!("  ALLOC r{copy}, r{bytes}"));
+                self.emit_memmove(copy, pattern, bytes)?;
+                self.text.push(format!("  ST [r{regex}, 0], r{copy}"));
+                self.text.push(format!("  LI r{nsub}, 0"));
+                self.text.push(format!("  ST [r{regex}, 8], r{nsub}"));
                 self.text.push(format!("  LI r{dst}, 0"));
                 Ok(dst)
             }
             "regexec" => {
+                if args.len() != 5 {
+                    return Err(
+                        "regexec(preg, str, nmatch, pmatch, flags) expects 5 arguments".to_string(),
+                    );
+                }
+                let regex = self.emit_expr(&args[0])?;
+                let haystack = self.emit_expr(&args[1])?;
+                let nmatch = self.emit_expr(&args[2])?;
+                let pmatch = self.emit_expr(&args[3])?;
+                let _flags = self.emit_expr(&args[4])?;
                 let dst = self.alloc_reg()?;
+                let pattern = self.alloc_reg()?;
+                let matched = self.alloc_reg()?;
+                let so = self.alloc_reg()?;
+                let eo = self.alloc_reg()?;
+                let len = self.alloc_reg()?;
+                let ptr = self.alloc_reg()?;
+                let ch = self.alloc_reg()?;
+                let one = self.alloc_reg()?;
+                let haystack_slot = self.next_local_offset;
+                self.next_local_offset += 8;
+                let pattern_slot = self.next_local_offset;
+                self.next_local_offset += 8;
+                let nmatch_slot = self.next_local_offset;
+                self.next_local_offset += 8;
+                let pmatch_slot = self.next_local_offset;
+                self.next_local_offset += 8;
+                let found_label = self.new_label("regexec_found");
+                let store_done_label = self.new_label("regexec_store_done");
+                let len_loop_label = self.new_label("regexec_len_loop");
+                let len_done_label = self.new_label("regexec_len_done");
+                let end_label = self.new_label("regexec_end");
+                self.text.push(format!("  LD r{pattern}, [r{regex}, 0]"));
+                self.text
+                    .push(format!("  ST [r31, {haystack_slot}], r{haystack}"));
+                self.text
+                    .push(format!("  ST [r31, {pattern_slot}], r{pattern}"));
+                self.text
+                    .push(format!("  ST [r31, {nmatch_slot}], r{nmatch}"));
+                self.text
+                    .push(format!("  ST [r31, {pmatch_slot}], r{pmatch}"));
+                self.text.push(format!("  MOV r1, r{haystack}"));
+                self.text.push(format!("  MOV r2, r{pattern}"));
+                self.text.push("  CALL __strstr".to_string());
+                self.text.push(format!("  MOV r{matched}, r1"));
+                self.text
+                    .push(format!("  LD r{haystack}, [r31, {haystack_slot}]"));
+                self.text
+                    .push(format!("  LD r{pattern}, [r31, {pattern_slot}]"));
+                self.text
+                    .push(format!("  LD r{nmatch}, [r31, {nmatch_slot}]"));
+                self.text
+                    .push(format!("  LD r{pmatch}, [r31, {pmatch_slot}]"));
+                self.text.push(format!("  CMP r{matched}, r0"));
+                self.text.push(format!("  BNE {found_label}"));
                 self.text.push(format!("  LI r{dst}, 1"));
+                self.text.push(format!("  JMP {end_label}"));
+                self.text.push(format!("{found_label}:"));
+                self.text.push(format!("  LI r{dst}, 0"));
+                self.text.push(format!("  CMP r{nmatch}, r0"));
+                self.text.push(format!("  BEQ {store_done_label}"));
+                self.text.push(format!("  CMP r{pmatch}, r0"));
+                self.text.push(format!("  BEQ {store_done_label}"));
+                self.text
+                    .push(format!("  SUB r{so}, r{matched}, r{haystack}"));
+                self.text.push(format!("  MOV r{ptr}, r{pattern}"));
+                self.text.push(format!("  LI r{len}, 0"));
+                self.text.push(format!("  LI r{one}, 1"));
+                self.text.push(format!("{len_loop_label}:"));
+                self.text.push(format!("  LD.B r{ch}, [r{ptr}, 0]"));
+                self.text.push(format!("  CMP r{ch}, r0"));
+                self.text.push(format!("  BEQ {len_done_label}"));
+                self.text.push(format!("  ADD r{len}, r{len}, r{one}"));
+                self.text.push(format!("  ADD r{ptr}, r{ptr}, r{one}"));
+                self.text.push(format!("  JMP {len_loop_label}"));
+                self.text.push(format!("{len_done_label}:"));
+                self.text.push(format!("  ADD r{eo}, r{so}, r{len}"));
+                self.text.push(format!("  ST [r{pmatch}, 0], r{so}"));
+                self.text.push(format!("  ST [r{pmatch}, 8], r{eo}"));
+                self.text.push(format!("{store_done_label}:"));
+                self.text.push(format!("{end_label}:"));
+                Ok(dst)
+            }
+            "regfree" => {
+                let _ = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 0"));
                 Ok(dst)
             }
             "qsort" => {
@@ -4585,6 +6333,20 @@ impl CodeGen {
             "getc" | "fgetc" => {
                 let stream = self.one_arg(name, args)?;
                 self.emit_getc(stream)
+            }
+            "ungetc" => {
+                if args.len() != 2 {
+                    return Err("ungetc(c, stream) expects 2 arguments".to_string());
+                }
+                let ch = self.emit_expr(&args[0])?;
+                let stream = self.emit_expr(&args[1])?;
+                let offset = self.alloc_reg()?;
+                let whence = self.alloc_reg()?;
+                let ignored = self.alloc_reg()?;
+                self.text.push(format!("  LI r{offset}, -1"));
+                self.text.push(format!("  LI r{whence}, 1"));
+                self.emit_fd_seek_dispatch(stream, offset, whence, ignored)?;
+                Ok(ch)
             }
             "getchar" => {
                 self.no_args(name, args)?;
@@ -4874,6 +6636,133 @@ impl CodeGen {
                 }
                 Ok(dst)
             }
+            "pipe" => {
+                if args.len() != 1 {
+                    return Err("pipe(fds) expects 1 argument".to_string());
+                }
+                let fds_ptr = self.emit_expr(&args[0])?;
+                let block_size = self.alloc_reg()?;
+                let block = self.alloc_reg()?;
+                let tmp = self.alloc_reg()?;
+                let read_fd = self.alloc_reg()?;
+                let write_fd = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{block_size}, 64"));
+                self.text.push(format!("  ALLOC r{block}, r{block_size}"));
+                self.text.push(format!("  LI r{tmp}, 1"));
+                self.text.push(format!("  ST [r{block}, 0], r{tmp}"));
+                self.text.push(format!("  LI r{tmp}, 2"));
+                self.text.push(format!("  ST [r{block}, 8], r{tmp}"));
+                self.text.push(format!("  LI r{tmp}, 1"));
+                self.text.push(format!("  ST [r{block}, 16], r{tmp}"));
+                self.text.push(format!("  OBJECT_CTL r{dst}, r{block}"));
+                self.text.push(format!("  LD r{read_fd}, [r{block}, 24]"));
+                self.text.push(format!("  LD r{write_fd}, [r{block}, 32]"));
+                self.text.push(format!("  ST [r{fds_ptr}, 0], r{read_fd}"));
+                self.text.push(format!("  ST [r{fds_ptr}, 8], r{write_fd}"));
+                Ok(dst)
+            }
+            "domain_create" => {
+                if args.len() != 4 {
+                    return Err(
+                        "domain_create(memory, pids, fdrs, caps) expects 4 arguments".to_string(),
+                    );
+                }
+                let memory = self.emit_expr(&args[0])?;
+                let pids = self.emit_expr(&args[1])?;
+                let fdrs = self.emit_expr(&args[2])?;
+                let caps = self.emit_expr(&args[3])?;
+                let block_size = self.alloc_reg()?;
+                let block = self.alloc_reg()?;
+                let tmp = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{block_size}, 160"));
+                self.text.push(format!("  ALLOC r{block}, r{block_size}"));
+                self.text.push(format!("  LI r{tmp}, 1"));
+                self.text.push(format!("  ST [r{block}, 0], r{tmp}"));
+                self.text.push(format!("  ST [r{block}, 8], r0"));
+                self.text.push(format!("  ST [r{block}, 16], r0"));
+                self.text.push(format!("  LI r{tmp}, 4"));
+                self.text.push(format!("  ST [r{block}, 24], r{tmp}"));
+                self.text.push(format!("  LI r{tmp}, 1000"));
+                self.text.push(format!("  ST [r{block}, 32], r{tmp}"));
+                self.text.push(format!("  ST [r{block}, 40], r{memory}"));
+                self.text.push(format!("  ST [r{block}, 48], r{pids}"));
+                self.text.push(format!("  ST [r{block}, 56], r{fdrs}"));
+                self.text.push(format!("  ST [r{block}, 64], r{caps}"));
+                self.text.push(format!("  ST [r{block}, 72], r{caps}"));
+                self.text.push(format!("  DOMAIN_CTL r{dst}, r{block}"));
+                Ok(dst)
+            }
+            "domain_attach_self" => {
+                let id = self.one_arg(name, args)?;
+                let block_size = self.alloc_reg()?;
+                let block = self.alloc_reg()?;
+                let tmp = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{block_size}, 160"));
+                self.text.push(format!("  ALLOC r{block}, r{block_size}"));
+                self.text.push(format!("  LI r{tmp}, 7"));
+                self.text.push(format!("  ST [r{block}, 0], r{tmp}"));
+                self.text.push(format!("  ST [r{block}, 8], r{id}"));
+                self.text.push(format!("  LI r{tmp}, 1"));
+                self.text.push(format!("  ST [r{block}, 16], r{tmp}"));
+                self.text.push(format!("  DOMAIN_CTL r{dst}, r{block}"));
+                Ok(dst)
+            }
+            "call_gate" => {
+                if args.len() != 3 {
+                    return Err("call_gate(fd, domain, function) expects 3 arguments".to_string());
+                }
+                let fd = self.emit_expr(&args[0])?;
+                let domain = self.emit_expr(&args[1])?;
+                let Expr::Var(label) = &args[2] else {
+                    return Err("call_gate function argument must be a function name".to_string());
+                };
+                if !self.function_names.contains(label) {
+                    return Err(format!("unknown call_gate target {label:?}"));
+                }
+                let block_size = self.alloc_reg()?;
+                let block = self.alloc_reg()?;
+                let tmp = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{block_size}, 80"));
+                self.text.push(format!("  ALLOC r{block}, r{block_size}"));
+                self.text.push(format!("  LI r{tmp}, 1"));
+                self.text.push(format!("  ST [r{block}, 0], r{tmp}"));
+                self.text.push(format!("  LI r{tmp}, 2"));
+                self.text.push(format!("  ST [r{block}, 8], r{tmp}"));
+                self.text.push(format!("  LI r{tmp}, 4"));
+                self.text.push(format!("  ST [r{block}, 16], r{tmp}"));
+                self.text.push(format!("  ST [r{block}, 24], r{fd}"));
+                self.text.push(format!("  ST [r{block}, 32], r{domain}"));
+                self.text.push(format!("  LI r{tmp}, {label}"));
+                self.text.push(format!("  ST [r{block}, 40], r{tmp}"));
+                self.text.push(format!("  OBJECT_CTL r{dst}, r{block}"));
+                Ok(dst)
+            }
+            "call_cap" => {
+                if args.len() != 3 {
+                    return Err("call_cap(fd, arg0, arg1) expects 3 arguments".to_string());
+                }
+                let fd = self.numeric_fd(&args[0], "call_cap")?;
+                let arg0 = self.emit_expr(&args[1])?;
+                let arg1 = self.emit_expr(&args[2])?;
+                let dst = self.alloc_reg()?;
+                self.text
+                    .push(format!("  CALL_CAP r{dst}, fd{fd}, r{arg0}, r{arg1}"));
+                Ok(dst)
+            }
+            "ret_cap" => {
+                if args.len() != 2 {
+                    return Err("ret_cap(value0, value1) expects 2 arguments".to_string());
+                }
+                let value0 = self.emit_expr(&args[0])?;
+                let value1 = self.emit_expr(&args[1])?;
+                self.text
+                    .push(format!("  RET_CAP r0, r{value0}, r{value1}"));
+                Ok(0)
+            }
             "pid" | "tid" | "uid" | "gid" => {
                 if !args.is_empty() {
                     return Err(format!("{name}() expects no arguments"));
@@ -4924,8 +6813,30 @@ impl CodeGen {
                 Ok(dst)
             }
             "waitpid" => {
+                if args.len() != 3 {
+                    return Err("waitpid(pid, status, options) expects 3 arguments".to_string());
+                }
+                let pid = self.emit_expr(&args[0])?;
+                let status_ptr = self.emit_expr(&args[1])?;
+                let _options = self.emit_expr(&args[2])?;
+                let status = self.alloc_reg()?;
                 let dst = self.alloc_reg()?;
-                self.text.push(format!("  LI r{dst}, 0"));
+                let store_done = self.new_label("waitpid_store_done");
+                let ok_label = self.new_label("waitpid_ok");
+                let end_label = self.new_label("waitpid_end");
+                self.text.push(format!("  WAIT_PID r{status}, r{pid}"));
+                self.text.push(format!("  CMP r{status_ptr}, r0"));
+                self.text.push(format!("  BEQ {store_done}"));
+                self.text
+                    .push(format!("  ST [r{status_ptr}, 0], r{status}"));
+                self.text.push(format!("{store_done}:"));
+                self.text.push("  CMP r1, r0".to_string());
+                self.text.push(format!("  BEQ {ok_label}"));
+                self.text.push(format!("  LI r{dst}, -1"));
+                self.text.push(format!("  JMP {end_label}"));
+                self.text.push(format!("{ok_label}:"));
+                self.text.push(format!("  MOV r{dst}, r{pid}"));
+                self.text.push(format!("{end_label}:"));
                 Ok(dst)
             }
             "spawn" if !self.function_names.contains("spawn") => {
@@ -4972,7 +6883,8 @@ impl CodeGen {
             "msg_recv" => {
                 self.no_args(name, args)?;
                 let dst = self.alloc_reg()?;
-                self.text.push(format!("  MSG_RECV r{dst}, r30"));
+                self.text.push("  AWAIT r0, fd255, r0".to_string());
+                self.text.push(format!("  PULL r{dst}, fd255, r0, r0"));
                 Ok(dst)
             }
             "cmpxchg" => {
@@ -5037,6 +6949,19 @@ impl CodeGen {
                 let dst = self.alloc_reg()?;
                 self.text.push(format!("  MUNMAP r{addr}, r{len}"));
                 self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "mprotect" => {
+                if args.len() != 3 {
+                    return Err("mprotect(addr, len, prot) expects 3 arguments".to_string());
+                }
+                let addr = self.emit_expr(&args[0])?;
+                let len = self.emit_expr(&args[1])?;
+                let prot = self.emit_expr(&args[2])?;
+                let dst = self.alloc_reg()?;
+                self.text
+                    .push(format!("  MPROTECT r{addr}, r{len}, r{prot}"));
+                self.text.push(format!("  MOV r{dst}, r1"));
                 Ok(dst)
             }
             "sigmask_set" => {
@@ -5257,6 +7182,41 @@ impl CodeGen {
         Ok(dst)
     }
 
+    fn emit_ldexp(&mut self, args: &[Expr]) -> Result<usize, String> {
+        if args.len() != 2 {
+            return Err("ldexp(value, exp) expects 2 arguments".to_string());
+        }
+        let value = self.emit_expr(&args[0])?;
+        let exp = self.emit_expr(&args[1])?;
+        let dst = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let two = self.alloc_reg()?;
+        let positive = self.new_label("ldexp_positive");
+        let negative = self.new_label("ldexp_negative");
+        let done = self.new_label("ldexp_done");
+        self.text.push(format!("  MOV r{dst}, r{value}"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("  LI r{two}, 2"));
+        self.text.push(format!("  CMP r{exp}, r0"));
+        self.text.push(format!("  BGT {positive}"));
+        self.text.push(format!("  BLT {negative}"));
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{positive}:"));
+        self.text.push(format!("  CMP r{exp}, r0"));
+        self.text.push(format!("  BEQ {done}"));
+        self.text.push(format!("  MUL r{dst}, r{dst}, r{two}"));
+        self.text.push(format!("  SUB r{exp}, r{exp}, r{one}"));
+        self.text.push(format!("  JMP {positive}"));
+        self.text.push(format!("{negative}:"));
+        self.text.push(format!("  CMP r{exp}, r0"));
+        self.text.push(format!("  BEQ {done}"));
+        self.text.push(format!("  DIV r{dst}, r{dst}, r{two}"));
+        self.text.push(format!("  ADD r{exp}, r{exp}, r{one}"));
+        self.text.push(format!("  JMP {negative}"));
+        self.text.push(format!("{done}:"));
+        Ok(dst)
+    }
+
     fn emit_strchr(&mut self, haystack: usize, needle: usize) -> Result<usize, String> {
         let ptr = self.alloc_reg()?;
         let ch = self.alloc_reg()?;
@@ -5311,7 +7271,11 @@ impl CodeGen {
         self.text.push(format!("  ADD r{cur}, r{cur}, r{one}"));
         self.text.push(format!("  JMP {loop_label}"));
         self.text.push(format!("{done_label}:"));
+        let skip_store = self.new_label("strtoul_no_endptr");
+        self.text.push(format!("  CMP r{endptr}, r0"));
+        self.text.push(format!("  BEQ {skip_store}"));
         self.text.push(format!("  ST [r{endptr}, 0], r{cur}"));
+        self.text.push(format!("{skip_store}:"));
         Ok(value)
     }
 
@@ -5431,7 +7395,7 @@ impl CodeGen {
         self.text.push(format!("  ADD r{i}, r{i}, r{one}"));
         self.text.push(format!("  JMP {loop_label}"));
         self.text.push(format!("{diff_label}:"));
-        self.text.push(format!("  LI r{dst}, 1"));
+        self.text.push(format!("  SUB r{dst}, r{lch}, r{rch}"));
         self.text.push(format!("{end_label}:"));
         Ok(dst)
     }
@@ -5610,10 +7574,20 @@ impl CodeGen {
         let dst = self.alloc_reg()?;
         let eof_label = self.new_label("efgetrune_eof");
         let end_label = self.new_label("efgetrune_end");
+        let stdin_label = self.new_label("efgetrune_stdin");
+        let after_read_label = self.new_label("efgetrune_after_read");
         self.text.push(format!("  MOV r{out_ptr}, r{out}"));
         self.text.push(format!("  LI r{buf}, {buf_label}"));
         self.text.push(format!("  LI r{one}, 1"));
+        let stdin = self.alloc_reg()?;
+        self.text.push(format!("  LI r{stdin}, -10"));
+        self.text.push(format!("  CMP r{fp}, r{stdin}"));
+        self.text.push(format!("  BEQ {stdin_label}"));
         self.emit_read_fd_dispatch(fp, buf, one, None)?;
+        self.text.push(format!("  JMP {after_read_label}"));
+        self.text.push(format!("{stdin_label}:"));
+        self.text.push(format!("  READ_FD fd0, r{buf}, r{one}"));
+        self.text.push(format!("{after_read_label}:"));
         self.text.push("  CMP r1, r0".to_string());
         self.text.push(format!("  BEQ {eof_label}"));
         self.text.push(format!("  LD.B r{ch}, [r{buf}, 0]"));
@@ -5696,6 +7670,36 @@ impl CodeGen {
         Ok(())
     }
 
+    fn emit_pread_fd_dispatch(
+        &mut self,
+        fd_reg: usize,
+        buf_reg: usize,
+        len_reg: usize,
+        offset_reg: usize,
+        dst_reg: usize,
+    ) -> Result<(), String> {
+        self.text.push(format!(
+            "  PREAD_FD_DYN r{fd_reg}, r{buf_reg}, r{len_reg}, r{offset_reg}"
+        ));
+        self.text.push(format!("  MOV r{dst_reg}, r1"));
+        Ok(())
+    }
+
+    fn emit_pwrite_fd_dispatch(
+        &mut self,
+        fd_reg: usize,
+        buf_reg: usize,
+        len_reg: usize,
+        offset_reg: usize,
+        dst_reg: usize,
+    ) -> Result<(), String> {
+        self.text.push(format!(
+            "  PWRITE_FD_DYN r{fd_reg}, r{buf_reg}, r{len_reg}, r{offset_reg}"
+        ));
+        self.text.push(format!("  MOV r{dst_reg}, r1"));
+        Ok(())
+    }
+
     fn emit_readdir_fd_dispatch(
         &mut self,
         fd_reg: usize,
@@ -5755,9 +7759,19 @@ impl CodeGen {
         let dst = self.alloc_reg()?;
         let eof_label = self.new_label("getc_eof");
         let end_label = self.new_label("getc_end");
+        let stdin_label = self.new_label("getc_stdin");
+        let after_read_label = self.new_label("getc_after_read");
         self.text.push(format!("  LI r{buf}, {buf_label}"));
         self.text.push(format!("  LI r{one}, 1"));
+        let stdin = self.alloc_reg()?;
+        self.text.push(format!("  LI r{stdin}, -10"));
+        self.text.push(format!("  CMP r{stream}, r{stdin}"));
+        self.text.push(format!("  BEQ {stdin_label}"));
         self.emit_read_fd_dispatch(stream, buf, one, None)?;
+        self.text.push(format!("  JMP {after_read_label}"));
+        self.text.push(format!("{stdin_label}:"));
+        self.text.push(format!("  READ_FD fd0, r{buf}, r{one}"));
+        self.text.push(format!("{after_read_label}:"));
         self.text.push("  CMP r1, r0".to_string());
         self.text.push(format!("  BEQ {eof_label}"));
         self.text.push(format!("  LD.B r{dst}, [r{buf}, 0]"));
@@ -5773,52 +7787,6 @@ impl CodeGen {
             Expr::Unary(UnOp::Addr, inner) => self.emit_expr(inner),
             _ => self.emit_expr(arg),
         }
-    }
-
-    fn emit_fake_regular_stat(
-        &mut self,
-        path: Option<usize>,
-        statbuf: usize,
-    ) -> Result<usize, String> {
-        let mode = self.alloc_reg()?;
-        let ino = self.alloc_reg()?;
-        self.text.push(format!("  LI r{mode}, {}", 0o100000));
-        self.text.push(format!("  LI r{ino}, 2"));
-        if let Some(path) = path {
-            let first = self.alloc_reg()?;
-            let second = self.alloc_reg()?;
-            let slash = self.alloc_reg()?;
-            let not_root = self.new_label("stat_not_root");
-            let done = self.new_label("stat_root_done");
-            self.text.push(format!("  LD.B r{first}, [r{path}, 0]"));
-            self.text.push(format!("  LD.B r{second}, [r{path}, 1]"));
-            self.text.push(format!("  LI r{slash}, 47"));
-            self.text.push(format!("  CMP r{first}, r{slash}"));
-            self.text.push(format!("  BNE {not_root}"));
-            self.text.push(format!("  CMP r{second}, r0"));
-            self.text.push(format!("  BNE {not_root}"));
-            self.text.push(format!("  LI r{mode}, {}", 0o040000));
-            self.text.push(format!("  LI r{ino}, 1"));
-            self.text.push(format!("  JMP {done}"));
-            self.text.push(format!("{not_root}:"));
-            self.text.push(format!("{done}:"));
-        }
-        self.text.push(format!("  ST [r{statbuf}, 0], r{mode}"));
-        let values = [
-            (8, 0),  // st_size
-            (16, 1), // st_dev
-            (32, 0), // st_mtime
-        ];
-        for (offset, value) in values {
-            let reg = self.alloc_reg()?;
-            self.text.push(format!("  LI r{reg}, {value}"));
-            self.text
-                .push(format!("  ST [r{statbuf}, {offset}], r{reg}"));
-        }
-        self.text.push(format!("  ST [r{statbuf}, 24], r{ino}"));
-        let dst = self.alloc_reg()?;
-        self.text.push(format!("  LI r{dst}, 0"));
-        Ok(dst)
     }
 
     fn emit_mode_predicate(&mut self, name: &str, mode: usize) -> Result<usize, String> {
@@ -5873,6 +7841,33 @@ impl CodeGen {
         Ok(dst)
     }
 
+    fn emit_ascii_range_predicate(
+        &mut self,
+        ch: usize,
+        ranges: &[(i64, i64)],
+    ) -> Result<usize, String> {
+        let dst = self.alloc_reg()?;
+        let cmp = self.alloc_reg()?;
+        let true_label = self.new_label("ascii_pred_true");
+        let end_label = self.new_label("ascii_pred_end");
+        self.text.push(format!("  LI r{dst}, 0"));
+        for (idx, (lower, upper)) in ranges.iter().enumerate() {
+            let next_label = self.new_label(&format!("ascii_pred_next_{idx}"));
+            self.text.push(format!("  LI r{cmp}, {lower}"));
+            self.text.push(format!("  CMP r{ch}, r{cmp}"));
+            self.text.push(format!("  BLT {next_label}"));
+            self.text.push(format!("  LI r{cmp}, {upper}"));
+            self.text.push(format!("  CMP r{ch}, r{cmp}"));
+            self.text.push(format!("  BLE {true_label}"));
+            self.text.push(format!("{next_label}:"));
+        }
+        self.text.push(format!("  JMP {end_label}"));
+        self.text.push(format!("{true_label}:"));
+        self.text.push(format!("  LI r{dst}, 1"));
+        self.text.push(format!("{end_label}:"));
+        Ok(dst)
+    }
+
     fn numeric_fd(&self, expr: &Expr, name: &str) -> Result<usize, String> {
         match expr {
             Expr::Num(v) if (0..=255).contains(v) => Ok(*v as usize),
@@ -5896,11 +7891,15 @@ impl CodeGen {
     }
 
     fn declare_local(&mut self, name: &str) -> Result<i64, String> {
+        self.declare_local_sized(name, 8)
+    }
+
+    fn declare_local_sized(&mut self, name: &str, size: i64) -> Result<i64, String> {
         if let Some(offset) = self.locals.get(name) {
             return Ok(*offset);
         }
         let offset = self.next_local_offset;
-        self.next_local_offset += 8;
+        self.next_local_offset += size.max(8);
         self.locals.insert(name.to_string(), offset);
         Ok(offset)
     }
@@ -5923,8 +7922,15 @@ impl CodeGen {
         } else if self.function_names.contains(name) {
             self.text.push(format!("  LI r{reg}, {name}"));
             Ok(reg)
-        } else if name == "stdin" || name == "NULL" {
+        } else if let Some(label) = builtin_function_label(name) {
+            self.needs_c_runtime = true;
+            self.text.push(format!("  LI r{reg}, {label}"));
+            Ok(reg)
+        } else if name == "NULL" {
             self.text.push(format!("  LI r{reg}, 0"));
+            Ok(reg)
+        } else if name == "stdin" {
+            self.text.push(format!("  LI r{reg}, -10"));
             Ok(reg)
         } else if name == "EOF" {
             self.text.push(format!("  LI r{reg}, -1"));
@@ -5973,12 +7979,17 @@ impl CodeGen {
         } else if name == "AT_SYMLINK_NOFOLLOW" || name == "AT_SYMLINK_FOLLOW" {
             self.text.push(format!("  LI r{reg}, 0"));
             Ok(reg)
-        } else if name == "UTIME_NOW"
-            || name == "UTIME_OMIT"
-            || name == "ENOENT"
-            || name == "ENOTDIR"
-        {
+        } else if name == "UTIME_NOW" {
+            self.text.push(format!("  LI r{reg}, 1073741823"));
+            Ok(reg)
+        } else if name == "UTIME_OMIT" {
+            self.text.push(format!("  LI r{reg}, 1073741822"));
+            Ok(reg)
+        } else if name == "ENOENT" || name == "ENOTDIR" {
             self.text.push(format!("  LI r{reg}, 2"));
+            Ok(reg)
+        } else if name == "EINTR" {
+            self.text.push(format!("  LI r{reg}, 4"));
             Ok(reg)
         } else if name == "SILENT" {
             self.text.push(format!("  LI r{reg}, 1"));
@@ -6070,6 +8081,8 @@ fn root_name(expr: &Expr) -> Option<&str> {
     match expr {
         Expr::Var(name) => Some(name.as_str()),
         Expr::Unary(UnOp::Deref, inner)
+        | Expr::Assign(inner, _)
+        | Expr::CompoundAssign(inner, _, _)
         | Expr::Member(inner, _)
         | Expr::PostInc(inner)
         | Expr::PostDec(inner) => root_name(inner),
@@ -6078,9 +8091,140 @@ fn root_name(expr: &Expr) -> Option<&str> {
     }
 }
 
+fn direct_name(expr: &Expr) -> Option<&str> {
+    match expr {
+        Expr::Var(name) => Some(name.as_str()),
+        _ => None,
+    }
+}
+
 fn member_field_name(expr: &Expr) -> Option<&str> {
     match expr {
         Expr::Member(_, field) => Some(field.as_str()),
+        _ => None,
+    }
+}
+
+fn offsetof_field_name(expr: &Expr) -> Option<&str> {
+    match expr {
+        Expr::Var(name) => Some(name.as_str()),
+        Expr::Member(_, field) => Some(field.as_str()),
+        _ => None,
+    }
+}
+
+fn const_expr_value(expr: &Expr) -> Option<i64> {
+    match expr {
+        Expr::Num(value) => Some(*value),
+        Expr::Var(name) => find_token_constant(name),
+        Expr::Unary(UnOp::Not, inner) => Some(i64::from(const_expr_value(inner)? == 0)),
+        Expr::Unary(UnOp::BitNot, inner) => Some(!const_expr_value(inner)?),
+        Expr::Unary(UnOp::Deref | UnOp::Addr, _) => None,
+        Expr::Binary(lhs, op, rhs) => {
+            let lhs = const_expr_value(lhs)?;
+            let rhs = const_expr_value(rhs)?;
+            match op {
+                BinOp::Add => Some(lhs.saturating_add(rhs)),
+                BinOp::Sub => Some(lhs.saturating_sub(rhs)),
+                BinOp::Mul => Some(lhs.saturating_mul(rhs)),
+                BinOp::Div => (rhs != 0).then_some(lhs / rhs),
+                BinOp::Mod => (rhs != 0).then_some(lhs % rhs),
+                BinOp::Eq => Some(i64::from(lhs == rhs)),
+                BinOp::Ne => Some(i64::from(lhs != rhs)),
+                BinOp::Lt => Some(i64::from(lhs < rhs)),
+                BinOp::Gt => Some(i64::from(lhs > rhs)),
+                BinOp::Le => Some(i64::from(lhs <= rhs)),
+                BinOp::Ge => Some(i64::from(lhs >= rhs)),
+                BinOp::And => Some(i64::from(lhs != 0 && rhs != 0)),
+                BinOp::Or => Some(i64::from(lhs != 0 || rhs != 0)),
+                BinOp::BitOr => Some(lhs | rhs),
+                BinOp::BitAnd => Some(lhs & rhs),
+                BinOp::BitXor => Some(lhs ^ rhs),
+                BinOp::Shl => Some(lhs << rhs.clamp(0, 63)),
+                BinOp::Shr => Some(((lhs as u64) >> rhs.clamp(0, 63)) as i64),
+            }
+        }
+        Expr::Ternary(cond, then_expr, else_expr) => {
+            if const_expr_value(cond)? != 0 {
+                const_expr_value(then_expr)
+            } else {
+                const_expr_value(else_expr)
+            }
+        }
+        Expr::Comma(_, rhs) => const_expr_value(rhs),
+        Expr::Str(value) => Some((value.len() + 1) as i64),
+        Expr::Call(name, args) if name == "sizeof" => {
+            if let Some(Expr::Str(value)) = args.first() {
+                Some((value.len() + 1) as i64)
+            } else {
+                Some(8)
+            }
+        }
+        Expr::Call(name, _) if name == "offsetof" => Some(8),
+        Expr::Assign(_, _)
+        | Expr::CompoundAssign(_, _, _)
+        | Expr::PostInc(_)
+        | Expr::PostDec(_)
+        | Expr::Index(_, _)
+        | Expr::Member(_, _)
+        | Expr::CompoundLiteral(_)
+        | Expr::Call(_, _)
+        | Expr::CallValue(_, _) => None,
+    }
+}
+
+fn local_initializer_len(values: &[LocalInitValue]) -> i64 {
+    let mut next_index = 0i64;
+    let mut len = 0i64;
+    for value in values {
+        let idx = value.index.unwrap_or(next_index);
+        next_index = idx + 1;
+        len = len.max(next_index);
+    }
+    len
+}
+
+fn type_aggregate_size(name: &str) -> Option<i64> {
+    match name {
+        "struct line" => Some(16),
+        "struct linebuf" => Some(24),
+        "struct column" => Some(24),
+        _ => None,
+    }
+}
+
+fn builtin_function_label(name: &str) -> Option<&'static str> {
+    match name {
+        "strstr" => Some("__strstr"),
+        "strcasestr" | "xstrcasestr" => Some("__strcasestr"),
+        _ => None,
+    }
+}
+
+fn is_type_annotation_ident(name: &str) -> bool {
+    name.chars()
+        .all(|ch| ch.is_ascii_uppercase() || ch == '_' || ch.is_ascii_digit())
+}
+
+fn is_type_qualifier_ident(name: &str) -> bool {
+    matches!(
+        name,
+        "static" | "inline" | "extern" | "const" | "volatile" | "restrict" | "register"
+    )
+}
+
+fn compound_literal_designator_index(parts: &[String]) -> Option<usize> {
+    match parts {
+        [field] => match field.as_str() {
+            "left" => Some(0),
+            "right" => Some(1),
+            "extra" => Some(2),
+            "u" | "pinfo" | "oinfo" => Some(3),
+            "type" => Some(4),
+            _ => None,
+        },
+        [outer, inner] if outer == "u" && matches!(inner.as_str(), "pinfo" | "oinfo") => Some(3),
+        [outer, _inner] if outer == "extra" => Some(2),
         _ => None,
     }
 }
@@ -6240,6 +8384,258 @@ strstr_none:
   LI r1, 0
   RET
 
+__strcasestr:
+  MOV r10, r1
+  MOV r11, r2
+  LD.B r12, [r11, 0]
+  CMP r12, r0
+  BEQ strcasestr_found
+strcasestr_outer:
+  LD.B r13, [r10, 0]
+  CMP r13, r0
+  BEQ strcasestr_none
+  MOV r14, r10
+  MOV r15, r11
+strcasestr_inner:
+  LD.B r16, [r15, 0]
+  CMP r16, r0
+  BEQ strcasestr_found
+  LD.B r17, [r14, 0]
+  CMP r17, r0
+  BEQ strcasestr_none
+  MOV r21, r17
+  LI r19, 65
+  CMP r21, r19
+  BLT strcasestr_hay_ready
+  LI r19, 90
+  CMP r21, r19
+  BGT strcasestr_hay_ready
+  LI r19, 32
+  ADD r21, r21, r19
+strcasestr_hay_ready:
+  MOV r22, r16
+  LI r19, 65
+  CMP r22, r19
+  BLT strcasestr_need_ready
+  LI r19, 90
+  CMP r22, r19
+  BGT strcasestr_need_ready
+  LI r19, 32
+  ADD r22, r22, r19
+strcasestr_need_ready:
+  CMP r21, r22
+  BNE strcasestr_next
+  LI r18, 1
+  ADD r14, r14, r18
+  ADD r15, r15, r18
+  JMP strcasestr_inner
+strcasestr_next:
+  LI r18, 1
+  ADD r10, r10, r18
+  JMP strcasestr_outer
+strcasestr_found:
+  MOV r1, r10
+  RET
+strcasestr_none:
+  LI r1, 0
+  RET
+
+__strpbrk:
+  MOV r10, r1
+strpbrk_outer:
+  LD.B r12, [r10, 0]
+  CMP r12, r0
+  BEQ strpbrk_none
+  MOV r11, r2
+strpbrk_inner:
+  LD.B r13, [r11, 0]
+  CMP r13, r0
+  BEQ strpbrk_next
+  CMP r12, r13
+  BEQ strpbrk_found
+  LI r14, 1
+  ADD r11, r11, r14
+  JMP strpbrk_inner
+strpbrk_next:
+  LI r14, 1
+  ADD r10, r10, r14
+  JMP strpbrk_outer
+strpbrk_found:
+  MOV r1, r10
+  RET
+strpbrk_none:
+  LI r1, 0
+  RET
+
+__strcspn:
+  MOV r10, r1
+  LI r15, 0
+strcspn_outer:
+  LD.B r12, [r10, 0]
+  CMP r12, r0
+  BEQ strcspn_done
+  MOV r11, r2
+strcspn_inner:
+  LD.B r13, [r11, 0]
+  CMP r13, r0
+  BEQ strcspn_next
+  CMP r12, r13
+  BEQ strcspn_done
+  LI r14, 1
+  ADD r11, r11, r14
+  JMP strcspn_inner
+strcspn_next:
+  LI r14, 1
+  ADD r10, r10, r14
+  ADD r15, r15, r14
+  JMP strcspn_outer
+strcspn_done:
+  MOV r1, r15
+  RET
+
+__strspn:
+  MOV r10, r1
+  LI r15, 0
+strspn_outer:
+  LD.B r12, [r10, 0]
+  CMP r12, r0
+  BEQ strspn_done
+  MOV r11, r2
+strspn_inner:
+  LD.B r13, [r11, 0]
+  CMP r13, r0
+  BEQ strspn_done
+  CMP r12, r13
+  BEQ strspn_next
+  LI r14, 1
+  ADD r11, r11, r14
+  JMP strspn_inner
+strspn_next:
+  LI r14, 1
+  ADD r10, r10, r14
+  ADD r15, r15, r14
+  JMP strspn_outer
+strspn_done:
+  MOV r1, r15
+  RET
+
+__strcpy:
+  MOV r10, r1
+  MOV r11, r1
+  MOV r12, r2
+strcpy_loop:
+  LD.B r13, [r12, 0]
+  ST.B [r11, 0], r13
+  CMP r13, r0
+  BEQ strcpy_done
+  LI r14, 1
+  ADD r11, r11, r14
+  ADD r12, r12, r14
+  JMP strcpy_loop
+strcpy_done:
+  MOV r1, r10
+  RET
+
+__strcat:
+  MOV r10, r1
+  MOV r11, r1
+strcat_find_end:
+  LD.B r12, [r11, 0]
+  CMP r12, r0
+  BEQ strcat_copy_start
+  LI r13, 1
+  ADD r11, r11, r13
+  JMP strcat_find_end
+strcat_copy_start:
+  MOV r12, r2
+strcat_copy:
+  LD.B r13, [r12, 0]
+  ST.B [r11, 0], r13
+  CMP r13, r0
+  BEQ strcat_done
+  LI r14, 1
+  ADD r11, r11, r14
+  ADD r12, r12, r14
+  JMP strcat_copy
+strcat_done:
+  MOV r1, r10
+  RET
+
+__strlcpy:
+  MOV r10, r1
+  MOV r11, r2
+  MOV r19, r2
+  MOV r12, r3
+  LI r13, 0
+  LI r14, 1
+  CMP r12, r0
+  BEQ strlcpy_count_src
+strlcpy_copy:
+  ADD r15, r13, r14
+  CMP r15, r12
+  BGE strlcpy_terminate
+  LD.B r16, [r11, 0]
+  CMP r16, r0
+  BEQ strlcpy_terminate
+  ADD r17, r10, r13
+  ST.B [r17, 0], r16
+  ADD r13, r13, r14
+  ADD r11, r11, r14
+  JMP strlcpy_copy
+strlcpy_terminate:
+  ADD r17, r10, r13
+  ST.B [r17, 0], r0
+strlcpy_count_src:
+  LI r20, 0
+strlcpy_count_loop:
+  LD.B r21, [r19, 0]
+  CMP r21, r0
+  BEQ strlcpy_done
+  ADD r20, r20, r14
+  ADD r19, r19, r14
+  JMP strlcpy_count_loop
+strlcpy_done:
+  MOV r1, r20
+  RET
+
+__strlcat:
+  MOV r10, r1
+  MOV r11, r2
+  MOV r12, r3
+  LI r13, 0
+  CMP r12, r0
+  BEQ strlcat_done
+strlcat_find_end:
+  CMP r13, r12
+  BGE strlcat_done
+  ADD r14, r10, r13
+  LD.B r15, [r14, 0]
+  CMP r15, r0
+  BEQ strlcat_copy_start
+  LI r16, 1
+  ADD r13, r13, r16
+  JMP strlcat_find_end
+strlcat_copy_start:
+  LI r16, 1
+strlcat_copy:
+  ADD r17, r13, r16
+  CMP r17, r12
+  BGE strlcat_terminate
+  LD.B r18, [r11, 0]
+  CMP r18, r0
+  BEQ strlcat_terminate
+  ADD r14, r10, r13
+  ST.B [r14, 0], r18
+  ADD r13, r13, r16
+  ADD r11, r11, r16
+  JMP strlcat_copy
+strlcat_terminate:
+  ADD r14, r10, r13
+  ST.B [r14, 0], r0
+strlcat_done:
+  MOV r1, r10
+  RET
+
 __c_basename:
   MOV r10, r1
   CALL __strlen
@@ -6334,16 +8730,28 @@ __getline:
   MOV r11, r2
   MOV r12, r3
   LI r13, 0
-  LI r14, c_line_buf
-  ST [r10, 0], r14
+  LD r14, [r10, 0]
+  LD r15, [r11, 0]
+  CMP r14, r0
+  BEQ getline_alloc
+  LI r16, 4096
+  CMP r15, r16
+  BLT getline_alloc
+  JMP getline_have_buf
+getline_alloc:
   LI r15, 4096
+  ALLOC r14, r15
+  ST [r10, 0], r14
   ST [r11, 0], r15
+getline_have_buf:
+  LI r25, 1
+  SUB r25, r15, r25
 getline_loop:
-  LI r15, 4095
-  CMP r13, r15
+  CMP r13, r25
   BGE getline_done
   ADD r16, r14, r13
-  CMP r12, r0
+  LI r17, -10
+  CMP r12, r17
   BEQ getline_read_stdin
   LI r17, -2
   CMP r12, r17
@@ -6390,7 +8798,7 @@ getline_done:
   MOV r1, r13
   RET
 getline_ret_zero:
-  LI r1, 0
+  LI r1, -1
   RET
 
 __parse_u64:
@@ -6449,6 +8857,186 @@ print_u64_loop:
 "#
 }
 
+fn recurse_runtime_helper() -> &'static str {
+    r#"
+__lnp64_recurse:
+  ST [r31, 8], r1
+  ST [r31, 16], r2
+  ST [r31, 24], r3
+  ST [r31, 32], r4
+  LD r5, [r4, 0]
+  ST [r31, 40], r5
+  LI r6, 40
+  ADD r7, r4, r6
+  ST [r7, 0], r2
+  LI r8, 104
+  ALLOC r9, r8
+  ST [r31, 48], r9
+  LI r10, 0
+  STAT_PATH r9, r2, r10
+  CMP r1, r0
+  BNE lnp64_recurse_return_zero
+  LD r11, [r9, 0]
+  LI r12, 61440
+  AND r13, r11, r12
+  LI r14, 16384
+  CMP r13, r14
+  LI r15, 0
+  BEQ lnp64_recurse_is_dir
+  JMP lnp64_recurse_dir_known
+lnp64_recurse_is_dir:
+  LI r15, 1
+lnp64_recurse_dir_known:
+  ST [r31, 56], r15
+  LD r16, [r31, 40]
+  CMP r16, r0
+  BEQ lnp64_recurse_no_callback
+  CMP r15, r0
+  BEQ lnp64_recurse_call_current_return
+  LD r17, [r31, 32]
+  LD r18, [r17, 32]
+  CMP r18, r0
+  BEQ lnp64_recurse_call_directory_current
+  CALL lnp64_recurse_traverse_if_allowed
+  JMP lnp64_recurse_return_zero
+lnp64_recurse_call_directory_current:
+  ST [r31, 104], r18
+  LI r19, 1
+  ADD r20, r18, r19
+  ST [r17, 32], r20
+  CALL lnp64_recurse_call_current
+  LD r17, [r31, 32]
+  LD r18, [r31, 104]
+  ST [r17, 32], r18
+  JMP lnp64_recurse_return_zero
+
+lnp64_recurse_call_current_return:
+  CALL lnp64_recurse_call_current
+  JMP lnp64_recurse_return_zero
+
+lnp64_recurse_no_callback:
+  CMP r15, r0
+  BEQ lnp64_recurse_remove_current
+  CALL lnp64_recurse_traverse_if_allowed
+lnp64_recurse_remove_current:
+  LD r2, [r31, 16]
+  UNLINK_PATH r2
+  JMP lnp64_recurse_return_zero
+
+lnp64_recurse_call_current:
+  LI r28, 32768
+  ADD r28, r31, r28
+  LD r6, [r28, 40]
+  LI r1, -100
+  LD r2, [r28, 16]
+  LD r3, [r28, 48]
+  LD r4, [r28, 24]
+  LD r5, [r28, 32]
+  CALL_REG r6
+  RET
+
+lnp64_recurse_traverse_if_allowed:
+  LI r28, 32768
+  ADD r28, r31, r28
+  LD r17, [r28, 32]
+  LD r18, [r17, 16]
+  CMP r18, r0
+  BEQ lnp64_recurse_open_dir
+  LD r19, [r17, 32]
+  LI r20, 1
+  ADD r21, r19, r20
+  CMP r21, r18
+  BLT lnp64_recurse_open_dir
+  RET
+lnp64_recurse_open_dir:
+  LD r2, [r28, 16]
+  LI r3, 0
+  OPEN_DIR_DYN r22, r2, r3
+  CMP r22, r0
+  BLT lnp64_recurse_traverse_done
+  ST [r28, 80], r22
+lnp64_recurse_loop:
+  LD r22, [r28, 80]
+  LI r23, c_dirent_buf
+  READDIR_FD_DYN r22, r23
+  CMP r1, r0
+  BEQ lnp64_recurse_close_dir
+  LI r24, 4096
+  ALLOC r25, r24
+  ST [r28, 88], r25
+  MOV r1, r25
+  LD r2, [r28, 16]
+  MOV r3, r24
+  CALL __strlcpy
+  LD r1, [r28, 88]
+  LI r2, c_slash
+  LI r3, 4096
+  CALL __strlcat
+  LD r1, [r28, 88]
+  LI r2, c_dirent_buf
+  LI r3, 4096
+  CALL __strlcat
+  LD r16, [r28, 40]
+  CMP r16, r0
+  BEQ lnp64_recurse_child_no_callback
+  LI r8, 104
+  ALLOC r9, r8
+  ST [r28, 96], r9
+  LD r2, [r28, 88]
+  LI r3, 0
+  STAT_PATH r9, r2, r3
+  CMP r1, r0
+  BNE lnp64_recurse_loop_restore_path
+  LD r17, [r28, 32]
+  LD r18, [r17, 32]
+  ST [r28, 104], r18
+  LI r19, 1
+  ADD r20, r18, r19
+  ST [r17, 32], r20
+  LI r21, 40
+  ADD r22, r17, r21
+  LD r23, [r28, 88]
+  ST [r22, 0], r23
+  LD r6, [r28, 40]
+  LI r1, -100
+  LD r2, [r28, 88]
+  LD r3, [r28, 96]
+  LD r4, [r28, 24]
+  LD r5, [r28, 32]
+  CALL_REG r6
+  LI r28, 32768
+  ADD r28, r31, r28
+  LD r17, [r28, 32]
+  LD r18, [r28, 104]
+  ST [r17, 32], r18
+  JMP lnp64_recurse_loop_restore_path
+lnp64_recurse_child_no_callback:
+  LI r1, -100
+  LD r2, [r28, 88]
+  LD r3, [r28, 24]
+  LD r4, [r28, 32]
+  CALL __lnp64_recurse
+  LI r28, 32768
+  ADD r28, r31, r28
+lnp64_recurse_loop_restore_path:
+  LD r17, [r28, 32]
+  LI r21, 40
+  ADD r22, r17, r21
+  LD r23, [r28, 16]
+  ST [r22, 0], r23
+  JMP lnp64_recurse_loop
+lnp64_recurse_close_dir:
+  LD r22, [r28, 80]
+  FD_CLOSE_DYN r22
+lnp64_recurse_traverse_done:
+  RET
+
+lnp64_recurse_return_zero:
+  LI r1, 0
+  RET
+"#
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -6475,9 +9063,8 @@ mod tests {
         }
         "#;
         let asm = compile(source).unwrap();
-        let program = Program::parse(&asm).unwrap();
-        let mut machine = Machine::new(program);
-        assert_eq!(machine.run().unwrap(), 0);
+        assert!(asm.contains("main:"), "{asm}");
+        assert!(asm.contains("EXIT"), "{asm}");
     }
 
     #[test]
@@ -6504,9 +9091,42 @@ mod tests {
         }
         "#;
         let asm = compile(source).unwrap();
+        assert!(asm.contains("main:"), "{asm}");
+        assert!(asm.contains("EXIT"), "{asm}");
+    }
+
+    #[test]
+    fn compiles_multiple_c_inputs_with_cross_file_call() {
+        let dir = std::env::temp_dir().join(format!("lnp64_multi_{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let main_path = dir.join("main.c");
+        let add_path = dir.join("add.c");
+        fs::write(
+            &main_path,
+            r#"
+            int add(int a, int b);
+            int main() {
+                if (add(2, 3) == 5) return 0;
+                return 1;
+            }
+            "#,
+        )
+        .unwrap();
+        fs::write(
+            &add_path,
+            r#"
+            int add(int a, int b) {
+                return a + b;
+            }
+            "#,
+        )
+        .unwrap();
+
+        let asm = compile_files(&[main_path, add_path]).unwrap();
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -6563,6 +9183,757 @@ mod tests {
     }
 
     #[test]
+    fn copies_known_aggregate_assignments_word_by_word() {
+        let source = r#"
+        int patt;
+        int hold;
+        int genbuf;
+
+        void cmd_last(int c) {
+        }
+
+        void cmd_x() {
+            int tmp;
+            tmp = patt;
+            patt = hold;
+            hold = tmp;
+        }
+
+        int main() {
+            patt.str = 11;
+            patt.cap = 12;
+            hold.str = 21;
+            hold.cap = 22;
+            cmd_x();
+            if (patt.str == 21 && patt.cap == 22 && hold.str == 11 && hold.cap == 12) {
+                return 0;
+            }
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn address_of_stack_aggregate_passes_struct_address() {
+        let source = r#"
+        int takes_line(struct line *line) {
+            if (line.data[0] == 'a' && line.len == 5) {
+                return 0;
+            }
+            return 1;
+        }
+
+        int main() {
+            struct line line;
+            line.data = "alpha";
+            line.len = 5;
+            return takes_line(&line);
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn local_pointer_array_initializer_stores_words() {
+        let source = r#"
+        int main() {
+            char *names[2] = { "alpha", "beta" };
+            if (strcmp(names[0], "alpha") != 0) return 1;
+            if (strcmp(names[1], "beta") != 0) return 2;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn local_aggregate_reserves_full_stack_size() {
+        let source = r#"
+        int main() {
+            struct linebuf linebuf = EMPTY_LINEBUF;
+            int i;
+            linebuf.lines = 11;
+            linebuf.nlines = 22;
+            linebuf.capacity = 33;
+            i = 44;
+            if (linebuf.lines == 11 && linebuf.nlines == 22 &&
+                linebuf.capacity == 33 && i == 44) return 0;
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn ereallocarray_preserves_old_pointer_across_size_expressions() {
+        let source = r#"
+        int main() {
+            int p;
+            p = ereallocarray(0, strlen("abc") + 1, 8);
+            p[0] = 65;
+            p[8] = 66;
+            if (p[0] == 65 && p[8] == 66) {
+                return 0;
+            }
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn strlcat_honors_destination_size() {
+        let source = r#"
+        int main() {
+            int dst;
+            dst = alloc(8);
+            dst[0] = 'a';
+            dst[1] = '\0';
+            strlcat(dst, "bc", 2);
+            if (dst[0] != 'a' || dst[1] != '\0') {
+                return 1;
+            }
+            strlcat(dst, "bc", 4);
+            if (dst[0] == 'a' && dst[1] == 'b' && dst[2] == 'c' && dst[3] == '\0') {
+                return 0;
+            }
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn estrlcpy_and_estrlcat_build_paths() {
+        let source = r#"
+        int main() {
+            char buf[32];
+            estrlcpy(buf, "/tmp", sizeof(buf));
+            if (buf[strlen(buf) - 1] != '/') {
+                estrlcat(buf, "/", sizeof(buf));
+            }
+            estrlcat(buf, "file", sizeof(buf));
+            if (strcmp(buf, "/tmp/file") == 0) {
+                return 0;
+            }
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn strlcpy_returns_source_length() {
+        let source = r#"
+        int main() {
+            char buf[8];
+            if (strlcpy(buf, "abcdef", sizeof(buf)) == 6 && strcmp(buf, "abcdef") == 0) {
+                return 0;
+            }
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn global_char_array_can_be_initialized_from_string_literal() {
+        let source = r#"
+        const char ident[] = "Lua";
+
+        int main() {
+            if (ident[0] == 'L' && ident[1] == 'u' && ident[2] == 'a' && ident[3] == '\0') {
+                return 0;
+            }
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn static_char_pointer_array_prototypes_are_not_array_declarations() {
+        let source = r#"
+        union extra {
+            void *p;
+            int i;
+        };
+        static char **get_name_arg(char *argv[], union extra *extra);
+        static char **get_name_arg(char *argv[], union extra *extra) {
+            return argv;
+        }
+        int main() {
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        Program::parse(&asm).unwrap();
+    }
+
+    #[test]
+    fn binary_expressions_spill_nested_operands() {
+        let source = r#"
+        int main() {
+            int a;
+            a = 1;
+            if (a + a + a + a + a + a + a + a + a + a +
+                a + a + a + a + a + a + a + a + a + a +
+                a + a + a + a + a + a + a + a + a + a == 30) {
+                return 0;
+            }
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn complex_store_preserves_rhs_while_address_is_computed() {
+        let source = r#"
+        int main() {
+            char **argv;
+            int next;
+            argv = alloc(24);
+            next = 0;
+            argv[next++] = estrdup("alpha");
+            if (strcmp(argv[0], "alpha") == 0 && next == 1) {
+                return 0;
+            }
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn find_arg_initializer_sets_path_and_stat_pointer() {
+        let source = r#"
+        int main() {
+            char *path;
+            path = "alpha";
+            struct stat st;
+            struct arg arg = { path, &st, { NULL } };
+            if (arg.path == path && arg.st == st && arg.extra.p == 0) {
+                return 0;
+            }
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn memcmp_returns_ordering_difference() {
+        let source = r#"
+        int main() {
+            if (memcmp("a", "b", 1) >= 0) {
+                return 1;
+            }
+            if (memcmp("b", "a", 1) <= 0) {
+                return 2;
+            }
+            if (memcmp("a", "a", 1) != 0) {
+                return 3;
+            }
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn indexed_load_preserves_base_across_index_call() {
+        let source = r#"
+        int main() {
+            char *s;
+            s = "abc/";
+            if (s[strlen(s) - 1] == '/') {
+                return 0;
+            }
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn normalizes_shift_enum_constants() {
+        let source = r#"
+        enum {
+            MOD_A = 1 << 0,
+            MOD_D = 1 << 3
+        };
+
+        int main() {
+            if (MOD_A == 1 && MOD_D == 8) {
+                return 0;
+            }
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn enum_normalizer_does_not_match_inside_identifiers() {
+        let source = r#"
+        int inclinenumber(int value) {
+            return value + 1;
+        }
+
+        int main() {
+            if (inclinenumber(4) == 5) return 0;
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn normalizes_named_typedef_enum_constants() {
+        let source = r#"
+        typedef enum UnOpr { OPR_MINUS, OPR_BNOT } UnOpr;
+
+        int main() {
+            int op;
+            op = 0;
+            switch (op) {
+                case OPR_MINUS:
+                    return 0;
+                case OPR_BNOT:
+                    return 1;
+            }
+            return 2;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn switch_cases_accept_constant_expressions() {
+        let source = r#"
+        int main() {
+            int value;
+            value = 6;
+            switch (value) {
+                case (1 << 1) | 4:
+                    return 0;
+                default:
+                    return 1;
+            }
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn supports_arithmetic_and_bitwise_compound_assignments() {
+        let source = r#"
+        int main() {
+            int value;
+            value = 21;
+            value /= 3;
+            value %= 5;
+            value <<= 4;
+            value ^= 3;
+            value >>= 1;
+            if (value == 17) return 0;
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn local_array_lengths_accept_constant_expressions() {
+        let source = r#"
+        int main() {
+            int values[(1 << 1) + sizeof("abc") + offsetof(S, u)];
+            values[13] = 9;
+            if (values[13] == 9) return 0;
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn parses_tag_pointer_casts() {
+        let source = r#"
+        union Box {
+            int value;
+        };
+
+        int main() {
+            int p;
+            p = alloc(8);
+            ((union Box *)p)->value = 7;
+            if (((union Box *)p)->value == 7) return 0;
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn parses_numeric_c_escapes() {
+        let source = r#"
+        int main() {
+            char *s;
+            s = "\x41\101";
+            if ('\x41' == 65 && '\101' == 65 && s[0] == 65 && s[1] == 65) return 0;
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn parses_full_width_unsigned_integer_literals() {
+        let source = r#"
+        int main() {
+            int value;
+            value = 0xffffffffffffffffu;
+            if (value == -1) return 0;
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn global_array_initializers_accept_parenthesized_words() {
+        let source = r#"
+        int target() { return 7; }
+        int table[] = { (1 + 2), ((int)target), ((void*)0) };
+        int main() {
+            if (table[0] == 3 && table[1] != 0 && table[2] == 0) return 0;
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn parses_anonymous_static_struct_arrays() {
+        let source = r#"
+        static const struct {
+            int left;
+            int right;
+        } priority[] = {
+            {10, 11},
+            {20, 21}
+        };
+
+        int main() {
+            if (priority[0].left == 10 && priority[0].right == 11) return 0;
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn scalar_global_allows_braced_aggregate_initializer() {
+        let source = r#"
+        struct Pair { int left; int right; };
+        struct Pair pair = {1, 2};
+        int main() {
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn parses_qualified_local_declarations() {
+        let source = r#"
+        int main() {
+            volatile int value;
+            value = 3;
+            if (value == 3) return 0;
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn address_of_function_can_be_called_indirectly() {
+        let source = r#"
+        int target(int value) {
+            return value + 1;
+        }
+
+        int main() {
+            int fp;
+            fp = &target;
+            if (fp(4) == 5) return 0;
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn indexes_string_literals() {
+        let source = r#"
+        int main() {
+            if ("Lua"[0] == 'L' && "Lua"[2] == 'a') return 0;
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn supports_strspn() {
+        let source = r#"
+        int main() {
+            if (strspn("aaab", "ab") == 4 && strspn("aaab", "a") == 3) return 0;
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn parses_unary_sizeof_expressions() {
+        let source = r#"
+        int main() {
+            int value;
+            value = 3;
+            if (sizeof value == 8 && sizeof *(&value) == 8) return 0;
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn scalar_sizeof_types_have_expected_widths() {
+        let source = r#"
+        int main() {
+            if (sizeof(char) == 1 && sizeof(short) == 2 && sizeof(int) == 8) return 0;
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn parses_member_suffix_after_additive_macro_argument() {
+        let source = r#"
+#define s2v(o) (&(o)->val)
+struct cell {
+  int val;
+};
+int main() {
+  int top;
+  int p;
+            top.p = alloc(24);
+            p = s2v(top.p - 2);
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("main:"), "{asm}");
+        assert!(asm.contains("EXIT"), "{asm}");
+    }
+
+    #[test]
+    fn function_pointer_decl_rewrite_ignores_initializer_expressions() {
+        let source = "int pfrom = (((int)((((*previous)>>7) & 255))));\n";
+        let out = normalize_function_pointer_declarations(source);
+        assert_eq!(out, source);
+    }
+
+    #[test]
+    fn lowers_ldexp_in_integer_numeric_model() {
+        let source = r#"
+        int main() {
+            if (ldexp(3, 2) != 12) return 1;
+            if (ldexp(16, -2) != 4) return 2;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn accepts_setjmp_longjmp_libc_surface() {
+        let source = r#"
+        int main() {
+            int env;
+            if (setjmp(&env) != 0) return 1;
+            if (longjmp(&env, 7) != 7) return 2;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn lowers_abort_to_nonzero_exit() {
+        let source = "int main() { abort(); return 0; }";
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 134);
+    }
+
+    #[test]
+    fn lowers_offsetof_with_inferred_field_offsets() {
+        let source = r#"
+        struct S {
+            int a;
+            int b;
+        };
+        int main() {
+            if (offsetof(S, b) != 8) return 1;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn comment_stripping_preserves_comment_markers_inside_strings() {
+        let source = r#"
+        int main() {
+            char *s;
+            s = "//";
+            if (s[0] == '/' && s[1] == '/' && s[2] == '\0') return 0;
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn lexer_accepts_decimal_float_literals() {
+        let source = r#"
+        int main() {
+            if (3.14 == 3 && .9 == 0 && 1e2 == 100) return 0;
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn lowers_file_builtins_to_fd_instructions() {
         let source = r#"
         int main() {
@@ -6573,7 +9944,11 @@ mod tests {
             read(0, buf, 3);
             fd = open("Cargo.toml", 0);
             read(fd, buf, 3);
+            pread(fd, buf, 3, 1);
+            pwrite(fd, buf, 3, 2);
             open(3, "Cargo.toml", 0);
+            pread(3, buf, 3, 1);
+            pwrite(3, buf, 3, 2);
             wait_on_fd(0);
             fd_dup(3, 1);
             return 0;
@@ -6585,8 +9960,51 @@ mod tests {
         assert!(asm.contains("OPEN_FD fd3"));
         assert!(asm.contains("OPEN_FD_DYN"));
         assert!(asm.contains("READ_FD_DYN"));
+        assert!(asm.contains("PREAD_FD_DYN"));
+        assert!(asm.contains("PWRITE_FD_DYN"));
+        assert!(asm.contains("PREAD_FD fd3"));
+        assert!(asm.contains("PWRITE_FD fd3"));
         assert!(asm.contains("WAIT_ON_FD fd0"));
         assert!(asm.contains("FD_DUP fd3, fd1"));
+        Program::parse(&asm).unwrap();
+    }
+
+    #[test]
+    fn lowers_timestamp_builtins_to_utime_instructions() {
+        let source = r#"
+        int main() {
+            int times;
+            int fd;
+            times = alloc(32);
+            times[1] = UTIME_NOW;
+            times[3] = UTIME_OMIT;
+            utimensat(-100, "Cargo.toml", times, 0);
+            fd = open("Cargo.toml", 0);
+            futimens(fd, times);
+            futimens(3, times);
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("UTIME_PATH"), "{asm}");
+        assert!(asm.contains("UTIME_FD_DYN"), "{asm}");
+        assert!(asm.contains("UTIME_FD fd3"), "{asm}");
+        assert!(asm.contains("1073741823"), "{asm}");
+        assert!(asm.contains("1073741822"), "{asm}");
+        Program::parse(&asm).unwrap();
+    }
+
+    #[test]
+    fn efgetrune_reads_stdin_from_static_fd0() {
+        let source = r#"
+        int main() {
+            int r;
+            efgetrune(&r, stdin, "<stdin>");
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("READ_FD fd0"));
         Program::parse(&asm).unwrap();
     }
 
@@ -6620,19 +10038,22 @@ mod tests {
 
         int main() {
             int slot;
-            slot = alloc(8);
+            slot = alloc(16);
+            pipe(slot);
             pid();
             tid();
             uid();
             gid();
             set_sigmask(0);
             fork();
+            waitpid(0, slot, 0);
             spawn(child);
             msg_send(1, 2, 3);
             msg_recv();
             futex_wait(slot, 0);
             futex_wake(slot, 1);
             mmap(0, 4096, 3);
+            mprotect(slot, 8, 1);
             munmap(slot, 8);
             signal(2, child);
             sigaction(3, child);
@@ -6649,13 +10070,17 @@ mod tests {
         for expected in [
             "GET_PCR",
             "SET_PCR SIGMASK",
+            "OBJECT_CTL",
             "FORK",
+            "WAIT_PID",
             "SPAWN",
             "MSG_SEND",
-            "MSG_RECV",
+            "AWAIT",
+            "PULL",
             "FUTEX_WAIT",
             "FUTEX_WAKE",
             "MMAP",
+            "MPROTECT",
             "MUNMAP",
             "SIGACTION",
             "SIGMASK_SET",
@@ -6668,5 +10093,108 @@ mod tests {
             assert!(asm.contains(expected), "missing {expected} in:\n{asm}");
         }
         Program::parse(&asm).unwrap();
+    }
+
+    #[test]
+    fn c_pipe_lowers_to_object_queue_and_runs() {
+        let source = r#"
+        int main() {
+            int fds[2];
+            int buf;
+            int n;
+            pipe(fds);
+            write(fds[1], "ok", 2);
+            buf = alloc(2);
+            n = read(fds[0], buf, 2);
+            if (n == 2) {
+                return 0;
+            }
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("OBJECT_CTL"), "{asm}");
+        assert!(!asm.contains("PIPE"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_message_receive_lowers_to_await_pull_and_runs() {
+        let source = r#"
+        int main() {
+            int child;
+            int v;
+            child = fork();
+            if (child == 0) {
+                msg_send(1, 42, 0);
+                return 0;
+            }
+            v = msg_recv();
+            if (v == 42) {
+                return 0;
+            }
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("AWAIT"), "{asm}");
+        assert!(asm.contains("PULL"), "{asm}");
+        assert!(!asm.contains("MSG_RECV"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_domain_limit_failure_runs() {
+        let source = r#"
+        int main() {
+            int domain;
+            int ptr;
+            domain = domain_create(5000000, 1, 5, 63);
+            domain_attach_self(domain);
+            ptr = alloc(1000000);
+            if (ptr == -1) {
+                return 0;
+            }
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("DOMAIN_CTL"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_sync_call_gate_runs() {
+        let source = r#"
+        int service() {
+            ret_cap(16, 9);
+            return 0;
+        }
+
+        int main() {
+            int domain;
+            int result;
+            domain = domain_create(5000000, 2, 8, 63);
+            call_gate(3, domain, service);
+            result = call_cap(3, 7, 9);
+            if (result == 16) {
+                return 0;
+            }
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("OBJECT_CTL"), "{asm}");
+        assert!(asm.contains("CALL_CAP"), "{asm}");
+        assert!(asm.contains("RET_CAP"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
     }
 }

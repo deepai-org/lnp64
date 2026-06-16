@@ -226,6 +226,28 @@ impl Parser {
                 arity(0)?;
                 Instr::Fence
             }
+            "PULL" => {
+                arity(4)?;
+                Instr::Pull(
+                    reg(&args[0])?,
+                    fd(&args[1])?,
+                    reg(&args[2])?,
+                    reg(&args[3])?,
+                )
+            }
+            "PUSH" => {
+                arity(4)?;
+                Instr::Push(
+                    reg(&args[0])?,
+                    fd(&args[1])?,
+                    reg(&args[2])?,
+                    reg(&args[3])?,
+                )
+            }
+            "AWAIT" => {
+                arity(3)?;
+                Instr::Await(reg(&args[0])?, fd(&args[1])?, reg(&args[2])?)
+            }
             "ALLOC" => {
                 arity(2)?;
                 Instr::Alloc(reg(&args[0])?, reg(&args[1])?)
@@ -258,6 +280,24 @@ impl Parser {
                 arity(3)?;
                 Instr::ReadFdDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
+            "PREAD_FD" => {
+                arity(4)?;
+                Instr::PreadFd(
+                    fd(&args[0])?,
+                    reg(&args[1])?,
+                    reg(&args[2])?,
+                    reg(&args[3])?,
+                )
+            }
+            "PREAD_FD_DYN" => {
+                arity(4)?;
+                Instr::PreadFdDyn(
+                    reg(&args[0])?,
+                    reg(&args[1])?,
+                    reg(&args[2])?,
+                    reg(&args[3])?,
+                )
+            }
             "READDIR_FD" => {
                 arity(2)?;
                 Instr::ReaddirFd(fd(&args[0])?, reg(&args[1])?)
@@ -281,6 +321,24 @@ impl Parser {
             "WRITE_FD_DYN" => {
                 arity(3)?;
                 Instr::WriteFdDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
+            "PWRITE_FD" => {
+                arity(4)?;
+                Instr::PwriteFd(
+                    fd(&args[0])?,
+                    reg(&args[1])?,
+                    reg(&args[2])?,
+                    reg(&args[3])?,
+                )
+            }
+            "PWRITE_FD_DYN" => {
+                arity(4)?;
+                Instr::PwriteFdDyn(
+                    reg(&args[0])?,
+                    reg(&args[1])?,
+                    reg(&args[2])?,
+                    reg(&args[3])?,
+                )
             }
             "MKDIR_PATH" => {
                 arity(2)?;
@@ -327,6 +385,18 @@ impl Parser {
                     reg(&args[3])?,
                 )
             }
+            "UTIME_PATH" => {
+                arity(3)?;
+                Instr::UtimePath(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
+            "UTIME_FD" => {
+                arity(2)?;
+                Instr::UtimeFd(fd(&args[0])?, reg(&args[1])?)
+            }
+            "UTIME_FD_DYN" => {
+                arity(2)?;
+                Instr::UtimeFdDyn(reg(&args[0])?, reg(&args[1])?)
+            }
             "STAT_PATH" => {
                 arity(3)?;
                 Instr::StatPath(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
@@ -366,10 +436,6 @@ impl Parser {
             "FD_DUP2" => {
                 arity(2)?;
                 Instr::FdDup2(fd(&args[0])?, fd(&args[1])?)
-            }
-            "PIPE" => {
-                arity(2)?;
-                Instr::Pipe(fd(&args[0])?, fd(&args[1])?)
             }
             "ERRNO_GET" => {
                 arity(1)?;
@@ -436,6 +502,10 @@ impl Parser {
                 arity(2)?;
                 Instr::Munmap(reg(&args[0])?, reg(&args[1])?)
             }
+            "MPROTECT" => {
+                arity(3)?;
+                Instr::Mprotect(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
             "SIGACTION" => {
                 arity(2)?;
                 Instr::Sigaction(reg(&args[0])?, reg(&args[1])?)
@@ -485,9 +555,26 @@ impl Parser {
                 arity(3)?;
                 Instr::MsgSend(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
-            "MSG_RECV" => {
+            "OBJECT_CTL" | "EVENT_CTL" | "TIMER_CTL" => {
                 arity(2)?;
-                Instr::MsgRecv(reg(&args[0])?, reg(&args[1])?)
+                Instr::ObjectCtl(reg(&args[0])?, reg(&args[1])?)
+            }
+            "DOMAIN_CTL" => {
+                arity(2)?;
+                Instr::DomainCtl(reg(&args[0])?, reg(&args[1])?)
+            }
+            "CALL_CAP" => {
+                arity(4)?;
+                Instr::CallCap(
+                    reg(&args[0])?,
+                    fd(&args[1])?,
+                    reg(&args[2])?,
+                    reg(&args[3])?,
+                )
+            }
+            "RET_CAP" => {
+                arity(3)?;
+                Instr::RetCap(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
             "FADD" => fpu3(&args, Instr::FAdd)?,
             "FSUB" => fpu3(&args, Instr::FSub)?,
@@ -760,5 +847,30 @@ mod tests {
         assert_eq!(program.labels["start"], 0);
         assert_eq!(program.data_labels["msg"], DATA_BASE);
         assert_eq!(program.instructions.len(), 3);
+    }
+
+    #[test]
+    fn parses_object_ctl_profile_aliases() {
+        let program = Program::parse(
+            r#"
+            .text
+              OBJECT_CTL r1, r2
+              EVENT_CTL r3, r4
+              TIMER_CTL r5, r6
+            "#,
+        )
+        .unwrap();
+        assert!(matches!(
+            program.instructions[0],
+            Instr::ObjectCtl(Reg(1), Reg(2))
+        ));
+        assert!(matches!(
+            program.instructions[1],
+            Instr::ObjectCtl(Reg(3), Reg(4))
+        ));
+        assert!(matches!(
+            program.instructions[2],
+            Instr::ObjectCtl(Reg(5), Reg(6))
+        ));
     }
 }

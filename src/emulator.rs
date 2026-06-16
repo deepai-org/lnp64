@@ -1,23 +1,84 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
+use std::ffi::CString;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::net::{TcpListener, TcpStream};
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::os::fd::AsRawFd;
+use std::os::raw::{c_char, c_int};
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::{FileExt, MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::asm::Program;
 use crate::isa::*;
 
 const STACK_SIZE: u64 = 4 * 1024 * 1024;
 const CALL_FRAME_SIZE: u64 = 32 * 1024;
-const THREAD_STACK_STRIDE: u64 = 0x100_000;
+const THREAD_STACK_STRIDE: u64 = 0x80_000;
 const MMAP_BASE: u64 = 0x200_000;
 const SIGCHLD: u64 = 17;
 const SIGSEGV: u64 = 11;
+const MESSAGE_ENDPOINT_FD: usize = FDR_COUNT - 1;
+const UTIME_NOW_LNP64: i64 = 1_073_741_823;
+const UTIME_OMIT_LNP64: i64 = 1_073_741_822;
+const ROOT_DOMAIN_ID: u64 = 1;
+const MAX_RESOURCE_DOMAINS: usize = 4096;
+const MAX_DOMAIN_DEPTH: u64 = 16;
+
+const DOMAIN_OP_CREATE: u64 = 1;
+const DOMAIN_OP_CONFIGURE: u64 = 2;
+const DOMAIN_OP_QUERY: u64 = 3;
+const DOMAIN_OP_FREEZE: u64 = 4;
+const DOMAIN_OP_RESUME: u64 = 5;
+const DOMAIN_OP_DESTROY: u64 = 6;
+const DOMAIN_OP_ATTACH_SELF: u64 = 7;
+const DOMAIN_OP_DETACH_SELF: u64 = 8;
+
+const DOMAIN_STATE_ACTIVE: u64 = 0;
+const DOMAIN_STATE_FROZEN: u64 = 1;
+const DOMAIN_STATE_DESTROYED: u64 = 2;
+const DOMAIN_QUERY_SIZE: u64 = 144;
+
+const DOMAIN_CAP_PROCESS: u64 = 1 << 0;
+const DOMAIN_CAP_MEMORY: u64 = 1 << 1;
+const DOMAIN_CAP_FDR: u64 = 1 << 2;
+const DOMAIN_CAP_IO: u64 = 1 << 3;
+const DOMAIN_CAP_OBJECT: u64 = 1 << 4;
+const DOMAIN_CAP_CALL: u64 = 1 << 5;
+
+const OBJECT_OP_CREATE: u64 = 1;
+const OBJECT_KIND_COUNTER: u64 = 1;
+const OBJECT_KIND_QUEUE: u64 = 2;
+const OBJECT_KIND_MEMORY_OBJECT: u64 = 3;
+const OBJECT_PROFILE_PIPE: u64 = 1;
+const OBJECT_PROFILE_CALL_GATE: u64 = 4;
+const CALL_MODE_SYNC: u64 = 0;
+const CALL_MODE_ASYNC: u64 = 1;
+const CALL_MODE_HANDOFF: u64 = 2;
+const CALL_GATE_FLAG_CAP_PASS: u64 = 1;
+const CALL_ARG_CAP_MARKER: u64 = 1 << 63;
+const MAX_CAP_CALL_DEPTH: usize = 8;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct HostTimespec {
+    tv_sec: i64,
+    tv_nsec: i64,
+}
+
+unsafe extern "C" {
+    fn utimensat(
+        dirfd: c_int,
+        pathname: *const c_char,
+        times: *const HostTimespec,
+        flags: c_int,
+    ) -> c_int;
+    fn futimens(fd: c_int, times: *const HostTimespec) -> c_int;
+}
 
 #[derive(Debug, Clone, Copy, Default)]
 struct Flags {
@@ -30,6 +91,7 @@ enum FdHandle {
     Stdin,
     Stdout,
     Stderr,
+    MessageEndpoint,
     File(File),
     Dir {
         path: String,
@@ -38,6 +100,19 @@ enum FdHandle {
     },
     PipeReader(Rc<RefCell<VecDeque<u8>>>),
     PipeWriter(Rc<RefCell<VecDeque<u8>>>),
+    Counter(Rc<RefCell<u64>>),
+    MemoryObject {
+        data: Rc<RefCell<Vec<u8>>>,
+        pos: usize,
+    },
+    CallGate {
+        entry: usize,
+        domain_id: u64,
+        domain_generation: u64,
+        mode: u64,
+        completion_fd: Option<usize>,
+        flags: u64,
+    },
     TcpListener {
         listener: TcpListener,
         pending: Option<TcpStream>,
@@ -51,6 +126,7 @@ impl FdHandle {
             FdHandle::Stdin => Ok(FdHandle::Stdin),
             FdHandle::Stdout => Ok(FdHandle::Stdout),
             FdHandle::Stderr => Ok(FdHandle::Stderr),
+            FdHandle::MessageEndpoint => Ok(FdHandle::MessageEndpoint),
             FdHandle::File(file) => file
                 .try_clone()
                 .map(FdHandle::File)
@@ -62,6 +138,26 @@ impl FdHandle {
             }),
             FdHandle::PipeReader(buffer) => Ok(FdHandle::PipeReader(Rc::clone(buffer))),
             FdHandle::PipeWriter(buffer) => Ok(FdHandle::PipeWriter(Rc::clone(buffer))),
+            FdHandle::Counter(value) => Ok(FdHandle::Counter(Rc::clone(value))),
+            FdHandle::MemoryObject { data, pos } => Ok(FdHandle::MemoryObject {
+                data: Rc::clone(data),
+                pos: *pos,
+            }),
+            FdHandle::CallGate {
+                entry,
+                domain_id,
+                domain_generation,
+                mode,
+                completion_fd,
+                flags,
+            } => Ok(FdHandle::CallGate {
+                entry: *entry,
+                domain_id: *domain_id,
+                domain_generation: *domain_generation,
+                mode: *mode,
+                completion_fd: *completion_fd,
+                flags: *flags,
+            }),
             FdHandle::TcpListener { listener, pending } => Ok(FdHandle::TcpListener {
                 listener: listener
                     .try_clone()
@@ -136,9 +232,69 @@ impl Vma {
     }
 }
 
+#[derive(Clone, Copy)]
+struct DomainLimits {
+    cpu: u64,
+    memory: u64,
+    pids: u64,
+    fdrs: u64,
+}
+
+impl DomainLimits {
+    fn root() -> Self {
+        Self {
+            cpu: u64::MAX,
+            memory: u64::MAX,
+            pids: u64::MAX,
+            fdrs: u64::MAX,
+        }
+    }
+}
+
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+struct DomainUsage {
+    cpu: u64,
+    memory: u64,
+    pids: u64,
+    fdrs: u64,
+}
+
+struct ResourceDomain {
+    id: u64,
+    generation: u64,
+    parent: Option<u64>,
+    children: Vec<u64>,
+    profile: u64,
+    limits: DomainLimits,
+    capability_mask: u64,
+    upcall_mask: u64,
+    frozen: bool,
+    destroyed: bool,
+    cpu_ticks: u64,
+}
+
+impl ResourceDomain {
+    fn root() -> Self {
+        Self {
+            id: ROOT_DOMAIN_ID,
+            generation: 1,
+            parent: None,
+            children: Vec::new(),
+            profile: 16,
+            limits: DomainLimits::root(),
+            capability_mask: u64::MAX,
+            upcall_mask: u64::MAX,
+            frozen: false,
+            destroyed: false,
+            cpu_ticks: 0,
+        }
+    }
+}
+
 struct Process {
     pid: u64,
     parent_pid: Option<u64>,
+    domain_id: u64,
     program: Program,
     fds: Vec<FdHandle>,
     memory: Vec<u8>,
@@ -158,7 +314,7 @@ struct Process {
 }
 
 impl Process {
-    fn new(pid: u64, parent_pid: Option<u64>, program: Program) -> Self {
+    fn new(pid: u64, parent_pid: Option<u64>, domain_id: u64, program: Program) -> Self {
         let mut fds = Vec::with_capacity(FDR_COUNT);
         fds.push(FdHandle::Stdin);
         fds.push(FdHandle::Stdout);
@@ -166,6 +322,7 @@ impl Process {
         for _ in 3..FDR_COUNT {
             fds.push(FdHandle::Closed);
         }
+        fds[MESSAGE_ENDPOINT_FD] = FdHandle::MessageEndpoint;
 
         let mut memory = vec![0; MEMORY_SIZE];
         let data_start = DATA_BASE as usize;
@@ -184,6 +341,7 @@ impl Process {
         Self {
             pid,
             parent_pid,
+            domain_id,
             program,
             fds,
             memory,
@@ -215,6 +373,7 @@ impl Process {
         Ok(Self {
             pid,
             parent_pid: Some(self.pid),
+            domain_id: self.domain_id,
             program: self.program.clone(),
             fds,
             memory: self.memory.clone(),
@@ -237,7 +396,8 @@ impl Process {
     fn exec(&mut self, program: Program) {
         let pid = self.pid;
         let parent_pid = self.parent_pid;
-        let mut replacement = Process::new(pid, parent_pid, program);
+        let domain_id = self.domain_id;
+        let mut replacement = Process::new(pid, parent_pid, domain_id, program);
         replacement.fds = std::mem::take(&mut self.fds);
         replacement.uid = self.uid;
         replacement.gid = self.gid;
@@ -257,6 +417,13 @@ struct SavedSignalContext {
 }
 
 #[derive(Clone)]
+struct CallContinuation {
+    return_ip: usize,
+    result_reg: Reg,
+    caller_domain_id: u64,
+}
+
+#[derive(Clone)]
 struct Thread {
     tid: u64,
     pid: u64,
@@ -266,6 +433,7 @@ struct Thread {
     ip: usize,
     flags: Flags,
     signal_stack: Vec<SavedSignalContext>,
+    cap_call_stack: Vec<CallContinuation>,
 }
 
 impl Thread {
@@ -281,6 +449,7 @@ impl Thread {
             ip: 0,
             flags: Flags::default(),
             signal_stack: Vec::new(),
+            cap_call_stack: Vec::new(),
         }
     }
 }
@@ -288,13 +457,17 @@ impl Thread {
 pub struct Machine {
     processes: HashMap<u64, Process>,
     threads: HashMap<u64, Thread>,
+    domains: HashMap<u64, ResourceDomain>,
     ready: VecDeque<u64>,
+    domain_parked: VecDeque<u64>,
     sleepers: Vec<(u64, u64)>,
     futex_waiters: HashMap<u64, VecDeque<u64>>,
     fd_waiters: Vec<(u64, usize)>,
     current_tid: u64,
     next_pid: u64,
     next_tid: u64,
+    next_domain_id: u64,
+    next_call_op_id: u64,
     last_exit: i32,
 }
 
@@ -302,13 +475,15 @@ impl Machine {
     pub fn new(program: Program) -> Self {
         let root_pid = 1;
         let root_tid = 1;
-        let process = Process::new(root_pid, None, program);
+        let process = Process::new(root_pid, None, ROOT_DOMAIN_ID, program);
         let thread = Thread::new(root_tid, root_pid);
 
         let mut processes = HashMap::new();
         processes.insert(root_pid, process);
         let mut threads = HashMap::new();
         threads.insert(root_tid, thread);
+        let mut domains = HashMap::new();
+        domains.insert(ROOT_DOMAIN_ID, ResourceDomain::root());
 
         let mut ready = VecDeque::new();
         ready.push_back(root_tid);
@@ -316,13 +491,17 @@ impl Machine {
         Self {
             processes,
             threads,
+            domains,
             ready,
+            domain_parked: VecDeque::new(),
             sleepers: Vec::new(),
             futex_waiters: HashMap::new(),
             fd_waiters: Vec::new(),
             current_tid: root_tid,
             next_pid: 2,
             next_tid: 2,
+            next_domain_id: 2,
+            next_call_op_id: 1,
             last_exit: 0,
         }
     }
@@ -379,6 +558,12 @@ impl Machine {
                 continue;
             }
             self.current_tid = tid;
+            if self.thread_domain_frozen(tid)? {
+                if !self.domain_parked.contains(&tid) {
+                    self.domain_parked.push_back(tid);
+                }
+                continue;
+            }
             self.deliver_signal_if_needed()?;
             if !self.threads.contains_key(&tid) {
                 continue;
@@ -397,6 +582,7 @@ impl Machine {
                 (thread.ip, instr)
             };
             self.thread_mut()?.ip += 1;
+            self.charge_cpu_tick()?;
             let keep_ready = self.exec(instr.clone()).map_err(|err| {
                 let context = self.fault_context(tid);
                 format!("{err} at tid {tid} ip {ip}: {instr:?}{context}")
@@ -514,8 +700,48 @@ impl Machine {
                 let addr = self.resolve_mem(mem)?;
                 self.store_width(addr, self.read_reg(src)?, width)?;
             }
+            Instr::Pull(result, fd, buf, len) => {
+                self.require_domain_cap(DOMAIN_CAP_IO)?;
+                if fd.0 == MESSAGE_ENDPOINT_FD {
+                    let Some((v1, v2)) = self.process_mut()?.inbox.pop_front() else {
+                        self.thread_mut()?.ip = self.thread()?.ip.saturating_sub(1);
+                        self.ready.retain(|tid| *tid != self.current_tid);
+                        return Ok(false);
+                    };
+                    self.set_errno(0)?;
+                    self.write_reg(result, v1)?;
+                    self.write_reg(Reg(30), v2)?;
+                } else {
+                    let addr = self.read_reg(buf)?;
+                    let len = self.read_reg(len)? as usize;
+                    let count = self.read_fd_index(fd.0, addr, len)?;
+                    self.set_errno(0)?;
+                    self.write_reg(result, count as u64)?;
+                }
+            }
+            Instr::Push(result, fd, buf, len) => {
+                self.require_domain_cap(DOMAIN_CAP_IO)?;
+                let addr = self.read_reg(buf)?;
+                let len = self.read_reg(len)? as usize;
+                self.write_fd_index(fd.0, addr, len)?;
+                self.write_reg(result, self.read_reg(Reg(1))?)?;
+            }
+            Instr::Await(result, fd, _mask) => {
+                if !self.fd_ready(fd.0)? {
+                    self.fd_waiters.push((self.current_tid, fd.0));
+                    self.ready.retain(|tid| *tid != self.current_tid);
+                    return Ok(false);
+                }
+                self.set_errno(0)?;
+                self.write_reg(result, 0)?;
+            }
             Instr::Alloc(dst, bytes_reg) => {
                 let len = (self.read_reg(bytes_reg)? as usize).max(1);
+                self.require_domain_cap(DOMAIN_CAP_MEMORY)?;
+                if !self.check_domain_budget(len as u64, 1, 0, 0)? {
+                    self.write_reg(dst, -1i64 as u64)?;
+                    return Ok(true);
+                }
                 let addr = {
                     let process = self.process_mut()?;
                     let addr = align_up(process.heap_next, 64);
@@ -539,6 +765,10 @@ impl Machine {
                 process.vmas.retain(|vma| vma.start != ptr);
             }
             Instr::OpenFd(dst, path_reg, flags_reg) => {
+                self.require_domain_cap(DOMAIN_CAP_FDR)?;
+                if !self.check_domain_budget(0, 0, 0, self.fd_slot_delta(dst.0)?)? {
+                    return Ok(true);
+                }
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
                 let path = self.resolve_process_path(&path)?;
                 let flags = self.read_reg(flags_reg)?;
@@ -551,6 +781,11 @@ impl Machine {
                 }
             }
             Instr::OpenFdDyn(dst_reg, path_reg, flags_reg) => {
+                self.require_domain_cap(DOMAIN_CAP_FDR)?;
+                if !self.check_domain_budget(0, 0, 0, 1)? {
+                    self.write_reg(dst_reg, -1i64 as u64)?;
+                    return Ok(true);
+                }
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
                 let path = self.resolve_process_path(&path)?;
                 let flags = self.read_reg(flags_reg)?;
@@ -570,6 +805,10 @@ impl Machine {
                 }
             }
             Instr::OpenDir(dst, path_reg, _flags_reg) => {
+                self.require_domain_cap(DOMAIN_CAP_FDR)?;
+                if !self.check_domain_budget(0, 0, 0, self.fd_slot_delta(dst.0)?)? {
+                    return Ok(true);
+                }
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
                 let path = self.resolve_process_path(&path)?;
                 match Self::open_dir_handle(&path) {
@@ -581,6 +820,11 @@ impl Machine {
                 }
             }
             Instr::OpenDirDyn(dst_reg, path_reg, _flags_reg) => {
+                self.require_domain_cap(DOMAIN_CAP_FDR)?;
+                if !self.check_domain_budget(0, 0, 0, 1)? {
+                    self.write_reg(dst_reg, -1i64 as u64)?;
+                    return Ok(true);
+                }
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
                 let path = self.resolve_process_path(&path)?;
                 match Self::open_dir_handle(&path) {
@@ -599,18 +843,37 @@ impl Machine {
                 }
             }
             Instr::ReadFd(fd, buf, len) => {
+                self.require_domain_cap(DOMAIN_CAP_IO)?;
                 let addr = self.read_reg(buf)?;
                 let len = self.read_reg(len)? as usize;
                 let count = self.read_fd_index(fd.0, addr, len)?;
                 self.write_reg(Reg(1), count as u64)?;
             }
             Instr::ReadFdDyn(fd_reg, buf, len) => {
+                self.require_domain_cap(DOMAIN_CAP_IO)?;
                 let fd = self.read_reg(fd_reg)?;
                 let addr = self.read_reg(buf)?;
                 let len = self.read_reg(len)? as usize;
                 if let Some(fd) = self.checked_fd_index(fd)? {
                     let count = self.read_fd_index(fd, addr, len)?;
                     self.write_reg(Reg(1), count as u64)?;
+                }
+            }
+            Instr::PreadFd(fd, buf, len, offset) => {
+                self.require_domain_cap(DOMAIN_CAP_IO)?;
+                let addr = self.read_reg(buf)?;
+                let len = self.read_reg(len)? as usize;
+                let offset = self.read_reg(offset)?;
+                self.pread_fd_index(fd.0, addr, len, offset)?;
+            }
+            Instr::PreadFdDyn(fd_reg, buf, len, offset) => {
+                self.require_domain_cap(DOMAIN_CAP_IO)?;
+                let fd = self.read_reg(fd_reg)?;
+                let addr = self.read_reg(buf)?;
+                let len = self.read_reg(len)? as usize;
+                let offset = self.read_reg(offset)?;
+                if let Some(fd) = self.checked_fd_index(fd)? {
+                    self.pread_fd_index(fd, addr, len, offset)?;
                 }
             }
             Instr::ReaddirFd(fd, dirent_buf) => {
@@ -638,16 +901,35 @@ impl Machine {
                 }
             }
             Instr::WriteFd(fd, buf, len) => {
+                self.require_domain_cap(DOMAIN_CAP_IO)?;
                 let addr = self.read_reg(buf)?;
                 let len = self.read_reg(len)? as usize;
                 self.write_fd_index(fd.0, addr, len)?;
             }
             Instr::WriteFdDyn(fd_reg, buf, len) => {
+                self.require_domain_cap(DOMAIN_CAP_IO)?;
                 let fd = self.read_reg(fd_reg)?;
                 let addr = self.read_reg(buf)?;
                 let len = self.read_reg(len)? as usize;
                 if let Some(fd) = self.checked_fd_index(fd)? {
                     self.write_fd_index(fd, addr, len)?;
+                }
+            }
+            Instr::PwriteFd(fd, buf, len, offset) => {
+                self.require_domain_cap(DOMAIN_CAP_IO)?;
+                let addr = self.read_reg(buf)?;
+                let len = self.read_reg(len)? as usize;
+                let offset = self.read_reg(offset)?;
+                self.pwrite_fd_index(fd.0, addr, len, offset)?;
+            }
+            Instr::PwriteFdDyn(fd_reg, buf, len, offset) => {
+                self.require_domain_cap(DOMAIN_CAP_IO)?;
+                let fd = self.read_reg(fd_reg)?;
+                let addr = self.read_reg(buf)?;
+                let len = self.read_reg(len)? as usize;
+                let offset = self.read_reg(offset)?;
+                if let Some(fd) = self.checked_fd_index(fd)? {
+                    self.pwrite_fd_index(fd, addr, len, offset)?;
                 }
             }
             Instr::MkdirPath(path_reg, _mode_reg) => {
@@ -768,6 +1050,24 @@ impl Machine {
                     Err(err) => self.set_status_io_error(err)?,
                 }
             }
+            Instr::UtimePath(path_reg, times_reg, flags_reg) => {
+                let path = self.read_c_string(self.read_reg(path_reg)?)?;
+                let path = self.resolve_process_path(&path)?;
+                let times_ptr = self.read_reg(times_reg)?;
+                let flags = self.read_reg(flags_reg)? as c_int;
+                self.utime_path(&path, times_ptr, flags)?;
+            }
+            Instr::UtimeFd(fd, times_reg) => {
+                let times_ptr = self.read_reg(times_reg)?;
+                self.utime_fd_index(fd.0, times_ptr)?;
+            }
+            Instr::UtimeFdDyn(fd_reg, times_reg) => {
+                let fd = self.read_reg(fd_reg)?;
+                let times_ptr = self.read_reg(times_reg)?;
+                if let Some(fd) = self.checked_fd_index(fd)? {
+                    self.utime_fd_index(fd, times_ptr)?;
+                }
+            }
             Instr::StatPath(statbuf_reg, path_reg, flags_reg) => {
                 let statbuf = self.read_reg(statbuf_reg)?;
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
@@ -829,19 +1129,20 @@ impl Machine {
                 }
             }
             Instr::FdDup(dst, src) => {
+                self.require_domain_cap(DOMAIN_CAP_FDR)?;
+                if !self.check_domain_budget(0, 0, 0, self.fd_slot_delta(dst.0)?)? {
+                    return Ok(true);
+                }
                 let cloned = self.process()?.fds[src.0].clone_handle()?;
                 self.process_mut()?.fds[dst.0] = cloned;
             }
             Instr::FdDup2(dst, src) => {
+                self.require_domain_cap(DOMAIN_CAP_FDR)?;
+                if !self.check_domain_budget(0, 0, 0, self.fd_slot_delta(dst.0)?)? {
+                    return Ok(true);
+                }
                 let cloned = self.process()?.fds[src.0].clone_handle()?;
                 self.process_mut()?.fds[dst.0] = cloned;
-                self.set_status_ok()?;
-            }
-            Instr::Pipe(read_fd, write_fd) => {
-                let buffer = Rc::new(RefCell::new(VecDeque::new()));
-                let process = self.process_mut()?;
-                process.fds[read_fd.0] = FdHandle::PipeReader(Rc::clone(&buffer));
-                process.fds[write_fd.0] = FdHandle::PipeWriter(buffer);
                 self.set_status_ok()?;
             }
             Instr::ErrnoGet(dst) => {
@@ -867,6 +1168,11 @@ impl Machine {
             }
             Instr::SetPcr(pcr, src) => self.write_pcr(pcr, self.read_reg(src)?)?,
             Instr::Fork(dst) => {
+                self.require_domain_cap(DOMAIN_CAP_PROCESS)?;
+                if !self.check_domain_budget(0, 0, 1, 0)? {
+                    self.write_reg(dst, -1i64 as u64)?;
+                    return Ok(true);
+                }
                 let child_pid = self.next_pid;
                 self.next_pid += 1;
                 let child_tid = self.next_tid;
@@ -898,6 +1204,11 @@ impl Machine {
                 *self.thread_mut()? = Thread::new(tid, pid);
             }
             Instr::Spawn(dst, entry) => {
+                self.require_domain_cap(DOMAIN_CAP_PROCESS)?;
+                if !self.check_domain_budget(0, 0, 1, 0)? {
+                    self.write_reg(dst, -1i64 as u64)?;
+                    return Ok(true);
+                }
                 let tid = self.next_tid;
                 self.next_tid += 1;
                 let mut child = self.thread()?.clone();
@@ -922,6 +1233,11 @@ impl Machine {
             }
             Instr::Mmap(dst, hint, len, prot, fd, offset) => {
                 let len = self.read_reg(len)?.max(1);
+                self.require_domain_cap(DOMAIN_CAP_MEMORY)?;
+                if !self.check_domain_budget(len, 1, 0, 0)? {
+                    self.write_reg(dst, -1i64 as u64)?;
+                    return Ok(true);
+                }
                 let prot = self.read_reg(prot)?;
                 let hint = self.read_reg(hint)?;
                 let offset = self.read_reg(offset)?;
@@ -955,6 +1271,12 @@ impl Machine {
             Instr::Munmap(addr, _len) => {
                 let addr = self.read_reg(addr)?;
                 self.process_mut()?.vmas.retain(|vma| vma.start != addr);
+            }
+            Instr::Mprotect(addr, len, prot) => {
+                let addr = self.read_reg(addr)?;
+                let len = self.read_reg(len)?;
+                let prot = self.read_reg(prot)?;
+                self.mprotect_range(addr, len, prot)?;
             }
             Instr::Sigaction(signum, handler) => {
                 let signum = self.read_reg(signum)?;
@@ -1064,14 +1386,22 @@ impl Machine {
                     }
                 }
             }
-            Instr::MsgRecv(dst1, dst2) => {
-                let Some((v1, v2)) = self.process_mut()?.inbox.pop_front() else {
-                    self.thread_mut()?.ip = self.thread()?.ip.saturating_sub(1);
-                    self.ready.retain(|tid| *tid != self.current_tid);
-                    return Ok(false);
-                };
-                self.write_reg(dst1, v1)?;
-                self.write_reg(dst2, v2)?;
+            Instr::ObjectCtl(result, argblock) => {
+                self.object_ctl(result, self.read_reg(argblock)?)?;
+            }
+            Instr::DomainCtl(result, argblock) => {
+                self.domain_ctl(result, self.read_reg(argblock)?)?;
+            }
+            Instr::CallCap(result, call_gate, arg0, arg1) => {
+                self.call_cap(
+                    result,
+                    call_gate.0,
+                    self.read_reg(arg0)?,
+                    self.read_reg(arg1)?,
+                )?;
+            }
+            Instr::RetCap(result, value0, value1) => {
+                self.ret_cap(result, self.read_reg(value0)?, self.read_reg(value1)?)?;
             }
             Instr::FAdd(dst, a, b) => {
                 self.write_freg(dst, self.read_f64(a)? + self.read_f64(b)?)?
@@ -1238,11 +1568,14 @@ impl Machine {
             (16, metadata.dev()),
             (24, metadata.ino()),
             (32, metadata.mtime() as u64),
-            (40, metadata.nlink()),
-            (48, metadata.uid() as u64),
-            (56, metadata.gid() as u64),
-            (64, metadata.atime() as u64),
-            (72, metadata.ctime() as u64),
+            (40, metadata.mtime_nsec() as u64),
+            (48, metadata.nlink()),
+            (56, metadata.uid() as u64),
+            (64, metadata.gid() as u64),
+            (72, metadata.atime() as u64),
+            (80, metadata.atime_nsec() as u64),
+            (88, metadata.ctime() as u64),
+            (96, metadata.ctime_nsec() as u64),
         ];
         for (offset, value) in fields {
             self.store_u64(addr + offset, value)?;
@@ -1257,11 +1590,14 @@ impl Machine {
             (16, 0),
             (24, 0),
             (32, 0),
-            (40, 1),
-            (48, self.process()?.uid),
-            (56, self.process()?.gid),
-            (64, 0),
+            (40, 0),
+            (48, 1),
+            (56, self.process()?.uid),
+            (64, self.process()?.gid),
             (72, 0),
+            (80, 0),
+            (88, 0),
+            (96, 0),
         ];
         for (offset, value) in fields {
             self.store_u64(addr + offset, value)?;
@@ -1311,6 +1647,27 @@ impl Machine {
                 buffer.borrow_mut().extend(data.iter().copied());
                 Ok(())
             }
+            FdHandle::Counter(value) => {
+                let next = if data.len() >= 8 {
+                    u64::from_le_bytes(data[..8].try_into().unwrap())
+                } else {
+                    data.iter()
+                        .enumerate()
+                        .fold(0u64, |acc, (idx, byte)| acc | ((*byte as u64) << (idx * 8)))
+                };
+                *value.borrow_mut() = next;
+                Ok(())
+            }
+            FdHandle::MemoryObject { data: object, pos } => {
+                let mut object = object.borrow_mut();
+                let end = pos.saturating_add(data.len());
+                if end > object.len() {
+                    object.resize(end, 0);
+                }
+                object[*pos..end].copy_from_slice(&data);
+                *pos = end;
+                Ok(())
+            }
             FdHandle::TcpListener { pending, .. } => {
                 if let Some(stream) = pending {
                     stream.write_all(&data)
@@ -1321,12 +1678,53 @@ impl Machine {
                     ))
                 }
             }
-            FdHandle::Stdin | FdHandle::Dir { .. } | FdHandle::PipeReader(_) | FdHandle::Closed => {
-                Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    "fd is not writable",
-                ))
+            FdHandle::Stdin
+            | FdHandle::MessageEndpoint
+            | FdHandle::Dir { .. }
+            | FdHandle::PipeReader(_)
+            | FdHandle::CallGate { .. }
+            | FdHandle::Closed => Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "fd is not writable",
+            )),
+        };
+        match result {
+            Ok(()) => {
+                self.set_errno(0)?;
+                self.write_reg(Reg(1), data.len() as u64)?;
             }
+            Err(err) => self.set_status_io_error(err)?,
+        }
+        Ok(())
+    }
+
+    fn pwrite_fd_index(
+        &mut self,
+        fd: usize,
+        addr: u64,
+        len: usize,
+        offset: u64,
+    ) -> Result<(), String> {
+        let data = self.read_bytes(addr, len)?;
+        let result = match &mut self.process_mut()?.fds[fd] {
+            FdHandle::File(file) => {
+                let mut written = 0usize;
+                while written < data.len() {
+                    let count = match file.write_at(&data[written..], offset + written as u64) {
+                        Ok(count) => count,
+                        Err(err) => return self.set_status_io_error(err),
+                    };
+                    if count == 0 {
+                        return Err("PWRITE_FD wrote zero bytes".to_string());
+                    }
+                    written += count;
+                }
+                Ok(())
+            }
+            _ => Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "fd does not support offset writes",
+            )),
         };
         match result {
             Ok(()) => {
@@ -1374,6 +1772,81 @@ impl Machine {
                 self.set_status_ok()
             }
             _ => self.set_status_errno(20),
+        }
+    }
+
+    fn utime_path(&mut self, path: &str, times_ptr: u64, flags: c_int) -> Result<(), String> {
+        let times = self.host_timespec_pair(times_ptr)?;
+        let times_ptr = times
+            .as_ref()
+            .map(|pair| pair.as_ptr())
+            .unwrap_or(std::ptr::null());
+        let c_path = CString::new(Path::new(path).as_os_str().as_bytes())
+            .map_err(|_| "UTIME_PATH path contains NUL byte".to_string())?;
+        let rc = unsafe { utimensat(-100, c_path.as_ptr(), times_ptr, flags) };
+        if rc == 0 {
+            self.set_status_ok()
+        } else {
+            self.set_status_io_error(io::Error::last_os_error())
+        }
+    }
+
+    fn utime_fd_index(&mut self, fd: usize, times_ptr: u64) -> Result<(), String> {
+        let times = self.host_timespec_pair(times_ptr)?;
+        let times_ptr = times
+            .as_ref()
+            .map(|pair| pair.as_ptr())
+            .unwrap_or(std::ptr::null());
+        let raw_fd = match &self.process()?.fds[fd] {
+            FdHandle::File(file) => Some(file.as_raw_fd()),
+            _ => None,
+        };
+        let Some(raw_fd) = raw_fd else {
+            return self.set_status_errno(9);
+        };
+        let rc = unsafe { futimens(raw_fd, times_ptr) };
+        if rc == 0 {
+            self.set_status_ok()
+        } else {
+            self.set_status_io_error(io::Error::last_os_error())
+        }
+    }
+
+    fn host_timespec_pair(&mut self, times_ptr: u64) -> Result<Option<[HostTimespec; 2]>, String> {
+        if times_ptr == 0 {
+            return Ok(None);
+        }
+        let now = Self::system_time_to_host_timespec(SystemTime::now());
+        let atime = self.host_timespec_at(times_ptr, now)?;
+        let mtime = self.host_timespec_at(times_ptr + 16, now)?;
+        Ok(Some([atime, mtime]))
+    }
+
+    fn host_timespec_at(&mut self, addr: u64, now: HostTimespec) -> Result<HostTimespec, String> {
+        let sec = self.load_u64(addr)? as i64;
+        let nsec = self.load_u64(addr + 8)? as i64;
+        if nsec == UTIME_NOW_LNP64 {
+            Ok(now)
+        } else if nsec == UTIME_OMIT_LNP64 {
+            Ok(HostTimespec {
+                tv_sec: 0,
+                tv_nsec: UTIME_OMIT_LNP64,
+            })
+        } else {
+            Ok(HostTimespec {
+                tv_sec: sec,
+                tv_nsec: nsec,
+            })
+        }
+    }
+
+    fn system_time_to_host_timespec(time: SystemTime) -> HostTimespec {
+        let duration = time
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_else(|_| Duration::from_secs(0));
+        HostTimespec {
+            tv_sec: duration.as_secs() as i64,
+            tv_nsec: duration.subsec_nanos() as i64,
         }
     }
 
@@ -1427,6 +1900,24 @@ impl Machine {
         Ok(())
     }
 
+    fn mprotect_range(&mut self, addr: u64, len: u64, prot: u64) -> Result<(), String> {
+        let len = len.max(1);
+        let Some(end) = addr.checked_add(len) else {
+            self.set_status_errno(22)?;
+            return Ok(());
+        };
+        for vma in &mut self.process_mut()?.vmas {
+            let vma_end = vma.start + vma.len;
+            if addr >= vma.start && end <= vma_end {
+                vma.prot = prot;
+                self.set_status_ok()?;
+                return Ok(());
+            }
+        }
+        self.set_status_errno(12)?;
+        Ok(())
+    }
+
     fn read_fd_index(&mut self, fd: usize, addr: u64, len: usize) -> Result<usize, String> {
         let mut tmp = vec![0; len];
         let count = match &mut self.process_mut()?.fds[fd] {
@@ -1446,6 +1937,20 @@ impl Machine {
                     tmp[count] = byte;
                     count += 1;
                 }
+                count
+            }
+            FdHandle::Counter(value) => {
+                let bytes = value.borrow().to_le_bytes();
+                let count = len.min(bytes.len());
+                tmp[..count].copy_from_slice(&bytes[..count]);
+                count
+            }
+            FdHandle::MemoryObject { data, pos } => {
+                let data = data.borrow();
+                let available = data.len().saturating_sub(*pos);
+                let count = len.min(available);
+                tmp[..count].copy_from_slice(&data[*pos..*pos + count]);
+                *pos += count;
                 count
             }
             FdHandle::TcpListener { listener, pending } => {
@@ -1473,12 +1978,1073 @@ impl Machine {
             }
             FdHandle::Stdout
             | FdHandle::Stderr
+            | FdHandle::MessageEndpoint
             | FdHandle::Dir { .. }
             | FdHandle::PipeWriter(_)
+            | FdHandle::CallGate { .. }
             | FdHandle::Closed => 0,
         };
         self.write_bytes(addr, &tmp[..count])?;
         Ok(count)
+    }
+
+    fn pread_fd_index(
+        &mut self,
+        fd: usize,
+        addr: u64,
+        len: usize,
+        offset: u64,
+    ) -> Result<(), String> {
+        let mut tmp = vec![0; len];
+        let result = match &mut self.process_mut()?.fds[fd] {
+            FdHandle::File(file) => file.read_at(&mut tmp, offset),
+            _ => Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "fd does not support offset reads",
+            )),
+        };
+        match result {
+            Ok(count) => {
+                self.write_bytes(addr, &tmp[..count])?;
+                self.set_errno(0)?;
+                self.write_reg(Reg(1), count as u64)?;
+            }
+            Err(err) => self.set_status_io_error(err)?,
+        }
+        Ok(())
+    }
+
+    fn object_ctl(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
+        let op = self.load_u64(argblock)?;
+        let value = match op {
+            OBJECT_OP_CREATE => self.object_ctl_create(argblock),
+            _ => Err(22),
+        };
+        match value {
+            Ok(value) => {
+                self.set_errno(0)?;
+                self.write_reg(result, value)
+            }
+            Err(errno) => {
+                self.set_errno(errno)?;
+                self.write_reg(result, -1i64 as u64)
+            }
+        }
+    }
+
+    fn object_ctl_create(&mut self, argblock: u64) -> Result<u64, u64> {
+        self.require_domain_cap_errno(DOMAIN_CAP_OBJECT | DOMAIN_CAP_FDR)?;
+        let kind = self.load_u64(argblock + 8).map_err(|_| 14u64)?;
+        let profile = self.load_u64(argblock + 16).map_err(|_| 14u64)?;
+        let fd0_req = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
+        let fd1_req = self.load_u64(argblock + 32).map_err(|_| 14u64)?;
+        let arg = self.load_u64(argblock + 40).map_err(|_| 14u64)?;
+        match (kind, profile) {
+            (OBJECT_KIND_QUEUE, OBJECT_PROFILE_PIPE) => {
+                let buffer = Rc::new(RefCell::new(VecDeque::new()));
+                let read_fd =
+                    self.install_object_fd(fd0_req, FdHandle::PipeReader(Rc::clone(&buffer)))?;
+                let write_fd = self.install_object_fd(fd1_req, FdHandle::PipeWriter(buffer))?;
+                self.store_u64(argblock + 24, read_fd as u64)
+                    .map_err(|_| 14u64)?;
+                self.store_u64(argblock + 32, write_fd as u64)
+                    .map_err(|_| 14u64)?;
+                Ok(0)
+            }
+            (OBJECT_KIND_QUEUE, OBJECT_PROFILE_CALL_GATE) => {
+                self.require_domain_cap_errno(DOMAIN_CAP_CALL)?;
+                let target_domain = if fd1_req == 0 {
+                    self.current_domain_id().map_err(|_| 3u64)?
+                } else {
+                    self.domain_ref(fd1_req, 0)?
+                };
+                let target_generation = self.domains.get(&target_domain).ok_or(3u64)?.generation;
+                if !self.domain_is_descendant_or_self(
+                    target_domain,
+                    self.current_domain_id().map_err(|_| 3u64)?,
+                ) {
+                    return Err(1);
+                }
+                let mode = self.load_u64(argblock + 48).map_err(|_| 14u64)?;
+                let completion_fd = self.load_u64(argblock + 56).map_err(|_| 14u64)?;
+                let flags = self.load_u64(argblock + 64).map_err(|_| 14u64)?;
+                if !matches!(mode, CALL_MODE_SYNC | CALL_MODE_ASYNC | CALL_MODE_HANDOFF) {
+                    return Err(22);
+                }
+                let completion_fd = if completion_fd == 0 {
+                    None
+                } else if completion_fd as usize >= FDR_COUNT {
+                    return Err(9);
+                } else {
+                    Some(completion_fd as usize)
+                };
+                if mode == CALL_MODE_ASYNC && completion_fd.is_none() {
+                    return Err(22);
+                }
+                let fd = self.install_object_fd(
+                    fd0_req,
+                    FdHandle::CallGate {
+                        entry: arg as usize,
+                        domain_id: target_domain,
+                        domain_generation: target_generation,
+                        mode,
+                        completion_fd,
+                        flags,
+                    },
+                )?;
+                self.store_u64(argblock + 24, fd as u64)
+                    .map_err(|_| 14u64)?;
+                Ok(fd as u64)
+            }
+            (OBJECT_KIND_COUNTER, _) => {
+                let fd =
+                    self.install_object_fd(fd0_req, FdHandle::Counter(Rc::new(RefCell::new(arg))))?;
+                self.store_u64(argblock + 24, fd as u64)
+                    .map_err(|_| 14u64)?;
+                Ok(fd as u64)
+            }
+            (OBJECT_KIND_MEMORY_OBJECT, _) => {
+                let len = arg.max(1) as usize;
+                let fd = self.install_object_fd(
+                    fd0_req,
+                    FdHandle::MemoryObject {
+                        data: Rc::new(RefCell::new(vec![0; len])),
+                        pos: 0,
+                    },
+                )?;
+                self.store_u64(argblock + 24, fd as u64)
+                    .map_err(|_| 14u64)?;
+                Ok(fd as u64)
+            }
+            _ => Err(22),
+        }
+    }
+
+    fn install_object_fd(&mut self, requested: u64, handle: FdHandle) -> Result<usize, u64> {
+        if requested != 0 {
+            if requested as usize >= FDR_COUNT || requested as usize == MESSAGE_ENDPOINT_FD {
+                return Err(9);
+            }
+            let fd = requested as usize;
+            let delta = self.fd_slot_delta(fd).map_err(|_| 9u64)?;
+            self.ensure_domain_budget_errno(0, 0, 0, delta)?;
+            self.process_mut().map_err(|_| 3u64)?.fds[fd] = handle;
+            return Ok(fd);
+        }
+        self.ensure_domain_budget_errno(0, 0, 0, 1)?;
+        let fd = {
+            let process = self.process_mut().map_err(|_| 3u64)?;
+            process
+                .fds
+                .iter()
+                .enumerate()
+                .find(|(idx, candidate)| {
+                    *idx != MESSAGE_ENDPOINT_FD && matches!(candidate, FdHandle::Closed)
+                })
+                .map(|(idx, _)| idx)
+        };
+        let Some(fd) = fd else {
+            return Err(24);
+        };
+        self.process_mut().map_err(|_| 3u64)?.fds[fd] = handle;
+        Ok(fd)
+    }
+
+    fn call_cap(
+        &mut self,
+        result: Reg,
+        call_gate_fd: usize,
+        arg0: u64,
+        arg1: u64,
+    ) -> Result<(), String> {
+        self.require_domain_cap(DOMAIN_CAP_CALL)?;
+        let (entry, domain_id, domain_generation, mode, completion_fd, flags) =
+            match &self.process()?.fds[call_gate_fd] {
+                FdHandle::CallGate {
+                    entry,
+                    domain_id,
+                    domain_generation,
+                    mode,
+                    completion_fd,
+                    flags,
+                } => (
+                    *entry,
+                    *domain_id,
+                    *domain_generation,
+                    *mode,
+                    *completion_fd,
+                    *flags,
+                ),
+                _ => {
+                    self.set_status_errno(9)?;
+                    self.write_reg(result, -1i64 as u64)?;
+                    return Ok(());
+                }
+            };
+        if self.domain_ref(domain_id, domain_generation).is_err() {
+            self.set_status_errno(116)?;
+            self.write_reg(result, -1i64 as u64)?;
+            return Ok(());
+        }
+        if (arg0 & CALL_ARG_CAP_MARKER != 0 || arg1 & CALL_ARG_CAP_MARKER != 0)
+            && flags & CALL_GATE_FLAG_CAP_PASS == 0
+        {
+            self.set_status_errno(1)?;
+            self.write_reg(result, -1i64 as u64)?;
+            return Ok(());
+        }
+        if self.domain_is_frozen_or_destroyed(domain_id) {
+            self.set_status_errno(11)?;
+            self.write_reg(result, -1i64 as u64)?;
+            return Ok(());
+        }
+        if !self.check_call_cpu_budget(domain_id)? {
+            self.write_reg(result, -1i64 as u64)?;
+            return Ok(());
+        }
+        match mode {
+            CALL_MODE_SYNC => self.call_cap_sync(result, entry, domain_id, arg0, arg1),
+            CALL_MODE_ASYNC => self.call_cap_async(result, completion_fd, arg0, arg1),
+            CALL_MODE_HANDOFF => self.call_cap_handoff(result, entry, domain_id, arg0, arg1),
+            _ => {
+                self.set_status_errno(22)?;
+                self.write_reg(result, -1i64 as u64)?;
+                return Ok(());
+            }
+        }
+    }
+
+    fn call_cap_sync(
+        &mut self,
+        result: Reg,
+        entry: usize,
+        domain_id: u64,
+        arg0: u64,
+        arg1: u64,
+    ) -> Result<(), String> {
+        if self.thread()?.cap_call_stack.len() >= MAX_CAP_CALL_DEPTH {
+            self.set_status_errno(11)?;
+            self.write_reg(result, -1i64 as u64)?;
+            return Ok(());
+        }
+        let caller_domain_id = self.current_domain_id()?;
+        let return_ip = self.thread()?.ip;
+        self.thread_mut()?.cap_call_stack.push(CallContinuation {
+            return_ip,
+            result_reg: result,
+            caller_domain_id,
+        });
+        self.process_mut()?.domain_id = domain_id;
+        self.write_reg(Reg(1), arg0)?;
+        self.write_reg(Reg(2), arg1)?;
+        self.thread_mut()?.ip = entry;
+        Ok(())
+    }
+
+    fn call_cap_async(
+        &mut self,
+        result: Reg,
+        completion_fd: Option<usize>,
+        arg0: u64,
+        arg1: u64,
+    ) -> Result<(), String> {
+        let op_id = self.next_call_op_id;
+        self.next_call_op_id = self.next_call_op_id.saturating_add(1);
+        if let Some(fd) = completion_fd {
+            self.complete_call_fd(fd, op_id, arg0, arg1)?;
+        }
+        self.set_errno(0)?;
+        self.write_reg(result, op_id)
+    }
+
+    fn call_cap_handoff(
+        &mut self,
+        result: Reg,
+        entry: usize,
+        domain_id: u64,
+        arg0: u64,
+        arg1: u64,
+    ) -> Result<(), String> {
+        self.process_mut()?.domain_id = domain_id;
+        self.set_errno(0)?;
+        self.write_reg(result, 0)?;
+        self.write_reg(Reg(1), arg0)?;
+        self.write_reg(Reg(2), arg1)?;
+        self.thread_mut()?.ip = entry;
+        Ok(())
+    }
+
+    fn complete_call_fd(
+        &mut self,
+        fd: usize,
+        op_id: u64,
+        value0: u64,
+        value1: u64,
+    ) -> Result<(), String> {
+        match &mut self.process_mut()?.fds[fd] {
+            FdHandle::Counter(value) => {
+                *value.borrow_mut() = op_id;
+                Ok(())
+            }
+            FdHandle::PipeWriter(queue) => {
+                let mut queue = queue.borrow_mut();
+                queue.extend(op_id.to_le_bytes());
+                queue.extend(value0.to_le_bytes());
+                queue.extend(value1.to_le_bytes());
+                Ok(())
+            }
+            _ => {
+                self.set_status_errno(9)?;
+                Err("CALL_CAP async completion target is not waitable".to_string())
+            }
+        }
+    }
+
+    fn ret_cap(&mut self, result: Reg, value0: u64, value1: u64) -> Result<(), String> {
+        let Some(continuation) = self.thread_mut()?.cap_call_stack.pop() else {
+            self.set_status_errno(22)?;
+            self.write_reg(result, -1i64 as u64)?;
+            return Ok(());
+        };
+        if self.domain_is_frozen_or_destroyed(continuation.caller_domain_id) {
+            self.set_status_errno(116)?;
+            self.write_reg(result, -1i64 as u64)?;
+            return Ok(());
+        }
+        let Some(caller) = self.domains.get(&continuation.caller_domain_id) else {
+            self.set_status_errno(116)?;
+            self.write_reg(result, -1i64 as u64)?;
+            return Ok(());
+        };
+        if caller.capability_mask & DOMAIN_CAP_CALL == 0 {
+            self.set_status_errno(1)?;
+            self.write_reg(result, -1i64 as u64)?;
+            return Ok(());
+        }
+        self.process_mut()?.domain_id = continuation.caller_domain_id;
+        self.thread_mut()?.ip = continuation.return_ip;
+        self.set_errno(0)?;
+        self.write_reg(continuation.result_reg, value0)?;
+        self.write_reg(Reg(30), value1)?;
+        self.write_reg(result, 0)
+    }
+
+    fn domain_ctl(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
+        let op = self.load_u64(argblock)?;
+        let value = match op {
+            DOMAIN_OP_CREATE => self.domain_ctl_create(argblock),
+            DOMAIN_OP_CONFIGURE => self.domain_ctl_configure(argblock),
+            DOMAIN_OP_QUERY => self.domain_ctl_query(argblock),
+            DOMAIN_OP_FREEZE => self.domain_ctl_set_frozen(argblock, true),
+            DOMAIN_OP_RESUME => self.domain_ctl_set_frozen(argblock, false),
+            DOMAIN_OP_DESTROY => self.domain_ctl_destroy(argblock),
+            DOMAIN_OP_ATTACH_SELF => self.domain_ctl_attach_self(argblock),
+            DOMAIN_OP_DETACH_SELF => self.domain_ctl_detach_self(),
+            _ => Err(22),
+        };
+        match value {
+            Ok(value) => {
+                self.set_errno(0)?;
+                self.write_reg(result, value)
+            }
+            Err(errno) => {
+                self.set_errno(errno)?;
+                self.write_reg(result, -1i64 as u64)
+            }
+        }
+    }
+
+    fn domain_ctl_create(&mut self, argblock: u64) -> Result<u64, u64> {
+        let parent_id = self.domain_arg_id(argblock)?;
+        let parent_generation = self.load_u64(argblock + 16).map_err(|_| 14u64)?;
+        self.domain_ref(parent_id, parent_generation)?;
+        let caller = self.current_domain_id().map_err(|_| 3u64)?;
+        if !self.domain_is_descendant_or_self(parent_id, caller) {
+            return Err(1);
+        }
+        if self.live_domain_count() >= MAX_RESOURCE_DOMAINS {
+            return Err(28);
+        }
+        let parent_depth = self.domain_depth(parent_id).ok_or(3u64)?;
+        if parent_depth + 1 > MAX_DOMAIN_DEPTH {
+            return Err(40);
+        }
+
+        let parent = self.domains.get(&parent_id).ok_or(3u64)?;
+        let parent_limits = parent.limits;
+        let parent_caps = parent.capability_mask;
+        let parent_upcalls = parent.upcall_mask;
+        let requested_cpu = self.load_u64(argblock + 32).map_err(|_| 14u64)?;
+        let requested_memory = self.load_u64(argblock + 40).map_err(|_| 14u64)?;
+        let requested_pids = self.load_u64(argblock + 48).map_err(|_| 14u64)?;
+        let requested_fdrs = self.load_u64(argblock + 56).map_err(|_| 14u64)?;
+        let profile = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
+        let requested_caps = self.load_u64(argblock + 64).map_err(|_| 14u64)?;
+        let requested_upcalls = self.load_u64(argblock + 72).map_err(|_| 14u64)?;
+        let limits = DomainLimits {
+            cpu: Self::delegate_limit(requested_cpu, parent_limits.cpu)?,
+            memory: Self::delegate_limit(requested_memory, parent_limits.memory)?,
+            pids: Self::delegate_limit(requested_pids, parent_limits.pids)?,
+            fdrs: Self::delegate_limit(requested_fdrs, parent_limits.fdrs)?,
+        };
+        let capability_mask = if requested_caps == 0 {
+            parent_caps
+        } else if requested_caps & !parent_caps == 0 {
+            requested_caps
+        } else {
+            return Err(1);
+        };
+        let upcall_mask = if requested_upcalls == 0 {
+            parent_upcalls
+        } else if requested_upcalls & !parent_upcalls == 0 {
+            requested_upcalls
+        } else {
+            return Err(1);
+        };
+
+        let id = self.next_domain_id;
+        self.next_domain_id += 1;
+        let domain = ResourceDomain {
+            id,
+            generation: 1,
+            parent: Some(parent_id),
+            children: Vec::new(),
+            profile,
+            limits,
+            capability_mask,
+            upcall_mask,
+            frozen: false,
+            destroyed: false,
+            cpu_ticks: 0,
+        };
+        self.domains.insert(id, domain);
+        if let Some(parent) = self.domains.get_mut(&parent_id) {
+            parent.children.push(id);
+        }
+        self.store_u64(argblock + 8, id).map_err(|_| 14u64)?;
+        self.store_u64(argblock + 16, 1).map_err(|_| 14u64)?;
+        self.store_u64(argblock + 120, parent_id)
+            .map_err(|_| 14u64)?;
+        self.store_u64(argblock + 128, parent_depth + 1)
+            .map_err(|_| 14u64)?;
+        Ok(id)
+    }
+
+    fn domain_ctl_configure(&mut self, argblock: u64) -> Result<u64, u64> {
+        let id = self.domain_ref_from_arg(argblock)?;
+        self.ensure_domain_control(id)?;
+        let parent_id = self.domains.get(&id).and_then(|domain| domain.parent);
+        let parent_limits = parent_id
+            .and_then(|parent| self.domains.get(&parent).map(|domain| domain.limits))
+            .unwrap_or_else(DomainLimits::root);
+        let child_limits = self.max_direct_child_limits(id);
+
+        let current_limits = self.domains.get(&id).ok_or(3u64)?.limits;
+        let requested_cpu = self.load_u64(argblock + 32).map_err(|_| 14u64)?;
+        let requested_memory = self.load_u64(argblock + 40).map_err(|_| 14u64)?;
+        let requested_pids = self.load_u64(argblock + 48).map_err(|_| 14u64)?;
+        let requested_fdrs = self.load_u64(argblock + 56).map_err(|_| 14u64)?;
+        let limits = DomainLimits {
+            cpu: Self::configure_limit(
+                requested_cpu,
+                current_limits.cpu,
+                parent_limits.cpu,
+                child_limits.cpu,
+            )?,
+            memory: Self::configure_limit(
+                requested_memory,
+                current_limits.memory,
+                parent_limits.memory,
+                child_limits.memory,
+            )?,
+            pids: Self::configure_limit(
+                requested_pids,
+                current_limits.pids,
+                parent_limits.pids,
+                child_limits.pids,
+            )?,
+            fdrs: Self::configure_limit(
+                requested_fdrs,
+                current_limits.fdrs,
+                parent_limits.fdrs,
+                child_limits.fdrs,
+            )?,
+        };
+
+        let parent_caps = parent_id
+            .and_then(|parent| {
+                self.domains
+                    .get(&parent)
+                    .map(|domain| domain.capability_mask)
+            })
+            .unwrap_or(u64::MAX);
+        let parent_upcalls = parent_id
+            .and_then(|parent| self.domains.get(&parent).map(|domain| domain.upcall_mask))
+            .unwrap_or(u64::MAX);
+        let profile = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
+        let caps = self.load_u64(argblock + 64).map_err(|_| 14u64)?;
+        let upcalls = self.load_u64(argblock + 72).map_err(|_| 14u64)?;
+
+        if caps != 0 {
+            if caps & !parent_caps != 0 {
+                return Err(1);
+            }
+        }
+        if upcalls != 0 {
+            if upcalls & !parent_upcalls != 0 {
+                return Err(1);
+            }
+        }
+        let domain = self.domains.get_mut(&id).ok_or(3u64)?;
+        if profile != 0 {
+            domain.profile = profile;
+        }
+        domain.limits = limits;
+        if caps != 0 {
+            domain.capability_mask = caps;
+        }
+        if upcalls != 0 {
+            domain.upcall_mask = upcalls;
+        }
+        if caps != 0 {
+            self.mask_descendant_capabilities(id, caps);
+        }
+        if upcalls != 0 {
+            self.mask_descendant_upcalls(id, upcalls);
+        }
+        Ok(0)
+    }
+
+    fn domain_ctl_query(&mut self, argblock: u64) -> Result<u64, u64> {
+        let id = self.domain_ref_from_arg(argblock)?;
+        self.ensure_domain_control(id)?;
+        let usage = self.domain_usage(id);
+        let domain = self.domains.get(&id).ok_or(3u64)?;
+        let state = if domain.destroyed {
+            DOMAIN_STATE_DESTROYED
+        } else if domain.frozen {
+            DOMAIN_STATE_FROZEN
+        } else {
+            DOMAIN_STATE_ACTIVE
+        };
+        let fields = [
+            (8, domain.id),
+            (16, domain.generation),
+            (24, domain.profile),
+            (32, domain.limits.cpu),
+            (40, domain.limits.memory),
+            (48, domain.limits.pids),
+            (56, domain.limits.fdrs),
+            (64, domain.capability_mask),
+            (72, domain.upcall_mask),
+            (80, usage.cpu),
+            (88, usage.memory),
+            (96, usage.pids),
+            (104, usage.fdrs),
+            (112, state),
+            (120, domain.parent.unwrap_or(0)),
+            (128, self.domain_depth(id).unwrap_or(0)),
+            (
+                136,
+                domain
+                    .children
+                    .iter()
+                    .filter(|child| self.domain_is_live(**child))
+                    .count() as u64,
+            ),
+        ];
+        for (offset, value) in fields {
+            self.store_u64(argblock + offset, value)
+                .map_err(|_| 14u64)?;
+        }
+        Ok(DOMAIN_QUERY_SIZE)
+    }
+
+    fn domain_ctl_set_frozen(&mut self, argblock: u64, frozen: bool) -> Result<u64, u64> {
+        let id = self.domain_ref_from_arg(argblock)?;
+        self.ensure_domain_control(id)?;
+        self.set_domain_frozen_recursive(id, frozen);
+        if frozen {
+            self.park_domain_threads(id);
+        } else {
+            self.release_domain_threads();
+        }
+        Ok(0)
+    }
+
+    fn domain_ctl_destroy(&mut self, argblock: u64) -> Result<u64, u64> {
+        let id = self.domain_ref_from_arg(argblock)?;
+        self.ensure_domain_control(id)?;
+        if id == ROOT_DOMAIN_ID {
+            return Err(1);
+        }
+        if self.domain_usage(id).pids != 0 {
+            return Err(16);
+        }
+        let parent_id = self.domains.get(&id).and_then(|domain| domain.parent);
+        if let Some(parent_id) = parent_id {
+            if let Some(parent) = self.domains.get_mut(&parent_id) {
+                parent.children.retain(|child| *child != id);
+            }
+        }
+        self.destroy_domain_recursive(id);
+        Ok(0)
+    }
+
+    fn domain_ctl_attach_self(&mut self, argblock: u64) -> Result<u64, u64> {
+        let id = self.domain_ref_from_arg(argblock)?;
+        self.ensure_domain_control(id)?;
+        if self.domain_is_frozen_or_destroyed(id) {
+            return Err(11);
+        }
+        let pid = self.thread().map_err(|_| 3u64)?.pid;
+        let current_domain = self
+            .processes
+            .get(&pid)
+            .map(|process| process.domain_id)
+            .ok_or(3u64)?;
+        let usage = self.process_usage(pid).ok_or(3u64)?;
+        self.ensure_attach_budget(id, current_domain, &usage)?;
+        if let Some(process) = self.processes.get_mut(&pid) {
+            process.domain_id = id;
+        }
+        Ok(0)
+    }
+
+    fn domain_ctl_detach_self(&mut self) -> Result<u64, u64> {
+        let pid = self.thread().map_err(|_| 3u64)?.pid;
+        let current = self
+            .processes
+            .get(&pid)
+            .map(|process| process.domain_id)
+            .ok_or(3u64)?;
+        let parent = self
+            .domains
+            .get(&current)
+            .and_then(|domain| domain.parent)
+            .unwrap_or(ROOT_DOMAIN_ID);
+        if let Some(process) = self.processes.get_mut(&pid) {
+            process.domain_id = parent;
+        }
+        Ok(parent)
+    }
+
+    fn domain_arg_id(&mut self, argblock: u64) -> Result<u64, u64> {
+        let id = self.load_u64(argblock + 8).map_err(|_| 14u64)?;
+        if id == 0 {
+            self.current_domain_id().map_err(|_| 3u64)
+        } else {
+            Ok(id)
+        }
+    }
+
+    fn domain_ref_from_arg(&mut self, argblock: u64) -> Result<u64, u64> {
+        let id = self.domain_arg_id(argblock)?;
+        let generation = self.load_u64(argblock + 16).map_err(|_| 14u64)?;
+        self.domain_ref(id, generation)
+    }
+
+    fn domain_ref(&self, id: u64, generation: u64) -> Result<u64, u64> {
+        let Some(domain) = self.domains.get(&id) else {
+            return Err(3);
+        };
+        if domain.destroyed || (generation != 0 && domain.generation != generation) {
+            return Err(116);
+        }
+        Ok(id)
+    }
+
+    fn ensure_domain_control(&self, id: u64) -> Result<(), u64> {
+        let caller = self.current_domain_id().map_err(|_| 3u64)?;
+        if self.domain_is_descendant_or_self(id, caller) {
+            Ok(())
+        } else {
+            Err(1)
+        }
+    }
+
+    fn current_domain_id(&self) -> Result<u64, String> {
+        Ok(self.process()?.domain_id)
+    }
+
+    fn require_domain_cap(&mut self, mask: u64) -> Result<(), String> {
+        if self.domain_has_cap(mask)? {
+            Ok(())
+        } else {
+            self.set_status_errno(1)?;
+            Err("resource domain capability denied".to_string())
+        }
+    }
+
+    fn require_domain_cap_errno(&self, mask: u64) -> Result<(), u64> {
+        if self.domain_has_cap_errno(mask)? {
+            Ok(())
+        } else {
+            Err(1)
+        }
+    }
+
+    fn domain_has_cap(&self, mask: u64) -> Result<bool, String> {
+        self.domain_has_cap_errno(mask)
+            .map_err(|errno| errno.to_string())
+    }
+
+    fn domain_has_cap_errno(&self, mask: u64) -> Result<bool, u64> {
+        let domain_id = self.current_domain_id().map_err(|_| 3u64)?;
+        let Some(domain) = self.domains.get(&domain_id) else {
+            return Err(3);
+        };
+        Ok(domain.capability_mask & mask == mask)
+    }
+
+    fn fd_slot_delta(&self, fd: usize) -> Result<u64, String> {
+        if fd >= FDR_COUNT || fd == MESSAGE_ENDPOINT_FD {
+            return Err(format!("fd index out of range: {fd}"));
+        }
+        Ok(match self.process()?.fds.get(fd) {
+            Some(FdHandle::Closed) => 1,
+            Some(_) => 0,
+            None => return Err(format!("fd index out of range: {fd}")),
+        })
+    }
+
+    fn check_domain_budget(
+        &mut self,
+        memory_delta: u64,
+        _vma_delta: u64,
+        pids_delta: u64,
+        fdrs_delta: u64,
+    ) -> Result<bool, String> {
+        match self.ensure_domain_budget_errno(memory_delta, _vma_delta, pids_delta, fdrs_delta) {
+            Ok(()) => Ok(true),
+            Err(errno) => {
+                self.set_status_errno(errno)?;
+                Ok(false)
+            }
+        }
+    }
+
+    fn ensure_domain_budget_errno(
+        &self,
+        memory_delta: u64,
+        _vma_delta: u64,
+        pids_delta: u64,
+        fdrs_delta: u64,
+    ) -> Result<(), u64> {
+        let current = self.current_domain_id().map_err(|_| 3u64)?;
+        let mut cursor = Some(current);
+        while let Some(domain_id) = cursor {
+            let Some(domain) = self.domains.get(&domain_id) else {
+                return Err(3);
+            };
+            let usage = self.domain_usage(domain_id);
+            if usage.memory.saturating_add(memory_delta) > domain.limits.memory
+                || usage.pids.saturating_add(pids_delta) > domain.limits.pids
+                || usage.fdrs.saturating_add(fdrs_delta) > domain.limits.fdrs
+            {
+                return Err(12);
+            }
+            cursor = domain.parent;
+        }
+        Ok(())
+    }
+
+    fn check_call_cpu_budget(&mut self, callee_domain_id: u64) -> Result<bool, String> {
+        let caller_domain_id = self.current_domain_id()?;
+        for domain_id in [caller_domain_id, callee_domain_id] {
+            let Some(domain) = self.domains.get(&domain_id) else {
+                self.set_status_errno(3)?;
+                return Ok(false);
+            };
+            if self.domain_usage(domain_id).cpu >= domain.limits.cpu {
+                self.set_status_errno(11)?;
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    fn delegate_limit(requested: u64, parent_limit: u64) -> Result<u64, u64> {
+        let limit = if requested == 0 {
+            parent_limit
+        } else {
+            requested
+        };
+        if limit <= parent_limit {
+            Ok(limit)
+        } else {
+            Err(1)
+        }
+    }
+
+    fn configure_limit(
+        requested: u64,
+        current: u64,
+        parent_limit: u64,
+        child_floor: u64,
+    ) -> Result<u64, u64> {
+        let limit = if requested == 0 { current } else { requested };
+        if limit > parent_limit || limit < child_floor {
+            Err(1)
+        } else {
+            Ok(limit)
+        }
+    }
+
+    fn max_direct_child_limits(&self, id: u64) -> DomainLimits {
+        let mut out = DomainLimits {
+            cpu: 0,
+            memory: 0,
+            pids: 0,
+            fdrs: 0,
+        };
+        if let Some(domain) = self.domains.get(&id) {
+            for child in &domain.children {
+                if let Some(child) = self.domains.get(child).filter(|child| !child.destroyed) {
+                    out.cpu = out.cpu.max(child.limits.cpu);
+                    out.memory = out.memory.max(child.limits.memory);
+                    out.pids = out.pids.max(child.limits.pids);
+                    out.fdrs = out.fdrs.max(child.limits.fdrs);
+                }
+            }
+        }
+        out
+    }
+
+    fn mask_descendant_capabilities(&mut self, id: u64, mask: u64) {
+        let children = self
+            .domains
+            .get(&id)
+            .map(|domain| domain.children.clone())
+            .unwrap_or_default();
+        for child_id in children {
+            if let Some(child) = self.domains.get_mut(&child_id) {
+                child.capability_mask &= mask;
+            }
+            self.mask_descendant_capabilities(child_id, mask);
+        }
+    }
+
+    fn mask_descendant_upcalls(&mut self, id: u64, mask: u64) {
+        let children = self
+            .domains
+            .get(&id)
+            .map(|domain| domain.children.clone())
+            .unwrap_or_default();
+        for child_id in children {
+            if let Some(child) = self.domains.get_mut(&child_id) {
+                child.upcall_mask &= mask;
+            }
+            self.mask_descendant_upcalls(child_id, mask);
+        }
+    }
+
+    fn set_domain_frozen_recursive(&mut self, id: u64, frozen: bool) {
+        if let Some(domain) = self.domains.get_mut(&id) {
+            domain.frozen = frozen;
+            let children = domain.children.clone();
+            for child in children {
+                self.set_domain_frozen_recursive(child, frozen);
+            }
+        }
+    }
+
+    fn destroy_domain_recursive(&mut self, id: u64) {
+        let children = self
+            .domains
+            .get(&id)
+            .map(|domain| domain.children.clone())
+            .unwrap_or_default();
+        for child in children {
+            self.destroy_domain_recursive(child);
+        }
+        if let Some(domain) = self.domains.get_mut(&id) {
+            domain.children.clear();
+            domain.destroyed = true;
+            domain.frozen = true;
+            domain.generation = domain.generation.saturating_add(1);
+        }
+    }
+
+    fn park_domain_threads(&mut self, id: u64) {
+        let mut kept_ready = VecDeque::new();
+        while let Some(tid) = self.ready.pop_front() {
+            let parked = self
+                .threads
+                .get(&tid)
+                .and_then(|thread| self.processes.get(&thread.pid))
+                .is_some_and(|process| self.domain_is_descendant_or_self(process.domain_id, id));
+            if parked {
+                if !self.domain_parked.contains(&tid) {
+                    self.domain_parked.push_back(tid);
+                }
+            } else {
+                kept_ready.push_back(tid);
+            }
+        }
+        self.ready = kept_ready;
+    }
+
+    fn release_domain_threads(&mut self) {
+        let parked = std::mem::take(&mut self.domain_parked);
+        for tid in parked {
+            match self.thread_domain_frozen(tid) {
+                Ok(false) => self.wake_thread(tid),
+                Ok(true) if self.threads.contains_key(&tid) => self.domain_parked.push_back(tid),
+                _ => {}
+            }
+        }
+    }
+
+    fn thread_domain_frozen(&self, tid: u64) -> Result<bool, String> {
+        let Some(thread) = self.threads.get(&tid) else {
+            return Ok(false);
+        };
+        let Some(process) = self.processes.get(&thread.pid) else {
+            return Ok(false);
+        };
+        Ok(self.domain_is_frozen_or_destroyed(process.domain_id))
+    }
+
+    fn domain_is_frozen_or_destroyed(&self, id: u64) -> bool {
+        let mut cursor = Some(id);
+        while let Some(domain_id) = cursor {
+            let Some(domain) = self.domains.get(&domain_id) else {
+                return true;
+            };
+            if domain.frozen || domain.destroyed {
+                return true;
+            }
+            cursor = domain.parent;
+        }
+        false
+    }
+
+    fn domain_is_live(&self, id: u64) -> bool {
+        self.domains
+            .get(&id)
+            .is_some_and(|domain| !domain.destroyed)
+    }
+
+    fn live_domain_count(&self) -> usize {
+        self.domains
+            .values()
+            .filter(|domain| !domain.destroyed)
+            .count()
+    }
+
+    fn domain_depth(&self, id: u64) -> Option<u64> {
+        let mut depth = 0;
+        let mut cursor = self.domains.get(&id)?.parent;
+        while let Some(parent) = cursor {
+            depth += 1;
+            cursor = self.domains.get(&parent)?.parent;
+        }
+        Some(depth)
+    }
+
+    fn domain_is_descendant_or_self(&self, id: u64, ancestor: u64) -> bool {
+        let mut cursor = Some(id);
+        while let Some(domain_id) = cursor {
+            if domain_id == ancestor {
+                return true;
+            }
+            cursor = self
+                .domains
+                .get(&domain_id)
+                .and_then(|domain| domain.parent);
+        }
+        false
+    }
+
+    fn domain_usage(&self, id: u64) -> DomainUsage {
+        let mut usage = DomainUsage::default();
+        for domain in self.domains.values() {
+            if !domain.destroyed && self.domain_is_descendant_or_self(domain.id, id) {
+                usage.cpu = usage.cpu.saturating_add(domain.cpu_ticks);
+            }
+        }
+        for process in self.processes.values() {
+            if self.domain_is_descendant_or_self(process.domain_id, id) {
+                usage.memory = usage
+                    .memory
+                    .saturating_add(process.vmas.iter().map(|vma| vma.len).sum::<u64>());
+                usage.fdrs = usage.fdrs.saturating_add(
+                    process
+                        .fds
+                        .iter()
+                        .enumerate()
+                        .filter(|(idx, fd)| {
+                            *idx != MESSAGE_ENDPOINT_FD && !matches!(fd, FdHandle::Closed)
+                        })
+                        .count() as u64,
+                );
+            }
+        }
+        for thread in self.threads.values() {
+            if let Some(process) = self.processes.get(&thread.pid) {
+                if self.domain_is_descendant_or_self(process.domain_id, id) {
+                    usage.pids = usage.pids.saturating_add(1);
+                }
+            }
+        }
+        usage
+    }
+
+    fn process_usage(&self, pid: u64) -> Option<DomainUsage> {
+        let process = self.processes.get(&pid)?;
+        let mut usage = DomainUsage::default();
+        usage.memory = process.vmas.iter().map(|vma| vma.len).sum::<u64>();
+        usage.fdrs = process
+            .fds
+            .iter()
+            .enumerate()
+            .filter(|(idx, fd)| *idx != MESSAGE_ENDPOINT_FD && !matches!(fd, FdHandle::Closed))
+            .count() as u64;
+        usage.pids = self
+            .threads
+            .values()
+            .filter(|thread| thread.pid == pid)
+            .count() as u64;
+        Some(usage)
+    }
+
+    fn ensure_attach_budget(
+        &self,
+        target_domain: u64,
+        current_domain: u64,
+        process_usage: &DomainUsage,
+    ) -> Result<(), u64> {
+        let mut cursor = Some(target_domain);
+        while let Some(domain_id) = cursor {
+            if domain_id == current_domain {
+                break;
+            }
+            let Some(domain) = self.domains.get(&domain_id) else {
+                return Err(3);
+            };
+            let usage = self.domain_usage(domain_id);
+            if usage.memory.saturating_add(process_usage.memory) > domain.limits.memory
+                || usage.pids.saturating_add(process_usage.pids) > domain.limits.pids
+                || usage.fdrs.saturating_add(process_usage.fdrs) > domain.limits.fdrs
+            {
+                return Err(12);
+            }
+            cursor = domain.parent;
+        }
+        Ok(())
+    }
+
+    fn charge_cpu_tick(&mut self) -> Result<(), String> {
+        let mut cursor = Some(self.current_domain_id()?);
+        while let Some(domain_id) = cursor {
+            let Some(domain) = self.domains.get_mut(&domain_id) else {
+                return Err(format!("missing resource domain {domain_id}"));
+            };
+            domain.cpu_ticks = domain.cpu_ticks.saturating_add(1);
+            cursor = domain.parent;
+        }
+        Ok(())
     }
 
     fn read_reg(&self, reg: Reg) -> Result<u64, String> {
@@ -1754,6 +3320,9 @@ impl Machine {
     }
 
     fn fd_ready(&mut self, fd: usize) -> Result<bool, String> {
+        if fd == MESSAGE_ENDPOINT_FD {
+            return Ok(!self.process()?.inbox.is_empty());
+        }
         let handle = &mut self.process_mut()?.fds[fd];
         match handle {
             FdHandle::Stdin
@@ -1761,7 +3330,11 @@ impl Machine {
             | FdHandle::Stderr
             | FdHandle::File(_)
             | FdHandle::Dir { .. }
-            | FdHandle::PipeWriter(_) => Ok(true),
+            | FdHandle::PipeWriter(_)
+            | FdHandle::Counter(_)
+            | FdHandle::MemoryObject { .. }
+            | FdHandle::CallGate { .. } => Ok(true),
+            FdHandle::MessageEndpoint => Ok(false),
             FdHandle::PipeReader(buffer) => Ok(!buffer.borrow().is_empty()),
             FdHandle::Closed => Ok(false),
             FdHandle::TcpListener { listener, pending } => {
@@ -1898,6 +3471,11 @@ mod tests {
     fn runs_system_primitive_subset() {
         let program = Program::parse(
             r#"
+            .data
+            pipe_msg: .string "hi"
+            dup_msg: .string "!"
+            obj_arg: .zero 64
+
             .text
               GET_PCR r1, PID
               LI r2, 1
@@ -1919,10 +3497,63 @@ mod tests {
               BNE bad
 
               MSG_SEND r1, r6, r7
-              MSG_RECV r10, r11
+              AWAIT r0, fd255, r0
+              PULL r10, fd255, r0, r0
+              MOV r11, r30
               CMP r10, r6
               BNE bad
               CMP r11, r7
+              BNE bad
+
+              LI r12, pipe_msg
+              LI r13, 2
+              LI r18, obj_arg
+              LI r19, 1
+              ST [r18, 0], r19
+              LI r19, 2
+              ST [r18, 8], r19
+              LI r19, 1
+              ST [r18, 16], r19
+              LI r19, 3
+              ST [r18, 24], r19
+              LI r19, 4
+              ST [r18, 32], r19
+              OBJECT_CTL r19, r18
+              CMP r19, r0
+              BNE bad
+              PUSH r19, fd4, r12, r13
+              LI r14, 2
+              ALLOC r15, r14
+              PULL r19, fd3, r15, r14
+              CMP r19, r14
+              BNE bad
+              LD.B r16, [r15, 0]
+              LI r17, 104
+              CMP r16, r17
+              BNE bad
+              LD.B r16, [r15, 1]
+              LI r17, 105
+              CMP r16, r17
+              BNE bad
+
+              FD_DUP2 fd5, fd4
+              CMP r1, r0
+              BNE bad
+              LI r12, dup_msg
+              LI r13, 1
+              WRITE_FD fd5, r12, r13
+              READ_FD fd3, r15, r13
+              CMP r1, r13
+              BNE bad
+              LD.B r16, [r15, 0]
+              LI r17, 33
+              CMP r16, r17
+              BNE bad
+              FREE r15
+
+              LI r18, 0
+              WAIT_PID r19, r18
+              CMP r1, r0
               BNE bad
               FREE r4
               EXIT r0
@@ -1934,6 +3565,117 @@ mod tests {
         .unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn offset_io_uses_explicit_file_offsets() {
+        let path = format!("/tmp/lnp64_offset_io_{}.txt", std::process::id());
+        fs::write(&path, b"abcdef").unwrap();
+
+        let program = Program::parse(&format!(
+            r#"
+            .data
+            path: .string "{path}"
+            patch: .string "XY"
+
+            .text
+              LI r1, path
+              LI r2, 4
+              OPEN_FD fd3, r1, r2
+              CMP r1, r0
+              BNE bad
+
+              LI r3, patch
+              LI r4, 2
+              LI r5, 2
+              PWRITE_FD fd3, r3, r4, r5
+              CMP r1, r4
+              BNE bad
+
+              LI r6, 6
+              ALLOC r7, r6
+              PREAD_FD fd3, r7, r6, r0
+              CMP r1, r6
+              BNE bad
+              LD.B r8, [r7, 0]
+              LI r9, 97
+              CMP r8, r9
+              BNE bad
+              LD.B r8, [r7, 2]
+              LI r9, 88
+              CMP r8, r9
+              BNE bad
+              LD.B r8, [r7, 3]
+              LI r9, 89
+              CMP r8, r9
+              BNE bad
+              LD.B r8, [r7, 5]
+              LI r9, 102
+              CMP r8, r9
+              BNE bad
+              FREE r7
+              EXIT r0
+            bad:
+              LI r1, 1
+              EXIT r1
+            "#,
+        ))
+        .unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+        assert_eq!(fs::read(&path).unwrap(), b"abXYef");
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn timestamp_instructions_update_file_metadata() {
+        let path = format!("/tmp/lnp64_utime_{}.txt", std::process::id());
+        fs::write(&path, b"time").unwrap();
+
+        let program = Program::parse(&format!(
+            r#"
+            .data
+            path: .string "{path}"
+            times: .quad 1
+                   .quad 0
+                   .quad 1
+                   .quad 0
+
+            .text
+              LI r10, path
+              LI r11, times
+              LI r12, 0
+              UTIME_PATH r10, r11, r12
+              CMP r1, r0
+              BNE bad
+
+              LI r13, 4
+              OPEN_FD fd3, r10, r13
+              CMP r1, r0
+              BNE bad
+
+              UTIME_FD fd3, r11
+              CMP r1, r0
+              BNE bad
+
+              LI r14, 3
+              UTIME_FD_DYN r14, r11
+              CMP r1, r0
+              BNE bad
+
+              EXIT r0
+            bad:
+              LI r1, 1
+              EXIT r1
+            "#,
+        ))
+        .unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+        let metadata = fs::metadata(&path).unwrap();
+        assert_eq!(metadata.mtime(), 1);
+        assert_eq!(metadata.mtime_nsec(), 0);
+        fs::remove_file(path).unwrap();
     }
 
     #[test]
@@ -2036,6 +3778,894 @@ mod tests {
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
         let _ = fs::remove_file(exec_path);
+    }
+
+    #[test]
+    fn domain_ctl_manages_nested_resource_domains() {
+        let program = Program::parse(
+            r#"
+            .data
+            arg: .zero 160
+
+            .text
+              LI r10, arg
+              LI r12, -1
+
+              LI r1, 1
+              ST [r10, 0], r1
+              ST [r10, 8], r0
+              ST [r10, 16], r0
+              LI r1, 1
+              ST [r10, 24], r1
+              LI r1, 100
+              ST [r10, 32], r1
+              LI r1, 6000000
+              ST [r10, 40], r1
+              LI r1, 4
+              ST [r10, 48], r1
+              LI r1, 16
+              ST [r10, 56], r1
+              LI r1, 15
+              ST [r10, 64], r1
+              LI r1, 7
+              ST [r10, 72], r1
+              DOMAIN_CTL r20, r10
+              CMP r20, r12
+              BEQ bad
+
+              LI r1, 1
+              ST [r10, 0], r1
+              ST [r10, 8], r20
+              LI r1, 1
+              ST [r10, 16], r1
+              ST [r10, 24], r1
+              LI r1, 40
+              ST [r10, 32], r1
+              LI r1, 5500000
+              ST [r10, 40], r1
+              LI r1, 2
+              ST [r10, 48], r1
+              LI r1, 8
+              ST [r10, 56], r1
+              LI r1, 3
+              ST [r10, 64], r1
+              LI r1, 1
+              ST [r10, 72], r1
+              DOMAIN_CTL r21, r10
+              CMP r21, r12
+              BEQ bad
+
+              LI r1, 3
+              ST [r10, 0], r1
+              ST [r10, 8], r21
+              LI r1, 1
+              ST [r10, 16], r1
+              DOMAIN_CTL r22, r10
+              LI r1, 144
+              CMP r22, r1
+              BNE bad
+              LD r23, [r10, 120]
+              CMP r23, r20
+              BNE bad
+              LD r23, [r10, 128]
+              LI r1, 2
+              CMP r23, r1
+              BNE bad
+
+              LI r1, 1
+              ST [r10, 0], r1
+              ST [r10, 8], r21
+              LI r1, 1
+              ST [r10, 16], r1
+              ST [r10, 24], r1
+              LI r1, 41
+              ST [r10, 32], r1
+              LI r1, 5500000
+              ST [r10, 40], r1
+              LI r1, 2
+              ST [r10, 48], r1
+              LI r1, 8
+              ST [r10, 56], r1
+              LI r1, 3
+              ST [r10, 64], r1
+              LI r1, 1
+              ST [r10, 72], r1
+              DOMAIN_CTL r24, r10
+              CMP r24, r12
+              BNE bad
+
+              LI r1, 4
+              ST [r10, 0], r1
+              ST [r10, 8], r21
+              LI r1, 1
+              ST [r10, 16], r1
+              DOMAIN_CTL r24, r10
+              CMP r24, r0
+              BNE bad
+              LI r1, 3
+              ST [r10, 0], r1
+              DOMAIN_CTL r24, r10
+              LD r25, [r10, 112]
+              LI r1, 1
+              CMP r25, r1
+              BNE bad
+              LI r1, 5
+              ST [r10, 0], r1
+              DOMAIN_CTL r24, r10
+              CMP r24, r0
+              BNE bad
+
+              LI r1, 7
+              ST [r10, 0], r1
+              ST [r10, 8], r20
+              LI r1, 1
+              ST [r10, 16], r1
+              DOMAIN_CTL r24, r10
+              CMP r24, r0
+              BNE bad
+              LI r1, 3
+              ST [r10, 0], r1
+              ST [r10, 8], r20
+              DOMAIN_CTL r24, r10
+              LD r25, [r10, 96]
+              LI r1, 1
+              CMP r25, r1
+              BNE bad
+              LI r1, 8
+              ST [r10, 0], r1
+              DOMAIN_CTL r24, r10
+              LI r1, 1
+              CMP r24, r1
+              BNE bad
+
+              LI r1, 6
+              ST [r10, 0], r1
+              ST [r10, 8], r21
+              LI r1, 1
+              ST [r10, 16], r1
+              DOMAIN_CTL r24, r10
+              CMP r24, r0
+              BNE bad
+              LI r1, 3
+              ST [r10, 0], r1
+              DOMAIN_CTL r24, r10
+              CMP r24, r12
+              BNE bad
+
+              EXIT r0
+            bad:
+              LI r1, 1
+              EXIT r1
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn domain_limits_are_enforced_by_ordinary_operations() {
+        let program = Program::parse(
+            r#"
+            .data
+            arg: .zero 160
+            obj: .zero 80
+
+            .text
+              LI r10, arg
+              LI r11, -1
+
+              LI r1, 1
+              ST [r10, 0], r1
+              ST [r10, 8], r0
+              ST [r10, 16], r0
+              LI r1, 4
+              ST [r10, 24], r1
+              LI r1, 1000
+              ST [r10, 32], r1
+              LI r1, 5000000
+              ST [r10, 40], r1
+              LI r1, 1
+              ST [r10, 48], r1
+              LI r1, 5
+              ST [r10, 56], r1
+              LI r1, 63
+              ST [r10, 64], r1
+              ST [r10, 72], r1
+              DOMAIN_CTL r20, r10
+              CMP r20, r11
+              BEQ bad
+
+              LI r1, 7
+              ST [r10, 0], r1
+              ST [r10, 8], r20
+              LI r1, 1
+              ST [r10, 16], r1
+              DOMAIN_CTL r21, r10
+              CMP r21, r0
+              BNE bad
+
+              LI r1, 3
+              ST [r10, 0], r1
+              DOMAIN_CTL r21, r10
+              LD r22, [r10, 88]
+              LD r23, [r10, 104]
+
+              LI r1, 64
+              ALLOC r24, r1
+              CMP r24, r11
+              BEQ bad
+              LI r1, 3
+              ST [r10, 0], r1
+              DOMAIN_CTL r21, r10
+              LD r25, [r10, 88]
+              CMP r25, r22
+              BLE bad
+              FREE r24
+              LI r1, 3
+              ST [r10, 0], r1
+              DOMAIN_CTL r21, r10
+              LD r25, [r10, 88]
+              CMP r25, r22
+              BNE bad
+
+              LI r1, 1000000
+              ALLOC r24, r1
+              CMP r24, r11
+              BNE bad
+
+              LI r1, worker
+              SPAWN r24, r1
+              CMP r24, r11
+              BNE bad
+
+              LI r12, obj
+              LI r1, 1
+              ST [r12, 0], r1
+              LI r1, 2
+              ST [r12, 8], r1
+              LI r1, 1
+              ST [r12, 16], r1
+              LI r1, 3
+              ST [r12, 24], r1
+              LI r1, 4
+              ST [r12, 32], r1
+              OBJECT_CTL r24, r12
+              CMP r24, r0
+              BNE bad
+              LI r1, 3
+              ST [r10, 0], r1
+              DOMAIN_CTL r21, r10
+              LD r25, [r10, 104]
+              CMP r25, r23
+              BLE bad
+
+              FD_DUP2 fd5, fd4
+              CMP r1, r11
+              BNE bad
+              FD_CLOSE fd3
+              FD_CLOSE fd4
+              LI r1, 3
+              ST [r10, 0], r1
+              DOMAIN_CTL r21, r10
+              LD r25, [r10, 104]
+              CMP r25, r23
+              BNE bad
+
+              EXIT r0
+
+            worker:
+              EXIT r0
+            bad:
+              LI r1, 1
+              EXIT r1
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn domain_capability_scope_blocks_ordinary_ops() {
+        let program = Program::parse(
+            r#"
+            .data
+            arg: .zero 160
+
+            .text
+              LI r10, arg
+              LI r1, 1
+              ST [r10, 0], r1
+              ST [r10, 8], r0
+              ST [r10, 16], r0
+              LI r1, 4
+              ST [r10, 24], r1
+              LI r1, 1000
+              ST [r10, 32], r1
+              LI r1, 5000000
+              ST [r10, 40], r1
+              LI r1, 1
+              ST [r10, 48], r1
+              LI r1, 8
+              ST [r10, 56], r1
+              LI r1, 13
+              ST [r10, 64], r1
+              ST [r10, 72], r1
+              DOMAIN_CTL r20, r10
+
+              LI r1, 7
+              ST [r10, 0], r1
+              ST [r10, 8], r20
+              LI r1, 1
+              ST [r10, 16], r1
+              DOMAIN_CTL r21, r10
+
+              LI r1, 64
+              ALLOC r22, r1
+              EXIT r0
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        let err = machine.run().unwrap_err();
+        assert!(err.contains("resource domain capability denied"), "{err}");
+    }
+
+    #[test]
+    fn domain_usage_rolls_up_and_release_is_live() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        let parent = ResourceDomain {
+            id: 2,
+            generation: 1,
+            parent: Some(ROOT_DOMAIN_ID),
+            children: vec![3],
+            profile: 4,
+            limits: DomainLimits {
+                cpu: u64::MAX,
+                memory: u64::MAX,
+                pids: u64::MAX,
+                fdrs: u64::MAX,
+            },
+            capability_mask: u64::MAX,
+            upcall_mask: u64::MAX,
+            frozen: false,
+            destroyed: false,
+            cpu_ticks: 0,
+        };
+        let child = ResourceDomain {
+            id: 3,
+            generation: 1,
+            parent: Some(2),
+            children: Vec::new(),
+            profile: 4,
+            limits: parent.limits,
+            capability_mask: u64::MAX,
+            upcall_mask: u64::MAX,
+            frozen: false,
+            destroyed: false,
+            cpu_ticks: 0,
+        };
+        machine
+            .domains
+            .get_mut(&ROOT_DOMAIN_ID)
+            .unwrap()
+            .children
+            .push(2);
+        machine.domains.insert(2, parent);
+        machine.domains.insert(3, child);
+        machine.processes.get_mut(&1).unwrap().domain_id = 3;
+
+        let child_before = machine.domain_usage(3);
+        let parent_before = machine.domain_usage(2);
+        assert_eq!(child_before.memory, parent_before.memory);
+        assert_eq!(child_before.pids, parent_before.pids);
+        assert_eq!(child_before.fdrs, parent_before.fdrs);
+
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[1] = 64;
+        machine.exec(Instr::Alloc(Reg(2), Reg(1))).unwrap();
+        let ptr = machine.thread().unwrap().regs[2];
+        let child_after_alloc = machine.domain_usage(3);
+        let parent_after_alloc = machine.domain_usage(2);
+        assert_eq!(child_after_alloc.memory, parent_after_alloc.memory);
+        assert!(child_after_alloc.memory > child_before.memory);
+
+        machine.thread_mut().unwrap().regs[3] = ptr;
+        machine.exec(Instr::Free(Reg(3))).unwrap();
+        let child_after_free = machine.domain_usage(3);
+        let parent_after_free = machine.domain_usage(2);
+        assert_eq!(child_after_free.memory, child_before.memory);
+        assert_eq!(parent_after_free.memory, parent_before.memory);
+    }
+
+    #[test]
+    fn failed_budgeted_operations_do_not_leak_accounting() {
+        let mut machine = test_machine_with_child_domain();
+        machine.processes.get_mut(&1).unwrap().domain_id = 2;
+        machine.current_tid = 1;
+        let baseline = machine.domain_usage(2);
+
+        machine.domains.get_mut(&2).unwrap().limits.pids = baseline.pids;
+        machine.exec(Instr::Fork(Reg(5))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
+        assert_eq!(machine.domain_usage(2), baseline);
+        assert_eq!(machine.threads.len(), 1);
+
+        machine.domains.get_mut(&2).unwrap().limits.memory = baseline.memory;
+        machine.thread_mut().unwrap().regs[6] = 4096;
+        machine.thread_mut().unwrap().regs[7] = 3;
+        machine
+            .exec(Instr::Mmap(
+                Reg(8),
+                Reg(0),
+                Reg(6),
+                Reg(7),
+                FdReg(0),
+                Reg(0),
+            ))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[8], -1i64 as u64);
+        assert_eq!(machine.domain_usage(2), baseline);
+
+        machine.domains.get_mut(&2).unwrap().limits.fdrs = baseline.fdrs;
+        let arg = ARG_BASE;
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine.store_u64(arg + 8, OBJECT_KIND_COUNTER).unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 4).unwrap();
+        machine.store_u64(arg + 40, 0).unwrap();
+        machine.object_ctl(Reg(9), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[9], -1i64 as u64);
+        assert!(matches!(
+            machine.process().unwrap().fds[4],
+            FdHandle::Closed
+        ));
+        assert_eq!(machine.domain_usage(2), baseline);
+
+        machine.domains.get_mut(&2).unwrap().frozen = true;
+        let stack_before = machine.thread().unwrap().cap_call_stack.len();
+        let domain_before = machine.process().unwrap().domain_id;
+        machine.call_cap(Reg(10), 3, 1, 2).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[10], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().cap_call_stack.len(), stack_before);
+        assert_eq!(machine.process().unwrap().domain_id, domain_before);
+        assert_eq!(machine.domain_usage(2), baseline);
+        machine.domains.get_mut(&2).unwrap().frozen = false;
+
+        machine.domains.insert(
+            3,
+            ResourceDomain {
+                id: 3,
+                generation: 1,
+                parent: Some(2),
+                children: Vec::new(),
+                profile: 4,
+                limits: DomainLimits {
+                    cpu: u64::MAX,
+                    memory: 1,
+                    pids: 1,
+                    fdrs: 1,
+                },
+                capability_mask: u64::MAX,
+                upcall_mask: u64::MAX,
+                frozen: false,
+                destroyed: false,
+                cpu_ticks: 0,
+            },
+        );
+        machine.domains.get_mut(&2).unwrap().children.push(3);
+        machine.store_u64(arg + 8, 3).unwrap();
+        machine.store_u64(arg + 16, 1).unwrap();
+        assert_eq!(machine.domain_ctl_attach_self(arg), Err(12));
+        assert_eq!(machine.process().unwrap().domain_id, 2);
+        assert_eq!(machine.domain_usage(2), baseline);
+    }
+
+    #[test]
+    fn call_cap_sync_returns_across_domain_gate() {
+        let program = Program::parse(
+            r#"
+            .data
+            dom: .zero 160
+            obj: .zero 80
+
+            .text
+              LI r10, dom
+              LI r11, -1
+              LI r1, 1
+              ST [r10, 0], r1
+              ST [r10, 8], r0
+              ST [r10, 16], r0
+              LI r1, 4
+              ST [r10, 24], r1
+              LI r1, 1000
+              ST [r10, 32], r1
+              LI r1, 5000000
+              ST [r10, 40], r1
+              LI r1, 2
+              ST [r10, 48], r1
+              LI r1, 8
+              ST [r10, 56], r1
+              LI r1, 63
+              ST [r10, 64], r1
+              ST [r10, 72], r1
+              DOMAIN_CTL r20, r10
+              CMP r20, r11
+              BEQ bad
+
+              LI r12, obj
+              LI r1, 1
+              ST [r12, 0], r1
+              LI r1, 2
+              ST [r12, 8], r1
+              LI r1, 4
+              ST [r12, 16], r1
+              LI r1, 3
+              ST [r12, 24], r1
+              ST [r12, 32], r20
+              LI r1, service
+              ST [r12, 40], r1
+              OBJECT_CTL r21, r12
+              CMP r21, r11
+              BEQ bad
+
+              LI r1, 7
+              LI r2, 9
+              CALL_CAP r22, fd3, r1, r2
+              LI r23, 16
+              CMP r22, r23
+              BNE bad
+              LI r23, 9
+              CMP r30, r23
+              BNE bad
+              EXIT r0
+
+            service:
+              ADD r3, r1, r2
+              RET_CAP r0, r3, r2
+
+            bad:
+              LI r1, 1
+              EXIT r1
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    fn test_machine_with_child_domain() -> Machine {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        machine.domains.insert(
+            2,
+            ResourceDomain {
+                id: 2,
+                generation: 1,
+                parent: Some(ROOT_DOMAIN_ID),
+                children: Vec::new(),
+                profile: 4,
+                limits: DomainLimits::root(),
+                capability_mask: u64::MAX,
+                upcall_mask: u64::MAX,
+                frozen: false,
+                destroyed: false,
+                cpu_ticks: 0,
+            },
+        );
+        machine
+            .domains
+            .get_mut(&ROOT_DOMAIN_ID)
+            .unwrap()
+            .children
+            .push(2);
+        machine.processes.get_mut(&1).unwrap().fds[3] = FdHandle::CallGate {
+            entry: 1,
+            domain_id: 2,
+            domain_generation: 1,
+            mode: CALL_MODE_SYNC,
+            completion_fd: None,
+            flags: 0,
+        };
+        machine
+    }
+
+    #[test]
+    fn call_cap_negative_corner_cases() {
+        let mut machine = test_machine_with_child_domain();
+
+        machine.domains.get_mut(&2).unwrap().generation = 2;
+        machine.call_cap(Reg(4), 3, 1, 2).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[4], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 116);
+
+        machine = test_machine_with_child_domain();
+        machine
+            .call_cap(Reg(4), 3, CALL_ARG_CAP_MARKER | 1, 2)
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[4], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
+
+        machine = test_machine_with_child_domain();
+        machine.domains.get_mut(&2).unwrap().frozen = true;
+        machine.call_cap(Reg(4), 3, 1, 2).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[4], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 11);
+
+        machine = test_machine_with_child_domain();
+        machine.domains.get_mut(&2).unwrap().limits.cpu = 0;
+        machine.call_cap(Reg(4), 3, 1, 2).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[4], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 11);
+
+        machine = test_machine_with_child_domain();
+        machine.domains.get_mut(&ROOT_DOMAIN_ID).unwrap().limits.cpu = 0;
+        machine.call_cap(Reg(4), 3, 1, 2).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[4], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 11);
+
+        machine = test_machine_with_child_domain();
+        machine.thread_mut().unwrap().cap_call_stack.resize(
+            MAX_CAP_CALL_DEPTH,
+            CallContinuation {
+                return_ip: 0,
+                result_reg: Reg(4),
+                caller_domain_id: ROOT_DOMAIN_ID,
+            },
+        );
+        machine.call_cap(Reg(4), 3, 1, 2).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[4], -1i64 as u64);
+
+        machine = test_machine_with_child_domain();
+        machine.ret_cap(Reg(4), 1, 2).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[4], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+
+        machine = test_machine_with_child_domain();
+        machine.processes.get_mut(&1).unwrap().domain_id = 2;
+        machine
+            .thread_mut()
+            .unwrap()
+            .cap_call_stack
+            .push(CallContinuation {
+                return_ip: 0,
+                result_reg: Reg(5),
+                caller_domain_id: ROOT_DOMAIN_ID,
+            });
+        machine
+            .domains
+            .get_mut(&ROOT_DOMAIN_ID)
+            .unwrap()
+            .capability_mask &= !DOMAIN_CAP_CALL;
+        machine.ret_cap(Reg(4), 1, 2).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[4], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().domain_id, 2);
+
+        machine = test_machine_with_child_domain();
+        machine.domains.insert(
+            3,
+            ResourceDomain {
+                id: 3,
+                generation: 1,
+                parent: Some(ROOT_DOMAIN_ID),
+                children: Vec::new(),
+                profile: 4,
+                limits: DomainLimits::root(),
+                capability_mask: u64::MAX,
+                upcall_mask: u64::MAX,
+                frozen: false,
+                destroyed: false,
+                cpu_ticks: 0,
+            },
+        );
+        machine.processes.get_mut(&1).unwrap().domain_id = 3;
+        machine
+            .thread_mut()
+            .unwrap()
+            .cap_call_stack
+            .push(CallContinuation {
+                return_ip: 0,
+                result_reg: Reg(5),
+                caller_domain_id: 2,
+            });
+        machine.destroy_domain_recursive(2);
+        machine.ret_cap(Reg(4), 1, 2).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[4], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().domain_id, 3);
+    }
+
+    #[test]
+    fn call_cap_async_and_handoff_modes_execute_minimally() {
+        let mut machine = test_machine_with_child_domain();
+        machine.processes.get_mut(&1).unwrap().fds[4] = FdHandle::Counter(Rc::new(RefCell::new(0)));
+        machine.processes.get_mut(&1).unwrap().fds[3] = FdHandle::CallGate {
+            entry: 1,
+            domain_id: 2,
+            domain_generation: 1,
+            mode: CALL_MODE_ASYNC,
+            completion_fd: Some(4),
+            flags: 0,
+        };
+        machine.call_cap(Reg(6), 3, 10, 20).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[6], 1);
+        match &machine.process().unwrap().fds[4] {
+            FdHandle::Counter(value) => assert_eq!(*value.borrow(), 1),
+            _ => panic!("expected completion counter"),
+        }
+        assert!(machine.thread().unwrap().cap_call_stack.is_empty());
+        assert_eq!(machine.process().unwrap().domain_id, ROOT_DOMAIN_ID);
+
+        machine.processes.get_mut(&1).unwrap().fds[3] = FdHandle::CallGate {
+            entry: 1,
+            domain_id: 2,
+            domain_generation: 1,
+            mode: CALL_MODE_HANDOFF,
+            completion_fd: None,
+            flags: 0,
+        };
+        machine.call_cap(Reg(6), 3, 33, 44).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[6], 0);
+        assert_eq!(machine.thread().unwrap().regs[1], 33);
+        assert_eq!(machine.thread().unwrap().regs[2], 44);
+        assert_eq!(machine.process().unwrap().domain_id, 2);
+        assert_eq!(machine.thread().unwrap().ip, 1);
+        assert!(machine.thread().unwrap().cap_call_stack.is_empty());
+    }
+
+    #[test]
+    fn domain_property_invariants_cover_edge_cases() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+
+        let mut live = vec![ROOT_DOMAIN_ID];
+        for idx in 0..24u64 {
+            let parent_id = live[(idx as usize * 7 + 3) % live.len()];
+            let parent = machine.domains.get(&parent_id).unwrap();
+            let id = idx + 2;
+            let limits = DomainLimits {
+                cpu: parent.limits.cpu.saturating_sub(idx + 1),
+                memory: parent.limits.memory.saturating_sub((idx + 1) * 4096),
+                pids: parent.limits.pids.saturating_sub(1),
+                fdrs: parent.limits.fdrs.saturating_sub(1),
+            };
+            machine.domains.insert(
+                id,
+                ResourceDomain {
+                    id,
+                    generation: 1,
+                    parent: Some(parent_id),
+                    children: Vec::new(),
+                    profile: idx % 9,
+                    limits,
+                    capability_mask: u64::MAX >> (idx % 8),
+                    upcall_mask: u64::MAX >> (idx % 8),
+                    frozen: false,
+                    destroyed: false,
+                    cpu_ticks: 0,
+                },
+            );
+            machine
+                .domains
+                .get_mut(&parent_id)
+                .unwrap()
+                .children
+                .push(id);
+            live.push(id);
+        }
+
+        for id in &live {
+            let mut seen = Vec::new();
+            let mut cursor = Some(*id);
+            while let Some(domain_id) = cursor {
+                assert!(!seen.contains(&domain_id), "cycle at domain {domain_id}");
+                seen.push(domain_id);
+                cursor = machine.domains.get(&domain_id).unwrap().parent;
+            }
+            assert!(seen.contains(&ROOT_DOMAIN_ID));
+            assert!(machine.domain_depth(*id).unwrap() < MAX_DOMAIN_DEPTH);
+            if let Some(parent_id) = machine.domains[id].parent {
+                let child = &machine.domains[id];
+                let parent = &machine.domains[&parent_id];
+                assert!(child.limits.cpu <= parent.limits.cpu);
+                assert!(child.limits.memory <= parent.limits.memory);
+                assert!(child.limits.pids <= parent.limits.pids);
+                assert!(child.limits.fdrs <= parent.limits.fdrs);
+            }
+        }
+
+        let leaf = *live.last().unwrap();
+        machine.destroy_domain_recursive(leaf);
+        assert_eq!(machine.domain_ref(leaf, 1), Err(116));
+
+        let parent_id = machine.domains[&2].parent.unwrap();
+        assert_eq!(Machine::delegate_limit(101, 100), Err(1));
+
+        machine.processes.get_mut(&1).unwrap().domain_id = 2;
+        assert_eq!(machine.domain_ctl_detach_self(), Ok(parent_id));
+        machine.processes.get_mut(&1).unwrap().domain_id = 2;
+        machine.destroy_domain_recursive(2);
+        let arg = ARG_BASE;
+        machine.store_u64(arg + 8, 2).unwrap();
+        machine.store_u64(arg + 16, 1).unwrap();
+        assert_eq!(machine.domain_ctl_attach_self(arg), Err(116));
+
+        machine.domains.insert(
+            100,
+            ResourceDomain {
+                id: 100,
+                generation: 1,
+                parent: Some(ROOT_DOMAIN_ID),
+                children: Vec::new(),
+                profile: 4,
+                limits: DomainLimits::root(),
+                capability_mask: u64::MAX,
+                upcall_mask: u64::MAX,
+                frozen: false,
+                destroyed: false,
+                cpu_ticks: 0,
+            },
+        );
+        machine
+            .domains
+            .get_mut(&ROOT_DOMAIN_ID)
+            .unwrap()
+            .children
+            .push(100);
+        machine.processes.get_mut(&1).unwrap().domain_id = 100;
+        machine.ready.clear();
+        machine.ready.push_back(1);
+        machine.set_domain_frozen_recursive(100, true);
+        machine.park_domain_threads(100);
+        assert!(machine.ready.is_empty());
+        assert_eq!(machine.domain_parked.front(), Some(&1));
+        machine.set_domain_frozen_recursive(100, false);
+        machine.release_domain_threads();
+        assert!(machine.ready.contains(&1));
+
+        machine.domains.insert(
+            101,
+            ResourceDomain {
+                id: 101,
+                generation: 1,
+                parent: Some(100),
+                children: Vec::new(),
+                profile: 8,
+                limits: DomainLimits::root(),
+                capability_mask: u64::MAX,
+                upcall_mask: u64::MAX,
+                frozen: false,
+                destroyed: false,
+                cpu_ticks: 0,
+            },
+        );
+        machine.domains.get_mut(&100).unwrap().children.push(101);
+        machine.domain_parked.push_back(1);
+        machine.mask_descendant_capabilities(100, DOMAIN_CAP_IO | DOMAIN_CAP_FDR);
+        assert_eq!(
+            machine.domains[&101].capability_mask,
+            DOMAIN_CAP_IO | DOMAIN_CAP_FDR
+        );
     }
 
     #[test]

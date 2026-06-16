@@ -36,6 +36,13 @@ pub fn companion_sources(input: &Path, source: &str) -> Vec<PathBuf> {
         push_if_exists(&mut paths, root.join("libutil/writeall.c"));
     }
 
+    if contains_call(source, "getlines") {
+        push_if_exists(&mut paths, root.join("libutil/getlines.c"));
+    }
+    if contains_call(source, "linecmp") {
+        push_if_exists(&mut paths, root.join("libutil/linecmp.c"));
+    }
+
     paths
 }
 

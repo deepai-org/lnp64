@@ -1,8 +1,12 @@
 mod asm;
 mod c_compiler;
 mod c_constants;
+mod c_control_rewrites;
 mod c_escapes;
+mod c_layouts;
+mod c_macro_rewrites;
 mod c_queue_rewrites;
+mod c_static_rewrites;
 mod c_support_sources;
 mod c_type_rewrites;
 mod emulator;
@@ -70,17 +74,19 @@ fn run() -> Result<(), String> {
             Ok(())
         }
         "cc" => {
-            let input = take_input(&mut args)?;
-            let output = take_output(&mut args)?;
-            if !args.is_empty() {
-                return Err(format!("unexpected arguments: {}", args.join(" ")));
-            }
-            let asm = c_compiler::compile_file(&input)?;
-            if let Some(output) = output {
-                fs::write(&output, asm)
+            let options = take_cc_options(&mut args)?;
+            let text = if options.dump_macros {
+                c_compiler::macro_expand_files(&options.inputs)?
+            } else if options.dump_preprocessed {
+                c_compiler::preprocess_files(&options.inputs)?
+            } else {
+                c_compiler::compile_files(&options.inputs)?
+            };
+            if let Some(output) = options.output {
+                fs::write(&output, text)
                     .map_err(|err| format!("failed to write {}: {err}", output.display()))?;
             } else {
-                print!("{asm}");
+                print!("{text}");
             }
             Ok(())
         }
@@ -96,7 +102,9 @@ fn usage() {
     eprintln!("usage:");
     eprintln!("  lnp64 asm <program.s>");
     eprintln!("  lnp64 run <program.s>");
-    eprintln!("  lnp64 cc <program.c> [-o program.s]");
+    eprintln!(
+        "  lnp64 cc [--dump-macros|--dump-preprocessed] <program.c> [more.c ...] [-o program.s]"
+    );
 }
 
 fn take_input(args: &mut Vec<String>) -> Result<PathBuf, String> {
@@ -106,16 +114,45 @@ fn take_input(args: &mut Vec<String>) -> Result<PathBuf, String> {
     Ok(PathBuf::from(args.remove(0)))
 }
 
-fn take_output(args: &mut Vec<String>) -> Result<Option<PathBuf>, String> {
-    if args.is_empty() {
-        return Ok(None);
+struct CcOptions {
+    inputs: Vec<PathBuf>,
+    output: Option<PathBuf>,
+    dump_macros: bool,
+    dump_preprocessed: bool,
+}
+
+fn take_cc_options(args: &mut Vec<String>) -> Result<CcOptions, String> {
+    let mut inputs = Vec::new();
+    let mut output = None;
+    let mut dump_macros = false;
+    let mut dump_preprocessed = false;
+    while !args.is_empty() {
+        let arg = args.remove(0);
+        if arg == "-o" {
+            if output.is_some() {
+                return Err("duplicate -o".to_string());
+            }
+            if args.is_empty() {
+                return Err("-o requires a path".to_string());
+            }
+            output = Some(PathBuf::from(args.remove(0)));
+        } else if arg == "--dump-preprocessed" {
+            dump_preprocessed = true;
+        } else if arg == "--dump-macros" {
+            dump_macros = true;
+        } else if arg.starts_with('-') {
+            return Err(format!("unexpected cc option {arg:?}"));
+        } else {
+            inputs.push(PathBuf::from(arg));
+        }
     }
-    if args[0] != "-o" {
-        return Ok(None);
+    if inputs.is_empty() {
+        return Err("missing input path".to_string());
     }
-    args.remove(0);
-    if args.is_empty() {
-        return Err("-o requires a path".to_string());
-    }
-    Ok(Some(PathBuf::from(args.remove(0))))
+    Ok(CcOptions {
+        inputs,
+        output,
+        dump_macros,
+        dump_preprocessed,
+    })
 }
