@@ -47,7 +47,9 @@ The emulator tracks the current ISA direction in `design.md` and
   a counter or queue endpoint, and handoff mode.
 - C allocation builtins lower to the native heap path: `malloc`/`calloc` use
   `ALLOC`, `aligned_alloc`/`posix_memalign` use `ALLOC_EX`, and `realloc` uses
-  `ALLOC_SIZE` metadata before copying and freeing the old allocation.
+  `ALLOC_SIZE` metadata before copying and freeing the old allocation. The
+  `brk`/`sbrk` compatibility layer tracks a process break cursor while positive
+  `sbrk` growth still obtains memory from `ALLOC`.
 - The current pthread/sync subset maps `pthread_create` to same-process
   `SPAWN`, `pthread_join` to `THREAD_JOIN`, and implements mutexes, condition
   variables, rwlocks, `pthread_once`, and POSIX-style semaphores with

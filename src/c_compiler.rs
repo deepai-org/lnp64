@@ -6123,6 +6123,20 @@ impl CodeGen {
                 self.text.push(format!("  LI r{dst}, 0"));
                 Ok(dst)
             }
+            "sbrk" => {
+                let increment = self.one_arg(name, args)?;
+                self.emit_sbrk(increment)
+            }
+            "brk" => {
+                let addr = self.one_arg(name, args)?;
+                self.data
+                    .entry("c_sbrk_cur".to_string())
+                    .or_insert(".quad 0".to_string());
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  ST c_sbrk_cur, r{addr}"));
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
             "ereallocarray" => {
                 if args.len() != 3 {
                     return Err("ereallocarray(ptr, nmemb, size) expects 3 arguments".to_string());
@@ -8483,6 +8497,37 @@ impl CodeGen {
         self.text.push(format!("  JMP {done}"));
         self.text.push(format!("{alloc_failed}:"));
         self.text.push(format!("  LI r{dst}, -1"));
+        self.text.push(format!("{done}:"));
+        Ok(dst)
+    }
+
+    fn emit_sbrk(&mut self, increment: usize) -> Result<usize, String> {
+        self.data
+            .entry("c_sbrk_cur".to_string())
+            .or_insert(".quad 0".to_string());
+        let current = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let next = self.alloc_reg()?;
+        let zero_increment = self.new_label("sbrk_zero_increment");
+        let negative_increment = self.new_label("sbrk_negative_increment");
+        let done = self.new_label("sbrk_done");
+        self.text.push(format!("  LD r{current}, c_sbrk_cur"));
+        self.text.push(format!("  CMP r{increment}, r0"));
+        self.text.push(format!("  BEQ {zero_increment}"));
+        self.text.push(format!("  BLT {negative_increment}"));
+        self.text.push(format!("  ALLOC r{dst}, r{increment}"));
+        self.text
+            .push(format!("  ADD r{next}, r{dst}, r{increment}"));
+        self.text.push(format!("  ST c_sbrk_cur, r{next}"));
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{negative_increment}:"));
+        self.text
+            .push(format!("  ADD r{next}, r{current}, r{increment}"));
+        self.text.push(format!("  ST c_sbrk_cur, r{next}"));
+        self.text.push(format!("  MOV r{dst}, r{current}"));
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{zero_increment}:"));
+        self.text.push(format!("  MOV r{dst}, r{current}"));
         self.text.push(format!("{done}:"));
         Ok(dst)
     }
@@ -11403,6 +11448,36 @@ int main() {
     }
 
     #[test]
+    fn c_brk_sbrk_compat_surface_uses_native_heap() {
+        let source = r#"
+        int main() {
+            int p;
+            int q;
+            int old;
+            p = sbrk(16);
+            if (p == 0) return 1;
+            *p = 41;
+            if (*p != 41) return 2;
+            q = sbrk(0);
+            if (q != p + 16) return 3;
+            if (brk(p + 8) != 0) return 4;
+            q = sbrk(0);
+            if (q != p + 8) return 5;
+            old = sbrk(-8);
+            if (old != p + 8) return 6;
+            if (sbrk(0) != p) return 7;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("ALLOC"), "{asm}");
+        assert!(asm.contains("c_sbrk_cur"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn c_select_fdset_surface_lowers_to_readiness_probe_and_runs() {
         let source = r#"
         int main() {
@@ -11572,6 +11647,8 @@ int main() {
             ptr = realloc(ptr, 16);
             aligned_alloc(128, 16);
             posix_memalign(&out, 256, 16);
+            ptr = sbrk(16);
+            brk(ptr);
             pthread_mutex_init(slot, 0);
             pthread_cond_init(out, 0);
             pthread_mutex_lock(slot);
@@ -11656,6 +11733,7 @@ int main() {
             "SET_PCR SIGMASK",
             "ALLOC_EX",
             "ALLOC_SIZE",
+            "c_sbrk_cur",
             "OBJECT_CTL",
             "FORK",
             "WAIT_PID",
