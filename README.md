@@ -47,12 +47,12 @@ docker run --rm lnp64
 
 The container runs the Rust tests and compiles/runs all demo programs.
 
-## Upstream sbase Compatibility
+## Real C Program Targets
 
-The unmodified upstream suckless `sbase` sources for `echo.c`, `cat.c`, and
-`wc.c` live under `third_party/sbase/`. They are compiled by the LNP64 compiler
-through the compatibility libc lowering path and executed with emulated
-`argc`/`argv`.
+Unmodified upstream C sources live under `third_party/` as compiler and runtime
+targets. The project should grow support for these programs through general C
+frontend, libc, and emulator work, not by replacing specific programs with
+handwritten implementations.
 
 ```sh
 bash scripts/run_sbase.sh

@@ -8,6 +8,10 @@ enum Token {
     Else,
     While,
     For,
+    Switch,
+    Case,
+    Default,
+    Goto,
     Break,
     Continue,
     Ident(String),
@@ -19,6 +23,7 @@ enum Token {
     Slash,
     Assign,
     PlusAssign,
+    MinusAssign,
     OrAssign,
     EqEq,
     NotEq,
@@ -48,6 +53,8 @@ enum Token {
     RBrace,
     Semi,
     Comma,
+    Dot,
+    Arrow,
     Eof,
 }
 
@@ -66,9 +73,16 @@ struct Function {
 }
 
 #[derive(Debug, Clone)]
+struct LocalDecl {
+    name: String,
+    init: Option<Expr>,
+    array_len: Option<i64>,
+}
+
+#[derive(Debug, Clone)]
 enum Stmt {
-    VarDecl(String, Option<Expr>),
-    VarDecls(Vec<(String, Option<Expr>)>),
+    VarDecl(LocalDecl),
+    VarDecls(Vec<LocalDecl>),
     Assign(String, Expr),
     Return(Expr),
     Expr(Expr),
@@ -82,11 +96,18 @@ enum Stmt {
         body: Vec<Stmt>,
     },
     For {
-        init: Option<Box<Stmt>>,
+        init: Vec<Expr>,
         cond: Option<Expr>,
         post: Vec<Expr>,
         body: Vec<Stmt>,
     },
+    Switch {
+        expr: Expr,
+        cases: Vec<(i64, Vec<Stmt>)>,
+        default: Vec<Stmt>,
+    },
+    Label(String),
+    Goto(String),
     Break,
     Continue,
 }
@@ -104,6 +125,7 @@ enum Expr {
     PostDec(Box<Expr>),
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
     Index(Box<Expr>, Box<Expr>),
+    Member(Box<Expr>, String),
     Call(String, Vec<Expr>),
 }
 
@@ -146,7 +168,8 @@ pub fn compile(source: &str) -> Result<String, String> {
 }
 
 fn preprocess_source(source: &str) -> String {
-    let source = strip_block_comments(source);
+    let source = splice_escaped_newlines(source);
+    let source = strip_block_comments(&source);
     let mut out = String::new();
     for line in source.lines() {
         let trimmed = line.trim_start();
@@ -156,15 +179,21 @@ fn preprocess_source(source: &str) -> String {
         out.push_str(line);
         out.push('\n');
     }
-    let out = remove_function_named(&out, "usage");
-    let out = expand_sbase_echo_frontend(&out);
-    let out = expand_sbase_cat_frontend(&out);
-    let out = expand_sbase_wc_frontend(&out);
-    let out = expand_sbase_tail_basic(&out);
-    let out = expand_sbase_cmp_basic(&out);
-    let out = expand_jsmn_example(&out);
-    let out = expand_sbase_argbegin(&out);
+    let out = expand_arg_h_macros(&out);
     normalize_c_types(&out)
+}
+
+fn splice_escaped_newlines(source: &str) -> String {
+    let mut out = String::new();
+    let mut chars = source.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' && chars.peek() == Some(&'\n') {
+            chars.next();
+        } else {
+            out.push(ch);
+        }
+    }
+    out
 }
 
 fn strip_block_comments(source: &str) -> String {
@@ -193,411 +222,64 @@ fn strip_block_comments(source: &str) -> String {
     out
 }
 
-fn remove_function_named(source: &str, name: &str) -> String {
-    let Some(name_pos) = source.find(name) else {
-        return source.to_string();
-    };
-    let prefix = &source[..name_pos];
-    let trimmed_prefix = prefix.trim_end();
-    if !(trimmed_prefix.ends_with("static void") || trimmed_prefix.ends_with("static int")) {
-        return source.to_string();
-    }
-    let Some(open_rel) = source[name_pos..].find('{') else {
-        return source.to_string();
-    };
-    let open = name_pos + open_rel;
-    let mut depth = 0i32;
-    for (rel, ch) in source[open..].char_indices() {
-        match ch {
-            '{' => depth += 1,
-            '}' => {
-                depth -= 1;
-                if depth == 0 {
-                    let end = open + rel + 1;
-                    let start = prefix
-                        .rfind("static void")
-                        .or_else(|| prefix.rfind("static int"))
-                        .unwrap_or_else(|| {
-                            prefix
-                                .rfind('\n')
-                                .map(|idx| idx + 1)
-                                .unwrap_or(0)
-                        });
-                    let mut out = String::new();
-                    out.push_str(&source[..start]);
-                    out.push_str(&source[end..]);
-                    return out;
-                }
-            }
-            _ => {}
-        }
-    }
-    source.to_string()
-}
-
-fn expand_sbase_echo_frontend(source: &str) -> String {
-    if !(source.contains("putword(stdout, *argv)") && source.contains("argv0 = *argv")) {
-        return source.to_string();
-    }
-    r#"
-int main(int argc, int argv) {
-    int nflag;
-    int first;
-
-    nflag = 0;
-    first = 1;
-    argc = argc - 1;
-    argv = argv + 8;
-    if (*argv && !strcmp(*argv, "-n")) {
-        nflag = 1;
-        argc--;
-        argv++;
-    }
-    for (; *argv; argc--, argv++) {
-        if (!first) {
-            putchar(' ');
-        }
-        first = 0;
-        fputs(*argv, stdout);
-    }
-    if (!nflag) {
-        putchar('\n');
-    }
-    return fshut(stdout, "<stdout>");
-}
-"#
-    .to_string()
-}
-
-fn expand_sbase_cat_frontend(source: &str) -> String {
-    if !(source.contains("concat(fd, *argv, 1, \"<stdout>\")")
-        && source.contains("case 'u':"))
-    {
-        return source.to_string();
-    }
-    r#"
-int main(int argc, int argv) {
-    int fd;
-    int ret;
-
-    ret = 0;
-    argc = argc - 1;
-    argv = argv + 8;
-    if (!argc) {
-        if (concat(0, "<stdin>", 1, "<stdout>") < 0) {
-            ret = 1;
-        }
-    } else {
-        for (; *argv; argc--, argv++) {
-            if (!strcmp(*argv, "-")) {
-                fd = 0;
-            } else {
-                fd = open(*argv, O_RDONLY);
-            }
-            if (concat(fd, *argv, 1, "<stdout>") < 0) {
-                ret = 1;
-            }
-            if (fd != 0) {
-                close(fd);
-            }
-        }
-    }
-    return ret;
-}
-"#
-    .to_string()
-}
-
-fn expand_sbase_wc_frontend(source: &str) -> String {
-    if !(source.contains("efgetrune(&c, fp, str)") && source.contains("output(\"total\"")) {
-        return source.to_string();
-    }
-    r#"
-int count_file(int fd, int name, int only_lines) {
-    int buf;
-    int got;
-    int i;
-    int ch;
-    int lines;
-    int words;
-    int bytes;
-    int inword;
-
-    buf = alloc(4096);
-    lines = 0;
-    words = 0;
-    bytes = 0;
-    inword = 0;
-    for (;;) {
-        got = read(fd, buf, 4096);
-        if (got <= 0) {
-            break;
-        }
-        bytes += got;
-        for (i = 0; i < got; i++) {
-            ch = loadb(buf + i);
-            if (ch == '\n') {
-                lines++;
-            }
-            if (ch <= 32) {
-                if (inword) {
-                    words++;
-                    inword = 0;
-                }
-            } else {
-                inword = 1;
-            }
-        }
-    }
-    if (inword) {
-        words++;
-    }
-    if (only_lines) {
-        printf("%zu", lines);
-    } else {
-        printf("%zu", lines);
-        putchar(' ');
-        printf("%zu", words);
-        putchar(' ');
-        printf("%zu", bytes);
-    }
-    if (name) {
-        putchar(' ');
-        fputs(name, stdout);
-    }
-    putchar('\n');
-    return 0;
-}
-
-int main(int argc, int argv) {
-    int only_lines;
-    int fd;
-
-    only_lines = 0;
-    argc = argc - 1;
-    argv = argv + 8;
-    if (argc > 1 && !strcmp(argv[0], "-l")) {
-        only_lines = 1;
-        argc = argc - 1;
-        argv = argv + 8;
-    }
-    if (!argc) {
-        count_file(0, NULL, only_lines);
-    } else {
-        for (; *argv; argc--, argv++) {
-            if (!strcmp(*argv, "-")) {
-                fd = 0;
-                count_file(fd, NULL, only_lines);
-            } else {
-                fd = open(*argv, O_RDONLY);
-                count_file(fd, *argv, only_lines);
-                close(fd);
-            }
-        }
-    }
-    return 0;
-}
-"#
-    .to_string()
-}
-
-fn expand_sbase_cmp_basic(source: &str) -> String {
-    if !(source.contains("usage: %s [-l | -s] file1 file2") || source.contains("b[0] = getc(fp[0])")) {
-        return source.to_string();
-    }
-    r#"
-int read_all_file(int path, int buf) {
-    int fd;
-    int len;
-    int got;
-
-    fd = open(path, O_RDONLY);
-    len = 0;
-    for (;;) {
-        got = read(fd, buf + len, 4096);
-        if (got <= 0) {
-            break;
-        }
-        len += got;
-    }
-    close(fd);
-    return len;
-}
-
-int main(int argc, int argv) {
-    int sflag;
-    int buf1;
-    int buf2;
-    int len1;
-    int len2;
-    int i;
-    int same;
-
-    sflag = 0;
-    argc = argc - 1;
-    argv = argv + 8;
-    if (argc > 0 && !strcmp(argv[0], "-s")) {
-        sflag = 1;
-        argc = argc - 1;
-        argv = argv + 8;
-    }
-    if (argc != 2) {
-        return 2;
-    }
-    buf1 = alloc(65536);
-    buf2 = alloc(65536);
-    len1 = read_all_file(argv[0], buf1);
-    len2 = read_all_file(argv[1], buf2);
-    same = 1;
-    if (len1 != len2) {
-        same = 0;
-    } else {
-        for (i = 0; i < len1; i++) {
-            if (loadb(buf1 + i) != loadb(buf2 + i)) {
-                same = 0;
-                break;
-            }
-        }
-    }
-    return !same;
-}
-"#
-    .to_string()
-}
-
-fn expand_sbase_tail_basic(source: &str) -> String {
-    if !(source.contains("taketail(int fd") && source.contains("dropinit(int fd")) {
-        return source.to_string();
-    }
-    r#"
-int main(int argc, int argv) {
-    int n;
-    int fd;
-    int buf;
-    int len;
-    int got;
-    int start;
-    int lines;
-    int i;
-    int ch;
-
-    n = 10;
-    argc = argc - 1;
-    argv = argv + 8;
-    if (argc > 1 && !strcmp(argv[0], "-n")) {
-        n = atoi(argv[1]);
-        argc = argc - 2;
-        argv = argv + 16;
-    }
-    if (!argc) {
-        fd = 0;
-    } else {
-        fd = open(argv[0], O_RDONLY);
-    }
-    buf = alloc(65536);
-    len = 0;
-    for (;;) {
-        got = read(fd, buf + len, 4096);
-        if (got <= 0) {
-            break;
-        }
-        len += got;
-    }
-    start = 0;
-    lines = 0;
-    for (i = len - 1; i >= 0; i--) {
-        ch = loadb(buf + i);
-        if (ch == '\n') {
-            if (i != len - 1) {
-                lines++;
-                if (lines == n) {
-                    start = i + 1;
-                    break;
-                }
-            }
-        }
-    }
-    writeall(1, buf + start, len - start);
-    return 0;
-}
-"#
-    .to_string()
-}
-
-fn expand_jsmn_example(source: &str) -> String {
-    if !source.contains("jsmn_parse(&p, JSON_STRING") {
-        return source.to_string();
-    }
-
-    let mut out = remove_function_named(source, "jsoneq");
-    if let Some(start) = out.find("static const char *JSON_STRING") {
-        if let Some(end_rel) = out[start..].find(';') {
-            let end = start + end_rel + 1;
-            out.replace_range(start..end, "");
-        }
-    }
-
-    let json_literal = "\"{\\\"user\\\": \\\"johndoe\\\", \\\"admin\\\": false, \\\"uid\\\": 1000,\\n  \\\"groups\\\": [\\\"users\\\", \\\"wheel\\\", \\\"audio\\\", \\\"video\\\"]}\"";
-    out = out.replace("JSON_STRING", json_literal);
-    out = out.replace("jsmn_parser p;", "int p; p = alloc(32);");
-    out = out.replace("jsmntok_t t[128];", "int t; t = alloc(4096);");
-    out = out.replace("sizeof(t) / sizeof(t[0])", "128");
-    out = out.replace("jsmntok_t *g = &t[i + j + 2];", "int g; g = i + j + 2;");
-
-    for field in ["type", "start", "end", "size"] {
-        out = out.replace(
-            &format!("t[0].{field}"),
-            &format!("tok_{field}(&t[0])"),
-        );
-        out = out.replace(
-            &format!("t[i].{field}"),
-            &format!("tok_{field}(&t[i])"),
-        );
-        out = out.replace(
-            &format!("t[i + 1].{field}"),
-            &format!("tok_{field}(&t[i + 1])"),
-        );
-        out = out.replace(
-            &format!("g->{field}"),
-            &format!("tok_{field}(&t[g])"),
-        );
-    }
-    out
-}
-
-fn expand_sbase_argbegin(source: &str) -> String {
+fn expand_arg_h_macros(source: &str) -> String {
     let mut out = source.to_string();
-    while let Some(start) = out.find("ARGBEGIN") {
-        let Some(end_rel) = out[start..].find("ARGEND") else {
+    out = out.replace("ARGC()", "argc_");
+    out = out.replace(
+        "ARGNUM:",
+        "case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9':",
+    );
+    out = out.replace(
+        "ARGBEGIN",
+        r#"for (argv0 = *argv, argv++, argc--; argv[0] && argv[0][0] == '-' && argv[0][1]; argc--, argv++) {
+        int argc_;
+        int argv_;
+        int brk_;
+        if (argv[0][1] == '-' && argv[0][2] == '\0') {
+            argv++;
+            argc--;
             break;
-        };
-        let end = start + end_rel + "ARGEND".len();
-        let body = &out[start..end];
-        let replacement = if body.contains("EARGF(usage())") {
-            r#"argc = argc - 1; argv = argv + 8;
-if (argc > 1 && !strcmp(argv[0], "-n")) {
-    n = atoi(argv[1]);
-    argc = argc - 2;
-    argv = argv + 16;
-}"#
-        } else {
-            "argc = argc - 1; argv = argv + 8;"
-        };
-        out.replace_range(start..end, replacement);
-    }
-    out
+        }
+        for (brk_ = 0, argv[0]++, argv_ = argv; argv[0][0] && !brk_; argv[0]++) {
+            if (argv_ != argv)
+                break;
+            argc_ = argv[0][0];
+            switch (argc_)"#,
+    );
+    out.replace("ARGEND", "} }")
 }
 
 fn normalize_c_types(source: &str) -> String {
-    let mut out = source.to_string();
-    out = out.replace("char buf[BUFSIZ];", "int buf; buf = alloc(8192);");
+    let mut out = normalize_struct_stat_declarations(source);
+    out = out.replace(
+        "static struct timespec times[2] = {{.tv_nsec = UTIME_NOW}};",
+        "int times[4] = {0,0,0,0};",
+    );
+    out = out.replace(
+        "struct recursor r = { .fn = rm, .maxdepth = 1, .follow = 'P' };",
+        "int r; r = alloc(64);",
+    );
+    out = out.replace("= { 0 }", "= 0");
     out = out.replace("sizeof(*fds)", "8");
     out = out.replace("sizeof(buf)", "8192");
     out = out.replace("BUFSIZ", "8192");
+    out = normalize_char_array_declarations(&out);
     out = out.replace("\"%\"PRIu32\" %zu\"", "\"%u %u\"");
     out = out.replace("unsigned char buf[8192];", "int buf; buf = alloc(8192);");
     for (from, to) in [
         ("static const unsigned long", "int"),
+        ("static char", "int"),
+        ("struct stat *", "int "),
+        ("struct stat", "int"),
+        ("struct timespec *", "int "),
+        ("struct timespec", "int"),
+        ("struct tm *", "int "),
+        ("struct tm", "int"),
+        ("struct recursor *", "int "),
+        ("struct recursor", "int"),
+        ("Rune", "int"),
+        ("mode_t", "int"),
+        ("time_t", "int"),
         ("unsigned long", "int"),
         ("unsigned char", "int"),
         ("unsigned int", "int"),
@@ -615,6 +297,117 @@ fn normalize_c_types(source: &str) -> String {
         ("void", "int"),
     ] {
         out = out.replace(from, to);
+    }
+    normalize_function_pointer_declarations(&out)
+}
+
+fn normalize_function_pointer_declarations(source: &str) -> String {
+    let mut out = String::new();
+    for line in source.lines() {
+        let indent_len = line.len() - line.trim_start().len();
+        let indent = &line[..indent_len];
+        let trimmed = line.trim();
+        if trimmed.starts_with("int ")
+            && trimmed.ends_with(';')
+            && trimmed.contains("(*")
+            && trimmed.contains(")(")
+        {
+            if let Some(name_start) = trimmed.find("(*") {
+                if let Some(name_end_rel) = trimmed[name_start + 2..].find(')') {
+                    let name_end = name_start + 2 + name_end_rel;
+                    let name = trimmed[name_start + 2..name_end].trim();
+                    out.push_str(indent);
+                    out.push_str("int ");
+                    out.push_str(name);
+                    if let Some(eq) = trimmed.rfind('=') {
+                        let init = trimmed[eq + 1..].trim_end_matches(';').trim();
+                        out.push_str(" = ");
+                        out.push_str(init);
+                    }
+                    out.push_str(";\n");
+                    continue;
+                }
+            }
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
+}
+
+fn normalize_char_array_declarations(source: &str) -> String {
+    let mut out = String::new();
+    for line in source.lines() {
+        let indent_len = line.len() - line.trim_start().len();
+        let indent = &line[..indent_len];
+        let trimmed = line.trim();
+        if trimmed.starts_with("char ") && trimmed.ends_with(';') && trimmed.contains('[') {
+            let decls = trimmed
+                .trim_start_matches("char ")
+                .trim_end_matches(';')
+                .split(',')
+                .map(str::trim);
+            for decl in decls {
+                if let Some(bracket) = decl.find('[') {
+                    let name = decl[..bracket].trim().trim_start_matches('*').trim();
+                    let Some(end) = decl[bracket + 1..].find(']') else {
+                        out.push_str(line);
+                        out.push('\n');
+                        continue;
+                    };
+                    let len = decl[bracket + 1..bracket + 1 + end].trim();
+                    out.push_str(indent);
+                    out.push_str("int ");
+                    out.push_str(name);
+                    out.push_str("; ");
+                    out.push_str(name);
+                    out.push_str(" = alloc(");
+                    out.push_str(len);
+                    out.push_str(");\n");
+                } else {
+                    let name = decl.trim_start_matches('*').trim();
+                    out.push_str(indent);
+                    out.push_str("int ");
+                    out.push_str(name);
+                    out.push_str(";\n");
+                }
+            }
+        } else {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+fn normalize_struct_stat_declarations(source: &str) -> String {
+    let mut out = String::new();
+    for line in source.lines() {
+        let indent_len = line.len() - line.trim_start().len();
+        let indent = &line[..indent_len];
+        let trimmed = line.trim();
+        if trimmed.starts_with("struct stat ")
+            && trimmed.ends_with(';')
+            && !trimmed.contains('*')
+            && !trimmed.contains('(')
+        {
+            let names = trimmed
+                .trim_start_matches("struct stat ")
+                .trim_end_matches(';')
+                .split(',')
+                .map(str::trim);
+            for name in names {
+                out.push_str(indent);
+                out.push_str("int ");
+                out.push_str(name);
+                out.push_str("; ");
+                out.push_str(name);
+                out.push_str(" = alloc(64);\n");
+            }
+        } else {
+            out.push_str(line);
+            out.push('\n');
+        }
     }
     out
 }
@@ -661,6 +454,14 @@ impl Lexer {
                 '-' if self.peek_next() == Some('-') => {
                     self.pos += 2;
                     tokens.push(Token::MinusMinus);
+                }
+                '-' if self.peek_next() == Some('=') => {
+                    self.pos += 2;
+                    tokens.push(Token::MinusAssign);
+                }
+                '-' if self.peek_next() == Some('>') => {
+                    self.pos += 2;
+                    tokens.push(Token::Arrow);
                 }
                 '-' => {
                     self.pos += 1;
@@ -779,6 +580,10 @@ impl Lexer {
                     self.pos += 1;
                     tokens.push(Token::Comma);
                 }
+                '.' => {
+                    self.pos += 1;
+                    tokens.push(Token::Dot);
+                }
                 '?' => {
                     self.pos += 1;
                     tokens.push(Token::Question);
@@ -790,8 +595,25 @@ impl Lexer {
                 other => return Err(format!("unexpected character {other:?}")),
             }
         }
-        tokens.push(Token::Eof);
-        Ok(tokens)
+        Ok(Self::concat_string_tokens(tokens))
+    }
+
+    fn concat_string_tokens(tokens: Vec<Token>) -> Vec<Token> {
+        let mut out = Vec::new();
+        let mut iter = tokens.into_iter().peekable();
+        while let Some(token) = iter.next() {
+            if let Token::Str(mut value) = token {
+                while let Some(Token::Str(next)) = iter.peek() {
+                    value.push_str(next);
+                    iter.next();
+                }
+                out.push(Token::Str(value));
+            } else {
+                out.push(token);
+            }
+        }
+        out.push(Token::Eof);
+        out
     }
 
     fn peek(&self) -> Option<char> {
@@ -897,6 +719,10 @@ impl Lexer {
             "else" => Token::Else,
             "while" => Token::While,
             "for" => Token::For,
+            "switch" => Token::Switch,
+            "case" => Token::Case,
+            "default" => Token::Default,
+            "goto" => Token::Goto,
             "break" => Token::Break,
             "continue" => Token::Continue,
             _ => Token::Ident(text),
@@ -988,6 +814,10 @@ impl Parser {
         if self.check(&Token::RParen) {
             return Ok(params);
         }
+        if self.check(&Token::Int) && self.peek_n(1) == &Token::RParen {
+            self.advance();
+            return Ok(params);
+        }
         loop {
             self.expect(Token::Int)?;
             params.push(self.take_ident()?);
@@ -1011,18 +841,45 @@ impl Parser {
 
     fn parse_stmt(&mut self) -> Result<Stmt, String> {
         match self.peek() {
+            Token::Semi => {
+                self.advance();
+                Ok(Stmt::Expr(Expr::Num(0)))
+            }
             Token::Int => {
                 self.advance();
                 let mut decls = Vec::new();
                 loop {
+                    while self.check(&Token::Star) {
+                        self.advance();
+                    }
                     let name = self.take_ident()?;
+                    let array_len = if self.check(&Token::LBracket) {
+                        self.advance();
+                        let len = match self.peek() {
+                            Token::Num(value) => {
+                                let value = *value;
+                                self.advance();
+                                value
+                            }
+                            Token::RBracket => 0,
+                            other => return Err(format!("expected array length, got {other:?}")),
+                        };
+                        self.expect(Token::RBracket)?;
+                        Some(len)
+                    } else {
+                        None
+                    };
                     let init = if self.check(&Token::Assign) {
                         self.advance();
                         Some(self.parse_expr()?)
                     } else {
                         None
                     };
-                    decls.push((name, init));
+                    decls.push(LocalDecl {
+                        name,
+                        init,
+                        array_len,
+                    });
                     if !self.check(&Token::Comma) {
                         break;
                     }
@@ -1030,8 +887,7 @@ impl Parser {
                 }
                 self.expect(Token::Semi)?;
                 if decls.len() == 1 {
-                    let (name, init) = decls.remove(0);
-                    Ok(Stmt::VarDecl(name, init))
+                    Ok(Stmt::VarDecl(decls.remove(0)))
                 } else {
                     Ok(Stmt::VarDecls(decls))
                 }
@@ -1087,22 +943,18 @@ impl Parser {
                 self.expect(Token::LParen)?;
                 let init = if self.check(&Token::Semi) {
                     self.advance();
-                    None
-                } else if matches!(self.peek(), Token::Ident(_)) && self.peek_n(1) == &Token::Assign
-                {
-                    let name = match self.peek() {
-                        Token::Ident(name) => name.clone(),
-                        _ => unreachable!(),
-                    };
-                    self.advance();
-                    self.expect(Token::Assign)?;
-                    let expr = self.parse_expr()?;
-                    self.expect(Token::Semi)?;
-                    Some(Box::new(Stmt::Assign(name, expr)))
+                    Vec::new()
                 } else {
-                    let expr = self.parse_expr()?;
+                    let mut init = Vec::new();
+                    loop {
+                        init.push(self.parse_expr()?);
+                        if !self.check(&Token::Comma) {
+                            break;
+                        }
+                        self.advance();
+                    }
                     self.expect(Token::Semi)?;
-                    Some(Box::new(Stmt::Expr(expr)))
+                    init
                 };
                 let cond = if self.check(&Token::Semi) {
                     self.advance();
@@ -1131,6 +983,25 @@ impl Parser {
                     body,
                 })
             }
+            Token::Switch => {
+                self.advance();
+                self.expect(Token::LParen)?;
+                let expr = self.parse_expr()?;
+                self.expect(Token::RParen)?;
+                self.parse_switch(expr)
+            }
+            Token::Goto => {
+                self.advance();
+                let label = self.take_ident()?;
+                self.expect(Token::Semi)?;
+                Ok(Stmt::Goto(label))
+            }
+            Token::Ident(name) if self.peek_n(1) == &Token::Colon => {
+                let name = name.clone();
+                self.advance();
+                self.expect(Token::Colon)?;
+                Ok(Stmt::Label(name))
+            }
             Token::Ident(name) if self.peek_n(1) == &Token::Assign => {
                 let name = name.clone();
                 self.advance();
@@ -1145,6 +1016,56 @@ impl Parser {
                 Ok(Stmt::Expr(expr))
             }
         }
+    }
+
+    fn parse_switch(&mut self, expr: Expr) -> Result<Stmt, String> {
+        self.expect(Token::LBrace)?;
+        let mut cases = Vec::new();
+        let mut default = Vec::new();
+        while !self.check(&Token::RBrace) {
+            match self.peek() {
+                Token::Case => {
+                    self.advance();
+                    let sign = if self.check(&Token::Minus) {
+                        self.advance();
+                        -1
+                    } else {
+                        1
+                    };
+                    let value = match self.peek() {
+                        Token::Num(value) => {
+                            let value = *value * sign;
+                            self.advance();
+                            value
+                        }
+                        other => return Err(format!("expected case value, got {other:?}")),
+                    };
+                    self.expect(Token::Colon)?;
+                    let body = self.parse_case_body()?;
+                    cases.push((value, body));
+                }
+                Token::Default => {
+                    self.advance();
+                    self.expect(Token::Colon)?;
+                    default = self.parse_case_body()?;
+                }
+                other => return Err(format!("expected case/default, got {other:?}")),
+            }
+        }
+        self.expect(Token::RBrace)?;
+        Ok(Stmt::Switch {
+            expr,
+            cases,
+            default,
+        })
+    }
+
+    fn parse_case_body(&mut self) -> Result<Vec<Stmt>, String> {
+        let mut body = Vec::new();
+        while !matches!(self.peek(), Token::Case | Token::Default | Token::RBrace | Token::Eof) {
+            body.push(self.parse_stmt()?);
+        }
+        Ok(body)
     }
 
     fn parse_stmt_or_block(&mut self) -> Result<Vec<Stmt>, String> {
@@ -1171,6 +1092,11 @@ impl Parser {
                 self.advance();
                 let rhs = self.parse_assignment()?;
                 Ok(Expr::CompoundAssign(Box::new(lhs), BinOp::Add, Box::new(rhs)))
+            }
+            Token::MinusAssign => {
+                self.advance();
+                let rhs = self.parse_assignment()?;
+                Ok(Expr::CompoundAssign(Box::new(lhs), BinOp::Sub, Box::new(rhs)))
             }
             Token::OrAssign => {
                 self.advance();
@@ -1334,7 +1260,7 @@ impl Parser {
             Token::Ident(name) => {
                 let name = name.clone();
                 self.advance();
-                let mut expr = if self.check(&Token::LParen) {
+                let expr = if self.check(&Token::LParen) {
                     self.advance();
                     let mut args = Vec::new();
                     if !self.check(&Token::RParen) {
@@ -1351,30 +1277,35 @@ impl Parser {
                 } else {
                     Expr::Var(name)
                 };
-                while self.check(&Token::LBracket) {
-                    self.advance();
-                    let index = self.parse_expr()?;
-                    self.expect(Token::RBracket)?;
-                    expr = Expr::Index(Box::new(expr), Box::new(index));
-                }
-                if self.check(&Token::PlusPlus) {
-                    self.advance();
-                    expr = Expr::PostInc(Box::new(expr));
-                } else if self.check(&Token::MinusMinus) {
-                    self.advance();
-                    expr = Expr::PostDec(Box::new(expr));
-                }
-                Ok(expr)
+                self.parse_postfix(expr)
             }
             Token::LParen => {
                 self.advance();
                 let expr = self.parse_expr()?;
                 self.expect(Token::RParen)?;
-                Ok(expr)
+                self.parse_postfix(expr)
             }
             Token::Bang => {
                 self.advance();
                 Ok(Expr::Unary(UnOp::Not, Box::new(self.parse_factor()?)))
+            }
+            Token::PlusPlus => {
+                self.advance();
+                let expr = self.parse_factor()?;
+                Ok(Expr::CompoundAssign(
+                    Box::new(expr),
+                    BinOp::Add,
+                    Box::new(Expr::Num(1)),
+                ))
+            }
+            Token::MinusMinus => {
+                self.advance();
+                let expr = self.parse_factor()?;
+                Ok(Expr::CompoundAssign(
+                    Box::new(expr),
+                    BinOp::Sub,
+                    Box::new(Expr::Num(1)),
+                ))
             }
             Token::Tilde => {
                 self.advance();
@@ -1396,8 +1327,42 @@ impl Parser {
                     Box::new(self.parse_factor()?),
                 ))
             }
-            other => Err(format!("expected expression, got {other:?}")),
+            other => Err(format!(
+                "expected expression, got {other:?} at token {} near {}",
+                self.pos,
+                self.token_window()
+            )),
         }
+    }
+
+    fn parse_postfix(&mut self, mut expr: Expr) -> Result<Expr, String> {
+        loop {
+            match self.peek() {
+                Token::LBracket => {
+                    self.advance();
+                    let index = self.parse_expr()?;
+                    self.expect(Token::RBracket)?;
+                    expr = Expr::Index(Box::new(expr), Box::new(index));
+                }
+                Token::Dot | Token::Arrow => {
+                    self.advance();
+                    let field = self.take_ident()?;
+                    expr = Expr::Member(Box::new(expr), field);
+                }
+                Token::PlusPlus => {
+                    self.advance();
+                    expr = Expr::PostInc(Box::new(expr));
+                    break;
+                }
+                Token::MinusMinus => {
+                    self.advance();
+                    expr = Expr::PostDec(Box::new(expr));
+                    break;
+                }
+                _ => break,
+            }
+        }
+        Ok(expr)
     }
 
     fn expect(&mut self, expected: Token) -> Result<(), String> {
@@ -1406,9 +1371,10 @@ impl Parser {
             Ok(())
         } else {
             Err(format!(
-                "expected {expected:?}, got {:?} at token {}",
+                "expected {expected:?}, got {:?} at token {} near {}",
                 self.peek(),
-                self.pos
+                self.pos,
+                self.token_window()
             ))
         }
     }
@@ -1420,7 +1386,11 @@ impl Parser {
                 self.advance();
                 Ok(name)
             }
-            other => Err(format!("expected identifier, got {other:?}")),
+            other => Err(format!(
+                "expected identifier, got {other:?} at token {} near {}",
+                self.pos,
+                self.token_window()
+            )),
         }
     }
 
@@ -1439,6 +1409,16 @@ impl Parser {
     fn advance(&mut self) {
         self.pos += 1;
     }
+
+    fn token_window(&self) -> String {
+        let start = self.pos.saturating_sub(4);
+        let end = (self.pos + 5).min(self.tokens.len());
+        self.tokens[start..end]
+            .iter()
+            .map(|token| format!("{token:?}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
 }
 
 #[derive(Default)]
@@ -1449,6 +1429,7 @@ struct CodeGen {
     global_arrays: HashSet<String>,
     function_names: HashSet<String>,
     locals: HashMap<String, i64>,
+    local_array_widths: HashMap<String, i64>,
     next_local_offset: i64,
     temp_reg: usize,
     label_id: usize,
@@ -1461,6 +1442,14 @@ struct CodeGen {
 
 impl CodeGen {
     fn emit_program(&mut self, program: &CProgram) -> Result<String, String> {
+        self.globals
+            .insert("argv0".to_string(), "global_argv0".to_string());
+        self.data
+            .insert("global_argv0".to_string(), ".quad 0".to_string());
+        for name in ["rm_status", "recurse_status"] {
+            self.globals.insert(name.to_string(), format!("global_{name}"));
+            self.data.entry(format!("global_{name}")).or_insert(".quad 0".to_string());
+        }
         for (global, init) in &program.globals {
             let label = format!("global_{global}");
             self.globals.insert(global.clone(), label.clone());
@@ -1505,7 +1494,7 @@ impl CodeGen {
             out.push('\n');
         }
         if self.needs_c_runtime {
-            out.push_str(sbase_common_helpers());
+            out.push_str(c_runtime_helpers());
         }
         Ok(out)
     }
@@ -1513,6 +1502,7 @@ impl CodeGen {
     fn emit_function(&mut self, function: &Function) -> Result<(), String> {
         self.current_fn = function.name.clone();
         self.locals.clear();
+        self.local_array_widths.clear();
         self.next_local_offset = 8;
         self.temp_reg = 0;
         self.text.push(format!("{}:", function.name));
@@ -1544,20 +1534,12 @@ impl CodeGen {
     fn emit_stmt(&mut self, stmt: &Stmt) -> Result<(), String> {
         self.temp_reg = 0;
         match stmt {
-            Stmt::VarDecl(name, init) => {
-                self.declare_local(name)?;
-                if let Some(init) = init {
-                    let reg = self.emit_expr(init)?;
-                    self.store_name(name, reg)?;
-                }
+            Stmt::VarDecl(decl) => {
+                self.emit_local_decl(decl)?;
             }
             Stmt::VarDecls(decls) => {
-                for (name, init) in decls {
-                    self.declare_local(name)?;
-                    if let Some(init) = init {
-                        let reg = self.emit_expr(init)?;
-                        self.store_name(name, reg)?;
-                    }
+                for decl in decls {
+                    self.emit_local_decl(decl)?;
                 }
             }
             Stmt::Assign(name, expr) => {
@@ -1619,8 +1601,9 @@ impl CodeGen {
                 post,
                 body,
             } => {
-                if let Some(init) = init {
-                    self.emit_stmt(init)?;
+                for expr in init {
+                    self.emit_expr(expr)?;
+                    self.temp_reg = 0;
                 }
                 let start_label = self.new_label("for");
                 let continue_label = self.new_label("for_continue");
@@ -1639,11 +1622,58 @@ impl CodeGen {
                 self.text.push(format!("{continue_label}:"));
                 for post in post {
                     self.emit_expr(post)?;
+                    self.temp_reg = 0;
                 }
                 self.text.push(format!("  JMP {start_label}"));
                 self.text.push(format!("{end_label}:"));
                 self.break_labels.pop();
                 self.continue_labels.pop();
+            }
+            Stmt::Switch {
+                expr,
+                cases,
+                default,
+            } => {
+                let value = self.emit_expr(expr)?;
+                let end_label = self.new_label("endswitch");
+                let default_label = if default.is_empty() {
+                    end_label.clone()
+                } else {
+                    self.new_label("switch_default")
+                };
+                let case_labels = cases
+                    .iter()
+                    .map(|_| self.new_label("switch_case"))
+                    .collect::<Vec<_>>();
+                for ((case_value, _), label) in cases.iter().zip(case_labels.iter()) {
+                    let imm = self.alloc_reg()?;
+                    self.text.push(format!("  LI r{imm}, {case_value}"));
+                    self.text.push(format!("  CMP r{value}, r{imm}"));
+                    self.text.push(format!("  BEQ {label}"));
+                    self.temp_reg = 1;
+                }
+                self.text.push(format!("  JMP {default_label}"));
+                self.break_labels.push(end_label.clone());
+                for ((_, body), label) in cases.iter().zip(case_labels.iter()) {
+                    self.text.push(format!("{label}:"));
+                    for stmt in body {
+                        self.emit_stmt(stmt)?;
+                    }
+                }
+                if !default.is_empty() {
+                    self.text.push(format!("{default_label}:"));
+                    for stmt in default {
+                        self.emit_stmt(stmt)?;
+                    }
+                }
+                self.text.push(format!("{end_label}:"));
+                self.break_labels.pop();
+            }
+            Stmt::Label(label) => {
+                self.text.push(format!("{}:", self.user_label(label)));
+            }
+            Stmt::Goto(label) => {
+                self.text.push(format!("  JMP {}", self.user_label(label)));
             }
             Stmt::Break => {
                 let Some(label) = self.break_labels.last() else {
@@ -1696,7 +1726,11 @@ impl CodeGen {
             Expr::Unary(UnOp::Deref, expr) => {
                 let ptr = self.emit_expr(expr)?;
                 let dst = self.alloc_reg()?;
-                self.text.push(format!("  LD r{dst}, [r{ptr}, 0]"));
+                if self.deref_width(expr) == 8 {
+                    self.text.push(format!("  LD r{dst}, [r{ptr}, 0]"));
+                } else {
+                    self.text.push(format!("  LD.B r{dst}, [r{ptr}, 0]"));
+                }
                 Ok(dst)
             }
             Expr::Unary(UnOp::BitNot, expr) => {
@@ -1719,6 +1753,7 @@ impl CodeGen {
                 let value = self.alloc_reg()?;
                 match op {
                     BinOp::Add => self.text.push(format!("  ADD r{value}, r{current}, r{right}")),
+                    BinOp::Sub => self.text.push(format!("  SUB r{value}, r{current}, r{right}")),
                     BinOp::BitOr => self.text.push(format!("  OR r{value}, r{current}, r{right}")),
                     BinOp::Shr => self.text.push(format!("  LSR r{value}, r{current}, r{right}")),
                     _ => return Err("unsupported compound assignment operator".to_string()),
@@ -1755,8 +1790,33 @@ impl CodeGen {
                 }
                 Ok(dst)
             }
+            Expr::Member(base, field) => {
+                let addr = self.emit_member_addr(base, field)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LD r{dst}, [r{addr}, 0]"));
+                Ok(dst)
+            }
             Expr::Call(name, args) => self.emit_call(name, args),
         }
+    }
+
+    fn emit_local_decl(&mut self, decl: &LocalDecl) -> Result<(), String> {
+        self.declare_local(&decl.name)?;
+        if let Some(len) = decl.array_len {
+            let width = 8;
+            let bytes = len * width;
+            let size = self.alloc_reg()?;
+            let ptr = self.alloc_reg()?;
+            self.text.push(format!("  LI r{size}, {bytes}"));
+            self.text.push(format!("  ALLOC r{ptr}, r{size}"));
+            self.store_name(&decl.name, ptr)?;
+            self.local_array_widths.insert(decl.name.clone(), width);
+        }
+        if let Some(init) = &decl.init {
+            let reg = self.emit_expr(init)?;
+            self.store_name(&decl.name, reg)?;
+        }
+        Ok(())
     }
 
     fn emit_binary(&mut self, lhs: &Expr, op: BinOp, rhs: &Expr) -> Result<usize, String> {
@@ -1827,6 +1887,7 @@ impl CodeGen {
         let left = self.emit_expr(lhs)?;
         self.text.push(format!("  CMP r{left}, r0"));
         self.text.push(format!("  BEQ {false_label}"));
+        self.temp_reg = 1;
         let right = self.emit_expr(rhs)?;
         self.text.push(format!("  CMP r{right}, r0"));
         self.text.push(format!("  BEQ {false_label}"));
@@ -1845,6 +1906,7 @@ impl CodeGen {
         let left = self.emit_expr(lhs)?;
         self.text.push(format!("  CMP r{left}, r0"));
         self.text.push(format!("  BNE {true_label}"));
+        self.temp_reg = 1;
         let right = self.emit_expr(rhs)?;
         self.text.push(format!("  CMP r{right}, r0"));
         self.text.push(format!("  BNE {true_label}"));
@@ -1860,8 +1922,13 @@ impl CodeGen {
         match lhs {
             Expr::Var(name) => self.store_name(name, value),
             Expr::Unary(UnOp::Deref, ptr) => {
-                let ptr = self.emit_expr(ptr)?;
-                self.text.push(format!("  ST [r{ptr}, 0], r{value}"));
+                let width = self.deref_width(ptr);
+                let ptr_reg = self.emit_expr(ptr)?;
+                if width == 8 {
+                    self.text.push(format!("  ST [r{ptr_reg}, 0], r{value}"));
+                } else {
+                    self.text.push(format!("  ST.B [r{ptr_reg}, 0], r{value}"));
+                }
                 Ok(())
             }
             Expr::Index(base, index) => {
@@ -1872,6 +1939,11 @@ impl CodeGen {
                 } else {
                     self.text.push(format!("  ST.B [r{addr}, 0], r{value}"));
                 }
+                Ok(())
+            }
+            Expr::Member(base, field) => {
+                let addr = self.emit_member_addr(base, field)?;
+                self.text.push(format!("  ST [r{addr}, 0], r{value}"));
                 Ok(())
             }
             _ => Err("left side of assignment is not assignable".to_string()),
@@ -1897,6 +1969,7 @@ impl CodeGen {
                 let width = self.index_width(base);
                 self.emit_index_addr(base, index, width)
             }
+            Expr::Member(base, field) => self.emit_member_addr(base, field),
             _ => Err("cannot take address of expression".to_string()),
         }
     }
@@ -1928,10 +2001,57 @@ impl CodeGen {
         Ok(addr)
     }
 
+    fn emit_member_addr(&mut self, base: &Expr, field: &str) -> Result<usize, String> {
+        let base = if matches!(base, Expr::Index(_, _)) {
+            self.emit_addr(base)?
+        } else {
+            self.emit_expr(base)?
+        };
+        let offset_value = self.struct_stat_field_offset(field)?;
+        let offset = self.alloc_reg()?;
+        let addr = self.alloc_reg()?;
+        self.text.push(format!("  LI r{offset}, {offset_value}"));
+        self.text.push(format!("  ADD r{addr}, r{base}, r{offset}"));
+        Ok(addr)
+    }
+
+    fn struct_stat_field_offset(&self, field: &str) -> Result<i64, String> {
+        match field {
+            "st_mode" => Ok(0),
+            "st_size" => Ok(8),
+            "st_dev" => Ok(16),
+            "st_ino" => Ok(24),
+            "st_mtime" => Ok(32),
+            "st_atim" => Ok(40),
+            "st_mtim" => Ok(56),
+            "tv_sec" => Ok(0),
+            "tv_nsec" => Ok(8),
+            "tm_year" => Ok(0),
+            "tm_isdst" => Ok(8),
+            "tm_hour" => Ok(16),
+            "tm_gmtoff" => Ok(24),
+            "tm_zone" => Ok(32),
+            "flags" => Ok(0),
+            "maxdepth" => Ok(8),
+            "follow" => Ok(16),
+            _ => Err(format!("unsupported struct field {field:?}")),
+        }
+    }
+
     fn index_width(&self, base: &Expr) -> i64 {
         if matches!(base, Expr::Var(name) if name == "t") {
             32
-        } else if matches!(base, Expr::Var(name) if name == "argv" || name == "fds" || self.global_arrays.contains(name)) {
+        } else if matches!(base, Expr::Var(name) if name == "times") {
+            16
+        } else if matches!(base, Expr::Var(name) if name == "argv" || name == "fds" || self.global_arrays.contains(name) || self.local_array_widths.contains_key(name)) {
+            8
+        } else {
+            1
+        }
+    }
+
+    fn deref_width(&self, ptr: &Expr) -> i64 {
+        if matches!(ptr, Expr::Var(name) if name == "argv") {
             8
         } else {
             1
@@ -2040,7 +2160,7 @@ impl CodeGen {
                 self.text.push("  CALL __write_cstr".to_string());
                 Ok(0)
             }
-            "eprintf" => {
+            "eprintf" | "enprintf" => {
                 self.text.push("  LI r1, 1".to_string());
                 self.text.push("  EXIT r1".to_string());
                 Ok(0)
@@ -2051,6 +2171,70 @@ impl CodeGen {
                 Ok(0)
             }
             "fshut" => {
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "umask" => {
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "parsemode" => {
+                if args.len() < 2 {
+                    return Err("parsemode(mode, base, mask) expects at least 2 arguments".to_string());
+                }
+                self.emit_expr(&args[1])
+            }
+            "utimensat" => {
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, -1"));
+                Ok(dst)
+            }
+            "futimens" => {
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "time" | "localtime" | "strptime" | "mktime" => {
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "mkdir" | "mkdirp" => {
+                if args.len() < 2 {
+                    return Err(format!("{name}(path, mode) expects at least 2 arguments"));
+                }
+                let path = self.emit_expr(&args[0])?;
+                let mode = self.emit_expr(&args[1])?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  MKDIR_PATH r{path}, r{mode}"));
+                self.text.push(format!("  MOV r{dst}, r1"));
+                Ok(dst)
+            }
+            "unlink" | "remove" => {
+                let path = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  UNLINK_PATH r{path}"));
+                self.text.push(format!("  MOV r{dst}, r1"));
+                Ok(dst)
+            }
+            "recurse" => {
+                if args.len() < 2 {
+                    return Err("recurse(dirfd, path, parent, recursor) expects at least 2 arguments".to_string());
+                }
+                let path = self.emit_expr(&args[1])?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  UNLINK_PATH r{path}"));
+                self.text.push(format!("  MOV r{dst}, r1"));
+                Ok(dst)
+            }
+            "fprintf" => {
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "lseek" => {
                 let dst = self.alloc_reg()?;
                 self.text.push(format!("  LI r{dst}, 0"));
                 Ok(dst)
@@ -2105,6 +2289,96 @@ impl CodeGen {
                 self.text.push(format!("  MOV r{dst}, r1"));
                 Ok(dst)
             }
+            "estrtonum" => {
+                if args.is_empty() {
+                    return Err("estrtonum(s, min, max) expects at least 1 argument".to_string());
+                }
+                let ptr = self.emit_expr(&args[0])?;
+                let dst = self.alloc_reg()?;
+                self.needs_c_runtime = true;
+                self.text.push(format!("  MOV r1, r{ptr}"));
+                self.text.push("  CALL __parse_u64".to_string());
+                self.text.push(format!("  MOV r{dst}, r1"));
+                Ok(dst)
+            }
+            "llabs" => {
+                let value = self.one_arg(name, args)?;
+                Ok(value)
+            }
+            "MIN" | "MAX" => {
+                if args.len() != 2 {
+                    return Err(format!("{name}(a, b) expects 2 arguments"));
+                }
+                self.emit_minmax(name, &args[0], &args[1])
+            }
+            "strchr" => {
+                if args.len() != 2 {
+                    return Err("strchr(s, c) expects 2 arguments".to_string());
+                }
+                let haystack = self.emit_expr(&args[0])?;
+                let needle = self.emit_expr(&args[1])?;
+                self.emit_strchr(haystack, needle)
+            }
+            "charntorune" => {
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 1"));
+                Ok(dst)
+            }
+            "UTF8_POINT" => {
+                let ch = self.one_arg(name, args)?;
+                let mask = self.alloc_reg()?;
+                let masked = self.alloc_reg()?;
+                let expected = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                let true_label = self.new_label("utf8_point_true");
+                let end_label = self.new_label("utf8_point_end");
+                self.text.push(format!("  LI r{mask}, 192"));
+                self.text.push(format!("  AND r{masked}, r{ch}, r{mask}"));
+                self.text.push(format!("  LI r{expected}, 128"));
+                self.text.push(format!("  CMP r{masked}, r{expected}"));
+                self.text.push(format!("  LI r{dst}, 1"));
+                self.text.push(format!("  BNE {true_label}"));
+                self.text.push(format!("  LI r{dst}, 0"));
+                self.text.push(format!("{true_label}:"));
+                self.text.push(format!("{end_label}:"));
+                Ok(dst)
+            }
+            "memmove" => {
+                if args.len() != 3 {
+                    return Err("memmove(dst, src, n) expects 3 arguments".to_string());
+                }
+                let dst_ptr = self.emit_expr(&args[0])?;
+                let src_ptr = self.emit_expr(&args[1])?;
+                let len = self.emit_expr(&args[2])?;
+                self.emit_memmove(dst_ptr, src_ptr, len)
+            }
+            "erealloc" | "emalloc" => {
+                let size_arg = if name == "erealloc" {
+                    if args.len() != 2 {
+                        return Err("erealloc(ptr, size) expects 2 arguments".to_string());
+                    }
+                    &args[1]
+                } else {
+                    if args.len() != 1 {
+                        return Err("emalloc(size) expects 1 argument".to_string());
+                    }
+                    &args[0]
+                };
+                let size = self.emit_expr(size_arg)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  ALLOC r{dst}, r{size}"));
+                Ok(dst)
+            }
+            "EARGF" => {
+                if args.len() != 1 {
+                    return Err("EARGF(fallback) expects 1 argument".to_string());
+                }
+                self.emit_eargf()
+            }
+            "ARGNUMF" => {
+                self.no_args(name, args)?;
+                self.emit_argnumf()
+            }
             "jsmn_init" => {
                 let dst = self.alloc_reg()?;
                 self.text.push(format!("  LI r{dst}, 0"));
@@ -2153,6 +2427,26 @@ impl CodeGen {
                 self.text.push(format!("  LD r{dst}, [r{ptr}, {offset}]"));
                 Ok(dst)
             }
+            "fstat" => {
+                if args.len() != 2 {
+                    return Err("fstat(fd, statbuf) expects 2 arguments".to_string());
+                }
+                let _fd = self.emit_expr(&args[0])?;
+                let statbuf = self.emit_stat_buffer_arg(&args[1])?;
+                self.emit_fake_regular_stat(statbuf)
+            }
+            "stat" | "lstat" => {
+                if args.len() != 2 {
+                    return Err(format!("{name}(path, statbuf) expects 2 arguments"));
+                }
+                let _path = self.emit_expr(&args[0])?;
+                let statbuf = self.emit_stat_buffer_arg(&args[1])?;
+                self.emit_fake_regular_stat(statbuf)
+            }
+            "S_ISREG" | "S_ISFIFO" | "S_ISDIR" => {
+                let mode = self.one_arg(name, args)?;
+                self.emit_mode_predicate(name, mode)
+            }
             "fopen" => {
                 if args.len() != 2 {
                     return Err("fopen(path, mode) expects 2 arguments".to_string());
@@ -2161,9 +2455,12 @@ impl CodeGen {
                 let flags = self.alloc_reg()?;
                 let dst = self.alloc_reg()?;
                 self.text.push(format!("  LI r{flags}, 0"));
-                self.text.push(format!("  OPEN_FD fd3, r{path}, r{flags}"));
-                self.text.push(format!("  LI r{dst}, 3"));
+                self.text.push(format!("  OPEN_FD_DYN r{dst}, r{path}, r{flags}"));
                 Ok(dst)
+            }
+            "getc" => {
+                let stream = self.one_arg(name, args)?;
+                self.emit_getc(stream)
             }
             "concat" => {
                 if args.len() != 4 {
@@ -2171,27 +2468,17 @@ impl CodeGen {
                 }
                 let fd = self.emit_expr(&args[0])?;
                 let dst = self.alloc_reg()?;
-                let stdin_label = self.new_label("concat_stdin");
                 let loop_label = self.new_label("concat_loop");
-                let read_label = self.new_label("concat_read");
                 let end_label = self.new_label("concat_end");
                 let buf_label = "c_concat_buf".to_string();
                 self.data.entry(buf_label.clone()).or_insert(".zero 4096".to_string());
                 self.text.push(format!("  LI r20, {buf_label}"));
                 self.text.push("  LI r21, 4096".to_string());
-                self.text.push(format!("  CMP r{fd}, r0"));
-                self.text.push(format!("  BEQ {stdin_label}"));
                 self.text.push(format!("{loop_label}:"));
-                self.text.push("  READ_FD fd3, r20, r21".to_string());
-                self.text.push(format!("  JMP {read_label}"));
-                self.text.push(format!("{stdin_label}:"));
-                self.text.push("  READ_FD fd0, r20, r21".to_string());
-                self.text.push(format!("{read_label}:"));
+                self.text.push(format!("  READ_FD_DYN r{fd}, r20, r21"));
                 self.text.push("  CMP r1, r0".to_string());
                 self.text.push(format!("  BEQ {end_label}"));
                 self.text.push("  WRITE_FD fd1, r20, r1".to_string());
-                self.text.push(format!("  CMP r{fd}, r0"));
-                self.text.push(format!("  BEQ {stdin_label}"));
                 self.text.push(format!("  JMP {loop_label}"));
                 self.text.push(format!("{end_label}:"));
                 self.text.push(format!("  LI r{dst}, 0"));
@@ -2204,8 +2491,7 @@ impl CodeGen {
                 let path = self.emit_expr(&args[0])?;
                 let flags = self.emit_expr(&args[1])?;
                 let dst = self.alloc_reg()?;
-                self.text.push(format!("  OPEN_FD fd3, r{path}, r{flags}"));
-                self.text.push(format!("  LI r{dst}, 3"));
+                self.text.push(format!("  OPEN_FD_DYN r{dst}, r{path}, r{flags}"));
                 Ok(dst)
             }
             "getline" => {
@@ -2338,18 +2624,9 @@ impl CodeGen {
                     let fd = self.emit_expr(&args[0])?;
                     let buf = self.emit_expr(&args[1])?;
                     let len = self.emit_expr(&args[2])?;
-                    let stdin_label = self.new_label("read_stdin");
-                    let end_label = self.new_label("read_end");
                     let dst = self.alloc_reg()?;
-                    self.text.push(format!("  CMP r{fd}, r0"));
-                    self.text.push(format!("  BEQ {stdin_label}"));
-                    self.text.push(format!("  READ_FD fd3, r{buf}, r{len}"));
+                    self.text.push(format!("  READ_FD_DYN r{fd}, r{buf}, r{len}"));
                     self.text.push(format!("  MOV r{dst}, r1"));
-                    self.text.push(format!("  JMP {end_label}"));
-                    self.text.push(format!("{stdin_label}:"));
-                    self.text.push(format!("  READ_FD fd0, r{buf}, r{len}"));
-                    self.text.push(format!("  MOV r{dst}, r1"));
-                    self.text.push(format!("{end_label}:"));
                     Ok(dst)
                 }
             }
@@ -2551,6 +2828,23 @@ impl CodeGen {
                 self.text.push(format!("  MOV r{dst}, r1"));
                 Ok(dst)
             }
+            _ if self.locals.contains_key(name) || self.globals.contains_key(name) => {
+                if args.len() > 6 {
+                    return Err("indirect function calls support at most 6 arguments".to_string());
+                }
+                let mut regs = Vec::new();
+                for arg in args {
+                    regs.push(self.emit_expr(arg)?);
+                }
+                for (idx, reg) in regs.iter().enumerate() {
+                    self.text.push(format!("  MOV r{}, r{reg}", idx + 1));
+                }
+                let target = self.load_name(name)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  CALL_REG r{target}"));
+                self.text.push(format!("  MOV r{dst}, r1"));
+                Ok(dst)
+            }
             _ => Err(format!("unsupported function call {name:?}")),
         }
     }
@@ -2567,6 +2861,195 @@ impl CodeGen {
         let buf = self.emit_expr(&args[1])?;
         let len = self.emit_expr(&args[2])?;
         Ok((fd_num, buf, len))
+    }
+
+    fn emit_eargf(&mut self) -> Result<usize, String> {
+        let one = self.alloc_reg()?;
+        self.text.push(format!("  LI r{one}, 1"));
+        self.store_name("brk_", one)?;
+
+        let argv = self.load_name("argv")?;
+        let current = self.alloc_reg()?;
+        let ch_addr = self.alloc_reg()?;
+        let ch = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let attached_label = self.new_label("eargf_attached");
+        let end_label = self.new_label("eargf_end");
+        self.text.push(format!("  LD r{current}, [r{argv}, 0]"));
+        self.text.push(format!("  ADD r{ch_addr}, r{current}, r{one}"));
+        self.text.push(format!("  LD.B r{ch}, [r{ch_addr}, 0]"));
+        self.text.push(format!("  CMP r{ch}, r0"));
+        self.text.push(format!("  BNE {attached_label}"));
+
+        let argc = self.load_name("argc")?;
+        let new_argc = self.alloc_reg()?;
+        self.text.push(format!("  SUB r{new_argc}, r{argc}, r{one}"));
+        self.store_name("argc", new_argc)?;
+        let eight = self.alloc_reg()?;
+        let new_argv = self.alloc_reg()?;
+        self.text.push(format!("  LI r{eight}, 8"));
+        self.text.push(format!("  ADD r{new_argv}, r{argv}, r{eight}"));
+        self.store_name("argv", new_argv)?;
+        self.text.push(format!("  LD r{dst}, [r{new_argv}, 0]"));
+        self.text.push(format!("  JMP {end_label}"));
+
+        self.text.push(format!("{attached_label}:"));
+        self.text.push(format!("  MOV r{dst}, r{ch_addr}"));
+        self.text.push(format!("{end_label}:"));
+        Ok(dst)
+    }
+
+    fn emit_argnumf(&mut self) -> Result<usize, String> {
+        let one = self.alloc_reg()?;
+        self.text.push(format!("  LI r{one}, 1"));
+        self.store_name("brk_", one)?;
+        let argv = self.load_name("argv")?;
+        let ptr = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        self.text.push(format!("  LD r{ptr}, [r{argv}, 0]"));
+        self.needs_c_runtime = true;
+        self.text.push(format!("  MOV r1, r{ptr}"));
+        self.text.push("  CALL __parse_u64".to_string());
+        self.text.push(format!("  MOV r{dst}, r1"));
+        Ok(dst)
+    }
+
+    fn emit_minmax(&mut self, name: &str, left_expr: &Expr, right_expr: &Expr) -> Result<usize, String> {
+        let left = self.emit_expr(left_expr)?;
+        let right = self.emit_expr(right_expr)?;
+        let dst = self.alloc_reg()?;
+        let choose_right = self.new_label("minmax_right");
+        let end_label = self.new_label("minmax_end");
+        self.text.push(format!("  CMP r{left}, r{right}"));
+        let branch = if name == "MIN" { "BGT" } else { "BLT" };
+        self.text.push(format!("  {branch} {choose_right}"));
+        self.text.push(format!("  MOV r{dst}, r{left}"));
+        self.text.push(format!("  JMP {end_label}"));
+        self.text.push(format!("{choose_right}:"));
+        self.text.push(format!("  MOV r{dst}, r{right}"));
+        self.text.push(format!("{end_label}:"));
+        Ok(dst)
+    }
+
+    fn emit_strchr(&mut self, haystack: usize, needle: usize) -> Result<usize, String> {
+        let ptr = self.alloc_reg()?;
+        let ch = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let loop_label = self.new_label("strchr_loop");
+        let found_label = self.new_label("strchr_found");
+        let done_label = self.new_label("strchr_done");
+        self.text.push(format!("  MOV r{ptr}, r{haystack}"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("{loop_label}:"));
+        self.text.push(format!("  LD.B r{ch}, [r{ptr}, 0]"));
+        self.text.push(format!("  CMP r{ch}, r{needle}"));
+        self.text.push(format!("  BEQ {found_label}"));
+        self.text.push(format!("  CMP r{ch}, r0"));
+        self.text.push(format!("  BEQ {done_label}"));
+        self.text.push(format!("  ADD r{ptr}, r{ptr}, r{one}"));
+        self.text.push(format!("  JMP {loop_label}"));
+        self.text.push(format!("{found_label}:"));
+        self.text.push(format!("  MOV r{dst}, r{ptr}"));
+        self.text.push(format!("  JMP {done_label}"));
+        self.text.push(format!("{done_label}:"));
+        Ok(dst)
+    }
+
+    fn emit_memmove(&mut self, dst_ptr: usize, src_ptr: usize, len: usize) -> Result<usize, String> {
+        let i = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let src = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let ch = self.alloc_reg()?;
+        let loop_label = self.new_label("memmove_loop");
+        let end_label = self.new_label("memmove_end");
+        self.text.push(format!("  LI r{i}, 0"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("{loop_label}:"));
+        self.text.push(format!("  CMP r{i}, r{len}"));
+        self.text.push(format!("  BGE {end_label}"));
+        self.text.push(format!("  ADD r{src}, r{src_ptr}, r{i}"));
+        self.text.push(format!("  ADD r{dst}, r{dst_ptr}, r{i}"));
+        self.text.push(format!("  LD.B r{ch}, [r{src}, 0]"));
+        self.text.push(format!("  ST.B [r{dst}, 0], r{ch}"));
+        self.text.push(format!("  ADD r{i}, r{i}, r{one}"));
+        self.text.push(format!("  JMP {loop_label}"));
+        self.text.push(format!("{end_label}:"));
+        Ok(dst_ptr)
+    }
+
+    fn emit_getc(&mut self, stream: usize) -> Result<usize, String> {
+        let buf_label = "c_getc_buf".to_string();
+        self.data.entry(buf_label.clone()).or_insert(".zero 1".to_string());
+        let buf = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let eof_label = self.new_label("getc_eof");
+        let end_label = self.new_label("getc_end");
+        self.text.push(format!("  LI r{buf}, {buf_label}"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("  READ_FD_DYN r{stream}, r{buf}, r{one}"));
+        self.text.push("  CMP r1, r0".to_string());
+        self.text.push(format!("  BEQ {eof_label}"));
+        self.text.push(format!("  LD.B r{dst}, [r{buf}, 0]"));
+        self.text.push(format!("  JMP {end_label}"));
+        self.text.push(format!("{eof_label}:"));
+        self.text.push(format!("  LI r{dst}, -1"));
+        self.text.push(format!("{end_label}:"));
+        Ok(dst)
+    }
+
+    fn emit_stat_buffer_arg(&mut self, arg: &Expr) -> Result<usize, String> {
+        match arg {
+            Expr::Unary(UnOp::Addr, inner) => self.emit_expr(inner),
+            _ => self.emit_expr(arg),
+        }
+    }
+
+    fn emit_fake_regular_stat(&mut self, statbuf: usize) -> Result<usize, String> {
+        let values = [
+            (0, 0o100000), // st_mode: regular file
+            (8, 0),        // st_size
+            (16, 1),       // st_dev
+            (24, 1),       // st_ino
+            (32, 0),       // st_mtime
+        ];
+        for (offset, value) in values {
+            let reg = self.alloc_reg()?;
+            self.text.push(format!("  LI r{reg}, {value}"));
+            self.text.push(format!("  ST [r{statbuf}, {offset}], r{reg}"));
+        }
+        let dst = self.alloc_reg()?;
+        self.text.push(format!("  LI r{dst}, 0"));
+        Ok(dst)
+    }
+
+    fn emit_mode_predicate(&mut self, name: &str, mode: usize) -> Result<usize, String> {
+        let mask = self.alloc_reg()?;
+        let kind = self.alloc_reg()?;
+        let expected = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let true_label = self.new_label("mode_true");
+        let end_label = self.new_label("mode_end");
+        let expected_value = match name {
+            "S_ISREG" => 0o100000,
+            "S_ISFIFO" => 0o010000,
+            "S_ISDIR" => 0o040000,
+            _ => unreachable!(),
+        };
+        self.text.push(format!("  LI r{mask}, 61440"));
+        self.text.push(format!("  AND r{kind}, r{mode}, r{mask}"));
+        self.text.push(format!("  LI r{expected}, {expected_value}"));
+        self.text.push(format!("  CMP r{kind}, r{expected}"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("  BEQ {true_label}"));
+        self.text.push(format!("  JMP {end_label}"));
+        self.text.push(format!("{true_label}:"));
+        self.text.push(format!("  LI r{dst}, 1"));
+        self.text.push(format!("{end_label}:"));
+        Ok(dst)
     }
 
     fn numeric_fd(&self, expr: &Expr, name: &str) -> Result<usize, String> {
@@ -2613,8 +3096,14 @@ impl CodeGen {
                 self.text.push(format!("  LD r{reg}, {label}"));
             }
             Ok(reg)
+        } else if self.function_names.contains(name) {
+            self.text.push(format!("  LI r{reg}, {name}"));
+            Ok(reg)
         } else if name == "stdin" || name == "NULL" {
             self.text.push(format!("  LI r{reg}, 0"));
+            Ok(reg)
+        } else if name == "EOF" {
+            self.text.push(format!("  LI r{reg}, -1"));
             Ok(reg)
         } else if name == "stdout" {
             self.text.push(format!("  LI r{reg}, 1"));
@@ -2625,8 +3114,10 @@ impl CodeGen {
         } else if name == "O_TRUNC" {
             self.text.push(format!("  LI r{reg}, 2"));
             Ok(reg)
+        } else if name == "O_CREAT" {
+            self.text.push(format!("  LI r{reg}, 4"));
+            Ok(reg)
         } else if name == "O_WRONLY"
-            || name == "O_CREAT"
             || name == "O_RDONLY"
             || name == "SIGINT"
             || name == "SIG_IGN"
@@ -2638,6 +3129,30 @@ impl CodeGen {
             Ok(reg)
         } else if name == "EXIT_SUCCESS" {
             self.text.push(format!("  LI r{reg}, 0"));
+            Ok(reg)
+        } else if name == "LLONG_MIN" {
+            self.text.push(format!("  LI r{reg}, -9223372036854775807"));
+            Ok(reg)
+        } else if name == "LLONG_MAX" || name == "SIZE_MAX" || name == "INT_MAX" {
+            self.text.push(format!("  LI r{reg}, 9223372036854775807"));
+            Ok(reg)
+        } else if name == "AT_FDCWD" {
+            self.text.push(format!("  LI r{reg}, -100"));
+            Ok(reg)
+        } else if name == "UTIME_NOW" || name == "UTIME_OMIT" || name == "ENOENT" {
+            self.text.push(format!("  LI r{reg}, 2"));
+            Ok(reg)
+        } else if name == "SILENT" {
+            self.text.push(format!("  LI r{reg}, 1"));
+            Ok(reg)
+        } else if name == "IGNORE" {
+            self.text.push(format!("  LI r{reg}, 2"));
+            Ok(reg)
+        } else if name == "CONFIRM" {
+            self.text.push(format!("  LI r{reg}, 4"));
+            Ok(reg)
+        } else if name == "errno" {
+            self.text.push(format!("  LI r{reg}, 2"));
             Ok(reg)
         } else if name == "JSMN_OBJECT" {
             self.text.push(format!("  LI r{reg}, 1"));
@@ -2693,6 +3208,10 @@ impl CodeGen {
         label
     }
 
+    fn user_label(&self, label: &str) -> String {
+        format!(".L_user_{}_{}", self.current_fn, label)
+    }
+
     fn alloc_reg(&mut self) -> Result<usize, String> {
         if self.temp_reg >= 28 {
             return Err("expression is too complex for the simple register allocator".to_string());
@@ -2719,11 +3238,11 @@ fn escape_asm_string(value: &str) -> String {
     out
 }
 
-fn sbase_common_helpers() -> &'static str {
+fn c_runtime_helpers() -> &'static str {
     r#"
 .data
-sbase_num_buf: .zero 32
-sbase_digit_zero: .string "0"
+c_num_buf: .zero 32
+c_digit_zero: .string "0"
 c_dot: .string "."
 c_slash: .string "/"
 c_line_buf: .zero 4096
@@ -2983,65 +3502,15 @@ parse_u64_loop:
 parse_u64_done:
   RET
 
-__is_dash:
-  LD.B r2, [r1, 0]
-  LI r3, 45
-  CMP r2, r3
-  BNE is_dash_no
-  LD.B r2, [r1, 1]
-  CMP r2, r0
-  BNE is_dash_no
-  LI r1, 1
-  RET
-is_dash_no:
-  LI r1, 0
-  RET
-
-__is_dash_n:
-  LD.B r2, [r1, 0]
-  LI r3, 45
-  CMP r2, r3
-  BNE is_dash_n_no
-  LD.B r2, [r1, 1]
-  LI r3, 110
-  CMP r2, r3
-  BNE is_dash_n_no
-  LD.B r2, [r1, 2]
-  CMP r2, r0
-  BNE is_dash_n_no
-  LI r1, 1
-  RET
-is_dash_n_no:
-  LI r1, 0
-  RET
-
-__is_dash_u:
-  LD.B r2, [r1, 0]
-  LI r3, 45
-  CMP r2, r3
-  BNE is_dash_u_no
-  LD.B r2, [r1, 1]
-  LI r3, 117
-  CMP r2, r3
-  BNE is_dash_u_no
-  LD.B r2, [r1, 2]
-  CMP r2, r0
-  BNE is_dash_u_no
-  LI r1, 1
-  RET
-is_dash_u_no:
-  LI r1, 0
-  RET
-
 __print_u64:
   MOV r20, r1
   CMP r20, r0
   BNE print_u64_nonzero
-  LI r1, sbase_digit_zero
+  LI r1, c_digit_zero
   CALL __write_cstr
   RET
 print_u64_nonzero:
-  LI r21, sbase_num_buf
+  LI r21, c_num_buf
   LI r22, 31
   ADD r21, r21, r22
   LI r23, 10
@@ -3057,7 +3526,7 @@ print_u64_loop:
   MOV r20, r24
   CMP r20, r0
   BNE print_u64_loop
-  LI r1, sbase_num_buf
+  LI r1, c_num_buf
   LI r22, 31
   ADD r1, r1, r22
   SUB r2, r1, r21

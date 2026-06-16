@@ -444,6 +444,14 @@ impl Machine {
                 self.store_u64(sp, ret)?;
                 self.thread_mut()?.ip = ip;
             }
+            Instr::CallReg(target) => {
+                let ip = self.read_reg(target)? as usize;
+                let ret = self.thread()?.ip as u64;
+                let sp = self.thread()?.regs[31].wrapping_sub(CALL_FRAME_SIZE);
+                self.thread_mut()?.regs[31] = sp;
+                self.store_u64(sp, ret)?;
+                self.thread_mut()?.ip = ip;
+            }
             Instr::Ret => {
                 let sp = self.thread()?.regs[31];
                 let next = self.load_u64(sp)?;
@@ -486,75 +494,28 @@ impl Machine {
             Instr::OpenFd(dst, path_reg, flags_reg) => {
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
                 let flags = self.read_reg(flags_reg)?;
-                if let Some(addr) = path.strip_prefix("tcp-listen:") {
-                    let listener = TcpListener::bind(addr)
-                        .map_err(|err| format!("OPEN_FD TCP listener {addr:?}: {err}"))?;
-                    listener
-                        .set_nonblocking(true)
-                        .map_err(|err| format!("OPEN_FD TCP nonblocking {addr:?}: {err}"))?;
-                    self.process_mut()?.fds[dst.0] = FdHandle::TcpListener {
-                        listener,
-                        pending: None,
-                    };
-                } else {
-                    let file = if flags & 1 == 1 {
-                        OpenOptions::new()
-                            .create(true)
-                            .truncate(false)
-                            .append(true)
-                            .read(true)
-                            .open(&path)
-                    } else if flags & 2 == 2 {
-                        OpenOptions::new()
-                            .create(true)
-                            .truncate(true)
-                            .write(true)
-                            .read(true)
-                            .open(&path)
-                    } else {
-                        File::open(&path)
-                    }
-                    .map_err(|err| format!("OPEN_FD {path:?}: {err}"))?;
-                    self.process_mut()?.fds[dst.0] = FdHandle::File(file);
-                }
+                let handle = Self::open_fd_handle(&path, flags)?;
+                self.process_mut()?.fds[dst.0] = handle;
+            }
+            Instr::OpenFdDyn(dst, path_reg, flags_reg) => {
+                let path = self.read_c_string(self.read_reg(path_reg)?)?;
+                let flags = self.read_reg(flags_reg)?;
+                let handle = Self::open_fd_handle(&path, flags)?;
+                let fd = self.alloc_fd()?;
+                self.process_mut()?.fds[fd] = handle;
+                self.write_reg(dst, fd as u64)?;
             }
             Instr::ReadFd(fd, buf, len) => {
                 let addr = self.read_reg(buf)?;
                 let len = self.read_reg(len)? as usize;
-                let mut tmp = vec![0; len];
-                let count = match &mut self.process_mut()?.fds[fd.0] {
-                    FdHandle::Stdin => io::stdin()
-                        .read(&mut tmp)
-                        .map_err(|err| format!("READ_FD fd0: {err}"))?,
-                    FdHandle::File(file) => file
-                        .read(&mut tmp)
-                        .map_err(|err| format!("READ_FD fd{}: {err}", fd.0))?,
-                    FdHandle::TcpListener { listener, pending } => {
-                        if pending.is_none() {
-                            match listener.accept() {
-                                Ok((stream, _)) => {
-                                    stream.set_nonblocking(false).map_err(|err| {
-                                        format!("READ_FD fd{} stream blocking: {err}", fd.0)
-                                    })?;
-                                    *pending = Some(stream);
-                                }
-                                Err(err) if err.kind() == io::ErrorKind::WouldBlock => {}
-                                Err(err) => {
-                                    return Err(format!("READ_FD fd{} accept: {err}", fd.0));
-                                }
-                            };
-                        }
-                        if let Some(stream) = pending {
-                            stream
-                                .read(&mut tmp)
-                                .map_err(|err| format!("READ_FD fd{} stream: {err}", fd.0))?
-                        } else {
-                            0
-                        }
-                    }
-                    FdHandle::Stdout | FdHandle::Stderr | FdHandle::Closed => 0,
-                };
-                self.write_bytes(addr, &tmp[..count])?;
+                let count = self.read_fd_index(fd.0, addr, len)?;
+                self.write_reg(Reg(1), count as u64)?;
+            }
+            Instr::ReadFdDyn(fd_reg, buf, len) => {
+                let fd = self.read_reg(fd_reg)? as usize;
+                let addr = self.read_reg(buf)?;
+                let len = self.read_reg(len)? as usize;
+                let count = self.read_fd_index(fd, addr, len)?;
                 self.write_reg(Reg(1), count as u64)?;
             }
             Instr::WriteFd(fd, buf, len) => {
@@ -587,6 +548,22 @@ impl Machine {
                         return Err(format!("WRITE_FD on non-writable fd{}", fd.0));
                     }
                 }
+            }
+            Instr::MkdirPath(path_reg, _mode_reg) => {
+                let path = self.read_c_string(self.read_reg(path_reg)?)?;
+                let status = match fs::create_dir(&path) {
+                    Ok(()) => 0,
+                    Err(_) => -1i64 as u64,
+                };
+                self.write_reg(Reg(1), status)?;
+            }
+            Instr::UnlinkPath(path_reg) => {
+                let path = self.read_c_string(self.read_reg(path_reg)?)?;
+                let status = match fs::remove_file(&path) {
+                    Ok(()) => 0,
+                    Err(_) => -1i64 as u64,
+                };
+                self.write_reg(Reg(1), status)?;
             }
             Instr::WaitOnFd(fd, _) => {
                 if !self.fd_ready(fd.0)? {
@@ -866,6 +843,88 @@ impl Machine {
         self.processes
             .get_mut(&pid)
             .ok_or_else(|| format!("missing process {pid}"))
+    }
+
+    fn alloc_fd(&mut self) -> Result<usize, String> {
+        let process = self.process_mut()?;
+        for fd in 3..process.fds.len() {
+            if matches!(process.fds[fd], FdHandle::Closed) {
+                return Ok(fd);
+            }
+        }
+        Err("no free file descriptors".to_string())
+    }
+
+    fn open_fd_handle(path: &str, flags: u64) -> Result<FdHandle, String> {
+        if let Some(addr) = path.strip_prefix("tcp-listen:") {
+            let listener = TcpListener::bind(addr)
+                .map_err(|err| format!("OPEN_FD TCP listener {addr:?}: {err}"))?;
+            listener
+                .set_nonblocking(true)
+                .map_err(|err| format!("OPEN_FD TCP nonblocking {addr:?}: {err}"))?;
+            Ok(FdHandle::TcpListener {
+                listener,
+                pending: None,
+            })
+        } else {
+            let file = if flags & 1 == 1 {
+                OpenOptions::new()
+                    .create(true)
+                    .truncate(false)
+                    .append(true)
+                    .read(true)
+                    .open(path)
+            } else if flags & 2 == 2 || flags & 4 == 4 {
+                OpenOptions::new()
+                    .create(true)
+                    .truncate(flags & 2 == 2)
+                    .write(true)
+                    .read(true)
+                    .open(path)
+            } else {
+                File::open(path)
+            }
+            .map_err(|err| format!("OPEN_FD {path:?}: {err}"))?;
+            Ok(FdHandle::File(file))
+        }
+    }
+
+    fn read_fd_index(&mut self, fd: usize, addr: u64, len: usize) -> Result<usize, String> {
+        let mut tmp = vec![0; len];
+        let count = match &mut self.process_mut()?.fds[fd] {
+            FdHandle::Stdin => io::stdin()
+                .read(&mut tmp)
+                .map_err(|err| format!("READ_FD fd0: {err}"))?,
+            FdHandle::File(file) => file
+                .read(&mut tmp)
+                .map_err(|err| format!("READ_FD fd{fd}: {err}"))?,
+            FdHandle::TcpListener { listener, pending } => {
+                if pending.is_none() {
+                    match listener.accept() {
+                        Ok((stream, _)) => {
+                            stream
+                                .set_nonblocking(false)
+                                .map_err(|err| format!("READ_FD fd{fd} stream blocking: {err}"))?;
+                            *pending = Some(stream);
+                        }
+                        Err(err) if err.kind() == io::ErrorKind::WouldBlock => {}
+                        Err(err) => {
+                            return Err(format!("READ_FD fd{fd} accept: {err}"));
+                        }
+                    };
+                }
+                if let Some(stream) = pending {
+                    stream
+                        .read(&mut tmp)
+                        .map_err(|err| format!("READ_FD fd{fd} stream: {err}"))?
+                } else {
+                    0
+                }
+            }
+            FdHandle::Stdout | FdHandle::Stderr | FdHandle::Closed => 0,
+        };
+        self.write_bytes(addr, &tmp[..count])?;
+        Ok(count)
     }
 
     fn read_reg(&self, reg: Reg) -> Result<u64, String> {

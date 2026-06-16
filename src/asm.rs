@@ -189,6 +189,10 @@ impl Parser {
                 arity(1)?;
                 Instr::Call(target(&args[0]))
             }
+            "CALL_REG" => {
+                arity(1)?;
+                Instr::CallReg(reg(&args[0])?)
+            }
             "RET" => {
                 arity(0)?;
                 Instr::Ret
@@ -215,13 +219,29 @@ impl Parser {
                 arity(3)?;
                 Instr::OpenFd(fd(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
+            "OPEN_FD_DYN" => {
+                arity(3)?;
+                Instr::OpenFdDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
             "READ_FD" => {
                 arity(3)?;
                 Instr::ReadFd(fd(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
+            "READ_FD_DYN" => {
+                arity(3)?;
+                Instr::ReadFdDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
             "WRITE_FD" => {
                 arity(3)?;
                 Instr::WriteFd(fd(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
+            "MKDIR_PATH" => {
+                arity(2)?;
+                Instr::MkdirPath(reg(&args[0])?, reg(&args[1])?)
+            }
+            "UNLINK_PATH" => {
+                arity(1)?;
+                Instr::UnlinkPath(reg(&args[0])?)
             }
             "WAIT_ON_FD" => {
                 arity(2)?;
