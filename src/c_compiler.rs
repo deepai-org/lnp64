@@ -6932,14 +6932,15 @@ impl CodeGen {
                     .push(format!("  RET_CAP r0, r{value0}, r{value1}"));
                 Ok(0)
             }
-            "pid" | "tid" | "uid" | "gid" | "getpid" | "gettid" | "getuid" | "geteuid"
-            | "getgid" | "getegid" => {
+            "pid" | "tid" | "uid" | "gid" | "getpid" | "getppid" | "gettid" | "getuid"
+            | "geteuid" | "getgid" | "getegid" => {
                 if !args.is_empty() {
                     return Err(format!("{name}() expects no arguments"));
                 }
                 let dst = self.alloc_reg()?;
                 let pcr = match name {
                     "pid" | "getpid" => "PID",
+                    "getppid" => "PPID",
                     "tid" | "gettid" => "TID",
                     "uid" | "getuid" | "geteuid" => "UID",
                     "gid" | "getgid" | "getegid" => "GID",
@@ -6987,14 +6988,21 @@ impl CodeGen {
                     return Err("waitpid(pid, status, options) expects 3 arguments".to_string());
                 }
                 let pid = self.emit_expr(&args[0])?;
+                let pid_slot = self.spill_reg(pid);
+                self.temp_reg = 0;
                 let status_ptr = self.emit_expr(&args[1])?;
+                let status_slot = self.spill_reg(status_ptr);
+                self.temp_reg = 0;
                 let _options = self.emit_expr(&args[2])?;
+                let pid = self.reload_reg(pid_slot)?;
                 let status = self.alloc_reg()?;
                 let dst = self.alloc_reg()?;
                 let store_done = self.new_label("waitpid_store_done");
                 let ok_label = self.new_label("waitpid_ok");
                 let end_label = self.new_label("waitpid_end");
                 self.text.push(format!("  WAIT_PID r{status}, r{pid}"));
+                let status_ptr = self.reload_reg(status_slot)?;
+                let pid = self.reload_reg(pid_slot)?;
                 self.text.push(format!("  CMP r{status_ptr}, r0"));
                 self.text.push(format!("  BEQ {store_done}"));
                 self.text
@@ -7006,6 +7014,33 @@ impl CodeGen {
                 self.text.push(format!("  JMP {end_label}"));
                 self.text.push(format!("{ok_label}:"));
                 self.text.push(format!("  MOV r{dst}, r{pid}"));
+                self.text.push(format!("{end_label}:"));
+                Ok(dst)
+            }
+            "wait" => {
+                if args.len() != 1 {
+                    return Err("wait(status) expects 1 argument".to_string());
+                }
+                let status_ptr = self.emit_expr(&args[0])?;
+                let status_slot = self.spill_reg(status_ptr);
+                let status = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                let store_done = self.new_label("wait_store_done");
+                let ok_label = self.new_label("wait_ok");
+                let end_label = self.new_label("wait_end");
+                self.text.push(format!("  WAIT_PID r{status}, r0"));
+                let status_ptr = self.reload_reg(status_slot)?;
+                self.text.push(format!("  CMP r{status_ptr}, r0"));
+                self.text.push(format!("  BEQ {store_done}"));
+                self.text
+                    .push(format!("  ST [r{status_ptr}, 0], r{status}"));
+                self.text.push(format!("{store_done}:"));
+                self.text.push("  CMP r1, r0".to_string());
+                self.text.push(format!("  BEQ {ok_label}"));
+                self.text.push(format!("  LI r{dst}, -1"));
+                self.text.push(format!("  JMP {end_label}"));
+                self.text.push(format!("{ok_label}:"));
+                self.text.push(format!("  LI r{dst}, 0"));
                 self.text.push(format!("{end_label}:"));
                 Ok(dst)
             }
@@ -7379,6 +7414,15 @@ impl CodeGen {
                 let set = self.emit_expr(&args[1])?;
                 let oldset = self.emit_expr(&args[2])?;
                 self.emit_sigprocmask(how, set, oldset)
+            }
+            "raise" => {
+                let signum = self.one_arg(name, args)?;
+                let pid = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  GET_PCR r{pid}, PID"));
+                self.text.push(format!("  KILL r{pid}, r{signum}"));
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
             }
             "kill" => {
                 if args.len() != 2 {
@@ -11557,35 +11601,76 @@ int main() {
     #[test]
     fn c_posix_process_and_signal_mask_surface_runs() {
         let source = r#"
+        int raised;
+
+        int on_signal() {
+            raised = 1;
+            sigret();
+            return 0;
+        }
+
         int main() {
             sigset_t set;
             sigset_t old;
+            raised = 0;
             if (getpid() != pid()) return 1;
-            if (gettid() != tid()) return 2;
-            if (getuid() != uid()) return 3;
-            if (geteuid() != uid()) return 4;
-            if (getgid() != gid()) return 5;
-            if (getegid() != gid()) return 6;
-            if (sigemptyset(&set) != 0) return 7;
-            if (sigismember(&set, SIGINT) != 0) return 8;
-            if (sigaddset(&set, SIGINT) != 0) return 9;
-            if (sigismember(&set, SIGINT) != 1) return 10;
-            if (sigprocmask(SIG_BLOCK, &set, &old) != 0) return 11;
-            if (sigismember(&old, SIGINT) != 0) return 12;
-            if (sigprocmask(SIG_UNBLOCK, &set, &old) != 0) return 13;
-            if (sigismember(&old, SIGINT) != 1) return 14;
-            if (sigdelset(&set, SIGINT) != 0) return 15;
-            if (sigismember(&set, SIGINT) != 0) return 16;
-            if (sigfillset(&set) != 0) return 17;
-            if (sigismember(&set, SIGALRM) != 1) return 18;
-            if (sigemptyset(&set) != 0) return 19;
-            if (sigprocmask(SIG_SETMASK, &set, 0) != 0) return 20;
+            if (getppid() != 0) return 2;
+            if (gettid() != tid()) return 3;
+            if (getuid() != uid()) return 4;
+            if (geteuid() != uid()) return 5;
+            if (getgid() != gid()) return 6;
+            if (getegid() != gid()) return 7;
+            if (sigemptyset(&set) != 0) return 8;
+            if (sigismember(&set, SIGINT) != 0) return 9;
+            if (sigaddset(&set, SIGINT) != 0) return 10;
+            if (sigismember(&set, SIGINT) != 1) return 11;
+            if (sigprocmask(SIG_BLOCK, &set, &old) != 0) return 12;
+            if (sigismember(&old, SIGINT) != 0) return 13;
+            if (sigprocmask(SIG_UNBLOCK, &set, &old) != 0) return 14;
+            if (sigismember(&old, SIGINT) != 1) return 15;
+            if (sigdelset(&set, SIGINT) != 0) return 16;
+            if (sigismember(&set, SIGINT) != 0) return 17;
+            if (sigfillset(&set) != 0) return 18;
+            if (sigismember(&set, SIGALRM) != 1) return 19;
+            if (sigemptyset(&set) != 0) return 20;
+            if (sigprocmask(SIG_SETMASK, &set, 0) != 0) return 21;
+            signal(SIGINT, on_signal);
+            if (raise(SIGINT) != 0) return 22;
+            if (raised != 1) return 23;
             return 0;
         }
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains("GET_PCR"), "{asm}");
         assert!(asm.contains("SET_PCR SIGMASK"), "{asm}");
+        assert!(asm.contains("KILL"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_wait_and_getppid_surface_runs_after_fork() {
+        let source = r#"
+        int main() {
+            int parent;
+            int child;
+            int status;
+            parent = getpid();
+            child = fork();
+            if (child == 0) {
+                if (getppid() != parent) return 7;
+                _exit(42);
+            }
+            if (wait(&status) != 0) return 1;
+            if (status != 42) return 2;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("GET_PCR"), "{asm}");
+        assert!(asm.contains("PPID"), "{asm}");
+        assert!(asm.contains("WAIT_PID"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
@@ -11694,6 +11779,7 @@ int main() {
             uid();
             gid();
             getpid();
+            getppid();
             gettid();
             getuid();
             geteuid();
@@ -11707,6 +11793,7 @@ int main() {
             sigdelset(&sigset, SIGINT);
             sigfillset(&sigset);
             fork();
+            wait(slot);
             waitpid(0, slot, 0);
             spawn(child);
             msg_send(1, 2, 3);
@@ -11719,6 +11806,7 @@ int main() {
             signal(2, child);
             sigaction(3, child);
             sigmask_set(1);
+            raise(2);
             kill(pid(), 2);
             inb(1);
             outb(1, 2);
@@ -11737,6 +11825,7 @@ int main() {
             "OBJECT_CTL",
             "FORK",
             "WAIT_PID",
+            "PPID",
             "SPAWN",
             "THREAD_JOIN",
             "LOCK.CMPXCHG",

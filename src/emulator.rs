@@ -1187,6 +1187,22 @@ impl Machine {
             }
             Instr::WaitPid(status_dst, pid_reg) => {
                 let pid = self.read_reg(pid_reg)?;
+                let current_pid = self.thread()?.pid;
+                let live_child = if pid == 0 {
+                    self.processes
+                        .values()
+                        .any(|process| process.parent_pid == Some(current_pid))
+                } else {
+                    self.processes
+                        .get(&pid)
+                        .is_some_and(|process| process.parent_pid == Some(current_pid))
+                };
+                if live_child {
+                    self.thread_mut()?.ip = self.thread()?.ip.saturating_sub(1);
+                    self.sleepers.push((self.current_tid, 1));
+                    self.ready.retain(|tid| *tid != self.current_tid);
+                    return Ok(false);
+                }
                 if pid == 0 || !self.processes.contains_key(&pid) {
                     self.write_reg(status_dst, self.last_exit as u64)?;
                     self.set_status_ok()?;
@@ -3309,6 +3325,7 @@ impl Machine {
         let process = self.process()?;
         Ok(match pcr {
             Pcr::Pid => process.pid,
+            Pcr::Ppid => process.parent_pid.unwrap_or(0),
             Pcr::Tid => self.thread()?.tid,
             Pcr::Uid => process.uid,
             Pcr::Gid => process.gid,
@@ -3327,7 +3344,7 @@ impl Machine {
     fn write_pcr(&mut self, pcr: Pcr, value: u64) -> Result<(), String> {
         let process = self.process_mut()?;
         match pcr {
-            Pcr::Pid | Pcr::Tid | Pcr::RealtimeSec | Pcr::RealtimeNsec => {
+            Pcr::Pid | Pcr::Ppid | Pcr::Tid | Pcr::RealtimeSec | Pcr::RealtimeNsec => {
                 Err("selected PCR is read-only".to_string())
             }
             Pcr::Uid if process.uid != 0 => {

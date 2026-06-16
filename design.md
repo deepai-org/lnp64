@@ -12,6 +12,7 @@ To support hardware-native OS primitives, the standard register file is expanded
 *   **FDRs (File Descriptor Registers):** `fd0` - `fd255` are the static low-descriptor fast bank. Full process FDR tables are DDR-backed and addressed by dynamic FDR instructions. FDRs do not hold integers; they hold hardware capability references to Silicon VFS objects, device objects, event queues, timers, generic counters, generic queues, memory objects, PCIe BARs, DMA buffers, or supervisor controls. `fd0`, `fd1`, and `fd2` conventionally bind to STDIN, STDOUT, and STDERR streams of the controlling TTY.
 *   **PCRs (Process Control Registers):**
     *   `PID`: Current Process ID, from process context.
+    *   `PPID`: Parent Process ID, from process context, or `0` for root.
     *   `TID`: Current Thread ID, from thread context.
     *   `UID` / `GID`: User/Group ID from process credential context.
     *   `CAPMASK`: Process credential capability bitmap.

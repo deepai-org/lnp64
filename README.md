@@ -39,8 +39,10 @@ The emulator tracks the current ISA direction in `design.md` and
   `REALTIME_SEC`/`REALTIME_NSEC` PCRs; `nanosleep` lowers to the existing
   scheduler `SLEEP` primitive. `usleep` rounds microseconds to the same coarse
   tick model, and `alarm` lowers to an `ALARM` timer that delivers `SIGALRM`.
-- POSIX-style `getpid`/`getuid`/`getgid` aliases read PCRs, and the current
-  64-bit `sigset_t`/`sigprocmask` subset updates the `SIGMASK` PCR.
+- POSIX-style `getpid`/`getppid`/`getuid`/`getgid` aliases read PCRs,
+  `wait(status)` lowers to `WAIT_PID`, `raise(signum)` sends through `KILL`,
+  and the current 64-bit `sigset_t`/`sigprocmask` subset updates the `SIGMASK`
+  PCR.
 - `EVENT_CTL` and `TIMER_CTL` are accepted by the assembler as aliases over
   `OBJECT_CTL`.
 - `CALL_CAP`/`RET_CAP` implement synchronous calls, asynchronous completion to

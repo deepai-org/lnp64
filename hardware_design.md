@@ -2148,6 +2148,7 @@ Futex local-state requirement:
 PCR reads are backed by process credential state plus thread-local state:
 
 - PID: read-only, from process context.
+- PPID: read-only, from process context, or `0` for root.
 - TID: read-only, from thread context.
 - UID: from process credential context.
 - GID: from process credential context.

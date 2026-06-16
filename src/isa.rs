@@ -26,6 +26,7 @@ pub struct VReg(pub usize);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pcr {
     Pid,
+    Ppid,
     Tid,
     Uid,
     Gid,
@@ -252,6 +253,7 @@ pub fn parse_vreg(text: &str) -> Result<VReg, String> {
 pub fn parse_pcr(text: &str) -> Result<Pcr, String> {
     match text.to_ascii_uppercase().as_str() {
         "PID" => Ok(Pcr::Pid),
+        "PPID" => Ok(Pcr::Ppid),
         "TID" => Ok(Pcr::Tid),
         "UID" => Ok(Pcr::Uid),
         "GID" => Ok(Pcr::Gid),
