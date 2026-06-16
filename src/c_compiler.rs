@@ -5379,6 +5379,16 @@ impl CodeGen {
                 let req = self.reload_reg(req_slot)?;
                 self.emit_nanosleep(req, rem)
             }
+            "usleep" => {
+                let usec = self.one_arg(name, args)?;
+                self.emit_usleep(usec)
+            }
+            "alarm" => {
+                let seconds = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  ALARM r{dst}, r{seconds}"));
+                Ok(dst)
+            }
             "strptime" | "mktime" => {
                 let dst = self.alloc_reg()?;
                 self.text.push(format!("  LI r{dst}, 0"));
@@ -8989,6 +8999,27 @@ impl CodeGen {
         Ok(dst)
     }
 
+    fn emit_usleep(&mut self, usec: usize) -> Result<usize, String> {
+        let divisor = self.alloc_reg()?;
+        let ticks = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let sleep = self.new_label("usleep_sleep");
+        let done = self.new_label("usleep_done");
+        self.text.push(format!("  LI r{divisor}, 10000"));
+        self.text
+            .push(format!("  DIV r{ticks}, r{usec}, r{divisor}"));
+        self.text.push(format!("  CMP r{ticks}, r0"));
+        self.text.push(format!("  BNE {sleep}"));
+        self.text.push(format!("  CMP r{usec}, r0"));
+        self.text.push(format!("  BEQ {done}"));
+        self.text.push(format!("  LI r{ticks}, 1"));
+        self.text.push(format!("{sleep}:"));
+        self.text.push(format!("  SLEEP r{ticks}"));
+        self.text.push(format!("{done}:"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        Ok(dst)
+    }
+
     fn emit_readdir_fd_dispatch(
         &mut self,
         fd_reg: usize,
@@ -11337,6 +11368,41 @@ int main() {
     }
 
     #[test]
+    fn c_usleep_and_alarm_surface_runs() {
+        let source = r#"
+        int fired;
+
+        int on_alarm() {
+            fired = 1;
+            sigret();
+            return 0;
+        }
+
+        int main() {
+            int prev;
+            fired = 0;
+            if (usleep(1) != 0) return 1;
+            signal(SIGALRM, on_alarm);
+            prev = alarm(1);
+            if (prev != 0) return 2;
+            prev = alarm(2);
+            if (prev == 0) return 3;
+            alarm(1);
+            while (fired == 0) {
+                yield_cpu();
+            }
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("ALARM"), "{asm}");
+        assert!(asm.contains("SLEEP"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn c_select_fdset_surface_lowers_to_readiness_probe_and_runs() {
         let source = r#"
         int main() {
@@ -11544,6 +11610,8 @@ int main() {
             gettimeofday(&tv, 0);
             time(&out);
             nanosleep(&ts, &ts);
+            usleep(1);
+            alarm(1);
             pid();
             tid();
             uid();
@@ -11601,6 +11669,7 @@ int main() {
             "REALTIME_SEC",
             "REALTIME_NSEC",
             "SLEEP",
+            "ALARM",
             "PULL",
             "FUTEX_WAIT",
             "FUTEX_WAKE",

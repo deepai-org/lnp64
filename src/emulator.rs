@@ -21,6 +21,7 @@ const CALL_FRAME_SIZE: u64 = 32 * 1024;
 const THREAD_STACK_STRIDE: u64 = 0x80_000;
 const MMAP_BASE: u64 = 0x200_000;
 const SIGCHLD: u64 = 17;
+const SIGALRM: u64 = 14;
 const SIGSEGV: u64 = 11;
 const MESSAGE_ENDPOINT_FD: usize = FDR_COUNT - 1;
 const UTIME_NOW_LNP64: i64 = 1_073_741_823;
@@ -464,6 +465,7 @@ pub struct Machine {
     ready: VecDeque<u64>,
     domain_parked: VecDeque<u64>,
     sleepers: Vec<(u64, u64)>,
+    alarms: Vec<(u64, u64)>,
     futex_waiters: HashMap<u64, VecDeque<u64>>,
     thread_join_waiters: HashMap<u64, VecDeque<u64>>,
     completed_threads: HashMap<u64, u64>,
@@ -500,6 +502,7 @@ impl Machine {
             ready,
             domain_parked: VecDeque::new(),
             sleepers: Vec::new(),
+            alarms: Vec::new(),
             futex_waiters: HashMap::new(),
             thread_join_waiters: HashMap::new(),
             completed_threads: HashMap::new(),
@@ -550,10 +553,12 @@ impl Machine {
             }
             steps += 1;
             self.tick_sleepers();
+            self.tick_alarms();
             self.poll_fd_waiters();
 
             let Some(tid) = self.ready.pop_front() else {
-                if self.sleepers.is_empty() && self.fd_waiters.is_empty() {
+                if self.sleepers.is_empty() && self.alarms.is_empty() && self.fd_waiters.is_empty()
+                {
                     return Err("hardware runqueue deadlock: no ready threads".to_string());
                 }
                 if !self.fd_waiters.is_empty() {
@@ -1337,20 +1342,25 @@ impl Machine {
                 let mask = self.read_reg(mask)?;
                 self.process_mut()?.sigmask = mask;
             }
+            Instr::Alarm(dst, seconds) => {
+                let seconds = self.read_reg(seconds)?;
+                let pid = self.thread()?.pid;
+                let previous = self
+                    .alarms
+                    .iter()
+                    .find(|(alarm_pid, _)| *alarm_pid == pid)
+                    .map(|(_, ticks)| ticks.div_ceil(100))
+                    .unwrap_or(0);
+                self.alarms.retain(|(alarm_pid, _)| *alarm_pid != pid);
+                if seconds != 0 {
+                    self.alarms.push((pid, seconds.saturating_mul(100)));
+                }
+                self.write_reg(dst, previous)?;
+            }
             Instr::Kill(pid, signum) => {
                 let pid = self.read_reg(pid)?;
                 let signum = self.read_reg(signum)?;
-                if let Some(process) = self.processes.get_mut(&pid) {
-                    process.pending_signals.push_back(signum);
-                    if let Some(tid) = self
-                        .threads
-                        .values()
-                        .find(|thread| thread.pid == pid)
-                        .map(|thread| thread.tid)
-                    {
-                        self.wake_thread(tid);
-                    }
-                }
+                self.raise_process_signal(pid, signum);
             }
             Instr::Sigret => {
                 let saved = self
@@ -3379,6 +3389,34 @@ impl Machine {
         self.sleepers.retain(|(_, ticks)| *ticks != 0);
         for tid in woke {
             self.wake_thread(tid);
+        }
+    }
+
+    fn tick_alarms(&mut self) {
+        let mut expired = Vec::new();
+        for (pid, ticks) in &mut self.alarms {
+            *ticks = ticks.saturating_sub(1);
+            if *ticks == 0 {
+                expired.push(*pid);
+            }
+        }
+        self.alarms.retain(|(_, ticks)| *ticks != 0);
+        for pid in expired {
+            self.raise_process_signal(pid, SIGALRM);
+        }
+    }
+
+    fn raise_process_signal(&mut self, pid: u64, signum: u64) {
+        if let Some(process) = self.processes.get_mut(&pid) {
+            process.pending_signals.push_back(signum);
+            if let Some(tid) = self
+                .threads
+                .values()
+                .find(|thread| thread.pid == pid)
+                .map(|thread| thread.tid)
+            {
+                self.wake_thread(tid);
+            }
         }
     }
 

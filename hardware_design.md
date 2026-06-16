@@ -653,6 +653,7 @@ The opcode map is fixed, but sparse:
 65 SIGRET
 66 MPROTECT
 67 SUPERVISOR_CTL
+68 ALARM
 
 70 LOCK_CMPXCHG
 71 RESERVED
@@ -1851,6 +1852,16 @@ u64 auxv_ptr
   the Futex Engine atomically compares before parking.
 - source-level waitpid, sleep, fd-readiness wait, timer wait, and blocking
   message-receive forms lower to `AWAIT` on the appropriate waitable object.
+
+`ALARM`:
+
+- uses F2: `a=result_dst`, `b=seconds_reg`.
+- resets the calling process's POSIX alarm timer and returns the previous
+  remaining whole seconds.
+- when it expires, the timer wheel enqueues `SIGALRM` for the process and wakes
+  a runnable thread in that process.
+- `ALARM 0` cancels the outstanding POSIX alarm. General multi-source timers
+  remain timer/event-queue profiles over waitable FDRs.
 
 `EXIT`:
 

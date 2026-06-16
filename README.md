@@ -37,7 +37,8 @@ The emulator tracks the current ISA direction in `design.md` and
   described in the design docs.
 - Source-level `clock_gettime`, `gettimeofday`, and `time` read
   `REALTIME_SEC`/`REALTIME_NSEC` PCRs; `nanosleep` lowers to the existing
-  scheduler `SLEEP` primitive.
+  scheduler `SLEEP` primitive. `usleep` rounds microseconds to the same coarse
+  tick model, and `alarm` lowers to an `ALARM` timer that delivers `SIGALRM`.
 - POSIX-style `getpid`/`getuid`/`getgid` aliases read PCRs, and the current
   64-bit `sigset_t`/`sigprocmask` subset updates the `SIGMASK` PCR.
 - `EVENT_CTL` and `TIMER_CTL` are accepted by the assembler as aliases over

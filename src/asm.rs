@@ -538,6 +538,10 @@ impl Parser {
                 arity(1)?;
                 Instr::SigmaskSet(reg(&args[0])?)
             }
+            "ALARM" => {
+                arity(2)?;
+                Instr::Alarm(reg(&args[0])?, reg(&args[1])?)
+            }
             "KILL" => {
                 arity(2)?;
                 Instr::Kill(reg(&args[0])?, reg(&args[1])?)
@@ -930,6 +934,21 @@ mod tests {
         assert!(matches!(
             program.instructions[0],
             Instr::ThreadJoin(Reg(1), Reg(2), Reg(3))
+        ));
+    }
+
+    #[test]
+    fn parses_alarm_instruction() {
+        let program = Program::parse(
+            r#"
+            .text
+              ALARM r1, r2
+            "#,
+        )
+        .unwrap();
+        assert!(matches!(
+            program.instructions[0],
+            Instr::Alarm(Reg(1), Reg(2))
         ));
     }
 }

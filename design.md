@@ -91,6 +91,11 @@ Signals are no longer software constructs; they are asynchronous hardware events
     *   *Action:* Registers a hardware trampoline address for a specific POSIX signal.
 *   **`SIGMASK_SET r_mask`**
     *   *Action:* Updates the `SIGMASK` PCR.
+*   **`ALARM r_dest, r_seconds`**
+    *   *Action:* Resets the process's POSIX alarm timer, returns the previous
+        remaining whole seconds in `r_dest`, and enqueues `SIGALRM` when the
+        timer expires. General multi-source timers remain FDR-backed timer
+        profiles.
 *   **`KILL r_pid, r_signum`**
     *   *Action:* Routes a signal request through the Signal Engine to the target PID/TID, waking the target if it is in an interruptible wait.
 *   **`SIGRET`**

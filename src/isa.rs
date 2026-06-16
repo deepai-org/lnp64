@@ -153,6 +153,7 @@ pub enum Instr {
     Mprotect(Reg, Reg, Reg),
     Sigaction(Reg, Reg),
     SigmaskSet(Reg),
+    Alarm(Reg, Reg),
     Kill(Reg, Reg),
     Sigret,
     LockCmpxchg(Reg, Reg, Reg, Reg),
