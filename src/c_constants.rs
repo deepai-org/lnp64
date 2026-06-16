@@ -49,6 +49,7 @@ pub fn find_token_constant(name: &str) -> Option<i64> {
         "POLLNVAL" => Some(32),
         "CLOCK_REALTIME" => Some(0),
         "CLOCK_MONOTONIC" => Some(1),
+        "FD_SETSIZE" => Some(64),
         "EAGAIN" => Some(11),
         "EBUSY" => Some(16),
         "EDEADLK" => Some(35),

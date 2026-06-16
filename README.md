@@ -31,10 +31,10 @@ The emulator tracks the current ISA direction in `design.md` and
   reserved per-process message endpoint `fd255`.
 - Source-level `pipe(fds)` lowers to `OBJECT_CTL create queue(profile=pipe)`,
   returning narrowed read/write endpoint FDRs.
-- Source-level `poll(fds, nfds, timeout)` lowers to `POLL_FD_DYN` readiness
-  probes plus `AWAIT_DYN` for blocking waits. This is the emulator's current
-  single-process bridge toward the event-queue profile described in the design
-  docs.
+- Source-level `poll(fds, nfds, timeout)` and 64-bit `fd_set` `select` lower to
+  `POLL_FD_DYN` readiness probes plus `AWAIT_DYN` for blocking waits. This is
+  the emulator's current single-process bridge toward the event-queue profile
+  described in the design docs.
 - Source-level `clock_gettime`, `gettimeofday`, and `time` read
   `REALTIME_SEC`/`REALTIME_NSEC` PCRs; `nanosleep` lowers to the existing
   scheduler `SLEEP` primitive.

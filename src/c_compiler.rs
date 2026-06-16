@@ -658,6 +658,7 @@ fn normalize_c_types(source: &str) -> String {
     out = out.replace("sizeof(*b->lines)", "16");
     out = out.replace("sizeof(regmatch_t)", "16");
     out = out.replace("sizeof(*pmatch)", "16");
+    out = out.replace("sizeof(fd_set)", "8");
     out = out.replace("sizeof(regex_t)", "16");
     out = out.replace("sizeof(*addr->u.re)", "16");
     out = out.replace("sizeof(*c->u.s.re)", "16");
@@ -694,6 +695,8 @@ fn normalize_c_types(source: &str) -> String {
         ("struct timespec", "int"),
         ("struct tm *", "int "),
         ("struct tm", "int"),
+        ("fd_set *", "int "),
+        ("fd_set", "int"),
         ("struct recursor *", "int "),
         ("struct recursor", "int"),
         ("struct arg *", "int "),
@@ -6743,6 +6746,38 @@ impl CodeGen {
                 self.emit_poll(fds, nfds, timeout, dst)?;
                 Ok(dst)
             }
+            "select" => {
+                if args.len() != 5 {
+                    return Err(
+                        "select(nfds, readfds, writefds, exceptfds, timeout) expects 5 arguments"
+                            .to_string(),
+                    );
+                }
+                let nfds = self.emit_expr(&args[0])?;
+                let readfds = self.emit_expr(&args[1])?;
+                let writefds = self.emit_expr(&args[2])?;
+                let exceptfds = self.emit_expr(&args[3])?;
+                let timeout = self.emit_expr(&args[4])?;
+                let dst = self.alloc_reg()?;
+                self.emit_select(nfds, readfds, writefds, exceptfds, timeout, dst)?;
+                Ok(dst)
+            }
+            "FD_ZERO" => {
+                if args.len() != 1 {
+                    return Err("FD_ZERO(set) expects 1 argument".to_string());
+                }
+                let set = self.emit_expr(&args[0])?;
+                self.text.push(format!("  ST [r{set}, 0], r0"));
+                Ok(0)
+            }
+            "FD_SET" | "FD_CLR" | "FD_ISSET" => {
+                if args.len() != 2 {
+                    return Err(format!("{name}(fd, set) expects 2 arguments"));
+                }
+                let fd = self.emit_expr(&args[0])?;
+                let set = self.emit_expr(&args[1])?;
+                self.emit_fd_set_op(name, fd, set)
+            }
             "pipe" => {
                 if args.len() != 1 {
                     return Err("pipe(fds) expects 1 argument".to_string());
@@ -8495,6 +8530,230 @@ impl CodeGen {
         self.text.push(format!("  JMP {scan_label}"));
 
         self.text.push(format!("{have_ready}:"));
+        self.text.push(format!("  MOV r{dst_reg}, r{count}"));
+        self.text.push(format!("{done}:"));
+        self.temp_reg = 0;
+        Ok(())
+    }
+
+    fn emit_fd_set_op(&mut self, name: &str, fd: usize, set: usize) -> Result<usize, String> {
+        let current = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let mask = self.alloc_reg()?;
+        let value = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        self.text.push(format!("  LD r{current}, [r{set}, 0]"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("  LSL r{mask}, r{one}, r{fd}"));
+        match name {
+            "FD_SET" => {
+                self.text
+                    .push(format!("  OR r{value}, r{current}, r{mask}"));
+                self.text.push(format!("  ST [r{set}, 0], r{value}"));
+                Ok(0)
+            }
+            "FD_CLR" => {
+                self.text.push(format!("  NOT r{mask}, r{mask}"));
+                self.text
+                    .push(format!("  AND r{value}, r{current}, r{mask}"));
+                self.text.push(format!("  ST [r{set}, 0], r{value}"));
+                Ok(0)
+            }
+            "FD_ISSET" => {
+                let false_label = self.new_label("fd_isset_false");
+                let done = self.new_label("fd_isset_done");
+                self.text
+                    .push(format!("  AND r{value}, r{current}, r{mask}"));
+                self.text.push(format!("  CMP r{value}, r0"));
+                self.text.push(format!("  BEQ {false_label}"));
+                self.text.push(format!("  LI r{dst}, 1"));
+                self.text.push(format!("  JMP {done}"));
+                self.text.push(format!("{false_label}:"));
+                self.text.push(format!("  LI r{dst}, 0"));
+                self.text.push(format!("{done}:"));
+                Ok(dst)
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn emit_select(
+        &mut self,
+        nfds_reg: usize,
+        readfds_reg: usize,
+        writefds_reg: usize,
+        exceptfds_reg: usize,
+        timeout_reg: usize,
+        dst_reg: usize,
+    ) -> Result<(), String> {
+        let nfds_slot = self.spill_reg(nfds_reg);
+        let readfds_slot = self.spill_reg(readfds_reg);
+        let writefds_slot = self.spill_reg(writefds_reg);
+        let exceptfds_slot = self.spill_reg(exceptfds_reg);
+        let timeout_slot = self.spill_reg(timeout_reg);
+        self.temp_reg = 0;
+
+        let scan_label = self.new_label("select_scan");
+        let scan_loop = self.new_label("select_scan_loop");
+        let write_check = self.new_label("select_write_check");
+        let scan_next = self.new_label("select_scan_next");
+        let scan_done = self.new_label("select_scan_done");
+        let have_ready = self.new_label("select_have_ready");
+        let no_wait = self.new_label("select_no_wait");
+        let wait_find_loop = self.new_label("select_wait_find_loop");
+        let wait_write_check = self.new_label("select_wait_write_check");
+        let wait_next = self.new_label("select_wait_next");
+        let wait_read = self.new_label("select_wait_read");
+        let wait_write = self.new_label("select_wait_write");
+        let store = self.new_label("select_store");
+        let store_read_done = self.new_label("select_store_read_done");
+        let store_write_done = self.new_label("select_store_write_done");
+        let store_except_done = self.new_label("select_store_except_done");
+        let done = self.new_label("select_done");
+
+        let nfds = self.alloc_reg()?;
+        let readfds = self.alloc_reg()?;
+        let writefds = self.alloc_reg()?;
+        let exceptfds = self.alloc_reg()?;
+        let timeout = self.alloc_reg()?;
+        let i = self.alloc_reg()?;
+        let count = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let bit = self.alloc_reg()?;
+        let mask = self.alloc_reg()?;
+        let active = self.alloc_reg()?;
+        let events = self.alloc_reg()?;
+        let revents = self.alloc_reg()?;
+        let read_out = self.alloc_reg()?;
+        let write_out = self.alloc_reg()?;
+        let ticks = self.alloc_reg()?;
+        let sec = self.alloc_reg()?;
+        let usec = self.alloc_reg()?;
+        let scale = self.alloc_reg()?;
+        let usec_ticks = self.alloc_reg()?;
+
+        self.text.push(format!("{scan_label}:"));
+        self.text.push(format!("  LD r{nfds}, [r31, {nfds_slot}]"));
+        self.text
+            .push(format!("  LD r{readfds}, [r31, {readfds_slot}]"));
+        self.text
+            .push(format!("  LD r{writefds}, [r31, {writefds_slot}]"));
+        self.text
+            .push(format!("  LD r{exceptfds}, [r31, {exceptfds_slot}]"));
+        self.text
+            .push(format!("  LD r{timeout}, [r31, {timeout_slot}]"));
+        self.text.push(format!("  LI r{i}, 0"));
+        self.text.push(format!("  LI r{count}, 0"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("  LI r{read_out}, 0"));
+        self.text.push(format!("  LI r{write_out}, 0"));
+        self.text.push(format!("{scan_loop}:"));
+        self.text.push(format!("  CMP r{i}, r{nfds}"));
+        self.text.push(format!("  BGE {scan_done}"));
+        self.text.push(format!("  LSL r{bit}, r{one}, r{i}"));
+        self.text.push(format!("  CMP r{readfds}, r0"));
+        self.text.push(format!("  BEQ {write_check}"));
+        self.text.push(format!("  LD r{mask}, [r{readfds}, 0]"));
+        self.text.push(format!("  AND r{active}, r{mask}, r{bit}"));
+        self.text.push(format!("  CMP r{active}, r0"));
+        self.text.push(format!("  BEQ {write_check}"));
+        self.text.push(format!("  LI r{events}, 1"));
+        self.text
+            .push(format!("  POLL_FD_DYN r{revents}, r{i}, r{events}"));
+        self.text.push(format!("  CMP r{revents}, r0"));
+        self.text.push(format!("  BEQ {write_check}"));
+        self.text
+            .push(format!("  OR r{read_out}, r{read_out}, r{bit}"));
+        self.text.push(format!("  ADD r{count}, r{count}, r{one}"));
+        self.text.push(format!("{write_check}:"));
+        self.text.push(format!("  CMP r{writefds}, r0"));
+        self.text.push(format!("  BEQ {scan_next}"));
+        self.text.push(format!("  LD r{mask}, [r{writefds}, 0]"));
+        self.text.push(format!("  AND r{active}, r{mask}, r{bit}"));
+        self.text.push(format!("  CMP r{active}, r0"));
+        self.text.push(format!("  BEQ {scan_next}"));
+        self.text.push(format!("  LI r{events}, 4"));
+        self.text
+            .push(format!("  POLL_FD_DYN r{revents}, r{i}, r{events}"));
+        self.text.push(format!("  CMP r{revents}, r0"));
+        self.text.push(format!("  BEQ {scan_next}"));
+        self.text
+            .push(format!("  OR r{write_out}, r{write_out}, r{bit}"));
+        self.text.push(format!("  ADD r{count}, r{count}, r{one}"));
+        self.text.push(format!("{scan_next}:"));
+        self.text.push(format!("  ADD r{i}, r{i}, r{one}"));
+        self.text.push(format!("  JMP {scan_loop}"));
+
+        self.text.push(format!("{scan_done}:"));
+        self.text.push(format!("  CMP r{count}, r0"));
+        self.text.push(format!("  BNE {have_ready}"));
+        self.text.push(format!("  CMP r{timeout}, r0"));
+        self.text.push(format!("  BEQ {wait_find_loop}"));
+        self.text.push(format!("  LD r{sec}, [r{timeout}, 0]"));
+        self.text.push(format!("  LD r{usec}, [r{timeout}, 8]"));
+        self.text.push(format!("  LI r{scale}, 100"));
+        self.text.push(format!("  MUL r{ticks}, r{sec}, r{scale}"));
+        self.text.push(format!("  LI r{scale}, 10000"));
+        self.text
+            .push(format!("  DIV r{usec_ticks}, r{usec}, r{scale}"));
+        self.text
+            .push(format!("  ADD r{ticks}, r{ticks}, r{usec_ticks}"));
+        self.text.push(format!("  CMP r{ticks}, r0"));
+        self.text.push(format!("  BEQ {no_wait}"));
+        self.text.push(format!("  SLEEP r{ticks}"));
+        self.text.push(format!("  JMP {no_wait}"));
+
+        self.text.push(format!("{wait_find_loop}:"));
+        self.text.push(format!("  LI r{i}, 0"));
+        self.text.push(format!("{wait_find_loop}_scan:"));
+        self.text.push(format!("  CMP r{i}, r{nfds}"));
+        self.text.push(format!("  BGE {no_wait}"));
+        self.text.push(format!("  LSL r{bit}, r{one}, r{i}"));
+        self.text.push(format!("  CMP r{readfds}, r0"));
+        self.text.push(format!("  BEQ {wait_write_check}"));
+        self.text.push(format!("  LD r{mask}, [r{readfds}, 0]"));
+        self.text.push(format!("  AND r{active}, r{mask}, r{bit}"));
+        self.text.push(format!("  CMP r{active}, r0"));
+        self.text.push(format!("  BNE {wait_read}"));
+        self.text.push(format!("{wait_write_check}:"));
+        self.text.push(format!("  CMP r{writefds}, r0"));
+        self.text.push(format!("  BEQ {wait_next}"));
+        self.text.push(format!("  LD r{mask}, [r{writefds}, 0]"));
+        self.text.push(format!("  AND r{active}, r{mask}, r{bit}"));
+        self.text.push(format!("  CMP r{active}, r0"));
+        self.text.push(format!("  BNE {wait_write}"));
+        self.text.push(format!("{wait_next}:"));
+        self.text.push(format!("  ADD r{i}, r{i}, r{one}"));
+        self.text.push(format!("  JMP {wait_find_loop}_scan"));
+        self.text.push(format!("{wait_read}:"));
+        self.text.push(format!("  LI r{events}, 1"));
+        self.text.push(format!("  AWAIT_DYN r0, r{i}, r{events}"));
+        self.text.push(format!("  JMP {scan_label}"));
+        self.text.push(format!("{wait_write}:"));
+        self.text.push(format!("  LI r{events}, 4"));
+        self.text.push(format!("  AWAIT_DYN r0, r{i}, r{events}"));
+        self.text.push(format!("  JMP {scan_label}"));
+
+        self.text.push(format!("{no_wait}:"));
+        self.text.push(format!("  LI r{count}, 0"));
+        self.text.push(format!("  LI r{read_out}, 0"));
+        self.text.push(format!("  LI r{write_out}, 0"));
+        self.text.push(format!("  JMP {store}"));
+        self.text.push(format!("{have_ready}:"));
+        self.text.push(format!("{store}:"));
+        self.text.push(format!("  CMP r{readfds}, r0"));
+        self.text.push(format!("  BEQ {store_read_done}"));
+        self.text.push(format!("  ST [r{readfds}, 0], r{read_out}"));
+        self.text.push(format!("{store_read_done}:"));
+        self.text.push(format!("  CMP r{writefds}, r0"));
+        self.text.push(format!("  BEQ {store_write_done}"));
+        self.text
+            .push(format!("  ST [r{writefds}, 0], r{write_out}"));
+        self.text.push(format!("{store_write_done}:"));
+        self.text.push(format!("  CMP r{exceptfds}, r0"));
+        self.text.push(format!("  BEQ {store_except_done}"));
+        self.text.push(format!("  ST [r{exceptfds}, 0], r0"));
+        self.text.push(format!("{store_except_done}:"));
         self.text.push(format!("  MOV r{dst_reg}, r{count}"));
         self.text.push(format!("{done}:"));
         self.temp_reg = 0;
@@ -10945,6 +11204,83 @@ int main() {
     }
 
     #[test]
+    fn c_select_fdset_surface_lowers_to_readiness_probe_and_runs() {
+        let source = r#"
+        int main() {
+            int fds[2];
+            fd_set rfds;
+            fd_set wfds;
+            int tv;
+            int stack;
+            pipe(fds);
+            tv = alloc(16);
+            stack = tv;
+            *stack = 0;
+            *(stack + 1) = 0;
+            FD_ZERO(&rfds);
+            FD_SET(fds[0], &rfds);
+            if (FD_ISSET(fds[0], &rfds) != 1) return 1;
+            if (select(fds[0] + 1, &rfds, 0, 0, tv) != 0) return 2;
+            if (FD_ISSET(fds[0], &rfds) != 0) return 3;
+            FD_ZERO(&wfds);
+            FD_SET(fds[1], &wfds);
+            if (select(fds[1] + 1, 0, &wfds, 0, tv) != 1) return 4;
+            if (FD_ISSET(fds[1], &wfds) != 1) return 5;
+            FD_CLR(fds[1], &wfds);
+            if (FD_ISSET(fds[1], &wfds) != 0) return 6;
+            write(fds[1], "x", 1);
+            FD_ZERO(&rfds);
+            FD_SET(fds[0], &rfds);
+            if (select(fds[0] + 1, &rfds, 0, 0, tv) != 1) return 7;
+            if (FD_ISSET(fds[0], &rfds) != 1) return 8;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("POLL_FD_DYN"), "{asm}");
+        assert!(asm.contains("LSL"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_select_blocks_with_dynamic_await_and_runs() {
+        let source = r#"
+        int rfd;
+        int wfd;
+
+        int writer() {
+            yield_cpu();
+            write(wfd, "z", 1);
+            pthread_exit(0);
+        }
+
+        int main() {
+            int fds[2];
+            fd_set rfds;
+            int thread;
+            pipe(fds);
+            rfd = fds[0];
+            wfd = fds[1];
+            pthread_create(&thread, 0, writer, 0);
+            FD_ZERO(&rfds);
+            FD_SET(rfd, &rfds);
+            if (select(rfd + 1, &rfds, 0, 0, 0) != 1) return 1;
+            if (FD_ISSET(rfd, &rfds) != 1) return 2;
+            pthread_join(thread, 0);
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("POLL_FD_DYN"), "{asm}");
+        assert!(asm.contains("AWAIT_DYN"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn efgetrune_reads_stdin_from_static_fd0() {
         let source = r#"
         int main() {
@@ -10990,6 +11326,7 @@ int main() {
             int slot;
             int ptr;
             int out;
+            fd_set set;
             struct pollfd p[1];
             struct timespec ts;
             struct timeval tv;
@@ -11027,6 +11364,11 @@ int main() {
             p[0].fd = slot[0];
             p[0].events = POLLIN;
             poll(p, 1, 0);
+            FD_ZERO(&set);
+            FD_SET(slot[0], &set);
+            FD_ISSET(slot[0], &set);
+            FD_CLR(slot[0], &set);
+            select(slot[0] + 1, &set, 0, 0, 0);
             clock_gettime(CLOCK_REALTIME, &ts);
             gettimeofday(&tv, 0);
             time(&out);
