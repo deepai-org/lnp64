@@ -3427,7 +3427,7 @@ impl CodeGen {
             self.emit_zero_local_aggregate(&decl.name, size)?;
         }
         if let Some(len) = decl.array_len {
-            let width = self.local_decl_array_width(&decl.name);
+            let width = aggregate_size.unwrap_or_else(|| self.local_decl_array_width(&decl.name));
             let bytes = if len == 0 {
                 match &decl.init {
                     Some(Expr::Str(value)) => value.len() as i64 + 1,
@@ -4339,6 +4339,7 @@ impl CodeGen {
             "st_ctim" => Ok(88),
             "tv_sec" => Ok(0),
             "tv_nsec" => Ok(8),
+            "tv_usec" => Ok(8),
             "tm_year" => Ok(0),
             "tm_isdst" => Ok(8),
             "tm_hour" => Ok(16),
@@ -4440,6 +4441,9 @@ impl CodeGen {
             "toksuper" => Ok(16),
             "parent" => Ok(32),
             "size" => Ok(24),
+            "fd" => Ok(0),
+            "events" => Ok(8),
+            "revents" => Ok(16),
             _ => self
                 .inferred_field_offsets
                 .get(field)
@@ -5328,7 +5332,48 @@ impl CodeGen {
                 self.text.push(format!("  LI r{dst}, 1"));
                 Ok(dst)
             }
-            "time" | "strptime" | "mktime" | "clock_gettime" => {
+            "clock_gettime" => {
+                if args.len() != 2 {
+                    return Err("clock_gettime(clockid, ts) expects 2 arguments".to_string());
+                }
+                let _clockid = self.emit_expr(&args[0])?;
+                let ts = self.emit_expr(&args[1])?;
+                self.emit_clock_gettime(ts)
+            }
+            "gettimeofday" => {
+                if args.len() != 2 {
+                    return Err("gettimeofday(tv, tz) expects 2 arguments".to_string());
+                }
+                let tv = self.emit_expr(&args[0])?;
+                let tv_slot = self.spill_reg(tv);
+                self.temp_reg = 0;
+                let tz = self.emit_expr(&args[1])?;
+                let tv = self.reload_reg(tv_slot)?;
+                self.emit_gettimeofday(tv, tz)
+            }
+            "time" => {
+                if args.len() > 1 {
+                    return Err("time(tloc) expects 0 or 1 arguments".to_string());
+                }
+                let tloc = if let Some(arg) = args.first() {
+                    Some(self.emit_expr(arg)?)
+                } else {
+                    None
+                };
+                self.emit_time(tloc)
+            }
+            "nanosleep" => {
+                if args.len() != 2 {
+                    return Err("nanosleep(req, rem) expects 2 arguments".to_string());
+                }
+                let req = self.emit_expr(&args[0])?;
+                let req_slot = self.spill_reg(req);
+                self.temp_reg = 0;
+                let rem = self.emit_expr(&args[1])?;
+                let req = self.reload_reg(req_slot)?;
+                self.emit_nanosleep(req, rem)
+            }
+            "strptime" | "mktime" => {
                 let dst = self.alloc_reg()?;
                 self.text.push(format!("  LI r{dst}, 0"));
                 Ok(dst)
@@ -5977,7 +6022,19 @@ impl CodeGen {
                 self.text.push(format!("  FREE r{ptr}"));
                 Ok(0)
             }
-            "erealloc" | "emalloc" | "enmalloc" | "malloc" => {
+            "erealloc" | "emalloc" | "enmalloc" | "malloc" | "realloc" => {
+                if name == "realloc" {
+                    if args.len() != 2 {
+                        return Err("realloc(ptr, size) expects 2 arguments".to_string());
+                    }
+                    let old = self.emit_expr(&args[0])?;
+                    let old_slot = self.spill_reg(old);
+                    self.temp_reg = 0;
+                    let size = self.emit_expr(&args[1])?;
+                    let size_slot = self.spill_reg(size);
+                    self.temp_reg = 0;
+                    return self.emit_realloc_from_slots(old_slot, size_slot);
+                }
                 let size_arg = if name == "erealloc" {
                     if args.len() != 2 {
                         return Err("erealloc(ptr, size) expects 2 arguments".to_string());
@@ -5997,6 +6054,57 @@ impl CodeGen {
                 let size = self.emit_expr(size_arg)?;
                 let dst = self.alloc_reg()?;
                 self.text.push(format!("  ALLOC r{dst}, r{size}"));
+                Ok(dst)
+            }
+            "calloc" | "ecalloc" => {
+                if args.len() != 2 {
+                    return Err(format!("{name}(count, size) expects 2 arguments"));
+                }
+                let count = self.emit_expr(&args[0])?;
+                let count_slot = self.spill_reg(count);
+                self.temp_reg = 0;
+                let size = self.emit_expr(&args[1])?;
+                let count = self.reload_reg(count_slot)?;
+                let bytes = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  MUL r{bytes}, r{count}, r{size}"));
+                self.text.push(format!("  ALLOC r{dst}, r{bytes}"));
+                self.emit_memset(dst, 0, bytes)?;
+                Ok(dst)
+            }
+            "aligned_alloc" => {
+                if args.len() != 2 {
+                    return Err("aligned_alloc(align, size) expects 2 arguments".to_string());
+                }
+                let align = self.emit_expr(&args[0])?;
+                let align_slot = self.spill_reg(align);
+                self.temp_reg = 0;
+                let size = self.emit_expr(&args[1])?;
+                let align = self.reload_reg(align_slot)?;
+                let dst = self.alloc_reg()?;
+                self.text
+                    .push(format!("  ALLOC_EX r{dst}, r{size}, r{align}"));
+                Ok(dst)
+            }
+            "posix_memalign" => {
+                if args.len() != 3 {
+                    return Err("posix_memalign(out, align, size) expects 3 arguments".to_string());
+                }
+                let out = self.emit_expr(&args[0])?;
+                let out_slot = self.spill_reg(out);
+                self.temp_reg = 0;
+                let align = self.emit_expr(&args[1])?;
+                let align_slot = self.spill_reg(align);
+                self.temp_reg = 0;
+                let size = self.emit_expr(&args[2])?;
+                let out = self.reload_reg(out_slot)?;
+                let align = self.reload_reg(align_slot)?;
+                let ptr = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                self.text
+                    .push(format!("  ALLOC_EX r{ptr}, r{size}, r{align}"));
+                self.text.push(format!("  ST [r{out}, 0], r{ptr}"));
+                self.text.push(format!("  LI r{dst}, 0"));
                 Ok(dst)
             }
             "ereallocarray" => {
@@ -6390,18 +6498,6 @@ impl CodeGen {
                 self.text.push(format!("  WRITE_FD fd1, r{buf}, r{len}"));
                 Ok(nmemb)
             }
-            "ecalloc" => {
-                if args.len() != 2 {
-                    return Err("ecalloc(count, size) expects 2 arguments".to_string());
-                }
-                let count = self.emit_expr(&args[0])?;
-                let size = self.emit_expr(&args[1])?;
-                let bytes = self.alloc_reg()?;
-                let dst = self.alloc_reg()?;
-                self.text.push(format!("  MUL r{bytes}, r{count}, r{size}"));
-                self.text.push(format!("  ALLOC r{dst}, r{bytes}"));
-                Ok(dst)
-            }
             "signal" => {
                 if args.len() != 2 {
                     return Err("signal(signum, handler) expects 2 arguments".to_string());
@@ -6634,6 +6730,17 @@ impl CodeGen {
                     let fd = self.emit_expr(&args[0])?;
                     self.emit_fd_close_dispatch(fd, dst)?;
                 }
+                Ok(dst)
+            }
+            "poll" => {
+                if args.len() != 3 {
+                    return Err("poll(fds, nfds, timeout) expects 3 arguments".to_string());
+                }
+                let fds = self.emit_expr(&args[0])?;
+                let nfds = self.emit_expr(&args[1])?;
+                let timeout = self.emit_expr(&args[2])?;
+                let dst = self.alloc_reg()?;
+                self.emit_poll(fds, nfds, timeout, dst)?;
                 Ok(dst)
             }
             "pipe" => {
@@ -6917,6 +7024,214 @@ impl CodeGen {
                 let count = self.emit_expr(&args[1])?;
                 self.text.push(format!("  FUTEX_WAKE r{ptr}, r{count}"));
                 Ok(0)
+            }
+            "pthread_create" => {
+                if args.len() != 4 {
+                    return Err(
+                        "pthread_create(thread, attr, start, arg) expects 4 arguments".to_string(),
+                    );
+                }
+                let Expr::Var(label) = &args[2] else {
+                    return Err("pthread_create start argument must be a function name".to_string());
+                };
+                if !self.function_names.contains(label) {
+                    return Err(format!("unknown pthread_create target {label:?}"));
+                }
+                let thread_ptr = self.emit_expr(&args[0])?;
+                let target = self.alloc_reg()?;
+                let tid = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{target}, {label}"));
+                self.text.push(format!("  SPAWN r{tid}, r{target}"));
+                self.text.push(format!("  CMP r{thread_ptr}, r0"));
+                let no_store = self.new_label("pthread_create_no_store");
+                self.text.push(format!("  BEQ {no_store}"));
+                self.text.push(format!("  ST [r{thread_ptr}, 0], r{tid}"));
+                self.text.push(format!("{no_store}:"));
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "pthread_self" => {
+                self.no_args(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  GET_PCR r{dst}, TID"));
+                Ok(dst)
+            }
+            "pthread_join" => {
+                if args.len() != 2 {
+                    return Err("pthread_join(thread, retval) expects 2 arguments".to_string());
+                }
+                let tid = self.emit_expr(&args[0])?;
+                let tid_slot = self.spill_reg(tid);
+                self.temp_reg = 0;
+                let retval = self.emit_expr(&args[1])?;
+                let tid = self.reload_reg(tid_slot)?;
+                let dst = self.alloc_reg()?;
+                self.text
+                    .push(format!("  THREAD_JOIN r{dst}, r{tid}, r{retval}"));
+                Ok(dst)
+            }
+            "pthread_exit" => {
+                let code = if args.is_empty() {
+                    let zero = self.alloc_reg()?;
+                    self.text.push(format!("  LI r{zero}, 0"));
+                    zero
+                } else {
+                    self.emit_expr(&args[0])?
+                };
+                self.text.push(format!("  EXIT r{code}"));
+                Ok(0)
+            }
+            "pthread_mutex_init" | "pthread_cond_init" => {
+                if args.len() != 2 {
+                    return Err(format!("{name}(obj, attr) expects 2 arguments"));
+                }
+                let ptr = self.emit_expr(&args[0])?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  ST [r{ptr}, 0], r0"));
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "pthread_mutex_destroy" | "pthread_cond_destroy" | "pthread_detach" => {
+                if args.len() != 1 {
+                    return Err(format!("{name}(obj) expects 1 argument"));
+                }
+                self.emit_expr(&args[0])?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "pthread_rwlock_init" => {
+                if args.len() != 2 {
+                    return Err("pthread_rwlock_init(lock, attr) expects 2 arguments".to_string());
+                }
+                let ptr = self.emit_expr(&args[0])?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  ST [r{ptr}, 0], r0"));
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "pthread_rwlock_destroy" => {
+                let ptr = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  ST [r{ptr}, 0], r0"));
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "pthread_rwlock_rdlock" => {
+                let ptr = self.one_arg(name, args)?;
+                self.emit_pthread_rwlock_rdlock(ptr)
+            }
+            "pthread_rwlock_tryrdlock" => {
+                let ptr = self.one_arg(name, args)?;
+                self.emit_pthread_rwlock_tryrdlock(ptr)
+            }
+            "pthread_rwlock_wrlock" => {
+                let ptr = self.one_arg(name, args)?;
+                self.emit_pthread_rwlock_wrlock(ptr)
+            }
+            "pthread_rwlock_trywrlock" => {
+                let ptr = self.one_arg(name, args)?;
+                self.emit_pthread_rwlock_trywrlock(ptr)
+            }
+            "pthread_rwlock_unlock" => {
+                let ptr = self.one_arg(name, args)?;
+                self.emit_pthread_rwlock_unlock(ptr)
+            }
+            "pthread_mutex_lock" => {
+                let ptr = self.one_arg(name, args)?;
+                self.emit_pthread_mutex_lock(ptr)
+            }
+            "pthread_mutex_trylock" => {
+                let ptr = self.one_arg(name, args)?;
+                self.emit_pthread_mutex_trylock(ptr)
+            }
+            "pthread_mutex_unlock" => {
+                let ptr = self.one_arg(name, args)?;
+                self.emit_pthread_mutex_unlock(ptr)
+            }
+            "pthread_cond_wait" => {
+                if args.len() != 2 {
+                    return Err("pthread_cond_wait(cond, mutex) expects 2 arguments".to_string());
+                }
+                let cond = self.emit_expr(&args[0])?;
+                let cond_slot = self.spill_reg(cond);
+                self.temp_reg = 0;
+                let mutex = self.emit_expr(&args[1])?;
+                let cond = self.reload_reg(cond_slot)?;
+                self.emit_pthread_cond_wait(cond, mutex)
+            }
+            "pthread_cond_signal" => {
+                let cond = self.one_arg(name, args)?;
+                self.emit_pthread_cond_wake(cond, 1)
+            }
+            "pthread_cond_broadcast" => {
+                let cond = self.one_arg(name, args)?;
+                self.emit_pthread_cond_wake(cond, 1024)
+            }
+            "pthread_once" => {
+                if args.len() != 2 {
+                    return Err("pthread_once(once, init) expects 2 arguments".to_string());
+                }
+                let Expr::Var(label) = &args[1] else {
+                    return Err("pthread_once init argument must be a function name".to_string());
+                };
+                if !self.function_names.contains(label) {
+                    return Err(format!("unknown pthread_once target {label:?}"));
+                }
+                let once = self.emit_expr(&args[0])?;
+                self.emit_pthread_once(once, label)
+            }
+            "sem_init" => {
+                if args.len() != 3 {
+                    return Err("sem_init(sem, pshared, value) expects 3 arguments".to_string());
+                }
+                let sem = self.emit_expr(&args[0])?;
+                let sem_slot = self.spill_reg(sem);
+                self.temp_reg = 0;
+                let value = self.emit_expr(&args[2])?;
+                let sem = self.reload_reg(sem_slot)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  ST [r{sem}, 0], r{value}"));
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "sem_destroy" => {
+                if args.len() != 1 {
+                    return Err("sem_destroy(sem) expects 1 argument".to_string());
+                }
+                self.emit_expr(&args[0])?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "sem_wait" => {
+                let sem = self.one_arg(name, args)?;
+                self.emit_sem_wait(sem)
+            }
+            "sem_trywait" => {
+                let sem = self.one_arg(name, args)?;
+                self.emit_sem_trywait(sem)
+            }
+            "sem_post" => {
+                let sem = self.one_arg(name, args)?;
+                self.emit_sem_post(sem)
+            }
+            "sem_getvalue" => {
+                if args.len() != 2 {
+                    return Err("sem_getvalue(sem, value) expects 2 arguments".to_string());
+                }
+                let sem = self.emit_expr(&args[0])?;
+                let sem_slot = self.spill_reg(sem);
+                self.temp_reg = 0;
+                let out = self.emit_expr(&args[1])?;
+                let sem = self.reload_reg(sem_slot)?;
+                let value = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LD r{value}, [r{sem}, 0]"));
+                self.text.push(format!("  ST [r{out}, 0], r{value}"));
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
             }
             "mmap" => {
                 let (hint, len, prot, fd_num, offset) = match args.len() {
@@ -7700,6 +8015,588 @@ impl CodeGen {
         Ok(())
     }
 
+    fn emit_pthread_mutex_lock(&mut self, ptr: usize) -> Result<usize, String> {
+        let expected = self.alloc_reg()?;
+        let locked = self.alloc_reg()?;
+        let current = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let loop_label = self.new_label("pthread_mutex_lock_loop");
+        let acquired = self.new_label("pthread_mutex_lock_acquired");
+        self.text.push(format!("  LI r{expected}, 0"));
+        self.text.push(format!("  LI r{locked}, 1"));
+        self.text.push(format!("{loop_label}:"));
+        self.text.push(format!(
+            "  LOCK.CMPXCHG r{current}, r{ptr}, r{expected}, r{locked}"
+        ));
+        self.text.push(format!("  CMP r{current}, r{expected}"));
+        self.text.push(format!("  BEQ {acquired}"));
+        self.text.push(format!("  FUTEX_WAIT r{ptr}, r{locked}"));
+        self.text.push(format!("  JMP {loop_label}"));
+        self.text.push(format!("{acquired}:"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        Ok(dst)
+    }
+
+    fn emit_pthread_mutex_trylock(&mut self, ptr: usize) -> Result<usize, String> {
+        let expected = self.alloc_reg()?;
+        let locked = self.alloc_reg()?;
+        let current = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let busy = self.new_label("pthread_mutex_trylock_busy");
+        let done = self.new_label("pthread_mutex_trylock_done");
+        self.text.push(format!("  LI r{expected}, 0"));
+        self.text.push(format!("  LI r{locked}, 1"));
+        self.text.push(format!(
+            "  LOCK.CMPXCHG r{current}, r{ptr}, r{expected}, r{locked}"
+        ));
+        self.text.push(format!("  CMP r{current}, r{expected}"));
+        self.text.push(format!("  BNE {busy}"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{busy}:"));
+        self.text.push(format!("  LI r{dst}, 16"));
+        self.text.push(format!("{done}:"));
+        Ok(dst)
+    }
+
+    fn emit_pthread_mutex_unlock(&mut self, ptr: usize) -> Result<usize, String> {
+        let one = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        self.text.push(format!("  ST [r{ptr}, 0], r0"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("  FUTEX_WAKE r{ptr}, r{one}"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        Ok(dst)
+    }
+
+    fn emit_pthread_rwlock_rdlock(&mut self, ptr: usize) -> Result<usize, String> {
+        let value = self.alloc_reg()?;
+        let zero = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let next = self.alloc_reg()?;
+        let current = self.alloc_reg()?;
+        let writer = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let loop_label = self.new_label("pthread_rwlock_rdlock_loop");
+        let try_read = self.new_label("pthread_rwlock_rdlock_try");
+        self.text.push(format!("  LI r{zero}, 0"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("  LI r{writer}, -1"));
+        self.text.push(format!("{loop_label}:"));
+        self.text.push(format!("  LD r{value}, [r{ptr}, 0]"));
+        self.text.push(format!("  CMP r{value}, r{zero}"));
+        self.text.push(format!("  BGE {try_read}"));
+        self.text.push(format!("  FUTEX_WAIT r{ptr}, r{writer}"));
+        self.text.push(format!("  JMP {loop_label}"));
+        self.text.push(format!("{try_read}:"));
+        self.text.push(format!("  ADD r{next}, r{value}, r{one}"));
+        self.text.push(format!(
+            "  LOCK.CMPXCHG r{current}, r{ptr}, r{value}, r{next}"
+        ));
+        self.text.push(format!("  CMP r{current}, r{value}"));
+        self.text.push(format!("  BNE {loop_label}"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        Ok(dst)
+    }
+
+    fn emit_pthread_rwlock_tryrdlock(&mut self, ptr: usize) -> Result<usize, String> {
+        let value = self.alloc_reg()?;
+        let zero = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let next = self.alloc_reg()?;
+        let current = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let busy = self.new_label("pthread_rwlock_tryrdlock_busy");
+        let done = self.new_label("pthread_rwlock_tryrdlock_done");
+        self.text.push(format!("  LI r{zero}, 0"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("  LD r{value}, [r{ptr}, 0]"));
+        self.text.push(format!("  CMP r{value}, r{zero}"));
+        self.text.push(format!("  BLT {busy}"));
+        self.text.push(format!("  ADD r{next}, r{value}, r{one}"));
+        self.text.push(format!(
+            "  LOCK.CMPXCHG r{current}, r{ptr}, r{value}, r{next}"
+        ));
+        self.text.push(format!("  CMP r{current}, r{value}"));
+        self.text.push(format!("  BNE {busy}"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{busy}:"));
+        self.text.push(format!("  LI r{dst}, 16"));
+        self.text.push(format!("{done}:"));
+        Ok(dst)
+    }
+
+    fn emit_pthread_rwlock_wrlock(&mut self, ptr: usize) -> Result<usize, String> {
+        let expected = self.alloc_reg()?;
+        let writer = self.alloc_reg()?;
+        let current = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let loop_label = self.new_label("pthread_rwlock_wrlock_loop");
+        let acquired = self.new_label("pthread_rwlock_wrlock_acquired");
+        self.text.push(format!("  LI r{expected}, 0"));
+        self.text.push(format!("  LI r{writer}, -1"));
+        self.text.push(format!("{loop_label}:"));
+        self.text.push(format!(
+            "  LOCK.CMPXCHG r{current}, r{ptr}, r{expected}, r{writer}"
+        ));
+        self.text.push(format!("  CMP r{current}, r{expected}"));
+        self.text.push(format!("  BEQ {acquired}"));
+        self.text.push(format!("  FUTEX_WAIT r{ptr}, r{current}"));
+        self.text.push(format!("  JMP {loop_label}"));
+        self.text.push(format!("{acquired}:"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        Ok(dst)
+    }
+
+    fn emit_pthread_rwlock_trywrlock(&mut self, ptr: usize) -> Result<usize, String> {
+        let expected = self.alloc_reg()?;
+        let writer = self.alloc_reg()?;
+        let current = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let busy = self.new_label("pthread_rwlock_trywrlock_busy");
+        let done = self.new_label("pthread_rwlock_trywrlock_done");
+        self.text.push(format!("  LI r{expected}, 0"));
+        self.text.push(format!("  LI r{writer}, -1"));
+        self.text.push(format!(
+            "  LOCK.CMPXCHG r{current}, r{ptr}, r{expected}, r{writer}"
+        ));
+        self.text.push(format!("  CMP r{current}, r{expected}"));
+        self.text.push(format!("  BNE {busy}"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{busy}:"));
+        self.text.push(format!("  LI r{dst}, 16"));
+        self.text.push(format!("{done}:"));
+        Ok(dst)
+    }
+
+    fn emit_pthread_rwlock_unlock(&mut self, ptr: usize) -> Result<usize, String> {
+        let value = self.alloc_reg()?;
+        let zero = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let next = self.alloc_reg()?;
+        let current = self.alloc_reg()?;
+        let wake_count = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let reader_unlock = self.new_label("pthread_rwlock_unlock_reader");
+        let loop_label = self.new_label("pthread_rwlock_unlock_loop");
+        let done_update = self.new_label("pthread_rwlock_unlock_done_update");
+        self.text.push(format!("  LI r{zero}, 0"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("{loop_label}:"));
+        self.text.push(format!("  LD r{value}, [r{ptr}, 0]"));
+        self.text.push(format!("  CMP r{value}, r{zero}"));
+        self.text.push(format!("  BGT {reader_unlock}"));
+        self.text.push(format!("  ST [r{ptr}, 0], r0"));
+        self.text.push(format!("  JMP {done_update}"));
+        self.text.push(format!("{reader_unlock}:"));
+        self.text.push(format!("  SUB r{next}, r{value}, r{one}"));
+        self.text.push(format!(
+            "  LOCK.CMPXCHG r{current}, r{ptr}, r{value}, r{next}"
+        ));
+        self.text.push(format!("  CMP r{current}, r{value}"));
+        self.text.push(format!("  BNE {loop_label}"));
+        self.text.push(format!("{done_update}:"));
+        self.text.push(format!("  LI r{wake_count}, 1024"));
+        self.text
+            .push(format!("  FUTEX_WAKE r{ptr}, r{wake_count}"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        Ok(dst)
+    }
+
+    fn emit_pthread_cond_wait(&mut self, cond: usize, mutex: usize) -> Result<usize, String> {
+        let seq = self.alloc_reg()?;
+        self.text.push(format!("  LD r{seq}, [r{cond}, 0]"));
+        self.emit_pthread_mutex_unlock(mutex)?;
+        self.text.push(format!("  FUTEX_WAIT r{cond}, r{seq}"));
+        self.emit_pthread_mutex_lock(mutex)?;
+        let dst = self.alloc_reg()?;
+        self.text.push(format!("  LI r{dst}, 0"));
+        Ok(dst)
+    }
+
+    fn emit_pthread_cond_wake(&mut self, cond: usize, count: i64) -> Result<usize, String> {
+        let seq = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let wake_count = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        self.text.push(format!("  LD r{seq}, [r{cond}, 0]"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("  ADD r{seq}, r{seq}, r{one}"));
+        self.text.push(format!("  ST [r{cond}, 0], r{seq}"));
+        self.text.push(format!("  LI r{wake_count}, {count}"));
+        self.text
+            .push(format!("  FUTEX_WAKE r{cond}, r{wake_count}"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        Ok(dst)
+    }
+
+    fn emit_pthread_once(&mut self, once: usize, label: &str) -> Result<usize, String> {
+        let once_slot = self.spill_reg(once);
+        let state = self.alloc_reg()?;
+        let expected = self.alloc_reg()?;
+        let running = self.alloc_reg()?;
+        let done_value = self.alloc_reg()?;
+        let current = self.alloc_reg()?;
+        let wake_count = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let loop_label = self.new_label("pthread_once_loop");
+        let run_label = self.new_label("pthread_once_run");
+        let wait_label = self.new_label("pthread_once_wait");
+        let done = self.new_label("pthread_once_done");
+        self.text.push(format!("  LI r{expected}, 0"));
+        self.text.push(format!("  LI r{running}, 1"));
+        self.text.push(format!("  LI r{done_value}, 2"));
+        self.text.push(format!("{loop_label}:"));
+        self.text.push(format!("  LD r{state}, [r{once}, 0]"));
+        self.text.push(format!("  CMP r{state}, r{done_value}"));
+        self.text.push(format!("  BEQ {done}"));
+        self.text.push(format!("  CMP r{state}, r{expected}"));
+        self.text.push(format!("  BNE {wait_label}"));
+        self.text.push(format!(
+            "  LOCK.CMPXCHG r{current}, r{once}, r{expected}, r{running}"
+        ));
+        self.text.push(format!("  CMP r{current}, r{expected}"));
+        self.text.push(format!("  BEQ {run_label}"));
+        self.text.push(format!("  JMP {loop_label}"));
+        self.text.push(format!("{wait_label}:"));
+        self.text.push(format!("  FUTEX_WAIT r{once}, r{running}"));
+        self.text.push(format!("  JMP {loop_label}"));
+        self.text.push(format!("{run_label}:"));
+        self.text.push(format!("  CALL {label}"));
+        self.text.push(format!("  LD r{once}, [r31, {once_slot}]"));
+        self.text.push(format!("  LI r{done_value}, 2"));
+        self.text.push(format!("  ST [r{once}, 0], r{done_value}"));
+        self.text.push(format!("  LI r{wake_count}, 1024"));
+        self.text
+            .push(format!("  FUTEX_WAKE r{once}, r{wake_count}"));
+        self.text.push(format!("{done}:"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        Ok(dst)
+    }
+
+    fn emit_sem_wait(&mut self, sem: usize) -> Result<usize, String> {
+        let value = self.alloc_reg()?;
+        let zero = self.alloc_reg()?;
+        let next = self.alloc_reg()?;
+        let current = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let loop_label = self.new_label("sem_wait_loop");
+        let try_take = self.new_label("sem_wait_try_take");
+        let done = self.new_label("sem_wait_done");
+        self.text.push(format!("  LI r{zero}, 0"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("{loop_label}:"));
+        self.text.push(format!("  LD r{value}, [r{sem}, 0]"));
+        self.text.push(format!("  CMP r{value}, r{zero}"));
+        self.text.push(format!("  BGT {try_take}"));
+        self.text.push(format!("  FUTEX_WAIT r{sem}, r{zero}"));
+        self.text.push(format!("  JMP {loop_label}"));
+        self.text.push(format!("{try_take}:"));
+        self.text.push(format!("  SUB r{next}, r{value}, r{one}"));
+        self.text.push(format!(
+            "  LOCK.CMPXCHG r{current}, r{sem}, r{value}, r{next}"
+        ));
+        self.text.push(format!("  CMP r{current}, r{value}"));
+        self.text.push(format!("  BNE {loop_label}"));
+        self.text.push(format!("{done}:"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        Ok(dst)
+    }
+
+    fn emit_sem_trywait(&mut self, sem: usize) -> Result<usize, String> {
+        let value = self.alloc_reg()?;
+        let zero = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let next = self.alloc_reg()?;
+        let current = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let unavailable = self.new_label("sem_trywait_unavailable");
+        let done = self.new_label("sem_trywait_done");
+        self.text.push(format!("  LI r{zero}, 0"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("  LD r{value}, [r{sem}, 0]"));
+        self.text.push(format!("  CMP r{value}, r{zero}"));
+        self.text.push(format!("  BLE {unavailable}"));
+        self.text.push(format!("  SUB r{next}, r{value}, r{one}"));
+        self.text.push(format!(
+            "  LOCK.CMPXCHG r{current}, r{sem}, r{value}, r{next}"
+        ));
+        self.text.push(format!("  CMP r{current}, r{value}"));
+        self.text.push(format!("  BNE {unavailable}"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{unavailable}:"));
+        self.text.push(format!("  LI r{dst}, 11"));
+        self.text.push(format!("{done}:"));
+        Ok(dst)
+    }
+
+    fn emit_sem_post(&mut self, sem: usize) -> Result<usize, String> {
+        let value = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let next = self.alloc_reg()?;
+        let current = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let loop_label = self.new_label("sem_post_loop");
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("{loop_label}:"));
+        self.text.push(format!("  LD r{value}, [r{sem}, 0]"));
+        self.text.push(format!("  ADD r{next}, r{value}, r{one}"));
+        self.text.push(format!(
+            "  LOCK.CMPXCHG r{current}, r{sem}, r{value}, r{next}"
+        ));
+        self.text.push(format!("  CMP r{current}, r{value}"));
+        self.text.push(format!("  BNE {loop_label}"));
+        self.text.push(format!("  FUTEX_WAKE r{sem}, r{one}"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        Ok(dst)
+    }
+
+    fn emit_realloc_from_slots(&mut self, old_slot: i64, size_slot: i64) -> Result<usize, String> {
+        let old = self.reload_reg(old_slot)?;
+        let size = self.reload_reg(size_slot)?;
+        let dst = self.alloc_reg()?;
+        let old_size = self.alloc_reg()?;
+        let copy_len = self.alloc_reg()?;
+        let fail = self.alloc_reg()?;
+        let zero_size = self.new_label("realloc_zero_size");
+        let null_old = self.new_label("realloc_null_old");
+        let alloc_failed = self.new_label("realloc_alloc_failed");
+        let use_old_size = self.new_label("realloc_use_old_size");
+        let do_copy = self.new_label("realloc_do_copy");
+        let done = self.new_label("realloc_done");
+
+        self.text.push(format!("  CMP r{size}, r0"));
+        self.text.push(format!("  BEQ {zero_size}"));
+        self.text.push(format!("  ALLOC r{dst}, r{size}"));
+        self.text.push(format!("  LI r{fail}, -1"));
+        self.text.push(format!("  CMP r{dst}, r{fail}"));
+        self.text.push(format!("  BEQ {alloc_failed}"));
+        self.text.push(format!("  CMP r{old}, r0"));
+        self.text.push(format!("  BEQ {null_old}"));
+        self.text.push(format!("  ALLOC_SIZE r{old_size}, r{old}"));
+        self.text.push(format!("  MOV r{copy_len}, r{size}"));
+        self.text.push(format!("  CMP r{old_size}, r{size}"));
+        self.text.push(format!("  BLT {use_old_size}"));
+        self.text.push(format!("  JMP {do_copy}"));
+        self.text.push(format!("{use_old_size}:"));
+        self.text.push(format!("  MOV r{copy_len}, r{old_size}"));
+        self.text.push(format!("{do_copy}:"));
+        self.text.push(format!("  CMP r{copy_len}, r0"));
+        self.text.push(format!("  BEQ {null_old}"));
+        self.emit_memmove(dst, old, copy_len)?;
+        self.text.push(format!("  FREE r{old}"));
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{null_old}:"));
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{zero_size}:"));
+        self.text.push(format!("  CMP r{old}, r0"));
+        self.text.push(format!("  BEQ {zero_size}_no_free"));
+        self.text.push(format!("  FREE r{old}"));
+        self.text.push(format!("{zero_size}_no_free:"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{alloc_failed}:"));
+        self.text.push(format!("  LI r{dst}, -1"));
+        self.text.push(format!("{done}:"));
+        Ok(dst)
+    }
+
+    fn emit_poll(
+        &mut self,
+        fds_reg: usize,
+        nfds_reg: usize,
+        timeout_reg: usize,
+        dst_reg: usize,
+    ) -> Result<(), String> {
+        let fds_slot = self.spill_reg(fds_reg);
+        let nfds_slot = self.spill_reg(nfds_reg);
+        let timeout_slot = self.spill_reg(timeout_reg);
+        self.temp_reg = 0;
+
+        let scan_label = self.new_label("poll_scan");
+        let scan_loop = self.new_label("poll_scan_loop");
+        let scan_next = self.new_label("poll_scan_next");
+        let scan_done = self.new_label("poll_scan_done");
+        let have_ready = self.new_label("poll_have_ready");
+        let wait_find_loop = self.new_label("poll_wait_find_loop");
+        let wait_found = self.new_label("poll_wait_found");
+        let no_wait = self.new_label("poll_no_wait");
+        let done = self.new_label("poll_done");
+
+        let fds = self.alloc_reg()?;
+        let nfds = self.alloc_reg()?;
+        let timeout = self.alloc_reg()?;
+        let i = self.alloc_reg()?;
+        let count = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let stride = self.alloc_reg()?;
+        let offset = self.alloc_reg()?;
+        let entry = self.alloc_reg()?;
+        let fd = self.alloc_reg()?;
+        let events = self.alloc_reg()?;
+        let revents = self.alloc_reg()?;
+
+        self.text.push(format!("{scan_label}:"));
+        self.text.push(format!("  LD r{fds}, [r31, {fds_slot}]"));
+        self.text.push(format!("  LD r{nfds}, [r31, {nfds_slot}]"));
+        self.text.push(format!("  LI r{i}, 0"));
+        self.text.push(format!("  LI r{count}, 0"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("  LI r{stride}, 24"));
+        self.text.push(format!("{scan_loop}:"));
+        self.text.push(format!("  CMP r{i}, r{nfds}"));
+        self.text.push(format!("  BGE {scan_done}"));
+        self.text.push(format!("  MUL r{offset}, r{i}, r{stride}"));
+        self.text.push(format!("  ADD r{entry}, r{fds}, r{offset}"));
+        self.text.push(format!("  LD r{fd}, [r{entry}, 0]"));
+        self.text.push(format!("  LD r{events}, [r{entry}, 8]"));
+        self.text
+            .push(format!("  POLL_FD_DYN r{revents}, r{fd}, r{events}"));
+        self.text.push(format!("  ST [r{entry}, 16], r{revents}"));
+        self.text.push(format!("  CMP r{revents}, r0"));
+        self.text.push(format!("  BEQ {scan_next}"));
+        self.text.push(format!("  ADD r{count}, r{count}, r{one}"));
+        self.text.push(format!("{scan_next}:"));
+        self.text.push(format!("  ADD r{i}, r{i}, r{one}"));
+        self.text.push(format!("  JMP {scan_loop}"));
+
+        self.text.push(format!("{scan_done}:"));
+        self.text.push(format!("  CMP r{count}, r0"));
+        self.text.push(format!("  BNE {have_ready}"));
+        self.text
+            .push(format!("  LD r{timeout}, [r31, {timeout_slot}]"));
+        self.text.push(format!("  CMP r{timeout}, r0"));
+        self.text.push(format!("  BEQ {no_wait}"));
+        self.text.push(format!("  BLT {wait_find_loop}"));
+        self.text.push(format!("  SLEEP r{timeout}"));
+        self.text.push(format!("{no_wait}:"));
+        self.text.push(format!("  LI r{dst_reg}, 0"));
+        self.text.push(format!("  JMP {done}"));
+
+        self.text.push(format!("{wait_find_loop}:"));
+        self.text.push(format!("  LI r{i}, 0"));
+        self.text.push(format!("{wait_found}_scan:"));
+        self.text.push(format!("  CMP r{i}, r{nfds}"));
+        self.text.push(format!("  BGE {no_wait}"));
+        self.text.push(format!("  MUL r{offset}, r{i}, r{stride}"));
+        self.text.push(format!("  ADD r{entry}, r{fds}, r{offset}"));
+        self.text.push(format!("  LD r{fd}, [r{entry}, 0]"));
+        self.text.push(format!("  LD r{events}, [r{entry}, 8]"));
+        self.text.push(format!("  CMP r{events}, r0"));
+        self.text.push(format!("  BNE {wait_found}"));
+        self.text.push(format!("  ADD r{i}, r{i}, r{one}"));
+        self.text.push(format!("  JMP {wait_found}_scan"));
+        self.text.push(format!("{wait_found}:"));
+        self.text.push(format!("  AWAIT_DYN r0, r{fd}, r{events}"));
+        self.text.push(format!("  JMP {scan_label}"));
+
+        self.text.push(format!("{have_ready}:"));
+        self.text.push(format!("  MOV r{dst_reg}, r{count}"));
+        self.text.push(format!("{done}:"));
+        self.temp_reg = 0;
+        Ok(())
+    }
+
+    fn emit_clock_gettime(&mut self, ts: usize) -> Result<usize, String> {
+        let sec = self.alloc_reg()?;
+        let nsec = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let done = self.new_label("clock_gettime_done");
+        self.text.push(format!("  CMP r{ts}, r0"));
+        self.text.push(format!("  BEQ {done}"));
+        self.text.push(format!("  GET_PCR r{sec}, REALTIME_SEC"));
+        self.text.push(format!("  GET_PCR r{nsec}, REALTIME_NSEC"));
+        self.text.push(format!("  ST [r{ts}, 0], r{sec}"));
+        self.text.push(format!("  ST [r{ts}, 8], r{nsec}"));
+        self.text.push(format!("{done}:"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        Ok(dst)
+    }
+
+    fn emit_gettimeofday(&mut self, tv: usize, tz: usize) -> Result<usize, String> {
+        let sec = self.alloc_reg()?;
+        let nsec = self.alloc_reg()?;
+        let divisor = self.alloc_reg()?;
+        let usec = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let skip_tv = self.new_label("gettimeofday_skip_tv");
+        let skip_tz = self.new_label("gettimeofday_skip_tz");
+        self.text.push(format!("  CMP r{tv}, r0"));
+        self.text.push(format!("  BEQ {skip_tv}"));
+        self.text.push(format!("  GET_PCR r{sec}, REALTIME_SEC"));
+        self.text.push(format!("  GET_PCR r{nsec}, REALTIME_NSEC"));
+        self.text.push(format!("  LI r{divisor}, 1000"));
+        self.text
+            .push(format!("  DIV r{usec}, r{nsec}, r{divisor}"));
+        self.text.push(format!("  ST [r{tv}, 0], r{sec}"));
+        self.text.push(format!("  ST [r{tv}, 8], r{usec}"));
+        self.text.push(format!("{skip_tv}:"));
+        self.text.push(format!("  CMP r{tz}, r0"));
+        self.text.push(format!("  BEQ {skip_tz}"));
+        self.text.push(format!("  ST [r{tz}, 0], r0"));
+        self.text.push(format!("  ST [r{tz}, 8], r0"));
+        self.text.push(format!("{skip_tz}:"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        Ok(dst)
+    }
+
+    fn emit_time(&mut self, tloc: Option<usize>) -> Result<usize, String> {
+        let sec = self.alloc_reg()?;
+        self.text.push(format!("  GET_PCR r{sec}, REALTIME_SEC"));
+        if let Some(tloc) = tloc {
+            let done = self.new_label("time_store_done");
+            self.text.push(format!("  CMP r{tloc}, r0"));
+            self.text.push(format!("  BEQ {done}"));
+            self.text.push(format!("  ST [r{tloc}, 0], r{sec}"));
+            self.text.push(format!("{done}:"));
+        }
+        Ok(sec)
+    }
+
+    fn emit_nanosleep(&mut self, req: usize, rem: usize) -> Result<usize, String> {
+        let sec = self.alloc_reg()?;
+        let nsec = self.alloc_reg()?;
+        let hundred = self.alloc_reg()?;
+        let divisor = self.alloc_reg()?;
+        let nsec_ticks = self.alloc_reg()?;
+        let ticks = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let no_req = self.new_label("nanosleep_no_req");
+        let sleep = self.new_label("nanosleep_sleep");
+        let skip_rem = self.new_label("nanosleep_skip_rem");
+        self.text.push(format!("  CMP r{req}, r0"));
+        self.text.push(format!("  BEQ {no_req}"));
+        self.text.push(format!("  LD r{sec}, [r{req}, 0]"));
+        self.text.push(format!("  LD r{nsec}, [r{req}, 8]"));
+        self.text.push(format!("  LI r{hundred}, 100"));
+        self.text
+            .push(format!("  MUL r{ticks}, r{sec}, r{hundred}"));
+        self.text.push(format!("  LI r{divisor}, 10000000"));
+        self.text
+            .push(format!("  DIV r{nsec_ticks}, r{nsec}, r{divisor}"));
+        self.text
+            .push(format!("  ADD r{ticks}, r{ticks}, r{nsec_ticks}"));
+        self.text.push(format!("  CMP r{ticks}, r0"));
+        self.text.push(format!("  BNE {sleep}"));
+        self.text.push(format!("  CMP r{nsec}, r0"));
+        self.text.push(format!("  BEQ {no_req}"));
+        self.text.push(format!("  LI r{ticks}, 1"));
+        self.text.push(format!("{sleep}:"));
+        self.text.push(format!("  SLEEP r{ticks}"));
+        self.text.push(format!("{no_req}:"));
+        self.text.push(format!("  CMP r{rem}, r0"));
+        self.text.push(format!("  BEQ {skip_rem}"));
+        self.text.push(format!("  ST [r{rem}, 0], r0"));
+        self.text.push(format!("  ST [r{rem}, 8], r0"));
+        self.text.push(format!("{skip_rem}:"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        Ok(dst)
+    }
+
     fn emit_readdir_fd_dispatch(
         &mut self,
         fd_reg: usize,
@@ -8189,6 +9086,9 @@ fn type_aggregate_size(name: &str) -> Option<i64> {
         "struct line" => Some(16),
         "struct linebuf" => Some(24),
         "struct column" => Some(24),
+        "struct pollfd" => Some(24),
+        "struct timespec" => Some(16),
+        "struct timeval" => Some(16),
         _ => None,
     }
 }
@@ -9995,6 +10895,56 @@ int main() {
     }
 
     #[test]
+    fn c_time_surface_uses_realtime_pcrs_and_sleep() {
+        let source = r#"
+        int main() {
+            int ts;
+            int req;
+            int rem;
+            int tv;
+            int stack;
+            int stored;
+            int now;
+            ts = alloc(16);
+            req = alloc(16);
+            rem = alloc(16);
+            tv = alloc(16);
+            stored = 0;
+            if (clock_gettime(CLOCK_REALTIME, ts) != 0) return 1;
+            stack = ts;
+            if (*stack == 0) return 2;
+            if (*(stack + 1) < 0) return 3;
+            if (gettimeofday(tv, 0) != 0) return 4;
+            stack = tv;
+            if (*stack == 0) return 5;
+            if (*(stack + 1) < 0) return 6;
+            now = time(&stored);
+            if (now == 0) return 7;
+            if (stored == 0) return 8;
+            stack = req;
+            *stack = 0;
+            *(stack + 1) = 1;
+            stack = rem;
+            *stack = 5;
+            *(stack + 1) = 6;
+            if (nanosleep(req, rem) != 0) return 9;
+            stack = rem;
+            if (*stack != 0) return 10;
+            if (*(stack + 1) != 0) return 11;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("GET_PCR"), "{asm}");
+        assert!(asm.contains("REALTIME_SEC"), "{asm}");
+        assert!(asm.contains("REALTIME_NSEC"), "{asm}");
+        assert!(asm.contains("SLEEP"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn efgetrune_reads_stdin_from_static_fd0() {
         let source = r#"
         int main() {
@@ -10038,8 +10988,49 @@ int main() {
 
         int main() {
             int slot;
+            int ptr;
+            int out;
+            struct pollfd p[1];
+            struct timespec ts;
+            struct timeval tv;
             slot = alloc(16);
+            ptr = calloc(2, 8);
+            ptr = realloc(ptr, 16);
+            aligned_alloc(128, 16);
+            posix_memalign(&out, 256, 16);
+            pthread_mutex_init(slot, 0);
+            pthread_cond_init(out, 0);
+            pthread_mutex_lock(slot);
+            pthread_mutex_trylock(slot);
+            pthread_mutex_unlock(slot);
+            pthread_cond_signal(out);
+            pthread_cond_broadcast(out);
+            pthread_create(&out, 0, child, 0);
+            pthread_join(out, &ptr);
+            pthread_self();
+            pthread_once(slot, child);
+            sem_init(slot, 0, 1);
+            sem_wait(slot);
+            sem_trywait(slot);
+            sem_post(slot);
+            sem_getvalue(slot, &out);
+            sem_destroy(slot);
+            pthread_rwlock_init(slot, 0);
+            pthread_rwlock_rdlock(slot);
+            pthread_rwlock_tryrdlock(slot);
+            pthread_rwlock_unlock(slot);
+            pthread_rwlock_wrlock(slot);
+            pthread_rwlock_trywrlock(slot);
+            pthread_rwlock_unlock(slot);
+            pthread_rwlock_destroy(slot);
             pipe(slot);
+            p[0].fd = slot[0];
+            p[0].events = POLLIN;
+            poll(p, 1, 0);
+            clock_gettime(CLOCK_REALTIME, &ts);
+            gettimeofday(&tv, 0);
+            time(&out);
+            nanosleep(&ts, &ts);
             pid();
             tid();
             uid();
@@ -10070,12 +11061,21 @@ int main() {
         for expected in [
             "GET_PCR",
             "SET_PCR SIGMASK",
+            "ALLOC_EX",
+            "ALLOC_SIZE",
             "OBJECT_CTL",
             "FORK",
             "WAIT_PID",
             "SPAWN",
+            "THREAD_JOIN",
+            "LOCK.CMPXCHG",
             "MSG_SEND",
             "AWAIT",
+            "AWAIT_DYN",
+            "POLL_FD_DYN",
+            "REALTIME_SEC",
+            "REALTIME_NSEC",
+            "SLEEP",
             "PULL",
             "FUTEX_WAIT",
             "FUTEX_WAKE",
@@ -10115,6 +11115,288 @@ int main() {
         let asm = compile(source).unwrap();
         assert!(asm.contains("OBJECT_CTL"), "{asm}");
         assert!(!asm.contains("PIPE"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_poll_lowers_to_native_readiness_probe_and_runs() {
+        let source = r#"
+        int main() {
+            int fds[2];
+            struct pollfd p[1];
+            pipe(fds);
+            p[0].fd = fds[0];
+            p[0].events = POLLIN;
+            p[0].revents = 99;
+            if (poll(p, 1, 0) != 0) {
+                return 1;
+            }
+            if (p[0].revents != 0) {
+                return 2;
+            }
+            write(fds[1], "x", 1);
+            if (poll(p, 1, 0) != 1) {
+                return 3;
+            }
+            if (p[0].revents != POLLIN) {
+                return 4;
+            }
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("POLL_FD_DYN"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_poll_blocks_with_dynamic_await_and_runs() {
+        let source = r#"
+        int main() {
+            int fds[2];
+            int child;
+            struct pollfd p[1];
+            pipe(fds);
+            p[0].fd = fds[0];
+            p[0].events = POLLIN;
+            child = fork();
+            if (child == 0) {
+                write(fds[1], "z", 1);
+                return 0;
+            }
+            if (poll(p, 1, -1) != 1) {
+                return 1;
+            }
+            if (p[0].revents != POLLIN) {
+                return 2;
+            }
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("POLL_FD_DYN"), "{asm}");
+        assert!(asm.contains("AWAIT_DYN"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_allocator_libc_surface_uses_native_heap_metadata() {
+        let source = r#"
+        int main() {
+            int p;
+            int q;
+            int aligned;
+            int out;
+            p = calloc(4, 8);
+            if (p == -1) return 1;
+            if (p[0] != 0) return 2;
+            if (p[1] != 0) return 3;
+            p[0] = 42;
+            q = realloc(p, 32);
+            if (q == -1) return 4;
+            if (q[0] != 42) return 5;
+            q = realloc(q, 0);
+            if (q != 0) return 6;
+            aligned = aligned_alloc(128, 16);
+            if (aligned == -1) return 7;
+            if ((aligned % 128) != 0) return 8;
+            out = 0;
+            if (posix_memalign(&out, 256, 16) != 0) return 9;
+            if (out == 0) return 10;
+            if ((out % 256) != 0) return 11;
+            free(aligned);
+            free(out);
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("ALLOC_EX"), "{asm}");
+        assert!(asm.contains("ALLOC_SIZE"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_pthread_mutex_condvar_surface_runs_on_futex_primitives() {
+        let source = r#"
+        int mutex;
+        int cond;
+        int ready;
+        int shared;
+        int thread;
+        int joined_value;
+
+        int worker() {
+            pthread_mutex_lock(&mutex);
+            while (ready == 0) {
+                pthread_cond_wait(&cond, &mutex);
+            }
+            shared = shared + 1;
+            pthread_mutex_unlock(&mutex);
+            pthread_exit(77);
+            return 0;
+        }
+
+        int main() {
+            pthread_mutex_init(&mutex, 0);
+            pthread_cond_init(&cond, 0);
+            ready = 0;
+            shared = 0;
+            pthread_create(&thread, 0, worker, 0);
+            yield_cpu();
+            pthread_mutex_lock(&mutex);
+            if (pthread_mutex_trylock(&mutex) != EBUSY) {
+                return 1;
+            }
+            ready = 1;
+            pthread_cond_signal(&cond);
+            pthread_mutex_unlock(&mutex);
+            while (shared == 0) {
+                yield_cpu();
+            }
+            if (thread == 0) {
+                return 2;
+            }
+            if (pthread_self() == 0) {
+                return 3;
+            }
+            if (pthread_join(thread, &joined_value) != 0) {
+                return 4;
+            }
+            if (joined_value != 77) {
+                return 5;
+            }
+            if (pthread_detach(thread) != 0) {
+                return 6;
+            }
+            if (pthread_mutex_destroy(&mutex) != 0) {
+                return 7;
+            }
+            if (pthread_cond_destroy(&cond) != 0) {
+                return 8;
+            }
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("LOCK.CMPXCHG"), "{asm}");
+        assert!(asm.contains("FUTEX_WAIT"), "{asm}");
+        assert!(asm.contains("FUTEX_WAKE"), "{asm}");
+        assert!(asm.contains("SPAWN"), "{asm}");
+        assert!(asm.contains("THREAD_JOIN"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_semaphore_and_once_surface_runs_on_futex_primitives() {
+        let source = r#"
+        int sem;
+        int once;
+        int shared;
+        int thread;
+
+        int init_once() {
+            shared = shared + 10;
+            return 0;
+        }
+
+        int worker() {
+            sem_wait(&sem);
+            pthread_once(&once, init_once);
+            shared = shared + 1;
+            sem_post(&sem);
+            pthread_exit(0);
+            return 0;
+        }
+
+        int main() {
+            int value;
+            sem_init(&sem, 0, 1);
+            once = 0;
+            shared = 0;
+            pthread_once(&once, init_once);
+            if (sem_trywait(&sem) != 0) {
+                return 1;
+            }
+            if (sem_trywait(&sem) != EAGAIN) {
+                return 2;
+            }
+            sem_post(&sem);
+            pthread_create(&thread, 0, worker, 0);
+            while (shared != 11) {
+                yield_cpu();
+            }
+            sem_getvalue(&sem, &value);
+            if (value != 1) {
+                return 3;
+            }
+            if (shared != 11) {
+                return 4;
+            }
+            if (sem_destroy(&sem) != 0) {
+                return 5;
+            }
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("LOCK.CMPXCHG"), "{asm}");
+        assert!(asm.contains("FUTEX_WAIT"), "{asm}");
+        assert!(asm.contains("FUTEX_WAKE"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_rwlock_surface_runs_on_futex_primitives() {
+        let source = r#"
+        int lock;
+        int shared;
+        int thread;
+        int joined;
+
+        int writer() {
+            pthread_rwlock_wrlock(&lock);
+            shared = shared + 10;
+            pthread_rwlock_unlock(&lock);
+            pthread_exit(5);
+            return 0;
+        }
+
+        int main() {
+            pthread_rwlock_init(&lock, 0);
+            shared = 1;
+            pthread_rwlock_rdlock(&lock);
+            if (pthread_rwlock_tryrdlock(&lock) != 0) return 1;
+            if (pthread_rwlock_trywrlock(&lock) != EBUSY) return 2;
+            pthread_rwlock_unlock(&lock);
+            pthread_create(&thread, 0, writer, 0);
+            yield_cpu();
+            if (shared != 1) return 3;
+            pthread_rwlock_unlock(&lock);
+            if (pthread_join(thread, &joined) != 0) return 4;
+            if (joined != 5) return 5;
+            if (shared != 11) return 6;
+            if (pthread_rwlock_trywrlock(&lock) != 0) return 7;
+            pthread_rwlock_unlock(&lock);
+            if (pthread_rwlock_destroy(&lock) != 0) return 8;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("LOCK.CMPXCHG"), "{asm}");
+        assert!(asm.contains("FUTEX_WAIT"), "{asm}");
+        assert!(asm.contains("FUTEX_WAKE"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);

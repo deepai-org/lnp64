@@ -31,10 +31,24 @@ The emulator tracks the current ISA direction in `design.md` and
   reserved per-process message endpoint `fd255`.
 - Source-level `pipe(fds)` lowers to `OBJECT_CTL create queue(profile=pipe)`,
   returning narrowed read/write endpoint FDRs.
+- Source-level `poll(fds, nfds, timeout)` lowers to `POLL_FD_DYN` readiness
+  probes plus `AWAIT_DYN` for blocking waits. This is the emulator's current
+  single-process bridge toward the event-queue profile described in the design
+  docs.
+- Source-level `clock_gettime`, `gettimeofday`, and `time` read
+  `REALTIME_SEC`/`REALTIME_NSEC` PCRs; `nanosleep` lowers to the existing
+  scheduler `SLEEP` primitive.
 - `EVENT_CTL` and `TIMER_CTL` are accepted by the assembler as aliases over
   `OBJECT_CTL`.
 - `CALL_CAP`/`RET_CAP` implement synchronous calls, asynchronous completion to
   a counter or queue endpoint, and handoff mode.
+- C allocation builtins lower to the native heap path: `malloc`/`calloc` use
+  `ALLOC`, `aligned_alloc`/`posix_memalign` use `ALLOC_EX`, and `realloc` uses
+  `ALLOC_SIZE` metadata before copying and freeing the old allocation.
+- The current pthread/sync subset maps `pthread_create` to same-process
+  `SPAWN`, `pthread_join` to `THREAD_JOIN`, and implements mutexes, condition
+  variables, rwlocks, `pthread_once`, and POSIX-style semaphores with
+  `LOCK.CMPXCHG`, `FUTEX_WAIT`, and `FUTEX_WAKE`.
 
 Current emulator `OBJECT_CTL` v1 fields are:
 

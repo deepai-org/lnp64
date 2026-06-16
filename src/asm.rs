@@ -248,9 +248,29 @@ impl Parser {
                 arity(3)?;
                 Instr::Await(reg(&args[0])?, fd(&args[1])?, reg(&args[2])?)
             }
+            "AWAIT_DYN" => {
+                arity(3)?;
+                Instr::AwaitDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
+            "POLL_FD" => {
+                arity(3)?;
+                Instr::PollFd(reg(&args[0])?, fd(&args[1])?, reg(&args[2])?)
+            }
+            "POLL_FD_DYN" => {
+                arity(3)?;
+                Instr::PollFdDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
             "ALLOC" => {
                 arity(2)?;
                 Instr::Alloc(reg(&args[0])?, reg(&args[1])?)
+            }
+            "ALLOC_EX" => {
+                arity(3)?;
+                Instr::AllocEx(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
+            "ALLOC_SIZE" => {
+                arity(2)?;
+                Instr::AllocSize(reg(&args[0])?, reg(&args[1])?)
             }
             "FREE" => {
                 arity(1)?;
@@ -474,6 +494,10 @@ impl Parser {
             "SPAWN" => {
                 arity(2)?;
                 Instr::Spawn(reg(&args[0])?, reg(&args[1])?)
+            }
+            "THREAD_JOIN" => {
+                arity(3)?;
+                Instr::ThreadJoin(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
             "YIELD" => {
                 arity(0)?;
@@ -871,6 +895,41 @@ mod tests {
         assert!(matches!(
             program.instructions[2],
             Instr::ObjectCtl(Reg(5), Reg(6))
+        ));
+    }
+
+    #[test]
+    fn parses_allocator_metadata_instructions() {
+        let program = Program::parse(
+            r#"
+            .text
+              ALLOC_EX r1, r2, r3
+              ALLOC_SIZE r4, r5
+            "#,
+        )
+        .unwrap();
+        assert!(matches!(
+            program.instructions[0],
+            Instr::AllocEx(Reg(1), Reg(2), Reg(3))
+        ));
+        assert!(matches!(
+            program.instructions[1],
+            Instr::AllocSize(Reg(4), Reg(5))
+        ));
+    }
+
+    #[test]
+    fn parses_thread_join_instruction() {
+        let program = Program::parse(
+            r#"
+            .text
+              THREAD_JOIN r1, r2, r3
+            "#,
+        )
+        .unwrap();
+        assert!(matches!(
+            program.instructions[0],
+            Instr::ThreadJoin(Reg(1), Reg(2), Reg(3))
         ));
     }
 }

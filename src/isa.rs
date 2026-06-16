@@ -30,6 +30,8 @@ pub enum Pcr {
     Uid,
     Gid,
     Sigmask,
+    RealtimeSec,
+    RealtimeNsec,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -88,7 +90,12 @@ pub enum Instr {
     Pull(Reg, FdReg, Reg, Reg),
     Push(Reg, FdReg, Reg, Reg),
     Await(Reg, FdReg, Reg),
+    AwaitDyn(Reg, Reg, Reg),
+    PollFd(Reg, FdReg, Reg),
+    PollFdDyn(Reg, Reg, Reg),
     Alloc(Reg, Reg),
+    AllocEx(Reg, Reg, Reg),
+    AllocSize(Reg, Reg),
     Free(Reg),
     OpenFd(FdReg, Reg, Reg),
     OpenFdDyn(Reg, Reg, Reg),
@@ -137,6 +144,7 @@ pub enum Instr {
     Fork(Reg),
     Exec(Reg, Reg),
     Spawn(Reg, Reg),
+    ThreadJoin(Reg, Reg, Reg),
     Yield,
     Sleep(Reg),
     Exit(Reg),
@@ -247,6 +255,8 @@ pub fn parse_pcr(text: &str) -> Result<Pcr, String> {
         "UID" => Ok(Pcr::Uid),
         "GID" => Ok(Pcr::Gid),
         "SIGMASK" => Ok(Pcr::Sigmask),
+        "REALTIME_SEC" => Ok(Pcr::RealtimeSec),
+        "REALTIME_NSEC" => Ok(Pcr::RealtimeNsec),
         _ => Err(format!("unknown PCR {text:?}")),
     }
 }

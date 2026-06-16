@@ -16,6 +16,9 @@ To support hardware-native OS primitives, the standard register file is expanded
     *   `UID` / `GID`: User/Group ID from process credential context.
     *   `CAPMASK`: Process credential capability bitmap.
     *   `SIGMASK`: Thread-local 64-bit bitmask of currently blocked signals.
+    *   `REALTIME_SEC` / `REALTIME_NSEC`: Read-only realtime clock snapshot
+        fields used by libc/runtime clock surfaces. Timer waitability remains
+        FDR-backed through timer profiles.
 *   **ERRNO:** Thread-local POSIX error register. Fallible instructions write their result to the encoded destination register and update thread-local `ERRNO` on failure.
 
 ## 2. Process & Scheduling Instructions
@@ -78,8 +81,8 @@ Page tables and VMAs are managed by fixed hardware MMU/VMA engines using bounded
     *   *Action:* Invalidates the VMA range, flushes the relevant TLB entries, and releases affected physical pages through the hardware page allocator when no longer referenced.
 *   **`MPROTECT r_addr, r_len, r_prot`**
     *   *Action:* Updates the protection bits for an existing VMA range and invalidates affected translations. This supports ELF loaders, guard pages, W^X policy, and paravirtual Unix guests that map their process abstractions onto LNP64 VMAs.
-*   **`ALLOC r_dest, r_size`** / **`ALLOC_EX r_dest, r_request_block`** / **`FREE r_result, r_ptr`**
-    *   *Action:* Allocates and frees byte-granular heap memory through the Hardware Heap Engine. The heap is process-local, backed by anonymous VMAs, thread-safe in hardware, and integrated with `CLONE` copy-on-write and `EXEC` teardown. `ALLOC_EX` supports alignment, zeroing, guard, debug, locality, and allocation-class flags.
+*   **`ALLOC r_dest, r_size`** / **`ALLOC_EX r_dest, r_request_block`** / **`ALLOC_SIZE r_dest, r_ptr`** / **`FREE r_result, r_ptr`**
+    *   *Action:* Allocates, queries, and frees byte-granular heap memory through the Hardware Heap Engine. The heap is process-local, backed by anonymous VMAs, thread-safe in hardware, and integrated with `CLONE` copy-on-write and `EXEC` teardown. `ALLOC_EX` supports alignment, zeroing, guard, debug, locality, and allocation-class flags. `ALLOC_SIZE` exposes allocation metadata to libc/runtime code so `realloc` can copy only the valid old allocation extent.
 
 ## 5. Signal Handling
 Signals are no longer software constructs; they are asynchronous hardware events delivered directly to the thread. Hardware execution faults use the same delivery path as POSIX signals.
@@ -155,7 +158,9 @@ Because "Everything is a File" is now a hardware reality, we need instructions t
 *   **`DUP r_result, r_dst_or_flags, r_src`**
     *   *Action:* Duplicates or moves an FDR capability, including `dup`, `dup2`, and narrowed-rights forms where permitted by the source capability.
 *   **`GET_PCR r_dest, pcr_name`**
-    *   *Action:* Reads a Process Control Register (like `PID` or `UID`) into a general-purpose register for user-space logic. (e.g., `GET_PCR r1, PID`).
+    *   *Action:* Reads a Process Control Register (like `PID`, `UID`, or
+        `REALTIME_SEC`) into a general-purpose register for user-space logic.
+        (e.g., `GET_PCR r1, PID`).
 *   **`SET_PCR pcr_name, r_src`**
     *   *Action:* Writes to a permitted Process Control Register. Credential changes are checked against UID/GID and process capability policy; denied changes fail with a permission error and update thread-local `ERRNO`.
 *   **`ENV_GET r_dest, r_key, r_index_or_buf, r_len_or_flags`**
@@ -179,6 +184,8 @@ Because the CPU manages threads in a hardware runqueue, traditional software spi
     *   *Action:* The hardware equivalent of a futex wait. If the value at `[r_addr]` equals `r_expected_val`, the CPU removes the current thread from the runqueue and parks it in a hardware wait-state attached to that memory address.
 *   **`WAKE futex([r_addr], r_num_threads)`**
     *   *Action:* The memory controller checks if any threads are parked on `[r_addr]`. If so, it pushes up to `r_num_threads` back onto the active runqueue.
+*   **`THREAD_JOIN r_result, r_tid, r_retval_ptr`**
+    *   *Action:* Parks the caller until the target same-process hardware thread exits. On completion, copies the target thread's exit value to `r_retval_ptr` when nonzero and returns `0`; returns a POSIX-style error code for invalid or self-join cases.
 
 ### 11. The Device Driver Problem (PCIe Bus Master + Capability Devices)
 If the VFS is baked into silicon, how does the CPU know how to talk to a newly released GPU, NVMe drive, or network card? We do **not** hardwire the full PCIe enumeration and quirk universe into the CPU. The hardware provides the safety-critical substrate, and a trusted software **PCIe Bus Master** domain handles the messy device-specific reality.
@@ -313,7 +320,7 @@ Preemptive software schedulers (like the Linux kernel or Erlang's BEAM VM) rely 
 ### 3. Hardware Allocation as a Fast Path (Not a libc Killer)
 If we only provide page-level `MMAP` (e.g., 4KB blocks), developers will still write software memory allocators (like `jemalloc` or `tcmalloc`) to hand out smaller chunks of memory, keeping a layer of software abstraction.
 *   **The Fix:** Keep VMAs page-granular for MMU practicality, but make allocation a native hardware service through the Hardware Heap Engine.
-*   **ISA Change:** `ALLOC r_dest, r_size`, `ALLOC_EX r_dest, r_request_block`, and `FREE r_result, r_ptr` are v1 architectural instructions. The default heap is per-process, backed by anonymous VMAs, thread-safe in hardware, and integrated with `CLONE` copy-on-write and `EXEC` teardown.
+*   **ISA Change:** `ALLOC r_dest, r_size`, `ALLOC_EX r_dest, r_request_block`, `ALLOC_SIZE r_dest, r_ptr`, and `FREE r_result, r_ptr` are v1 architectural instructions. The default heap is per-process, backed by anonymous VMAs, thread-safe in hardware, and integrated with `CLONE` copy-on-write and `EXEC` teardown.
 *   **The Result:** Native programs, libc, and language runtimes get a fast, observable, guarded, thread-safe allocator by default. Custom allocators remain possible, but the native heap should be good enough that programmers are not tempted to replace it for general-purpose allocation. `MMAP` remains the right primitive for files, shared memory, executable mappings, DMA buffers, and device mappings.
 
 ### 4. Banish Ambient MMIO (Keeping Capability-Scoped MMIO)

@@ -62,6 +62,9 @@ const CALL_MODE_HANDOFF: u64 = 2;
 const CALL_GATE_FLAG_CAP_PASS: u64 = 1;
 const CALL_ARG_CAP_MARKER: u64 = 1 << 63;
 const MAX_CAP_CALL_DEPTH: usize = 8;
+const POLLIN_MASK: u64 = 1;
+const POLLOUT_MASK: u64 = 4;
+const POLLNVAL_MASK: u64 = 32;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -462,7 +465,9 @@ pub struct Machine {
     domain_parked: VecDeque<u64>,
     sleepers: Vec<(u64, u64)>,
     futex_waiters: HashMap<u64, VecDeque<u64>>,
-    fd_waiters: Vec<(u64, usize)>,
+    thread_join_waiters: HashMap<u64, VecDeque<u64>>,
+    completed_threads: HashMap<u64, u64>,
+    fd_waiters: Vec<(u64, usize, u64)>,
     current_tid: u64,
     next_pid: u64,
     next_tid: u64,
@@ -496,6 +501,8 @@ impl Machine {
             domain_parked: VecDeque::new(),
             sleepers: Vec::new(),
             futex_waiters: HashMap::new(),
+            thread_join_waiters: HashMap::new(),
+            completed_threads: HashMap::new(),
             fd_waiters: Vec::new(),
             current_tid: root_tid,
             next_pid: 2,
@@ -726,37 +733,57 @@ impl Machine {
                 self.write_fd_index(fd.0, addr, len)?;
                 self.write_reg(result, self.read_reg(Reg(1))?)?;
             }
-            Instr::Await(result, fd, _mask) => {
-                if !self.fd_ready(fd.0)? {
-                    self.fd_waiters.push((self.current_tid, fd.0));
+            Instr::Await(result, fd, mask) => {
+                let mask = self.read_reg(mask)?;
+                if !self.fd_ready_for_mask(fd.0, mask)? {
+                    self.fd_waiters.push((self.current_tid, fd.0, mask));
                     self.ready.retain(|tid| *tid != self.current_tid);
                     return Ok(false);
                 }
                 self.set_errno(0)?;
                 self.write_reg(result, 0)?;
             }
+            Instr::AwaitDyn(result, fd_reg, mask) => {
+                let fd = self.read_reg(fd_reg)?;
+                let mask = self.read_reg(mask)?;
+                let Some(fd) = self.checked_fd_index(fd)? else {
+                    self.write_reg(result, -1i64 as u64)?;
+                    return Ok(true);
+                };
+                if !self.fd_ready_for_mask(fd, mask)? {
+                    self.fd_waiters.push((self.current_tid, fd, mask));
+                    self.ready.retain(|tid| *tid != self.current_tid);
+                    return Ok(false);
+                }
+                self.set_errno(0)?;
+                self.write_reg(result, 0)?;
+            }
+            Instr::PollFd(result, fd, events) => {
+                let events = self.read_reg(events)?;
+                let revents = self.poll_fd_mask(fd.0 as u64, events)?;
+                self.write_reg(result, revents)?;
+            }
+            Instr::PollFdDyn(result, fd_reg, events) => {
+                let fd = self.read_reg(fd_reg)?;
+                let events = self.read_reg(events)?;
+                let revents = self.poll_fd_mask(fd, events)?;
+                self.write_reg(result, revents)?;
+            }
             Instr::Alloc(dst, bytes_reg) => {
                 let len = (self.read_reg(bytes_reg)? as usize).max(1);
-                self.require_domain_cap(DOMAIN_CAP_MEMORY)?;
-                if !self.check_domain_budget(len as u64, 1, 0, 0)? {
-                    self.write_reg(dst, -1i64 as u64)?;
-                    return Ok(true);
-                }
-                let addr = {
-                    let process = self.process_mut()?;
-                    let addr = align_up(process.heap_next, 64);
-                    let end = addr
-                        .checked_add(len as u64)
-                        .ok_or_else(|| "allocation overflow".to_string())?;
-                    if end as usize >= process.memory.len() {
-                        return Err(format!("out of silicon heap memory allocating {len} bytes"));
-                    }
-                    process.heap_next = end;
-                    process.allocations.insert(addr, len);
-                    process.vmas.push(Vma::anonymous(addr, len as u64, 0b11));
-                    addr
-                };
+                let addr = self.alloc_heap(len, 64)?;
                 self.write_reg(dst, addr)?;
+            }
+            Instr::AllocEx(dst, bytes_reg, align_reg) => {
+                let len = (self.read_reg(bytes_reg)? as usize).max(1);
+                let align = self.read_reg(align_reg)?.clamp(1, 4096).next_power_of_two();
+                let addr = self.alloc_heap(len, align)?;
+                self.write_reg(dst, addr)?;
+            }
+            Instr::AllocSize(dst, ptr_reg) => {
+                let ptr = self.read_reg(ptr_reg)?;
+                let size = self.process()?.allocations.get(&ptr).copied().unwrap_or(0);
+                self.write_reg(dst, size as u64)?;
             }
             Instr::Free(ptr) => {
                 let ptr = self.read_reg(ptr)?;
@@ -1123,7 +1150,7 @@ impl Machine {
             }
             Instr::WaitOnFd(fd, _) => {
                 if !self.fd_ready(fd.0)? {
-                    self.fd_waiters.push((self.current_tid, fd.0));
+                    self.fd_waiters.push((self.current_tid, fd.0, 0));
                     self.ready.retain(|tid| *tid != self.current_tid);
                     return Ok(false);
                 }
@@ -1218,6 +1245,29 @@ impl Machine {
                 self.threads.insert(tid, child);
                 self.ready.push_back(tid);
                 self.write_reg(dst, tid)?;
+            }
+            Instr::ThreadJoin(result, tid_reg, retval_reg) => {
+                let tid = self.read_reg(tid_reg)?;
+                let retval_ptr = self.read_reg(retval_reg)?;
+                if tid == self.current_tid {
+                    self.write_reg(result, 35)?;
+                } else if let Some(value) = self.completed_threads.remove(&tid) {
+                    if retval_ptr != 0 {
+                        self.store_u64(retval_ptr, value)?;
+                    }
+                    self.write_reg(result, 0)?;
+                } else if self.threads.contains_key(&tid) {
+                    self.thread_mut()?.ip = self.thread()?.ip.saturating_sub(1);
+                    self.thread_join_waiters
+                        .entry(tid)
+                        .or_default()
+                        .push_back(self.current_tid);
+                    self.ready
+                        .retain(|ready_tid| *ready_tid != self.current_tid);
+                    return Ok(false);
+                } else {
+                    self.write_reg(result, 3)?;
+                }
             }
             Instr::Yield => return Ok(true),
             Instr::Sleep(ticks_reg) => {
@@ -1603,6 +1653,29 @@ impl Machine {
             self.store_u64(addr + offset, value)?;
         }
         Ok(())
+    }
+
+    fn alloc_heap(&mut self, len: usize, align: u64) -> Result<u64, String> {
+        self.require_domain_cap(DOMAIN_CAP_MEMORY)?;
+        if !self.check_domain_budget(len as u64, 1, 0, 0)? {
+            return Ok(-1i64 as u64);
+        }
+        let align = align.max(1).next_power_of_two();
+        let addr = {
+            let process = self.process_mut()?;
+            let addr = align_up(process.heap_next, align);
+            let end = addr
+                .checked_add(len as u64)
+                .ok_or_else(|| "allocation overflow".to_string())?;
+            if end as usize >= process.memory.len() {
+                return Err(format!("out of silicon heap memory allocating {len} bytes"));
+            }
+            process.heap_next = end;
+            process.allocations.insert(addr, len);
+            process.vmas.push(Vma::anonymous(addr, len as u64, 0b11));
+            addr
+        };
+        Ok(addr)
     }
 
     fn checked_fd_index(&mut self, fd: u64) -> Result<Option<usize>, String> {
@@ -3230,13 +3303,23 @@ impl Machine {
             Pcr::Uid => process.uid,
             Pcr::Gid => process.gid,
             Pcr::Sigmask => process.sigmask,
+            Pcr::RealtimeSec => {
+                let now = Self::system_time_to_host_timespec(SystemTime::now());
+                now.tv_sec as u64
+            }
+            Pcr::RealtimeNsec => {
+                let now = Self::system_time_to_host_timespec(SystemTime::now());
+                now.tv_nsec as u64
+            }
         })
     }
 
     fn write_pcr(&mut self, pcr: Pcr, value: u64) -> Result<(), String> {
         let process = self.process_mut()?;
         match pcr {
-            Pcr::Pid | Pcr::Tid => Err("PID and TID PCRs are read-only".to_string()),
+            Pcr::Pid | Pcr::Tid | Pcr::RealtimeSec | Pcr::RealtimeNsec => {
+                Err("selected PCR is read-only".to_string())
+            }
             Pcr::Uid if process.uid != 0 => {
                 Err("SET_PCR UID denied: current UID is not 0".to_string())
             }
@@ -3260,6 +3343,12 @@ impl Machine {
         let pid = self.thread()?.pid;
         let parent_pid = self.process()?.parent_pid;
         self.threads.remove(&tid);
+        self.completed_threads.insert(tid, code as u64);
+        if let Some(waiters) = self.thread_join_waiters.remove(&tid) {
+            for waiter in waiters {
+                self.wake_thread(waiter);
+            }
+        }
         self.last_exit = code;
         if !self.threads.values().any(|thread| thread.pid == pid) {
             self.processes.remove(&pid);
@@ -3295,14 +3384,14 @@ impl Machine {
 
     fn poll_fd_waiters(&mut self) {
         let waiters = std::mem::take(&mut self.fd_waiters);
-        for (tid, fd) in waiters {
+        for (tid, fd, mask) in waiters {
             let ready = self
-                .with_thread_process(tid, |machine| machine.fd_ready(fd))
+                .with_thread_process(tid, |machine| machine.fd_ready_for_mask(fd, mask))
                 .unwrap_or(false);
             if ready {
                 self.wake_thread(tid);
             } else if self.threads.contains_key(&tid) {
-                self.fd_waiters.push((tid, fd));
+                self.fd_waiters.push((tid, fd, mask));
             }
         }
     }
@@ -3317,6 +3406,88 @@ impl Machine {
         let result = f(self);
         self.current_tid = saved;
         result
+    }
+
+    fn poll_fd_mask(&mut self, fd: u64, events: u64) -> Result<u64, String> {
+        let revents = self.poll_fd_mask_raw(fd, events)?;
+        self.set_errno(0)?;
+        Ok(revents)
+    }
+
+    fn poll_fd_mask_raw(&mut self, fd: u64, events: u64) -> Result<u64, String> {
+        if fd >= FDR_COUNT as u64 {
+            return Ok(POLLNVAL_MASK);
+        }
+        let fd = fd as usize;
+        if matches!(self.process()?.fds[fd], FdHandle::Closed) {
+            return Ok(POLLNVAL_MASK);
+        }
+        let mut revents = 0;
+        if events & POLLIN_MASK != 0 && self.fd_read_ready(fd)? {
+            revents |= POLLIN_MASK;
+        }
+        if events & POLLOUT_MASK != 0 && self.fd_write_ready(fd)? {
+            revents |= POLLOUT_MASK;
+        }
+        Ok(revents)
+    }
+
+    fn fd_ready_for_mask(&mut self, fd: usize, mask: u64) -> Result<bool, String> {
+        if mask == 0 {
+            self.fd_ready(fd)
+        } else {
+            Ok(self.poll_fd_mask_raw(fd as u64, mask)? != 0)
+        }
+    }
+
+    fn fd_read_ready(&mut self, fd: usize) -> Result<bool, String> {
+        if fd == MESSAGE_ENDPOINT_FD {
+            return Ok(!self.process()?.inbox.is_empty());
+        }
+        let handle = &mut self.process_mut()?.fds[fd];
+        match handle {
+            FdHandle::Stdin
+            | FdHandle::File(_)
+            | FdHandle::Dir { .. }
+            | FdHandle::Counter(_)
+            | FdHandle::MemoryObject { .. } => Ok(true),
+            FdHandle::PipeReader(buffer) => Ok(!buffer.borrow().is_empty()),
+            FdHandle::TcpListener { listener, pending } => {
+                if pending.is_some() {
+                    return Ok(true);
+                }
+                match listener.accept() {
+                    Ok((stream, _)) => {
+                        stream
+                            .set_nonblocking(false)
+                            .map_err(|err| format!("TCP accepted stream blocking failed: {err}"))?;
+                        *pending = Some(stream);
+                        Ok(true)
+                    }
+                    Err(err) if err.kind() == io::ErrorKind::WouldBlock => Ok(false),
+                    Err(err) => Err(format!("TCP accept failed: {err}")),
+                }
+            }
+            FdHandle::Stdout
+            | FdHandle::Stderr
+            | FdHandle::MessageEndpoint
+            | FdHandle::PipeWriter(_)
+            | FdHandle::CallGate { .. }
+            | FdHandle::Closed => Ok(false),
+        }
+    }
+
+    fn fd_write_ready(&self, fd: usize) -> Result<bool, String> {
+        let handle = &self.process()?.fds[fd];
+        Ok(matches!(
+            handle,
+            FdHandle::Stdout
+                | FdHandle::Stderr
+                | FdHandle::File(_)
+                | FdHandle::PipeWriter(_)
+                | FdHandle::Counter(_)
+                | FdHandle::MemoryObject { .. }
+        ))
     }
 
     fn fd_ready(&mut self, fd: usize) -> Result<bool, String> {

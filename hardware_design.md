@@ -605,6 +605,7 @@ The opcode map is fixed, but sparse:
 1C FREE
 1D ISYNC
 1E ALLOC_EX
+1F ALLOC_SIZE
 
 20 OPEN_AT
 21 CLOSE
@@ -634,6 +635,7 @@ The opcode map is fixed, but sparse:
 38 DOMAIN_CTL
 39 CALL_CAP
 3A RET_CAP
+3B THREAD_JOIN
 
 50 GET_PCR
 51 SET_PCR
@@ -998,6 +1000,34 @@ Event fast path:
 - Event Router fan-in is distributed by source class where practical: timers,
   device IRQs, engine completions, futexes, signals, and supervisor upcalls each
   have narrow ingress queues before central arbitration.
+
+Event queue acceleration:
+
+- active event queues have on-chip source slots for the hot subset of watched
+  objects.
+- each source slot carries source object id or fd, event mask, readiness
+  generation snapshot, trigger mode, user data, and ready bits.
+- `OBJECT_CTL` add-source for an event queue is an atomic add/check/arm
+  sequence: install the source, snapshot readiness generation, check current
+  readiness, and enqueue immediately if the source is already ready.
+- waitable objects publish narrow readiness-change events to the Event Router:
+  object id, event mask, and generation.
+- the Event Router matches active source slots, sets ready bits, appends compact
+  event records, and wakes parked TIDs without a software scan.
+- `AWAIT(event_queue)` checks nonempty ready bits before parking so add/check
+  and park cannot lose a wakeup.
+- `PULL(event_queue)` can batch multiple event records for `poll`, `select`,
+  `epoll_wait`, `kqueue`, and runtime executor drains.
+- timer profiles are ordinary source slots driven by the timer wheel.
+- edge-triggered sources compare generation changes; level-triggered sources
+  may requeue while the source remains ready; one-shot sources disable
+  themselves after one emitted event until rearmed.
+- if the active source window or event record queue overflows, hardware may
+  coalesce by source, set an overflow/rescan event, or spill cold records to DDR
+  according to queue policy.
+- large or cold subscription sets live in DDR. Readiness changes for cold
+  sources mark the queue overflow/rescan path rather than forcing the Event
+  Router to walk thousands of subscriptions in hardware.
 
 ### 11.1 Hardware-Owned Runtime Objects
 
@@ -1746,6 +1776,7 @@ Each thread entry contains:
 - thread-local signal mask and pending per-thread signal queue.
 - blocked state and wait object.
 - cancellation/operation id for any in-flight hardware command.
+- join completion record or join-waiter list for same-process thread joins.
 
 `CLONE`:
 
@@ -1771,6 +1802,16 @@ Each thread entry contains:
 - create new PID.
 - set entry PC from argument block.
 - allocate new stack VMA or use supplied stack pointer.
+
+`THREAD_JOIN`:
+
+- uses F8: `a=result_dst`, `b=target_tid_reg`, `c=retval_ptr_reg`.
+- waits on a same-process thread completion record.
+- parks the caller in the scheduler rather than spinning when the target thread
+  is still live.
+- writes the target thread's exit value to `retval_ptr` when nonzero.
+- returns `0` on success or a POSIX-style error code such as `ESRCH` or
+  `EDEADLK`.
 
 `EXEC`:
 
@@ -1896,11 +1937,11 @@ do not require a full DDR VMA tree walk. DDR walks are refill/cold paths.
 
 ## 18. Hardware Heap Engine
 
-`ALLOC`, `ALLOC_EX`, and `FREE` are v1 architectural instructions backed by the
-Hardware Heap Engine. They are the preferred userspace allocation primitive.
-`malloc` implementations should lower to these instructions by default. `MMAP`
-remains the primitive for page mappings, files, shared memory, executable memory,
-DMA buffers, and device mappings.
+`ALLOC`, `ALLOC_EX`, `ALLOC_SIZE`, and `FREE` are v1 architectural instructions
+backed by the Hardware Heap Engine. They are the preferred userspace allocation
+primitive. `malloc` implementations should lower to these instructions by
+default. `MMAP` remains the primitive for page mappings, files, shared memory,
+executable memory, DMA buffers, and device mappings.
 
 `ALLOC`:
 
@@ -1919,6 +1960,16 @@ DMA buffers, and device mappings.
 - detects invalid pointers and double free when heap metadata is intact; v1
   returns `EINVAL` and may additionally deliver `SIGSEGV` if the process has
   heap-hardening policy enabled.
+
+`ALLOC_SIZE`:
+
+- uses F2: `a=result_dst`, `b=ptr_reg`.
+- reads Heap Engine metadata for an exact allocation pointer.
+- returns the allocation's usable byte extent in `result_dst`.
+- returns `0` for null or unknown pointers in the emulator subset; hardware may
+  return `-1` with `ERRNO=EINVAL` under stricter heap-hardening policy.
+- lets libc implement `realloc` without copying beyond the old allocation's
+  valid mapped extent.
 
 `ALLOC_EX`:
 
@@ -2091,11 +2142,14 @@ PCR reads are backed by process credential state plus thread-local state:
 - GID: from process credential context.
 - SIGMASK: from thread context.
 - CAPMASK: from process credential context.
+- REALTIME_SEC / REALTIME_NSEC: read-only scalar realtime clock snapshot fields
+  for libc/runtime clock reads. Timer expiry and waitability remain represented
+  by timer profiles and event/waitable FDRs.
 
 `GET_PCR` reads from context into a GPR. `SET_PCR` is permission checked in
 hardware. UID/GID/CAPMASK changes update credential context and require the
 current effective UID/capability policy to permit the transition. `SIGMASK`
-updates are thread-local.
+updates are thread-local. Realtime clock PCRs are read-only.
 
 All VFS permission checks consume a snapshot of UID/GID from PCR state at command
 issue time.
