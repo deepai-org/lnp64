@@ -5314,10 +5314,27 @@ impl CodeGen {
                 Ok(dst)
             }
             "getenv" => {
-                let _ = self.one_arg(name, args)?;
-                let dst = self.alloc_reg()?;
-                self.text.push(format!("  LI r{dst}, 0"));
-                Ok(dst)
+                let key = self.one_arg(name, args)?;
+                self.emit_getenv(key)
+            }
+            "setenv" => {
+                if args.len() != 3 {
+                    return Err("setenv(name, value, overwrite) expects 3 arguments".to_string());
+                }
+                let key = self.emit_expr(&args[0])?;
+                let key_slot = self.spill_reg(key);
+                self.temp_reg = 0;
+                let value = self.emit_expr(&args[1])?;
+                let value_slot = self.spill_reg(value);
+                self.temp_reg = 0;
+                let overwrite = self.emit_expr(&args[2])?;
+                let key = self.reload_reg(key_slot)?;
+                let value = self.reload_reg(value_slot)?;
+                self.emit_setenv(key, value, overwrite)
+            }
+            "unsetenv" => {
+                let key = self.one_arg(name, args)?;
+                self.emit_unsetenv(key)
             }
             "__errno_location" | "___errno" => {
                 self.no_args(name, args)?;
@@ -8945,6 +8962,197 @@ impl CodeGen {
 
         self.text.push(format!("{next_egid}:"));
         self.text.push(format!("{done}:"));
+        Ok(dst)
+    }
+
+    fn ensure_env_runtime(&mut self) {
+        self.data
+            .entry("__lnp_env_count".to_string())
+            .or_insert(".quad 0".to_string());
+        self.data
+            .entry("__lnp_env_pairs".to_string())
+            .or_insert(".zero 512".to_string());
+    }
+
+    fn emit_inline_streq(&mut self, left: usize, right: usize, dst: usize) {
+        let loop_label = self.new_label("streq_loop");
+        let false_label = self.new_label("streq_false");
+        let true_label = self.new_label("streq_true");
+        let done = self.new_label("streq_done");
+        self.text.push(format!("  MOV r24, r{left}"));
+        self.text.push(format!("  MOV r25, r{right}"));
+        self.text.push(format!("{loop_label}:"));
+        self.text.push("  LD.B r26, [r24, 0]".to_string());
+        self.text.push("  LD.B r27, [r25, 0]".to_string());
+        self.text.push("  CMP r26, r27".to_string());
+        self.text.push(format!("  BNE {false_label}"));
+        self.text.push("  CMP r26, r0".to_string());
+        self.text.push(format!("  BEQ {true_label}"));
+        self.text.push("  LI r28, 1".to_string());
+        self.text.push("  ADD r24, r24, r28".to_string());
+        self.text.push("  ADD r25, r25, r28".to_string());
+        self.text.push(format!("  JMP {loop_label}"));
+        self.text.push(format!("{true_label}:"));
+        self.text.push(format!("  LI r{dst}, 1"));
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{false_label}:"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("{done}:"));
+    }
+
+    fn emit_getenv(&mut self, key: usize) -> Result<usize, String> {
+        self.ensure_env_runtime();
+        let dst = self.alloc_reg()?;
+        let base = self.alloc_reg()?;
+        let count_addr = self.alloc_reg()?;
+        let count = self.alloc_reg()?;
+        let idx = self.alloc_reg()?;
+        let shift = self.alloc_reg()?;
+        let offset = self.alloc_reg()?;
+        let slot = self.alloc_reg()?;
+        let stored = self.alloc_reg()?;
+        let matched = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let loop_label = self.new_label("getenv_loop");
+        let next = self.new_label("getenv_next");
+        let found = self.new_label("getenv_found");
+        let done = self.new_label("getenv_done");
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("  LI r{base}, __lnp_env_pairs"));
+        self.text
+            .push(format!("  LI r{count_addr}, __lnp_env_count"));
+        self.text.push(format!("  LD r{count}, [r{count_addr}, 0]"));
+        self.text.push(format!("  LI r{idx}, 0"));
+        self.text.push(format!("  LI r{shift}, 4"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("{loop_label}:"));
+        self.text.push(format!("  CMP r{idx}, r{count}"));
+        self.text.push(format!("  BGE {done}"));
+        self.text.push(format!("  LSL r{offset}, r{idx}, r{shift}"));
+        self.text.push(format!("  ADD r{slot}, r{base}, r{offset}"));
+        self.text.push(format!("  LD r{stored}, [r{slot}, 0]"));
+        self.text.push(format!("  CMP r{stored}, r0"));
+        self.text.push(format!("  BEQ {next}"));
+        self.emit_inline_streq(stored, key, matched);
+        self.text.push(format!("  CMP r{matched}, r0"));
+        self.text.push(format!("  BNE {found}"));
+        self.text.push(format!("{next}:"));
+        self.text.push(format!("  ADD r{idx}, r{idx}, r{one}"));
+        self.text.push(format!("  JMP {loop_label}"));
+        self.text.push(format!("{found}:"));
+        self.text.push(format!("  LD r{dst}, [r{slot}, 8]"));
+        self.text.push(format!("{done}:"));
+        Ok(dst)
+    }
+
+    fn emit_setenv(&mut self, key: usize, value: usize, overwrite: usize) -> Result<usize, String> {
+        self.ensure_env_runtime();
+        let dst = self.alloc_reg()?;
+        let base = self.alloc_reg()?;
+        let count_addr = self.alloc_reg()?;
+        let count = self.alloc_reg()?;
+        let idx = self.alloc_reg()?;
+        let shift = self.alloc_reg()?;
+        let offset = self.alloc_reg()?;
+        let slot = self.alloc_reg()?;
+        let stored = self.alloc_reg()?;
+        let matched = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let limit = self.alloc_reg()?;
+        let loop_label = self.new_label("setenv_loop");
+        let next = self.new_label("setenv_next");
+        let found = self.new_label("setenv_found");
+        let add = self.new_label("setenv_add");
+        let full = self.new_label("setenv_full");
+        let done = self.new_label("setenv_done");
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("  LI r{base}, __lnp_env_pairs"));
+        self.text
+            .push(format!("  LI r{count_addr}, __lnp_env_count"));
+        self.text.push(format!("  LD r{count}, [r{count_addr}, 0]"));
+        self.text.push(format!("  LI r{idx}, 0"));
+        self.text.push(format!("  LI r{shift}, 4"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("{loop_label}:"));
+        self.text.push(format!("  CMP r{idx}, r{count}"));
+        self.text.push(format!("  BGE {add}"));
+        self.text.push(format!("  LSL r{offset}, r{idx}, r{shift}"));
+        self.text.push(format!("  ADD r{slot}, r{base}, r{offset}"));
+        self.text.push(format!("  LD r{stored}, [r{slot}, 0]"));
+        self.text.push(format!("  CMP r{stored}, r0"));
+        self.text.push(format!("  BEQ {next}"));
+        self.emit_inline_streq(stored, key, matched);
+        self.text.push(format!("  CMP r{matched}, r0"));
+        self.text.push(format!("  BNE {found}"));
+        self.text.push(format!("{next}:"));
+        self.text.push(format!("  ADD r{idx}, r{idx}, r{one}"));
+        self.text.push(format!("  JMP {loop_label}"));
+        self.text.push(format!("{found}:"));
+        self.text.push(format!("  CMP r{overwrite}, r0"));
+        self.text.push(format!("  BEQ {done}"));
+        self.text.push(format!("  ST [r{slot}, 8], r{value}"));
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{add}:"));
+        self.text.push(format!("  LI r{limit}, 32"));
+        self.text.push(format!("  CMP r{count}, r{limit}"));
+        self.text.push(format!("  BGE {full}"));
+        self.text
+            .push(format!("  LSL r{offset}, r{count}, r{shift}"));
+        self.text.push(format!("  ADD r{slot}, r{base}, r{offset}"));
+        self.text.push(format!("  ST [r{slot}, 0], r{key}"));
+        self.text.push(format!("  ST [r{slot}, 8], r{value}"));
+        self.text.push(format!("  ADD r{count}, r{count}, r{one}"));
+        self.text.push(format!("  ST [r{count_addr}, 0], r{count}"));
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{full}:"));
+        self.text.push(format!("  LI r{dst}, -1"));
+        self.text.push(format!("{done}:"));
+        Ok(dst)
+    }
+
+    fn emit_unsetenv(&mut self, key: usize) -> Result<usize, String> {
+        self.ensure_env_runtime();
+        let dst = self.alloc_reg()?;
+        let base = self.alloc_reg()?;
+        let count_addr = self.alloc_reg()?;
+        let count = self.alloc_reg()?;
+        let idx = self.alloc_reg()?;
+        let shift = self.alloc_reg()?;
+        let offset = self.alloc_reg()?;
+        let slot = self.alloc_reg()?;
+        let stored = self.alloc_reg()?;
+        let matched = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let loop_label = self.new_label("unsetenv_loop");
+        let next = self.new_label("unsetenv_next");
+        let found = self.new_label("unsetenv_found");
+        let done = self.new_label("unsetenv_done");
+        self.text.push(format!("  LI r{base}, __lnp_env_pairs"));
+        self.text
+            .push(format!("  LI r{count_addr}, __lnp_env_count"));
+        self.text.push(format!("  LD r{count}, [r{count_addr}, 0]"));
+        self.text.push(format!("  LI r{idx}, 0"));
+        self.text.push(format!("  LI r{shift}, 4"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("{loop_label}:"));
+        self.text.push(format!("  CMP r{idx}, r{count}"));
+        self.text.push(format!("  BGE {done}"));
+        self.text.push(format!("  LSL r{offset}, r{idx}, r{shift}"));
+        self.text.push(format!("  ADD r{slot}, r{base}, r{offset}"));
+        self.text.push(format!("  LD r{stored}, [r{slot}, 0]"));
+        self.text.push(format!("  CMP r{stored}, r0"));
+        self.text.push(format!("  BEQ {next}"));
+        self.emit_inline_streq(stored, key, matched);
+        self.text.push(format!("  CMP r{matched}, r0"));
+        self.text.push(format!("  BNE {found}"));
+        self.text.push(format!("{next}:"));
+        self.text.push(format!("  ADD r{idx}, r{idx}, r{one}"));
+        self.text.push(format!("  JMP {loop_label}"));
+        self.text.push(format!("{found}:"));
+        self.text.push(format!("  ST [r{slot}, 0], r0"));
+        self.text.push(format!("  ST [r{slot}, 8], r0"));
+        self.text.push(format!("{done}:"));
+        self.text.push(format!("  LI r{dst}, 0"));
         Ok(dst)
     }
 
@@ -12586,6 +12794,34 @@ int main() {
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains("GET_PCR"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_environment_surface_stores_and_finds_values() {
+        let source = r#"
+        int main() {
+            int value;
+            if (getenv("LNP_ENV_TEST") != 0) return 1;
+            if (setenv("LNP_ENV_TEST", "alpha", 0) != 0) return 2;
+            value = getenv("LNP_ENV_TEST");
+            if (value == 0) return 3;
+            if (loadb(value) != 'a') return 4;
+            if (setenv("LNP_ENV_TEST", "beta", 0) != 0) return 5;
+            value = getenv("LNP_ENV_TEST");
+            if (loadb(value) != 'a') return 6;
+            if (setenv("LNP_ENV_TEST", "beta", 1) != 0) return 7;
+            value = getenv("LNP_ENV_TEST");
+            if (loadb(value) != 'b') return 8;
+            if (unsetenv("LNP_ENV_TEST") != 0) return 9;
+            if (getenv("LNP_ENV_TEST") != 0) return 10;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("__lnp_env_pairs"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
