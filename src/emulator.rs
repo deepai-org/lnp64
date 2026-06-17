@@ -27,6 +27,8 @@ const ASLR_STACK_PAGES: u64 = 16;
 const SIGCHLD: u64 = 17;
 const SIGALRM: u64 = 14;
 const SIGSEGV: u64 = 11;
+const SIG_DFL_HANDLER: usize = 0;
+const SIG_IGN_HANDLER: usize = 1;
 const MESSAGE_ENDPOINT_FD: usize = FDR_COUNT - 1;
 const UTIME_NOW_LNP64: i64 = 1_073_741_823;
 const UTIME_OMIT_LNP64: i64 = 1_073_741_822;
@@ -575,12 +577,18 @@ struct Process {
     uid: u64,
     gid: u64,
     sigmask: u64,
-    signal_handlers: HashMap<u64, usize>,
+    signal_handlers: HashMap<u64, SignalDisposition>,
     pending_signals: VecDeque<u64>,
     inbox: VecDeque<(u64, u64)>,
     ucode_ports: HashMap<u64, u8>,
     errno: u64,
     cwd: PathBuf,
+}
+
+#[derive(Clone, Copy)]
+enum SignalDisposition {
+    Handler(usize),
+    Ignore,
 }
 
 impl Process {
@@ -1794,7 +1802,21 @@ impl Machine {
             Instr::Sigaction(signum, handler) => {
                 let signum = self.read_reg(signum)?;
                 let handler = self.read_reg(handler)? as usize;
-                self.process_mut()?.signal_handlers.insert(signum, handler);
+                match handler {
+                    SIG_DFL_HANDLER => {
+                        self.process_mut()?.signal_handlers.remove(&signum);
+                    }
+                    SIG_IGN_HANDLER => {
+                        self.process_mut()?
+                            .signal_handlers
+                            .insert(signum, SignalDisposition::Ignore);
+                    }
+                    _ => {
+                        self.process_mut()?
+                            .signal_handlers
+                            .insert(signum, SignalDisposition::Handler(handler));
+                    }
+                }
             }
             Instr::SigmaskSet(mask) => {
                 let mask = self.read_reg(mask)?;
@@ -5461,22 +5483,25 @@ impl Machine {
         let Some(signum) = signum else {
             return Ok(());
         };
-        let handler = self.process()?.signal_handlers.get(&signum).copied();
-        if let Some(handler) = handler {
-            let saved = {
-                let thread = self.thread()?;
-                SavedSignalContext {
-                    ip: thread.ip,
-                    regs: thread.regs,
-                    flags: thread.flags,
+        match self.process()?.signal_handlers.get(&signum).copied() {
+            Some(SignalDisposition::Ignore) => {}
+            Some(SignalDisposition::Handler(handler)) => {
+                let saved = {
+                    let thread = self.thread()?;
+                    SavedSignalContext {
+                        ip: thread.ip,
+                        regs: thread.regs,
+                        flags: thread.flags,
+                    }
+                };
+                let thread = self.thread_mut()?;
+                thread.signal_stack.push(saved);
+                thread.ip = handler;
+            }
+            None => {
+                if signum != SIGCHLD {
+                    self.exit_current(128 + signum as i32)?;
                 }
-            };
-            let thread = self.thread_mut()?;
-            thread.signal_stack.push(saved);
-            thread.ip = handler;
-        } else {
-            if signum != SIGCHLD {
-                self.exit_current(128 + signum as i32)?;
             }
         }
         Ok(())

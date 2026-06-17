@@ -12397,8 +12397,7 @@ impl CodeGen {
         } else if name == "O_CREAT" {
             self.text.push(format!("  LI r{reg}, 4"));
             Ok(reg)
-        } else if name == "O_WRONLY" || name == "O_RDONLY" || name == "SIGINT" || name == "SIG_IGN"
-        {
+        } else if name == "O_WRONLY" || name == "O_RDONLY" {
             self.text.push(format!("  LI r{reg}, 0"));
             Ok(reg)
         } else if name == "SIG_ERR" {
@@ -16084,6 +16083,39 @@ int main() {
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_signal_default_and_ignore_dispositions_run() {
+        let ignore_source = r#"
+        int main() {
+            if (signal(SIGINT, SIG_IGN) != 0) return 1;
+            if (raise(SIGINT) != 0) return 2;
+            return 0;
+        }
+        "#;
+        let asm = compile(ignore_source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+
+        let default_source = r#"
+        int handler() {
+            sigret();
+            return 0;
+        }
+
+        int main() {
+            if (signal(SIGINT, handler) != 0) return 1;
+            if (signal(SIGINT, SIG_DFL) != 0) return 2;
+            raise(SIGINT);
+            return 3;
+        }
+        "#;
+        let asm = compile(default_source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 130);
     }
 
     #[test]
