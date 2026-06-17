@@ -7129,6 +7129,36 @@ impl CodeGen {
                 self.emit_select(nfds, readfds, writefds, exceptfds, timeout, dst)?;
                 Ok(dst)
             }
+            "epoll_create1" => {
+                if args.len() != 1 {
+                    return Err("epoll_create1(flags) expects 1 argument".to_string());
+                }
+                self.emit_expr(&args[0])?;
+                self.emit_epoll_create()
+            }
+            "epoll_ctl" => {
+                if args.len() != 4 {
+                    return Err("epoll_ctl(epfd, op, fd, event) expects 4 arguments".to_string());
+                }
+                let epfd = self.emit_expr(&args[0])?;
+                let op = self.emit_expr(&args[1])?;
+                let fd = self.emit_expr(&args[2])?;
+                let event = self.emit_expr(&args[3])?;
+                self.emit_epoll_ctl(epfd, op, fd, event)
+            }
+            "epoll_wait" => {
+                if args.len() != 4 {
+                    return Err(
+                        "epoll_wait(epfd, events, maxevents, timeout) expects 4 arguments"
+                            .to_string(),
+                    );
+                }
+                let epfd = self.emit_expr(&args[0])?;
+                let events = self.emit_expr(&args[1])?;
+                let maxevents = self.emit_expr(&args[2])?;
+                let timeout = self.emit_expr(&args[3])?;
+                self.emit_epoll_wait(epfd, events, maxevents, timeout)
+            }
             "FD_ZERO" => {
                 if args.len() != 1 {
                     return Err("FD_ZERO(set) expects 1 argument".to_string());
@@ -9641,6 +9671,144 @@ impl CodeGen {
         self.text.push(format!("{done}:"));
         self.temp_reg = 0;
         Ok(())
+    }
+
+    fn emit_epoll_create(&mut self) -> Result<usize, String> {
+        let size = self.alloc_reg()?;
+        let epfd = self.alloc_reg()?;
+        self.text.push(format!("  LI r{size}, 1032"));
+        self.text.push(format!("  ALLOC r{epfd}, r{size}"));
+        self.text.push(format!("  ST [r{epfd}, 0], r0"));
+        Ok(epfd)
+    }
+
+    fn emit_epoll_ctl(
+        &mut self,
+        epfd: usize,
+        op: usize,
+        fd: usize,
+        event: usize,
+    ) -> Result<usize, String> {
+        let add = self.new_label("epoll_ctl_add");
+        let done = self.new_label("epoll_ctl_done");
+        let fail = self.new_label("epoll_ctl_fail");
+        let have_mask = self.new_label("epoll_ctl_have_mask");
+        let count = self.alloc_reg()?;
+        let cmp = self.alloc_reg()?;
+        let mask = self.alloc_reg()?;
+        let shift = self.alloc_reg()?;
+        let offset = self.alloc_reg()?;
+        let slot = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        self.text.push(format!("  LI r{cmp}, 1"));
+        self.text.push(format!("  CMP r{op}, r{cmp}"));
+        self.text.push(format!("  BEQ {add}"));
+        self.text.push(format!("  JMP {fail}"));
+        self.text.push(format!("{add}:"));
+        self.text.push(format!("  LD r{count}, [r{epfd}, 0]"));
+        self.text.push(format!("  LI r{cmp}, 64"));
+        self.text.push(format!("  CMP r{count}, r{cmp}"));
+        self.text.push(format!("  BGE {fail}"));
+        self.text.push(format!("  LI r{mask}, 1"));
+        self.text.push(format!("  CMP r{event}, r0"));
+        self.text.push(format!("  BEQ {have_mask}"));
+        self.text.push(format!("  LD r{mask}, [r{event}, 0]"));
+        self.text.push(format!("{have_mask}:"));
+        self.text.push(format!("  LI r{shift}, 4"));
+        self.text
+            .push(format!("  LSL r{offset}, r{count}, r{shift}"));
+        self.text.push(format!("  LI r{cmp}, 8"));
+        self.text
+            .push(format!("  ADD r{offset}, r{offset}, r{cmp}"));
+        self.text.push(format!("  ADD r{slot}, r{epfd}, r{offset}"));
+        self.text.push(format!("  ST [r{slot}, 0], r{fd}"));
+        self.text.push(format!("  ST [r{slot}, 8], r{mask}"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("  ADD r{count}, r{count}, r{one}"));
+        self.text.push(format!("  ST [r{epfd}, 0], r{count}"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{fail}:"));
+        self.text.push(format!("  LI r{dst}, -1"));
+        self.text.push(format!("{done}:"));
+        Ok(dst)
+    }
+
+    fn emit_epoll_wait(
+        &mut self,
+        epfd: usize,
+        events: usize,
+        maxevents: usize,
+        timeout: usize,
+    ) -> Result<usize, String> {
+        let scan = self.new_label("epoll_wait_scan");
+        let scan_loop = self.new_label("epoll_wait_scan_loop");
+        let next = self.new_label("epoll_wait_next");
+        let ready_label = self.new_label("epoll_wait_ready");
+        let wait_first = self.new_label("epoll_wait_first");
+        let done = self.new_label("epoll_wait_done");
+        let count = self.alloc_reg()?;
+        let idx = self.alloc_reg()?;
+        let ready = self.alloc_reg()?;
+        let shift = self.alloc_reg()?;
+        let offset = self.alloc_reg()?;
+        let slot = self.alloc_reg()?;
+        let fd = self.alloc_reg()?;
+        let mask = self.alloc_reg()?;
+        let revents = self.alloc_reg()?;
+        let out_offset = self.alloc_reg()?;
+        let out = self.alloc_reg()?;
+        let tmp = self.alloc_reg()?;
+        self.text.push(format!("{scan}:"));
+        self.text.push(format!("  LD r{count}, [r{epfd}, 0]"));
+        self.text.push(format!("  LI r{idx}, 0"));
+        self.text.push(format!("  LI r{ready}, 0"));
+        self.text.push(format!("  LI r{shift}, 4"));
+        self.text.push(format!("{scan_loop}:"));
+        self.text.push(format!("  CMP r{idx}, r{count}"));
+        self.text.push(format!("  BGE {wait_first}"));
+        self.text.push(format!("  CMP r{ready}, r{maxevents}"));
+        self.text.push(format!("  BGE {done}"));
+        self.text.push(format!("  LSL r{offset}, r{idx}, r{shift}"));
+        self.text.push(format!("  LI r{tmp}, 8"));
+        self.text
+            .push(format!("  ADD r{offset}, r{offset}, r{tmp}"));
+        self.text.push(format!("  ADD r{slot}, r{epfd}, r{offset}"));
+        self.text.push(format!("  LD r{fd}, [r{slot}, 0]"));
+        self.text.push(format!("  LD r{mask}, [r{slot}, 8]"));
+        self.text
+            .push(format!("  POLL_FD_DYN r{revents}, r{fd}, r{mask}"));
+        self.text.push(format!("  CMP r{revents}, r0"));
+        self.text.push(format!("  BNE {ready_label}"));
+        self.text.push(format!("{next}:"));
+        self.text.push(format!("  LI r{tmp}, 1"));
+        self.text.push(format!("  ADD r{idx}, r{idx}, r{tmp}"));
+        self.text.push(format!("  JMP {scan_loop}"));
+        self.text.push(format!("{ready_label}:"));
+        self.text
+            .push(format!("  LSL r{out_offset}, r{ready}, r{shift}"));
+        self.text
+            .push(format!("  ADD r{out}, r{events}, r{out_offset}"));
+        self.text.push(format!("  ST [r{out}, 0], r{revents}"));
+        self.text.push(format!("  ST [r{out}, 8], r{fd}"));
+        self.text.push(format!("  LI r{tmp}, 1"));
+        self.text.push(format!("  ADD r{ready}, r{ready}, r{tmp}"));
+        self.text.push(format!("  JMP {next}"));
+        self.text.push(format!("{wait_first}:"));
+        self.text.push(format!("  CMP r{ready}, r0"));
+        self.text.push(format!("  BNE {done}"));
+        self.text.push(format!("  CMP r{timeout}, r0"));
+        self.text.push(format!("  BEQ {done}"));
+        self.text.push(format!("  CMP r{count}, r0"));
+        self.text.push(format!("  BEQ {done}"));
+        self.text.push(format!("  LD r{fd}, [r{epfd}, 8]"));
+        self.text.push(format!("  LD r{mask}, [r{epfd}, 16]"));
+        self.text
+            .push(format!("  AWAIT_DYN r{tmp}, r{fd}, r{mask}"));
+        self.text.push(format!("  JMP {scan}"));
+        self.text.push(format!("{done}:"));
+        Ok(ready)
     }
 
     fn emit_clock_gettime(&mut self, ts: usize) -> Result<usize, String> {
@@ -12351,6 +12519,42 @@ int main() {
         let asm = compile(source).unwrap();
         assert!(asm.contains("POLL_FD_DYN"), "{asm}");
         assert!(asm.contains("LSL"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_epoll_surface_lowers_to_native_readiness_probe_and_runs() {
+        let source = r#"
+        int main() {
+            int fds[2];
+            int rfd;
+            int wfd;
+            int ep;
+            int ev;
+            int out;
+            int buf;
+            pipe(fds);
+            rfd = fds[0];
+            wfd = fds[1];
+            ep = epoll_create1(0);
+            if (ep == 0) return 1;
+            ev = alloc(16);
+            out = alloc(16);
+            buf = alloc(1);
+            store(ev, EPOLLIN);
+            if (epoll_ctl(ep, EPOLL_CTL_ADD, rfd, ev) != 0) return 2;
+            if (epoll_wait(ep, out, 1, 0) != 0) return 3;
+            if (write(wfd, "e", 1) != 1) return 4;
+            if (epoll_wait(ep, out, 1, 0) != 1) return 5;
+            if (load(out) != EPOLLIN) return 6;
+            if (read(rfd, buf, 1) != 1) return 8;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("POLL_FD_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
