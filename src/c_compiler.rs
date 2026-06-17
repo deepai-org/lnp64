@@ -7098,26 +7098,52 @@ impl CodeGen {
                     return Err("pipe(fds) expects 1 argument".to_string());
                 }
                 let fds_ptr = self.emit_expr(&args[0])?;
-                let block_size = self.alloc_reg()?;
-                let block = self.alloc_reg()?;
-                let tmp = self.alloc_reg()?;
-                let read_fd = self.alloc_reg()?;
-                let write_fd = self.alloc_reg()?;
-                let dst = self.alloc_reg()?;
-                self.text.push(format!("  LI r{block_size}, 64"));
-                self.text.push(format!("  ALLOC r{block}, r{block_size}"));
-                self.text.push(format!("  LI r{tmp}, 1"));
-                self.text.push(format!("  ST [r{block}, 0], r{tmp}"));
-                self.text.push(format!("  LI r{tmp}, 2"));
-                self.text.push(format!("  ST [r{block}, 8], r{tmp}"));
-                self.text.push(format!("  LI r{tmp}, 1"));
-                self.text.push(format!("  ST [r{block}, 16], r{tmp}"));
-                self.text.push(format!("  OBJECT_CTL r{dst}, r{block}"));
-                self.text.push(format!("  LD r{read_fd}, [r{block}, 24]"));
-                self.text.push(format!("  LD r{write_fd}, [r{block}, 32]"));
-                self.text.push(format!("  ST [r{fds_ptr}, 0], r{read_fd}"));
-                self.text.push(format!("  ST [r{fds_ptr}, 8], r{write_fd}"));
-                Ok(dst)
+                self.emit_pipe_queue_create(fds_ptr)
+            }
+            "queue_create" => {
+                if args.len() != 1 {
+                    return Err("queue_create(fds) expects 1 argument".to_string());
+                }
+                let fds_ptr = self.emit_expr(&args[0])?;
+                self.emit_pipe_queue_create(fds_ptr)
+            }
+            "object_create" => {
+                if args.len() != 5 {
+                    return Err(
+                        "object_create(kind, profile, fd0, fd1, arg) expects 5 arguments"
+                            .to_string(),
+                    );
+                }
+                let kind = self.emit_expr(&args[0])?;
+                let profile = self.emit_expr(&args[1])?;
+                let fd0 = self.emit_expr(&args[2])?;
+                let fd1 = self.emit_expr(&args[3])?;
+                let arg = self.emit_expr(&args[4])?;
+                self.emit_object_create(kind, profile, fd0, fd1, arg)
+            }
+            "counter_create" => {
+                let initial = self.one_arg(name, args)?;
+                let kind = self.alloc_reg()?;
+                let profile = self.alloc_reg()?;
+                let fd0 = self.alloc_reg()?;
+                let fd1 = self.alloc_reg()?;
+                self.text.push(format!("  LI r{kind}, 1"));
+                self.text.push(format!("  LI r{profile}, 0"));
+                self.text.push(format!("  LI r{fd0}, 0"));
+                self.text.push(format!("  LI r{fd1}, 0"));
+                self.emit_object_create(kind, profile, fd0, fd1, initial)
+            }
+            "memory_object_create" => {
+                let size = self.one_arg(name, args)?;
+                let kind = self.alloc_reg()?;
+                let profile = self.alloc_reg()?;
+                let fd0 = self.alloc_reg()?;
+                let fd1 = self.alloc_reg()?;
+                self.text.push(format!("  LI r{kind}, 3"));
+                self.text.push(format!("  LI r{profile}, 0"));
+                self.text.push(format!("  LI r{fd0}, 0"));
+                self.text.push(format!("  LI r{fd1}, 0"));
+                self.emit_object_create(kind, profile, fd0, fd1, size)
             }
             "domain_create" => {
                 if args.len() != 4 {
@@ -8530,6 +8556,54 @@ impl CodeGen {
             self.text.push(format!("  ST [r{out}, {offset}], r{tmp}"));
         }
         self.text.push(format!("{skip_copy}:"));
+        Ok(dst)
+    }
+
+    fn emit_object_create(
+        &mut self,
+        kind: usize,
+        profile: usize,
+        fd0: usize,
+        fd1: usize,
+        arg: usize,
+    ) -> Result<usize, String> {
+        let block_size = self.alloc_reg()?;
+        let block = self.alloc_reg()?;
+        let op = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        self.text.push(format!("  LI r{block_size}, 72"));
+        self.text.push(format!("  ALLOC r{block}, r{block_size}"));
+        self.text.push(format!("  LI r{op}, 1"));
+        self.text.push(format!("  ST [r{block}, 0], r{op}"));
+        self.text.push(format!("  ST [r{block}, 8], r{kind}"));
+        self.text.push(format!("  ST [r{block}, 16], r{profile}"));
+        self.text.push(format!("  ST [r{block}, 24], r{fd0}"));
+        self.text.push(format!("  ST [r{block}, 32], r{fd1}"));
+        self.text.push(format!("  ST [r{block}, 40], r{arg}"));
+        self.text.push(format!("  OBJECT_CTL r{dst}, r{block}"));
+        Ok(dst)
+    }
+
+    fn emit_pipe_queue_create(&mut self, fds_ptr: usize) -> Result<usize, String> {
+        let block_size = self.alloc_reg()?;
+        let block = self.alloc_reg()?;
+        let tmp = self.alloc_reg()?;
+        let read_fd = self.alloc_reg()?;
+        let write_fd = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        self.text.push(format!("  LI r{block_size}, 64"));
+        self.text.push(format!("  ALLOC r{block}, r{block_size}"));
+        self.text.push(format!("  LI r{tmp}, 1"));
+        self.text.push(format!("  ST [r{block}, 0], r{tmp}"));
+        self.text.push(format!("  LI r{tmp}, 2"));
+        self.text.push(format!("  ST [r{block}, 8], r{tmp}"));
+        self.text.push(format!("  LI r{tmp}, 1"));
+        self.text.push(format!("  ST [r{block}, 16], r{tmp}"));
+        self.text.push(format!("  OBJECT_CTL r{dst}, r{block}"));
+        self.text.push(format!("  LD r{read_fd}, [r{block}, 24]"));
+        self.text.push(format!("  LD r{write_fd}, [r{block}, 32]"));
+        self.text.push(format!("  ST [r{fds_ptr}, 0], r{read_fd}"));
+        self.text.push(format!("  ST [r{fds_ptr}, 8], r{write_fd}"));
         Ok(dst)
     }
 
@@ -12528,6 +12602,45 @@ int main() {
         let asm = compile(source).unwrap();
         assert!(asm.contains("OBJECT_CTL"), "{asm}");
         assert!(!asm.contains("PIPE"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_object_creation_surface_runs_on_object_ctl() {
+        let source = r#"
+        int main() {
+            int fds[2];
+            int buf;
+            int counter;
+            int generic_counter;
+            int mem;
+            buf = alloc(8);
+            counter = counter_create(7);
+            if (counter == -1) return 1;
+            if (read(counter, buf, 8) != 8) return 2;
+            if (load(buf) != 7) return 3;
+            store(buf, 9);
+            if (write(counter, buf, 8) != 8) return 4;
+            store(buf, 0);
+            if (read(counter, buf, 8) != 8) return 5;
+            if (load(buf) != 9) return 6;
+            generic_counter = object_create(1, 0, 0, 0, 5);
+            if (generic_counter == -1) return 7;
+            if (read(generic_counter, buf, 8) != 8) return 8;
+            if (load(buf) != 5) return 9;
+            mem = memory_object_create(4);
+            if (mem == -1) return 10;
+            if (read(mem, buf, 4) != 4) return 11;
+            if (queue_create(fds) != 0) return 12;
+            if (write(fds[1], "q", 1) != 1) return 13;
+            if (read(fds[0], buf, 1) != 1) return 14;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("OBJECT_CTL"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
