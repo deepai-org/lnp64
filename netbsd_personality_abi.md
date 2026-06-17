@@ -6,9 +6,12 @@ The intent is to keep BSD/POSIX compatibility in a software personality while
 LNP64 owns capabilities, VMAs, domains, scheduling, wait/wake, object profiles,
 and gate delivery.
 
-`demos/netbsd_personality_smoke.c` is the current smoke artifact for this
+`demos/netbsd_personality_smoke.c` is the focused ABI smoke artifact for this
 boundary. `scripts/run_netbsd_personality_smoke.sh` compiles it, runs it, and
 checks that the generated assembly still uses the expected native primitives.
+`scripts/run_netbsd_personality_system.sh` is the larger userland-style system
+gate: it boots `userland/netbsd_init.c`, executes `userland/netbsd_sh.c`, runs
+several compiled C test programs, and audits the generated native trace.
 
 ## ABI Surface
 
@@ -64,6 +67,35 @@ checks that the generated assembly still uses the expected native primitives.
   `MMAP`, `MPROTECT`, `MUNMAP`, `POLL_FD_DYN`, `AWAIT_DYN`, `SIGACTION`,
   `KILL`, `CAP_DUP`, `CAP_SEND`, `CAP_RECV`, `DOMAIN_CTL`,
   `CALL_CAP`/`GATE_CALL`, and `RET_CAP`/`GATE_RETURN`.
+
+## Current System Gate
+
+`scripts/run_netbsd_personality_system.sh` builds a temporary personality root
+with `/sbin/init.s`, `/bin/netbsd_sh.s`, and compiled test programs for
+threads, poll/select/epoll, mmap, fd passing, loopback sockets, signal gates,
+call gates, and Resource Domain budget checks. The scripted shell runs:
+
+```sh
+/init
+/bin/sh -c 'netbsd personality system script'
+echo hello > /tmp/a
+cat /tmp/a | wc
+mkdir /tmp/d
+ls /tmp
+./thread_test
+./poll_test
+./socket_loopback_test
+./signal_gate_test
+./domain_budget_test
+```
+
+The runner verifies the transcript, checks native primitive evidence including
+FDR I/O, `MMAP`, `AWAIT_DYN`, `OBJECT_CTL`, `DOMAIN_CTL`, `CAP_*`,
+`CALL_CAP`/`RET_CAP`, `FORK`, `EXEC`, `SPAWN`, `SIGACTION`, `SIGRET`, and
+rejects raw interrupt/MMIO/DMA/page-table/scheduler/syscall trace tokens. It
+also verifies stale FDR generation rejection via `demos/stale_fd_token.s` and
+checks Resource Domain PID counters return to their baseline after child
+program exits.
 
 ## Open Work
 

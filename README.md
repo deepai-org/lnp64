@@ -119,6 +119,7 @@ Run demos and userland:
 ```sh
 bash scripts/run_demos.sh
 bash scripts/run_userland.sh
+bash scripts/run_netbsd_personality_system.sh
 ```
 
 Run real-package gates:
