@@ -726,6 +726,22 @@ impl Thread {
     }
 }
 
+#[derive(Clone, Copy)]
+struct FdWaiter {
+    tid: u64,
+    fd: usize,
+    generation: u64,
+    mask: u64,
+    result: Option<Reg>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FdWaiterState {
+    Pending,
+    Ready,
+    Stale,
+}
+
 pub struct Machine {
     processes: HashMap<u64, Process>,
     threads: HashMap<u64, Thread>,
@@ -737,7 +753,7 @@ pub struct Machine {
     futex_waiters: HashMap<u64, VecDeque<u64>>,
     thread_join_waiters: HashMap<u64, VecDeque<u64>>,
     completed_threads: HashMap<u64, u64>,
-    fd_waiters: Vec<(u64, usize, u64)>,
+    fd_waiters: Vec<FdWaiter>,
     current_tid: u64,
     next_pid: u64,
     next_tid: u64,
@@ -1017,7 +1033,7 @@ impl Machine {
             Instr::Await(result, fd, mask) => {
                 let mask = self.read_reg(mask)?;
                 if !self.fd_ready_for_mask(fd.0, mask)? {
-                    self.fd_waiters.push((self.current_tid, fd.0, mask));
+                    self.push_fd_waiter(fd.0, mask, Some(result))?;
                     self.ready.retain(|tid| *tid != self.current_tid);
                     return Ok(false);
                 }
@@ -1032,7 +1048,7 @@ impl Machine {
                     return Ok(true);
                 };
                 if !self.fd_ready_for_mask(fd, mask)? {
-                    self.fd_waiters.push((self.current_tid, fd, mask));
+                    self.push_fd_waiter(fd, mask, Some(result))?;
                     self.ready.retain(|tid| *tid != self.current_tid);
                     return Ok(false);
                 }
@@ -1463,7 +1479,7 @@ impl Machine {
             }
             Instr::WaitOnFd(fd, _) => {
                 if !self.fd_ready(fd.0)? {
-                    self.fd_waiters.push((self.current_tid, fd.0, 0));
+                    self.push_fd_waiter(fd.0, 0, None)?;
                     self.ready.retain(|tid| *tid != self.current_tid);
                     return Ok(false);
                 }
@@ -4943,16 +4959,63 @@ impl Machine {
 
     fn poll_fd_waiters(&mut self) {
         let waiters = std::mem::take(&mut self.fd_waiters);
-        for (tid, fd, mask) in waiters {
-            let ready = self
-                .with_thread_process(tid, |machine| machine.fd_ready_for_mask(fd, mask))
-                .unwrap_or(false);
-            if ready {
-                self.wake_thread(tid);
-            } else if self.threads.contains_key(&tid) {
-                self.fd_waiters.push((tid, fd, mask));
+        for waiter in waiters {
+            let state = self
+                .with_thread_process(waiter.tid, |machine| {
+                    if !machine.fd_generation_matches(waiter.fd, waiter.generation)? {
+                        return Ok(FdWaiterState::Stale);
+                    }
+                    if machine.fd_ready_for_mask(waiter.fd, waiter.mask)? {
+                        Ok(FdWaiterState::Ready)
+                    } else {
+                        Ok(FdWaiterState::Pending)
+                    }
+                })
+                .unwrap_or(FdWaiterState::Stale);
+            match state {
+                FdWaiterState::Ready => self.wake_thread(waiter.tid),
+                FdWaiterState::Pending if self.threads.contains_key(&waiter.tid) => {
+                    self.fd_waiters.push(waiter);
+                }
+                FdWaiterState::Stale => {
+                    let _ = self.with_thread_process(waiter.tid, |machine| {
+                        machine.set_errno(116)?;
+                        if let Some(result) = waiter.result {
+                            machine.write_reg(result, -1i64 as u64)?;
+                        }
+                        Ok(())
+                    });
+                    self.wake_thread(waiter.tid);
+                }
+                FdWaiterState::Pending => {}
             }
         }
+    }
+
+    fn push_fd_waiter(&mut self, fd: usize, mask: u64, result: Option<Reg>) -> Result<(), String> {
+        let generation = self.fd_generation(fd)?;
+        self.fd_waiters.push(FdWaiter {
+            tid: self.current_tid,
+            fd,
+            generation,
+            mask,
+            result,
+        });
+        Ok(())
+    }
+
+    fn fd_generation(&self, fd: usize) -> Result<u64, String> {
+        self.process()?
+            .fd_generations
+            .get(fd)
+            .copied()
+            .ok_or_else(|| format!("fd index out of range: {fd}"))
+    }
+
+    fn fd_generation_matches(&self, fd: usize, generation: u64) -> Result<bool, String> {
+        let process = self.process()?;
+        Ok(process.fd_generations.get(fd).copied() == Some(generation)
+            && !matches!(process.fds.get(fd), Some(FdHandle::Closed) | None))
     }
 
     fn with_thread_process<T>(
@@ -6379,6 +6442,43 @@ mod tests {
             .unwrap();
         assert_eq!(machine.process().unwrap().errno, 116);
         assert_eq!(machine.thread().unwrap().regs[1], 0);
+    }
+
+    #[test]
+    fn stale_fd_waiter_rejects_reused_event_source_generation() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        let pipe = Rc::new(RefCell::new(PipeBuffer::default()));
+        machine.processes.get_mut(&1).unwrap().fds[3] = FdHandle::PipeReader(pipe);
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[3] = FdCapability::full(3);
+        machine.thread_mut().unwrap().regs[2] = POLLIN_MASK;
+
+        let keep_ready = machine
+            .exec(Instr::Await(Reg(5), FdReg(3), Reg(2)))
+            .unwrap();
+        assert!(!keep_ready);
+        assert_eq!(machine.fd_waiters.len(), 1);
+
+        machine.close_fd_index(3).unwrap();
+        assert_eq!(
+            machine
+                .alloc_fd_handle(FdHandle::Counter(Rc::new(RefCell::new(1))))
+                .unwrap(),
+            Some(3)
+        );
+        machine.poll_fd_waiters();
+
+        assert!(machine.ready.contains(&1));
+        assert!(machine.fd_waiters.is_empty());
+        assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 116);
     }
 
     #[test]
