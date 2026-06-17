@@ -3008,6 +3008,17 @@ impl CodeGen {
             };
             self.data.insert(label, data);
         }
+        for (name, _) in &program.global_arrays {
+            let label = format!("global_{name}");
+            self.globals.insert(name.clone(), label);
+            self.global_arrays.insert(name.clone());
+        }
+        for (name, _) in &program.global_byte_arrays {
+            let label = format!("global_{name}");
+            self.globals.insert(name.clone(), label);
+            self.global_arrays.insert(name.clone());
+            self.global_byte_arrays.insert(name.clone());
+        }
         for (name, values) in &program.global_arrays {
             let label = format!("global_{name}");
             self.globals.insert(name.clone(), label.clone());
@@ -3026,7 +3037,11 @@ impl CodeGen {
             for (idx, value) in values.iter().enumerate() {
                 let word = match value {
                     GlobalWord::Int(value) => value.to_string(),
-                    GlobalWord::Label(label) => label.clone(),
+                    GlobalWord::Label(label) => self
+                        .globals
+                        .get(label)
+                        .cloned()
+                        .unwrap_or_else(|| label.clone()),
                     GlobalWord::Str(value) => self.intern_string(value),
                 };
                 if idx == 0 {
@@ -13824,6 +13839,26 @@ mod tests {
         }
         "#;
         let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn global_pointer_array_resolves_static_char_array_labels() {
+        let source = r#"
+        static const char typename[] = "userdata";
+        static const char *names[] = {"nil", typename, typename};
+
+        int main() {
+            if (strcmp(names[1], "userdata") != 0) return 1;
+            if (strcmp(names[2], "userdata") != 0) return 2;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("global_typename"), "{asm}");
+        assert!(!asm.contains(".quad typename"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
