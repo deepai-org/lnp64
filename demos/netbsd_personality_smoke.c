@@ -183,6 +183,9 @@ int check_mmap_and_rumpfs_block() {
     if (loadb(out + 6) != 'f') return 9;
     if (loadb(out + 11) != 'r') return 10;
     if (loadb(out + 16) != 's') return 11;
+    if (mprotect(mmap_arena, 4096, 1) != 0) return 12;
+    if (load(mem1) != 0x4e425344) return 13;
+    if (munmap(mmap_arena, 4096) != 0) return 14;
     return 0;
 }
 
