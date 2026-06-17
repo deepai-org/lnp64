@@ -5353,9 +5353,16 @@ impl CodeGen {
                 if args.len() != 3 {
                     return Err("fgets(buf, size, stream) expects 3 arguments".to_string());
                 }
-                let dst = self.alloc_reg()?;
-                self.text.push(format!("  LI r{dst}, 0"));
-                Ok(dst)
+                let buf = self.emit_expr(&args[0])?;
+                let buf_slot = self.spill_reg(buf);
+                self.temp_reg = 0;
+                let size = self.emit_expr(&args[1])?;
+                let size_slot = self.spill_reg(size);
+                self.temp_reg = 0;
+                let stream = self.emit_expr(&args[2])?;
+                let buf = self.reload_reg(buf_slot)?;
+                let size = self.reload_reg(size_slot)?;
+                self.emit_fgets(buf, size, stream)
             }
             "assert" | "lua_assert" | "lua_longassert" => {
                 if args.len() != 1 {
@@ -9194,6 +9201,60 @@ impl CodeGen {
         Ok(())
     }
 
+    fn emit_fgets(&mut self, buf: usize, size: usize, stream: usize) -> Result<usize, String> {
+        let dst = self.alloc_reg()?;
+        let idx = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let limit = self.alloc_reg()?;
+        let ptr = self.alloc_reg()?;
+        let count = self.alloc_reg()?;
+        let ch = self.alloc_reg()?;
+        let newline = self.alloc_reg()?;
+        let done = self.new_label("fgets_done");
+        let size_one = self.new_label("fgets_size_one");
+        let loop_label = self.new_label("fgets_loop");
+        let terminate = self.new_label("fgets_terminate");
+        let empty = self.new_label("fgets_empty");
+
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("  CMP r{size}, r0"));
+        self.text.push(format!("  BLE {done}"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("  SUB r{limit}, r{size}, r{one}"));
+        self.text.push(format!("  CMP r{limit}, r0"));
+        self.text.push(format!("  BLE {size_one}"));
+        self.text.push(format!("  LI r{idx}, 0"));
+        self.text.push(format!("  LI r{newline}, 10"));
+        self.text.push(format!("{loop_label}:"));
+        self.text.push(format!("  CMP r{idx}, r{limit}"));
+        self.text.push(format!("  BGE {terminate}"));
+        self.text.push(format!("  ADD r{ptr}, r{buf}, r{idx}"));
+        self.text.push(format!("  LI r{count}, 1"));
+        self.emit_read_fd_dispatch(stream, ptr, count, Some(count))?;
+        self.text.push(format!("  CMP r{count}, r0"));
+        self.text.push(format!("  BLE {terminate}"));
+        self.text.push(format!("  LD.B r{ch}, [r{ptr}, 0]"));
+        self.text.push(format!("  ADD r{idx}, r{idx}, r{one}"));
+        self.text.push(format!("  CMP r{ch}, r{newline}"));
+        self.text.push(format!("  BEQ {terminate}"));
+        self.text.push(format!("  JMP {loop_label}"));
+        self.text.push(format!("{size_one}:"));
+        self.text.push(format!("  ST.B [r{buf}, 0], r0"));
+        self.text.push(format!("  MOV r{dst}, r{buf}"));
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{terminate}:"));
+        self.text.push(format!("  ADD r{ptr}, r{buf}, r{idx}"));
+        self.text.push(format!("  ST.B [r{ptr}, 0], r0"));
+        self.text.push(format!("  CMP r{idx}, r0"));
+        self.text.push(format!("  BEQ {empty}"));
+        self.text.push(format!("  MOV r{dst}, r{buf}"));
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{empty}:"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("{done}:"));
+        Ok(dst)
+    }
+
     fn emit_write_fd_dispatch(
         &mut self,
         fd_reg: usize,
@@ -12942,6 +13003,32 @@ int main() {
         let asm = compile(source).unwrap();
         assert!(asm.contains("OPEN_FD_DYN"), "{asm}");
         assert!(asm.contains("CAP_DUP"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_fgets_reads_lines_from_descriptor_stream() {
+        let source = r#"
+        int main() {
+            int fds[2];
+            int buf;
+            pipe(fds);
+            buf = alloc(8);
+            if (write(fds[1], "abc\ndef", 7) != 7) return 1;
+            if (fgets(buf, 8, fds[0]) != buf) return 2;
+            if (strcmp(buf, "abc\n") != 0) return 3;
+            if (fgets(buf, 4, fds[0]) != buf) return 4;
+            if (strcmp(buf, "def") != 0) return 5;
+            if (fgets(buf, 1, fds[0]) != buf) return 6;
+            if (strcmp(buf, "") != 0) return 7;
+            if (fgets(buf, 8, fds[0]) != 0) return 8;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("READ_FD_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);

@@ -4,9 +4,9 @@ int handler(int client) {
     int n;
     buf = alloc(256);
     recv(client, buf, 256, 0);
-    open(4, "demos/index.html", 0);
+    open(10, "demos/index.html", 0);
     filebuf = alloc(64);
-    n = read(4, filebuf, 64);
+    n = read(10, filebuf, 64);
     send(client, "HTTP/1.1 200 OK\r\nContent-Length: 16\r\n\r\n", 39, MSG_NOSIGNAL);
     send(client, filebuf, n, MSG_NOSIGNAL);
     return 0;
