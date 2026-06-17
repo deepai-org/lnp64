@@ -11,6 +11,7 @@ programs=(
   netbsd_sh
   thread_test
   poll_test
+  fs_service_test
   mmap_test
   fd_passing_test
   gate_trace_test
@@ -25,6 +26,24 @@ mkdir -p "$root/bin" "$root/dev" "$root/etc" "$root/sbin" "$root/tmp"
 cat > "$root/etc/motd" <<'MOTD'
 welcome to lnp64-netbsd-personality
 MOTD
+
+fs_image="$root/etc/netbsd_personality.fs"
+truncate -s 512 "$fs_image"
+put_image() {
+  local offset="$1"
+  local bytes="$2"
+  printf '%b' "$bytes" | dd of="$fs_image" bs=1 seek="$offset" conv=notrunc status=none
+}
+put_image 0 'LNPFS2\n0'
+put_image 64 '1d11/\0'
+put_image 100 'x'
+put_image 128 '1d11/etc\0'
+put_image 164 'x'
+put_image 192 '1f11/etc/motd\0'
+put_image 228 'r'
+put_image 232 'welcome\0'
+put_image 256 '1d11/tmp\0'
+put_image 292 'x'
 
 : > "$trace"
 "${lnp64[@]}" cc userland/netbsd_init.c -o "$root/sbin/init.s"
@@ -52,6 +71,8 @@ $ ./thread_test
 thread_test ok
 $ ./poll_test
 poll_test ok
+$ ./fs_service_test
+fs_service_test ok
 $ ./socket_loopback_test
 socket_loopback_test ok
 $ ./signal_gate_test
@@ -82,6 +103,8 @@ required_native=(
   EXEC
   SPAWN
   POLL_FD_DYN
+  PWRITE_FD_DYN
+  FD_SEEK
   SIGACTION
   KILL
 )

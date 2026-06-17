@@ -32,7 +32,7 @@ several compiled C test programs, and audits the generated native trace.
 | Signals | `signal`, `sigaction`, masks, `raise`, `kill`, `SIGRET` | `GATE_CTL` for POSIX disposition gates, `GATE_MASK_SET`, `GATE_DELIVER`, `GATE_RETURN`; `SIGRET` is the POSIX alias for gate return |
 | Faults/exceptions | `SIGILL`, `SIGFPE`, `SIGSEGV`, `SIGBUS`, `SIGTRAP` | native fault delivery records routed through the Gate/Continuation Engine, then mapped by the POSIX profile |
 | Sockets | `socket`, `bind`, `listen`, `connect`, `accept`, `send`, `recv` | endpoint object profiles via `OBJECT_CTL`, stream `PUSH`/`PULL`, readiness waits |
-| Rump filesystem hook | mounted block image or object-backed storage service | tiny checked rumpfs mount/read service over a block-image FDR fixture plus mmap/page-fill |
+| Rump filesystem hook | mounted block image or object-backed storage service | tiny checked rumpfs mount/read service over a block-image FDR fixture plus the system gate's fixed-record service-owned image with mmap, mutation, metadata, and flush/barrier checks |
 | Gates/upcalls | rump service calls, cross-domain delivery | `OBJECT_CTL create call_gate`, `GATE_CALL`, `GATE_RETURN`; `CALL_CAP`/`RET_CAP` are source/profile spellings |
 | Resource domains | sandbox/container/rump service isolation | `DOMAIN_CTL` create/query/freeze/resume/attach/detach/destroy |
 
@@ -72,8 +72,9 @@ several compiled C test programs, and audits the generated native trace.
 
 `scripts/run_netbsd_personality_system.sh` builds a temporary personality root
 with `/sbin/init.s`, `/bin/netbsd_sh.s`, and compiled test programs for
-threads, poll/select/epoll, mmap, fd passing, loopback sockets, signal gates,
-call gates, and Resource Domain budget checks. The scripted shell runs:
+threads, poll/select/epoll, a service-owned filesystem image, mmap, fd passing,
+loopback sockets, signal gates, call gates, and Resource Domain budget checks.
+The scripted shell runs:
 
 ```sh
 /init
@@ -84,24 +85,28 @@ mkdir /tmp/d
 ls /tmp
 ./thread_test
 ./poll_test
+./fs_service_test
 ./socket_loopback_test
 ./signal_gate_test
 ./domain_budget_test
 ```
 
 The runner verifies the transcript, checks native primitive evidence including
-FDR I/O, `MMAP`, `AWAIT_DYN`, `OBJECT_CTL`, `DOMAIN_CTL`, `CAP_*`,
-`CALL_CAP`/`RET_CAP`, `FORK`, `EXEC`, `SPAWN`, `SIGACTION`, `SIGRET`, and
-rejects raw interrupt/MMIO/DMA/page-table/scheduler/syscall trace tokens. It
-also verifies stale FDR generation rejection via `demos/stale_fd_token.s` and
-checks Resource Domain PID counters return to their baseline after child
-program exits.
+FDR I/O, `MMAP`, `PWRITE_FD_DYN`, `FD_SEEK`, `AWAIT_DYN`, `OBJECT_CTL`,
+`DOMAIN_CTL`, `CAP_*`, `CALL_CAP`/`RET_CAP`, `FORK`, `EXEC`, `SPAWN`,
+`SIGACTION`, `SIGRET`, and rejects raw interrupt/MMIO/DMA/page-table/scheduler/
+syscall trace tokens. It also verifies stale FDR generation rejection via
+`demos/stale_fd_token.s` and checks Resource Domain PID counters return to their
+baseline after child program exits. The filesystem-service test maps a generated
+fixed-record image, performs service-owned path walking, create, rename, link,
+unlink, metadata update, and an explicit flush/barrier through offset I/O, then
+reopens the image to verify persisted state.
 
 ## Open Work
 
-- Expand the current tiny checked rumpfs service into a real NetBSD-derived
-  filesystem component that owns a block/object FDR and exposes namespace/file
-  services back through capabilities.
+- Promote the current fixed-record service-owned filesystem image into a real
+  NetBSD-derived component that exposes namespace/file services back through
+  capabilities.
 - Add negative tests proving the personality cannot resolve paths without a
   delegated root/cwd capability and cannot use raw interrupts, raw DMA, raw page
   tables, hidden scheduler authority, or widened transferred capabilities.
