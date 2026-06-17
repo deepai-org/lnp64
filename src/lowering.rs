@@ -803,6 +803,58 @@ mod tests {
             .collect()
     }
 
+    fn contract_rows(manifest: &str) -> Vec<(&str, &str, &str)> {
+        manifest
+            .lines()
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(|line| {
+                let mut fields = line.splitn(3, '|');
+                let name = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing contract name in {line}"));
+                let path = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing contract path in {line}"));
+                let test = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing contract test in {line}"));
+                (name, path, test)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn toolchain_contract_index_is_complete() {
+        let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
+        let rows = contract_rows(contract_index);
+        let mut names = std::collections::BTreeSet::new();
+        let mut paths = std::collections::BTreeSet::new();
+        let mut tests = std::collections::BTreeSet::new();
+        let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+
+        for (name, path, test) in rows {
+            assert!(names.insert(name), "duplicate contract name {name}");
+            assert!(paths.insert(path), "duplicate contract path {path}");
+            assert!(tests.insert(test), "duplicate contract test {test}");
+            assert!(
+                manifest_root.join(path).is_file(),
+                "contract {name} path {path} does not exist"
+            );
+            assert!(!test.is_empty(), "empty test for contract {name}");
+        }
+        for name in [
+            "contract_index",
+            "target",
+            "relocations",
+            "psabi",
+            "intrinsics",
+            "isel",
+            "exec_plan",
+        ] {
+            assert!(names.contains(name), "missing contract index row {name}");
+        }
+    }
+
     #[test]
     fn llvm_target_manifest_records_required_backend_contract() {
         let manifest = include_str!("../toolchain/lnp64_target.manifest");
