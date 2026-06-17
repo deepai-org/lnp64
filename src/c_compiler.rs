@@ -22403,6 +22403,34 @@ int main() {
     }
 
     #[test]
+    fn c_pthread_join_reports_lifecycle_errors() {
+        let source = r#"
+        int worker() {
+            pthread_exit(44);
+            return 0;
+        }
+
+        int main() {
+            int thread;
+            int joined;
+            if (pthread_join(pthread_self(), 0) != EDEADLK) return 1;
+            if (pthread_join(999999, 0) != ESRCH) return 2;
+            if (pthread_create(&thread, 0, worker, 0) != 0) return 3;
+            if (pthread_join(thread, &joined) != 0) return 4;
+            if (joined != 44) return 5;
+            if (pthread_join(thread, 0) != ESRCH) return 6;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("SPAWN"), "{asm}");
+        assert!(asm.contains("THREAD_JOIN"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn c_thread_pointer_and_specific_storage_are_per_thread() {
         let source = r#"
         int key;
