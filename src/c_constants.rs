@@ -118,6 +118,7 @@ pub fn find_token_constant(name: &str) -> Option<i64> {
         "F_SETFD" => Some(2),
         "F_GETFL" => Some(3),
         "F_SETFL" => Some(4),
+        "WNOHANG" => Some(1),
         "AT_FDCWD" => Some(-100),
         "AT_NULL" => Some(0),
         "AT_PHDR" => Some(3),

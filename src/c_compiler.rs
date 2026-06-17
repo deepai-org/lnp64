@@ -8469,6 +8469,19 @@ impl CodeGen {
                 self.text.push(format!("{end_label}:"));
                 Ok(dst)
             }
+            "WIFEXITED" => {
+                let _status = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 1"));
+                Ok(dst)
+            }
+            "WEXITSTATUS" => self.one_arg(name, args),
+            "WIFSIGNALED" | "WTERMSIG" | "WIFSTOPPED" | "WSTOPSIG" | "WIFCONTINUED" => {
+                let _status = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
             "spawn" if !self.function_names.contains("spawn") => {
                 if args.len() != 1 {
                     return Err("spawn(function_name) expects 1 argument".to_string());
@@ -15755,6 +15768,11 @@ int main() {
             }
             if (wait(&status) != 0) return 1;
             if (status != 42) return 2;
+            if (!WIFEXITED(status)) return 3;
+            if (WEXITSTATUS(status) != 42) return 4;
+            if (WIFSIGNALED(status)) return 5;
+            if (WTERMSIG(status) != 0) return 6;
+            if (waitpid(0, &status, WNOHANG) != 0) return 8;
             return 0;
         }
         "#;
