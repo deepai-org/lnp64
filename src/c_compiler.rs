@@ -7018,6 +7018,10 @@ impl CodeGen {
                 self.text.push(format!("{done}:"));
                 Ok(dst)
             }
+            "strerror" => {
+                let errno = self.one_arg(name, args)?;
+                self.emit_strerror(errno)
+            }
             "signal" => {
                 if args.len() != 2 {
                     return Err("signal(signum, handler) expects 2 arguments".to_string());
@@ -9022,6 +9026,47 @@ impl CodeGen {
         self.text.push(format!("  JMP {end_label}"));
         self.text.push(format!("{ok_label}:"));
         self.text.push(format!("{end_label}:"));
+        Ok(dst)
+    }
+
+    fn emit_strerror(&mut self, errno_reg: usize) -> Result<usize, String> {
+        let dst = self.alloc_reg()?;
+        let value = self.alloc_reg()?;
+        let done = self.new_label("strerror_done");
+        let fallback = self.intern_string("Unknown error");
+        let messages = [
+            (0, "Success"),
+            (1, "Operation not permitted"),
+            (2, "No such file or directory"),
+            (4, "Interrupted system call"),
+            (5, "Input/output error"),
+            (9, "Bad file descriptor"),
+            (10, "No child processes"),
+            (11, "Resource temporarily unavailable"),
+            (12, "Cannot allocate memory"),
+            (13, "Permission denied"),
+            (16, "Device or resource busy"),
+            (17, "File exists"),
+            (18, "Invalid cross-device link"),
+            (20, "Not a directory"),
+            (22, "Invalid argument"),
+            (24, "Too many open files"),
+            (34, "Numerical result out of range"),
+            (35, "Resource deadlock avoided"),
+            (38, "Function not implemented"),
+        ];
+        self.text.push(format!("  LI r{dst}, {fallback}"));
+        for (errno, message) in messages {
+            let next = self.new_label("strerror_next");
+            let label = self.intern_string(message);
+            self.text.push(format!("  LI r{value}, {errno}"));
+            self.text.push(format!("  CMP r{errno_reg}, r{value}"));
+            self.text.push(format!("  BNE {next}"));
+            self.text.push(format!("  LI r{dst}, {label}"));
+            self.text.push(format!("  JMP {done}"));
+            self.text.push(format!("{next}:"));
+        }
+        self.text.push(format!("{done}:"));
         Ok(dst)
     }
 
@@ -13162,6 +13207,28 @@ int main() {
         let asm = compile(source).unwrap();
         assert!(asm.contains("ERRNO_GET"), "{asm}");
         assert!(asm.contains("ERRNO_SET"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_strerror_returns_static_errno_messages() {
+        let source = r#"
+        int main() {
+            char *msg;
+            msg = strerror(0);
+            if (strcmp(msg, "Success") != 0) return 1;
+            errno = 2;
+            msg = strerror(errno);
+            if (strcmp(msg, "No such file or directory") != 0) return 2;
+            if (strcmp(strerror(38), "Function not implemented") != 0) return 3;
+            if (strcmp(strerror(999), "Unknown error") != 0) return 4;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("strerror_done"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
