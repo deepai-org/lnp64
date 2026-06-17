@@ -4785,6 +4785,11 @@ impl CodeGen {
             && root_name(base).is_some_and(|name| matches!(name, "L" | "L1" | "ci" | "up"))
         {
             self.emit_expr(base)?
+        } else if self.function_names.contains("new")
+            && member_field_name(base).is_some_and(|name| matches!(name, "n" | "p"))
+            && root_name(base).is_some_and(|name| matches!(name, "q" | "p"))
+        {
+            self.emit_expr(base)?
         } else if matches!(base, Expr::Index(inner, _) if matches!(&**inner, Expr::Var(name) if self.current_fn == "luaS_new" && name == "p"))
             || matches!(base, Expr::Index(inner, _) if member_field_name(inner).is_some_and(|name| matches!(name, "tmname" | "mt" | "strcache")))
         {
@@ -4806,6 +4811,16 @@ impl CodeGen {
     }
 
     fn struct_field_offset_for(&self, base: &Expr, field: &str) -> Result<i64, String> {
+        if self.function_names.contains("new")
+            && root_name(base).is_some_and(|name| matches!(name, "q" | "p"))
+        {
+            return match field {
+                "n" => Ok(0),
+                "p" => Ok(8),
+                "i" => Ok(16),
+                _ => self.struct_stat_field_offset(field),
+            };
+        }
         if self.function_names.contains("luaO_pushvfstring")
             && root_name(base).is_some_and(|name| name == "buff")
         {
@@ -6019,6 +6034,12 @@ impl CodeGen {
                 let dst = self.alloc_reg()?;
                 let size = match args.first() {
                     Some(Expr::Var(name)) => self.local_array_sizes.get(name).copied().unwrap_or(8),
+                    Some(Expr::Unary(UnOp::Deref, inner))
+                        if self.function_names.contains("new")
+                            && matches!(&**inner, Expr::Var(name) if name == "q") =>
+                    {
+                        24
+                    }
                     Some(Expr::Str(value)) => value.len() as i64 + 1,
                     _ => 8,
                 };
@@ -8122,6 +8143,17 @@ impl CodeGen {
                     regs[4],
                     name == "lsearch",
                 )
+            }
+            "insque" => {
+                if args.len() != 2 {
+                    return Err("insque(elem, pred) expects 2 arguments".to_string());
+                }
+                let regs = self.emit_call_arg_regs(args)?;
+                self.emit_insque(regs[0], regs[1])
+            }
+            "remque" => {
+                let elem = self.one_arg(name, args)?;
+                self.emit_remque(elem)
             }
             "creat" => {
                 if args.len() != 2 {
@@ -10634,6 +10666,55 @@ impl CodeGen {
         self.text.push(format!("{done_label}:"));
         self.temp_reg = 1;
         Ok(1)
+    }
+
+    fn emit_insque(&mut self, elem: usize, pred: usize) -> Result<usize, String> {
+        let dst = self.alloc_reg()?;
+        let next = self.alloc_reg()?;
+        let done = self.new_label("insque_done");
+        let no_next = self.new_label("insque_no_next");
+        self.text.push(format!("  ST [r{elem}, 8], r{pred}"));
+        self.text.push(format!("  CMP r{pred}, r0"));
+        self.text.push(format!("  BEQ {no_next}"));
+        self.text.push(format!("  LD r{next}, [r{pred}, 0]"));
+        self.text.push(format!("  ST [r{elem}, 0], r{next}"));
+        self.text.push(format!("  CMP r{next}, r0"));
+        self.text.push(format!("  BEQ {done}"));
+        self.text.push(format!("  ST [r{next}, 8], r{elem}"));
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{no_next}:"));
+        self.text.push(format!("  ST [r{elem}, 0], r0"));
+        self.text.push(format!("{done}:"));
+        self.text.push(format!("  CMP r{pred}, r0"));
+        self.text.push(format!("  BEQ {done}_ret"));
+        self.text.push(format!("  ST [r{pred}, 0], r{elem}"));
+        self.text.push(format!("{done}_ret:"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        Ok(dst)
+    }
+
+    fn emit_remque(&mut self, elem: usize) -> Result<usize, String> {
+        let dst = self.alloc_reg()?;
+        let next = self.alloc_reg()?;
+        let prev = self.alloc_reg()?;
+        let no_prev = self.new_label("remque_no_prev");
+        let no_next = self.new_label("remque_no_next");
+        let done = self.new_label("remque_done");
+        self.text.push(format!("  LD r{next}, [r{elem}, 0]"));
+        self.text.push(format!("  LD r{prev}, [r{elem}, 8]"));
+        self.text.push(format!("  CMP r{prev}, r0"));
+        self.text.push(format!("  BEQ {no_prev}"));
+        self.text.push(format!("  ST [r{prev}, 0], r{next}"));
+        self.text.push(format!("{no_prev}:"));
+        self.text.push(format!("  CMP r{next}, r0"));
+        self.text.push(format!("  BEQ {no_next}"));
+        self.text.push(format!("  ST [r{next}, 8], r{prev}"));
+        self.text.push(format!("{no_next}:"));
+        self.text.push(format!("  ST [r{elem}, 0], r0"));
+        self.text.push(format!("  ST [r{elem}, 8], r0"));
+        self.text.push(format!("{done}:"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        Ok(dst)
     }
 
     fn emit_memmem(
@@ -16649,6 +16730,41 @@ mod tests {
         let asm = compile(source).unwrap();
         assert!(asm.contains("CALL_REG"), "{asm}");
         assert!(asm.contains("__strcmp"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn insque_and_remque_splice_intrusive_queue_nodes() {
+        let source = r#"
+        int new(int i) {
+            int q;
+            q = alloc(24);
+            q->i = i;
+            return q;
+        }
+
+        int main() {
+            int q;
+            int p;
+            q = new(1);
+            p = new(2);
+            insque(q, 0);
+            insque(p, q);
+            insque(new(3), p);
+            if (q->n != p) return 1;
+            if (p->p != q) return 2;
+            if (p->n->p != p) return 3;
+            remque(p);
+            if (q->n->i != 3) return 4;
+            if (q->n->p != q) return 5;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("insque_done"), "{asm}");
+        assert!(asm.contains("remque_done"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);

@@ -9,6 +9,7 @@ tests=(
   dirname
   env
   random
+  search_insque
   search_lsearch
   string
   string_memmem
