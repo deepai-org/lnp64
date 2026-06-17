@@ -145,6 +145,8 @@ for token in "${required_native[@]}"; do
   grep -q "$token" "$trace"
 done
 
+cargo test --quiet netbsd_system_gate_canonical_native_primitives_cover_runner_requirements
+
 for forbidden in IRQ MMIO DMA_CTL PAGE_TABLE SCHED_CTL RAW_SYSCALL; do
   if grep -q "$forbidden" "$trace"; then
     printf 'forbidden primitive in trace: %s\n' "$forbidden" >&2

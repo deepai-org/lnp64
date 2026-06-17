@@ -837,6 +837,82 @@ mod tests {
     }
 
     #[test]
+    fn netbsd_system_gate_canonical_native_primitives_cover_runner_requirements() {
+        fn gate_has(
+            surfaces: &[CompatSurface],
+            mut required: impl FnMut(&NativePrimitive) -> bool,
+        ) -> bool {
+            surfaces
+                .iter()
+                .flat_map(|surface| lowering_for(*surface))
+                .any(|primitive| required(primitive))
+        }
+
+        let surfaces = [
+            CompatSurface::CwdRoot,
+            CompatSurface::Open,
+            CompatSurface::Read,
+            CompatSurface::Write,
+            CompatSurface::Close,
+            CompatSurface::Pipe,
+            CompatSurface::PollSelectEpoll,
+            CompatSurface::Fork,
+            CompatSurface::Exec,
+            CompatSurface::PthreadCreate,
+            CompatSurface::Mmap,
+            CompatSurface::FdPassing,
+            CompatSurface::SocketLoopback,
+            CompatSurface::Timer,
+            CompatSurface::CallGate,
+            CompatSurface::Signal,
+            CompatSurface::ResourceDomain,
+        ];
+
+        assert!(gate_has(&surfaces, |primitive| *primitive == NativePrimitive::OpenAt));
+        assert!(gate_has(&surfaces, |primitive| *primitive == NativePrimitive::Pull));
+        assert!(gate_has(&surfaces, |primitive| *primitive == NativePrimitive::Push));
+        assert!(gate_has(&surfaces, |primitive| *primitive == NativePrimitive::Close));
+        assert!(gate_has(&surfaces, |primitive| matches!(
+            primitive,
+            NativePrimitive::ObjectCtl { .. }
+        )));
+        assert!(gate_has(&surfaces, |primitive| *primitive == NativePrimitive::Await));
+        assert!(gate_has(&surfaces, |primitive| *primitive == NativePrimitive::Exec));
+        assert!(gate_has(&surfaces, |primitive| *primitive == NativePrimitive::Mmap));
+        assert!(gate_has(&surfaces, |primitive| *primitive
+            == NativePrimitive::Mprotect));
+        assert!(gate_has(&surfaces, |primitive| *primitive == NativePrimitive::Munmap));
+        assert!(gate_has(&surfaces, |primitive| *primitive
+            == NativePrimitive::CapabilityDuplicate));
+        assert!(gate_has(&surfaces, |primitive| *primitive
+            == NativePrimitive::CapabilitySend));
+        assert!(gate_has(&surfaces, |primitive| *primitive
+            == NativePrimitive::CapabilityRecv));
+        assert!(gate_has(&surfaces, |primitive| *primitive
+            == NativePrimitive::DomainCtl));
+        assert!(gate_has(&surfaces, |primitive| *primitive
+            == NativePrimitive::GateCall));
+        assert!(gate_has(&surfaces, |primitive| *primitive
+            == NativePrimitive::GateReturn));
+        assert!(gate_has(&surfaces, |primitive| {
+            *primitive
+                == NativePrimitive::Clone {
+                    profile: CloneProfile::NewProcessCow,
+                }
+        }));
+        assert!(gate_has(&surfaces, |primitive| {
+            *primitive
+                == NativePrimitive::Clone {
+                    profile: CloneProfile::NewThreadSharedVm,
+                }
+        }));
+        assert!(gate_has(&surfaces, |primitive| *primitive
+            == NativePrimitive::EventDelivery));
+        assert!(gate_has(&surfaces, |primitive| *primitive
+            == NativePrimitive::AbiSignalFrame));
+    }
+
+    #[test]
     fn compatibility_surfaces_have_layer_policy() {
         for entry in COMPATIBILITY_LOWERINGS {
             assert!(
