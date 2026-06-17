@@ -123,6 +123,7 @@ const OBJECT_OP_CLASSIFIER_QUERY: u64 = 10;
 const EVENTFD_SEMAPHORE: u64 = 1;
 const CLASSIFIER_MAX_RULES: usize = 64;
 const CLASSIFIER_MAX_ALLOWED_QUEUES: usize = 64;
+const CLASSIFIER_MAX_ROUTE_BYTES: usize = 4096;
 const CLASSIFIER_RULE_SIZE: u64 = 64;
 const CLASSIFY_ENVELOPE_SIZE: u64 = 72;
 const CLASSIFY_RESULT_SIZE: u64 = 64;
@@ -4126,6 +4127,9 @@ impl Machine {
             Some(FdHandle::PipeWriter(queue)) => Rc::clone(queue),
             _ => return Err(9),
         };
+        if envelope.record_len > CLASSIFIER_MAX_ROUTE_BYTES {
+            return Err(75);
+        }
         let payload = if envelope.record_ptr != 0 && envelope.record_len != 0 {
             self.read_bytes(envelope.record_ptr, envelope.record_len)
                 .map_err(|_| 14u64)?
@@ -6606,6 +6610,52 @@ mod tests {
         machine.read_fd_index(3, ARG_BASE + 0x1c00, 3).unwrap();
         out.copy_from_slice(&machine.read_bytes(ARG_BASE + 0x1c00, 3).unwrap());
         assert_eq!(&out, b"ipc");
+    }
+
+    #[test]
+    fn classifier_rejects_oversized_routed_records_before_queueing() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let (_reader_token, writer_token) = create_pipe_pair(&mut machine, 3, 4);
+        let source = create_memory_source(&mut machine, 5);
+        let rules = ARG_BASE + 0x1000;
+        let allowed = ARG_BASE + 0x1800;
+        let payload = ARG_BASE + 0x3000;
+        let envelope = ARG_BASE + 0x1a00;
+        let result = ARG_BASE + 0x1b00;
+        let oversized = vec![0x5au8; CLASSIFIER_MAX_ROUTE_BYTES + 1];
+        machine.write_bytes(payload, &oversized).unwrap();
+        machine.store_u64(allowed, writer_token).unwrap();
+        write_classifier_rule(
+            &mut machine,
+            rules,
+            CLASSIFY_RULE_EXACT,
+            CLASSIFY_FIELD_SERVICE_ID,
+            42,
+            0,
+            CLASSIFY_ACTION_ROUTE,
+            writer_token,
+            0,
+        );
+        let classifier = create_classifier(&mut machine, 6, rules, 1, allowed, 1);
+        write_envelope(
+            &mut machine,
+            envelope,
+            CLASSIFY_PROFILE_IPC,
+            source,
+            payload,
+            oversized.len() as u64,
+            42,
+            0,
+            0,
+        );
+
+        assert_eq!(
+            classify(&mut machine, classifier, envelope, result),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 75);
+        assert!(!machine.fd_read_ready(3).unwrap());
     }
 
     #[test]
