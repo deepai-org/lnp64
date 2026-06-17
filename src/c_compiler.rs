@@ -749,6 +749,7 @@ fn normalize_c_types(source: &str) -> String {
     out = normalize_find_struct_initializers(&out);
     out = normalize_struct_recursor_declarations(&out);
     out = normalize_struct_object_declarations(&out, "struct arg", 24);
+    out = normalize_struct_object_declarations(&out, "struct sigaction", 24);
     out = normalize_struct_object_declarations(&out, "jsmn_parser", 24);
     out = normalize_struct_object_declarations(&out, "struct range", 24);
     out = normalize_struct_object_declarations(&out, "static struct range", 24);
@@ -807,6 +808,8 @@ fn normalize_c_types(source: &str) -> String {
         ("struct stat", "int"),
         ("struct timespec *", "int "),
         ("struct timespec", "int"),
+        ("struct sigaction *", "int "),
+        ("struct sigaction", "int"),
         ("struct tm *", "int "),
         ("struct tm", "int"),
         ("fd_set *", "int "),
@@ -4586,6 +4589,9 @@ impl CodeGen {
             "st_mtim" => Ok(32),
             "st_atim" => Ok(72),
             "st_ctim" => Ok(88),
+            "sa_handler" => Ok(0),
+            "sa_mask" => Ok(8),
+            "sa_flags" => Ok(16),
             "tv_sec" => Ok(0),
             "tv_nsec" => Ok(8),
             "tv_usec" => Ok(8),
@@ -7623,11 +7629,15 @@ impl CodeGen {
                     );
                 }
                 let signum = self.emit_expr(&args[0])?;
-                let handler = self.emit_expr(&args[1])?;
-                let dst = self.alloc_reg()?;
-                self.text.push(format!("  SIGACTION r{signum}, r{handler}"));
-                self.text.push(format!("  LI r{dst}, 0"));
-                Ok(dst)
+                let act = self.emit_expr(&args[1])?;
+                let oldact = if let Some(old) = args.get(2) {
+                    self.emit_expr(old)?
+                } else {
+                    let zero = self.alloc_reg()?;
+                    self.text.push(format!("  LI r{zero}, 0"));
+                    zero
+                };
+                self.emit_sigaction(&args[1], signum, act, oldact)
             }
             "printf" | "weprintf" | "xvprintf" => {
                 if name == "printf" {
@@ -11357,6 +11367,51 @@ impl CodeGen {
                 Ok(dst)
             }
             _ => unreachable!(),
+        }
+    }
+
+    fn emit_sigaction(
+        &mut self,
+        act_expr: &Expr,
+        signum: usize,
+        act: usize,
+        oldact: usize,
+    ) -> Result<usize, String> {
+        let handler = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let skip_old = self.new_label("sigaction_skip_old");
+        let skip_act = self.new_label("sigaction_skip_act");
+
+        self.text.push(format!("  CMP r{oldact}, r0"));
+        self.text.push(format!("  BEQ {skip_old}"));
+        self.text.push(format!("  ST [r{oldact}, 0], r0"));
+        self.text.push(format!("  ST [r{oldact}, 8], r0"));
+        self.text.push(format!("  ST [r{oldact}, 16], r0"));
+        self.text.push(format!("{skip_old}:"));
+
+        self.text.push(format!("  CMP r{act}, r0"));
+        self.text.push(format!("  BEQ {skip_act}"));
+        if self.sigaction_arg_is_handler(act_expr) {
+            self.text.push(format!("  MOV r{handler}, r{act}"));
+        } else {
+            self.text.push(format!("  LD r{handler}, [r{act}, 0]"));
+        }
+        self.text.push(format!("  SIGACTION r{signum}, r{handler}"));
+        self.text.push(format!("{skip_act}:"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        Ok(dst)
+    }
+
+    fn sigaction_arg_is_handler(&self, expr: &Expr) -> bool {
+        match expr {
+            Expr::Num(_) | Expr::Str(_) => true,
+            Expr::Var(name) => {
+                self.function_names.contains(name) || find_token_constant(name).is_some()
+            }
+            Expr::Unary(UnOp::Addr, inner) => {
+                matches!(&**inner, Expr::Var(name) if self.function_names.contains(name))
+            }
+            _ => false,
         }
     }
 
@@ -15993,6 +16048,39 @@ int main() {
         assert!(asm.contains("GET_PCR"), "{asm}");
         assert!(asm.contains("SET_PCR SIGMASK"), "{asm}");
         assert!(asm.contains("KILL"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_sigaction_accepts_posix_action_struct() {
+        let source = r#"
+        int raised;
+
+        int on_signal() {
+            raised = 1;
+            sigret();
+            return 0;
+        }
+
+        int main() {
+            struct sigaction act;
+            struct sigaction old;
+            raised = 0;
+            act.sa_handler = on_signal;
+            act.sa_flags = 0;
+            if (sigemptyset(&act.sa_mask) != 0) return 1;
+            if (sigaction(SIGINT, &act, &old) != 0) return 2;
+            if (old.sa_handler != 0) return 3;
+            if (old.sa_flags != 0) return 4;
+            if (raise(SIGINT) != 0) return 5;
+            if (raised != 1) return 6;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("SIGACTION"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
