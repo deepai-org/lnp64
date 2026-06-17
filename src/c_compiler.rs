@@ -5957,6 +5957,23 @@ impl CodeGen {
                 let req = self.reload_reg(req_slot)?;
                 self.emit_nanosleep(req, rem)
             }
+            "clock_nanosleep" => {
+                if args.len() != 4 {
+                    return Err(
+                        "clock_nanosleep(clockid, flags, req, rem) expects 4 arguments".to_string(),
+                    );
+                }
+                self.emit_expr(&args[0])?;
+                self.temp_reg = 0;
+                self.emit_expr(&args[1])?;
+                self.temp_reg = 0;
+                let req = self.emit_expr(&args[2])?;
+                let req_slot = self.spill_reg(req);
+                self.temp_reg = 0;
+                let rem = self.emit_expr(&args[3])?;
+                let req = self.reload_reg(req_slot)?;
+                self.emit_nanosleep(req, rem)
+            }
             "usleep" => {
                 let usec = self.one_arg(name, args)?;
                 self.emit_usleep(usec)
@@ -14999,6 +15016,16 @@ int main() {
             stack = rem;
             if (*stack != 0) return 13;
             if (*(stack + 1) != 0) return 14;
+            stack = req;
+            *stack = 0;
+            *(stack + 1) = 1;
+            stack = rem;
+            *stack = 5;
+            *(stack + 1) = 6;
+            if (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, req, rem) != 0) return 15;
+            stack = rem;
+            if (*stack != 0) return 16;
+            if (*(stack + 1) != 0) return 17;
             return 0;
         }
         "#;
@@ -15635,6 +15662,7 @@ int main() {
             FD_CLR(slot[0], &set);
             select(slot[0] + 1, &set, 0, 0, 0);
             clock_gettime(CLOCK_REALTIME, &ts);
+            clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, &ts);
             gettimeofday(&tv, 0);
             time(&out);
             nanosleep(&ts, &ts);

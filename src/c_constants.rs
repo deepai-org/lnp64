@@ -92,6 +92,7 @@ pub fn find_token_constant(name: &str) -> Option<i64> {
         "CLOCK_REALTIME" => Some(0),
         "CLOCK_MONOTONIC" => Some(1),
         "CLOCKS_PER_SEC" => Some(100),
+        "TIMER_ABSTIME" => Some(1),
         "LC_ALL" => Some(0),
         "LC_COLLATE" => Some(1),
         "LC_CTYPE" => Some(2),
