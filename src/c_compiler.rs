@@ -4481,6 +4481,9 @@ impl CodeGen {
     }
 
     fn struct_stat_field_offset(&self, field: &str) -> Result<i64, String> {
+        if let Some(offset) = self.inferred_field_offsets.get(field) {
+            return Ok(*offset);
+        }
         match field {
             "st_mode" => Ok(0),
             "st_size" => Ok(8),
@@ -4510,6 +4513,11 @@ impl CodeGen {
             "tm_isdst" => Ok(64),
             "tm_gmtoff" => Ok(72),
             "tm_zone" => Ok(80),
+            "decimal_point" => Ok(0),
+            "b" => Ok(0),
+            "L" => Ok(24),
+            "init" => Ok(32),
+            "space" => Ok(32),
             "shrlen" => Ok(8),
             "lnglen" => Ok(16),
             "contents" => Ok(24),
@@ -4609,11 +4617,7 @@ impl CodeGen {
             "fd" => Ok(0),
             "events" => Ok(8),
             "revents" => Ok(16),
-            _ => self
-                .inferred_field_offsets
-                .get(field)
-                .copied()
-                .ok_or_else(|| format!("unsupported struct field {field:?}")),
+            _ => Err(format!("unsupported struct field {field:?}")),
         }
     }
 
@@ -6485,7 +6489,7 @@ impl CodeGen {
                 let ptr = self.emit_expr(&args[0])?;
                 self.emit_efputrune(ptr)
             }
-            "isspacerune" => {
+            "isspace" | "isspacerune" => {
                 let ch = self.one_arg(name, args)?;
                 self.emit_space_predicate(ch)
             }
@@ -6509,9 +6513,29 @@ impl CodeGen {
                 let ch = self.one_arg(name, args)?;
                 self.emit_ascii_range_predicate(ch, &[(65, 90), (97, 122)])
             }
+            "islower" => {
+                let ch = self.one_arg(name, args)?;
+                self.emit_ascii_range_predicate(ch, &[(97, 122)])
+            }
+            "isupper" => {
+                let ch = self.one_arg(name, args)?;
+                self.emit_ascii_range_predicate(ch, &[(65, 90)])
+            }
             "isalnum" | "isalnumrune" => {
                 let ch = self.one_arg(name, args)?;
                 self.emit_ascii_range_predicate(ch, &[(48, 57), (65, 90), (97, 122)])
+            }
+            "iscntrl" => {
+                let ch = self.one_arg(name, args)?;
+                self.emit_ascii_range_predicate(ch, &[(0, 31), (127, 127)])
+            }
+            "isgraph" => {
+                let ch = self.one_arg(name, args)?;
+                self.emit_ascii_range_predicate(ch, &[(33, 126)])
+            }
+            "ispunct" => {
+                let ch = self.one_arg(name, args)?;
+                self.emit_ascii_range_predicate(ch, &[(33, 47), (58, 64), (91, 96), (123, 126)])
             }
             "isprint" | "isprintrune" => {
                 let ch = self.one_arg(name, args)?;
@@ -6533,7 +6557,14 @@ impl CodeGen {
                 self.text.push(format!("{end_label}:"));
                 Ok(dst)
             }
-            "tolowerrune" | "toupperrune" => self.one_arg(name, args),
+            "tolower" | "tolowerrune" => {
+                let ch = self.one_arg(name, args)?;
+                self.emit_ascii_case_map(ch, true)
+            }
+            "toupper" | "toupperrune" => {
+                let ch = self.one_arg(name, args)?;
+                self.emit_ascii_case_map(ch, false)
+            }
             "free" => {
                 let ptr = self.one_arg(name, args)?;
                 self.text.push(format!("  FREE r{ptr}"));
@@ -11451,6 +11482,30 @@ impl CodeGen {
         Ok(dst)
     }
 
+    fn emit_ascii_case_map(&mut self, ch: usize, to_lower: bool) -> Result<usize, String> {
+        let dst = self.alloc_reg()?;
+        let cmp = self.alloc_reg()?;
+        let delta = self.alloc_reg()?;
+        let done = self.new_label("ascii_case_done");
+        let lower = if to_lower { 65 } else { 97 };
+        let upper = if to_lower { 90 } else { 122 };
+        self.text.push(format!("  MOV r{dst}, r{ch}"));
+        self.text.push(format!("  LI r{cmp}, {lower}"));
+        self.text.push(format!("  CMP r{ch}, r{cmp}"));
+        self.text.push(format!("  BLT {done}"));
+        self.text.push(format!("  LI r{cmp}, {upper}"));
+        self.text.push(format!("  CMP r{ch}, r{cmp}"));
+        self.text.push(format!("  BGT {done}"));
+        self.text.push(format!("  LI r{delta}, 32"));
+        if to_lower {
+            self.text.push(format!("  ADD r{dst}, r{ch}, r{delta}"));
+        } else {
+            self.text.push(format!("  SUB r{dst}, r{ch}, r{delta}"));
+        }
+        self.text.push(format!("{done}:"));
+        Ok(dst)
+    }
+
     fn numeric_fd(&self, expr: &Expr, name: &str) -> Result<usize, String> {
         match expr {
             Expr::Num(v) if (0..=255).contains(v) => Ok(*v as usize),
@@ -13537,6 +13592,8 @@ int main() {
             if (cos(1) != 1) return 11;
             if (exp(1) != 1) return 12;
             if (atan2(1, 1) != 0) return 13;
+            if (HUGE_VAL <= 0) return 14;
+            if (NAN != 0) return 15;
             return 0;
         }
         "#;
@@ -13735,6 +13792,7 @@ int main() {
             if (strcmp(setlocale(LC_ALL, 0), "C") != 0) return 7;
             lc = localeconv();
             if (loadb(load(lc)) != '.') return 8;
+            if (loadb(localeconv()->decimal_point) != '.') return 15;
             buf = alloc(L_tmpnam);
             path = tmpnam(buf);
             if (path != buf) return 9;
@@ -14404,6 +14462,56 @@ int main() {
         assert!(asm.contains("REALTIME_SEC"), "{asm}");
         assert!(asm.contains("REALTIME_NSEC"), "{asm}");
         assert!(asm.contains("SLEEP"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_standard_ctype_surface_runs() {
+        let source = r#"
+        int main() {
+            if (tolower('A') != 'a') return 1;
+            if (tolower('1') != '1') return 2;
+            if (toupper('z') != 'Z') return 3;
+            if (toupper('?') != '?') return 4;
+            if (!isspace('\n')) return 5;
+            if (!islower('q')) return 6;
+            if (islower('Q')) return 7;
+            if (!isupper('Q')) return 8;
+            if (isupper('q')) return 9;
+            if (!iscntrl('\n')) return 10;
+            if (!isgraph('!')) return 11;
+            if (isgraph(' ')) return 12;
+            if (!ispunct('!')) return 13;
+            if (ispunct('a')) return 14;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("ascii_case_done"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_lua_buffer_field_offsets_are_addressable() {
+        let source = r#"
+        int main() {
+            int b;
+            b = alloc(128);
+            b->b = 55;
+            b->L = 77;
+            store(b + 32, 123);
+            if (b->b != 55) return 1;
+            if (b->init != 123) return 2;
+            if (b->space != 123) return 3;
+            if (b->L != 77) return 4;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
