@@ -7159,6 +7159,59 @@ impl CodeGen {
                 let timeout = self.emit_expr(&args[3])?;
                 self.emit_epoll_wait(epfd, events, maxevents, timeout)
             }
+            "socket" => {
+                if args.len() != 3 {
+                    return Err("socket(domain, type, protocol) expects 3 arguments".to_string());
+                }
+                let domain = self.emit_expr(&args[0])?;
+                let sock_type = self.emit_expr(&args[1])?;
+                let protocol = self.emit_expr(&args[2])?;
+                self.emit_socket_create(domain, sock_type, protocol)
+            }
+            "bind" => {
+                if args.len() != 3 {
+                    return Err("bind(fd, addr, len) expects 3 arguments".to_string());
+                }
+                let fd = self.emit_expr(&args[0])?;
+                let addr = self.emit_expr(&args[1])?;
+                self.emit_expr(&args[2])?;
+                self.emit_socket_control(2, fd, 0, addr, 0)
+            }
+            "listen" => {
+                if args.len() != 2 {
+                    return Err("listen(fd, backlog) expects 2 arguments".to_string());
+                }
+                let fd = self.emit_expr(&args[0])?;
+                let backlog = self.emit_expr(&args[1])?;
+                self.emit_socket_control(3, fd, 0, backlog, 0)
+            }
+            "connect" => {
+                if args.len() != 3 {
+                    return Err("connect(fd, addr, len) expects 3 arguments".to_string());
+                }
+                let fd = self.emit_expr(&args[0])?;
+                let addr = self.emit_expr(&args[1])?;
+                self.emit_expr(&args[2])?;
+                self.emit_socket_control(4, fd, 0, addr, 0)
+            }
+            "accept" => {
+                if args.len() != 3 {
+                    return Err("accept(fd, addr, len) expects 3 arguments".to_string());
+                }
+                let fd = self.emit_expr(&args[0])?;
+                self.emit_expr(&args[1])?;
+                self.emit_expr(&args[2])?;
+                self.emit_socket_control(5, fd, 0, 0, 0)
+            }
+            "getsockname" => {
+                if args.len() != 3 {
+                    return Err("getsockname(fd, addr, len) expects 3 arguments".to_string());
+                }
+                let fd = self.emit_expr(&args[0])?;
+                let addr = self.emit_expr(&args[1])?;
+                let len = self.emit_expr(&args[2])?;
+                self.emit_socket_control(6, fd, 0, addr, len)
+            }
             "FD_ZERO" => {
                 if args.len() != 1 {
                     return Err("FD_ZERO(set) expects 1 argument".to_string());
@@ -8686,6 +8739,62 @@ impl CodeGen {
         self.text.push(format!("  ST [r{block}, 24], r{fd0}"));
         self.text.push(format!("  ST [r{block}, 32], r{fd1}"));
         self.text.push(format!("  ST [r{block}, 40], r{arg}"));
+        self.text.push(format!("  OBJECT_CTL r{dst}, r{block}"));
+        Ok(dst)
+    }
+
+    fn emit_socket_create(
+        &mut self,
+        domain: usize,
+        sock_type: usize,
+        protocol: usize,
+    ) -> Result<usize, String> {
+        let block_size = self.alloc_reg()?;
+        let block = self.alloc_reg()?;
+        let tmp = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        self.text.push(format!("  LI r{block_size}, 64"));
+        self.text.push(format!("  ALLOC r{block}, r{block_size}"));
+        self.text.push(format!("  LI r{tmp}, 1"));
+        self.text.push(format!("  ST [r{block}, 0], r{tmp}"));
+        self.text.push(format!("  LI r{tmp}, 5"));
+        self.text.push(format!("  ST [r{block}, 8], r{tmp}"));
+        self.text.push(format!("  LI r{tmp}, 2"));
+        self.text.push(format!("  ST [r{block}, 16], r{tmp}"));
+        self.text.push(format!("  ST [r{block}, 40], r{domain}"));
+        self.text.push(format!("  ST [r{block}, 48], r{sock_type}"));
+        self.text.push(format!("  ST [r{block}, 56], r{protocol}"));
+        self.text.push(format!("  OBJECT_CTL r{dst}, r{block}"));
+        Ok(dst)
+    }
+
+    fn emit_socket_control(
+        &mut self,
+        op: i64,
+        fd: usize,
+        requested_fd: i64,
+        arg: usize,
+        aux: usize,
+    ) -> Result<usize, String> {
+        let block_size = self.alloc_reg()?;
+        let block = self.alloc_reg()?;
+        let tmp = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        self.text.push(format!("  LI r{block_size}, 64"));
+        self.text.push(format!("  ALLOC r{block}, r{block_size}"));
+        self.text.push(format!("  LI r{tmp}, {op}"));
+        self.text.push(format!("  ST [r{block}, 0], r{tmp}"));
+        self.text.push(format!("  ST [r{block}, 24], r{fd}"));
+        if requested_fd != 0 {
+            self.text.push(format!("  LI r{tmp}, {requested_fd}"));
+            self.text.push(format!("  ST [r{block}, 32], r{tmp}"));
+        }
+        if arg != 0 {
+            self.text.push(format!("  ST [r{block}, 40], r{arg}"));
+        }
+        if aux != 0 {
+            self.text.push(format!("  ST [r{block}, 48], r{aux}"));
+        }
         self.text.push(format!("  OBJECT_CTL r{dst}, r{block}"));
         Ok(dst)
     }
@@ -12555,6 +12664,51 @@ int main() {
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains("POLL_FD_DYN"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_socket_surface_lowers_to_endpoint_object_controls_and_runs() {
+        let source = r#"
+        int main() {
+            int server;
+            int client;
+            int accepted;
+            int addr;
+            int addrlen;
+            int buf;
+            struct pollfd p[1];
+            server = socket(AF_INET, SOCK_STREAM, 0);
+            if (server == -1) return 1;
+            if (bind(server, "127.0.0.1:0", 0) != 0) return 2;
+            if (listen(server, 1) != 0) return 3;
+            addr = alloc(64);
+            addrlen = alloc(8);
+            store(addrlen, 64);
+            if (getsockname(server, addr, addrlen) != 0) return 4;
+            client = socket(AF_INET, SOCK_STREAM, 0);
+            if (client == -1) return 5;
+            if (connect(client, addr, load(addrlen)) != 0) return 6;
+            p[0].fd = server;
+            p[0].events = POLLIN;
+            if (poll(p, 1, 0) != 1) return 7;
+            accepted = accept(server, 0, 0);
+            if (accepted == -1) return 8;
+            buf = alloc(2);
+            p[0].fd = accepted;
+            p[0].events = POLLIN;
+            if (poll(p, 1, 0) != 0) return 9;
+            if (write(client, "s", 1) != 1) return 10;
+            if (poll(p, 1, 0) != 1) return 11;
+            if (read(accepted, buf, 1) != 1) return 12;
+            if (loadb(buf) != 's') return 13;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("OBJECT_CTL"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);

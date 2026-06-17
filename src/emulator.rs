@@ -66,11 +66,18 @@ const DOMAIN_CAP_OBJECT: u64 = 1 << 4;
 const DOMAIN_CAP_CALL: u64 = 1 << 5;
 
 const OBJECT_OP_CREATE: u64 = 1;
+const OBJECT_OP_SOCKET_BIND: u64 = 2;
+const OBJECT_OP_SOCKET_LISTEN: u64 = 3;
+const OBJECT_OP_SOCKET_CONNECT: u64 = 4;
+const OBJECT_OP_SOCKET_ACCEPT: u64 = 5;
+const OBJECT_OP_SOCKET_GETSOCKNAME: u64 = 6;
 const OBJECT_KIND_COUNTER: u64 = 1;
 const OBJECT_KIND_QUEUE: u64 = 2;
 const OBJECT_KIND_MEMORY_OBJECT: u64 = 3;
 const OBJECT_KIND_DMA_BUFFER: u64 = 4;
+const OBJECT_KIND_ENDPOINT: u64 = 5;
 const OBJECT_PROFILE_PIPE: u64 = 1;
+const OBJECT_PROFILE_TCP_STREAM: u64 = 2;
 const OBJECT_PROFILE_CALL_GATE: u64 = 4;
 const DMA_OP_COPY: u64 = 1;
 const DMA_OP_FILL: u64 = 2;
@@ -153,10 +160,17 @@ enum FdHandle {
         completion_fd: Option<usize>,
         flags: u64,
     },
+    TcpSocket {
+        domain: u64,
+        sock_type: u64,
+        protocol: u64,
+        bound_addr: Option<String>,
+    },
     TcpListener {
         listener: TcpListener,
         pending: Option<TcpStream>,
     },
+    TcpStream(TcpStream),
     Closed,
 }
 
@@ -202,6 +216,17 @@ impl FdHandle {
                 completion_fd: *completion_fd,
                 flags: *flags,
             }),
+            FdHandle::TcpSocket {
+                domain,
+                sock_type,
+                protocol,
+                bound_addr,
+            } => Ok(FdHandle::TcpSocket {
+                domain: *domain,
+                sock_type: *sock_type,
+                protocol: *protocol,
+                bound_addr: bound_addr.clone(),
+            }),
             FdHandle::TcpListener { listener, pending } => Ok(FdHandle::TcpListener {
                 listener: listener
                     .try_clone()
@@ -215,6 +240,10 @@ impl FdHandle {
                     None => None,
                 },
             }),
+            FdHandle::TcpStream(stream) => stream
+                .try_clone()
+                .map(FdHandle::TcpStream)
+                .map_err(|err| format!("failed to clone TCP stream fd: {err}")),
             FdHandle::Closed => Ok(FdHandle::Closed),
         }
     }
@@ -2268,10 +2297,12 @@ impl Machine {
                     ))
                 }
             }
+            FdHandle::TcpStream(stream) => stream.write_all(&data),
             FdHandle::Stdin
             | FdHandle::MessageEndpoint
             | FdHandle::Dir { .. }
             | FdHandle::PipeReader(_)
+            | FdHandle::TcpSocket { .. }
             | FdHandle::DmaBuffer { .. }
             | FdHandle::CallGate { .. }
             | FdHandle::Closed => Err(io::Error::new(
@@ -2583,11 +2614,17 @@ impl Machine {
                     0
                 }
             }
+            FdHandle::TcpStream(stream) => match stream.read(&mut tmp) {
+                Ok(count) => count,
+                Err(err) if err.kind() == io::ErrorKind::WouldBlock => 0,
+                Err(err) => return Err(format!("READ_FD fd{fd} TCP stream: {err}")),
+            },
             FdHandle::Stdout
             | FdHandle::Stderr
             | FdHandle::MessageEndpoint
             | FdHandle::Dir { .. }
             | FdHandle::PipeWriter(_)
+            | FdHandle::TcpSocket { .. }
             | FdHandle::DmaBuffer { .. }
             | FdHandle::CallGate { .. }
             | FdHandle::Closed => 0,
@@ -2629,6 +2666,11 @@ impl Machine {
         let op = self.load_u64(argblock)?;
         let value = match op {
             OBJECT_OP_CREATE => self.object_ctl_create(argblock),
+            OBJECT_OP_SOCKET_BIND => self.object_ctl_socket_bind(argblock),
+            OBJECT_OP_SOCKET_LISTEN => self.object_ctl_socket_listen(argblock),
+            OBJECT_OP_SOCKET_CONNECT => self.object_ctl_socket_connect(argblock),
+            OBJECT_OP_SOCKET_ACCEPT => self.object_ctl_socket_accept(argblock),
+            OBJECT_OP_SOCKET_GETSOCKNAME => self.object_ctl_socket_getsockname(argblock),
             _ => Err(22),
         };
         match value {
@@ -3083,8 +3125,135 @@ impl Machine {
                     .map_err(|_| 14u64)?;
                 Ok(fd as u64)
             }
+            (OBJECT_KIND_ENDPOINT, OBJECT_PROFILE_TCP_STREAM) => {
+                let sock_type = self.load_u64(argblock + 48).map_err(|_| 14u64)?;
+                let protocol = self.load_u64(argblock + 56).map_err(|_| 14u64)?;
+                let fd = self.install_object_fd(
+                    fd0_req,
+                    FdHandle::TcpSocket {
+                        domain: arg,
+                        sock_type,
+                        protocol,
+                        bound_addr: None,
+                    },
+                )?;
+                self.store_u64(argblock + 24, fd as u64)
+                    .map_err(|_| 14u64)?;
+                Ok(fd as u64)
+            }
             _ => Err(22),
         }
+    }
+
+    fn object_ctl_socket_bind(&mut self, argblock: u64) -> Result<u64, u64> {
+        let fd_value = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
+        let addr_ptr = self.load_u64(argblock + 40).map_err(|_| 14u64)?;
+        let fd = self.decode_fd_value(fd_value)?;
+        self.fd_right_errno(fd, CAP_RIGHT_WRITE)?;
+        let addr = self.read_c_string(addr_ptr).map_err(|_| 14u64)?;
+        match &mut self.process_mut().map_err(|_| 3u64)?.fds[fd] {
+            FdHandle::TcpSocket { bound_addr, .. } => {
+                *bound_addr = Some(addr);
+                Ok(0)
+            }
+            _ => Err(22),
+        }
+    }
+
+    fn object_ctl_socket_listen(&mut self, argblock: u64) -> Result<u64, u64> {
+        let fd_value = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
+        let fd = self.decode_fd_value(fd_value)?;
+        self.fd_right_errno(fd, CAP_RIGHT_WRITE | CAP_RIGHT_POLL)?;
+        let addr = match &self.process().map_err(|_| 3u64)?.fds[fd] {
+            FdHandle::TcpSocket {
+                bound_addr: Some(addr),
+                ..
+            } => addr.clone(),
+            _ => return Err(22),
+        };
+        let listener = TcpListener::bind(&addr).map_err(|_| 98u64)?;
+        listener.set_nonblocking(true).map_err(|_| 5u64)?;
+        self.process_mut().map_err(|_| 3u64)?.fds[fd] = FdHandle::TcpListener {
+            listener,
+            pending: None,
+        };
+        self.bump_fd_generation(fd).map_err(|_| 9u64)?;
+        Ok(0)
+    }
+
+    fn object_ctl_socket_connect(&mut self, argblock: u64) -> Result<u64, u64> {
+        let fd_value = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
+        let addr_ptr = self.load_u64(argblock + 40).map_err(|_| 14u64)?;
+        let fd = self.decode_fd_value(fd_value)?;
+        self.fd_right_errno(fd, CAP_RIGHT_READ | CAP_RIGHT_WRITE | CAP_RIGHT_POLL)?;
+        if !matches!(
+            self.process().map_err(|_| 3u64)?.fds.get(fd),
+            Some(FdHandle::TcpSocket { .. })
+        ) {
+            return Err(22);
+        }
+        let addr = self.read_c_string(addr_ptr).map_err(|_| 14u64)?;
+        let stream = TcpStream::connect(&addr).map_err(|_| 111u64)?;
+        stream.set_nonblocking(true).map_err(|_| 5u64)?;
+        self.process_mut().map_err(|_| 3u64)?.fds[fd] = FdHandle::TcpStream(stream);
+        self.bump_fd_generation(fd).map_err(|_| 9u64)?;
+        Ok(0)
+    }
+
+    fn object_ctl_socket_accept(&mut self, argblock: u64) -> Result<u64, u64> {
+        let listener_value = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
+        let accepted_req = self.load_u64(argblock + 32).map_err(|_| 14u64)?;
+        let listener_fd = self.decode_fd_value(listener_value)?;
+        self.fd_right_errno(listener_fd, CAP_RIGHT_READ | CAP_RIGHT_POLL)?;
+        let stream = {
+            let process = self.process_mut().map_err(|_| 3u64)?;
+            match &mut process.fds[listener_fd] {
+                FdHandle::TcpListener { listener, pending } => {
+                    if let Some(stream) = pending.take() {
+                        stream
+                    } else {
+                        match listener.accept() {
+                            Ok((stream, _)) => stream,
+                            Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
+                                return Err(11);
+                            }
+                            Err(_) => return Err(5),
+                        }
+                    }
+                }
+                _ => return Err(22),
+            }
+        };
+        stream.set_nonblocking(true).map_err(|_| 5u64)?;
+        let accepted_fd = self.install_object_fd(accepted_req, FdHandle::TcpStream(stream))?;
+        self.store_u64(argblock + 32, accepted_fd as u64)
+            .map_err(|_| 14u64)?;
+        Ok(accepted_fd as u64)
+    }
+
+    fn object_ctl_socket_getsockname(&mut self, argblock: u64) -> Result<u64, u64> {
+        let fd_value = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
+        let addr_ptr = self.load_u64(argblock + 40).map_err(|_| 14u64)?;
+        let len_ptr = self.load_u64(argblock + 48).map_err(|_| 14u64)?;
+        let fd = self.decode_fd_value(fd_value)?;
+        self.fd_right_errno(fd, CAP_RIGHT_STAT)?;
+        let addr = match &self.process().map_err(|_| 3u64)?.fds[fd] {
+            FdHandle::TcpListener { listener, .. } => listener.local_addr().map_err(|_| 5u64)?,
+            FdHandle::TcpStream(stream) => stream.local_addr().map_err(|_| 5u64)?,
+            _ => return Err(22),
+        };
+        let mut bytes = addr.to_string().into_bytes();
+        bytes.push(0);
+        if len_ptr != 0 {
+            let capacity = self.load_u64(len_ptr).map_err(|_| 14u64)?;
+            if capacity < bytes.len() as u64 {
+                return Err(22);
+            }
+            self.store_u64(len_ptr, bytes.len() as u64)
+                .map_err(|_| 14u64)?;
+        }
+        self.write_bytes(addr_ptr, &bytes).map_err(|_| 14u64)?;
+        Ok(0)
     }
 
     fn install_object_fd(&mut self, requested: u64, handle: FdHandle) -> Result<usize, u64> {
@@ -4677,10 +4846,19 @@ impl Machine {
                     Err(err) => Err(format!("TCP accept failed: {err}")),
                 }
             }
+            FdHandle::TcpStream(stream) => {
+                let mut byte = [0u8; 1];
+                match stream.peek(&mut byte) {
+                    Ok(count) => Ok(count > 0),
+                    Err(err) if err.kind() == io::ErrorKind::WouldBlock => Ok(false),
+                    Err(_) => Ok(true),
+                }
+            }
             FdHandle::Stdout
             | FdHandle::Stderr
             | FdHandle::MessageEndpoint
             | FdHandle::PipeWriter(_)
+            | FdHandle::TcpSocket { .. }
             | FdHandle::DmaBuffer { .. }
             | FdHandle::CallGate { .. }
             | FdHandle::Closed => Ok(false),
@@ -4697,6 +4875,7 @@ impl Machine {
                 | FdHandle::PipeWriter(_)
                 | FdHandle::Counter(_)
                 | FdHandle::MemoryObject { .. }
+                | FdHandle::TcpStream(_)
         ))
     }
 
@@ -4714,8 +4893,9 @@ impl Machine {
             | FdHandle::PipeWriter(_)
             | FdHandle::Counter(_)
             | FdHandle::MemoryObject { .. }
-            | FdHandle::CallGate { .. } => Ok(true),
-            FdHandle::MessageEndpoint => Ok(false),
+            | FdHandle::CallGate { .. }
+            | FdHandle::TcpStream(_) => Ok(true),
+            FdHandle::MessageEndpoint | FdHandle::TcpSocket { .. } => Ok(false),
             FdHandle::PipeReader(buffer) => {
                 let buffer = buffer.borrow();
                 Ok(!buffer.bytes.is_empty() || !buffer.capabilities.is_empty())
