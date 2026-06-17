@@ -20,6 +20,10 @@ const STACK_SIZE: u64 = 4 * 1024 * 1024;
 const CALL_FRAME_SIZE: u64 = 32 * 1024;
 const THREAD_STACK_STRIDE: u64 = 0x80_000;
 const MMAP_BASE: u64 = 0x200_000;
+const ASLR_PAGE: u64 = 4096;
+const ASLR_HEAP_PAGES: u64 = 16;
+const ASLR_MMAP_PAGES: u64 = 16;
+const ASLR_STACK_PAGES: u64 = 16;
 const SIGCHLD: u64 = 17;
 const SIGALRM: u64 = 14;
 const SIGSEGV: u64 = 11;
@@ -269,6 +273,46 @@ struct Allocation {
 }
 
 #[derive(Clone, Copy)]
+struct ProcessLayout {
+    stack_top: u64,
+    heap_base: u64,
+    mmap_base: u64,
+}
+
+impl ProcessLayout {
+    fn for_process(pid: u64, domain_id: u64, aslr_enabled: bool) -> Self {
+        if !aslr_enabled {
+            return Self {
+                stack_top: STACK_TOP,
+                heap_base: HEAP_BASE,
+                mmap_base: MMAP_BASE,
+            };
+        }
+        Self {
+            stack_top: STACK_TOP
+                - Self::page_offset(pid, domain_id, 0x5a17_51ac_57ac_0001, ASLR_STACK_PAGES),
+            heap_base: HEAP_BASE
+                + Self::page_offset(pid, domain_id, 0x5a17_51ac_481e_0002, ASLR_HEAP_PAGES),
+            mmap_base: MMAP_BASE
+                + Self::page_offset(pid, domain_id, 0x5a17_51ac_aa9d_0003, ASLR_MMAP_PAGES),
+        }
+    }
+
+    fn page_offset(pid: u64, domain_id: u64, salt: u64, pages: u64) -> u64 {
+        let mut x = pid
+            .wrapping_mul(0x9e37_79b9_7f4a_7c15)
+            .wrapping_add(domain_id.rotate_left(17))
+            ^ salt;
+        x ^= x >> 30;
+        x = x.wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        x ^= x >> 27;
+        x = x.wrapping_mul(0x94d0_49bb_1331_11eb);
+        x ^= x >> 31;
+        ((x % pages) + 1) * ASLR_PAGE
+    }
+}
+
+#[derive(Clone, Copy)]
 struct DomainLimits {
     cpu: u64,
     memory: u64,
@@ -362,6 +406,7 @@ struct Process {
     fds: Vec<FdHandle>,
     memory: Vec<u8>,
     vmas: Vec<Vma>,
+    stack_top: u64,
     heap_next: u64,
     mmap_next: u64,
     allocations: HashMap<u64, Allocation>,
@@ -377,7 +422,13 @@ struct Process {
 }
 
 impl Process {
-    fn new(pid: u64, parent_pid: Option<u64>, domain_id: u64, program: Program) -> Self {
+    fn new(
+        pid: u64,
+        parent_pid: Option<u64>,
+        domain_id: u64,
+        program: Program,
+        layout: ProcessLayout,
+    ) -> Self {
         let mut fds = Vec::with_capacity(FDR_COUNT);
         fds.push(FdHandle::Stdin);
         fds.push(FdHandle::Stdout);
@@ -396,7 +447,7 @@ impl Process {
 
         let mut vmas = vec![
             Vma::anonymous(DATA_BASE, program.data.len().max(1) as u64, 0b11),
-            Vma::anonymous(STACK_TOP - STACK_SIZE, STACK_SIZE, 0b11),
+            Vma::anonymous(layout.stack_top - STACK_SIZE, STACK_SIZE, 0b11),
             Vma::anonymous(ARG_BASE, ARG_SIZE, 0b11),
         ];
         vmas.sort_by_key(|vma| vma.start);
@@ -409,8 +460,9 @@ impl Process {
             fds,
             memory,
             vmas,
-            heap_next: HEAP_BASE,
-            mmap_next: MMAP_BASE,
+            stack_top: layout.stack_top,
+            heap_next: layout.heap_base,
+            mmap_next: layout.mmap_base,
             allocations: HashMap::new(),
             uid: if pid == 1 { 0 } else { 1000 },
             gid: if pid == 1 { 0 } else { 1000 },
@@ -441,6 +493,7 @@ impl Process {
             fds,
             memory: self.memory.clone(),
             vmas,
+            stack_top: self.stack_top,
             heap_next: self.heap_next,
             mmap_next: self.mmap_next,
             allocations: self.allocations.clone(),
@@ -456,11 +509,11 @@ impl Process {
         })
     }
 
-    fn exec(&mut self, program: Program) {
+    fn exec(&mut self, program: Program, layout: ProcessLayout) {
         let pid = self.pid;
         let parent_pid = self.parent_pid;
         let domain_id = self.domain_id;
-        let mut replacement = Process::new(pid, parent_pid, domain_id, program);
+        let mut replacement = Process::new(pid, parent_pid, domain_id, program, layout);
         replacement.fds = std::mem::take(&mut self.fds);
         replacement.uid = self.uid;
         replacement.gid = self.gid;
@@ -500,9 +553,9 @@ struct Thread {
 }
 
 impl Thread {
-    fn new(tid: u64, pid: u64) -> Self {
+    fn new(tid: u64, pid: u64, stack_top: u64) -> Self {
         let mut regs = [0; GPR_COUNT];
-        regs[31] = STACK_TOP - CALL_FRAME_SIZE;
+        regs[31] = stack_top - CALL_FRAME_SIZE;
         Self {
             tid,
             pid,
@@ -542,8 +595,9 @@ impl Machine {
     pub fn new(program: Program) -> Self {
         let root_pid = 1;
         let root_tid = 1;
-        let process = Process::new(root_pid, None, ROOT_DOMAIN_ID, program);
-        let thread = Thread::new(root_tid, root_pid);
+        let layout = ProcessLayout::for_process(root_pid, ROOT_DOMAIN_ID, true);
+        let process = Process::new(root_pid, None, ROOT_DOMAIN_ID, program, layout);
+        let thread = Thread::new(root_tid, root_pid, layout.stack_top);
 
         let mut processes = HashMap::new();
         processes.insert(root_pid, process);
@@ -1337,10 +1391,18 @@ impl Machine {
                     .map_err(|err| format!("EXEC failed to read {path:?}: {err}"))?;
                 let program = Program::parse(&source)
                     .map_err(|err| format!("EXEC failed to assemble {path:?}: {err}"))?;
-                self.process_mut()?.exec(program);
+                let pid = self.thread()?.pid;
+                let domain_id = self.process()?.domain_id;
+                let aslr_enabled = self
+                    .domains
+                    .get(&domain_id)
+                    .map(|domain| domain.security.aslr_enabled)
+                    .unwrap_or(true);
+                let layout = ProcessLayout::for_process(pid, domain_id, aslr_enabled);
+                self.process_mut()?.exec(program, layout);
                 let pid = self.thread()?.pid;
                 let tid = self.thread()?.tid;
-                *self.thread_mut()? = Thread::new(tid, pid);
+                *self.thread_mut()? = Thread::new(tid, pid, layout.stack_top);
             }
             Instr::Spawn(dst, entry) => {
                 self.require_domain_cap(DOMAIN_CAP_PROCESS)?;
@@ -1353,7 +1415,8 @@ impl Machine {
                 let mut child = self.thread()?.clone();
                 child.tid = tid;
                 child.ip = self.read_reg(entry)? as usize;
-                child.regs[31] = STACK_TOP - CALL_FRAME_SIZE - ((tid - 1) * THREAD_STACK_STRIDE);
+                let stack_top = self.process()?.stack_top;
+                child.regs[31] = stack_top - CALL_FRAME_SIZE - ((tid - 1) * THREAD_STACK_STRIDE);
                 self.threads.insert(tid, child);
                 self.ready.push_back(tid);
                 self.write_reg(dst, tid)?;
@@ -4840,6 +4903,67 @@ mod tests {
                 .resolve_process_path("tcp-listen:127.0.0.1:0")
                 .unwrap(),
             "tcp-listen:127.0.0.1:0"
+        );
+    }
+
+    #[test]
+    fn process_layout_aslr_is_deterministic_and_disableable() {
+        let first = ProcessLayout::for_process(1, ROOT_DOMAIN_ID, true);
+        let second = ProcessLayout::for_process(1, ROOT_DOMAIN_ID, true);
+        assert_eq!(first.stack_top, second.stack_top);
+        assert_eq!(first.heap_base, second.heap_base);
+        assert_eq!(first.mmap_base, second.mmap_base);
+        assert_ne!(first.stack_top, STACK_TOP);
+        assert_ne!(first.heap_base, HEAP_BASE);
+        assert_ne!(first.mmap_base, MMAP_BASE);
+        assert_eq!(first.stack_top % ASLR_PAGE, 0);
+        assert_eq!(first.heap_base % ASLR_PAGE, 0);
+        assert_eq!(first.mmap_base % ASLR_PAGE, 0);
+
+        let disabled = ProcessLayout::for_process(1, ROOT_DOMAIN_ID, false);
+        assert_eq!(disabled.stack_top, STACK_TOP);
+        assert_eq!(disabled.heap_base, HEAP_BASE);
+        assert_eq!(disabled.mmap_base, MMAP_BASE);
+    }
+
+    #[test]
+    fn heap_and_anonymous_mmap_use_aslr_layout() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        let layout = ProcessLayout::for_process(1, ROOT_DOMAIN_ID, true);
+        assert_eq!(machine.process().unwrap().heap_next, layout.heap_base);
+        assert_eq!(machine.process().unwrap().mmap_next, layout.mmap_base);
+        assert_eq!(machine.process().unwrap().stack_top, layout.stack_top);
+
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[1] = 32;
+        machine.exec(Instr::Alloc(Reg(2), Reg(1))).unwrap();
+        assert_eq!(
+            machine.thread().unwrap().regs[2],
+            align_up(layout.heap_base, 64)
+        );
+
+        machine.thread_mut().unwrap().regs[3] = 4096;
+        machine.thread_mut().unwrap().regs[4] = 0b011;
+        machine
+            .exec(Instr::Mmap(
+                Reg(5),
+                Reg(0),
+                Reg(3),
+                Reg(4),
+                FdReg(0),
+                Reg(0),
+            ))
+            .unwrap();
+        assert_eq!(
+            machine.thread().unwrap().regs[5],
+            align_up(layout.mmap_base, 4096)
         );
     }
 
