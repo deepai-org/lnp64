@@ -3479,6 +3479,7 @@ impl Parser {
                         | "float"
                         | "signed"
                         | "unsigned"
+                        | "uint"
                         | "char"
                         | "void"
                 ) || is_type_qualifier_ident(name)
@@ -19066,6 +19067,38 @@ int main() {
         let asm = compile(source).unwrap();
         assert!(asm.contains("OPEN_DIR_DYN"), "{asm}");
         assert!(asm.contains("READDIR_FD_DYN"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_stat_exports_guest_ids_and_accepts_uint_casts() {
+        let source = r#"
+        int main() {
+            int st;
+            int f;
+            st = alloc(104);
+            if (stat(".", st) != 0) return 1;
+            if (!S_ISDIR(st.st_mode)) return 2;
+            if (!((uint)st.st_nlink > 0)) return 3;
+            if (stat("/dev/null", st) != 0) return 4;
+            if (!S_ISCHR(st.st_mode)) return 5;
+            f = tmpfile();
+            if (!f) return 6;
+            fputs("hello", f);
+            fflush(f);
+            if (fstat(fileno(f), st) != 0) return 7;
+            if (st.st_uid != geteuid()) return 8;
+            if (st.st_gid != getegid()) return 9;
+            if (st.st_size != 5) return 10;
+            fclose(f);
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("STAT_PATH"), "{asm}");
+        assert!(asm.contains("STAT_FD_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);

@@ -17,6 +17,7 @@ libc-test files; bounded or locally guarded files are called out below.
 - `functional/random.c`
 - `functional/search_insque.c`
 - `functional/search_lsearch.c`
+- `functional/stat.c`
 - `functional/string.c`
 - `functional/string_memmem.c`
 - `functional/string_strchr.c`
@@ -38,6 +39,9 @@ zero-divisor table row because that row is undefined behavior in C.
 `ungetc.c` is the upstream file and covers descriptor-backed one-byte
 pushback, scanset mismatch preservation, `ftell` positioning, and `fread`
 consumption of an ungot byte.
+`stat.c` is the upstream file and covers directory/device predicates, timestamp
+fields, file size, and guest UID/GID ownership in exported `struct stat`
+records.
 
 Run the subset with:
 

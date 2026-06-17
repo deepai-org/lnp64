@@ -2237,6 +2237,8 @@ impl Machine {
     }
 
     fn write_lnp64_stat(&mut self, addr: u64, metadata: &fs::Metadata) -> Result<(), String> {
+        let uid = self.process()?.uid;
+        let gid = self.process()?.gid;
         let fields = [
             (0, metadata.mode() as u64),
             (8, metadata.size()),
@@ -2245,8 +2247,8 @@ impl Machine {
             (32, metadata.mtime() as u64),
             (40, metadata.mtime_nsec() as u64),
             (48, metadata.nlink()),
-            (56, metadata.uid() as u64),
-            (64, metadata.gid() as u64),
+            (56, uid),
+            (64, gid),
             (72, metadata.atime() as u64),
             (80, metadata.atime_nsec() as u64),
             (88, metadata.ctime() as u64),

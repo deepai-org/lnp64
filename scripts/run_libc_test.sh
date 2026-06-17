@@ -13,6 +13,7 @@ tests=(
   random
   search_insque
   search_lsearch
+  stat
   string
   string_memmem
   string_strchr
