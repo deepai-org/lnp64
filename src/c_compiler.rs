@@ -21301,6 +21301,37 @@ int main() {
     }
 
     #[test]
+    fn c_hardware_fault_signal_surface_runs_through_handler() {
+        let source = r#"
+        int fpe_seen;
+
+        int on_fpe() {
+            fpe_seen = 1;
+            sigret();
+            return 0;
+        }
+
+        int main() {
+            int value;
+            int divisor;
+            fpe_seen = 0;
+            value = 42;
+            divisor = 0;
+            if (signal(SIGFPE, on_fpe) != 0) return 1;
+            value = value / divisor;
+            if (fpe_seen != 1) return 2;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("DIV"), "{asm}");
+        assert!(asm.contains("SIGRET"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn c_wait_and_getppid_surface_runs_after_fork() {
         let source = r#"
         int main() {
