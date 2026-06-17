@@ -199,6 +199,18 @@ struct Flags {
     greater: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct FileLockKey {
+    dev: u64,
+    ino: u64,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct AdvisoryLock {
+    owner_pid: u64,
+    lock_type: u64,
+}
+
 enum FdHandle {
     Stdin,
     Stdout,
@@ -877,6 +889,7 @@ pub struct Machine {
     next_domain_id: u64,
     next_call_op_id: u64,
     next_cap_lineage: u64,
+    advisory_locks: HashMap<FileLockKey, AdvisoryLock>,
     random_state: u64,
     last_exit: i32,
 }
@@ -917,6 +930,7 @@ impl Machine {
             next_domain_id: 2,
             next_call_op_id: 1,
             next_cap_lineage: FDR_COUNT as u64 + 1,
+            advisory_locks: HashMap::new(),
             random_state: 0x4d59_5df4_d0f3_3173,
             last_exit: 0,
         }
@@ -1595,6 +1609,14 @@ impl Machine {
                 let fd = self.read_reg(fd_reg)?;
                 if let Some(fd) = self.checked_fd_index(fd)? {
                     self.stat_fd_index(statbuf, fd)?;
+                }
+            }
+            Instr::FcntlFdDyn(fd_reg, cmd_reg, arg_reg) => {
+                let fd = self.read_reg(fd_reg)?;
+                let cmd = self.read_reg(cmd_reg)?;
+                let arg = self.read_reg(arg_reg)?;
+                if let Some(fd) = self.checked_fd_index(fd)? {
+                    self.fcntl_fd_index(fd, cmd, arg)?;
                 }
             }
             Instr::FdClose(fd) => {
@@ -2405,11 +2427,89 @@ impl Machine {
     }
 
     fn close_fd_index(&mut self, fd: usize) -> Result<(), String> {
+        self.release_process_file_locks_for_fd(fd)?;
         self.bump_fd_generation(fd)?;
         self.process_mut()?.fds[fd] = FdHandle::Closed;
         let lineage = self.fresh_fd_capability().lineage;
         self.install_fd_capability(fd, FdCapability::closed(lineage))?;
         Ok(())
+    }
+
+    fn file_lock_key_for_fd(&self, fd: usize) -> Result<FileLockKey, u64> {
+        self.fd_right_errno(fd, CAP_RIGHT_STAT)?;
+        let process = self.process().map_err(|_| 3u64)?;
+        let Some(FdHandle::File(file)) = process.fds.get(fd) else {
+            return Err(9);
+        };
+        let metadata = file.metadata().map_err(|err| Self::errno_from_io(&err))?;
+        Ok(FileLockKey {
+            dev: metadata.dev(),
+            ino: metadata.ino(),
+        })
+    }
+
+    fn release_process_file_locks_for_fd(&mut self, fd: usize) -> Result<(), String> {
+        let pid = self.process()?.pid;
+        if let Ok(key) = self.file_lock_key_for_fd(fd) {
+            self.advisory_locks
+                .retain(|lock_key, lock| *lock_key != key || lock.owner_pid != pid);
+        }
+        Ok(())
+    }
+
+    fn fcntl_fd_index(&mut self, fd: usize, cmd: u64, arg: u64) -> Result<(), String> {
+        const F_GETLK_LNP64: u64 = 5;
+        const F_SETLK_LNP64: u64 = 6;
+        const F_SETLKW_LNP64: u64 = 7;
+        const F_UNLCK_LNP64: u64 = 2;
+        if arg == 0 {
+            return self.set_status_errno(14);
+        }
+        self.ensure_mapped(arg, 40, true)?;
+        let key = match self.file_lock_key_for_fd(fd) {
+            Ok(key) => key,
+            Err(errno) => return self.set_status_errno(errno),
+        };
+        let pid = self.process()?.pid;
+        let requested_type = self.load_u64(arg)?;
+        match cmd {
+            F_GETLK_LNP64 => {
+                if let Some(lock) = self.advisory_locks.get(&key).copied() {
+                    if lock.owner_pid != pid {
+                        self.store_u64(arg, lock.lock_type)?;
+                        self.store_u64(arg + 32, lock.owner_pid)?;
+                    } else {
+                        self.store_u64(arg, F_UNLCK_LNP64)?;
+                        self.store_u64(arg + 32, 0)?;
+                    }
+                } else {
+                    self.store_u64(arg, F_UNLCK_LNP64)?;
+                    self.store_u64(arg + 32, 0)?;
+                }
+                self.set_status_ok()
+            }
+            F_SETLK_LNP64 | F_SETLKW_LNP64 => {
+                if requested_type == F_UNLCK_LNP64 {
+                    self.advisory_locks
+                        .retain(|lock_key, lock| *lock_key != key || lock.owner_pid != pid);
+                    return self.set_status_ok();
+                }
+                if let Some(lock) = self.advisory_locks.get(&key).copied() {
+                    if lock.owner_pid != pid {
+                        return self.set_status_errno(11);
+                    }
+                }
+                self.advisory_locks.insert(
+                    key,
+                    AdvisoryLock {
+                        owner_pid: pid,
+                        lock_type: requested_type,
+                    },
+                );
+                self.set_status_ok()
+            }
+            _ => self.set_status_errno(22),
+        }
     }
 
     fn duplicate_fd_capability(
@@ -5822,6 +5922,7 @@ impl Machine {
         }
         self.last_exit = code;
         if !self.threads.values().any(|thread| thread.pid == pid) {
+            self.advisory_locks.retain(|_, lock| lock.owner_pid != pid);
             self.processes.remove(&pid);
             if let Some(parent_pid) = parent_pid {
                 if let Some(parent) = self.processes.get_mut(&parent_pid) {

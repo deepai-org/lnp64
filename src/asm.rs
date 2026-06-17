@@ -442,6 +442,10 @@ impl Parser {
                 arity(2)?;
                 Instr::StatFdDyn(reg(&args[0])?, reg(&args[1])?)
             }
+            "FCNTL_FD_DYN" => {
+                arity(3)?;
+                Instr::FcntlFdDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
             "FD_CLOSE" => {
                 arity(1)?;
                 Instr::FdClose(fd(&args[0])?)

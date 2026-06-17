@@ -13,6 +13,7 @@ libc-test files; bounded or locally guarded files are called out below.
 - `functional/dirname.c`
 - `functional/env.c`
 - `functional/fdopen.c`
+- `functional/fcntl.c`
 - `functional/qsort_bounded.c`
 - `functional/random.c`
 - `functional/search_insque.c`
@@ -46,6 +47,8 @@ records.
 `utime.c` is the upstream file and covers `futimens`/`utimensat` timestamp
 pairs, `UTIME_NOW`, `UTIME_OMIT`, invalid file descriptors, and nested
 timestamp fields in `struct stat`.
+`fcntl.c` is the upstream file and covers whole-file advisory lock rejection
+and `F_GETLK` owner reporting across `fork`.
 
 Run the subset with:
 

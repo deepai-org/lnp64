@@ -132,6 +132,7 @@ pub enum Instr {
     StatPath(Reg, Reg, Reg),
     StatFd(Reg, FdReg),
     StatFdDyn(Reg, Reg),
+    FcntlFdDyn(Reg, Reg, Reg),
     FdClose(FdReg),
     FdCloseDyn(Reg),
     FdSeek(FdReg, Reg, Reg),

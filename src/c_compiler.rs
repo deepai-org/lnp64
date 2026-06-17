@@ -5551,6 +5551,11 @@ impl CodeGen {
             "st_mtim" => Ok(32),
             "st_atim" => Ok(72),
             "st_ctim" => Ok(88),
+            "l_type" => Ok(0),
+            "l_whence" => Ok(8),
+            "l_start" => Ok(16),
+            "l_len" => Ok(24),
+            "l_pid" => Ok(32),
             "sa_handler" => Ok(0),
             "sa_mask" => Ok(8),
             "sa_flags" => Ok(16),
@@ -9078,6 +9083,23 @@ impl CodeGen {
                         }
                         let dst = self.alloc_reg()?;
                         self.text.push(format!("  LI r{dst}, 0"));
+                        Ok(dst)
+                    }
+                    5..=7 => {
+                        let fd = self.emit_expr(&args[0])?;
+                        let cmd_reg = self.alloc_reg()?;
+                        self.text.push(format!("  LI r{cmd_reg}, {cmd}"));
+                        let arg = if args.len() == 3 {
+                            self.emit_expr(&args[2])?
+                        } else {
+                            let zero = self.alloc_reg()?;
+                            self.text.push(format!("  LI r{zero}, 0"));
+                            zero
+                        };
+                        let dst = self.alloc_reg()?;
+                        self.text
+                            .push(format!("  FCNTL_FD_DYN r{fd}, r{cmd_reg}, r{arg}"));
+                        self.text.push(format!("  MOV r{dst}, r1"));
                         Ok(dst)
                     }
                     _ => Err(format!("unsupported fcntl command {cmd}")),
@@ -14897,6 +14919,7 @@ fn type_aggregate_size(name: &str) -> Option<i64> {
         "struct pollfd" => Some(24),
         "struct timespec" => Some(16),
         "struct timeval" => Some(16),
+        "struct flock" => Some(40),
         _ => None,
     }
 }
@@ -19160,6 +19183,56 @@ int main() {
         let asm = compile(source).unwrap();
         assert!(asm.contains("OPEN_FD_DYN"), "{asm}");
         assert!(asm.contains("CAP_DUP"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_fcntl_record_locks_survive_fork() {
+        let source = r#"
+        int main() {
+            int fl;
+            int f;
+            int fd;
+            int pid;
+            int status;
+            fl = alloc(40);
+            f = tmpfile();
+            if (!f) return 1;
+            fd = fileno(f);
+
+            fl.l_type = F_WRLCK;
+            fl.l_whence = SEEK_SET;
+            fl.l_start = 0;
+            fl.l_len = 0;
+            if (fcntl(fd, F_SETLK, fl) != 0) return 2;
+
+            pid = fork();
+            if (!pid) {
+                fl.l_type = F_RDLCK;
+                if (fcntl(fd, F_SETLK, fl) == 0) _exit(3);
+                if (errno != EAGAIN && errno != EACCES) _exit(4);
+                _exit(0);
+            }
+            while (waitpid(pid, &status, 0) < 0 && errno == EINTR);
+            if (status != 0) return 5;
+
+            pid = fork();
+            if (!pid) {
+                fl.l_type = F_WRLCK;
+                if (fcntl(fd, F_GETLK, fl) != 0) _exit(6);
+                if (fl.l_pid != getppid()) _exit(7);
+                _exit(0);
+            }
+            while (waitpid(pid, &status, 0) < 0 && errno == EINTR);
+            if (status != 0) return 8;
+            fclose(f);
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("FCNTL_FD_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
