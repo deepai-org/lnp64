@@ -9,6 +9,7 @@ stack_alignment=16
 e_machine=0x6c64
 psabi=psABI.md
 object_contract=object_format.md
+relocation_contract=toolchain/lnp64_relocations.manifest
 gpr=r0-r31
 fdr=fd0-fd31
 pcr=PID,PPID,TID,TP,UID,GID,SIGMASK,SIGPENDING,REALTIME_SEC,REALTIME_NSEC

@@ -714,6 +714,28 @@ mod tests {
             .any(|entry| entry == value)
     }
 
+    fn relocation_rows(manifest: &str) -> Vec<(u16, &str, &str)> {
+        manifest
+            .lines()
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(|line| {
+                let mut fields = line.splitn(3, ',');
+                let number = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing relocation number in {line}"))
+                    .parse()
+                    .unwrap_or_else(|_| panic!("invalid relocation number in {line}"));
+                let name = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing relocation name in {line}"));
+                let calculation = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing relocation calculation in {line}"));
+                (number, name, calculation)
+            })
+            .collect()
+    }
+
     #[test]
     fn llvm_target_manifest_records_required_backend_contract() {
         let manifest = include_str!("../toolchain/lnp64_target.manifest");
@@ -728,6 +750,10 @@ mod tests {
         assert_eq!(
             manifest_field(manifest, "object_contract"),
             "object_format.md"
+        );
+        assert_eq!(
+            manifest_field(manifest, "relocation_contract"),
+            "toolchain/lnp64_relocations.manifest"
         );
         assert_eq!(manifest_field(manifest, "gpr"), "r0-r31");
         assert_eq!(manifest_field(manifest, "fdr"), "fd0-fd31");
@@ -777,6 +803,37 @@ mod tests {
             manifest_field(manifest, "toy_compiler_policy"),
             "bootstrap_smoke_only_after_llvm_gate"
         );
+    }
+
+    #[test]
+    fn relocation_manifest_matches_object_format_and_target_manifest() {
+        let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
+        let relocation_manifest = include_str!("../toolchain/lnp64_relocations.manifest");
+        let object_format = include_str!("../object_format.md");
+        let rows = relocation_rows(relocation_manifest);
+        let mut numbers = std::collections::BTreeSet::new();
+        let mut names = std::collections::BTreeSet::new();
+
+        assert_eq!(rows.len(), 13);
+        for (idx, (number, name, calculation)) in rows.iter().enumerate() {
+            assert_eq!(*number as usize, idx, "relocation numbers must be dense");
+            assert!(
+                numbers.insert(*number),
+                "duplicate relocation number {number}"
+            );
+            assert!(names.insert(*name), "duplicate relocation name {name}");
+            assert!(!calculation.is_empty(), "empty calculation for {name}");
+            assert!(
+                object_format.contains(&format!("| {number} | `{name}` |")),
+                "relocation {number},{name} is missing from object_format.md"
+            );
+        }
+        for name in manifest_field(target_manifest, "relocations").split(',') {
+            assert!(
+                names.contains(name),
+                "target manifest relocation {name} is missing from relocation manifest"
+            );
+        }
     }
 
     #[test]
