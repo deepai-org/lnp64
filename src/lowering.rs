@@ -717,6 +717,7 @@ mod tests {
     #[test]
     fn llvm_target_manifest_records_required_backend_contract() {
         let manifest = include_str!("../toolchain/lnp64_target.manifest");
+        let object_format = include_str!("../object_format.md");
         assert_eq!(manifest_field(manifest, "triple"), "lnp64-unknown-none");
         assert_eq!(manifest_field(manifest, "object_format"), "ELF64");
         assert_eq!(manifest_field(manifest, "endianness"), "little");
@@ -736,12 +737,20 @@ mod tests {
         for relocation in [
             "R_LNP64_ABS64",
             "R_LNP64_PC32",
-            "R_LNP64_CALL26",
+            "R_LNP64_BRANCH26",
+            "R_LNP64_GOT64",
             "R_LNP64_TLS_TPREL64",
+            "R_LNP64_RELATIVE",
         ] {
             assert!(
                 manifest_csv_contains(manifest, "relocations", relocation),
                 "missing {relocation}"
+            );
+        }
+        for relocation in manifest_field(manifest, "relocations").split(',') {
+            assert!(
+                object_format.contains(&format!("`{relocation}`")),
+                "manifest relocation {relocation} is missing from object_format.md"
             );
         }
         for intrinsic in [
