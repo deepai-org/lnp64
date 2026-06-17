@@ -386,18 +386,23 @@ fn expand_quoted_includes(path: &Path, seen: &mut HashSet<PathBuf>) -> Result<St
     let base = path.parent().unwrap_or_else(|| Path::new("."));
     let mut out = String::new();
     for line in source.lines() {
-        let trimmed = line.trim_start();
-        if let Some(rest) = trimmed.strip_prefix("#include \"") {
-            if let Some(end) = rest.find('"') {
-                let include_path = base.join(&rest[..end]);
-                out.push_str(&expand_quoted_includes(&include_path, seen)?);
-                continue;
-            }
+        if let Some(include) = quoted_include_path(line) {
+            let include_path = base.join(include);
+            out.push_str(&expand_quoted_includes(&include_path, seen)?);
+            continue;
         }
         out.push_str(line);
         out.push('\n');
     }
     Ok(out)
+}
+
+fn quoted_include_path(line: &str) -> Option<&str> {
+    let directive = line.trim_start().strip_prefix('#')?.trim_start();
+    let rest = directive.strip_prefix("include")?.trim_start();
+    let rest = rest.strip_prefix('"')?;
+    let end = rest.find('"')?;
+    Some(&rest[..end])
 }
 
 fn strip_c_keyword(source: &str, keyword: &str) -> String {
@@ -14468,6 +14473,16 @@ mod tests {
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn quoted_include_path_accepts_spaced_directives() {
+        assert_eq!(quoted_include_path("#include \"plain.h\""), Some("plain.h"));
+        assert_eq!(
+            quoted_include_path("#  include   \"nested/crc32.h\""),
+            Some("nested/crc32.h")
+        );
+        assert_eq!(quoted_include_path("#include <stdio.h>"), None);
     }
 
     #[test]

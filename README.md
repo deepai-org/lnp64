@@ -102,7 +102,7 @@ Run the `inih` real-package smoke gate:
 bash scripts/run_inih.sh
 ```
 
-Run the `zlib` real-package Adler-32 smoke gate:
+Run the `zlib` real-package checksum smoke gate:
 
 ```sh
 bash scripts/run_zlib.sh

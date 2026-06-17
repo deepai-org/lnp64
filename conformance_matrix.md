@@ -63,7 +63,7 @@ specific compiler/runtime special casing.
 | sbase subset | passing | `third_party/sbase/*`, `scripts/run_sbase.sh` | Expand command coverage and edge cases under `COMPAT-FS-001`, `COMPAT-STDIO-001`, `COMPAT-LIBC-002`. |
 | jsmn | passing | `third_party/jsmn/example/simple.c`, `third_party/jsmn/test/tests.c`, `scripts/run_sbase.sh` | None known beyond broader C parser/runtime coverage. |
 | inih | passing | `third_party/inih/ini.c`, `third_party/inih/smoke.c`, `scripts/run_inih.sh` | `ini_parse_string` still depends on anonymous-struct aggregate layout; file parser path passes. `COMPAT-PKG-006`. |
-| zlib upstream | partial / passing Adler-32 | `third_party/zlib/adler32.c`, `third_party/zlib/zutil.c`, `third_party/zlib/smoke.c`, `scripts/run_zlib.sh` | CRC-32 static tables and full deflate/inflate remain `COMPAT-PKG-002`. |
+| zlib upstream | partial / passing checksums | `third_party/zlib/adler32.c`, `third_party/zlib/crc32.c`, `third_party/zlib/crc32.h`, `third_party/zlib/zutil.c`, `third_party/zlib/smoke.c`, `scripts/run_zlib.sh` | Full deflate/inflate remain `COMPAT-PKG-002`. |
 | small HTTP server | passing | `demos/httpd.c`, `scripts/run_demos.sh` | Socket nonblocking and network-service semantics tracked by `COMPAT-SOCK-001`. |
 | netcat-like socket demo | passing | `demos/netcat.c`, `scripts/run_demos.sh` | Socket nonblocking and descriptor passing tracked by `COMPAT-SOCK-001`. |
 | sqlite-lite demo | passing | `demos/sqlite_lite.c`, `demos/sqlite_lite.db`, `scripts/run_demos.sh` | This is not upstream SQLite; full SQLite remains `COMPAT-PKG-003`. |
@@ -82,7 +82,7 @@ specific compiler/runtime special casing.
 | `COMPAT-BIN-001` | Binary/object format | `object_format.md` defines static v1 ELF, relocations, mapping permissions, ASLR, static-only dynamic-linking policy, and startup descriptors. | Implement an ELF loader and relocation tests. |
 | `COMPAT-USERLAND-001` | Minimal userland image | Host-directory image with `/sbin/init.s`, `/bin/lnpsh.s`, `/etc`, `/dev`, and `/tmp` passes `scripts/run_userland.sh`. | Add native boot manifest/VFS image format and boot command instead of host-directory setup. |
 | `COMPAT-PKG-001` | Upstream Lua | Lua compatibility is covered by targeted compiler tests only. | Add a reproducible upstream Lua package script and convert failures into generic compiler/runtime bugs. |
-| `COMPAT-PKG-002` | zlib | Upstream v1.3.1 Adler-32 path passes through `scripts/run_zlib.sh`; CRC-32 currently exposes static-table/global-array support gaps. | Add CRC-32 smoke after static const table initialization and indexed global array handling are robust, then expand to deflate/inflate. |
+| `COMPAT-PKG-002` | zlib | Upstream v1.3.1 Adler-32 and CRC-32 checksum paths pass through `scripts/run_zlib.sh`. | Expand to deflate/inflate once struct-heavy stream state and broader compression runtime paths are ready. |
 | `COMPAT-PKG-003` | Upstream SQLite | Only sqlite-lite demo exists. | Add upstream amalgamation smoke once C/runtime gaps are known. |
 | `COMPAT-PKG-004` | libpng | Not started. | Add after zlib passes. |
 | `COMPAT-PKG-005` | musl tests | Not started. | Pick a small libc-test subset that avoids unsupported dynamic linking first. |
