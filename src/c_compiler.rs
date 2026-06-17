@@ -5216,6 +5216,18 @@ impl CodeGen {
                     Ok(dst)
                 }
             }
+            "send" => {
+                if args.len() != 4 {
+                    return Err("send(fd, buf, len, flags) expects 4 arguments".to_string());
+                }
+                let fd = self.emit_expr(&args[0])?;
+                let buf = self.emit_expr(&args[1])?;
+                let len = self.emit_expr(&args[2])?;
+                self.emit_expr(&args[3])?;
+                let dst = self.alloc_reg()?;
+                self.emit_write_fd_dispatch(fd, buf, len, dst)?;
+                Ok(dst)
+            }
             "__lnp_push" => {
                 if args.len() != 3 {
                     return Err("__lnp_push(fd, buf, len) expects 3 arguments".to_string());
@@ -6897,6 +6909,18 @@ impl CodeGen {
                     self.emit_read_fd_dispatch(fd, buf, len, Some(dst))?;
                     Ok(dst)
                 }
+            }
+            "recv" => {
+                if args.len() != 4 {
+                    return Err("recv(fd, buf, len, flags) expects 4 arguments".to_string());
+                }
+                let fd = self.emit_expr(&args[0])?;
+                let buf = self.emit_expr(&args[1])?;
+                let len = self.emit_expr(&args[2])?;
+                self.emit_expr(&args[3])?;
+                let dst = self.alloc_reg()?;
+                self.emit_read_fd_dispatch(fd, buf, len, Some(dst))?;
+                Ok(dst)
             }
             "__lnp_pull" => {
                 if args.len() != 3 {
@@ -12700,9 +12724,9 @@ int main() {
             p[0].fd = accepted;
             p[0].events = POLLIN;
             if (poll(p, 1, 0) != 0) return 9;
-            if (write(client, "s", 1) != 1) return 10;
+            if (send(client, "s", 1, MSG_NOSIGNAL) != 1) return 10;
             if (poll(p, 1, 0) != 1) return 11;
-            if (read(accepted, buf, 1) != 1) return 12;
+            if (recv(accepted, buf, 1, 0) != 1) return 12;
             if (loadb(buf) != 's') return 13;
             return 0;
         }
