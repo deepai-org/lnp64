@@ -11,6 +11,7 @@ The checked gate currently runs these upstream functional tests:
 - `functional/clock_gettime.c`
 - `functional/dirname.c`
 - `functional/env.c`
+- `functional/search_lsearch.c`
 - `functional/string.c`
 - `functional/string_memmem.c`
 - `functional/string_strchr.c`

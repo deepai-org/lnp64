@@ -1531,11 +1531,24 @@ fn collect_global_char_array_sizes(source: &str) -> HashMap<String, i64> {
                     if !is_plain_identifier(name) {
                         continue;
                     }
-                    let Some(end) = decl[bracket + 1..].find(']') else {
-                        continue;
-                    };
-                    let len = decl[bracket + 1..bracket + 1 + end].trim();
-                    if let Some(size) = parse_constant_len(len) {
+                    let mut rest = &decl[bracket..];
+                    let mut size = 1i64;
+                    let mut found_dim = false;
+                    while let Some(dim) = rest.strip_prefix('[') {
+                        let Some(end) = dim.find(']') else {
+                            break;
+                        };
+                        let len = dim[..end].trim();
+                        if let Some(value) = parse_constant_len(len) {
+                            size = size.saturating_mul(value);
+                            found_dim = true;
+                        } else {
+                            found_dim = false;
+                            break;
+                        }
+                        rest = dim[end + 1..].trim_start();
+                    }
+                    if found_dim {
                         arrays.insert(name.to_string(), size);
                     }
                 }
@@ -2183,12 +2196,19 @@ impl Parser {
                 continue;
             }
             if self.check(&Token::LBracket) {
-                self.advance();
-                let _array_len = self.parse_array_length()?;
-                self.expect(Token::RBracket)?;
+                let mut dimensions = Vec::new();
+                while self.check(&Token::LBracket) {
+                    self.advance();
+                    dimensions.push(self.parse_array_length()?);
+                    self.expect(Token::RBracket)?;
+                }
                 if self.check(&Token::Semi) {
                     self.advance();
                     if let Some(size) = self.global_byte_array_sizes.get(&name).copied() {
+                        if let Some(width) = dimensions.get(1).copied() {
+                            self.global_aggregate_array_widths
+                                .insert(name.clone(), width);
+                        }
                         global_zero_byte_arrays.push((name, size));
                     }
                     continue;
@@ -3331,6 +3351,30 @@ impl Parser {
     fn skip_cast_type_name(&mut self) {
         while matches!(self.peek(), Token::Int | Token::Star | Token::Ident(_)) {
             self.advance();
+        }
+        if self.check(&Token::LParen) && self.peek_n(1) == &Token::Star {
+            self.advance();
+            let mut depth = 1i64;
+            while depth > 0 && !self.check(&Token::Eof) {
+                if self.check(&Token::LParen) {
+                    depth += 1;
+                } else if self.check(&Token::RParen) {
+                    depth -= 1;
+                }
+                self.advance();
+            }
+            if self.check(&Token::LParen) {
+                self.advance();
+                let mut depth = 1i64;
+                while depth > 0 && !self.check(&Token::Eof) {
+                    if self.check(&Token::LParen) {
+                        depth += 1;
+                    } else if self.check(&Token::RParen) {
+                        depth -= 1;
+                    }
+                    self.advance();
+                }
+            }
         }
     }
 
@@ -8023,6 +8067,22 @@ impl CodeGen {
                 let regs = self.emit_call_arg_regs(args)?;
                 self.emit_qsort(regs[0], regs[1], regs[2], regs[3])
             }
+            "lfind" | "lsearch" => {
+                if args.len() != 5 {
+                    return Err(format!(
+                        "{name}(key, base, nelp, width, compar) expects 5 arguments"
+                    ));
+                }
+                let regs = self.emit_call_arg_regs(args)?;
+                self.emit_lsearch(
+                    regs[0],
+                    regs[1],
+                    regs[2],
+                    regs[3],
+                    regs[4],
+                    name == "lsearch",
+                )
+            }
             "creat" => {
                 if args.len() != 2 {
                     return Err("creat(path, mode) expects 2 arguments".to_string());
@@ -10426,6 +10486,112 @@ impl CodeGen {
         self.text.push(format!("  BNE {outer_label}"));
         self.text.push(format!("{done_label}:"));
         self.text.push("  LI r1, 0".to_string());
+        self.temp_reg = 1;
+        Ok(1)
+    }
+
+    fn emit_lsearch(
+        &mut self,
+        key_reg: usize,
+        base_reg: usize,
+        nelp_reg: usize,
+        width_reg: usize,
+        cmp_reg: usize,
+        insert_on_miss: bool,
+    ) -> Result<usize, String> {
+        let key_slot = self.next_local_offset;
+        let base_slot = key_slot + 8;
+        let nelp_slot = key_slot + 16;
+        let width_slot = key_slot + 24;
+        let cmp_slot = key_slot + 32;
+        let i_slot = key_slot + 40;
+        let elem_slot = key_slot + 48;
+        let copy_slot = key_slot + 56;
+        self.next_local_offset += 64;
+
+        self.text
+            .push(format!("  ST [r31, {key_slot}], r{key_reg}"));
+        self.text
+            .push(format!("  ST [r31, {base_slot}], r{base_reg}"));
+        self.text
+            .push(format!("  ST [r31, {nelp_slot}], r{nelp_reg}"));
+        self.text
+            .push(format!("  ST [r31, {width_slot}], r{width_reg}"));
+        self.text
+            .push(format!("  ST [r31, {cmp_slot}], r{cmp_reg}"));
+        self.text.push(format!("  ST [r31, {i_slot}], r0"));
+
+        let scan_label = self.new_label("lsearch_scan");
+        let found_label = self.new_label("lsearch_found");
+        let miss_label = self.new_label("lsearch_miss");
+        let copy_loop_label = self.new_label("lsearch_copy_loop");
+        let copy_done_label = self.new_label("lsearch_copy_done");
+        let done_label = self.new_label("lsearch_done");
+
+        self.text.push(format!("{scan_label}:"));
+        self.text.push(format!("  LD r20, [r31, {i_slot}]"));
+        self.text.push(format!("  LD r21, [r31, {nelp_slot}]"));
+        self.text.push("  LD r22, [r21, 0]".to_string());
+        self.text.push("  CMP r20, r22".to_string());
+        self.text.push(format!("  BGE {miss_label}"));
+        self.text.push(format!("  LD r23, [r31, {width_slot}]"));
+        self.text.push(format!("  LD r24, [r31, {base_slot}]"));
+        self.text.push("  MUL r25, r20, r23".to_string());
+        self.text.push("  ADD r25, r24, r25".to_string());
+        self.text.push(format!("  ST [r31, {elem_slot}], r25"));
+        self.text.push(format!("  LD r26, [r31, {cmp_slot}]"));
+        self.text.push(format!("  LD r27, [r31, {key_slot}]"));
+        self.text.push("  MOV r1, r27".to_string());
+        self.text.push("  MOV r2, r25".to_string());
+        self.text.push("  CALL_REG r26".to_string());
+        self.text.push("  CMP r1, r0".to_string());
+        self.text.push(format!("  BEQ {found_label}"));
+        self.text.push(format!("  LD r20, [r31, {i_slot}]"));
+        self.text.push("  LI r21, 1".to_string());
+        self.text.push("  ADD r20, r20, r21".to_string());
+        self.text.push(format!("  ST [r31, {i_slot}], r20"));
+        self.text.push(format!("  JMP {scan_label}"));
+
+        self.text.push(format!("{found_label}:"));
+        self.text.push(format!("  LD r1, [r31, {elem_slot}]"));
+        self.text.push(format!("  JMP {done_label}"));
+
+        self.text.push(format!("{miss_label}:"));
+        if insert_on_miss {
+            self.text.push(format!("  LD r20, [r31, {nelp_slot}]"));
+            self.text.push("  LD r21, [r20, 0]".to_string());
+            self.text.push(format!("  LD r22, [r31, {width_slot}]"));
+            self.text.push(format!("  LD r23, [r31, {base_slot}]"));
+            self.text.push("  MUL r24, r21, r22".to_string());
+            self.text.push("  ADD r24, r23, r24".to_string());
+            self.text.push(format!("  ST [r31, {elem_slot}], r24"));
+            self.text.push(format!("  ST [r31, {copy_slot}], r0"));
+            self.text.push(format!("{copy_loop_label}:"));
+            self.text.push(format!("  LD r20, [r31, {copy_slot}]"));
+            self.text.push(format!("  LD r21, [r31, {width_slot}]"));
+            self.text.push("  CMP r20, r21".to_string());
+            self.text.push(format!("  BGE {copy_done_label}"));
+            self.text.push(format!("  LD r22, [r31, {key_slot}]"));
+            self.text.push("  ADD r22, r22, r20".to_string());
+            self.text.push("  LD.B r23, [r22, 0]".to_string());
+            self.text.push(format!("  LD r24, [r31, {elem_slot}]"));
+            self.text.push("  ADD r24, r24, r20".to_string());
+            self.text.push("  ST.B [r24, 0], r23".to_string());
+            self.text.push("  LI r25, 1".to_string());
+            self.text.push("  ADD r20, r20, r25".to_string());
+            self.text.push(format!("  ST [r31, {copy_slot}], r20"));
+            self.text.push(format!("  JMP {copy_loop_label}"));
+            self.text.push(format!("{copy_done_label}:"));
+            self.text.push(format!("  LD r20, [r31, {nelp_slot}]"));
+            self.text.push("  LD r21, [r20, 0]".to_string());
+            self.text.push("  LI r22, 1".to_string());
+            self.text.push("  ADD r21, r21, r22".to_string());
+            self.text.push("  ST [r20, 0], r21".to_string());
+            self.text.push(format!("  LD r1, [r31, {elem_slot}]"));
+        } else {
+            self.text.push("  LI r1, 0".to_string());
+        }
+        self.text.push(format!("{done_label}:"));
         self.temp_reg = 1;
         Ok(1)
     }
@@ -13692,6 +13858,7 @@ fn builtin_function_label(name: &str) -> Option<&'static str> {
         "memcpy" => Some("__memcpy"),
         "memmove" => Some("__memmove"),
         "memset" => Some("__memset"),
+        "strcmp" => Some("__strcmp"),
         "strstr" => Some("__strstr"),
         "strcasestr" | "xstrcasestr" => Some("__strcasestr"),
         _ => None,
@@ -15451,6 +15618,29 @@ mod tests {
     }
 
     #[test]
+    fn file_scope_two_dimensional_char_arrays_use_row_stride() {
+        let source = r#"
+        static char tab[3][5];
+
+        int main() {
+            if (tab[1][0] != 0) return 1;
+            tab[1][0] = 'x';
+            tab[1][1] = '\0';
+            if (tab[0][0] != 0) return 2;
+            if (strcmp(tab[1], "x") != 0) return 3;
+            if (tab[2][0] != 0) return 4;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("global_tab:"), "{asm}");
+        assert!(asm.contains(".zero 15"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn lua_aggregate_sizeofs_survive_alias_rewrites() {
         let source = r#"
         typedef struct global_State global_State;
@@ -16351,6 +16541,37 @@ mod tests {
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains("memmem_inner"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn lfind_and_lsearch_scan_fixed_width_entries() {
+        let source = r#"
+        static char tab[4][6];
+        int nel;
+
+        int main() {
+            char *r;
+            r = lsearch("ab", tab, &nel, 6, (int(*)(int*, int*))strcmp);
+            if (r != tab) return 1;
+            if (nel != 1) return 2;
+            if (strcmp(tab[0], "ab") != 0) return 3;
+            if (lfind("ab", tab, &nel, 6, (int(*)(int*, int*))strcmp) != tab) return 4;
+            if (lfind("zz", tab, &nel, 6, (int(*)(int*, int*))strcmp) != 0) return 5;
+            r = lsearch("cd", tab, &nel, 6, (int(*)(int*, int*))strcmp);
+            if (r != tab[1]) return 6;
+            if (nel != 2) return 7;
+            r = lsearch("ab", tab, &nel, 6, (int(*)(int*, int*))strcmp);
+            if (r != tab) return 8;
+            if (nel != 2) return 9;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("CALL_REG"), "{asm}");
+        assert!(asm.contains("__strcmp"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);

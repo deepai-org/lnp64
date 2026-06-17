@@ -8,6 +8,7 @@ tests=(
   clock_gettime
   dirname
   env
+  search_lsearch
   string
   string_memmem
   string_strchr
