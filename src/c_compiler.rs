@@ -16870,6 +16870,57 @@ int main() {
     }
 
     #[test]
+    fn c_epoll_wait_race_timing_cases_run() {
+        let source = r#"
+        int wfd;
+
+        int writer() {
+            yield_cpu();
+            write(wfd, "b", 1);
+            return 0;
+        }
+
+        int main() {
+            int fds[2];
+            int rfd;
+            int ep;
+            int ev;
+            int out;
+            int buf;
+            int child;
+            pipe(fds);
+            rfd = fds[0];
+            wfd = fds[1];
+            ep = epoll_create1(0);
+            ev = alloc(16);
+            out = alloc(16);
+            buf = alloc(2);
+            store(ev, EPOLLIN);
+            if (epoll_ctl(ep, EPOLL_CTL_ADD, rfd, ev) != 0) return 1;
+            if (epoll_wait(ep, out, 1, 0) != 0) return 2;
+            write(wfd, "a", 1);
+            if (epoll_wait(ep, out, 1, -1) != 1) return 3;
+            if (load(out) != EPOLLIN) return 4;
+            if (read(rfd, buf, 1) != 1) return 5;
+            child = fork();
+            if (child == 0) {
+                return writer();
+            }
+            if (epoll_wait(ep, out, 1, -1) != 1) return 6;
+            if (load(out) != EPOLLIN) return 7;
+            if (read(rfd, buf, 1) != 1) return 8;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("POLL_FD_DYN"), "{asm}");
+        assert!(asm.contains("AWAIT_DYN"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn c_socket_surface_lowers_to_endpoint_object_controls_and_runs() {
         let source = r#"
         int main() {
@@ -17603,6 +17654,40 @@ int main() {
         let asm = compile(source).unwrap();
         assert!(asm.contains("POLL_FD_DYN"), "{asm}");
         assert!(asm.contains("AWAIT_DYN"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_poll_race_timing_cases_run() {
+        let source = r#"
+        int main() {
+            int fds[2];
+            struct pollfd p[1];
+            int buf;
+            pipe(fds);
+            p[0].fd = fds[0];
+            p[0].events = POLLIN;
+            p[0].revents = 77;
+            if (poll(p, 1, 1) != 0) return 1;
+            if (p[0].revents != 0) return 2;
+            write(fds[1], "a", 1);
+            if (poll(p, 1, -1) != 1) return 3;
+            if (p[0].revents != POLLIN) return 4;
+            buf = alloc(2);
+            if (read(fds[0], buf, 1) != 1) return 5;
+            if (poll(p, 1, 0) != 0) return 6;
+            write(fds[1], "b", 1);
+            if (poll(p, 1, 0) != 1) return 7;
+            if (p[0].revents != POLLIN) return 8;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("POLL_FD_DYN"), "{asm}");
+        assert!(asm.contains("AWAIT_DYN"), "{asm}");
+        assert!(asm.contains("SLEEP"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
