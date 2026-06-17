@@ -297,19 +297,19 @@ impl Parser {
                 arity(1)?;
                 Instr::Free(reg(&args[0])?)
             }
-            "OPEN_FD" => {
+            "OPEN_AT" | "OPEN_FD" => {
                 arity(3)?;
                 Instr::OpenFd(fd(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
-            "OPEN_FD_DYN" => {
+            "OPEN_AT_DYN" | "OPEN_FD_DYN" => {
                 arity(3)?;
                 Instr::OpenFdDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
-            "OPEN_DIR" => {
+            "OPEN_DIR" | "OPEN_DIR_AT" => {
                 arity(3)?;
                 Instr::OpenDir(fd(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
-            "OPEN_DIR_DYN" => {
+            "OPEN_DIR_DYN" | "OPEN_DIR_AT_DYN" => {
                 arity(3)?;
                 Instr::OpenDirDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
@@ -951,6 +951,36 @@ mod tests {
         assert!(matches!(
             program.instructions[2],
             Instr::ObjectCtl(Reg(5), Reg(6))
+        ));
+    }
+
+    #[test]
+    fn parses_open_at_and_legacy_open_fd_aliases() {
+        let program = Program::parse(
+            r#"
+            .text
+              OPEN_AT fd3, r1, r2
+              OPEN_AT_DYN r4, r5, r6
+              OPEN_FD fd7, r8, r9
+              OPEN_FD_DYN r10, r11, r12
+            "#,
+        )
+        .unwrap();
+        assert!(matches!(
+            program.instructions[0],
+            Instr::OpenFd(FdReg(3), Reg(1), Reg(2))
+        ));
+        assert!(matches!(
+            program.instructions[1],
+            Instr::OpenFdDyn(Reg(4), Reg(5), Reg(6))
+        ));
+        assert!(matches!(
+            program.instructions[2],
+            Instr::OpenFd(FdReg(7), Reg(8), Reg(9))
+        ));
+        assert!(matches!(
+            program.instructions[3],
+            Instr::OpenFdDyn(Reg(10), Reg(11), Reg(12))
         ));
     }
 

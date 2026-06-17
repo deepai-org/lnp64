@@ -8,7 +8,7 @@ out=/tmp/netbsd_personality_smoke.out
 "${lnp64[@]}" cc demos/netbsd_personality_smoke.c -o "$asm"
 
 required_native=(
-  OPEN_FD
+  OPEN_AT
   READ_FD_DYN
   WRITE_FD_DYN
   FORK

@@ -113,7 +113,7 @@ EXPECTED
 diff -u "$expected" "$out"
 
 required_native=(
-  OPEN_FD
+  OPEN_AT
   READ_FD_DYN
   WRITE_FD_DYN
   CHDIR_PATH

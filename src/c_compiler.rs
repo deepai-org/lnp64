@@ -9066,7 +9066,7 @@ impl CodeGen {
                 let flags = self.emit_expr(&args[2])?;
                 let dst = self.alloc_reg()?;
                 self.text
-                    .push(format!("  OPEN_FD fd{fd_num}, r{path}, r{flags}"));
+                    .push(format!("  OPEN_AT fd{fd_num}, r{path}, r{flags}"));
                 self.text.push(format!("  LI r{dst}, {fd_num}"));
                 Ok(dst)
             }
@@ -11761,7 +11761,7 @@ impl CodeGen {
     fn emit_open_fd_alloc(&mut self, path_reg: usize, flags_reg: usize) -> Result<usize, String> {
         let dst = self.alloc_reg()?;
         self.text
-            .push(format!("  OPEN_FD_DYN r{dst}, r{path_reg}, r{flags_reg}"));
+            .push(format!("  OPEN_AT_DYN r{dst}, r{path_reg}, r{flags_reg}"));
         Ok(dst)
     }
 
@@ -11940,7 +11940,7 @@ impl CodeGen {
         }
         self.text.push(format!("  LI r{flags}, {}", 2 | 4));
         self.text
-            .push(format!("  OPEN_FD_DYN r{dst}, r{template}, r{flags}"));
+            .push(format!("  OPEN_AT_DYN r{dst}, r{template}, r{flags}"));
         self.text.push(format!("  JMP {done}"));
         self.text.push(format!("{null_template}:"));
         self.text.push(format!("  LI r{dst}, -1"));
@@ -19629,7 +19629,7 @@ int main() {
         }
         "#;
         let asm = compile(source).unwrap();
-        assert!(asm.contains("OPEN_FD_DYN"), "{asm}");
+        assert!(asm.contains("OPEN_AT_DYN"), "{asm}");
         assert!(asm.contains("__strcpy"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
@@ -19962,8 +19962,8 @@ int main() {
         let asm = compile(source).unwrap();
         assert!(asm.contains("WRITE_FD fd1"));
         assert!(asm.contains("READ_FD fd0"));
-        assert!(asm.contains("OPEN_FD fd3"));
-        assert!(asm.contains("OPEN_FD_DYN"));
+        assert!(asm.contains("OPEN_AT fd3"));
+        assert!(asm.contains("OPEN_AT_DYN"));
         assert!(asm.contains("CAP_DUP"));
         assert!(asm.contains("READ_FD_DYN"));
         assert!(asm.contains("PREAD_FD_DYN"));
@@ -20004,7 +20004,7 @@ int main() {
         }
         "#;
         let asm = compile(source).unwrap();
-        assert!(asm.contains("OPEN_FD_DYN"), "{asm}");
+        assert!(asm.contains("OPEN_AT_DYN"), "{asm}");
         assert!(asm.contains("CAP_DUP"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
@@ -20315,7 +20315,7 @@ int main() {
         }
         "#;
         let asm = compile(source).unwrap();
-        assert!(asm.contains("OPEN_FD_DYN"), "{asm}");
+        assert!(asm.contains("OPEN_AT_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
@@ -20536,7 +20536,7 @@ int main() {
         }
         "#;
         let asm = compile(source).unwrap();
-        assert!(asm.contains("OPEN_FD_DYN"), "{asm}");
+        assert!(asm.contains("OPEN_AT_DYN"), "{asm}");
         assert!(asm.contains("UNLINK_PATH"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
@@ -20640,7 +20640,7 @@ int main() {
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains("FD_CLOSE_DYN"), "{asm}");
-        assert!(asm.contains("OPEN_FD_DYN"), "{asm}");
+        assert!(asm.contains("OPEN_AT_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
@@ -22067,7 +22067,7 @@ int main() {
         let asm = compile(source).unwrap();
         for expected in [
             "ALLOC",
-            "OPEN_FD_DYN",
+            "OPEN_AT_DYN",
             "OBJECT_CTL",
             "PUSH",
             "AWAIT",
