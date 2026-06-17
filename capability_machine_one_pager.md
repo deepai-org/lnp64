@@ -198,6 +198,26 @@ capability. Confidential-domain hooks add measured launch, memory-encryption
 key-id metadata, sealed-secret release policy, and encrypted-checkpoint metadata
 without changing the Resource Domain model.
 
+Assured deployments are named profiles, not after-the-fact hardening scripts.
+`ASSURANCE_DEV`, `ASSURANCE_FIELD`, `ASSURANCE_HIGH`, and `ASSURANCE_FORMAL`
+bind measured boot, quote records, debug lockdown, metadata ECC/parity,
+watchdogs, telemetry, audit roots, MLS labels, proof artifact hashes, RTL/IP
+provenance, and toolchain/build ids into Resource Domain policy and remote
+attestation. Hardware is the Policy Enforcement Point; PID 1, orchestration,
+personalities, and services are Policy Decision Points whose requests become
+real only after capability, label, lineage, generation, measurement, and domain
+checks.
+
+Audit, debug, and cross-domain controls follow the same capability rule.
+Tamper-evident audit streams are append-only event logs with sequence numbers,
+hash chaining, scoped disclosure, redaction, dropped-count metadata, and
+quoteable roots. Debug and forensics require explicit debug-control FDRs,
+measured unlocks, audit records, and domain/range/label-scoped rights; production
+profiles can permanently disable invasive debug. MLS deployments attach labels
+to domains, FDRs, memory objects, DMA buffers, endpoints, telemetry, and audit
+streams. Declassification is an explicit audited service path, not a parent
+privilege or debug shortcut.
+
 Revocation is one algebra across the machine. Capabilities carry object
 generation, capability generation, lineage root, lineage epoch, rights, ranges,
 and domain scope. Narrowing and sending preserve lineage; sealing hides software
