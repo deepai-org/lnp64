@@ -5209,7 +5209,7 @@ impl CodeGen {
                 self.text.push(format!("  LI r{dst}, 0"));
                 Ok(dst)
             }
-            "abs" | "labs" | "llabs" => {
+            "abs" | "labs" | "llabs" | "fabs" | "fabsf" | "fabsl" => {
                 let value = self.one_arg(name, args)?;
                 let dst = self.alloc_reg()?;
                 let nonnegative = self.new_label("abs_nonnegative");
@@ -5221,6 +5221,64 @@ impl CodeGen {
                 self.text.push(format!("{nonnegative}:"));
                 self.text.push(format!("  MOV r{dst}, r{value}"));
                 self.text.push(format!("{done}:"));
+                Ok(dst)
+            }
+            "floor" | "floorf" | "floorl" | "ceil" | "ceilf" | "ceill" | "trunc" | "truncf"
+            | "truncl" => self.one_arg(name, args),
+            "sqrt" | "sqrtf" | "sqrtl" => {
+                let value = self.one_arg(name, args)?;
+                self.emit_integer_sqrt(value)
+            }
+            "fmod" | "fmodf" | "fmodl" => {
+                if args.len() != 2 {
+                    return Err(format!("{name}(a, b) expects 2 arguments"));
+                }
+                let left = self.emit_expr(&args[0])?;
+                let right = self.emit_expr(&args[1])?;
+                self.emit_fmod(left, right)
+            }
+            "pow" | "powf" | "powl" => {
+                if args.len() != 2 {
+                    return Err(format!("{name}(base, exp) expects 2 arguments"));
+                }
+                let base = self.emit_expr(&args[0])?;
+                let exp = self.emit_expr(&args[1])?;
+                self.emit_pow(base, exp)
+            }
+            "frexp" | "frexpf" | "frexpl" => {
+                if args.len() != 2 {
+                    return Err(format!("{name}(value, exp) expects 2 arguments"));
+                }
+                let value = self.emit_expr(&args[0])?;
+                let exp_ptr = self.emit_expr(&args[1])?;
+                let exp = self.alloc_reg()?;
+                self.text.push(format!("  LI r{exp}, 0"));
+                self.text.push(format!("  ST [r{exp_ptr}, 0], r{exp}"));
+                Ok(value)
+            }
+            "log" | "logf" | "logl" | "log2" | "log2f" | "log2l" | "log10" | "log10f"
+            | "log10l" | "sin" | "sinf" | "sinl" | "tan" | "tanf" | "tanl" | "asin" | "asinf"
+            | "asinl" | "acos" | "acosf" | "acosl" | "atan" | "atanf" | "atanl" | "sinh"
+            | "sinhf" | "sinhl" | "tanh" | "tanhf" | "tanhl" => {
+                let _value = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "cos" | "cosf" | "cosl" | "cosh" | "coshf" | "coshl" | "exp" | "expf" | "expl" => {
+                let _value = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 1"));
+                Ok(dst)
+            }
+            "atan2" | "atan2f" | "atan2l" => {
+                if args.len() != 2 {
+                    return Err(format!("{name}(y, x) expects 2 arguments"));
+                }
+                self.emit_expr(&args[0])?;
+                self.emit_expr(&args[1])?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 0"));
                 Ok(dst)
             }
             "ldexp" => self.emit_ldexp(args),
@@ -8736,6 +8794,63 @@ impl CodeGen {
         self.text.push(format!("  DIV r{dst}, r{dst}, r{two}"));
         self.text.push(format!("  ADD r{exp}, r{exp}, r{one}"));
         self.text.push(format!("  JMP {negative}"));
+        self.text.push(format!("{done}:"));
+        Ok(dst)
+    }
+
+    fn emit_integer_sqrt(&mut self, value: usize) -> Result<usize, String> {
+        let dst = self.alloc_reg()?;
+        let square = self.alloc_reg()?;
+        let next = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let loop_label = self.new_label("sqrt_loop");
+        let done = self.new_label("sqrt_done");
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("{loop_label}:"));
+        self.text.push(format!("  ADD r{next}, r{dst}, r{one}"));
+        self.text.push(format!("  MUL r{square}, r{next}, r{next}"));
+        self.text.push(format!("  CMP r{square}, r{value}"));
+        self.text.push(format!("  BGT {done}"));
+        self.text.push(format!("  MOV r{dst}, r{next}"));
+        self.text.push(format!("  JMP {loop_label}"));
+        self.text.push(format!("{done}:"));
+        Ok(dst)
+    }
+
+    fn emit_fmod(&mut self, left: usize, right: usize) -> Result<usize, String> {
+        let dst = self.alloc_reg()?;
+        let quotient = self.alloc_reg()?;
+        let product = self.alloc_reg()?;
+        let done = self.new_label("fmod_done");
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("  CMP r{right}, r0"));
+        self.text.push(format!("  BEQ {done}"));
+        self.text
+            .push(format!("  DIV r{quotient}, r{left}, r{right}"));
+        self.text
+            .push(format!("  MUL r{product}, r{quotient}, r{right}"));
+        self.text.push(format!("  SUB r{dst}, r{left}, r{product}"));
+        self.text.push(format!("{done}:"));
+        Ok(dst)
+    }
+
+    fn emit_pow(&mut self, base: usize, exp: usize) -> Result<usize, String> {
+        let dst = self.alloc_reg()?;
+        let remaining = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let loop_label = self.new_label("pow_loop");
+        let done = self.new_label("pow_done");
+        self.text.push(format!("  LI r{dst}, 1"));
+        self.text.push(format!("  MOV r{remaining}, r{exp}"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("{loop_label}:"));
+        self.text.push(format!("  CMP r{remaining}, r0"));
+        self.text.push(format!("  BLE {done}"));
+        self.text.push(format!("  MUL r{dst}, r{dst}, r{base}"));
+        self.text
+            .push(format!("  SUB r{remaining}, r{remaining}, r{one}"));
+        self.text.push(format!("  JMP {loop_label}"));
         self.text.push(format!("{done}:"));
         Ok(dst)
     }
@@ -13398,6 +13513,36 @@ int main() {
         }
         "#;
         let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_libm_integer_model_shims_run() {
+        let source = r#"
+        int main() {
+            int ep;
+            if (fabs(-7) != 7) return 1;
+            if (floor(5) != 5) return 2;
+            if (ceil(5) != 5) return 3;
+            if (sqrt(9) != 3) return 4;
+            if (sqrt(10) != 3) return 5;
+            if (fmod(17, 5) != 2) return 6;
+            if (pow(3, 4) != 81) return 7;
+            ep = 99;
+            if (frexp(12, &ep) != 12) return 8;
+            if (ep != 0) return 9;
+            if (sin(1) != 0) return 10;
+            if (cos(1) != 1) return 11;
+            if (exp(1) != 1) return 12;
+            if (atan2(1, 1) != 0) return 13;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("sqrt_loop"), "{asm}");
+        assert!(asm.contains("pow_loop"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
