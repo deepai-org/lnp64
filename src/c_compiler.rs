@@ -9766,66 +9766,29 @@ impl CodeGen {
 
     fn emit_getauxval(&mut self, key: usize) -> Result<usize, String> {
         let dst = self.alloc_reg()?;
-        let cmp = self.alloc_reg()?;
-        let next_page = self.new_label("getauxval_next_page");
-        let next_hwcap = self.new_label("getauxval_next_hwcap");
-        let next_clktck = self.new_label("getauxval_next_clktck");
-        let next_uid = self.new_label("getauxval_next_uid");
-        let next_euid = self.new_label("getauxval_next_euid");
-        let next_gid = self.new_label("getauxval_next_gid");
-        let next_egid = self.new_label("getauxval_next_egid");
+        let env_key = self.alloc_reg()?;
+        let index = self.alloc_reg()?;
+        let aux_type = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let scan = self.new_label("getauxval_scan");
+        let found = self.new_label("getauxval_found");
         let done = self.new_label("getauxval_done");
         self.text.push(format!("  LI r{dst}, 0"));
-
-        self.text.push(format!("  LI r{cmp}, 6"));
-        self.text.push(format!("  CMP r{key}, r{cmp}"));
-        self.text.push(format!("  BNE {next_page}"));
-        self.text.push(format!("  LI r{dst}, 4096"));
+        self.text.push(format!("  LI r{env_key}, 16"));
+        self.text.push(format!("  LI r{index}, 0"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("{scan}:"));
+        self.text
+            .push(format!("  ENV_GET r{aux_type}, r{env_key}, r{index}, r0"));
+        self.text.push(format!("  CMP r{aux_type}, r0"));
+        self.text.push(format!("  BEQ {done}"));
+        self.text.push(format!("  CMP r{aux_type}, r{key}"));
+        self.text.push(format!("  BEQ {found}"));
+        self.text.push(format!("  ADD r{index}, r{index}, r{one}"));
+        self.text.push(format!("  JMP {scan}"));
+        self.text.push(format!("{found}:"));
+        self.text.push(format!("  MOV r{dst}, r30"));
         self.text.push(format!("  JMP {done}"));
-
-        self.text.push(format!("{next_page}:"));
-        self.text.push(format!("  LI r{cmp}, 16"));
-        self.text.push(format!("  CMP r{key}, r{cmp}"));
-        self.text.push(format!("  BNE {next_hwcap}"));
-        self.text.push(format!("  LI r{dst}, 1"));
-        self.text.push(format!("  JMP {done}"));
-
-        self.text.push(format!("{next_hwcap}:"));
-        self.text.push(format!("  LI r{cmp}, 17"));
-        self.text.push(format!("  CMP r{key}, r{cmp}"));
-        self.text.push(format!("  BNE {next_clktck}"));
-        self.text.push(format!("  LI r{dst}, 100"));
-        self.text.push(format!("  JMP {done}"));
-
-        self.text.push(format!("{next_clktck}:"));
-        self.text.push(format!("  LI r{cmp}, 11"));
-        self.text.push(format!("  CMP r{key}, r{cmp}"));
-        self.text.push(format!("  BNE {next_uid}"));
-        self.text.push(format!("  GET_PCR r{dst}, UID"));
-        self.text.push(format!("  JMP {done}"));
-
-        self.text.push(format!("{next_uid}:"));
-        self.text.push(format!("  LI r{cmp}, 12"));
-        self.text.push(format!("  CMP r{key}, r{cmp}"));
-        self.text.push(format!("  BNE {next_euid}"));
-        self.text.push(format!("  GET_PCR r{dst}, UID"));
-        self.text.push(format!("  JMP {done}"));
-
-        self.text.push(format!("{next_euid}:"));
-        self.text.push(format!("  LI r{cmp}, 13"));
-        self.text.push(format!("  CMP r{key}, r{cmp}"));
-        self.text.push(format!("  BNE {next_gid}"));
-        self.text.push(format!("  GET_PCR r{dst}, GID"));
-        self.text.push(format!("  JMP {done}"));
-
-        self.text.push(format!("{next_gid}:"));
-        self.text.push(format!("  LI r{cmp}, 14"));
-        self.text.push(format!("  CMP r{key}, r{cmp}"));
-        self.text.push(format!("  BNE {next_egid}"));
-        self.text.push(format!("  GET_PCR r{dst}, GID"));
-        self.text.push(format!("  JMP {done}"));
-
-        self.text.push(format!("{next_egid}:"));
         self.text.push(format!("{done}:"));
         Ok(dst)
     }
@@ -14053,7 +14016,7 @@ int main() {
         }
         "#;
         let asm = compile(source).unwrap();
-        assert!(asm.contains("GET_PCR"), "{asm}");
+        assert!(asm.contains("ENV_GET"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
