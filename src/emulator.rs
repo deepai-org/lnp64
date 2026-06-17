@@ -669,6 +669,8 @@ impl Process {
         let domain_id = self.domain_id;
         let mut replacement = Process::new(pid, parent_pid, domain_id, program, layout);
         replacement.fds = std::mem::take(&mut self.fds);
+        replacement.fd_generations = std::mem::take(&mut self.fd_generations);
+        replacement.fd_capabilities = std::mem::take(&mut self.fd_capabilities);
         replacement.uid = self.uid;
         replacement.gid = self.gid;
         replacement.sigmask = self.sigmask;
@@ -1605,8 +1607,10 @@ impl Machine {
                 self.write_reg(dst, child_pid)?;
                 let _ = parent_pid;
             }
-            Instr::Exec(path_reg, _argv_reg) => {
+            Instr::Exec(path_reg, argv_reg) => {
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
+                let argv = self.read_reg(argv_reg)?;
+                let args = self.collect_exec_args(&path, argv)?;
                 let source = fs::read_to_string(&path)
                     .map_err(|err| format!("EXEC failed to read {path:?}: {err}"))?;
                 let program = Program::parse(&source)
@@ -1623,6 +1627,7 @@ impl Machine {
                 let pid = self.thread()?.pid;
                 let tid = self.thread()?.tid;
                 *self.thread_mut()? = Thread::new(tid, pid, layout.stack_top);
+                self.set_args(&args)?;
             }
             Instr::Spawn(dst, entry) => {
                 self.require_domain_cap(DOMAIN_CAP_PROCESS)?;
@@ -4836,6 +4841,21 @@ impl Machine {
         String::from_utf8(bytes).map_err(|err| format!("invalid utf-8 string at 0x{addr:x}: {err}"))
     }
 
+    fn collect_exec_args(&mut self, path: &str, argv: u64) -> Result<Vec<String>, String> {
+        if argv == 0 {
+            return Ok(vec![path.to_string()]);
+        }
+        let mut args = Vec::new();
+        for idx in 0..256u64 {
+            let ptr = self.load_u64(argv + idx * 8)?;
+            if ptr == 0 {
+                return Ok(args);
+            }
+            args.push(self.read_c_string(ptr)?);
+        }
+        Err("EXEC argv is not null-terminated within 256 entries".to_string())
+    }
+
     fn read_pcr(&self, pcr: Pcr) -> Result<u64, String> {
         let process = self.process()?;
         Ok(match pcr {
@@ -5297,6 +5317,49 @@ mod tests {
         .unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn exec_installs_argv_on_replacement_process() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let child_path = std::env::temp_dir().join(format!("lnp64_exec_args_{unique}.s"));
+        fs::write(
+            &child_path,
+            r#"
+            .text
+              LI r1, 0x700000
+              LD r2, [r1, 0]
+              EXIT r2
+            "#,
+        )
+        .unwrap();
+        let child_path = child_path.to_string_lossy();
+        let program = Program::parse(&format!(
+            r#"
+            .data
+            path: .string "{child_path}"
+            arg0: .string "child"
+            arg1: .string "two"
+            argv: .quad arg0
+                  .quad arg1
+                  .quad 0
+
+            .text
+              LI r1, path
+              LI r2, argv
+              EXEC r1, r2
+              LI r3, 99
+              EXIT r3
+            "#
+        ))
+        .unwrap();
+        let mut machine = Machine::new(program);
+        let result = machine.run();
+        let _ = fs::remove_file(child_path.as_ref());
+        assert_eq!(result.unwrap(), 2);
     }
 
     #[test]
