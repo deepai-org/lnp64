@@ -4354,6 +4354,18 @@ impl CodeGen {
             };
         }
         if root_name(base).is_some_and(|name| name == "gflags") {
+            if self.function_names.contains("do_stat") {
+                return match field {
+                    "ret" => Ok(0),
+                    "depth" => Ok(8),
+                    "h" => Ok(16),
+                    "l" => Ok(24),
+                    "prune" => Ok(32),
+                    "xdev" => Ok(40),
+                    "print" => Ok(48),
+                    _ => self.struct_stat_field_offset(field),
+                };
+            }
             return match field {
                 "n" => Ok(0),
                 "E" => Ok(8),
@@ -4977,7 +4989,7 @@ impl CodeGen {
         }
         let fmt = match &args[1] {
             Expr::Str(fmt) => fmt.clone(),
-            _ => return Err("fprintf format must be a string literal".to_string()),
+            _ => return self.emit_dynamic_fprintf(args),
         };
         let stream = self.emit_expr(&args[0])?;
         let stream_slot = self.spill_reg(stream);
@@ -5043,6 +5055,47 @@ impl CodeGen {
         }
         if !literal.is_empty() {
             self.emit_fprintf_literal(stream_slot, &literal)?;
+        }
+        let dst = self.alloc_reg()?;
+        self.text.push(format!("  LI r{dst}, 0"));
+        Ok(dst)
+    }
+
+    fn emit_dynamic_fprintf(&mut self, args: &[Expr]) -> Result<usize, String> {
+        let stream = self.emit_expr(&args[0])?;
+        let stream_slot = self.spill_reg(stream);
+        self.temp_reg = 0;
+        let fmt = self.emit_expr(&args[1])?;
+        let fmt_slot = self.spill_reg(fmt);
+        self.temp_reg = 0;
+        if args.len() == 2 {
+            let stream = self.reload_reg(stream_slot)?;
+            let fmt = self.reload_reg(fmt_slot)?;
+            self.needs_c_runtime = true;
+            self.text.push(format!("  MOV r1, r{stream}"));
+            self.text.push(format!("  MOV r2, r{fmt}"));
+            self.text.push("  CALL __write_cstr_fd".to_string());
+        } else {
+            let value = self.emit_expr(&args[2])?;
+            let value_slot = self.spill_reg(value);
+            self.temp_reg = 0;
+            for arg in args.iter().skip(3) {
+                self.emit_expr(arg)?;
+                self.temp_reg = 0;
+            }
+            let stream = self.reload_reg(stream_slot)?;
+            let value = self.reload_reg(value_slot)?;
+            self.needs_c_runtime = true;
+            self.text.push(format!("  MOV r1, r{stream}"));
+            self.text.push(format!("  MOV r2, r{value}"));
+            self.text.push("  CALL __print_u64_fd".to_string());
+            let stream = self.reload_reg(stream_slot)?;
+            let space_label = self.intern_string(" ");
+            let space = self.alloc_reg()?;
+            self.text.push(format!("  LI r{space}, {space_label}"));
+            self.text.push(format!("  MOV r1, r{stream}"));
+            self.text.push(format!("  MOV r2, r{space}"));
+            self.text.push("  CALL __write_cstr_fd".to_string());
         }
         let dst = self.alloc_reg()?;
         self.text.push(format!("  LI r{dst}, 0"));
@@ -14913,6 +14966,31 @@ int main() {
     }
 
     #[test]
+    fn c_fprintf_accepts_dynamic_count_format_pointer() {
+        let source = r#"
+        int main() {
+            int fds[2];
+            int buf;
+            int fmt;
+            pipe(fds);
+            buf = alloc(16);
+            fmt = "%7ld ";
+            fprintf(fds[1], fmt, 12);
+            if (read(fds[0], buf, 3) != 3) return 1;
+            storeb(buf + 3, 0);
+            if (strcmp(buf, "12 ") != 0) return 2;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("__print_u64_fd"), "{asm}");
+        assert!(asm.contains("__write_cstr_fd"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn c_stdio_writes_honor_descriptor_stream_argument() {
         let source = r#"
         int main() {
@@ -15841,6 +15919,45 @@ int main() {
             normalized.contains("recurse(-100, \"path\", 0, r);"),
             "{normalized}"
         );
+    }
+
+    #[test]
+    fn find_gflags_fields_use_find_layout() {
+        let source = r#"
+        static struct {
+            char ret;
+            char depth;
+            char h;
+            char l;
+            char prune;
+            char xdev;
+            char print;
+        } gflags;
+
+        int do_stat() {
+            return 0;
+        }
+
+        int main() {
+            gflags.ret = 0;
+            gflags.depth = 1;
+            gflags.h = 1;
+            gflags.l = 0;
+            gflags.prune = 0;
+            gflags.xdev = 0;
+            gflags.print = 1;
+            if (gflags.depth != 1) return 1;
+            if (gflags.h != 1) return 2;
+            if (gflags.l != 0) return 3;
+            if (gflags.print != 1) return 4;
+            gflags.ret |= 0;
+            return gflags.ret;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
     }
 
     #[test]
