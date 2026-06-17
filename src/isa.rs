@@ -90,6 +90,7 @@ pub enum Instr {
     Ld(Reg, MemRef, Width),
     St(MemRef, Reg, Width),
     Fence,
+    Isync(Reg, Reg, Reg),
     Pull(Reg, FdReg, Reg, Reg),
     Push(Reg, FdReg, Reg, Reg),
     Await(Reg, FdReg, Reg),

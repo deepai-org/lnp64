@@ -1134,6 +1134,11 @@ impl Machine {
     fn exec(&mut self, instr: Instr) -> Result<bool, String> {
         match instr {
             Instr::Nop | Instr::Fence => {}
+            Instr::Isync(result, addr, len) => {
+                let addr = self.read_reg(addr)?;
+                let len = self.read_reg(len)?;
+                self.isync_range(result, addr, len)?;
+            }
             Instr::Li(dst, value) => {
                 let v = self.resolve_value(value)?;
                 self.write_reg(dst, v)?;
@@ -2291,13 +2296,21 @@ impl Machine {
     }
 
     fn complete_ok(&mut self, value: u64) -> Result<(), String> {
-        self.set_errno(0)?;
-        self.write_reg(Reg(1), value)
+        self.complete_reg_ok(Reg(1), value)
     }
 
     fn complete_err(&mut self, errno: u64) -> Result<(), String> {
+        self.complete_reg_err(Reg(1), errno)
+    }
+
+    fn complete_reg_ok(&mut self, result: Reg, value: u64) -> Result<(), String> {
+        self.set_errno(0)?;
+        self.write_reg(result, value)
+    }
+
+    fn complete_reg_err(&mut self, result: Reg, errno: u64) -> Result<(), String> {
         self.set_errno(errno)?;
-        self.write_reg(Reg(1), -1i64 as u64)
+        self.write_reg(result, -1i64 as u64)
     }
 
     fn set_status_ok(&mut self) -> Result<(), String> {
@@ -3036,6 +3049,26 @@ impl Machine {
         self.process_mut()?.vmas[idx].prot = prot;
         self.set_status_ok()?;
         Ok(())
+    }
+
+    fn isync_range(&mut self, result: Reg, addr: u64, len: u64) -> Result<(), String> {
+        if len == 0 {
+            return self.complete_reg_err(result, 22);
+        }
+        let Some(end) = addr.checked_add(len) else {
+            return self.complete_reg_err(result, 22);
+        };
+        let process = self.process()?;
+        let Some(vma) = process.vmas.iter().find(|vma| {
+            let vma_end = vma.start.saturating_add(vma.len);
+            addr >= vma.start && end <= vma_end
+        }) else {
+            return self.complete_reg_err(result, 14);
+        };
+        if vma.guard || vma.prot == 0 || vma.prot & 0b101 == 0 {
+            return self.complete_reg_err(result, 14);
+        }
+        self.complete_reg_ok(result, 0)
     }
 
     fn read_fd_index(&mut self, fd: usize, addr: u64, len: usize) -> Result<usize, String> {
@@ -8392,6 +8425,51 @@ mod tests {
                 .prot,
             0b110
         );
+    }
+
+    #[test]
+    fn isync_reports_success_and_canonical_range_errors() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[1] = 4096;
+        machine.thread_mut().unwrap().regs[2] = 0b101;
+        machine.thread_mut().unwrap().regs[7] = 0x230_000;
+        machine
+            .exec(Instr::Mmap(
+                Reg(3),
+                Reg(7),
+                Reg(1),
+                Reg(2),
+                FdReg(0),
+                Reg(7),
+            ))
+            .unwrap();
+        let addr = machine.thread().unwrap().regs[3];
+        assert_ne!(addr, -1i64 as u64);
+
+        machine.thread_mut().unwrap().regs[4] = addr;
+        machine.thread_mut().unwrap().regs[5] = 64;
+        machine.exec(Instr::Isync(Reg(6), Reg(4), Reg(5))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[6], 0);
+        assert_eq!(machine.process().unwrap().errno, 0);
+
+        machine.thread_mut().unwrap().regs[5] = 0;
+        machine.exec(Instr::Isync(Reg(6), Reg(4), Reg(5))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[6], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+
+        machine.thread_mut().unwrap().regs[4] = 0xffff_0000;
+        machine.thread_mut().unwrap().regs[5] = 64;
+        machine.exec(Instr::Isync(Reg(6), Reg(4), Reg(5))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[6], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 14);
     }
 
     #[test]

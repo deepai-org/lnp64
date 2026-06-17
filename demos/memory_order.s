@@ -4,6 +4,15 @@ word: .quad 41
 
 .text
   LI r4, word
+  LI r5, 8
+
+isync_forms:
+  ISYNC r4, r5
+  CMP r1, r0
+  BNE bad
+  ISYNC r11, r4, r5
+  CMP r11, r0
+  BNE bad
 
 successful_cmpxchg:
   FENCE

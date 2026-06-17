@@ -226,6 +226,14 @@ impl Parser {
                 arity(0)?;
                 Instr::Fence
             }
+            "ISYNC" => {
+                if args.len() == 2 {
+                    Instr::Isync(Reg(1), reg(&args[0])?, reg(&args[1])?)
+                } else {
+                    arity(3)?;
+                    Instr::Isync(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+                }
+            }
             "PULL" => {
                 arity(4)?;
                 Instr::Pull(
@@ -943,6 +951,26 @@ mod tests {
         assert!(matches!(
             program.instructions[2],
             Instr::ObjectCtl(Reg(5), Reg(6))
+        ));
+    }
+
+    #[test]
+    fn parses_isync_with_implicit_or_explicit_result() {
+        let program = Program::parse(
+            r#"
+            .text
+              ISYNC r2, r3
+              ISYNC r4, r5, r6
+            "#,
+        )
+        .unwrap();
+        assert!(matches!(
+            program.instructions[0],
+            Instr::Isync(Reg(1), Reg(2), Reg(3))
+        ));
+        assert!(matches!(
+            program.instructions[1],
+            Instr::Isync(Reg(4), Reg(5), Reg(6))
         ));
     }
 
