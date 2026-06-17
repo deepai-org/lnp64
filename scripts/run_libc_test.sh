@@ -9,6 +9,7 @@ tests=(
   dirname
   env
   fdopen
+  qsort_bounded
   random
   search_insque
   search_lsearch

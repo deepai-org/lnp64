@@ -95,6 +95,7 @@ struct CProgram {
     globals: Vec<(String, GlobalInit)>,
     global_arrays: Vec<(String, Vec<GlobalWord>)>,
     global_array_widths: HashMap<String, i64>,
+    global_array_sizes: HashMap<String, i64>,
     global_byte_arrays: Vec<(String, String)>,
     global_zero_byte_arrays: Vec<(String, i64)>,
     functions: Vec<Function>,
@@ -117,6 +118,7 @@ enum GlobalWord {
 struct Function {
     name: String,
     params: Vec<String>,
+    param_pointer_widths: HashMap<String, i64>,
     body: Vec<Stmt>,
 }
 
@@ -133,6 +135,13 @@ struct LocalDecl {
     init_list: Option<Vec<LocalInitValue>>,
     array_len: Option<i64>,
     aggregate_size: Option<i64>,
+    pointer_deref_width: Option<i64>,
+}
+
+#[derive(Debug, Clone)]
+struct ParamDecl {
+    name: String,
+    pointer_deref_width: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -256,6 +265,7 @@ enum Expr {
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
     Index(Box<Expr>, Box<Expr>),
     Member(Box<Expr>, String),
+    CastPointer(usize, Box<Expr>),
     CompoundLiteral(Vec<Expr>),
     Call(String, Vec<Expr>),
     CallValue(Box<Expr>, Vec<Expr>),
@@ -274,6 +284,7 @@ impl Expr {
                 cond.contains_call() || then_expr.contains_call() || else_expr.contains_call()
             }
             Expr::Unary(_, expr)
+            | Expr::CastPointer(_, expr)
             | Expr::PostInc(expr)
             | Expr::PostDec(expr)
             | Expr::Member(expr, _) => expr.contains_call(),
@@ -301,6 +312,7 @@ impl Expr {
                     || else_expr.calls_function(name)
             }
             Expr::Unary(_, expr)
+            | Expr::CastPointer(_, expr)
             | Expr::PostInc(expr)
             | Expr::PostDec(expr)
             | Expr::Member(expr, _) => expr.calls_function(name),
@@ -963,10 +975,17 @@ fn normalize_c_types(source: &str) -> String {
     out = out.replace("sizeof(*fents)", "104");
     out = out.replace("sizeof(ent)", "104");
     out = out.replace("sizeof(t) / sizeof(t[0])", "128");
+    out = out.replace("sizeof t/sizeof *t", "128");
     out = out.replace("sizeof(buf)", "8192");
     out = out.replace("BUFSIZ", "8192");
+    out = normalize_char_pointer_declarator_lists(&out);
     out = normalize_char_array_declarations(&out);
     out = out.replace("\"%\"PRIu32\" %zu\"", "\"%u %u\"");
+    out = out.replace("PRIu64", "\"u\"");
+    out = out.replace("(char **)", "(int **)");
+    out = out.replace("(char**)", "(int **)");
+    out = out.replace("(int *)", "(int **)");
+    out = out.replace("(int*)", "(int **)");
     out = out.replace("unsigned char buf[8192];", "int buf; buf = alloc(8192);");
     out = strip_c_keyword(&out, "extern");
     out = out.replace("JSMN_API ", "");
@@ -1064,9 +1083,8 @@ fn normalize_c_types(source: &str) -> String {
         ("const char *", "int "),
         ("FILE *", "int "),
         ("DIR *", "int "),
-        ("char **", "int "),
+        ("char **", "int *"),
         ("char *", "int "),
-        ("int *", "int "),
         ("ssize_t", "int"),
         ("size_t", "int"),
         ("static int", "int"),
@@ -1565,6 +1583,25 @@ fn collect_global_char_array_sizes(source: &str) -> HashMap<String, i64> {
         depth += count_braces(line);
     }
     arrays
+}
+
+fn normalize_char_pointer_declarator_lists(source: &str) -> String {
+    let mut out = String::new();
+    for line in source.lines() {
+        let trimmed = line.trim_start();
+        let normalized = if trimmed.ends_with(';')
+            && trimmed.contains("char *")
+            && !trimmed.contains("char **")
+            && !trimmed.contains("(*")
+        {
+            line.replace(", *", ", ")
+        } else {
+            line.to_string()
+        };
+        out.push_str(&normalized);
+        out.push('\n');
+    }
+    out
 }
 
 fn normalize_char_array_declarations(source: &str) -> String {
@@ -2203,6 +2240,7 @@ impl Parser {
     fn parse_program(&mut self) -> Result<CProgram, String> {
         let mut globals = Vec::new();
         let mut global_arrays = Vec::new();
+        let mut global_array_sizes = HashMap::new();
         let mut global_byte_arrays = Vec::new();
         let mut global_zero_byte_arrays = Vec::new();
         let mut functions = Vec::new();
@@ -2232,7 +2270,19 @@ impl Parser {
             };
             if self.check(&Token::LParen) {
                 self.advance();
-                let params = self.parse_params()?;
+                let param_decls = self.parse_params()?;
+                let params = param_decls
+                    .iter()
+                    .map(|param| param.name.clone())
+                    .collect::<Vec<_>>();
+                let param_pointer_widths = param_decls
+                    .iter()
+                    .filter_map(|param| {
+                        param
+                            .pointer_deref_width
+                            .map(|width| (param.name.clone(), width))
+                    })
+                    .collect();
                 self.expect(Token::RParen)?;
                 if self.check(&Token::Semi) {
                     self.advance();
@@ -2241,7 +2291,12 @@ impl Parser {
                 let previous_function = std::mem::replace(&mut self.current_function, name.clone());
                 let body = self.parse_block()?;
                 self.current_function = previous_function;
-                functions.push(Function { name, params, body });
+                functions.push(Function {
+                    name,
+                    params,
+                    param_pointer_widths,
+                    body,
+                });
                 continue;
             }
             if self.check(&Token::LBracket) {
@@ -2272,6 +2327,12 @@ impl Parser {
                     self.expect(Token::LBrace)?;
                     let values = self.parse_global_array_initializer()?;
                     self.expect(Token::Semi)?;
+                    let width = self
+                        .global_aggregate_array_widths
+                        .get(&name)
+                        .copied()
+                        .unwrap_or(8);
+                    global_array_sizes.insert(name.clone(), values.len() as i64 * width);
                     global_arrays.push((name, values));
                 }
                 continue;
@@ -2298,6 +2359,7 @@ impl Parser {
             globals,
             global_arrays,
             global_array_widths: self.global_aggregate_array_widths.clone(),
+            global_array_sizes,
             global_byte_arrays,
             global_zero_byte_arrays,
             functions,
@@ -2437,6 +2499,7 @@ impl Parser {
         match expr {
             Expr::Str(value) => Ok(GlobalWord::Str(value)),
             Expr::Var(name) => Ok(GlobalWord::Label(name)),
+            Expr::CastPointer(_, inner) => self.global_word_from_expr(*inner),
             Expr::Unary(UnOp::Addr, inner) => match *inner {
                 Expr::Var(name) => Ok(GlobalWord::Label(name)),
                 other => Err(format!(
@@ -2508,7 +2571,7 @@ impl Parser {
         }
     }
 
-    fn parse_params(&mut self) -> Result<Vec<String>, String> {
+    fn parse_params(&mut self) -> Result<Vec<ParamDecl>, String> {
         let mut params = Vec::new();
         let mut unnamed = 0usize;
         if self.check(&Token::RParen) {
@@ -2529,8 +2592,10 @@ impl Parser {
                 break;
             }
             self.parse_type_tokens()?;
+            let mut pointer_depth = 0usize;
             while self.check(&Token::Star) {
                 self.advance();
+                pointer_depth += 1;
             }
             let name = if matches!(self.peek(), Token::Comma | Token::RParen) {
                 unnamed += 1;
@@ -2545,7 +2610,10 @@ impl Parser {
                 }
                 self.expect(Token::RBracket)?;
             }
-            params.push(name);
+            params.push(ParamDecl {
+                name,
+                pointer_deref_width: (pointer_depth > 0).then_some(8),
+            });
             if !self.check(&Token::Comma) {
                 break;
             }
@@ -2766,6 +2834,7 @@ impl Parser {
                 init_list,
                 array_len,
                 aggregate_size,
+                pointer_deref_width: (pointer_depth > 0).then_some(8),
             });
             if !self.check(&Token::Comma) {
                 break;
@@ -3295,13 +3364,14 @@ impl Parser {
             Token::LParen => {
                 self.advance();
                 if self.is_cast_type_start() {
-                    self.skip_cast_type_name();
+                    let pointer_depth = self.skip_cast_type_name();
                     self.expect(Token::RParen)?;
                     if self.check(&Token::LBrace) {
                         self.advance();
                         return Ok(Expr::CompoundLiteral(self.parse_compound_literal_fields()?));
                     }
-                    return self.parse_factor();
+                    let expr = self.parse_factor()?;
+                    return Ok(Expr::CastPointer(pointer_depth, Box::new(expr)));
                 }
                 let expr = self.parse_expr()?;
                 self.expect(Token::RParen)?;
@@ -3417,12 +3487,17 @@ impl Parser {
         }
     }
 
-    fn skip_cast_type_name(&mut self) {
+    fn skip_cast_type_name(&mut self) -> usize {
+        let mut pointer_depth = 0usize;
         while matches!(self.peek(), Token::Int | Token::Star | Token::Ident(_)) {
+            if self.check(&Token::Star) {
+                pointer_depth += 1;
+            }
             self.advance();
         }
         if self.check(&Token::LParen) && self.peek_n(1) == &Token::Star {
             self.advance();
+            pointer_depth += 1;
             let mut depth = 1i64;
             while depth > 0 && !self.check(&Token::Eof) {
                 if self.check(&Token::LParen) {
@@ -3445,6 +3520,7 @@ impl Parser {
                 }
             }
         }
+        pointer_depth
     }
 
     fn parse_postfix(&mut self, mut expr: Expr) -> Result<Expr, String> {
@@ -3564,6 +3640,7 @@ struct CodeGen {
     globals: HashMap<String, String>,
     global_arrays: HashSet<String>,
     global_array_widths: HashMap<String, i64>,
+    global_array_sizes: HashMap<String, i64>,
     global_byte_arrays: HashSet<String>,
     inferred_field_offsets: HashMap<String, i64>,
     function_names: HashSet<String>,
@@ -3572,6 +3649,7 @@ struct CodeGen {
     local_aggregate_sizes: HashMap<String, i64>,
     local_array_widths: HashMap<String, i64>,
     local_array_sizes: HashMap<String, i64>,
+    local_pointer_widths: HashMap<String, i64>,
     next_local_offset: i64,
     temp_reg: usize,
     label_id: usize,
@@ -3588,6 +3666,7 @@ impl CodeGen {
     fn emit_program(&mut self, program: &CProgram) -> Result<String, String> {
         self.function_names = program.functions.iter().map(|f| f.name.clone()).collect();
         self.global_array_widths = program.global_array_widths.clone();
+        self.global_array_sizes = program.global_array_sizes.clone();
         self.function_param_counts = program
             .functions
             .iter()
@@ -3744,6 +3823,7 @@ impl CodeGen {
         self.local_aggregate_sizes.clear();
         self.local_array_widths.clear();
         self.local_array_sizes.clear();
+        self.local_pointer_widths = function.param_pointer_widths.clone();
         self.next_local_offset = 8;
         self.temp_reg = 0;
         self.text.push(format!("{}:", function.name));
@@ -4104,6 +4184,7 @@ impl CodeGen {
                 Ok(reg)
             }
             Expr::Var(name) => self.load_name(name),
+            Expr::CastPointer(_, expr) => self.emit_expr(expr),
             Expr::Binary(lhs, BinOp::And, rhs) => self.emit_logical_and(lhs, rhs),
             Expr::Binary(lhs, BinOp::Or, rhs) => self.emit_logical_or(lhs, rhs),
             Expr::Binary(lhs, op, rhs) => self.emit_binary(lhs, *op, rhs),
@@ -4308,6 +4389,9 @@ impl CodeGen {
         if let Some(size) = aggregate_size {
             self.local_aggregate_sizes.insert(decl.name.clone(), size);
             self.emit_zero_local_aggregate(&decl.name, size)?;
+        }
+        if let Some(width) = decl.pointer_deref_width {
+            self.local_pointer_widths.insert(decl.name.clone(), width);
         }
         if let Some(len) = decl.array_len {
             let width = aggregate_size.unwrap_or_else(|| self.local_decl_array_width(&decl.name));
@@ -4653,6 +4737,7 @@ impl CodeGen {
         match lhs {
             Expr::Unary(UnOp::Deref, ptr) => self.deref_width(ptr),
             Expr::Index(base, _) => self.index_width(base),
+            Expr::CastPointer(depth, _) if *depth >= 2 => 8,
             _ => 8,
         }
     }
@@ -4665,6 +4750,7 @@ impl CodeGen {
                 self.emit_index_addr(base, index, width)
             }
             Expr::Member(base, field) => self.emit_member_addr(base, field),
+            Expr::CastPointer(_, expr) => self.emit_expr(expr),
             Expr::Var(_) => self.emit_addr(lhs),
             _ => Err("left side of assignment is not addressable".to_string()),
         }
@@ -5536,6 +5622,10 @@ impl CodeGen {
         {
             *width
         } else if let Expr::Var(name) = base
+            && let Some(width) = self.local_pointer_widths.get(name)
+        {
+            *width
+        } else if let Expr::Var(name) = base
             && let Some(width) = self.global_array_widths.get(name)
         {
             *width
@@ -5617,6 +5707,9 @@ impl CodeGen {
     }
 
     fn pointer_step(&self, name: &str) -> i64 {
+        if let Some(width) = self.local_pointer_widths.get(name) {
+            return *width;
+        }
         match name {
             "argv" | "arg" | "paths" | "files" | "sp" | "brace" | "top" | "stack" | "new" => 8,
             "pc" | "prog" | "c" | "from" | "to" | "lbrace" | "jump"
@@ -5648,6 +5741,14 @@ impl CodeGen {
     }
 
     fn deref_width(&self, ptr: &Expr) -> i64 {
+        if let Expr::CastPointer(depth, _) = ptr {
+            return if *depth >= 2 { 8 } else { 1 };
+        }
+        if let Some(name) = root_name(ptr)
+            && let Some(width) = self.local_pointer_widths.get(name)
+        {
+            return *width;
+        }
         if self.current_fn == "resize"
             && root_name(ptr).is_some_and(|name| matches!(name, "ptr" | "nmemb" | "next"))
         {
@@ -6122,12 +6223,20 @@ impl CodeGen {
             "sizeof" => {
                 let dst = self.alloc_reg()?;
                 let size = match args.first() {
-                    Some(Expr::Var(name)) => self.local_array_sizes.get(name).copied().unwrap_or(8),
+                    Some(Expr::Var(name)) => self
+                        .local_array_sizes
+                        .get(name)
+                        .copied()
+                        .or_else(|| self.global_array_sizes.get(name).copied())
+                        .unwrap_or(8),
                     Some(Expr::Unary(UnOp::Deref, inner))
                         if self.function_names.contains("new")
                             && matches!(&**inner, Expr::Var(name) if name == "q") =>
                     {
                         24
+                    }
+                    Some(Expr::Unary(UnOp::Deref, inner)) if matches!(&**inner, Expr::Var(_)) => {
+                        self.index_width(inner)
                     }
                     Some(Expr::Str(value)) => value.len() as i64 + 1,
                     _ => 8,
@@ -14253,6 +14362,7 @@ fn root_name(expr: &Expr) -> Option<&str> {
         | Expr::Member(inner, _)
         | Expr::PostInc(inner)
         | Expr::PostDec(inner) => root_name(inner),
+        Expr::CastPointer(_, inner) => root_name(inner),
         Expr::Index(base, _) => root_name(base),
         _ => None,
     }
@@ -14317,7 +14427,7 @@ fn const_expr_value(expr: &Expr) -> Option<i64> {
         Expr::Var(name) => find_token_constant(name),
         Expr::Unary(UnOp::Not, inner) => Some(i64::from(const_expr_value(inner)? == 0)),
         Expr::Unary(UnOp::BitNot, inner) => Some(!const_expr_value(inner)?),
-        Expr::Unary(UnOp::Deref | UnOp::Addr, _) => None,
+        Expr::Unary(UnOp::Deref | UnOp::Addr, _) | Expr::CastPointer(_, _) => None,
         Expr::Binary(lhs, op, rhs) => {
             let lhs = const_expr_value(lhs)?;
             let rhs = const_expr_value(rhs)?;
@@ -17556,6 +17666,142 @@ mod tests {
         int main() {
             if (015437 != 6943) return 1;
             if (010 + 10 != 18) return 2;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn normalizes_inttypes_priu64_format_fragments() {
+        let source = r#"
+        int main() {
+            printf("\t%d\t%" PRIu64 "\t%" PRIu64 "\n", 1, 2, 3);
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(!asm.contains("PRIu64"), "{asm}");
+        assert!(asm.contains("CALL __print_u64"), "{asm}");
+    }
+
+    #[test]
+    fn qsort_style_word_pointer_casts_load_full_words() {
+        let source = r#"
+        int icmp(const void *a, const void *b) {
+            return *(int*)a - *(int*)b;
+        }
+
+        int main() {
+            int a;
+            int b;
+            a = 300;
+            b = 44;
+            if (icmp(&a, &b) != 256) return 1;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn word_pointer_params_index_by_word_width() {
+        let source = r#"
+        int second(int *p) {
+            return p[1];
+        }
+
+        int main() {
+            int a[2] = { 1, 300 };
+            if (second(a) != 300) return 1;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn pointer_to_pointer_params_index_by_word_width() {
+        let source = r#"
+        int first_is_second(char **p) {
+            return strcmp(p[1], "Alice") == 0;
+        }
+
+        int main() {
+            char *s[2] = { "Bob", "Alice" };
+            if (!first_is_second(s)) return 1;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn global_array_sizeof_reports_full_array_bytes() {
+        let source = r#"
+        int values[] = { 4, 5, 6 };
+        int main() {
+            if (sizeof values != 24) return 1;
+            if (sizeof values / sizeof *values != 3) return 2;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn qsort_wrapper_uses_global_array_sizeof_count() {
+        let source = r#"
+        int scmp(const void *a, const void *b) {
+            return strcmp(*(char **)a, *(char **)b);
+        }
+
+        char *s[] = { "Bob", "Alice", "John" };
+        char *want[] = { "Alice", "Bob", "John" };
+
+        int str_test(const char **a, const char **a_sorted, int len) {
+            int i;
+            qsort(a, len, sizeof *a, scmp);
+            for (i = 0; i < len; i++) {
+                if (strcmp(a[i], a_sorted[i]) != 0) return i + 1;
+            }
+            return 0;
+        }
+
+        int main() {
+            return str_test(s, want, sizeof s / sizeof *s);
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn char_pointer_declarator_lists_keep_byte_pointer_arithmetic() {
+        let source = r#"
+        int main() {
+            char *s, *c;
+            s = "abcdef";
+            c = s + 4;
+            if (c - s != 4) return 1;
+            if (*c != 'e') return 2;
             return 0;
         }
         "#;

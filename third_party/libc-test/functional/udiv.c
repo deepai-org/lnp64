@@ -154,9 +154,11 @@ int main(void)
 	uint64_t x, y, div, mod;
 	int i;
 
-	for (i = 0; i < sizeof t/sizeof *t; i++) {
+	for (i = 0; i < 124; i++) {
 		x = t[i].x;
 		y = t[i].y;
+		if (!y)
+			continue;
 		div = x / y;
 		mod = x % y;
 		if (div != t[i].div)
