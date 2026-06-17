@@ -4606,6 +4606,22 @@ Verification should start at the architectural level before RTL:
   reset cause, bitstream/ROM identity, manifest/image/domain measurement log,
   boot policy failure behavior, quote FDR shape, development quote flag, and
   capability-root binding.
+- Write directed tests for assurance profiles: `ASSURANCE_DEV`,
+  `ASSURANCE_FIELD`, `ASSURANCE_HIGH`, and `ASSURANCE_FORMAL` profile bits,
+  minimum-profile domain admission, quote binding for proof/IP/toolchain/build
+  metadata, and rejection when mandatory profile controls are absent.
+- Write directed tests for tamper-evident audit streams: monotonic sequence,
+  hash-chain root, dropped-count/gap records, narrowed audit FDR disclosure,
+  quoteable audit roots, destructive/snapshot reads, and no authority encoded in
+  audit payloads.
+- Write directed tests for controlled debug and forensics: debug-control FDR
+  rights per operation, measured/audited unlock, production debug lockout,
+  domain/range/label scoping, parent-inspection denial, destructive freeze
+  policy, and crash-dump redaction.
+- Write directed tests for MLS/cross-domain labels: stale label generation
+  rejection, denied cross-label `CAP_SEND`, `MMAP`, DMA, debug, telemetry,
+  service reply, and returned-capability installs, explicit audited
+  declassification gates, and unlabeled-object policy.
 - Write directed tests for storage barriers: data sync, metadata sync,
   barrier-after-commit ordering, backend flush failure, and replay/fsck-visible
   commit records.
