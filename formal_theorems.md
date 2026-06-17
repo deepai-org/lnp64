@@ -28,8 +28,10 @@ Useful sub-theorems:
 values, memory bytes, registers, trace records, event payloads, or message
 payloads.
 
-Only the Capability/FDR engine, object owner engines, boot engine, and explicitly
-authorized mint capabilities can create authority-bearing FDR entries.
+Only the Capability/FDR engine, object owner engines, boot engine, and
+class-scoped mint/root capabilities can create authority-bearing FDR entries.
+Software service replies are data until the Capability Engine validates and
+commits a derived capability.
 
 Useful sub-theorems:
 
@@ -37,6 +39,12 @@ Useful sub-theorems:
 - memory stores cannot create valid FDR entries.
 - received capabilities must originate from `CAP_SEND` or an authorized object
   mint path.
+- namespace, filesystem, network, PCIe, loader, and supervisor services cannot
+  broaden authority by returning a capability proposal; installation succeeds
+  only if the proposal derives from authority already delegated to that service.
+- mint/install validates object class, rights, ranges, generations, lineage,
+  receiver domain policy, and object-specific constraints before publishing the
+  FDR entry.
 - object ids without matching generation and rights confer no authority.
 - trace, counter, classifier, event, and fault records are data, not
   capabilities.
@@ -66,6 +74,10 @@ operation.
 
 Useful sub-theorems:
 
+- every authority-bearing cached record carries or can validate object
+  generation, capability generation, lineage root, and lineage epoch.
+- `CAP_REVOKE` advances the lineage or revocation-root epoch before descendant
+  authority can be reused.
 - cached FDR descriptors observe revocation before accepting new operations.
 - mapped VMAs derived from revoked object authority are invalidated or
   generation-mismatched.
@@ -75,6 +87,20 @@ Useful sub-theorems:
 - DMA exports derived from revoked authority reject new descriptors.
 - classifier tables, network endpoints, packet queues, listeners, and namespace
   roots derived from revoked authority reject new use.
+- waiters on revoked sources wake with a revoke/error event.
+- operations before their commit point abort with the chosen revoked/stale
+  error; operations after commit complete, roll forward, or follow documented
+  teardown policy, but later use sees stale generation/epoch.
+- every revoked object follows one architectural revocation class:
+  `lazy_epoch`, `forced_cancel`, `synchronous_quiesce`, or `poison_fault`.
+- `lazy_epoch` revocation is sufficient only when stale cached records cannot
+  start new authority-bearing work after the epoch advance.
+- `forced_cancel` revocation wakes or aborts pre-commit waits, page fills,
+  queued calls, and async operations with a revoke/cancel status.
+- `synchronous_quiesce` revocation blocks new DMA, pinning, page reuse, BAR
+  mapping, or domain dispatch before reuse can occur.
+- `poison_fault` revocation prevents recycling corrupted authority as fresh
+  authority without supervisor/PID 1 acknowledgement.
 
 ## 5. Generation Safety
 
@@ -88,7 +114,8 @@ Useful sub-theorems:
   endpoint, namespace, and domain operations check object generation before use.
 - uncorrectable metadata faults do not advance generation into a fresh-looking
   valid object without supervisor acknowledgement.
-- serialized checkpoint/restore records cannot revive stale generations.
+- checkpoint records and future reattachment records cannot revive stale
+  generations.
 
 ## 6. Resource Domain Containment
 
@@ -106,11 +133,16 @@ Useful sub-theorems:
   to escape containment.
 - domain-scoped classifier tables, network namespaces, and device capabilities
   cannot target resources outside delegated domain authority.
+- VM, container, cgroup, jail, sandbox, and supervisor profiles are all refinements
+  of the same child-domain creation transition; profile metadata cannot weaken
+  tree topology, monotonic limits, capability lineage, accounting rollup, or
+  generation checks.
 
 ## 7. Scheduler Safety
 
-**Scheduler well-formedness:** hardware scheduling never loses or duplicates a
-thread context.
+**Scheduler well-formedness and bounded fairness:** hardware scheduling never
+loses or duplicates a thread context, and eligible runnable threads are
+dispatched according to the bounded weighted-fair virtual-time contract.
 
 Useful sub-theorems:
 
@@ -123,6 +155,39 @@ Useful sub-theorems:
 - `WAKE`, event delivery, signal delivery, fd readiness, timer expiry, call
   completion, classifier queue routing, and domain resume transition eligible
   threads back to runnable at most once.
+- consumed CPU advances virtual runtime/deadline accounting according to the
+  fixed weight table.
+- child Resource Domain CPU usage charges all ancestors before later dispatch
+  decisions can ignore it.
+- quota exhaustion makes descendant threads ineligible until the next permitted
+  budget update.
+- no eligible runnable thread with domain budget can remain undispatched beyond
+  the implementation's stated fairness/approximation bound.
+- scheduler bucket/window spill and refill preserve runnable identity, virtual
+  time order within the stated approximation, and domain accounting.
+- no software callback, plugin, raw interrupt handler, or policy script can
+  mutate ready/blocked state or dispatch order outside the fixed hardware
+  weighted-fair transition relation.
+
+## 7.1 Default Operating Envelope
+
+**Reset starts from a valid policy-bearing machine state:** before PID 1 or any
+service thread can dispatch, hardware has created the root domain, PID 1 domain,
+scheduler profile, security defaults, telemetry/fault routes, boot measurements,
+and explicit initial capabilities.
+
+Useful sub-theorems:
+
+- no runnable thread exists outside a valid Resource Domain.
+- no thread can dispatch before domain budget, virtual-time state, and
+  accounting records are initialized.
+- initial authority is represented by FDR capabilities, not ambient reset-time
+  privilege.
+- raw physical interrupts are routed to Event Router inputs before driver code
+  can run.
+- absent optional services imply absent authority, not fallback ambient access.
+- PID 1 can refine policy through capabilities, but cannot retroactively create
+  unmeasured boot authority.
 
 ## 8. No Lost Wakeups
 
@@ -159,25 +224,63 @@ Useful sub-theorems:
 - datagram/stream/socket compatibility profiles preserve endpoint capability
   rights and event semantics.
 
-## 10. Namespace Capability Containment
+## 10. Namespace Dispatch Containment
 
-**Path lookup cannot escape delegated namespace authority:** path strings are
-names, not authority.
+**Namespace dispatch cannot escape delegated namespace authority:** path strings
+are names, not authority.
 
 Useful sub-theorems:
 
-- `OPEN_AT` resolves only relative to a held directory/root capability or the
-  process/domain delegated cwd/root.
+- `OPEN_AT` and `NS_CTL` dispatch only through a held directory/root/namespace
+  capability or the process/domain delegated cwd/root.
 - `..`, symlinks, bind/delegated mounts, synthetic namespace nodes, and guest
-  namespace upcalls cannot escape the root capability.
-- path lookup returns only object capabilities permitted by the namespace root,
-  credentials, object metadata, and Resource Domain policy.
-- delegated namespace upcalls cannot mint broader authority than the parent
+  namespace upcalls are service semantics, but returned capabilities cannot
+  escape the root capability.
+- namespace services can return only object capabilities permitted by their
+  delegated namespace root, credentials, object metadata, and Resource Domain
+  policy.
+- delegated namespace services cannot mint broader authority than the parent
   namespace capability allowed.
 - POSIX global path syntax is a compatibility profile over explicit namespace
   root capabilities.
 
-## 11. VMA and Memory Safety
+## 11. Typed Control Envelope Safety
+
+**Control operations cannot become ambient `ioctl` authority:** metadata and
+control surfaces are bounded, typed, versioned, and capability-checked before
+dispatch.
+
+Useful sub-theorems:
+
+- `GET_META`, `SET_META`, `OBJECT_CTL`, `DOMAIN_CTL`, `NS_CTL`, socket options,
+  storage barriers, and service-owned controls validate object class, profile
+  class, profile id, op id, version, flags, lengths, required rights,
+  generation, lineage epoch, capability argument shape, returned-capability
+  shape, and domain policy before side effects.
+- unknown well-formed operations return `ENOTSUP`; malformed envelopes return
+  `EINVAL`; authority failures return `EPERM`/`EACCES`; stale lineage returns
+  `EREVOKED` or the chosen stale-reference error.
+- valid envelope shapes that exceed bounded implementation/profile limits return
+  `EOVERFLOW`; user-buffer copy/pin faults return `EFAULT`; conflicting quiescent
+  state returns `EBUSY`; pre-commit cancellation returns `ECANCELED`.
+- capability arguments are passed only by FDR/capability mechanisms and cannot
+  be forged by scalar fields or user memory.
+- service-owned controls receive bounded copied records or pinned-buffer
+  descriptors, not ambient raw pointers.
+- returned authority is installed only through the verified capability-return
+  path and cannot exceed delegated rights.
+- every control operation has a single commit point and follows common
+  cancellation/revocation semantics.
+- returned-capability installation is a separate Capability Engine commit; a
+  service reply cannot publish authority if capability-install validation fails.
+- backend-defined payload bytes are data only and cannot encode ambient
+  authority, unbounded pointers, hidden returned capabilities, or executable
+  policy.
+- architectural, personality/service, and vendor/device profiles all refine the
+  same envelope validation relation; vendor profiles do not get a separate
+  authority path.
+
+## 12. VMA and Memory Safety
 
 **VMA protection:** memory accesses succeed only through a valid VMA with
 compatible permissions and generation.
@@ -193,8 +296,60 @@ Useful sub-theorems:
   affected threads resume.
 - memory-object and DMA-buffer mappings cannot exceed the mapped capability's
   allowed range, direction, or memory type.
+- page-state transitions follow the frozen state machine: `UNMAPPED`,
+  `RESERVED`, `NONRESIDENT_OBJECT`, `FILL_PENDING`, `RESIDENT_CLEAN`,
+  `RESIDENT_DIRTY`, `COW_SHARED`, `PINNED_DMA`, `REVOKING`, and `POISONED`.
+- object-backed page replies are proposals until the VMA/Page Engine validates
+  the returned page capability, range, memory type, executable provenance, and
+  generation/lineage metadata.
+- object-backed fills install a page only when VMA generation, object
+  generation, lineage epoch, permissions, memory type, executable provenance,
+  and domain policy still match the original fault.
+- `MUNMAP`, `MPROTECT`, revocation, truncation notice, object generation change,
+  domain teardown, or fatal signal before page-install commit cancels or faults
+  the pending fill without publishing the page.
+- hardware dirty bits and dirty-range enumeration do not imply hardware
+  ownership of filesystem writeback policy.
+- dirty writeback, truncation, `msync`, and file/service coherence policy are
+  service-level refinements and cannot bypass VMA permissions or capability
+  generations.
+- VMA race resolution is deterministic and follows the architectural priority:
+  poison, domain teardown, revocation, `MUNMAP`, `MPROTECT`/truncate/object
+  generation change, DMA pin lifecycle, object-fill reply, then ordinary access.
+- every multi-step VMA operation has one commit point; before commit it can abort
+  without publishing authority, and after commit later conflicts require a new
+  transition.
+- DMA pins are granted only for resident, authorized, non-poisoned, non-guard,
+  non-stale pages, and revocation blocks new pins before backing memory can be
+  reused.
 
-## 12. W^X and Executable Provenance
+## 12.1 Memory Visibility Contract
+
+**Normal cached memory is coherent and TSO-like:** ordinary shared-memory
+programs, futexes, atomics, call gates, signals, DMA completion, and Unix
+personality ports observe the architecture's explicit visibility rules.
+
+Useful sub-theorems:
+
+- stores to normal cached memory become visible to other cores in program order.
+- a core observes its own loads and stores in program order, including
+  store-buffer forwarding to later loads from the same address.
+- aligned naturally sized loads/stores up to 64 bits are single architectural
+  memory operations.
+- `LOCK_CMPXCHG` is single-copy atomic and sequentially consistent in v1.
+- futex `AWAIT` performs an acquire-style check before parking, and futex
+  `WAKE` performs release-style ordering before making waiters runnable.
+- `FENCE` orders normal memory, DMA/engine completions, and device memory
+  according to VMA memory type.
+- `device_ordered` mappings are strongly ordered and uncached.
+- `write_combining` mappings cannot be used for ordered device signaling
+  without a following `FENCE`.
+- VMA/TLB/I-cache invalidation completes before affected threads resume or
+  backing authority is reused.
+- coherent DMA writes are visible before completion events are delivered; a
+  non-coherent implementation cannot claim the coherent-DMA feature bit.
+
+## 13. W^X and Executable Provenance
 
 **W^X invariant:** no page is simultaneously writable and executable unless the
 current Resource Domain has explicit JIT/loader authority and the mapping is in
@@ -210,7 +365,46 @@ Useful sub-theorems:
 - BAR, DMA-buffer, packet-buffer, signal-frame, and queue mappings are never
   executable in v1.
 
-## 13. DMA Isolation
+## 14. Heap Allocation Safety
+
+**The hardware heap substrate preserves allocation safety:** `ALLOC`,
+`ALLOC_EX`, `ALLOC_SIZE`, and `FREE` expose allocation intent and policy hints
+over the LNP64 Default Heap Algorithm without exposing allocator representation,
+and cannot create writable authority outside heap-owned VMAs or corrupt
+allocator metadata.
+
+The theorem has two granularities. Hardware-owned allocations receive
+object-level safety and accounting. Software-owned arenas receive region-level
+VMA/capability/domain safety; object-level correctness inside the arena is a
+runtime theorem, not a Heap Engine theorem.
+
+Useful sub-theorems:
+
+- every returned allocation pointer lies inside a heap-owned, non-executable
+  VMA authorized by the process and Resource Domain.
+- `FREE` succeeds only for an exact live allocation pointer from the current
+  compatible heap arena.
+- interior, stale, double-free, foreign-arena, `MMAP`, `memory_object`, DMA,
+  device, and executable-memory pointers are rejected.
+- allocator metadata is not directly writable by user mappings.
+- generation/quarantine policy prevents silent stale-pointer authority reuse
+  before a slot is republished.
+- per-thread allocation-window hits refine the same abstract allocation
+  transition as central heap metadata updates.
+- slab/run refill and drain preserve size-class membership, live/free counts,
+  and per-domain heap accounting.
+- `ALLOC_EX` policy hints cannot bypass Resource Domain memory, DMA, sharing,
+  hardening, or executable-memory restrictions.
+- implementation-specific size classes, allocation-window depth, freelists,
+  slab/run layout, and quarantine state are not architectural authority and
+  cannot be observed or mutated directly by user code.
+- arena-style `ALLOC_EX`, `memory_object`, and `MMAP` regions do not give the
+  Heap Engine authority over software subobjects inside the region.
+- releasing a software-owned arena revokes or invalidates the outer region
+  according to VMA/capability rules, regardless of the runtime's inner object
+  graph.
+
+## 15. DMA Isolation
 
 **DMA confinement:** no DMA operation can read or write memory outside the
 capability, VMA, IOMMU, direction, and Resource Domain scope that authorized it.
@@ -228,7 +422,7 @@ Useful sub-theorems:
 - packet DMA and network driver DMA follow the same confinement rules as
   ordinary `DMA_CTL`.
 
-## 14. Raw Interrupt Non-Exposure
+## 16. Raw Interrupt Non-Exposure
 
 **Raw interrupt vectors are not software authority:** physical interrupt inputs
 are consumed by hardware routing and exposed only as capability-scoped events,
@@ -246,7 +440,7 @@ Useful sub-theorems:
 - machine-check/panic/debug exceptions remain outside the normal driver
   interrupt model.
 
-## 15. Network Capability Containment
+## 17. Network Capability Containment
 
 **Network authority is capability-scoped:** network access requires delegated
 `net_namespace`, `net_interface`, `packet_queue`, endpoint, listener, or related
@@ -265,8 +459,23 @@ Useful sub-theorems:
   derived endpoints, listeners, packet queues, filters, and network events.
 - POSIX sockets are a compatibility profile over endpoint and listener
   capabilities, not an alternate authority path.
+- datagram and stream endpoints are capability-scoped object profiles; their
+  implementation may be software TCP, UDP-like datagrams, local IPC, QUIC,
+  paravirtual transport, or a future accelerator without changing authority
+  checks.
+- transport assists such as checksum, timestamp, flow hash, queue steering,
+  timer/counter use, and zero-copy handoff cannot create protocol authority or
+  bypass endpoint capability scope.
+- endpoint substitution preserves authority: software TCP, local IPC, QUIC,
+  paravirtual transport, and future accelerators may all implement a
+  `stream_endpoint`, but none can broaden rights, bypass namespace scope, or
+  change the endpoint readiness/capability contract observed by applications.
+- packet queues preserve packet-record authority, datagram endpoints preserve
+  message-boundary authority, stream endpoints preserve ordered-byte authority,
+  and listeners mint accepted endpoint capabilities only through the Capability
+  Engine's returned-capability path.
 
-## 16. Classifier Safety
+## 18. Classifier Safety
 
 **Bounded record classification cannot broaden authority or create unbounded
 execution:** classifier tables classify and steer records only within delegated
@@ -288,26 +497,37 @@ Useful sub-theorems:
 - classifier marks, counters, flow hashes, and routed record envelopes are data,
   not capabilities.
 
-## 17. Event, Signal, and Fault Delivery Safety
+## 19. Event, Signal, and Fault Delivery Safety
 
 **Events and faults are delivered to the right authority scope:** synchronous
-faults, asynchronous events, and POSIX signal compatibility frames are
-well-formed and cannot forge privilege or capabilities.
+faults, asynchronous events, and the frozen Unix-signal subset are well-formed
+and cannot forge privilege or capabilities.
 
 Useful sub-theorems:
 
 - divide-by-zero, illegal opcode, permission fault, guard fault, and bad device
   mapping produce the specified signal/upcall/fault record.
-- POSIX signal delivery is a compatibility profile over hardware event delivery.
+- frozen v1 signal delivery refines hardware event/fault delivery and respects
+  process disposition, thread mask, pending state, and domain policy.
+- synchronous faults are thread-directed to the faulting thread.
+- process-directed signals are delivered only to an eligible unmasked thread
+  chosen by the fixed implementation-profile rule, or remain process-pending.
 - signal frames are non-executable and cannot forge privilege or capability
   state.
 - `SIGRET` restores only the hardware-saved context for that interrupted
   thread.
+- `SIGRET` validates saved context token/generation and cannot restore from an
+  arbitrary user-writable frame.
+- interruptible operations return `EINTR` or a typed interrupted status before
+  handler entry; post-commit operations follow their documented roll-forward or
+  teardown policy.
+- unsupported POSIX/Linux/BSD signal quirks can be emulated by personality code
+  but cannot bypass native event, domain, or capability checks.
 - supervisor opcode upcalls cannot bypass normal capability/domain checks.
 - event/fault records are scoped to the owning domain or configured supervisor
   FDR and do not leak unauthorized payloads.
 
-## 18. Cross-Domain Call Safety
+## 20. Cross-Domain Call Safety
 
 **Call-gate safety:** `CALL_CAP` transfers control, arguments, accounting, and
 optional capabilities only as authorized by the call-gate FDR.
@@ -324,10 +544,11 @@ Useful sub-theorems:
 - cross-domain calls cannot bypass child/parent domain budget and authority
   checks.
 
-## 19. Snapshot/Restore Safety
+## 21. Checkpoint Hook Safety
 
-**Checkpoint metadata cannot duplicate or revive authority:** freeze, query,
-resume, and future restore hooks preserve containment and generation safety.
+**Checkpoint metadata cannot duplicate or revive authority:** freeze,
+query-state, resume, dirty tracking, and future explicit reattachment preserve
+containment and generation safety.
 
 Useful sub-theorems:
 
@@ -336,13 +557,14 @@ Useful sub-theorems:
   no unaccounted call-gate continuations.
 - `query-state` is observation only and cannot mutate authority.
 - `resume` restarts a quiesced domain without generation churn.
-- future `restore` creates fresh domain ids/generation bases and requires
-  explicit capability reattachment.
+- future software restore creates fresh domain ids/generation bases and
+  requires explicit capability reattachment; hardware does not parse checkpoint
+  image formats.
 - serialized stale capabilities cannot revive revoked or destroyed authority.
 - dirty-memory tracking hooks cannot grant read/write access outside the
-  snapshotted domain.
+  checkpointed domain.
 
-## 20. Commit/Abort Atomicity
+## 22. Commit/Abort Atomicity
 
 **No partial publication:** multi-step hardware operations expose either the old
 state or the committed new state, never an inconsistent middle state.
@@ -358,53 +580,106 @@ Useful sub-theorems:
   failure without corrupting authority-bearing metadata.
 - result registers and compatibility `ERRNO` are updated only at completion.
 
-## 21. Filesystem Durability Contract
+## 23. Clone/Fork Profile Safety
 
-**Durable metadata ordering:** after a successful synchronous metadata barrier,
-the storage image can recover to a state that includes the committed operation
-or a defined replay/fsck result.
+**`CLONE` creates only explicitly described process/thread state:** native clone
+profiles and POSIX `fork()` compatibility cannot duplicate hidden authority or
+in-flight ownership.
 
 Useful sub-theorems:
 
-- atomic rename is power-fail atomic under the selected log/journal/COW
-  protocol.
-- metadata commit records are written before commit publication.
+- `profile=thread` creates a new TID in the same PID with only the explicitly
+  shared address space, FDR table, credentials, signal dispositions, and
+  scheduler state.
+- `profile=process` creates a new PID with only the requested share/copy/new
+  state permitted by Resource Domain policy.
+- `profile=posix_fork` creates one child thread, COW VMAs and heap metadata,
+  inherited/narrowed FDRs according to descriptor flags, copied credentials and
+  signal dispositions, copied caller signal mask, and cleared child pending
+  signals.
+- no clone profile copies in-flight operation ownership, pending DMA
+  descriptors, partially committed metadata operations, runtime locks, or
+  hidden personality state.
+- parent and child return-register conventions are published at one commit
+  point, and failure before commit leaves the parent unchanged.
+
+## 24. Storage and Filesystem-Service Durability Contract
+
+**Durable storage ordering:** after a successful synchronous storage barrier,
+the relevant block/storage object can recover to a state that includes all
+committed writes before the barrier or a defined service replay/fsck result.
+
+Useful sub-theorems:
+
+- filesystem-service operations such as atomic rename are power-fail atomic
+  only under the selected service log/journal/COW protocol.
+- service commit records are written before commit publication.
 - storage barriers order prior data writes, metadata writes, and backend flush
   completion.
+- hardware proves ordering and completion for block/storage objects; filesystem
+  semantics are proved for the service implementation that owns them.
 - live-system atomicity and power-fail durability have separate proof
   obligations.
 
-## 22. Boot Measurement Integrity
+## 25. Exec-Plan Commit Soundness
 
-**Measured boot consistency:** the boot measurement log accurately reflects the
-boot manifest, selected images, reset cause, FPGA build id, and boot policy
-observed by PID 1.
+**`EXEC` commits only validated architectural state:** hardware process
+replacement consumes a bounded exec-plan descriptor, not an executable file
+format.
+
+Useful sub-theorems:
+
+- every VMA installed by `EXEC` is authorized by an executable image, memory
+  object, anonymous-memory, or loader/JIT capability named in the exec plan.
+- W^X, NX, guard-page, ASLR, Resource Domain, and executable-source policy are
+  checked before the commit point.
+- sibling threads are stopped or invalidated before the old address space is
+  destroyed.
+- startup metadata is treated as opaque runtime/personality data; hardware does
+  not derive authority from auxv, environment strings, interpreter paths,
+  dynamic-linker records, or relocation tables.
+- failure before commit preserves the old process image; success after commit
+  exposes exactly one surviving thread in the new image.
+
+## 26. Boot Measurement and Attestation Integrity
+
+**Measured boot and quote consistency:** the boot measurement log and quote FDR
+accurately reflect the boot manifest, selected images, reset cause, FPGA/ROM
+identity, domain launch measurements, delegated capability roots, and boot
+policy observed by authorized domains.
 
 Useful sub-theorems:
 
 - measurement records are append-only during boot.
 - PID 1 cannot observe a booted image without the corresponding measurement
   record being present.
+- a tenant or confidential domain cannot be marked runnable before its launch
+  measurement is recorded.
+- quote records are derived from measurement records and cannot include
+  unmeasured capability roots or omit measured policy bits.
 - boot policy failure either records a structured fault and enters permitted
   development mode or enters hardware panic.
-- boot-control FDR reads cannot alter measurement records or mint authority.
+- boot-control and quote FDR reads cannot alter measurement records or mint
+  authority.
 
-## 23. RAS Fault Containment
+## 27. RAS Fault Containment
 
 **Detected corruption does not silently become authority:** ECC/parity,
-watchdog, and metadata faults are either corrected, poisoned, reported, or
-panic the machine.
+watchdog, local engine reset, and metadata faults are either corrected,
+poisoned, reported, locally degraded, or panic the machine.
 
 Useful sub-theorems:
 
 - correctable metadata faults preserve object identity and generation.
 - uncorrectable metadata faults poison affected objects before reuse.
 - local engine reset does not publish partial state.
+- a local engine fault cannot corrupt unrelated domains or require full-chip
+  reset when the engine has a defined recovery/degraded path.
 - degraded engines reject new commands until supervisor/PID 1 policy clears
   them.
 - trace/fault records cannot grant authority.
 
-## 24. Trace and Counter Non-Interference
+## 28. Telemetry, Trace, and Counter Non-Interference
 
 **Observability does not change authority:** reading counters, trace rings, or
 fault records cannot create, broaden, revive, or revoke capabilities.
@@ -415,10 +690,13 @@ Useful sub-theorems:
 - destructive trace reads only advance trace-consumer cursors.
 - counter overflow or wrap cannot affect scheduler, domain, VMA, or capability
   state.
-- trace/counter access is scoped by Resource Domain and control-FDR authority.
+- trace/counter/telemetry access is scoped by Resource Domain and control-FDR
+  authority.
+- aggregate telemetry cannot be refined into unauthorized per-tenant memory,
+  packet, or secret contents.
 - classifier and network counters cannot leak unauthorized packet payloads.
 
-## 25. POSIX/Profile Compatibility Refinement
+## 29. POSIX/Profile Compatibility Refinement
 
 **Compatibility APIs are refinements of native primitives:** POSIX, libc, Linux
 syscall compatibility, and NetBSD rump-style interfaces cannot bypass native
@@ -427,8 +705,8 @@ capability/event/domain authority.
 Useful sub-theorems:
 
 - POSIX file descriptors are FDR capability handles plus compatibility metadata.
-- `fork` is a `CLONE` profile and cannot duplicate authority beyond FDR/domain
-  inheritance rules.
+- `fork` is the constrained `CLONE profile=posix_fork` and cannot duplicate
+  authority beyond FDR/domain inheritance rules or copy in-flight ownership.
 - POSIX signals are an event-delivery profile and cannot bypass capability or
   domain checks.
 - UID/GID and mode bits participate in compatibility decisions but cannot
@@ -438,7 +716,7 @@ Useful sub-theorems:
 - ioctl-like controls refine typed metadata/control records or fail; they do
   not form a separate authority path.
 
-## 26. Paravirtual Personality Containment
+## 30. Paravirtual Personality Containment
 
 **Guest personality containment:** Linux/NetBSD-style personality domains can
 emulate richer policy for their children, but cannot bypass hardware authority
@@ -456,8 +734,15 @@ Useful sub-theorems:
   but cannot access packets, interfaces, or DMA outside delegated authority.
 - Linux syscall compatibility is a personality/runtime profile over native
   operations, not a privileged syscall escape hatch.
+- personality control surfaces are limited to fixed FDR mechanisms: lifecycle
+  events, VMA events, capability transfer, namespace dispatch, block/storage
+  objects, signal/fault records, event queues, network endpoints, PCIe
+  BAR/DMA/IRQ-event capabilities, and domain-control upcalls.
+- personality domains cannot mutate raw page tables, receive raw interrupts,
+  bypass the hardware scheduler, perform raw DMA, or mint capabilities outside
+  the Capability Engine.
 
-## 27. Confidentiality and No Unauthorized Observation
+## 31. Tenant-Strict Confidentiality and No Unauthorized Observation
 
 **A domain cannot observe data outside delegated authority:** memory, metadata,
 events, packets, counters, traces, and fault records are readable only through
@@ -473,8 +758,14 @@ Useful sub-theorems:
 - scheduler/domain pressure counters expose only permitted aggregate data.
 - classifier records, marks, hashes, and counters do not leak unauthorized
   packet/message payloads.
+- `DOMAIN_PROFILE_TENANT_STRICT` forbids parent memory inspection without an
+  explicit shared-memory or inspection capability.
+- confidential-domain sealed secrets are released only when measurement and
+  policy records match.
+- confidential-domain memory cannot be exported through ordinary query-state,
+  telemetry, trace, DMA, packet, or fault records.
 
-## 28. Refinement Targets
+## 32. Refinement Targets
 
 After the abstract theorems exist, each hardware block should prove or test a
 small refinement claim:

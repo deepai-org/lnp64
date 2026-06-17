@@ -2,7 +2,9 @@
 
 This document lists emulator changes needed to implement and test the native
 LNP64 security model: W^X, NX data, ASLR, guard pages, entropy, generation
-checks, revocation, sealed/narrowed capabilities, and DMA isolation.
+checks, revocation, sealed/narrowed capabilities, DMA isolation,
+tenant-strict domains, telemetry delegation, attestation records, and
+confidential-domain hooks.
 
 ## 1. Resource Domain Security Policy
 
@@ -15,10 +17,17 @@ Extend Resource Domain state with security policy fields:
 - `dma_allowed`
 - hardening profile
 - executable-source policy
+- tenant-strict flag
+- parent-inspection permission
+- telemetry scope
+- measured-launch requirement
+- confidential-memory/key-id tag
+- sealed-secret policy id
 
 Enforce monotonic delegation. A child domain can become stricter than its
 parent, but cannot enable broader executable-memory, DMA, entropy, device, or
-capability-transfer authority than its parent delegated.
+capability-transfer authority than its parent delegated. Tenant-strict children
+also cannot relax mandatory W^X/NX/ASLR/guard/DMA/no-raw-interrupt rules.
 
 Tests:
 
@@ -26,6 +35,32 @@ Tests:
 - child can disable ASLR for a deterministic test profile only when parent
   permits it.
 - frozen, revoked, or destroyed domains reject security-sensitive operations.
+- tenant-strict child denies parent memory inspection without explicit
+  inspection or shared-memory capability.
+- confidential mode rejects launch when production encryption is requested but
+  unavailable in the emulator configuration.
+
+## 1.1 Attestation, Telemetry, and Confidential Hooks
+
+Model the cloud-grade surfaces without pretending the emulator has production
+cryptography:
+
+- boot and domain measurement records.
+- quote FDR with an explicit development/non-production flag.
+- capability-root binding in quote records.
+- telemetry FDRs with aggregate, per-domain, redacted, snapshot-read,
+  destructive-read, and threshold-event profiles.
+- sealed-secret records that release only on matching measurement/policy.
+- explicit shared-page metadata for confidential domains.
+
+Tests:
+
+- quote records include boot, image, domain, policy, and capability-root
+  measurements.
+- quote reads do not mint authority or alter measurement records.
+- telemetry reads fail without a delegated telemetry FDR.
+- redacted tenant telemetry omits payload bytes and sealed capability contents.
+- sealed-secret release fails on measurement or policy mismatch.
 
 ## 2. VMA Protection Enforcement
 
@@ -104,11 +139,15 @@ Tests:
 
 Extend capability metadata with:
 
+- object generation.
+- capability generation.
 - rights mask.
 - transfer rights.
 - narrowable bit.
 - sealed bit.
-- revocable lineage id.
+- lineage root id.
+- lineage epoch.
+- parent capability generation or revocation-root pointer where relevant.
 - allowed range and mapping permissions where relevant.
 
 Enforce:
@@ -117,7 +156,10 @@ Enforce:
 - sealed capabilities cannot be duplicated, narrowed, or reminted unless their
   rights explicitly allow it.
 - `CAP_SEND` obeys transfer permission.
-- `CAP_REVOKE` invalidates descendants.
+- `CAP_REVOKE` advances lineage/revocation-root epoch and invalidates
+  descendants.
+- cached FDR, VMA, event, call-gate, DMA, and page-fill paths compare
+  generation/epoch before accepting new work.
 
 Tests:
 
@@ -126,6 +168,9 @@ Tests:
 - capability without transfer right cannot be sent.
 - revoked child capability fails immediately.
 - cached descriptor path observes revocation or generation mismatch.
+- waiters on revoked objects wake with a revoke/error event.
+- pre-commit operations abort with `EREVOKED` or stale-reference error;
+  post-commit operations complete or follow teardown policy.
 
 ## 7. DMA Isolation
 
@@ -161,6 +206,8 @@ Tests:
 - invalid DMA emits a completion fault or event.
 - stale capability returns `EBADF` or the chosen stale-reference error.
 - signal frame lives in a non-executable protected stack area.
+- `SIGRET` restores only the Signal Engine's saved context identity/generation,
+  not arbitrary user-written signal-frame bytes.
 
 ## Recommended Order
 

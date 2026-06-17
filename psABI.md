@@ -114,9 +114,10 @@ standalone crt object files. Startup is compiler/runtime modeled.
 
 ## Auxv and Environment Metadata
 
-`ENV_GET` is the architectural metadata path. `getauxval` is lowered to that
-surface and currently exposes page size, clock tick frequency, hardware feature
-bits, uid/gid values, and process-entry metadata.
+`ENV_GET` is the architectural metadata path for machine facts and the opaque
+startup metadata block. libc/runtime code implements `getauxval` by combining
+direct `ENV_GET` machine keys with auxv records that the loader/personality
+placed in that startup metadata block. Hardware does not index auxv entries.
 
 `AT_RANDOM` intentionally returns zero through `getauxval`; secret entropy must
 come from `RANDOM` or libc wrappers such as `getentropy`, `getrandom`, and
@@ -135,16 +136,27 @@ errno path by compiler lowering.
 
 ## Signals
 
-Signal handlers receive the signal number in `r1`, matching the first integer
-argument register. `SIGRET` restores the saved signal context.
+LNP64 v1 freezes a small Unix-signal ABI subset. Signal handlers receive the
+signal number in `r1`, matching the first integer argument register. `SIGRET`
+restores the Signal Engine's saved interrupted context for the current thread.
 
 The hardware design requires a saved signal context containing at least the
-faulting PC, signal number/code, bad address where relevant, trapped instruction
-word where relevant, and the GPR/FPR/VR state needed by this psABI. The emulator
-implements signal delivery and keeps signal-frame stack areas non-executable.
+saved context token/generation, faulting PC, signal number/code, bad address
+where relevant, trapped instruction word where relevant, source PID/TID/domain
+where permitted, event/fault id, and the GPR/FPR/VR state needed by this psABI.
+The emulator implements signal delivery and keeps signal-frame stack areas
+non-executable.
 
-Full POSIX signal queueing, `sigaltstack`, and final per-thread delivery rules
-remain outside the frozen v0 psABI.
+The frozen subset includes handler/default/ignore dispositions, per-thread
+masks, process-directed and thread-directed pending state, fault-to-signal
+mapping, `raise`/`kill`-style software injection, `alarm`, fixed handler entry,
+and `SIGRET`. User-visible frame memory is diagnostic/runtime ABI data;
+`SIGRET` uses the Signal Engine-owned context token/generation.
+
+Full POSIX realtime queueing, OS-specific syscall restart behavior, arbitrary
+`sigaltstack` ABI variants, and Linux/BSD-specific delivery corner cases remain
+outside the frozen v0 psABI. A libc or Unix personality may emulate them over
+event queues and compatibility metadata.
 
 ## FDR Inheritance and Capabilities
 
@@ -153,9 +165,15 @@ C/POSIX layer may expose dynamic descriptor tokens for descriptors that cannot
 be encoded as a static `fdN` operand. Tokens include generation information so
 stale descriptor reuse fails.
 
-`fork`-like cloning preserves process FDR state according to emulator process
-clone semantics. `exec` preserves inherited descriptors and installs a new
-program plus a fresh process entry page.
+`fork`-like cloning is the `CLONE profile=posix_fork` compatibility profile.
+It creates a new PID with exactly one child thread. FDR entries are inherited
+only according to their descriptor inheritance flags and retain object
+generation, rights, event masks, transfer rights, and Resource Domain scope.
+In-flight operation ownership is not copied.
+
+`exec` preserves only descriptors not marked close-on-exec plus explicit startup
+FDR grants from the exec-plan descriptor. It installs a fresh startup metadata
+block and does not reinterpret inherited descriptors as ambient authority.
 
 Native capability movement uses `CAP_DUP`, `CAP_SEND`, `CAP_RECV`, and
 `CAP_REVOKE`. Delegation may narrow rights, transfer permission, ranges, event
@@ -163,13 +181,26 @@ masks, and mapping permissions. Sealed capabilities may be used or transferred
 according to their rights but cannot be duplicated or narrowed by ordinary
 receivers.
 
+Capability tokens and native extension APIs must preserve the architectural
+lineage model: object generation, capability generation, lineage root, lineage
+epoch, rights, range, event mask, mapping permissions, transfer/seal/narrow
+flags, and Resource Domain scope. Revocation advances the lineage or
+revocation-root epoch. Operations issued before their commit point fail with
+`EREVOKED` or the object-specific stale-reference error; operations after commit
+complete according to the object's documented teardown rule, and later use sees
+the stale generation/epoch.
+
 ## Dynamic Loader Expectations
 
 There is no dynamic linker ABI in v0. Optional dynamic loading APIs such as
 `dlopen`, `dlsym`, and `dlclose` fail cleanly in the current libc surface.
 
 The v0 package bring-up path is static or compiler-emitted LNP64 assembly.
-Future dynamic loading must define:
+Future dynamic loading is a software loader/personality contract, not a
+hardware `EXEC` contract. Hardware accepts a bounded exec-plan descriptor and
+opaque startup metadata; it does not parse ELF, dynamic-linker state,
+relocations, interpreters, shebangs, library graphs, or Unix credential
+transition policy. Future dynamic loading must define:
 
 - auxv keys consumed by the loader.
 - relocation records and symbol binding rules.
@@ -181,9 +212,10 @@ Future dynamic loading must define:
 ## Binary and Object Format v0
 
 The emulator currently loads LNP64 assembly programs, not ELF binaries.
-`object_format.md` defines the target static v1 ELF profile, relocation model,
-executable mapping permissions, ASLR loader behavior, dynamic-linking boundary,
-and startup descriptor records.
+`object_format.md` defines the target static v1 software-loader ELF profile,
+relocation model, executable mapping permissions, ASLR loader behavior,
+dynamic-linking boundary, startup descriptor records, and the boundary between
+loader-owned format policy and hardware `EXEC` commit.
 
 Until those details are implemented, real-package gates should compile through
 the repository C compiler to LNP64 assembly.

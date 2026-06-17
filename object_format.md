@@ -1,8 +1,15 @@
 # LNP64 Binary and Object Format v1
 
-This document defines the first ELF-based binary/object profile for LNP64. The
+This document defines the first software-loader ELF profile for LNP64. The
 current emulator still executes LNP64 assembly directly; this is the target
 format for the future loader and package toolchain.
+
+Hardware does not parse this format. ELF headers, program headers, dynamic
+linking, relocations, interpreters, shebang handling, library search, and
+credential-transition policy belong to loader services, libc runtimes, or Unix
+personality domains. A loader that accepts this format produces a bounded LNP64
+exec-plan descriptor; hardware `EXEC` validates that descriptor's capabilities
+and commits the address-space replacement atomically.
 
 ## ELF Profile
 
@@ -14,16 +21,18 @@ LNP64 v1 uses ELF64, little-endian, two's complement, LP64-style objects.
 | `EI_DATA` | `ELFDATA2LSB` |
 | `e_machine` | `EM_LNP64`, provisional value `0x6c64` until registered |
 | `e_ident[EI_OSABI]` | `ELFOSABI_NONE` for native static programs |
-| `e_type` | `ET_EXEC` or `ET_DYN`; static v1 loaders may reject `ET_DYN` unless explicitly running PIE mode |
+| `e_type` | `ET_EXEC` or `ET_DYN`; `ET_DYN` means static PIE only in this v1 profile |
 | `p_align` | page-aligned `PT_LOAD` segments use at least 4096-byte alignment |
 
 The canonical toolchain path for v1 is static linking to an executable image.
 Relocatable `ET_REL` objects are a toolchain format, not an emulator input.
+Accepting `ET_DYN` for static PIE is a software-loader policy decision; it does
+not imply a hardware dynamic linker or a mandatory shared-library ABI.
 
 ## Sections and Segments
 
-The loader consumes program headers. Section headers are optional at runtime and
-may be stripped.
+The software loader consumes program headers. Section headers are optional at
+runtime and may be stripped.
 
 Required program-header behavior:
 
@@ -123,7 +132,7 @@ domain or boot manifest.
 
 ## Static-Only v1 Policy
 
-Native v1 is static-only for executable loading:
+Native v1 loader policy is static-only for this profile:
 
 - `dlopen`, `dlsym`, and `dlclose` remain fail-cleanly libc surfaces.
 - `PT_DYNAMIC` and lazy binding are rejected by the native static loader.
@@ -134,7 +143,8 @@ Native v1 is static-only for executable loading:
   policy.
 
 This keeps W^X, capability startup, and deterministic test behavior tractable
-while real package compatibility is still being expanded.
+while real package compatibility is still being expanded. It is a loader policy,
+not a hardware limitation on future executable formats.
 
 ## Startup Descriptors
 
@@ -143,7 +153,8 @@ encoding ambient privilege in memory addresses.
 
 The loader accepts descriptor metadata from the boot manifest or parent domain
 and publishes public metadata through `ENV_GET`/auxv. Descriptor payloads live in
-hardware FDR slots.
+hardware FDR slots. Hardware sees only the resulting startup metadata pointer
+and FDR grants recorded in the exec-plan descriptor.
 
 `.note.lnp64.startup` contains:
 
@@ -186,7 +197,7 @@ before user code starts.
 
 ## Loader Failure Rules
 
-The loader must fail before transferring control when:
+The software loader must fail before submitting `EXEC` when:
 
 - an ELF header field is unsupported.
 - a `PT_LOAD` segment overflows, overlaps another segment, or violates alignment.

@@ -12,13 +12,18 @@ model. The implemented subset covers:
 - Load/store memory, `.data` labels, strings, quads, zero-fill, VMAs, and
   lazy file-backed `MMAP` page-in.
 - Hardware-style `ALLOC`/`FREE`.
-- FDR I/O via `WRITE_FD`, `READ_FD`, `OPEN_FD`, and `FD_DUP`.
-- Real emulator-level process cloning for `FORK`, assembly-program loading for
-  `EXEC`, hardware-thread contexts for `SPAWN`, ready-queue scheduling,
-  futex parking/wake, signal delivery with `SIGRET`, IPC messages, and
-  loadable microcode port hooks for `INB`/`OUTB`.
-- Resource Domains, minimal `OBJECT_CTL`, and `CALL_CAP`/`RET_CAP` service
-  calls.
+- FDR I/O through the current emulator instructions, with the architectural
+  direction converging on `OPEN_AT`, `PULL`, `PUSH`, `SEEK`, and capability
+  operations.
+- Real emulator-level process cloning and assembly-program loading for `EXEC`,
+  with the architectural direction converging on `CLONE` profiles for process,
+  thread, and POSIX-fork compatibility.
+- Ready-queue scheduling, futex parking/wake, signal delivery with `SIGRET`,
+  IPC messages, Resource Domains, minimal `OBJECT_CTL`, and `CALL_CAP`/`RET_CAP`
+  service calls.
+- Reserved low-level device/debug hooks exist in the emulator, but ordinary
+  device access is intended to flow through FDR capabilities, `MMAP`, DMA
+  buffers, event objects, and service domains rather than raw `INB`/`OUTB`.
 - A small C compiler written in Rust that emits LNP64 assembly.
 
 ## Formal Verification Direction
@@ -67,9 +72,9 @@ The emulator tracks the current ISA direction in `design.md` and
   the emulator's current single-process bridge toward the event-queue profile
   described in the design docs.
 - Source-level `clock_gettime`, `gettimeofday`, and `time` read
-  `REALTIME_SEC`/`REALTIME_NSEC` PCRs; `nanosleep` lowers to the existing
-  scheduler `SLEEP` primitive. `usleep` rounds microseconds to the same coarse
-  tick model, and `alarm` lowers to an `ALARM` timer that delivers `SIGALRM`.
+  `REALTIME_SEC`/`REALTIME_NSEC` PCRs. `nanosleep`, `usleep`, and `alarm` use
+  the emulator's current coarse timer path; architecturally these are timer
+  object profiles waited on through `AWAIT`.
 - POSIX-style `getpid`/`getppid`/`getuid`/`getgid` aliases read PCRs,
   `wait(status)` lowers to `WAIT_PID`, `raise(signum)` sends through `KILL`,
   and the current 64-bit `sigset_t`/`sigprocmask` subset updates the `SIGMASK`
@@ -83,12 +88,15 @@ The emulator tracks the current ISA direction in `design.md` and
   `ALLOC_SIZE` metadata before copying and freeing the old allocation. The
   `brk`/`sbrk` compatibility layer tracks a process break cursor while positive
   `sbrk` growth still obtains memory from `ALLOC`.
-- The current pthread/sync subset maps `pthread_create` to same-process
-  `SPAWN`, `pthread_join` to `THREAD_JOIN`, and implements mutexes, condition
-  variables, rwlocks, `pthread_once`, and POSIX-style semaphores with
-  `LOCK.CMPXCHG`, `FUTEX_WAIT`, and `FUTEX_WAKE`.
+- The current pthread/sync subset maps `pthread_create` to a same-process
+  thread creation path equivalent to `CLONE profile=thread`, `pthread_join` to a
+  join wait, and implements mutexes, condition variables, rwlocks,
+  `pthread_once`, and POSIX-style semaphores with atomics and futex-flavored
+  wait/wake operations. The architectural form is `LOCK_CMPXCHG` plus `AWAIT`
+  and wake operations over waitable objects.
 
-Current emulator `OBJECT_CTL` v1 fields are:
+Current emulator `OBJECT_CTL` v1 fields are a compact implementation ABI, not
+the final typed control envelope described in the architecture documents:
 
 ```text
 arg+0  op: 1=create
@@ -163,6 +171,12 @@ Run the `libc-test` focused libc conformance subset:
 bash scripts/run_libc_test.sh
 ```
 
+Run all checked third-party real-package gates:
+
+```sh
+bash scripts/run_real_packages.sh
+```
+
 For the current POSIX/libc surface, real-program gates, and open compatibility
 bugs, see `conformance_matrix.md`. For the current emulator process ABI, see
 `psABI.md`; for the target ELF/static object profile, see `object_format.md`.
@@ -184,6 +198,7 @@ frontend, libc, and emulator work, not by replacing specific programs with
 handwritten implementations.
 
 ```sh
+bash scripts/run_real_packages.sh
 bash scripts/run_sbase.sh
 bash scripts/run_jsmn.sh
 bash scripts/run_natsort.sh
