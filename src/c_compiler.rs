@@ -5404,6 +5404,18 @@ impl CodeGen {
                 self.text.push(format!("  LI r{dst}, 0"));
                 Ok(dst)
             }
+            "setvbuf" => {
+                if args.len() != 4 {
+                    return Err("setvbuf(stream, buf, mode, size) expects 4 arguments".to_string());
+                }
+                for arg in args {
+                    self.emit_expr(arg)?;
+                    self.temp_reg = 0;
+                }
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
             "getenv" => {
                 let key = self.one_arg(name, args)?;
                 self.emit_getenv(key)
@@ -10993,6 +11005,15 @@ impl CodeGen {
         } else if name == "SEEK_END" {
             self.text.push(format!("  LI r{reg}, 2"));
             Ok(reg)
+        } else if name == "_IONBF" {
+            self.text.push(format!("  LI r{reg}, 0"));
+            Ok(reg)
+        } else if name == "_IOFBF" {
+            self.text.push(format!("  LI r{reg}, 1"));
+            Ok(reg)
+        } else if name == "_IOLBF" {
+            self.text.push(format!("  LI r{reg}, 2"));
+            Ok(reg)
         } else if name == "O_APPEND" {
             self.text.push(format!("  LI r{reg}, 1"));
             Ok(reg)
@@ -13460,6 +13481,29 @@ int main() {
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains("FD_SEEK_DYN"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_setvbuf_accepts_standard_buffering_modes() {
+        let source = r#"
+        int main() {
+            int fp;
+            remove("/tmp/lnp64_setvbuf_test.txt");
+            fp = fopen("/tmp/lnp64_setvbuf_test.txt", "w");
+            if (fp == -1) return 1;
+            if (setvbuf(fp, 0, _IONBF, 0) != 0) return 2;
+            if (setvbuf(fp, 0, _IOFBF, 128) != 0) return 3;
+            if (setvbuf(fp, 0, _IOLBF, 128) != 0) return 4;
+            fputs("ok", fp);
+            fclose(fp);
+            remove("/tmp/lnp64_setvbuf_test.txt");
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
