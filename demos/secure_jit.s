@@ -5,9 +5,9 @@ ok_msg: .string "secure jit ok\n"
   LI r29, -1
 
 map_rw:
-  LI r1, 4096
+  LI r9, 4096
   LI r2, 3
-  MMAP r3, r0, r1, r2, fd0, r0
+  MMAP r3, r0, r9, r2, fd0, r0
   CMP r3, r29
   BEQ bad
   LI r4, 144
@@ -15,14 +15,17 @@ map_rw:
 
 protect_rx:
   LI r5, 5
-  MPROTECT r3, r1, r5
+  MPROTECT r3, r9, r5
   ERRNO_GET r6
   CMP r6, r0
+  BNE bad
+  ISYNC r8, r3, r9
+  CMP r8, r0
   BNE bad
 
 reject_wx:
   LI r5, 6
-  MPROTECT r3, r1, r5
+  MPROTECT r3, r9, r5
   ERRNO_GET r6
   LI r7, 1
   CMP r6, r7
