@@ -1127,6 +1127,23 @@ Both instructions return success, a new FDR index, byte count, or operation id
 in the encoded result register. Long operations park the issuing thread or
 complete through an event object according to flags.
 
+The current emulator subset intentionally implements only synchronous
+memory-to-memory `DMA_CTL` commands:
+
+- arg+0: operation, where `1` is copy and `2` is fill.
+- arg+8: destination virtual address.
+- arg+16: source virtual address for copy or byte fill value for fill.
+- arg+24: byte length.
+- arg+32: optional `dma_buffer` FDR token limiting the permitted byte range.
+
+The emulator does not enqueue DMA descriptors, expose async DMA completion
+objects, or keep a pending-DMA table. A successful `DMA_CTL` has completed and
+made its writes visible before the next instruction can execute. `CAP_REVOKE`
+therefore cannot race with an in-flight emulator DMA operation: revoke blocks
+future submissions through that capability lineage, while operations that
+already returned are complete. The hardware target above still needs a separate
+quiesce-or-cancel policy before asynchronous DMA descriptors are enabled.
+
 ### 11.2 Capability Calls
 
 `CALL_CAP` and `RET_CAP` provide a fast path for calling through hardware

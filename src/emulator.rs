@@ -7603,6 +7603,64 @@ mod tests {
     }
 
     #[test]
+    fn dma_ctl_v1_completes_before_revoke_and_blocks_later_submits() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[1] = 16;
+        machine.exec(Instr::Alloc(Reg(2), Reg(1))).unwrap();
+        let buffer = machine.thread().unwrap().regs[2];
+        let arg = ARG_BASE;
+
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine.store_u64(arg + 8, OBJECT_KIND_DMA_BUFFER).unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.store_u64(arg + 32, 0).unwrap();
+        machine.store_u64(arg + 40, buffer).unwrap();
+        machine.store_u64(arg + 48, 16).unwrap();
+        machine.object_ctl(Reg(3), arg).unwrap();
+        let fd = machine.thread().unwrap().regs[3] as usize;
+        let owner_token = machine.fd_token(fd).unwrap();
+
+        machine.store_u64(arg, owner_token).unwrap();
+        machine.store_u64(arg + 8, 0).unwrap();
+        machine.store_u64(arg + 16, CAP_RIGHT_WRITE).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_dup(Reg(4), arg).unwrap();
+        let writer_token = machine.thread().unwrap().regs[4];
+        assert_ne!(writer_token, -1i64 as u64);
+
+        machine.store_u64(arg, DMA_OP_FILL).unwrap();
+        machine.store_u64(arg + 8, buffer + 4).unwrap();
+        machine.store_u64(arg + 16, 0xaa).unwrap();
+        machine.store_u64(arg + 24, 4).unwrap();
+        machine.store_u64(arg + 32, writer_token).unwrap();
+        machine.dma_ctl(Reg(5), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], 4);
+        assert_eq!(
+            machine.read_bytes(buffer, 12).unwrap(),
+            vec![0, 0, 0, 0, 0xaa, 0xaa, 0xaa, 0xaa, 0, 0, 0, 0]
+        );
+
+        machine.store_u64(arg, owner_token).unwrap();
+        machine.cap_revoke(Reg(6), arg).unwrap();
+        assert!(machine.thread().unwrap().regs[6] >= 2);
+
+        machine.store_u64(arg, DMA_OP_FILL).unwrap();
+        machine.store_u64(arg + 8, buffer + 8).unwrap();
+        machine.store_u64(arg + 16, 0xbb).unwrap();
+        machine.store_u64(arg + 24, 4).unwrap();
+        machine.store_u64(arg + 32, writer_token).unwrap();
+        machine.dma_ctl(Reg(7), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[7], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 116);
+        assert_eq!(
+            machine.read_bytes(buffer, 12).unwrap(),
+            vec![0, 0, 0, 0, 0xaa, 0xaa, 0xaa, 0xaa, 0, 0, 0, 0]
+        );
+    }
+
+    #[test]
     fn alloc_ex_creates_and_frees_guard_regions() {
         let program = empty_program();
         let mut machine = Machine::new(program);
