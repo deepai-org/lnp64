@@ -6,6 +6,30 @@ asm=/tmp/netbsd_personality_smoke.s
 out=/tmp/netbsd_personality_smoke.out
 
 "${lnp64[@]}" cc demos/netbsd_personality_smoke.c -o "$asm"
+
+required_native=(
+  OPEN_FD
+  READ_FD_DYN
+  WRITE_FD_DYN
+  FORK
+  SPAWN
+  FUTEX_WAIT
+  FUTEX_WAKE
+  OBJECT_CTL
+  MMAP
+  POLL_FD_DYN
+  AWAIT_DYN
+  SIGACTION
+  KILL
+  DOMAIN_CTL
+  CALL_CAP
+  RET_CAP
+)
+
+for token in "${required_native[@]}"; do
+  grep -q "$token" "$asm"
+done
+
 rm -f "$out"
 "${lnp64[@]}" run "$asm" > "$out"
 cat "$out"

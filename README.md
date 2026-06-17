@@ -40,6 +40,8 @@ Core architecture docs:
   gaps.
 - `psABI.md`: current process ABI, calling convention, signal frame, FDR
   inheritance, and loader boundaries.
+- `netbsd_personality_abi.md`: first NetBSD-like rump/personality ABI boundary
+  and smoke gate mapping.
 - `object_format.md`: target static ELF/software-loader profile and exec-plan
   boundary.
 - `libc_roadmap.md`: libc/runtime integration plan.
