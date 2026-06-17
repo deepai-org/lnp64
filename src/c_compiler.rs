@@ -17732,6 +17732,57 @@ int main() {
     }
 
     #[test]
+    fn c_multithreaded_allocator_pressure_runs() {
+        let source = r#"
+        int failures;
+
+        int worker(int arg) {
+            int i;
+            int p;
+            int q;
+            i = 0;
+            while (i < 48) {
+                p = malloc(24 + i);
+                if (p == 0) failures = 1;
+                store(p, i + arg);
+                q = realloc(p, 96 + i);
+                if (q == 0) failures = 2;
+                if (load(q) != i + arg) failures = 3;
+                free(q);
+                i = i + 1;
+            }
+            pthread_exit(0);
+            return 0;
+        }
+
+        int main() {
+            int t1;
+            int t2;
+            int t3;
+            int t4;
+            failures = 0;
+            pthread_create(&t1, 0, worker, 100);
+            pthread_create(&t2, 0, worker, 200);
+            pthread_create(&t3, 0, worker, 300);
+            pthread_create(&t4, 0, worker, 400);
+            pthread_join(t1, 0);
+            pthread_join(t2, 0);
+            pthread_join(t3, 0);
+            pthread_join(t4, 0);
+            if (failures != 0) return failures;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("SPAWN"), "{asm}");
+        assert!(asm.contains("THREAD_JOIN"), "{asm}");
+        assert!(asm.contains("ALLOC_SIZE"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn c_pthread_mutex_condvar_surface_runs_on_futex_primitives() {
         let source = r#"
         int mutex;
