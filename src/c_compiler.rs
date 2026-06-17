@@ -7858,6 +7858,58 @@ impl CodeGen {
                 let len = self.emit_expr(&args[2])?;
                 self.emit_socket_control(6, fd, 0, addr, len)
             }
+            "getsockopt" => {
+                if args.len() != 5 {
+                    return Err(
+                        "getsockopt(fd, level, optname, optval, optlen) expects 5 arguments"
+                            .to_string(),
+                    );
+                }
+                let fd = self.emit_expr(&args[0])?;
+                let fd_slot = self.spill_reg(fd);
+                self.temp_reg = 0;
+                let level = self.emit_expr(&args[1])?;
+                let level_slot = self.spill_reg(level);
+                self.temp_reg = 0;
+                let optname = self.emit_expr(&args[2])?;
+                let optname_slot = self.spill_reg(optname);
+                self.temp_reg = 0;
+                let optval = self.emit_expr(&args[3])?;
+                let optval_slot = self.spill_reg(optval);
+                self.temp_reg = 0;
+                let optlen = self.emit_expr(&args[4])?;
+                let fd = self.reload_reg(fd_slot)?;
+                let level = self.reload_reg(level_slot)?;
+                let optname = self.reload_reg(optname_slot)?;
+                let optval = self.reload_reg(optval_slot)?;
+                self.emit_socket_option_control(7, fd, level, optname, optval, optlen)
+            }
+            "setsockopt" => {
+                if args.len() != 5 {
+                    return Err(
+                        "setsockopt(fd, level, optname, optval, optlen) expects 5 arguments"
+                            .to_string(),
+                    );
+                }
+                let fd = self.emit_expr(&args[0])?;
+                let fd_slot = self.spill_reg(fd);
+                self.temp_reg = 0;
+                let level = self.emit_expr(&args[1])?;
+                let level_slot = self.spill_reg(level);
+                self.temp_reg = 0;
+                let optname = self.emit_expr(&args[2])?;
+                let optname_slot = self.spill_reg(optname);
+                self.temp_reg = 0;
+                let optval = self.emit_expr(&args[3])?;
+                let optval_slot = self.spill_reg(optval);
+                self.temp_reg = 0;
+                let optlen = self.emit_expr(&args[4])?;
+                let fd = self.reload_reg(fd_slot)?;
+                let level = self.reload_reg(level_slot)?;
+                let optname = self.reload_reg(optname_slot)?;
+                let optval = self.reload_reg(optval_slot)?;
+                self.emit_socket_option_control(8, fd, level, optname, optval, optlen)
+            }
             "FD_ZERO" => {
                 if args.len() != 1 {
                     return Err("FD_ZERO(set) expects 1 argument".to_string());
@@ -9782,6 +9834,32 @@ impl CodeGen {
         if aux != 0 {
             self.text.push(format!("  ST [r{block}, 48], r{aux}"));
         }
+        self.text.push(format!("  OBJECT_CTL r{dst}, r{block}"));
+        Ok(dst)
+    }
+
+    fn emit_socket_option_control(
+        &mut self,
+        op: i64,
+        fd: usize,
+        level: usize,
+        optname: usize,
+        optval: usize,
+        optlen: usize,
+    ) -> Result<usize, String> {
+        let block_size = self.alloc_reg()?;
+        let block = self.alloc_reg()?;
+        let tmp = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        self.text.push(format!("  LI r{block_size}, 72"));
+        self.text.push(format!("  ALLOC r{block}, r{block_size}"));
+        self.text.push(format!("  LI r{tmp}, {op}"));
+        self.text.push(format!("  ST [r{block}, 0], r{tmp}"));
+        self.text.push(format!("  ST [r{block}, 24], r{fd}"));
+        self.text.push(format!("  ST [r{block}, 40], r{level}"));
+        self.text.push(format!("  ST [r{block}, 48], r{optname}"));
+        self.text.push(format!("  ST [r{block}, 56], r{optval}"));
+        self.text.push(format!("  ST [r{block}, 64], r{optlen}"));
         self.text.push(format!("  OBJECT_CTL r{dst}, r{block}"));
         Ok(dst)
     }
@@ -15045,31 +15123,40 @@ int main() {
             int addr;
             int addrlen;
             int buf;
+            int opt;
+            int optlen;
             struct pollfd p[1];
             server = socket(AF_INET, SOCK_STREAM, 0);
             if (server == -1) return 1;
-            if (bind(server, "127.0.0.1:0", 0) != 0) return 2;
-            if (listen(server, 1) != 0) return 3;
+            opt = 1;
+            if (setsockopt(server, SOL_SOCKET, SO_REUSEADDR, &opt, 8) != 0) return 2;
+            opt = 99;
+            optlen = 8;
+            if (getsockopt(server, SOL_SOCKET, SO_ERROR, &opt, &optlen) != 0) return 3;
+            if (opt != 0) return 4;
+            if (optlen != 8) return 5;
+            if (bind(server, "127.0.0.1:0", 0) != 0) return 6;
+            if (listen(server, 1) != 0) return 7;
             addr = alloc(64);
             addrlen = alloc(8);
             store(addrlen, 64);
-            if (getsockname(server, addr, addrlen) != 0) return 4;
+            if (getsockname(server, addr, addrlen) != 0) return 8;
             client = socket(AF_INET, SOCK_STREAM, 0);
-            if (client == -1) return 5;
-            if (connect(client, addr, load(addrlen)) != 0) return 6;
+            if (client == -1) return 9;
+            if (connect(client, addr, load(addrlen)) != 0) return 10;
             p[0].fd = server;
             p[0].events = POLLIN;
-            if (poll(p, 1, 0) != 1) return 7;
+            if (poll(p, 1, 0) != 1) return 11;
             accepted = accept(server, 0, 0);
-            if (accepted == -1) return 8;
+            if (accepted == -1) return 12;
             buf = alloc(2);
             p[0].fd = accepted;
             p[0].events = POLLIN;
-            if (poll(p, 1, 0) != 0) return 9;
-            if (send(client, "s", 1, MSG_NOSIGNAL) != 1) return 10;
-            if (poll(p, 1, 0) != 1) return 11;
-            if (recv(accepted, buf, 1, 0) != 1) return 12;
-            if (loadb(buf) != 's') return 13;
+            if (poll(p, 1, 0) != 0) return 13;
+            if (send(client, "s", 1, MSG_NOSIGNAL) != 1) return 14;
+            if (poll(p, 1, 0) != 1) return 15;
+            if (recv(accepted, buf, 1, 0) != 1) return 16;
+            if (loadb(buf) != 's') return 17;
             return 0;
         }
         "#;

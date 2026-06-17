@@ -113,6 +113,8 @@ const OBJECT_OP_SOCKET_LISTEN: u64 = 3;
 const OBJECT_OP_SOCKET_CONNECT: u64 = 4;
 const OBJECT_OP_SOCKET_ACCEPT: u64 = 5;
 const OBJECT_OP_SOCKET_GETSOCKNAME: u64 = 6;
+const OBJECT_OP_SOCKET_GETSOCKOPT: u64 = 7;
+const OBJECT_OP_SOCKET_SETSOCKOPT: u64 = 8;
 const OBJECT_KIND_COUNTER: u64 = 1;
 const OBJECT_KIND_QUEUE: u64 = 2;
 const OBJECT_KIND_MEMORY_OBJECT: u64 = 3;
@@ -2791,6 +2793,8 @@ impl Machine {
             OBJECT_OP_SOCKET_CONNECT => self.object_ctl_socket_connect(argblock),
             OBJECT_OP_SOCKET_ACCEPT => self.object_ctl_socket_accept(argblock),
             OBJECT_OP_SOCKET_GETSOCKNAME => self.object_ctl_socket_getsockname(argblock),
+            OBJECT_OP_SOCKET_GETSOCKOPT => self.object_ctl_socket_getsockopt(argblock),
+            OBJECT_OP_SOCKET_SETSOCKOPT => self.object_ctl_socket_setsockopt(argblock),
             _ => Err(22),
         };
         match value {
@@ -3383,6 +3387,49 @@ impl Machine {
         }
         self.write_bytes(addr_ptr, &bytes).map_err(|_| 14u64)?;
         Ok(0)
+    }
+
+    fn object_ctl_socket_getsockopt(&mut self, argblock: u64) -> Result<u64, u64> {
+        let fd_value = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
+        let optval = self.load_u64(argblock + 56).map_err(|_| 14u64)?;
+        let optlen = self.load_u64(argblock + 64).map_err(|_| 14u64)?;
+        let fd = self.decode_fd_value(fd_value)?;
+        self.fd_right_errno(fd, CAP_RIGHT_STAT)?;
+        self.ensure_socket_fd(fd)?;
+        if optlen != 0 {
+            let capacity = self.load_u64(optlen).map_err(|_| 14u64)?;
+            if capacity < 8 {
+                return Err(22);
+            }
+            self.store_u64(optlen, 8).map_err(|_| 14u64)?;
+        }
+        if optval != 0 {
+            self.store_u64(optval, 0).map_err(|_| 14u64)?;
+        }
+        Ok(0)
+    }
+
+    fn object_ctl_socket_setsockopt(&mut self, argblock: u64) -> Result<u64, u64> {
+        let fd_value = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
+        let optval = self.load_u64(argblock + 56).map_err(|_| 14u64)?;
+        let optlen = self.load_u64(argblock + 64).map_err(|_| 14u64)?;
+        let fd = self.decode_fd_value(fd_value)?;
+        self.fd_right_errno(fd, CAP_RIGHT_WRITE)?;
+        self.ensure_socket_fd(fd)?;
+        if optval != 0 && optlen != 0 {
+            self.ensure_mapped(optval, optlen as usize, false)
+                .map_err(|_| 14u64)?;
+        }
+        Ok(0)
+    }
+
+    fn ensure_socket_fd(&self, fd: usize) -> Result<(), u64> {
+        match self.process().map_err(|_| 3u64)?.fds.get(fd) {
+            Some(FdHandle::TcpSocket { .. })
+            | Some(FdHandle::TcpListener { .. })
+            | Some(FdHandle::TcpStream(_)) => Ok(()),
+            _ => Err(22),
+        }
     }
 
     fn install_object_fd(&mut self, requested: u64, handle: FdHandle) -> Result<usize, u64> {
