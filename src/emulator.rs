@@ -8392,6 +8392,28 @@ mod tests {
     }
 
     #[test]
+    fn multi_source_fd_waiters_wake_only_ready_sources() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        create_pipe_pair(&mut machine, 3, 4);
+        create_pipe_pair(&mut machine, 5, 6);
+        machine.push_fd_waiter(3, POLLIN_MASK, None).unwrap();
+        machine.push_fd_waiter(5, POLLIN_MASK, None).unwrap();
+        machine.ready.retain(|tid| *tid != 1);
+
+        let payload = ARG_BASE + 0x100;
+        machine.write_bytes(payload, b"x").unwrap();
+        machine.write_fd_index(4, payload, 1).unwrap();
+        machine.poll_fd_waiters();
+
+        assert!(machine.ready.contains(&1));
+        assert_eq!(machine.fd_waiters.len(), 1);
+        assert_eq!(machine.fd_waiters[0].fd, 5);
+        assert!(machine.fd_read_ready(3).unwrap());
+        assert!(!machine.fd_read_ready(5).unwrap());
+    }
+
+    #[test]
     fn unmapped_vma_rejects_stale_memory_access() {
         let program = Program::parse(
             r#"
