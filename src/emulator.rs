@@ -77,6 +77,9 @@ const CALL_MODE_HANDOFF: u64 = 2;
 const CALL_GATE_FLAG_CAP_PASS: u64 = 1;
 const CALL_ARG_CAP_MARKER: u64 = 1 << 63;
 const MAX_CAP_CALL_DEPTH: usize = 8;
+const FDR_TOKEN_MARKER: u64 = 1 << 62;
+const FDR_TOKEN_SHIFT: u64 = 8;
+const FDR_TOKEN_INDEX_MASK: u64 = 0xff;
 const POLLIN_MASK: u64 = 1;
 const POLLOUT_MASK: u64 = 4;
 const POLLNVAL_MASK: u64 = 32;
@@ -404,6 +407,7 @@ struct Process {
     domain_id: u64,
     program: Program,
     fds: Vec<FdHandle>,
+    fd_generations: Vec<u64>,
     memory: Vec<u8>,
     vmas: Vec<Vma>,
     stack_top: u64,
@@ -437,6 +441,7 @@ impl Process {
             fds.push(FdHandle::Closed);
         }
         fds[MESSAGE_ENDPOINT_FD] = FdHandle::MessageEndpoint;
+        let fd_generations = vec![1; FDR_COUNT];
 
         let mut memory = vec![0; MEMORY_SIZE];
         let data_start = DATA_BASE as usize;
@@ -458,6 +463,7 @@ impl Process {
             domain_id,
             program,
             fds,
+            fd_generations,
             memory,
             vmas,
             stack_top: layout.stack_top,
@@ -491,6 +497,7 @@ impl Process {
             domain_id: self.domain_id,
             program: self.program.clone(),
             fds,
+            fd_generations: self.fd_generations.clone(),
             memory: self.memory.clone(),
             vmas,
             stack_top: self.stack_top,
@@ -886,7 +893,11 @@ impl Machine {
             Instr::PollFdDyn(result, fd_reg, events) => {
                 let fd = self.read_reg(fd_reg)?;
                 let events = self.read_reg(events)?;
-                let revents = self.poll_fd_mask(fd, events)?;
+                let revents = match self.checked_fd_index(fd)? {
+                    Some(fd) => self.poll_fd_index_mask(fd, events)?,
+                    None => POLLNVAL_MASK,
+                };
+                self.set_errno(0)?;
                 self.write_reg(result, revents)?;
             }
             Instr::Alloc(dst, bytes_reg) => {
@@ -931,6 +942,7 @@ impl Machine {
                 let flags = self.read_reg(flags_reg)?;
                 match Self::open_fd_handle(&path, flags) {
                     Ok(handle) => {
+                        self.bump_fd_generation(dst.0)?;
                         self.process_mut()?.fds[dst.0] = handle;
                         self.set_status_ok()?;
                     }
@@ -949,9 +961,10 @@ impl Machine {
                 match Self::open_fd_handle(&path, flags) {
                     Ok(handle) => match self.alloc_fd_handle(handle)? {
                         Some(fd) => {
+                            let token = self.fd_token(fd)?;
                             self.set_errno(0)?;
-                            self.write_reg(dst_reg, fd as u64)?;
-                            self.write_reg(Reg(1), fd as u64)?;
+                            self.write_reg(dst_reg, token)?;
+                            self.write_reg(Reg(1), token)?;
                         }
                         None => self.write_reg(dst_reg, -1i64 as u64)?,
                     },
@@ -970,6 +983,7 @@ impl Machine {
                 let path = self.resolve_process_path(&path)?;
                 match Self::open_dir_handle(&path) {
                     Ok(handle) => {
+                        self.bump_fd_generation(dst.0)?;
                         self.process_mut()?.fds[dst.0] = handle;
                         self.set_status_ok()?;
                     }
@@ -987,9 +1001,10 @@ impl Machine {
                 match Self::open_dir_handle(&path) {
                     Ok(handle) => match self.alloc_fd_handle(handle)? {
                         Some(fd) => {
+                            let token = self.fd_token(fd)?;
                             self.set_errno(0)?;
-                            self.write_reg(dst_reg, fd as u64)?;
-                            self.write_reg(Reg(1), fd as u64)?;
+                            self.write_reg(dst_reg, token)?;
+                            self.write_reg(Reg(1), token)?;
                         }
                         None => self.write_reg(dst_reg, -1i64 as u64)?,
                     },
@@ -1255,12 +1270,14 @@ impl Machine {
                 }
             }
             Instr::FdClose(fd) => {
+                self.bump_fd_generation(fd.0)?;
                 self.process_mut()?.fds[fd.0] = FdHandle::Closed;
                 self.set_status_ok()?;
             }
             Instr::FdCloseDyn(fd_reg) => {
                 let fd = self.read_reg(fd_reg)?;
                 if let Some(fd) = self.checked_fd_index(fd)? {
+                    self.bump_fd_generation(fd)?;
                     self.process_mut()?.fds[fd] = FdHandle::Closed;
                     self.set_status_ok()?;
                 }
@@ -1291,6 +1308,7 @@ impl Machine {
                     return Ok(true);
                 }
                 let cloned = self.process()?.fds[src.0].clone_handle()?;
+                self.bump_fd_generation(dst.0)?;
                 self.process_mut()?.fds[dst.0] = cloned;
             }
             Instr::FdDup2(dst, src) => {
@@ -1299,6 +1317,7 @@ impl Machine {
                     return Ok(true);
                 }
                 let cloned = self.process()?.fds[src.0].clone_handle()?;
+                self.bump_fd_generation(dst.0)?;
                 self.process_mut()?.fds[dst.0] = cloned;
                 self.set_status_ok()?;
             }
@@ -1906,11 +1925,12 @@ impl Machine {
     }
 
     fn checked_fd_index(&mut self, fd: u64) -> Result<Option<usize>, String> {
-        if fd < FDR_COUNT as u64 {
-            Ok(Some(fd as usize))
-        } else {
-            self.set_status_errno(9)?;
-            Ok(None)
+        match self.decode_fd_value(fd) {
+            Ok(fd) => Ok(Some(fd)),
+            Err(errno) => {
+                self.set_status_errno(errno)?;
+                Ok(None)
+            }
         }
     }
 
@@ -1923,12 +1943,59 @@ impl Machine {
                 .position(|candidate| matches!(candidate, FdHandle::Closed))
         };
         if let Some(fd) = fd {
+            self.bump_fd_generation(fd)?;
             self.process_mut()?.fds[fd] = handle;
             Ok(Some(fd))
         } else {
             self.set_status_errno(24)?;
             Ok(None)
         }
+    }
+
+    fn fd_token(&self, fd: usize) -> Result<u64, String> {
+        let generation = self
+            .process()?
+            .fd_generations
+            .get(fd)
+            .copied()
+            .ok_or_else(|| format!("fd index out of range: {fd}"))?;
+        Ok(FDR_TOKEN_MARKER | (generation << FDR_TOKEN_SHIFT) | fd as u64)
+    }
+
+    fn decode_fd_value(&self, value: u64) -> Result<usize, u64> {
+        if value < FDR_COUNT as u64 {
+            return Ok(value as usize);
+        }
+        if value & FDR_TOKEN_MARKER == 0 {
+            return Err(9);
+        }
+        let fd = (value & FDR_TOKEN_INDEX_MASK) as usize;
+        if fd >= FDR_COUNT {
+            return Err(9);
+        }
+        let generation = (value & !FDR_TOKEN_MARKER) >> FDR_TOKEN_SHIFT;
+        if generation == 0 {
+            return Err(9);
+        }
+        let process = self.process().map_err(|_| 3u64)?;
+        if process.fd_generations.get(fd).copied() != Some(generation)
+            || matches!(process.fds[fd], FdHandle::Closed)
+        {
+            return Err(116);
+        }
+        Ok(fd)
+    }
+
+    fn bump_fd_generation(&mut self, fd: usize) -> Result<(), String> {
+        let generation = self
+            .process()?
+            .fd_generations
+            .get(fd)
+            .copied()
+            .ok_or_else(|| format!("fd index out of range: {fd}"))?;
+        let next = generation.saturating_add(1).max(1);
+        self.process_mut()?.fd_generations[fd] = next;
+        Ok(())
     }
 
     fn write_fd_index(&mut self, fd: usize, addr: u64, len: usize) -> Result<(), String> {
@@ -2432,6 +2499,7 @@ impl Machine {
             let fd = requested as usize;
             let delta = self.fd_slot_delta(fd).map_err(|_| 9u64)?;
             self.ensure_domain_budget_errno(0, 0, 0, delta)?;
+            self.bump_fd_generation(fd).map_err(|_| 9u64)?;
             self.process_mut().map_err(|_| 3u64)?.fds[fd] = handle;
             return Ok(fd);
         }
@@ -2450,6 +2518,7 @@ impl Machine {
         let Some(fd) = fd else {
             return Err(24);
         };
+        self.bump_fd_generation(fd).map_err(|_| 9u64)?;
         self.process_mut().map_err(|_| 3u64)?.fds[fd] = handle;
         Ok(fd)
     }
@@ -3896,16 +3965,24 @@ impl Machine {
     }
 
     fn poll_fd_mask(&mut self, fd: u64, events: u64) -> Result<u64, String> {
-        let revents = self.poll_fd_mask_raw(fd, events)?;
+        let revents = match self.decode_fd_value(fd) {
+            Ok(fd) => self.poll_fd_index_mask_raw(fd, events)?,
+            Err(_) => POLLNVAL_MASK,
+        };
         self.set_errno(0)?;
         Ok(revents)
     }
 
-    fn poll_fd_mask_raw(&mut self, fd: u64, events: u64) -> Result<u64, String> {
-        if fd >= FDR_COUNT as u64 {
+    fn poll_fd_index_mask(&mut self, fd: usize, events: u64) -> Result<u64, String> {
+        let revents = self.poll_fd_index_mask_raw(fd, events)?;
+        self.set_errno(0)?;
+        Ok(revents)
+    }
+
+    fn poll_fd_index_mask_raw(&mut self, fd: usize, events: u64) -> Result<u64, String> {
+        if fd >= FDR_COUNT {
             return Ok(POLLNVAL_MASK);
         }
-        let fd = fd as usize;
         if matches!(self.process()?.fds[fd], FdHandle::Closed) {
             return Ok(POLLNVAL_MASK);
         }
@@ -3923,7 +4000,7 @@ impl Machine {
         if mask == 0 {
             self.fd_ready(fd)
         } else {
-            Ok(self.poll_fd_mask_raw(fd as u64, mask)? != 0)
+            Ok(self.poll_fd_index_mask_raw(fd, mask)? != 0)
         }
     }
 
@@ -4965,6 +5042,53 @@ mod tests {
             machine.thread().unwrap().regs[5],
             align_up(layout.mmap_base, 4096)
         );
+    }
+
+    #[test]
+    fn dynamic_fd_tokens_reject_stale_reuse() {
+        let program = Program::parse(
+            r#"
+            .data
+            path: .string "Cargo.toml"
+
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let path = program.data_labels["path"];
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+
+        machine.thread_mut().unwrap().regs[1] = path;
+        machine.thread_mut().unwrap().regs[2] = 0;
+        machine
+            .exec(Instr::OpenFdDyn(Reg(3), Reg(1), Reg(2)))
+            .unwrap();
+        let first_token = machine.thread().unwrap().regs[3];
+        let first_fd = (first_token & FDR_TOKEN_INDEX_MASK) as usize;
+        assert!(first_token >= FDR_COUNT as u64);
+
+        machine.thread_mut().unwrap().regs[4] = first_token;
+        machine.exec(Instr::FdCloseDyn(Reg(4))).unwrap();
+        assert_eq!(machine.process().unwrap().errno, 0);
+
+        machine.thread_mut().unwrap().regs[1] = path;
+        machine.thread_mut().unwrap().regs[2] = 0;
+        machine
+            .exec(Instr::OpenFdDyn(Reg(5), Reg(1), Reg(2)))
+            .unwrap();
+        let second_token = machine.thread().unwrap().regs[5];
+        assert_ne!(second_token, first_token);
+        assert_eq!((second_token & FDR_TOKEN_INDEX_MASK) as usize, first_fd);
+
+        machine.thread_mut().unwrap().regs[6] = first_token;
+        machine.thread_mut().unwrap().regs[7] = ARG_BASE;
+        machine.thread_mut().unwrap().regs[8] = 4;
+        machine
+            .exec(Instr::ReadFdDyn(Reg(6), Reg(7), Reg(8)))
+            .unwrap();
+        assert_eq!(machine.process().unwrap().errno, 116);
     }
 
     #[test]
