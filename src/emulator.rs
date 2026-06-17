@@ -5066,6 +5066,10 @@ impl Machine {
             Pcr::Gid => process.gid,
             Pcr::Tp => self.thread()?.thread_pointer,
             Pcr::Sigmask => process.sigmask,
+            Pcr::Sigpending => process
+                .pending_signals
+                .iter()
+                .fold(0u64, |mask, signum| mask | (1u64 << signum.min(&63))),
             Pcr::RealtimeSec => {
                 let now = Self::system_time_to_host_timespec(SystemTime::now());
                 now.tv_sec as u64
@@ -5080,9 +5084,12 @@ impl Machine {
     fn write_pcr(&mut self, pcr: Pcr, value: u64) -> Result<(), String> {
         let process = self.process_mut()?;
         match pcr {
-            Pcr::Pid | Pcr::Ppid | Pcr::Tid | Pcr::RealtimeSec | Pcr::RealtimeNsec => {
-                Err("selected PCR is read-only".to_string())
-            }
+            Pcr::Pid
+            | Pcr::Ppid
+            | Pcr::Tid
+            | Pcr::Sigpending
+            | Pcr::RealtimeSec
+            | Pcr::RealtimeNsec => Err("selected PCR is read-only".to_string()),
             Pcr::Tp => {
                 self.thread_mut()?.thread_pointer = value;
                 Ok(())

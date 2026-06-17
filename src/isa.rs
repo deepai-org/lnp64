@@ -32,6 +32,7 @@ pub enum Pcr {
     Gid,
     Tp,
     Sigmask,
+    Sigpending,
     RealtimeSec,
     RealtimeNsec,
 }
@@ -267,6 +268,7 @@ pub fn parse_pcr(text: &str) -> Result<Pcr, String> {
         "GID" => Ok(Pcr::Gid),
         "TP" => Ok(Pcr::Tp),
         "SIGMASK" => Ok(Pcr::Sigmask),
+        "SIGPENDING" => Ok(Pcr::Sigpending),
         "REALTIME_SEC" => Ok(Pcr::RealtimeSec),
         "REALTIME_NSEC" => Ok(Pcr::RealtimeNsec),
         _ => Err(format!("unknown PCR {text:?}")),

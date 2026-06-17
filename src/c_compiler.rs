@@ -8814,6 +8814,15 @@ impl CodeGen {
                 let oldset = self.emit_expr(&args[2])?;
                 self.emit_sigprocmask(how, set, oldset)
             }
+            "sigpending" => {
+                let set = self.one_arg(name, args)?;
+                let pending = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  GET_PCR r{pending}, SIGPENDING"));
+                self.text.push(format!("  ST [r{set}, 0], r{pending}"));
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
             "raise" => {
                 let signum = self.one_arg(name, args)?;
                 let pid = self.alloc_reg()?;
@@ -15433,6 +15442,7 @@ int main() {
         int main() {
             sigset_t set;
             sigset_t old;
+            sigset_t pending;
             raised = 0;
             if (getpid() != pid()) return 1;
             if (getppid() != 0) return 2;
@@ -15447,17 +15457,25 @@ int main() {
             if (sigismember(&set, SIGINT) != 1) return 11;
             if (sigprocmask(SIG_BLOCK, &set, &old) != 0) return 12;
             if (sigismember(&old, SIGINT) != 0) return 13;
-            if (sigprocmask(SIG_UNBLOCK, &set, &old) != 0) return 14;
-            if (sigismember(&old, SIGINT) != 1) return 15;
-            if (sigdelset(&set, SIGINT) != 0) return 16;
-            if (sigismember(&set, SIGINT) != 0) return 17;
-            if (sigfillset(&set) != 0) return 18;
-            if (sigismember(&set, SIGALRM) != 1) return 19;
-            if (sigemptyset(&set) != 0) return 20;
-            if (sigprocmask(SIG_SETMASK, &set, 0) != 0) return 21;
             signal(SIGINT, on_signal);
-            if (raise(SIGINT) != 0) return 22;
-            if (raised != 1) return 23;
+            if (raise(SIGINT) != 0) return 14;
+            if (raised != 0) return 15;
+            if (sigpending(&pending) != 0) return 16;
+            if (sigismember(&pending, SIGINT) != 1) return 17;
+            if (sigprocmask(SIG_UNBLOCK, &set, &old) != 0) return 18;
+            if (sigismember(&old, SIGINT) != 1) return 19;
+            if (raised != 1) return 20;
+            if (sigpending(&pending) != 0) return 21;
+            if (sigismember(&pending, SIGINT) != 0) return 22;
+            if (sigdelset(&set, SIGINT) != 0) return 23;
+            if (sigismember(&set, SIGINT) != 0) return 24;
+            if (sigfillset(&set) != 0) return 25;
+            if (sigismember(&set, SIGALRM) != 1) return 26;
+            if (sigemptyset(&set) != 0) return 27;
+            if (sigprocmask(SIG_SETMASK, &set, 0) != 0) return 28;
+            raised = 0;
+            if (raise(SIGINT) != 0) return 29;
+            if (raised != 1) return 30;
             return 0;
         }
         "#;
@@ -15638,6 +15656,7 @@ int main() {
             sigaddset(&sigset, SIGINT);
             sigismember(&sigset, SIGINT);
             sigprocmask(SIG_BLOCK, &sigset, &out);
+            sigpending(&out);
             sigdelset(&sigset, SIGINT);
             sigfillset(&sigset);
             fork();
@@ -15667,6 +15686,7 @@ int main() {
         for expected in [
             "GET_PCR",
             "SET_PCR SIGMASK",
+            "SIGPENDING",
             "ALLOC_EX",
             "ALLOC_SIZE",
             "c_sbrk_cur",
