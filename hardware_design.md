@@ -4685,6 +4685,11 @@ Verification should start at the architectural level before RTL:
   mission-state transitions, fail-closed dispatch denial, failover without
   authority broadening, stale service-generation rejection, audit/fault emission,
   stale-data budget enforcement, and quoteable mission evidence.
+- Write directed tests for owner sovereignty and open assurance: owner-key boot
+  policy, unsigned development policy with explicit non-production quote,
+  reproducible artifact hash fields, owner-held debug-control FDR unlock, no
+  vendor-exclusive key requirement, no hidden management/telemetry/debug/DMA
+  path, and replacement service image authority checks.
 - Write directed tests for storage barriers: data sync, metadata sync,
   barrier-after-commit ordering, backend flush failure, and replay/fsck-visible
   commit records.

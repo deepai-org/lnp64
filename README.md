@@ -34,6 +34,13 @@ long-term goal is not only to test the emulator, but to make the important
 security and crash-freedom properties either proven, locally checkable, or
 structurally impossible to violate.
 
+The architecture is also intended to be owner-verifiable and open-assurance
+friendly. Attestation should prove measured artifacts and active policy; it
+should not create a vendor-only DRM path. The design supports owner-installed
+trust roots, reproducible bitstream/toolchain/proof manifests, capability-scoped
+debug, replaceable service stacks, and no hidden management, telemetry, debug,
+DMA, or interrupt backchannel.
+
 The preferred proof source is the Lean/pure-math ecosystem for the abstract
 machine and security invariants, rather than relying only on hardware-design
 verification tools. Lean should model domains, capabilities, FDR tables, VMAs,
