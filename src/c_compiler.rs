@@ -4499,11 +4499,17 @@ impl CodeGen {
             "tv_sec" => Ok(0),
             "tv_nsec" => Ok(8),
             "tv_usec" => Ok(8),
-            "tm_year" => Ok(0),
-            "tm_isdst" => Ok(8),
+            "tm_sec" => Ok(0),
+            "tm_min" => Ok(8),
             "tm_hour" => Ok(16),
-            "tm_gmtoff" => Ok(24),
-            "tm_zone" => Ok(32),
+            "tm_mday" => Ok(24),
+            "tm_mon" => Ok(32),
+            "tm_year" => Ok(40),
+            "tm_wday" => Ok(48),
+            "tm_yday" => Ok(56),
+            "tm_isdst" => Ok(64),
+            "tm_gmtoff" => Ok(72),
+            "tm_zone" => Ok(80),
             "shrlen" => Ok(8),
             "lnglen" => Ok(16),
             "contents" => Ok(24),
@@ -5687,10 +5693,18 @@ impl CodeGen {
                 let dst = self.emit_expr(&args[0])?;
                 self.emit_format_to_buffer(dst, "Jan 01 00:00", &[], 0)
             }
-            "localtime" => {
-                let dst = self.alloc_reg()?;
-                self.text.push(format!("  LI r{dst}, 1"));
-                Ok(dst)
+            "localtime" | "gmtime" => {
+                let _time = self.one_arg(name, args)?;
+                self.emit_static_tm()
+            }
+            "localtime_r" | "gmtime_r" => {
+                if args.len() != 2 {
+                    return Err(format!("{name}(time, result) expects 2 arguments"));
+                }
+                let _time = self.emit_expr(&args[0])?;
+                let result = self.emit_expr(&args[1])?;
+                self.emit_fill_tm(result)?;
+                Ok(result)
             }
             "clock_gettime" => {
                 if args.len() != 2 {
@@ -11025,6 +11039,35 @@ impl CodeGen {
         Ok(sec)
     }
 
+    fn emit_static_tm(&mut self) -> Result<usize, String> {
+        self.data
+            .entry("c_tm_buf".to_string())
+            .or_insert(".zero 72".to_string());
+        let tm = self.alloc_reg()?;
+        self.text.push(format!("  LI r{tm}, c_tm_buf"));
+        self.emit_fill_tm(tm)?;
+        Ok(tm)
+    }
+
+    fn emit_fill_tm(&mut self, tm: usize) -> Result<(), String> {
+        let value = self.alloc_reg()?;
+        for (offset, field_value) in [
+            (0, 0),   // tm_sec
+            (8, 0),   // tm_min
+            (16, 0),  // tm_hour
+            (24, 1),  // tm_mday
+            (32, 0),  // tm_mon
+            (40, 70), // tm_year
+            (48, 4),  // tm_wday
+            (56, 0),  // tm_yday
+            (64, 0),  // tm_isdst
+        ] {
+            self.text.push(format!("  LI r{value}, {field_value}"));
+            self.text.push(format!("  ST [r{tm}, {offset}], r{value}"));
+        }
+        Ok(())
+    }
+
     fn emit_nanosleep(&mut self, req: usize, rem: usize) -> Result<usize, String> {
         let sec = self.alloc_reg()?;
         let nsec = self.alloc_reg()?;
@@ -14123,6 +14166,34 @@ int main() {
         assert!(asm.contains("REALTIME_SEC"), "{asm}");
         assert!(asm.contains("REALTIME_NSEC"), "{asm}");
         assert!(asm.contains("SLEEP"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_time_conversion_returns_tm_buffers() {
+        let source = r#"
+        int main() {
+            int tm;
+            int out;
+            tm = localtime(0);
+            if (tm == 0) return 1;
+            if (tm->tm_year != 70) return 2;
+            if (tm->tm_mon != 0) return 3;
+            if (tm->tm_mday != 1) return 4;
+            if (tm->tm_wday != 4) return 5;
+            out = alloc(72);
+            if (gmtime_r(0, out) != out) return 6;
+            if (out->tm_hour != 0) return 7;
+            if (out->tm_yday != 0) return 8;
+            if (out->tm_isdst != 0) return 9;
+            if (gmtime(0)->tm_year != 70) return 10;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("c_tm_buf"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
