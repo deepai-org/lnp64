@@ -3816,6 +3816,8 @@ V1 metadata keys:
 - `classifier_feature_bits`.
 - `topology_record_count`.
 - `topology_record_format`.
+- `topology_record`: buffer key that copies the bounded topology table using
+  fixed-size v1 records.
 - `architectural_thread_limit`.
 - `process_limit`.
 - `resource_domain_limit`.
@@ -3830,6 +3832,12 @@ V1 metadata keys:
 - `startup_metadata_version`.
 - process personality id.
 - boot manifest flags exposed to PID 1.
+
+The reference emulator's v1 topology table uses 64-byte little-endian records:
+`kind`, `id`, `parent_or_domain`, `limit_or_base`, `size_or_granule`,
+`alignment_or_detail`, `feature_bits`, and `reserved`. Kinds currently cover
+core tile, memory region, coherence domain, and classifier/queue steering
+engine. Short buffers receive a prefix; invalid buffers fail with `EFAULT`.
 
 `GET_PCR` remains the authority and credential path. `ENV_GET` is read-only and
 must not expose mutable privilege state except through ordinary public metadata

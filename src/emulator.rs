@@ -55,19 +55,93 @@ const ENV_KEY_AUXV_BASE: u64 = 15;
 const ENV_KEY_AUXV_ENTRY: u64 = 16;
 const ENV_KEY_PERSONALITY_ID: u64 = 17;
 const ENV_KEY_BOOT_MANIFEST_FLAGS: u64 = 18;
+const ENV_KEY_IMPLEMENTATION_PROFILE: u64 = 19;
+const ENV_KEY_DMA_ALIGNMENT: u64 = 20;
+const ENV_KEY_TIMER_GRANULARITY_NS: u64 = 21;
+const ENV_KEY_MONOTONIC_COUNTER_BITS: u64 = 22;
+const ENV_KEY_TIME_BEHAVIOR_FLAGS: u64 = 23;
+const ENV_KEY_OPCODE_FEATURE_BITS: u64 = 24;
+const ENV_KEY_OBJECT_PROFILE_BITS: u64 = 25;
+const ENV_KEY_DOMAIN_FEATURE_BITS: u64 = 26;
+const ENV_KEY_SECURITY_PROFILE_BITS: u64 = 27;
+const ENV_KEY_SCHEDULER_FEATURE_BITS: u64 = 28;
+const ENV_KEY_CLASSIFIER_FEATURE_BITS: u64 = 29;
+const ENV_KEY_TOPOLOGY_RECORD_COUNT: u64 = 30;
+const ENV_KEY_TOPOLOGY_RECORD_FORMAT: u64 = 31;
+const ENV_KEY_RESOURCE_DOMAIN_LIMIT: u64 = 32;
+const ENV_KEY_DMA_MAX_DESCRIPTORS: u64 = 33;
+const ENV_KEY_CLASSIFIER_ENTRY_LIMIT: u64 = 34;
+const ENV_KEY_STARTUP_METADATA_PTR: u64 = 35;
+const ENV_KEY_STARTUP_METADATA_LEN: u64 = 36;
+const ENV_KEY_STARTUP_METADATA_FORMAT: u64 = 37;
+const ENV_KEY_STARTUP_METADATA_VERSION: u64 = 38;
 const ENV_KEY_PROCESS_ENTRY_RECORD: u64 = 64;
+const ENV_KEY_TOPOLOGY_RECORD: u64 = 65;
 const ENV_ISA_VERSION: u64 = 1;
+const ENV_IMPLEMENTATION_PROFILE_REFERENCE: u64 = 1;
 const ENV_HWCAP0_RANDOM: u64 = 1 << 0;
 const ENV_HWCAP0_CAPABILITIES: u64 = 1 << 1;
 const ENV_HWCAP0_RESOURCE_DOMAINS: u64 = 1 << 2;
 const ENV_HWCAP0_DMA: u64 = 1 << 3;
 const ENV_HWCAP0_FUTEX: u64 = 1 << 4;
+const ENV_HWCAP0_OBJECTS: u64 = 1 << 5;
+const ENV_HWCAP0_CALL_CAP: u64 = 1 << 6;
+const ENV_HWCAP0_CLASSIFIER: u64 = 1 << 7;
 const ENV_CACHE_LINE_SIZE: u64 = 64;
+const ENV_DMA_ALIGNMENT: u64 = 64;
 const ENV_TIMEBASE_HZ: u64 = 1_000_000_000;
+const ENV_TIMER_GRANULARITY_NS: u64 = 1_000_000;
 const ENV_THREAD_LIMIT: u64 = 4096;
 const ENV_PROCESS_LIMIT: u64 = 4096;
 const ENV_EVENT_QUEUE_LIMIT: u64 = 4096;
 const ENV_FUTEX_BUCKET_COUNT: u64 = 4096;
+const ENV_TOPOLOGY_RECORD_COUNT: u64 = 4;
+const ENV_TOPOLOGY_RECORD_FORMAT: u64 = 1;
+const ENV_TOPOLOGY_RECORD_SIZE: usize = 64;
+const ENV_STARTUP_METADATA_FORMAT: u64 = 1;
+const ENV_STARTUP_METADATA_VERSION: u64 = 1;
+const ENV_OPCODE_FEATURE_BASE_ISA: u64 = 1 << 0;
+const ENV_OPCODE_FEATURE_FDR: u64 = 1 << 1;
+const ENV_OPCODE_FEATURE_OBJECT_CTL: u64 = 1 << 2;
+const ENV_OPCODE_FEATURE_DOMAIN_CTL: u64 = 1 << 3;
+const ENV_OPCODE_FEATURE_DMA_CTL: u64 = 1 << 4;
+const ENV_OPCODE_FEATURE_CALL_CAP: u64 = 1 << 5;
+const ENV_OPCODE_FEATURE_ENV_GET: u64 = 1 << 6;
+const ENV_OPCODE_FEATURE_RANDOM: u64 = 1 << 7;
+const ENV_OPCODE_FEATURE_AWAIT: u64 = 1 << 8;
+const ENV_OBJECT_PROFILE_COUNTER: u64 = 1 << 0;
+const ENV_OBJECT_PROFILE_QUEUE: u64 = 1 << 1;
+const ENV_OBJECT_PROFILE_MEMORY_OBJECT: u64 = 1 << 2;
+const ENV_OBJECT_PROFILE_DMA_BUFFER: u64 = 1 << 3;
+const ENV_OBJECT_PROFILE_ENDPOINT: u64 = 1 << 4;
+const ENV_OBJECT_PROFILE_TIMER: u64 = 1 << 5;
+const ENV_OBJECT_PROFILE_CALL_GATE: u64 = 1 << 6;
+const ENV_OBJECT_PROFILE_CLASSIFIER_TABLE: u64 = 1 << 7;
+const ENV_DOMAIN_FEATURE_NESTED: u64 = 1 << 0;
+const ENV_DOMAIN_FEATURE_BUDGETS: u64 = 1 << 1;
+const ENV_DOMAIN_FEATURE_SECURITY_POLICY: u64 = 1 << 2;
+const ENV_DOMAIN_FEATURE_LIFECYCLE: u64 = 1 << 3;
+const ENV_SECURITY_PROFILE_ASLR: u64 = 1 << 0;
+const ENV_SECURITY_PROFILE_NX: u64 = 1 << 1;
+const ENV_SECURITY_PROFILE_WX_DENY: u64 = 1 << 2;
+const ENV_SECURITY_PROFILE_GUARD_PAGES: u64 = 1 << 3;
+const ENV_SECURITY_PROFILE_CAP_REVOCATION: u64 = 1 << 4;
+const ENV_SECURITY_PROFILE_ENTROPY_QUOTA: u64 = 1 << 5;
+const ENV_SCHEDULER_FEATURE_RUNQUEUE: u64 = 1 << 0;
+const ENV_SCHEDULER_FEATURE_AWAIT: u64 = 1 << 1;
+const ENV_SCHEDULER_FEATURE_FD_WAITERS: u64 = 1 << 2;
+const ENV_SCHEDULER_FEATURE_THREAD_JOIN: u64 = 1 << 3;
+const ENV_CLASSIFIER_FEATURE_EXACT: u64 = 1 << 0;
+const ENV_CLASSIFIER_FEATURE_MASKED: u64 = 1 << 1;
+const ENV_CLASSIFIER_FEATURE_RANGE: u64 = 1 << 2;
+const ENV_CLASSIFIER_FEATURE_HASH: u64 = 1 << 3;
+const ENV_CLASSIFIER_FEATURE_MARK: u64 = 1 << 4;
+const ENV_CLASSIFIER_FEATURE_COUNT: u64 = 1 << 5;
+const ENV_CLASSIFIER_FEATURE_DROP: u64 = 1 << 6;
+const ENV_CLASSIFIER_FEATURE_ROUTE: u64 = 1 << 7;
+const ENV_CLASSIFIER_FEATURE_NEEDS_SOFTWARE: u64 = 1 << 8;
+const ENV_TIME_FLAG_MONOTONIC: u64 = 1 << 0;
+const ENV_TIME_FLAG_REALTIME: u64 = 1 << 1;
 const AT_UID: u64 = 11;
 const AT_EUID: u64 = 12;
 const AT_GID: u64 = 13;
@@ -5257,14 +5331,83 @@ impl Machine {
                     | ENV_HWCAP0_CAPABILITIES
                     | ENV_HWCAP0_RESOURCE_DOMAINS
                     | ENV_HWCAP0_DMA
-                    | ENV_HWCAP0_FUTEX,
+                    | ENV_HWCAP0_FUTEX
+                    | ENV_HWCAP0_OBJECTS
+                    | ENV_HWCAP0_CALL_CAP
+                    | ENV_HWCAP0_CLASSIFIER,
             ),
             ENV_KEY_HWCAP1 => Some(0),
+            ENV_KEY_IMPLEMENTATION_PROFILE => Some(ENV_IMPLEMENTATION_PROFILE_REFERENCE),
+            ENV_KEY_DMA_ALIGNMENT => Some(ENV_DMA_ALIGNMENT),
+            ENV_KEY_TIMER_GRANULARITY_NS => Some(ENV_TIMER_GRANULARITY_NS),
+            ENV_KEY_MONOTONIC_COUNTER_BITS => Some(64),
+            ENV_KEY_TIME_BEHAVIOR_FLAGS => Some(ENV_TIME_FLAG_MONOTONIC | ENV_TIME_FLAG_REALTIME),
+            ENV_KEY_OPCODE_FEATURE_BITS => Some(
+                ENV_OPCODE_FEATURE_BASE_ISA
+                    | ENV_OPCODE_FEATURE_FDR
+                    | ENV_OPCODE_FEATURE_OBJECT_CTL
+                    | ENV_OPCODE_FEATURE_DOMAIN_CTL
+                    | ENV_OPCODE_FEATURE_DMA_CTL
+                    | ENV_OPCODE_FEATURE_CALL_CAP
+                    | ENV_OPCODE_FEATURE_ENV_GET
+                    | ENV_OPCODE_FEATURE_RANDOM
+                    | ENV_OPCODE_FEATURE_AWAIT,
+            ),
+            ENV_KEY_OBJECT_PROFILE_BITS => Some(
+                ENV_OBJECT_PROFILE_COUNTER
+                    | ENV_OBJECT_PROFILE_QUEUE
+                    | ENV_OBJECT_PROFILE_MEMORY_OBJECT
+                    | ENV_OBJECT_PROFILE_DMA_BUFFER
+                    | ENV_OBJECT_PROFILE_ENDPOINT
+                    | ENV_OBJECT_PROFILE_TIMER
+                    | ENV_OBJECT_PROFILE_CALL_GATE
+                    | ENV_OBJECT_PROFILE_CLASSIFIER_TABLE,
+            ),
+            ENV_KEY_DOMAIN_FEATURE_BITS => Some(
+                ENV_DOMAIN_FEATURE_NESTED
+                    | ENV_DOMAIN_FEATURE_BUDGETS
+                    | ENV_DOMAIN_FEATURE_SECURITY_POLICY
+                    | ENV_DOMAIN_FEATURE_LIFECYCLE,
+            ),
+            ENV_KEY_SECURITY_PROFILE_BITS => Some(
+                ENV_SECURITY_PROFILE_ASLR
+                    | ENV_SECURITY_PROFILE_NX
+                    | ENV_SECURITY_PROFILE_WX_DENY
+                    | ENV_SECURITY_PROFILE_GUARD_PAGES
+                    | ENV_SECURITY_PROFILE_CAP_REVOCATION
+                    | ENV_SECURITY_PROFILE_ENTROPY_QUOTA,
+            ),
+            ENV_KEY_SCHEDULER_FEATURE_BITS => Some(
+                ENV_SCHEDULER_FEATURE_RUNQUEUE
+                    | ENV_SCHEDULER_FEATURE_AWAIT
+                    | ENV_SCHEDULER_FEATURE_FD_WAITERS
+                    | ENV_SCHEDULER_FEATURE_THREAD_JOIN,
+            ),
+            ENV_KEY_CLASSIFIER_FEATURE_BITS => Some(
+                ENV_CLASSIFIER_FEATURE_EXACT
+                    | ENV_CLASSIFIER_FEATURE_MASKED
+                    | ENV_CLASSIFIER_FEATURE_RANGE
+                    | ENV_CLASSIFIER_FEATURE_HASH
+                    | ENV_CLASSIFIER_FEATURE_MARK
+                    | ENV_CLASSIFIER_FEATURE_COUNT
+                    | ENV_CLASSIFIER_FEATURE_DROP
+                    | ENV_CLASSIFIER_FEATURE_ROUTE
+                    | ENV_CLASSIFIER_FEATURE_NEEDS_SOFTWARE,
+            ),
+            ENV_KEY_TOPOLOGY_RECORD_COUNT => Some(ENV_TOPOLOGY_RECORD_COUNT),
+            ENV_KEY_TOPOLOGY_RECORD_FORMAT => Some(ENV_TOPOLOGY_RECORD_FORMAT),
             ENV_KEY_ARCH_THREAD_LIMIT => Some(ENV_THREAD_LIMIT),
             ENV_KEY_PROCESS_LIMIT => Some(ENV_PROCESS_LIMIT),
+            ENV_KEY_RESOURCE_DOMAIN_LIMIT => Some(MAX_RESOURCE_DOMAINS as u64),
             ENV_KEY_DEFAULT_FDR_LIMIT => Some(FDR_COUNT as u64),
             ENV_KEY_EVENT_QUEUE_LIMIT => Some(ENV_EVENT_QUEUE_LIMIT),
             ENV_KEY_FUTEX_BUCKET_COUNT => Some(ENV_FUTEX_BUCKET_COUNT),
+            ENV_KEY_DMA_MAX_DESCRIPTORS => Some(128),
+            ENV_KEY_CLASSIFIER_ENTRY_LIMIT => Some(CLASSIFIER_MAX_RULES as u64),
+            ENV_KEY_STARTUP_METADATA_PTR => Some(ARG_BASE),
+            ENV_KEY_STARTUP_METADATA_LEN => Some(ARG_SIZE),
+            ENV_KEY_STARTUP_METADATA_FORMAT => Some(ENV_STARTUP_METADATA_FORMAT),
+            ENV_KEY_STARTUP_METADATA_VERSION => Some(ENV_STARTUP_METADATA_VERSION),
             ENV_KEY_ARGC => Some(self.env_argc()?),
             ENV_KEY_ARGV_BASE => Some(ARG_BASE + 8),
             ENV_KEY_ENVP_BASE => Some(self.env_envp_base()?),
@@ -5277,6 +5420,9 @@ impl Machine {
             ENV_KEY_PERSONALITY_ID | ENV_KEY_BOOT_MANIFEST_FLAGS => Some(0),
             ENV_KEY_PROCESS_ENTRY_RECORD => {
                 return self.env_get_process_entry_record(result, index_or_buf, len_or_flags);
+            }
+            ENV_KEY_TOPOLOGY_RECORD => {
+                return self.env_get_topology_records(result, index_or_buf, len_or_flags);
             }
             _ => None,
         };
@@ -5349,6 +5495,77 @@ impl Machine {
         }
         self.set_errno(0)?;
         self.write_reg(result, count as u64)
+    }
+
+    fn env_get_topology_records(&mut self, result: Reg, buf: u64, len: u64) -> Result<(), String> {
+        let records = self.env_topology_records();
+        let count = (len as usize).min(records.len());
+        if self.write_bytes(buf, &records[..count]).is_err() {
+            self.set_status_errno(14)?;
+            self.write_reg(result, -1i64 as u64)?;
+            return Ok(());
+        }
+        self.set_errno(0)?;
+        self.write_reg(result, count as u64)
+    }
+
+    fn env_topology_records(&self) -> Vec<u8> {
+        let mut records = Vec::with_capacity(ENV_TOPOLOGY_RECORD_SIZE * 4);
+        for fields in [
+            [
+                1,
+                0,
+                ROOT_DOMAIN_ID,
+                ENV_THREAD_LIMIT,
+                ENV_CACHE_LINE_SIZE,
+                ENV_TIMEBASE_HZ,
+                ENV_SCHEDULER_FEATURE_RUNQUEUE | ENV_SCHEDULER_FEATURE_AWAIT,
+                0,
+            ],
+            [
+                2,
+                0,
+                0,
+                MEMORY_SIZE as u64,
+                ASLR_PAGE,
+                ENV_DMA_ALIGNMENT,
+                ENV_SECURITY_PROFILE_NX | ENV_SECURITY_PROFILE_GUARD_PAGES,
+                0,
+            ],
+            [
+                3,
+                0,
+                0,
+                MEMORY_SIZE as u64,
+                ENV_CACHE_LINE_SIZE,
+                1,
+                ENV_HWCAP0_DMA,
+                0,
+            ],
+            [
+                4,
+                0,
+                0,
+                CLASSIFIER_MAX_RULES as u64,
+                CLASSIFIER_MAX_ALLOWED_QUEUES as u64,
+                CLASSIFIER_MAX_ROUTE_BYTES as u64,
+                ENV_CLASSIFIER_FEATURE_EXACT
+                    | ENV_CLASSIFIER_FEATURE_MASKED
+                    | ENV_CLASSIFIER_FEATURE_RANGE
+                    | ENV_CLASSIFIER_FEATURE_HASH
+                    | ENV_CLASSIFIER_FEATURE_ROUTE,
+                0,
+            ],
+        ] {
+            for value in fields {
+                records.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        debug_assert_eq!(
+            records.len(),
+            ENV_TOPOLOGY_RECORD_COUNT as usize * ENV_TOPOLOGY_RECORD_SIZE
+        );
+        records
     }
 
     fn max_direct_child_limits(&self, id: u64) -> DomainLimits {
@@ -9111,6 +9328,144 @@ mod tests {
             .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
             .unwrap();
         assert_eq!(machine.thread().unwrap().regs[1], ARG_BASE + 8 + 3 * 8);
+
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_IMPLEMENTATION_PROFILE;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
+            .unwrap();
+        assert_eq!(
+            machine.thread().unwrap().regs[1],
+            ENV_IMPLEMENTATION_PROFILE_REFERENCE
+        );
+
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_DMA_ALIGNMENT;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], ENV_DMA_ALIGNMENT);
+
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_TIMER_GRANULARITY_NS;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], ENV_TIMER_GRANULARITY_NS);
+
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_HWCAP0;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
+            .unwrap();
+        assert!(machine.thread().unwrap().regs[1] & ENV_HWCAP0_CLASSIFIER != 0);
+
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_OBJECT_PROFILE_BITS;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
+            .unwrap();
+        assert!(machine.thread().unwrap().regs[1] & ENV_OBJECT_PROFILE_CLASSIFIER_TABLE != 0);
+
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_SECURITY_PROFILE_BITS;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
+            .unwrap();
+        assert!(machine.thread().unwrap().regs[1] & ENV_SECURITY_PROFILE_WX_DENY != 0);
+
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_CLASSIFIER_FEATURE_BITS;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
+            .unwrap();
+        assert!(machine.thread().unwrap().regs[1] & ENV_CLASSIFIER_FEATURE_HASH != 0);
+
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_TOPOLOGY_RECORD_COUNT;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], ENV_TOPOLOGY_RECORD_COUNT);
+
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_TOPOLOGY_RECORD_FORMAT;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
+            .unwrap();
+        assert_eq!(
+            machine.thread().unwrap().regs[1],
+            ENV_TOPOLOGY_RECORD_FORMAT
+        );
+
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_RESOURCE_DOMAIN_LIMIT;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
+            .unwrap();
+        assert_eq!(
+            machine.thread().unwrap().regs[1],
+            MAX_RESOURCE_DOMAINS as u64
+        );
+
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_CLASSIFIER_ENTRY_LIMIT;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
+            .unwrap();
+        assert_eq!(
+            machine.thread().unwrap().regs[1],
+            CLASSIFIER_MAX_RULES as u64
+        );
+
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_STARTUP_METADATA_PTR;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], ARG_BASE);
+
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_STARTUP_METADATA_LEN;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], ARG_SIZE);
+    }
+
+    #[test]
+    fn env_get_copies_topology_records_and_faults_bad_buffers() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        let out = ARG_BASE + 0x900;
+        let topology_len = ENV_TOPOLOGY_RECORD_COUNT * ENV_TOPOLOGY_RECORD_SIZE as u64;
+
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_TOPOLOGY_RECORD;
+        machine.thread_mut().unwrap().regs[3] = out;
+        machine.thread_mut().unwrap().regs[4] = topology_len;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(3), Reg(4)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], topology_len);
+        assert_eq!(machine.load_u64(out).unwrap(), 1);
+        assert_eq!(
+            machine
+                .load_u64(out + ENV_TOPOLOGY_RECORD_SIZE as u64)
+                .unwrap(),
+            2
+        );
+        let classifier_record = out + 3 * ENV_TOPOLOGY_RECORD_SIZE as u64;
+        assert_eq!(machine.load_u64(classifier_record).unwrap(), 4);
+        assert_eq!(
+            machine.load_u64(classifier_record + 24).unwrap(),
+            CLASSIFIER_MAX_RULES as u64
+        );
+        assert_eq!(
+            machine.load_u64(classifier_record + 40).unwrap(),
+            CLASSIFIER_MAX_ROUTE_BYTES as u64
+        );
+
+        machine.thread_mut().unwrap().regs[3] = 0xffff_ffff;
+        machine.thread_mut().unwrap().regs[4] = ENV_TOPOLOGY_RECORD_SIZE as u64;
+        machine
+            .exec(Instr::EnvGet(Reg(5), Reg(2), Reg(3), Reg(4)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 14);
     }
 
     #[test]
