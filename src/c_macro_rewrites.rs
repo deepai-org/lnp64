@@ -317,13 +317,21 @@ fn has_only_scalar_or_param_sizeofs(text: &str, params: &[String]) -> bool {
     let mut rest = text;
     while let Some(pos) = rest.find("sizeof") {
         let after = rest[pos + "sizeof".len()..].trim_start();
-        let Some(after) = after.strip_prefix('(') else {
-            return false;
+        let (ty, next_rest) = if let Some(after) = after.strip_prefix('(') {
+            let Some(close) = matching_sizeof_close(after) else {
+                return false;
+            };
+            (after[..close].trim(), &after[close + 1..])
+        } else {
+            let end = after
+                .char_indices()
+                .find_map(|(idx, ch)| {
+                    (!matches!(ch, '_' | '*' | '[' | ']' | '0') && !ch.is_ascii_alphanumeric())
+                        .then_some(idx)
+                })
+                .unwrap_or(after.len());
+            (after[..end].trim(), &after[end..])
         };
-        let Some(close) = matching_sizeof_close(after) else {
-            return false;
-        };
-        let ty = after[..close].trim();
         if !matches!(
             ty,
             "char"
@@ -353,7 +361,7 @@ fn has_only_scalar_or_param_sizeofs(text: &str, params: &[String]) -> bool {
         {
             return false;
         }
-        rest = &after[close + 1..];
+        rest = next_rest;
     }
     true
 }
@@ -1385,6 +1393,19 @@ int main() { int p; grow(p, int, 4); }
         let out = expand_object_like_macros(source);
         assert!(
             out.contains("int main() { int p; ((p) = alloc(sizeof(int) * (4))); }"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn expands_unparenthesized_sizeof_macro_parameters() {
+        let source = r#"
+#define copy(s) memcpy(buf, s, sizeof s)
+int main() { copy("abc"); }
+"#;
+        let out = expand_object_like_macros(source);
+        assert!(
+            out.contains("memcpy(buf, \"abc\", sizeof \"abc\")"),
             "{out}"
         );
     }

@@ -90,6 +90,7 @@ struct CProgram {
     globals: Vec<(String, GlobalInit)>,
     global_arrays: Vec<(String, Vec<GlobalWord>)>,
     global_byte_arrays: Vec<(String, String)>,
+    global_zero_byte_arrays: Vec<(String, i64)>,
     functions: Vec<Function>,
 }
 
@@ -335,6 +336,7 @@ pub fn compile(source: &str) -> Result<String, String> {
     let inferred_aggregate_sizes = c_layouts::collect_aggregate_sizes(&layout_source);
     let mut inferred_aggregate_declarations =
         c_layouts::collect_aggregate_declarations(&layout_source, &inferred_aggregate_sizes);
+    let global_byte_array_sizes = collect_global_char_array_sizes(&layout_source);
     let source = preprocess_source(source);
     remove_heap_allocated_aggregate_declarations(&source, &mut inferred_aggregate_declarations);
     let tokens = Lexer::new(&source).lex()?;
@@ -342,6 +344,7 @@ pub fn compile(source: &str) -> Result<String, String> {
         tokens,
         inferred_aggregate_sizes,
         inferred_aggregate_declarations,
+        global_byte_array_sizes,
     );
     let program = parser.parse_program()?;
     let mut codegen = CodeGen::default();
@@ -1482,6 +1485,44 @@ fn is_plain_identifier(name: &str) -> bool {
         && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }
 
+fn collect_global_char_array_sizes(source: &str) -> HashMap<String, i64> {
+    let source = strip_block_comments(source);
+    let mut arrays = HashMap::new();
+    let mut depth = 0i64;
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if depth == 0 && trimmed.ends_with(';') && !trimmed.contains('(') && !trimmed.contains('=')
+        {
+            let decls = trimmed
+                .strip_prefix("static const char ")
+                .or_else(|| trimmed.strip_prefix("const static char "))
+                .or_else(|| trimmed.strip_prefix("static char "))
+                .or_else(|| trimmed.strip_prefix("const char "))
+                .or_else(|| trimmed.strip_prefix("char "));
+            if let Some(decls) = decls {
+                for decl in decls.trim_end_matches(';').split(',').map(str::trim) {
+                    let Some(bracket) = decl.find('[') else {
+                        continue;
+                    };
+                    let name = decl[..bracket].trim().trim_start_matches('*').trim();
+                    if !is_plain_identifier(name) {
+                        continue;
+                    }
+                    let Some(end) = decl[bracket + 1..].find(']') else {
+                        continue;
+                    };
+                    let len = decl[bracket + 1..bracket + 1 + end].trim();
+                    if let Some(size) = parse_constant_len(len) {
+                        arrays.insert(name.to_string(), size);
+                    }
+                }
+            }
+        }
+        depth += count_braces(line);
+    }
+    arrays
+}
+
 fn normalize_char_array_declarations(source: &str) -> String {
     let mut out = String::new();
     let mut active_array_sizes = Vec::new();
@@ -1490,7 +1531,8 @@ fn normalize_char_array_declarations(source: &str) -> String {
         let indent_len = line.len() - line.trim_start().len();
         let indent = &line[..indent_len];
         let trimmed = line.trim();
-        if trimmed.starts_with("char ")
+        if depth > 0
+            && trimmed.starts_with("char ")
             && !trimmed.starts_with("char *")
             && !trimmed.starts_with("char*")
             && trimmed.ends_with(';')
@@ -1539,6 +1581,7 @@ fn normalize_char_array_declarations(source: &str) -> String {
             let mut line = line.to_string();
             for (name, size, _) in active_array_sizes.iter().rev() {
                 line = line.replace(&format!("sizeof({name})"), &size.to_string());
+                line = replace_unparenthesized_sizeof_name(&line, name, *size);
             }
             out.push_str(&line);
             out.push('\n');
@@ -1546,6 +1589,26 @@ fn normalize_char_array_declarations(source: &str) -> String {
         depth += count_braces(line);
         active_array_sizes.retain(|(_, _, decl_depth)| *decl_depth == 0 || depth >= *decl_depth);
     }
+    out
+}
+
+fn replace_unparenthesized_sizeof_name(line: &str, name: &str, size: i64) -> String {
+    let pattern = format!("sizeof {name}");
+    let mut out = String::new();
+    let mut pos = 0usize;
+    while let Some(rel) = line[pos..].find(&pattern) {
+        let start = pos + rel;
+        let end = start + pattern.len();
+        let next = line[end..].chars().next();
+        if next.is_some_and(is_c_ident_char) {
+            out.push_str(&line[pos..end]);
+        } else {
+            out.push_str(&line[pos..start]);
+            out.push_str(&size.to_string());
+        }
+        pos = end;
+    }
+    out.push_str(&line[pos..]);
     out
 }
 
@@ -2032,6 +2095,7 @@ struct Parser {
     pos: usize,
     aggregate_sizes: HashMap<String, i64>,
     aggregate_declarations: HashMap<String, i64>,
+    global_byte_array_sizes: HashMap<String, i64>,
 }
 
 impl Parser {
@@ -2039,12 +2103,14 @@ impl Parser {
         tokens: Vec<Token>,
         aggregate_sizes: HashMap<String, i64>,
         aggregate_declarations: HashMap<String, i64>,
+        global_byte_array_sizes: HashMap<String, i64>,
     ) -> Self {
         Self {
             tokens,
             pos: 0,
             aggregate_sizes,
             aggregate_declarations,
+            global_byte_array_sizes,
         }
     }
 
@@ -2052,6 +2118,7 @@ impl Parser {
         let mut globals = Vec::new();
         let mut global_arrays = Vec::new();
         let mut global_byte_arrays = Vec::new();
+        let mut global_zero_byte_arrays = Vec::new();
         let mut functions = Vec::new();
         while !self.check(&Token::Eof) {
             if self.check(&Token::Semi) {
@@ -2091,15 +2158,13 @@ impl Parser {
             }
             if self.check(&Token::LBracket) {
                 self.advance();
-                while !self.check(&Token::RBracket) {
-                    if self.check(&Token::Eof) {
-                        return Err("unterminated global array declarator".to_string());
-                    }
-                    self.advance();
-                }
+                let _array_len = self.parse_array_length()?;
                 self.expect(Token::RBracket)?;
                 if self.check(&Token::Semi) {
                     self.advance();
+                    if let Some(size) = self.global_byte_array_sizes.get(&name).copied() {
+                        global_zero_byte_arrays.push((name, size));
+                    }
                     continue;
                 }
                 self.expect(Token::Assign)?;
@@ -2138,6 +2203,7 @@ impl Parser {
             globals,
             global_arrays,
             global_byte_arrays,
+            global_zero_byte_arrays,
             functions,
         })
     }
@@ -3438,6 +3504,12 @@ impl CodeGen {
             self.global_arrays.insert(name.clone());
             self.global_byte_arrays.insert(name.clone());
         }
+        for (name, _) in &program.global_zero_byte_arrays {
+            let label = format!("global_{name}");
+            self.globals.insert(name.clone(), label);
+            self.global_arrays.insert(name.clone());
+            self.global_byte_arrays.insert(name.clone());
+        }
         for (name, values) in &program.global_arrays {
             let label = format!("global_{name}");
             self.globals.insert(name.clone(), label.clone());
@@ -3477,6 +3549,13 @@ impl CodeGen {
             self.global_arrays.insert(name.clone());
             self.global_byte_arrays.insert(name.clone());
             self.data.insert(label, c_string_data(value));
+        }
+        for (name, size) in &program.global_zero_byte_arrays {
+            let label = format!("global_{name}");
+            self.globals.insert(name.clone(), label.clone());
+            self.global_arrays.insert(name.clone());
+            self.global_byte_arrays.insert(name.clone());
+            self.data.insert(label, format!(".zero {size}"));
         }
         self.text.push(".text".to_string());
         let entry_name = if program.functions.iter().any(|f| f.name == "_start") {
@@ -9935,17 +10014,22 @@ impl CodeGen {
     fn emit_strchr(&mut self, haystack: usize, needle: usize) -> Result<usize, String> {
         let ptr = self.alloc_reg()?;
         let ch = self.alloc_reg()?;
+        let needle_byte = self.alloc_reg()?;
+        let mask = self.alloc_reg()?;
         let dst = self.alloc_reg()?;
         let one = self.alloc_reg()?;
         let loop_label = self.new_label("strchr_loop");
         let found_label = self.new_label("strchr_found");
         let done_label = self.new_label("strchr_done");
         self.text.push(format!("  MOV r{ptr}, r{haystack}"));
+        self.text.push(format!("  LI r{mask}, 255"));
+        self.text
+            .push(format!("  AND r{needle_byte}, r{needle}, r{mask}"));
         self.text.push(format!("  LI r{dst}, 0"));
         self.text.push(format!("  LI r{one}, 1"));
         self.text.push(format!("{loop_label}:"));
         self.text.push(format!("  LD.B r{ch}, [r{ptr}, 0]"));
-        self.text.push(format!("  CMP r{ch}, r{needle}"));
+        self.text.push(format!("  CMP r{ch}, r{needle_byte}"));
         self.text.push(format!("  BEQ {found_label}"));
         self.text.push(format!("  CMP r{ch}, r0"));
         self.text.push(format!("  BEQ {done_label}"));
@@ -14743,6 +14827,11 @@ mod tests {
             return sizeof(buff);
         }
 
+        int first_unparenthesized() {
+            char buff[32];
+            return sizeof buff;
+        }
+
         int second() {
             unsigned int buff[2];
             return sizeof(buff);
@@ -14750,14 +14839,39 @@ mod tests {
 
         int main() {
             if (first() != 64) return 1;
-            if (second() != 16) return 2;
+            if (first_unparenthesized() != 32) return 2;
+            if (second() != 16) return 3;
             return 0;
         }
         "#;
         let normalized = preprocess_source(source);
         assert!(normalized.contains("return 64;"), "{normalized}");
+        assert!(normalized.contains("return 32;"), "{normalized}");
         assert!(normalized.contains("return sizeof(buff);"), "{normalized}");
         let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn file_scope_static_char_arrays_are_zeroed_byte_globals() {
+        let source = r#"
+        static char buf[4];
+
+        int main() {
+            if (buf[0] != 0) return 1;
+            buf[0] = 65;
+            buf[1] = 255;
+            if (buf[0] != 65) return 2;
+            if (buf[1] != 255) return 3;
+            if (buf[2] != 0) return 4;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("global_buf:"), "{asm}");
+        assert!(asm.contains(".zero 4"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
@@ -15778,6 +15892,23 @@ mod tests {
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains(".bytes 255, 128, 0"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn strchr_search_uses_low_unsigned_byte() {
+        let source = r#"
+        int main() {
+            char *s;
+            s = "a\xff";
+            if (strchr(s, 'a' + 256) != s) return 1;
+            if (strchr(s, 255) != s + 1) return 2;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
