@@ -643,70 +643,25 @@ Hard v1 requirements:
 *   **Storage durability contract:** Storage services and block objects define commit points, flush/barrier ordering, and replay/fsck expectations before RTL freeze. Live-system atomicity is not enough; power-fail durability must be specified, but general writable filesystem policy is not implemented in hardware.
 *   **Deterministic failure containment proofs:** Each hardware engine must have a small enumerated state model, explicit commit/abort boundaries, local reset/degraded states, and proof or exhaustive-test obligations that faults cannot silently create authority, corrupt unrelated domains, or require full-chip reset when local recovery is possible.
 
-### The Final Verdict
-With these additions, the LNP64 has a coherent v1 shape: it boots into an `init` process, represents file-like resources, service endpoints, and threads as capability-managed objects, handles native page faults in VMA/MMU engines, and routes I/O through capability-checked FDR objects without a conventional kernel syscall path.
+### Native Adoption Strategy
+The native path should be faster, safer, or simpler than recreating the same
+behavior in software. v1 keeps this boundary:
 
-To make developers use the LNP64's native resource primitives, we should make the
-native path faster, safer, and easier than recreating the same behavior in
-software. The design should block ambient authority bypasses, but it should not
-make language runtimes, Linux compatibility personalities, or NetBSD service
-processes impossible.
-
-Language runtimes and compatibility layers will still build their own abstractions when the hardware primitives are too narrow, too slow, or too awkward. The ISA should make the native path practical enough that runtimes can adopt it instead of bypassing it.
-
-Here is how we tune the LNP64 ISA to prefer the native capability/event/domain substrate without
-breaking practical runtimes:
-
-### 1. Hardware-Owned Thread Contexts (Without Locking the Stack Pointer)
-To build a software scheduler (green threads/coroutines), a developer must be able to save the CPU registers to memory, change the Stack Pointer (`r31`), and jump to a new function. 
-*   **The Fix:** Keep `r31` as an ordinary architectural register, but make hardware thread contexts, stacks, guard pages, and runqueue state first-class kernel-less objects.
-*   **ISA Change:** `CLONE`, `YIELD`, `AWAIT`, futex waits, signal delivery, and supervisor upcalls operate on hardware-owned thread contexts. The MMU enforces stack VMA bounds and guard pages.
-*   **The Result:** Language runtimes and compatibility layers can set up stacks normally, but native hardware threads are the efficient scheduling unit. Linux and NetBSD personalities can map tasks onto hardware threads instead of fighting a locked stack pointer.
-
-### 2. Timer FDRs Instead of Ambient Timer Interrupts
-Preemptive software schedulers (like the Linux kernel or Erlang's BEAM VM) rely on a periodic timer interrupt (e.g., every 1 millisecond) to pause the current task and run the scheduler logic.
-*   **The Fix:** Do not expose an ambient periodic interrupt to every process. Expose time through monotonic/realtime reads, timer FDRs, `AWAIT` on timer waitables, and supervisor-domain timer upcalls.
-*   **ISA Change:** Timer objects are FDR-backed wait sources. `AWAIT` and event-queue FDRs can wait on timers alongside fd readiness, signals, child exit, futex events, and supervisor upcalls.
-*   **The Result:** Normal programs get POSIX-style sleep and timeout behavior, compatibility personalities can implement scheduler accounting and `clock_gettime`, and hardware still owns the actual runqueue.
-
-### 3. Hardware Allocation as a Fast Path (Not a libc Killer)
-If we only provide page-level `MMAP` (e.g., 4KB blocks), developers will still write software memory allocators (like `jemalloc` or `tcmalloc`) to hand out smaller chunks of memory, keeping a layer of software abstraction.
-*   **The Fix:** Keep VMAs page-granular for MMU practicality, but make general-purpose allocation a native hardware service through one frozen, widely accepted allocator: the LNP64 Default Heap Algorithm. It is a domain-aware segregated bump allocator with fixed size-class dispatch, per-thread allocation windows, domain-owned slab/run pages, batched cross-thread frees, bounded quarantine/guard hooks, page-run large objects, checked metadata, generation checks, and Resource Domain accounting.
-*   **ISA Change:** `ALLOC r_dest, r_size`, `ALLOC_EX r_dest, r_request_block`, `ALLOC_SIZE r_dest, r_ptr`, and `FREE r_result, r_ptr` are v1 architectural instructions. They expose allocation intent and policy hints, not freelists, slab layouts, allocation-window depths, quarantine algorithms, or coalescing policy. The default heap is per-process, backed by anonymous VMAs, thread-safe in hardware, and integrated with `CLONE` copy-on-write and `EXEC` teardown.
-*   **The Boundary:** The architecture supports two allocation modes. Hardware-owned allocations use `ALLOC`/`FREE`, so hardware tracks each allocation object and can enforce object-level invalid-free, stale-generation, quarantine, and accounting rules. Software-owned arenas use `MMAP`, `memory_object`, or arena-style `ALLOC_EX`, so hardware enforces the outer region's VMA/capability/domain rules while the runtime owns the inner object representation. Hardware does not implement arbitrary malloc plugins, garbage collectors, alternative heap policies, profiling policy, compaction, or unbounded coalescing walks.
-*   **The Result:** Native programs, libc, and language runtimes get a fast, observable, guarded, thread-safe allocator by default. Custom allocators remain possible, but the native heap should be good enough that programmers are not tempted to replace it for general-purpose allocation. `MMAP` remains the right primitive for files, shared memory, executable mappings, DMA buffers, and device mappings.
-
-### 4. Banish Ambient MMIO (Keeping Capability-Scoped MMIO)
-Projects like DPDK (Data Plane Development Kit) bypass the OS entirely by mapping a network card's raw memory directly into user-space and polling it in software. Unchecked physical MMIO would bypass the namespace/resource and capability model.
-*   **The Fix:** LNP64 forbids ambient MMIO. A general `LOAD` or `STORE` cannot target arbitrary physical device addresses. Device memory becomes accessible only when a process holds an FDR capability such as `pcie_bar` and maps it with `MMAP`.
-*   **The Result:** Drivers can still get bare-metal register performance, but authority flows through explicit FDR capabilities. The Bus Master requests page-granular BAR capabilities, the Capability Engine derives them from PCIe root/function authority, the VMA engine installs `device_ordered` or `write_combining` PTEs, and only then do ordinary `LD`/`ST` instructions reach the device.
-
-### 5. Fast Scalar IPC
-To reduce pressure to build ad hoc shared-memory IPC for small control messages, LNP64 includes a hardware scalar-message path.
-*   **ISA Change:** **`MSG_SEND r_pid_dest, r_val1, r_val2`** remains the tiny scalar send fast path. Receiving is `AWAIT`/`PULL` over a message endpoint, queue, or call-gate completion object; byte or capability payloads use `PULL`/`PUSH` plus `CAP_SEND`/`CAP_RECV`.
-*   **The Mechanism:** Because the hardware scheduler tracks parked receiver contexts, `MSG_SEND` can deliver a small fixed payload through scheduler/register-transfer fabric and wake a matching receiver without building a shared-memory queue.
-*   **The Result:** Small control messages between isolated processes avoid most software IPC overhead. Larger byte streams and capability payloads still use queue/stream objects and FDR capability passing.
-
-### 5.1 Capability Calls
-For structured service boundaries, `CALL_CAP` and `RET_CAP` provide call/return semantics over FDR capabilities. A `call_gate` can target a parked worker thread, service queue, driver service, supervisor service, runtime actor, or Resource Domain entry point. This is the fast path for cross-thread and hot cross-domain calls; it does not make cold VM/container creation free, but it makes calls into already-provisioned isolated components cheap enough to use as a normal software abstraction.
-
-Call gates have three profiles:
-
-*   **Synchronous:** `CALL_CAP` parks the caller until the target executes `RET_CAP`, then writes bounded return values and wakes the caller.
-*   **Asynchronous:** `CALL_CAP` starts or enqueues work and returns immediately with status or an operation id. Completion is delivered to an `event_queue`, `counter` completion profile, or service queue.
-*   **Handoff:** `CALL_CAP` transfers request ownership to the target and does not create a return continuation for the original caller. This is useful for request routing, pipelines, and supervisor handoff.
-
-Cross-domain calls charge resource usage according to call-gate policy, and capability passing is denied unless explicitly enabled by the gate.
-
-### 6. Hardware-Owned Runtime Objects
-The broader reusable primitive is not just "everything is a file." It is hardware-owned waitable/capability objects with local state, bounded transitions, and event delivery.
-*   **The Fix:** Expose only three primitive generic object classes in hardware: `counter`, `queue`, and `memory_object`. Channels, semaphores, completions, event counters, task queues, shared arenas, DMA buffers, and runtime events are profiles over those primitives, not separate hardware modules.
-*   **ISA Change:** `OBJECT_CTL` creates/configures these primitives. `PULL`/`PUSH` move queue records, `AWAIT` parks on counter/queue/memory-object state changes, `CAP_*` delegates authority, `MMAP` maps memory objects, and `DMA_CTL` accelerates large copy/fill/scatter-gather work.
-*   **The Result:** Heap, Event, Futex, VMA, Capability, Signal, and DMA hardware become useful to normal application code: async runtimes, channels, worker pools, language schedulers, safe handles, arenas, guard pages, large copies, and runtime synchronization all share the same hard blocks.
-
-### Summary of the Strategy
-By avoiding ambient device memory, making hardware wait queues and FDRs the
-natural event model, exposing reusable hardware-owned waitable/capability
-objects, and providing fast native allocation, IPC, and DMA bulk movement, LNP64 makes
-the hardware primitives the path of least resistance without blocking practical
-language runtimes or Unix compatibility personalities.
+*   **Thread contexts:** `r31` remains an ordinary register; hardware owns thread
+    context state, guard-page enforcement, runqueue state, waits, and wakeups.
+*   **Timers:** time is exposed through reads, timer FDRs, event queues, and
+    supervisor upcalls; ambient timer interrupts are not exposed to processes.
+*   **Allocation:** `ALLOC`, `ALLOC_EX`, `ALLOC_SIZE`, and `FREE` provide the
+    default hardware heap. `MMAP`, `memory_object`, and arena-style `ALLOC_EX`
+    remain the escape hatch for custom runtimes and GC heaps.
+*   **Device memory:** device registers are reachable only through mapped
+    capability objects such as `pcie_bar`; arbitrary physical MMIO is forbidden.
+*   **IPC:** small scalar messages use `MSG_SEND`; receive paths use
+    `AWAIT`/`PULL`. Larger byte or capability payloads use queues, streams,
+    `CAP_SEND`, and `CAP_RECV`.
+*   **Call gates:** `CALL_CAP` supports synchronous, asynchronous, and handoff
+    calls into pre-provisioned threads, services, actors, supervisors, or domain
+    entries. Cold domain creation remains `DOMAIN_CTL`.
+*   **Runtime objects:** hardware exposes only `counter`, `queue`, and
+    `memory_object`; semaphores, completions, channels, task queues, shared
+    arenas, and DMA completions are profiles over those primitives.
