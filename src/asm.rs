@@ -272,6 +272,10 @@ impl Parser {
                 arity(2)?;
                 Instr::AllocSize(reg(&args[0])?, reg(&args[1])?)
             }
+            "RANDOM" => {
+                arity(3)?;
+                Instr::Random(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
             "FREE" => {
                 arity(1)?;
                 Instr::Free(reg(&args[0])?)
@@ -919,6 +923,21 @@ mod tests {
         assert!(matches!(
             program.instructions[1],
             Instr::AllocSize(Reg(4), Reg(5))
+        ));
+    }
+
+    #[test]
+    fn parses_random_instruction() {
+        let program = Program::parse(
+            r#"
+            .text
+              RANDOM r1, r2, r3
+            "#,
+        )
+        .unwrap();
+        assert!(matches!(
+            program.instructions[0],
+            Instr::Random(Reg(1), Reg(2), Reg(3))
         ));
     }
 

@@ -142,6 +142,7 @@ pub enum Instr {
     WaitPid(Reg, Reg),
     GetPcr(Reg, Pcr),
     SetPcr(Pcr, Reg),
+    Random(Reg, Reg, Reg),
     Fork(Reg),
     Exec(Reg, Reg),
     Spawn(Reg, Reg),

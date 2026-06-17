@@ -534,6 +534,7 @@ pub struct Machine {
     next_tid: u64,
     next_domain_id: u64,
     next_call_op_id: u64,
+    random_state: u64,
     last_exit: i32,
 }
 
@@ -571,6 +572,7 @@ impl Machine {
             next_tid: 2,
             next_domain_id: 2,
             next_call_op_id: 1,
+            random_state: 0x4d59_5df4_d0f3_3173,
             last_exit: 0,
         }
     }
@@ -1284,6 +1286,26 @@ impl Machine {
                 self.write_reg(dst, value)?;
             }
             Instr::SetPcr(pcr, src) => self.write_pcr(pcr, self.read_reg(src)?)?,
+            Instr::Random(result, buf, len_reg) => {
+                let len = self.read_reg(len_reg)?;
+                let bytes = if len == 0 { 8 } else { len };
+                if self.consume_domain_entropy(bytes).is_err() {
+                    self.set_status_errno(1)?;
+                    self.write_reg(result, -1i64 as u64)?;
+                    return Ok(true);
+                }
+                if len == 0 {
+                    let value = self.next_random_u64();
+                    self.set_errno(0)?;
+                    self.write_reg(result, value)?;
+                } else {
+                    let addr = self.read_reg(buf)?;
+                    let data = self.random_bytes(len as usize);
+                    self.write_bytes(addr, &data)?;
+                    self.set_errno(0)?;
+                    self.write_reg(result, len)?;
+                }
+            }
             Instr::Fork(dst) => {
                 self.require_domain_cap(DOMAIN_CAP_PROCESS)?;
                 if !self.check_domain_budget(0, 0, 1, 0)? {
@@ -3171,6 +3193,49 @@ impl Machine {
         Ok(!wants_wx || domain.security.allow_wx)
     }
 
+    fn consume_domain_entropy(&mut self, bytes: u64) -> Result<(), String> {
+        if bytes == 0 {
+            return Ok(());
+        }
+        let mut domain_ids = Vec::new();
+        let mut cursor = Some(self.current_domain_id()?);
+        while let Some(domain_id) = cursor {
+            let Some(domain) = self.domains.get(&domain_id) else {
+                return Err(format!("missing resource domain {domain_id}"));
+            };
+            if domain.security.entropy_quota < bytes {
+                return Err("resource domain entropy quota exceeded".to_string());
+            }
+            domain_ids.push(domain_id);
+            cursor = domain.parent;
+        }
+        for domain_id in domain_ids {
+            if let Some(domain) = self.domains.get_mut(&domain_id) {
+                domain.security.entropy_quota = domain.security.entropy_quota.saturating_sub(bytes);
+            }
+        }
+        Ok(())
+    }
+
+    fn next_random_u64(&mut self) -> u64 {
+        let mut x = self.random_state;
+        x ^= x >> 12;
+        x ^= x << 25;
+        x ^= x >> 27;
+        self.random_state = x;
+        x.wrapping_mul(0x2545_f491_4f6c_dd1d)
+    }
+
+    fn random_bytes(&mut self, len: usize) -> Vec<u8> {
+        let mut out = Vec::with_capacity(len);
+        while out.len() < len {
+            let value = self.next_random_u64().to_le_bytes();
+            let remaining = len - out.len();
+            out.extend_from_slice(&value[..remaining.min(value.len())]);
+        }
+        out
+    }
+
     fn max_direct_child_limits(&self, id: u64) -> DomainLimits {
         let mut out = DomainLimits {
             cpu: 0,
@@ -4776,6 +4841,77 @@ mod tests {
                 .unwrap(),
             "tcp-listen:127.0.0.1:0"
         );
+    }
+
+    #[test]
+    fn random_scalar_and_buffer_are_deterministic() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut first = Machine::new(program.clone());
+        let mut second = Machine::new(program);
+        first.current_tid = 1;
+        second.current_tid = 1;
+
+        first.exec(Instr::Random(Reg(1), Reg(0), Reg(0))).unwrap();
+        second.exec(Instr::Random(Reg(1), Reg(0), Reg(0))).unwrap();
+        assert_eq!(
+            first.thread().unwrap().regs[1],
+            second.thread().unwrap().regs[1]
+        );
+        assert_ne!(first.thread().unwrap().regs[1], 0);
+
+        first.thread_mut().unwrap().regs[2] = ARG_BASE;
+        first.thread_mut().unwrap().regs[3] = 16;
+        second.thread_mut().unwrap().regs[2] = ARG_BASE;
+        second.thread_mut().unwrap().regs[3] = 16;
+        first.exec(Instr::Random(Reg(4), Reg(2), Reg(3))).unwrap();
+        second.exec(Instr::Random(Reg(4), Reg(2), Reg(3))).unwrap();
+        assert_eq!(first.thread().unwrap().regs[4], 16);
+        assert_eq!(
+            first.read_bytes(ARG_BASE, 16).unwrap(),
+            second.read_bytes(ARG_BASE, 16).unwrap()
+        );
+        assert_ne!(first.read_bytes(ARG_BASE, 16).unwrap(), vec![0; 16]);
+    }
+
+    #[test]
+    fn random_obeys_domain_entropy_quota() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        machine
+            .domains
+            .get_mut(&ROOT_DOMAIN_ID)
+            .unwrap()
+            .security
+            .entropy_quota = 4;
+
+        machine.exec(Instr::Random(Reg(1), Reg(0), Reg(0))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
+        assert_eq!(machine.domains[&ROOT_DOMAIN_ID].security.entropy_quota, 4);
+
+        machine.thread_mut().unwrap().regs[2] = ARG_BASE;
+        machine.thread_mut().unwrap().regs[3] = 4;
+        machine.exec(Instr::Random(Reg(4), Reg(2), Reg(3))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[4], 4);
+        assert_eq!(machine.domains[&ROOT_DOMAIN_ID].security.entropy_quota, 0);
+
+        machine.thread_mut().unwrap().regs[3] = 1;
+        machine.exec(Instr::Random(Reg(5), Reg(2), Reg(3))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
     }
 
     #[test]
