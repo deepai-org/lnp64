@@ -13,6 +13,7 @@ object_contract=object_format.md
 relocation_contract=toolchain/lnp64_relocations.manifest
 intrinsic_contract=toolchain/lnp64_intrinsics.manifest
 isel_contract=toolchain/lnp64_isel.manifest
+exec_plan_contract=toolchain/lnp64_exec_plan.manifest
 gpr=r0-r31
 fdr=fd0-fd31
 pcr=PID,PPID,TID,TP,UID,GID,SIGMASK,SIGPENDING,REALTIME_SEC,REALTIME_NSEC

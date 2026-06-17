@@ -781,6 +781,28 @@ mod tests {
             .collect()
     }
 
+    fn exec_plan_rows(manifest: &str) -> Vec<(&str, &str, Vec<&str>)> {
+        manifest
+            .lines()
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(|line| {
+                let mut fields = line.splitn(3, '|');
+                let record = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing exec-plan record in {line}"));
+                let requirement = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing exec-plan requirement in {line}"));
+                let record_fields = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing exec-plan fields in {line}"))
+                    .split(',')
+                    .collect();
+                (record, requirement, record_fields)
+            })
+            .collect()
+    }
+
     #[test]
     fn llvm_target_manifest_records_required_backend_contract() {
         let manifest = include_str!("../toolchain/lnp64_target.manifest");
@@ -811,6 +833,10 @@ mod tests {
         assert_eq!(
             manifest_field(manifest, "isel_contract"),
             "toolchain/lnp64_isel.manifest"
+        );
+        assert_eq!(
+            manifest_field(manifest, "exec_plan_contract"),
+            "toolchain/lnp64_exec_plan.manifest"
         );
         assert_eq!(manifest_field(manifest, "gpr"), "r0-r31");
         assert_eq!(manifest_field(manifest, "fdr"), "fd0-fd31");
@@ -946,6 +972,57 @@ mod tests {
         ] {
             assert!(groups.contains(group), "missing isel group {group}");
         }
+    }
+
+    #[test]
+    fn exec_plan_manifest_matches_loader_boundary_contract() {
+        let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
+        let exec_plan_manifest = include_str!("../toolchain/lnp64_exec_plan.manifest");
+        let object_format = include_str!("../object_format.md");
+        let rows = exec_plan_rows(exec_plan_manifest);
+        let mut records = std::collections::BTreeSet::new();
+
+        assert_eq!(
+            manifest_field(target_manifest, "exec_plan_contract"),
+            "toolchain/lnp64_exec_plan.manifest"
+        );
+        for (record, requirement, fields) in rows {
+            assert!(
+                records.insert(record),
+                "duplicate exec-plan record {record}"
+            );
+            assert!(
+                ["required", "optional"].contains(&requirement),
+                "unknown exec-plan requirement {requirement}"
+            );
+            assert!(!fields.is_empty(), "empty exec-plan record {record}");
+            let mut record_fields = std::collections::BTreeSet::new();
+            for field in fields {
+                assert!(
+                    !field.is_empty(),
+                    "empty field in exec-plan record {record}"
+                );
+                assert!(
+                    record_fields.insert(field),
+                    "duplicate field {field} in exec-plan record {record}"
+                );
+            }
+        }
+        for record in ["header", "entry", "vma", "fdr_grant"] {
+            assert!(
+                records.contains(record),
+                "missing exec-plan record {record}"
+            );
+        }
+
+        assert!(object_format.contains("## Exec-Plan Descriptor Boundary"));
+        assert!(
+            object_format.contains("exec-plan descriptor is the only object consumed by hardware")
+        );
+        assert!(object_format.contains("entry PC, initial SP"));
+        assert!(object_format.contains("VMA records: target virtual address"));
+        assert!(object_format.contains("startup FDR grants"));
+        assert!(object_format.contains("old image remains"));
     }
 
     #[test]

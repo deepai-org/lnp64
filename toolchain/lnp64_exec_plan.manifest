@@ -1,0 +1,7 @@
+# LNP64 exec-plan manifest v1.
+# Pipe-delimited fields: record|required|fields
+header|required|version,total_length,flags,vma_count,fdr_count,measurement_count,expected_domain_generation,expected_process_generation,expected_lineage_epoch
+entry|required|entry_pc,initial_sp,tls_base,startup_metadata_ptr
+vma|required|virtual_address,length,protection,memory_type,executable_provenance,source_cap,source_offset,source_generation,lineage_epoch,zero_fill_length,mapping_flags
+fdr_grant|required|slot,kind,rights,flags,source_cap,source_generation,close_on_exec,preserve
+measurement|optional|algorithm,measurement_ref,manifest_ref,attestation_ref
