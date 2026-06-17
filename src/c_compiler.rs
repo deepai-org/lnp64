@@ -8063,9 +8063,15 @@ impl CodeGen {
                 self.text.push(format!("  FORK r{dst}"));
                 Ok(dst)
             }
-            "exec" | "execvp" => {
+            "exec" | "execv" | "execvp" | "execve" => {
                 if args.is_empty() {
                     return Err(format!("{name}(path[, argv]) expects at least 1 argument"));
+                }
+                if matches!(name, "execv" | "execvp") && args.len() != 2 {
+                    return Err(format!("{name}(path, argv) expects 2 arguments"));
+                }
+                if name == "execve" && args.len() != 3 {
+                    return Err("execve(path, argv, envp) expects 3 arguments".to_string());
                 }
                 let path = self.emit_expr(&args[0])?;
                 let argv = if args.len() > 1 {
@@ -8073,6 +8079,27 @@ impl CodeGen {
                 } else {
                     0
                 };
+                self.text.push(format!("  EXEC r{path}, r{argv}"));
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, -1"));
+                Ok(dst)
+            }
+            "execl" | "execlp" | "execle" => {
+                if args.len() < 2 {
+                    return Err(format!(
+                        "{name}(path, arg0, ...) expects at least 2 arguments"
+                    ));
+                }
+                if name == "execle" && args.len() < 3 {
+                    return Err("execle(path, arg0, ..., envp) expects envp".to_string());
+                }
+                let path = self.emit_expr(&args[0])?;
+                let argv_args = if name == "execle" {
+                    &args[1..args.len() - 1]
+                } else {
+                    &args[1..]
+                };
+                let argv = self.emit_exec_argv_array(argv_args)?;
                 self.text.push(format!("  EXEC r{path}, r{argv}"));
                 let dst = self.alloc_reg()?;
                 self.text.push(format!("  LI r{dst}, -1"));
@@ -9721,6 +9748,20 @@ impl CodeGen {
         }
         self.text.push(format!("  OBJECT_CTL r{dst}, r{block}"));
         Ok(dst)
+    }
+
+    fn emit_exec_argv_array(&mut self, argv_args: &[Expr]) -> Result<usize, String> {
+        let size = self.alloc_reg()?;
+        let argv = self.alloc_reg()?;
+        self.text
+            .push(format!("  LI r{size}, {}", argv_args.len() * 8));
+        self.text.push(format!("  ALLOC r{argv}, r{size}"));
+        for (idx, arg) in argv_args.iter().enumerate() {
+            let value = self.emit_expr(arg)?;
+            self.text
+                .push(format!("  ST [r{argv}, {}], r{value}", idx * 8));
+        }
+        Ok(argv)
     }
 
     fn emit_getauxval(&mut self, key: usize) -> Result<usize, String> {
@@ -15025,6 +15066,29 @@ int main() {
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_exec_family_lowers_to_native_exec() {
+        let source = r#"
+        int main() {
+            int argv[2];
+            int envp[1];
+            argv[0] = "Cargo.toml";
+            argv[1] = 0;
+            envp[0] = 0;
+            execv("Cargo.toml", argv);
+            execve("Cargo.toml", argv, envp);
+            execl("Cargo.toml", "Cargo.toml", 0);
+            execlp("Cargo.toml", "Cargo.toml", 0);
+            execle("Cargo.toml", "Cargo.toml", 0, envp);
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert_eq!(asm.matches("EXEC").count(), 5, "{asm}");
+        assert!(asm.contains("ALLOC"), "{asm}");
+        Program::parse(&asm).unwrap();
     }
 
     #[test]
