@@ -759,6 +759,28 @@ mod tests {
             .collect()
     }
 
+    fn isel_rows(manifest: &str) -> Vec<(&str, &str, Vec<&str>)> {
+        manifest
+            .lines()
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(|line| {
+                let mut fields = line.splitn(3, '|');
+                let group = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing isel group in {line}"));
+                let status = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing isel status in {line}"));
+                let opcodes = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing isel opcodes in {line}"))
+                    .split(',')
+                    .collect();
+                (group, status, opcodes)
+            })
+            .collect()
+    }
+
     #[test]
     fn llvm_target_manifest_records_required_backend_contract() {
         let manifest = include_str!("../toolchain/lnp64_target.manifest");
@@ -785,6 +807,10 @@ mod tests {
         assert_eq!(
             manifest_field(manifest, "intrinsic_contract"),
             "toolchain/lnp64_intrinsics.manifest"
+        );
+        assert_eq!(
+            manifest_field(manifest, "isel_contract"),
+            "toolchain/lnp64_isel.manifest"
         );
         assert_eq!(manifest_field(manifest, "gpr"), "r0-r31");
         assert_eq!(manifest_field(manifest, "fdr"), "fd0-fd31");
@@ -878,6 +904,47 @@ mod tests {
                 names.contains(name),
                 "target manifest intrinsic {name} is missing from intrinsic manifest"
             );
+        }
+    }
+
+    #[test]
+    fn isel_manifest_covers_backend_starting_opcode_groups() {
+        let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
+        let isel_manifest = include_str!("../toolchain/lnp64_isel.manifest");
+        let asm_source = include_str!("asm.rs");
+        let rows = isel_rows(isel_manifest);
+        let mut groups = std::collections::BTreeSet::new();
+        let mut opcodes = std::collections::BTreeSet::new();
+
+        assert_eq!(
+            manifest_field(target_manifest, "isel_contract"),
+            "toolchain/lnp64_isel.manifest"
+        );
+        for (group, status, group_opcodes) in rows {
+            assert!(groups.insert(group), "duplicate isel group {group}");
+            assert!(
+                ["required", "profile", "intrinsic", "bootstrap"].contains(&status),
+                "unknown isel status {status}"
+            );
+            assert!(!group_opcodes.is_empty(), "empty isel group {group}");
+            for opcode in group_opcodes {
+                assert!(!opcode.is_empty(), "empty opcode in {group}");
+                assert!(opcodes.insert(opcode), "duplicate isel opcode {opcode}");
+                assert!(
+                    asm_source.contains(&format!("\"{opcode}\"")),
+                    "isel opcode {opcode} is missing from the assembler parser"
+                );
+            }
+        }
+        for group in [
+            "constants",
+            "integer_alu",
+            "control_flow",
+            "memory",
+            "atomics",
+            "native_primitives",
+        ] {
+            assert!(groups.contains(group), "missing isel group {group}");
         }
     }
 
