@@ -34,6 +34,46 @@ const ROOT_DOMAIN_ID: u64 = 1;
 const MAX_RESOURCE_DOMAINS: usize = 4096;
 const MAX_DOMAIN_DEPTH: u64 = 16;
 
+const ENV_KEY_ISA_VERSION: u64 = 1;
+const ENV_KEY_PAGE_SIZE: u64 = 2;
+const ENV_KEY_CACHE_LINE_SIZE: u64 = 3;
+const ENV_KEY_TIMEBASE_HZ: u64 = 4;
+const ENV_KEY_HWCAP0: u64 = 5;
+const ENV_KEY_HWCAP1: u64 = 6;
+const ENV_KEY_ARCH_THREAD_LIMIT: u64 = 7;
+const ENV_KEY_PROCESS_LIMIT: u64 = 8;
+const ENV_KEY_DEFAULT_FDR_LIMIT: u64 = 9;
+const ENV_KEY_EVENT_QUEUE_LIMIT: u64 = 10;
+const ENV_KEY_FUTEX_BUCKET_COUNT: u64 = 11;
+const ENV_KEY_ARGC: u64 = 12;
+const ENV_KEY_ARGV_BASE: u64 = 13;
+const ENV_KEY_ENVP_BASE: u64 = 14;
+const ENV_KEY_AUXV_BASE: u64 = 15;
+const ENV_KEY_AUXV_ENTRY: u64 = 16;
+const ENV_KEY_PERSONALITY_ID: u64 = 17;
+const ENV_KEY_BOOT_MANIFEST_FLAGS: u64 = 18;
+const ENV_KEY_PROCESS_ENTRY_RECORD: u64 = 64;
+const ENV_ISA_VERSION: u64 = 1;
+const ENV_HWCAP0_RANDOM: u64 = 1 << 0;
+const ENV_HWCAP0_CAPABILITIES: u64 = 1 << 1;
+const ENV_HWCAP0_RESOURCE_DOMAINS: u64 = 1 << 2;
+const ENV_HWCAP0_DMA: u64 = 1 << 3;
+const ENV_HWCAP0_FUTEX: u64 = 1 << 4;
+const ENV_CACHE_LINE_SIZE: u64 = 64;
+const ENV_TIMEBASE_HZ: u64 = 1_000_000_000;
+const ENV_THREAD_LIMIT: u64 = 4096;
+const ENV_PROCESS_LIMIT: u64 = 4096;
+const ENV_EVENT_QUEUE_LIMIT: u64 = 4096;
+const ENV_FUTEX_BUCKET_COUNT: u64 = 4096;
+const AT_UID: u64 = 11;
+const AT_EUID: u64 = 12;
+const AT_GID: u64 = 13;
+const AT_EGID: u64 = 14;
+const AT_PAGESZ: u64 = 6;
+const AT_HWCAP: u64 = 16;
+const AT_CLKTCK: u64 = 17;
+const AT_RANDOM: u64 = 25;
+
 const DOMAIN_OP_CREATE: u64 = 1;
 const DOMAIN_OP_CONFIGURE: u64 = 2;
 const DOMAIN_OP_QUERY: u64 = 3;
@@ -1501,6 +1541,9 @@ impl Machine {
                 self.write_reg(dst, value)?;
             }
             Instr::SetPcr(pcr, src) => self.write_pcr(pcr, self.read_reg(src)?)?,
+            Instr::EnvGet(result, key, index_or_buf, len_or_flags) => {
+                self.env_get(result, key, index_or_buf, len_or_flags)?;
+            }
             Instr::Random(result, buf, len_reg) => {
                 let len = self.read_reg(len_reg)?;
                 let bytes = if len == 0 { 8 } else { len };
@@ -4194,6 +4237,110 @@ impl Machine {
         out
     }
 
+    fn env_get(
+        &mut self,
+        result: Reg,
+        key_reg: Reg,
+        index_or_buf_reg: Reg,
+        len_or_flags_reg: Reg,
+    ) -> Result<(), String> {
+        let key = self.read_reg(key_reg)?;
+        let index_or_buf = self.read_reg(index_or_buf_reg)?;
+        let len_or_flags = self.read_reg(len_or_flags_reg)?;
+        let scalar = match key {
+            ENV_KEY_ISA_VERSION => Some(ENV_ISA_VERSION),
+            ENV_KEY_PAGE_SIZE => Some(ASLR_PAGE),
+            ENV_KEY_CACHE_LINE_SIZE => Some(ENV_CACHE_LINE_SIZE),
+            ENV_KEY_TIMEBASE_HZ => Some(ENV_TIMEBASE_HZ),
+            ENV_KEY_HWCAP0 => Some(
+                ENV_HWCAP0_RANDOM
+                    | ENV_HWCAP0_CAPABILITIES
+                    | ENV_HWCAP0_RESOURCE_DOMAINS
+                    | ENV_HWCAP0_DMA
+                    | ENV_HWCAP0_FUTEX,
+            ),
+            ENV_KEY_HWCAP1 => Some(0),
+            ENV_KEY_ARCH_THREAD_LIMIT => Some(ENV_THREAD_LIMIT),
+            ENV_KEY_PROCESS_LIMIT => Some(ENV_PROCESS_LIMIT),
+            ENV_KEY_DEFAULT_FDR_LIMIT => Some(FDR_COUNT as u64),
+            ENV_KEY_EVENT_QUEUE_LIMIT => Some(ENV_EVENT_QUEUE_LIMIT),
+            ENV_KEY_FUTEX_BUCKET_COUNT => Some(ENV_FUTEX_BUCKET_COUNT),
+            ENV_KEY_ARGC => Some(self.env_argc()?),
+            ENV_KEY_ARGV_BASE => Some(ARG_BASE + 8),
+            ENV_KEY_ENVP_BASE => Some(self.env_envp_base()?),
+            ENV_KEY_AUXV_BASE => Some(self.env_auxv_base()?),
+            ENV_KEY_AUXV_ENTRY => {
+                let (kind, value) = self.env_auxv_entry(index_or_buf);
+                self.write_reg(Reg(30), value)?;
+                Some(kind)
+            }
+            ENV_KEY_PERSONALITY_ID | ENV_KEY_BOOT_MANIFEST_FLAGS => Some(0),
+            ENV_KEY_PROCESS_ENTRY_RECORD => {
+                return self.env_get_process_entry_record(result, index_or_buf, len_or_flags);
+            }
+            _ => None,
+        };
+
+        if let Some(value) = scalar {
+            self.set_errno(0)?;
+            self.write_reg(result, value)
+        } else {
+            self.set_status_errno(22)?;
+            self.write_reg(result, -1i64 as u64)
+        }
+    }
+
+    fn env_argc(&mut self) -> Result<u64, String> {
+        self.load_u64(ARG_BASE)
+    }
+
+    fn env_envp_base(&mut self) -> Result<u64, String> {
+        Ok(ARG_BASE + 8 + (self.env_argc()?.saturating_add(1) * 8))
+    }
+
+    fn env_auxv_base(&mut self) -> Result<u64, String> {
+        Ok(self.env_envp_base()? + 8)
+    }
+
+    fn env_auxv_entry(&self, index: u64) -> (u64, u64) {
+        match index {
+            0 => (AT_PAGESZ, ASLR_PAGE),
+            1 => (AT_HWCAP, ENV_HWCAP0_RANDOM | ENV_HWCAP0_CAPABILITIES),
+            2 => (AT_CLKTCK, 100),
+            3 => (AT_UID, 0),
+            4 => (AT_EUID, 0),
+            5 => (AT_GID, 0),
+            6 => (AT_EGID, 0),
+            7 => (AT_RANDOM, 0),
+            _ => (0, 0),
+        }
+    }
+
+    fn env_get_process_entry_record(
+        &mut self,
+        result: Reg,
+        buf: u64,
+        len: u64,
+    ) -> Result<(), String> {
+        let mut record = Vec::with_capacity(32);
+        for value in [
+            self.env_argc()?,
+            ARG_BASE + 8,
+            self.env_envp_base()?,
+            self.env_auxv_base()?,
+        ] {
+            record.extend_from_slice(&value.to_le_bytes());
+        }
+        let count = (len as usize).min(record.len());
+        if self.write_bytes(buf, &record[..count]).is_err() {
+            self.set_status_errno(14)?;
+            self.write_reg(result, -1i64 as u64)?;
+            return Ok(());
+        }
+        self.set_errno(0)?;
+        self.write_reg(result, count as u64)
+    }
+
     fn max_direct_child_limits(&self, id: u64) -> DomainLimits {
         let mut out = DomainLimits {
             cpu: 0,
@@ -6628,6 +6775,117 @@ mod tests {
         machine.exec(Instr::Random(Reg(5), Reg(2), Reg(3))).unwrap();
         assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 1);
+    }
+
+    #[test]
+    fn env_get_reports_public_scalar_metadata() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        machine
+            .set_args(&["prog".to_string(), "arg".to_string()])
+            .unwrap();
+
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_PAGE_SIZE;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], ASLR_PAGE);
+
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_ARGC;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], 2);
+
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_ARGV_BASE;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], ARG_BASE + 8);
+
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_ENVP_BASE;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], ARG_BASE + 8 + 3 * 8);
+    }
+
+    #[test]
+    fn env_get_copies_process_entry_record_and_faults_bad_buffers() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        machine.set_args(&["prog".to_string()]).unwrap();
+
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_PROCESS_ENTRY_RECORD;
+        machine.thread_mut().unwrap().regs[3] = ARG_BASE + 0x800;
+        machine.thread_mut().unwrap().regs[4] = 32;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(3), Reg(4)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], 32);
+        assert_eq!(machine.load_u64(ARG_BASE + 0x800).unwrap(), 1);
+        assert_eq!(machine.load_u64(ARG_BASE + 0x808).unwrap(), ARG_BASE + 8);
+        assert_eq!(machine.load_u64(ARG_BASE + 0x810).unwrap(), ARG_BASE + 24);
+        assert_eq!(machine.load_u64(ARG_BASE + 0x818).unwrap(), ARG_BASE + 32);
+
+        machine.thread_mut().unwrap().regs[3] = 0xffff_ffff;
+        machine
+            .exec(Instr::EnvGet(Reg(5), Reg(2), Reg(3), Reg(4)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 14);
+    }
+
+    #[test]
+    fn env_get_rejects_bad_keys_and_never_exposes_random_material() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_AUXV_ENTRY;
+        machine.thread_mut().unwrap().regs[3] = 7;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(3), Reg(0)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], AT_RANDOM);
+        assert_eq!(machine.thread().unwrap().regs[30], 0);
+
+        machine.thread_mut().unwrap().regs[2] = 0xfeed_beef;
+        machine
+            .exec(Instr::EnvGet(Reg(4), Reg(2), Reg(0), Reg(0)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[4], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+
+        machine.exec(Instr::Random(Reg(5), Reg(0), Reg(0))).unwrap();
+        assert_ne!(machine.thread().unwrap().regs[5], 0);
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_AUXV_ENTRY;
+        machine.thread_mut().unwrap().regs[3] = 7;
+        machine
+            .exec(Instr::EnvGet(Reg(6), Reg(2), Reg(3), Reg(0)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[6], AT_RANDOM);
+        assert_eq!(machine.thread().unwrap().regs[30], 0);
     }
 
     #[test]

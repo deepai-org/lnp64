@@ -272,6 +272,15 @@ impl Parser {
                 arity(2)?;
                 Instr::AllocSize(reg(&args[0])?, reg(&args[1])?)
             }
+            "ENV_GET" => {
+                arity(4)?;
+                Instr::EnvGet(
+                    reg(&args[0])?,
+                    reg(&args[1])?,
+                    reg(&args[2])?,
+                    reg(&args[3])?,
+                )
+            }
             "RANDOM" => {
                 arity(3)?;
                 Instr::Random(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
@@ -996,12 +1005,17 @@ mod tests {
         let program = Program::parse(
             r#"
             .text
+              ENV_GET r4, r5, r6, r7
               RANDOM r1, r2, r3
             "#,
         )
         .unwrap();
         assert!(matches!(
             program.instructions[0],
+            Instr::EnvGet(Reg(4), Reg(5), Reg(6), Reg(7))
+        ));
+        assert!(matches!(
+            program.instructions[1],
             Instr::Random(Reg(1), Reg(2), Reg(3))
         ));
     }
