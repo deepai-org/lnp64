@@ -5555,6 +5555,36 @@ fn parse_num(text: &str) -> Result<u64, String> {
 mod tests {
     use super::*;
 
+    struct TestRng(u64);
+
+    impl TestRng {
+        fn new(seed: u64) -> Self {
+            Self(seed)
+        }
+
+        fn next(&mut self) -> u64 {
+            self.0 = self
+                .0
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            self.0
+        }
+
+        fn below(&mut self, limit: u64) -> u64 {
+            self.next() % limit
+        }
+    }
+
+    fn empty_program() -> Program {
+        Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap()
+    }
+
     #[test]
     fn runs_integer_loop() {
         let program = Program::parse(
@@ -7574,13 +7604,7 @@ mod tests {
 
     #[test]
     fn alloc_ex_creates_and_frees_guard_regions() {
-        let program = Program::parse(
-            r#"
-            .text
-              NOP
-            "#,
-        )
-        .unwrap();
+        let program = empty_program();
         let mut machine = Machine::new(program);
         machine.current_tid = 1;
         machine.thread_mut().unwrap().regs[1] = 32;
@@ -7635,6 +7659,235 @@ mod tests {
         assert!(stale_read.contains("unmapped address"), "{stale_read}");
         let stale_write = machine.write_bytes(ptr, &[1]).unwrap_err();
         assert!(stale_write.contains("unmapped address"), "{stale_write}");
+    }
+
+    #[test]
+    fn randomized_mmap_mprotect_and_guard_stress_preserves_permissions() {
+        let mut rng = TestRng::new(0x5150_f00d_dead_beef);
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let mut live_allocs = Vec::new();
+
+        for i in 0..48 {
+            let len = 4096;
+            let prot = match rng.below(4) {
+                0 => 0,
+                1 => 0b001,
+                2 => 0b010,
+                _ => 0b011,
+            };
+            machine.thread_mut().unwrap().regs[1] = len;
+            machine.thread_mut().unwrap().regs[2] = prot;
+            machine
+                .exec(Instr::Mmap(
+                    Reg(3),
+                    Reg(0),
+                    Reg(1),
+                    Reg(2),
+                    FdReg(0),
+                    Reg(0),
+                ))
+                .unwrap();
+            let addr = machine.thread().unwrap().regs[3];
+            assert_ne!(addr, -1i64 as u64);
+
+            if prot & 0b001 != 0 {
+                assert_eq!(machine.read_bytes(addr, 1).unwrap(), vec![0]);
+            } else {
+                let err = machine.read_bytes(addr, 1).unwrap_err();
+                assert!(
+                    err.contains("no-access VMA") || err.contains("read denied"),
+                    "{err}"
+                );
+            }
+            if prot & 0b010 != 0 {
+                machine.write_bytes(addr, &[i as u8]).unwrap();
+            } else {
+                let err = machine.write_bytes(addr, &[i as u8]).unwrap_err();
+                assert!(
+                    err.contains("no-access VMA") || err.contains("write denied"),
+                    "{err}"
+                );
+            }
+
+            let new_prot = match rng.below(4) {
+                0 => 0,
+                1 => 0b001,
+                2 => 0b010,
+                _ => 0b011,
+            };
+            machine.thread_mut().unwrap().regs[4] = addr;
+            machine.thread_mut().unwrap().regs[5] = len;
+            machine.thread_mut().unwrap().regs[6] = new_prot;
+            machine
+                .exec(Instr::Mprotect(Reg(4), Reg(5), Reg(6)))
+                .unwrap();
+            assert_eq!(machine.process().unwrap().errno, 0);
+
+            if new_prot & 0b010 != 0 {
+                machine.write_bytes(addr, &[0xaa]).unwrap();
+            } else {
+                let err = machine.write_bytes(addr, &[0xaa]).unwrap_err();
+                assert!(
+                    err.contains("no-access VMA") || err.contains("write denied"),
+                    "{err}"
+                );
+            }
+
+            if rng.below(3) == 0 {
+                let alloc_len = 16 + rng.below(96) as usize;
+                machine.thread_mut().unwrap().regs[7] = alloc_len as u64;
+                machine.thread_mut().unwrap().regs[8] = 64;
+                machine
+                    .exec(Instr::AllocEx(Reg(9), Reg(7), Reg(8)))
+                    .unwrap();
+                let ptr = machine.thread().unwrap().regs[9];
+                assert_eq!(ptr % 64, 0);
+                assert!(
+                    machine
+                        .read_bytes(ptr - 1, 1)
+                        .unwrap_err()
+                        .contains("guard page")
+                );
+                assert!(
+                    machine
+                        .write_bytes(ptr + alloc_len as u64, &[1])
+                        .unwrap_err()
+                        .contains("guard page")
+                );
+                live_allocs.push(ptr);
+            }
+
+            machine.thread_mut().unwrap().regs[10] = addr;
+            machine.thread_mut().unwrap().regs[11] = len;
+            machine.exec(Instr::Munmap(Reg(10), Reg(11))).unwrap();
+            assert!(
+                machine
+                    .read_bytes(addr, 1)
+                    .unwrap_err()
+                    .contains("unmapped address")
+            );
+
+            if !live_allocs.is_empty() && rng.below(2) == 0 {
+                let idx = rng.below(live_allocs.len() as u64) as usize;
+                let ptr = live_allocs.swap_remove(idx);
+                machine.thread_mut().unwrap().regs[12] = ptr;
+                machine.exec(Instr::Free(Reg(12))).unwrap();
+                assert!(
+                    machine
+                        .read_bytes(ptr, 1)
+                        .unwrap_err()
+                        .contains("unmapped address")
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn randomized_capability_delegation_stress_preserves_authority() {
+        let mut rng = TestRng::new(0xc0ff_ee00_cafe_f00d);
+        let program = Program::parse(
+            r#"
+            .data
+            path: .string "Cargo.toml"
+
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let path = program.data_labels["path"];
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        let pipe = Rc::new(RefCell::new(PipeBuffer::default()));
+        machine.processes.get_mut(&1).unwrap().fds[10] = FdHandle::PipeReader(Rc::clone(&pipe));
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[10] = FdCapability::full(10);
+        machine.processes.get_mut(&1).unwrap().fds[11] = FdHandle::PipeWriter(pipe);
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[11] = FdCapability::full(11);
+
+        for _ in 0..32 {
+            machine.thread_mut().unwrap().regs[1] = path;
+            machine.thread_mut().unwrap().regs[2] = 0;
+            machine
+                .exec(Instr::OpenFdDyn(Reg(3), Reg(1), Reg(2)))
+                .unwrap();
+            let source = machine.thread().unwrap().regs[3];
+            assert_ne!(source, -1i64 as u64);
+
+            let mut rights = CAP_RIGHT_READ;
+            if rng.below(2) == 0 {
+                rights |= CAP_RIGHT_DUP;
+            }
+            if rng.below(2) == 0 {
+                rights |= CAP_RIGHT_REVOKE;
+            }
+            if rng.below(2) == 0 {
+                rights |= CAP_RIGHT_TRANSFER;
+            }
+            let seal = rng.below(2) == 0;
+            let arg = ARG_BASE;
+            machine.store_u64(arg, source).unwrap();
+            machine.store_u64(arg + 8, 0).unwrap();
+            machine.store_u64(arg + 16, rights).unwrap();
+            machine
+                .store_u64(arg + 24, if seal { CAP_DUP_FLAG_SEAL } else { 0 })
+                .unwrap();
+            machine.cap_dup(Reg(4), arg).unwrap();
+            let child = machine.thread().unwrap().regs[4];
+            assert_ne!(child, -1i64 as u64);
+
+            machine.thread_mut().unwrap().regs[5] = child;
+            machine.thread_mut().unwrap().regs[6] = ARG_BASE + 0x4000;
+            machine.thread_mut().unwrap().regs[7] = 1;
+            machine
+                .exec(Instr::ReadFdDyn(Reg(5), Reg(6), Reg(7)))
+                .unwrap();
+            assert_eq!(machine.process().unwrap().errno, 0);
+            assert_eq!(machine.thread().unwrap().regs[1], 1);
+
+            machine.store_u64(arg, child).unwrap();
+            machine.store_u64(arg + 8, 0).unwrap();
+            machine.store_u64(arg + 16, CAP_RIGHT_READ).unwrap();
+            machine.store_u64(arg + 24, 0).unwrap();
+            machine.cap_dup(Reg(8), arg).unwrap();
+            if seal || rights & CAP_RIGHT_DUP == 0 {
+                assert_eq!(machine.thread().unwrap().regs[8], -1i64 as u64);
+                assert_eq!(machine.process().unwrap().errno, 1);
+            } else {
+                assert_ne!(machine.thread().unwrap().regs[8], -1i64 as u64);
+            }
+
+            machine.store_u64(arg, 11).unwrap();
+            machine.store_u64(arg + 8, child).unwrap();
+            machine.store_u64(arg + 16, 0).unwrap();
+            machine.store_u64(arg + 24, 0).unwrap();
+            machine.cap_send(Reg(9), arg).unwrap();
+            if rights & CAP_RIGHT_TRANSFER == 0 {
+                assert_eq!(machine.thread().unwrap().regs[9], -1i64 as u64);
+                assert_eq!(machine.process().unwrap().errno, 1);
+            } else {
+                assert_eq!(machine.thread().unwrap().regs[9], 1);
+                machine.store_u64(arg, 10).unwrap();
+                machine.store_u64(arg + 8, 0).unwrap();
+                machine.store_u64(arg + 16, CAP_RIGHT_READ).unwrap();
+                machine.store_u64(arg + 24, 0).unwrap();
+                machine.cap_recv(Reg(12), arg).unwrap();
+                let received = machine.thread().unwrap().regs[12];
+                assert_ne!(received, -1i64 as u64);
+            }
+
+            machine.store_u64(arg, source).unwrap();
+            machine.cap_revoke(Reg(13), arg).unwrap();
+            assert!(machine.thread().unwrap().regs[13] >= 1);
+            machine.thread_mut().unwrap().regs[14] = child;
+            machine.thread_mut().unwrap().regs[15] = ARG_BASE + 0x5000;
+            machine.thread_mut().unwrap().regs[16] = 1;
+            machine
+                .exec(Instr::ReadFdDyn(Reg(14), Reg(15), Reg(16)))
+                .unwrap();
+            assert_eq!(machine.process().unwrap().errno, 116);
+            assert_eq!(machine.thread().unwrap().regs[1], 0);
+        }
     }
 
     #[test]
