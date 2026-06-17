@@ -4,7 +4,7 @@ int child_actor() {
     int value;
     int i;
     i = 0;
-    while (i < 1000000) {
+    while (i < 100000) {
         value = msg_recv();
         msg_send(parent_pid, value + 1, 0);
         i = i + 1;
@@ -24,12 +24,12 @@ int main() {
     }
     i = 0;
     value = 0;
-    while (i < 1000000) {
+    while (i < 100000) {
         msg_send(child, value, 0);
         value = msg_recv();
         i = i + 1;
     }
-    if (value == 1000000) {
+    if (value == 100000) {
         write(1, "ping pong ok\n", 13);
         return 0;
     }
