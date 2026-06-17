@@ -3874,11 +3874,16 @@ impl Machine {
     }
 
     fn require_domain_cap(&mut self, mask: u64) -> Result<(), String> {
-        if self.domain_has_cap(mask)? {
-            Ok(())
-        } else {
-            self.set_status_errno(1)?;
-            Err("resource domain capability denied".to_string())
+        match self.domain_has_cap_errno(mask) {
+            Ok(true) => Ok(()),
+            Ok(false) => {
+                self.set_status_errno(1)?;
+                Err("resource domain capability denied".to_string())
+            }
+            Err(errno) => {
+                self.set_status_errno(errno)?;
+                Err("resource domain inactive".to_string())
+            }
         }
     }
 
@@ -3890,16 +3895,14 @@ impl Machine {
         }
     }
 
-    fn domain_has_cap(&self, mask: u64) -> Result<bool, String> {
-        self.domain_has_cap_errno(mask)
-            .map_err(|errno| errno.to_string())
-    }
-
     fn domain_has_cap_errno(&self, mask: u64) -> Result<bool, u64> {
         let domain_id = self.current_domain_id().map_err(|_| 3u64)?;
         let Some(domain) = self.domains.get(&domain_id) else {
             return Err(3);
         };
+        if self.domain_is_frozen_or_destroyed(domain_id) {
+            return Err(11);
+        }
         Ok(domain.capability_mask & mask == mask)
     }
 
@@ -5768,6 +5771,27 @@ mod tests {
     }
 
     #[test]
+    fn inactive_current_domain_rejects_sensitive_operations() {
+        let mut machine = test_machine_with_child_domain();
+        machine.current_tid = 1;
+        machine.processes.get_mut(&1).unwrap().domain_id = 2;
+        machine.thread_mut().unwrap().regs[1] = 64;
+        machine.domains.get_mut(&2).unwrap().frozen = true;
+        let err = machine.exec(Instr::Alloc(Reg(2), Reg(1))).unwrap_err();
+        assert!(err.contains("resource domain inactive"), "{err}");
+        assert_eq!(machine.process().unwrap().errno, 11);
+
+        let mut machine = test_machine_with_child_domain();
+        machine.current_tid = 1;
+        machine.processes.get_mut(&1).unwrap().domain_id = 2;
+        machine.thread_mut().unwrap().regs[1] = 64;
+        machine.destroy_domain_recursive(2);
+        let err = machine.exec(Instr::Alloc(Reg(2), Reg(1))).unwrap_err();
+        assert!(err.contains("resource domain inactive"), "{err}");
+        assert_eq!(machine.process().unwrap().errno, 11);
+    }
+
+    #[test]
     fn wx_mmap_and_mprotect_follow_domain_policy() {
         let program = Program::parse(
             r#"
@@ -7008,8 +7032,8 @@ mod tests {
         machine.domains.get_mut(&2).unwrap().frozen = true;
         let stack_before = machine.thread().unwrap().cap_call_stack.len();
         let domain_before = machine.process().unwrap().domain_id;
-        machine.call_cap(Reg(10), 3, 1, 2).unwrap();
-        assert_eq!(machine.thread().unwrap().regs[10], -1i64 as u64);
+        let err = machine.call_cap(Reg(10), 3, 1, 2).unwrap_err();
+        assert!(err.contains("resource domain inactive"), "{err}");
         assert_eq!(machine.thread().unwrap().cap_call_stack.len(), stack_before);
         assert_eq!(machine.process().unwrap().domain_id, domain_before);
         assert_eq!(machine.domain_usage(2), baseline);
