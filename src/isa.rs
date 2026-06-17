@@ -166,6 +166,7 @@ pub enum Instr {
     LoadUcode(Reg, Reg),
     MsgSend(Reg, Reg, Reg),
     ObjectCtl(Reg, Reg),
+    DmaCtl(Reg, Reg),
     DomainCtl(Reg, Reg),
     CallCap(Reg, FdReg, Reg, Reg),
     RetCap(Reg, Reg, Reg),

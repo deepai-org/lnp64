@@ -591,6 +591,10 @@ impl Parser {
                 arity(2)?;
                 Instr::ObjectCtl(reg(&args[0])?, reg(&args[1])?)
             }
+            "DMA_CTL" => {
+                arity(2)?;
+                Instr::DmaCtl(reg(&args[0])?, reg(&args[1])?)
+            }
             "DOMAIN_CTL" => {
                 arity(2)?;
                 Instr::DomainCtl(reg(&args[0])?, reg(&args[1])?)
@@ -903,6 +907,21 @@ mod tests {
         assert!(matches!(
             program.instructions[2],
             Instr::ObjectCtl(Reg(5), Reg(6))
+        ));
+    }
+
+    #[test]
+    fn parses_dma_ctl_instruction() {
+        let program = Program::parse(
+            r#"
+            .text
+              DMA_CTL r1, r2
+            "#,
+        )
+        .unwrap();
+        assert!(matches!(
+            program.instructions[0],
+            Instr::DmaCtl(Reg(1), Reg(2))
         ));
     }
 

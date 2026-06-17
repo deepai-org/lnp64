@@ -71,6 +71,8 @@ const OBJECT_KIND_QUEUE: u64 = 2;
 const OBJECT_KIND_MEMORY_OBJECT: u64 = 3;
 const OBJECT_PROFILE_PIPE: u64 = 1;
 const OBJECT_PROFILE_CALL_GATE: u64 = 4;
+const DMA_OP_COPY: u64 = 1;
+const DMA_OP_FILL: u64 = 2;
 const CALL_MODE_SYNC: u64 = 0;
 const CALL_MODE_ASYNC: u64 = 1;
 const CALL_MODE_HANDOFF: u64 = 2;
@@ -1644,6 +1646,9 @@ impl Machine {
             Instr::ObjectCtl(result, argblock) => {
                 self.object_ctl(result, self.read_reg(argblock)?)?;
             }
+            Instr::DmaCtl(result, argblock) => {
+                self.dma_ctl(result, self.read_reg(argblock)?)?;
+            }
             Instr::DomainCtl(result, argblock) => {
                 self.domain_ctl(result, self.read_reg(argblock)?)?;
             }
@@ -2398,6 +2403,45 @@ impl Machine {
             }
             Err(errno) => {
                 self.set_errno(errno)?;
+                self.write_reg(result, -1i64 as u64)
+            }
+        }
+    }
+
+    fn dma_ctl(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
+        if !self.current_domain_dma_allowed()? {
+            self.set_status_errno(1)?;
+            self.write_reg(result, -1i64 as u64)?;
+            return Ok(());
+        }
+        let op = self.load_u64(argblock)?;
+        let dst = self.load_u64(argblock + 8)?;
+        let src_or_value = self.load_u64(argblock + 16)?;
+        let len = self.load_u64(argblock + 24)? as usize;
+        let outcome: Result<u64, u64> = match op {
+            DMA_OP_COPY => self
+                .read_bytes(src_or_value, len)
+                .map_err(|_| 14u64)
+                .and_then(|bytes| {
+                    self.write_bytes(dst, &bytes)
+                        .map(|_| len as u64)
+                        .map_err(|_| 14u64)
+                }),
+            DMA_OP_FILL => {
+                let bytes = vec![src_or_value as u8; len];
+                self.write_bytes(dst, &bytes)
+                    .map(|_| len as u64)
+                    .map_err(|_| 14u64)
+            }
+            _ => Err(22),
+        };
+        match outcome {
+            Ok(count) => {
+                self.set_errno(0)?;
+                self.write_reg(result, count)
+            }
+            Err(errno) => {
+                self.set_status_errno(errno)?;
                 self.write_reg(result, -1i64 as u64)
             }
         }
@@ -3323,6 +3367,14 @@ impl Machine {
         };
         let wants_wx = prot & 0b110 == 0b110;
         Ok(!wants_wx || domain.security.allow_wx)
+    }
+
+    fn current_domain_dma_allowed(&self) -> Result<bool, String> {
+        let domain_id = self.current_domain_id()?;
+        let Some(domain) = self.domains.get(&domain_id) else {
+            return Err(format!("missing resource domain {domain_id}"));
+        };
+        Ok(domain.security.dma_allowed)
     }
 
     fn consume_domain_entropy(&mut self, bytes: u64) -> Result<(), String> {
@@ -5191,6 +5243,87 @@ mod tests {
         assert!(read_err.contains("no-access VMA"), "{read_err}");
         let write_err = machine.write_bytes(addr, &[1]).unwrap_err();
         assert!(write_err.contains("no-access VMA"), "{write_err}");
+    }
+
+    #[test]
+    fn dma_ctl_copy_and_fill_use_vma_permissions() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        let arg = ARG_BASE;
+        let src = ARG_BASE + 0x1000;
+        let dst = ARG_BASE + 0x1100;
+        machine.write_bytes(src, &[1, 2, 3, 4]).unwrap();
+
+        machine.store_u64(arg, DMA_OP_COPY).unwrap();
+        machine.store_u64(arg + 8, dst).unwrap();
+        machine.store_u64(arg + 16, src).unwrap();
+        machine.store_u64(arg + 24, 4).unwrap();
+        machine.dma_ctl(Reg(1), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], 4);
+        assert_eq!(machine.read_bytes(dst, 4).unwrap(), vec![1, 2, 3, 4]);
+
+        machine.store_u64(arg, DMA_OP_FILL).unwrap();
+        machine.store_u64(arg + 8, dst).unwrap();
+        machine.store_u64(arg + 16, 0xab).unwrap();
+        machine.store_u64(arg + 24, 3).unwrap();
+        machine.dma_ctl(Reg(2), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[2], 3);
+        assert_eq!(
+            machine.read_bytes(dst, 4).unwrap(),
+            vec![0xab, 0xab, 0xab, 4]
+        );
+    }
+
+    #[test]
+    fn dma_ctl_rejects_guard_unmapped_and_disallowed_domain() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        let arg = ARG_BASE;
+
+        machine.thread_mut().unwrap().regs[1] = 8;
+        machine.thread_mut().unwrap().regs[2] = 64;
+        machine
+            .exec(Instr::AllocEx(Reg(3), Reg(1), Reg(2)))
+            .unwrap();
+        let guarded = machine.thread().unwrap().regs[3] + 8;
+
+        machine.store_u64(arg, DMA_OP_FILL).unwrap();
+        machine.store_u64(arg + 8, guarded).unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 1).unwrap();
+        machine.dma_ctl(Reg(4), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[4], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 14);
+
+        machine.store_u64(arg + 8, 0x7f_0000).unwrap();
+        machine.dma_ctl(Reg(5), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 14);
+
+        machine
+            .domains
+            .get_mut(&ROOT_DOMAIN_ID)
+            .unwrap()
+            .security
+            .dma_allowed = false;
+        machine.store_u64(arg + 8, ARG_BASE + 0x1000).unwrap();
+        machine.dma_ctl(Reg(6), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[6], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
     }
 
     #[test]
