@@ -174,6 +174,9 @@ In-flight operation ownership is not copied.
 `exec` preserves only descriptors not marked close-on-exec plus explicit startup
 FDR grants from the exec-plan descriptor. It installs a fresh startup metadata
 block and does not reinterpret inherited descriptors as ambient authority.
+The exec-plan is prepared by a loader/runtime/personality; hardware validates
+and commits it atomically. If validation fails before the hardware commit point,
+the old process image remains active.
 
 Native capability movement uses `CAP_DUP`, `CAP_SEND`, `CAP_RECV`, and
 `CAP_REVOKE`. Delegation may narrow rights, transfer permission, ranges, event
@@ -200,7 +203,11 @@ Future dynamic loading is a software loader/personality contract, not a
 hardware `EXEC` contract. Hardware accepts a bounded exec-plan descriptor and
 opaque startup metadata; it does not parse ELF, dynamic-linker state,
 relocations, interpreters, shebangs, library graphs, or Unix credential
-transition policy. Future dynamic loading must define:
+transition policy. Loader/personality code owns ASLR layout choices, relocation
+correctness, startup metadata shape, auxv contents, and FDR grant selection;
+hardware owns capability/generation/lineage checks, W^X/NX/provenance checks,
+Resource Domain policy checks, and atomic image commit. Future dynamic loading
+must define:
 
 - auxv keys consumed by the loader.
 - relocation records and symbol binding rules.

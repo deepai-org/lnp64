@@ -62,12 +62,12 @@ LNP64 v1 must support:
   invalid states are unrepresentable or detected by construction.
 
 The v1 design is allowed to be slow for complex compatibility operations.
-For example, `EXEC` can take thousands or millions of cycles while storage DMA
-loads a prepared executable image plan. The important requirement is that the
-hardware commits a bounded architectural transition while the issuing thread is
-parked and other threads continue. Hardware does not parse ELF, dynamic-linker
-state, shebangs, relocation formats, library graphs, or Unix credential
-transition policy.
+For example, `EXEC` can take thousands or millions of cycles while the DMA
+fabric copies ranges named by a prepared exec-plan descriptor. The important
+requirement is that hardware commits a bounded architectural transition while
+the issuing thread is parked and other threads continue. Hardware does not parse
+ELF, dynamic-linker state, shebangs, relocation formats, library graphs, or Unix
+credential transition policy.
 
 A major design goal of the hardware resource modules is robustness, not just
 speed. Compared with software subsystems, a good hard block should have a
@@ -2777,24 +2777,42 @@ the atomic clone transition and defined inherited state.
 
 `EXEC`:
 
+- validates the F9 argument block and copies/pins the bounded exec-plan
+  descriptor before any irrevocable state replacement.
 - enters a process-wide exec barrier.
 - prevents new threads from being spawned in the process.
 - stops all sibling TIDs at scheduling boundaries or via forced scheduler park.
 - cancels or detaches in-flight operations according to the cancellation rules.
 - invalidates sibling thread contexts so exactly one thread survives the exec.
-- consumes a prepared exec-plan descriptor from user memory.
-- validates executable image, memory object, and startup metadata capabilities
-  named by the descriptor.
+- consumes a prepared exec-plan descriptor from user memory or from a trusted
+  boot-manifest record.
+- validates executable image, memory object, startup metadata, VMA, FDR, and
+  domain/security capabilities named by the descriptor.
+- rejects malformed descriptors, stale generations, stale lineage epochs,
+  unauthorized executable provenance, W^X/NX violations, unaligned mappings,
+  unsupported memory types, unauthorized startup FDR grants, and denied Resource
+  Domain policy before the commit point.
 - tears down old VMAs except preserved process resources.
 - builds the new VMA set from descriptor records: executable image ranges,
   read-only data, read/write data, anonymous BSS, heap seed, stack, guard pages,
   TLS, and optional shared objects already authorized by the loader.
-- DMA-loads mapped ranges from their source object capabilities into DDR or
-  installs lazy object-backed mappings according to descriptor flags.
+- copies mapped ranges from their source object capabilities into DDR through
+  the DMA fabric or installs lazy object-backed mappings according to descriptor
+  flags. Hardware follows the descriptor; it does not parse segment tables.
 - resets PC, LR, SP, registers, thread-local `ERRNO`, and signal state as
   specified by LNP64 ABI.
-- preserves PID, parent, cwd, selected FDRs, uid/gid.
+- preserves PID, parent, cwd, selected FDRs, and credentials except for
+  explicitly authorized domain/security deltas named by the descriptor.
 - exits the exec barrier and enqueues the single surviving thread.
+
+The `EXEC` commit point is the atomic publication of the new process image:
+new VMA root, new FDR table view, new startup metadata pointer, new PC/SP/TLS
+state, reset signal/thread state, and invalidated sibling thread contexts. If
+validation, cancellation, revocation, signal interruption, descriptor copy,
+object access, or policy checks fail before that point, hardware releases the
+exec barrier and the old image continues with an error in `r_result`. After that
+point the old image no longer exists; later page-fill, startup, or fetch faults
+are faults of the new image and use the normal signal/termination path.
 
 `EXEC` uses F9 with this v1 argument block:
 
@@ -2812,9 +2830,12 @@ architecture record produced by a loader service, libc runtime, Unix
 personality, or boot manifest tool. It contains only hardware-visible commit
 data:
 
+- descriptor version, total byte length, bounded record counts, flags, expected
+  domain generation, expected process generation, and expected lineage epoch.
 - entry PC, initial SP, optional TLS base, and startup metadata pointer.
 - VMA records with target virtual address, length, protection, memory type,
-  source object capability, source offset, and zero-fill length.
+  executable provenance class, source object capability, source offset,
+  file/object generation, lineage epoch, and zero-fill length.
 - FDR preservation/close-on-exec policy and explicit startup FDR grants.
 - domain/security policy deltas already authorized by the parent domain.
 - image measurement/hash references for measured boot or audit records.

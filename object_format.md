@@ -11,6 +11,11 @@ personality domains. A loader that accepts this format produces a bounded LNP64
 exec-plan descriptor; hardware `EXEC` validates that descriptor's capabilities
 and commits the address-space replacement atomically.
 
+The boundary is intentional: this file is a software-loader contract, not a
+hardware executable ABI. Linux, NetBSD, native static loaders, boot-manifest
+tools, and future dynamic loaders may all produce the same exec-plan shape after
+applying their own format and policy rules.
+
 ## ELF Profile
 
 LNP64 v1 uses ELF64, little-endian, two's complement, LP64-style objects.
@@ -194,6 +199,34 @@ The initial process receives:
 Descriptor inheritance across `exec` follows FDR capability metadata. A
 close-on-exec flag prevents inheritance. Generation mismatches fail the exec
 before user code starts.
+
+## Exec-Plan Descriptor Boundary
+
+The exec-plan descriptor is the only object consumed by hardware `EXEC`.
+It is a bounded architecture record containing:
+
+- descriptor version, total length, bounded record counts, flags, expected
+  domain/process generations, and expected lineage epoch.
+- entry PC, initial SP, optional TLS base, and startup metadata pointer.
+- VMA records: target virtual address, length, protection, memory type,
+  executable provenance class, source object/FDR capability, source offset,
+  source generation, lineage epoch, zero-fill length, and mapping flags.
+- startup FDR grants and close-on-exec/preserve decisions.
+- optional image measurement references for measured boot, audit, or
+  attestation records.
+
+The loader must choose ASLR layout, apply relocations, resolve static PIE
+placement, build startup metadata, prepare source/memory capabilities, and
+select FDR grants before calling `EXEC`. Hardware validates the descriptor's
+shape, capabilities, generations, lineage, W^X/NX policy, executable
+provenance, guard pages, memory type, Resource Domain policy, and FDR grant
+authority. It does not validate ELF program-header intent or relocation
+correctness directly.
+
+If `EXEC` rejects the descriptor before its commit point, the old image remains
+runnable and the caller receives an errno-style status. Once hardware commits,
+the old address space and sibling thread contexts are gone and subsequent
+startup/page/fetch faults belong to the new image.
 
 ## Loader Failure Rules
 

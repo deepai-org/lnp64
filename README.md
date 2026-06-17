@@ -15,9 +15,10 @@ model. The implemented subset covers:
 - FDR I/O through the current emulator instructions, with the architectural
   direction converging on `OPEN_AT`, `PULL`, `PUSH`, `SEEK`, and capability
   operations.
-- Real emulator-level process cloning and assembly-program loading for `EXEC`,
-  with the architectural direction converging on `CLONE` profiles for process,
-  thread, and POSIX-fork compatibility.
+- Real emulator-level process cloning and current assembly-program `EXEC`
+  loading. The architectural target is `CLONE` profiles plus hardware `EXEC`
+  commit of loader-produced exec-plan descriptors, not hardware parsing of ELF
+  or dynamic-linker policy.
 - Ready-queue scheduling, futex parking/wake, signal delivery with `SIGRET`,
   IPC messages, Resource Domains, minimal `OBJECT_CTL`, and `CALL_CAP`/`RET_CAP`
   service calls.

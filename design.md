@@ -53,7 +53,7 @@ plugins, or unbounded tree walks.
 *   **`CLONE r_dest, r_flags_or_argblock`**
     *   *Action:* Native process/thread creation primitive. Creates a new thread or process according to an explicit profile and bounded share/copy flags. `pthread_create`-like source forms lower to `profile=thread`; native actor/process creation lowers to explicit `profile=process`; POSIX `fork()` lowers to constrained `profile=posix_fork` with a new PID, exactly one child thread, COW VMAs/heap metadata, defined FDR inheritance, copied credentials/dispositions, copied caller signal mask, cleared child pending signals, and no in-flight operation ownership copied.
 *   **`EXEC r_result, r_exec_argblock`**
-    *   *Action:* Enters a process-wide exec barrier, stops sibling threads, cancels/detaches in-flight operations, invalidates old thread contexts, commits a loader-produced exec-plan descriptor, and resumes with exactly one surviving thread. POSIX `execve(path, ...)` first performs namespace-dispatch `OPEN_AT`, then a loader service or runtime parses the executable format and submits a hardware-visible exec plan.
+    *   *Action:* Commits a loader-produced exec-plan descriptor. POSIX `execve(path, ...)` first performs namespace-dispatch `OPEN_AT`, then a loader service or runtime parses the executable format, applies relocations and interpreter policy in software, prepares memory/source capabilities and startup metadata, and submits a hardware-visible exec plan. Hardware validates that plan, enters a process-wide exec barrier, stops sibling threads, cancels/detaches in-flight operations, invalidates old thread contexts, atomically replaces the VMA/register/startup state, and resumes with exactly one surviving thread. If validation or pre-commit cancellation fails, the old image remains runnable.
 *   **`YIELD`**
     *   *Action:* Suspends the current thread, saves state to the hardware thread context, and selects another ready TID from the hardware runqueue at a bounded scheduling point.
 *   **`EXIT r_exit_code`**
@@ -121,6 +121,27 @@ Page tables and VMAs are managed by fixed hardware MMU/VMA engines using bounded
     *   *Action:* Updates the protection bits for an existing VMA range and invalidates affected translations. This supports software loaders, guard pages, W^X policy, and paravirtual Unix guests that map their process abstractions onto LNP64 VMAs.
 *   **`ALLOC r_dest, r_size`** / **`ALLOC_EX r_dest, r_request_block`** / **`ALLOC_SIZE r_dest, r_ptr`** / **`FREE r_result, r_ptr`**
     *   *Action:* Allocates, queries, and frees byte-granular heap memory through the Hardware Heap Engine. The ISA exposes allocation intent and bounded policy hints, not allocator representation. `ALLOC`/`FREE` create hardware-owned allocation objects with object-level safety and accounting. `MMAP`, `memory_object`, and arena-style `ALLOC_EX` create backing regions for software-owned allocation representations with region-level safety and accounting. The heap is process-local, backed by anonymous NX VMAs, thread-safe in hardware, and integrated with `CLONE` copy-on-write and `EXEC` teardown. Hardware freezes the **LNP64 Default Heap Algorithm**: a domain-aware segregated bump allocator with fixed size classes, per-thread allocation windows, domain-owned slab/run pages, batched cross-thread frees, bounded quarantine/guard hooks, page-run large objects, checked metadata, generation checks, and Resource Domain accounting. Libc and language runtimes own higher-level object policy. `ALLOC_EX` supports alignment, zeroing, guard, debug, locality, allocation-class tags, arena profiles, shared/DMA eligibility hints, and optional memory-tag/debug-hardening flags. `ALLOC_SIZE` exposes the usable allocation extent to libc/runtime code so `realloc` can copy only the valid old allocation extent.
+
+## 4.1 Exec-Plan Boundary
+Hardware `EXEC` does not load programs or understand executable formats. It
+commits a prepared architectural image. A loader, libc runtime, boot manifest
+tool, or Unix personality owns ELF or other formats, dynamic-linker policy,
+interpreter/shebang handling, relocation records, library search, auxv layout,
+credential-transition policy, and package rules.
+
+The exec-plan descriptor is the narrow hardware contract. It names the entry
+PC, initial SP, optional TLS base, startup metadata pointer, VMA records, source
+object capabilities, zero-fill ranges, FDR inheritance/close-on-exec behavior,
+explicit startup FDR grants, executable provenance, ASLR-selected addresses, and
+authorized domain/security deltas. Hardware checks only authority, generations,
+lineage, W^X/NX, executable provenance, guard pages, memory type, Resource
+Domain policy, FDR inheritance, and bounded descriptor shape.
+
+The commit rule is simple: before the exec commit point, failure or cancellation
+releases the exec barrier and the old image continues. After the commit point,
+the old address space and sibling thread contexts are gone, exactly one thread
+exists in the new image, and remaining failures are delivered through the normal
+fault/termination path for that new image.
 
 ## 5. Signal Handling
 LNP64 freezes a clean, widely used Unix signal subset in hardware because it is
@@ -367,14 +388,17 @@ General compute isn't just integers. We need a standard IEEE 754 Floating Point 
     *   *Action:* Vector addition. Adds multiple 32-bit integers simultaneously across wide vector registers (`v0` - `v15`), identical to AVX/NEON.
 
 ### 13. Bootstrapping (Hardware PID 1)
-How does this machine actually turn on if there is no bootloader or kernel to load? The CPU itself is the bootloader.
+How does this machine actually turn on without a conventional bootloader or
+kernel? The reset controller creates the initial operating envelope and commits
+a bounded manifest-provided exec plan for PID 1. It is not a general executable
+loader.
 
 Upon receiving power, the LNP64 executes a hardwired reset sequence:
 1.  Initializes the hardware VMA tree, scheduler fabric, root Resource Domain, default weighted-fair scheduler profile, telemetry/fault routes, capability roots, and runqueue.
 2.  Creates the initial hardware process/thread context (PID 1, TID 1, UID 0) inside a PID 1 Resource Domain with valid CPU, memory, FDR, event, telemetry, and device budgets.
 3.  Reads a boot manifest from SD, SPI flash, or another boot backend by fixed offset/table records, not by hardware path walking.
 4.  Computes manifest/image measurements and exposes the measurement log and FPGA build id through `ENV_GET` and a boot-control FDR. Signed boot images are optional for FPGA v1, but the measurement path is architectural.
-5.  Loads PID 1 from the manifest's exec-plan record and grants initial FDRs named by the manifest: stdio, boot-control, block/storage objects, root namespace service, and any initial service/control capabilities. The manifest exec-plan is an architecture record, not a general executable format.
+5.  Commits PID 1 from the manifest's exec-plan record and grants initial FDRs named by the manifest: stdio, boot-control, block/storage objects, root namespace service, and any initial service/control capabilities. The manifest exec-plan is an architecture record, not a general executable format.
 6.  If a boot manifest names a namespace service, filesystem service, or PCIe Bus Master, creates those privileged service processes and grants only their explicit control capabilities. PCIe enumeration and path semantics are deferred to those services.
 7.  If the manifest lacks a valid PID 1 image, the reset controller enters a hardware panic state and emits board diagnostics.
 
