@@ -1438,8 +1438,8 @@ fn normalize_function_pointer_declarations(source: &str) -> String {
         let indent_len = line.len() - line.trim_start().len();
         let indent = &line[..indent_len];
         let trimmed = line.trim();
-        if trimmed.starts_with("int ")
-            && trimmed.ends_with(';')
+        if trimmed.ends_with(';')
+            && (trimmed.starts_with("int ") || trimmed.starts_with("int *"))
             && trimmed.contains("(*")
             && trimmed.contains(")(")
         {
@@ -1451,7 +1451,7 @@ fn normalize_function_pointer_declarations(source: &str) -> String {
                 }
                 if let Some(name_end_rel) = trimmed[name_start + 2..].find(')') {
                     let name_end = name_start + 2 + name_end_rel;
-                    let name = trimmed[name_start + 2..name_end].trim();
+                    let name = function_pointer_declarator_name(&trimmed[name_start + 2..name_end]);
                     if !is_plain_identifier(name) {
                         out.push_str(line);
                         out.push('\n');
@@ -1474,6 +1474,14 @@ fn normalize_function_pointer_declarations(source: &str) -> String {
         out.push('\n');
     }
     out
+}
+
+fn function_pointer_declarator_name(decl: &str) -> &str {
+    decl.split_whitespace()
+        .rev()
+        .find(|part| !is_type_qualifier_ident(part))
+        .unwrap_or("")
+        .trim_start_matches('*')
 }
 
 fn is_plain_identifier(name: &str) -> bool {
@@ -13594,6 +13602,9 @@ fn type_aggregate_size(name: &str) -> Option<i64> {
 fn builtin_function_label(name: &str) -> Option<&'static str> {
     match name {
         "fgets" => Some("__lnp_fgets"),
+        "memcpy" => Some("__memcpy"),
+        "memmove" => Some("__memmove"),
+        "memset" => Some("__memset"),
         "strstr" => Some("__strstr"),
         "strcasestr" | "xstrcasestr" => Some("__strcasestr"),
         _ => None,
@@ -13732,6 +13743,47 @@ strlen_loop:
   ADD r1, r1, r4
   JMP strlen_loop
 strlen_done:
+  RET
+
+__memcpy:
+  MOV r20, r1
+  MOV r21, r2
+  MOV r22, r3
+  LI r23, 0
+  LI r24, 1
+memcpy_loop:
+  CMP r23, r22
+  BGE memcpy_done
+  ADD r25, r21, r23
+  ADD r26, r20, r23
+  LD.B r27, [r25, 0]
+  ST.B [r26, 0], r27
+  ADD r23, r23, r24
+  JMP memcpy_loop
+memcpy_done:
+  MOV r1, r20
+  RET
+
+__memmove:
+  JMP __memcpy
+
+__memset:
+  MOV r20, r1
+  MOV r21, r2
+  MOV r22, r3
+  LI r23, 255
+  AND r21, r21, r23
+  LI r23, 0
+  LI r24, 1
+memset_loop:
+  CMP r23, r22
+  BGE memset_done
+  ADD r25, r20, r23
+  ST.B [r25, 0], r21
+  ADD r23, r23, r24
+  JMP memset_loop
+memset_done:
+  MOV r1, r20
   RET
 
 __lnp_fgets:
@@ -16420,6 +16472,47 @@ int main() {
         let source = "int pfrom = (((int)((((*previous)>>7) & 255))));\n";
         let out = normalize_function_pointer_declarations(source);
         assert_eq!(out, source);
+    }
+
+    #[test]
+    fn function_pointer_decl_rewrite_accepts_qualified_pointer_declarators() {
+        let source = "int *(*volatile pmemcpy)(int *restrict, int *restrict, int);\n";
+        let out = normalize_function_pointer_declarations(source);
+        assert_eq!(out, "int pmemcpy;\n");
+    }
+
+    #[test]
+    fn indirect_memcpy_and_memset_builtins_have_callable_labels() {
+        let source = r#"
+        static void *(*volatile pmemcpy)(void *restrict, const void *restrict, size_t);
+        static void *(*volatile pmemset)(void *, int, size_t);
+
+        int main() {
+            char src[8];
+            char dst[8];
+            pmemcpy = memcpy;
+            pmemset = memset;
+            pmemset(src, 'A', 8);
+            src[3] = 'Z';
+            if (pmemcpy(dst + 1, src + 2, 4) != dst + 1) return 1;
+            if (dst[0] != 0) return 2;
+            if (dst[1] != 'A') return 3;
+            if (dst[2] != 'Z') return 4;
+            if (dst[3] != 'A') return 5;
+            if (dst[4] != 'A') return 6;
+            if (pmemset(dst, -1, 2) != dst) return 7;
+            if (dst[0] != 255) return 8;
+            if (dst[1] != 255) return 9;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("__memcpy"), "{asm}");
+        assert!(asm.contains("__memset"), "{asm}");
+        assert!(asm.contains("CALL_REG"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
     }
 
     #[test]
