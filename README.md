@@ -90,6 +90,9 @@ Run all demos:
 bash scripts/run_demos.sh
 ```
 
+For the current POSIX/libc surface, real-program gates, and open compatibility
+bugs, see `conformance_matrix.md`.
+
 ## Docker
 
 ```sh
