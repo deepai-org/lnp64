@@ -6649,6 +6649,23 @@ impl CodeGen {
                 let flags = self.emit_fopen_flags(&args[1])?;
                 self.emit_open_fd_alloc(path, flags)
             }
+            "freopen" => {
+                if args.len() != 3 {
+                    return Err("freopen(path, mode, stream) expects 3 arguments".to_string());
+                }
+                let path = self.emit_expr(&args[0])?;
+                let path_slot = self.spill_reg(path);
+                self.temp_reg = 0;
+                let flags = self.emit_fopen_flags(&args[1])?;
+                let flags_slot = self.spill_reg(flags);
+                self.temp_reg = 0;
+                let stream = self.emit_expr(&args[2])?;
+                let ignored = self.alloc_reg()?;
+                self.emit_fd_close_dispatch(stream, ignored)?;
+                let path = self.reload_reg(path_slot)?;
+                let flags = self.reload_reg(flags_slot)?;
+                self.emit_open_fd_alloc(path, flags)
+            }
             "tmpfile" => {
                 self.no_args(name, args)?;
                 let path_value = format!("/tmp/lnp64_tmpfile_{}", self.string_id);
@@ -13544,6 +13561,39 @@ int main() {
         let asm = compile(source).unwrap();
         assert!(asm.contains("OPEN_FD_DYN"), "{asm}");
         assert!(asm.contains("UNLINK_PATH"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_freopen_replaces_descriptor_stream() {
+        let source = r#"
+        int main() {
+            int fp;
+            int buf;
+            remove("/tmp/lnp64_freopen_test.txt");
+            fp = fopen("/tmp/lnp64_freopen_test.txt", "w");
+            if (fp == -1) return 1;
+            fwrite("abc", 1, 3, fp);
+            fclose(fp);
+            fp = fopen("/tmp/lnp64_freopen_test.txt", "r");
+            if (fp == -1) return 2;
+            buf = alloc(8);
+            if (fread(buf, 1, 1, fp) != 1) return 3;
+            fp = freopen("/tmp/lnp64_freopen_test.txt", "rb", fp);
+            if (fp == -1) return 4;
+            if (fread(buf, 1, 3, fp) != 3) return 5;
+            storeb(buf + 3, 0);
+            if (strcmp(buf, "abc") != 0) return 6;
+            fclose(fp);
+            remove("/tmp/lnp64_freopen_test.txt");
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("FD_CLOSE_DYN"), "{asm}");
+        assert!(asm.contains("OPEN_FD_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
