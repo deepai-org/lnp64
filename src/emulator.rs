@@ -8,13 +8,14 @@ use std::os::fd::AsRawFd;
 use std::os::raw::{c_char, c_int};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{FileExt, MetadataExt, PermissionsExt};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::rc::Rc;
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::asm::Program;
 use crate::isa::*;
+use crate::native::{CloneProfile, NativeEvent, NativeResult, ObjectKind, ObjectProfile};
 
 const STACK_SIZE: u64 = 4 * 1024 * 1024;
 const CALL_FRAME_SIZE: u64 = 32 * 1024;
@@ -117,17 +118,36 @@ const OBJECT_OP_SOCKET_ACCEPT: u64 = 5;
 const OBJECT_OP_SOCKET_GETSOCKNAME: u64 = 6;
 const OBJECT_OP_SOCKET_GETSOCKOPT: u64 = 7;
 const OBJECT_OP_SOCKET_SETSOCKOPT: u64 = 8;
-const OBJECT_KIND_COUNTER: u64 = 1;
-const OBJECT_KIND_QUEUE: u64 = 2;
-const OBJECT_KIND_MEMORY_OBJECT: u64 = 3;
-const OBJECT_KIND_DMA_BUFFER: u64 = 4;
-const OBJECT_KIND_ENDPOINT: u64 = 5;
-const OBJECT_KIND_TIMER: u64 = 6;
-const OBJECT_PROFILE_PIPE: u64 = 1;
-const OBJECT_PROFILE_EVENTFD: u64 = 1;
-const OBJECT_PROFILE_TCP_STREAM: u64 = 2;
-const OBJECT_PROFILE_CALL_GATE: u64 = 4;
+const OBJECT_OP_CLASSIFY: u64 = 9;
+const OBJECT_OP_CLASSIFIER_QUERY: u64 = 10;
 const EVENTFD_SEMAPHORE: u64 = 1;
+const CLASSIFIER_MAX_RULES: usize = 64;
+const CLASSIFIER_MAX_ALLOWED_QUEUES: usize = 64;
+const CLASSIFIER_RULE_SIZE: u64 = 64;
+const CLASSIFY_ENVELOPE_SIZE: u64 = 72;
+const CLASSIFY_RESULT_SIZE: u64 = 64;
+const CLASSIFIER_COUNTERS_SIZE: u64 = 40;
+const CLASSIFY_PROFILE_PACKET: u64 = 1;
+const CLASSIFY_PROFILE_IPC: u64 = 2;
+const CLASSIFY_PROFILE_EVENT: u64 = 3;
+const CLASSIFY_PROFILE_DMA_COMPLETION: u64 = 4;
+const CLASSIFY_PROFILE_STORAGE_COMPLETION: u64 = 5;
+const CLASSIFY_PROFILE_TRACE: u64 = 6;
+const CLASSIFY_PROFILE_RUNTIME_TASK: u64 = 7;
+const CLASSIFY_RULE_EXACT: u64 = 1;
+const CLASSIFY_RULE_MASKED: u64 = 2;
+const CLASSIFY_RULE_RANGE: u64 = 3;
+const CLASSIFY_RULE_HASH: u64 = 4;
+const CLASSIFY_FIELD_SERVICE_ID: u64 = 1;
+const CLASSIFY_FIELD_DST_PORT: u64 = 2;
+const CLASSIFY_FIELD_SRC_IPV4: u64 = 3;
+const CLASSIFY_FIELD_DST_IPV4: u64 = 4;
+const CLASSIFY_FIELD_HASH: u64 = 5;
+const CLASSIFY_ACTION_MARK: u64 = 1;
+const CLASSIFY_ACTION_COUNT: u64 = 2;
+const CLASSIFY_ACTION_DROP: u64 = 3;
+const CLASSIFY_ACTION_ROUTE: u64 = 4;
+const CLASSIFY_ACTION_NEEDS_SOFTWARE: u64 = 5;
 const DMA_OP_COPY: u64 = 1;
 const DMA_OP_FILL: u64 = 2;
 const CALL_MODE_SYNC: u64 = 0;
@@ -202,6 +222,7 @@ enum FdHandle {
         pos: usize,
     },
     Timer(Rc<RefCell<TimerState>>),
+    ClassifierTable(Rc<RefCell<ClassifierTable>>),
     DmaBuffer {
         addr: u64,
         len: u64,
@@ -256,6 +277,7 @@ impl FdHandle {
                 pos: *pos,
             }),
             FdHandle::Timer(timer) => Ok(FdHandle::Timer(Rc::clone(timer))),
+            FdHandle::ClassifierTable(table) => Ok(FdHandle::ClassifierTable(Rc::clone(table))),
             FdHandle::DmaBuffer { addr, len } => Ok(FdHandle::DmaBuffer {
                 addr: *addr,
                 len: *len,
@@ -357,6 +379,59 @@ struct CapabilityPayload {
 struct PipeBuffer {
     bytes: VecDeque<u8>,
     capabilities: VecDeque<CapabilityPayload>,
+}
+
+#[derive(Clone)]
+struct ClassifierRule {
+    kind: u64,
+    field: u64,
+    value: u64,
+    mask_or_end: u64,
+    action: u64,
+    action_arg: u64,
+    hash_mod: u64,
+}
+
+#[derive(Default)]
+struct ClassifierCounters {
+    hits: u64,
+    drops: u64,
+    routes: u64,
+    malformed: u64,
+    fallback: u64,
+}
+
+struct ClassifierTable {
+    rules: Vec<ClassifierRule>,
+    allowed_queues: Vec<u64>,
+    counters: ClassifierCounters,
+}
+
+struct ClassifierEnvelope {
+    profile: u64,
+    source: u64,
+    source_generation: u64,
+    domain_id: u64,
+    record_ptr: u64,
+    record_len: usize,
+    inline0: u64,
+    inline1: u64,
+    inline2: u64,
+}
+
+#[derive(Default)]
+struct ClassifierParsedFields {
+    src_ipv4: Option<u64>,
+    dst_ipv4: Option<u64>,
+    src_port: Option<u64>,
+    dst_port: Option<u64>,
+    hash: u64,
+    needs_software: bool,
+}
+
+enum ClassifyParseError {
+    Malformed,
+    NeedsSoftware,
 }
 
 #[derive(Default)]
@@ -578,10 +653,11 @@ struct Process {
     gid: u64,
     sigmask: u64,
     signal_handlers: HashMap<u64, SignalDisposition>,
-    pending_signals: VecDeque<u64>,
+    pending_events: VecDeque<NativeEvent>,
     inbox: VecDeque<(u64, u64)>,
     ucode_ports: HashMap<u64, u8>,
     errno: u64,
+    namespace_root: Option<PathBuf>,
     cwd: PathBuf,
 }
 
@@ -650,10 +726,11 @@ impl Process {
             gid: if pid == 1 { 0 } else { 1000 },
             sigmask: 0,
             signal_handlers: HashMap::new(),
-            pending_signals: VecDeque::new(),
+            pending_events: VecDeque::new(),
             inbox: VecDeque::new(),
             ucode_ports: HashMap::new(),
             errno: 0,
+            namespace_root: Some(PathBuf::from("/")),
             cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
         }
     }
@@ -685,10 +762,11 @@ impl Process {
             gid: self.gid,
             sigmask: self.sigmask,
             signal_handlers: self.signal_handlers.clone(),
-            pending_signals: VecDeque::new(),
+            pending_events: VecDeque::new(),
             inbox: VecDeque::new(),
             ucode_ports: self.ucode_ports.clone(),
             errno: self.errno,
+            namespace_root: self.namespace_root.clone(),
             cwd: self.cwd.clone(),
         })
     }
@@ -704,6 +782,7 @@ impl Process {
         replacement.uid = self.uid;
         replacement.gid = self.gid;
         replacement.sigmask = self.sigmask;
+        replacement.namespace_root = self.namespace_root.clone();
         replacement.cwd = self.cwd.clone();
         replacement.errno = self.errno;
         replacement.ucode_ports = std::mem::take(&mut self.ucode_ports);
@@ -1640,29 +1719,7 @@ impl Machine {
                 }
             }
             Instr::Fork(dst) => {
-                self.require_domain_cap(DOMAIN_CAP_PROCESS)?;
-                if !self.check_domain_budget(0, 0, 1, 0)? {
-                    self.write_reg(dst, -1i64 as u64)?;
-                    return Ok(true);
-                }
-                let child_pid = self.next_pid;
-                self.next_pid += 1;
-                let child_tid = self.next_tid;
-                self.next_tid += 1;
-
-                let parent_pid = self.thread()?.pid;
-                let child_process = self.process()?.fork_clone(child_pid)?;
-                let mut child_thread = self.thread()?.clone();
-                child_thread.pid = child_pid;
-                child_thread.tid = child_tid;
-                if dst.0 != 0 && dst.0 != 31 {
-                    child_thread.regs[dst.0] = 0;
-                }
-                self.processes.insert(child_pid, child_process);
-                self.threads.insert(child_tid, child_thread);
-                self.ready.push_back(child_tid);
-                self.write_reg(dst, child_pid)?;
-                let _ = parent_pid;
+                self.clone_with_profile(CloneProfile::NewProcessCow, dst, None)?;
             }
             Instr::Exec(path_reg, argv_reg, envp_reg) => {
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
@@ -1689,22 +1746,8 @@ impl Machine {
                 self.set_process_entry(&args, &env)?;
             }
             Instr::Spawn(dst, entry) => {
-                self.require_domain_cap(DOMAIN_CAP_PROCESS)?;
-                if !self.check_domain_budget(0, 0, 1, 0)? {
-                    self.write_reg(dst, -1i64 as u64)?;
-                    return Ok(true);
-                }
-                let tid = self.next_tid;
-                self.next_tid += 1;
-                let mut child = self.thread()?.clone();
-                child.tid = tid;
-                child.thread_pointer = 0;
-                child.ip = self.read_reg(entry)? as usize;
-                let stack_top = self.process()?.stack_top;
-                child.regs[31] = stack_top - CALL_FRAME_SIZE - ((tid - 1) * THREAD_STACK_STRIDE);
-                self.threads.insert(tid, child);
-                self.ready.push_back(tid);
-                self.write_reg(dst, tid)?;
+                let entry = self.read_reg(entry)?;
+                self.clone_with_profile(CloneProfile::SpawnEntry, dst, Some(entry))?;
             }
             Instr::ThreadJoin(result, tid_reg, retval_reg) => {
                 let tid = self.read_reg(tid_reg)?;
@@ -1840,7 +1883,7 @@ impl Machine {
             Instr::Kill(pid, signum) => {
                 let pid = self.read_reg(pid)?;
                 let signum = self.read_reg(signum)?;
-                self.raise_process_signal(pid, signum);
+                self.queue_process_event(pid, NativeEvent::kill_signal(signum));
             }
             Instr::Sigret => {
                 let saved = self
@@ -2001,6 +2044,58 @@ impl Machine {
             .ok_or_else(|| format!("missing current thread {}", self.current_tid))
     }
 
+    fn clone_with_profile(
+        &mut self,
+        profile: CloneProfile,
+        dst: Reg,
+        entry: Option<u64>,
+    ) -> Result<(), String> {
+        self.require_domain_cap(DOMAIN_CAP_PROCESS)?;
+        if !self.check_domain_budget(0, 0, 1, 0)? {
+            self.write_reg(dst, -1i64 as u64)?;
+            return Ok(());
+        }
+        match profile {
+            CloneProfile::NewProcessCow => {
+                let child_pid = self.next_pid;
+                self.next_pid += 1;
+                let child_tid = self.next_tid;
+                self.next_tid += 1;
+
+                let child_process = self.process()?.fork_clone(child_pid)?;
+                let mut child_thread = self.thread()?.clone();
+                child_thread.pid = child_pid;
+                child_thread.tid = child_tid;
+                if dst.0 != 0 && dst.0 != 31 {
+                    child_thread.regs[dst.0] = 0;
+                }
+                self.processes.insert(child_pid, child_process);
+                self.threads.insert(child_tid, child_thread);
+                self.ready.push_back(child_tid);
+                self.write_reg(dst, child_pid)?;
+            }
+            CloneProfile::NewThreadSharedVm | CloneProfile::SpawnEntry => {
+                let entry = entry.ok_or_else(|| "thread clone missing entry point".to_string())?;
+                let tid = self.next_tid;
+                self.next_tid += 1;
+                let mut child = self.thread()?.clone();
+                child.tid = tid;
+                child.thread_pointer = 0;
+                child.ip = entry as usize;
+                let stack_top = self.process()?.stack_top;
+                child.regs[31] = stack_top - CALL_FRAME_SIZE - ((tid - 1) * THREAD_STACK_STRIDE);
+                self.threads.insert(tid, child);
+                self.ready.push_back(tid);
+                self.write_reg(dst, tid)?;
+            }
+            CloneProfile::DomainTask => {
+                self.set_status_errno(38)?;
+                self.write_reg(dst, -1i64 as u64)?;
+            }
+        }
+        Ok(())
+    }
+
     fn process(&self) -> Result<&Process, String> {
         let pid = self.thread()?.pid;
         self.processes
@@ -2090,14 +2185,22 @@ impl Machine {
         Ok(())
     }
 
-    fn set_status_ok(&mut self) -> Result<(), String> {
+    fn complete_ok(&mut self, value: u64) -> Result<(), String> {
         self.set_errno(0)?;
-        self.write_reg(Reg(1), 0)
+        self.write_reg(Reg(1), value)
+    }
+
+    fn complete_err(&mut self, errno: u64) -> Result<(), String> {
+        self.set_errno(errno)?;
+        self.write_reg(Reg(1), -1i64 as u64)
+    }
+
+    fn set_status_ok(&mut self) -> Result<(), String> {
+        self.complete_ok(0)
     }
 
     fn set_status_errno(&mut self, errno: u64) -> Result<(), String> {
-        self.set_errno(errno)?;
-        self.write_reg(Reg(1), -1i64 as u64)
+        self.complete_err(errno)
     }
 
     fn set_status_io_error(&mut self, err: io::Error) -> Result<(), String> {
@@ -2105,15 +2208,26 @@ impl Machine {
     }
 
     fn resolve_process_path(&self, path: &str) -> Result<String, String> {
-        if path.is_empty() || path.starts_with("tcp-listen:") || Path::new(path).is_absolute() {
+        if path.is_empty() || path.starts_with("tcp-listen:") {
             return Ok(path.to_string());
         }
-        Ok(self
-            .process()?
-            .cwd
-            .join(path)
-            .to_string_lossy()
-            .into_owned())
+        let process = self.process()?;
+        let root = process.namespace_root.as_ref().ok_or_else(|| {
+            "path resolution denied: missing namespace root capability".to_string()
+        })?;
+        let candidate = if Path::new(path).is_absolute() {
+            normalize_path_lexical(Path::new(path))
+        } else {
+            normalize_path_lexical(&process.cwd.join(path))
+        };
+        let root = normalize_path_lexical(root);
+        if !candidate.starts_with(&root) {
+            return Err(format!(
+                "path resolution denied: {:?} escapes namespace root {:?}",
+                candidate, root
+            ));
+        }
+        Ok(candidate.to_string_lossy().into_owned())
     }
 
     fn write_lnp64_stat(&mut self, addr: u64, metadata: &fs::Metadata) -> Result<(), String> {
@@ -2478,6 +2592,7 @@ impl Machine {
             | FdHandle::TcpSocket { .. }
             | FdHandle::DmaBuffer { .. }
             | FdHandle::CallGate { .. }
+            | FdHandle::ClassifierTable(_)
             | FdHandle::Closed => Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
                 "fd is not writable",
@@ -2838,6 +2953,7 @@ impl Machine {
             | FdHandle::TcpSocket { .. }
             | FdHandle::DmaBuffer { .. }
             | FdHandle::CallGate { .. }
+            | FdHandle::ClassifierTable(_)
             | FdHandle::Closed => 0,
         };
         self.write_bytes(addr, &tmp[..count])?;
@@ -2884,6 +3000,8 @@ impl Machine {
             OBJECT_OP_SOCKET_GETSOCKNAME => self.object_ctl_socket_getsockname(argblock),
             OBJECT_OP_SOCKET_GETSOCKOPT => self.object_ctl_socket_getsockopt(argblock),
             OBJECT_OP_SOCKET_SETSOCKOPT => self.object_ctl_socket_setsockopt(argblock),
+            OBJECT_OP_CLASSIFY => self.object_ctl_classify(argblock),
+            OBJECT_OP_CLASSIFIER_QUERY => self.object_ctl_classifier_query(argblock),
             _ => Err(22),
         };
         match value {
@@ -3243,15 +3361,17 @@ impl Machine {
         Ok(targets.len() as u64)
     }
 
-    fn object_ctl_create(&mut self, argblock: u64) -> Result<u64, u64> {
+    fn object_ctl_create(&mut self, argblock: u64) -> NativeResult<u64> {
         self.require_domain_cap_errno(DOMAIN_CAP_OBJECT | DOMAIN_CAP_FDR)?;
-        let kind = self.load_u64(argblock + 8).map_err(|_| 14u64)?;
-        let profile = self.load_u64(argblock + 16).map_err(|_| 14u64)?;
+        let kind_code = self.load_u64(argblock + 8).map_err(|_| 14u64)?;
+        let profile_code = self.load_u64(argblock + 16).map_err(|_| 14u64)?;
+        let kind = ObjectKind::from_code(kind_code).ok_or(22u64)?;
+        let profile = ObjectProfile::from_code_for_kind(kind, profile_code).ok_or(22u64)?;
         let fd0_req = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
         let fd1_req = self.load_u64(argblock + 32).map_err(|_| 14u64)?;
         let arg = self.load_u64(argblock + 40).map_err(|_| 14u64)?;
         match (kind, profile) {
-            (OBJECT_KIND_QUEUE, OBJECT_PROFILE_PIPE) => {
+            (ObjectKind::Queue, ObjectProfile::Pipe) => {
                 let buffer = Rc::new(RefCell::new(PipeBuffer::default()));
                 let read_fd =
                     self.install_object_fd(fd0_req, FdHandle::PipeReader(Rc::clone(&buffer)))?;
@@ -3262,7 +3382,7 @@ impl Machine {
                     .map_err(|_| 14u64)?;
                 Ok(0)
             }
-            (OBJECT_KIND_QUEUE, OBJECT_PROFILE_CALL_GATE) => {
+            (ObjectKind::Queue, ObjectProfile::CallGate) => {
                 self.require_domain_cap_errno(DOMAIN_CAP_CALL)?;
                 let target_domain = if fd1_req == 0 {
                     self.current_domain_id().map_err(|_| 3u64)?
@@ -3307,7 +3427,7 @@ impl Machine {
                     .map_err(|_| 14u64)?;
                 Ok(fd as u64)
             }
-            (OBJECT_KIND_COUNTER, OBJECT_PROFILE_EVENTFD) => {
+            (ObjectKind::Counter, ObjectProfile::EventFd) => {
                 let flags = self.load_u64(argblock + 48).map_err(|_| 14u64)?;
                 let fd = self.install_object_fd(
                     fd0_req,
@@ -3320,14 +3440,14 @@ impl Machine {
                     .map_err(|_| 14u64)?;
                 Ok(fd as u64)
             }
-            (OBJECT_KIND_COUNTER, _) => {
+            (ObjectKind::Counter, _) => {
                 let fd =
                     self.install_object_fd(fd0_req, FdHandle::Counter(Rc::new(RefCell::new(arg))))?;
                 self.store_u64(argblock + 24, fd as u64)
                     .map_err(|_| 14u64)?;
                 Ok(fd as u64)
             }
-            (OBJECT_KIND_MEMORY_OBJECT, _) => {
+            (ObjectKind::MemoryObject, _) => {
                 let len = arg.max(1) as usize;
                 let fd = self.install_object_fd(
                     fd0_req,
@@ -3340,7 +3460,7 @@ impl Machine {
                     .map_err(|_| 14u64)?;
                 Ok(fd as u64)
             }
-            (OBJECT_KIND_TIMER, _) => {
+            (ObjectKind::Timer, _) => {
                 let fd = self.install_object_fd(
                     fd0_req,
                     FdHandle::Timer(Rc::new(RefCell::new(TimerState::default()))),
@@ -3349,7 +3469,32 @@ impl Machine {
                     .map_err(|_| 14u64)?;
                 Ok(fd as u64)
             }
-            (OBJECT_KIND_DMA_BUFFER, _) => {
+            (ObjectKind::Classifier, ObjectProfile::ClassifierTable) => {
+                let rules_ptr = arg;
+                let rule_count = self.load_u64(argblock + 48).map_err(|_| 14u64)? as usize;
+                let allowed_ptr = self.load_u64(argblock + 56).map_err(|_| 14u64)?;
+                let allowed_count = self.load_u64(argblock + 64).map_err(|_| 14u64)? as usize;
+                if rule_count > CLASSIFIER_MAX_RULES
+                    || allowed_count > CLASSIFIER_MAX_ALLOWED_QUEUES
+                {
+                    return Err(22);
+                }
+                let rules = self.read_classifier_rules(rules_ptr, rule_count)?;
+                let allowed_queues =
+                    self.read_classifier_allowed_queues(allowed_ptr, allowed_count)?;
+                let fd = self.install_object_fd(
+                    fd0_req,
+                    FdHandle::ClassifierTable(Rc::new(RefCell::new(ClassifierTable {
+                        rules,
+                        allowed_queues,
+                        counters: ClassifierCounters::default(),
+                    }))),
+                )?;
+                self.store_u64(argblock + 24, fd as u64)
+                    .map_err(|_| 14u64)?;
+                Ok(fd as u64)
+            }
+            (ObjectKind::DmaBuffer, _) => {
                 let len = self.load_u64(argblock + 48).map_err(|_| 14u64)?.max(1);
                 self.ensure_mapped(arg, len as usize, false)
                     .map_err(|_| 14u64)?;
@@ -3360,7 +3505,7 @@ impl Machine {
                     .map_err(|_| 14u64)?;
                 Ok(fd as u64)
             }
-            (OBJECT_KIND_ENDPOINT, OBJECT_PROFILE_TCP_STREAM) => {
+            (ObjectKind::Endpoint, ObjectProfile::TcpStream) => {
                 let sock_type = self.load_u64(argblock + 48).map_err(|_| 14u64)?;
                 let protocol = self.load_u64(argblock + 56).map_err(|_| 14u64)?;
                 let fd = self.install_object_fd(
@@ -3378,6 +3523,459 @@ impl Machine {
             }
             _ => Err(22),
         }
+    }
+
+    fn read_classifier_rules(
+        &mut self,
+        rules_ptr: u64,
+        rule_count: usize,
+    ) -> Result<Vec<ClassifierRule>, u64> {
+        if rule_count == 0 {
+            return Ok(Vec::new());
+        }
+        if rules_ptr == 0 {
+            return Err(14);
+        }
+        let mut rules = Vec::with_capacity(rule_count);
+        for idx in 0..rule_count as u64 {
+            let base = rules_ptr + idx * CLASSIFIER_RULE_SIZE;
+            let rule = ClassifierRule {
+                kind: self.load_u64(base).map_err(|_| 14u64)?,
+                field: self.load_u64(base + 8).map_err(|_| 14u64)?,
+                value: self.load_u64(base + 16).map_err(|_| 14u64)?,
+                mask_or_end: self.load_u64(base + 24).map_err(|_| 14u64)?,
+                action: self.load_u64(base + 32).map_err(|_| 14u64)?,
+                action_arg: self.load_u64(base + 40).map_err(|_| 14u64)?,
+                hash_mod: self.load_u64(base + 48).map_err(|_| 14u64)?,
+            };
+            if !matches!(
+                rule.kind,
+                CLASSIFY_RULE_EXACT
+                    | CLASSIFY_RULE_MASKED
+                    | CLASSIFY_RULE_RANGE
+                    | CLASSIFY_RULE_HASH
+            ) || !matches!(
+                rule.action,
+                CLASSIFY_ACTION_MARK
+                    | CLASSIFY_ACTION_COUNT
+                    | CLASSIFY_ACTION_DROP
+                    | CLASSIFY_ACTION_ROUTE
+                    | CLASSIFY_ACTION_NEEDS_SOFTWARE
+            ) {
+                return Err(22);
+            }
+            rules.push(rule);
+        }
+        Ok(rules)
+    }
+
+    fn read_classifier_allowed_queues(
+        &mut self,
+        allowed_ptr: u64,
+        allowed_count: usize,
+    ) -> Result<Vec<u64>, u64> {
+        if allowed_count == 0 {
+            return Ok(Vec::new());
+        }
+        if allowed_ptr == 0 {
+            return Err(14);
+        }
+        let mut allowed = Vec::with_capacity(allowed_count);
+        for idx in 0..allowed_count as u64 {
+            let token = self.load_u64(allowed_ptr + idx * 8).map_err(|_| 14u64)?;
+            let fd = self.decode_fd_value(token)?;
+            self.fd_right_errno(fd, CAP_RIGHT_WRITE)?;
+            if !matches!(
+                self.process().map_err(|_| 3u64)?.fds[fd],
+                FdHandle::PipeWriter(_)
+            ) {
+                return Err(9);
+            }
+            allowed.push(token);
+        }
+        Ok(allowed)
+    }
+
+    fn object_ctl_classify(&mut self, argblock: u64) -> NativeResult<u64> {
+        let classifier_value = self.load_u64(argblock + 8).map_err(|_| 14u64)?;
+        let envelope_ptr = self.load_u64(argblock + 16).map_err(|_| 14u64)?;
+        let result_ptr = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
+        if envelope_ptr == 0 {
+            return Err(14);
+        }
+        self.ensure_mapped(envelope_ptr, CLASSIFY_ENVELOPE_SIZE as usize, false)
+            .map_err(|_| 14u64)?;
+        if result_ptr != 0 {
+            self.ensure_mapped(result_ptr, CLASSIFY_RESULT_SIZE as usize, true)
+                .map_err(|_| 14u64)?;
+        }
+        let classifier_fd = self.decode_fd_value(classifier_value)?;
+        self.fd_right_errno(classifier_fd, CAP_RIGHT_CALL)?;
+        let table = match self.process().map_err(|_| 3u64)?.fds.get(classifier_fd) {
+            Some(FdHandle::ClassifierTable(table)) => Rc::clone(table),
+            _ => return Err(9),
+        };
+        let envelope = ClassifierEnvelope {
+            profile: self.load_u64(envelope_ptr).map_err(|_| 14u64)?,
+            source: self.load_u64(envelope_ptr + 8).map_err(|_| 14u64)?,
+            source_generation: self.load_u64(envelope_ptr + 16).map_err(|_| 14u64)?,
+            domain_id: self.load_u64(envelope_ptr + 24).map_err(|_| 14u64)?,
+            record_ptr: self.load_u64(envelope_ptr + 32).map_err(|_| 14u64)?,
+            record_len: self.load_u64(envelope_ptr + 40).map_err(|_| 14u64)? as usize,
+            inline0: self.load_u64(envelope_ptr + 48).map_err(|_| 14u64)?,
+            inline1: self.load_u64(envelope_ptr + 56).map_err(|_| 14u64)?,
+            inline2: self.load_u64(envelope_ptr + 64).map_err(|_| 14u64)?,
+        };
+        if !matches!(
+            envelope.profile,
+            CLASSIFY_PROFILE_PACKET
+                | CLASSIFY_PROFILE_IPC
+                | CLASSIFY_PROFILE_EVENT
+                | CLASSIFY_PROFILE_DMA_COMPLETION
+                | CLASSIFY_PROFILE_STORAGE_COMPLETION
+                | CLASSIFY_PROFILE_TRACE
+                | CLASSIFY_PROFILE_RUNTIME_TASK
+        ) {
+            return Err(22);
+        }
+        if envelope.domain_id != 0
+            && envelope.domain_id != self.current_domain_id().map_err(|_| 3u64)?
+        {
+            return Err(1);
+        }
+        self.validate_classifier_source(&envelope)?;
+        let packet = if envelope.profile == CLASSIFY_PROFILE_PACKET {
+            match self.parse_classifier_packet(&envelope) {
+                Ok(parsed) => parsed,
+                Err(ClassifyParseError::Malformed) => {
+                    let mut table = table.borrow_mut();
+                    table.counters.malformed = table.counters.malformed.saturating_add(1);
+                    table.counters.fallback = table.counters.fallback.saturating_add(1);
+                    self.write_classifier_result(
+                        result_ptr,
+                        CLASSIFY_ACTION_NEEDS_SOFTWARE,
+                        0,
+                        0,
+                        u64::MAX,
+                    )?;
+                    return Ok(CLASSIFY_ACTION_NEEDS_SOFTWARE);
+                }
+                Err(ClassifyParseError::NeedsSoftware) => ClassifierParsedFields {
+                    needs_software: true,
+                    ..ClassifierParsedFields::default()
+                },
+            }
+        } else {
+            ClassifierParsedFields::default()
+        };
+        if packet.needs_software {
+            let mut table = table.borrow_mut();
+            table.counters.fallback = table.counters.fallback.saturating_add(1);
+            self.write_classifier_result(
+                result_ptr,
+                CLASSIFY_ACTION_NEEDS_SOFTWARE,
+                0,
+                0,
+                u64::MAX,
+            )?;
+            return Ok(CLASSIFY_ACTION_NEEDS_SOFTWARE);
+        }
+        let selected = {
+            let table_ref = table.borrow();
+            table_ref.rules.iter().enumerate().find_map(|(idx, rule)| {
+                self.classifier_rule_matches(rule, &envelope, &packet)
+                    .then(|| (idx as u64, rule.clone()))
+            })
+        };
+        let Some((rule_idx, rule)) = selected else {
+            let mut table = table.borrow_mut();
+            table.counters.fallback = table.counters.fallback.saturating_add(1);
+            self.write_classifier_result(
+                result_ptr,
+                CLASSIFY_ACTION_NEEDS_SOFTWARE,
+                0,
+                0,
+                u64::MAX,
+            )?;
+            return Ok(CLASSIFY_ACTION_NEEDS_SOFTWARE);
+        };
+        let route_token = if rule.action == CLASSIFY_ACTION_ROUTE {
+            self.classifier_route(&table, rule.action_arg, &envelope)?
+        } else {
+            0
+        };
+        {
+            let mut table = table.borrow_mut();
+            table.counters.hits = table.counters.hits.saturating_add(1);
+            match rule.action {
+                CLASSIFY_ACTION_DROP => {
+                    table.counters.drops = table.counters.drops.saturating_add(1);
+                }
+                CLASSIFY_ACTION_ROUTE => {
+                    table.counters.routes = table.counters.routes.saturating_add(1);
+                }
+                CLASSIFY_ACTION_NEEDS_SOFTWARE => {
+                    table.counters.fallback = table.counters.fallback.saturating_add(1);
+                }
+                _ => {}
+            }
+        }
+        self.write_classifier_result(
+            result_ptr,
+            rule.action,
+            rule.action_arg,
+            route_token,
+            rule_idx,
+        )?;
+        Ok(rule.action)
+    }
+
+    fn object_ctl_classifier_query(&mut self, argblock: u64) -> NativeResult<u64> {
+        let classifier_value = self.load_u64(argblock + 8).map_err(|_| 14u64)?;
+        let out_ptr = self.load_u64(argblock + 16).map_err(|_| 14u64)?;
+        if out_ptr == 0 {
+            return Err(14);
+        }
+        self.ensure_mapped(out_ptr, CLASSIFIER_COUNTERS_SIZE as usize, true)
+            .map_err(|_| 14u64)?;
+        let classifier_fd = self.decode_fd_value(classifier_value)?;
+        self.fd_right_errno(classifier_fd, CAP_RIGHT_STAT)?;
+        let counters = match self.process().map_err(|_| 3u64)?.fds.get(classifier_fd) {
+            Some(FdHandle::ClassifierTable(table)) => {
+                let table = table.borrow();
+                [
+                    table.counters.hits,
+                    table.counters.drops,
+                    table.counters.routes,
+                    table.counters.malformed,
+                    table.counters.fallback,
+                ]
+            }
+            _ => return Err(9),
+        };
+        for (idx, value) in counters.into_iter().enumerate() {
+            self.store_u64(out_ptr + idx as u64 * 8, value)
+                .map_err(|_| 14u64)?;
+        }
+        Ok(CLASSIFIER_COUNTERS_SIZE)
+    }
+
+    fn validate_classifier_source(&self, envelope: &ClassifierEnvelope) -> Result<(), u64> {
+        if envelope.source == 0 {
+            return Err(9);
+        }
+        let source_fd = self.decode_fd_value(envelope.source)?;
+        self.fd_right_errno(source_fd, CAP_RIGHT_READ)?;
+        if envelope.source_generation != 0 {
+            let generation = self
+                .process()
+                .map_err(|_| 3u64)?
+                .fd_generations
+                .get(source_fd)
+                .copied()
+                .ok_or(9u64)?;
+            if generation != envelope.source_generation {
+                return Err(116);
+            }
+        }
+        Ok(())
+    }
+
+    fn classifier_rule_matches(
+        &self,
+        rule: &ClassifierRule,
+        envelope: &ClassifierEnvelope,
+        packet: &ClassifierParsedFields,
+    ) -> bool {
+        let Some(value) = self.classifier_field_value(rule.field, envelope, packet) else {
+            return false;
+        };
+        match rule.kind {
+            CLASSIFY_RULE_EXACT => value == rule.value,
+            CLASSIFY_RULE_MASKED => (value & rule.mask_or_end) == (rule.value & rule.mask_or_end),
+            CLASSIFY_RULE_RANGE => value >= rule.value && value <= rule.mask_or_end,
+            CLASSIFY_RULE_HASH => {
+                let modulus = rule.hash_mod.max(rule.mask_or_end).max(1);
+                value % modulus == rule.value
+            }
+            _ => false,
+        }
+    }
+
+    fn classifier_field_value(
+        &self,
+        field: u64,
+        envelope: &ClassifierEnvelope,
+        packet: &ClassifierParsedFields,
+    ) -> Option<u64> {
+        match field {
+            CLASSIFY_FIELD_SERVICE_ID => Some(envelope.inline0),
+            CLASSIFY_FIELD_DST_PORT => packet.dst_port.or(Some(envelope.inline1)),
+            CLASSIFY_FIELD_SRC_IPV4 => packet.src_ipv4.or(Some(envelope.inline1)),
+            CLASSIFY_FIELD_DST_IPV4 => packet.dst_ipv4.or(Some(envelope.inline2)),
+            CLASSIFY_FIELD_HASH => {
+                Some(packet.hash ^ envelope.inline0 ^ envelope.inline1 ^ envelope.inline2)
+            }
+            _ => None,
+        }
+    }
+
+    fn parse_classifier_packet(
+        &mut self,
+        envelope: &ClassifierEnvelope,
+    ) -> Result<ClassifierParsedFields, ClassifyParseError> {
+        if envelope.record_ptr == 0 || envelope.record_len < 14 {
+            return Err(ClassifyParseError::Malformed);
+        }
+        let bytes = self
+            .read_bytes(envelope.record_ptr, envelope.record_len)
+            .map_err(|_| ClassifyParseError::Malformed)?;
+        let mut offset = 14usize;
+        let mut ethertype = u16::from_be_bytes([bytes[12], bytes[13]]);
+        if matches!(ethertype, 0x8100 | 0x88a8) {
+            if bytes.len() < 18 {
+                return Err(ClassifyParseError::Malformed);
+            }
+            ethertype = u16::from_be_bytes([bytes[16], bytes[17]]);
+            offset = 18;
+        }
+        match ethertype {
+            0x0800 => self.parse_classifier_ipv4(&bytes, offset),
+            0x86dd => self.parse_classifier_ipv6(&bytes, offset),
+            _ => Err(ClassifyParseError::NeedsSoftware),
+        }
+    }
+
+    fn parse_classifier_ipv4(
+        &self,
+        bytes: &[u8],
+        offset: usize,
+    ) -> Result<ClassifierParsedFields, ClassifyParseError> {
+        if bytes.len() < offset + 20 {
+            return Err(ClassifyParseError::Malformed);
+        }
+        let version = bytes[offset] >> 4;
+        let ihl = (bytes[offset] & 0x0f) as usize * 4;
+        if version != 4 || ihl < 20 || bytes.len() < offset + ihl {
+            return Err(ClassifyParseError::Malformed);
+        }
+        let protocol = bytes[offset + 9];
+        let src_ipv4 = u32::from_be_bytes([
+            bytes[offset + 12],
+            bytes[offset + 13],
+            bytes[offset + 14],
+            bytes[offset + 15],
+        ]) as u64;
+        let dst_ipv4 = u32::from_be_bytes([
+            bytes[offset + 16],
+            bytes[offset + 17],
+            bytes[offset + 18],
+            bytes[offset + 19],
+        ]) as u64;
+        let mut parsed = ClassifierParsedFields {
+            src_ipv4: Some(src_ipv4),
+            dst_ipv4: Some(dst_ipv4),
+            hash: src_ipv4 ^ dst_ipv4 ^ protocol as u64,
+            ..ClassifierParsedFields::default()
+        };
+        if matches!(protocol, 6 | 17) {
+            let port_offset = offset + ihl;
+            if bytes.len() < port_offset + 4 {
+                return Err(ClassifyParseError::Malformed);
+            }
+            let src_port = u16::from_be_bytes([bytes[port_offset], bytes[port_offset + 1]]) as u64;
+            let dst_port =
+                u16::from_be_bytes([bytes[port_offset + 2], bytes[port_offset + 3]]) as u64;
+            parsed.src_port = Some(src_port);
+            parsed.dst_port = Some(dst_port);
+            parsed.hash ^= src_port ^ dst_port;
+        } else {
+            parsed.needs_software = true;
+        }
+        Ok(parsed)
+    }
+
+    fn parse_classifier_ipv6(
+        &self,
+        bytes: &[u8],
+        offset: usize,
+    ) -> Result<ClassifierParsedFields, ClassifyParseError> {
+        if bytes.len() < offset + 40 {
+            return Err(ClassifyParseError::Malformed);
+        }
+        if bytes[offset] >> 4 != 6 {
+            return Err(ClassifyParseError::Malformed);
+        }
+        let next_header = bytes[offset + 6];
+        let mut hash = next_header as u64;
+        for byte in &bytes[offset + 8..offset + 40] {
+            hash = hash.rotate_left(5) ^ *byte as u64;
+        }
+        let mut parsed = ClassifierParsedFields {
+            hash,
+            ..ClassifierParsedFields::default()
+        };
+        if matches!(next_header, 6 | 17) {
+            let port_offset = offset + 40;
+            if bytes.len() < port_offset + 4 {
+                return Err(ClassifyParseError::Malformed);
+            }
+            let src_port = u16::from_be_bytes([bytes[port_offset], bytes[port_offset + 1]]) as u64;
+            let dst_port =
+                u16::from_be_bytes([bytes[port_offset + 2], bytes[port_offset + 3]]) as u64;
+            parsed.src_port = Some(src_port);
+            parsed.dst_port = Some(dst_port);
+            parsed.hash ^= src_port ^ dst_port;
+        } else {
+            parsed.needs_software = true;
+        }
+        Ok(parsed)
+    }
+
+    fn classifier_route(
+        &mut self,
+        table: &Rc<RefCell<ClassifierTable>>,
+        queue_token: u64,
+        envelope: &ClassifierEnvelope,
+    ) -> NativeResult<u64> {
+        if !table.borrow().allowed_queues.contains(&queue_token) {
+            return Err(1);
+        }
+        let queue_fd = self.decode_fd_value(queue_token)?;
+        self.fd_right_errno(queue_fd, CAP_RIGHT_WRITE)?;
+        let queue = match self.process().map_err(|_| 3u64)?.fds.get(queue_fd) {
+            Some(FdHandle::PipeWriter(queue)) => Rc::clone(queue),
+            _ => return Err(9),
+        };
+        let payload = if envelope.record_ptr != 0 && envelope.record_len != 0 {
+            self.read_bytes(envelope.record_ptr, envelope.record_len)
+                .map_err(|_| 14u64)?
+        } else {
+            envelope.inline0.to_le_bytes().to_vec()
+        };
+        queue.borrow_mut().bytes.extend(payload);
+        Ok(queue_token)
+    }
+
+    fn write_classifier_result(
+        &mut self,
+        result_ptr: u64,
+        action: u64,
+        action_arg: u64,
+        route_token: u64,
+        rule_idx: u64,
+    ) -> Result<(), u64> {
+        if result_ptr == 0 {
+            return Ok(());
+        }
+        self.store_u64(result_ptr, action).map_err(|_| 14u64)?;
+        self.store_u64(result_ptr + 8, action_arg)
+            .map_err(|_| 14u64)?;
+        self.store_u64(result_ptr + 16, route_token)
+            .map_err(|_| 14u64)?;
+        self.store_u64(result_ptr + 24, rule_idx)
+            .map_err(|_| 14u64)?;
+        Ok(())
     }
 
     fn object_ctl_socket_bind(&mut self, argblock: u64) -> Result<u64, u64> {
@@ -5089,9 +5687,10 @@ impl Machine {
             Pcr::Tp => self.thread()?.thread_pointer,
             Pcr::Sigmask => process.sigmask,
             Pcr::Sigpending => process
-                .pending_signals
+                .pending_events
                 .iter()
-                .fold(0u64, |mask, signum| mask | (1u64 << signum.min(&63))),
+                .filter_map(|event| event.signal_number())
+                .fold(0u64, |mask, signum| mask | (1u64 << signum.min(63))),
             Pcr::RealtimeSec => {
                 let now = Self::system_time_to_host_timespec(SystemTime::now());
                 now.tv_sec as u64
@@ -5150,7 +5749,9 @@ impl Machine {
             self.processes.remove(&pid);
             if let Some(parent_pid) = parent_pid {
                 if let Some(parent) = self.processes.get_mut(&parent_pid) {
-                    parent.pending_signals.push_back(SIGCHLD);
+                    parent
+                        .pending_events
+                        .push_back(NativeEvent::child_signal(SIGCHLD));
                 }
             }
         }
@@ -5188,7 +5789,7 @@ impl Machine {
         }
         self.alarms.retain(|(_, ticks)| *ticks != 0);
         for pid in expired {
-            self.raise_process_signal(pid, SIGALRM);
+            self.queue_process_event(pid, NativeEvent::timer_signal(SIGALRM));
         }
     }
 
@@ -5219,9 +5820,9 @@ impl Machine {
         }
     }
 
-    fn raise_process_signal(&mut self, pid: u64, signum: u64) {
+    fn queue_process_event(&mut self, pid: u64, event: NativeEvent) {
         if let Some(process) = self.processes.get_mut(&pid) {
-            process.pending_signals.push_back(signum);
+            process.pending_events.push_back(event);
             if let Some(tid) = self
                 .threads
                 .values()
@@ -5397,6 +5998,7 @@ impl Machine {
             | FdHandle::TcpSocket { .. }
             | FdHandle::DmaBuffer { .. }
             | FdHandle::CallGate { .. }
+            | FdHandle::ClassifierTable(_)
             | FdHandle::Closed => Ok(false),
         }
     }
@@ -5432,6 +6034,7 @@ impl Machine {
             | FdHandle::Counter(_)
             | FdHandle::MemoryObject { .. }
             | FdHandle::CallGate { .. }
+            | FdHandle::ClassifierTable(_)
             | FdHandle::TcpStream(_) => Ok(true),
             FdHandle::EventCounter { value, .. } => Ok(*value.borrow() != 0),
             FdHandle::Timer(timer) => Ok(timer.borrow().expirations != 0),
@@ -5461,7 +6064,9 @@ impl Machine {
     }
 
     fn raise_current_signal(&mut self, signum: u64) -> Result<(), String> {
-        self.process_mut()?.pending_signals.push_back(signum);
+        self.process_mut()?
+            .pending_events
+            .push_back(NativeEvent::fault_signal(signum));
         Ok(())
     }
 
@@ -5471,16 +6076,19 @@ impl Machine {
             let Some(process) = self.processes.get_mut(&pid) else {
                 return Ok(());
             };
-            let Some(pos) = process
-                .pending_signals
-                .iter()
-                .position(|sig| process.sigmask & (1u64 << sig.min(&63)) == 0)
-            else {
+            let Some(pos) = process.pending_events.iter().position(|event| {
+                event
+                    .signal_number()
+                    .is_some_and(|sig| process.sigmask & (1u64 << sig.min(63)) == 0)
+            }) else {
                 return Ok(());
             };
-            process.pending_signals.remove(pos)
+            process.pending_events.remove(pos)
         };
-        let Some(signum) = signum else {
+        let Some(event) = signum else {
+            return Ok(());
+        };
+        let Some(signum) = event.signal_number() else {
             return Ok(());
         };
         match self.process()?.signal_handlers.get(&signum).copied() {
@@ -5530,6 +6138,26 @@ impl Machine {
 
 fn align_up(value: u64, align: u64) -> u64 {
     (value + align - 1) & !(align - 1)
+}
+
+fn normalize_path_lexical(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => out.push(prefix.as_os_str()),
+            Component::RootDir => out.push(Path::new("/")),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            Component::Normal(part) => out.push(part),
+        }
+    }
+    if out.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        out
+    }
 }
 
 fn range_within(base: u64, base_len: u64, addr: u64, len: usize) -> bool {
@@ -5583,6 +6211,505 @@ mod tests {
             "#,
         )
         .unwrap()
+    }
+
+    fn create_pipe_pair(machine: &mut Machine, read_fd: u64, write_fd: u64) -> (u64, u64) {
+        let arg = ARG_BASE;
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::Queue.code())
+            .unwrap();
+        machine
+            .store_u64(arg + 16, ObjectProfile::Pipe.code())
+            .unwrap();
+        machine.store_u64(arg + 24, read_fd).unwrap();
+        machine.store_u64(arg + 32, write_fd).unwrap();
+        machine.store_u64(arg + 40, 0).unwrap();
+        machine.object_ctl(Reg(2), arg).unwrap();
+        (
+            machine.fd_token(read_fd as usize).unwrap(),
+            machine.fd_token(write_fd as usize).unwrap(),
+        )
+    }
+
+    fn create_memory_source(machine: &mut Machine, fd: u64) -> u64 {
+        let arg = ARG_BASE + 0x100;
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::MemoryObject.code())
+            .unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, fd).unwrap();
+        machine.store_u64(arg + 40, 64).unwrap();
+        machine.object_ctl(Reg(2), arg).unwrap();
+        machine.fd_token(fd as usize).unwrap()
+    }
+
+    fn write_classifier_rule(
+        machine: &mut Machine,
+        base: u64,
+        kind: u64,
+        field: u64,
+        value: u64,
+        mask_or_end: u64,
+        action: u64,
+        action_arg: u64,
+        hash_mod: u64,
+    ) {
+        machine.store_u64(base, kind).unwrap();
+        machine.store_u64(base + 8, field).unwrap();
+        machine.store_u64(base + 16, value).unwrap();
+        machine.store_u64(base + 24, mask_or_end).unwrap();
+        machine.store_u64(base + 32, action).unwrap();
+        machine.store_u64(base + 40, action_arg).unwrap();
+        machine.store_u64(base + 48, hash_mod).unwrap();
+    }
+
+    fn create_classifier(
+        machine: &mut Machine,
+        fd: u64,
+        rules_ptr: u64,
+        rule_count: u64,
+        allowed_ptr: u64,
+        allowed_count: u64,
+    ) -> u64 {
+        let arg = ARG_BASE + 0x200;
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::Classifier.code())
+            .unwrap();
+        machine
+            .store_u64(arg + 16, ObjectProfile::ClassifierTable.code())
+            .unwrap();
+        machine.store_u64(arg + 24, fd).unwrap();
+        machine.store_u64(arg + 40, rules_ptr).unwrap();
+        machine.store_u64(arg + 48, rule_count).unwrap();
+        machine.store_u64(arg + 56, allowed_ptr).unwrap();
+        machine.store_u64(arg + 64, allowed_count).unwrap();
+        machine.object_ctl(Reg(2), arg).unwrap();
+        machine.fd_token(fd as usize).unwrap()
+    }
+
+    fn classify(machine: &mut Machine, classifier: u64, envelope: u64, result: u64) -> u64 {
+        let arg = ARG_BASE + 0x300;
+        machine.store_u64(arg, OBJECT_OP_CLASSIFY).unwrap();
+        machine.store_u64(arg + 8, classifier).unwrap();
+        machine.store_u64(arg + 16, envelope).unwrap();
+        machine.store_u64(arg + 24, result).unwrap();
+        machine.object_ctl(Reg(9), arg).unwrap();
+        machine.thread().unwrap().regs[9]
+    }
+
+    fn write_envelope(
+        machine: &mut Machine,
+        base: u64,
+        profile: u64,
+        source: u64,
+        record_ptr: u64,
+        record_len: u64,
+        inline0: u64,
+        inline1: u64,
+        inline2: u64,
+    ) {
+        machine.store_u64(base, profile).unwrap();
+        machine.store_u64(base + 8, source).unwrap();
+        machine.store_u64(base + 16, 0).unwrap();
+        machine.store_u64(base + 24, ROOT_DOMAIN_ID).unwrap();
+        machine.store_u64(base + 32, record_ptr).unwrap();
+        machine.store_u64(base + 40, record_len).unwrap();
+        machine.store_u64(base + 48, inline0).unwrap();
+        machine.store_u64(base + 56, inline1).unwrap();
+        machine.store_u64(base + 64, inline2).unwrap();
+    }
+
+    fn ipv4_udp_packet(src: [u8; 4], dst: [u8; 4], src_port: u16, dst_port: u16) -> Vec<u8> {
+        let mut bytes = vec![0u8; 14 + 20 + 8];
+        bytes[12] = 0x08;
+        bytes[13] = 0x00;
+        let ip = 14;
+        bytes[ip] = 0x45;
+        bytes[ip + 9] = 17;
+        bytes[ip + 12..ip + 16].copy_from_slice(&src);
+        bytes[ip + 16..ip + 20].copy_from_slice(&dst);
+        let udp = ip + 20;
+        bytes[udp..udp + 2].copy_from_slice(&src_port.to_be_bytes());
+        bytes[udp + 2..udp + 4].copy_from_slice(&dst_port.to_be_bytes());
+        bytes
+    }
+
+    fn query_classifier_counters(machine: &mut Machine, classifier: u64, out: u64) {
+        let arg = ARG_BASE + 0x380;
+        machine.store_u64(arg, OBJECT_OP_CLASSIFIER_QUERY).unwrap();
+        machine.store_u64(arg + 8, classifier).unwrap();
+        machine.store_u64(arg + 16, out).unwrap();
+        machine.object_ctl(Reg(10), arg).unwrap();
+    }
+
+    #[test]
+    fn classifier_routes_ipc_record_by_service_id_and_wakes_queue() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let (_reader_token, writer_token) = create_pipe_pair(&mut machine, 3, 4);
+        let source = create_memory_source(&mut machine, 5);
+        let rules = ARG_BASE + 0x1000;
+        let allowed = ARG_BASE + 0x1800;
+        let payload = ARG_BASE + 0x1900;
+        let envelope = ARG_BASE + 0x1a00;
+        let result = ARG_BASE + 0x1b00;
+        machine.write_bytes(payload, b"ipc").unwrap();
+        machine.store_u64(allowed, writer_token).unwrap();
+        write_classifier_rule(
+            &mut machine,
+            rules,
+            CLASSIFY_RULE_EXACT,
+            CLASSIFY_FIELD_SERVICE_ID,
+            42,
+            0,
+            CLASSIFY_ACTION_ROUTE,
+            writer_token,
+            0,
+        );
+        let classifier = create_classifier(&mut machine, 6, rules, 1, allowed, 1);
+        write_envelope(
+            &mut machine,
+            envelope,
+            CLASSIFY_PROFILE_IPC,
+            source,
+            payload,
+            3,
+            42,
+            0,
+            0,
+        );
+
+        assert_eq!(
+            classify(&mut machine, classifier, envelope, result),
+            CLASSIFY_ACTION_ROUTE
+        );
+        assert_eq!(machine.load_u64(result).unwrap(), CLASSIFY_ACTION_ROUTE);
+        assert!(machine.fd_read_ready(3).unwrap());
+        let mut out = [0u8; 3];
+        machine.read_fd_index(3, ARG_BASE + 0x1c00, 3).unwrap();
+        out.copy_from_slice(&machine.read_bytes(ARG_BASE + 0x1c00, 3).unwrap());
+        assert_eq!(&out, b"ipc");
+    }
+
+    #[test]
+    fn classifier_routes_packets_by_port_subnet_and_hash() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let (_reader_token, writer_token) = create_pipe_pair(&mut machine, 3, 4);
+        let source = create_memory_source(&mut machine, 5);
+        let allowed = ARG_BASE + 0x1000;
+        machine.store_u64(allowed, writer_token).unwrap();
+        let packet = ipv4_udp_packet([10, 1, 2, 3], [192, 168, 1, 44], 1000, 8080);
+        let packet_ptr = ARG_BASE + 0x1800;
+        let envelope = ARG_BASE + 0x1a00;
+        let result = ARG_BASE + 0x1b00;
+        machine.write_bytes(packet_ptr, &packet).unwrap();
+        write_envelope(
+            &mut machine,
+            envelope,
+            CLASSIFY_PROFILE_PACKET,
+            source,
+            packet_ptr,
+            packet.len() as u64,
+            0,
+            0,
+            0,
+        );
+
+        let rule_sets = [
+            (
+                CLASSIFY_RULE_EXACT,
+                CLASSIFY_FIELD_DST_PORT,
+                8080,
+                0,
+                0,
+                ARG_BASE + 0x2000,
+            ),
+            (
+                CLASSIFY_RULE_MASKED,
+                CLASSIFY_FIELD_DST_IPV4,
+                0xc0a8_0100,
+                0xffff_ff00,
+                0,
+                ARG_BASE + 0x2100,
+            ),
+            (
+                CLASSIFY_RULE_HASH,
+                CLASSIFY_FIELD_HASH,
+                ((0x0a01_0203u64 ^ 0xc0a8_012cu64 ^ 17 ^ 1000 ^ 8080) % 4),
+                0,
+                4,
+                ARG_BASE + 0x2200,
+            ),
+        ];
+        for (kind, field, value, mask, hash_mod, rules) in rule_sets {
+            write_classifier_rule(
+                &mut machine,
+                rules,
+                kind,
+                field,
+                value,
+                mask,
+                CLASSIFY_ACTION_ROUTE,
+                writer_token,
+                hash_mod,
+            );
+            let classifier = create_classifier(&mut machine, 6, rules, 1, allowed, 1);
+            assert_eq!(
+                classify(&mut machine, classifier, envelope, result),
+                CLASSIFY_ACTION_ROUTE
+            );
+            machine.close_fd_index(6).unwrap();
+        }
+    }
+
+    #[test]
+    fn classifier_fallback_malformed_and_drop_counters_are_reported() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let (_reader_token, writer_token) = create_pipe_pair(&mut machine, 3, 4);
+        let source = create_memory_source(&mut machine, 5);
+        let rules = ARG_BASE + 0x1000;
+        let allowed = ARG_BASE + 0x1800;
+        let envelope = ARG_BASE + 0x1a00;
+        let result = ARG_BASE + 0x1b00;
+        let counters = ARG_BASE + 0x1c00;
+        let packet_ptr = ARG_BASE + 0x1d00;
+        machine.store_u64(allowed, writer_token).unwrap();
+        write_classifier_rule(
+            &mut machine,
+            rules,
+            CLASSIFY_RULE_EXACT,
+            CLASSIFY_FIELD_SERVICE_ID,
+            7,
+            0,
+            CLASSIFY_ACTION_DROP,
+            0,
+            0,
+        );
+        let classifier = create_classifier(&mut machine, 6, rules, 1, allowed, 1);
+
+        write_envelope(
+            &mut machine,
+            envelope,
+            CLASSIFY_PROFILE_IPC,
+            source,
+            0,
+            0,
+            7,
+            0,
+            0,
+        );
+        assert_eq!(
+            classify(&mut machine, classifier, envelope, result),
+            CLASSIFY_ACTION_DROP
+        );
+
+        write_envelope(
+            &mut machine,
+            envelope,
+            CLASSIFY_PROFILE_IPC,
+            source,
+            0,
+            0,
+            99,
+            0,
+            0,
+        );
+        assert_eq!(
+            classify(&mut machine, classifier, envelope, result),
+            CLASSIFY_ACTION_NEEDS_SOFTWARE
+        );
+
+        machine.write_bytes(packet_ptr, &[1, 2, 3]).unwrap();
+        write_envelope(
+            &mut machine,
+            envelope,
+            CLASSIFY_PROFILE_PACKET,
+            source,
+            packet_ptr,
+            3,
+            0,
+            0,
+            0,
+        );
+        assert_eq!(
+            classify(&mut machine, classifier, envelope, result),
+            CLASSIFY_ACTION_NEEDS_SOFTWARE
+        );
+
+        query_classifier_counters(&mut machine, classifier, counters);
+        assert_eq!(machine.load_u64(counters).unwrap(), 1);
+        assert_eq!(machine.load_u64(counters + 8).unwrap(), 1);
+        assert_eq!(machine.load_u64(counters + 16).unwrap(), 0);
+        assert_eq!(machine.load_u64(counters + 24).unwrap(), 1);
+        assert_eq!(machine.load_u64(counters + 32).unwrap(), 2);
+    }
+
+    #[test]
+    fn classifier_rejects_unauthorized_stale_and_revoked_routes() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let (_reader_token, writer_token) = create_pipe_pair(&mut machine, 3, 4);
+        let (_other_reader, other_writer) = create_pipe_pair(&mut machine, 7, 8);
+        let source = create_memory_source(&mut machine, 5);
+        let rules = ARG_BASE + 0x1000;
+        let allowed = ARG_BASE + 0x1800;
+        let envelope = ARG_BASE + 0x1a00;
+        let result = ARG_BASE + 0x1b00;
+        machine.store_u64(allowed, writer_token).unwrap();
+        write_classifier_rule(
+            &mut machine,
+            rules,
+            CLASSIFY_RULE_EXACT,
+            CLASSIFY_FIELD_SERVICE_ID,
+            1,
+            0,
+            CLASSIFY_ACTION_ROUTE,
+            other_writer,
+            0,
+        );
+        let classifier = create_classifier(&mut machine, 6, rules, 1, allowed, 1);
+        write_envelope(
+            &mut machine,
+            envelope,
+            CLASSIFY_PROFILE_IPC,
+            source,
+            0,
+            0,
+            1,
+            0,
+            0,
+        );
+        assert_eq!(
+            classify(&mut machine, classifier, envelope, result),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 1);
+
+        machine.close_fd_index(6).unwrap();
+        write_classifier_rule(
+            &mut machine,
+            rules,
+            CLASSIFY_RULE_EXACT,
+            CLASSIFY_FIELD_SERVICE_ID,
+            1,
+            0,
+            CLASSIFY_ACTION_ROUTE,
+            writer_token,
+            0,
+        );
+        let classifier = create_classifier(&mut machine, 6, rules, 1, allowed, 1);
+        machine.close_fd_index(5).unwrap();
+        assert_eq!(
+            classify(&mut machine, classifier, envelope, result),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 116);
+
+        let source = create_memory_source(&mut machine, 5);
+        write_envelope(
+            &mut machine,
+            envelope,
+            CLASSIFY_PROFILE_IPC,
+            source,
+            0,
+            0,
+            1,
+            0,
+            0,
+        );
+        machine.store_u64(ARG_BASE + 0x1f00, writer_token).unwrap();
+        machine.cap_revoke(Reg(11), ARG_BASE + 0x1f00).unwrap();
+        assert_eq!(
+            classify(&mut machine, classifier, envelope, result),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 116);
+    }
+
+    #[test]
+    fn completion_helpers_are_errno_compatibility_boundary() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.complete_ok(123).unwrap();
+        assert_eq!(machine.process().unwrap().errno, 0);
+        assert_eq!(machine.thread().unwrap().regs[1], 123);
+
+        machine.complete_err(22).unwrap();
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+    }
+
+    #[test]
+    fn clone_profiles_back_fork_and_spawn_entry() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+
+        machine
+            .clone_with_profile(CloneProfile::NewProcessCow, Reg(5), None)
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], 2);
+        let child = machine
+            .threads
+            .values()
+            .find(|thread| thread.pid == 2)
+            .unwrap();
+        assert_eq!(child.regs[5], 0);
+
+        machine
+            .clone_with_profile(CloneProfile::NewThreadSharedVm, Reg(6), Some(0))
+            .unwrap();
+        assert!(machine.thread().unwrap().regs[6] >= 2);
+        assert!(machine.threads.len() >= 3);
+    }
+
+    #[test]
+    fn signal_delivery_uses_native_event_queue_before_abi_frame() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine
+            .process_mut()
+            .unwrap()
+            .signal_handlers
+            .insert(2, SignalDisposition::Handler(7));
+
+        machine.queue_process_event(1, NativeEvent::kill_signal(2));
+        assert!(matches!(
+            machine.process().unwrap().pending_events.front(),
+            Some(NativeEvent::Signal { signum: 2, .. })
+        ));
+
+        machine.deliver_signal_if_needed().unwrap();
+        assert!(machine.process().unwrap().pending_events.is_empty());
+        assert_eq!(machine.thread().unwrap().ip, 7);
+        assert_eq!(machine.thread().unwrap().signal_stack.len(), 1);
+    }
+
+    #[test]
+    fn namespace_root_capability_is_required_for_path_resolution() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.process_mut().unwrap().namespace_root = None;
+        assert!(machine.resolve_process_path("Cargo.toml").is_err());
+    }
+
+    #[test]
+    fn namespace_root_rejects_lexical_escape() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let root = PathBuf::from("/tmp/lnp64-ns-root");
+        let process = machine.process_mut().unwrap();
+        process.namespace_root = Some(root.clone());
+        process.cwd = root.join("subdir");
+        assert!(machine.resolve_process_path("../../outside").is_err());
+        assert_eq!(
+            machine.resolve_process_path("inside").unwrap(),
+            "/tmp/lnp64-ns-root/subdir/inside"
+        );
     }
 
     #[test]
@@ -7513,7 +8640,9 @@ mod tests {
         let arg = ARG_BASE;
 
         machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
-        machine.store_u64(arg + 8, OBJECT_KIND_DMA_BUFFER).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::DmaBuffer.code())
+            .unwrap();
         machine.store_u64(arg + 16, 0).unwrap();
         machine.store_u64(arg + 24, 0).unwrap();
         machine.store_u64(arg + 32, 0).unwrap();
@@ -7559,7 +8688,9 @@ mod tests {
         let arg = ARG_BASE;
 
         machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
-        machine.store_u64(arg + 8, OBJECT_KIND_DMA_BUFFER).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::DmaBuffer.code())
+            .unwrap();
         machine.store_u64(arg + 16, 0).unwrap();
         machine.store_u64(arg + 24, 0).unwrap();
         machine.store_u64(arg + 32, 0).unwrap();
@@ -7572,7 +8703,9 @@ mod tests {
         machine.thread_mut().unwrap().regs[4] = stale_token;
         machine.exec(Instr::FdCloseDyn(Reg(4))).unwrap();
         machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
-        machine.store_u64(arg + 8, OBJECT_KIND_DMA_BUFFER).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::DmaBuffer.code())
+            .unwrap();
         machine.store_u64(arg + 16, 0).unwrap();
         machine.store_u64(arg + 24, fd as u64).unwrap();
         machine.store_u64(arg + 32, 0).unwrap();
@@ -7612,7 +8745,9 @@ mod tests {
         let arg = ARG_BASE;
 
         machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
-        machine.store_u64(arg + 8, OBJECT_KIND_DMA_BUFFER).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::DmaBuffer.code())
+            .unwrap();
         machine.store_u64(arg + 16, 0).unwrap();
         machine.store_u64(arg + 24, 0).unwrap();
         machine.store_u64(arg + 32, 0).unwrap();
@@ -8128,7 +9263,9 @@ mod tests {
         machine.domains.get_mut(&2).unwrap().limits.fdrs = baseline.fdrs;
         let arg = ARG_BASE;
         machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
-        machine.store_u64(arg + 8, OBJECT_KIND_COUNTER).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::Counter.code())
+            .unwrap();
         machine.store_u64(arg + 16, 0).unwrap();
         machine.store_u64(arg + 24, 4).unwrap();
         machine.store_u64(arg + 40, 0).unwrap();

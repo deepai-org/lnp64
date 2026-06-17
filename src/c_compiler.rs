@@ -19,6 +19,11 @@ use crate::c_type_rewrites::{
     normalize_static_struct_line_globals, normalize_storage_class_arrays,
     normalize_struct_entry_declarations,
 };
+use crate::lowering::{
+    DOMAIN_CTL_RECORD_SIZE, OBJECT_CTL_CREATE_RECORD_SIZE, fork_clone_profile, pipe_object_profile,
+    pthread_clone_profile,
+};
+use crate::native::CloneProfile;
 
 #[derive(Debug, Clone, PartialEq)]
 enum Token {
@@ -8781,9 +8786,9 @@ impl CodeGen {
                     &[(0, src), (8, dst_req), (16, rights), (24, flags)],
                 )
             }
-            "cap_send" => {
+            "cap_send" | "__lnp_cap_send" => {
                 if args.len() != 3 {
-                    return Err("cap_send(channel, src, flags) expects 3 arguments".to_string());
+                    return Err(format!("{name}(channel, src, flags) expects 3 arguments"));
                 }
                 let channel = self.emit_expr(&args[0])?;
                 let src = self.emit_expr(&args[1])?;
@@ -9103,6 +9108,20 @@ impl CodeGen {
                 let arg = self.emit_expr(&args[4])?;
                 self.emit_object_create(kind, profile, fd0, fd1, arg)
             }
+            "__lnp_object_create" => {
+                if args.len() != 5 {
+                    return Err(
+                        "__lnp_object_create(kind, profile, fd0, fd1, arg) expects 5 arguments"
+                            .to_string(),
+                    );
+                }
+                let kind = self.emit_expr(&args[0])?;
+                let profile = self.emit_expr(&args[1])?;
+                let fd0 = self.emit_expr(&args[2])?;
+                let fd1 = self.emit_expr(&args[3])?;
+                let arg = self.emit_expr(&args[4])?;
+                self.emit_object_create(kind, profile, fd0, fd1, arg)
+            }
             "__lnp_object_ctl" => {
                 let argblock = self.one_arg(name, args)?;
                 let dst = self.alloc_reg()?;
@@ -9143,27 +9162,20 @@ impl CodeGen {
                 let pids = self.emit_expr(&args[1])?;
                 let fdrs = self.emit_expr(&args[2])?;
                 let caps = self.emit_expr(&args[3])?;
-                let block_size = self.alloc_reg()?;
-                let block = self.alloc_reg()?;
-                let tmp = self.alloc_reg()?;
-                let dst = self.alloc_reg()?;
-                self.text.push(format!("  LI r{block_size}, 208"));
-                self.text.push(format!("  ALLOC r{block}, r{block_size}"));
-                self.text.push(format!("  LI r{tmp}, 1"));
-                self.text.push(format!("  ST [r{block}, 0], r{tmp}"));
-                self.text.push(format!("  ST [r{block}, 8], r0"));
-                self.text.push(format!("  ST [r{block}, 16], r0"));
-                self.text.push(format!("  LI r{tmp}, 4"));
-                self.text.push(format!("  ST [r{block}, 24], r{tmp}"));
-                self.text.push(format!("  LI r{tmp}, 1000"));
-                self.text.push(format!("  ST [r{block}, 32], r{tmp}"));
-                self.text.push(format!("  ST [r{block}, 40], r{memory}"));
-                self.text.push(format!("  ST [r{block}, 48], r{pids}"));
-                self.text.push(format!("  ST [r{block}, 56], r{fdrs}"));
-                self.text.push(format!("  ST [r{block}, 64], r{caps}"));
-                self.text.push(format!("  ST [r{block}, 72], r{caps}"));
-                self.text.push(format!("  DOMAIN_CTL r{dst}, r{block}"));
-                Ok(dst)
+                self.emit_domain_create(memory, pids, fdrs, caps)
+            }
+            "__lnp_domain_create" => {
+                if args.len() != 4 {
+                    return Err(
+                        "__lnp_domain_create(memory, pids, fdrs, caps) expects 4 arguments"
+                            .to_string(),
+                    );
+                }
+                let memory = self.emit_expr(&args[0])?;
+                let pids = self.emit_expr(&args[1])?;
+                let fdrs = self.emit_expr(&args[2])?;
+                let caps = self.emit_expr(&args[3])?;
+                self.emit_domain_create(memory, pids, fdrs, caps)
             }
             "__lnp_domain_ctl" => {
                 let argblock = self.one_arg(name, args)?;
@@ -9242,11 +9254,11 @@ impl CodeGen {
                     .push(format!("  CALL_CAP r{dst}, fd{fd}, r{arg0}, r{arg1}"));
                 Ok(dst)
             }
-            "__lnp_call_cap" => {
+            "__lnp_call_cap" | "__lnp_call" => {
                 if args.len() != 3 {
-                    return Err("__lnp_call_cap(fd, arg0, arg1) expects 3 arguments".to_string());
+                    return Err(format!("{name}(fd, arg0, arg1) expects 3 arguments"));
                 }
-                let fd = self.numeric_fd(&args[0], "__lnp_call_cap")?;
+                let fd = self.numeric_fd(&args[0], name)?;
                 let arg0 = self.emit_expr(&args[1])?;
                 let arg1 = self.emit_expr(&args[2])?;
                 let dst = self.alloc_reg()?;
@@ -9296,9 +9308,7 @@ impl CodeGen {
                 if !args.is_empty() {
                     return Err("fork() expects no arguments".to_string());
                 }
-                let dst = self.alloc_reg()?;
-                self.text.push(format!("  FORK r{dst}"));
-                Ok(dst)
+                self.emit_clone_profile(fork_clone_profile(), None)
             }
             "exec" | "execv" | "execvp" | "execve" => {
                 if args.is_empty() {
@@ -9441,11 +9451,7 @@ impl CodeGen {
                 if !self.function_names.contains(label) {
                     return Err(format!("unknown spawn target {label:?}"));
                 }
-                let target = self.alloc_reg()?;
-                let dst = self.alloc_reg()?;
-                self.text.push(format!("  LI r{target}, {label}"));
-                self.text.push(format!("  SPAWN r{dst}, r{target}"));
-                Ok(dst)
+                self.emit_clone_profile(CloneProfile::SpawnEntry, Some(label))
             }
             "yield_cpu" => {
                 self.no_args(name, args)?;
@@ -9600,11 +9606,8 @@ impl CodeGen {
                     return Err(format!("unknown pthread_create target {label:?}"));
                 }
                 let thread_ptr = self.emit_expr(&args[0])?;
-                let target = self.alloc_reg()?;
-                let tid = self.alloc_reg()?;
+                let tid = self.emit_clone_profile(pthread_clone_profile(), Some(label))?;
                 let dst = self.alloc_reg()?;
-                self.text.push(format!("  LI r{target}, {label}"));
-                self.text.push(format!("  SPAWN r{tid}, r{target}"));
                 self.text.push(format!("  CMP r{thread_ptr}, r0"));
                 let no_store = self.new_label("pthread_create_no_store");
                 self.text.push(format!("  BEQ {no_store}"));
@@ -11107,7 +11110,8 @@ impl CodeGen {
         let block = self.alloc_reg()?;
         let tmp = self.alloc_reg()?;
         let dst = self.alloc_reg()?;
-        self.text.push(format!("  LI r{block_size}, 208"));
+        self.text
+            .push(format!("  LI r{block_size}, {DOMAIN_CTL_RECORD_SIZE}"));
         self.text.push(format!("  ALLOC r{block}, r{block_size}"));
         self.text.push(format!("  LI r{tmp}, {op}"));
         self.text.push(format!("  ST [r{block}, 0], r{tmp}"));
@@ -11120,13 +11124,45 @@ impl CodeGen {
         Ok(dst)
     }
 
+    fn emit_domain_create(
+        &mut self,
+        memory: usize,
+        pids: usize,
+        fdrs: usize,
+        caps: usize,
+    ) -> Result<usize, String> {
+        let block_size = self.alloc_reg()?;
+        let block = self.alloc_reg()?;
+        let tmp = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        self.text
+            .push(format!("  LI r{block_size}, {DOMAIN_CTL_RECORD_SIZE}"));
+        self.text.push(format!("  ALLOC r{block}, r{block_size}"));
+        self.text.push(format!("  LI r{tmp}, 1"));
+        self.text.push(format!("  ST [r{block}, 0], r{tmp}"));
+        self.text.push(format!("  ST [r{block}, 8], r0"));
+        self.text.push(format!("  ST [r{block}, 16], r0"));
+        self.text.push(format!("  LI r{tmp}, 4"));
+        self.text.push(format!("  ST [r{block}, 24], r{tmp}"));
+        self.text.push(format!("  LI r{tmp}, 1000"));
+        self.text.push(format!("  ST [r{block}, 32], r{tmp}"));
+        self.text.push(format!("  ST [r{block}, 40], r{memory}"));
+        self.text.push(format!("  ST [r{block}, 48], r{pids}"));
+        self.text.push(format!("  ST [r{block}, 56], r{fdrs}"));
+        self.text.push(format!("  ST [r{block}, 64], r{caps}"));
+        self.text.push(format!("  ST [r{block}, 72], r{caps}"));
+        self.text.push(format!("  DOMAIN_CTL r{dst}, r{block}"));
+        Ok(dst)
+    }
+
     fn emit_domain_query(&mut self, id: usize, out: usize) -> Result<usize, String> {
         let block_size = self.alloc_reg()?;
         let block = self.alloc_reg()?;
         let tmp = self.alloc_reg()?;
         let dst = self.alloc_reg()?;
         let skip_copy = self.new_label("domain_query_skip_copy");
-        self.text.push(format!("  LI r{block_size}, 208"));
+        self.text
+            .push(format!("  LI r{block_size}, {DOMAIN_CTL_RECORD_SIZE}"));
         self.text.push(format!("  ALLOC r{block}, r{block_size}"));
         self.text.push(format!("  LI r{tmp}, 3"));
         self.text.push(format!("  ST [r{block}, 0], r{tmp}"));
@@ -11156,7 +11192,9 @@ impl CodeGen {
         let block = self.alloc_reg()?;
         let op = self.alloc_reg()?;
         let dst = self.alloc_reg()?;
-        self.text.push(format!("  LI r{block_size}, 72"));
+        self.text.push(format!(
+            "  LI r{block_size}, {OBJECT_CTL_CREATE_RECORD_SIZE}"
+        ));
         self.text.push(format!("  ALLOC r{block}, r{block_size}"));
         self.text.push(format!("  LI r{op}, 1"));
         self.text.push(format!("  ST [r{block}, 0], r{op}"));
@@ -11166,6 +11204,31 @@ impl CodeGen {
         self.text.push(format!("  ST [r{block}, 32], r{fd1}"));
         self.text.push(format!("  ST [r{block}, 40], r{arg}"));
         self.text.push(format!("  OBJECT_CTL r{dst}, r{block}"));
+        Ok(dst)
+    }
+
+    fn emit_clone_profile(
+        &mut self,
+        profile: CloneProfile,
+        entry_label: Option<&str>,
+    ) -> Result<usize, String> {
+        let dst = self.alloc_reg()?;
+        match profile {
+            CloneProfile::NewProcessCow => {
+                self.text.push(format!("  FORK r{dst}"));
+            }
+            CloneProfile::NewThreadSharedVm | CloneProfile::SpawnEntry => {
+                let Some(label) = entry_label else {
+                    return Err("thread clone profile requires an entry label".to_string());
+                };
+                let target = self.alloc_reg()?;
+                self.text.push(format!("  LI r{target}, {label}"));
+                self.text.push(format!("  SPAWN r{dst}, r{target}"));
+            }
+            CloneProfile::DomainTask => {
+                return Err("domain_task clone profile is not exposed to C yet".to_string());
+            }
+        }
         Ok(dst)
     }
 
@@ -11779,19 +11842,22 @@ impl CodeGen {
     }
 
     fn emit_pipe_queue_create(&mut self, fds_ptr: usize) -> Result<usize, String> {
+        let (kind, profile) = pipe_object_profile();
         let block_size = self.alloc_reg()?;
         let block = self.alloc_reg()?;
         let tmp = self.alloc_reg()?;
         let read_fd = self.alloc_reg()?;
         let write_fd = self.alloc_reg()?;
         let dst = self.alloc_reg()?;
-        self.text.push(format!("  LI r{block_size}, 64"));
+        self.text.push(format!(
+            "  LI r{block_size}, {OBJECT_CTL_CREATE_RECORD_SIZE}"
+        ));
         self.text.push(format!("  ALLOC r{block}, r{block_size}"));
         self.text.push(format!("  LI r{tmp}, 1"));
         self.text.push(format!("  ST [r{block}, 0], r{tmp}"));
-        self.text.push(format!("  LI r{tmp}, 2"));
+        self.text.push(format!("  LI r{tmp}, {}", kind.code()));
         self.text.push(format!("  ST [r{block}, 8], r{tmp}"));
-        self.text.push(format!("  LI r{tmp}, 1"));
+        self.text.push(format!("  LI r{tmp}, {}", profile.code()));
         self.text.push(format!("  ST [r{block}, 16], r{tmp}"));
         self.text.push(format!("  OBJECT_CTL r{dst}, r{block}"));
         self.text.push(format!("  LD r{read_fd}, [r{block}, 24]"));
@@ -19441,6 +19507,33 @@ int main() {
     }
 
     #[test]
+    fn c_posix_pipe_and_native_queue_profiles_are_equivalent() {
+        let source = r#"
+        int main() {
+            int posix[2];
+            int native[2];
+            int buf;
+            pipe(posix);
+            queue_create(native);
+            buf = alloc(2);
+            if (write(posix[1], "a", 1) != 1) return 1;
+            if (write(native[1], "b", 1) != 1) return 2;
+            if (read(posix[0], buf, 1) != 1) return 3;
+            if (loadb(buf) != 'a') return 4;
+            if (read(native[0], buf, 1) != 1) return 5;
+            if (loadb(buf) != 'b') return 6;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert_eq!(asm.matches("OBJECT_CTL").count(), 2, "{asm}");
+        assert!(!asm.contains("PIPE"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn c_readv_writev_surface_uses_dynamic_fdr_io() {
         let source = r#"
         int main() {
@@ -19562,10 +19655,10 @@ int main() {
             store(domain_arg + 16, 1);
             if (__lnp_domain_ctl(domain_arg) != 200) return 8;
 
-            domain = domain_create(5000000, 2, 8, 63);
+            domain = __lnp_domain_create(5000000, 2, 8, 63);
             if (domain == -1) return 9;
             call_gate(5, domain, service);
-            result = __lnp_call_cap(5, 1, 2);
+            result = __lnp_call(5, 1, 2);
             if (result != 77) return 10;
             return 0;
         }
@@ -19583,6 +19676,27 @@ int main() {
         ] {
             assert!(asm.contains(expected), "missing {expected} in:\n{asm}");
         }
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_native_intrinsic_aliases_lower_to_capability_primitives() {
+        let source = r#"
+        int main() {
+            int slot[2];
+            int narrowed;
+            pipe(slot);
+            narrowed = cap_dup(3, 0, 257, 0);
+            if (narrowed == -1) return 1;
+            if (__lnp_cap_send(slot[1], narrowed, 0) != 1) return 2;
+            if (cap_recv(slot[0], 0, 1, 0) == -1) return 3;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("CAP_SEND"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);

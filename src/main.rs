@@ -11,6 +11,8 @@ mod c_support_sources;
 mod c_type_rewrites;
 mod emulator;
 mod isa;
+mod lowering;
+mod native;
 
 use std::env;
 use std::fs;
