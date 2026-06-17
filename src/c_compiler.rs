@@ -6019,7 +6019,7 @@ impl CodeGen {
                 }
                 Ok(dst)
             }
-            "fseek" | "fseeko" => {
+            "fseek" | "fseeko" | "_fseeki64" => {
                 if args.len() != 3 {
                     return Err(format!(
                         "{name}(stream, offset, whence) expects 3 arguments"
@@ -6046,7 +6046,7 @@ impl CodeGen {
                 self.text.push(format!("{done}:"));
                 Ok(dst)
             }
-            "ftell" | "ftello" => {
+            "ftell" | "ftello" | "_ftelli64" => {
                 let stream = self.one_arg(name, args)?;
                 let offset = self.alloc_reg()?;
                 let whence = self.alloc_reg()?;
@@ -14177,6 +14177,37 @@ int main() {
             if (strcmp(buf, "f") != 0) return 11;
             fclose(fp);
             remove("/tmp/lnp64_fseek_test.txt");
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("FD_SEEK_DYN"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_stdio_windows_seek_aliases_use_descriptor_streams() {
+        let source = r#"
+        int main() {
+            int fp;
+            int buf;
+            remove("/tmp/lnp64_fseeki64_test.txt");
+            fp = fopen("/tmp/lnp64_fseeki64_test.txt", "w");
+            if (fp == -1) return 1;
+            fwrite("abcdef", 1, 6, fp);
+            fclose(fp);
+            fp = fopen("/tmp/lnp64_fseeki64_test.txt", "r");
+            if (fp == -1) return 2;
+            if (_fseeki64(fp, 3, SEEK_SET) != 0) return 3;
+            if (_ftelli64(fp) != 3) return 4;
+            buf = alloc(8);
+            if (fread(buf, 1, 2, fp) != 2) return 5;
+            storeb(buf + 2, 0);
+            if (strcmp(buf, "de") != 0) return 6;
+            fclose(fp);
+            remove("/tmp/lnp64_fseeki64_test.txt");
             return 0;
         }
         "#;
