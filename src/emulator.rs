@@ -779,6 +779,9 @@ impl Machine {
                     .get(&thread.pid)
                     .ok_or_else(|| format!("missing process {}", thread.pid))?;
                 let Some(instr) = process.program.instructions.get(thread.ip).cloned() else {
+                    if let Some(fault) = self.instruction_fetch_fault(thread.ip as u64)? {
+                        return Err(fault);
+                    }
                     self.exit_current(0)?;
                     continue;
                 };
@@ -4349,6 +4352,31 @@ impl Machine {
         Ok(())
     }
 
+    fn instruction_fetch_fault(&self, addr: u64) -> Result<Option<String>, String> {
+        let process = self.process()?;
+        let Some(vma) = process.vmas.iter().find(|vma| vma.contains(addr, 1)) else {
+            return Ok(None);
+        };
+        if vma.guard {
+            return Ok(Some(format!(
+                "hardware SIGSEGV: guard page execute at 0x{addr:x}"
+            )));
+        }
+        if vma.prot == 0 {
+            return Ok(Some(format!(
+                "hardware SIGSEGV: no-access VMA execute at 0x{addr:x}"
+            )));
+        }
+        if vma.prot & 0b100 == 0 {
+            return Ok(Some(format!(
+                "hardware SIGSEGV: execute denied at 0x{addr:x}"
+            )));
+        }
+        Ok(Some(format!(
+            "hardware SIGSEGV: dynamic instruction fetch is not modeled at 0x{addr:x}"
+        )))
+    }
+
     fn read_c_string(&mut self, addr: u64) -> Result<String, String> {
         let mut bytes = Vec::new();
         let mut pos = addr;
@@ -5513,6 +5541,123 @@ mod tests {
                 .prot,
             0b110
         );
+    }
+
+    #[test]
+    fn nx_and_guard_instruction_fetches_fault() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[1] = 4096;
+        machine.thread_mut().unwrap().regs[2] = 0b011;
+        machine
+            .exec(Instr::Mmap(
+                Reg(3),
+                Reg(0),
+                Reg(1),
+                Reg(2),
+                FdReg(0),
+                Reg(0),
+            ))
+            .unwrap();
+        let rw_mapping = machine.thread().unwrap().regs[3];
+        machine.thread_mut().unwrap().ip = rw_mapping as usize;
+        let err = machine.run().unwrap_err();
+        assert!(err.contains("execute denied"), "{err}");
+
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[1] = 32;
+        machine.thread_mut().unwrap().regs[2] = 64;
+        machine
+            .exec(Instr::AllocEx(Reg(3), Reg(1), Reg(2)))
+            .unwrap();
+        let guarded = machine.thread().unwrap().regs[3] - 1;
+        machine.thread_mut().unwrap().ip = guarded as usize;
+        let err = machine.run().unwrap_err();
+        assert!(err.contains("guard page execute"), "{err}");
+    }
+
+    #[test]
+    fn jit_style_transition_reaches_rx_without_wx() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[1] = 4096;
+        machine.thread_mut().unwrap().regs[2] = 0b011;
+        machine
+            .exec(Instr::Mmap(
+                Reg(3),
+                Reg(0),
+                Reg(1),
+                Reg(2),
+                FdReg(0),
+                Reg(0),
+            ))
+            .unwrap();
+        let addr = machine.thread().unwrap().regs[3];
+        machine.write_bytes(addr, &[0x90]).unwrap();
+
+        machine.thread_mut().unwrap().regs[4] = addr;
+        machine.thread_mut().unwrap().regs[5] = 4096;
+        machine.thread_mut().unwrap().regs[6] = 0b101;
+        machine
+            .exec(Instr::Mprotect(Reg(4), Reg(5), Reg(6)))
+            .unwrap();
+        assert_eq!(machine.process().unwrap().errno, 0);
+        assert_eq!(
+            machine
+                .process()
+                .unwrap()
+                .vmas
+                .iter()
+                .find(|vma| vma.start == addr)
+                .unwrap()
+                .prot,
+            0b101
+        );
+        let err = machine.write_bytes(addr, &[0xcc]).unwrap_err();
+        assert!(err.contains("write denied"), "{err}");
+    }
+
+    #[test]
+    fn signal_frame_stack_area_is_non_executable() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let machine = Machine::new(program);
+        let stack_top = machine.process().unwrap().stack_top;
+        let stack_vma = machine
+            .process()
+            .unwrap()
+            .vmas
+            .iter()
+            .find(|vma| vma.contains(stack_top - CALL_FRAME_SIZE, CALL_FRAME_SIZE as usize))
+            .unwrap();
+        assert_eq!(stack_vma.prot & 0b100, 0);
     }
 
     #[test]
