@@ -48,6 +48,7 @@ fn run() -> Result<(), String> {
             Ok(())
         }
         "run" => {
+            let namespace_root = take_run_namespace_root(&mut args)?;
             let input = take_input(&mut args)?;
             if args.first().is_some_and(|arg| arg == "--") {
                 args.remove(0);
@@ -56,6 +57,9 @@ fn run() -> Result<(), String> {
                 .map_err(|err| format!("failed to read {}: {err}", input.display()))?;
             let program = Program::parse(&source)?;
             let mut machine = Machine::new(program);
+            if let Some(root) = namespace_root {
+                machine.set_namespace_root(root)?;
+            }
             let run_args = if args.is_empty() {
                 vec![
                     input
@@ -102,10 +106,31 @@ fn run() -> Result<(), String> {
 fn usage() {
     eprintln!("usage:");
     eprintln!("  lnp64 asm <program.s>");
-    eprintln!("  lnp64 run <program.s>");
+    eprintln!("  lnp64 run [--namespace-root <dir>] <program.s>");
     eprintln!(
         "  lnp64 cc [--dump-macros|--dump-preprocessed] <program.c> [more.c ...] [-o program.s]"
     );
+}
+
+fn take_run_namespace_root(args: &mut Vec<String>) -> Result<Option<PathBuf>, String> {
+    let mut root = None;
+    loop {
+        let Some(arg) = args.first() else {
+            break;
+        };
+        if arg != "--namespace-root" {
+            break;
+        }
+        args.remove(0);
+        if root.is_some() {
+            return Err("duplicate --namespace-root".to_string());
+        }
+        if args.is_empty() {
+            return Err("--namespace-root requires a directory".to_string());
+        }
+        root = Some(PathBuf::from(args.remove(0)));
+    }
+    Ok(root)
 }
 
 fn take_input(args: &mut Vec<String>) -> Result<PathBuf, String> {

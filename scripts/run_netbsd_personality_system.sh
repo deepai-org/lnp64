@@ -10,6 +10,7 @@ trace="${TMPDIR:-/tmp}/lnp64-netbsd-personality.trace"
 programs=(
   netbsd_sh
   thread_test
+  namespace_test
   poll_test
   fs_service_test
   mmap_test
@@ -54,11 +55,11 @@ for program in "${programs[@]}"; do
   cat "$root/bin/${program}.s" >> "$trace"
 done
 
-"${lnp64[@]}" run "$root/sbin/init.s" -- init "$root" > "$out"
+"${lnp64[@]}" run --namespace-root "$root" "$root/sbin/init.s" -- init / > "$out"
 
 cat > "$expected" <<EXPECTED
 lnp64-netbsd-personality: supervisor boot
-lnp64-netbsd-personality: root $root
+lnp64-netbsd-personality: root /
 /init
 /bin/sh -c 'netbsd personality system script'
 $ echo hello > /tmp/a
@@ -70,6 +71,8 @@ a
 d
 $ ./thread_test
 thread_test ok
+$ ./namespace_test
+namespace_test ok
 $ ./poll_test
 poll_test ok
 $ ./fs_service_test
@@ -97,6 +100,8 @@ required_native=(
   OPEN_FD
   READ_FD_DYN
   WRITE_FD_DYN
+  CHDIR_PATH
+  GETCWD_PATH
   MMAP
   MPROTECT
   MUNMAP

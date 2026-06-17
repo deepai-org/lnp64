@@ -71,10 +71,11 @@ several compiled C test programs, and audits the generated native trace.
 ## Current System Gate
 
 `scripts/run_netbsd_personality_system.sh` builds a temporary personality root
-with `/sbin/init.s`, `/bin/netbsd_sh.s`, and compiled test programs for
-threads, poll/select/epoll, a service-owned filesystem image, mmap, fd passing,
-loopback sockets, signal gates, call gates, timers, and Resource Domain budget
-checks. The scripted shell runs:
+with `/sbin/init.s`, `/bin/netbsd_sh.s`, and compiled test programs, then boots
+it with `run --namespace-root` so guest absolute paths resolve inside that root.
+The test set covers cwd/root/openat, threads, poll/select/epoll, a service-owned
+filesystem image, mmap, fd passing, loopback sockets, signal gates, call gates,
+timers, and Resource Domain budget checks. The scripted shell runs:
 
 ```sh
 /init
@@ -84,6 +85,7 @@ cat /tmp/a | wc
 mkdir /tmp/d
 ls /tmp
 ./thread_test
+./namespace_test
 ./poll_test
 ./fs_service_test
 ./mmap_test
@@ -96,11 +98,11 @@ ls /tmp
 ```
 
 The runner verifies the transcript, checks native primitive evidence including
-FDR I/O, `MMAP`, `PWRITE_FD_DYN`, `FD_SEEK`, `AWAIT_DYN`, `OBJECT_CTL`,
-`DOMAIN_CTL`, `CAP_*`, `CALL_CAP`/`RET_CAP`, `FORK`, `EXEC`, `SPAWN`,
-`SLEEP`, `ALARM`, `SIGACTION`, `SIGRET`, and rejects raw interrupt/MMIO/DMA/
-page-table/scheduler/syscall trace tokens. It also verifies stale FDR
-generation rejection via
+FDR I/O, `CHDIR_PATH`, `GETCWD_PATH`, `MMAP`, `PWRITE_FD_DYN`, `FD_SEEK`,
+`AWAIT_DYN`, `OBJECT_CTL`, `DOMAIN_CTL`, `CAP_*`, `CALL_CAP`/`RET_CAP`,
+`FORK`, `EXEC`, `SPAWN`, `SLEEP`, `ALARM`, `SIGACTION`, `SIGRET`, and rejects
+raw interrupt/MMIO/DMA/page-table/scheduler/syscall trace tokens. It also
+verifies stale FDR generation rejection via
 `demos/stale_fd_token.s` and checks Resource Domain PID counters return to their
 baseline after child program exits. The filesystem-service test maps a generated
 fixed-record image, performs service-owned path walking, create, rename, link,
@@ -112,9 +114,9 @@ reopens the image to verify persisted state.
 - Promote the current fixed-record service-owned filesystem image into a real
   NetBSD-derived component that exposes namespace/file services back through
   capabilities.
-- Add negative tests proving the personality cannot resolve paths without a
-  delegated root/cwd capability and cannot use raw interrupts, raw DMA, raw page
-  tables, hidden scheduler authority, or widened transferred capabilities.
+- Broaden negative tests for delegated namespace roots/cwd, lexical escape, raw
+  interrupts, raw DMA, raw page tables, hidden scheduler authority, and widened
+  transferred capabilities.
 - Move `poll`/`select` blocking paths toward a first-class event queue profile
   while keeping readiness probes as compatibility helpers.
 - Add a software loader/exec-plan path for NetBSD-like userland images instead

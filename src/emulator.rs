@@ -1020,6 +1020,22 @@ impl Machine {
         self.set_process_entry(args, &[])
     }
 
+    pub fn set_namespace_root(&mut self, root: impl Into<PathBuf>) -> Result<(), String> {
+        let root = root.into();
+        let root = fs::canonicalize(&root)
+            .map_err(|err| format!("failed to resolve namespace root {}: {err}", root.display()))?;
+        if !root.is_dir() {
+            return Err(format!(
+                "namespace root {} is not a directory",
+                root.display()
+            ));
+        }
+        let process = self.process_mut()?;
+        process.namespace_root = Some(root.clone());
+        process.cwd = root;
+        Ok(())
+    }
+
     pub fn set_process_entry(&mut self, args: &[String], env: &[String]) -> Result<(), String> {
         let pid = self.thread()?.pid;
         let process = self
@@ -1840,7 +1856,8 @@ impl Machine {
                 let envp = self.read_reg(envp_reg)?;
                 let args = self.collect_exec_args(&path, argv)?;
                 let env = self.collect_exec_env(envp)?;
-                let source = fs::read_to_string(&path)
+                let source_path = self.resolve_process_path(&path)?;
+                let source = fs::read_to_string(&source_path)
                     .map_err(|err| format!("EXEC failed to read {path:?}: {err}"))?;
                 let program = Program::parse(&source)
                     .map_err(|err| format!("EXEC failed to assemble {path:?}: {err}"))?;
@@ -2338,8 +2355,8 @@ impl Machine {
         let root = process.namespace_root.as_ref().ok_or_else(|| {
             "path resolution denied: missing namespace root capability".to_string()
         })?;
-        let candidate = if Path::new(path).is_absolute() {
-            normalize_path_lexical(Path::new(path))
+        let candidate = if path.starts_with('/') {
+            normalize_path_lexical(&root.join(path.trim_start_matches('/')))
         } else {
             normalize_path_lexical(&process.cwd.join(path))
         };
@@ -7625,6 +7642,10 @@ mod tests {
         assert_eq!(
             machine.resolve_process_path("inside").unwrap(),
             "/tmp/lnp64-ns-root/subdir/inside"
+        );
+        assert_eq!(
+            machine.resolve_process_path("/etc/motd").unwrap(),
+            "/tmp/lnp64-ns-root/etc/motd"
         );
     }
 
