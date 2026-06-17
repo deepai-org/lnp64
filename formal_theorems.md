@@ -7,6 +7,47 @@ RTL assertions and model checking used later for local refinement checks.
 The guiding rule is: authority-bearing behavior should be proven correct,
 locally checkable, or structurally impossible to violate.
 
+## 0. Formal Model Scope
+
+The first formal model should be an architectural abstract machine, not a gate
+or timing model. Its initial proof boundary is:
+
+- instruction decode for the frozen base ISA formats and opcode/profile
+  dispatch.
+- GPR/FDR/PCR/thread/process state needed for architectural transitions.
+- capability tables, generations, lineage epochs, narrowing, sealing, transfer,
+  returned-capability install, and revocation.
+- Resource Domain tree state, monotonic delegation, budgets, usage accounting,
+  freeze/resume/destroy, and lifecycle generations.
+- VMA/page states, TLB-visible permissions, W^X/NX/guard checks, COW,
+  object-backed page-fill commit, DMA pin/unpin, and revocation races.
+- the TSO-like memory consistency contract at the abstract event level:
+  ordinary loads/stores, locked atomics, `FENCE`, `ISYNC`, engine completions,
+  coherent DMA, and device-memory ordering classes.
+- mandatory object profiles: `counter`, `queue`, `event/completion`, `timer`,
+  `memory_object`, `call_gate`, `dma_buffer`, and `dma_completion`.
+- wait/ready/runqueue state, scheduler eligibility, no-lost-wakeup transitions,
+  timeout events, and signal/fault delivery.
+- service-boundary request/reply records, continuation ids, copied/pinned
+  buffers, returned-capability proposals, commit points, and canonical error
+  outcomes.
+- fault, poison, overflow, watchdog, local-reset, trace/audit/telemetry records
+  as data, never authority.
+
+The first model intentionally excludes:
+
+- cycle timing, cache replacement policy, branch pipeline timing, physical DDR
+  controller timing, Ethernet/PCIe electrical behavior, and FPGA-specific CDC.
+- filesystem formats, executable formats, dynamic-linker behavior, TCP/IP
+  protocol policy, PCIe device quirks, orchestration policy, and Linux/BSD ABI
+  compatibility details.
+- performance optimality. Proofs should establish safety, containment,
+  determinism at architectural commit points, and specified liveness/fairness
+  bounds where the architecture promises them.
+
+RTL assertions and bounded model checking should later prove that each hard
+block refines the abstract transition relation for its owned state machine.
+
 ## 1. Global State Validity
 
 **State preservation:** if the machine state is valid and an architectural

@@ -78,7 +78,7 @@ V1 hardware must specify these mechanisms:
 *   **Mandatory object profiles:** the base hardware object set is `counter`,
     `queue`, `event/completion`, `timer`, `memory_object`, `call_gate`,
     `dma_buffer`, `dma_completion`, and, when the classifier engine is present,
-    `classifier_queue`. Pipes, semaphores, channels, epoll-like sets, task
+    `classifier_table`. Pipes, semaphores, channels, epoll-like sets, task
     events, shared arenas, and socket readiness are source/runtime profiles over
     that set.
 
@@ -135,7 +135,7 @@ System calls are replaced by direct hardware resource commands. The binary ISA u
 *   **`EVENT_CTL` / `TIMER_CTL` / `SUPERVISOR_CTL`**
     *   *Action:* `EVENT_CTL` and `TIMER_CTL` are source-level/profile aliases over `OBJECT_CTL` for event-queue and timer profiles. `SUPERVISOR_CTL` is a source-level/profile alias over `DOMAIN_CTL` for delegated supervisor domains.
 *   **`OBJECT_CTL r_result, r_argblock`**
-    *   *Action:* Creates, configures, queries, resets, or destroys the three generic hardware-owned object primitives through the typed control envelope: `counter`, `queue`, and `memory_object`. Semaphores, completions, event counters, channels, task queues, shared arenas, and DMA completions are runtime profiles over these primitives, not separate hardware modules.
+    *   *Action:* Creates, configures, queries, resets, or destroys the mandatory hardware-owned object profiles through the typed control envelope: `counter`, `queue`, `event/completion`, `timer`, `memory_object`, `call_gate`, `dma_buffer`, and `dma_completion`. Semaphores, pipes, channels, task queues, shared arenas, socket readiness, and DMA completions are runtime profiles over these primitives, not separate ad hoc hardware modules.
 *   **`DMA_CTL r_result, r_argblock`**
     *   *Action:* Submits bulk memory/object operations to the DMA Fabric: large copy, fill/zero, scatter/gather copy, and optional checksum/hash profiles. Small operations may complete synchronously; long operations can complete through an `event_queue` FDR or a `counter` completion profile. DMA always runs through VMA permissions, capability checks, IOMMU/device scope, and Resource Domain accounting.
 *   **`DOMAIN_CTL r_result, r_argblock`**
@@ -604,7 +604,9 @@ POSIX sockets lower cleanly onto this model: `socket()` creates an endpoint unde
 
 ### 11.2 Bounded Record Classification and Queue Steering
 
-The networking classifier is useful beyond networking, so it should be specified as a generic bounded record-classification engine with packet parsing as one profile.
+The networking classifier is useful beyond networking, so it is specified as a
+generic `classifier_table` object profile created through `OBJECT_CTL`, with
+packet parsing as only one record profile.
 
 The engine accepts a record envelope plus a capability-scoped rule table and can:
 
@@ -613,7 +615,8 @@ The engine accepts a record envelope plus a capability-scoped rule table and can
 *   compute simple hashes for queue steering.
 *   stamp metadata fields such as class id, flow hash, timestamp, priority, or mark bits.
 *   increment counters.
-*   route, copy-reference, drop, or mark records into capability-scoped queues.
+*   route, drop, or mark records into capability-scoped queues from the table's
+    authorized destination set.
 
 Useful profiles include:
 

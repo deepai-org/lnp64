@@ -170,7 +170,7 @@ Mandatory hardware object profiles:
 
 - base profiles: `counter`, `queue`, `event/completion`, `timer`,
   `memory_object`, `call_gate`, `dma_buffer`, and `dma_completion`.
-- optional v1 acceleration profiles: `classifier_queue`, `packet_queue`, and
+- optional v1 acceleration profiles: `classifier_table`, `packet_queue`, and
   `storage_barrier`.
 - source-level pipes, semaphores, channels, epoll-like sets, task events,
   shared arenas, socket readiness, IRQ events, and call completions are runtime
@@ -1427,13 +1427,19 @@ bounded transitions, and event delivery
 ```
 
 These objects are represented by FDR capabilities, but they are not limited to
-Unix files. V1 exposes only three primitive generic object classes:
+Unix files. V1 exposes a small base set of hardware-owned object profiles:
 
 - `counter`: waitable integer state with threshold/predicate wakeups.
 - `queue`: bounded byte or record queue with readable/writable wakeups.
 - `memory_object`: capability-scoped memory range or arena with map/pin/protect
   operations.
 - `call_gate`: callable entry into another thread, service, or Resource Domain.
+- `event/completion`: event-queue profile over queue/counter readiness state.
+- `timer`: waitable time source profile driven by the hardware timer wheel.
+- `dma_buffer`: memory-object profile with pin direction, IOMMU/device scope,
+  cacheability, and quiesce state.
+- `dma_completion`: event/counter profile for DMA success, partial, canceled,
+  revoked, or fault status.
 
 Higher-level runtime concepts are profiles over those primitives, not distinct
 hardware classes:
@@ -1469,12 +1475,52 @@ The point is not to make application code look like syscalls or to add a new
 hardware module for every runtime abstraction. The point is that runtime
 primitives such as channels, futures, async executors, condition variables, work
 queues, shared arenas, large copies, and safe resource handles can be built from
-three small object FSMs plus the existing Heap, Event, Futex, VMA, Capability,
+the small object FSMs plus the existing Heap, Event, Futex, VMA, Capability,
 Signal, and DMA blocks.
+
+Frozen v1 object state-machine shapes:
+
+- `counter`: `INVALID -> READY -> WAITING/READY -> REVOKING -> DESTROYED`,
+  with `POISONED` for integrity failure. Counter value, generation, predicates,
+  overflow mode, and event mask update in one owner-engine transaction.
+- `queue`: `INVALID -> OPEN -> READ_CLOSED/WRITE_CLOSED -> DRAINING ->
+  DESTROYED`, with `REVOKING` and `POISONED` side states. Head/tail, record
+  generation, readable/writable readiness, and capacity pressure are serialized
+  by the queue owner.
+- `event/completion`: queue/counter profile with source slots, source
+  generations, trigger mode, ready bits, overflow/rescan records, and atomic
+  add-source check-and-arm.
+- `timer`: `DISARMED -> ARMED -> EXPIRED -> DISARMED/ARMED`, with cancel and
+  revoke paths. Periodic rearm is atomic with expiry publication.
+- `memory_object`: `UNMAPPED -> MAPPABLE -> MAPPED/PINNED -> REVOKING ->
+  DESTROYED`, plus `POISONED`. Map, pin, dirty enumeration, and protection
+  changes carry object and VMA generation checks.
+- `call_gate`: `CLOSED -> READY -> QUEUED/ENTERED -> RETURNING -> READY`,
+  plus `REVOKING/DESTROYED`. Synchronous calls park a continuation; async and
+  handoff profiles publish completion through explicit event/counter objects.
+- `dma_buffer`: memory-object profile with `IDLE -> PINNED -> IN_DMA ->
+  QUIESCING -> IDLE/REVOKING`. A buffer cannot be reused for a conflicting
+  direction until completion visibility and unpin commit.
+- `dma_completion`: event/counter profile with `PENDING -> COMPLETED`,
+  `PENDING -> CANCELED`, `PENDING -> REVOKED`, or `PENDING -> FAULTED`.
+
+Common object invariants:
+
+- state changes are generation-checked and serialized by one owner engine.
+- all waits use atomic check/install/park so readiness cannot be missed.
+- overflow behavior is explicit: park, `EAGAIN`, `EOVERFLOW`, coalesce,
+  drop-with-count, poison, or profile-defined fatal/degraded state.
+- revocation wakes or cancels waiters and rejects new use after commit.
+- poisoned objects cannot be recycled as fresh authority without supervisor or
+  PID 1 acknowledgement.
+- returned capabilities for object creation are installed only by the
+  Capability Engine after rights, generation, lineage, and Resource Domain
+  checks.
 
 `OBJECT_CTL` uses F9. Its v1 argument block is versioned and names:
 
-- object type: `counter`, `queue`, or `memory_object`.
+- object type/profile: `counter`, `queue`, `memory_object`, `event/completion`,
+  `timer`, `call_gate`, `dma_buffer`, or `dma_completion`.
 - create, configure, query, reset, or destroy operation.
 - initial rights and event mask.
 - queue/record depth or size where applicable.
@@ -2007,20 +2053,37 @@ Common validation rules:
 
 Error convention:
 
-- `EINVAL`: malformed envelope, bad length, unsupported flag combination, or
-  invalid scalar shape.
-- `ENOTSUP`: well-formed but unsupported profile class, object/profile, or op.
-- `EPERM`/`EACCES`: authority, credential, or domain-policy denial.
-- `EBADF`: invalid FDR operand.
-- `EREVOKED` or object-specific stale-reference error: generation/lineage epoch
-  mismatch.
+- `EINVAL`: malformed envelope, bad length/alignment, unsupported reserved
+  bits, invalid state transition, or invalid scalar shape.
+- `ENOTSUP`: well-formed but unsupported opcode profile, object/profile, op,
+  feature, or version.
+- `EBADF`: invalid FDR operand, wrong FDR class, closed descriptor, or missing
+  operation class.
+- `EPERM`: capability, delegation, security-profile, sealed-capability, or
+  Resource Domain policy denial.
+- `EACCES`: credential or object permission denial after a valid capability was
+  supplied.
 - `EFAULT`: unreadable input buffer, unwritable output buffer, invalid pinned
-  range, or user memory fault during pre-commit copying/pinning.
-- `EOVERFLOW`: valid envelope shape exceeds an implementation or profile limit.
+  range, unmapped memory, or user memory fault during pre-commit copying or
+  pinning.
+- `EAGAIN`: nonblocking operation would block or bounded retry is required.
+- `EINTR`: interruptible operation was canceled by handled signal before
+  commit.
+- `ECANCELED`: operation was canceled before commit by teardown, revocation,
+  explicit cancel policy, or service death.
+- `EREVOKED`: generation, lineage, or revocation epoch mismatch.
+- `EOVERFLOW`: valid envelope shape exceeds an implementation/profile limit or
+  a bounded queue/ring reports overflow.
+- `EQUOTA`: Resource Domain limit, budget, or accounting admission failure.
 - `EBUSY`: operation cannot commit because a required object is quiescing,
   frozen, pinned, or in a conflicting committed operation.
-- `ECANCELED`: operation was canceled before commit by signal, teardown,
-  revocation, or explicit cancel policy.
+- `EPIPE`: peer or service endpoint closed after the request was otherwise
+  valid.
+- `ETIMEDOUT`: timeout expired before readiness or completion.
+- `EIO`: service, device, storage, or media operation failed after authority
+  checks.
+- `EPOISONED`: object, page, descriptor, queue, or metadata is poisoned by an
+  integrity/RAS failure.
 - object-specific errors are allowed only after common envelope validation has
   succeeded.
 
@@ -2047,14 +2110,27 @@ endpoints:
 Every dispatched service request record includes the minimum hardware context
 needed for safe completion:
 
+- request version, record size, profile class, profile id, op id, flags, and
+  expected commit class.
 - request id and continuation id.
+- cancellation token and deadline/timeout policy.
 - caller PID/TID and Resource Domain id/generation.
+- credential snapshot and nonblocking/wait policy.
 - target object id/generation and lineage epoch.
-- requested rights, operation/profile id, flags, and nonblocking/wait policy.
+- requested rights and object class.
 - bounded copied input bytes or pinned-buffer descriptors.
 - explicit capability argument table.
 - expected returned-capability shape and destination FDR policy.
-- timeout/cancellation token when the profile is interruptible.
+
+Service reply records use the matching architectural header:
+
+- request id, continuation id, service id/generation, status code, flags, and
+  output length.
+- copied output descriptors or bounded copied output bytes.
+- returned-capability proposal slots matching the request's declared shape.
+- optional event, pressure, or fault metadata.
+- optional committed-byte count or profile-specific progress marker for partial
+  data operations.
 
 Services never receive ambient pointers, ambient physical addresses, ambient
 device access, raw interrupt vectors, or hidden authority. Pinned-buffer
@@ -2137,11 +2213,12 @@ writes.
 - consumes the typed control envelope from Section 12.3.
 - creates, configures, queries, resets, or destroys generic hardware-owned
   waitable/capability objects.
-- covers only three primitive hardware classes: `counter`, `queue`, and
-  `memory_object`.
-- higher-level names such as semaphore, completion, event counter, channel,
-  task queue, shared arena, and DMA completion are runtime profiles over those
-  three classes.
+- covers the mandatory base profiles: `counter`, `queue`,
+  `event/completion`, `timer`, `memory_object`, `call_gate`, `dma_buffer`, and
+  `dma_completion`.
+- higher-level names such as semaphore, pipe, channel, task queue, shared
+  arena, socket readiness, and runtime completion are profiles over those base
+  objects.
 - returns a new FDR index, object state, operation id, or `-1` with
   thread-local `ERRNO`.
 - cannot grant authority beyond the caller's existing capabilities and process
@@ -2481,7 +2558,7 @@ The engine accepts:
 - record profile id.
 - owner Resource Domain id/generation.
 - source object id/generation.
-- capability-scoped classifier table id.
+- capability-scoped `classifier_table` object id.
 - destination queue capability set.
 
 Supported v1 matching primitives:
