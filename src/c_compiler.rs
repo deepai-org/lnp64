@@ -14736,6 +14736,30 @@ int main() {
     }
 
     #[test]
+    fn c_mmap_mprotect_and_munmap_surface_runs() {
+        let source = r#"
+        int main() {
+            int p;
+            p = mmap(0, 4096, 3);
+            if (p == -1) return 1;
+            *p = 42;
+            if (*p != 42) return 2;
+            if (mprotect(p, 4096, 1) != 0) return 3;
+            if (*p != 42) return 4;
+            if (munmap(p, 4096) != 0) return 5;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("MMAP"), "{asm}");
+        assert!(asm.contains("MPROTECT"), "{asm}");
+        assert!(asm.contains("MUNMAP"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn c_select_fdset_surface_lowers_to_readiness_probe_and_runs() {
         let source = r#"
         int main() {
