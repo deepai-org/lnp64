@@ -44,7 +44,7 @@ Status values:
 | Optional dynamic loading and subprocess streams: `dlopen`, `dlsym`, `dlclose`, `popen`, `pclose` | unsupported | `c_optional_dynamic_loading_and_popen_fail_cleanly` | Intentionally fail cleanly until binary/dynamic-loader work exists. |
 | Locale, wide chars, iconv, regex | partial | sbase text utilities exercise simple byte-string behavior | Full locale/wide/regex conformance is not implemented. `COMPAT-LIBC-003`. |
 | LNP64 `__lnp_*` shim layer | native extension | `c_private_lnp_shim_layer_lowers_to_native_primitives`, `c_private_lnp_shim_layer_accepts_dynamic_fdr_tokens`, `psABI.md` | Public extension header/package boundary is not frozen. |
-| Resource Domain APIs | native extension | `c_domain_lifecycle_surface_runs_on_domain_ctl`, `c_domain_limit_failure_runs`, domain emulator tests | Random create/freeze/resume/destroy stress is missing. `COMPAT-STRESS-002`. |
+| Resource Domain APIs | native extension | `c_domain_lifecycle_surface_runs_on_domain_ctl`, `c_domain_limit_failure_runs`, domain emulator tests, `randomized_domain_lifecycle_stress_rejects_stale_handles` | Seeded lifecycle stress exists; nested-domain and attached-process interleavings remain under `COMPAT-STRESS-002`. |
 | Capability APIs: send, receive, duplicate, narrow, seal, revoke, generation checks | native extension | `c_capability_transfer_surface_runs_on_native_cap_ops`, capability emulator tests, `randomized_capability_delegation_stress_preserves_authority` | Seeded delegation stress exists; multi-process/channel interleavings remain under `COMPAT-STRESS-001`. |
 | Object APIs: queue/counter/memory object, pipe lowering, message receive | native extension | `c_object_creation_surface_runs_on_object_ctl`, `c_pipe_lowers_to_object_queue_and_runs`, `c_message_receive_lowers_to_await_pull_and_runs` | Multi-producer/multi-consumer race coverage is partial. |
 | Call gates: sync, async, handoff | native extension | `c_sync_call_gate_runs`, `call_cap_sync_returns_across_domain_gate`, `call_cap_async_and_handoff_modes_execute_minimally`, `psABI.md` | Full cross-domain aggregate argument ABI is not frozen. |
@@ -96,7 +96,7 @@ specific compiler/runtime special casing.
 | `COMPAT-SIGNAL-001` | Full signal semantics | Default/ignore/action/mask subset works. | Add queueing, nested delivery, altstack boundary, and per-thread delivery tests. |
 | `COMPAT-SOCK-001` | Full socket semantics | TCP-like local endpoint subset works. | Add nonblocking, UDP boundary, accepted endpoint inheritance, and descriptor passing plan. |
 | `COMPAT-STRESS-001` | Capability fuzzing | Seeded cap send/dup/seal/revoke stress exists. | Expand to multi-process/channel interleavings and longer randomized traces. |
-| `COMPAT-STRESS-002` | Domain lifecycle fuzzing | Deterministic unit tests exist. | Add random create/freeze/resume/destroy sequence test. |
+| `COMPAT-STRESS-002` | Domain lifecycle fuzzing | Seeded create/freeze/resume/destroy stress exists. | Expand to nested domains, attached processes, and concurrent parked-thread release cases. |
 | `COMPAT-STRESS-003` | VMA fuzzing | Seeded mmap/munmap/mprotect/guard stress exists. | Expand to file-backed/shared mappings and executable-transition traces. |
 | `COMPAT-STRESS-004` | Allocator pressure | Single-thread allocator tests exist. | Add multi-threaded allocation/free/realloc pressure test. |
 | `COMPAT-STRESS-005` | poll/epoll races | Blocking and readiness tests exist. | Add before-arm, during-arm, after-timeout race tests. |

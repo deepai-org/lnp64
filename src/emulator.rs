@@ -7891,6 +7891,78 @@ mod tests {
     }
 
     #[test]
+    fn randomized_domain_lifecycle_stress_rejects_stale_handles() {
+        let mut rng = TestRng::new(0xd0aa_1ade_c001_beef);
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let arg = ARG_BASE;
+        let mut live = Vec::new();
+        let mut destroyed = Vec::new();
+
+        for _ in 0..96 {
+            for offset in (0..=160).step_by(8) {
+                machine.store_u64(arg + offset, 0).unwrap();
+            }
+
+            let op = if live.is_empty() { 0 } else { rng.below(4) };
+            match op {
+                0 if live.len() < 24 => {
+                    machine.store_u64(arg, DOMAIN_OP_CREATE).unwrap();
+                    machine.store_u64(arg + 8, ROOT_DOMAIN_ID).unwrap();
+                    machine.store_u64(arg + 16, 1).unwrap();
+                    let id = machine.domain_ctl_create(arg).unwrap();
+                    let generation = machine.domains[&id].generation;
+                    assert_eq!(generation, 1);
+                    assert!(machine.domain_ref(id, generation).is_ok());
+                    live.push((id, generation));
+                }
+                1 if !live.is_empty() => {
+                    let idx = rng.below(live.len() as u64) as usize;
+                    let (id, generation) = live[idx];
+                    machine.store_u64(arg + 8, id).unwrap();
+                    machine.store_u64(arg + 16, generation).unwrap();
+                    machine.domain_ctl_set_frozen(arg, true).unwrap();
+                    assert!(machine.domains[&id].frozen);
+                    machine.domain_ctl_set_frozen(arg, false).unwrap();
+                    assert!(!machine.domains[&id].frozen);
+                    assert!(machine.domain_ref(id, generation).is_ok());
+                }
+                2 if !live.is_empty() => {
+                    let idx = rng.below(live.len() as u64) as usize;
+                    let (id, generation) = live.swap_remove(idx);
+                    machine.store_u64(arg + 8, id).unwrap();
+                    machine.store_u64(arg + 16, generation).unwrap();
+                    machine.domain_ctl_destroy(arg).unwrap();
+                    assert!(machine.domains[&id].destroyed);
+                    assert_eq!(machine.domain_ref(id, generation), Err(116));
+                    destroyed.push((id, generation));
+                }
+                _ => {
+                    if let Some(&(id, generation)) =
+                        destroyed.get(rng.below(destroyed.len().max(1) as u64) as usize)
+                    {
+                        machine.store_u64(arg + 8, id).unwrap();
+                        machine.store_u64(arg + 16, generation).unwrap();
+                        assert_eq!(machine.domain_ctl_query(arg), Err(116));
+                    }
+                }
+            }
+        }
+
+        if destroyed.is_empty() {
+            let (id, generation) = live.pop().expect("domain stress created no domains");
+            machine.store_u64(arg + 8, id).unwrap();
+            machine.store_u64(arg + 16, generation).unwrap();
+            machine.domain_ctl_destroy(arg).unwrap();
+            destroyed.push((id, generation));
+        }
+
+        for (id, generation) in destroyed {
+            assert_eq!(machine.domain_ref(id, generation), Err(116));
+        }
+    }
+
+    #[test]
     fn domain_usage_rolls_up_and_release_is_live() {
         let program = Program::parse(
             r#"
