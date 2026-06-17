@@ -8,6 +8,7 @@ The checked gate currently runs these upstream functional tests:
 
 - `functional/basename.c`
 - `functional/dirname.c`
+- `functional/env.c`
 - `functional/string_strchr.c`
 - `functional/string_strcspn.c`
 - `functional/string_strstr.c`

@@ -110,6 +110,7 @@ pub fn find_token_constant(name: &str) -> Option<i64> {
         "EBUSY" => Some(16),
         "EDEADLK" => Some(35),
         "EEXIST" => Some(17),
+        "EINVAL" => Some(22),
         "EXDEV" => Some(18),
         "ENOSYS" => Some(38),
         "SEEK_SET" => Some(0),
