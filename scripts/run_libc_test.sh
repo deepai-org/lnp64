@@ -19,6 +19,7 @@ tests=(
   functional/stat
   functional/string
   functional/string_memmem
+  functional/string_memmove_bounded
   functional/string_strchr
   functional/string_strcspn
   functional/string_strstr
