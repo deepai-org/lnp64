@@ -5753,9 +5753,27 @@ mod tests {
     fn process_layout_aslr_is_deterministic_and_disableable() {
         let first = ProcessLayout::for_process(1, ROOT_DOMAIN_ID, true);
         let second = ProcessLayout::for_process(1, ROOT_DOMAIN_ID, true);
+        let other_process = ProcessLayout::for_process(2, ROOT_DOMAIN_ID, true);
+        let other_domain = ProcessLayout::for_process(1, 2, true);
         assert_eq!(first.stack_top, second.stack_top);
         assert_eq!(first.heap_base, second.heap_base);
         assert_eq!(first.mmap_base, second.mmap_base);
+        assert_ne!(
+            (first.stack_top, first.heap_base, first.mmap_base),
+            (
+                other_process.stack_top,
+                other_process.heap_base,
+                other_process.mmap_base
+            )
+        );
+        assert_ne!(
+            (first.stack_top, first.heap_base, first.mmap_base),
+            (
+                other_domain.stack_top,
+                other_domain.heap_base,
+                other_domain.mmap_base
+            )
+        );
         assert_ne!(first.stack_top, STACK_TOP);
         assert_ne!(first.heap_base, HEAP_BASE);
         assert_ne!(first.mmap_base, MMAP_BASE);
@@ -5767,6 +5785,10 @@ mod tests {
         assert_eq!(disabled.stack_top, STACK_TOP);
         assert_eq!(disabled.heap_base, HEAP_BASE);
         assert_eq!(disabled.mmap_base, MMAP_BASE);
+        let disabled_child = ProcessLayout::for_process(1, 2, false);
+        assert_eq!(disabled_child.stack_top, STACK_TOP);
+        assert_eq!(disabled_child.heap_base, HEAP_BASE);
+        assert_eq!(disabled_child.mmap_base, MMAP_BASE);
     }
 
     #[test]
@@ -5855,6 +5877,42 @@ mod tests {
             .exec(Instr::ReadFdDyn(Reg(6), Reg(7), Reg(8)))
             .unwrap();
         assert_eq!(machine.process().unwrap().errno, 116);
+    }
+
+    #[test]
+    fn unmapped_vma_rejects_stale_memory_access() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[1] = 4096;
+        machine.thread_mut().unwrap().regs[2] = 0b011;
+        machine
+            .exec(Instr::Mmap(
+                Reg(3),
+                Reg(0),
+                Reg(1),
+                Reg(2),
+                FdReg(0),
+                Reg(0),
+            ))
+            .unwrap();
+        let addr = machine.thread().unwrap().regs[3];
+        machine.write_bytes(addr, &[1]).unwrap();
+
+        machine.thread_mut().unwrap().regs[4] = addr;
+        machine.thread_mut().unwrap().regs[5] = 4096;
+        machine.exec(Instr::Munmap(Reg(4), Reg(5))).unwrap();
+
+        let err = machine.read_bytes(addr, 1).unwrap_err();
+        assert!(err.contains("unmapped address"), "{err}");
+        let err = machine.write_bytes(addr, &[2]).unwrap_err();
+        assert!(err.contains("unmapped address"), "{err}");
     }
 
     #[test]
