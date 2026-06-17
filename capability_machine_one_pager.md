@@ -229,6 +229,16 @@ violations cannot broaden authority during recovery. Quotes can bind the current
 mission state, dependency graph, audit root, proof artifacts, and delegated
 capability roots, so continuity under failure becomes evidence, not a promise.
 
+The same machinery supports owner sovereignty and open assurance. LNP64 should
+be able to ship as open RTL with reproducible bitstream manifests, public proof
+artifacts, owner-installed trust roots, owner-held debug-control capabilities,
+and replaceable service stacks. Attestation proves measured artifacts and active
+policy; it is not a DRM path. Managed fleets may require signed images or locked
+debug by policy, but the ISA does not require a vendor-exclusive key, hidden
+management engine, remote kill switch, ambient telemetry channel, or secret
+debug/DMA path. Capability security protects users from malware and vendors
+alike.
+
 Revocation is one algebra across the machine. Capabilities carry object
 generation, capability generation, lineage root, lineage epoch, rights, ranges,
 and domain scope. Narrowing and sending preserve lineage; sealing hides software

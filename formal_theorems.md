@@ -710,6 +710,32 @@ Useful sub-theorems:
   metadata, RTL/IP provenance hashes, and toolchain/build ids to the measured
   image.
 
+## 26.2 Owner Sovereignty and Open Assurance
+
+**Attestation is evidence, not ambient vendor control:** measured boot and quote
+records describe artifacts and policy, but cannot create a vendor-only execution
+gate unless the machine owner selected that policy.
+
+Useful sub-theorems:
+
+- boot policy can name owner, organization, vendor, development, or unsigned
+  development trust roots, and quote records identify which root policy was
+  active.
+- no architectural state transition requires a vendor-exclusive key, remote
+  authorization service, hidden management domain, or ambient vendor capability.
+- owner-held debug-control FDRs in open-owner profiles can unlock debug only
+  through measured/audited transitions and still obey domain/range/label
+  authority.
+- quote records can bind public RTL/source hashes, reproducible bitstream
+  hashes, toolchain manifests, proof artifact hashes, and service image hashes
+  without requiring those artifacts to be secret or vendor-controlled.
+- telemetry, audit, trace, debug, and DMA paths cannot bypass FDR capability
+  checks to create hidden owner/vendor access.
+- replacing loader, filesystem, network, personality, telemetry, domain-manager,
+  or declassification services cannot broaden authority unless the replacement
+  receives explicit capabilities and passes generation/lineage/label/domain
+  checks.
+
 ## 27. RAS Fault Containment
 
 **Detected corruption does not silently become authority:** ECC/parity,
