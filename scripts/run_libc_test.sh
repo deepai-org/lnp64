@@ -18,6 +18,7 @@ tests=(
   functional/sem_init
   functional/stat
   functional/string
+  functional/string_memcpy_bounded
   functional/string_memmem
   functional/string_memmove_bounded
   functional/string_strchr

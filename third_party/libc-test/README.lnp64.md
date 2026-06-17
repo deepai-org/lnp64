@@ -22,6 +22,7 @@ upstream libc-test files; bounded or locally guarded files are called out below.
 - `functional/sem_init.c`
 - `functional/stat.c`
 - `functional/string.c`
+- `functional/string_memcpy_bounded.c`
 - `functional/string_memmem.c`
 - `functional/string_memmove_bounded.c`
 - `functional/string_strchr.c`
@@ -62,6 +63,10 @@ isolation, destructor execution on thread exit, and key deletion.
 adjusted; it covers `fmemopen` reads through `fgets` and EOF buffer preservation.
 `regression/malloc-0.c` is the upstream file with only the harness include path
 adjusted; it covers non-null, unique `malloc(0)` allocations.
+`functional/string_memcpy_bounded.c` is a local bounded file covering direct and
+function-pointer `memcpy`/`memset`, offset destinations, high-byte `memset`
+values, and zero-length no-write behavior without the full upstream exhaustive
+alignment loops.
 `functional/string_memmove_bounded.c` is a local bounded file covering direct
 and function-pointer `memmove` with non-overlap, destination-after-source
 overlap, destination-before-source overlap, and zero-length moves.
