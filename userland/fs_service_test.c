@@ -110,6 +110,13 @@ int bump_generation(int rec) {
     return 0;
 }
 
+int live_generation_matches(int rec, int generation) {
+    if (rec <= 0) return 0;
+    if (loadb(rec) != '1') return 0;
+    if (loadb(rec + 3) != generation) return 0;
+    return 1;
+}
+
 int create_file(int dir, int name, int data) {
     int parent;
     int path;
@@ -201,11 +208,67 @@ int verify_persisted_link(int image_path) {
     return 0;
 }
 
+int verify_recovered_image(int image_path) {
+    int fd;
+    int saved_base;
+    int rec;
+    int rc;
+    fd = open(10, image_path, 0);
+    if (fd == -1) return 1;
+    saved_base = image_base;
+    image_base = mmap(10, 512, 3);
+    if (image_base == -1) {
+        image_base = saved_base;
+        return 2;
+    }
+    rc = mount_image();
+    if (rc != 0) {
+        image_base = saved_base;
+        return 10 + rc;
+    }
+    if (loadb(image_base + 7) == '0') {
+        image_base = saved_base;
+        return 20;
+    }
+    if (find_record("/tmp/b") != 0) {
+        image_base = saved_base;
+        return 21;
+    }
+    rec = find_record("/tmp/link-b");
+    if (rec == 0) {
+        image_base = saved_base;
+        return 22;
+    }
+    if (loadb(rec + 1) != 'f') {
+        image_base = saved_base;
+        return 23;
+    }
+    if (loadb(rec + 36) != 'x') {
+        image_base = saved_base;
+        return 24;
+    }
+    if (loadb(rec + 40) != 'h') {
+        image_base = saved_base;
+        return 25;
+    }
+    if (loadb(rec + 45) != 10) {
+        image_base = saved_base;
+        return 26;
+    }
+    close(10);
+    image_base = saved_base;
+    return 0;
+}
+
 int main(int argc, char **argv) {
     int root;
     int path;
     int fd;
     int rc;
+    int rec;
+    int link_rec;
+    int gen;
+    int link_gen;
 
     if (argc > 1) {
         root = argv[1];
@@ -223,20 +286,34 @@ int main(int argc, char **argv) {
     rc = mount_image();
     if (rc != 0) return 10 + rc;
     if (find_record("/etc/motd") == 0) return 20;
-    if (create_file("/tmp", "a", "hello\n") == 0) return 21;
-    if (find_record("/tmp/a") == 0) return 22;
-    if (rename_path("/tmp/a", "/tmp/b") != 0) return 23;
-    if (find_record("/tmp/a") != 0) return 24;
-    if (find_record("/tmp/b") == 0) return 25;
-    if (link_path("/tmp/b", "/tmp/link-b") == 0) return 26;
-    if (unlink_path("/tmp/b") != 0) return 27;
-    if (find_record("/tmp/b") != 0) return 28;
-    if (find_record("/tmp/link-b") == 0) return 29;
-    if (set_metadata("/tmp/link-b", 'x') != 0) return 30;
-    if (flush_image(10) != 0) return 31;
+    rec = create_file("/tmp", "a", "hello\n");
+    if (rec <= 0) return 21;
+    gen = loadb(rec + 3);
+    if (live_generation_matches(rec, gen) == 0) return 22;
+    if (find_record("/tmp/a") == 0) return 23;
+    if (rename_path("/tmp/a", "/tmp/b") != 0) return 24;
+    if (live_generation_matches(rec, gen) != 0) return 25;
+    gen = loadb(rec + 3);
+    if (live_generation_matches(rec, gen) == 0) return 26;
+    if (find_record("/tmp/a") != 0) return 27;
+    if (find_record("/tmp/b") == 0) return 28;
+    link_rec = link_path("/tmp/b", "/tmp/link-b");
+    if (link_rec <= 0) return 29;
+    link_gen = loadb(link_rec + 3);
+    if (unlink_path("/tmp/b") != 0) return 30;
+    if (live_generation_matches(rec, gen) != 0) return 31;
+    if (find_record("/tmp/b") != 0) return 32;
+    if (find_record("/tmp/link-b") == 0) return 33;
+    if (set_metadata("/tmp/link-b", 'x') != 0) return 34;
+    if (live_generation_matches(link_rec, link_gen) != 0) return 35;
+    link_gen = loadb(link_rec + 3);
+    if (live_generation_matches(link_rec, link_gen) == 0) return 36;
+    if (flush_image(10) != 0) return 37;
     close(10);
     rc = verify_persisted_link(path);
     if (rc != 0) return 40 + rc;
+    rc = verify_recovered_image(path);
+    if (rc != 0) return 70 + rc;
 
     write(1, "fs_service_test ok\n", 19);
     return 0;
