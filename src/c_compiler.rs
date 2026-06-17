@@ -9943,13 +9943,47 @@ impl CodeGen {
                 Ok(dst)
             }
             "WIFEXITED" => {
-                let _status = self.one_arg(name, args)?;
+                let status = self.one_arg(name, args)?;
                 let dst = self.alloc_reg()?;
+                let threshold = self.alloc_reg()?;
+                let done = self.new_label("wifexited_done");
+                self.text.push(format!("  LI r{dst}, 0"));
+                self.text.push(format!("  LI r{threshold}, 128"));
+                self.text.push(format!("  CMP r{status}, r{threshold}"));
+                self.text.push(format!("  BGE {done}"));
                 self.text.push(format!("  LI r{dst}, 1"));
+                self.text.push(format!("{done}:"));
                 Ok(dst)
             }
             "WEXITSTATUS" => self.one_arg(name, args),
-            "WIFSIGNALED" | "WTERMSIG" | "WIFSTOPPED" | "WSTOPSIG" | "WIFCONTINUED" => {
+            "WIFSIGNALED" => {
+                let status = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 0"));
+                let threshold = self.alloc_reg()?;
+                let done = self.new_label("wifsignaled_done");
+                self.text.push(format!("  LI r{threshold}, 128"));
+                self.text.push(format!("  CMP r{status}, r{threshold}"));
+                self.text.push(format!("  BLT {done}"));
+                self.text.push(format!("  LI r{dst}, 1"));
+                self.text.push(format!("{done}:"));
+                Ok(dst)
+            }
+            "WTERMSIG" => {
+                let status = self.one_arg(name, args)?;
+                let threshold = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                let done = self.new_label("wtermsig_done");
+                self.text.push(format!("  LI r{dst}, 0"));
+                self.text.push(format!("  LI r{threshold}, 128"));
+                self.text.push(format!("  CMP r{status}, r{threshold}"));
+                self.text.push(format!("  BLT {done}"));
+                self.text
+                    .push(format!("  SUB r{dst}, r{status}, r{threshold}"));
+                self.text.push(format!("{done}:"));
+                Ok(dst)
+            }
+            "WIFSTOPPED" | "WSTOPSIG" | "WIFCONTINUED" => {
                 let _status = self.one_arg(name, args)?;
                 let dst = self.alloc_reg()?;
                 self.text.push(format!("  LI r{dst}, 0"));
@@ -21427,6 +21461,36 @@ int main() {
         let asm = compile(source).unwrap();
         assert!(asm.contains("GET_PCR"), "{asm}");
         assert!(asm.contains("PPID"), "{asm}");
+        assert!(asm.contains("WAIT_PID"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_wait_reports_default_signal_termination() {
+        let source = r#"
+        int main() {
+            int child;
+            int status;
+
+            child = fork();
+            if (child == 0) {
+                raise(SIGINT);
+                _exit(99);
+            }
+            if (wait(&status) != 0) return 1;
+            if (status != 130) return 2;
+            if (WIFEXITED(status)) return 3;
+            if (!WIFSIGNALED(status)) return 4;
+            if (WTERMSIG(status) != SIGINT) return 5;
+            if (WEXITSTATUS(status) != 130) return 6;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("FORK"), "{asm}");
+        assert!(asm.contains("KILL"), "{asm}");
         assert!(asm.contains("WAIT_PID"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
