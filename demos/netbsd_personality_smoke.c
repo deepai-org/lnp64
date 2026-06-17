@@ -1,4 +1,7 @@
 int signal_seen;
+int select_rfd;
+int select_wfd;
+int futex_slot;
 
 int gate_service() {
     ret_cap(0x4e425344, 0);
@@ -8,6 +11,20 @@ int gate_service() {
 int on_signal() {
     signal_seen = 1;
     sigret();
+    return 0;
+}
+
+int select_writer() {
+    write(select_wfd, "s", 1);
+    pthread_exit(0);
+    return 0;
+}
+
+int futex_worker() {
+    futex_wait(futex_slot, 0);
+    cmpxchg(futex_slot, 1, 2);
+    futex_wake(futex_slot, 1);
+    pthread_exit(0);
     return 0;
 }
 
@@ -73,6 +90,59 @@ int check_signal_delivery() {
     return 0;
 }
 
+int check_thread_futex_select_timer() {
+    fd_set rfds;
+    int fds[2];
+    int thread;
+    int buf;
+    int fd;
+    int spec[4];
+    int old[4];
+    int p[3];
+    if (pipe(fds) != 0) return 1;
+    select_rfd = fds[0];
+    select_wfd = fds[1];
+    if (pthread_create(&thread, 0, select_writer, 0) != 0) return 2;
+    FD_ZERO(&rfds);
+    FD_SET(select_rfd, &rfds);
+    if (select(select_rfd + 1, &rfds, 0, 0, 0) != 1) return 3;
+    if (FD_ISSET(select_rfd, &rfds) != 1) return 4;
+    buf = alloc(1);
+    if (read(select_rfd, buf, 1) != 1) return 5;
+    if (loadb(buf) != 's') return 6;
+    if (pthread_join(thread, 0) != 0) return 7;
+
+    futex_slot = alloc(8);
+    store(futex_slot, 0);
+    if (pthread_create(&thread, 0, futex_worker, 0) != 0) return 8;
+    yield_cpu();
+    store(futex_slot, 1);
+    futex_wake(futex_slot, 1);
+    while (load(futex_slot) != 2) {
+        yield_cpu();
+    }
+    if (pthread_join(thread, 0) != 0) return 9;
+
+    fd = timerfd_create(CLOCK_MONOTONIC, 0);
+    if (fd == -1) return 10;
+    spec[0] = 0;
+    spec[1] = 0;
+    spec[2] = 0;
+    spec[3] = 1;
+    old[0] = 9;
+    if (timerfd_settime(fd, 0, spec, old) != 0) return 11;
+    if (old[0] != 0) return 12;
+    p[0] = fd;
+    p[1] = POLLIN;
+    p[2] = 0;
+    if (poll(p, 1, -1) != 1) return 13;
+    if (p[2] != POLLIN) return 14;
+    spec[0] = 0;
+    if (read(fd, spec, 8) != 8) return 15;
+    if (spec[0] != 1) return 16;
+    return 0;
+}
+
 int check_loopback_socket() {
     struct pollfd p[1];
     int server;
@@ -135,6 +205,8 @@ int main() {
     if (rc != 0) return 40 + rc;
     rc = check_signal_delivery();
     if (rc != 0) return 50 + rc;
+    rc = check_thread_futex_select_timer();
+    if (rc != 0) return 80 + rc;
     rc = check_loopback_socket();
     if (rc != 0) return 60 + rc;
     rc = check_domain_and_gate();
