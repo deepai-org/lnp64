@@ -3101,6 +3101,16 @@ impl CodeGen {
             } else if self.current_fn == "main" && idx == 1 {
                 self.text.push("  LI r1, 0x700008".to_string());
                 self.text.push(format!("  ST [r31, {offset}], r1"));
+            } else if self.current_fn == "main" && idx == 2 {
+                self.text.push("  LI r1, 0x700000".to_string());
+                self.text.push("  LD r2, [r1, 0]".to_string());
+                self.text.push("  LI r3, 1".to_string());
+                self.text.push("  ADD r2, r2, r3".to_string());
+                self.text.push("  LI r3, 8".to_string());
+                self.text.push("  MUL r2, r2, r3".to_string());
+                self.text.push("  LI r1, 0x700008".to_string());
+                self.text.push("  ADD r1, r1, r2".to_string());
+                self.text.push(format!("  ST [r31, {offset}], r1"));
             } else {
                 self.text
                     .push(format!("  ST [r31, {offset}], r{}", idx + 1));
@@ -14062,13 +14072,15 @@ int main() {
     }
 
     #[test]
-    fn c_main_receives_argc_and_argv_from_startup_page() {
+    fn c_main_receives_argc_argv_and_envp_from_startup_page() {
         let source = r#"
-        int main(int argc, char **argv) {
+        int main(int argc, char **argv, char **envp) {
             if (argc != 3) return 1;
             if (strcmp(argv[0], "prog") != 0) return 2;
             if (strcmp(argv[1], "alpha") != 0) return 3;
             if (strcmp(argv[2], "beta") != 0) return 4;
+            if (envp == 0) return 5;
+            if (envp[0] != 0) return 6;
             return 0;
         }
         "#;
