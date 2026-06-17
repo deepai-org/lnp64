@@ -15,23 +15,42 @@ int run_program(int root, int name, int image) {
     int path;
     int child;
     int status;
+    int domain;
+    int info;
+    int rc;
 
     write(1, "$ ./", 4);
     write_cstr(1, name);
     write(1, "\n", 1);
 
     path = alloc(256);
+    info = alloc(208);
+    rc = 0;
     join_path(path, root, image);
+    domain = domain_create(100000000, 16, 128, 63);
+    if (domain == -1) return 4;
     child = fork();
     if (child == 0) {
+        if (domain_attach_self(domain) != 0) _exit(126);
         execl(path, name, root, 0);
         _exit(127);
     }
-    if (wait(&status) != 0) return 1;
-    if (!WIFEXITED(status)) return 2;
-    if (WEXITSTATUS(status) != 0) return 3;
+    if (child == -1) rc = 1;
+    if (rc == 0) {
+        if (wait(&status) != 0) rc = 1;
+        if (rc == 0) {
+            if (!WIFEXITED(status)) rc = 2;
+        }
+        if (rc == 0) {
+            if (WEXITSTATUS(status) != 0) rc = 3;
+        }
+    }
+    if (domain_query(domain, info) != 200) return 5;
+    if (load(info + 96) != 0) return 6;
+    if (domain_destroy(domain) != 0) return 7;
     free(path);
-    return 0;
+    free(info);
+    return rc;
 }
 
 int write_tmp_a(int root) {

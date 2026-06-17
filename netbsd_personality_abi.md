@@ -105,8 +105,10 @@ FDR I/O, `CHDIR_PATH`, `GETCWD_PATH`, `MMAP`, `PWRITE_FD_DYN`, `FD_SEEK`,
 `FORK`, `EXEC`, `SPAWN`, `SLEEP`, `ALARM`, `SIGACTION`, `SIGRET`, and rejects
 raw interrupt/MMIO/DMA/page-table/scheduler/syscall trace tokens. It also
 verifies stale FDR generation rejection via
-`demos/stale_fd_token.s` and checks Resource Domain PID counters return to their
-baseline after child program exits. The filesystem-service test maps a generated
+`demos/stale_fd_token.s`; the shell launches each compiled child program in a
+fresh Resource Domain, verifies that domain's PID counter returns to zero after
+`wait`, destroys the child domain, and checks the supervisor domain PID counter
+returns to its baseline. The filesystem-service test maps a generated
 fixed-record image, performs service-owned path walking, create, rename, link,
 unlink, metadata update, and an explicit flush/barrier through offset I/O, then
 reopens the image to verify persisted state. The loader test validates a
