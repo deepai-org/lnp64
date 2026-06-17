@@ -22,6 +22,9 @@ required_native=(
   AWAIT_DYN
   SIGACTION
   KILL
+  CAP_DUP
+  CAP_SEND
+  CAP_RECV
   DOMAIN_CTL
   CALL_CAP
   RET_CAP

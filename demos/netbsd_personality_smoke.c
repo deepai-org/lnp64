@@ -128,6 +128,26 @@ int check_pipe_fork_poll() {
     return 0;
 }
 
+int check_descriptor_passing() {
+    int fds[2];
+    int fd;
+    int narrowed;
+    int received;
+    int buf;
+    if (pipe(fds) != 0) return 1;
+    fd = open("demos/netbsd_rumpfs.img", 0);
+    if (fd == -1) return 2;
+    narrowed = cap_dup(fd, 0, 257, 0);
+    if (narrowed == -1) return 3;
+    if (cap_send(fds[1], narrowed, 0) != 1) return 4;
+    received = cap_recv(fds[0], 0, 1, 0);
+    if (received == -1) return 5;
+    buf = alloc(1);
+    if (read(received, buf, 1) != 1) return 6;
+    if (loadb(buf) != 'R') return 7;
+    return 0;
+}
+
 int check_mmap_and_rumpfs_block() {
     int mem1;
     int mem2;
@@ -276,6 +296,8 @@ int main() {
     if (rc != 0) return 20 + rc;
     rc = check_pipe_fork_poll();
     if (rc != 0) return 30 + rc;
+    rc = check_descriptor_passing();
+    if (rc != 0) return 90 + rc;
     rc = check_mmap_and_rumpfs_block();
     if (rc != 0) return 40 + rc;
     rc = check_signal_delivery();
