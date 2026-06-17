@@ -3908,17 +3908,18 @@ impl Machine {
         }
         let source_fd = self.decode_fd_value(envelope.source)?;
         self.fd_right_errno(source_fd, CAP_RIGHT_READ)?;
-        if envelope.source_generation != 0 {
-            let generation = self
-                .process()
-                .map_err(|_| 3u64)?
-                .fd_generations
-                .get(source_fd)
-                .copied()
-                .ok_or(9u64)?;
-            if generation != envelope.source_generation {
-                return Err(116);
-            }
+        if envelope.source_generation == 0 {
+            return Err(116);
+        }
+        let generation = self
+            .process()
+            .map_err(|_| 3u64)?
+            .fd_generations
+            .get(source_fd)
+            .copied()
+            .ok_or(9u64)?;
+        if generation != envelope.source_generation {
+            return Err(116);
         }
         Ok(())
     }
@@ -4003,6 +4004,9 @@ impl Machine {
         }
         let total_len = u16::from_be_bytes([bytes[offset + 2], bytes[offset + 3]]) as usize;
         if total_len != 0 && total_len < ihl {
+            return Err(ClassifyParseError::Malformed);
+        }
+        if total_len != 0 && bytes.len() < offset + total_len {
             return Err(ClassifyParseError::Malformed);
         }
         let protocol = bytes[offset + 9];
@@ -6512,9 +6516,11 @@ mod tests {
         inline1: u64,
         inline2: u64,
     ) {
+        let source_fd = machine.decode_fd_value(source).unwrap();
+        let source_generation = machine.fd_generation(source_fd).unwrap();
         machine.store_u64(base, profile).unwrap();
         machine.store_u64(base + 8, source).unwrap();
-        machine.store_u64(base + 16, 0).unwrap();
+        machine.store_u64(base + 16, source_generation).unwrap();
         machine.store_u64(base + 24, ROOT_DOMAIN_ID).unwrap();
         machine.store_u64(base + 32, record_ptr).unwrap();
         machine.store_u64(base + 40, record_len).unwrap();
@@ -6828,6 +6834,29 @@ mod tests {
             0,
         );
         let classifier = create_classifier(&mut machine, 6, rules, 1, allowed, 1);
+        machine.store_u64(envelope + 16, 0).unwrap();
+        assert_eq!(
+            classify(&mut machine, classifier, envelope, result),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 116);
+        machine.store_u64(envelope + 16, 999).unwrap();
+        assert_eq!(
+            classify(&mut machine, classifier, envelope, result),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 116);
+        write_envelope(
+            &mut machine,
+            envelope,
+            CLASSIFY_PROFILE_IPC,
+            source,
+            0,
+            0,
+            1,
+            0,
+            0,
+        );
         machine.close_fd_index(5).unwrap();
         assert_eq!(
             classify(&mut machine, classifier, envelope, result),
