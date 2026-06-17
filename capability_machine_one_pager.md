@@ -72,6 +72,13 @@ metadata, Resource Domain snapshot hooks, and explicit storage flush/barrier
 semantics. These are not a full fleet-management stack, but they keep reliability
 and diagnosis from becoming afterthoughts.
 
+Physical interrupt inputs still exist for devices, timers, DMA, PCIe MSI/MSI-X,
+watchdogs, and hardware faults, but raw interrupt vectors are not exposed to
+normal software or drivers. The Event Router consumes physical interrupts and
+normalizes them into FDR-backed waitables, signals, scheduler wakeups,
+trace/fault records, or supervisor/control events. Driver domains wait on
+delegated `irq_event` capabilities; they do not own interrupt vectors.
+
 Service boundaries are built from call gates. A pre-provisioned domain or worker
 thread can expose a callable FDR. `CALL_CAP` validates the gate, transfers small
 register arguments, accounts resource usage, and hands the target to the
