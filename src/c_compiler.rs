@@ -5216,6 +5216,18 @@ impl CodeGen {
                     Ok(dst)
                 }
             }
+            "__lnp_push" => {
+                if args.len() != 3 {
+                    return Err("__lnp_push(fd, buf, len) expects 3 arguments".to_string());
+                }
+                let fd = self.numeric_fd(&args[0], "__lnp_push")?;
+                let buf = self.emit_expr(&args[1])?;
+                let len = self.emit_expr(&args[2])?;
+                let dst = self.alloc_reg()?;
+                self.text
+                    .push(format!("  PUSH r{dst}, fd{fd}, r{buf}, r{len}"));
+                Ok(dst)
+            }
             "pread" => {
                 if args.len() != 4 {
                     return Err("pread(fd, buf, len, offset) expects 4 arguments".to_string());
@@ -6696,6 +6708,18 @@ impl CodeGen {
                 let flags = self.emit_expr(&args[2])?;
                 self.emit_open_fd_alloc(path, flags)
             }
+            "__lnp_openat" => {
+                if args.len() != 3 && args.len() != 4 {
+                    return Err(
+                        "__lnp_openat(dirfd, path, flags[, mode]) expects 3 or 4 arguments"
+                            .to_string(),
+                    );
+                }
+                self.emit_expr(&args[0])?;
+                let path = self.emit_expr(&args[1])?;
+                let flags = self.emit_expr(&args[2])?;
+                self.emit_open_fd_alloc(path, flags)
+            }
             "getline" => {
                 if args.len() != 3 {
                     return Err("getline(&buf, &size, fp) expects 3 arguments".to_string());
@@ -6874,6 +6898,18 @@ impl CodeGen {
                     Ok(dst)
                 }
             }
+            "__lnp_pull" => {
+                if args.len() != 3 {
+                    return Err("__lnp_pull(fd, buf, len) expects 3 arguments".to_string());
+                }
+                let fd = self.numeric_fd(&args[0], "__lnp_pull")?;
+                let buf = self.emit_expr(&args[1])?;
+                let len = self.emit_expr(&args[2])?;
+                let dst = self.alloc_reg()?;
+                self.text
+                    .push(format!("  PULL r{dst}, fd{fd}, r{buf}, r{len}"));
+                Ok(dst)
+            }
             "wait_on_fd" => {
                 if args.len() != 1 {
                     return Err("wait_on_fd(fd) expects 1 argument".to_string());
@@ -6881,6 +6917,16 @@ impl CodeGen {
                 let fd_num = self.numeric_fd(&args[0], "wait_on_fd")?;
                 self.text.push(format!("  WAIT_ON_FD fd{fd_num}, r0"));
                 Ok(0)
+            }
+            "__lnp_await" => {
+                if args.len() != 2 {
+                    return Err("__lnp_await(fd, mask) expects 2 arguments".to_string());
+                }
+                let fd = self.numeric_fd(&args[0], "__lnp_await")?;
+                let mask = self.emit_expr(&args[1])?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  AWAIT r{dst}, fd{fd}, r{mask}"));
+                Ok(dst)
             }
             "fd_dup" => {
                 if args.len() != 2 {
@@ -7035,6 +7081,12 @@ impl CodeGen {
                 self.text.push(format!("  ALLOC r{dst}, r{len}"));
                 Ok(dst)
             }
+            "__lnp_alloc" => {
+                let len = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  ALLOC r{dst}, r{len}"));
+                Ok(dst)
+            }
             "close" => {
                 if args.len() != 1 {
                     return Err("close(fd) expects 1 argument".to_string());
@@ -7121,6 +7173,12 @@ impl CodeGen {
                 let arg = self.emit_expr(&args[4])?;
                 self.emit_object_create(kind, profile, fd0, fd1, arg)
             }
+            "__lnp_object_ctl" => {
+                let argblock = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  OBJECT_CTL r{dst}, r{argblock}"));
+                Ok(dst)
+            }
             "counter_create" => {
                 let initial = self.one_arg(name, args)?;
                 let kind = self.alloc_reg()?;
@@ -7175,6 +7233,12 @@ impl CodeGen {
                 self.text.push(format!("  ST [r{block}, 64], r{caps}"));
                 self.text.push(format!("  ST [r{block}, 72], r{caps}"));
                 self.text.push(format!("  DOMAIN_CTL r{dst}, r{block}"));
+                Ok(dst)
+            }
+            "__lnp_domain_ctl" => {
+                let argblock = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  DOMAIN_CTL r{dst}, r{argblock}"));
                 Ok(dst)
             }
             "domain_attach_self" => {
@@ -7241,6 +7305,18 @@ impl CodeGen {
                     return Err("call_cap(fd, arg0, arg1) expects 3 arguments".to_string());
                 }
                 let fd = self.numeric_fd(&args[0], "call_cap")?;
+                let arg0 = self.emit_expr(&args[1])?;
+                let arg1 = self.emit_expr(&args[2])?;
+                let dst = self.alloc_reg()?;
+                self.text
+                    .push(format!("  CALL_CAP r{dst}, fd{fd}, r{arg0}, r{arg1}"));
+                Ok(dst)
+            }
+            "__lnp_call_cap" => {
+                if args.len() != 3 {
+                    return Err("__lnp_call_cap(fd, arg0, arg1) expects 3 arguments".to_string());
+                }
+                let fd = self.numeric_fd(&args[0], "__lnp_call_cap")?;
                 let arg0 = self.emit_expr(&args[1])?;
                 let arg1 = self.emit_expr(&args[2])?;
                 let dst = self.alloc_reg()?;
@@ -12641,6 +12717,72 @@ int main() {
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains("OBJECT_CTL"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_private_lnp_shim_layer_lowers_to_native_primitives() {
+        let source = r#"
+        int service() {
+            ret_cap(77, 0);
+            return 0;
+        }
+
+        int main() {
+            int obj;
+            int domain_arg;
+            int buf;
+            int fd;
+            int domain;
+            int result;
+
+            buf = __lnp_alloc(16);
+            if (buf == 0) return 1;
+
+            fd = __lnp_openat(AT_FDCWD, "Cargo.toml", 0);
+            if (fd == -1) return 2;
+            if (read(fd, buf, 1) != 1) return 3;
+
+            obj = __lnp_alloc(72);
+            store(obj, 1);
+            store(obj + 8, 2);
+            store(obj + 16, 1);
+            store(obj + 24, 3);
+            store(obj + 32, 4);
+            if (__lnp_object_ctl(obj) != 0) return 4;
+            if (__lnp_push(4, "x", 1) != 1) return 5;
+            if (__lnp_await(3, POLLIN) != 0) return 6;
+            if (__lnp_pull(3, buf, 1) != 1) return 7;
+
+            domain_arg = __lnp_alloc(208);
+            store(domain_arg, 3);
+            store(domain_arg + 8, 1);
+            store(domain_arg + 16, 1);
+            if (__lnp_domain_ctl(domain_arg) != 200) return 8;
+
+            domain = domain_create(5000000, 2, 8, 63);
+            if (domain == -1) return 9;
+            call_gate(5, domain, service);
+            result = __lnp_call_cap(5, 1, 2);
+            if (result != 77) return 10;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        for expected in [
+            "ALLOC",
+            "OPEN_FD_DYN",
+            "OBJECT_CTL",
+            "PUSH",
+            "AWAIT",
+            "PULL",
+            "DOMAIN_CTL",
+            "CALL_CAP",
+        ] {
+            assert!(asm.contains(expected), "missing {expected} in:\n{asm}");
+        }
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
