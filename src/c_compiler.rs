@@ -7118,6 +7118,45 @@ impl CodeGen {
                 let template = self.one_arg(name, args)?;
                 self.emit_mkstemp(template)
             }
+            "popen" | "_popen" => {
+                if args.len() != 2 {
+                    return Err(format!("{name}(command, mode) expects 2 arguments"));
+                }
+                self.emit_expr(&args[0])?;
+                self.emit_expr(&args[1])?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "pclose" | "_pclose" => {
+                let _stream = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, -1"));
+                Ok(dst)
+            }
+            "dlopen" | "dlsym" => {
+                if args.len() != 2 {
+                    return Err(format!("{name}(arg0, arg1) expects 2 arguments"));
+                }
+                self.emit_expr(&args[0])?;
+                self.emit_expr(&args[1])?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "dlclose" => {
+                let _handle = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "dlerror" => {
+                self.no_args(name, args)?;
+                let dst = self.alloc_reg()?;
+                let label = self.intern_string("dynamic loading not supported");
+                self.text.push(format!("  LI r{dst}, {label}"));
+                Ok(dst)
+            }
             "system" => {
                 let cmd = self.one_arg(name, args)?;
                 let dst = self.alloc_reg()?;
@@ -13565,6 +13604,29 @@ int main() {
         let asm = compile(source).unwrap();
         assert!(asm.contains("GET_PCR"), "{asm}");
         assert!(asm.contains("__strcpy"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_optional_dynamic_loading_and_popen_fail_cleanly() {
+        let source = r#"
+        int main() {
+            if (popen("echo hi", "r") != 0) return 1;
+            if (_popen("echo hi", "r") != 0) return 2;
+            if (pclose(0) != -1) return 3;
+            if (_pclose(0) != -1) return 4;
+            if (dlopen("libreadline.so", RTLD_NOW | RTLD_LOCAL) != 0) return 5;
+            if (dlsym(0, "readline") != 0) return 6;
+            if (dlclose(0) != 0) return 7;
+            if (strcmp(dlerror(), "dynamic loading not supported") != 0) return 8;
+            if (RTLD_GLOBAL == 0) return 9;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("dynamic loading not supported"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
