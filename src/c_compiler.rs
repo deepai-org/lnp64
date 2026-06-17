@@ -5858,6 +5858,14 @@ impl CodeGen {
                 self.emit_expr(&args[1])?;
                 self.emit_timerfd_create()
             }
+            "eventfd" => {
+                if args.len() != 2 {
+                    return Err("eventfd(initval, flags) expects 2 arguments".to_string());
+                }
+                let initval = self.emit_expr(&args[0])?;
+                let flags = self.emit_expr(&args[1])?;
+                self.emit_eventfd_create(initval, flags)
+            }
             "timerfd_settime" | "timerinttime" => {
                 if args.len() != 4 {
                     return Err(
@@ -11399,6 +11407,27 @@ impl CodeGen {
         self.emit_object_create(kind, profile, 0, 0, 0)
     }
 
+    fn emit_eventfd_create(&mut self, initval: usize, flags: usize) -> Result<usize, String> {
+        let block_size = self.alloc_reg()?;
+        let block = self.alloc_reg()?;
+        let tmp = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        self.text.push(format!("  LI r{block_size}, 72"));
+        self.text.push(format!("  ALLOC r{block}, r{block_size}"));
+        self.text.push(format!("  LI r{tmp}, 1"));
+        self.text.push(format!("  ST [r{block}, 0], r{tmp}"));
+        self.text.push(format!("  LI r{tmp}, 1"));
+        self.text.push(format!("  ST [r{block}, 8], r{tmp}"));
+        self.text.push(format!("  LI r{tmp}, 1"));
+        self.text.push(format!("  ST [r{block}, 16], r{tmp}"));
+        self.text.push(format!("  ST [r{block}, 24], r0"));
+        self.text.push(format!("  ST [r{block}, 32], r0"));
+        self.text.push(format!("  ST [r{block}, 40], r{initval}"));
+        self.text.push(format!("  ST [r{block}, 48], r{flags}"));
+        self.text.push(format!("  OBJECT_CTL r{dst}, r{block}"));
+        Ok(dst)
+    }
+
     fn emit_timerfd_settime(
         &mut self,
         fd: usize,
@@ -14920,6 +14949,49 @@ int main() {
         let asm = compile(source).unwrap();
         assert!(asm.contains("OBJECT_CTL"), "{asm}");
         assert!(asm.contains("WRITE_FD_DYN"), "{asm}");
+        assert!(asm.contains("POLL_FD_DYN"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_eventfd_surface_uses_counter_object_profile() {
+        let source = r#"
+        int main() {
+            int fd;
+            int sem;
+            int buf;
+            struct pollfd p[1];
+            buf = alloc(8);
+            fd = eventfd(2, EFD_NONBLOCK);
+            if (fd == -1) return 1;
+            p[0].fd = fd;
+            p[0].events = POLLIN;
+            if (poll(p, 1, 0) != 1) return 2;
+            if (read(fd, buf, 8) != 8) return 3;
+            if (load(buf) != 2) return 4;
+            if (poll(p, 1, 0) != 0) return 5;
+            store(buf, 5);
+            if (write(fd, buf, 8) != 8) return 6;
+            if (poll(p, 1, 0) != 1) return 7;
+            store(buf, 0);
+            if (read(fd, buf, 8) != 8) return 8;
+            if (load(buf) != 5) return 9;
+            sem = eventfd(2, EFD_SEMAPHORE);
+            if (sem == -1) return 10;
+            if (read(sem, buf, 8) != 8) return 11;
+            if (load(buf) != 1) return 12;
+            p[0].fd = sem;
+            if (poll(p, 1, 0) != 1) return 13;
+            if (read(sem, buf, 8) != 8) return 14;
+            if (load(buf) != 1) return 15;
+            if (poll(p, 1, 0) != 0) return 16;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("OBJECT_CTL"), "{asm}");
         assert!(asm.contains("POLL_FD_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);

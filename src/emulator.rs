@@ -122,8 +122,10 @@ const OBJECT_KIND_DMA_BUFFER: u64 = 4;
 const OBJECT_KIND_ENDPOINT: u64 = 5;
 const OBJECT_KIND_TIMER: u64 = 6;
 const OBJECT_PROFILE_PIPE: u64 = 1;
+const OBJECT_PROFILE_EVENTFD: u64 = 1;
 const OBJECT_PROFILE_TCP_STREAM: u64 = 2;
 const OBJECT_PROFILE_CALL_GATE: u64 = 4;
+const EVENTFD_SEMAPHORE: u64 = 1;
 const DMA_OP_COPY: u64 = 1;
 const DMA_OP_FILL: u64 = 2;
 const CALL_MODE_SYNC: u64 = 0;
@@ -189,6 +191,10 @@ enum FdHandle {
     PipeReader(Rc<RefCell<PipeBuffer>>),
     PipeWriter(Rc<RefCell<PipeBuffer>>),
     Counter(Rc<RefCell<u64>>),
+    EventCounter {
+        value: Rc<RefCell<u64>>,
+        semaphore: bool,
+    },
     MemoryObject {
         data: Rc<RefCell<Vec<u8>>>,
         pos: usize,
@@ -239,6 +245,10 @@ impl FdHandle {
             FdHandle::PipeReader(buffer) => Ok(FdHandle::PipeReader(Rc::clone(buffer))),
             FdHandle::PipeWriter(buffer) => Ok(FdHandle::PipeWriter(Rc::clone(buffer))),
             FdHandle::Counter(value) => Ok(FdHandle::Counter(Rc::clone(value))),
+            FdHandle::EventCounter { value, semaphore } => Ok(FdHandle::EventCounter {
+                value: Rc::clone(value),
+                semaphore: *semaphore,
+            }),
             FdHandle::MemoryObject { data, pos } => Ok(FdHandle::MemoryObject {
                 data: Rc::clone(data),
                 pos: *pos,
@@ -2392,6 +2402,18 @@ impl Machine {
                 *value.borrow_mut() = next;
                 Ok(())
             }
+            FdHandle::EventCounter { value, .. } => {
+                let addend = if data.len() >= 8 {
+                    u64::from_le_bytes(data[..8].try_into().unwrap())
+                } else {
+                    data.iter()
+                        .enumerate()
+                        .fold(0u64, |acc, (idx, byte)| acc | ((*byte as u64) << (idx * 8)))
+                };
+                let mut value = value.borrow_mut();
+                *value = value.saturating_add(addend);
+                Ok(())
+            }
             FdHandle::MemoryObject { data: object, pos } => {
                 let mut object = object.borrow_mut();
                 let end = pos.saturating_add(data.len());
@@ -2720,6 +2742,23 @@ impl Machine {
                 let count = len.min(bytes.len());
                 tmp[..count].copy_from_slice(&bytes[..count]);
                 count
+            }
+            FdHandle::EventCounter { value, semaphore } => {
+                let mut value = value.borrow_mut();
+                if *value == 0 {
+                    0
+                } else {
+                    let observed = if *semaphore { 1 } else { *value };
+                    if *semaphore {
+                        *value = value.saturating_sub(1);
+                    } else {
+                        *value = 0;
+                    }
+                    let bytes = observed.to_le_bytes();
+                    let count = len.min(bytes.len());
+                    tmp[..count].copy_from_slice(&bytes[..count]);
+                    count
+                }
             }
             FdHandle::MemoryObject { data, pos } => {
                 let data = data.borrow();
@@ -3240,6 +3279,19 @@ impl Machine {
                         mode,
                         completion_fd,
                         flags,
+                    },
+                )?;
+                self.store_u64(argblock + 24, fd as u64)
+                    .map_err(|_| 14u64)?;
+                Ok(fd as u64)
+            }
+            (OBJECT_KIND_COUNTER, OBJECT_PROFILE_EVENTFD) => {
+                let flags = self.load_u64(argblock + 48).map_err(|_| 14u64)?;
+                let fd = self.install_object_fd(
+                    fd0_req,
+                    FdHandle::EventCounter {
+                        value: Rc::new(RefCell::new(arg)),
+                        semaphore: flags & EVENTFD_SEMAPHORE != 0,
                     },
                 )?;
                 self.store_u64(argblock + 24, fd as u64)
@@ -5279,6 +5331,7 @@ impl Machine {
             | FdHandle::Dir { .. }
             | FdHandle::Counter(_)
             | FdHandle::MemoryObject { .. } => Ok(true),
+            FdHandle::EventCounter { value, .. } => Ok(*value.borrow() != 0),
             FdHandle::Timer(timer) => Ok(timer.borrow().expirations != 0),
             FdHandle::PipeReader(buffer) => {
                 let buffer = buffer.borrow();
@@ -5328,6 +5381,7 @@ impl Machine {
                 | FdHandle::File(_)
                 | FdHandle::PipeWriter(_)
                 | FdHandle::Counter(_)
+                | FdHandle::EventCounter { .. }
                 | FdHandle::MemoryObject { .. }
                 | FdHandle::Timer(_)
                 | FdHandle::TcpStream(_)
@@ -5350,6 +5404,7 @@ impl Machine {
             | FdHandle::MemoryObject { .. }
             | FdHandle::CallGate { .. }
             | FdHandle::TcpStream(_) => Ok(true),
+            FdHandle::EventCounter { value, .. } => Ok(*value.borrow() != 0),
             FdHandle::Timer(timer) => Ok(timer.borrow().expirations != 0),
             FdHandle::MessageEndpoint | FdHandle::TcpSocket { .. } => Ok(false),
             FdHandle::PipeReader(buffer) => {
