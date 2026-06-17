@@ -82,6 +82,16 @@ const MAX_CAP_CALL_DEPTH: usize = 8;
 const FDR_TOKEN_MARKER: u64 = 1 << 62;
 const FDR_TOKEN_SHIFT: u64 = 8;
 const FDR_TOKEN_INDEX_MASK: u64 = 0xff;
+const CAP_RIGHT_READ: u64 = 1 << 0;
+const CAP_RIGHT_WRITE: u64 = 1 << 1;
+const CAP_RIGHT_SEEK: u64 = 1 << 2;
+const CAP_RIGHT_STAT: u64 = 1 << 3;
+const CAP_RIGHT_POLL: u64 = 1 << 4;
+const CAP_RIGHT_CALL: u64 = 1 << 5;
+const CAP_RIGHT_DUP: u64 = 1 << 6;
+const CAP_RIGHT_REVOKE: u64 = 1 << 7;
+const CAP_RIGHT_ALL: u64 = (1 << 8) - 1;
+const CAP_DUP_FLAG_SEAL: u64 = 1 << 0;
 const POLLIN_MASK: u64 = 1;
 const POLLOUT_MASK: u64 = 4;
 const POLLNVAL_MASK: u64 = 32;
@@ -205,6 +215,36 @@ impl FdHandle {
                 .map(Some)
                 .map_err(|err| format!("failed to clone file-backed fd: {err}")),
             _ => Ok(None),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct FdCapability {
+    rights: u64,
+    sealed: bool,
+    narrowable: bool,
+    revocable: bool,
+    lineage: u64,
+    revoked: bool,
+}
+
+impl FdCapability {
+    fn full(lineage: u64) -> Self {
+        Self {
+            rights: CAP_RIGHT_ALL,
+            sealed: false,
+            narrowable: true,
+            revocable: true,
+            lineage,
+            revoked: false,
+        }
+    }
+
+    fn closed(lineage: u64) -> Self {
+        Self {
+            revoked: true,
+            ..Self::full(lineage)
         }
     }
 }
@@ -410,6 +450,7 @@ struct Process {
     program: Program,
     fds: Vec<FdHandle>,
     fd_generations: Vec<u64>,
+    fd_capabilities: Vec<FdCapability>,
     memory: Vec<u8>,
     vmas: Vec<Vma>,
     stack_top: u64,
@@ -444,6 +485,15 @@ impl Process {
         }
         fds[MESSAGE_ENDPOINT_FD] = FdHandle::MessageEndpoint;
         let fd_generations = vec![1; FDR_COUNT];
+        let mut fd_capabilities = Vec::with_capacity(FDR_COUNT);
+        for idx in 0..FDR_COUNT {
+            let lineage = idx as u64 + 1;
+            if matches!(fds[idx], FdHandle::Closed) {
+                fd_capabilities.push(FdCapability::closed(lineage));
+            } else {
+                fd_capabilities.push(FdCapability::full(lineage));
+            }
+        }
 
         let mut memory = vec![0; MEMORY_SIZE];
         let data_start = DATA_BASE as usize;
@@ -466,6 +516,7 @@ impl Process {
             program,
             fds,
             fd_generations,
+            fd_capabilities,
             memory,
             vmas,
             stack_top: layout.stack_top,
@@ -500,6 +551,7 @@ impl Process {
             program: self.program.clone(),
             fds,
             fd_generations: self.fd_generations.clone(),
+            fd_capabilities: self.fd_capabilities.clone(),
             memory: self.memory.clone(),
             vmas,
             stack_top: self.stack_top,
@@ -596,6 +648,7 @@ pub struct Machine {
     next_tid: u64,
     next_domain_id: u64,
     next_call_op_id: u64,
+    next_cap_lineage: u64,
     random_state: u64,
     last_exit: i32,
 }
@@ -635,6 +688,7 @@ impl Machine {
             next_tid: 2,
             next_domain_id: 2,
             next_call_op_id: 1,
+            next_cap_lineage: FDR_COUNT as u64 + 1,
             random_state: 0x4d59_5df4_d0f3_3173,
             last_exit: 0,
         }
@@ -946,6 +1000,8 @@ impl Machine {
                     Ok(handle) => {
                         self.bump_fd_generation(dst.0)?;
                         self.process_mut()?.fds[dst.0] = handle;
+                        let capability = self.fresh_fd_capability();
+                        self.install_fd_capability(dst.0, capability)?;
                         self.set_status_ok()?;
                     }
                     Err(_) => self.set_status_errno(5)?,
@@ -987,6 +1043,8 @@ impl Machine {
                     Ok(handle) => {
                         self.bump_fd_generation(dst.0)?;
                         self.process_mut()?.fds[dst.0] = handle;
+                        let capability = self.fresh_fd_capability();
+                        self.install_fd_capability(dst.0, capability)?;
                         self.set_status_ok()?;
                     }
                     Err(err) => self.set_status_io_error(err)?,
@@ -1272,15 +1330,13 @@ impl Machine {
                 }
             }
             Instr::FdClose(fd) => {
-                self.bump_fd_generation(fd.0)?;
-                self.process_mut()?.fds[fd.0] = FdHandle::Closed;
+                self.close_fd_index(fd.0)?;
                 self.set_status_ok()?;
             }
             Instr::FdCloseDyn(fd_reg) => {
                 let fd = self.read_reg(fd_reg)?;
                 if let Some(fd) = self.checked_fd_index(fd)? {
-                    self.bump_fd_generation(fd)?;
-                    self.process_mut()?.fds[fd] = FdHandle::Closed;
+                    self.close_fd_index(fd)?;
                     self.set_status_ok()?;
                 }
             }
@@ -1310,6 +1366,14 @@ impl Machine {
                     return Ok(true);
                 }
                 let cloned = self.process()?.fds[src.0].clone_handle()?;
+                let rights = self.process()?.fd_capabilities[src.0].rights;
+                match self.duplicate_fd_capability(src.0, dst.0, rights, false) {
+                    Ok(()) => {}
+                    Err(errno) => {
+                        self.set_status_errno(errno)?;
+                        return Ok(true);
+                    }
+                }
                 self.bump_fd_generation(dst.0)?;
                 self.process_mut()?.fds[dst.0] = cloned;
             }
@@ -1319,6 +1383,14 @@ impl Machine {
                     return Ok(true);
                 }
                 let cloned = self.process()?.fds[src.0].clone_handle()?;
+                let rights = self.process()?.fd_capabilities[src.0].rights;
+                match self.duplicate_fd_capability(src.0, dst.0, rights, false) {
+                    Ok(()) => {}
+                    Err(errno) => {
+                        self.set_status_errno(errno)?;
+                        return Ok(true);
+                    }
+                }
                 self.bump_fd_generation(dst.0)?;
                 self.process_mut()?.fds[dst.0] = cloned;
                 self.set_status_ok()?;
@@ -1649,6 +1721,12 @@ impl Machine {
             Instr::DmaCtl(result, argblock) => {
                 self.dma_ctl(result, self.read_reg(argblock)?)?;
             }
+            Instr::CapDup(result, argblock) => {
+                self.cap_dup(result, self.read_reg(argblock)?)?;
+            }
+            Instr::CapRevoke(result, argblock) => {
+                self.cap_revoke(result, self.read_reg(argblock)?)?;
+            }
             Instr::DomainCtl(result, argblock) => {
                 self.domain_ctl(result, self.read_reg(argblock)?)?;
             }
@@ -1950,6 +2028,8 @@ impl Machine {
         if let Some(fd) = fd {
             self.bump_fd_generation(fd)?;
             self.process_mut()?.fds[fd] = handle;
+            let capability = self.fresh_fd_capability();
+            self.install_fd_capability(fd, capability)?;
             Ok(Some(fd))
         } else {
             self.set_status_errno(24)?;
@@ -1965,6 +2045,89 @@ impl Machine {
             .copied()
             .ok_or_else(|| format!("fd index out of range: {fd}"))?;
         Ok(FDR_TOKEN_MARKER | (generation << FDR_TOKEN_SHIFT) | fd as u64)
+    }
+
+    fn fresh_fd_capability(&mut self) -> FdCapability {
+        let lineage = self.next_cap_lineage;
+        self.next_cap_lineage = self
+            .next_cap_lineage
+            .saturating_add(1)
+            .max(FDR_COUNT as u64 + 1);
+        FdCapability::full(lineage)
+    }
+
+    fn install_fd_capability(&mut self, fd: usize, capability: FdCapability) -> Result<(), String> {
+        let process = self.process_mut()?;
+        let Some(slot) = process.fd_capabilities.get_mut(fd) else {
+            return Err(format!("fd index out of range: {fd}"));
+        };
+        *slot = capability;
+        Ok(())
+    }
+
+    fn close_fd_index(&mut self, fd: usize) -> Result<(), String> {
+        self.bump_fd_generation(fd)?;
+        self.process_mut()?.fds[fd] = FdHandle::Closed;
+        let lineage = self.fresh_fd_capability().lineage;
+        self.install_fd_capability(fd, FdCapability::closed(lineage))?;
+        Ok(())
+    }
+
+    fn duplicate_fd_capability(
+        &mut self,
+        src: usize,
+        dst: usize,
+        rights: u64,
+        sealed: bool,
+    ) -> Result<(), u64> {
+        let source = self
+            .process()
+            .map_err(|_| 3u64)?
+            .fd_capabilities
+            .get(src)
+            .copied()
+            .ok_or(9u64)?;
+        if matches!(self.process().map_err(|_| 3u64)?.fds[src], FdHandle::Closed) {
+            return Err(9);
+        }
+        if source.revoked {
+            return Err(116);
+        }
+        if source.sealed || source.rights & CAP_RIGHT_DUP == 0 {
+            return Err(1);
+        }
+        if rights & !source.rights != 0 {
+            return Err(1);
+        }
+        if (rights != source.rights || sealed) && !source.narrowable {
+            return Err(1);
+        }
+        let mut duplicate = source;
+        duplicate.rights = rights;
+        duplicate.sealed = sealed;
+        duplicate.narrowable = source.narrowable && !sealed;
+        duplicate.revoked = false;
+        self.install_fd_capability(dst, duplicate).map_err(|_| 9u64)
+    }
+
+    fn ensure_fd_right(&mut self, fd: usize, right: u64) -> Result<(), String> {
+        let Some(capability) = self.process()?.fd_capabilities.get(fd).copied() else {
+            self.set_status_errno(9)?;
+            return Err(format!("fd index out of range: {fd}"));
+        };
+        if matches!(self.process()?.fds[fd], FdHandle::Closed) {
+            self.set_status_errno(9)?;
+            return Err(format!("fd {fd} is closed"));
+        }
+        if capability.revoked {
+            self.set_status_errno(116)?;
+            return Err(format!("fd {fd} capability is revoked"));
+        }
+        if capability.rights & right != right {
+            self.set_status_errno(1)?;
+            return Err(format!("fd {fd} capability right denied"));
+        }
+        Ok(())
     }
 
     fn decode_fd_value(&self, value: u64) -> Result<usize, u64> {
@@ -1985,6 +2148,10 @@ impl Machine {
         let process = self.process().map_err(|_| 3u64)?;
         if process.fd_generations.get(fd).copied() != Some(generation)
             || matches!(process.fds[fd], FdHandle::Closed)
+            || process
+                .fd_capabilities
+                .get(fd)
+                .is_none_or(|cap| cap.revoked)
         {
             return Err(116);
         }
@@ -2004,6 +2171,9 @@ impl Machine {
     }
 
     fn write_fd_index(&mut self, fd: usize, addr: u64, len: usize) -> Result<(), String> {
+        if self.ensure_fd_right(fd, CAP_RIGHT_WRITE).is_err() {
+            return Ok(());
+        }
         let data = self.read_bytes(addr, len)?;
         let result = match &mut self.process_mut()?.fds[fd] {
             FdHandle::Stdout => {
@@ -2077,6 +2247,9 @@ impl Machine {
         len: usize,
         offset: u64,
     ) -> Result<(), String> {
+        if self.ensure_fd_right(fd, CAP_RIGHT_WRITE).is_err() {
+            return Ok(());
+        }
         let data = self.read_bytes(addr, len)?;
         let result = match &mut self.process_mut()?.fds[fd] {
             FdHandle::File(file) => {
@@ -2223,6 +2396,9 @@ impl Machine {
     }
 
     fn stat_fd_index(&mut self, statbuf: u64, fd: usize) -> Result<(), String> {
+        if self.ensure_fd_right(fd, CAP_RIGHT_STAT).is_err() {
+            return Ok(());
+        }
         let metadata = match &self.process()?.fds[fd] {
             FdHandle::File(file) => Some(file.metadata().map_err(|err| Self::errno_from_io(&err))),
             FdHandle::Dir { path, .. } => {
@@ -2245,6 +2421,9 @@ impl Machine {
     }
 
     fn fd_seek_index(&mut self, fd: usize, offset: i64, whence: u64) -> Result<(), String> {
+        if self.ensure_fd_right(fd, CAP_RIGHT_SEEK).is_err() {
+            return Ok(());
+        }
         let seek_from = match whence {
             0 => Some(SeekFrom::Start(offset as u64)),
             1 => Some(SeekFrom::Current(offset)),
@@ -2295,6 +2474,9 @@ impl Machine {
     }
 
     fn read_fd_index(&mut self, fd: usize, addr: u64, len: usize) -> Result<usize, String> {
+        if self.ensure_fd_right(fd, CAP_RIGHT_READ).is_err() {
+            return Ok(0);
+        }
         let mut tmp = vec![0; len];
         let count = match &mut self.process_mut()?.fds[fd] {
             FdHandle::Stdin => io::stdin()
@@ -2371,6 +2553,9 @@ impl Machine {
         len: usize,
         offset: u64,
     ) -> Result<(), String> {
+        if self.ensure_fd_right(fd, CAP_RIGHT_READ).is_err() {
+            return Ok(());
+        }
         let mut tmp = vec![0; len];
         let result = match &mut self.process_mut()?.fds[fd] {
             FdHandle::File(file) => file.read_at(&mut tmp, offset),
@@ -2445,6 +2630,126 @@ impl Machine {
                 self.write_reg(result, -1i64 as u64)
             }
         }
+    }
+
+    fn cap_dup(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
+        let src_value = self.load_u64(argblock)?;
+        let dst_req = self.load_u64(argblock + 8)?;
+        let rights_req = self.load_u64(argblock + 16)?;
+        let flags = self.load_u64(argblock + 24)?;
+        let value = self.cap_dup_inner(src_value, dst_req, rights_req, flags);
+        match value {
+            Ok(token) => {
+                self.set_errno(0)?;
+                self.write_reg(result, token)
+            }
+            Err(errno) => {
+                self.set_status_errno(errno)?;
+                self.write_reg(result, -1i64 as u64)
+            }
+        }
+    }
+
+    fn cap_dup_inner(
+        &mut self,
+        src_value: u64,
+        dst_req: u64,
+        rights_req: u64,
+        flags: u64,
+    ) -> Result<u64, u64> {
+        let src = self.decode_fd_value(src_value)?;
+        let source_cap = self
+            .process()
+            .map_err(|_| 3u64)?
+            .fd_capabilities
+            .get(src)
+            .copied()
+            .ok_or(9u64)?;
+        let rights = if rights_req == 0 {
+            source_cap.rights
+        } else {
+            rights_req
+        };
+        let sealed = flags & CAP_DUP_FLAG_SEAL != 0;
+        let handle = self
+            .process()
+            .map_err(|_| 3u64)?
+            .fds
+            .get(src)
+            .ok_or(9u64)?
+            .clone_handle()
+            .map_err(|_| 9u64)?;
+        let dst = if dst_req == 0 {
+            self.ensure_domain_budget_errno(0, 0, 0, 1)?;
+            let process = self.process().map_err(|_| 3u64)?;
+            process
+                .fds
+                .iter()
+                .enumerate()
+                .find(|(idx, candidate)| {
+                    *idx != MESSAGE_ENDPOINT_FD && matches!(candidate, FdHandle::Closed)
+                })
+                .map(|(idx, _)| idx)
+                .ok_or(24u64)?
+        } else {
+            if dst_req as usize >= FDR_COUNT || dst_req as usize == MESSAGE_ENDPOINT_FD {
+                return Err(9);
+            }
+            let fd = dst_req as usize;
+            let delta = self.fd_slot_delta(fd).map_err(|_| 9u64)?;
+            self.ensure_domain_budget_errno(0, 0, 0, delta)?;
+            fd
+        };
+        self.duplicate_fd_capability(src, dst, rights, sealed)?;
+        self.bump_fd_generation(dst).map_err(|_| 9u64)?;
+        self.process_mut().map_err(|_| 3u64)?.fds[dst] = handle;
+        self.fd_token(dst).map_err(|_| 9u64)
+    }
+
+    fn cap_revoke(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
+        let src_value = self.load_u64(argblock)?;
+        let value = self.cap_revoke_inner(src_value);
+        match value {
+            Ok(count) => {
+                self.set_errno(0)?;
+                self.write_reg(result, count)
+            }
+            Err(errno) => {
+                self.set_status_errno(errno)?;
+                self.write_reg(result, -1i64 as u64)
+            }
+        }
+    }
+
+    fn cap_revoke_inner(&mut self, src_value: u64) -> Result<u64, u64> {
+        let src = self.decode_fd_value(src_value)?;
+        let source = self
+            .process()
+            .map_err(|_| 3u64)?
+            .fd_capabilities
+            .get(src)
+            .copied()
+            .ok_or(9u64)?;
+        if source.revoked {
+            return Err(116);
+        }
+        if !source.revocable || source.rights & CAP_RIGHT_REVOKE == 0 {
+            return Err(1);
+        }
+        let lineage = source.lineage;
+        let targets = self
+            .process()
+            .map_err(|_| 3u64)?
+            .fd_capabilities
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, cap)| (cap.lineage == lineage && !cap.revoked).then_some(idx))
+            .collect::<Vec<_>>();
+        for fd in &targets {
+            self.process_mut().map_err(|_| 3u64)?.fd_capabilities[*fd].revoked = true;
+            self.bump_fd_generation(*fd).map_err(|_| 9u64)?;
+        }
+        Ok(targets.len() as u64)
     }
 
     fn object_ctl_create(&mut self, argblock: u64) -> Result<u64, u64> {
@@ -2545,6 +2850,9 @@ impl Machine {
             self.ensure_domain_budget_errno(0, 0, 0, delta)?;
             self.bump_fd_generation(fd).map_err(|_| 9u64)?;
             self.process_mut().map_err(|_| 3u64)?.fds[fd] = handle;
+            let capability = self.fresh_fd_capability();
+            self.install_fd_capability(fd, capability)
+                .map_err(|_| 9u64)?;
             return Ok(fd);
         }
         self.ensure_domain_budget_errno(0, 0, 0, 1)?;
@@ -2564,6 +2872,9 @@ impl Machine {
         };
         self.bump_fd_generation(fd).map_err(|_| 9u64)?;
         self.process_mut().map_err(|_| 3u64)?.fds[fd] = handle;
+        let capability = self.fresh_fd_capability();
+        self.install_fd_capability(fd, capability)
+            .map_err(|_| 9u64)?;
         Ok(fd)
     }
 
@@ -2575,6 +2886,10 @@ impl Machine {
         arg1: u64,
     ) -> Result<(), String> {
         self.require_domain_cap(DOMAIN_CAP_CALL)?;
+        if self.ensure_fd_right(call_gate_fd, CAP_RIGHT_CALL).is_err() {
+            self.write_reg(result, -1i64 as u64)?;
+            return Ok(());
+        }
         let (entry, domain_id, domain_generation, mode, completion_fd, flags) =
             match &self.process()?.fds[call_gate_fd] {
                 FdHandle::CallGate {
@@ -4035,6 +4350,9 @@ impl Machine {
         if fd >= FDR_COUNT {
             return Ok(POLLNVAL_MASK);
         }
+        if self.ensure_fd_right(fd, CAP_RIGHT_POLL).is_err() {
+            return Ok(POLLNVAL_MASK);
+        }
         if matches!(self.process()?.fds[fd], FdHandle::Closed) {
             return Ok(POLLNVAL_MASK);
         }
@@ -5144,6 +5462,138 @@ mod tests {
     }
 
     #[test]
+    fn cap_dup_can_only_narrow_rights() {
+        let program = Program::parse(
+            r#"
+            .data
+            path: .string "Cargo.toml"
+
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let path = program.data_labels["path"];
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[1] = path;
+        machine.thread_mut().unwrap().regs[2] = 0;
+        machine
+            .exec(Instr::OpenFdDyn(Reg(3), Reg(1), Reg(2)))
+            .unwrap();
+        let source = machine.thread().unwrap().regs[3];
+        let arg = ARG_BASE;
+        machine.store_u64(arg, source).unwrap();
+        machine.store_u64(arg + 8, 0).unwrap();
+        machine.store_u64(arg + 16, CAP_RIGHT_READ).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_dup(Reg(4), arg).unwrap();
+        let readonly = machine.thread().unwrap().regs[4];
+        assert_ne!(readonly, -1i64 as u64);
+
+        machine.thread_mut().unwrap().regs[5] = readonly;
+        machine.thread_mut().unwrap().regs[6] = ARG_BASE + 0x1000;
+        machine.thread_mut().unwrap().regs[7] = 1;
+        machine
+            .exec(Instr::WriteFdDyn(Reg(5), Reg(6), Reg(7)))
+            .unwrap();
+        assert_eq!(machine.process().unwrap().errno, 1);
+
+        machine.store_u64(arg, readonly).unwrap();
+        machine.store_u64(arg + 8, 0).unwrap();
+        machine
+            .store_u64(arg + 16, CAP_RIGHT_READ | CAP_RIGHT_WRITE)
+            .unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_dup(Reg(8), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[8], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
+    }
+
+    #[test]
+    fn sealed_capability_cannot_be_duplicated() {
+        let program = Program::parse(
+            r#"
+            .data
+            path: .string "Cargo.toml"
+
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let path = program.data_labels["path"];
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[1] = path;
+        machine.thread_mut().unwrap().regs[2] = 0;
+        machine
+            .exec(Instr::OpenFdDyn(Reg(3), Reg(1), Reg(2)))
+            .unwrap();
+        let source = machine.thread().unwrap().regs[3];
+        let arg = ARG_BASE;
+        machine.store_u64(arg, source).unwrap();
+        machine.store_u64(arg + 8, 0).unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, CAP_DUP_FLAG_SEAL).unwrap();
+        machine.cap_dup(Reg(4), arg).unwrap();
+        let sealed = machine.thread().unwrap().regs[4];
+        assert_ne!(sealed, -1i64 as u64);
+
+        machine.store_u64(arg, sealed).unwrap();
+        machine.store_u64(arg + 8, 0).unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_dup(Reg(5), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
+    }
+
+    #[test]
+    fn cap_revoke_invalidates_descendant_capabilities() {
+        let program = Program::parse(
+            r#"
+            .data
+            path: .string "Cargo.toml"
+
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let path = program.data_labels["path"];
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[1] = path;
+        machine.thread_mut().unwrap().regs[2] = 0;
+        machine
+            .exec(Instr::OpenFdDyn(Reg(3), Reg(1), Reg(2)))
+            .unwrap();
+        let source = machine.thread().unwrap().regs[3];
+        let arg = ARG_BASE;
+        machine.store_u64(arg, source).unwrap();
+        machine.store_u64(arg + 8, 0).unwrap();
+        machine
+            .store_u64(arg + 16, CAP_RIGHT_READ | CAP_RIGHT_REVOKE)
+            .unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_dup(Reg(4), arg).unwrap();
+        let child = machine.thread().unwrap().regs[4];
+
+        machine.store_u64(arg, source).unwrap();
+        machine.cap_revoke(Reg(5), arg).unwrap();
+        assert!(machine.thread().unwrap().regs[5] >= 2);
+
+        machine.thread_mut().unwrap().regs[6] = child;
+        machine.thread_mut().unwrap().regs[7] = ARG_BASE + 0x1000;
+        machine.thread_mut().unwrap().regs[8] = 1;
+        machine
+            .exec(Instr::ReadFdDyn(Reg(6), Reg(7), Reg(8)))
+            .unwrap();
+        assert_eq!(machine.process().unwrap().errno, 116);
+    }
+
+    #[test]
     fn random_scalar_and_buffer_are_deterministic() {
         let program = Program::parse(
             r#"
@@ -5662,6 +6112,7 @@ mod tests {
             completion_fd: None,
             flags: 0,
         };
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[3] = FdCapability::full(3);
         machine
     }
 
@@ -5774,6 +6225,7 @@ mod tests {
     fn call_cap_async_and_handoff_modes_execute_minimally() {
         let mut machine = test_machine_with_child_domain();
         machine.processes.get_mut(&1).unwrap().fds[4] = FdHandle::Counter(Rc::new(RefCell::new(0)));
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[4] = FdCapability::full(4);
         machine.processes.get_mut(&1).unwrap().fds[3] = FdHandle::CallGate {
             entry: 1,
             domain_id: 2,

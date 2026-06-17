@@ -595,6 +595,14 @@ impl Parser {
                 arity(2)?;
                 Instr::DmaCtl(reg(&args[0])?, reg(&args[1])?)
             }
+            "CAP_DUP" => {
+                arity(2)?;
+                Instr::CapDup(reg(&args[0])?, reg(&args[1])?)
+            }
+            "CAP_REVOKE" => {
+                arity(2)?;
+                Instr::CapRevoke(reg(&args[0])?, reg(&args[1])?)
+            }
             "DOMAIN_CTL" => {
                 arity(2)?;
                 Instr::DomainCtl(reg(&args[0])?, reg(&args[1])?)
@@ -922,6 +930,26 @@ mod tests {
         assert!(matches!(
             program.instructions[0],
             Instr::DmaCtl(Reg(1), Reg(2))
+        ));
+    }
+
+    #[test]
+    fn parses_capability_control_instructions() {
+        let program = Program::parse(
+            r#"
+            .text
+              CAP_DUP r1, r2
+              CAP_REVOKE r3, r4
+            "#,
+        )
+        .unwrap();
+        assert!(matches!(
+            program.instructions[0],
+            Instr::CapDup(Reg(1), Reg(2))
+        ));
+        assert!(matches!(
+            program.instructions[1],
+            Instr::CapRevoke(Reg(3), Reg(4))
         ));
     }
 
