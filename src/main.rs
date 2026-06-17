@@ -1,7 +1,6 @@
 mod asm;
 mod c_compiler;
 mod c_constants;
-mod c_control_rewrites;
 mod c_escapes;
 mod c_layouts;
 mod c_macro_rewrites;

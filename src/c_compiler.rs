@@ -3,7 +3,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::c_constants::find_token_constant;
-use crate::c_control_rewrites::normalize_do_while_loops;
 use crate::c_escapes::parse_c_escape;
 use crate::c_layouts;
 use crate::c_macro_rewrites::expand_object_like_macros;
@@ -32,6 +31,7 @@ enum Token {
     If,
     Else,
     While,
+    Do,
     For,
     Switch,
     Case,
@@ -161,6 +161,10 @@ enum Stmt {
         cond: Expr,
         body: Vec<Stmt>,
     },
+    DoWhile {
+        body: Vec<Stmt>,
+        cond: Expr,
+    },
     For {
         init: Vec<Expr>,
         cond: Option<Expr>,
@@ -194,7 +198,7 @@ impl Stmt {
                     || then_body.iter().any(|stmt| stmt.calls_function(name))
                     || else_body.iter().any(|stmt| stmt.calls_function(name))
             }
-            Stmt::While { cond, body } => {
+            Stmt::While { cond, body } | Stmt::DoWhile { cond, body } => {
                 cond.calls_function(name) || body.iter().any(|stmt| stmt.calls_function(name))
             }
             Stmt::For {
@@ -470,7 +474,6 @@ fn is_c_ident_char(ch: char) -> bool {
 fn preprocess_source(source: &str) -> String {
     let source = splice_escaped_newlines(source);
     let source = strip_block_comments(&source);
-    let source = normalize_do_while_loops(&source);
     let source = expand_object_like_macros(&source);
     let user_type_aliases = collect_user_type_aliases(&source);
     let user_struct_tags = collect_user_struct_tags(&source);
@@ -556,7 +559,6 @@ fn preprocess_source(source: &str) -> String {
     let out = apply_scalar_type_rewrites(&out);
     let out = normalize_c_types(&out);
     let out = strip_simple_typedefs(&out);
-    let out = normalize_do_while_loops(&out);
     strip_simple_typedefs(&out)
 }
 
@@ -2147,6 +2149,7 @@ impl Lexer {
             "if" => Token::If,
             "else" => Token::Else,
             "while" => Token::While,
+            "do" => Token::Do,
             "for" => Token::For,
             "switch" => Token::Switch,
             "case" => Token::Case,
@@ -2809,6 +2812,16 @@ impl Parser {
                 self.expect(Token::RParen)?;
                 let body = self.parse_stmt_or_block()?;
                 Ok(Stmt::While { cond, body })
+            }
+            Token::Do => {
+                self.advance();
+                let body = self.parse_stmt_or_block()?;
+                self.expect(Token::While)?;
+                self.expect(Token::LParen)?;
+                let cond = self.parse_expr()?;
+                self.expect(Token::RParen)?;
+                self.expect(Token::Semi)?;
+                Ok(Stmt::DoWhile { body, cond })
             }
             Token::For => {
                 self.advance();
@@ -3929,6 +3942,24 @@ impl CodeGen {
                     self.emit_stmt(stmt)?;
                 }
                 self.text.push(format!("  JMP {start_label}"));
+                self.text.push(format!("{end_label}:"));
+                self.break_labels.pop();
+                self.continue_labels.pop();
+            }
+            Stmt::DoWhile { body, cond } => {
+                let start_label = self.new_label("dowhile");
+                let continue_label = self.new_label("dowhile_continue");
+                let end_label = self.new_label("enddowhile");
+                self.break_labels.push(end_label.clone());
+                self.continue_labels.push(continue_label.clone());
+                self.text.push(format!("{start_label}:"));
+                for stmt in body {
+                    self.emit_stmt(stmt)?;
+                }
+                self.text.push(format!("{continue_label}:"));
+                let cond_reg = self.emit_expr(cond)?;
+                self.text.push(format!("  CMP r{cond_reg}, r0"));
+                self.text.push(format!("  BNE {start_label}"));
                 self.text.push(format!("{end_label}:"));
                 self.break_labels.pop();
                 self.continue_labels.pop();
@@ -5459,6 +5490,8 @@ impl CodeGen {
             16
         } else if matches!(base, Expr::Index(inner, _) if member_field_name(inner).is_some_and(|name| name == "strcache"))
         {
+            8
+        } else if member_field_name(base).is_some_and(|name| name == "paths") {
             8
         } else if member_field_name(base).is_some_and(|name| name == "node") {
             56
@@ -15311,6 +15344,32 @@ mod tests {
     }
 
     #[test]
+    fn c_do_while_continue_runs_condition_before_next_iteration() {
+        let source = r#"
+        int main() {
+            int i;
+            int sum;
+            i = 0;
+            sum = 0;
+            do {
+                i = i + 1;
+                if (i < 3) {
+                    continue;
+                }
+                sum = sum + i;
+            } while (i < 5);
+            if (sum != 12) return 1;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("dowhile_continue"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn compiles_multiple_c_inputs_with_cross_file_call() {
         let dir = std::env::temp_dir().join(format!("lnp64_multi_{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
@@ -15643,6 +15702,36 @@ mod tests {
             struct entry ent;
             ent->mode = 11;
             return ent.mode == 11 ? 0 : 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn member_pointer_array_indexes_load_word_slots() {
+        let source = r#"
+        struct joined {
+            char **paths;
+            int path_index;
+        };
+
+        int second_matches(struct joined *j) {
+            j->path_index = 1;
+            return strcmp(j->paths[j->path_index], "beta") == 0 ? 0 : 1;
+        }
+
+        int main() {
+            char *paths[3];
+            struct joined j;
+            paths[0] = "alpha";
+            paths[1] = "beta";
+            paths[2] = 0;
+            j.paths = paths;
+            j.path_index = 0;
+            return second_matches(&j);
         }
         "#;
         let asm = compile(source).unwrap();
