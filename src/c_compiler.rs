@@ -7153,19 +7153,31 @@ impl CodeGen {
             }
             "domain_attach_self" => {
                 let id = self.one_arg(name, args)?;
-                let block_size = self.alloc_reg()?;
-                let block = self.alloc_reg()?;
-                let tmp = self.alloc_reg()?;
-                let dst = self.alloc_reg()?;
-                self.text.push(format!("  LI r{block_size}, 208"));
-                self.text.push(format!("  ALLOC r{block}, r{block_size}"));
-                self.text.push(format!("  LI r{tmp}, 7"));
-                self.text.push(format!("  ST [r{block}, 0], r{tmp}"));
-                self.text.push(format!("  ST [r{block}, 8], r{id}"));
-                self.text.push(format!("  LI r{tmp}, 1"));
-                self.text.push(format!("  ST [r{block}, 16], r{tmp}"));
-                self.text.push(format!("  DOMAIN_CTL r{dst}, r{block}"));
-                Ok(dst)
+                self.emit_domain_control(7, Some(id))
+            }
+            "domain_detach_self" => {
+                self.no_args(name, args)?;
+                self.emit_domain_control(8, None)
+            }
+            "domain_freeze" => {
+                let id = self.one_arg(name, args)?;
+                self.emit_domain_control(4, Some(id))
+            }
+            "domain_resume" => {
+                let id = self.one_arg(name, args)?;
+                self.emit_domain_control(5, Some(id))
+            }
+            "domain_destroy" => {
+                let id = self.one_arg(name, args)?;
+                self.emit_domain_control(6, Some(id))
+            }
+            "domain_query" => {
+                if args.len() != 2 {
+                    return Err("domain_query(id, out) expects 2 arguments".to_string());
+                }
+                let id = self.emit_expr(&args[0])?;
+                let out = self.emit_expr(&args[1])?;
+                self.emit_domain_query(id, out)
             }
             "call_gate" => {
                 if args.len() != 3 {
@@ -8476,6 +8488,48 @@ impl CodeGen {
             self.text.push(format!("  ST [r{block}, {offset}], r{reg}"));
         }
         self.text.push(format!("  {instruction} r{dst}, r{block}"));
+        Ok(dst)
+    }
+
+    fn emit_domain_control(&mut self, op: i64, id: Option<usize>) -> Result<usize, String> {
+        let block_size = self.alloc_reg()?;
+        let block = self.alloc_reg()?;
+        let tmp = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        self.text.push(format!("  LI r{block_size}, 208"));
+        self.text.push(format!("  ALLOC r{block}, r{block_size}"));
+        self.text.push(format!("  LI r{tmp}, {op}"));
+        self.text.push(format!("  ST [r{block}, 0], r{tmp}"));
+        if let Some(id) = id {
+            self.text.push(format!("  ST [r{block}, 8], r{id}"));
+            self.text.push(format!("  LI r{tmp}, 1"));
+            self.text.push(format!("  ST [r{block}, 16], r{tmp}"));
+        }
+        self.text.push(format!("  DOMAIN_CTL r{dst}, r{block}"));
+        Ok(dst)
+    }
+
+    fn emit_domain_query(&mut self, id: usize, out: usize) -> Result<usize, String> {
+        let block_size = self.alloc_reg()?;
+        let block = self.alloc_reg()?;
+        let tmp = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let skip_copy = self.new_label("domain_query_skip_copy");
+        self.text.push(format!("  LI r{block_size}, 208"));
+        self.text.push(format!("  ALLOC r{block}, r{block_size}"));
+        self.text.push(format!("  LI r{tmp}, 3"));
+        self.text.push(format!("  ST [r{block}, 0], r{tmp}"));
+        self.text.push(format!("  ST [r{block}, 8], r{id}"));
+        self.text.push(format!("  LI r{tmp}, 1"));
+        self.text.push(format!("  ST [r{block}, 16], r{tmp}"));
+        self.text.push(format!("  DOMAIN_CTL r{dst}, r{block}"));
+        self.text.push(format!("  CMP r{out}, r0"));
+        self.text.push(format!("  BEQ {skip_copy}"));
+        for offset in (8..=192).step_by(8) {
+            self.text.push(format!("  LD r{tmp}, [r{block}, {offset}]"));
+            self.text.push(format!("  ST [r{out}, {offset}], r{tmp}"));
+        }
+        self.text.push(format!("{skip_copy}:"));
         Ok(dst)
     }
 
@@ -12835,6 +12889,38 @@ int main() {
                 return 0;
             }
             return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("DOMAIN_CTL"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_domain_lifecycle_surface_runs_on_domain_ctl() {
+        let source = r#"
+        int main() {
+            int domain;
+            int info;
+            domain = domain_create(5000000, 2, 8, 63);
+            if (domain == -1) return 1;
+            info = alloc(208);
+            if (domain_query(domain, info) != 200) return 2;
+            if (load(info + 8) != domain) return 3;
+            if (load(info + 16) != 1) return 4;
+            if (load(info + 112) != 0) return 5;
+            if (domain_freeze(domain) != 0) return 6;
+            if (domain_query(domain, info) != 200) return 7;
+            if (load(info + 112) != 1) return 8;
+            if (domain_resume(domain) != 0) return 9;
+            if (domain_query(domain, info) != 200) return 10;
+            if (load(info + 112) != 0) return 11;
+            if (domain_attach_self(domain) != 0) return 12;
+            if (domain_detach_self() != 1) return 13;
+            if (domain_destroy(domain) != 0) return 14;
+            return 0;
         }
         "#;
         let asm = compile(source).unwrap();
