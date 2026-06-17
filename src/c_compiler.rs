@@ -5542,13 +5542,28 @@ impl CodeGen {
                 if args.len() != 3 {
                     return Err("__lnp_push(fd, buf, len) expects 3 arguments".to_string());
                 }
-                let fd = self.numeric_fd(&args[0], "__lnp_push")?;
-                let buf = self.emit_expr(&args[1])?;
-                let len = self.emit_expr(&args[2])?;
-                let dst = self.alloc_reg()?;
-                self.text
-                    .push(format!("  PUSH r{dst}, fd{fd}, r{buf}, r{len}"));
-                Ok(dst)
+                if matches!(args.first(), Some(Expr::Num(_))) {
+                    let fd = self.numeric_fd(&args[0], "__lnp_push")?;
+                    let buf = self.emit_expr(&args[1])?;
+                    let len = self.emit_expr(&args[2])?;
+                    let dst = self.alloc_reg()?;
+                    self.text
+                        .push(format!("  PUSH r{dst}, fd{fd}, r{buf}, r{len}"));
+                    Ok(dst)
+                } else {
+                    let fd = self.emit_expr(&args[0])?;
+                    let fd_slot = self.spill_reg(fd);
+                    self.temp_reg = 0;
+                    let buf = self.emit_expr(&args[1])?;
+                    let buf_slot = self.spill_reg(buf);
+                    self.temp_reg = 0;
+                    let len = self.emit_expr(&args[2])?;
+                    let fd = self.reload_reg(fd_slot)?;
+                    let buf = self.reload_reg(buf_slot)?;
+                    let dst = self.alloc_reg()?;
+                    self.emit_write_fd_dispatch(fd, buf, len, dst)?;
+                    Ok(dst)
+                }
             }
             "pread" => {
                 if args.len() != 4 {
@@ -7693,13 +7708,28 @@ impl CodeGen {
                 if args.len() != 3 {
                     return Err("__lnp_pull(fd, buf, len) expects 3 arguments".to_string());
                 }
-                let fd = self.numeric_fd(&args[0], "__lnp_pull")?;
-                let buf = self.emit_expr(&args[1])?;
-                let len = self.emit_expr(&args[2])?;
-                let dst = self.alloc_reg()?;
-                self.text
-                    .push(format!("  PULL r{dst}, fd{fd}, r{buf}, r{len}"));
-                Ok(dst)
+                if matches!(args.first(), Some(Expr::Num(_))) {
+                    let fd = self.numeric_fd(&args[0], "__lnp_pull")?;
+                    let buf = self.emit_expr(&args[1])?;
+                    let len = self.emit_expr(&args[2])?;
+                    let dst = self.alloc_reg()?;
+                    self.text
+                        .push(format!("  PULL r{dst}, fd{fd}, r{buf}, r{len}"));
+                    Ok(dst)
+                } else {
+                    let fd = self.emit_expr(&args[0])?;
+                    let fd_slot = self.spill_reg(fd);
+                    self.temp_reg = 0;
+                    let buf = self.emit_expr(&args[1])?;
+                    let buf_slot = self.spill_reg(buf);
+                    self.temp_reg = 0;
+                    let len = self.emit_expr(&args[2])?;
+                    let fd = self.reload_reg(fd_slot)?;
+                    let buf = self.reload_reg(buf_slot)?;
+                    let dst = self.alloc_reg()?;
+                    self.emit_read_fd_dispatch(fd, buf, len, Some(dst))?;
+                    Ok(dst)
+                }
             }
             "wait_on_fd" => {
                 if args.len() != 1 {
@@ -7713,10 +7743,20 @@ impl CodeGen {
                 if args.len() != 2 {
                     return Err("__lnp_await(fd, mask) expects 2 arguments".to_string());
                 }
-                let fd = self.numeric_fd(&args[0], "__lnp_await")?;
-                let mask = self.emit_expr(&args[1])?;
                 let dst = self.alloc_reg()?;
-                self.text.push(format!("  AWAIT r{dst}, fd{fd}, r{mask}"));
+                if matches!(args.first(), Some(Expr::Num(_))) {
+                    let fd = self.numeric_fd(&args[0], "__lnp_await")?;
+                    let mask = self.emit_expr(&args[1])?;
+                    self.text.push(format!("  AWAIT r{dst}, fd{fd}, r{mask}"));
+                } else {
+                    let fd = self.emit_expr(&args[0])?;
+                    let fd_slot = self.spill_reg(fd);
+                    self.temp_reg = 0;
+                    let mask = self.emit_expr(&args[1])?;
+                    let fd = self.reload_reg(fd_slot)?;
+                    self.text
+                        .push(format!("  AWAIT_DYN r{dst}, r{fd}, r{mask}"));
+                }
                 Ok(dst)
             }
             "fd_dup" => {
@@ -16524,6 +16564,30 @@ int main() {
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains("DOMAIN_CTL"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_private_lnp_shim_layer_accepts_dynamic_fdr_tokens() {
+        let source = r#"
+        int main() {
+            int fds[2];
+            int buf;
+            pipe(fds);
+            buf = alloc(2);
+            if (__lnp_push(fds[1], "Z", 1) != 1) return 1;
+            if (__lnp_await(fds[0], POLLIN) != 0) return 2;
+            if (__lnp_pull(fds[0], buf, 1) != 1) return 3;
+            if (loadb(buf) != 'Z') return 4;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("WRITE_FD_DYN"), "{asm}");
+        assert!(asm.contains("AWAIT_DYN"), "{asm}");
+        assert!(asm.contains("READ_FD_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
