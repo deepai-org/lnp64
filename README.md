@@ -90,6 +90,12 @@ Run all demos:
 bash scripts/run_demos.sh
 ```
 
+Build and boot the minimal userland image:
+
+```sh
+bash scripts/run_userland.sh
+```
+
 For the current POSIX/libc surface, real-program gates, and open compatibility
 bugs, see `conformance_matrix.md`. For the current emulator process ABI, see
 `psABI.md`.
