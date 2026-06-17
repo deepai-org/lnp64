@@ -108,6 +108,12 @@ Run the `zlib` real-package checksum smoke gate:
 bash scripts/run_zlib.sh
 ```
 
+Run the `natsort` real-package string comparison smoke gate:
+
+```sh
+bash scripts/run_natsort.sh
+```
+
 For the current POSIX/libc surface, real-program gates, and open compatibility
 bugs, see `conformance_matrix.md`. For the current emulator process ABI, see
 `psABI.md`; for the target ELF/static object profile, see `object_format.md`.
@@ -130,4 +136,5 @@ handwritten implementations.
 
 ```sh
 bash scripts/run_sbase.sh
+bash scripts/run_natsort.sh
 ```

@@ -3083,6 +3083,10 @@ impl Parser {
                 self.advance();
                 Ok(Expr::Unary(UnOp::Not, Box::new(self.parse_factor()?)))
             }
+            Token::Plus => {
+                self.advance();
+                self.parse_factor()
+            }
             Token::PlusPlus => {
                 self.advance();
                 let expr = self.parse_factor()?;
@@ -15507,6 +15511,23 @@ mod tests {
             s = "\x41\101";
             if ('\x41' == 65 && '\101' == 65 && s[0] == 65 && s[1] == 65) return 0;
             return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn parses_unary_plus_expressions() {
+        let source = r#"
+        int positive(void) {
+            return +1;
+        }
+
+        int main() {
+            return (+2 + positive() == 3) ? 0 : 1;
         }
         "#;
         let asm = compile(source).unwrap();

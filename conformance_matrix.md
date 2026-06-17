@@ -64,6 +64,7 @@ specific compiler/runtime special casing.
 | jsmn | passing | `third_party/jsmn/example/simple.c`, `third_party/jsmn/test/tests.c`, `scripts/run_sbase.sh` | None known beyond broader C parser/runtime coverage. |
 | inih | passing | `third_party/inih/ini.c`, `third_party/inih/smoke.c`, `scripts/run_inih.sh` | `ini_parse_string` still depends on anonymous-struct aggregate layout; file parser path passes. `COMPAT-PKG-006`. |
 | zlib upstream | partial / passing checksums | `third_party/zlib/adler32.c`, `third_party/zlib/crc32.c`, `third_party/zlib/crc32.h`, `third_party/zlib/zutil.c`, `third_party/zlib/smoke.c`, `scripts/run_zlib.sh` | Full deflate/inflate remain `COMPAT-PKG-002`. |
+| natsort | passing | `third_party/natsort/strnatcmp.c`, `third_party/natsort/smoke.c`, `scripts/run_natsort.sh` | None known beyond broader C parser/runtime coverage. |
 | small HTTP server | passing | `demos/httpd.c`, `scripts/run_demos.sh` | Socket nonblocking and network-service semantics tracked by `COMPAT-SOCK-001`. |
 | netcat-like socket demo | passing | `demos/netcat.c`, `scripts/run_demos.sh` | Socket nonblocking and descriptor passing tracked by `COMPAT-SOCK-001`. |
 | sqlite-lite demo | passing | `demos/sqlite_lite.c`, `demos/sqlite_lite.db`, `scripts/run_demos.sh` | This is not upstream SQLite; full SQLite remains `COMPAT-PKG-003`. |
