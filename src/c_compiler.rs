@@ -9648,6 +9648,21 @@ impl CodeGen {
                 let caps = self.emit_expr(&args[3])?;
                 self.emit_domain_create(memory, pids, fdrs, caps)
             }
+            "domain_create_child" => {
+                if args.len() != 6 {
+                    return Err(
+                        "domain_create_child(parent, profile, memory, pids, fdrs, caps) expects 6 arguments"
+                            .to_string(),
+                    );
+                }
+                let parent = self.emit_expr(&args[0])?;
+                let profile = self.emit_expr(&args[1])?;
+                let memory = self.emit_expr(&args[2])?;
+                let pids = self.emit_expr(&args[3])?;
+                let fdrs = self.emit_expr(&args[4])?;
+                let caps = self.emit_expr(&args[5])?;
+                self.emit_domain_create_child(parent, profile, memory, pids, fdrs, caps)
+            }
             "__lnp_domain_create" => {
                 if args.len() != 4 {
                     return Err(
@@ -9660,6 +9675,21 @@ impl CodeGen {
                 let fdrs = self.emit_expr(&args[2])?;
                 let caps = self.emit_expr(&args[3])?;
                 self.emit_domain_create(memory, pids, fdrs, caps)
+            }
+            "__lnp_domain_create_child" => {
+                if args.len() != 6 {
+                    return Err(
+                        "__lnp_domain_create_child(parent, profile, memory, pids, fdrs, caps) expects 6 arguments"
+                            .to_string(),
+                    );
+                }
+                let parent = self.emit_expr(&args[0])?;
+                let profile = self.emit_expr(&args[1])?;
+                let memory = self.emit_expr(&args[2])?;
+                let pids = self.emit_expr(&args[3])?;
+                let fdrs = self.emit_expr(&args[4])?;
+                let caps = self.emit_expr(&args[5])?;
+                self.emit_domain_create_child(parent, profile, memory, pids, fdrs, caps)
             }
             "__lnp_domain_ctl" => {
                 let argblock = self.one_arg(name, args)?;
@@ -11996,6 +12026,39 @@ impl CodeGen {
         fdrs: usize,
         caps: usize,
     ) -> Result<usize, String> {
+        let parent = self.alloc_reg()?;
+        let generation = self.alloc_reg()?;
+        let profile = self.alloc_reg()?;
+        self.text.push(format!("  LI r{parent}, 0"));
+        self.text.push(format!("  LI r{generation}, 0"));
+        self.text.push(format!("  LI r{profile}, 4"));
+        self.emit_domain_create_record(parent, generation, profile, memory, pids, fdrs, caps)
+    }
+
+    fn emit_domain_create_child(
+        &mut self,
+        parent: usize,
+        profile: usize,
+        memory: usize,
+        pids: usize,
+        fdrs: usize,
+        caps: usize,
+    ) -> Result<usize, String> {
+        let generation = self.alloc_reg()?;
+        self.text.push(format!("  LI r{generation}, 1"));
+        self.emit_domain_create_record(parent, generation, profile, memory, pids, fdrs, caps)
+    }
+
+    fn emit_domain_create_record(
+        &mut self,
+        parent: usize,
+        generation: usize,
+        profile: usize,
+        memory: usize,
+        pids: usize,
+        fdrs: usize,
+        caps: usize,
+    ) -> Result<usize, String> {
         let block_size = self.alloc_reg()?;
         let block = self.alloc_reg()?;
         let tmp = self.alloc_reg()?;
@@ -12005,10 +12068,10 @@ impl CodeGen {
         self.text.push(format!("  ALLOC r{block}, r{block_size}"));
         self.text.push(format!("  LI r{tmp}, 1"));
         self.text.push(format!("  ST [r{block}, 0], r{tmp}"));
-        self.text.push(format!("  ST [r{block}, 8], r0"));
-        self.text.push(format!("  ST [r{block}, 16], r0"));
-        self.text.push(format!("  LI r{tmp}, 4"));
-        self.text.push(format!("  ST [r{block}, 24], r{tmp}"));
+        self.text.push(format!("  ST [r{block}, 8], r{parent}"));
+        self.text
+            .push(format!("  ST [r{block}, 16], r{generation}"));
+        self.text.push(format!("  ST [r{block}, 24], r{profile}"));
         self.text.push(format!("  LI r{tmp}, 1000"));
         self.text.push(format!("  ST [r{block}, 32], r{tmp}"));
         self.text.push(format!("  ST [r{block}, 40], r{memory}"));
@@ -22498,6 +22561,33 @@ int main() {
             if (domain_attach_self(domain) != 0) return 12;
             if (domain_detach_self() != 1) return 13;
             if (domain_destroy(domain) != 0) return 14;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("DOMAIN_CTL"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_domain_child_surface_runs_on_domain_ctl() {
+        let source = r#"
+        int main() {
+            int parent;
+            int child;
+            int info;
+            parent = domain_create(200000000, 8, 64, 63);
+            if (parent == -1) return 1;
+            child = domain_create_child(parent, 41, 100000000, 4, 32, 31);
+            if (child == -1) return 2;
+            info = alloc(208);
+            if (domain_query(child, info) != 200) return 3;
+            if (load(info + 120) != parent) return 4;
+            if (load(info + 128) != 2) return 5;
+            if (domain_destroy(child) != 0) return 6;
+            if (domain_destroy(parent) != 0) return 7;
             return 0;
         }
         "#;

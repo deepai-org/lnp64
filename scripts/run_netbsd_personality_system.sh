@@ -21,6 +21,7 @@ programs=(
   timer_test
   socket_loopback_test
   signal_gate_test
+  domain_nested_test
   domain_budget_test
 )
 
@@ -99,6 +100,8 @@ $ ./socket_loopback_test
 socket_loopback_test ok
 $ ./signal_gate_test
 signal_gate_test ok
+$ ./domain_nested_test
+domain_nested_test ok
 $ ./domain_budget_test
 domain_budget_test ok
 netbsd personality system ok

@@ -154,6 +154,8 @@ int main(int argc, char **argv) {
     if (rc != 0) return 70 + rc;
     rc = run_program(root, "signal_gate_test", "/bin/signal_gate_test.s");
     if (rc != 0) return 80 + rc;
+    rc = run_program(root, "domain_nested_test", "/bin/domain_nested_test.s");
+    if (rc != 0) return 85 + rc;
     rc = run_program(root, "domain_budget_test", "/bin/domain_budget_test.s");
     if (rc != 0) return 90 + rc;
     if (domain_query(0, info) != 200) return 120;

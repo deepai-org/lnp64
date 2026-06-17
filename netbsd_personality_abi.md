@@ -108,6 +108,7 @@ ls /tmp
 ./timer_test
 ./socket_loopback_test
 ./signal_gate_test
+./domain_nested_test
 ./domain_budget_test
 ```
 
@@ -129,6 +130,10 @@ the planned target, keeping the compatibility decision in userland while the
 full ELF-to-exec-plan loader remains future work.
 `signal_gate_test` covers masked compatibility delivery and child-exit
 `SIGCHLD` as native event delivery before ABI handler return.
+`domain_nested_test` creates jail/container-style nested Resource Domains from
+compiled C, verifies parent/depth/child-count query fields, checks delegated
+limit rejection, exercises attach/detach accounting, and confirms freeze/resume
+propagates through the nested tree.
 
 ## Open Work
 
