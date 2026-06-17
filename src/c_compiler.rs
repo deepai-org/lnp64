@@ -7053,6 +7053,10 @@ impl CodeGen {
                 let buf = self.one_arg(name, args)?;
                 self.emit_tmpnam(buf)
             }
+            "mkstemp" => {
+                let template = self.one_arg(name, args)?;
+                self.emit_mkstemp(template)
+            }
             "system" => {
                 let cmd = self.one_arg(name, args)?;
                 let dst = self.alloc_reg()?;
@@ -9197,6 +9201,28 @@ impl CodeGen {
         self.text.push(format!("  JMP {done}"));
         self.text.push(format!("{static_label}:"));
         self.text.push(format!("  LI r{dst}, {label}"));
+        self.text.push(format!("{done}:"));
+        Ok(dst)
+    }
+
+    fn emit_mkstemp(&mut self, template: usize) -> Result<usize, String> {
+        let label = self.intern_string("/tmp/lnp64_mkstemp");
+        let dst = self.alloc_reg()?;
+        let flags = self.alloc_reg()?;
+        let null_template = self.new_label("mkstemp_null");
+        let done = self.new_label("mkstemp_done");
+        self.needs_c_runtime = true;
+        self.text.push(format!("  CMP r{template}, r0"));
+        self.text.push(format!("  BEQ {null_template}"));
+        self.text.push(format!("  MOV r1, r{template}"));
+        self.text.push(format!("  LI r2, {label}"));
+        self.text.push("  CALL __strcpy".to_string());
+        self.text.push(format!("  LI r{flags}, {}", 2 | 4));
+        self.text
+            .push(format!("  OPEN_FD_DYN r{dst}, r{template}, r{flags}"));
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{null_template}:"));
+        self.text.push(format!("  LI r{dst}, -1"));
         self.text.push(format!("{done}:"));
         Ok(dst)
     }
@@ -13394,6 +13420,36 @@ int main() {
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains("GET_PCR"), "{asm}");
+        assert!(asm.contains("__strcpy"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_mkstemp_creates_file_and_updates_template() {
+        let source = r#"
+        int main() {
+            int buf;
+            int fd;
+            remove("/tmp/lnp64_mkstemp");
+            buf = alloc(64);
+            strcpy(buf, "/tmp/lua_XXXXXX");
+            fd = mkstemp(buf);
+            if (fd == -1) return 1;
+            if (strcmp(buf, "/tmp/lnp64_mkstemp") != 0) return 2;
+            fputs("ok", fd);
+            close(fd);
+            fd = open(buf, 0);
+            if (fd == -1) return 3;
+            close(fd);
+            remove(buf);
+            if (mkstemp(0) != -1) return 4;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("OPEN_FD_DYN"), "{asm}");
         assert!(asm.contains("__strcpy"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
