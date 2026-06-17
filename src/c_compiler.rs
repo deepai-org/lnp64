@@ -3116,6 +3116,9 @@ impl CodeGen {
                     .push(format!("  ST [r31, {offset}], r{}", idx + 1));
             }
         }
+        if self.current_fn == "main" && self.globals.contains_key("environ") {
+            self.emit_main_environ_init();
+        }
         for stmt in &function.body {
             self.emit_stmt(stmt)?;
         }
@@ -3125,6 +3128,18 @@ impl CodeGen {
             self.text.push("  RET".to_string());
         }
         Ok(())
+    }
+
+    fn emit_main_environ_init(&mut self) {
+        self.text.push("  LI r1, 0x700000".to_string());
+        self.text.push("  LD r2, [r1, 0]".to_string());
+        self.text.push("  LI r3, 1".to_string());
+        self.text.push("  ADD r2, r2, r3".to_string());
+        self.text.push("  LI r3, 8".to_string());
+        self.text.push("  MUL r2, r2, r3".to_string());
+        self.text.push("  LI r1, 0x700008".to_string());
+        self.text.push("  ADD r1, r1, r2".to_string());
+        self.text.push("  ST global_environ, r1".to_string());
     }
 
     fn ensure_atexit_runtime(&mut self) {
@@ -4706,7 +4721,10 @@ impl CodeGen {
             *width
         } else if matches!(base, Expr::Var(name) if self.global_byte_arrays.contains(name)) {
             1
-        } else if matches!(base, Expr::Var(name) if name == "argv" || name == "fds" || self.global_arrays.contains(name))
+        } else if matches!(base, Expr::Var(name) if matches!(
+            name.as_str(),
+            "argv" | "envp" | "environ" | "fds"
+        ) || self.global_arrays.contains(name))
         {
             8
         } else {
@@ -4719,7 +4737,7 @@ impl CodeGen {
             && matches!(name, "t" | "tok" | "tokens" | "toksmall" | "toklarge")
         {
             32
-        } else if matches!(name, "fp" | "fds" | "argv") {
+        } else if matches!(name, "fp" | "fds" | "argv" | "envp" | "environ") {
             8
         } else if name == "pmatch" {
             16
@@ -14309,6 +14327,30 @@ int main() {
         let mut machine = Machine::new(program);
         machine
             .set_args(&["prog".to_string(), "alpha".to_string(), "beta".to_string()])
+            .unwrap();
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_main_environ_points_at_startup_envp() {
+        let source = r#"
+        extern char **environ;
+        int main(int argc, char **argv, char **envp) {
+            if (argc != 1) return 1;
+            if (envp == 0) return 2;
+            if (environ != envp) return 3;
+            if (envp[0] == 0) return 4;
+            if (loadb(envp[0]) != 'H') return 5;
+            if (environ[1] != 0) return 6;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("ST global_environ"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        machine
+            .set_process_entry(&["prog".to_string()], &["HELLO=world".to_string()])
             .unwrap();
         assert_eq!(machine.run().unwrap(), 0);
     }
