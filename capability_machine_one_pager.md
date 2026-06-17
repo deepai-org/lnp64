@@ -108,6 +108,18 @@ generation, lineage, and domain policy. A compromised service can only misuse
 authority it was explicitly delegated; it cannot manufacture a broader FDR by
 writing a reply record.
 
+This is the native service model. Hardware owns authority, scheduling,
+waitability, memory safety, accounting, and commit semantics. Services own
+evolving policy. A service receives bounded requests through call gates, queues,
+event queues, namespace dispatch, typed controls, page-fill requests, or
+`PULL`/`PUSH`; replies are data until hardware validates status, output shape,
+service generation, and returned-capability proposals. Service crash,
+revocation, caller cancellation, and queue pressure have typed outcomes rather
+than ad hoc daemon behavior. Backpressure is explicit: full queues either park,
+return `EAGAIN`, or fail with a bounded overflow status. No service gets raw
+interrupts, raw DMA, raw physical memory, ambient device authority, or a private
+capability table.
+
 Executable formats follow the same boundary. Hardware `EXEC` commits a prepared
 exec-plan descriptor atomically; software loaders own ELF, dynamic linking,
 relocations, interpreters, auxv conventions, library policy, and credential

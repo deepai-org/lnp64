@@ -115,6 +115,13 @@ The libc contract is profile-based: POSIX names are source and ABI compatibility
 
    Expose first-class interfaces for hardware capabilities that POSIX does not model cleanly:
 
+   - Native service helpers for issuing bounded service transactions over call
+     gates, queues, namespace dispatch, typed controls, page-fill callbacks, and
+     stream endpoints. Libc should surface service generation checks, bounded
+     input/output records, capability argument tables, returned-capability
+     slots, backpressure outcomes, cancellation, and service-crash errors
+     consistently instead of inventing one-off daemon protocols for filesystems,
+     loaders, networking, PCIe, telemetry, or personalities.
    - Typed control envelope helpers for `GET_META`, `SET_META`, `OBJECT_CTL`,
      `DOMAIN_CTL`, `NS_CTL`, socket options, storage barriers, and service
      controls. Libc should not expose ad hoc raw `ioctl` blobs when a typed

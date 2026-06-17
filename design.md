@@ -102,6 +102,57 @@ returned-capability verification, explicit commit/cancel rules, and fail-closed
 error behavior. Payload bytes and scalar fields are data only; all authority
 enters through FDR/capability arguments and all returned authority is installed
 only through returned-capability slots verified by the Capability Engine.
+
+### 3.1 Native Service Model
+LNP64's service boundary is architectural. Hardware owns authority, scheduling,
+waitability, memory safety, accounting, and commit semantics. Services own
+evolving policy: filesystem formats, namespace rules, loaders, networking
+protocols, PCIe quirks, device management, Unix personalities, and synthetic
+metadata.
+
+A service is a normal process or domain with explicit service capabilities,
+bounded request queues, call gates, event queues, and Resource Domain budgets.
+It receives work only through hardware-mediated surfaces: `OPEN_AT`, `NS_CTL`,
+`GET_META`/`SET_META`, `OBJECT_CTL`, `PULL`/`PUSH`, object-backed page-fill
+requests, `CALL_CAP`, and event queues. Hardware packages requests as bounded
+records with caller identity, object generation, lineage epoch, rights,
+Resource Domain id/generation, copied bytes or pinned-buffer descriptors, and
+explicit capability arguments. Services never receive ambient raw pointers, raw
+interrupt vectors, raw DMA authority, physical addresses, or hidden privilege.
+
+Service replies are data until committed by hardware. A reply may include
+status, metadata, copied output, event records, or returned-capability
+proposals. Returned authority is installed only through declared
+returned-capability slots after the Capability Engine verifies the proposal
+against an existing mint/root capability, object class, range, rights,
+generation, lineage, receiver domain policy, and destination FDR policy.
+
+Every service transaction has exactly one commit point. Before commit,
+cancellation, signal interruption, service crash, domain teardown, or revocation
+aborts the transaction, releases reservations, and wakes the caller with a
+typed error such as `ECANCELED`, `EINTR`, `EPIPE`, `EREVOKED`, or a
+profile-specific stale-service status. After commit, the operation completes,
+rolls forward, drains already committed data, or follows the object's documented
+teardown policy. If service-side work commits but returned-capability install
+fails, hardware reports the install failure and must not publish substitute
+authority.
+
+Backpressure is explicit. Service request queues, reply queues, page-fill
+windows, event queues, and call-gate continuations have bounded capacity and
+Resource Domain accounting. Full queues either park the caller with `AWAIT`,
+return `EAGAIN` for nonblocking profiles, or return `EOVERFLOW` when the
+profile forbids waiting. No service boundary may allocate unbounded hidden
+state.
+
+Blessed v1 service patterns are namespace/filesystem services, block-image
+services, loader/exec-plan services, network endpoint services, PCIe Bus Master
+and driver services, telemetry/attestation services, and supervisor/personality
+services. Forbidden patterns are ambient privileged daemons, untyped `ioctl`
+blobs carrying hidden authority, unbounded path/tree walkers in hardware, raw
+physical memory or MMIO delegation, raw interrupt delivery to software, and
+service replies that manufacture FDR authority without Capability Engine
+commit.
+
 *   **`CALL_CAP r_result, r_call_gate_fd, r_arg0, r_arg1`** / **`RET_CAP r_result, r_value0, r_value1`**
     *   *Action:* Performs a fast call and return through a callable FDR capability. Call gates may target another thread, service queue, driver service, supervisor service, runtime actor, or Resource Domain entry point. Hot calls use bounded register arguments and pre-provisioned target state; cold domain/container/VM creation remains a `DOMAIN_CTL` operation. Call gates support synchronous, asynchronous, and handoff profiles.
 *   **`ERRNO_GET r_dest`** / **`ERRNO_SET r_src`**
@@ -455,6 +506,67 @@ Nested virtualization is modeled as nested domains. A Linux personality domain c
 `DOMAIN_PROFILE_TENANT_STRICT` is the cloud isolation profile. It requires W^X, NX data, ASLR, guard-page support, generation checks, scoped entropy, DMA isolation, no raw interrupts, no ambient devices, no parent memory inspection unless explicitly delegated, and explicit shared-memory capabilities for every cross-tenant data path. Parent domains may freeze, kill, measure, query permitted aggregate usage, revoke delegated capabilities, and receive fault/pressure events, but they do not gain implicit read/write authority over tenant memory or sealed secrets.
 
 Confidential-domain hooks extend the same profile without changing the object model. A confidential child can request a memory-encryption/key-id tag, measured launch policy, explicit shared-page declarations, sealed secret release only to matching measurements, and checkpoint encryption metadata owned by software. FPGA v1 may implement these as architectural hooks and refusal paths rather than production cryptography, but the domain record and capability rules must not require redesign to add real encryption later.
+
+### 14.1 Assured Deployment Profiles
+LNP64 has named assurance profiles for deployments that need more than ordinary
+cloud isolation:
+
+*   **`ASSURANCE_DEV`:** development bitstreams may expose unsigned
+    non-production quotes, wider debug, and permissive boot policy, but every
+    quote and audit record is explicitly marked development-mode.
+*   **`ASSURANCE_FIELD`:** measured boot, locked debug by default,
+    tenant-strict domain support, ECC/parity for critical metadata, watchdogs,
+    telemetry FDRs, and tamper-evident audit streams are mandatory.
+*   **`ASSURANCE_HIGH`:** signed bitstream/manifest policy, production quotes,
+    no invasive debug without explicit measured unlock, mandatory audit roots,
+    MLS label enforcement, debug/forensics redaction, and no ambient device,
+    interrupt, DMA, or telemetry access.
+*   **`ASSURANCE_FORMAL`:** same runtime behavior as `ASSURANCE_HIGH`, plus
+    machine-checkable proof artifact hashes, theorem coverage metadata, RTL/IP
+    provenance hashes, and toolchain/build identifiers in the attestation
+    record.
+
+The profiles are Resource Domain policy inputs and quoteable machine facts, not
+marketing labels. A domain can require a minimum assurance profile before it
+accepts secrets, joins a cluster, or processes controlled data.
+
+LNP64 separates policy decisions from policy enforcement. Hardware is the
+Policy Enforcement Point: it enforces capabilities, domains, VMA permissions,
+DMA/IOMMU scope, scheduler budgets, event delivery, audit append rules, MLS
+labels, debug gates, and commit points. PID 1, domain managers, compatibility
+personalities, filesystem/network/loader services, and orchestration software
+are Policy Decision Points: they choose which capabilities, labels, limits,
+routes, services, and declassification paths to request. A policy decision has
+no authority until hardware validates it against FDR rights, Resource Domain
+policy, generation, lineage, measurement state, and assurance profile.
+
+The tamper-evident audit stream is a first-class telemetry profile. It is an
+append-only event queue with monotonic sequence numbers, wrap/dropped counts,
+domain/service identity, event class, bounded payload, previous-record hash,
+and periodic quoteable audit roots. Audit FDRs can be narrowed by domain, label,
+event class, destructive/snapshot read mode, and redaction policy. Audit records
+are data and cannot mint authority, but they are designed to support custody,
+incident response, mission replay, and remote attestation.
+
+Controlled debug and forensics mode is capability-gated. Debug unlock requires
+a debug-control FDR, matching assurance policy, optional physical/board policy,
+and a measured/audited transition. Debug scopes are domain/object/range scoped:
+single-step, breakpoints, register reads, trace reads, crash snapshots, memory
+inspection, and dump export are separate rights. Tenant-strict, confidential,
+and MLS domains deny parent inspection unless an explicit inspection or shared
+memory capability was delegated. Production profiles may permanently disable
+invasive debug or require destructive domain freeze before forensic capture.
+
+Cross-domain and MLS deployments use the same Resource Domain/capability model.
+Domains, FDRs, telemetry streams, audit streams, DMA buffers, packet queues, and
+service endpoints may carry label metadata. Hardware enforces no-read/no-write
+outside permitted label relations and rejects unlabeled cross-domain sharing in
+MLS profiles. Declassification, release, guard, and downgrade paths are
+service-owned policies, but they must run through explicit declassification
+call gates or control FDRs, produce audit records, and return capabilities only
+through the Capability Engine. There is no label bypass through parent memory
+inspection, debug, DMA, raw interrupts, telemetry, trace, fault records, or
+service replies.
 
 Pre-provisioned domains can expose `call_gate` FDRs for hot cross-domain calls. This makes sandboxed libraries, service calls, driver calls, and guest/supervisor calls use the same capability-call path as cross-thread calls, while preserving domain budget accounting and capability checks.
 

@@ -1923,6 +1923,94 @@ Error convention:
 - object-specific errors are allowed only after common envelope validation has
   succeeded.
 
+### 12.4 Service Domain Transaction Model
+
+Service domains are the only place v1 intentionally leaves evolving policy in
+software. Filesystem formats, namespace rules, loader policy, TCP/IP, Wi-Fi,
+PCIe quirks, device management, Unix personality semantics, and synthetic
+metadata live in services. Hardware still owns the service boundary.
+
+A service domain is a process or Resource Domain that holds explicit service
+capabilities and receives requests through one or more bounded hardware-visible
+endpoints:
+
+- call gates for low-latency request/return.
+- queue objects for asynchronous request/reply records.
+- event queues for readiness, completion, pressure, and fault notification.
+- namespace dispatch continuations from `OPEN_AT` and `NS_CTL`.
+- typed control-envelope dispatch from `GET_META`, `SET_META`, `OBJECT_CTL`,
+  `DOMAIN_CTL`, socket/storage profiles, and service-owned metadata controls.
+- object-backed page-fill requests from the VMA/Page Engine.
+- `PULL`/`PUSH` stream endpoints for data-plane services.
+
+Every dispatched service request record includes the minimum hardware context
+needed for safe completion:
+
+- request id and continuation id.
+- caller PID/TID and Resource Domain id/generation.
+- target object id/generation and lineage epoch.
+- requested rights, operation/profile id, flags, and nonblocking/wait policy.
+- bounded copied input bytes or pinned-buffer descriptors.
+- explicit capability argument table.
+- expected returned-capability shape and destination FDR policy.
+- timeout/cancellation token when the profile is interruptible.
+
+Services never receive ambient pointers, ambient physical addresses, ambient
+device access, raw interrupt vectors, or hidden authority. Pinned-buffer
+descriptors are valid only for the named request, range, rights, memory type,
+and generation; they are revoked automatically on cancellation, domain teardown,
+or lineage mismatch.
+
+Service replies are validated in two phases:
+
+1. Reply-shape validation checks request id, continuation id, service domain
+   generation, output length, status code, copied output shape, and profile
+   version.
+2. Returned-capability install checks each proposed FDR against an existing
+   mint/root capability held by the service, object class, object id/range,
+   rights, memory type, event mask, mapping permissions, transfer/seal/narrow
+   flags, object generation, lineage epoch, receiver domain policy, and
+   destination FDR table policy.
+
+Until both phases commit, service output is data only. A service cannot mint an
+FDR by encoding an integer, pointer, object id, trace record, or backend payload
+field. If service work has committed but returned-capability install fails,
+hardware reports the install failure and publishes no substitute authority.
+
+Service crash and cancellation rules:
+
+- before the service transaction commit point, service death, service-domain
+  freeze, caller signal interruption, caller/domain teardown, queue cancellation,
+  or revocation aborts the request and wakes the caller with `ECANCELED`,
+  `EINTR`, `EPIPE`, `EREVOKED`, or a profile-specific stale-service error.
+- after the commit point, already committed data is either visible, drained, or
+  rolled forward according to the object profile. The service cannot be asked to
+  undo an operation after its architectural commit point unless the profile
+  explicitly defines compensation.
+- namespace mutations, storage metadata changes, endpoint creation, loader
+  exec-plan publication, and capability-return commits must each name their
+  commit point.
+- services that restart receive a new service generation. Pending continuations
+  carrying the old service generation cannot complete successfully.
+
+Backpressure rules:
+
+- request queues, reply queues, page-fill windows, event queues, stream buffers,
+  and call-gate continuation slots are bounded and charged to Resource Domains.
+- when capacity is exhausted, blocking profiles park the caller on a waitable
+  capacity event, nonblocking profiles return `EAGAIN`, and profiles that cannot
+  wait return `EOVERFLOW`.
+- pressure events are generated through normal event queues/telemetry FDRs;
+  there is no hidden global service scheduler or emergency allocation path.
+
+Blessed service shapes are namespace/filesystem services, block-image/storage
+services, loader/exec-plan services, network endpoint services, PCIe Bus Master
+and driver services, telemetry/attestation services, and supervisor/personality
+services. Forbidden service shapes are ambient privileged daemons, untyped
+authority-bearing `ioctl` blobs, raw pointers, raw interrupts, raw DMA, raw
+physical memory, unbounded hardware walkers, or service-owned capability table
+writes.
+
 `EVENT_CTL`:
 
 - is a reserved/source-level profile alias over `OBJECT_CTL`.
@@ -4322,6 +4410,78 @@ The trace ring is optional but recommended for FPGA v1:
 - readable through a control FDR with destructive or snapshot read mode.
 - overflow is explicit: records include wrap generation and dropped-count
   metadata.
+
+### 24.3.1 Assured Deployment, Audit, Debug, and MLS Hooks
+
+Assurance profile is a boot-time and domain-time policy field. The architectural
+profiles are:
+
+- `ASSURANCE_DEV`: development mode; quotes and audit records carry an explicit
+  non-production flag, and invasive debug may be enabled by board policy.
+- `ASSURANCE_FIELD`: measured boot, critical metadata ECC/parity, watchdogs,
+  telemetry FDRs, locked debug by default, tenant-strict domains, and audit
+  stream support are required.
+- `ASSURANCE_HIGH`: signed bitstream/manifest policy, production quotes,
+  mandatory audit roots, MLS label checks, no invasive debug without measured
+  unlock, and no ambient device, interrupt, DMA, or telemetry access.
+- `ASSURANCE_FORMAL`: `ASSURANCE_HIGH` plus proof artifact hashes,
+  theorem-coverage metadata, RTL/IP provenance hashes, synthesis/build ids, and
+  toolchain identifiers in quote records.
+
+Hardware is the Policy Enforcement Point. It checks capabilities, Resource
+Domain policy, label policy, generation/lineage, measurement state, VMA
+permissions, DMA/IOMMU scope, event delivery, audit append rights, debug gates,
+and commit points. PID 1, Resource Domain managers, personalities, and services
+are Policy Decision Points: they submit policy records, but hardware validates
+and commits only authorized effects.
+
+Tamper-evident audit stream:
+
+- implemented as an append-only telemetry/event profile, backed by a fixed ring
+  or DDR-backed log with hardware-owned write metadata.
+- records event class, domain id/generation, service id/generation, object
+  id/generation where applicable, lineage epoch, label, bounded payload hash or
+  redacted payload, monotonic sequence number, dropped-count, previous-record
+  hash, and current audit-root hash.
+- audit roots are quoteable through the attestation FDR.
+- audit FDRs are narrowable by domain subtree, label, event class, destructive
+  vs snapshot read mode, and redaction policy.
+- audit records are data. They cannot encode returned capabilities or alter
+  Resource Domain, VMA, scheduler, or FDR state.
+- overflow emits an audit-overflow record before advancing dropped-count
+  metadata when capacity permits; otherwise the next readable root marks a gap.
+
+Controlled debug and forensics:
+
+- debug authority is an FDR capability, not an ambient mode bit.
+- debug unlock requires a debug-control FDR, matching assurance profile, optional
+  board/physical policy, and a measured/audited state transition.
+- debug rights are scoped: halt/freeze, single-step, breakpoint, register read,
+  memory read, memory write, trace read, crash snapshot, dump export, and local
+  engine diagnostic access are distinct rights.
+- debug access is restricted by Resource Domain, label, object/range, generation,
+  and tenant/confidential policy. Parent domains do not gain inspection rights
+  merely by being ancestors.
+- production profiles may permanently disable invasive debug or require a
+  destructive domain freeze before forensic capture.
+- crash snapshots and dumps are exported only through capability-scoped FDRs and
+  are redacted according to tenant, confidential, and MLS policy.
+
+Cross-domain and MLS hooks:
+
+- Resource Domains, FDRs, memory objects, DMA buffers, packet queues, event
+  queues, telemetry streams, audit streams, and service endpoints may carry a
+  compact label id plus label-generation.
+- the MLS policy table is installed by an authorized policy domain and validated
+  by hardware before use; unknown or stale label generations fail closed.
+- hardware rejects cross-domain send, map, DMA, telemetry, debug, packet,
+  page-fill, returned-capability, or service-reply operations that violate the
+  active label relation.
+- declassification/release/downgrade is not implicit. It must go through an
+  explicit declassification call gate or control FDR, produce an audit record,
+  and return any new authority through the Capability Engine.
+- raw interrupts, raw DMA, parent inspection, trace/fault records, service
+  replies, and debug paths cannot bypass label checks.
 
 ### 24.4 Watchdogs and Local Engine Reset
 

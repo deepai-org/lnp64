@@ -280,6 +280,34 @@ Useful sub-theorems:
   same envelope validation relation; vendor profiles do not get a separate
   authority path.
 
+## 11.1 Service Domain Boundary Soundness
+
+**Services can implement policy but cannot escape the hardware authority
+boundary:** a namespace, filesystem, loader, network, PCIe, telemetry, or
+personality service can complete requests only through hardware-validated
+continuations.
+
+Useful sub-theorems:
+
+- every service request is delivered through a bounded endpoint: call gate,
+  queue, event queue, namespace dispatch, typed control envelope, page-fill
+  request, or stream endpoint.
+- request records contain caller domain/generation, target object generation,
+  lineage epoch, rights, bounded input, explicit capability arguments, and an
+  expected returned-capability shape.
+- services never receive ambient physical addresses, raw interrupts, raw DMA,
+  raw user pointers, or direct capability table write authority.
+- service replies are data until hardware validates request/continuation id,
+  service generation, output shape, and returned-capability proposals.
+- service crash, restart, freeze, caller cancellation, signal interruption,
+  domain teardown, and revocation before commit cannot publish partial
+  authority.
+- after commit, the operation either exposes exactly the committed effect or
+  follows the object profile's documented roll-forward/drain/teardown rule.
+- bounded queues, page-fill windows, stream buffers, and continuation slots
+  prevent unbounded hidden service state; full capacity has a typed result:
+  wait, `EAGAIN`, or `EOVERFLOW`.
+
 ## 12. VMA and Memory Safety
 
 **VMA protection:** memory accesses succeed only through a valid VMA with
