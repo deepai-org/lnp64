@@ -127,6 +127,65 @@ int main(void) {
     if (written != 16) return 54;
     if (!expect_path(buffer, "C:\\drive\\old.txt")) return 55;
 
+    cwk_path_set_style(CWK_STYLE_UNIX);
+    if (cwk_path_has_extension("archive")) return 56;
+    if (!cwk_path_has_extension(".profile")) return 57;
+    if (!cwk_path_get_extension(".profile", &base, &length)) return 58;
+    if (length != 8) return 59;
+    if (strncmp(base, ".profile", length) != 0) return 60;
+    if (!cwk_path_get_extension("dir/file.", &base, &length)) return 61;
+    if (length != 1) return 62;
+    if (strncmp(base, ".", length) != 0) return 63;
+    if (!cwk_path_get_extension("dir/.hidden.txt", &base, &length)) return 64;
+    if (length != 4) return 65;
+    if (strncmp(base, ".txt", length) != 0) return 66;
+
+    written = cwk_path_change_extension("archive", "gz", buffer, sizeof(buffer));
+    if (written != 10) return 67;
+    if (!expect_path(buffer, "archive.gz")) return 68;
+    written = cwk_path_change_extension("/", "root", buffer, sizeof(buffer));
+    if (written != 6) return 69;
+    if (!expect_path(buffer, "/.root")) return 70;
+    written = cwk_path_change_extension("dir/file.", ".txt", buffer, sizeof(buffer));
+    if (written != 12) return 71;
+    if (!expect_path(buffer, "dir/file.txt")) return 72;
+
+    written = cwk_path_normalize("../../alpha/../beta", buffer, sizeof(buffer));
+    if (written != 10) return 73;
+    if (!expect_path(buffer, "../../beta")) return 74;
+    written = cwk_path_join("alpha", "../../beta", buffer, sizeof(buffer));
+    if (written != 7) return 75;
+    if (!expect_path(buffer, "../beta")) return 76;
+
+    written = cwk_path_join("/alpha", "beta/gamma", small, 4);
+    if (written != 17) return 77;
+    if (small[0] != '/') return 78;
+    if (small[1] != 'a') return 79;
+    if (small[2] != 'l') return 80;
+    if (small[3] != 0) return 81;
+    small[0] = 'x';
+    written = cwk_path_join("/alpha", "beta/gamma", small, 1);
+    if (written != 17) return 82;
+    if (small[0] != 0) return 83;
+
+    strcpy(buffer, "/root/dir/file");
+    if (!cwk_path_get_first_segment(buffer, &segment)) return 84;
+    written = cwk_path_change_segment(&segment, "/trimmed/", buffer, sizeof(buffer));
+    if (written != 17) return 85;
+    if (!expect_path(buffer, "/trimmed/dir/file")) return 86;
+
+    cwk_path_set_style(CWK_STYLE_WINDOWS);
+    cwk_path_get_root("\\\\server\\share", &length);
+    if (length != 14) return 87;
+    if (cwk_path_is_absolute("\\\\server\\share")) return 88;
+    if (!cwk_path_is_relative("\\\\server\\share")) return 89;
+    cwk_path_get_root("\\\\server\\share\\", &length);
+    if (length != 15) return 90;
+    if (!cwk_path_is_absolute("\\\\server\\share\\")) return 91;
+    cwk_path_get_root("\\\\server", &length);
+    if (length != 8) return 92;
+    if (cwk_path_is_absolute("\\\\server")) return 93;
+
     puts("cwalk ok");
     return 0;
 }
