@@ -3024,10 +3024,15 @@ impl CodeGen {
                 .insert(label, format!(".string \"{}\"", escape_asm_string(value)));
         }
         self.text.push(".text".to_string());
-        if let Some(main) = program.functions.iter().find(|f| f.name == "main") {
-            self.emit_function(main)?;
+        let entry_name = if program.functions.iter().any(|f| f.name == "_start") {
+            "_start"
+        } else {
+            "main"
+        };
+        if let Some(entry) = program.functions.iter().find(|f| f.name == entry_name) {
+            self.emit_function(entry)?;
         }
-        for function in program.functions.iter().filter(|f| f.name != "main") {
+        for function in program.functions.iter().filter(|f| f.name != entry_name) {
             self.emit_function(function)?;
         }
         if self.needs_recurse_runtime {
@@ -3082,7 +3087,7 @@ impl CodeGen {
         for stmt in &function.body {
             self.emit_stmt(stmt)?;
         }
-        if self.current_fn == "main" {
+        if self.current_fn == "main" || self.current_fn == "_start" {
             self.emit_process_exit(0);
         } else {
             self.text.push("  RET".to_string());
@@ -3215,7 +3220,7 @@ impl CodeGen {
             }
             Stmt::Return(expr) => {
                 let reg = self.emit_expr(expr)?;
-                if self.current_fn == "main" {
+                if self.current_fn == "main" || self.current_fn == "_start" {
                     self.emit_process_exit(reg);
                 } else {
                     self.text.push(format!("  MOV r1, r{reg}"));
@@ -12581,6 +12586,31 @@ int main() {
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains("GET_PCR"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_start_symbol_overrides_main_entry() {
+        let source = r#"
+        int ran_main;
+
+        int main() {
+            ran_main = 1;
+            return 7;
+        }
+
+        int _start() {
+            if (ran_main != 0) return 1;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let text_pos = asm.find(".text").unwrap();
+        let start_pos = asm[text_pos..].find("_start:").unwrap();
+        let main_pos = asm[text_pos..].find("main:").unwrap();
+        assert!(start_pos < main_pos, "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
