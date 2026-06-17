@@ -153,6 +153,43 @@ error behavior. Payload bytes and scalar fields are data only; all authority
 enters through FDR/capability arguments and all returned authority is installed
 only through returned-capability slots verified by the Capability Engine.
 
+Mandatory object profiles have frozen state-machine shapes:
+
+*   **`counter`:** `INVALID -> READY -> WAITING/READY -> REVOKING -> DESTROYED`.
+    A counter has a value, generation, wait predicates, overflow mode, and
+    event mask. Increment/decrement/set/test-and-wait transitions are atomic at
+    the counter object. Waiters cannot be lost because predicate check,
+    waiter-install, and wake publication are one owner-engine transaction.
+*   **`queue`:** `INVALID -> OPEN -> READ_CLOSED/WRITE_CLOSED -> DRAINING ->
+    DESTROYED`, with `REVOKING` and `POISONED` side states. A queue has bounded
+    capacity, record mode, head/tail generations, readable/writable readiness,
+    and explicit full behavior: park, `EAGAIN`, `EOVERFLOW`, coalesce, or
+    drop-with-count where the profile permits drops.
+*   **`event/completion`:** an event queue is a queue profile with source slots,
+    source generations, trigger mode, ready bits, and overflow/rescan records.
+    Add-source is atomic check-and-arm; `AWAIT` checks readiness before parking.
+*   **`timer`:** `DISARMED -> ARMED -> EXPIRED -> DISARMED/ARMED`, with
+    cancellation and revocation states. Timer expiry publishes a waitable event;
+    periodic rearm is atomic with expiry publication.
+*   **`memory_object`:** `UNMAPPED -> MAPPABLE -> MAPPED/PINNED -> REVOKING ->
+    DESTROYED`, with `POISONED` for integrity failure. Mapping, pinning, dirty
+    enumeration, and protection changes carry generation checks and VMA policy.
+*   **`call_gate`:** `CLOSED -> READY -> ENTERED/QUEUED -> RETURNING -> READY`
+    plus `REVOKING/DESTROYED`. Synchronous calls park the caller continuation;
+    async and handoff calls publish completion through explicit event/counter
+    objects. Entry and return have separate commit points.
+*   **`dma_buffer` / `dma_completion`:** DMA buffers are memory-object profiles
+    with pin direction, IOMMU/device scope, cacheability, generation, and
+    quiesce state. Completion objects are event/counter profiles that publish
+    success, partial, canceled, revoked, or fault status after DMA visibility is
+    correct.
+
+All object profiles share the same rules: state is generation-checked,
+authority comes only from FDR capabilities, all waits are attached before the
+condition can be missed, overflow is explicit, revocation wakes or cancels
+waiters, and poisoned objects cannot be recycled as fresh authority without a
+supervisor/PID 1 acknowledgement path.
+
 ### 3.1 Native Service Model
 LNP64's service boundary is architectural. Hardware owns authority, scheduling,
 waitability, memory safety, accounting, and commit semantics. Services own
@@ -169,6 +206,27 @@ records with caller identity, object generation, lineage epoch, rights,
 Resource Domain id/generation, copied bytes or pinned-buffer descriptors, and
 explicit capability arguments. Services never receive ambient raw pointers, raw
 interrupt vectors, raw DMA authority, physical addresses, or hidden privilege.
+
+The v1 service request header is architectural:
+
+*   version, size, profile class, profile id, op id, flags.
+*   request id, continuation id, cancellation token, and deadline/timeout
+    policy.
+*   caller PID/TID, Resource Domain id/generation, credential snapshot, and
+    nonblocking/wait policy.
+*   target object class/id/generation, lineage root/epoch, requested rights,
+    and expected commit class.
+*   copied input bounds, pinned-buffer descriptors, scalar fields, explicit
+    capability-argument slots, and expected returned-capability slots.
+
+The v1 service reply header is also architectural:
+
+*   matching request id, continuation id, service id/generation, status code,
+    flags, and output length.
+*   copied output bounds, event/pressure/fault metadata where applicable, and
+    returned-capability proposals in declared slots.
+*   optional committed-byte count or profile-specific progress marker for
+    partial data operations.
 
 Service replies are data until committed by hardware. A reply may include
 status, metadata, copied output, event records, or returned-capability
@@ -209,6 +267,50 @@ commit.
     *   *Action:* Reads or writes the thread-local POSIX error register. Fallible resource instructions write success or `-1` to their encoded result register and set thread-local `ERRNO` on failure.
 *   **Child Waits**
     *   *Action:* Child completion is a waitable event. Source-level `waitpid` lowers to `AWAIT` on a child/process waitable and then `GET_META` for status where needed.
+
+### 3.2 Canonical Error and Fault Codes
+
+Fallible instructions return success or a nonnegative value in the encoded
+destination register. On ordinary failure they write `-1` and update
+thread-local `ERRNO`. Hardware engines use one canonical error namespace:
+
+*   `EINVAL`: malformed record, bad length/alignment, invalid state transition,
+    unsupported reserved bits, or invalid scalar shape.
+*   `ENOTSUP`: well-formed but unsupported opcode profile, object profile, op,
+    feature, or version.
+*   `EBADF`: invalid FDR, wrong FDR class, closed descriptor, or descriptor
+    without the required operation class.
+*   `EPERM`: capability, delegation, security-profile, sealed-capability, or
+    Resource Domain policy denial.
+*   `EACCES`: credential or object permission denial after a valid capability
+    was supplied.
+*   `EFAULT`: invalid user buffer, failed copy/pin, unmapped memory, or
+    protection failure during pre-commit argument access.
+*   `EAGAIN`: nonblocking operation would block or bounded retry is required.
+*   `EINTR`: interruptible operation canceled by handled signal before commit.
+*   `ECANCELED`: operation canceled by teardown, explicit cancellation,
+    service death, or pre-commit revoke.
+*   `EREVOKED`: generation, lineage, or revocation epoch mismatch.
+*   `EOVERFLOW`: well-formed request exceeds a hardware/profile limit or a
+    bounded queue/ring reports overflow.
+*   `EQUOTA`: Resource Domain limit, budget, or accounting admission failure.
+*   `EBUSY`: object is frozen, quiescing, pinned, or in a conflicting committed
+    operation.
+*   `EPIPE`: peer/service endpoint is closed after the request was otherwise
+    valid.
+*   `ETIMEDOUT`: timeout expired before readiness or completion.
+*   `EIO`: service/device/storage operation failed after authority checks.
+*   `EPOISONED`: object, page, descriptor, queue, or metadata is poisoned by an
+    integrity/RAS failure.
+
+Synchronous architectural faults use the signal/fault path rather than only
+`ERRNO`: illegal opcode or disabled feature `SIGILL`; arithmetic trap `SIGFPE`;
+protection or unmapped memory `SIGSEGV`; alignment, device mapping, or physical
+translation fault `SIGBUS`; breakpoint/debug trap `SIGTRAP`. Hardware also
+emits structured fault records for RAS, DMA/IOMMU, watchdog, boot measurement,
+metadata integrity, classifier, storage barrier, and machine-fatal faults.
+Compatibility personalities may translate these codes into Linux/BSD names, but
+native LNP64 engines use this canonical set.
 
 ## 4. Memory Management (Silicon VMAs)
 Page tables and VMAs are managed by fixed hardware MMU/VMA engines using bounded hardware-walked metadata structures. Hardware freezes the page-state machine and safety invariants, not a general file page cache or backing-object policy. The normative page states are `UNMAPPED`, `RESERVED`, `NONRESIDENT_OBJECT`, `FILL_PENDING`, `RESIDENT_CLEAN`, `RESIDENT_DIRTY`, `COW_SHARED`, `PINNED_DMA`, `REVOKING`, and `POISONED`; all multi-step transitions have explicit commit/abort points and deterministic race priority.
@@ -304,6 +406,49 @@ The LNP64 is a strict Load/Store architecture. ALUs only operate on registers. B
     *   *Action:* Memory barrier. Orders normal cached memory, atomics, DMA visibility, POSIX engine completions, and device-memory operations according to fence flags and VMA memory type.
 *   **`ISYNC r_addr, r_len`**
     *   *Action:* Invalidates instruction-cache state for an executable range or mapped object. This is required for JITs and code patching and uses the same hardware invalidation fabric as `EXEC` and `MPROTECT`.
+
+## 6.1 Memory Consistency Model
+
+LNP64 v1 uses a coherent, TSO-like model for `normal_cached` memory:
+
+*   Each hardware thread observes its own loads and stores in program order.
+*   Stores become visible to other cores in program order.
+*   Loads may read the issuing core's older buffered stores to the same
+    address.
+*   Aligned naturally sized 8-, 16-, 32-, and 64-bit loads/stores are single
+    architectural memory operations.
+*   Instruction fetch observes data-side code changes only after the required
+    `MPROTECT`/`ISYNC` or exec/remap invalidation event.
+
+Synchronization rules:
+
+*   `LOCK_CMPXCHG` is a single-copy atomic read-modify-write and is
+    sequentially consistent in v1.
+*   Futex `AWAIT` performs an acquire-style value check before parking; futex
+    `WAKE` performs release-style ordering before making waiters runnable.
+*   `CALL_CAP` commits argument/register state before target entry; `RET_CAP`
+    commits return values before waking the caller continuation.
+*   Signal delivery records a precise architectural boundary; `SIGRET` resumes
+    after handler memory effects are visible under the ordinary memory model.
+
+DMA and device rules:
+
+*   Hardware engine completions are ordered after their DMA writes, metadata
+    updates, and result-register writes.
+*   Coherent DMA participates in the L2-coherent fabric before completion is
+    signaled. A non-coherent implementation must expose explicit cache
+    maintenance and must not advertise coherent DMA.
+*   VMA permission changes, unmaps, revocation, and page installs complete
+    required TLB/cache/I-cache invalidations before affected threads resume or
+    backing authority is reused.
+*   `device_ordered` mappings are uncached and strongly ordered for CPU MMIO
+    loads/stores. `write_combining` mappings may combine writes; software must
+    execute `FENCE` before relying on those writes being visible to device
+    doorbells, DMA engines, or completion observers.
+
+The v1 model is intentionally stronger than many relaxed commercial CPUs
+because libc, language runtimes, paravirtual Unix personalities, and formal
+proofs should not need architecture-specific weak-memory folklore.
 
 ## 7. Arithmetic and Logic Unit (ALU)
 Standard 64-bit integer operations. Because threads are managed in hardware, the ALU pipeline reads and writes architectural state through hardware thread contexts.
