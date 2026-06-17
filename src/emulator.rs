@@ -403,8 +403,14 @@ struct ClassifierCounters {
 
 struct ClassifierTable {
     rules: Vec<ClassifierRule>,
-    allowed_queues: Vec<u64>,
+    allowed_queues: Vec<ClassifierAllowedQueue>,
     counters: ClassifierCounters,
+}
+
+struct ClassifierAllowedQueue {
+    token: u64,
+    fd: usize,
+    generation: u64,
 }
 
 struct ClassifierEnvelope {
@@ -3479,9 +3485,9 @@ impl Machine {
                 {
                     return Err(22);
                 }
-                let rules = self.read_classifier_rules(rules_ptr, rule_count)?;
                 let allowed_queues =
                     self.read_classifier_allowed_queues(allowed_ptr, allowed_count)?;
+                let rules = self.read_classifier_rules(rules_ptr, rule_count, &allowed_queues)?;
                 let fd = self.install_object_fd(
                     fd0_req,
                     FdHandle::ClassifierTable(Rc::new(RefCell::new(ClassifierTable {
@@ -3529,6 +3535,7 @@ impl Machine {
         &mut self,
         rules_ptr: u64,
         rule_count: usize,
+        allowed_queues: &[ClassifierAllowedQueue],
     ) -> Result<Vec<ClassifierRule>, u64> {
         if rule_count == 0 {
             return Ok(Vec::new());
@@ -3555,6 +3562,13 @@ impl Machine {
                     | CLASSIFY_RULE_RANGE
                     | CLASSIFY_RULE_HASH
             ) || !matches!(
+                rule.field,
+                CLASSIFY_FIELD_SERVICE_ID
+                    | CLASSIFY_FIELD_DST_PORT
+                    | CLASSIFY_FIELD_SRC_IPV4
+                    | CLASSIFY_FIELD_DST_IPV4
+                    | CLASSIFY_FIELD_HASH
+            ) || !matches!(
                 rule.action,
                 CLASSIFY_ACTION_MARK
                     | CLASSIFY_ACTION_COUNT
@@ -3563,6 +3577,13 @@ impl Machine {
                     | CLASSIFY_ACTION_NEEDS_SOFTWARE
             ) {
                 return Err(22);
+            }
+            if rule.action == CLASSIFY_ACTION_ROUTE
+                && !allowed_queues
+                    .iter()
+                    .any(|queue| queue.token == rule.action_arg)
+            {
+                return Err(1);
             }
             rules.push(rule);
         }
@@ -3573,7 +3594,7 @@ impl Machine {
         &mut self,
         allowed_ptr: u64,
         allowed_count: usize,
-    ) -> Result<Vec<u64>, u64> {
+    ) -> Result<Vec<ClassifierAllowedQueue>, u64> {
         if allowed_count == 0 {
             return Ok(Vec::new());
         }
@@ -3583,6 +3604,9 @@ impl Machine {
         let mut allowed = Vec::with_capacity(allowed_count);
         for idx in 0..allowed_count as u64 {
             let token = self.load_u64(allowed_ptr + idx * 8).map_err(|_| 14u64)?;
+            if token & FDR_TOKEN_MARKER == 0 {
+                return Err(9);
+            }
             let fd = self.decode_fd_value(token)?;
             self.fd_right_errno(fd, CAP_RIGHT_WRITE)?;
             if !matches!(
@@ -3591,7 +3615,18 @@ impl Machine {
             ) {
                 return Err(9);
             }
-            allowed.push(token);
+            let generation = self
+                .process()
+                .map_err(|_| 3u64)?
+                .fd_generations
+                .get(fd)
+                .copied()
+                .ok_or(9u64)?;
+            allowed.push(ClassifierAllowedQueue {
+                token,
+                fd,
+                generation,
+            });
         }
         Ok(allowed)
     }
@@ -3938,10 +3973,26 @@ impl Machine {
         queue_token: u64,
         envelope: &ClassifierEnvelope,
     ) -> NativeResult<u64> {
-        if !table.borrow().allowed_queues.contains(&queue_token) {
-            return Err(1);
+        let (queue_fd, generation) = {
+            let table = table.borrow();
+            let Some(queue) = table
+                .allowed_queues
+                .iter()
+                .find(|queue| queue.token == queue_token)
+            else {
+                return Err(1);
+            };
+            (queue.fd, queue.generation)
+        };
+        if !self
+            .fd_generation_matches(queue_fd, generation)
+            .map_err(|_| 9u64)?
+        {
+            return Err(116);
         }
-        let queue_fd = self.decode_fd_value(queue_token)?;
+        if self.decode_fd_value(queue_token)? != queue_fd {
+            return Err(116);
+        }
         self.fd_right_errno(queue_fd, CAP_RIGHT_WRITE)?;
         let queue = match self.process().map_err(|_| 3u64)?.fds.get(queue_fd) {
             Some(FdHandle::PipeWriter(queue)) => Rc::clone(queue),
@@ -3953,7 +4004,10 @@ impl Machine {
         } else {
             envelope.inline0.to_le_bytes().to_vec()
         };
-        queue.borrow_mut().bytes.extend(payload);
+        {
+            queue.borrow_mut().bytes.extend(payload);
+        }
+        self.poll_fd_waiters();
         Ok(queue_token)
     }
 
@@ -6273,6 +6327,28 @@ mod tests {
         allowed_ptr: u64,
         allowed_count: u64,
     ) -> u64 {
+        assert_ne!(
+            try_create_classifier(
+                machine,
+                fd,
+                rules_ptr,
+                rule_count,
+                allowed_ptr,
+                allowed_count
+            ),
+            -1i64 as u64
+        );
+        machine.fd_token(fd as usize).unwrap()
+    }
+
+    fn try_create_classifier(
+        machine: &mut Machine,
+        fd: u64,
+        rules_ptr: u64,
+        rule_count: u64,
+        allowed_ptr: u64,
+        allowed_count: u64,
+    ) -> u64 {
         let arg = ARG_BASE + 0x200;
         machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
         machine
@@ -6287,7 +6363,7 @@ mod tests {
         machine.store_u64(arg + 56, allowed_ptr).unwrap();
         machine.store_u64(arg + 64, allowed_count).unwrap();
         machine.object_ctl(Reg(2), arg).unwrap();
-        machine.fd_token(fd as usize).unwrap()
+        machine.thread().unwrap().regs[2]
     }
 
     fn classify(machine: &mut Machine, classifier: u64, envelope: u64, result: u64) -> u64 {
@@ -6370,6 +6446,7 @@ mod tests {
             0,
         );
         let classifier = create_classifier(&mut machine, 6, rules, 1, allowed, 1);
+
         write_envelope(
             &mut machine,
             envelope,
@@ -6381,12 +6458,18 @@ mod tests {
             0,
             0,
         );
+        machine.push_fd_waiter(3, POLLIN_MASK, None).unwrap();
+        let current_tid = machine.current_tid;
+        machine.ready.retain(|tid| *tid != current_tid);
+        assert!(!machine.ready.contains(&current_tid));
 
         assert_eq!(
             classify(&mut machine, classifier, envelope, result),
             CLASSIFY_ACTION_ROUTE
         );
         assert_eq!(machine.load_u64(result).unwrap(), CLASSIFY_ACTION_ROUTE);
+        assert!(machine.fd_waiters.is_empty());
+        assert!(machine.ready.contains(&current_tid));
         assert!(machine.fd_read_ready(3).unwrap());
         let mut out = [0u8; 3];
         machine.read_fd_index(3, ARG_BASE + 0x1c00, 3).unwrap();
@@ -6572,7 +6655,11 @@ mod tests {
             other_writer,
             0,
         );
-        let classifier = create_classifier(&mut machine, 6, rules, 1, allowed, 1);
+        assert_eq!(
+            try_create_classifier(&mut machine, 6, rules, 1, allowed, 1),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 1);
         write_envelope(
             &mut machine,
             envelope,
@@ -6584,13 +6671,7 @@ mod tests {
             0,
             0,
         );
-        assert_eq!(
-            classify(&mut machine, classifier, envelope, result),
-            -1i64 as u64
-        );
-        assert_eq!(machine.process().unwrap().errno, 1);
 
-        machine.close_fd_index(6).unwrap();
         write_classifier_rule(
             &mut machine,
             rules,
@@ -6622,6 +6703,28 @@ mod tests {
             0,
             0,
         );
+        machine.close_fd_index(4).unwrap();
+        assert_eq!(
+            classify(&mut machine, classifier, envelope, result),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 116);
+
+        let (_reader_token, writer_token) = create_pipe_pair(&mut machine, 9, 10);
+        machine.store_u64(allowed, writer_token).unwrap();
+        write_classifier_rule(
+            &mut machine,
+            rules,
+            CLASSIFY_RULE_EXACT,
+            CLASSIFY_FIELD_SERVICE_ID,
+            1,
+            0,
+            CLASSIFY_ACTION_ROUTE,
+            writer_token,
+            0,
+        );
+        machine.close_fd_index(6).unwrap();
+        let classifier = create_classifier(&mut machine, 6, rules, 1, allowed, 1);
         machine.store_u64(ARG_BASE + 0x1f00, writer_token).unwrap();
         machine.cap_revoke(Reg(11), ARG_BASE + 0x1f00).unwrap();
         assert_eq!(
