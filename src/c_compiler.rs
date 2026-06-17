@@ -7114,6 +7114,25 @@ impl CodeGen {
                 self.text.push(format!("  MOV r{ret}, r1"));
                 Ok(ret)
             }
+            "strncpy" | "strncat" => {
+                if args.len() != 3 {
+                    return Err(format!("{name}(dst, src, n) expects 3 arguments"));
+                }
+                let regs = self.emit_call_arg_regs(args)?;
+                let ret = self.alloc_reg()?;
+                self.needs_c_runtime = true;
+                self.text.push(format!("  MOV r1, r{}", regs[0]));
+                self.text.push(format!("  MOV r2, r{}", regs[1]));
+                self.text.push(format!("  MOV r3, r{}", regs[2]));
+                let helper = if name == "strncpy" {
+                    "__strncpy"
+                } else {
+                    "__strncat"
+                };
+                self.text.push(format!("  CALL {helper}"));
+                self.text.push(format!("  MOV r{ret}, r1"));
+                Ok(ret)
+            }
             "strlcpy" | "xstrlcpy" | "estrlcpy" => {
                 if args.len() != 3 {
                     return Err(format!("{name}(dst, src, size) expects 3 arguments"));
@@ -7139,6 +7158,19 @@ impl CodeGen {
                 self.text.push(format!("  MOV r2, r{}", regs[1]));
                 self.text.push(format!("  MOV r3, r{}", regs[2]));
                 self.text.push("  CALL __strlcat".to_string());
+                self.text.push(format!("  MOV r{ret}, r1"));
+                Ok(ret)
+            }
+            "strtok" => {
+                if args.len() != 2 {
+                    return Err("strtok(s, delim) expects 2 arguments".to_string());
+                }
+                let regs = self.emit_call_arg_regs(args)?;
+                let ret = self.alloc_reg()?;
+                self.needs_c_runtime = true;
+                self.text.push(format!("  MOV r1, r{}", regs[0]));
+                self.text.push(format!("  MOV r2, r{}", regs[1]));
+                self.text.push("  CALL __strtok".to_string());
                 self.text.push(format!("  MOV r{ret}, r1"));
                 Ok(ret)
             }
@@ -13728,6 +13760,7 @@ c_digit_zero: .string "0"
 c_dot: .string "."
 c_slash: .string "/"
 c_line_buf: .zero 4096
+c_strtok_state: .zero 8
 
 .text
 __write_cstr:
@@ -14082,6 +14115,38 @@ strcpy_done:
   MOV r1, r10
   RET
 
+__strncpy:
+  MOV r10, r1
+  MOV r11, r1
+  MOV r12, r2
+  MOV r13, r3
+  LI r14, 0
+  LI r15, 1
+  LI r16, 0
+strncpy_loop:
+  CMP r14, r13
+  BGE strncpy_done
+  CMP r16, r0
+  BNE strncpy_pad
+  LD.B r17, [r12, 0]
+  ST.B [r11, 0], r17
+  CMP r17, r0
+  BNE strncpy_next_src
+  LI r16, 1
+  JMP strncpy_next
+strncpy_next_src:
+  ADD r12, r12, r15
+  JMP strncpy_next
+strncpy_pad:
+  ST.B [r11, 0], r0
+strncpy_next:
+  ADD r11, r11, r15
+  ADD r14, r14, r15
+  JMP strncpy_loop
+strncpy_done:
+  MOV r1, r10
+  RET
+
 __strcat:
   MOV r10, r1
   MOV r11, r1
@@ -14105,6 +14170,98 @@ strcat_copy:
   JMP strcat_copy
 strcat_done:
   MOV r1, r10
+  RET
+
+__strncat:
+  MOV r10, r1
+  MOV r11, r1
+strncat_find_end:
+  LD.B r12, [r11, 0]
+  CMP r12, r0
+  BEQ strncat_copy_start
+  LI r13, 1
+  ADD r11, r11, r13
+  JMP strncat_find_end
+strncat_copy_start:
+  MOV r12, r2
+  MOV r13, r3
+  LI r14, 0
+  LI r15, 1
+strncat_copy:
+  CMP r14, r13
+  BGE strncat_terminate
+  LD.B r16, [r12, 0]
+  CMP r16, r0
+  BEQ strncat_terminate
+  ST.B [r11, 0], r16
+  ADD r11, r11, r15
+  ADD r12, r12, r15
+  ADD r14, r14, r15
+  JMP strncat_copy
+strncat_terminate:
+  ST.B [r11, 0], r0
+  MOV r1, r10
+  RET
+
+__strtok:
+  LI r20, c_strtok_state
+  LI r25, 1
+  CMP r1, r0
+  BNE strtok_have_input
+  LD r21, [r20, 0]
+  CMP r21, r0
+  BEQ strtok_none
+  JMP strtok_skip
+strtok_have_input:
+  MOV r21, r1
+strtok_skip:
+  LD.B r22, [r21, 0]
+  CMP r22, r0
+  BEQ strtok_end_input
+  MOV r23, r2
+strtok_skip_delim_loop:
+  LD.B r24, [r23, 0]
+  CMP r24, r0
+  BEQ strtok_token_start
+  CMP r22, r24
+  BEQ strtok_skip_advance
+  ADD r23, r23, r25
+  JMP strtok_skip_delim_loop
+strtok_skip_advance:
+  ADD r21, r21, r25
+  JMP strtok_skip
+strtok_token_start:
+  MOV r26, r21
+strtok_scan:
+  LD.B r22, [r21, 0]
+  CMP r22, r0
+  BEQ strtok_scan_end
+  MOV r23, r2
+strtok_scan_delim_loop:
+  LD.B r24, [r23, 0]
+  CMP r24, r0
+  BEQ strtok_scan_advance
+  CMP r22, r24
+  BEQ strtok_found_delim
+  ADD r23, r23, r25
+  JMP strtok_scan_delim_loop
+strtok_scan_advance:
+  ADD r21, r21, r25
+  JMP strtok_scan
+strtok_found_delim:
+  ST.B [r21, 0], r0
+  ADD r21, r21, r25
+  ST [r20, 0], r21
+  MOV r1, r26
+  RET
+strtok_scan_end:
+  ST [r20, 0], r0
+  MOV r1, r26
+  RET
+strtok_end_input:
+  ST [r20, 0], r0
+strtok_none:
+  LI r1, 0
   RET
 
 __strlcpy:
@@ -14149,37 +14306,44 @@ __strlcat:
   MOV r11, r2
   MOV r12, r3
   LI r13, 0
-  CMP r12, r0
-  BEQ strlcat_done
+  LI r16, 1
 strlcat_find_end:
   CMP r13, r12
-  BGE strlcat_done
+  BGE strlcat_count_src
   ADD r14, r10, r13
   LD.B r15, [r14, 0]
   CMP r15, r0
   BEQ strlcat_copy_start
-  LI r16, 1
   ADD r13, r13, r16
   JMP strlcat_find_end
 strlcat_copy_start:
-  LI r16, 1
+  MOV r19, r13
 strlcat_copy:
-  ADD r17, r13, r16
+  ADD r17, r19, r16
   CMP r17, r12
   BGE strlcat_terminate
   LD.B r18, [r11, 0]
   CMP r18, r0
   BEQ strlcat_terminate
-  ADD r14, r10, r13
+  ADD r14, r10, r19
   ST.B [r14, 0], r18
-  ADD r13, r13, r16
+  ADD r19, r19, r16
   ADD r11, r11, r16
   JMP strlcat_copy
 strlcat_terminate:
-  ADD r14, r10, r13
+  ADD r14, r10, r19
   ST.B [r14, 0], r0
+strlcat_count_src:
+  LI r20, 0
+strlcat_count_loop:
+  LD.B r21, [r2, 0]
+  CMP r21, r0
+  BEQ strlcat_done
+  ADD r20, r20, r16
+  ADD r2, r2, r16
+  JMP strlcat_count_loop
 strlcat_done:
-  MOV r1, r10
+  ADD r1, r13, r20
   RET
 
 __c_basename:
@@ -15095,15 +15259,16 @@ mod tests {
         let source = r#"
         int main() {
             int dst;
+            int n;
             dst = alloc(8);
             dst[0] = 'a';
             dst[1] = '\0';
-            strlcat(dst, "bc", 2);
-            if (dst[0] != 'a' || dst[1] != '\0') {
+            n = strlcat(dst, "bc", 2);
+            if (n != 3 || dst[0] != 'a' || dst[1] != '\0') {
                 return 1;
             }
-            strlcat(dst, "bc", 4);
-            if (dst[0] == 'a' && dst[1] == 'b' && dst[2] == 'c' && dst[3] == '\0') {
+            n = strlcat(dst, "bc", 4);
+            if (n == 3 && dst[0] == 'a' && dst[1] == 'b' && dst[2] == 'c' && dst[3] == '\0') {
                 return 0;
             }
             return 1;
@@ -16078,6 +16243,68 @@ mod tests {
         }
         "#;
         let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn bounded_string_copy_and_concat_match_c_semantics() {
+        let source = r#"
+        int main() {
+            char b[16];
+            char *r;
+            memset(b, 'x', sizeof b);
+            r = strncpy(b, "abc", 8);
+            if (r != b) return 1;
+            if (memcmp(b, "abc\0\0\0\0", 8) != 0) return 2;
+            if (b[8] != 'x') return 3;
+            b[3] = 'x';
+            b[4] = 0;
+            strncpy(b, "abc", 3);
+            if (b[2] != 'c') return 4;
+            if (b[3] != 'x') return 5;
+            strcpy(b, "abc");
+            r = strncat(b, "123456", 3);
+            if (r != b) return 6;
+            if (strcmp(b, "abc123") != 0) return 7;
+            if (b[6] != 0) return 8;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("__strncpy"), "{asm}");
+        assert!(asm.contains("__strncat"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn strtok_tracks_saved_position_and_delimiters() {
+        let source = r#"
+        int main() {
+            char b[32];
+            char *s;
+            strcpy(b, "abc   123; xyz; foo");
+            s = strtok(b, " ");
+            if (s != b) return 1;
+            if (strcmp(s, "abc") != 0) return 2;
+            s = strtok(NULL, ";");
+            if (s != b + 4) return 3;
+            if (strcmp(s, "  123") != 0) return 4;
+            s = strtok(NULL, " ;");
+            if (s != b + 11) return 5;
+            if (strcmp(s, "xyz") != 0) return 6;
+            s = strtok(NULL, " ;");
+            if (s != b + 16) return 7;
+            if (strcmp(s, "foo") != 0) return 8;
+            if (strtok(NULL, " ;") != 0) return 9;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("__strtok"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
