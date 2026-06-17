@@ -9,8 +9,10 @@ trace="${TMPDIR:-/tmp}/lnp64-netbsd-personality.trace"
 
 programs=(
   netbsd_sh
+  loader_target
   thread_test
   namespace_test
+  loader_test
   poll_test
   fs_service_test
   mmap_test
@@ -28,6 +30,11 @@ mkdir -p "$root/bin" "$root/dev" "$root/etc" "$root/sbin" "$root/tmp"
 cat > "$root/etc/motd" <<'MOTD'
 welcome to lnp64-netbsd-personality
 MOTD
+
+cat > "$root/etc/loader_target.execplan" <<'PLAN'
+LNP64EXEC1
+/bin/loader_target.s
+PLAN
 
 fs_image="$root/etc/netbsd_personality.fs"
 truncate -s 512 "$fs_image"
@@ -73,6 +80,9 @@ $ ./thread_test
 thread_test ok
 $ ./namespace_test
 namespace_test ok
+$ ./loader_test
+loader_target ok
+loader_test ok
 $ ./poll_test
 poll_test ok
 $ ./fs_service_test

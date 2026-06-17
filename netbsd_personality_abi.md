@@ -73,9 +73,10 @@ several compiled C test programs, and audits the generated native trace.
 `scripts/run_netbsd_personality_system.sh` builds a temporary personality root
 with `/sbin/init.s`, `/bin/netbsd_sh.s`, and compiled test programs, then boots
 it with `run --namespace-root` so guest absolute paths resolve inside that root.
-The test set covers cwd/root/openat, threads, poll/select/epoll, a service-owned
-filesystem image, mmap, fd passing, loopback sockets, signal gates, call gates,
-timers, and Resource Domain budget checks. The scripted shell runs:
+The test set covers cwd/root/openat, a fixed-record software exec-plan smoke,
+threads, poll/select/epoll, a service-owned filesystem image, mmap, fd passing,
+loopback sockets, signal gates, call gates, timers, and Resource Domain budget
+checks. The scripted shell runs:
 
 ```sh
 /init
@@ -86,6 +87,7 @@ mkdir /tmp/d
 ls /tmp
 ./thread_test
 ./namespace_test
+./loader_test
 ./poll_test
 ./fs_service_test
 ./mmap_test
@@ -107,7 +109,10 @@ verifies stale FDR generation rejection via
 baseline after child program exits. The filesystem-service test maps a generated
 fixed-record image, performs service-owned path walking, create, rename, link,
 unlink, metadata update, and an explicit flush/barrier through offset I/O, then
-reopens the image to verify persisted state.
+reopens the image to verify persisted state. The loader test validates a
+service-owned `/etc/loader_target.execplan` record before forking and execing
+the planned target, keeping the compatibility decision in userland while the
+full ELF-to-exec-plan loader remains future work.
 
 ## Open Work
 
@@ -119,7 +124,8 @@ reopens the image to verify persisted state.
   transferred capabilities.
 - Move `poll`/`select` blocking paths toward a first-class event queue profile
   while keeping readiness probes as compatibility helpers.
-- Add a software loader/exec-plan path for NetBSD-like userland images instead
-  of relying on compiler-emitted assembly as the image format.
+- Replace the current fixed-record exec-plan smoke with a software loader for
+  NetBSD-like userland images instead of relying on compiler-emitted assembly as
+  the image format.
 - Import small NetBSD-derived libc/userland components once the ABI smoke stays
   stable under this gate.

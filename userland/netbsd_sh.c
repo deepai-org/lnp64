@@ -117,6 +117,8 @@ int main(int argc, char **argv) {
     if (rc != 0) return 50 + rc;
     rc = run_program(root, "namespace_test", "/bin/namespace_test.s");
     if (rc != 0) return 55 + rc;
+    rc = run_program(root, "loader_test", "/bin/loader_test.s");
+    if (rc != 0) return 57 + rc;
     rc = run_program(root, "poll_test", "/bin/poll_test.s");
     if (rc != 0) return 60 + rc;
     rc = run_program(root, "fs_service_test", "/bin/fs_service_test.s");
