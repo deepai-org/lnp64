@@ -935,6 +935,7 @@ fn normalize_c_types(source: &str) -> String {
     out = normalize_struct_recursor_declarations(&out);
     out = normalize_struct_object_declarations(&out, "struct arg", 24);
     out = normalize_struct_object_declarations(&out, "struct sigaction", 24);
+    out = normalize_struct_object_declarations(&out, "struct timespec", 16);
     out = normalize_struct_object_declarations(&out, "jsmn_parser", 24);
     out = normalize_struct_object_declarations(&out, "struct range", 24);
     out = normalize_struct_object_declarations(&out, "static struct range", 24);
@@ -1010,6 +1011,9 @@ fn normalize_c_types(source: &str) -> String {
         ("fd_set", "int"),
         ("sigset_t *", "int "),
         ("sigset_t", "int"),
+        ("pthread_t", "int"),
+        ("sem_t *", "int *"),
+        ("sem_t", "int"),
         ("struct recursor *", "int "),
         ("struct recursor", "int"),
         ("struct arg *", "int "),
@@ -1093,6 +1097,8 @@ fn normalize_c_types(source: &str) -> String {
     ] {
         out = out.replace(from, to);
     }
+    out = out.replace("intrywait", "sem_trywait");
+    out = out.replace("intimedwait", "sem_timedwait");
     out = out.replace("va_arg(ap, int)", "va_arg(ap, 0)");
     out = out.replace("va_arg(args, int)", "va_arg(args, 0)");
     let out = normalize_function_pointer_declarations(&out);
@@ -5693,7 +5699,11 @@ impl CodeGen {
     }
 
     fn index_width(&self, base: &Expr) -> i64 {
-        if !self.function_names.contains("jsmn_parse")
+        if let Expr::Var(name) = base
+            && let Some(width) = self.local_array_widths.get(name)
+        {
+            *width
+        } else if !self.function_names.contains("jsmn_parse")
             && matches!(base, Expr::Var(name) if matches!(
                 name.as_str(),
                 "tok" | "toks" | "root" | "rpn" | "out" | "infix"
@@ -5762,10 +5772,6 @@ impl CodeGen {
             })
         {
             8
-        } else if let Expr::Var(name) = base
-            && let Some(width) = self.local_array_widths.get(name)
-        {
-            *width
         } else if let Expr::Var(name) = base
             && let Some(width) = self.local_pointer_widths.get(name)
         {
@@ -5853,6 +5859,9 @@ impl CodeGen {
 
     fn pointer_step(&self, name: &str) -> i64 {
         if let Some(width) = self.local_pointer_widths.get(name) {
+            return *width;
+        }
+        if let Some(width) = self.local_array_widths.get(name) {
             return *width;
         }
         match name {
@@ -9938,7 +9947,15 @@ impl CodeGen {
                     return Err(format!("unknown pthread_create target {label:?}"));
                 }
                 let thread_ptr = self.emit_expr(&args[0])?;
+                let thread_ptr_slot = self.spill_reg(thread_ptr);
+                self.temp_reg = 0;
+                let start_arg = self.emit_expr(&args[3])?;
+                let start_arg_slot = self.spill_reg(start_arg);
+                self.temp_reg = 0;
+                let start_arg = self.reload_reg(start_arg_slot)?;
+                self.text.push(format!("  MOV r1, r{start_arg}"));
                 let tid = self.emit_clone_profile(pthread_clone_profile(), Some(label))?;
+                let thread_ptr = self.reload_reg(thread_ptr_slot)?;
                 let dst = self.alloc_reg()?;
                 self.text.push(format!("  CMP r{thread_ptr}, r0"));
                 let no_store = self.new_label("pthread_create_no_store");
@@ -10150,6 +10167,17 @@ impl CodeGen {
             "sem_trywait" => {
                 let sem = self.one_arg(name, args)?;
                 self.emit_sem_trywait(sem)
+            }
+            "sem_timedwait" => {
+                if args.len() != 2 {
+                    return Err("sem_timedwait(sem, abs_timeout) expects 2 arguments".to_string());
+                }
+                let sem = self.emit_expr(&args[0])?;
+                let sem_slot = self.spill_reg(sem);
+                self.temp_reg = 0;
+                let deadline = self.emit_expr(&args[1])?;
+                let sem = self.reload_reg(sem_slot)?;
+                self.emit_sem_timedwait(sem, deadline)
             }
             "sem_post" => {
                 let sem = self.one_arg(name, args)?;
@@ -13058,6 +13086,7 @@ impl CodeGen {
         let next = self.alloc_reg()?;
         let current = self.alloc_reg()?;
         let dst = self.alloc_reg()?;
+        let err = self.alloc_reg()?;
         let unavailable = self.new_label("sem_trywait_unavailable");
         let done = self.new_label("sem_trywait_done");
         self.text.push(format!("  LI r{zero}, 0"));
@@ -13071,10 +13100,62 @@ impl CodeGen {
         ));
         self.text.push(format!("  CMP r{current}, r{value}"));
         self.text.push(format!("  BNE {unavailable}"));
+        self.text.push(format!("  ERRNO_SET r{zero}"));
         self.text.push(format!("  LI r{dst}, 0"));
         self.text.push(format!("  JMP {done}"));
         self.text.push(format!("{unavailable}:"));
-        self.text.push(format!("  LI r{dst}, 11"));
+        self.text.push(format!("  LI r{err}, 11"));
+        self.text.push(format!("  ERRNO_SET r{err}"));
+        self.text.push(format!("  LI r{dst}, -1"));
+        self.text.push(format!("{done}:"));
+        Ok(dst)
+    }
+
+    fn emit_sem_timedwait(&mut self, sem: usize, deadline: usize) -> Result<usize, String> {
+        let value = self.alloc_reg()?;
+        let zero = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let next = self.alloc_reg()?;
+        let current = self.alloc_reg()?;
+        let now_sec = self.alloc_reg()?;
+        let limit_sec = self.alloc_reg()?;
+        let err = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let loop_label = self.new_label("sem_timedwait_loop");
+        let try_take = self.new_label("sem_timedwait_try_take");
+        let wait = self.new_label("sem_timedwait_wait");
+        let timeout = self.new_label("sem_timedwait_timeout");
+        let done = self.new_label("sem_timedwait_done");
+        self.text.push(format!("  LI r{zero}, 0"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("{loop_label}:"));
+        self.text.push(format!("  LD r{value}, [r{sem}, 0]"));
+        self.text.push(format!("  CMP r{value}, r{zero}"));
+        self.text.push(format!("  BGT {try_take}"));
+        self.text
+            .push(format!("  GET_PCR r{now_sec}, REALTIME_SEC"));
+        self.text
+            .push(format!("  LD r{limit_sec}, [r{deadline}, 0]"));
+        self.text.push(format!("  CMP r{now_sec}, r{limit_sec}"));
+        self.text.push(format!("  BLT {wait}"));
+        self.text.push(format!("  JMP {timeout}"));
+        self.text.push(format!("{wait}:"));
+        self.text.push(format!("  FUTEX_WAIT r{sem}, r{zero}"));
+        self.text.push(format!("  JMP {loop_label}"));
+        self.text.push(format!("{try_take}:"));
+        self.text.push(format!("  SUB r{next}, r{value}, r{one}"));
+        self.text.push(format!(
+            "  LOCK.CMPXCHG r{current}, r{sem}, r{value}, r{next}"
+        ));
+        self.text.push(format!("  CMP r{current}, r{value}"));
+        self.text.push(format!("  BNE {loop_label}"));
+        self.text.push(format!("  ERRNO_SET r{zero}"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{timeout}:"));
+        self.text.push(format!("  LI r{err}, 110"));
+        self.text.push(format!("  ERRNO_SET r{err}"));
+        self.text.push(format!("  LI r{dst}, -1"));
         self.text.push(format!("{done}:"));
         Ok(dst)
     }
@@ -21300,8 +21381,12 @@ int main() {
             if (sem_trywait(&sem) != 0) {
                 return 1;
             }
-            if (sem_trywait(&sem) != EAGAIN) {
+            errno = 0;
+            if (sem_trywait(&sem) != -1) {
                 return 2;
+            }
+            if (errno != EAGAIN) {
+                return 3;
             }
             sem_post(&sem);
             pthread_create(&thread, 0, worker, 0);
@@ -21310,13 +21395,13 @@ int main() {
             }
             sem_getvalue(&sem, &value);
             if (value != 1) {
-                return 3;
-            }
-            if (shared != 11) {
                 return 4;
             }
-            if (sem_destroy(&sem) != 0) {
+            if (shared != 11) {
                 return 5;
+            }
+            if (sem_destroy(&sem) != 0) {
+                return 6;
             }
             return 0;
         }
@@ -21325,6 +21410,48 @@ int main() {
         assert!(asm.contains("LOCK.CMPXCHG"), "{asm}");
         assert!(asm.contains("FUTEX_WAIT"), "{asm}");
         assert!(asm.contains("FUTEX_WAKE"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_posix_semaphore_timedwait_and_returning_pthread_start_run() {
+        let source = r#"
+        int sem;
+
+        int worker(int arg) {
+            sem_post(arg);
+            return 0;
+        }
+
+        int main() {
+            int thread;
+            int joined;
+            int ts;
+            int value;
+            ts = alloc(16);
+            if (sem_init(&sem, 0, 0) != 0) return 1;
+            errno = 0;
+            if (sem_trywait(&sem) != -1) return 2;
+            if (errno != EAGAIN) return 3;
+            clock_gettime(CLOCK_REALTIME, ts);
+            errno = 0;
+            if (sem_timedwait(&sem, ts) != -1) return 4;
+            if (errno != ETIMEDOUT) return 5;
+            if (pthread_create(&thread, 0, worker, &sem) != 0) return 6;
+            if (sem_wait(&sem) != 0) return 7;
+            if (pthread_join(thread, &joined) != 0) return 8;
+            if (sem_getvalue(&sem, &value) != 0) return 9;
+            if (value != 0) return 10;
+            if (sem_destroy(&sem) != 0) return 11;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("SPAWN"), "{asm}");
+        assert!(asm.contains("GET_PCR"), "{asm}");
+        assert!(asm.contains("FUTEX_WAIT"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);

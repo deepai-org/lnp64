@@ -14,6 +14,7 @@ tests=(
   random
   search_insque
   search_lsearch
+  sem_init
   stat
   string
   string_memmem

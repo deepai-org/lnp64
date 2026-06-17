@@ -18,6 +18,7 @@ libc-test files; bounded or locally guarded files are called out below.
 - `functional/random.c`
 - `functional/search_insque.c`
 - `functional/search_lsearch.c`
+- `functional/sem_init.c`
 - `functional/stat.c`
 - `functional/string.c`
 - `functional/string_memmem.c`
@@ -49,6 +50,8 @@ pairs, `UTIME_NOW`, `UTIME_OMIT`, invalid file descriptors, and nested
 timestamp fields in `struct stat`.
 `fcntl.c` is the upstream file and covers whole-file advisory lock rejection
 and `F_GETLK` owner reporting across `fork`.
+`sem_init.c` is the upstream file and covers unnamed semaphore init/wait/post,
+try/timed wait errno behavior, and pthread start routines that return normally.
 
 Run the subset with:
 

@@ -19,7 +19,7 @@ use crate::native::{CloneProfile, NativeEvent, NativeResult, ObjectKind, ObjectP
 
 const STACK_SIZE: u64 = 4 * 1024 * 1024;
 const CALL_FRAME_SIZE: u64 = 32 * 1024;
-const THREAD_STACK_STRIDE: u64 = 0x80_000;
+const THREAD_STACK_STRIDE: u64 = 0x40_000;
 const MMAP_BASE: u64 = 0x200_000;
 const ASLR_PAGE: u64 = 4096;
 const ASLR_HEAP_PAGES: u64 = 16;
@@ -2112,6 +2112,8 @@ impl Machine {
                 child.ip = entry as usize;
                 let stack_top = self.process()?.stack_top;
                 child.regs[31] = stack_top - CALL_FRAME_SIZE - ((tid - 1) * THREAD_STACK_STRIDE);
+                let thread_return = self.process()?.program.instructions.len() as u64;
+                self.store_u64(child.regs[31], thread_return)?;
                 self.threads.insert(tid, child);
                 self.ready.push_back(tid);
                 self.write_reg(dst, tid)?;
