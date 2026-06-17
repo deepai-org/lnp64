@@ -5440,7 +5440,7 @@ impl CodeGen {
         } else if matches!(base, Expr::Var(name) if matches!(
             name.as_str(),
             "argv" | "envp" | "environ" | "fds" | "paths" | "files" | "sp" | "brace" | "top"
-                | "stack" | "new"
+                | "stack" | "new" | "x"
         ) || self.global_arrays.contains(name))
         {
             8
@@ -6208,6 +6208,46 @@ impl CodeGen {
                 self.no_args(name, args)?;
                 let dst = self.alloc_reg()?;
                 self.text.push(format!("  RANDOM r{dst}, r0, r0"));
+                Ok(dst)
+            }
+            "random" | "rand" => {
+                self.no_args(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.needs_c_runtime = true;
+                self.text.push("  CALL __random".to_string());
+                self.text.push(format!("  MOV r{dst}, r1"));
+                Ok(dst)
+            }
+            "srandom" | "srand" => {
+                let seed = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.needs_c_runtime = true;
+                self.text.push(format!("  MOV r1, r{seed}"));
+                self.text.push("  CALL __srandom".to_string());
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "initstate" => {
+                if args.len() != 3 {
+                    return Err("initstate(seed, state, size) expects 3 arguments".to_string());
+                }
+                let regs = self.emit_call_arg_regs(args)?;
+                let dst = self.alloc_reg()?;
+                self.needs_c_runtime = true;
+                self.text.push(format!("  MOV r1, r{}", regs[0]));
+                self.text.push(format!("  MOV r2, r{}", regs[1]));
+                self.text.push(format!("  MOV r3, r{}", regs[2]));
+                self.text.push("  CALL __initstate".to_string());
+                self.text.push(format!("  MOV r{dst}, r1"));
+                Ok(dst)
+            }
+            "setstate" => {
+                let state = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.needs_c_runtime = true;
+                self.text.push(format!("  MOV r1, r{state}"));
+                self.text.push("  CALL __setstate".to_string());
+                self.text.push(format!("  MOV r{dst}, r1"));
                 Ok(dst)
             }
             "arc4random_buf" => {
@@ -13953,6 +13993,8 @@ c_dot: .string "."
 c_slash: .string "/"
 c_line_buf: .zero 4096
 c_strtok_state: .zero 8
+__lnp_random_current: .quad __lnp_random_default_state
+__lnp_random_default_state: .quad 1
 
 .text
 __write_cstr:
@@ -13998,6 +14040,41 @@ strlen_loop:
   ADD r1, r1, r4
   JMP strlen_loop
 strlen_done:
+  RET
+
+__random:
+  LI r10, __lnp_random_current
+  LD r11, [r10, 0]
+  LD r12, [r11, 0]
+  LI r13, 1103515245
+  MUL r12, r12, r13
+  LI r13, 12345
+  ADD r12, r12, r13
+  LI r13, 2147483647
+  AND r12, r12, r13
+  ST [r11, 0], r12
+  MOV r1, r12
+  RET
+
+__srandom:
+  LI r10, __lnp_random_current
+  LD r11, [r10, 0]
+  ST [r11, 0], r1
+  RET
+
+__initstate:
+  LI r10, __lnp_random_current
+  LD r11, [r10, 0]
+  ST [r2, 0], r1
+  ST [r10, 0], r2
+  MOV r1, r11
+  RET
+
+__setstate:
+  LI r10, __lnp_random_current
+  LD r11, [r10, 0]
+  ST [r10, 0], r1
+  MOV r1, r11
   RET
 
 __memcpy:
@@ -17475,6 +17552,67 @@ int main() {
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains("RANDOM"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_random_state_surface_is_reseedable_and_swappable() {
+        let source = r#"
+        int main() {
+            int state;
+            int old;
+            int saved;
+            int a;
+            int b;
+            int c;
+            state = alloc(128);
+            a = random();
+            srandom(1);
+            if (random() != a) return 1;
+            old = initstate(1, state, 128);
+            if (random() != a) return 2;
+            b = random();
+            saved = setstate(old);
+            c = random();
+            if (c != b) return 3;
+            old = setstate(saved);
+            if (random() == c) return 4;
+            srand(1);
+            if (rand() != a) return 5;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("__random"), "{asm}");
+        assert!(asm.contains("__initstate"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_random_word_pointer_samples_keep_full_width_bits() {
+        let source = r#"
+        int orx;
+        int chkones(int x) {
+            int i;
+            orx = 0;
+            for (i = 0; i < 20; i++) orx |= x[i];
+            return orx != 0x7fffffff;
+        }
+
+        int main() {
+            int x[100];
+            int i;
+            srandom(0x7fffffff);
+            for (i = 0; i < 100; i++) x[i] = random();
+            if (chkones(x)) return 1;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
