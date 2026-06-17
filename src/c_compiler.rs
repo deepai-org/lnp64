@@ -6500,6 +6500,17 @@ impl CodeGen {
                 let flags = self.emit_expr(&args[1])?;
                 self.emit_open_fd_alloc(path, flags)
             }
+            "openat" => {
+                if args.len() != 3 && args.len() != 4 {
+                    return Err(
+                        "openat(dirfd, path, flags[, mode]) expects 3 or 4 arguments".to_string(),
+                    );
+                }
+                self.emit_expr(&args[0])?;
+                let path = self.emit_expr(&args[1])?;
+                let flags = self.emit_expr(&args[2])?;
+                self.emit_open_fd_alloc(path, flags)
+            }
             "getline" => {
                 if args.len() != 3 {
                     return Err("getline(&buf, &size, fp) expects 3 arguments".to_string());
@@ -6694,6 +6705,57 @@ impl CodeGen {
                 let src = self.numeric_fd(&args[1], "fd_dup")?;
                 self.text.push(format!("  FD_DUP fd{dst}, fd{src}"));
                 Ok(0)
+            }
+            "dup" => {
+                let src = self.one_arg(name, args)?;
+                let zero = self.alloc_reg()?;
+                self.text.push(format!("  LI r{zero}, 0"));
+                self.emit_cap_control("CAP_DUP", &[(0, src), (8, zero), (16, zero), (24, zero)])
+            }
+            "dup2" => {
+                if args.len() != 2 {
+                    return Err("dup2(src, dst) expects 2 arguments".to_string());
+                }
+                let src = self.emit_expr(&args[0])?;
+                let dst_req = self.emit_expr(&args[1])?;
+                let zero = self.alloc_reg()?;
+                self.text.push(format!("  LI r{zero}, 0"));
+                self.emit_cap_control("CAP_DUP", &[(0, src), (8, dst_req), (16, zero), (24, zero)])
+            }
+            "fcntl" => {
+                if args.len() < 2 || args.len() > 3 {
+                    return Err("fcntl(fd, cmd[, arg]) expects 2 or 3 arguments".to_string());
+                }
+                let cmd = const_expr_value(&args[1])
+                    .ok_or_else(|| "fcntl command must be a constant expression".to_string())?;
+                match cmd {
+                    0 => {
+                        let src = self.emit_expr(&args[0])?;
+                        let dst_req = if args.len() == 3 {
+                            self.emit_expr(&args[2])?
+                        } else {
+                            let zero = self.alloc_reg()?;
+                            self.text.push(format!("  LI r{zero}, 0"));
+                            zero
+                        };
+                        let zero = self.alloc_reg()?;
+                        self.text.push(format!("  LI r{zero}, 0"));
+                        self.emit_cap_control(
+                            "CAP_DUP",
+                            &[(0, src), (8, dst_req), (16, zero), (24, zero)],
+                        )
+                    }
+                    1 | 2 | 3 | 4 => {
+                        self.emit_expr(&args[0])?;
+                        if args.len() == 3 {
+                            self.emit_expr(&args[2])?;
+                        }
+                        let dst = self.alloc_reg()?;
+                        self.text.push(format!("  LI r{dst}, 0"));
+                        Ok(dst)
+                    }
+                    _ => Err(format!("unsupported fcntl command {cmd}")),
+                }
             }
             "cap_dup" => {
                 if args.len() != 4 {
@@ -11413,9 +11475,17 @@ int main() {
             write(1, buf, 3);
             read(0, buf, 3);
             fd = open("Cargo.toml", 0);
+            fd = openat(AT_FDCWD, "Cargo.toml", 0);
             read(fd, buf, 3);
             pread(fd, buf, 3, 1);
             pwrite(fd, buf, 3, 2);
+            fd = dup(fd);
+            fd = dup2(fd, 7);
+            fd = fcntl(fd, F_DUPFD, 8);
+            fcntl(fd, F_GETFD);
+            fcntl(fd, F_SETFD, 0);
+            fcntl(fd, F_GETFL);
+            fcntl(fd, F_SETFL, 0);
             open(3, "Cargo.toml", 0);
             pread(3, buf, 3, 1);
             pwrite(3, buf, 3, 2);
@@ -11429,6 +11499,7 @@ int main() {
         assert!(asm.contains("READ_FD fd0"));
         assert!(asm.contains("OPEN_FD fd3"));
         assert!(asm.contains("OPEN_FD_DYN"));
+        assert!(asm.contains("CAP_DUP"));
         assert!(asm.contains("READ_FD_DYN"));
         assert!(asm.contains("PREAD_FD_DYN"));
         assert!(asm.contains("PWRITE_FD_DYN"));
@@ -11437,6 +11508,42 @@ int main() {
         assert!(asm.contains("WAIT_ON_FD fd0"));
         assert!(asm.contains("FD_DUP fd3, fd1"));
         Program::parse(&asm).unwrap();
+    }
+
+    #[test]
+    fn c_posix_descriptor_dup_surface_runs_on_cap_dup() {
+        let source = r#"
+        int main() {
+            int buf;
+            int fd;
+            int d1;
+            int d2;
+            int d3;
+            buf = alloc(8);
+            fd = openat(AT_FDCWD, "Cargo.toml", 0);
+            if (fd == -1) return 1;
+            d1 = dup(fd);
+            if (d1 == -1) return 2;
+            if (read(d1, buf, 1) != 1) return 3;
+            d2 = dup2(d1, 9);
+            if (d2 == -1) return 4;
+            if (read(d2, buf, 1) != 1) return 5;
+            d3 = fcntl(d2, F_DUPFD, 10);
+            if (d3 == -1) return 6;
+            if (read(d3, buf, 1) != 1) return 7;
+            if (fcntl(d3, F_GETFD) != 0) return 8;
+            if (fcntl(d3, F_SETFD, 0) != 0) return 9;
+            if (fcntl(d3, F_GETFL) != 0) return 10;
+            if (fcntl(d3, F_SETFL, 0) != 0) return 11;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("OPEN_FD_DYN"), "{asm}");
+        assert!(asm.contains("CAP_DUP"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
     }
 
     #[test]
