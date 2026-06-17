@@ -1,6 +1,6 @@
 .data
 ok_msg: .string "cgroup domains ok\n"
-dom: .zero 160
+dom: .zero 208
 obj: .zero 64
 
 .text

@@ -1,6 +1,6 @@
 .data
 ok_msg: .string "domain pressure ok\n"
-dom: .zero 160
+dom: .zero 208
 
 .text
   LI r10, dom

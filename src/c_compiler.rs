@@ -6845,7 +6845,7 @@ impl CodeGen {
                 let block = self.alloc_reg()?;
                 let tmp = self.alloc_reg()?;
                 let dst = self.alloc_reg()?;
-                self.text.push(format!("  LI r{block_size}, 160"));
+                self.text.push(format!("  LI r{block_size}, 208"));
                 self.text.push(format!("  ALLOC r{block}, r{block_size}"));
                 self.text.push(format!("  LI r{tmp}, 1"));
                 self.text.push(format!("  ST [r{block}, 0], r{tmp}"));
@@ -6869,7 +6869,7 @@ impl CodeGen {
                 let block = self.alloc_reg()?;
                 let tmp = self.alloc_reg()?;
                 let dst = self.alloc_reg()?;
-                self.text.push(format!("  LI r{block_size}, 160"));
+                self.text.push(format!("  LI r{block_size}, 208"));
                 self.text.push(format!("  ALLOC r{block}, r{block_size}"));
                 self.text.push(format!("  LI r{tmp}, 7"));
                 self.text.push(format!("  ST [r{block}, 0], r{tmp}"));

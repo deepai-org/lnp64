@@ -1,6 +1,6 @@
 .data
 ok_msg: .string "resource domains ok\n"
-arg: .zero 160
+arg: .zero 208
 
 .text
   LI r10, arg
@@ -153,7 +153,7 @@ check_nested_vm:
   LI r1, 1
   ST [r10, 16], r1
   DOMAIN_CTL r26, r10
-  LI r1, 144
+  LI r1, 200
   CMP r26, r1
   BNE bad
   LD r26, [r10, 120]

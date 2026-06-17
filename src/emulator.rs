@@ -42,7 +42,17 @@ const DOMAIN_OP_DETACH_SELF: u64 = 8;
 const DOMAIN_STATE_ACTIVE: u64 = 0;
 const DOMAIN_STATE_FROZEN: u64 = 1;
 const DOMAIN_STATE_DESTROYED: u64 = 2;
-const DOMAIN_QUERY_SIZE: u64 = 144;
+const DOMAIN_QUERY_SIZE: u64 = 200;
+const DOMAIN_BOOL_INHERIT: u64 = 0;
+const DOMAIN_BOOL_ENABLE: u64 = 1;
+const DOMAIN_BOOL_DISABLE: u64 = 2;
+const DOMAIN_SECURITY_ASLR_ENABLED: u64 = 144;
+const DOMAIN_SECURITY_ALLOW_WX: u64 = 152;
+const DOMAIN_SECURITY_ALLOW_JIT_TRANSITION: u64 = 160;
+const DOMAIN_SECURITY_ENTROPY_QUOTA: u64 = 168;
+const DOMAIN_SECURITY_DMA_ALLOWED: u64 = 176;
+const DOMAIN_SECURITY_HARDENING_PROFILE: u64 = 184;
+const DOMAIN_SECURITY_EXEC_SOURCE_POLICY: u64 = 192;
 
 const DOMAIN_CAP_PROCESS: u64 = 1 << 0;
 const DOMAIN_CAP_MEMORY: u64 = 1 << 1;
@@ -263,6 +273,31 @@ struct DomainUsage {
     fdrs: u64,
 }
 
+#[derive(Clone, Copy)]
+struct DomainSecurityPolicy {
+    aslr_enabled: bool,
+    allow_wx: bool,
+    allow_jit_transition: bool,
+    entropy_quota: u64,
+    dma_allowed: bool,
+    hardening_profile: u64,
+    executable_source_policy: u64,
+}
+
+impl DomainSecurityPolicy {
+    fn root() -> Self {
+        Self {
+            aslr_enabled: true,
+            allow_wx: false,
+            allow_jit_transition: true,
+            entropy_quota: u64::MAX,
+            dma_allowed: true,
+            hardening_profile: 0,
+            executable_source_policy: u64::MAX,
+        }
+    }
+}
+
 struct ResourceDomain {
     id: u64,
     generation: u64,
@@ -272,6 +307,7 @@ struct ResourceDomain {
     limits: DomainLimits,
     capability_mask: u64,
     upcall_mask: u64,
+    security: DomainSecurityPolicy,
     frozen: bool,
     destroyed: bool,
     cpu_ticks: u64,
@@ -288,6 +324,7 @@ impl ResourceDomain {
             limits: DomainLimits::root(),
             capability_mask: u64::MAX,
             upcall_mask: u64::MAX,
+            security: DomainSecurityPolicy::root(),
             frozen: false,
             destroyed: false,
             cpu_ticks: 0,
@@ -1310,6 +1347,11 @@ impl Machine {
                     return Ok(true);
                 }
                 let prot = self.read_reg(prot)?;
+                if !self.domain_allows_prot(prot)? {
+                    self.set_status_errno(1)?;
+                    self.write_reg(dst, -1i64 as u64)?;
+                    return Ok(true);
+                }
                 let hint = self.read_reg(hint)?;
                 let offset = self.read_reg(offset)?;
                 let file = self.process()?.fds[fd.0].file_clone()?;
@@ -1626,7 +1668,7 @@ impl Machine {
     }
 
     fn resolve_process_path(&self, path: &str) -> Result<String, String> {
-        if path.is_empty() || Path::new(path).is_absolute() {
+        if path.is_empty() || path.starts_with("tcp-listen:") || Path::new(path).is_absolute() {
             return Ok(path.to_string());
         }
         Ok(self
@@ -2000,6 +2042,10 @@ impl Machine {
     }
 
     fn mprotect_range(&mut self, addr: u64, len: u64, prot: u64) -> Result<(), String> {
+        if !self.domain_allows_prot(prot)? {
+            self.set_status_errno(1)?;
+            return Ok(());
+        }
         let len = len.max(1);
         let Some(end) = addr.checked_add(len) else {
             self.set_status_errno(22)?;
@@ -2473,6 +2519,7 @@ impl Machine {
         let parent_limits = parent.limits;
         let parent_caps = parent.capability_mask;
         let parent_upcalls = parent.upcall_mask;
+        let parent_security = parent.security;
         let requested_cpu = self.load_u64(argblock + 32).map_err(|_| 14u64)?;
         let requested_memory = self.load_u64(argblock + 40).map_err(|_| 14u64)?;
         let requested_pids = self.load_u64(argblock + 48).map_err(|_| 14u64)?;
@@ -2500,6 +2547,7 @@ impl Machine {
         } else {
             return Err(1);
         };
+        let security = self.domain_security_from_arg(argblock, parent_security, parent_security)?;
 
         let id = self.next_domain_id;
         self.next_domain_id += 1;
@@ -2512,6 +2560,7 @@ impl Machine {
             limits,
             capability_mask,
             upcall_mask,
+            security,
             frozen: false,
             destroyed: false,
             cpu_ticks: 0,
@@ -2532,6 +2581,9 @@ impl Machine {
     fn domain_ctl_configure(&mut self, argblock: u64) -> Result<u64, u64> {
         let id = self.domain_ref_from_arg(argblock)?;
         self.ensure_domain_control(id)?;
+        if self.domain_is_frozen_or_destroyed(id) {
+            return Err(11);
+        }
         let parent_id = self.domains.get(&id).and_then(|domain| domain.parent);
         let parent_limits = parent_id
             .and_then(|parent| self.domains.get(&parent).map(|domain| domain.limits))
@@ -2580,6 +2632,12 @@ impl Machine {
         let parent_upcalls = parent_id
             .and_then(|parent| self.domains.get(&parent).map(|domain| domain.upcall_mask))
             .unwrap_or(u64::MAX);
+        let parent_security = parent_id
+            .and_then(|parent| self.domains.get(&parent).map(|domain| domain.security))
+            .unwrap_or_else(DomainSecurityPolicy::root);
+        let current_security = self.domains.get(&id).ok_or(3u64)?.security;
+        let security =
+            self.domain_security_from_arg(argblock, parent_security, current_security)?;
         let profile = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
         let caps = self.load_u64(argblock + 64).map_err(|_| 14u64)?;
         let upcalls = self.load_u64(argblock + 72).map_err(|_| 14u64)?;
@@ -2605,12 +2663,14 @@ impl Machine {
         if upcalls != 0 {
             domain.upcall_mask = upcalls;
         }
+        domain.security = security;
         if caps != 0 {
             self.mask_descendant_capabilities(id, caps);
         }
         if upcalls != 0 {
             self.mask_descendant_upcalls(id, upcalls);
         }
+        self.clamp_descendant_security(id);
         Ok(0)
     }
 
@@ -2650,6 +2710,31 @@ impl Machine {
                     .iter()
                     .filter(|child| self.domain_is_live(**child))
                     .count() as u64,
+            ),
+            (
+                DOMAIN_SECURITY_ASLR_ENABLED,
+                u64::from(domain.security.aslr_enabled),
+            ),
+            (
+                DOMAIN_SECURITY_ALLOW_WX,
+                u64::from(domain.security.allow_wx),
+            ),
+            (
+                DOMAIN_SECURITY_ALLOW_JIT_TRANSITION,
+                u64::from(domain.security.allow_jit_transition),
+            ),
+            (DOMAIN_SECURITY_ENTROPY_QUOTA, domain.security.entropy_quota),
+            (
+                DOMAIN_SECURITY_DMA_ALLOWED,
+                u64::from(domain.security.dma_allowed),
+            ),
+            (
+                DOMAIN_SECURITY_HARDENING_PROFILE,
+                domain.security.hardening_profile,
+            ),
+            (
+                DOMAIN_SECURITY_EXEC_SOURCE_POLICY,
+                domain.security.executable_source_policy,
             ),
         ];
         for (offset, value) in fields {
@@ -2890,6 +2975,128 @@ impl Machine {
         }
     }
 
+    fn domain_security_from_arg(
+        &mut self,
+        argblock: u64,
+        parent: DomainSecurityPolicy,
+        current: DomainSecurityPolicy,
+    ) -> Result<DomainSecurityPolicy, u64> {
+        let aslr_enabled = Self::decode_domain_bool(
+            self.load_u64(argblock + DOMAIN_SECURITY_ASLR_ENABLED)
+                .map_err(|_| 14u64)?,
+            current.aslr_enabled,
+        )?;
+        let allow_wx = Self::decode_domain_bool(
+            self.load_u64(argblock + DOMAIN_SECURITY_ALLOW_WX)
+                .map_err(|_| 14u64)?,
+            current.allow_wx,
+        )?;
+        let allow_jit_transition = Self::decode_domain_bool(
+            self.load_u64(argblock + DOMAIN_SECURITY_ALLOW_JIT_TRANSITION)
+                .map_err(|_| 14u64)?,
+            current.allow_jit_transition,
+        )?;
+        let entropy_quota = match self
+            .load_u64(argblock + DOMAIN_SECURITY_ENTROPY_QUOTA)
+            .map_err(|_| 14u64)?
+        {
+            0 => current.entropy_quota,
+            quota => quota,
+        };
+        let dma_allowed = Self::decode_domain_bool(
+            self.load_u64(argblock + DOMAIN_SECURITY_DMA_ALLOWED)
+                .map_err(|_| 14u64)?,
+            current.dma_allowed,
+        )?;
+        let hardening_profile = match self
+            .load_u64(argblock + DOMAIN_SECURITY_HARDENING_PROFILE)
+            .map_err(|_| 14u64)?
+        {
+            0 => current.hardening_profile,
+            profile => profile,
+        };
+        let executable_source_policy = match self
+            .load_u64(argblock + DOMAIN_SECURITY_EXEC_SOURCE_POLICY)
+            .map_err(|_| 14u64)?
+        {
+            0 => current.executable_source_policy,
+            policy => policy,
+        };
+        let candidate = DomainSecurityPolicy {
+            aslr_enabled,
+            allow_wx,
+            allow_jit_transition,
+            entropy_quota,
+            dma_allowed,
+            hardening_profile,
+            executable_source_policy,
+        };
+        Self::validate_domain_security(parent, candidate)?;
+        Ok(candidate)
+    }
+
+    fn decode_domain_bool(request: u64, current: bool) -> Result<bool, u64> {
+        match request {
+            DOMAIN_BOOL_INHERIT => Ok(current),
+            DOMAIN_BOOL_ENABLE => Ok(true),
+            DOMAIN_BOOL_DISABLE => Ok(false),
+            _ => Err(22),
+        }
+    }
+
+    fn validate_domain_security(
+        parent: DomainSecurityPolicy,
+        child: DomainSecurityPolicy,
+    ) -> Result<(), u64> {
+        if parent.aslr_enabled && !child.aslr_enabled {
+            return Err(1);
+        }
+        if child.allow_wx && !parent.allow_wx {
+            return Err(1);
+        }
+        if child.allow_jit_transition && !parent.allow_jit_transition {
+            return Err(1);
+        }
+        if child.entropy_quota > parent.entropy_quota {
+            return Err(1);
+        }
+        if child.dma_allowed && !parent.dma_allowed {
+            return Err(1);
+        }
+        if child.hardening_profile < parent.hardening_profile {
+            return Err(1);
+        }
+        if child.executable_source_policy & !parent.executable_source_policy != 0 {
+            return Err(1);
+        }
+        Ok(())
+    }
+
+    fn clamp_security_to_parent(
+        parent: DomainSecurityPolicy,
+        child: DomainSecurityPolicy,
+    ) -> DomainSecurityPolicy {
+        DomainSecurityPolicy {
+            aslr_enabled: child.aslr_enabled || parent.aslr_enabled,
+            allow_wx: child.allow_wx && parent.allow_wx,
+            allow_jit_transition: child.allow_jit_transition && parent.allow_jit_transition,
+            entropy_quota: child.entropy_quota.min(parent.entropy_quota),
+            dma_allowed: child.dma_allowed && parent.dma_allowed,
+            hardening_profile: child.hardening_profile.max(parent.hardening_profile),
+            executable_source_policy: child.executable_source_policy
+                & parent.executable_source_policy,
+        }
+    }
+
+    fn domain_allows_prot(&self, prot: u64) -> Result<bool, String> {
+        let domain_id = self.current_domain_id()?;
+        let Some(domain) = self.domains.get(&domain_id) else {
+            return Err(format!("missing resource domain {domain_id}"));
+        };
+        let wants_wx = prot & 0b110 == 0b110;
+        Ok(!wants_wx || domain.security.allow_wx)
+    }
+
     fn max_direct_child_limits(&self, id: u64) -> DomainLimits {
         let mut out = DomainLimits {
             cpu: 0,
@@ -2935,6 +3142,23 @@ impl Machine {
                 child.upcall_mask &= mask;
             }
             self.mask_descendant_upcalls(child_id, mask);
+        }
+    }
+
+    fn clamp_descendant_security(&mut self, id: u64) {
+        let Some(parent_security) = self.domains.get(&id).map(|domain| domain.security) else {
+            return;
+        };
+        let children = self
+            .domains
+            .get(&id)
+            .map(|domain| domain.children.clone())
+            .unwrap_or_default();
+        for child_id in children {
+            if let Some(child) = self.domains.get_mut(&child_id) {
+                child.security = Self::clamp_security_to_parent(parent_security, child.security);
+            }
+            self.clamp_descendant_security(child_id);
         }
     }
 
@@ -4011,7 +4235,7 @@ mod tests {
         let program = Program::parse(
             r#"
             .data
-            arg: .zero 160
+            arg: .zero 208
 
             .text
               LI r10, arg
@@ -4067,7 +4291,7 @@ mod tests {
               LI r1, 1
               ST [r10, 16], r1
               DOMAIN_CTL r22, r10
-              LI r1, 144
+              LI r1, 200
               CMP r22, r1
               BNE bad
               LD r23, [r10, 120]
@@ -4174,7 +4398,7 @@ mod tests {
         let program = Program::parse(
             r#"
             .data
-            arg: .zero 160
+            arg: .zero 208
             obj: .zero 80
 
             .text
@@ -4297,7 +4521,7 @@ mod tests {
         let program = Program::parse(
             r#"
             .data
-            arg: .zero 160
+            arg: .zero 208
 
             .text
               LI r10, arg
@@ -4339,6 +4563,142 @@ mod tests {
     }
 
     #[test]
+    fn domain_security_policy_delegation_is_monotonic() {
+        let mut machine = test_machine_with_child_domain();
+        let arg = ARG_BASE;
+
+        machine.store_u64(arg, DOMAIN_OP_CREATE).unwrap();
+        machine.store_u64(arg + 8, ROOT_DOMAIN_ID).unwrap();
+        machine.store_u64(arg + 16, 1).unwrap();
+        machine
+            .store_u64(arg + DOMAIN_SECURITY_ALLOW_WX, DOMAIN_BOOL_ENABLE)
+            .unwrap();
+        assert_eq!(machine.domain_ctl_create(arg), Err(1));
+
+        machine
+            .store_u64(arg + DOMAIN_SECURITY_ALLOW_WX, DOMAIN_BOOL_INHERIT)
+            .unwrap();
+        machine
+            .store_u64(arg + DOMAIN_SECURITY_ASLR_ENABLED, DOMAIN_BOOL_DISABLE)
+            .unwrap();
+        assert_eq!(machine.domain_ctl_create(arg), Err(1));
+
+        machine.domains.get_mut(&2).unwrap().security.aslr_enabled = false;
+        machine.store_u64(arg + 8, 2).unwrap();
+        machine
+            .store_u64(arg + DOMAIN_SECURITY_ASLR_ENABLED, DOMAIN_BOOL_DISABLE)
+            .unwrap();
+        let id = machine.domain_ctl_create(arg).unwrap();
+        assert!(!machine.domains[&id].security.aslr_enabled);
+
+        machine.store_u64(arg, DOMAIN_OP_CONFIGURE).unwrap();
+        machine.store_u64(arg + 8, 2).unwrap();
+        machine.store_u64(arg + 16, 1).unwrap();
+        machine.domains.get_mut(&2).unwrap().frozen = true;
+        assert_eq!(machine.domain_ctl_configure(arg), Err(11));
+    }
+
+    #[test]
+    fn wx_mmap_and_mprotect_follow_domain_policy() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[6] = 4096;
+        machine.thread_mut().unwrap().regs[7] = 0b110;
+        machine
+            .exec(Instr::Mmap(
+                Reg(8),
+                Reg(0),
+                Reg(6),
+                Reg(7),
+                FdReg(0),
+                Reg(0),
+            ))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[8], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
+
+        machine.thread_mut().unwrap().regs[7] = 0b011;
+        machine
+            .exec(Instr::Mmap(
+                Reg(8),
+                Reg(0),
+                Reg(6),
+                Reg(7),
+                FdReg(0),
+                Reg(0),
+            ))
+            .unwrap();
+        let addr = machine.thread().unwrap().regs[8];
+        assert_ne!(addr, -1i64 as u64);
+
+        machine.thread_mut().unwrap().regs[9] = addr;
+        machine.thread_mut().unwrap().regs[10] = 4096;
+        machine.thread_mut().unwrap().regs[11] = 0b110;
+        machine
+            .exec(Instr::Mprotect(Reg(9), Reg(10), Reg(11)))
+            .unwrap();
+        assert_eq!(machine.process().unwrap().errno, 1);
+        assert_eq!(
+            machine
+                .process()
+                .unwrap()
+                .vmas
+                .iter()
+                .find(|vma| vma.start == addr)
+                .unwrap()
+                .prot,
+            0b011
+        );
+
+        machine
+            .domains
+            .get_mut(&ROOT_DOMAIN_ID)
+            .unwrap()
+            .security
+            .allow_wx = true;
+        machine
+            .exec(Instr::Mprotect(Reg(9), Reg(10), Reg(11)))
+            .unwrap();
+        assert_eq!(machine.process().unwrap().errno, 0);
+        assert_eq!(
+            machine
+                .process()
+                .unwrap()
+                .vmas
+                .iter()
+                .find(|vma| vma.start == addr)
+                .unwrap()
+                .prot,
+            0b110
+        );
+    }
+
+    #[test]
+    fn tcp_listener_endpoint_is_not_resolved_as_relative_path() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let machine = Machine::new(program);
+        assert_eq!(
+            machine
+                .resolve_process_path("tcp-listen:127.0.0.1:0")
+                .unwrap(),
+            "tcp-listen:127.0.0.1:0"
+        );
+    }
+
+    #[test]
     fn domain_usage_rolls_up_and_release_is_live() {
         let program = Program::parse(
             r#"
@@ -4362,6 +4722,7 @@ mod tests {
             },
             capability_mask: u64::MAX,
             upcall_mask: u64::MAX,
+            security: DomainSecurityPolicy::root(),
             frozen: false,
             destroyed: false,
             cpu_ticks: 0,
@@ -4375,6 +4736,7 @@ mod tests {
             limits: parent.limits,
             capability_mask: u64::MAX,
             upcall_mask: u64::MAX,
+            security: DomainSecurityPolicy::root(),
             frozen: false,
             destroyed: false,
             cpu_ticks: 0,
@@ -4482,6 +4844,7 @@ mod tests {
                 },
                 capability_mask: u64::MAX,
                 upcall_mask: u64::MAX,
+                security: DomainSecurityPolicy::root(),
                 frozen: false,
                 destroyed: false,
                 cpu_ticks: 0,
@@ -4500,7 +4863,7 @@ mod tests {
         let program = Program::parse(
             r#"
             .data
-            dom: .zero 160
+            dom: .zero 208
             obj: .zero 80
 
             .text
@@ -4589,6 +4952,7 @@ mod tests {
                 limits: DomainLimits::root(),
                 capability_mask: u64::MAX,
                 upcall_mask: u64::MAX,
+                security: DomainSecurityPolicy::root(),
                 frozen: false,
                 destroyed: false,
                 cpu_ticks: 0,
@@ -4600,6 +4964,7 @@ mod tests {
             .unwrap()
             .children
             .push(2);
+        machine.next_domain_id = 3;
         machine.processes.get_mut(&1).unwrap().fds[3] = FdHandle::CallGate {
             entry: 1,
             domain_id: 2,
@@ -4694,6 +5059,7 @@ mod tests {
                 limits: DomainLimits::root(),
                 capability_mask: u64::MAX,
                 upcall_mask: u64::MAX,
+                security: DomainSecurityPolicy::root(),
                 frozen: false,
                 destroyed: false,
                 cpu_ticks: 0,
@@ -4786,6 +5152,7 @@ mod tests {
                     limits,
                     capability_mask: u64::MAX >> (idx % 8),
                     upcall_mask: u64::MAX >> (idx % 8),
+                    security: DomainSecurityPolicy::root(),
                     frozen: false,
                     destroyed: false,
                     cpu_ticks: 0,
@@ -4847,6 +5214,7 @@ mod tests {
                 limits: DomainLimits::root(),
                 capability_mask: u64::MAX,
                 upcall_mask: u64::MAX,
+                security: DomainSecurityPolicy::root(),
                 frozen: false,
                 destroyed: false,
                 cpu_ticks: 0,
@@ -4880,6 +5248,7 @@ mod tests {
                 limits: DomainLimits::root(),
                 capability_mask: u64::MAX,
                 upcall_mask: u64::MAX,
+                security: DomainSecurityPolicy::root(),
                 frozen: false,
                 destroyed: false,
                 cpu_ticks: 0,
