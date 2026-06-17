@@ -5935,6 +5935,54 @@ impl CodeGen {
                 }
                 Ok(dst)
             }
+            "fseek" | "fseeko" => {
+                if args.len() != 3 {
+                    return Err(format!(
+                        "{name}(stream, offset, whence) expects 3 arguments"
+                    ));
+                }
+                let stream = self.emit_expr(&args[0])?;
+                let stream_slot = self.spill_reg(stream);
+                self.temp_reg = 0;
+                let offset = self.emit_expr(&args[1])?;
+                let offset_slot = self.spill_reg(offset);
+                self.temp_reg = 0;
+                let whence = self.emit_expr(&args[2])?;
+                let stream = self.reload_reg(stream_slot)?;
+                let offset = self.reload_reg(offset_slot)?;
+                let dst = self.alloc_reg()?;
+                let fail = self.alloc_reg()?;
+                let done = self.new_label("fseek_done");
+                self.emit_fd_seek_dispatch(stream, offset, whence, dst)?;
+                self.text.push(format!("  LI r{fail}, -1"));
+                self.text.push(format!("  CMP r{dst}, r{fail}"));
+                self.text.push(format!("  LI r{dst}, 0"));
+                self.text.push(format!("  BNE {done}"));
+                self.text.push(format!("  LI r{dst}, -1"));
+                self.text.push(format!("{done}:"));
+                Ok(dst)
+            }
+            "ftell" | "ftello" => {
+                let stream = self.one_arg(name, args)?;
+                let offset = self.alloc_reg()?;
+                let whence = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{offset}, 0"));
+                self.text.push(format!("  LI r{whence}, 1"));
+                self.emit_fd_seek_dispatch(stream, offset, whence, dst)?;
+                Ok(dst)
+            }
+            "rewind" => {
+                let stream = self.one_arg(name, args)?;
+                let offset = self.alloc_reg()?;
+                let whence = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{offset}, 0"));
+                self.text.push(format!("  LI r{whence}, 0"));
+                self.emit_fd_seek_dispatch(stream, offset, whence, dst)?;
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
             "strlen" => {
                 let ptr = self.one_arg(name, args)?;
                 let dst = self.alloc_reg()?;
@@ -10936,6 +10984,15 @@ impl CodeGen {
         } else if name == "stderr" {
             self.text.push(format!("  LI r{reg}, 2"));
             Ok(reg)
+        } else if name == "SEEK_SET" {
+            self.text.push(format!("  LI r{reg}, 0"));
+            Ok(reg)
+        } else if name == "SEEK_CUR" {
+            self.text.push(format!("  LI r{reg}, 1"));
+            Ok(reg)
+        } else if name == "SEEK_END" {
+            self.text.push(format!("  LI r{reg}, 2"));
+            Ok(reg)
         } else if name == "O_APPEND" {
             self.text.push(format!("  LI r{reg}, 1"));
             Ok(reg)
@@ -13365,6 +13422,44 @@ int main() {
         let asm = compile(source).unwrap();
         assert!(asm.contains("READ_FD_DYN"), "{asm}");
         assert!(asm.contains("FD_CLOSE_DYN"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_stdio_seek_and_tell_use_descriptor_streams() {
+        let source = r#"
+        int main() {
+            int fp;
+            int buf;
+            remove("/tmp/lnp64_fseek_test.txt");
+            fp = fopen("/tmp/lnp64_fseek_test.txt", "w");
+            if (fp == -1) return 1;
+            fwrite("abcdef", 1, 6, fp);
+            fclose(fp);
+            fp = fopen("/tmp/lnp64_fseek_test.txt", "r");
+            if (fp == -1) return 2;
+            buf = alloc(8);
+            if (fseek(fp, 2, SEEK_SET) != 0) return 3;
+            if (ftell(fp) != 2) return 4;
+            if (fread(buf, 1, 2, fp) != 2) return 5;
+            storeb(buf + 2, 0);
+            if (strcmp(buf, "cd") != 0) return 6;
+            if (ftell(fp) != 4) return 7;
+            rewind(fp);
+            if (ftell(fp) != 0) return 8;
+            if (fseek(fp, -1, SEEK_END) != 0) return 9;
+            if (fread(buf, 1, 1, fp) != 1) return 10;
+            storeb(buf + 1, 0);
+            if (strcmp(buf, "f") != 0) return 11;
+            fclose(fp);
+            remove("/tmp/lnp64_fseek_test.txt");
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("FD_SEEK_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
