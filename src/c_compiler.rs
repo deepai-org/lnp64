@@ -1094,7 +1094,8 @@ fn is_plain_identifier(name: &str) -> bool {
 
 fn normalize_char_array_declarations(source: &str) -> String {
     let mut out = String::new();
-    let mut array_sizes = Vec::new();
+    let mut active_array_sizes = Vec::new();
+    let mut depth = 0i64;
     for line in source.lines() {
         let indent_len = line.len() - line.trim_start().len();
         let indent = &line[..indent_len];
@@ -1134,7 +1135,7 @@ fn normalize_char_array_declarations(source: &str) -> String {
                     out.push_str(len);
                     out.push_str(");\n");
                     if let Some(size) = parse_constant_len(len) {
-                        array_sizes.push((name.to_string(), size));
+                        active_array_sizes.push((name.to_string(), size, depth));
                     }
                 } else {
                     let name = decl.trim_start_matches('*').trim();
@@ -1145,12 +1146,15 @@ fn normalize_char_array_declarations(source: &str) -> String {
                 }
             }
         } else {
-            out.push_str(line);
+            let mut line = line.to_string();
+            for (name, size, _) in active_array_sizes.iter().rev() {
+                line = line.replace(&format!("sizeof({name})"), &size.to_string());
+            }
+            out.push_str(&line);
             out.push('\n');
         }
-    }
-    for (name, size) in array_sizes {
-        out = out.replace(&format!("sizeof({name})"), &size.to_string());
+        depth += count_braces(line);
+        active_array_sizes.retain(|(_, _, decl_depth)| *decl_depth == 0 || depth >= *decl_depth);
     }
     out
 }
@@ -2668,14 +2672,16 @@ impl Parser {
                         if self.is_cast_type_start() {
                             self.skip_cast_type_name();
                             self.expect(Token::RParen)?;
+                            return Ok(Expr::Num(8));
                         } else {
-                            self.parse_expr()?;
+                            let expr = self.parse_expr()?;
                             self.expect(Token::RParen)?;
+                            return Ok(Expr::Call("sizeof".to_string(), vec![expr]));
                         }
                     } else {
-                        self.parse_factor()?;
+                        let expr = self.parse_factor()?;
+                        return Ok(Expr::Call("sizeof".to_string(), vec![expr]));
                     }
-                    return Ok(Expr::Num(8));
                 }
                 let expr = if self.check(&Token::LParen) {
                     self.advance();
@@ -2946,6 +2952,7 @@ struct CodeGen {
     locals: HashMap<String, i64>,
     local_aggregate_sizes: HashMap<String, i64>,
     local_array_widths: HashMap<String, i64>,
+    local_array_sizes: HashMap<String, i64>,
     next_local_offset: i64,
     temp_reg: usize,
     label_id: usize,
@@ -3104,6 +3111,7 @@ impl CodeGen {
         self.locals.clear();
         self.local_aggregate_sizes.clear();
         self.local_array_widths.clear();
+        self.local_array_sizes.clear();
         self.next_local_offset = 8;
         self.temp_reg = 0;
         self.text.push(format!("{}:", function.name));
@@ -3613,7 +3621,7 @@ impl CodeGen {
             }
             Expr::Member(base, field) => {
                 let addr = self.emit_member_addr(base, field)?;
-                if matches!(field.as_str(), "pattern" | "d_name") {
+                if is_inline_array_field(field) {
                     return Ok(addr);
                 }
                 let dst = self.alloc_reg()?;
@@ -3631,7 +3639,11 @@ impl CodeGen {
         for (idx, reg) in regs.iter().enumerate() {
             self.text.push(format!("  MOV r{}, r{reg}", idx + 1));
         }
-        let target = self.emit_expr(callee)?;
+        let target = if let Expr::Unary(UnOp::Deref, inner) = callee {
+            self.emit_expr(inner)?
+        } else {
+            self.emit_expr(callee)?
+        };
         let dst = self.alloc_reg()?;
         self.text.push(format!("  CALL_REG r{target}"));
         self.text.push(format!("  MOV r{dst}, r1"));
@@ -3667,6 +3679,7 @@ impl CodeGen {
             self.text.push(format!("  ALLOC r{ptr}, r{size}"));
             self.store_name(&decl.name, ptr)?;
             self.local_array_widths.insert(decl.name.clone(), width);
+            self.local_array_sizes.insert(decl.name.clone(), bytes);
             if let Some(Expr::Str(value)) = &decl.init {
                 let label = self.intern_string(value);
                 let src = self.alloc_reg()?;
@@ -4733,6 +4746,12 @@ impl CodeGen {
             8
         } else if member_field_name(base).is_some_and(|name| name == "lines") {
             16
+        } else if member_field_name(base).is_some_and(|name| name == "gcparams") {
+            1
+        } else if member_field_name(base)
+            .is_some_and(|name| matches!(name, "tmname" | "mt" | "strcache"))
+        {
+            8
         } else if member_field_name(base).is_some_and(|name| name == "data")
             && root_name(base).is_some_and(|name| {
                 matches!(
@@ -5320,7 +5339,12 @@ impl CodeGen {
         match name {
             "sizeof" => {
                 let dst = self.alloc_reg()?;
-                self.text.push(format!("  LI r{dst}, 8"));
+                let size = match args.first() {
+                    Some(Expr::Var(name)) => self.local_array_sizes.get(name).copied().unwrap_or(8),
+                    Some(Expr::Str(value)) => value.len() as i64 + 1,
+                    _ => 8,
+                };
+                self.text.push(format!("  LI r{dst}, {size}"));
                 Ok(dst)
             }
             "va_start" => {
@@ -12473,6 +12497,13 @@ fn member_field_name(expr: &Expr) -> Option<&str> {
     }
 }
 
+fn is_inline_array_field(field: &str) -> bool {
+    matches!(
+        field,
+        "pattern" | "d_name" | "gcparams" | "tmname" | "mt" | "strcache"
+    )
+}
+
 fn offsetof_field_name(expr: &Expr) -> Option<&str> {
     match expr {
         Expr::Var(name) => Some(name.as_str()),
@@ -13865,6 +13896,83 @@ mod tests {
     }
 
     #[test]
+    fn char_array_sizeof_rewrite_stays_in_declaring_scope() {
+        let source = r#"
+        int first() {
+            char buff[64];
+            return sizeof(buff);
+        }
+
+        int second() {
+            unsigned int buff[2];
+            return sizeof(buff);
+        }
+
+        int main() {
+            if (first() != 64) return 1;
+            if (second() != 16) return 2;
+            return 0;
+        }
+        "#;
+        let normalized = preprocess_source(source);
+        assert!(normalized.contains("return 64;"), "{normalized}");
+        assert!(normalized.contains("return sizeof(buff);"), "{normalized}");
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn lua_aggregate_sizeofs_survive_alias_rewrites() {
+        let source = r#"
+        typedef struct global_State global_State;
+        typedef struct LX LX;
+        typedef struct CallInfo CallInfo;
+
+        int main() {
+            int g = sizeof(global_State);
+            int lx = sizeof(LX);
+            int ci = sizeof(CallInfo);
+            if (g != 2048) return 1;
+            if (lx != 256) return 2;
+            if (ci != 128) return 3;
+            return 0;
+        }
+        "#;
+        let normalized = preprocess_source(source);
+        assert!(normalized.contains("int g = 2048;"), "{normalized}");
+        assert!(normalized.contains("int lx = 256;"), "{normalized}");
+        assert!(normalized.contains("int ci = 128;"), "{normalized}");
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn inline_array_member_index_uses_member_address() {
+        let source = r#"
+        struct Global {
+            int head;
+            int gcparams[8];
+        };
+
+        int main() {
+            int g;
+            g = alloc(64);
+            g.gcparams[3] = 84;
+            if (g.gcparams[3] != 84) return 1;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn static_char_pointer_array_prototypes_are_not_array_declarations() {
         let source = r#"
         union extra {
@@ -14418,6 +14526,30 @@ int main() {
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 22);
+    }
+
+    #[test]
+    fn parenthesized_deref_function_pointer_calls_target_value() {
+        let source = r#"
+        int add4(int value) {
+            return value + 4;
+        }
+
+        int apply(int (*f)(int), int value) {
+            return (*f)(value);
+        }
+
+        int main() {
+            if (apply(add4, 3) != 7) return 1;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("CALL_REG"), "{asm}");
+        assert!(!asm.contains("LD.B"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
     }
 
     #[test]
