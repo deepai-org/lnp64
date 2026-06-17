@@ -6882,11 +6882,21 @@ impl CodeGen {
                     return Err("fwrite(buf, size, nmemb, stream) expects 4 arguments".to_string());
                 }
                 let buf = self.emit_expr(&args[0])?;
+                let buf_slot = self.spill_reg(buf);
+                self.temp_reg = 0;
                 let size = self.emit_expr(&args[1])?;
+                let size_slot = self.spill_reg(size);
+                self.temp_reg = 0;
                 let nmemb = self.emit_expr(&args[2])?;
+                let nmemb_slot = self.spill_reg(nmemb);
+                self.temp_reg = 0;
+                let stream = self.emit_expr(&args[3])?;
+                let buf = self.reload_reg(buf_slot)?;
+                let size = self.reload_reg(size_slot)?;
+                let nmemb = self.reload_reg(nmemb_slot)?;
                 let len = self.alloc_reg()?;
                 self.text.push(format!("  MUL r{len}, r{size}, r{nmemb}"));
-                self.text.push(format!("  WRITE_FD fd1, r{buf}, r{len}"));
+                self.emit_write_fd_dispatch(stream, buf, len, 1)?;
                 Ok(nmemb)
             }
             "signal" => {
@@ -6929,9 +6939,14 @@ impl CodeGen {
                     return Err("fputs(s, stream) expects 2 arguments".to_string());
                 }
                 let ptr = self.emit_expr(&args[0])?;
+                let ptr_slot = self.spill_reg(ptr);
+                self.temp_reg = 0;
+                let stream = self.emit_expr(&args[1])?;
+                let ptr = self.reload_reg(ptr_slot)?;
                 self.needs_c_runtime = true;
-                self.text.push(format!("  MOV r1, r{ptr}"));
-                self.text.push("  CALL __write_cstr".to_string());
+                self.text.push(format!("  MOV r1, r{stream}"));
+                self.text.push(format!("  MOV r2, r{ptr}"));
+                self.text.push("  CALL __write_cstr_fd".to_string());
                 Ok(0)
             }
             "putword" => {
@@ -6994,6 +7009,16 @@ impl CodeGen {
                     return Err("fputc(c, stream) expects at least 1 argument".to_string());
                 }
                 let ch = self.emit_expr(&args[0])?;
+                let ch_slot = self.spill_reg(ch);
+                self.temp_reg = 0;
+                let stream = if let Some(stream) = args.get(1) {
+                    self.emit_expr(stream)?
+                } else {
+                    let stdout = self.alloc_reg()?;
+                    self.text.push(format!("  LI r{stdout}, 1"));
+                    stdout
+                };
+                let ch = self.reload_reg(ch_slot)?;
                 let label = "c_putchar_buf".to_string();
                 self.data
                     .entry(label.clone())
@@ -7003,7 +7028,7 @@ impl CodeGen {
                 self.text.push(format!("  LI r{addr}, {label}"));
                 self.text.push(format!("  ST.B [r{addr}, 0], r{ch}"));
                 self.text.push(format!("  LI r{len}, 1"));
-                self.text.push(format!("  WRITE_FD fd1, r{addr}, r{len}"));
+                self.emit_write_fd_dispatch(stream, addr, len, 1)?;
                 Ok(0)
             }
             "open" => {
@@ -13193,6 +13218,31 @@ int main() {
         let asm = compile(source).unwrap();
         assert!(asm.contains("__write_cstr_fd"), "{asm}");
         assert!(asm.contains("__print_u64_fd"), "{asm}");
+        assert!(asm.contains("WRITE_FD_DYN"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_stdio_writes_honor_descriptor_stream_argument() {
+        let source = r#"
+        int main() {
+            int fds[2];
+            int buf;
+            pipe(fds);
+            buf = alloc(16);
+            fputs("hi", fds[1]);
+            fputc('!', fds[1]);
+            if (fwrite("xy", 1, 2, fds[1]) != 2) return 1;
+            if (read(fds[0], buf, 5) != 5) return 2;
+            storeb(buf + 5, 0);
+            if (strcmp(buf, "hi!xy") != 0) return 3;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("__write_cstr_fd"), "{asm}");
         assert!(asm.contains("WRITE_FD_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
