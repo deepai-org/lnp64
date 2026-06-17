@@ -9201,8 +9201,9 @@ impl CodeGen {
                 if args.len() < 2 || args.len() > 3 {
                     return Err("fcntl(fd, cmd[, arg]) expects 2 or 3 arguments".to_string());
                 }
-                let cmd = const_expr_value(&args[1])
-                    .ok_or_else(|| "fcntl command must be a constant expression".to_string())?;
+                let Some(cmd) = const_expr_value(&args[1]) else {
+                    return self.emit_fcntl_dynamic(args);
+                };
                 match cmd {
                     0 => {
                         let src = self.emit_expr(&args[0])?;
@@ -11874,6 +11875,75 @@ impl CodeGen {
             self.text.push(format!("  ST [r{block}, {offset}], r{reg}"));
         }
         self.text.push(format!("  {instruction} r{dst}, r{block}"));
+        Ok(dst)
+    }
+
+    fn emit_fcntl_dynamic(&mut self, args: &[Expr]) -> Result<usize, String> {
+        let fd = self.emit_expr(&args[0])?;
+        let cmd = self.emit_expr(&args[1])?;
+        let arg = if args.len() == 3 {
+            self.emit_expr(&args[2])?
+        } else {
+            let zero = self.alloc_reg()?;
+            self.text.push(format!("  LI r{zero}, 0"));
+            zero
+        };
+        let fd_slot = self.spill_reg(fd);
+        let cmd_slot = self.spill_reg(cmd);
+        let arg_slot = self.spill_reg(arg);
+
+        let dst = self.alloc_reg()?;
+        let cmd_reg = self.reload_reg(cmd_slot)?;
+        let value = self.alloc_reg()?;
+        let dup_label = self.new_label("fcntl_dyn_dup");
+        let flags_label = self.new_label("fcntl_dyn_flags");
+        let record_label = self.new_label("fcntl_dyn_record");
+        let invalid_label = self.new_label("fcntl_dyn_invalid");
+        let done = self.new_label("fcntl_dyn_done");
+
+        self.text.push(format!("  LI r{value}, 0"));
+        self.text.push(format!("  CMP r{cmd_reg}, r{value}"));
+        self.text.push(format!("  BEQ {dup_label}"));
+        self.text.push(format!("  LI r{value}, 1"));
+        self.text.push(format!("  CMP r{cmd_reg}, r{value}"));
+        self.text.push(format!("  BLT {invalid_label}"));
+        self.text.push(format!("  LI r{value}, 5"));
+        self.text.push(format!("  CMP r{cmd_reg}, r{value}"));
+        self.text.push(format!("  BLT {flags_label}"));
+        self.text.push(format!("  LI r{value}, 8"));
+        self.text.push(format!("  CMP r{cmd_reg}, r{value}"));
+        self.text.push(format!("  BLT {record_label}"));
+        self.text.push(format!("  JMP {invalid_label}"));
+
+        self.text.push(format!("{dup_label}:"));
+        let fd = self.reload_reg(fd_slot)?;
+        let arg = self.reload_reg(arg_slot)?;
+        let zero = self.alloc_reg()?;
+        self.text.push(format!("  LI r{zero}, 0"));
+        let cap = self.emit_cap_control("CAP_DUP", &[(0, fd), (8, arg), (16, zero), (24, zero)])?;
+        self.text.push(format!("  MOV r{dst}, r{cap}"));
+        self.text.push(format!("  JMP {done}"));
+
+        self.text.push(format!("{flags_label}:"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("  JMP {done}"));
+
+        self.text.push(format!("{record_label}:"));
+        let fd = self.reload_reg(fd_slot)?;
+        let cmd = self.reload_reg(cmd_slot)?;
+        let arg = self.reload_reg(arg_slot)?;
+        self.text
+            .push(format!("  FCNTL_FD_DYN r{fd}, r{cmd}, r{arg}"));
+        self.text.push(format!("  MOV r{dst}, r1"));
+        self.text.push(format!("  JMP {done}"));
+
+        self.text.push(format!("{invalid_label}:"));
+        let err = self.alloc_reg()?;
+        self.text.push(format!("  LI r{err}, 22"));
+        self.text.push(format!("  ERRNO_SET r{err}"));
+        self.text.push(format!("  LI r{dst}, -1"));
+
+        self.text.push(format!("{done}:"));
         Ok(dst)
     }
 
@@ -19772,6 +19842,48 @@ int main() {
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains("ERRNO_SET"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_fcntl_accepts_dynamic_command_expressions() {
+        let source = r#"
+        int main() {
+            int fd;
+            int dupfd;
+            int cmd;
+            int fl;
+            fd = openat(AT_FDCWD, "Cargo.toml", 0);
+            if (fd == -1) return 1;
+            cmd = F_DUPFD;
+            dupfd = fcntl(fd, cmd, 12);
+            if (dupfd == -1) return 2;
+            cmd = F_GETFD;
+            if (fcntl(dupfd, cmd) != 0) return 3;
+            cmd = F_SETFL;
+            if (fcntl(dupfd, cmd, 0) != 0) return 4;
+            fl = alloc(40);
+            fl.l_type = F_WRLCK;
+            fl.l_whence = SEEK_SET;
+            fl.l_start = 0;
+            fl.l_len = 0;
+            cmd = F_SETLK;
+            if (fcntl(dupfd, cmd, fl) != 0) return 5;
+            cmd = F_GETLK;
+            if (fcntl(dupfd, cmd, fl) != 0) return 6;
+            if (fl.l_type != F_UNLCK) return 7;
+            errno = 0;
+            cmd = 999;
+            if (fcntl(dupfd, cmd, 0) != -1) return 8;
+            if (errno != EINVAL) return 9;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("fcntl_dyn_dup"), "{asm}");
+        assert!(asm.contains("FCNTL_FD_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
