@@ -11,6 +11,7 @@ psabi=psABI.md
 psabi_contract=toolchain/lnp64_psabi.manifest
 object_contract=object_format.md
 relocation_contract=toolchain/lnp64_relocations.manifest
+intrinsic_contract=toolchain/lnp64_intrinsics.manifest
 gpr=r0-r31
 fdr=fd0-fd31
 pcr=PID,PPID,TID,TP,UID,GID,SIGMASK,SIGPENDING,REALTIME_SEC,REALTIME_NSEC

@@ -736,6 +736,29 @@ mod tests {
             .collect()
     }
 
+    fn intrinsic_rows(manifest: &str) -> Vec<(&str, &str, &str, &str)> {
+        manifest
+            .lines()
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(|line| {
+                let mut fields = line.splitn(4, '|');
+                let name = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing intrinsic name in {line}"));
+                let primitive = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing intrinsic primitive in {line}"));
+                let result = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing intrinsic result in {line}"));
+                let operands = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing intrinsic operands in {line}"));
+                (name, primitive, result, operands)
+            })
+            .collect()
+    }
+
     #[test]
     fn llvm_target_manifest_records_required_backend_contract() {
         let manifest = include_str!("../toolchain/lnp64_target.manifest");
@@ -758,6 +781,10 @@ mod tests {
         assert_eq!(
             manifest_field(manifest, "relocation_contract"),
             "toolchain/lnp64_relocations.manifest"
+        );
+        assert_eq!(
+            manifest_field(manifest, "intrinsic_contract"),
+            "toolchain/lnp64_intrinsics.manifest"
         );
         assert_eq!(manifest_field(manifest, "gpr"), "r0-r31");
         assert_eq!(manifest_field(manifest, "fdr"), "fd0-fd31");
@@ -807,6 +834,51 @@ mod tests {
             manifest_field(manifest, "toy_compiler_policy"),
             "bootstrap_smoke_only_after_llvm_gate"
         );
+    }
+
+    #[test]
+    fn intrinsic_manifest_matches_target_manifest() {
+        let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
+        let intrinsic_manifest = include_str!("../toolchain/lnp64_intrinsics.manifest");
+        let rows = intrinsic_rows(intrinsic_manifest);
+        let mut names = std::collections::BTreeSet::new();
+        let target_intrinsics: std::collections::BTreeSet<_> =
+            manifest_field(target_manifest, "intrinsics")
+                .split(',')
+                .collect();
+        let target_primitives: std::collections::BTreeSet<_> =
+            manifest_field(target_manifest, "native_primitives")
+                .split(',')
+                .collect();
+
+        assert_eq!(
+            manifest_field(target_manifest, "intrinsic_contract"),
+            "toolchain/lnp64_intrinsics.manifest"
+        );
+        assert_eq!(rows.len(), target_intrinsics.len());
+        for (name, primitive, result, operands) in rows {
+            assert!(
+                name.starts_with("__lnp_"),
+                "intrinsic {name} must stay in the private LNP namespace"
+            );
+            assert!(names.insert(name), "duplicate intrinsic {name}");
+            assert!(
+                target_intrinsics.contains(name),
+                "intrinsic manifest names {name}, but target manifest does not"
+            );
+            assert!(
+                target_primitives.contains(primitive),
+                "intrinsic {name} maps to unknown primitive {primitive}"
+            );
+            assert!(!result.is_empty(), "intrinsic {name} has empty result");
+            assert!(!operands.is_empty(), "intrinsic {name} has empty operands");
+        }
+        for name in target_intrinsics {
+            assert!(
+                names.contains(name),
+                "target manifest intrinsic {name} is missing from intrinsic manifest"
+            );
+        }
     }
 
     #[test]
