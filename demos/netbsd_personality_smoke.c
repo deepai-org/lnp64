@@ -148,6 +148,17 @@ int check_descriptor_passing() {
     return 0;
 }
 
+int check_openat_boundary() {
+    int fd;
+    int buf;
+    fd = openat(AT_FDCWD, "demos/netbsd_rumpfs.img", 0);
+    if (fd == -1) return 1;
+    buf = alloc(1);
+    if (read(fd, buf, 1) != 1) return 2;
+    if (loadb(buf) != 'R') return 3;
+    return 0;
+}
+
 int check_mmap_and_rumpfs_block() {
     int mem1;
     int mem2;
@@ -298,6 +309,8 @@ int main() {
     if (rc != 0) return 30 + rc;
     rc = check_descriptor_passing();
     if (rc != 0) return 90 + rc;
+    rc = check_openat_boundary();
+    if (rc != 0) return 100 + rc;
     rc = check_mmap_and_rumpfs_block();
     if (rc != 0) return 40 + rc;
     rc = check_signal_delivery();

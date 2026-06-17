@@ -48,6 +48,7 @@ checks that the generated assembly still uses the expected native primitives.
 
 - init-style startup, shell-like command dispatch output, and a forked `exec`
   shell command,
+- `openat(AT_FDCWD, ...)` file-open compatibility plus descriptor reads,
 - pipe/fd inheritance through `fork`, `poll`, and `wait`,
 - descriptor passing through narrowed FDR capabilities over a queue,
 - an mmap-backed allocator arena and a tiny checked rumpfs mount/read service
