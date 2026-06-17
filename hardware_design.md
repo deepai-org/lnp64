@@ -4559,163 +4559,17 @@ heap size classes:                fixed by implementation profile; query coarse 
 per-thread heap windows:          on-chip active windows, DDR-backed slab/run metadata
 ```
 
-## 26. Verification Plan
+## 26. Verification
 
-Verification should start at the architectural level before RTL:
+The hardware spec depends on three companion documents:
 
-- Build an instruction encoding/decoding golden model.
-- Extend the current Rust emulator to consume encoded 64-bit instructions.
-- Add traces for thread scheduling, FDR table transitions, VMA changes, and
-  signal delivery.
-- Write directed tests for every native resource instruction and for the POSIX
-  compatibility profiles layered over them.
-- Write state-machine invariant tests for every hard block: legal state
-  transitions, invalid-state detection, commit/abort behavior, timeout recovery,
-  and reset recovery.
-- Write directed tests for `ENV_GET` scalar keys, buffer keys, bad keys, and
-  buffer faults.
-- Write directed tests for hardware fault-to-signal mapping: `SIGFPE`, `SIGILL`,
-  `SIGSEGV`, `SIGBUS`, and `SIGTRAP`.
-- Write directed tests for the weighted-fair scheduler: fixed weight table
-  charging, virtual runtime/deadline ordering, bucket/window approximation,
-  quota exhaustion and replenishment, hierarchy rollup, wakeup insertion,
-  bounded preemption latency, call-gate charge policy, affinity masks, frozen
-  domain removal, and no scheduler plugin/callback path.
-- Write directed tests for `OBJECT_CTL` `counter`, `queue`, and `memory_object`
-  primitives plus profile mappings for semaphores, channels, task events,
-  completions, shared arenas, and capability delegation.
-- Write directed tests for `DMA_CTL` copy, fill, scatter/gather, completion
-  events, cancellation, permission faults, and cache-coherence behavior.
-- Write directed tests for the Object-Backed Page Transaction Protocol: request
-  shape, page/zero/shared/retry/error replies, VMA/object generation mismatch,
-  lineage mismatch, permission and memory-type narrowing, executable provenance,
-  pending-fill cancellation, dirty-range enumeration, service-owned `msync`,
-  and timeout/fault events.
-- Write directed tests for `DOMAIN_CTL`: nested create/destroy, monotonic
-  resource limits, hierarchical accounting, freeze/resume, capability
-  delegation/revocation, stale generation rejection, checkpoint/query-state
-  records, dirty-memory tracking hooks, upcall masking, tenant-strict profile
-  enforcement, parent-inspection denial, scoped telemetry, and confidential-mode
-  refusal when production encryption is unavailable.
-- Write directed tests for `CALL_CAP`/`RET_CAP`: same-domain cross-thread calls,
-  cross-domain call gates, stale gate generation rejection, budget accounting,
-  synchronous return continuation handling, asynchronous completion delivery,
-  handoff cancellation ownership, reentrant-depth limits, and denied capability
-  passing.
-- Write directed tests for critical metadata ECC/parity injection: correction,
-  poisoning, generation preservation, and structured fault delivery.
-- Write directed tests for watchdog timeout and local engine reset before and
-  after commit points.
-- Write directed tests for telemetry capabilities: observability counters,
-  aggregate-only views, redacted tenant views, trace-ring overflow, snapshot
-  reads, destructive reads, and rejection without delegated telemetry FDRs.
-- Write directed tests for measured boot and attestation metadata: build id,
-  reset cause, bitstream/ROM identity, manifest/image/domain measurement log,
-  boot policy failure behavior, quote FDR shape, development quote flag, and
-  capability-root binding.
-- Write directed tests for assurance profiles: `ASSURANCE_DEV`,
-  `ASSURANCE_FIELD`, `ASSURANCE_HIGH`, and `ASSURANCE_FORMAL` profile bits,
-  minimum-profile domain admission, quote binding for proof/IP/toolchain/build
-  metadata, and rejection when mandatory profile controls are absent.
-- Write directed tests for tamper-evident audit streams: monotonic sequence,
-  hash-chain root, dropped-count/gap records, narrowed audit FDR disclosure,
-  quoteable audit roots, destructive/snapshot reads, and no authority encoded in
-  audit payloads.
-- Write directed tests for controlled debug and forensics: debug-control FDR
-  rights per operation, measured/audited unlock, production debug lockout,
-  domain/range/label scoping, parent-inspection denial, destructive freeze
-  policy, and crash-dump redaction.
-- Write directed tests for MLS/cross-domain labels: stale label generation
-  rejection, denied cross-label `CAP_SEND`, `MMAP`, DMA, debug, telemetry,
-  service reply, and returned-capability installs, explicit audited
-  declassification gates, and unlabeled-object policy.
-- Write directed tests for mission assurance profiles: minimum-assurance
-  admission, dependency graph hash validation, dependency-as-FDR enforcement,
-  mission-state transitions, fail-closed dispatch denial, failover without
-  authority broadening, stale service-generation rejection, audit/fault emission,
-  stale-data budget enforcement, and quoteable mission evidence.
-- Write directed tests for owner sovereignty and open assurance: owner-key boot
-  policy, unsigned development policy with explicit non-production quote,
-  reproducible artifact hash fields, owner-held debug-control FDR unlock, no
-  vendor-exclusive key requirement, no hidden management/telemetry/debug/DMA
-  path, and replacement service image authority checks.
-- Write directed tests for storage barriers: data sync, metadata sync,
-  barrier-after-commit ordering, backend flush failure, and replay/fsck-visible
-  commit records.
-- Write directed tests for namespace dispatch: authority validation, bounded
-  path slices, service reply continuation, returned-capability verification,
-  narrowing, generation rejection, revoked service rejection, and optional
-  service-approved lookup-cache invalidation.
-- Write directed tests for the Record Classification and Queue Steering Engine:
-  exact/masked/prefix/range matches, hash steering, counter updates,
-  capability-scoped destination queues, overflow events, malformed record
-  handling, packet profile parsing, IPC/event/storage completion profiles, and
-  rejection of unbounded or unauthorized rules.
-- Write randomized tests for invalid FDs, bad paths, page faults, and killed
-  blocked threads.
-- Run the same binaries against emulator and RTL simulation.
+- `formal_theorems.md`: architectural proof obligations.
+- `conformance_matrix.md`: emulator/libc/package compatibility status.
+- `verification_plan.md`: directed tests and RTL simulation milestones.
 
-RTL simulation milestones:
-
-1. Fetch/decode/ALU/load/store from DDR model.
-2. weighted-fair multi-context scheduler with `CLONE`, `YIELD`, `AWAIT`,
-   `EXIT`, virtual-time accounting, quotas, and bounded wakeup insertion.
-3. FDR table plus UART `PULL`/`PUSH`.
-4. default operating envelope plus boot manifest image loading by offset/hash:
-   root/PID 1 domains, scheduler profile, security defaults, telemetry/fault
-   FDRs, measurements, and explicit initial grants.
-5. Namespace Dispatch Engine with service-domain `OPEN_AT`, `NS_CTL`,
-   `GET_META`, and `SET_META` request/reply capability installation.
-6. `MMAP`, page-state transitions, anonymous COW, and object-backed page-fill
-   transactions.
-7. Hardware Heap Engine: `ALLOC`, `ALLOC_EX`, `FREE`, invalid free detection,
-   fork COW, exec teardown, and cross-thread frees.
-8. `CLONE`, copy-on-write, and child-exit `AWAIT`.
-9. `EXEC` commit from a boot-manifest or loader-produced exec-plan descriptor.
-10. signals, hardware fault delivery, `ENV_GET`, and futexes.
-11. Ethernet packet objects.
-12. explicit-offset `PULL`/`PUSH` block-image object.
-13. generic runtime objects with `OBJECT_CTL`, `PULL`/`PUSH`, `AWAIT`, and
-    `CAP_*`.
-14. `DMA_CTL` memory copy/fill/scatter-gather with event completion.
-15. Resource Domains with `DOMAIN_CTL`: nested limits, freeze/resume, usage
-    accounting, and capability delegation.
-16. `CALL_CAP`/`RET_CAP` same-domain and cross-domain call gates.
-17. supervisor-domain control FDR and upcall delivery as a Resource Domain
-    profile.
-18. minimal paravirtual Unix personality that boots a guest init process over
-    native LNP64 tasks and a block-image filesystem.
-19. Linux syscall compatibility runtime for a static userland smoke test:
-    open/read/write/mmap/futex/clock/wait/exec paths mapped to native opcodes.
-20. NetBSD rump-kernel style filesystem service over a block-image FDR, exposed
-    back through delegated native FDRs.
-21. PCIe Root Complex smoke test with Bus Master config-space enumeration.
-22. page-granular `pcie_bar` FDR minting and `MMAP` to device-ordered and
-    write-combining VMAs.
-23. `dma_buffer` FDR export through IOMMU and revocation after DMA quiesce.
-24. MSI/MSI-X delivery through `irq_event` FDRs and `AWAIT`.
-25. simple NVMe or NIC driver domain using BAR `LD`/`ST`, DMA buffers, and IRQ
-    events to publish high-level block or network FDRs.
-26. RAS smoke tests: metadata ECC/parity fault injection, structured fault
-    events, watchdog/local-reset recovery, observability counters, and trace
-    ring reads.
-27. measured boot and attestation skeleton: build id/reset cause keys,
-    bitstream/ROM identity, manifest/image/domain measurement log,
-    boot-control FDR, quote FDR, and development quote flag.
-28. storage service durability smoke test: service metadata commit log,
-    flush/barrier ordering, reset replay, and service-level atomic rename
-    persistence over block-image FDRs.
-29. domain checkpoint hook smoke test: freeze to quiescence, query bounded
-    state records, resume without generation churn, and reject future
-    reattachment records with invalid capability lineage.
-30. Record Classification and Queue Steering smoke test: packet envelope
-    metadata, flow hash steering, packet queue routing, IPC completion routing,
-    storage/DMA fault routing, counters, and bounded-rule rejection.
-31. tenant-strict/confidential-domain hook smoke test: mandatory hardening bits,
-    no parent memory inspection without a capability, scoped telemetry,
-    explicit shared pages, measured launch records, sealed-secret refusal on
-    measurement mismatch, and production confidential-mode refusal when the
-    implementation lacks memory encryption.
+RTL work should first prove small block-level invariants, then run the same
+resource, personality, and package-level workloads against emulator and RTL
+simulation where practical.
 
 ## 27. Main Architectural Risk
 

@@ -1,8 +1,9 @@
-Here is the draft Instruction Set Architecture (ISA) for the **LNP64 (Linux-Native Processor 64-bit)**. The design is a capability/event/domain machine with POSIX as its primary compatibility profile. It does not freeze historical Unix as the hardware model; it exposes durable primitives that make libc, Unix personalities, drivers, and runtimes straightforward to build.
-
----
-
 # LNP64 Instruction Set Architecture (Draft v1.0)
+
+LNP64 is a capability/event/domain machine with POSIX as its primary
+compatibility profile. It exposes hardware-visible primitives for libc, Unix
+personalities, drivers, runtimes, and native services without freezing a
+historical kernel as the hardware model.
 
 ## 1. Register Architecture
 To support hardware-native resource primitives, the standard register file is expanded beyond General Purpose Registers (GPRs) to include File Descriptor Registers (FDRs) and Process Control Registers (PCRs).
@@ -239,7 +240,7 @@ Here is how the general-purpose compute integrates with the LNP64 resource fabri
 
 ---
 
-### 6. Memory Access (Load/Store Architecture)
+## 6. Memory Access (Load/Store Architecture)
 The LNP64 is a strict Load/Store architecture. ALUs only operate on registers. Because the CPU manages VMAs and page faults natively, a `LOAD` that faults can park the issuing thread while the VMA/Page Engine handles resident, anonymous zero-fill, COW, guard, object-fill-pending, or failed mapping states. No conventional kernel trap is required for native LNP64 faults.
 
 *   **`LD r_dest, [r_base, r_offset]`**
@@ -255,7 +256,7 @@ The LNP64 is a strict Load/Store architecture. ALUs only operate on registers. B
 *   **`ISYNC r_addr, r_len`**
     *   *Action:* Invalidates instruction-cache state for an executable range or mapped object. This is required for JITs and code patching and uses the same hardware invalidation fabric as `EXEC` and `MPROTECT`.
 
-### 7. Arithmetic and Logic Unit (ALU)
+## 7. Arithmetic and Logic Unit (ALU)
 Standard 64-bit integer operations. Because threads are managed in hardware, the ALU pipeline reads and writes architectural state through hardware thread contexts.
 
 *   **`ADD r_dest, r_src1, r_src2`** / **`SUB r_dest, r_src1, r_src2`**
@@ -267,7 +268,7 @@ Standard 64-bit integer operations. Because threads are managed in hardware, the
 *   **`LSL`, `LSR`, `ASR`**
     *   *Action:* Logical Shift Left, Logical Shift Right, Arithmetic Shift Right.
 
-### 8. Control Flow (Branching & Execution)
+## 8. Control Flow (Branching & Execution)
 Since there is no Ring 0 / Ring 3 boundary, native control flow is about
 executing user logic and jumping to functions. Compatibility personalities may
 receive explicit supervisor upcalls, but native LNP64 resource operations are not
@@ -284,7 +285,7 @@ implemented as syscall traps.
 *   **`BEQ`, `BNE`, `BLT`, `BGT`**
     *   *Action:* Branch if Equal, Not Equal, Less Than, Greater Than (evaluates condition flags).
 
-### 9. Hybrid Resource-Compute Instructions (The "Glue")
+## 9. Hybrid Resource-Compute Instructions
 Because "everything is a capability object" is the native hardware reality, we need instructions to move data between the general compute realm (GPRs) and the resource realm (FDRs and PCRs).
 
 *   **`MOV r_dest, r_src`**
@@ -311,7 +312,7 @@ To make the LNP64 bootable and useful, v1 includes **Synchronization, Device Dri
 
 The following sections sketch those remaining pieces of the LNP64 architecture:
 
-### 10. Synchronization (The Silicon Futex)
+## 10. Synchronization
 Because the CPU manages threads in a hardware runqueue, traditional software spinlocks would waste issue slots under contention. Hardware-level concurrency controls let a thread park on a waitable condition and let the scheduler run another ready thread.
 
 *   **`LOCK.CMPXCHG r_dest, [r_addr], r_expected, r_new`**
@@ -323,7 +324,7 @@ Because the CPU manages threads in a hardware runqueue, traditional software spi
 *   **`THREAD_JOIN r_result, r_tid, r_retval_ptr`**
     *   *Action:* Parks the caller until the target same-process hardware thread exits. On completion, copies the target thread's exit value to `r_retval_ptr` when nonzero and returns `0`; returns a POSIX-style error code for invalid or self-join cases.
 
-### 11. The Device Driver Problem (PCIe Bus Master + Capability Devices)
+## 11. Device and Network Capabilities
 If resource authority is capability-native, how does the CPU know how to talk to a newly released GPU, NVMe drive, or network card? We do **not** hardwire the full PCIe enumeration and quirk universe into the CPU. The hardware provides the safety-critical substrate, and a trusted software **PCIe Bus Master** domain handles the messy device-specific reality.
 
 The v1 hardware includes:
@@ -430,7 +431,7 @@ Useful profiles include:
 
 This is not an arbitrary packet VM or eBPF replacement. V1 classifier rules are bounded, table-driven, versioned, capability-owned, and loop-free. If a record is malformed, too deep, encrypted, fragmented, extension-header-heavy, or unknown, the classifier marks it `partial` or `needs_software` and still delivers it safely to a software-owned queue. Protocol state, connection tracking, routing policy, firewall languages, TLS, Wi-Fi management, and application semantics remain in software domains.
 
-### 12. Floating Point & Vector Math (FPU/SIMD)
+## 12. Floating Point and Vector Math
 General compute isn't just integers. We need a standard IEEE 754 Floating Point Unit and SIMD (Single Instruction, Multiple Data) for multimedia and AI.
 
 *   **`FADD`, `FSUB`, `FMUL`, `FDIV`**
@@ -438,7 +439,7 @@ General compute isn't just integers. We need a standard IEEE 754 Floating Point 
 *   **`VADD.32 v_dest, v_src1, v_src2`**
     *   *Action:* Vector addition. Adds multiple 32-bit integers simultaneously across wide vector registers (`v0` - `v15`), identical to AVX/NEON.
 
-### 13. Bootstrapping (Hardware PID 1)
+## 13. Bootstrapping (Hardware PID 1)
 How does this machine actually turn on without a conventional bootloader or
 kernel? The reset controller creates the initial operating envelope and commits
 a bounded manifest-provided exec plan for PID 1. It is not a general executable
@@ -461,7 +462,7 @@ and all initial authority is represented by explicit FDR capabilities. PID 1 may
 refine policy and launch services, but it does not create the authority,
 scheduler, memory, or telemetry model from scratch.
 
-### 14. Paravirtual Unix Guest Profile
+## 14. Paravirtual Unix Guest Profile
 LNP64 does **not** add traditional kernel rings, mandatory syscall traps, or OS-owned page tables just to make Linux or NetBSD feel at home. The hardware remains capability/event/domain-native. A Unix kernel port is plausible by treating Linux/NetBSD as a paravirtual personality process, similar in spirit to User-Mode Linux or a microkernel guest.
 
 In this model, the silicon remains authoritative for:
@@ -602,7 +603,7 @@ For memory, the guest uses `MMAP`, `MUNMAP`, and `MPROTECT` to request native ha
 
 This preserves the vision: Linux and NetBSD can be personalities projected onto native capability/event/domain silicon, rather than forcing LNP64 to become another trap-and-kernel RISC machine.
 
-### Native Security Invariants
+## 15. Native Security Invariants
 
 LNP64 security is expressed through Resource Domains, VMAs, FDR capabilities, and hardware-owned object/capability generations plus lineage epochs rather than through a separate kernel ring model.
 
@@ -623,7 +624,7 @@ Hard v1 invariants:
 *   **Tenant-strict isolation:** `DOMAIN_PROFILE_TENANT_STRICT` combines mandatory memory hardening, no ambient devices, no raw interrupts, scoped telemetry, scoped DMA, explicit shared pages, and no parent memory read authority without a delegated capability.
 *   **Confidential computing hooks:** Domain records reserve measured-launch, memory-encryption/key-id, shared-page, sealed-secret, and encrypted-checkpoint fields. Software owns secret policy and checkpoint formats; hardware enforces that confidential-domain memory and sealed capabilities are not exposed through ordinary parent inspection, telemetry, trace, DMA, or fault paths.
 
-### Native RAS and Operability Invariants
+## 16. Native RAS and Operability Invariants
 
 Cloud-grade LNP64 does not require a production fleet stack in FPGA v1, but the
 first hardware version must preserve the architectural hooks that make reliable
@@ -643,7 +644,7 @@ Hard v1 requirements:
 *   **Storage durability contract:** Storage services and block objects define commit points, flush/barrier ordering, and replay/fsck expectations before RTL freeze. Live-system atomicity is not enough; power-fail durability must be specified, but general writable filesystem policy is not implemented in hardware.
 *   **Deterministic failure containment proofs:** Each hardware engine must have a small enumerated state model, explicit commit/abort boundaries, local reset/degraded states, and proof or exhaustive-test obligations that faults cannot silently create authority, corrupt unrelated domains, or require full-chip reset when local recovery is possible.
 
-### Native Adoption Strategy
+## 17. Native Adoption Strategy
 The native path should be faster, safer, or simpler than recreating the same
 behavior in software. v1 keeps this boundary:
 
