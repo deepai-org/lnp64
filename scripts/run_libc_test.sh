@@ -5,6 +5,7 @@ lnp64=(cargo run --quiet --)
 tests=(
   basename
   dirname
+  string_strcspn
   string_strstr
 )
 

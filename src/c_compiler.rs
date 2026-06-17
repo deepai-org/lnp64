@@ -3476,8 +3476,7 @@ impl CodeGen {
             self.globals.insert(name.clone(), label.clone());
             self.global_arrays.insert(name.clone());
             self.global_byte_arrays.insert(name.clone());
-            self.data
-                .insert(label, format!(".string \"{}\"", escape_asm_string(value)));
+            self.data.insert(label, c_string_data(value));
         }
         self.text.push(".text".to_string());
         let entry_name = if program.functions.iter().any(|f| f.name == "_start") {
@@ -13030,10 +13029,7 @@ impl CodeGen {
     fn intern_string(&mut self, value: &str) -> String {
         let label = format!("str_{}", self.string_id);
         self.string_id += 1;
-        self.data.insert(
-            label.clone(),
-            format!(".string \"{}\"", escape_asm_string(value)),
-        );
+        self.data.insert(label.clone(), c_string_data(value));
         label
     }
 
@@ -13275,20 +13271,27 @@ fn next_format_spec(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Opt
     chars.next()
 }
 
-fn escape_asm_string(value: &str) -> String {
-    let mut out = String::new();
+fn c_string_data(value: &str) -> String {
+    let bytes: Vec<String> = c_string_bytes(value)
+        .into_iter()
+        .chain(std::iter::once(0))
+        .map(|byte| byte.to_string())
+        .collect();
+    format!(".bytes {}", bytes.join(", "))
+}
+
+fn c_string_bytes(value: &str) -> Vec<u8> {
+    let mut bytes = Vec::new();
     for ch in value.chars() {
-        match ch {
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            '\0' => out.push_str("\\0"),
-            '\\' => out.push_str("\\\\"),
-            '"' => out.push_str("\\\""),
-            other => out.push(other),
+        let code = ch as u32;
+        if code <= 0xff {
+            bytes.push(code as u8);
+        } else {
+            let mut buf = [0u8; 4];
+            bytes.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
         }
     }
-    out
+    bytes
 }
 
 fn c_runtime_helpers() -> &'static str {
@@ -15758,6 +15761,29 @@ mod tests {
     }
 
     #[test]
+    fn high_byte_c_escapes_emit_single_bytes() {
+        let source = r#"
+        const char global[] = "\xff";
+
+        int main() {
+            char *s;
+            s = "\xff\x80";
+            if (s[0] != 255) return 1;
+            if (s[1] != 128) return 2;
+            if (s[2] != 0) return 3;
+            if (global[0] != 255) return 4;
+            if (global[1] != 0) return 5;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains(".bytes 255, 128, 0"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn parses_unary_plus_expressions() {
         let source = r#"
         int positive(void) {
@@ -16259,7 +16285,10 @@ int main() {
         }
         "#;
         let asm = compile(source).unwrap();
-        assert!(asm.contains("dynamic loading not supported"), "{asm}");
+        assert!(
+            asm.contains(&c_string_data("dynamic loading not supported")),
+            "{asm}"
+        );
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
