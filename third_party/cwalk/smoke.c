@@ -8,6 +8,7 @@ static int expect_path(const char *got, const char *want) {
 
 int main(void) {
     char buffer[128];
+    char small[6];
     const char *base;
     const char *paths[4];
     size_t length;
@@ -59,12 +60,34 @@ int main(void) {
     written = cwk_path_get_intersection("/srv/www/root/file", "/srv/www/root/assets/app.css");
     if (written != 13) return 20;
 
-    if (cwk_path_guess_style("C:\\temp\\file.txt") != CWK_STYLE_WINDOWS) return 21;
+    written = cwk_path_join("/alpha", "beta/gamma", small, sizeof(small));
+    if (written != 17) return 21;
+    if (small[sizeof(small) - 1] != 0) return 22;
+    if (strncmp(small, "/alph", sizeof(small) - 1) != 0) return 23;
+
+    written = cwk_path_normalize("", buffer, sizeof(buffer));
+    if (written != 0) return 24;
+    if (!expect_path(buffer, "")) return 25;
+
+    cwk_path_get_basename("/", &base, &length);
+    if (length != 0) return 26;
+    if (base != 0) return 27;
+    if (cwk_path_get_first_segment("////", &segment)) return 28;
+
+    written = cwk_path_normalize("///alpha////beta//", buffer, sizeof(buffer));
+    if (written != 11) return 29;
+    if (!expect_path(buffer, "/alpha/beta")) return 30;
+
+    if (cwk_path_guess_style("C:\\temp\\file.txt") != CWK_STYLE_WINDOWS) return 31;
     cwk_path_set_style(CWK_STYLE_WINDOWS);
-    if (!cwk_path_is_absolute("C:\\temp\\file.txt")) return 22;
+    if (!cwk_path_is_absolute("C:\\temp\\file.txt")) return 32;
     written = cwk_path_normalize("C:\\temp\\..\\out\\file.txt", buffer, sizeof(buffer));
-    if (written != 15) return 23;
-    if (!expect_path(buffer, "C:\\out\\file.txt")) return 24;
+    if (written != 15) return 33;
+    if (!expect_path(buffer, "C:\\out\\file.txt")) return 34;
+
+    written = cwk_path_normalize("C:/temp\\..//out\\file.txt", buffer, sizeof(buffer));
+    if (written != 15) return 35;
+    if (!expect_path(buffer, "C:\\out\\file.txt")) return 36;
 
     puts("cwalk ok");
     return 0;
