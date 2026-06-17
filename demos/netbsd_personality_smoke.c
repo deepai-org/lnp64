@@ -377,6 +377,28 @@ int check_domain_and_gate() {
     return 0;
 }
 
+int check_domain_isolation() {
+    int domain;
+    int info;
+    int ptr;
+    int memory_limit;
+    int pid_limit;
+    int fdr_limit;
+    info = alloc(208);
+    if (domain_query(0, info) != 200) return 1;
+    memory_limit = load(info + 88) + 65536;
+    pid_limit = load(info + 96) + 1;
+    fdr_limit = load(info + 104) + 1;
+    domain = domain_create(memory_limit, pid_limit, fdr_limit, 63);
+    if (domain == -1) return 2;
+    if (domain_attach_self(domain) != 0) return 3;
+    ptr = alloc(131072);
+    if (ptr != -1) return 4;
+    if (domain_detach_self() == 0) return 5;
+    if (domain_destroy(domain) != 0) return 6;
+    return 0;
+}
+
 int main() {
     int rc;
     if (check_shell_command(1) != 0) return 1;
@@ -405,6 +427,8 @@ int main() {
     if (rc != 0) return 60 + rc;
     rc = check_domain_and_gate();
     if (rc != 0) return 70 + rc;
+    rc = check_domain_isolation();
+    if (rc != 0) return 140 + rc;
     write(1, "netbsd personality smoke ok\n", 28);
     return 0;
 }
