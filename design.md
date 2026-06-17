@@ -50,9 +50,9 @@ System calls are replaced by direct hardware VFS/File Engine commands. The binar
 *   **`CLOSE r_result, r_fd`**
     *   *Action:* Releases an FDR capability reference.
 *   **`GET_META r_result, r_fd, r_meta_ptr, r_flags`** / **`SET_META r_result, r_fd, r_meta_ptr, r_flags`**
-    *   *Action:* Reads or mutates metadata on an opened object: stat, chmod, chown, utime, fd flags, rights, and backend-specific metadata.
+    *   *Action:* Reads or mutates metadata on an opened object: stat, chmod, chown, utime, fd flags, rights, durability/flush state, observability counters, and backend-specific metadata.
 *   **`NS_CTL r_result, r_argblock`**
-    *   *Action:* Performs namespace mutations relative to directory FDRs: mkdirat, unlinkat, renameat, linkat, symlinkat, readlinkat, chdir, and delegated namespace operations.
+    *   *Action:* Performs namespace mutations relative to directory FDRs: mkdirat, unlinkat, renameat, linkat, symlinkat, readlinkat, chdir, delegated namespace operations, and storage barrier/flush operations needed to make metadata commit points durable.
 *   **`DUP`**
     *   *Action:* Duplicates or moves FDR capabilities. Exact destinations and narrowing flags are encoded in the instruction or argument block. Source-level `pipe()` lowers to `OBJECT_CTL create queue(profile=pipe)` plus narrowed read/write endpoint capabilities.
 *   **`CAP_DUP`, `CAP_SEND`, `CAP_RECV`, `CAP_REVOKE`**
@@ -64,7 +64,7 @@ System calls are replaced by direct hardware VFS/File Engine commands. The binar
 *   **`DMA_CTL r_result, r_argblock`**
     *   *Action:* Submits bulk memory/object operations to the DMA Fabric: large copy, fill/zero, scatter/gather copy, and optional checksum/hash profiles. Small operations may complete synchronously; long operations can complete through an `event_queue` FDR or a `counter` completion profile. DMA always runs through VMA permissions, capability checks, IOMMU/device scope, and Resource Domain accounting.
 *   **`DOMAIN_CTL r_result, r_argblock`**
-    *   *Action:* Creates, configures, queries, freezes, resumes, or destroys nested Resource Domains. Virtual machines, containers, cgroups, jails, sandboxes, and supervisor domains are profiles of the same domain primitive.
+    *   *Action:* Creates, configures, queries, freezes, resumes, snapshots, restores, or destroys nested Resource Domains. Virtual machines, containers, cgroups, jails, sandboxes, and supervisor domains are profiles of the same domain primitive. Snapshot/restore is a v1 metadata hook: live migration is not required, but `DOMAIN_CTL` must expose enough quiesced state for future serialization of threads, FDRs, VMAs, waitables, and capability lineage.
 *   **`CALL_CAP r_result, r_call_gate_fd, r_arg0, r_arg1`** / **`RET_CAP r_result, r_value0, r_value1`**
     *   *Action:* Performs a fast call and return through a callable FDR capability. Call gates may target another thread, service queue, driver service, supervisor service, runtime actor, or Resource Domain entry point. Hot calls use bounded register arguments and pre-provisioned target state; cold domain/container/VM creation remains a `DOMAIN_CTL` operation. Call gates support synchronous, asynchronous, and handoff profiles.
 *   **`ERRNO_GET r_dest`** / **`ERRNO_SET r_src`**
@@ -241,9 +241,10 @@ Upon receiving power, the LNP64 executes a hardwired reset sequence:
 1.  Initializes the hardware VMA tree and runqueue.
 2.  Creates the initial hardware process/thread context (PID 1, TID 1, UID 0).
 3.  Mounts the boot VFS from SD, SPI flash, or another already-described boot backend.
-4.  If a boot manifest names a PCIe Bus Master and PCIe is present, creates that privileged process and grants it the Root Complex control FDR; otherwise PCIe enumeration is deferred.
-5.  Automatically executes an internal equivalent of `OPEN_AT "/sbin/init"` and `EXEC` on that executable FDR.
-6.  If `/sbin/init` is missing, the reset controller enters a hardware panic state and emits board diagnostics.
+4.  Reads a boot manifest, computes a manifest/image measurement, and exposes the measurement log and FPGA build id through `ENV_GET` and a boot-control FDR. Signed boot images are optional for FPGA v1, but the measurement path is architectural.
+5.  If a boot manifest names a PCIe Bus Master and PCIe is present, creates that privileged process and grants it the Root Complex control FDR; otherwise PCIe enumeration is deferred.
+6.  Automatically executes an internal equivalent of `OPEN_AT "/sbin/init"` and `EXEC` on that executable FDR.
+7.  If `/sbin/init` is missing, the reset controller enters a hardware panic state and emits board diagnostics.
 
 ### 14. Paravirtual Unix Guest Profile
 LNP64 does **not** add traditional kernel rings, mandatory syscall traps, or OS-owned page tables just to make Linux or NetBSD feel at home. The hardware remains POSIX-native. A Unix kernel port is plausible by treating Linux/NetBSD as a paravirtual personality process, similar in spirit to User-Mode Linux or a microkernel guest.
@@ -314,6 +315,23 @@ Hard v1 invariants:
 *   **Revocation:** `CAP_REVOKE`, `DOMAIN_CTL`, `MUNMAP`, `MPROTECT`, and object teardown invalidate cached descriptors, mappings, event sources, call gates, and DMA exports before authority is reused.
 *   **Sealed and narrowed capabilities:** Authority can only move by explicit capability operations. Delegation may narrow rights, ranges, event masks, memory permissions, device scope, and transfer rights. Sealed capabilities can be used or transferred according to their rights but cannot be broadened or reminted by receivers.
 *   **DMA isolation:** Internal DMA, `DMA_CTL`, file I/O DMA, Ethernet, SD/SPI, and PCIe requester DMA all pass through VMA/capability checks, the coherent DMA fabric, Resource Domain accounting, and IOMMU/device scope. No device may DMA to arbitrary DDR or bypass revocation.
+
+### Native RAS and Operability Invariants
+
+Cloud-grade LNP64 does not require a production fleet stack in FPGA v1, but the
+first hardware version must preserve the architectural hooks that make reliable
+operation possible.
+
+Hard v1 requirements:
+
+*   **Critical metadata ECC/parity:** FDR tables, VMA descriptors, domain tables, scheduler queues, event queues, heap metadata, DMA descriptors, and VFS metadata carry parity or ECC according to width and storage class. Corruption becomes a fault event, not silent authority reuse.
+*   **Fault event model:** Engine faults, ECC/parity faults, invalid metadata, poisoned pages, DMA faults, watchdog timeouts, and boot measurement failures are delivered as structured events to PID 1, a supervisor Resource Domain, or a configured control FDR.
+*   **Watchdogs and local reset:** Long-latency engines have bounded timeout states, abort paths, and local reset/degraded modes. A stuck File, VMA, DMA, Capability, Event, or Domain engine should not require full-chip reset when local recovery is possible.
+*   **Observability counters:** Domains and engines expose counters for issued/completed/aborted operations, queue depth, stalls, faults, bytes moved, scheduler transitions, capability sends/revokes, and resource pressure.
+*   **Trace ring:** FPGA v1 includes a small optional trace ring for scheduler transitions, domain events, faults, capability delegation/revocation, call-gate calls, DMA completions, and storage barriers.
+*   **Measured boot skeleton:** The boot path records build id, boot manifest hash, image measurements, and selected boot policy into read-only metadata visible to PID 1 and delegated control domains.
+*   **Snapshot/restore hooks:** `DOMAIN_CTL freeze/query-state/resume` must define quiescent state boundaries for future checkpointing, even if live migration is not implemented in v1.
+*   **Storage durability contract:** VFS metadata operations define commit points, flush/barrier ordering, and replay/fsck expectations before RTL freeze. Live-system atomicity is not enough; power-fail durability must be specified.
 
 ### The Final Verdict
 With these additions, the LNP64 has a coherent v1 shape: it boots into an `init` process, represents files and threads as hardware-managed resources, handles native page faults in VMA/MMU engines, and routes I/O through capability-checked FDR objects without a conventional kernel syscall path.

@@ -43,6 +43,10 @@ LNP64 v1 must support:
 - Native security invariants: W^X, NX data defaults, ASLR, guard pages,
   hardware entropy, generation-checked objects, revocation, sealed/narrowed
   capabilities, and DMA isolation as Resource Domain and capability policy.
+- V1 operability hooks: critical metadata ECC/parity, structured fault events,
+  per-engine watchdog/reset paths, observability counters, a small trace ring,
+  measured boot metadata, snapshot/restore hooks, and explicit storage
+  flush/barrier semantics.
 - Deterministic instruction decode with a fixed binary encoding.
 - Hardware-owned waitable/capability objects with local state, bounded
   transitions, and event delivery, usable by ordinary runtimes as well as
@@ -106,6 +110,7 @@ The chip is organized as these blocks:
 - Resource Domain Engine.
 - Supervisor Domain and Upcall Engine.
 - Entropy and Randomization Engine.
+- Fault, Telemetry, and Trace Engine.
 - PCIe Root Complex.
 - PCIe IOMMU / DMA Remapper.
 - PCIe MSI/MSI-X Event Router.
@@ -264,6 +269,9 @@ Wakeup/event wires:
   acknowledgement.
 - `icache_inv_req` / `icache_inv_ack`: executable mapping invalidation.
 - `fatal_fault`: decode, execute, LSU, or bus fault must enter Signal Engine.
+- `ras_fault`: ECC/parity, metadata-corruption, watchdog, local-reset, storage,
+  or DMA isolation fault must enter the Fault, Telemetry, and Trace Engine.
+- `trace_event`: compact event record is available for the optional trace ring.
 
 Large or sparse events are carried as DDR-backed event records. The wire only
 announces that an event record exists and identifies the active-window slot or
@@ -273,6 +281,11 @@ Shared table access:
 
 - FDR, process, thread, VMA, heap, futex, event-queue, and VFS metadata live in
   DDR-backed tables with small on-chip caches.
+- Critical authority-bearing metadata is parity- or ECC-protected according to
+  storage width and target FPGA support. At minimum this includes FDR entries,
+  VMA descriptors, domain descriptors, scheduler/runqueue entries, event queue
+  heads/tails, heap metadata, DMA descriptors, and VFS namespace/object
+  metadata.
 - Each table has one owning engine that arbitrates mutation. Other engines
   access it through request channels or read-only cached snapshots.
 - Non-owner engines must not independently walk or mutate another engine's DDR
@@ -369,6 +382,13 @@ Hard-block robustness checklist:
   and generation validation.
 - watchdogs can force a stuck engine command into a bounded abort path or
   hardware panic state.
+- local reset is defined per engine: either drain/abort outstanding commands and
+  reinitialize local state from protected metadata, or enter a degraded state
+  that rejects new commands and emits `ras_fault` until PID 1/supervisor action.
+- parity/ECC faults are classified before recovery: correctable faults update
+  counters and continue after repair; uncorrectable faults poison the affected
+  object/page/descriptor and emit a structured fault event before any authority
+  is reused.
 - formal or exhaustive tests cover each module's state-transition graph before
   RTL freeze.
 
@@ -857,6 +877,20 @@ ownership:
 
 The hardware engines may be internally pipelined, but they must expose atomic
 architectural transitions to threads.
+
+Critical metadata protection:
+
+- FDR table entries, process/thread records, VMA descriptors, domain records,
+  scheduler queue links, wait queue heads/tails, event queue indices, heap
+  metadata, DMA descriptors, and VFS object metadata carry parity or ECC.
+- Correctable errors increment per-engine and per-domain counters and repair the
+  stored word where the target memory permits writeback.
+- Uncorrectable errors poison the affected object, descriptor, page, or queue
+  entry, prevent new authority-bearing operations through it, and emit a
+  structured `ras_fault` event.
+- Object generations are never advanced past an uncorrectable metadata fault
+  without supervisor/PID 1 acknowledgement, preventing corrupt metadata from
+  being silently recycled as fresh authority.
 
 ## 10. External DDR Memory Model
 
@@ -1554,6 +1588,23 @@ Crash recovery requirement:
   commits against SD/SPI/PCIe block-device flush completion.
 - Until this is specified, LNPFS is a format direction, not a frozen storage
   format.
+
+Minimal FPGA v1 storage durability contract:
+
+- every metadata mutation has a named prepare record, commit record, and replay
+  rule, even if the first implementation uses a simple append log.
+- `NS_CTL` and `SET_META` variants can request `sync_metadata`, `sync_data`, or
+  `barrier_after_commit` semantics.
+- `GET_META` exposes dirty/committed/error state for an opened object or
+  filesystem root.
+- `PUSH` to a regular file may complete before media persistence unless the fd
+  or operation requests synchronous data semantics.
+- a storage barrier completes only after prior data writes, metadata log writes,
+  and backend flush commands have reached the documented persistence point.
+- `FENCE` orders CPU/cache/DMA visibility; storage durability requires the
+  explicit file/VFS barrier or synchronous metadata/data flag.
+- after reset, the boot VFS mount path must replay or reject the writable
+  filesystem before exposing it to PID 1.
 
 ### 14.4 SPI Flash
 
@@ -2396,6 +2447,8 @@ Each domain contains:
 - security policy bits: ASLR enable/disable constraints, JIT/loader W^X
   exception authority, executable-memory source policy, entropy quota, and
   hardening profile.
+- snapshot state: frozen/quiescing/quiesced flag, dirty-memory tracking root,
+  exportable state cursor, and restore-generation base.
 - freeze/park state and teardown policy.
 
 Hard invariants:
@@ -2444,6 +2497,21 @@ set or query limits, snapshot usage counters, delegate or revoke capabilities,
 attach process subtrees, configure upcall policy, and freeze/resume a subtree.
 `SUPERVISOR_CTL` remains as a narrower compatibility/source-level profile for
 domains whose main purpose is upcall supervision.
+
+Snapshot/restore hooks are v1 architectural metadata hooks, not a promise of
+full live migration:
+
+- `freeze` drives a subtree toward a quiescent boundary: no running threads,
+  no new DMA descriptors, no in-progress metadata commits, and all call-gate
+  continuations either parked or canceled according to policy.
+- `query-state` exposes bounded records for thread contexts, FDR tables, VMA
+  ranges, event queues, waitable objects, heap arenas, pending signals, and
+  capability lineage/generation metadata.
+- `resume` restarts a quiesced domain without changing object generations.
+- future `restore` creates a new domain from a serialized state image with a
+  fresh domain id/generation base and explicit capability reattachment.
+- dirty-memory tracking is optional in FPGA v1 but the VMA Engine must reserve
+  the state bit or counter hook so checkpointing does not require redesign.
 
 ### 21.3 Paravirtual Unix Guest Profile
 
@@ -2670,21 +2738,38 @@ Reset sequence:
 1. Hardware reset controller initializes FPGA-local RAM structures.
 2. DDR controller calibration completes.
 3. Page allocator marks DDR regions free or reserved.
-4. VFS engine mounts boot backend from SD or SPI flash.
-5. FDR table template binds `fd0`, `fd1`, `fd2` to UART.
-6. If PCIe is present, Root Complex link training completes, but enumeration is
+4. Reset controller records FPGA build id, configuration hash where available,
+   and reset cause into the boot measurement log.
+5. VFS engine mounts boot backend from SD or SPI flash.
+6. FDR table template binds `fd0`, `fd1`, `fd2` to UART.
+7. If PCIe is present, Root Complex link training completes, but enumeration is
    deferred until a Bus Master executable is loaded.
-7. The boot manifest is read from the boot backend. It names `/sbin/init` and
+8. The boot manifest is read from the boot backend. It names `/sbin/init` and
    may optionally name a Bus Master executable such as `/sbin/pcie-busmaster`.
-8. If the manifest names a Bus Master, the boot engine creates a privileged
+   The manifest bytes and named executable images are measured into the boot
+   measurement log. Signature verification is optional for FPGA v1, but the
+   measurement log is architectural.
+9. If the manifest names a Bus Master, the boot engine creates a privileged
    process for it, grants the PCIe Root Complex control FDR, loads it with the
    same `EXEC` machinery, and parks it until PID 1 is ready to coordinate boot.
    If no Bus Master is named, PCIe enumeration is deferred to native userland.
-9. Process Engine creates PID 1, TID 1, UID 0.
-10. VFS resolves `/sbin/init`.
-11. `EXEC` engine loads `/sbin/init` into PID 1.
-12. Scheduler marks PID 1 and any boot-manifest Bus Master ready.
-13. Fetch begins at PID 1 entry point.
+10. Process Engine creates PID 1, TID 1, UID 0.
+11. VFS resolves `/sbin/init`.
+12. `EXEC` engine loads `/sbin/init` into PID 1.
+13. Scheduler marks PID 1 and any boot-manifest Bus Master ready.
+14. Fetch begins at PID 1 entry point.
+
+Measured boot skeleton:
+
+- `ENV_GET` exposes immutable scalar keys for FPGA build id, ISA revision,
+  reset cause, boot measurement count, and boot policy flags.
+- a read-only boot-control FDR exposes the measurement log to PID 1 and any
+  delegated control domain.
+- boot measurement failure emits a structured fault event and either continues
+  in permissive FPGA-development mode or enters hardware panic according to boot
+  policy.
+- remote attestation and production key management are not v1 FPGA requirements,
+  but the measurement records must be stable enough to feed those later.
 
 If no boot image is found, the reset controller enters a hardware panic state
 that emits a UART diagnostic and blinks a board LED pattern.
@@ -2745,6 +2830,101 @@ Operation classes:
 Hardware engines must never deliver partial architectural writes to user memory
 unless the instruction's POSIX result reports the number of bytes actually
 transferred. Metadata operations are atomic at their documented commit point.
+
+### 24.2 Structured Fault Event Model
+
+Software-visible failures are not limited to POSIX `ERRNO` or synchronous
+signals. Hardware engines also emit structured fault events through the Fault,
+Telemetry, and Trace Engine.
+
+Fault event sources:
+
+- correctable and uncorrectable ECC/parity faults.
+- poisoned page/object/descriptor access.
+- malformed or generation-stale metadata detected by an owner engine.
+- watchdog timeout or local engine reset.
+- DMA translation, permission, direction, IOMMU, or coherence fault.
+- storage barrier or media flush failure.
+- boot manifest/image measurement failure.
+- internal invariant violation that is recoverable enough to report.
+
+Fault event records include:
+
+- event class and severity.
+- engine id.
+- Resource Domain id/generation where applicable.
+- PID/TID where applicable.
+- object id/generation or physical/virtual page token where applicable.
+- operation id.
+- corrected/poisoned/degraded/panic disposition.
+- compact implementation-specific syndrome bits.
+
+Delivery rules:
+
+- domain-scoped faults route to the owning domain's supervisor/control FDR when
+  one is configured.
+- otherwise recoverable system faults route to PID 1's control/event FDR.
+- fatal unrecoverable faults enter hardware panic after attempting UART/trace
+  emission.
+- repeated fault storms may be coalesced, but the coalesced record must expose
+  a lost-count field.
+
+### 24.3 Observability Counters and Trace Ring
+
+FPGA v1 includes low-cost counters, not a full dynamic tracing system.
+
+Per-domain counters:
+
+- CPU dispatch ticks, runnable time, blocked time, and forced parks.
+- current and peak threads, FDRs, VMAs, heap pages, memory-object pages, and
+  event records.
+- `PULL`/`PUSH` ops and bytes, DMA ops and bytes, storage barriers, faults,
+  signals, capability sends/receives/revokes, call-gate calls, and domain
+  freeze/resume events.
+
+Per-engine counters:
+
+- commands issued/completed/aborted/canceled.
+- local queue depth high-water marks.
+- DDR requests, cache hits/misses where tracked, DMA descriptors, stalls,
+  watchdog near-misses/timeouts, local resets, ECC corrections, and poisoned
+  objects.
+
+Access paths:
+
+- `DOMAIN_CTL query` returns domain usage and pressure snapshots.
+- `GET_META` on control FDRs returns engine counters, boot measurements, and
+  object-local counters where permitted.
+- supervisor/control FDRs can subscribe to threshold events for pressure, fault,
+  and watchdog counters.
+
+The trace ring is optional but recommended for FPGA v1:
+
+- fixed-size BRAM or DDR ring with a hardware write pointer and generation.
+- records scheduler transitions, wait/ready transitions, `CALL_CAP` entry/exit,
+  domain freeze/resume, capability send/revoke, DMA completion/fault, storage
+  barrier completion/failure, and structured fault events.
+- readable through a control FDR with destructive or snapshot read mode.
+- overflow is explicit: records include wrap generation and dropped-count
+  metadata.
+
+### 24.4 Watchdogs and Local Engine Reset
+
+Each long-latency engine has a watchdog budget in cycles or fabric ticks.
+
+Watchdog behavior:
+
+- before commit, a timed-out operation aborts if the engine can prove no
+  architectural state was published.
+- after commit, the engine must complete, roll forward, or enter degraded mode;
+  it may not silently roll back published state.
+- local reset drains or cancels ingress queues, invalidates local caches, reloads
+  protected metadata if safe, increments reset counters, and emits a fault
+  event.
+- engines whose owner metadata is corrupt enter degraded mode and reject new
+  commands until supervisor/PID 1 policy clears or reinitializes them.
+- watchdogs are not normal flow control. Persistent timeouts are treated as RAS
+  faults and are visible in counters and the trace ring.
 
 ## 25. FPGA Resource Strategy
 
@@ -2819,12 +2999,24 @@ Verification should start at the architectural level before RTL:
   events, cancellation, permission faults, and cache-coherence behavior.
 - Write directed tests for `DOMAIN_CTL`: nested create/destroy, monotonic
   resource limits, hierarchical accounting, freeze/resume, capability
-  delegation/revocation, stale generation rejection, and upcall masking.
+  delegation/revocation, stale generation rejection, snapshot/query-state
+  records, dirty-memory tracking hooks, and upcall masking.
 - Write directed tests for `CALL_CAP`/`RET_CAP`: same-domain cross-thread calls,
   cross-domain call gates, stale gate generation rejection, budget accounting,
   synchronous return continuation handling, asynchronous completion delivery,
   handoff cancellation ownership, reentrant-depth limits, and denied capability
   passing.
+- Write directed tests for critical metadata ECC/parity injection: correction,
+  poisoning, generation preservation, and structured fault delivery.
+- Write directed tests for watchdog timeout and local engine reset before and
+  after commit points.
+- Write directed tests for observability counters and trace-ring overflow,
+  snapshot reads, and destructive reads.
+- Write directed tests for measured boot metadata: build id, reset cause,
+  manifest/image measurement log, and boot policy failure behavior.
+- Write directed tests for storage barriers: data sync, metadata sync,
+  barrier-after-commit ordering, backend flush failure, and replay/fsck-visible
+  commit records.
 - Write randomized tests for invalid FDs, bad paths, page faults, and killed
   blocked threads.
 - Run the same binaries against emulator and RTL simulation.
@@ -2866,6 +3058,16 @@ RTL simulation milestones:
 24. MSI/MSI-X delivery through `irq_event` FDRs and `AWAIT`.
 25. simple NVMe or NIC driver domain using BAR `LD`/`ST`, DMA buffers, and IRQ
     events to publish high-level block or network FDRs.
+26. RAS smoke tests: metadata ECC/parity fault injection, structured fault
+    events, watchdog/local-reset recovery, observability counters, and trace
+    ring reads.
+27. measured boot skeleton: build id/reset cause keys, manifest/image
+    measurement log, and boot-control FDR.
+28. storage durability smoke test: metadata commit log, flush/barrier ordering,
+    reset replay, and atomic rename persistence.
+29. domain snapshot hook smoke test: freeze to quiescence, query serialized
+    state records, resume without generation churn, and reject restore images
+    with invalid capability lineage.
 
 ## 27. Main Architectural Risk
 

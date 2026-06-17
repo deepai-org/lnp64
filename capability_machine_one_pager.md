@@ -65,6 +65,13 @@ narrowed capabilities, and DMA isolation are enforced by Resource Domains, VMAs,
 FDRs, and the coherent DMA/IOMMU path rather than by an ambient privileged
 kernel path.
 
+The first FPGA target also keeps cloud-operability hooks in the architecture:
+critical metadata ECC/parity, structured fault events, per-engine watchdog and
+local reset paths, observability counters, a small trace ring, measured boot
+metadata, Resource Domain snapshot hooks, and explicit storage flush/barrier
+semantics. These are not a full fleet-management stack, but they keep reliability
+and diagnosis from becoming afterthoughts.
+
 Service boundaries are built from call gates. A pre-provisioned domain or worker
 thread can expose a callable FDR. `CALL_CAP` validates the gate, transfers small
 register arguments, accounts resource usage, and hands the target to the
