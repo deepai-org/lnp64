@@ -9765,7 +9765,7 @@ impl CodeGen {
                 let arg1 = self.emit_expr(&args[2])?;
                 let dst = self.alloc_reg()?;
                 self.text
-                    .push(format!("  CALL_CAP r{dst}, fd{fd}, r{arg0}, r{arg1}"));
+                    .push(format!("  GATE_CALL r{dst}, fd{fd}, r{arg0}, r{arg1}"));
                 Ok(dst)
             }
             "__lnp_call_cap" | "__lnp_call" => {
@@ -9777,7 +9777,7 @@ impl CodeGen {
                 let arg1 = self.emit_expr(&args[2])?;
                 let dst = self.alloc_reg()?;
                 self.text
-                    .push(format!("  CALL_CAP r{dst}, fd{fd}, r{arg0}, r{arg1}"));
+                    .push(format!("  GATE_CALL r{dst}, fd{fd}, r{arg0}, r{arg1}"));
                 Ok(dst)
             }
             "ret_cap" => {
@@ -9787,7 +9787,7 @@ impl CodeGen {
                 let value0 = self.emit_expr(&args[0])?;
                 let value1 = self.emit_expr(&args[1])?;
                 self.text
-                    .push(format!("  RET_CAP r0, r{value0}, r{value1}"));
+                    .push(format!("  GATE_RETURN r0, r{value0}, r{value1}"));
                 Ok(0)
             }
             "pid" | "tid" | "uid" | "gid" | "getpid" | "getppid" | "gettid" | "getuid"
@@ -22073,7 +22073,7 @@ int main() {
             "AWAIT",
             "PULL",
             "DOMAIN_CTL",
-            "CALL_CAP",
+            "GATE_CALL",
         ] {
             assert!(asm.contains(expected), "missing {expected} in:\n{asm}");
         }
@@ -22856,8 +22856,8 @@ int main() {
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains("OBJECT_CTL"), "{asm}");
-        assert!(asm.contains("CALL_CAP"), "{asm}");
-        assert!(asm.contains("RET_CAP"), "{asm}");
+        assert!(asm.contains("GATE_CALL"), "{asm}");
+        assert!(asm.contains("GATE_RETURN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);

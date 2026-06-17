@@ -32,8 +32,8 @@ required_native=(
   CAP_SEND
   CAP_RECV
   DOMAIN_CTL
-  CALL_CAP
-  RET_CAP
+  GATE_CALL
+  GATE_RETURN
 )
 
 for token in "${required_native[@]}"; do

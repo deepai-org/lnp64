@@ -643,7 +643,7 @@ impl Parser {
                 arity(2)?;
                 Instr::DomainCtl(reg(&args[0])?, reg(&args[1])?)
             }
-            "CALL_CAP" => {
+            "GATE_CALL" | "CALL_CAP" => {
                 arity(4)?;
                 Instr::CallCap(
                     reg(&args[0])?,
@@ -652,7 +652,7 @@ impl Parser {
                     reg(&args[3])?,
                 )
             }
-            "RET_CAP" => {
+            "GATE_RETURN" | "RET_CAP" => {
                 arity(3)?;
                 Instr::RetCap(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
@@ -981,6 +981,36 @@ mod tests {
         assert!(matches!(
             program.instructions[3],
             Instr::OpenFdDyn(Reg(10), Reg(11), Reg(12))
+        ));
+    }
+
+    #[test]
+    fn parses_gate_and_legacy_call_cap_aliases() {
+        let program = Program::parse(
+            r#"
+            .text
+              GATE_CALL r1, fd2, r3, r4
+              GATE_RETURN r5, r6, r7
+              CALL_CAP r8, fd9, r10, r11
+              RET_CAP r12, r13, r14
+            "#,
+        )
+        .unwrap();
+        assert!(matches!(
+            program.instructions[0],
+            Instr::CallCap(Reg(1), FdReg(2), Reg(3), Reg(4))
+        ));
+        assert!(matches!(
+            program.instructions[1],
+            Instr::RetCap(Reg(5), Reg(6), Reg(7))
+        ));
+        assert!(matches!(
+            program.instructions[2],
+            Instr::CallCap(Reg(8), FdReg(9), Reg(10), Reg(11))
+        ));
+        assert!(matches!(
+            program.instructions[3],
+            Instr::RetCap(Reg(12), Reg(13), Reg(14))
         ));
     }
 
