@@ -1114,6 +1114,8 @@ impl Machine {
                 if let Some(fd) = self.checked_fd_index(fd)? {
                     let count = self.read_fd_index(fd, addr, len)?;
                     self.write_reg(Reg(1), count as u64)?;
+                } else {
+                    self.write_reg(Reg(1), 0)?;
                 }
             }
             Instr::PreadFd(fd, buf, len, offset) => {
@@ -1131,6 +1133,8 @@ impl Machine {
                 let offset = self.read_reg(offset)?;
                 if let Some(fd) = self.checked_fd_index(fd)? {
                     self.pread_fd_index(fd, addr, len, offset)?;
+                } else {
+                    self.write_reg(Reg(1), 0)?;
                 }
             }
             Instr::ReaddirFd(fd, dirent_buf) => {
@@ -1142,6 +1146,8 @@ impl Machine {
                 let addr = self.read_reg(dirent_buf)?;
                 if let Some(fd) = self.checked_fd_index(fd)? {
                     self.readdir_fd_index(fd, addr)?;
+                } else {
+                    self.write_reg(Reg(1), 0)?;
                 }
             }
             Instr::RewinddirFd(fd) => match &mut self.process_mut()?.fds[fd.0] {
@@ -1170,6 +1176,8 @@ impl Machine {
                 let len = self.read_reg(len)? as usize;
                 if let Some(fd) = self.checked_fd_index(fd)? {
                     self.write_fd_index(fd, addr, len)?;
+                } else {
+                    self.write_reg(Reg(1), 0)?;
                 }
             }
             Instr::PwriteFd(fd, buf, len, offset) => {
@@ -1187,6 +1195,8 @@ impl Machine {
                 let offset = self.read_reg(offset)?;
                 if let Some(fd) = self.checked_fd_index(fd)? {
                     self.pwrite_fd_index(fd, addr, len, offset)?;
+                } else {
+                    self.write_reg(Reg(1), 0)?;
                 }
             }
             Instr::MkdirPath(path_reg, _mode_reg) => {
@@ -5877,6 +5887,7 @@ mod tests {
             .exec(Instr::ReadFdDyn(Reg(6), Reg(7), Reg(8)))
             .unwrap();
         assert_eq!(machine.process().unwrap().errno, 116);
+        assert_eq!(machine.thread().unwrap().regs[1], 0);
     }
 
     #[test]
@@ -6045,6 +6056,7 @@ mod tests {
             .exec(Instr::ReadFdDyn(Reg(6), Reg(7), Reg(8)))
             .unwrap();
         assert_eq!(machine.process().unwrap().errno, 116);
+        assert_eq!(machine.thread().unwrap().regs[1], 0);
     }
 
     #[test]
@@ -6200,6 +6212,7 @@ mod tests {
             .exec(Instr::ReadFdDyn(Reg(9), Reg(10), Reg(11)))
             .unwrap();
         assert_eq!(machine.process().unwrap().errno, 116);
+        assert_eq!(machine.thread().unwrap().regs[1], 0);
     }
 
     #[test]
