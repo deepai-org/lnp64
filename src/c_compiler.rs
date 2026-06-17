@@ -21243,6 +21243,49 @@ int main() {
     }
 
     #[test]
+    fn c_socket_options_fail_closed_for_unknown_controls() {
+        let source = r#"
+        int main() {
+            int s;
+            int opt;
+            int optlen;
+
+            s = socket(AF_INET, SOCK_STREAM, 0);
+            if (s == -1) return 1;
+            opt = 1;
+            if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &opt, 8) != 0) return 2;
+            if (setsockopt(s, IPPROTO_TCP, TCP_NODELAY, &opt, 8) != 0) return 3;
+            opt = 99;
+            optlen = 8;
+            if (getsockopt(s, SOL_SOCKET, SO_ERROR, &opt, &optlen) != 0) return 4;
+            if (opt != 0) return 5;
+            if (optlen != 8) return 6;
+
+            errno = 0;
+            if (setsockopt(s, SOL_SOCKET, 999, &opt, 8) != -1) return 7;
+            if (errno != EINVAL) return 8;
+            errno = 0;
+            if (setsockopt(s, 999, SO_REUSEADDR, &opt, 8) != -1) return 9;
+            if (errno != EINVAL) return 10;
+            errno = 0;
+            optlen = 8;
+            if (getsockopt(s, SOL_SOCKET, 999, &opt, &optlen) != -1) return 11;
+            if (errno != EINVAL) return 12;
+            errno = 0;
+            optlen = 8;
+            if (getsockopt(s, IPPROTO_TCP, TCP_NODELAY, &opt, &optlen) != -1) return 13;
+            if (errno != EINVAL) return 14;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("OBJECT_CTL"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn c_select_blocks_with_dynamic_await_and_runs() {
         let source = r#"
         int rfd;

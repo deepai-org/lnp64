@@ -30,6 +30,15 @@ const SIGALRM: u64 = 14;
 const SIGSEGV: u64 = 11;
 const SIG_DFL_HANDLER: usize = 0;
 const SIG_IGN_HANDLER: usize = 1;
+const SOCKET_LEVEL_SOL_SOCKET: u64 = 1;
+const SOCKET_LEVEL_IPPROTO_TCP: u64 = 6;
+const SOCKET_OPT_TCP_NODELAY: u64 = 1;
+const SOCKET_OPT_SO_REUSEADDR: u64 = 2;
+const SOCKET_OPT_SO_ERROR: u64 = 4;
+const SOCKET_OPT_SO_BROADCAST: u64 = 6;
+const SOCKET_OPT_SO_SNDBUF: u64 = 7;
+const SOCKET_OPT_SO_RCVBUF: u64 = 8;
+const SOCKET_OPT_SO_KEEPALIVE: u64 = 9;
 const MESSAGE_ENDPOINT_FD: usize = FDR_COUNT - 1;
 const UTIME_NOW_LNP64: i64 = 1_073_741_823;
 const UTIME_OMIT_LNP64: i64 = 1_073_741_822;
@@ -4416,11 +4425,16 @@ impl Machine {
 
     fn object_ctl_socket_getsockopt(&mut self, argblock: u64) -> Result<u64, u64> {
         let fd_value = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
+        let level = self.load_u64(argblock + 40).map_err(|_| 14u64)?;
+        let optname = self.load_u64(argblock + 48).map_err(|_| 14u64)?;
         let optval = self.load_u64(argblock + 56).map_err(|_| 14u64)?;
         let optlen = self.load_u64(argblock + 64).map_err(|_| 14u64)?;
         let fd = self.decode_fd_value(fd_value)?;
         self.fd_right_errno(fd, CAP_RIGHT_STAT)?;
         self.ensure_socket_fd(fd)?;
+        if !self.socket_getsockopt_supported(level, optname) {
+            return Err(22);
+        }
         if optlen != 0 {
             let capacity = self.load_u64(optlen).map_err(|_| 14u64)?;
             if capacity < 8 {
@@ -4436,16 +4450,42 @@ impl Machine {
 
     fn object_ctl_socket_setsockopt(&mut self, argblock: u64) -> Result<u64, u64> {
         let fd_value = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
+        let level = self.load_u64(argblock + 40).map_err(|_| 14u64)?;
+        let optname = self.load_u64(argblock + 48).map_err(|_| 14u64)?;
         let optval = self.load_u64(argblock + 56).map_err(|_| 14u64)?;
         let optlen = self.load_u64(argblock + 64).map_err(|_| 14u64)?;
         let fd = self.decode_fd_value(fd_value)?;
         self.fd_right_errno(fd, CAP_RIGHT_WRITE)?;
         self.ensure_socket_fd(fd)?;
+        if !self.socket_setsockopt_supported(level, optname) {
+            return Err(22);
+        }
         if optval != 0 && optlen != 0 {
             self.ensure_mapped(optval, optlen as usize, false)
                 .map_err(|_| 14u64)?;
         }
         Ok(0)
+    }
+
+    fn socket_getsockopt_supported(&self, level: u64, optname: u64) -> bool {
+        matches!(
+            (level, optname),
+            (SOCKET_LEVEL_SOL_SOCKET, SOCKET_OPT_SO_ERROR)
+        )
+    }
+
+    fn socket_setsockopt_supported(&self, level: u64, optname: u64) -> bool {
+        matches!(
+            (level, optname),
+            (
+                SOCKET_LEVEL_SOL_SOCKET,
+                SOCKET_OPT_SO_REUSEADDR
+                    | SOCKET_OPT_SO_BROADCAST
+                    | SOCKET_OPT_SO_SNDBUF
+                    | SOCKET_OPT_SO_RCVBUF
+                    | SOCKET_OPT_SO_KEEPALIVE
+            ) | (SOCKET_LEVEL_IPPROTO_TCP, SOCKET_OPT_TCP_NODELAY)
+        )
     }
 
     fn ensure_socket_fd(&self, fd: usize) -> Result<(), u64> {
