@@ -12,5 +12,6 @@ int main() {
     result = call_cap(12, 0, 0);
     if (result != 0x4e425344) return 2;
     if (domain_destroy(domain) != 0) return 3;
+    write(1, "gate_trace_test ok\n", 19);
     return 0;
 }

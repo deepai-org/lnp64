@@ -119,6 +119,14 @@ int main(int argc, char **argv) {
     if (rc != 0) return 60 + rc;
     rc = run_program(root, "fs_service_test", "/bin/fs_service_test.s");
     if (rc != 0) return 65 + rc;
+    rc = run_program(root, "mmap_test", "/bin/mmap_test.s");
+    if (rc != 0) return 66 + rc;
+    rc = run_program(root, "fd_passing_test", "/bin/fd_passing_test.s");
+    if (rc != 0) return 67 + rc;
+    rc = run_program(root, "gate_trace_test", "/bin/gate_trace_test.s");
+    if (rc != 0) return 68 + rc;
+    rc = run_program(root, "timer_test", "/bin/timer_test.s");
+    if (rc != 0) return 69 + rc;
     rc = run_program(root, "socket_loopback_test", "/bin/socket_loopback_test.s");
     if (rc != 0) return 70 + rc;
     rc = run_program(root, "signal_gate_test", "/bin/signal_gate_test.s");

@@ -73,8 +73,8 @@ several compiled C test programs, and audits the generated native trace.
 `scripts/run_netbsd_personality_system.sh` builds a temporary personality root
 with `/sbin/init.s`, `/bin/netbsd_sh.s`, and compiled test programs for
 threads, poll/select/epoll, a service-owned filesystem image, mmap, fd passing,
-loopback sockets, signal gates, call gates, and Resource Domain budget checks.
-The scripted shell runs:
+loopback sockets, signal gates, call gates, timers, and Resource Domain budget
+checks. The scripted shell runs:
 
 ```sh
 /init
@@ -86,6 +86,10 @@ ls /tmp
 ./thread_test
 ./poll_test
 ./fs_service_test
+./mmap_test
+./fd_passing_test
+./gate_trace_test
+./timer_test
 ./socket_loopback_test
 ./signal_gate_test
 ./domain_budget_test
@@ -94,8 +98,9 @@ ls /tmp
 The runner verifies the transcript, checks native primitive evidence including
 FDR I/O, `MMAP`, `PWRITE_FD_DYN`, `FD_SEEK`, `AWAIT_DYN`, `OBJECT_CTL`,
 `DOMAIN_CTL`, `CAP_*`, `CALL_CAP`/`RET_CAP`, `FORK`, `EXEC`, `SPAWN`,
-`SIGACTION`, `SIGRET`, and rejects raw interrupt/MMIO/DMA/page-table/scheduler/
-syscall trace tokens. It also verifies stale FDR generation rejection via
+`SLEEP`, `ALARM`, `SIGACTION`, `SIGRET`, and rejects raw interrupt/MMIO/DMA/
+page-table/scheduler/syscall trace tokens. It also verifies stale FDR
+generation rejection via
 `demos/stale_fd_token.s` and checks Resource Domain PID counters return to their
 baseline after child program exits. The filesystem-service test maps a generated
 fixed-record image, performs service-owned path walking, create, rename, link,

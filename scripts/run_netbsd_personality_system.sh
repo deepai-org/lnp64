@@ -15,6 +15,7 @@ programs=(
   mmap_test
   fd_passing_test
   gate_trace_test
+  timer_test
   socket_loopback_test
   signal_gate_test
   domain_budget_test
@@ -73,6 +74,14 @@ $ ./poll_test
 poll_test ok
 $ ./fs_service_test
 fs_service_test ok
+$ ./mmap_test
+mmap_test ok
+$ ./fd_passing_test
+fd_passing_test ok
+$ ./gate_trace_test
+gate_trace_test ok
+$ ./timer_test
+timer_test ok
 $ ./socket_loopback_test
 socket_loopback_test ok
 $ ./signal_gate_test
@@ -105,6 +114,8 @@ required_native=(
   POLL_FD_DYN
   PWRITE_FD_DYN
   FD_SEEK
+  SLEEP
+  ALARM
   SIGACTION
   KILL
 )
