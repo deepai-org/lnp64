@@ -62,6 +62,7 @@ specific compiler/runtime special casing.
 | --- | --- | --- | --- |
 | sbase subset | passing | `third_party/sbase/*`, `scripts/run_sbase.sh` | Expand command coverage and edge cases under `COMPAT-FS-001`, `COMPAT-STDIO-001`, `COMPAT-LIBC-002`. |
 | jsmn | passing | `third_party/jsmn/example/simple.c`, `third_party/jsmn/test/tests.c`, `scripts/run_sbase.sh` | None known beyond broader C parser/runtime coverage. |
+| inih | passing | `third_party/inih/ini.c`, `third_party/inih/smoke.c`, `scripts/run_inih.sh` | `ini_parse_string` still depends on anonymous-struct aggregate layout; file parser path passes. `COMPAT-PKG-006`. |
 | small HTTP server | passing | `demos/httpd.c`, `scripts/run_demos.sh` | Socket nonblocking and network-service semantics tracked by `COMPAT-SOCK-001`. |
 | netcat-like socket demo | passing | `demos/netcat.c`, `scripts/run_demos.sh` | Socket nonblocking and descriptor passing tracked by `COMPAT-SOCK-001`. |
 | sqlite-lite demo | passing | `demos/sqlite_lite.c`, `demos/sqlite_lite.db`, `scripts/run_demos.sh` | This is not upstream SQLite; full SQLite remains `COMPAT-PKG-003`. |
@@ -85,6 +86,7 @@ specific compiler/runtime special casing.
 | `COMPAT-PKG-003` | Upstream SQLite | Only sqlite-lite demo exists. | Add upstream amalgamation smoke once C/runtime gaps are known. |
 | `COMPAT-PKG-004` | libpng | Not started. | Add after zlib passes. |
 | `COMPAT-PKG-005` | musl tests | Not started. | Pick a small libc-test subset that avoids unsupported dynamic linking first. |
+| `COMPAT-PKG-006` | inih parse-string aggregate path | File parser smoke passes with upstream `inih` r58. | Add generic anonymous-struct local layout support so `ini_parse_string` can run too. |
 | `COMPAT-FS-001` | Filesystem/path conformance | sbase covers common commands. | Add negative/error path tests for symlinks, permissions, `stat`, and rename/link corner cases. |
 | `COMPAT-STDIO-001` | stdio conformance | Common descriptor-backed streams pass. | Add EOF/error flag, buffering, append, and mixed read/write tests. |
 | `COMPAT-LIBC-001` | Full `fcntl` command surface | Descriptor duplication path exists. | Define supported commands and add tests for unsupported errno behavior. |

@@ -510,7 +510,81 @@ fn preprocess_source(source: &str) -> String {
     let out = normalize_function_pointer_params(&out);
     let out = apply_scalar_type_rewrites(&out);
     let out = normalize_c_types(&out);
+    let out = strip_simple_typedefs(&out);
     normalize_do_while_loops(&out)
+}
+
+fn strip_simple_typedefs(source: &str) -> String {
+    let mut out = String::new();
+    let mut aliases = Vec::new();
+    for line in source.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("typedef ") && trimmed.ends_with(';') && !trimmed.contains('{') {
+            if let Some((base, alias)) = simple_typedef_alias(trimmed) {
+                aliases.push((base, alias));
+            }
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    for (base, alias) in aliases {
+        out = replace_ident_token_local(&out, &alias, &base);
+    }
+    out
+}
+
+fn simple_typedef_alias(line: &str) -> Option<(String, String)> {
+    let body = line
+        .trim()
+        .strip_prefix("typedef ")?
+        .trim_end_matches(';')
+        .trim();
+    let mut parts = body.split_whitespace().collect::<Vec<_>>();
+    if parts.len() < 2 {
+        return None;
+    }
+    let alias = parts.pop()?.trim_start_matches('*');
+    if !is_c_identifier(alias) {
+        return None;
+    }
+    let base = parts.join(" ");
+    let base = match base.as_str() {
+        "char" | "signed char" | "unsigned char" => "char",
+        "short" | "unsigned short" | "int" | "unsigned" | "unsigned int" | "long"
+        | "unsigned long" | "long long" | "unsigned long long" | "size_t" | "ssize_t"
+        | "ptrdiff_t" => "int",
+        _ => return None,
+    };
+    Some((base.to_string(), alias.to_string()))
+}
+
+fn is_c_identifier(text: &str) -> bool {
+    let mut chars = text.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first == '_' || first.is_ascii_alphabetic()) && chars.all(is_c_ident_char)
+}
+
+fn replace_ident_token_local(source: &str, needle: &str, replacement: &str) -> String {
+    let mut out = String::new();
+    let mut pos = 0;
+    while let Some(rel) = source[pos..].find(needle) {
+        let start = pos + rel;
+        let end = start + needle.len();
+        let before = source[..start].chars().next_back();
+        let after = source[end..].chars().next();
+        if before.is_some_and(is_c_ident_char) || after.is_some_and(is_c_ident_char) {
+            out.push_str(&source[pos..end]);
+        } else {
+            out.push_str(&source[pos..start]);
+            out.push_str(replacement);
+        }
+        pos = end;
+    }
+    out.push_str(&source[pos..]);
+    out
 }
 
 fn expand_test_macros(source: &str) -> String {
@@ -803,6 +877,7 @@ fn normalize_c_types(source: &str) -> String {
     out = out.replace("unsigned char buf[8192];", "int buf; buf = alloc(8192);");
     out = strip_c_keyword(&out, "extern");
     out = out.replace("JSMN_API ", "");
+    out = out.replace("INI_API ", "");
     out = strip_c_keyword(&out, "const");
     out = out.replace("const int", "int");
     out = out.replace("int (*func)(void)", "int func");
@@ -13020,6 +13095,7 @@ fn type_aggregate_size(name: &str) -> Option<i64> {
 
 fn builtin_function_label(name: &str) -> Option<&'static str> {
     match name {
+        "fgets" => Some("__lnp_fgets"),
         "strstr" => Some("__strstr"),
         "strcasestr" | "xstrcasestr" => Some("__strcasestr"),
         _ => None,
@@ -13151,6 +13227,48 @@ strlen_loop:
   ADD r1, r1, r4
   JMP strlen_loop
 strlen_done:
+  RET
+
+__lnp_fgets:
+  MOV r20, r1
+  MOV r21, r2
+  MOV r22, r3
+  LI r1, 0
+  CMP r21, r0
+  BLE lnp_fgets_done
+  LI r23, 1
+  SUB r24, r21, r23
+  CMP r24, r0
+  BLE lnp_fgets_size_one
+  LI r25, 0
+  LI r29, 10
+lnp_fgets_loop:
+  CMP r25, r24
+  BGE lnp_fgets_terminate
+  ADD r26, r20, r25
+  LI r27, 1
+  READ_FD_DYN r22, r26, r27
+  CMP r1, r0
+  BLE lnp_fgets_terminate
+  LD.B r28, [r26, 0]
+  ADD r25, r25, r23
+  CMP r28, r29
+  BEQ lnp_fgets_terminate
+  JMP lnp_fgets_loop
+lnp_fgets_size_one:
+  ST.B [r20, 0], r0
+  MOV r1, r20
+  JMP lnp_fgets_done
+lnp_fgets_terminate:
+  ADD r26, r20, r25
+  ST.B [r26, 0], r0
+  CMP r25, r0
+  BEQ lnp_fgets_empty
+  MOV r1, r20
+  JMP lnp_fgets_done
+lnp_fgets_empty:
+  LI r1, 0
+lnp_fgets_done:
   RET
 
 __streq:

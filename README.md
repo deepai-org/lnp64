@@ -96,6 +96,12 @@ Build and boot the minimal userland image:
 bash scripts/run_userland.sh
 ```
 
+Run the `inih` real-package smoke gate:
+
+```sh
+bash scripts/run_inih.sh
+```
+
 For the current POSIX/libc surface, real-program gates, and open compatibility
 bugs, see `conformance_matrix.md`. For the current emulator process ABI, see
 `psABI.md`; for the target ELF/static object profile, see `object_format.md`.
