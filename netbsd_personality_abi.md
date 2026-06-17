@@ -28,7 +28,7 @@ checks that the generated assembly still uses the expected native primitives.
 | Timers/time | `timerfd`, `nanosleep`, `usleep`, `alarm`, clocks | timer object profile, PCR/timebase reads, sleep queues, signal event delivery |
 | Signals | `signal`, `sigaction`, masks, `raise`, `kill`, `SIGRET` | native event queue, signal frame construction at compatibility boundary |
 | Sockets | `socket`, `bind`, `listen`, `connect`, `accept`, `send`, `recv` | endpoint object profiles via `OBJECT_CTL`, stream `PUSH`/`PULL`, readiness waits |
-| Rump filesystem hook | mounted block image or object-backed storage service | block/file/object FDR plus mmap/page-fill and service-owned filesystem logic |
+| Rump filesystem hook | mounted block image or object-backed storage service | checked block-image FDR fixture plus mmap/page-fill and service-owned filesystem logic |
 | Gates/upcalls | rump service calls, cross-domain delivery | `OBJECT_CTL create call_gate`, `CALL_CAP`, `RET_CAP` |
 | Resource domains | sandbox/container/rump service isolation | `DOMAIN_CTL` create/query/freeze/resume/attach/detach/destroy |
 
@@ -47,7 +47,7 @@ checks that the generated assembly still uses the expected native primitives.
 
 - init-style startup and shell-like command dispatch output,
 - pipe/fd inheritance through `fork`, `poll`, and `wait`,
-- anonymous mmap memory and a block-image-backed rumpfs mount hook,
+- anonymous mmap memory and a checked block-image-backed rumpfs mount hook,
 - signal delivery through `signal`, `raise`, and `SIGRET`,
 - pthread startup/join, futex wake, `select`, and timerfd wait,
 - TCP loopback through endpoint object controls,
@@ -58,7 +58,7 @@ checks that the generated assembly still uses the expected native primitives.
 
 ## Open Work
 
-- Replace the current block-image hook with a checked rump-style filesystem
+- Expand the current checked block-image hook into a rump-style filesystem
   service that owns a block/object FDR and exposes namespace/file services back
   through capabilities.
 - Add negative tests proving the personality cannot resolve paths without a

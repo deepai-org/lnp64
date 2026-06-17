@@ -74,11 +74,21 @@ int check_mmap_and_rumpfs_block() {
     if (mem == -1) return 1;
     store(mem, 0x4e425344);
     if (load(mem) != 0x4e425344) return 2;
-    fd = open(10, "demos/sqlite_lite.db", 1);
+    fd = open(10, "demos/netbsd_rumpfs.img", 1);
     if (fd == -1) return 3;
     block = mmap(10, 64, 3);
     if (block == -1) return 4;
-    if (loadb(block) != 0) return 5;
+    if (loadb(block) != 'R') return 5;
+    if (loadb(block + 1) != 'U') return 6;
+    if (loadb(block + 2) != 'M') return 7;
+    if (loadb(block + 3) != 'P') return 8;
+    if (loadb(block + 4) != 'F') return 9;
+    if (loadb(block + 5) != 'S') return 10;
+    if (loadb(block + 6) != '1') return 11;
+    if (loadb(block + 8) != 'e') return 12;
+    if (loadb(block + 11) != '/') return 13;
+    if (loadb(block + 17) != 'h') return 14;
+    if (loadb(block + 28) != 'r') return 15;
     return 0;
 }
 
