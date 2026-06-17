@@ -250,7 +250,11 @@ fn field_names_from_decl(trimmed: &str) -> Vec<String> {
         .split(';')
         .flat_map(|decl| {
             let decl = decl.trim();
-            if decl.is_empty() || decl.contains('(') {
+            if decl.is_empty() {
+                return Vec::new();
+            }
+            let decl = strip_array_declarators(decl);
+            if decl.contains('(') {
                 return Vec::new();
             }
             decl.split(',')
@@ -266,6 +270,20 @@ fn field_names_from_decl(trimmed: &str) -> Vec<String> {
                 .collect::<Vec<_>>()
         })
         .collect()
+}
+
+fn strip_array_declarators(decl: &str) -> String {
+    let mut out = String::with_capacity(decl.len());
+    let mut depth = 0usize;
+    for ch in decl.chars() {
+        match ch {
+            '[' => depth += 1,
+            ']' if depth > 0 => depth -= 1,
+            _ if depth == 0 => out.push(ch),
+            _ => {}
+        }
+    }
+    out
 }
 
 fn ident(text: &str) -> Option<&str> {
@@ -297,6 +315,24 @@ mod tests {
         assert_eq!(fields["top"], 0);
         assert_eq!(fields["ci"], 8);
         assert_eq!(fields["short_src"], 16);
+    }
+
+    #[test]
+    fn collects_array_field_with_spaced_length_expression() {
+        let fields = collect_field_offsets(
+            r#"
+            typedef struct {
+              unsigned total;
+              unsigned na;
+              int deleted;
+              unsigned nums[MAXABITS + 1];
+            } Counters;
+            "#,
+        );
+        assert_eq!(fields["total"], 0);
+        assert_eq!(fields["na"], 8);
+        assert_eq!(fields["deleted"], 16);
+        assert_eq!(fields["nums"], 24);
     }
 
     #[test]

@@ -400,6 +400,28 @@ fn expand_quoted_includes(path: &Path, seen: &mut HashSet<PathBuf>) -> Result<St
     Ok(out)
 }
 
+fn strip_c_keyword(source: &str, keyword: &str) -> String {
+    let mut out = String::with_capacity(source.len());
+    let mut rest = source;
+    while let Some(idx) = rest.find(keyword) {
+        let (before, after_start) = rest.split_at(idx);
+        out.push_str(before);
+        let after = &after_start[keyword.len()..];
+        let prev = out.chars().next_back();
+        let next = after.chars().next();
+        if prev.is_some_and(is_c_ident_char) || next.is_some_and(is_c_ident_char) {
+            out.push_str(keyword);
+        }
+        rest = after;
+    }
+    out.push_str(rest);
+    out
+}
+
+fn is_c_ident_char(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphanumeric()
+}
+
 fn preprocess_source(source: &str) -> String {
     let source = splice_escaped_newlines(source);
     let source = strip_block_comments(&source);
@@ -771,9 +793,9 @@ fn normalize_c_types(source: &str) -> String {
     out = normalize_char_array_declarations(&out);
     out = out.replace("\"%\"PRIu32\" %zu\"", "\"%u %u\"");
     out = out.replace("unsigned char buf[8192];", "int buf; buf = alloc(8192);");
-    out = out.replace("extern ", "");
+    out = strip_c_keyword(&out, "extern");
     out = out.replace("JSMN_API ", "");
-    out = out.replace("const ", "");
+    out = strip_c_keyword(&out, "const");
     out = out.replace("const int", "int");
     out = out.replace("int (*func)(void)", "int func");
     out = out.replace("int (*func)(int)", "int func");
@@ -5016,24 +5038,48 @@ impl CodeGen {
         if args.len() < 3 {
             return Err("snprintf(buf, size, fmt, ...) expects at least 3 arguments".to_string());
         }
-        let fmt = match &args[2] {
-            Expr::Str(fmt) => fmt.clone(),
-            _ => return Err("snprintf format must be a string literal".to_string()),
-        };
         let dst = self.emit_expr(&args[0])?;
-        self.emit_format_to_buffer(dst, &fmt, args, 3)
+        let Expr::Str(fmt) = &args[2] else {
+            return self.emit_dynamic_format_to_buffer(dst, args, 1);
+        };
+        self.emit_format_to_buffer(dst, fmt, args, 3)
     }
 
     fn emit_sprintf(&mut self, args: &[Expr]) -> Result<usize, String> {
         if args.len() < 2 {
             return Err("sprintf(buf, fmt, ...) expects at least 2 arguments".to_string());
         }
-        let fmt = match &args[1] {
-            Expr::Str(fmt) => fmt.clone(),
-            _ => return Err("sprintf format must be a string literal".to_string()),
-        };
         let dst = self.emit_expr(&args[0])?;
-        self.emit_format_to_buffer(dst, &fmt, args, 2)
+        let Expr::Str(fmt) = &args[1] else {
+            return self.emit_dynamic_format_to_buffer(dst, args, 1);
+        };
+        self.emit_format_to_buffer(dst, fmt, args, 2)
+    }
+
+    fn emit_dynamic_format_to_buffer(
+        &mut self,
+        dst: usize,
+        args: &[Expr],
+        first_arg: usize,
+    ) -> Result<usize, String> {
+        let dst_slot = self.next_local_offset;
+        self.next_local_offset += 8;
+        self.text.push(format!("  ST [r31, {dst_slot}], r{dst}"));
+        self.temp_reg = 0;
+        for arg in args.iter().skip(first_arg) {
+            self.emit_expr(arg)?;
+            self.temp_reg = 0;
+        }
+        let dst_fixed = 20usize;
+        let count = 21usize;
+        self.text
+            .push(format!("  LD r{dst_fixed}, [r31, {dst_slot}]"));
+        self.text.push(format!("  LI r{count}, 0"));
+        self.temp_reg = 21;
+        self.emit_snprintf_store_nul(dst_fixed, count)?;
+        self.text.push("  LI r1, 0".to_string());
+        self.temp_reg = 1;
+        Ok(1)
     }
 
     fn emit_format_to_buffer(
@@ -12840,6 +12886,49 @@ mod tests {
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn preserves_identifier_suffix_const_while_stripping_qualifier() {
+        let source = r#"
+        int exp2const(int value) {
+            return value + 1;
+        }
+
+        int main() {
+            const int value = 41;
+            if (exp2const(value) == 42) {
+                return 0;
+            }
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn snprintf_accepts_dynamic_format_pointer() {
+        let source = r#"
+        int main() {
+            int buf;
+            int fmt;
+            int len;
+            buf = alloc(16);
+            fmt = "%s";
+            len = snprintf(buf, 16, fmt, "abc");
+            if (len == 0 && *buf == 0) {
+                return 0;
+            }
+            return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
     }
 
     #[test]
