@@ -594,6 +594,42 @@ state, degraded-mode reason, audit root, proof artifact hash, domain launch
 measurement, and delegated capability-root summary. This makes mission
 continuity, not just initial isolation, part of the attested system state.
 
+### 14.2 Owner Sovereignty and Open Assurance
+LNP64 is intended to be compatible with open RTL, reproducible builds, owner
+control, and forkable software stacks. National-security assurance and open
+source freedom use the same primitives: explicit authority, inspectable state,
+measured artifacts, scoped telemetry, replaceable services, and no hidden
+privileged path.
+
+Assurance profiles are selected by the machine owner/operator or by a Resource
+Domain policy that the owner has chosen to run. A remote service may require a
+minimum profile before it accepts a connection or releases a secret, but the
+hardware does not impose vendor-only software, remote kill switches, mandatory
+signed-only execution, or a vendor-exclusive trust root. Quotes prove what is
+running and which policy is active; they are not a DRM mechanism.
+
+The root-of-trust model must support owner-installed keys and transparent key
+policy. Development and open-owner profiles can use owner keys, public build
+manifests, reproducible bitstream hashes, reproducible toolchain manifests,
+public proof artifacts, and audited debug unlocks. Production or managed-fleet
+profiles may require signed manifests and locked debug, but those requirements
+are profile policy, not an architectural mandate that only one vendor can
+authorize code.
+
+Open assurance also means service replaceability. Filesystems, loaders,
+network stacks, compatibility personalities, domain managers, telemetry
+collectors, and declassification services are software services behind explicit
+capabilities. Users can replace them without changing the silicon, as long as
+the replacement obeys the same capability, lineage, label, audit, and Resource
+Domain rules.
+
+Controlled debug is not a backdoor and not an anti-repair mechanism. In owner
+profiles, debug and forensics can be enabled by an owner-held debug-control FDR,
+with measurement and audit. In sealed tenant, confidential, MLS, or managed
+profiles, debug can be narrowed or disabled by policy. In both cases the rule is
+explicit: no hidden management engine, no ambient vendor access, no secret DMA
+path, no raw interrupt backchannel, and no authority that bypasses FDRs.
+
 Pre-provisioned domains can expose `call_gate` FDRs for hot cross-domain calls. This makes sandboxed libraries, service calls, driver calls, and guest/supervisor calls use the same capability-call path as cross-thread calls, while preserving domain budget accounting and capability checks.
 
 A capability-marked domain can also act as a supervisor domain and receive upcalls for selected events: unsupported opcodes, delegated namespace lookups, permission decisions, child exit, signal delivery, fd readiness, timer expiry, futex events, block-image completion, resource pressure, limit violation, and process lifecycle changes.

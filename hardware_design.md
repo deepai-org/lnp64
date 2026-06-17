@@ -4516,6 +4516,31 @@ Mission assurance hooks:
   reason, audit root, proof artifact hash, domain launch measurement, and
   delegated capability-root summary.
 
+Owner sovereignty and open-assurance hooks:
+
+- the architecture supports owner-controlled roots of trust. Boot/quote policy
+  records can name owner keys, organization keys, vendor keys, development keys,
+  or an explicit unsigned development mode; quote records identify which policy
+  was used.
+- no architectural profile requires a vendor-exclusive signing key, vendor-only
+  debug unlock, remote kill switch, or mandatory signed-only execution. Managed
+  deployments may require those constraints by local policy, but they are not
+  hardwired into the ISA.
+- quotes prove measured artifacts and active policy. They do not authorize or
+  deny execution by themselves.
+- quote and measurement records can include public RTL/source hashes,
+  reproducible bitstream hashes, reproducible toolchain manifests, proof
+  artifact hashes, and service image hashes.
+- debug-control FDRs can be owner-held in open-owner profiles. Unlocks remain
+  measured and audited, and debug access still obeys domain/range/label rights.
+- telemetry, audit, and trace access is capability-scoped. There is no hidden
+  management engine, ambient vendor telemetry channel, secret DMA path, or raw
+  interrupt backchannel.
+- service replaceability is preserved: loader, filesystem, network,
+  personality, telemetry, domain-manager, and declassification services can be
+  replaced if the caller has the required capabilities and the replacement
+  satisfies the same generation, lineage, label, audit, and domain checks.
+
 ### 24.4 Watchdogs and Local Engine Reset
 
 Each long-latency engine has a watchdog budget in cycles or fabric ticks.
