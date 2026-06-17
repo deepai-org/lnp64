@@ -117,6 +117,12 @@ arg+64 call_gate flags, bit0 permits capability-marked args
 cargo test
 ```
 
+Run the full checked repository gate:
+
+```sh
+bash scripts/run_all_gates.sh
+```
+
 ## Compile and Run a Demo
 
 ```sh
