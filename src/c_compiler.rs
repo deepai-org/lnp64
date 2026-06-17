@@ -5434,6 +5434,63 @@ impl CodeGen {
                 self.text.push(format!("{done}:"));
                 Ok(dst)
             }
+            "arc4random" => {
+                self.no_args(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  RANDOM r{dst}, r0, r0"));
+                Ok(dst)
+            }
+            "arc4random_buf" => {
+                if args.len() != 2 {
+                    return Err("arc4random_buf(buf, len) expects 2 arguments".to_string());
+                }
+                let buf = self.emit_expr(&args[0])?;
+                let buf_slot = self.spill_reg(buf);
+                self.temp_reg = 0;
+                let len = self.emit_expr(&args[1])?;
+                let buf = self.reload_reg(buf_slot)?;
+                let _ = self.emit_random_buffer(buf, len)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "getentropy" => {
+                if args.len() != 2 {
+                    return Err("getentropy(buf, len) expects 2 arguments".to_string());
+                }
+                let buf = self.emit_expr(&args[0])?;
+                let buf_slot = self.spill_reg(buf);
+                self.temp_reg = 0;
+                let len = self.emit_expr(&args[1])?;
+                let buf = self.reload_reg(buf_slot)?;
+                let written = self.emit_random_buffer(buf, len)?;
+                let dst = self.alloc_reg()?;
+                let ok = self.new_label("getentropy_ok");
+                let done = self.new_label("getentropy_done");
+                self.text.push(format!("  CMP r{written}, r{len}"));
+                self.text.push(format!("  BEQ {ok}"));
+                self.text.push(format!("  LI r{dst}, -1"));
+                self.text.push(format!("  JMP {done}"));
+                self.text.push(format!("{ok}:"));
+                self.text.push(format!("  LI r{dst}, 0"));
+                self.text.push(format!("{done}:"));
+                Ok(dst)
+            }
+            "getrandom" => {
+                if args.len() != 3 {
+                    return Err("getrandom(buf, len, flags) expects 3 arguments".to_string());
+                }
+                let buf = self.emit_expr(&args[0])?;
+                let buf_slot = self.spill_reg(buf);
+                self.temp_reg = 0;
+                let len = self.emit_expr(&args[1])?;
+                let len_slot = self.spill_reg(len);
+                self.temp_reg = 0;
+                let _flags = self.emit_expr(&args[2])?;
+                let buf = self.reload_reg(buf_slot)?;
+                let len = self.reload_reg(len_slot)?;
+                self.emit_random_buffer(buf, len)
+            }
             "write" => {
                 if matches!(args.first(), Some(Expr::Num(_))) {
                     let (fd_num, buf, len) = self.fd_buf_len_args(name, args)?;
@@ -11778,6 +11835,12 @@ impl CodeGen {
         Ok(())
     }
 
+    fn emit_random_buffer(&mut self, buf: usize, len: usize) -> Result<usize, String> {
+        let dst = self.alloc_reg()?;
+        self.text.push(format!("  RANDOM r{dst}, r{buf}, r{len}"));
+        Ok(dst)
+    }
+
     fn emit_nanosleep(&mut self, req: usize, rem: usize) -> Result<usize, String> {
         let sec = self.alloc_reg()?;
         let nsec = self.alloc_reg()?;
@@ -14482,6 +14545,35 @@ int main() {
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains("ENV_GET"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_entropy_surface_lowers_to_random_instruction() {
+        let source = r#"
+        int main() {
+            int buf;
+            int more;
+            int word;
+            buf = alloc(16);
+            more = alloc(8);
+            if (getentropy(buf, 16) != 0) return 1;
+            if (load(buf) == 0) {
+                if (load(buf + 8) == 0) return 2;
+            }
+            if (getrandom(more, 8, 0) != 8) return 3;
+            if (load(more) == 0) return 4;
+            word = arc4random();
+            if (word == 0) return 5;
+            arc4random_buf(buf, 8);
+            if (load(buf) == 0) return 6;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("RANDOM"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
