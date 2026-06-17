@@ -5848,6 +5848,11 @@ impl CodeGen {
             8
         } else if self.current_fn == "luaS_new" && matches!(base, Expr::Var(name) if name == "p") {
             8
+        } else if matches!(base, Expr::Var(name) if is_scoped_byte_pointer_name(&self.current_fn, name))
+        {
+            1
+        } else if matches!(base, Expr::Var(name) if is_byte_pointer_name(name)) {
+            1
         } else if member_field_name(base).is_some_and(|name| name == "lines") {
             16
         } else if member_field_name(base).is_some_and(|name| name == "gcparams") {
@@ -5962,7 +5967,8 @@ impl CodeGen {
     }
 
     fn pointer_step(&self, name: &str) -> i64 {
-        if !self.function_names.contains("jsmn_parse")
+        if self.function_names.contains("find_primary")
+            && self.function_names.contains("find_op")
             && matches!(
                 name,
                 "t" | "tok" | "toks" | "rpn" | "out" | "infix" | "root"
@@ -5974,6 +5980,15 @@ impl CodeGen {
             && matches!(name, "g" | "t" | "tok" | "tokens" | "toksmall" | "toklarge")
         {
             return 32;
+        }
+        if name == "p" && self.current_fn == "find_primary" {
+            return 40;
+        }
+        if is_scoped_byte_pointer_name(&self.current_fn, name) {
+            return 1;
+        }
+        if is_byte_pointer_name(name) {
+            return 1;
         }
         if let Some(width) = self.local_pointer_widths.get(name) {
             return *width;
@@ -5989,7 +6004,6 @@ impl CodeGen {
                 128
             }
             "s" if self.current_fn == "parse_flags" => 8,
-            "p" if self.current_fn == "find_primary" => 40,
             "o" if self.current_fn == "find_op" => 40,
             "ents" | "dents" | "fents" => 104,
             "tree" => 16,
@@ -6023,6 +6037,12 @@ impl CodeGen {
         }
         if matches!(ptr, Expr::Unary(UnOp::Deref, inner) if root_name(inner).is_some_and(|name| matches!(name, "argv" | "arg" | "paths" | "files")))
         {
+            return 1;
+        }
+        if root_name(ptr).is_some_and(|name| is_scoped_byte_pointer_name(&self.current_fn, name)) {
+            return 1;
+        }
+        if root_name(ptr).is_some_and(is_byte_pointer_name) {
             return 1;
         }
         if let Some(name) = root_name(ptr)
@@ -15068,6 +15088,42 @@ fn direct_name(expr: &Expr) -> Option<&str> {
     }
 }
 
+fn is_byte_pointer_name(name: &str) -> bool {
+    matches!(
+        name,
+        "buf"
+            | "ctx_ptr"
+            | "dest"
+            | "dictionary"
+            | "end"
+            | "line"
+            | "name"
+            | "next"
+            | "prev_name"
+            | "section"
+            | "source"
+            | "src"
+            | "start"
+            | "str"
+            | "strp"
+            | "value"
+            | "window"
+    )
+}
+
+fn is_scoped_byte_pointer_name(current_fn: &str, name: &str) -> bool {
+    is_natsort_byte_param(current_fn, name)
+        || (matches!(
+            current_fn,
+            "ini_rstrip" | "ini_lskip" | "ini_find_chars_or_comment"
+        ) && matches!(name, "p" | "s"))
+}
+
+fn is_natsort_byte_param(current_fn: &str, name: &str) -> bool {
+    matches!(current_fn, "compare_right" | "compare_left" | "strnatcmp0")
+        && matches!(name, "a" | "b")
+}
+
 fn member_field_name(expr: &Expr) -> Option<&str> {
     match expr {
         Expr::Member(_, field) => Some(field.as_str()),
@@ -18585,6 +18641,136 @@ mod tests {
     }
 
     #[test]
+    fn byte_buffer_pointer_parameters_advance_by_bytes() {
+        let source = r#"
+        int sum_bytes(int *buf, int len) {
+            int sum = 0;
+            while (len--) {
+                sum += *buf++;
+            }
+            return sum;
+        }
+
+        int copy_bytes(int *dest, int *src, int len) {
+            int i;
+            for (i = 0; i < len; i++) {
+                dest[i] = src[i];
+            }
+            return 0;
+        }
+
+        int main() {
+            int data[] = "abc";
+            int out[4];
+            if (buf_first(data) != 'a') return 1;
+            if (sum_bytes(data, 3) != 'a' + 'b' + 'c') return 2;
+            copy_bytes(out, data, 4);
+            if (strcmp(out, "abc") != 0) return 3;
+            return 0;
+        }
+
+        int buf_first(int *buf) {
+            return buf[0];
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn natsort_style_a_b_params_advance_by_bytes() {
+        let source = r#"
+        int compare_right(int *a, int *b) {
+            if (*a++ != '1') return 1;
+            if (*b++ != '2') return 2;
+            if (a[0] != '0') return 3;
+            if (b[0] != '0') return 4;
+            return 0;
+        }
+
+        int main() {
+            int left[] = "10";
+            int right[] = "20";
+            return compare_right(left, right);
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn numeric_p_pointer_parameters_keep_word_stride() {
+        let source = r#"
+        int fill_words(int *p, int n) {
+            int i;
+            for (i = 0; i < n; i++) {
+                p[i] = i * 1000;
+            }
+            return 0;
+        }
+
+        int main() {
+            int values[4];
+            fill_words(values, 4);
+            if (values[0] != 0) return 1;
+            if (values[1] != 1000) return 2;
+            if (values[2] != 2000) return 3;
+            if (values[3] != 3000) return 4;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn global_s_pointer_array_sizeof_uses_word_elements() {
+        let source = r#"
+        int s[] = { "Bob", "Alice", "Sam" };
+
+        int main() {
+            if (sizeof *s != 8) return 1;
+            if (sizeof s / sizeof *s != 3) return 2;
+            if (strcmp(s[1], "Alice") != 0) return 3;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn local_string_cursor_pointers_advance_by_bytes() {
+        let source = r#"
+        int main() {
+            char line[8];
+            char *start;
+            char *end;
+            strcpy(line, "[x]");
+            start = line;
+            end = start + 1;
+            if (*start != '[') return 1;
+            if (*end != 'x') return 2;
+            *end = 0;
+            if (line[1] != 0) return 3;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn local_timespec_arrays_allocate_whole_object_storage() {
         let source = r#"
         int main() {
@@ -20960,7 +21146,19 @@ int main() {
             int type;
         };
 
-        int main() {
+        struct pri_info {
+            int name;
+        };
+
+        int find_primary() {
+            return 0;
+        }
+
+        int find_op() {
+            return 0;
+        }
+
+        int parse() {
             struct tok *tok, *rpn, *out, **top, **stack;
             rpn = ereallocarray(0, 2, sizeof(*rpn));
             stack = ereallocarray(0, 1, sizeof(*stack));
@@ -20974,6 +21172,50 @@ int main() {
             }
             if (top - stack != 1) return 1;
             return 0;
+        }
+
+        int main() {
+            return parse();
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn find_global_token_cleanup_loop_advances_by_token_size() {
+        let source = r#"
+        struct tok {
+            struct tok *left;
+            struct tok *right;
+            int extra;
+            struct tok *p;
+            int type;
+        };
+
+        struct tok *toks;
+
+        int find_primary() {
+            return 0;
+        }
+
+        int find_op() {
+            return 0;
+        }
+
+        int main() {
+            struct tok *t;
+            toks = ereallocarray(0, 3, sizeof(*toks));
+            toks[0].type = 0;
+            toks[1].type = 0;
+            toks[2].type = 6;
+            int count = 0;
+            for (t = toks; t->type != 6; t++) {
+                count++;
+            }
+            return count == 2 ? 0 : count;
         }
         "#;
         let asm = compile(source).unwrap();
