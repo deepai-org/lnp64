@@ -3894,6 +3894,10 @@ impl Machine {
         if version != 4 || ihl < 20 || bytes.len() < offset + ihl {
             return Err(ClassifyParseError::Malformed);
         }
+        let total_len = u16::from_be_bytes([bytes[offset + 2], bytes[offset + 3]]) as usize;
+        if total_len != 0 && total_len < ihl {
+            return Err(ClassifyParseError::Malformed);
+        }
         let protocol = bytes[offset + 9];
         let src_ipv4 = u32::from_be_bytes([
             bytes[offset + 12],
@@ -3913,8 +3917,21 @@ impl Machine {
             hash: src_ipv4 ^ dst_ipv4 ^ protocol as u64,
             ..ClassifierParsedFields::default()
         };
+        let fragment = u16::from_be_bytes([bytes[offset + 6], bytes[offset + 7]]);
+        if fragment & 0x3fff != 0 {
+            parsed.needs_software = true;
+            return Ok(parsed);
+        }
         if matches!(protocol, 6 | 17) {
             let port_offset = offset + ihl;
+            let packet_len = if total_len == 0 {
+                bytes.len() - offset
+            } else {
+                total_len
+            };
+            if packet_len < ihl + 4 {
+                return Err(ClassifyParseError::Malformed);
+            }
             if bytes.len() < port_offset + 4 {
                 return Err(ClassifyParseError::Malformed);
             }
@@ -6624,12 +6641,31 @@ mod tests {
             CLASSIFY_ACTION_NEEDS_SOFTWARE
         );
 
+        let mut fragmented_packet = ipv4_udp_packet([10, 0, 0, 1], [10, 0, 0, 2], 100, 200);
+        fragmented_packet[14 + 6] = 0x20;
+        machine.write_bytes(packet_ptr, &fragmented_packet).unwrap();
+        write_envelope(
+            &mut machine,
+            envelope,
+            CLASSIFY_PROFILE_PACKET,
+            source,
+            packet_ptr,
+            fragmented_packet.len() as u64,
+            0,
+            0,
+            0,
+        );
+        assert_eq!(
+            classify(&mut machine, classifier, envelope, result),
+            CLASSIFY_ACTION_NEEDS_SOFTWARE
+        );
+
         query_classifier_counters(&mut machine, classifier, counters);
         assert_eq!(machine.load_u64(counters).unwrap(), 1);
         assert_eq!(machine.load_u64(counters + 8).unwrap(), 1);
         assert_eq!(machine.load_u64(counters + 16).unwrap(), 0);
         assert_eq!(machine.load_u64(counters + 24).unwrap(), 1);
-        assert_eq!(machine.load_u64(counters + 32).unwrap(), 2);
+        assert_eq!(machine.load_u64(counters + 32).unwrap(), 3);
     }
 
     #[test]
@@ -6710,6 +6746,41 @@ mod tests {
         );
         assert_eq!(machine.process().unwrap().errno, 116);
 
+        let (_reader_token, writer_token) = create_pipe_pair(&mut machine, 7, 8);
+        machine.store_u64(allowed, writer_token).unwrap();
+        write_classifier_rule(
+            &mut machine,
+            rules,
+            CLASSIFY_RULE_EXACT,
+            CLASSIFY_FIELD_SERVICE_ID,
+            1,
+            0,
+            CLASSIFY_ACTION_ROUTE,
+            writer_token,
+            0,
+        );
+        machine.close_fd_index(6).unwrap();
+        let classifier = create_classifier(&mut machine, 6, rules, 1, allowed, 1);
+        let source = create_memory_source(&mut machine, 5);
+        write_envelope(
+            &mut machine,
+            envelope,
+            CLASSIFY_PROFILE_IPC,
+            source,
+            0,
+            0,
+            1,
+            0,
+            0,
+        );
+        machine.store_u64(ARG_BASE + 0x1e00, source).unwrap();
+        machine.cap_revoke(Reg(11), ARG_BASE + 0x1e00).unwrap();
+        assert_eq!(
+            classify(&mut machine, classifier, envelope, result),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 116);
+
         let (_reader_token, writer_token) = create_pipe_pair(&mut machine, 9, 10);
         machine.store_u64(allowed, writer_token).unwrap();
         write_classifier_rule(
@@ -6725,6 +6796,18 @@ mod tests {
         );
         machine.close_fd_index(6).unwrap();
         let classifier = create_classifier(&mut machine, 6, rules, 1, allowed, 1);
+        let source = create_memory_source(&mut machine, 5);
+        write_envelope(
+            &mut machine,
+            envelope,
+            CLASSIFY_PROFILE_IPC,
+            source,
+            0,
+            0,
+            1,
+            0,
+            0,
+        );
         machine.store_u64(ARG_BASE + 0x1f00, writer_token).unwrap();
         machine.cap_revoke(Reg(11), ARG_BASE + 0x1f00).unwrap();
         assert_eq!(
