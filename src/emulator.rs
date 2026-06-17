@@ -90,8 +90,10 @@ const CAP_RIGHT_POLL: u64 = 1 << 4;
 const CAP_RIGHT_CALL: u64 = 1 << 5;
 const CAP_RIGHT_DUP: u64 = 1 << 6;
 const CAP_RIGHT_REVOKE: u64 = 1 << 7;
-const CAP_RIGHT_ALL: u64 = (1 << 8) - 1;
+const CAP_RIGHT_TRANSFER: u64 = 1 << 8;
+const CAP_RIGHT_ALL: u64 = (1 << 9) - 1;
 const CAP_DUP_FLAG_SEAL: u64 = 1 << 0;
+const CAP_SEND_FLAG_MOVE: u64 = 1 << 0;
 const POLLIN_MASK: u64 = 1;
 const POLLOUT_MASK: u64 = 4;
 const POLLNVAL_MASK: u64 = 32;
@@ -131,8 +133,8 @@ enum FdHandle {
         entries: Vec<String>,
         pos: usize,
     },
-    PipeReader(Rc<RefCell<VecDeque<u8>>>),
-    PipeWriter(Rc<RefCell<VecDeque<u8>>>),
+    PipeReader(Rc<RefCell<PipeBuffer>>),
+    PipeWriter(Rc<RefCell<PipeBuffer>>),
     Counter(Rc<RefCell<u64>>),
     MemoryObject {
         data: Rc<RefCell<Vec<u8>>>,
@@ -247,6 +249,17 @@ impl FdCapability {
             ..Self::full(lineage)
         }
     }
+}
+
+struct CapabilityPayload {
+    handle: FdHandle,
+    capability: FdCapability,
+}
+
+#[derive(Default)]
+struct PipeBuffer {
+    bytes: VecDeque<u8>,
+    capabilities: VecDeque<CapabilityPayload>,
 }
 
 struct Vma {
@@ -1721,6 +1734,12 @@ impl Machine {
             Instr::DmaCtl(result, argblock) => {
                 self.dma_ctl(result, self.read_reg(argblock)?)?;
             }
+            Instr::CapSend(result, argblock) => {
+                self.cap_send(result, self.read_reg(argblock)?)?;
+            }
+            Instr::CapRecv(result, argblock) => {
+                self.cap_recv(result, self.read_reg(argblock)?)?;
+            }
             Instr::CapDup(result, argblock) => {
                 self.cap_dup(result, self.read_reg(argblock)?)?;
             }
@@ -2110,24 +2129,31 @@ impl Machine {
         self.install_fd_capability(dst, duplicate).map_err(|_| 9u64)
     }
 
-    fn ensure_fd_right(&mut self, fd: usize, right: u64) -> Result<(), String> {
-        let Some(capability) = self.process()?.fd_capabilities.get(fd).copied() else {
-            self.set_status_errno(9)?;
-            return Err(format!("fd index out of range: {fd}"));
+    fn fd_right_errno(&self, fd: usize, right: u64) -> Result<(), u64> {
+        let process = self.process().map_err(|_| 3u64)?;
+        let Some(capability) = process.fd_capabilities.get(fd).copied() else {
+            return Err(9);
         };
-        if matches!(self.process()?.fds[fd], FdHandle::Closed) {
-            self.set_status_errno(9)?;
-            return Err(format!("fd {fd} is closed"));
+        if matches!(process.fds.get(fd), Some(FdHandle::Closed) | None) {
+            return Err(9);
         }
         if capability.revoked {
-            self.set_status_errno(116)?;
-            return Err(format!("fd {fd} capability is revoked"));
+            return Err(116);
         }
         if capability.rights & right != right {
-            self.set_status_errno(1)?;
-            return Err(format!("fd {fd} capability right denied"));
+            return Err(1);
         }
         Ok(())
+    }
+
+    fn ensure_fd_right(&mut self, fd: usize, right: u64) -> Result<(), String> {
+        match self.fd_right_errno(fd, right) {
+            Ok(()) => Ok(()),
+            Err(errno) => {
+                self.set_status_errno(errno)?;
+                Err(format!("fd {fd} capability right denied"))
+            }
+        }
     }
 
     fn decode_fd_value(&self, value: u64) -> Result<usize, u64> {
@@ -2186,7 +2212,7 @@ impl Machine {
             }
             FdHandle::File(file) => file.write_all(&data),
             FdHandle::PipeWriter(buffer) => {
-                buffer.borrow_mut().extend(data.iter().copied());
+                buffer.borrow_mut().bytes.extend(data.iter().copied());
                 Ok(())
             }
             FdHandle::Counter(value) => {
@@ -2489,7 +2515,7 @@ impl Machine {
                 let mut buffer = buffer.borrow_mut();
                 let mut count = 0;
                 while count < len {
-                    let Some(byte) = buffer.pop_front() else {
+                    let Some(byte) = buffer.bytes.pop_front() else {
                         break;
                     };
                     tmp[count] = byte;
@@ -2632,6 +2658,154 @@ impl Machine {
         }
     }
 
+    fn cap_send(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
+        let channel_value = self.load_u64(argblock)?;
+        let src_value = self.load_u64(argblock + 8)?;
+        let flags = self.load_u64(argblock + 24)?;
+        let value = self.cap_send_inner(channel_value, src_value, flags);
+        match value {
+            Ok(count) => {
+                self.set_errno(0)?;
+                self.write_reg(result, count)
+            }
+            Err(errno) => {
+                self.set_status_errno(errno)?;
+                self.write_reg(result, -1i64 as u64)
+            }
+        }
+    }
+
+    fn cap_send_inner(
+        &mut self,
+        channel_value: u64,
+        src_value: u64,
+        flags: u64,
+    ) -> Result<u64, u64> {
+        if flags & !CAP_SEND_FLAG_MOVE != 0 {
+            return Err(22);
+        }
+        let channel = self.decode_fd_value(channel_value)?;
+        let src = self.decode_fd_value(src_value)?;
+        self.fd_right_errno(channel, CAP_RIGHT_WRITE | CAP_RIGHT_TRANSFER)?;
+        self.fd_right_errno(src, CAP_RIGHT_TRANSFER)?;
+
+        let (queue, payload) = {
+            let process = self.process().map_err(|_| 3u64)?;
+            let queue = match process.fds.get(channel).ok_or(9u64)? {
+                FdHandle::PipeWriter(queue) => Rc::clone(queue),
+                _ => return Err(9),
+            };
+            let handle = process
+                .fds
+                .get(src)
+                .ok_or(9u64)?
+                .clone_handle()
+                .map_err(|_| 9u64)?;
+            let capability = process.fd_capabilities.get(src).copied().ok_or(9u64)?;
+            if capability.revoked {
+                return Err(116);
+            }
+            (queue, CapabilityPayload { handle, capability })
+        };
+
+        queue.borrow_mut().capabilities.push_back(payload);
+        if flags & CAP_SEND_FLAG_MOVE != 0 {
+            self.close_fd_index(src).map_err(|_| 9u64)?;
+        }
+        Ok(1)
+    }
+
+    fn cap_recv(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
+        let channel_value = self.load_u64(argblock)?;
+        let dst_req = self.load_u64(argblock + 8)?;
+        let rights_req = self.load_u64(argblock + 16)?;
+        let flags = self.load_u64(argblock + 24)?;
+        let value = self.cap_recv_inner(channel_value, dst_req, rights_req, flags);
+        match value {
+            Ok(token) => {
+                self.set_errno(0)?;
+                self.write_reg(result, token)
+            }
+            Err(errno) => {
+                self.set_status_errno(errno)?;
+                self.write_reg(result, -1i64 as u64)
+            }
+        }
+    }
+
+    fn cap_recv_inner(
+        &mut self,
+        channel_value: u64,
+        dst_req: u64,
+        rights_req: u64,
+        flags: u64,
+    ) -> Result<u64, u64> {
+        if flags != 0 {
+            return Err(22);
+        }
+        let channel = self.decode_fd_value(channel_value)?;
+        self.fd_right_errno(channel, CAP_RIGHT_READ | CAP_RIGHT_TRANSFER)?;
+        let queue = {
+            let process = self.process().map_err(|_| 3u64)?;
+            match process.fds.get(channel).ok_or(9u64)? {
+                FdHandle::PipeReader(queue) => Rc::clone(queue),
+                _ => return Err(9),
+            }
+        };
+
+        let source_capability = queue
+            .borrow()
+            .capabilities
+            .front()
+            .map(|payload| payload.capability)
+            .ok_or(11u64)?;
+        if source_capability.revoked {
+            return Err(116);
+        }
+        let rights = if rights_req == 0 {
+            source_capability.rights
+        } else {
+            rights_req
+        };
+        if rights & !source_capability.rights != 0 {
+            return Err(1);
+        }
+        if rights != source_capability.rights && !source_capability.narrowable {
+            return Err(1);
+        }
+
+        let dst = if dst_req == 0 {
+            self.ensure_domain_budget_errno(0, 0, 0, 1)?;
+            let process = self.process().map_err(|_| 3u64)?;
+            process
+                .fds
+                .iter()
+                .enumerate()
+                .find(|(idx, candidate)| {
+                    *idx != MESSAGE_ENDPOINT_FD && matches!(candidate, FdHandle::Closed)
+                })
+                .map(|(idx, _)| idx)
+                .ok_or(24u64)?
+        } else {
+            if dst_req as usize >= FDR_COUNT || dst_req as usize == MESSAGE_ENDPOINT_FD {
+                return Err(9);
+            }
+            let fd = dst_req as usize;
+            let delta = self.fd_slot_delta(fd).map_err(|_| 9u64)?;
+            self.ensure_domain_budget_errno(0, 0, 0, delta)?;
+            fd
+        };
+
+        let mut payload = queue.borrow_mut().capabilities.pop_front().ok_or(11u64)?;
+        payload.capability.rights = rights;
+        payload.capability.narrowable = payload.capability.narrowable && !payload.capability.sealed;
+        self.install_fd_capability(dst, payload.capability)
+            .map_err(|_| 9u64)?;
+        self.bump_fd_generation(dst).map_err(|_| 9u64)?;
+        self.process_mut().map_err(|_| 3u64)?.fds[dst] = payload.handle;
+        self.fd_token(dst).map_err(|_| 9u64)
+    }
+
     fn cap_dup(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
         let src_value = self.load_u64(argblock)?;
         let dst_req = self.load_u64(argblock + 8)?;
@@ -2761,7 +2935,7 @@ impl Machine {
         let arg = self.load_u64(argblock + 40).map_err(|_| 14u64)?;
         match (kind, profile) {
             (OBJECT_KIND_QUEUE, OBJECT_PROFILE_PIPE) => {
-                let buffer = Rc::new(RefCell::new(VecDeque::new()));
+                let buffer = Rc::new(RefCell::new(PipeBuffer::default()));
                 let read_fd =
                     self.install_object_fd(fd0_req, FdHandle::PipeReader(Rc::clone(&buffer)))?;
                 let write_fd = self.install_object_fd(fd1_req, FdHandle::PipeWriter(buffer))?;
@@ -3020,9 +3194,9 @@ impl Machine {
             }
             FdHandle::PipeWriter(queue) => {
                 let mut queue = queue.borrow_mut();
-                queue.extend(op_id.to_le_bytes());
-                queue.extend(value0.to_le_bytes());
-                queue.extend(value1.to_le_bytes());
+                queue.bytes.extend(op_id.to_le_bytes());
+                queue.bytes.extend(value0.to_le_bytes());
+                queue.bytes.extend(value1.to_le_bytes());
                 Ok(())
             }
             _ => {
@@ -4385,7 +4559,10 @@ impl Machine {
             | FdHandle::Dir { .. }
             | FdHandle::Counter(_)
             | FdHandle::MemoryObject { .. } => Ok(true),
-            FdHandle::PipeReader(buffer) => Ok(!buffer.borrow().is_empty()),
+            FdHandle::PipeReader(buffer) => {
+                let buffer = buffer.borrow();
+                Ok(!buffer.bytes.is_empty() || !buffer.capabilities.is_empty())
+            }
             FdHandle::TcpListener { listener, pending } => {
                 if pending.is_some() {
                     return Ok(true);
@@ -4440,7 +4617,10 @@ impl Machine {
             | FdHandle::MemoryObject { .. }
             | FdHandle::CallGate { .. } => Ok(true),
             FdHandle::MessageEndpoint => Ok(false),
-            FdHandle::PipeReader(buffer) => Ok(!buffer.borrow().is_empty()),
+            FdHandle::PipeReader(buffer) => {
+                let buffer = buffer.borrow();
+                Ok(!buffer.bytes.is_empty() || !buffer.capabilities.is_empty())
+            }
             FdHandle::Closed => Ok(false),
             FdHandle::TcpListener { listener, pending } => {
                 if pending.is_some() {
@@ -5589,6 +5769,161 @@ mod tests {
         machine.thread_mut().unwrap().regs[8] = 1;
         machine
             .exec(Instr::ReadFdDyn(Reg(6), Reg(7), Reg(8)))
+            .unwrap();
+        assert_eq!(machine.process().unwrap().errno, 116);
+    }
+
+    #[test]
+    fn cap_send_requires_transfer_right() {
+        let program = Program::parse(
+            r#"
+            .data
+            path: .string "Cargo.toml"
+
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let path = program.data_labels["path"];
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        let pipe = Rc::new(RefCell::new(PipeBuffer::default()));
+        machine.processes.get_mut(&1).unwrap().fds[3] = FdHandle::PipeReader(Rc::clone(&pipe));
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[3] = FdCapability::full(3);
+        machine.processes.get_mut(&1).unwrap().fds[4] = FdHandle::PipeWriter(pipe);
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[4] = FdCapability::full(4);
+
+        machine.thread_mut().unwrap().regs[1] = path;
+        machine.thread_mut().unwrap().regs[2] = 0;
+        machine
+            .exec(Instr::OpenFdDyn(Reg(5), Reg(1), Reg(2)))
+            .unwrap();
+        let source = machine.thread().unwrap().regs[5];
+        let arg = ARG_BASE;
+        machine.store_u64(arg, source).unwrap();
+        machine.store_u64(arg + 8, 0).unwrap();
+        machine.store_u64(arg + 16, CAP_RIGHT_READ).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_dup(Reg(6), arg).unwrap();
+        let no_transfer = machine.thread().unwrap().regs[6];
+
+        machine.store_u64(arg, 4).unwrap();
+        machine.store_u64(arg + 8, no_transfer).unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_send(Reg(7), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[7], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
+    }
+
+    #[test]
+    fn cap_send_recv_transfers_narrowed_capability() {
+        let program = Program::parse(
+            r#"
+            .data
+            path: .string "Cargo.toml"
+
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let path = program.data_labels["path"];
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        let pipe = Rc::new(RefCell::new(PipeBuffer::default()));
+        machine.processes.get_mut(&1).unwrap().fds[3] = FdHandle::PipeReader(Rc::clone(&pipe));
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[3] = FdCapability::full(3);
+        machine.processes.get_mut(&1).unwrap().fds[4] = FdHandle::PipeWriter(pipe);
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[4] = FdCapability::full(4);
+
+        machine.thread_mut().unwrap().regs[1] = path;
+        machine.thread_mut().unwrap().regs[2] = 0;
+        machine
+            .exec(Instr::OpenFdDyn(Reg(5), Reg(1), Reg(2)))
+            .unwrap();
+        let source = machine.thread().unwrap().regs[5];
+        let arg = ARG_BASE;
+        machine.store_u64(arg, 4).unwrap();
+        machine.store_u64(arg + 8, source).unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_send(Reg(6), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[6], 1);
+
+        machine.store_u64(arg, 3).unwrap();
+        machine.store_u64(arg + 8, 0).unwrap();
+        machine.store_u64(arg + 16, CAP_RIGHT_READ).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_recv(Reg(7), arg).unwrap();
+        let received = machine.thread().unwrap().regs[7];
+        assert_ne!(received, -1i64 as u64);
+        let received_fd = machine.decode_fd_value(received).unwrap();
+        assert_eq!(
+            machine.process().unwrap().fd_capabilities[received_fd].rights,
+            CAP_RIGHT_READ
+        );
+
+        machine.thread_mut().unwrap().regs[8] = received;
+        machine.thread_mut().unwrap().regs[9] = ARG_BASE + 0x1000;
+        machine.thread_mut().unwrap().regs[10] = 1;
+        machine
+            .exec(Instr::WriteFdDyn(Reg(8), Reg(9), Reg(10)))
+            .unwrap();
+        assert_eq!(machine.process().unwrap().errno, 1);
+    }
+
+    #[test]
+    fn cap_revoke_invalidates_received_capability() {
+        let program = Program::parse(
+            r#"
+            .data
+            path: .string "Cargo.toml"
+
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let path = program.data_labels["path"];
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        let pipe = Rc::new(RefCell::new(PipeBuffer::default()));
+        machine.processes.get_mut(&1).unwrap().fds[3] = FdHandle::PipeReader(Rc::clone(&pipe));
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[3] = FdCapability::full(3);
+        machine.processes.get_mut(&1).unwrap().fds[4] = FdHandle::PipeWriter(pipe);
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[4] = FdCapability::full(4);
+
+        machine.thread_mut().unwrap().regs[1] = path;
+        machine.thread_mut().unwrap().regs[2] = 0;
+        machine
+            .exec(Instr::OpenFdDyn(Reg(5), Reg(1), Reg(2)))
+            .unwrap();
+        let source = machine.thread().unwrap().regs[5];
+        let arg = ARG_BASE;
+        machine.store_u64(arg, 4).unwrap();
+        machine.store_u64(arg + 8, source).unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_send(Reg(6), arg).unwrap();
+
+        machine.store_u64(arg, 3).unwrap();
+        machine.store_u64(arg + 8, 0).unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_recv(Reg(7), arg).unwrap();
+        let received = machine.thread().unwrap().regs[7];
+
+        machine.store_u64(arg, source).unwrap();
+        machine.cap_revoke(Reg(8), arg).unwrap();
+        assert!(machine.thread().unwrap().regs[8] >= 2);
+
+        machine.thread_mut().unwrap().regs[9] = received;
+        machine.thread_mut().unwrap().regs[10] = ARG_BASE + 0x1000;
+        machine.thread_mut().unwrap().regs[11] = 1;
+        machine
+            .exec(Instr::ReadFdDyn(Reg(9), Reg(10), Reg(11)))
             .unwrap();
         assert_eq!(machine.process().unwrap().errno, 116);
     }

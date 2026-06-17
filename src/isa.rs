@@ -167,6 +167,8 @@ pub enum Instr {
     MsgSend(Reg, Reg, Reg),
     ObjectCtl(Reg, Reg),
     DmaCtl(Reg, Reg),
+    CapSend(Reg, Reg),
+    CapRecv(Reg, Reg),
     CapDup(Reg, Reg),
     CapRevoke(Reg, Reg),
     DomainCtl(Reg, Reg),

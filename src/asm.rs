@@ -595,6 +595,14 @@ impl Parser {
                 arity(2)?;
                 Instr::DmaCtl(reg(&args[0])?, reg(&args[1])?)
             }
+            "CAP_SEND" => {
+                arity(2)?;
+                Instr::CapSend(reg(&args[0])?, reg(&args[1])?)
+            }
+            "CAP_RECV" => {
+                arity(2)?;
+                Instr::CapRecv(reg(&args[0])?, reg(&args[1])?)
+            }
             "CAP_DUP" => {
                 arity(2)?;
                 Instr::CapDup(reg(&args[0])?, reg(&args[1])?)
@@ -940,6 +948,8 @@ mod tests {
             .text
               CAP_DUP r1, r2
               CAP_REVOKE r3, r4
+              CAP_SEND r5, r6
+              CAP_RECV r7, r8
             "#,
         )
         .unwrap();
@@ -950,6 +960,14 @@ mod tests {
         assert!(matches!(
             program.instructions[1],
             Instr::CapRevoke(Reg(3), Reg(4))
+        ));
+        assert!(matches!(
+            program.instructions[2],
+            Instr::CapSend(Reg(5), Reg(6))
+        ));
+        assert!(matches!(
+            program.instructions[3],
+            Instr::CapRecv(Reg(7), Reg(8))
         ));
     }
 
