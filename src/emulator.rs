@@ -6658,6 +6658,14 @@ mod tests {
                 4,
                 ARG_BASE + 0x2200,
             ),
+            (
+                CLASSIFY_RULE_RANGE,
+                CLASSIFY_FIELD_DST_PORT,
+                8000,
+                9000,
+                0,
+                ARG_BASE + 0x2300,
+            ),
         ];
         for (kind, field, value, mask, hash_mod, rules) in rule_sets {
             write_classifier_rule(
@@ -6678,6 +6686,79 @@ mod tests {
             );
             machine.close_fd_index(6).unwrap();
         }
+    }
+
+    #[test]
+    fn classifier_supports_mark_and_count_actions_without_queue_authority() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let source = create_memory_source(&mut machine, 5);
+        let rules = ARG_BASE + 0x1000;
+        let envelope = ARG_BASE + 0x1a00;
+        let result = ARG_BASE + 0x1b00;
+        let counters = ARG_BASE + 0x1c00;
+        write_classifier_rule(
+            &mut machine,
+            rules,
+            CLASSIFY_RULE_EXACT,
+            CLASSIFY_FIELD_SERVICE_ID,
+            55,
+            0,
+            CLASSIFY_ACTION_MARK,
+            0xabcd,
+            0,
+        );
+        write_classifier_rule(
+            &mut machine,
+            rules + CLASSIFIER_RULE_SIZE,
+            CLASSIFY_RULE_EXACT,
+            CLASSIFY_FIELD_SERVICE_ID,
+            77,
+            0,
+            CLASSIFY_ACTION_COUNT,
+            0,
+            0,
+        );
+        let classifier = create_classifier(&mut machine, 6, rules, 2, 0, 0);
+
+        write_envelope(
+            &mut machine,
+            envelope,
+            CLASSIFY_PROFILE_IPC,
+            source,
+            0,
+            0,
+            55,
+            0,
+            0,
+        );
+        assert_eq!(
+            classify(&mut machine, classifier, envelope, result),
+            CLASSIFY_ACTION_MARK
+        );
+        assert_eq!(machine.load_u64(result + 8).unwrap(), 0xabcd);
+
+        write_envelope(
+            &mut machine,
+            envelope,
+            CLASSIFY_PROFILE_IPC,
+            source,
+            0,
+            0,
+            77,
+            0,
+            0,
+        );
+        assert_eq!(
+            classify(&mut machine, classifier, envelope, result),
+            CLASSIFY_ACTION_COUNT
+        );
+        query_classifier_counters(&mut machine, classifier, counters);
+        assert_eq!(machine.load_u64(counters).unwrap(), 2);
+        assert_eq!(machine.load_u64(counters + 8).unwrap(), 0);
+        assert_eq!(machine.load_u64(counters + 16).unwrap(), 0);
+        assert_eq!(machine.load_u64(counters + 24).unwrap(), 0);
+        assert_eq!(machine.load_u64(counters + 32).unwrap(), 0);
     }
 
     #[test]

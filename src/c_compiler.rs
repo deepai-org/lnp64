@@ -1007,6 +1007,8 @@ fn normalize_c_types(source: &str) -> String {
     out = out.replace("int (*func)(void)", "int func");
     out = out.replace("int (*func)(int)", "int func");
     for (from, to) in [
+        ("static const char *", "int "),
+        ("static char *", "int "),
         ("static const unsigned long", "int"),
         ("static unsigned", "int"),
         ("static char", "int"),
@@ -1144,6 +1146,16 @@ fn normalize_struct_object_declarations(source: &str, ty: &str, size: i64) -> St
                 .split(',')
                 .map(str::trim);
             for name in names {
+                let (name, alloc_size) = if let Some(open) = name.find('[') {
+                    let close = name[open + 1..]
+                        .find(']')
+                        .map(|close| open + 1 + close)
+                        .unwrap_or(name.len());
+                    let len = name[open + 1..close].trim().parse::<i64>().unwrap_or(1);
+                    (name[..open].trim(), size * len.max(1))
+                } else {
+                    (name, size)
+                };
                 object_names.push(name.to_string());
                 out.push_str(indent);
                 out.push_str("int ");
@@ -1151,7 +1163,7 @@ fn normalize_struct_object_declarations(source: &str, ty: &str, size: i64) -> St
                 out.push_str("; ");
                 out.push_str(name);
                 out.push_str(" = alloc(");
-                out.push_str(&size.to_string());
+                out.push_str(&alloc_size.to_string());
                 out.push_str(");\n");
             }
         } else {
@@ -18506,6 +18518,60 @@ mod tests {
             return 0;
         }
         "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn static_char_pointer_locals_keep_byte_pointer_arithmetic() {
+        let source = r#"
+        int main() {
+            static char *buf = 0;
+            char *p;
+            int len = 6;
+            int left = 2;
+            buf = "a\nb\nc\n";
+            for (p = buf + len - 2; p >= buf; p--) {
+                if (*p != '\n') continue;
+                left--;
+                if (!left) {
+                    p++;
+                    break;
+                }
+            }
+            if (strcmp(p, "b\nc\n") != 0) return 1;
+            return 0;
+        }
+        "#;
+        let normalized = preprocess_source(source);
+        assert!(normalized.contains("int buf = 0;"), "{normalized}");
+        assert!(!normalized.contains("int *buf"), "{normalized}");
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn local_timespec_arrays_allocate_whole_object_storage() {
+        let source = r#"
+        int main() {
+            struct timespec times[2];
+            times[0].tv_sec = 7;
+            times[1].tv_nsec = 9;
+            if (times[0].tv_sec != 7) return 1;
+            if (times[1].tv_nsec != 9) return 2;
+            return 0;
+        }
+        "#;
+        let normalized = preprocess_source(source);
+        assert!(
+            normalized.contains("int times; times = alloc(32);"),
+            "{normalized}"
+        );
+        assert!(!normalized.contains("times[2] = alloc"), "{normalized}");
         let asm = compile(source).unwrap();
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
