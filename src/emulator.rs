@@ -820,6 +820,10 @@ impl Machine {
     }
 
     pub fn set_args(&mut self, args: &[String]) -> Result<(), String> {
+        self.set_process_entry(args, &[])
+    }
+
+    pub fn set_process_entry(&mut self, args: &[String], env: &[String]) -> Result<(), String> {
         let pid = self.thread()?.pid;
         let process = self
             .processes
@@ -827,7 +831,14 @@ impl Machine {
             .ok_or_else(|| format!("missing process {pid}"))?;
         let argc_addr = ARG_BASE as usize;
         let argv_addr = (ARG_BASE + 8) as usize;
+        let envp_addr = argv_addr + (args.len() + 1) * 8;
         let mut str_addr = ARG_BASE + 0x1000;
+        let arg_page_start = ARG_BASE as usize;
+        let arg_page_end = (ARG_BASE + ARG_SIZE) as usize;
+        process.memory[arg_page_start..arg_page_end].fill(0);
+        if envp_addr + (env.len() + 1) * 8 > str_addr as usize {
+            return Err("process entry pointer table exceeds reserved argument area".to_string());
+        }
         process.memory[argc_addr..argc_addr + 8]
             .copy_from_slice(&(args.len() as u64).to_le_bytes());
         for (idx, arg) in args.iter().enumerate() {
@@ -844,6 +855,21 @@ impl Machine {
             str_addr += bytes.len() as u64 + 1;
         }
         let null_slot = argv_addr + args.len() * 8;
+        process.memory[null_slot..null_slot + 8].copy_from_slice(&0u64.to_le_bytes());
+        for (idx, item) in env.iter().enumerate() {
+            let ptr_slot = envp_addr + idx * 8;
+            process.memory[ptr_slot..ptr_slot + 8].copy_from_slice(&str_addr.to_le_bytes());
+            let bytes = item.as_bytes();
+            let start = str_addr as usize;
+            let end = start + bytes.len();
+            if end + 1 >= (ARG_BASE + ARG_SIZE) as usize {
+                return Err("envp data exceeds emulated argument page".to_string());
+            }
+            process.memory[start..end].copy_from_slice(bytes);
+            process.memory[end] = 0;
+            str_addr += bytes.len() as u64 + 1;
+        }
+        let null_slot = envp_addr + env.len() * 8;
         process.memory[null_slot..null_slot + 8].copy_from_slice(&0u64.to_le_bytes());
         Ok(())
     }
@@ -1620,10 +1646,12 @@ impl Machine {
                 self.write_reg(dst, child_pid)?;
                 let _ = parent_pid;
             }
-            Instr::Exec(path_reg, argv_reg) => {
+            Instr::Exec(path_reg, argv_reg, envp_reg) => {
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
                 let argv = self.read_reg(argv_reg)?;
+                let envp = self.read_reg(envp_reg)?;
                 let args = self.collect_exec_args(&path, argv)?;
+                let env = self.collect_exec_env(envp)?;
                 let source = fs::read_to_string(&path)
                     .map_err(|err| format!("EXEC failed to read {path:?}: {err}"))?;
                 let program = Program::parse(&source)
@@ -1640,7 +1668,7 @@ impl Machine {
                 let pid = self.thread()?.pid;
                 let tid = self.thread()?.tid;
                 *self.thread_mut()? = Thread::new(tid, pid, layout.stack_top);
-                self.set_args(&args)?;
+                self.set_process_entry(&args, &env)?;
             }
             Instr::Spawn(dst, entry) => {
                 self.require_domain_cap(DOMAIN_CAP_PROCESS)?;
@@ -4413,7 +4441,17 @@ impl Machine {
     }
 
     fn env_auxv_base(&mut self) -> Result<u64, String> {
-        Ok(self.env_envp_base()? + 8)
+        Ok(self.env_envp_base()? + ((self.env_count()? + 1) * 8))
+    }
+
+    fn env_count(&mut self) -> Result<u64, String> {
+        let envp = self.env_envp_base()?;
+        for idx in 0..256u64 {
+            if self.load_u64(envp + idx * 8)? == 0 {
+                return Ok(idx);
+            }
+        }
+        Err("envp is not null-terminated within 256 entries".to_string())
     }
 
     fn env_auxv_entry(&self, index: u64) -> (u64, u64) {
@@ -4938,15 +4976,32 @@ impl Machine {
         if argv == 0 {
             return Ok(vec![path.to_string()]);
         }
-        let mut args = Vec::new();
-        for idx in 0..256u64 {
-            let ptr = self.load_u64(argv + idx * 8)?;
-            if ptr == 0 {
-                return Ok(args);
-            }
-            args.push(self.read_c_string(ptr)?);
+        self.collect_exec_string_vector(argv, "argv")
+    }
+
+    fn collect_exec_env(&mut self, envp: u64) -> Result<Vec<String>, String> {
+        if envp == 0 {
+            return Ok(Vec::new());
         }
-        Err("EXEC argv is not null-terminated within 256 entries".to_string())
+        self.collect_exec_string_vector(envp, "envp")
+    }
+
+    fn collect_exec_string_vector(
+        &mut self,
+        vector: u64,
+        name: &str,
+    ) -> Result<Vec<String>, String> {
+        let mut values = Vec::new();
+        for idx in 0..256u64 {
+            let ptr = self.load_u64(vector + idx * 8)?;
+            if ptr == 0 {
+                return Ok(values);
+            }
+            values.push(self.read_c_string(ptr)?);
+        }
+        Err(format!(
+            "EXEC {name} is not null-terminated within 256 entries"
+        ))
     }
 
     fn read_pcr(&self, pcr: Pcr) -> Result<u64, String> {
@@ -5443,19 +5498,36 @@ mod tests {
     }
 
     #[test]
-    fn exec_installs_argv_on_replacement_process() {
+    fn exec_installs_process_entry_on_replacement_process() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let child_path = std::env::temp_dir().join(format!("lnp64_exec_args_{unique}.s"));
+        let child_path = std::env::temp_dir().join(format!("lnp64_exec_entry_{unique}.s"));
         fs::write(
             &child_path,
             r#"
             .text
-              LI r1, 0x700000
-              LD r2, [r1, 0]
-              EXIT r2
+              LI r10, 0x700000
+              LD r2, [r10, 0]
+              LI r3, 2
+              CMP r2, r3
+              BNE bad
+              LI r4, 0x700020
+              LD r5, [r4, 0]
+              CMP r5, r0
+              BEQ bad
+              LD.B r6, [r5, 0]
+              LI r7, 75
+              CMP r6, r7
+              BNE bad
+              LD r8, [r4, 8]
+              CMP r8, r0
+              BNE bad
+              EXIT r0
+            bad:
+              LI r1, 1
+              EXIT r1
             "#,
         )
         .unwrap();
@@ -5466,14 +5538,18 @@ mod tests {
             path: .string "{child_path}"
             arg0: .string "child"
             arg1: .string "two"
+            env0: .string "KEY=value"
             argv: .quad arg0
                   .quad arg1
+                  .quad 0
+            envp: .quad env0
                   .quad 0
 
             .text
               LI r1, path
               LI r2, argv
-              EXEC r1, r2
+              LI r3, envp
+              EXEC r1, r2, r3
               LI r3, 99
               EXIT r3
             "#
@@ -5482,7 +5558,7 @@ mod tests {
         let mut machine = Machine::new(program);
         let result = machine.run();
         let _ = fs::remove_file(child_path.as_ref());
-        assert_eq!(result.unwrap(), 2);
+        assert_eq!(result.unwrap(), 0);
     }
 
     #[test]

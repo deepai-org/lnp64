@@ -501,8 +501,15 @@ impl Parser {
                 Instr::Fork(reg(&args[0])?)
             }
             "EXEC" => {
-                arity(2)?;
-                Instr::Exec(reg(&args[0])?, reg(&args[1])?)
+                if args.len() != 2 && args.len() != 3 {
+                    return Err(self.err("EXEC expects 2 or 3 arguments".to_string()));
+                }
+                let envp = if args.len() == 3 {
+                    reg(&args[2])?
+                } else {
+                    Reg(0)
+                };
+                Instr::Exec(reg(&args[0])?, reg(&args[1])?, envp)
             }
             "SPAWN" => {
                 arity(2)?;
@@ -1025,12 +1032,22 @@ mod tests {
         let program = Program::parse(
             r#"
             .text
+              EXEC r9, r10
+              EXEC r11, r12, r13
               THREAD_JOIN r1, r2, r3
             "#,
         )
         .unwrap();
         assert!(matches!(
             program.instructions[0],
+            Instr::Exec(Reg(9), Reg(10), Reg(0))
+        ));
+        assert!(matches!(
+            program.instructions[1],
+            Instr::Exec(Reg(11), Reg(12), Reg(13))
+        ));
+        assert!(matches!(
+            program.instructions[2],
             Instr::ThreadJoin(Reg(1), Reg(2), Reg(3))
         ));
     }

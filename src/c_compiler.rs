@@ -8163,11 +8163,19 @@ impl CodeGen {
                 }
                 let path = self.emit_expr(&args[0])?;
                 let argv = if args.len() > 1 {
-                    self.emit_expr(&args[1])?
+                    Some(self.emit_expr(&args[1])?)
                 } else {
-                    0
+                    None
                 };
-                self.text.push(format!("  EXEC r{path}, r{argv}"));
+                let envp = if name == "execve" {
+                    Some(self.emit_expr(&args[2])?)
+                } else {
+                    None
+                };
+                let argv_text = argv.map_or_else(|| "r0".to_string(), |reg| format!("r{reg}"));
+                let envp_text = envp.map_or_else(|| "r0".to_string(), |reg| format!("r{reg}"));
+                self.text
+                    .push(format!("  EXEC r{path}, {argv_text}, {envp_text}"));
                 let dst = self.alloc_reg()?;
                 self.text.push(format!("  LI r{dst}, -1"));
                 Ok(dst)
@@ -8188,7 +8196,14 @@ impl CodeGen {
                     &args[1..]
                 };
                 let argv = self.emit_exec_argv_array(argv_args)?;
-                self.text.push(format!("  EXEC r{path}, r{argv}"));
+                let envp = if name == "execle" {
+                    Some(self.emit_expr(&args[args.len() - 1])?)
+                } else {
+                    None
+                };
+                let envp_text = envp.map_or_else(|| "r0".to_string(), |reg| format!("r{reg}"));
+                self.text
+                    .push(format!("  EXEC r{path}, r{argv}, {envp_text}"));
                 let dst = self.alloc_reg()?;
                 self.text.push(format!("  LI r{dst}, -1"));
                 Ok(dst)

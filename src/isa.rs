@@ -146,7 +146,7 @@ pub enum Instr {
     EnvGet(Reg, Reg, Reg, Reg),
     Random(Reg, Reg, Reg),
     Fork(Reg),
-    Exec(Reg, Reg),
+    Exec(Reg, Reg, Reg),
     Spawn(Reg, Reg),
     ThreadJoin(Reg, Reg, Reg),
     Yield,
