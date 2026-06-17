@@ -5850,6 +5850,14 @@ impl CodeGen {
                 let ts = self.emit_expr(&args[1])?;
                 self.emit_clock_gettime(ts)
             }
+            "clock_getres" => {
+                if args.len() != 2 {
+                    return Err("clock_getres(clockid, ts) expects 2 arguments".to_string());
+                }
+                let _clockid = self.emit_expr(&args[0])?;
+                let ts = self.emit_expr(&args[1])?;
+                self.emit_clock_getres(ts)
+            }
             "timerfd_create" => {
                 if args.len() != 2 {
                     return Err("timerfd_create(clockid, flags) expects 2 arguments".to_string());
@@ -11421,6 +11429,20 @@ impl CodeGen {
         Ok(dst)
     }
 
+    fn emit_clock_getres(&mut self, ts: usize) -> Result<usize, String> {
+        let nsec = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let done = self.new_label("clock_getres_done");
+        self.text.push(format!("  CMP r{ts}, r0"));
+        self.text.push(format!("  BEQ {done}"));
+        self.text.push(format!("  ST [r{ts}, 0], r0"));
+        self.text.push(format!("  LI r{nsec}, 10000000"));
+        self.text.push(format!("  ST [r{ts}, 8], r{nsec}"));
+        self.text.push(format!("{done}:"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        Ok(dst)
+    }
+
     fn emit_timerfd_create(&mut self) -> Result<usize, String> {
         let kind = self.alloc_reg()?;
         let profile = self.alloc_reg()?;
@@ -14933,6 +14955,7 @@ int main() {
             int ts;
             int req;
             int rem;
+            int res;
             int tv;
             int stack;
             int stored;
@@ -14940,29 +14963,33 @@ int main() {
             ts = alloc(16);
             req = alloc(16);
             rem = alloc(16);
+            res = alloc(16);
             tv = alloc(16);
             stored = 0;
             if (clock_gettime(CLOCK_REALTIME, ts) != 0) return 1;
             stack = ts;
             if (*stack == 0) return 2;
             if (*(stack + 1) < 0) return 3;
-            if (gettimeofday(tv, 0) != 0) return 4;
+            if (clock_getres(CLOCK_MONOTONIC, res) != 0) return 4;
+            if (load(res) != 0) return 5;
+            if (load(res + 8) != 10000000) return 6;
+            if (gettimeofday(tv, 0) != 0) return 7;
             stack = tv;
-            if (*stack == 0) return 5;
-            if (*(stack + 1) < 0) return 6;
+            if (*stack == 0) return 8;
+            if (*(stack + 1) < 0) return 9;
             now = time(&stored);
-            if (now == 0) return 7;
-            if (stored == 0) return 8;
+            if (now == 0) return 10;
+            if (stored == 0) return 11;
             stack = req;
             *stack = 0;
             *(stack + 1) = 1;
             stack = rem;
             *stack = 5;
             *(stack + 1) = 6;
-            if (nanosleep(req, rem) != 0) return 9;
+            if (nanosleep(req, rem) != 0) return 12;
             stack = rem;
-            if (*stack != 0) return 10;
-            if (*(stack + 1) != 0) return 11;
+            if (*stack != 0) return 13;
+            if (*(stack + 1) != 0) return 14;
             return 0;
         }
         "#;
