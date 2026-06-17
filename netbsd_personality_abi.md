@@ -13,7 +13,9 @@ checks that the generated assembly still uses the expected native primitives.
 gate: it boots `userland/netbsd_init.c`, executes `userland/netbsd_sh.c`, runs
 several compiled C test programs, and audits the generated native trace.
 `src/lowering.rs` is the typed compatibility dispatch table for NetBSD/POSIX
-surfaces used by this gate.
+surfaces used by this gate. It also carries the initial NetBSD-current
+syscall-number subset for the gate's supported calls, routing them to the same
+compatibility surfaces instead of creating an emulator syscall escape.
 
 ## ABI Surface
 
@@ -41,6 +43,10 @@ surfaces used by this gate.
 The checked lowering table in `src/lowering.rs` covers cwd/root/openat, byte
 I/O, pipes, poll/select/epoll, fork/exec, pthreads, mmap, fd passing, sockets,
 timers, call gates, signals, Resource Domains, errno, and metadata operations.
+The initial NetBSD syscall-number dispatch subset covers the corresponding
+open/read/write/close, pipe, poll/select/epoll, fork/exec/wait, LWP/thread,
+mmap, descriptor passing, socket, timer, cwd/root, metadata, and signal calls
+used by the system gate.
 
 ## Non-Goals For This Milestone
 

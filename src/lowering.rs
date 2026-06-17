@@ -28,6 +28,15 @@ pub enum CompatSurface {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompatibilityLayer {
+    Native,
+    Personality,
+    RuntimeLibc,
+    Unsupported,
+    IntentionallyExcluded,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativePrimitive {
     OpenAt,
     Pull,
@@ -64,6 +73,41 @@ pub enum NativePrimitive {
 pub struct CompatibilityLowering {
     pub surface: CompatSurface,
     pub native: &'static [NativePrimitive],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CompatibilitySurfacePolicy {
+    pub surface: CompatSurface,
+    pub layer: CompatibilityLayer,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NetBsdSyscallEntry {
+    pub number: u16,
+    pub name: &'static str,
+    pub surface: CompatSurface,
+    pub layer: CompatibilityLayer,
+}
+
+const fn surface_policy(
+    surface: CompatSurface,
+    layer: CompatibilityLayer,
+) -> CompatibilitySurfacePolicy {
+    CompatibilitySurfacePolicy { surface, layer }
+}
+
+const fn netbsd_entry(
+    number: u16,
+    name: &'static str,
+    surface: CompatSurface,
+    layer: CompatibilityLayer,
+) -> NetBsdSyscallEntry {
+    NetBsdSyscallEntry {
+        number,
+        name,
+        surface,
+        layer,
+    }
 }
 
 pub const LOWER_OPEN: &[NativePrimitive] = &[NativePrimitive::OpenAt];
@@ -221,6 +265,389 @@ pub const COMPATIBILITY_LOWERINGS: &[CompatibilityLowering] = &[
     },
 ];
 
+pub const COMPATIBILITY_SURFACE_POLICIES: &[CompatibilitySurfacePolicy] = &[
+    surface_policy(CompatSurface::Open, CompatibilityLayer::Personality),
+    surface_policy(CompatSurface::CwdRoot, CompatibilityLayer::Personality),
+    surface_policy(CompatSurface::Read, CompatibilityLayer::Native),
+    surface_policy(CompatSurface::Write, CompatibilityLayer::Native),
+    surface_policy(CompatSurface::Close, CompatibilityLayer::Native),
+    surface_policy(CompatSurface::Pipe, CompatibilityLayer::Personality),
+    surface_policy(
+        CompatSurface::PollSelectEpoll,
+        CompatibilityLayer::Personality,
+    ),
+    surface_policy(CompatSurface::Fork, CompatibilityLayer::Personality),
+    surface_policy(CompatSurface::Exec, CompatibilityLayer::Personality),
+    surface_policy(
+        CompatSurface::PthreadCreate,
+        CompatibilityLayer::RuntimeLibc,
+    ),
+    surface_policy(CompatSurface::Mmap, CompatibilityLayer::Native),
+    surface_policy(CompatSurface::FdPassing, CompatibilityLayer::Native),
+    surface_policy(
+        CompatSurface::SocketLoopback,
+        CompatibilityLayer::Personality,
+    ),
+    surface_policy(CompatSurface::Timer, CompatibilityLayer::Personality),
+    surface_policy(CompatSurface::CallGate, CompatibilityLayer::Native),
+    surface_policy(CompatSurface::Signal, CompatibilityLayer::Personality),
+    surface_policy(CompatSurface::Errno, CompatibilityLayer::RuntimeLibc),
+    surface_policy(CompatSurface::ResourceDomain, CompatibilityLayer::Native),
+    surface_policy(CompatSurface::Stat, CompatibilityLayer::Personality),
+    surface_policy(CompatSurface::Chmod, CompatibilityLayer::Personality),
+    surface_policy(CompatSurface::Fcntl, CompatibilityLayer::Personality),
+];
+
+// NetBSD-current sys/syscall.h revision 1.330 subset used by the personality gate.
+pub const NETBSD_SYSCALLS: &[NetBsdSyscallEntry] = &[
+    netbsd_entry(
+        2,
+        "fork",
+        CompatSurface::Fork,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(3, "read", CompatSurface::Read, CompatibilityLayer::Native),
+    netbsd_entry(4, "write", CompatSurface::Write, CompatibilityLayer::Native),
+    netbsd_entry(
+        5,
+        "open",
+        CompatSurface::Open,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(6, "close", CompatSurface::Close, CompatibilityLayer::Native),
+    netbsd_entry(
+        7,
+        "compat_50_wait4",
+        CompatSurface::PollSelectEpoll,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        12,
+        "chdir",
+        CompatSurface::CwdRoot,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        13,
+        "fchdir",
+        CompatSurface::CwdRoot,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        15,
+        "chmod",
+        CompatSurface::Chmod,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        27,
+        "recvmsg",
+        CompatSurface::SocketLoopback,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        28,
+        "sendmsg",
+        CompatSurface::SocketLoopback,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        29,
+        "recvfrom",
+        CompatSurface::SocketLoopback,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        30,
+        "accept",
+        CompatSurface::SocketLoopback,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        31,
+        "getpeername",
+        CompatSurface::SocketLoopback,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        32,
+        "getsockname",
+        CompatSurface::SocketLoopback,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        37,
+        "kill",
+        CompatSurface::Signal,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        41,
+        "dup",
+        CompatSurface::FdPassing,
+        CompatibilityLayer::Native,
+    ),
+    netbsd_entry(
+        42,
+        "pipe",
+        CompatSurface::Pipe,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        59,
+        "execve",
+        CompatSurface::Exec,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        73,
+        "munmap",
+        CompatSurface::Mmap,
+        CompatibilityLayer::Native,
+    ),
+    netbsd_entry(
+        74,
+        "mprotect",
+        CompatSurface::Mmap,
+        CompatibilityLayer::Native,
+    ),
+    netbsd_entry(
+        90,
+        "dup2",
+        CompatSurface::FdPassing,
+        CompatibilityLayer::Native,
+    ),
+    netbsd_entry(
+        92,
+        "fcntl",
+        CompatSurface::Fcntl,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        97,
+        "compat_30_socket",
+        CompatSurface::SocketLoopback,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        98,
+        "connect",
+        CompatSurface::SocketLoopback,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        104,
+        "bind",
+        CompatSurface::SocketLoopback,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        105,
+        "setsockopt",
+        CompatSurface::SocketLoopback,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        106,
+        "listen",
+        CompatSurface::SocketLoopback,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        118,
+        "getsockopt",
+        CompatSurface::SocketLoopback,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        120,
+        "readv",
+        CompatSurface::Read,
+        CompatibilityLayer::Native,
+    ),
+    netbsd_entry(
+        121,
+        "writev",
+        CompatSurface::Write,
+        CompatibilityLayer::Native,
+    ),
+    netbsd_entry(
+        128,
+        "rename",
+        CompatSurface::Open,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        133,
+        "sendto",
+        CompatSurface::SocketLoopback,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        134,
+        "shutdown",
+        CompatSurface::SocketLoopback,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        135,
+        "socketpair",
+        CompatSurface::SocketLoopback,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        136,
+        "mkdir",
+        CompatSurface::Open,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        173,
+        "pread",
+        CompatSurface::Read,
+        CompatibilityLayer::Native,
+    ),
+    netbsd_entry(
+        174,
+        "pwrite",
+        CompatSurface::Write,
+        CompatibilityLayer::Native,
+    ),
+    netbsd_entry(
+        177,
+        "timerfd_create",
+        CompatSurface::Timer,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        178,
+        "timerfd_settime",
+        CompatSurface::Timer,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        179,
+        "timerfd_gettime",
+        CompatSurface::Timer,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(197, "mmap", CompatSurface::Mmap, CompatibilityLayer::Native),
+    netbsd_entry(
+        199,
+        "lseek",
+        CompatSurface::Read,
+        CompatibilityLayer::Native,
+    ),
+    netbsd_entry(
+        209,
+        "poll",
+        CompatSurface::PollSelectEpoll,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        267,
+        "eventfd",
+        CompatSurface::PollSelectEpoll,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        291,
+        "compat_16___sigaction14",
+        CompatSurface::Signal,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        293,
+        "__sigprocmask14",
+        CompatSurface::Signal,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        295,
+        "compat_16___sigreturn14",
+        CompatSurface::Signal,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        296,
+        "__getcwd",
+        CompatSurface::CwdRoot,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        309,
+        "_lwp_create",
+        CompatSurface::PthreadCreate,
+        CompatibilityLayer::RuntimeLibc,
+    ),
+    netbsd_entry(
+        340,
+        "__sigaction_sigtramp",
+        CompatSurface::Signal,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        394,
+        "__socket30",
+        CompatSurface::SocketLoopback,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        417,
+        "__select50",
+        CompatSurface::PollSelectEpoll,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        430,
+        "__nanosleep50",
+        CompatSurface::Timer,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        449,
+        "__wait450",
+        CompatSurface::PollSelectEpoll,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        453,
+        "pipe2",
+        CompatSurface::Pipe,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        465,
+        "fexecve",
+        CompatSurface::Exec,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        468,
+        "openat",
+        CompatSurface::Open,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        502,
+        "epoll_create1",
+        CompatSurface::PollSelectEpoll,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        503,
+        "epoll_ctl",
+        CompatSurface::PollSelectEpoll,
+        CompatibilityLayer::Personality,
+    ),
+    netbsd_entry(
+        504,
+        "epoll_pwait2",
+        CompatSurface::PollSelectEpoll,
+        CompatibilityLayer::Personality,
+    ),
+];
+
 pub const OBJECT_CTL_CREATE_RECORD_SIZE: u64 = 72;
 pub const DOMAIN_CTL_RECORD_SIZE: u64 = 208;
 
@@ -229,6 +656,27 @@ pub fn lowering_for(surface: CompatSurface) -> &'static [NativePrimitive] {
         .iter()
         .find(|entry| entry.surface == surface)
         .map(|entry| entry.native)
+        .unwrap_or(&[])
+}
+
+pub fn layer_for(surface: CompatSurface) -> Option<CompatibilityLayer> {
+    COMPATIBILITY_SURFACE_POLICIES
+        .iter()
+        .find(|entry| entry.surface == surface)
+        .map(|entry| entry.layer)
+}
+
+pub fn netbsd_syscall(number: u16) -> Option<&'static NetBsdSyscallEntry> {
+    NETBSD_SYSCALLS.iter().find(|entry| entry.number == number)
+}
+
+pub fn netbsd_syscall_by_name(name: &str) -> Option<&'static NetBsdSyscallEntry> {
+    NETBSD_SYSCALLS.iter().find(|entry| entry.name == name)
+}
+
+pub fn netbsd_syscall_lowering(number: u16) -> &'static [NativePrimitive] {
+    netbsd_syscall(number)
+        .map(|entry| lowering_for(entry.surface))
         .unwrap_or(&[])
 }
 
@@ -314,6 +762,143 @@ mod tests {
             assert!(
                 !lowering_for(surface).is_empty(),
                 "missing lowering for {surface:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn compatibility_surfaces_have_layer_policy() {
+        for entry in COMPATIBILITY_LOWERINGS {
+            assert!(
+                layer_for(entry.surface).is_some(),
+                "missing layer policy for {:?}",
+                entry.surface
+            );
+        }
+        assert_eq!(
+            layer_for(CompatSurface::Errno),
+            Some(CompatibilityLayer::RuntimeLibc)
+        );
+        assert_eq!(
+            layer_for(CompatSurface::Signal),
+            Some(CompatibilityLayer::Personality)
+        );
+        assert_eq!(
+            layer_for(CompatSurface::ResourceDomain),
+            Some(CompatibilityLayer::Native)
+        );
+    }
+
+    #[test]
+    fn netbsd_syscall_numbers_route_to_compat_surfaces() {
+        assert_eq!(
+            netbsd_syscall(2).map(|entry| entry.surface),
+            Some(CompatSurface::Fork)
+        );
+        assert_eq!(
+            netbsd_syscall(3).map(|entry| entry.surface),
+            Some(CompatSurface::Read)
+        );
+        assert_eq!(
+            netbsd_syscall(4).map(|entry| entry.surface),
+            Some(CompatSurface::Write)
+        );
+        assert_eq!(
+            netbsd_syscall(5).map(|entry| entry.surface),
+            Some(CompatSurface::Open)
+        );
+        assert_eq!(
+            netbsd_syscall(42).map(|entry| entry.surface),
+            Some(CompatSurface::Pipe)
+        );
+        assert_eq!(
+            netbsd_syscall(197).map(|entry| entry.surface),
+            Some(CompatSurface::Mmap)
+        );
+        assert_eq!(
+            netbsd_syscall(340).map(|entry| entry.surface),
+            Some(CompatSurface::Signal)
+        );
+        assert_eq!(
+            netbsd_syscall(468).map(|entry| entry.surface),
+            Some(CompatSurface::Open)
+        );
+        assert!(netbsd_syscall_lowering(54).is_empty());
+    }
+
+    #[test]
+    fn netbsd_syscall_dispatch_is_layered_over_native_lowerings() {
+        for entry in NETBSD_SYSCALLS {
+            assert_eq!(
+                Some(entry.layer),
+                layer_for(entry.surface),
+                "layer mismatch for {}",
+                entry.name
+            );
+            assert!(
+                !netbsd_syscall_lowering(entry.number).is_empty(),
+                "missing native lowering for {}",
+                entry.name
+            );
+        }
+    }
+
+    #[test]
+    fn netbsd_system_gate_syscalls_are_registered() {
+        let names = [
+            "fork",
+            "read",
+            "write",
+            "open",
+            "openat",
+            "close",
+            "compat_50_wait4",
+            "__wait450",
+            "chdir",
+            "fchdir",
+            "__getcwd",
+            "chmod",
+            "dup",
+            "dup2",
+            "fcntl",
+            "pipe",
+            "pipe2",
+            "execve",
+            "fexecve",
+            "mmap",
+            "mprotect",
+            "munmap",
+            "poll",
+            "__select50",
+            "epoll_create1",
+            "epoll_ctl",
+            "epoll_pwait2",
+            "timerfd_create",
+            "timerfd_settime",
+            "timerfd_gettime",
+            "__nanosleep50",
+            "_lwp_create",
+            "__socket30",
+            "bind",
+            "listen",
+            "connect",
+            "accept",
+            "recvfrom",
+            "sendto",
+            "sendmsg",
+            "recvmsg",
+            "getsockname",
+            "getsockopt",
+            "setsockopt",
+            "__sigaction_sigtramp",
+            "__sigprocmask14",
+            "kill",
+            "compat_16___sigreturn14",
+        ];
+        for name in names {
+            assert!(
+                netbsd_syscall_by_name(name).is_some(),
+                "missing NetBSD syscall dispatch entry for {name}"
             );
         }
     }
