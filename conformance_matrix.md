@@ -65,6 +65,7 @@ specific compiler/runtime special casing.
 | inih | passing | `third_party/inih/ini.c`, `third_party/inih/smoke.c`, `scripts/run_inih.sh` | `ini_parse_string` still depends on anonymous-struct aggregate layout; file parser path passes. `COMPAT-PKG-006`. |
 | zlib upstream | partial / passing checksums | `third_party/zlib/adler32.c`, `third_party/zlib/crc32.c`, `third_party/zlib/crc32.h`, `third_party/zlib/zutil.c`, `third_party/zlib/smoke.c`, `scripts/run_zlib.sh` | Full deflate/inflate remain `COMPAT-PKG-002`. |
 | natsort | passing | `third_party/natsort/strnatcmp.c`, `third_party/natsort/smoke.c`, `scripts/run_natsort.sh` | None known beyond broader C parser/runtime coverage. |
+| cwalk | passing | `third_party/cwalk/include/cwalk.h`, `third_party/cwalk/src/cwalk.c`, `third_party/cwalk/smoke.c`, `scripts/run_cwalk.sh` | Broader normalize/join/relative Windows-style coverage remains under `COMPAT-PKG-007`. |
 | small HTTP server | passing | `demos/httpd.c`, `scripts/run_demos.sh` | Socket nonblocking and network-service semantics tracked by `COMPAT-SOCK-001`. |
 | netcat-like socket demo | passing | `demos/netcat.c`, `scripts/run_demos.sh` | Socket nonblocking and descriptor passing tracked by `COMPAT-SOCK-001`. |
 | sqlite-lite demo | passing | `demos/sqlite_lite.c`, `demos/sqlite_lite.db`, `scripts/run_demos.sh` | This is not upstream SQLite; full SQLite remains `COMPAT-PKG-003`. |
@@ -73,7 +74,6 @@ specific compiler/runtime special casing.
 | SQLite upstream | not started | No checked-in SQLite target | Add package gate. `COMPAT-PKG-003`. |
 | libpng upstream | not started | No checked-in libpng target | Add package gate after zlib. `COMPAT-PKG-004`. |
 | musl tests subset | not started | No checked-in musl test gate | Add focused libc conformance harness. `COMPAT-PKG-005`. |
-| cwalk | failing / not checked in | Scratch probe compiles after generic `bool`, named-enum, word-pointer indexing, and `length` output-pointer fixes, then faults in nested segment aggregate handling | Track remaining aggregate copy/layout semantics under `COMPAT-PKG-007` before adding a package gate. |
 
 ## Open Compatibility Bugs
 
@@ -89,7 +89,7 @@ specific compiler/runtime special casing.
 | `COMPAT-PKG-004` | libpng | Not started. | Add after zlib passes. |
 | `COMPAT-PKG-005` | musl tests | Not started. | Pick a small libc-test subset that avoids unsupported dynamic linking first. |
 | `COMPAT-PKG-006` | inih parse-string aggregate path | File parser smoke passes with upstream `inih` r58. | Add generic anonymous-struct local layout support so `ini_parse_string` can run too. |
-| `COMPAT-PKG-007` | cwalk path library | Scratch probe reaches segment iteration after generic bool/enum, word-pointer indexing, and `length` out-parameter fixes. It now faults around nested segment aggregate state after `sjc = *sj`. | Reduce nested aggregate assignment/layout for cwalk segment structs to focused regressions before vendoring cwalk. |
+| `COMPAT-PKG-007` | cwalk path library | Upstream cwalk commit `e98d23f` has a checked smoke gate for Unix path predicates, basename/dirname output parameters, segment iteration, and extension replacement. | Expand the gate across normalize, join, relative, intersection, and Windows-style paths. |
 | `COMPAT-FS-001` | Filesystem/path conformance | sbase covers common commands. | Add negative/error path tests for symlinks, permissions, `stat`, and rename/link corner cases. |
 | `COMPAT-STDIO-001` | stdio conformance | Common descriptor-backed streams pass. | Add EOF/error flag, buffering, append, and mixed read/write tests. |
 | `COMPAT-LIBC-001` | Full `fcntl` command surface | Descriptor duplication path exists. | Define supported commands and add tests for unsupported errno behavior. |

@@ -332,13 +332,41 @@ enum UnOp {
 pub fn compile(source: &str) -> Result<String, String> {
     let layout_source = expand_object_like_macros(source);
     let inferred_field_offsets = c_layouts::collect_field_offsets(&layout_source);
+    let inferred_aggregate_sizes = c_layouts::collect_aggregate_sizes(&layout_source);
+    let mut inferred_aggregate_declarations =
+        c_layouts::collect_aggregate_declarations(&layout_source, &inferred_aggregate_sizes);
     let source = preprocess_source(source);
+    remove_heap_allocated_aggregate_declarations(&source, &mut inferred_aggregate_declarations);
     let tokens = Lexer::new(&source).lex()?;
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::new(
+        tokens,
+        inferred_aggregate_sizes,
+        inferred_aggregate_declarations,
+    );
     let program = parser.parse_program()?;
     let mut codegen = CodeGen::default();
     codegen.inferred_field_offsets = inferred_field_offsets;
     codegen.emit_program(&program)
+}
+
+fn remove_heap_allocated_aggregate_declarations(
+    source: &str,
+    declarations: &mut HashMap<String, i64>,
+) {
+    let heap_allocated: Vec<String> = declarations
+        .keys()
+        .filter(|name| {
+            source.lines().any(|line| {
+                let trimmed = line.trim();
+                trimmed.contains(&format!("int {name};"))
+                    && trimmed.contains(&format!("{name} = alloc("))
+            })
+        })
+        .cloned()
+        .collect();
+    for name in heap_allocated {
+        declarations.remove(&name);
+    }
 }
 
 pub fn compile_files(paths: &[PathBuf]) -> Result<String, String> {
@@ -2002,11 +2030,22 @@ impl Lexer {
 struct Parser {
     tokens: Vec<Token>,
     pos: usize,
+    aggregate_sizes: HashMap<String, i64>,
+    aggregate_declarations: HashMap<String, i64>,
 }
 
 impl Parser {
-    fn new(tokens: Vec<Token>) -> Self {
-        Self { tokens, pos: 0 }
+    fn new(
+        tokens: Vec<Token>,
+        aggregate_sizes: HashMap<String, i64>,
+        aggregate_declarations: HashMap<String, i64>,
+    ) -> Self {
+        Self {
+            tokens,
+            pos: 0,
+            aggregate_sizes,
+            aggregate_declarations,
+        }
     }
 
     fn parse_program(&mut self) -> Result<CProgram, String> {
@@ -2539,15 +2578,22 @@ impl Parser {
             } else {
                 None
             };
+            let aggregate_size = parsed_type
+                .aggregate
+                .as_deref()
+                .and_then(|type_name| {
+                    self.aggregate_sizes
+                        .get(type_name)
+                        .copied()
+                        .or_else(|| type_aggregate_size(type_name))
+                })
+                .or_else(|| self.aggregate_declarations.get(&name).copied());
             decls.push(LocalDecl {
                 name,
                 init,
                 init_list,
                 array_len,
-                aggregate_size: parsed_type
-                    .aggregate
-                    .as_deref()
-                    .and_then(type_aggregate_size),
+                aggregate_size,
             });
             if !self.check(&Token::Comma) {
                 break;
@@ -4388,6 +4434,9 @@ impl CodeGen {
 
     fn aggregate_assignment_size(&self, lhs: &Expr, rhs: &Expr) -> Option<i64> {
         let lhs_size = self.aggregate_expr_size(lhs)?;
+        if matches!(rhs, Expr::Unary(UnOp::Deref, _)) {
+            return Some(lhs_size);
+        }
         let rhs_size = self.aggregate_expr_size(rhs)?;
         if lhs_size == rhs_size {
             Some(lhs_size)
@@ -4417,6 +4466,7 @@ impl CodeGen {
     fn emit_aggregate_addr(&mut self, expr: &Expr) -> Result<usize, String> {
         match expr {
             Expr::Var(_) => self.emit_addr(expr),
+            Expr::Unary(UnOp::Deref, ptr) => self.emit_expr(ptr),
             Expr::Member(base, field) => self.emit_member_addr(base, field),
             Expr::Index(base, index) => {
                 let width = self.index_width(base);
@@ -5374,6 +5424,8 @@ impl CodeGen {
                     | "parser"
                     | "list"
                     | "length"
+                    | "basename"
+                    | "extension"
             )
         }) {
             8
@@ -14308,6 +14360,48 @@ mod tests {
     }
 
     #[test]
+    fn copies_inferred_nested_named_aggregate_assignments() {
+        let source = r#"
+        struct Segment {
+            int path;
+            int begin;
+            int size;
+        };
+
+        struct Joined {
+            struct Segment segment;
+            int paths;
+            int index;
+        };
+
+        int check(struct Joined *sj) {
+            struct Joined copy;
+            copy = *sj;
+            if (copy.segment.path != 11) return 1;
+            if (copy.segment.begin != 22) return 2;
+            if (copy.segment.size != 33) return 3;
+            if (copy.paths != 44) return 4;
+            if (copy.index != 55) return 5;
+            return 0;
+        }
+
+        int main() {
+            struct Joined sj;
+            sj.segment.path = 11;
+            sj.segment.begin = 22;
+            sj.segment.size = 33;
+            sj.paths = 44;
+            sj.index = 55;
+            return check(&sj);
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn address_of_stack_aggregate_passes_struct_address() {
         let source = r#"
         int takes_line(struct line *line) {
@@ -14377,6 +14471,47 @@ mod tests {
             length = 0;
             set_length(&length);
             return length == 257 ? 0 : 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn output_pointer_to_pointer_stores_full_word() {
+        let source = r#"
+        int set_basename(char **basename) {
+            *basename = "archive.tar.gz";
+            return 0;
+        }
+
+        int main() {
+            char *basename;
+            basename = 0;
+            set_basename(&basename);
+            return strcmp(basename, "archive.tar.gz") == 0 ? 0 : 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn normalized_heap_struct_declaration_is_not_stack_aggregate() {
+        let source = r#"
+        struct entry {
+            int name;
+            int mode;
+        };
+
+        int main() {
+            struct entry ent;
+            ent->mode = 11;
+            return ent.mode == 11 ? 0 : 1;
         }
         "#;
         let asm = compile(source).unwrap();

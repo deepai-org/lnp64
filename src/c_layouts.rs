@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 pub fn collect_field_offsets(source: &str) -> HashMap<String, i64> {
+    let aggregate_sizes = collect_aggregate_sizes(source);
     let source = strip_c_comments(source);
     let mut fields = HashMap::new();
     let mut stack: Vec<AggregateContext> = Vec::new();
@@ -55,14 +56,126 @@ pub fn collect_field_offsets(source: &str) -> HashMap<String, i64> {
             && !trimmed.contains('{')
             && !(trimmed.starts_with("enum ") && trimmed.contains('{'))
         {
+            let size = aggregate_field_size(trimmed, &aggregate_sizes);
             for name in field_names_from_decl(trimmed) {
                 fields.entry(name).or_insert(context.next_field_offset());
-                context.add_field_size(8);
+                context.add_field_size(size);
             }
         }
     }
 
     fields
+}
+
+pub fn collect_aggregate_sizes(source: &str) -> HashMap<String, i64> {
+    let source = strip_c_comments(source);
+    let mut sizes = HashMap::new();
+    let mut stack: Vec<NamedAggregateContext> = Vec::new();
+    let mut pending_aggregate: Option<(AggregateKind, Option<String>)> = None;
+
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if let Some((kind, name)) = pending_aggregate.take()
+            && trimmed.starts_with('{')
+        {
+            stack.push(NamedAggregateContext::new(kind, name));
+            continue;
+        }
+
+        if starts_aggregate_definition(trimmed) {
+            stack.push(NamedAggregateContext::new(
+                aggregate_kind(trimmed),
+                aggregate_definition_name(trimmed),
+            ));
+            continue;
+        }
+        if let Some(kind) = pending_aggregate_definition(trimmed) {
+            pending_aggregate = Some((kind, aggregate_definition_name(trimmed)));
+            continue;
+        }
+
+        if closing_aggregate_field(trimmed).is_some() {
+            let Some(context) = stack.pop() else {
+                continue;
+            };
+            let size = context.size();
+            if let Some(name) = context.name {
+                sizes.entry(name).or_insert(size);
+            }
+            if let Some(parent) = stack.last_mut() {
+                parent.add_field_size(size);
+            }
+            continue;
+        }
+
+        if let Some(context) = stack.last_mut()
+            && trimmed.ends_with(';')
+            && !trimmed.contains('{')
+            && !(trimmed.starts_with("enum ") && trimmed.contains('{'))
+        {
+            let size = aggregate_field_size(trimmed, &sizes);
+            for _ in field_names_from_decl(trimmed) {
+                context.add_field_size(size);
+            }
+        }
+    }
+
+    sizes
+}
+
+pub fn collect_aggregate_declarations(
+    source: &str,
+    sizes: &HashMap<String, i64>,
+) -> HashMap<String, i64> {
+    let source = strip_c_comments(source);
+    let mut declarations = HashMap::new();
+    let mut aggregate_depth = 0i64;
+    let mut pending_aggregate = false;
+
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if pending_aggregate {
+            pending_aggregate = false;
+            if trimmed.starts_with('{') {
+                aggregate_depth = count_braces(trimmed);
+                if aggregate_depth <= 0 {
+                    aggregate_depth = 1;
+                }
+                continue;
+            }
+        }
+        if aggregate_depth > 0 {
+            aggregate_depth += count_braces(trimmed);
+            if aggregate_depth < 0 {
+                aggregate_depth = 0;
+            }
+            continue;
+        }
+        if starts_aggregate_definition(trimmed) {
+            aggregate_depth = count_braces(trimmed);
+            if aggregate_depth > 0 {
+                continue;
+            }
+        }
+        if pending_aggregate_definition(trimmed).is_some() {
+            pending_aggregate = true;
+            continue;
+        }
+        if let Some((rest, size)) = named_aggregate_decl_rest(trimmed, sizes) {
+            for name in declarator_names(rest) {
+                declarations.entry(name).or_insert(size);
+            }
+        }
+    }
+
+    declarations
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,6 +219,29 @@ impl AggregateContext {
             AggregateKind::Struct => self.offset,
             AggregateKind::Union => self.max_size,
         }
+    }
+}
+
+#[derive(Debug)]
+struct NamedAggregateContext {
+    inner: AggregateContext,
+    name: Option<String>,
+}
+
+impl NamedAggregateContext {
+    fn new(kind: AggregateKind, name: Option<String>) -> Self {
+        Self {
+            inner: AggregateContext::new(kind),
+            name,
+        }
+    }
+
+    fn add_field_size(&mut self, size: i64) {
+        self.inner.add_field_size(size);
+    }
+
+    fn size(&self) -> i64 {
+        self.inner.size()
     }
 }
 
@@ -228,6 +364,84 @@ fn aggregate_kind(trimmed: &str) -> AggregateKind {
     }
 }
 
+fn aggregate_definition_name(trimmed: &str) -> Option<String> {
+    let trimmed = trimmed.trim_start();
+    let rest = trimmed
+        .strip_prefix("typedef struct ")
+        .or_else(|| trimmed.strip_prefix("struct "))
+        .or_else(|| trimmed.strip_prefix("typedef union "))
+        .or_else(|| trimmed.strip_prefix("union "))?;
+    let before_body = rest.split('{').next().unwrap_or(rest).trim();
+    let name = before_body.split_whitespace().next()?;
+    ident(name).map(|name| {
+        if trimmed.starts_with("typedef union ") || trimmed.starts_with("union ") {
+            format!("union {name}")
+        } else {
+            format!("struct {name}")
+        }
+    })
+}
+
+fn aggregate_field_size(trimmed: &str, sizes: &HashMap<String, i64>) -> i64 {
+    if let Some(rest) = trimmed.strip_prefix("struct ")
+        && let Some(name) = rest.split_whitespace().next()
+        && let Some(size) = sizes.get(&format!("struct {name}"))
+    {
+        if rest[name.len()..].trim_start().starts_with('*') {
+            return 8;
+        }
+        return *size;
+    }
+    if let Some(rest) = trimmed.strip_prefix("union ")
+        && let Some(name) = rest.split_whitespace().next()
+        && let Some(size) = sizes.get(&format!("union {name}"))
+    {
+        if rest[name.len()..].trim_start().starts_with('*') {
+            return 8;
+        }
+        return *size;
+    }
+    8
+}
+
+fn named_aggregate_decl_rest<'a>(
+    trimmed: &'a str,
+    sizes: &HashMap<String, i64>,
+) -> Option<(&'a str, i64)> {
+    let (kind, rest) = trimmed
+        .strip_prefix("struct ")
+        .map(|rest| ("struct", rest))
+        .or_else(|| trimmed.strip_prefix("union ").map(|rest| ("union", rest)))?;
+    let tag = rest.split_whitespace().next()?;
+    let size = *sizes.get(&format!("{kind} {tag}"))?;
+    let rest = rest[tag.len()..].trim();
+    if rest.contains('(') || !rest.ends_with(';') {
+        return None;
+    }
+    Some((rest.trim_end_matches(';').trim(), size))
+}
+
+fn declarator_names(rest: &str) -> Vec<String> {
+    rest.split(',')
+        .filter_map(|part| {
+            let part = part.trim();
+            if part.is_empty() || part.contains('*') {
+                return None;
+            }
+            ident(part)
+        })
+        .map(str::to_string)
+        .collect()
+}
+
+fn count_braces(line: &str) -> i64 {
+    line.chars().fold(0, |depth, ch| match ch {
+        '{' => depth + 1,
+        '}' => depth - 1,
+        _ => depth,
+    })
+}
+
 fn closing_aggregate_field(trimmed: &str) -> Option<Option<String>> {
     if !trimmed.starts_with('}') || !trimmed.ends_with(';') {
         return None;
@@ -324,7 +538,7 @@ fn ident(text: &str) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
-    use super::collect_field_offsets;
+    use super::{collect_aggregate_declarations, collect_aggregate_sizes, collect_field_offsets};
 
     #[test]
     fn collects_simple_struct_field_offsets() {
@@ -355,6 +569,62 @@ mod tests {
         );
         assert_eq!(fields["RoundKey"], 0);
         assert_eq!(fields["Iv"], 8);
+    }
+
+    #[test]
+    fn collects_nested_named_aggregate_sizes() {
+        let source = r#"
+            struct Segment
+            {
+              int path;
+              int begin;
+              int size;
+            };
+
+            struct Joined
+            {
+              struct Segment segment;
+              int paths;
+              int index;
+            };
+            "#;
+        let sizes = collect_aggregate_sizes(source);
+        assert_eq!(sizes["struct Segment"], 24);
+        assert_eq!(sizes["struct Joined"], 40);
+        let fields = collect_field_offsets(source);
+        assert_eq!(fields["segment"], 0);
+        assert_eq!(fields["paths"], 24);
+        assert_eq!(fields["index"], 32);
+    }
+
+    #[test]
+    fn collects_named_aggregate_declaration_sizes() {
+        let source = r#"
+            struct Segment
+            {
+              int path;
+              int begin;
+              int size;
+            };
+
+            struct Joined
+            {
+              struct Segment segment;
+              int paths;
+              int index;
+            };
+
+            int check(struct Joined *sj) {
+                struct Joined copy, other;
+                struct Joined *ptr;
+                return 0;
+            }
+            "#;
+        let sizes = collect_aggregate_sizes(source);
+        let declarations = collect_aggregate_declarations(source, &sizes);
+        assert_eq!(declarations["copy"], 40);
+        assert_eq!(declarations["other"], 40);
+        assert!(!declarations.contains_key("ptr"));
     }
 
     #[test]
