@@ -56,13 +56,13 @@ System calls are replaced by direct hardware VFS/File Engine commands. The binar
 *   **`DUP`**
     *   *Action:* Duplicates or moves FDR capabilities. Exact destinations and narrowing flags are encoded in the instruction or argument block. Source-level `pipe()` lowers to `OBJECT_CTL create queue(profile=pipe)` plus narrowed read/write endpoint capabilities.
 *   **`CAP_DUP`, `CAP_SEND`, `CAP_RECV`, `CAP_REVOKE`**
-    *   *Action:* Architectural FDR capability management. Capabilities can be duplicated with narrowed rights, passed out-of-band over permitted pipe/socket/control FDRs, received into a target FDR table, or revoked along a revocable lineage. This is how the Bus Master delegates PCIe BARs, drivers receive DMA buffers and IRQ events, and supervisor domains pass authority without ambient privilege.
+    *   *Action:* Architectural FDR capability management. Capabilities can be duplicated with narrowed rights, sealed against further delegation, passed out-of-band over permitted pipe/socket/control FDRs, received into a target FDR table, or revoked along a revocable lineage. This is how the Bus Master delegates PCIe BARs, drivers receive DMA buffers and IRQ events, and supervisor domains pass authority without ambient privilege.
 *   **`EVENT_CTL` / `TIMER_CTL` / `SUPERVISOR_CTL`**
     *   *Action:* `EVENT_CTL` and `TIMER_CTL` are source-level/profile aliases over `OBJECT_CTL` for event-queue and timer profiles. `SUPERVISOR_CTL` is a source-level/profile alias over `DOMAIN_CTL` for delegated supervisor domains.
 *   **`OBJECT_CTL r_result, r_argblock`**
     *   *Action:* Creates, configures, queries, resets, or destroys the three generic hardware-owned object primitives: `counter`, `queue`, and `memory_object`. Semaphores, completions, event counters, channels, task queues, shared arenas, and DMA completions are runtime profiles over these primitives, not separate hardware modules.
 *   **`DMA_CTL r_result, r_argblock`**
-    *   *Action:* Submits bulk memory/object operations to the DMA Fabric: large copy, fill/zero, scatter/gather copy, and optional checksum/hash profiles. Small operations may complete synchronously; long operations can complete through an `event_queue` FDR or a `counter` completion profile.
+    *   *Action:* Submits bulk memory/object operations to the DMA Fabric: large copy, fill/zero, scatter/gather copy, and optional checksum/hash profiles. Small operations may complete synchronously; long operations can complete through an `event_queue` FDR or a `counter` completion profile. DMA always runs through VMA permissions, capability checks, IOMMU/device scope, and Resource Domain accounting.
 *   **`DOMAIN_CTL r_result, r_argblock`**
     *   *Action:* Creates, configures, queries, freezes, resumes, or destroys nested Resource Domains. Virtual machines, containers, cgroups, jails, sandboxes, and supervisor domains are profiles of the same domain primitive.
 *   **`CALL_CAP r_result, r_call_gate_fd, r_arg0, r_arg1`** / **`RET_CAP r_result, r_value0, r_value1`**
@@ -77,13 +77,13 @@ Page tables and VMAs are managed by fixed hardware MMU/VMA engines using bounded
 
 *   **`MMAP r_dest, r_hint_addr, r_len, r_prot, fd_src, r_offset`**
     *   *Action:* Hardware allocates physical pages and inserts a new VMA node into the current PID's silicon VMA tree. If `fd_src` is valid, configures hardware page-fault handlers to fetch from the storage controller. Returns the mapped virtual address in `r_dest`.
-    *   *Protection Flags:* `r_prot` includes read/write/execute, shared/private, and memory type: `normal_cached`, `uncached`, `device_ordered`, or `write_combining`.
+    *   *Protection Flags:* `r_prot` includes read/write/execute, shared/private, guard-page, and memory type: `normal_cached`, `uncached`, `device_ordered`, or `write_combining`. Writable-plus-executable mappings are rejected unless the current Resource Domain has an explicit JIT/loader policy bit.
 *   **`MUNMAP r_addr, r_len`**
     *   *Action:* Invalidates the VMA range, flushes the relevant TLB entries, and releases affected physical pages through the hardware page allocator when no longer referenced.
 *   **`MPROTECT r_addr, r_len, r_prot`**
     *   *Action:* Updates the protection bits for an existing VMA range and invalidates affected translations. This supports ELF loaders, guard pages, W^X policy, and paravirtual Unix guests that map their process abstractions onto LNP64 VMAs.
 *   **`ALLOC r_dest, r_size`** / **`ALLOC_EX r_dest, r_request_block`** / **`ALLOC_SIZE r_dest, r_ptr`** / **`FREE r_result, r_ptr`**
-    *   *Action:* Allocates, queries, and frees byte-granular heap memory through the Hardware Heap Engine. The heap is process-local, backed by anonymous VMAs, thread-safe in hardware, and integrated with `CLONE` copy-on-write and `EXEC` teardown. `ALLOC_EX` supports alignment, zeroing, guard, debug, locality, and allocation-class flags. `ALLOC_SIZE` exposes allocation metadata to libc/runtime code so `realloc` can copy only the valid old allocation extent.
+    *   *Action:* Allocates, queries, and frees byte-granular heap memory through the Hardware Heap Engine. The heap is process-local, backed by anonymous NX VMAs, thread-safe in hardware, and integrated with `CLONE` copy-on-write and `EXEC` teardown. `ALLOC_EX` supports alignment, zeroing, guard, debug, locality, allocation-class, and optional memory-tag/debug-hardening flags. `ALLOC_SIZE` exposes allocation metadata to libc/runtime code so `realloc` can copy only the valid old allocation extent.
 
 ## 5. Signal Handling
 Signals are no longer software constructs; they are asynchronous hardware events delivered directly to the thread. Hardware execution faults use the same delivery path as POSIX signals.
@@ -171,6 +171,8 @@ Because "Everything is a File" is now a hardware reality, we need instructions t
     *   *Action:* Writes to a permitted Process Control Register. Credential changes are checked against UID/GID and process capability policy; denied changes fail with a permission error and update thread-local `ERRNO`.
 *   **`ENV_GET r_dest, r_key, r_index_or_buf, r_len_or_flags`**
     *   *Action:* Reads read-only process and machine metadata for libc/runtime startup: ISA version, page size, cache-line size, hardware feature bits, architectural limits, `argc`, `argv`/`envp`/`auxv` locations, personality flags, and timebase frequency. This is not a replacement for immediates; constants still use normal instruction encodings or literal loads.
+*   **`RANDOM r_dest, r_len_or_flags`**
+    *   *Action:* Returns hardware entropy for ASLR, stack canaries, randomized capability ids, allocator hardening, and libc/runtime seeding. Small scalar requests return in `r_dest`; larger requests use a versioned argument-block variant that copies entropy into a caller buffer.
 
 ---
 **Summary of the Compute Pipeline:**
@@ -296,6 +298,22 @@ For physical PCIe devices, the PCIe Bus Master delegates `pcie_bar`, `dma_buffer
 For memory, the guest uses `MMAP`, `MUNMAP`, and `MPROTECT` to request native hardware VMAs. It does not write page tables directly. Linux/BSD tasks map one-to-one to hardware threads where practical, while the guest scheduler becomes an accounting and policy layer over the hardware runqueue.
 
 This preserves the vision: Linux and NetBSD can be personalities projected onto native POSIX silicon, rather than forcing LNP64 to become another trap-and-kernel RISC machine.
+
+### Native Security Invariants
+
+LNP64 security is expressed through Resource Domains, VMAs, FDR capabilities, and hardware-owned object generations rather than through a separate kernel ring model.
+
+Hard v1 invariants:
+
+*   **W^X by default:** The VMA Engine rejects simultaneous writable and executable permissions unless a domain explicitly holds a JIT/loader policy bit. JITs use write-then-execute transitions with `MPROTECT` and `ISYNC`, not permanent RWX mappings.
+*   **NX data:** Heap, stacks, queues, shared memory, DMA buffers, device BARs, signal frames, and ordinary anonymous mappings default non-executable. Executable mappings must originate from executable image objects or an explicitly authorized loader/JIT transition.
+*   **ASLR:** Process startup, `EXEC`, `MMAP`, heap arenas, stacks, signal trampolines, shared objects, call-gate trampolines, and guard regions are randomized with hardware entropy unless disabled by a delegated domain policy.
+*   **Guard pages:** Stacks, heap arenas, signal frames, large allocations, and selected runtime objects can request unmapped or no-access guard VMAs. Guard faults route through the normal hardware signal path.
+*   **Entropy:** `RANDOM` is the architectural entropy source for libc, loaders, domain managers, allocator hardening, and compatibility personalities. `ENV_GET` reports feature bits; it does not provide secret randomness.
+*   **Generation checks:** Domains, FDR entries, VMAs, heap arenas, waitable objects, call gates, event sources, DMA buffers, and mapped device objects carry generation fields. Stale references fail deterministically instead of silently reusing authority.
+*   **Revocation:** `CAP_REVOKE`, `DOMAIN_CTL`, `MUNMAP`, `MPROTECT`, and object teardown invalidate cached descriptors, mappings, event sources, call gates, and DMA exports before authority is reused.
+*   **Sealed and narrowed capabilities:** Authority can only move by explicit capability operations. Delegation may narrow rights, ranges, event masks, memory permissions, device scope, and transfer rights. Sealed capabilities can be used or transferred according to their rights but cannot be broadened or reminted by receivers.
+*   **DMA isolation:** Internal DMA, `DMA_CTL`, file I/O DMA, Ethernet, SD/SPI, and PCIe requester DMA all pass through VMA/capability checks, the coherent DMA fabric, Resource Domain accounting, and IOMMU/device scope. No device may DMA to arbitrary DDR or bypass revocation.
 
 ### The Final Verdict
 With these additions, the LNP64 has a coherent v1 shape: it boots into an `init` process, represents files and threads as hardware-managed resources, handles native page faults in VMA/MMU engines, and routes I/O through capability-checked FDR objects without a conventional kernel syscall path.

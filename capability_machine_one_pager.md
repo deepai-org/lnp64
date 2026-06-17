@@ -50,6 +50,12 @@ makes virtualization and cgroups the same mechanism: a VM is a domain with
 strong virtualization policy, while a cgroup is a domain focused on accounting
 and limits.
 
+Security policy is native to the same model. W^X, NX data defaults, ASLR, guard
+pages, hardware entropy, generation-checked objects, revocation, sealed and
+narrowed capabilities, and DMA isolation are enforced by Resource Domains, VMAs,
+FDRs, and the coherent DMA/IOMMU path rather than by an ambient privileged
+kernel path.
+
 Service boundaries are built from call gates. A pre-provisioned domain or worker
 thread can expose a callable FDR. `CALL_CAP` validates the gate, transfers small
 register arguments, accounts resource usage, and schedules the target. The call

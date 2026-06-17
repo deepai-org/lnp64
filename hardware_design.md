@@ -40,6 +40,9 @@ LNP64 v1 must support:
 - Deeply nestable Resource Domains for virtualization, containers, cgroups,
   jails, sandboxes, and supervisor upcalls, without adding traditional hosted-OS
   rings or syscall traps.
+- Native security invariants: W^X, NX data defaults, ASLR, guard pages,
+  hardware entropy, generation-checked objects, revocation, sealed/narrowed
+  capabilities, and DMA isolation as Resource Domain and capability policy.
 - Deterministic instruction decode with a fixed binary encoding.
 - Hardware-owned waitable/capability objects with local state, bounded
   transitions, and event delivery, usable by ordinary runtimes as well as
@@ -102,6 +105,7 @@ The chip is organized as these blocks:
 - Futex and Atomic Engine.
 - Resource Domain Engine.
 - Supervisor Domain and Upcall Engine.
+- Entropy and Randomization Engine.
 - PCIe Root Complex.
 - PCIe IOMMU / DMA Remapper.
 - PCIe MSI/MSI-X Event Router.
@@ -530,8 +534,8 @@ a=result_dst, b=arg0, c=arg1, d=arg2, imm16=variant/flags
 ```
 
 Used by `CLONE`, `MUNMAP`, `SIGACTION`, `KILL`, `AWAIT`, `WAKE`, `ENV_GET`,
-`CALL_CAP`, `RET_CAP`, and message operations. The opcode selects the operation;
-`imm16` selects variants or flags, not the primary operation.
+`RANDOM`, `CALL_CAP`, `RET_CAP`, and message operations. The opcode selects the
+operation; `imm16` selects variants or flags, not the primary operation.
 
 `F9`: argument-block operation.
 
@@ -644,6 +648,7 @@ The opcode map is fixed, but sparse:
 54 YIELD
 55 EXIT
 56 ENV_GET
+57 RANDOM
 
 60 MMAP
 61 MUNMAP
@@ -1249,6 +1254,12 @@ opcode per operation.
 The hardware validates range, valid bit, and rights before issuing the
 operation.
 
+Every authority-bearing FDR entry includes an object generation. Cached
+descriptor hits are valid only when the cached generation still matches the
+object owner. This makes stale descriptor reuse, post-revocation use, and
+destroy/recreate aliasing fail as `EBADF` or the object-specific stale-reference
+error instead of silently targeting a new object.
+
 Invalid descriptors write `-1` to the encoded result register where applicable
 and set the issuing thread's `ERRNO=EBADF`.
 
@@ -1277,6 +1288,7 @@ FDRs are the security boundary, so capability movement is architectural.
 - uses F9.
 - duplicates an FDR capability within the same process FDR table.
 - may narrow rights, event masks, allowed ranges, or mapping permissions.
+- may seal the duplicate when requested and permitted by the source rights.
 - cannot broaden authority beyond the source capability.
 
 `CAP_SEND` and `CAP_RECV`:
@@ -1296,6 +1308,9 @@ FDRs are the security boundary, so capability movement is architectural.
 - uses F9.
 - requests revocation of a revocable capability lineage.
 - prevents new operations from starting through revoked descendants.
+- emits compact invalidation events for active FDR caches, event-source slots,
+  mapped VMAs, call-gate continuations, and DMA exports derived from the
+  revoked lineage.
 - waits for or cancels in-flight operations according to each object's
   cancellation policy.
 - cannot revoke immutable capabilities unless the issuer marked them revocable.
@@ -1903,6 +1918,7 @@ The VMA Engine:
 
 - read, write, execute.
 - private or shared.
+- guard/no-access.
 - requested memory type: `normal_cached`, `uncached`, `device_ordered`, or
   `write_combining`.
 
@@ -1911,12 +1927,29 @@ with `EINVAL`. For `pcie_bar` FDRs, the requested memory type must be permitted
 by the FDR and the mapping must be page-aligned. No sub-page BAR capability is
 architectural in v1.
 
+Security policy is enforced at VMA creation and permission-change time:
+
+- anonymous mappings, heaps, stacks, queues, DMA buffers, shared-memory objects,
+  device BARs, and signal-frame regions default NX.
+- executable mappings must be backed by an executable image/object capability or
+  by a Resource Domain policy that permits loader/JIT executable transitions.
+- writable-plus-executable permission is rejected unless the current Resource
+  Domain has an explicit JIT/loader policy bit.
+- sanctioned JIT flow is writable mapping, write/patch code, `MPROTECT` to
+  executable and non-writable, then `ISYNC`.
+- guard VMAs are represented as no-access descriptors that intentionally fault
+  on load, store, fetch, or DMA pin.
+- ASLR address selection uses the Entropy and Randomization Engine unless the
+  current Resource Domain policy disables or constrains randomization.
+
 `MUNMAP`:
 
 - finds intersecting VMAs.
 - splits or removes VMA descriptors.
 - decrements page refcounts.
 - invalidates matching TLB entries for that process.
+- revokes or generation-invalidates mapped object views when teardown removes
+  the last authority-bearing VMA.
 - writes success or error sentinel to the encoded result register and updates
   thread-local `ERRNO` on failure.
 
@@ -1924,6 +1957,8 @@ architectural in v1.
 
 - finds existing VMAs covering the requested range.
 - updates read/write/execute and sharing permission bits.
+- applies W^X, NX default, JIT/loader policy, and capability-derived permission
+  limits before publishing the new protections.
 - invalidates matching TLB and instruction-cache entries where permissions
   require it.
 - is required for ELF loaders, language runtimes, JIT policy, guard pages, and
@@ -1953,6 +1988,11 @@ backed by the Hardware Heap Engine. They are the preferred userspace allocation
 primitive. `malloc` implementations should lower to these instructions by
 default. `MMAP` remains the primitive for page mappings, files, shared memory,
 executable memory, DMA buffers, and device mappings.
+
+Heap backing VMAs are NX by default. Guarded allocations use VMA guard regions
+or heap-local guard slots depending on size and policy. Heap metadata includes
+generation fields so stale or freed pointers can be rejected by hardened
+profiles before an allocation slot is reused silently.
 
 `ALLOC`:
 
@@ -2016,6 +2056,7 @@ Heap model:
 - each process has a default heap created at process start.
 - heap metadata lives in protected DDR and is not directly mapped writable by
   the process.
+- heap arena bases and large-object mappings are randomized by default.
 - small allocations use hardware-managed size classes and sub-page chunks.
 - large allocations use page runs from anonymous VMAs.
 - per-thread allocation caches and cross-thread free queues are allowed and
@@ -2203,6 +2244,28 @@ V1 metadata keys:
 must not expose mutable privilege state except through ordinary public metadata
 such as PID/TID when a runtime asks for it.
 
+`RANDOM` is the architectural entropy instruction:
+
+```text
+a=result_dst, b=len_or_flags_reg, c=buf_reg, d=reserved, imm16=variant
+```
+
+Scalar variants return up to one machine word of entropy in `result_dst`.
+Buffer variants copy entropy into `c` for `b` bytes and return the byte count.
+Failures return `-1` and update thread-local `ERRNO`.
+
+The Entropy and Randomization Engine feeds:
+
+- ASLR decisions during `EXEC`, `MMAP`, stack creation, heap arena creation, and
+  call-gate trampoline placement.
+- libc stack canaries and runtime seeding.
+- randomized object ids where an object class benefits from nonpredictability.
+- allocator hardening and quarantine policies.
+
+Entropy output is domain-accounted and rate-limited if needed, but it is not a
+capability secret by itself. Capability authority still comes from unforgeable
+FDR entries, rights, object ids, and generation checks.
+
 ### 21.1 Privilege and Security Model
 
 V1 freezes a hybrid cloud profile: POSIX-style UID/GID and permission bits for
@@ -2239,6 +2302,38 @@ Chosen model: hybrid cloud profile.
   cross-user `KILL`, and process memory inspection.
 - Chosen for v1 because it preserves POSIX shape while avoiding a single
   all-powerful root path in hardware.
+
+The hybrid model is still capability-native. UID/GID participates in
+compatibility decisions, but authority over files, devices, memory objects,
+call gates, DMA buffers, and supervisor controls is carried by FDR capabilities
+and Resource Domain policy.
+
+V1 security invariants:
+
+- W^X is enforced by the VMA Engine. Writable-plus-executable mappings require
+  an explicit Resource Domain JIT/loader policy bit and should be temporary.
+- Data is NX by default: heap, stack, queues, shared memory, DMA buffers, device
+  BARs, signal frames, and ordinary anonymous memory are not executable.
+- ASLR is enabled by default for `EXEC`, stack placement, heap arenas, anonymous
+  `MMAP`, shared objects, signal trampolines, and call-gate trampolines.
+- Guard pages are first-class no-access VMAs used for stacks, signal frames,
+  heap arenas, selected large allocations, and runtime hardening.
+- Generation checks are mandatory on domains, FDRs, VMAs, heap arenas,
+  waitable objects, event sources, call gates, DMA buffers, and mapped device
+  objects.
+- Revocation invalidates cached descriptors, mappings, event bindings, call
+  gates, and DMA exports before object ids or authority-bearing slots are
+  reused.
+- Capability delegation can only narrow authority: rights, ranges, event masks,
+  mapping permissions, transfer rights, and device scope cannot be broadened by
+  a receiver.
+- Sealed capabilities may be transferred and used according to their rights, but
+  cannot be inspected, narrowed, duplicated, or used to mint related authority
+  unless the sealed rights explicitly permit it.
+- DMA isolation is mandatory. Internal devices, `DMA_CTL`, PCIe requesters, and
+  file/page-fault DMA all pass through VMA permission checks, FDR capability
+  checks, Resource Domain accounting, coherent-DMA visibility, and IOMMU/device
+  scope where applicable.
 
 The v1 process credential context contains UID, GID, supplementary group pointer
 or group-set object, and a capability bitmap. Hardware permission-check FSMs must
@@ -2281,6 +2376,9 @@ Each domain contains:
 - namespace root/cwd delegation pointers.
 - event queue and upcall policy.
 - device, DMA, and PCIe capability scope.
+- security policy bits: ASLR enable/disable constraints, JIT/loader W^X
+  exception authority, executable-memory source policy, entropy quota, and
+  hardening profile.
 - freeze/park state and teardown policy.
 
 Hard invariants:
@@ -2299,6 +2397,9 @@ Hard invariants:
 - upcall policy can be delegated, masked, or translated by each parent domain.
 - hardware enforces budgets and capability scope even when a guest personality
   implements its own policy.
+- security policy is monotonic with delegation: a child may become stricter, but
+  cannot enable broader executable-memory, DMA, device, entropy, or capability
+  transfer authority than its parent delegated.
 
 Linux-style cgroup controllers map directly onto domain fields:
 
@@ -2495,7 +2596,9 @@ Every DMA command carries:
 - virtual address.
 - byte length.
 - direction.
+- Resource Domain id and generation.
 - source and destination object ids when operating on FDR-backed objects.
+- source and destination object generations.
 - fault policy.
 - completion target TID or engine.
 - optional completion event object.
@@ -2518,10 +2621,28 @@ The DMA Fabric must not bypass normal memory safety. `DMA_CTL` requests still
 use VMA translation, permissions, cache-coherence rules, and capability checks
 for FDR-backed memory objects.
 
+DMA isolation rules:
+
+- all DMA requests are checked against the issuing Resource Domain's memory,
+  device, and DMA budgets before they are accepted.
+- DMA pinning fails for guard pages, unmapped pages, executable-only pages,
+  revoked mappings, stale generations, or pages outside the caller's delegated
+  capability range.
+- DMA buffers are explicit FDR-backed objects with rights, permitted direction,
+  byte range, memory type, owner domain, and generation.
+- completion events are not delivered until cache visibility and revocation
+  checks have completed.
+- revocation of a DMA buffer prevents new descriptors, waits for or cancels
+  in-flight descriptors according to policy, tears down device mappings, and
+  only then releases backing pages.
+
 For PCIe, the DMA Fabric and IOMMU jointly enforce that a device can access only
 pages exported through a valid `dma_buffer` FDR. Revocation requires the Bus
 Master or driver to quiesce the device, tear down IOMMU entries, and wait for
 in-flight DMA completion before the VMA Engine releases the backing pages.
+The IOMMU context includes requester id, domain id/generation, allowed page
+ranges, direction, and buffer generation; stale or revoked contexts fault and
+emit an event to the owning driver/control FDR.
 
 ## 23. Boot Flow
 
