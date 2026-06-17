@@ -10,6 +10,7 @@ non_network=(
   demos/fibonacci.c
   demos/hello.c
   demos/json_parser.c
+  demos/netbsd_personality_smoke.c
   demos/parallel_hash.c
   demos/pcr.c
   demos/ping_pong.c
