@@ -5323,6 +5323,10 @@ impl CodeGen {
                 self.text.push(format!("  LI r{dst}, global_errno"));
                 Ok(dst)
             }
+            "getauxval" => {
+                let key = self.one_arg(name, args)?;
+                self.emit_getauxval(key)
+            }
             "fgets" => {
                 if args.len() != 3 {
                     return Err("fgets(buf, size, stream) expects 3 arguments".to_string());
@@ -8829,6 +8833,72 @@ impl CodeGen {
             self.text.push(format!("  ST [r{block}, 48], r{aux}"));
         }
         self.text.push(format!("  OBJECT_CTL r{dst}, r{block}"));
+        Ok(dst)
+    }
+
+    fn emit_getauxval(&mut self, key: usize) -> Result<usize, String> {
+        let dst = self.alloc_reg()?;
+        let cmp = self.alloc_reg()?;
+        let next_page = self.new_label("getauxval_next_page");
+        let next_hwcap = self.new_label("getauxval_next_hwcap");
+        let next_clktck = self.new_label("getauxval_next_clktck");
+        let next_uid = self.new_label("getauxval_next_uid");
+        let next_euid = self.new_label("getauxval_next_euid");
+        let next_gid = self.new_label("getauxval_next_gid");
+        let next_egid = self.new_label("getauxval_next_egid");
+        let done = self.new_label("getauxval_done");
+        self.text.push(format!("  LI r{dst}, 0"));
+
+        self.text.push(format!("  LI r{cmp}, 6"));
+        self.text.push(format!("  CMP r{key}, r{cmp}"));
+        self.text.push(format!("  BNE {next_page}"));
+        self.text.push(format!("  LI r{dst}, 4096"));
+        self.text.push(format!("  JMP {done}"));
+
+        self.text.push(format!("{next_page}:"));
+        self.text.push(format!("  LI r{cmp}, 16"));
+        self.text.push(format!("  CMP r{key}, r{cmp}"));
+        self.text.push(format!("  BNE {next_hwcap}"));
+        self.text.push(format!("  LI r{dst}, 1"));
+        self.text.push(format!("  JMP {done}"));
+
+        self.text.push(format!("{next_hwcap}:"));
+        self.text.push(format!("  LI r{cmp}, 17"));
+        self.text.push(format!("  CMP r{key}, r{cmp}"));
+        self.text.push(format!("  BNE {next_clktck}"));
+        self.text.push(format!("  LI r{dst}, 100"));
+        self.text.push(format!("  JMP {done}"));
+
+        self.text.push(format!("{next_clktck}:"));
+        self.text.push(format!("  LI r{cmp}, 11"));
+        self.text.push(format!("  CMP r{key}, r{cmp}"));
+        self.text.push(format!("  BNE {next_uid}"));
+        self.text.push(format!("  GET_PCR r{dst}, UID"));
+        self.text.push(format!("  JMP {done}"));
+
+        self.text.push(format!("{next_uid}:"));
+        self.text.push(format!("  LI r{cmp}, 12"));
+        self.text.push(format!("  CMP r{key}, r{cmp}"));
+        self.text.push(format!("  BNE {next_euid}"));
+        self.text.push(format!("  GET_PCR r{dst}, UID"));
+        self.text.push(format!("  JMP {done}"));
+
+        self.text.push(format!("{next_euid}:"));
+        self.text.push(format!("  LI r{cmp}, 13"));
+        self.text.push(format!("  CMP r{key}, r{cmp}"));
+        self.text.push(format!("  BNE {next_gid}"));
+        self.text.push(format!("  GET_PCR r{dst}, GID"));
+        self.text.push(format!("  JMP {done}"));
+
+        self.text.push(format!("{next_gid}:"));
+        self.text.push(format!("  LI r{cmp}, 14"));
+        self.text.push(format!("  CMP r{key}, r{cmp}"));
+        self.text.push(format!("  BNE {next_egid}"));
+        self.text.push(format!("  GET_PCR r{dst}, GID"));
+        self.text.push(format!("  JMP {done}"));
+
+        self.text.push(format!("{next_egid}:"));
+        self.text.push(format!("{done}:"));
         Ok(dst)
     }
 
@@ -12377,6 +12447,30 @@ int main() {
         let asm = compile(source).unwrap();
         assert!(asm.contains("ERRNO_GET"), "{asm}");
         assert!(asm.contains("ERRNO_SET"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_getauxval_startup_metadata_surface_runs() {
+        let source = r#"
+        int main() {
+            int key;
+            if (getauxval(AT_PAGESZ) != 4096) return 1;
+            key = AT_CLKTCK;
+            if (getauxval(key) != 100) return 2;
+            if (getauxval(AT_HWCAP) == 0) return 3;
+            if (getauxval(AT_UID) != getuid()) return 4;
+            if (getauxval(AT_EUID) != geteuid()) return 5;
+            if (getauxval(AT_GID) != getgid()) return 6;
+            if (getauxval(AT_EGID) != getegid()) return 7;
+            if (getauxval(AT_RANDOM) != 0) return 8;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("GET_PCR"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
