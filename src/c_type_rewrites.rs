@@ -700,7 +700,7 @@ fn single_line_tag_alias(trimmed: &str) -> Option<String> {
 }
 
 fn function_pointer_typedef_alias(trimmed: &str) -> Option<String> {
-    if !trimmed.starts_with("typedef ") || !trimmed.ends_with(';') {
+    if !trimmed.starts_with("typedef ") {
         return None;
     }
     let marker = "(*";
@@ -840,7 +840,10 @@ fn is_ident_char(ch: char) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_function_pointer_params;
+    use super::{
+        apply_user_type_alias_rewrites, collect_user_type_aliases,
+        normalize_function_pointer_params,
+    };
 
     #[test]
     fn function_pointer_param_rewrite_leaves_indirect_calls() {
@@ -855,5 +858,24 @@ int main() {
         assert!(out.contains("void takes_cb(int cb);"), "{out}");
         assert!(out.contains("void takes_unnamed(int);"), "{out}");
         assert!(out.contains("(*g->frealloc)(g->ud, g, 8, 0);"), "{out}");
+    }
+
+    #[test]
+    fn collects_multiline_function_pointer_typedef_aliases() {
+        let source = r#"
+typedef unsigned (*in_func)(void *,
+                            const unsigned char **);
+int inflateBack(int stream, in_func in);
+"#;
+        let aliases = collect_user_type_aliases(source);
+        assert!(
+            aliases.iter().any(|alias| alias == "in_func"),
+            "{aliases:?}"
+        );
+        let out = apply_user_type_alias_rewrites(source, &aliases);
+        assert!(
+            out.contains("int inflateBack(int stream, int in);"),
+            "{out}"
+        );
     }
 }

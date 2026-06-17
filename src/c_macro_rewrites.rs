@@ -204,7 +204,12 @@ fn define_macro(rest: &str, defines: &mut Defines) {
         return;
     }
     let replacement = after_name.trim();
-    if replacement.is_empty() || !is_expandable_replacement(replacement) {
+    if replacement.is_empty() {
+        defines.objects.insert(name.to_string(), String::new());
+        defines.functions.remove(name);
+        return;
+    }
+    if !is_expandable_replacement(replacement) {
         defines.objects.remove(name);
         return;
     }
@@ -1202,6 +1207,17 @@ int value = call(NAME);
         assert!(out.contains("static const char *literal = \"NAME\";"));
         assert!(out.contains("int value = \"lua\";"));
         assert!(out.contains("#define NAME \"lua\""));
+    }
+
+    #[test]
+    fn expands_empty_object_macros() {
+        let source = r#"
+#define API
+API int exported(void);
+"#;
+        let out = expand_object_like_macros(source);
+        assert!(out.contains(" int exported(void);"), "{out}");
+        assert!(out.contains("#define API"), "{out}");
     }
 
     #[test]

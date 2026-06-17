@@ -511,17 +511,28 @@ fn preprocess_source(source: &str) -> String {
     let out = apply_scalar_type_rewrites(&out);
     let out = normalize_c_types(&out);
     let out = strip_simple_typedefs(&out);
-    normalize_do_while_loops(&out)
+    let out = normalize_do_while_loops(&out);
+    strip_simple_typedefs(&out)
 }
 
 fn strip_simple_typedefs(source: &str) -> String {
     let mut out = String::new();
     let mut aliases = Vec::new();
+    let mut skipping_typedef = false;
     for line in source.lines() {
         let trimmed = line.trim_start();
-        if trimmed.starts_with("typedef ") && trimmed.ends_with(';') && !trimmed.contains('{') {
+        if skipping_typedef {
+            if trimmed.contains(';') {
+                skipping_typedef = false;
+            }
+            continue;
+        }
+        if trimmed.starts_with("typedef ") && !trimmed.contains('{') {
             if let Some((base, alias)) = simple_typedef_alias(trimmed) {
                 aliases.push((base, alias));
+            }
+            if !trimmed.contains(';') {
+                skipping_typedef = true;
             }
             continue;
         }
@@ -530,6 +541,29 @@ fn strip_simple_typedefs(source: &str) -> String {
     }
     for (base, alias) in aliases {
         out = replace_ident_token_local(&out, &alias, &base);
+    }
+    strip_typedef_declarations(&out)
+}
+
+fn strip_typedef_declarations(source: &str) -> String {
+    let mut out = String::new();
+    let mut skipping_typedef = false;
+    for line in source.lines() {
+        let trimmed = line.trim_start();
+        if skipping_typedef {
+            if trimmed.contains(';') {
+                skipping_typedef = false;
+            }
+            continue;
+        }
+        if trimmed.starts_with("typedef ") && !trimmed.contains('{') {
+            if !trimmed.contains(';') {
+                skipping_typedef = true;
+            }
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
     }
     out
 }
@@ -14485,6 +14519,30 @@ mod tests {
         assert!(normalized.contains("int g = 2048;"), "{normalized}");
         assert!(normalized.contains("int lx = 256;"), "{normalized}");
         assert!(normalized.contains("int ci = 128;"), "{normalized}");
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn scalar_typedef_aliases_are_stripped_after_normalization() {
+        let source = r#"
+        #define FAR
+        typedef unsigned long z_size_t;
+        typedef unsigned char Byte;
+        typedef Byte FAR Bytef;
+
+        Bytef value;
+
+        int main() {
+            value = 7;
+            return value == 7 ? 0 : 1;
+        }
+        "#;
+        let normalized = preprocess_source(source);
+        assert!(!normalized.contains("typedef"), "{normalized}");
+        assert!(normalized.contains("int value;"), "{normalized}");
         let asm = compile(source).unwrap();
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
