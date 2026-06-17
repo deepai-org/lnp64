@@ -37,7 +37,7 @@ Status values:
 | C11 atomics and futex-backed waits | tested | `c_c11_atomic_surface_runs_on_lock_cmpxchg`, emulator futex tests | Memory-order conformance beyond the modeled primitives needs stress tests. |
 | `poll`, `select`, `epoll_create1`, `epoll_ctl`, `epoll_wait` | tested | `c_select_fdset_surface_lowers_to_readiness_probe_and_runs`, `c_select_blocks_with_dynamic_await_and_runs`, `c_poll_*`, `c_epoll_surface_lowers_to_native_readiness_probe_and_runs`, `c_poll_race_timing_cases_run`, `c_epoll_wait_race_timing_cases_run` | Basic race timing coverage exists; larger multi-source races remain under `COMPAT-STRESS-005`. |
 | `eventfd`, `timerfd_create`, `timerfd_settime`, `timerfd_gettime` | tested | `c_eventfd_surface_uses_counter_object_profile`, `c_timerfd_surface_uses_object_timer_profile` | Full Linux flag and clock-id behavior is partial. |
-| `clock_gettime`, `gettimeofday`, `time`, `nanosleep`, `usleep`, `alarm` | tested | `c_time_surface_uses_realtime_pcrs_and_sleep`, `c_usleep_and_alarm_surface_runs` | Time precision is emulator-coarse. |
+| `clock_gettime`, `gettimeofday`, `time`, `nanosleep`, `usleep`, `alarm` | tested | `c_time_surface_uses_realtime_pcrs_and_sleep`, `c_usleep_and_alarm_surface_runs`, libc-test `clock_gettime` | Time precision is emulator-coarse. |
 | `fork`, `exec*`, `wait`, `waitpid`, `getpid`, `getppid` | tested | `c_posix_process_and_signal_mask_surface_runs`, `c_wait_and_getppid_surface_runs_after_fork`, `c_exec_family_lowers_to_native_exec`, emulator clone/exec tests | `exec` loads LNP64 assembly today; binary format loader work is tracked as `COMPAT-BIN-001`. |
 | Signals: `sigaction`, `signal`, `sigprocmask`, `raise`, default/ignore dispositions, signal frames | tested | `c_sigaction_accepts_posix_action_struct`, `c_signal_default_and_ignore_dispositions_run`, `signal_frame_stack_area_is_non_executable` | Full POSIX signal queueing, altstack, and per-thread delivery semantics are partial. `COMPAT-SIGNAL-001`. |
 | Sockets: `socket`, `bind`, `listen`, `connect`, `accept`, `getsockname`, `getsockopt`, `setsockopt`, `send`, `recv` | tested | `c_socket_surface_lowers_to_endpoint_object_controls_and_runs`, `demos/netcat.c`, `demos/httpd.c` in `scripts/run_demos.sh` | Nonblocking sockets, descriptor passing, UDP, and real network-driver service integration are partial. `COMPAT-SOCK-001`. |
@@ -73,7 +73,7 @@ specific compiler/runtime special casing.
 | Lua upstream | failing / not checked in | Lua-targeted compiler tests exist; no checked-in full Lua package gate | Remove Lua-specific normalizer pressure by fixing generic C semantics. `COMPAT-PKG-001`. |
 | SQLite upstream | not started | No checked-in SQLite target | Add package gate. `COMPAT-PKG-003`. |
 | libpng upstream | not started | No checked-in libpng target | Add package gate after zlib. `COMPAT-PKG-004`. |
-| musl libc-test subset | partial / passing focused checks | `third_party/libc-test/functional/{argv.c,basename.c,dirname.c,env.c,string_strchr.c,string_strcspn.c,string_strstr.c}`, `scripts/run_libc_test.sh` | Expand beyond the initial path/string subset. `COMPAT-PKG-005` tracks harness and libc gaps. |
+| musl libc-test subset | partial / passing focused checks | `third_party/libc-test/functional/{argv.c,basename.c,clock_gettime.c,dirname.c,env.c,string_strchr.c,string_strcspn.c,string_strstr.c}`, `scripts/run_libc_test.sh` | Expand beyond the initial path/string subset. `COMPAT-PKG-005` tracks harness and libc gaps. |
 
 ## Open Compatibility Bugs
 

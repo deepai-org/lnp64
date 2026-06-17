@@ -5,6 +5,7 @@ lnp64=(cargo run --quiet --)
 tests=(
   argv
   basename
+  clock_gettime
   dirname
   env
   string_strchr
