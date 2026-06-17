@@ -3,6 +3,7 @@ set -euo pipefail
 
 lnp64=(cargo run --quiet --)
 tests=(
+  argv
   basename
   dirname
   env

@@ -99,6 +99,7 @@ impl Default for Defines {
 #[derive(Debug, Clone)]
 struct FunctionMacro {
     params: Vec<String>,
+    variadic: bool,
     body: String,
 }
 
@@ -256,16 +257,17 @@ fn strip_trailing_line_comment(text: &str) -> &str {
 
 fn parse_function_macro(name: &str, text: &str) -> Option<FunctionMacro> {
     let close = text.find(')')?;
-    let params = text[1..close]
+    let mut params = text[1..close]
         .split(',')
         .map(str::trim)
         .filter(|param| !param.is_empty())
         .map(str::to_string)
         .collect::<Vec<_>>();
-    if params
-        .iter()
-        .any(|param| !is_identifier(param) || param == "...")
-    {
+    let variadic = params.last().is_some_and(|param| param == "...");
+    if variadic {
+        *params.last_mut()? = "__VA_ARGS__".to_string();
+    }
+    if params.iter().any(|param| !is_identifier(param)) {
         return None;
     }
     let body = text[close + 1..].trim();
@@ -274,6 +276,7 @@ fn parse_function_macro(name: &str, text: &str) -> Option<FunctionMacro> {
     }
     Some(FunctionMacro {
         params,
+        variadic,
         body: body.to_string(),
     })
 }
@@ -686,17 +689,27 @@ fn expand_function_macro(
     args: &[String],
     defines: &Defines,
 ) -> String {
-    if args.len() != function_macro.params.len() {
+    if (!function_macro.variadic && args.len() != function_macro.params.len())
+        || (function_macro.variadic && args.len() < function_macro.params.len() - 1)
+    {
         return String::new();
     }
-    let expanded_args = args
+    let raw_args = if function_macro.variadic {
+        let fixed = function_macro.params.len() - 1;
+        let mut normalized = args[..fixed].to_vec();
+        normalized.push(args[fixed..].join(", "));
+        normalized
+    } else {
+        args.to_vec()
+    };
+    let expanded_args = raw_args
         .iter()
         .map(|arg| expand_line(arg, defines))
         .collect::<Vec<_>>();
     substitute_function_params(
         &function_macro.body,
         &function_macro.params,
-        args,
+        &raw_args,
         &expanded_args,
     )
 }
@@ -1462,6 +1475,26 @@ int b = mathop(floor)(x);
         let out = expand_object_like_macros(source);
         assert!(out.contains("int a = (53);"), "{out}");
         assert!(out.contains("int b = floorf(x);"), "{out}");
+    }
+
+    #[test]
+    fn expands_variadic_function_macros() {
+        let source = r#"
+#define TEST(c, ...) ((c) ? 1 : (log(#c " failed: " __VA_ARGS__), 0))
+int a = TEST(x == 1, "value %d\n", x);
+int b = TEST(y == 2);
+"#;
+        let out = expand_object_like_macros(source);
+        assert!(
+            out.contains(
+                r#"int a = ((x == 1) ? 1 : (log("x == 1" " failed: " "value %d\n", x), 0));"#
+            ),
+            "{out}"
+        );
+        assert!(
+            out.contains(r#"int b = ((y == 2) ? 1 : (log("y == 2" " failed: " ), 0));"#),
+            "{out}"
+        );
     }
 
     #[test]

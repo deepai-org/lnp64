@@ -14,7 +14,7 @@ Status values:
 
 | API or Scope | Status | Evidence | Known Gaps / Compatibility Bugs |
 | --- | --- | --- | --- |
-| `_start`, `main(argc, argv, envp)`, `environ` | tested | `c_start_symbol_overrides_main_entry`, `c_main_receives_argc_argv_and_envp_from_startup_page`, `c_main_environ_points_at_startup_envp` | No standalone crt object files yet; startup is compiler/runtime modeled. `COMPAT-ABI-001` tracks psABI/crt packaging. |
+| `_start`, `main(argc, argv, envp)`, `environ` | tested | `c_start_symbol_overrides_main_entry`, `c_main_receives_argc_argv_and_envp_from_startup_page`, `c_main_environ_points_at_startup_envp`, libc-test `argv` | No standalone crt object files yet; startup is compiler/runtime modeled. `COMPAT-ABI-001` tracks psABI/crt packaging. |
 | `getauxval`, auxv metadata, process entry metadata | tested | `c_getauxval_startup_metadata_surface_runs`, `ENV_GET` emulator tests | Dynamic loader auxv contract is not frozen. Covered by `COMPAT-ABI-002`. |
 | TLS/thread pointer, `errno`, `strerror` | tested | `c_thread_pointer_and_specific_storage_are_per_thread`, `c_errno_location_shim_tracks_hardware_errno`, `c_strerror_returns_static_errno_messages`, `psABI.md` | Dynamic TLS module layout is not frozen. |
 | `atexit`, `exit`, `_exit` | tested | `c_atexit_handlers_run_before_main_return`, `c_exit_runs_atexit_but_exit_bypasses_it` | No shared-object destructor model. |
@@ -73,7 +73,7 @@ specific compiler/runtime special casing.
 | Lua upstream | failing / not checked in | Lua-targeted compiler tests exist; no checked-in full Lua package gate | Remove Lua-specific normalizer pressure by fixing generic C semantics. `COMPAT-PKG-001`. |
 | SQLite upstream | not started | No checked-in SQLite target | Add package gate. `COMPAT-PKG-003`. |
 | libpng upstream | not started | No checked-in libpng target | Add package gate after zlib. `COMPAT-PKG-004`. |
-| musl libc-test subset | partial / passing focused checks | `third_party/libc-test/functional/{basename.c,dirname.c,env.c,string_strchr.c,string_strcspn.c,string_strstr.c}`, `scripts/run_libc_test.sh` | Expand beyond the initial path/string subset. `COMPAT-PKG-005` tracks harness and libc gaps. |
+| musl libc-test subset | partial / passing focused checks | `third_party/libc-test/functional/{argv.c,basename.c,dirname.c,env.c,string_strchr.c,string_strcspn.c,string_strstr.c}`, `scripts/run_libc_test.sh` | Expand beyond the initial path/string subset. `COMPAT-PKG-005` tracks harness and libc gaps. |
 
 ## Open Compatibility Bugs
 
