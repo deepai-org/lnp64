@@ -4,9 +4,11 @@ This document sketches the libc/runtime work needed to make LNP64 software use t
 
 ## Goal
 
-LNP64 libc should be the normal way to access files, memory, synchronization, isolation, eventing, process control, and service calls. It should expose familiar POSIX and C interfaces where possible, while routing those interfaces to native hardware primitives such as `OPEN_AT`, `PULL`, `PUSH`, `AWAIT`, `OBJECT_CTL`, `DOMAIN_CTL`, `CALL_CAP`, `ALLOC`, `MMAP`, and capability transfer.
+LNP64 libc should be the normal way to access files, memory, synchronization, isolation, eventing, process control, and service calls. It should expose familiar POSIX and C interfaces where possible, while routing those interfaces to native capability/event/domain primitives such as `OPEN_AT`, `PULL`, `PUSH`, `AWAIT`, `OBJECT_CTL`, `DOMAIN_CTL`, `CALL_CAP`, `ALLOC`, `MMAP`, and capability transfer.
 
 The implementation should avoid building a hidden software kernel inside libc. Libc is the ABI adapter, policy surface, and compatibility layer. Hardware-owned objects remain the authority for capabilities, waitability, memory mappings, domains, and scheduling-visible state.
+
+The libc contract is profile-based: POSIX names are source and ABI compatibility, not the primitive architecture. `open` returns an FDR-backed capability handle, `pipe` creates a queue profile, `poll`/`select`/`epoll` use event-queue profiles, `fork` is a `CLONE` profile, signals are an ABI view over hardware event delivery, and `errno` is a thread-local compatibility view of explicit result/error status.
 
 ## Layering
 

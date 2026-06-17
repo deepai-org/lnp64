@@ -49,6 +49,23 @@ sandbox is a Resource Domain profile. This keeps the hardware surface small
 while making the primitives useful to normal applications, language runtimes,
 drivers, and Unix compatibility layers.
 
+POSIX is the primary compatibility profile, not the primitive architecture.
+`fork`, signals, paths, UID/GID, `errno`, file descriptors, and `ioctl`-like
+controls are mapped by libc or a Unix personality onto capability handles,
+waitable objects, event queues, Resource Domains, VMAs, and typed metadata
+operations. This keeps real software easy to port without making historical Unix
+quirks the center of the hardware model.
+
+Networking follows the same rule. Silicon provides the safe substrate: PCIe
+Root Complex support, IOMMU-scoped DMA buffers, BAR capabilities, `irq_event`
+records, packet queues, event delivery, counters, and simple MAC/packet
+movement. A bounded record classifier can stamp metadata, compute hashes, count,
+and steer packets, IPC messages, storage completions, trace records, or runtime
+events into capability-scoped queues. Ethernet, Wi-Fi, TCP/IP, routing,
+firewall, TLS, DNS, and socket policy live in driver or network service domains
+that publish endpoint capabilities. POSIX sockets are a compatibility profile
+over those endpoints.
+
 Isolation is built from Resource Domains. Domains form a tree. A child domain
 can only use resources delegated by its parent, and usage accounting rolls up
 the tree. CPU budget, memory budget, PID/thread limits, FDR limits, I/O limits,

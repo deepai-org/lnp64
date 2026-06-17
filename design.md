@@ -1,15 +1,15 @@
-Here is the draft Instruction Set Architecture (ISA) for the **LNP64 (Linux-Native Processor 64-bit)**. The design explores putting POSIX-like resource, process, memory, and event primitives directly into fixed hardware.
+Here is the draft Instruction Set Architecture (ISA) for the **LNP64 (Linux-Native Processor 64-bit)**. The design is a capability/event/domain machine with POSIX as its primary compatibility profile. It does not freeze historical Unix as the hardware model; it exposes durable primitives that make libc, Unix personalities, drivers, and runtimes straightforward to build.
 
 ---
 
 # LNP64 Instruction Set Architecture (Draft v1.0)
 
 ## 1. Register Architecture
-To support hardware-native OS primitives, the standard register file is expanded beyond General Purpose Registers (GPRs) to include File Descriptor Registers (FDRs) and Process Control Registers (PCRs).
+To support hardware-native resource primitives, the standard register file is expanded beyond General Purpose Registers (GPRs) to include File Descriptor Registers (FDRs) and Process Control Registers (PCRs).
 
 *   **GPRs (General Purpose):** `r0` - `r31` (64-bit, standard ALU operations).
 *   **LR (Link Register):** Thread-local 64-bit return-address register. `CALL` / `CALL_REG` write `LR = PC + 8`; `RET` jumps to `LR`.
-*   **FDRs (File Descriptor Registers):** `fd0` - `fd255` are the static low-descriptor fast bank. Full process FDR tables are DDR-backed and addressed by dynamic FDR instructions. FDRs do not hold integers; they hold hardware capability references to Silicon VFS objects, device objects, event queues, timers, generic counters, generic queues, memory objects, PCIe BARs, DMA buffers, or supervisor controls. `fd0`, `fd1`, and `fd2` conventionally bind to STDIN, STDOUT, and STDERR streams of the controlling TTY.
+*   **FDRs (File Descriptor Registers):** `fd0` - `fd255` are the static low-descriptor fast bank. Full process FDR tables are DDR-backed and addressed by dynamic FDR instructions. An FDR is a hardware capability handle, not a Unix integer descriptor. POSIX file descriptors are the libc/personality interpretation of these handles. FDRs reference Silicon VFS objects, device objects, event queues, timers, generic counters, generic queues, memory objects, PCIe BARs, DMA buffers, call gates, or supervisor controls. `fd0`, `fd1`, and `fd2` conventionally bind to STDIN, STDOUT, and STDERR streams of the controlling TTY.
 *   **PCRs (Process Control Registers):**
     *   `PID`: Current Process ID, from process context.
     *   `PPID`: Parent Process ID, from process context, or `0` for root.
@@ -20,7 +20,21 @@ To support hardware-native OS primitives, the standard register file is expanded
     *   `REALTIME_SEC` / `REALTIME_NSEC`: Read-only realtime clock snapshot
         fields used by libc/runtime clock surfaces. Timer waitability remains
         FDR-backed through timer profiles.
-*   **ERRNO:** Thread-local POSIX error register. Fallible instructions write their result to the encoded destination register and update thread-local `ERRNO` on failure.
+*   **ERRNO:** Thread-local compatibility error register. Fallible instructions write their result to the encoded destination register and update thread-local `ERRNO` on failure so libc can expose normal POSIX semantics; the architectural result/error convention remains explicit.
+
+## 1.1 Architectural Layering
+
+The native LNP64 primitives are not Unix syscalls in silicon. They are:
+
+*   **Capability handles:** FDR entries carrying unforgeable authority to objects.
+*   **Objects:** streams, queues, counters, memory objects, VFS nodes, devices, DMA buffers, call gates, event queues, and control endpoints.
+*   **Waitables and events:** readiness, completion, timer, futex, child-exit, IRQ, signal, and supervisor events.
+*   **Resource Domains:** nested containment, accounting, security policy, virtualization, cgroup, sandbox, and supervisor boundaries.
+*   **VMAs and address spaces:** hardware-managed memory mappings derived from memory/image/device capabilities.
+*   **Scheduler contexts:** hardware-owned runnable, running, blocked, parked, and destroyed thread state.
+*   **Metadata/control surfaces:** typed `GET_META`, `SET_META`, `OBJECT_CTL`, `DOMAIN_CTL`, and `NS_CTL` operations.
+
+POSIX, Linux syscall compatibility, and NetBSD rump-style services are profiles over these primitives. This keeps libc clean: familiar APIs lower to stable native operations, while native software can use the cleaner capability/event/domain model directly.
 
 ## 2. Process & Scheduling Instructions
 The CPU features a hardware-managed runqueue. There is no mandatory OS scheduler tick; hardware scheduler and context-store blocks dispatch ready threads directly.
@@ -35,7 +49,7 @@ The CPU features a hardware-managed runqueue. There is no mandatory OS scheduler
     *   *Action:* Destroys the current hardware thread context. If it's the last thread in the PID group, triggers hardware VMA teardown and signals the parent PID with `SIGCHLD`.
 
 ## 3. I/O and File Operations
-System calls are replaced by direct hardware VFS/File Engine commands. The binary ISA uses a compact stream/resource model; POSIX-shaped source names are assembler or libc lowering aliases.
+System calls are replaced by direct hardware resource commands. The binary ISA uses a compact stream/object/capability model; POSIX-shaped source names are assembler or libc lowering aliases.
 
 *   **`OPEN_AT r_dest, r_dirfd, r_path_ptr, r_flags`**
     *   *Action:* Resolves a path/name relative to a directory/root FDR or cwd/root and returns a resource FDR. Source-level `open`, `openat`, and `opendir` lower to this instruction.
@@ -86,7 +100,7 @@ Page tables and VMAs are managed by fixed hardware MMU/VMA engines using bounded
     *   *Action:* Allocates, queries, and frees byte-granular heap memory through the Hardware Heap Engine. The heap is process-local, backed by anonymous NX VMAs, thread-safe in hardware, and integrated with `CLONE` copy-on-write and `EXEC` teardown. `ALLOC_EX` supports alignment, zeroing, guard, debug, locality, allocation-class, and optional memory-tag/debug-hardening flags. `ALLOC_SIZE` exposes allocation metadata to libc/runtime code so `realloc` can copy only the valid old allocation extent.
 
 ## 5. Signal Handling
-Signals are no longer software constructs; they are asynchronous hardware events delivered directly to the thread. Hardware execution faults use the same delivery path as POSIX signals.
+Signals are a compatibility profile over hardware asynchronous event delivery. Hardware execution faults can use the same delivery path as POSIX signals, while native code should prefer event queues, cancellation objects, call-gate completions, domain faults, and structured control events where they fit better.
 
 *   **`SIGACTION r_signum, r_handler_ptr`**
     *   *Action:* Registers a hardware trampoline address for a specific POSIX signal.
@@ -105,9 +119,9 @@ Signals are no longer software constructs; they are asynchronous hardware events
     *   *Action:* Divide-by-zero and arithmetic traps raise `SIGFPE`; illegal or disabled opcodes raise `SIGILL` unless routed to a supervisor upcall; invalid or protected memory accesses raise `SIGSEGV`; alignment and unmappable physical/device accesses raise `SIGBUS`; breakpoints raise `SIGTRAP`. The signal frame records faulting PC, signal code, bad address where applicable, and the trapped opcode where useful.
 
 ---
-To make the **LNP64** a fully functional processor, the POSIX-like hardware instructions must coexist with a conventional general-purpose compute architecture. Since VFS, capability, VMA, event, and runqueue logic consume meaningful FPGA resources, the general compute side should remain a lean in-order RISC architecture.
+To make the **LNP64** a fully functional processor, the capability/event/domain instructions must coexist with a conventional general-purpose compute architecture. Since VFS, capability, VMA, event, and runqueue logic consume meaningful FPGA resources, the general compute side should remain a lean in-order RISC architecture.
 
-Here is how the general-purpose compute integrates with the Linux-native silicon.
+Here is how the general-purpose compute integrates with the LNP64 resource fabric.
 
 ---
 
@@ -142,7 +156,7 @@ Standard 64-bit integer operations. Because threads are managed in hardware, the
 ### 8. Control Flow (Branching & Execution)
 Since there is no Ring 0 / Ring 3 boundary, native control flow is about
 executing user logic and jumping to functions. Compatibility personalities may
-receive explicit supervisor upcalls, but native LNP64 POSIX operations are not
+receive explicit supervisor upcalls, but native LNP64 resource operations are not
 implemented as syscall traps.
 
 *   **`JMP r_target`** / **`JMP immediate`**
@@ -156,8 +170,8 @@ implemented as syscall traps.
 *   **`BEQ`, `BNE`, `BLT`, `BGT`**
     *   *Action:* Branch if Equal, Not Equal, Less Than, Greater Than (evaluates condition flags).
 
-### 9. Hybrid OS-Compute Instructions (The "Glue")
-Because "Everything is a File" is now a hardware reality, we need instructions to move data between the general compute realm (GPRs) and the OS realm (FDRs and PCRs).
+### 9. Hybrid Resource-Compute Instructions (The "Glue")
+Because "everything is a capability object" is the native hardware reality, we need instructions to move data between the general compute realm (GPRs) and the resource realm (FDRs and PCRs).
 
 *   **`MOV r_dest, r_src`**
     *   *Action:* Move data between general purpose registers.
@@ -176,7 +190,7 @@ Because "Everything is a File" is now a hardware reality, we need instructions t
 
 ---
 **Summary of the Compute Pipeline:**
-The ALU and Control Flow instructions avoid privilege-transition overhead for native POSIX-like operations. If an ALU instruction calculates a buffer address and the next instruction is `PUSH`, decode can enqueue a File/DMA Engine command directly rather than entering a software syscall path.
+The ALU and Control Flow instructions avoid privilege-transition overhead for native resource operations. If an ALU instruction calculates a buffer address and the next instruction is `PUSH`, decode can enqueue a File/DMA Engine command directly rather than entering a software syscall path.
 The core ISA also needs synchronization, device-driver boundaries, floating-point/vector compute, and a boot path to be a practical v1 target.
 
 To make the LNP64 bootable and useful, v1 includes **Synchronization, Device Drivers, Floating Point, and Bootstrapping**.
@@ -226,6 +240,64 @@ This preserves the rule that ambient MMIO is forbidden. A process cannot load/st
 *   **`LOAD_UCODE r_buf_ptr, r_len`**
     *   *Action:* Reserved device-driver acceleration hook. In FPGA v1 this is a stub; it does not replace the Bus Master, IOMMU, BAR FDR, or capability-delegation model.
 
+### 11.1 Native Networking Model
+
+Networking is not a hardware TCP/IP stack and not POSIX sockets in silicon. It is a set of capability profiles over the same object, queue, event, DMA, and Resource Domain primitives used elsewhere.
+
+Native network authority is rooted in capabilities:
+
+*   **`net_namespace` FDR:** Delegated network universe for a process or Resource Domain. It controls visible interfaces, address/port binding authority, raw packet permission, route view, quotas, and optional firewall/filter policy. A domain without a `net_namespace` capability has no ambient network authority.
+*   **`net_interface` FDR:** Capability to a physical, PCIe, or virtual interface. It exposes link state, MTU, counters, queue creation, packet filter attachment, and offload metadata through `GET_META`, `SET_META`, and `OBJECT_CTL`.
+*   **`packet_queue` FDR:** Capability-scoped L2/L3 packet ingress or egress queue, optionally narrowed by MAC address, ethertype, VLAN, IP protocol, address, port, or service-defined filter. Used by native network services, packet capture, virtual switches, DPDK-like runtimes, and paravirtual Linux/NetBSD stacks.
+*   **`datagram_endpoint` FDR:** Message-oriented endpoint profile for UDP-like traffic, raw datagram protocols, QUIC-friendly flows, or local datagram services.
+*   **`stream_endpoint` FDR:** Ordered byte-stream endpoint profile for TCP-like connections or service-provided secure streams.
+*   **`listener` FDR:** Passive accept queue. `PULL(listener)` returns a new `stream_endpoint` capability.
+
+The same ISA operations cover networking:
+
+*   `OBJECT_CTL` creates namespaces, endpoints, listeners, packet queues, filters, and completion/event queues where the caller holds authority.
+*   `SET_META` performs bind, connect, listen, option/filter configuration, route/address updates where delegated, and graceful close/reset controls.
+*   `GET_META` reads local/peer addresses, MTU, link state, endpoint state, counters, errors, timestamp/offload metadata, and quota pressure.
+*   `PULL` receives packets, datagrams, stream bytes, accepted connection capabilities, and network event records.
+*   `PUSH` transmits packets, datagrams, and stream bytes.
+*   `AWAIT` waits for readable, writable, accepted, connected, closed, error, link-change, quota, or completion events.
+*   `CAP_SEND` passes listeners, accepted connections, packet queues, or namespace subsets between domains.
+*   `CAP_REVOKE` tears down delegated network authority and derived endpoints.
+
+The silicon/software split is deliberate:
+
+*   **Silicon owns:** safe packet movement, packet DMA, coherent visibility, IOMMU enforcement, page-granular BAR mappings, `irq_event` delivery, generic queues/counters/events, basic MAC filtering/steering where cheap, simple checksums/classification where cheap, timestamps where cheap, per-domain quotas, counters, trace, and fault events.
+*   **Software domains own:** PCIe enumeration and quirks, Ethernet NIC drivers, Wi-Fi firmware/device protocols, Wi-Fi scan/association/authentication/roaming/regulatory policy, ARP/NDP, IP, TCP, UDP, QUIC policy, routing, firewall/NAT policy, TLS, DNS, socket compatibility, and service discovery.
+
+For PCIe Ethernet, the Bus Master mints `pci_function`, `pcie_bar`, `dma_buffer`, and `irq_event` capabilities for a NIC driver domain. The driver maps BARs with `MMAP`, allocates descriptor rings and packet buffers through `dma_buffer` capabilities, waits on `irq_event` records for MSI/MSI-X completion, and publishes `net_interface` plus packet queue capabilities to a network service domain. That service domain exposes `stream_endpoint`, `datagram_endpoint`, and `listener` FDRs to applications and libc.
+
+For Wi-Fi, silicon remains the same PCIe/DMA/event substrate. Wi-Fi-specific firmware loading, scan, association, WPA/WPA2/WPA3, roaming, regulatory behavior, power management, and link policy belong in a Wi-Fi driver/service domain. Once associated, the service publishes a normal `net_interface` capability to the rest of the system.
+
+POSIX sockets lower cleanly onto this model: `socket()` creates an endpoint under a `net_namespace`, `bind`/`connect`/`listen` become typed metadata/control operations, `accept` pulls a connection capability from a listener, `send`/`recv` become `PUSH`/`PULL`, `poll`/`epoll` bind endpoint readiness into event queues, `getsockopt`/`setsockopt` become typed metadata records, and descriptor passing maps to `CAP_SEND`.
+
+### 11.2 Bounded Record Classification and Queue Steering
+
+The networking classifier is useful beyond networking, so it should be specified as a generic bounded record-classification engine with packet parsing as one profile.
+
+The engine accepts a record envelope plus a capability-scoped rule table and can:
+
+*   extract a bounded set of fixed fields from known envelope profiles.
+*   compare exact values, masks, prefixes, ranges, and small enumerations.
+*   compute simple hashes for queue steering.
+*   stamp metadata fields such as class id, flow hash, timestamp, priority, or mark bits.
+*   increment counters.
+*   route, copy-reference, drop, or mark records into capability-scoped queues.
+
+Useful profiles include:
+
+*   **Packet profile:** shallow L2/L3/L4 extraction for simple Ethernet, VLAN, IPv4/IPv6, TCP/UDP/SCTP/ICMP headers; checksum status; flow hash; queue steering.
+*   **IPC/message profile:** route typed messages or call-gate completions to worker queues by service id, method id, tenant/domain id, priority, or hash.
+*   **Storage/DMA completion profile:** route completions and faults by object id, operation id, domain id, priority, or error class.
+*   **Event/trace profile:** classify structured fault, trace, scheduler, and RAS records for observability without waking a general supervisor for every record.
+*   **Runtime profile:** steer task, actor, or executor records to per-core/per-domain queues.
+
+This is not an arbitrary packet VM or eBPF replacement. V1 classifier rules are bounded, table-driven, versioned, capability-owned, and loop-free. If a record is malformed, too deep, encrypted, fragmented, extension-header-heavy, or unknown, the classifier marks it `partial` or `needs_software` and still delivers it safely to a software-owned queue. Protocol state, connection tracking, routing policy, firewall languages, TLS, Wi-Fi management, and application semantics remain in software domains.
+
 ### 12. Floating Point & Vector Math (FPU/SIMD)
 General compute isn't just integers. We need a standard IEEE 754 Floating Point Unit and SIMD (Single Instruction, Multiple Data) for multimedia and AI.
 
@@ -247,7 +319,7 @@ Upon receiving power, the LNP64 executes a hardwired reset sequence:
 7.  If `/sbin/init` is missing, the reset controller enters a hardware panic state and emits board diagnostics.
 
 ### 14. Paravirtual Unix Guest Profile
-LNP64 does **not** add traditional kernel rings, mandatory syscall traps, or OS-owned page tables just to make Linux or NetBSD feel at home. The hardware remains POSIX-native. A Unix kernel port is plausible by treating Linux/NetBSD as a paravirtual personality process, similar in spirit to User-Mode Linux or a microkernel guest.
+LNP64 does **not** add traditional kernel rings, mandatory syscall traps, or OS-owned page tables just to make Linux or NetBSD feel at home. The hardware remains capability/event/domain-native. A Unix kernel port is plausible by treating Linux/NetBSD as a paravirtual personality process, similar in spirit to User-Mode Linux or a microkernel guest.
 
 In this model, the silicon remains authoritative for:
 
@@ -264,6 +336,13 @@ The Linux/NetBSD personality owns:
 *   Guest filesystems mounted inside large hardware VFS files.
 *   Network stack policy above raw frame or datagram hardware objects.
 *   Userland ABI conventions.
+
+This makes the implementation path clean:
+
+*   libc lowers POSIX APIs to native primitives: `open/read/write/close` to `OPEN_AT`/`PULL`/`PUSH`/`CLOSE`, `pipe` to a queue profile, `poll`/`epoll` to event queues, `mmap` to VMA mapping of a capability, and `errno` to the compatibility error register.
+*   fork-like behavior is a `CLONE` profile, not the conceptual center of the machine. Native code can prefer spawn, call gates, domains, explicit shared memory, and event queues.
+*   signals remain available for POSIX and hardware faults, but native code can use structured events and cancellation objects instead.
+*   UID/GID is a credential profile for POSIX files and imported software; native authority is still capability possession plus Resource Domain policy.
 
 The targeted compatibility approaches are:
 
@@ -285,8 +364,8 @@ A capability-marked domain can also act as a supervisor domain and receive upcal
 
 Upcalls are delivered through a normal FDR with object class `control`. The supervisor pulls event records with `PULL` and pushes policy commands with `PUSH`. This keeps the design inside the FDR/VFS model instead of reintroducing a syscall path.
 
-The precise claim is: native LNP64 POSIX operations are hardware commands, not
-software traps. Compatibility personalities may still receive explicit hardware
+The precise claim is: native LNP64 resource operations are hardware commands, not
+software traps. POSIX and Linux compatibility personalities may still receive explicit hardware
 upcalls for virtualization policy, unsupported opcodes, delegated namespaces,
 and Linux syscall ABI emulation.
 
@@ -298,7 +377,7 @@ For physical PCIe devices, the PCIe Bus Master delegates `pcie_bar`, `dma_buffer
 
 For memory, the guest uses `MMAP`, `MUNMAP`, and `MPROTECT` to request native hardware VMAs. It does not write page tables directly. Linux/BSD tasks map one-to-one to hardware threads where practical, while the guest scheduler becomes an accounting and policy layer over the hardware runqueue.
 
-This preserves the vision: Linux and NetBSD can be personalities projected onto native POSIX silicon, rather than forcing LNP64 to become another trap-and-kernel RISC machine.
+This preserves the vision: Linux and NetBSD can be personalities projected onto native capability/event/domain silicon, rather than forcing LNP64 to become another trap-and-kernel RISC machine.
 
 ### Native Security Invariants
 
@@ -336,7 +415,7 @@ Hard v1 requirements:
 ### The Final Verdict
 With these additions, the LNP64 has a coherent v1 shape: it boots into an `init` process, represents files and threads as hardware-managed resources, handles native page faults in VMA/MMU engines, and routes I/O through capability-checked FDR objects without a conventional kernel syscall path.
 
-To make developers use the LNP64's silicon OS primitives, we should make the
+To make developers use the LNP64's native resource primitives, we should make the
 native path faster, safer, and easier than recreating the same behavior in
 software. The design should block ambient authority bypasses, but it should not
 make language runtimes, Linux compatibility personalities, or NetBSD service
@@ -344,7 +423,7 @@ processes impossible.
 
 Language runtimes and compatibility layers will still build their own abstractions when the hardware primitives are too narrow, too slow, or too awkward. The ISA should make the native path practical enough that runtimes can adopt it instead of bypassing it.
 
-Here is how we tune the LNP64 ISA to prefer the "Silicon OS" paradigm without
+Here is how we tune the LNP64 ISA to prefer the native capability/event/domain substrate without
 breaking practical runtimes:
 
 ### 1. Hardware-Owned Thread Contexts (Without Locking the Stack Pointer)

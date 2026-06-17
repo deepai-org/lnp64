@@ -3,8 +3,9 @@
 This document sketches a first real FPGA implementation of LNP64. It is not RTL
 and it is not a module skeleton. It is an architectural design target for a large
 FPGA with no built-in CPU cores. The central goal is to realize the POSIX-like
-ISA instructions as hardware datapaths and hardwired state machines, not as
-software traps and not as a hidden microcoded processor.
+compatibility surface as native capability, event, VMA, scheduler, and Resource
+Domain datapaths, not as software traps and not as a hidden microcoded
+processor.
 
 ## 1. Implementation Target
 
@@ -28,9 +29,12 @@ engines.
 LNP64 v1 must support:
 
 - General integer execution: registers, ALU, branches, calls, loads, stores.
-- File descriptor registers as real hardware capability entries.
-- POSIX-like file, directory, process, signal, futex, mmap, exec, fork, and
-  scheduling instructions from day one.
+- File descriptor registers as real hardware capability handles. POSIX file
+  descriptors are the libc/personality profile over these handles.
+- Native capability/object operations for streams, directories, waitables,
+  memory mappings, domains, call gates, DMA buffers, and device views from day
+  one. POSIX file, process, signal, futex, mmap, exec, fork, poll, and socket
+  APIs lower cleanly to these primitives.
 - True multi-context hardware scheduling with a real hardware runqueue.
 - Coherent multicore execution across multiple fabric CPU tiles.
 - External DDR virtual memory with hardware-managed translation and VMAs.
@@ -50,21 +54,21 @@ LNP64 v1 must support:
 - Deterministic instruction decode with a fixed binary encoding.
 - Hardware-owned waitable/capability objects with local state, bounded
   transitions, and event delivery, usable by ordinary runtimes as well as
-  POSIX-like OS operations.
+  POSIX-compatible OS operations.
 - Hardware modules designed as small, explicit, enumerated-state machines where
   invalid states are unrepresentable or detected by construction.
 
-The v1 design is allowed to be slow for complex POSIX operations. For example,
+The v1 design is allowed to be slow for complex compatibility operations. For example,
 `EXEC` can take thousands or millions of cycles while the SD controller streams
 an ELF image. The important requirement is that the operation is performed by
 dedicated hardware controllers and the issuing thread is parked while other
 threads continue.
 
-A major design goal of the POSIX hardware modules is robustness, not just speed.
-Compared with software subsystems, a good hard block should have a smaller
-reachable bad-state space: explicit states, bounded transitions, protected
-metadata, generation/check bits, and commit/abort paths that prevent partial
-architectural publication.
+A major design goal of the hardware resource modules is robustness, not just
+speed. Compared with software subsystems, a good hard block should have a
+smaller reachable bad-state space: explicit states, bounded transitions,
+protected metadata, generation/check bits, and commit/abort paths that prevent
+partial architectural publication.
 
 ## 3. Non-Goals
 
@@ -115,11 +119,12 @@ The chip is organized as these blocks:
 - PCIe IOMMU / DMA Remapper.
 - PCIe MSI/MSI-X Event Router.
 - DMA Fabric.
+- Record Classification and Queue Steering Engine.
 - Device adapters for UART, SD card, SPI flash, and Ethernet.
 - DDR Memory Controller Interface.
 - Interrupt and Event Router.
 
-All long-latency POSIX instructions issue a command into a hardware engine and
+All long-latency resource instructions issue a command into a hardware engine and
 park the issuing thread. Completion events write architectural results, update
 `ERRNO`, and return the thread to the ready queue.
 
@@ -1007,7 +1012,7 @@ Instruction behavior:
 - `YIELD`: moves current TID to the tail of ready queue.
 - timer-flavored `AWAIT`: inserts current TID into timer wheel.
 - `AWAIT`: attaches current TID to a waitable object's event mask or predicate.
-- long POSIX operations: mark current TID blocked on an engine command.
+- long resource operations: mark current TID blocked on an engine command.
 - engine completion: writes result registers, updates errno, returns TID to
   ready queue unless a signal must be delivered first.
 
@@ -1071,7 +1076,7 @@ Event queue acceleration:
 
 ### 11.1 Hardware-Owned Runtime Objects
 
-The same hard blocks that make POSIX operations native should also accelerate
+The same hard blocks that make POSIX compatibility cheap should also accelerate
 ordinary application and language-runtime code. The general abstraction is:
 
 ```text
@@ -1271,14 +1276,15 @@ Each FDR entry contains:
 
 - valid bit.
 - object class: `closed`, `regular_file`, `directory`, `char_stream`,
-  `block_device`, `pipe_read`, `pipe_write`, `socket`, `listener`,
-  `event_queue`, `timer`, `counter`, `queue`, `memory_object`, `call_gate`,
-  `control`, `pci_function`, `pcie_bar`, `dma_buffer`, `irq_event`,
-  `gpu_device`, `accelerator`.
+  `block_device`, `pipe_read`, `pipe_write`, `net_namespace`,
+  `net_interface`, `packet_queue`, `datagram_endpoint`, `stream_endpoint`,
+  `socket_compat`, `listener`, `event_queue`, `timer`, `counter`, `queue`,
+  `memory_object`, `call_gate`, `control`, `pci_function`, `pcie_bar`,
+  `dma_buffer`, `irq_event`, `gpu_device`, `accelerator`.
 - backend id: `none`, `uart0`, `sd0`, `spi_flash0`, `eth0`, `ramfs`,
-  `pipe_engine`, `socket_engine`, `vfs_engine`, `supervisor_engine`,
+  `pipe_engine`, `network_service`, `vfs_engine`, `supervisor_engine`,
   `pcie_root`, `pcie_iommu`, `pcie_msi`, `nvme_driver`, `ethernet_driver`,
-  `gpu_driver`.
+  `wifi_driver`, `gpu_driver`.
 - protocol or subtype: `raw_frame`, `udp_datagram`, `stream`, `block_extent`,
   `block_image`, `tty`, `control`, `pci_config`, `bar_mmio`,
   `timer_oneshot`, `timer_periodic`, `msi_vector`, `msix_vector`,
@@ -1612,24 +1618,199 @@ SPI flash is used for boot ROM assets and optional read-mostly files. It exposes
 a block-like backend with slower writes. The boot path may fetch initial VFS
 metadata and `/sbin/init` from SPI flash if SD is absent.
 
-### 14.5 Simplified Ethernet
+### 14.5 Native Networking Substrate
 
-Ethernet v1 is a simplified packet device, not a full TCP/IP offload engine.
+Networking follows the general LNP64 rule: silicon owns safety, movement,
+queues, events, and isolation; software domains own protocol policy, driver
+quirks, and evolving network semantics.
 
-Supported model:
+FPGA v1 Ethernet is a simplified packet device, not a full TCP/IP offload
+engine. PCIe Ethernet and Wi-Fi use the same substrate through the PCIe Bus
+Master, IOMMU, BAR, DMA-buffer, and IRQ-event capability path.
 
-- raw frame RX/TX queues.
-- optional UDP-like datagram objects.
-- listener objects are event queues over configured ethertype/port filters.
-- `PULL` receives frames/datagrams into user buffers.
-- `PUSH` transmits frames/datagrams from user buffers.
+Native network object profiles:
 
-The VFS can expose network endpoints under paths such as `/dev/eth0` or
-`/net/udp/<port>`.
+- `net_namespace`: delegated network universe for a Resource Domain. It scopes
+  visible interfaces, addresses, routes, port binding authority, raw-packet
+  authority, packet filters, quotas, and network policy roots.
+- `net_interface`: capability to a physical, PCIe, or virtual interface. It
+  exposes link state, MTU, hardware address metadata, queue creation, offload
+  capabilities, counters, and fault state.
+- `packet_queue`: raw or filtered packet ingress/egress queue. It is used by
+  driver domains, native network service domains, packet capture tools,
+  virtual switches, DPDK-like runtimes, and paravirtual Linux/NetBSD stacks.
+- `datagram_endpoint`: message-oriented endpoint profile for UDP-like traffic,
+  raw datagram protocols, local datagrams, or QUIC-friendly flows.
+- `stream_endpoint`: ordered byte-stream endpoint profile for TCP-like
+  connections or service-provided secure streams.
+- `listener`: passive accept queue; `PULL(listener)` returns a new endpoint
+  capability.
+
+These are object profiles, not independent hardware modules. They are
+implemented by the VFS/Object Engine, generic queues, event queues, DMA Fabric,
+driver domains, and network service domains. POSIX sockets are a libc/personality
+profile over these objects.
+
+Silicon responsibilities:
+
+- move packets between MAC/device FIFOs and DDR buffers through coherent DMA.
+- enforce VMA permissions, `dma_buffer` rights, requester id, direction, object
+  generation, and Resource Domain budget before accepting packet DMA.
+- route device interrupts/MSI/MSI-X into `irq_event` FDR records; raw interrupt
+  vectors are not exposed to drivers.
+- provide generic queue/counter/event objects for RX, TX, completion, link
+  state, and worker handoff.
+- expose counters for packets, bytes, drops, checksum status, DMA faults,
+  queue pressure, link changes, and device errors.
+- support simple MAC/interface filtering, packet length checks, optional
+  checksum assist, optional timestamping, and bounded classifier-driven
+  hash/steering when cheap in FPGA resources.
+- publish packet descriptors in a stable packet-envelope format.
+
+Silicon does not implement in v1:
+
+- TCP state machines or congestion control.
+- TLS, DNS, DHCP, routing, NAT, firewall policy, or service discovery.
+- Wi-Fi scan, association, authentication, roaming, regulatory behavior, or
+  power-management policy.
+- BPF/eBPF-scale programmable packet processing.
+- NIC-specific quirks, firmware protocols, or PCIe enumeration policy.
+
+#### 14.5.1 Record Classification and Queue Steering
+
+The networking classifier is a profile of a more general fixed-function block:
+the Record Classification and Queue Steering Engine. Its job is to classify
+small structured records, stamp metadata, count, and steer records into
+capability-scoped queues. It is useful for packets, but also for IPC,
+service-call completions, storage completions, DMA faults, trace records, RAS
+events, and runtime task queues.
+
+The engine accepts:
+
+- a record envelope pointer or on-chip record.
+- record profile id.
+- owner Resource Domain id/generation.
+- source object id/generation.
+- capability-scoped classifier table id.
+- destination queue capability set.
+
+Supported v1 matching primitives:
+
+- exact match.
+- masked value match.
+- prefix match for fixed-width fields.
+- small range match.
+- small enum/set match.
+- flow/hash bits computed over selected fixed fields.
+
+Supported v1 actions:
+
+- pass to one queue.
+- steer to one queue by hash/table.
+- drop with counter.
+- mark class id, priority, timestamp, flow hash, or software-needed flag.
+- increment per-rule, per-domain, per-source, and per-destination counters.
+- emit pressure/fault events on overflow or malformed records.
+
+Networking packet profile:
+
+- shallow parse only.
+- recognizes simple Ethernet, optional VLAN, IPv4/IPv6 base headers, and simple
+  TCP/UDP/SCTP/ICMP header positions when not fragmented and not hidden behind
+  deep extension chains.
+- may validate or assist checksums where cheap.
+- computes flow hash over available 5-tuple fields.
+- marks `parse_status = full`, `partial`, `unknown`, or `needs_software`.
+
+Non-network profiles:
+
+- event profile: classify scheduler, signal, timer, RAS, and supervisor events
+  into control queues.
+- IPC profile: route typed message records or call-gate completions by service
+  id, method id, tenant/domain id, priority, or hash.
+- storage/DMA profile: route completion records by object id, operation id,
+  error class, or owning domain.
+- trace profile: classify trace records into per-domain or per-engine readers.
+- runtime profile: steer task/executor records into per-core or per-domain work
+  queues.
+
+Hard limits:
+
+- no loops.
+- no unbounded header walks.
+- no arbitrary instruction VM.
+- no mutable protocol state.
+- no connection tracking.
+- no routing/firewall policy language.
+- no packet decryption/encryption.
+- no Wi-Fi management state.
+- table sizes, parse depth, extracted fields, and action count are bounded and
+  reported through `GET_META`.
+
+Classifier tables are capabilities. A process may install or update a table
+only when it holds the source object/control capability and destination queue
+capabilities. Delegating a classifier can narrow sources, destination queues,
+match masks, action types, and counters, but cannot broaden them.
+
+Packet envelope metadata:
+
+```text
+u32 version
+u32 flags
+u64 buffer_fd_or_object
+u64 offset
+u64 length
+u64 ingress_interface
+u64 timestamp
+u64 checksum_status
+u64 vlan_or_tag
+u64 flow_hash
+u64 reserved
+```
+
+The envelope is a software-visible record format used by packet queues and
+network services. It is not a promise that hardware parses every protocol field;
+fields can be unknown/zero when unsupported.
+
+FPGA v1 MAC path:
+
+- `PULL(packet_queue)` receives frames into user buffers or memory-object/DMA
+  buffers according to queue policy.
+- `PUSH(packet_queue)` transmits frames from user buffers or memory-object/DMA
+  buffers.
+- `AWAIT(packet_queue)` waits for RX ready, TX space, TX completion, link
+  change, error, or quota pressure.
+- `GET_META(net_interface)` reports link state, MTU, MAC address, counters, and
+  supported offload bits.
+- `SET_META(net_interface)` configures delegated filters and queue parameters
+  where the caller holds authority.
+
+Network service domains:
+
+- own ARP/NDP, IP, TCP, UDP, routing, firewall/NAT policy, TLS integration,
+  DNS/resolver policy, and POSIX socket compatibility.
+- expose `stream_endpoint`, `datagram_endpoint`, and `listener` capabilities to
+  applications.
+- can delegate accepted connection capabilities to worker domains with
+  `CAP_SEND`.
+- can expose virtio-net-like queue capabilities to Linux/NetBSD personalities
+  that want to run their own stack.
+
+Security rules:
+
+- no ambient network namespace exists. A process/domain needs a `net_namespace`
+  or narrower endpoint/interface capability.
+- raw packet access requires explicit packet authority.
+- privileged-port behavior is compatibility policy on top of namespace
+  capability rules, not an ambient UID 0 shortcut.
+- filters, endpoint rights, port binding authority, and queue access can be
+  narrowed when delegated and cannot be broadened by children.
+- revoking a namespace or interface authority revokes derived endpoints, packet
+  queues, filters, and events according to capability lineage.
 
 ### 14.6 PCIe Host Support
 
-PCIe support preserves the POSIX-native model by exposing devices as FDR
+PCIe support preserves the capability model by exposing devices as FDR
 capabilities. The FPGA v1 hardware includes the pieces that must be in hardware
 for safety and link operation, while PCIe enumeration and quirks are handled by
 a trusted software Bus Master process.
@@ -1693,7 +1874,34 @@ access control and memory type are represented by standard PTE bits.
 
 This model deliberately avoids a large hardware PCIe enumerator or BAR command
 parser. PCIe complexity and quirks live in one isolated Bus Master process, but
-the rest of the system still sees devices as POSIX-native capabilities.
+the rest of the system still sees devices as capability handles with stream,
+memory, DMA, event, and control profiles.
+
+PCIe Ethernet bring-up path:
+
+- Bus Master enumerates the NIC and mints `pci_function`, `pcie_bar`,
+  `dma_buffer`, and `irq_event` authority for a NIC driver domain.
+- NIC driver maps BARs with `MMAP` and uses ordinary `LD`/`ST` for doorbells,
+  status registers, and descriptor-ring control.
+- descriptor rings and packet buffers are allocated/exported as `dma_buffer`
+  or memory-object-backed capabilities with requester id, direction, range, and
+  generation.
+- MSI/MSI-X completions arrive as `irq_event` records; the driver does not own
+  raw interrupt vectors.
+- the driver publishes `net_interface`, `packet_queue`, and control/event FDRs
+  to a network service domain.
+- the network service domain publishes application-facing `stream_endpoint`,
+  `datagram_endpoint`, and `listener` FDRs.
+
+PCIe Wi-Fi bring-up path:
+
+- uses the same BAR, DMA, and IRQ-event primitives as Ethernet.
+- Wi-Fi firmware loading, device mailbox protocols, scan, association,
+  authentication, WPA/WPA2/WPA3, roaming, regulatory policy, and power
+  management live in a Wi-Fi driver/service domain.
+- after association, the Wi-Fi service publishes an ordinary `net_interface`
+  FDR and packet queues; the rest of the system does not need Wi-Fi-specific
+  silicon.
 
 `INB_RESERVED` and `OUTB_RESERVED`:
 
@@ -2336,9 +2544,11 @@ FDR entries, rights, object ids, and generation checks.
 
 ### 21.1 Privilege and Security Model
 
-V1 freezes a hybrid cloud profile: POSIX-style UID/GID and permission bits for
-compatibility, plus an explicit process credential capability bitmap for powers
-that must not be represented by UID 0 alone.
+V1 freezes a capability-native cloud profile with a POSIX credential
+compatibility layer. The native authority model is capability possession,
+object rights, generation validity, and Resource Domain policy. UID/GID and
+permission bits remain because real Unix software expects them, but they are a
+credential profile rather than the root of the architecture.
 
 Rejected alternative A: Unix-like UID/GID plus capability bits only as an
 informal policy.
@@ -2360,7 +2570,7 @@ Rejected alternative B: pure object capabilities.
 - Weakness: conventional POSIX software expects UID/GID checks and ambient
   process authority.
 
-Chosen model: hybrid cloud profile.
+Chosen model: capability-native cloud profile with POSIX credentials.
 
 - Keep UID/GID and POSIX permission checks for compatibility.
 - Represent privileged powers as hardware capability bits attached to process
@@ -2368,13 +2578,12 @@ Chosen model: hybrid cloud profile.
 - Require both UID/GID permission and specific capability bits for dangerous
   operations such as raw network access, mounting, adapter table loading,
   cross-user `KILL`, and process memory inspection.
-- Chosen for v1 because it preserves POSIX shape while avoiding a single
-  all-powerful root path in hardware.
+- Chosen for v1 because it preserves POSIX shape for libc and Linux/BSD
+  personalities while avoiding a single all-powerful root path in hardware.
 
-The hybrid model is still capability-native. UID/GID participates in
-compatibility decisions, but authority over files, devices, memory objects,
-call gates, DMA buffers, and supervisor controls is carried by FDR capabilities
-and Resource Domain policy.
+UID/GID participates in compatibility decisions, but authority over files,
+devices, memory objects, call gates, DMA buffers, namespaces, and supervisor
+controls is carried by FDR capabilities and Resource Domain policy.
 
 V1 security invariants:
 
@@ -2518,7 +2727,8 @@ full live migration:
 LNP64 does not add a conventional hosted-OS profile with kernel rings, software
 page tables, mandatory syscall traps, or an OS-owned scheduler. A future
 Linux/NetBSD port is made plausible by treating the kernel as a paravirtual Unix
-personality domain running on top of native LNP64 POSIX hardware.
+personality domain running on top of native LNP64 capability/event/domain
+hardware.
 
 The silicon remains authoritative for:
 
@@ -2555,6 +2765,23 @@ Non-targeted approach:
 
 - A full traditional Linux/NetBSD port that owns page tables, context switching,
   interrupts, and raw devices is not a v1 design target.
+
+Compatibility layering rules:
+
+- POSIX descriptors are represented by FDR capability handles; Linux fd tables
+  map to FDR tables plus personality metadata.
+- `fork` is a compatibility profile over `CLONE` with a new process, COW VMAs,
+  inherited/narrowed capabilities, and POSIX parent/child return conventions.
+- `pthread_create`, native actors, and guest tasks use other `CLONE` profiles
+  rather than pretending that fork is the fundamental process primitive.
+- POSIX signals are represented by hardware event delivery plus an ABI signal
+  frame. Native code may use event queues, cancellation objects, domain faults,
+  and call-gate completions instead.
+- `errno` is a libc/personality view of explicit result/error status.
+- Path lookup is syntax and compatibility; authority comes from directory/root
+  FDRs, namespace-root capabilities, and opened object capabilities.
+- UID/GID and mode bits are credential metadata for Unix software; object
+  capabilities and Resource Domain policy remain authoritative.
 
 Supervisor domains:
 
@@ -2659,8 +2886,8 @@ ABI requirements:
   event-queue FDRs that represent sets of wait sources.
 
 This profile preserves the LNP64 thesis: Linux/NetBSD can become personalities
-that project their semantics onto native POSIX hardware, rather than forcing the
-chip to become a conventional trap-and-kernel machine.
+that project their semantics onto native capability/event/domain hardware,
+rather than forcing the chip to become a conventional trap-and-kernel machine.
 
 ## 22. DMA Fabric
 
@@ -2984,7 +3211,8 @@ Verification should start at the architectural level before RTL:
 - Extend the current Rust emulator to consume encoded 64-bit instructions.
 - Add traces for thread scheduling, FDR table transitions, VMA changes, and
   signal delivery.
-- Write directed tests for every POSIX instruction.
+- Write directed tests for every native resource instruction and for the POSIX
+  compatibility profiles layered over them.
 - Write state-machine invariant tests for every hard block: legal state
   transitions, invalid-state detection, commit/abort behavior, timeout recovery,
   and reset recovery.
@@ -3017,6 +3245,11 @@ Verification should start at the architectural level before RTL:
 - Write directed tests for storage barriers: data sync, metadata sync,
   barrier-after-commit ordering, backend flush failure, and replay/fsck-visible
   commit records.
+- Write directed tests for the Record Classification and Queue Steering Engine:
+  exact/masked/prefix/range matches, hash steering, counter updates,
+  capability-scoped destination queues, overflow events, malformed record
+  handling, packet profile parsing, IPC/event/storage completion profiles, and
+  rejection of unbounded or unauthorized rules.
 - Write randomized tests for invalid FDs, bad paths, page faults, and killed
   blocked threads.
 - Run the same binaries against emulator and RTL simulation.
@@ -3068,16 +3301,29 @@ RTL simulation milestones:
 29. domain snapshot hook smoke test: freeze to quiescence, query serialized
     state records, resume without generation churn, and reject restore images
     with invalid capability lineage.
+30. Record Classification and Queue Steering smoke test: packet envelope
+    metadata, flow hash steering, packet queue routing, IPC completion routing,
+    storage/DMA fault routing, counters, and bounded-rule rejection.
 
 ## 27. Main Architectural Risk
 
-The hard part is not the integer CPU. The hard part is bounding POSIX semantics
-so they fit into fixed hardware controllers. LNP64 v1 should deliberately define
-an FPGA-native POSIX subset with hard limits. The compiler, libc shim, and
-runtime should target that subset rather than assuming every Linux behavior is
-replicated.
+The hard part is not the integer CPU. The hard part is keeping historical Unix
+compatibility useful without letting historical Unix become the whole hardware
+model. LNP64 v1 should deliberately define a small native substrate:
+capability handles, waitable objects, VMAs, Resource Domains, hardware
+scheduler contexts, event queues, call gates, and typed metadata/control
+surfaces.
 
-The core architectural bet is that POSIX operations are represented as
-capability-checked hardware commands that park threads and let the scheduler run
-other work. That keeps the ISA promise: the file, process, VM, and synchronization
-operations are real hardware features, not software calls with different names.
+POSIX is the primary compatibility profile over that substrate. The compiler,
+libc shim, Linux syscall runtime, and paravirtual personalities should target
+that profile rather than assuming every Linux behavior is replicated in
+hardware. When a POSIX feature is awkward historically, such as fork, signals,
+global paths, UID/GID, or ioctl-like controls, the native primitive remains the
+cleaner capability/event/domain operation and the compatibility layer performs
+the translation.
+
+The core architectural bet is that resource operations are capability-checked
+hardware commands that park threads and let the scheduler run other work. That
+keeps the ISA promise: files, streams, memory mappings, waitables, domains,
+devices, and service calls are real hardware-visible resources, not software
+calls with different names.
