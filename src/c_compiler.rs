@@ -5314,6 +5314,15 @@ impl CodeGen {
                 self.text.push(format!("  LI r{dst}, 0"));
                 Ok(dst)
             }
+            "__errno_location" | "___errno" => {
+                self.no_args(name, args)?;
+                let errno = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  ERRNO_GET r{errno}"));
+                self.text.push(format!("  ST global_errno, r{errno}"));
+                self.text.push(format!("  LI r{dst}, global_errno"));
+                Ok(dst)
+            }
             "fgets" => {
                 if args.len() != 3 {
                     return Err("fgets(buf, size, stream) expects 3 arguments".to_string());
@@ -12342,6 +12351,32 @@ int main() {
         }
         "#;
         let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_errno_location_shim_tracks_hardware_errno() {
+        let source = r#"
+        int main() {
+            int ep;
+            errno = 0;
+            ep = __errno_location();
+            if (*ep != 0) return 1;
+            if (open("missing-lnp64-file", 0) != -1) return 2;
+            if (errno == 0) return 3;
+            ep = __errno_location();
+            if (*ep != errno) return 4;
+            errno = 12;
+            ep = __errno_location();
+            if (*ep != 12) return 5;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("ERRNO_GET"), "{asm}");
+        assert!(asm.contains("ERRNO_SET"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
