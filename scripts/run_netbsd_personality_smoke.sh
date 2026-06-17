@@ -23,6 +23,8 @@ required_native=(
   POLL_FD_DYN
   AWAIT_DYN
   SIGACTION
+  GET_PCR
+  "SET_PCR SIGMASK"
   KILL
   CAP_DUP
   CAP_SEND

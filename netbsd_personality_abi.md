@@ -53,8 +53,8 @@ checks that the generated assembly still uses the expected native primitives.
 - descriptor passing through narrowed FDR capabilities over a queue,
 - an mmap-backed allocator arena, `mprotect`/`munmap`, and a tiny checked
   rumpfs mount/read service over a block-image FDR,
-- POSIX signal-profile delivery through gate disposition, `raise`, and
-  `SIGRET`/`GATE_RETURN`,
+- POSIX signal-profile delivery through gate disposition, mask/pending state,
+  `raise`, and `SIGRET`/`GATE_RETURN`,
 - pthread startup/join, futex wake, `select`, `epoll`, and timerfd wait,
 - TCP loopback through endpoint object controls,
 - call-gate delivery and Resource Domain attach/detach/destroy,

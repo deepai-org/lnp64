@@ -197,6 +197,28 @@ int check_signal_delivery() {
     return 0;
 }
 
+int check_signal_mask_delivery() {
+    sigset_t set;
+    sigset_t old;
+    sigset_t pending;
+    signal_seen = 0;
+    if (signal(SIGINT, on_signal) != 0) return 1;
+    if (sigemptyset(&set) != 0) return 2;
+    if (sigaddset(&set, SIGINT) != 0) return 3;
+    if (sigprocmask(SIG_BLOCK, &set, &old) != 0) return 4;
+    if (sigismember(&old, SIGINT) != 0) return 5;
+    if (raise(SIGINT) != 0) return 6;
+    if (signal_seen != 0) return 7;
+    if (sigpending(&pending) != 0) return 8;
+    if (sigismember(&pending, SIGINT) != 1) return 9;
+    if (sigprocmask(SIG_UNBLOCK, &set, &old) != 0) return 10;
+    if (sigismember(&old, SIGINT) != 1) return 11;
+    if (signal_seen != 1) return 12;
+    if (sigpending(&pending) != 0) return 13;
+    if (sigismember(&pending, SIGINT) != 0) return 14;
+    return 0;
+}
+
 int check_thread_futex_select_timer() {
     fd_set rfds;
     int fds[2];
@@ -341,6 +363,8 @@ int main() {
     if (rc != 0) return 40 + rc;
     rc = check_signal_delivery();
     if (rc != 0) return 50 + rc;
+    rc = check_signal_mask_delivery();
+    if (rc != 0) return 120 + rc;
     rc = check_thread_futex_select_timer();
     if (rc != 0) return 80 + rc;
     rc = check_epoll_readiness();
