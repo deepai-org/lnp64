@@ -2218,6 +2218,19 @@ struct Parser {
     current_function: String,
 }
 
+#[derive(Debug, Default)]
+struct CastTypeName {
+    pointer_depth: usize,
+    parts: Vec<String>,
+    array_len: Option<usize>,
+}
+
+impl CastTypeName {
+    fn normalized_name(&self) -> String {
+        self.parts.join(" ")
+    }
+}
+
 impl Parser {
     fn new(
         tokens: Vec<Token>,
@@ -3364,14 +3377,16 @@ impl Parser {
             Token::LParen => {
                 self.advance();
                 if self.is_cast_type_start() {
-                    let pointer_depth = self.skip_cast_type_name();
+                    let cast_type = self.skip_cast_type_name_details();
                     self.expect(Token::RParen)?;
                     if self.check(&Token::LBrace) {
                         self.advance();
-                        return Ok(Expr::CompoundLiteral(self.parse_compound_literal_fields()?));
+                        return Ok(Expr::CompoundLiteral(
+                            self.parse_compound_literal_fields_for(&cast_type)?,
+                        ));
                     }
                     let expr = self.parse_factor()?;
-                    return Ok(Expr::CastPointer(pointer_depth, Box::new(expr)));
+                    return Ok(Expr::CastPointer(cast_type.pointer_depth, Box::new(expr)));
                 }
                 let expr = self.parse_expr()?;
                 self.expect(Token::RParen)?;
@@ -3465,6 +3480,86 @@ impl Parser {
         Ok(fields)
     }
 
+    fn parse_compound_literal_fields_for(
+        &mut self,
+        cast_type: &CastTypeName,
+    ) -> Result<Vec<Expr>, String> {
+        if cast_type.normalized_name() == "struct timespec" {
+            if let Some(array_len) = cast_type.array_len {
+                return self.parse_timespec_array_compound_literal_fields(array_len);
+            }
+        }
+        if cast_type.normalized_name() == "int" && cast_type.array_len == Some(2) {
+            return self.parse_timespec_array_compound_literal_fields(2);
+        }
+        self.parse_compound_literal_fields()
+    }
+
+    fn parse_timespec_array_compound_literal_fields(
+        &mut self,
+        array_len: usize,
+    ) -> Result<Vec<Expr>, String> {
+        let mut fields = vec![Expr::Num(0); array_len.saturating_mul(2).max(2)];
+        let mut element_index = 0usize;
+        let mut scalar_index = 0usize;
+        while !self.check(&Token::RBrace) {
+            if self.check(&Token::LBrace) {
+                self.advance();
+                let pair = self.parse_timespec_compound_literal_element()?;
+                let base = element_index.saturating_mul(2);
+                if base + 1 < fields.len() {
+                    fields[base] = pair[0].clone();
+                    fields[base + 1] = pair[1].clone();
+                }
+                element_index += 1;
+                scalar_index = element_index.saturating_mul(2);
+            } else {
+                let value = self.parse_assignment()?;
+                if scalar_index < fields.len() {
+                    fields[scalar_index] = value;
+                }
+                scalar_index += 1;
+            }
+            if self.check(&Token::Comma) {
+                self.advance();
+            }
+        }
+        self.expect(Token::RBrace)?;
+        Ok(fields)
+    }
+
+    fn parse_timespec_compound_literal_element(&mut self) -> Result<[Expr; 2], String> {
+        let mut fields = [Expr::Num(0), Expr::Num(0)];
+        let mut scalar_index = 0usize;
+        while !self.check(&Token::RBrace) {
+            if self.check(&Token::Dot) {
+                let mut parts = Vec::new();
+                while self.check(&Token::Dot) {
+                    self.advance();
+                    parts.push(self.take_ident()?);
+                }
+                self.expect(Token::Assign)?;
+                let value = self.parse_assignment()?;
+                match parts.last().map(String::as_str) {
+                    Some("tv_sec") => fields[0] = value,
+                    Some("tv_nsec") => fields[1] = value,
+                    _ => {}
+                }
+            } else {
+                let value = self.parse_assignment()?;
+                if scalar_index < fields.len() {
+                    fields[scalar_index] = value;
+                }
+                scalar_index += 1;
+            }
+            if self.check(&Token::Comma) {
+                self.advance();
+            }
+        }
+        self.expect(Token::RBrace)?;
+        Ok(fields)
+    }
+
     fn is_cast_type_start(&self) -> bool {
         match self.peek() {
             Token::Int => true,
@@ -3489,16 +3584,44 @@ impl Parser {
     }
 
     fn skip_cast_type_name(&mut self) -> usize {
-        let mut pointer_depth = 0usize;
+        self.skip_cast_type_name_details().pointer_depth
+    }
+
+    fn skip_cast_type_name_details(&mut self) -> CastTypeName {
+        let mut cast_type = CastTypeName::default();
         while matches!(self.peek(), Token::Int | Token::Star | Token::Ident(_)) {
-            if self.check(&Token::Star) {
-                pointer_depth += 1;
+            match self.peek() {
+                Token::Star => {
+                    cast_type.pointer_depth += 1;
+                }
+                Token::Int => {
+                    cast_type.parts.push("int".to_string());
+                }
+                Token::Ident(name) if !is_type_qualifier_ident(name) => {
+                    cast_type.parts.push(name.clone());
+                }
+                _ => {}
             }
             self.advance();
         }
+        while self.check(&Token::LBracket) {
+            self.advance();
+            if let Token::Num(value) = self.peek() {
+                if *value >= 0 {
+                    cast_type.array_len = Some(*value as usize);
+                }
+                self.advance();
+            }
+            while !self.check(&Token::RBracket) && !self.check(&Token::Eof) {
+                self.advance();
+            }
+            if self.check(&Token::RBracket) {
+                self.advance();
+            }
+        }
         if self.check(&Token::LParen) && self.peek_n(1) == &Token::Star {
             self.advance();
-            pointer_depth += 1;
+            cast_type.pointer_depth += 1;
             let mut depth = 1i64;
             while depth > 0 && !self.check(&Token::Eof) {
                 if self.check(&Token::LParen) {
@@ -3521,7 +3644,7 @@ impl Parser {
                 }
             }
         }
-        pointer_depth
+        cast_type
     }
 
     fn parse_postfix(&mut self, mut expr: Expr) -> Result<Expr, String> {
@@ -14532,8 +14655,14 @@ impl CodeGen {
         } else if name == "UTIME_OMIT" {
             self.text.push(format!("  LI r{reg}, 1073741822"));
             Ok(reg)
-        } else if name == "ENOENT" || name == "ENOTDIR" {
+        } else if name == "ENOENT" {
             self.text.push(format!("  LI r{reg}, 2"));
+            Ok(reg)
+        } else if name == "EBADF" {
+            self.text.push(format!("  LI r{reg}, 9"));
+            Ok(reg)
+        } else if name == "ENOTDIR" {
+            self.text.push(format!("  LI r{reg}, 20"));
             Ok(reg)
         } else if name == "EINTR" {
             self.text.push(format!("  LI r{reg}, 4"));
@@ -19549,6 +19678,46 @@ int main() {
         assert!(asm.contains("1073741823"), "{asm}");
         assert!(asm.contains("1073741822"), "{asm}");
         Program::parse(&asm).unwrap();
+    }
+
+    #[test]
+    fn c_utime_compound_timespec_arrays_run() {
+        let source = r#"
+        int main() {
+            int f;
+            int fd;
+            int st;
+
+            errno = 0;
+            if (futimens(-1, ((struct timespec[2]){{.tv_nsec=UTIME_OMIT},{.tv_nsec=UTIME_OMIT}})) != -1) return 1;
+            if (errno != EBADF) return 2;
+
+            f = tmpfile();
+            if (!f) return 3;
+            fd = fileno(f);
+            st = alloc(104);
+
+            if (futimens(fd, (struct timespec[2]){0}) != 0) return 4;
+            if (fstat(fd, st) != 0) return 5;
+            if (st.st_atim.tv_sec != 0) return 6;
+            if (st.st_atim.tv_nsec != 0) return 7;
+            if (st.st_mtim.tv_sec != 0) return 8;
+            if (st.st_mtim.tv_nsec != 0) return 9;
+
+            if (futimens(fd, ((struct timespec[2]){{.tv_sec=7,.tv_nsec=UTIME_OMIT},{.tv_sec=9,.tv_nsec=UTIME_OMIT}})) != 0) return 10;
+            if (fstat(fd, st) != 0) return 11;
+            if (st.st_atim.tv_sec != 0) return 12;
+            if (st.st_mtim.tv_sec != 0) return 13;
+            fclose(f);
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("UTIME_FD_DYN"), "{asm}");
+        assert!(asm.contains("1073741822"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
     }
 
     #[test]

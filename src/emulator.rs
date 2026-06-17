@@ -2477,6 +2477,9 @@ impl Machine {
     }
 
     fn decode_fd_value(&self, value: u64) -> Result<usize, u64> {
+        if value == -1i64 as u64 {
+            return Err(9);
+        }
         if value < FDR_COUNT as u64 {
             return Ok(value as usize);
         }

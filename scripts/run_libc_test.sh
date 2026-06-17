@@ -22,6 +22,7 @@ tests=(
   strtol
   udiv
   ungetc
+  utime
 )
 
 for test_name in "${tests[@]}"; do

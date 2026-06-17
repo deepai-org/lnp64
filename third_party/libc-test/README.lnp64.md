@@ -26,6 +26,7 @@ libc-test files; bounded or locally guarded files are called out below.
 - `functional/strtol.c`
 - `functional/udiv.c`
 - `functional/ungetc.c`
+- `functional/utime.c`
 
 The local `functional/test.h` and `functional/print.c` files provide a minimal
 LNP64-compatible test harness. They preserve the libc-test convention that tests
@@ -42,6 +43,9 @@ consumption of an ungot byte.
 `stat.c` is the upstream file and covers directory/device predicates, timestamp
 fields, file size, and guest UID/GID ownership in exported `struct stat`
 records.
+`utime.c` is the upstream file and covers `futimens`/`utimensat` timestamp
+pairs, `UTIME_NOW`, `UTIME_OMIT`, invalid file descriptors, and nested
+timestamp fields in `struct stat`.
 
 Run the subset with:
 
