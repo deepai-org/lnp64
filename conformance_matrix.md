@@ -73,6 +73,7 @@ specific compiler/runtime special casing.
 | SQLite upstream | not started | No checked-in SQLite target | Add package gate. `COMPAT-PKG-003`. |
 | libpng upstream | not started | No checked-in libpng target | Add package gate after zlib. `COMPAT-PKG-004`. |
 | musl tests subset | not started | No checked-in musl test gate | Add focused libc conformance harness. `COMPAT-PKG-005`. |
+| cwalk | failing / not checked in | Scratch probe compiles after generic `bool` and named-enum normalization, then faults in path separator handling | Track remaining pointer/array runtime semantics under `COMPAT-PKG-007` before adding a package gate. |
 
 ## Open Compatibility Bugs
 
@@ -88,6 +89,7 @@ specific compiler/runtime special casing.
 | `COMPAT-PKG-004` | libpng | Not started. | Add after zlib passes. |
 | `COMPAT-PKG-005` | musl tests | Not started. | Pick a small libc-test subset that avoids unsupported dynamic linking first. |
 | `COMPAT-PKG-006` | inih parse-string aggregate path | File parser smoke passes with upstream `inih` r58. | Add generic anonymous-struct local layout support so `ini_parse_string` can run too. |
+| `COMPAT-PKG-007` | cwalk path library | Scratch probe reaches runtime after generic bool/enum frontend fixes, then faults while handling separator/path pointer data. | Reduce the separator crash to a focused pointer/array regression before vendoring cwalk. |
 | `COMPAT-FS-001` | Filesystem/path conformance | sbase covers common commands. | Add negative/error path tests for symlinks, permissions, `stat`, and rename/link corner cases. |
 | `COMPAT-STDIO-001` | stdio conformance | Common descriptor-backed streams pass. | Add EOF/error flag, buffering, append, and mixed read/write tests. |
 | `COMPAT-LIBC-001` | Full `fcntl` command surface | Descriptor duplication path exists. | Define supported commands and add tests for unsupported errno behavior. |

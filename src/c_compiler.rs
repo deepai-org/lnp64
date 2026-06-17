@@ -14625,6 +14625,27 @@ mod tests {
     }
 
     #[test]
+    fn bool_alias_and_constants_normalize_to_scalar_ints() {
+        let source = r#"
+        bool enabled;
+
+        int main() {
+            enabled = true;
+            if (enabled != 1) return 1;
+            enabled = false;
+            return enabled == 0 ? 0 : 2;
+        }
+        "#;
+        let normalized = preprocess_source(source);
+        assert!(!normalized.contains("bool"), "{normalized}");
+        assert!(normalized.contains("int enabled;"), "{normalized}");
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn lua_longjmp_local_is_allocated_for_member_access() {
         let source = r#"
         typedef struct lua_longjmp {

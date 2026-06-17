@@ -1,5 +1,7 @@
 pub fn find_token_constant(name: &str) -> Option<i64> {
     match name {
+        "false" => Some(0),
+        "true" => Some(1),
         "JSMN_UNDEFINED" => Some(0),
         "JSMN_OBJECT" => Some(1),
         "JSMN_ARRAY" => Some(2),

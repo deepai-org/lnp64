@@ -109,7 +109,7 @@ pub fn apply_scalar_type_rewrites(source: &str) -> String {
     ] {
         out = replace_token_phrase(&out, from, to);
     }
-    for alias in ["FILE", "DIR", "regex_t", "regmatch_t"] {
+    for alias in ["FILE", "DIR", "bool", "regex_t", "regmatch_t"] {
         out = replace_ident_token(&out, alias, "int");
     }
     for alias in ["uint8_t", "uint16_t", "uint32_t", "uint64_t", "uintptr_t"] {
@@ -489,11 +489,32 @@ pub fn normalize_pointer_char_idioms(source: &str) -> String {
 
 pub fn normalize_anonymous_enums(source: &str) -> String {
     let mut constants = Vec::new();
+    let mut type_names = Vec::new();
     let mut out = String::new();
     let mut lines = source.lines();
 
     while let Some(line) = lines.next() {
-        if let Some((start, body_start)) = enum_body_start(line) {
+        let mut line = line.to_string();
+        if enum_body_start(&line).is_none()
+            && pending_enum_definition(&line)
+            && let Some(next_line) = lines.next()
+        {
+            if next_line.trim_start().starts_with('{') {
+                line.push(' ');
+                line.push_str(next_line);
+            } else {
+                out.push_str(&line);
+                out.push('\n');
+                out.push_str(next_line);
+                out.push('\n');
+                continue;
+            }
+        }
+
+        if let Some((start, body_start)) = enum_body_start(&line) {
+            if let Some(type_name) = enum_type_name(&line, start, body_start) {
+                type_names.push(type_name);
+            }
             let mut body = String::new();
             let after_start = &line[body_start..];
             if let Some(end) = enum_declaration_end(after_start) {
@@ -520,7 +541,7 @@ pub fn normalize_anonymous_enums(source: &str) -> String {
                 body.push('\n');
             }
         } else {
-            out.push_str(line);
+            out.push_str(&line);
             out.push('\n');
         }
     }
@@ -530,6 +551,11 @@ pub fn normalize_anonymous_enums(source: &str) -> String {
     for (name, value) in constants {
         out = replace_enum_constant_token(&out, &name, &value.to_string());
     }
+    type_names.sort_by_key(|name| std::cmp::Reverse(name.len()));
+    type_names.dedup();
+    for name in type_names {
+        out = replace_token_phrase(&out, &format!("enum {name}"), "int");
+    }
     out
 }
 
@@ -537,6 +563,31 @@ fn enum_body_start(line: &str) -> Option<(usize, usize)> {
     let enum_pos = find_enum_keyword(line)?;
     let open_rel = line[enum_pos..].find('{')?;
     Some((enum_pos, enum_pos + open_rel + 1))
+}
+
+fn pending_enum_definition(line: &str) -> bool {
+    let Some(enum_pos) = find_enum_keyword(line) else {
+        return false;
+    };
+    if line.contains('{') || line.trim_end().ends_with(';') {
+        return false;
+    }
+    let rest = line[enum_pos + "enum".len()..].trim();
+    is_identifier(rest)
+}
+
+fn enum_type_name(line: &str, start: usize, body_start: usize) -> Option<String> {
+    let before_body = line[start + "enum".len()..body_start - 1].trim();
+    let name = before_body.split_whitespace().next()?;
+    is_identifier(name).then(|| name.to_string())
+}
+
+fn is_identifier(text: &str) -> bool {
+    let mut chars = text.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first == '_' || first.is_ascii_alphabetic()) && chars.all(is_ident_char)
 }
 
 fn find_enum_keyword(line: &str) -> Option<usize> {
@@ -845,7 +896,7 @@ fn is_ident_char(ch: char) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_user_type_alias_rewrites, collect_user_type_aliases,
+        apply_user_type_alias_rewrites, collect_user_type_aliases, normalize_anonymous_enums,
         normalize_function_pointer_params,
     };
 
@@ -896,5 +947,29 @@ int cipher(state_t *state);
         );
         let out = apply_user_type_alias_rewrites(source, &aliases);
         assert!(out.contains("int cipher(int *state);"), "{out}");
+    }
+
+    #[test]
+    fn normalizes_next_line_brace_enum_constants() {
+        let source = r#"
+enum path_style
+{
+    STYLE_WINDOWS,
+    STYLE_UNIX
+};
+
+int style = STYLE_UNIX;
+enum path_style get_style(enum path_style value);
+enum path_style guess_style(int path)
+{
+    return STYLE_UNIX;
+}
+"#;
+        let out = normalize_anonymous_enums(source);
+        assert!(!out.contains("STYLE_UNIX"), "{out}");
+        assert!(out.contains("int style = 1;"), "{out}");
+        assert!(out.contains("int get_style(int value);"), "{out}");
+        assert!(out.contains("int guess_style(int path)"), "{out}");
+        assert!(out.contains("return 1;"), "{out}");
     }
 }
