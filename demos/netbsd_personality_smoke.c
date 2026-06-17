@@ -250,6 +250,29 @@ int check_thread_futex_select_timer() {
     return 0;
 }
 
+int check_epoll_readiness() {
+    int fds[2];
+    int ep;
+    int ev;
+    int out;
+    int buf;
+    if (pipe(fds) != 0) return 1;
+    ep = epoll_create1(0);
+    if (ep == 0) return 2;
+    ev = alloc(16);
+    out = alloc(16);
+    buf = alloc(1);
+    store(ev, EPOLLIN);
+    if (epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], ev) != 0) return 3;
+    if (epoll_wait(ep, out, 1, 0) != 0) return 4;
+    if (write(fds[1], "e", 1) != 1) return 5;
+    if (epoll_wait(ep, out, 1, 0) != 1) return 6;
+    if (load(out) != EPOLLIN) return 7;
+    if (read(fds[0], buf, 1) != 1) return 8;
+    if (loadb(buf) != 'e') return 9;
+    return 0;
+}
+
 int check_loopback_socket() {
     struct pollfd p[1];
     int server;
@@ -320,6 +343,8 @@ int main() {
     if (rc != 0) return 50 + rc;
     rc = check_thread_futex_select_timer();
     if (rc != 0) return 80 + rc;
+    rc = check_epoll_readiness();
+    if (rc != 0) return 110 + rc;
     rc = check_loopback_socket();
     if (rc != 0) return 60 + rc;
     rc = check_domain_and_gate();
