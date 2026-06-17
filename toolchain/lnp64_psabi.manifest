@@ -1,0 +1,24 @@
+# LNP64 psABI manifest v0.
+# This is the backend-facing subset of psABI.md for the future LLVM target.
+name=lnp64_psabi_v0
+doc=psABI.md
+gpr_count=32
+fdr_count=256
+fpr_count=32
+vr_count=16
+zero_register=r0
+stack_pointer=r31
+link_register=LR
+argument_gprs=r1-r6
+return_gprs=r1
+caller_clobbered_gprs=r1-r30
+callee_saved_gprs=none
+stack_alignment=16
+local_first_offset=8
+entry_page_base=0x700000
+entry_page_size=0x20000
+entry_strings_base=0x701000
+thread_pointer_pcr=TP
+errno_ops=ERRNO_GET,ERRNO_SET
+signal_argument_gprs=r1
+signal_return=SIGRET,GATE_RETURN

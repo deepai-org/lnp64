@@ -748,6 +748,10 @@ mod tests {
         assert_eq!(manifest_field(manifest, "e_machine"), "0x6c64");
         assert_eq!(manifest_field(manifest, "psabi"), "psABI.md");
         assert_eq!(
+            manifest_field(manifest, "psabi_contract"),
+            "toolchain/lnp64_psabi.manifest"
+        );
+        assert_eq!(
             manifest_field(manifest, "object_contract"),
             "object_format.md"
         );
@@ -803,6 +807,82 @@ mod tests {
             manifest_field(manifest, "toy_compiler_policy"),
             "bootstrap_smoke_only_after_llvm_gate"
         );
+    }
+
+    #[test]
+    fn psabi_manifest_records_current_calling_convention_contract() {
+        let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
+        let psabi_manifest = include_str!("../toolchain/lnp64_psabi.manifest");
+        let psabi_doc = include_str!("../psABI.md");
+
+        assert_eq!(
+            manifest_field(target_manifest, "psabi_contract"),
+            "toolchain/lnp64_psabi.manifest"
+        );
+        assert_eq!(
+            manifest_field(psabi_manifest, "name"),
+            manifest_field(target_manifest, "call_conv")
+        );
+        assert_eq!(
+            manifest_field(psabi_manifest, "doc"),
+            manifest_field(target_manifest, "psabi")
+        );
+        assert_eq!(
+            manifest_field(psabi_manifest, "stack_alignment"),
+            manifest_field(target_manifest, "stack_alignment")
+        );
+        assert_eq!(manifest_field(psabi_manifest, "gpr_count"), "32");
+        assert_eq!(manifest_field(psabi_manifest, "fdr_count"), "256");
+        assert_eq!(manifest_field(psabi_manifest, "zero_register"), "r0");
+        assert_eq!(manifest_field(psabi_manifest, "stack_pointer"), "r31");
+        assert_eq!(manifest_field(psabi_manifest, "link_register"), "LR");
+        assert_eq!(manifest_field(psabi_manifest, "argument_gprs"), "r1-r6");
+        assert_eq!(manifest_field(psabi_manifest, "return_gprs"), "r1");
+        assert_eq!(
+            manifest_field(psabi_manifest, "caller_clobbered_gprs"),
+            "r1-r30"
+        );
+        assert_eq!(manifest_field(psabi_manifest, "callee_saved_gprs"), "none");
+        assert_eq!(
+            manifest_field(psabi_manifest, "entry_page_base"),
+            "0x700000"
+        );
+        assert_eq!(manifest_field(psabi_manifest, "entry_page_size"), "0x20000");
+        assert_eq!(
+            manifest_field(psabi_manifest, "entry_strings_base"),
+            "0x701000"
+        );
+        assert_eq!(manifest_field(psabi_manifest, "thread_pointer_pcr"), "TP");
+        assert!(manifest_csv_contains(
+            psabi_manifest,
+            "errno_ops",
+            "ERRNO_GET"
+        ));
+        assert!(manifest_csv_contains(
+            psabi_manifest,
+            "errno_ops",
+            "ERRNO_SET"
+        ));
+        assert!(manifest_csv_contains(
+            psabi_manifest,
+            "signal_return",
+            "SIGRET"
+        ));
+        assert!(manifest_csv_contains(
+            psabi_manifest,
+            "signal_return",
+            "GATE_RETURN"
+        ));
+
+        assert!(
+            psabi_doc.contains("Integer and pointer arguments are passed in `r1` through `r6`.")
+        );
+        assert!(psabi_doc.contains("Return values are placed in `r1`."));
+        assert!(psabi_doc.contains("There is no callee-saved GPR set"));
+        assert!(psabi_doc.contains("`r31` points at the current thread's stack/local region."));
+        assert!(psabi_doc.contains("The thread pointer is read and written through the `TP` PCR."));
+        assert!(psabi_doc.contains("`SIGRET` is the POSIX spelling"));
+        assert!(psabi_doc.contains("`GATE_RETURN`"));
     }
 
     #[test]

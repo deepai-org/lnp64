@@ -8,6 +8,7 @@ pointer_width=64
 stack_alignment=16
 e_machine=0x6c64
 psabi=psABI.md
+psabi_contract=toolchain/lnp64_psabi.manifest
 object_contract=object_format.md
 relocation_contract=toolchain/lnp64_relocations.manifest
 gpr=r0-r31
