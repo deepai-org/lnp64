@@ -7419,11 +7419,8 @@ impl CodeGen {
                 if args.len() != 4 {
                     return Err("memmem(h, hlen, n, nlen) expects 4 arguments".to_string());
                 }
-                let haystack = self.emit_expr(&args[0])?;
-                let hay_len = self.emit_expr(&args[1])?;
-                let needle = self.emit_expr(&args[2])?;
-                let needle_len = self.emit_expr(&args[3])?;
-                self.emit_memmem(haystack, hay_len, needle, needle_len)
+                let regs = self.emit_call_arg_regs(args)?;
+                self.emit_memmem(regs[0], regs[1], regs[2], regs[3])
             }
             "fullrune" => {
                 let dst = self.alloc_reg()?;
@@ -10384,22 +10381,55 @@ impl CodeGen {
         needle_len: usize,
     ) -> Result<usize, String> {
         let dst = self.alloc_reg()?;
+        let pos = self.alloc_reg()?;
         let remaining = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let cur = self.alloc_reg()?;
+        let j = self.alloc_reg()?;
+        let hay_addr = self.alloc_reg()?;
+        let needle_addr = self.alloc_reg()?;
+        let hay_ch = self.alloc_reg()?;
+        let needle_ch = self.alloc_reg()?;
+        let outer_label = self.new_label("memmem_outer");
+        let inner_label = self.new_label("memmem_inner");
+        let next_label = self.new_label("memmem_next");
         let found_label = self.new_label("memmem_found");
         let end_label = self.new_label("memmem_end");
         self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("  LI r{pos}, 0"));
+        self.text.push(format!("  LI r{one}, 1"));
         self.text.push(format!("  CMP r{needle_len}, r0"));
         self.text.push(format!("  BEQ {found_label}"));
         self.text
             .push(format!("  SUB r{remaining}, r{hay_len}, r{needle_len}"));
         self.text.push(format!("  CMP r{remaining}, r0"));
         self.text.push(format!("  BLT {end_label}"));
-        self.text.push(format!("  MOV r{dst}, r{haystack}"));
-        self.text.push(format!("  JMP {end_label}"));
+        self.text.push(format!("{outer_label}:"));
+        self.text.push(format!("  CMP r{pos}, r{remaining}"));
+        self.text.push(format!("  BGT {end_label}"));
+        self.text.push(format!("  ADD r{cur}, r{haystack}, r{pos}"));
+        self.text.push(format!("  LI r{j}, 0"));
+        self.text.push(format!("{inner_label}:"));
+        self.text.push(format!("  CMP r{j}, r{needle_len}"));
+        self.text.push(format!("  BGE {found_label}"));
+        self.text.push(format!("  ADD r{hay_addr}, r{cur}, r{j}"));
+        self.text
+            .push(format!("  ADD r{needle_addr}, r{needle}, r{j}"));
+        self.text
+            .push(format!("  LD.B r{hay_ch}, [r{hay_addr}, 0]"));
+        self.text
+            .push(format!("  LD.B r{needle_ch}, [r{needle_addr}, 0]"));
+        self.text.push(format!("  CMP r{hay_ch}, r{needle_ch}"));
+        self.text.push(format!("  BNE {next_label}"));
+        self.text.push(format!("  ADD r{j}, r{j}, r{one}"));
+        self.text.push(format!("  JMP {inner_label}"));
+        self.text.push(format!("{next_label}:"));
+        self.text.push(format!("  ADD r{pos}, r{pos}, r{one}"));
+        self.text.push(format!("  JMP {outer_label}"));
         self.text.push(format!("{found_label}:"));
-        self.text.push(format!("  MOV r{dst}, r{haystack}"));
+        self.text.push(format!("  ADD r{dst}, r{haystack}, r{pos}"));
+        self.text.push(format!("  JMP {end_label}"));
         self.text.push(format!("{end_label}:"));
-        let _ = needle;
         Ok(dst)
     }
 
@@ -16048,6 +16078,27 @@ mod tests {
         }
         "#;
         let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn memmem_searches_for_matching_byte_sequence() {
+        let source = r#"
+        int main() {
+            char *s;
+            s = "nanabanabanana";
+            if (memmem(s, strlen(s), "banana", 6) != s + 8) return 1;
+            if (memmem(s, strlen(s), "anab", 4) != s + 1) return 2;
+            if (memmem("abba", 4, "aba", 3) != 0) return 3;
+            s = "abcd";
+            if (memmem(s, strlen(s), "", 0) != s) return 4;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("memmem_inner"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
