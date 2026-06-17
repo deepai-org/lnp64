@@ -5866,6 +5866,28 @@ impl CodeGen {
                 let flags = self.emit_expr(&args[1])?;
                 self.emit_eventfd_create(initval, flags)
             }
+            "eventfd_read" => {
+                if args.len() != 2 {
+                    return Err("eventfd_read(fd, value) expects 2 arguments".to_string());
+                }
+                let fd = self.emit_expr(&args[0])?;
+                let fd_slot = self.spill_reg(fd);
+                self.temp_reg = 0;
+                let value = self.emit_expr(&args[1])?;
+                let fd = self.reload_reg(fd_slot)?;
+                self.emit_eventfd_read(fd, value)
+            }
+            "eventfd_write" => {
+                if args.len() != 2 {
+                    return Err("eventfd_write(fd, value) expects 2 arguments".to_string());
+                }
+                let fd = self.emit_expr(&args[0])?;
+                let fd_slot = self.spill_reg(fd);
+                self.temp_reg = 0;
+                let value = self.emit_expr(&args[1])?;
+                let fd = self.reload_reg(fd_slot)?;
+                self.emit_eventfd_write(fd, value)
+            }
             "timerfd_settime" | "timerinttime" => {
                 if args.len() != 4 {
                     return Err(
@@ -11428,6 +11450,45 @@ impl CodeGen {
         Ok(dst)
     }
 
+    fn emit_eventfd_read(&mut self, fd: usize, value: usize) -> Result<usize, String> {
+        let len = self.alloc_reg()?;
+        let count = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let ok = self.new_label("eventfd_read_ok");
+        let done = self.new_label("eventfd_read_done");
+        self.text.push(format!("  LI r{len}, 8"));
+        self.emit_read_fd_dispatch(fd, value, len, Some(count))?;
+        self.text.push(format!("  CMP r{count}, r{len}"));
+        self.text.push(format!("  BEQ {ok}"));
+        self.text.push(format!("  LI r{dst}, -1"));
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{ok}:"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("{done}:"));
+        Ok(dst)
+    }
+
+    fn emit_eventfd_write(&mut self, fd: usize, value: usize) -> Result<usize, String> {
+        let block_size = self.alloc_reg()?;
+        let block = self.alloc_reg()?;
+        let count = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let ok = self.new_label("eventfd_write_ok");
+        let done = self.new_label("eventfd_write_done");
+        self.text.push(format!("  LI r{block_size}, 8"));
+        self.text.push(format!("  ALLOC r{block}, r{block_size}"));
+        self.text.push(format!("  ST [r{block}, 0], r{value}"));
+        self.emit_write_fd_dispatch(fd, block, block_size, count)?;
+        self.text.push(format!("  CMP r{count}, r{block_size}"));
+        self.text.push(format!("  BEQ {ok}"));
+        self.text.push(format!("  LI r{dst}, -1"));
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{ok}:"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("{done}:"));
+        Ok(dst)
+    }
+
     fn emit_timerfd_settime(
         &mut self,
         fd: usize,
@@ -14969,11 +15030,10 @@ int main() {
             p[0].fd = fd;
             p[0].events = POLLIN;
             if (poll(p, 1, 0) != 1) return 2;
-            if (read(fd, buf, 8) != 8) return 3;
+            if (eventfd_read(fd, buf) != 0) return 3;
             if (load(buf) != 2) return 4;
             if (poll(p, 1, 0) != 0) return 5;
-            store(buf, 5);
-            if (write(fd, buf, 8) != 8) return 6;
+            if (eventfd_write(fd, 5) != 0) return 6;
             if (poll(p, 1, 0) != 1) return 7;
             store(buf, 0);
             if (read(fd, buf, 8) != 8) return 8;
