@@ -6586,8 +6586,7 @@ impl CodeGen {
                     return Err("fopen(path, mode) expects 2 arguments".to_string());
                 }
                 let path = self.emit_expr(&args[0])?;
-                let flags = self.alloc_reg()?;
-                self.text.push(format!("  LI r{flags}, 0"));
+                let flags = self.emit_fopen_flags(&args[1])?;
                 self.emit_open_fd_alloc(path, flags)
             }
             "fmemopen" => {
@@ -8850,6 +8849,19 @@ impl CodeGen {
         self.text.push(format!("  ST.B [r{buf}, 0], r{ch}"));
         self.text.push(format!("  WRITE_FD fd1, r{buf}, r{one}"));
         Ok(0)
+    }
+
+    fn emit_fopen_flags(&mut self, mode: &Expr) -> Result<usize, String> {
+        let flags = self.alloc_reg()?;
+        let value = match mode {
+            Expr::Str(mode) if mode.starts_with('a') => 1,
+            Expr::Str(mode) if mode.starts_with('w') => 2 | 4,
+            Expr::Str(mode) if mode.starts_with('r') && mode.contains('+') => 4,
+            Expr::Str(_) => 0,
+            _ => 0,
+        };
+        self.text.push(format!("  LI r{flags}, {value}"));
+        Ok(flags)
     }
 
     fn emit_open_fd_alloc(&mut self, path_reg: usize, flags_reg: usize) -> Result<usize, String> {
@@ -13244,6 +13256,39 @@ int main() {
         let asm = compile(source).unwrap();
         assert!(asm.contains("__write_cstr_fd"), "{asm}");
         assert!(asm.contains("WRITE_FD_DYN"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_fopen_write_mode_creates_and_truncates_file() {
+        let source = r#"
+        int main() {
+            int fp;
+            int buf;
+            remove("/tmp/lnp64_fopen_mode_test.txt");
+            fp = fopen("/tmp/lnp64_fopen_mode_test.txt", "w");
+            if (fp == -1) return 1;
+            fputs("abcdef", fp);
+            close(fp);
+            fp = fopen("/tmp/lnp64_fopen_mode_test.txt", "w");
+            if (fp == -1) return 2;
+            fputs("xy", fp);
+            close(fp);
+            fp = fopen("/tmp/lnp64_fopen_mode_test.txt", "r");
+            if (fp == -1) return 3;
+            buf = alloc(8);
+            if (read(fp, buf, 8) != 2) return 4;
+            storeb(buf + 2, 0);
+            if (strcmp(buf, "xy") != 0) return 5;
+            close(fp);
+            remove("/tmp/lnp64_fopen_mode_test.txt");
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("OPEN_FD_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
