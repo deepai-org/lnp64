@@ -15,6 +15,7 @@ MOTD
 
 cat > "$root/etc/files" <<'FILES'
 /bin/lnpsh.s
+/bin/ucat.s
 /dev/console
 /dev/null
 /dev/random
@@ -35,6 +36,7 @@ DEVS
 : > "$root/dev/random"
 
 "${lnp64[@]}" cc userland/lnpsh.c -o "$root/bin/lnpsh.s"
+"${lnp64[@]}" cc userland/ucat.c -o "$root/bin/ucat.s"
 "${lnp64[@]}" cc userland/init.c -o "$root/sbin/init.s"
 
 "${lnp64[@]}" run "$root/sbin/init.s" -- init "$root" > "$out"
@@ -48,6 +50,7 @@ $ pwd
 /
 $ ls
 /bin/lnpsh.s
+/bin/ucat.s
 /dev/console
 /dev/null
 /dev/random
@@ -56,6 +59,8 @@ $ ls
 /sbin/init.s
 /tmp
 $ cat /etc/motd
+welcome to lnp64 userland
+$ ucat /etc/motd
 welcome to lnp64 userland
 $ devs
 console

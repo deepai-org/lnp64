@@ -54,7 +54,7 @@ Implementation:
 - `src/emulator.rs`: emulator runtime.
 - `src/c_compiler.rs`: small C compiler.
 - `demos/`: assembly and C demos.
-- `userland/`: minimal bootable userland image.
+- `userland/`: minimal bootable userland image with init, shell, and command binaries.
 - `third_party/`: real package smoke targets.
 - `scripts/`: test, demo, userland, and package gates.
 

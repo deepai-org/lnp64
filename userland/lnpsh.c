@@ -62,6 +62,33 @@ int command(int root, int name, int arg) {
     return 1;
 }
 
+int exec_command(int root, int name, int arg) {
+    int path;
+    int child;
+    int status;
+
+    write(1, "$ ", 2);
+    write_cstr(1, name);
+    if (arg != 0) {
+        write(1, " ", 1);
+        write_cstr(1, arg);
+    }
+    write(1, "\n", 1);
+
+    path = alloc(256);
+    join_path(path, root, "/bin/ucat.s");
+    child = fork();
+    if (child == 0) {
+        execl(path, "ucat", root, arg, 0);
+        _exit(127);
+    }
+    if (wait(&status) != 0) return 1;
+    if (!WIFEXITED(status)) return 2;
+    if (WEXITSTATUS(status) != 0) return 3;
+    free(path);
+    return 0;
+}
+
 int main(int argc, char **argv) {
     int root;
     if (argc > 1) {
@@ -74,6 +101,7 @@ int main(int argc, char **argv) {
     command(root, "pwd", 0);
     command(root, "ls", 0);
     command(root, "cat", "/etc/motd");
+    exec_command(root, "ucat", "/etc/motd");
     command(root, "devs", 0);
     write(1, "lnpsh: halt\n", 12);
     return 0;
