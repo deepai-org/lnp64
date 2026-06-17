@@ -69,6 +69,7 @@ const OBJECT_OP_CREATE: u64 = 1;
 const OBJECT_KIND_COUNTER: u64 = 1;
 const OBJECT_KIND_QUEUE: u64 = 2;
 const OBJECT_KIND_MEMORY_OBJECT: u64 = 3;
+const OBJECT_KIND_DMA_BUFFER: u64 = 4;
 const OBJECT_PROFILE_PIPE: u64 = 1;
 const OBJECT_PROFILE_CALL_GATE: u64 = 4;
 const DMA_OP_COPY: u64 = 1;
@@ -140,6 +141,10 @@ enum FdHandle {
         data: Rc<RefCell<Vec<u8>>>,
         pos: usize,
     },
+    DmaBuffer {
+        addr: u64,
+        len: u64,
+    },
     CallGate {
         entry: usize,
         domain_id: u64,
@@ -177,6 +182,10 @@ impl FdHandle {
             FdHandle::MemoryObject { data, pos } => Ok(FdHandle::MemoryObject {
                 data: Rc::clone(data),
                 pos: *pos,
+            }),
+            FdHandle::DmaBuffer { addr, len } => Ok(FdHandle::DmaBuffer {
+                addr: *addr,
+                len: *len,
             }),
             FdHandle::CallGate {
                 entry,
@@ -2253,6 +2262,7 @@ impl Machine {
             | FdHandle::MessageEndpoint
             | FdHandle::Dir { .. }
             | FdHandle::PipeReader(_)
+            | FdHandle::DmaBuffer { .. }
             | FdHandle::CallGate { .. }
             | FdHandle::Closed => Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
@@ -2568,6 +2578,7 @@ impl Machine {
             | FdHandle::MessageEndpoint
             | FdHandle::Dir { .. }
             | FdHandle::PipeWriter(_)
+            | FdHandle::DmaBuffer { .. }
             | FdHandle::CallGate { .. }
             | FdHandle::Closed => 0,
         };
@@ -2632,6 +2643,15 @@ impl Machine {
         let dst = self.load_u64(argblock + 8)?;
         let src_or_value = self.load_u64(argblock + 16)?;
         let len = self.load_u64(argblock + 24)? as usize;
+        let dma_buffer = self.load_u64(argblock + 32)?;
+        if dma_buffer != 0 {
+            let validation = self.validate_dma_buffer(dma_buffer, op, dst, src_or_value, len);
+            if let Err(errno) = validation {
+                self.set_status_errno(errno)?;
+                self.write_reg(result, -1i64 as u64)?;
+                return Ok(());
+            }
+        }
         let outcome: Result<u64, u64> = match op {
             DMA_OP_COPY => self
                 .read_bytes(src_or_value, len)
@@ -2659,6 +2679,35 @@ impl Machine {
                 self.write_reg(result, -1i64 as u64)
             }
         }
+    }
+
+    fn validate_dma_buffer(
+        &mut self,
+        fd_value: u64,
+        op: u64,
+        dst: u64,
+        src_or_value: u64,
+        len: usize,
+    ) -> Result<(), u64> {
+        let fd = self.decode_fd_value(fd_value)?;
+        let required_rights = match op {
+            DMA_OP_COPY => CAP_RIGHT_READ | CAP_RIGHT_WRITE,
+            DMA_OP_FILL => CAP_RIGHT_WRITE,
+            _ => return Err(22),
+        };
+        self.fd_right_errno(fd, required_rights)?;
+        let process = self.process().map_err(|_| 3u64)?;
+        let (addr, buffer_len) = match process.fds.get(fd).ok_or(9u64)? {
+            FdHandle::DmaBuffer { addr, len } => (*addr, *len),
+            _ => return Err(9),
+        };
+        if !range_within(addr, buffer_len, dst, len) {
+            return Err(14);
+        }
+        if op == DMA_OP_COPY && !range_within(addr, buffer_len, src_or_value, len) {
+            return Err(14);
+        }
+        Ok(())
     }
 
     fn cap_send(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
@@ -3009,6 +3058,17 @@ impl Machine {
                         pos: 0,
                     },
                 )?;
+                self.store_u64(argblock + 24, fd as u64)
+                    .map_err(|_| 14u64)?;
+                Ok(fd as u64)
+            }
+            (OBJECT_KIND_DMA_BUFFER, _) => {
+                let len = self.load_u64(argblock + 48).map_err(|_| 14u64)?.max(1);
+                self.ensure_mapped(arg, len as usize, false)
+                    .map_err(|_| 14u64)?;
+                self.ensure_mapped(arg, len as usize, true)
+                    .map_err(|_| 14u64)?;
+                let fd = self.install_object_fd(fd0_req, FdHandle::DmaBuffer { addr: arg, len })?;
                 self.store_u64(argblock + 24, fd as u64)
                     .map_err(|_| 14u64)?;
                 Ok(fd as u64)
@@ -4611,6 +4671,7 @@ impl Machine {
             | FdHandle::Stderr
             | FdHandle::MessageEndpoint
             | FdHandle::PipeWriter(_)
+            | FdHandle::DmaBuffer { .. }
             | FdHandle::CallGate { .. }
             | FdHandle::Closed => Ok(false),
         }
@@ -4649,7 +4710,7 @@ impl Machine {
                 let buffer = buffer.borrow();
                 Ok(!buffer.bytes.is_empty() || !buffer.capabilities.is_empty())
             }
-            FdHandle::Closed => Ok(false),
+            FdHandle::DmaBuffer { .. } | FdHandle::Closed => Ok(false),
             FdHandle::TcpListener { listener, pending } => {
                 if pending.is_some() {
                     return Ok(true);
@@ -4736,6 +4797,16 @@ impl Machine {
 
 fn align_up(value: u64, align: u64) -> u64 {
     (value + align - 1) & !(align - 1)
+}
+
+fn range_within(base: u64, base_len: u64, addr: u64, len: usize) -> bool {
+    let Some(base_end) = base.checked_add(base_len) else {
+        return false;
+    };
+    let Some(end) = addr.checked_add(len as u64) else {
+        return false;
+    };
+    addr >= base && end <= base_end
 }
 
 fn parse_num(text: &str) -> Result<u64, String> {
@@ -6254,6 +6325,112 @@ mod tests {
         machine.dma_ctl(Reg(6), arg).unwrap();
         assert_eq!(machine.thread().unwrap().regs[6], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 1);
+    }
+
+    #[test]
+    fn dma_ctl_uses_dma_buffer_capability_scope() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[1] = 16;
+        machine.exec(Instr::Alloc(Reg(2), Reg(1))).unwrap();
+        let buffer = machine.thread().unwrap().regs[2];
+        let arg = ARG_BASE;
+
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine.store_u64(arg + 8, OBJECT_KIND_DMA_BUFFER).unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.store_u64(arg + 32, 0).unwrap();
+        machine.store_u64(arg + 40, buffer).unwrap();
+        machine.store_u64(arg + 48, 16).unwrap();
+        machine.object_ctl(Reg(3), arg).unwrap();
+        let fd = machine.thread().unwrap().regs[3] as usize;
+        let token = machine.fd_token(fd).unwrap();
+
+        machine.store_u64(arg, DMA_OP_FILL).unwrap();
+        machine.store_u64(arg + 8, buffer + 4).unwrap();
+        machine.store_u64(arg + 16, 0xcd).unwrap();
+        machine.store_u64(arg + 24, 4).unwrap();
+        machine.store_u64(arg + 32, token).unwrap();
+        machine.dma_ctl(Reg(4), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[4], 4);
+        assert_eq!(
+            machine.read_bytes(buffer + 4, 4).unwrap(),
+            vec![0xcd, 0xcd, 0xcd, 0xcd]
+        );
+
+        machine.store_u64(arg + 8, buffer + 15).unwrap();
+        machine.store_u64(arg + 24, 2).unwrap();
+        machine.dma_ctl(Reg(5), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 14);
+    }
+
+    #[test]
+    fn dma_ctl_rejects_stale_and_revoked_dma_buffers() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[1] = 16;
+        machine.exec(Instr::Alloc(Reg(2), Reg(1))).unwrap();
+        let buffer = machine.thread().unwrap().regs[2];
+        let arg = ARG_BASE;
+
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine.store_u64(arg + 8, OBJECT_KIND_DMA_BUFFER).unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.store_u64(arg + 32, 0).unwrap();
+        machine.store_u64(arg + 40, buffer).unwrap();
+        machine.store_u64(arg + 48, 16).unwrap();
+        machine.object_ctl(Reg(3), arg).unwrap();
+        let fd = machine.thread().unwrap().regs[3] as usize;
+        let stale_token = machine.fd_token(fd).unwrap();
+
+        machine.thread_mut().unwrap().regs[4] = stale_token;
+        machine.exec(Instr::FdCloseDyn(Reg(4))).unwrap();
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine.store_u64(arg + 8, OBJECT_KIND_DMA_BUFFER).unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, fd as u64).unwrap();
+        machine.store_u64(arg + 32, 0).unwrap();
+        machine.store_u64(arg + 40, buffer).unwrap();
+        machine.store_u64(arg + 48, 16).unwrap();
+        machine.object_ctl(Reg(5), arg).unwrap();
+
+        machine.store_u64(arg, DMA_OP_FILL).unwrap();
+        machine.store_u64(arg + 8, buffer).unwrap();
+        machine.store_u64(arg + 16, 0xee).unwrap();
+        machine.store_u64(arg + 24, 1).unwrap();
+        machine.store_u64(arg + 32, stale_token).unwrap();
+        machine.dma_ctl(Reg(6), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[6], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 116);
+
+        let live_token = machine.fd_token(fd).unwrap();
+        machine.store_u64(arg, live_token).unwrap();
+        machine.cap_revoke(Reg(7), arg).unwrap();
+        machine.store_u64(arg, DMA_OP_FILL).unwrap();
+        machine.store_u64(arg + 8, buffer).unwrap();
+        machine.store_u64(arg + 16, 0xee).unwrap();
+        machine.store_u64(arg + 24, 1).unwrap();
+        machine.store_u64(arg + 32, live_token).unwrap();
+        machine.dma_ctl(Reg(8), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[8], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 116);
     }
 
     #[test]
