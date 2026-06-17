@@ -14,6 +14,7 @@ upstream libc-test files; bounded or locally guarded files are called out below.
 - `functional/env.c`
 - `functional/fdopen.c`
 - `functional/fcntl.c`
+- `functional/pthread_tsd.c`
 - `functional/qsort_bounded.c`
 - `functional/random.c`
 - `functional/search_insque.c`
@@ -53,6 +54,8 @@ timestamp fields in `struct stat`.
 and `F_GETLK` owner reporting across `fork`.
 `sem_init.c` is the upstream file and covers unnamed semaphore init/wait/post,
 try/timed wait errno behavior, and pthread start routines that return normally.
+`pthread_tsd.c` is the upstream file and covers thread-specific storage
+isolation, destructor execution on thread exit, and key deletion.
 `regression/malloc-0.c` is the upstream file with only the harness include path
 adjusted; it covers non-null, unique `malloc(0)` allocations.
 

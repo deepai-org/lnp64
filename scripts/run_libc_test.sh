@@ -11,6 +11,7 @@ tests=(
   functional/fdopen
   functional/fcntl
   functional/qsort_bounded
+  functional/pthread_tsd
   functional/random
   functional/search_insque
   functional/search_lsearch

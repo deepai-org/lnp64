@@ -1011,6 +1011,7 @@ fn normalize_c_types(source: &str) -> String {
         ("fd_set", "int"),
         ("sigset_t *", "int "),
         ("sigset_t", "int"),
+        ("pthread_key_t", "int"),
         ("pthread_t", "int"),
         ("sem_t *", "int *"),
         ("sem_t", "int"),
@@ -3788,6 +3789,8 @@ struct CodeGen {
     needs_c_runtime: bool,
     needs_recurse_runtime: bool,
     needs_atexit_runtime: bool,
+    needs_pthread_tsd_runtime: bool,
+    pthread_start_wrappers: BTreeMap<String, String>,
     break_labels: Vec<String>,
     continue_labels: Vec<String>,
 }
@@ -3926,6 +3929,12 @@ impl CodeGen {
         if self.needs_atexit_runtime {
             self.emit_atexit_runner();
         }
+        if !self.pthread_start_wrappers.is_empty() {
+            self.emit_pthread_start_wrappers();
+        }
+        if self.needs_pthread_tsd_runtime {
+            self.emit_pthread_tsd_runner();
+        }
 
         let mut out = String::new();
         if !self.data.is_empty() {
@@ -4051,6 +4060,78 @@ impl CodeGen {
         self.text.push("  JMP __lnp_run_atexit_loop".to_string());
         self.text.push("__lnp_run_atexit_done:".to_string());
         self.text.push("  RET".to_string());
+    }
+
+    fn ensure_pthread_tsd_runtime(&mut self) {
+        self.needs_pthread_tsd_runtime = true;
+        self.data
+            .entry("__lnp_pthread_key_dtors".to_string())
+            .or_insert(".zero 2048".to_string());
+    }
+
+    fn pthread_start_wrapper(&mut self, target: &str) -> String {
+        self.ensure_pthread_tsd_runtime();
+        if let Some(label) = self.pthread_start_wrappers.get(target) {
+            return label.clone();
+        }
+        let label = format!("__lnp_pthread_start_{target}");
+        self.pthread_start_wrappers
+            .insert(target.to_string(), label.clone());
+        label
+    }
+
+    fn emit_pthread_start_wrappers(&mut self) {
+        for (target, wrapper) in self.pthread_start_wrappers.clone() {
+            self.text.push(format!("{wrapper}:"));
+            self.text.push(format!("  CALL {target}"));
+            self.text.push("  MOV r24, r1".to_string());
+            self.text
+                .push("  CALL __lnp_pthread_run_tsd_dtors".to_string());
+            self.text.push("  EXIT r24".to_string());
+        }
+    }
+
+    fn emit_pthread_tsd_runner(&mut self) {
+        self.text.push("__lnp_pthread_run_tsd_dtors:".to_string());
+        self.text.push("  GET_PCR r25, TP".to_string());
+        self.text.push("  CMP r25, r0".to_string());
+        self.text.push("  BEQ __lnp_pthread_tsd_done".to_string());
+        self.text.push("  LI r26, 1".to_string());
+        self.text.push("__lnp_pthread_tsd_loop:".to_string());
+        self.text.push("  LI r27, 256".to_string());
+        self.text.push("  CMP r26, r27".to_string());
+        self.text.push("  BEQ __lnp_pthread_tsd_done".to_string());
+        self.text.push("  LI r28, 3".to_string());
+        self.text.push("  LSL r29, r26, r28".to_string());
+        self.text.push("  ADD r30, r25, r29".to_string());
+        self.text.push("  LD r1, [r30, 0]".to_string());
+        self.text.push("  CMP r1, r0".to_string());
+        self.text.push("  BEQ __lnp_pthread_tsd_next".to_string());
+        self.text.push("  ST [r30, 0], r0".to_string());
+        self.text
+            .push("  LI r27, __lnp_pthread_key_dtors".to_string());
+        self.text.push("  ADD r27, r27, r29".to_string());
+        self.text.push("  LD r27, [r27, 0]".to_string());
+        self.text.push("  CMP r27, r0".to_string());
+        self.text.push("  BEQ __lnp_pthread_tsd_next".to_string());
+        self.text.push("  ST [r25, 0], r26".to_string());
+        self.text.push("  CALL_REG r27".to_string());
+        self.text.push("  GET_PCR r25, TP".to_string());
+        self.text.push("  LD r26, [r25, 0]".to_string());
+        self.text.push("__lnp_pthread_tsd_next:".to_string());
+        self.text.push("  LI r27, 1".to_string());
+        self.text.push("  ADD r26, r26, r27".to_string());
+        self.text.push("  JMP __lnp_pthread_tsd_loop".to_string());
+        self.text.push("__lnp_pthread_tsd_done:".to_string());
+        self.text.push("  RET".to_string());
+    }
+
+    fn emit_pthread_exit(&mut self, code: usize) {
+        self.ensure_pthread_tsd_runtime();
+        self.text.push(format!("  MOV r24, r{code}"));
+        self.text
+            .push("  CALL __lnp_pthread_run_tsd_dtors".to_string());
+        self.text.push("  EXIT r24".to_string());
     }
 
     fn global_aggregate_size(&self, name: &str) -> Option<i64> {
@@ -9946,6 +10027,7 @@ impl CodeGen {
                 if !self.function_names.contains(label) {
                     return Err(format!("unknown pthread_create target {label:?}"));
                 }
+                let wrapper = self.pthread_start_wrapper(label);
                 let thread_ptr = self.emit_expr(&args[0])?;
                 let thread_ptr_slot = self.spill_reg(thread_ptr);
                 self.temp_reg = 0;
@@ -9954,7 +10036,7 @@ impl CodeGen {
                 self.temp_reg = 0;
                 let start_arg = self.reload_reg(start_arg_slot)?;
                 self.text.push(format!("  MOV r1, r{start_arg}"));
-                let tid = self.emit_clone_profile(pthread_clone_profile(), Some(label))?;
+                let tid = self.emit_clone_profile(pthread_clone_profile(), Some(&wrapper))?;
                 let thread_ptr = self.reload_reg(thread_ptr_slot)?;
                 let dst = self.alloc_reg()?;
                 self.text.push(format!("  CMP r{thread_ptr}, r0"));
@@ -10006,7 +10088,7 @@ impl CodeGen {
                 } else {
                     self.emit_expr(&args[0])?
                 };
-                self.text.push(format!("  EXIT r{code}"));
+                self.emit_pthread_exit(code);
                 Ok(0)
             }
             "pthread_mutex_init" | "pthread_cond_init" => {
@@ -10035,11 +10117,15 @@ impl CodeGen {
                     );
                 }
                 let key_ptr = self.emit_expr(&args[0])?;
-                self.emit_expr(&args[1])?;
-                self.emit_pthread_key_create(key_ptr)
+                let key_ptr_slot = self.spill_reg(key_ptr);
+                self.temp_reg = 0;
+                let destructor = self.emit_expr(&args[1])?;
+                let key_ptr = self.reload_reg(key_ptr_slot)?;
+                self.emit_pthread_key_create(key_ptr, destructor)
             }
             "pthread_key_delete" => {
-                let _ = self.one_arg(name, args)?;
+                let key = self.one_arg(name, args)?;
+                self.emit_pthread_key_delete(key)?;
                 let dst = self.alloc_reg()?;
                 self.text.push(format!("  LI r{dst}, 0"));
                 Ok(dst)
@@ -11677,17 +11763,32 @@ impl CodeGen {
     }
 
     fn emit_mkstemp(&mut self, template: usize) -> Result<usize, String> {
-        let label = self.intern_string("/tmp/lnp64_mkstemp");
         let dst = self.alloc_reg()?;
         let flags = self.alloc_reg()?;
+        let len = self.alloc_reg()?;
+        let suffix_len = self.alloc_reg()?;
+        let suffix = self.alloc_reg()?;
         let null_template = self.new_label("mkstemp_null");
         let done = self.new_label("mkstemp_done");
         self.needs_c_runtime = true;
         self.text.push(format!("  CMP r{template}, r0"));
         self.text.push(format!("  BEQ {null_template}"));
+        let template_slot = self.spill_reg(template);
         self.text.push(format!("  MOV r1, r{template}"));
-        self.text.push(format!("  LI r2, {label}"));
-        self.text.push("  CALL __strcpy".to_string());
+        self.text.push("  CALL __strlen".to_string());
+        self.text.push(format!("  MOV r{len}, r1"));
+        let template = self.reload_reg(template_slot)?;
+        self.text.push(format!("  LI r{suffix_len}, 6"));
+        self.text
+            .push(format!("  SUB r{suffix}, r{len}, r{suffix_len}"));
+        self.text
+            .push(format!("  ADD r{suffix}, r{template}, r{suffix}"));
+        for (offset, byte) in b"lnp64a".iter().copied().enumerate() {
+            let value = self.alloc_reg()?;
+            self.text.push(format!("  LI r{value}, {byte}"));
+            self.text
+                .push(format!("  ST.B [r{suffix}, {offset}], r{value}"));
+        }
         self.text.push(format!("  LI r{flags}, {}", 2 | 4));
         self.text
             .push(format!("  OPEN_FD_DYN r{dst}, r{template}, r{flags}"));
@@ -12773,23 +12874,56 @@ impl CodeGen {
         Ok(dst)
     }
 
-    fn emit_pthread_key_create(&mut self, key_ptr: usize) -> Result<usize, String> {
+    fn emit_pthread_key_create(
+        &mut self,
+        key_ptr: usize,
+        destructor: usize,
+    ) -> Result<usize, String> {
+        self.ensure_pthread_tsd_runtime();
         self.data
             .entry("__lnp_pthread_key_next".to_string())
             .or_insert(".quad 1".to_string());
         let key_addr = self.alloc_reg()?;
         let key = self.alloc_reg()?;
+        let shift = self.alloc_reg()?;
+        let offset = self.alloc_reg()?;
+        let dtor_table = self.alloc_reg()?;
+        let dtor_slot = self.alloc_reg()?;
         let one = self.alloc_reg()?;
         let dst = self.alloc_reg()?;
         self.text
             .push(format!("  LI r{key_addr}, __lnp_pthread_key_next"));
         self.text.push(format!("  LD r{key}, [r{key_addr}, 0]"));
         self.text.push(format!("  ST [r{key_ptr}, 0], r{key}"));
+        self.text.push(format!("  LI r{shift}, 3"));
+        self.text.push(format!("  LSL r{offset}, r{key}, r{shift}"));
+        self.text
+            .push(format!("  LI r{dtor_table}, __lnp_pthread_key_dtors"));
+        self.text
+            .push(format!("  ADD r{dtor_slot}, r{dtor_table}, r{offset}"));
+        self.text
+            .push(format!("  ST [r{dtor_slot}, 0], r{destructor}"));
         self.text.push(format!("  LI r{one}, 1"));
         self.text.push(format!("  ADD r{key}, r{key}, r{one}"));
         self.text.push(format!("  ST [r{key_addr}, 0], r{key}"));
         self.text.push(format!("  LI r{dst}, 0"));
         Ok(dst)
+    }
+
+    fn emit_pthread_key_delete(&mut self, key: usize) -> Result<(), String> {
+        self.ensure_pthread_tsd_runtime();
+        let shift = self.alloc_reg()?;
+        let offset = self.alloc_reg()?;
+        let dtor_table = self.alloc_reg()?;
+        let dtor_slot = self.alloc_reg()?;
+        self.text.push(format!("  LI r{shift}, 3"));
+        self.text.push(format!("  LSL r{offset}, r{key}, r{shift}"));
+        self.text
+            .push(format!("  LI r{dtor_table}, __lnp_pthread_key_dtors"));
+        self.text
+            .push(format!("  ADD r{dtor_slot}, r{dtor_table}, r{offset}"));
+        self.text.push(format!("  ST [r{dtor_slot}, 0], r0"));
+        Ok(())
     }
 
     fn emit_tls_block(&mut self) -> Result<usize, String> {
@@ -18870,12 +19004,12 @@ int main() {
         int main() {
             int buf;
             int fd;
-            remove("/tmp/lnp64_mkstemp");
+            remove("/tmp/lua_lnp64a");
             buf = alloc(64);
             strcpy(buf, "/tmp/lua_XXXXXX");
             fd = mkstemp(buf);
             if (fd == -1) return 1;
-            if (strcmp(buf, "/tmp/lnp64_mkstemp") != 0) return 2;
+            if (strcmp(buf, "/tmp/lua_lnp64a") != 0) return 2;
             fputs("ok", fd);
             close(fd);
             fd = open(buf, 0);
@@ -21345,6 +21479,42 @@ int main() {
         let asm = compile(source).unwrap();
         assert!(asm.contains("GET_PCR"), "{asm}");
         assert!(asm.contains("SET_PCR TP"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_pthread_tsd_destructors_run_on_thread_return() {
+        let source = r#"
+        int key;
+
+        void dtor(void *arg) {
+            *(int *)arg = 41;
+        }
+
+        void *worker(void *arg) {
+            if (pthread_setspecific(key, arg) != 0) return 3;
+            return 7;
+        }
+
+        int main() {
+            int thread;
+            int joined;
+            int value;
+            value = 0;
+            if (pthread_key_create(&key, dtor) != 0) return 1;
+            if (pthread_create(&thread, 0, worker, &value) != 0) return 2;
+            if (pthread_join(thread, &joined) != 0) return 3;
+            if (joined != 7) return 4;
+            if (value != 41) return 5;
+            if (pthread_key_delete(key) != 0) return 6;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("__lnp_pthread_start_worker"), "{asm}");
+        assert!(asm.contains("__lnp_pthread_run_tsd_dtors"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
