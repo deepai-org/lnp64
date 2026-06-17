@@ -1376,7 +1376,9 @@ impl Machine {
                     return Ok(true);
                 }
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
-                let path = self.resolve_process_path(&path)?;
+                let Some(path) = self.resolve_process_path_or_errno(&path)? else {
+                    return Ok(true);
+                };
                 let flags = self.read_reg(flags_reg)?;
                 match Self::open_fd_handle(&path, flags) {
                     Ok(handle) => {
@@ -1396,7 +1398,10 @@ impl Machine {
                     return Ok(true);
                 }
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
-                let path = self.resolve_process_path(&path)?;
+                let Some(path) = self.resolve_process_path_or_errno(&path)? else {
+                    self.write_reg(dst_reg, -1i64 as u64)?;
+                    return Ok(true);
+                };
                 let flags = self.read_reg(flags_reg)?;
                 match Self::open_fd_handle(&path, flags) {
                     Ok(handle) => match self.alloc_fd_handle(handle)? {
@@ -1420,7 +1425,9 @@ impl Machine {
                     return Ok(true);
                 }
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
-                let path = self.resolve_process_path(&path)?;
+                let Some(path) = self.resolve_process_path_or_errno(&path)? else {
+                    return Ok(true);
+                };
                 match Self::open_dir_handle(&path) {
                     Ok(handle) => {
                         self.bump_fd_generation(dst.0)?;
@@ -1439,7 +1446,10 @@ impl Machine {
                     return Ok(true);
                 }
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
-                let path = self.resolve_process_path(&path)?;
+                let Some(path) = self.resolve_process_path_or_errno(&path)? else {
+                    self.write_reg(dst_reg, -1i64 as u64)?;
+                    return Ok(true);
+                };
                 match Self::open_dir_handle(&path) {
                     Ok(handle) => match self.alloc_fd_handle(handle)? {
                         Some(fd) => {
@@ -1558,7 +1568,9 @@ impl Machine {
             }
             Instr::MkdirPath(path_reg, _mode_reg) => {
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
-                let path = self.resolve_process_path(&path)?;
+                let Some(path) = self.resolve_process_path_or_errno(&path)? else {
+                    return Ok(true);
+                };
                 match fs::create_dir(&path) {
                     Ok(()) => self.set_status_ok()?,
                     Err(err) => self.set_status_io_error(err)?,
@@ -1566,7 +1578,9 @@ impl Machine {
             }
             Instr::UnlinkPath(path_reg) => {
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
-                let path = self.resolve_process_path(&path)?;
+                let Some(path) = self.resolve_process_path_or_errno(&path)? else {
+                    return Ok(true);
+                };
                 match fs::remove_file(&path) {
                     Ok(()) => self.set_status_ok()?,
                     Err(file_err) => match fs::remove_dir(&path) {
@@ -1578,8 +1592,12 @@ impl Machine {
             Instr::RenamePath(old_reg, new_reg) => {
                 let old = self.read_c_string(self.read_reg(old_reg)?)?;
                 let new = self.read_c_string(self.read_reg(new_reg)?)?;
-                let old = self.resolve_process_path(&old)?;
-                let new = self.resolve_process_path(&new)?;
+                let Some(old) = self.resolve_process_path_or_errno(&old)? else {
+                    return Ok(true);
+                };
+                let Some(new) = self.resolve_process_path_or_errno(&new)? else {
+                    return Ok(true);
+                };
                 match fs::rename(&old, &new) {
                     Ok(()) => self.set_status_ok()?,
                     Err(err) => self.set_status_io_error(err)?,
@@ -1589,8 +1607,12 @@ impl Machine {
                 let old = self.read_c_string(self.read_reg(old_reg)?)?;
                 let new = self.read_c_string(self.read_reg(new_reg)?)?;
                 let flags = self.read_reg(flags_reg)?;
-                let old_path = self.resolve_process_path(&old)?;
-                let new = self.resolve_process_path(&new)?;
+                let Some(old_path) = self.resolve_process_path_or_errno(&old)? else {
+                    return Ok(true);
+                };
+                let Some(new) = self.resolve_process_path_or_errno(&new)? else {
+                    return Ok(true);
+                };
                 let result = if flags & 1 == 1 {
                     std::os::unix::fs::symlink(&old, &new)
                 } else {
@@ -1604,7 +1626,9 @@ impl Machine {
             Instr::SymlinkPath(target_reg, link_reg) => {
                 let target = self.read_c_string(self.read_reg(target_reg)?)?;
                 let link = self.read_c_string(self.read_reg(link_reg)?)?;
-                let link = self.resolve_process_path(&link)?;
+                let Some(link) = self.resolve_process_path_or_errno(&link)? else {
+                    return Ok(true);
+                };
                 match std::os::unix::fs::symlink(&target, &link) {
                     Ok(()) => self.set_status_ok()?,
                     Err(err) => self.set_status_io_error(err)?,
@@ -1612,7 +1636,9 @@ impl Machine {
             }
             Instr::ReadlinkPath(path_reg, buf_reg, len_reg) => {
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
-                let path = self.resolve_process_path(&path)?;
+                let Some(path) = self.resolve_process_path_or_errno(&path)? else {
+                    return Ok(true);
+                };
                 let buf = self.read_reg(buf_reg)?;
                 let len = self.read_reg(len_reg)? as usize;
                 match fs::read_link(&path) {
@@ -1629,7 +1655,9 @@ impl Machine {
             }
             Instr::ChdirPath(path_reg) => {
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
-                let path = self.resolve_process_path(&path)?;
+                let Some(path) = self.resolve_process_path_or_errno(&path)? else {
+                    return Ok(true);
+                };
                 match fs::metadata(&path) {
                     Ok(metadata) if metadata.is_dir() => {
                         self.process_mut()?.cwd = PathBuf::from(path);
@@ -1655,7 +1683,9 @@ impl Machine {
             }
             Instr::ChmodPath(path_reg, mode_reg, _flags_reg) => {
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
-                let path = self.resolve_process_path(&path)?;
+                let Some(path) = self.resolve_process_path_or_errno(&path)? else {
+                    return Ok(true);
+                };
                 let mode = self.read_reg(mode_reg)? as u32;
                 match fs::set_permissions(&path, fs::Permissions::from_mode(mode)) {
                     Ok(()) => self.set_status_ok()?,
@@ -1664,7 +1694,9 @@ impl Machine {
             }
             Instr::ChownPath(path_reg, uid_reg, gid_reg, _flags_reg) => {
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
-                let path = self.resolve_process_path(&path)?;
+                let Some(path) = self.resolve_process_path_or_errno(&path)? else {
+                    return Ok(true);
+                };
                 let uid = self.read_reg(uid_reg)?;
                 let gid = self.read_reg(gid_reg)?;
                 let uid = (uid != -1i64 as u64).then_some(uid as u32);
@@ -1676,7 +1708,9 @@ impl Machine {
             }
             Instr::UtimePath(path_reg, times_reg, flags_reg) => {
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
-                let path = self.resolve_process_path(&path)?;
+                let Some(path) = self.resolve_process_path_or_errno(&path)? else {
+                    return Ok(true);
+                };
                 let times_ptr = self.read_reg(times_reg)?;
                 let flags = self.read_reg(flags_reg)? as c_int;
                 self.utime_path(&path, times_ptr, flags)?;
@@ -1695,7 +1729,9 @@ impl Machine {
             Instr::StatPath(statbuf_reg, path_reg, flags_reg) => {
                 let statbuf = self.read_reg(statbuf_reg)?;
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
-                let path = self.resolve_process_path(&path)?;
+                let Some(path) = self.resolve_process_path_or_errno(&path)? else {
+                    return Ok(true);
+                };
                 let flags = self.read_reg(flags_reg)?;
                 let result = if flags & 1 == 1 {
                     fs::symlink_metadata(&path)
@@ -1865,7 +1901,9 @@ impl Machine {
                 let envp = self.read_reg(envp_reg)?;
                 let args = self.collect_exec_args(&path, argv)?;
                 let env = self.collect_exec_env(envp)?;
-                let source_path = self.resolve_process_path(&path)?;
+                let Some(source_path) = self.resolve_process_path_or_errno(&path)? else {
+                    return Ok(true);
+                };
                 let source = fs::read_to_string(&source_path)
                     .map_err(|err| format!("EXEC failed to read {path:?}: {err}"))?;
                 let program = Program::parse(&source)
@@ -2354,6 +2392,17 @@ impl Machine {
 
     fn set_status_io_error(&mut self, err: io::Error) -> Result<(), String> {
         self.set_status_errno(Self::errno_from_io(&err))
+    }
+
+    fn resolve_process_path_or_errno(&mut self, path: &str) -> Result<Option<String>, String> {
+        match self.resolve_process_path(path) {
+            Ok(path) => Ok(Some(path)),
+            Err(err) if err.starts_with("path resolution denied:") => {
+                self.set_status_errno(13)?;
+                Ok(None)
+            }
+            Err(err) => Err(err),
+        }
     }
 
     fn resolve_process_path(&self, path: &str) -> Result<String, String> {

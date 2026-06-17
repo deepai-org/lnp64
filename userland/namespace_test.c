@@ -24,17 +24,20 @@ int main() {
     if (loadb(buf) != 'w') return 10;
     close(fd);
 
+    fd = openat(AT_FDCWD, "../../etc/passwd", 0);
+    if (fd != -1) return 11;
+
     fd = openat(AT_FDCWD, "ns_probe", O_CREAT | O_TRUNC);
-    if (fd == -1) return 11;
-    if (write(fd, "ok", 2) != 2) return 12;
+    if (fd == -1) return 12;
+    if (write(fd, "ok", 2) != 2) return 13;
     close(fd);
 
-    if (chdir("/") != 0) return 13;
+    if (chdir("/") != 0) return 14;
     fd = openat(AT_FDCWD, "tmp/ns_probe", 0);
-    if (fd == -1) return 14;
-    if (read(fd, buf, 2) != 2) return 15;
-    if (loadb(buf) != 'o') return 16;
-    if (loadb(buf + 1) != 'k') return 17;
+    if (fd == -1) return 15;
+    if (read(fd, buf, 2) != 2) return 16;
+    if (loadb(buf) != 'o') return 17;
+    if (loadb(buf + 1) != 'k') return 18;
     close(fd);
 
     write(1, "namespace_test ok\n", 18);
