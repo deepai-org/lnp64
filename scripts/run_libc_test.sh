@@ -13,6 +13,7 @@ tests=(
   string_strchr
   string_strcspn
   string_strstr
+  udiv
 )
 
 for test_name in "${tests[@]}"; do

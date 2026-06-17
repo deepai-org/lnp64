@@ -127,6 +127,70 @@ pub fn collect_aggregate_sizes(source: &str) -> HashMap<String, i64> {
     sizes
 }
 
+pub fn collect_global_aggregate_array_widths(source: &str) -> HashMap<String, i64> {
+    let source = strip_c_comments(source);
+    let aggregate_sizes = collect_aggregate_sizes(&source);
+    let mut widths = HashMap::new();
+    let mut stack: Vec<NamedAggregateContext> = Vec::new();
+    let mut pending_aggregate: Option<(AggregateKind, Option<String>)> = None;
+
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if let Some((kind, name)) = pending_aggregate.take()
+            && trimmed.starts_with('{')
+        {
+            stack.push(NamedAggregateContext::new(kind, name));
+            continue;
+        }
+
+        if starts_aggregate_definition(trimmed) {
+            stack.push(NamedAggregateContext::new(
+                aggregate_kind(trimmed),
+                aggregate_definition_name(trimmed),
+            ));
+            continue;
+        }
+        if let Some(kind) = pending_aggregate_definition(trimmed) {
+            pending_aggregate = Some((kind, aggregate_definition_name(trimmed)));
+            continue;
+        }
+
+        if let Some(name) = closing_aggregate_field(trimmed) {
+            let Some(context) = stack.pop() else {
+                continue;
+            };
+            let size = context.size();
+            if stack.is_empty()
+                && let Some(name) = name
+                && trimmed.contains('[')
+            {
+                widths.entry(name).or_insert(size);
+            }
+            if let Some(parent) = stack.last_mut() {
+                parent.add_field_size(size);
+            }
+            continue;
+        }
+
+        if let Some(context) = stack.last_mut()
+            && trimmed.ends_with(';')
+            && !trimmed.contains('{')
+            && !(trimmed.starts_with("enum ") && trimmed.contains('{'))
+        {
+            let size = aggregate_field_size(trimmed, &aggregate_sizes);
+            for _ in field_names_from_decl(trimmed) {
+                context.add_field_size(size);
+            }
+        }
+    }
+
+    widths
+}
+
 pub fn collect_aggregate_declarations(
     source: &str,
     sizes: &HashMap<String, i64>,
@@ -336,6 +400,7 @@ fn has_sed_layout(function_names: &HashSet<String>) -> bool {
 }
 
 fn starts_aggregate_definition(trimmed: &str) -> bool {
+    let trimmed = strip_storage_prefixes(trimmed);
     (trimmed.starts_with("struct ")
         || trimmed.starts_with("typedef struct ")
         || trimmed.starts_with("union ")
@@ -344,6 +409,7 @@ fn starts_aggregate_definition(trimmed: &str) -> bool {
 }
 
 fn pending_aggregate_definition(trimmed: &str) -> Option<AggregateKind> {
+    let trimmed = strip_storage_prefixes(trimmed);
     if trimmed.ends_with(';') || trimmed.contains('{') || trimmed.contains('=') {
         return None;
     }
@@ -357,6 +423,7 @@ fn pending_aggregate_definition(trimmed: &str) -> Option<AggregateKind> {
 }
 
 fn aggregate_kind(trimmed: &str) -> AggregateKind {
+    let trimmed = strip_storage_prefixes(trimmed);
     if trimmed.starts_with("union ") || trimmed.starts_with("typedef union ") {
         AggregateKind::Union
     } else {
@@ -365,7 +432,7 @@ fn aggregate_kind(trimmed: &str) -> AggregateKind {
 }
 
 fn aggregate_definition_name(trimmed: &str) -> Option<String> {
-    let trimmed = trimmed.trim_start();
+    let trimmed = strip_storage_prefixes(trimmed.trim_start());
     let rest = trimmed
         .strip_prefix("typedef struct ")
         .or_else(|| trimmed.strip_prefix("struct "))
@@ -380,6 +447,20 @@ fn aggregate_definition_name(trimmed: &str) -> Option<String> {
             format!("struct {name}")
         }
     })
+}
+
+fn strip_storage_prefixes(mut trimmed: &str) -> &str {
+    loop {
+        let next = trimmed
+            .strip_prefix("static ")
+            .or_else(|| trimmed.strip_prefix("const "))
+            .or_else(|| trimmed.strip_prefix("volatile "))
+            .or_else(|| trimmed.strip_prefix("extern "));
+        let Some(next) = next else {
+            return trimmed;
+        };
+        trimmed = next.trim_start();
+    }
 }
 
 fn aggregate_field_size(trimmed: &str, sizes: &HashMap<String, i64>) -> i64 {
@@ -443,14 +524,14 @@ fn count_braces(line: &str) -> i64 {
 }
 
 fn closing_aggregate_field(trimmed: &str) -> Option<Option<String>> {
-    if !trimmed.starts_with('}') || !trimmed.ends_with(';') {
+    if !trimmed.starts_with('}') {
         return None;
     }
-    let name = trimmed
-        .trim_start_matches('}')
-        .trim()
-        .trim_end_matches(';')
-        .trim();
+    let mut name = trimmed.trim_start_matches('}').trim();
+    let end = name
+        .find(|ch: char| matches!(ch, ';' | '=' | '[' | ','))
+        .unwrap_or(name.len());
+    name = name[..end].trim();
     if name.is_empty() {
         Some(None)
     } else {
@@ -538,7 +619,10 @@ fn ident(text: &str) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
-    use super::{collect_aggregate_declarations, collect_aggregate_sizes, collect_field_offsets};
+    use super::{
+        collect_aggregate_declarations, collect_aggregate_sizes, collect_field_offsets,
+        collect_global_aggregate_array_widths,
+    };
 
     #[test]
     fn collects_simple_struct_field_offsets() {
@@ -728,5 +812,24 @@ mod tests {
         assert_eq!(fields["tt"], 0);
         assert_eq!(fields["len"], 8);
         assert_eq!(fields["bindata"], 16);
+    }
+
+    #[test]
+    fn collects_static_anonymous_struct_array_layout() {
+        let source = r#"
+            static struct {
+                int x, y, div, mod;
+            } t[] = {
+                {1, 2, 0, 1},
+                {4, 2, 2, 0},
+            };
+            "#;
+        let fields = collect_field_offsets(source);
+        let widths = collect_global_aggregate_array_widths(source);
+        assert_eq!(fields["x"], 0);
+        assert_eq!(fields["y"], 8);
+        assert_eq!(fields["div"], 16);
+        assert_eq!(fields["mod"], 24);
+        assert_eq!(widths["t"], 32);
     }
 }

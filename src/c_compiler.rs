@@ -89,6 +89,7 @@ enum Token {
 struct CProgram {
     globals: Vec<(String, GlobalInit)>,
     global_arrays: Vec<(String, Vec<GlobalWord>)>,
+    global_array_widths: HashMap<String, i64>,
     global_byte_arrays: Vec<(String, String)>,
     global_zero_byte_arrays: Vec<(String, i64)>,
     functions: Vec<Function>,
@@ -336,6 +337,8 @@ pub fn compile(source: &str) -> Result<String, String> {
     let inferred_aggregate_sizes = c_layouts::collect_aggregate_sizes(&layout_source);
     let mut inferred_aggregate_declarations =
         c_layouts::collect_aggregate_declarations(&layout_source, &inferred_aggregate_sizes);
+    let global_aggregate_array_widths =
+        c_layouts::collect_global_aggregate_array_widths(&layout_source);
     let global_byte_array_sizes = collect_global_char_array_sizes(&layout_source);
     let source = preprocess_source(source);
     remove_heap_allocated_aggregate_declarations(&source, &mut inferred_aggregate_declarations);
@@ -344,6 +347,7 @@ pub fn compile(source: &str) -> Result<String, String> {
         tokens,
         inferred_aggregate_sizes,
         inferred_aggregate_declarations,
+        global_aggregate_array_widths,
         global_byte_array_sizes,
     );
     let program = parser.parse_program()?;
@@ -797,10 +801,14 @@ fn strip_user_struct_definitions(source: &str) -> String {
     let mut skip_depth = 0i64;
     let mut pending_static_struct = false;
     let mut pending_classes = false;
+    let mut pending_static_struct_block = String::new();
     for line in source.lines() {
         let trimmed = line.trim_start();
         let fully_trimmed = line.trim();
         if skip_depth == 0 && trimmed.starts_with("static struct {") {
+            pending_static_struct_block.clear();
+            pending_static_struct_block.push_str(line);
+            pending_static_struct_block.push('\n');
             skip_depth += count_braces(line);
             pending_static_struct = true;
             continue;
@@ -813,6 +821,10 @@ fn strip_user_struct_definitions(source: &str) -> String {
             continue;
         }
         if skip_depth > 0 {
+            if pending_static_struct {
+                pending_static_struct_block.push_str(line);
+                pending_static_struct_block.push('\n');
+            }
             if pending_static_struct && trimmed.contains("classes[]") {
                 pending_classes = true;
             }
@@ -824,9 +836,12 @@ fn strip_user_struct_definitions(source: &str) -> String {
                     out.push_str("int gflags[8] = {0,0,0,0,0,0,0,0};\n");
                 } else if trimmed.contains("*tree") {
                     out.push_str("int tree = 0;\n");
+                } else {
+                    out.push_str(&pending_static_struct_block);
                 }
                 pending_static_struct = false;
                 pending_classes = false;
+                pending_static_struct_block.clear();
             }
             continue;
         }
@@ -2103,6 +2118,7 @@ struct Parser {
     pos: usize,
     aggregate_sizes: HashMap<String, i64>,
     aggregate_declarations: HashMap<String, i64>,
+    global_aggregate_array_widths: HashMap<String, i64>,
     global_byte_array_sizes: HashMap<String, i64>,
 }
 
@@ -2111,6 +2127,7 @@ impl Parser {
         tokens: Vec<Token>,
         aggregate_sizes: HashMap<String, i64>,
         aggregate_declarations: HashMap<String, i64>,
+        global_aggregate_array_widths: HashMap<String, i64>,
         global_byte_array_sizes: HashMap<String, i64>,
     ) -> Self {
         Self {
@@ -2118,6 +2135,7 @@ impl Parser {
             pos: 0,
             aggregate_sizes,
             aggregate_declarations,
+            global_aggregate_array_widths,
             global_byte_array_sizes,
         }
     }
@@ -2210,6 +2228,7 @@ impl Parser {
         Ok(CProgram {
             globals,
             global_arrays,
+            global_array_widths: self.global_aggregate_array_widths.clone(),
             global_byte_arrays,
             global_zero_byte_arrays,
             functions,
@@ -3431,6 +3450,7 @@ struct CodeGen {
     data: BTreeMap<String, String>,
     globals: HashMap<String, String>,
     global_arrays: HashSet<String>,
+    global_array_widths: HashMap<String, i64>,
     global_byte_arrays: HashSet<String>,
     inferred_field_offsets: HashMap<String, i64>,
     function_names: HashSet<String>,
@@ -3454,6 +3474,7 @@ struct CodeGen {
 impl CodeGen {
     fn emit_program(&mut self, program: &CProgram) -> Result<String, String> {
         self.function_names = program.functions.iter().map(|f| f.name.clone()).collect();
+        self.global_array_widths = program.global_array_widths.clone();
         self.function_param_counts = program
             .functions
             .iter()
@@ -5364,6 +5385,10 @@ impl CodeGen {
             8
         } else if let Expr::Var(name) = base
             && let Some(width) = self.local_array_widths.get(name)
+        {
+            *width
+        } else if let Expr::Var(name) = base
+            && let Some(width) = self.global_array_widths.get(name)
         {
             *width
         } else if matches!(base, Expr::Var(name) if self.global_byte_arrays.contains(name)) {
@@ -16608,6 +16633,30 @@ mod tests {
         int main() {
             if (priority[0].left == 10 && priority[0].right == 11) return 0;
             return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn preserves_static_anonymous_struct_array_layout() {
+        let source = r#"
+        static struct {
+            int x, y, div, mod;
+        } t[] = {
+            {8, 3, 2, 2},
+            {9, 4, 2, 1}
+        };
+
+        int main() {
+            if (t[0].x != 8) return 1;
+            if (t[0].mod != 2) return 2;
+            if (t[1].y != 4) return 3;
+            if (t[1].div != 2) return 4;
+            return 0;
         }
         "#;
         let asm = compile(source).unwrap();
