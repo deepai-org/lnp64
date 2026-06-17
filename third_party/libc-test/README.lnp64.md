@@ -4,8 +4,8 @@ This directory vendors a narrow subset of libc-test from the musl project,
 using upstream commit `b95fe84efa38a146ad32ae02cac224e928926810` as fetched
 from `https://repo.or.cz/libc-test.git`.
 
-The checked gate currently runs these functional tests. Most are upstream
-libc-test files; bounded or locally guarded files are called out below.
+The checked gate currently runs these functional and regression tests. Most are
+upstream libc-test files; bounded or locally guarded files are called out below.
 
 - `functional/argv.c`
 - `functional/basename.c`
@@ -29,6 +29,7 @@ libc-test files; bounded or locally guarded files are called out below.
 - `functional/udiv.c`
 - `functional/ungetc.c`
 - `functional/utime.c`
+- `regression/malloc-0.c`
 
 The local `functional/test.h` and `functional/print.c` files provide a minimal
 LNP64-compatible test harness. They preserve the libc-test convention that tests
@@ -52,6 +53,8 @@ timestamp fields in `struct stat`.
 and `F_GETLK` owner reporting across `fork`.
 `sem_init.c` is the upstream file and covers unnamed semaphore init/wait/post,
 try/timed wait errno behavior, and pthread start routines that return normally.
+`regression/malloc-0.c` is the upstream file with only the harness include path
+adjusted; it covers non-null, unique `malloc(0)` allocations.
 
 Run the subset with:
 

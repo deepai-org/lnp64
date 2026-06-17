@@ -3,34 +3,36 @@ set -euo pipefail
 
 lnp64=(cargo run --quiet --)
 tests=(
-  argv
-  basename
-  clock_gettime
-  dirname
-  env
-  fdopen
-  fcntl
-  qsort_bounded
-  random
-  search_insque
-  search_lsearch
-  sem_init
-  stat
-  string
-  string_memmem
-  string_strchr
-  string_strcspn
-  string_strstr
-  strtol
-  udiv
-  ungetc
-  utime
+  functional/argv
+  functional/basename
+  functional/clock_gettime
+  functional/dirname
+  functional/env
+  functional/fdopen
+  functional/fcntl
+  functional/qsort_bounded
+  functional/random
+  functional/search_insque
+  functional/search_lsearch
+  functional/sem_init
+  functional/stat
+  functional/string
+  functional/string_memmem
+  functional/string_strchr
+  functional/string_strcspn
+  functional/string_strstr
+  functional/strtol
+  functional/udiv
+  functional/ungetc
+  functional/utime
+  regression/malloc-0
 )
 
-for test_name in "${tests[@]}"; do
+for test_path in "${tests[@]}"; do
+  test_name="${test_path##*/}"
   asm="/tmp/libc_test_${test_name}.s"
   "${lnp64[@]}" cc \
-    "third_party/libc-test/functional/${test_name}.c" \
+    "third_party/libc-test/${test_path}.c" \
     third_party/libc-test/functional/print.c \
     -o "$asm"
   out=$("${lnp64[@]}" run "$asm" -- "$test_name")
