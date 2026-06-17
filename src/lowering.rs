@@ -5,15 +5,23 @@ use crate::native::{CloneProfile, MetadataOp, ObjectKind, ObjectProfile, Waitabl
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompatSurface {
     Open,
+    CwdRoot,
     Read,
     Write,
     Close,
     Pipe,
     PollSelectEpoll,
     Fork,
+    Exec,
     PthreadCreate,
+    Mmap,
+    FdPassing,
+    SocketLoopback,
+    Timer,
+    CallGate,
     Signal,
     Errno,
+    ResourceDomain,
     Stat,
     Chmod,
     Fcntl,
@@ -31,6 +39,17 @@ pub enum NativePrimitive {
     },
     EventQueue,
     Await,
+    Exec,
+    Mmap,
+    Mprotect,
+    Munmap,
+    CapabilityDuplicate,
+    CapabilitySend,
+    CapabilityRecv,
+    DomainCtl,
+    GateCall,
+    GateReturn,
+    Sleep,
     Clone {
         profile: CloneProfile,
     },
@@ -48,6 +67,7 @@ pub struct CompatibilityLowering {
 }
 
 pub const LOWER_OPEN: &[NativePrimitive] = &[NativePrimitive::OpenAt];
+pub const LOWER_CWD_ROOT: &[NativePrimitive] = &[NativePrimitive::OpenAt];
 pub const LOWER_READ: &[NativePrimitive] = &[NativePrimitive::Pull];
 pub const LOWER_WRITE: &[NativePrimitive] = &[NativePrimitive::Push];
 pub const LOWER_CLOSE: &[NativePrimitive] = &[NativePrimitive::Close];
@@ -63,9 +83,46 @@ pub const LOWER_WAIT: &[NativePrimitive] = &[
 pub const LOWER_FORK: &[NativePrimitive] = &[NativePrimitive::Clone {
     profile: CloneProfile::NewProcessCow,
 }];
+pub const LOWER_EXEC: &[NativePrimitive] = &[NativePrimitive::OpenAt, NativePrimitive::Exec];
 pub const LOWER_PTHREAD_CREATE: &[NativePrimitive] = &[NativePrimitive::Clone {
     profile: CloneProfile::NewThreadSharedVm,
 }];
+pub const LOWER_MMAP: &[NativePrimitive] = &[
+    NativePrimitive::Mmap,
+    NativePrimitive::Mprotect,
+    NativePrimitive::Munmap,
+];
+pub const LOWER_FD_PASSING: &[NativePrimitive] = &[
+    NativePrimitive::CapabilityDuplicate,
+    NativePrimitive::CapabilitySend,
+    NativePrimitive::CapabilityRecv,
+];
+pub const LOWER_SOCKET_LOOPBACK: &[NativePrimitive] = &[
+    NativePrimitive::ObjectCtl {
+        kind: ObjectKind::Endpoint,
+        profile: ObjectProfile::TcpStream,
+    },
+    NativePrimitive::Push,
+    NativePrimitive::Pull,
+    NativePrimitive::Await,
+];
+pub const LOWER_TIMER: &[NativePrimitive] = &[
+    NativePrimitive::ObjectCtl {
+        kind: ObjectKind::Timer,
+        profile: ObjectProfile::Default,
+    },
+    NativePrimitive::Await,
+    NativePrimitive::Pull,
+    NativePrimitive::EventDelivery,
+];
+pub const LOWER_CALL_GATE: &[NativePrimitive] = &[
+    NativePrimitive::ObjectCtl {
+        kind: ObjectKind::Queue,
+        profile: ObjectProfile::CallGate,
+    },
+    NativePrimitive::GateCall,
+    NativePrimitive::GateReturn,
+];
 pub const LOWER_SIGNAL: &[NativePrimitive] = &[
     NativePrimitive::EventDelivery,
     NativePrimitive::AbiSignalFrame,
@@ -75,11 +132,16 @@ pub const LOWER_ERRNO: &[NativePrimitive] = &[
     NativePrimitive::TlsErrnoView,
 ];
 pub const LOWER_METADATA: &[NativePrimitive] = &[NativePrimitive::Metadata(MetadataOp::GetMeta)];
+pub const LOWER_RESOURCE_DOMAIN: &[NativePrimitive] = &[NativePrimitive::DomainCtl];
 
 pub const COMPATIBILITY_LOWERINGS: &[CompatibilityLowering] = &[
     CompatibilityLowering {
         surface: CompatSurface::Open,
         native: LOWER_OPEN,
+    },
+    CompatibilityLowering {
+        surface: CompatSurface::CwdRoot,
+        native: LOWER_CWD_ROOT,
     },
     CompatibilityLowering {
         surface: CompatSurface::Read,
@@ -106,8 +168,32 @@ pub const COMPATIBILITY_LOWERINGS: &[CompatibilityLowering] = &[
         native: LOWER_FORK,
     },
     CompatibilityLowering {
+        surface: CompatSurface::Exec,
+        native: LOWER_EXEC,
+    },
+    CompatibilityLowering {
         surface: CompatSurface::PthreadCreate,
         native: LOWER_PTHREAD_CREATE,
+    },
+    CompatibilityLowering {
+        surface: CompatSurface::Mmap,
+        native: LOWER_MMAP,
+    },
+    CompatibilityLowering {
+        surface: CompatSurface::FdPassing,
+        native: LOWER_FD_PASSING,
+    },
+    CompatibilityLowering {
+        surface: CompatSurface::SocketLoopback,
+        native: LOWER_SOCKET_LOOPBACK,
+    },
+    CompatibilityLowering {
+        surface: CompatSurface::Timer,
+        native: LOWER_TIMER,
+    },
+    CompatibilityLowering {
+        surface: CompatSurface::CallGate,
+        native: LOWER_CALL_GATE,
     },
     CompatibilityLowering {
         surface: CompatSurface::Signal,
@@ -116,6 +202,10 @@ pub const COMPATIBILITY_LOWERINGS: &[CompatibilityLowering] = &[
     CompatibilityLowering {
         surface: CompatSurface::Errno,
         native: LOWER_ERRNO,
+    },
+    CompatibilityLowering {
+        surface: CompatSurface::ResourceDomain,
+        native: LOWER_RESOURCE_DOMAIN,
     },
     CompatibilityLowering {
         surface: CompatSurface::Stat,
@@ -187,7 +277,44 @@ mod tests {
                 profile: CloneProfile::NewThreadSharedVm,
             }]
         );
+        assert!(lowering_for(CompatSurface::Exec).contains(&NativePrimitive::Exec));
+        assert!(lowering_for(CompatSurface::Mmap).contains(&NativePrimitive::Mmap));
+        assert!(lowering_for(CompatSurface::FdPassing).contains(&NativePrimitive::CapabilitySend));
+        assert!(lowering_for(CompatSurface::SocketLoopback).contains(&NativePrimitive::Await));
+        assert!(lowering_for(CompatSurface::Timer).contains(&NativePrimitive::EventDelivery));
+        assert!(lowering_for(CompatSurface::CallGate).contains(&NativePrimitive::GateReturn));
         assert!(lowering_for(CompatSurface::Signal).contains(&NativePrimitive::EventDelivery));
         assert!(lowering_for(CompatSurface::Errno).contains(&NativePrimitive::TlsErrnoView));
+        assert!(lowering_for(CompatSurface::ResourceDomain).contains(&NativePrimitive::DomainCtl));
+    }
+
+    #[test]
+    fn netbsd_system_gate_surfaces_are_registered() {
+        let surfaces = [
+            CompatSurface::CwdRoot,
+            CompatSurface::Open,
+            CompatSurface::Read,
+            CompatSurface::Write,
+            CompatSurface::Close,
+            CompatSurface::Pipe,
+            CompatSurface::PollSelectEpoll,
+            CompatSurface::Fork,
+            CompatSurface::Exec,
+            CompatSurface::PthreadCreate,
+            CompatSurface::Mmap,
+            CompatSurface::FdPassing,
+            CompatSurface::SocketLoopback,
+            CompatSurface::Timer,
+            CompatSurface::CallGate,
+            CompatSurface::Signal,
+            CompatSurface::ResourceDomain,
+            CompatSurface::Errno,
+        ];
+        for surface in surfaces {
+            assert!(
+                !lowering_for(surface).is_empty(),
+                "missing lowering for {surface:?}"
+            );
+        }
     }
 }

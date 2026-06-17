@@ -12,6 +12,8 @@ checks that the generated assembly still uses the expected native primitives.
 `scripts/run_netbsd_personality_system.sh` is the larger userland-style system
 gate: it boots `userland/netbsd_init.c`, executes `userland/netbsd_sh.c`, runs
 several compiled C test programs, and audits the generated native trace.
+`src/lowering.rs` is the typed compatibility dispatch table for NetBSD/POSIX
+surfaces used by this gate.
 
 ## ABI Surface
 
@@ -35,6 +37,10 @@ several compiled C test programs, and audits the generated native trace.
 | Rump filesystem hook | mounted block image or object-backed storage service | tiny checked rumpfs mount/read service over a block-image FDR fixture plus the system gate's fixed-record service-owned image with mmap, mutation, metadata, and flush/barrier checks |
 | Gates/upcalls | rump service calls, cross-domain delivery | `OBJECT_CTL create call_gate`, `GATE_CALL`, `GATE_RETURN`; `CALL_CAP`/`RET_CAP` are source/profile spellings |
 | Resource domains | sandbox/container/rump service isolation | `DOMAIN_CTL` create/query/freeze/resume/attach/detach/destroy |
+
+The checked lowering table in `src/lowering.rs` covers cwd/root/openat, byte
+I/O, pipes, poll/select/epoll, fork/exec, pthreads, mmap, fd passing, sockets,
+timers, call gates, signals, Resource Domains, errno, and metadata operations.
 
 ## Non-Goals For This Milestone
 
