@@ -2,6 +2,8 @@ int signal_seen;
 int select_rfd;
 int select_wfd;
 int futex_slot;
+int mmap_arena;
+int mmap_cursor;
 
 int gate_service() {
     ret_cap(0x4e425344, 0);
@@ -26,6 +28,13 @@ int futex_worker() {
     futex_wake(futex_slot, 1);
     pthread_exit(0);
     return 0;
+}
+
+int personality_mmap_alloc(int bytes) {
+    int out;
+    out = mmap_cursor;
+    mmap_cursor = mmap_cursor + bytes;
+    return out;
 }
 
 int check_shell_command(int command) {
@@ -67,28 +76,35 @@ int check_pipe_fork_poll() {
 }
 
 int check_mmap_and_rumpfs_block() {
-    int mem;
+    int mem1;
+    int mem2;
     int fd;
     int block;
-    mem = mmap(0, 4096, 3);
-    if (mem == -1) return 1;
-    store(mem, 0x4e425344);
-    if (load(mem) != 0x4e425344) return 2;
+    mmap_arena = mmap(0, 4096, 3);
+    if (mmap_arena == -1) return 1;
+    mmap_cursor = mmap_arena;
+    mem1 = personality_mmap_alloc(16);
+    mem2 = personality_mmap_alloc(16);
+    if (mem2 != mem1 + 16) return 2;
+    store(mem1, 0x4e425344);
+    store(mem2, 0x52554d50);
+    if (load(mem1) != 0x4e425344) return 3;
+    if (load(mem2) != 0x52554d50) return 4;
     fd = open(10, "demos/netbsd_rumpfs.img", 1);
-    if (fd == -1) return 3;
+    if (fd == -1) return 5;
     block = mmap(10, 64, 3);
-    if (block == -1) return 4;
-    if (loadb(block) != 'R') return 5;
-    if (loadb(block + 1) != 'U') return 6;
-    if (loadb(block + 2) != 'M') return 7;
-    if (loadb(block + 3) != 'P') return 8;
-    if (loadb(block + 4) != 'F') return 9;
-    if (loadb(block + 5) != 'S') return 10;
-    if (loadb(block + 6) != '1') return 11;
-    if (loadb(block + 8) != 'e') return 12;
-    if (loadb(block + 11) != '/') return 13;
-    if (loadb(block + 17) != 'h') return 14;
-    if (loadb(block + 28) != 'r') return 15;
+    if (block == -1) return 6;
+    if (loadb(block) != 'R') return 7;
+    if (loadb(block + 1) != 'U') return 8;
+    if (loadb(block + 2) != 'M') return 9;
+    if (loadb(block + 3) != 'P') return 10;
+    if (loadb(block + 4) != 'F') return 11;
+    if (loadb(block + 5) != 'S') return 12;
+    if (loadb(block + 6) != '1') return 13;
+    if (loadb(block + 8) != 'e') return 14;
+    if (loadb(block + 11) != '/') return 15;
+    if (loadb(block + 17) != 'h') return 16;
+    if (loadb(block + 28) != 'r') return 17;
     return 0;
 }
 

@@ -47,7 +47,8 @@ checks that the generated assembly still uses the expected native primitives.
 
 - init-style startup and shell-like command dispatch output,
 - pipe/fd inheritance through `fork`, `poll`, and `wait`,
-- anonymous mmap memory and a checked block-image-backed rumpfs mount hook,
+- an mmap-backed allocator arena and a checked block-image-backed rumpfs mount
+  hook,
 - signal delivery through `signal`, `raise`, and `SIGRET`,
 - pthread startup/join, futex wake, `select`, and timerfd wait,
 - TCP loopback through endpoint object controls,
