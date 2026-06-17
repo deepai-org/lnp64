@@ -20510,6 +20510,76 @@ int main() {
     }
 
     #[test]
+    fn c_filesystem_mutation_negative_paths_report_errno() {
+        let source = r#"
+        int main() {
+            int st;
+            int fd;
+            int n;
+            int buf;
+
+            remove("/tmp/lnp64_fs_neg_a");
+            remove("/tmp/lnp64_fs_neg_b");
+            remove("/tmp/lnp64_fs_neg_link");
+            remove("/tmp/lnp64_fs_neg_missing");
+
+            st = alloc(104);
+            errno = 0;
+            if (stat("/tmp/lnp64_fs_neg_missing", st) != -1) return 1;
+            if (errno != ENOENT) return 2;
+
+            errno = 0;
+            if (rename("/tmp/lnp64_fs_neg_missing", "/tmp/lnp64_fs_neg_b") != -1) return 3;
+            if (errno != ENOENT) return 4;
+
+            errno = 0;
+            if (unlink("/tmp/lnp64_fs_neg_missing") != -1) return 5;
+            if (errno != ENOENT) return 6;
+
+            fd = open("/tmp/lnp64_fs_neg_a", O_CREAT);
+            if (fd == -1) return 7;
+            if (write(fd, "a", 1) != 1) return 8;
+            close(fd);
+
+            fd = open("/tmp/lnp64_fs_neg_b", O_CREAT);
+            if (fd == -1) return 9;
+            if (write(fd, "b", 1) != 1) return 10;
+            close(fd);
+
+            errno = 0;
+            if (link("/tmp/lnp64_fs_neg_a", "/tmp/lnp64_fs_neg_b") != -1) return 11;
+            if (errno != EEXIST) return 12;
+
+            if (rename("/tmp/lnp64_fs_neg_a", "/tmp/lnp64_fs_neg_missing") != 0) return 13;
+            if (stat("/tmp/lnp64_fs_neg_a", st) != -1) return 14;
+            if (stat("/tmp/lnp64_fs_neg_missing", st) != 0) return 15;
+
+            if (symlink("/tmp/lnp64_fs_neg_missing", "/tmp/lnp64_fs_neg_link") != 0) return 16;
+            buf = alloc(64);
+            n = readlink("/tmp/lnp64_fs_neg_link", buf, 64);
+            if (n != 25) return 17;
+            storeb(buf + n, 0);
+            if (strcmp(buf, "/tmp/lnp64_fs_neg_missing") != 0) return 18;
+
+            remove("/tmp/lnp64_fs_neg_b");
+            remove("/tmp/lnp64_fs_neg_missing");
+            remove("/tmp/lnp64_fs_neg_link");
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("STAT_PATH"), "{asm}");
+        assert!(asm.contains("RENAME_PATH"), "{asm}");
+        assert!(asm.contains("UNLINK_PATH"), "{asm}");
+        assert!(asm.contains("LINK_PATH"), "{asm}");
+        assert!(asm.contains("SYMLINK_PATH"), "{asm}");
+        assert!(asm.contains("READLINK_PATH"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn c_freopen_replaces_descriptor_stream() {
         let source = r#"
         int main() {
