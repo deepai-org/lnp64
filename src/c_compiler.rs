@@ -9246,7 +9246,14 @@ impl CodeGen {
                         self.text.push(format!("  MOV r{dst}, r1"));
                         Ok(dst)
                     }
-                    _ => Err(format!("unsupported fcntl command {cmd}")),
+                    _ => {
+                        let err = self.alloc_reg()?;
+                        let dst = self.alloc_reg()?;
+                        self.text.push(format!("  LI r{err}, 22"));
+                        self.text.push(format!("  ERRNO_SET r{err}"));
+                        self.text.push(format!("  LI r{dst}, -1"));
+                        Ok(dst)
+                    }
                 }
             }
             "cap_dup" => {
@@ -19748,6 +19755,23 @@ int main() {
         let asm = compile(source).unwrap();
         assert!(asm.contains("OPEN_FD_DYN"), "{asm}");
         assert!(asm.contains("CAP_DUP"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_fcntl_unsupported_constant_fails_with_einval() {
+        let source = r#"
+        int main() {
+            errno = 0;
+            if (fcntl(0, 999, 0) != -1) return 1;
+            if (errno != EINVAL) return 2;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("ERRNO_SET"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
