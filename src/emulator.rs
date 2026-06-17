@@ -6891,7 +6891,7 @@ mod tests {
     }
 
     #[test]
-    fn sealed_capability_cannot_be_duplicated() {
+    fn sealed_capability_can_be_used_but_not_duplicated_or_narrowed() {
         let program = Program::parse(
             r#"
             .data
@@ -6920,12 +6920,29 @@ mod tests {
         let sealed = machine.thread().unwrap().regs[4];
         assert_ne!(sealed, -1i64 as u64);
 
+        machine.thread_mut().unwrap().regs[6] = sealed;
+        machine.thread_mut().unwrap().regs[7] = ARG_BASE + 0x1000;
+        machine.thread_mut().unwrap().regs[8] = 4;
+        machine
+            .exec(Instr::ReadFdDyn(Reg(6), Reg(7), Reg(8)))
+            .unwrap();
+        assert_eq!(machine.process().unwrap().errno, 0);
+        assert_eq!(machine.thread().unwrap().regs[1], 4);
+
         machine.store_u64(arg, sealed).unwrap();
         machine.store_u64(arg + 8, 0).unwrap();
         machine.store_u64(arg + 16, 0).unwrap();
         machine.store_u64(arg + 24, 0).unwrap();
         machine.cap_dup(Reg(5), arg).unwrap();
         assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
+
+        machine.store_u64(arg, sealed).unwrap();
+        machine.store_u64(arg + 8, 0).unwrap();
+        machine.store_u64(arg + 16, CAP_RIGHT_READ).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_dup(Reg(9), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[9], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 1);
     }
 
