@@ -7398,6 +7398,78 @@ impl CodeGen {
                 ));
                 Ok(dst)
             }
+            "atomic_init" | "atomic_store" | "atomic_store_explicit" | "__atomic_store_n" => {
+                let expected = if name == "atomic_store_explicit" || name == "__atomic_store_n" {
+                    3
+                } else {
+                    2
+                };
+                if args.len() != expected {
+                    return Err(format!(
+                        "{name}(ptr, value[, order]) expects {expected} arguments"
+                    ));
+                }
+                let ptr = self.emit_expr(&args[0])?;
+                let value = self.emit_expr(&args[1])?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  ST [r{ptr}, 0], r{value}"));
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "atomic_load" | "atomic_load_explicit" | "__atomic_load_n" => {
+                let expected = if name == "atomic_load" { 1 } else { 2 };
+                if args.len() != expected {
+                    return Err(format!("{name}(ptr[, order]) expects {expected} arguments"));
+                }
+                let ptr = self.emit_expr(&args[0])?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LD r{dst}, [r{ptr}, 0]"));
+                Ok(dst)
+            }
+            "atomic_exchange" | "atomic_exchange_explicit" | "__atomic_exchange_n" => {
+                let expected = if name == "atomic_exchange" { 2 } else { 3 };
+                if args.len() != expected {
+                    return Err(format!(
+                        "{name}(ptr, value[, order]) expects {expected} arguments"
+                    ));
+                }
+                let ptr = self.emit_expr(&args[0])?;
+                let value = self.emit_expr(&args[1])?;
+                self.emit_atomic_exchange(ptr, value)
+            }
+            "atomic_fetch_add" | "atomic_fetch_add_explicit" | "__atomic_fetch_add" => {
+                let expected = if name == "atomic_fetch_add" { 2 } else { 3 };
+                if args.len() != expected {
+                    return Err(format!(
+                        "{name}(ptr, value[, order]) expects {expected} arguments"
+                    ));
+                }
+                let ptr = self.emit_expr(&args[0])?;
+                let value = self.emit_expr(&args[1])?;
+                self.emit_atomic_fetch_add(ptr, value)
+            }
+            "atomic_compare_exchange_strong"
+            | "atomic_compare_exchange_weak"
+            | "atomic_compare_exchange_strong_explicit"
+            | "atomic_compare_exchange_weak_explicit"
+            | "__atomic_compare_exchange_n" => {
+                let expected = match name {
+                    "atomic_compare_exchange_strong" | "atomic_compare_exchange_weak" => 3,
+                    "atomic_compare_exchange_strong_explicit"
+                    | "atomic_compare_exchange_weak_explicit" => 5,
+                    "__atomic_compare_exchange_n" => 6,
+                    _ => unreachable!(),
+                };
+                if args.len() != expected {
+                    return Err(format!(
+                        "{name}(ptr, expected, desired[, ...]) expects {expected} arguments"
+                    ));
+                }
+                let ptr = self.emit_expr(&args[0])?;
+                let expected_ptr = self.emit_expr(&args[1])?;
+                let desired = self.emit_expr(&args[2])?;
+                self.emit_atomic_compare_exchange(ptr, expected_ptr, desired)
+            }
             "futex_wait" => {
                 if args.len() != 2 {
                     return Err("futex_wait(ptr, expected) expects 2 arguments".to_string());
@@ -8463,6 +8535,71 @@ impl CodeGen {
         ));
         self.text.push(format!("  MOV r{dst_reg}, r1"));
         Ok(())
+    }
+
+    fn emit_atomic_exchange(&mut self, ptr: usize, value: usize) -> Result<usize, String> {
+        let current = self.alloc_reg()?;
+        let observed = self.alloc_reg()?;
+        let loop_label = self.new_label("atomic_exchange_loop");
+        let done = self.new_label("atomic_exchange_done");
+        self.text.push(format!("{loop_label}:"));
+        self.text.push(format!("  LD r{current}, [r{ptr}, 0]"));
+        self.text.push(format!(
+            "  LOCK.CMPXCHG r{observed}, r{ptr}, r{current}, r{value}"
+        ));
+        self.text.push(format!("  CMP r{observed}, r{current}"));
+        self.text.push(format!("  BEQ {done}"));
+        self.text.push(format!("  JMP {loop_label}"));
+        self.text.push(format!("{done}:"));
+        Ok(current)
+    }
+
+    fn emit_atomic_fetch_add(&mut self, ptr: usize, value: usize) -> Result<usize, String> {
+        let current = self.alloc_reg()?;
+        let next = self.alloc_reg()?;
+        let observed = self.alloc_reg()?;
+        let loop_label = self.new_label("atomic_fetch_add_loop");
+        let done = self.new_label("atomic_fetch_add_done");
+        self.text.push(format!("{loop_label}:"));
+        self.text.push(format!("  LD r{current}, [r{ptr}, 0]"));
+        self.text
+            .push(format!("  ADD r{next}, r{current}, r{value}"));
+        self.text.push(format!(
+            "  LOCK.CMPXCHG r{observed}, r{ptr}, r{current}, r{next}"
+        ));
+        self.text.push(format!("  CMP r{observed}, r{current}"));
+        self.text.push(format!("  BEQ {done}"));
+        self.text.push(format!("  JMP {loop_label}"));
+        self.text.push(format!("{done}:"));
+        Ok(current)
+    }
+
+    fn emit_atomic_compare_exchange(
+        &mut self,
+        ptr: usize,
+        expected_ptr: usize,
+        desired: usize,
+    ) -> Result<usize, String> {
+        let expected = self.alloc_reg()?;
+        let observed = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let success = self.new_label("atomic_cmpxchg_success");
+        let done = self.new_label("atomic_cmpxchg_done");
+        self.text
+            .push(format!("  LD r{expected}, [r{expected_ptr}, 0]"));
+        self.text.push(format!(
+            "  LOCK.CMPXCHG r{observed}, r{ptr}, r{expected}, r{desired}"
+        ));
+        self.text.push(format!("  CMP r{observed}, r{expected}"));
+        self.text.push(format!("  BEQ {success}"));
+        self.text
+            .push(format!("  ST [r{expected_ptr}, 0], r{observed}"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{success}:"));
+        self.text.push(format!("  LI r{dst}, 1"));
+        self.text.push(format!("{done}:"));
+        Ok(dst)
     }
 
     fn emit_pthread_mutex_lock(&mut self, ptr: usize) -> Result<usize, String> {
@@ -11795,6 +11932,40 @@ int main() {
         let asm = compile(source).unwrap();
         assert!(asm.contains("OPEN_FD_DYN"), "{asm}");
         assert!(asm.contains("CAP_DUP"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_c11_atomic_surface_runs_on_lock_cmpxchg() {
+        let source = r#"
+        int value;
+        int expected;
+
+        int main() {
+            atomic_init(&value, 3);
+            if (atomic_load(&value) != 3) return 1;
+            atomic_store_explicit(&value, 4, memory_order_seq_cst);
+            if (atomic_exchange(&value, 6) != 4) return 2;
+            if (atomic_fetch_add_explicit(&value, 5, memory_order_relaxed) != 6) return 3;
+            if (atomic_load_explicit(&value, memory_order_acquire) != 11) return 4;
+            expected = 10;
+            if (atomic_compare_exchange_strong(&value, &expected, 12) != 0) return 5;
+            if (expected != 11) return 6;
+            if (atomic_compare_exchange_weak_explicit(&value, &expected, 12, memory_order_acq_rel, memory_order_acquire) != 1) return 7;
+            if (__atomic_load_n(&value, memory_order_seq_cst) != 12) return 8;
+            __atomic_store_n(&value, 20, memory_order_release);
+            if (__atomic_exchange_n(&value, 21, memory_order_seq_cst) != 20) return 9;
+            if (__atomic_fetch_add(&value, 1, memory_order_seq_cst) != 21) return 10;
+            expected = 22;
+            if (__atomic_compare_exchange_n(&value, &expected, 23, 0, memory_order_seq_cst, memory_order_seq_cst) != 1) return 11;
+            if (value != 23) return 12;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("LOCK.CMPXCHG"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
