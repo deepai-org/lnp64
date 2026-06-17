@@ -14062,6 +14062,26 @@ int main() {
     }
 
     #[test]
+    fn c_main_receives_argc_and_argv_from_startup_page() {
+        let source = r#"
+        int main(int argc, char **argv) {
+            if (argc != 3) return 1;
+            if (strcmp(argv[0], "prog") != 0) return 2;
+            if (strcmp(argv[1], "alpha") != 0) return 3;
+            if (strcmp(argv[2], "beta") != 0) return 4;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        machine
+            .set_args(&["prog".to_string(), "alpha".to_string(), "beta".to_string()])
+            .unwrap();
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn lexer_accepts_decimal_float_literals() {
         let source = r#"
         int main() {
