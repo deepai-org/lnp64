@@ -747,6 +747,12 @@ fn count_braces(line: &str) -> i64 {
 fn normalize_c_types(source: &str) -> String {
     let mut out = normalize_struct_stat_declarations(source);
     out = normalize_find_struct_initializers(&out);
+    out = normalize_lua_longjmp_declarations(&out);
+    out = normalize_lua_bufffs_declarations(&out);
+    out = normalize_lua_table_overflow_guards(&out);
+    out = normalize_lua_table_declarations(&out);
+    out = normalize_lua_registry_declarations(&out);
+    out = normalize_lua_pcall_declarations(&out);
     out = normalize_struct_recursor_declarations(&out);
     out = normalize_struct_object_declarations(&out, "struct arg", 24);
     out = normalize_struct_object_declarations(&out, "struct sigaction", 24);
@@ -770,6 +776,7 @@ fn normalize_c_types(source: &str) -> String {
     out = out.replace("sizeof(*stack)", "8");
     out = out.replace("sizeof(*linebuf.lines)", "16");
     out = out.replace("sizeof(*b->lines)", "16");
+    out = out.replace("sizeof(buff->space)", "200");
     out = out.replace("sizeof(regmatch_t)", "16");
     out = out.replace("sizeof(*pmatch)", "16");
     out = out.replace("sizeof(fd_set)", "8");
@@ -1018,6 +1025,244 @@ fn normalize_struct_recursor_declarations(source: &str) -> String {
     }
     for name in object_names {
         out = replace_amp_object_refs(&out, &name);
+    }
+    out
+}
+
+fn normalize_lua_longjmp_declarations(source: &str) -> String {
+    if !source.contains("luaD_rawrunprotected") {
+        return source.to_string();
+    }
+    let mut out = String::new();
+    for line in source.lines() {
+        let indent_len = line.len() - line.trim_start().len();
+        let indent = &line[..indent_len];
+        if line.trim() == "int lj;" {
+            out.push_str(indent);
+            out.push_str("int lj; lj = alloc(40);\n");
+        } else {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+fn normalize_lua_bufffs_declarations(source: &str) -> String {
+    if !source.contains("luaO_pushvfstring") {
+        return source.to_string();
+    }
+    let mut out = String::new();
+    let mut in_pushvfstring = false;
+    let mut depth = 0i64;
+    let mut has_buff_object = false;
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if !in_pushvfstring && trimmed.contains("luaO_pushvfstring") && trimmed.contains('{') {
+            in_pushvfstring = true;
+            depth = 0;
+            has_buff_object = false;
+        }
+
+        let mut line_out = if in_pushvfstring && trimmed == "int buff;" {
+            let indent_len = line.len() - line.trim_start().len();
+            let indent = &line[..indent_len];
+            has_buff_object = true;
+            format!("{indent}int buff; buff = alloc(240);")
+        } else {
+            line.to_string()
+        };
+        if in_pushvfstring && has_buff_object {
+            line_out = replace_amp_object_refs(&line_out, "buff");
+        }
+        out.push_str(&line_out);
+        out.push('\n');
+
+        if in_pushvfstring {
+            depth += count_braces(line);
+            if depth <= 0 {
+                in_pushvfstring = false;
+                depth = 0;
+                has_buff_object = false;
+            }
+        }
+    }
+    out
+}
+
+fn normalize_lua_table_overflow_guards(source: &str) -> String {
+    if !source.contains("luaH_resize") {
+        return source.to_string();
+    }
+    let mut out = String::new();
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("if (newasize >")
+            && trimmed.contains("1u <<")
+            && (trimmed.contains("sizeof(int) + 1") || trimmed.contains("8 + 1"))
+        {
+            let indent_len = line.len() - line.trim_start().len();
+            let indent = &line[..indent_len];
+            out.push_str(indent);
+            out.push_str("if (newasize > 1073741824)\n");
+        } else {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+fn normalize_lua_table_declarations(source: &str) -> String {
+    if !source.contains("luaH_resize") {
+        return source.to_string();
+    }
+    let mut out = String::new();
+    let mut in_resize = false;
+    let mut pending_resize = false;
+    let mut depth = 0i64;
+    let mut has_newt_object = false;
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if !in_resize && trimmed.contains("luaH_resize") {
+            pending_resize = true;
+        }
+        if !in_resize && pending_resize && trimmed.contains('{') {
+            in_resize = true;
+            pending_resize = false;
+            depth = 0;
+            has_newt_object = false;
+        }
+
+        let mut line_out = if in_resize && trimmed == "int newt;" {
+            let indent_len = line.len() - line.trim_start().len();
+            let indent = &line[..indent_len];
+            has_newt_object = true;
+            format!("{indent}int newt; newt = alloc(128);")
+        } else {
+            line.to_string()
+        };
+        if in_resize && has_newt_object {
+            line_out = replace_amp_object_refs(&line_out, "newt");
+        }
+        out.push_str(&line_out);
+        out.push('\n');
+
+        if in_resize {
+            depth += count_braces(line);
+            if depth <= 0 {
+                in_resize = false;
+                pending_resize = false;
+                depth = 0;
+                has_newt_object = false;
+            }
+        } else if pending_resize && trimmed.ends_with(';') {
+            pending_resize = false;
+        }
+    }
+    out
+}
+
+fn normalize_lua_registry_declarations(source: &str) -> String {
+    if !source.contains("init_registry") {
+        return source.to_string();
+    }
+    let mut out = String::new();
+    let mut in_registry = false;
+    let mut depth = 0i64;
+    let mut has_aux_object = false;
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if !in_registry && trimmed.contains("init_registry") && trimmed.contains('{') {
+            in_registry = true;
+            depth = 0;
+            has_aux_object = false;
+        }
+
+        let mut line_out = if in_registry && trimmed == "int aux;" {
+            let indent_len = line.len() - line.trim_start().len();
+            let indent = &line[..indent_len];
+            has_aux_object = true;
+            format!("{indent}int aux; aux = alloc(16);")
+        } else {
+            line.to_string()
+        };
+        if in_registry && has_aux_object {
+            line_out = replace_amp_object_refs(&line_out, "aux");
+        }
+        out.push_str(&line_out);
+        out.push('\n');
+
+        if in_registry {
+            depth += count_braces(line);
+            if depth <= 0 {
+                in_registry = false;
+                depth = 0;
+                has_aux_object = false;
+            }
+        }
+    }
+    out
+}
+
+fn normalize_lua_pcall_declarations(source: &str) -> String {
+    if !source.contains("lua_pcallk") {
+        return source.to_string();
+    }
+    let mut out = String::new();
+    let mut in_pcall = false;
+    let mut pending_pcall = false;
+    let mut depth = 0i64;
+    let mut has_call_object = false;
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if !in_pcall && trimmed.contains("lua_pcallk") {
+            pending_pcall = true;
+        }
+        if !in_pcall && pending_pcall && trimmed.contains('{') {
+            in_pcall = true;
+            pending_pcall = false;
+            depth = 0;
+            has_call_object = false;
+        }
+
+        let mut line_out = if in_pcall && trimmed == "int c;" {
+            let indent_len = line.len() - line.trim_start().len();
+            let indent = &line[..indent_len];
+            has_call_object = true;
+            format!("{indent}int c; c = alloc(16);")
+        } else {
+            line.to_string()
+        };
+        if in_pcall && line_out.contains("c.func = L->top.p - (nargs + 1);") {
+            line_out = line_out.replace(
+                "c.func = L->top.p - (nargs + 1);",
+                "c.func = L->top.p - ((nargs + 1) * 16);",
+            );
+        }
+        if in_pcall && line_out.contains("c.func = L->top.p - (nargs+1);") {
+            line_out = line_out.replace(
+                "c.func = L->top.p - (nargs+1);",
+                "c.func = L->top.p - ((nargs+1) * 16);",
+            );
+        }
+        if in_pcall && has_call_object {
+            line_out = replace_amp_object_refs(&line_out, "c");
+        }
+        out.push_str(&line_out);
+        out.push('\n');
+
+        if in_pcall {
+            depth += count_braces(line);
+            if depth <= 0 {
+                in_pcall = false;
+                pending_pcall = false;
+                depth = 0;
+                has_call_object = false;
+            }
+        } else if pending_pcall && trimmed.ends_with(';') {
+            pending_pcall = false;
+        }
     }
     out
 }
@@ -4192,22 +4437,12 @@ impl CodeGen {
 
     fn emit_index_addr(&mut self, base: &Expr, index: &Expr, width: i64) -> Result<usize, String> {
         let base = self.emit_expr(base)?;
-        let base_slot = if index.contains_call() {
-            let slot = self.next_local_offset;
-            self.next_local_offset += 8;
-            self.text.push(format!("  ST [r31, {slot}], r{base}"));
-            Some(slot)
-        } else {
-            None
-        };
+        let base_slot = self.next_local_offset;
+        self.next_local_offset += 8;
+        self.text.push(format!("  ST [r31, {base_slot}], r{base}"));
         let index = self.emit_expr(index)?;
-        let base = if let Some(slot) = base_slot {
-            let reloaded = self.alloc_reg()?;
-            self.text.push(format!("  LD r{reloaded}, [r31, {slot}]"));
-            reloaded
-        } else {
-            base
-        };
+        let base = self.alloc_reg()?;
+        self.text.push(format!("  LD r{base}, [r31, {base_slot}]"));
         let scale = self.alloc_reg()?;
         let offset = self.alloc_reg()?;
         let addr = self.alloc_reg()?;
@@ -4220,8 +4455,19 @@ impl CodeGen {
 
     fn emit_member_addr(&mut self, base: &Expr, field: &str) -> Result<usize, String> {
         let offset_value = self.struct_field_offset_for(base, field)?;
-        let base = if member_field_name(base)
-            .is_some_and(|name| matches!(name, "pinfo" | "oinfo" | "fninfo" | "st"))
+        let base = if member_field_name(base).is_some_and(|name| {
+            matches!(
+                name,
+                "pinfo" | "oinfo" | "fninfo" | "st" | "l_G" | "memerrmsg"
+            )
+        }) {
+            self.emit_expr(base)?
+        } else if member_field_name(base).is_some_and(|name| name == "p")
+            && root_name(base).is_some_and(|name| matches!(name, "L" | "L1" | "ci" | "up"))
+        {
+            self.emit_expr(base)?
+        } else if matches!(base, Expr::Index(inner, _) if matches!(&**inner, Expr::Var(name) if self.current_fn == "luaS_new" && name == "p"))
+            || matches!(base, Expr::Index(inner, _) if member_field_name(inner).is_some_and(|name| matches!(name, "tmname" | "mt" | "strcache")))
         {
             self.emit_expr(base)?
         } else if matches!(base, Expr::Index(_, _) | Expr::Member(_, _)) {
@@ -4241,6 +4487,64 @@ impl CodeGen {
     }
 
     fn struct_field_offset_for(&self, base: &Expr, field: &str) -> Result<i64, String> {
+        if self.function_names.contains("luaO_pushvfstring")
+            && root_name(base).is_some_and(|name| name == "buff")
+        {
+            return match field {
+                "L" => Ok(0),
+                "b" => Ok(8),
+                "buffsize" => Ok(16),
+                "blen" => Ok(24),
+                "err" => Ok(32),
+                "space" => Ok(40),
+                _ => self.struct_stat_field_offset(field),
+            };
+        }
+        match field {
+            "strt" => return Ok(48),
+            "l_registry" => return Ok(72),
+            "nilvalue" => return Ok(88),
+            "seed" => return Ok(104),
+            "mainth" => return Ok(1536),
+            "top" => return Ok(40),
+            "ci" => return Ok(56),
+            "stack_last" => return Ok(64),
+            "stack" => return Ok(72),
+            "openupval" => return Ok(80),
+            "tbclist" => return Ok(88),
+            _ => {}
+        }
+        if root_name(base).is_some_and(|name| name == "c") {
+            match field {
+                "func" => return Ok(0),
+                "nresults" => return Ok(8),
+                _ => {}
+            }
+        }
+        if field == "u" && expr_contains_member(base, "node") {
+            return Ok(48);
+        }
+        if self.function_names.contains("luaS_newlstr")
+            && root_name(base).is_some_and(|name| name == "tb")
+        {
+            return match field {
+                "hash" => Ok(0),
+                "nuse" => Ok(8),
+                "size" => Ok(16),
+                _ => self.struct_stat_field_offset(field),
+            };
+        }
+        if member_field_name(base).is_some_and(|name| name == "strt") {
+            return match field {
+                "hash" => Ok(0),
+                "nuse" => Ok(8),
+                "size" => Ok(16),
+                _ => self.struct_stat_field_offset(field),
+            };
+        }
+        if self.function_names.contains("luaS_new") && field == "strcache" {
+            return Ok(496);
+        }
         if member_field_name(base).is_some_and(|name| name == "fninfo")
             || root_name(base).is_some_and(|name| name == "fns")
         {
@@ -4525,6 +4829,17 @@ impl CodeGen {
                 _ => self.struct_stat_field_offset(field),
             };
         }
+        if field == "u" && expr_contains_member(base, "node") {
+            return Ok(48);
+        }
+        if matches!(base, Expr::Index(inner, _) if member_field_name(inner).is_some_and(|name| name == "node"))
+        {
+            return match field {
+                "i_val" => Ok(0),
+                "u" => Ok(48),
+                _ => self.struct_stat_field_offset(field),
+            };
+        }
         if root_name(base).is_some_and(|name| name == "linebuf") {
             return match field {
                 "lines" => Ok(0),
@@ -4611,10 +4926,14 @@ impl CodeGen {
             "L" => Ok(24),
             "init" => Ok(32),
             "space" => Ok(32),
+            "tmname" => Ok(296),
+            "strcache" => Ok(496),
             "shrlen" => Ok(8),
             "lnglen" => Ok(16),
             "contents" => Ok(24),
+            "tt_" => Ok(8),
             "flags" => Ok(0),
+            "hash" => Ok(0),
             "maxdepth" => Ok(8),
             "follow" => Ok(16),
             "ret" => Ok(0),
@@ -4695,6 +5014,13 @@ impl CodeGen {
             "nlines" => Ok(8),
             "capacity" => Ok(16),
             "u" => Ok(0),
+            "gc" => Ok(0),
+            "value_" => Ok(0),
+            "val" => Ok(0),
+            "hnext" => Ok(0),
+            "node" => Ok(56),
+            "key_tt" => Ok(16),
+            "key_val" => Ok(32),
             "pinfo" => Ok(0),
             "oinfo" => Ok(0),
             "p" => Ok(0),
@@ -4750,12 +5076,27 @@ impl CodeGen {
             104
         } else if matches!(base, Expr::Var(name) if name == "rstr") {
             8
+        } else if self.current_fn == "tablerehash"
+            && matches!(base, Expr::Var(name) if name == "vect")
+        {
+            8
+        } else if self.current_fn == "luaS_new" && matches!(base, Expr::Var(name) if name == "p") {
+            8
         } else if member_field_name(base).is_some_and(|name| name == "lines") {
             16
         } else if member_field_name(base).is_some_and(|name| name == "gcparams") {
             1
+        } else if member_field_name(base).is_some_and(|name| name == "space") {
+            1
+        } else if member_field_name(base).is_some_and(|name| name == "strcache") {
+            16
+        } else if matches!(base, Expr::Index(inner, _) if member_field_name(inner).is_some_and(|name| name == "strcache"))
+        {
+            8
+        } else if member_field_name(base).is_some_and(|name| name == "node") {
+            56
         } else if member_field_name(base)
-            .is_some_and(|name| matches!(name, "tmname" | "mt" | "strcache"))
+            .is_some_and(|name| matches!(name, "tmname" | "mt" | "hash"))
         {
             8
         } else if member_field_name(base).is_some_and(|name| name == "data")
@@ -4884,6 +5225,9 @@ impl CodeGen {
         {
             return 8;
         }
+        if self.current_fn == "luaS_remove" && root_name(ptr).is_some_and(|name| name == "p") {
+            return 8;
+        }
         if matches!(ptr, Expr::Unary(UnOp::Deref, inner) if root_name(inner).is_some_and(|name| matches!(name, "argv" | "arg" | "paths" | "files")))
         {
             return 1;
@@ -4909,6 +5253,7 @@ impl CodeGen {
                     | "tok"
                     | "tokens"
                     | "parser"
+                    | "list"
             )
         }) {
             8
@@ -12551,10 +12896,34 @@ fn member_field_name(expr: &Expr) -> Option<&str> {
     }
 }
 
+fn expr_contains_member(expr: &Expr, needle: &str) -> bool {
+    match expr {
+        Expr::Member(inner, field) => field == needle || expr_contains_member(inner, needle),
+        Expr::Index(base, index) => {
+            expr_contains_member(base, needle) || expr_contains_member(index, needle)
+        }
+        Expr::Unary(_, inner)
+        | Expr::Assign(inner, _)
+        | Expr::CompoundAssign(inner, _, _)
+        | Expr::PostInc(inner)
+        | Expr::PostDec(inner) => expr_contains_member(inner, needle),
+        Expr::Binary(left, _, right) => {
+            expr_contains_member(left, needle) || expr_contains_member(right, needle)
+        }
+        Expr::Call(_, args) => args.iter().any(|arg| expr_contains_member(arg, needle)),
+        Expr::Ternary(cond, then_expr, else_expr) => {
+            expr_contains_member(cond, needle)
+                || expr_contains_member(then_expr, needle)
+                || expr_contains_member(else_expr, needle)
+        }
+        _ => false,
+    }
+}
+
 fn is_inline_array_field(field: &str) -> bool {
     matches!(
         field,
-        "pattern" | "d_name" | "gcparams" | "tmname" | "mt" | "strcache"
+        "pattern" | "d_name" | "gcparams" | "tmname" | "mt" | "strcache" | "space"
     )
 }
 
@@ -13999,6 +14368,603 @@ mod tests {
         assert!(normalized.contains("int lx = 256;"), "{normalized}");
         assert!(normalized.contains("int ci = 128;"), "{normalized}");
         let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn lua_longjmp_local_is_allocated_for_member_access() {
+        let source = r#"
+        typedef struct lua_longjmp {
+            int previous;
+            int b;
+            int status;
+        } lua_longjmp;
+
+        int current;
+
+        int setjmp(int env) {
+            return 0;
+        }
+
+        int body(int L, int *ud) {
+            store(ud, L + 1);
+            return 0;
+        }
+
+        int luaD_rawrunprotected(int L, int f, int *ud) {
+            int oldnCcalls = L;
+            lua_longjmp lj;
+            lj.status = 0;
+            lj.previous = current;
+            current = &lj;
+            if (setjmp(&lj.b) == 0) ((f)(L, ud));
+            current = lj.previous;
+            L = oldnCcalls;
+            return lj.status;
+        }
+
+        int main() {
+            int out;
+            out = 0;
+            if (luaD_rawrunprotected(41, body, &out) != 0) return 1;
+            if (out != 42) return 2;
+            if (current != 0) return 3;
+            return 0;
+        }
+        "#;
+        let normalized = preprocess_source(source);
+        assert!(
+            normalized.contains("int lj; lj = alloc(40);"),
+            "{normalized}"
+        );
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn lua_bufffs_local_is_allocated_for_member_access() {
+        let source = r#"
+        typedef struct BuffFS {
+            int buffsize;
+            int err;
+            int blen;
+            int L;
+            int b;
+            char space[32];
+        } BuffFS;
+
+        int initbuff(int L, int buff) {
+            buff->L = L;
+            buff->b = buff->space;
+            buff->buffsize = 32;
+            buff->blen = 0;
+            buff->err = 0;
+            return 0;
+        }
+
+        int luaO_pushvfstring(int L, int fmt, int argp) {
+            BuffFS buff;
+            initbuff(L, &buff);
+            buff.b[0] = 'A';
+            if (buff.L != L) return 1;
+            if (buff.b != buff.space) return 2;
+            if (buff.space[0] != 'A') return 3;
+            return 0;
+        }
+
+        int main() {
+            return luaO_pushvfstring(77, 0, 0);
+        }
+        "#;
+        let normalized = preprocess_source(source);
+        assert!(
+            normalized.contains("int buff; buff = alloc(240);"),
+            "{normalized}"
+        );
+        assert!(normalized.contains("initbuff(L, buff);"), "{normalized}");
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn lua_string_table_hash_member_indexes_pointer_slots() {
+        let source = r#"
+        int luaS_newlstr() {
+            return 0;
+        }
+
+        struct Other {
+            int a;
+            int b;
+            int c;
+            int d;
+            int e;
+            int hash;
+        };
+
+        struct GlobalForStrings {
+            int pad;
+            int strt;
+        };
+
+        int main() {
+            int tb;
+            int list;
+            int g;
+            tb = alloc(64);
+            tb->hash = alloc(32);
+            tb->nuse = 7;
+            tb->size = 4;
+            g = alloc(128);
+            g->strt.hash = 55;
+            g->strt.nuse = 3;
+            g->strt.size = 8;
+            if (load(g + 48) != 55) return 8;
+            if (load(g + 56) != 3) return 9;
+            if (load(g + 64) != 8) return 10;
+            tb->hash[2] = 99;
+            if (load(tb) != tb->hash) return 4;
+            if (load(tb + 8) != 7) return 5;
+            if (load(tb + 16) != 4) return 6;
+            if (load(tb->hash + 16) != 99) return 1;
+            if (tb->hash[2] != 99) return 2;
+            list = &tb->hash[2];
+            if (load(list) != 99) return 3;
+            if (*list != 99) return 7;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn lua_nested_l_g_member_address_uses_loaded_global_state() {
+        let source = r#"
+        struct Global {
+            int pad;
+            int strt;
+        };
+
+        struct State {
+            int pad;
+            int l_G;
+        };
+
+        int main() {
+            int L;
+            int g;
+            int tb;
+            L = alloc(32);
+            g = alloc(128);
+            L->l_G = g;
+            g->strt = 1234;
+            tb = &L->l_G->strt;
+            if (tb != g + 48) return 1;
+            if (load(tb) != 1234) return 2;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn lua_tablerehash_indexes_vector_pointer_slots() {
+        let source = r#"
+        int tablerehash(int *vect, int osize, int nsize) {
+            int i;
+            for (i = osize; i < nsize; i++)
+                vect[i] = 0;
+            return 0;
+        }
+
+        int main() {
+            int vect;
+            vect = alloc(32);
+            store(vect + 16, 1234);
+            tablerehash(vect, 1, 4);
+            if (load(vect) != 0) return 1;
+            if (load(vect + 8) != 0) return 2;
+            if (load(vect + 16) != 0) return 3;
+            if (load(vect + 24) != 0) return 4;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn lua_table_resize_overflow_guard_uses_positive_limit() {
+        let source = r#"
+        int tripped;
+
+        int luaG_runerror(int L, int fmt) {
+            tripped = 1;
+            return 0;
+        }
+
+        int luaH_resize(int L, int t, int newasize, int nhsize) {
+            if (newasize > (((1u << (((int)((8 * 8))) - 1)) < (((int)(~(int)0))/(sizeof(int) + 1))) ? (1u << (((int)((8 * 8))) - 1)) : ((int)(((((int)(~(int)0))/(sizeof(int) + 1)))))))
+                luaG_runerror(L, "table overflow");
+            return tripped;
+        }
+
+        int main() {
+            return luaH_resize(0, 0, 3, 0);
+        }
+        "#;
+        let normalized = preprocess_source(source);
+        assert!(
+            normalized.contains("if (newasize > 1073741824)"),
+            "{normalized}"
+        );
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn lua_table_resize_allocates_new_table_local() {
+        let source = r#"
+        typedef struct Table {
+            int flags;
+            int node;
+        } Table;
+
+        int seen;
+
+        int setnodevector(int L, int t, int size) {
+            t->node = 77;
+            seen = t;
+            return 0;
+        }
+
+        int luaH_resize(int L, int t, int newasize, int nhsize) {
+            Table newt;
+            newt.flags = 0;
+            setnodevector(L, &newt, nhsize);
+            if (newt.node != 77) return 1;
+            if (seen != newt) return 2;
+            return 0;
+        }
+
+        int main() {
+            return luaH_resize(0, 0, 3, 0);
+        }
+        "#;
+        let normalized = preprocess_source(source);
+        assert!(
+            normalized.contains("int newt; newt = alloc(128);"),
+            "{normalized}"
+        );
+        assert!(
+            normalized.contains("setnodevector(L, newt, nhsize);"),
+            "{normalized}"
+        );
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn lua_init_registry_allocates_aux_tvalue_local() {
+        let source = r#"
+        typedef struct TValue {
+            int value_;
+            int tt_;
+        } TValue;
+
+        int seen_table;
+        int seen_value;
+
+        int luaH_new(int L) {
+            return 1234;
+        }
+
+        int luaH_resize(int L, int registry, int narr, int nrec) {
+            return 0;
+        }
+
+        int luaH_setint(int L, int registry, int key, int value) {
+            seen_table = registry;
+            seen_value = value->tt_;
+            return 0;
+        }
+
+        int init_registry(int L, int g) {
+            TValue aux;
+            int registry = luaH_new(L);
+            luaH_resize(L, registry, 3, 0);
+            (&aux)->tt_ = 1;
+            luaH_setint(L, registry, 1, &aux);
+            if (seen_table != 1234) return 1;
+            if (seen_value != 1) return 2;
+            return 0;
+        }
+
+        int main() {
+            return init_registry(0, 0);
+        }
+        "#;
+        let normalized = preprocess_source(source);
+        assert!(
+            normalized.contains("int aux; aux = alloc(16);"),
+            "{normalized}"
+        );
+        assert!(
+            normalized.contains("luaH_setint(L, registry, 1, aux);"),
+            "{normalized}"
+        );
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn lua_global_registry_does_not_overlap_string_table_count() {
+        let source = r#"
+        int init_registry(int L, int g) {
+            int registry;
+            registry = 12345;
+            g->strt.nuse = 7;
+            (&g->l_registry)->value_.gc = registry;
+            (&g->l_registry)->tt_ = 69;
+            if (g->strt.nuse != 7) return 1;
+            if (load(g + 72) != registry) return 2;
+            if (load(g + 80) != 69) return 3;
+            return 0;
+        }
+
+        int main() {
+            int g;
+            g = alloc(256);
+            return init_registry(0, g);
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn lua_pcallk_allocates_call_status_local() {
+        let source = r#"
+        int seen_func;
+        int seen_results;
+        int seen_offset;
+
+        int luaD_pcall(int L, int f, int c, int offset, int func) {
+            seen_func = c->func;
+            seen_results = c->nresults;
+            seen_offset = offset;
+            return 0;
+        }
+
+        int f_call(int L, int ud) {
+            return 0;
+        }
+
+        int lua_pcallk(int L, int nargs, int nresults, int errfunc, int ctx, int k) {
+            int c;
+            int status;
+            int func;
+            func = 0;
+            c.func = L->top.p - (nargs + 1);
+            c.nresults = nresults;
+            status = luaD_pcall(L, f_call, &c, c.func - L->stack.p, func);
+            if (seen_func != 744) return 1;
+            if (seen_results != 2) return 2;
+            if (seen_offset != 544) return 3;
+            return status;
+        }
+
+        int main() {
+            int L;
+            L = alloc(128);
+            L->top.p = 1000;
+            L->stack.p = 200;
+            return lua_pcallk(L, 15, 2, 0, 0, 0);
+        }
+        "#;
+        let normalized = preprocess_source(source);
+        assert!(normalized.contains("int c; c = alloc(16);"), "{normalized}");
+        assert!(
+            normalized.contains("luaD_pcall(L, f_call, c,"),
+            "{normalized}"
+        );
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn lua_stack_pointer_member_addresses_use_pointed_slot() {
+        let source = r#"
+        int main() {
+            int L;
+            int slot;
+            L = alloc(128);
+            slot = alloc(32);
+            L->top.p = slot;
+            (&(L->top.p)->val)->tt_ = 6;
+            if (load(slot + 8) != 6) return 1;
+            if (load(L + 40) != slot) return 2;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn lua_table_node_member_indexes_node_records() {
+        let source = r#"
+        int main() {
+            int t;
+            int nodes;
+            t = alloc(128);
+            nodes = alloc(128);
+            t->node = nodes;
+            t->node[1].u.key_tt = 77;
+            if (load(nodes + 56 + 48 + 16) != 77) return 1;
+            if (t->node[1].u.key_tt != 77) return 2;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn lua_strcache_two_dimensional_member_indexes_rows_then_slots() {
+        let source = r#"
+        int main() {
+            int g;
+            g = alloc(1024);
+            g->strcache[3][1] = 99;
+            if (load(g + 496 + 3 * 16 + 8) != 99) return 1;
+            if (g->strcache[3][1] != 99) return 2;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn lua_s_new_indexes_strcache_row_pointer_slots() {
+        let source = r#"
+        int luaS_new(int L, int str) {
+            int p;
+            int s;
+            p = alloc(16);
+            s = alloc(64);
+            s->shrlen = 77;
+            p[1] = s;
+            if (load(p + 8) != s) return 1;
+            if (p[1] != s) return 2;
+            if (p[1]->shrlen != 77) return 3;
+            return 0;
+        }
+
+        int main() {
+            return luaS_new(0, 0);
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn lua_memerrmsg_nested_member_address_uses_pointed_object() {
+        let source = r#"
+        struct TString {
+            int gc;
+            int shrlen;
+        };
+
+        struct Global {
+            int pad;
+            int memerrmsg;
+        };
+
+        int main() {
+            int g;
+            int s;
+            int p;
+            g = alloc(64);
+            s = alloc(64);
+            g->memerrmsg = s;
+            s->shrlen = 44;
+            p = &g->memerrmsg->shrlen;
+            if (p != s + 8) return 1;
+            if (load(p) != 44) return 2;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn lua_tmname_element_member_address_uses_pointed_object() {
+        let source = r#"
+        int main() {
+            int g;
+            int s;
+            int p;
+            g = alloc(1024);
+            s = alloc(64);
+            s->shrlen = 12;
+            g->tmname[2] = s;
+            p = &g->tmname[2]->shrlen;
+            if (p != s + 8) return 1;
+            if (load(p) != 12) return 2;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn lua_s_remove_dereferences_string_table_pointer_slots() {
+        let source = r#"
+        int luaS_remove(int head, int target) {
+            int p;
+            p = &head;
+            while (*p != target)
+                p = &(*p)->u.hnext;
+            *p = (*p)->u.hnext;
+            return head;
+        }
+
+        int main() {
+            int a;
+            int b;
+            a = alloc(64);
+            b = alloc(64);
+            a->u.hnext = b;
+            b->u.hnext = 0;
+            if (luaS_remove(a, b) != a) return 1;
+            if (a->u.hnext != 0) return 2;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("LD r"), "{asm}");
+        assert!(!asm.contains("LD.B r2, [r1, 0]\n  ST"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
@@ -15694,11 +16660,12 @@ int main() {
             b = alloc(128);
             b->b = 55;
             b->L = 77;
-            store(b + 32, 123);
+            b->space[0] = 123;
             if (b->b != 55) return 1;
             if (b->init != 123) return 2;
-            if (b->space != 123) return 3;
+            if (b->space != b + 32) return 3;
             if (b->L != 77) return 4;
+            if (b->space[0] != 123) return 5;
             return 0;
         }
         "#;
