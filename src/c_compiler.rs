@@ -5962,6 +5962,19 @@ impl CodeGen {
     }
 
     fn pointer_step(&self, name: &str) -> i64 {
+        if !self.function_names.contains("jsmn_parse")
+            && matches!(
+                name,
+                "t" | "tok" | "toks" | "rpn" | "out" | "infix" | "root"
+            )
+        {
+            return 40;
+        }
+        if self.function_names.contains("jsmn_parse")
+            && matches!(name, "g" | "t" | "tok" | "tokens" | "toksmall" | "toklarge")
+        {
+            return 32;
+        }
         if let Some(width) = self.local_pointer_widths.get(name) {
             return *width;
         }
@@ -5978,10 +5991,8 @@ impl CodeGen {
             "s" if self.current_fn == "parse_flags" => 8,
             "p" if self.current_fn == "find_primary" => 40,
             "o" if self.current_fn == "find_op" => 40,
-            "g" if self.function_names.contains("jsmn_parse") => 32,
             "ents" | "dents" | "fents" => 104,
             "tree" => 16,
-            "t" | "tok" | "toks" | "rpn" | "out" | "infix" | "root" => 40,
             "set" | "set1" | "set2" => 24,
             _ => 1,
         }
@@ -6002,11 +6013,6 @@ impl CodeGen {
         if let Expr::CastPointer(depth, _) = ptr {
             return if *depth >= 2 { 8 } else { 1 };
         }
-        if let Some(name) = root_name(ptr)
-            && let Some(width) = self.local_pointer_widths.get(name)
-        {
-            return *width;
-        }
         if self.current_fn == "resize"
             && root_name(ptr).is_some_and(|name| matches!(name, "ptr" | "nmemb" | "next"))
         {
@@ -6018,6 +6024,11 @@ impl CodeGen {
         if matches!(ptr, Expr::Unary(UnOp::Deref, inner) if root_name(inner).is_some_and(|name| matches!(name, "argv" | "arg" | "paths" | "files")))
         {
             return 1;
+        }
+        if let Some(name) = root_name(ptr)
+            && let Some(width) = self.local_pointer_widths.get(name)
+        {
+            return *width;
         }
         if self.current_fn == "parse_flags" && root_name(ptr).is_some_and(|name| name == "s") {
             return 8;
@@ -18555,6 +18566,25 @@ mod tests {
     }
 
     #[test]
+    fn double_deref_argv_style_vectors_load_character_bytes() {
+        let source = r#"
+        int main() {
+            char *items[2];
+            char **argv;
+            argv = items;
+            items[0] = "-name";
+            items[1] = 0;
+            if (**argv != '-') return 1;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn local_timespec_arrays_allocate_whole_object_storage() {
         let source = r#"
         int main() {
@@ -20911,6 +20941,39 @@ int main() {
             if (gflags.print != 1) return 4;
             gflags.ret |= 0;
             return gflags.ret;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn find_token_stream_pointers_advance_by_token_size() {
+        let source = r#"
+        struct tok {
+            struct tok *left;
+            struct tok *right;
+            int extra;
+            struct tok *p;
+            int type;
+        };
+
+        int main() {
+            struct tok *tok, *rpn, *out, **top, **stack;
+            rpn = ereallocarray(0, 2, sizeof(*rpn));
+            stack = ereallocarray(0, 1, sizeof(*stack));
+            tok = rpn;
+            tok->type = 0;
+            out = rpn;
+            *out++ = *tok;
+            out->type = 6;
+            for (tok = rpn, top = stack; tok->type != 6; tok++) {
+                *top++ = tok;
+            }
+            if (top - stack != 1) return 1;
+            return 0;
         }
         "#;
         let asm = compile(source).unwrap();
