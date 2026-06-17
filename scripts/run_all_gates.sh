@@ -3,6 +3,7 @@ set -euo pipefail
 
 cargo fmt --check
 cargo test
+bash scripts/run_toolchain_contracts.sh
 
 bash scripts/run_netbsd_personality_smoke.sh
 bash scripts/run_demos.sh
