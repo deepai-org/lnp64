@@ -120,6 +120,12 @@ Run the `cwalk` real-package path manipulation smoke gate:
 bash scripts/run_cwalk.sh
 ```
 
+Run the `libc-test` focused libc conformance subset:
+
+```sh
+bash scripts/run_libc_test.sh
+```
+
 For the current POSIX/libc surface, real-program gates, and open compatibility
 bugs, see `conformance_matrix.md`. For the current emulator process ABI, see
 `psABI.md`; for the target ELF/static object profile, see `object_format.md`.
@@ -144,4 +150,5 @@ handwritten implementations.
 bash scripts/run_sbase.sh
 bash scripts/run_natsort.sh
 bash scripts/run_cwalk.sh
+bash scripts/run_libc_test.sh
 ```

@@ -7092,19 +7092,31 @@ impl CodeGen {
             "basename" => {
                 let ptr = self.one_arg(name, args)?;
                 let dst = self.alloc_reg()?;
+                let dot = self.intern_string(".");
+                let end = self.new_label("basename_done");
                 self.needs_c_runtime = true;
+                self.text.push(format!("  CMP r{ptr}, r0"));
+                self.text.push(format!("  LI r{dst}, {dot}"));
+                self.text.push(format!("  BEQ {end}"));
                 self.text.push(format!("  MOV r1, r{ptr}"));
                 self.text.push("  CALL __c_basename".to_string());
                 self.text.push(format!("  MOV r{dst}, r1"));
+                self.text.push(format!("{end}:"));
                 Ok(dst)
             }
             "dirname" => {
                 let ptr = self.one_arg(name, args)?;
                 let dst = self.alloc_reg()?;
+                let dot = self.intern_string(".");
+                let end = self.new_label("dirname_done");
                 self.needs_c_runtime = true;
+                self.text.push(format!("  CMP r{ptr}, r0"));
+                self.text.push(format!("  LI r{dst}, {dot}"));
+                self.text.push(format!("  BEQ {end}"));
                 self.text.push(format!("  MOV r1, r{ptr}"));
                 self.text.push("  CALL __c_dirname".to_string());
                 self.text.push(format!("  MOV r{dst}, r1"));
+                self.text.push(format!("{end}:"));
                 Ok(dst)
             }
             "atoi" => {
@@ -13706,7 +13718,7 @@ __c_basename:
   MOV r11, r1
   MOV r1, r10
   CMP r11, r0
-  BEQ c_basename_ret
+  BEQ c_basename_dot
   ADD r12, r10, r11
 c_basename_trim:
   LI r13, 1
@@ -13722,6 +13734,14 @@ c_basename_trim:
   SUB r11, r11, r13
   JMP c_basename_trim
 c_basename_scan_start:
+  LI r13, 1
+  CMP r11, r13
+  BNE c_basename_scan_begin
+  LD.B r15, [r10, 0]
+  LI r16, 47
+  CMP r15, r16
+  BEQ c_basename_slash
+c_basename_scan_begin:
   MOV r17, r12
 c_basename_scan:
   CMP r17, r10
@@ -13737,6 +13757,12 @@ c_basename_scan:
 c_basename_ret_start:
   MOV r1, r10
 c_basename_ret:
+  RET
+c_basename_dot:
+  LI r1, c_dot
+  RET
+c_basename_slash:
+  LI r1, c_slash
   RET
 
 __c_dirname:
@@ -14492,6 +14518,21 @@ mod tests {
             basename = 0;
             set_basename(&basename);
             return strcmp(basename, "archive.tar.gz") == 0 ? 0 : 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn basename_and_dirname_accept_null_paths() {
+        let source = r#"
+        int main() {
+            if (strcmp(basename(0), ".") != 0) return 1;
+            if (strcmp(dirname(0), ".") != 0) return 2;
+            return 0;
         }
         "#;
         let asm = compile(source).unwrap();
