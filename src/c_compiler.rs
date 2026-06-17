@@ -7754,6 +7754,19 @@ impl CodeGen {
                 self.text.push(format!("  GET_PCR r{dst}, TID"));
                 Ok(dst)
             }
+            "__builtin_thread_pointer" | "__lnp_get_thread_pointer" => {
+                self.no_args(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  GET_PCR r{dst}, TP"));
+                Ok(dst)
+            }
+            "__lnp_set_thread_pointer" => {
+                let tp = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  SET_PCR TP, r{tp}"));
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
             "pthread_join" => {
                 if args.len() != 2 {
                     return Err("pthread_join(thread, retval) expects 2 arguments".to_string());
@@ -7797,6 +7810,34 @@ impl CodeGen {
                 let dst = self.alloc_reg()?;
                 self.text.push(format!("  LI r{dst}, 0"));
                 Ok(dst)
+            }
+            "pthread_key_create" => {
+                if args.len() != 2 {
+                    return Err(
+                        "pthread_key_create(key, destructor) expects 2 arguments".to_string()
+                    );
+                }
+                let key_ptr = self.emit_expr(&args[0])?;
+                self.emit_expr(&args[1])?;
+                self.emit_pthread_key_create(key_ptr)
+            }
+            "pthread_key_delete" => {
+                let _ = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
+            "pthread_setspecific" => {
+                if args.len() != 2 {
+                    return Err("pthread_setspecific(key, value) expects 2 arguments".to_string());
+                }
+                let key = self.emit_expr(&args[0])?;
+                let value = self.emit_expr(&args[1])?;
+                self.emit_pthread_setspecific(key, value)
+            }
+            "pthread_getspecific" => {
+                let key = self.one_arg(name, args)?;
+                self.emit_pthread_getspecific(key)
             }
             "pthread_rwlock_init" => {
                 if args.len() != 2 {
@@ -9099,6 +9140,75 @@ impl CodeGen {
         self.text.push(format!("  LI r{one}, 1"));
         self.text.push(format!("  FUTEX_WAKE r{ptr}, r{one}"));
         self.text.push(format!("  LI r{dst}, 0"));
+        Ok(dst)
+    }
+
+    fn emit_pthread_key_create(&mut self, key_ptr: usize) -> Result<usize, String> {
+        self.data
+            .entry("__lnp_pthread_key_next".to_string())
+            .or_insert(".quad 1".to_string());
+        let key_addr = self.alloc_reg()?;
+        let key = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        self.text
+            .push(format!("  LI r{key_addr}, __lnp_pthread_key_next"));
+        self.text.push(format!("  LD r{key}, [r{key_addr}, 0]"));
+        self.text.push(format!("  ST [r{key_ptr}, 0], r{key}"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("  ADD r{key}, r{key}, r{one}"));
+        self.text.push(format!("  ST [r{key_addr}, 0], r{key}"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        Ok(dst)
+    }
+
+    fn emit_tls_block(&mut self) -> Result<usize, String> {
+        let tp = self.alloc_reg()?;
+        let size = self.alloc_reg()?;
+        let done = self.new_label("tls_have_block");
+        self.text.push(format!("  GET_PCR r{tp}, TP"));
+        self.text.push(format!("  CMP r{tp}, r0"));
+        self.text.push(format!("  BNE {done}"));
+        self.text.push(format!("  LI r{size}, 2048"));
+        self.text.push(format!("  ALLOC r{tp}, r{size}"));
+        self.text.push(format!("  SET_PCR TP, r{tp}"));
+        self.text.push(format!("{done}:"));
+        Ok(tp)
+    }
+
+    fn emit_pthread_setspecific(&mut self, key: usize, value: usize) -> Result<usize, String> {
+        let tp = self.emit_tls_block()?;
+        let shift = self.alloc_reg()?;
+        let offset = self.alloc_reg()?;
+        let slot = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        self.text.push(format!("  LI r{shift}, 3"));
+        self.text.push(format!("  LSL r{offset}, r{key}, r{shift}"));
+        self.text.push(format!("  ADD r{slot}, r{tp}, r{offset}"));
+        self.text.push(format!("  ST [r{slot}, 0], r{value}"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        Ok(dst)
+    }
+
+    fn emit_pthread_getspecific(&mut self, key: usize) -> Result<usize, String> {
+        let tp = self.alloc_reg()?;
+        let shift = self.alloc_reg()?;
+        let offset = self.alloc_reg()?;
+        let slot = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let none = self.new_label("tls_getspecific_none");
+        let done = self.new_label("tls_getspecific_done");
+        self.text.push(format!("  GET_PCR r{tp}, TP"));
+        self.text.push(format!("  CMP r{tp}, r0"));
+        self.text.push(format!("  BEQ {none}"));
+        self.text.push(format!("  LI r{shift}, 3"));
+        self.text.push(format!("  LSL r{offset}, r{key}, r{shift}"));
+        self.text.push(format!("  ADD r{slot}, r{tp}, r{offset}"));
+        self.text.push(format!("  LD r{dst}, [r{slot}, 0]"));
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{none}:"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("{done}:"));
         Ok(dst)
     }
 
@@ -13470,6 +13580,56 @@ int main() {
         assert!(asm.contains("FUTEX_WAKE"), "{asm}");
         assert!(asm.contains("SPAWN"), "{asm}");
         assert!(asm.contains("THREAD_JOIN"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_thread_pointer_and_specific_storage_are_per_thread() {
+        let source = r#"
+        int key;
+        int parent_tp;
+        int child_tp;
+        int child_value;
+
+        int worker() {
+            if (__builtin_thread_pointer() != 0) return 1;
+            if (pthread_getspecific(key) != 0) return 2;
+            if (pthread_setspecific(key, 22) != 0) return 3;
+            child_tp = __builtin_thread_pointer();
+            child_value = pthread_getspecific(key);
+            pthread_exit(0);
+            return 0;
+        }
+
+        int main() {
+            int thread;
+            int joined;
+            int block;
+            block = alloc(16);
+            if (__lnp_set_thread_pointer(block) != 0) return 4;
+            parent_tp = __lnp_get_thread_pointer();
+            if (parent_tp != block) return 5;
+            if (pthread_key_create(&key, 0) != 0) return 6;
+            if (pthread_setspecific(key, 11) != 0) return 7;
+            if (pthread_getspecific(key) != 11) return 8;
+            pthread_create(&thread, 0, worker, 0);
+            while (child_value == 0) {
+                yield_cpu();
+            }
+            if (child_value != 22) return 9;
+            if (child_tp == 0) return 10;
+            if (child_tp == parent_tp) return 11;
+            if (pthread_getspecific(key) != 11) return 12;
+            if (pthread_join(thread, &joined) != 0) return 13;
+            if (pthread_key_delete(key) != 0) return 14;
+            return joined;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("GET_PCR"), "{asm}");
+        assert!(asm.contains("SET_PCR TP"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);

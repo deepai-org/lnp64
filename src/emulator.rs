@@ -655,6 +655,7 @@ struct CallContinuation {
 struct Thread {
     tid: u64,
     pid: u64,
+    thread_pointer: u64,
     regs: [u64; GPR_COUNT],
     fregs: [u64; FPR_COUNT],
     vregs: [u128; VR_COUNT],
@@ -671,6 +672,7 @@ impl Thread {
         Self {
             tid,
             pid,
+            thread_pointer: 0,
             regs,
             fregs: [0; FPR_COUNT],
             vregs: [0; VR_COUNT],
@@ -1571,6 +1573,7 @@ impl Machine {
                 self.next_tid += 1;
                 let mut child = self.thread()?.clone();
                 child.tid = tid;
+                child.thread_pointer = 0;
                 child.ip = self.read_reg(entry)? as usize;
                 let stack_top = self.process()?.stack_top;
                 child.regs[31] = stack_top - CALL_FRAME_SIZE - ((tid - 1) * THREAD_STACK_STRIDE);
@@ -4638,6 +4641,7 @@ impl Machine {
             Pcr::Tid => self.thread()?.tid,
             Pcr::Uid => process.uid,
             Pcr::Gid => process.gid,
+            Pcr::Tp => self.thread()?.thread_pointer,
             Pcr::Sigmask => process.sigmask,
             Pcr::RealtimeSec => {
                 let now = Self::system_time_to_host_timespec(SystemTime::now());
@@ -4655,6 +4659,10 @@ impl Machine {
         match pcr {
             Pcr::Pid | Pcr::Ppid | Pcr::Tid | Pcr::RealtimeSec | Pcr::RealtimeNsec => {
                 Err("selected PCR is read-only".to_string())
+            }
+            Pcr::Tp => {
+                self.thread_mut()?.thread_pointer = value;
+                Ok(())
             }
             Pcr::Uid if process.uid != 0 => {
                 Err("SET_PCR UID denied: current UID is not 0".to_string())
