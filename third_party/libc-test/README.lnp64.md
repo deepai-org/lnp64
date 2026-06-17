@@ -30,6 +30,7 @@ upstream libc-test files; bounded or locally guarded files are called out below.
 - `functional/udiv.c`
 - `functional/ungetc.c`
 - `functional/utime.c`
+- `regression/fgets-eof.c`
 - `regression/malloc-0.c`
 
 The local `functional/test.h` and `functional/print.c` files provide a minimal
@@ -56,6 +57,8 @@ and `F_GETLK` owner reporting across `fork`.
 try/timed wait errno behavior, and pthread start routines that return normally.
 `pthread_tsd.c` is the upstream file and covers thread-specific storage
 isolation, destructor execution on thread exit, and key deletion.
+`regression/fgets-eof.c` is the upstream file with only the harness include path
+adjusted; it covers `fmemopen` reads through `fgets` and EOF buffer preservation.
 `regression/malloc-0.c` is the upstream file with only the harness include path
 adjusted; it covers non-null, unique `malloc(0)` allocations.
 

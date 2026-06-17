@@ -26,6 +26,7 @@ tests=(
   functional/udiv
   functional/ungetc
   functional/utime
+  regression/fgets-eof
   regression/malloc-0
 )
 
