@@ -207,6 +207,7 @@ struct Vma {
     file: Option<File>,
     file_offset: u64,
     resident: bool,
+    guard: bool,
 }
 
 impl Vma {
@@ -218,6 +219,19 @@ impl Vma {
             file: None,
             file_offset: 0,
             resident: true,
+            guard: false,
+        }
+    }
+
+    fn guard(start: u64, len: u64) -> Self {
+        Self {
+            start,
+            len,
+            prot: 0,
+            file: None,
+            file_offset: 0,
+            resident: true,
+            guard: true,
         }
     }
 
@@ -242,8 +256,16 @@ impl Vma {
             },
             file_offset: self.file_offset,
             resident: self.resident,
+            guard: self.guard,
         })
     }
+}
+
+#[derive(Clone, Copy)]
+struct Allocation {
+    len: usize,
+    guard_before: Option<u64>,
+    guard_after: Option<u64>,
 }
 
 #[derive(Clone, Copy)]
@@ -342,7 +364,7 @@ struct Process {
     vmas: Vec<Vma>,
     heap_next: u64,
     mmap_next: u64,
-    allocations: HashMap<u64, usize>,
+    allocations: HashMap<u64, Allocation>,
     uid: u64,
     gid: u64,
     sigmask: u64,
@@ -813,25 +835,35 @@ impl Machine {
             }
             Instr::Alloc(dst, bytes_reg) => {
                 let len = (self.read_reg(bytes_reg)? as usize).max(1);
-                let addr = self.alloc_heap(len, 64)?;
+                let addr = self.alloc_heap(len, 64, false)?;
                 self.write_reg(dst, addr)?;
             }
             Instr::AllocEx(dst, bytes_reg, align_reg) => {
                 let len = (self.read_reg(bytes_reg)? as usize).max(1);
                 let align = self.read_reg(align_reg)?.clamp(1, 4096).next_power_of_two();
-                let addr = self.alloc_heap(len, align)?;
+                let addr = self.alloc_heap(len, align, true)?;
                 self.write_reg(dst, addr)?;
             }
             Instr::AllocSize(dst, ptr_reg) => {
                 let ptr = self.read_reg(ptr_reg)?;
-                let size = self.process()?.allocations.get(&ptr).copied().unwrap_or(0);
+                let size = self
+                    .process()?
+                    .allocations
+                    .get(&ptr)
+                    .map(|allocation| allocation.len)
+                    .unwrap_or(0);
                 self.write_reg(dst, size as u64)?;
             }
             Instr::Free(ptr) => {
                 let ptr = self.read_reg(ptr)?;
                 let process = self.process_mut()?;
-                process.allocations.remove(&ptr);
-                process.vmas.retain(|vma| vma.start != ptr);
+                if let Some(allocation) = process.allocations.remove(&ptr) {
+                    process.vmas.retain(|vma| {
+                        vma.start != ptr
+                            && Some(vma.start) != allocation.guard_before
+                            && Some(vma.start) != allocation.guard_after
+                    });
+                }
             }
             Instr::OpenFd(dst, path_reg, flags_reg) => {
                 self.require_domain_cap(DOMAIN_CAP_FDR)?;
@@ -1376,6 +1408,7 @@ impl Machine {
                         file,
                         file_offset: offset,
                         resident: false,
+                        guard: false,
                     });
                     addr
                 };
@@ -1723,23 +1756,64 @@ impl Machine {
         Ok(())
     }
 
-    fn alloc_heap(&mut self, len: usize, align: u64) -> Result<u64, String> {
+    fn alloc_heap(&mut self, len: usize, align: u64, guarded: bool) -> Result<u64, String> {
         self.require_domain_cap(DOMAIN_CAP_MEMORY)?;
-        if !self.check_domain_budget(len as u64, 1, 0, 0)? {
+        let guard_len = if guarded { 4096 } else { 0 };
+        let memory_delta = (len as u64)
+            .checked_add(guard_len)
+            .and_then(|value| value.checked_add(guard_len))
+            .ok_or_else(|| "allocation size overflow".to_string())?;
+        if !self.check_domain_budget(memory_delta, 1 + u64::from(guarded) * 2, 0, 0)? {
             return Ok(-1i64 as u64);
         }
         let align = align.max(1).next_power_of_two();
         let addr = {
             let process = self.process_mut()?;
-            let addr = align_up(process.heap_next, align);
+            let addr = if guarded {
+                align_up(
+                    process
+                        .heap_next
+                        .checked_add(guard_len)
+                        .ok_or_else(|| "allocation overflow".to_string())?,
+                    align,
+                )
+            } else {
+                align_up(process.heap_next, align)
+            };
             let end = addr
                 .checked_add(len as u64)
+                .and_then(|value| value.checked_add(guard_len))
                 .ok_or_else(|| "allocation overflow".to_string())?;
             if end as usize >= process.memory.len() {
                 return Err(format!("out of silicon heap memory allocating {len} bytes"));
             }
             process.heap_next = end;
-            process.allocations.insert(addr, len);
+            let guard_before = if guarded {
+                let start = addr
+                    .checked_sub(guard_len)
+                    .ok_or_else(|| "allocation guard underflow".to_string())?;
+                process.vmas.push(Vma::guard(start, guard_len));
+                Some(start)
+            } else {
+                None
+            };
+            let guard_after = if guarded {
+                let start = addr
+                    .checked_add(len as u64)
+                    .ok_or_else(|| "allocation guard overflow".to_string())?;
+                process.vmas.push(Vma::guard(start, guard_len));
+                Some(start)
+            } else {
+                None
+            };
+            process.allocations.insert(
+                addr,
+                Allocation {
+                    len,
+                    guard_before,
+                    guard_after,
+                },
+            );
             process.vmas.push(Vma::anonymous(addr, len as u64, 0b11));
             addr
         };
@@ -3505,6 +3579,12 @@ impl Machine {
             .iter()
             .position(|vma| vma.contains(addr, len))
             .ok_or_else(|| format!("hardware SIGSEGV: unmapped address 0x{addr:x} + {len}"))?;
+        if process.vmas[idx].guard {
+            return Err(format!("hardware SIGSEGV: guard page access at 0x{addr:x}"));
+        }
+        if process.vmas[idx].prot == 0 {
+            return Err(format!("hardware SIGSEGV: no-access VMA at 0x{addr:x}"));
+        }
         if write && process.vmas[idx].prot & 0b10 == 0 {
             return Err(format!("hardware SIGSEGV: write denied at 0x{addr:x}"));
         }
@@ -4695,6 +4775,98 @@ mod tests {
                 .resolve_process_path("tcp-listen:127.0.0.1:0")
                 .unwrap(),
             "tcp-listen:127.0.0.1:0"
+        );
+    }
+
+    #[test]
+    fn no_access_mmap_faults_on_load_and_store() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[1] = 4096;
+        machine.thread_mut().unwrap().regs[2] = 0;
+        machine
+            .exec(Instr::Mmap(
+                Reg(3),
+                Reg(0),
+                Reg(1),
+                Reg(2),
+                FdReg(0),
+                Reg(0),
+            ))
+            .unwrap();
+        let addr = machine.thread().unwrap().regs[3];
+        assert_ne!(addr, -1i64 as u64);
+        let read_err = machine.read_bytes(addr, 1).unwrap_err();
+        assert!(read_err.contains("no-access VMA"), "{read_err}");
+        let write_err = machine.write_bytes(addr, &[1]).unwrap_err();
+        assert!(write_err.contains("no-access VMA"), "{write_err}");
+    }
+
+    #[test]
+    fn alloc_ex_creates_and_frees_guard_regions() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[1] = 32;
+        machine.thread_mut().unwrap().regs[2] = 64;
+        machine
+            .exec(Instr::AllocEx(Reg(3), Reg(1), Reg(2)))
+            .unwrap();
+        let ptr = machine.thread().unwrap().regs[3];
+        assert_eq!(ptr % 64, 0);
+        assert_eq!(machine.process().unwrap().allocations[&ptr].len, 32);
+
+        machine.write_bytes(ptr, &[7]).unwrap();
+        assert_eq!(machine.read_bytes(ptr, 1).unwrap(), vec![7]);
+
+        let guard_before = ptr - 4096;
+        let guard_after = ptr + 32;
+        let before_err = machine.read_bytes(ptr - 1, 1).unwrap_err();
+        assert!(before_err.contains("guard page"), "{before_err}");
+        let after_err = machine.write_bytes(guard_after, &[1]).unwrap_err();
+        assert!(after_err.contains("guard page"), "{after_err}");
+        assert!(
+            machine
+                .process()
+                .unwrap()
+                .vmas
+                .iter()
+                .any(|vma| vma.start == guard_before && vma.guard)
+        );
+        assert!(
+            machine
+                .process()
+                .unwrap()
+                .vmas
+                .iter()
+                .any(|vma| vma.start == guard_after && vma.guard)
+        );
+
+        machine.thread_mut().unwrap().regs[4] = ptr;
+        machine.exec(Instr::Free(Reg(4))).unwrap();
+        assert!(!machine.process().unwrap().allocations.contains_key(&ptr));
+        assert!(
+            !machine
+                .process()
+                .unwrap()
+                .vmas
+                .iter()
+                .any(|vma| vma.start == guard_before
+                    || vma.start == ptr
+                    || vma.start == guard_after)
         );
     }
 
