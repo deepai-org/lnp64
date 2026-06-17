@@ -45,7 +45,8 @@ checks that the generated assembly still uses the expected native primitives.
 
 `scripts/run_netbsd_personality_smoke.sh` verifies:
 
-- init-style startup and shell-like command dispatch output,
+- init-style startup, shell-like command dispatch output, and a forked `exec`
+  shell command,
 - pipe/fd inheritance through `fork`, `poll`, and `wait`,
 - an mmap-backed allocator arena and a checked block-image-backed rumpfs mount
   hook,

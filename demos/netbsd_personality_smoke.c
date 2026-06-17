@@ -49,6 +49,20 @@ int check_shell_command(int command) {
     return -1;
 }
 
+int check_shell_exec_command() {
+    int child;
+    int status;
+    child = fork();
+    if (child == 0) {
+        execl("demos/exec_target.s", "exec_target", 0);
+        _exit(127);
+    }
+    if (wait(&status) != 0) return 1;
+    if (!WIFEXITED(status)) return 2;
+    if (WEXITSTATUS(status) != 0) return 3;
+    return 0;
+}
+
 int check_pipe_fork_poll() {
     struct pollfd p[1];
     int fds[2];
@@ -225,6 +239,8 @@ int main() {
     int rc;
     if (check_shell_command(1) != 0) return 1;
     if (check_shell_command(2) != 0) return 2;
+    rc = check_shell_exec_command();
+    if (rc != 0) return 20 + rc;
     rc = check_pipe_fork_poll();
     if (rc != 0) return 30 + rc;
     rc = check_mmap_and_rumpfs_block();

@@ -12,6 +12,7 @@ required_native=(
   READ_FD_DYN
   WRITE_FD_DYN
   FORK
+  EXEC
   SPAWN
   FUTEX_WAIT
   FUTEX_WAKE
