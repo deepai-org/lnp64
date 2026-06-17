@@ -5454,6 +5454,21 @@ impl CodeGen {
                     Ok(dst)
                 }
             }
+            "writev" => {
+                if args.len() != 3 {
+                    return Err("writev(fd, iov, iovcnt) expects 3 arguments".to_string());
+                }
+                let fd = self.emit_expr(&args[0])?;
+                let fd_slot = self.spill_reg(fd);
+                self.temp_reg = 0;
+                let iov = self.emit_expr(&args[1])?;
+                let iov_slot = self.spill_reg(iov);
+                self.temp_reg = 0;
+                let iovcnt = self.emit_expr(&args[2])?;
+                let fd = self.reload_reg(fd_slot)?;
+                let iov = self.reload_reg(iov_slot)?;
+                self.emit_writev(fd, iov, iovcnt)
+            }
             "send" => {
                 if args.len() != 4 {
                     return Err("send(fd, buf, len, flags) expects 4 arguments".to_string());
@@ -7589,6 +7604,21 @@ impl CodeGen {
                     self.emit_read_fd_dispatch(fd, buf, len, Some(dst))?;
                     Ok(dst)
                 }
+            }
+            "readv" => {
+                if args.len() != 3 {
+                    return Err("readv(fd, iov, iovcnt) expects 3 arguments".to_string());
+                }
+                let fd = self.emit_expr(&args[0])?;
+                let fd_slot = self.spill_reg(fd);
+                self.temp_reg = 0;
+                let iov = self.emit_expr(&args[1])?;
+                let iov_slot = self.spill_reg(iov);
+                self.temp_reg = 0;
+                let iovcnt = self.emit_expr(&args[2])?;
+                let fd = self.reload_reg(fd_slot)?;
+                let iov = self.reload_reg(iov_slot)?;
+                self.emit_readv(fd, iov, iovcnt)
             }
             "recv" => {
                 if args.len() != 4 {
@@ -10298,6 +10328,69 @@ impl CodeGen {
             .push(format!("  WRITE_FD_DYN r{fd_reg}, r{buf_reg}, r{len_reg}"));
         self.text.push(format!("  MOV r{dst_reg}, r1"));
         Ok(())
+    }
+
+    fn emit_readv(&mut self, fd: usize, iov: usize, iovcnt: usize) -> Result<usize, String> {
+        self.emit_iov_rw(true, fd, iov, iovcnt)
+    }
+
+    fn emit_writev(&mut self, fd: usize, iov: usize, iovcnt: usize) -> Result<usize, String> {
+        self.emit_iov_rw(false, fd, iov, iovcnt)
+    }
+
+    fn emit_iov_rw(
+        &mut self,
+        is_read: bool,
+        fd: usize,
+        iov: usize,
+        iovcnt: usize,
+    ) -> Result<usize, String> {
+        let fd_value = self.alloc_reg()?;
+        let iov_base = self.alloc_reg()?;
+        let iov_limit = self.alloc_reg()?;
+        let idx = self.alloc_reg()?;
+        let total = self.alloc_reg()?;
+        let shift = self.alloc_reg()?;
+        let offset = self.alloc_reg()?;
+        let entry = self.alloc_reg()?;
+        let base = self.alloc_reg()?;
+        let len = self.alloc_reg()?;
+        let count = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let loop_label = self.new_label(if is_read { "readv_loop" } else { "writev_loop" });
+        let next = self.new_label(if is_read { "readv_next" } else { "writev_next" });
+        let done = self.new_label(if is_read { "readv_done" } else { "writev_done" });
+        self.text.push(format!("  MOV r{fd_value}, r{fd}"));
+        self.text.push(format!("  MOV r{iov_base}, r{iov}"));
+        self.text.push(format!("  MOV r{iov_limit}, r{iovcnt}"));
+        self.text.push(format!("  LI r{idx}, 0"));
+        self.text.push(format!("  LI r{total}, 0"));
+        self.text.push(format!("  LI r{shift}, 4"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("{loop_label}:"));
+        self.text.push(format!("  CMP r{idx}, r{iov_limit}"));
+        self.text.push(format!("  BGE {done}"));
+        self.text.push(format!("  LSL r{offset}, r{idx}, r{shift}"));
+        self.text
+            .push(format!("  ADD r{entry}, r{iov_base}, r{offset}"));
+        self.text.push(format!("  LD r{base}, [r{entry}, 0]"));
+        self.text.push(format!("  LD r{len}, [r{entry}, 8]"));
+        self.text.push(format!("  CMP r{len}, r0"));
+        self.text.push(format!("  BEQ {next}"));
+        if is_read {
+            self.emit_read_fd_dispatch(fd_value, base, len, Some(count))?;
+        } else {
+            self.emit_write_fd_dispatch(fd_value, base, len, count)?;
+        }
+        self.text
+            .push(format!("  ADD r{total}, r{total}, r{count}"));
+        self.text.push(format!("  CMP r{count}, r{len}"));
+        self.text.push(format!("  BNE {done}"));
+        self.text.push(format!("{next}:"));
+        self.text.push(format!("  ADD r{idx}, r{idx}, r{one}"));
+        self.text.push(format!("  JMP {loop_label}"));
+        self.text.push(format!("{done}:"));
+        Ok(total)
     }
 
     fn emit_pread_fd_dispatch(
@@ -15776,6 +15869,49 @@ int main() {
         let asm = compile(source).unwrap();
         assert!(asm.contains("OBJECT_CTL"), "{asm}");
         assert!(!asm.contains("PIPE"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_readv_writev_surface_uses_dynamic_fdr_io() {
+        let source = r#"
+        int main() {
+            int fds[2];
+            int in_iov;
+            int out_iov;
+            int a;
+            int b;
+            int c;
+            int d;
+            pipe(fds);
+            in_iov = alloc(32);
+            out_iov = alloc(32);
+            a = "ab";
+            b = "cd";
+            c = alloc(1);
+            d = alloc(3);
+            store(in_iov, a);
+            store(in_iov + 8, 2);
+            store(in_iov + 16, b);
+            store(in_iov + 24, 2);
+            if (writev(fds[1], in_iov, 2) != 4) return 1;
+            store(out_iov, c);
+            store(out_iov + 8, 1);
+            store(out_iov + 16, d);
+            store(out_iov + 24, 3);
+            if (readv(fds[0], out_iov, 2) != 4) return 2;
+            if (loadb(c) != 'a') return 3;
+            if (loadb(d) != 'b') return 4;
+            if (loadb(d + 1) != 'c') return 5;
+            if (loadb(d + 2) != 'd') return 6;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("READ_FD_DYN"), "{asm}");
+        assert!(asm.contains("WRITE_FD_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
