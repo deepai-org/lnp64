@@ -4,11 +4,19 @@ pub fn collect_field_offsets(source: &str) -> HashMap<String, i64> {
     let source = strip_c_comments(source);
     let mut fields = HashMap::new();
     let mut stack: Vec<AggregateContext> = Vec::new();
+    let mut pending_aggregate_kind: Option<AggregateKind> = None;
 
     for line in source.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
+        }
+
+        if let Some(kind) = pending_aggregate_kind.take() {
+            if trimmed.starts_with('{') {
+                stack.push(AggregateContext::new(kind));
+                continue;
+            }
         }
 
         if let Some((name, size)) = single_line_aggregate_field(trimmed) {
@@ -21,6 +29,10 @@ pub fn collect_field_offsets(source: &str) -> HashMap<String, i64> {
 
         if starts_aggregate_definition(trimmed) {
             stack.push(AggregateContext::new(aggregate_kind(trimmed)));
+            continue;
+        }
+        if let Some(kind) = pending_aggregate_definition(trimmed) {
+            pending_aggregate_kind = Some(kind);
             continue;
         }
 
@@ -195,6 +207,19 @@ fn starts_aggregate_definition(trimmed: &str) -> bool {
         && trimmed.contains('{')
 }
 
+fn pending_aggregate_definition(trimmed: &str) -> Option<AggregateKind> {
+    if trimmed.ends_with(';') || trimmed.contains('{') || trimmed.contains('=') {
+        return None;
+    }
+    if trimmed.starts_with("struct ") || trimmed.starts_with("typedef struct ") {
+        Some(AggregateKind::Struct)
+    } else if trimmed.starts_with("union ") || trimmed.starts_with("typedef union ") {
+        Some(AggregateKind::Union)
+    } else {
+        None
+    }
+}
+
 fn aggregate_kind(trimmed: &str) -> AggregateKind {
     if trimmed.starts_with("union ") || trimmed.starts_with("typedef union ") {
         AggregateKind::Union
@@ -315,6 +340,21 @@ mod tests {
         assert_eq!(fields["top"], 0);
         assert_eq!(fields["ci"], 8);
         assert_eq!(fields["short_src"], 16);
+    }
+
+    #[test]
+    fn collects_next_line_brace_struct_fields() {
+        let fields = collect_field_offsets(
+            r#"
+            struct AES_ctx
+            {
+              int RoundKey[176];
+              int Iv[16];
+            };
+            "#,
+        );
+        assert_eq!(fields["RoundKey"], 0);
+        assert_eq!(fields["Iv"], 8);
     }
 
     #[test]

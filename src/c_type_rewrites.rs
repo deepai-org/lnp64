@@ -112,6 +112,9 @@ pub fn apply_scalar_type_rewrites(source: &str) -> String {
     for alias in ["FILE", "DIR", "regex_t", "regmatch_t"] {
         out = replace_ident_token(&out, alias, "int");
     }
+    for alias in ["uint8_t", "uint16_t", "uint32_t", "uint64_t", "uintptr_t"] {
+        out = replace_ident_token(&out, alias, "int");
+    }
     out
 }
 
@@ -724,6 +727,7 @@ fn single_line_typedef_alias(trimmed: &str) -> Option<String> {
 
 fn ident(text: &str) -> Option<String> {
     let text = text.trim().trim_start_matches('*').trim();
+    let text = text.split('[').next().unwrap_or(text).trim();
     if text.is_empty() {
         return None;
     }
@@ -877,5 +881,20 @@ int inflateBack(int stream, in_func in);
             out.contains("int inflateBack(int stream, int in);"),
             "{out}"
         );
+    }
+
+    #[test]
+    fn collects_array_typedef_alias_names() {
+        let source = r#"
+typedef uint8_t state_t[4][4];
+int cipher(state_t *state);
+"#;
+        let aliases = collect_user_type_aliases(source);
+        assert!(
+            aliases.iter().any(|alias| alias == "state_t"),
+            "{aliases:?}"
+        );
+        let out = apply_user_type_alias_rewrites(source, &aliases);
+        assert!(out.contains("int cipher(int *state);"), "{out}");
     }
 }

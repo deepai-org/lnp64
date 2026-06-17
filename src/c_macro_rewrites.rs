@@ -203,7 +203,7 @@ fn define_macro(rest: &str, defines: &mut Defines) {
         defines.objects.remove(name);
         return;
     }
-    let replacement = after_name.trim();
+    let replacement = strip_trailing_line_comment(after_name.trim()).trim();
     if replacement.is_empty() {
         defines.objects.insert(name.to_string(), String::new());
         defines.functions.remove(name);
@@ -217,6 +217,41 @@ fn define_macro(rest: &str, defines: &mut Defines) {
         .objects
         .insert(name.to_string(), replacement.to_string());
     defines.functions.remove(name);
+}
+
+fn strip_trailing_line_comment(text: &str) -> &str {
+    let mut in_string = false;
+    let mut in_char = false;
+    let mut escaped = false;
+    let mut prev_slash = false;
+    for (idx, ch) in text.char_indices() {
+        if in_string || in_char {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if in_string && ch == '"' {
+                in_string = false;
+            } else if in_char && ch == '\'' {
+                in_char = false;
+            }
+            prev_slash = false;
+            continue;
+        }
+        if prev_slash {
+            if ch == '/' {
+                return text[..idx - 1].trim_end();
+            }
+            prev_slash = false;
+        }
+        match ch {
+            '"' => in_string = true,
+            '\'' => in_char = true,
+            '/' => prev_slash = true,
+            _ => {}
+        }
+    }
+    text
 }
 
 fn parse_function_macro(name: &str, text: &str) -> Option<FunctionMacro> {
@@ -1218,6 +1253,19 @@ API int exported(void);
         let out = expand_object_like_macros(source);
         assert!(out.contains(" int exported(void);"), "{out}");
         assert!(out.contains("#define API"), "{out}");
+    }
+
+    #[test]
+    fn strips_line_comments_from_object_macro_replacements() {
+        let source = r#"
+#define LEN 16 // bytes
+#define URL "http://example"
+int data[LEN];
+char *url = URL;
+"#;
+        let out = expand_object_like_macros(source);
+        assert!(out.contains("int data[16];"), "{out}");
+        assert!(out.contains("char *url = \"http://example\";"), "{out}");
     }
 
     #[test]

@@ -9631,7 +9631,15 @@ impl CodeGen {
         let args = args.iter().take(6).collect::<Vec<_>>();
         let mut slots = Vec::new();
         for arg in args {
-            let reg = self.emit_expr(arg)?;
+            let reg = if let Expr::Var(name) = arg {
+                if self.local_array_sizes.contains_key(name) {
+                    self.load_name(name)?
+                } else {
+                    self.emit_expr(arg)?
+                }
+            } else {
+                self.emit_expr(arg)?
+            };
             let offset = self.next_local_offset;
             self.next_local_offset += 8;
             self.text.push(format!("  ST [r31, {offset}], r{reg}"));
@@ -14333,6 +14341,24 @@ mod tests {
     }
 
     #[test]
+    fn local_array_arguments_decay_to_address_for_function_calls() {
+        let source = r#"
+        int same(int lhs, int rhs) {
+            return lhs == rhs ? 0 : 1;
+        }
+
+        int main() {
+            int data[2];
+            return same(data, &data[0]);
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn local_aggregate_reserves_full_stack_size() {
         let source = r#"
         int main() {
@@ -14558,6 +14584,36 @@ mod tests {
         let normalized = preprocess_source(source);
         assert!(!normalized.contains("typedef"), "{normalized}");
         assert!(normalized.contains("int value;"), "{normalized}");
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn fixed_width_uint_aliases_normalize_to_scalar_ints() {
+        let source = r#"
+        uint8_t a;
+        uint16_t b;
+        uint32_t c;
+        uint64_t d;
+        uintptr_t e;
+
+        int main() {
+            a = 1;
+            b = 2;
+            c = 3;
+            d = 4;
+            e = 5;
+            return (a + b + c + d + e == 15) ? 0 : 1;
+        }
+        "#;
+        let normalized = preprocess_source(source);
+        assert!(!normalized.contains("uint8_t"), "{normalized}");
+        assert!(!normalized.contains("uint16_t"), "{normalized}");
+        assert!(!normalized.contains("uint32_t"), "{normalized}");
+        assert!(!normalized.contains("uint64_t"), "{normalized}");
+        assert!(!normalized.contains("uintptr_t"), "{normalized}");
         let asm = compile(source).unwrap();
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);

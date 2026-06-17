@@ -4,12 +4,19 @@ LNP64 is a processor architecture built around a simple premise: files, memory,
 synchronization, isolation, and service calls should be hardware-native
 capability operations, not conventions layered entirely above a generic CPU.
 
-The design is not a traditional kernel machine with a faster syscall path. It is
-a capability machine. Programs hold unforgeable File Descriptor Register (FDR)
-capabilities for resources: streams, files, device objects, queues, counters,
-memory objects, DMA buffers, PCIe BARs, call gates, event queues, and delegated
-domains. Authority flows by explicit capability delegation, not ambient access
-to global device memory or privileged kernel-only tables.
+The design is not a traditional kernel machine with a faster syscall path, and
+it is not quite Unix on a chip. It does not freeze one historical kernel, VFS,
+filesystem policy, network stack, or scheduler policy into hardware. Instead,
+LNP64 provides the durable substrate that makes building modern Unix-like
+systems simpler: files/resources as capabilities, waitable objects, VMAs,
+hardware thread scheduling, event queues, domains, call gates, DMA isolation,
+revocation, and generation checks.
+
+It is a capability machine. Programs hold unforgeable File Descriptor Register
+(FDR) capabilities for resources: streams, files, device objects, queues,
+counters, memory objects, DMA buffers, PCIe BARs, call gates, event queues, and
+delegated domains. Authority flows by explicit capability delegation, not
+ambient access to global device memory or privileged kernel-only tables.
 
 The core ISA remains a normal load/store architecture for ordinary computation.
 Branches, calls, loads, stores, atomics, floating point, and vector operations
@@ -48,7 +55,9 @@ the tree. CPU budget, memory budget, PID/thread limits, FDR limits, I/O limits,
 device authority, namespace roots, and upcall policy are all domain-scoped. This
 makes virtualization and cgroups the same mechanism: a VM is a domain with
 strong virtualization policy, while a cgroup is a domain focused on accounting
-and limits.
+and limits. Domains provide scheduler policy and accounting, but ready/blocked
+thread state, wait transitions, and dispatch remain owned by the hardware
+scheduler and runqueue.
 
 Security policy is native to the same model. W^X, NX data defaults, ASLR, guard
 pages, hardware entropy, generation-checked objects, revocation, sealed and
@@ -58,10 +67,10 @@ kernel path.
 
 Service boundaries are built from call gates. A pre-provisioned domain or worker
 thread can expose a callable FDR. `CALL_CAP` validates the gate, transfers small
-register arguments, accounts resource usage, and schedules the target. The call
-may be synchronous, asynchronous, or a handoff. Cold domain creation is still a
-real operation, but hot calls into already-created isolated services can be made
-close to protected procedure calls.
+register arguments, accounts resource usage, and hands the target to the
+hardware scheduler. The call may be synchronous, asynchronous, or a handoff. Cold
+domain creation is still a real operation, but hot calls into already-created
+isolated services can be made close to protected procedure calls.
 
 The hardware philosophy is conservative: modules are not hidden CPUs. They are
 small, enumerated-state machines with local registers, FPGA RAM, tiny caches,
