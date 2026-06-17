@@ -135,6 +135,11 @@ The libc contract is profile-based: POSIX names are source and ABI compatibility
    - Resource Domain creation, configuration, freeze/resume, destroy, and usage
      queries, with VM/container/cgroup/sandbox profiles over the same
      `DOMAIN_CTL create child` primitive.
+   - Mission-assurance helpers over `DOMAIN_CTL`/`GET_META`: configure/query
+     mission profiles, dependency graph hashes, fail policies, degraded-state
+     records, recovery priority, stale-data budgets, and quoteable mission
+     evidence. These APIs should expose mission continuity as Resource Domain
+     metadata, not as a separate supervisor daemon protocol.
    - Checkpoint support helpers for `freeze`, `query-state`, `resume`, dirty
      tracking, and explicit capability reattachment. Checkpoint image formats,
      migration transport, device/service state capture, and restore policy stay

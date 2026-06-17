@@ -568,6 +568,32 @@ through the Capability Engine. There is no label bypass through parent memory
 inspection, debug, DMA, raw interrupts, telemetry, trace, fault records, or
 service replies.
 
+Mission assurance is a Resource Domain profile, not a hardware mission planner.
+A mission domain may declare a `MISSION_PROFILE` with mission id, minimum
+assurance profile, required audit/attestation level, dependency graph hash,
+allowed degraded modes, recovery priority, maximum stale event/time budget, and
+failure policy: `fail_closed`, `fail_degraded`, `fail_over`, `freeze`, or
+`quarantine`. Dependencies are ordinary capabilities: storage, network, sensor,
+device, telemetry, audit, supervisor, declassification, and fallback service
+FDRs. If a dependency is not represented by a capability, it is not part of the
+mission authority graph.
+
+Hardware enforces a small mission-state machine: `normal`, `degraded`,
+`recovering`, `frozen`, `failed_closed`, and `quarantined`. Transitions are
+caused by existing events: service crash/restart, watchdog fault, revoked or
+stale dependency, audit failure, attestation failure, device fault, label
+violation, policy denial, or supervisor action. Hardware validates legal
+transitions, blocks authority broadening during recovery, invalidates stale
+continuations through generation checks, enforces fail-closed/freeze/quarantine
+states, and emits audit/fault events. Software chooses recovery plans and backup
+services, but fallback authority must already have been delegated.
+
+Mission evidence is quoteable. A quote may include boot measurements, assurance
+profile, mission profile hash, active dependency graph hash, current mission
+state, degraded-mode reason, audit root, proof artifact hash, domain launch
+measurement, and delegated capability-root summary. This makes mission
+continuity, not just initial isolation, part of the attested system state.
+
 Pre-provisioned domains can expose `call_gate` FDRs for hot cross-domain calls. This makes sandboxed libraries, service calls, driver calls, and guest/supervisor calls use the same capability-call path as cross-thread calls, while preserving domain budget accounting and capability checks.
 
 A capability-marked domain can also act as a supervisor domain and receive upcalls for selected events: unsupported opcodes, delegated namespace lookups, permission decisions, child exit, signal delivery, fd readiness, timer expiry, futex events, block-image completion, resource pressure, limit violation, and process lifecycle changes.

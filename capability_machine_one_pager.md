@@ -218,6 +218,17 @@ to domains, FDRs, memory objects, DMA buffers, endpoints, telemetry, and audit
 streams. Declassification is an explicit audited service path, not a parent
 privilege or debug shortcut.
 
+Mission assurance is the same idea applied to continuity. A mission workload is
+a Resource Domain profile with an assurance floor, audit/attestation
+requirements, dependency graph hash, delegated fallback capabilities, allowed
+degraded modes, recovery priority, stale-data budget, and fail policy. Hardware
+does not plan the mission; it enforces the small state machine: normal,
+degraded, recovering, frozen, failed closed, or quarantined. Service restarts,
+watchdog faults, revoked dependencies, audit or attestation failures, and label
+violations cannot broaden authority during recovery. Quotes can bind the current
+mission state, dependency graph, audit root, proof artifacts, and delegated
+capability roots, so continuity under failure becomes evidence, not a promise.
+
 Revocation is one algebra across the machine. Capabilities carry object
 generation, capability generation, lineage root, lineage epoch, rights, ranges,
 and domain scope. Narrowing and sending preserve lineage; sealing hides software

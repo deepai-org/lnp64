@@ -872,6 +872,34 @@ Useful sub-theorems:
 - unlabeled objects cannot enter an MLS domain except through a profile-defined
   default-label rule that is itself quoteable and auditable.
 
+## 31.3 Mission Assurance Continuity
+
+**Mission recovery cannot broaden authority:** mission-domain degraded,
+recovery, failover, freeze, quarantine, and fail-closed transitions preserve the
+Resource Domain and capability containment model.
+
+Useful sub-theorems:
+
+- a mission domain cannot enter `normal`, `degraded`, or `recovering` unless its
+  minimum assurance, audit, attestation, dependency graph, and label constraints
+  are satisfied.
+- mission dependencies are exactly the delegated FDR capabilities named by the
+  mission profile; undeclared services or devices cannot become implicit
+  dependencies.
+- service restart or failover creates new service generations, and stale
+  continuations or returned-capability proposals from old generations cannot
+  complete.
+- `fail_closed`, `freeze`, and `quarantine` states reject new dispatch or
+  authority use except for explicitly permitted recovery/control FDRs.
+- `fail_degraded` and `fail_over` states cannot add rights beyond already
+  delegated fallback capabilities.
+- mission-state transitions emit audit/fault events and update quoteable
+  mission evidence before the next successful mission dispatch.
+- mission evidence quote fields match the active mission profile hash,
+  dependency graph hash, current state, degraded reason, audit root, proof
+  artifact hash, domain launch measurement, and delegated capability-root
+  summary.
+
 ## 32. Refinement Targets
 
 After the abstract theorems exist, each hardware block should prove or test a

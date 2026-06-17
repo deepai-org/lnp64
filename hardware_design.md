@@ -4483,6 +4483,39 @@ Cross-domain and MLS hooks:
 - raw interrupts, raw DMA, parent inspection, trace/fault records, service
   replies, and debug paths cannot bypass label checks.
 
+Mission assurance hooks:
+
+- mission assurance is a Resource Domain profile configured through
+  `DOMAIN_CTL`; it is not a separate scheduler, privilege ring, policy language,
+  or mission-planning engine.
+- mission profile fields include mission id, minimum assurance profile,
+  required audit level, required attestation level, dependency graph hash,
+  allowed degraded-mode bitmap, recovery priority, maximum stale event/time
+  budget, and failure policy: `fail_closed`, `fail_degraded`, `fail_over`,
+  `freeze`, or `quarantine`.
+- mission dependencies are represented only by explicit FDR capabilities:
+  storage, network, sensor/device, telemetry, audit, supervisor,
+  declassification, fallback service, and recovery service capabilities.
+- the hardware mission state machine is small: `normal`, `degraded`,
+  `recovering`, `frozen`, `failed_closed`, and `quarantined`.
+- transition triggers are existing architectural events: service
+  crash/restart, stale service generation, watchdog fault, revoked dependency,
+  audit failure, attestation failure, device fault, label violation, domain
+  budget exhaustion, policy denial, or supervisor command.
+- state transitions validate the mission profile, Resource Domain generation,
+  dependency capability generations, lineage epochs, label policy, and
+  assurance profile. Invalid transitions fail closed or leave the domain in its
+  previous state.
+- recovery and failover cannot broaden authority. Fallback services must already
+  be delegated, and restarted services receive new generations so stale
+  continuations cannot complete.
+- mission-state changes emit fault/audit events and update quoteable mission
+  evidence.
+- mission evidence records may include boot measurements, assurance profile,
+  mission profile hash, dependency graph hash, current mission state, degraded
+  reason, audit root, proof artifact hash, domain launch measurement, and
+  delegated capability-root summary.
+
 ### 24.4 Watchdogs and Local Engine Reset
 
 Each long-latency engine has a watchdog budget in cycles or fabric ticks.
@@ -4622,6 +4655,11 @@ Verification should start at the architectural level before RTL:
   rejection, denied cross-label `CAP_SEND`, `MMAP`, DMA, debug, telemetry,
   service reply, and returned-capability installs, explicit audited
   declassification gates, and unlabeled-object policy.
+- Write directed tests for mission assurance profiles: minimum-assurance
+  admission, dependency graph hash validation, dependency-as-FDR enforcement,
+  mission-state transitions, fail-closed dispatch denial, failover without
+  authority broadening, stale service-generation rejection, audit/fault emission,
+  stale-data budget enforcement, and quoteable mission evidence.
 - Write directed tests for storage barriers: data sync, metadata sync,
   barrier-after-commit ordering, backend flush failure, and replay/fsck-visible
   commit records.
