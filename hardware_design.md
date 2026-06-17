@@ -75,6 +75,107 @@ smaller reachable bad-state space: explicit states, bounded transitions,
 protected metadata, generation/check bits, and commit/abort paths that prevent
 partial architectural publication.
 
+### 2.1 Base Hardware Platform Contract
+
+V1 hardware must expose a stable platform contract before software policy is
+loaded. This contract is the minimum substrate for serious applications,
+paravirtual Unix personalities, containers, VMs, runtimes, and services.
+
+Feature discovery:
+
+- `ENV_GET` exposes ISA revision, implementation profile, supported opcode
+  groups, mandatory and optional object profiles, Resource Domain features,
+  security/assurance profile bits, scheduler features, timer features,
+  classifier features, cache/page/DMA geometry, topology records, and limits.
+- Feature bits are monotonic within a boot. If a feature is absent, the related
+  opcode/profile must fail with a defined `ENOTSUP`, `EINVAL`, or capability
+  error rather than partially emulating hidden behavior.
+- Discovery records are read-only architectural metadata. They do not expose
+  mutable privilege state or secret entropy.
+
+Time:
+
+- hardware provides a monotonic counter, realtime snapshot PCR fields, timer
+  object profiles, `AWAIT` timeout semantics, and per-domain CPU accounting.
+- `ENV_GET` reports timebase frequency, nominal timer granularity, realtime
+  availability, counter width, suspend/freeze behavior, and audit timestamp
+  provenance.
+- Timer expiry is delivered as a waitable event; software clock APIs and Unix
+  timer policy are compatibility layers over that event source.
+
+Fault and overflow taxonomy:
+
+- hardware fault classes include instruction/decode, arithmetic, memory/VMA,
+  capability, domain-policy, scheduler/accounting, DMA/IOMMU, device, storage,
+  classifier, event overflow, watchdog/local-reset, metadata integrity, boot
+  measurement, and machine-fatal faults.
+- every bounded queue or ring defines full behavior: park caller, return
+  `EAGAIN`, return `EOVERFLOW`, coalesce, drop with a visible lost-count,
+  poison the object, or enter a fatal/degraded state.
+- overflow behavior is part of each object/control profile and must be visible
+  through status bits, counters, events, or fault records.
+
+Resource accounting:
+
+- Resource Domains account for CPU dispatch ticks, runnable/blocked time,
+  forced parks, threads, processes, VMAs, pages, heap pages, FDRs, objects,
+  event records, queue occupancy, DMA bytes/ops, storage barriers, classifier
+  entries, packet queues, faults, signals, and capability operations.
+- accounting is hierarchical. Child usage charges ancestors before later
+  dispatch or resource admission can succeed.
+- failed pre-commit operations roll back reservations; committed operations
+  update usage before completion is published.
+
+Domain lifecycle:
+
+- `DOMAIN_CTL` owns create, configure, attach, detach, freeze, resume, destroy,
+  revoke, query, quiesce, and checkpoint-hook transitions.
+- Domain ids, generations, parent links, usage records, scheduler state,
+  security policy, delegated roots, and capability lineage are hardware state.
+- Lifecycle operations are explicit state transitions. A domain cannot be both
+  runnable and frozen, attached to two parents, or destroyed while still
+  accepting new capability use.
+
+Snapshot and live-migration hooks:
+
+- hardware defines quiescent boundaries, dirty-page enumeration, state cursors,
+  object-generation changes, DMA/device quiescence, timer/accounting snapshot
+  fields, and restore reattachment validation.
+- hardware does not own checkpoint image formats, deduplication, compression,
+  encryption envelopes, device model serialization, or migration transport.
+- a restored domain receives fresh ids/generations and explicitly reattached
+  capabilities; stale pre-restore authority must fail generation checks.
+
+Security and assurance state:
+
+- W^X/NX, ASLR, guard-page defaults, entropy health, generation checks,
+  revocation mode, sealed/narrowed capability support, DMA isolation,
+  measured-boot state, attestation root state, debug/forensics mode,
+  tenant-strict mode, confidential-domain hooks, MLS hooks, audit policy, and
+  owner-key/open-assurance policy are queryable and enforceable domain state.
+- Security state that affects isolation is monotonic down the Resource Domain
+  tree unless a parent explicitly delegates a narrower transition.
+- Debug, telemetry, trace, audit, and fault records are capabilities and never
+  ambient privileged channels.
+
+Topology:
+
+- `ENV_GET` exposes core tiles, active-thread windows, memory regions, cache
+  and coherence domains, PCIe roots, DMA locality, classifier/queue steering
+  instances, scheduler placement masks, and NUMA locality ids.
+- FPGA v1 may expose a single memory locality and one coherence domain, but the
+  metadata format must not require that forever.
+
+Mandatory hardware object profiles:
+
+- base profiles: `counter`, `queue`, `event/completion`, `timer`,
+  `memory_object`, `call_gate`, `dma_buffer`, and `dma_completion`.
+- optional v1 acceleration profiles: `classifier_queue`, `packet_queue`, and
+  `storage_barrier`.
+- source-level pipes, semaphores, channels, epoll-like sets, task events,
+  shared arenas, socket readiness, IRQ events, and call completions are runtime
+  profiles over the base object set.
+
 ## 3. Non-Goals
 
 LNP64 v1 does not attempt:
@@ -3621,15 +3722,31 @@ written. Failure returns `-1` and updates thread-local `ERRNO`.
 V1 metadata keys:
 
 - `isa_version`.
+- `implementation_profile`.
 - `page_size`.
 - `cache_line_size`.
+- `dma_alignment`.
 - `timebase_hz`.
+- `timer_granularity_ns`.
+- `monotonic_counter_bits`.
+- `time_behavior_flags`.
 - `hwcap0` and `hwcap1`.
+- `opcode_feature_bits`.
+- `object_profile_bits`.
+- `domain_feature_bits`.
+- `security_profile_bits`.
+- `scheduler_feature_bits`.
+- `classifier_feature_bits`.
+- `topology_record_count`.
+- `topology_record_format`.
 - `architectural_thread_limit`.
 - `process_limit`.
+- `resource_domain_limit`.
 - `default_fdr_limit`.
 - `event_queue_limit`.
 - `futex_bucket_count`.
+- `dma_max_descriptors`.
+- `classifier_entry_limit`.
 - `startup_metadata_ptr`.
 - `startup_metadata_len`.
 - `startup_metadata_format`.

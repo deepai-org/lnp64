@@ -37,6 +37,55 @@ The native LNP64 primitives are not Unix syscalls in silicon. They are:
 
 POSIX, Linux syscall compatibility, and NetBSD rump-style services are profiles over these primitives. This keeps libc clean: familiar APIs lower to stable native operations, while native software can use the cleaner capability/event/domain model directly.
 
+## 1.2 Base Hardware Platform Contract
+
+Serious software can rely on a mandatory hardware contract, independent of
+which libc, Unix personality, filesystem service, or network stack is running.
+V1 hardware must specify these mechanisms:
+
+*   **Feature discovery:** `ENV_GET` exposes ISA revision, implementation
+    profile, supported opcode groups, object profiles, domain/security features,
+    timer features, topology, cache/page/DMA geometry, and architectural limits.
+*   **Time:** hardware provides a monotonic timebase, realtime snapshot fields,
+    timer object profiles, timeout semantics for `AWAIT`, and per-domain CPU
+    accounting ticks. Timer precision, suspend/freeze behavior, and timestamp
+    provenance are implementation-profile fields.
+*   **Faults and overflow:** instruction, memory, capability, domain-policy,
+    DMA/IOMMU, device, event overflow, watchdog, metadata, and machine-fatal
+    faults have architectural classes and delivery rules. Bounded queues,
+    rings, runqueues, audit streams, classifiers, DMA queues, and event queues
+    must define full/overflow behavior: park, `EAGAIN`, `EOVERFLOW`, coalesce,
+    drop-with-count, poison, or fatal fault.
+*   **Resource accounting:** Resource Domains account for CPU time, threads,
+    processes, memory pages, VMAs, heap pages, FDRs, objects, event records,
+    DMA bytes/ops, classifier entries, and queue occupancy. Parent domains see
+    hierarchical usage snapshots subject to telemetry policy.
+*   **Domain lifecycle:** `DOMAIN_CTL` defines create, configure, attach,
+    detach, freeze, resume, destroy, revoke, query, and quiesce transitions.
+    Domain ids, generations, usage records, scheduler state, and capability
+    lineage are hardware state, not software convention.
+*   **Snapshot hooks:** hardware defines quiescent boundaries, dirty-memory
+    enumeration, bounded state cursors, object-generation changes, DMA/device
+    quiescence, and restore reattachment checks. Image formats and migration
+    transport remain software.
+*   **Security state:** W^X/NX, ASLR enablement, entropy availability, measured
+    boot, attestation, debug mode, DMA isolation, tenant-strict,
+    confidential-domain, MLS, and audit-mode bits are queryable and enforced by
+    Resource Domain policy.
+*   **Topology:** `ENV_GET` reports core tiles, memory regions, cache/coherence
+    domains, PCIe roots, DMA locality, and scheduler placement masks. FPGA v1
+    may report a single coherent locality domain.
+*   **Mandatory object profiles:** the base hardware object set is `counter`,
+    `queue`, `event/completion`, `timer`, `memory_object`, `call_gate`,
+    `dma_buffer`, `dma_completion`, and, when the classifier engine is present,
+    `classifier_queue`. Pipes, semaphores, channels, epoll-like sets, task
+    events, shared arenas, and socket readiness are source/runtime profiles over
+    that set.
+
+Software defines names, policies, file formats, protocol semantics, loader
+rules, orchestration, and compatibility ABIs. Hardware defines the mechanisms,
+state transitions, atomicity, isolation, accounting, and failure semantics above.
+
 ## 2. Process & Scheduling Instructions
 The CPU features a hardware-managed runqueue. There is no mandatory OS scheduler tick; hardware scheduler and context-store blocks dispatch ready threads directly.
 
@@ -299,7 +348,7 @@ Because "everything is a capability object" is the native hardware reality, we n
 *   **`SET_PCR pcr_name, r_src`**
     *   *Action:* Writes to a permitted Process Control Register. Credential changes are checked against UID/GID and process capability policy; denied changes fail with a permission error and update thread-local `ERRNO`.
 *   **`ENV_GET r_dest, r_key, r_index_or_buf, r_len_or_flags`**
-    *   *Action:* Reads read-only process and machine metadata for libc/runtime startup: ISA version, page size, cache-line size, hardware feature bits, architectural limits, startup metadata pointer, personality flags, and timebase frequency. POSIX `argc`, `argv`, `envp`, and auxv layout are libc/personality ABI data behind that pointer, not hardware-interpreted state. This is not a replacement for immediates; constants still use normal instruction encodings or literal loads.
+    *   *Action:* Reads read-only process and machine metadata for libc/runtime startup: ISA version, implementation profile, page size, cache-line size, DMA alignment, hardware feature bits, supported opcode groups, object profiles, domain/security features, architectural limits, topology records, startup metadata pointer, personality flags, and timebase frequency. POSIX `argc`, `argv`, `envp`, and auxv layout are libc/personality ABI data behind that pointer, not hardware-interpreted state. This is not a replacement for immediates; constants still use normal instruction encodings or literal loads.
 *   **`RANDOM r_dest, r_len_or_flags`**
     *   *Action:* Returns hardware entropy for ASLR, stack canaries, randomized capability ids, allocator hardening, and libc/runtime seeding. Small scalar requests return in `r_dest`; larger requests use a versioned argument-block variant that copies entropy into a caller buffer.
 
