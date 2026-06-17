@@ -14157,6 +14157,42 @@ int main() {
     }
 
     #[test]
+    fn c_directory_iteration_surface_reads_entries() {
+        let source = r#"
+        int main() {
+            int dir;
+            int ent;
+            int found;
+            int count;
+            dir = opendir(".");
+            if (dir == -1) return 1;
+            found = 0;
+            count = 0;
+            while (count < 512 && found == 0) {
+                ent = readdir(dir);
+                if (ent == 0) {
+                    count = 512;
+                } else {
+                    if (strcmp(ent->d_name, "Cargo.toml") == 0) {
+                        found = 1;
+                    }
+                    count = count + 1;
+                }
+            }
+            if (closedir(dir) != 0) return 2;
+            if (found == 0) return 3;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("OPEN_DIR_DYN"), "{asm}");
+        assert!(asm.contains("READDIR_FD_DYN"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn c_fgets_reads_lines_from_descriptor_stream() {
         let source = r#"
         int main() {
