@@ -7036,6 +7036,140 @@ mod tests {
     }
 
     #[test]
+    fn classifier_cap_source_and_queue_rights_are_enforced() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let (_reader_token, writer_token) = create_pipe_pair(&mut machine, 3, 4);
+        let source = create_memory_source(&mut machine, 5);
+        let rules = ARG_BASE + 0x1000;
+        let allowed = ARG_BASE + 0x1800;
+        let envelope = ARG_BASE + 0x1a00;
+        let result = ARG_BASE + 0x1b00;
+        machine.store_u64(allowed, writer_token).unwrap();
+        write_classifier_rule(
+            &mut machine,
+            rules,
+            CLASSIFY_RULE_EXACT,
+            CLASSIFY_FIELD_SERVICE_ID,
+            1,
+            0,
+            CLASSIFY_ACTION_ROUTE,
+            writer_token,
+            0,
+        );
+        let classifier = create_classifier(&mut machine, 6, rules, 1, allowed, 1);
+        write_envelope(
+            &mut machine,
+            envelope,
+            CLASSIFY_PROFILE_IPC,
+            source,
+            0,
+            0,
+            1,
+            0,
+            0,
+        );
+
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[6].rights &= !CAP_RIGHT_CALL;
+        assert_eq!(
+            classify(&mut machine, classifier, envelope, result),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 1);
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[6].rights |= CAP_RIGHT_CALL;
+
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[5].rights &= !CAP_RIGHT_READ;
+        assert_eq!(
+            classify(&mut machine, classifier, envelope, result),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 1);
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[5].rights |= CAP_RIGHT_READ;
+
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[4].rights &= !CAP_RIGHT_WRITE;
+        assert_eq!(
+            classify(&mut machine, classifier, envelope, result),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 1);
+    }
+
+    #[test]
+    fn classifier_table_capability_is_generation_checked_and_revocable() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let (_reader_token, writer_token) = create_pipe_pair(&mut machine, 3, 4);
+        let source = create_memory_source(&mut machine, 5);
+        let rules = ARG_BASE + 0x1000;
+        let allowed = ARG_BASE + 0x1800;
+        let envelope = ARG_BASE + 0x1a00;
+        let result = ARG_BASE + 0x1b00;
+        machine.store_u64(allowed, writer_token).unwrap();
+        write_classifier_rule(
+            &mut machine,
+            rules,
+            CLASSIFY_RULE_EXACT,
+            CLASSIFY_FIELD_SERVICE_ID,
+            1,
+            0,
+            CLASSIFY_ACTION_ROUTE,
+            writer_token,
+            0,
+        );
+        let classifier = create_classifier(&mut machine, 6, rules, 1, allowed, 1);
+        write_envelope(
+            &mut machine,
+            envelope,
+            CLASSIFY_PROFILE_IPC,
+            source,
+            0,
+            0,
+            1,
+            0,
+            0,
+        );
+
+        machine.close_fd_index(6).unwrap();
+        assert_eq!(
+            classify(&mut machine, classifier, envelope, result),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 116);
+
+        let classifier = create_classifier(&mut machine, 6, rules, 1, allowed, 1);
+        machine.store_u64(ARG_BASE + 0x1c00, classifier).unwrap();
+        machine.cap_revoke(Reg(11), ARG_BASE + 0x1c00).unwrap();
+        assert_eq!(
+            classify(&mut machine, classifier, envelope, result),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 116);
+    }
+
+    #[test]
+    fn classifier_table_creation_is_bounded() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        assert_eq!(
+            try_create_classifier(&mut machine, 6, 0, CLASSIFIER_MAX_RULES as u64 + 1, 0, 0),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert_eq!(
+            try_create_classifier(
+                &mut machine,
+                6,
+                0,
+                0,
+                0,
+                CLASSIFIER_MAX_ALLOWED_QUEUES as u64 + 1
+            ),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 22);
+    }
+
+    #[test]
     fn completion_helpers_are_errno_compatibility_boundary() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
