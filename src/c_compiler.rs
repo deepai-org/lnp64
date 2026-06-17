@@ -6114,6 +6114,20 @@ impl CodeGen {
                 let len = self.emit_expr(&args[2])?;
                 self.emit_memcmp(left, right, len)
             }
+            "strcoll" => {
+                if args.len() != 2 {
+                    return Err("strcoll(a, b) expects 2 arguments".to_string());
+                }
+                let left = self.emit_expr(&args[0])?;
+                let right = self.emit_expr(&args[1])?;
+                let dst = self.alloc_reg()?;
+                self.needs_c_runtime = true;
+                self.text.push(format!("  MOV r1, r{left}"));
+                self.text.push(format!("  MOV r2, r{right}"));
+                self.text.push("  CALL __strcmp".to_string());
+                self.text.push(format!("  MOV r{dst}, r1"));
+                Ok(dst)
+            }
             "fnmatch" => {
                 if args.len() != 3 {
                     return Err("fnmatch(pattern, string, flags) expects 3 arguments".to_string());
@@ -6189,6 +6203,23 @@ impl CodeGen {
                 let haystack = self.emit_expr(&args[0])?;
                 let needle = self.emit_expr(&args[1])?;
                 self.emit_strchr(haystack, needle)
+            }
+            "strrchr" => {
+                if args.len() != 2 {
+                    return Err("strrchr(s, c) expects 2 arguments".to_string());
+                }
+                let haystack = self.emit_expr(&args[0])?;
+                let needle = self.emit_expr(&args[1])?;
+                self.emit_strrchr(haystack, needle)
+            }
+            "memchr" => {
+                if args.len() != 3 {
+                    return Err("memchr(s, c, n) expects 3 arguments".to_string());
+                }
+                let haystack = self.emit_expr(&args[0])?;
+                let needle = self.emit_expr(&args[1])?;
+                let len = self.emit_expr(&args[2])?;
+                self.emit_memchr(haystack, needle, len)
             }
             "strtoul" | "strtol" => {
                 if args.len() != 3 {
@@ -6896,9 +6927,15 @@ impl CodeGen {
                 self.emit_fd_close_dispatch(dir, dst)?;
                 Ok(dst)
             }
-            "getc" | "fgetc" => {
+            "getc" | "fgetc" | "getc_unlocked" => {
                 let stream = self.one_arg(name, args)?;
                 self.emit_getc(stream)
+            }
+            "flockfile" | "funlockfile" => {
+                let _stream = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
             }
             "ungetc" => {
                 if args.len() != 2 {
@@ -7033,6 +7070,16 @@ impl CodeGen {
             "clock" => {
                 self.no_args(name, args)?;
                 self.emit_clock_ticks()
+            }
+            "difftime" => {
+                if args.len() != 2 {
+                    return Err("difftime(t1, t0) expects 2 arguments".to_string());
+                }
+                let t1 = self.emit_expr(&args[0])?;
+                let t0 = self.emit_expr(&args[1])?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  SUB r{dst}, r{t1}, r{t0}"));
+                Ok(dst)
             }
             "setlocale" => {
                 if args.len() != 2 {
@@ -8662,6 +8709,60 @@ impl CodeGen {
         self.text.push(format!("{found_label}:"));
         self.text.push(format!("  MOV r{dst}, r{ptr}"));
         self.text.push(format!("  JMP {done_label}"));
+        self.text.push(format!("{done_label}:"));
+        Ok(dst)
+    }
+
+    fn emit_strrchr(&mut self, haystack: usize, needle: usize) -> Result<usize, String> {
+        let ptr = self.alloc_reg()?;
+        let ch = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let loop_label = self.new_label("strrchr_loop");
+        let next_label = self.new_label("strrchr_next");
+        let done_label = self.new_label("strrchr_done");
+        self.text.push(format!("  MOV r{ptr}, r{haystack}"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("{loop_label}:"));
+        self.text.push(format!("  LD.B r{ch}, [r{ptr}, 0]"));
+        self.text.push(format!("  CMP r{ch}, r{needle}"));
+        self.text.push(format!("  BNE {next_label}"));
+        self.text.push(format!("  MOV r{dst}, r{ptr}"));
+        self.text.push(format!("{next_label}:"));
+        self.text.push(format!("  CMP r{ch}, r0"));
+        self.text.push(format!("  BEQ {done_label}"));
+        self.text.push(format!("  ADD r{ptr}, r{ptr}, r{one}"));
+        self.text.push(format!("  JMP {loop_label}"));
+        self.text.push(format!("{done_label}:"));
+        Ok(dst)
+    }
+
+    fn emit_memchr(&mut self, haystack: usize, needle: usize, len: usize) -> Result<usize, String> {
+        let ptr = self.alloc_reg()?;
+        let remaining = self.alloc_reg()?;
+        let ch = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let loop_label = self.new_label("memchr_loop");
+        let found_label = self.new_label("memchr_found");
+        let done_label = self.new_label("memchr_done");
+        self.text.push(format!("  MOV r{ptr}, r{haystack}"));
+        self.text.push(format!("  MOV r{remaining}, r{len}"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("{loop_label}:"));
+        self.text.push(format!("  CMP r{remaining}, r0"));
+        self.text.push(format!("  BEQ {done_label}"));
+        self.text.push(format!("  LD.B r{ch}, [r{ptr}, 0]"));
+        self.text.push(format!("  CMP r{ch}, r{needle}"));
+        self.text.push(format!("  BEQ {found_label}"));
+        self.text.push(format!("  ADD r{ptr}, r{ptr}, r{one}"));
+        self.text
+            .push(format!("  SUB r{remaining}, r{remaining}, r{one}"));
+        self.text.push(format!("  JMP {loop_label}"));
+        self.text.push(format!("{found_label}:"));
+        self.text.push(format!("  MOV r{dst}, r{ptr}"));
         self.text.push(format!("{done_label}:"));
         Ok(dst)
     }
@@ -13451,6 +13552,36 @@ int main() {
         let asm = compile(source).unwrap();
         assert!(asm.contains("OPEN_FD_DYN"), "{asm}");
         assert!(asm.contains("__strcpy"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_lua_posix_string_and_stream_shims_run() {
+        let source = r#"
+        int main() {
+            int fds[2];
+            char *s;
+            pipe(fds);
+            write(fds[1], "A", 1);
+            flockfile(fds[0]);
+            if (getc_unlocked(fds[0]) != 'A') return 1;
+            funlockfile(fds[0]);
+            s = "abca";
+            if (strrchr(s, 'a') != s + 3) return 2;
+            if (strrchr(s, 'z') != 0) return 3;
+            if (memchr(s, 'b', 4) != s + 1) return 4;
+            if (memchr(s, 'a', 0) != 0) return 5;
+            if (strcoll("abc", "abc") != 0) return 6;
+            if (strcoll("b", "a") <= 0) return 7;
+            if (difftime(10, 3) != 7) return 8;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("strrchr_loop"), "{asm}");
+        assert!(asm.contains("memchr_loop"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
