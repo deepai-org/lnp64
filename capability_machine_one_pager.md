@@ -142,6 +142,12 @@ Deployment profiles are named policy inputs:
   attestation requirements, dependency graph hash, fallback capabilities,
   degraded modes, stale-data budget, recovery priority, and fail policy.
 
+These profiles serve different operators without changing the architecture:
+hyperscalers get tenant isolation, live migration hooks, scoped telemetry, and
+fault containment; federal users get assurance, MLS, audit, attestation, and
+mission continuity; open-source users get owner keys, reproducible builds,
+replaceable services, and no hidden vendor path.
+
 Mission state is bounded: normal, degraded, recovering, frozen, failed closed,
 or quarantined. Recovery and failover cannot broaden authority; fallback
 services must already be delegated; stale service generations cannot complete.

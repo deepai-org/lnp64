@@ -4413,133 +4413,82 @@ The trace ring is optional but recommended for FPGA v1:
 
 ### 24.3.1 Assured Deployment, Audit, Debug, and MLS Hooks
 
-Assurance profile is a boot-time and domain-time policy field. The architectural
-profiles are:
+Assurance profile is a boot/domain policy field:
 
-- `ASSURANCE_DEV`: development mode; quotes and audit records carry an explicit
-  non-production flag, and invasive debug may be enabled by board policy.
-- `ASSURANCE_FIELD`: measured boot, critical metadata ECC/parity, watchdogs,
-  telemetry FDRs, locked debug by default, tenant-strict domains, and audit
-  stream support are required.
-- `ASSURANCE_HIGH`: signed bitstream/manifest policy, production quotes,
-  mandatory audit roots, MLS label checks, no invasive debug without measured
-  unlock, and no ambient device, interrupt, DMA, or telemetry access.
-- `ASSURANCE_FORMAL`: `ASSURANCE_HIGH` plus proof artifact hashes,
-  theorem-coverage metadata, RTL/IP provenance hashes, synthesis/build ids, and
-  toolchain identifiers in quote records.
+- `ASSURANCE_DEV`: non-production quotes/audit; board policy may allow debug.
+- `ASSURANCE_FIELD`: measured boot, metadata ECC/parity, watchdogs, telemetry,
+  locked debug, tenant-strict domains, audit stream.
+- `ASSURANCE_HIGH`: signed bitstream/manifest policy, production quotes, audit
+  roots, MLS labels, measured debug unlock, no ambient device/interrupt/DMA.
+- `ASSURANCE_FORMAL`: `ASSURANCE_HIGH` plus proof, theorem coverage, RTL/IP,
+  synthesis, build, and toolchain identifiers in quote records.
 
-Hardware is the Policy Enforcement Point. It checks capabilities, Resource
-Domain policy, label policy, generation/lineage, measurement state, VMA
-permissions, DMA/IOMMU scope, event delivery, audit append rights, debug gates,
-and commit points. PID 1, Resource Domain managers, personalities, and services
-are Policy Decision Points: they submit policy records, but hardware validates
-and commits only authorized effects.
+Hardware is the Policy Enforcement Point for capabilities, domains, labels,
+generations, lineage, measurements, VMAs, DMA/IOMMU scope, audit append,
+debug gates, and commit points. PID 1, domain managers, personalities, and
+services are Policy Decision Points.
 
-Tamper-evident audit stream:
+Audit stream record fields:
 
-- implemented as an append-only telemetry/event profile, backed by a fixed ring
-  or DDR-backed log with hardware-owned write metadata.
-- records event class, domain id/generation, service id/generation, object
-  id/generation where applicable, lineage epoch, label, bounded payload hash or
-  redacted payload, monotonic sequence number, dropped-count, previous-record
-  hash, and current audit-root hash.
-- audit roots are quoteable through the attestation FDR.
-- audit FDRs are narrowable by domain subtree, label, event class, destructive
-  vs snapshot read mode, and redaction policy.
-- audit records are data. They cannot encode returned capabilities or alter
-  Resource Domain, VMA, scheduler, or FDR state.
-- overflow emits an audit-overflow record before advancing dropped-count
-  metadata when capacity permits; otherwise the next readable root marks a gap.
+- event class, domain/service id+generation, object id+generation, lineage
+  epoch, label, bounded payload hash or redacted payload.
+- monotonic sequence, dropped count, previous-record hash, current audit root.
+- scope fields for domain subtree, label, event class, read mode, redaction.
 
-Controlled debug and forensics:
+Audit records are data. Overflow records a gap/dropped count. Audit roots are
+quoteable.
 
-- debug authority is an FDR capability, not an ambient mode bit.
-- debug unlock requires a debug-control FDR, matching assurance profile, optional
-  board/physical policy, and a measured/audited state transition.
-- debug rights are scoped: halt/freeze, single-step, breakpoint, register read,
-  memory read, memory write, trace read, crash snapshot, dump export, and local
-  engine diagnostic access are distinct rights.
-- debug access is restricted by Resource Domain, label, object/range, generation,
-  and tenant/confidential policy. Parent domains do not gain inspection rights
-  merely by being ancestors.
-- production profiles may permanently disable invasive debug or require a
-  destructive domain freeze before forensic capture.
-- crash snapshots and dumps are exported only through capability-scoped FDRs and
-  are redacted according to tenant, confidential, and MLS policy.
+Debug/forensics rules:
 
-Cross-domain and MLS hooks:
+- debug authority is a debug-control FDR.
+- rights are distinct: halt/freeze, step, breakpoint, register read, memory
+  read/write, trace read, crash snapshot, dump export, engine diagnostics.
+- access is scoped by domain, label, object/range, generation, and profile.
+- parent domains do not gain inspection rights by ancestry.
+- production profiles may disable invasive debug or require destructive freeze.
+- dumps leave only through FDRs and are redacted by tenant/confidential/MLS
+  policy.
 
-- Resource Domains, FDRs, memory objects, DMA buffers, packet queues, event
-  queues, telemetry streams, audit streams, and service endpoints may carry a
-  compact label id plus label-generation.
-- the MLS policy table is installed by an authorized policy domain and validated
-  by hardware before use; unknown or stale label generations fail closed.
-- hardware rejects cross-domain send, map, DMA, telemetry, debug, packet,
-  page-fill, returned-capability, or service-reply operations that violate the
-  active label relation.
-- declassification/release/downgrade is not implicit. It must go through an
-  explicit declassification call gate or control FDR, produce an audit record,
-  and return any new authority through the Capability Engine.
-- raw interrupts, raw DMA, parent inspection, trace/fault records, service
-  replies, and debug paths cannot bypass label checks.
+MLS hooks:
 
-Mission assurance hooks:
+- domains, FDRs, memory objects, DMA buffers, packet queues, event queues,
+  telemetry, audit streams, and endpoints may carry `label_id` and
+  `label_generation`.
+- stale/unknown label generation fails closed.
+- cross-domain send/map/DMA/telemetry/debug/packet/page-fill/reply/cap-return
+  operations must satisfy the active label relation.
+- declassification uses explicit call gates or control FDRs, emits audit, and
+  returns authority only through the Capability Engine.
 
-- mission assurance is a Resource Domain profile configured through
-  `DOMAIN_CTL`; it is not a separate scheduler, privilege ring, policy language,
-  or mission-planning engine.
-- mission profile fields include mission id, minimum assurance profile,
-  required audit level, required attestation level, dependency graph hash,
-  allowed degraded-mode bitmap, recovery priority, maximum stale event/time
-  budget, and failure policy: `fail_closed`, `fail_degraded`, `fail_over`,
-  `freeze`, or `quarantine`.
-- mission dependencies are represented only by explicit FDR capabilities:
-  storage, network, sensor/device, telemetry, audit, supervisor,
-  declassification, fallback service, and recovery service capabilities.
-- the hardware mission state machine is small: `normal`, `degraded`,
-  `recovering`, `frozen`, `failed_closed`, and `quarantined`.
-- transition triggers are existing architectural events: service
-  crash/restart, stale service generation, watchdog fault, revoked dependency,
-  audit failure, attestation failure, device fault, label violation, domain
-  budget exhaustion, policy denial, or supervisor command.
-- state transitions validate the mission profile, Resource Domain generation,
-  dependency capability generations, lineage epochs, label policy, and
-  assurance profile. Invalid transitions fail closed or leave the domain in its
-  previous state.
-- recovery and failover cannot broaden authority. Fallback services must already
-  be delegated, and restarted services receive new generations so stale
-  continuations cannot complete.
-- mission-state changes emit fault/audit events and update quoteable mission
-  evidence.
-- mission evidence records may include boot measurements, assurance profile,
-  mission profile hash, dependency graph hash, current mission state, degraded
-  reason, audit root, proof artifact hash, domain launch measurement, and
-  delegated capability-root summary.
+Mission profile fields:
 
-Owner sovereignty and open-assurance hooks:
+- mission id, minimum assurance, audit/attestation level, dependency graph hash,
+  degraded-mode bitmap, recovery priority, stale event/time budget, fail policy.
+- dependencies are explicit FDRs: storage, network, sensor/device, telemetry,
+  audit, supervisor, declassification, fallback, recovery.
+- states: `normal`, `degraded`, `recovering`, `frozen`, `failed_closed`,
+  `quarantined`.
+- triggers: service restart, stale generation, watchdog fault, revocation, audit
+  failure, attestation failure, device fault, label violation, budget exhaustion,
+  policy denial, supervisor command.
 
-- the architecture supports owner-controlled roots of trust. Boot/quote policy
-  records can name owner keys, organization keys, vendor keys, development keys,
-  or an explicit unsigned development mode; quote records identify which policy
-  was used.
-- no architectural profile requires a vendor-exclusive signing key, vendor-only
-  debug unlock, remote kill switch, or mandatory signed-only execution. Managed
-  deployments may require those constraints by local policy, but they are not
-  hardwired into the ISA.
-- quotes prove measured artifacts and active policy. They do not authorize or
-  deny execution by themselves.
-- quote and measurement records can include public RTL/source hashes,
-  reproducible bitstream hashes, reproducible toolchain manifests, proof
-  artifact hashes, and service image hashes.
-- debug-control FDRs can be owner-held in open-owner profiles. Unlocks remain
-  measured and audited, and debug access still obeys domain/range/label rights.
-- telemetry, audit, and trace access is capability-scoped. There is no hidden
-  management engine, ambient vendor telemetry channel, secret DMA path, or raw
-  interrupt backchannel.
-- service replaceability is preserved: loader, filesystem, network,
-  personality, telemetry, domain-manager, and declassification services can be
-  replaced if the caller has the required capabilities and the replacement
-  satisfies the same generation, lineage, label, audit, and domain checks.
+Recovery/failover cannot broaden authority. Fallback services must already be
+delegated. Restarted services receive new generations. Mission-state changes
+emit fault/audit events and update quoteable mission evidence.
+
+Open-assurance hooks:
+
+- boot/quote policy may name owner, organization, vendor, development, or
+  unsigned-development trust roots.
+- no architectural profile requires vendor-exclusive keys, vendor debug unlock,
+  remote kill switch, mandatory signed-only execution, hidden management,
+  ambient vendor telemetry, secret DMA, or raw interrupt backchannel.
+- quote records may include public RTL/source hashes, reproducible bitstream and
+  toolchain manifests, proof artifacts, and service image hashes.
+- owner-held debug-control FDRs are allowed in open-owner profiles.
+- loader, filesystem, network, personality, telemetry, domain-manager, and
+  declassification services are replaceable under normal capability, lineage,
+  label, audit, and domain checks.
 
 ### 24.4 Watchdogs and Local Engine Reset
 
