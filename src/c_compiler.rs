@@ -7022,6 +7022,51 @@ impl CodeGen {
                 let errno = self.one_arg(name, args)?;
                 self.emit_strerror(errno)
             }
+            "fileno" | "_fileno" => {
+                let stream = self.one_arg(name, args)?;
+                self.emit_fileno(stream)
+            }
+            "isatty" | "_isatty" => {
+                let fd = self.one_arg(name, args)?;
+                self.emit_isatty(fd)
+            }
+            "clock" => {
+                self.no_args(name, args)?;
+                self.emit_clock_ticks()
+            }
+            "setlocale" => {
+                if args.len() != 2 {
+                    return Err("setlocale(category, locale) expects 2 arguments".to_string());
+                }
+                self.emit_expr(&args[0])?;
+                self.emit_expr(&args[1])?;
+                let dst = self.alloc_reg()?;
+                let label = self.intern_string("C");
+                self.text.push(format!("  LI r{dst}, {label}"));
+                Ok(dst)
+            }
+            "localeconv" => {
+                self.no_args(name, args)?;
+                self.emit_localeconv()
+            }
+            "tmpnam" => {
+                let buf = self.one_arg(name, args)?;
+                self.emit_tmpnam(buf)
+            }
+            "system" => {
+                let cmd = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                let unavailable = self.new_label("system_unavailable");
+                let done = self.new_label("system_done");
+                self.text.push(format!("  CMP r{cmd}, r0"));
+                self.text.push(format!("  BNE {unavailable}"));
+                self.text.push(format!("  LI r{dst}, 0"));
+                self.text.push(format!("  JMP {done}"));
+                self.text.push(format!("{unavailable}:"));
+                self.text.push(format!("  LI r{dst}, -1"));
+                self.text.push(format!("{done}:"));
+                Ok(dst)
+            }
             "signal" => {
                 if args.len() != 2 {
                     return Err("signal(signum, handler) expects 2 arguments".to_string());
@@ -9066,6 +9111,92 @@ impl CodeGen {
             self.text.push(format!("  JMP {done}"));
             self.text.push(format!("{next}:"));
         }
+        self.text.push(format!("{done}:"));
+        Ok(dst)
+    }
+
+    fn emit_fileno(&mut self, stream: usize) -> Result<usize, String> {
+        let dst = self.alloc_reg()?;
+        let stdin = self.alloc_reg()?;
+        let done = self.new_label("fileno_done");
+        self.text.push(format!("  LI r{stdin}, -10"));
+        self.text.push(format!("  CMP r{stream}, r{stdin}"));
+        self.text.push(format!("  BNE {done}"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("  JMP {done}_end"));
+        self.text.push(format!("{done}:"));
+        self.text.push(format!("  MOV r{dst}, r{stream}"));
+        self.text.push(format!("{done}_end:"));
+        Ok(dst)
+    }
+
+    fn emit_isatty(&mut self, fd: usize) -> Result<usize, String> {
+        let dst = self.alloc_reg()?;
+        let value = self.alloc_reg()?;
+        let yes = self.new_label("isatty_yes");
+        let done = self.new_label("isatty_done");
+        self.text.push(format!("  LI r{dst}, 0"));
+        for tty_fd in [-10, 0, 1, 2] {
+            let next = self.new_label("isatty_next");
+            self.text.push(format!("  LI r{value}, {tty_fd}"));
+            self.text.push(format!("  CMP r{fd}, r{value}"));
+            self.text.push(format!("  BNE {next}"));
+            self.text.push(format!("  JMP {yes}"));
+            self.text.push(format!("{next}:"));
+        }
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{yes}:"));
+        self.text.push(format!("  LI r{dst}, 1"));
+        self.text.push(format!("{done}:"));
+        Ok(dst)
+    }
+
+    fn emit_clock_ticks(&mut self) -> Result<usize, String> {
+        let sec = self.alloc_reg()?;
+        let nsec = self.alloc_reg()?;
+        let ticks_per_sec = self.alloc_reg()?;
+        let nsec_per_tick = self.alloc_reg()?;
+        let sec_ticks = self.alloc_reg()?;
+        let nsec_ticks = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        self.text.push(format!("  GET_PCR r{sec}, REALTIME_SEC"));
+        self.text.push(format!("  GET_PCR r{nsec}, REALTIME_NSEC"));
+        self.text.push(format!("  LI r{ticks_per_sec}, 100"));
+        self.text
+            .push(format!("  MUL r{sec_ticks}, r{sec}, r{ticks_per_sec}"));
+        self.text.push(format!("  LI r{nsec_per_tick}, 10000000"));
+        self.text
+            .push(format!("  DIV r{nsec_ticks}, r{nsec}, r{nsec_per_tick}"));
+        self.text
+            .push(format!("  ADD r{dst}, r{sec_ticks}, r{nsec_ticks}"));
+        Ok(dst)
+    }
+
+    fn emit_localeconv(&mut self) -> Result<usize, String> {
+        let decimal = self.intern_string(".");
+        self.data
+            .entry("c_localeconv".to_string())
+            .or_insert(format!(".quad {decimal}"));
+        let dst = self.alloc_reg()?;
+        self.text.push(format!("  LI r{dst}, c_localeconv"));
+        Ok(dst)
+    }
+
+    fn emit_tmpnam(&mut self, buf: usize) -> Result<usize, String> {
+        let label = self.intern_string("/tmp/lnp64_tmpnam");
+        let dst = self.alloc_reg()?;
+        let static_label = self.new_label("tmpnam_static");
+        let done = self.new_label("tmpnam_done");
+        self.needs_c_runtime = true;
+        self.text.push(format!("  CMP r{buf}, r0"));
+        self.text.push(format!("  BEQ {static_label}"));
+        self.text.push(format!("  MOV r1, r{buf}"));
+        self.text.push(format!("  LI r2, {label}"));
+        self.text.push("  CALL __strcpy".to_string());
+        self.text.push(format!("  MOV r{dst}, r1"));
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{static_label}:"));
+        self.text.push(format!("  LI r{dst}, {label}"));
         self.text.push(format!("{done}:"));
         Ok(dst)
     }
@@ -13229,6 +13360,41 @@ int main() {
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains("strerror_done"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_lua_portability_libc_shims_run() {
+        let source = r#"
+        int main() {
+            int lc;
+            int buf;
+            char *path;
+            if (fileno(stdin) != 0) return 1;
+            if (fileno(stdout) != 1) return 2;
+            if (isatty(0) != 1) return 3;
+            if (isatty(99) != 0) return 4;
+            if (clock() < 0) return 5;
+            if (CLOCKS_PER_SEC != 100) return 6;
+            if (strcmp(setlocale(LC_ALL, 0), "C") != 0) return 7;
+            lc = localeconv();
+            if (loadb(load(lc)) != '.') return 8;
+            buf = alloc(L_tmpnam);
+            path = tmpnam(buf);
+            if (path != buf) return 9;
+            if (strcmp(path, "/tmp/lnp64_tmpnam") != 0) return 10;
+            if (strcmp(tmpnam(0), "/tmp/lnp64_tmpnam") != 0) return 11;
+            if (system(0) != 0) return 12;
+            if (system("true") != -1) return 13;
+            if (LC_TIME != 5) return 14;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("GET_PCR"), "{asm}");
+        assert!(asm.contains("__strcpy"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
