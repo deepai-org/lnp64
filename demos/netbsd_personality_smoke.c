@@ -361,12 +361,19 @@ int check_domain_and_gate() {
     info = alloc(208);
     if (domain_query(domain, info) != 200) return 2;
     if (load(info + 8) != domain) return 3;
+    if (load(info + 112) != 0) return 4;
+    if (domain_freeze(domain) != 0) return 5;
+    if (domain_query(domain, info) != 200) return 6;
+    if (load(info + 112) != 1) return 7;
+    if (domain_resume(domain) != 0) return 8;
+    if (domain_query(domain, info) != 200) return 9;
+    if (load(info + 112) != 0) return 10;
     call_gate(12, domain, gate_service);
     result = call_cap(12, 0, 0);
-    if (result != 0x4e425344) return 4;
-    if (domain_attach_self(domain) != 0) return 5;
-    if (domain_detach_self() != 1) return 6;
-    if (domain_destroy(domain) != 0) return 7;
+    if (result != 0x4e425344) return 11;
+    if (domain_attach_self(domain) != 0) return 12;
+    if (domain_detach_self() != 1) return 13;
+    if (domain_destroy(domain) != 0) return 14;
     return 0;
 }
 

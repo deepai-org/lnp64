@@ -58,7 +58,7 @@ checks that the generated assembly still uses the expected native primitives.
 - pthread startup/join, futex wake, `select`, `epoll`, `usleep`, `alarm`, and
   timerfd wait,
 - TCP loopback through endpoint object controls,
-- call-gate delivery and Resource Domain attach/detach/destroy,
+- call-gate delivery and Resource Domain freeze/resume/attach/detach/destroy,
 - assembly evidence for FDR I/O, `FORK`, `SPAWN`, `FUTEX_*`, `OBJECT_CTL`,
   `MMAP`, `MPROTECT`, `MUNMAP`, `POLL_FD_DYN`, `AWAIT_DYN`, `SIGACTION`,
   `KILL`, `CAP_DUP`, `CAP_SEND`, `CAP_RECV`, `DOMAIN_CTL`,
