@@ -21,6 +21,37 @@ model. The implemented subset covers:
   calls.
 - A small C compiler written in Rust that emits LNP64 assembly.
 
+## Formal Verification Direction
+
+LNP64 is intended to be proof-friendly from the architecture level down. The
+long-term goal is not only to test the emulator, but to make the important
+security and crash-freedom properties either proven, locally checkable, or
+structurally impossible to violate.
+
+The preferred proof source is the Lean/pure-math ecosystem for the abstract
+machine and security invariants, rather than relying only on hardware-design
+verification tools. Lean should model domains, capabilities, FDR tables, VMAs,
+waitables, scheduler state, DMA buffers, and architectural transitions such as
+`CAP_DUP`, `CAP_REVOKE`, `MMAP`, `MPROTECT`, `AWAIT`, `WAKE`, `DOMAIN_CTL`,
+`CALL_CAP`, and `DMA_CTL`.
+
+Key proof targets include:
+
+- capability non-forgeability.
+- monotonic delegation and no authority amplification.
+- revocation soundness and stale-generation rejection.
+- Resource Domain containment.
+- W^X and NX-data invariants.
+- DMA isolation through exported buffer capabilities.
+- scheduler state validity.
+- no lost wakeups for waitable objects.
+- crash-free hardware engine transitions with explicit commit/abort points.
+
+RTL assertions, bounded model checking, and simulation still matter, but their
+role is local: handshake correctness, valid FSM states, no double commit, no
+response without request, and refinement checks against the Lean-level
+transition model.
+
 ## Emulator ISA Deltas
 
 The emulator tracks the current ISA direction in `design.md` and

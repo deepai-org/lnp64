@@ -72,12 +72,31 @@ hardware scheduler. The call may be synchronous, asynchronous, or a handoff. Col
 domain creation is still a real operation, but hot calls into already-created
 isolated services can be made close to protected procedure calls.
 
+LNP64 deliberately avoids the failure mode of earlier high-level processors:
+putting rich object or language semantics into the hot path and making ordinary
+code pay for descriptor walks, policy decisions, or hidden microcoded loops. The
+core stays a simple load/store machine. Hardware primitives are justified only
+when they own useful local state, enforce an invariant software cannot reliably
+preserve, avoid memory traffic, or make an atomic transition cheap. Complex,
+evolving policy remains in libc, runtimes, service domains, or Unix
+personalities.
+
 The hardware philosophy is conservative: modules are not hidden CPUs. They are
 small, enumerated-state machines with local registers, FPGA RAM, tiny caches,
 bounded transitions, generation checks, and commit/abort points. A hardware
 module earns silicon only if it reduces memory traffic, improves streaming,
 enforces capability/scheduling semantics, or shrinks the reachable bad-state
 space compared with software.
+
+The verification philosophy follows the same line. The long-term target is
+seL4-like confidence for the hardware-visible security model: capability
+non-forgeability, monotonic delegation, revocation soundness, domain
+containment, W^X, DMA isolation, scheduler state validity, no lost wakeups, and
+crash-free engine transitions. LNP64 should use Lean or a similar theorem-prover
+for the abstract machine and security invariants, with RTL assertions and model
+checking reserved for local handshake, FSM, and refinement checks. The design
+goal is that important guarantees are either proven, locally checkable, or
+structurally impossible to violate.
 
 The result is a system architecture where the operating-system boundary becomes
 less special. Files, queues, memory mappings, timers, futexes, devices,
