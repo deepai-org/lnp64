@@ -6649,6 +6649,20 @@ impl CodeGen {
                 let flags = self.emit_fopen_flags(&args[1])?;
                 self.emit_open_fd_alloc(path, flags)
             }
+            "tmpfile" => {
+                self.no_args(name, args)?;
+                let path_value = format!("/tmp/lnp64_tmpfile_{}", self.string_id);
+                let path_label = self.intern_string(&path_value);
+                let path = self.alloc_reg()?;
+                let flags = self.alloc_reg()?;
+                self.text.push(format!("  LI r{path}, {path_label}"));
+                self.text.push(format!("  LI r{flags}, {}", 2 | 4));
+                let path_slot = self.spill_reg(path);
+                let dst = self.emit_open_fd_alloc(path, flags)?;
+                let path = self.reload_reg(path_slot)?;
+                self.text.push(format!("  UNLINK_PATH r{path}"));
+                Ok(dst)
+            }
             "fmemopen" => {
                 if args.len() != 3 {
                     return Err("fmemopen(buf, size, mode) expects 3 arguments".to_string());
@@ -13504,6 +13518,32 @@ int main() {
         }
         "#;
         let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_tmpfile_returns_read_write_unlinked_stream() {
+        let source = r#"
+        int main() {
+            int fp;
+            int buf;
+            fp = tmpfile();
+            if (fp == -1) return 1;
+            if (fwrite("tmp", 1, 3, fp) != 3) return 2;
+            rewind(fp);
+            buf = alloc(8);
+            if (fread(buf, 1, 3, fp) != 3) return 3;
+            storeb(buf + 3, 0);
+            if (strcmp(buf, "tmp") != 0) return 4;
+            fclose(fp);
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("OPEN_FD_DYN"), "{asm}");
+        assert!(asm.contains("UNLINK_PATH"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
