@@ -4911,6 +4911,97 @@ impl CodeGen {
         Ok(())
     }
 
+    fn emit_fprintf(&mut self, args: &[Expr]) -> Result<usize, String> {
+        if args.len() < 2 {
+            return Err("fprintf(stream, fmt, ...) expects at least 2 arguments".to_string());
+        }
+        let fmt = match &args[1] {
+            Expr::Str(fmt) => fmt.clone(),
+            _ => return Err("fprintf format must be a string literal".to_string()),
+        };
+        let stream = self.emit_expr(&args[0])?;
+        let stream_slot = self.spill_reg(stream);
+        self.temp_reg = 0;
+        let mut arg_idx = 2usize;
+        let mut literal = String::new();
+        let mut chars = fmt.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch != '%' {
+                literal.push(ch);
+                continue;
+            }
+            if chars.peek() == Some(&'%') {
+                chars.next();
+                literal.push('%');
+                continue;
+            }
+            if !literal.is_empty() {
+                self.emit_fprintf_literal(stream_slot, &literal)?;
+                literal.clear();
+            }
+            let Some(spec) = next_format_spec(&mut chars) else {
+                break;
+            };
+            if !matches!(spec, 's' | 'd' | 'i' | 'u' | 'o' | 'c') {
+                continue;
+            }
+            let Some(arg) = args.get(arg_idx) else {
+                return Err("fprintf missing format argument".to_string());
+            };
+            arg_idx += 1;
+            let value = self.emit_expr(arg)?;
+            let value_slot = self.spill_reg(value);
+            self.temp_reg = 0;
+            let stream = self.reload_reg(stream_slot)?;
+            let value = self.reload_reg(value_slot)?;
+            self.needs_c_runtime = true;
+            match spec {
+                's' => {
+                    self.text.push(format!("  MOV r1, r{stream}"));
+                    self.text.push(format!("  MOV r2, r{value}"));
+                    self.text.push("  CALL __write_cstr_fd".to_string());
+                }
+                'c' => {
+                    let buf_label = "c_fprintf_char_buf".to_string();
+                    self.data
+                        .entry(buf_label.clone())
+                        .or_insert(".zero 1".to_string());
+                    let buf = self.alloc_reg()?;
+                    let len = self.alloc_reg()?;
+                    self.text.push(format!("  LI r{buf}, {buf_label}"));
+                    self.text.push(format!("  ST.B [r{buf}, 0], r{value}"));
+                    self.text.push(format!("  LI r{len}, 1"));
+                    self.emit_write_fd_dispatch(stream, buf, len, 1)?;
+                }
+                _ => {
+                    self.text.push(format!("  MOV r1, r{stream}"));
+                    self.text.push(format!("  MOV r2, r{value}"));
+                    self.text.push("  CALL __print_u64_fd".to_string());
+                }
+            }
+            self.temp_reg = 0;
+        }
+        if !literal.is_empty() {
+            self.emit_fprintf_literal(stream_slot, &literal)?;
+        }
+        let dst = self.alloc_reg()?;
+        self.text.push(format!("  LI r{dst}, 0"));
+        Ok(dst)
+    }
+
+    fn emit_fprintf_literal(&mut self, stream_slot: i64, literal: &str) -> Result<(), String> {
+        let label = self.intern_string(literal);
+        let stream = self.reload_reg(stream_slot)?;
+        let ptr = self.alloc_reg()?;
+        self.needs_c_runtime = true;
+        self.text.push(format!("  LI r{ptr}, {label}"));
+        self.text.push(format!("  MOV r1, r{stream}"));
+        self.text.push(format!("  MOV r2, r{ptr}"));
+        self.text.push("  CALL __write_cstr_fd".to_string());
+        self.temp_reg = 0;
+        Ok(())
+    }
+
     fn emit_snprintf(&mut self, args: &[Expr]) -> Result<usize, String> {
         if args.len() < 3 {
             return Err("snprintf(buf, size, fmt, ...) expects at least 3 arguments".to_string());
@@ -5825,11 +5916,7 @@ impl CodeGen {
                 self.text.push(format!("  MOV r{dst}, r1"));
                 Ok(dst)
             }
-            "fprintf" => {
-                let dst = self.alloc_reg()?;
-                self.text.push(format!("  LI r{dst}, 0"));
-                Ok(dst)
-            }
+            "fprintf" => self.emit_fprintf(args),
             "lseek" => {
                 if args.len() != 3 {
                     return Err("lseek(fd, offset, whence) expects 3 arguments".to_string());
@@ -10765,6 +10852,9 @@ impl CodeGen {
         } else if name == "stdout" {
             self.text.push(format!("  LI r{reg}, 1"));
             Ok(reg)
+        } else if name == "stderr" {
+            self.text.push(format!("  LI r{reg}, 2"));
+            Ok(reg)
         } else if name == "O_APPEND" {
             self.text.push(format!("  LI r{reg}, 1"));
             Ok(reg)
@@ -11123,6 +11213,22 @@ write_cstr_loop:
   JMP write_cstr_loop
 write_cstr_done:
   WRITE_FD fd1, r1, r21
+  RET
+
+__write_cstr_fd:
+  MOV r20, r1
+  MOV r21, r2
+  LI r22, 0
+write_cstr_fd_loop:
+  LD.B r23, [r21, 0]
+  CMP r23, r0
+  BEQ write_cstr_fd_done
+  LI r24, 1
+  ADD r21, r21, r24
+  ADD r22, r22, r24
+  JMP write_cstr_fd_loop
+write_cstr_fd_done:
+  WRITE_FD_DYN r20, r2, r22
   RET
 
 __strlen:
@@ -11680,6 +11786,41 @@ print_u64_loop:
   SUB r2, r1, r21
   MOV r1, r21
   WRITE_FD fd1, r1, r2
+  RET
+
+__print_u64_fd:
+  MOV r29, r1
+  MOV r20, r2
+  CMP r20, r0
+  BNE print_u64_fd_nonzero
+  MOV r1, r29
+  LI r2, c_digit_zero
+  CALL __write_cstr_fd
+  RET
+print_u64_fd_nonzero:
+  LI r21, c_num_buf
+  LI r22, 31
+  ADD r21, r21, r22
+  LI r23, 10
+print_u64_fd_loop:
+  DIV r24, r20, r23
+  MUL r25, r24, r23
+  SUB r26, r20, r25
+  LI r27, 48
+  ADD r26, r26, r27
+  LI r28, 1
+  SUB r21, r21, r28
+  ST.B [r21, 0], r26
+  MOV r20, r24
+  CMP r20, r0
+  BNE print_u64_fd_loop
+  LI r2, c_num_buf
+  LI r22, 31
+  ADD r2, r2, r22
+  SUB r3, r2, r21
+  MOV r1, r29
+  MOV r2, r21
+  WRITE_FD_DYN r1, r2, r3
   RET
 "#
 }
@@ -13029,6 +13170,30 @@ int main() {
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains("READ_FD_DYN"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_fprintf_writes_formatted_output_to_descriptor_stream() {
+        let source = r#"
+        int main() {
+            int fds[2];
+            int buf;
+            pipe(fds);
+            buf = alloc(16);
+            fprintf(fds[1], "a%s%7ld%c", "b", 12, '\n');
+            if (read(fds[0], buf, 5) != 5) return 1;
+            storeb(buf + 5, 0);
+            if (strcmp(buf, "ab12\n") != 0) return 2;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("__write_cstr_fd"), "{asm}");
+        assert!(asm.contains("__print_u64_fd"), "{asm}");
+        assert!(asm.contains("WRITE_FD_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
