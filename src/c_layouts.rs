@@ -98,12 +98,17 @@ pub fn collect_aggregate_sizes(source: &str) -> HashMap<String, i64> {
             continue;
         }
 
-        if closing_aggregate_field(trimmed).is_some() {
+        if let Some(closing_name) = closing_aggregate_field(trimmed) {
             let Some(context) = stack.pop() else {
                 continue;
             };
             let size = context.size();
             if let Some(name) = context.name {
+                sizes.entry(name).or_insert(size);
+            }
+            if stack.is_empty()
+                && let Some(name) = closing_name
+            {
                 sizes.entry(name).or_insert(size);
             }
             if let Some(parent) = stack.last_mut() {
@@ -199,10 +204,19 @@ pub fn collect_aggregate_declarations(
     let mut declarations = HashMap::new();
     let mut aggregate_depth = 0i64;
     let mut pending_aggregate = false;
+    let mut current_fn: Option<String> = None;
+    let mut function_depth = 0i64;
 
     for line in source.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
+            continue;
+        }
+        if current_fn.is_none()
+            && let Some(name) = function_definition_name(trimmed)
+        {
+            current_fn = Some(name);
+            function_depth = count_braces(trimmed).max(1);
             continue;
         }
         if pending_aggregate {
@@ -234,7 +248,18 @@ pub fn collect_aggregate_declarations(
         }
         if let Some((rest, size)) = named_aggregate_decl_rest(trimmed, sizes) {
             for name in declarator_names(rest) {
-                declarations.entry(name).or_insert(size);
+                insert_declaration_size(&mut declarations, current_fn.as_deref(), name, size);
+            }
+        } else if let Some((rest, size)) = alias_aggregate_decl_rest(trimmed, sizes) {
+            for name in declarator_names(rest) {
+                insert_declaration_size(&mut declarations, current_fn.as_deref(), name, size);
+            }
+        }
+        if current_fn.is_some() {
+            function_depth += count_braces(trimmed);
+            if function_depth <= 0 {
+                current_fn = None;
+                function_depth = 0;
             }
         }
     }
@@ -482,6 +507,14 @@ fn aggregate_field_size(trimmed: &str, sizes: &HashMap<String, i64>) -> i64 {
         }
         return *size;
     }
+    if let Some(name) = trimmed.split_whitespace().next()
+        && let Some(size) = sizes.get(name)
+    {
+        if trimmed[name.len()..].trim_start().starts_with('*') {
+            return 8;
+        }
+        return *size;
+    }
     8
 }
 
@@ -502,6 +535,48 @@ fn named_aggregate_decl_rest<'a>(
     Some((rest.trim_end_matches(';').trim(), size))
 }
 
+fn alias_aggregate_decl_rest<'a>(
+    trimmed: &'a str,
+    sizes: &HashMap<String, i64>,
+) -> Option<(&'a str, i64)> {
+    let trimmed = strip_storage_prefixes(trimmed.trim_start());
+    let alias = trimmed.split_whitespace().next()?;
+    let size = *sizes.get(alias)?;
+    let rest = trimmed[alias.len()..].trim();
+    if rest.contains('(') || !rest.ends_with(';') {
+        return None;
+    }
+    Some((rest.trim_end_matches(';').trim(), size))
+}
+
+fn insert_declaration_size(
+    declarations: &mut HashMap<String, i64>,
+    current_fn: Option<&str>,
+    name: String,
+    size: i64,
+) {
+    if let Some(function) = current_fn {
+        declarations
+            .entry(format!("{function}::{name}"))
+            .or_insert(size);
+    } else {
+        declarations.entry(name).or_insert(size);
+    }
+}
+
+fn function_definition_name(trimmed: &str) -> Option<String> {
+    if !trimmed.ends_with('{') || !trimmed.contains('(') || trimmed.starts_with("typedef ") {
+        return None;
+    }
+    let before_paren = trimmed.split('(').next()?.trim();
+    let name = before_paren
+        .split_whitespace()
+        .last()
+        .unwrap_or_default()
+        .trim_start_matches('*');
+    ident(name).map(str::to_string)
+}
+
 fn declarator_names(rest: &str) -> Vec<String> {
     rest.split(',')
         .filter_map(|part| {
@@ -509,7 +584,8 @@ fn declarator_names(rest: &str) -> Vec<String> {
             if part.is_empty() || part.contains('*') {
                 return None;
             }
-            ident(part)
+            let name = part.split('=').next().unwrap_or(part).trim();
+            ident(name)
         })
         .map(str::to_string)
         .collect()
@@ -706,8 +782,32 @@ mod tests {
             "#;
         let sizes = collect_aggregate_sizes(source);
         let declarations = collect_aggregate_declarations(source, &sizes);
-        assert_eq!(declarations["copy"], 40);
-        assert_eq!(declarations["other"], 40);
+        assert_eq!(declarations["check::copy"], 40);
+        assert_eq!(declarations["check::other"], 40);
+        assert!(!declarations.contains_key("ptr"));
+    }
+
+    #[test]
+    fn collects_anonymous_typedef_aggregate_alias_declarations() {
+        let source = r#"
+            typedef struct {
+              int ptr;
+              int num_left;
+            } ini_parse_string_ctx;
+
+            int parse(int string) {
+                ini_parse_string_ctx ctx;
+                ini_parse_string_ctx *ptr;
+                return 0;
+            }
+            "#;
+        let sizes = collect_aggregate_sizes(source);
+        assert_eq!(sizes["ini_parse_string_ctx"], 16);
+        let fields = collect_field_offsets(source);
+        assert_eq!(fields["ptr"], 0);
+        assert_eq!(fields["num_left"], 8);
+        let declarations = collect_aggregate_declarations(source, &sizes);
+        assert_eq!(declarations["parse::ctx"], 16);
         assert!(!declarations.contains_key("ptr"));
     }
 

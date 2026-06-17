@@ -371,7 +371,8 @@ fn remove_heap_allocated_aggregate_declarations(
 ) {
     let heap_allocated: Vec<String> = declarations
         .keys()
-        .filter(|name| {
+        .filter(|key| {
+            let name = key.rsplit_once("::").map_or(key.as_str(), |(_, name)| name);
             source.lines().any(|line| {
                 let trimmed = line.trim();
                 trimmed.contains(&format!("int {name};"))
@@ -2169,6 +2170,7 @@ struct Parser {
     aggregate_declarations: HashMap<String, i64>,
     global_aggregate_array_widths: HashMap<String, i64>,
     global_byte_array_sizes: HashMap<String, i64>,
+    current_function: String,
 }
 
 impl Parser {
@@ -2186,6 +2188,7 @@ impl Parser {
             aggregate_declarations,
             global_aggregate_array_widths,
             global_byte_array_sizes,
+            current_function: String::new(),
         }
     }
 
@@ -2227,7 +2230,9 @@ impl Parser {
                     self.advance();
                     continue;
                 }
+                let previous_function = std::mem::replace(&mut self.current_function, name.clone());
                 let body = self.parse_block()?;
+                self.current_function = previous_function;
                 functions.push(Function { name, params, body });
                 continue;
             }
@@ -2697,8 +2702,10 @@ impl Parser {
         let parsed_type = self.parse_type_tokens()?;
         let mut decls = Vec::new();
         loop {
+            let mut pointer_depth = 0usize;
             while self.check(&Token::Star) {
                 self.advance();
+                pointer_depth += 1;
             }
             let name = self.take_ident()?;
             let array_len = if self.check(&Token::LBracket) {
@@ -2727,16 +2734,24 @@ impl Parser {
             } else {
                 None
             };
-            let aggregate_size = parsed_type
-                .aggregate
-                .as_deref()
-                .and_then(|type_name| {
-                    self.aggregate_sizes
-                        .get(type_name)
-                        .copied()
-                        .or_else(|| type_aggregate_size(type_name))
-                })
-                .or_else(|| self.aggregate_declarations.get(&name).copied());
+            let aggregate_size = if pointer_depth == 0 {
+                parsed_type
+                    .aggregate
+                    .as_deref()
+                    .and_then(|type_name| {
+                        self.aggregate_sizes
+                            .get(type_name)
+                            .copied()
+                            .or_else(|| type_aggregate_size(type_name))
+                    })
+                    .or_else(|| {
+                        self.aggregate_declarations
+                            .get(&format!("{}::{name}", self.current_function))
+                            .copied()
+                    })
+            } else {
+                None
+            };
             decls.push(LocalDecl {
                 name,
                 init,
@@ -15732,6 +15747,38 @@ mod tests {
             j.paths = paths;
             j.path_index = 0;
             return second_matches(&j);
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn typedef_aggregate_pointer_local_name_does_not_reuse_stack_layout() {
+        let source = r#"
+        typedef struct {
+            int ptr;
+            int num_left;
+        } parse_ctx;
+
+        int read_ctx(void *stream) {
+            parse_ctx *ctx;
+            ctx = (parse_ctx *)stream;
+            return ctx->num_left;
+        }
+
+        int parse(void) {
+            parse_ctx ctx;
+            ctx.ptr = 41;
+            ctx.num_left = 7;
+            if (ctx.ptr != 41) return 1;
+            return read_ctx(&ctx) == 7 ? 0 : 2;
+        }
+
+        int main() {
+            return parse();
         }
         "#;
         let asm = compile(source).unwrap();
