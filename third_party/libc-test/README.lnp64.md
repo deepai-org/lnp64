@@ -10,6 +10,7 @@ upstream libc-test files; bounded or locally guarded files are called out below.
 - `functional/argv.c`
 - `functional/basename.c`
 - `functional/clock_gettime.c`
+- `functional/ctype_bounded.c`
 - `functional/dirname.c`
 - `functional/env.c`
 - `functional/fdopen.c`
@@ -63,6 +64,8 @@ isolation, destructor execution on thread exit, and key deletion.
 adjusted; it covers `fmemopen` reads through `fgets` and EOF buffer preservation.
 `regression/malloc-0.c` is the upstream file with only the harness include path
 adjusted; it covers non-null, unique `malloc(0)` allocations.
+`functional/ctype_bounded.c` is a local bounded file covering the supported
+ASCII ctype predicates and `tolower`/`toupper` mappings without locale tables.
 `functional/string_memcpy_bounded.c` is a local bounded file covering direct and
 function-pointer `memcpy`/`memset`, offset destinations, high-byte `memset`
 values, and zero-length no-write behavior without the full upstream exhaustive

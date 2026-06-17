@@ -6,6 +6,7 @@ tests=(
   functional/argv
   functional/basename
   functional/clock_gettime
+  functional/ctype_bounded
   functional/dirname
   functional/env
   functional/fdopen
