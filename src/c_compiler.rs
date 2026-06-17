@@ -4381,6 +4381,22 @@ impl CodeGen {
         Ok(dst)
     }
 
+    fn emit_pointer_arg(&mut self, arg: &Expr) -> Result<usize, String> {
+        if let Expr::Var(name) = arg
+            && self.local_array_sizes.contains_key(name)
+        {
+            let Some(offset) = self.locals.get(name).copied() else {
+                return Err(format!("unknown local array {name:?}"));
+            };
+            let reg = self.alloc_reg()?;
+            let offset_reg = self.alloc_reg()?;
+            self.text.push(format!("  LI r{offset_reg}, {offset}"));
+            self.text.push(format!("  ADD r{reg}, r31, r{offset_reg}"));
+            return Ok(reg);
+        }
+        self.emit_expr(arg)
+    }
+
     fn emit_local_decl(&mut self, decl: &LocalDecl) -> Result<(), String> {
         let aggregate_size = decl.aggregate_size.or_else(|| {
             c_layouts::local_aggregate_size(&self.function_names, &self.current_fn, &decl.name)
@@ -5913,6 +5929,7 @@ impl CodeGen {
         self.temp_reg = 0;
         let mut arg_idx = 2usize;
         let mut literal = String::new();
+        let mut written = 0usize;
         let mut chars = fmt.chars().peekable();
         while let Some(ch) = chars.next() {
             if ch != '%' {
@@ -5925,6 +5942,7 @@ impl CodeGen {
                 continue;
             }
             if !literal.is_empty() {
+                written += literal.len();
                 self.emit_fprintf_literal(stream_slot, &literal)?;
                 literal.clear();
             }
@@ -5961,6 +5979,7 @@ impl CodeGen {
                     self.text.push(format!("  ST.B [r{buf}, 0], r{value}"));
                     self.text.push(format!("  LI r{len}, 1"));
                     self.emit_write_fd_dispatch(stream, buf, len, 1)?;
+                    written += 1;
                 }
                 _ => {
                     self.text.push(format!("  MOV r1, r{stream}"));
@@ -5971,10 +5990,11 @@ impl CodeGen {
             self.temp_reg = 0;
         }
         if !literal.is_empty() {
+            written += literal.len();
             self.emit_fprintf_literal(stream_slot, &literal)?;
         }
         let dst = self.alloc_reg()?;
-        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("  LI r{dst}, {written}"));
         Ok(dst)
     }
 
@@ -6036,7 +6056,7 @@ impl CodeGen {
         if args.len() < 3 {
             return Err("snprintf(buf, size, fmt, ...) expects at least 3 arguments".to_string());
         }
-        let dst = self.emit_expr(&args[0])?;
+        let dst = self.emit_pointer_arg(&args[0])?;
         let Expr::Str(fmt) = &args[2] else {
             return self.emit_dynamic_format_to_buffer(dst, args, 1);
         };
@@ -6047,7 +6067,7 @@ impl CodeGen {
         if args.len() < 2 {
             return Err("sprintf(buf, fmt, ...) expects at least 2 arguments".to_string());
         }
-        let dst = self.emit_expr(&args[0])?;
+        let dst = self.emit_pointer_arg(&args[0])?;
         let Expr::Str(fmt) = &args[1] else {
             return self.emit_dynamic_format_to_buffer(dst, args, 1);
         };
@@ -6722,7 +6742,7 @@ impl CodeGen {
                 if args.len() != 3 {
                     return Err("fgets(buf, size, stream) expects 3 arguments".to_string());
                 }
-                let buf = self.emit_expr(&args[0])?;
+                let buf = self.emit_pointer_arg(&args[0])?;
                 let buf_slot = self.spill_reg(buf);
                 self.temp_reg = 0;
                 let size = self.emit_expr(&args[1])?;
@@ -7337,6 +7357,7 @@ impl CodeGen {
                 self.text.push(format!("  BNE {done}"));
                 self.text.push(format!("  LI r{dst}, -1"));
                 self.text.push(format!("{done}:"));
+                self.emit_clear_ungetc_on_ok(dst)?;
                 Ok(dst)
             }
             "ftell" | "ftello" | "_ftelli64" => {
@@ -8421,15 +8442,13 @@ impl CodeGen {
                     return Err("ungetc(c, stream) expects 2 arguments".to_string());
                 }
                 let ch = self.emit_expr(&args[0])?;
+                let ch_slot = self.spill_reg(ch);
+                self.temp_reg = 0;
                 let stream = self.emit_expr(&args[1])?;
-                let offset = self.alloc_reg()?;
-                let whence = self.alloc_reg()?;
-                let ignored = self.alloc_reg()?;
-                self.text.push(format!("  LI r{offset}, -1"));
-                self.text.push(format!("  LI r{whence}, 1"));
-                self.emit_fd_seek_dispatch(stream, offset, whence, ignored)?;
-                Ok(ch)
+                let ch = self.reload_reg(ch_slot)?;
+                self.emit_ungetc_value(ch, stream)
             }
+            "fscanf" => self.emit_fscanf(args),
             "getchar" => {
                 self.no_args(name, args)?;
                 let stdin = self.alloc_reg()?;
@@ -8509,7 +8528,7 @@ impl CodeGen {
                 if args.len() != 4 {
                     return Err("fread(buf, size, nmemb, stream) expects 4 arguments".to_string());
                 }
-                let buf = self.emit_expr(&args[0])?;
+                let buf = self.emit_pointer_arg(&args[0])?;
                 let buf_slot = self.spill_reg(buf);
                 self.temp_reg = 0;
                 let size = self.emit_expr(&args[1])?;
@@ -8519,20 +8538,13 @@ impl CodeGen {
                 let nmemb_slot = self.spill_reg(nmemb);
                 self.temp_reg = 0;
                 let stream = self.emit_expr(&args[3])?;
+                let stream_slot = self.spill_reg(stream);
+                self.temp_reg = 0;
                 let buf = self.reload_reg(buf_slot)?;
                 let size = self.reload_reg(size_slot)?;
                 let nmemb = self.reload_reg(nmemb_slot)?;
-                let len = self.alloc_reg()?;
-                let dst = self.alloc_reg()?;
-                let done = self.new_label("fread_done");
-                self.text.push(format!("  LI r{dst}, 0"));
-                self.text.push(format!("  CMP r{size}, r0"));
-                self.text.push(format!("  BEQ {done}"));
-                self.text.push(format!("  MUL r{len}, r{size}, r{nmemb}"));
-                self.emit_read_fd_dispatch(stream, buf, len, Some(dst))?;
-                self.text.push(format!("  DIV r{dst}, r{dst}, r{size}"));
-                self.text.push(format!("{done}:"));
-                Ok(dst)
+                let stream = self.reload_reg(stream_slot)?;
+                self.emit_fread(buf, size, nmemb, stream)
             }
             "strerror" => {
                 let errno = self.one_arg(name, args)?;
@@ -8723,7 +8735,7 @@ impl CodeGen {
             }
             "feof" => {
                 let dst = self.alloc_reg()?;
-                self.text.push(format!("  LI r{dst}, 1"));
+                self.text.push(format!("  LI r{dst}, 0"));
                 Ok(dst)
             }
             "clearerr" => {
@@ -13972,6 +13984,88 @@ impl CodeGen {
         Ok(())
     }
 
+    fn ensure_ungetc_state(&mut self) {
+        self.data
+            .entry("c_ungetc_stream".to_string())
+            .or_insert(".quad 0".to_string());
+        self.data
+            .entry("c_ungetc_char".to_string())
+            .or_insert(".quad 0".to_string());
+        self.data
+            .entry("c_ungetc_valid".to_string())
+            .or_insert(".quad 0".to_string());
+        self.data
+            .entry("c_ungetc_advance".to_string())
+            .or_insert(".quad 0".to_string());
+    }
+
+    fn emit_clear_ungetc_on_ok(&mut self, result: usize) -> Result<(), String> {
+        self.ensure_ungetc_state();
+        let done = self.new_label("clear_ungetc_done");
+        self.text.push(format!("  CMP r{result}, r0"));
+        self.text.push(format!("  BNE {done}"));
+        self.text.push("  ST c_ungetc_valid, r0".to_string());
+        self.text.push("  ST c_ungetc_advance, r0".to_string());
+        self.text.push(format!("{done}:"));
+        Ok(())
+    }
+
+    fn emit_ungetc_value(&mut self, ch: usize, stream: usize) -> Result<usize, String> {
+        self.ensure_ungetc_state();
+        let ch_value = self.alloc_reg()?;
+        let stream_value = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let eof = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let offset = self.alloc_reg()?;
+        let whence = self.alloc_reg()?;
+        let seek_result = self.alloc_reg()?;
+        let eof_label = self.new_label("ungetc_eof");
+        let no_advance = self.new_label("ungetc_no_advance");
+        let done = self.new_label("ungetc_done");
+        self.text.push(format!("  MOV r{ch_value}, r{ch}"));
+        self.text.push(format!("  MOV r{stream_value}, r{stream}"));
+        self.text.push(format!("  MOV r{dst}, r{ch_value}"));
+        self.text.push(format!("  LI r{eof}, -1"));
+        self.text.push(format!("  CMP r{ch_value}, r{eof}"));
+        self.text.push(format!("  BEQ {eof_label}"));
+        self.text.push(format!("  LI r{offset}, -1"));
+        self.text.push(format!("  LI r{whence}, 1"));
+        self.emit_fd_seek_dispatch(stream_value, offset, whence, seek_result)?;
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text
+            .push(format!("  ST c_ungetc_stream, r{stream_value}"));
+        self.text.push(format!("  ST c_ungetc_char, r{ch_value}"));
+        self.text.push(format!("  ST c_ungetc_valid, r{one}"));
+        self.text.push(format!("  CMP r{seek_result}, r0"));
+        self.text.push(format!("  BNE {no_advance}"));
+        self.text.push(format!("  ST c_ungetc_advance, r{one}"));
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{no_advance}:"));
+        self.text.push("  ST c_ungetc_advance, r0".to_string());
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{eof_label}:"));
+        self.text.push(format!("  LI r{dst}, -1"));
+        self.text.push(format!("{done}:"));
+        Ok(dst)
+    }
+
+    fn emit_advance_after_ungetc(&mut self, stream: usize) -> Result<(), String> {
+        let advance = self.alloc_reg()?;
+        let offset = self.alloc_reg()?;
+        let whence = self.alloc_reg()?;
+        let ignored = self.alloc_reg()?;
+        let done = self.new_label("ungetc_advance_done");
+        self.text.push(format!("  LD r{advance}, c_ungetc_advance"));
+        self.text.push(format!("  CMP r{advance}, r0"));
+        self.text.push(format!("  BEQ {done}"));
+        self.text.push(format!("  LI r{offset}, 1"));
+        self.text.push(format!("  LI r{whence}, 1"));
+        self.emit_fd_seek_dispatch(stream, offset, whence, ignored)?;
+        self.text.push(format!("{done}:"));
+        Ok(())
+    }
+
     fn emit_stat_fd_dispatch(
         &mut self,
         fd_reg: usize,
@@ -13985,6 +14079,7 @@ impl CodeGen {
     }
 
     fn emit_getc(&mut self, stream: usize) -> Result<usize, String> {
+        self.ensure_ungetc_state();
         let buf_label = "c_getc_buf".to_string();
         self.data
             .entry(buf_label.clone())
@@ -13992,10 +14087,25 @@ impl CodeGen {
         let buf = self.alloc_reg()?;
         let one = self.alloc_reg()?;
         let dst = self.alloc_reg()?;
+        let valid = self.alloc_reg()?;
+        let saved_stream = self.alloc_reg()?;
         let eof_label = self.new_label("getc_eof");
         let end_label = self.new_label("getc_end");
         let stdin_label = self.new_label("getc_stdin");
         let after_read_label = self.new_label("getc_after_read");
+        let direct_read_label = self.new_label("getc_direct_read");
+        self.text.push(format!("  LD r{valid}, c_ungetc_valid"));
+        self.text.push(format!("  CMP r{valid}, r0"));
+        self.text.push(format!("  BEQ {direct_read_label}"));
+        self.text
+            .push(format!("  LD r{saved_stream}, c_ungetc_stream"));
+        self.text.push(format!("  CMP r{saved_stream}, r{stream}"));
+        self.text.push(format!("  BNE {direct_read_label}"));
+        self.text.push(format!("  LD r{dst}, c_ungetc_char"));
+        self.text.push("  ST c_ungetc_valid, r0".to_string());
+        self.emit_advance_after_ungetc(stream)?;
+        self.text.push(format!("  JMP {end_label}"));
+        self.text.push(format!("{direct_read_label}:"));
         self.text.push(format!("  LI r{buf}, {buf_label}"));
         self.text.push(format!("  LI r{one}, 1"));
         let stdin = self.alloc_reg()?;
@@ -14015,6 +14125,163 @@ impl CodeGen {
         self.text.push(format!("  LI r{dst}, -1"));
         self.text.push(format!("{end_label}:"));
         Ok(dst)
+    }
+
+    fn emit_fread(
+        &mut self,
+        buf: usize,
+        size: usize,
+        nmemb: usize,
+        stream: usize,
+    ) -> Result<usize, String> {
+        self.ensure_ungetc_state();
+        let buf_base = self.alloc_reg()?;
+        let stream_value = self.alloc_reg()?;
+        let len = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let valid = self.alloc_reg()?;
+        let saved_stream = self.alloc_reg()?;
+        let ch = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let remaining = self.alloc_reg()?;
+        let tail = self.alloc_reg()?;
+        let count = self.alloc_reg()?;
+        let direct = self.new_label("fread_direct");
+        let divide = self.new_label("fread_divide");
+        let done = self.new_label("fread_done");
+        self.text.push(format!("  MOV r{buf_base}, r{buf}"));
+        self.text.push(format!("  MOV r{stream_value}, r{stream}"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("  CMP r{size}, r0"));
+        self.text.push(format!("  BEQ {done}"));
+        self.text.push(format!("  CMP r{nmemb}, r0"));
+        self.text.push(format!("  BEQ {done}"));
+        self.text.push(format!("  MUL r{len}, r{size}, r{nmemb}"));
+        self.text.push(format!("  LD r{valid}, c_ungetc_valid"));
+        self.text.push(format!("  CMP r{valid}, r0"));
+        self.text.push(format!("  BEQ {direct}"));
+        self.text
+            .push(format!("  LD r{saved_stream}, c_ungetc_stream"));
+        self.text
+            .push(format!("  CMP r{saved_stream}, r{stream_value}"));
+        self.text.push(format!("  BNE {direct}"));
+        self.text.push(format!("  LD r{ch}, c_ungetc_char"));
+        self.text.push(format!("  ST.B [r{buf_base}, 0], r{ch}"));
+        self.text.push("  ST c_ungetc_valid, r0".to_string());
+        self.emit_advance_after_ungetc(stream_value)?;
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text
+            .push(format!("  SUB r{remaining}, r{len}, r{one}"));
+        self.text.push(format!("  MOV r{dst}, r{one}"));
+        self.text.push(format!("  CMP r{remaining}, r0"));
+        self.text.push(format!("  BEQ {divide}"));
+        self.text
+            .push(format!("  ADD r{tail}, r{buf_base}, r{one}"));
+        self.emit_read_fd_dispatch(stream_value, tail, remaining, Some(count))?;
+        self.text.push(format!("  ADD r{dst}, r{count}, r{one}"));
+        self.text.push(format!("  JMP {divide}"));
+        self.text.push(format!("{direct}:"));
+        self.emit_read_fd_dispatch(stream_value, buf_base, len, Some(dst))?;
+        self.text.push(format!("{divide}:"));
+        self.text.push(format!("  DIV r{dst}, r{dst}, r{size}"));
+        self.text.push(format!("{done}:"));
+        Ok(dst)
+    }
+
+    fn emit_fscanf(&mut self, args: &[Expr]) -> Result<usize, String> {
+        if args.len() != 3 {
+            return Err("fscanf(stream, fmt, out) expects 3 arguments".to_string());
+        }
+        let fmt = match &args[1] {
+            Expr::Str(fmt) => fmt,
+            _ => return Err("fscanf currently requires a literal format".to_string()),
+        };
+        let Some(allowed) = scanset_bytes(fmt) else {
+            return Err(format!("unsupported fscanf format {fmt:?}"));
+        };
+        let stream = self.emit_expr(&args[0])?;
+        let stream_slot = self.spill_reg(stream);
+        self.temp_reg = 0;
+        let out = self.emit_pointer_arg(&args[2])?;
+        let stream = self.reload_reg(stream_slot)?;
+        self.emit_fscanf_scanset(stream, out, &allowed)
+    }
+
+    fn emit_fscanf_scanset(
+        &mut self,
+        stream: usize,
+        out: usize,
+        allowed: &[u8],
+    ) -> Result<usize, String> {
+        if allowed.is_empty() {
+            return Err("empty fscanf scanset is unsupported".to_string());
+        }
+        let stream_value = self.alloc_reg()?;
+        let out_base = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let idx = self.alloc_reg()?;
+        let one = self.alloc_reg()?;
+        let eof = self.alloc_reg()?;
+        let out_ptr = self.alloc_reg()?;
+        let tmp = self.alloc_reg()?;
+        let loop_label = self.new_label("fscanf_scanset_loop");
+        let matched = self.new_label("fscanf_scanset_matched");
+        let no_match = self.new_label("fscanf_scanset_no_match");
+        let eof_label = self.new_label("fscanf_scanset_eof");
+        let terminate = self.new_label("fscanf_scanset_terminate");
+        let fail = self.new_label("fscanf_scanset_fail");
+        let done = self.new_label("fscanf_scanset_done");
+        self.text.push(format!("  MOV r{stream_value}, r{stream}"));
+        self.text.push(format!("  MOV r{out_base}, r{out}"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("  LI r{idx}, 0"));
+        self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("  LI r{eof}, -1"));
+        self.text.push(format!("{loop_label}:"));
+        let ch = self.emit_getc(stream_value)?;
+        self.text.push(format!("  CMP r{ch}, r{eof}"));
+        self.text.push(format!("  BEQ {eof_label}"));
+        self.emit_scanset_membership(ch, tmp, allowed, &matched, &no_match);
+        self.text.push(format!("{matched}:"));
+        self.text
+            .push(format!("  ADD r{out_ptr}, r{out_base}, r{idx}"));
+        self.text.push(format!("  ST.B [r{out_ptr}, 0], r{ch}"));
+        self.text.push(format!("  ADD r{idx}, r{idx}, r{one}"));
+        self.text.push(format!("  JMP {loop_label}"));
+        self.text.push(format!("{no_match}:"));
+        self.emit_ungetc_value(ch, stream_value)?;
+        self.text.push(format!("  CMP r{idx}, r0"));
+        self.text.push(format!("  BEQ {fail}"));
+        self.text.push(format!("  JMP {terminate}"));
+        self.text.push(format!("{eof_label}:"));
+        self.text.push(format!("  CMP r{idx}, r0"));
+        self.text.push(format!("  BEQ {fail}"));
+        self.text.push(format!("{terminate}:"));
+        self.text
+            .push(format!("  ADD r{out_ptr}, r{out_base}, r{idx}"));
+        self.text.push(format!("  ST.B [r{out_ptr}, 0], r0"));
+        self.text.push(format!("  LI r{dst}, 1"));
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{fail}:"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("{done}:"));
+        Ok(dst)
+    }
+
+    fn emit_scanset_membership(
+        &mut self,
+        ch: usize,
+        tmp: usize,
+        allowed: &[u8],
+        yes: &str,
+        no: &str,
+    ) {
+        for byte in allowed {
+            self.text.push(format!("  LI r{tmp}, {byte}"));
+            self.text.push(format!("  CMP r{ch}, r{tmp}"));
+            self.text.push(format!("  BEQ {yes}"));
+        }
+        self.text.push(format!("  JMP {no}"));
     }
 
     fn emit_stat_buffer_arg(&mut self, arg: &Expr) -> Result<usize, String> {
@@ -14571,6 +14838,15 @@ fn next_format_spec(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Opt
         chars.next();
     }
     chars.next()
+}
+
+fn scanset_bytes(fmt: &str) -> Option<Vec<u8>> {
+    let body = fmt.strip_prefix("%[")?;
+    let (set, rest) = body.split_once(']')?;
+    if !rest.is_empty() {
+        return None;
+    }
+    Some(set.as_bytes().to_vec())
 }
 
 fn c_string_data(value: &str) -> String {
@@ -18992,6 +19268,47 @@ int main() {
         }
         "#;
         let asm = compile(source).unwrap();
+        assert!(asm.contains("FD_SEEK_DYN"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_ungetc_scanset_and_fread_pushback_run() {
+        let source = r#"
+        int main() {
+            int fp;
+            char a[100];
+            fp = tmpfile();
+            if (fp == -1) return 1;
+            if (fprintf(fp, "hello, world\n") != 13) return 2;
+            if (fseek(fp, 0, SEEK_SET) != 0) return 3;
+            if (feof(fp) != 0) return 4;
+            if (fgetc(fp) != 'h') return 5;
+            if (ftell(fp) != 1) return 6;
+            if (ungetc('x', fp) != 'x') return 7;
+            if (ftell(fp) != 0) return 8;
+            if (fscanf(fp, "%[h]", a) != 0) return 9;
+            if (ftell(fp) != 0) return 10;
+            if (fgetc(fp) != 'x') return 11;
+            if (ftell(fp) != 1) return 12;
+            if (fseek(fp, 0, SEEK_SET) != 0) return 13;
+            if (ungetc('x', fp) != 'x') return 14;
+            if (fread(a, 1, sizeof a, fp) != 14) return 15;
+            a[14] = 0;
+            if (strcmp(a, "xhello, world\n") != 0) return 16;
+            if (fseek(fp, 0, SEEK_SET) != 0) return 17;
+            if (fscanf(fp, "%[x]", a) != 0) return 18;
+            if (ungetc('x', fp) != 'x') return 19;
+            if (fgetc(fp) != 'x') return 20;
+            if (fgetc(fp) != 'h') return 21;
+            fclose(fp);
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("c_ungetc_valid"), "{asm}");
         assert!(asm.contains("FD_SEEK_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);

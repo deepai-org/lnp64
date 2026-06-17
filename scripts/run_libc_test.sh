@@ -20,6 +20,7 @@ tests=(
   string_strstr
   strtol
   udiv
+  ungetc
 )
 
 for test_name in "${tests[@]}"; do

@@ -24,6 +24,7 @@ libc-test files; bounded or locally guarded files are called out below.
 - `functional/string_strstr.c`
 - `functional/strtol.c`
 - `functional/udiv.c`
+- `functional/ungetc.c`
 
 The local `functional/test.h` and `functional/print.c` files provide a minimal
 LNP64-compatible test harness. They preserve the libc-test convention that tests
@@ -34,6 +35,9 @@ large uint64 cases because the current compiler qsort helper is O(n^2); the full
 upstream qsort case is a remaining performance gate, not a known correctness
 failure. `udiv.c` keeps the checked unsigned division rows but skips a local
 zero-divisor table row because that row is undefined behavior in C.
+`ungetc.c` is the upstream file and covers descriptor-backed one-byte
+pushback, scanset mismatch preservation, `ftell` positioning, and `fread`
+consumption of an ungot byte.
 
 Run the subset with:
 
