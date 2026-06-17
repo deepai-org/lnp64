@@ -5234,7 +5234,8 @@ impl CodeGen {
             1
         } else if matches!(base, Expr::Var(name) if matches!(
             name.as_str(),
-            "argv" | "envp" | "environ" | "fds"
+            "argv" | "envp" | "environ" | "fds" | "paths" | "files" | "sp" | "brace" | "top"
+                | "stack" | "new"
         ) || self.global_arrays.contains(name))
         {
             8
@@ -5372,6 +5373,7 @@ impl CodeGen {
                     | "tokens"
                     | "parser"
                     | "list"
+                    | "length"
             )
         }) {
             8
@@ -14336,6 +14338,45 @@ mod tests {
             if (strcmp(names[0], "alpha") != 0) return 1;
             if (strcmp(names[1], "beta") != 0) return 2;
             return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn word_pointer_parameter_indexes_load_pointer_slots() {
+        let source = r#"
+        int first_matches(char **paths) {
+            return strcmp(paths[0], "alpha") == 0 ? 0 : 1;
+        }
+
+        int main() {
+            char *paths[2] = { "alpha", "beta" };
+            return first_matches(paths);
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn output_pointer_named_length_stores_full_word() {
+        let source = r#"
+        int set_length(int *length) {
+            *length = 257;
+            return 0;
+        }
+
+        int main() {
+            int length;
+            length = 0;
+            set_length(&length);
+            return length == 257 ? 0 : 1;
         }
         "#;
         let asm = compile(source).unwrap();
