@@ -46,6 +46,8 @@ Core architecture docs:
   boundary.
 - `toolchain_roadmap.md`: LLVM/Clang/lld and NetBSD-derived toolchain bring-up
   plan, including the toy compiler freeze policy.
+- `toolchain/lnp64_target.manifest`: checked seed contract for the future LLVM
+  target skeleton.
 - `libc_roadmap.md`: libc/runtime integration plan.
 - `emulator_security_roadmap.md`: emulator security implementation roadmap.
 

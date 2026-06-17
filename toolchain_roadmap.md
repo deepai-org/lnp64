@@ -4,6 +4,11 @@ This roadmap is the transition plan from the in-repo toy C compiler to a real
 LLVM/Clang/lld based LNP64 toolchain capable of building NetBSD-derived libc,
 libpthread, userland commands, and rump service components.
 
+`toolchain/lnp64_target.manifest` is the checked, machine-readable seed of the
+future LLVM target contract. The Rust test
+`llvm_target_manifest_records_required_backend_contract` keeps its first
+backend-facing fields synchronized with this roadmap.
+
 The current Rust assembler, emulator, and C compiler remain useful bootstrap
 and architecture smoke-test tools. They are not the long-term application
 toolchain.

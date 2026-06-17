@@ -700,6 +700,76 @@ pub const fn signal_waitable(signum: u64) -> Waitable {
 mod tests {
     use super::*;
 
+    fn manifest_field<'a>(manifest: &'a str, key: &str) -> &'a str {
+        let prefix = format!("{key}=");
+        manifest
+            .lines()
+            .find_map(|line| line.strip_prefix(&prefix))
+            .unwrap_or_else(|| panic!("missing manifest field {key}"))
+    }
+
+    fn manifest_csv_contains(manifest: &str, key: &str, value: &str) -> bool {
+        manifest_field(manifest, key)
+            .split(',')
+            .any(|entry| entry == value)
+    }
+
+    #[test]
+    fn llvm_target_manifest_records_required_backend_contract() {
+        let manifest = include_str!("../toolchain/lnp64_target.manifest");
+        assert_eq!(manifest_field(manifest, "triple"), "lnp64-unknown-none");
+        assert_eq!(manifest_field(manifest, "object_format"), "ELF64");
+        assert_eq!(manifest_field(manifest, "endianness"), "little");
+        assert_eq!(manifest_field(manifest, "data_model"), "LP64");
+        assert_eq!(manifest_field(manifest, "pointer_width"), "64");
+        assert_eq!(manifest_field(manifest, "e_machine"), "0x6c64");
+        assert_eq!(manifest_field(manifest, "psabi"), "psABI.md");
+        assert_eq!(
+            manifest_field(manifest, "object_contract"),
+            "object_format.md"
+        );
+        assert_eq!(manifest_field(manifest, "gpr"), "r0-r31");
+        assert_eq!(manifest_field(manifest, "fdr"), "fd0-fd31");
+        for pcr in ["PID", "PPID", "TID", "TP", "SIGMASK", "SIGPENDING"] {
+            assert!(manifest_csv_contains(manifest, "pcr", pcr), "missing {pcr}");
+        }
+        for relocation in [
+            "R_LNP64_ABS64",
+            "R_LNP64_PC32",
+            "R_LNP64_CALL26",
+            "R_LNP64_TLS_TPREL64",
+        ] {
+            assert!(
+                manifest_csv_contains(manifest, "relocations", relocation),
+                "missing {relocation}"
+            );
+        }
+        for intrinsic in [
+            "__lnp_openat",
+            "__lnp_pull",
+            "__lnp_push",
+            "__lnp_mmap",
+            "__lnp_await",
+            "__lnp_gate_call",
+            "__lnp_gate_return",
+            "__lnp_domain_ctl",
+            "__lnp_object_ctl",
+            "__lnp_cap_dup",
+            "__lnp_cap_send",
+            "__lnp_cap_recv",
+            "__lnp_cap_revoke",
+        ] {
+            assert!(
+                manifest_csv_contains(manifest, "intrinsics", intrinsic),
+                "missing {intrinsic}"
+            );
+        }
+        assert_eq!(
+            manifest_field(manifest, "toy_compiler_policy"),
+            "bootstrap_smoke_only_after_llvm_gate"
+        );
+    }
+
     #[test]
     fn compatibility_table_names_native_primitives() {
         assert_eq!(lowering_for(CompatSurface::Open), LOWER_OPEN);
