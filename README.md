@@ -44,6 +44,8 @@ Core architecture docs:
   and smoke gate mapping.
 - `object_format.md`: target static ELF/software-loader profile and exec-plan
   boundary.
+- `toolchain_roadmap.md`: LLVM/Clang/lld and NetBSD-derived toolchain bring-up
+  plan, including the toy compiler freeze policy.
 - `libc_roadmap.md`: libc/runtime integration plan.
 - `emulator_security_roadmap.md`: emulator security implementation roadmap.
 
