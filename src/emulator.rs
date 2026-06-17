@@ -57,6 +57,8 @@ const DOMAIN_SECURITY_ENTROPY_QUOTA: u64 = 168;
 const DOMAIN_SECURITY_DMA_ALLOWED: u64 = 176;
 const DOMAIN_SECURITY_HARDENING_PROFILE: u64 = 184;
 const DOMAIN_SECURITY_EXEC_SOURCE_POLICY: u64 = 192;
+const EXEC_SOURCE_ANONYMOUS_JIT: u64 = 1 << 0;
+const EXEC_SOURCE_FILE_MAPPING: u64 = 1 << 1;
 
 const DOMAIN_CAP_PROCESS: u64 = 1 << 0;
 const DOMAIN_CAP_MEMORY: u64 = 1 << 1;
@@ -1632,6 +1634,11 @@ impl Machine {
                 let hint = self.read_reg(hint)?;
                 let offset = self.read_reg(offset)?;
                 let file = self.process()?.fds[fd.0].file_clone()?;
+                if !self.domain_allows_executable_source(prot, file.is_some())? {
+                    self.set_status_errno(1)?;
+                    self.write_reg(dst, -1i64 as u64)?;
+                    return Ok(true);
+                }
                 let addr = {
                     let process = self.process_mut()?;
                     let addr = if hint != 0 {
@@ -2544,15 +2551,24 @@ impl Machine {
             self.set_status_errno(22)?;
             return Ok(());
         };
-        for vma in &mut self.process_mut()?.vmas {
+        let Some(idx) = self.process()?.vmas.iter().position(|vma| {
             let vma_end = vma.start + vma.len;
-            if addr >= vma.start && end <= vma_end {
-                vma.prot = prot;
-                self.set_status_ok()?;
-                return Ok(());
-            }
+            addr >= vma.start && end <= vma_end
+        }) else {
+            self.set_status_errno(12)?;
+            return Ok(());
+        };
+        let (old_prot, file_backed) = {
+            let vma = &self.process()?.vmas[idx];
+            (vma.prot, vma.file.is_some())
+        };
+        let adds_execute = old_prot & 0b100 == 0 && prot & 0b100 != 0;
+        if adds_execute && !self.domain_allows_executable_source(prot, file_backed)? {
+            self.set_status_errno(1)?;
+            return Ok(());
         }
-        self.set_status_errno(12)?;
+        self.process_mut()?.vmas[idx].prot = prot;
+        self.set_status_ok()?;
         Ok(())
     }
 
@@ -4101,6 +4117,27 @@ impl Machine {
         };
         let wants_wx = prot & 0b110 == 0b110;
         Ok(!wants_wx || domain.security.allow_wx)
+    }
+
+    fn domain_allows_executable_source(
+        &self,
+        prot: u64,
+        file_backed: bool,
+    ) -> Result<bool, String> {
+        if prot & 0b100 == 0 {
+            return Ok(true);
+        }
+        let domain_id = self.current_domain_id()?;
+        let Some(domain) = self.domains.get(&domain_id) else {
+            return Err(format!("missing resource domain {domain_id}"));
+        };
+        let source = if file_backed {
+            EXEC_SOURCE_FILE_MAPPING
+        } else {
+            EXEC_SOURCE_ANONYMOUS_JIT
+        };
+        Ok(domain.security.allow_jit_transition
+            && domain.security.executable_source_policy & source != 0)
     }
 
     fn current_domain_dma_allowed(&self) -> Result<bool, String> {
@@ -5809,6 +5846,101 @@ mod tests {
                 .unwrap()
                 .prot,
             0b110
+        );
+    }
+
+    #[test]
+    fn executable_mappings_require_jit_transition_policy() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        machine
+            .domains
+            .get_mut(&ROOT_DOMAIN_ID)
+            .unwrap()
+            .security
+            .allow_jit_transition = false;
+
+        machine.thread_mut().unwrap().regs[1] = 4096;
+        machine.thread_mut().unwrap().regs[2] = 0b101;
+        machine.thread_mut().unwrap().regs[7] = 0x220_000;
+        machine
+            .exec(Instr::Mmap(
+                Reg(3),
+                Reg(7),
+                Reg(1),
+                Reg(2),
+                FdReg(0),
+                Reg(7),
+            ))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[3], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
+
+        machine.thread_mut().unwrap().regs[1] = 4096;
+        machine.thread_mut().unwrap().regs[2] = 0b011;
+        machine.thread_mut().unwrap().regs[7] = 0x220_000;
+        machine
+            .exec(Instr::Mmap(
+                Reg(3),
+                Reg(7),
+                Reg(1),
+                Reg(2),
+                FdReg(0),
+                Reg(7),
+            ))
+            .unwrap();
+        let addr = machine.thread().unwrap().regs[3];
+        assert_ne!(addr, -1i64 as u64);
+
+        machine.thread_mut().unwrap().regs[4] = addr;
+        machine.thread_mut().unwrap().regs[5] = 4096;
+        machine.thread_mut().unwrap().regs[6] = 0b101;
+        machine
+            .exec(Instr::Mprotect(Reg(4), Reg(5), Reg(6)))
+            .unwrap();
+        assert_eq!(machine.process().unwrap().errno, 1);
+        assert_eq!(
+            machine
+                .process()
+                .unwrap()
+                .vmas
+                .iter()
+                .find(|vma| vma.start == addr)
+                .unwrap()
+                .prot,
+            0b011
+        );
+
+        machine
+            .domains
+            .get_mut(&ROOT_DOMAIN_ID)
+            .unwrap()
+            .security
+            .allow_jit_transition = true;
+        machine.thread_mut().unwrap().regs[4] = addr;
+        machine.thread_mut().unwrap().regs[5] = 4096;
+        machine.thread_mut().unwrap().regs[6] = 0b101;
+        machine
+            .exec(Instr::Mprotect(Reg(4), Reg(5), Reg(6)))
+            .unwrap();
+        assert_eq!(machine.process().unwrap().errno, 0);
+        assert_eq!(
+            machine
+                .process()
+                .unwrap()
+                .vmas
+                .iter()
+                .find(|vma| vma.start == addr)
+                .unwrap()
+                .prot,
+            0b101
         );
     }
 
