@@ -5832,6 +5832,42 @@ impl CodeGen {
                 let ts = self.emit_expr(&args[1])?;
                 self.emit_clock_gettime(ts)
             }
+            "timerfd_create" => {
+                if args.len() != 2 {
+                    return Err("timerfd_create(clockid, flags) expects 2 arguments".to_string());
+                }
+                self.emit_expr(&args[0])?;
+                self.emit_expr(&args[1])?;
+                self.emit_timerfd_create()
+            }
+            "timerfd_settime" | "timerinttime" => {
+                if args.len() != 4 {
+                    return Err(
+                        "timerfd_settime(fd, flags, new_value, old_value) expects 4 arguments"
+                            .to_string(),
+                    );
+                }
+                let fd = self.emit_expr(&args[0])?;
+                let fd_slot = self.spill_reg(fd);
+                self.temp_reg = 0;
+                let _flags = self.emit_expr(&args[1])?;
+                self.temp_reg = 0;
+                let new_value = self.emit_expr(&args[2])?;
+                let new_slot = self.spill_reg(new_value);
+                self.temp_reg = 0;
+                let old_value = self.emit_expr(&args[3])?;
+                let fd = self.reload_reg(fd_slot)?;
+                let new_value = self.reload_reg(new_slot)?;
+                self.emit_timerfd_settime(fd, new_value, old_value)
+            }
+            "timerfd_gettime" => {
+                if args.len() != 2 {
+                    return Err("timerfd_gettime(fd, curr_value) expects 2 arguments".to_string());
+                }
+                self.emit_expr(&args[0])?;
+                let curr_value = self.emit_expr(&args[1])?;
+                self.emit_timerfd_gettime(curr_value)
+            }
             "gettimeofday" => {
                 if args.len() != 2 {
                     return Err("gettimeofday(tv, tz) expects 2 arguments".to_string());
@@ -11244,6 +11280,93 @@ impl CodeGen {
         Ok(dst)
     }
 
+    fn emit_timerfd_create(&mut self) -> Result<usize, String> {
+        let kind = self.alloc_reg()?;
+        let profile = self.alloc_reg()?;
+        self.text.push(format!("  LI r{kind}, 6"));
+        self.text.push(format!("  LI r{profile}, 0"));
+        self.emit_object_create(kind, profile, 0, 0, 0)
+    }
+
+    fn emit_timerfd_settime(
+        &mut self,
+        fd: usize,
+        new_value: usize,
+        old_value: usize,
+    ) -> Result<usize, String> {
+        let sec = self.alloc_reg()?;
+        let nsec = self.alloc_reg()?;
+        let hundred = self.alloc_reg()?;
+        let divisor = self.alloc_reg()?;
+        let nsec_ticks = self.alloc_reg()?;
+        let ticks = self.alloc_reg()?;
+        let block_size = self.alloc_reg()?;
+        let block = self.alloc_reg()?;
+        let len = self.alloc_reg()?;
+        let result = self.alloc_reg()?;
+        let dst = self.alloc_reg()?;
+        let no_new = self.new_label("timerfd_settime_no_new");
+        let arm = self.new_label("timerfd_settime_arm");
+        let no_old = self.new_label("timerfd_settime_no_old");
+        let ok = self.new_label("timerfd_settime_ok");
+        let done = self.new_label("timerfd_settime_done");
+
+        self.text.push(format!("  CMP r{old_value}, r0"));
+        self.text.push(format!("  BEQ {no_old}"));
+        for offset in [0, 8, 16, 24] {
+            self.text.push(format!("  ST [r{old_value}, {offset}], r0"));
+        }
+        self.text.push(format!("{no_old}:"));
+
+        self.text.push(format!("  LI r{ticks}, 0"));
+        self.text.push(format!("  CMP r{new_value}, r0"));
+        self.text.push(format!("  BEQ {no_new}"));
+        self.text.push(format!("  LD r{sec}, [r{new_value}, 16]"));
+        self.text.push(format!("  LD r{nsec}, [r{new_value}, 24]"));
+        self.text.push(format!("  LI r{hundred}, 100"));
+        self.text
+            .push(format!("  MUL r{ticks}, r{sec}, r{hundred}"));
+        self.text.push(format!("  LI r{divisor}, 10000000"));
+        self.text
+            .push(format!("  DIV r{nsec_ticks}, r{nsec}, r{divisor}"));
+        self.text
+            .push(format!("  ADD r{ticks}, r{ticks}, r{nsec_ticks}"));
+        self.text.push(format!("  CMP r{ticks}, r0"));
+        self.text.push(format!("  BNE {arm}"));
+        self.text.push(format!("  CMP r{nsec}, r0"));
+        self.text.push(format!("  BEQ {arm}"));
+        self.text.push(format!("  LI r{ticks}, 1"));
+        self.text.push(format!("{arm}:"));
+        self.text.push(format!("{no_new}:"));
+        self.text.push(format!("  LI r{block_size}, 8"));
+        self.text.push(format!("  ALLOC r{block}, r{block_size}"));
+        self.text.push(format!("  ST [r{block}, 0], r{ticks}"));
+        self.text.push(format!("  LI r{len}, 8"));
+        self.emit_write_fd_dispatch(fd, block, len, result)?;
+        self.text.push(format!("  CMP r{result}, r{len}"));
+        self.text.push(format!("  BEQ {ok}"));
+        self.text.push(format!("  LI r{dst}, -1"));
+        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("{ok}:"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        self.text.push(format!("{done}:"));
+        Ok(dst)
+    }
+
+    fn emit_timerfd_gettime(&mut self, curr_value: usize) -> Result<usize, String> {
+        let dst = self.alloc_reg()?;
+        let done = self.new_label("timerfd_gettime_done");
+        self.text.push(format!("  CMP r{curr_value}, r0"));
+        self.text.push(format!("  BEQ {done}"));
+        for offset in [0, 8, 16, 24] {
+            self.text
+                .push(format!("  ST [r{curr_value}, {offset}], r0"));
+        }
+        self.text.push(format!("{done}:"));
+        self.text.push(format!("  LI r{dst}, 0"));
+        Ok(dst)
+    }
+
     fn emit_gettimeofday(&mut self, tv: usize, tz: usize) -> Result<usize, String> {
         let sec = self.alloc_reg()?;
         let nsec = self.alloc_reg()?;
@@ -14623,6 +14746,46 @@ int main() {
         assert!(asm.contains("REALTIME_SEC"), "{asm}");
         assert!(asm.contains("REALTIME_NSEC"), "{asm}");
         assert!(asm.contains("SLEEP"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_timerfd_surface_uses_object_timer_profile() {
+        let source = r#"
+        int main() {
+            int fd;
+            int spec[4];
+            int old[4];
+            int p[3];
+            fd = timerfd_create(CLOCK_MONOTONIC, 0);
+            if (fd == -1) return 1;
+            spec[0] = 0;
+            spec[1] = 0;
+            spec[2] = 0;
+            spec[3] = 1;
+            old[0] = 9;
+            if (timerfd_settime(fd, 0, spec, old) != 0) return 2;
+            if (old[0] != 0) return 3;
+            p[0] = fd;
+            p[1] = POLLIN;
+            p[2] = 0;
+            if (poll(p, 1, -1) != 1) return 4;
+            if (p[2] != POLLIN) return 5;
+            spec[0] = 0;
+            if (read(fd, spec, 8) != 8) return 6;
+            if (spec[0] != 1) return 7;
+            spec[2] = 5;
+            if (timerfd_gettime(fd, spec) != 0) return 8;
+            if (spec[2] != 0) return 9;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("OBJECT_CTL"), "{asm}");
+        assert!(asm.contains("WRITE_FD_DYN"), "{asm}");
+        assert!(asm.contains("POLL_FD_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);

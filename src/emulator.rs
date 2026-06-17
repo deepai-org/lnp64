@@ -118,6 +118,7 @@ const OBJECT_KIND_QUEUE: u64 = 2;
 const OBJECT_KIND_MEMORY_OBJECT: u64 = 3;
 const OBJECT_KIND_DMA_BUFFER: u64 = 4;
 const OBJECT_KIND_ENDPOINT: u64 = 5;
+const OBJECT_KIND_TIMER: u64 = 6;
 const OBJECT_PROFILE_PIPE: u64 = 1;
 const OBJECT_PROFILE_TCP_STREAM: u64 = 2;
 const OBJECT_PROFILE_CALL_GATE: u64 = 4;
@@ -190,6 +191,7 @@ enum FdHandle {
         data: Rc<RefCell<Vec<u8>>>,
         pos: usize,
     },
+    Timer(Rc<RefCell<TimerState>>),
     DmaBuffer {
         addr: u64,
         len: u64,
@@ -239,6 +241,7 @@ impl FdHandle {
                 data: Rc::clone(data),
                 pos: *pos,
             }),
+            FdHandle::Timer(timer) => Ok(FdHandle::Timer(Rc::clone(timer))),
             FdHandle::DmaBuffer { addr, len } => Ok(FdHandle::DmaBuffer {
                 addr: *addr,
                 len: *len,
@@ -340,6 +343,13 @@ struct CapabilityPayload {
 struct PipeBuffer {
     bytes: VecDeque<u8>,
     capabilities: VecDeque<CapabilityPayload>,
+}
+
+#[derive(Default)]
+struct TimerState {
+    remaining: u64,
+    interval: u64,
+    expirations: u64,
 }
 
 struct Vma {
@@ -845,6 +855,7 @@ impl Machine {
             steps += 1;
             self.tick_sleepers();
             self.tick_alarms();
+            self.tick_timers();
             self.poll_fd_waiters();
 
             let Some(tid) = self.ready.pop_front() else {
@@ -2361,6 +2372,20 @@ impl Machine {
                 *pos = end;
                 Ok(())
             }
+            FdHandle::Timer(timer) => {
+                let ticks = if data.len() >= 8 {
+                    u64::from_le_bytes(data[..8].try_into().unwrap())
+                } else {
+                    data.iter()
+                        .enumerate()
+                        .fold(0u64, |acc, (idx, byte)| acc | ((*byte as u64) << (idx * 8)))
+                };
+                let mut timer = timer.borrow_mut();
+                timer.remaining = ticks;
+                timer.interval = 0;
+                timer.expirations = 0;
+                Ok(())
+            }
             FdHandle::TcpListener { pending, .. } => {
                 if let Some(stream) = pending {
                     stream.write_all(&data)
@@ -2673,6 +2698,18 @@ impl Machine {
                 tmp[..count].copy_from_slice(&data[*pos..*pos + count]);
                 *pos += count;
                 count
+            }
+            FdHandle::Timer(timer) => {
+                let mut timer = timer.borrow_mut();
+                if timer.expirations == 0 {
+                    0
+                } else {
+                    let bytes = timer.expirations.to_le_bytes();
+                    let count = len.min(bytes.len());
+                    tmp[..count].copy_from_slice(&bytes[..count]);
+                    timer.expirations = 0;
+                    count
+                }
             }
             FdHandle::TcpListener { listener, pending } => {
                 if pending.is_none() {
@@ -3192,6 +3229,15 @@ impl Machine {
                         data: Rc::new(RefCell::new(vec![0; len])),
                         pos: 0,
                     },
+                )?;
+                self.store_u64(argblock + 24, fd as u64)
+                    .map_err(|_| 14u64)?;
+                Ok(fd as u64)
+            }
+            (OBJECT_KIND_TIMER, _) => {
+                let fd = self.install_object_fd(
+                    fd0_req,
+                    FdHandle::Timer(Rc::new(RefCell::new(TimerState::default()))),
                 )?;
                 self.store_u64(argblock + 24, fd as u64)
                     .map_err(|_| 14u64)?;
@@ -4963,6 +5009,33 @@ impl Machine {
         }
     }
 
+    fn tick_timers(&mut self) {
+        let mut seen: Vec<*const RefCell<TimerState>> = Vec::new();
+        for process in self.processes.values_mut() {
+            for handle in &mut process.fds {
+                let FdHandle::Timer(timer) = handle else {
+                    continue;
+                };
+                let ptr = Rc::as_ptr(timer);
+                if seen.contains(&ptr) {
+                    continue;
+                }
+                seen.push(ptr);
+                let mut timer = timer.borrow_mut();
+                if timer.remaining == 0 {
+                    continue;
+                }
+                timer.remaining = timer.remaining.saturating_sub(1);
+                if timer.remaining == 0 {
+                    timer.expirations = timer.expirations.saturating_add(1);
+                    if timer.interval != 0 {
+                        timer.remaining = timer.interval;
+                    }
+                }
+            }
+        }
+    }
+
     fn raise_process_signal(&mut self, pid: u64, signum: u64) {
         if let Some(process) = self.processes.get_mut(&pid) {
             process.pending_signals.push_back(signum);
@@ -5104,6 +5177,7 @@ impl Machine {
             | FdHandle::Dir { .. }
             | FdHandle::Counter(_)
             | FdHandle::MemoryObject { .. } => Ok(true),
+            FdHandle::Timer(timer) => Ok(timer.borrow().expirations != 0),
             FdHandle::PipeReader(buffer) => {
                 let buffer = buffer.borrow();
                 Ok(!buffer.bytes.is_empty() || !buffer.capabilities.is_empty())
@@ -5153,6 +5227,7 @@ impl Machine {
                 | FdHandle::PipeWriter(_)
                 | FdHandle::Counter(_)
                 | FdHandle::MemoryObject { .. }
+                | FdHandle::Timer(_)
                 | FdHandle::TcpStream(_)
         ))
     }
@@ -5173,6 +5248,7 @@ impl Machine {
             | FdHandle::MemoryObject { .. }
             | FdHandle::CallGate { .. }
             | FdHandle::TcpStream(_) => Ok(true),
+            FdHandle::Timer(timer) => Ok(timer.borrow().expirations != 0),
             FdHandle::MessageEndpoint | FdHandle::TcpSocket { .. } => Ok(false),
             FdHandle::PipeReader(buffer) => {
                 let buffer = buffer.borrow();
