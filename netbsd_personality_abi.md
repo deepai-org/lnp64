@@ -28,7 +28,7 @@ checks that the generated assembly still uses the expected native primitives.
 | Timers/time | `timerfd`, `nanosleep`, `usleep`, `alarm`, clocks | timer object profile, PCR/timebase reads, sleep queues, signal event delivery |
 | Signals | `signal`, `sigaction`, masks, `raise`, `kill`, `SIGRET` | native event queue, signal frame construction at compatibility boundary |
 | Sockets | `socket`, `bind`, `listen`, `connect`, `accept`, `send`, `recv` | endpoint object profiles via `OBJECT_CTL`, stream `PUSH`/`PULL`, readiness waits |
-| Rump filesystem hook | mounted block image or object-backed storage service | checked block-image FDR fixture plus mmap/page-fill and service-owned filesystem logic |
+| Rump filesystem hook | mounted block image or object-backed storage service | tiny checked rumpfs mount/read service over a block-image FDR fixture plus mmap/page-fill |
 | Gates/upcalls | rump service calls, cross-domain delivery | `OBJECT_CTL create call_gate`, `CALL_CAP`, `RET_CAP` |
 | Resource domains | sandbox/container/rump service isolation | `DOMAIN_CTL` create/query/freeze/resume/attach/detach/destroy |
 
@@ -48,8 +48,8 @@ checks that the generated assembly still uses the expected native primitives.
 - init-style startup, shell-like command dispatch output, and a forked `exec`
   shell command,
 - pipe/fd inheritance through `fork`, `poll`, and `wait`,
-- an mmap-backed allocator arena and a checked block-image-backed rumpfs mount
-  hook,
+- an mmap-backed allocator arena and a tiny checked rumpfs mount/read service
+  over a block-image FDR,
 - signal delivery through `signal`, `raise`, and `SIGRET`,
 - pthread startup/join, futex wake, `select`, and timerfd wait,
 - TCP loopback through endpoint object controls,
@@ -60,9 +60,9 @@ checks that the generated assembly still uses the expected native primitives.
 
 ## Open Work
 
-- Expand the current checked block-image hook into a rump-style filesystem
-  service that owns a block/object FDR and exposes namespace/file services back
-  through capabilities.
+- Expand the current tiny checked rumpfs service into a real NetBSD-derived
+  filesystem component that owns a block/object FDR and exposes namespace/file
+  services back through capabilities.
 - Add negative tests proving the personality cannot resolve paths without a
   delegated root/cwd capability and cannot use raw interrupts, raw DMA, raw page
   tables, or hidden scheduler authority.

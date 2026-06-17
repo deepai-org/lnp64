@@ -4,6 +4,7 @@ int select_wfd;
 int futex_slot;
 int mmap_arena;
 int mmap_cursor;
+int rumpfs_base;
 
 int gate_service() {
     ret_cap(0x4e425344, 0);
@@ -35,6 +36,44 @@ int personality_mmap_alloc(int bytes) {
     out = mmap_cursor;
     mmap_cursor = mmap_cursor + bytes;
     return out;
+}
+
+int rumpfs_mount() {
+    rumpfs_base = mmap(10, 64, 3);
+    if (rumpfs_base == -1) return 1;
+    if (loadb(rumpfs_base) != 'R') return 2;
+    if (loadb(rumpfs_base + 1) != 'U') return 3;
+    if (loadb(rumpfs_base + 2) != 'M') return 4;
+    if (loadb(rumpfs_base + 3) != 'P') return 5;
+    if (loadb(rumpfs_base + 4) != 'F') return 6;
+    if (loadb(rumpfs_base + 5) != 'S') return 7;
+    if (loadb(rumpfs_base + 6) != '1') return 8;
+    return 0;
+}
+
+int rumpfs_lookup_motd() {
+    if (loadb(rumpfs_base + 8) != 'e') return 0;
+    if (loadb(rumpfs_base + 9) != 't') return 0;
+    if (loadb(rumpfs_base + 10) != 'c') return 0;
+    if (loadb(rumpfs_base + 11) != '/') return 0;
+    if (loadb(rumpfs_base + 12) != 'm') return 0;
+    if (loadb(rumpfs_base + 13) != 'o') return 0;
+    if (loadb(rumpfs_base + 14) != 't') return 0;
+    if (loadb(rumpfs_base + 15) != 'd') return 0;
+    return rumpfs_base + 17;
+}
+
+int rumpfs_read_motd(int out) {
+    int src;
+    int i;
+    src = rumpfs_lookup_motd();
+    if (src == 0) return -1;
+    i = 0;
+    while (i < 17) {
+        storeb(out + i, loadb(src + i));
+        i = i + 1;
+    }
+    return 17;
 }
 
 int check_shell_command(int command) {
@@ -93,7 +132,7 @@ int check_mmap_and_rumpfs_block() {
     int mem1;
     int mem2;
     int fd;
-    int block;
+    int out;
     mmap_arena = mmap(0, 4096, 3);
     if (mmap_arena == -1) return 1;
     mmap_cursor = mmap_arena;
@@ -106,19 +145,13 @@ int check_mmap_and_rumpfs_block() {
     if (load(mem2) != 0x52554d50) return 4;
     fd = open(10, "demos/netbsd_rumpfs.img", 1);
     if (fd == -1) return 5;
-    block = mmap(10, 64, 3);
-    if (block == -1) return 6;
-    if (loadb(block) != 'R') return 7;
-    if (loadb(block + 1) != 'U') return 8;
-    if (loadb(block + 2) != 'M') return 9;
-    if (loadb(block + 3) != 'P') return 10;
-    if (loadb(block + 4) != 'F') return 11;
-    if (loadb(block + 5) != 'S') return 12;
-    if (loadb(block + 6) != '1') return 13;
-    if (loadb(block + 8) != 'e') return 14;
-    if (loadb(block + 11) != '/') return 15;
-    if (loadb(block + 17) != 'h') return 16;
-    if (loadb(block + 28) != 'r') return 17;
+    if (rumpfs_mount() != 0) return 6;
+    out = personality_mmap_alloc(32);
+    if (rumpfs_read_motd(out) != 17) return 7;
+    if (loadb(out) != 'h') return 8;
+    if (loadb(out + 6) != 'f') return 9;
+    if (loadb(out + 11) != 'r') return 10;
+    if (loadb(out + 16) != 's') return 11;
     return 0;
 }
 
