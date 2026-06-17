@@ -6898,6 +6898,35 @@ impl CodeGen {
                 self.emit_write_fd_dispatch(stream, buf, len, 1)?;
                 Ok(nmemb)
             }
+            "fread" => {
+                if args.len() != 4 {
+                    return Err("fread(buf, size, nmemb, stream) expects 4 arguments".to_string());
+                }
+                let buf = self.emit_expr(&args[0])?;
+                let buf_slot = self.spill_reg(buf);
+                self.temp_reg = 0;
+                let size = self.emit_expr(&args[1])?;
+                let size_slot = self.spill_reg(size);
+                self.temp_reg = 0;
+                let nmemb = self.emit_expr(&args[2])?;
+                let nmemb_slot = self.spill_reg(nmemb);
+                self.temp_reg = 0;
+                let stream = self.emit_expr(&args[3])?;
+                let buf = self.reload_reg(buf_slot)?;
+                let size = self.reload_reg(size_slot)?;
+                let nmemb = self.reload_reg(nmemb_slot)?;
+                let len = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                let done = self.new_label("fread_done");
+                self.text.push(format!("  LI r{dst}, 0"));
+                self.text.push(format!("  CMP r{size}, r0"));
+                self.text.push(format!("  BEQ {done}"));
+                self.text.push(format!("  MUL r{len}, r{size}, r{nmemb}"));
+                self.emit_read_fd_dispatch(stream, buf, len, Some(dst))?;
+                self.text.push(format!("  DIV r{dst}, r{dst}, r{size}"));
+                self.text.push(format!("{done}:"));
+                Ok(dst)
+            }
             "signal" => {
                 if args.len() != 2 {
                     return Err("signal(signum, handler) expects 2 arguments".to_string());
@@ -7271,6 +7300,21 @@ impl CodeGen {
                 let dst = self.alloc_reg()?;
                 if matches!(args.first(), Some(Expr::Num(_))) {
                     let fd = self.numeric_fd(&args[0], "close")?;
+                    self.text.push(format!("  FD_CLOSE fd{fd}"));
+                    self.text.push(format!("  MOV r{dst}, r1"));
+                } else {
+                    let fd = self.emit_expr(&args[0])?;
+                    self.emit_fd_close_dispatch(fd, dst)?;
+                }
+                Ok(dst)
+            }
+            "fclose" => {
+                if args.len() != 1 {
+                    return Err("fclose(stream) expects 1 argument".to_string());
+                }
+                let dst = self.alloc_reg()?;
+                if matches!(args.first(), Some(Expr::Num(_))) {
+                    let fd = self.numeric_fd(&args[0], "fclose")?;
                     self.text.push(format!("  FD_CLOSE fd{fd}"));
                     self.text.push(format!("  MOV r{dst}, r1"));
                 } else {
@@ -13289,6 +13333,38 @@ int main() {
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains("OPEN_FD_DYN"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_fread_and_fclose_use_descriptor_streams() {
+        let source = r#"
+        int main() {
+            int fp;
+            int buf;
+            remove("/tmp/lnp64_fread_test.txt");
+            fp = fopen("/tmp/lnp64_fread_test.txt", "w");
+            if (fp == -1) return 1;
+            if (fwrite("abcd", 1, 4, fp) != 4) return 2;
+            if (fclose(fp) != 0) return 3;
+            fp = fopen("/tmp/lnp64_fread_test.txt", "r");
+            if (fp == -1) return 4;
+            buf = alloc(8);
+            if (fread(buf, 1, 3, fp) != 3) return 5;
+            storeb(buf + 3, 0);
+            if (strcmp(buf, "abc") != 0) return 6;
+            if (fread(buf, 2, 2, fp) != 0) return 7;
+            if (fread(buf, 0, 4, fp) != 0) return 8;
+            fclose(fp);
+            remove("/tmp/lnp64_fread_test.txt");
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("READ_FD_DYN"), "{asm}");
+        assert!(asm.contains("FD_CLOSE_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
