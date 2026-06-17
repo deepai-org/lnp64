@@ -8,6 +8,7 @@ tests=(
   clock_gettime
   dirname
   env
+  fdopen
   random
   search_insque
   search_lsearch

@@ -306,7 +306,6 @@ fn is_expandable_replacement(text: &str) -> bool {
 fn is_expandable_function_replacement(name: &str, params: &[String], text: &str) -> bool {
     if is_queue_macro_name(name)
         || text.contains("struct ")
-        || text.contains("do ")
         || (text.contains("sizeof")
             && name != "l_numbits"
             && !has_only_scalar_or_param_sizeofs(text, params))
@@ -1558,6 +1557,23 @@ int main() {
             "{out}"
         );
         assert!(!out.contains("preserve(ptr, ptr);"), "{out}");
+    }
+
+    #[test]
+    fn expands_do_while_statement_function_macros() {
+        let source = r#"
+#define TEST(c) do { if (!(c)) fail(#c); } while(0)
+int main() {
+  TEST(x == 1);
+}
+"#;
+        let out = expand_object_like_macros(source);
+        assert!(
+            out.contains("do { if (!(x == 1)) fail(\"x == 1\"); } while(0);"),
+            "{out}"
+        );
+        let main_body = out.split("int main()").nth(1).unwrap_or_default();
+        assert!(!main_body.contains("TEST("), "{out}");
     }
 
     #[test]

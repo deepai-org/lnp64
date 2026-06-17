@@ -1594,15 +1594,35 @@ fn normalize_char_array_declarations(source: &str) -> String {
                         continue;
                     };
                     let len = decl[bracket + 1..bracket + 1 + end].trim();
+                    let rest = decl[bracket + 1 + end + 1..].trim();
+                    let literal_init = rest
+                        .strip_prefix('=')
+                        .and_then(|init| parse_string_literal_value(init.trim()));
+                    let alloc_len = if len.is_empty() {
+                        literal_init
+                            .as_ref()
+                            .map(|value| (value.len() + 1).to_string())
+                            .unwrap_or_default()
+                    } else {
+                        len.to_string()
+                    };
                     out.push_str(indent);
                     out.push_str("int ");
                     out.push_str(name);
                     out.push_str("; ");
                     out.push_str(name);
                     out.push_str(" = alloc(");
-                    out.push_str(len);
+                    out.push_str(&alloc_len);
                     out.push_str(");\n");
-                    if let Some(size) = parse_constant_len(len) {
+                    if literal_init.is_some() {
+                        out.push_str(indent);
+                        out.push_str("strcpy(");
+                        out.push_str(name);
+                        out.push_str(", ");
+                        out.push_str(rest.trim_start_matches('=').trim());
+                        out.push_str(");\n");
+                    }
+                    if let Some(size) = parse_constant_len(&alloc_len) {
                         active_array_sizes.push((name.to_string(), size, depth));
                     }
                 } else {
@@ -1626,6 +1646,14 @@ fn normalize_char_array_declarations(source: &str) -> String {
         active_array_sizes.retain(|(_, _, decl_depth)| *decl_depth == 0 || depth >= *decl_depth);
     }
     out
+}
+
+fn parse_string_literal_value(text: &str) -> Option<String> {
+    let mut tokens = Lexer::new(text).lex().ok()?.into_iter();
+    match (tokens.next()?, tokens.next()?) {
+        (Token::Str(value), Token::Eof) => Some(value),
+        _ => None,
+    }
 }
 
 fn replace_unparenthesized_sizeof_name(line: &str, name: &str, size: i64) -> String {
@@ -7915,6 +7943,16 @@ impl CodeGen {
                 let flags = self.emit_fopen_flags(&args[1])?;
                 self.emit_open_fd_alloc(path, flags)
             }
+            "fdopen" => {
+                if args.len() != 2 {
+                    return Err("fdopen(fd, mode) expects 2 arguments".to_string());
+                }
+                let fd = self.emit_expr(&args[0])?;
+                self.emit_expr(&args[1])?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  MOV r{dst}, r{fd}"));
+                Ok(dst)
+            }
             "freopen" => {
                 if args.len() != 3 {
                     return Err("freopen(path, mode, stream) expects 3 arguments".to_string());
@@ -11787,6 +11825,7 @@ impl CodeGen {
         let count = self.alloc_reg()?;
         let ch = self.alloc_reg()?;
         let newline = self.alloc_reg()?;
+        let fd = self.alloc_reg()?;
         let done = self.new_label("fgets_done");
         let size_one = self.new_label("fgets_size_one");
         let loop_label = self.new_label("fgets_loop");
@@ -11802,12 +11841,13 @@ impl CodeGen {
         self.text.push(format!("  BLE {size_one}"));
         self.text.push(format!("  LI r{idx}, 0"));
         self.text.push(format!("  LI r{newline}, 10"));
+        self.text.push(format!("  MOV r{fd}, r{stream}"));
         self.text.push(format!("{loop_label}:"));
         self.text.push(format!("  CMP r{idx}, r{limit}"));
         self.text.push(format!("  BGE {terminate}"));
         self.text.push(format!("  ADD r{ptr}, r{buf}, r{idx}"));
         self.text.push(format!("  LI r{count}, 1"));
-        self.emit_read_fd_dispatch(stream, ptr, count, Some(count))?;
+        self.emit_read_fd_dispatch(fd, ptr, count, Some(count))?;
         self.text.push(format!("  CMP r{count}, r0"));
         self.text.push(format!("  BLE {terminate}"));
         self.text.push(format!("  LD.B r{ch}, [r{ptr}, 0]"));
@@ -15753,6 +15793,30 @@ mod tests {
     }
 
     #[test]
+    fn local_unsized_char_array_string_initializer_allocates_and_copies() {
+        let source = r#"
+        int main() {
+            char tmp[] = "/tmp/template";
+            if (strcmp(tmp, "/tmp/template") != 0) return 1;
+            tmp[5] = 'X';
+            if (strcmp(tmp, "/tmp/Xemplate") != 0) return 2;
+            if (sizeof tmp != 14) return 3;
+            return 0;
+        }
+        "#;
+        let normalized = preprocess_source(source);
+        assert!(normalized.contains("tmp = alloc(14);"), "{normalized}");
+        assert!(
+            normalized.contains("strcpy(tmp, \"/tmp/template\");"),
+            "{normalized}"
+        );
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
     fn file_scope_static_char_arrays_are_zeroed_byte_globals() {
         let source = r#"
         static char buf[4];
@@ -18197,6 +18261,37 @@ int main() {
             return 0;
         }
         "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("FD_SEEK_DYN"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_fdopen_wraps_existing_descriptor_as_stream() {
+        let source = r#"
+        int main() {
+            char tmp[] = "/tmp/lnp64_fdopen_XXXXXX";
+            char foo[6];
+            int fd;
+            int fp;
+            fd = mkstemp(tmp);
+            if (fd <= 2) return 1;
+            if (write(fd, "hello", 6) != 6) return 2;
+            fp = fdopen(fd, "rb");
+            if (!fp) return 3;
+            if (ftello(fp) != 6) return 4;
+            if (fseeko(fp, 0, SEEK_SET) != 0) return 5;
+            if (!fgets(foo, sizeof foo, fp)) return 6;
+            if (strcmp(foo, "hello") != 0) return 7;
+            fclose(fp);
+            unlink(tmp);
+            return 0;
+        }
+        "#;
+        let normalized = preprocess_source(source);
+        assert!(normalized.contains("tmp = alloc(25);"), "{normalized}");
         let asm = compile(source).unwrap();
         assert!(asm.contains("FD_SEEK_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
