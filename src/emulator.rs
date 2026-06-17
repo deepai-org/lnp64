@@ -7743,6 +7743,44 @@ mod tests {
     }
 
     #[test]
+    fn exec_rejection_preserves_old_image_before_commit() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let bad_path = std::env::temp_dir().join(format!("lnp64_bad_exec_plan_{unique}.s"));
+        fs::write(&bad_path, "BAD_OPCODE r1\n").unwrap();
+        let bad_path = bad_path.to_string_lossy();
+
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let path_addr = ARG_BASE + 0x2000;
+        machine.write_bytes(path_addr, bad_path.as_bytes()).unwrap();
+        machine
+            .write_bytes(path_addr + bad_path.len() as u64, &[0])
+            .unwrap();
+        machine.write_reg(Reg(1), path_addr).unwrap();
+        machine.write_reg(Reg(2), 0).unwrap();
+        machine.write_reg(Reg(3), 0).unwrap();
+        machine.write_reg(Reg(9), 0xfeed_cafe).unwrap();
+        machine.thread_mut().unwrap().ip = 0;
+
+        let err = machine
+            .exec(Instr::Exec(Reg(1), Reg(2), Reg(3)))
+            .unwrap_err();
+        let _ = fs::remove_file(bad_path.as_ref());
+        assert!(err.contains("EXEC failed to assemble"), "{err}");
+        assert!(matches!(
+            machine.process().unwrap().program.instructions.first(),
+            Some(Instr::Nop)
+        ));
+        assert_eq!(machine.thread().unwrap().tid, 1);
+        assert_eq!(machine.thread().unwrap().ip, 0);
+        assert_eq!(machine.read_reg(Reg(9)).unwrap(), 0xfeed_cafe);
+        assert_eq!(machine.load_u64(ARG_BASE).unwrap(), 0);
+    }
+
+    #[test]
     fn runs_system_primitive_subset() {
         let program = Program::parse(
             r#"
