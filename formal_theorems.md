@@ -27,7 +27,7 @@ or timing model. Its initial proof boundary is:
 - mandatory object profiles: `counter`, `queue`, `event/completion`, `timer`,
   `memory_object`, `call_gate`, `dma_buffer`, and `dma_completion`.
 - wait/ready/runqueue state, scheduler eligibility, no-lost-wakeup transitions,
-  timeout events, and signal/fault delivery.
+  timeout events, gate delivery, continuation return, and fault delivery.
 - service-boundary request/reply records, continuation ids, copied/pinned
   buffers, returned-capability proposals, commit points, and canonical error
   outcomes.
@@ -193,7 +193,7 @@ Useful sub-theorems:
   budget.
 - `AWAIT` atomically transitions a thread from running to blocked or returns
   ready without losing an event.
-- `WAKE`, event delivery, signal delivery, fd readiness, timer expiry, call
+- `WAKE`, event delivery, gate delivery, fd readiness, timer expiry, call
   completion, classifier queue routing, and domain resume transition eligible
   threads back to runnable at most once.
 - consumed CPU advances virtual runtime/deadline accounting according to the
@@ -566,27 +566,28 @@ Useful sub-theorems:
 - classifier marks, counters, flow hashes, and routed record envelopes are data,
   not capabilities.
 
-## 19. Event, Signal, and Fault Delivery Safety
+## 19. Event, Gate, and Fault Delivery Safety
 
-**Events and faults are delivered to the right authority scope:** synchronous
-faults, asynchronous events, and the frozen Unix-signal subset are well-formed
-and cannot forge privilege or capabilities.
+**Events, gate activations, and faults are delivered to the right authority
+scope:** synchronous faults, asynchronous events, explicit calls, forced
+deliveries, and the POSIX signal profile are well-formed and cannot forge
+privilege or capabilities.
 
 Useful sub-theorems:
 
 - divide-by-zero, illegal opcode, permission fault, guard fault, and bad device
-  mapping produce the specified signal/upcall/fault record.
-- frozen v1 signal delivery refines hardware event/fault delivery and respects
+  mapping produce the specified gate-delivery/upcall/fault record.
+- frozen v1 POSIX signal delivery refines native gate delivery and respects
   process disposition, thread mask, pending state, and domain policy.
 - synchronous faults are thread-directed to the faulting thread.
 - process-directed signals are delivered only to an eligible unmasked thread
   chosen by the fixed implementation-profile rule, or remain process-pending.
-- signal frames are non-executable and cannot forge privilege or capability
+- signal/delivery frames are non-executable and cannot forge privilege or capability
   state.
-- `SIGRET` restores only the hardware-saved context for that interrupted
-  thread.
-- `SIGRET` validates saved context token/generation and cannot restore from an
-  arbitrary user-writable frame.
+- `GATE_RETURN` restores only the hardware-saved continuation for that
+  activation.
+- `GATE_RETURN` validates saved context token/generation and cannot restore
+  from an arbitrary user-writable frame.
 - interruptible operations return `EINTR` or a typed interrupted status before
   handler entry; post-commit operations follow their documented roll-forward or
   teardown policy.
@@ -596,14 +597,17 @@ Useful sub-theorems:
 - event/fault records are scoped to the owning domain or configured supervisor
   FDR and do not leak unauthorized payloads.
 
-## 20. Cross-Domain Call Safety
+## 20. Gate/Continuation Safety
 
-**Call-gate safety:** `CALL_CAP` transfers control, arguments, accounting, and
-optional capabilities only as authorized by the call-gate FDR.
+**Gate safety:** `GATE_CALL`, `GATE_DELIVER`, and `GATE_RETURN` transfer
+control, arguments, accounting, continuations, and optional capabilities only as
+authorized by the gate FDR or delivery profile.
 
 Useful sub-theorems:
 
 - synchronous calls park exactly one caller continuation.
+- forced deliveries save at most one bounded continuation per activation unless
+  a profile explicitly permits bounded nesting.
 - asynchronous calls produce at most one completion per accepted operation id.
 - handoff calls transfer cancellation/accounting ownership according to gate
   policy.
@@ -641,7 +645,7 @@ state or the committed new state, never an inconsistent middle state.
 Useful sub-theorems:
 
 - `OPEN_AT`, `NS_CTL`, `SET_META`, `MMAP`, `MUNMAP`, `CLONE`, `EXEC`,
-  `DOMAIN_CTL`, `OBJECT_CTL`, `CAP_REVOKE`, `CALL_CAP`, classifier table
+  `DOMAIN_CTL`, `OBJECT_CTL`, `CAP_REVOKE`, `GATE_CALL`, classifier table
   updates, and network endpoint creation each have a single architectural commit
   point.
 - cancellation before commit rolls back all reservations.
@@ -844,8 +848,8 @@ Useful sub-theorems:
   authority beyond FDR/domain inheritance rules or copy in-flight ownership.
 - POSIX signals are an event-delivery profile and cannot bypass capability or
   domain checks.
-- UID/GID and mode bits participate in compatibility decisions but cannot
-  replace required capabilities.
+- POSIX UID/GID and mode bits participate in compatibility decisions through a
+  credential profile, but cannot replace required capabilities.
 - `errno` is a compatibility view of explicit result/error status.
 - socket APIs refine endpoint/listener/network namespace capabilities.
 - ioctl-like controls refine typed metadata/control records or fail; they do

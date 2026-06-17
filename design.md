@@ -6,17 +6,18 @@ personalities, drivers, runtimes, and native services without freezing a
 historical kernel as the hardware model.
 
 ## 1. Register Architecture
-To support hardware-native resource primitives, the standard register file is expanded beyond General Purpose Registers (GPRs) to include File Descriptor Registers (FDRs) and Process Control Registers (PCRs).
+To support hardware-native resource primitives, the standard register file is expanded beyond General Purpose Registers (GPRs) to include FDR capability registers and Process Control Registers (PCRs).
 
 *   **GPRs (General Purpose):** `r0` - `r31` (64-bit, standard ALU operations).
 *   **LR (Link Register):** Thread-local 64-bit return-address register. `CALL` / `CALL_REG` write `LR = PC + 8`; `RET` jumps to `LR`.
-*   **FDRs (File Descriptor Registers):** `fd0` - `fd255` are the static low-descriptor fast bank. Full process FDR tables are DDR-backed and addressed by dynamic FDR instructions. An FDR is a hardware capability handle, not a Unix integer descriptor. POSIX file descriptors are the libc/personality interpretation of these handles. FDRs reference namespace services, object services, streams, files, device objects, event queues, timers, generic counters, generic queues, memory objects, PCIe BARs, DMA buffers, call gates, or supervisor controls. `fd0`, `fd1`, and `fd2` conventionally bind to STDIN, STDOUT, and STDERR streams of the controlling TTY.
+*   **FDRs (FDR capability registers):** `fd0` - `fd255` are the static low-descriptor fast bank. Full process FDR tables are DDR-backed and addressed by dynamic FDR instructions. An FDR is a hardware capability handle, not a Unix integer descriptor. POSIX file descriptors are the libc/personality interpretation of these handles. FDRs reference namespace services, object services, streams, files, device objects, event queues, timers, generic counters, generic queues, memory objects, PCIe BARs, DMA buffers, call gates, or supervisor controls. `fd0`, `fd1`, and `fd2` conventionally bind to STDIN, STDOUT, and STDERR streams of the controlling TTY.
 *   **PCRs (Process Control Registers):**
     *   `PID`: Current Process ID, from process context.
     *   `PPID`: Parent Process ID, from process context, or `0` for root.
     *   `TID`: Current Thread ID, from thread context.
-    *   `UID` / `GID`: User/Group ID from process credential context.
-    *   `CAPMASK`: Process credential capability bitmap.
+    *   `CRED_PROFILE`: Read-only credential profile id for the active personality or service profile.
+    *   `CRED_HANDLE`: Read-only opaque credential object/token plus generation for profile-specific checks.
+    *   `POSIX_UID` / `POSIX_GID`: Optional compatibility aliases backed by the active POSIX credential profile. They are not native authority roots.
     *   `SIGMASK`: Thread-local 64-bit bitmask of currently blocked signals.
     *   `REALTIME_SEC` / `REALTIME_NSEC`: Read-only realtime clock snapshot
         fields used by libc/runtime clock surfaces. Timer waitability remains
@@ -112,8 +113,8 @@ plugins, or unbounded tree walks.
 ## 3. I/O and File Operations
 System calls are replaced by direct hardware resource commands. The binary ISA uses a compact stream/object/capability model; POSIX-shaped source names are assembler or libc lowering aliases.
 
-*   **`OPEN_AT r_dest, r_dirfd, r_path_ptr, r_flags`**
-    *   *Action:* Hardware-mediated namespace dispatch. Validates the caller's directory/root/namespace capability, bounds and pins the path buffer, sends a lookup/open request to the owning namespace service domain, parks the caller, then verifies/narrows/installs the returned object capability. Source-level `open`, `openat`, and `opendir` lower to this instruction; hardware does not interpret filesystem formats or perform general directory walking.
+*   **`OPEN_AT r_dest, r_dirfd, r_selector_ptr, r_flags_or_profile`**
+    *   *Action:* Hardware-mediated namespace dispatch relative to a namespace, directory, root, or lookup-context capability. Hardware validates the caller's namespace capability, bounds and pins/copies a selector payload, dispatches a lookup/open request to the owning namespace service domain, parks the caller, then verifies/narrows/installs the returned object capability. POSIX `open`, `openat`, and `opendir` lower to the `posix_path` selector profile, where the selector bytes are a pathname string. Native services may define other selector profiles, such as object id, content hash, service key, package id, route tuple, or tenant-local name. Hardware does not parse `/`, `.`, `..`, symlinks, mounts, case folding, normalization, filesystem formats, or directory trees.
 *   **`PULL r_result, r_fd, r_buf_ptr, r_len_or_argblock`**
     *   *Action:* Pulls records from a stream object into memory. Files produce bytes, directories produce dirent records, sockets produce packets/messages, event queues produce event records, and block-image FDRs may use explicit-offset argument blocks.
 *   **`PUSH r_result, r_fd, r_buf_ptr, r_len_or_argblock`**
@@ -201,7 +202,7 @@ A service is a normal process or domain with explicit service capabilities,
 bounded request queues, call gates, event queues, and Resource Domain budgets.
 It receives work only through hardware-mediated surfaces: `OPEN_AT`, `NS_CTL`,
 `GET_META`/`SET_META`, `OBJECT_CTL`, `PULL`/`PUSH`, object-backed page-fill
-requests, `CALL_CAP`, and event queues. Hardware packages requests as bounded
+requests, `GATE_CALL`/call-gate profiles, and event queues. Hardware packages requests as bounded
 records with caller identity, object generation, lineage epoch, rights,
 Resource Domain id/generation, copied bytes or pinned-buffer descriptors, and
 explicit capability arguments. Services never receive ambient raw pointers, raw
@@ -261,8 +262,8 @@ physical memory or MMIO delegation, raw interrupt delivery to software, and
 service replies that manufacture FDR authority without Capability Engine
 commit.
 
-*   **`CALL_CAP r_result, r_call_gate_fd, r_arg0, r_arg1`** / **`RET_CAP r_result, r_value0, r_value1`**
-    *   *Action:* Performs a fast call and return through a callable FDR capability. Call gates may target another thread, service queue, driver service, supervisor service, runtime actor, or Resource Domain entry point. Hot calls use bounded register arguments and pre-provisioned target state; cold domain/container/VM creation remains a `DOMAIN_CTL` operation. Call gates support synchronous, asynchronous, and handoff profiles.
+*   **`GATE_CALL r_result, r_gate_fd, r_arg0, r_arg1`** / **`GATE_RETURN r_result, r_value0, r_value1`**
+    *   *Action:* Native bounded activation through a gate capability and return through a trusted continuation token. `CALL_CAP`/`RET_CAP` remain source-level names for explicit call-gate profiles. The same Gate/Continuation Engine is also used by delivery profiles for faults, cancellation, supervisor upcalls, debug traps, timers, and POSIX signals. Hot activations use bounded register arguments and pre-provisioned target state; cold domain/container/VM creation remains a `DOMAIN_CTL` operation.
 *   **`ERRNO_GET r_dest`** / **`ERRNO_SET r_src`**
     *   *Action:* Reads or writes the thread-local POSIX error register. Fallible resource instructions write success or `-1` to their encoded result register and set thread-local `ERRNO` on failure.
 *   **Child Waits**
@@ -346,43 +347,61 @@ the old address space and sibling thread contexts are gone, exactly one thread
 exists in the new image, and remaining failures are delivered through the normal
 fault/termination path for that new image.
 
-## 5. Signal Handling
-LNP64 freezes a clean, widely used Unix signal subset in hardware because it is
-useful for real software and precise hardware faults. Signals are still built on
-the same event/fault delivery fabric as native waitables, but the v1 subset is
-architectural: handler table, per-thread mask, pending signal state, saved
-context, fault-to-signal mapping, `KILL`, `ALARM`, and `SIGRET`.
+## 5. Gate Delivery and POSIX Signals
+The native asynchronous-control primitive is **bounded activation through a
+gate plus return through a trusted continuation**. Explicit cross-thread or
+cross-domain calls, synchronous hardware faults, cancellation, timer delivery,
+debug traps, supervisor upcalls, and POSIX signal handlers all use the same
+Gate/Continuation Engine.
 
-The hardware substrate is deliberately precise and bounded: dispositions are
-process-wide, masks are per-thread, pending state is split into process-directed
-and thread-directed records, synchronous faults target the faulting thread, and
-process-directed signals select an eligible unmasked thread by a deterministic
-implementation-profile rule. `SIGRET` restores only from a Signal Engine-owned
-saved-context token/generation, never from authority stored in user memory.
+Native gate delivery records are typed:
 
-The frozen subset intentionally excludes historical signal quirks that would
-make the architecture less elegant: OS-specific restart behavior, arbitrary
-signal-stack ABI variants, full POSIX realtime queueing semantics, signal-based
-application IPC as a preferred primitive, and Linux/BSD-specific delivery
-corner cases. Those remain libc/personality policy over hardware events.
+*   class: explicit_call, fault, cancel, timer, child, debug, resource, service,
+    domain, supervisor, or software.
+*   code: profile-specific reason such as arithmetic fault, memory protection,
+    alarm timer, child exit, breakpoint, quota, revoke, or opcode upcall.
+*   target scope: thread, process, Resource Domain, event queue, or gate.
+*   source domain/PID/TID where permitted.
+*   object id, operation id, fault PC/address, compact payload words, flags,
+    generation, and optional continuation token.
 
-*   **`SIGACTION r_signum, r_handler_ptr`**
-    *   *Action:* Registers handler, default, or ignore disposition for a bounded v1 signal number. Handler entry is through a fixed psABI signal trampoline.
-*   **`SIGMASK_SET r_mask`**
-    *   *Action:* Updates the thread-local `SIGMASK` PCR and triggers delivery if an unmasked pending signal is now deliverable.
-*   **`ALARM r_dest, r_seconds`**
-    *   *Action:* Resets the process's POSIX alarm timer, returns the previous
-        remaining whole seconds in `r_dest`, and enqueues `SIGALRM` when the
-        timer expires. General multi-source timers remain FDR-backed timer
-        profiles.
-*   **`KILL r_pid, r_signum`**
-    *   *Action:* Routes a signal request through the Signal Engine to the target PID/TID, subject to credential/capability checks, waking the target if it is in an interruptible wait.
-*   **`SIGRET`**
-    *   *Action:* Issued at the end of a signal handler. Restores the hardware-saved interrupted context for that thread and resumes normal execution.
-*   **Fault Delivery**
-    *   *Action:* Divide-by-zero and arithmetic traps raise `SIGFPE`; illegal or disabled opcodes raise `SIGILL` unless routed to a supervisor upcall; invalid or protected memory accesses raise `SIGSEGV`; alignment and unmappable physical/device accesses raise `SIGBUS`; breakpoints raise `SIGTRAP`. The signal frame records faulting PC, signal code, bad address where applicable, and the trapped opcode where useful.
-*   **Interrupted Operations**
-    *   *Action:* Interruptible `AWAIT`, futex, timer, `PULL`/`PUSH`, pending page-fill, and queued call-gate waits return `EINTR` or a typed interrupted status before handler entry. Operations past their commit point use their documented roll-forward/cancel policy. Linux/BSD `SA_RESTART` behavior is libc/personality policy.
+Gate actions are also typed:
+
+*   enqueue a record to an event queue.
+*   wake an `AWAIT`.
+*   enter a registered gate with bounded register arguments.
+*   terminate a thread, process, or domain.
+*   coalesce, ignore, or defer according to profile policy.
+
+The native instructions are `GATE_CALL`, `GATE_DELIVER`, `GATE_CTL`,
+`GATE_MASK_SET`, and `GATE_RETURN`. Source names such as `CALL_CAP`, `RET_CAP`,
+`SIGACTION`, `SIGMASK_SET`, `KILL`, `ALARM`, and `SIGRET` are profiles or aliases
+over those operations.
+
+The POSIX signal profile freezes only the bounded pieces needed by libc and
+Unix personalities: dispositions, per-thread masks, pending state,
+fault-to-signal mapping, checked `kill`/`raise`, alarm delivery, fixed handler
+entry, and trusted return. `SIGRET` is a POSIX spelling of `GATE_RETURN`; it
+restores only from a Gate/Continuation Engine-owned saved-context
+token/generation, never from authority stored in user memory.
+
+The frozen POSIX profile intentionally excludes historical signal quirks:
+OS-specific restart behavior, arbitrary signal-stack ABI variants, full POSIX
+realtime queueing semantics, signal-based application IPC as a preferred
+primitive, and Linux/BSD-specific delivery corner cases. Those remain
+libc/personality policy over native gates, event queues, and compatibility
+metadata.
+
+Fault delivery maps native fault classes to POSIX signal numbers only inside the
+POSIX profile: arithmetic faults to `SIGFPE`, decode faults to `SIGILL`, memory
+protection faults to `SIGSEGV`, alignment/device/bus faults to `SIGBUS`, and
+debug traps to `SIGTRAP`. Native code can consume the typed fault delivery
+record directly.
+
+Interruptible `AWAIT`, futex, timer, `PULL`/`PUSH`, pending page-fill, and queued
+gate waits return `EINTR` or a typed interrupted status before profile handler
+entry. Operations past their commit point use their documented roll-forward or
+cancel policy. Linux/BSD `SA_RESTART` behavior is libc/personality policy.
 
 ---
 To make the **LNP64** a fully functional processor, the capability/event/domain instructions must coexist with a conventional general-purpose compute architecture. Since namespace dispatch, capability, VMA, event, and runqueue logic consume meaningful FPGA resources, the general compute side should remain a lean in-order RISC architecture.
@@ -426,10 +445,11 @@ Synchronization rules:
     sequentially consistent in v1.
 *   Futex `AWAIT` performs an acquire-style value check before parking; futex
     `WAKE` performs release-style ordering before making waiters runnable.
-*   `CALL_CAP` commits argument/register state before target entry; `RET_CAP`
-    commits return values before waking the caller continuation.
-*   Signal delivery records a precise architectural boundary; `SIGRET` resumes
-    after handler memory effects are visible under the ordinary memory model.
+*   `GATE_CALL` commits argument/register state before target entry;
+    `GATE_RETURN` commits return values before waking the caller continuation.
+*   Forced gate delivery records a precise architectural boundary;
+    `GATE_RETURN` resumes after handler memory effects are visible under the
+    ordinary memory model.
 
 DMA and device rules:
 
@@ -456,7 +476,7 @@ Standard 64-bit integer operations. Because threads are managed in hardware, the
 *   **`ADD r_dest, r_src1, r_src2`** / **`SUB r_dest, r_src1, r_src2`**
     *   *Action:* Standard integer addition/subtraction.
 *   **`MUL r_dest, r_src1, r_src2`** / **`DIV r_dest, r_src1, r_src2`**
-    *   *Action:* Integer multiplication and hardware division. Division by zero is delivered through the Signal Engine as `SIGFPE`.
+    *   *Action:* Integer multiplication and hardware division. Division by zero creates a native fault delivery; the POSIX profile maps it to `SIGFPE`.
 *   **`AND`, `OR`, `XOR`, `NOT`**
     *   *Action:* Standard bitwise operations.
 *   **`LSL`, `LSR`, `ASR`**
@@ -487,11 +507,12 @@ Because "everything is a capability object" is the native hardware reality, we n
 *   **`DUP r_result, r_dst_or_flags, r_src`**
     *   *Action:* Duplicates or moves an FDR capability, including `dup`, `dup2`, and narrowed-rights forms where permitted by the source capability.
 *   **`GET_PCR r_dest, pcr_name`**
-    *   *Action:* Reads a Process Control Register (like `PID`, `UID`, or
-        `REALTIME_SEC`) into a general-purpose register for user-space logic.
+    *   *Action:* Reads a Process Control Register (like `PID`, `CRED_PROFILE`,
+        `POSIX_UID`, or `REALTIME_SEC`) into a general-purpose register for
+        user-space logic.
         (e.g., `GET_PCR r1, PID`).
 *   **`SET_PCR pcr_name, r_src`**
-    *   *Action:* Writes to a permitted Process Control Register. Credential changes are checked against UID/GID and process capability policy; denied changes fail with a permission error and update thread-local `ERRNO`.
+    *   *Action:* Writes to a permitted Process Control Register. Credential-profile changes are checked against the current credential object, FDR capabilities, and Resource Domain policy; POSIX UID/GID mutation is a compatibility profile operation, not a native privilege root. Denied changes fail with a permission error and update thread-local `ERRNO`.
 *   **`ENV_GET r_dest, r_key, r_index_or_buf, r_len_or_flags`**
     *   *Action:* Reads read-only process and machine metadata for libc/runtime startup: ISA version, implementation profile, page size, cache-line size, DMA alignment, hardware feature bits, supported opcode groups, object profiles, domain/security features, architectural limits, bounded topology records, startup metadata pointer, personality flags, and timebase frequency. POSIX `argc`, `argv`, `envp`, and auxv layout are libc/personality ABI data behind that pointer, not hardware-interpreted state. This is not a replacement for immediates; constants still use normal instruction encodings or literal loads.
 *   **`RANDOM r_dest, r_len_or_flags`**
@@ -499,7 +520,7 @@ Because "everything is a capability object" is the native hardware reality, we n
 
 ---
 **Summary of the Compute Pipeline:**
-The ALU and Control Flow instructions avoid privilege-transition overhead for native resource operations. If an ALU instruction calculates a buffer address and the next instruction is `PUSH`, decode can enqueue a File/DMA Engine command directly rather than entering a software syscall path.
+The ALU and Control Flow instructions avoid privilege-transition overhead for native resource operations. If an ALU instruction calculates a buffer address and the next instruction is `PUSH`, decode can enqueue a Stream/Object or DMA Engine command directly rather than entering a software syscall path.
 The core ISA also needs synchronization, device-driver boundaries, floating-point/vector compute, and a boot path to be a practical v1 target.
 
 To make the LNP64 bootable and useful, v1 includes **Synchronization, Device Drivers, Floating Point, and Bootstrapping**.
@@ -644,7 +665,7 @@ loader.
 
 Upon receiving power, the LNP64 executes a hardwired reset sequence:
 1.  Initializes the hardware VMA tree, scheduler fabric, root Resource Domain, default weighted-fair scheduler profile, telemetry/fault routes, capability roots, and runqueue.
-2.  Creates the initial hardware process/thread context (PID 1, TID 1, UID 0) inside a PID 1 Resource Domain with valid CPU, memory, FDR, event, telemetry, and device budgets.
+2.  Creates the initial hardware process/thread context (PID 1, TID 1) inside a PID 1 Resource Domain with valid CPU, memory, FDR, event, telemetry, and device budgets. If the boot profile enables POSIX compatibility, PID 1 starts with a POSIX credential profile equivalent to UID 0; the authority still comes from explicit boot FDRs and domain policy.
 3.  Reads a boot manifest from SD, SPI flash, or another boot backend by fixed offset/table records, not by hardware path walking.
 4.  Computes manifest/image measurements and exposes the measurement log and FPGA build id through `ENV_GET` and a boot-control FDR. Signed boot images are optional for FPGA v1, but the measurement path is architectural.
 5.  Commits PID 1 from the manifest's exec-plan record and grants initial FDRs named by the manifest: stdio, boot-control, block/storage objects, root namespace service, and any initial service/control capabilities. The manifest exec-plan is an architecture record, not a general executable format.
@@ -681,9 +702,10 @@ The Linux/NetBSD personality owns:
 This makes the implementation path clean:
 
 *   libc lowers POSIX APIs to native primitives: `open/read/write/close` to `OPEN_AT`/`PULL`/`PUSH`/`CLOSE`, `pipe` to a queue profile, `poll`/`epoll` to event queues, `mmap` to VMA mapping of a capability, and `errno` to the compatibility error register.
+*   `OPEN_AT` is namespace selector dispatch, not a path walker. POSIX paths are the `posix_path` selector profile; native code may use object-id, content-hash, service-key, package-id, route-tuple, or tenant-local selector profiles under the same capability checks.
 *   fork-like behavior is a `CLONE` profile, not the conceptual center of the machine. Native code can prefer spawn, call gates, domains, explicit shared memory, and event queues.
-*   signals remain available for POSIX and hardware faults, but native code can use structured events and cancellation objects instead.
-*   UID/GID is a credential profile for POSIX files and imported software; native authority is still capability possession plus Resource Domain policy.
+*   POSIX signals remain available as a gate-delivery profile, but native code can use typed gate deliveries, structured events, and cancellation objects instead.
+*   POSIX UID/GID is a credential profile for imported software; native authority is capability possession, credential-profile tokens where explicitly requested, and Resource Domain policy.
 
 The targeted compatibility approaches are:
 
@@ -693,7 +715,7 @@ The targeted compatibility approaches are:
 
 A full traditional Linux/NetBSD port that owns page tables, context switching, interrupts, and raw devices is not the v1 target.
 
-The compatibility interface is deliberately narrow. A personality observes and controls native objects through fixed FDR surfaces: lifecycle events for `CLONE`/`EXEC`/`EXIT`, VMA and page-fault events, FDR/capability transfer, namespace dispatch, block-image/storage objects, hardware signal/fault records, event queues, futex/timer waitables, network endpoint/packet queue capabilities, PCIe BAR/DMA/IRQ-event capabilities, and domain control upcalls. It may translate these into Linux or BSD concepts, but it cannot own page tables, raw interrupts, the scheduler, raw DMA, or capability minting.
+The compatibility interface is deliberately narrow. A personality observes and controls native objects through fixed FDR surfaces: lifecycle events for `CLONE`/`EXEC`/`EXIT`, VMA and page-fault events, FDR/capability transfer, namespace dispatch, block-image/storage objects, gate-delivery/fault records, event queues, futex/timer waitables, network endpoint/packet queue capabilities, PCIe BAR/DMA/IRQ-event capabilities, and domain control upcalls. It may translate these into Linux or BSD concepts, but it cannot own page tables, raw interrupts, the scheduler, raw DMA, or capability minting.
 
 The key hardware mechanism is a **Resource Domain**, not a privilege ring. A Resource Domain is a nested capability and accounting container for a process subtree, FDR authority, VMA/memory budget, scheduler budget, event policy, namespace root, and delegated devices. Virtual machines, containers, cgroups, jails, sandboxes, and supervisor domains are profiles of this same primitive. Hardware sees all of them as child domains in the same containment algebra; software decides whether a child domain is presented as a VM, a container, a cgroup, or a sandbox.
 
@@ -781,7 +803,7 @@ capability, lineage, label, audit, and Resource Domain rules.
 
 Pre-provisioned domains can expose `call_gate` FDRs for hot cross-domain calls. This makes sandboxed libraries, service calls, driver calls, and guest/supervisor calls use the same capability-call path as cross-thread calls, while preserving domain budget accounting and capability checks.
 
-A capability-marked domain can also act as a supervisor domain and receive upcalls for selected events: unsupported opcodes, delegated namespace lookups, permission decisions, child exit, signal delivery, fd readiness, timer expiry, futex events, block-image completion, resource pressure, limit violation, and process lifecycle changes.
+A capability-marked domain can also act as a supervisor domain and receive upcalls for selected events: unsupported opcodes, delegated namespace lookups, permission decisions, child exit, gate delivery, fd readiness, timer expiry, futex events, block-image completion, resource pressure, limit violation, and process lifecycle changes.
 
 Upcalls are delivered through a normal FDR with object class `control`. The supervisor pulls event records with `PULL` and pushes policy commands with `PUSH`. This keeps the design inside the FDR/capability model instead of reintroducing a syscall path.
 
@@ -790,7 +812,7 @@ software traps. POSIX and Linux compatibility personalities may still receive ex
 upcalls for virtualization policy, unsupported opcodes, delegated namespaces,
 and Linux syscall ABI emulation.
 
-For this to be practical, LNP64 needs a stable psABI: calling convention, process entry layout, TLS, signal frame layout, errno convention, time/timer FDRs, and event-queue FDRs that can aggregate fd readiness, timers, child exit, signals, futex events, and supervisor upcalls.
+For this to be practical, LNP64 needs a stable psABI: calling convention, process entry layout, TLS, POSIX signal/gate-delivery frame layout, errno convention, time/timer FDRs, and event-queue FDRs that can aggregate fd readiness, timers, child exit, gate-delivery events, futex events, and supervisor upcalls.
 
 For storage, a guest kernel can treat a large block-image or storage-service FDR as a paravirtual block device. It uses explicit-offset `PULL` and `PUSH`, then mounts ext4, FFS, or another guest filesystem inside that image. LNP64 provides the outer capability, DMA, eventing, and durability hooks; the guest kernel or filesystem service provides the filesystem semantics.
 
@@ -809,14 +831,14 @@ Hard v1 invariants:
 *   **W^X by default:** The VMA Engine rejects simultaneous writable and executable permissions unless a domain explicitly holds a JIT/loader policy bit. JITs use write-then-execute transitions with `MPROTECT` and `ISYNC`, not permanent RWX mappings.
 *   **NX data:** Heap, stacks, queues, shared memory, DMA buffers, device BARs, signal frames, and ordinary anonymous mappings default non-executable. Executable mappings must originate from executable image objects or an explicitly authorized loader/JIT transition.
 *   **ASLR:** Process startup, `EXEC`, `MMAP`, heap arenas, stacks, signal trampolines, shared objects, call-gate trampolines, and guard regions are randomized with hardware entropy unless disabled by a delegated domain policy.
-*   **Guard pages:** Stacks, heap arenas, signal frames, large allocations, and selected runtime objects can request unmapped or no-access guard VMAs. Guard faults route through the normal hardware signal path.
+*   **Guard pages:** Stacks, heap arenas, delivery/signal frames, large allocations, and selected runtime objects can request unmapped or no-access guard VMAs. Guard faults route through native gate delivery.
 *   **Entropy:** `RANDOM` is the architectural entropy source for libc, loaders, domain managers, allocator hardening, and compatibility personalities. `ENV_GET` reports feature bits; it does not provide secret randomness.
 *   **Generation and lineage checks:** Domains, FDR entries, VMAs, heap arenas, waitable objects, call gates, event sources, DMA buffers, mapped device objects, and capability lineages carry generation/epoch fields. Stale or revoked references fail deterministically instead of silently reusing authority.
 *   **Classed revocation:** Revocation advances lineage or revocation-root epochs and then follows the object's class: lazy cached invalidation, forced cancel, synchronous quiesce, or poison/fault. DMA buffers, IOMMU contexts, BAR mappings, and pages before reuse require quiescence; event sources, endpoints, classifier tables, and namespace handles can usually use lazy epoch invalidation; corrupted metadata becomes poison/fault until supervisor/PID 1 action.
 *   **Revocation:** `CAP_REVOKE`, `DOMAIN_CTL`, `MUNMAP`, `MPROTECT`, and object teardown advance lineage/revocation epochs and invalidate cached descriptors, mappings, event sources, call gates, page-fill continuations, and DMA exports before authority is reused.
 *   **Sealed and narrowed capabilities:** Authority can only move by explicit capability operations. Delegation may narrow rights, ranges, event masks, memory permissions, device scope, and transfer rights. Sealed capabilities can be used or transferred according to their rights but cannot be broadened or reminted by receivers.
 *   **Capability minting discipline:** Software services never manufacture raw FDR authority. Namespace, network, PCIe, loader, supervisor, and filesystem services may select objects and propose returned capabilities, but hardware mints or installs authority only by deriving from an existing mint/root capability and only after validating object class, rights, ranges, generations, lineage, and domain policy. Service replies are data until the Capability Engine commits them.
-*   **Memory visibility contract:** Normal cached memory is coherent and TSO-like by default. Ordinary loads/stores are easy for C/C++/Rust/Go/JVM runtimes and Unix personalities to reason about; weaker or device-specific behavior is opt-in through VMA memory type and explicit `FENCE`. Locked atomics are single-copy atomic and sequentially consistent in v1. Futex wait/wake, call-gate handoff, signal delivery, VMA/TLB updates, DMA visibility, `device_ordered`, and `write_combining` mappings have explicit ordering rules.
+*   **Memory visibility contract:** Normal cached memory is coherent and TSO-like by default. Ordinary loads/stores are easy for C/C++/Rust/Go/JVM runtimes and Unix personalities to reason about; weaker or device-specific behavior is opt-in through VMA memory type and explicit `FENCE`. Locked atomics are single-copy atomic and sequentially consistent in v1. Futex wait/wake, gate handoff/delivery, VMA/TLB updates, DMA visibility, `device_ordered`, and `write_combining` mappings have explicit ordering rules.
 *   **DMA isolation:** Internal DMA, `DMA_CTL`, file I/O DMA, Ethernet, SD/SPI, and PCIe requester DMA all pass through VMA/capability checks, the coherent DMA fabric, Resource Domain accounting, and IOMMU/device scope. No device may DMA to arbitrary DDR or bypass revocation.
 *   **Tenant-strict isolation:** `DOMAIN_PROFILE_TENANT_STRICT` combines mandatory memory hardening, no ambient devices, no raw interrupts, scoped telemetry, scoped DMA, explicit shared pages, and no parent memory read authority without a delegated capability.
 *   **Confidential computing hooks:** Domain records reserve measured-launch, memory-encryption/key-id, shared-page, sealed-secret, and encrypted-checkpoint fields. Software owns secret policy and checkpoint formats; hardware enforces that confidential-domain memory and sealed capabilities are not exposed through ordinary parent inspection, telemetry, trace, DMA, or fault paths.
@@ -831,7 +853,7 @@ Hard v1 requirements:
 
 *   **Critical metadata ECC/parity:** FDR tables, VMA descriptors, domain tables, scheduler queues, event queues, heap metadata, DMA descriptors, namespace-dispatch records, and hardware-owned object metadata carry parity or ECC according to width and storage class. Corruption becomes a fault event, not silent authority reuse.
 *   **Fault event model:** Engine faults, ECC/parity faults, invalid metadata, poisoned pages, DMA faults, watchdog timeouts, and boot measurement failures are delivered as structured events to PID 1, a supervisor Resource Domain, or a configured control FDR.
-*   **Watchdogs and local reset:** Long-latency engines have bounded timeout states, abort paths, and local reset/degraded modes. A stuck File, VMA, DMA, Capability, Event, or Domain engine should not require full-chip reset when local recovery is possible.
+*   **Watchdogs and local reset:** Long-latency engines have bounded timeout states, abort paths, and local reset/degraded modes. A stuck Stream/Object, VMA, DMA, Capability, Event, or Domain engine should not require full-chip reset when local recovery is possible.
 *   **Observability counters:** Domains and engines expose counters for issued/completed/aborted operations, queue depth, stalls, faults, bytes moved, scheduler transitions, capability sends/revokes, and resource pressure.
 *   **Fleet observability without privileged scraping:** Counters, trace rings, pressure events, and fault records are FDR-backed telemetry capabilities with scope, generation, and domain policy. Monitoring domains receive delegated aggregate views; they do not scrape raw memory, raw interrupts, or global privileged state.
 *   **Trace ring:** FPGA v1 includes a small optional trace ring for scheduler transitions, domain events, faults, capability delegation/revocation, call-gate calls, DMA completions, queue-steering decisions, and storage barriers.
@@ -854,12 +876,14 @@ behavior in software. v1 keeps this boundary:
     remain the escape hatch for custom runtimes and GC heaps.
 *   **Device memory:** device registers are reachable only through mapped
     capability objects such as `pcie_bar`; arbitrary physical MMIO is forbidden.
-*   **IPC:** small scalar messages use `MSG_SEND`; receive paths use
-    `AWAIT`/`PULL`. Larger byte or capability payloads use queues, streams,
-    `CAP_SEND`, and `CAP_RECV`.
-*   **Call gates:** `CALL_CAP` supports synchronous, asynchronous, and handoff
-    calls into pre-provisioned threads, services, actors, supervisors, or domain
-    entries. Cold domain creation remains `DOMAIN_CTL`.
+*   **IPC:** small scalar messages use queue, endpoint, or call-gate profiles;
+    source-level `MSG_SEND` lowers to `PUSH` on a message endpoint. Receive
+    paths use `AWAIT`/`PULL`. Capability payloads use `CAP_SEND` and
+    `CAP_RECV`.
+*   **Call gates:** `GATE_CALL` supports synchronous, asynchronous, and handoff
+    activations into pre-provisioned threads, services, actors, supervisors, or
+    domain entries. `CALL_CAP` remains a source/profile spelling. Cold domain
+    creation remains `DOMAIN_CTL`.
 *   **Runtime objects:** hardware exposes only `counter`, `queue`, and
     `memory_object`; semaphores, completions, channels, task queues, shared
     arenas, and DMA completions are profiles over those primitives.

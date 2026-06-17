@@ -10,10 +10,10 @@ compiler for exploring that design. It is not a transistor-accurate RTL model.
 
 ## Architecture In One Page
 
-- File Descriptor Registers (FDRs) are unforgeable capabilities, not just Unix
-  integer descriptors.
+- FDR capability registers are unforgeable object handles; POSIX file
+  descriptors are a compatibility view over them.
 - Resource operations use native instructions such as `PULL`, `PUSH`, `AWAIT`,
-  `MMAP`, `CAP_*`, `OBJECT_CTL`, `DOMAIN_CTL`, `CALL_CAP`, and `DMA_CTL`.
+  `MMAP`, `CAP_*`, `OBJECT_CTL`, `DOMAIN_CTL`, `GATE_CALL`, and `DMA_CTL`.
 - Resource Domains unify containers, VMs, cgroups, sandboxes, supervisors, and
   mission/assurance profiles.
 - Services own evolving policy: filesystems, loaders, networking, PCIe quirks,
@@ -21,6 +21,9 @@ compiler for exploring that design. It is not a transistor-accurate RTL model.
 - Hardware owns enforcement: capability validity, generation/lineage checks,
   VMA permissions, DMA/IOMMU scope, wait/wake transitions, scheduler dispatch,
   audit/debug gates, and commit points.
+- Native APIs prefer selectors, capabilities, event queues, call gates,
+  hardware object profiles, and Resource Domains; POSIX paths, POSIX UID/GID,
+  signals, and `errno` are compatibility profiles.
 - The design aims to be useful to hyperscalers, federal/mission deployments,
   and open-source owner-controlled systems without changing the ISA.
 
@@ -64,8 +67,9 @@ Implemented areas include:
   `FREE`.
 - FDR I/O and POSIX-shaped lowering for files, pipes, poll/select/epoll,
   signals, timers, process APIs, and libc allocation APIs.
-- Ready-queue scheduling, futex parking/wake, signal delivery with `SIGRET`,
-  IPC messages, Resource Domains, `OBJECT_CTL`, and `CALL_CAP`/`RET_CAP`.
+- Ready-queue scheduling, futex parking/wake, gate delivery with `GATE_RETURN`,
+  queue/message endpoints, Resource Domains, `OBJECT_CTL`, and explicit
+  call-gate profiles.
 - Current emulator `EXEC` loads assembly programs; the architectural target is
   loader-produced exec-plan descriptors, not hardware ELF parsing.
 - Reserved low-level device/debug hooks exist, but ordinary device access is

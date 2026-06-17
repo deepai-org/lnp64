@@ -8,7 +8,7 @@ privilege.
 
 ## Core Model
 
-Programs hold unforgeable File Descriptor Register (FDR) capabilities. FDRs name
+Programs hold unforgeable FDR capability registers. FDRs name
 streams, files, queues, counters, memory objects, DMA buffers, PCIe BARs, event
 queues, call gates, namespace roots, devices, and Resource Domains. Authority
 moves only through explicit capability transfer, narrowing, sealing, revocation,
@@ -24,17 +24,25 @@ is the system boundary:
 - `MMAP` / `MPROTECT` / `MUNMAP`: manage VMAs through capability-checked memory
   objects, files, DMA buffers, and BARs.
 - `CAP_*`: duplicate, transfer, narrow, seal, receive, and revoke capabilities.
-- `OBJECT_CTL`: create/configure `counter`, `queue`, and `memory_object`
-  primitives.
+- `OBJECT_CTL`: create/configure `counter`, `queue`, `event/completion`,
+  `timer`, `memory_object`, `call_gate`, `dma_buffer`, and `dma_completion`
+  profiles.
 - `DOMAIN_CTL`: create/configure Resource Domains for VMs, containers, cgroups,
   jails, sandboxes, supervisors, and mission profiles.
-- `CALL_CAP` / `RET_CAP`: perform protected cross-thread or cross-domain calls.
+- `GATE_CALL` / `GATE_RETURN`: perform protected cross-thread or cross-domain
+  calls and return through trusted continuations. `CALL_CAP`, `RET_CAP`, and
+  `SIGRET` are profile/source names over this gate mechanism.
 - `DMA_CTL`: perform bulk copy/fill/scatter-gather/checksum work under VMA,
   IOMMU, capability, and domain checks.
 
 Pipes, semaphores, completions, event counters, shared arenas, sockets, timers,
 VMs, containers, and cgroups are profiles over these primitives, not separate
 hardware subsystems.
+
+Native APIs should prefer selectors, capabilities, event queues, gate
+activations, runtime objects, and Resource Domains. POSIX paths, file
+descriptors, POSIX UID/GID, signals, and `errno` remain compatibility profiles
+over those primitives.
 
 ## Service Boundary
 
@@ -43,9 +51,10 @@ and commit semantics. Services own evolving policy.
 
 Filesystems, path walking, executable formats, dynamic linking, TCP/IP, Wi-Fi,
 PCIe quirks, socket policy, declassification policy, and Unix compatibility
-rules live in service domains or personalities. Hardware packages bounded
-requests, parks callers, validates replies, and installs returned FDR authority
-only through the Capability Engine.
+rules live in service domains or personalities. Hardware dispatches bounded
+namespace selectors, parks callers, validates replies, and installs returned FDR
+authority only through the Capability Engine. POSIX paths are one selector
+profile, not the hardware namespace model.
 
 Service replies are data until committed. A namespace, filesystem, network,
 PCIe, loader, or supervisor service may propose a returned capability, but it
@@ -68,11 +77,13 @@ POSIX is the main compatibility profile, not the primitive model.
 - `fork` is a constrained `CLONE profile=posix_fork`.
 - `exec` commits a loader-produced exec-plan descriptor; hardware does not
   parse ELF, shebangs, auxv, dynamic-linker state, or credential transitions.
-- Signals freeze a small Unix subset: dispositions, per-thread masks, directed
-  pending state, fault-to-signal mapping, checked `kill`/`raise`, `alarm`, fixed
-  handler entry, and trusted `SIGRET`.
+- Signals are a bounded POSIX profile over native gate delivery: dispositions,
+  per-thread masks, directed pending state, fault-to-signal mapping, checked
+  `kill`/`raise`, `alarm`, fixed handler entry, and trusted `SIGRET` as a
+  `GATE_RETURN` alias. Native async code should use event queues, cancellation
+  objects, counters, queues, and gate profiles.
 - Linux and NetBSD can run as paravirtual personalities over lifecycle events,
-  VMA events, namespace dispatch, block-image FDRs, signal/fault records,
+  VMA events, namespace dispatch, block-image FDRs, gate-delivery/fault records,
   event queues, endpoint capabilities, and PCIe BAR/DMA/IRQ-event FDRs.
 
 Personality software may emulate rich Unix behavior, but it cannot own raw page
@@ -122,7 +133,7 @@ Security is native to the object model:
   sealed/narrowed capabilities, DMA isolation, and scoped telemetry are enforced
   by Resource Domains, VMAs, FDRs, and the coherent DMA/IOMMU path.
 - Raw interrupt vectors are not exposed to software. The Event Router converts
-  physical interrupts into waitables, signals, scheduler events, fault records,
+  physical interrupts into waitables, gate deliveries, scheduler events, fault records,
   or supervisor/control events.
 - Audit streams are append-only FDR-backed logs with sequence numbers, hash
   chaining, dropped-count/gap metadata, scoped disclosure, redaction, and
@@ -174,7 +185,7 @@ drivers, or Unix personalities.
 The verification target is seL4-like confidence for the hardware-visible
 security model: capability non-forgeability, monotonic delegation, revocation
 soundness, domain containment, W^X, DMA isolation, scheduler validity, no lost
-wakeups, precise signal/fault delivery, service-boundary soundness, and
+wakeups, precise gate/fault delivery, service-boundary soundness, and
 crash-free engine transitions. The preferred high-level proof source is a
 Lean-style abstract machine, with RTL assertions and model checking for local
 FSM/refinement checks.

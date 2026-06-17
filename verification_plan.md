@@ -17,12 +17,14 @@ Core ISA:
 
 - ALU, branch, call/return, load/store, atomics, `FENCE`, `ISYNC`.
 - `ENV_GET` scalar keys, buffer keys, bad keys, and buffer faults.
-- Fault-to-signal mapping: `SIGFPE`, `SIGILL`, `SIGSEGV`, `SIGBUS`, `SIGTRAP`.
+- Native fault gate delivery and POSIX signal-profile mapping: `SIGFPE`,
+  `SIGILL`, `SIGSEGV`, `SIGBUS`, `SIGTRAP`.
 
 Resource primitives:
 
-- `PULL`, `PUSH`, `AWAIT`, `CAP_*`, `OBJECT_CTL`, `DOMAIN_CTL`, `CALL_CAP`,
-  `RET_CAP`, `DMA_CTL`, `ALLOC`, `FREE`, `MMAP`, `MUNMAP`, `MPROTECT`.
+- `PULL`, `PUSH`, `AWAIT`, `CAP_*`, `OBJECT_CTL`, `DOMAIN_CTL`, `GATE_CALL`,
+  `GATE_RETURN`, `GATE_DELIVER`, `DMA_CTL`, `ALLOC`, `FREE`, `MMAP`, `MUNMAP`,
+  `MPROTECT`.
 - `OBJECT_CTL` profiles for `counter`, `queue`, and `memory_object`.
 - Runtime profiles for pipe, semaphore, completion, channel, task event, shared
   arena, and DMA completion.
@@ -50,7 +52,7 @@ Scheduler and waits:
   hierarchy rollup, wakeup insertion, frozen-domain removal, bounded preemption,
   no lost wakeups, and no scheduler plugin/callback path.
 - Futex wait/wake, timer waits, event queues, fd readiness, child waits,
-  signal interruption, and call-gate waits.
+  gate-delivery interruption, and gate waits.
 
 Device and I/O:
 
@@ -100,7 +102,7 @@ Assurance and operability:
 11. DMA copy/fill/scatter-gather with event completion.
 12. Resource Domains, nested limits, freeze/resume, usage accounting, and
     capability delegation.
-13. `CALL_CAP`/`RET_CAP` same-domain and cross-domain gates.
+13. `GATE_CALL`/`GATE_RETURN` same-domain and cross-domain gates.
 14. Supervisor-domain control FDR and upcall delivery.
 15. Minimal paravirtual Unix personality over native tasks and block-image FDRs.
 16. Linux syscall compatibility smoke test for static userland.

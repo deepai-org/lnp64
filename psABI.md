@@ -11,7 +11,8 @@ The v0 psABI covers:
 - integer calling convention used by the C compiler.
 - stack and local storage convention used by compiled C.
 - process entry page layout for `argc`, `argv`, and `envp`.
-- thread pointer, `errno`, signal frame, and auxv conventions.
+- thread pointer, `errno`, POSIX signal/gate-delivery frame, and auxv
+  conventions.
 - FDR inheritance and native capability surfaces.
 - current dynamic loader and binary-format expectations.
 
@@ -64,8 +65,8 @@ area for the callee's `va_start`/`va_arg` support; they are not passed on a
 hardware stack by generic call lowering.
 
 Return values are placed in `r1`. Multi-register returns are not part of the C
-ABI yet. Cross-domain call gates use their own bounded return registers through
-`RET_CAP`.
+ABI yet. Cross-domain gate profiles use bounded return registers through native
+`GATE_RETURN`; `RET_CAP` is the source-level call-profile spelling.
 
 The current compiler treats GPRs other than `r0` and `r31` as caller-clobbered.
 There is no callee-saved GPR set in the v0 compiler ABI. Runtimes that need
@@ -136,27 +137,33 @@ errno path by compiler lowering.
 
 ## Signals
 
-LNP64 v1 freezes a small Unix-signal ABI subset. Signal handlers receive the
-signal number in `r1`, matching the first integer argument register. `SIGRET`
-restores the Signal Engine's saved interrupted context for the current thread.
+LNP64 v1 freezes a small Unix-signal ABI subset as a profile over native
+Gate/Continuation delivery. Signal handlers receive the signal number in `r1`,
+matching the first integer argument register. `SIGRET` is the POSIX spelling of
+`GATE_RETURN` and restores the Gate/Continuation Engine's saved interrupted
+context for the current thread.
 
-The hardware design requires a saved signal context containing at least the
+The hardware design requires a saved gate-delivery context containing at least the
 saved context token/generation, faulting PC, signal number/code, bad address
 where relevant, trapped instruction word where relevant, source PID/TID/domain
 where permitted, event/fault id, and the GPR/FPR/VR state needed by this psABI.
-The emulator implements signal delivery and keeps signal-frame stack areas
-non-executable.
+The emulator implements the POSIX signal profile and keeps signal-frame stack
+areas non-executable.
 
 The frozen subset includes handler/default/ignore dispositions, per-thread
 masks, process-directed and thread-directed pending state, fault-to-signal
 mapping, `raise`/`kill`-style software injection, `alarm`, fixed handler entry,
 and `SIGRET`. User-visible frame memory is diagnostic/runtime ABI data;
-`SIGRET` uses the Signal Engine-owned context token/generation.
+`SIGRET`/`GATE_RETURN` uses the Gate/Continuation Engine-owned context
+token/generation.
 
 Full POSIX realtime queueing, OS-specific syscall restart behavior, arbitrary
 `sigaltstack` ABI variants, and Linux/BSD-specific delivery corner cases remain
 outside the frozen v0 psABI. A libc or Unix personality may emulate them over
 event queues and compatibility metadata.
+
+Native async runtimes should use event queues, counters, queues, cancellation
+objects, and gate profiles directly instead of POSIX signal delivery.
 
 ## FDR Inheritance and Capabilities
 
