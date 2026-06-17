@@ -16,7 +16,7 @@ Status values:
 | --- | --- | --- | --- |
 | `_start`, `main(argc, argv, envp)`, `environ` | tested | `c_start_symbol_overrides_main_entry`, `c_main_receives_argc_argv_and_envp_from_startup_page`, `c_main_environ_points_at_startup_envp` | No standalone crt object files yet; startup is compiler/runtime modeled. `COMPAT-ABI-001` tracks psABI/crt packaging. |
 | `getauxval`, auxv metadata, process entry metadata | tested | `c_getauxval_startup_metadata_surface_runs`, `ENV_GET` emulator tests | Dynamic loader auxv contract is not frozen. Covered by `COMPAT-ABI-002`. |
-| TLS/thread pointer, `errno`, `strerror` | tested | `c_thread_pointer_and_specific_storage_are_per_thread`, `c_errno_location_shim_tracks_hardware_errno`, `c_strerror_returns_static_errno_messages` | TLS layout needs psABI text. |
+| TLS/thread pointer, `errno`, `strerror` | tested | `c_thread_pointer_and_specific_storage_are_per_thread`, `c_errno_location_shim_tracks_hardware_errno`, `c_strerror_returns_static_errno_messages`, `psABI.md` | Dynamic TLS module layout is not frozen. |
 | `atexit`, `exit`, `_exit` | tested | `c_atexit_handlers_run_before_main_return`, `c_exit_runs_atexit_but_exit_bypasses_it` | No shared-object destructor model. |
 | Environment APIs: `getenv`, `setenv`, `unsetenv` | tested | `c_environment_surface_stores_and_finds_values` | Locale/environment inheritance across `exec` needs more real-program coverage. |
 | Basic file descriptors: `open`, `openat`-style lowering, `close`, `read`, `write`, `lseek` | tested | `lowers_file_builtins_to_fd_instructions`, `scripts/run_sbase.sh` | Host-backed file model, not a boot image VFS yet. |
@@ -43,11 +43,11 @@ Status values:
 | Sockets: `socket`, `bind`, `listen`, `connect`, `accept`, `getsockname`, `getsockopt`, `setsockopt`, `send`, `recv` | tested | `c_socket_surface_lowers_to_endpoint_object_controls_and_runs`, `demos/netcat.c`, `demos/httpd.c` in `scripts/run_demos.sh` | Nonblocking sockets, descriptor passing, UDP, and real network-driver service integration are partial. `COMPAT-SOCK-001`. |
 | Optional dynamic loading and subprocess streams: `dlopen`, `dlsym`, `dlclose`, `popen`, `pclose` | unsupported | `c_optional_dynamic_loading_and_popen_fail_cleanly` | Intentionally fail cleanly until binary/dynamic-loader work exists. |
 | Locale, wide chars, iconv, regex | partial | sbase text utilities exercise simple byte-string behavior | Full locale/wide/regex conformance is not implemented. `COMPAT-LIBC-003`. |
-| LNP64 `__lnp_*` shim layer | native extension | `c_private_lnp_shim_layer_lowers_to_native_primitives`, `c_private_lnp_shim_layer_accepts_dynamic_fdr_tokens` | ABI names need psABI stabilization. |
+| LNP64 `__lnp_*` shim layer | native extension | `c_private_lnp_shim_layer_lowers_to_native_primitives`, `c_private_lnp_shim_layer_accepts_dynamic_fdr_tokens`, `psABI.md` | Public extension header/package boundary is not frozen. |
 | Resource Domain APIs | native extension | `c_domain_lifecycle_surface_runs_on_domain_ctl`, `c_domain_limit_failure_runs`, domain emulator tests | Random create/freeze/resume/destroy stress is missing. `COMPAT-STRESS-002`. |
 | Capability APIs: send, receive, duplicate, narrow, seal, revoke, generation checks | native extension | `c_capability_transfer_surface_runs_on_native_cap_ops`, capability emulator tests | Randomized passing/revocation fuzzing is missing. `COMPAT-STRESS-001`. |
 | Object APIs: queue/counter/memory object, pipe lowering, message receive | native extension | `c_object_creation_surface_runs_on_object_ctl`, `c_pipe_lowers_to_object_queue_and_runs`, `c_message_receive_lowers_to_await_pull_and_runs` | Multi-producer/multi-consumer race coverage is partial. |
-| Call gates: sync, async, handoff | native extension | `c_sync_call_gate_runs`, `call_cap_sync_returns_across_domain_gate`, `call_cap_async_and_handoff_modes_execute_minimally` | psABI register contract for cross-domain calls needs formal text. |
+| Call gates: sync, async, handoff | native extension | `c_sync_call_gate_runs`, `call_cap_sync_returns_across_domain_gate`, `call_cap_async_and_handoff_modes_execute_minimally`, `psABI.md` | Full cross-domain aggregate argument ABI is not frozen. |
 | DMA APIs and DMA buffers | native extension | `dma_ctl_copy_and_fill_use_vma_permissions`, `dma_ctl_rejects_guard_unmapped_and_disallowed_domain`, `dma_ctl_uses_dma_buffer_capability_scope`, `dma_ctl_rejects_stale_and_revoked_dma_buffers` | Pending-operation revoke stress is not modeled yet. `COMPAT-STRESS-006`. |
 | ELF objects, relocations, dynamic linker | unsupported | Design docs mention loader requirements; no implementation test covers ELF loading | Define binary format details. `COMPAT-BIN-001`. |
 | Bootable userland image: `/sbin/init`, shell-like runner, filesystem image, `/dev` namespace | unsupported | Demos run individually through host CLI | Build minimal userland image. `COMPAT-USERLAND-001`. |
@@ -75,8 +75,8 @@ specific compiler/runtime special casing.
 
 | Bug | Requirement | Current State | Next Concrete Step |
 | --- | --- | --- | --- |
-| `COMPAT-ABI-001` | psABI/crt packaging | Startup is modeled in compiler/runtime tests. | Write `psABI.md` and define whether v1 ships crt objects or compiler-emitted startup. |
-| `COMPAT-ABI-002` | auxv/dynamic-loader contract | `ENV_GET` and `getauxval` exist. | Freeze auxv keys, stack layout, and dynamic loader expectations. |
+| `COMPAT-ABI-001` | psABI/crt packaging | `psABI.md` records the current emulator ABI; startup is compiler/runtime modeled. | Decide whether v1 ships crt objects or keeps compiler-emitted startup as the contract. |
+| `COMPAT-ABI-002` | auxv/dynamic-loader contract | `psABI.md` records current auxv behavior; `ENV_GET` and `getauxval` exist. | Freeze auxv key numbers and dynamic loader expectations. |
 | `COMPAT-BIN-001` | Binary/object format | Assembly program loading exists; ELF details are design-only. | Define static v1 ELF relocation model and executable mapping rules. |
 | `COMPAT-USERLAND-001` | Minimal userland image | Individual demos run through host CLI. | Add init program, command runner, boot manifest, and basic filesystem image script. |
 | `COMPAT-PKG-001` | Upstream Lua | Lua compatibility is covered by targeted compiler tests only. | Add a reproducible upstream Lua package script and convert failures into generic compiler/runtime bugs. |
