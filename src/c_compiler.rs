@@ -113,6 +113,12 @@ struct Function {
     body: Vec<Stmt>,
 }
 
+impl Function {
+    fn calls_function(&self, name: &str) -> bool {
+        self.body.iter().any(|stmt| stmt.calls_function(name))
+    }
+}
+
 #[derive(Debug, Clone)]
 struct LocalDecl {
     name: String,
@@ -166,6 +172,64 @@ enum Stmt {
     Block(Vec<Stmt>),
 }
 
+impl Stmt {
+    fn calls_function(&self, name: &str) -> bool {
+        match self {
+            Stmt::VarDecl(decl) => decl.calls_function(name),
+            Stmt::VarDecls(decls) => decls.iter().any(|decl| decl.calls_function(name)),
+            Stmt::Return(expr) | Stmt::Expr(expr) => expr.calls_function(name),
+            Stmt::If {
+                cond,
+                then_body,
+                else_body,
+            } => {
+                cond.calls_function(name)
+                    || then_body.iter().any(|stmt| stmt.calls_function(name))
+                    || else_body.iter().any(|stmt| stmt.calls_function(name))
+            }
+            Stmt::While { cond, body } => {
+                cond.calls_function(name) || body.iter().any(|stmt| stmt.calls_function(name))
+            }
+            Stmt::For {
+                init,
+                cond,
+                post,
+                body,
+            } => {
+                init.iter().any(|expr| expr.calls_function(name))
+                    || cond.as_ref().is_some_and(|expr| expr.calls_function(name))
+                    || post.iter().any(|expr| expr.calls_function(name))
+                    || body.iter().any(|stmt| stmt.calls_function(name))
+            }
+            Stmt::Switch {
+                expr,
+                cases,
+                default,
+            } => {
+                expr.calls_function(name)
+                    || cases
+                        .iter()
+                        .any(|(_, body)| body.iter().any(|stmt| stmt.calls_function(name)))
+                    || default.iter().any(|stmt| stmt.calls_function(name))
+            }
+            Stmt::Block(body) => body.iter().any(|stmt| stmt.calls_function(name)),
+            Stmt::Label(_) | Stmt::Goto(_) | Stmt::Break | Stmt::Continue => false,
+        }
+    }
+}
+
+impl LocalDecl {
+    fn calls_function(&self, name: &str) -> bool {
+        self.init
+            .as_ref()
+            .is_some_and(|expr| expr.calls_function(name))
+            || self
+                .init_list
+                .as_ref()
+                .is_some_and(|values| values.iter().any(|value| value.expr.calls_function(name)))
+    }
+}
+
 #[derive(Debug, Clone)]
 enum Expr {
     Num(i64),
@@ -203,6 +267,33 @@ impl Expr {
             | Expr::PostDec(expr)
             | Expr::Member(expr, _) => expr.contains_call(),
             Expr::CompoundLiteral(fields) => fields.iter().any(Expr::contains_call),
+            Expr::Num(_) | Expr::Str(_) | Expr::Var(_) => false,
+        }
+    }
+
+    fn calls_function(&self, name: &str) -> bool {
+        match self {
+            Expr::Call(callee, args) => {
+                callee == name || args.iter().any(|expr| expr.calls_function(name))
+            }
+            Expr::CallValue(callee, args) => {
+                callee.calls_function(name) || args.iter().any(|expr| expr.calls_function(name))
+            }
+            Expr::Binary(lhs, _, rhs)
+            | Expr::Assign(lhs, rhs)
+            | Expr::CompoundAssign(lhs, _, rhs)
+            | Expr::Comma(lhs, rhs)
+            | Expr::Index(lhs, rhs) => lhs.calls_function(name) || rhs.calls_function(name),
+            Expr::Ternary(cond, then_expr, else_expr) => {
+                cond.calls_function(name)
+                    || then_expr.calls_function(name)
+                    || else_expr.calls_function(name)
+            }
+            Expr::Unary(_, expr)
+            | Expr::PostInc(expr)
+            | Expr::PostDec(expr)
+            | Expr::Member(expr, _) => expr.calls_function(name),
+            Expr::CompoundLiteral(fields) => fields.iter().any(|expr| expr.calls_function(name)),
             Expr::Num(_) | Expr::Str(_) | Expr::Var(_) => false,
         }
     }
@@ -2840,6 +2931,7 @@ struct CodeGen {
     current_fn: String,
     needs_c_runtime: bool,
     needs_recurse_runtime: bool,
+    needs_atexit_runtime: bool,
     break_labels: Vec<String>,
     continue_labels: Vec<String>,
 }
@@ -2852,6 +2944,13 @@ impl CodeGen {
             .iter()
             .map(|f| (f.name.clone(), f.params.len()))
             .collect();
+        if program
+            .functions
+            .iter()
+            .any(|function| function.calls_function("atexit"))
+        {
+            self.ensure_atexit_runtime();
+        }
         self.globals
             .insert("argv0".to_string(), "global_argv0".to_string());
         self.data
@@ -2934,6 +3033,9 @@ impl CodeGen {
         if self.needs_recurse_runtime {
             self.text.push(recurse_runtime_helper().to_string());
         }
+        if self.needs_atexit_runtime {
+            self.emit_atexit_runner();
+        }
 
         let mut out = String::new();
         if !self.data.is_empty() {
@@ -2981,11 +3083,57 @@ impl CodeGen {
             self.emit_stmt(stmt)?;
         }
         if self.current_fn == "main" {
-            self.text.push("  EXIT r0".to_string());
+            self.emit_process_exit(0);
         } else {
             self.text.push("  RET".to_string());
         }
         Ok(())
+    }
+
+    fn ensure_atexit_runtime(&mut self) {
+        self.needs_atexit_runtime = true;
+        self.data
+            .entry("__lnp_atexit_count".to_string())
+            .or_insert(".quad 0".to_string());
+        self.data
+            .entry("__lnp_atexit_stack".to_string())
+            .or_insert(".zero 128".to_string());
+    }
+
+    fn emit_process_exit(&mut self, code: usize) {
+        if self.needs_atexit_runtime {
+            self.text.push(format!("  MOV r24, r{code}"));
+            self.text.push("  CALL __lnp_run_atexit".to_string());
+            self.text.push("  EXIT r24".to_string());
+        } else {
+            self.text.push(format!("  EXIT r{code}"));
+        }
+    }
+
+    fn emit_atexit_runner(&mut self) {
+        self.text.push("__lnp_run_atexit:".to_string());
+        self.text.push("  LI r25, __lnp_atexit_count".to_string());
+        self.text.push("  LD r26, [r25, 0]".to_string());
+        self.text.push("__lnp_run_atexit_loop:".to_string());
+        self.text.push("  CMP r26, r0".to_string());
+        self.text.push("  BEQ __lnp_run_atexit_done".to_string());
+        self.text.push("  LI r27, 1".to_string());
+        self.text.push("  SUB r26, r26, r27".to_string());
+        self.text.push("  ST [r25, 0], r26".to_string());
+        self.text.push("  LI r28, 3".to_string());
+        self.text.push("  LSL r29, r26, r28".to_string());
+        self.text.push("  LI r30, __lnp_atexit_stack".to_string());
+        self.text.push("  ADD r29, r30, r29".to_string());
+        self.text.push("  LD r27, [r29, 0]".to_string());
+        self.text.push("  CMP r27, r0".to_string());
+        self.text.push("  BEQ __lnp_run_atexit_reload".to_string());
+        self.text.push("  CALL_REG r27".to_string());
+        self.text.push("__lnp_run_atexit_reload:".to_string());
+        self.text.push("  LI r25, __lnp_atexit_count".to_string());
+        self.text.push("  LD r26, [r25, 0]".to_string());
+        self.text.push("  JMP __lnp_run_atexit_loop".to_string());
+        self.text.push("__lnp_run_atexit_done:".to_string());
+        self.text.push("  RET".to_string());
     }
 
     fn global_aggregate_size(&self, name: &str) -> Option<i64> {
@@ -3068,7 +3216,7 @@ impl CodeGen {
             Stmt::Return(expr) => {
                 let reg = self.emit_expr(expr)?;
                 if self.current_fn == "main" {
-                    self.text.push(format!("  EXIT r{reg}"));
+                    self.emit_process_exit(reg);
                 } else {
                     self.text.push(format!("  MOV r1, r{reg}"));
                     self.text.push("  RET".to_string());
@@ -5010,6 +5158,43 @@ impl CodeGen {
                 self.text.push(format!("  LI r{code}, 134"));
                 self.text.push(format!("  EXIT r{code}"));
                 Ok(code)
+            }
+            "atexit" => {
+                let callback = self.one_arg(name, args)?;
+                self.ensure_atexit_runtime();
+                let count_addr = self.alloc_reg()?;
+                let count = self.alloc_reg()?;
+                let limit = self.alloc_reg()?;
+                let shift = self.alloc_reg()?;
+                let offset = self.alloc_reg()?;
+                let stack = self.alloc_reg()?;
+                let slot = self.alloc_reg()?;
+                let one = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                let full = self.new_label("atexit_full");
+                let done = self.new_label("atexit_done");
+                self.text
+                    .push(format!("  LI r{count_addr}, __lnp_atexit_count"));
+                self.text.push(format!("  LD r{count}, [r{count_addr}, 0]"));
+                self.text.push(format!("  LI r{limit}, 16"));
+                self.text.push(format!("  CMP r{count}, r{limit}"));
+                self.text.push(format!("  BGE {full}"));
+                self.text.push(format!("  LI r{shift}, 3"));
+                self.text
+                    .push(format!("  LSL r{offset}, r{count}, r{shift}"));
+                self.text.push(format!("  LI r{stack}, __lnp_atexit_stack"));
+                self.text
+                    .push(format!("  ADD r{slot}, r{stack}, r{offset}"));
+                self.text.push(format!("  ST [r{slot}, 0], r{callback}"));
+                self.text.push(format!("  LI r{one}, 1"));
+                self.text.push(format!("  ADD r{count}, r{count}, r{one}"));
+                self.text.push(format!("  ST [r{count_addr}, 0], r{count}"));
+                self.text.push(format!("  LI r{dst}, 0"));
+                self.text.push(format!("  JMP {done}"));
+                self.text.push(format!("{full}:"));
+                self.text.push(format!("  LI r{dst}, -1"));
+                self.text.push(format!("{done}:"));
+                Ok(dst)
             }
             "write" => {
                 if matches!(args.first(), Some(Expr::Num(_))) {
@@ -7173,7 +7358,12 @@ impl CodeGen {
                 self.text.push(format!("  SLEEP r{ticks}"));
                 Ok(0)
             }
-            "exit" | "_exit" => {
+            "exit" => {
+                let code = self.one_arg(name, args)?;
+                self.emit_process_exit(code);
+                Ok(0)
+            }
+            "_exit" => {
                 let code = self.one_arg(name, args)?;
                 self.text.push(format!("  EXIT r{code}"));
                 Ok(0)
@@ -11406,6 +11596,70 @@ int main() {
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_atexit_handlers_run_before_main_return() {
+        let source = r#"
+        int first() {
+            _exit(11);
+            return 0;
+        }
+
+        int second() {
+            _exit(22);
+            return 0;
+        }
+
+        int main() {
+            if (atexit(first) != 0) return 1;
+            if (atexit(second) != 0) return 2;
+            return 3;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("__lnp_run_atexit"), "{asm}");
+        assert!(asm.contains("CALL_REG"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 22);
+    }
+
+    #[test]
+    fn c_exit_runs_atexit_but_exit_bypasses_it() {
+        let exit_source = r#"
+        int cleanup() {
+            _exit(44);
+            return 0;
+        }
+
+        int main() {
+            if (atexit(cleanup) != 0) return 1;
+            exit(5);
+            return 6;
+        }
+        "#;
+        let asm = compile(exit_source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 44);
+
+        let underscore_exit_source = r#"
+        int cleanup() {
+            _exit(99);
+            return 0;
+        }
+
+        int main() {
+            if (atexit(cleanup) != 0) return 1;
+            _exit(7);
+            return 8;
+        }
+        "#;
+        let asm = compile(underscore_exit_source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 7);
     }
 
     #[test]
