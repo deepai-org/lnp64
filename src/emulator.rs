@@ -218,6 +218,11 @@ const CLASSIFY_FIELD_DST_PORT: u64 = 2;
 const CLASSIFY_FIELD_SRC_IPV4: u64 = 3;
 const CLASSIFY_FIELD_DST_IPV4: u64 = 4;
 const CLASSIFY_FIELD_HASH: u64 = 5;
+const CLASSIFY_FIELD_PROFILE: u64 = 6;
+const CLASSIFY_FIELD_DOMAIN_ID: u64 = 7;
+const CLASSIFY_FIELD_INLINE0: u64 = 8;
+const CLASSIFY_FIELD_INLINE1: u64 = 9;
+const CLASSIFY_FIELD_INLINE2: u64 = 10;
 const CLASSIFY_ACTION_MARK: u64 = 1;
 const CLASSIFY_ACTION_COUNT: u64 = 2;
 const CLASSIFY_ACTION_DROP: u64 = 3;
@@ -3783,6 +3788,11 @@ impl Machine {
                     | CLASSIFY_FIELD_SRC_IPV4
                     | CLASSIFY_FIELD_DST_IPV4
                     | CLASSIFY_FIELD_HASH
+                    | CLASSIFY_FIELD_PROFILE
+                    | CLASSIFY_FIELD_DOMAIN_ID
+                    | CLASSIFY_FIELD_INLINE0
+                    | CLASSIFY_FIELD_INLINE1
+                    | CLASSIFY_FIELD_INLINE2
             ) || !matches!(
                 rule.action,
                 CLASSIFY_ACTION_MARK
@@ -4061,12 +4071,17 @@ impl Machine {
     ) -> Option<u64> {
         match field {
             CLASSIFY_FIELD_SERVICE_ID => Some(envelope.inline0),
-            CLASSIFY_FIELD_DST_PORT => packet.dst_port.or(Some(envelope.inline1)),
-            CLASSIFY_FIELD_SRC_IPV4 => packet.src_ipv4.or(Some(envelope.inline1)),
-            CLASSIFY_FIELD_DST_IPV4 => packet.dst_ipv4.or(Some(envelope.inline2)),
+            CLASSIFY_FIELD_DST_PORT => packet.dst_port,
+            CLASSIFY_FIELD_SRC_IPV4 => packet.src_ipv4,
+            CLASSIFY_FIELD_DST_IPV4 => packet.dst_ipv4,
             CLASSIFY_FIELD_HASH => {
                 Some(packet.hash ^ envelope.inline0 ^ envelope.inline1 ^ envelope.inline2)
             }
+            CLASSIFY_FIELD_PROFILE => Some(envelope.profile),
+            CLASSIFY_FIELD_DOMAIN_ID => Some(envelope.domain_id),
+            CLASSIFY_FIELD_INLINE0 => Some(envelope.inline0),
+            CLASSIFY_FIELD_INLINE1 => Some(envelope.inline1),
+            CLASSIFY_FIELD_INLINE2 => Some(envelope.inline2),
             _ => None,
         }
     }
@@ -7059,6 +7074,69 @@ mod tests {
         assert_eq!(machine.load_u64(counters + 16).unwrap(), 0);
         assert_eq!(machine.load_u64(counters + 24).unwrap(), 0);
         assert_eq!(machine.load_u64(counters + 32).unwrap(), 0);
+    }
+
+    #[test]
+    fn classifier_routes_generic_event_records_with_inline_fields() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let (_reader_token, writer_token) = create_pipe_pair(&mut machine, 3, 4);
+        let source = create_memory_source(&mut machine, 5);
+        let rules = ARG_BASE + 0x1000;
+        let allowed = ARG_BASE + 0x1800;
+        let payload = ARG_BASE + 0x1900;
+        let envelope = ARG_BASE + 0x1a00;
+        let result = ARG_BASE + 0x1b00;
+        machine.write_bytes(payload, b"evt").unwrap();
+        machine.store_u64(allowed, writer_token).unwrap();
+        write_classifier_rule(
+            &mut machine,
+            rules,
+            CLASSIFY_RULE_EXACT,
+            CLASSIFY_FIELD_DST_PORT,
+            99,
+            0,
+            CLASSIFY_ACTION_DROP,
+            0,
+            0,
+        );
+        write_classifier_rule(
+            &mut machine,
+            rules + CLASSIFIER_RULE_SIZE,
+            CLASSIFY_RULE_EXACT,
+            CLASSIFY_FIELD_INLINE1,
+            99,
+            0,
+            CLASSIFY_ACTION_ROUTE,
+            writer_token,
+            0,
+        );
+        let classifier = create_classifier(&mut machine, 6, rules, 2, allowed, 1);
+
+        write_envelope(
+            &mut machine,
+            envelope,
+            CLASSIFY_PROFILE_EVENT,
+            source,
+            payload,
+            3,
+            0,
+            99,
+            0,
+        );
+
+        assert_eq!(
+            classify(&mut machine, classifier, envelope, result),
+            CLASSIFY_ACTION_ROUTE
+        );
+        assert_eq!(machine.load_u64(result).unwrap(), CLASSIFY_ACTION_ROUTE);
+        assert_eq!(machine.load_u64(result + 24).unwrap(), 1);
+        assert!(machine.fd_read_ready(3).unwrap());
+        machine.read_fd_index(3, ARG_BASE + 0x1c00, 3).unwrap();
+        assert_eq!(
+            machine.read_bytes(ARG_BASE + 0x1c00, 3).unwrap(),
+            b"evt".to_vec()
+        );
     }
 
     #[test]

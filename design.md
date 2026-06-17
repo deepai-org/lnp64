@@ -639,6 +639,11 @@ The engine accepts a record envelope plus a capability-scoped rule table and can
 *   route, drop, or mark records into capability-scoped queues from the table's
     authorized destination set.
 
+The fixed field vocabulary is intentionally small. Generic records expose
+`profile`, `domain_id`, and `inline0..inline2` fields; `service_id` is a
+compatibility alias for `inline0` for IPC-style records. Packet records add
+packet-only fields such as `dst_port`, `src_ipv4`, `dst_ipv4`, and `hash`.
+
 Useful profiles include:
 
 *   **Packet profile:** shallow L2/L3/L4 extraction for simple Ethernet, VLAN, IPv4/IPv6, TCP/UDP/SCTP/ICMP headers; checksum status; flow hash; queue steering.
