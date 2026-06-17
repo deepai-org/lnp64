@@ -1,4 +1,5 @@
 int signal_seen;
+int alarm_seen;
 int select_rfd;
 int select_wfd;
 int futex_slot;
@@ -13,6 +14,12 @@ int gate_service() {
 
 int on_signal() {
     signal_seen = 1;
+    sigret();
+    return 0;
+}
+
+int on_alarm_signal() {
+    alarm_seen = 1;
     sigret();
     return 0;
 }
@@ -219,6 +226,22 @@ int check_signal_mask_delivery() {
     return 0;
 }
 
+int check_alarm_delivery() {
+    int prev;
+    alarm_seen = 0;
+    if (usleep(1) != 0) return 1;
+    if (signal(SIGALRM, on_alarm_signal) != 0) return 2;
+    prev = alarm(1);
+    if (prev != 0) return 3;
+    prev = alarm(2);
+    if (prev == 0) return 4;
+    alarm(1);
+    while (alarm_seen == 0) {
+        yield_cpu();
+    }
+    return 0;
+}
+
 int check_thread_futex_select_timer() {
     fd_set rfds;
     int fds[2];
@@ -365,6 +388,8 @@ int main() {
     if (rc != 0) return 50 + rc;
     rc = check_signal_mask_delivery();
     if (rc != 0) return 120 + rc;
+    rc = check_alarm_delivery();
+    if (rc != 0) return 130 + rc;
     rc = check_thread_futex_select_timer();
     if (rc != 0) return 80 + rc;
     rc = check_epoll_readiness();

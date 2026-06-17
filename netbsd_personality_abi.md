@@ -55,7 +55,8 @@ checks that the generated assembly still uses the expected native primitives.
   rumpfs mount/read service over a block-image FDR,
 - POSIX signal-profile delivery through gate disposition, mask/pending state,
   `raise`, and `SIGRET`/`GATE_RETURN`,
-- pthread startup/join, futex wake, `select`, `epoll`, and timerfd wait,
+- pthread startup/join, futex wake, `select`, `epoll`, `usleep`, `alarm`, and
+  timerfd wait,
 - TCP loopback through endpoint object controls,
 - call-gate delivery and Resource Domain attach/detach/destroy,
 - assembly evidence for FDR I/O, `FORK`, `SPAWN`, `FUTEX_*`, `OBJECT_CTL`,

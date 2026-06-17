@@ -26,6 +26,8 @@ required_native=(
   GET_PCR
   "SET_PCR SIGMASK"
   KILL
+  ALARM
+  SLEEP
   CAP_DUP
   CAP_SEND
   CAP_RECV
