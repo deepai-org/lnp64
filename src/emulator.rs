@@ -8392,6 +8392,29 @@ mod tests {
     }
 
     #[test]
+    fn stale_dynamic_fd_waiter_reports_error_result() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        create_pipe_pair(&mut machine, 3, 4);
+        machine.thread_mut().unwrap().regs[2] = 3;
+        machine.thread_mut().unwrap().regs[3] = POLLIN_MASK;
+
+        let keep_ready = machine
+            .exec(Instr::AwaitDyn(Reg(5), Reg(2), Reg(3)))
+            .unwrap();
+        assert!(!keep_ready);
+        assert_eq!(machine.fd_waiters.len(), 1);
+
+        machine.close_fd_index(3).unwrap();
+        machine.poll_fd_waiters();
+
+        assert!(machine.ready.contains(&1));
+        assert!(machine.fd_waiters.is_empty());
+        assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 116);
+    }
+
+    #[test]
     fn multi_source_fd_waiters_wake_only_ready_sources() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;

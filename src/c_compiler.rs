@@ -13509,6 +13509,8 @@ impl CodeGen {
         let fd = self.alloc_reg()?;
         let events = self.alloc_reg()?;
         let revents = self.alloc_reg()?;
+        let await_result = self.alloc_reg()?;
+        let minus_one = self.alloc_reg()?;
 
         self.text.push(format!("{scan_label}:"));
         self.text.push(format!("  LD r{fds}, [r31, {fds_slot}]"));
@@ -13561,8 +13563,17 @@ impl CodeGen {
         self.text.push(format!("  ADD r{i}, r{i}, r{one}"));
         self.text.push(format!("  JMP {wait_found}_scan"));
         self.text.push(format!("{wait_found}:"));
-        self.text.push(format!("  AWAIT_DYN r0, r{fd}, r{events}"));
+        let wait_error = self.new_label("poll_wait_error");
+        self.text
+            .push(format!("  AWAIT_DYN r{await_result}, r{fd}, r{events}"));
+        self.text.push(format!("  LI r{minus_one}, -1"));
+        self.text
+            .push(format!("  CMP r{await_result}, r{minus_one}"));
+        self.text.push(format!("  BEQ {wait_error}"));
         self.text.push(format!("  JMP {scan_label}"));
+        self.text.push(format!("{wait_error}:"));
+        self.text.push(format!("  LI r{dst_reg}, -1"));
+        self.text.push(format!("  JMP {done}"));
 
         self.text.push(format!("{have_ready}:"));
         self.text.push(format!("  MOV r{dst_reg}, r{count}"));
@@ -21695,6 +21706,44 @@ int main() {
         assert!(asm.contains("POLL_FD_DYN"), "{asm}");
         assert!(asm.contains("AWAIT_DYN"), "{asm}");
         assert!(asm.contains("SLEEP"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_poll_closed_shared_descriptor_reports_pollnval() {
+        let source = r#"
+        int watched;
+
+        int closer() {
+            yield_cpu();
+            close(watched);
+            return 0;
+        }
+
+        int main() {
+            int fds[2];
+            int thread;
+            int joined;
+            struct pollfd p[1];
+            pipe(fds);
+            watched = fds[0];
+            p[0].fd = watched;
+            p[0].events = POLLIN;
+            p[0].revents = 77;
+            if (pthread_create(&thread, 0, closer, 0) != 0) return 1;
+            errno = 0;
+            if (poll(p, 1, -1) != 1) return 2;
+            if (p[0].revents != POLLNVAL) return 3;
+            if (pthread_join(thread, &joined) != 0) return 4;
+            if (joined != 0) return 5;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("AWAIT_DYN"), "{asm}");
+        assert!(asm.contains("POLL_FD_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
