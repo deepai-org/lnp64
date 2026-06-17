@@ -89,6 +89,44 @@ int main(void) {
     if (written != 15) return 35;
     if (!expect_path(buffer, "C:\\out\\file.txt")) return 36;
 
+    written = cwk_path_normalize("C:folder\\file.txt", buffer, sizeof(buffer));
+    if (written != 17) return 37;
+    if (!expect_path(buffer, "C:folder\\file.txt")) return 38;
+    if (cwk_path_is_absolute("C:folder\\file.txt")) return 39;
+    if (!cwk_path_is_relative("C:folder\\file.txt")) return 40;
+    cwk_path_get_root("C:folder\\file.txt", &length);
+    if (length != 2) return 41;
+
+    written = cwk_path_normalize("\\\\server\\share\\dir\\..\\file.txt", buffer, sizeof(buffer));
+    if (written != 23) return 42;
+    if (!expect_path(buffer, "\\\\server\\share\\file.txt")) return 43;
+    cwk_path_get_root("\\\\server\\share\\dir\\file.txt", &length);
+    if (length != 15) return 44;
+
+    written = cwk_path_get_relative("C:\\base\\root", "C:\\base\\target\\file", buffer, sizeof(buffer));
+    if (written != 14) return 45;
+    if (!expect_path(buffer, "..\\target\\file")) return 46;
+
+    written = cwk_path_get_absolute("C:\\base\\root", "..\\target", buffer, sizeof(buffer));
+    if (written != 14) return 47;
+    if (!expect_path(buffer, "C:\\base\\target")) return 48;
+
+    strcpy(buffer, "C:\\base\\old.txt");
+    written = cwk_path_change_extension(buffer, ".log", buffer, sizeof(buffer));
+    if (written != 15) return 49;
+    if (!expect_path(buffer, "C:\\base\\old.log")) return 50;
+
+    strcpy(buffer, "C:\\base\\old.txt");
+    written = cwk_path_change_basename(buffer, "new.bin", buffer, sizeof(buffer));
+    if (written != 15) return 51;
+    if (!expect_path(buffer, "C:\\base\\new.bin")) return 52;
+
+    strcpy(buffer, "C:\\base\\old.txt");
+    if (!cwk_path_get_first_segment(buffer, &segment)) return 53;
+    written = cwk_path_change_segment(&segment, "drive", buffer, sizeof(buffer));
+    if (written != 16) return 54;
+    if (!expect_path(buffer, "C:\\drive\\old.txt")) return 55;
+
     puts("cwalk ok");
     return 0;
 }

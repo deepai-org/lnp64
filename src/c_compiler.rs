@@ -11187,11 +11187,34 @@ impl CodeGen {
         let src = self.alloc_reg()?;
         let dst = self.alloc_reg()?;
         let ch = self.alloc_reg()?;
-        let loop_label = self.new_label("memmove_loop");
+        let zero = self.alloc_reg()?;
+        let src_end = self.alloc_reg()?;
+        let forward_label = self.new_label("memmove_forward");
+        let forward_loop = self.new_label("memmove_forward_loop");
+        let backward_loop = self.new_label("memmove_backward_loop");
         let end_label = self.new_label("memmove_end");
         self.text.push(format!("  LI r{i}, 0"));
         self.text.push(format!("  LI r{one}, 1"));
-        self.text.push(format!("{loop_label}:"));
+        self.text.push(format!("  LI r{zero}, 0"));
+        self.text
+            .push(format!("  ADD r{src_end}, r{src_ptr}, r{len}"));
+        self.text.push(format!("  CMP r{dst_ptr}, r{src_ptr}"));
+        self.text.push(format!("  BLT {forward_label}"));
+        self.text.push(format!("  CMP r{dst_ptr}, r{src_end}"));
+        self.text.push(format!("  BGE {forward_label}"));
+        self.text.push(format!("  MOV r{i}, r{len}"));
+        self.text.push(format!("{backward_loop}:"));
+        self.text.push(format!("  CMP r{i}, r{zero}"));
+        self.text.push(format!("  BEQ {end_label}"));
+        self.text.push(format!("  SUB r{i}, r{i}, r{one}"));
+        self.text.push(format!("  ADD r{src}, r{src_ptr}, r{i}"));
+        self.text.push(format!("  ADD r{dst}, r{dst_ptr}, r{i}"));
+        self.text.push(format!("  LD.B r{ch}, [r{src}, 0]"));
+        self.text.push(format!("  ST.B [r{dst}, 0], r{ch}"));
+        self.text.push(format!("  JMP {backward_loop}"));
+        self.text.push(format!("{forward_label}:"));
+        self.text.push(format!("  LI r{i}, 0"));
+        self.text.push(format!("{forward_loop}:"));
         self.text.push(format!("  CMP r{i}, r{len}"));
         self.text.push(format!("  BGE {end_label}"));
         self.text.push(format!("  ADD r{src}, r{src_ptr}, r{i}"));
@@ -11199,7 +11222,7 @@ impl CodeGen {
         self.text.push(format!("  LD.B r{ch}, [r{src}, 0]"));
         self.text.push(format!("  ST.B [r{dst}, 0], r{ch}"));
         self.text.push(format!("  ADD r{i}, r{i}, r{one}"));
-        self.text.push(format!("  JMP {loop_label}"));
+        self.text.push(format!("  JMP {forward_loop}"));
         self.text.push(format!("{end_label}:"));
         Ok(dst_ptr)
     }
@@ -15556,7 +15579,41 @@ memcpy_done:
   RET
 
 __memmove:
-  JMP __memcpy
+  MOV r20, r1
+  MOV r21, r2
+  MOV r22, r3
+  LI r23, 0
+  LI r24, 1
+  ADD r28, r21, r22
+  CMP r20, r21
+  BLT memmove_forward
+  CMP r20, r28
+  BGE memmove_forward
+  MOV r23, r22
+memmove_backward_loop:
+  LI r29, 0
+  CMP r23, r29
+  BEQ memmove_done
+  SUB r23, r23, r24
+  ADD r25, r21, r23
+  ADD r26, r20, r23
+  LD.B r27, [r25, 0]
+  ST.B [r26, 0], r27
+  JMP memmove_backward_loop
+memmove_forward:
+  LI r23, 0
+memmove_forward_loop:
+  CMP r23, r22
+  BGE memmove_done
+  ADD r25, r21, r23
+  ADD r26, r20, r23
+  LD.B r27, [r25, 0]
+  ST.B [r26, 0], r27
+  ADD r23, r23, r24
+  JMP memmove_forward_loop
+memmove_done:
+  MOV r1, r20
+  RET
 
 __memset:
   MOV r20, r1
@@ -19091,12 +19148,15 @@ int main() {
     fn indirect_memcpy_and_memset_builtins_have_callable_labels() {
         let source = r#"
         static void *(*volatile pmemcpy)(void *restrict, const void *restrict, size_t);
+        static void *(*volatile pmemmove)(void *, const void *, size_t);
         static void *(*volatile pmemset)(void *, int, size_t);
 
         int main() {
             char src[8];
             char dst[8];
+            char overlap[12];
             pmemcpy = memcpy;
+            pmemmove = memmove;
             pmemset = memset;
             pmemset(src, 'A', 8);
             src[3] = 'Z';
@@ -19109,11 +19169,35 @@ int main() {
             if (pmemset(dst, -1, 2) != dst) return 7;
             if (dst[0] != 255) return 8;
             if (dst[1] != 255) return 9;
+            pmemset(overlap, 0, 12);
+            overlap[0] = 'a';
+            overlap[1] = 'b';
+            overlap[2] = 'c';
+            overlap[3] = 'd';
+            overlap[4] = 'e';
+            overlap[5] = 'f';
+            if (pmemmove(overlap + 2, overlap, 6) != overlap + 2) return 10;
+            if (overlap[0] != 'a') return 11;
+            if (overlap[1] != 'b') return 12;
+            if (overlap[2] != 'a') return 13;
+            if (overlap[3] != 'b') return 14;
+            if (overlap[4] != 'c') return 15;
+            if (overlap[5] != 'd') return 16;
+            if (overlap[6] != 'e') return 17;
+            if (overlap[7] != 'f') return 18;
+            if (memmove(overlap, overlap + 2, 6) != overlap) return 19;
+            if (overlap[0] != 'a') return 20;
+            if (overlap[1] != 'b') return 21;
+            if (overlap[2] != 'c') return 22;
+            if (overlap[3] != 'd') return 23;
+            if (overlap[4] != 'e') return 24;
+            if (overlap[5] != 'f') return 25;
             return 0;
         }
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains("__memcpy"), "{asm}");
+        assert!(asm.contains("__memmove"), "{asm}");
         assert!(asm.contains("__memset"), "{asm}");
         assert!(asm.contains("CALL_REG"), "{asm}");
         let program = Program::parse(&asm).unwrap();
