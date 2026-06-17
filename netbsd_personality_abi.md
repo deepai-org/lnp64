@@ -57,7 +57,7 @@ several compiled C test programs, and audits the generated native trace.
 - an mmap-backed allocator arena, `mprotect`/`munmap`, and a tiny checked
   rumpfs mount/read service over a block-image FDR,
 - POSIX signal-profile delivery through gate disposition, mask/pending state,
-  `raise`, and `SIGRET`/`GATE_RETURN`,
+  `raise`, child-exit `SIGCHLD`, and `SIGRET`/`GATE_RETURN`,
 - pthread startup/join, futex wake, `select`, `epoll`, `usleep`, `alarm`, and
   timerfd wait,
 - TCP loopback through endpoint object controls,
@@ -115,6 +115,8 @@ reopens the image to verify persisted state. The loader test validates a
 service-owned `/etc/loader_target.execplan` record before forking and execing
 the planned target, keeping the compatibility decision in userland while the
 full ELF-to-exec-plan loader remains future work.
+`signal_gate_test` covers masked compatibility delivery and child-exit
+`SIGCHLD` as native event delivery before ABI handler return.
 
 ## Open Work
 

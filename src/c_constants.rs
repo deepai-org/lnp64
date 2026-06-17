@@ -53,6 +53,7 @@ pub fn find_token_constant(name: &str) -> Option<i64> {
         "SIGKILL" => Some(9),
         "SIGALRM" => Some(14),
         "SIGTERM" => Some(15),
+        "SIGCHLD" => Some(17),
         "SIG_BLOCK" => Some(0),
         "SIG_UNBLOCK" => Some(1),
         "SIG_SETMASK" => Some(2),
