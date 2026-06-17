@@ -488,6 +488,7 @@ fn preprocess_source(source: &str) -> String {
     let source = splice_escaped_newlines(source);
     let source = strip_block_comments(&source);
     let source = expand_object_like_macros(&source);
+    let source = expand_predefined_line_macro(&source);
     let user_type_aliases = collect_user_type_aliases(&source);
     let user_struct_tags = collect_user_struct_tags(&source);
     let has_test_macros = source.lines().any(|line| {
@@ -573,6 +574,16 @@ fn preprocess_source(source: &str) -> String {
     let out = normalize_c_types(&out);
     let out = strip_simple_typedefs(&out);
     strip_simple_typedefs(&out)
+}
+
+fn expand_predefined_line_macro(source: &str) -> String {
+    let mut out = String::new();
+    for (idx, line) in source.lines().enumerate() {
+        let replacement = (idx + 1).to_string();
+        out.push_str(&replace_ident_token_local(line, "__LINE__", &replacement));
+        out.push('\n');
+    }
+    out
 }
 
 fn strip_simple_typedefs(source: &str) -> String {
@@ -17003,6 +17014,27 @@ mod tests {
             Some("nested/crc32.h")
         );
         assert_eq!(quoted_include_path("#include <stdio.h>"), None);
+    }
+
+    #[test]
+    fn predefined_line_macro_expands_to_numeric_literal() {
+        let source = r#"
+        int line_value(void) {
+            return __LINE__;
+        }
+
+        int main() {
+            int line = line_value();
+            return line > 0 ? 0 : 1;
+        }
+        "#;
+        let normalized = preprocess_source(source);
+        assert!(!normalized.contains("__LINE__"), "{normalized}");
+        assert!(normalized.contains("return 3;"), "{normalized}");
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
     }
 
     #[test]

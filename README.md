@@ -151,6 +151,12 @@ Run the `cwalk` real-package path manipulation smoke gate:
 bash scripts/run_cwalk.sh
 ```
 
+Run the `jsmn` real-package JSON parser smoke gate:
+
+```sh
+bash scripts/run_jsmn.sh
+```
+
 Run the `libc-test` focused libc conformance subset:
 
 ```sh
@@ -179,6 +185,7 @@ handwritten implementations.
 
 ```sh
 bash scripts/run_sbase.sh
+bash scripts/run_jsmn.sh
 bash scripts/run_natsort.sh
 bash scripts/run_cwalk.sh
 bash scripts/run_libc_test.sh
