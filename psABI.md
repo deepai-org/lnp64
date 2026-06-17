@@ -180,18 +180,10 @@ Future dynamic loading must define:
 
 ## Binary and Object Format v0
 
-The emulator currently loads LNP64 assembly programs, not ELF binaries. Design
-documents describe ELF streaming and executable mappings, but there is no
-checked-in ELF loader or relocation implementation yet.
-
-Static v1 object format work must define:
-
-- ELF machine id and endianness.
-- relocation types for absolute addresses, PC-relative branches, FDR/capability
-  references, TLS references, and data labels.
-- segment permission mapping, including W^X and executable-source policy.
-- ASLR rules for executable/load segments.
-- how capability-bearing startup descriptors are passed into the first process.
+The emulator currently loads LNP64 assembly programs, not ELF binaries.
+`object_format.md` defines the target static v1 ELF profile, relocation model,
+executable mapping permissions, ASLR loader behavior, dynamic-linking boundary,
+and startup descriptor records.
 
 Until those details are implemented, real-package gates should compile through
 the repository C compiler to LNP64 assembly.

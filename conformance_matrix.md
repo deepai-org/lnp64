@@ -49,7 +49,7 @@ Status values:
 | Object APIs: queue/counter/memory object, pipe lowering, message receive | native extension | `c_object_creation_surface_runs_on_object_ctl`, `c_pipe_lowers_to_object_queue_and_runs`, `c_message_receive_lowers_to_await_pull_and_runs` | Multi-producer/multi-consumer race coverage is partial. |
 | Call gates: sync, async, handoff | native extension | `c_sync_call_gate_runs`, `call_cap_sync_returns_across_domain_gate`, `call_cap_async_and_handoff_modes_execute_minimally`, `psABI.md` | Full cross-domain aggregate argument ABI is not frozen. |
 | DMA APIs and DMA buffers | native extension | `dma_ctl_copy_and_fill_use_vma_permissions`, `dma_ctl_rejects_guard_unmapped_and_disallowed_domain`, `dma_ctl_uses_dma_buffer_capability_scope`, `dma_ctl_rejects_stale_and_revoked_dma_buffers` | Pending-operation revoke stress is not modeled yet. `COMPAT-STRESS-006`. |
-| ELF objects, relocations, dynamic linker | unsupported | Design docs mention loader requirements; no implementation test covers ELF loading | Define binary format details. `COMPAT-BIN-001`. |
+| ELF objects, relocations, dynamic linker | partial | `object_format.md`, `psABI.md` | Static v1 ELF profile is specified; ELF loader and relocation implementation remain `COMPAT-BIN-001`. |
 | Bootable userland image: `/sbin/init`, shell-like runner, filesystem image, `/dev` namespace | tested | `userland/init.c`, `userland/lnpsh.c`, `scripts/run_userland.sh` | Minimal host-directory image boots and inspects itself; native boot manifest/VFS integration remains under `COMPAT-USERLAND-001`. |
 
 ## Real Program Targets
@@ -78,7 +78,7 @@ specific compiler/runtime special casing.
 | --- | --- | --- | --- |
 | `COMPAT-ABI-001` | psABI/crt packaging | `psABI.md` records the current emulator ABI; startup is compiler/runtime modeled. | Decide whether v1 ships crt objects or keeps compiler-emitted startup as the contract. |
 | `COMPAT-ABI-002` | auxv/dynamic-loader contract | `psABI.md` records current auxv behavior; `ENV_GET` and `getauxval` exist. | Freeze auxv key numbers and dynamic loader expectations. |
-| `COMPAT-BIN-001` | Binary/object format | Assembly program loading exists; ELF details are design-only. | Define static v1 ELF relocation model and executable mapping rules. |
+| `COMPAT-BIN-001` | Binary/object format | `object_format.md` defines static v1 ELF, relocations, mapping permissions, ASLR, static-only dynamic-linking policy, and startup descriptors. | Implement an ELF loader and relocation tests. |
 | `COMPAT-USERLAND-001` | Minimal userland image | Host-directory image with `/sbin/init.s`, `/bin/lnpsh.s`, `/etc`, `/dev`, and `/tmp` passes `scripts/run_userland.sh`. | Add native boot manifest/VFS image format and boot command instead of host-directory setup. |
 | `COMPAT-PKG-001` | Upstream Lua | Lua compatibility is covered by targeted compiler tests only. | Add a reproducible upstream Lua package script and convert failures into generic compiler/runtime bugs. |
 | `COMPAT-PKG-002` | zlib | Not started. | Vendor or fetch a small zlib release and add build/run smoke tests. |

@@ -98,7 +98,7 @@ bash scripts/run_userland.sh
 
 For the current POSIX/libc surface, real-program gates, and open compatibility
 bugs, see `conformance_matrix.md`. For the current emulator process ABI, see
-`psABI.md`.
+`psABI.md`; for the target ELF/static object profile, see `object_format.md`.
 
 ## Docker
 
