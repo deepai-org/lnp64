@@ -2021,6 +2021,14 @@ impl Lexer {
             return Ok(Token::Num(value as i64));
         }
         self.consume_integer_suffix();
+        if text.len() > 1 && text.starts_with('0') && text.chars().all(|ch| matches!(ch, '0'..='7'))
+        {
+            let value = i64::from_str_radix(&text, 8)
+                .or_else(|_| u64::from_str_radix(&text, 8).map(|value| value as i64));
+            return Ok(Token::Num(
+                value.map_err(|_| format!("invalid octal integer literal {text:?}"))?,
+            ));
+        }
         let value = text
             .parse::<i64>()
             .or_else(|_| text.parse::<u64>().map(|value| value as i64));
@@ -7465,6 +7473,12 @@ impl CodeGen {
                 self.text.push(format!("  MOV r{dst}, r1"));
                 Ok(dst)
             }
+            "atol" => {
+                let ptr = self.one_arg(name, args)?;
+                let zero = self.alloc_reg()?;
+                self.text.push(format!("  LI r{zero}, 0"));
+                self.emit_strtoint(ptr, zero, zero, true)
+            }
             "estrtonum" => {
                 if args.is_empty() {
                     return Err("estrtonum(s, min, max) expects at least 1 argument".to_string());
@@ -7513,13 +7527,14 @@ impl CodeGen {
                 let len = self.emit_expr(&args[2])?;
                 self.emit_memchr(haystack, needle, len)
             }
-            "strtoul" | "strtol" => {
+            "strtoul" | "strtol" | "strtoll" | "strtoull" => {
                 if args.len() != 3 {
                     return Err(format!("{name}(s, endptr, base) expects 3 arguments"));
                 }
                 let ptr = self.emit_expr(&args[0])?;
                 let endptr = self.emit_expr(&args[1])?;
-                self.emit_strtoul(ptr, endptr)
+                let base = self.emit_expr(&args[2])?;
+                self.emit_strtoint(ptr, endptr, base, matches!(name, "strtol" | "strtoll"))
             }
             "strtod" => {
                 if args.len() != 2 {
@@ -7527,7 +7542,9 @@ impl CodeGen {
                 }
                 let ptr = self.emit_expr(&args[0])?;
                 let endptr = self.emit_expr(&args[1])?;
-                self.emit_strtoul(ptr, endptr)
+                let zero = self.alloc_reg()?;
+                self.text.push(format!("  LI r{zero}, 0"));
+                self.emit_strtoint(ptr, endptr, zero, true)
             }
             "estrdup" => {
                 let ptr = self.one_arg(name, args)?;
@@ -10387,19 +10404,154 @@ impl CodeGen {
         Ok(dst)
     }
 
-    fn emit_strtoul(&mut self, ptr: usize, endptr: usize) -> Result<usize, String> {
+    fn emit_strtoint(
+        &mut self,
+        ptr: usize,
+        endptr: usize,
+        base_reg: usize,
+        signed_result: bool,
+    ) -> Result<usize, String> {
         let cur = self.alloc_reg()?;
+        let start = self.alloc_reg()?;
+        let digits_start = self.alloc_reg()?;
         let value = self.alloc_reg()?;
         let ch = self.alloc_reg()?;
+        let digit = self.alloc_reg()?;
         let tmp = self.alloc_reg()?;
-        let ten = self.alloc_reg()?;
+        let base = self.alloc_reg()?;
         let one = self.alloc_reg()?;
-        let loop_label = self.new_label("strtoul_loop");
-        let done_label = self.new_label("strtoul_done");
+        let negative = self.alloc_reg()?;
+        let saw_digit = self.alloc_reg()?;
+        let prefix_candidate = self.alloc_reg()?;
+        let overflow = self.alloc_reg()?;
+        let signed_flag = self.alloc_reg()?;
+        let limit = self.alloc_reg()?;
+        let limit_div = self.alloc_reg()?;
+        let limit_prod = self.alloc_reg()?;
+        let limit_rem = self.alloc_reg()?;
+        let whitespace_label = self.new_label("strtoint_ws");
+        let after_ws_label = self.new_label("strtoint_after_ws");
+        let sign_done_label = self.new_label("strtoint_sign_done");
+        let positive_label = self.new_label("strtoint_positive");
+        let base_auto_label = self.new_label("strtoint_base_auto");
+        let base_valid_label = self.new_label("strtoint_base_valid");
+        let base_ten_label = self.new_label("strtoint_base_ten");
+        let maybe_hex_label = self.new_label("strtoint_maybe_hex");
+        let hex_check_label = self.new_label("strtoint_hex_check");
+        let hex_prefix_label = self.new_label("strtoint_hex_prefix");
+        let loop_label = self.new_label("strtoint_loop");
+        let uppercase_label = self.new_label("strtoint_upper");
+        let lowercase_label = self.new_label("strtoint_lower");
+        let have_digit_label = self.new_label("strtoint_have_digit");
+        let accumulate_label = self.new_label("strtoint_accumulate");
+        let overflow_label = self.new_label("strtoint_overflow");
+        let consume_overflow_label = self.new_label("strtoint_consume_overflow");
+        let compare_remainder_label = self.new_label("strtoint_compare_remainder");
+        let done_label = self.new_label("strtoint_done");
+        let no_digits_label = self.new_label("strtoint_no_digits");
+        let overflow_done_label = self.new_label("strtoint_overflow_done");
+        let signed_overflow_label = self.new_label("strtoint_signed_overflow");
+        let positive_limit_label = self.new_label("strtoint_positive_limit");
+        let negative_overflow_label = self.new_label("strtoint_negative_overflow");
+        let unsigned_overflow_label = self.new_label("strtoint_unsigned_overflow");
+        let apply_sign_label = self.new_label("strtoint_apply_sign");
+        let store_end_label = self.new_label("strtoint_store_end");
+        let skip_store_label = self.new_label("strtoint_no_endptr");
+        let invalid_base_label = self.new_label("strtoint_invalid_base");
+        let return_label = self.new_label("strtoint_return");
         self.text.push(format!("  MOV r{cur}, r{ptr}"));
+        self.text.push(format!("  MOV r{start}, r{ptr}"));
         self.text.push(format!("  LI r{value}, 0"));
-        self.text.push(format!("  LI r{ten}, 10"));
         self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("  LI r{negative}, 0"));
+        self.text.push(format!("  LI r{saw_digit}, 0"));
+        self.text.push(format!("  LI r{prefix_candidate}, 0"));
+        self.text.push(format!("  LI r{overflow}, 0"));
+        self.text
+            .push(format!("  LI r{signed_flag}, {}", u64::from(signed_result)));
+
+        self.text.push(format!("{whitespace_label}:"));
+        self.text.push(format!("  LD.B r{ch}, [r{cur}, 0]"));
+        self.text.push(format!("  LI r{tmp}, 32"));
+        self.text.push(format!("  CMP r{ch}, r{tmp}"));
+        self.text.push(format!("  BEQ {after_ws_label}"));
+        self.text.push(format!("  LI r{tmp}, 9"));
+        self.text.push(format!("  CMP r{ch}, r{tmp}"));
+        self.text.push(format!("  BLT {sign_done_label}"));
+        self.text.push(format!("  LI r{tmp}, 13"));
+        self.text.push(format!("  CMP r{ch}, r{tmp}"));
+        self.text.push(format!("  BGT {sign_done_label}"));
+        self.text.push(format!("{after_ws_label}:"));
+        self.text.push(format!("  ADD r{cur}, r{cur}, r{one}"));
+        self.text.push(format!("  JMP {whitespace_label}"));
+
+        self.text.push(format!("{sign_done_label}:"));
+        self.text.push(format!("  LI r{tmp}, 45"));
+        self.text.push(format!("  CMP r{ch}, r{tmp}"));
+        self.text.push(format!("  BNE {positive_label}"));
+        self.text.push(format!("  LI r{negative}, 1"));
+        self.text.push(format!("  ADD r{cur}, r{cur}, r{one}"));
+        self.text.push(format!("  JMP {base_auto_label}"));
+        self.text.push(format!("{positive_label}:"));
+        self.text.push(format!("  LI r{tmp}, 43"));
+        self.text.push(format!("  CMP r{ch}, r{tmp}"));
+        self.text.push(format!("  BNE {base_auto_label}"));
+        self.text.push(format!("  ADD r{cur}, r{cur}, r{one}"));
+
+        self.text.push(format!("{base_auto_label}:"));
+        self.text.push(format!("  MOV r{base}, r{base_reg}"));
+        self.text.push(format!("  CMP r{base}, r0"));
+        self.text.push(format!("  BEQ {base_ten_label}"));
+        self.text.push(format!("  LI r{tmp}, 2"));
+        self.text.push(format!("  CMP r{base}, r{tmp}"));
+        self.text.push(format!("  BLT {invalid_base_label}"));
+        self.text.push(format!("  LI r{tmp}, 36"));
+        self.text.push(format!("  CMP r{base}, r{tmp}"));
+        self.text.push(format!("  BGT {invalid_base_label}"));
+        self.text.push(format!("  JMP {base_valid_label}"));
+
+        self.text.push(format!("{base_ten_label}:"));
+        self.text.push(format!("  LI r{base}, 10"));
+        self.text.push(format!("  LD.B r{ch}, [r{cur}, 0]"));
+        self.text.push(format!("  LI r{tmp}, 48"));
+        self.text.push(format!("  CMP r{ch}, r{tmp}"));
+        self.text.push(format!("  BNE {base_valid_label}"));
+        self.text.push(format!("  LI r{base}, 8"));
+        self.text.push(format!("  ADD r{tmp}, r{cur}, r{one}"));
+        self.text.push(format!("  LD.B r{ch}, [r{tmp}, 0]"));
+        self.text.push(format!("  LI r{tmp}, 120"));
+        self.text.push(format!("  CMP r{ch}, r{tmp}"));
+        self.text.push(format!("  BEQ {maybe_hex_label}"));
+        self.text.push(format!("  LI r{tmp}, 88"));
+        self.text.push(format!("  CMP r{ch}, r{tmp}"));
+        self.text.push(format!("  BNE {base_valid_label}"));
+        self.text.push(format!("{maybe_hex_label}:"));
+        self.text.push(format!("  LI r{base}, 16"));
+
+        self.text.push(format!("{base_valid_label}:"));
+        self.text.push(format!("  MOV r{digits_start}, r{cur}"));
+        self.text.push(format!("  LI r{tmp}, 16"));
+        self.text.push(format!("  CMP r{base}, r{tmp}"));
+        self.text.push(format!("  BNE {loop_label}"));
+        self.text.push(format!("{hex_check_label}:"));
+        self.text.push(format!("  LD.B r{ch}, [r{cur}, 0]"));
+        self.text.push(format!("  LI r{tmp}, 48"));
+        self.text.push(format!("  CMP r{ch}, r{tmp}"));
+        self.text.push(format!("  BNE {loop_label}"));
+        self.text.push(format!("  ADD r{tmp}, r{cur}, r{one}"));
+        self.text.push(format!("  LD.B r{ch}, [r{tmp}, 0]"));
+        self.text.push(format!("  LI r{tmp}, 120"));
+        self.text.push(format!("  CMP r{ch}, r{tmp}"));
+        self.text.push(format!("  BEQ {hex_prefix_label}"));
+        self.text.push(format!("  LI r{tmp}, 88"));
+        self.text.push(format!("  CMP r{ch}, r{tmp}"));
+        self.text.push(format!("  BNE {loop_label}"));
+        self.text.push(format!("{hex_prefix_label}:"));
+        self.text.push(format!("  MOV r{prefix_candidate}, r{cur}"));
+        self.text.push(format!("  ADD r{cur}, r{cur}, r{one}"));
+        self.text.push(format!("  ADD r{cur}, r{cur}, r{one}"));
+        self.text.push(format!("  MOV r{digits_start}, r{cur}"));
+
         self.text.push(format!("{loop_label}:"));
         self.text.push(format!("  LD.B r{ch}, [r{cur}, 0]"));
         self.text.push(format!("  LI r{tmp}, 48"));
@@ -10407,19 +10559,134 @@ impl CodeGen {
         self.text.push(format!("  BLT {done_label}"));
         self.text.push(format!("  LI r{tmp}, 57"));
         self.text.push(format!("  CMP r{ch}, r{tmp}"));
-        self.text.push(format!("  BGT {done_label}"));
-        self.text.push(format!("  MUL r{value}, r{value}, r{ten}"));
+        self.text.push(format!("  BGT {uppercase_label}"));
         self.text.push(format!("  LI r{tmp}, 48"));
-        self.text.push(format!("  SUB r{ch}, r{ch}, r{tmp}"));
-        self.text.push(format!("  ADD r{value}, r{value}, r{ch}"));
+        self.text.push(format!("  SUB r{digit}, r{ch}, r{tmp}"));
+        self.text.push(format!("  JMP {have_digit_label}"));
+
+        self.text.push(format!("{uppercase_label}:"));
+        self.text.push(format!("  LI r{tmp}, 65"));
+        self.text.push(format!("  CMP r{ch}, r{tmp}"));
+        self.text.push(format!("  BLT {done_label}"));
+        self.text.push(format!("  LI r{tmp}, 90"));
+        self.text.push(format!("  CMP r{ch}, r{tmp}"));
+        self.text.push(format!("  BGT {lowercase_label}"));
+        self.text.push(format!("  LI r{tmp}, 55"));
+        self.text.push(format!("  SUB r{digit}, r{ch}, r{tmp}"));
+        self.text.push(format!("  JMP {have_digit_label}"));
+
+        self.text.push(format!("{lowercase_label}:"));
+        self.text.push(format!("  LI r{tmp}, 97"));
+        self.text.push(format!("  CMP r{ch}, r{tmp}"));
+        self.text.push(format!("  BLT {done_label}"));
+        self.text.push(format!("  LI r{tmp}, 122"));
+        self.text.push(format!("  CMP r{ch}, r{tmp}"));
+        self.text.push(format!("  BGT {done_label}"));
+        self.text.push(format!("  LI r{tmp}, 87"));
+        self.text.push(format!("  SUB r{digit}, r{ch}, r{tmp}"));
+
+        self.text.push(format!("{have_digit_label}:"));
+        self.text.push(format!("  CMP r{digit}, r{base}"));
+        self.text.push(format!("  BGE {done_label}"));
+        self.text.push(format!("  CMP r{overflow}, r0"));
+        self.text.push(format!("  BNE {consume_overflow_label}"));
+        self.text.push(format!("  CMP r{signed_flag}, r0"));
+        self.text.push(format!("  BEQ {compare_remainder_label}"));
+        self.text.push(format!("  CMP r{negative}, r0"));
+        self.text.push(format!("  BEQ {positive_limit_label}"));
+        self.text
+            .push(format!("  LI r{limit}, -9223372036854775808"));
+        self.text.push(format!("  JMP {compare_remainder_label}"));
+        self.text.push(format!("{positive_limit_label}:"));
+        self.text
+            .push(format!("  LI r{limit}, 9223372036854775807"));
+        self.text.push(format!("  JMP {compare_remainder_label}"));
+        self.text.push(format!("{compare_remainder_label}:"));
+        self.text.push(format!("  CMP r{signed_flag}, r0"));
+        self.text.push(format!("  BNE {signed_overflow_label}"));
+        self.text.push(format!("  LI r{limit}, -1"));
+        self.text.push(format!("{signed_overflow_label}:"));
+        self.text
+            .push(format!("  DIV r{limit_div}, r{limit}, r{base}"));
+        self.text
+            .push(format!("  MUL r{limit_prod}, r{limit_div}, r{base}"));
+        self.text
+            .push(format!("  SUB r{limit_rem}, r{limit}, r{limit_prod}"));
+        self.text.push(format!("  CMP r{value}, r0"));
+        self.text.push(format!("  BLT {overflow_label}"));
+        self.text.push(format!("  CMP r{value}, r{limit_div}"));
+        self.text.push(format!("  BGT {overflow_label}"));
+        self.text.push(format!("  BLT {accumulate_label}"));
+        self.text.push(format!("  CMP r{digit}, r{limit_rem}"));
+        self.text.push(format!("  BGT {overflow_label}"));
+        self.text.push(format!("{accumulate_label}:"));
+        self.text.push(format!("  MUL r{value}, r{value}, r{base}"));
+        self.text
+            .push(format!("  ADD r{value}, r{value}, r{digit}"));
+        self.text.push(format!("  LI r{saw_digit}, 1"));
         self.text.push(format!("  ADD r{cur}, r{cur}, r{one}"));
         self.text.push(format!("  JMP {loop_label}"));
+        self.text.push(format!("{overflow_label}:"));
+        self.text.push(format!("  LI r{overflow}, 1"));
+        self.text.push(format!("  LI r{saw_digit}, 1"));
+        self.text.push(format!("{consume_overflow_label}:"));
+        self.text.push(format!("  ADD r{cur}, r{cur}, r{one}"));
+        self.text.push(format!("  JMP {loop_label}"));
+
         self.text.push(format!("{done_label}:"));
-        let skip_store = self.new_label("strtoul_no_endptr");
+        self.text.push(format!("  CMP r{saw_digit}, r0"));
+        self.text.push(format!("  BEQ {no_digits_label}"));
+        self.text.push(format!("  CMP r{overflow}, r0"));
+        self.text.push(format!("  BNE {overflow_done_label}"));
+        self.text.push(format!("  JMP {apply_sign_label}"));
+        self.text.push(format!("{no_digits_label}:"));
+        self.text.push(format!("  MOV r{cur}, r{start}"));
+        self.text.push(format!("  CMP r{prefix_candidate}, r0"));
+        self.text.push(format!("  BEQ {store_end_label}"));
+        self.text.push(format!("  MOV r{cur}, r{prefix_candidate}"));
+        self.text.push(format!("  ADD r{cur}, r{cur}, r{one}"));
+        self.text.push(format!("  JMP {store_end_label}"));
+
+        self.text.push(format!("{overflow_done_label}:"));
+        self.text.push(format!("  LI r{tmp}, 34"));
+        self.text.push(format!("  ERRNO_SET r{tmp}"));
+        self.text.push(format!("  CMP r{signed_flag}, r0"));
+        self.text.push(format!("  BEQ {negative_overflow_label}"));
+        self.text.push(format!("  CMP r{negative}, r0"));
+        self.text.push(format!("  BNE {negative_overflow_label}"));
+        self.text
+            .push(format!("  LI r{value}, 9223372036854775807"));
+        self.text.push(format!("  JMP {store_end_label}"));
+        self.text.push(format!("{negative_overflow_label}:"));
+        self.text.push(format!("  CMP r{signed_flag}, r0"));
+        self.text.push(format!("  BEQ {unsigned_overflow_label}"));
+        self.text
+            .push(format!("  LI r{value}, -9223372036854775808"));
+        self.text.push(format!("  JMP {store_end_label}"));
+        self.text.push(format!("{unsigned_overflow_label}:"));
+        self.text.push(format!("  LI r{value}, -1"));
+        self.text.push(format!("  JMP {store_end_label}"));
+
+        self.text.push(format!("{apply_sign_label}:"));
+        self.text.push(format!("  CMP r{negative}, r0"));
+        self.text.push(format!("  BEQ {store_end_label}"));
+        self.text.push(format!("  SUB r{value}, r0, r{value}"));
+
+        self.text.push(format!("{store_end_label}:"));
         self.text.push(format!("  CMP r{endptr}, r0"));
-        self.text.push(format!("  BEQ {skip_store}"));
+        self.text.push(format!("  BEQ {skip_store_label}"));
         self.text.push(format!("  ST [r{endptr}, 0], r{cur}"));
-        self.text.push(format!("{skip_store}:"));
+        self.text.push(format!("{skip_store_label}:"));
+        self.text.push(format!("  JMP {return_label}"));
+
+        self.text.push(format!("{invalid_base_label}:"));
+        self.text.push(format!("  LI r{tmp}, 22"));
+        self.text.push(format!("  ERRNO_SET r{tmp}"));
+        self.text.push(format!("  MOV r{cur}, r{start}"));
+        self.text.push(format!("  CMP r{endptr}, r0"));
+        self.text.push(format!("  BEQ {return_label}"));
+        self.text.push(format!("  ST [r{endptr}, 0], r{cur}"));
+        self.text.push(format!("{return_label}:"));
         Ok(value)
     }
 
@@ -17275,6 +17542,21 @@ mod tests {
             value = 0xffffffffffffffffu;
             if (value == -1) return 0;
             return 1;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn parses_octal_integer_literals() {
+        let source = r#"
+        int main() {
+            if (015437 != 6943) return 1;
+            if (010 + 10 != 18) return 2;
+            return 0;
         }
         "#;
         let asm = compile(source).unwrap();

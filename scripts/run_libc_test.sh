@@ -17,6 +17,7 @@ tests=(
   string_strchr
   string_strcspn
   string_strstr
+  strtol
   udiv
 )
 

@@ -20,6 +20,7 @@ The checked gate currently runs these upstream functional tests:
 - `functional/string_strchr.c`
 - `functional/string_strcspn.c`
 - `functional/string_strstr.c`
+- `functional/strtol.c`
 - `functional/udiv.c`
 
 The local `functional/test.h` and `functional/print.c` files provide a minimal
