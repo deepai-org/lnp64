@@ -7328,6 +7328,10 @@ mod tests {
                     || vma.start == ptr
                     || vma.start == guard_after)
         );
+        let stale_read = machine.read_bytes(ptr, 1).unwrap_err();
+        assert!(stale_read.contains("unmapped address"), "{stale_read}");
+        let stale_write = machine.write_bytes(ptr, &[1]).unwrap_err();
+        assert!(stale_write.contains("unmapped address"), "{stale_write}");
     }
 
     #[test]
