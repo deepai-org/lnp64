@@ -690,6 +690,26 @@ Useful sub-theorems:
 - boot-control and quote FDR reads cannot alter measurement records or mint
   authority.
 
+## 26.1 Assurance Profile and Policy Enforcement Soundness
+
+**Assurance profiles are enforceable machine state:** development, field,
+high-assurance, and formal-assurance profiles are reflected in boot records,
+domain policy, quote records, and hardware checks.
+
+Useful sub-theorems:
+
+- `ASSURANCE_DEV` quotes and audit records cannot be mistaken for production
+  quotes.
+- a domain requiring `ASSURANCE_FIELD`, `ASSURANCE_HIGH`, or
+  `ASSURANCE_FORMAL` cannot become runnable unless the active machine/domain
+  policy satisfies that minimum profile.
+- policy decisions from PID 1, domain managers, personalities, or services have
+  no effect until the hardware Policy Enforcement Point validates capability,
+  domain, generation, lineage, label, measurement, and profile constraints.
+- `ASSURANCE_FORMAL` quote records bind proof artifact hashes, theorem coverage
+  metadata, RTL/IP provenance hashes, and toolchain/build ids to the measured
+  image.
+
 ## 27. RAS Fault Containment
 
 **Detected corruption does not silently become authority:** ECC/parity,
@@ -723,6 +743,26 @@ Useful sub-theorems:
 - aggregate telemetry cannot be refined into unauthorized per-tenant memory,
   packet, or secret contents.
 - classifier and network counters cannot leak unauthorized packet payloads.
+
+## 28.1 Tamper-Evident Audit Integrity
+
+**Audit streams are append-only evidence, not authority:** audit records cannot
+create or broaden capabilities, and missing or reordered records are detectable
+within the stated overflow model.
+
+Useful sub-theorems:
+
+- audit records have monotonically increasing sequence numbers within a stream.
+- each committed record includes the previous audit-root hash or a documented
+  reset/gap marker.
+- audit overflow advances dropped-count or gap metadata before later roots are
+  accepted.
+- narrowed audit FDRs expose only authorized domains, labels, event classes, and
+  redacted payload fields.
+- audit roots included in quote records correspond to the hardware-owned audit
+  stream state.
+- audit read, destructive read, snapshot read, and quote operations cannot alter
+  Resource Domain, scheduler, VMA, DMA, or FDR authority.
 
 ## 29. POSIX/Profile Compatibility Refinement
 
@@ -792,6 +832,45 @@ Useful sub-theorems:
   policy records match.
 - confidential-domain memory cannot be exported through ordinary query-state,
   telemetry, trace, DMA, packet, or fault records.
+
+## 31.1 Controlled Debug and Forensics Non-Bypass
+
+**Debug is not an ambient superuser path:** every debug or forensic observation
+is mediated by explicit capability, domain, label, generation, and assurance
+policy.
+
+Useful sub-theorems:
+
+- no debug operation succeeds without a debug-control FDR carrying the specific
+  right for halt/freeze, single-step, breakpoint, register read, memory read,
+  memory write, trace read, crash snapshot, dump export, or engine diagnostic
+  access.
+- production profiles can permanently disable invasive debug or require
+  destructive domain freeze before forensic export.
+- tenant-strict, confidential, and MLS domains cannot be inspected by parent
+  domains without an explicit inspection or shared-memory capability.
+- debug unlock and forensic export produce audit records and are reflected in
+  quoteable state where the assurance profile requires it.
+- crash dumps and snapshots are redacted according to tenant/confidential/MLS
+  policy before leaving the domain.
+
+## 31.2 Cross-Domain MLS Noninterference
+
+**Labels compose with capabilities:** a held capability is necessary but not
+sufficient when MLS policy is active; the label relation must also permit the
+operation.
+
+Useful sub-theorems:
+
+- cross-domain send, map, DMA, telemetry, debug, packet, page-fill,
+  returned-capability, and service-reply operations fail closed when label
+  generation is stale or the label relation denies the flow.
+- declassification/release/downgrade requires an explicit declassification
+  service capability and produces an audit record.
+- raw interrupts, raw DMA, parent inspection, trace/fault records, service
+  replies, and debug paths cannot bypass label checks.
+- unlabeled objects cannot enter an MLS domain except through a profile-defined
+  default-label rule that is itself quoteable and auditable.
 
 ## 32. Refinement Targets
 
