@@ -1046,6 +1046,24 @@ mod tests {
     }
 
     #[test]
+    fn private_intrinsics_do_not_expose_posix_compatibility_names() {
+        let intrinsic_manifest = include_str!("../toolchain/lnp64_intrinsics.manifest");
+        let forbidden = [
+            "fork", "pipe", "pthread", "signal", "sig", "errno", "poll", "select", "epoll",
+            "socket",
+        ];
+
+        for (name, _, _, _) in intrinsic_rows(intrinsic_manifest) {
+            for word in forbidden {
+                assert!(
+                    !name.contains(word),
+                    "private native intrinsic {name} leaks compatibility spelling {word}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn isel_manifest_covers_backend_starting_opcode_groups() {
         let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
         let isel_manifest = include_str!("../toolchain/lnp64_isel.manifest");
