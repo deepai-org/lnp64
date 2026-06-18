@@ -79,7 +79,9 @@ module lnp64_m1_tb;
         @(posedge clk);
         start = 1'b0;
 
-        repeat (32) @(posedge clk);
+        for (int unsigned cycle = 0; cycle < 12 && !done; cycle++) begin
+            @(posedge clk);
+        end
         require(done, "M1 ping-pong did not complete");
         require(no_forged_fdr, "M1 no-forged-FDR invariant did not hold");
         require(no_lost_wakeup, "M1 wakeup was lost");
