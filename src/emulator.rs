@@ -92,6 +92,8 @@ const ENV_KEY_SERVICELET_RECORD_LIMIT: u64 = 43;
 const ENV_KEY_SERVICELET_ACTION_LIMIT: u64 = 44;
 const ENV_KEY_SERVICELET_ISA_MASK: u64 = 45;
 const ENV_KEY_SERVICELET_FLAG_MASK: u64 = 46;
+const ENV_KEY_CLASSIFIER_ALLOWED_QUEUE_LIMIT: u64 = 47;
+const ENV_KEY_CLASSIFIER_ROUTE_BYTE_LIMIT: u64 = 48;
 const ENV_KEY_PROCESS_ENTRY_RECORD: u64 = 64;
 const ENV_KEY_TOPOLOGY_RECORD: u64 = 65;
 const ENV_ISA_VERSION: u64 = 1;
@@ -162,6 +164,15 @@ const ENV_CLASSIFIER_FEATURE_COUNT: u64 = 1 << 5;
 const ENV_CLASSIFIER_FEATURE_DROP: u64 = 1 << 6;
 const ENV_CLASSIFIER_FEATURE_ROUTE: u64 = 1 << 7;
 const ENV_CLASSIFIER_FEATURE_NEEDS_SOFTWARE: u64 = 1 << 8;
+const ENV_CLASSIFIER_FEATURE_ALL: u64 = ENV_CLASSIFIER_FEATURE_EXACT
+    | ENV_CLASSIFIER_FEATURE_MASKED
+    | ENV_CLASSIFIER_FEATURE_RANGE
+    | ENV_CLASSIFIER_FEATURE_HASH
+    | ENV_CLASSIFIER_FEATURE_MARK
+    | ENV_CLASSIFIER_FEATURE_COUNT
+    | ENV_CLASSIFIER_FEATURE_DROP
+    | ENV_CLASSIFIER_FEATURE_ROUTE
+    | ENV_CLASSIFIER_FEATURE_NEEDS_SOFTWARE;
 const ENV_TIME_FLAG_MONOTONIC: u64 = 1 << 0;
 const ENV_TIME_FLAG_REALTIME: u64 = 1 << 1;
 const AT_UID: u64 = 11;
@@ -6051,17 +6062,7 @@ impl Machine {
                     | ENV_SCHEDULER_FEATURE_FD_WAITERS
                     | ENV_SCHEDULER_FEATURE_THREAD_JOIN,
             ),
-            ENV_KEY_CLASSIFIER_FEATURE_BITS => Some(
-                ENV_CLASSIFIER_FEATURE_EXACT
-                    | ENV_CLASSIFIER_FEATURE_MASKED
-                    | ENV_CLASSIFIER_FEATURE_RANGE
-                    | ENV_CLASSIFIER_FEATURE_HASH
-                    | ENV_CLASSIFIER_FEATURE_MARK
-                    | ENV_CLASSIFIER_FEATURE_COUNT
-                    | ENV_CLASSIFIER_FEATURE_DROP
-                    | ENV_CLASSIFIER_FEATURE_ROUTE
-                    | ENV_CLASSIFIER_FEATURE_NEEDS_SOFTWARE,
-            ),
+            ENV_KEY_CLASSIFIER_FEATURE_BITS => Some(ENV_CLASSIFIER_FEATURE_ALL),
             ENV_KEY_TOPOLOGY_RECORD_COUNT => Some(ENV_TOPOLOGY_RECORD_COUNT),
             ENV_KEY_TOPOLOGY_RECORD_FORMAT => Some(ENV_TOPOLOGY_RECORD_FORMAT),
             ENV_KEY_ARCH_THREAD_LIMIT => Some(ENV_THREAD_LIMIT),
@@ -6072,6 +6073,8 @@ impl Machine {
             ENV_KEY_FUTEX_BUCKET_COUNT => Some(ENV_FUTEX_BUCKET_COUNT),
             ENV_KEY_DMA_MAX_DESCRIPTORS => Some(128),
             ENV_KEY_CLASSIFIER_ENTRY_LIMIT => Some(CLASSIFIER_MAX_RULES as u64),
+            ENV_KEY_CLASSIFIER_ALLOWED_QUEUE_LIMIT => Some(CLASSIFIER_MAX_ALLOWED_QUEUES as u64),
+            ENV_KEY_CLASSIFIER_ROUTE_BYTE_LIMIT => Some(CLASSIFIER_MAX_ROUTE_BYTES as u64),
             ENV_KEY_STARTUP_METADATA_PTR => Some(ARG_BASE),
             ENV_KEY_STARTUP_METADATA_LEN => Some(ARG_SIZE),
             ENV_KEY_STARTUP_METADATA_FORMAT => Some(ENV_STARTUP_METADATA_FORMAT),
@@ -6225,11 +6228,7 @@ impl Machine {
                 CLASSIFIER_MAX_RULES as u64,
                 CLASSIFIER_MAX_ALLOWED_QUEUES as u64,
                 CLASSIFIER_MAX_ROUTE_BYTES as u64,
-                ENV_CLASSIFIER_FEATURE_EXACT
-                    | ENV_CLASSIFIER_FEATURE_MASKED
-                    | ENV_CLASSIFIER_FEATURE_RANGE
-                    | ENV_CLASSIFIER_FEATURE_HASH
-                    | ENV_CLASSIFIER_FEATURE_ROUTE,
+                ENV_CLASSIFIER_FEATURE_ALL,
                 0,
             ],
         ] {
@@ -10582,6 +10581,24 @@ mod tests {
             CLASSIFIER_MAX_RULES as u64
         );
 
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_CLASSIFIER_ALLOWED_QUEUE_LIMIT;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
+            .unwrap();
+        assert_eq!(
+            machine.thread().unwrap().regs[1],
+            CLASSIFIER_MAX_ALLOWED_QUEUES as u64
+        );
+
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_CLASSIFIER_ROUTE_BYTE_LIMIT;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
+            .unwrap();
+        assert_eq!(
+            machine.thread().unwrap().regs[1],
+            CLASSIFIER_MAX_ROUTE_BYTES as u64
+        );
+
         machine.thread_mut().unwrap().regs[2] = ENV_KEY_STARTUP_METADATA_PTR;
         machine
             .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
@@ -10657,8 +10674,16 @@ mod tests {
             CLASSIFIER_MAX_RULES as u64
         );
         assert_eq!(
+            machine.load_u64(classifier_record + 32).unwrap(),
+            CLASSIFIER_MAX_ALLOWED_QUEUES as u64
+        );
+        assert_eq!(
             machine.load_u64(classifier_record + 40).unwrap(),
             CLASSIFIER_MAX_ROUTE_BYTES as u64
+        );
+        assert_eq!(
+            machine.load_u64(classifier_record + 48).unwrap(),
+            ENV_CLASSIFIER_FEATURE_ALL
         );
 
         machine.thread_mut().unwrap().regs[3] = 0xffff_ffff;
