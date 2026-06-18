@@ -10631,6 +10631,49 @@ mod tests {
     }
 
     #[test]
+    fn thread_join_waiter_wakes_and_consumes_exit_status() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine
+            .clone_with_profile(CloneProfile::NewThreadSharedVm, Reg(2), Some(0))
+            .unwrap();
+        let child_tid = machine.thread().unwrap().regs[2];
+        let retval = ARG_BASE + 0x200;
+        machine.thread_mut().unwrap().regs[3] = child_tid;
+        machine.thread_mut().unwrap().regs[4] = retval;
+
+        let keep_ready = machine
+            .exec(Instr::ThreadJoin(Reg(5), Reg(3), Reg(4)))
+            .unwrap();
+        assert!(!keep_ready);
+        assert!(!machine.ready.contains(&1));
+        assert_eq!(
+            machine
+                .thread_join_waiters
+                .get(&child_tid)
+                .unwrap()
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![1]
+        );
+
+        machine.current_tid = child_tid;
+        machine.exit_current(77).unwrap();
+        assert!(machine.ready.contains(&1));
+        assert!(!machine.threads.contains_key(&child_tid));
+        assert_eq!(machine.completed_threads.get(&child_tid), Some(&77));
+
+        machine.current_tid = 1;
+        machine
+            .exec(Instr::ThreadJoin(Reg(5), Reg(3), Reg(4)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], 0);
+        assert_eq!(machine.load_u64(retval).unwrap(), 77);
+        assert!(!machine.completed_threads.contains_key(&child_tid));
+    }
+
+    #[test]
     fn unmapped_vma_rejects_stale_memory_access() {
         let program = Program::parse(
             r#"
