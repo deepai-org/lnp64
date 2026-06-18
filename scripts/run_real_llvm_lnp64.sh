@@ -210,6 +210,23 @@ grep -q 'call ' "$factorial_dump"
 printf 'real LLVM LNP64 clang factorial object smoke passed: %s\n' \
   "$factorial_obj"
 
+allocator_obj="$build_dir/allocator-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables \
+  -Wno-implicit-function-declaration -I toolchain \
+  -c demos/allocator.c -o "$allocator_obj"
+test -s "$allocator_obj"
+allocator_dump="$build_dir/allocator-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$allocator_obj" \
+  >"$allocator_dump"
+grep -q 'la r' "$allocator_dump"
+grep -q 'ld.w r' "$allocator_dump"
+grep -q 'st.w r' "$allocator_dump"
+grep -q 'cmp r' "$allocator_dump"
+grep -q 'call ' "$allocator_dump"
+printf 'real LLVM LNP64 clang allocator object smoke passed: %s\n' \
+  "$allocator_obj"
+
 crt0_obj="$build_dir/crt0-smoke.o"
 "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj toolchain/crt0_lnp64.s \
   -o "$crt0_obj"
