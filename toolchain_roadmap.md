@@ -65,6 +65,9 @@ The first SelectionDAG patterns now select simple i64 ALU operations
 (`add`/`sub`/`mul`/signed `div`, bitwise ops, and shifts) onto the fixed32 ALU
 opcodes; calls, returns, stack frames, memory selection, and branches remain
 bring-up blockers.
+Control-flow opcodes now carry TableGen instruction properties for branches,
+calls, link-register definition/use, returns, terminators, and barriers, so
+later call/return lowering and verifier work can rely on instruction metadata.
 `LNP64InstrInfo.td` now carries operand-bearing TableGen classes for integer
 RRR/RR/RI, branch, memory, atomic, and native-capability instruction shapes
 instead of name-only opcode stubs.

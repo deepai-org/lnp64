@@ -81,17 +81,24 @@ def LSR : LNP64RRR<"lsr"> {
 def ASR : LNP64RRR<"asr"> {
   let Pattern = [(set GPR:$rd, (sra GPR:$rs1, GPR:$rs2))];
 }
+let isCompare = 1 in
 def CMP : LNP64Cmp<"cmp">;
 
+let isBranch = 1, isTerminator = 1, isBarrier = 1 in
 def JMP : LNP64Branch<"jmp">;
+let isBranch = 1, isTerminator = 1 in {
 def BEQ : LNP64Branch<"beq">;
 def BNE : LNP64Branch<"bne">;
 def BLT : LNP64Branch<"blt">;
 def BGT : LNP64Branch<"bgt">;
 def BLE : LNP64Branch<"ble">;
 def BGE : LNP64Branch<"bge">;
+}
+let isCall = 1, Defs = [LR] in
 def CALL : LNP64Branch<"call">;
+let isCall = 1, Defs = [LR] in
 def CALL_REG : LNP64Inst<(outs), (ins GPR:$target), "call_reg", "\t$target">;
+let isReturn = 1, isTerminator = 1, isBarrier = 1, Uses = [LR] in
 def RET : LNP64NoOperand<"ret">;
 
 def LD : LNP64MemLoad<"ld">;

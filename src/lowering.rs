@@ -1867,6 +1867,10 @@ mod tests {
         assert!(isel.contains("computeRegisterProperties"));
         assert!(instr_td.contains("(set GPR:$rd, (add GPR:$rs1, GPR:$rs2))"));
         assert!(instr_td.contains("(set GPR:$rd, (shl GPR:$rs1, GPR:$rs2))"));
+        assert!(instr_td.contains("isReturn = 1"));
+        assert!(instr_td.contains("Defs = [LR]"));
+        assert!(instr_td.contains("Uses = [LR]"));
+        assert!(instr_td.contains("isBranch = 1"));
         assert!(isel.contains("setStackPointerRegisterToSaveRestore(LNP64::R31)"));
         assert!(frame.contains("StackGrowsDown"));
         assert!(frame.contains("Align(16)"));
