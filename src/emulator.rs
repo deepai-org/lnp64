@@ -4417,6 +4417,7 @@ impl Machine {
         if flags & CAP_SEND_FLAG_MOVE != 0 {
             self.close_fd_index(src).map_err(|_| 9u64)?;
         }
+        self.poll_fd_waiters();
         Ok(1)
     }
 
@@ -16346,6 +16347,36 @@ mod tests {
             .exec(Instr::WriteFdDyn(Reg(8), Reg(9), Reg(10)))
             .unwrap();
         assert_eq!(machine.process().unwrap().errno, 1);
+    }
+
+    #[test]
+    fn cap_send_wakes_reader_waiting_for_capability_payload() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        create_pipe_pair(&mut machine, 3, 4);
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[5] = FdHandle::Counter(Rc::new(RefCell::new(99)));
+            process.fd_capabilities[5] = FdCapability::full(5);
+        }
+        machine
+            .push_fd_waiter(3, POLLIN_MASK, Some(Reg(8)))
+            .unwrap();
+        machine.ready.retain(|tid| *tid != 1);
+
+        let arg = ARG_BASE;
+        machine.store_u64(arg, 4).unwrap();
+        machine.store_u64(arg + 8, 5).unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_send(Reg(6), arg).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[6], 1);
+        assert!(machine.ready.contains(&1));
+        assert!(machine.fd_waiters.is_empty());
+        assert_eq!(machine.thread().unwrap().regs[8], 0);
+        assert_eq!(machine.process().unwrap().errno, 0);
+        assert!(machine.fd_read_ready(3).unwrap());
     }
 
     #[test]
