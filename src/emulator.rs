@@ -2269,6 +2269,7 @@ impl Machine {
                 self.env_get(result, key, index_or_buf, len_or_flags)?;
             }
             Instr::Random(result, buf, len_reg) => {
+                Self::ensure_result_reg_writable(result)?;
                 let len = self.read_reg(len_reg)?;
                 let bytes = if len == 0 { 8 } else { len };
                 if len == 0 {
@@ -14633,6 +14634,34 @@ mod tests {
         assert!(err.contains("unmapped address"), "{err}");
         assert_eq!(machine.domains[&ROOT_DOMAIN_ID].security.entropy_quota, 64);
         assert_eq!(machine.thread().unwrap().regs[4], 0);
+    }
+
+    #[test]
+    fn random_rejects_locked_result_register_before_entropy_or_writes() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine
+            .domains
+            .get_mut(&ROOT_DOMAIN_ID)
+            .unwrap()
+            .security
+            .entropy_quota = 64;
+        let random_state = machine.random_state;
+        machine.write_bytes(ARG_BASE, b"sentinel").unwrap();
+        machine.thread_mut().unwrap().regs[2] = ARG_BASE;
+        machine.thread_mut().unwrap().regs[3] = 8;
+
+        let err = machine
+            .exec(Instr::Random(Reg(31), Reg(2), Reg(3)))
+            .unwrap_err();
+
+        assert!(err.contains("hardware-locked stack pointer"), "{err}");
+        assert_eq!(machine.domains[&ROOT_DOMAIN_ID].security.entropy_quota, 64);
+        assert_eq!(machine.random_state, random_state);
+        assert_eq!(
+            machine.read_bytes(ARG_BASE, 8).unwrap(),
+            b"sentinel".to_vec()
+        );
     }
 
     #[test]
