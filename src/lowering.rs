@@ -955,6 +955,34 @@ mod tests {
             .collect()
     }
 
+    fn conformance_gate_rows(manifest: &str) -> Vec<(&str, &str, Vec<&str>, &str, &str)> {
+        manifest
+            .lines()
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(|line| {
+                let mut fields = line.splitn(5, '|');
+                let category = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing conformance category in {line}"));
+                let status = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing conformance status in {line}"));
+                let artifacts = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing conformance artifacts in {line}"))
+                    .split(',')
+                    .collect();
+                let gate = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing conformance gate in {line}"));
+                let coverage = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing conformance coverage in {line}"));
+                (category, status, artifacts, gate, coverage)
+            })
+            .collect()
+    }
+
     fn llvm_bootstrap_rows(manifest: &str) -> Vec<(&str, &str, Vec<&str>, Vec<&str>, &str)> {
         manifest
             .lines()
@@ -1095,6 +1123,7 @@ mod tests {
             "llvm_filemap",
             "libc_shim",
             "netbsd_layers",
+            "conformance_gates",
             "isel",
             "llvm_bootstrap",
             "llvm_gates",
@@ -1821,6 +1850,114 @@ mod tests {
     }
 
     #[test]
+    fn conformance_gate_manifest_covers_required_layers() {
+        let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
+        let gate_manifest = include_str!("../toolchain/lnp64_conformance_gates.manifest");
+        let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
+        let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
+        let roadmap = include_str!("../toolchain_roadmap.md");
+        let conformance = include_str!("../conformance_matrix.md");
+        let run_all = include_str!("../scripts/run_all_gates.sh");
+        let run_software = include_str!("../scripts/run_software_gates.sh");
+        let run_real_packages = include_str!("../scripts/run_real_packages.sh");
+        let run_demos = include_str!("../scripts/run_demos.sh");
+        let rows = conformance_gate_rows(gate_manifest);
+        let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let gate_path = manifest_field(target_manifest, "conformance_gate_contract");
+        let mut categories = std::collections::BTreeMap::new();
+
+        assert_eq!(gate_path, "toolchain/lnp64_conformance_gates.manifest");
+        assert!(manifest_root.join(gate_path).is_file());
+        assert!(contract_index.contains(
+            "conformance_gates|toolchain/lnp64_conformance_gates.manifest|conformance_gate_manifest_covers_required_layers"
+        ));
+        assert!(transition_manifest.contains("toolchain/lnp64_conformance_gates.manifest"));
+        assert!(roadmap.contains("toolchain/lnp64_conformance_gates.manifest"));
+        assert!(conformance.contains("toolchain/lnp64_conformance_gates.manifest"));
+
+        for (category, status, artifacts, gate, coverage) in rows {
+            assert!(
+                categories
+                    .insert(category, (status, artifacts.clone(), gate, coverage))
+                    .is_none(),
+                "duplicate conformance gate category {category}"
+            );
+            assert!(
+                ["tested", "planned"].contains(&status),
+                "unknown conformance gate status {status} for {category}"
+            );
+            assert!(
+                !artifacts.is_empty(),
+                "empty artifacts for conformance gate {category}"
+            );
+            for artifact in artifacts {
+                assert!(
+                    manifest_root.join(artifact).exists(),
+                    "conformance gate {category} names missing artifact {artifact}"
+                );
+            }
+            assert!(
+                !gate.is_empty(),
+                "empty gate for conformance category {category}"
+            );
+            assert!(
+                gate.starts_with("cargo test")
+                    || gate == "simple_libc_gate"
+                    || manifest_root.join(gate).exists(),
+                "conformance gate {category} names missing gate {gate}"
+            );
+            assert!(
+                !coverage.is_empty(),
+                "empty coverage note for conformance category {category}"
+            );
+        }
+
+        for category in [
+            "asm_demos",
+            "c_tests",
+            "randomized_emulator",
+            "adversarial_fault",
+            "package_tests",
+            "netbsd_personality",
+            "llvm_built_versions",
+            "aggregate_hygiene",
+        ] {
+            assert!(
+                categories.contains_key(category),
+                "missing conformance category {category}"
+            );
+        }
+        assert_eq!(categories["llvm_built_versions"].0, "planned");
+        for category in [
+            "asm_demos",
+            "c_tests",
+            "randomized_emulator",
+            "adversarial_fault",
+            "package_tests",
+            "netbsd_personality",
+            "aggregate_hygiene",
+        ] {
+            assert_eq!(
+                categories[category].0, "tested",
+                "{category} should be tested by current gates"
+            );
+        }
+
+        assert!(run_software.contains("cargo test"));
+        assert!(run_software.contains("bash scripts/run_toolchain_contracts.sh"));
+        assert!(run_software.contains("bash scripts/run_demos.sh"));
+        assert!(run_software.contains("bash scripts/run_userland.sh"));
+        assert!(run_software.contains("bash scripts/run_netbsd_personality_system.sh"));
+        assert!(run_software.contains("bash scripts/run_real_packages.sh"));
+        assert!(run_all.contains("bash scripts/run_software_gates.sh"));
+        assert!(run_all.contains("git diff --check"));
+        assert!(run_real_packages.contains("scripts/run_libc_test.sh"));
+        assert!(run_real_packages.contains("scripts/run_sbase.sh"));
+        assert!(run_demos.contains("demos/hello.c"));
+        assert!(run_demos.contains("for src in demos/*.s"));
+    }
+
+    #[test]
     fn llvm_target_manifest_records_required_backend_contract() {
         let manifest = include_str!("../toolchain/lnp64_target.manifest");
         let object_format = include_str!("../object_format.md");
@@ -1868,6 +2005,10 @@ mod tests {
         assert_eq!(
             manifest_field(manifest, "netbsd_layers_contract"),
             "toolchain/lnp64_netbsd_layers.manifest"
+        );
+        assert_eq!(
+            manifest_field(manifest, "conformance_gate_contract"),
+            "toolchain/lnp64_conformance_gates.manifest"
         );
         assert_eq!(
             manifest_field(manifest, "isel_contract"),

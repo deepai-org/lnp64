@@ -14,6 +14,10 @@ Status values:
 
 Aggregate gates:
 
+- `toolchain/lnp64_conformance_gates.manifest` is the checked gate-category
+  contract for asm demos, C/libc tests, randomized emulator tests,
+  adversarial/fault tests, package tests, NetBSD personality gates, planned
+  LLVM-built versions, and aggregate hygiene.
 - `scripts/run_software_gates.sh` runs the host Rust tests, toolchain contract
   checks, demos, userland, NetBSD personality smoke/system gates, and real
   package gates.

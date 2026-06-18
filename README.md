@@ -142,7 +142,17 @@ bash scripts/run_toolchain_contracts.sh
 cargo test --quiet toolchain_contract_index_is_complete
 cargo test --quiet llvm_gate_manifest_pins_non_toy_clang_commands
 cargo test --quiet clang_driver_manifest_matches_llvm_gates
+cargo test --quiet llvm_filemap_manifest_names_backend_source_surface
+cargo test --quiet libc_shim_manifest_covers_runtime_surfaces
+cargo test --quiet loader_security_manifest_covers_exec_plan_security
+cargo test --quiet netbsd_layers_manifest_preserves_personality_order
+cargo test --quiet conformance_gate_manifest_covers_required_layers
 ```
+
+The focused manifest tests are useful while editing one contract file at a
+time. Before committing a toolchain contract batch, also run
+`bash scripts/run_toolchain_contracts.sh`; it checks the manifest index rather
+than only the Rust unit that was under edit.
 
 Use focused Rust filters while iterating, then run the full suite before a broad
 commit:
@@ -183,6 +193,16 @@ cargo test --quiet loader::tests
 cargo test --quiet exec_descriptor
 cargo test --quiet inline_asm_manifest_records_backend_constraints
 bash scripts/run_toolchain_contracts.sh
+```
+
+For the current conformance-gate and README/doc batches, this narrower
+dirty-worktree check has been useful before staging:
+
+```sh
+cargo fmt --check
+cargo test --quiet conformance_gate_manifest_covers_required_layers
+cargo test --quiet toolchain_contract_index_is_complete
+git diff --check -- README.md src/lowering.rs conformance_matrix.md toolchain_roadmap.md toolchain/lnp64_conformance_gates.manifest toolchain/lnp64_contracts.manifest toolchain/lnp64_target.manifest toolchain/lnp64_transition.manifest
 ```
 
 `elf-plan` parses a static LNP64 ELF image, applies supported relocations,

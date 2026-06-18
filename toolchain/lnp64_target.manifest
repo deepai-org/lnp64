@@ -17,6 +17,7 @@ clang_driver_contract=toolchain/lnp64_clang_driver.manifest
 llvm_filemap_contract=toolchain/lnp64_llvm_filemap.manifest
 libc_shim_contract=toolchain/lnp64_libc_shim.manifest
 netbsd_layers_contract=toolchain/lnp64_netbsd_layers.manifest
+conformance_gate_contract=toolchain/lnp64_conformance_gates.manifest
 isel_contract=toolchain/lnp64_isel.manifest
 exec_plan_contract=toolchain/lnp64_exec_plan.manifest
 loader_security_contract=toolchain/lnp64_loader_security.manifest
