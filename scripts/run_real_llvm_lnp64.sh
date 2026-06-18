@@ -599,6 +599,71 @@ grep -q 'call ' "$calloc_dump"
 printf 'real LLVM LNP64 clang calloc object smoke passed: %s\n' \
   "$calloc_obj"
 
+realloc_c="$build_dir/realloc-smoke.c"
+cat >"$realloc_c" <<'C'
+typedef unsigned long size_t;
+
+void *malloc(size_t size);
+void *realloc(void *ptr, size_t size);
+void free(void *ptr);
+
+int main(void) {
+  unsigned char *bytes = malloc(4);
+  if (!bytes)
+    return 1;
+  bytes[0] = 1;
+  bytes[1] = 2;
+  bytes[2] = 3;
+  bytes[3] = 4;
+
+  unsigned char *grown = realloc(bytes, 8);
+  if (!grown)
+    return 2;
+  for (size_t i = 0; i < 4; i = i + 1) {
+    if (grown[i] != i + 1)
+      return 3;
+  }
+  grown[4] = 5;
+  grown[5] = 6;
+  grown[6] = 7;
+  grown[7] = 8;
+
+  unsigned char *shrunk = realloc(grown, 2);
+  if (!shrunk)
+    return 4;
+  if (shrunk[0] != 1 || shrunk[1] != 2)
+    return 5;
+  free(shrunk);
+
+  unsigned char *fresh = realloc(0, 3);
+  if (!fresh)
+    return 6;
+  fresh[0] = 9;
+  if (fresh[0] != 9)
+    return 7;
+  free(fresh);
+
+  unsigned char *zero = malloc(1);
+  if (!zero)
+    return 8;
+  if (realloc(zero, 0) != 0)
+    return 9;
+  return 0;
+}
+C
+
+realloc_obj="$build_dir/realloc-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$realloc_c" -o "$realloc_obj"
+test -s "$realloc_obj"
+realloc_dump="$build_dir/realloc-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$realloc_obj" \
+  >"$realloc_dump"
+grep -q 'call ' "$realloc_dump"
+printf 'real LLVM LNP64 clang realloc object smoke passed: %s\n' \
+  "$realloc_obj"
+
 stack_arg_formal_c="$build_dir/stack-arg-formal-negative.c"
 cat >"$stack_arg_formal_c" <<'C'
 int sum7(int a, int b, int c, int d, int e, int f, int g) {
@@ -748,6 +813,13 @@ calloc_elf="$build_dir/lnp64-calloc-linked.elf"
 test -s "$calloc_elf"
 printf 'real LLVM LNP64 lld calloc link smoke passed: %s\n' \
   "$calloc_elf"
+
+realloc_elf="$build_dir/lnp64-realloc-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$realloc_elf" "$crt0_obj" "$realloc_obj" "$minilibc_obj"
+test -s "$realloc_elf"
+printf 'real LLVM LNP64 lld realloc link smoke passed: %s\n' \
+  "$realloc_elf"
 
 indirect_call_elf="$build_dir/lnp64-indirect-call-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

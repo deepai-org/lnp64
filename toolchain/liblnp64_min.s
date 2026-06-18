@@ -13,12 +13,16 @@ write:
 .type alloc,@function
 alloc:
   MOV r2, r1
+  LI r5, 8
   LA r4, __lnp64_min_heap_cursor
   LD r3, 0(r4)
   LA r1, __lnp64_min_heap
   ADD r1, r1, r3
-  ADD r3, r3, r2
+  ST r2, 0(r1)
+  ADD r6, r2, r5
+  ADD r3, r3, r6
   ST r3, 0(r4)
+  ADD r1, r1, r5
   RET
 
 .globl malloc
@@ -36,6 +40,53 @@ calloc:
   MOV r2, r0
   MOV r3, r8
   CALL memset
+  RET
+
+.globl realloc
+.type realloc,@function
+realloc:
+  CMP r1, r0
+  BEQ realloc_malloc
+  CMP r2, r0
+  BEQ realloc_free
+  LA r4, __lnp64_min_realloc_old
+  ST r1, 0(r4)
+  LA r4, __lnp64_min_realloc_size
+  ST r2, 0(r4)
+  MOV r1, r2
+  CALL malloc
+  CMP r1, r0
+  BEQ realloc_done
+  LA r4, __lnp64_min_realloc_new
+  ST r1, 0(r4)
+  LA r4, __lnp64_min_realloc_old
+  LD r2, 0(r4)
+  LI r5, -8
+  ADD r6, r2, r5
+  LD r3, 0(r6)
+  LA r4, __lnp64_min_realloc_size
+  LD r5, 0(r4)
+  CMPU r3, r5
+  BLE realloc_copy
+  MOV r3, r5
+realloc_copy:
+  LA r4, __lnp64_min_realloc_new
+  LD r1, 0(r4)
+  CALL memcpy
+  LA r4, __lnp64_min_realloc_old
+  LD r1, 0(r4)
+  CALL free
+  LA r4, __lnp64_min_realloc_new
+  LD r1, 0(r4)
+  RET
+realloc_malloc:
+  MOV r1, r2
+  CALL malloc
+  RET
+realloc_free:
+  CALL free
+  RET
+realloc_done:
   RET
 
 .globl free
@@ -111,6 +162,18 @@ exit:
 .bss
 .globl __lnp64_min_heap_cursor
 __lnp64_min_heap_cursor:
+  .quad 0
+
+.globl __lnp64_min_realloc_old
+__lnp64_min_realloc_old:
+  .quad 0
+
+.globl __lnp64_min_realloc_size
+__lnp64_min_realloc_size:
+  .quad 0
+
+.globl __lnp64_min_realloc_new
+__lnp64_min_realloc_new:
   .quad 0
 
 .globl __lnp64_min_heap

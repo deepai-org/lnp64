@@ -34,13 +34,15 @@ hook, and lld arch hook into upstream LLVM 14 and builds real
 `clang`/`llc`/`llvm-mc`/`llvm-objdump`/`lld` tools in Docker; its smoke now
 verifies trivial LNP64 IR codegen, real Clang compiles of scalar C,
 `demos/hello.c`, `demos/factorial.c`, `demos/allocator.c`, and
-`demos/fibonacci.c` to target objects, object assembly of the checked crt0
-stub and minimal libc smoke stub, disassembly of emitted objects, a static link
-of crt0 plus an assembler-built `main`, and static lld links of each
-Clang-built demo object with crt0 plus the smoke libc object. The Docker wrapper
-also submits the linked hello, factorial, allocator, and Fibonacci ELFs through
-`elf-plan`/`run-elf` and requires each to print its expected stdout text and
-exit 0 after exec-plan validation and commit.
+`demos/fibonacci.c` to target objects. It also covers indirect calls, inline
+asm, exit/argc, signed and unsigned compares, signed loads, wide constants,
+stack aggregate addresses, minilibc string calls, and minilibc `calloc`/`realloc`
+smokes. The gate assembles the checked crt0 and minimal libc smoke stubs,
+disassembles emitted objects, statically links crt0 plus an assembler-built
+`main`, and statically links each Clang-built demo/probe object with crt0 plus
+the smoke libc object. The Docker wrapper submits those linked ELFs through
+`elf-plan`/`run-elf` and requires expected output or exit status after exec-plan
+validation and commit.
 `toolchain/lnp64_static.ld` is the initial checked static linker-script
 contract for lld-produced ELF inputs.
 `toolchain/crt0_lnp64.s` is the initial checked crt0 startup stub for the
@@ -103,9 +105,9 @@ external `alloc`/`free`/`write` call references, stack-local pointer storage,
 and string-address relocations without claiming runtime allocator execution;
 the Fibonacci object gate covers recursive direct calls, returns, local
 spill-slot traffic, and multi-function object emission.
-Stack call operands/results, call-frame pseudos, finalized signed/unsigned
-narrow-load semantics, unaligned/large-offset address expansion, unsigned
-conditional branches, and globals remain bring-up blockers.
+Stack-passed call operands/results, varargs, richer aggregate ABI cases,
+unaligned/large-offset address expansion, fuller global/constant-pool models,
+and the remaining `__lnp_*` native shim coverage remain bring-up blockers.
 Narrow memory selection covers zero-extending byte/half/word loads and
 truncating byte/half/word stores through `LD_B`/`LD_H`/`LD_W` and
 `ST_B`/`ST_H`/`ST_W`.
@@ -118,8 +120,8 @@ Return lowering now maps the LLVM return value path through `RetCC_LNP64` into
 `r1` and selects a target `RET_FLAG` DAG node to the architectural `RET`;
 formal argument lowering maps register arguments from `CC_LNP64` live-ins.
 This first call-convention lowering is intentionally register-only: varargs,
-stack arguments, stack returns, indirect calls, and call-frame pseudo handling
-remain bring-up blockers.
+stack arguments, stack returns, and broader call-frame pseudo handling remain
+bring-up blockers.
 Control-flow opcodes now carry TableGen instruction properties for branches,
 calls, link-register definition/use, returns, terminators, and barriers, so
 later call/return lowering and verifier work can rely on instruction metadata.

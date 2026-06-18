@@ -1457,6 +1457,8 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang minilibc string object smoke passed"));
         assert!(real_llc.contains("calloc-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang calloc object smoke passed"));
+        assert!(real_llc.contains("realloc-clang-smoke.o"));
+        assert!(real_llc.contains("real LLVM LNP64 clang realloc object smoke passed"));
         assert!(real_llc.contains("toolchain/crt0_lnp64.s"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc crt0 smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_min.s"));
@@ -1465,6 +1467,8 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 lld minilibc string link smoke passed"));
         assert!(real_llc.contains("lnp64-calloc-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld calloc link smoke passed"));
+        assert!(real_llc.contains("lnp64-realloc-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld realloc link smoke passed"));
         assert!(real_llc.contains("--triple=lnp64-unknown-none"));
         assert!(real_llc.contains("errno_set r0"));
         assert!(real_llc.contains("exit r1"));
@@ -1695,6 +1699,8 @@ mod tests {
         );
         assert!(real_llc_docker.contains("lnp64-calloc-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf calloc execution passed"));
+        assert!(real_llc_docker.contains("lnp64-realloc-linked.elf"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf realloc execution passed"));
         assert!(real_llc_docker.contains("lnp64-intrinsic-push-linked.elf"));
         assert!(real_llc_docker.contains("intrinsic push ok"));
         assert!(
@@ -2679,7 +2685,8 @@ mod tests {
             "LD r3, 0(r4)",
             "LA r1, __lnp64_min_heap",
             "ADD r1, r1, r3",
-            "ADD r3, r3, r2",
+            "ST r2, 0(r1)",
+            "ADD r6, r2, r5",
             "ST r3, 0(r4)",
             ".globl malloc",
             "malloc:",
@@ -2687,6 +2694,9 @@ mod tests {
             ".globl calloc",
             "calloc:",
             "CALL memset",
+            ".globl realloc",
+            "realloc:",
+            "CALL memcpy",
             ".globl free",
             "free:",
             "LI r1, 0",
