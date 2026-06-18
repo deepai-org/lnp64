@@ -266,6 +266,24 @@ public:
       addReg(Instr, B);
       addReg(Instr, C);
       return MCDisassembler::Success;
+    case 0xaa:
+      Instr.setOpcode(LNP64::MULH);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0xab:
+      Instr.setOpcode(LNP64::MULHU);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0xac:
+      Instr.setOpcode(LNP64::MULHSU);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
     case 0xad:
       Instr.setOpcode(LNP64::SEXT_B);
       addReg(Instr, A);

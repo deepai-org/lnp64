@@ -189,6 +189,24 @@ public:
                                 getGPRNo(MI.getOperand(2))),
                OS);
       return;
+    case LNP64::MULH:
+      emitLE32(encodeFixed32RRR(0xaa, getGPRNo(MI.getOperand(0)),
+                                getGPRNo(MI.getOperand(1)),
+                                getGPRNo(MI.getOperand(2))),
+               OS);
+      return;
+    case LNP64::MULHU:
+      emitLE32(encodeFixed32RRR(0xab, getGPRNo(MI.getOperand(0)),
+                                getGPRNo(MI.getOperand(1)),
+                                getGPRNo(MI.getOperand(2))),
+               OS);
+      return;
+    case LNP64::MULHSU:
+      emitLE32(encodeFixed32RRR(0xac, getGPRNo(MI.getOperand(0)),
+                                getGPRNo(MI.getOperand(1)),
+                                getGPRNo(MI.getOperand(2))),
+               OS);
+      return;
     case LNP64::AND:
       emitLE32(encodeFixed32RRR(0x14, getGPRNo(MI.getOperand(0)),
                                 getGPRNo(MI.getOperand(1)),

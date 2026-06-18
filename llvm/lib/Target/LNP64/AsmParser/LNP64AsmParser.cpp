@@ -279,6 +279,9 @@ private:
             .Case("addi", LNP64::ADDI)
             .Case("sub", LNP64::SUB)
             .Case("mul", LNP64::MUL)
+            .Case("mulh", LNP64::MULH)
+            .Case("mulhu", LNP64::MULHU)
+            .Case("mulhsu", LNP64::MULHSU)
             .Case("div", LNP64::DIV)
             .Case("udiv", LNP64::UDIV)
             .Case("srem", LNP64::SREM)
@@ -393,7 +396,8 @@ private:
     if (Opcode == LNP64::ADD || Opcode == LNP64::SUB ||
         Opcode == LNP64::MUL || Opcode == LNP64::DIV ||
         Opcode == LNP64::UDIV || Opcode == LNP64::SREM ||
-        Opcode == LNP64::UREM ||
+        Opcode == LNP64::UREM || Opcode == LNP64::MULH ||
+        Opcode == LNP64::MULHU || Opcode == LNP64::MULHSU ||
         Opcode == LNP64::AND || Opcode == LNP64::OR ||
         Opcode == LNP64::XOR || Opcode == LNP64::LSL ||
         Opcode == LNP64::LSR || Opcode == LNP64::ASR ||

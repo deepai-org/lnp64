@@ -1432,6 +1432,13 @@ mod tests {
         assert!(real_llc.contains("grep -q 'udiv r'"));
         assert!(real_llc.contains("grep -q 'srem r'"));
         assert!(real_llc.contains("real LLVM LNP64 clang scalar arithmetic object smoke passed"));
+        assert!(real_llc.contains("high-mul-clang-smoke.o"));
+        assert!(real_llc.contains("grep -q 'mulhu r'"));
+        assert!(real_llc.contains("grep -q 'mulh r'"));
+        assert!(real_llc.contains("real LLVM LNP64 clang high-multiply object smoke passed"));
+        assert!(real_llc.contains("high-mul-mc-smoke.o"));
+        assert!(real_llc.contains("mulhsu r7, r8, r9"));
+        assert!(real_llc.contains("real LLVM LNP64 llvm-mc high-multiply smoke passed"));
         assert!(real_llc.contains("scalar-extend-clang-smoke.o"));
         assert!(real_llc.contains("grep -q 'zext.w r'"));
         assert!(real_llc.contains("grep -q 'sext.b r'"));
@@ -1523,6 +1530,8 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 lld read link smoke passed"));
         assert!(real_llc.contains("lnp64-scalar-arith-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld scalar arithmetic link smoke passed"));
+        assert!(real_llc.contains("lnp64-high-mul-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld high-multiply link smoke passed"));
         assert!(real_llc.contains("lnp64-scalar-extend-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld scalar extension link smoke passed"));
         assert!(real_llc.contains("lnp64-bitmanip-linked.elf"));
@@ -1774,6 +1783,8 @@ mod tests {
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf scalar arithmetic execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-high-mul-linked.elf"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf high-multiply execution passed"));
         assert!(real_llc_docker.contains("lnp64-scalar-extend-linked.elf"));
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf scalar extension execution passed")
@@ -3730,6 +3741,8 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::UDIV"));
         assert!(mc_emitter.contains("case LNP64::SREM"));
         assert!(mc_emitter.contains("case LNP64::UREM"));
+        assert!(mc_emitter.contains("case LNP64::MULH"));
+        assert!(mc_emitter.contains("case LNP64::MULHSU"));
         assert!(mc_emitter.contains("case LNP64::SEXT_B"));
         assert!(mc_emitter.contains("case LNP64::ZEXT_W"));
         assert!(mc_emitter.contains("case LNP64::CLZ"));

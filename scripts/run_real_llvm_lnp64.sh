@@ -219,6 +219,40 @@ grep -q 'srem r' "$scalar_arith_dump"
 printf 'real LLVM LNP64 clang scalar arithmetic object smoke passed: %s\n' \
   "$scalar_arith_obj"
 
+high_mul_c="$build_dir/high-mul-smoke.c"
+cat >"$high_mul_c" <<'C'
+static volatile unsigned long uhi = 0xffffffffffffffffUL;
+static volatile unsigned long ulo = 2;
+static volatile long sneg = -2;
+static volatile long spos = 3;
+
+__attribute__((noinline)) unsigned long umul_high(unsigned long a,
+                                                  unsigned long b) {
+  return ((unsigned __int128)a * (unsigned __int128)b) >> 64;
+}
+
+__attribute__((noinline)) long smul_high(long a, long b) {
+  return ((__int128)a * (__int128)b) >> 64;
+}
+
+int main(void) {
+  return (int)((umul_high(uhi, ulo) - 1) + (smul_high(sneg, spos) + 1));
+}
+C
+
+high_mul_obj="$build_dir/high-mul-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$high_mul_c" -o "$high_mul_obj"
+test -s "$high_mul_obj"
+high_mul_dump="$build_dir/high-mul-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$high_mul_obj" \
+  >"$high_mul_dump"
+grep -q 'mulhu r' "$high_mul_dump"
+grep -q 'mulh r' "$high_mul_dump"
+printf 'real LLVM LNP64 clang high-multiply object smoke passed: %s\n' \
+  "$high_mul_obj"
+
 scalar_extend_c="$build_dir/scalar-extend-smoke.c"
 cat >"$scalar_extend_c" <<'C'
 static volatile unsigned long minus_two = 0UL - 2;
@@ -1077,6 +1111,29 @@ minilibc_obj="$build_dir/liblnp64-min-smoke.o"
 test -s "$minilibc_obj"
 printf 'real LLVM LNP64 llvm-mc minilibc smoke passed: %s\n' "$minilibc_obj"
 
+high_mul_asm="$build_dir/high-mul-mc-smoke.s"
+cat >"$high_mul_asm" <<'ASM'
+  .text
+  .globl _start
+_start:
+  mulh r1, r2, r3
+  mulhu r4, r5, r6
+  mulhsu r7, r8, r9
+  ret
+ASM
+high_mul_mc_obj="$build_dir/high-mul-mc-smoke.o"
+"$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$high_mul_asm" \
+  -o "$high_mul_mc_obj"
+test -s "$high_mul_mc_obj"
+high_mul_mc_dump="$build_dir/high-mul-mc-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$high_mul_mc_obj" \
+  >"$high_mul_mc_dump"
+grep -q 'mulh r1, r2, r3' "$high_mul_mc_dump"
+grep -q 'mulhu r4, r5, r6' "$high_mul_mc_dump"
+grep -q 'mulhsu r7, r8, r9' "$high_mul_mc_dump"
+printf 'real LLVM LNP64 llvm-mc high-multiply smoke passed: %s\n' \
+  "$high_mul_mc_obj"
+
 minilibc_dump="$build_dir/liblnp64-min-smoke.dump"
 "$llvm_objdump" -d --triple=lnp64-unknown-none "$minilibc_obj" \
   >"$minilibc_dump"
@@ -1206,6 +1263,13 @@ scalar_arith_elf="$build_dir/lnp64-scalar-arith-linked.elf"
 test -s "$scalar_arith_elf"
 printf 'real LLVM LNP64 lld scalar arithmetic link smoke passed: %s\n' \
   "$scalar_arith_elf"
+
+high_mul_elf="$build_dir/lnp64-high-mul-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$high_mul_elf" "$crt0_obj" "$high_mul_obj"
+test -s "$high_mul_elf"
+printf 'real LLVM LNP64 lld high-multiply link smoke passed: %s\n' \
+  "$high_mul_elf"
 
 scalar_extend_elf="$build_dir/lnp64-scalar-extend-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

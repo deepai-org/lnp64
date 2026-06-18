@@ -238,6 +238,13 @@ def SREM : LNP64RRR<"srem"> {
 def UREM : LNP64RRR<"urem"> {
   let Pattern = [(set GPR:$rd, (urem GPR:$rs1, GPR:$rs2))];
 }
+def MULH : LNP64RRR<"mulh"> {
+  let Pattern = [(set GPR:$rd, (mulhs GPR:$rs1, GPR:$rs2))];
+}
+def MULHU : LNP64RRR<"mulhu"> {
+  let Pattern = [(set GPR:$rd, (mulhu GPR:$rs1, GPR:$rs2))];
+}
+def MULHSU : LNP64RRR<"mulhsu">;
 def AND : LNP64RRR<"and"> {
   let Pattern = [(set GPR:$rd, (and GPR:$rs1, GPR:$rs2))];
 }

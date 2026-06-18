@@ -290,8 +290,8 @@ LNP64TargetLowering::LNP64TargetLowering(const TargetMachine &TM,
 
   for (unsigned Opcode : {ISD::ADD, ISD::SUB, ISD::MUL, ISD::SDIV, ISD::UDIV,
                           ISD::SREM, ISD::UREM, ISD::AND, ISD::OR, ISD::XOR,
-                          ISD::SHL, ISD::SRL, ISD::SRA, ISD::CTLZ,
-                          ISD::CTLZ_ZERO_UNDEF, ISD::CTTZ,
+                          ISD::SHL, ISD::SRL, ISD::SRA, ISD::MULHS,
+                          ISD::MULHU, ISD::CTLZ, ISD::CTLZ_ZERO_UNDEF, ISD::CTTZ,
                           ISD::CTTZ_ZERO_UNDEF, ISD::CTPOP, ISD::ROTL,
                           ISD::ROTR, ISD::BSWAP})
     setOperationAction(Opcode, MVT::i64, Legal);
