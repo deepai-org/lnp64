@@ -1,6 +1,6 @@
 .data
 ok_msg: .string "env get ok\n"
-topology: .zero 256
+topology: .zero 320
 
 .text
   LI r29, -1
@@ -33,7 +33,7 @@ check_classifier_features:
 check_topology_scalars:
   LI r2, 30
   ENV_GET r1, r2, r0, r0
-  LI r3, 4
+  LI r3, 5
   CMP r1, r3
   BNE bad
   LI r2, 31
@@ -45,7 +45,7 @@ check_topology_scalars:
 check_topology_records:
   LI r2, 65
   LI r5, topology
-  LI r6, 256
+  LI r6, 320
   ENV_GET r1, r2, r5, r6
   CMP r1, r6
   BNE bad
@@ -60,6 +60,14 @@ check_topology_records:
   LD r9, [r5, 232]
   LI r3, 4096
   CMP r9, r3
+  BNE bad
+  LD r10, [r5, 256]
+  LI r3, 5
+  CMP r10, r3
+  BNE bad
+  LD r11, [r5, 272]
+  LI r3, 4096
+  CMP r11, r3
   BNE bad
 
 done:

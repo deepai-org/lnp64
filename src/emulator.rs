@@ -114,7 +114,7 @@ const ENV_THREAD_LIMIT: u64 = 4096;
 const ENV_PROCESS_LIMIT: u64 = 4096;
 const ENV_EVENT_QUEUE_LIMIT: u64 = 4096;
 const ENV_FUTEX_BUCKET_COUNT: u64 = 4096;
-const ENV_TOPOLOGY_RECORD_COUNT: u64 = 4;
+const ENV_TOPOLOGY_RECORD_COUNT: u64 = 5;
 const ENV_TOPOLOGY_RECORD_FORMAT: u64 = 1;
 const ENV_TOPOLOGY_RECORD_SIZE: usize = 64;
 const ENV_STARTUP_METADATA_FORMAT: u64 = 1;
@@ -6189,7 +6189,8 @@ impl Machine {
     }
 
     fn env_topology_records(&self) -> Vec<u8> {
-        let mut records = Vec::with_capacity(ENV_TOPOLOGY_RECORD_SIZE * 4);
+        let mut records =
+            Vec::with_capacity(ENV_TOPOLOGY_RECORD_SIZE * ENV_TOPOLOGY_RECORD_COUNT as usize);
         for fields in [
             [
                 1,
@@ -6230,6 +6231,16 @@ impl Machine {
                 CLASSIFIER_MAX_ROUTE_BYTES as u64,
                 ENV_CLASSIFIER_FEATURE_ALL,
                 0,
+            ],
+            [
+                5,
+                SERVICELET_VERIFY_VERSION,
+                SERVICELET_MAX_PROGRAM_BYTES,
+                SERVICELET_MAX_INSTRUCTIONS,
+                SERVICELET_MAX_CYCLES,
+                SERVICELET_MAX_RECORD_BYTES,
+                SERVICELET_MAX_ACTION_BYTES,
+                SERVICELET_ALLOWED_ISA_MASK,
             ],
         ] {
             for value in fields {
@@ -10684,6 +10695,36 @@ mod tests {
         assert_eq!(
             machine.load_u64(classifier_record + 48).unwrap(),
             ENV_CLASSIFIER_FEATURE_ALL
+        );
+        let servicelet_record = out + 4 * ENV_TOPOLOGY_RECORD_SIZE as u64;
+        assert_eq!(machine.load_u64(servicelet_record).unwrap(), 5);
+        assert_eq!(
+            machine.load_u64(servicelet_record + 8).unwrap(),
+            SERVICELET_VERIFY_VERSION
+        );
+        assert_eq!(
+            machine.load_u64(servicelet_record + 16).unwrap(),
+            SERVICELET_MAX_PROGRAM_BYTES
+        );
+        assert_eq!(
+            machine.load_u64(servicelet_record + 24).unwrap(),
+            SERVICELET_MAX_INSTRUCTIONS
+        );
+        assert_eq!(
+            machine.load_u64(servicelet_record + 32).unwrap(),
+            SERVICELET_MAX_CYCLES
+        );
+        assert_eq!(
+            machine.load_u64(servicelet_record + 40).unwrap(),
+            SERVICELET_MAX_RECORD_BYTES
+        );
+        assert_eq!(
+            machine.load_u64(servicelet_record + 48).unwrap(),
+            SERVICELET_MAX_ACTION_BYTES
+        );
+        assert_eq!(
+            machine.load_u64(servicelet_record + 56).unwrap(),
+            SERVICELET_ALLOWED_ISA_MASK
         );
 
         machine.thread_mut().unwrap().regs[3] = 0xffff_ffff;
