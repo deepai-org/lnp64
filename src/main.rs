@@ -19,7 +19,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use asm::Program;
-use emulator::Machine;
+use emulator::{Machine, PreparedExecVma};
 use loader::{ExecPlanDescriptorOptions, ExecutableProvenance, LoaderOptions, VmaProtection};
 
 fn main() {
@@ -120,6 +120,17 @@ fn run() -> Result<(), String> {
             )?;
             let descriptor_words = loader::encode_exec_descriptor(&descriptor);
             Machine::validate_exec_descriptor_words(&descriptor_words)?;
+            let commit_vmas = prepared
+                .iter()
+                .zip(descriptor.vmas.iter())
+                .map(|(prepared_vma, descriptor_vma)| PreparedExecVma {
+                    virtual_address: prepared_vma.virtual_address,
+                    protection: descriptor_vma.protection,
+                    bytes: prepared_vma.bytes.clone(),
+                })
+                .collect::<Vec<_>>();
+            let mut commit_probe = Machine::new(Program::parse(".text\n  NOP\n")?);
+            commit_probe.commit_exec_descriptor_memory_image(&descriptor_words, &commit_vmas)?;
             println!(
                 "exec-plan version={} entry=0x{:x} initial_sp=0x{:x} tls_base=0x{:x} startup_metadata=0x{:x}",
                 plan.version,
@@ -129,7 +140,7 @@ fn run() -> Result<(), String> {
                 plan.entry.startup_metadata_ptr
             );
             println!(
-                "descriptor_length={} descriptor_words={} descriptor_validated=true vmas={} startup_note={} fdr_grants={} measurements={}",
+                "descriptor_length={} descriptor_words={} descriptor_validated=true memory_commit_validated=true vmas={} startup_note={} fdr_grants={} measurements={}",
                 descriptor.header.total_length,
                 descriptor_words.len(),
                 prepared.len(),
