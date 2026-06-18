@@ -30,6 +30,7 @@ const ASLR_STACK_PAGES: u64 = 16;
 const SIGCHLD: u64 = 17;
 const SIGALRM: u64 = 14;
 const SIGSEGV: u64 = 11;
+const SIGNAL_NUMBER_LIMIT: u64 = 64;
 const SIG_DFL_HANDLER: usize = 0;
 const SIG_IGN_HANDLER: usize = 1;
 const SOCKET_AF_INET: u64 = 2;
@@ -2339,6 +2340,10 @@ impl Machine {
             }
             Instr::Sigaction(signum, handler) => {
                 let signum = self.read_reg(signum)?;
+                if !Self::valid_signal_number(signum) {
+                    self.set_status_errno(22)?;
+                    return Ok(true);
+                }
                 let handler = self.read_reg(handler)? as usize;
                 match handler {
                     SIG_DFL_HANDLER => {
@@ -2378,6 +2383,10 @@ impl Machine {
             Instr::Kill(pid, signum) => {
                 let pid = self.read_reg(pid)?;
                 let signum = self.read_reg(signum)?;
+                if !Self::valid_signal_number(signum) {
+                    self.set_status_errno(22)?;
+                    return Ok(true);
+                }
                 self.queue_process_event(pid, NativeEvent::kill_signal(signum));
             }
             Instr::Sigret => {
@@ -2697,6 +2706,10 @@ impl Machine {
             .filter(|errno| *errno > 0)
             .map(|errno| errno as u64)
             .unwrap_or(5)
+    }
+
+    fn valid_signal_number(signum: u64) -> bool {
+        (1..SIGNAL_NUMBER_LIMIT).contains(&signum)
     }
 
     fn set_errno(&mut self, errno: u64) -> Result<(), String> {
@@ -9553,6 +9566,62 @@ mod tests {
         assert_eq!(machine.next_tid, next_tid);
         assert_eq!(machine.processes.len(), process_count);
         assert_eq!(machine.threads.len(), thread_count);
+    }
+
+    #[test]
+    fn signal_controls_reject_invalid_numbers_without_mutation() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine
+            .process_mut()
+            .unwrap()
+            .signal_handlers
+            .insert(2, SignalDisposition::Handler(7));
+
+        machine.thread_mut().unwrap().regs[2] = 0;
+        machine.thread_mut().unwrap().regs[3] = 99;
+        assert!(machine.exec(Instr::Sigaction(Reg(2), Reg(3))).unwrap());
+        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert!(!machine.process().unwrap().signal_handlers.contains_key(&0));
+        assert!(matches!(
+            machine.process().unwrap().signal_handlers.get(&2),
+            Some(SignalDisposition::Handler(7))
+        ));
+
+        machine.thread_mut().unwrap().regs[2] = SIGNAL_NUMBER_LIMIT;
+        machine.thread_mut().unwrap().regs[3] = SIG_IGN_HANDLER as u64;
+        assert!(machine.exec(Instr::Sigaction(Reg(2), Reg(3))).unwrap());
+        assert!(
+            !machine
+                .process()
+                .unwrap()
+                .signal_handlers
+                .contains_key(&SIGNAL_NUMBER_LIMIT)
+        );
+        assert!(matches!(
+            machine.process().unwrap().signal_handlers.get(&2),
+            Some(SignalDisposition::Handler(7))
+        ));
+
+        machine.thread_mut().unwrap().regs[2] = SIGNAL_NUMBER_LIMIT - 1;
+        machine.thread_mut().unwrap().regs[3] = SIG_IGN_HANDLER as u64;
+        assert!(machine.exec(Instr::Sigaction(Reg(2), Reg(3))).unwrap());
+        assert!(matches!(
+            machine
+                .process()
+                .unwrap()
+                .signal_handlers
+                .get(&(SIGNAL_NUMBER_LIMIT - 1)),
+            Some(SignalDisposition::Ignore)
+        ));
+
+        machine.thread_mut().unwrap().regs[4] = 1;
+        machine.thread_mut().unwrap().regs[5] = SIGNAL_NUMBER_LIMIT;
+        assert!(machine.exec(Instr::Kill(Reg(4), Reg(5))).unwrap());
+        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert!(machine.process().unwrap().pending_events.is_empty());
     }
 
     #[test]
