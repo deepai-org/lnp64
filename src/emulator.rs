@@ -10437,6 +10437,22 @@ mod tests {
     }
 
     #[test]
+    fn zero_tick_sleep_parks_until_next_scheduler_tick() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[2] = 0;
+
+        let keep_ready = machine.exec(Instr::Sleep(Reg(2))).unwrap();
+        assert!(!keep_ready);
+        assert!(!machine.ready.contains(&1));
+        assert_eq!(machine.sleepers, vec![(1, 1)]);
+
+        machine.tick_sleepers();
+        assert!(machine.sleepers.is_empty());
+        assert!(machine.ready.contains(&1));
+    }
+
+    #[test]
     fn unmapped_vma_rejects_stale_memory_access() {
         let program = Program::parse(
             r#"
