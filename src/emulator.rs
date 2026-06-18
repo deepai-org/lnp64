@@ -4064,7 +4064,25 @@ impl Machine {
             return Ok(0);
         }
         self.ensure_mapped(addr, len, true)?;
+        enum ReadCommit {
+            None,
+            Pipe {
+                buffer: Rc<RefCell<PipeBuffer>>,
+                count: usize,
+            },
+            EventCounter {
+                value: Rc<RefCell<u64>>,
+                semaphore: bool,
+            },
+            MemoryObject {
+                end: usize,
+            },
+            Timer {
+                timer: Rc<RefCell<TimerState>>,
+            },
+        }
         let mut tmp = vec![0; len];
+        let mut commit = ReadCommit::None;
         let count = match &mut self.process_mut()?.fds[fd] {
             FdHandle::Stdin => io::stdin()
                 .read(&mut tmp)
@@ -4073,14 +4091,17 @@ impl Machine {
                 .read(&mut tmp)
                 .map_err(|err| format!("READ_FD fd{fd}: {err}"))?,
             FdHandle::PipeReader(buffer) => {
-                let mut buffer = buffer.borrow_mut();
-                let mut count = 0;
-                while count < len {
-                    let Some(byte) = buffer.bytes.pop_front() else {
-                        break;
+                let buffer_ref = buffer.borrow();
+                let count = len.min(buffer_ref.bytes.len());
+                for (dst, byte) in tmp.iter_mut().zip(buffer_ref.bytes.iter()).take(count) {
+                    *dst = *byte;
+                }
+                drop(buffer_ref);
+                if count != 0 {
+                    commit = ReadCommit::Pipe {
+                        buffer: Rc::clone(buffer),
+                        count,
                     };
-                    tmp[count] = byte;
-                    count += 1;
                 }
                 count
             }
@@ -4091,19 +4112,20 @@ impl Machine {
                 count
             }
             FdHandle::EventCounter { value, semaphore } => {
-                let mut value = value.borrow_mut();
-                if *value == 0 {
+                let observed = *value.borrow();
+                if observed == 0 {
                     0
                 } else {
-                    let observed = if *semaphore { 1 } else { *value };
-                    if *semaphore {
-                        *value = value.saturating_sub(1);
-                    } else {
-                        *value = 0;
-                    }
+                    let observed = if *semaphore { 1 } else { observed };
                     let bytes = observed.to_le_bytes();
                     let count = len.min(bytes.len());
                     tmp[..count].copy_from_slice(&bytes[..count]);
+                    if count != 0 {
+                        commit = ReadCommit::EventCounter {
+                            value: Rc::clone(value),
+                            semaphore: *semaphore,
+                        };
+                    }
                     count
                 }
             }
@@ -4112,18 +4134,24 @@ impl Machine {
                 let available = data.len().saturating_sub(*pos);
                 let count = len.min(available);
                 tmp[..count].copy_from_slice(&data[*pos..*pos + count]);
-                *pos += count;
+                if count != 0 {
+                    commit = ReadCommit::MemoryObject { end: *pos + count };
+                }
                 count
             }
             FdHandle::Timer(timer) => {
-                let mut timer = timer.borrow_mut();
-                if timer.expirations == 0 {
+                let expirations = timer.borrow().expirations;
+                if expirations == 0 {
                     0
                 } else {
-                    let bytes = timer.expirations.to_le_bytes();
+                    let bytes = expirations.to_le_bytes();
                     let count = len.min(bytes.len());
                     tmp[..count].copy_from_slice(&bytes[..count]);
-                    timer.expirations = 0;
+                    if count != 0 {
+                        commit = ReadCommit::Timer {
+                            timer: Rc::clone(timer),
+                        };
+                    }
                     count
                 }
             }
@@ -4168,6 +4196,30 @@ impl Machine {
             | FdHandle::Closed => 0,
         };
         self.write_bytes(addr, &tmp[..count])?;
+        match commit {
+            ReadCommit::None => {}
+            ReadCommit::Pipe { buffer, count } => {
+                let mut buffer = buffer.borrow_mut();
+                for _ in 0..count {
+                    buffer.bytes.pop_front();
+                }
+            }
+            ReadCommit::EventCounter { value, semaphore } => {
+                let mut value = value.borrow_mut();
+                if semaphore {
+                    *value = value.saturating_sub(1);
+                } else {
+                    *value = 0;
+                }
+            }
+            ReadCommit::MemoryObject { end } => match &mut self.process_mut()?.fds[fd] {
+                FdHandle::MemoryObject { pos, .. } => *pos = end,
+                _ => return Err("fd is not a memory object".to_string()),
+            },
+            ReadCommit::Timer { timer } => {
+                timer.borrow_mut().expirations = 0;
+            }
+        }
         Ok(count)
     }
 
@@ -8485,6 +8537,38 @@ mod tests {
             FdHandle::MemoryObject { pos, .. } => assert_eq!(*pos, 8),
             _ => panic!("expected memory object fd"),
         }
+    }
+
+    #[test]
+    fn zero_length_reads_do_not_consume_event_sources() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let event_counter = Rc::new(RefCell::new(3));
+        let timer = Rc::new(RefCell::new(TimerState {
+            remaining: 0,
+            interval: 0,
+            expirations: 2,
+        }));
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[3] = FdHandle::EventCounter {
+                value: Rc::clone(&event_counter),
+                semaphore: false,
+            };
+            process.fd_capabilities[3] = FdCapability::full(3);
+            process.fds[4] = FdHandle::Timer(Rc::clone(&timer));
+            process.fd_capabilities[4] = FdCapability::full(4);
+        }
+
+        assert_eq!(machine.read_fd_index(3, ARG_BASE, 0).unwrap(), 0);
+        assert_eq!(*event_counter.borrow(), 3);
+        assert_eq!(machine.read_fd_index(4, ARG_BASE, 0).unwrap(), 0);
+        assert_eq!(timer.borrow().expirations, 2);
+
+        assert_eq!(machine.read_fd_index(3, ARG_BASE, 8).unwrap(), 8);
+        assert_eq!(*event_counter.borrow(), 0);
+        assert_eq!(machine.read_fd_index(4, ARG_BASE, 8).unwrap(), 8);
+        assert_eq!(timer.borrow().expirations, 0);
     }
 
     #[test]
