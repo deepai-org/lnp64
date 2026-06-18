@@ -1,5 +1,6 @@
 #include "LNP64.h"
 #include "clang/Basic/MacroBuilder.h"
+#include "llvm/ADT/StringSwitch.h"
 
 using namespace clang;
 using namespace clang::targets;
@@ -30,6 +31,23 @@ void LNP64TargetInfo::getTargetDefines(const LangOptions &,
   Builder.defineMacro("__LNP64__");
   Builder.defineMacro("__lnp64__");
   Builder.defineMacro("__ELF__");
+}
+
+bool LNP64TargetInfo::isValidCPUName(StringRef Name) const {
+  return Name == "generic-lnp64";
+}
+
+void LNP64TargetInfo::fillValidCPUList(
+    SmallVectorImpl<StringRef> &Values) const {
+  Values.emplace_back("generic-lnp64");
+}
+
+bool LNP64TargetInfo::setCPU(const std::string &Name) {
+  return isValidCPUName(Name);
+}
+
+bool LNP64TargetInfo::hasFeature(StringRef Feature) const {
+  return llvm::StringSwitch<bool>(Feature).Case("lnp64", true).Default(false);
 }
 
 ArrayRef<const char *> LNP64TargetInfo::getGCCRegNames() const {
@@ -69,4 +87,4 @@ bool LNP64TargetInfo::validateAsmConstraint(
   }
 }
 
-StringRef LNP64TargetInfo::getClobbers() const { return ""; }
+const char *LNP64TargetInfo::getClobbers() const { return ""; }

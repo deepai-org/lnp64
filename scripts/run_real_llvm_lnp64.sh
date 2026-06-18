@@ -35,9 +35,9 @@ if [[ ! -d "$project_dir/.git" ]]; then
     --branch "$tag" \
     https://github.com/llvm/llvm-project.git \
     "$project_dir"
-  git -C "$project_dir" sparse-checkout set llvm cmake lld
+  git -C "$project_dir" sparse-checkout set llvm cmake clang lld
 else
-  git -C "$project_dir" sparse-checkout set llvm cmake lld
+  git -C "$project_dir" sparse-checkout set llvm cmake clang lld
 fi
 
 if [[ ! -f "$project_dir/llvm/CMakeLists.txt" ]]; then
@@ -47,12 +47,23 @@ fi
 
 mkdir -p "$project_dir/llvm/lib/Target/LNP64"
 cp -a llvm/lib/Target/LNP64/. "$project_dir/llvm/lib/Target/LNP64/"
+mkdir -p "$project_dir/clang/lib/Basic/Targets"
+cp -a clang/lib/Basic/Targets/LNP64.h "$project_dir/clang/lib/Basic/Targets/LNP64.h"
+cp -a clang/lib/Basic/Targets/LNP64.cpp "$project_dir/clang/lib/Basic/Targets/LNP64.cpp"
+mkdir -p "$project_dir/clang/lib/Driver/ToolChains/Arch"
+cp -a clang/lib/Driver/ToolChains/Arch/LNP64.cpp \
+  "$project_dir/clang/lib/Driver/ToolChains/Arch/LNP64.cpp"
 mkdir -p "$project_dir/lld/ELF/Arch"
 cp -a lld/ELF/Arch/LNP64.cpp "$project_dir/lld/ELF/Arch/LNP64.cpp"
 
 llvm_cmake="$project_dir/llvm/CMakeLists.txt"
 triple_h="$project_dir/llvm/include/llvm/ADT/Triple.h"
 triple_cpp="$project_dir/llvm/lib/Support/Triple.cpp"
+clang_basic_cmake="$project_dir/clang/lib/Basic/CMakeLists.txt"
+clang_targets_cpp="$project_dir/clang/lib/Basic/Targets.cpp"
+clang_driver_cmake="$project_dir/clang/lib/Driver/CMakeLists.txt"
+clang_common_args_cpp="$project_dir/clang/lib/Driver/ToolChains/CommonArgs.cpp"
+clang_baremetal_cpp="$project_dir/clang/lib/Driver/ToolChains/BareMetal.cpp"
 lld_cmake="$project_dir/lld/ELF/CMakeLists.txt"
 lld_target_h="$project_dir/lld/ELF/Target.h"
 lld_target_cpp="$project_dir/lld/ELF/Target.cpp"
@@ -78,6 +89,22 @@ rewrite_with_perl "$triple_cpp" \
   's/^  case llvm::Triple::lnp64:\n//mg' \
   's/(^  case llvm::Triple::le64:\n)/$1  case llvm::Triple::lnp64:\n/m'
 
+rewrite_with_perl "$clang_basic_cmake" \
+  's/^  Targets\/LNP64\.cpp\n//mg; s/(^  Targets\/Lanai\.cpp\n)/$1  Targets\/LNP64.cpp\n/m'
+
+rewrite_with_perl "$clang_targets_cpp" \
+  's/^#include "Targets\/LNP64\.h"\n//mg; s/(^#include "Targets\/Lanai\.h"\n)/$1#include "Targets\/LNP64.h"\n/m' \
+  's/^  case llvm::Triple::lnp64:\n    return new LNP64TargetInfo\(Triple, Opts\);\n\n//mg; s/(^  case llvm::Triple::lanai:\n    return new LanaiTargetInfo\(Triple, Opts\);\n)/$1\n  case llvm::Triple::lnp64:\n    return new LNP64TargetInfo(Triple, Opts);\n/m'
+
+rewrite_with_perl "$clang_driver_cmake" \
+  's/^  ToolChains\/Arch\/LNP64\.cpp\n//mg; s/(^  ToolChains\/Arch\/M68k\.cpp\n)/  ToolChains\/Arch\/LNP64.cpp\n$1/m'
+
+rewrite_with_perl "$clang_common_args_cpp" \
+  's/^  case llvm::Triple::lnp64:\n    return "generic-lnp64";\n\n//mg; s/(^  case llvm::Triple::lanai:\n    return getLanaiTargetCPU\(Args\);\n)/$1\n  case llvm::Triple::lnp64:\n    return "generic-lnp64";\n/m'
+
+rewrite_with_perl "$clang_baremetal_cpp" \
+  's/return isARMBareMetal\(Triple\) \|\| isAArch64BareMetal\(Triple\) \|\|\n         isRISCVBareMetal\(Triple\);/return Triple.getArch() == llvm::Triple::lnp64 || isARMBareMetal(Triple) ||\n         isAArch64BareMetal(Triple) || isRISCVBareMetal(Triple);/m'
+
 rewrite_with_perl "$lld_cmake" \
   's/^  Arch\/LNP64\.cpp\n//mg; s/(^  Arch\/MSP430\.cpp\n)/  Arch\/LNP64.cpp\n$1/m'
 
@@ -99,7 +126,7 @@ rewrite_with_perl "$lld_tool_cpp" \
 
 cmake -S "$project_dir/llvm" -B "$build_dir" -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
-  -DLLVM_ENABLE_PROJECTS=lld \
+  -DLLVM_ENABLE_PROJECTS="clang;lld" \
   -DLLVM_TARGETS_TO_BUILD=LNP64 \
   -DLLVM_INCLUDE_TESTS=OFF \
   -DLLVM_INCLUDE_BENCHMARKS=OFF \
@@ -109,9 +136,10 @@ cmake -S "$project_dir/llvm" -B "$build_dir" -G Ninja \
   -DLLVM_ENABLE_LIBXML2=OFF \
   -DLLVM_ENABLE_LIBEDIT=OFF
 
-ninja -C "$build_dir" -j "$jobs" llc llvm-mc llvm-objdump lld
+ninja -C "$build_dir" -j "$jobs" llc llvm-mc llvm-objdump clang lld
 
 llc="$build_dir/bin/llc"
+clang="$build_dir/bin/clang"
 llvm_mc="$build_dir/bin/llvm-mc"
 llvm_objdump="$build_dir/bin/llvm-objdump"
 lld="$build_dir/bin/lld"
@@ -119,9 +147,10 @@ lld="$build_dir/bin/lld"
 
 smoke_ir="$(mktemp)"
 smoke_asm="$(mktemp)"
+clang_c="$(mktemp --suffix=.c)"
 main_asm="$(mktemp)"
 smoke_obj="$build_dir/lnp64-smoke.o"
-trap 'rm -f "$smoke_ir" "$smoke_asm" "$main_asm"' EXIT
+trap 'rm -f "$smoke_ir" "$smoke_asm" "$clang_c" "$main_asm"' EXIT
 
 cat >"$smoke_ir" <<'IR'
 define i64 @main() {
@@ -138,6 +167,19 @@ grep -q '^ret$' "$smoke_asm"
 "$llc" -mtriple=lnp64-unknown-none -filetype=obj "$smoke_ir" -o "$smoke_obj"
 test -s "$smoke_obj"
 printf 'real LLVM LNP64 llc smoke passed: %s\n' "$smoke_obj"
+
+cat >"$clang_c" <<'C'
+int main(void) {
+  return 7;
+}
+C
+
+clang_obj="$build_dir/scalar-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$clang_c" -o "$clang_obj"
+test -s "$clang_obj"
+printf 'real LLVM LNP64 clang scalar compile smoke passed: %s\n' "$clang_obj"
 
 crt0_obj="$build_dir/crt0-smoke.o"
 "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj toolchain/crt0_lnp64.s \

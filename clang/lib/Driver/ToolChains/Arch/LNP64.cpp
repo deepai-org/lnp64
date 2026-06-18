@@ -5,7 +5,6 @@
 #include <vector>
 
 using namespace clang::driver;
-using namespace clang::driver::tools;
 using namespace llvm::opt;
 
 namespace clang {
@@ -13,10 +12,11 @@ namespace driver {
 namespace tools {
 namespace lnp64 {
 
-StringRef getLNP64TargetCPU(const ArgList &) { return "generic-lnp64"; }
+llvm::StringRef getLNP64TargetCPU(const ArgList &) { return "generic-lnp64"; }
 
 void getLNP64TargetFeatures(const Driver &, const llvm::Triple &,
-                            const ArgList &, std::vector<StringRef> &) {}
+                            const ArgList &,
+                            std::vector<llvm::StringRef> &) {}
 
 void addLNP64TargetArgs(const ArgList &, ArgStringList &CmdArgs) {
   CmdArgs.push_back("-ffreestanding");

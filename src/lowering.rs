@@ -1397,16 +1397,24 @@ mod tests {
         assert!(real_tblgen_docker.contains(r#"--user "$uid:$gid""#));
         assert!(real_llc.contains("llvmorg-14.0.6"));
         assert!(real_llc.contains("git clone"));
-        assert!(real_llc.contains("git -C \"$project_dir\" sparse-checkout set llvm cmake lld"));
-        assert!(real_llc.contains("LLVM_ENABLE_PROJECTS=lld"));
+        assert!(
+            real_llc.contains("git -C \"$project_dir\" sparse-checkout set llvm cmake clang lld")
+        );
+        assert!(real_llc.contains("LLVM_ENABLE_PROJECTS=\"clang;lld\""));
         assert!(real_llc.contains("LLVM_TARGETS_TO_BUILD=LNP64"));
         assert!(real_llc.contains(r#"ninja -C "$build_dir""#));
-        assert!(real_llc.contains("llc llvm-mc llvm-objdump lld"));
+        assert!(real_llc.contains("llc llvm-mc llvm-objdump clang lld"));
         assert!(real_llc.contains(r#"llc="$build_dir/bin/llc""#));
+        assert!(real_llc.contains(r#"clang="$build_dir/bin/clang""#));
         assert!(real_llc.contains(r#"llvm_mc="$build_dir/bin/llvm-mc""#));
         assert!(real_llc.contains(r#"llvm_objdump="$build_dir/bin/llvm-objdump""#));
         assert!(real_llc.contains(r#"lld="$build_dir/bin/lld""#));
         assert!(real_llc.contains(r#""$llc" --version"#));
+        assert!(real_llc.contains("clang/lib/Basic/Targets/LNP64.h"));
+        assert!(real_llc.contains("clang/lib/Basic/Targets/LNP64.cpp"));
+        assert!(real_llc.contains("clang/lib/Driver/ToolChains/Arch/LNP64.cpp"));
+        assert!(real_llc.contains("Targets/LNP64.cpp"));
+        assert!(real_llc.contains("BareMetal(Triple)"));
         assert!(real_llc.contains("lld/ELF/Arch/LNP64.cpp"));
         assert!(real_llc.contains("elf64lnp64"));
         assert!(real_llc.contains("getLNP64TargetInfo"));
@@ -1414,6 +1422,10 @@ mod tests {
         assert!(real_llc.contains("-verify-machineinstrs"));
         assert!(real_llc.contains("-filetype=obj"));
         assert!(real_llc.contains("real LLVM LNP64 llc smoke passed"));
+        assert!(real_llc.contains("--target=lnp64-unknown-none"));
+        assert!(real_llc.contains("int main(void)"));
+        assert!(real_llc.contains("scalar-clang-smoke.o"));
+        assert!(real_llc.contains("real LLVM LNP64 clang scalar compile smoke passed"));
         assert!(real_llc.contains("toolchain/crt0_lnp64.s"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc crt0 smoke passed"));
         assert!(real_llc.contains("--triple=lnp64-unknown-none"));
@@ -1867,6 +1879,7 @@ mod tests {
         let isel_header = include_str!("../llvm/lib/Target/LNP64/LNP64ISelLowering.h");
         let frame = include_str!("../llvm/lib/Target/LNP64/LNP64FrameLowering.cpp");
         let reginfo = include_str!("../llvm/lib/Target/LNP64/LNP64RegisterInfo.cpp");
+        let clang_target_header = include_str!("../clang/lib/Basic/Targets/LNP64.h");
         let clang_target = include_str!("../clang/lib/Basic/Targets/LNP64.cpp");
         let clang_driver = include_str!("../clang/lib/Driver/ToolChains/Arch/LNP64.cpp");
         let lld_arch = include_str!("../lld/ELF/Arch/LNP64.cpp");
@@ -2146,6 +2159,12 @@ mod tests {
         assert!(reginfo.contains("NoCalleeSaved"));
         assert!(clang_target.contains("resetDataLayout(\"e-m:e-p:64:64-i64:64-n64-S128\")"));
         assert!(clang_target.contains("__LNP64__"));
+        assert!(clang_target_header.contains("getTargetBuiltins()"));
+        assert!(clang_target_header.contains("isValidCPUName(StringRef Name)"));
+        assert!(clang_target.contains("Name == \"generic-lnp64\""));
+        assert!(clang_target_header.contains("setCPU(const std::string &Name)"));
+        assert!(clang_target_header.contains("hasFeature(StringRef Feature)"));
+        assert!(clang_target.contains("const char *LNP64TargetInfo::getClobbers() const"));
         for constraint in ["case 'r'", "case 'f'", "case 'p'", "case 'm'", "case 'i'"] {
             assert!(
                 clang_target.contains(constraint),
