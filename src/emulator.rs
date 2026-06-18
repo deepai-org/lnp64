@@ -13706,6 +13706,50 @@ mod tests {
     }
 
     #[test]
+    fn call_cap_validation_failures_preserve_caller_context() {
+        let assert_failed_call_preserved =
+            |machine: &mut Machine, arg0: u64, expected_errno: u64| {
+                let stack_len = machine.thread().unwrap().cap_call_stack.len();
+                let domain_id = machine.process().unwrap().domain_id;
+                let ip = machine.thread().unwrap().ip;
+
+                machine.call_cap(Reg(4), 3, arg0, 2).unwrap();
+
+                assert_eq!(machine.thread().unwrap().regs[4], -1i64 as u64);
+                assert_eq!(machine.process().unwrap().errno, expected_errno);
+                assert_eq!(machine.thread().unwrap().cap_call_stack.len(), stack_len);
+                assert_eq!(machine.process().unwrap().domain_id, domain_id);
+                assert_eq!(machine.thread().unwrap().ip, ip);
+            };
+
+        let mut machine = test_machine_with_child_domain();
+        machine.domains.get_mut(&2).unwrap().generation = 2;
+        assert_failed_call_preserved(&mut machine, 1, 116);
+
+        let mut machine = test_machine_with_child_domain();
+        assert_failed_call_preserved(&mut machine, CALL_ARG_CAP_MARKER | 1, 1);
+
+        let mut machine = test_machine_with_child_domain();
+        machine.domains.get_mut(&2).unwrap().frozen = true;
+        assert_failed_call_preserved(&mut machine, 1, 11);
+
+        let mut machine = test_machine_with_child_domain();
+        machine.domains.get_mut(&2).unwrap().limits.cpu = 0;
+        assert_failed_call_preserved(&mut machine, 1, 11);
+
+        let mut machine = test_machine_with_child_domain();
+        machine.thread_mut().unwrap().cap_call_stack.resize(
+            MAX_CAP_CALL_DEPTH,
+            CallContinuation {
+                return_ip: 0,
+                result_reg: Reg(4),
+                caller_domain_id: ROOT_DOMAIN_ID,
+            },
+        );
+        assert_failed_call_preserved(&mut machine, 1, 11);
+    }
+
+    #[test]
     fn call_cap_async_and_handoff_modes_execute_minimally() {
         let mut machine = test_machine_with_child_domain();
         machine.processes.get_mut(&1).unwrap().fds[4] = FdHandle::Counter(Rc::new(RefCell::new(0)));
