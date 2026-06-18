@@ -9033,6 +9033,21 @@ impl CodeGen {
                 self.text.push(format!("{done}:"));
                 Ok(dst)
             }
+            "syscall" => {
+                if args.is_empty() {
+                    return Err("syscall(number, ...) expects at least 1 argument".to_string());
+                }
+                for arg in args {
+                    self.emit_expr(arg)?;
+                    self.temp_reg = 0;
+                }
+                let err = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{err}, 38"));
+                self.text.push(format!("  ERRNO_SET r{err}"));
+                self.text.push(format!("  LI r{dst}, -1"));
+                Ok(dst)
+            }
             "signal" => {
                 if args.len() != 2 {
                     return Err("signal(signum, handler) expects 2 arguments".to_string());
@@ -19777,6 +19792,23 @@ int main() {
             asm.contains(&c_string_data("dynamic loading not supported")),
             "{asm}"
         );
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_raw_syscall_function_fails_with_enosys() {
+        let source = r#"
+        int main() {
+            errno = 0;
+            if (syscall(1, 1, "x", 1) != -1) return 1;
+            if (errno != ENOSYS) return 2;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("ERRNO_SET"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
