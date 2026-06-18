@@ -47,6 +47,14 @@ int check_timerfd() {
     spec[2] = 5;
     if (timerfd_gettime(fd, spec) != 0) return 8;
     if (spec[2] != 0) return 9;
+    spec[0] = 0;
+    spec[1] = 0;
+    spec[2] = 0;
+    spec[3] = 0;
+    if (timerfd_settime(fd, 0, spec, 0) != 0) return 10;
+    p[2] = 0;
+    if (poll(p, 1, 0) != 0) return 11;
+    if (p[2] != 0) return 12;
     return 0;
 }
 
