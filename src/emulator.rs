@@ -12572,6 +12572,23 @@ mod tests {
             machine.process().unwrap().fds[7],
             FdHandle::Closed
         ));
+
+        let retained = Rc::new(RefCell::new(88));
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[7] = FdHandle::Counter(retained.clone());
+            process.fd_capabilities[7] = FdCapability::full(7);
+        }
+        machine.object_ctl(Reg(5), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 14);
+        match &machine.process().unwrap().fds[7] {
+            FdHandle::Counter(value) => {
+                assert!(Rc::ptr_eq(value, &retained));
+                assert_eq!(*value.borrow(), 88);
+            }
+            _ => panic!("expected retained counter fd"),
+        }
     }
 
     #[test]
