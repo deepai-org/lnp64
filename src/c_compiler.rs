@@ -9348,16 +9348,7 @@ impl CodeGen {
                             &[(0, src), (8, dst_req), (16, zero), (24, zero)],
                         )
                     }
-                    1 | 2 | 3 | 4 => {
-                        self.emit_expr(&args[0])?;
-                        if args.len() == 3 {
-                            self.emit_expr(&args[2])?;
-                        }
-                        let dst = self.alloc_reg()?;
-                        self.text.push(format!("  LI r{dst}, 0"));
-                        Ok(dst)
-                    }
-                    5..=7 => {
+                    1..=7 => {
                         let fd = self.emit_expr(&args[0])?;
                         let cmd_reg = self.alloc_reg()?;
                         self.text.push(format!("  LI r{cmd_reg}, {cmd}"));
@@ -12216,8 +12207,7 @@ impl CodeGen {
         self.text.push(format!("  JMP {done}"));
 
         self.text.push(format!("{flags_label}:"));
-        self.text.push(format!("  LI r{dst}, 0"));
-        self.text.push(format!("  JMP {done}"));
+        self.text.push(format!("  JMP {record_label}"));
 
         self.text.push(format!("{record_label}:"));
         let fd = self.reload_reg(fd_slot)?;
@@ -20262,9 +20252,12 @@ int main() {
             if (d3 == -1) return 6;
             if (read(d3, buf, 1) != 1) return 7;
             if (fcntl(d3, F_GETFD) != 0) return 8;
-            if (fcntl(d3, F_SETFD, 0) != 0) return 9;
-            if (fcntl(d3, F_GETFL) != 0) return 10;
-            if (fcntl(d3, F_SETFL, 0) != 0) return 11;
+            if (fcntl(d3, F_SETFD, FD_CLOEXEC) != 0) return 9;
+            if ((fcntl(d3, F_GETFD) & FD_CLOEXEC) == 0) return 10;
+            if (fcntl(d3, F_SETFD, 0) != 0) return 11;
+            if (fcntl(d3, F_GETFD) != 0) return 12;
+            if (fcntl(d3, F_GETFL) != 0) return 13;
+            if (fcntl(d3, F_SETFL, 0) != 0) return 14;
             return 0;
         }
         "#;

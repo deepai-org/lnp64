@@ -3566,22 +3566,50 @@ impl Machine {
     }
 
     fn fcntl_fd_index(&mut self, fd: usize, cmd: u64, arg: u64) -> Result<(), String> {
+        const F_GETFD_LNP64: u64 = 1;
+        const F_SETFD_LNP64: u64 = 2;
+        const F_GETFL_LNP64: u64 = 3;
+        const F_SETFL_LNP64: u64 = 4;
         const F_GETLK_LNP64: u64 = 5;
         const F_SETLK_LNP64: u64 = 6;
         const F_SETLKW_LNP64: u64 = 7;
         const F_UNLCK_LNP64: u64 = 2;
-        if arg == 0 {
-            return self.set_status_errno(14);
-        }
-        self.ensure_mapped(arg, 40, true)?;
-        let key = match self.file_lock_key_for_fd(fd) {
-            Ok(key) => key,
-            Err(errno) => return self.set_status_errno(errno),
-        };
-        let pid = self.process()?.pid;
-        let requested_type = self.load_u64_offset(arg, 0)?;
+        const FD_CLOEXEC_LNP64: u64 = 1;
         match cmd {
+            F_GETFD_LNP64 => {
+                if let Err(errno) = self.fd_right_errno(fd, CAP_RIGHT_STAT) {
+                    return self.set_status_errno(errno);
+                }
+                let flags = if self.process()?.fd_capabilities[fd].close_on_exec {
+                    FD_CLOEXEC_LNP64
+                } else {
+                    0
+                };
+                self.complete_ok(flags)
+            }
+            F_SETFD_LNP64 => {
+                if let Err(errno) = self.fd_right_errno(fd, CAP_RIGHT_DUP) {
+                    return self.set_status_errno(errno);
+                }
+                self.process_mut()?.fd_capabilities[fd].close_on_exec = arg & FD_CLOEXEC_LNP64 != 0;
+                self.set_status_ok()
+            }
+            F_GETFL_LNP64 | F_SETFL_LNP64 => {
+                if let Err(errno) = self.fd_right_errno(fd, CAP_RIGHT_STAT) {
+                    return self.set_status_errno(errno);
+                }
+                self.set_status_ok()
+            }
             F_GETLK_LNP64 => {
+                if arg == 0 {
+                    return self.set_status_errno(14);
+                }
+                self.ensure_mapped(arg, 40, true)?;
+                let key = match self.file_lock_key_for_fd(fd) {
+                    Ok(key) => key,
+                    Err(errno) => return self.set_status_errno(errno),
+                };
+                let pid = self.process()?.pid;
                 if let Some(lock) = self.advisory_locks.get(&key).copied() {
                     if lock.owner_pid != pid {
                         self.store_u64_offset(arg, 0, lock.lock_type)?;
@@ -3597,6 +3625,16 @@ impl Machine {
                 self.set_status_ok()
             }
             F_SETLK_LNP64 | F_SETLKW_LNP64 => {
+                if arg == 0 {
+                    return self.set_status_errno(14);
+                }
+                self.ensure_mapped(arg, 40, true)?;
+                let key = match self.file_lock_key_for_fd(fd) {
+                    Ok(key) => key,
+                    Err(errno) => return self.set_status_errno(errno),
+                };
+                let pid = self.process()?.pid;
+                let requested_type = self.load_u64_offset(arg, 0)?;
                 if requested_type == F_UNLCK_LNP64 {
                     self.advisory_locks
                         .retain(|lock_key, lock| *lock_key != key || lock.owner_pid != pid);

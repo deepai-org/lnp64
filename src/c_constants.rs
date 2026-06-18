@@ -147,6 +147,7 @@ pub fn find_token_constant(name: &str) -> Option<i64> {
         "F_DUPFD" => Some(0),
         "F_GETFD" => Some(1),
         "F_SETFD" => Some(2),
+        "FD_CLOEXEC" => Some(1),
         "F_GETFL" => Some(3),
         "F_SETFL" => Some(4),
         "F_GETLK" => Some(5),
