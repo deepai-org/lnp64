@@ -7777,6 +7777,45 @@ mod tests {
     }
 
     #[test]
+    fn object_ctl_rejects_invalid_records_and_missing_authority() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let arg = ARG_BASE;
+
+        machine.store_u64(arg, 0xffff).unwrap();
+        machine.object_ctl(Reg(2), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine.store_u64(arg + 8, 0xffff).unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.object_ctl(Reg(3), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[3], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+
+        machine
+            .store_u64(arg + 8, ObjectKind::Queue.code())
+            .unwrap();
+        machine.store_u64(arg + 16, 0xffff).unwrap();
+        machine.object_ctl(Reg(4), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[4], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+
+        machine
+            .domains
+            .get_mut(&ROOT_DOMAIN_ID)
+            .unwrap()
+            .capability_mask &= !DOMAIN_CAP_OBJECT;
+        machine
+            .store_u64(arg + 16, ObjectProfile::Pipe.code())
+            .unwrap();
+        machine.object_ctl(Reg(5), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
+    }
+
+    #[test]
     fn namespace_root_capability_is_required_for_path_resolution() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
