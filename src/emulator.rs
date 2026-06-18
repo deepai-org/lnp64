@@ -1526,11 +1526,13 @@ impl Machine {
                 self.write_reg(result, revents)?;
             }
             Instr::Alloc(dst, bytes_reg) => {
+                Self::ensure_result_reg_writable(dst)?;
                 let len = (self.read_reg(bytes_reg)? as usize).max(1);
                 let addr = self.alloc_heap(len, 64, false)?;
                 self.write_reg(dst, addr)?;
             }
             Instr::AllocEx(dst, bytes_reg, align_reg) => {
+                Self::ensure_result_reg_writable(dst)?;
                 let len = (self.read_reg(bytes_reg)? as usize).max(1);
                 let align = self.read_reg(align_reg)?.clamp(1, 4096).next_power_of_two();
                 let addr = self.alloc_heap(len, align, true)?;
@@ -13286,6 +13288,22 @@ mod tests {
 
         assert!(err.contains("allocation overflow"), "{err}");
         assert_eq!(machine.thread().unwrap().regs[2], 0);
+    }
+
+    #[test]
+    fn alloc_rejects_locked_result_register_before_vma_side_effects() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let heap_next = machine.process().unwrap().heap_next;
+        let vma_count = machine.process().unwrap().vmas.len();
+        machine.thread_mut().unwrap().regs[1] = 64;
+
+        let err = machine.exec(Instr::Alloc(Reg(31), Reg(1))).unwrap_err();
+
+        assert!(err.contains("hardware-locked stack pointer"), "{err}");
+        assert_eq!(machine.process().unwrap().heap_next, heap_next);
+        assert!(machine.process().unwrap().allocations.is_empty());
+        assert_eq!(machine.process().unwrap().vmas.len(), vma_count);
     }
 
     #[test]
