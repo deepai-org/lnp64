@@ -191,8 +191,30 @@ toolchain-manifest work:
 cargo test --quiet classifier_
 cargo test --quiet loader::tests
 cargo test --quiet exec_descriptor
+cargo test --quiet run_elf_probe_loads_and_commits_minimal_static_elf
+cargo test --quiet run_elf_manifest_records_execution_boundary
 cargo test --quiet inline_asm_manifest_records_backend_constraints
 bash scripts/run_toolchain_contracts.sh
+```
+
+For compatibility-lowering and native-primitive naming work, these focused
+manifest tests are the shortest useful loop before the full suite:
+
+```sh
+cargo test --quiet compatibility_table_names_native_primitives
+cargo test --quiet compatibility_lowering_pins_native_architecture_boundaries
+cargo test --quiet compatibility_surfaces_have_layer_policy
+cargo test --quiet intrinsic_manifest_matches_target_manifest
+cargo test --quiet intrinsic_header_matches_intrinsic_manifest
+```
+
+For classifier-table routing changes, use the broad classifier filter while
+iterating. It covers IPC service routing, packet port/subnet/hash routing,
+fallback, malformed packets, unauthorized and stale capabilities, queue wakeup,
+and classifier counters:
+
+```sh
+cargo test --quiet classifier_
 ```
 
 For the current conformance-gate and README/doc batches, this narrower
