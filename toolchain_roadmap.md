@@ -80,12 +80,14 @@ tree.
 The MC code emitter now has concrete fixed32 paths for `NOP`, `RET`, `LI`,
 `MOV`, integer ALU/compare operations, branch/call/return opcodes,
 byte/halfword/word/doubleword `LD`/`ST`, and native heap opcodes
-`ALLOC`/`ALLOC_EX`/`ALLOC_SIZE`/`FREE`; other opcodes remain blocked until
-operand encodings are implemented. The disassembler decodes that same initial
-fixed32 subset for future `llvm-mc` round trips. The MC layer now has target
-fixup kinds and object-writer relocation mapping for branch/data relocations,
-and the lld scaffold can patch `R_LNP64_BRANCH26` into the aligned signed
-branch field.
+`ALLOC`/`ALLOC_EX`/`ALLOC_SIZE`/`FREE`. The first typed-control opcodes
+`OBJECT_CTL` and `DOMAIN_CTL` also have real MC and committed-exec coverage
+through private `__lnp_object_ctl`/`__lnp_domain_ctl` Clang smokes. Other
+opcodes remain blocked until operand encodings are implemented. The
+disassembler decodes that same initial fixed32 subset for future `llvm-mc`
+round trips. The MC layer now has target fixup kinds and object-writer
+relocation mapping for branch/data relocations, and the lld scaffold can patch
+`R_LNP64_BRANCH26` into the aligned signed branch field.
 The first SelectionDAG patterns now select signed-16 constant materialization
 through `LI`, simple i64 ALU operations (`add`/`sub`/`mul`/signed `div`,
 bitwise ops including `xor allones` to `NOT`, and shifts), and i64
@@ -115,8 +117,10 @@ truncating byte/half/word stores through `LD_B`/`LD_H`/`LD_W` and
 The first private native shim lowerings recognize `__lnp_pull`, `__lnp_push`,
 `__lnp_call`, `__lnp_domain_ctl`, and `__lnp_object_ctl` and emit native
 `PULL`/`PUSH`/`GATE_CALL`/`DOMAIN_CTL`/`OBJECT_CTL` operations directly,
-treating the C ABI `lnp64_cap_t` as a GPR capability handle. The remaining
-`__lnp_*` shims still need backend nodes or runtime call fallbacks.
+treating the C ABI `lnp64_cap_t` as a GPR capability handle. `__lnp_push`,
+`__lnp_domain_ctl`, and `__lnp_object_ctl` now have Clang/lld/`run-elf`
+execution smokes. The remaining `__lnp_*` shims still need backend nodes or
+runtime call fallbacks.
 Return lowering now maps the LLVM return value path through `RetCC_LNP64` into
 `r1` and selects a target `RET_FLAG` DAG node to the architectural `RET`;
 formal argument lowering maps register arguments from `CC_LNP64` live-ins.

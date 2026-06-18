@@ -1574,6 +1574,8 @@ impl Machine {
             0x48 => Instr::AllocSize(a, b),
             0x49 => Instr::Free(a),
             0x4a => Instr::AllocEx(a, b, c),
+            0x4b => Instr::ObjectCtl(a, b),
+            0x4c => Instr::DomainCtl(a, b),
             other => {
                 return Err(format!(
                     "unsupported committed exec opcode 0x{other:02x} at 0x{pc:x}"

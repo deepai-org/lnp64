@@ -315,6 +315,8 @@ private:
             .Case("alloc_ex", LNP64::ALLOC_EX)
             .Case("alloc_size", LNP64::ALLOC_SIZE)
             .Case("free", LNP64::FREE)
+            .Case("object_ctl", LNP64::OBJECT_CTL)
+            .Case("domain_ctl", LNP64::DOMAIN_CTL)
             .Case("pull", LNP64::PULL)
             .Case("push", LNP64::PUSH)
             .Case("ld", LNP64::LD)
@@ -364,6 +366,8 @@ private:
         Opcode == LNP64::EXIT || Opcode == LNP64::FREE)
       return addReg(Inst, Operands);
     if (Opcode == LNP64::ALLOC || Opcode == LNP64::ALLOC_SIZE)
+      return addRegReg(Inst, Operands);
+    if (Opcode == LNP64::OBJECT_CTL || Opcode == LNP64::DOMAIN_CTL)
       return addRegReg(Inst, Operands);
     if (Opcode == LNP64::ALLOC_EX)
       return addRegRegReg(Inst, Operands);

@@ -1453,6 +1453,10 @@ mod tests {
         assert!(real_llc.contains("indirect-call-clang-smoke.o"));
         assert!(real_llc.contains("call_reg"));
         assert!(real_llc.contains("real LLVM LNP64 clang indirect call object smoke passed"));
+        assert!(real_llc.contains("intrinsic-control-clang-smoke.o"));
+        assert!(real_llc.contains("object_ctl r"));
+        assert!(real_llc.contains("domain_ctl r"));
+        assert!(real_llc.contains("real LLVM LNP64 clang intrinsic control object smoke passed"));
         assert!(real_llc.contains("libc-string-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang minilibc string object smoke passed"));
         assert!(real_llc.contains("calloc-clang-smoke.o"));
@@ -1487,6 +1491,8 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 lld static link smoke passed"));
         assert!(real_llc.contains("lnp64-native-heap-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld native heap link smoke passed"));
+        assert!(real_llc.contains("lnp64-intrinsic-control-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld intrinsic control link smoke passed"));
         assert!(real_llc.contains("lnp64-$demo-clang-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld clang demo link smoke passed"));
         assert!(real_llc.contains("rewrite_with_perl"));
@@ -1720,6 +1726,10 @@ mod tests {
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic push execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-intrinsic-control-linked.elf"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic control execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-exit-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf exit execution passed"));
         assert!(main_source.contains("\"run-elf\""));
@@ -1776,6 +1786,7 @@ mod tests {
             "real_clang_demo_execution",
             "real_native_heap_execution",
             "real_intrinsic_push_execution",
+            "real_intrinsic_control_execution",
             "real_exit_execution",
             "entry_state",
             "text_fetch_decode",
@@ -1795,6 +1806,7 @@ mod tests {
             "real_clang_demo_execution",
             "real_native_heap_execution",
             "real_intrinsic_push_execution",
+            "real_intrinsic_control_execution",
             "real_exit_execution",
             "text_fetch_decode",
         ] {
@@ -3555,6 +3567,7 @@ mod tests {
             "heap_rrr",
             "heap_reg",
             "native_primitives",
+            "native_control_rr",
         ] {
             assert!(
                 groups.contains_key(group),
@@ -3609,6 +3622,8 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::ALLOC_EX"));
         assert!(mc_emitter.contains("case LNP64::ALLOC_SIZE"));
         assert!(mc_emitter.contains("case LNP64::FREE"));
+        assert!(mc_emitter.contains("case LNP64::OBJECT_CTL"));
+        assert!(mc_emitter.contains("case LNP64::DOMAIN_CTL"));
         assert!(mc_emitter.contains("case LNP64::LD"));
         assert!(mc_emitter.contains("case LNP64::ST"));
         assert!(mc_emitter.contains("encodeFixed32NoOperand(0x00)"));

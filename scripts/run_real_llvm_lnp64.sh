@@ -291,6 +291,33 @@ grep -q 'push r' "$intrinsic_push_dump"
 printf 'real LLVM LNP64 clang intrinsic push object smoke passed: %s\n' \
   "$intrinsic_push_obj"
 
+intrinsic_ctl_c="$build_dir/intrinsic-control.c"
+cat >"$intrinsic_ctl_c" <<'C'
+#include "lnp64_intrinsics.h"
+int main(void) {
+  lnp64_word_t record[1];
+  record[0] = 99;
+  if (__lnp_object_ctl((lnp64_word_t)record) != (lnp64_word_t)-1)
+    return 1;
+  if (__lnp_domain_ctl((lnp64_word_t)record) != (lnp64_word_t)-1)
+    return 2;
+  return 0;
+}
+C
+
+intrinsic_ctl_obj="$build_dir/intrinsic-control-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$intrinsic_ctl_c" -o "$intrinsic_ctl_obj"
+test -s "$intrinsic_ctl_obj"
+intrinsic_ctl_dump="$build_dir/intrinsic-control-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$intrinsic_ctl_obj" \
+  >"$intrinsic_ctl_dump"
+grep -q 'object_ctl r' "$intrinsic_ctl_dump"
+grep -q 'domain_ctl r' "$intrinsic_ctl_dump"
+printf 'real LLVM LNP64 clang intrinsic control object smoke passed: %s\n' \
+  "$intrinsic_ctl_obj"
+
 inline_asm_c="$build_dir/inline-asm-smoke.c"
 cat >"$inline_asm_c" <<'C'
 unsigned long twice(unsigned long x) {
@@ -786,6 +813,13 @@ intrinsic_push_elf="$build_dir/lnp64-intrinsic-push-linked.elf"
 test -s "$intrinsic_push_elf"
 printf 'real LLVM LNP64 lld intrinsic push link smoke passed: %s\n' \
   "$intrinsic_push_elf"
+
+intrinsic_ctl_elf="$build_dir/lnp64-intrinsic-control-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$intrinsic_ctl_elf" "$crt0_obj" "$intrinsic_ctl_obj"
+test -s "$intrinsic_ctl_elf"
+printf 'real LLVM LNP64 lld intrinsic control link smoke passed: %s\n' \
+  "$intrinsic_ctl_elf"
 
 inline_asm_elf="$build_dir/lnp64-inline-asm-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

@@ -292,6 +292,16 @@ public:
       addReg(Instr, B);
       addReg(Instr, C);
       return MCDisassembler::Success;
+    case 0x4b:
+      Instr.setOpcode(LNP64::OBJECT_CTL);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      return MCDisassembler::Success;
+    case 0x4c:
+      Instr.setOpcode(LNP64::DOMAIN_CTL);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      return MCDisassembler::Success;
     case 0x30:
       Instr.setOpcode(LNP64::LD);
       addReg(Instr, A);

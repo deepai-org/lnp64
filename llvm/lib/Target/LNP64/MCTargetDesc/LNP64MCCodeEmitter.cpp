@@ -307,6 +307,16 @@ public:
                                 getGPRNo(MI.getOperand(2))),
                OS);
       return;
+    case LNP64::OBJECT_CTL:
+      emitLE32(encodeFixed32RR(0x4b, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
+    case LNP64::DOMAIN_CTL:
+      emitLE32(encodeFixed32RR(0x4c, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
     case LNP64::LD:
       emitLE32(encodeFixed32Mem(0x30, getGPRNo(MI.getOperand(0)),
                                 getGPRNo(MI.getOperand(1)),
