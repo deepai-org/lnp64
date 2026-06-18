@@ -7745,6 +7745,48 @@ mod tests {
     }
 
     #[test]
+    fn object_create_rejects_cross_kind_profiles_without_installing_fd() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let arg = ARG_BASE;
+
+        let invalid_cases = [
+            (ObjectKind::Counter, ObjectProfile::TcpStream),
+            (ObjectKind::MemoryObject, ObjectProfile::TcpStream),
+            (ObjectKind::Timer, ObjectProfile::TcpStream),
+        ];
+        for (kind, profile) in invalid_cases {
+            machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+            machine.store_u64(arg + 8, kind.code()).unwrap();
+            machine.store_u64(arg + 16, profile.code()).unwrap();
+            machine.store_u64(arg + 24, 7).unwrap();
+            machine.store_u64(arg + 40, 64).unwrap();
+            machine.object_ctl(Reg(2), arg).unwrap();
+
+            assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
+            assert_eq!(machine.process().unwrap().errno, 22);
+            assert!(matches!(
+                machine.process().unwrap().fds[7],
+                FdHandle::Closed
+            ));
+        }
+
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::Endpoint.code())
+            .unwrap();
+        machine
+            .store_u64(arg + 16, ObjectProfile::TcpStream.code())
+            .unwrap();
+        machine.store_u64(arg + 24, 7).unwrap();
+        machine.store_u64(arg + 40, SOCKET_AF_INET).unwrap();
+        machine.store_u64(arg + 48, SOCKET_TYPE_STREAM).unwrap();
+        machine.store_u64(arg + 56, 0).unwrap();
+        machine.object_ctl(Reg(3), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[3], 7);
+    }
+
+    #[test]
     fn classifier_routes_ipc_record_by_service_id_and_wakes_queue() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;

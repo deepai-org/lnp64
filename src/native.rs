@@ -80,7 +80,7 @@ impl ObjectProfile {
             (ObjectKind::Counter, 1) => Some(Self::EventFd),
             (ObjectKind::Classifier, 1) => Some(Self::ClassifierTable),
             (ObjectKind::Servicelet, 1) => Some(Self::ServiceletProgram),
-            (_, 2) => Some(Self::TcpStream),
+            (ObjectKind::Endpoint, 2) => Some(Self::TcpStream),
             (ObjectKind::Queue, 4) => Some(Self::CallGate),
             _ => None,
         }
