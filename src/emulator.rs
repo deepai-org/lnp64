@@ -6938,6 +6938,7 @@ impl Machine {
                 .pending_events
                 .iter()
                 .filter_map(|event| event.signal_number())
+                .filter(|signum| Self::valid_signal_number(*signum))
                 .fold(0u64, |mask, signum| mask | (1u64 << signum.min(63))),
             Pcr::RealtimeSec => {
                 let now = Self::system_time_to_host_timespec(SystemTime::now());
@@ -7070,6 +7071,12 @@ impl Machine {
     }
 
     fn queue_process_event(&mut self, pid: u64, event: NativeEvent) {
+        if event
+            .signal_number()
+            .is_some_and(|signum| !Self::valid_signal_number(signum))
+        {
+            return;
+        }
         if let Some(process) = self.processes.get_mut(&pid) {
             process.pending_events.push_back(event);
             if let Some(tid) = self
@@ -9622,6 +9629,26 @@ mod tests {
         assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 22);
         assert!(machine.process().unwrap().pending_events.is_empty());
+    }
+
+    #[test]
+    fn invalid_signal_events_do_not_enter_pending_state() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+
+        machine.queue_process_event(1, NativeEvent::kill_signal(SIGNAL_NUMBER_LIMIT));
+        assert!(machine.process().unwrap().pending_events.is_empty());
+        assert_eq!(machine.read_pcr(Pcr::Sigpending).unwrap(), 0);
+
+        machine.queue_process_event(1, NativeEvent::kill_signal(SIGNAL_NUMBER_LIMIT - 1));
+        assert!(matches!(
+            machine.process().unwrap().pending_events.front(),
+            Some(NativeEvent::Signal { signum, .. }) if *signum == SIGNAL_NUMBER_LIMIT - 1
+        ));
+        assert_eq!(
+            machine.read_pcr(Pcr::Sigpending).unwrap(),
+            1u64 << (SIGNAL_NUMBER_LIMIT - 1)
+        );
     }
 
     #[test]
