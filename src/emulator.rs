@@ -3670,6 +3670,7 @@ impl Machine {
         ) {
             return self.write_memory_object_fd_index(fd, &data);
         }
+        let mut wake_fd_waiters = false;
         let result = match &mut self.process_mut()?.fds[fd] {
             FdHandle::Stdout => {
                 let mut out = io::stdout();
@@ -3680,10 +3681,16 @@ impl Machine {
                 err.write_all(&data).and_then(|()| err.flush())
             }
             FdHandle::File(file) => file.write_all(&data),
-            FdHandle::PipeWriter(buffer) => buffer
-                .borrow_mut()
-                .push_bytes(&data)
-                .map_err(|errno| io::Error::from_raw_os_error(errno as i32)),
+            FdHandle::PipeWriter(buffer) => {
+                let result = buffer
+                    .borrow_mut()
+                    .push_bytes(&data)
+                    .map_err(|errno| io::Error::from_raw_os_error(errno as i32));
+                if result.is_ok() && !data.is_empty() {
+                    wake_fd_waiters = true;
+                }
+                result
+            }
             FdHandle::Counter(value) => {
                 let next = if data.len() >= 8 {
                     u64::from_le_bytes(data[..8].try_into().unwrap())
@@ -3705,6 +3712,9 @@ impl Machine {
                 };
                 let mut value = value.borrow_mut();
                 *value = value.saturating_add(addend);
+                if addend != 0 {
+                    wake_fd_waiters = true;
+                }
                 Ok(())
             }
             FdHandle::Timer(timer) => {
@@ -3748,7 +3758,12 @@ impl Machine {
             )),
         };
         match result {
-            Ok(()) => self.complete_ok(data.len() as u64)?,
+            Ok(()) => {
+                self.complete_ok(data.len() as u64)?;
+                if wake_fd_waiters {
+                    self.poll_fd_waiters();
+                }
+            }
             Err(err) => self.set_status_io_error(err)?,
         }
         Ok(())
@@ -8696,6 +8711,65 @@ mod tests {
         assert_eq!(
             machine.poll_fd_index_mask_raw(4, POLLOUT_MASK).unwrap(),
             POLLOUT_MASK
+        );
+    }
+
+    #[test]
+    fn pipe_write_wakes_reader_waiting_for_byte_payload() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        create_pipe_pair(&mut machine, 3, 4);
+        machine
+            .push_fd_waiter(3, POLLIN_MASK, Some(Reg(8)))
+            .unwrap();
+        machine.ready.retain(|tid| *tid != 1);
+
+        let payload = ARG_BASE + 0x100;
+        machine.write_bytes(payload, b"x").unwrap();
+        machine.write_fd_index(4, payload, 1).unwrap();
+
+        assert!(machine.ready.contains(&1));
+        assert!(machine.fd_waiters.is_empty());
+        assert_eq!(machine.thread().unwrap().regs[1], 1);
+        assert_eq!(machine.thread().unwrap().regs[8], 0);
+        assert_eq!(machine.process().unwrap().errno, 0);
+        assert_eq!(
+            machine.poll_fd_index_mask_raw(3, POLLIN_MASK).unwrap(),
+            POLLIN_MASK
+        );
+    }
+
+    #[test]
+    fn event_counter_write_wakes_reader_waiting_for_nonzero_value() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let event_counter = Rc::new(RefCell::new(0));
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[3] = FdHandle::EventCounter {
+                value: Rc::clone(&event_counter),
+                semaphore: false,
+            };
+            process.fd_capabilities[3] = FdCapability::full(3);
+        }
+        machine
+            .push_fd_waiter(3, POLLIN_MASK, Some(Reg(8)))
+            .unwrap();
+        machine.ready.retain(|tid| *tid != 1);
+
+        let payload = ARG_BASE + 0x100;
+        machine.store_u64(payload, 2).unwrap();
+        machine.write_fd_index(3, payload, 8).unwrap();
+
+        assert_eq!(*event_counter.borrow(), 2);
+        assert!(machine.ready.contains(&1));
+        assert!(machine.fd_waiters.is_empty());
+        assert_eq!(machine.thread().unwrap().regs[1], 8);
+        assert_eq!(machine.thread().unwrap().regs[8], 0);
+        assert_eq!(machine.process().unwrap().errno, 0);
+        assert_eq!(
+            machine.poll_fd_index_mask_raw(3, POLLIN_MASK).unwrap(),
+            POLLIN_MASK
         );
     }
 
@@ -15408,9 +15482,8 @@ mod tests {
 
         let payload = ARG_BASE + 0x140;
         machine.write_bytes(payload, b"x").unwrap();
-        machine.write_fd_index(4, payload, 1).unwrap();
         machine.set_errno(123).unwrap();
-        machine.poll_fd_waiters();
+        machine.write_fd_index(4, payload, 1).unwrap();
 
         assert!(machine.ready.contains(&1));
         assert!(machine.fd_waiters.is_empty());
