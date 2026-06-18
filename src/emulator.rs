@@ -151,6 +151,9 @@ const ENV_SECURITY_PROFILE_WX_DENY: u64 = 1 << 2;
 const ENV_SECURITY_PROFILE_GUARD_PAGES: u64 = 1 << 3;
 const ENV_SECURITY_PROFILE_CAP_REVOCATION: u64 = 1 << 4;
 const ENV_SECURITY_PROFILE_ENTROPY_QUOTA: u64 = 1 << 5;
+const ENV_SECURITY_PROFILE_NO_RAW_IRQ: u64 = 1 << 6;
+const ENV_SECURITY_PROFILE_NO_RAW_MMIO: u64 = 1 << 7;
+const ENV_SECURITY_PROFILE_NO_RAW_SYSCALL: u64 = 1 << 8;
 const ENV_SCHEDULER_FEATURE_RUNQUEUE: u64 = 1 << 0;
 const ENV_SCHEDULER_FEATURE_AWAIT: u64 = 1 << 1;
 const ENV_SCHEDULER_FEATURE_FD_WAITERS: u64 = 1 << 2;
@@ -6057,7 +6060,10 @@ impl Machine {
                     | ENV_SECURITY_PROFILE_WX_DENY
                     | ENV_SECURITY_PROFILE_GUARD_PAGES
                     | ENV_SECURITY_PROFILE_CAP_REVOCATION
-                    | ENV_SECURITY_PROFILE_ENTROPY_QUOTA,
+                    | ENV_SECURITY_PROFILE_ENTROPY_QUOTA
+                    | ENV_SECURITY_PROFILE_NO_RAW_IRQ
+                    | ENV_SECURITY_PROFILE_NO_RAW_MMIO
+                    | ENV_SECURITY_PROFILE_NO_RAW_SYSCALL,
             ),
             ENV_KEY_SCHEDULER_FEATURE_BITS => Some(
                 ENV_SCHEDULER_FEATURE_RUNQUEUE
@@ -10696,6 +10702,9 @@ mod tests {
             .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
             .unwrap();
         assert!(machine.thread().unwrap().regs[1] & ENV_SECURITY_PROFILE_WX_DENY != 0);
+        assert!(machine.thread().unwrap().regs[1] & ENV_SECURITY_PROFILE_NO_RAW_IRQ != 0);
+        assert!(machine.thread().unwrap().regs[1] & ENV_SECURITY_PROFILE_NO_RAW_MMIO != 0);
+        assert!(machine.thread().unwrap().regs[1] & ENV_SECURITY_PROFILE_NO_RAW_SYSCALL != 0);
 
         machine.thread_mut().unwrap().regs[2] = ENV_KEY_CLASSIFIER_FEATURE_BITS;
         machine

@@ -30,6 +30,14 @@ check_classifier_features:
   CMP r4, r0
   BEQ bad
 
+check_security_features:
+  LI r2, 27
+  ENV_GET r1, r2, r0, r0
+  LI r3, 448
+  AND r4, r1, r3
+  CMP r4, r3
+  BNE bad
+
 check_topology_scalars:
   LI r2, 30
   ENV_GET r1, r2, r0, r0
