@@ -913,6 +913,7 @@ mod tests {
     fn llvm_target_manifest_records_required_backend_contract() {
         let manifest = include_str!("../toolchain/lnp64_target.manifest");
         let object_format = include_str!("../object_format.md");
+        let psabi_doc = include_str!("../psABI.md");
         let roadmap = include_str!("../toolchain_roadmap.md");
         assert_eq!(manifest_field(manifest, "triple"), "lnp64-unknown-none");
         assert_eq!(manifest_field(manifest, "object_format"), "ELF64");
@@ -977,6 +978,10 @@ mod tests {
                 manifest_csv_contains(manifest, "clone_profiles", profile),
                 "missing clone profile {profile}"
             );
+            assert!(
+                psabi_doc.contains(profile),
+                "psABI.md is missing clone profile {profile}"
+            );
         }
         for relocation in [
             "R_LNP64_NONE",
@@ -1033,6 +1038,7 @@ mod tests {
         );
         assert!(roadmap.contains("`CLONE` is a backend-visible native primitive"));
         assert!(roadmap.contains("new_thread_shared_vm"));
+        assert!(psabi_doc.contains("## Native Clone Profiles"));
         assert!(roadmap.contains("## Toy Compiler Freeze Policy"));
         assert!(roadmap.contains("They are not the long-term application"));
         assert!(roadmap.contains("only small fixes needed to keep existing smoke"));

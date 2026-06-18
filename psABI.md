@@ -194,6 +194,24 @@ The exec-plan is prepared by a loader/runtime/personality; hardware validates
 and commits it atomically. If validation fails before the hardware commit point,
 the old process image remains active.
 
+## Native Clone Profiles
+
+`CLONE` is a native primitive with explicit profiles. POSIX process and thread
+APIs are compatibility lowerings onto these profiles; native runtimes should name
+the profile they need instead of calling a POSIX-shaped surface.
+
+| Profile | Compatibility Surface | Semantics |
+| --- | --- | --- |
+| `new_process_cow` | `fork()` | New PID, one child thread, copy-on-write address-space snapshot, inherited FDRs according to descriptor metadata. |
+| `new_thread_shared_vm` | `pthread_create()` | New thread in the same process/domain with shared VM, FDR table, and process metadata. |
+| `spawn_entry` | native runtime spawn | New thread-like execution context starting at an explicit entry PC. |
+| `domain_task` | native domain scheduler | Domain-owned task profile; not exposed through the C compatibility layer in v0. |
+
+The backend-facing target manifest records these exact spellings in
+`clone_profiles`. Loader, libc, and runtime code may map higher-level process,
+thread, servicelet, or domain-task abstractions onto them, but the hardware
+profile selection is explicit.
+
 Native capability movement uses `CAP_DUP`, `CAP_SEND`, `CAP_RECV`, and
 `CAP_REVOKE`. Delegation may narrow rights, transfer permission, ranges, event
 masks, and mapping permissions. Sealed capabilities may be used or transferred
