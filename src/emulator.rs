@@ -4503,14 +4503,8 @@ impl Machine {
         let flags = self.load_u64_offset(argblock, 24)?;
         let value = self.cap_dup_inner(src_value, dst_req, rights_req, flags);
         match value {
-            Ok(token) => {
-                self.set_errno(0)?;
-                self.write_reg(result, token)
-            }
-            Err(errno) => {
-                self.set_status_errno(errno)?;
-                self.write_reg(result, -1i64 as u64)
-            }
+            Ok(token) => self.complete_reg_ok(result, token),
+            Err(errno) => self.complete_reg_err(result, errno),
         }
     }
 
@@ -4582,14 +4576,8 @@ impl Machine {
         let src_value = self.load_u64_offset(argblock, 0)?;
         let value = self.cap_revoke_inner(src_value);
         match value {
-            Ok(count) => {
-                self.set_errno(0)?;
-                self.write_reg(result, count)
-            }
-            Err(errno) => {
-                self.set_status_errno(errno)?;
-                self.write_reg(result, -1i64 as u64)
-            }
+            Ok(count) => self.complete_reg_ok(result, count),
+            Err(errno) => self.complete_reg_err(result, errno),
         }
     }
 
@@ -15333,6 +15321,62 @@ mod tests {
             .unwrap();
         assert_eq!(machine.process().unwrap().errno, 116);
         assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+    }
+
+    #[test]
+    fn cap_dup_rejects_locked_result_before_install_or_errno_side_effects() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[5] = FdHandle::Counter(Rc::new(RefCell::new(99)));
+            process.fd_capabilities[5] = FdCapability::full(5);
+        }
+        let source = machine.fd_token(5).unwrap();
+        machine.set_errno(123).unwrap();
+        let arg = ARG_BASE;
+        machine.store_u64(arg, source).unwrap();
+        machine.store_u64(arg + 8, 6).unwrap();
+        machine.store_u64(arg + 16, CAP_RIGHT_READ).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+
+        let err = machine.cap_dup(Reg(31), arg).unwrap_err();
+
+        assert!(err.contains("stack pointer"), "{err}");
+        assert_eq!(machine.process().unwrap().errno, 123);
+        assert!(matches!(
+            machine.process().unwrap().fds[6],
+            FdHandle::Closed
+        ));
+    }
+
+    #[test]
+    fn cap_revoke_rejects_locked_result_before_revocation_or_errno_side_effects() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[5] = FdHandle::Counter(Rc::new(RefCell::new(99)));
+            process.fd_capabilities[5] = FdCapability::full(5);
+        }
+        let source = machine.fd_token(5).unwrap();
+        let arg = ARG_BASE;
+        machine.store_u64(arg, source).unwrap();
+        machine.store_u64(arg + 8, 6).unwrap();
+        machine
+            .store_u64(arg + 16, CAP_RIGHT_READ | CAP_RIGHT_REVOKE)
+            .unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_dup(Reg(7), arg).unwrap();
+        machine.set_errno(123).unwrap();
+        machine.store_u64(arg, source).unwrap();
+
+        let err = machine.cap_revoke(Reg(31), arg).unwrap_err();
+
+        assert!(err.contains("stack pointer"), "{err}");
+        assert_eq!(machine.process().unwrap().errno, 123);
+        assert!(!machine.process().unwrap().fd_capabilities[5].revoked);
+        assert!(!machine.process().unwrap().fd_capabilities[6].revoked);
     }
 
     #[test]
