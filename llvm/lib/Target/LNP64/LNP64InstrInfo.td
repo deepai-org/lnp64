@@ -111,6 +111,13 @@ class LNP64MemLoad<string Mnemonic>
     : LNP64Inst<(outs GPR:$rd), (ins GPR:$base, simm14:$offset), Mnemonic,
                 "\t$rd, $offset($base)">;
 
+class LNP64SignedLoadPseudo<string Mnemonic>
+    : LNP64Inst<(outs GPR:$rd), (ins GPR:$base, simm14:$offset), Mnemonic,
+                "\t$rd, $offset($base)"> {
+  let isPseudo = 1;
+  let usesCustomInserter = 1;
+}
+
 class LNP64MemStore<string Mnemonic>
     : LNP64Inst<(outs), (ins GPR:$rs, GPR:$base, simm14:$offset), Mnemonic,
                 "\t$rs, $offset($base)">;
@@ -267,6 +274,9 @@ def LD : LNP64MemLoad<"ld">;
 def LD_W : LNP64MemLoad<"ld.w">;
 def LD_H : LNP64MemLoad<"ld.h">;
 def LD_B : LNP64MemLoad<"ld.b">;
+def PseudoLD_SW : LNP64SignedLoadPseudo<"pseudo_ld.sw">;
+def PseudoLD_SH : LNP64SignedLoadPseudo<"pseudo_ld.sh">;
+def PseudoLD_SB : LNP64SignedLoadPseudo<"pseudo_ld.sb">;
 def ST : LNP64MemStore<"st">;
 def ST_W : LNP64MemStore<"st.w">;
 def ST_H : LNP64MemStore<"st.h">;
@@ -278,12 +288,30 @@ def : Pat<(i64 (load GPR:$base)), (LD GPR:$base, 0)>;
 def : Pat<(i64 (zextloadi32 (add GPR:$base, simm14_imm:$offset))),
           (LD_W GPR:$base, simm14_imm:$offset)>;
 def : Pat<(i64 (zextloadi32 GPR:$base)), (LD_W GPR:$base, 0)>;
+def : Pat<(i64 (extloadi32 (add GPR:$base, simm14_imm:$offset))),
+          (LD_W GPR:$base, simm14_imm:$offset)>;
+def : Pat<(i64 (extloadi32 GPR:$base)), (LD_W GPR:$base, 0)>;
+def : Pat<(i64 (sextloadi32 (add GPR:$base, simm14_imm:$offset))),
+          (PseudoLD_SW GPR:$base, simm14_imm:$offset)>;
+def : Pat<(i64 (sextloadi32 GPR:$base)), (PseudoLD_SW GPR:$base, 0)>;
 def : Pat<(i64 (zextloadi16 (add GPR:$base, simm14_imm:$offset))),
           (LD_H GPR:$base, simm14_imm:$offset)>;
 def : Pat<(i64 (zextloadi16 GPR:$base)), (LD_H GPR:$base, 0)>;
+def : Pat<(i64 (extloadi16 (add GPR:$base, simm14_imm:$offset))),
+          (LD_H GPR:$base, simm14_imm:$offset)>;
+def : Pat<(i64 (extloadi16 GPR:$base)), (LD_H GPR:$base, 0)>;
+def : Pat<(i64 (sextloadi16 (add GPR:$base, simm14_imm:$offset))),
+          (PseudoLD_SH GPR:$base, simm14_imm:$offset)>;
+def : Pat<(i64 (sextloadi16 GPR:$base)), (PseudoLD_SH GPR:$base, 0)>;
 def : Pat<(i64 (zextloadi8 (add GPR:$base, simm14_imm:$offset))),
           (LD_B GPR:$base, simm14_imm:$offset)>;
 def : Pat<(i64 (zextloadi8 GPR:$base)), (LD_B GPR:$base, 0)>;
+def : Pat<(i64 (extloadi8 (add GPR:$base, simm14_imm:$offset))),
+          (LD_B GPR:$base, simm14_imm:$offset)>;
+def : Pat<(i64 (extloadi8 GPR:$base)), (LD_B GPR:$base, 0)>;
+def : Pat<(i64 (sextloadi8 (add GPR:$base, simm14_imm:$offset))),
+          (PseudoLD_SB GPR:$base, simm14_imm:$offset)>;
+def : Pat<(i64 (sextloadi8 GPR:$base)), (PseudoLD_SB GPR:$base, 0)>;
 def : Pat<(store GPR:$rs, (add GPR:$base, simm14_imm:$offset)),
           (ST GPR:$rs, GPR:$base, simm14_imm:$offset)>;
 def : Pat<(store GPR:$rs, GPR:$base), (ST GPR:$rs, GPR:$base, 0)>;

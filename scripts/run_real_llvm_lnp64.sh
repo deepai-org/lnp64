@@ -335,6 +335,38 @@ grep -q 'cset.lt' "$compare_dump"
 printf 'real LLVM LNP64 clang comparison object smoke passed: %s\n' \
   "$compare_obj"
 
+signed_load_c="$build_dir/signed-load-smoke.c"
+cat >"$signed_load_c" <<'C'
+signed char global_byte = -2;
+short global_half = -3;
+volatile signed char local_byte_source = -4;
+volatile short local_half_source = -5;
+
+int load_signed(void) {
+  signed char local_byte = local_byte_source;
+  short local_half = local_half_source;
+  return global_byte + global_half + local_byte + local_half;
+}
+
+int main(void) {
+  return load_signed() + 14;
+}
+C
+
+signed_load_obj="$build_dir/signed-load-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$signed_load_c" -o "$signed_load_obj"
+test -s "$signed_load_obj"
+signed_load_dump="$build_dir/signed-load-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$signed_load_obj" \
+  >"$signed_load_dump"
+grep -q 'ld.b r' "$signed_load_dump"
+grep -q 'ld.h r' "$signed_load_dump"
+grep -q 'asr r' "$signed_load_dump"
+printf 'real LLVM LNP64 clang signed-load object smoke passed: %s\n' \
+  "$signed_load_obj"
+
 crt0_obj="$build_dir/crt0-smoke.o"
 "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj toolchain/crt0_lnp64.s \
   -o "$crt0_obj"
@@ -399,6 +431,13 @@ compare_elf="$build_dir/lnp64-compare-linked.elf"
 test -s "$compare_elf"
 printf 'real LLVM LNP64 lld comparison link smoke passed: %s\n' \
   "$compare_elf"
+
+signed_load_elf="$build_dir/lnp64-signed-load-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$signed_load_elf" "$crt0_obj" "$signed_load_obj"
+test -s "$signed_load_elf"
+printf 'real LLVM LNP64 lld signed-load link smoke passed: %s\n' \
+  "$signed_load_elf"
 
 for demo in hello factorial allocator fibonacci; do
   demo_obj="$build_dir/$demo-clang-smoke.o"

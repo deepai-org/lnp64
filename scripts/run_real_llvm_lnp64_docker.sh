@@ -59,3 +59,10 @@ compare_output="$(cargo run --quiet -- run-elf "$compare_probe")"
 grep -q 'exit=0' <<<"$compare_output"
 printf 'real LLVM LNP64 run-elf comparison execution passed: %s\n' \
   "$compare_probe"
+
+signed_load_probe="target/llvm-lnp64-build/lnp64-signed-load-linked.elf"
+cargo run --quiet -- elf-plan "$signed_load_probe" >/dev/null
+signed_load_output="$(cargo run --quiet -- run-elf "$signed_load_probe")"
+grep -q 'exit=0' <<<"$signed_load_output"
+printf 'real LLVM LNP64 run-elf signed-load execution passed: %s\n' \
+  "$signed_load_probe"

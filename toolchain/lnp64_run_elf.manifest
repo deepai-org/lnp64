@@ -12,6 +12,7 @@ real_intrinsic_push_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolc
 real_exit_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/liblnp64_min.s|real LLVM LNP64 run-elf exit execution passed|none
 real_argc_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/crt0_lnp64.s|real LLVM LNP64 run-elf argc execution passed|none
 real_compare_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64_isel.manifest|real LLVM LNP64 run-elf comparison execution passed|none
+real_signed_load_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64_isel.manifest|real LLVM LNP64 run-elf signed-load execution passed|none
 entry_state|partial|src/loader.rs,src/emulator.rs,psABI.md|exec_descriptor_records_entry_sp_tls_startup_metadata|needs_runtime_startup_metadata_installation
 text_fetch_decode|tested|src/emulator.rs,toolchain/lnp64_mc_encoding.manifest|committed_exec_decodes_and_runs_stack_pointer_alu_exit|none
 stdout_exit|partial|scripts/run_real_llvm_lnp64_docker.sh,toolchain/liblnp64_min.s|hello from LNP64|needs_clang_built_libc_runtime

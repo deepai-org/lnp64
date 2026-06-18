@@ -120,6 +120,43 @@ static bool isLNP64SetCCPseudo(unsigned Opcode) {
   }
 }
 
+static bool isLNP64SignedLoadPseudo(unsigned Opcode) {
+  switch (Opcode) {
+  case LNP64::PseudoLD_SB:
+  case LNP64::PseudoLD_SH:
+  case LNP64::PseudoLD_SW:
+    return true;
+  default:
+    return false;
+  }
+}
+
+static unsigned getLNP64SignedLoadInstr(unsigned Opcode) {
+  switch (Opcode) {
+  case LNP64::PseudoLD_SB:
+    return LNP64::LD_B;
+  case LNP64::PseudoLD_SH:
+    return LNP64::LD_H;
+  case LNP64::PseudoLD_SW:
+    return LNP64::LD_W;
+  default:
+    llvm_unreachable("expected LNP64 signed load pseudo");
+  }
+}
+
+static int64_t getLNP64SignedLoadShift(unsigned Opcode) {
+  switch (Opcode) {
+  case LNP64::PseudoLD_SB:
+    return 56;
+  case LNP64::PseudoLD_SH:
+    return 48;
+  case LNP64::PseudoLD_SW:
+    return 32;
+  default:
+    llvm_unreachable("expected LNP64 signed load pseudo");
+  }
+}
+
 LNP64TargetLowering::LNP64TargetLowering(const TargetMachine &TM,
                                          const LNP64Subtarget &STI)
     : TargetLowering(TM) {
@@ -138,6 +175,8 @@ LNP64TargetLowering::LNP64TargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::BR_CC, MVT::i64, Custom);
   for (MVT MemVT : {MVT::i8, MVT::i16, MVT::i32}) {
     setLoadExtAction(ISD::ZEXTLOAD, MVT::i64, MemVT, Legal);
+    setLoadExtAction(ISD::SEXTLOAD, MVT::i64, MemVT, Legal);
+    setLoadExtAction(ISD::EXTLOAD, MVT::i64, MemVT, Legal);
     setTruncStoreAction(MVT::i64, MemVT, Legal);
   }
   computeRegisterProperties(STI.getRegisterInfo());
@@ -207,6 +246,29 @@ MachineBasicBlock *LNP64TargetLowering::EmitInstrWithCustomInserter(
     MachineInstr &MI, MachineBasicBlock *BB) const {
   const TargetInstrInfo &TII = *BB->getParent()->getSubtarget().getInstrInfo();
   DebugLoc DL = MI.getDebugLoc();
+
+  if (isLNP64SignedLoadPseudo(MI.getOpcode())) {
+    MachineFunction *MF = BB->getParent();
+    MachineRegisterInfo &MRI = MF->getRegInfo();
+    Register Loaded = MRI.createVirtualRegister(&LNP64::GPRRegClass);
+    Register Shifted = MRI.createVirtualRegister(&LNP64::GPRRegClass);
+    Register Shift = MRI.createVirtualRegister(&LNP64::GPRRegClass);
+
+    BuildMI(*BB, MI, DL, TII.get(getLNP64SignedLoadInstr(MI.getOpcode())),
+            Loaded)
+        .add(MI.getOperand(1))
+        .add(MI.getOperand(2));
+    BuildMI(*BB, MI, DL, TII.get(LNP64::LI), Shift)
+        .addImm(getLNP64SignedLoadShift(MI.getOpcode()));
+    BuildMI(*BB, MI, DL, TII.get(LNP64::LSL), Shifted)
+        .addReg(Loaded)
+        .addReg(Shift);
+    BuildMI(*BB, MI, DL, TII.get(LNP64::ASR), MI.getOperand(0).getReg())
+        .addReg(Shifted)
+        .addReg(Shift);
+    MI.eraseFromParent();
+    return BB;
+  }
 
   if (isLNP64SetCCPseudo(MI.getOpcode())) {
     MachineFunction *MF = BB->getParent();
