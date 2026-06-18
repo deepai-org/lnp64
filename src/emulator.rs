@@ -130,6 +130,7 @@ const ENV_OBJECT_PROFILE_ENDPOINT: u64 = 1 << 4;
 const ENV_OBJECT_PROFILE_TIMER: u64 = 1 << 5;
 const ENV_OBJECT_PROFILE_CALL_GATE: u64 = 1 << 6;
 const ENV_OBJECT_PROFILE_CLASSIFIER_TABLE: u64 = 1 << 7;
+const ENV_OBJECT_PROFILE_SERVICELET_PROGRAM: u64 = 1 << 8;
 const ENV_DOMAIN_FEATURE_NESTED: u64 = 1 << 0;
 const ENV_DOMAIN_FEATURE_BUDGETS: u64 = 1 << 1;
 const ENV_DOMAIN_FEATURE_SECURITY_POLICY: u64 = 1 << 2;
@@ -215,6 +216,14 @@ const CLASSIFIER_RULE_SIZE: u64 = 64;
 const CLASSIFY_ENVELOPE_SIZE: u64 = 72;
 const CLASSIFY_RESULT_SIZE: u64 = 64;
 const CLASSIFIER_COUNTERS_SIZE: u64 = 40;
+const SERVICELET_VERIFY_VERSION: u64 = 1;
+const SERVICELET_MAX_PROGRAM_BYTES: u64 = 4096;
+const SERVICELET_MAX_INSTRUCTIONS: u64 = 512;
+const SERVICELET_MAX_CYCLES: u64 = 4096;
+const SERVICELET_MAX_RECORD_BYTES: u64 = 4096;
+const SERVICELET_MAX_ACTION_BYTES: u64 = 256;
+const SERVICELET_ALLOWED_ISA_MASK: u64 = 0x0f;
+const SERVICELET_FLAG_ALLOW_STATIC_LOOPS: u64 = 1 << 0;
 const CLASSIFY_PROFILE_PACKET: u64 = 1;
 const CLASSIFY_PROFILE_IPC: u64 = 2;
 const CLASSIFY_PROFILE_EVENT: u64 = 3;
@@ -329,6 +338,7 @@ enum FdHandle {
     },
     Timer(Rc<RefCell<TimerState>>),
     ClassifierTable(Rc<RefCell<ClassifierTable>>),
+    ServiceletProgram(Rc<ServiceletProgram>),
     DmaBuffer {
         addr: u64,
         len: u64,
@@ -384,6 +394,9 @@ impl FdHandle {
             }),
             FdHandle::Timer(timer) => Ok(FdHandle::Timer(Rc::clone(timer))),
             FdHandle::ClassifierTable(table) => Ok(FdHandle::ClassifierTable(Rc::clone(table))),
+            FdHandle::ServiceletProgram(program) => {
+                Ok(FdHandle::ServiceletProgram(Rc::clone(program)))
+            }
             FdHandle::DmaBuffer { addr, len } => Ok(FdHandle::DmaBuffer {
                 addr: *addr,
                 len: *len,
@@ -551,6 +564,20 @@ struct TimerState {
     remaining: u64,
     interval: u64,
     expirations: u64,
+}
+
+#[derive(Clone)]
+#[allow(dead_code)]
+struct ServiceletProgram {
+    program_len: u64,
+    isa_subset: u64,
+    instruction_limit: u64,
+    cycle_limit: u64,
+    record_read_limit: u64,
+    action_write_limit: u64,
+    flags: u64,
+    owner_domain_id: u64,
+    owner_generation: u64,
 }
 
 struct Vma {
@@ -3270,6 +3297,7 @@ impl Machine {
             | FdHandle::DmaBuffer { .. }
             | FdHandle::CallGate { .. }
             | FdHandle::ClassifierTable(_)
+            | FdHandle::ServiceletProgram(_)
             | FdHandle::Closed => Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
                 "fd is not writable",
@@ -3642,6 +3670,7 @@ impl Machine {
             | FdHandle::DmaBuffer { .. }
             | FdHandle::CallGate { .. }
             | FdHandle::ClassifierTable(_)
+            | FdHandle::ServiceletProgram(_)
             | FdHandle::Closed => 0,
         };
         self.write_bytes(addr, &tmp[..count])?;
@@ -4175,6 +4204,14 @@ impl Machine {
                     .map_err(|_| 14u64)?;
                 Ok(fd as u64)
             }
+            (ObjectKind::Servicelet, ObjectProfile::ServiceletProgram) => {
+                let program = self.verify_servicelet_program(arg)?;
+                let fd =
+                    self.install_object_fd(fd0_req, FdHandle::ServiceletProgram(Rc::new(program)))?;
+                self.store_u64(argblock + 24, fd as u64)
+                    .map_err(|_| 14u64)?;
+                Ok(fd as u64)
+            }
             (ObjectKind::DmaBuffer, _) => {
                 let len = self.load_u64(argblock + 48).map_err(|_| 14u64)?.max(1);
                 self.ensure_mapped(arg, len as usize, false)
@@ -4309,6 +4346,56 @@ impl Machine {
             });
         }
         Ok(allowed)
+    }
+
+    fn verify_servicelet_program(&mut self, envelope: u64) -> NativeResult<ServiceletProgram> {
+        if envelope == 0 {
+            return Err(14);
+        }
+        let version = self.load_u64(envelope).map_err(|_| 14u64)?;
+        if version != SERVICELET_VERIFY_VERSION {
+            return Err(22);
+        }
+        let program_len = self.load_u64(envelope + 8).map_err(|_| 14u64)?;
+        let isa_subset = self.load_u64(envelope + 16).map_err(|_| 14u64)?;
+        let instruction_limit = self.load_u64(envelope + 24).map_err(|_| 14u64)?;
+        let cycle_limit = self.load_u64(envelope + 32).map_err(|_| 14u64)?;
+        let record_read_limit = self.load_u64(envelope + 40).map_err(|_| 14u64)?;
+        let action_write_limit = self.load_u64(envelope + 48).map_err(|_| 14u64)?;
+        let flags = self.load_u64(envelope + 56).map_err(|_| 14u64)?;
+        let owner_domain_id = self.load_u64(envelope + 64).map_err(|_| 14u64)?;
+        let owner_generation = self.load_u64(envelope + 72).map_err(|_| 14u64)?;
+
+        if program_len == 0
+            || program_len > SERVICELET_MAX_PROGRAM_BYTES
+            || instruction_limit == 0
+            || instruction_limit > SERVICELET_MAX_INSTRUCTIONS
+            || cycle_limit == 0
+            || cycle_limit > SERVICELET_MAX_CYCLES
+            || record_read_limit > SERVICELET_MAX_RECORD_BYTES
+            || action_write_limit > SERVICELET_MAX_ACTION_BYTES
+            || isa_subset == 0
+            || isa_subset & !SERVICELET_ALLOWED_ISA_MASK != 0
+            || flags & !SERVICELET_FLAG_ALLOW_STATIC_LOOPS != 0
+        {
+            return Err(22);
+        }
+        let owner = self.domain_ref(owner_domain_id, owner_generation)?;
+        if !self.domain_is_descendant_or_self(owner, self.current_domain_id().map_err(|_| 3u64)?) {
+            return Err(1);
+        }
+
+        Ok(ServiceletProgram {
+            program_len,
+            isa_subset,
+            instruction_limit,
+            cycle_limit,
+            record_read_limit,
+            action_write_limit,
+            flags,
+            owner_domain_id: owner,
+            owner_generation,
+        })
     }
 
     fn object_ctl_classify(&mut self, argblock: u64) -> NativeResult<u64> {
@@ -5933,7 +6020,8 @@ impl Machine {
                     | ENV_OBJECT_PROFILE_ENDPOINT
                     | ENV_OBJECT_PROFILE_TIMER
                     | ENV_OBJECT_PROFILE_CALL_GATE
-                    | ENV_OBJECT_PROFILE_CLASSIFIER_TABLE,
+                    | ENV_OBJECT_PROFILE_CLASSIFIER_TABLE
+                    | ENV_OBJECT_PROFILE_SERVICELET_PROGRAM,
             ),
             ENV_KEY_DOMAIN_FEATURE_BITS => Some(
                 ENV_DOMAIN_FEATURE_NESTED
@@ -6975,6 +7063,7 @@ impl Machine {
             | FdHandle::DmaBuffer { .. }
             | FdHandle::CallGate { .. }
             | FdHandle::ClassifierTable(_)
+            | FdHandle::ServiceletProgram(_)
             | FdHandle::Closed => Ok(false),
         }
     }
@@ -7011,6 +7100,7 @@ impl Machine {
             | FdHandle::MemoryObject { .. }
             | FdHandle::CallGate { .. }
             | FdHandle::ClassifierTable(_)
+            | FdHandle::ServiceletProgram(_)
             | FdHandle::TcpStream(_) => Ok(true),
             FdHandle::EventCounter { value, .. } => Ok(*value.borrow() != 0),
             FdHandle::Timer(timer) => Ok(timer.borrow().expirations != 0),
@@ -7287,6 +7377,46 @@ mod tests {
         machine.store_u64(arg + 48, rule_count).unwrap();
         machine.store_u64(arg + 56, allowed_ptr).unwrap();
         machine.store_u64(arg + 64, allowed_count).unwrap();
+        machine.object_ctl(Reg(2), arg).unwrap();
+        machine.thread().unwrap().regs[2]
+    }
+
+    fn write_servicelet_envelope(
+        machine: &mut Machine,
+        base: u64,
+        program_len: u64,
+        isa_subset: u64,
+        instruction_limit: u64,
+        cycle_limit: u64,
+        record_read_limit: u64,
+        action_write_limit: u64,
+        flags: u64,
+    ) {
+        machine.store_u64(base, SERVICELET_VERIFY_VERSION).unwrap();
+        machine.store_u64(base + 8, program_len).unwrap();
+        machine.store_u64(base + 16, isa_subset).unwrap();
+        machine.store_u64(base + 24, instruction_limit).unwrap();
+        machine.store_u64(base + 32, cycle_limit).unwrap();
+        machine.store_u64(base + 40, record_read_limit).unwrap();
+        machine.store_u64(base + 48, action_write_limit).unwrap();
+        machine.store_u64(base + 56, flags).unwrap();
+        machine.store_u64(base + 64, ROOT_DOMAIN_ID).unwrap();
+        machine
+            .store_u64(base + 72, machine.domains[&ROOT_DOMAIN_ID].generation)
+            .unwrap();
+    }
+
+    fn try_create_servicelet(machine: &mut Machine, fd: u64, envelope: u64) -> u64 {
+        let arg = ARG_BASE + 0x280;
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::Servicelet.code())
+            .unwrap();
+        machine
+            .store_u64(arg + 16, ObjectProfile::ServiceletProgram.code())
+            .unwrap();
+        machine.store_u64(arg + 24, fd).unwrap();
+        machine.store_u64(arg + 40, envelope).unwrap();
         machine.object_ctl(Reg(2), arg).unwrap();
         machine.thread().unwrap().regs[2]
     }
@@ -8072,6 +8202,122 @@ mod tests {
             -1i64 as u64
         );
         assert_eq!(machine.process().unwrap().errno, 22);
+    }
+
+    #[test]
+    fn servicelet_program_creation_verifies_bounds() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let envelope = ARG_BASE + 0x1000;
+        write_servicelet_envelope(&mut machine, envelope, 64, 0x03, 32, 128, 64, 32, 0);
+
+        assert_ne!(
+            try_create_servicelet(&mut machine, 7, envelope),
+            -1i64 as u64
+        );
+        match &machine.process().unwrap().fds[7] {
+            FdHandle::ServiceletProgram(program) => {
+                assert_eq!(program.program_len, 64);
+                assert_eq!(program.isa_subset, 0x03);
+                assert_eq!(program.instruction_limit, 32);
+                assert_eq!(program.cycle_limit, 128);
+                assert_eq!(program.record_read_limit, 64);
+                assert_eq!(program.action_write_limit, 32);
+                assert_eq!(program.flags, 0);
+                assert_eq!(program.owner_domain_id, ROOT_DOMAIN_ID);
+                assert_eq!(
+                    program.owner_generation,
+                    machine.domains[&ROOT_DOMAIN_ID].generation
+                );
+            }
+            _ => panic!("expected servicelet program fd"),
+        }
+        assert!(machine.fd_token(7).unwrap() & FDR_TOKEN_MARKER != 0);
+    }
+
+    #[test]
+    fn servicelet_program_verifier_rejects_bad_envelopes() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let envelope = ARG_BASE + 0x1000;
+
+        write_servicelet_envelope(&mut machine, envelope, 0, 0x01, 32, 128, 64, 32, 0);
+        assert_eq!(
+            try_create_servicelet(&mut machine, 7, envelope),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 22);
+
+        write_servicelet_envelope(
+            &mut machine,
+            envelope,
+            SERVICELET_MAX_PROGRAM_BYTES + 1,
+            0x01,
+            32,
+            128,
+            64,
+            32,
+            0,
+        );
+        assert_eq!(
+            try_create_servicelet(&mut machine, 7, envelope),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 22);
+
+        write_servicelet_envelope(
+            &mut machine,
+            envelope,
+            64,
+            SERVICELET_ALLOWED_ISA_MASK << 1,
+            32,
+            128,
+            64,
+            32,
+            0,
+        );
+        assert_eq!(
+            try_create_servicelet(&mut machine, 7, envelope),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 22);
+
+        write_servicelet_envelope(
+            &mut machine,
+            envelope,
+            64,
+            0x01,
+            SERVICELET_MAX_INSTRUCTIONS + 1,
+            128,
+            64,
+            32,
+            0,
+        );
+        assert_eq!(
+            try_create_servicelet(&mut machine, 7, envelope),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 22);
+
+        write_servicelet_envelope(&mut machine, envelope, 64, 0x01, 32, 128, 64, 32, 1 << 4);
+        assert_eq!(
+            try_create_servicelet(&mut machine, 7, envelope),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 22);
+
+        write_servicelet_envelope(&mut machine, envelope, 64, 0x01, 32, 128, 64, 32, 0);
+        machine
+            .store_u64(
+                envelope + 72,
+                machine.domains[&ROOT_DOMAIN_ID].generation + 1,
+            )
+            .unwrap();
+        assert_eq!(
+            try_create_servicelet(&mut machine, 7, envelope),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 116);
     }
 
     #[test]
@@ -10273,6 +10519,7 @@ mod tests {
             .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
             .unwrap();
         assert!(machine.thread().unwrap().regs[1] & ENV_OBJECT_PROFILE_CLASSIFIER_TABLE != 0);
+        assert!(machine.thread().unwrap().regs[1] & ENV_OBJECT_PROFILE_SERVICELET_PROGRAM != 0);
 
         machine.thread_mut().unwrap().regs[2] = ENV_KEY_SECURITY_PROFILE_BITS;
         machine

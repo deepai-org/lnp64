@@ -18,6 +18,7 @@ pub enum ObjectKind {
     Endpoint,
     Timer,
     Classifier,
+    Servicelet,
 }
 
 impl ObjectKind {
@@ -30,6 +31,7 @@ impl ObjectKind {
             Self::Endpoint => 5,
             Self::Timer => 6,
             Self::Classifier => 7,
+            Self::Servicelet => 8,
         }
     }
 
@@ -42,6 +44,7 @@ impl ObjectKind {
             5 => Some(Self::Endpoint),
             6 => Some(Self::Timer),
             7 => Some(Self::Classifier),
+            8 => Some(Self::Servicelet),
             _ => None,
         }
     }
@@ -55,6 +58,7 @@ pub enum ObjectProfile {
     TcpStream,
     CallGate,
     ClassifierTable,
+    ServiceletProgram,
 }
 
 impl ObjectProfile {
@@ -65,6 +69,7 @@ impl ObjectProfile {
             Self::TcpStream => 2,
             Self::CallGate => 4,
             Self::ClassifierTable => 1,
+            Self::ServiceletProgram => 1,
         }
     }
 
@@ -74,6 +79,7 @@ impl ObjectProfile {
             (ObjectKind::Queue, 1) => Some(Self::Pipe),
             (ObjectKind::Counter, 1) => Some(Self::EventFd),
             (ObjectKind::Classifier, 1) => Some(Self::ClassifierTable),
+            (ObjectKind::Servicelet, 1) => Some(Self::ServiceletProgram),
             (_, 2) => Some(Self::TcpStream),
             (ObjectKind::Queue, 4) => Some(Self::CallGate),
             _ => None,
