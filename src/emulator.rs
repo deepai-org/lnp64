@@ -2115,6 +2115,23 @@ impl Machine {
             Instr::WaitPid(status_dst, pid_reg) => {
                 let pid = self.read_reg(pid_reg)?;
                 let current_pid = self.thread()?.pid;
+                let completed = if pid == 0 {
+                    self.completed_children
+                        .keys()
+                        .find(|(parent, _)| *parent == current_pid)
+                        .copied()
+                } else {
+                    Some((current_pid, pid)).filter(|key| self.completed_children.contains_key(key))
+                };
+                if let Some(key) = completed {
+                    let status = self
+                        .completed_children
+                        .remove(&key)
+                        .unwrap_or(self.last_exit);
+                    self.write_reg(status_dst, status as u64)?;
+                    self.set_status_ok()?;
+                    return Ok(true);
+                }
                 let live_child = if pid == 0 {
                     self.processes
                         .values()
@@ -2131,18 +2148,7 @@ impl Machine {
                     return Ok(false);
                 }
                 if pid == 0 {
-                    let completed = self
-                        .completed_children
-                        .keys()
-                        .find(|(parent, _)| *parent == current_pid)
-                        .copied();
-                    let status = completed
-                        .and_then(|key| self.completed_children.remove(&key))
-                        .unwrap_or(self.last_exit);
-                    self.write_reg(status_dst, status as u64)?;
-                    self.set_status_ok()?;
-                } else if let Some(status) = self.completed_children.remove(&(current_pid, pid)) {
-                    self.write_reg(status_dst, status as u64)?;
+                    self.write_reg(status_dst, self.last_exit as u64)?;
                     self.set_status_ok()?;
                 } else {
                     self.set_status_errno(10)?;
@@ -12432,6 +12438,41 @@ mod tests {
         assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 10);
         assert_eq!(machine.thread().unwrap().regs[4], 0);
+    }
+
+    #[test]
+    fn waitpid_any_child_prefers_completed_status_over_live_child() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine
+            .clone_with_profile(CloneProfile::NewProcessCow, Reg(2), None)
+            .unwrap();
+        let completed_pid = machine.thread().unwrap().regs[2];
+        machine.current_tid = 1;
+        machine
+            .clone_with_profile(CloneProfile::NewProcessCow, Reg(3), None)
+            .unwrap();
+        let live_pid = machine.thread().unwrap().regs[3];
+        assert!(machine.processes.contains_key(&live_pid));
+        let completed_tid = machine
+            .threads
+            .values()
+            .find(|thread| thread.pid == completed_pid)
+            .unwrap()
+            .tid;
+
+        machine.current_tid = completed_tid;
+        machine.exit_current(33).unwrap();
+
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[4] = 0;
+        let keep_ready = machine.exec(Instr::WaitPid(Reg(5), Reg(4))).unwrap();
+
+        assert!(keep_ready);
+        assert_eq!(machine.thread().unwrap().regs[5], 33);
+        assert_eq!(machine.thread().unwrap().regs[1], 0);
+        assert!(machine.processes.contains_key(&live_pid));
+        assert!(!machine.completed_children.contains_key(&(1, completed_pid)));
     }
 
     #[test]
