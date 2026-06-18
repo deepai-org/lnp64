@@ -50,6 +50,12 @@ int main() {
     if (wait(&status) != 0) return 20;
     if (!WIFEXITED(status)) return 21;
     if (WEXITSTATUS(status) != 0) return 22;
+    close(fds[0]);
+    p[0] = fds[0];
+    p[1] = POLLIN;
+    p[2] = 0;
+    if (poll(p, 1, 0) != 1) return 23;
+    if (p[2] != POLLNVAL) return 24;
 
     write(1, "poll_test ok\n", 13);
     return 0;
