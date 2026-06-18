@@ -46,8 +46,9 @@ contract for lld-produced ELF inputs.
 `toolchain/crt0_lnp64.s` is the initial checked crt0 startup stub for the
 future LLVM/lld path.
 `toolchain/liblnp64_min.s` is a checked smoke-only libc object used to prove
-lld can resolve real Clang demo objects and route hello stdout through native
-`PUSH` before the native libc/runtime is ready.
+lld can resolve real Clang demo objects, route stdout through native `PUSH`,
+and provide a small bump-allocation surface before the native libc/runtime is
+ready.
 `toolchain/lnp64_intrinsics.h` is the initial checked private C shim header for
 native `__lnp_*` calls.
 `toolchain/lnp64_clang_driver.manifest` records the planned Clang/lld driver
