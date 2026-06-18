@@ -1669,13 +1669,13 @@ mod tests {
         assert!(gate_manifest.contains("lnp64 run-elf"));
         assert!(real_llc_docker.contains("cargo run --quiet -- elf-plan"));
         assert!(real_llc_docker.contains("cargo run --quiet -- run-elf"));
-        assert!(real_llc_docker.contains("lnp64-hello-clang-linked.elf"));
+        assert!(real_llc_docker.contains("lnp64-$demo-clang-linked.elf"));
         assert!(real_llc_docker.contains("hello from LNP64"));
+        assert!(real_llc_docker.contains("factorial ok"));
+        assert!(real_llc_docker.contains("alloc ok"));
+        assert!(real_llc_docker.contains("fibonacci ok"));
         assert!(real_llc_docker.contains("exit=0"));
-        assert!(
-            real_llc_docker
-                .contains("real LLVM LNP64 run-elf linked hello stdout execution passed")
-        );
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf clang demo execution passed"));
         assert!(main_source.contains("\"run-elf\""));
         assert!(main_source.contains("run_committed_exec"));
         assert!(loader_security.contains("submit_exec_plan"));
@@ -1727,6 +1727,7 @@ mod tests {
             "cli_probe",
             "cli_surface",
             "real_clang_lld_probe",
+            "real_clang_demo_execution",
             "entry_state",
             "text_fetch_decode",
             "stdout_exit",
@@ -1742,6 +1743,7 @@ mod tests {
             "cli_probe",
             "cli_surface",
             "real_clang_lld_probe",
+            "real_clang_demo_execution",
             "text_fetch_decode",
         ] {
             assert_eq!(stages[stage].0, "tested", "{stage} should be tested");
