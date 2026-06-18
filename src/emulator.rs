@@ -2027,14 +2027,12 @@ impl Machine {
                 }
             }
             Instr::FdClose(fd) => {
-                self.close_fd_index(fd.0)?;
-                self.set_status_ok()?;
+                self.close_fd_index_checked(fd.0)?;
             }
             Instr::FdCloseDyn(fd_reg) => {
                 let fd = self.read_reg(fd_reg)?;
                 if let Some(fd) = self.checked_fd_index(fd)? {
-                    self.close_fd_index(fd)?;
-                    self.set_status_ok()?;
+                    self.close_fd_index_checked(fd)?;
                 }
             }
             Instr::FdSeek(fd, offset_reg, whence_reg) => {
@@ -3158,6 +3156,14 @@ impl Machine {
         let lineage = self.fresh_fd_capability().lineage;
         self.install_fd_capability(fd, FdCapability::closed(lineage))?;
         Ok(())
+    }
+
+    fn close_fd_index_checked(&mut self, fd: usize) -> Result<(), String> {
+        if matches!(self.process()?.fds.get(fd), Some(FdHandle::Closed) | None) {
+            return self.set_status_errno(9);
+        }
+        self.close_fd_index(fd)?;
+        self.set_status_ok()
     }
 
     fn file_lock_key_for_fd(&self, fd: usize) -> Result<FileLockKey, u64> {
@@ -12022,6 +12028,24 @@ mod tests {
             .unwrap();
         assert_eq!(machine.process().unwrap().errno, 116);
         assert_eq!(machine.thread().unwrap().regs[1], 0);
+    }
+
+    #[test]
+    fn close_rejects_closed_fdr_slots_without_recycling_generation() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let original_generation = machine.fd_generation(7).unwrap();
+
+        assert!(machine.exec(Instr::FdClose(FdReg(7))).unwrap());
+        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 9);
+        assert_eq!(machine.fd_generation(7).unwrap(), original_generation);
+
+        machine.thread_mut().unwrap().regs[2] = 7;
+        assert!(machine.exec(Instr::FdCloseDyn(Reg(2))).unwrap());
+        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 9);
+        assert_eq!(machine.fd_generation(7).unwrap(), original_generation);
     }
 
     #[test]
