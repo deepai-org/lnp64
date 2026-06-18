@@ -9880,6 +9880,35 @@ mod tests {
     }
 
     #[test]
+    fn mprotect_rejects_overflow_and_unmapped_ranges() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+
+        machine.thread_mut().unwrap().regs[1] = u64::MAX - 1;
+        machine.thread_mut().unwrap().regs[2] = 8;
+        machine.thread_mut().unwrap().regs[3] = 0b001;
+        machine
+            .exec(Instr::Mprotect(Reg(1), Reg(2), Reg(3)))
+            .unwrap();
+        assert_eq!(machine.process().unwrap().errno, 22);
+
+        machine.thread_mut().unwrap().regs[1] = 0xdead_0000;
+        machine.thread_mut().unwrap().regs[2] = 4096;
+        machine.thread_mut().unwrap().regs[3] = 0b001;
+        machine
+            .exec(Instr::Mprotect(Reg(1), Reg(2), Reg(3)))
+            .unwrap();
+        assert_eq!(machine.process().unwrap().errno, 12);
+    }
+
+    #[test]
     fn isync_reports_success_and_canonical_range_errors() {
         let program = Program::parse(
             r#"
