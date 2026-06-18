@@ -982,6 +982,7 @@ mod tests {
             "relocations",
             "psabi",
             "intrinsics",
+            "intrinsic_header",
             "isel",
             "llvm_bootstrap",
             "llvm_gates",
@@ -1063,6 +1064,17 @@ mod tests {
             commands["assemble_crt0"].contains("toolchain/crt0_lnp64.s"),
             "crt0 gate must assemble checked startup stub"
         );
+        for gate in [
+            "compile_hello",
+            "compile_arithmetic",
+            "compile_memory",
+            "compile_calls",
+        ] {
+            assert!(
+                commands[gate].contains("-I toolchain"),
+                "{gate} must include checked private intrinsic header path"
+            );
+        }
     }
 
     #[test]
@@ -1301,6 +1313,10 @@ mod tests {
             "toolchain/lnp64_intrinsics.manifest"
         );
         assert_eq!(
+            manifest_field(manifest, "intrinsic_header_contract"),
+            "toolchain/lnp64_intrinsics.h"
+        );
+        assert_eq!(
             manifest_field(manifest, "isel_contract"),
             "toolchain/lnp64_isel.manifest"
         );
@@ -1461,6 +1477,54 @@ mod tests {
             assert!(
                 names.contains(name),
                 "target manifest intrinsic {name} is missing from intrinsic manifest"
+            );
+        }
+    }
+
+    #[test]
+    fn intrinsic_header_matches_intrinsic_manifest() {
+        let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
+        let intrinsic_manifest = include_str!("../toolchain/lnp64_intrinsics.manifest");
+        let intrinsic_header = include_str!("../toolchain/lnp64_intrinsics.h");
+        let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
+        let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
+        let roadmap = include_str!("../toolchain_roadmap.md");
+        let rows = intrinsic_rows(intrinsic_manifest);
+        let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let header_path = manifest_field(target_manifest, "intrinsic_header_contract");
+        let mut declarations = std::collections::BTreeSet::new();
+
+        assert_eq!(header_path, "toolchain/lnp64_intrinsics.h");
+        assert!(manifest_root.join(header_path).is_file());
+        assert!(contract_index.contains(
+            "intrinsic_header|toolchain/lnp64_intrinsics.h|intrinsic_header_matches_intrinsic_manifest"
+        ));
+        assert!(transition_manifest.contains("toolchain/lnp64_intrinsics.h"));
+        assert!(roadmap.contains("toolchain/lnp64_intrinsics.h"));
+        assert!(intrinsic_header.contains("#ifndef LNP64_INTRINSICS_H"));
+        assert!(intrinsic_header.contains("typedef unsigned long lnp64_word_t;"));
+        assert!(intrinsic_header.contains("typedef lnp64_word_t lnp64_cap_t;"));
+
+        for (name, primitive, _, operands) in rows {
+            assert!(
+                declarations.insert(name),
+                "duplicate intrinsic declaration check for {name}"
+            );
+            assert!(
+                intrinsic_header.contains(&format!(" {name}(")),
+                "intrinsic header is missing declaration for {name}"
+            );
+            assert!(
+                !primitive.is_empty() && !operands.is_empty(),
+                "manifest row for {name} must keep primitive and operands"
+            );
+        }
+        for forbidden in [
+            "fork", "pipe", "pthread", "signal", "poll", "select", "epoll",
+        ] {
+            assert!(
+                !intrinsic_header.contains(forbidden),
+                "private intrinsic header leaks compatibility word {forbidden}"
             );
         }
     }

@@ -26,6 +26,8 @@ shapes for compiling, linking, exec-plan inspection, and emulator execution.
 contract for lld-produced ELF inputs.
 `toolchain/crt0_lnp64.s` is the initial checked crt0 startup stub for the
 future LLVM/lld path.
+`toolchain/lnp64_intrinsics.h` is the initial checked private C shim header for
+native `__lnp_*` calls.
 
 The current Rust assembler, emulator, and C compiler remain useful bootstrap
 and architecture smoke-test tools. They are not the long-term application
@@ -180,7 +182,8 @@ bootstrap compatibility target and the toy compiler remains on the critical
 path.
 
 The planned command shapes are pinned in
-`toolchain/lnp64_llvm_gates.manifest`. The crt gate must assemble
+`toolchain/lnp64_llvm_gates.manifest`. The Clang compile gates must include
+`toolchain/lnp64_intrinsics.h`, the crt gate must assemble
 `toolchain/crt0_lnp64.s`, the static link gate must use
 `toolchain/lnp64_static.ld`, and all gates must stay Clang/lld/loader based: no
 gate in that manifest may invoke `lnp64 cc`, `cargo run -- cc`, or the in-repo
@@ -195,8 +198,8 @@ platform while remaining useful as a smoke generator:
 | --- | --- | --- |
 | Toy compiler retirement | `toolchain_roadmap.md`, `src/c_compiler.rs`, and private `__lnp_*` shim tests keep new native work out of ad hoc POSIX-shaped compiler features. | `c_private_lnp_manifest_intrinsics_lower_and_run` |
 | Real toolchain target | `toolchain/lnp64_target.manifest`, psABI, relocation, object-format, crt, inline-asm, debug/unwind, intrinsic, isel, and exec-plan manifests. | `toolchain_contract_index_is_complete` |
-| Minimal LLVM/Clang path | `toolchain/lnp64_llvm_bootstrap.manifest` pins the planned hello, arithmetic, memory, calls, and simple-libc replacement gates for the toy-compiler smoke path; `toolchain/lnp64_llvm_gates.manifest` pins the Clang/lld/loader command shapes that replace `lnp64 cc`; `toolchain/lnp64_static.ld` pins the first lld static layout; `toolchain/crt0_lnp64.s` pins the first crt0 startup stub. | `llvm_bootstrap_manifest_names_first_clang_gate`, `llvm_gate_manifest_pins_non_toy_clang_commands`, and `crt0_startup_stub_matches_crt_contract` |
-| Libc/runtime shim layer | `libc_roadmap.md`, crt/startup manifest, and intrinsic manifest define startup, TLS/errno, allocation, FDR I/O, pthread/futex, event waits, mmap, signal, and socket lowering. | `scripts/run_software_gates.sh` |
+| Minimal LLVM/Clang path | `toolchain/lnp64_llvm_bootstrap.manifest` pins the planned hello, arithmetic, memory, calls, and simple-libc replacement gates for the toy-compiler smoke path; `toolchain/lnp64_llvm_gates.manifest` pins the Clang/lld/loader command shapes that replace `lnp64 cc`; `toolchain/lnp64_static.ld` pins the first lld static layout; `toolchain/crt0_lnp64.s` pins the first crt0 startup stub; `toolchain/lnp64_intrinsics.h` pins the private C shim header. | `llvm_bootstrap_manifest_names_first_clang_gate`, `llvm_gate_manifest_pins_non_toy_clang_commands`, `crt0_startup_stub_matches_crt_contract`, and `intrinsic_header_matches_intrinsic_manifest` |
+| Libc/runtime shim layer | `libc_roadmap.md`, crt/startup manifest, intrinsic manifest, and private intrinsic header define startup, TLS/errno, allocation, FDR I/O, pthread/futex, event waits, mmap, signal, and socket lowering. | `scripts/run_software_gates.sh` |
 | Software loader and exec plan | `src/loader.rs`, `src/emulator.rs`, `object_format.md`, and `toolchain/lnp64_exec_plan.manifest` define the initial ELF64 parser, encoded exec-plan records, emulator-side descriptor validation, committed entry/TLS/startup metadata, and atomic memory-image commit probe for the bounded `EXEC` boundary. | `exec_plan_manifest_matches_loader_boundary_contract` plus the `exec_descriptor` test filter |
 | NetBSD personality layering | `netbsd_personality_abi.md`, this roadmap, and the NetBSD system script keep the personality layered over native services. | `scripts/run_netbsd_personality_system.sh` |
 | Conformance gates | `conformance_matrix.md`, `scripts/run_software_gates.sh`, and `scripts/run_all_gates.sh` enumerate host software, package, personality, RTL/proof, and whitespace gates. | `scripts/run_software_gates.sh` plus `scripts/run_all_gates.sh` |
