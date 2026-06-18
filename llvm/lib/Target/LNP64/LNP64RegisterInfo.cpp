@@ -1,4 +1,7 @@
 #include "LNP64RegisterInfo.h"
+#include "MCTargetDesc/LNP64MCTargetDesc.h"
+#include "llvm/CodeGen/MachineFrameInfo.h"
+#include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineFunction.h"
 
 using namespace llvm;
@@ -25,4 +28,23 @@ LNP64RegisterInfo::getCalleeSavedRegs(const MachineFunction *) const {
 
 Register LNP64RegisterInfo::getFrameRegister(const MachineFunction &) const {
   return LNP64::R31;
+}
+
+bool LNP64RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
+                                            int, unsigned FIOperandNum,
+                                            RegScavenger *) const {
+  MachineInstr &MI = *II;
+  MachineFunction &MF = *MI.getParent()->getParent();
+  const MachineFrameInfo &MFI = MF.getFrameInfo();
+  int FrameIndex = MI.getOperand(FIOperandNum).getIndex();
+  int64_t Offset = MFI.getObjectOffset(FrameIndex) + MFI.getStackSize();
+  if (FIOperandNum + 1 < MI.getNumOperands() &&
+      MI.getOperand(FIOperandNum + 1).isImm())
+    Offset += MI.getOperand(FIOperandNum + 1).getImm();
+
+  MI.getOperand(FIOperandNum).ChangeToRegister(LNP64::R31, false);
+  if (FIOperandNum + 1 < MI.getNumOperands() &&
+      MI.getOperand(FIOperandNum + 1).isImm())
+    MI.getOperand(FIOperandNum + 1).ChangeToImmediate(Offset);
+  return false;
 }

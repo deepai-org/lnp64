@@ -1890,6 +1890,9 @@ mod tests {
         assert!(frame.contains("StackGrowsDown"));
         assert!(frame.contains("Align(16)"));
         assert!(reginfo.contains("Reserved.set(LNP64::R0)"));
+        assert!(reginfo.contains("eliminateFrameIndex"));
+        assert!(reginfo.contains("ChangeToRegister(LNP64::R31"));
+        assert!(reginfo.contains("MFI.getObjectOffset"));
         assert!(reginfo.contains("NoCalleeSaved"));
         assert!(clang_target.contains("resetDataLayout(\"e-m:e-p:64:64-i64:64-n64-S128\")"));
         assert!(clang_target.contains("__LNP64__"));
