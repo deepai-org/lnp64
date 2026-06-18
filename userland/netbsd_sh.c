@@ -153,6 +153,8 @@ int main(int argc, char **argv) {
     if (rc != 0) return 68 + rc;
     rc = run_program(root, "timer_test", "/bin/timer_test.s");
     if (rc != 0) return 69 + rc;
+    rc = run_program(root, "classifier_test", "/bin/classifier_test.s");
+    if (rc != 0) return 71 + rc;
     rc = run_program(root, "socket_loopback_test", "/bin/socket_loopback_test.s");
     if (rc != 0) return 70 + rc;
     rc = run_program(root, "signal_gate_test", "/bin/signal_gate_test.s");

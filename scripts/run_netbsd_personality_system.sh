@@ -19,6 +19,7 @@ programs=(
   fd_passing_test
   gate_trace_test
   timer_test
+  classifier_test
   socket_loopback_test
   signal_gate_test
   signal_fault_test
@@ -108,6 +109,8 @@ $ ./gate_trace_test
 gate_trace_test ok
 $ ./timer_test
 timer_test ok
+$ ./classifier_test
+classifier_test ok
 $ ./socket_loopback_test
 socket_loopback_test ok
 $ ./signal_gate_test
