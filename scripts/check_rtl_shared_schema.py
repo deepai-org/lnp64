@@ -98,6 +98,14 @@ def parse_parameter_entry(entry: str) -> tuple[str, str]:
     return match.group("name"), compact(match.group("value"))
 
 
+def parse_record_entry(entry: str) -> tuple[str, int]:
+    match = re.fullmatch(r"(?P<name>\w+):(?P<width>\d+)", entry)
+    require(match is not None, f"invalid record schema entry: {entry}")
+    width = int(match.group("width"))
+    require(width > 0, f"record field width must be positive: {entry}")
+    return match.group("name"), width
+
+
 def require_exact_map(actual: dict[str, list[str]], expected: dict[str, list[str]], label: str) -> None:
     require(set(actual) == set(expected), f"{label} names drifted: actual={sorted(actual)} expected={sorted(expected)}")
     for name, expected_items in expected.items():
@@ -122,6 +130,41 @@ def require_mapping_keys(entries: object, expected_keys: list[str], required_fie
     actual_keys = [entry["key"] for entry in parsed]
     require(actual_keys == expected_keys, f"{label} keys drifted: actual={actual_keys} expected={expected_keys}")
     return parsed
+
+
+def render_sv_struct_from_schema(record_name: str, fields: list[str]) -> str:
+    lines = ["typedef struct packed {"]
+    for entry in fields:
+        field_name, width = parse_record_entry(entry)
+        if width == 1:
+            lines.append(f"    logic {field_name};")
+        else:
+            lines.append(f"    logic [{width - 1}:0] {field_name};")
+    lines.append(f"}} {record_name};")
+    return "\n".join(lines)
+
+
+def require_m1_generated_structs(
+    actual_records: dict[str, list[str]],
+    schema: dict,
+    m1_contract: dict,
+) -> None:
+    """Treat the shared schema as the M1 SystemVerilog struct source of truth."""
+    schema_records = schema.get("records", {})
+    require(isinstance(schema_records, dict), "schema records must be an object")
+    for contract_key, label in (
+        ("record", "commit"),
+        ("state_record", "state projection"),
+    ):
+        record_name = require_string(m1_contract.get(contract_key), f"M1 {label} record")
+        require(record_name in schema_records, f"M1 {label} record is absent from schema records")
+        require(record_name in actual_records, f"M1 {label} record is absent from parsed package records")
+        expected_sv = render_sv_struct_from_schema(record_name, schema_records[record_name])
+        actual_sv = render_sv_struct_from_schema(record_name, actual_records[record_name])
+        require(
+            actual_sv == expected_sv,
+            f"M1 schema-owned generated SV struct {record_name} drifted from shared schema",
+        )
 
 
 def main() -> None:
@@ -150,7 +193,8 @@ def main() -> None:
         require(body_terms == expected_terms, f"rollup {name} drifted: actual={body_terms} expected={expected_terms}")
 
     require_exact_map(parse_enums(pkg_text), schema.get("enums", {}), "enum")
-    require_exact_map(parse_records(pkg_text), schema.get("records", {}), "record")
+    actual_records = parse_records(pkg_text)
+    require_exact_map(actual_records, schema.get("records", {}), "record")
 
     families = schema.get("record_families", {})
     require(isinstance(families, dict) and families, "record_families must be non-empty")
@@ -181,6 +225,7 @@ def main() -> None:
 
     m1_contract = schema.get("m1_typed_commit_contract", {})
     require(isinstance(m1_contract, dict) and m1_contract, "m1_typed_commit_contract must be present")
+    require_m1_generated_structs(actual_records, schema, m1_contract)
     require(
         m1_contract.get("stage") == "m1_typed_cap_commit_transition_mirror",
         "M1 typed commit stage must identify the transition mirror",

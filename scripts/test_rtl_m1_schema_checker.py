@@ -1,0 +1,102 @@
+#!/usr/bin/env python3
+"""Self-test M1 schema-owned SystemVerilog struct checker failure modes."""
+
+from __future__ import annotations
+
+import copy
+import contextlib
+import importlib.util
+import io
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+CHECKER = ROOT / "scripts/check_rtl_shared_schema.py"
+SCHEMA = ROOT / "rtl/schema/lnp64_shared_schema.json"
+PKG = ROOT / "rtl/include/lnp64_pkg.sv"
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise SystemExit(message)
+
+
+def load_checker():
+    spec = importlib.util.spec_from_file_location("check_rtl_shared_schema", CHECKER)
+    require(spec is not None and spec.loader is not None, "could not load shared schema checker")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def expect_failure(expected: str, action) -> None:
+    stderr = io.StringIO()
+    failure_text = ""
+    with contextlib.redirect_stderr(stderr):
+        try:
+            action()
+        except SystemExit as exc:
+            require(exc.code != 0, "checker failure unexpectedly used success exit code")
+            failure_text = str(exc)
+        else:
+            raise SystemExit("expected checker failure")
+    output = stderr.getvalue() + failure_text
+    require(expected in output, f"checker failure did not include {expected!r}: {output}")
+
+
+def main() -> None:
+    checker = load_checker()
+    schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
+    m1_contract = schema["m1_typed_commit_contract"]
+    actual_records = checker.parse_records(PKG.read_text(encoding="utf-8"))
+
+    valid = subprocess.run(
+        [sys.executable, str(CHECKER)],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    valid_output = (valid.stdout or "") + (valid.stderr or "")
+    require(valid.returncode == 0, f"current shared schema failed: {valid_output}")
+    require("rtl shared schema ok" in valid_output, "current shared schema did not print success")
+
+    checker.require_m1_generated_structs(actual_records, schema, m1_contract)
+
+    package_width_drift = copy.deepcopy(actual_records)
+    package_width_drift["lnp64_m1_cap_commit_t"] = [
+        "rights_mask:63" if field == "rights_mask:64" else field
+        for field in package_width_drift["lnp64_m1_cap_commit_t"]
+    ]
+    expect_failure(
+        "M1 schema-owned generated SV struct lnp64_m1_cap_commit_t drifted",
+        lambda: checker.require_m1_generated_structs(
+            package_width_drift,
+            schema,
+            m1_contract,
+        ),
+    )
+
+    schema_field_drift = copy.deepcopy(schema)
+    schema_field_drift["records"]["lnp64_m1_state_projection_t"] = [
+        "transfer_valid:2" if field == "transfer_valid:1" else field
+        for field in schema_field_drift["records"]["lnp64_m1_state_projection_t"]
+    ]
+    expect_failure(
+        "M1 schema-owned generated SV struct lnp64_m1_state_projection_t drifted",
+        lambda: checker.require_m1_generated_structs(
+            actual_records,
+            schema_field_drift,
+            schema_field_drift["m1_typed_commit_contract"],
+        ),
+    )
+
+    print("rtl m1 schema checker self-test ok")
+
+
+if __name__ == "__main__":
+    main()
