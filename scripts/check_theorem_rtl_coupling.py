@@ -1,0 +1,161 @@
+#!/usr/bin/env python3
+"""Validate human-auditable theorem-to-RTL coupling evidence."""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+MANIFEST = Path(
+    os.environ.get(
+        "LNP64_THEOREM_RTL_COUPLING_MANIFEST",
+        str(ROOT / "formal/theorem_rtl_coupling_manifest.json"),
+    )
+)
+INDEX = Path(
+    os.environ.get(
+        "LNP64_THEOREM_RTL_COUPLING_INDEX",
+        str(ROOT / "formal/theorem_rtl_coupling_index.md"),
+    )
+)
+ALLOWED_TRUST_LEVELS = {"T0", "T1", "T2", "T3", "T4", "T5"}
+ALLOWED_ARTIFACT_LEVELS = {
+    "coverage",
+    "bounded_witness",
+    "transition_invariant",
+    "refinement",
+}
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise SystemExit(message)
+
+
+def read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8", errors="replace")
+
+
+def root_path(name: str) -> Path:
+    return ROOT / name
+
+
+def theorem_exists(path: Path, theorem: str) -> bool:
+    return re.search(rf"(?m)^theorem\s+{re.escape(theorem)}\b", read_text(path)) is not None
+
+
+def module_exists(path: Path, module: str) -> bool:
+    return re.search(rf"(?m)^\s*module\s+{re.escape(module)}\b", read_text(path)) is not None
+
+
+def check_file(path: Path, label: str) -> str:
+    require(path.exists(), f"missing {label} {path}")
+    require(path.stat().st_size > 0, f"empty {label} {path}")
+    return read_text(path)
+
+
+def check_claim(claim: dict) -> None:
+    claim_id = claim.get("id")
+    require(isinstance(claim_id, str) and claim_id, "claim missing id")
+    require(isinstance(claim.get("claim"), str) and claim["claim"], f"{claim_id}: missing claim text")
+
+    trust = claim.get("trust_level")
+    require(trust in ALLOWED_TRUST_LEVELS, f"{claim_id}: invalid trust level {trust}")
+    require(claim.get("known_gaps"), f"{claim_id}: known_gaps must be explicit")
+    require(claim.get("assumptions"), f"{claim_id}: assumptions must be explicit")
+
+    lean_theorems = claim.get("lean_theorems")
+    require(isinstance(lean_theorems, list) and lean_theorems, f"{claim_id}: missing Lean theorem links")
+    for item in lean_theorems:
+        path = root_path(item["file"])
+        check_file(path, f"{claim_id} Lean file")
+        theorem = item["name"]
+        artifact_level = item.get("artifact_level")
+        require(
+            artifact_level in ALLOWED_ARTIFACT_LEVELS,
+            f"{claim_id}: {theorem} has invalid artifact_level {artifact_level}",
+        )
+        if item["file"] == "formal/FormalTheoremsModel.lean":
+            require(
+                artifact_level == "coverage",
+                f"{claim_id}: FormalTheoremsModel.lean entries must be coverage artifacts",
+            )
+        require(theorem_exists(path, theorem), f"{claim_id}: missing theorem {theorem} in {item['file']}")
+
+    rtl_text = ""
+    modules = claim.get("rtl_modules")
+    require(isinstance(modules, list) and modules, f"{claim_id}: missing RTL modules")
+    for item in modules:
+        path = root_path(item["file"])
+        rtl_text += "\n" + check_file(path, f"{claim_id} RTL file")
+        require(module_exists(path, item["module"]), f"{claim_id}: missing module {item['module']} in {item['file']}")
+
+    assertion_text = ""
+    assertion_files = claim.get("assertion_files")
+    require(isinstance(assertion_files, list) and assertion_files, f"{claim_id}: missing assertion files")
+    for name in assertion_files:
+        assertion_text += "\n" + check_file(root_path(name), f"{claim_id} assertion file")
+
+    combined_signal_text = rtl_text + "\n" + assertion_text
+    for signal in claim.get("rtl_witness_signals", []):
+        require(signal in combined_signal_text, f"{claim_id}: missing RTL/assertion witness {signal}")
+
+    trace_text = ""
+    trace_sources = claim.get("trace_sources")
+    require(isinstance(trace_sources, list) and trace_sources, f"{claim_id}: missing trace sources")
+    for name in trace_sources:
+        trace_text += "\n" + check_file(root_path(name), f"{claim_id} trace source")
+    for marker in claim.get("trace_markers", []):
+        require(marker in trace_text, f"{claim_id}: missing trace marker {marker}")
+
+    gates = claim.get("gate_scripts")
+    require(isinstance(gates, list) and gates, f"{claim_id}: missing gate scripts")
+    for name in gates:
+        path = root_path(name)
+        check_file(path, f"{claim_id} gate script")
+        require(os.access(path, os.X_OK), f"{claim_id}: gate script is not executable {name}")
+
+
+def main() -> None:
+    manifest = json.loads(check_file(MANIFEST, "theorem/RTL coupling manifest"))
+    require(manifest.get("name") == "lnp64_theorem_rtl_coupling", "unexpected coupling manifest name")
+    require(root_path(manifest["roadmap"]).exists(), f"missing roadmap {manifest['roadmap']}")
+
+    trust_levels = manifest.get("trust_levels")
+    require(isinstance(trust_levels, dict), "trust_levels must be an object")
+    for level in ALLOWED_TRUST_LEVELS:
+        require(level in trust_levels, f"trust_levels omits {level}")
+
+    claims = manifest.get("claims")
+    require(isinstance(claims, list) and claims, "coupling manifest must list claims")
+    index_text = check_file(INDEX, "theorem/RTL coupling index")
+    seen: set[str] = set()
+    required_claims = {
+        "no_forged_authority",
+        "revocation_generation_safety",
+        "domain_containment",
+        "dma_confined",
+        "scheduler_single_location",
+        "no_lost_wakeups",
+        "servicelets_terminate_contained",
+        "faults_terminal_progress",
+    }
+    for claim in claims:
+        claim_id = claim.get("id")
+        require(claim_id not in seen, f"duplicate coupling claim {claim_id}")
+        seen.add(claim_id)
+        check_claim(claim)
+        require(f"`{claim_id}`" in index_text, f"coupling index omits claim {claim_id}")
+        require(claim["trust_level"] in index_text, f"coupling index omits trust level for {claim_id}")
+
+    missing = sorted(required_claims - seen)
+    require(not missing, f"coupling manifest omits required claims: {', '.join(missing)}")
+    print("theorem/RTL coupling manifest ok")
+
+
+if __name__ == "__main__":
+    main()

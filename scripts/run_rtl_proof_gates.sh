@@ -21,9 +21,11 @@ lean_files=(
   formal/M13PcieIommuModel.lean
   formal/M14ResourceDomainPolicyModel.lean
   formal/M15ObjectProfilesModel.lean
+  formal/FormalTheoremsModel.lean
 )
 
 scripts/check_formal_proof_manifest.py
+scripts/check_theorem_rtl_coupling.py
 scripts/check_formal_rtl_roadmap_audit.py
 
 if grep -RInE '(^|[^[:alnum:]_])(axiom|sorry|admit)([^[:alnum:]_]|$)' "${lean_files[@]}"; then

@@ -6,8 +6,14 @@ FPGA-bring-up flow, with Docker-backed verification. Physical board validation
 is kept as an optional hardware-only extension because no real FPGA is available
 in this environment.
 
-Current completion status: complete for the available Docker-backed
-RTL/proof/synthesis/FPGA-smoke scope.
+Current completion status: incomplete for the full roadmap. The Docker-backed
+RTL/proof/synthesis/FPGA-smoke scope is implemented and passing.
+`formal_theorems.md` has checked Lean coverage artifacts through
+`formal/FormalTheoremsModel.lean`; remaining work is to replace coverage and
+bounded-witness artifacts with transition-invariant proofs and RTL refinement
+proofs for the full SystemVerilog chip and real architectural programs. The
+current theorem-to-RTL coupling rows are T1 bounded witnesses with assertion
+evidence; they are not T2 until typed transition traces exist.
 
 The RTL/proof/synthesis/FPGA-smoke deliverables are represented by
 machine-checkable manifests and gates. The strict hardware audit is intentionally
@@ -25,6 +31,8 @@ and validates with `scripts/check_board_evidence.py`.
 | RTL S0 contract checker positive and negative checks | `scripts/check_rtl_s0_contract.py`, `scripts/test_rtl_s0_contract_checker.py` | `scripts/test_rtl_s0_contract_checker.py` |
 | S0 proof obligations | `formal/S0Model.lean`, `formal/proof_obligations_manifest.json` | `scripts/check_formal_proof_manifest.py` |
 | Track A A1-A10 formal model and theorem artifacts | `formal/proof_obligations_manifest.json`, `formal/S0Model.lean`, `formal/M1Model.lean`, `formal/M2GateModel.lean` through `formal/M15ObjectProfilesModel.lean` | `scripts/check_formal_proof_manifest.py`; Docker: `bash scripts/run_rtl_proof_docker.sh` |
+| Formal theorem roadmap coverage | `formal_theorems.md`, `formal/FormalTheoremsModel.lean`, `formal/proof_obligations_manifest.json` obligation `FT`; coverage only, not a full architecture proof | `scripts/check_formal_proof_manifest.py`; Docker: `docker run --rm -e LNP64_REQUIRE_LEAN=1 -v "$PWD:/work" -w /work lnp64-rtl-proof lean formal/FormalTheoremsModel.lean` |
+| Human-auditable theorem-to-RTL coupling evidence | `formal/theorem_rtl_coupling_manifest.json`, `formal/theorem_rtl_coupling_index.md`, theorem names, artifact levels, RTL modules, assertions, trace markers, trust levels, known gaps, and gates for each major guarantee | `scripts/check_theorem_rtl_coupling.py` |
 | Formal proof manifest checker positive and negative checks | `scripts/check_formal_proof_manifest.py`, `scripts/test_formal_proof_manifest_checker.py` | `scripts/test_formal_proof_manifest_checker.py` |
 | Track B B0-B14 RTL skeleton and vertical block coverage | `rtl/track_b_blocks_manifest.json`, S0 and M1-M15 RTL/testbench/filelist/assertion artifacts, `scripts/run_rtl_yosys_vertical_slices.sh` | `scripts/check_rtl_track_b_manifest.py`; `bash scripts/run_rtl_yosys_vertical_slices.sh`; Docker synth gate |
 | RTL Track B manifest checker positive and negative checks | `scripts/check_rtl_track_b_manifest.py`, `scripts/test_rtl_track_b_manifest_checker.py` | `scripts/test_rtl_track_b_manifest_checker.py` |
@@ -36,7 +44,7 @@ and validates with `scripts/check_board_evidence.py`.
 | FPGA report checker positive and negative checks | `scripts/check_ice40_report.py`, `scripts/check_icetime_report.py`, `scripts/test_fpga_report_checkers.py` | `scripts/test_fpga_report_checkers.py` |
 | iCE40 bitstream, UART waveform, nextpnr timing, and icetime timing smoke | `fpga/rtl/lnp64_s0_fpga_top.sv`, `rtl/sim/lnp64_s0_fpga_tb.sv`, `fpga/constraints/lnp64_s0_ice40_hx8k_ct256.pcf` | `bash scripts/run_rtl_synth_docker.sh` or `docker run --rm -v "$PWD:/work" -w /work lnp64-rtl-synth bash scripts/run_rtl_synth_gates.sh` |
 | First milestone: whole-machine skeleton | S0 RTL, assertions, Lean S0 model, S0 Verilator testbench, and S0 contract checker | `bash scripts/run_rtl_s0.sh`; `scripts/check_rtl_s0_contract.py` |
-| Second milestone: proven ping-pong machine | `rtl/engines/lnp64_m1_pingpong.sv`, `rtl/sim/lnp64_m1_tb.sv`, `formal/M1Model.lean`, `formal/m1_model.py`, `tests/rtl/m1_filelist.f` | `bash scripts/run_rtl_m1.sh`; `scripts/check_rtl_cosim_manifest.py` |
+| Second milestone: bounded ping-pong witness | `rtl/engines/lnp64_m1_pingpong.sv`, `rtl/sim/lnp64_m1_tb.sv`, `formal/M1Model.lean`, `formal/m1_model.py`, `tests/rtl/m1_filelist.f` | `bash scripts/run_rtl_m1.sh`; `scripts/check_rtl_cosim_manifest.py` |
 | Docker-backed proof, synthesis, FPGA, and board command paths | `Dockerfile.rtl-proof`, `Dockerfile.rtl-synth`, `Dockerfile.rtl-board`, `scripts/run_rtl_proof_docker.sh`, `scripts/run_rtl_synth_docker.sh`, `scripts/run_rtl_board_docker.sh` | `scripts/check_rtl_dockerfiles.py` |
 | RTL Dockerfile checker positive and negative checks | `scripts/check_rtl_dockerfiles.py`, `scripts/test_rtl_dockerfiles_checker.py` | `scripts/test_rtl_dockerfiles_checker.py` |
 | Board UART/evidence validator positive and negative checks | `scripts/check_uart_byte.py`, `scripts/test_uart_byte_checker.py`, `scripts/check_board_evidence.py`, `scripts/test_board_evidence_checker.py` | `scripts/test_uart_byte_checker.py`; `scripts/test_board_evidence_checker.py` |
@@ -122,7 +130,7 @@ and validates with `scripts/check_board_evidence.py`.
 | First milestone proof targets | `formal/S0Model.lean` and S0 entries in `formal/proof_obligations_manifest.json` | `scripts/check_formal_proof_manifest.py` |
 | First milestone expected demo | `rtl/sim/lnp64_s0_tb.sv` exercises reset, tiny PID 1 program, UART status, `ENV_GET`, unsupported command, and structured fault event | `bash scripts/run_rtl_s0.sh` |
 | Second milestone required slice | M1 ping-pong RTL/testbench/assertions/filelist plus S0/B1-B5 shell coverage | `scripts/check_rtl_track_b_manifest.py`; `bash scripts/run_rtl_m1.sh` |
-| Second milestone proof targets | `formal/M1Model.lean` theorem entries in `formal/proof_obligations_manifest.json` | `scripts/check_formal_proof_manifest.py` |
+| Second milestone proof targets | `formal/M1Model.lean` bounded-witness theorem entries in `formal/proof_obligations_manifest.json`; later work must turn this into a reachable-state transition proof | `scripts/check_formal_proof_manifest.py` |
 | Second milestone expected demo | `formal/m1_model.py`, `scripts/run_rtl_m1.sh`, and `tests/traces/rtl_cosim_manifest.json` compare M1 model and RTL traces | `scripts/check_rtl_cosim_manifest.py`; `bash scripts/run_rtl_m1.sh` |
 
 ## Completion Commands

@@ -55,6 +55,215 @@ whole-machine shape, but the roadmap target is a complete RTL implementation of
 every required architectural block and complete Lean proofs of every theorem we
 claim for the architecture.
 
+## Proof/RTL Coupling Contract
+
+Lean proofs are valuable only if they describe the hardware that is actually
+being built. The project should therefore treat the Lean model, RTL, simulator
+traces, assertions, and manifests as one refinement chain rather than parallel
+artifacts.
+
+The intended trust chain is:
+
+```text
+architectural schema -> Lean transition model -> theorem obligations
+-> generated RTL/assertion/trace schemas -> RTL module contract
+-> RTL simulation/formal checks -> top-level integration evidence
+```
+
+The long-term goal is not merely "Lean file exists" or "RTL test passes." The
+goal is a checked refinement claim for each block: every committed RTL-visible
+architectural transition for that block corresponds to an allowed Lean
+transition under an explicit set of assumptions.
+
+### Proof Artifact Levels
+
+Do not treat every Lean file as the same kind of evidence. The project should
+use four distinct artifact levels:
+
+- **Coverage artifact:** records that a theorem-roadmap topic has a named file,
+  theorem name, manifest entry, and evidence link. This is useful bookkeeping,
+  but it is not a proof of the architecture.
+- **Bounded witness model:** proves properties of one scripted trace or small
+  bounded scenario. This is useful for early RTL bring-up and regression, but it
+  does not prove that all reachable states are safe.
+- **Transition-invariant proof:** defines `State`, `Step`, `Reachable`, and one
+  or more invariants, then proves each transition preserves the invariant. This
+  is the first level that should be called a real architectural proof.
+- **Refinement proof:** relates RTL-visible commit records to Lean transitions
+  and proves that the RTL preserves the architectural invariant under explicit
+  clock/reset/fairness/vendor-IP assumptions.
+
+The current `formal/FormalTheoremsModel.lean` style should be treated as a
+coverage artifact only. It may keep the manifest honest, but a theorem proved
+by setting a coverage field to `true` and using `rfl` is not an architectural
+guarantee. The current M1-M15 Lean files are bounded witness models unless and
+until they define a transition relation and prove invariants over all reachable
+states in the modeled slice.
+
+This naming discipline matters. Public claims should say exactly what has been
+proved: coverage exists, a bounded trace checks out, an invariant is preserved,
+or RTL refines the Lean transition model.
+
+### Shared Schemas
+
+Architectural records must not be hand-copied between Lean, SystemVerilog, Rust,
+and Python. For each stable record family, keep a single schema source or a
+schema manifest that can generate or check all consumers:
+
+- opcodes, profiles, status codes, and canonical errors.
+- command, response, completion, event, fault, capability, domain, VMA, DMA,
+  gate, object, scheduler, service, and telemetry records.
+- feature bits, latency classes, rights masks, and lifecycle states.
+- trace event names and normalized fields used by co-simulation.
+
+The first acceptable implementation can be a checked manifest plus parsers. The
+preferred end state is generated Lean structures, SystemVerilog `typedef struct
+packed` records, Rust constants, Python model constants, and Markdown tables
+from the same source. A CI check must fail if a field, width, enum value, or
+trace event drifts without updating the schema.
+
+### Refinement Artifacts
+
+Each milestone block should carry these artifacts:
+
+- `formal/Mx...Model.lean`: abstract state, transition relation, reachability
+  definition, invariants, and theorem statements/proofs.
+- `rtl/engines/lnp64_mx_*.sv`: RTL implementation.
+- `formal/rtl_assertions/lnp64_mx_assertions.sv`: generated or hand-audited
+  assertions mirroring the Lean preconditions, invariants, and postconditions.
+- `formal/mx_*_model.py` or an extracted/generated executable model: produces
+  canonical traces from the same abstract transition shape.
+- `tests/rtl/mx_filelist.f`: exact RTL files under test.
+- manifest entries tying theorem names, RTL modules, assertions, traces, and
+  scripts together.
+
+The manifest should answer: which theorem is this RTL transition meant to
+support, which RTL signals witness it, which assumptions are required, which
+assertions check those assumptions, and which simulation/formal gate exercised
+it.
+
+For a proof slice to advance beyond bounded-witness status, its Lean model must
+include:
+
+- a typed `State` record with authority, generation, scheduler, fault, event,
+  and ownership fields relevant to that slice.
+- a typed `Input` or command/event record.
+- an inductive or functional `Step` relation.
+- a `Reachable` definition from reset or a stated pre-state.
+- at least one nontrivial invariant stated over arbitrary reachable states.
+- preservation lemmas for each transition constructor or operation case.
+- a top-level theorem of the form `forall s, Reachable s -> Invariant s`.
+
+Fixed final-state proofs remain useful regression witnesses, but they must not
+be the final proof shape for security, isolation, revocation, scheduler,
+memory, DMA, servicelet, or RAS claims.
+
+### Refinement Checks
+
+For every block, the normal gate should check more than textual trace equality:
+
+- decode RTL commit events into typed architectural transition records.
+- run the corresponding Lean/executable transition from the same typed
+  pre-state and inputs.
+- compare post-state projections: authority, generations, scheduler location,
+  wait sources, memory permissions, result/error, event/fault records, and
+  telemetry counters.
+- check that every RTL terminal path is one of the Lean terminal paths.
+- check that every Lean theorem assumption is either proven in Lean, asserted in
+  RTL, constrained by the top-level environment, or named as a trusted hardware
+  assumption.
+
+String traces are acceptable early scaffolding, but they are not the final
+coupling. They should evolve into typed trace records generated from the shared
+schema.
+
+The preferred path is:
+
+```text
+bounded string trace -> typed transition trace -> executable Lean transition
+comparison -> checked RTL-to-Lean refinement relation
+```
+
+At the typed-trace stage, every trace field used by a proof must come from the
+shared schema. At the refinement stage, the trace is no longer the proof; it is
+debug evidence for a checked relation between RTL commit events and Lean steps.
+
+### Assumption Discipline
+
+The proof gate must track assumptions as first-class objects:
+
+- no `sorry`, `admit`, unchecked `axiom`, or hidden trusted lemma in production
+  proof files.
+- every environment assumption has an owner: reset, clocking, ready/valid
+  fairness, bounded queue arbitration, memory model, vendor IP, or external
+  device contract.
+- every RTL `assume` has a matching Lean assumption or top-level environment
+  contract.
+- every Lean assumption has at least one of: RTL assertion evidence, bounded
+  model-check evidence, simulation coverage, synthesis/CDC constraint evidence,
+  or an explicit trusted-platform entry.
+- black boxes such as DDR PHYs, FPGA PLLs, SERDES, and vendor PCIe/DDR IP are
+  modeled as assume-guarantee contracts with named guarantees and failure modes.
+
+This keeps the trusted computing base visible. A theorem should never appear to
+prove more about the physical machine than the recorded assumptions support.
+
+### Trust Levels
+
+Use visible trust levels for each theorem/block pair:
+
+- **T0 Sketch:** Lean theorem names and RTL tests exist, but coupling is mostly
+  manual.
+- **T1 Bounded Witness:** a Lean/Python/executable model proves or checks a
+  scripted bounded scenario and RTL traces match that scenario.
+- **T2 Assertion-Coupled:** RTL assertions check the local invariants and
+  theorem assumptions at module boundaries, and typed traces compare RTL
+  behavior to the executable model for representative and randomized inputs.
+- **T3 Transition-Proven:** Lean proves an invariant for all reachable states of
+  the block's abstract transition model.
+- **T4 Refinement-Coupled:** a checked refinement artifact maps RTL transitions
+  to Lean transitions for the block's architectural state projection.
+- **T5 Integrated/Board-Qualified:** top-level simulation/formal evidence shows
+  the block's guarantees survive composition with neighboring engines and
+  shared fabrics. Later FPGA evidence confirms the same interfaces and
+  assumptions hold on selected hardware.
+
+Current early milestones may start at T0/T1. Security, isolation, authority,
+DMA, Resource Domain, scheduler, and RAS guarantees should not be advertised as
+strong hardware guarantees until they reach at least T4 for the relevant RTL
+block, and T5 for cross-module or board-dependent properties.
+
+### Human-Auditable Evidence
+
+The proof system must also be legible. A casual technical observer should be
+able to start at a small set of top-level claims and follow the evidence without
+reverse-engineering the whole repository.
+
+For each major guarantee, maintain a short evidence page or generated index
+that shows:
+
+- the plain-English claim.
+- the exact Lean theorem names and their artifact level: coverage, bounded
+  witness, transition proof, or refinement proof.
+- the assumptions and trusted-platform contracts used by those theorems.
+- the RTL modules and top-level signals covered by the claim.
+- the assertion files, simulation gates, co-simulation traces, synthesis checks,
+  and board evidence that connect the theorem to the implemented hardware.
+- the current trust level, from T0 through T5.
+- known gaps, exclusions, and reasons the claim is not stronger.
+
+The top-level evidence index should be organized by the guarantees users care
+about: no forged authority, revocation works, domains contain tenants, DMA is
+confined, scheduler state cannot split, wakeups are not lost, servicelets
+terminate, faults reach terminal paths, and admitted work makes bounded
+progress. Each row should link to the theorem, RTL, assertion, trace, and gate
+artifacts that support it.
+
+This is not marketing material. It is a review surface for engineers, users,
+security reviewers, open-source contributors, and future hardware partners. If a
+guarantee cannot be explained through this chain, the guarantee is not yet
+usable as an engineering claim.
+
 ## S0 Starter Contract
 
 This section is the concrete starting point for an engineer implementing the
@@ -282,6 +491,34 @@ Start with a Lean architectural model, not a full timing RTL model. Early files
 may be small executable/proof sketches, but the target is a complete Lean model
 and proof suite for the theorem set in `formal_theorems.md`.
 
+The first cleanup pass in Track A should classify existing Lean files:
+
+- `FormalTheoremsModel.lean` is a coverage ledger unless replaced by real
+  abstract theorem statements and proofs.
+- S0 and M1-M15 files are bounded witness models unless they include `State`,
+  `Step`, `Reachable`, invariants, preservation lemmas, and reachable-state
+  theorems.
+- manifests should record this artifact level so reviewers can see what is
+  actually proven.
+
+After classification, choose one vertical slice and make it genuinely
+mathematical before duplicating the pattern. The preferred first real slice is
+the FDR/capability engine, because authority is the architecture's security
+root and the state space is still small enough to model cleanly.
+
+The first real Lean slice should:
+
+- define capability, object, domain, FDR-table, queue, event, and scheduler
+  projections needed for that slice.
+- define operation inputs for `CAP_DUP`, `CAP_SEND`, `CAP_RECV`, `CAP_REVOKE`,
+  `PUSH`, `PULL`, and `AWAIT` only if those operations are part of the slice.
+- define the allowed `Step` relation, including fail-closed error transitions.
+- define `Reachable` from reset plus optional trusted initial grants.
+- prove non-forgeability, no authority amplification, stale-generation
+  rejection, and no-lost-wakeup over all reachable states in that slice.
+- export or mirror typed transition records for the RTL testbench and Python
+  co-sim model.
+
 The Lean work is complete only when it covers:
 
 - machine state well-formedness.
@@ -463,7 +700,7 @@ Start broad. The first RTL objective is not performance or full behavior; it is
 getting the whole architectural skeleton right so later blocks have the right
 interfaces, records, reset paths, ownership fields, and failure paths.
 
-The RTL track does not stop at S0/M1. Those milestones only prove that the
+The RTL track does not stop at S0/M1. Those milestones only show that the
 interfaces and proof/simulation loop are viable. The intended deliverable is a
 complete full-chip SystemVerilog implementation of the architecture in
 `hardware_design.md`: core tiles, scheduler, capabilities, Resource Domains,
@@ -873,6 +1110,8 @@ Every RTL block should have a matching harness:
 
 - run the same input vector in emulator/model and RTL simulation.
 - compare architectural state, result codes, event records, and FDR generations.
+- prefer typed transition-record comparison over free-form string trace
+  comparison as soon as the shared schemas exist.
 - generate random but bounded traces from the formal model where practical.
 - use Verilator for fast CI.
 - later add FPGA simulation and synthesis checks.
@@ -885,6 +1124,10 @@ should keep a top-level Verilator path alive throughout development, first with
 stubbed engines, then with filled blocks. A block is not considered integrated
 until it participates in top-level reset, command/response routing, event/fault
 delivery, telemetry, and at least one model/emulator/RTL trace comparison.
+For high-value guarantees, integration is not complete until the block has a
+documented refinement relation to the Lean transition model and its assumptions
+are either discharged by assertions/checks or listed in the trusted-platform
+contract.
 
 ## Track D: FPGA Bring-Up
 
@@ -917,7 +1160,7 @@ fill the smallest useful vertical slice:
 
 ## First Milestone: Whole-Machine Skeleton
 
-`LNP64-RTL-S0` should prove that the overall architecture shape is correct
+`LNP64-RTL-S0` should demonstrate that the overall architecture shape is correct
 before any single block becomes sophisticated.
 
 Required slice:
@@ -958,7 +1201,7 @@ Expected demo:
 
 ## Second Milestone: Proven Ping-Pong Machine
 
-`LNP64-RTL-M1` should prove that the architecture is real enough to execute code
+`LNP64-RTL-M1` should demonstrate that the architecture is real enough to execute code
 outside the Rust emulator.
 
 Required slice:

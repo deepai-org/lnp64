@@ -95,6 +95,7 @@ def validate_references(audit: dict) -> dict:
     expected = {
         "s0_contract",
         "track_a_formal",
+        "theorem_rtl_coupling",
         "formal_proof_manifest_checker_selftest",
         "track_b_rtl",
         "rtl_track_b_manifest_checker_selftest",

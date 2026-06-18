@@ -62,6 +62,7 @@ case "$docker_mode" in
 esac
 
 scripts/check_formal_proof_manifest.py
+scripts/check_theorem_rtl_coupling.py
 scripts/check_rtl_cosim_manifest.py
 scripts/check_rtl_synth_constraints.py
 scripts/check_fpga_bringup_manifest.py

@@ -1,0 +1,189 @@
+{
+  "name": "lnp64_theorem_rtl_coupling",
+  "roadmap": "formal_rtl_codesign_roadmap.md",
+  "purpose": "Human-auditable links from major architectural guarantees to Lean theorems, RTL modules, assertion files, trace witnesses, and gates.",
+  "trust_levels": {
+    "T0": "Sketch: theorem names and RTL tests exist, but coupling is mostly manual.",
+    "T1": "Bounded Witness: a Lean/Python/executable model checks a scripted bounded scenario and RTL traces match that scenario.",
+    "T2": "Assertion-Coupled: RTL assertions check local invariants and theorem assumptions, and typed traces compare RTL behavior to the executable model.",
+    "T3": "Transition-Proven: Lean proves an invariant for all reachable states of the block abstract transition model.",
+    "T4": "Refinement-Coupled: a checked refinement artifact maps RTL transitions to Lean transitions for the block architectural state projection.",
+    "T5": "Integrated/Board-Qualified: top-level evidence shows composition survives, with later FPGA evidence when hardware exists."
+  },
+  "claims": [
+    {
+      "id": "no_forged_authority",
+      "claim": "Software cannot manufacture authority; authority-bearing FDRs are created only by checked capability/object paths.",
+      "trust_level": "T1",
+      "lean_theorems": [
+        {"file": "formal/S0Model.lean", "name": "s0_stubs_do_not_create_authority", "artifact_level": "bounded_witness"},
+        {"file": "formal/M1Model.lean", "name": "m1_no_forged_fdr", "artifact_level": "bounded_witness"},
+        {"file": "formal/M1Model.lean", "name": "m1_no_authority_amplification", "artifact_level": "bounded_witness"},
+        {"file": "formal/FormalTheoremsModel.lean", "name": "ft_capability_non_forgeability", "artifact_level": "coverage"}
+      ],
+      "rtl_modules": [
+        {"file": "rtl/engines/lnp64_m1_pingpong.sv", "module": "lnp64_m1_pingpong"},
+        {"file": "rtl/engines/lnp64_engine_shells.sv", "module": "lnp64_cap_engine"}
+      ],
+      "rtl_witness_signals": ["no_forged_fdr", "rights", "stale_generation_rejected"],
+      "assertion_files": ["formal/rtl_assertions/lnp64_m1_assertions.sv"],
+      "trace_sources": ["rtl/sim/lnp64_m1_tb.sv", "formal/m1_model.py", "tests/traces/rtl_cosim_manifest.json"],
+      "trace_markers": ["TRACE cap_dup", "rights=", "TRACE stale_pull"],
+      "gate_scripts": ["scripts/run_rtl_m1.sh", "scripts/run_rtl_random_cosim.sh"],
+      "assumptions": ["bounded M1 FDR table", "ready/valid fairness for accepted operations"],
+      "known_gaps": ["Not T2 yet: typed transition traces from the shared schema are missing; coupling still uses assertions plus string traces."]
+    },
+    {
+      "id": "revocation_generation_safety",
+      "claim": "Revoked or stale-generation authority cannot start new work.",
+      "trust_level": "T1",
+      "lean_theorems": [
+        {"file": "formal/M1Model.lean", "name": "m1_cap_revoke_invalidates_generation", "artifact_level": "bounded_witness"},
+        {"file": "formal/M1Model.lean", "name": "m1_revoked_authority_cannot_start_new_work", "artifact_level": "bounded_witness"},
+        {"file": "formal/M5DmaModel.lean", "name": "m5_revoked_generation_rejected", "artifact_level": "bounded_witness"},
+        {"file": "formal/FormalTheoremsModel.lean", "name": "ft_revocation_soundness", "artifact_level": "coverage"}
+      ],
+      "rtl_modules": [
+        {"file": "rtl/engines/lnp64_m1_pingpong.sv", "module": "lnp64_m1_pingpong"},
+        {"file": "rtl/engines/lnp64_m5_dma.sv", "module": "lnp64_m5_dma"}
+      ],
+      "rtl_witness_signals": ["stale_generation_rejected", "revoke_rejected"],
+      "assertion_files": ["formal/rtl_assertions/lnp64_m1_assertions.sv", "formal/rtl_assertions/lnp64_m5_assertions.sv"],
+      "trace_sources": ["rtl/sim/lnp64_m1_tb.sv", "rtl/sim/lnp64_m5_tb.sv", "formal/m5_dma_model.py"],
+      "trace_markers": ["TRACE stale_pull", "TRACE revoked_submit", "EREVOKED"],
+      "gate_scripts": ["scripts/run_rtl_m1.sh", "scripts/run_rtl_m5.sh", "scripts/run_rtl_random_cosim.sh"],
+      "assumptions": ["generation fields are carried on command/response records", "revocation is observed before new authority-bearing work"],
+      "known_gaps": ["Not T2 yet: typed transition traces are missing; no full lineage/revocation epoch transition or refinement proof across all object classes yet."]
+    },
+    {
+      "id": "domain_containment",
+      "claim": "Child Resource Domains cannot exceed delegated rights, budgets, or policy.",
+      "trust_level": "T1",
+      "lean_theorems": [
+        {"file": "formal/M14ResourceDomainPolicyModel.lean", "name": "m14_child_rights_subset_parent", "artifact_level": "bounded_witness"},
+        {"file": "formal/M14ResourceDomainPolicyModel.lean", "name": "m14_child_budget_within_parent", "artifact_level": "bounded_witness"},
+        {"file": "formal/M14ResourceDomainPolicyModel.lean", "name": "m14_policy_fail_closed", "artifact_level": "bounded_witness"},
+        {"file": "formal/FormalTheoremsModel.lean", "name": "ft_resource_domain_containment", "artifact_level": "coverage"}
+      ],
+      "rtl_modules": [
+        {"file": "rtl/engines/lnp64_m14_resource_domain_policy.sv", "module": "lnp64_m14_resource_domain_policy"},
+        {"file": "rtl/engines/lnp64_engine_shells.sv", "module": "lnp64_domain_engine"}
+      ],
+      "rtl_witness_signals": ["child_rights_subset_parent", "child_budget_within_parent", "policy_fail_closed"],
+      "assertion_files": ["formal/rtl_assertions/lnp64_m14_assertions.sv"],
+      "trace_sources": ["rtl/sim/lnp64_m14_tb.sv", "formal/m14_resource_domain_policy_model.py"],
+      "trace_markers": ["TRACE delegate", "child_rights=", "TRACE policy"],
+      "gate_scripts": ["scripts/run_rtl_m14.sh", "scripts/run_rtl_random_cosim.sh"],
+      "assumptions": ["parent domain budget is authoritative", "policy masks are immutable during a checked transition"],
+      "known_gaps": ["Not T2 yet: typed transition traces are missing; cross-engine domain containment is not yet a T4 composition proof."]
+    },
+    {
+      "id": "dma_confined",
+      "claim": "DMA copy/fill/pin operations stay inside authorized capability, generation, and domain scope.",
+      "trust_level": "T1",
+      "lean_theorems": [
+        {"file": "formal/M5DmaModel.lean", "name": "m5_dma_confined_to_capability_domain", "artifact_level": "bounded_witness"},
+        {"file": "formal/M5DmaModel.lean", "name": "m5_pin_completes_with_authority", "artifact_level": "bounded_witness"},
+        {"file": "formal/M5DmaModel.lean", "name": "m5_unpin_clears_pinned_state", "artifact_level": "bounded_witness"},
+        {"file": "formal/FormalTheoremsModel.lean", "name": "ft_dma_isolation", "artifact_level": "coverage"}
+      ],
+      "rtl_modules": [
+        {"file": "rtl/engines/lnp64_m5_dma.sv", "module": "lnp64_m5_dma"},
+        {"file": "rtl/engines/lnp64_engine_shells.sv", "module": "lnp64_dma_fabric"}
+      ],
+      "rtl_witness_signals": ["pin_completed", "unpin_completed", "domain_isolation_enforced", "coherence_observed"],
+      "assertion_files": ["formal/rtl_assertions/lnp64_m5_assertions.sv"],
+      "trace_sources": ["rtl/sim/lnp64_m5_tb.sv", "formal/m5_dma_model.py", "tests/traces/rtl_cosim_manifest.json"],
+      "trace_markers": ["TRACE dma_pin", "TRACE dma_unpin", "TRACE domain_isolation", "TRACE coherence_flush"],
+      "gate_scripts": ["scripts/run_rtl_m5.sh", "scripts/run_rtl_random_cosim.sh"],
+      "assumptions": ["DMA buffers are the authority carrier", "coherence flush is the modeled visibility boundary"],
+      "known_gaps": ["Not T2 yet: typed transition traces are missing; no full cache/TLB/DMA fabric refinement proof yet."]
+    },
+    {
+      "id": "scheduler_single_location",
+      "claim": "A live thread appears in exactly one scheduler state/location.",
+      "trust_level": "T1",
+      "lean_theorems": [
+        {"file": "formal/S0Model.lean", "name": "s0_every_live_thread_has_exactly_one_scheduler_location", "artifact_level": "bounded_witness"},
+        {"file": "formal/M7FutexAtomicModel.lean", "name": "m7_exactly_one_scheduler_location", "artifact_level": "bounded_witness"},
+        {"file": "formal/FormalTheoremsModel.lean", "name": "ft_scheduler_safety", "artifact_level": "coverage"}
+      ],
+      "rtl_modules": [
+        {"file": "rtl/engines/lnp64_m7_futex_atomic.sv", "module": "lnp64_m7_futex_atomic"},
+        {"file": "rtl/engines/lnp64_engine_shells.sv", "module": "lnp64_scheduler"}
+      ],
+      "rtl_witness_signals": ["futex_wait_parked", "futex_wake_delivered", "timer_wait_parked"],
+      "assertion_files": ["formal/rtl_assertions/lnp64_s0_assertions.sv", "formal/rtl_assertions/lnp64_m7_assertions.sv"],
+      "trace_sources": ["rtl/sim/lnp64_s0_tb.sv", "rtl/sim/lnp64_m7_tb.sv", "formal/m7_futex_atomic_model.py"],
+      "trace_markers": ["state=parked", "woken=1", "TRACE timer_wait"],
+      "gate_scripts": ["scripts/run_rtl_s0.sh", "scripts/run_rtl_m7.sh", "scripts/run_rtl_random_cosim.sh"],
+      "assumptions": ["one selected hardware TID per issue slot", "bounded ready/wait queues in the smoke model"],
+      "known_gaps": ["Not T2 yet: typed transition traces are missing; no weighted-fair scheduler T3 transition proof yet."]
+    },
+    {
+      "id": "no_lost_wakeups",
+      "claim": "Futex, timer, event, and queue wakeups are not silently lost in the modeled bounded paths.",
+      "trust_level": "T1",
+      "lean_theorems": [
+        {"file": "formal/M7FutexAtomicModel.lean", "name": "m7_no_lost_wakeup", "artifact_level": "bounded_witness"},
+        {"file": "formal/M7FutexAtomicModel.lean", "name": "m7_futex_wake_delivered", "artifact_level": "bounded_witness"},
+        {"file": "formal/FormalTheoremsModel.lean", "name": "ft_no_lost_wakeups", "artifact_level": "coverage"}
+      ],
+      "rtl_modules": [
+        {"file": "rtl/engines/lnp64_m7_futex_atomic.sv", "module": "lnp64_m7_futex_atomic"},
+        {"file": "rtl/engines/lnp64_m1_pingpong.sv", "module": "lnp64_m1_pingpong"}
+      ],
+      "rtl_witness_signals": ["no_lost_wakeup", "futex_wake_delivered", "timer_expired"],
+      "assertion_files": ["formal/rtl_assertions/lnp64_m7_assertions.sv", "formal/rtl_assertions/lnp64_m1_assertions.sv"],
+      "trace_sources": ["rtl/sim/lnp64_m7_tb.sv", "rtl/sim/lnp64_m1_tb.sv", "formal/m7_futex_atomic_model.py"],
+      "trace_markers": ["TRACE futex_wake", "TRACE timer_expire", "wake=2"],
+      "gate_scripts": ["scripts/run_rtl_m7.sh", "scripts/run_rtl_m1.sh", "scripts/run_rtl_random_cosim.sh"],
+      "assumptions": ["wake source generation matches the armed wait", "bounded smoke traces represent the checked waitable classes"],
+      "known_gaps": ["Not T2 yet: typed transition traces are missing; no full multi-source event-router refinement proof yet."]
+    },
+    {
+      "id": "servicelets_terminate_contained",
+      "claim": "Classifier/servicelet execution terminates in the bounded envelope and cannot create authority or arbitrary memory access.",
+      "trust_level": "T1",
+      "lean_theorems": [
+        {"file": "formal/M9ClassifierServiceletModel.lean", "name": "m9_termination_by_construction", "artifact_level": "bounded_witness"},
+        {"file": "formal/M9ClassifierServiceletModel.lean", "name": "m9_no_authority_creation", "artifact_level": "bounded_witness"},
+        {"file": "formal/M9ClassifierServiceletModel.lean", "name": "m9_no_arbitrary_memory_access", "artifact_level": "bounded_witness"},
+        {"file": "formal/FormalTheoremsModel.lean", "name": "ft_classifier_servicelet_safety", "artifact_level": "coverage"}
+      ],
+      "rtl_modules": [
+        {"file": "rtl/engines/lnp64_m9_classifier_servicelet.sv", "module": "lnp64_m9_classifier_servicelet"},
+        {"file": "rtl/engines/lnp64_engine_shells.sv", "module": "lnp64_classifier_servicelet"}
+      ],
+      "rtl_witness_signals": ["verifier_accepted", "verifier_rejected", "no_authority_created", "budget_enforced"],
+      "assertion_files": ["formal/rtl_assertions/lnp64_m9_assertions.sv"],
+      "trace_sources": ["rtl/sim/lnp64_m9_tb.sv", "formal/m9_classifier_servicelet_model.py"],
+      "trace_markers": ["TRACE verifier", "TRACE verifier_reject", "TRACE budget_exhaust"],
+      "gate_scripts": ["scripts/run_rtl_m9.sh", "scripts/run_rtl_random_cosim.sh"],
+      "assumptions": ["servicelet ISA subset has no blocking or allocation instructions", "cycle budget is enforced by the lane"],
+      "known_gaps": ["Not T2 yet: typed transition traces and extracted typed servicelet semantics are missing; current witness is bounded model plus RTL assertions."]
+    },
+    {
+      "id": "faults_terminal_progress",
+      "claim": "Bounded faults, watchdog events, and adversarial inputs reach explicit terminal paths without creating authority.",
+      "trust_level": "T1",
+      "lean_theorems": [
+        {"file": "formal/M10RasModel.lean", "name": "m10_adversarial_inputs_cannot_hang_owner_or_create_authority", "artifact_level": "bounded_witness"},
+        {"file": "formal/M10RasModel.lean", "name": "m10_bounded_local_fault_reaches_terminal_path", "artifact_level": "bounded_witness"},
+        {"file": "formal/M10RasModel.lean", "name": "m10_realtime_work_has_bounded_arbitration_progress", "artifact_level": "bounded_witness"},
+        {"file": "formal/FormalTheoremsModel.lean", "name": "ft_global_progress_bounded_faults", "artifact_level": "coverage"}
+      ],
+      "rtl_modules": [
+        {"file": "rtl/engines/lnp64_m10_ras.sv", "module": "lnp64_m10_ras"},
+        {"file": "rtl/engines/lnp64_engine_shells.sv", "module": "lnp64_watchdog"}
+      ],
+      "rtl_witness_signals": ["watchdog_timed_out", "degraded_state", "telemetry_scoped", "audit_recorded"],
+      "assertion_files": ["formal/rtl_assertions/lnp64_m10_assertions.sv"],
+      "trace_sources": ["rtl/sim/lnp64_m10_tb.sv", "formal/m10_ras_model.py"],
+      "trace_markers": ["TRACE watchdog_timeout", "TRACE parity_poison", "TRACE audit_mls"],
+      "gate_scripts": ["scripts/run_rtl_m10.sh", "scripts/run_rtl_random_cosim.sh"],
+      "assumptions": ["watchdog clock is live", "bounded fault classes match formal_theorems.md assumptions"],
+      "known_gaps": ["Not T2 yet: typed transition traces are missing; no full-chip T4 global progress refinement/composition proof yet."]
+    }
+  ]
+}

@@ -193,11 +193,14 @@ def check_aggregate_and_docs() -> None:
     require_all(
         readme,
         [
-            "Actually verified Docker commands from this checkout",
+            "RTL And Proof Gates",
             "bash scripts/run_rtl_proof_docker.sh",
             "bash scripts/run_rtl_synth_docker.sh",
-            "bash scripts/run_rtl_board_docker.sh",
-            "bash scripts/run_formal_rtl_roadmap_audit.sh",
+            "bash scripts/run_rtl_proof_gates.sh",
+            "bash scripts/run_rtl_synth_gates.sh",
+            "scripts/check_theorem_rtl_coupling.py",
+            "FPGA Board Note",
+            "Dockerized RTL/proof and synthesis/FPGA-smoke gates are the reproducible evidence path",
         ],
         "README.md",
     )
