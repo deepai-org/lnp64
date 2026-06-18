@@ -5383,6 +5383,8 @@ impl Machine {
         };
         let mut bytes = addr.to_string().into_bytes();
         bytes.push(0);
+        self.ensure_mapped(addr_ptr, bytes.len(), true)
+            .map_err(|_| 14u64)?;
         if len_ptr != 0 {
             let capacity = self.load_u64(len_ptr).map_err(|_| 14u64)?;
             if capacity < bytes.len() as u64 {
@@ -10258,6 +10260,54 @@ mod tests {
         assert_eq!(machine.process().unwrap().errno, 22);
         assert_eq!(machine.load_u64(out_len).unwrap(), 1);
         assert_eq!(machine.read_c_string(out).unwrap(), "sentinel");
+    }
+
+    #[test]
+    fn socket_getsockname_prevalidates_output_before_len_update() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let arg = ARG_BASE + 0x1000;
+        let addr = ARG_BASE + 0x1100;
+        let out_len = ARG_BASE + 0x1300;
+        machine.write_bytes(addr, b"127.0.0.1:0\0").unwrap();
+
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::Endpoint.code())
+            .unwrap();
+        machine
+            .store_u64(arg + 16, ObjectProfile::TcpStream.code())
+            .unwrap();
+        machine.store_u64(arg + 24, 7).unwrap();
+        machine.store_u64(arg + 40, SOCKET_AF_INET).unwrap();
+        machine.store_u64(arg + 48, SOCKET_TYPE_STREAM).unwrap();
+        machine.store_u64(arg + 56, 0).unwrap();
+        machine.object_ctl(Reg(1), arg).unwrap();
+
+        machine.store_u64(arg, OBJECT_OP_SOCKET_BIND).unwrap();
+        machine.store_u64(arg + 24, 7).unwrap();
+        machine.store_u64(arg + 40, addr).unwrap();
+        machine.object_ctl(Reg(2), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[2], 0);
+
+        machine.store_u64(arg, OBJECT_OP_SOCKET_LISTEN).unwrap();
+        machine.store_u64(arg + 24, 7).unwrap();
+        machine.object_ctl(Reg(3), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[3], 0);
+        let listener_token = machine.fd_token(7).unwrap();
+
+        machine.store_u64(out_len, 64).unwrap();
+        machine
+            .store_u64(arg, OBJECT_OP_SOCKET_GETSOCKNAME)
+            .unwrap();
+        machine.store_u64(arg + 24, listener_token).unwrap();
+        machine.store_u64(arg + 40, MEMORY_SIZE as u64).unwrap();
+        machine.store_u64(arg + 48, out_len).unwrap();
+        machine.object_ctl(Reg(4), arg).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[4], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 14);
+        assert_eq!(machine.load_u64(out_len).unwrap(), 64);
     }
 
     #[test]
