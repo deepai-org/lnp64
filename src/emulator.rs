@@ -2637,6 +2637,9 @@ impl Machine {
 
     fn open_fd_handle(path: &str, flags: u64) -> Result<FdHandle, String> {
         if let Some(addr) = path.strip_prefix("tcp-listen:") {
+            let addr = addr
+                .parse::<SocketAddr>()
+                .map_err(|err| format!("OPEN_FD TCP listener address {addr:?}: {err}"))?;
             let listener = TcpListener::bind(addr)
                 .map_err(|err| format!("OPEN_FD TCP listener {addr:?}: {err}"))?;
             listener
@@ -11705,6 +11708,15 @@ mod tests {
                 .unwrap(),
             "tcp-listen:127.0.0.1:0"
         );
+    }
+
+    #[test]
+    fn tcp_listener_endpoint_rejects_non_numeric_addresses() {
+        let err = match Machine::open_fd_handle("tcp-listen:localhost:0", 0) {
+            Ok(_) => panic!("expected non-numeric listener address rejection"),
+            Err(err) => err,
+        };
+        assert!(err.contains("TCP listener address"), "{err}");
     }
 
     #[test]
