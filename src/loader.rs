@@ -9,6 +9,7 @@ const ET_DYN: u16 = 3;
 const EM_LNP64: u16 = 0x6c64;
 const PT_LOAD: u32 = 1;
 const PT_DYNAMIC: u32 = 2;
+const PT_INTERP: u32 = 3;
 const PT_NOTE: u32 = 4;
 const PT_PHDR: u32 = 6;
 const PT_TLS: u32 = 7;
@@ -482,6 +483,7 @@ pub fn build_static_exec_plan(image: &[u8], options: LoaderOptions) -> Result<Ex
                 options.load_bias,
             )?),
             PT_DYNAMIC => return Err("PT_DYNAMIC is unsupported by the static loader".to_string()),
+            PT_INTERP => return Err("PT_INTERP is unsupported by the static loader".to_string()),
             PT_NOTE => parse_startup_note_segment(image, ph, &mut startup, &mut fdr_grants)?,
             PT_PHDR => parse_phdr_segment(
                 image,
@@ -1174,6 +1176,26 @@ mod tests {
         ]);
         let err = build_static_exec_plan(&image, LoaderOptions::default()).unwrap_err();
         assert!(err.contains("PT_DYNAMIC"), "{err}");
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_interpreter_segment() {
+        let image = test_elf(&[
+            text_phdr(),
+            TestPhdr {
+                typ: PT_INTERP,
+                flags: PF_R,
+                offset: 0x280,
+                vaddr: 0,
+                filesz: 16,
+                memsz: 16,
+                align: 1,
+            },
+        ]);
+
+        let err = build_static_exec_plan(&image, LoaderOptions::default()).unwrap_err();
+
+        assert!(err.contains("PT_INTERP"), "{err}");
     }
 
     #[test]
