@@ -10,6 +10,7 @@ const EM_LNP64: u16 = 0x6c64;
 const PT_LOAD: u32 = 1;
 const PT_DYNAMIC: u32 = 2;
 const PT_NOTE: u32 = 4;
+const PT_TLS: u32 = 7;
 const SHT_RELA: u32 = 4;
 const PF_X: u32 = 1;
 const PF_W: u32 = 2;
@@ -46,6 +47,7 @@ pub struct ExecPlan {
     pub version: u64,
     pub entry: ExecEntry,
     pub vmas: Vec<VmaRecord>,
+    pub tls: Option<TlsDescriptor>,
     pub startup: Option<StartupDescriptor>,
     pub fdr_grants: Vec<StartupFdrDescriptor>,
 }
@@ -77,6 +79,15 @@ pub struct PreparedVma {
     pub protection: VmaProtection,
     pub executable_provenance: ExecutableProvenance,
     pub bytes: Vec<u8>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TlsDescriptor {
+    pub virtual_address: u64,
+    pub source_offset: u64,
+    pub file_size: u64,
+    pub memory_size: u64,
+    pub alignment: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -442,6 +453,7 @@ pub fn build_static_exec_plan(image: &[u8], options: LoaderOptions) -> Result<Ex
     }
 
     let mut vmas = Vec::new();
+    let mut tls = None;
     let mut startup = None;
     let mut fdr_grants = Vec::new();
     for idx in 0..phnum {
@@ -456,6 +468,7 @@ pub fn build_static_exec_plan(image: &[u8], options: LoaderOptions) -> Result<Ex
             )?),
             PT_DYNAMIC => return Err("PT_DYNAMIC is unsupported by the static loader".to_string()),
             PT_NOTE => parse_startup_note_segment(image, ph, &mut startup, &mut fdr_grants)?,
+            PT_TLS => parse_tls_segment(image, ph, options.load_bias, &mut tls)?,
             _ => {}
         }
     }
@@ -480,6 +493,7 @@ pub fn build_static_exec_plan(image: &[u8], options: LoaderOptions) -> Result<Ex
             startup_metadata_ptr: options.startup_metadata_ptr,
         },
         vmas,
+        tls,
         startup,
         fdr_grants,
     })
@@ -633,6 +647,49 @@ fn relocation_file_offset(plan: &ExecPlan, target: u64) -> Result<usize, String>
         }
     }
     Err("RELA target is outside file-backed PT_LOAD data".to_string())
+}
+
+fn parse_tls_segment(
+    image: &[u8],
+    ph: ProgramHeader,
+    load_bias: u64,
+    tls: &mut Option<TlsDescriptor>,
+) -> Result<(), String> {
+    if tls.is_some() {
+        return Err("duplicate PT_TLS segment".to_string());
+    }
+    if ph.memsz == 0 {
+        return Err("PT_TLS memory size is zero".to_string());
+    }
+    if ph.filesz > ph.memsz {
+        return Err("PT_TLS file size exceeds memory size".to_string());
+    }
+    if ph.align != 0 && !ph.align.is_power_of_two() {
+        return Err("PT_TLS alignment is not a power of two".to_string());
+    }
+    let file_end = ph
+        .offset
+        .checked_add(ph.filesz)
+        .ok_or_else(|| "PT_TLS file range overflows".to_string())?;
+    if checked_usize(file_end, "PT_TLS file end")? > image.len() {
+        return Err("PT_TLS file range is truncated".to_string());
+    }
+    let virtual_address = ph
+        .vaddr
+        .checked_add(load_bias)
+        .ok_or_else(|| "PT_TLS virtual address plus load bias overflows".to_string())?;
+    virtual_address
+        .checked_add(ph.memsz)
+        .ok_or_else(|| "PT_TLS virtual range overflows".to_string())?;
+
+    *tls = Some(TlsDescriptor {
+        virtual_address,
+        source_offset: ph.offset,
+        file_size: ph.filesz,
+        memory_size: ph.memsz,
+        alignment: ph.align,
+    });
+    Ok(())
 }
 
 fn exec_descriptor_total_length(
@@ -889,6 +946,7 @@ mod tests {
         assert_eq!(plan.version, 1);
         assert_eq!(plan.entry.entry_pc, 0x400000);
         assert_eq!(plan.entry.initial_sp, 0x700000);
+        assert!(plan.tls.is_none());
         assert!(plan.startup.is_none());
         assert!(plan.fdr_grants.is_empty());
         assert_eq!(plan.vmas.len(), 2);
@@ -1040,6 +1098,94 @@ mod tests {
         put_u64(&mut image, 24, 0x402000);
         let err = build_static_exec_plan(&image, LoaderOptions::default()).unwrap_err();
         assert!(err.contains("entry point"), "{err}");
+    }
+
+    #[test]
+    fn static_elf_loader_parses_tls_segment() {
+        let image = test_elf(&[
+            text_phdr(),
+            TestPhdr {
+                typ: PT_TLS,
+                flags: PF_R,
+                offset: 0x280,
+                vaddr: 0x500000,
+                filesz: 8,
+                memsz: 24,
+                align: 16,
+            },
+        ]);
+
+        let plan = build_static_exec_plan(
+            &image,
+            LoaderOptions {
+                load_bias: 0x1000,
+                ..LoaderOptions::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            plan.tls,
+            Some(TlsDescriptor {
+                virtual_address: 0x501000,
+                source_offset: 0x280,
+                file_size: 8,
+                memory_size: 24,
+                alignment: 16,
+            })
+        );
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_duplicate_tls_segments() {
+        let image = test_elf(&[
+            text_phdr(),
+            TestPhdr {
+                typ: PT_TLS,
+                flags: PF_R,
+                offset: 0x280,
+                vaddr: 0x500000,
+                filesz: 8,
+                memsz: 24,
+                align: 16,
+            },
+            TestPhdr {
+                typ: PT_TLS,
+                flags: PF_R,
+                offset: 0x300,
+                vaddr: 0x501000,
+                filesz: 8,
+                memsz: 24,
+                align: 16,
+            },
+        ]);
+
+        let err = build_static_exec_plan(&image, LoaderOptions::default()).unwrap_err();
+
+        assert!(err.contains("duplicate PT_TLS"), "{err}");
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_malformed_tls_segment() {
+        let image = test_elf(&[
+            text_phdr(),
+            TestPhdr {
+                typ: PT_TLS,
+                flags: PF_R,
+                offset: 0x280,
+                vaddr: 0x500000,
+                filesz: 24,
+                memsz: 8,
+                align: 16,
+            },
+        ]);
+
+        let err = build_static_exec_plan(&image, LoaderOptions::default()).unwrap_err();
+
+        assert!(
+            err.contains("PT_TLS file size exceeds memory size"),
+            "{err}"
+        );
     }
 
     #[test]

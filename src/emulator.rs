@@ -8577,6 +8577,7 @@ mod tests {
                     mapping_flags: 0,
                 },
             ],
+            tls: None,
             startup: None,
             fdr_grants: vec![StartupFdrDescriptor {
                 slot: 3,
