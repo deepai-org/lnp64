@@ -1137,6 +1137,13 @@ pub struct Machine {
     last_exit: i32,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PreparedExecVma {
+    pub virtual_address: u64,
+    pub protection: u64,
+    pub bytes: Vec<u8>,
+}
+
 fn checked_exec_count(value: u64, limit: usize, name: &str) -> Result<usize, String> {
     let count =
         usize::try_from(value).map_err(|_| format!("exec-plan {name} count exceeds host usize"))?;
@@ -1297,6 +1304,59 @@ impl Machine {
         for _ in 0..fdr_count {
             validate_exec_fdr_grant_words(&words[offset..offset + EXEC_PLAN_FDR_GRANT_WORDS])?;
             offset += EXEC_PLAN_FDR_GRANT_WORDS;
+        }
+        Ok(())
+    }
+
+    pub fn commit_exec_descriptor_memory_image(
+        &mut self,
+        words: &[u64],
+        prepared_vmas: &[PreparedExecVma],
+    ) -> Result<(), String> {
+        Self::validate_exec_descriptor_words(words)?;
+        let vma_count = checked_exec_count(words[3], EXEC_PLAN_MAX_VMAS, "VMA")?;
+        if prepared_vmas.len() != vma_count {
+            return Err("prepared VMA count does not match exec descriptor".to_string());
+        }
+
+        let mut replacement_memory = vec![0; MEMORY_SIZE];
+        let mut replacement_vmas = Vec::with_capacity(vma_count);
+        let mut offset = EXEC_PLAN_HEADER_WORDS + EXEC_PLAN_ENTRY_WORDS;
+        for prepared in prepared_vmas {
+            let record = &words[offset..offset + EXEC_PLAN_VMA_WORDS];
+            let virtual_address = record[0];
+            let length = usize::try_from(record[1])
+                .map_err(|_| "exec-plan VMA length exceeds host usize".to_string())?;
+            let protection = record[2];
+            if prepared.virtual_address != virtual_address {
+                return Err("prepared VMA address does not match exec descriptor".to_string());
+            }
+            if prepared.protection != protection {
+                return Err("prepared VMA protection does not match exec descriptor".to_string());
+            }
+            if prepared.bytes.len() != length {
+                return Err("prepared VMA length does not match exec descriptor".to_string());
+            }
+            let start = usize::try_from(virtual_address)
+                .map_err(|_| "exec-plan VMA address exceeds host usize".to_string())?;
+            let end = start
+                .checked_add(length)
+                .ok_or_else(|| "prepared VMA memory range overflows".to_string())?;
+            if end > replacement_memory.len() {
+                return Err("prepared VMA exceeds process memory".to_string());
+            }
+            replacement_memory[start..end].copy_from_slice(&prepared.bytes);
+            replacement_vmas.push(Vma::anonymous(virtual_address, record[1], protection));
+            offset += EXEC_PLAN_VMA_WORDS;
+        }
+
+        let initial_sp = words[10];
+        let process = self.process_mut()?;
+        process.memory = replacement_memory;
+        process.vmas = replacement_vmas;
+        process.allocations.clear();
+        if initial_sp != 0 {
+            self.thread_mut()?.regs[31] = initial_sp;
         }
         Ok(())
     }
@@ -8530,6 +8590,21 @@ mod tests {
         }
     }
 
+    fn prepared_exec_vmas_fixture() -> Vec<PreparedExecVma> {
+        vec![
+            PreparedExecVma {
+                virtual_address: 0x400000,
+                protection: EXEC_PLAN_VMA_PROT_READ | EXEC_PLAN_VMA_PROT_EXECUTE,
+                bytes: vec![0xaa; 0x1000],
+            },
+            PreparedExecVma {
+                virtual_address: 0x402000,
+                protection: EXEC_PLAN_VMA_PROT_READ | EXEC_PLAN_VMA_PROT_WRITE,
+                bytes: vec![0xbb; 0x1000],
+            },
+        ]
+    }
+
     #[test]
     fn call_preserves_sp_and_ip_when_return_slot_unmapped() {
         let mut machine = Machine::new(empty_program());
@@ -13289,6 +13364,84 @@ mod tests {
         let err = Machine::validate_exec_descriptor_words(&words).unwrap_err();
 
         assert!(err.contains("source capability"), "{err}");
+    }
+
+    #[test]
+    fn emulator_commits_exec_descriptor_memory_image_atomically() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let words = encode_exec_descriptor(&descriptor);
+        let mut machine = Machine::new(empty_program());
+        machine.write_bytes(ARG_BASE, b"old-image").unwrap();
+
+        machine
+            .commit_exec_descriptor_memory_image(&words, &prepared_exec_vmas_fixture())
+            .unwrap();
+
+        let process = machine.process().unwrap();
+        assert_eq!(&process.memory[0x400000..0x400008], &[0xaa; 8]);
+        assert_eq!(&process.memory[0x402000..0x402008], &[0xbb; 8]);
+        assert_eq!(
+            &process.memory[ARG_BASE as usize..ARG_BASE as usize + 8],
+            &[0; 8]
+        );
+        assert_eq!(process.vmas.len(), 2);
+        assert_eq!(process.vmas[0].start, 0x400000);
+        assert_eq!(
+            process.vmas[0].prot,
+            EXEC_PLAN_VMA_PROT_READ | EXEC_PLAN_VMA_PROT_EXECUTE
+        );
+        assert_eq!(process.vmas[1].start, 0x402000);
+        assert_eq!(
+            process.vmas[1].prot,
+            EXEC_PLAN_VMA_PROT_READ | EXEC_PLAN_VMA_PROT_WRITE
+        );
+        assert!(process.allocations.is_empty());
+        assert_eq!(machine.thread().unwrap().regs[31], 0x700000);
+    }
+
+    #[test]
+    fn emulator_preserves_old_image_when_exec_descriptor_validation_fails() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let mut words = encode_exec_descriptor(&descriptor);
+        words[18] = 0;
+        let mut machine = Machine::new(empty_program());
+        machine.write_bytes(ARG_BASE, b"old-image").unwrap();
+
+        let err = machine
+            .commit_exec_descriptor_memory_image(&words, &prepared_exec_vmas_fixture())
+            .unwrap_err();
+
+        assert!(err.contains("source capability"), "{err}");
+        assert_eq!(
+            &machine.process().unwrap().memory[ARG_BASE as usize..ARG_BASE as usize + 9],
+            b"old-image"
+        );
+        assert!(
+            machine
+                .process()
+                .unwrap()
+                .vmas
+                .iter()
+                .any(|vma| vma.contains(ARG_BASE, 9))
+        );
     }
 
     #[test]
