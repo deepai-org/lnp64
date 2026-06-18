@@ -2259,11 +2259,15 @@ impl Machine {
                     } else {
                         align_up(process.mmap_next, 4096)
                     };
-                    let end = addr
-                        .checked_add(len)
-                        .ok_or_else(|| "MMAP range overflow".to_string())?;
-                    if end as usize >= process.memory.len() {
-                        return Err(format!("MMAP out of range: 0x{addr:x} + {len}"));
+                    let Some(end) = addr.checked_add(len) else {
+                        self.set_status_errno(22)?;
+                        self.write_reg(dst, -1i64 as u64)?;
+                        return Ok(true);
+                    };
+                    if end as usize > process.memory.len() {
+                        self.set_status_errno(12)?;
+                        self.write_reg(dst, -1i64 as u64)?;
+                        return Ok(true);
                     }
                     if process.vmas.iter().any(|vma| {
                         let Some(vma_end) = vma.start.checked_add(vma.len) else {
@@ -10450,6 +10454,45 @@ mod tests {
             .exec(Instr::Mprotect(Reg(1), Reg(2), Reg(3)))
             .unwrap();
         assert_eq!(machine.process().unwrap().errno, 12);
+    }
+
+    #[test]
+    fn mmap_rejects_overflow_and_out_of_range_hints_without_vmas() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let vma_count = machine.process().unwrap().vmas.len();
+        machine.thread_mut().unwrap().regs[1] = u64::MAX - 1;
+        machine.thread_mut().unwrap().regs[2] = 8;
+        machine.thread_mut().unwrap().regs[3] = 0b001;
+        machine
+            .exec(Instr::Mmap(
+                Reg(4),
+                Reg(1),
+                Reg(2),
+                Reg(3),
+                FdReg(0),
+                Reg(0),
+            ))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[4], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert_eq!(machine.process().unwrap().vmas.len(), vma_count);
+
+        machine.thread_mut().unwrap().regs[1] = MEMORY_SIZE as u64 - 1024;
+        machine.thread_mut().unwrap().regs[2] = 4096;
+        machine
+            .exec(Instr::Mmap(
+                Reg(5),
+                Reg(1),
+                Reg(2),
+                Reg(3),
+                FdReg(0),
+                Reg(0),
+            ))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 12);
+        assert_eq!(machine.process().unwrap().vmas.len(), vma_count);
     }
 
     #[test]
