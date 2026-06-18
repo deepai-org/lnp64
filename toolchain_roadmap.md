@@ -96,6 +96,10 @@ NetBSD policy. Those remain loader, libc, and personality responsibilities.
      FDR grants, and executable provenance.
    - Produce bounded EXEC plan records and prove old image preservation on
      pre-commit failure.
+   - Current repository code starts this in `src/loader.rs`: it parses static
+     ELF64 LNP64 program headers, builds bounded exec-plan VMA records, applies
+     checked `R_LNP64_RELATIVE` RELA entries with an explicit load bias, and
+     rejects unsupported relocations until the fuller lld/loader path exists.
 
 ## Clang, Libc, And Runtime Milestones
 

@@ -9,12 +9,18 @@ const ET_DYN: u16 = 3;
 const EM_LNP64: u16 = 0x6c64;
 const PT_LOAD: u32 = 1;
 const PT_DYNAMIC: u32 = 2;
+const SHT_RELA: u32 = 4;
 const PF_X: u32 = 1;
 const PF_W: u32 = 2;
 const PF_R: u32 = 4;
+const R_LNP64_NONE: u32 = 0;
+const R_LNP64_ABS64: u32 = 1;
+const R_LNP64_RELATIVE: u32 = 7;
 const PAGE_SIZE: u64 = 4096;
 const ELF64_EHDR_SIZE: usize = 64;
 const ELF64_PHDR_SIZE: usize = 56;
+const ELF64_SHDR_SIZE: usize = 64;
+const ELF64_RELA_SIZE: usize = 24;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExecPlan {
@@ -68,6 +74,7 @@ pub struct LoaderOptions {
     pub tls_base: u64,
     pub startup_metadata_ptr: u64,
     pub allow_wx: bool,
+    pub load_bias: u64,
 }
 
 impl Default for LoaderOptions {
@@ -77,6 +84,7 @@ impl Default for LoaderOptions {
             tls_base: 0,
             startup_metadata_ptr: 0,
             allow_wx: false,
+            load_bias: 0,
         }
     }
 }
@@ -90,6 +98,12 @@ struct ProgramHeader {
     filesz: u64,
     memsz: u64,
     align: u64,
+}
+
+pub fn load_static_elf(image: &mut [u8], options: LoaderOptions) -> Result<ExecPlan, String> {
+    let plan = build_static_exec_plan(image, options)?;
+    apply_rela_sections(image, &plan, options.load_bias)?;
+    Ok(plan)
 }
 
 pub fn build_static_exec_plan(image: &[u8], options: LoaderOptions) -> Result<ExecPlan, String> {
@@ -120,7 +134,9 @@ pub fn build_static_exec_plan(image: &[u8], options: LoaderOptions) -> Result<Ex
         return Err("ELF header version is unsupported".to_string());
     }
 
-    let entry_pc = read_u64(image, 24)?;
+    let entry_pc = read_u64(image, 24)?
+        .checked_add(options.load_bias)
+        .ok_or_else(|| "ELF entry point plus load bias overflows".to_string())?;
     let phoff = checked_usize(read_u64(image, 32)?, "program-header offset")?;
     let phentsize = usize::from(read_u16(image, 54)?);
     let phnum = usize::from(read_u16(image, 56)?);
@@ -142,7 +158,12 @@ pub fn build_static_exec_plan(image: &[u8], options: LoaderOptions) -> Result<Ex
         let base = phoff + idx * phentsize;
         let ph = read_program_header(image, base)?;
         match ph.typ {
-            PT_LOAD => vmas.push(vma_from_load(image, ph, options.allow_wx)?),
+            PT_LOAD => vmas.push(vma_from_load(
+                image,
+                ph,
+                options.allow_wx,
+                options.load_bias,
+            )?),
             PT_DYNAMIC => return Err("PT_DYNAMIC is unsupported by the static loader".to_string()),
             _ => {}
         }
@@ -171,7 +192,12 @@ pub fn build_static_exec_plan(image: &[u8], options: LoaderOptions) -> Result<Ex
     })
 }
 
-fn vma_from_load(image: &[u8], ph: ProgramHeader, allow_wx: bool) -> Result<VmaRecord, String> {
+fn vma_from_load(
+    image: &[u8],
+    ph: ProgramHeader,
+    allow_wx: bool,
+    load_bias: u64,
+) -> Result<VmaRecord, String> {
     if ph.flags & !(PF_R | PF_W | PF_X) != 0 {
         return Err("PT_LOAD has unsupported permission flags".to_string());
     }
@@ -191,7 +217,11 @@ fn vma_from_load(image: &[u8], ph: ProgramHeader, allow_wx: bool) -> Result<VmaR
     if checked_usize(file_end, "PT_LOAD file end")? > image.len() {
         return Err("PT_LOAD file range is truncated".to_string());
     }
-    ph.vaddr
+    let virtual_address = ph
+        .vaddr
+        .checked_add(load_bias)
+        .ok_or_else(|| "PT_LOAD virtual address plus load bias overflows".to_string())?;
+    virtual_address
         .checked_add(ph.memsz)
         .ok_or_else(|| "PT_LOAD virtual range overflows".to_string())?;
 
@@ -202,7 +232,7 @@ fn vma_from_load(image: &[u8], ph: ProgramHeader, allow_wx: bool) -> Result<VmaR
     }
 
     Ok(VmaRecord {
-        virtual_address: ph.vaddr,
+        virtual_address,
         length: ph.memsz,
         protection: VmaProtection {
             read: ph.flags & (PF_R | PF_W | PF_X) != 0,
@@ -220,6 +250,96 @@ fn vma_from_load(image: &[u8], ph: ProgramHeader, allow_wx: bool) -> Result<VmaR
         zero_fill_length: ph.memsz - ph.filesz,
         mapping_flags: 0,
     })
+}
+
+fn apply_rela_sections(image: &mut [u8], plan: &ExecPlan, load_bias: u64) -> Result<(), String> {
+    let shoff = read_u64(image, 40)?;
+    let shentsize = usize::from(read_u16(image, 58)?);
+    let shnum = usize::from(read_u16(image, 60)?);
+    if shoff == 0 || shnum == 0 {
+        return Ok(());
+    }
+    if shentsize != ELF64_SHDR_SIZE {
+        return Err("ELF section-header entry size is unsupported".to_string());
+    }
+    let shoff = checked_usize(shoff, "section-header offset")?;
+    let sh_table_len = shentsize
+        .checked_mul(shnum)
+        .ok_or_else(|| "ELF section-header table length overflows".to_string())?;
+    let sh_table_end = shoff
+        .checked_add(sh_table_len)
+        .ok_or_else(|| "ELF section-header table end overflows".to_string())?;
+    if sh_table_end > image.len() {
+        return Err("ELF section-header table is truncated".to_string());
+    }
+
+    for idx in 0..shnum {
+        let base = shoff + idx * shentsize;
+        if read_u32(image, base + 4)? != SHT_RELA {
+            continue;
+        }
+        let rela_offset = checked_usize(read_u64(image, base + 24)?, "RELA section offset")?;
+        let rela_size = checked_usize(read_u64(image, base + 32)?, "RELA section size")?;
+        let rela_entsize = checked_usize(read_u64(image, base + 56)?, "RELA entry size")?;
+        if rela_entsize != ELF64_RELA_SIZE {
+            return Err("RELA entry size is unsupported".to_string());
+        }
+        if rela_size % ELF64_RELA_SIZE != 0 {
+            return Err("RELA section size is not entry-aligned".to_string());
+        }
+        let rela_end = rela_offset
+            .checked_add(rela_size)
+            .ok_or_else(|| "RELA section range overflows".to_string())?;
+        if rela_end > image.len() {
+            return Err("RELA section is truncated".to_string());
+        }
+
+        for entry in (rela_offset..rela_end).step_by(ELF64_RELA_SIZE) {
+            let r_offset = read_u64(image, entry)?;
+            let r_info = read_u64(image, entry + 8)?;
+            let r_addend = read_i64(image, entry + 16)?;
+            let reloc_type = (r_info & 0xffff_ffff) as u32;
+            match reloc_type {
+                R_LNP64_NONE => {}
+                R_LNP64_RELATIVE => {
+                    let target = r_offset
+                        .checked_add(load_bias)
+                        .ok_or_else(|| "RELA target plus load bias overflows".to_string())?;
+                    let value = i128::from(load_bias) + i128::from(r_addend);
+                    let value = u64::try_from(value)
+                        .map_err(|_| "RELA relative value is out of range".to_string())?;
+                    let file_offset = relocation_file_offset(plan, target)?;
+                    image[file_offset..file_offset + 8].copy_from_slice(&value.to_le_bytes());
+                }
+                other => {
+                    return Err(format!("unsupported LNP64 relocation type {other}"));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn relocation_file_offset(plan: &ExecPlan, target: u64) -> Result<usize, String> {
+    let target_end = target
+        .checked_add(8)
+        .ok_or_else(|| "RELA target range overflows".to_string())?;
+    for vma in &plan.vmas {
+        let file_start = vma.virtual_address;
+        let file_end = vma
+            .virtual_address
+            .checked_add(vma.source_length)
+            .ok_or_else(|| "VMA file-backed range overflows".to_string())?;
+        if target >= file_start && target_end <= file_end {
+            let delta = target - vma.virtual_address;
+            let file_offset = vma
+                .source_offset
+                .checked_add(delta)
+                .ok_or_else(|| "RELA file offset overflows".to_string())?;
+            return checked_usize(file_offset, "RELA file offset");
+        }
+    }
+    Err("RELA target is outside file-backed PT_LOAD data".to_string())
 }
 
 fn reject_overlapping_vmas(vmas: &[VmaRecord]) -> Result<(), String> {
@@ -280,6 +400,15 @@ fn read_u64(bytes: &[u8], offset: usize) -> Result<u64, String> {
     ]))
 }
 
+fn read_i64(bytes: &[u8], offset: usize) -> Result<i64, String> {
+    let field = bytes
+        .get(offset..offset + 8)
+        .ok_or_else(|| "ELF field is truncated".to_string())?;
+    Ok(i64::from_le_bytes([
+        field[0], field[1], field[2], field[3], field[4], field[5], field[6], field[7],
+    ]))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -324,6 +453,7 @@ mod tests {
                 tls_base: 0x710000,
                 startup_metadata_ptr: 0x720000,
                 allow_wx: false,
+                load_bias: 0,
             },
         )
         .unwrap();
@@ -417,6 +547,62 @@ mod tests {
         assert!(err.contains("entry point"), "{err}");
     }
 
+    #[test]
+    fn static_elf_loader_applies_relative_relocations_with_load_bias() {
+        let mut image = test_elf(&[
+            TestPhdr {
+                typ: PT_LOAD,
+                flags: PF_R | PF_X,
+                offset: 0x100,
+                vaddr: 0x1000,
+                filesz: 16,
+                memsz: 16,
+                align: PAGE_SIZE,
+            },
+            TestPhdr {
+                typ: PT_LOAD,
+                flags: PF_R | PF_W,
+                offset: 0x200,
+                vaddr: 0x2000,
+                filesz: 8,
+                memsz: 8,
+                align: PAGE_SIZE,
+            },
+        ]);
+        put_u16(&mut image, 16, ET_DYN);
+        put_u64(&mut image, 24, 0x1000);
+        install_rela_section(&mut image, 0x2000, R_LNP64_RELATIVE, 0x55);
+
+        let plan = load_static_elf(
+            &mut image,
+            LoaderOptions {
+                load_bias: 0x100000,
+                ..LoaderOptions::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(plan.entry.entry_pc, 0x101000);
+        assert_eq!(plan.vmas[1].virtual_address, 0x102000);
+        assert_eq!(read_u64(&image, 0x200).unwrap(), 0x100055);
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_unsupported_relocations() {
+        let mut image = test_elf(&[text_phdr()]);
+        install_rela_section(&mut image, 0x400000, R_LNP64_ABS64, 0);
+        let err = load_static_elf(&mut image, LoaderOptions::default()).unwrap_err();
+        assert!(err.contains("unsupported LNP64 relocation type"), "{err}");
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_relocations_outside_file_backed_loads() {
+        let mut image = test_elf(&[text_phdr()]);
+        install_rela_section(&mut image, 0x401000, R_LNP64_RELATIVE, 0);
+        let err = load_static_elf(&mut image, LoaderOptions::default()).unwrap_err();
+        assert!(err.contains("outside file-backed PT_LOAD"), "{err}");
+    }
+
     fn text_phdr() -> TestPhdr {
         TestPhdr {
             typ: PT_LOAD,
@@ -431,7 +617,7 @@ mod tests {
 
     fn test_elf(phdrs: &[TestPhdr]) -> Vec<u8> {
         let phoff = ELF64_EHDR_SIZE;
-        let mut image = vec![0; 0x300];
+        let mut image = vec![0; 0x500];
         image[0..4].copy_from_slice(b"\x7fELF");
         image[EI_CLASS] = ELFCLASS64;
         image[EI_DATA] = ELFDATA2LSB;
@@ -463,6 +649,21 @@ mod tests {
         image
     }
 
+    fn install_rela_section(image: &mut [u8], target: u64, reloc_type: u32, addend: i64) {
+        let shoff = 0x300;
+        let rela_offset = 0x380;
+        put_u64(image, 40, shoff);
+        put_u16(image, 58, ELF64_SHDR_SIZE as u16);
+        put_u16(image, 60, 1);
+        put_u32(image, shoff as usize + 4, SHT_RELA);
+        put_u64(image, shoff as usize + 24, rela_offset);
+        put_u64(image, shoff as usize + 32, ELF64_RELA_SIZE as u64);
+        put_u64(image, shoff as usize + 56, ELF64_RELA_SIZE as u64);
+        put_u64(image, rela_offset as usize, target);
+        put_u64(image, rela_offset as usize + 8, u64::from(reloc_type));
+        put_i64(image, rela_offset as usize + 16, addend);
+    }
+
     fn put_u16(bytes: &mut [u8], offset: usize, value: u16) {
         bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
     }
@@ -472,6 +673,10 @@ mod tests {
     }
 
     fn put_u64(bytes: &mut [u8], offset: usize, value: u64) {
+        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+
+    fn put_i64(bytes: &mut [u8], offset: usize, value: i64) {
         bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
 }
