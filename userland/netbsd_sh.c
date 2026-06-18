@@ -47,7 +47,10 @@ int run_program(int root, int name, int image) {
     }
     if (domain_query(domain, info) != 200) return 5;
     if (load(info + 96) != 0) return 6;
-    if (domain_destroy(domain) != 0) return 7;
+    if (load(info + 88) != 0) return 7;
+    if (load(info + 104) != 0) return 8;
+    if (domain_destroy(domain) != 0) return 9;
+    if (domain_query(domain, info) != -1) return 10;
     free(path);
     free(info);
     return rc;

@@ -20,7 +20,10 @@ int main() {
     if (domain_detach_self() == 0) return 5;
     if (domain_query(domain, info) != 200) return 6;
     if (load(info + 96) != 0) return 7;
-    if (domain_destroy(domain) != 0) return 8;
+    if (load(info + 88) != 0) return 8;
+    if (load(info + 104) != 0) return 9;
+    if (domain_destroy(domain) != 0) return 10;
+    if (domain_query(domain, info) != -1) return 11;
 
     write(1, "domain_budget_test ok\n", 22);
     return 0;
