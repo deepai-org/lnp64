@@ -10589,6 +10589,71 @@ mod tests {
     }
 
     #[test]
+    fn cap_recv_cannot_expand_transferred_rights() {
+        let program = Program::parse(
+            r#"
+            .data
+            path: .string "Cargo.toml"
+
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let path = program.data_labels["path"];
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        let pipe = Rc::new(RefCell::new(PipeBuffer::default()));
+        machine.processes.get_mut(&1).unwrap().fds[3] = FdHandle::PipeReader(Rc::clone(&pipe));
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[3] = FdCapability::full(3);
+        machine.processes.get_mut(&1).unwrap().fds[4] = FdHandle::PipeWriter(pipe);
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[4] = FdCapability::full(4);
+
+        machine.thread_mut().unwrap().regs[1] = path;
+        machine.thread_mut().unwrap().regs[2] = 0;
+        machine
+            .exec(Instr::OpenFdDyn(Reg(5), Reg(1), Reg(2)))
+            .unwrap();
+        let source = machine.thread().unwrap().regs[5];
+        let arg = ARG_BASE;
+        machine.store_u64(arg, source).unwrap();
+        machine.store_u64(arg + 8, 0).unwrap();
+        machine
+            .store_u64(arg + 16, CAP_RIGHT_READ | CAP_RIGHT_TRANSFER)
+            .unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_dup(Reg(6), arg).unwrap();
+        let transferable_read = machine.thread().unwrap().regs[6];
+
+        machine.store_u64(arg, 4).unwrap();
+        machine.store_u64(arg + 8, transferable_read).unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_send(Reg(7), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[7], 1);
+
+        machine.store_u64(arg, 3).unwrap();
+        machine.store_u64(arg + 8, 0).unwrap();
+        machine
+            .store_u64(arg + 16, CAP_RIGHT_READ | CAP_RIGHT_WRITE)
+            .unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_recv(Reg(8), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[8], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
+
+        machine.store_u64(arg + 16, CAP_RIGHT_READ).unwrap();
+        machine.cap_recv(Reg(9), arg).unwrap();
+        let received = machine.thread().unwrap().regs[9];
+        assert_ne!(received, -1i64 as u64);
+        let received_fd = machine.decode_fd_value(received).unwrap();
+        assert_eq!(
+            machine.process().unwrap().fd_capabilities[received_fd].rights,
+            CAP_RIGHT_READ
+        );
+    }
+
+    #[test]
     fn cap_revoke_invalidates_received_capability() {
         let program = Program::parse(
             r#"
