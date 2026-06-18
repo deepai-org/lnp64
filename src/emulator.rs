@@ -11817,6 +11817,43 @@ mod tests {
     }
 
     #[test]
+    fn dma_buffer_object_creation_requires_writable_mapped_range() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[1] = 4096;
+        machine.thread_mut().unwrap().regs[2] = 0b001;
+        machine
+            .exec(Instr::Mmap(
+                Reg(3),
+                Reg(0),
+                Reg(1),
+                Reg(2),
+                FdReg(0),
+                Reg(0),
+            ))
+            .unwrap();
+        let readonly = machine.thread().unwrap().regs[3];
+        let arg = ARG_BASE;
+
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::DmaBuffer.code())
+            .unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 7).unwrap();
+        machine.store_u64(arg + 40, readonly).unwrap();
+        machine.store_u64(arg + 48, 16).unwrap();
+        machine.object_ctl(Reg(4), arg).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[4], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 14);
+        assert!(matches!(
+            machine.process().unwrap().fds[7],
+            FdHandle::Closed
+        ));
+    }
+
+    #[test]
     fn dma_ctl_rejects_stale_and_revoked_dma_buffers() {
         let program = Program::parse(
             r#"
