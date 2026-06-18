@@ -5555,7 +5555,7 @@ impl Machine {
 
     fn ns_ctl_record(&mut self, argblock: u64) -> Result<u64, u64> {
         let op = self.load_u64(argblock).map_err(|_| 14u64)?;
-        let version = self.load_u64(argblock + 8).map_err(|_| 14u64)?;
+        let version = self.load_u64_offset(argblock, 8).map_err(|_| 14u64)?;
         if version != NS_CTL_VERSION {
             return Err(22);
         }
@@ -5566,11 +5566,11 @@ impl Machine {
     }
 
     fn ns_ctl_resolve(&mut self, argblock: u64) -> Result<u64, u64> {
-        let dir_value = self.load_u64(argblock + 16).map_err(|_| 14u64)?;
-        let path_ptr = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
-        let out_ptr = self.load_u64(argblock + 32).map_err(|_| 14u64)?;
-        let out_len = self.load_u64(argblock + 40).map_err(|_| 14u64)? as usize;
-        let flags = self.load_u64(argblock + 48).map_err(|_| 14u64)?;
+        let dir_value = self.load_u64_offset(argblock, 16).map_err(|_| 14u64)?;
+        let path_ptr = self.load_u64_offset(argblock, 24).map_err(|_| 14u64)?;
+        let out_ptr = self.load_u64_offset(argblock, 32).map_err(|_| 14u64)?;
+        let out_len = self.load_u64_offset(argblock, 40).map_err(|_| 14u64)? as usize;
+        let flags = self.load_u64_offset(argblock, 48).map_err(|_| 14u64)?;
         if out_len == 0 {
             return Err(22);
         }
@@ -5584,11 +5584,13 @@ impl Machine {
             flags & NS_RESOLVE_FLAG_NOFOLLOW_FINAL != 0,
         )?;
         let bytes = resolved.as_bytes();
-        if bytes.len() + 1 > out_len {
+        let required_len = bytes.len().checked_add(1).ok_or(34u64)?;
+        if required_len > out_len {
             return Err(34);
         }
-        self.write_bytes(out_ptr, bytes).map_err(|_| 14u64)?;
-        self.write_bytes(out_ptr + bytes.len() as u64, &[0])
+        self.write_bytes_offset(out_ptr, 0, bytes)
+            .map_err(|_| 14u64)?;
+        self.write_bytes_offset(out_ptr, bytes.len() as u64, &[0])
             .map_err(|_| 14u64)?;
         Ok(bytes.len() as u64)
     }
