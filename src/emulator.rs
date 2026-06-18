@@ -5806,7 +5806,7 @@ impl Machine {
             ),
         ];
         for (offset, value) in fields {
-            self.store_u64(argblock + offset, value)
+            self.store_u64_offset(argblock, offset, value)
                 .map_err(|_| 14u64)?;
         }
         Ok(DOMAIN_QUERY_SIZE)
