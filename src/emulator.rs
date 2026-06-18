@@ -10116,6 +10116,46 @@ mod tests {
     }
 
     #[test]
+    fn domain_security_rejects_invalid_boolean_selectors_without_mutation() {
+        let mut machine = test_machine_with_child_domain();
+        let arg = ARG_BASE;
+        let next_domain_id = machine.next_domain_id;
+
+        machine.store_u64(arg, DOMAIN_OP_CREATE).unwrap();
+        machine.store_u64(arg + 8, ROOT_DOMAIN_ID).unwrap();
+        machine.store_u64(arg + 16, 1).unwrap();
+        machine
+            .store_u64(arg + DOMAIN_SECURITY_ASLR_ENABLED, 99)
+            .unwrap();
+        assert_eq!(machine.domain_ctl_create(arg), Err(22));
+        assert_eq!(machine.next_domain_id, next_domain_id);
+        assert!(!machine.domains.contains_key(&next_domain_id));
+
+        machine
+            .store_u64(arg + DOMAIN_SECURITY_ASLR_ENABLED, DOMAIN_BOOL_INHERIT)
+            .unwrap();
+        machine.store_u64(arg, DOMAIN_OP_CONFIGURE).unwrap();
+        machine.store_u64(arg + 8, 2).unwrap();
+        machine.store_u64(arg + 16, 1).unwrap();
+        machine
+            .store_u64(arg + DOMAIN_SECURITY_DMA_ALLOWED, 99)
+            .unwrap();
+        let before = machine.domains[&2].security;
+        assert_eq!(machine.domain_ctl_configure(arg), Err(22));
+        let after = machine.domains[&2].security;
+        assert_eq!(after.dma_allowed, before.dma_allowed);
+        assert_eq!(after.aslr_enabled, before.aslr_enabled);
+        assert_eq!(after.allow_wx, before.allow_wx);
+        assert_eq!(after.allow_jit_transition, before.allow_jit_transition);
+        assert_eq!(after.entropy_quota, before.entropy_quota);
+        assert_eq!(after.hardening_profile, before.hardening_profile);
+        assert_eq!(
+            after.executable_source_policy,
+            before.executable_source_policy
+        );
+    }
+
+    #[test]
     fn inactive_current_domain_rejects_sensitive_operations() {
         let mut machine = test_machine_with_child_domain();
         machine.current_tid = 1;
