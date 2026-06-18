@@ -8720,6 +8720,33 @@ mod tests {
     }
 
     #[test]
+    fn masked_signal_remains_pending_until_unmasked() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine
+            .process_mut()
+            .unwrap()
+            .signal_handlers
+            .insert(2, SignalDisposition::Handler(7));
+        machine.process_mut().unwrap().sigmask = 1 << 2;
+
+        machine.queue_process_event(1, NativeEvent::kill_signal(2));
+        machine.deliver_signal_if_needed().unwrap();
+        assert_eq!(machine.thread().unwrap().ip, 0);
+        assert!(machine.thread().unwrap().signal_stack.is_empty());
+        assert!(matches!(
+            machine.process().unwrap().pending_events.front(),
+            Some(NativeEvent::Signal { signum: 2, .. })
+        ));
+
+        machine.process_mut().unwrap().sigmask = 0;
+        machine.deliver_signal_if_needed().unwrap();
+        assert!(machine.process().unwrap().pending_events.is_empty());
+        assert_eq!(machine.thread().unwrap().ip, 7);
+        assert_eq!(machine.thread().unwrap().signal_stack.len(), 1);
+    }
+
+    #[test]
     fn signal_delivery_defers_nested_frames_until_sigret() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
