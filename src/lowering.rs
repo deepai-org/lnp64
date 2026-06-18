@@ -1687,6 +1687,10 @@ mod tests {
             "llvm/lib/Target/LNP64/LNP64RegisterInfo.td",
             "llvm/lib/Target/LNP64/LNP64InstrInfo.td",
             "llvm/lib/Target/LNP64/LNP64CallingConv.td",
+            "llvm/lib/Target/LNP64/LNP64TargetMachine.cpp",
+            "llvm/lib/Target/LNP64/LNP64Subtarget.cpp",
+            "llvm/lib/Target/LNP64/LNP64InstrInfo.cpp",
+            "llvm/lib/Target/LNP64/LNP64RegisterInfo.cpp",
             "llvm/lib/Target/LNP64/LNP64ISelLowering.cpp",
             "llvm/lib/Target/LNP64/LNP64FrameLowering.cpp",
             "llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCTargetDesc.cpp",
@@ -1710,6 +1714,12 @@ mod tests {
             "llvm/lib/Target/LNP64/LNP64RegisterInfo.td",
             "llvm/lib/Target/LNP64/LNP64InstrInfo.td",
             "llvm/lib/Target/LNP64/LNP64CallingConv.td",
+            "llvm/lib/Target/LNP64/LNP64TargetMachine.cpp",
+            "llvm/lib/Target/LNP64/LNP64Subtarget.cpp",
+            "llvm/lib/Target/LNP64/LNP64InstrInfo.cpp",
+            "llvm/lib/Target/LNP64/LNP64RegisterInfo.cpp",
+            "llvm/lib/Target/LNP64/LNP64ISelLowering.cpp",
+            "llvm/lib/Target/LNP64/LNP64FrameLowering.cpp",
             "llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCTargetDesc.cpp",
             "llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCCodeEmitter.cpp",
             "llvm/lib/Target/LNP64/TargetInfo/LNP64TargetInfo.cpp",
@@ -1717,7 +1727,6 @@ mod tests {
             assert_eq!(statuses[path], "scaffolded", "{path} should be scaffolded");
         }
         for path in [
-            "llvm/lib/Target/LNP64/LNP64ISelLowering.cpp",
             "llvm/lib/Target/LNP64/AsmParser/LNP64AsmParser.cpp",
             "llvm/lib/Target/LNP64/Disassembler/LNP64Disassembler.cpp",
             "clang/lib/Basic/Targets/LNP64.cpp",
@@ -1748,6 +1757,11 @@ mod tests {
         let mc_desc = include_str!("../llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCTargetDesc.cpp");
         let mc_emitter =
             include_str!("../llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCCodeEmitter.cpp");
+        let target_machine = include_str!("../llvm/lib/Target/LNP64/LNP64TargetMachine.cpp");
+        let subtarget = include_str!("../llvm/lib/Target/LNP64/LNP64Subtarget.cpp");
+        let isel = include_str!("../llvm/lib/Target/LNP64/LNP64ISelLowering.cpp");
+        let frame = include_str!("../llvm/lib/Target/LNP64/LNP64FrameLowering.cpp");
+        let reginfo = include_str!("../llvm/lib/Target/LNP64/LNP64RegisterInfo.cpp");
 
         assert!(target_td.contains("def LNP64 : Target"));
         for required in ["GPR", "FDR", "FPR", "VR", "PCR", "LR", "R31"] {
@@ -1771,6 +1785,14 @@ mod tests {
             assert!(instr_td.contains(opcode), "instr TableGen missing {opcode}");
         }
         assert!(cmake.contains("LNP64GenRegisterInfo.inc"));
+        for source in [
+            "LNP64TargetMachine.cpp",
+            "LNP64Subtarget.cpp",
+            "LNP64ISelLowering.cpp",
+            "LNP64FrameLowering.cpp",
+        ] {
+            assert!(cmake.contains(source), "CMake missing {source}");
+        }
         assert!(cmake.contains("add_llvm_target(LNP64CodeGen"));
         assert!(target_info.contains("LLVMInitializeLNP64TargetInfo"));
         assert!(target_info.contains("RegisterTarget<Triple::lnp64>"));
@@ -1778,6 +1800,15 @@ mod tests {
         assert!(mc_desc.contains("RegisterMCCodeEmitter"));
         assert!(mc_emitter.contains("createLNP64MCCodeEmitter"));
         assert!(mc_emitter.contains("not implemented yet"));
+        assert!(target_machine.contains("LLVMInitializeLNP64Target"));
+        assert!(target_machine.contains("e-m:e-p:64:64-i64:64-n64-S128"));
+        assert!(subtarget.contains("TLInfo(TM, *this)"));
+        assert!(isel.contains("addRegisterClass(MVT::i64"));
+        assert!(isel.contains("setStackPointerRegisterToSaveRestore(LNP64::R31)"));
+        assert!(frame.contains("StackGrowsDown"));
+        assert!(frame.contains("Align(16)"));
+        assert!(reginfo.contains("Reserved.set(LNP64::R0)"));
+        assert!(reginfo.contains("NoCalleeSaved"));
     }
 
     #[test]

@@ -41,8 +41,10 @@ classes, reserved registers, allocatable sets, and debug/unwind role names.
 The first llvm-project backend files now exist under `llvm/lib/Target/LNP64/`:
 `CMakeLists.txt`, `LNP64.td`, `LNP64RegisterInfo.td`,
 `LNP64CallingConv.td`, `LNP64InstrInfo.td`, `TargetInfo/LNP64TargetInfo.cpp`,
-and initial `MCTargetDesc` registration/code-emitter files. They are
-scaffolded source files for the real port, not a buildable code generator yet.
+initial `MCTargetDesc` registration/code-emitter files, and the first
+`TargetMachine`/`Subtarget`/`ISelLowering`/`FrameLowering` class skeletons.
+They are scaffolded source files for the real port, not a buildable code
+generator yet.
 `toolchain/lnp64_mc_encoding.manifest` records the initial MC format classes,
 opcode coverage, relocation hooks, and llvm-project surfaces for the first
 assembler/emitter/disassembler path.

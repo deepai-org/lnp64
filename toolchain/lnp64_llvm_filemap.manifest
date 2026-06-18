@@ -5,8 +5,12 @@ llvm_target|llvm/lib/Target/LNP64/LNP64.td|scaffolded|target root, subtarget, in
 llvm_target|llvm/lib/Target/LNP64/LNP64RegisterInfo.td|scaffolded|GPR, FDR, FPR, VR, PCR register classes
 llvm_target|llvm/lib/Target/LNP64/LNP64InstrInfo.td|scaffolded|integer, load/store, branch, call, return, native primitive opcodes
 llvm_target|llvm/lib/Target/LNP64/LNP64CallingConv.td|scaffolded|calling convention argument, return, callee-save, and vararg rules
-llvm_target|llvm/lib/Target/LNP64/LNP64ISelLowering.cpp|planned|integer, memory, branch, call, TLS, intrinsic lowering
-llvm_target|llvm/lib/Target/LNP64/LNP64FrameLowering.cpp|planned|stack frame, spill slots, LR save, CFI emission
+llvm_target|llvm/lib/Target/LNP64/LNP64TargetMachine.cpp|scaffolded|target machine registration and data layout
+llvm_target|llvm/lib/Target/LNP64/LNP64Subtarget.cpp|scaffolded|subtarget state wiring for instruction, register, frame, and lowering hooks
+llvm_target|llvm/lib/Target/LNP64/LNP64InstrInfo.cpp|scaffolded|instruction-info class seeded from TableGen opcodes
+llvm_target|llvm/lib/Target/LNP64/LNP64RegisterInfo.cpp|scaffolded|reserved register and psABI callee-save hooks
+llvm_target|llvm/lib/Target/LNP64/LNP64ISelLowering.cpp|scaffolded|integer, memory, branch, call, TLS, intrinsic lowering
+llvm_target|llvm/lib/Target/LNP64/LNP64FrameLowering.cpp|scaffolded|stack frame, spill slots, LR save, CFI emission
 llvm_mc|llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCTargetDesc.cpp|scaffolded|ELF machine id, relocations, MC code emitter hooks
 llvm_mc|llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCCodeEmitter.cpp|scaffolded|MC instruction encoding from lnp64_mc_encoding manifest
 llvm_asmparser|llvm/lib/Target/LNP64/AsmParser/LNP64AsmParser.cpp|planned|assembly parser, inline asm constraints, operand validation

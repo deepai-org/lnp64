@@ -10,9 +10,9 @@ namespace {
 
 class LNP64MCCodeEmitter final : public MCCodeEmitter {
 public:
-  void encodeInstruction(const MCInst &MI, SmallVectorImpl<char> &CB,
-                         SmallVectorImpl<MCFixup> &Fixups,
-                         const MCSubtargetInfo &STI) const override {
+  void encodeInstruction(const MCInst &, SmallVectorImpl<char> &,
+                         SmallVectorImpl<MCFixup> &,
+                         const MCSubtargetInfo &) const override {
     llvm_unreachable("LNP64 MC encoding is scaffolded but not implemented yet");
   }
 };
