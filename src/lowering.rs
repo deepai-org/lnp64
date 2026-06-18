@@ -929,6 +929,31 @@ mod tests {
             .collect()
     }
 
+    fn llvm_gate_rows(manifest: &str) -> Vec<(&str, &str, Vec<&str>, &str)> {
+        manifest
+            .lines()
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(|line| {
+                let mut fields = line.splitn(4, '|');
+                let gate = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing llvm gate name in {line}"));
+                let command = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing llvm gate command in {line}"));
+                let requires = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing llvm gate requirements in {line}"))
+                    .split(',')
+                    .collect();
+                let status = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing llvm gate status in {line}"));
+                (gate, command, requires, status)
+            })
+            .collect()
+    }
+
     #[test]
     fn toolchain_contract_index_is_complete() {
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
@@ -956,6 +981,7 @@ mod tests {
             "intrinsics",
             "isel",
             "llvm_bootstrap",
+            "llvm_gates",
             "exec_plan",
             "loader",
             "exec_descriptor_validator",
@@ -965,6 +991,61 @@ mod tests {
             "transition",
         ] {
             assert!(names.contains(name), "missing contract index row {name}");
+        }
+    }
+
+    #[test]
+    fn llvm_gate_manifest_pins_non_toy_clang_commands() {
+        let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
+        let gate_manifest = include_str!("../toolchain/lnp64_llvm_gates.manifest");
+        let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
+        let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
+        let roadmap = include_str!("../toolchain_roadmap.md");
+        let rows = llvm_gate_rows(gate_manifest);
+        let mut gates = std::collections::BTreeSet::new();
+
+        assert_eq!(
+            manifest_field(target_manifest, "llvm_gate_contract"),
+            "toolchain/lnp64_llvm_gates.manifest"
+        );
+        assert!(contract_index.contains(
+            "llvm_gates|toolchain/lnp64_llvm_gates.manifest|llvm_gate_manifest_pins_non_toy_clang_commands"
+        ));
+        assert!(transition_manifest.contains("toolchain/lnp64_llvm_gates.manifest"));
+        assert!(roadmap.contains("toolchain/lnp64_llvm_gates.manifest"));
+
+        for (gate, command, requirements, status) in rows {
+            assert!(gates.insert(gate), "duplicate llvm gate {gate}");
+            assert_eq!(
+                status, "planned",
+                "gate {gate} must stay planned until real Clang/lld/loader execution exists"
+            );
+            assert!(!command.is_empty(), "empty llvm gate command for {gate}");
+            assert!(
+                !requirements.is_empty(),
+                "empty llvm gate requirements for {gate}"
+            );
+            assert!(
+                !command.contains("lnp64 cc") && !command.contains("cargo run -- cc"),
+                "llvm gate {gate} must not use the toy compiler command"
+            );
+            assert!(
+                !command.contains("src/c_compiler"),
+                "llvm gate {gate} must not route through the in-repo C compiler"
+            );
+        }
+
+        for gate in [
+            "compile_hello",
+            "compile_arithmetic",
+            "compile_memory",
+            "compile_calls",
+            "link_static",
+            "inspect_exec_plan",
+            "run_without_toy_compiler",
+            "simple_libc_gate",
+        ] {
+            assert!(gates.contains(gate), "missing llvm gate {gate}");
         }
     }
 
@@ -1120,6 +1201,10 @@ mod tests {
         assert_eq!(
             manifest_field(manifest, "crt_startup_contract"),
             "toolchain/lnp64_crt_startup.manifest"
+        );
+        assert_eq!(
+            manifest_field(manifest, "llvm_gate_contract"),
+            "toolchain/lnp64_llvm_gates.manifest"
         );
         assert_eq!(manifest_field(manifest, "gpr"), "r0-r31");
         assert_eq!(manifest_field(manifest, "fdr"), "fd0-fd255");
