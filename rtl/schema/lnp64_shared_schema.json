@@ -171,6 +171,7 @@
     "authority_and_policy": [
       "lnp64_cap_t",
       "lnp64_m1_cap_commit_t",
+      "lnp64_m1_state_projection_t",
       "lnp64_domain_t",
       "lnp64_policy_decision_t",
       "lnp64_credential_snapshot_t",
@@ -220,6 +221,7 @@
     "lnp64_engine_lifecycle_t": ["engine_id:16", "profile:16", "state:16", "owner_shard_id:32", "generation:32", "fault_policy:16"],
     "lnp64_cap_t": ["object_id:32", "object_gen:32", "fdr_gen:32", "domain_id:32", "domain_gen:32", "rights_mask:64", "lineage_epoch:32", "sealed:1", "narrowable:1"],
     "lnp64_m1_cap_commit_t": ["op:8", "object_id:32", "object_gen:32", "fdr_gen:32", "domain_id:32", "domain_gen:32", "rights_mask:64", "lineage_epoch:32", "sealed:1", "status:16"],
+    "lnp64_m1_state_projection_t": ["op:8", "status:16", "object_gen:32", "created_object_created:1", "created_object_gen:32", "root_object_id:32", "root_generation:32", "root_domain_id:32", "root_lineage_epoch:32", "root_sealed:1", "root_rights:64", "consumer_object_id:32", "consumer_generation:32", "consumer_domain_id:32", "consumer_lineage_epoch:32", "consumer_sealed:1", "consumer_rights:64", "sent_valid:1", "sent_object_id:32", "sent_generation:32", "sent_domain_id:32", "sent_lineage_epoch:32", "sent_sealed:1", "sent_rights:64", "minted_valid:1", "minted_object_id:32", "minted_generation:32", "minted_domain_id:32", "minted_lineage_epoch:32", "minted_sealed:1", "minted_rights:64", "wake_pending:1", "transfer_valid:1", "stale_rejected:1", "revoked_rejected:1", "failed_no_authority:1", "full_was_explicit:1", "has_revoked_generation:1", "revoked_generation:32"],
     "lnp64_object_ref_t": ["object_id:32", "object_gen:32", "profile:16", "length:64", "bounds_base:64"],
     "lnp64_control_envelope_t": ["version:16", "profile:16", "byte_len:32", "selector:32", "service_generation:32", "payload_ptr:64"],
     "lnp64_domain_t": ["domain_id:32", "domain_gen:32", "parent_domain_id:32", "parent_domain_gen:32", "budget_limit:64", "budget_used:64", "lifecycle_state:16", "assurance_profile:16", "label_id:32"],
@@ -282,7 +284,27 @@
     "gate": "scripts/check_rtl_m1_typed_commit_trace.py",
     "source": "rtl/sim/lnp64_m1_tb.sv",
     "record": "lnp64_m1_cap_commit_t",
+    "state_record": "lnp64_m1_state_projection_t",
     "op_enum": "lnp64_m1_commit_op_e",
-    "record_name": "m1_cap_commit"
+    "record_name": "m1_cap_commit",
+    "state_record_name": "m1_state_projection",
+    "op_mappings": [
+      {"key": "cap_dup", "sv": "LNP64_M1_COMMIT_CAP_DUP", "lean_op": "capDup", "lean_commit_op": "capDup", "lean_transition": "capDup"},
+      {"key": "cap_send", "sv": "LNP64_M1_COMMIT_CAP_SEND", "lean_op": "capSend", "lean_commit_op": "capSend", "lean_transition": "capSend"},
+      {"key": "cap_recv", "sv": "LNP64_M1_COMMIT_CAP_RECV", "lean_op": "capRecv", "lean_commit_op": "capRecv", "lean_transition": "capRecv"},
+      {"key": "cap_revoke", "sv": "LNP64_M1_COMMIT_CAP_REVOKE", "lean_op": "capRevoke", "lean_commit_op": "capRevoke", "lean_transition": "capRevoke"},
+      {"key": "reject_stale", "sv": "LNP64_M1_COMMIT_REJECT_STALE", "lean_op": "rejectStale", "lean_commit_op": "rejectStale", "lean_transition": "rejectStale"},
+      {"key": "push", "sv": "LNP64_M1_COMMIT_PUSH", "lean_op": "push", "lean_commit_op": "push", "lean_transition": "push"},
+      {"key": "pull", "sv": "LNP64_M1_COMMIT_PULL", "lean_op": "pull", "lean_commit_op": "pull", "lean_transition": "pull"},
+      {"key": "reject_full", "sv": "LNP64_M1_COMMIT_REJECT_FULL", "lean_op": "rejectFull", "lean_commit_op": "rejectFull", "lean_transition": "rejectFull"},
+      {"key": "cap_dup_denied", "sv": "LNP64_M1_COMMIT_CAP_DUP_DENIED", "lean_op": "capDupDenied", "lean_commit_op": "capDupDenied", "lean_transition": "capDupDenied"},
+      {"key": "object_create", "sv": "LNP64_M1_COMMIT_OBJECT_CREATE", "lean_op": "objectCreate", "lean_commit_op": "objectCreate", "lean_transition": "objectCreate"}
+    ],
+    "status_mappings": [
+      {"key": "ok", "sv_errno": "LNP64_ERR_OK", "lean_status": "ok"},
+      {"key": "eperm", "sv_errno": "LNP64_ERR_EPERM", "lean_status": "eperm"},
+      {"key": "eagain", "sv_errno": "LNP64_ERR_EAGAIN", "lean_status": "eagain"},
+      {"key": "erevoked", "sv_errno": "LNP64_ERR_EREVOKED", "lean_status": "erevoked"}
+    ]
   }
 }

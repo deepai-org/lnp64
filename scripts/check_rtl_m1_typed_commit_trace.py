@@ -22,6 +22,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = ROOT / "rtl/schema/lnp64_shared_schema.json"
 LEAN_M1_MODEL = ROOT / "formal/M1TransitionInvariantModel.lean"
+RTL_M1_ENGINE = ROOT / "rtl/engines/lnp64_m1_pingpong.sv"
+RTL_M1_TB = ROOT / "rtl/sim/lnp64_m1_tb.sv"
+RTL_M1_ASSERTIONS = ROOT / "formal/rtl_assertions/lnp64_m1_assertions.sv"
 DEFAULT_TYPED_COMMIT_SEEDS = (
     "0 1 7 42 255 1024 4095 4096 65536 1048576 16777216 134217728 268435456 536870912"
 )
@@ -51,48 +54,62 @@ CAP_FIELDS = (
 
 COMMIT_FIELDS = ("op",) + CAP_FIELDS
 
-M1_OP_ENUM_NAMES = {
-    "cap_dup": "LNP64_M1_COMMIT_CAP_DUP",
-    "cap_send": "LNP64_M1_COMMIT_CAP_SEND",
-    "cap_recv": "LNP64_M1_COMMIT_CAP_RECV",
-    "cap_revoke": "LNP64_M1_COMMIT_CAP_REVOKE",
-    "reject_stale": "LNP64_M1_COMMIT_REJECT_STALE",
-    "push": "LNP64_M1_COMMIT_PUSH",
-    "pull": "LNP64_M1_COMMIT_PULL",
-    "reject_full": "LNP64_M1_COMMIT_REJECT_FULL",
-    "cap_dup_denied": "LNP64_M1_COMMIT_CAP_DUP_DENIED",
-    "object_create": "LNP64_M1_COMMIT_OBJECT_CREATE",
-}
+STATE_PROJECTION_FIELDS = (
+    "op",
+    "status",
+    "object_gen",
+    "created_object_created",
+    "created_object_gen",
+    "root_object_id",
+    "root_generation",
+    "root_domain_id",
+    "root_lineage_epoch",
+    "root_sealed",
+    "root_rights",
+    "consumer_object_id",
+    "consumer_generation",
+    "consumer_domain_id",
+    "consumer_lineage_epoch",
+    "consumer_sealed",
+    "consumer_rights",
+    "sent_valid",
+    "sent_object_id",
+    "sent_generation",
+    "sent_domain_id",
+    "sent_lineage_epoch",
+    "sent_sealed",
+    "sent_rights",
+    "minted_valid",
+    "minted_object_id",
+    "minted_generation",
+    "minted_domain_id",
+    "minted_lineage_epoch",
+    "minted_sealed",
+    "minted_rights",
+    "wake_pending",
+    "transfer_valid",
+    "stale_rejected",
+    "revoked_rejected",
+    "failed_no_authority",
+    "full_was_explicit",
+    "has_revoked_generation",
+    "revoked_generation",
+)
 
-M1_TYPED_COMMIT_LEAN_OPS = {
-    "cap_dup": "capDup",
-    "cap_send": "capSend",
-    "cap_recv": "capRecv",
-    "cap_revoke": "capRevoke",
-    "reject_stale": "rejectStale",
-    "push": "push",
-    "pull": "pull",
-    "reject_full": "rejectFull",
-    "cap_dup_denied": "capDupDenied",
-    "object_create": "objectCreate",
-}
+M1_OP_KEYS = (
+    "cap_dup",
+    "cap_send",
+    "cap_recv",
+    "cap_revoke",
+    "reject_stale",
+    "push",
+    "pull",
+    "reject_full",
+    "cap_dup_denied",
+    "object_create",
+)
 
-M1_TYPED_COMMIT_LEAN_COMMIT_OPS = M1_TYPED_COMMIT_LEAN_OPS
-M1_TYPED_COMMIT_LEAN_TRANSITIONS = M1_TYPED_COMMIT_LEAN_OPS
-
-M1_STATUS_ENUM_NAMES = {
-    "ok": "LNP64_ERR_OK",
-    "eperm": "LNP64_ERR_EPERM",
-    "eagain": "LNP64_ERR_EAGAIN",
-    "erevoked": "LNP64_ERR_EREVOKED",
-}
-
-M1_TYPED_COMMIT_LEAN_STATUSES = {
-    "ok": "ok",
-    "eperm": "eperm",
-    "eagain": "eagain",
-    "erevoked": "erevoked",
-}
+M1_STATUS_KEYS = ("ok", "eperm", "eagain", "erevoked")
 
 M1_LEAN_COMMIT_RECORD_FIELDS = (
     "op",
@@ -145,6 +162,15 @@ M1_TYPED_COMMIT_LEAN_THEOREMS = (
     "m1_t3_failed_authority_operations_preserve_authority_slots_for_reachable",
     "m1_t3_typed_commit_failed_authority_transition_preserves_authority_slots_for_reachable",
     "m1_t3_typed_commit_non_ok_status_preserves_authority_slots_for_reachable",
+    "rtl_m1_refinement_failed_authority_transition_preserves_authority_projection",
+    "rtl_m1_refinement_non_ok_status_preserves_authority_projection",
+    "rtl_m1_refinement_cap_dup_post_consumer_matches_commit_projection",
+    "rtl_m1_refinement_cap_send_post_sent_matches_commit_projection",
+    "rtl_m1_refinement_cap_recv_post_consumer_matches_commit_projection",
+    "rtl_m1_refinement_object_create_post_minted_matches_commit_projection",
+    "rtl_m1_refinement_cap_revoke_post_generation_matches_commit_projection",
+    "rtlM1CommitPackedSchema_width",
+    "rtlM1StateProjectionPackedSchema_width",
 )
 
 M1_SCHEMA_TO_LEAN_COMMIT_FIELDS = {
@@ -159,6 +185,57 @@ M1_SCHEMA_TO_LEAN_COMMIT_FIELDS = {
     "sealed": "sealed",
     "status": "status",
 }
+
+M1_STATE_CAP_PROJECTION_FIELDS = (
+    "object_id",
+    "generation",
+    "domain_id",
+    "lineage_epoch",
+    "sealed",
+    "rights",
+)
+
+
+def lean_state_projection_fields_from_schema(schema_fields: tuple[str, ...]) -> tuple[str, ...]:
+    """Map the flat RTL state projection schema onto the Lean projection fields."""
+    remaining = list(schema_fields)
+    lean_fields: list[str] = []
+
+    def take_exact(expected: tuple[str, ...], lean_field: str) -> None:
+        actual = tuple(remaining[:len(expected)])
+        if actual != expected:
+            fail(
+                "M1 state projection schema no longer maps cleanly to Lean "
+                f"{lean_field}: {actual!r} != {expected!r}"
+            )
+        del remaining[:len(expected)]
+        lean_fields.append(lean_field)
+
+    take_exact(("op", "status"), "transitionTag")
+    take_exact(("object_gen",), "objectGeneration")
+    take_exact(("created_object_created",), "createdObjectCreated")
+    take_exact(("created_object_gen",), "createdObjectGeneration")
+    take_exact(tuple(f"root_{field}" for field in M1_STATE_CAP_PROJECTION_FIELDS), "rootCap")
+    take_exact(tuple(f"consumer_{field}" for field in M1_STATE_CAP_PROJECTION_FIELDS), "consumerCap")
+    take_exact(
+        ("sent_valid",) + tuple(f"sent_{field}" for field in M1_STATE_CAP_PROJECTION_FIELDS),
+        "sentCap",
+    )
+    take_exact(
+        ("minted_valid",) + tuple(f"minted_{field}" for field in M1_STATE_CAP_PROJECTION_FIELDS),
+        "mintedCap",
+    )
+    take_exact(("wake_pending",), "wakePending")
+    take_exact(("transfer_valid",), "transferValid")
+    take_exact(("stale_rejected",), "staleRejected")
+    take_exact(("revoked_rejected",), "revokedRejected")
+    take_exact(("failed_no_authority",), "failedNoAuthority")
+    take_exact(("full_was_explicit",), "fullWasExplicit")
+    take_exact(("has_revoked_generation",), "hasRevokedGeneration")
+    take_exact(("revoked_generation",), "revokedGeneration")
+    if remaining:
+        fail(f"M1 state projection schema has unmapped fields: {tuple(remaining)!r}")
+    return tuple(field for field in lean_fields if field != "transitionTag")
 
 
 @dataclass(frozen=True)
@@ -198,6 +275,22 @@ class CommitOps:
 
 
 @dataclass(frozen=True)
+class M1OpMapping:
+    key: str
+    sv: str
+    lean_op: str
+    lean_commit_op: str
+    lean_transition: str
+
+
+@dataclass(frozen=True)
+class M1StatusMapping:
+    key: str
+    sv_errno: str
+    lean_status: str
+
+
+@dataclass(frozen=True)
 class Cap:
     object_id: int
     object_gen: int
@@ -222,6 +315,9 @@ class M1State:
     wake_pending: bool = False
     transfer_valid: bool = False
     stale_rejected: bool = False
+    revoked_rejected: bool = False
+    failed_no_authority: bool = False
+    full_was_explicit: bool = False
     revoked_gen: int | None = None
 
 
@@ -246,11 +342,154 @@ def parse_sv_int(value: str) -> int:
     fail(f"unsupported SystemVerilog integer literal {value!r}")
 
 
+def parse_schema_field(entry: str) -> tuple[str, int]:
+    name, raw_width = entry.split(":", 1)
+    try:
+        width = int(raw_width, 10)
+    except ValueError as exc:
+        fail(f"invalid schema field width in {entry!r}: {exc}")
+    if width <= 0:
+        fail(f"invalid nonpositive schema field width in {entry!r}")
+    return name, width
+
+
 def load_lean_model_source() -> str:
     try:
         return LEAN_M1_MODEL.read_text(encoding="utf-8")
     except OSError as exc:
         fail(f"could not read Lean M1 transition model: {exc}")
+
+
+def require_trace_display_payload_source(
+    tb_source: str,
+    marker: str,
+    source_signal: str,
+    message: str,
+) -> None:
+    marker_index = tb_source.find(marker)
+    if marker_index < 0:
+        fail(message)
+    display_end = tb_source.find(");", marker_index)
+    if display_end < 0:
+        fail(message)
+    display_call = tb_source[marker_index:display_end]
+    if re.search(rf"\b{re.escape(source_signal)}\b", display_call) is None:
+        fail(message)
+
+
+def check_rtl_state_projection_boundary_sources(
+    engine_source: str,
+    tb_source: str,
+    assertion_source: str,
+    expected_commit_fields: tuple[str, ...],
+    expected_state_fields: tuple[str, ...],
+) -> None:
+    if "output lnp64_m1_state_projection_t typed_state_projection" not in engine_source:
+        fail("M1 engine no longer exposes schema-owned typed_state_projection")
+    if "lnp64_m1_cap_commit_t typed_commit" not in tb_source:
+        fail("M1 testbench no longer declares the schema-owned typed_commit record")
+    if ".typed_state_projection(typed_state_projection)" not in tb_source:
+        fail("M1 testbench no longer connects the typed_state_projection boundary")
+    if "input lnp64_m1_state_projection_t typed_state_projection" not in assertion_source:
+        fail("M1 assertions no longer consume the schema-owned typed_state_projection")
+    if ".typed_state_projection(typed_state_projection)" not in tb_source:
+        fail("M1 testbench no longer passes typed_state_projection into assertions")
+    if "TTRACE_M1_BITS" not in tb_source or "TTRACE_M1_STATE_BITS" not in tb_source:
+        fail("M1 testbench no longer emits packed bit records for commit and state projection")
+    require_trace_display_payload_source(
+        tb_source,
+        "TTRACE_M1_BITS",
+        "typed_commit",
+        "M1 testbench no longer emits packed commit bits from typed_commit",
+    )
+    require_trace_display_payload_source(
+        tb_source,
+        "TTRACE_M1_STATE_BITS",
+        "typed_state_projection",
+        "M1 testbench no longer emits packed state bits from typed_state_projection",
+    )
+    if "m1_authority_projection_slots_match" not in assertion_source:
+        fail("M1 assertions no longer check non-OK authority projection preservation")
+    missing_commit_fields = [
+        field
+        for field in expected_commit_fields
+        if f"typed_commit.{field}" not in tb_source
+    ]
+    if missing_commit_fields:
+        fail(
+            "M1 testbench no longer emits every commit trace field from typed_commit: "
+            f"{missing_commit_fields}"
+        )
+    missing_trace_fields = [
+        field
+        for field in expected_state_fields
+        if f"typed_state_projection.{field}" not in tb_source
+    ]
+    if missing_trace_fields:
+        fail(
+            "M1 testbench no longer emits every state trace field from typed_state_projection: "
+            f"{missing_trace_fields}"
+        )
+    required_assertion_fields = (
+        "op",
+        "status",
+        "object_gen",
+        "root_object_id",
+        "root_generation",
+        "root_domain_id",
+        "root_lineage_epoch",
+        "root_sealed",
+        "root_rights",
+        "consumer_object_id",
+        "consumer_generation",
+        "consumer_domain_id",
+        "consumer_lineage_epoch",
+        "consumer_sealed",
+        "consumer_rights",
+        "sent_valid",
+        "sent_object_id",
+        "sent_generation",
+        "sent_domain_id",
+        "sent_lineage_epoch",
+        "sent_sealed",
+        "sent_rights",
+        "minted_valid",
+        "minted_object_id",
+        "minted_generation",
+        "minted_domain_id",
+        "minted_lineage_epoch",
+        "minted_sealed",
+        "minted_rights",
+    )
+    missing_assertion_fields = [
+        field
+        for field in required_assertion_fields
+        if f"typed_state_projection.{field}" not in assertion_source
+    ]
+    if missing_assertion_fields:
+        fail(
+            "M1 assertions no longer mediate authority fields through typed_state_projection: "
+            f"{missing_assertion_fields}"
+        )
+
+
+def check_rtl_state_projection_boundary(
+    expected_commit_fields: tuple[str, ...],
+    expected_state_fields: tuple[str, ...],
+) -> None:
+    try:
+        engine_source = RTL_M1_ENGINE.read_text(encoding="utf-8")
+        tb_source = RTL_M1_TB.read_text(encoding="utf-8")
+        assertion_source = RTL_M1_ASSERTIONS.read_text(encoding="utf-8")
+    except OSError as exc:
+        fail(f"could not read M1 RTL sources: {exc}")
+    check_rtl_state_projection_boundary_sources(
+        engine_source,
+        tb_source,
+        assertion_source,
+        expected_commit_fields,
+        expected_state_fields,
+    )
 
 
 def load_lean_inductive_constructors(source: str, name: str) -> set[str]:
@@ -273,36 +512,155 @@ def load_lean_structure_fields(source: str, name: str) -> tuple[str, ...]:
     )
 
 
+def load_lean_packed_schema(source: str, name: str) -> tuple[tuple[str, int], ...]:
+    match = re.search(
+        rf"(?ms)^def\s+{re.escape(name)}\s*:\s*List\s*\(String\s*×\s*Nat\)\s*:=\s*\[(?P<body>.*?)^\]",
+        source,
+    )
+    if not match:
+        fail(f"Lean M1 transition model is missing packed schema {name}")
+    fields = tuple(
+        (field_name, int(width))
+        for field_name, width in re.findall(r'\("([^"]+)",\s*([0-9]+)\)', match.group("body"))
+    )
+    if not fields:
+        fail(f"Lean packed schema {name} has no parsed fields")
+    return fields
+
+
+def load_lean_packed_schema_width_theorem(source: str, theorem_name: str, schema_name: str) -> int:
+    match = re.search(
+        rf"(?ms)^theorem\s+{re.escape(theorem_name)}\s*:\s*"
+        rf"packedSchemaWidth\s+{re.escape(schema_name)}\s*=\s*(?P<width>[0-9]+)\s*:=\s*by\b",
+        source,
+    )
+    if not match:
+        fail(
+            "Lean M1 transition model is missing packed schema width theorem "
+            f"{theorem_name} for {schema_name}"
+        )
+    return int(match.group("width"))
+
+
 def load_lean_theorems(source: str) -> set[str]:
     return set(re.findall(r"(?m)^(?:theorem|lemma)\s+([A-Za-z0-9_']+)\b", source))
 
 
-def check_lean_typed_commit_mapping() -> None:
-    if set(M1_OP_ENUM_NAMES) != set(M1_TYPED_COMMIT_LEAN_OPS):
-        fail("internal M1 RTL enum to Lean Op mapping keys drifted")
-    if set(M1_OP_ENUM_NAMES) != set(M1_TYPED_COMMIT_LEAN_COMMIT_OPS):
-        fail("internal M1 RTL enum to Lean CommitOp mapping keys drifted")
-    if set(M1_OP_ENUM_NAMES) != set(M1_TYPED_COMMIT_LEAN_TRANSITIONS):
-        fail("internal M1 RTL enum to Lean TypedCommitTransition mapping keys drifted")
-    if set(M1_STATUS_ENUM_NAMES) != set(M1_TYPED_COMMIT_LEAN_STATUSES):
-        fail("internal M1 RTL status to Lean CommitStatus mapping keys drifted")
+def require_string_mapping_field(entry: object, field: str, label: str) -> str:
+    if not isinstance(entry, dict):
+        fail(f"shared schema {label} entry is not an object: {entry!r}")
+    value = entry.get(field)
+    if not isinstance(value, str) or not value:
+        fail(f"shared schema {label} entry has invalid {field}: {entry!r}")
+    return value
+
+
+def load_m1_op_mappings(contract: dict[str, object]) -> tuple[M1OpMapping, ...]:
+    raw_mappings = contract.get("op_mappings")
+    if not isinstance(raw_mappings, list) or not raw_mappings:
+        fail("shared schema M1 contract is missing op_mappings")
+    mappings = tuple(
+        M1OpMapping(
+            key=require_string_mapping_field(entry, "key", "M1 op_mappings"),
+            sv=require_string_mapping_field(entry, "sv", "M1 op_mappings"),
+            lean_op=require_string_mapping_field(entry, "lean_op", "M1 op_mappings"),
+            lean_commit_op=require_string_mapping_field(entry, "lean_commit_op", "M1 op_mappings"),
+            lean_transition=require_string_mapping_field(entry, "lean_transition", "M1 op_mappings"),
+        )
+        for entry in raw_mappings
+    )
+    keys = tuple(mapping.key for mapping in mappings)
+    if keys != M1_OP_KEYS:
+        fail(f"shared schema M1 op mapping keys drifted: {keys!r} != {M1_OP_KEYS!r}")
+    sv_names = [mapping.sv for mapping in mappings]
+    if len(sv_names) != len(set(sv_names)):
+        fail(f"shared schema M1 op mappings contain duplicate SV names: {sv_names!r}")
+    return mappings
+
+
+def load_m1_status_mappings(contract: dict[str, object]) -> tuple[M1StatusMapping, ...]:
+    raw_mappings = contract.get("status_mappings")
+    if not isinstance(raw_mappings, list) or not raw_mappings:
+        fail("shared schema M1 contract is missing status_mappings")
+    mappings = tuple(
+        M1StatusMapping(
+            key=require_string_mapping_field(entry, "key", "M1 status_mappings"),
+            sv_errno=require_string_mapping_field(entry, "sv_errno", "M1 status_mappings"),
+            lean_status=require_string_mapping_field(entry, "lean_status", "M1 status_mappings"),
+        )
+        for entry in raw_mappings
+    )
+    keys = tuple(mapping.key for mapping in mappings)
+    if keys != M1_STATUS_KEYS:
+        fail(f"shared schema M1 status mapping keys drifted: {keys!r} != {M1_STATUS_KEYS!r}")
+    sv_names = [mapping.sv_errno for mapping in mappings]
+    if len(sv_names) != len(set(sv_names)):
+        fail(f"shared schema M1 status mappings contain duplicate errno names: {sv_names!r}")
+    return mappings
+
+
+def check_lean_packed_schema_contract(
+    lean_source: str,
+    commit_field_specs: tuple[tuple[str, int], ...],
+    state_field_specs: tuple[tuple[str, int], ...],
+) -> None:
+    lean_commit_schema = load_lean_packed_schema(lean_source, "rtlM1CommitPackedSchema")
+    if lean_commit_schema != commit_field_specs:
+        fail(
+            "Lean rtlM1CommitPackedSchema drifted from shared M1 commit schema: "
+            f"{lean_commit_schema!r} != {commit_field_specs!r}"
+        )
+    lean_commit_schema_width = load_lean_packed_schema_width_theorem(
+        lean_source,
+        "rtlM1CommitPackedSchema_width",
+        "rtlM1CommitPackedSchema",
+    )
+    commit_schema_width = sum(width for _name, width in commit_field_specs)
+    if lean_commit_schema_width != commit_schema_width:
+        fail(
+            "Lean rtlM1CommitPackedSchema_width drifted from shared M1 commit schema width: "
+            f"{lean_commit_schema_width} != {commit_schema_width}"
+        )
+    lean_state_schema = load_lean_packed_schema(lean_source, "rtlM1StateProjectionPackedSchema")
+    if lean_state_schema != state_field_specs:
+        fail(
+            "Lean rtlM1StateProjectionPackedSchema drifted from shared M1 state schema: "
+            f"{lean_state_schema!r} != {state_field_specs!r}"
+        )
+    lean_state_schema_width = load_lean_packed_schema_width_theorem(
+        lean_source,
+        "rtlM1StateProjectionPackedSchema_width",
+        "rtlM1StateProjectionPackedSchema",
+    )
+    state_schema_width = sum(width for _name, width in state_field_specs)
+    if lean_state_schema_width != state_schema_width:
+        fail(
+            "Lean rtlM1StateProjectionPackedSchema_width drifted from shared M1 state schema width: "
+            f"{lean_state_schema_width} != {state_schema_width}"
+        )
+
+
+def check_lean_typed_commit_mapping(
+    op_mappings: tuple[M1OpMapping, ...],
+    status_mappings: tuple[M1StatusMapping, ...],
+) -> None:
     source = load_lean_model_source()
 
     op_constructors = load_lean_inductive_constructors(source, "Op")
-    missing = sorted(set(M1_TYPED_COMMIT_LEAN_OPS.values()) - op_constructors)
+    missing = sorted({mapping.lean_op for mapping in op_mappings} - op_constructors)
     if missing:
         fail(f"M1 typed commit ops are missing Lean Op constructors: {missing}")
 
     commit_op_constructors = load_lean_inductive_constructors(source, "CommitOp")
     missing_commit_ops = sorted(
-        set(M1_TYPED_COMMIT_LEAN_COMMIT_OPS.values()) - commit_op_constructors
+        {mapping.lean_commit_op for mapping in op_mappings} - commit_op_constructors
     )
     if missing_commit_ops:
         fail(f"M1 typed commit ops are missing Lean CommitOp constructors: {missing_commit_ops}")
 
     transition_constructors = load_lean_inductive_constructors(source, "TypedCommitTransition")
     missing_transitions = sorted(
-        set(M1_TYPED_COMMIT_LEAN_TRANSITIONS.values()) - transition_constructors
+        {mapping.lean_transition for mapping in op_mappings} - transition_constructors
     )
     if missing_transitions:
         fail(
@@ -310,7 +668,7 @@ def check_lean_typed_commit_mapping() -> None:
             f"{missing_transitions}"
         )
     extra_transitions = sorted(
-        transition_constructors - set(M1_TYPED_COMMIT_LEAN_TRANSITIONS.values())
+        transition_constructors - {mapping.lean_transition for mapping in op_mappings}
     )
     if extra_transitions:
         fail(
@@ -319,7 +677,7 @@ def check_lean_typed_commit_mapping() -> None:
         )
 
     status_constructors = load_lean_inductive_constructors(source, "CommitStatus")
-    missing_statuses = sorted(set(M1_TYPED_COMMIT_LEAN_STATUSES.values()) - status_constructors)
+    missing_statuses = sorted({mapping.lean_status for mapping in status_mappings} - status_constructors)
     if missing_statuses:
         fail(f"M1 typed commit statuses are missing Lean CommitStatus constructors: {missing_statuses}")
 
@@ -348,8 +706,15 @@ def check_lean_typed_commit_mapping() -> None:
         )
 
 
-def load_schema_contract() -> tuple[str, tuple[str, ...], CommitOps]:
-    check_lean_typed_commit_mapping()
+def load_schema_contract() -> tuple[
+    str,
+    tuple[str, ...],
+    tuple[int, ...],
+    str,
+    tuple[str, ...],
+    tuple[int, ...],
+    CommitOps,
+]:
     try:
         schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
     except OSError as exc:
@@ -362,23 +727,51 @@ def load_schema_contract() -> tuple[str, tuple[str, ...], CommitOps]:
         fail("shared schema is missing m1_typed_commit_contract")
     if contract.get("stage") != "m1_typed_cap_commit_transition_mirror":
         fail("shared schema M1 typed commit contract has unexpected stage")
+    op_mappings = load_m1_op_mappings(contract)
+    status_mappings = load_m1_status_mappings(contract)
+    check_lean_typed_commit_mapping(op_mappings, status_mappings)
     record_name = contract.get("record_name")
+    state_record_name = contract.get("state_record_name")
     record_type = contract.get("record")
+    state_record_type = contract.get("state_record")
     op_enum = contract.get("op_enum")
     if record_name != "m1_cap_commit":
         fail(f"shared schema M1 record_name drifted: {record_name!r}")
+    if state_record_name != "m1_state_projection":
+        fail(f"shared schema M1 state_record_name drifted: {state_record_name!r}")
     fields = schema.get("records", {}).get(record_type)
     if not isinstance(fields, list):
         fail(f"shared schema is missing M1 record {record_type!r}")
-    expected_fields = tuple(entry.split(":", 1)[0] for entry in fields)
+    commit_field_specs = tuple(parse_schema_field(entry) for entry in fields)
+    expected_fields = tuple(name for name, _width in commit_field_specs)
+    expected_widths = tuple(width for _name, width in commit_field_specs)
     if expected_fields != COMMIT_FIELDS:
         fail(f"M1 typed commit schema fields drifted: {expected_fields!r} != {COMMIT_FIELDS!r}")
+    state_fields = schema.get("records", {}).get(state_record_type)
+    if not isinstance(state_fields, list):
+        fail(f"shared schema is missing M1 state projection record {state_record_type!r}")
+    state_field_specs = tuple(parse_schema_field(entry) for entry in state_fields)
+    expected_state_fields = tuple(name for name, _width in state_field_specs)
+    expected_state_widths = tuple(width for _name, width in state_field_specs)
+    if expected_state_fields != STATE_PROJECTION_FIELDS:
+        fail(
+            "M1 state projection schema fields drifted: "
+            f"{expected_state_fields!r} != {STATE_PROJECTION_FIELDS!r}"
+        )
+    check_rtl_state_projection_boundary(expected_fields, expected_state_fields)
+    mapped_lean_state_fields = lean_state_projection_fields_from_schema(expected_state_fields)
+    if mapped_lean_state_fields != M1_LEAN_RTL_STATE_PROJECTION_FIELDS:
+        fail(
+            "M1 state projection schema-to-Lean RtlM1StateProjection mapping drifted: "
+            f"{mapped_lean_state_fields!r} != {M1_LEAN_RTL_STATE_PROJECTION_FIELDS!r}"
+        )
     mapped_lean_fields = tuple(M1_SCHEMA_TO_LEAN_COMMIT_FIELDS[field] for field in expected_fields)
     if mapped_lean_fields != M1_LEAN_COMMIT_RECORD_FIELDS:
         fail(
             "M1 typed commit schema-to-Lean CommitRecord field mapping drifted: "
             f"{mapped_lean_fields!r} != {M1_LEAN_COMMIT_RECORD_FIELDS!r}"
         )
+    check_lean_packed_schema_contract(load_lean_model_source(), commit_field_specs, state_field_specs)
     enum_entries = schema.get("enums", {}).get(op_enum)
     if not isinstance(enum_entries, list):
         fail(f"shared schema is missing M1 op enum {op_enum!r}")
@@ -386,7 +779,7 @@ def load_schema_contract() -> tuple[str, tuple[str, ...], CommitOps]:
     for entry in enum_entries:
         name, raw_value = entry.split("=", 1)
         enum_values[name] = parse_sv_int(raw_value)
-    missing = sorted(set(M1_OP_ENUM_NAMES.values()) - set(enum_values))
+    missing = sorted({mapping.sv for mapping in op_mappings} - set(enum_values))
     if missing:
         fail(f"M1 op enum is missing values: {missing}")
     errno_entries = schema.get("enums", {}).get("lnp64_errno_e")
@@ -396,7 +789,7 @@ def load_schema_contract() -> tuple[str, tuple[str, ...], CommitOps]:
     for entry in errno_entries:
         name, raw_value = entry.split("=", 1)
         errno_values[name] = parse_sv_int(raw_value)
-    missing_status_values = sorted(set(M1_STATUS_ENUM_NAMES.values()) - set(errno_values))
+    missing_status_values = sorted({mapping.sv_errno for mapping in status_mappings} - set(errno_values))
     if missing_status_values:
         fail(f"M1 status enum mapping is missing errno values: {missing_status_values}")
     expected_status_values = {
@@ -405,17 +798,25 @@ def load_schema_contract() -> tuple[str, tuple[str, ...], CommitOps]:
         "eagain": ERR_EAGAIN,
         "erevoked": ERR_EREVOKED,
     }
-    for status_key, enum_name in M1_STATUS_ENUM_NAMES.items():
-        if errno_values[enum_name] != expected_status_values[status_key]:
+    for mapping in status_mappings:
+        if errno_values[mapping.sv_errno] != expected_status_values[mapping.key]:
             fail(
-                f"M1 status {status_key} value drifted: "
-                f"{errno_values[enum_name]} != {expected_status_values[status_key]}"
+                f"M1 status {mapping.key} value drifted: "
+                f"{errno_values[mapping.sv_errno]} != {expected_status_values[mapping.key]}"
             )
     ops = CommitOps(**{
-        field: enum_values[enum_name]
-        for field, enum_name in M1_OP_ENUM_NAMES.items()
+        mapping.key: enum_values[mapping.sv]
+        for mapping in op_mappings
     })
-    return record_name, expected_fields, ops
+    return (
+        record_name,
+        expected_fields,
+        expected_widths,
+        state_record_name,
+        expected_state_fields,
+        expected_state_widths,
+        ops,
+    )
 
 
 def run_m1_gate() -> str:
@@ -461,6 +862,93 @@ def parse_records(
     if not records:
         fail("no TTRACE_M1 records emitted")
     return records
+
+
+def parse_state_projection_records(
+    output: str,
+    expected_record_name: str,
+    expected_fields: tuple[str, ...],
+) -> list[dict[str, int | str]]:
+    records: list[dict[str, int | str]] = []
+    for line in output.splitlines():
+        if not line.startswith("TTRACE_M1_STATE "):
+            continue
+        payload = line.removeprefix("TTRACE_M1_STATE ")
+        try:
+            record = json.loads(payload)
+        except json.JSONDecodeError as exc:
+            fail(f"invalid M1 state projection record {payload!r}: {exc}")
+        if record.get("record") != expected_record_name:
+            fail(f"unexpected M1 state projection record type {record.get('record')!r}")
+        actual_fields = tuple(key for key in record if key != "record")
+        if actual_fields != expected_fields:
+            fail(f"M1 state projection fields drifted: {actual_fields!r} != {expected_fields!r}")
+        for field in expected_fields:
+            require_int(record, field)
+        records.append(record)
+    if not records:
+        fail("no TTRACE_M1_STATE records emitted")
+    return records
+
+
+def parse_bit_records(output: str, prefix: str, expected_record_name: str) -> list[str]:
+    records: list[str] = []
+    for line in output.splitlines():
+        if not line.startswith(prefix):
+            continue
+        payload = line.removeprefix(prefix)
+        try:
+            record = json.loads(payload)
+        except json.JSONDecodeError as exc:
+            fail(f"invalid packed bit record {payload!r}: {exc}")
+        if record.get("record") != expected_record_name:
+            fail(f"unexpected packed bit record type {record.get('record')!r}")
+        bits = record.get("bits")
+        if not isinstance(bits, str) or not re.fullmatch(r"[0-9a-fA-F]+", bits):
+            fail(f"packed bit record {expected_record_name} has invalid bits {bits!r}")
+        records.append(bits)
+    if not records:
+        fail(f"no {prefix.strip()} records emitted")
+    return records
+
+
+def decode_packed_bits(
+    bits: str,
+    expected_fields: tuple[str, ...],
+    expected_widths: tuple[int, ...],
+) -> dict[str, int]:
+    total_width = sum(expected_widths)
+    raw = int(bits, 16)
+    if raw >= (1 << total_width):
+        fail(f"packed bit record is wider than schema width {total_width}: 0x{bits}")
+    decoded: dict[str, int] = {}
+    shift = total_width
+    for field, width in zip(expected_fields, expected_widths, strict=True):
+        shift -= width
+        decoded[field] = (raw >> shift) & ((1 << width) - 1)
+    if shift != 0:
+        fail("internal packed bit decoder did not consume all schema bits")
+    return decoded
+
+
+def check_packed_bits_match_records(
+    records: list[dict[str, int | str]],
+    bit_records: list[str],
+    expected_fields: tuple[str, ...],
+    expected_widths: tuple[int, ...],
+    label: str,
+) -> None:
+    if len(bit_records) != len(records):
+        fail(f"{label} packed bit count {len(bit_records)} != field record count {len(records)}")
+    for index, (record, bits) in enumerate(zip(records, bit_records, strict=True)):
+        decoded = decode_packed_bits(bits, expected_fields, expected_widths)
+        for field in expected_fields:
+            actual = require_int(record, field)
+            if decoded[field] != actual:
+                fail(
+                    f"{label} packed bit decode drift at record {index} field {field}: "
+                    f"{decoded[field]} != {actual}"
+                )
 
 
 def split_runs(records: list[dict[str, int | str]], ops: CommitOps) -> list[list[dict[str, int | str]]]:
@@ -553,15 +1041,89 @@ def require_cap_equal(left: Cap, right: Cap, context: str) -> None:
         fail(f"{context}: cap mismatch {left!r} != {right!r}")
 
 
-def initial_state(first_record: dict[str, int | str]) -> M1State:
+def cap_projection(prefix: str, cap: Cap | None) -> dict[str, int]:
+    if cap is None:
+        return {
+            f"{prefix}_object_id": 0,
+            f"{prefix}_generation": 0,
+            f"{prefix}_domain_id": 0,
+            f"{prefix}_lineage_epoch": 0,
+            f"{prefix}_sealed": 0,
+            f"{prefix}_rights": 0,
+        }
+    return {
+        f"{prefix}_object_id": cap.object_id,
+        f"{prefix}_generation": cap.fdr_gen,
+        f"{prefix}_domain_id": cap.domain_id,
+        f"{prefix}_lineage_epoch": cap.lineage_epoch,
+        f"{prefix}_sealed": cap.sealed,
+        f"{prefix}_rights": cap.rights_mask,
+    }
+
+
+def projection_from_state(state: M1State, op: int, status: int) -> dict[str, int | str]:
+    consumer_cap = state.consumer_cap
+    if consumer_cap is None:
+        consumer_cap = Cap(
+            object_id=state.root_cap.object_id,
+            object_gen=state.object_gen,
+            fdr_gen=0,
+            domain_id=2,
+            domain_gen=1,
+            rights_mask=0,
+            lineage_epoch=state.root_cap.lineage_epoch,
+            sealed=0,
+        )
+    return {
+        "record": "m1_state_projection",
+        "op": op,
+        "status": status,
+        "object_gen": state.object_gen,
+        "created_object_created": int(state.created_object_created),
+        "created_object_gen": state.created_object_gen,
+        **cap_projection("root", state.root_cap),
+        **cap_projection("consumer", consumer_cap),
+        "sent_valid": int(state.sent_cap is not None),
+        **cap_projection("sent", state.sent_cap),
+        "minted_valid": int(state.minted_cap is not None),
+        **cap_projection("minted", state.minted_cap),
+        "wake_pending": int(state.wake_pending),
+        "transfer_valid": int(state.transfer_valid),
+        "stale_rejected": int(state.stale_rejected),
+        "revoked_rejected": int(state.revoked_rejected),
+        "failed_no_authority": int(state.failed_no_authority),
+        "full_was_explicit": int(state.full_was_explicit),
+        "has_revoked_generation": int(state.revoked_gen is not None),
+        "revoked_generation": state.revoked_gen or 0,
+    }
+
+
+def check_state_projection(
+    expected: dict[str, int | str],
+    actual: dict[str, int | str],
+    context: str,
+) -> None:
+    expected_fields = ("record",) + STATE_PROJECTION_FIELDS
+    actual_fields = tuple(actual)
+    if actual_fields != expected_fields:
+        fail(f"{context}: state projection fields drifted: {actual_fields!r} != {expected_fields!r}")
+    for field in expected_fields:
+        if actual.get(field) != expected.get(field):
+            fail(f"{context}: state projection field {field} {actual.get(field)!r} != {expected.get(field)!r}")
+
+
+def initial_state(first_record: dict[str, int | str], ops: CommitOps) -> M1State:
     initial_gen = require_int(first_record, "object_gen")
+    root_rights = ROOT_RIGHTS
+    if require_int(first_record, "op") == ops.cap_dup_denied:
+        root_rights = require_int(first_record, "rights_mask")
     root_cap = Cap(
         object_id=1,
         object_gen=initial_gen,
         fdr_gen=initial_gen,
         domain_id=1,
         domain_gen=1,
-        rights_mask=ROOT_RIGHTS,
+        rights_mask=root_rights,
         lineage_epoch=1,
         sealed=0,
     )
@@ -651,6 +1213,7 @@ def apply_commit(state: M1State, record: dict[str, int | str], run_index: int, o
         require_cap_equal(cap, state.root_cap, f"run {run_index} rejectFull")
         if status != ERR_EAGAIN:
             fail(f"run {run_index} rejectFull did not fail with EAGAIN")
+        state.full_was_explicit = True
         return
 
     if op == ops.object_create:
@@ -694,6 +1257,8 @@ def apply_commit(state: M1State, record: dict[str, int | str], run_index: int, o
             fail(f"run {run_index} capRevoke failed")
         state.object_gen = old_gen + 1
         state.revoked_gen = old_gen
+        state.revoked_rejected = True
+        state.stale_rejected = True
         state.root_cap = Cap(
             object_id=state.root_cap.object_id,
             object_gen=state.object_gen,
@@ -730,6 +1295,26 @@ def apply_commit(state: M1State, record: dict[str, int | str], run_index: int, o
         state.stale_rejected = True
         return
 
+    if op == ops.cap_dup_denied:
+        if status != ERR_EPERM:
+            fail(f"run {run_index} capDupDenied did not fail with EPERM")
+        if cap.rights_mask & RIGHT_DUP:
+            fail(f"run {run_index} capDupDenied still carried dup authority")
+        expected = Cap(
+            object_id=state.root_cap.object_id,
+            object_gen=state.object_gen,
+            fdr_gen=state.object_gen,
+            domain_id=1,
+            domain_gen=1,
+            rights_mask=RIGHT_PUSH | RIGHT_PULL,
+            lineage_epoch=state.root_cap.lineage_epoch,
+            sealed=0,
+        )
+        require_cap_equal(cap, expected, f"run {run_index} capDupDenied")
+        state.root_cap = cap
+        state.failed_no_authority = True
+        return
+
     fail(f"run {run_index} unsupported op {op}")
 
 
@@ -754,20 +1339,35 @@ def check_common(record: dict[str, int | str], ops: CommitOps) -> None:
         fail(f"op {op} amplifies rights beyond root mask")
 
 
-def check_run(run: list[dict[str, int | str]], index: int, ops: CommitOps) -> None:
+def check_run(
+    run: list[dict[str, int | str]],
+    state_run: list[dict[str, int | str]],
+    index: int,
+    ops: CommitOps,
+) -> None:
     sequence = [require_int(record, "op") for record in run]
+    state_sequence = [require_int(record, "op") for record in state_run]
+    if state_sequence != sequence:
+        fail(f"run {index} state projection op sequence {state_sequence} != commit sequence {sequence}")
     if sequence == ops.denied_sequence:
-        check_denied_run(run, index, ops)
+        check_denied_run(run, state_run, index, ops)
         return
     if sequence != ops.expected_sequence:
         fail(f"run {index} op sequence {sequence} != {ops.expected_sequence} or {ops.denied_sequence}")
+    if len(state_run) != len(run):
+        fail(f"run {index} state projection count {len(state_run)} != commit count {len(run)}")
 
     for record in run:
         check_common(record, ops)
 
-    state = initial_state(run[0])
-    for record in run:
+    state = initial_state(run[0], ops)
+    for record, state_record in zip(run, state_run, strict=True):
         apply_commit(state, record, index, ops)
+        check_state_projection(
+            projection_from_state(state, require_int(record, "op"), require_int(record, "status")),
+            state_record,
+            f"run {index} op {require_int(record, 'op')}",
+        )
     if state.sent_cap is not None:
         fail(f"run {index} ended with an undelivered transferred cap")
     if state.consumer_cap is None:
@@ -852,36 +1452,68 @@ def check_run(run: list[dict[str, int | str]], index: int, ops: CommitOps) -> No
         fail(f"run {index} stale FDR generation was accepted as live")
 
 
-def check_denied_run(run: list[dict[str, int | str]], index: int, ops: CommitOps) -> None:
+def check_denied_run(
+    run: list[dict[str, int | str]],
+    state_run: list[dict[str, int | str]],
+    index: int,
+    ops: CommitOps,
+) -> None:
     if len(run) != 1:
         fail(f"run {index} denied path emitted more than one commit")
+    if len(state_run) != 1:
+        fail(f"run {index} denied path emitted more than one state projection")
     record = run[0]
     check_common(record, ops)
-    cap = cap_from_record(record)
-    expected = Cap(
-        object_id=1,
-        object_gen=1,
-        fdr_gen=1,
-        domain_id=1,
-        domain_gen=1,
-        rights_mask=RIGHT_PUSH | RIGHT_PULL,
-        lineage_epoch=1,
-        sealed=0,
+    state = initial_state(record, ops)
+    apply_commit(state, record, index, ops)
+    check_state_projection(
+        projection_from_state(state, require_int(record, "op"), require_int(record, "status")),
+        state_run[0],
+        f"run {index} capDupDenied",
     )
-    require_cap_equal(cap, expected, f"run {index} capDupDenied")
-    if require_int(record, "status") != ERR_EPERM:
-        fail(f"run {index} capDupDenied did not report EPERM")
-    if cap.rights_mask & RIGHT_DUP:
-        fail(f"run {index} capDupDenied still carried dup authority")
 
 
 def main() -> int:
-    record_name, schema_fields, ops = load_schema_contract()
+    (
+        record_name,
+        schema_fields,
+        schema_widths,
+        state_record_name,
+        state_schema_fields,
+        state_schema_widths,
+        ops,
+    ) = load_schema_contract()
     output = run_m1_gate()
     records = parse_records(output, record_name, schema_fields)
+    bit_records = parse_bit_records(output, "TTRACE_M1_BITS ", "m1_cap_commit_bits")
+    state_records = parse_state_projection_records(output, state_record_name, state_schema_fields)
+    state_bit_records = parse_bit_records(
+        output,
+        "TTRACE_M1_STATE_BITS ",
+        "m1_state_projection_bits",
+    )
+    check_packed_bits_match_records(
+        records,
+        bit_records,
+        schema_fields,
+        schema_widths,
+        "M1 typed commit",
+    )
+    check_packed_bits_match_records(
+        state_records,
+        state_bit_records,
+        state_schema_fields,
+        state_schema_widths,
+        "M1 state projection",
+    )
+    if len(state_records) != len(records):
+        fail(f"M1 state projection count {len(state_records)} != commit count {len(records)}")
     runs = split_runs(records, ops)
-    for index, run in enumerate(runs):
-        check_run(run, index, ops)
+    state_runs = split_runs(state_records, ops)
+    if len(state_runs) != len(runs):
+        fail(f"M1 state projection run count {len(state_runs)} != commit run count {len(runs)}")
+    for index, (run, state_run) in enumerate(zip(runs, state_runs, strict=True)):
+        check_run(run, state_run, index, ops)
     print(f"rtl m1 typed commit trace ok ({len(runs)} run(s))")
     return 0
 

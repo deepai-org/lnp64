@@ -70,6 +70,7 @@ bash scripts/run_rtl_s0.sh
 LNP64_TYPED_TRACE_USE_EXISTING=1 scripts/check_rtl_typed_trace_contract.py
 bash scripts/run_rtl_m1.sh
 scripts/check_rtl_m1_typed_commit_trace.py
+scripts/test_rtl_m1_typed_commit_checker.py
 bash scripts/run_rtl_m2.sh
 bash scripts/run_rtl_m3.sh
 bash scripts/run_rtl_m4.sh

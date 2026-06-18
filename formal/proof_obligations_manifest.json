@@ -65,10 +65,10 @@
       "bridge": {
         "assumptions": ["bounded FDR table in the M1 slice", "ready/valid fairness for accepted queue operations"],
         "rtl_modules": ["rtl/engines/lnp64_m1_pingpong.sv", "rtl/engines/lnp64_engine_shells.sv"],
-        "rtl_witness_signals": ["no_forged_fdr", "rights", "stale_generation_rejected", "typed_commit_valid", "typed_commit", "typed_commit.op", "typed_commit.rights_mask", "typed_commit.fdr_gen", "duplicated_cap", "sent_cap", "have_sent_cap"],
+        "rtl_witness_signals": ["no_forged_fdr", "rights", "stale_generation_rejected", "typed_commit_valid", "typed_commit", "typed_commit.op", "typed_commit.rights_mask", "typed_commit.fdr_gen", "typed_state_projection", "typed_state_projection.root_generation", "typed_state_projection.consumer_generation", "rtl_state_projection", "producer_fd_generation", "consumer_fd_generation", "queue_generation", "producer_rights", "consumer_rights", "duplicated_cap", "sent_cap", "have_sent_cap", "transfer_valid", "minted_cap_valid", "revoked_rejected", "failed_no_authority"],
         "trace_evidence": ["rtl/sim/lnp64_m1_tb.sv", "formal/m1_model.py", "scripts/check_rtl_m1_typed_commit_trace.py", "scripts/run_rtl_m1.sh"],
         "trust_level": "T1",
-        "known_gaps": ["M1 has a transition-invariant Lean slice, schema-backed typed cap commit records checked against Lean CommitOp/CommitStatus/CommitRecord/TypedCommitTransition plus the typed-commit bridge, transfer-current-authority, and fail-closed authority-slot theorem names, local RTL assertions for dup/send/recv transfer continuity, and executable transition comparison, but no bit-level checked RTL-to-Lean refinement proof yet."]
+        "known_gaps": ["M1 has a transition-invariant Lean slice, schema-backed typed cap commit and RTL post-state projection records checked against Lean CommitOp/CommitStatus/CommitRecord/TypedCommitTransition/RtlM1StateProjection, an explicit RTL commit/state projection relation, typed-commit bridge, transfer-current-authority, and fail-closed authority-slot theorem names, a typed_state_projection RTL module boundary feeding trace and assertion witnesses, local RTL assertions that consume the packed typed_state_projection for dup/send/recv transfer continuity, non-OK authority-projection preservation, and authority-write mediation, and executable transition/post-state comparison. The Lean model names rtlM1CommitPackedSchema and rtlM1StateProjectionPackedSchema with width theorems, and the checker compares those Lean packed-schema mirrors to the shared RTL schema and consumes schema-owned M1 op/status mappings when checking SV enum names, Lean constructors, and trace values. The checker also requires every emitted M1 state trace field to come from typed_state_projection and decodes packed RTL commit/projection bits by schema before comparing them to the transition records. The Lean refinement relation now lifts failed-authority and non-OK commit preservation onto RTL state projections and has op-specific projection lemmas for capDup, capSend, capRecv, objectCreate, and capRevoke, so authority-changing post-state projection slots are tied to the typed commit projection. This is the first refinement-shape relation, but no formal bit-level RTL-to-Lean refinement proof from emitted bits exists yet."]
       },
       "lean_file": "formal/M1Model.lean",
       "theorems": [
@@ -102,6 +102,15 @@
             "m1_t3_typed_commit_transition_refines_step_for_reachable",
             "m1_t3_typed_commit_transition_preserves_invariant_for_reachable",
             "m1_t3_typed_commit_failed_authority_transition_preserves_authority_slots_for_reachable",
+            "m1_t3_typed_commit_non_ok_status_preserves_authority_slots_for_reachable",
+            "m1_t3_rtl_m1_refinement_step_preserves_sg_auth_invariant_for_reachable",
+            "rtl_m1_refinement_failed_authority_transition_preserves_authority_projection",
+            "rtl_m1_refinement_non_ok_status_preserves_authority_projection",
+            "rtl_m1_refinement_cap_dup_post_consumer_matches_commit_projection",
+            "rtl_m1_refinement_cap_send_post_sent_matches_commit_projection",
+            "rtl_m1_refinement_cap_recv_post_consumer_matches_commit_projection",
+            "rtl_m1_refinement_object_create_post_minted_matches_commit_projection",
+            "rtl_m1_refinement_cap_revoke_post_generation_matches_commit_projection",
             "m1_t3_stale_generation_cannot_authorize_pull_from_main_object",
             "m1_t3_stale_generation_cannot_authorize_work_for_all_reachable",
             "m1_t3_revoked_caps_cannot_revive_for_all_reachable"

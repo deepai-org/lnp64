@@ -104,6 +104,26 @@ def require_exact_map(actual: dict[str, list[str]], expected: dict[str, list[str
         require(actual[name] == expected_items, f"{label} {name} drifted: actual={actual[name]} expected={expected_items}")
 
 
+def require_string(value: object, label: str) -> str:
+    require(isinstance(value, str) and value, f"{label} must be a non-empty string")
+    return value
+
+
+def require_mapping_keys(entries: object, expected_keys: list[str], required_fields: list[str], label: str) -> list[dict[str, str]]:
+    require(isinstance(entries, list) and entries, f"{label} must be a non-empty list")
+    parsed: list[dict[str, str]] = []
+    for entry in entries:
+        require(isinstance(entry, dict), f"{label} entry must be an object: {entry!r}")
+        parsed_entry = {
+            field: require_string(entry.get(field), f"{label}.{field}")
+            for field in required_fields
+        }
+        parsed.append(parsed_entry)
+    actual_keys = [entry["key"] for entry in parsed]
+    require(actual_keys == expected_keys, f"{label} keys drifted: actual={actual_keys} expected={expected_keys}")
+    return parsed
+
+
 def main() -> None:
     schema = json.loads(read_text(SCHEMA))
     require(schema.get("schema") == "lnp64_shared_schema_v1", "unexpected schema id")
@@ -168,12 +188,47 @@ def main() -> None:
     m1_gate = m1_contract.get("gate")
     m1_source = m1_contract.get("source")
     m1_record = m1_contract.get("record")
+    m1_state_record = m1_contract.get("state_record")
     m1_op_enum = m1_contract.get("op_enum")
     require(isinstance(m1_gate, str) and (ROOT / m1_gate).exists(), "M1 typed commit gate must exist")
     require(isinstance(m1_source, str) and (ROOT / m1_source).exists(), "M1 typed commit source must exist")
     require(m1_record in schema["records"], "M1 typed commit record must name a package record")
+    require(m1_state_record in schema["records"], "M1 state projection record must name a package record")
     require(m1_op_enum in schema["enums"], "M1 typed commit op_enum must name a package enum")
     require(m1_contract.get("record_name") == "m1_cap_commit", "M1 typed commit record_name drifted")
+    require(
+        m1_contract.get("state_record_name") == "m1_state_projection",
+        "M1 state projection record_name drifted",
+    )
+    op_mappings = require_mapping_keys(
+        m1_contract.get("op_mappings"),
+        [
+            "cap_dup",
+            "cap_send",
+            "cap_recv",
+            "cap_revoke",
+            "reject_stale",
+            "push",
+            "pull",
+            "reject_full",
+            "cap_dup_denied",
+            "object_create",
+        ],
+        ["key", "sv", "lean_op", "lean_commit_op", "lean_transition"],
+        "M1 op_mappings",
+    )
+    m1_op_enum_names = {entry.split("=", 1)[0] for entry in schema["enums"][m1_op_enum]}
+    missing_sv_ops = sorted({entry["sv"] for entry in op_mappings} - m1_op_enum_names)
+    require(not missing_sv_ops, f"M1 op_mappings reference absent SV enum entries: {missing_sv_ops}")
+    status_mappings = require_mapping_keys(
+        m1_contract.get("status_mappings"),
+        ["ok", "eperm", "eagain", "erevoked"],
+        ["key", "sv_errno", "lean_status"],
+        "M1 status_mappings",
+    )
+    errno_enum_names = {entry.split("=", 1)[0] for entry in schema["enums"]["lnp64_errno_e"]}
+    missing_statuses = sorted({entry["sv_errno"] for entry in status_mappings} - errno_enum_names)
+    require(not missing_statuses, f"M1 status_mappings reference absent errno entries: {missing_statuses}")
 
     print("rtl shared schema ok")
 

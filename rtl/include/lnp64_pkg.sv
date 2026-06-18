@@ -265,6 +265,48 @@ package lnp64_pkg;
     } lnp64_m1_cap_commit_t;
 
     typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] object_gen;
+        logic        created_object_created;
+        logic [31:0] created_object_gen;
+        logic [31:0] root_object_id;
+        logic [31:0] root_generation;
+        logic [31:0] root_domain_id;
+        logic [31:0] root_lineage_epoch;
+        logic        root_sealed;
+        logic [63:0] root_rights;
+        logic [31:0] consumer_object_id;
+        logic [31:0] consumer_generation;
+        logic [31:0] consumer_domain_id;
+        logic [31:0] consumer_lineage_epoch;
+        logic        consumer_sealed;
+        logic [63:0] consumer_rights;
+        logic        sent_valid;
+        logic [31:0] sent_object_id;
+        logic [31:0] sent_generation;
+        logic [31:0] sent_domain_id;
+        logic [31:0] sent_lineage_epoch;
+        logic        sent_sealed;
+        logic [63:0] sent_rights;
+        logic        minted_valid;
+        logic [31:0] minted_object_id;
+        logic [31:0] minted_generation;
+        logic [31:0] minted_domain_id;
+        logic [31:0] minted_lineage_epoch;
+        logic        minted_sealed;
+        logic [63:0] minted_rights;
+        logic        wake_pending;
+        logic        transfer_valid;
+        logic        stale_rejected;
+        logic        revoked_rejected;
+        logic        failed_no_authority;
+        logic        full_was_explicit;
+        logic        has_revoked_generation;
+        logic [31:0] revoked_generation;
+    } lnp64_m1_state_projection_t;
+
+    typedef struct packed {
         logic [31:0] object_id;
         logic [31:0] object_gen;
         logic [15:0] profile;

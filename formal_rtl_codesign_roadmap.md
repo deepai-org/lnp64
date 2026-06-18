@@ -760,8 +760,10 @@ progress, realtime, and evidence-honesty claims instead of accumulating
 unrelated local facts.
 
 Near-term Track A work should be intentionally narrow. Until the first
-capability/FDR transition-invariant slice is complete, do not expand the formal
-surface broadly except to remove false claims or wire that slice to RTL. The
+capability/FDR transition-invariant slice reaches the first credible refinement
+shape, do not expand the formal surface broadly except to remove false claims
+or wire that slice to RTL. M1 is the template. If M1 stops at typed traces plus
+assertions, every later proof slice is likely to copy that weakness. The
 acceptance bar for the first deep slice is:
 
 - a Lean `State`, `Step`, and `Reachable` model for the capability/FDR path.
@@ -771,13 +773,29 @@ acceptance bar for the first deep slice is:
   amplification, stale-generation rejection, revocation safety, and valid
   transfer.
 - typed commit records from the corresponding RTL slice.
+- a schema-owned commit/state-projection format shared by SystemVerilog, Lean,
+  Python, and trace decoding, or mechanically checked against the same schema.
+- an explicit refinement relation between RTL commit/state projection, Lean
+  pre-state, Lean `Step`, and Lean post-state projection.
 - assertions or explicit assumptions for every precondition the proof needs.
 - a gate that demonstrates the RTL commit records match the executable model
   for representative and randomized traces.
+- bypass/mediation assertions showing no alternate RTL path writes
+  capability/FDR authority outside the owner transition path.
+
+This is a hard work-order gate, not a preference. The next vertical slice must
+not start while M1 is still only "typed traces plus assertions." During this
+phase, broad new theorem files, new manifest/checker layers, and new RTL smoke
+slices are justified only when they directly tighten the M1 refinement bridge:
+schema ownership, RTL state projection, Lean transition preservation, executable
+comparison, bypass mediation, or explicit trust-level accounting.
 
 Only after that pattern is real should the project repeat it for scheduler
 uniqueness, no-lost-wakeups, VMA/DMA authority, Resource Domain isolation, and
-fault/progress containment.
+fault/progress containment. Do not start the next vertical slice merely because
+the M1 trace checker is passing; the M1 row must state what is already
+transition-proven, what is assertion-coupled, what is refinement-coupled, and
+what remains for T4.
 
 ### Immediate Execution Focus
 
@@ -795,23 +813,47 @@ Do this before opening another large proof area:
    transfer/revocation state.
 2. **Make M1 commit records schema-owned.** The typed commit record should be
    generated from, or mechanically checked against, the shared schema for
-   SystemVerilog, Lean, Python, and any trace JSON. The testbench must not
-   define an independent authority format.
+   SystemVerilog packed records, Lean records/projections, Python decoding, and
+   any trace JSON. The schema is the source of truth; testbench JSON is only a
+   decoded view and must not define an independent authority format.
 3. **Prove the M1 model preserves `SG-AUTH`.** Preserve non-forgeability, no
    authority amplification, current-authority checks, valid transfer, revoke,
    stale-generation rejection, and fail-closed operations across all reachable
    states in the modeled slice.
 4. **Check the RTL emits only valid M1 commits.** The RTL gate should decode
-   typed commits, compare them against the executable model, and reject
-   impossible authority transitions. This is still not a bit-level proof, but it
-   is the bridge toward T4.
+   typed commits and state projections from the schema-owned format, compare
+   them against the executable model, and reject impossible authority
+   transitions. This is still not a bit-level proof, but it is the bridge
+   toward T4.
 5. **Add bypass/mediation checks.** Prove or assert that no RTL path writes
    capability/FDR authority state except the M1 owner transition path or its
    explicitly named shard. This is the first concrete mediation-completeness
    check.
-6. **Record the trust level honestly.** Until a checked RTL-to-Lean refinement
-   relation exists, call the slice transition-proven plus typed-trace/assertion
-   coupled, not finished T4/T5 hardware assurance.
+6. **Record the trust level honestly.** Every M1 evidence row should use the
+   same vocabulary: model-only, typed-trace checked, assertion-coupled,
+   transition-proven, refinement-coupled, or top-level composed. Until a
+   checked RTL-to-Lean refinement relation exists, call the slice
+   transition-proven plus typed-trace/assertion coupled, not finished T4/T5
+   hardware assurance.
+
+M1 reaches the minimum shape for the next vertical slice only when the roadmap
+and manifests can answer all of these questions in one place:
+
+- which RTL packed record fields form the commit and state projection.
+- which Lean `Step` each commit may represent.
+- which post-state projection is compared.
+- which SG-AUTH invariant is preserved for reachable Lean states.
+- which RTL assertions rule out bypasses and unchecked preconditions.
+- which assumptions remain outside the proof, and whether the current claim is
+  model-only, typed-trace checked, assertion-coupled, transition-proven,
+  refinement-coupled, or top-level composed.
+
+The current M1 artifacts should be read against this checklist. A passing trace
+checker means the source-owned record and executable comparison are improving;
+it does not by itself prove a T4 RTL-to-Lean refinement. The remaining T4 gap
+must stay explicit until a checked artifact shows that every accepted M1 RTL
+commit corresponds to one allowed Lean transition and that all authority-bearing
+post-state projection fields match the Lean post-state.
 
 After M1 reaches this shape, repeat the same pattern in this order:
 
@@ -1882,6 +1924,10 @@ Required slice:
 - cross-tile wake or scheduler handoff.
 - schema-owned typed capability/FDR commit records.
 - a documented RTL-state-projection to Lean-state relation for the M1 slice.
+- a documented commit/pre-state/post-state relation showing which Lean `Step`
+  each RTL M1 commit corresponds to.
+- packed RTL commit/projection bit decoding checked against the schema before
+  JSON trace fields are trusted.
 - bypass/mediation assertions for capability/FDR authority writes.
 - Verilator simulation.
 - co-simulation against the emulator.
@@ -1915,6 +1961,9 @@ Expected demo:
 - the ping-pong program is promoted into the recurring program corpus gate.
 
 This milestone is intentionally small but deep. It is not finished until the
-remaining gap to checked RTL-to-Lean refinement is explicit. Once it works, the
-project has a reusable proof/RTL/emulator loop and can grow block by block
+remaining gap to checked RTL-to-Lean refinement is explicit and the evidence row
+says whether M1 is only typed-trace checked, assertion-coupled,
+transition-proven, refinement-coupled, or top-level composed. Passing typed
+trace checks and assertions alone is not T4. Once the refinement shape works,
+the project has a reusable proof/RTL/emulator loop and can grow block by block
 without betting everything on a whole-chip rewrite.

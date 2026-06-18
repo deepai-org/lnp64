@@ -19,6 +19,7 @@ module lnp64_m1_tb;
     logic queue_full_explicit;
     logic typed_commit_valid;
     lnp64_m1_cap_commit_t typed_commit;
+    lnp64_m1_state_projection_t typed_state_projection;
 
     lnp64_m1_pingpong dut(
         .clk(clk),
@@ -36,7 +37,8 @@ module lnp64_m1_tb;
         .stale_generation_rejected(stale_generation_rejected),
         .queue_full_explicit(queue_full_explicit),
         .typed_commit_valid(typed_commit_valid),
-        .typed_commit(typed_commit)
+        .typed_commit(typed_commit),
+        .typed_state_projection(typed_state_projection)
     );
 
     lnp64_m1_assertions assertions_i(
@@ -50,7 +52,10 @@ module lnp64_m1_tb;
         .queue_full_explicit(queue_full_explicit),
         .expect_denied(deny_dup),
         .typed_commit_valid(typed_commit_valid),
-        .typed_commit(typed_commit)
+        .typed_commit(typed_commit),
+        .typed_state_projection(typed_state_projection),
+        .rtl_state_projection(dut.state),
+        .queue_generation(typed_state_projection.object_gen)
     );
 
     always #5 clk = ~clk;
@@ -75,6 +80,56 @@ module lnp64_m1_tb;
                 typed_commit.lineage_epoch,
                 typed_commit.sealed,
                 typed_commit.status
+            );
+            $display(
+                "TTRACE_M1_BITS {\"record\":\"m1_cap_commit_bits\",\"bits\":\"%0h\"}",
+                typed_commit
+            );
+            $display(
+                "TTRACE_M1_STATE {\"record\":\"m1_state_projection\",\"op\":%0d,\"status\":%0d,\"object_gen\":%0d,\"created_object_created\":%0d,\"created_object_gen\":%0d,\"root_object_id\":%0d,\"root_generation\":%0d,\"root_domain_id\":%0d,\"root_lineage_epoch\":%0d,\"root_sealed\":%0d,\"root_rights\":%0d,\"consumer_object_id\":%0d,\"consumer_generation\":%0d,\"consumer_domain_id\":%0d,\"consumer_lineage_epoch\":%0d,\"consumer_sealed\":%0d,\"consumer_rights\":%0d,\"sent_valid\":%0d,\"sent_object_id\":%0d,\"sent_generation\":%0d,\"sent_domain_id\":%0d,\"sent_lineage_epoch\":%0d,\"sent_sealed\":%0d,\"sent_rights\":%0d,\"minted_valid\":%0d,\"minted_object_id\":%0d,\"minted_generation\":%0d,\"minted_domain_id\":%0d,\"minted_lineage_epoch\":%0d,\"minted_sealed\":%0d,\"minted_rights\":%0d,\"wake_pending\":%0d,\"transfer_valid\":%0d,\"stale_rejected\":%0d,\"revoked_rejected\":%0d,\"failed_no_authority\":%0d,\"full_was_explicit\":%0d,\"has_revoked_generation\":%0d,\"revoked_generation\":%0d}",
+                typed_state_projection.op,
+                typed_state_projection.status,
+                typed_state_projection.object_gen,
+                typed_state_projection.created_object_created,
+                typed_state_projection.created_object_gen,
+                typed_state_projection.root_object_id,
+                typed_state_projection.root_generation,
+                typed_state_projection.root_domain_id,
+                typed_state_projection.root_lineage_epoch,
+                typed_state_projection.root_sealed,
+                typed_state_projection.root_rights,
+                typed_state_projection.consumer_object_id,
+                typed_state_projection.consumer_generation,
+                typed_state_projection.consumer_domain_id,
+                typed_state_projection.consumer_lineage_epoch,
+                typed_state_projection.consumer_sealed,
+                typed_state_projection.consumer_rights,
+                typed_state_projection.sent_valid,
+                typed_state_projection.sent_object_id,
+                typed_state_projection.sent_generation,
+                typed_state_projection.sent_domain_id,
+                typed_state_projection.sent_lineage_epoch,
+                typed_state_projection.sent_sealed,
+                typed_state_projection.sent_rights,
+                typed_state_projection.minted_valid,
+                typed_state_projection.minted_object_id,
+                typed_state_projection.minted_generation,
+                typed_state_projection.minted_domain_id,
+                typed_state_projection.minted_lineage_epoch,
+                typed_state_projection.minted_sealed,
+                typed_state_projection.minted_rights,
+                typed_state_projection.wake_pending,
+                typed_state_projection.transfer_valid,
+                typed_state_projection.stale_rejected,
+                typed_state_projection.revoked_rejected,
+                typed_state_projection.failed_no_authority,
+                typed_state_projection.full_was_explicit,
+                typed_state_projection.has_revoked_generation,
+                typed_state_projection.revoked_generation
+            );
+            $display(
+                "TTRACE_M1_STATE_BITS {\"record\":\"m1_state_projection_bits\",\"bits\":\"%0h\"}",
+                typed_state_projection
             );
         end
         if (trace_valid) begin
