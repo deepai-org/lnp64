@@ -3,7 +3,7 @@ use std::collections::{HashMap, VecDeque};
 use std::ffi::CString;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::os::fd::AsRawFd;
 use std::os::raw::{c_char, c_int};
 use std::os::unix::ffi::OsStrExt;
@@ -4990,6 +4990,7 @@ impl Machine {
         let fd = self.decode_fd_value(fd_value)?;
         self.fd_right_errno(fd, CAP_RIGHT_WRITE)?;
         let addr = self.read_c_string(addr_ptr).map_err(|_| 14u64)?;
+        let addr = addr.parse::<SocketAddr>().map_err(|_| 22u64)?.to_string();
         match &mut self.process_mut().map_err(|_| 3u64)?.fds[fd] {
             FdHandle::TcpSocket { bound_addr, .. } => {
                 *bound_addr = Some(addr);
@@ -5032,7 +5033,8 @@ impl Machine {
             return Err(22);
         }
         let addr = self.read_c_string(addr_ptr).map_err(|_| 14u64)?;
-        let stream = TcpStream::connect(&addr).map_err(|_| 111u64)?;
+        let addr = addr.parse::<SocketAddr>().map_err(|_| 22u64)?;
+        let stream = TcpStream::connect(addr).map_err(|_| 111u64)?;
         stream.set_nonblocking(true).map_err(|_| 5u64)?;
         self.process_mut().map_err(|_| 3u64)?.fds[fd] = FdHandle::TcpStream(stream);
         self.bump_fd_generation(fd).map_err(|_| 9u64)?;
@@ -9230,6 +9232,59 @@ mod tests {
         machine.object_ctl(Reg(6), arg).unwrap();
         assert_eq!(machine.thread().unwrap().regs[6], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 1);
+    }
+
+    #[test]
+    fn socket_endpoint_rejects_invalid_addresses_without_state_change() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let arg = ARG_BASE + 0x1000;
+        let addr = ARG_BASE + 0x1100;
+        machine.write_bytes(addr, b"localhost:41065\0").unwrap();
+
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::Endpoint.code())
+            .unwrap();
+        machine
+            .store_u64(arg + 16, ObjectProfile::TcpStream.code())
+            .unwrap();
+        machine.store_u64(arg + 24, 7).unwrap();
+        machine.store_u64(arg + 40, SOCKET_AF_INET).unwrap();
+        machine.store_u64(arg + 48, SOCKET_TYPE_STREAM).unwrap();
+        machine.store_u64(arg + 56, 0).unwrap();
+        machine.object_ctl(Reg(1), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], 7);
+
+        machine.store_u64(arg, OBJECT_OP_SOCKET_BIND).unwrap();
+        machine.store_u64(arg + 24, 7).unwrap();
+        machine.store_u64(arg + 40, addr).unwrap();
+        machine.object_ctl(Reg(2), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+        match &machine.process().unwrap().fds[7] {
+            FdHandle::TcpSocket {
+                bound_addr,
+                domain,
+                sock_type,
+                protocol,
+            } => {
+                assert!(bound_addr.is_none());
+                assert_eq!(*domain, SOCKET_AF_INET);
+                assert_eq!(*sock_type, SOCKET_TYPE_STREAM);
+                assert_eq!(*protocol, 0);
+            }
+            _ => panic!("expected unbound TCP socket"),
+        }
+
+        machine.store_u64(arg, OBJECT_OP_SOCKET_CONNECT).unwrap();
+        machine.object_ctl(Reg(3), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[3], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert!(matches!(
+            machine.process().unwrap().fds[7],
+            FdHandle::TcpSocket { .. }
+        ));
     }
 
     #[test]
