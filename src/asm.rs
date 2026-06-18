@@ -414,6 +414,10 @@ impl Parser {
                 arity(2)?;
                 Instr::SymlinkPath(reg(&args[0])?, reg(&args[1])?)
             }
+            "SYMLINK_PATH_AT" => {
+                arity(3)?;
+                Instr::SymlinkPathAt(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
             "READLINK_PATH" => {
                 arity(3)?;
                 Instr::ReadlinkPath(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)

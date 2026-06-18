@@ -124,6 +124,7 @@ pub enum Instr {
     RenamePath(Reg, Reg),
     LinkPath(Reg, Reg, Reg),
     SymlinkPath(Reg, Reg),
+    SymlinkPathAt(Reg, Reg, Reg),
     ReadlinkPath(Reg, Reg, Reg),
     ChdirPath(Reg),
     GetcwdPath(Reg, Reg),

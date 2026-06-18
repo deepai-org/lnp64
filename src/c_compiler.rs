@@ -7544,9 +7544,11 @@ impl CodeGen {
                     );
                 }
                 let target = self.emit_expr(&args[0])?;
+                let dirfd = self.emit_expr(&args[1])?;
                 let link = self.emit_expr(&args[2])?;
                 let dst = self.alloc_reg()?;
-                self.text.push(format!("  SYMLINK_PATH r{target}, r{link}"));
+                self.text
+                    .push(format!("  SYMLINK_PATH_AT r{target}, r{dirfd}, r{link}"));
                 self.text.push(format!("  MOV r{dst}, r1"));
                 Ok(dst)
             }
@@ -19995,6 +19997,7 @@ int main() {
             fcntl(fd, F_SETFL, 0);
             fchmodat(AT_FDCWD, "Cargo.toml", 0644, 0);
             unlinkat(AT_FDCWD, "/tmp/lnp64_unlinkat_compile_only", 0);
+            symlinkat("Cargo.toml", AT_FDCWD, "/tmp/lnp64_symlinkat_compile_only");
             open(3, "Cargo.toml", 0);
             pread(3, buf, 3, 1);
             pwrite(3, buf, 3, 2);
@@ -20010,6 +20013,7 @@ int main() {
         assert!(asm.contains("OPEN_AT_DYN"));
         assert!(asm.contains("CHMOD_PATH_AT"));
         assert!(asm.contains("UNLINK_PATH_AT"));
+        assert!(asm.contains("SYMLINK_PATH_AT"));
         assert!(asm.contains("CAP_DUP"));
         assert!(asm.contains("PULL_DYN"));
         assert!(asm.contains("PREAD_FD_DYN"));

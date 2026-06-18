@@ -1678,6 +1678,18 @@ impl Machine {
                     Err(err) => self.set_status_io_error(err)?,
                 }
             }
+            Instr::SymlinkPathAt(target_reg, dir_reg, link_reg) => {
+                let target = self.read_c_string(self.read_reg(target_reg)?)?;
+                let dir_value = self.read_reg(dir_reg)?;
+                let link = self.read_c_string(self.read_reg(link_reg)?)?;
+                let Some(link) = self.resolve_process_path_at_or_errno(dir_value, &link)? else {
+                    return Ok(true);
+                };
+                match std::os::unix::fs::symlink(&target, &link) {
+                    Ok(()) => self.set_status_ok()?,
+                    Err(err) => self.set_status_io_error(err)?,
+                }
+            }
             Instr::ReadlinkPath(path_reg, buf_reg, len_reg) => {
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
                 let Some(path) = self.resolve_process_path_no_follow_final_or_errno(&path)? else {
