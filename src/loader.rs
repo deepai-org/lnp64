@@ -497,6 +497,7 @@ pub fn build_static_exec_plan(image: &[u8], options: LoaderOptions) -> Result<Ex
         return Err("ELF image has no PT_LOAD segments".to_string());
     }
     reject_overlapping_vmas(&vmas)?;
+    validate_metadata_ranges(&vmas, phdr, tls)?;
     if !vmas.iter().any(|vma| {
         vma.protection.execute
             && entry_pc >= vma.virtual_address
@@ -913,6 +914,41 @@ fn reject_overlapping_vmas(vmas: &[VmaRecord]) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_metadata_ranges(
+    vmas: &[VmaRecord],
+    phdr: Option<PhdrDescriptor>,
+    tls: Option<TlsDescriptor>,
+) -> Result<(), String> {
+    if let Some(phdr) = phdr {
+        ensure_range_covered_by_vma(vmas, phdr.virtual_address, phdr.byte_len, "PT_PHDR")?;
+    }
+    if let Some(tls) = tls {
+        ensure_range_covered_by_vma(vmas, tls.virtual_address, tls.memory_size, "PT_TLS")?;
+    }
+    Ok(())
+}
+
+fn ensure_range_covered_by_vma(
+    vmas: &[VmaRecord],
+    virtual_address: u64,
+    length: u64,
+    label: &str,
+) -> Result<(), String> {
+    let end = virtual_address
+        .checked_add(length)
+        .ok_or_else(|| format!("{label} virtual range overflows"))?;
+    if vmas.iter().any(|vma| {
+        let Some(vma_end) = vma.virtual_address.checked_add(vma.length) else {
+            return false;
+        };
+        virtual_address >= vma.virtual_address && end <= vma_end
+    }) {
+        Ok(())
+    } else {
+        Err(format!("{label} virtual range is outside PT_LOAD segments"))
+    }
+}
+
 fn read_program_header(image: &[u8], base: usize) -> Result<ProgramHeader, String> {
     Ok(ProgramHeader {
         typ: read_u32(image, base)?,
@@ -1173,12 +1209,20 @@ mod tests {
     #[test]
     fn static_elf_loader_parses_phdr_segment() {
         let phdrs = [
-            text_phdr(),
+            TestPhdr {
+                typ: PT_LOAD,
+                flags: PF_R | PF_X,
+                offset: 0x100,
+                vaddr: 0x400000,
+                filesz: 16,
+                memsz: 0x1000,
+                align: PAGE_SIZE,
+            },
             TestPhdr {
                 typ: PT_PHDR,
                 flags: PF_R,
                 offset: ELF64_EHDR_SIZE as u64,
-                vaddr: 0x3ff000,
+                vaddr: 0x400100,
                 filesz: (2 * ELF64_PHDR_SIZE) as u64,
                 memsz: (2 * ELF64_PHDR_SIZE) as u64,
                 align: 8,
@@ -1198,7 +1242,7 @@ mod tests {
         assert_eq!(
             plan.phdr,
             Some(PhdrDescriptor {
-                virtual_address: 0x400000,
+                virtual_address: 0x401100,
                 source_offset: ELF64_EHDR_SIZE as u64,
                 byte_len: (2 * ELF64_PHDR_SIZE) as u64,
                 entry_size: ELF64_PHDR_SIZE as u64,
@@ -1259,9 +1303,39 @@ mod tests {
     }
 
     #[test]
+    fn static_elf_loader_rejects_phdr_outside_load_segments() {
+        let phdrs = [
+            text_phdr(),
+            TestPhdr {
+                typ: PT_PHDR,
+                flags: PF_R,
+                offset: ELF64_EHDR_SIZE as u64,
+                vaddr: 0x500000,
+                filesz: (2 * ELF64_PHDR_SIZE) as u64,
+                memsz: (2 * ELF64_PHDR_SIZE) as u64,
+                align: 8,
+            },
+        ];
+        let image = test_elf(&phdrs);
+
+        let err = build_static_exec_plan(&image, LoaderOptions::default()).unwrap_err();
+
+        assert!(err.contains("PT_PHDR virtual range"), "{err}");
+    }
+
+    #[test]
     fn static_elf_loader_parses_tls_segment() {
         let image = test_elf(&[
             text_phdr(),
+            TestPhdr {
+                typ: PT_LOAD,
+                flags: PF_R | PF_W,
+                offset: 0x280,
+                vaddr: 0x500000,
+                filesz: 32,
+                memsz: 0x1000,
+                align: PAGE_SIZE,
+            },
             TestPhdr {
                 typ: PT_TLS,
                 flags: PF_R,
@@ -1292,6 +1366,26 @@ mod tests {
                 alignment: 16,
             })
         );
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_tls_outside_load_segments() {
+        let image = test_elf(&[
+            text_phdr(),
+            TestPhdr {
+                typ: PT_TLS,
+                flags: PF_R,
+                offset: 0x280,
+                vaddr: 0x500000,
+                filesz: 8,
+                memsz: 24,
+                align: 16,
+            },
+        ]);
+
+        let err = build_static_exec_plan(&image, LoaderOptions::default()).unwrap_err();
+
+        assert!(err.contains("PT_TLS virtual range"), "{err}");
     }
 
     #[test]
