@@ -227,6 +227,23 @@ grep -q 'call ' "$allocator_dump"
 printf 'real LLVM LNP64 clang allocator object smoke passed: %s\n' \
   "$allocator_obj"
 
+fibonacci_obj="$build_dir/fibonacci-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables \
+  -Wno-implicit-function-declaration -I toolchain \
+  -c demos/fibonacci.c -o "$fibonacci_obj"
+test -s "$fibonacci_obj"
+fibonacci_dump="$build_dir/fibonacci-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$fibonacci_obj" \
+  >"$fibonacci_dump"
+grep -q '<fib_recursive>:' "$fibonacci_dump"
+grep -q '<main>:' "$fibonacci_dump"
+grep -q 'add r' "$fibonacci_dump"
+grep -q 'call ' "$fibonacci_dump"
+grep -q 'ret' "$fibonacci_dump"
+printf 'real LLVM LNP64 clang fibonacci object smoke passed: %s\n' \
+  "$fibonacci_obj"
+
 crt0_obj="$build_dir/crt0-smoke.o"
 "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj toolchain/crt0_lnp64.s \
   -o "$crt0_obj"

@@ -1442,6 +1442,13 @@ mod tests {
         assert!(real_llc.contains("allocator-clang-smoke.o"));
         assert!(real_llc.contains("allocator-clang-smoke.dump"));
         assert!(real_llc.contains("real LLVM LNP64 clang allocator object smoke passed"));
+        assert!(real_llc.contains("-c demos/fibonacci.c"));
+        assert!(real_llc.contains("fibonacci-clang-smoke.o"));
+        assert!(real_llc.contains("fibonacci-clang-smoke.dump"));
+        assert!(real_llc.contains("<fib_recursive>:"));
+        assert!(real_llc.contains("<main>:"));
+        assert!(real_llc.contains("ret"));
+        assert!(real_llc.contains("real LLVM LNP64 clang fibonacci object smoke passed"));
         assert!(real_llc.contains("toolchain/crt0_lnp64.s"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc crt0 smoke passed"));
         assert!(real_llc.contains("--triple=lnp64-unknown-none"));
