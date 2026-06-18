@@ -1904,10 +1904,20 @@ impl Machine {
                 let Some(source_path) = self.resolve_process_path_or_errno(&path)? else {
                     return Ok(true);
                 };
-                let source = fs::read_to_string(&source_path)
-                    .map_err(|err| format!("EXEC failed to read {path:?}: {err}"))?;
-                let program = Program::parse(&source)
-                    .map_err(|err| format!("EXEC failed to assemble {path:?}: {err}"))?;
+                let source = match fs::read_to_string(&source_path) {
+                    Ok(source) => source,
+                    Err(err) => {
+                        self.set_status_io_error(err)?;
+                        return Ok(true);
+                    }
+                };
+                let program = match Program::parse(&source) {
+                    Ok(program) => program,
+                    Err(_) => {
+                        self.set_status_errno(8)?;
+                        return Ok(true);
+                    }
+                };
                 let pid = self.thread()?.pid;
                 let domain_id = self.process()?.domain_id;
                 let aslr_enabled = self
@@ -8037,11 +8047,10 @@ mod tests {
         machine.write_reg(Reg(9), 0xfeed_cafe).unwrap();
         machine.thread_mut().unwrap().ip = 0;
 
-        let err = machine
-            .exec(Instr::Exec(Reg(1), Reg(2), Reg(3)))
-            .unwrap_err();
+        assert!(machine.exec(Instr::Exec(Reg(1), Reg(2), Reg(3))).unwrap());
         let _ = fs::remove_file(bad_path.as_ref());
-        assert!(err.contains("EXEC failed to assemble"), "{err}");
+        assert_eq!(machine.process().unwrap().errno, 8);
+        assert_eq!(machine.read_reg(Reg(1)).unwrap(), -1i64 as u64);
         assert!(matches!(
             machine.process().unwrap().program.instructions.first(),
             Some(Instr::Nop)

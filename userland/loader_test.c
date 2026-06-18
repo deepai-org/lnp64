@@ -55,6 +55,9 @@ int main() {
     if (path == 0) return 3;
     child = fork();
     if (child == 0) {
+        if (execl("/bin/missing_loader_target.s", "missing_loader_target", 0) != -1) {
+            _exit(126);
+        }
         execl(path, "loader_target", 0);
         _exit(127);
     }
