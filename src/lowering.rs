@@ -1399,11 +1399,15 @@ mod tests {
         assert!(real_llc.contains("git clone"));
         assert!(real_llc.contains("LLVM_TARGETS_TO_BUILD=LNP64"));
         assert!(real_llc.contains(r#"ninja -C "$build_dir""#));
+        assert!(real_llc.contains("llc llvm-mc"));
         assert!(real_llc.contains(r#"llc="$build_dir/bin/llc""#));
+        assert!(real_llc.contains(r#"llvm_mc="$build_dir/bin/llvm-mc""#));
         assert!(real_llc.contains(r#""$llc" --version"#));
         assert!(real_llc.contains("-verify-machineinstrs"));
         assert!(real_llc.contains("-filetype=obj"));
         assert!(real_llc.contains("real LLVM LNP64 llc smoke passed"));
+        assert!(real_llc.contains("toolchain/crt0_lnp64.s"));
+        assert!(real_llc.contains("real LLVM LNP64 llvm-mc crt0 smoke passed"));
         assert!(real_llc.contains("rewrite_with_perl"));
         assert!(real_llc_docker.contains("Dockerfile.llvm"));
         assert!(real_llc_docker.contains("scripts/run_real_llvm_lnp64.sh"));
@@ -1873,6 +1877,8 @@ mod tests {
             "LD",
             "CALL",
             "RET",
+            "ERRNO_SET",
+            "EXIT",
             "PULL",
             "OBJECT_CTL",
             "CAP_REVOKE",
@@ -1928,6 +1934,8 @@ mod tests {
         assert!(inst_printer.contains("createLNP64MCInstPrinter"));
         assert!(inst_printer.contains("getLNP64Mnemonic"));
         assert!(inst_printer.contains("printMemOperand"));
+        assert!(inst_printer.contains("errno_set"));
+        assert!(inst_printer.contains("case LNP64::EXIT"));
         assert!(inst_printer.contains("call_reg"));
         assert!(mc_emitter.contains("case LNP64::AND"));
         assert!(mc_emitter.contains("case LNP64::CMP"));
@@ -1943,17 +1951,25 @@ mod tests {
         assert!(asm_parser.contains("parseImmediateOrMemory"));
         assert!(asm_parser.contains("buildInstruction"));
         assert!(asm_parser.contains(r#".Case("call", LNP64::CALL)"#));
+        assert!(asm_parser.contains(r#".Case("errno_get", LNP64::ERRNO_GET)"#));
+        assert!(asm_parser.contains(r#".Case("errno_set", LNP64::ERRNO_SET)"#));
+        assert!(asm_parser.contains(r#".Case("exit", LNP64::EXIT)"#));
         assert!(asm_parser.contains(r#".Case("ld.w", LNP64::LD_W)"#));
         assert!(asm_parser.contains(r#".Case("ld.h", LNP64::LD_H)"#));
         assert!(disassembler.contains("LLVMInitializeLNP64Disassembler"));
         assert!(disassembler.contains("RegisterMCDisassembler"));
         assert!(disassembler.contains("readLE32"));
+        assert!(disassembler.contains("ArrayRef<uint8_t> Bytes"));
+        assert!(!disassembler.contains("MemoryObject"));
         assert!(disassembler.contains("case 0x10"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::ADD)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::AND)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::CMP)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::CALL)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::CALL_REG)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::ERRNO_GET)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::ERRNO_SET)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::EXIT)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::LD_W)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::LD_H)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::ST_B)"));
@@ -2413,9 +2429,12 @@ mod tests {
 
         for required in [
             "_start:",
-            "LI r7, 0x700000",
-            "LD r1, [r7, 0]",
-            "LI r2, 0x700008",
+            "LI r7, 0x7000",
+            "LI r8, 0x100",
+            "MUL r7, r7, r8",
+            "LD r1, 0(r7)",
+            "LI r2, 8",
+            "ADD r2, r7, r2",
             "MUL r3, r1, r8",
             "ADD r3, r3, r2",
             "ADD r3, r3, r8",
@@ -3238,6 +3257,7 @@ mod tests {
             "constants",
             "integer_alu_rrr",
             "control_branch",
+            "runtime_control",
             "memory",
             "atomics",
             "native_primitives",
@@ -3284,6 +3304,9 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::ADD"));
         assert!(mc_emitter.contains("case LNP64::CALL"));
         assert!(mc_emitter.contains("case LNP64::CALL_REG"));
+        assert!(mc_emitter.contains("case LNP64::ERRNO_GET"));
+        assert!(mc_emitter.contains("case LNP64::ERRNO_SET"));
+        assert!(mc_emitter.contains("case LNP64::EXIT"));
         assert!(mc_emitter.contains("case LNP64::LD"));
         assert!(mc_emitter.contains("case LNP64::ST"));
         assert!(mc_emitter.contains("encodeFixed32NoOperand(0x00)"));

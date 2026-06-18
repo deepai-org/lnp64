@@ -4,7 +4,6 @@
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/MathExtras.h"
-#include "llvm/Support/MemoryObject.h"
 
 using namespace llvm;
 
@@ -174,6 +173,18 @@ public:
       return MCDisassembler::Success;
     case 0x28:
       Instr.setOpcode(LNP64::CALL_REG);
+      addReg(Instr, A);
+      return MCDisassembler::Success;
+    case 0x38:
+      Instr.setOpcode(LNP64::ERRNO_GET);
+      addReg(Instr, A);
+      return MCDisassembler::Success;
+    case 0x39:
+      Instr.setOpcode(LNP64::ERRNO_SET);
+      addReg(Instr, A);
+      return MCDisassembler::Success;
+    case 0x3a:
+      Instr.setOpcode(LNP64::EXIT);
       addReg(Instr, A);
       return MCDisassembler::Success;
     case 0x30:

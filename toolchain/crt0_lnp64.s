@@ -4,9 +4,12 @@
 
 .text
 _start:
-  LI r7, 0x700000
-  LD r1, [r7, 0]
-  LI r2, 0x700008
+  LI r7, 0x7000
+  LI r8, 0x100
+  MUL r7, r7, r8
+  LD r1, 0(r7)
+  LI r2, 8
+  ADD r2, r7, r2
   LI r8, 8
   MUL r3, r1, r8
   ADD r3, r3, r2

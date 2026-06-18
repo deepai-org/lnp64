@@ -99,6 +99,12 @@ class LNP64Native4<string Mnemonic>
 class LNP64Native2<string Mnemonic>
     : LNP64Inst<(outs GPR:$rd), (ins GPR:$arg), Mnemonic, "\t$rd, $arg">;
 
+class LNP64RuntimeGet<string Mnemonic>
+    : LNP64Inst<(outs GPR:$rd), (ins), Mnemonic, "\t$rd">;
+
+class LNP64RuntimeSet<string Mnemonic>
+    : LNP64Inst<(outs), (ins GPR:$rs), Mnemonic, "\t$rs">;
+
 def NOP : LNP64NoOperand<"nop">;
 def LI : LNP64RI<"li"> {
   let Pattern = [(set GPR:$rd, simm16_imm:$imm)];
@@ -182,6 +188,10 @@ let isReturn = 1, isTerminator = 1, isBarrier = 1, Uses = [LR] in
 def RET : LNP64NoOperand<"ret"> {
   let Pattern = [(LNP64retflag)];
 }
+def ERRNO_GET : LNP64RuntimeGet<"errno_get">;
+def ERRNO_SET : LNP64RuntimeSet<"errno_set">;
+let isTerminator = 1, isBarrier = 1 in
+def EXIT : LNP64RuntimeSet<"exit">;
 
 def LD : LNP64MemLoad<"ld">;
 def LD_W : LNP64MemLoad<"ld.w">;

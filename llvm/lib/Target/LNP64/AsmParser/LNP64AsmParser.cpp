@@ -295,6 +295,9 @@ private:
             .Case("call", LNP64::CALL)
             .Case("call_reg", LNP64::CALL_REG)
             .Case("ret", LNP64::RET)
+            .Case("errno_get", LNP64::ERRNO_GET)
+            .Case("errno_set", LNP64::ERRNO_SET)
+            .Case("exit", LNP64::EXIT)
             .Case("ld", LNP64::LD)
             .Case("ld.w", LNP64::LD_W)
             .Case("ld.h", LNP64::LD_H)
@@ -331,6 +334,9 @@ private:
       return addBranchTarget(Inst, Operands);
     if (Opcode == LNP64::CALL_REG)
       return addReg(Inst, Operands);
+    if (Opcode == LNP64::ERRNO_GET || Opcode == LNP64::ERRNO_SET ||
+        Opcode == LNP64::EXIT)
+      return addReg(Inst, Operands);
     if (Opcode == LNP64::LD || Opcode == LNP64::LD_W ||
         Opcode == LNP64::LD_H || Opcode == LNP64::LD_B)
       return addLoad(Inst, Operands);
@@ -365,6 +371,8 @@ private:
     const LNP64Operand *Imm = getOp(Operands, 2);
     if (Operands.size() != 3 || !Reg || !Imm || !Reg->isReg() ||
         !Imm->isImmValue())
+      return false;
+    if (Imm->getImm() < -32768 || Imm->getImm() > 32767)
       return false;
     Inst.addOperand(MCOperand::createReg(Reg->getReg()));
     Inst.addOperand(MCOperand::createImm(Imm->getImm()));
