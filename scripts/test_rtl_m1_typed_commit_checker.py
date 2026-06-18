@@ -150,6 +150,42 @@ def main() -> None:
     valid_run, valid_state_run = build_valid_full_run(checker, ops)
     checker.check_run(valid_run, valid_state_run, 0, ops)
 
+    cap_send_before_dup_state = checker.initial_state(valid_run[0], ops)
+    expect_failure(
+        "TypedCommitTransition.capSend before capDup",
+        lambda: checker.check_rtl_refinement_step(
+            cap_send_before_dup_state,
+            None,
+            valid_run[1],
+            valid_state_run[1],
+            0,
+            ops,
+        ),
+    )
+
+    object_create_without_mint_state = checker.initial_state(valid_run[0], ops)
+    object_create_without_mint_state.root_cap = checker.Cap(
+        object_id=object_create_without_mint_state.root_cap.object_id,
+        object_gen=object_create_without_mint_state.object_gen,
+        fdr_gen=object_create_without_mint_state.object_gen,
+        domain_id=object_create_without_mint_state.root_cap.domain_id,
+        domain_gen=object_create_without_mint_state.root_cap.domain_gen,
+        rights_mask=checker.RIGHT_PUSH | checker.RIGHT_PULL | checker.RIGHT_DUP,
+        lineage_epoch=object_create_without_mint_state.root_cap.lineage_epoch,
+        sealed=object_create_without_mint_state.root_cap.sealed,
+    )
+    expect_failure(
+        "TypedCommitTransition.objectCreate root mint precondition failed",
+        lambda: checker.check_rtl_refinement_step(
+            object_create_without_mint_state,
+            None,
+            valid_run[6],
+            valid_state_run[6],
+            0,
+            ops,
+        ),
+    )
+
     bad_post_state_run = copy.deepcopy(valid_state_run)
     bad_post_state_run[1]["sent_valid"] = 0
     expect_failure(

@@ -1139,6 +1139,30 @@ def require_cap_equal(left: Cap, right: Cap, context: str) -> None:
         fail(f"{context}: cap mismatch {left!r} != {right!r}")
 
 
+def lean_transition_constructor(op: int, ops: CommitOps) -> str:
+    if op == ops.cap_dup:
+        return "TypedCommitTransition.capDup"
+    if op == ops.cap_send:
+        return "TypedCommitTransition.capSend"
+    if op == ops.cap_recv:
+        return "TypedCommitTransition.capRecv"
+    if op == ops.cap_revoke:
+        return "TypedCommitTransition.capRevoke"
+    if op == ops.reject_stale:
+        return "TypedCommitTransition.rejectStale"
+    if op == ops.push:
+        return "TypedCommitTransition.push"
+    if op == ops.pull:
+        return "TypedCommitTransition.pull"
+    if op == ops.reject_full:
+        return "TypedCommitTransition.rejectFull"
+    if op == ops.cap_dup_denied:
+        return "TypedCommitTransition.capDupDenied"
+    if op == ops.object_create:
+        return "TypedCommitTransition.objectCreate"
+    fail(f"unsupported M1 commit op {op}")
+
+
 def cap_projection(prefix: str, cap: Cap | None) -> dict[str, int]:
     if cap is None:
         return {
@@ -1226,19 +1250,20 @@ def check_rtl_refinement_step(
     """
     op = require_int(commit_record, "op")
     status = require_int(commit_record, "status")
+    transition = lean_transition_constructor(op, ops)
     if pre_state_record is not None:
         pre_op = require_int(pre_state_record, "op")
         pre_status = require_int(pre_state_record, "status")
         check_state_projection(
             projection_from_state(state, pre_op, pre_status),
             pre_state_record,
-            f"run {run_index} op {op} RtlM1RefinementStep pre-state projection",
+            f"run {run_index} {transition} RtlM1RefinementStep pre-state projection",
         )
     apply_commit(state, commit_record, run_index, ops)
     check_state_projection(
         projection_from_state(state, op, status),
         post_state_record,
-        f"run {run_index} op {op} RtlM1RefinementStep post-state projection",
+        f"run {run_index} {transition} RtlM1RefinementStep post-state projection",
     )
 
 
@@ -1264,10 +1289,11 @@ def apply_commit(state: M1State, record: dict[str, int | str], run_index: int, o
     op = require_int(record, "op")
     cap = cap_from_record(record)
     status = require_int(record, "status")
+    transition = lean_transition_constructor(op, ops)
 
     if op == ops.cap_dup:
         if not can_root_duplicate(state):
-            fail(f"run {run_index} capDup root duplicate precondition failed")
+            fail(f"run {run_index} {transition} root duplicate precondition failed")
         expected = Cap(
             object_id=state.root_cap.object_id,
             object_gen=state.object_gen,
@@ -1278,32 +1304,32 @@ def apply_commit(state: M1State, record: dict[str, int | str], run_index: int, o
             lineage_epoch=state.root_cap.lineage_epoch,
             sealed=0,
         )
-        require_cap_equal(cap, expected, f"run {run_index} capDup post-state")
+        require_cap_equal(cap, expected, f"run {run_index} {transition} commit projection")
         if status != ERR_OK:
-            fail(f"run {run_index} capDup failed")
+            fail(f"run {run_index} {transition} emitted non-OK status")
         state.consumer_cap = cap
         return
 
     if op == ops.cap_send:
         if state.consumer_cap is None:
-            fail(f"run {run_index} capSend before capDup")
+            fail(f"run {run_index} {transition} before capDup")
         if not cap_currently_authorizes(state, state.consumer_cap):
-            fail(f"run {run_index} capSend consumer cap does not currently authorize transfer")
-        require_cap_equal(cap, state.consumer_cap, f"run {run_index} capSend")
+            fail(f"run {run_index} {transition} consumer cap does not currently authorize transfer")
+        require_cap_equal(cap, state.consumer_cap, f"run {run_index} {transition} commit projection")
         if status != ERR_OK:
-            fail(f"run {run_index} capSend failed")
+            fail(f"run {run_index} {transition} emitted non-OK status")
         state.sent_cap = state.consumer_cap
         state.transfer_valid = True
         return
 
     if op == ops.cap_recv:
         if state.sent_cap is None:
-            fail(f"run {run_index} capRecv with empty transfer slot")
+            fail(f"run {run_index} {transition} with empty transfer slot")
         if not cap_currently_authorizes(state, state.sent_cap):
-            fail(f"run {run_index} capRecv sent cap does not currently authorize transfer")
-        require_cap_equal(cap, state.sent_cap, f"run {run_index} capRecv")
+            fail(f"run {run_index} {transition} sent cap does not currently authorize transfer")
+        require_cap_equal(cap, state.sent_cap, f"run {run_index} {transition} commit projection")
         if status != ERR_OK:
-            fail(f"run {run_index} capRecv failed")
+            fail(f"run {run_index} {transition} emitted non-OK status")
         state.consumer_cap = state.sent_cap
         state.sent_cap = None
         state.transfer_valid = True
@@ -1311,24 +1337,24 @@ def apply_commit(state: M1State, record: dict[str, int | str], run_index: int, o
 
     if op == ops.push:
         if not can_root_push(state):
-            fail(f"run {run_index} push root push precondition failed")
-        require_cap_equal(cap, state.root_cap, f"run {run_index} push")
+            fail(f"run {run_index} {transition} root push precondition failed")
+        require_cap_equal(cap, state.root_cap, f"run {run_index} {transition} commit projection")
         if status != ERR_OK:
-            fail(f"run {run_index} push failed")
+            fail(f"run {run_index} {transition} emitted non-OK status")
         state.queue_full = True
         state.wake_pending = True
         return
 
     if op == ops.pull:
         if state.consumer_cap is None:
-            fail(f"run {run_index} pull before consumer cap exists")
+            fail(f"run {run_index} {transition} before consumer cap exists")
         if not can_consumer_pull_from_main_object(state, state.consumer_cap):
-            fail(f"run {run_index} pull consumer pull precondition failed")
+            fail(f"run {run_index} {transition} consumer pull precondition failed")
         if not state.queue_full:
-            fail(f"run {run_index} pull while queue is empty")
-        require_cap_equal(cap, state.consumer_cap, f"run {run_index} pull")
+            fail(f"run {run_index} {transition} while queue is empty")
+        require_cap_equal(cap, state.consumer_cap, f"run {run_index} {transition} commit projection")
         if status != ERR_OK:
-            fail(f"run {run_index} pull failed")
+            fail(f"run {run_index} {transition} emitted non-OK status")
         state.queue_full = False
         state.wake_pending = False
         return
@@ -1339,16 +1365,16 @@ def apply_commit(state: M1State, record: dict[str, int | str], run_index: int, o
         if not state.queue_full:
             state.queue_full = True
         if not state.queue_full:
-            fail(f"run {run_index} rejectFull without a full queue")
-        require_cap_equal(cap, state.root_cap, f"run {run_index} rejectFull")
+            fail(f"run {run_index} {transition} without a full queue")
+        require_cap_equal(cap, state.root_cap, f"run {run_index} {transition} commit projection")
         if status != ERR_EAGAIN:
-            fail(f"run {run_index} rejectFull did not fail with EAGAIN")
+            fail(f"run {run_index} {transition} did not fail with EAGAIN")
         state.full_was_explicit = True
         return
 
     if op == ops.object_create:
         if not can_root_mint(state):
-            fail(f"run {run_index} objectCreate root mint precondition failed")
+            fail(f"run {run_index} {transition} root mint precondition failed")
         expected = Cap(
             object_id=2,
             object_gen=state.created_object_gen,
@@ -1359,18 +1385,18 @@ def apply_commit(state: M1State, record: dict[str, int | str], run_index: int, o
             lineage_epoch=state.root_cap.lineage_epoch,
             sealed=0,
         )
-        require_cap_equal(cap, expected, f"run {run_index} objectCreate")
+        require_cap_equal(cap, expected, f"run {run_index} {transition} commit projection")
         if status != ERR_OK:
-            fail(f"run {run_index} objectCreate failed")
+            fail(f"run {run_index} {transition} emitted non-OK status")
         state.created_object_created = True
         state.minted_cap = cap
         if not cap_currently_authorizes(state, state.minted_cap):
-            fail(f"run {run_index} objectCreate minted cap does not authorize created object")
+            fail(f"run {run_index} {transition} minted cap does not authorize created object")
         return
 
     if op == ops.cap_revoke:
         if not root_cap_currently_authorizes(state):
-            fail(f"run {run_index} capRevoke root authority precondition failed")
+            fail(f"run {run_index} {transition} root authority precondition failed")
         old_gen = state.object_gen
         expected = Cap(
             object_id=state.root_cap.object_id,
@@ -1382,9 +1408,9 @@ def apply_commit(state: M1State, record: dict[str, int | str], run_index: int, o
             lineage_epoch=state.root_cap.lineage_epoch,
             sealed=0,
         )
-        require_cap_equal(cap, expected, f"run {run_index} capRevoke")
+        require_cap_equal(cap, expected, f"run {run_index} {transition} commit projection")
         if status != ERR_OK:
-            fail(f"run {run_index} capRevoke failed")
+            fail(f"run {run_index} {transition} emitted non-OK status")
         state.object_gen = old_gen + 1
         state.revoked_gen = old_gen
         state.revoked_rejected = True
@@ -1403,7 +1429,7 @@ def apply_commit(state: M1State, record: dict[str, int | str], run_index: int, o
 
     if op == ops.reject_stale:
         if state.consumer_cap is None:
-            fail(f"run {run_index} rejectStale before consumer cap exists")
+            fail(f"run {run_index} {transition} before consumer cap exists")
         expected = state.consumer_cap
         expected_live_projection = Cap(
             object_id=expected.object_id,
@@ -1415,21 +1441,21 @@ def apply_commit(state: M1State, record: dict[str, int | str], run_index: int, o
             lineage_epoch=expected.lineage_epoch,
             sealed=expected.sealed,
         )
-        require_cap_equal(cap, expected_live_projection, f"run {run_index} rejectStale")
+        require_cap_equal(cap, expected_live_projection, f"run {run_index} {transition} commit projection")
         if status != ERR_EREVOKED:
-            fail(f"run {run_index} rejectStale did not fail with EREVOKED")
+            fail(f"run {run_index} {transition} did not fail with EREVOKED")
         if cap_currently_authorizes(state, state.consumer_cap):
-            fail(f"run {run_index} stale consumer cap still authorizes work")
+            fail(f"run {run_index} {transition} stale consumer cap still authorizes work")
         if state.revoked_gen is None or state.consumer_cap.fdr_gen != state.revoked_gen:
-            fail(f"run {run_index} stale cap does not point at the revoked generation")
+            fail(f"run {run_index} {transition} stale cap does not point at the revoked generation")
         state.stale_rejected = True
         return
 
     if op == ops.cap_dup_denied:
         if status != ERR_EPERM:
-            fail(f"run {run_index} capDupDenied did not fail with EPERM")
+            fail(f"run {run_index} {transition} did not fail with EPERM")
         if cap.rights_mask & RIGHT_DUP:
-            fail(f"run {run_index} capDupDenied still carried dup authority")
+            fail(f"run {run_index} {transition} still carried dup authority")
         expected = Cap(
             object_id=state.root_cap.object_id,
             object_gen=state.object_gen,
@@ -1440,7 +1466,7 @@ def apply_commit(state: M1State, record: dict[str, int | str], run_index: int, o
             lineage_epoch=state.root_cap.lineage_epoch,
             sealed=0,
         )
-        require_cap_equal(cap, expected, f"run {run_index} capDupDenied")
+        require_cap_equal(cap, expected, f"run {run_index} {transition} commit projection")
         state.root_cap = cap
         state.failed_no_authority = True
         return
