@@ -11810,6 +11810,37 @@ mod tests {
     }
 
     #[test]
+    fn symlink_without_namespace_root_does_not_create_host_link() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let link_path = std::env::temp_dir().join(format!("lnp64_symlink_no_root_{unique}"));
+        let _ = fs::remove_file(&link_path);
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.process_mut().unwrap().namespace_root = None;
+        let target_addr = ARG_BASE + 0x1000;
+        let link_addr = ARG_BASE + 0x1100;
+        let link_bytes = format!("{}\0", link_path.to_string_lossy());
+        machine
+            .write_bytes(target_addr, b"target-payload\0")
+            .unwrap();
+        machine
+            .write_bytes(link_addr, link_bytes.as_bytes())
+            .unwrap();
+        machine.thread_mut().unwrap().regs[1] = target_addr;
+        machine.thread_mut().unwrap().regs[2] = link_addr;
+
+        machine.exec(Instr::SymlinkPath(Reg(1), Reg(2))).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 13);
+        assert!(!link_path.exists());
+        let _ = fs::remove_file(link_path);
+    }
+
+    #[test]
     fn open_fd_dyn_without_namespace_root_does_not_allocate_fdr() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
