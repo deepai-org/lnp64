@@ -7382,6 +7382,19 @@ impl Machine {
 
     fn ensure_mapped(&mut self, addr: u64, len: usize, write: bool) -> Result<(), String> {
         let process = self.process_mut()?;
+        let start = usize::try_from(addr).map_err(|_| {
+            format!(
+                "hardware SIGSEGV: unmapped address 0x{addr:x} + {len} (outside process memory)"
+            )
+        })?;
+        let end = start.checked_add(len).ok_or_else(|| {
+            format!("hardware SIGSEGV: unmapped address 0x{addr:x} + {len} (memory range overflow)")
+        })?;
+        if end > process.memory.len() {
+            return Err(format!(
+                "hardware SIGSEGV: unmapped address 0x{addr:x} + {len} (outside process memory)"
+            ));
+        }
         let idx = process
             .vmas
             .iter()
@@ -14387,6 +14400,23 @@ mod tests {
         let normal = Vma::anonymous(0x1000, 0x100, 0b011);
         assert!(normal.contains(0x1010, 0x20));
         assert!(!normal.contains(0x10f0, 0x20));
+    }
+
+    #[test]
+    fn ensure_mapped_rejects_resident_vma_beyond_process_memory() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let addr = MEMORY_SIZE as u64 - 2;
+        machine
+            .process_mut()
+            .unwrap()
+            .vmas
+            .push(Vma::anonymous(addr, 8, 0b011));
+
+        let read_err = machine.read_bytes(addr, 8).unwrap_err();
+        assert!(read_err.contains("outside process memory"), "{read_err}");
+        let write_err = machine.write_bytes(addr, &[1, 2, 3, 4]).unwrap_err();
+        assert!(write_err.contains("outside process memory"), "{write_err}");
     }
 
     #[test]
