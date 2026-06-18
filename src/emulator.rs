@@ -12852,6 +12852,17 @@ mod tests {
             machine.read_bytes(dst, 4).unwrap(),
             vec![0xab, 0xab, 0xab, 4]
         );
+
+        machine.write_bytes(dst, &[9, 9, 9, 9]).unwrap();
+        machine.store_u64(arg, 99).unwrap();
+        machine.store_u64(arg + 8, dst).unwrap();
+        machine.store_u64(arg + 16, 0xee).unwrap();
+        machine.store_u64(arg + 24, 4).unwrap();
+        machine.store_u64(arg + 32, 0).unwrap();
+        machine.dma_ctl(Reg(3), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[3], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert_eq!(machine.read_bytes(dst, 4).unwrap(), vec![9, 9, 9, 9]);
     }
 
     #[test]
