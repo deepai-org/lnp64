@@ -1073,6 +1073,7 @@ enum FdWaiterState {
     Pending,
     Ready,
     Stale,
+    Error(u64),
 }
 
 pub struct Machine {
@@ -7742,6 +7743,9 @@ impl Machine {
                     if !machine.fd_generation_matches(waiter.fd, waiter.generation)? {
                         return Ok(FdWaiterState::Stale);
                     }
+                    if let Err(errno) = machine.fd_right_errno(waiter.fd, CAP_RIGHT_POLL) {
+                        return Ok(FdWaiterState::Error(errno));
+                    }
                     if machine.fd_ready_for_mask(waiter.fd, waiter.mask)? {
                         Ok(FdWaiterState::Ready)
                     } else {
@@ -7755,6 +7759,16 @@ impl Machine {
                         machine.set_errno(0)?;
                         if let Some(result) = waiter.result {
                             machine.write_reg(result, 0)?;
+                        }
+                        Ok(())
+                    });
+                    self.wake_thread(waiter.tid);
+                }
+                FdWaiterState::Error(errno) => {
+                    let _ = self.with_thread_process(waiter.tid, |machine| {
+                        machine.set_errno(errno)?;
+                        if let Some(result) = waiter.result {
+                            machine.write_reg(result, -1i64 as u64)?;
                         }
                         Ok(())
                     });
@@ -15050,6 +15064,28 @@ mod tests {
         assert!(keep_ready);
         assert!(machine.fd_waiters.is_empty());
         assert_eq!(machine.thread().unwrap().regs[8], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
+    }
+
+    #[test]
+    fn fd_waiter_reports_error_when_poll_right_revoked_before_wake() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        create_pipe_pair(&mut machine, 3, 4);
+        machine.thread_mut().unwrap().regs[2] = POLLIN_MASK;
+
+        let keep_ready = machine
+            .exec(Instr::Await(Reg(5), FdReg(3), Reg(2)))
+            .unwrap();
+        assert!(!keep_ready);
+        assert_eq!(machine.fd_waiters.len(), 1);
+
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[3].rights &= !CAP_RIGHT_POLL;
+        machine.poll_fd_waiters();
+
+        assert!(machine.ready.contains(&1));
+        assert!(machine.fd_waiters.is_empty());
+        assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 1);
     }
 
