@@ -54,7 +54,8 @@ codegen, `llvm-mc` basic assembly, and Clang driver command shape; they are
 marked `XFAIL` until the target is integrated and executable.
 The MC code emitter now has concrete fixed32 paths for `NOP`, `RET`, `LI`,
 `MOV`, `ADD`/`SUB`/`MUL`/`DIV`, and basic `LD`/`ST`; other opcodes remain
-blocked until operand encodings and fixups are implemented.
+blocked until operand encodings and fixups are implemented. The disassembler
+decodes that same initial fixed32 subset for future `llvm-mc` round trips.
 `LNP64InstrInfo.td` now carries operand-bearing TableGen classes for integer
 RRR/RR/RI, branch, memory, atomic, and native-capability instruction shapes
 instead of name-only opcode stubs.

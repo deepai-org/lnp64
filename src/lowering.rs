@@ -1828,6 +1828,10 @@ mod tests {
         assert!(asm_parser.contains("instruction matching is not implemented yet"));
         assert!(disassembler.contains("LLVMInitializeLNP64Disassembler"));
         assert!(disassembler.contains("RegisterMCDisassembler"));
+        assert!(disassembler.contains("readLE32"));
+        assert!(disassembler.contains("case 0x10"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::ADD)"));
+        assert!(disassembler.contains("SignExtend64<14>"));
         assert!(disassembler.contains("MCDisassembler::Fail"));
         assert!(target_machine.contains("LLVMInitializeLNP64Target"));
         assert!(target_machine.contains("e-m:e-p:64:64-i64:64-n64-S128"));
