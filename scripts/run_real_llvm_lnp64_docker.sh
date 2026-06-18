@@ -130,6 +130,13 @@ grep -q 'exit=0' <<<"$realloc_output"
 printf 'real LLVM LNP64 run-elf realloc execution passed: %s\n' \
   "$realloc_probe"
 
+read_probe="target/llvm-lnp64-build/lnp64-read-linked.elf"
+cargo run --quiet -- elf-plan "$read_probe" >/dev/null
+read_output="$(cargo run --quiet -- run-elf "$read_probe")"
+grep -q 'exit=0' <<<"$read_output"
+printf 'real LLVM LNP64 run-elf read execution passed: %s\n' \
+  "$read_probe"
+
 indirect_call_probe="target/llvm-lnp64-build/lnp64-indirect-call-linked.elf"
 cargo run --quiet -- elf-plan "$indirect_call_probe" >/dev/null
 indirect_call_output="$(cargo run --quiet -- run-elf "$indirect_call_probe")"

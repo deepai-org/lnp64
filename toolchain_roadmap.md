@@ -36,8 +36,8 @@ verifies trivial LNP64 IR codegen, real Clang compiles of scalar C,
 `demos/hello.c`, `demos/factorial.c`, `demos/allocator.c`, and
 `demos/fibonacci.c` to target objects. It also covers indirect calls, inline
 asm, exit/argc, signed and unsigned compares, signed loads, wide constants,
-stack aggregate addresses, minilibc string calls, and minilibc `calloc`/`realloc`
-smokes. The gate assembles the checked crt0 and minimal libc smoke stubs,
+stack aggregate addresses, minilibc string calls, minilibc `calloc`/`realloc`,
+and minilibc `read` smokes. The gate assembles the checked crt0 and minimal libc smoke stubs,
 disassembles emitted objects, statically links crt0 plus an assembler-built
 `main`, and statically links each Clang-built demo/probe object with crt0 plus
 the smoke libc object. The Docker wrapper submits those linked ELFs through
@@ -48,9 +48,10 @@ contract for lld-produced ELF inputs.
 `toolchain/crt0_lnp64.s` is the initial checked crt0 startup stub for the
 future LLVM/lld path.
 `toolchain/liblnp64_min.s` is a checked smoke-only libc object used to prove
-lld can resolve real Clang demo objects, route stdout through native `PUSH`,
-and route `malloc`/`calloc`/`realloc`/`free` through native heap opcodes before
-the full libc/runtime is ready.
+lld can resolve real Clang demo objects, route `read` through native `PULL`,
+route stdout through native `PUSH`, and route
+`malloc`/`calloc`/`realloc`/`free` through native heap opcodes before the full
+libc/runtime is ready.
 `toolchain/lnp64_intrinsics.h` is the initial checked private C shim header for
 native `__lnp_*` calls.
 `toolchain/lnp64_clang_driver.manifest` records the planned Clang/lld driver

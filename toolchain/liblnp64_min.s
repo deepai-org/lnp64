@@ -9,6 +9,12 @@ write:
   PUSH r1, r1, r2, r3
   RET
 
+.globl read
+.type read,@function
+read:
+  PULL r1, r1, r2, r3
+  RET
+
 .globl alloc
 .type alloc,@function
 alloc:

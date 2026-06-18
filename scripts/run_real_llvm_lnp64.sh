@@ -691,6 +691,30 @@ grep -q 'call ' "$realloc_dump"
 printf 'real LLVM LNP64 clang realloc object smoke passed: %s\n' \
   "$realloc_obj"
 
+read_c="$build_dir/read-smoke.c"
+cat >"$read_c" <<'C'
+typedef unsigned long size_t;
+
+long read(int fd, void *buf, size_t len);
+
+int main(void) {
+  char byte = 0;
+  return read(0, &byte, 0);
+}
+C
+
+read_obj="$build_dir/read-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$read_c" -o "$read_obj"
+test -s "$read_obj"
+read_dump="$build_dir/read-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$read_obj" \
+  >"$read_dump"
+grep -q 'call ' "$read_dump"
+printf 'real LLVM LNP64 clang read object smoke passed: %s\n' \
+  "$read_obj"
+
 stack_arg_formal_c="$build_dir/stack-arg-formal-negative.c"
 cat >"$stack_arg_formal_c" <<'C'
 int sum7(int a, int b, int c, int d, int e, int f, int g) {
@@ -742,10 +766,11 @@ printf 'real LLVM LNP64 llvm-mc minilibc smoke passed: %s\n' "$minilibc_obj"
 minilibc_dump="$build_dir/liblnp64-min-smoke.dump"
 "$llvm_objdump" -d --triple=lnp64-unknown-none "$minilibc_obj" \
   >"$minilibc_dump"
+grep -q 'pull r1, r1, r2, r3' "$minilibc_dump"
 grep -q 'alloc r1, r1' "$minilibc_dump"
 grep -q 'alloc_size r3, r2' "$minilibc_dump"
 grep -q 'free r1' "$minilibc_dump"
-printf 'real LLVM LNP64 llvm-objdump minilibc heap decode smoke passed: %s\n' \
+printf 'real LLVM LNP64 llvm-objdump minilibc native decode smoke passed: %s\n' \
   "$minilibc_dump"
 
 cat >"$main_asm" <<'ASM'
@@ -895,6 +920,13 @@ realloc_elf="$build_dir/lnp64-realloc-linked.elf"
 test -s "$realloc_elf"
 printf 'real LLVM LNP64 lld realloc link smoke passed: %s\n' \
   "$realloc_elf"
+
+read_elf="$build_dir/lnp64-read-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$read_elf" "$crt0_obj" "$read_obj" "$minilibc_obj"
+test -s "$read_elf"
+printf 'real LLVM LNP64 lld read link smoke passed: %s\n' \
+  "$read_elf"
 
 indirect_call_elf="$build_dir/lnp64-indirect-call-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

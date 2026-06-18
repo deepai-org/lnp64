@@ -1463,16 +1463,19 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang calloc object smoke passed"));
         assert!(real_llc.contains("realloc-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang realloc object smoke passed"));
+        assert!(real_llc.contains("read-clang-smoke.o"));
+        assert!(real_llc.contains("real LLVM LNP64 clang read object smoke passed"));
         assert!(real_llc.contains("toolchain/crt0_lnp64.s"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc crt0 smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_min.s"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc minilibc smoke passed"));
         assert!(real_llc.contains("liblnp64-min-smoke.dump"));
+        assert!(real_llc.contains("pull r1, r1, r2, r3"));
         assert!(real_llc.contains("alloc r1, r1"));
         assert!(real_llc.contains("alloc_size r3, r2"));
         assert!(real_llc.contains("free r1"));
         assert!(
-            real_llc.contains("real LLVM LNP64 llvm-objdump minilibc heap decode smoke passed")
+            real_llc.contains("real LLVM LNP64 llvm-objdump minilibc native decode smoke passed")
         );
         assert!(real_llc.contains("lnp64-libc-string-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld minilibc string link smoke passed"));
@@ -1480,6 +1483,8 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 lld calloc link smoke passed"));
         assert!(real_llc.contains("lnp64-realloc-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld realloc link smoke passed"));
+        assert!(real_llc.contains("lnp64-read-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld read link smoke passed"));
         assert!(real_llc.contains("--triple=lnp64-unknown-none"));
         assert!(real_llc.contains("errno_set r0"));
         assert!(real_llc.contains("exit r1"));
@@ -1721,6 +1726,8 @@ mod tests {
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf calloc execution passed"));
         assert!(real_llc_docker.contains("lnp64-realloc-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf realloc execution passed"));
+        assert!(real_llc_docker.contains("lnp64-read-linked.elf"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf read execution passed"));
         assert!(real_llc_docker.contains("lnp64-intrinsic-push-linked.elf"));
         assert!(real_llc_docker.contains("intrinsic push ok"));
         assert!(
@@ -1785,6 +1792,7 @@ mod tests {
             "real_clang_lld_probe",
             "real_clang_demo_execution",
             "real_native_heap_execution",
+            "real_read_execution",
             "real_intrinsic_push_execution",
             "real_intrinsic_control_execution",
             "real_exit_execution",
@@ -2706,6 +2714,9 @@ mod tests {
             ".globl write",
             "write:",
             "PUSH r1, r1, r2, r3",
+            ".globl read",
+            "read:",
+            "PULL r1, r1, r2, r3",
             ".globl alloc",
             "alloc:",
             "ALLOC r1, r1",
