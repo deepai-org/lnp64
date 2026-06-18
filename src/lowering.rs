@@ -1883,6 +1883,9 @@ mod tests {
         assert!(instr_td.contains("isBranch = 1"));
         assert!(instr_info.contains("copyPhysReg"));
         assert!(instr_info.contains("BuildMI(MBB, I, DL, get(LNP64::MOV), DestReg)"));
+        assert!(instr_info.contains("storeRegToStackSlot"));
+        assert!(instr_info.contains("loadRegFromStackSlot"));
+        assert!(instr_info.contains("addFrameIndex(FrameIndex)"));
         assert!(isel.contains("setStackPointerRegisterToSaveRestore(LNP64::R31)"));
         assert!(frame.contains("StackGrowsDown"));
         assert!(frame.contains("Align(16)"));

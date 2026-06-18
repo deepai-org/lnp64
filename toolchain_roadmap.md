@@ -70,6 +70,9 @@ calls, link-register definition/use, returns, terminators, and barriers, so
 later call/return lowering and verifier work can rely on instruction metadata.
 `LNP64InstrInfo` now lowers GPR-to-GPR physical register copies through `MOV`,
 giving instruction selection and register allocation a concrete copy path.
+It also emits first GPR-only stack-slot spills/reloads through `ST`/`LD` with a
+frame-index base and zero offset; full frame layout and prologue/epilogue
+emission remain blockers.
 `LNP64InstrInfo.td` now carries operand-bearing TableGen classes for integer
 RRR/RR/RI, branch, memory, atomic, and native-capability instruction shapes
 instead of name-only opcode stubs.
