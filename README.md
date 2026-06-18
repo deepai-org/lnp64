@@ -204,6 +204,7 @@ For toolchain-contract changes, these focused commands have been working:
 
 ```sh
 bash scripts/run_real_llvm_tblgen_docker.sh
+bash scripts/run_real_llvm_lnp64_docker.sh
 bash scripts/run_toolchain_contracts.sh
 cargo test --quiet toolchain_contract_index_is_complete
 cargo test --quiet llvm_gate_manifest_pins_non_toy_clang_commands

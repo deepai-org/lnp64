@@ -12,6 +12,7 @@ llvm_target|llvm/lib/Target/LNP64/LNP64RegisterInfo.cpp|scaffolded|reserved regi
 llvm_target|llvm/lib/Target/LNP64/LNP64ISelLowering.cpp|scaffolded|integer, memory, branch, call, TLS, intrinsic lowering
 llvm_target|llvm/lib/Target/LNP64/LNP64FrameLowering.cpp|scaffolded|stack frame, spill slots, LR save, CFI emission
 llvm_mc|llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCTargetDesc.cpp|scaffolded|ELF machine id, relocations, MC code emitter hooks
+llvm_mc|llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCAsmInfo.cpp|scaffolded|ELF asm info registration for real llc initialization
 llvm_mc|llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCCodeEmitter.cpp|scaffolded|MC instruction encoding from lnp64_mc_encoding manifest
 llvm_mc|llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCAsmBackend.cpp|scaffolded|MC fixup metadata, ELF object writer, and relocation mapping
 llvm_mc|llvm/lib/Target/LNP64/InstPrinter/LNP64InstPrinter.cpp|scaffolded|MC instruction printing for assembler and disassembler round trips

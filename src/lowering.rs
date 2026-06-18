@@ -1277,6 +1277,8 @@ mod tests {
         let gate_driver = include_str!("../scripts/run_llvm_bootstrap_gates.sh");
         let real_tblgen = include_str!("../scripts/run_real_llvm_tblgen.sh");
         let real_tblgen_docker = include_str!("../scripts/run_real_llvm_tblgen_docker.sh");
+        let real_llc = include_str!("../scripts/run_real_llvm_lnp64.sh");
+        let real_llc_docker = include_str!("../scripts/run_real_llvm_lnp64_docker.sh");
         let llvm_dockerfile = include_str!("../Dockerfile.llvm");
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
         let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
@@ -1305,6 +1307,16 @@ mod tests {
                 .join("scripts/run_real_llvm_tblgen_docker.sh")
                 .is_file()
         );
+        assert!(
+            manifest_root
+                .join("scripts/run_real_llvm_lnp64.sh")
+                .is_file()
+        );
+        assert!(
+            manifest_root
+                .join("scripts/run_real_llvm_lnp64_docker.sh")
+                .is_file()
+        );
         assert!(manifest_root.join("Dockerfile.llvm").is_file());
         assert!(contract_index.contains(
             "llvm_gates|toolchain/lnp64_llvm_gates.manifest|llvm_gate_manifest_pins_non_toy_clang_commands"
@@ -1314,6 +1326,7 @@ mod tests {
         assert!(roadmap.contains("toolchain/lnp64_llvm_gates.manifest"));
         assert!(roadmap.contains("scripts/run_llvm_bootstrap_gates.sh --dry-run"));
         assert!(roadmap.contains("scripts/run_real_llvm_tblgen_docker.sh"));
+        assert!(roadmap.contains("scripts/run_real_llvm_lnp64_docker.sh"));
         assert!(roadmap.contains("Dockerfile.llvm"));
 
         for (gate, command, requirements, status) in rows {
@@ -1341,6 +1354,7 @@ mod tests {
         for gate in [
             "gate_driver",
             "real_tblgen",
+            "real_llc_build",
             "compile_hello",
             "compile_arithmetic",
             "compile_memory",
@@ -1361,6 +1375,10 @@ mod tests {
             commands["real_tblgen"].contains("scripts/run_real_llvm_tblgen_docker.sh"),
             "real LLVM TableGen gate must run through the Docker-backed script"
         );
+        assert!(
+            commands["real_llc_build"].contains("scripts/run_real_llvm_lnp64_docker.sh"),
+            "real LLVM llc gate must run through the Docker-backed script"
+        );
         assert!(gate_driver.contains("toolchain/lnp64_llvm_gates.manifest"));
         assert!(gate_driver.contains("--dry-run"));
         assert!(gate_driver.contains("--run"));
@@ -1377,6 +1395,15 @@ mod tests {
         assert!(real_tblgen_docker.contains("Dockerfile.llvm"));
         assert!(real_tblgen_docker.contains("scripts/run_real_llvm_tblgen.sh"));
         assert!(real_tblgen_docker.contains(r#"--user "$uid:$gid""#));
+        assert!(real_llc.contains("llvmorg-14.0.6"));
+        assert!(real_llc.contains("git clone"));
+        assert!(real_llc.contains("LLVM_TARGETS_TO_BUILD=LNP64"));
+        assert!(real_llc.contains(r#"ninja -C "$build_dir""#));
+        assert!(real_llc.contains(r#""$build_dir/bin/llc" --version"#));
+        assert!(real_llc.contains("rewrite_with_perl"));
+        assert!(real_llc_docker.contains("Dockerfile.llvm"));
+        assert!(real_llc_docker.contains("scripts/run_real_llvm_lnp64.sh"));
+        assert!(real_llc_docker.contains(r#"--user "$uid:$gid""#));
         assert!(llvm_dockerfile.contains("llvm-dev"));
         assert!(llvm_dockerfile.contains("llvm-runtime"));
         assert!(llvm_dockerfile.contains("clang"));
@@ -1728,6 +1755,7 @@ mod tests {
             "llvm/lib/Target/LNP64/LNP64ISelLowering.cpp",
             "llvm/lib/Target/LNP64/LNP64FrameLowering.cpp",
             "llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCTargetDesc.cpp",
+            "llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCAsmInfo.cpp",
             "llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCCodeEmitter.cpp",
             "llvm/lib/Target/LNP64/AsmParser/LNP64AsmParser.cpp",
             "llvm/lib/Target/LNP64/Disassembler/LNP64Disassembler.cpp",
@@ -1755,6 +1783,7 @@ mod tests {
             "llvm/lib/Target/LNP64/LNP64ISelLowering.cpp",
             "llvm/lib/Target/LNP64/LNP64FrameLowering.cpp",
             "llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCTargetDesc.cpp",
+            "llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCAsmInfo.cpp",
             "llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCCodeEmitter.cpp",
             "llvm/lib/Target/LNP64/AsmParser/LNP64AsmParser.cpp",
             "llvm/lib/Target/LNP64/Disassembler/LNP64Disassembler.cpp",
@@ -1794,6 +1823,7 @@ mod tests {
             include_str!("../llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCTargetDesc.h");
         let mc_desc_cmake = include_str!("../llvm/lib/Target/LNP64/MCTargetDesc/CMakeLists.txt");
         let mc_desc = include_str!("../llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCTargetDesc.cpp");
+        let mc_asm_info = include_str!("../llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCAsmInfo.h");
         let mc_emitter =
             include_str!("../llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCCodeEmitter.cpp");
         let mc_asm_backend =
@@ -1851,6 +1881,8 @@ mod tests {
             assert!(instr_td.contains(shape), "instr TableGen missing {shape}");
         }
         assert!(cmake.contains("LNP64GenRegisterInfo.inc"));
+        assert!(cmake.contains("add_llvm_component_group(LNP64)"));
+        assert!(cmake.contains("ADD_TO_COMPONENT"));
         for source in [
             "LNP64TargetMachine.cpp",
             "LNP64Subtarget.cpp",
@@ -1864,18 +1896,23 @@ mod tests {
         }
         assert!(cmake.contains("add_llvm_target(LNP64CodeGen"));
         assert!(mc_desc_cmake.contains("LNP64MCAsmBackend.cpp"));
+        assert!(mc_desc_cmake.contains("LNP64MCAsmInfo.cpp"));
+        assert!(mc_desc_cmake.contains("LNP64InstPrinter"));
         assert!(target_info.contains("LLVMInitializeLNP64TargetInfo"));
         assert!(target_info.contains("RegisterTarget<Triple::lnp64>"));
         assert!(mc_desc.contains("LLVMInitializeLNP64TargetMC"));
+        assert!(mc_desc.contains("RegisterMCAsmInfo<LNP64MCAsmInfo>"));
         assert!(mc_desc.contains("RegisterMCCodeEmitter"));
         assert!(mc_desc.contains("RegisterMCAsmBackend"));
         assert!(mc_desc.contains("RegisterMCInstPrinter"));
         assert!(mc_desc_header.contains("fixup_lnp64_branch26"));
+        assert!(mc_asm_info.contains("MCAsmInfoELF"));
         assert!(mc_emitter.contains("createLNP64MCCodeEmitter"));
         assert!(mc_asm_backend.contains("createLNP64AsmBackend"));
         assert!(mc_asm_backend.contains("LNP64ELFObjectWriter"));
         assert!(mc_asm_backend.contains("R_LNP64_BRANCH26"));
         assert!(inst_printer.contains("createLNP64MCInstPrinter"));
+        assert!(inst_printer.contains("getLNP64Mnemonic"));
         assert!(inst_printer.contains("printMemOperand"));
         assert!(inst_printer.contains("call_reg"));
         assert!(mc_emitter.contains("case LNP64::AND"));
@@ -1888,6 +1925,7 @@ mod tests {
         assert!(mc_emitter.contains("isInt<14>(Offset)"));
         assert!(asm_parser.contains("LLVMInitializeLNP64AsmParser"));
         assert!(asm_parser.contains("RegisterMCAsmParser"));
+        assert!(asm_parser.contains("tryParseRegister"));
         assert!(asm_parser.contains("parseImmediateOrMemory"));
         assert!(asm_parser.contains("buildInstruction"));
         assert!(asm_parser.contains(r#".Case("call", LNP64::CALL)"#));
@@ -1911,6 +1949,7 @@ mod tests {
         assert!(disassembler.contains("MCDisassembler::Fail"));
         assert!(target_machine.contains("LLVMInitializeLNP64Target"));
         assert!(target_machine.contains("e-m:e-p:64:64-i64:64-n64-S128"));
+        assert!(target_machine.contains("initAsmInfo()"));
         assert!(subtarget.contains("TLInfo(TM, *this)"));
         assert!(isel.contains("addRegisterClass(MVT::i64"));
         assert!(isel.contains("ISD::ADD"));
@@ -2029,6 +2068,7 @@ mod tests {
         assert!(instr_info.contains("addFrameIndex(FrameIndex)"));
         assert!(isel.contains("setStackPointerRegisterToSaveRestore(LNP64::R31)"));
         assert!(frame.contains("StackGrowsDown"));
+        assert!(frame.contains("bool LNP64FrameLowering::hasFP"));
         assert!(frame.contains("Align(16)"));
         assert!(frame.contains("emitSPAdjust"));
         assert!(frame.contains("LNP64::R30"));
@@ -2036,6 +2076,7 @@ mod tests {
         assert!(reginfo.contains("Reserved.set(LNP64::R0)"));
         assert!(reginfo.contains("Reserved.set(LNP64::R30)"));
         assert!(reginfo.contains("eliminateFrameIndex"));
+        assert!(reginfo.contains("void LNP64RegisterInfo::eliminateFrameIndex"));
         assert!(reginfo.contains("ChangeToRegister(LNP64::R31"));
         assert!(reginfo.contains("MFI.getObjectOffset"));
         assert!(reginfo.contains("isInt<14>(Offset)"));
