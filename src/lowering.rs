@@ -1426,6 +1426,9 @@ mod tests {
         assert!(real_llc.contains("int main(void)"));
         assert!(real_llc.contains("scalar-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang scalar compile smoke passed"));
+        assert!(real_llc.contains("-S demos/hello.c"));
+        assert!(real_llc.contains("hello-clang-smoke.s"));
+        assert!(real_llc.contains("real LLVM LNP64 clang hello assembly smoke passed"));
         assert!(real_llc.contains("toolchain/crt0_lnp64.s"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc crt0 smoke passed"));
         assert!(real_llc.contains("--triple=lnp64-unknown-none"));
@@ -1964,6 +1967,7 @@ mod tests {
         assert!(inst_printer.contains("printMemOperand"));
         assert!(inst_printer.contains("errno_set"));
         assert!(inst_printer.contains("case LNP64::EXIT"));
+        assert!(inst_printer.contains("case LNP64::LA"));
         assert!(inst_printer.contains("call_reg"));
         assert!(mc_emitter.contains("case LNP64::AND"));
         assert!(mc_emitter.contains("case LNP64::CMP"));
@@ -2029,6 +2033,9 @@ mod tests {
         assert!(isel.contains("setOperationAction(ISD::BR_CC, MVT::i64, Custom)"));
         assert!(isel.contains("LNP64GenCallingConv.inc"));
         assert!(isel.contains("LowerOperation"));
+        assert!(isel.contains("setOperationAction(ISD::GlobalAddress, MVT::i64, Custom)"));
+        assert!(isel.contains("ISD::GlobalAddress"));
+        assert!(isel.contains("LNP64ISD::WRAPPER"));
         assert!(isel.contains("ISD::BR_CC"));
         assert!(
             isel.contains(
@@ -2083,6 +2090,7 @@ mod tests {
         assert!(isel_header.contains("OBJECT_CTL"));
         assert!(isel_header.contains("PULL"));
         assert!(isel_header.contains("PUSH"));
+        assert!(isel_header.contains("WRAPPER"));
         assert!(isel_header.contains("RET_FLAG"));
         assert!(instr_td.contains("def simm16_imm"));
         assert!(instr_td.contains("def simm14_imm"));
@@ -2105,7 +2113,10 @@ mod tests {
         assert!(instr_td.contains("def LNP64objectctl"));
         assert!(instr_td.contains("def LNP64pull"));
         assert!(instr_td.contains("def LNP64push"));
+        assert!(instr_td.contains("def LNP64wrapper"));
         assert!(instr_td.contains("(set GPR:$rd, simm16_imm:$imm)"));
+        assert!(instr_td.contains("def LA"));
+        assert!(instr_td.contains("(i64 (LNP64wrapper tglobaladdr:$target))"));
         assert!(instr_td.contains("(set GPR:$rd, (add GPR:$rs1, GPR:$rs2))"));
         assert!(instr_td.contains("(set GPR:$rd, (xor GPR:$rs, all_ones_imm))"));
         assert!(instr_td.contains("(set GPR:$rd, (shl GPR:$rs1, GPR:$rs2))"));

@@ -74,6 +74,8 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
     return "st.h";
   case LNP64::ST_B:
     return "st.b";
+  case LNP64::LA:
+    return "la";
   default:
     return "";
   }
@@ -141,6 +143,12 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
     break;
   case LNP64::MOV:
     OS << "mov ";
+    printOperand(MI->getOperand(0), OS);
+    OS << ", ";
+    printOperand(MI->getOperand(1), OS);
+    break;
+  case LNP64::LA:
+    OS << "la ";
     printOperand(MI->getOperand(0), OS);
     OS << ", ";
     printOperand(MI->getOperand(1), OS);

@@ -24,6 +24,7 @@ enum NodeType : unsigned {
   OBJECT_CTL,
   PULL,
   PUSH,
+  WRAPPER,
   RET_FLAG,
 };
 }

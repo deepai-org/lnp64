@@ -74,6 +74,7 @@ LNP64TargetLowering::LNP64TargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::UDIV, MVT::i64, Expand);
   setOperationAction(ISD::UREM, MVT::i64, Expand);
   setOperationAction(ISD::SREM, MVT::i64, Expand);
+  setOperationAction(ISD::GlobalAddress, MVT::i64, Custom);
   setOperationAction(ISD::BR_CC, MVT::i64, Custom);
   for (MVT MemVT : {MVT::i8, MVT::i16, MVT::i32}) {
     setLoadExtAction(ISD::ZEXTLOAD, MVT::i64, MemVT, Legal);
@@ -108,6 +109,8 @@ const char *LNP64TargetLowering::getTargetNodeName(unsigned Opcode) const {
     return "LNP64ISD::PULL";
   case LNP64ISD::PUSH:
     return "LNP64ISD::PUSH";
+  case LNP64ISD::WRAPPER:
+    return "LNP64ISD::WRAPPER";
   case LNP64ISD::RET_FLAG:
     return "LNP64ISD::RET_FLAG";
   default:
@@ -118,6 +121,14 @@ const char *LNP64TargetLowering::getTargetNodeName(unsigned Opcode) const {
 SDValue LNP64TargetLowering::LowerOperation(SDValue Op,
                                             SelectionDAG &DAG) const {
   switch (Op.getOpcode()) {
+  case ISD::GlobalAddress: {
+    auto *G = cast<GlobalAddressSDNode>(Op);
+    SDLoc DL(Op);
+    SDValue Target = DAG.getTargetGlobalAddress(
+        G->getGlobal(), DL, getPointerTy(DAG.getDataLayout()), G->getOffset());
+    return DAG.getNode(LNP64ISD::WRAPPER, DL,
+                       getPointerTy(DAG.getDataLayout()), Target);
+  }
   case ISD::BR_CC: {
     SDValue Chain = Op.getOperand(0);
     auto *CC = cast<CondCodeSDNode>(Op.getOperand(1));

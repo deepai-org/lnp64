@@ -43,6 +43,10 @@ def LNP64pull : SDNode<"LNP64ISD::PULL", SDT_LNP64Native3,
                        [SDNPHasChain]>;
 def LNP64push : SDNode<"LNP64ISD::PUSH", SDT_LNP64Native3,
                        [SDNPHasChain]>;
+def SDT_LNP64Wrapper : SDTypeProfile<1, 1, [
+  SDTCisSameAs<0, 1>, SDTCisPtrTy<0>
+]>;
+def LNP64wrapper : SDNode<"LNP64ISD::WRAPPER", SDT_LNP64Wrapper>;
 
 class LNP64Inst<dag Outs, dag Ins, string Mnemonic, string Operands>
     : Instruction {
@@ -110,6 +114,11 @@ def LI : LNP64RI<"li"> {
   let Pattern = [(set GPR:$rd, simm16_imm:$imm)];
 }
 def MOV : LNP64RR<"mov">;
+def LA : LNP64Inst<(outs GPR:$rd), (ins i64imm:$target), "la",
+                   "\t$rd, $target"> {
+  let isPseudo = 1;
+}
+def : Pat<(i64 (LNP64wrapper tglobaladdr:$target)), (LA tglobaladdr:$target)>;
 
 def ADD : LNP64RRR<"add"> {
   let Pattern = [(set GPR:$rd, (add GPR:$rs1, GPR:$rs2))];

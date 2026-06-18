@@ -181,6 +181,16 @@ clang_obj="$build_dir/scalar-clang-smoke.o"
 test -s "$clang_obj"
 printf 'real LLVM LNP64 clang scalar compile smoke passed: %s\n' "$clang_obj"
 
+hello_asm="$build_dir/hello-clang-smoke.s"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables \
+  -Wno-implicit-function-declaration -I toolchain \
+  -S demos/hello.c -o "$hello_asm"
+grep -q '^la[[:space:]]' "$hello_asm"
+grep -q '^call[[:space:]]' "$hello_asm"
+test -s "$hello_asm"
+printf 'real LLVM LNP64 clang hello assembly smoke passed: %s\n' "$hello_asm"
+
 crt0_obj="$build_dir/crt0-smoke.o"
 "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj toolchain/crt0_lnp64.s \
   -o "$crt0_obj"
