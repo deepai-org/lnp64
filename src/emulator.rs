@@ -8281,6 +8281,43 @@ mod tests {
     }
 
     #[test]
+    fn classifier_rejects_invalid_profile_and_foreign_domain_envelopes() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let source = create_memory_source(&mut machine, 5);
+        let classifier = create_classifier(&mut machine, 6, 0, 0, 0, 0);
+        let envelope = ARG_BASE + 0x1000;
+        let result = ARG_BASE + 0x1100;
+
+        write_envelope(&mut machine, envelope, 99, source, 0, 0, 0, 0, 0);
+        assert_eq!(
+            classify(&mut machine, classifier, envelope, result),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 22);
+
+        write_envelope(
+            &mut machine,
+            envelope,
+            CLASSIFY_PROFILE_IPC,
+            source,
+            0,
+            0,
+            0,
+            0,
+            0,
+        );
+        machine
+            .store_u64(envelope + 24, ROOT_DOMAIN_ID + 1)
+            .unwrap();
+        assert_eq!(
+            classify(&mut machine, classifier, envelope, result),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 1);
+    }
+
+    #[test]
     fn servicelet_program_creation_verifies_bounds() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
