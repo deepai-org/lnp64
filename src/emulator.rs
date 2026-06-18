@@ -1049,6 +1049,7 @@ pub struct Machine {
     futex_waiters: HashMap<u64, VecDeque<u64>>,
     thread_join_waiters: HashMap<u64, VecDeque<u64>>,
     completed_threads: HashMap<u64, u64>,
+    completed_children: HashMap<(u64, u64), i32>,
     fd_waiters: Vec<FdWaiter>,
     current_tid: u64,
     next_pid: u64,
@@ -1090,6 +1091,7 @@ impl Machine {
             futex_waiters: HashMap::new(),
             thread_join_waiters: HashMap::new(),
             completed_threads: HashMap::new(),
+            completed_children: HashMap::new(),
             fd_waiters: Vec::new(),
             current_tid: root_tid,
             next_pid: 2,
@@ -2128,8 +2130,19 @@ impl Machine {
                     self.ready.retain(|tid| *tid != self.current_tid);
                     return Ok(false);
                 }
-                if pid == 0 || !self.processes.contains_key(&pid) {
-                    self.write_reg(status_dst, self.last_exit as u64)?;
+                if pid == 0 {
+                    let completed = self
+                        .completed_children
+                        .keys()
+                        .find(|(parent, _)| *parent == current_pid)
+                        .copied();
+                    let status = completed
+                        .and_then(|key| self.completed_children.remove(&key))
+                        .unwrap_or(self.last_exit);
+                    self.write_reg(status_dst, status as u64)?;
+                    self.set_status_ok()?;
+                } else if let Some(status) = self.completed_children.remove(&(current_pid, pid)) {
+                    self.write_reg(status_dst, status as u64)?;
                     self.set_status_ok()?;
                 } else {
                     self.set_status_errno(10)?;
@@ -7038,6 +7051,7 @@ impl Machine {
             self.advisory_locks.retain(|_, lock| lock.owner_pid != pid);
             self.processes.remove(&pid);
             if let Some(parent_pid) = parent_pid {
+                self.completed_children.insert((parent_pid, pid), code);
                 if let Some(parent) = self.processes.get_mut(&parent_pid) {
                     parent
                         .pending_events
@@ -12377,6 +12391,47 @@ mod tests {
         assert_eq!(machine.thread().unwrap().regs[5], 0);
         assert_eq!(machine.load_u64(retval).unwrap(), 77);
         assert!(!machine.completed_threads.contains_key(&child_tid));
+    }
+
+    #[test]
+    fn waitpid_specific_child_consumes_completed_status() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine
+            .clone_with_profile(CloneProfile::NewProcessCow, Reg(2), None)
+            .unwrap();
+        let child_pid = machine.thread().unwrap().regs[2];
+        let child_tid = machine
+            .threads
+            .values()
+            .find(|thread| thread.pid == child_pid)
+            .unwrap()
+            .tid;
+
+        machine.current_tid = child_tid;
+        machine.exit_current(42).unwrap();
+        assert_eq!(machine.completed_children.get(&(1, child_pid)), Some(&42));
+
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[3] = child_pid;
+        machine.exec(Instr::WaitPid(Reg(4), Reg(3))).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[4], 42);
+        assert_eq!(machine.thread().unwrap().regs[1], 0);
+        assert!(!machine.completed_children.contains_key(&(1, child_pid)));
+    }
+
+    #[test]
+    fn waitpid_specific_non_child_reports_echild() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[2] = 999;
+
+        machine.exec(Instr::WaitPid(Reg(4), Reg(2))).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 10);
+        assert_eq!(machine.thread().unwrap().regs[4], 0);
     }
 
     #[test]
