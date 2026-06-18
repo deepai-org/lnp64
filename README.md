@@ -111,17 +111,218 @@ arg+64 call_gate flags, bit0 permits capability-marked args
 
 ## Build And Test
 
-Run Rust tests:
+Working commands are meant to be run from the repository root. For a normal
+host-side hygiene pass, use:
 
 ```sh
+cargo fmt --check
 cargo test
+bash scripts/run_demos.sh
+git diff --check
+rg "MSG_RECV|\\bPIPE\\b"
+rg "EVENT_CTL|TIMER_CTL"
 ```
 
-Run the full checked repository gate:
+Notes on the commands that are known to work:
+
+- Run them from the repository root; most scripts `cd` there defensively, but
+  the one-off `cargo run -- ...` examples assume repo-relative paths.
+- `cargo test` is the authoritative emulator/compiler regression gate. Use
+  `cargo test --quiet <test_name>` for a focused check before the full suite.
+- `cargo fmt --check` and `git diff --check` are read-only checks. They are
+  expected to fail only when formatting or whitespace needs fixing.
+- `scripts/run_demos.sh` compiles C demos to `/tmp/*.s`, runs assembly demos,
+  and exercises the loopback `netcat` and `httpd` demos. It needs bash
+  `/dev/tcp` support and free localhost ports `41065` and `41066`.
+- `scripts/run_real_packages.sh` is the aggregate package smoke command. It
+  runs the individual `sbase`, `inih`, `zlib`, `natsort`, `cwalk`, `jsmn`, and
+  `libc_test` package gates listed later in this section.
+- After `cargo build --release`, set
+  `LNP64_BIN="$PWD/target/release/lnp64"` before running demo/package scripts
+  to avoid repeated `cargo run --release` rebuild checks. `run_software_gates.sh`
+  does this automatically with a copied release binary under `/tmp`.
+- The Rust `target/` tree can get large after full gates. Run `cargo clean`
+  when you want the workspace back to a small on-disk footprint.
+- The `rg` alias checks are allowed to print documentation hits. Treat new
+  emulator/compiler implementation hits for POSIX-first terms as layering
+  regressions unless they are explicitly compatibility lowerings.
+
+The `rg "MSG_RECV|\\bPIPE\\b"` results should be limited to documentation or
+negative assertions. The `rg "EVENT_CTL|TIMER_CTL"` results should be
+alias-only wording; new emulator/compiler work should use event queues,
+waitables, typed control records, and native object/domain terminology instead.
+
+Quick command notes:
+
+- Host-only, no Docker: `cargo fmt --check`, `cargo test`,
+  `bash scripts/run_demos.sh`, `bash scripts/run_userland.sh`,
+  `bash scripts/run_netbsd_personality_system.sh`,
+  `bash scripts/run_real_packages.sh`, and `git diff --check`.
+- Release-reuse path: `cargo build --release` followed by
+  `LNP64_BIN="$PWD/target/release/lnp64" bash scripts/run_demos.sh` works for
+  demo reruns without paying the `cargo run --release` startup path each time.
+- Docker-required for a reproducible proof/RTL environment:
+  `bash scripts/run_rtl_proof_docker.sh` and
+  `bash scripts/run_rtl_synth_docker.sh`.
+- Host RTL/proof scripts assume local Verilator, Python, and optionally Lean or
+  Yosys. Use the Docker commands when those tools are not installed locally.
+- Network demo scripts use localhost only, but they still need free loopback
+  ports and a shell with `/dev/tcp` support.
+- Cleanup after large gates: `cargo clean` removes Rust build artifacts, and
+  Docker image cleanup is left to normal Docker tooling.
+
+For the broader host software gate, run:
+
+```sh
+bash scripts/run_software_gates.sh
+```
+
+That script runs Rust formatting/tests, builds the release emulator, then runs
+the toolchain contracts, NetBSD personality smoke/system gates, demos,
+userland, and real-package gates. It also exports `LNP64_BIN` so downstream
+demo/package scripts reuse the release binary instead of rebuilding through
+`cargo run`.
+
+For the full repository gate with Dockerized RTL/proof coverage, run:
 
 ```sh
 bash scripts/run_all_gates.sh
 ```
+
+That command runs the RTL/proof Docker gate, the host software gate, and
+`git diff --check`.
+
+For RTL/proof work, use the Dockerized gates below first. These commands were
+run successfully in this checkout on 2026-06-18; they are separated from the
+emulator/Rust gates above because the Lean and RTL toolchains are intentionally
+containerized.
+
+The current first-class verification path is the RTL/proof Docker flow. It keeps
+Lean, Verilator, and the proof gate dependencies out of the host environment.
+The Docker commands are intentionally heavyweight because they install the tool
+chains inside images; once an image exists, use the shorter `docker run ...`
+rerun commands below for the live workspace.
+
+Run the reproducible RTL/proof co-design gate:
+
+```sh
+bash scripts/run_rtl_proof_docker.sh
+```
+
+This builds `Dockerfile.rtl-proof`, installs Lean and Verilator, runs the gate
+during image construction, then reruns it against the mounted working tree with
+Lean required. The gate checks S0 through M13, runs the Python mirrors, runs the
+RTL simulations, runs the bounded M1-M13 randomized co-simulation seeds, checks
+the formal proof-obligation manifest under `formal/`, and rejects `axiom`,
+`sorry`, and `admit` in the checked Lean files. The final line should be:
+
+```text
+rtl/proof gates ok
+```
+
+After the image exists, this is the shorter command for rerunning the same
+gate against the live workspace:
+
+```sh
+docker run --rm \
+  -e LNP64_REQUIRE_LEAN=1 \
+  -v "$PWD:/work" \
+  -w /work \
+  lnp64-rtl-proof \
+  bash scripts/run_rtl_proof_gates.sh
+```
+
+To run the same RTL/proof gate directly on a host that already has compatible
+Lean, Python, and Verilator installed:
+
+```sh
+LNP64_REQUIRE_LEAN=1 bash scripts/run_rtl_proof_gates.sh
+```
+
+Without `LNP64_REQUIRE_LEAN=1`, the host gate still runs the Python mirrors and
+RTL simulations, but skips Lean if `lean` is not configured. Use the Docker path
+for proof work unless you are intentionally testing the host toolchain.
+
+Run the Dockerized RTL synthesis/FPGA smoke gate:
+
+```sh
+bash scripts/run_rtl_synth_docker.sh
+```
+
+This builds `Dockerfile.rtl-synth`, checks the FPGA constraint manifest under
+`fpga/constraints/`, checks the Track D bring-up coverage manifest under
+`fpga/bringup/`, checks the Track B RTL block manifest under `rtl/`, checks the
+roadmap S0 shell/record contract, runs a Yosys S0 synthesis/netlist smoke, and
+statically elaborates the S0 through M13 RTL tops with Verilator. It is a
+bring-up smoke gate for constraints, roadmap coverage, and synthesizable RTL
+shape, not a claimed FPGA bitstream or board build.
+
+After the image exists, rerun the same synthesis smoke gate against the live
+workspace:
+
+```sh
+docker run --rm \
+  -v "$PWD:/work" \
+  -w /work \
+  lnp64-rtl-synth \
+  bash scripts/run_rtl_synth_smoke.sh
+```
+
+Run only the bounded randomized RTL/model co-simulation smoke:
+
+```sh
+bash scripts/run_rtl_random_cosim.sh
+```
+
+This validates `tests/traces/rtl_cosim_manifest.json` and runs the seedable
+M1-M13 model/RTL trace comparisons for the default bounded seed set. Override
+the seed set with `LNP64_COSIM_SEEDS`.
+
+The currently exercised random slices are:
+
+- M1 ping-pong queues: queue generation, push payload, and refill payload.
+- M2 gates: gate generation, continuation id, and call targets.
+- M3 process/thread lifecycle: parent/child ids, exit code, exec epoch, and
+  stopped-sibling count.
+- M4 VMAs: VMA id, page count, base address, and VMA generation.
+- M5 DMA/memory objects: root domain, source/destination buffers, copy/fill
+  sizes, fill value, and isolation-domain checks.
+- M6 typed control/service boundary: root/namespace ids, path length, service
+  and operation ids, continuation id, returned rights, and returned object id.
+- M7 futex/atomic: root domain, initial atomic value, compare-exchange values,
+  futex address, and bucket id.
+- M8 heap: root domain, heap generation, pointer, size class, owner/freeing
+  thread ids, and pointer generation.
+- M9 classifier/servicelet: root/table ids, verifier program and instruction
+  count, packet and IPC steering fields, and budget cycle count.
+- M10 RAS/observability: measurement and telemetry ids, ECC correction count,
+  watchdog reset id, visible counters, trace-ring capacity/writes, quote id,
+  and audit label.
+- M11 DDR/metadata broker: root domain, DDR line id/generation, metadata epoch,
+  byte length, data value, cross-domain id, and ECC correction count.
+- M12 SD/SPI storage barrier: root domain, object id/generation, barrier id,
+  block index, byte length, data value, cross-domain id, and media status.
+- M13 PCIe/IOMMU/MSI: root domain, requester id, BAR id/generation, IOMMU
+  context, DMA byte count, MSI vector, rogue domain, and malformed field id.
+
+The following host checks have also been kept as small, actually runnable
+sanity commands for the RTL/proof path:
+
+```sh
+bash -n scripts/run_rtl_*.sh
+scripts/check_formal_proof_manifest.py
+scripts/check_rtl_cosim_manifest.py
+scripts/check_rtl_synth_constraints.py
+scripts/check_fpga_bringup_manifest.py
+scripts/check_rtl_track_b_manifest.py
+scripts/check_rtl_s0_contract.py
+bash scripts/run_rtl_yosys_s0.sh
+rg -n "\\baxiom\\b|sorry|admit" formal || true
+bash scripts/run_rtl_synth_smoke.sh
+git diff --check
+```
+
+Run individual RTL/model vertical slices:
 
 Run the first RTL/formal co-design skeleton gate:
 
@@ -133,6 +334,78 @@ Run the first RTL/model co-simulation vertical slice:
 
 ```sh
 bash scripts/run_rtl_m1.sh
+```
+
+Run the gate/continuation RTL/model vertical slice:
+
+```sh
+bash scripts/run_rtl_m2.sh
+```
+
+Run the process/thread lifecycle RTL/model vertical slice:
+
+```sh
+bash scripts/run_rtl_m3.sh
+```
+
+Run the VMA/MMU RTL/model vertical slice:
+
+```sh
+bash scripts/run_rtl_m4.sh
+```
+
+Run the DMA/memory-object RTL/model vertical slice:
+
+```sh
+bash scripts/run_rtl_m5.sh
+```
+
+Run the typed-control/namespace/service-boundary RTL/model vertical slice:
+
+```sh
+bash scripts/run_rtl_m6.sh
+```
+
+Run the futex/atomic RTL/model vertical slice:
+
+```sh
+bash scripts/run_rtl_m7.sh
+```
+
+Run the heap RTL/model vertical slice:
+
+```sh
+bash scripts/run_rtl_m8.sh
+```
+
+Run the classifier/servicelet RTL/model vertical slice:
+
+```sh
+bash scripts/run_rtl_m9.sh
+```
+
+Run the RAS/observability/assurance RTL/model vertical slice:
+
+```sh
+bash scripts/run_rtl_m10.sh
+```
+
+Run the DDR/metadata-broker RTL/model vertical slice:
+
+```sh
+bash scripts/run_rtl_m11.sh
+```
+
+Run the SD/SPI storage-barrier RTL/model vertical slice:
+
+```sh
+bash scripts/run_rtl_m12.sh
+```
+
+Run the PCIe/IOMMU/MSI RTL/model vertical slice:
+
+```sh
+bash scripts/run_rtl_m13.sh
 ```
 
 Build and run a demo:
