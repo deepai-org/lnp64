@@ -962,6 +962,22 @@ mod tests {
         for pcr in ["PID", "PPID", "TID", "TP", "SIGMASK", "SIGPENDING"] {
             assert!(manifest_csv_contains(manifest, "pcr", pcr), "missing {pcr}");
         }
+        assert!(manifest_csv_contains(
+            manifest,
+            "native_primitives",
+            "CLONE"
+        ));
+        for profile in [
+            "new_process_cow",
+            "new_thread_shared_vm",
+            "spawn_entry",
+            "domain_task",
+        ] {
+            assert!(
+                manifest_csv_contains(manifest, "clone_profiles", profile),
+                "missing clone profile {profile}"
+            );
+        }
         for relocation in [
             "R_LNP64_NONE",
             "R_LNP64_ABS64",
@@ -1015,6 +1031,8 @@ mod tests {
             manifest_field(manifest, "toy_compiler_policy"),
             "bootstrap_smoke_only_after_llvm_gate"
         );
+        assert!(roadmap.contains("`CLONE` is a backend-visible native primitive"));
+        assert!(roadmap.contains("new_thread_shared_vm"));
         assert!(roadmap.contains("## Toy Compiler Freeze Policy"));
         assert!(roadmap.contains("They are not the long-term application"));
         assert!(roadmap.contains("only small fixes needed to keep existing smoke"));

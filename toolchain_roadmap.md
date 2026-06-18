@@ -60,6 +60,10 @@ NetBSD policy. Those remain loader, libc, and personality responsibilities.
 4. Add native primitive access.
    - Inline asm constraints for GPR/FDR/PCR operands from
      `toolchain/lnp64_inline_asm.manifest`.
+   - `CLONE` is a backend-visible native primitive with profile operands
+     `new_process_cow`, `new_thread_shared_vm`, `spawn_entry`, and
+     `domain_task`. POSIX `fork()` and `pthread_create()` remain libc/runtime
+     lowerings to the first two profiles rather than compiler special cases.
    - Backend builtins or Clang intrinsics for private `__lnp_*` shims:
      `__lnp_openat`, `__lnp_pull`, `__lnp_push`, `__lnp_mmap`,
      `__lnp_await`, `__lnp_gate_call`, `__lnp_call`,
