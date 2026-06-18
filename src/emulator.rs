@@ -12458,6 +12458,15 @@ mod tests {
         assert_eq!(machine.process().unwrap().errno, 14);
         assert_eq!(machine.read_bytes(boundary_out, 1).unwrap(), b"Z".to_vec());
 
+        machine.store_u64(arg, 99).unwrap();
+        machine.store_u64(arg + 32, out).unwrap();
+        machine.store_u64(arg + 40, 256).unwrap();
+        machine.write_bytes(out, b"sentinel-e\0").unwrap();
+        machine.ns_ctl(Reg(9), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[9], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert_eq!(machine.read_c_string(out).unwrap(), "sentinel-e");
+
         let _ = fs::remove_dir_all(&base);
     }
 
