@@ -286,6 +286,12 @@ private:
             .Case("lsr", LNP64::LSR)
             .Case("asr", LNP64::ASR)
             .Case("cmp", LNP64::CMP)
+            .Case("cset.eq", LNP64::CSET_EQ)
+            .Case("cset.ne", LNP64::CSET_NE)
+            .Case("cset.lt", LNP64::CSET_LT)
+            .Case("cset.gt", LNP64::CSET_GT)
+            .Case("cset.le", LNP64::CSET_LE)
+            .Case("cset.ge", LNP64::CSET_GE)
             .Case("jmp", LNP64::JMP)
             .Case("beq", LNP64::BEQ)
             .Case("bne", LNP64::BNE)
@@ -337,7 +343,10 @@ private:
         Opcode == LNP64::BGT || Opcode == LNP64::BLE ||
         Opcode == LNP64::BGE || Opcode == LNP64::CALL)
       return addBranchTarget(Inst, Operands);
-    if (Opcode == LNP64::CALL_REG)
+    if (Opcode == LNP64::CALL_REG || Opcode == LNP64::CSET_EQ ||
+        Opcode == LNP64::CSET_NE || Opcode == LNP64::CSET_LT ||
+        Opcode == LNP64::CSET_GT || Opcode == LNP64::CSET_LE ||
+        Opcode == LNP64::CSET_GE)
       return addReg(Inst, Operands);
     if (Opcode == LNP64::ERRNO_GET || Opcode == LNP64::ERRNO_SET ||
         Opcode == LNP64::EXIT)

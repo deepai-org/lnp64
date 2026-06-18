@@ -52,3 +52,10 @@ argc_output="$(cargo run --quiet -- run-elf "$argc_probe")"
 grep -q 'exit=0' <<<"$argc_output"
 printf 'real LLVM LNP64 run-elf argc execution passed: %s\n' \
   "$argc_probe"
+
+compare_probe="target/llvm-lnp64-build/lnp64-compare-linked.elf"
+cargo run --quiet -- elf-plan "$compare_probe" >/dev/null
+compare_output="$(cargo run --quiet -- run-elf "$compare_probe")"
+grep -q 'exit=0' <<<"$compare_output"
+printf 'real LLVM LNP64 run-elf comparison execution passed: %s\n' \
+  "$compare_probe"

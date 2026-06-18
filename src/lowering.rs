@@ -1955,6 +1955,7 @@ mod tests {
             "LD",
             "CALL",
             "RET",
+            "CSET_EQ",
             "ERRNO_SET",
             "EXIT",
             "PULL",
@@ -2014,11 +2015,13 @@ mod tests {
         assert!(inst_printer.contains("getLNP64Mnemonic"));
         assert!(inst_printer.contains("printMemOperand"));
         assert!(inst_printer.contains("errno_set"));
+        assert!(inst_printer.contains("cset.eq"));
         assert!(inst_printer.contains("case LNP64::EXIT"));
         assert!(inst_printer.contains("case LNP64::LA"));
         assert!(inst_printer.contains("call_reg"));
         assert!(mc_emitter.contains("case LNP64::AND"));
         assert!(mc_emitter.contains("case LNP64::CMP"));
+        assert!(mc_emitter.contains("case LNP64::CSET_EQ"));
         assert!(mc_emitter.contains("case LNP64::LA"));
         assert!(mc_emitter.contains("fixup_lnp64_abs32"));
         assert!(mc_emitter.contains("case LNP64::LD_W"));
@@ -2034,6 +2037,7 @@ mod tests {
         assert!(asm_parser.contains("buildInstruction"));
         assert!(asm_parser.contains(r#".Case("la", LNP64::LA)"#));
         assert!(asm_parser.contains(r#".Case("call", LNP64::CALL)"#));
+        assert!(asm_parser.contains(r#".Case("cset.eq", LNP64::CSET_EQ)"#));
         assert!(asm_parser.contains(r#".Case("errno_get", LNP64::ERRNO_GET)"#));
         assert!(asm_parser.contains(r#".Case("errno_set", LNP64::ERRNO_SET)"#));
         assert!(asm_parser.contains(r#".Case("exit", LNP64::EXIT)"#));
@@ -2050,6 +2054,7 @@ mod tests {
         assert!(disassembler.contains("Instr.setOpcode(LNP64::ADD)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::AND)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::CMP)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::CSET_EQ)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::CALL)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::CALL_REG)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::ERRNO_GET)"));
@@ -2091,6 +2096,7 @@ mod tests {
         assert!(isel.contains("ISD::ADD"));
         assert!(isel.contains("ISD::SDIV"));
         assert!(isel.contains("setOperationAction(ISD::BR_CC, MVT::i64, Custom)"));
+        assert!(isel.contains("getLNP64CSetInstr"));
         assert!(isel.contains("LNP64GenCallingConv.inc"));
         assert!(isel.contains("LowerOperation"));
         assert!(isel.contains("setOperationAction(ISD::GlobalAddress, MVT::i64, Custom)"));
@@ -2105,6 +2111,7 @@ mod tests {
         assert!(isel.contains("EmitInstrWithCustomInserter"));
         assert!(isel.contains("LNP64::PseudoBEQ"));
         assert!(isel.contains("BuildMI(*BB, MI, DL, TII.get(LNP64::CMP))"));
+        assert!(isel.contains("TII.get(getLNP64CSetInstr(MI.getOpcode()))"));
         assert!(isel.contains("BuildMI(*BB, MI, DL, TII.get(BranchOpcode))"));
         assert!(isel.contains("LowerFormalArguments"));
         assert!(isel.contains("CCInfo.AnalyzeFormalArguments(Ins, CC_LNP64)"));
@@ -2161,9 +2168,13 @@ mod tests {
         assert!(instr_td.contains("def LNP64breq"));
         assert!(instr_td.contains("def LNP64brne"));
         assert!(instr_td.contains("class LNP64CondBranchPseudo"));
+        assert!(instr_td.contains("class LNP64SetCCPseudo"));
+        assert!(instr_td.contains("def CSET_EQ"));
         assert!(instr_td.contains("usesCustomInserter = 1"));
         assert!(instr_td.contains("def PseudoBEQ"));
         assert!(instr_td.contains("(PseudoBEQ GPR:$lhs, GPR:$rhs, bb:$target)"));
+        assert!(instr_td.contains("(PseudoCSETEQ GPR:$lhs, GPR:$rhs)"));
+        assert!(instr_td.contains("(PseudoCSETNEI GPR:$lhs, simm16_imm:$rhs)"));
         assert!(instr_td.contains("def LNP64retflag"));
         assert!(instr_td.contains("def SDT_LNP64Call"));
         assert!(instr_td.contains("SDTypeProfile<0, -1, []>"));
@@ -3417,6 +3428,7 @@ mod tests {
         for group in [
             "constants",
             "integer_alu_rrr",
+            "integer_compare_value",
             "control_branch",
             "runtime_control",
             "memory",
@@ -3465,6 +3477,7 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::ADD"));
         assert!(mc_emitter.contains("case LNP64::CALL"));
         assert!(mc_emitter.contains("case LNP64::CALL_REG"));
+        assert!(mc_emitter.contains("case LNP64::CSET_EQ"));
         assert!(mc_emitter.contains("case LNP64::ERRNO_GET"));
         assert!(mc_emitter.contains("case LNP64::ERRNO_SET"));
         assert!(mc_emitter.contains("case LNP64::EXIT"));

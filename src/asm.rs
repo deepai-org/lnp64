@@ -194,6 +194,12 @@ impl Parser {
                 arity(2)?;
                 Instr::Cmp(reg(&args[0])?, reg(&args[1])?)
             }
+            "CSET.EQ" => cset(&args, Condition::Eq)?,
+            "CSET.NE" => cset(&args, Condition::Ne)?,
+            "CSET.LT" => cset(&args, Condition::Lt)?,
+            "CSET.GT" => cset(&args, Condition::Gt)?,
+            "CSET.LE" => cset(&args, Condition::Le)?,
+            "CSET.GE" => cset(&args, Condition::Ge)?,
             "JMP" => {
                 arity(1)?;
                 Instr::Jmp(target(&args[0]))
@@ -802,6 +808,13 @@ fn branch(args: &[String], condition: Condition) -> Result<Instr, String> {
         return Err(format!("branch expects 1 operand, got {}", args.len()));
     }
     Ok(Instr::Branch(condition, target(&args[0])))
+}
+
+fn cset(args: &[String], condition: Condition) -> Result<Instr, String> {
+    if args.len() != 1 {
+        return Err(format!("cset expects 1 operand, got {}", args.len()));
+    }
+    Ok(Instr::Cset(reg(&args[0])?, condition))
 }
 
 fn load(args: &[String], width: Width) -> Result<Instr, String> {

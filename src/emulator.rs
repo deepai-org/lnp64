@@ -1553,6 +1553,12 @@ impl Machine {
             0x3a => Instr::Exit(a),
             0x3b => Instr::PullDyn(a, b, c, Reg(((word >> 4) & 0x1f) as usize)),
             0x3c => Instr::PushDyn(a, b, c, Reg(((word >> 4) & 0x1f) as usize)),
+            0x3d => Instr::Cset(a, Condition::Eq),
+            0x3e => Instr::Cset(a, Condition::Ne),
+            0x3f => Instr::Cset(a, Condition::Lt),
+            0x40 => Instr::Cset(a, Condition::Gt),
+            0x41 => Instr::Cset(a, Condition::Le),
+            0x42 => Instr::Cset(a, Condition::Ge),
             other => {
                 return Err(format!(
                     "unsupported committed exec opcode 0x{other:02x} at 0x{pc:x}"
@@ -1853,6 +1859,10 @@ impl Machine {
                     negative: lhs < rhs,
                     greater: lhs > rhs,
                 };
+            }
+            Instr::Cset(dst, condition) => {
+                let value = u64::from(self.condition(condition)?);
+                self.write_alu_reg(dst, value)?;
             }
             Instr::Jmp(target) => {
                 let ip = self.resolve_target(target)?;

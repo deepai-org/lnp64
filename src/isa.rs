@@ -82,6 +82,7 @@ pub enum Instr {
     Lsr(Reg, Reg, Reg),
     Asr(Reg, Reg, Reg),
     Cmp(Reg, Reg),
+    Cset(Reg, Condition),
     Jmp(Target),
     Branch(Condition, Target),
     Call(Target),

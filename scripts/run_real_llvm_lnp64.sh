@@ -302,6 +302,39 @@ grep -q '<main>:' "$argc_dump"
 grep -q 'ret' "$argc_dump"
 printf 'real LLVM LNP64 clang argc object smoke passed: %s\n' "$argc_obj"
 
+compare_c="$build_dir/compare-smoke.c"
+cat >"$compare_c" <<'C'
+int same(long a, long b) {
+  return a == b;
+}
+
+int different(long a, long b) {
+  return a != b;
+}
+
+int less(long a, long b) {
+  return a < b;
+}
+
+int main(void) {
+  return same(9, 9) + different(9, 7) + less(3, 4) - 3;
+}
+C
+
+compare_obj="$build_dir/compare-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$compare_c" -o "$compare_obj"
+test -s "$compare_obj"
+compare_dump="$build_dir/compare-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$compare_obj" \
+  >"$compare_dump"
+grep -q 'cset.eq' "$compare_dump"
+grep -q 'cset.ne' "$compare_dump"
+grep -q 'cset.lt' "$compare_dump"
+printf 'real LLVM LNP64 clang comparison object smoke passed: %s\n' \
+  "$compare_obj"
+
 crt0_obj="$build_dir/crt0-smoke.o"
 "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj toolchain/crt0_lnp64.s \
   -o "$crt0_obj"
@@ -359,6 +392,13 @@ argc_elf="$build_dir/lnp64-argc-linked.elf"
   -o "$argc_elf" "$crt0_obj" "$argc_obj"
 test -s "$argc_elf"
 printf 'real LLVM LNP64 lld argc link smoke passed: %s\n' "$argc_elf"
+
+compare_elf="$build_dir/lnp64-compare-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$compare_elf" "$crt0_obj" "$compare_obj"
+test -s "$compare_elf"
+printf 'real LLVM LNP64 lld comparison link smoke passed: %s\n' \
+  "$compare_elf"
 
 for demo in hello factorial allocator fibonacci; do
   demo_obj="$build_dir/$demo-clang-smoke.o"

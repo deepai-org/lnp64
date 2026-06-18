@@ -1,7 +1,7 @@
 # LNP64 instruction-selection manifest v1.
 # Pipe-delimited fields: group|status|opcodes
 constants|required|NOP,LI,MOV
-integer_alu|required|ADD,SUB,MUL,DIV,AND,OR,XOR,NOT,LSL,LSR,ASR,CMP
+integer_alu|required|ADD,SUB,MUL,DIV,AND,OR,XOR,NOT,LSL,LSR,ASR,CMP,CSET.EQ,CSET.NE,CSET.LT,CSET.GT,CSET.LE,CSET.GE
 control_flow|required|JMP,BEQ,BNE,BLT,BGT,BLE,BGE,CALL,CALL_REG,RET
 memory|required|LD,LD.W,LD.H,LD.B,ST,ST.W,ST.H,ST.B,FENCE,ISYNC
 atomics|required|LOCK.CMPXCHG,FUTEX_WAIT,FUTEX_WAKE

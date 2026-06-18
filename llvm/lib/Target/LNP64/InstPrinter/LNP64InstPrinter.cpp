@@ -36,6 +36,18 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
     return "not";
   case LNP64::CMP:
     return "cmp";
+  case LNP64::CSET_EQ:
+    return "cset.eq";
+  case LNP64::CSET_NE:
+    return "cset.ne";
+  case LNP64::CSET_LT:
+    return "cset.lt";
+  case LNP64::CSET_GT:
+    return "cset.gt";
+  case LNP64::CSET_LE:
+    return "cset.le";
+  case LNP64::CSET_GE:
+    return "cset.ge";
   case LNP64::JMP:
     return "jmp";
   case LNP64::BEQ:
@@ -199,6 +211,12 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::ERRNO_GET:
   case LNP64::ERRNO_SET:
   case LNP64::EXIT:
+  case LNP64::CSET_EQ:
+  case LNP64::CSET_NE:
+  case LNP64::CSET_LT:
+  case LNP64::CSET_GT:
+  case LNP64::CSET_LE:
+  case LNP64::CSET_GE:
     OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
     printOperand(MI->getOperand(0), OS);
     break;

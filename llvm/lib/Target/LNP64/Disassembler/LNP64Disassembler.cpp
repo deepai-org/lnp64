@@ -217,6 +217,30 @@ public:
       addReg(Instr, C);
       addReg(Instr, (Word >> 4) & 0x1f);
       return MCDisassembler::Success;
+    case 0x3d:
+      Instr.setOpcode(LNP64::CSET_EQ);
+      addReg(Instr, A);
+      return MCDisassembler::Success;
+    case 0x3e:
+      Instr.setOpcode(LNP64::CSET_NE);
+      addReg(Instr, A);
+      return MCDisassembler::Success;
+    case 0x3f:
+      Instr.setOpcode(LNP64::CSET_LT);
+      addReg(Instr, A);
+      return MCDisassembler::Success;
+    case 0x40:
+      Instr.setOpcode(LNP64::CSET_GT);
+      addReg(Instr, A);
+      return MCDisassembler::Success;
+    case 0x41:
+      Instr.setOpcode(LNP64::CSET_LE);
+      addReg(Instr, A);
+      return MCDisassembler::Success;
+    case 0x42:
+      Instr.setOpcode(LNP64::CSET_GE);
+      addReg(Instr, A);
+      return MCDisassembler::Success;
     case 0x30:
       Instr.setOpcode(LNP64::LD);
       addReg(Instr, A);

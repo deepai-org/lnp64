@@ -6,6 +6,7 @@
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/SelectionDAG.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -57,6 +58,65 @@ static unsigned getLNP64BranchInstr(unsigned Opcode) {
     return LNP64::BGE;
   default:
     llvm_unreachable("expected LNP64 conditional branch pseudo");
+  }
+}
+
+static unsigned getLNP64CSetInstr(unsigned Opcode) {
+  switch (Opcode) {
+  case LNP64::PseudoCSETEQ:
+  case LNP64::PseudoCSETEQI:
+    return LNP64::CSET_EQ;
+  case LNP64::PseudoCSETNE:
+  case LNP64::PseudoCSETNEI:
+    return LNP64::CSET_NE;
+  case LNP64::PseudoCSETLT:
+  case LNP64::PseudoCSETLTI:
+    return LNP64::CSET_LT;
+  case LNP64::PseudoCSETGT:
+  case LNP64::PseudoCSETGTI:
+    return LNP64::CSET_GT;
+  case LNP64::PseudoCSETLE:
+  case LNP64::PseudoCSETLEI:
+    return LNP64::CSET_LE;
+  case LNP64::PseudoCSETGE:
+  case LNP64::PseudoCSETGEI:
+    return LNP64::CSET_GE;
+  default:
+    llvm_unreachable("expected LNP64 setcc pseudo");
+  }
+}
+
+static bool isLNP64SetCCImmPseudo(unsigned Opcode) {
+  switch (Opcode) {
+  case LNP64::PseudoCSETEQI:
+  case LNP64::PseudoCSETNEI:
+  case LNP64::PseudoCSETLTI:
+  case LNP64::PseudoCSETGTI:
+  case LNP64::PseudoCSETLEI:
+  case LNP64::PseudoCSETGEI:
+    return true;
+  default:
+    return false;
+  }
+}
+
+static bool isLNP64SetCCPseudo(unsigned Opcode) {
+  switch (Opcode) {
+  case LNP64::PseudoCSETEQ:
+  case LNP64::PseudoCSETNE:
+  case LNP64::PseudoCSETLT:
+  case LNP64::PseudoCSETGT:
+  case LNP64::PseudoCSETLE:
+  case LNP64::PseudoCSETGE:
+  case LNP64::PseudoCSETEQI:
+  case LNP64::PseudoCSETNEI:
+  case LNP64::PseudoCSETLTI:
+  case LNP64::PseudoCSETGTI:
+  case LNP64::PseudoCSETLEI:
+  case LNP64::PseudoCSETGEI:
+    return true;
+  default:
+    return false;
   }
 }
 
@@ -147,6 +207,28 @@ MachineBasicBlock *LNP64TargetLowering::EmitInstrWithCustomInserter(
     MachineInstr &MI, MachineBasicBlock *BB) const {
   const TargetInstrInfo &TII = *BB->getParent()->getSubtarget().getInstrInfo();
   DebugLoc DL = MI.getDebugLoc();
+
+  if (isLNP64SetCCPseudo(MI.getOpcode())) {
+    MachineFunction *MF = BB->getParent();
+    MachineRegisterInfo &MRI = MF->getRegInfo();
+    if (isLNP64SetCCImmPseudo(MI.getOpcode())) {
+      Register RHS = MRI.createVirtualRegister(&LNP64::GPRRegClass);
+      BuildMI(*BB, MI, DL, TII.get(LNP64::LI), RHS)
+          .addImm(MI.getOperand(2).getImm());
+      BuildMI(*BB, MI, DL, TII.get(LNP64::CMP))
+          .add(MI.getOperand(1))
+          .addReg(RHS);
+    } else {
+      BuildMI(*BB, MI, DL, TII.get(LNP64::CMP))
+          .add(MI.getOperand(1))
+          .add(MI.getOperand(2));
+    }
+    BuildMI(*BB, MI, DL, TII.get(getLNP64CSetInstr(MI.getOpcode())),
+            MI.getOperand(0).getReg());
+    MI.eraseFromParent();
+    return BB;
+  }
+
   unsigned BranchOpcode = getLNP64BranchInstr(MI.getOpcode());
 
   BuildMI(*BB, MI, DL, TII.get(LNP64::CMP))
