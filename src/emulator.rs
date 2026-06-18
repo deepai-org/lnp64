@@ -3432,10 +3432,7 @@ impl Machine {
                 )),
             };
             match result {
-                Ok(pos) => {
-                    self.set_errno(0)?;
-                    self.write_reg(Reg(1), pos)?;
-                }
+                Ok(pos) => self.complete_ok(pos)?,
                 Err(err) => self.set_status_io_error(err)?,
             }
         } else {
@@ -3626,8 +3623,7 @@ impl Machine {
         match result {
             Ok(count) => {
                 self.write_bytes(addr, &tmp[..count])?;
-                self.set_errno(0)?;
-                self.write_reg(Reg(1), count as u64)?;
+                self.complete_ok(count as u64)?;
             }
             Err(err) => self.set_status_io_error(err)?,
         }
@@ -3650,14 +3646,8 @@ impl Machine {
             _ => Err(22),
         };
         match value {
-            Ok(value) => {
-                self.set_errno(0)?;
-                self.write_reg(result, value)
-            }
-            Err(errno) => {
-                self.set_errno(errno)?;
-                self.write_reg(result, -1i64 as u64)
-            }
+            Ok(value) => self.complete_reg_ok(result, value),
+            Err(errno) => self.complete_reg_err(result, errno),
         }
     }
 
