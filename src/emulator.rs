@@ -3488,6 +3488,12 @@ impl Machine {
             return Ok(());
         }
         let data = self.read_bytes(addr, len)?;
+        if matches!(
+            self.process()?.fds.get(fd),
+            Some(FdHandle::MemoryObject { .. })
+        ) {
+            return self.write_memory_object_fd_index(fd, &data);
+        }
         let result = match &mut self.process_mut()?.fds[fd] {
             FdHandle::Stdout => {
                 let mut out = io::stdout();
@@ -3525,16 +3531,6 @@ impl Machine {
                 *value = value.saturating_add(addend);
                 Ok(())
             }
-            FdHandle::MemoryObject { data: object, pos } => {
-                let mut object = object.borrow_mut();
-                let end = pos.saturating_add(data.len());
-                if end > object.len() {
-                    object.resize(end, 0);
-                }
-                object[*pos..end].copy_from_slice(&data);
-                *pos = end;
-                Ok(())
-            }
             FdHandle::Timer(timer) => {
                 let ticks = if data.len() >= 8 {
                     u64::from_le_bytes(data[..8].try_into().unwrap())
@@ -3564,6 +3560,7 @@ impl Machine {
             | FdHandle::MessageEndpoint
             | FdHandle::Dir { .. }
             | FdHandle::PipeReader(_)
+            | FdHandle::MemoryObject { .. }
             | FdHandle::TcpSocket { .. }
             | FdHandle::DmaBuffer { .. }
             | FdHandle::CallGate { .. }
@@ -3579,6 +3576,46 @@ impl Machine {
             Err(err) => self.set_status_io_error(err)?,
         }
         Ok(())
+    }
+
+    fn write_memory_object_fd_index(&mut self, fd: usize, data: &[u8]) -> Result<(), String> {
+        let (object, start) = {
+            let process = self.process()?;
+            match process.fds.get(fd) {
+                Some(FdHandle::MemoryObject { data, pos }) => (Rc::clone(data), *pos),
+                Some(_) => return Err("fd is not a memory object".to_string()),
+                None => return Err(format!("fd index out of range: {fd}")),
+            }
+        };
+        let Some(end) = start.checked_add(data.len()) else {
+            self.set_status_errno(12)?;
+            return Ok(());
+        };
+        if end > MEMORY_SIZE {
+            self.set_status_errno(12)?;
+            return Ok(());
+        }
+        let current_len = object.borrow().len();
+        let growth = end.saturating_sub(current_len);
+        if growth != 0 {
+            if let Err(errno) = self.ensure_domain_budget_errno(growth as u64, 0, 0, 0) {
+                self.set_status_errno(errno)?;
+                return Ok(());
+            }
+        }
+
+        {
+            let mut object = object.borrow_mut();
+            if end > object.len() {
+                object.resize(end, 0);
+            }
+            object[start..end].copy_from_slice(data);
+        }
+        match &mut self.process_mut()?.fds[fd] {
+            FdHandle::MemoryObject { pos, .. } => *pos = end,
+            _ => return Err("fd is not a memory object".to_string()),
+        }
+        self.complete_ok(data.len() as u64)
     }
 
     fn pwrite_fd_index(
@@ -8060,6 +8097,67 @@ mod tests {
 
         machine.close_fd_index(5).unwrap();
         assert_eq!(machine.domain_usage(ROOT_DOMAIN_ID).memory, baseline.memory);
+    }
+
+    #[test]
+    fn memory_object_write_rejects_growth_past_maximum_size() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let object = Rc::new(RefCell::new(vec![0; 8]));
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[5] = FdHandle::MemoryObject {
+                data: object.clone(),
+                pos: MEMORY_SIZE - 1,
+            };
+            process.fd_capabilities[5] = FdCapability::full(5);
+        }
+
+        let payload = ARG_BASE + 0x100;
+        machine.write_bytes(payload, b"xy").unwrap();
+        machine.write_fd_index(5, payload, 2).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 12);
+        assert_eq!(object.borrow().len(), 8);
+        match &machine.process().unwrap().fds[5] {
+            FdHandle::MemoryObject { pos, .. } => assert_eq!(*pos, MEMORY_SIZE - 1),
+            _ => panic!("expected memory object fd"),
+        }
+    }
+
+    #[test]
+    fn memory_object_write_growth_obeys_domain_budget() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let object = Rc::new(RefCell::new(vec![0; 8]));
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[5] = FdHandle::MemoryObject {
+                data: object.clone(),
+                pos: 8,
+            };
+            process.fd_capabilities[5] = FdCapability::full(5);
+        }
+        let current_usage = machine.domain_usage(ROOT_DOMAIN_ID).memory;
+        machine
+            .domains
+            .get_mut(&ROOT_DOMAIN_ID)
+            .unwrap()
+            .limits
+            .memory = current_usage;
+
+        let payload = ARG_BASE + 0x100;
+        machine.write_bytes(payload, b"z").unwrap();
+        machine.write_fd_index(5, payload, 1).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 12);
+        assert_eq!(object.borrow().len(), 8);
+        match &machine.process().unwrap().fds[5] {
+            FdHandle::MemoryObject { pos, .. } => assert_eq!(*pos, 8),
+            _ => panic!("expected memory object fd"),
+        }
     }
 
     #[test]
