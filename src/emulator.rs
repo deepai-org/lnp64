@@ -12945,6 +12945,60 @@ mod tests {
     }
 
     #[test]
+    fn process_exec_preserves_fdr_capabilities_and_namespace_state() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let counter = Rc::new(RefCell::new(7));
+        let root = PathBuf::from("/tmp/lnp64-exec-preserve-root");
+        let cwd = root.join("work");
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[9] = FdHandle::Counter(Rc::clone(&counter));
+            process.fd_generations[9] = 44;
+            process.fd_capabilities[9] = FdCapability {
+                rights: CAP_RIGHT_READ | CAP_RIGHT_WRITE,
+                sealed: false,
+                narrowable: true,
+                revocable: true,
+                lineage: 99,
+                revoked: false,
+            };
+            process.namespace_root = Some(root.clone());
+            process.cwd = cwd.clone();
+            process.errno = 77;
+        }
+        let replacement = Program::parse(
+            r#"
+            .text
+              EXIT r0
+            "#,
+        )
+        .unwrap();
+        let layout = ProcessLayout::for_process(1, ROOT_DOMAIN_ID, false);
+
+        machine.process_mut().unwrap().exec(replacement, layout);
+
+        let process = machine.process().unwrap();
+        match &process.fds[9] {
+            FdHandle::Counter(value) => {
+                assert!(Rc::ptr_eq(value, &counter));
+                assert_eq!(*value.borrow(), 7);
+            }
+            _ => panic!("expected preserved counter FDR"),
+        }
+        assert_eq!(process.fd_generations[9], 44);
+        assert_eq!(
+            process.fd_capabilities[9].rights,
+            CAP_RIGHT_READ | CAP_RIGHT_WRITE
+        );
+        assert_eq!(process.fd_capabilities[9].lineage, 99);
+        assert!(!process.fd_capabilities[9].revoked);
+        assert_eq!(process.namespace_root.as_ref(), Some(&root));
+        assert_eq!(process.cwd, cwd);
+        assert_eq!(process.errno, 77);
+    }
+
+    #[test]
     fn exec_rejection_preserves_old_image_before_commit() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
