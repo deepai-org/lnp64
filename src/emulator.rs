@@ -8041,7 +8041,13 @@ impl Machine {
                 return Ok(());
             };
             let Some(pos) = process.pending_events.iter().position(|event| {
-                event
+                matches!(
+                    event,
+                    NativeEvent::Signal {
+                        source: EventSource::HardwareFault,
+                        ..
+                    }
+                ) || event
                     .signal_number()
                     .is_some_and(|sig| process.sigmask & (1u64 << sig.min(63)) == 0)
             }) else {
@@ -11436,6 +11442,33 @@ mod tests {
         assert!(machine.process().unwrap().pending_events.is_empty());
         assert_eq!(machine.thread().unwrap().ip, 7);
         assert_eq!(machine.thread().unwrap().signal_stack.len(), 1);
+    }
+
+    #[test]
+    fn hardware_fault_signal_bypasses_compatibility_signal_mask() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine
+            .process_mut()
+            .unwrap()
+            .signal_handlers
+            .insert(SIGSEGV, SignalDisposition::Handler(9));
+        machine.process_mut().unwrap().sigmask = 1 << SIGSEGV;
+
+        machine.queue_process_event(1, NativeEvent::kill_signal(SIGSEGV));
+        machine.queue_process_event(1, NativeEvent::fault_signal(SIGSEGV));
+        machine.deliver_signal_if_needed().unwrap();
+
+        assert_eq!(machine.thread().unwrap().ip, 9);
+        assert_eq!(machine.thread().unwrap().signal_stack.len(), 1);
+        assert_eq!(machine.process().unwrap().pending_events.len(), 1);
+        assert!(matches!(
+            machine.process().unwrap().pending_events.front(),
+            Some(NativeEvent::Signal {
+                signum: SIGSEGV,
+                source: EventSource::Kill,
+            })
+        ));
     }
 
     #[test]
