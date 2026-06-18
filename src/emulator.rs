@@ -4651,6 +4651,7 @@ impl Machine {
                 if fd0_req != 0 && fd0_req == fd1_req {
                     return Err(22);
                 }
+                self.prevalidate_object_create_outputs(argblock, 2)?;
                 let buffer = Rc::new(RefCell::new(PipeBuffer::default()));
                 let read_fd =
                     self.install_object_fd(fd0_req, FdHandle::PipeReader(Rc::clone(&buffer)))?;
@@ -4699,6 +4700,7 @@ impl Machine {
                 if mode == CALL_MODE_ASYNC && completion_fd.is_none() {
                     return Err(22);
                 }
+                self.prevalidate_object_create_outputs(argblock, 1)?;
                 let fd = self.install_object_fd(
                     fd0_req,
                     FdHandle::CallGate {
@@ -4720,6 +4722,7 @@ impl Machine {
                 if flags & !(EVENTFD_SEMAPHORE | EVENTFD_NONBLOCK) != 0 {
                     return Err(22);
                 }
+                self.prevalidate_object_create_outputs(argblock, 1)?;
                 let fd = self.install_object_fd(
                     fd0_req,
                     FdHandle::EventCounter {
@@ -4732,6 +4735,7 @@ impl Machine {
                 Ok(fd as u64)
             }
             (ObjectKind::Counter, _) => {
+                self.prevalidate_object_create_outputs(argblock, 1)?;
                 let fd =
                     self.install_object_fd(fd0_req, FdHandle::Counter(Rc::new(RefCell::new(arg))))?;
                 self.store_u64_offset(argblock, 24, fd as u64)
@@ -4747,6 +4751,7 @@ impl Machine {
                 }
                 self.ensure_domain_budget_errno(arg, 0, 0, 0)?;
                 let len = usize::try_from(arg).map_err(|_| 12u64)?;
+                self.prevalidate_object_create_outputs(argblock, 1)?;
                 let fd = self.install_object_fd(
                     fd0_req,
                     FdHandle::MemoryObject {
@@ -4759,6 +4764,7 @@ impl Machine {
                 Ok(fd as u64)
             }
             (ObjectKind::Timer, _) => {
+                self.prevalidate_object_create_outputs(argblock, 1)?;
                 let fd = self.install_object_fd(
                     fd0_req,
                     FdHandle::Timer(Rc::new(RefCell::new(TimerState::default()))),
@@ -4780,6 +4786,7 @@ impl Machine {
                 let allowed_queues =
                     self.read_classifier_allowed_queues(allowed_ptr, allowed_count)?;
                 let rules = self.read_classifier_rules(rules_ptr, rule_count, &allowed_queues)?;
+                self.prevalidate_object_create_outputs(argblock, 1)?;
                 let fd = self.install_object_fd(
                     fd0_req,
                     FdHandle::ClassifierTable(Rc::new(RefCell::new(ClassifierTable {
@@ -4794,6 +4801,7 @@ impl Machine {
             }
             (ObjectKind::Servicelet, ObjectProfile::ServiceletProgram) => {
                 let program = self.verify_servicelet_program(arg)?;
+                self.prevalidate_object_create_outputs(argblock, 1)?;
                 let fd =
                     self.install_object_fd(fd0_req, FdHandle::ServiceletProgram(Rc::new(program)))?;
                 self.store_u64_offset(argblock, 24, fd as u64)
@@ -4809,6 +4817,7 @@ impl Machine {
                     .map_err(|_| 14u64)?;
                 self.ensure_mapped(arg, len as usize, true)
                     .map_err(|_| 14u64)?;
+                self.prevalidate_object_create_outputs(argblock, 1)?;
                 let fd = self.install_object_fd(fd0_req, FdHandle::DmaBuffer { addr: arg, len })?;
                 self.store_u64_offset(argblock, 24, fd as u64)
                     .map_err(|_| 14u64)?;
@@ -4823,6 +4832,7 @@ impl Machine {
                 {
                     return Err(22);
                 }
+                self.prevalidate_object_create_outputs(argblock, 1)?;
                 let fd = self.install_object_fd(
                     fd0_req,
                     FdHandle::TcpSocket {
@@ -4838,6 +4848,15 @@ impl Machine {
             }
             _ => Err(22),
         }
+    }
+
+    fn prevalidate_object_create_outputs(
+        &mut self,
+        argblock: u64,
+        slots: usize,
+    ) -> NativeResult<()> {
+        let addr = argblock.checked_add(24).ok_or(14u64)?;
+        self.ensure_mapped(addr, slots * 8, true).map_err(|_| 14u64)
     }
 
     fn read_classifier_rules(
@@ -8717,6 +8736,41 @@ mod tests {
             machine.process().unwrap().fds[7],
             FdHandle::Closed
         ));
+    }
+
+    #[test]
+    fn object_ctl_create_prevalidates_result_slots_before_installing_fd() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let arg = ARG_BASE;
+
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::Counter.code())
+            .unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 7).unwrap();
+        machine.store_u64(arg + 40, 99).unwrap();
+        let original_generation = machine.fd_generation(7).unwrap();
+        {
+            let process = machine.process_mut().unwrap();
+            let vma = process
+                .vmas
+                .iter_mut()
+                .find(|vma| vma.contains(arg, 48))
+                .expect("argblock VMA");
+            vma.prot = 0b01;
+        }
+
+        machine.object_ctl(Reg(5), arg).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 14);
+        assert!(matches!(
+            machine.process().unwrap().fds[7],
+            FdHandle::Closed
+        ));
+        assert_eq!(machine.fd_generation(7).unwrap(), original_generation);
     }
 
     #[test]
