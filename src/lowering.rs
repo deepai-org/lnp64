@@ -1614,6 +1614,31 @@ mod tests {
                 entry.surface
             );
         }
+        for (idx, entry) in COMPATIBILITY_LOWERINGS.iter().enumerate() {
+            assert!(
+                !COMPATIBILITY_LOWERINGS[..idx]
+                    .iter()
+                    .any(|seen| seen.surface == entry.surface),
+                "duplicate lowering for {:?}",
+                entry.surface
+            );
+        }
+        for policy in COMPATIBILITY_SURFACE_POLICIES {
+            assert!(
+                !lowering_for(policy.surface).is_empty(),
+                "missing lowering for policy surface {:?}",
+                policy.surface
+            );
+        }
+        for (idx, policy) in COMPATIBILITY_SURFACE_POLICIES.iter().enumerate() {
+            assert!(
+                !COMPATIBILITY_SURFACE_POLICIES[..idx]
+                    .iter()
+                    .any(|seen| seen.surface == policy.surface),
+                "duplicate layer policy for {:?}",
+                policy.surface
+            );
+        }
         assert_eq!(
             layer_for(CompatSurface::Errno),
             Some(CompatibilityLayer::RuntimeLibc)
