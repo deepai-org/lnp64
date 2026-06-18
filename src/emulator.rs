@@ -3275,20 +3275,20 @@ impl Machine {
             Err(errno) => return self.set_status_errno(errno),
         };
         let pid = self.process()?.pid;
-        let requested_type = self.load_u64(arg)?;
+        let requested_type = self.load_u64_offset(arg, 0)?;
         match cmd {
             F_GETLK_LNP64 => {
                 if let Some(lock) = self.advisory_locks.get(&key).copied() {
                     if lock.owner_pid != pid {
-                        self.store_u64(arg, lock.lock_type)?;
-                        self.store_u64(arg + 32, lock.owner_pid)?;
+                        self.store_u64_offset(arg, 0, lock.lock_type)?;
+                        self.store_u64_offset(arg, 32, lock.owner_pid)?;
                     } else {
-                        self.store_u64(arg, F_UNLCK_LNP64)?;
-                        self.store_u64(arg + 32, 0)?;
+                        self.store_u64_offset(arg, 0, F_UNLCK_LNP64)?;
+                        self.store_u64_offset(arg, 32, 0)?;
                     }
                 } else {
-                    self.store_u64(arg, F_UNLCK_LNP64)?;
-                    self.store_u64(arg + 32, 0)?;
+                    self.store_u64_offset(arg, 0, F_UNLCK_LNP64)?;
+                    self.store_u64_offset(arg, 32, 0)?;
                 }
                 self.set_status_ok()
             }
