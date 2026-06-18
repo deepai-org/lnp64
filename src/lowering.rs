@@ -891,7 +891,7 @@ mod tests {
             "toolchain/lnp64_exec_plan.manifest"
         );
         assert_eq!(manifest_field(manifest, "gpr"), "r0-r31");
-        assert_eq!(manifest_field(manifest, "fdr"), "fd0-fd31");
+        assert_eq!(manifest_field(manifest, "fdr"), "fd0-fd255");
         for pcr in ["PID", "PPID", "TID", "TP", "SIGMASK", "SIGPENDING"] {
             assert!(manifest_csv_contains(manifest, "pcr", pcr), "missing {pcr}");
         }

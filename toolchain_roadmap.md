@@ -42,8 +42,8 @@ NetBSD policy. Those remain loader, libc, and personality responsibilities.
      instructions.
 
 2. Define registers and calling convention.
-   - GPR `r0`-`r31`, FDR capability registers, PCR names, and dedicated FPU/vector
-     register files.
+   - GPR `r0`-`r31`, FDR capability registers `fd0`-`fd255`, PCR names, and
+     dedicated FPU/vector register files.
    - psABI argument/return rules from `psABI.md`.
    - Stack layout, call frame, callee-save set, TLS pointer, and startup
      metadata access.
