@@ -2570,6 +2570,7 @@ impl Machine {
                 thread.flags = saved.flags;
             }
             Instr::LockCmpxchg(dst, addr_reg, expected, new_value) => {
+                Self::ensure_result_reg_writable(dst)?;
                 let addr = self.read_reg(addr_reg)?;
                 let current = self.load_u64(addr)?;
                 if current == self.read_reg(expected)? {
@@ -13987,6 +13988,24 @@ mod tests {
 
         assert!(!machine.futex_waiters.contains_key(&0x100));
         assert!(machine.ready.contains(&waiter_tid));
+    }
+
+    #[test]
+    fn lock_cmpxchg_rejects_locked_result_before_store() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let addr = ARG_BASE + 0x180;
+        machine.store_u64(addr, 7).unwrap();
+        machine.thread_mut().unwrap().regs[2] = addr;
+        machine.thread_mut().unwrap().regs[3] = 7;
+        machine.thread_mut().unwrap().regs[4] = 9;
+
+        let err = machine
+            .exec(Instr::LockCmpxchg(Reg(31), Reg(2), Reg(3), Reg(4)))
+            .unwrap_err();
+
+        assert!(err.contains("hardware-locked stack pointer"), "{err}");
+        assert_eq!(machine.load_u64(addr).unwrap(), 7);
     }
 
     #[test]
