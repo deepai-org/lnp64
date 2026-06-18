@@ -18,6 +18,7 @@ debug_unwind_contract=toolchain/lnp64_debug_unwind.manifest
 inline_asm_contract=toolchain/lnp64_inline_asm.manifest
 crt_startup_contract=toolchain/lnp64_crt_startup.manifest
 llvm_gate_contract=toolchain/lnp64_llvm_gates.manifest
+linker_script_contract=toolchain/lnp64_static.ld
 gpr=r0-r31
 fdr=fd0-fd255
 fpr=f0-f31

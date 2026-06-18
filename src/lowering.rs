@@ -985,6 +985,7 @@ mod tests {
             "isel",
             "llvm_bootstrap",
             "llvm_gates",
+            "linker_script",
             "exec_plan",
             "loader",
             "exec_descriptor_validator",
@@ -1006,6 +1007,7 @@ mod tests {
         let roadmap = include_str!("../toolchain_roadmap.md");
         let rows = llvm_gate_rows(gate_manifest);
         let mut gates = std::collections::BTreeSet::new();
+        let mut commands = std::collections::BTreeMap::new();
 
         assert_eq!(
             manifest_field(target_manifest, "llvm_gate_contract"),
@@ -1019,6 +1021,7 @@ mod tests {
 
         for (gate, command, requirements, status) in rows {
             assert!(gates.insert(gate), "duplicate llvm gate {gate}");
+            commands.insert(gate, command);
             assert_eq!(
                 status, "planned",
                 "gate {gate} must stay planned until real Clang/lld/loader execution exists"
@@ -1050,6 +1053,71 @@ mod tests {
         ] {
             assert!(gates.contains(gate), "missing llvm gate {gate}");
         }
+        assert!(
+            commands["link_static"].contains("-T toolchain/lnp64_static.ld"),
+            "static link gate must use checked LNP64 linker script"
+        );
+    }
+
+    #[test]
+    fn static_linker_script_records_loader_mapping_contract() {
+        let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
+        let linker_script = include_str!("../toolchain/lnp64_static.ld");
+        let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
+        let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
+        let object_format = include_str!("../object_format.md");
+        let roadmap = include_str!("../toolchain_roadmap.md");
+        let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let linker_path = manifest_field(target_manifest, "linker_script_contract");
+
+        assert_eq!(linker_path, "toolchain/lnp64_static.ld");
+        assert!(manifest_root.join(linker_path).is_file());
+        assert!(contract_index.contains(
+            "linker_script|toolchain/lnp64_static.ld|static_linker_script_records_loader_mapping_contract"
+        ));
+        assert!(transition_manifest.contains("toolchain/lnp64_static.ld"));
+        assert!(roadmap.contains("toolchain/lnp64_static.ld"));
+
+        for required in [
+            "OUTPUT_ARCH(lnp64)",
+            "ENTRY(_start)",
+            "PHDRS",
+            "PT_LOAD",
+            "PT_TLS",
+            "PT_NOTE",
+            ".text",
+            ".rodata",
+            ".data",
+            ".bss",
+            ".tdata",
+            ".tbss",
+            ".note.lnp64.startup",
+            ".note.lnp64.capreq",
+        ] {
+            assert!(
+                linker_script.contains(required),
+                "linker script missing {required}"
+            );
+        }
+        for section in [
+            ".text",
+            ".rodata",
+            ".data",
+            ".bss",
+            ".tdata",
+            ".tbss",
+            ".note.lnp64.startup",
+            ".note.lnp64.capreq",
+        ] {
+            assert!(
+                object_format.contains(section),
+                "object format missing linked section {section}"
+            );
+        }
+        assert!(
+            !linker_script.contains("PT_DYNAMIC"),
+            "static v0 linker script must not emit PT_DYNAMIC"
+        );
     }
 
     #[test]
@@ -1208,6 +1276,10 @@ mod tests {
         assert_eq!(
             manifest_field(manifest, "llvm_gate_contract"),
             "toolchain/lnp64_llvm_gates.manifest"
+        );
+        assert_eq!(
+            manifest_field(manifest, "linker_script_contract"),
+            "toolchain/lnp64_static.ld"
         );
         assert_eq!(manifest_field(manifest, "gpr"), "r0-r31");
         assert_eq!(manifest_field(manifest, "fdr"), "fd0-fd255");

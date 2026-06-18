@@ -22,6 +22,8 @@ calls, and simple libc. The entries are marked `planned` until a real
 LLVM/lld/software-loader path runs them without the toy compiler.
 `toolchain/lnp64_llvm_gates.manifest` records the concrete planned command
 shapes for compiling, linking, exec-plan inspection, and emulator execution.
+`toolchain/lnp64_static.ld` is the initial checked static linker-script
+contract for lld-produced ELF inputs.
 
 The current Rust assembler, emulator, and C compiler remain useful bootstrap
 and architecture smoke-test tools. They are not the long-term application
@@ -90,7 +92,8 @@ NetBSD policy. Those remain loader, libc, and personality responsibilities.
    - Absolute, PC-relative branch/call, GOT-like static PIE, TLS, and data
      relocations.
    - Static archives and ordinary `ar`/lld workflows.
-   - Linker script defaults that match `object_format.md` mapping policy.
+   - Linker script defaults from `toolchain/lnp64_static.ld` that match
+     `object_format.md` mapping policy.
 
 6. Build the software loader path.
    - Parse ELF in a loader/personality component, not in hardware.
@@ -175,7 +178,8 @@ bootstrap compatibility target and the toy compiler remains on the critical
 path.
 
 The planned command shapes are pinned in
-`toolchain/lnp64_llvm_gates.manifest`. They must stay Clang/lld/loader based:
+`toolchain/lnp64_llvm_gates.manifest`. The static link gate must use
+`toolchain/lnp64_static.ld`, and all gates must stay Clang/lld/loader based:
 no gate in that manifest may invoke `lnp64 cc`, `cargo run -- cc`, or the
 in-repo toy C compiler.
 
@@ -188,7 +192,7 @@ platform while remaining useful as a smoke generator:
 | --- | --- | --- |
 | Toy compiler retirement | `toolchain_roadmap.md`, `src/c_compiler.rs`, and private `__lnp_*` shim tests keep new native work out of ad hoc POSIX-shaped compiler features. | `c_private_lnp_manifest_intrinsics_lower_and_run` |
 | Real toolchain target | `toolchain/lnp64_target.manifest`, psABI, relocation, object-format, crt, inline-asm, debug/unwind, intrinsic, isel, and exec-plan manifests. | `toolchain_contract_index_is_complete` |
-| Minimal LLVM/Clang path | `toolchain/lnp64_llvm_bootstrap.manifest` pins the planned hello, arithmetic, memory, calls, and simple-libc replacement gates for the toy-compiler smoke path; `toolchain/lnp64_llvm_gates.manifest` pins the Clang/lld/loader command shapes that replace `lnp64 cc`. | `llvm_bootstrap_manifest_names_first_clang_gate` and `llvm_gate_manifest_pins_non_toy_clang_commands` |
+| Minimal LLVM/Clang path | `toolchain/lnp64_llvm_bootstrap.manifest` pins the planned hello, arithmetic, memory, calls, and simple-libc replacement gates for the toy-compiler smoke path; `toolchain/lnp64_llvm_gates.manifest` pins the Clang/lld/loader command shapes that replace `lnp64 cc`; `toolchain/lnp64_static.ld` pins the first lld static layout. | `llvm_bootstrap_manifest_names_first_clang_gate` and `llvm_gate_manifest_pins_non_toy_clang_commands` |
 | Libc/runtime shim layer | `libc_roadmap.md`, crt/startup manifest, and intrinsic manifest define startup, TLS/errno, allocation, FDR I/O, pthread/futex, event waits, mmap, signal, and socket lowering. | `scripts/run_software_gates.sh` |
 | Software loader and exec plan | `src/loader.rs`, `src/emulator.rs`, `object_format.md`, and `toolchain/lnp64_exec_plan.manifest` define the initial ELF64 parser, encoded exec-plan records, emulator-side descriptor validation, committed entry/TLS/startup metadata, and atomic memory-image commit probe for the bounded `EXEC` boundary. | `exec_plan_manifest_matches_loader_boundary_contract` plus the `exec_descriptor` test filter |
 | NetBSD personality layering | `netbsd_personality_abi.md`, this roadmap, and the NetBSD system script keep the personality layered over native services. | `scripts/run_netbsd_personality_system.sh` |
