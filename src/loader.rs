@@ -19,6 +19,8 @@ const PF_W: u32 = 2;
 const PF_R: u32 = 4;
 const R_LNP64_NONE: u32 = 0;
 const R_LNP64_ABS64: u32 = 1;
+const R_LNP64_ABS32: u32 = 2;
+const R_LNP64_GLOB_DAT: u32 = 6;
 const R_LNP64_RELATIVE: u32 = 7;
 const PAGE_SIZE: u64 = 4096;
 const ELF64_EHDR_SIZE: usize = 64;
@@ -641,20 +643,39 @@ fn apply_rela_sections(image: &mut [u8], plan: &ExecPlan, load_bias: u64) -> Res
             let symbol_index = r_info >> 32;
             match reloc_type {
                 R_LNP64_NONE => {}
-                R_LNP64_ABS64 => {
+                R_LNP64_ABS64 | R_LNP64_GLOB_DAT => {
+                    let name = if reloc_type == R_LNP64_ABS64 {
+                        "ABS64"
+                    } else {
+                        "GLOB_DAT"
+                    };
+                    if symbol_index != 0 {
+                        return Err(format!(
+                            "RELA {name} with symbol index is unsupported by static loader"
+                        ));
+                    }
+                    let target = r_offset
+                        .checked_add(load_bias)
+                        .ok_or_else(|| "RELA target plus load bias overflows".to_string())?;
+                    let value = u64::try_from(i128::from(r_addend))
+                        .map_err(|_| format!("RELA {name} value is out of range"))?;
+                    let file_offset = relocation_file_offset(plan, target, 8)?;
+                    image[file_offset..file_offset + 8].copy_from_slice(&value.to_le_bytes());
+                }
+                R_LNP64_ABS32 => {
                     if symbol_index != 0 {
                         return Err(
-                            "RELA ABS64 with symbol index is unsupported by static loader"
+                            "RELA ABS32 with symbol index is unsupported by static loader"
                                 .to_string(),
                         );
                     }
                     let target = r_offset
                         .checked_add(load_bias)
                         .ok_or_else(|| "RELA target plus load bias overflows".to_string())?;
-                    let value = u64::try_from(i128::from(r_addend))
-                        .map_err(|_| "RELA ABS64 value is out of range".to_string())?;
-                    let file_offset = relocation_file_offset(plan, target)?;
-                    image[file_offset..file_offset + 8].copy_from_slice(&value.to_le_bytes());
+                    let value = u32::try_from(i128::from(r_addend))
+                        .map_err(|_| "RELA ABS32 value is out of range".to_string())?;
+                    let file_offset = relocation_file_offset(plan, target, 4)?;
+                    image[file_offset..file_offset + 4].copy_from_slice(&value.to_le_bytes());
                 }
                 R_LNP64_RELATIVE => {
                     if symbol_index != 0 {
@@ -666,7 +687,7 @@ fn apply_rela_sections(image: &mut [u8], plan: &ExecPlan, load_bias: u64) -> Res
                     let value = i128::from(load_bias) + i128::from(r_addend);
                     let value = u64::try_from(value)
                         .map_err(|_| "RELA relative value is out of range".to_string())?;
-                    let file_offset = relocation_file_offset(plan, target)?;
+                    let file_offset = relocation_file_offset(plan, target, 8)?;
                     image[file_offset..file_offset + 8].copy_from_slice(&value.to_le_bytes());
                 }
                 other => {
@@ -678,9 +699,9 @@ fn apply_rela_sections(image: &mut [u8], plan: &ExecPlan, load_bias: u64) -> Res
     Ok(())
 }
 
-fn relocation_file_offset(plan: &ExecPlan, target: u64) -> Result<usize, String> {
+fn relocation_file_offset(plan: &ExecPlan, target: u64, width: u64) -> Result<usize, String> {
     let target_end = target
-        .checked_add(8)
+        .checked_add(width)
         .ok_or_else(|| "RELA target range overflows".to_string())?;
     for vma in &plan.vmas {
         let file_start = vma.virtual_address;
@@ -1578,6 +1599,69 @@ mod tests {
             },
         ]);
         install_rela_section(&mut image, 0x500000, R_LNP64_ABS64, 0x1234);
+
+        load_static_elf(&mut image, LoaderOptions::default()).unwrap();
+
+        assert_eq!(read_u64(&image, 0x200).unwrap(), 0x1234);
+    }
+
+    #[test]
+    fn static_elf_loader_applies_symbolless_abs32_relocations() {
+        let mut image = test_elf(&[
+            text_phdr(),
+            TestPhdr {
+                typ: PT_LOAD,
+                flags: PF_R | PF_W,
+                offset: 0x200,
+                vaddr: 0x500000,
+                filesz: 4,
+                memsz: 4,
+                align: PAGE_SIZE,
+            },
+        ]);
+        install_rela_section(&mut image, 0x500000, R_LNP64_ABS32, 0x1234);
+
+        load_static_elf(&mut image, LoaderOptions::default()).unwrap();
+
+        assert_eq!(read_u32(&image, 0x200).unwrap(), 0x1234);
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_abs32_overflow() {
+        let mut image = test_elf(&[
+            text_phdr(),
+            TestPhdr {
+                typ: PT_LOAD,
+                flags: PF_R | PF_W,
+                offset: 0x200,
+                vaddr: 0x500000,
+                filesz: 4,
+                memsz: 4,
+                align: PAGE_SIZE,
+            },
+        ]);
+        install_rela_section(&mut image, 0x500000, R_LNP64_ABS32, 0x1_0000_0000);
+
+        let err = load_static_elf(&mut image, LoaderOptions::default()).unwrap_err();
+
+        assert!(err.contains("ABS32 value is out of range"), "{err}");
+    }
+
+    #[test]
+    fn static_elf_loader_applies_symbolless_glob_dat_relocations() {
+        let mut image = test_elf(&[
+            text_phdr(),
+            TestPhdr {
+                typ: PT_LOAD,
+                flags: PF_R | PF_W,
+                offset: 0x200,
+                vaddr: 0x500000,
+                filesz: 8,
+                memsz: 8,
+                align: PAGE_SIZE,
+            },
+        ]);
+        install_rela_section(&mut image, 0x500000, R_LNP64_GLOB_DAT, 0x1234);
 
         load_static_elf(&mut image, LoaderOptions::default()).unwrap();
 
