@@ -1565,14 +1565,14 @@ impl Machine {
                 Self::ensure_result_reg_writable(dst)?;
                 let len = (self.read_reg(bytes_reg)? as usize).max(1);
                 let addr = self.alloc_heap(len, 64, false)?;
-                self.write_reg(dst, addr)?;
+                self.complete_reg_ok(dst, addr)?;
             }
             Instr::AllocEx(dst, bytes_reg, align_reg) => {
                 Self::ensure_result_reg_writable(dst)?;
                 let len = (self.read_reg(bytes_reg)? as usize).max(1);
                 let align = self.read_reg(align_reg)?.clamp(1, 4096).next_power_of_two();
                 let addr = self.alloc_heap(len, align, true)?;
-                self.write_reg(dst, addr)?;
+                self.complete_reg_ok(dst, addr)?;
             }
             Instr::AllocSize(dst, ptr_reg) => {
                 let ptr = self.read_reg(ptr_reg)?;
@@ -13993,6 +13993,30 @@ mod tests {
         assert_eq!(machine.process().unwrap().heap_next, heap_next);
         assert!(machine.process().unwrap().allocations.is_empty());
         assert_eq!(machine.process().unwrap().vmas.len(), vma_count);
+    }
+
+    #[test]
+    fn allocation_success_clears_errno() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[1] = 64;
+        machine.set_errno(123).unwrap();
+
+        machine.exec(Instr::Alloc(Reg(2), Reg(1))).unwrap();
+
+        assert_ne!(machine.thread().unwrap().regs[2], 0);
+        assert_eq!(machine.process().unwrap().errno, 0);
+
+        machine.thread_mut().unwrap().regs[3] = 128;
+        machine.thread_mut().unwrap().regs[4] = 256;
+        machine.set_errno(77).unwrap();
+
+        machine
+            .exec(Instr::AllocEx(Reg(5), Reg(3), Reg(4)))
+            .unwrap();
+
+        assert_ne!(machine.thread().unwrap().regs[5], 0);
+        assert_eq!(machine.process().unwrap().errno, 0);
     }
 
     #[test]
