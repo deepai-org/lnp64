@@ -2303,7 +2303,11 @@ impl Machine {
             }
             Instr::Munmap(addr, len) => {
                 let addr = self.read_reg(addr)?;
-                let len = self.read_reg(len)?.max(1);
+                let len = self.read_reg(len)?;
+                if len == 0 {
+                    self.set_status_errno(22)?;
+                    return Ok(true);
+                }
                 let Some(_end) = addr.checked_add(len) else {
                     self.set_status_errno(22)?;
                     return Ok(true);
@@ -11043,6 +11047,13 @@ mod tests {
         assert_ne!(addr, -1i64 as u64);
         machine.write_bytes(addr, &[0xcc]).unwrap();
         let vma_count = machine.process().unwrap().vmas.len();
+
+        machine.thread_mut().unwrap().regs[4] = addr;
+        machine.thread_mut().unwrap().regs[5] = 0;
+        machine.exec(Instr::Munmap(Reg(4), Reg(5))).unwrap();
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert_eq!(machine.process().unwrap().vmas.len(), vma_count);
+        assert_eq!(machine.read_bytes(addr, 1).unwrap(), vec![0xcc]);
 
         machine.thread_mut().unwrap().regs[4] = addr + 128;
         machine.thread_mut().unwrap().regs[5] = 4096;
