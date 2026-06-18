@@ -4220,6 +4220,8 @@ impl Machine {
                 for _ in 0..count {
                     buffer.bytes.pop_front();
                 }
+                drop(buffer);
+                self.poll_fd_waiters();
             }
             ReadCommit::EventCounter { value, semaphore } => {
                 let mut value = value.borrow_mut();
@@ -8664,6 +8666,33 @@ mod tests {
         assert_eq!(machine.process().unwrap().errno, 11);
         assert_eq!(queue.borrow().bytes.len(), PIPE_BUFFER_BYTE_LIMIT);
         queue.borrow_mut().bytes.pop_front();
+        assert_eq!(
+            machine.poll_fd_index_mask_raw(4, POLLOUT_MASK).unwrap(),
+            POLLOUT_MASK
+        );
+    }
+
+    #[test]
+    fn pipe_read_wakes_writer_waiting_for_byte_queue_space() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        create_pipe_pair(&mut machine, 3, 4);
+        let queue = match &machine.process().unwrap().fds[4] {
+            FdHandle::PipeWriter(queue) => Rc::clone(queue),
+            _ => panic!("expected pipe writer"),
+        };
+        queue.borrow_mut().bytes = vec![0x5a; PIPE_BUFFER_BYTE_LIMIT].into();
+        machine
+            .push_fd_waiter(4, POLLOUT_MASK, Some(Reg(8)))
+            .unwrap();
+        machine.ready.retain(|tid| *tid != 1);
+
+        assert_eq!(machine.read_fd_index(3, ARG_BASE, 1).unwrap(), Some(1));
+
+        assert!(machine.ready.contains(&1));
+        assert!(machine.fd_waiters.is_empty());
+        assert_eq!(machine.thread().unwrap().regs[8], 0);
+        assert_eq!(machine.process().unwrap().errno, 0);
         assert_eq!(
             machine.poll_fd_index_mask_raw(4, POLLOUT_MASK).unwrap(),
             POLLOUT_MASK
