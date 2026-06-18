@@ -4408,8 +4408,10 @@ impl Machine {
             self.ensure_domain_budget_errno(0, 0, 0, delta)?;
             fd
         };
-        self.release_fd_locks_for_replacement(dst)
-            .map_err(|_| 9u64)?;
+        if dst != src {
+            self.release_fd_locks_for_replacement(dst)
+                .map_err(|_| 9u64)?;
+        }
         self.duplicate_fd_capability(src, dst, rights, sealed)?;
         self.bump_fd_generation(dst).map_err(|_| 9u64)?;
         self.process_mut().map_err(|_| 3u64)?.fds[dst] = handle;
@@ -10755,6 +10757,54 @@ mod tests {
         assert!(matches!(
             machine.process().unwrap().fds[7],
             FdHandle::Counter(_)
+        ));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn cap_dup_same_fd_preserves_existing_file_locks() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("lnp64_cap_dup_same_lock_{unique}"));
+        fs::write(&path, b"locked").unwrap();
+
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[7] = FdHandle::File(
+                OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(&path)
+                    .unwrap(),
+            );
+            process.fd_capabilities[7] = FdCapability::full(7);
+        }
+
+        let lock = ARG_BASE;
+        machine.store_u64(lock, 1).unwrap();
+        machine.fcntl_fd_index(7, 6, lock).unwrap();
+        assert_eq!(machine.advisory_locks.len(), 1);
+
+        let arg = ARG_BASE + 0x100;
+        machine.store_u64(arg, 7).unwrap();
+        machine.store_u64(arg + 8, 7).unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_dup(Reg(2), arg).unwrap();
+
+        assert_eq!(
+            machine.thread().unwrap().regs[2],
+            machine.fd_token(7).unwrap()
+        );
+        assert_eq!(machine.advisory_locks.len(), 1);
+        assert!(matches!(
+            machine.process().unwrap().fds[7],
+            FdHandle::File(_)
         ));
 
         let _ = fs::remove_file(path);
