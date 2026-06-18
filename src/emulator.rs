@@ -4651,11 +4651,16 @@ impl Machine {
                 if fd0_req != 0 && fd0_req == fd1_req {
                     return Err(22);
                 }
+                let read_excluded = (fd1_req != 0).then_some(fd1_req as usize);
+                let (read_fd, read_delta) = self.plan_object_fd_slot(fd0_req, read_excluded)?;
+                let (write_fd, write_delta) = self.plan_object_fd_slot(fd1_req, Some(read_fd))?;
+                self.ensure_domain_budget_errno(0, 0, 0, read_delta + write_delta)?;
                 self.prevalidate_object_create_outputs(argblock, 2)?;
                 let buffer = Rc::new(RefCell::new(PipeBuffer::default()));
-                let read_fd =
-                    self.install_object_fd(fd0_req, FdHandle::PipeReader(Rc::clone(&buffer)))?;
-                let write_fd = self.install_object_fd(fd1_req, FdHandle::PipeWriter(buffer))?;
+                let read_fd = self
+                    .install_object_fd(read_fd as u64, FdHandle::PipeReader(Rc::clone(&buffer)))?;
+                let write_fd =
+                    self.install_object_fd(write_fd as u64, FdHandle::PipeWriter(buffer))?;
                 self.store_u64_offset(argblock, 24, read_fd as u64)
                     .map_err(|_| 14u64)?;
                 self.store_u64_offset(argblock, 32, write_fd as u64)
@@ -4857,6 +4862,33 @@ impl Machine {
     ) -> NativeResult<()> {
         let addr = argblock.checked_add(24).ok_or(14u64)?;
         self.ensure_mapped(addr, slots * 8, true).map_err(|_| 14u64)
+    }
+
+    fn plan_object_fd_slot(
+        &self,
+        requested: u64,
+        excluded: Option<usize>,
+    ) -> Result<(usize, u64), u64> {
+        if requested != 0 {
+            let fd = requested as usize;
+            if Some(fd) == excluded {
+                return Err(22);
+            }
+            let delta = self.fd_slot_delta(fd).map_err(|_| 9u64)?;
+            return Ok((fd, delta));
+        }
+        let process = self.process().map_err(|_| 3u64)?;
+        process
+            .fds
+            .iter()
+            .enumerate()
+            .find(|(idx, candidate)| {
+                *idx != MESSAGE_ENDPOINT_FD
+                    && Some(*idx) != excluded
+                    && matches!(candidate, FdHandle::Closed)
+            })
+            .map(|(idx, _)| (idx, 1))
+            .ok_or(24)
     }
 
     fn read_classifier_rules(
@@ -8816,6 +8848,43 @@ mod tests {
         assert_eq!(machine.process().unwrap().errno, 22);
         assert!(matches!(
             machine.process().unwrap().fds[5],
+            FdHandle::Closed
+        ));
+    }
+
+    #[test]
+    fn pipe_create_prevalidates_combined_fdr_budget_before_installing() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let arg = ARG_BASE;
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::Queue.code())
+            .unwrap();
+        machine
+            .store_u64(arg + 16, ObjectProfile::Pipe.code())
+            .unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.store_u64(arg + 32, 0).unwrap();
+        machine.store_u64(arg + 40, 0).unwrap();
+        let usage = machine.domain_usage(ROOT_DOMAIN_ID);
+        machine
+            .domains
+            .get_mut(&ROOT_DOMAIN_ID)
+            .unwrap()
+            .limits
+            .fdrs = usage.fdrs + 1;
+
+        machine.object_ctl(Reg(2), arg).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 12);
+        assert!(matches!(
+            machine.process().unwrap().fds[3],
+            FdHandle::Closed
+        ));
+        assert!(matches!(
+            machine.process().unwrap().fds[4],
             FdHandle::Closed
         ));
     }
