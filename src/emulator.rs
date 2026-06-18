@@ -5025,8 +5025,7 @@ impl Machine {
         if let Some(fd) = completion_fd {
             self.complete_call_fd(fd, op_id, arg0, arg1)?;
         }
-        self.set_errno(0)?;
-        self.write_reg(result, op_id)
+        self.complete_reg_ok(result, op_id)
     }
 
     fn call_cap_handoff(
@@ -5038,8 +5037,7 @@ impl Machine {
         arg1: u64,
     ) -> Result<(), String> {
         self.process_mut()?.domain_id = domain_id;
-        self.set_errno(0)?;
-        self.write_reg(result, 0)?;
+        self.complete_reg_ok(result, 0)?;
         self.write_reg(Reg(1), arg0)?;
         self.write_reg(Reg(2), arg1)?;
         self.thread_mut()?.ip = entry;
@@ -5115,14 +5113,8 @@ impl Machine {
             _ => Err(22),
         };
         match value {
-            Ok(value) => {
-                self.set_errno(0)?;
-                self.write_reg(result, value)
-            }
-            Err(errno) => {
-                self.set_errno(errno)?;
-                self.write_reg(result, -1i64 as u64)
-            }
+            Ok(value) => self.complete_reg_ok(result, value),
+            Err(errno) => self.complete_reg_err(result, errno),
         }
     }
 
