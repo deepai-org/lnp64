@@ -47,6 +47,9 @@ NetBSD policy. Those remain loader, libc, and personality responsibilities.
    - psABI argument/return rules from `psABI.md`.
    - Stack layout, call frame, callee-save set, TLS pointer, and startup
      metadata access.
+   - Debug/unwind minimums from `toolchain/lnp64_debug_unwind.manifest`:
+     DWARF line/register info, CFI for non-leaf frames, `LR` return-address
+     state, and no language exception runtime in v0.
 
 3. Lower normal code.
    - Integer ALU, compares, branches, calls/returns.

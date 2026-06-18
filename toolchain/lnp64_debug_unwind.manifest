@@ -1,0 +1,12 @@
+# LNP64 debug/unwind manifest v0.
+# Backend-facing minimums for the initial LLVM target.
+debug_format=DWARFv5
+line_tables=required
+register_numbers=r0-r31,LR,TP
+stack_pointer=r31
+return_address=LR
+cfi=required_for_non_leaf
+frame_pointer=optional
+eh_frame=not_required_v0
+exception_model=none_v0
+signal_unwind=psabi_signal_frame

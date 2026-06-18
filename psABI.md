@@ -87,6 +87,15 @@ The v0 compiler does not build a conventional downward-growing C call stack for
 arguments. Function calls rely on registers, compiler-managed spill slots, and
 the hardware `LR`.
 
+## Debug and Unwind Minimum
+
+The initial LLVM target should emit DWARF line tables and register mappings for
+GPR `r0`-`r31`, `LR`, and `TP`. Non-leaf functions should carry call-frame
+information sufficient to recover `r31` as the stack pointer and `LR` as the
+return address. There is no v0 language exception runtime and `.eh_frame` is not
+required for the first static C target. POSIX signal and gate-delivery frames
+unwind through the psABI signal frame described below.
+
 ## Process Entry
 
 The current emulator reserves the process entry page at `0x700000` with size

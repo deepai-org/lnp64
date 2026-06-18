@@ -850,6 +850,7 @@ mod tests {
             "intrinsics",
             "isel",
             "exec_plan",
+            "debug_unwind",
         ] {
             assert!(names.contains(name), "missing contract index row {name}");
         }
@@ -889,6 +890,10 @@ mod tests {
         assert_eq!(
             manifest_field(manifest, "exec_plan_contract"),
             "toolchain/lnp64_exec_plan.manifest"
+        );
+        assert_eq!(
+            manifest_field(manifest, "debug_unwind_contract"),
+            "toolchain/lnp64_debug_unwind.manifest"
         );
         assert_eq!(manifest_field(manifest, "gpr"), "r0-r31");
         assert_eq!(manifest_field(manifest, "fdr"), "fd0-fd255");
@@ -1151,6 +1156,58 @@ mod tests {
         assert!(psabi_doc.contains("The thread pointer is read and written through the `TP` PCR."));
         assert!(psabi_doc.contains("`SIGRET` is the POSIX spelling"));
         assert!(psabi_doc.contains("`GATE_RETURN`"));
+    }
+
+    #[test]
+    fn debug_unwind_manifest_records_minimum_backend_contract() {
+        let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
+        let debug_unwind_manifest = include_str!("../toolchain/lnp64_debug_unwind.manifest");
+        let psabi_doc = include_str!("../psABI.md");
+        let roadmap = include_str!("../toolchain_roadmap.md");
+
+        assert_eq!(
+            manifest_field(target_manifest, "debug_unwind_contract"),
+            "toolchain/lnp64_debug_unwind.manifest"
+        );
+        assert_eq!(
+            manifest_field(debug_unwind_manifest, "debug_format"),
+            "DWARFv5"
+        );
+        assert_eq!(
+            manifest_field(debug_unwind_manifest, "line_tables"),
+            "required"
+        );
+        for register in ["r0-r31", "LR", "TP"] {
+            assert!(manifest_csv_contains(
+                debug_unwind_manifest,
+                "register_numbers",
+                register
+            ));
+        }
+        assert_eq!(
+            manifest_field(debug_unwind_manifest, "stack_pointer"),
+            "r31"
+        );
+        assert_eq!(
+            manifest_field(debug_unwind_manifest, "return_address"),
+            "LR"
+        );
+        assert_eq!(
+            manifest_field(debug_unwind_manifest, "cfi"),
+            "required_for_non_leaf"
+        );
+        assert_eq!(
+            manifest_field(debug_unwind_manifest, "exception_model"),
+            "none_v0"
+        );
+        assert_eq!(
+            manifest_field(debug_unwind_manifest, "signal_unwind"),
+            "psabi_signal_frame"
+        );
+
+        assert!(psabi_doc.contains("## Debug and Unwind Minimum"));
+        assert!(psabi_doc.contains("There is no v0 language exception runtime"));
+        assert!(roadmap.contains("toolchain/lnp64_debug_unwind.manifest"));
     }
 
     #[test]
