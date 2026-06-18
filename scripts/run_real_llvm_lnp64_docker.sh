@@ -30,3 +30,11 @@ for demo in hello factorial allocator fibonacci; do
 done
 printf 'real LLVM LNP64 run-elf clang demo execution passed: %s\n' \
   "target/llvm-lnp64-build/lnp64-{hello,factorial,allocator,fibonacci}-clang-linked.elf"
+
+intrinsic_probe="target/llvm-lnp64-build/lnp64-intrinsic-push-linked.elf"
+cargo run --quiet -- elf-plan "$intrinsic_probe" >/dev/null
+intrinsic_output="$(cargo run --quiet -- run-elf "$intrinsic_probe")"
+grep -q 'intrinsic push ok' <<<"$intrinsic_output"
+grep -q 'exit=0' <<<"$intrinsic_output"
+printf 'real LLVM LNP64 run-elf intrinsic push execution passed: %s\n' \
+  "$intrinsic_probe"

@@ -1676,6 +1676,11 @@ mod tests {
         assert!(real_llc_docker.contains("fibonacci ok"));
         assert!(real_llc_docker.contains("exit=0"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf clang demo execution passed"));
+        assert!(real_llc_docker.contains("lnp64-intrinsic-push-linked.elf"));
+        assert!(real_llc_docker.contains("intrinsic push ok"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic push execution passed")
+        );
         assert!(main_source.contains("\"run-elf\""));
         assert!(main_source.contains("run_committed_exec"));
         assert!(loader_security.contains("submit_exec_plan"));
@@ -1728,6 +1733,7 @@ mod tests {
             "cli_surface",
             "real_clang_lld_probe",
             "real_clang_demo_execution",
+            "real_intrinsic_push_execution",
             "entry_state",
             "text_fetch_decode",
             "stdout_exit",
@@ -1744,6 +1750,7 @@ mod tests {
             "cli_surface",
             "real_clang_lld_probe",
             "real_clang_demo_execution",
+            "real_intrinsic_push_execution",
             "text_fetch_decode",
         ] {
             assert_eq!(stages[stage].0, "tested", "{stage} should be tested");

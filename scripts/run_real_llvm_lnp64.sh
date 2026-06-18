@@ -244,6 +244,27 @@ grep -q 'ret' "$fibonacci_dump"
 printf 'real LLVM LNP64 clang fibonacci object smoke passed: %s\n' \
   "$fibonacci_obj"
 
+intrinsic_push_c="$build_dir/intrinsic-push.c"
+cat >"$intrinsic_push_c" <<'C'
+#include "lnp64_intrinsics.h"
+int main(void) {
+  __lnp_push(1, (lnp64_word_t)"intrinsic push ok\n", 18);
+  return 0;
+}
+C
+
+intrinsic_push_obj="$build_dir/intrinsic-push-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$intrinsic_push_c" -o "$intrinsic_push_obj"
+test -s "$intrinsic_push_obj"
+intrinsic_push_dump="$build_dir/intrinsic-push-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$intrinsic_push_obj" \
+  >"$intrinsic_push_dump"
+grep -q 'push r' "$intrinsic_push_dump"
+printf 'real LLVM LNP64 clang intrinsic push object smoke passed: %s\n' \
+  "$intrinsic_push_obj"
+
 crt0_obj="$build_dir/crt0-smoke.o"
 "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj toolchain/crt0_lnp64.s \
   -o "$crt0_obj"
@@ -282,6 +303,13 @@ linked_elf="$build_dir/lnp64-linked-smoke.elf"
   -o "$linked_elf" "$crt0_obj" "$main_obj"
 test -s "$linked_elf"
 printf 'real LLVM LNP64 lld static link smoke passed: %s\n' "$linked_elf"
+
+intrinsic_push_elf="$build_dir/lnp64-intrinsic-push-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$intrinsic_push_elf" "$crt0_obj" "$intrinsic_push_obj"
+test -s "$intrinsic_push_elf"
+printf 'real LLVM LNP64 lld intrinsic push link smoke passed: %s\n' \
+  "$intrinsic_push_elf"
 
 for demo in hello factorial allocator fibonacci; do
   demo_obj="$build_dir/$demo-clang-smoke.o"
