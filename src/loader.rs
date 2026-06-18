@@ -543,6 +543,9 @@ fn vma_from_load(
     if ph.align != 0 && (ph.align < PAGE_SIZE || !ph.align.is_power_of_two()) {
         return Err("PT_LOAD alignment is not page-sized power-of-two".to_string());
     }
+    if ph.align != 0 && load_bias % ph.align != 0 {
+        return Err("PT_LOAD load bias does not preserve segment alignment".to_string());
+    }
     let file_end = ph
         .offset
         .checked_add(ph.filesz)
@@ -1223,6 +1226,23 @@ mod tests {
         .unwrap_err();
 
         assert!(err.contains("ET_EXEC"), "{err}");
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_misaligned_pie_load_bias() {
+        let mut image = test_elf(&[text_phdr()]);
+        put_u16(&mut image, 16, ET_DYN);
+
+        let err = build_static_exec_plan(
+            &image,
+            LoaderOptions {
+                load_bias: 0x123,
+                ..LoaderOptions::default()
+            },
+        )
+        .unwrap_err();
+
+        assert!(err.contains("load bias"), "{err}");
     }
 
     #[test]
