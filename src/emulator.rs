@@ -11737,6 +11737,23 @@ mod tests {
     }
 
     #[test]
+    fn chdir_without_namespace_root_preserves_cwd() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let original_cwd = machine.process().unwrap().cwd.clone();
+        machine.process_mut().unwrap().namespace_root = None;
+        let path = ARG_BASE + 0x1000;
+        machine.write_bytes(path, b".\0").unwrap();
+        machine.thread_mut().unwrap().regs[1] = path;
+
+        machine.exec(Instr::ChdirPath(Reg(1))).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 13);
+        assert_eq!(machine.process().unwrap().cwd, original_cwd);
+    }
+
+    #[test]
     fn open_fd_dyn_without_namespace_root_does_not_allocate_fdr() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
