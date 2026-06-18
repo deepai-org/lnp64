@@ -140,10 +140,12 @@ fn run() -> Result<(), String> {
                 plan.entry.startup_metadata_ptr
             );
             println!(
-                "descriptor_length={} descriptor_words={} descriptor_validated=true memory_commit_validated=true vmas={} startup_note={} fdr_grants={} measurements={}",
+                "descriptor_length={} descriptor_words={} descriptor_validated=true memory_commit_validated=true vmas={} phdr={} tls={} startup_note={} fdr_grants={} measurements={}",
                 descriptor.header.total_length,
                 descriptor_words.len(),
                 prepared.len(),
+                plan.phdr.is_some(),
+                plan.tls.is_some(),
                 plan.startup.is_some(),
                 plan.fdr_grants.len(),
                 descriptor.measurements.len()
