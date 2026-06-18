@@ -8413,6 +8413,35 @@ mod tests {
     }
 
     #[test]
+    fn servicelet_verifier_accepts_advertised_static_loop_flag() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let envelope = ARG_BASE + 0x1000;
+        write_servicelet_envelope(
+            &mut machine,
+            envelope,
+            64,
+            0x01,
+            32,
+            128,
+            64,
+            32,
+            SERVICELET_FLAG_ALLOW_STATIC_LOOPS,
+        );
+
+        assert_ne!(
+            try_create_servicelet(&mut machine, 7, envelope),
+            -1i64 as u64
+        );
+        match &machine.process().unwrap().fds[7] {
+            FdHandle::ServiceletProgram(program) => {
+                assert_eq!(program.flags, SERVICELET_FLAG_ALLOW_STATIC_LOOPS);
+            }
+            _ => panic!("expected servicelet program fd"),
+        }
+    }
+
+    #[test]
     fn servicelet_program_owner_must_be_current_domain_or_descendant() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
