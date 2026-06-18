@@ -1579,6 +1579,7 @@ impl Machine {
                 }
             }
             Instr::OpenFdDyn(dst_reg, path_reg, flags_reg) => {
+                Self::ensure_result_reg_writable(dst_reg)?;
                 self.require_domain_cap(DOMAIN_CAP_FDR)?;
                 if !self.check_domain_budget(0, 0, 0, 1)? {
                     self.write_reg(dst_reg, -1i64 as u64)?;
@@ -1607,6 +1608,7 @@ impl Machine {
                 }
             }
             Instr::OpenAtDyn(dst_reg, dir_reg, path_reg, flags_reg) => {
+                Self::ensure_result_reg_writable(dst_reg)?;
                 self.require_domain_cap(DOMAIN_CAP_FDR)?;
                 if !self.check_domain_budget(0, 0, 0, 1)? {
                     self.write_reg(dst_reg, -1i64 as u64)?;
@@ -1656,6 +1658,7 @@ impl Machine {
                 }
             }
             Instr::OpenDirDyn(dst_reg, path_reg, _flags_reg) => {
+                Self::ensure_result_reg_writable(dst_reg)?;
                 self.require_domain_cap(DOMAIN_CAP_FDR)?;
                 if !self.check_domain_budget(0, 0, 0, 1)? {
                     self.write_reg(dst_reg, -1i64 as u64)?;
@@ -13421,6 +13424,37 @@ mod tests {
             .unwrap();
         assert_eq!(machine.process().unwrap().errno, 116);
         assert_eq!(machine.thread().unwrap().regs[1], 0);
+    }
+
+    #[test]
+    fn open_fd_dyn_rejects_locked_result_register_before_allocating_fd() {
+        let program = Program::parse(
+            r#"
+            .data
+            path: .string "Cargo.toml"
+
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let path = program.data_labels["path"];
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        let generations = machine.process().unwrap().fd_generations.clone();
+
+        machine.thread_mut().unwrap().regs[1] = path;
+        machine.thread_mut().unwrap().regs[2] = 0;
+        let err = machine
+            .exec(Instr::OpenFdDyn(Reg(31), Reg(1), Reg(2)))
+            .unwrap_err();
+
+        assert!(err.contains("hardware-locked stack pointer"), "{err}");
+        assert_eq!(machine.process().unwrap().fd_generations, generations);
+        assert!(matches!(
+            machine.process().unwrap().fds[3],
+            FdHandle::Closed
+        ));
     }
 
     #[test]
