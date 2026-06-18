@@ -1192,14 +1192,22 @@ mod tests {
     #[test]
     fn rejects_raw_hardware_and_syscall_escape_opcodes() {
         for opcode in [
+            "INT",
             "IRQ",
+            "RAW_IRQ",
             "INTERRUPT",
             "MMIO",
+            "RAW_MMIO",
             "MMIO_LOAD",
             "MMIO_STORE",
+            "PHYS_LOAD",
+            "PHYS_STORE",
             "RAW_DMA",
+            "ECALL",
+            "SVC",
             "RAW_SYSCALL",
             "SYSCALL",
+            "syscall",
         ] {
             let source = format!(".text\n  {opcode} r1, r2\n");
             let err = Program::parse(&source).unwrap_err();
