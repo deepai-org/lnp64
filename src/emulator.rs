@@ -1797,9 +1797,34 @@ impl Machine {
                     Err(err) => self.set_status_io_error(err)?,
                 }
             }
+            Instr::ChownPathAt(dir_reg, path_reg, uid_reg, gid_reg, _flags_reg) => {
+                let dir_value = self.read_reg(dir_reg)?;
+                let path = self.read_c_string(self.read_reg(path_reg)?)?;
+                let Some(path) = self.resolve_process_path_at_or_errno(dir_value, &path)? else {
+                    return Ok(true);
+                };
+                let uid = self.read_reg(uid_reg)?;
+                let gid = self.read_reg(gid_reg)?;
+                let uid = (uid != -1i64 as u64).then_some(uid as u32);
+                let gid = (gid != -1i64 as u64).then_some(gid as u32);
+                match std::os::unix::fs::chown(&path, uid, gid) {
+                    Ok(()) => self.set_status_ok()?,
+                    Err(err) => self.set_status_io_error(err)?,
+                }
+            }
             Instr::UtimePath(path_reg, times_reg, flags_reg) => {
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
                 let Some(path) = self.resolve_process_path_or_errno(&path)? else {
+                    return Ok(true);
+                };
+                let times_ptr = self.read_reg(times_reg)?;
+                let flags = self.read_reg(flags_reg)? as c_int;
+                self.utime_path(&path, times_ptr, flags)?;
+            }
+            Instr::UtimePathAt(dir_reg, path_reg, times_reg, flags_reg) => {
+                let dir_value = self.read_reg(dir_reg)?;
+                let path = self.read_c_string(self.read_reg(path_reg)?)?;
+                let Some(path) = self.resolve_process_path_at_or_errno(dir_value, &path)? else {
                     return Ok(true);
                 };
                 let times_ptr = self.read_reg(times_reg)?;

@@ -7194,13 +7194,15 @@ impl CodeGen {
                         "fchownat(dirfd, path, uid, gid, flags) expects 5 arguments".to_string()
                     );
                 }
+                let dirfd = self.emit_expr(&args[0])?;
                 let path = self.emit_expr(&args[1])?;
                 let uid = self.emit_expr(&args[2])?;
                 let gid = self.emit_expr(&args[3])?;
                 let flags = self.emit_expr(&args[4])?;
                 let dst = self.alloc_reg()?;
-                self.text
-                    .push(format!("  CHOWN_PATH r{path}, r{uid}, r{gid}, r{flags}"));
+                self.text.push(format!(
+                    "  CHOWN_PATH_AT r{dirfd}, r{path}, r{uid}, r{gid}, r{flags}"
+                ));
                 self.text.push(format!("  MOV r{dst}, r1"));
                 Ok(dst)
             }
@@ -7215,12 +7217,14 @@ impl CodeGen {
                         "utimensat(dirfd, path, times, flags) expects 4 arguments".to_string()
                     );
                 }
+                let dirfd = self.emit_expr(&args[0])?;
                 let path = self.emit_expr(&args[1])?;
                 let times = self.emit_expr(&args[2])?;
                 let flags = self.emit_expr(&args[3])?;
                 let dst = self.alloc_reg()?;
-                self.text
-                    .push(format!("  UTIME_PATH r{path}, r{times}, r{flags}"));
+                self.text.push(format!(
+                    "  UTIME_PATH_AT r{dirfd}, r{path}, r{times}, r{flags}"
+                ));
                 self.text.push(format!("  MOV r{dst}, r1"));
                 Ok(dst)
             }
@@ -19999,6 +20003,7 @@ int main() {
             fcntl(fd, F_GETFL);
             fcntl(fd, F_SETFL, 0);
             fchmodat(AT_FDCWD, "Cargo.toml", 0644, 0);
+            fchownat(AT_FDCWD, "Cargo.toml", -1, -1, 0);
             unlinkat(AT_FDCWD, "/tmp/lnp64_unlinkat_compile_only", 0);
             linkat(AT_FDCWD, "Cargo.toml", AT_FDCWD, "/tmp/lnp64_linkat_compile_only", 0);
             symlinkat("Cargo.toml", AT_FDCWD, "/tmp/lnp64_symlinkat_compile_only");
@@ -20016,6 +20021,7 @@ int main() {
         assert!(asm.contains("OPEN_AT fd3"));
         assert!(asm.contains("OPEN_AT_DYN"));
         assert!(asm.contains("CHMOD_PATH_AT"));
+        assert!(asm.contains("CHOWN_PATH_AT"));
         assert!(asm.contains("UNLINK_PATH_AT"));
         assert!(asm.contains("LINK_PATH_AT"));
         assert!(asm.contains("SYMLINK_PATH_AT"));
@@ -20759,7 +20765,7 @@ int main() {
         }
         "#;
         let asm = compile(source).unwrap();
-        assert!(asm.contains("UTIME_PATH"), "{asm}");
+        assert!(asm.contains("UTIME_PATH_AT"), "{asm}");
         assert!(asm.contains("UTIME_FD_DYN"), "{asm}");
         assert!(asm.contains("UTIME_FD fd3"), "{asm}");
         assert!(asm.contains("1073741823"), "{asm}");

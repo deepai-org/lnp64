@@ -462,9 +462,28 @@ impl Parser {
                     reg(&args[3])?,
                 )
             }
+            "CHOWN_PATH_AT" => {
+                arity(5)?;
+                Instr::ChownPathAt(
+                    reg(&args[0])?,
+                    reg(&args[1])?,
+                    reg(&args[2])?,
+                    reg(&args[3])?,
+                    reg(&args[4])?,
+                )
+            }
             "UTIME_PATH" => {
                 arity(3)?;
                 Instr::UtimePath(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
+            "UTIME_PATH_AT" => {
+                arity(4)?;
+                Instr::UtimePathAt(
+                    reg(&args[0])?,
+                    reg(&args[1])?,
+                    reg(&args[2])?,
+                    reg(&args[3])?,
+                )
             }
             "UTIME_FD" => {
                 arity(2)?;
