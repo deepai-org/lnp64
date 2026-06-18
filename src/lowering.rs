@@ -1872,6 +1872,8 @@ mod tests {
         assert!(isel.contains("ISD::ADD"));
         assert!(isel.contains("ISD::SDIV"));
         assert!(isel.contains("computeRegisterProperties"));
+        assert!(instr_td.contains("def simm16_imm"));
+        assert!(instr_td.contains("(set GPR:$rd, simm16_imm:$imm)"));
         assert!(instr_td.contains("(set GPR:$rd, (add GPR:$rs1, GPR:$rs2))"));
         assert!(instr_td.contains("(set GPR:$rd, (shl GPR:$rs1, GPR:$rs2))"));
         assert!(instr_td.contains("isReturn = 1"));
@@ -1908,6 +1910,7 @@ mod tests {
         assert!(codegen_test.contains("llc -mtriple=lnp64-unknown-none"));
         assert!(codegen_test.contains("XFAIL: *"));
         assert!(codegen_test.contains("define i64 @arith"));
+        assert!(codegen_test.contains("%biased = add i64 %sum, 7"));
         assert!(codegen_test.contains("; CHECK: lsl"));
         assert!(codegen_test.contains("__lnp_push"));
         assert!(mc_test.contains("llvm-mc -triple=lnp64-unknown-none"));

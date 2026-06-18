@@ -16,7 +16,8 @@ entry:
 define i64 @arith(i64 %a, i64 %b) {
 entry:
   %sum = add i64 %a, %b
-  %masked = and i64 %sum, %a
+  %biased = add i64 %sum, 7
+  %masked = and i64 %biased, %a
   %shifted = shl i64 %masked, %b
   ret i64 %shifted
 }
@@ -26,6 +27,7 @@ entry:
 ; CHECK: push
 ; CHECK: ret
 ; CHECK-LABEL: arith:
+; CHECK: li
 ; CHECK: add
 ; CHECK: and
 ; CHECK: lsl

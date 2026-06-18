@@ -1,5 +1,8 @@
 def simm16 : Operand<i64>;
 def simm26 : Operand<i64>;
+def simm16_imm : PatLeaf<(imm), [{
+  return isInt<16>(N->getSExtValue());
+}]>;
 
 class LNP64Inst<dag Outs, dag Ins, string Mnemonic, string Operands>
     : Instruction {
@@ -47,7 +50,9 @@ class LNP64Native2<string Mnemonic>
     : LNP64Inst<(outs GPR:$rd), (ins GPR:$arg), Mnemonic, "\t$rd, $arg">;
 
 def NOP : LNP64NoOperand<"nop">;
-def LI : LNP64RI<"li">;
+def LI : LNP64RI<"li"> {
+  let Pattern = [(set GPR:$rd, simm16_imm:$imm)];
+}
 def MOV : LNP64RR<"mov">;
 
 def ADD : LNP64RRR<"add"> {
