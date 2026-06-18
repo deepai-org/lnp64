@@ -10262,6 +10262,12 @@ mod tests {
             .unwrap();
         assert!(machine.thread().unwrap().regs[1] & ENV_HWCAP0_CLASSIFIER != 0);
 
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_OPCODE_FEATURE_BITS;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
+            .unwrap();
+        assert!(machine.thread().unwrap().regs[1] & ENV_OPCODE_FEATURE_NS_CTL != 0);
+
         machine.thread_mut().unwrap().regs[2] = ENV_KEY_OBJECT_PROFILE_BITS;
         machine
             .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
