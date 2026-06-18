@@ -239,11 +239,23 @@ git diff --check
 rg -n "MSG_RECV|\\bPIPE\\b"
 rg -n "EVENT_CTL|TIMER_CTL"
 python3 -m py_compile \
+  scripts/check_formal_proof_manifest.py \
+  scripts/test_formal_proof_manifest_checker.py \
+  scripts/check_rtl_cosim_manifest.py \
+  scripts/test_rtl_cosim_manifest_checker.py \
+  scripts/check_rtl_track_b_manifest.py \
+  scripts/test_rtl_track_b_manifest_checker.py \
+  scripts/check_fpga_bringup_manifest.py \
+  scripts/test_fpga_bringup_manifest_checker.py \
   scripts/check_formal_rtl_roadmap_audit.py \
   scripts/test_formal_rtl_roadmap_strict_audit.py \
   scripts/test_uart_byte_checker.py \
   scripts/test_board_evidence_checker.py
 bash -n scripts/run_rtl_board_ice40_s0.sh
+scripts/test_formal_proof_manifest_checker.py
+scripts/test_rtl_track_b_manifest_checker.py
+scripts/test_rtl_cosim_manifest_checker.py
+scripts/test_fpga_bringup_manifest_checker.py
 scripts/test_board_evidence_checker.py
 scripts/test_uart_byte_checker.py
 scripts/test_formal_rtl_roadmap_strict_audit.py
@@ -396,6 +408,13 @@ docker run --rm \
 
 # Board-tool image build; live validation still requires attached hardware.
 docker build -f Dockerfile.rtl-board -t lnp64-rtl-board .
+
+# Board-tool image smoke; confirms the container has programmer, FPGA, and UART deps.
+docker run --rm \
+  -v "$PWD:/work" \
+  -w /work \
+  lnp64-rtl-board \
+  bash -lc 'set -euo pipefail; command -v iceprog; command -v yosys; command -v nextpnr-ice40; command -v icepack; command -v icetime; python3 -c "import serial; print(\"python serial ok\")"'
 ```
 
 Expected success lines for those Docker reruns are:
@@ -653,10 +672,14 @@ sanity commands for the RTL/proof path:
 bash -n scripts/run_rtl_*.sh
 python3 -m py_compile scripts/check_rtl_s0_contract.py
 scripts/check_formal_proof_manifest.py
+scripts/test_formal_proof_manifest_checker.py
 scripts/check_rtl_cosim_manifest.py
+scripts/test_rtl_cosim_manifest_checker.py
 scripts/check_rtl_synth_constraints.py
 scripts/check_fpga_bringup_manifest.py
+scripts/test_fpga_bringup_manifest_checker.py
 scripts/check_rtl_track_b_manifest.py
+scripts/test_rtl_track_b_manifest_checker.py
 scripts/check_rtl_s0_contract.py
 scripts/check_rtl_dockerfiles.py
 scripts/test_board_evidence_checker.py
