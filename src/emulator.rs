@@ -8328,6 +8328,58 @@ mod tests {
     }
 
     #[test]
+    fn classifier_control_records_reject_bad_pointers_handles_and_rights() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let (_reader_token, writer_token) = create_pipe_pair(&mut machine, 3, 4);
+        let source = create_memory_source(&mut machine, 5);
+        let classifier = create_classifier(&mut machine, 6, 0, 0, 0, 0);
+        let envelope = ARG_BASE + 0x1000;
+        let result = ARG_BASE + 0x1100;
+        let counters = ARG_BASE + 0x1200;
+
+        assert_eq!(classify(&mut machine, classifier, 0, result), -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 14);
+
+        write_envelope(
+            &mut machine,
+            envelope,
+            CLASSIFY_PROFILE_IPC,
+            source,
+            0,
+            0,
+            1,
+            0,
+            0,
+        );
+        assert_eq!(
+            classify(&mut machine, writer_token, envelope, result),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 9);
+
+        let arg = ARG_BASE + 0x300;
+        machine.store_u64(arg, OBJECT_OP_CLASSIFIER_QUERY).unwrap();
+        machine.store_u64(arg + 8, classifier).unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.object_ctl(Reg(10), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[10], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 14);
+
+        machine.store_u64(arg + 8, writer_token).unwrap();
+        machine.store_u64(arg + 16, counters).unwrap();
+        machine.object_ctl(Reg(10), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[10], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 9);
+
+        machine.store_u64(arg + 8, classifier).unwrap();
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[6].rights &= !CAP_RIGHT_STAT;
+        machine.object_ctl(Reg(10), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[10], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
+    }
+
+    #[test]
     fn servicelet_program_creation_verifies_bounds() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
