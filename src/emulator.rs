@@ -3832,14 +3832,12 @@ impl Machine {
     }
 
     fn readdir_fd_index(&mut self, fd: usize, addr: u64) -> Result<(), String> {
-        let entry = match &mut self.process_mut()?.fds[fd] {
+        let entry = match &self.process()?.fds[fd] {
             FdHandle::Dir { entries, pos, .. } => {
                 if *pos >= entries.len() {
                     None
                 } else {
-                    let entry = entries[*pos].clone();
-                    *pos += 1;
-                    Some(entry)
+                    Some(entries[*pos].clone())
                 }
             }
             _ => {
@@ -3851,6 +3849,9 @@ impl Machine {
             let mut bytes = entry.into_bytes();
             bytes.push(0);
             self.write_bytes(addr, &bytes)?;
+            if let FdHandle::Dir { pos, .. } = &mut self.process_mut()?.fds[fd] {
+                *pos += 1;
+            }
             self.set_errno(0)?;
             self.write_reg(Reg(1), 1)?;
         } else if self.read_reg(Reg(1))? != -1i64 as u64 {
@@ -11741,6 +11742,36 @@ mod tests {
         assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 14);
         assert_eq!(machine.read_bytes(boundary_out, 1).unwrap(), b"Z".to_vec());
+    }
+
+    #[test]
+    fn readdir_write_failure_preserves_directory_position() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[10] = FdHandle::Dir {
+                path: "/tmp".to_string(),
+                entries: vec!["alpha".to_string()],
+                pos: 0,
+            };
+            process.fd_capabilities[10] = FdCapability::full(10);
+        }
+
+        let err = machine.readdir_fd_index(10, u64::MAX - 1).unwrap_err();
+        assert!(err.contains("unmapped address"), "{err}");
+        assert!(matches!(
+            machine.process().unwrap().fds.get(10),
+            Some(FdHandle::Dir { pos: 0, .. })
+        ));
+
+        let out = ARG_BASE + 0x1400;
+        machine.readdir_fd_index(10, out).unwrap();
+        assert_eq!(machine.read_c_string(out).unwrap(), "alpha");
+        assert!(matches!(
+            machine.process().unwrap().fds.get(10),
+            Some(FdHandle::Dir { pos: 1, .. })
+        ));
     }
 
     #[test]
