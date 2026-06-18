@@ -118,6 +118,10 @@ const ENV_OPCODE_FEATURE_CALL_CAP: u64 = 1 << 5;
 const ENV_OPCODE_FEATURE_ENV_GET: u64 = 1 << 6;
 const ENV_OPCODE_FEATURE_RANDOM: u64 = 1 << 7;
 const ENV_OPCODE_FEATURE_AWAIT: u64 = 1 << 8;
+const ENV_OPCODE_FEATURE_NS_CTL: u64 = 1 << 9;
+const NS_CTL_VERSION: u64 = 1;
+const NS_OP_RESOLVE: u64 = 1;
+const NS_RESOLVE_FLAG_NOFOLLOW_FINAL: u64 = 1 << 0;
 const ENV_OBJECT_PROFILE_COUNTER: u64 = 1 << 0;
 const ENV_OBJECT_PROFILE_QUEUE: u64 = 1 << 1;
 const ENV_OBJECT_PROFILE_MEMORY_OBJECT: u64 = 1 << 2;
@@ -2360,6 +2364,9 @@ impl Machine {
             Instr::DomainCtl(result, argblock) => {
                 self.domain_ctl(result, self.read_reg(argblock)?)?;
             }
+            Instr::NsCtl(result, argblock) => {
+                self.ns_ctl(result, self.read_reg(argblock)?)?;
+            }
             Instr::CallCap(result, call_gate, arg0, arg1) => {
                 self.call_cap(
                     result,
@@ -2687,6 +2694,45 @@ impl Machine {
                 Ok(None)
             }
             Err(err) => Err(err),
+        }
+    }
+
+    fn resolve_process_path_at_raw(
+        &self,
+        dir_value: u64,
+        path: &str,
+        no_follow_final: bool,
+    ) -> Result<String, u64> {
+        if path.starts_with('/') || dir_value == AT_FDCWD_VALUE {
+            let resolved = if no_follow_final {
+                self.resolve_process_path_no_follow_final(path)
+            } else {
+                self.resolve_process_path(path)
+            };
+            return Self::path_resolution_result_to_errno(resolved);
+        }
+        let dir_fd = self.decode_fd_value(dir_value)?;
+        self.fd_right_errno(dir_fd, CAP_RIGHT_READ)?;
+        let base = {
+            let process = self.process().map_err(|_| 3u64)?;
+            match process.fds.get(dir_fd) {
+                Some(FdHandle::Dir { path, .. }) => PathBuf::from(path),
+                _ => return Err(20),
+            }
+        };
+        let resolved = if no_follow_final {
+            self.resolve_process_path_no_follow_final_from_base(&base, path)
+        } else {
+            self.resolve_process_path_from_base(&base, path)
+        };
+        Self::path_resolution_result_to_errno(resolved)
+    }
+
+    fn path_resolution_result_to_errno(result: Result<String, String>) -> Result<String, u64> {
+        match result {
+            Ok(path) => Ok(path),
+            Err(err) if err.starts_with("path resolution denied:") => Err(13),
+            Err(_) => Err(5),
         }
     }
 
@@ -5118,6 +5164,51 @@ impl Machine {
         }
     }
 
+    fn ns_ctl(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
+        let value = self.ns_ctl_record(argblock);
+        match value {
+            Ok(value) => self.complete_reg_ok(result, value),
+            Err(errno) => self.complete_reg_err(result, errno),
+        }
+    }
+
+    fn ns_ctl_record(&mut self, argblock: u64) -> Result<u64, u64> {
+        let op = self.load_u64(argblock).map_err(|_| 14u64)?;
+        let version = self.load_u64(argblock + 8).map_err(|_| 14u64)?;
+        if version != NS_CTL_VERSION {
+            return Err(22);
+        }
+        match op {
+            NS_OP_RESOLVE => self.ns_ctl_resolve(argblock),
+            _ => Err(22),
+        }
+    }
+
+    fn ns_ctl_resolve(&mut self, argblock: u64) -> Result<u64, u64> {
+        let dir_value = self.load_u64(argblock + 16).map_err(|_| 14u64)?;
+        let path_ptr = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
+        let out_ptr = self.load_u64(argblock + 32).map_err(|_| 14u64)?;
+        let out_len = self.load_u64(argblock + 40).map_err(|_| 14u64)? as usize;
+        let flags = self.load_u64(argblock + 48).map_err(|_| 14u64)?;
+        if out_len == 0 {
+            return Err(22);
+        }
+        let path = self.read_c_string(path_ptr).map_err(|_| 14u64)?;
+        let resolved = self.resolve_process_path_at_raw(
+            dir_value,
+            &path,
+            flags & NS_RESOLVE_FLAG_NOFOLLOW_FINAL != 0,
+        )?;
+        let bytes = resolved.as_bytes();
+        if bytes.len() + 1 > out_len {
+            return Err(34);
+        }
+        self.write_bytes(out_ptr, bytes).map_err(|_| 14u64)?;
+        self.write_bytes(out_ptr + bytes.len() as u64, &[0])
+            .map_err(|_| 14u64)?;
+        Ok(bytes.len() as u64)
+    }
+
     fn domain_ctl_create(&mut self, argblock: u64) -> Result<u64, u64> {
         let parent_id = self.domain_arg_id(argblock)?;
         let parent_generation = self.load_u64(argblock + 16).map_err(|_| 14u64)?;
@@ -5831,7 +5922,8 @@ impl Machine {
                     | ENV_OPCODE_FEATURE_CALL_CAP
                     | ENV_OPCODE_FEATURE_ENV_GET
                     | ENV_OPCODE_FEATURE_RANDOM
-                    | ENV_OPCODE_FEATURE_AWAIT,
+                    | ENV_OPCODE_FEATURE_AWAIT
+                    | ENV_OPCODE_FEATURE_NS_CTL,
             ),
             ENV_KEY_OBJECT_PROFILE_BITS => Some(
                 ENV_OBJECT_PROFILE_COUNTER
@@ -8178,6 +8270,73 @@ mod tests {
             machine.resolve_process_path("inside_link").unwrap(),
             tmp.join("inside_link").to_string_lossy()
         );
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn ns_ctl_resolve_uses_directory_capability() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let base = std::env::temp_dir().join(format!("lnp64_ns_ctl_{unique}"));
+        let root = base.join("root");
+        let tmp = root.join("tmp");
+        let outside = base.join("outside");
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&tmp).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(tmp.join("inside"), b"inside").unwrap();
+
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        {
+            let process = machine.process_mut().unwrap();
+            process.namespace_root = Some(root.clone());
+            process.cwd = root.clone();
+            process.fds[10] = FdHandle::Dir {
+                path: tmp.to_string_lossy().into_owned(),
+                entries: Vec::new(),
+                pos: 0,
+            };
+            process.fd_capabilities[10] = FdCapability::full(10);
+            process.fds[11] = FdHandle::File(File::open(tmp.join("inside")).unwrap());
+            process.fd_capabilities[11] = FdCapability::full(11);
+        }
+
+        let arg = ARG_BASE + 0x1000;
+        let path = ARG_BASE + 0x1100;
+        let out = ARG_BASE + 0x1200;
+        machine.write_bytes(path, b"inside\0").unwrap();
+        machine.store_u64(arg, NS_OP_RESOLVE).unwrap();
+        machine.store_u64(arg + 8, NS_CTL_VERSION).unwrap();
+        machine.store_u64(arg + 16, 10).unwrap();
+        machine.store_u64(arg + 24, path).unwrap();
+        machine.store_u64(arg + 32, out).unwrap();
+        machine.store_u64(arg + 40, 256).unwrap();
+        machine.store_u64(arg + 48, 0).unwrap();
+        machine.ns_ctl(Reg(4), arg).unwrap();
+        let expected = tmp.join("inside").to_string_lossy().into_owned();
+        assert_eq!(machine.thread().unwrap().regs[4], expected.len() as u64);
+        assert_eq!(machine.process().unwrap().errno, 0);
+        assert_eq!(machine.read_c_string(out).unwrap(), expected);
+
+        machine.write_bytes(path, b"../../outside\0").unwrap();
+        machine.ns_ctl(Reg(5), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 13);
+
+        machine.write_bytes(path, b"inside\0").unwrap();
+        machine.store_u64(arg + 16, 11).unwrap();
+        machine.ns_ctl(Reg(6), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[6], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 20);
+
+        machine.store_u64(arg + 8, NS_CTL_VERSION + 1).unwrap();
+        machine.ns_ctl(Reg(7), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[7], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
 
         let _ = fs::remove_dir_all(&base);
     }

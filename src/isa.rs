@@ -188,6 +188,7 @@ pub enum Instr {
     CapDup(Reg, Reg),
     CapRevoke(Reg, Reg),
     DomainCtl(Reg, Reg),
+    NsCtl(Reg, Reg),
     CallCap(Reg, FdReg, Reg, Reg),
     RetCap(Reg, Reg, Reg),
     FAdd(FReg, FReg, FReg),

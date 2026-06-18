@@ -729,6 +729,10 @@ impl Parser {
                 arity(2)?;
                 Instr::DomainCtl(reg(&args[0])?, reg(&args[1])?)
             }
+            "NS_CTL" => {
+                arity(2)?;
+                Instr::NsCtl(reg(&args[0])?, reg(&args[1])?)
+            }
             "GATE_CALL" | "CALL_CAP" => {
                 arity(4)?;
                 Instr::CallCap(
@@ -1037,6 +1041,21 @@ mod tests {
         assert!(matches!(
             program.instructions[2],
             Instr::ObjectCtl(Reg(5), Reg(6))
+        ));
+    }
+
+    #[test]
+    fn parses_namespace_control() {
+        let program = Program::parse(
+            r#"
+            .text
+              NS_CTL r7, r8
+            "#,
+        )
+        .unwrap();
+        assert!(matches!(
+            program.instructions[0],
+            Instr::NsCtl(Reg(7), Reg(8))
         ));
     }
 
