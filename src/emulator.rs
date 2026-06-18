@@ -4502,6 +4502,9 @@ impl Machine {
                 } else {
                     let fd = completion_fd as usize;
                     self.fd_right_errno(fd, CAP_RIGHT_WRITE)?;
+                    if !self.fd_accepts_call_completion(fd).map_err(|_| 9u64)? {
+                        return Err(22);
+                    }
                     (Some(fd), Some(self.fd_generation(fd).map_err(|_| 9u64)?))
                 };
                 if mode == CALL_MODE_ASYNC && completion_fd.is_none() {
@@ -7520,6 +7523,13 @@ impl Machine {
         let process = self.process()?;
         Ok(process.fd_generations.get(fd).copied() == Some(generation)
             && !matches!(process.fds.get(fd), Some(FdHandle::Closed) | None))
+    }
+
+    fn fd_accepts_call_completion(&self, fd: usize) -> Result<bool, String> {
+        Ok(matches!(
+            self.process()?.fds.get(fd),
+            Some(FdHandle::Counter(_) | FdHandle::EventCounter { .. } | FdHandle::PipeWriter(_))
+        ))
     }
 
     fn with_thread_process<T>(
@@ -15541,6 +15551,36 @@ mod tests {
 
         assert_eq!(machine.thread().unwrap().regs[6], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 1);
+        assert!(matches!(
+            machine.process().unwrap().fds[5],
+            FdHandle::Closed
+        ));
+    }
+
+    #[test]
+    fn object_ctl_call_gate_rejects_non_waitable_completion_target() {
+        let mut machine = test_machine_with_child_domain();
+        machine.current_tid = 1;
+        let arg = ARG_BASE;
+
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::Queue.code())
+            .unwrap();
+        machine
+            .store_u64(arg + 16, ObjectProfile::CallGate.code())
+            .unwrap();
+        machine.store_u64(arg + 24, 5).unwrap();
+        machine.store_u64(arg + 32, 2).unwrap();
+        machine.store_u64(arg + 40, 1).unwrap();
+        machine.store_u64(arg + 48, CALL_MODE_ASYNC).unwrap();
+        machine.store_u64(arg + 56, 1).unwrap();
+        machine.store_u64(arg + 64, 0).unwrap();
+
+        machine.object_ctl(Reg(6), arg).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[6], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
         assert!(matches!(
             machine.process().unwrap().fds[5],
             FdHandle::Closed
