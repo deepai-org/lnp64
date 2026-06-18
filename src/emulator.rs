@@ -5410,6 +5410,9 @@ impl Machine {
         if !self.socket_getsockopt_supported(level, optname) {
             return Err(22);
         }
+        if optval != 0 {
+            self.ensure_mapped(optval, 8, true).map_err(|_| 14u64)?;
+        }
         if optlen != 0 {
             let capacity = self.load_u64(optlen).map_err(|_| 14u64)?;
             if capacity < 8 {
@@ -10209,6 +10212,43 @@ mod tests {
         machine.object_ctl(Reg(5), arg).unwrap();
         assert_eq!(machine.thread().unwrap().regs[5], 0);
         assert!(machine.load_u64(out_len).unwrap() > 0);
+    }
+
+    #[test]
+    fn socket_getsockopt_prevalidates_value_before_len_update() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let arg = ARG_BASE + 0x1000;
+        let optlen = ARG_BASE + 0x1300;
+
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::Endpoint.code())
+            .unwrap();
+        machine
+            .store_u64(arg + 16, ObjectProfile::TcpStream.code())
+            .unwrap();
+        machine.store_u64(arg + 24, 7).unwrap();
+        machine.store_u64(arg + 40, SOCKET_AF_INET).unwrap();
+        machine.store_u64(arg + 48, SOCKET_TYPE_STREAM).unwrap();
+        machine.store_u64(arg + 56, 0).unwrap();
+        machine.object_ctl(Reg(1), arg).unwrap();
+        let socket_token = machine.fd_token(7).unwrap();
+
+        machine.store_u64(optlen, 64).unwrap();
+        machine.store_u64(arg, OBJECT_OP_SOCKET_GETSOCKOPT).unwrap();
+        machine.store_u64(arg + 24, socket_token).unwrap();
+        machine
+            .store_u64(arg + 40, SOCKET_LEVEL_SOL_SOCKET)
+            .unwrap();
+        machine.store_u64(arg + 48, SOCKET_OPT_SO_ERROR).unwrap();
+        machine.store_u64(arg + 56, MEMORY_SIZE as u64).unwrap();
+        machine.store_u64(arg + 64, optlen).unwrap();
+        machine.object_ctl(Reg(2), arg).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 14);
+        assert_eq!(machine.load_u64(optlen).unwrap(), 64);
     }
 
     #[test]
