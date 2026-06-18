@@ -4288,9 +4288,9 @@ impl Machine {
                 let read_fd =
                     self.install_object_fd(fd0_req, FdHandle::PipeReader(Rc::clone(&buffer)))?;
                 let write_fd = self.install_object_fd(fd1_req, FdHandle::PipeWriter(buffer))?;
-                self.store_u64(argblock + 24, read_fd as u64)
+                self.store_u64_offset(argblock, 24, read_fd as u64)
                     .map_err(|_| 14u64)?;
-                self.store_u64(argblock + 32, write_fd as u64)
+                self.store_u64_offset(argblock, 32, write_fd as u64)
                     .map_err(|_| 14u64)?;
                 Ok(0)
             }
@@ -4341,7 +4341,7 @@ impl Machine {
                         flags,
                     },
                 )?;
-                self.store_u64(argblock + 24, fd as u64)
+                self.store_u64_offset(argblock, 24, fd as u64)
                     .map_err(|_| 14u64)?;
                 Ok(fd as u64)
             }
@@ -4357,14 +4357,14 @@ impl Machine {
                         semaphore: flags & EVENTFD_SEMAPHORE != 0,
                     },
                 )?;
-                self.store_u64(argblock + 24, fd as u64)
+                self.store_u64_offset(argblock, 24, fd as u64)
                     .map_err(|_| 14u64)?;
                 Ok(fd as u64)
             }
             (ObjectKind::Counter, _) => {
                 let fd =
                     self.install_object_fd(fd0_req, FdHandle::Counter(Rc::new(RefCell::new(arg))))?;
-                self.store_u64(argblock + 24, fd as u64)
+                self.store_u64_offset(argblock, 24, fd as u64)
                     .map_err(|_| 14u64)?;
                 Ok(fd as u64)
             }
@@ -4380,7 +4380,7 @@ impl Machine {
                         pos: 0,
                     },
                 )?;
-                self.store_u64(argblock + 24, fd as u64)
+                self.store_u64_offset(argblock, 24, fd as u64)
                     .map_err(|_| 14u64)?;
                 Ok(fd as u64)
             }
@@ -4389,7 +4389,7 @@ impl Machine {
                     fd0_req,
                     FdHandle::Timer(Rc::new(RefCell::new(TimerState::default()))),
                 )?;
-                self.store_u64(argblock + 24, fd as u64)
+                self.store_u64_offset(argblock, 24, fd as u64)
                     .map_err(|_| 14u64)?;
                 Ok(fd as u64)
             }
@@ -4414,7 +4414,7 @@ impl Machine {
                         counters: ClassifierCounters::default(),
                     }))),
                 )?;
-                self.store_u64(argblock + 24, fd as u64)
+                self.store_u64_offset(argblock, 24, fd as u64)
                     .map_err(|_| 14u64)?;
                 Ok(fd as u64)
             }
@@ -4422,7 +4422,7 @@ impl Machine {
                 let program = self.verify_servicelet_program(arg)?;
                 let fd =
                     self.install_object_fd(fd0_req, FdHandle::ServiceletProgram(Rc::new(program)))?;
-                self.store_u64(argblock + 24, fd as u64)
+                self.store_u64_offset(argblock, 24, fd as u64)
                     .map_err(|_| 14u64)?;
                 Ok(fd as u64)
             }
@@ -4436,7 +4436,7 @@ impl Machine {
                 self.ensure_mapped(arg, len as usize, true)
                     .map_err(|_| 14u64)?;
                 let fd = self.install_object_fd(fd0_req, FdHandle::DmaBuffer { addr: arg, len })?;
-                self.store_u64(argblock + 24, fd as u64)
+                self.store_u64_offset(argblock, 24, fd as u64)
                     .map_err(|_| 14u64)?;
                 Ok(fd as u64)
             }
@@ -4458,7 +4458,7 @@ impl Machine {
                         bound_addr: None,
                     },
                 )?;
-                self.store_u64(argblock + 24, fd as u64)
+                self.store_u64_offset(argblock, 24, fd as u64)
                     .map_err(|_| 14u64)?;
                 Ok(fd as u64)
             }
@@ -5153,7 +5153,7 @@ impl Machine {
         };
         stream.set_nonblocking(true).map_err(|_| 5u64)?;
         let accepted_fd = self.install_object_fd(accepted_req, FdHandle::TcpStream(stream))?;
-        self.store_u64(argblock + 32, accepted_fd as u64)
+        self.store_u64_offset(argblock, 32, accepted_fd as u64)
             .map_err(|_| 14u64)?;
         Ok(accepted_fd as u64)
     }
@@ -5645,11 +5645,11 @@ impl Machine {
         if let Some(parent) = self.domains.get_mut(&parent_id) {
             parent.children.push(id);
         }
-        self.store_u64(argblock + 8, id).map_err(|_| 14u64)?;
-        self.store_u64(argblock + 16, 1).map_err(|_| 14u64)?;
-        self.store_u64(argblock + 120, parent_id)
+        self.store_u64_offset(argblock, 8, id).map_err(|_| 14u64)?;
+        self.store_u64_offset(argblock, 16, 1).map_err(|_| 14u64)?;
+        self.store_u64_offset(argblock, 120, parent_id)
             .map_err(|_| 14u64)?;
-        self.store_u64(argblock + 128, parent_depth + 1)
+        self.store_u64_offset(argblock, 128, parent_depth + 1)
             .map_err(|_| 14u64)?;
         Ok(id)
     }
