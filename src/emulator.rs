@@ -1165,10 +1165,6 @@ impl Machine {
 
     pub fn set_process_entry(&mut self, args: &[String], env: &[String]) -> Result<(), String> {
         let pid = self.thread()?.pid;
-        let process = self
-            .processes
-            .get_mut(&pid)
-            .ok_or_else(|| format!("missing process {pid}"))?;
         let argc_addr = ARG_BASE as usize;
         let argv_addr = (ARG_BASE + 8) as usize;
         let argv_slots = args
@@ -1191,7 +1187,7 @@ impl Machine {
         let mut str_addr = ARG_BASE + 0x1000;
         let arg_page_start = ARG_BASE as usize;
         let arg_page_end = (ARG_BASE + ARG_SIZE) as usize;
-        process.memory[arg_page_start..arg_page_end].fill(0);
+        let mut arg_page = vec![0u8; ARG_SIZE as usize];
         if envp_addr
             .checked_add(env_bytes)
             .ok_or_else(|| "envp table address overflow".to_string())?
@@ -1199,8 +1195,14 @@ impl Machine {
         {
             return Err("process entry pointer table exceeds reserved argument area".to_string());
         }
-        process.memory[argc_addr..argc_addr + 8]
-            .copy_from_slice(&(args.len() as u64).to_le_bytes());
+        let arg_page_len = arg_page.len();
+        let page_offset = |addr: usize| -> Result<usize, String> {
+            addr.checked_sub(arg_page_start)
+                .filter(|offset| *offset < arg_page_len)
+                .ok_or_else(|| "process entry address outside argument page".to_string())
+        };
+        let argc_off = page_offset(argc_addr)?;
+        arg_page[argc_off..argc_off + 8].copy_from_slice(&(args.len() as u64).to_le_bytes());
         for (idx, arg) in args.iter().enumerate() {
             let ptr_slot = argv_addr
                 .checked_add(
@@ -1208,7 +1210,8 @@ impl Machine {
                         .ok_or_else(|| "argv slot offset overflow".to_string())?,
                 )
                 .ok_or_else(|| "argv slot address overflow".to_string())?;
-            process.memory[ptr_slot..ptr_slot + 8].copy_from_slice(&str_addr.to_le_bytes());
+            let ptr_slot_off = page_offset(ptr_slot)?;
+            arg_page[ptr_slot_off..ptr_slot_off + 8].copy_from_slice(&str_addr.to_le_bytes());
             let bytes = arg.as_bytes();
             let start = str_addr as usize;
             let end = start
@@ -1221,8 +1224,10 @@ impl Machine {
             {
                 return Err("argv data exceeds emulated argument page".to_string());
             }
-            process.memory[start..end].copy_from_slice(bytes);
-            process.memory[end] = 0;
+            let start_off = page_offset(start)?;
+            let end_off = page_offset(end)?;
+            arg_page[start_off..end_off].copy_from_slice(bytes);
+            arg_page[end_off] = 0;
             str_addr = str_addr
                 .checked_add(bytes.len() as u64)
                 .and_then(|addr| addr.checked_add(1))
@@ -1235,7 +1240,8 @@ impl Machine {
                     .ok_or_else(|| "argv null slot offset overflow".to_string())?,
             )
             .ok_or_else(|| "argv null slot address overflow".to_string())?;
-        process.memory[null_slot..null_slot + 8].copy_from_slice(&0u64.to_le_bytes());
+        let null_slot_off = page_offset(null_slot)?;
+        arg_page[null_slot_off..null_slot_off + 8].copy_from_slice(&0u64.to_le_bytes());
         for (idx, item) in env.iter().enumerate() {
             let ptr_slot = envp_addr
                 .checked_add(
@@ -1243,7 +1249,8 @@ impl Machine {
                         .ok_or_else(|| "envp slot offset overflow".to_string())?,
                 )
                 .ok_or_else(|| "envp slot address overflow".to_string())?;
-            process.memory[ptr_slot..ptr_slot + 8].copy_from_slice(&str_addr.to_le_bytes());
+            let ptr_slot_off = page_offset(ptr_slot)?;
+            arg_page[ptr_slot_off..ptr_slot_off + 8].copy_from_slice(&str_addr.to_le_bytes());
             let bytes = item.as_bytes();
             let start = str_addr as usize;
             let end = start
@@ -1256,8 +1263,10 @@ impl Machine {
             {
                 return Err("envp data exceeds emulated argument page".to_string());
             }
-            process.memory[start..end].copy_from_slice(bytes);
-            process.memory[end] = 0;
+            let start_off = page_offset(start)?;
+            let end_off = page_offset(end)?;
+            arg_page[start_off..end_off].copy_from_slice(bytes);
+            arg_page[end_off] = 0;
             str_addr = str_addr
                 .checked_add(bytes.len() as u64)
                 .and_then(|addr| addr.checked_add(1))
@@ -1270,7 +1279,13 @@ impl Machine {
                     .ok_or_else(|| "envp null slot offset overflow".to_string())?,
             )
             .ok_or_else(|| "envp null slot address overflow".to_string())?;
-        process.memory[null_slot..null_slot + 8].copy_from_slice(&0u64.to_le_bytes());
+        let null_slot_off = page_offset(null_slot)?;
+        arg_page[null_slot_off..null_slot_off + 8].copy_from_slice(&0u64.to_le_bytes());
+        let process = self
+            .processes
+            .get_mut(&pid)
+            .ok_or_else(|| format!("missing process {pid}"))?;
+        process.memory[arg_page_start..arg_page_end].copy_from_slice(&arg_page);
         Ok(())
     }
 
@@ -15197,6 +15212,22 @@ mod tests {
             machine.read_bytes(ARG_BASE, 8).unwrap(),
             b"sentinel".to_vec()
         );
+    }
+
+    #[test]
+    fn set_process_entry_failure_preserves_argument_page() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.store_u64(ARG_BASE, 0xfeed_cafe).unwrap();
+        let oversized = "x".repeat(ARG_SIZE as usize);
+
+        let err = machine.set_process_entry(&[oversized], &[]).unwrap_err();
+
+        assert!(
+            err.contains("argv data exceeds emulated argument page"),
+            "{err}"
+        );
+        assert_eq!(machine.load_u64(ARG_BASE).unwrap(), 0xfeed_cafe);
     }
 
     #[test]
