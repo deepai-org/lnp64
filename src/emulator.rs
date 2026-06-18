@@ -4362,14 +4362,8 @@ impl Machine {
         let flags = self.load_u64_offset(argblock, 24)?;
         let value = self.cap_send_inner(channel_value, src_value, flags);
         match value {
-            Ok(count) => {
-                self.set_errno(0)?;
-                self.write_reg(result, count)
-            }
-            Err(errno) => {
-                self.set_status_errno(errno)?;
-                self.write_reg(result, -1i64 as u64)
-            }
+            Ok(count) => self.complete_reg_ok(result, count),
+            Err(errno) => self.complete_reg_err(result, errno),
         }
     }
 
@@ -4421,14 +4415,8 @@ impl Machine {
         let flags = self.load_u64_offset(argblock, 24)?;
         let value = self.cap_recv_inner(channel_value, dst_req, rights_req, flags);
         match value {
-            Ok(token) => {
-                self.set_errno(0)?;
-                self.write_reg(result, token)
-            }
-            Err(errno) => {
-                self.set_status_errno(errno)?;
-                self.write_reg(result, -1i64 as u64)
-            }
+            Ok(token) => self.complete_reg_ok(result, token),
+            Err(errno) => self.complete_reg_err(result, errno),
         }
     }
 
@@ -8710,6 +8698,69 @@ mod tests {
             machine.process().unwrap().fds[5],
             FdHandle::Counter(_)
         ));
+    }
+
+    #[test]
+    fn cap_send_rejects_locked_result_before_queue_or_errno_side_effects() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        create_pipe_pair(&mut machine, 3, 4);
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[5] = FdHandle::Counter(Rc::new(RefCell::new(99)));
+            process.fd_capabilities[5] = FdCapability::full(5);
+        }
+        machine.set_errno(123).unwrap();
+        let arg = ARG_BASE;
+        machine.store_u64(arg, 4).unwrap();
+        machine.store_u64(arg + 8, 5).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+
+        let err = machine.cap_send(Reg(31), arg).unwrap_err();
+
+        assert!(err.contains("stack pointer"), "{err}");
+        assert_eq!(machine.process().unwrap().errno, 123);
+        let queue = match &machine.process().unwrap().fds[4] {
+            FdHandle::PipeWriter(queue) => Rc::clone(queue),
+            _ => panic!("expected pipe writer"),
+        };
+        assert_eq!(queue.borrow().capabilities.len(), 0);
+    }
+
+    #[test]
+    fn cap_recv_rejects_locked_result_before_dequeue_or_errno_side_effects() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        create_pipe_pair(&mut machine, 3, 4);
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[5] = FdHandle::Counter(Rc::new(RefCell::new(99)));
+            process.fd_capabilities[5] = FdCapability::full(5);
+        }
+        let arg = ARG_BASE;
+        machine.store_u64(arg, 4).unwrap();
+        machine.store_u64(arg + 8, 5).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_send(Reg(6), arg).unwrap();
+        machine.set_errno(123).unwrap();
+        machine.store_u64(arg, 3).unwrap();
+        machine.store_u64(arg + 8, 7).unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+
+        let err = machine.cap_recv(Reg(31), arg).unwrap_err();
+
+        assert!(err.contains("stack pointer"), "{err}");
+        assert_eq!(machine.process().unwrap().errno, 123);
+        assert!(matches!(
+            machine.process().unwrap().fds[7],
+            FdHandle::Closed
+        ));
+        let queue = match &machine.process().unwrap().fds[3] {
+            FdHandle::PipeReader(queue) => Rc::clone(queue),
+            _ => panic!("expected pipe reader"),
+        };
+        assert_eq!(queue.borrow().capabilities.len(), 1);
     }
 
     #[test]
