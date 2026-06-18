@@ -4593,19 +4593,19 @@ impl Machine {
         if envelope == 0 {
             return Err(14);
         }
-        let version = self.load_u64(envelope).map_err(|_| 14u64)?;
+        let version = self.load_u64_offset(envelope, 0).map_err(|_| 14u64)?;
         if version != SERVICELET_VERIFY_VERSION {
             return Err(22);
         }
-        let program_len = self.load_u64(envelope + 8).map_err(|_| 14u64)?;
-        let isa_subset = self.load_u64(envelope + 16).map_err(|_| 14u64)?;
-        let instruction_limit = self.load_u64(envelope + 24).map_err(|_| 14u64)?;
-        let cycle_limit = self.load_u64(envelope + 32).map_err(|_| 14u64)?;
-        let record_read_limit = self.load_u64(envelope + 40).map_err(|_| 14u64)?;
-        let action_write_limit = self.load_u64(envelope + 48).map_err(|_| 14u64)?;
-        let flags = self.load_u64(envelope + 56).map_err(|_| 14u64)?;
-        let owner_domain_id = self.load_u64(envelope + 64).map_err(|_| 14u64)?;
-        let owner_generation = self.load_u64(envelope + 72).map_err(|_| 14u64)?;
+        let program_len = self.load_u64_offset(envelope, 8).map_err(|_| 14u64)?;
+        let isa_subset = self.load_u64_offset(envelope, 16).map_err(|_| 14u64)?;
+        let instruction_limit = self.load_u64_offset(envelope, 24).map_err(|_| 14u64)?;
+        let cycle_limit = self.load_u64_offset(envelope, 32).map_err(|_| 14u64)?;
+        let record_read_limit = self.load_u64_offset(envelope, 40).map_err(|_| 14u64)?;
+        let action_write_limit = self.load_u64_offset(envelope, 48).map_err(|_| 14u64)?;
+        let flags = self.load_u64_offset(envelope, 56).map_err(|_| 14u64)?;
+        let owner_domain_id = self.load_u64_offset(envelope, 64).map_err(|_| 14u64)?;
+        let owner_generation = self.load_u64_offset(envelope, 72).map_err(|_| 14u64)?;
 
         if program_len == 0
             || program_len > SERVICELET_MAX_PROGRAM_BYTES
