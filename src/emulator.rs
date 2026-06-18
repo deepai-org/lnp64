@@ -3710,8 +3710,9 @@ impl Machine {
             return Ok(());
         };
         let Some(idx) = self.process()?.vmas.iter().position(|vma| {
-            let vma_end = vma.start + vma.len;
-            addr >= vma.start && end <= vma_end
+            vma.start
+                .checked_add(vma.len)
+                .is_some_and(|vma_end| addr >= vma.start && end <= vma_end)
         }) else {
             self.set_status_errno(12)?;
             return Ok(());
@@ -12084,6 +12085,32 @@ mod tests {
 
         assert_eq!(machine.thread().unwrap().regs[3], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 22);
+    }
+
+    #[test]
+    fn mprotect_ignores_overflowing_vma_bounds() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine
+            .process_mut()
+            .unwrap()
+            .vmas
+            .push(Vma::anonymous(u64::MAX - 8, 16, 0b011));
+
+        machine.mprotect_range(u64::MAX - 8, 1, 0b001).unwrap();
+
+        assert_eq!(machine.process().unwrap().errno, 12);
+        assert_eq!(
+            machine
+                .process()
+                .unwrap()
+                .vmas
+                .iter()
+                .find(|vma| vma.start == u64::MAX - 8)
+                .unwrap()
+                .prot,
+            0b011
+        );
     }
 
     #[test]
