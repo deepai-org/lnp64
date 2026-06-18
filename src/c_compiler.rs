@@ -10351,7 +10351,13 @@ impl CodeGen {
                 self.text.push(format!("  LI r{dst}, 0"));
                 Ok(dst)
             }
-            "pthread_mutex_destroy" | "pthread_cond_destroy" | "pthread_detach" => {
+            "pthread_detach" => {
+                let tid = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  THREAD_DETACH r{dst}, r{tid}"));
+                Ok(dst)
+            }
+            "pthread_mutex_destroy" | "pthread_cond_destroy" => {
                 if args.len() != 1 {
                     return Err(format!("{name}(obj) expects 1 argument"));
                 }
@@ -22640,7 +22646,7 @@ int main() {
             if (joined_value != 77) {
                 return 5;
             }
-            if (pthread_detach(thread) != 0) {
+            if (pthread_detach(thread) != ESRCH) {
                 return 6;
             }
             if (pthread_mutex_destroy(&mutex) != 0) {
@@ -22736,6 +22742,45 @@ int main() {
         let asm = compile(source).unwrap();
         assert!(asm.contains("GET_PCR"), "{asm}");
         assert!(asm.contains("SET_PCR TP"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_pthread_detach_reports_lifecycle_states() {
+        let source = r#"
+        int go;
+        int done;
+
+        int worker() {
+            while (go == 0) {
+                yield_cpu();
+            }
+            done = 1;
+            pthread_exit(55);
+            return 0;
+        }
+
+        int main() {
+            int thread;
+            go = 0;
+            done = 0;
+            if (pthread_create(&thread, 0, worker, 0) != 0) return 1;
+            if (pthread_detach(thread) != 0) return 2;
+            if (pthread_detach(thread) != EINVAL) return 3;
+            if (pthread_join(thread, 0) != EINVAL) return 4;
+            go = 1;
+            while (done == 0) {
+                yield_cpu();
+            }
+            if (pthread_join(thread, 0) != ESRCH) return 5;
+            if (pthread_detach(thread) != ESRCH) return 6;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("THREAD_DETACH"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);

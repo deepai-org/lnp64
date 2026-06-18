@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::CString;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
@@ -1104,6 +1104,7 @@ pub struct Machine {
     thread_join_waiters: HashMap<u64, VecDeque<u64>>,
     child_waiters: HashMap<u64, VecDeque<u64>>,
     completed_threads: HashMap<u64, u64>,
+    detached_threads: HashSet<u64>,
     completed_children: HashMap<(u64, u64), i32>,
     fd_waiters: Vec<FdWaiter>,
     current_tid: u64,
@@ -1147,6 +1148,7 @@ impl Machine {
             thread_join_waiters: HashMap::new(),
             child_waiters: HashMap::new(),
             completed_threads: HashMap::new(),
+            detached_threads: HashSet::new(),
             completed_children: HashMap::new(),
             fd_waiters: Vec::new(),
             current_tid: root_tid,
@@ -2402,6 +2404,8 @@ impl Machine {
                 let retval_ptr = self.read_reg(retval_reg)?;
                 if tid == self.current_tid {
                     self.write_reg(result, 35)?;
+                } else if self.detached_threads.contains(&tid) {
+                    self.write_reg(result, 22)?;
                 } else if let Some(value) = self.completed_threads.get(&tid).copied() {
                     if retval_ptr != 0 {
                         self.ensure_mapped(retval_ptr, 8, true)?;
@@ -2421,6 +2425,26 @@ impl Machine {
                     self.ready
                         .retain(|ready_tid| *ready_tid != self.current_tid);
                     return Ok(false);
+                } else {
+                    self.write_reg(result, 3)?;
+                }
+            }
+            Instr::ThreadDetach(result, tid_reg) => {
+                Self::ensure_result_reg_writable(result)?;
+                let tid = self.read_reg(tid_reg)?;
+                if self.detached_threads.contains(&tid) {
+                    self.write_reg(result, 22)?;
+                } else if self
+                    .thread_join_waiters
+                    .get(&tid)
+                    .is_some_and(|waiters| !waiters.is_empty())
+                {
+                    self.write_reg(result, 16)?;
+                } else if self.completed_threads.remove(&tid).is_some() {
+                    self.write_reg(result, 0)?;
+                } else if self.threads.contains_key(&tid) {
+                    self.detached_threads.insert(tid);
+                    self.write_reg(result, 0)?;
                 } else {
                     self.write_reg(result, 3)?;
                 }
@@ -7652,7 +7676,9 @@ impl Machine {
         let pid = self.thread()?.pid;
         let parent_pid = self.process()?.parent_pid;
         self.threads.remove(&tid);
-        self.completed_threads.insert(tid, code as u64);
+        if !self.detached_threads.remove(&tid) {
+            self.completed_threads.insert(tid, code as u64);
+        }
         if let Some(waiters) = self.thread_join_waiters.remove(&tid) {
             for waiter in waiters {
                 self.wake_thread(waiter);
@@ -15822,6 +15848,80 @@ mod tests {
         assert_eq!(machine.thread().unwrap().regs[5], 0);
         assert_eq!(machine.load_u64(retval).unwrap(), 77);
         assert!(!machine.completed_threads.contains_key(&child_tid));
+    }
+
+    #[test]
+    fn thread_detach_live_thread_rejects_join_and_discards_completion() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine
+            .clone_with_profile(CloneProfile::NewThreadSharedVm, Reg(2), Some(0))
+            .unwrap();
+        let child_tid = machine.thread().unwrap().regs[2];
+        machine.thread_mut().unwrap().regs[3] = child_tid;
+
+        machine.exec(Instr::ThreadDetach(Reg(5), Reg(3))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], 0);
+        assert!(machine.detached_threads.contains(&child_tid));
+
+        machine
+            .exec(Instr::ThreadJoin(Reg(6), Reg(3), Reg(0)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[6], 22);
+
+        machine.current_tid = child_tid;
+        machine.exit_current(77).unwrap();
+        assert!(!machine.completed_threads.contains_key(&child_tid));
+        assert!(!machine.detached_threads.contains(&child_tid));
+
+        machine.current_tid = 1;
+        machine
+            .exec(Instr::ThreadJoin(Reg(7), Reg(3), Reg(0)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[7], 3);
+    }
+
+    #[test]
+    fn thread_detach_completed_thread_consumes_join_status() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine
+            .clone_with_profile(CloneProfile::NewThreadSharedVm, Reg(2), Some(0))
+            .unwrap();
+        let child_tid = machine.thread().unwrap().regs[2];
+
+        machine.current_tid = child_tid;
+        machine.exit_current(44).unwrap();
+        assert_eq!(machine.completed_threads.get(&child_tid), Some(&44));
+
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[3] = child_tid;
+        machine.exec(Instr::ThreadDetach(Reg(5), Reg(3))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], 0);
+        assert!(!machine.completed_threads.contains_key(&child_tid));
+
+        machine
+            .exec(Instr::ThreadJoin(Reg(6), Reg(3), Reg(0)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[6], 3);
+    }
+
+    #[test]
+    fn thread_detach_rejects_locked_result_before_state_change() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine
+            .clone_with_profile(CloneProfile::NewThreadSharedVm, Reg(2), Some(0))
+            .unwrap();
+        let child_tid = machine.thread().unwrap().regs[2];
+        machine.thread_mut().unwrap().regs[3] = child_tid;
+
+        let err = machine
+            .exec(Instr::ThreadDetach(Reg(31), Reg(3)))
+            .unwrap_err();
+        assert!(err.contains("hardware-locked stack pointer"), "{err}");
+        assert!(!machine.detached_threads.contains(&child_tid));
+        assert!(machine.threads.contains_key(&child_tid));
     }
 
     #[test]

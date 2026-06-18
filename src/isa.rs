@@ -163,6 +163,7 @@ pub enum Instr {
     Exec(Reg, Reg, Reg),
     Spawn(Reg, Reg),
     ThreadJoin(Reg, Reg, Reg),
+    ThreadDetach(Reg, Reg),
     Yield,
     Sleep(Reg),
     Exit(Reg),

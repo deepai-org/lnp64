@@ -617,6 +617,10 @@ impl Parser {
                 arity(3)?;
                 Instr::ThreadJoin(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
+            "THREAD_DETACH" => {
+                arity(2)?;
+                Instr::ThreadDetach(reg(&args[0])?, reg(&args[1])?)
+            }
             "YIELD" => {
                 arity(0)?;
                 Instr::Yield
@@ -1296,6 +1300,7 @@ mod tests {
               EXEC r9, r10
               EXEC r11, r12, r13
               THREAD_JOIN r1, r2, r3
+              THREAD_DETACH r4, r5
             "#,
         )
         .unwrap();
@@ -1310,6 +1315,10 @@ mod tests {
         assert!(matches!(
             program.instructions[2],
             Instr::ThreadJoin(Reg(1), Reg(2), Reg(3))
+        ));
+        assert!(matches!(
+            program.instructions[3],
+            Instr::ThreadDetach(Reg(4), Reg(5))
         ));
     }
 
