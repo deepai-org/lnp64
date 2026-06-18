@@ -8260,6 +8260,27 @@ mod tests {
     }
 
     #[test]
+    fn classifier_table_rejects_invalid_rule_descriptors() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let rules = ARG_BASE + 0x1000;
+        let invalid_cases = [
+            (99, CLASSIFY_FIELD_SERVICE_ID, CLASSIFY_ACTION_COUNT),
+            (CLASSIFY_RULE_EXACT, 99, CLASSIFY_ACTION_COUNT),
+            (CLASSIFY_RULE_EXACT, CLASSIFY_FIELD_SERVICE_ID, 99),
+        ];
+
+        for (kind, field, action) in invalid_cases {
+            write_classifier_rule(&mut machine, rules, kind, field, 1, 0, action, 0, 0);
+            assert_eq!(
+                try_create_classifier(&mut machine, 6, rules, 1, 0, 0),
+                -1i64 as u64
+            );
+            assert_eq!(machine.process().unwrap().errno, 22);
+        }
+    }
+
+    #[test]
     fn servicelet_program_creation_verifies_bounds() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
