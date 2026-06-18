@@ -22,6 +22,8 @@ const R_LNP64_ABS64: u32 = 1;
 const R_LNP64_ABS32: u32 = 2;
 const R_LNP64_GLOB_DAT: u32 = 6;
 const R_LNP64_RELATIVE: u32 = 7;
+const R_LNP64_TLS_TPREL64: u32 = 8;
+const R_LNP64_TLS_DTPREL64: u32 = 9;
 const PAGE_SIZE: u64 = 4096;
 const ELF64_EHDR_SIZE: usize = 64;
 const ELF64_PHDR_SIZE: usize = 56;
@@ -676,6 +678,31 @@ fn apply_rela_sections(image: &mut [u8], plan: &ExecPlan, load_bias: u64) -> Res
                         .map_err(|_| "RELA ABS32 value is out of range".to_string())?;
                     let file_offset = relocation_file_offset(plan, target, 4)?;
                     image[file_offset..file_offset + 4].copy_from_slice(&value.to_le_bytes());
+                }
+                R_LNP64_TLS_TPREL64 | R_LNP64_TLS_DTPREL64 => {
+                    let name = if reloc_type == R_LNP64_TLS_TPREL64 {
+                        "TLS_TPREL64"
+                    } else {
+                        "TLS_DTPREL64"
+                    };
+                    if symbol_index != 0 {
+                        return Err(format!(
+                            "RELA {name} with symbol index is unsupported by static loader"
+                        ));
+                    }
+                    let tls = plan
+                        .tls
+                        .ok_or_else(|| format!("RELA {name} requires PT_TLS segment"))?;
+                    let value = u64::try_from(i128::from(r_addend))
+                        .map_err(|_| format!("RELA {name} value is out of range"))?;
+                    if value > tls.memory_size {
+                        return Err(format!("RELA {name} offset exceeds PT_TLS memory size"));
+                    }
+                    let target = r_offset
+                        .checked_add(load_bias)
+                        .ok_or_else(|| "RELA target plus load bias overflows".to_string())?;
+                    let file_offset = relocation_file_offset(plan, target, 8)?;
+                    image[file_offset..file_offset + 8].copy_from_slice(&value.to_le_bytes());
                 }
                 R_LNP64_RELATIVE => {
                     if symbol_index != 0 {
@@ -1666,6 +1693,144 @@ mod tests {
         load_static_elf(&mut image, LoaderOptions::default()).unwrap();
 
         assert_eq!(read_u64(&image, 0x200).unwrap(), 0x1234);
+    }
+
+    #[test]
+    fn static_elf_loader_applies_symbolless_tls_tprel64_relocations() {
+        let mut image = test_elf(&[
+            text_phdr(),
+            TestPhdr {
+                typ: PT_LOAD,
+                flags: PF_R | PF_W,
+                offset: 0x200,
+                vaddr: 0x500000,
+                filesz: 8,
+                memsz: 8,
+                align: PAGE_SIZE,
+            },
+            TestPhdr {
+                typ: PT_LOAD,
+                flags: PF_R | PF_W,
+                offset: 0x280,
+                vaddr: 0x600000,
+                filesz: 32,
+                memsz: 0x1000,
+                align: PAGE_SIZE,
+            },
+            TestPhdr {
+                typ: PT_TLS,
+                flags: PF_R,
+                offset: 0x280,
+                vaddr: 0x600000,
+                filesz: 8,
+                memsz: 24,
+                align: 16,
+            },
+        ]);
+        install_rela_section(&mut image, 0x500000, R_LNP64_TLS_TPREL64, 16);
+
+        load_static_elf(&mut image, LoaderOptions::default()).unwrap();
+
+        assert_eq!(read_u64(&image, 0x200).unwrap(), 16);
+    }
+
+    #[test]
+    fn static_elf_loader_applies_symbolless_tls_dtprel64_relocations() {
+        let mut image = test_elf(&[
+            text_phdr(),
+            TestPhdr {
+                typ: PT_LOAD,
+                flags: PF_R | PF_W,
+                offset: 0x200,
+                vaddr: 0x500000,
+                filesz: 8,
+                memsz: 8,
+                align: PAGE_SIZE,
+            },
+            TestPhdr {
+                typ: PT_LOAD,
+                flags: PF_R | PF_W,
+                offset: 0x280,
+                vaddr: 0x600000,
+                filesz: 32,
+                memsz: 0x1000,
+                align: PAGE_SIZE,
+            },
+            TestPhdr {
+                typ: PT_TLS,
+                flags: PF_R,
+                offset: 0x280,
+                vaddr: 0x600000,
+                filesz: 8,
+                memsz: 24,
+                align: 16,
+            },
+        ]);
+        install_rela_section(&mut image, 0x500000, R_LNP64_TLS_DTPREL64, 8);
+
+        load_static_elf(&mut image, LoaderOptions::default()).unwrap();
+
+        assert_eq!(read_u64(&image, 0x200).unwrap(), 8);
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_tls_relocation_without_tls_segment() {
+        let mut image = test_elf(&[
+            text_phdr(),
+            TestPhdr {
+                typ: PT_LOAD,
+                flags: PF_R | PF_W,
+                offset: 0x200,
+                vaddr: 0x500000,
+                filesz: 8,
+                memsz: 8,
+                align: PAGE_SIZE,
+            },
+        ]);
+        install_rela_section(&mut image, 0x500000, R_LNP64_TLS_TPREL64, 0);
+
+        let err = load_static_elf(&mut image, LoaderOptions::default()).unwrap_err();
+
+        assert!(err.contains("requires PT_TLS"), "{err}");
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_tls_relocation_outside_tls_image() {
+        let mut image = test_elf(&[
+            text_phdr(),
+            TestPhdr {
+                typ: PT_LOAD,
+                flags: PF_R | PF_W,
+                offset: 0x200,
+                vaddr: 0x500000,
+                filesz: 8,
+                memsz: 8,
+                align: PAGE_SIZE,
+            },
+            TestPhdr {
+                typ: PT_LOAD,
+                flags: PF_R | PF_W,
+                offset: 0x280,
+                vaddr: 0x600000,
+                filesz: 32,
+                memsz: 0x1000,
+                align: PAGE_SIZE,
+            },
+            TestPhdr {
+                typ: PT_TLS,
+                flags: PF_R,
+                offset: 0x280,
+                vaddr: 0x600000,
+                filesz: 8,
+                memsz: 24,
+                align: 16,
+            },
+        ]);
+        install_rela_section(&mut image, 0x500000, R_LNP64_TLS_TPREL64, 25);
+
+        let err = load_static_elf(&mut image, LoaderOptions::default()).unwrap_err();
+
+        assert!(err.contains("offset exceeds PT_TLS"), "{err}");
     }
 
     #[test]

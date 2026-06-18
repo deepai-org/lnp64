@@ -102,11 +102,12 @@ NetBSD policy. Those remain loader, libc, and personality responsibilities.
      ELF64 LNP64 program headers, builds bounded exec-plan VMA records, applies
      checked `R_LNP64_RELATIVE` RELA entries with an explicit load bias, applies
      symbol-less `R_LNP64_ABS64`, `R_LNP64_ABS32`, and `R_LNP64_GLOB_DAT` slots
-     that a static linker has already resolved, and parses `LNP64ST\0`
-     startup/FDR descriptor notes. It can materialize VMA byte images with
-     file-backed contents plus zero-fill tails. Symbolful relocation resolution
-     and richer startup authority installation remain blocked until the fuller
-     lld/loader path exists.
+     that a static linker has already resolved, applies symbol-less
+     `R_LNP64_TLS_TPREL64` and `R_LNP64_TLS_DTPREL64` offsets against `PT_TLS`,
+     and parses `LNP64ST\0` startup/FDR descriptor notes. It can materialize VMA
+     byte images with file-backed contents plus zero-fill tails. Symbolful
+     relocation resolution and richer startup authority installation remain
+     blocked until the fuller lld/loader path exists.
 
 ## Clang, Libc, And Runtime Milestones
 
