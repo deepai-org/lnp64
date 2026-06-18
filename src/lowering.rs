@@ -980,6 +980,38 @@ mod tests {
             .collect()
     }
 
+    fn libc_shim_rows(manifest: &str) -> Vec<(&str, Vec<&str>, Vec<&str>, Vec<&str>, &str)> {
+        manifest
+            .lines()
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(|line| {
+                let mut fields = line.splitn(5, '|');
+                let group = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing libc shim group in {line}"));
+                let public_surface = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing libc shim public surface in {line}"))
+                    .split(',')
+                    .collect();
+                let native_lowering = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing libc shim native lowering in {line}"))
+                    .split(',')
+                    .collect();
+                let evidence = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing libc shim evidence in {line}"))
+                    .split(',')
+                    .collect();
+                let status = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing libc shim status in {line}"));
+                (group, public_surface, native_lowering, evidence, status)
+            })
+            .collect()
+    }
+
     #[test]
     fn toolchain_contract_index_is_complete() {
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
@@ -1008,6 +1040,7 @@ mod tests {
             "intrinsic_header",
             "clang_driver",
             "llvm_filemap",
+            "libc_shim",
             "isel",
             "llvm_bootstrap",
             "llvm_gates",
@@ -1334,6 +1367,165 @@ mod tests {
     }
 
     #[test]
+    fn libc_shim_manifest_covers_runtime_surfaces() {
+        let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
+        let shim_manifest = include_str!("../toolchain/lnp64_libc_shim.manifest");
+        let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
+        let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
+        let roadmap = include_str!("../toolchain_roadmap.md");
+        let libc_roadmap = include_str!("../libc_roadmap.md");
+        let conformance = include_str!("../conformance_matrix.md");
+        let c_compiler = include_str!("c_compiler.rs");
+        let emulator = include_str!("emulator.rs");
+        let evidence_corpus = format!("{conformance}\n{c_compiler}\n{emulator}");
+        let rows = libc_shim_rows(shim_manifest);
+        let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let shim_path = manifest_field(target_manifest, "libc_shim_contract");
+        let mut groups = std::collections::BTreeMap::new();
+
+        assert_eq!(shim_path, "toolchain/lnp64_libc_shim.manifest");
+        assert!(manifest_root.join(shim_path).is_file());
+        assert!(contract_index.contains(
+            "libc_shim|toolchain/lnp64_libc_shim.manifest|libc_shim_manifest_covers_runtime_surfaces"
+        ));
+        assert!(transition_manifest.contains("toolchain/lnp64_libc_shim.manifest"));
+        assert!(roadmap.contains("toolchain/lnp64_libc_shim.manifest"));
+        assert!(libc_roadmap.contains("toolchain/lnp64_libc_shim.manifest"));
+
+        for (group, public_surface, native_lowering, evidence, status) in rows {
+            assert!(
+                groups
+                    .insert(
+                        group,
+                        (public_surface.clone(), native_lowering.clone(), status),
+                    )
+                    .is_none(),
+                "duplicate libc shim group {group}"
+            );
+            assert!(
+                ["tested", "partial", "planned"].contains(&status),
+                "unknown libc shim status {status} for {group}"
+            );
+            assert!(
+                !public_surface.is_empty(),
+                "empty public surface for libc shim group {group}"
+            );
+            assert!(
+                !native_lowering.is_empty(),
+                "empty native lowering for libc shim group {group}"
+            );
+            assert!(
+                !evidence.is_empty(),
+                "empty evidence for libc shim group {group}"
+            );
+            for item in public_surface.iter().chain(native_lowering.iter()) {
+                assert!(!item.is_empty(), "empty item in libc shim group {group}");
+            }
+            for item in evidence {
+                assert!(
+                    manifest_root.join(item).exists() || evidence_corpus.contains(item),
+                    "libc shim evidence {item} for {group} is not present in repo evidence"
+                );
+            }
+        }
+
+        for group in [
+            "startup_env_auxv",
+            "errno_tls",
+            "fd_io",
+            "malloc_heap",
+            "pthread_futex",
+            "poll_select_epoll_kqueue",
+            "mmap_mprotect",
+            "signals_as_events",
+            "sockets_endpoints",
+        ] {
+            assert!(
+                groups.contains_key(group),
+                "missing libc shim group {group}"
+            );
+        }
+        assert_eq!(
+            groups["poll_select_epoll_kqueue"].2, "partial",
+            "kqueue/kevent must stay partial until real event-queue backend exists"
+        );
+        for group in [
+            "startup_env_auxv",
+            "errno_tls",
+            "fd_io",
+            "malloc_heap",
+            "pthread_futex",
+            "mmap_mprotect",
+            "signals_as_events",
+            "sockets_endpoints",
+        ] {
+            assert_eq!(groups[group].2, "tested", "{group} should be tested");
+        }
+
+        for (group, required_public, required_native) in [
+            (
+                "startup_env_auxv",
+                vec!["_start", "argv", "envp", "getauxval"],
+                vec!["crt0", "TLS", "ENV_GET", "EXIT"],
+            ),
+            (
+                "errno_tls",
+                vec!["errno", "__errno_location", "strerror"],
+                vec!["TLS", "ERRNO_SET", "completion_helpers"],
+            ),
+            (
+                "fd_io",
+                vec!["openat", "read", "write", "fcntl", "stdio"],
+                vec!["__lnp_openat", "__lnp_pull", "__lnp_push", "CAP_DUP", "FDR"],
+            ),
+            (
+                "malloc_heap",
+                vec!["malloc", "free", "posix_memalign"],
+                vec!["ALLOC", "ALLOC_EX", "ALLOC_SIZE", "FREE"],
+            ),
+            (
+                "pthread_futex",
+                vec!["pthread_create", "pthread_join", "futex"],
+                vec!["CLONE", "FUTEX_WAIT", "FUTEX_WAKE", "AWAIT"],
+            ),
+            (
+                "poll_select_epoll_kqueue",
+                vec!["poll", "select", "epoll_wait", "kqueue"],
+                vec!["event_queue", "AWAIT", "OBJECT_CTL", "waitable_generation"],
+            ),
+            (
+                "mmap_mprotect",
+                vec!["mmap", "munmap", "mprotect"],
+                vec!["MMAP", "MUNMAP", "MPROTECT", "VMA"],
+            ),
+            (
+                "signals_as_events",
+                vec!["sigaction", "signal", "SIGRET"],
+                vec!["event_delivery", "signal_frame", "SIGRET"],
+            ),
+            (
+                "sockets_endpoints",
+                vec!["socket", "accept", "getsockopt", "recv"],
+                vec!["OBJECT_CTL", "endpoint_profile", "GET_META", "PULL", "PUSH"],
+            ),
+        ] {
+            let (public_surface, native_lowering, _) = &groups[group];
+            for item in required_public {
+                assert!(
+                    public_surface.contains(&item),
+                    "libc shim group {group} missing public surface {item}"
+                );
+            }
+            for item in required_native {
+                assert!(
+                    native_lowering.contains(&item),
+                    "libc shim group {group} missing native lowering {item}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn llvm_bootstrap_manifest_names_first_clang_gate() {
         let bootstrap_manifest = include_str!("../toolchain/lnp64_llvm_bootstrap.manifest");
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
@@ -1518,6 +1710,10 @@ mod tests {
         assert_eq!(
             manifest_field(manifest, "llvm_filemap_contract"),
             "toolchain/lnp64_llvm_filemap.manifest"
+        );
+        assert_eq!(
+            manifest_field(manifest, "libc_shim_contract"),
+            "toolchain/lnp64_libc_shim.manifest"
         );
         assert_eq!(
             manifest_field(manifest, "isel_contract"),

@@ -2,6 +2,11 @@
 
 This document sketches the libc/runtime work needed to make LNP64 software use the hardware naturally instead of treating the machine as a conventional CPU with unusual syscalls.
 
+`toolchain/lnp64_libc_shim.manifest` is the checked runtime-surface contract
+for the current libc shim layer. It maps startup/env/auxv, errno/TLS,
+allocation, FDR I/O, pthread/futex, poll/select/epoll/kqueue, mmap/mprotect,
+signals, and sockets to native LNP64 lowerings and evidence.
+
 ## Goal
 
 LNP64 libc should be the normal way to access files, memory, synchronization, isolation, eventing, process control, and service calls. It should expose familiar POSIX and C interfaces where possible, while routing those interfaces to native capability/event/domain primitives such as `OPEN_AT`, `PULL`, `PUSH`, `AWAIT`, `OBJECT_CTL`, `DOMAIN_CTL`, `CALL_CAP`, `ALLOC`, `MMAP`, and capability transfer.
