@@ -402,6 +402,8 @@ def check_rtl_state_projection_boundary_sources(
         "input logic [63:0] consumer_rights",
         "input logic sent_cap_valid",
         "input logic minted_cap_valid",
+        "input lnp64_cap_t sent_cap_state",
+        "input lnp64_cap_t minted_cap_state",
         "input logic created_object_created",
         "input logic [31:0] created_object_generation",
     )
@@ -423,6 +425,8 @@ def check_rtl_state_projection_boundary_sources(
         ".consumer_rights(dut.consumer_rights)",
         ".sent_cap_valid(dut.sent_cap_valid)",
         ".minted_cap_valid(dut.minted_cap_valid)",
+        ".sent_cap_state(dut.sent_cap_state)",
+        ".minted_cap_state(dut.minted_cap_state)",
         ".created_object_created(dut.created_object_created)",
         ".created_object_generation(dut.created_object_generation)",
     )
@@ -452,6 +456,30 @@ def check_rtl_state_projection_boundary_sources(
     )
     if "m1_authority_projection_slots_match" not in assertion_source:
         fail("M1 assertions no longer check non-OK authority projection preservation")
+    required_engine_projection_sources = (
+        "typed_state_projection.sent_object_id = sent_cap_state.object_id",
+        "typed_state_projection.sent_generation = sent_cap_state.fdr_gen",
+        "typed_state_projection.sent_domain_id = sent_cap_state.domain_id",
+        "typed_state_projection.sent_lineage_epoch = sent_cap_state.lineage_epoch",
+        "typed_state_projection.sent_sealed = sent_cap_state.sealed",
+        "typed_state_projection.sent_rights = sent_cap_state.rights_mask",
+        "typed_state_projection.minted_object_id = minted_cap_state.object_id",
+        "typed_state_projection.minted_generation = minted_cap_state.fdr_gen",
+        "typed_state_projection.minted_domain_id = minted_cap_state.domain_id",
+        "typed_state_projection.minted_lineage_epoch = minted_cap_state.lineage_epoch",
+        "typed_state_projection.minted_sealed = minted_cap_state.sealed",
+        "typed_state_projection.minted_rights = minted_cap_state.rights_mask",
+    )
+    missing_engine_projection_sources = [
+        source
+        for source in required_engine_projection_sources
+        if source not in engine_source
+    ]
+    if missing_engine_projection_sources:
+        fail(
+            "M1 typed_state_projection no longer derives sent/minted authority fields "
+            f"from explicit RTL cap-state slots: {missing_engine_projection_sources}"
+        )
     missing_commit_fields = [
         field
         for field in expected_commit_fields
@@ -521,6 +549,10 @@ def check_rtl_state_projection_boundary_sources(
         "M1 typed state projection consumer rights did not match RTL consumer_rights",
         "M1 typed state projection sent_valid did not match RTL sent_cap_valid",
         "M1 typed state projection minted_valid did not match RTL minted_cap_valid",
+        "M1 invalid sent-cap state retained authority bits",
+        "M1 sent-cap projection did not match RTL sent_cap_state",
+        "M1 invalid minted-cap state retained authority bits",
+        "M1 minted-cap projection did not match RTL minted_cap_state",
         "M1 sent-cap validity set outside capSend owner path",
         "M1 sent-cap validity cleared outside capRecv owner path",
         "M1 transfer-valid witness set outside capSend owner path",

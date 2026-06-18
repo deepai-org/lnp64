@@ -260,6 +260,38 @@ def main() -> None:
         ),
     )
 
+    missing_sent_cap_state_connection = replace_once(
+        tb_source,
+        ".sent_cap_state(dut.sent_cap_state)",
+        ".sent_cap_state(typed_state_projection.sent_object_id)",
+    )
+    expect_failure(
+        "real RTL authority state into projection faithfulness assertions",
+        lambda: checker.check_rtl_state_projection_boundary_sources(
+            engine_source,
+            missing_sent_cap_state_connection,
+            assertion_source,
+            commit_field_names,
+            state_field_names,
+        ),
+    )
+
+    projection_derived_from_ambient_state = replace_once(
+        engine_source,
+        "typed_state_projection.sent_generation = sent_cap_state.fdr_gen",
+        "typed_state_projection.sent_generation = consumer_fd_generation",
+    )
+    expect_failure(
+        "explicit RTL cap-state slots",
+        lambda: checker.check_rtl_state_projection_boundary_sources(
+            projection_derived_from_ambient_state,
+            tb_source,
+            assertion_source,
+            commit_field_names,
+            state_field_names,
+        ),
+    )
+
     missing_transfer_mediation_assertion = replace_once(
         assertion_source,
         "M1 sent-cap validity set outside capSend owner path",
