@@ -398,6 +398,10 @@ impl Parser {
                 arity(1)?;
                 Instr::UnlinkPath(reg(&args[0])?)
             }
+            "UNLINK_PATH_AT" => {
+                arity(3)?;
+                Instr::UnlinkPathAt(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
             "RENAME_PATH" => {
                 arity(2)?;
                 Instr::RenamePath(reg(&args[0])?, reg(&args[1])?)

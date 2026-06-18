@@ -65,6 +65,12 @@ int main() {
     if (fstatat(dir, "ns_probe", st, 0) != 0) return 37;
     if ((load(st) & 511) != 384) return 38;
     if (fchmodat(dir, "../../etc/motd", 384, 0) != -1) return 39;
+    fd = openat(dir, "unlink_probe", O_CREAT | O_TRUNC);
+    if (fd == -1) return 40;
+    close(fd);
+    if (unlinkat(dir, "unlink_probe", 0) != 0) return 41;
+    if (fstatat(dir, "unlink_probe", st, 0) != -1) return 42;
+    if (unlinkat(dir, "../../etc/motd", 0) != -1) return 43;
     closedir(dir);
 
     if (chdir("/") != 0) return 22;

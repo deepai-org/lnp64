@@ -7459,9 +7459,12 @@ impl CodeGen {
                 if args.len() != 3 {
                     return Err("unlinkat(dirfd, path, flags) expects 3 arguments".to_string());
                 }
+                let dirfd = self.emit_expr(&args[0])?;
                 let path = self.emit_expr(&args[1])?;
+                let flags = self.emit_expr(&args[2])?;
                 let dst = self.alloc_reg()?;
-                self.text.push(format!("  UNLINK_PATH r{path}"));
+                self.text
+                    .push(format!("  UNLINK_PATH_AT r{dirfd}, r{path}, r{flags}"));
                 self.text.push(format!("  MOV r{dst}, r1"));
                 Ok(dst)
             }
@@ -19991,6 +19994,7 @@ int main() {
             fcntl(fd, F_GETFL);
             fcntl(fd, F_SETFL, 0);
             fchmodat(AT_FDCWD, "Cargo.toml", 0644, 0);
+            unlinkat(AT_FDCWD, "/tmp/lnp64_unlinkat_compile_only", 0);
             open(3, "Cargo.toml", 0);
             pread(3, buf, 3, 1);
             pwrite(3, buf, 3, 2);
@@ -20005,6 +20009,7 @@ int main() {
         assert!(asm.contains("OPEN_AT fd3"));
         assert!(asm.contains("OPEN_AT_DYN"));
         assert!(asm.contains("CHMOD_PATH_AT"));
+        assert!(asm.contains("UNLINK_PATH_AT"));
         assert!(asm.contains("CAP_DUP"));
         assert!(asm.contains("PULL_DYN"));
         assert!(asm.contains("PREAD_FD_DYN"));

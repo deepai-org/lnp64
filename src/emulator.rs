@@ -1619,6 +1619,20 @@ impl Machine {
                     },
                 }
             }
+            Instr::UnlinkPathAt(dir_reg, path_reg, _flags_reg) => {
+                let dir_value = self.read_reg(dir_reg)?;
+                let path = self.read_c_string(self.read_reg(path_reg)?)?;
+                let Some(path) = self.resolve_process_path_at_or_errno(dir_value, &path)? else {
+                    return Ok(true);
+                };
+                match fs::remove_file(&path) {
+                    Ok(()) => self.set_status_ok()?,
+                    Err(file_err) => match fs::remove_dir(&path) {
+                        Ok(()) => self.set_status_ok()?,
+                        Err(_) => self.set_status_io_error(file_err)?,
+                    },
+                }
+            }
             Instr::RenamePath(old_reg, new_reg) => {
                 let old = self.read_c_string(self.read_reg(old_reg)?)?;
                 let new = self.read_c_string(self.read_reg(new_reg)?)?;

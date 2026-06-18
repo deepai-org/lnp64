@@ -120,6 +120,7 @@ pub enum Instr {
     PwriteFdDyn(Reg, Reg, Reg, Reg),
     MkdirPath(Reg, Reg),
     UnlinkPath(Reg),
+    UnlinkPathAt(Reg, Reg, Reg),
     RenamePath(Reg, Reg),
     LinkPath(Reg, Reg, Reg),
     SymlinkPath(Reg, Reg),
