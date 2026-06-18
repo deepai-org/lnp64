@@ -1154,6 +1154,7 @@ fn validate_exec_vma_words(words: &[u64]) -> Result<(u64, u64), String> {
     let protection = words[2];
     let memory_type = words[3];
     let provenance = words[4];
+    let source_cap = words[5];
     let zero_fill_length = words[9];
     if length == 0 {
         return Err("exec-plan VMA length is zero".to_string());
@@ -1169,6 +1170,9 @@ fn validate_exec_vma_words(words: &[u64]) -> Result<(u64, u64), String> {
     }
     if memory_type != EXEC_PLAN_MEMORY_TYPE_IMAGE {
         return Err("exec-plan VMA memory type is unsupported".to_string());
+    }
+    if source_cap == 0 {
+        return Err("exec-plan VMA lacks source capability".to_string());
     }
     if !matches!(
         provenance,
@@ -13265,6 +13269,26 @@ mod tests {
         let err = Machine::validate_exec_descriptor_words(&words).unwrap_err();
 
         assert!(err.contains("overlap"), "{err}");
+    }
+
+    #[test]
+    fn emulator_rejects_exec_descriptor_vma_without_source_capability() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let mut words = encode_exec_descriptor(&descriptor);
+        words[18] = 0;
+
+        let err = Machine::validate_exec_descriptor_words(&words).unwrap_err();
+
+        assert!(err.contains("source capability"), "{err}");
     }
 
     #[test]

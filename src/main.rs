@@ -109,8 +109,15 @@ fn run() -> Result<(), String> {
                 },
             )?;
             let prepared = loader::materialize_vmas(&image, &plan)?;
-            let descriptor =
-                loader::build_exec_descriptor(&plan, ExecPlanDescriptorOptions::default())?;
+            let descriptor = loader::build_exec_descriptor(
+                &plan,
+                ExecPlanDescriptorOptions {
+                    image_source_cap: 1,
+                    image_source_generation: 1,
+                    image_lineage_epoch: 1,
+                    ..ExecPlanDescriptorOptions::default()
+                },
+            )?;
             let descriptor_words = loader::encode_exec_descriptor(&descriptor);
             Machine::validate_exec_descriptor_words(&descriptor_words)?;
             println!(
