@@ -1575,6 +1575,7 @@ impl Machine {
                 self.complete_reg_ok(dst, addr)?;
             }
             Instr::AllocSize(dst, ptr_reg) => {
+                Self::ensure_result_reg_writable(dst)?;
                 let ptr = self.read_reg(ptr_reg)?;
                 let size = self
                     .process()?
@@ -1582,7 +1583,7 @@ impl Machine {
                     .get(&ptr)
                     .map(|allocation| allocation.len)
                     .unwrap_or(0);
-                self.write_reg(dst, size as u64)?;
+                self.complete_reg_ok(dst, size as u64)?;
             }
             Instr::Free(ptr) => {
                 let ptr = self.read_reg(ptr)?;
@@ -14004,7 +14005,20 @@ mod tests {
 
         machine.exec(Instr::Alloc(Reg(2), Reg(1))).unwrap();
 
-        assert_ne!(machine.thread().unwrap().regs[2], 0);
+        let ptr = machine.thread().unwrap().regs[2];
+        assert_ne!(ptr, 0);
+        assert_eq!(machine.process().unwrap().errno, 0);
+
+        machine.thread_mut().unwrap().regs[6] = ptr;
+        machine.set_errno(55).unwrap();
+        machine.exec(Instr::AllocSize(Reg(7), Reg(6))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[7], 64);
+        assert_eq!(machine.process().unwrap().errno, 0);
+
+        machine.thread_mut().unwrap().regs[8] = ptr + 1;
+        machine.set_errno(56).unwrap();
+        machine.exec(Instr::AllocSize(Reg(9), Reg(8))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[9], 0);
         assert_eq!(machine.process().unwrap().errno, 0);
 
         machine.thread_mut().unwrap().regs[3] = 128;
