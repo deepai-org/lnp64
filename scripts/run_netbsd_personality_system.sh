@@ -114,8 +114,8 @@ diff -u "$expected" "$out"
 
 required_native=(
   OPEN_AT
-  READ_FD_DYN
-  WRITE_FD_DYN
+  PULL_DYN
+  PUSH_DYN
   CHDIR_PATH
   GETCWD_PATH
   MMAP

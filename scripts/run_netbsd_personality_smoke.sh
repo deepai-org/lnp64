@@ -9,8 +9,8 @@ out=/tmp/netbsd_personality_smoke.out
 
 required_native=(
   OPEN_AT
-  READ_FD_DYN
-  WRITE_FD_DYN
+  PULL_DYN
+  PUSH_DYN
   FORK
   EXEC
   SPAWN

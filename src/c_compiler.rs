@@ -12837,7 +12837,7 @@ impl CodeGen {
         dst_reg: Option<usize>,
     ) -> Result<(), String> {
         self.text
-            .push(format!("  READ_FD_DYN r{fd_reg}, r{buf_reg}, r{len_reg}"));
+            .push(format!("  PULL_DYN r{fd_reg}, r{buf_reg}, r{len_reg}"));
         if let Some(dst) = dst_reg {
             self.text.push(format!("  MOV r{dst}, r1"));
         }
@@ -12933,7 +12933,7 @@ impl CodeGen {
         dst_reg: usize,
     ) -> Result<(), String> {
         self.text
-            .push(format!("  WRITE_FD_DYN r{fd_reg}, r{buf_reg}, r{len_reg}"));
+            .push(format!("  PUSH_DYN r{fd_reg}, r{buf_reg}, r{len_reg}"));
         self.text.push(format!("  MOV r{dst_reg}, r1"));
         Ok(())
     }
@@ -15604,7 +15604,7 @@ write_cstr_fd_loop:
   ADD r22, r22, r24
   JMP write_cstr_fd_loop
 write_cstr_fd_done:
-  WRITE_FD_DYN r20, r2, r22
+  PUSH_DYN r20, r2, r22
   RET
 
 __strlen:
@@ -15749,7 +15749,7 @@ lnp_fgets_loop:
   BGE lnp_fgets_terminate
   ADD r26, r20, r25
   LI r27, 1
-  READ_FD_DYN r22, r26, r27
+  PULL_DYN r22, r26, r27
   CMP r1, r0
   BLE lnp_fgets_terminate
   LD.B r28, [r26, 0]
@@ -16493,7 +16493,7 @@ print_u64_fd_loop:
   SUB r3, r2, r21
   MOV r1, r29
   MOV r2, r21
-  WRITE_FD_DYN r1, r2, r3
+  PUSH_DYN r1, r2, r3
   RET
 "#
 }
@@ -19965,7 +19965,7 @@ int main() {
         assert!(asm.contains("OPEN_AT fd3"));
         assert!(asm.contains("OPEN_AT_DYN"));
         assert!(asm.contains("CAP_DUP"));
-        assert!(asm.contains("READ_FD_DYN"));
+        assert!(asm.contains("PULL_DYN"));
         assert!(asm.contains("PREAD_FD_DYN"));
         assert!(asm.contains("PWRITE_FD_DYN"));
         assert!(asm.contains("PREAD_FD fd3"));
@@ -20208,7 +20208,7 @@ int main() {
         }
         "#;
         let asm = compile(source).unwrap();
-        assert!(asm.contains("READ_FD_DYN"), "{asm}");
+        assert!(asm.contains("PULL_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
@@ -20232,7 +20232,7 @@ int main() {
         let asm = compile(source).unwrap();
         assert!(asm.contains("__write_cstr_fd"), "{asm}");
         assert!(asm.contains("__print_u64_fd"), "{asm}");
-        assert!(asm.contains("WRITE_FD_DYN"), "{asm}");
+        assert!(asm.contains("PUSH_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
@@ -20282,7 +20282,7 @@ int main() {
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains("__write_cstr_fd"), "{asm}");
-        assert!(asm.contains("WRITE_FD_DYN"), "{asm}");
+        assert!(asm.contains("PUSH_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
@@ -20346,7 +20346,7 @@ int main() {
         }
         "#;
         let asm = compile(source).unwrap();
-        assert!(asm.contains("READ_FD_DYN"), "{asm}");
+        assert!(asm.contains("PULL_DYN"), "{asm}");
         assert!(asm.contains("FD_CLOSE_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
@@ -20843,7 +20843,7 @@ int main() {
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains("OBJECT_CTL"), "{asm}");
-        assert!(asm.contains("WRITE_FD_DYN"), "{asm}");
+        assert!(asm.contains("PUSH_DYN"), "{asm}");
         assert!(asm.contains("POLL_FD_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
@@ -21970,8 +21970,8 @@ int main() {
         }
         "#;
         let asm = compile(source).unwrap();
-        assert!(asm.contains("READ_FD_DYN"), "{asm}");
-        assert!(asm.contains("WRITE_FD_DYN"), "{asm}");
+        assert!(asm.contains("PULL_DYN"), "{asm}");
+        assert!(asm.contains("PUSH_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
@@ -22767,9 +22767,9 @@ int main() {
         }
         "#;
         let asm = compile(source).unwrap();
-        assert!(asm.contains("WRITE_FD_DYN"), "{asm}");
+        assert!(asm.contains("PUSH_DYN"), "{asm}");
         assert!(asm.contains("AWAIT_DYN"), "{asm}");
-        assert!(asm.contains("READ_FD_DYN"), "{asm}");
+        assert!(asm.contains("PULL_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);

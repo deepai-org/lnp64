@@ -317,7 +317,7 @@ impl Parser {
                 arity(3)?;
                 Instr::ReadFd(fd(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
-            "READ_FD_DYN" => {
+            "PULL_DYN" | "READ_FD_DYN" => {
                 arity(3)?;
                 Instr::ReadFdDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
@@ -359,7 +359,7 @@ impl Parser {
                 arity(3)?;
                 Instr::WriteFd(fd(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
-            "WRITE_FD_DYN" => {
+            "PUSH_DYN" | "WRITE_FD_DYN" => {
                 arity(3)?;
                 Instr::WriteFdDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
@@ -981,6 +981,36 @@ mod tests {
         assert!(matches!(
             program.instructions[3],
             Instr::OpenFdDyn(Reg(10), Reg(11), Reg(12))
+        ));
+    }
+
+    #[test]
+    fn parses_pull_push_dynamic_and_legacy_fd_aliases() {
+        let program = Program::parse(
+            r#"
+            .text
+              PULL_DYN r1, r2, r3
+              PUSH_DYN r4, r5, r6
+              READ_FD_DYN r7, r8, r9
+              WRITE_FD_DYN r10, r11, r12
+            "#,
+        )
+        .unwrap();
+        assert!(matches!(
+            program.instructions[0],
+            Instr::ReadFdDyn(Reg(1), Reg(2), Reg(3))
+        ));
+        assert!(matches!(
+            program.instructions[1],
+            Instr::WriteFdDyn(Reg(4), Reg(5), Reg(6))
+        ));
+        assert!(matches!(
+            program.instructions[2],
+            Instr::ReadFdDyn(Reg(7), Reg(8), Reg(9))
+        ));
+        assert!(matches!(
+            program.instructions[3],
+            Instr::WriteFdDyn(Reg(10), Reg(11), Reg(12))
         ));
     }
 
