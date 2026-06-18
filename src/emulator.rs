@@ -13205,6 +13205,57 @@ mod tests {
     }
 
     #[test]
+    fn exec_oversized_envp_metadata_preserves_old_image_before_commit() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let child_path = std::env::temp_dir().join(format!("lnp64_big_exec_envp_{unique}.s"));
+        fs::write(&child_path, ".text\n  EXIT r0\n").unwrap();
+        let child_path = child_path.to_string_lossy();
+
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let path_addr = ARG_BASE + 0x2000;
+        machine
+            .write_bytes(path_addr, child_path.as_bytes())
+            .unwrap();
+        machine
+            .write_bytes(path_addr + child_path.len() as u64, &[0])
+            .unwrap();
+        let oversized = machine.alloc_heap(ARG_SIZE as usize + 1, 8, false).unwrap();
+        machine
+            .write_bytes(oversized, &vec![b'e'; ARG_SIZE as usize])
+            .unwrap();
+        machine.write_bytes(oversized + ARG_SIZE, &[0]).unwrap();
+        let envp = ARG_BASE + 0x180;
+        machine.store_u64(envp, oversized).unwrap();
+        machine.store_u64(envp + 8, 0).unwrap();
+        machine.write_reg(Reg(1), path_addr).unwrap();
+        machine.write_reg(Reg(2), 0).unwrap();
+        machine.write_reg(Reg(3), envp).unwrap();
+        machine.write_reg(Reg(9), 0xfeed_cafe).unwrap();
+        machine.thread_mut().unwrap().ip = 0;
+
+        let err = machine
+            .exec(Instr::Exec(Reg(1), Reg(2), Reg(3)))
+            .unwrap_err();
+
+        let _ = fs::remove_file(child_path.as_ref());
+        assert!(
+            err.contains("envp data exceeds emulated argument page"),
+            "{err}"
+        );
+        assert!(matches!(
+            machine.process().unwrap().program.instructions.first(),
+            Some(Instr::Nop)
+        ));
+        assert_eq!(machine.thread().unwrap().tid, 1);
+        assert_eq!(machine.thread().unwrap().ip, 0);
+        assert_eq!(machine.read_reg(Reg(9)).unwrap(), 0xfeed_cafe);
+    }
+
+    #[test]
     fn runs_system_primitive_subset() {
         let program = Program::parse(
             r#"
