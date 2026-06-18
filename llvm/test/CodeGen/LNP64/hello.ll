@@ -31,3 +31,4 @@ entry:
 ; CHECK: add
 ; CHECK: and
 ; CHECK: lsl
+; CHECK: ret

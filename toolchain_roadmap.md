@@ -65,8 +65,14 @@ branch field.
 The first SelectionDAG patterns now select signed-16 constant materialization
 through `LI`, simple i64 ALU operations (`add`/`sub`/`mul`/signed `div`,
 bitwise ops, and shifts), and i64 base+signed-14-offset loads/stores onto the
-fixed32 opcodes; calls, returns, narrow memory extension/truncation, globals,
-and branches remain bring-up blockers.
+fixed32 opcodes; calls, narrow memory extension/truncation, globals, and
+branches remain bring-up blockers.
+Return lowering now maps the LLVM return value path through `RetCC_LNP64` into
+`r1` and selects a target `RET_FLAG` DAG node to the architectural `RET`;
+formal argument lowering maps register arguments from `CC_LNP64` live-ins.
+This first call-convention lowering is intentionally register-only: varargs,
+stack arguments, stack returns, outgoing calls, and call-frame pseudo handling
+remain bring-up blockers.
 Control-flow opcodes now carry TableGen instruction properties for branches,
 calls, link-register definition/use, returns, terminators, and barriers, so
 later call/return lowering and verifier work can rely on instruction metadata.

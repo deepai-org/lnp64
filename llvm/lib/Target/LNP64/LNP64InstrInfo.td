@@ -8,6 +8,9 @@ def simm14_imm : PatLeaf<(imm), [{
   return isInt<14>(N->getSExtValue());
 }]>;
 
+def LNP64retflag : SDNode<"LNP64ISD::RET_FLAG", SDTNone,
+                          [SDNPHasChain, SDNPOptInGlue, SDNPVariadic]>;
+
 class LNP64Inst<dag Outs, dag Ins, string Mnemonic, string Operands>
     : Instruction {
   let Namespace = "LNP64";
@@ -108,7 +111,9 @@ def CALL : LNP64Branch<"call">;
 let isCall = 1, Defs = [LR] in
 def CALL_REG : LNP64Inst<(outs), (ins GPR:$target), "call_reg", "\t$target">;
 let isReturn = 1, isTerminator = 1, isBarrier = 1, Uses = [LR] in
-def RET : LNP64NoOperand<"ret">;
+def RET : LNP64NoOperand<"ret"> {
+  let Pattern = [(LNP64retflag)];
+}
 
 def LD : LNP64MemLoad<"ld">;
 def LD_W : LNP64MemLoad<"ld.w">;

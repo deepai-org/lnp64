@@ -1772,6 +1772,7 @@ mod tests {
         let target_machine = include_str!("../llvm/lib/Target/LNP64/LNP64TargetMachine.cpp");
         let subtarget = include_str!("../llvm/lib/Target/LNP64/LNP64Subtarget.cpp");
         let isel = include_str!("../llvm/lib/Target/LNP64/LNP64ISelLowering.cpp");
+        let isel_header = include_str!("../llvm/lib/Target/LNP64/LNP64ISelLowering.h");
         let frame = include_str!("../llvm/lib/Target/LNP64/LNP64FrameLowering.cpp");
         let reginfo = include_str!("../llvm/lib/Target/LNP64/LNP64RegisterInfo.cpp");
         let clang_target = include_str!("../clang/lib/Basic/Targets/LNP64.cpp");
@@ -1878,9 +1879,23 @@ mod tests {
         assert!(isel.contains("addRegisterClass(MVT::i64"));
         assert!(isel.contains("ISD::ADD"));
         assert!(isel.contains("ISD::SDIV"));
+        assert!(isel.contains("LNP64GenCallingConv.inc"));
+        assert!(isel.contains("LowerFormalArguments"));
+        assert!(isel.contains("CCInfo.AnalyzeFormalArguments(Ins, CC_LNP64)"));
+        assert!(isel.contains("MF.addLiveIn(VA.getLocReg(), &LNP64::GPRRegClass)"));
+        assert!(isel.contains("LowerReturn"));
+        assert!(isel.contains("CCInfo.AnalyzeReturn(Outs, RetCC_LNP64)"));
+        assert!(isel.contains("DAG.getCopyToReg"));
+        assert!(isel.contains("LNP64ISD::RET_FLAG"));
         assert!(isel.contains("computeRegisterProperties"));
+        assert!(isel.contains("varargs lowering is not implemented yet"));
+        assert!(isel_header.contains("getTargetNodeName"));
+        assert!(isel_header.contains("LowerFormalArguments"));
+        assert!(isel_header.contains("LowerReturn"));
+        assert!(isel_header.contains("RET_FLAG"));
         assert!(instr_td.contains("def simm16_imm"));
         assert!(instr_td.contains("def simm14_imm"));
+        assert!(instr_td.contains("def LNP64retflag"));
         assert!(instr_td.contains("(set GPR:$rd, simm16_imm:$imm)"));
         assert!(instr_td.contains("(set GPR:$rd, (add GPR:$rs1, GPR:$rs2))"));
         assert!(instr_td.contains("(set GPR:$rd, (shl GPR:$rs1, GPR:$rs2))"));
@@ -1889,6 +1904,7 @@ mod tests {
         assert!(instr_td.contains("isReturn = 1"));
         assert!(instr_td.contains("Defs = [LR]"));
         assert!(instr_td.contains("Uses = [LR]"));
+        assert!(instr_td.contains("let Pattern = [(LNP64retflag)]"));
         assert!(instr_td.contains("isBranch = 1"));
         assert!(instr_info.contains("copyPhysReg"));
         assert!(instr_info.contains("BuildMI(MBB, I, DL, get(LNP64::MOV), DestReg)"));
@@ -1935,6 +1951,7 @@ mod tests {
         assert!(codegen_test.contains("define i64 @arith"));
         assert!(codegen_test.contains("%biased = add i64 %sum, 7"));
         assert!(codegen_test.contains("; CHECK: lsl"));
+        assert!(codegen_test.contains("; CHECK: ret"));
         assert!(codegen_test.contains("__lnp_push"));
         assert!(mc_test.contains("llvm-mc -triple=lnp64-unknown-none"));
         assert!(mc_test.contains("li r1, 42"));
