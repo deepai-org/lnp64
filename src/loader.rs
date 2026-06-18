@@ -10,6 +10,7 @@ const EM_LNP64: u16 = 0x6c64;
 const PT_LOAD: u32 = 1;
 const PT_DYNAMIC: u32 = 2;
 const PT_NOTE: u32 = 4;
+const PT_PHDR: u32 = 6;
 const PT_TLS: u32 = 7;
 const SHT_RELA: u32 = 4;
 const PF_X: u32 = 1;
@@ -47,6 +48,7 @@ pub struct ExecPlan {
     pub version: u64,
     pub entry: ExecEntry,
     pub vmas: Vec<VmaRecord>,
+    pub phdr: Option<PhdrDescriptor>,
     pub tls: Option<TlsDescriptor>,
     pub startup: Option<StartupDescriptor>,
     pub fdr_grants: Vec<StartupFdrDescriptor>,
@@ -79,6 +81,15 @@ pub struct PreparedVma {
     pub protection: VmaProtection,
     pub executable_provenance: ExecutableProvenance,
     pub bytes: Vec<u8>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhdrDescriptor {
+    pub virtual_address: u64,
+    pub source_offset: u64,
+    pub byte_len: u64,
+    pub entry_size: u64,
+    pub entry_count: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -453,6 +464,7 @@ pub fn build_static_exec_plan(image: &[u8], options: LoaderOptions) -> Result<Ex
     }
 
     let mut vmas = Vec::new();
+    let mut phdr = None;
     let mut tls = None;
     let mut startup = None;
     let mut fdr_grants = Vec::new();
@@ -468,6 +480,15 @@ pub fn build_static_exec_plan(image: &[u8], options: LoaderOptions) -> Result<Ex
             )?),
             PT_DYNAMIC => return Err("PT_DYNAMIC is unsupported by the static loader".to_string()),
             PT_NOTE => parse_startup_note_segment(image, ph, &mut startup, &mut fdr_grants)?,
+            PT_PHDR => parse_phdr_segment(
+                image,
+                ph,
+                phoff,
+                phentsize,
+                phnum,
+                options.load_bias,
+                &mut phdr,
+            )?,
             PT_TLS => parse_tls_segment(image, ph, options.load_bias, &mut tls)?,
             _ => {}
         }
@@ -493,6 +514,7 @@ pub fn build_static_exec_plan(image: &[u8], options: LoaderOptions) -> Result<Ex
             startup_metadata_ptr: options.startup_metadata_ptr,
         },
         vmas,
+        phdr,
         tls,
         startup,
         fdr_grants,
@@ -647,6 +669,53 @@ fn relocation_file_offset(plan: &ExecPlan, target: u64) -> Result<usize, String>
         }
     }
     Err("RELA target is outside file-backed PT_LOAD data".to_string())
+}
+
+fn parse_phdr_segment(
+    image: &[u8],
+    ph: ProgramHeader,
+    phoff: usize,
+    phentsize: usize,
+    phnum: usize,
+    load_bias: u64,
+    phdr: &mut Option<PhdrDescriptor>,
+) -> Result<(), String> {
+    if phdr.is_some() {
+        return Err("duplicate PT_PHDR segment".to_string());
+    }
+    if ph.offset != phoff as u64 {
+        return Err("PT_PHDR offset does not match program-header table".to_string());
+    }
+    let expected_len = u64::try_from(phentsize)
+        .ok()
+        .and_then(|entry_size| entry_size.checked_mul(phnum as u64))
+        .ok_or_else(|| "PT_PHDR table length overflows".to_string())?;
+    if ph.filesz != expected_len || ph.memsz != expected_len {
+        return Err("PT_PHDR size does not match program-header table".to_string());
+    }
+    let file_end = ph
+        .offset
+        .checked_add(ph.filesz)
+        .ok_or_else(|| "PT_PHDR file range overflows".to_string())?;
+    if checked_usize(file_end, "PT_PHDR file end")? > image.len() {
+        return Err("PT_PHDR file range is truncated".to_string());
+    }
+    let virtual_address = ph
+        .vaddr
+        .checked_add(load_bias)
+        .ok_or_else(|| "PT_PHDR virtual address plus load bias overflows".to_string())?;
+    virtual_address
+        .checked_add(ph.memsz)
+        .ok_or_else(|| "PT_PHDR virtual range overflows".to_string())?;
+
+    *phdr = Some(PhdrDescriptor {
+        virtual_address,
+        source_offset: ph.offset,
+        byte_len: ph.filesz,
+        entry_size: phentsize as u64,
+        entry_count: phnum as u64,
+    });
+    Ok(())
 }
 
 fn parse_tls_segment(
@@ -946,6 +1015,7 @@ mod tests {
         assert_eq!(plan.version, 1);
         assert_eq!(plan.entry.entry_pc, 0x400000);
         assert_eq!(plan.entry.initial_sp, 0x700000);
+        assert!(plan.phdr.is_none());
         assert!(plan.tls.is_none());
         assert!(plan.startup.is_none());
         assert!(plan.fdr_grants.is_empty());
@@ -1098,6 +1168,94 @@ mod tests {
         put_u64(&mut image, 24, 0x402000);
         let err = build_static_exec_plan(&image, LoaderOptions::default()).unwrap_err();
         assert!(err.contains("entry point"), "{err}");
+    }
+
+    #[test]
+    fn static_elf_loader_parses_phdr_segment() {
+        let phdrs = [
+            text_phdr(),
+            TestPhdr {
+                typ: PT_PHDR,
+                flags: PF_R,
+                offset: ELF64_EHDR_SIZE as u64,
+                vaddr: 0x3ff000,
+                filesz: (2 * ELF64_PHDR_SIZE) as u64,
+                memsz: (2 * ELF64_PHDR_SIZE) as u64,
+                align: 8,
+            },
+        ];
+        let image = test_elf(&phdrs);
+
+        let plan = build_static_exec_plan(
+            &image,
+            LoaderOptions {
+                load_bias: 0x1000,
+                ..LoaderOptions::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            plan.phdr,
+            Some(PhdrDescriptor {
+                virtual_address: 0x400000,
+                source_offset: ELF64_EHDR_SIZE as u64,
+                byte_len: (2 * ELF64_PHDR_SIZE) as u64,
+                entry_size: ELF64_PHDR_SIZE as u64,
+                entry_count: 2,
+            })
+        );
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_duplicate_phdr_segments() {
+        let phdrs = [
+            text_phdr(),
+            TestPhdr {
+                typ: PT_PHDR,
+                flags: PF_R,
+                offset: ELF64_EHDR_SIZE as u64,
+                vaddr: 0x3ff000,
+                filesz: (3 * ELF64_PHDR_SIZE) as u64,
+                memsz: (3 * ELF64_PHDR_SIZE) as u64,
+                align: 8,
+            },
+            TestPhdr {
+                typ: PT_PHDR,
+                flags: PF_R,
+                offset: ELF64_EHDR_SIZE as u64,
+                vaddr: 0x3ff000,
+                filesz: (3 * ELF64_PHDR_SIZE) as u64,
+                memsz: (3 * ELF64_PHDR_SIZE) as u64,
+                align: 8,
+            },
+        ];
+        let image = test_elf(&phdrs);
+
+        let err = build_static_exec_plan(&image, LoaderOptions::default()).unwrap_err();
+
+        assert!(err.contains("duplicate PT_PHDR"), "{err}");
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_malformed_phdr_segment() {
+        let phdrs = [
+            text_phdr(),
+            TestPhdr {
+                typ: PT_PHDR,
+                flags: PF_R,
+                offset: 0x280,
+                vaddr: 0x3ff000,
+                filesz: (2 * ELF64_PHDR_SIZE) as u64,
+                memsz: (2 * ELF64_PHDR_SIZE) as u64,
+                align: 8,
+            },
+        ];
+        let image = test_elf(&phdrs);
+
+        let err = build_static_exec_plan(&image, LoaderOptions::default()).unwrap_err();
+
+        assert!(err.contains("PT_PHDR offset"), "{err}");
     }
 
     #[test]
@@ -1513,6 +1671,9 @@ mod tests {
             put_u64(&mut image, base + 32, phdr.filesz);
             put_u64(&mut image, base + 40, phdr.memsz);
             put_u64(&mut image, base + 48, phdr.align);
+            if phdr.typ == PT_PHDR {
+                continue;
+            }
             let start = phdr.offset as usize;
             let end = start + phdr.filesz as usize;
             for byte in &mut image[start..end] {
