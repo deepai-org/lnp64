@@ -1500,10 +1500,12 @@ mod tests {
         let roadmap = include_str!("../toolchain_roadmap.md");
         let conformance = include_str!("../conformance_matrix.md");
         let loader_security = include_str!("../toolchain/lnp64_loader_security.manifest");
+        let main_source = include_str!("main.rs");
         let loader_source = include_str!("loader.rs");
         let emulator_source = include_str!("emulator.rs");
         let lowering_source = include_str!("lowering.rs");
-        let evidence_corpus = format!("{loader_source}\n{emulator_source}\n{lowering_source}");
+        let evidence_corpus =
+            format!("{main_source}\n{loader_source}\n{emulator_source}\n{lowering_source}");
         let rows = run_elf_rows(run_elf_manifest);
         let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let mut stages = std::collections::BTreeMap::new();
@@ -1519,6 +1521,8 @@ mod tests {
         assert!(roadmap.contains("toolchain/lnp64_run_elf.manifest"));
         assert!(conformance.contains("toolchain/lnp64_run_elf.manifest"));
         assert!(gate_manifest.contains("lnp64 run-elf"));
+        assert!(main_source.contains("\"run-elf\""));
+        assert!(main_source.contains("ELF text fetch/decode is not implemented yet"));
         assert!(loader_security.contains("submit_exec_plan"));
         assert!(
             loader_security.contains("emulator_commits_exec_descriptor_memory_image_atomically")
@@ -1565,6 +1569,7 @@ mod tests {
             "materialize_vmas",
             "descriptor_validate",
             "descriptor_commit",
+            "cli_surface",
             "entry_state",
             "text_fetch_decode",
             "stdout_exit",
@@ -1581,6 +1586,7 @@ mod tests {
             assert_eq!(stages[stage].0, "tested", "{stage} should be tested");
         }
         assert_eq!(stages["entry_state"].0, "partial");
+        assert_eq!(stages["cli_surface"].0, "partial");
         for stage in ["text_fetch_decode", "stdout_exit", "no_toy_compiler"] {
             assert_eq!(
                 stages[stage].0, "planned",

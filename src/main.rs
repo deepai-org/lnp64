@@ -99,59 +99,29 @@ fn run() -> Result<(), String> {
         }
         "elf-plan" => {
             let options = take_elf_plan_options(&mut args)?;
-            let mut image = fs::read(&options.input)
-                .map_err(|err| format!("failed to read {}: {err}", options.input.display()))?;
-            let plan = loader::load_static_elf(
-                &mut image,
-                LoaderOptions {
-                    load_bias: options.load_bias,
-                    ..LoaderOptions::default()
-                },
-            )?;
-            let prepared = loader::materialize_vmas(&image, &plan)?;
-            let descriptor = loader::build_exec_descriptor(
-                &plan,
-                ExecPlanDescriptorOptions {
-                    image_source_cap: 1,
-                    image_source_generation: 1,
-                    image_lineage_epoch: 1,
-                    ..ExecPlanDescriptorOptions::default()
-                },
-            )?;
-            let descriptor_words = loader::encode_exec_descriptor(&descriptor);
-            Machine::validate_exec_descriptor_words(&descriptor_words)?;
-            let commit_vmas = prepared
-                .iter()
-                .zip(descriptor.vmas.iter())
-                .map(|(prepared_vma, descriptor_vma)| PreparedExecVma {
-                    virtual_address: prepared_vma.virtual_address,
-                    protection: descriptor_vma.protection,
-                    bytes: prepared_vma.bytes.clone(),
-                })
-                .collect::<Vec<_>>();
-            let mut commit_probe = Machine::new(Program::parse(".text\n  NOP\n")?);
-            commit_probe.commit_exec_descriptor_memory_image(&descriptor_words, &commit_vmas)?;
+            let probe = build_elf_exec_probe(&options)?;
             println!(
                 "exec-plan version={} entry=0x{:x} initial_sp=0x{:x} tls_base=0x{:x} startup_metadata=0x{:x}",
-                plan.version,
-                plan.entry.entry_pc,
-                plan.entry.initial_sp,
-                plan.entry.tls_base,
-                plan.entry.startup_metadata_ptr
+                probe.plan.version,
+                probe.plan.entry.entry_pc,
+                probe.plan.entry.initial_sp,
+                probe.plan.entry.tls_base,
+                probe.plan.entry.startup_metadata_ptr
             );
             println!(
                 "descriptor_length={} descriptor_words={} descriptor_validated=true memory_commit_validated=true vmas={} phdr={} tls={} startup_note={} fdr_grants={} measurements={}",
-                descriptor.header.total_length,
-                descriptor_words.len(),
-                prepared.len(),
-                plan.phdr.is_some(),
-                plan.tls.is_some(),
-                plan.startup.is_some(),
-                plan.fdr_grants.len(),
-                descriptor.measurements.len()
+                probe.descriptor.header.total_length,
+                probe.descriptor_words.len(),
+                probe.prepared.len(),
+                probe.plan.phdr.is_some(),
+                probe.plan.tls.is_some(),
+                probe.plan.startup.is_some(),
+                probe.plan.fdr_grants.len(),
+                probe.descriptor.measurements.len()
             );
-            for (idx, vma) in plan.vmas.iter().enumerate() {
-                let prepared_len = prepared
+            for (idx, vma) in probe.plan.vmas.iter().enumerate() {
+                let prepared_len = probe
+                    .prepared
                     .get(idx)
                     .map(|prepared_vma| prepared_vma.bytes.len())
                     .unwrap_or_default();
@@ -169,6 +139,15 @@ fn run() -> Result<(), String> {
             }
             Ok(())
         }
+        "run-elf" => {
+            let options = take_elf_plan_options(&mut args)?;
+            let probe = build_elf_exec_probe(&options)?;
+            Err(format!(
+                "run-elf loaded and committed exec plan for {} at entry=0x{:x}, but ELF text fetch/decode is not implemented yet; see toolchain/lnp64_run_elf.manifest",
+                options.input.display(),
+                probe.plan.entry.entry_pc
+            ))
+        }
         "help" | "--help" | "-h" => {
             usage();
             Ok(())
@@ -182,9 +161,58 @@ fn usage() {
     eprintln!("  lnp64 asm <program.s>");
     eprintln!("  lnp64 run [--namespace-root <dir>] <program.s>");
     eprintln!("  lnp64 elf-plan [--load-bias <n>] <program.elf>");
+    eprintln!("  lnp64 run-elf [--load-bias <n>] <program.elf>");
     eprintln!(
         "  lnp64 cc [--dump-macros|--dump-preprocessed] <program.c> [more.c ...] [-o program.s]"
     );
+}
+
+struct ElfExecProbe {
+    plan: loader::ExecPlan,
+    prepared: Vec<loader::PreparedVma>,
+    descriptor: loader::ExecPlanDescriptor,
+    descriptor_words: Vec<u64>,
+}
+
+fn build_elf_exec_probe(options: &ElfPlanOptions) -> Result<ElfExecProbe, String> {
+    let mut image = fs::read(&options.input)
+        .map_err(|err| format!("failed to read {}: {err}", options.input.display()))?;
+    let plan = loader::load_static_elf(
+        &mut image,
+        LoaderOptions {
+            load_bias: options.load_bias,
+            ..LoaderOptions::default()
+        },
+    )?;
+    let prepared = loader::materialize_vmas(&image, &plan)?;
+    let descriptor = loader::build_exec_descriptor(
+        &plan,
+        ExecPlanDescriptorOptions {
+            image_source_cap: 1,
+            image_source_generation: 1,
+            image_lineage_epoch: 1,
+            ..ExecPlanDescriptorOptions::default()
+        },
+    )?;
+    let descriptor_words = loader::encode_exec_descriptor(&descriptor);
+    Machine::validate_exec_descriptor_words(&descriptor_words)?;
+    let commit_vmas = prepared
+        .iter()
+        .zip(descriptor.vmas.iter())
+        .map(|(prepared_vma, descriptor_vma)| PreparedExecVma {
+            virtual_address: prepared_vma.virtual_address,
+            protection: descriptor_vma.protection,
+            bytes: prepared_vma.bytes.clone(),
+        })
+        .collect::<Vec<_>>();
+    let mut commit_probe = Machine::new(Program::parse(".text\n  NOP\n")?);
+    commit_probe.commit_exec_descriptor_memory_image(&descriptor_words, &commit_vmas)?;
+    Ok(ElfExecProbe {
+        plan,
+        prepared,
+        descriptor,
+        descriptor_words,
+    })
 }
 
 struct ElfPlanOptions {
