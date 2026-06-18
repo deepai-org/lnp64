@@ -65,8 +65,10 @@ branch field.
 The first SelectionDAG patterns now select signed-16 constant materialization
 through `LI`, simple i64 ALU operations (`add`/`sub`/`mul`/signed `div`,
 bitwise ops, and shifts), and i64 base+signed-14-offset loads/stores onto the
-fixed32 opcodes; calls, narrow memory extension/truncation, globals, and
-branches remain bring-up blockers.
+fixed32 opcodes. LLVM unconditional `br` now selects the architectural `JMP`
+through a machine-basic-block branch target operand. Calls, conditional branch
+lowering, narrow memory extension/truncation, and globals remain bring-up
+blockers.
 Return lowering now maps the LLVM return value path through `RetCC_LNP64` into
 `r1` and selects a target `RET_FLAG` DAG node to the architectural `RET`;
 formal argument lowering maps register arguments from `CC_LNP64` live-ins.

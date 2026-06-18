@@ -1,6 +1,7 @@
 def simm16 : Operand<i64>;
 def simm14 : Operand<i64>;
 def simm26 : Operand<i64>;
+def brtarget : Operand<OtherVT>;
 def simm16_imm : PatLeaf<(imm), [{
   return isInt<16>(N->getSExtValue());
 }]>;
@@ -39,7 +40,7 @@ class LNP64Cmp<string Mnemonic>
                 "\t$rs1, $rs2">;
 
 class LNP64Branch<string Mnemonic>
-    : LNP64Inst<(outs), (ins simm26:$target), Mnemonic, "\t$target">;
+    : LNP64Inst<(outs), (ins brtarget:$target), Mnemonic, "\t$target">;
 
 class LNP64MemLoad<string Mnemonic>
     : LNP64Inst<(outs GPR:$rd), (ins GPR:$base, simm14:$offset), Mnemonic,
@@ -97,7 +98,9 @@ let isCompare = 1 in
 def CMP : LNP64Cmp<"cmp">;
 
 let isBranch = 1, isTerminator = 1, isBarrier = 1 in
-def JMP : LNP64Branch<"jmp">;
+def JMP : LNP64Branch<"jmp"> {
+  let Pattern = [(br bb:$target)];
+}
 let isBranch = 1, isTerminator = 1 in {
 def BEQ : LNP64Branch<"beq">;
 def BNE : LNP64Branch<"bne">;

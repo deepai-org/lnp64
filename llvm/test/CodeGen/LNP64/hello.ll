@@ -22,6 +22,17 @@ entry:
   ret i64 %shifted
 }
 
+define i64 @jump(i64 %x) {
+entry:
+  br label %exit
+
+cold:
+  ret i64 0
+
+exit:
+  ret i64 %x
+}
+
 ; CHECK-LABEL: main:
 ; CHECK: li
 ; CHECK: push
@@ -31,4 +42,7 @@ entry:
 ; CHECK: add
 ; CHECK: and
 ; CHECK: lsl
+; CHECK: ret
+; CHECK-LABEL: jump:
+; CHECK: jmp
 ; CHECK: ret
