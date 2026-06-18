@@ -1825,6 +1825,64 @@ theorem rtl_m1_refinement_cap_revoke_post_generation_matches_commit_projection
   | objectCreate hRootMint =>
       simp [objectCreateCommit, commitFromCap, hOp] at hCommitOp
 
+def RtlM1RefinementPostcondition
+    (commitProjection : RtlM1CommitProjection)
+    (pre post : RtlM1StateProjection) : Prop :=
+  match commitProjection.op with
+  | CommitOp.capDup =>
+      post.consumerCap = capabilityFromCommitProjection commitProjection
+  | CommitOp.capSend =>
+      post.sentCap = some (capabilityFromCommitProjection commitProjection)
+  | CommitOp.capRecv =>
+      post.consumerCap = capabilityFromCommitProjection commitProjection /\
+        post.sentCap = none
+  | CommitOp.capRevoke =>
+      post.objectGeneration = commitProjection.objectGeneration /\
+        post.rootCap.generation = commitProjection.objectGeneration /\
+        post.revokedGeneration = commitProjection.fdrGeneration /\
+        post.hasRevokedGeneration = true
+  | CommitOp.rejectStale =>
+      post.staleRejected = true /\
+        authoritySlotsProjectionUnchanged pre post /\
+        commitProjection.status = CommitStatus.erevoked
+  | CommitOp.push =>
+      post.rootCap = capabilityFromCommitProjection commitProjection /\
+        post.wakePending = true
+  | CommitOp.pull =>
+      post.consumerCap = capabilityFromCommitProjection commitProjection /\
+        post.wakePending = false
+  | CommitOp.rejectFull =>
+      post.fullWasExplicit = true /\
+        authoritySlotsProjectionUnchanged pre post /\
+        commitProjection.status = CommitStatus.eagain
+  | CommitOp.capDupDenied =>
+      post.failedNoAuthority = true /\
+        authoritySlotsProjectionUnchanged pre post /\
+        commitProjection.status = CommitStatus.eperm
+  | CommitOp.objectCreate =>
+      post.mintedCap = some (capabilityFromCommitProjection commitProjection) /\
+        post.createdObjectCreated = true
+
+theorem rtl_m1_refinement_step_satisfies_postcondition
+    {pre : RtlM1StateProjection}
+    {commitProjection : RtlM1CommitProjection}
+    {post : RtlM1StateProjection} :
+    RtlM1RefinementStep pre commitProjection post ->
+    RtlM1RefinementPostcondition commitProjection pre post := by
+  intro hRefine
+  cases hOp : commitProjection.op <;>
+    simp [RtlM1RefinementPostcondition, hOp]
+  · exact rtl_m1_refinement_cap_dup_post_consumer_matches_commit_projection hRefine hOp
+  · exact rtl_m1_refinement_cap_send_post_sent_matches_commit_projection hRefine hOp
+  · exact rtl_m1_refinement_cap_recv_post_consumer_matches_commit_projection hRefine hOp
+  · exact rtl_m1_refinement_cap_revoke_post_generation_matches_commit_projection hRefine hOp
+  · exact rtl_m1_refinement_reject_stale_post_failure_matches_commit_projection hRefine hOp
+  · exact rtl_m1_refinement_push_post_wake_matches_commit_projection hRefine hOp
+  · exact rtl_m1_refinement_pull_post_wake_matches_commit_projection hRefine hOp
+  · exact rtl_m1_refinement_reject_full_post_failure_matches_commit_projection hRefine hOp
+  · exact rtl_m1_refinement_cap_dup_denied_post_failure_matches_commit_projection hRefine hOp
+  · exact rtl_m1_refinement_object_create_post_minted_matches_commit_projection hRefine hOp
+
 theorem reachable_invariant {s : State} :
     Reachable s -> invariant s := by
   intro hReach
@@ -1893,6 +1951,34 @@ theorem m1_t3_rtl_m1_refinement_step_refines_commit_projection_op_for_reachable
     simpa using typed_commit_transition_refines_step hCommit
   · exact typed_commit_transition_preserves_invariant
       (reachable_invariant hReach) hCommit
+
+theorem m1_t3_rtl_m1_refinement_step_refines_preserves_and_satisfies_postcondition_for_reachable
+    {pre : RtlM1StateProjection}
+    {commitProjection : RtlM1CommitProjection}
+    {post : RtlM1StateProjection}
+    {s t : State}
+    {commit : CommitRecord} :
+    Reachable s ->
+    stateMatchesRtlProjection s pre ->
+    commitMatchesRtlProjection commit commitProjection ->
+    TypedCommitTransition s commit t ->
+    stateMatchesRtlProjection t post ->
+    RtlM1RefinementStep pre commitProjection post /\
+      Step s (commitOpToStepOp commitProjection.op) t /\
+      invariant t /\
+      RtlM1RefinementPostcondition commitProjection pre post := by
+  intro hReach hPre hCommitProjection hCommit hPost
+  have hRefine : RtlM1RefinementStep pre commitProjection post :=
+    ⟨s, t, commit, hPre, hCommitProjection, hCommit, hPost⟩
+  have hBundle :=
+    m1_t3_rtl_m1_refinement_step_refines_commit_projection_op_for_reachable
+      hReach hPre hCommitProjection hCommit hPost
+  exact ⟨
+    hRefine,
+    hBundle.2.1,
+    hBundle.2.2,
+    rtl_m1_refinement_step_satisfies_postcondition hRefine
+  ⟩
 
 theorem m1_t3_typed_commit_failed_authority_transition_preserves_authority_slots_for_reachable
     {s t : State} {commit : CommitRecord} :
