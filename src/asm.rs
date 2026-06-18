@@ -394,6 +394,10 @@ impl Parser {
                 arity(2)?;
                 Instr::MkdirPath(reg(&args[0])?, reg(&args[1])?)
             }
+            "MKDIR_PATH_AT" => {
+                arity(3)?;
+                Instr::MkdirPathAt(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
             "UNLINK_PATH" => {
                 arity(1)?;
                 Instr::UnlinkPath(reg(&args[0])?)
@@ -431,6 +435,15 @@ impl Parser {
             "READLINK_PATH" => {
                 arity(3)?;
                 Instr::ReadlinkPath(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
+            "READLINK_PATH_AT" => {
+                arity(4)?;
+                Instr::ReadlinkPathAt(
+                    reg(&args[0])?,
+                    reg(&args[1])?,
+                    reg(&args[2])?,
+                    reg(&args[3])?,
+                )
             }
             "CHDIR_PATH" => {
                 arity(1)?;

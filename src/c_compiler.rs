@@ -7423,6 +7423,19 @@ impl CodeGen {
                 self.text.push(format!("  MOV r{dst}, r1"));
                 Ok(dst)
             }
+            "mkdirat" => {
+                if args.len() != 3 {
+                    return Err("mkdirat(dirfd, path, mode) expects 3 arguments".to_string());
+                }
+                let dirfd = self.emit_expr(&args[0])?;
+                let path = self.emit_expr(&args[1])?;
+                let mode = self.emit_expr(&args[2])?;
+                let dst = self.alloc_reg()?;
+                self.text
+                    .push(format!("  MKDIR_PATH_AT r{dirfd}, r{path}, r{mode}"));
+                self.text.push(format!("  MOV r{dst}, r1"));
+                Ok(dst)
+            }
             "chdir" => {
                 let path = self.one_arg(name, args)?;
                 let dst = self.alloc_reg()?;
@@ -7569,6 +7582,21 @@ impl CodeGen {
                 let dst = self.alloc_reg()?;
                 self.text
                     .push(format!("  READLINK_PATH r{path}, r{buf}, r{len}"));
+                self.text.push(format!("  MOV r{dst}, r1"));
+                Ok(dst)
+            }
+            "readlinkat" => {
+                if args.len() != 4 {
+                    return Err("readlinkat(dirfd, path, buf, len) expects 4 arguments".to_string());
+                }
+                let dirfd = self.emit_expr(&args[0])?;
+                let path = self.emit_expr(&args[1])?;
+                let buf = self.emit_expr(&args[2])?;
+                let len = self.emit_expr(&args[3])?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!(
+                    "  READLINK_PATH_AT r{dirfd}, r{path}, r{buf}, r{len}"
+                ));
                 self.text.push(format!("  MOV r{dst}, r1"));
                 Ok(dst)
             }
@@ -20004,9 +20032,11 @@ int main() {
             fcntl(fd, F_SETFL, 0);
             fchmodat(AT_FDCWD, "Cargo.toml", 0644, 0);
             fchownat(AT_FDCWD, "Cargo.toml", -1, -1, 0);
+            mkdirat(AT_FDCWD, "/tmp/lnp64_mkdirat_compile_only", 0755);
             unlinkat(AT_FDCWD, "/tmp/lnp64_unlinkat_compile_only", 0);
             linkat(AT_FDCWD, "Cargo.toml", AT_FDCWD, "/tmp/lnp64_linkat_compile_only", 0);
             symlinkat("Cargo.toml", AT_FDCWD, "/tmp/lnp64_symlinkat_compile_only");
+            readlinkat(AT_FDCWD, "/tmp/lnp64_symlinkat_compile_only", buf, 16);
             open(3, "Cargo.toml", 0);
             pread(3, buf, 3, 1);
             pwrite(3, buf, 3, 2);
@@ -20022,9 +20052,11 @@ int main() {
         assert!(asm.contains("OPEN_AT_DYN"));
         assert!(asm.contains("CHMOD_PATH_AT"));
         assert!(asm.contains("CHOWN_PATH_AT"));
+        assert!(asm.contains("MKDIR_PATH_AT"));
         assert!(asm.contains("UNLINK_PATH_AT"));
         assert!(asm.contains("LINK_PATH_AT"));
         assert!(asm.contains("SYMLINK_PATH_AT"));
+        assert!(asm.contains("READLINK_PATH_AT"));
         assert!(asm.contains("CAP_DUP"));
         assert!(asm.contains("PULL_DYN"));
         assert!(asm.contains("PREAD_FD_DYN"));

@@ -1606,6 +1606,17 @@ impl Machine {
                     Err(err) => self.set_status_io_error(err)?,
                 }
             }
+            Instr::MkdirPathAt(dir_reg, path_reg, _mode_reg) => {
+                let dir_value = self.read_reg(dir_reg)?;
+                let path = self.read_c_string(self.read_reg(path_reg)?)?;
+                let Some(path) = self.resolve_process_path_at_or_errno(dir_value, &path)? else {
+                    return Ok(true);
+                };
+                match fs::create_dir(&path) {
+                    Ok(()) => self.set_status_ok()?,
+                    Err(err) => self.set_status_io_error(err)?,
+                }
+            }
             Instr::UnlinkPath(path_reg) => {
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
                 let Some(path) = self.resolve_process_path_or_errno(&path)? else {
@@ -1716,6 +1727,28 @@ impl Machine {
             Instr::ReadlinkPath(path_reg, buf_reg, len_reg) => {
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
                 let Some(path) = self.resolve_process_path_no_follow_final_or_errno(&path)? else {
+                    return Ok(true);
+                };
+                let buf = self.read_reg(buf_reg)?;
+                let len = self.read_reg(len_reg)? as usize;
+                match fs::read_link(&path) {
+                    Ok(target) => {
+                        let bytes = target.to_string_lossy();
+                        let data = bytes.as_bytes();
+                        let count = data.len().min(len);
+                        self.write_bytes(buf, &data[..count])?;
+                        self.set_errno(0)?;
+                        self.write_reg(Reg(1), count as u64)?;
+                    }
+                    Err(err) => self.set_status_io_error(err)?,
+                }
+            }
+            Instr::ReadlinkPathAt(dir_reg, path_reg, buf_reg, len_reg) => {
+                let dir_value = self.read_reg(dir_reg)?;
+                let path = self.read_c_string(self.read_reg(path_reg)?)?;
+                let Some(path) =
+                    self.resolve_process_path_at_no_follow_final_or_errno(dir_value, &path)?
+                else {
                     return Ok(true);
                 };
                 let buf = self.read_reg(buf_reg)?;
@@ -2605,6 +2638,45 @@ impl Machine {
         }
     }
 
+    fn resolve_process_path_at_no_follow_final_or_errno(
+        &mut self,
+        dir_value: u64,
+        path: &str,
+    ) -> Result<Option<String>, String> {
+        if path.starts_with('/') || dir_value == AT_FDCWD_VALUE {
+            return self.resolve_process_path_no_follow_final_or_errno(path);
+        }
+        let dir_fd = match self.decode_fd_value(dir_value) {
+            Ok(fd) => fd,
+            Err(errno) => {
+                self.set_status_errno(errno)?;
+                return Ok(None);
+            }
+        };
+        if let Err(errno) = self.fd_right_errno(dir_fd, CAP_RIGHT_READ) {
+            self.set_status_errno(errno)?;
+            return Ok(None);
+        }
+        let base = {
+            let process = self.process()?;
+            match process.fds.get(dir_fd) {
+                Some(FdHandle::Dir { path, .. }) => PathBuf::from(path),
+                _ => {
+                    self.set_status_errno(20)?;
+                    return Ok(None);
+                }
+            }
+        };
+        match self.resolve_process_path_no_follow_final_from_base(&base, path) {
+            Ok(path) => Ok(Some(path)),
+            Err(err) if err.starts_with("path resolution denied:") => {
+                self.set_status_errno(13)?;
+                Ok(None)
+            }
+            Err(err) => Err(err),
+        }
+    }
+
     fn resolve_process_path(&self, path: &str) -> Result<String, String> {
         let process = self.process()?;
         self.resolve_process_path_from_base(&process.cwd, path)
@@ -2635,6 +2707,15 @@ impl Machine {
     }
 
     fn resolve_process_path_no_follow_final(&self, path: &str) -> Result<String, String> {
+        let process = self.process()?;
+        self.resolve_process_path_no_follow_final_from_base(&process.cwd, path)
+    }
+
+    fn resolve_process_path_no_follow_final_from_base(
+        &self,
+        base: &Path,
+        path: &str,
+    ) -> Result<String, String> {
         if path.is_empty() || path.starts_with("tcp-listen:") {
             return Ok(path.to_string());
         }
@@ -2645,7 +2726,7 @@ impl Machine {
         let candidate = if path.starts_with('/') {
             normalize_path_lexical(&root.join(path.trim_start_matches('/')))
         } else {
-            normalize_path_lexical(&process.cwd.join(path))
+            normalize_path_lexical(&base.join(path))
         };
         let root = normalize_path_lexical(root);
         if !candidate.starts_with(&root) {
