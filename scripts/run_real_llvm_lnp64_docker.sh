@@ -60,6 +60,13 @@ grep -q 'exit=0' <<<"$compare_output"
 printf 'real LLVM LNP64 run-elf comparison execution passed: %s\n' \
   "$compare_probe"
 
+unsigned_compare_probe="target/llvm-lnp64-build/lnp64-unsigned-compare-linked.elf"
+cargo run --quiet -- elf-plan "$unsigned_compare_probe" >/dev/null
+unsigned_compare_output="$(cargo run --quiet -- run-elf "$unsigned_compare_probe")"
+grep -q 'exit=0' <<<"$unsigned_compare_output"
+printf 'real LLVM LNP64 run-elf unsigned comparison execution passed: %s\n' \
+  "$unsigned_compare_probe"
+
 signed_load_probe="target/llvm-lnp64-build/lnp64-signed-load-linked.elf"
 cargo run --quiet -- elf-plan "$signed_load_probe" >/dev/null
 signed_load_output="$(cargo run --quiet -- run-elf "$signed_load_probe")"

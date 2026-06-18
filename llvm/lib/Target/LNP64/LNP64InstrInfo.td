@@ -208,18 +208,30 @@ def CSET_LT : LNP64Cset<"cset.lt">;
 def CSET_GT : LNP64Cset<"cset.gt">;
 def CSET_LE : LNP64Cset<"cset.le">;
 def CSET_GE : LNP64Cset<"cset.ge">;
+def CSET_ULT : LNP64Cset<"cset.ult">;
+def CSET_UGT : LNP64Cset<"cset.ugt">;
+def CSET_ULE : LNP64Cset<"cset.ule">;
+def CSET_UGE : LNP64Cset<"cset.uge">;
 def PseudoCSETEQ : LNP64SetCCPseudo<"pseudo_cseteq">;
 def PseudoCSETNE : LNP64SetCCPseudo<"pseudo_csetne">;
 def PseudoCSETLT : LNP64SetCCPseudo<"pseudo_csetlt">;
 def PseudoCSETGT : LNP64SetCCPseudo<"pseudo_csetgt">;
 def PseudoCSETLE : LNP64SetCCPseudo<"pseudo_csetle">;
 def PseudoCSETGE : LNP64SetCCPseudo<"pseudo_csetge">;
+def PseudoCSETULT : LNP64SetCCPseudo<"pseudo_csetult">;
+def PseudoCSETUGT : LNP64SetCCPseudo<"pseudo_csetugt">;
+def PseudoCSETULE : LNP64SetCCPseudo<"pseudo_csetule">;
+def PseudoCSETUGE : LNP64SetCCPseudo<"pseudo_csetuge">;
 def PseudoCSETEQI : LNP64SetCCImmPseudo<"pseudo_cseteqi">;
 def PseudoCSETNEI : LNP64SetCCImmPseudo<"pseudo_csetnei">;
 def PseudoCSETLTI : LNP64SetCCImmPseudo<"pseudo_csetlti">;
 def PseudoCSETGTI : LNP64SetCCImmPseudo<"pseudo_csetgti">;
 def PseudoCSETLEI : LNP64SetCCImmPseudo<"pseudo_csetlei">;
 def PseudoCSETGEI : LNP64SetCCImmPseudo<"pseudo_csetgei">;
+def PseudoCSETULTI : LNP64SetCCImmPseudo<"pseudo_csetulti">;
+def PseudoCSETUGTI : LNP64SetCCImmPseudo<"pseudo_csetugti">;
+def PseudoCSETULEI : LNP64SetCCImmPseudo<"pseudo_csetulei">;
+def PseudoCSETUGEI : LNP64SetCCImmPseudo<"pseudo_csetugei">;
 def : Pat<(i64 (seteq GPR:$lhs, GPR:$rhs)),
           (PseudoCSETEQ GPR:$lhs, GPR:$rhs)>;
 def : Pat<(i64 (setne GPR:$lhs, GPR:$rhs)),
@@ -232,6 +244,14 @@ def : Pat<(i64 (setle GPR:$lhs, GPR:$rhs)),
           (PseudoCSETLE GPR:$lhs, GPR:$rhs)>;
 def : Pat<(i64 (setge GPR:$lhs, GPR:$rhs)),
           (PseudoCSETGE GPR:$lhs, GPR:$rhs)>;
+def : Pat<(i64 (setult GPR:$lhs, GPR:$rhs)),
+          (PseudoCSETULT GPR:$lhs, GPR:$rhs)>;
+def : Pat<(i64 (setugt GPR:$lhs, GPR:$rhs)),
+          (PseudoCSETUGT GPR:$lhs, GPR:$rhs)>;
+def : Pat<(i64 (setule GPR:$lhs, GPR:$rhs)),
+          (PseudoCSETULE GPR:$lhs, GPR:$rhs)>;
+def : Pat<(i64 (setuge GPR:$lhs, GPR:$rhs)),
+          (PseudoCSETUGE GPR:$lhs, GPR:$rhs)>;
 def : Pat<(i64 (seteq GPR:$lhs, simm16_imm:$rhs)),
           (PseudoCSETEQI GPR:$lhs, simm16_imm:$rhs)>;
 def : Pat<(i64 (setne GPR:$lhs, simm16_imm:$rhs)),
@@ -244,6 +264,16 @@ def : Pat<(i64 (setle GPR:$lhs, simm16_imm:$rhs)),
           (PseudoCSETLEI GPR:$lhs, simm16_imm:$rhs)>;
 def : Pat<(i64 (setge GPR:$lhs, simm16_imm:$rhs)),
           (PseudoCSETGEI GPR:$lhs, simm16_imm:$rhs)>;
+def : Pat<(i64 (setult GPR:$lhs, simm16_imm:$rhs)),
+          (PseudoCSETULTI GPR:$lhs, simm16_imm:$rhs)>;
+def : Pat<(i64 (setugt GPR:$lhs, simm16_imm:$rhs)),
+          (PseudoCSETUGTI GPR:$lhs, simm16_imm:$rhs)>;
+def : Pat<(i64 (setule GPR:$lhs, simm16_imm:$rhs)),
+          (PseudoCSETULEI GPR:$lhs, simm16_imm:$rhs)>;
+def : Pat<(i64 (setuge GPR:$lhs, simm16_imm:$rhs)),
+          (PseudoCSETUGEI GPR:$lhs, simm16_imm:$rhs)>;
+let isCompare = 1, Defs = [FLAGS] in
+def CMPU : LNP64Cmp<"cmpu">;
 
 let isBranch = 1, isTerminator = 1, isBarrier = 1 in
 def JMP : LNP64Branch<"jmp"> {

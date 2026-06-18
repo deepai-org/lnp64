@@ -1957,6 +1957,8 @@ mod tests {
             "CALL",
             "RET",
             "CSET_EQ",
+            "CSET_ULT",
+            "CMPU",
             "ERRNO_SET",
             "EXIT",
             "PULL",
@@ -2017,13 +2019,16 @@ mod tests {
         assert!(inst_printer.contains("printMemOperand"));
         assert!(inst_printer.contains("errno_set"));
         assert!(inst_printer.contains("cset.eq"));
+        assert!(inst_printer.contains("cset.ult"));
         assert!(inst_printer.contains("case LNP64::EXIT"));
         assert!(inst_printer.contains("case LNP64::LA"));
         assert!(inst_printer.contains("case LNP64::LI32"));
         assert!(inst_printer.contains("call_reg"));
         assert!(mc_emitter.contains("case LNP64::AND"));
         assert!(mc_emitter.contains("case LNP64::CMP"));
+        assert!(mc_emitter.contains("case LNP64::CMPU"));
         assert!(mc_emitter.contains("case LNP64::CSET_EQ"));
+        assert!(mc_emitter.contains("case LNP64::CSET_ULT"));
         assert!(mc_emitter.contains("case LNP64::LA"));
         assert!(mc_emitter.contains("case LNP64::LI32"));
         assert!(mc_emitter.contains("fixup_lnp64_abs32"));
@@ -2042,6 +2047,8 @@ mod tests {
         assert!(asm_parser.contains(r#".Case("li32", LNP64::LI32)"#));
         assert!(asm_parser.contains(r#".Case("call", LNP64::CALL)"#));
         assert!(asm_parser.contains(r#".Case("cset.eq", LNP64::CSET_EQ)"#));
+        assert!(asm_parser.contains(r#".Case("cmpu", LNP64::CMPU)"#));
+        assert!(asm_parser.contains(r#".Case("cset.ult", LNP64::CSET_ULT)"#));
         assert!(asm_parser.contains(r#".Case("errno_get", LNP64::ERRNO_GET)"#));
         assert!(asm_parser.contains(r#".Case("errno_set", LNP64::ERRNO_SET)"#));
         assert!(asm_parser.contains(r#".Case("exit", LNP64::EXIT)"#));
@@ -2060,7 +2067,9 @@ mod tests {
         assert!(disassembler.contains("Instr.setOpcode(LNP64::ADD)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::AND)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::CMP)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::CMPU)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::CSET_EQ)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::CSET_ULT)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::CALL)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::CALL_REG)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::ERRNO_GET)"));
@@ -2108,6 +2117,7 @@ mod tests {
         assert!(isel.contains("ISD::SDIV"));
         assert!(isel.contains("setOperationAction(ISD::BR_CC, MVT::i64, Custom)"));
         assert!(isel.contains("getLNP64CSetInstr"));
+        assert!(isel.contains("isLNP64UnsignedSetCCPseudo"));
         assert!(isel.contains("LNP64::PseudoLINeg32"));
         assert!(isel.contains("TII.get(LNP64::LI32)"));
         assert!(isel.contains("LNP64GenCallingConv.inc"));
@@ -2190,12 +2200,15 @@ mod tests {
         assert!(instr_td.contains("class LNP64SetCCPseudo"));
         assert!(instr_td.contains("class LNP64SignedLoadPseudo"));
         assert!(instr_td.contains("def CSET_EQ"));
+        assert!(instr_td.contains("def CSET_ULT"));
         assert!(instr_td.contains("def PseudoLD_SB"));
         assert!(instr_td.contains("usesCustomInserter = 1"));
         assert!(instr_td.contains("def PseudoBEQ"));
         assert!(instr_td.contains("(PseudoBEQ GPR:$lhs, GPR:$rhs, bb:$target)"));
         assert!(instr_td.contains("(PseudoCSETEQ GPR:$lhs, GPR:$rhs)"));
+        assert!(instr_td.contains("(PseudoCSETULT GPR:$lhs, GPR:$rhs)"));
         assert!(instr_td.contains("(PseudoCSETNEI GPR:$lhs, simm16_imm:$rhs)"));
+        assert!(instr_td.contains("(PseudoCSETUGEI GPR:$lhs, simm16_imm:$rhs)"));
         assert!(instr_td.contains("(i64 (sextloadi8 (add GPR:$base, simm14_imm:$offset)))"));
         assert!(instr_td.contains("(i64 (extloadi16 (add GPR:$base, simm14_imm:$offset)))"));
         assert!(instr_td.contains("(PseudoLD_SH GPR:$base, simm14_imm:$offset)"));
@@ -3507,6 +3520,8 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::ADD"));
         assert!(mc_emitter.contains("case LNP64::CALL"));
         assert!(mc_emitter.contains("case LNP64::CALL_REG"));
+        assert!(mc_emitter.contains("case LNP64::CMPU"));
+        assert!(mc_emitter.contains("case LNP64::CSET_ULT"));
         assert!(mc_emitter.contains("case LNP64::CSET_EQ"));
         assert!(mc_emitter.contains("case LNP64::ERRNO_GET"));
         assert!(mc_emitter.contains("case LNP64::ERRNO_SET"));

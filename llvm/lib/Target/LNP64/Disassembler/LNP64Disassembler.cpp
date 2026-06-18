@@ -162,6 +162,11 @@ public:
       addReg(Instr, A);
       addReg(Instr, B);
       return MCDisassembler::Success;
+    case 0x1c:
+      Instr.setOpcode(LNP64::CMPU);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      return MCDisassembler::Success;
     case 0x1f:
       Instr.setOpcode(LNP64::RET);
       return MCDisassembler::Success;
@@ -249,6 +254,22 @@ public:
       return MCDisassembler::Success;
     case 0x42:
       Instr.setOpcode(LNP64::CSET_GE);
+      addReg(Instr, A);
+      return MCDisassembler::Success;
+    case 0x43:
+      Instr.setOpcode(LNP64::CSET_ULT);
+      addReg(Instr, A);
+      return MCDisassembler::Success;
+    case 0x44:
+      Instr.setOpcode(LNP64::CSET_UGT);
+      addReg(Instr, A);
+      return MCDisassembler::Success;
+    case 0x45:
+      Instr.setOpcode(LNP64::CSET_ULE);
+      addReg(Instr, A);
+      return MCDisassembler::Success;
+    case 0x46:
+      Instr.setOpcode(LNP64::CSET_UGE);
       addReg(Instr, A);
       return MCDisassembler::Success;
     case 0x30:

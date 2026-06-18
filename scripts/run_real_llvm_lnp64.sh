@@ -335,6 +335,46 @@ grep -q 'cset.lt' "$compare_dump"
 printf 'real LLVM LNP64 clang comparison object smoke passed: %s\n' \
   "$compare_obj"
 
+unsigned_compare_c="$build_dir/unsigned-compare-smoke.c"
+cat >"$unsigned_compare_c" <<'C'
+int below(unsigned long a, unsigned long b) {
+  return a < b;
+}
+
+int above(unsigned long a, unsigned long b) {
+  return a > b;
+}
+
+int below_or_equal(unsigned long a, unsigned long b) {
+  return a <= b;
+}
+
+int above_or_equal(unsigned long a, unsigned long b) {
+  return a >= b;
+}
+
+int main(void) {
+  return below(3, 4) + above(5, 4) + below_or_equal(4, 4) +
+         above_or_equal(4, 4) - 4;
+}
+C
+
+unsigned_compare_obj="$build_dir/unsigned-compare-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$unsigned_compare_c" -o "$unsigned_compare_obj"
+test -s "$unsigned_compare_obj"
+unsigned_compare_dump="$build_dir/unsigned-compare-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$unsigned_compare_obj" \
+  >"$unsigned_compare_dump"
+grep -q 'cmpu r' "$unsigned_compare_dump"
+grep -q 'cset.ult' "$unsigned_compare_dump"
+grep -q 'cset.ugt' "$unsigned_compare_dump"
+grep -q 'cset.ule' "$unsigned_compare_dump"
+grep -q 'cset.uge' "$unsigned_compare_dump"
+printf 'real LLVM LNP64 clang unsigned comparison object smoke passed: %s\n' \
+  "$unsigned_compare_obj"
+
 signed_load_c="$build_dir/signed-load-smoke.c"
 cat >"$signed_load_c" <<'C'
 signed char global_byte = -2;
@@ -454,6 +494,13 @@ compare_elf="$build_dir/lnp64-compare-linked.elf"
 test -s "$compare_elf"
 printf 'real LLVM LNP64 lld comparison link smoke passed: %s\n' \
   "$compare_elf"
+
+unsigned_compare_elf="$build_dir/lnp64-unsigned-compare-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$unsigned_compare_elf" "$crt0_obj" "$unsigned_compare_obj"
+test -s "$unsigned_compare_elf"
+printf 'real LLVM LNP64 lld unsigned comparison link smoke passed: %s\n' \
+  "$unsigned_compare_elf"
 
 signed_load_elf="$build_dir/lnp64-signed-load-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

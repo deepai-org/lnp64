@@ -45,6 +45,10 @@ pub enum Condition {
     Gt,
     Le,
     Ge,
+    Ult,
+    Ugt,
+    Ule,
+    Uge,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,6 +86,7 @@ pub enum Instr {
     Lsr(Reg, Reg, Reg),
     Asr(Reg, Reg, Reg),
     Cmp(Reg, Reg),
+    Cmpu(Reg, Reg),
     Cset(Reg, Condition),
     Jmp(Target),
     Branch(Condition, Target),

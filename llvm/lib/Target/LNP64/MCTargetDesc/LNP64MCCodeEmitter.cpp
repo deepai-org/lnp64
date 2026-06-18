@@ -203,6 +203,11 @@ public:
                                getGPRNo(MI.getOperand(1))),
                OS);
       return;
+    case LNP64::CMPU:
+      emitLE32(encodeFixed32RR(0x1c, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
     case LNP64::JMP:
       emitLE32(encodeFixed32BranchOperand(0x20, MI.getOperand(0), Fixups), OS);
       return;
@@ -270,6 +275,18 @@ public:
       return;
     case LNP64::CSET_GE:
       emitLE32(encodeFixed32Reg(0x42, getGPRNo(MI.getOperand(0))), OS);
+      return;
+    case LNP64::CSET_ULT:
+      emitLE32(encodeFixed32Reg(0x43, getGPRNo(MI.getOperand(0))), OS);
+      return;
+    case LNP64::CSET_UGT:
+      emitLE32(encodeFixed32Reg(0x44, getGPRNo(MI.getOperand(0))), OS);
+      return;
+    case LNP64::CSET_ULE:
+      emitLE32(encodeFixed32Reg(0x45, getGPRNo(MI.getOperand(0))), OS);
+      return;
+    case LNP64::CSET_UGE:
+      emitLE32(encodeFixed32Reg(0x46, getGPRNo(MI.getOperand(0))), OS);
       return;
     case LNP64::LD:
       emitLE32(encodeFixed32Mem(0x30, getGPRNo(MI.getOperand(0)),

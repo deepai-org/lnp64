@@ -287,12 +287,17 @@ private:
             .Case("lsr", LNP64::LSR)
             .Case("asr", LNP64::ASR)
             .Case("cmp", LNP64::CMP)
+            .Case("cmpu", LNP64::CMPU)
             .Case("cset.eq", LNP64::CSET_EQ)
             .Case("cset.ne", LNP64::CSET_NE)
             .Case("cset.lt", LNP64::CSET_LT)
             .Case("cset.gt", LNP64::CSET_GT)
             .Case("cset.le", LNP64::CSET_LE)
             .Case("cset.ge", LNP64::CSET_GE)
+            .Case("cset.ult", LNP64::CSET_ULT)
+            .Case("cset.ugt", LNP64::CSET_UGT)
+            .Case("cset.ule", LNP64::CSET_ULE)
+            .Case("cset.uge", LNP64::CSET_UGE)
             .Case("jmp", LNP64::JMP)
             .Case("beq", LNP64::BEQ)
             .Case("bne", LNP64::BNE)
@@ -337,7 +342,7 @@ private:
         Opcode == LNP64::XOR || Opcode == LNP64::LSL ||
         Opcode == LNP64::LSR || Opcode == LNP64::ASR)
       return addRegRegReg(Inst, Operands);
-    if (Opcode == LNP64::CMP)
+    if (Opcode == LNP64::CMP || Opcode == LNP64::CMPU)
       return addRegReg(Inst, Operands);
     if (Opcode == LNP64::JMP || Opcode == LNP64::BEQ ||
         Opcode == LNP64::BNE || Opcode == LNP64::BLT ||
@@ -347,7 +352,9 @@ private:
     if (Opcode == LNP64::CALL_REG || Opcode == LNP64::CSET_EQ ||
         Opcode == LNP64::CSET_NE || Opcode == LNP64::CSET_LT ||
         Opcode == LNP64::CSET_GT || Opcode == LNP64::CSET_LE ||
-        Opcode == LNP64::CSET_GE)
+        Opcode == LNP64::CSET_GE || Opcode == LNP64::CSET_ULT ||
+        Opcode == LNP64::CSET_UGT || Opcode == LNP64::CSET_ULE ||
+        Opcode == LNP64::CSET_UGE)
       return addReg(Inst, Operands);
     if (Opcode == LNP64::ERRNO_GET || Opcode == LNP64::ERRNO_SET ||
         Opcode == LNP64::EXIT)

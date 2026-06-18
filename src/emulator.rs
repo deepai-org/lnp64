@@ -381,6 +381,8 @@ struct Flags {
     zero: bool,
     negative: bool,
     greater: bool,
+    below: bool,
+    above: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -1502,6 +1504,7 @@ impl Machine {
             0x19 => Instr::Lsr(a, b, c),
             0x1a => Instr::Asr(a, b, c),
             0x1b => Instr::Cmp(a, b),
+            0x1c => Instr::Cmpu(a, b),
             0x1f => Instr::Ret,
             0x20 => Instr::Jmp(branch_target()),
             0x21 => Instr::Branch(Condition::Eq, branch_target()),
@@ -1563,6 +1566,10 @@ impl Machine {
             0x40 => Instr::Cset(a, Condition::Gt),
             0x41 => Instr::Cset(a, Condition::Le),
             0x42 => Instr::Cset(a, Condition::Ge),
+            0x43 => Instr::Cset(a, Condition::Ult),
+            0x44 => Instr::Cset(a, Condition::Ugt),
+            0x45 => Instr::Cset(a, Condition::Ule),
+            0x46 => Instr::Cset(a, Condition::Uge),
             other => {
                 return Err(format!(
                     "unsupported committed exec opcode 0x{other:02x} at 0x{pc:x}"
@@ -1856,12 +1863,27 @@ impl Machine {
                 ((self.read_reg(a)? as i64) >> (self.read_reg(b)? & 63)) as u64,
             )?,
             Instr::Cmp(a, b) => {
-                let lhs = self.read_reg(a)? as i64;
-                let rhs = self.read_reg(b)? as i64;
+                let lhs_raw = self.read_reg(a)?;
+                let rhs_raw = self.read_reg(b)?;
+                let lhs = lhs_raw as i64;
+                let rhs = rhs_raw as i64;
                 self.thread_mut()?.flags = Flags {
                     zero: lhs == rhs,
                     negative: lhs < rhs,
                     greater: lhs > rhs,
+                    below: lhs_raw < rhs_raw,
+                    above: lhs_raw > rhs_raw,
+                };
+            }
+            Instr::Cmpu(a, b) => {
+                let lhs = self.read_reg(a)?;
+                let rhs = self.read_reg(b)?;
+                self.thread_mut()?.flags = Flags {
+                    zero: lhs == rhs,
+                    negative: (lhs as i64) < (rhs as i64),
+                    greater: (lhs as i64) > (rhs as i64),
+                    below: lhs < rhs,
+                    above: lhs > rhs,
                 };
             }
             Instr::Cset(dst, condition) => {
@@ -7919,6 +7941,10 @@ impl Machine {
             Condition::Gt => flags.greater,
             Condition::Le => flags.zero || flags.negative,
             Condition::Ge => flags.zero || flags.greater,
+            Condition::Ult => flags.below,
+            Condition::Ugt => flags.above,
+            Condition::Ule => flags.zero || flags.below,
+            Condition::Uge => flags.zero || flags.above,
         })
     }
 

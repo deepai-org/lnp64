@@ -81,6 +81,18 @@ static unsigned getLNP64CSetInstr(unsigned Opcode) {
   case LNP64::PseudoCSETGE:
   case LNP64::PseudoCSETGEI:
     return LNP64::CSET_GE;
+  case LNP64::PseudoCSETULT:
+  case LNP64::PseudoCSETULTI:
+    return LNP64::CSET_ULT;
+  case LNP64::PseudoCSETUGT:
+  case LNP64::PseudoCSETUGTI:
+    return LNP64::CSET_UGT;
+  case LNP64::PseudoCSETULE:
+  case LNP64::PseudoCSETULEI:
+    return LNP64::CSET_ULE;
+  case LNP64::PseudoCSETUGE:
+  case LNP64::PseudoCSETUGEI:
+    return LNP64::CSET_UGE;
   default:
     llvm_unreachable("expected LNP64 setcc pseudo");
   }
@@ -94,6 +106,10 @@ static bool isLNP64SetCCImmPseudo(unsigned Opcode) {
   case LNP64::PseudoCSETGTI:
   case LNP64::PseudoCSETLEI:
   case LNP64::PseudoCSETGEI:
+  case LNP64::PseudoCSETULTI:
+  case LNP64::PseudoCSETUGTI:
+  case LNP64::PseudoCSETULEI:
+  case LNP64::PseudoCSETUGEI:
     return true;
   default:
     return false;
@@ -114,6 +130,30 @@ static bool isLNP64SetCCPseudo(unsigned Opcode) {
   case LNP64::PseudoCSETGTI:
   case LNP64::PseudoCSETLEI:
   case LNP64::PseudoCSETGEI:
+  case LNP64::PseudoCSETULT:
+  case LNP64::PseudoCSETUGT:
+  case LNP64::PseudoCSETULE:
+  case LNP64::PseudoCSETUGE:
+  case LNP64::PseudoCSETULTI:
+  case LNP64::PseudoCSETUGTI:
+  case LNP64::PseudoCSETULEI:
+  case LNP64::PseudoCSETUGEI:
+    return true;
+  default:
+    return false;
+  }
+}
+
+static bool isLNP64UnsignedSetCCPseudo(unsigned Opcode) {
+  switch (Opcode) {
+  case LNP64::PseudoCSETULT:
+  case LNP64::PseudoCSETUGT:
+  case LNP64::PseudoCSETULE:
+  case LNP64::PseudoCSETUGE:
+  case LNP64::PseudoCSETULTI:
+  case LNP64::PseudoCSETUGTI:
+  case LNP64::PseudoCSETULEI:
+  case LNP64::PseudoCSETUGEI:
     return true;
   default:
     return false;
@@ -284,17 +324,19 @@ MachineBasicBlock *LNP64TargetLowering::EmitInstrWithCustomInserter(
   }
 
   if (isLNP64SetCCPseudo(MI.getOpcode())) {
+    unsigned CmpOpcode =
+        isLNP64UnsignedSetCCPseudo(MI.getOpcode()) ? LNP64::CMPU : LNP64::CMP;
     MachineFunction *MF = BB->getParent();
     MachineRegisterInfo &MRI = MF->getRegInfo();
     if (isLNP64SetCCImmPseudo(MI.getOpcode())) {
       Register RHS = MRI.createVirtualRegister(&LNP64::GPRRegClass);
       BuildMI(*BB, MI, DL, TII.get(LNP64::LI), RHS)
           .addImm(MI.getOperand(2).getImm());
-      BuildMI(*BB, MI, DL, TII.get(LNP64::CMP))
+      BuildMI(*BB, MI, DL, TII.get(CmpOpcode))
           .add(MI.getOperand(1))
           .addReg(RHS);
     } else {
-      BuildMI(*BB, MI, DL, TII.get(LNP64::CMP))
+      BuildMI(*BB, MI, DL, TII.get(CmpOpcode))
           .add(MI.getOperand(1))
           .add(MI.getOperand(2));
     }

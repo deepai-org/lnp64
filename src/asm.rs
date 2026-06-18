@@ -198,12 +198,20 @@ impl Parser {
                 arity(2)?;
                 Instr::Cmp(reg(&args[0])?, reg(&args[1])?)
             }
+            "CMPU" => {
+                arity(2)?;
+                Instr::Cmpu(reg(&args[0])?, reg(&args[1])?)
+            }
             "CSET.EQ" => cset(&args, Condition::Eq)?,
             "CSET.NE" => cset(&args, Condition::Ne)?,
             "CSET.LT" => cset(&args, Condition::Lt)?,
             "CSET.GT" => cset(&args, Condition::Gt)?,
             "CSET.LE" => cset(&args, Condition::Le)?,
             "CSET.GE" => cset(&args, Condition::Ge)?,
+            "CSET.ULT" => cset(&args, Condition::Ult)?,
+            "CSET.UGT" => cset(&args, Condition::Ugt)?,
+            "CSET.ULE" => cset(&args, Condition::Ule)?,
+            "CSET.UGE" => cset(&args, Condition::Uge)?,
             "JMP" => {
                 arity(1)?;
                 Instr::Jmp(target(&args[0]))
