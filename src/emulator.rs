@@ -8707,6 +8707,28 @@ mod tests {
     }
 
     #[test]
+    fn ns_ctl_resolve_requires_namespace_root_capability() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.process_mut().unwrap().namespace_root = None;
+        let arg = ARG_BASE + 0x1000;
+        let path = ARG_BASE + 0x1100;
+        let out = ARG_BASE + 0x1200;
+        machine.write_bytes(path, b"Cargo.toml\0").unwrap();
+        machine.store_u64(arg, NS_OP_RESOLVE).unwrap();
+        machine.store_u64(arg + 8, NS_CTL_VERSION).unwrap();
+        machine.store_u64(arg + 16, AT_FDCWD_VALUE).unwrap();
+        machine.store_u64(arg + 24, path).unwrap();
+        machine.store_u64(arg + 32, out).unwrap();
+        machine.store_u64(arg + 40, 256).unwrap();
+        machine.store_u64(arg + 48, 0).unwrap();
+
+        machine.ns_ctl(Reg(3), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[3], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 13);
+    }
+
+    #[test]
     fn namespace_root_rejects_lexical_escape() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
