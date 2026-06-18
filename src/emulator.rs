@@ -5910,25 +5910,17 @@ impl Machine {
     fn ret_cap(&mut self, result: Reg, value0: u64, value1: u64) -> Result<(), String> {
         Self::ensure_result_reg_writable(result)?;
         let Some(continuation) = self.thread()?.cap_call_stack.last().cloned() else {
-            self.set_status_errno(22)?;
-            self.write_reg(result, -1i64 as u64)?;
-            return Ok(());
+            return self.complete_reg_err(result, 22);
         };
         Self::ensure_result_reg_writable(continuation.result_reg)?;
         if self.domain_is_frozen_or_destroyed(continuation.caller_domain_id) {
-            self.set_status_errno(116)?;
-            self.write_reg(result, -1i64 as u64)?;
-            return Ok(());
+            return self.complete_reg_err(result, 116);
         }
         let Some(caller) = self.domains.get(&continuation.caller_domain_id) else {
-            self.set_status_errno(116)?;
-            self.write_reg(result, -1i64 as u64)?;
-            return Ok(());
+            return self.complete_reg_err(result, 116);
         };
         if caller.capability_mask & DOMAIN_CAP_CALL == 0 {
-            self.set_status_errno(1)?;
-            self.write_reg(result, -1i64 as u64)?;
-            return Ok(());
+            return self.complete_reg_err(result, 1);
         }
         self.thread_mut()?.cap_call_stack.pop();
         self.process_mut()?.domain_id = continuation.caller_domain_id;
