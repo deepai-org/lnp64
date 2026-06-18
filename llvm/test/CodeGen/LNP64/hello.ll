@@ -13,7 +13,19 @@ entry:
   ret i64 %n
 }
 
+define i64 @arith(i64 %a, i64 %b) {
+entry:
+  %sum = add i64 %a, %b
+  %masked = and i64 %sum, %a
+  %shifted = shl i64 %masked, %b
+  ret i64 %shifted
+}
+
 ; CHECK-LABEL: main:
 ; CHECK: li
 ; CHECK: push
 ; CHECK: ret
+; CHECK-LABEL: arith:
+; CHECK: add
+; CHECK: and
+; CHECK: lsl

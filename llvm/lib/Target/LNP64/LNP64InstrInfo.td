@@ -50,17 +50,37 @@ def NOP : LNP64NoOperand<"nop">;
 def LI : LNP64RI<"li">;
 def MOV : LNP64RR<"mov">;
 
-def ADD : LNP64RRR<"add">;
-def SUB : LNP64RRR<"sub">;
-def MUL : LNP64RRR<"mul">;
-def DIV : LNP64RRR<"div">;
-def AND : LNP64RRR<"and">;
-def OR : LNP64RRR<"or">;
-def XOR : LNP64RRR<"xor">;
+def ADD : LNP64RRR<"add"> {
+  let Pattern = [(set GPR:$rd, (add GPR:$rs1, GPR:$rs2))];
+}
+def SUB : LNP64RRR<"sub"> {
+  let Pattern = [(set GPR:$rd, (sub GPR:$rs1, GPR:$rs2))];
+}
+def MUL : LNP64RRR<"mul"> {
+  let Pattern = [(set GPR:$rd, (mul GPR:$rs1, GPR:$rs2))];
+}
+def DIV : LNP64RRR<"div"> {
+  let Pattern = [(set GPR:$rd, (sdiv GPR:$rs1, GPR:$rs2))];
+}
+def AND : LNP64RRR<"and"> {
+  let Pattern = [(set GPR:$rd, (and GPR:$rs1, GPR:$rs2))];
+}
+def OR : LNP64RRR<"or"> {
+  let Pattern = [(set GPR:$rd, (or GPR:$rs1, GPR:$rs2))];
+}
+def XOR : LNP64RRR<"xor"> {
+  let Pattern = [(set GPR:$rd, (xor GPR:$rs1, GPR:$rs2))];
+}
 def NOT : LNP64RR<"not">;
-def LSL : LNP64RRR<"lsl">;
-def LSR : LNP64RRR<"lsr">;
-def ASR : LNP64RRR<"asr">;
+def LSL : LNP64RRR<"lsl"> {
+  let Pattern = [(set GPR:$rd, (shl GPR:$rs1, GPR:$rs2))];
+}
+def LSR : LNP64RRR<"lsr"> {
+  let Pattern = [(set GPR:$rd, (srl GPR:$rs1, GPR:$rs2))];
+}
+def ASR : LNP64RRR<"asr"> {
+  let Pattern = [(set GPR:$rd, (sra GPR:$rs1, GPR:$rs2))];
+}
 def CMP : LNP64Cmp<"cmp">;
 
 def JMP : LNP64Branch<"jmp">;

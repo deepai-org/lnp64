@@ -1862,6 +1862,11 @@ mod tests {
         assert!(target_machine.contains("e-m:e-p:64:64-i64:64-n64-S128"));
         assert!(subtarget.contains("TLInfo(TM, *this)"));
         assert!(isel.contains("addRegisterClass(MVT::i64"));
+        assert!(isel.contains("ISD::ADD"));
+        assert!(isel.contains("ISD::SDIV"));
+        assert!(isel.contains("computeRegisterProperties"));
+        assert!(instr_td.contains("(set GPR:$rd, (add GPR:$rs1, GPR:$rs2))"));
+        assert!(instr_td.contains("(set GPR:$rd, (shl GPR:$rs1, GPR:$rs2))"));
         assert!(isel.contains("setStackPointerRegisterToSaveRestore(LNP64::R31)"));
         assert!(frame.contains("StackGrowsDown"));
         assert!(frame.contains("Align(16)"));
@@ -1891,6 +1896,8 @@ mod tests {
         }
         assert!(codegen_test.contains("llc -mtriple=lnp64-unknown-none"));
         assert!(codegen_test.contains("XFAIL: *"));
+        assert!(codegen_test.contains("define i64 @arith"));
+        assert!(codegen_test.contains("; CHECK: lsl"));
         assert!(codegen_test.contains("__lnp_push"));
         assert!(mc_test.contains("llvm-mc -triple=lnp64-unknown-none"));
         assert!(mc_test.contains("li r1, 42"));

@@ -61,6 +61,10 @@ encodings are implemented. The disassembler decodes that same initial fixed32
 subset for future `llvm-mc` round trips. The MC layer now has target fixup
 kinds and object-writer relocation mapping for branch/data relocations, and the
 lld scaffold can patch `R_LNP64_BRANCH26` into the aligned signed branch field.
+The first SelectionDAG patterns now select simple i64 ALU operations
+(`add`/`sub`/`mul`/signed `div`, bitwise ops, and shifts) onto the fixed32 ALU
+opcodes; calls, returns, stack frames, memory selection, and branches remain
+bring-up blockers.
 `LNP64InstrInfo.td` now carries operand-bearing TableGen classes for integer
 RRR/RR/RI, branch, memory, atomic, and native-capability instruction shapes
 instead of name-only opcode stubs.
