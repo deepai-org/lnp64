@@ -2749,15 +2749,42 @@ impl Machine {
                     return Ok(());
                 };
                 let tid = self.next_tid;
-                self.next_tid += 1;
+                let stack_top = self.process()?.stack_top;
+                let stack_offset = match tid
+                    .checked_sub(1)
+                    .and_then(|index| index.checked_mul(THREAD_STACK_STRIDE))
+                {
+                    Some(offset) => offset,
+                    None => {
+                        self.set_status_errno(12)?;
+                        self.write_reg(dst, -1i64 as u64)?;
+                        return Ok(());
+                    }
+                };
+                let Some(child_stack) = stack_top
+                    .checked_sub(CALL_FRAME_SIZE)
+                    .and_then(|base| base.checked_sub(stack_offset))
+                else {
+                    self.set_status_errno(12)?;
+                    self.write_reg(dst, -1i64 as u64)?;
+                    return Ok(());
+                };
+                if self
+                    .ensure_mapped(child_stack, CALL_FRAME_SIZE as usize, true)
+                    .is_err()
+                {
+                    self.set_status_errno(12)?;
+                    self.write_reg(dst, -1i64 as u64)?;
+                    return Ok(());
+                }
                 let mut child = self.thread()?.clone();
                 child.tid = tid;
                 child.thread_pointer = 0;
                 child.ip = entry as usize;
-                let stack_top = self.process()?.stack_top;
-                child.regs[31] = stack_top - CALL_FRAME_SIZE - ((tid - 1) * THREAD_STACK_STRIDE);
+                child.regs[31] = child_stack;
                 let thread_return = self.process()?.program.instructions.len() as u64;
                 self.store_u64(child.regs[31], thread_return)?;
+                self.next_tid += 1;
                 self.threads.insert(tid, child);
                 self.ready.push_back(tid);
                 self.write_reg(dst, tid)?;
@@ -10421,6 +10448,16 @@ mod tests {
         assert_eq!(machine.process().unwrap().errno, 22);
         assert_eq!(machine.next_pid, next_pid);
         assert_eq!(machine.next_tid, next_tid);
+        assert_eq!(machine.processes.len(), process_count);
+        assert_eq!(machine.threads.len(), thread_count);
+
+        machine.next_tid = 17;
+        machine
+            .clone_with_profile(CloneProfile::NewThreadSharedVm, Reg(7), Some(0))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[7], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 12);
+        assert_eq!(machine.next_tid, 17);
         assert_eq!(machine.processes.len(), process_count);
         assert_eq!(machine.threads.len(), thread_count);
     }
