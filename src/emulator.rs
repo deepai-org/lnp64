@@ -84,6 +84,14 @@ const ENV_KEY_STARTUP_METADATA_PTR: u64 = 35;
 const ENV_KEY_STARTUP_METADATA_LEN: u64 = 36;
 const ENV_KEY_STARTUP_METADATA_FORMAT: u64 = 37;
 const ENV_KEY_STARTUP_METADATA_VERSION: u64 = 38;
+const ENV_KEY_SERVICELET_VERIFY_VERSION: u64 = 39;
+const ENV_KEY_SERVICELET_PROGRAM_LIMIT: u64 = 40;
+const ENV_KEY_SERVICELET_INSTRUCTION_LIMIT: u64 = 41;
+const ENV_KEY_SERVICELET_CYCLE_LIMIT: u64 = 42;
+const ENV_KEY_SERVICELET_RECORD_LIMIT: u64 = 43;
+const ENV_KEY_SERVICELET_ACTION_LIMIT: u64 = 44;
+const ENV_KEY_SERVICELET_ISA_MASK: u64 = 45;
+const ENV_KEY_SERVICELET_FLAG_MASK: u64 = 46;
 const ENV_KEY_PROCESS_ENTRY_RECORD: u64 = 64;
 const ENV_KEY_TOPOLOGY_RECORD: u64 = 65;
 const ENV_ISA_VERSION: u64 = 1;
@@ -6068,6 +6076,14 @@ impl Machine {
             ENV_KEY_STARTUP_METADATA_LEN => Some(ARG_SIZE),
             ENV_KEY_STARTUP_METADATA_FORMAT => Some(ENV_STARTUP_METADATA_FORMAT),
             ENV_KEY_STARTUP_METADATA_VERSION => Some(ENV_STARTUP_METADATA_VERSION),
+            ENV_KEY_SERVICELET_VERIFY_VERSION => Some(SERVICELET_VERIFY_VERSION),
+            ENV_KEY_SERVICELET_PROGRAM_LIMIT => Some(SERVICELET_MAX_PROGRAM_BYTES),
+            ENV_KEY_SERVICELET_INSTRUCTION_LIMIT => Some(SERVICELET_MAX_INSTRUCTIONS),
+            ENV_KEY_SERVICELET_CYCLE_LIMIT => Some(SERVICELET_MAX_CYCLES),
+            ENV_KEY_SERVICELET_RECORD_LIMIT => Some(SERVICELET_MAX_RECORD_BYTES),
+            ENV_KEY_SERVICELET_ACTION_LIMIT => Some(SERVICELET_MAX_ACTION_BYTES),
+            ENV_KEY_SERVICELET_ISA_MASK => Some(SERVICELET_ALLOWED_ISA_MASK),
+            ENV_KEY_SERVICELET_FLAG_MASK => Some(SERVICELET_FLAG_ALLOW_STATIC_LOOPS),
             ENV_KEY_ARGC => Some(self.env_argc()?),
             ENV_KEY_ARGV_BASE => Some(ARG_BASE + 8),
             ENV_KEY_ENVP_BASE => Some(self.env_envp_base()?),
@@ -10577,6 +10593,33 @@ mod tests {
             .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
             .unwrap();
         assert_eq!(machine.thread().unwrap().regs[1], ARG_SIZE);
+
+        let servicelet_env = [
+            (ENV_KEY_SERVICELET_VERIFY_VERSION, SERVICELET_VERIFY_VERSION),
+            (
+                ENV_KEY_SERVICELET_PROGRAM_LIMIT,
+                SERVICELET_MAX_PROGRAM_BYTES,
+            ),
+            (
+                ENV_KEY_SERVICELET_INSTRUCTION_LIMIT,
+                SERVICELET_MAX_INSTRUCTIONS,
+            ),
+            (ENV_KEY_SERVICELET_CYCLE_LIMIT, SERVICELET_MAX_CYCLES),
+            (ENV_KEY_SERVICELET_RECORD_LIMIT, SERVICELET_MAX_RECORD_BYTES),
+            (ENV_KEY_SERVICELET_ACTION_LIMIT, SERVICELET_MAX_ACTION_BYTES),
+            (ENV_KEY_SERVICELET_ISA_MASK, SERVICELET_ALLOWED_ISA_MASK),
+            (
+                ENV_KEY_SERVICELET_FLAG_MASK,
+                SERVICELET_FLAG_ALLOW_STATIC_LOOPS,
+            ),
+        ];
+        for (key, expected) in servicelet_env {
+            machine.thread_mut().unwrap().regs[2] = key;
+            machine
+                .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
+                .unwrap();
+            assert_eq!(machine.thread().unwrap().regs[1], expected);
+        }
     }
 
     #[test]
