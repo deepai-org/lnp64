@@ -2093,6 +2093,8 @@ mod tests {
         assert!(dag_isel.contains("SelectionDAGISel"));
         assert!(dag_isel.contains("LNP64GenDAGISel.inc"));
         assert!(dag_isel.contains("SelectCode(Node)"));
+        assert!(dag_isel.contains("SelectFrameIndexValue"));
+        assert!(dag_isel.contains("LNP64::PseudoFRAMEADDR"));
         assert!(dag_isel.contains("SelectFrameIndexLoad"));
         assert!(dag_isel.contains("SelectFrameIndexStore"));
         assert!(dag_isel.contains("getTargetFrameIndex"));
@@ -2204,9 +2206,11 @@ mod tests {
         assert!(instr_td.contains("class LNP64CondBranchPseudo"));
         assert!(instr_td.contains("class LNP64SetCCPseudo"));
         assert!(instr_td.contains("class LNP64SignedLoadPseudo"));
+        assert!(instr_td.contains("class LNP64FrameAddrPseudo"));
         assert!(instr_td.contains("def CSET_EQ"));
         assert!(instr_td.contains("def CSET_ULT"));
         assert!(instr_td.contains("def PseudoLD_SB"));
+        assert!(instr_td.contains("def PseudoFRAMEADDR"));
         assert!(instr_td.contains("usesCustomInserter = 1"));
         assert!(instr_td.contains("def PseudoBEQ"));
         assert!(instr_td.contains("def PseudoBULT"));
@@ -2285,6 +2289,9 @@ mod tests {
         assert!(reginfo.contains("eliminateFrameIndex"));
         assert!(reginfo.contains("void LNP64RegisterInfo::eliminateFrameIndex"));
         assert!(reginfo.contains("ChangeToRegister(LNP64::R31"));
+        assert!(reginfo.contains("LNP64::PseudoFRAMEADDR"));
+        assert!(reginfo.contains("LNP64 frame address offset exceeds signed-16 LI range"));
+        assert!(reginfo.contains("TII.get(LNP64::ADD)"));
         assert!(reginfo.contains("MFI.getObjectOffset"));
         assert!(reginfo.contains("isInt<14>(Offset)"));
         assert!(reginfo.contains("NoCalleeSaved"));

@@ -437,6 +437,44 @@ grep -q 'li32 r' "$wide_const_dump"
 printf 'real LLVM LNP64 clang wide-constant object smoke passed: %s\n' \
   "$wide_const_obj"
 
+stack_aggregate_c="$build_dir/stack-aggregate-smoke.c"
+cat >"$stack_aggregate_c" <<'C'
+struct Pair {
+  int a;
+  int b;
+};
+
+int stack_bytes(void) {
+  unsigned char bytes[3];
+  bytes[0] = 3;
+  bytes[1] = 4;
+  bytes[2] = 5;
+  return bytes[0] + bytes[1] + bytes[2];
+}
+
+int stack_pair(void) {
+  struct Pair p = {4, 6};
+  return p.a + p.b;
+}
+
+int main(void) {
+  return stack_bytes() + stack_pair() - 22;
+}
+C
+
+stack_aggregate_obj="$build_dir/stack-aggregate-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$stack_aggregate_c" -o "$stack_aggregate_obj"
+test -s "$stack_aggregate_obj"
+stack_aggregate_dump="$build_dir/stack-aggregate-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$stack_aggregate_obj" \
+  >"$stack_aggregate_dump"
+grep -q 'add r.*r31' "$stack_aggregate_dump"
+grep -q 'st.b' "$stack_aggregate_dump"
+printf 'real LLVM LNP64 clang stack aggregate object smoke passed: %s\n' \
+  "$stack_aggregate_obj"
+
 crt0_obj="$build_dir/crt0-smoke.o"
 "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj toolchain/crt0_lnp64.s \
   -o "$crt0_obj"
@@ -522,6 +560,13 @@ wide_const_elf="$build_dir/lnp64-wide-const-linked.elf"
 test -s "$wide_const_elf"
 printf 'real LLVM LNP64 lld wide-constant link smoke passed: %s\n' \
   "$wide_const_elf"
+
+stack_aggregate_elf="$build_dir/lnp64-stack-aggregate-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$stack_aggregate_elf" "$crt0_obj" "$stack_aggregate_obj"
+test -s "$stack_aggregate_elf"
+printf 'real LLVM LNP64 lld stack aggregate link smoke passed: %s\n' \
+  "$stack_aggregate_elf"
 
 for demo in hello factorial allocator fibonacci; do
   demo_obj="$build_dir/$demo-clang-smoke.o"

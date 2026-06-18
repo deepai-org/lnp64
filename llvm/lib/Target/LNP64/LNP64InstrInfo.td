@@ -136,6 +136,12 @@ class LNP64SignedLoadPseudo<string Mnemonic>
   let usesCustomInserter = 1;
 }
 
+class LNP64FrameAddrPseudo<string Mnemonic>
+    : LNP64Inst<(outs GPR:$rd), (ins GPR:$base, simm14:$offset), Mnemonic,
+                "\t$rd, $offset($base)"> {
+  let isPseudo = 1;
+}
+
 class LNP64MemStore<string Mnemonic>
     : LNP64Inst<(outs), (ins GPR:$rs, GPR:$base, simm14:$offset), Mnemonic,
                 "\t$rs, $offset($base)">;
@@ -344,6 +350,7 @@ def LD_B : LNP64MemLoad<"ld.b">;
 def PseudoLD_SW : LNP64SignedLoadPseudo<"pseudo_ld.sw">;
 def PseudoLD_SH : LNP64SignedLoadPseudo<"pseudo_ld.sh">;
 def PseudoLD_SB : LNP64SignedLoadPseudo<"pseudo_ld.sb">;
+def PseudoFRAMEADDR : LNP64FrameAddrPseudo<"pseudo_frameaddr">;
 def ST : LNP64MemStore<"st">;
 def ST_W : LNP64MemStore<"st.w">;
 def ST_H : LNP64MemStore<"st.h">;

@@ -21,6 +21,7 @@ public:
   }
 
   void Select(SDNode *Node) override;
+  bool SelectFrameIndexValue(SDNode *Node);
   bool SelectFrameIndexLoad(SDNode *Node);
   bool SelectFrameIndexStore(SDNode *Node);
 
@@ -28,6 +29,21 @@ public:
 };
 
 } // end anonymous namespace
+
+bool LNP64DAGToDAGISel::SelectFrameIndexValue(SDNode *Node) {
+  auto *FI = dyn_cast<FrameIndexSDNode>(Node);
+  if (!FI)
+    return false;
+
+  SDLoc DL(Node);
+  SDValue Base = CurDAG->getTargetFrameIndex(FI->getIndex(), MVT::i64);
+  SDValue Offset = CurDAG->getTargetConstant(0, DL, MVT::i64);
+  SDNode *Selected =
+      CurDAG->getMachineNode(LNP64::PseudoFRAMEADDR, DL, MVT::i64,
+                             {Base, Offset});
+  ReplaceNode(Node, Selected);
+  return true;
+}
 
 bool LNP64DAGToDAGISel::SelectFrameIndexLoad(SDNode *Node) {
   auto *Load = dyn_cast<LoadSDNode>(Node);
@@ -113,7 +129,8 @@ void LNP64DAGToDAGISel::Select(SDNode *Node) {
     return;
   }
 
-  if (SelectFrameIndexLoad(Node) || SelectFrameIndexStore(Node))
+  if (SelectFrameIndexLoad(Node) || SelectFrameIndexStore(Node) ||
+      SelectFrameIndexValue(Node))
     return;
 
   SelectCode(Node);

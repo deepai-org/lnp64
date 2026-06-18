@@ -80,3 +80,10 @@ wide_const_output="$(cargo run --quiet -- run-elf "$wide_const_probe")"
 grep -q 'exit=0' <<<"$wide_const_output"
 printf 'real LLVM LNP64 run-elf wide-constant execution passed: %s\n' \
   "$wide_const_probe"
+
+stack_aggregate_probe="target/llvm-lnp64-build/lnp64-stack-aggregate-linked.elf"
+cargo run --quiet -- elf-plan "$stack_aggregate_probe" >/dev/null
+stack_aggregate_output="$(cargo run --quiet -- run-elf "$stack_aggregate_probe")"
+grep -q 'exit=0' <<<"$stack_aggregate_output"
+printf 'real LLVM LNP64 run-elf stack aggregate execution passed: %s\n' \
+  "$stack_aggregate_probe"

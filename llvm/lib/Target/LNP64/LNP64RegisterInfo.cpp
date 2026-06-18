@@ -3,7 +3,9 @@
 #include "MCTargetDesc/LNP64MCTargetDesc.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineInstr.h"
+#include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
@@ -46,6 +48,28 @@ void LNP64RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   if (FIOperandNum + 1 < MI.getNumOperands() &&
       MI.getOperand(FIOperandNum + 1).isImm())
     Offset += MI.getOperand(FIOperandNum + 1).getImm();
+
+  if (MI.getOpcode() == LNP64::PseudoFRAMEADDR) {
+    if (!isInt<16>(Offset))
+      llvm_unreachable(
+          "LNP64 frame address offset exceeds signed-16 LI range");
+
+    const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
+    MachineBasicBlock &MBB = *MI.getParent();
+    DebugLoc DL = MI.getDebugLoc();
+    Register Dst = MI.getOperand(0).getReg();
+    if (Offset == 0) {
+      BuildMI(MBB, MI, DL, TII.get(LNP64::MOV), Dst).addReg(LNP64::R31);
+    } else {
+      BuildMI(MBB, MI, DL, TII.get(LNP64::LI), LNP64::R30).addImm(Offset);
+      BuildMI(MBB, MI, DL, TII.get(LNP64::ADD), Dst)
+          .addReg(LNP64::R31)
+          .addReg(LNP64::R30);
+    }
+    MI.eraseFromParent();
+    return;
+  }
+
   if (!isInt<14>(Offset))
     llvm_unreachable("LNP64 frame index offset exceeds signed-14 memory field");
 
