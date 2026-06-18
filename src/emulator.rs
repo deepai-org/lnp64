@@ -246,6 +246,7 @@ const OBJECT_OP_SOCKET_SETSOCKOPT: u64 = 8;
 const OBJECT_OP_CLASSIFY: u64 = 9;
 const OBJECT_OP_CLASSIFIER_QUERY: u64 = 10;
 const EVENTFD_SEMAPHORE: u64 = 1;
+const EVENTFD_NONBLOCK: u64 = 0x800;
 const CLASSIFIER_MAX_RULES: usize = 64;
 const CLASSIFIER_MAX_ALLOWED_QUEUES: usize = 64;
 const CLASSIFIER_MAX_ROUTE_BYTES: usize = 4096;
@@ -4182,6 +4183,9 @@ impl Machine {
             }
             (ObjectKind::Counter, ObjectProfile::EventFd) => {
                 let flags = self.load_u64(argblock + 48).map_err(|_| 14u64)?;
+                if flags & !(EVENTFD_SEMAPHORE | EVENTFD_NONBLOCK) != 0 {
+                    return Err(22);
+                }
                 let fd = self.install_object_fd(
                     fd0_req,
                     FdHandle::EventCounter {
@@ -9041,6 +9045,33 @@ mod tests {
         machine.object_ctl(Reg(6), arg).unwrap();
         assert_eq!(machine.thread().unwrap().regs[6], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 1);
+    }
+
+    #[test]
+    fn object_ctl_eventfd_rejects_unknown_flags_without_installing_fd() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let arg = ARG_BASE;
+
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::Counter.code())
+            .unwrap();
+        machine
+            .store_u64(arg + 16, ObjectProfile::EventFd.code())
+            .unwrap();
+        machine.store_u64(arg + 24, 7).unwrap();
+        machine.store_u64(arg + 40, 1).unwrap();
+        machine.store_u64(arg + 48, 1 << 4).unwrap();
+
+        machine.object_ctl(Reg(2), arg).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert!(matches!(
+            machine.process().unwrap().fds[7],
+            FdHandle::Closed
+        ));
     }
 
     #[test]
