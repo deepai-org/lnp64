@@ -62,8 +62,9 @@ NetBSD policy. Those remain loader, libc, and personality responsibilities.
      `toolchain/lnp64_inline_asm.manifest`.
    - Backend builtins or Clang intrinsics for private `__lnp_*` shims:
      `__lnp_openat`, `__lnp_pull`, `__lnp_push`, `__lnp_mmap`,
-     `__lnp_await`, `__lnp_gate_call`, `__lnp_gate_return`,
-     `__lnp_domain_ctl`, `__lnp_object_ctl`, `__lnp_cap_dup`,
+     `__lnp_await`, `__lnp_gate_call`, `__lnp_call`,
+     `__lnp_gate_return`, `__lnp_domain_ctl`, `__lnp_domain_create`,
+     `__lnp_object_ctl`, `__lnp_object_create`, `__lnp_cap_dup`,
      `__lnp_cap_send`, `__lnp_cap_recv`, and `__lnp_cap_revoke`.
    - Application C should normally call libc/POSIX APIs, not raw primitives.
 

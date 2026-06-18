@@ -22319,6 +22319,7 @@ int main() {
             int fds[2];
             int obj;
             int mapped;
+            int counter;
             int narrowed;
             int received;
             int revoked;
@@ -22334,21 +22335,27 @@ int main() {
             if (__lnp_object_ctl(obj) == -1) return 1;
             mapped = __lnp_mmap(3, 8, 3);
             if (mapped == -1) return 2;
+            counter = __lnp_object_create(1, 0, 0, 0, 7);
+            if (counter == -1) return 3;
+            if (read(counter, mapped, 8) != 8) return 4;
+            if (load(mapped) != 7) return 5;
 
-            if (pipe(fds) != 0) return 3;
+            if (pipe(fds) != 0) return 6;
             narrowed = __lnp_cap_dup(fds[0], 0, 257, 0);
-            if (narrowed == -1) return 4;
-            if (__lnp_cap_send(fds[1], narrowed, 0) != 1) return 5;
+            if (narrowed == -1) return 7;
+            if (__lnp_cap_send(fds[1], narrowed, 0) != 1) return 8;
             received = __lnp_cap_recv(fds[0], 0, 1, 0);
-            if (received == -1) return 6;
+            if (received == -1) return 9;
             revoked = __lnp_cap_revoke(fds[1]);
-            if (revoked == -1) return 7;
+            if (revoked == -1) return 10;
 
             domain = __lnp_domain_create(5000000, 2, 8, 63);
-            if (domain == -1) return 8;
+            if (domain == -1) return 11;
             call_gate(5, domain, service);
+            result = __lnp_call(5, 1, 2);
+            if (result != 88) return 12;
             result = __lnp_gate_call(5, 1, 2, 0);
-            if (result != 88) return 9;
+            if (result != 88) return 13;
             return 0;
         }
         "#;
