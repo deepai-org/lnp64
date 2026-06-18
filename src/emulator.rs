@@ -1148,7 +1148,8 @@ fn checked_exec_count(value: u64, limit: usize, name: &str) -> Result<usize, Str
     Ok(count)
 }
 
-fn validate_exec_vma_words(words: &[u64]) -> Result<(), String> {
+fn validate_exec_vma_words(words: &[u64]) -> Result<(u64, u64), String> {
+    let virtual_address = words[0];
     let length = words[1];
     let protection = words[2];
     let memory_type = words[3];
@@ -1157,6 +1158,9 @@ fn validate_exec_vma_words(words: &[u64]) -> Result<(), String> {
     if length == 0 {
         return Err("exec-plan VMA length is zero".to_string());
     }
+    let end = virtual_address
+        .checked_add(length)
+        .ok_or_else(|| "exec-plan VMA range overflows".to_string())?;
     if protection & !EXEC_PLAN_VMA_PROT_MASK != 0 {
         return Err("exec-plan VMA protection has unknown bits".to_string());
     }
@@ -1182,7 +1186,7 @@ fn validate_exec_vma_words(words: &[u64]) -> Result<(), String> {
     if zero_fill_length > length {
         return Err("exec-plan VMA zero-fill exceeds mapping length".to_string());
     }
-    Ok(())
+    Ok((virtual_address, end))
 }
 
 fn validate_exec_fdr_grant_words(words: &[u64]) -> Result<(), String> {
@@ -1275,8 +1279,15 @@ impl Machine {
         }
 
         let mut offset = minimum_words;
+        let mut vma_ranges: Vec<(u64, u64)> = Vec::with_capacity(vma_count);
         for _ in 0..vma_count {
-            validate_exec_vma_words(&words[offset..offset + EXEC_PLAN_VMA_WORDS])?;
+            let range = validate_exec_vma_words(&words[offset..offset + EXEC_PLAN_VMA_WORDS])?;
+            for existing in &vma_ranges {
+                if range.0 < existing.1 && existing.0 < range.1 {
+                    return Err("exec-plan VMA ranges overlap".to_string());
+                }
+            }
+            vma_ranges.push(range);
             offset += EXEC_PLAN_VMA_WORDS;
         }
         for _ in 0..fdr_count {
@@ -13234,6 +13245,26 @@ mod tests {
         let err = Machine::validate_exec_descriptor_words(&words).unwrap_err();
 
         assert!(err.contains("writable executable"), "{err}");
+    }
+
+    #[test]
+    fn emulator_rejects_overlapping_exec_descriptor_vmas() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let mut words = encode_exec_descriptor(&descriptor);
+        words[24] = 0x400800;
+
+        let err = Machine::validate_exec_descriptor_words(&words).unwrap_err();
+
+        assert!(err.contains("overlap"), "{err}");
     }
 
     #[test]
