@@ -1681,6 +1681,8 @@ mod tests {
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic push execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-exit-linked.elf"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf exit execution passed"));
         assert!(main_source.contains("\"run-elf\""));
         assert!(main_source.contains("run_committed_exec"));
         assert!(loader_security.contains("submit_exec_plan"));
@@ -1734,6 +1736,7 @@ mod tests {
             "real_clang_lld_probe",
             "real_clang_demo_execution",
             "real_intrinsic_push_execution",
+            "real_exit_execution",
             "entry_state",
             "text_fetch_decode",
             "stdout_exit",
@@ -1751,6 +1754,7 @@ mod tests {
             "real_clang_lld_probe",
             "real_clang_demo_execution",
             "real_intrinsic_push_execution",
+            "real_exit_execution",
             "text_fetch_decode",
         ] {
             assert_eq!(stages[stage].0, "tested", "{stage} should be tested");
@@ -2587,6 +2591,11 @@ mod tests {
             ".globl free",
             "free:",
             "LI r1, 0",
+            ".globl _exit",
+            "_exit:",
+            "EXIT r1",
+            ".globl exit",
+            "exit:",
             "__lnp64_min_heap_cursor:",
             ".quad 0",
             "__lnp64_min_heap:",

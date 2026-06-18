@@ -319,11 +319,11 @@ backend files and writes generated includes under `target/real-llvm-tblgen`.
 upstream LLVM 14 `clang`, `llc`, `llvm-mc`, `llvm-objdump`, and an ELF-only
 `lld` smoke driver with LNP64 registered, then proving IR codegen, real Clang
 scalar C, hello object, factorial object, allocator object, and Fibonacci calls
-object compilation, a C `__lnp_push` native-intrinsic object, crt0/minilibc
-assembly, disassembly, assembler-main static linking, intrinsic static linking,
-per-demo Clang-object static linking, linked hello/factorial/allocator/Fibonacci
-`run-elf` execution smokes, and a direct intrinsic `run-elf` execution smoke
-through those real tools.
+object compilation, C `__lnp_push` native-intrinsic and `_exit` objects,
+crt0/minilibc assembly, disassembly, assembler-main static linking, intrinsic
+and exit static linking, per-demo Clang-object static linking, linked
+hello/factorial/allocator/Fibonacci `run-elf` execution smokes, and direct
+intrinsic/exit `run-elf` execution smokes through those real tools.
 The Clang compile gates must include `toolchain/lnp64_intrinsics.h`, the crt
 gate must assemble `toolchain/crt0_lnp64.s`, the static link gate must use
 `toolchain/lnp64_static.ld`, and all gates must stay Clang/lld/loader based: no

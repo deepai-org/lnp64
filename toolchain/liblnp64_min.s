@@ -33,6 +33,18 @@ free:
   LI r1, 0
   RET
 
+.globl _exit
+.type _exit,@function
+_exit:
+  EXIT r1
+  RET
+
+.globl exit
+.type exit,@function
+exit:
+  EXIT r1
+  RET
+
 .bss
 .globl __lnp64_min_heap_cursor
 __lnp64_min_heap_cursor:

@@ -38,3 +38,10 @@ grep -q 'intrinsic push ok' <<<"$intrinsic_output"
 grep -q 'exit=0' <<<"$intrinsic_output"
 printf 'real LLVM LNP64 run-elf intrinsic push execution passed: %s\n' \
   "$intrinsic_probe"
+
+exit_probe="target/llvm-lnp64-build/lnp64-exit-linked.elf"
+cargo run --quiet -- elf-plan "$exit_probe" >/dev/null
+exit_output="$(cargo run --quiet -- run-elf "$exit_probe")"
+grep -q 'exit=0' <<<"$exit_output"
+printf 'real LLVM LNP64 run-elf exit execution passed: %s\n' \
+  "$exit_probe"

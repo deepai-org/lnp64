@@ -264,6 +264,25 @@ grep -q 'push r' "$intrinsic_push_dump"
 printf 'real LLVM LNP64 clang intrinsic push object smoke passed: %s\n' \
   "$intrinsic_push_obj"
 
+exit_c="$build_dir/exit-smoke.c"
+cat >"$exit_c" <<'C'
+int main(void) {
+  _exit(0);
+  return 7;
+}
+C
+
+exit_obj="$build_dir/exit-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables \
+  -Wno-implicit-function-declaration -I toolchain \
+  -c "$exit_c" -o "$exit_obj"
+test -s "$exit_obj"
+exit_dump="$build_dir/exit-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$exit_obj" >"$exit_dump"
+grep -q 'call ' "$exit_dump"
+printf 'real LLVM LNP64 clang exit object smoke passed: %s\n' "$exit_obj"
+
 crt0_obj="$build_dir/crt0-smoke.o"
 "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj toolchain/crt0_lnp64.s \
   -o "$crt0_obj"
@@ -309,6 +328,12 @@ intrinsic_push_elf="$build_dir/lnp64-intrinsic-push-linked.elf"
 test -s "$intrinsic_push_elf"
 printf 'real LLVM LNP64 lld intrinsic push link smoke passed: %s\n' \
   "$intrinsic_push_elf"
+
+exit_elf="$build_dir/lnp64-exit-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$exit_elf" "$crt0_obj" "$exit_obj" "$minilibc_obj"
+test -s "$exit_elf"
+printf 'real LLVM LNP64 lld exit link smoke passed: %s\n' "$exit_elf"
 
 for demo in hello factorial allocator fibonacci; do
   demo_obj="$build_dir/$demo-clang-smoke.o"
