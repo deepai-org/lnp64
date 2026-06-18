@@ -4013,6 +4013,9 @@ impl Machine {
         rights_req: u64,
         flags: u64,
     ) -> Result<u64, u64> {
+        if flags & !CAP_DUP_FLAG_SEAL != 0 {
+            return Err(22);
+        }
         let src = self.decode_fd_value(src_value)?;
         let source_cap = self
             .process()
@@ -10816,6 +10819,43 @@ mod tests {
         machine.cap_dup(Reg(8), arg).unwrap();
         assert_eq!(machine.thread().unwrap().regs[8], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 1);
+    }
+
+    #[test]
+    fn cap_dup_rejects_unknown_flags_without_installing_destination() {
+        let program = Program::parse(
+            r#"
+            .data
+            path: .string "Cargo.toml"
+
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let path = program.data_labels["path"];
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[1] = path;
+        machine.thread_mut().unwrap().regs[2] = 0;
+        machine
+            .exec(Instr::OpenFdDyn(Reg(3), Reg(1), Reg(2)))
+            .unwrap();
+        let source = machine.thread().unwrap().regs[3];
+        let arg = ARG_BASE;
+        machine.store_u64(arg, source).unwrap();
+        machine.store_u64(arg + 8, 8).unwrap();
+        machine.store_u64(arg + 16, CAP_RIGHT_READ).unwrap();
+        machine.store_u64(arg + 24, 1 << 4).unwrap();
+
+        machine.cap_dup(Reg(4), arg).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[4], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert!(matches!(
+            machine.process().unwrap().fds[8],
+            FdHandle::Closed
+        ));
     }
 
     #[test]
