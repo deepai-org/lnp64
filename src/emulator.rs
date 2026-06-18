@@ -1450,6 +1450,7 @@ impl Machine {
                 self.store_width(addr, self.read_reg(src)?, width)?;
             }
             Instr::Pull(result, fd, buf, len) => {
+                Self::ensure_result_reg_writable(result)?;
                 self.require_domain_cap(DOMAIN_CAP_IO)?;
                 if fd.0 == MESSAGE_ENDPOINT_FD {
                     let Some((v1, v2)) = self.process_mut()?.inbox.pop_front() else {
@@ -1469,6 +1470,7 @@ impl Machine {
                 }
             }
             Instr::Push(result, fd, buf, len) => {
+                Self::ensure_result_reg_writable(result)?;
                 self.require_domain_cap(DOMAIN_CAP_IO)?;
                 let addr = self.read_reg(buf)?;
                 let len = self.read_reg(len)? as usize;
@@ -8400,6 +8402,24 @@ mod tests {
             machine.poll_fd_index_mask_raw(4, POLLOUT_MASK).unwrap(),
             POLLOUT_MASK
         );
+    }
+
+    #[test]
+    fn push_rejects_locked_result_register_before_queue_write() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        create_pipe_pair(&mut machine, 3, 4);
+        let payload = ARG_BASE + 0x100;
+        machine.write_bytes(payload, b"x").unwrap();
+        machine.thread_mut().unwrap().regs[2] = payload;
+        machine.thread_mut().unwrap().regs[3] = 1;
+
+        let err = machine
+            .exec(Instr::Push(Reg(31), FdReg(4), Reg(2), Reg(3)))
+            .unwrap_err();
+
+        assert!(err.contains("hardware-locked stack pointer"), "{err}");
+        assert!(!machine.fd_read_ready(3).unwrap());
     }
 
     #[test]
