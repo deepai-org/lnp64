@@ -1753,6 +1753,7 @@ mod tests {
         let registers_td = include_str!("../llvm/lib/Target/LNP64/LNP64RegisterInfo.td");
         let calling_td = include_str!("../llvm/lib/Target/LNP64/LNP64CallingConv.td");
         let instr_td = include_str!("../llvm/lib/Target/LNP64/LNP64InstrInfo.td");
+        let instr_info = include_str!("../llvm/lib/Target/LNP64/LNP64InstrInfo.cpp");
         let cmake = include_str!("../llvm/lib/Target/LNP64/CMakeLists.txt");
         let target_info = include_str!("../llvm/lib/Target/LNP64/TargetInfo/LNP64TargetInfo.cpp");
         let mc_desc_header =
@@ -1880,6 +1881,8 @@ mod tests {
         assert!(instr_td.contains("Defs = [LR]"));
         assert!(instr_td.contains("Uses = [LR]"));
         assert!(instr_td.contains("isBranch = 1"));
+        assert!(instr_info.contains("copyPhysReg"));
+        assert!(instr_info.contains("BuildMI(MBB, I, DL, get(LNP64::MOV), DestReg)"));
         assert!(isel.contains("setStackPointerRegisterToSaveRestore(LNP64::R31)"));
         assert!(frame.contains("StackGrowsDown"));
         assert!(frame.contains("Align(16)"));

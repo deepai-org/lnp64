@@ -15,6 +15,9 @@ public:
   LNP64InstrInfo();
 
   const LNP64RegisterInfo &getRegisterInfo() const { return RI; }
+  void copyPhysReg(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
+                   const DebugLoc &DL, MCRegister DestReg, MCRegister SrcReg,
+                   bool KillSrc) const override;
 };
 
 } // end namespace llvm

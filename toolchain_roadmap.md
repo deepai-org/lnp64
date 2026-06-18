@@ -68,6 +68,8 @@ frames, memory selection, and branches remain bring-up blockers.
 Control-flow opcodes now carry TableGen instruction properties for branches,
 calls, link-register definition/use, returns, terminators, and barriers, so
 later call/return lowering and verifier work can rely on instruction metadata.
+`LNP64InstrInfo` now lowers GPR-to-GPR physical register copies through `MOV`,
+giving instruction selection and register allocation a concrete copy path.
 `LNP64InstrInfo.td` now carries operand-bearing TableGen classes for integer
 RRR/RR/RI, branch, memory, atomic, and native-capability instruction shapes
 instead of name-only opcode stubs.
