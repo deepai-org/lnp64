@@ -14,6 +14,15 @@ def LNP64retflag : SDNode<"LNP64ISD::RET_FLAG", SDTNone,
 def LNP64call : SDNode<"LNP64ISD::CALL", SDTNone,
                        [SDNPHasChain, SDNPOptInGlue, SDNPOutGlue,
                         SDNPVariadic]>;
+def SDT_LNP64BrCC : SDTypeProfile<0, 3, [
+  SDTCisVT<0, i64>, SDTCisVT<1, i64>, SDTCisVT<2, OtherVT>
+]>;
+def LNP64breq : SDNode<"LNP64ISD::BR_EQ", SDT_LNP64BrCC, [SDNPHasChain]>;
+def LNP64brge : SDNode<"LNP64ISD::BR_GE", SDT_LNP64BrCC, [SDNPHasChain]>;
+def LNP64brgt : SDNode<"LNP64ISD::BR_GT", SDT_LNP64BrCC, [SDNPHasChain]>;
+def LNP64brle : SDNode<"LNP64ISD::BR_LE", SDT_LNP64BrCC, [SDNPHasChain]>;
+def LNP64brlt : SDNode<"LNP64ISD::BR_LT", SDT_LNP64BrCC, [SDNPHasChain]>;
+def LNP64brne : SDNode<"LNP64ISD::BR_NE", SDT_LNP64BrCC, [SDNPHasChain]>;
 def SDT_LNP64Native1 : SDTypeProfile<1, 1, [
   SDTCisVT<0, i64>, SDTCisVT<1, i64>
 ]>;
@@ -60,6 +69,16 @@ class LNP64Cmp<string Mnemonic>
 
 class LNP64Branch<string Mnemonic>
     : LNP64Inst<(outs), (ins brtarget:$target), Mnemonic, "\t$target">;
+
+class LNP64CondBranchPseudo<string Mnemonic>
+    : LNP64Inst<(outs), (ins GPR:$lhs, GPR:$rhs, brtarget:$target),
+                Mnemonic, "\t$lhs, $rhs, $target"> {
+  let isPseudo = 1;
+  let isBranch = 1;
+  let isTerminator = 1;
+  let Uses = [FLAGS];
+  let usesCustomInserter = 1;
+}
 
 class LNP64MemLoad<string Mnemonic>
     : LNP64Inst<(outs GPR:$rd), (ins GPR:$base, simm14:$offset), Mnemonic,
@@ -128,6 +147,24 @@ def BGT : LNP64Branch<"bgt">;
 def BLE : LNP64Branch<"ble">;
 def BGE : LNP64Branch<"bge">;
 }
+def PseudoBEQ : LNP64CondBranchPseudo<"pseudo_beq">;
+def PseudoBNE : LNP64CondBranchPseudo<"pseudo_bne">;
+def PseudoBLT : LNP64CondBranchPseudo<"pseudo_blt">;
+def PseudoBGT : LNP64CondBranchPseudo<"pseudo_bgt">;
+def PseudoBLE : LNP64CondBranchPseudo<"pseudo_ble">;
+def PseudoBGE : LNP64CondBranchPseudo<"pseudo_bge">;
+def : Pat<(LNP64breq GPR:$lhs, GPR:$rhs, bb:$target),
+          (PseudoBEQ GPR:$lhs, GPR:$rhs, bb:$target)>;
+def : Pat<(LNP64brne GPR:$lhs, GPR:$rhs, bb:$target),
+          (PseudoBNE GPR:$lhs, GPR:$rhs, bb:$target)>;
+def : Pat<(LNP64brlt GPR:$lhs, GPR:$rhs, bb:$target),
+          (PseudoBLT GPR:$lhs, GPR:$rhs, bb:$target)>;
+def : Pat<(LNP64brgt GPR:$lhs, GPR:$rhs, bb:$target),
+          (PseudoBGT GPR:$lhs, GPR:$rhs, bb:$target)>;
+def : Pat<(LNP64brle GPR:$lhs, GPR:$rhs, bb:$target),
+          (PseudoBLE GPR:$lhs, GPR:$rhs, bb:$target)>;
+def : Pat<(LNP64brge GPR:$lhs, GPR:$rhs, bb:$target),
+          (PseudoBGE GPR:$lhs, GPR:$rhs, bb:$target)>;
 let isCall = 1, Defs = [LR] in
 def CALL : LNP64Branch<"call">;
 def : Pat<(LNP64call tglobaladdr:$target), (CALL tglobaladdr:$target)>;

@@ -1,7 +1,10 @@
 #include "LNP64ISelLowering.h"
+#include "LNP64InstrInfo.h"
 #include "LNP64Subtarget.h"
 #include "llvm/CodeGen/CallingConvLower.h"
+#include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/SelectionDAG.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -15,6 +18,45 @@ static StringRef getDirectCalleeName(SDValue Callee) {
   if (ExternalSymbolSDNode *S = dyn_cast<ExternalSymbolSDNode>(Callee))
     return S->getSymbol();
   return StringRef();
+}
+
+static unsigned getLNP64BranchOpcode(ISD::CondCode CC) {
+  switch (CC) {
+  case ISD::SETEQ:
+    return LNP64ISD::BR_EQ;
+  case ISD::SETNE:
+    return LNP64ISD::BR_NE;
+  case ISD::SETLT:
+    return LNP64ISD::BR_LT;
+  case ISD::SETGT:
+    return LNP64ISD::BR_GT;
+  case ISD::SETLE:
+    return LNP64ISD::BR_LE;
+  case ISD::SETGE:
+    return LNP64ISD::BR_GE;
+  default:
+    llvm_unreachable(
+        "LNP64 conditional branch lowering only supports signed comparisons today");
+  }
+}
+
+static unsigned getLNP64BranchInstr(unsigned Opcode) {
+  switch (Opcode) {
+  case LNP64::PseudoBEQ:
+    return LNP64::BEQ;
+  case LNP64::PseudoBNE:
+    return LNP64::BNE;
+  case LNP64::PseudoBLT:
+    return LNP64::BLT;
+  case LNP64::PseudoBGT:
+    return LNP64::BGT;
+  case LNP64::PseudoBLE:
+    return LNP64::BLE;
+  case LNP64::PseudoBGE:
+    return LNP64::BGE;
+  default:
+    llvm_unreachable("expected LNP64 conditional branch pseudo");
+  }
 }
 
 LNP64TargetLowering::LNP64TargetLowering(const TargetMachine &TM,
@@ -31,6 +73,7 @@ LNP64TargetLowering::LNP64TargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::UDIV, MVT::i64, Expand);
   setOperationAction(ISD::UREM, MVT::i64, Expand);
   setOperationAction(ISD::SREM, MVT::i64, Expand);
+  setOperationAction(ISD::BR_CC, MVT::i64, Custom);
   for (MVT MemVT : {MVT::i8, MVT::i16, MVT::i32}) {
     setLoadExtAction(ISD::ZEXTLOAD, MVT::i64, MemVT, Legal);
     setTruncStoreAction(MVT::i64, MemVT, Legal);
@@ -40,6 +83,18 @@ LNP64TargetLowering::LNP64TargetLowering(const TargetMachine &TM,
 
 const char *LNP64TargetLowering::getTargetNodeName(unsigned Opcode) const {
   switch (Opcode) {
+  case LNP64ISD::BR_EQ:
+    return "LNP64ISD::BR_EQ";
+  case LNP64ISD::BR_GE:
+    return "LNP64ISD::BR_GE";
+  case LNP64ISD::BR_GT:
+    return "LNP64ISD::BR_GT";
+  case LNP64ISD::BR_LE:
+    return "LNP64ISD::BR_LE";
+  case LNP64ISD::BR_LT:
+    return "LNP64ISD::BR_LT";
+  case LNP64ISD::BR_NE:
+    return "LNP64ISD::BR_NE";
   case LNP64ISD::CALL:
     return "LNP64ISD::CALL";
   case LNP64ISD::DOMAIN_CTL:
@@ -57,6 +112,37 @@ const char *LNP64TargetLowering::getTargetNodeName(unsigned Opcode) const {
   default:
     return nullptr;
   }
+}
+
+SDValue LNP64TargetLowering::LowerOperation(SDValue Op,
+                                            SelectionDAG &DAG) const {
+  switch (Op.getOpcode()) {
+  case ISD::BR_CC: {
+    SDValue Chain = Op.getOperand(0);
+    auto *CC = cast<CondCodeSDNode>(Op.getOperand(1));
+    SDValue LHS = Op.getOperand(2);
+    SDValue RHS = Op.getOperand(3);
+    SDValue Target = Op.getOperand(4);
+    return DAG.getNode(getLNP64BranchOpcode(CC->get()), SDLoc(Op), MVT::Other,
+                       {Chain, LHS, RHS, Target});
+  }
+  default:
+    llvm_unreachable("unsupported LNP64 custom lowering opcode");
+  }
+}
+
+MachineBasicBlock *LNP64TargetLowering::EmitInstrWithCustomInserter(
+    MachineInstr &MI, MachineBasicBlock *BB) const {
+  const TargetInstrInfo &TII = *BB->getParent()->getSubtarget().getInstrInfo();
+  DebugLoc DL = MI.getDebugLoc();
+  unsigned BranchOpcode = getLNP64BranchInstr(MI.getOpcode());
+
+  BuildMI(*BB, MI, DL, TII.get(LNP64::CMP))
+      .add(MI.getOperand(0))
+      .add(MI.getOperand(1));
+  BuildMI(*BB, MI, DL, TII.get(BranchOpcode)).add(MI.getOperand(2));
+  MI.eraseFromParent();
+  return BB;
 }
 
 SDValue LNP64TargetLowering::LowerFormalArguments(

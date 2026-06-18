@@ -70,9 +70,11 @@ fixed32 opcodes. LLVM unconditional `br` now selects the architectural `JMP`
 through a machine-basic-block branch target operand. Non-varargs calls now
 lower register arguments through `CC_LNP64`, emit `CALL` for global or external
 callees, emit `CALL_REG` for register callees, and copy register results through
-`RetCC_LNP64`. Conditional branch lowering, stack call operands/results,
-call-frame pseudos, signed narrow loads, unaligned/large-offset address
-expansion, and globals remain bring-up blockers.
+`RetCC_LNP64`. LLVM `BR_CC` now lowers signed integer comparisons through
+condition-specific pseudo branches that expand to `CMP` plus `BEQ`/`BNE`/`BLT`/
+`BGT`/`BLE`/`BGE`. Stack call operands/results, call-frame pseudos, signed
+narrow loads, unaligned/large-offset address expansion, unsigned conditional
+branches, and globals remain bring-up blockers.
 Narrow memory selection covers zero-extending byte/half/word loads and
 truncating byte/half/word stores through `LD_B`/`LD_H`/`LD_W` and
 `ST_B`/`ST_H`/`ST_W`.

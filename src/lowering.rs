@@ -1879,7 +1879,19 @@ mod tests {
         assert!(isel.contains("addRegisterClass(MVT::i64"));
         assert!(isel.contains("ISD::ADD"));
         assert!(isel.contains("ISD::SDIV"));
+        assert!(isel.contains("setOperationAction(ISD::BR_CC, MVT::i64, Custom)"));
         assert!(isel.contains("LNP64GenCallingConv.inc"));
+        assert!(isel.contains("LowerOperation"));
+        assert!(isel.contains("ISD::BR_CC"));
+        assert!(
+            isel.contains(
+                "LNP64 conditional branch lowering only supports signed comparisons today"
+            )
+        );
+        assert!(isel.contains("EmitInstrWithCustomInserter"));
+        assert!(isel.contains("LNP64::PseudoBEQ"));
+        assert!(isel.contains("BuildMI(*BB, MI, DL, TII.get(LNP64::CMP))"));
+        assert!(isel.contains("BuildMI(*BB, MI, DL, TII.get(BranchOpcode))"));
         assert!(isel.contains("LowerFormalArguments"));
         assert!(isel.contains("CCInfo.AnalyzeFormalArguments(Ins, CC_LNP64)"));
         assert!(isel.contains("MF.addLiveIn(VA.getLocReg(), &LNP64::GPRRegClass)"));
@@ -1912,6 +1924,9 @@ mod tests {
         assert!(isel.contains("computeRegisterProperties"));
         assert!(isel.contains("varargs lowering is not implemented yet"));
         assert!(isel_header.contains("getTargetNodeName"));
+        assert!(isel_header.contains("LowerOperation"));
+        assert!(isel_header.contains("EmitInstrWithCustomInserter"));
+        assert!(isel_header.contains("BR_EQ"));
         assert!(isel_header.contains("LowerFormalArguments"));
         assert!(isel_header.contains("LowerReturn"));
         assert!(isel_header.contains("LowerCall"));
@@ -1926,6 +1941,13 @@ mod tests {
         assert!(instr_td.contains("def simm14_imm"));
         assert!(instr_td.contains("def brtarget : Operand<OtherVT>"));
         assert!(instr_td.contains("(ins brtarget:$target)"));
+        assert!(instr_td.contains("def SDT_LNP64BrCC"));
+        assert!(instr_td.contains("def LNP64breq"));
+        assert!(instr_td.contains("def LNP64brne"));
+        assert!(instr_td.contains("class LNP64CondBranchPseudo"));
+        assert!(instr_td.contains("usesCustomInserter = 1"));
+        assert!(instr_td.contains("def PseudoBEQ"));
+        assert!(instr_td.contains("(PseudoBEQ GPR:$lhs, GPR:$rhs, bb:$target)"));
         assert!(instr_td.contains("def LNP64retflag"));
         assert!(instr_td.contains("def LNP64call"));
         assert!(instr_td.contains("def LNP64domainctl"));
@@ -2007,6 +2029,7 @@ mod tests {
         assert!(codegen_test.contains("define i64 @gate"));
         assert!(codegen_test.contains("define i64 @read_stream"));
         assert!(codegen_test.contains("define i64 @jump"));
+        assert!(codegen_test.contains("define i64 @branch_if"));
         assert!(codegen_test.contains("define i64 @call_direct"));
         assert!(codegen_test.contains("define i64 @call_indirect"));
         assert!(codegen_test.contains("define i64 @memory"));
@@ -2014,6 +2037,8 @@ mod tests {
         assert!(codegen_test.contains("br label %exit"));
         assert!(codegen_test.contains("call i64 @callee"));
         assert!(codegen_test.contains("; CHECK: call callee"));
+        assert!(codegen_test.contains("; CHECK: cmp"));
+        assert!(codegen_test.contains("; CHECK: beq"));
         assert!(codegen_test.contains("; CHECK: call_reg"));
         assert!(codegen_test.contains("; CHECK: jmp"));
         for mnemonic in ["ld.b", "ld.h", "ld.w", "st.b", "st.h", "st.w"] {

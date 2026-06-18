@@ -58,6 +58,18 @@ exit:
   ret i64 %x
 }
 
+define i64 @branch_if(i64 %a, i64 %b) {
+entry:
+  %same = icmp eq i64 %a, %b
+  br i1 %same, label %yes, label %no
+
+yes:
+  ret i64 1
+
+no:
+  ret i64 0
+}
+
 define i64 @call_direct(i64 %x) {
 entry:
   %y = call i64 @callee(i64 %x)
@@ -113,6 +125,10 @@ entry:
 ; CHECK: ret
 ; CHECK-LABEL: jump:
 ; CHECK: jmp
+; CHECK: ret
+; CHECK-LABEL: branch_if:
+; CHECK: cmp
+; CHECK: beq
 ; CHECK: ret
 ; CHECK-LABEL: call_direct:
 ; CHECK: call callee

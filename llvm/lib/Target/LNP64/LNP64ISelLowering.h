@@ -5,11 +5,19 @@
 
 namespace llvm {
 
+class MachineBasicBlock;
+class MachineInstr;
 class LNP64Subtarget;
 
 namespace LNP64ISD {
 enum NodeType : unsigned {
   FIRST_NUMBER = ISD::BUILTIN_OP_END,
+  BR_EQ,
+  BR_GE,
+  BR_GT,
+  BR_LE,
+  BR_LT,
+  BR_NE,
   CALL,
   DOMAIN_CTL,
   GATE_CALL,
@@ -26,6 +34,10 @@ public:
                                const LNP64Subtarget &STI);
 
   const char *getTargetNodeName(unsigned Opcode) const override;
+  SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const override;
+  MachineBasicBlock *
+  EmitInstrWithCustomInserter(MachineInstr &MI,
+                              MachineBasicBlock *BB) const override;
 
   SDValue LowerFormalArguments(SDValue Chain, CallingConv::ID CallConv,
                                bool IsVarArg,
