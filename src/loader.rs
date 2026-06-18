@@ -25,6 +25,8 @@ const R_LNP64_RELATIVE: u32 = 7;
 const R_LNP64_TLS_TPREL64: u32 = 8;
 const R_LNP64_TLS_DTPREL64: u32 = 9;
 const R_LNP64_FDR_DESC64: u32 = 10;
+const R_LNP64_CAP_DESC64: u32 = 11;
+const R_LNP64_CALLGATE64: u32 = 12;
 const PAGE_SIZE: u64 = 4096;
 const ELF64_EHDR_SIZE: usize = 64;
 const ELF64_PHDR_SIZE: usize = 56;
@@ -725,6 +727,16 @@ fn apply_rela_sections(image: &mut [u8], plan: &ExecPlan, load_bias: u64) -> Res
                         .ok_or_else(|| "RELA target plus load bias overflows".to_string())?;
                     let file_offset = relocation_file_offset(plan, target, 8)?;
                     image[file_offset..file_offset + 8].copy_from_slice(&index.to_le_bytes());
+                }
+                R_LNP64_CAP_DESC64 | R_LNP64_CALLGATE64 => {
+                    let name = if reloc_type == R_LNP64_CAP_DESC64 {
+                        "CAP_DESC64"
+                    } else {
+                        "CALLGATE64"
+                    };
+                    return Err(format!(
+                        "RELA {name} requires an authorized descriptor table"
+                    ));
                 }
                 R_LNP64_RELATIVE => {
                     if symbol_index != 0 {
@@ -1919,6 +1931,54 @@ mod tests {
 
         assert!(
             err.contains("FDR_DESC64 index exceeds startup FDR"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_cap_descriptor_relocations_without_table() {
+        let mut image = test_elf(&[
+            text_phdr(),
+            TestPhdr {
+                typ: PT_LOAD,
+                flags: PF_R | PF_W,
+                offset: 0x200,
+                vaddr: 0x500000,
+                filesz: 8,
+                memsz: 8,
+                align: PAGE_SIZE,
+            },
+        ]);
+        install_rela_section(&mut image, 0x500000, R_LNP64_CAP_DESC64, 0);
+
+        let err = load_static_elf(&mut image, LoaderOptions::default()).unwrap_err();
+
+        assert!(
+            err.contains("CAP_DESC64 requires an authorized descriptor table"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_callgate_descriptor_relocations_without_table() {
+        let mut image = test_elf(&[
+            text_phdr(),
+            TestPhdr {
+                typ: PT_LOAD,
+                flags: PF_R | PF_W,
+                offset: 0x200,
+                vaddr: 0x500000,
+                filesz: 8,
+                memsz: 8,
+                align: PAGE_SIZE,
+            },
+        ]);
+        install_rela_section(&mut image, 0x500000, R_LNP64_CALLGATE64, 0);
+
+        let err = load_static_elf(&mut image, LoaderOptions::default()).unwrap_err();
+
+        assert!(
+            err.contains("CALLGATE64 requires an authorized descriptor table"),
             "{err}"
         );
     }
