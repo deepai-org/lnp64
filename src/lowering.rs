@@ -962,12 +962,19 @@ mod tests {
             assert!(manifest_csv_contains(manifest, "pcr", pcr), "missing {pcr}");
         }
         for relocation in [
+            "R_LNP64_NONE",
             "R_LNP64_ABS64",
+            "R_LNP64_ABS32",
             "R_LNP64_PC32",
             "R_LNP64_BRANCH26",
             "R_LNP64_GOT64",
-            "R_LNP64_TLS_TPREL64",
+            "R_LNP64_GLOB_DAT",
             "R_LNP64_RELATIVE",
+            "R_LNP64_TLS_TPREL64",
+            "R_LNP64_TLS_DTPREL64",
+            "R_LNP64_FDR_DESC64",
+            "R_LNP64_CAP_DESC64",
+            "R_LNP64_CALLGATE64",
         ] {
             assert!(
                 manifest_csv_contains(manifest, "relocations", relocation),
@@ -1384,10 +1391,19 @@ mod tests {
         let relocation_manifest = include_str!("../toolchain/lnp64_relocations.manifest");
         let object_format = include_str!("../object_format.md");
         let rows = relocation_rows(relocation_manifest);
+        let target_relocations: std::collections::BTreeSet<_> =
+            manifest_field(target_manifest, "relocations")
+                .split(',')
+                .collect();
         let mut numbers = std::collections::BTreeSet::new();
         let mut names = std::collections::BTreeSet::new();
 
         assert_eq!(rows.len(), 13);
+        assert_eq!(
+            target_relocations.len(),
+            rows.len(),
+            "target manifest must enumerate the complete relocation contract"
+        );
         for (idx, (number, name, calculation)) in rows.iter().enumerate() {
             assert_eq!(*number as usize, idx, "relocation numbers must be dense");
             assert!(
@@ -1400,8 +1416,12 @@ mod tests {
                 object_format.contains(&format!("| {number} | `{name}` |")),
                 "relocation {number},{name} is missing from object_format.md"
             );
+            assert!(
+                target_relocations.contains(name),
+                "relocation manifest {name} is missing from target manifest"
+            );
         }
-        for name in manifest_field(target_manifest, "relocations").split(',') {
+        for name in target_relocations {
             assert!(
                 names.contains(name),
                 "target manifest relocation {name} is missing from relocation manifest"
