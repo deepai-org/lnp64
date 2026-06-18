@@ -132,6 +132,7 @@ pub enum Instr {
     UtimeFd(FdReg, Reg),
     UtimeFdDyn(Reg, Reg),
     StatPath(Reg, Reg, Reg),
+    StatPathAt(Reg, Reg, Reg, Reg),
     StatFd(Reg, FdReg),
     StatFdDyn(Reg, Reg),
     FcntlFdDyn(Reg, Reg, Reg),

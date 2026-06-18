@@ -3,9 +3,11 @@ int main() {
     int dir;
     int buf;
     int cwd;
+    int st;
 
     buf = alloc(16);
     cwd = alloc(256);
+    st = alloc(128);
 
     if (getcwd(cwd, 256) != cwd) return 1;
     fd = openat(AT_FDCWD, "/etc/passwd", 0);
@@ -23,6 +25,9 @@ int main() {
     if (read(fd, buf, 1) != 1) return 29;
     if (loadb(buf) != 'w') return 30;
     close(fd);
+    if (fstatat(dir, "motd", st, 0) != 0) return 32;
+    if (load(st + 8) == 0) return 33;
+    if (fstatat(dir, "../../etc/passwd", st, 0) != -1) return 34;
     fd = openat(dir, "../../etc/passwd", 0);
     if (fd != -1) return 31;
     closedir(dir);

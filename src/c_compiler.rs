@@ -8395,12 +8395,14 @@ impl CodeGen {
                         "fstatat(dirfd, path, statbuf, flags) expects 4 arguments".to_string()
                     );
                 }
+                let dirfd = self.emit_expr(&args[0])?;
                 let path = self.emit_expr(&args[1])?;
                 let statbuf = self.emit_stat_buffer_arg(&args[2])?;
                 let flags = self.emit_expr(&args[3])?;
                 let dst = self.alloc_reg()?;
-                self.text
-                    .push(format!("  STAT_PATH r{statbuf}, r{path}, r{flags}"));
+                self.text.push(format!(
+                    "  STAT_PATH_AT r{statbuf}, r{dirfd}, r{path}, r{flags}"
+                ));
                 self.text.push(format!("  MOV r{dst}, r1"));
                 Ok(dst)
             }
@@ -20197,12 +20199,18 @@ int main() {
         int main() {
             int st;
             int f;
+            int d;
             st = alloc(104);
             if (stat(".", st) != 0) return 1;
             if (!S_ISDIR(st.st_mode)) return 2;
             if (!((uint)st.st_nlink > 0)) return 3;
             if (stat("/dev/null", st) != 0) return 4;
             if (!S_ISCHR(st.st_mode)) return 5;
+            d = opendir(".");
+            if (d == 0) return 11;
+            if (fstatat(d, "Cargo.toml", st, 0) != 0) return 12;
+            if (st.st_size == 0) return 13;
+            closedir(d);
             f = tmpfile();
             if (!f) return 6;
             fputs("hello", f);
@@ -20217,6 +20225,7 @@ int main() {
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains("STAT_PATH"), "{asm}");
+        assert!(asm.contains("STAT_PATH_AT"), "{asm}");
         assert!(asm.contains("STAT_FD_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);

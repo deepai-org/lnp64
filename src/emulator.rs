@@ -1776,6 +1776,27 @@ impl Machine {
                     Err(err) => self.set_status_io_error(err)?,
                 }
             }
+            Instr::StatPathAt(statbuf_reg, dir_reg, path_reg, flags_reg) => {
+                let statbuf = self.read_reg(statbuf_reg)?;
+                let dir_value = self.read_reg(dir_reg)?;
+                let path = self.read_c_string(self.read_reg(path_reg)?)?;
+                let Some(path) = self.resolve_process_path_at_or_errno(dir_value, &path)? else {
+                    return Ok(true);
+                };
+                let flags = self.read_reg(flags_reg)?;
+                let result = if flags & 1 == 1 {
+                    fs::symlink_metadata(&path)
+                } else {
+                    fs::metadata(&path)
+                };
+                match result {
+                    Ok(metadata) => {
+                        self.write_lnp64_stat(statbuf, &metadata)?;
+                        self.set_status_ok()?;
+                    }
+                    Err(err) => self.set_status_io_error(err)?,
+                }
+            }
             Instr::StatFd(statbuf_reg, fd) => {
                 let statbuf = self.read_reg(statbuf_reg)?;
                 self.stat_fd_index(statbuf, fd.0)?;

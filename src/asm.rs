@@ -451,6 +451,15 @@ impl Parser {
                 arity(3)?;
                 Instr::StatPath(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
+            "STAT_PATH_AT" => {
+                arity(4)?;
+                Instr::StatPathAt(
+                    reg(&args[0])?,
+                    reg(&args[1])?,
+                    reg(&args[2])?,
+                    reg(&args[3])?,
+                )
+            }
             "STAT_FD" => {
                 arity(2)?;
                 Instr::StatFd(reg(&args[0])?, fd(&args[1])?)
