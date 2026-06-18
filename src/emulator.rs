@@ -1138,45 +1138,105 @@ impl Machine {
             .ok_or_else(|| format!("missing process {pid}"))?;
         let argc_addr = ARG_BASE as usize;
         let argv_addr = (ARG_BASE + 8) as usize;
-        let envp_addr = argv_addr + (args.len() + 1) * 8;
+        let argv_slots = args
+            .len()
+            .checked_add(1)
+            .ok_or_else(|| "argv table size overflow".to_string())?;
+        let argv_bytes = argv_slots
+            .checked_mul(8)
+            .ok_or_else(|| "argv table size overflow".to_string())?;
+        let envp_addr = argv_addr
+            .checked_add(argv_bytes)
+            .ok_or_else(|| "argv table address overflow".to_string())?;
+        let env_slots = env
+            .len()
+            .checked_add(1)
+            .ok_or_else(|| "envp table size overflow".to_string())?;
+        let env_bytes = env_slots
+            .checked_mul(8)
+            .ok_or_else(|| "envp table size overflow".to_string())?;
         let mut str_addr = ARG_BASE + 0x1000;
         let arg_page_start = ARG_BASE as usize;
         let arg_page_end = (ARG_BASE + ARG_SIZE) as usize;
         process.memory[arg_page_start..arg_page_end].fill(0);
-        if envp_addr + (env.len() + 1) * 8 > str_addr as usize {
+        if envp_addr
+            .checked_add(env_bytes)
+            .ok_or_else(|| "envp table address overflow".to_string())?
+            > str_addr as usize
+        {
             return Err("process entry pointer table exceeds reserved argument area".to_string());
         }
         process.memory[argc_addr..argc_addr + 8]
             .copy_from_slice(&(args.len() as u64).to_le_bytes());
         for (idx, arg) in args.iter().enumerate() {
-            let ptr_slot = argv_addr + idx * 8;
+            let ptr_slot = argv_addr
+                .checked_add(
+                    idx.checked_mul(8)
+                        .ok_or_else(|| "argv slot offset overflow".to_string())?,
+                )
+                .ok_or_else(|| "argv slot address overflow".to_string())?;
             process.memory[ptr_slot..ptr_slot + 8].copy_from_slice(&str_addr.to_le_bytes());
             let bytes = arg.as_bytes();
             let start = str_addr as usize;
-            let end = start + bytes.len();
-            if end + 1 >= (ARG_BASE + ARG_SIZE) as usize {
+            let end = start
+                .checked_add(bytes.len())
+                .ok_or_else(|| "argv data address overflow".to_string())?;
+            if end
+                .checked_add(1)
+                .ok_or_else(|| "argv data address overflow".to_string())?
+                >= (ARG_BASE + ARG_SIZE) as usize
+            {
                 return Err("argv data exceeds emulated argument page".to_string());
             }
             process.memory[start..end].copy_from_slice(bytes);
             process.memory[end] = 0;
-            str_addr += bytes.len() as u64 + 1;
+            str_addr = str_addr
+                .checked_add(bytes.len() as u64)
+                .and_then(|addr| addr.checked_add(1))
+                .ok_or_else(|| "argv string cursor overflow".to_string())?;
         }
-        let null_slot = argv_addr + args.len() * 8;
+        let null_slot = argv_addr
+            .checked_add(
+                args.len()
+                    .checked_mul(8)
+                    .ok_or_else(|| "argv null slot offset overflow".to_string())?,
+            )
+            .ok_or_else(|| "argv null slot address overflow".to_string())?;
         process.memory[null_slot..null_slot + 8].copy_from_slice(&0u64.to_le_bytes());
         for (idx, item) in env.iter().enumerate() {
-            let ptr_slot = envp_addr + idx * 8;
+            let ptr_slot = envp_addr
+                .checked_add(
+                    idx.checked_mul(8)
+                        .ok_or_else(|| "envp slot offset overflow".to_string())?,
+                )
+                .ok_or_else(|| "envp slot address overflow".to_string())?;
             process.memory[ptr_slot..ptr_slot + 8].copy_from_slice(&str_addr.to_le_bytes());
             let bytes = item.as_bytes();
             let start = str_addr as usize;
-            let end = start + bytes.len();
-            if end + 1 >= (ARG_BASE + ARG_SIZE) as usize {
+            let end = start
+                .checked_add(bytes.len())
+                .ok_or_else(|| "envp data address overflow".to_string())?;
+            if end
+                .checked_add(1)
+                .ok_or_else(|| "envp data address overflow".to_string())?
+                >= (ARG_BASE + ARG_SIZE) as usize
+            {
                 return Err("envp data exceeds emulated argument page".to_string());
             }
             process.memory[start..end].copy_from_slice(bytes);
             process.memory[end] = 0;
-            str_addr += bytes.len() as u64 + 1;
+            str_addr = str_addr
+                .checked_add(bytes.len() as u64)
+                .and_then(|addr| addr.checked_add(1))
+                .ok_or_else(|| "envp string cursor overflow".to_string())?;
         }
-        let null_slot = envp_addr + env.len() * 8;
+        let null_slot = envp_addr
+            .checked_add(
+                env.len()
+                    .checked_mul(8)
+                    .ok_or_else(|| "envp null slot offset overflow".to_string())?,
+            )
+            .ok_or_else(|| "envp null slot address overflow".to_string())?;
         process.memory[null_slot..null_slot + 8].copy_from_slice(&0u64.to_le_bytes());
         Ok(())
     }
