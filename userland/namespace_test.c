@@ -1,5 +1,6 @@
 int main() {
     int fd;
+    int dir;
     int buf;
     int cwd;
 
@@ -15,6 +16,16 @@ int main() {
     if (read(fd, buf, 1) != 1) return 4;
     if (loadb(buf) != 'w') return 5;
     close(fd);
+    dir = opendir("/etc");
+    if (dir == 0) return 27;
+    fd = openat(dir, "motd", 0);
+    if (fd == -1) return 28;
+    if (read(fd, buf, 1) != 1) return 29;
+    if (loadb(buf) != 'w') return 30;
+    close(fd);
+    fd = openat(dir, "../../etc/passwd", 0);
+    if (fd != -1) return 31;
+    closedir(dir);
 
     if (chdir("/tmp") != 0) return 6;
     if (getcwd(cwd, 256) != cwd) return 7;

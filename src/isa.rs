@@ -103,6 +103,7 @@ pub enum Instr {
     Free(Reg),
     OpenFd(FdReg, Reg, Reg),
     OpenFdDyn(Reg, Reg, Reg),
+    OpenAtDyn(Reg, Reg, Reg, Reg),
     OpenDir(FdReg, Reg, Reg),
     OpenDirDyn(Reg, Reg, Reg),
     ReadFd(FdReg, Reg, Reg),

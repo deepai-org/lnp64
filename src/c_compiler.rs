@@ -8742,10 +8742,10 @@ impl CodeGen {
                         "openat(dirfd, path, flags[, mode]) expects 3 or 4 arguments".to_string(),
                     );
                 }
-                self.emit_expr(&args[0])?;
+                let dirfd = self.emit_expr(&args[0])?;
                 let path = self.emit_expr(&args[1])?;
                 let flags = self.emit_expr(&args[2])?;
-                self.emit_open_fd_alloc(path, flags)
+                self.emit_open_fd_at_alloc(dirfd, path, flags)
             }
             "__lnp_openat" => {
                 if args.len() != 3 && args.len() != 4 {
@@ -8754,10 +8754,10 @@ impl CodeGen {
                             .to_string(),
                     );
                 }
-                self.emit_expr(&args[0])?;
+                let dirfd = self.emit_expr(&args[0])?;
                 let path = self.emit_expr(&args[1])?;
                 let flags = self.emit_expr(&args[2])?;
-                self.emit_open_fd_alloc(path, flags)
+                self.emit_open_fd_at_alloc(dirfd, path, flags)
             }
             "getline" => {
                 if args.len() != 3 {
@@ -11784,6 +11784,19 @@ impl CodeGen {
         let dst = self.alloc_reg()?;
         self.text
             .push(format!("  OPEN_AT_DYN r{dst}, r{path_reg}, r{flags_reg}"));
+        Ok(dst)
+    }
+
+    fn emit_open_fd_at_alloc(
+        &mut self,
+        dir_reg: usize,
+        path_reg: usize,
+        flags_reg: usize,
+    ) -> Result<usize, String> {
+        let dst = self.alloc_reg()?;
+        self.text.push(format!(
+            "  OPEN_AT_DYN r{dst}, r{dir_reg}, r{path_reg}, r{flags_reg}"
+        ));
         Ok(dst)
     }
 

@@ -302,8 +302,17 @@ impl Parser {
                 Instr::OpenFd(fd(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
             "OPEN_AT_DYN" | "OPEN_FD_DYN" => {
-                arity(3)?;
-                Instr::OpenFdDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+                if args.len() == 3 {
+                    Instr::OpenFdDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+                } else {
+                    arity(4)?;
+                    Instr::OpenAtDyn(
+                        reg(&args[0])?,
+                        reg(&args[1])?,
+                        reg(&args[2])?,
+                        reg(&args[3])?,
+                    )
+                }
             }
             "OPEN_DIR" | "OPEN_DIR_AT" => {
                 arity(3)?;
@@ -961,6 +970,7 @@ mod tests {
             .text
               OPEN_AT fd3, r1, r2
               OPEN_AT_DYN r4, r5, r6
+              OPEN_AT_DYN r13, r14, r15, r16
               OPEN_FD fd7, r8, r9
               OPEN_FD_DYN r10, r11, r12
             "#,
@@ -976,10 +986,14 @@ mod tests {
         ));
         assert!(matches!(
             program.instructions[2],
-            Instr::OpenFd(FdReg(7), Reg(8), Reg(9))
+            Instr::OpenAtDyn(Reg(13), Reg(14), Reg(15), Reg(16))
         ));
         assert!(matches!(
             program.instructions[3],
+            Instr::OpenFd(FdReg(7), Reg(8), Reg(9))
+        ));
+        assert!(matches!(
+            program.instructions[4],
             Instr::OpenFdDyn(Reg(10), Reg(11), Reg(12))
         ));
     }

@@ -260,6 +260,7 @@ const CAP_RIGHT_TRANSFER: u64 = 1 << 8;
 const CAP_RIGHT_ALL: u64 = (1 << 9) - 1;
 const CAP_DUP_FLAG_SEAL: u64 = 1 << 0;
 const CAP_SEND_FLAG_MOVE: u64 = 1 << 0;
+const AT_FDCWD_VALUE: u64 = -100i64 as u64;
 const POLLIN_MASK: u64 = 1;
 const POLLOUT_MASK: u64 = 4;
 const POLLNVAL_MASK: u64 = 32;
@@ -1419,6 +1420,35 @@ impl Machine {
                     }
                 }
             }
+            Instr::OpenAtDyn(dst_reg, dir_reg, path_reg, flags_reg) => {
+                self.require_domain_cap(DOMAIN_CAP_FDR)?;
+                if !self.check_domain_budget(0, 0, 0, 1)? {
+                    self.write_reg(dst_reg, -1i64 as u64)?;
+                    return Ok(true);
+                }
+                let dir_value = self.read_reg(dir_reg)?;
+                let path = self.read_c_string(self.read_reg(path_reg)?)?;
+                let Some(path) = self.resolve_process_path_at_or_errno(dir_value, &path)? else {
+                    self.write_reg(dst_reg, -1i64 as u64)?;
+                    return Ok(true);
+                };
+                let flags = self.read_reg(flags_reg)?;
+                match Self::open_fd_handle(&path, flags) {
+                    Ok(handle) => match self.alloc_fd_handle(handle)? {
+                        Some(fd) => {
+                            let token = self.fd_token(fd)?;
+                            self.set_errno(0)?;
+                            self.write_reg(dst_reg, token)?;
+                            self.write_reg(Reg(1), token)?;
+                        }
+                        None => self.write_reg(dst_reg, -1i64 as u64)?,
+                    },
+                    Err(_) => {
+                        self.write_reg(dst_reg, -1i64 as u64)?;
+                        self.set_status_errno(5)?;
+                    }
+                }
+            }
             Instr::OpenDir(dst, path_reg, _flags_reg) => {
                 self.require_domain_cap(DOMAIN_CAP_FDR)?;
                 if !self.check_domain_budget(0, 0, 0, self.fd_slot_delta(dst.0)?)? {
@@ -2415,6 +2445,45 @@ impl Machine {
         }
     }
 
+    fn resolve_process_path_at_or_errno(
+        &mut self,
+        dir_value: u64,
+        path: &str,
+    ) -> Result<Option<String>, String> {
+        if path.starts_with('/') || dir_value == AT_FDCWD_VALUE {
+            return self.resolve_process_path_or_errno(path);
+        }
+        let dir_fd = match self.decode_fd_value(dir_value) {
+            Ok(fd) => fd,
+            Err(errno) => {
+                self.set_status_errno(errno)?;
+                return Ok(None);
+            }
+        };
+        if let Err(errno) = self.fd_right_errno(dir_fd, CAP_RIGHT_READ) {
+            self.set_status_errno(errno)?;
+            return Ok(None);
+        }
+        let base = {
+            let process = self.process()?;
+            match process.fds.get(dir_fd) {
+                Some(FdHandle::Dir { path, .. }) => PathBuf::from(path),
+                _ => {
+                    self.set_status_errno(20)?;
+                    return Ok(None);
+                }
+            }
+        };
+        match self.resolve_process_path_from_base(&base, path) {
+            Ok(path) => Ok(Some(path)),
+            Err(err) if err.starts_with("path resolution denied:") => {
+                self.set_status_errno(13)?;
+                Ok(None)
+            }
+            Err(err) => Err(err),
+        }
+    }
+
     fn resolve_process_path_no_follow_final_or_errno(
         &mut self,
         path: &str,
@@ -2430,6 +2499,11 @@ impl Machine {
     }
 
     fn resolve_process_path(&self, path: &str) -> Result<String, String> {
+        let process = self.process()?;
+        self.resolve_process_path_from_base(&process.cwd, path)
+    }
+
+    fn resolve_process_path_from_base(&self, base: &Path, path: &str) -> Result<String, String> {
         if path.is_empty() || path.starts_with("tcp-listen:") {
             return Ok(path.to_string());
         }
@@ -2440,7 +2514,7 @@ impl Machine {
         let candidate = if path.starts_with('/') {
             normalize_path_lexical(&root.join(path.trim_start_matches('/')))
         } else {
-            normalize_path_lexical(&process.cwd.join(path))
+            normalize_path_lexical(&base.join(path))
         };
         let root = normalize_path_lexical(root);
         if !candidate.starts_with(&root) {
