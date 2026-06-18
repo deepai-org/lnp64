@@ -2266,21 +2266,29 @@ impl Machine {
             Instr::Random(result, buf, len_reg) => {
                 let len = self.read_reg(len_reg)?;
                 let bytes = if len == 0 { 8 } else { len };
-                if self.consume_domain_entropy(bytes).is_err() {
-                    self.set_status_errno(1)?;
-                    self.write_reg(result, -1i64 as u64)?;
-                    return Ok(true);
-                }
                 if len == 0 {
+                    if self.consume_domain_entropy(bytes).is_err() {
+                        self.set_status_errno(1)?;
+                        self.write_reg(result, -1i64 as u64)?;
+                        return Ok(true);
+                    }
                     let value = self.next_random_u64();
                     self.set_errno(0)?;
                     self.write_reg(result, value)?;
                 } else {
                     let addr = self.read_reg(buf)?;
-                    let data = self.random_bytes(len as usize);
+                    let len = usize::try_from(len)
+                        .map_err(|_| "RANDOM length does not fit host usize".to_string())?;
+                    self.ensure_mapped(addr, len, true)?;
+                    if self.consume_domain_entropy(bytes).is_err() {
+                        self.set_status_errno(1)?;
+                        self.write_reg(result, -1i64 as u64)?;
+                        return Ok(true);
+                    }
+                    let data = self.random_bytes(len);
                     self.write_bytes(addr, &data)?;
                     self.set_errno(0)?;
-                    self.write_reg(result, len)?;
+                    self.write_reg(result, bytes)?;
                 }
             }
             Instr::Fork(dst) => {
@@ -13930,6 +13938,28 @@ mod tests {
         machine.exec(Instr::Random(Reg(5), Reg(2), Reg(3))).unwrap();
         assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 1);
+    }
+
+    #[test]
+    fn random_buffer_preflights_destination_before_entropy_or_allocation() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine
+            .domains
+            .get_mut(&ROOT_DOMAIN_ID)
+            .unwrap()
+            .security
+            .entropy_quota = 64;
+        machine.thread_mut().unwrap().regs[2] = ARG_BASE;
+        machine.thread_mut().unwrap().regs[3] = ARG_SIZE + 1;
+
+        let err = machine
+            .exec(Instr::Random(Reg(4), Reg(2), Reg(3)))
+            .unwrap_err();
+
+        assert!(err.contains("unmapped address"), "{err}");
+        assert_eq!(machine.domains[&ROOT_DOMAIN_ID].security.entropy_quota, 64);
+        assert_eq!(machine.thread().unwrap().regs[4], 0);
     }
 
     #[test]
