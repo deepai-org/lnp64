@@ -265,6 +265,13 @@ public:
                                     getGPRNo(MI.getOperand(3))),
                OS);
       return;
+    case LNP64::GATE_CALL:
+      emitLE32(encodeFixed32Native4(0x4e, getGPRNo(MI.getOperand(0)),
+                                    getGPRNo(MI.getOperand(1)),
+                                    getGPRNo(MI.getOperand(2)),
+                                    getGPRNo(MI.getOperand(3))),
+               OS);
+      return;
     case LNP64::CSET_EQ:
       emitLE32(encodeFixed32Reg(0x3d, getGPRNo(MI.getOperand(0))), OS);
       return;

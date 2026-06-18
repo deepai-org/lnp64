@@ -1456,6 +1456,9 @@ mod tests {
         assert!(real_llc.contains("intrinsic-await-clang-smoke.o"));
         assert!(real_llc.contains("await r"));
         assert!(real_llc.contains("real LLVM LNP64 clang intrinsic await object smoke passed"));
+        assert!(real_llc.contains("intrinsic-call-clang-smoke.o"));
+        assert!(real_llc.contains("gate_call r"));
+        assert!(real_llc.contains("real LLVM LNP64 clang intrinsic call object smoke passed"));
         assert!(real_llc.contains("intrinsic-control-clang-smoke.o"));
         assert!(real_llc.contains("object_ctl r"));
         assert!(real_llc.contains("domain_ctl r"));
@@ -1490,6 +1493,8 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 lld read link smoke passed"));
         assert!(real_llc.contains("lnp64-intrinsic-await-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld intrinsic await link smoke passed"));
+        assert!(real_llc.contains("lnp64-intrinsic-call-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld intrinsic call link smoke passed"));
         assert!(real_llc.contains("--triple=lnp64-unknown-none"));
         assert!(real_llc.contains("errno_set r0"));
         assert!(real_llc.contains("exit r1"));
@@ -1742,6 +1747,10 @@ mod tests {
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic await execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-intrinsic-call-linked.elf"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic call execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-intrinsic-control-linked.elf"));
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic control execution passed")
@@ -1802,6 +1811,8 @@ mod tests {
             "real_clang_demo_execution",
             "real_native_heap_execution",
             "real_read_execution",
+            "real_intrinsic_await_execution",
+            "real_intrinsic_call_execution",
             "real_intrinsic_push_execution",
             "real_intrinsic_control_execution",
             "real_exit_execution",
@@ -2032,6 +2043,7 @@ mod tests {
             "ERRNO_SET",
             "EXIT",
             "AWAIT",
+            "GATE_CALL",
             "PULL",
             "OBJECT_CTL",
             "CAP_REVOKE",
@@ -3649,6 +3661,7 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::ALLOC_SIZE"));
         assert!(mc_emitter.contains("case LNP64::FREE"));
         assert!(mc_emitter.contains("case LNP64::AWAIT"));
+        assert!(mc_emitter.contains("case LNP64::GATE_CALL"));
         assert!(mc_emitter.contains("case LNP64::OBJECT_CTL"));
         assert!(mc_emitter.contains("case LNP64::DOMAIN_CTL"));
         assert!(mc_emitter.contains("case LNP64::LD"));

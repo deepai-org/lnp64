@@ -16,6 +16,7 @@ real_realloc_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/li
 real_read_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/liblnp64_min.s|real LLVM LNP64 run-elf read execution passed|none
 real_intrinsic_push_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64_intrinsics.h|real LLVM LNP64 run-elf intrinsic push execution passed|none
 real_intrinsic_await_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64_intrinsics.h|real LLVM LNP64 run-elf intrinsic await execution passed|none
+real_intrinsic_call_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64_intrinsics.h|real LLVM LNP64 run-elf intrinsic call execution passed|none
 real_intrinsic_control_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64_intrinsics.h|real LLVM LNP64 run-elf intrinsic control execution passed|none
 real_inline_asm_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64_inline_asm.manifest|real LLVM LNP64 run-elf inline asm execution passed|none
 real_exit_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/liblnp64_min.s|real LLVM LNP64 run-elf exit execution passed|none

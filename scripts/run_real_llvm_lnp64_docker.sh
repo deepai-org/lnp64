@@ -53,6 +53,13 @@ grep -q 'exit=0' <<<"$intrinsic_await_output"
 printf 'real LLVM LNP64 run-elf intrinsic await execution passed: %s\n' \
   "$intrinsic_await_probe"
 
+intrinsic_call_probe="target/llvm-lnp64-build/lnp64-intrinsic-call-linked.elf"
+cargo run --quiet -- elf-plan "$intrinsic_call_probe" >/dev/null
+intrinsic_call_output="$(cargo run --quiet -- run-elf "$intrinsic_call_probe")"
+grep -q 'exit=0' <<<"$intrinsic_call_output"
+printf 'real LLVM LNP64 run-elf intrinsic call execution passed: %s\n' \
+  "$intrinsic_call_probe"
+
 intrinsic_ctl_probe="target/llvm-lnp64-build/lnp64-intrinsic-control-linked.elf"
 cargo run --quiet -- elf-plan "$intrinsic_ctl_probe" >/dev/null
 intrinsic_ctl_output="$(cargo run --quiet -- run-elf "$intrinsic_ctl_probe")"

@@ -1577,6 +1577,7 @@ impl Machine {
             0x4b => Instr::ObjectCtl(a, b),
             0x4c => Instr::DomainCtl(a, b),
             0x4d => Instr::AwaitDyn(a, b, c),
+            0x4e => Instr::CallCapDyn(a, b, c, Reg(((word >> 4) & 0x1f) as usize)),
             other => {
                 return Err(format!(
                     "unsupported committed exec opcode 0x{other:02x} at 0x{pc:x}"
@@ -3272,6 +3273,19 @@ impl Machine {
                 self.call_cap(
                     result,
                     call_gate.0,
+                    self.read_reg(arg0)?,
+                    self.read_reg(arg1)?,
+                )?;
+            }
+            Instr::CallCapDyn(result, call_gate, arg0, arg1) => {
+                Self::ensure_result_reg_writable(result)?;
+                let Some(call_gate_fd) = self.checked_fd_index(self.read_reg(call_gate)?)? else {
+                    self.complete_reg_err(result, 9)?;
+                    return Ok(true);
+                };
+                self.call_cap(
+                    result,
+                    call_gate_fd,
                     self.read_reg(arg0)?,
                     self.read_reg(arg1)?,
                 )?;

@@ -311,6 +311,28 @@ grep -q 'await r' "$intrinsic_await_dump"
 printf 'real LLVM LNP64 clang intrinsic await object smoke passed: %s\n' \
   "$intrinsic_await_obj"
 
+intrinsic_call_c="$build_dir/intrinsic-call.c"
+cat >"$intrinsic_call_c" <<'C'
+#include "lnp64_intrinsics.h"
+int main(void) {
+  if (__lnp_call(0, 1, 2) != (lnp64_word_t)-1)
+    return 1;
+  return 0;
+}
+C
+
+intrinsic_call_obj="$build_dir/intrinsic-call-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$intrinsic_call_c" -o "$intrinsic_call_obj"
+test -s "$intrinsic_call_obj"
+intrinsic_call_dump="$build_dir/intrinsic-call-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$intrinsic_call_obj" \
+  >"$intrinsic_call_dump"
+grep -q 'gate_call r' "$intrinsic_call_dump"
+printf 'real LLVM LNP64 clang intrinsic call object smoke passed: %s\n' \
+  "$intrinsic_call_obj"
+
 intrinsic_ctl_c="$build_dir/intrinsic-control.c"
 cat >"$intrinsic_ctl_c" <<'C'
 #include "lnp64_intrinsics.h"
@@ -865,6 +887,13 @@ intrinsic_await_elf="$build_dir/lnp64-intrinsic-await-linked.elf"
 test -s "$intrinsic_await_elf"
 printf 'real LLVM LNP64 lld intrinsic await link smoke passed: %s\n' \
   "$intrinsic_await_elf"
+
+intrinsic_call_elf="$build_dir/lnp64-intrinsic-call-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$intrinsic_call_elf" "$crt0_obj" "$intrinsic_call_obj"
+test -s "$intrinsic_call_elf"
+printf 'real LLVM LNP64 lld intrinsic call link smoke passed: %s\n' \
+  "$intrinsic_call_elf"
 
 intrinsic_ctl_elf="$build_dir/lnp64-intrinsic-control-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
