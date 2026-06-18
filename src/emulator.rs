@@ -3641,13 +3641,18 @@ impl Machine {
         }
         let now = Self::system_time_to_host_timespec(SystemTime::now());
         let atime = self.host_timespec_at(times_ptr, now)?;
-        let mtime = self.host_timespec_at(times_ptr + 16, now)?;
+        let mtime = self.host_timespec_at(
+            times_ptr
+                .checked_add(16)
+                .ok_or_else(|| "address overflow".to_string())?,
+            now,
+        )?;
         Ok(Some([atime, mtime]))
     }
 
     fn host_timespec_at(&mut self, addr: u64, now: HostTimespec) -> Result<HostTimespec, String> {
-        let sec = self.load_u64(addr)? as i64;
-        let nsec = self.load_u64(addr + 8)? as i64;
+        let sec = self.load_u64_offset(addr, 0)? as i64;
+        let nsec = self.load_u64_offset(addr, 8)? as i64;
         if nsec == UTIME_NOW_LNP64 {
             Ok(now)
         } else if nsec == UTIME_OMIT_LNP64 {
