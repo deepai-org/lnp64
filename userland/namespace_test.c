@@ -69,6 +69,8 @@ int main() {
     if (fchownat(dir, "../../etc/motd", -1, -1, 0) != -1) return 53;
     if (utimensat(dir, "ns_probe", 0, 0) != 0) return 54;
     if (utimensat(dir, "../../etc/motd", 0, 0) != -1) return 55;
+    if (faccessat(dir, "ns_probe", F_OK, 0) != 0) return 63;
+    if (faccessat(dir, "../../etc/motd", F_OK, 0) != -1) return 64;
     if (mkdirat(dir, "ns_probe_dir", 0755) != 0) return 56;
     if (fstatat(dir, "ns_probe_dir", st, 0) != 0) return 57;
     if (unlinkat(dir, "ns_probe_dir", 0) != 0) return 58;

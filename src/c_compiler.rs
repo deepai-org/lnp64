@@ -7502,6 +7502,27 @@ impl CodeGen {
                 self.text.push(format!("  MOV r{dst}, r1"));
                 Ok(dst)
             }
+            "faccessat" => {
+                if args.len() != 4 {
+                    return Err(
+                        "faccessat(dirfd, path, mode, flags) expects 4 arguments".to_string()
+                    );
+                }
+                let dirfd = self.emit_expr(&args[0])?;
+                let path = self.emit_expr(&args[1])?;
+                let _mode = self.emit_expr(&args[2])?;
+                let flags = self.emit_expr(&args[3])?;
+                let size = self.alloc_reg()?;
+                let statbuf = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{size}, 104"));
+                self.text.push(format!("  ALLOC r{statbuf}, r{size}"));
+                self.text.push(format!(
+                    "  STAT_PATH_AT r{statbuf}, r{dirfd}, r{path}, r{flags}"
+                ));
+                self.text.push(format!("  MOV r{dst}, r1"));
+                Ok(dst)
+            }
             "rename" => {
                 if args.len() != 2 {
                     return Err("rename(old, new) expects 2 arguments".to_string());
@@ -20032,6 +20053,7 @@ int main() {
             fcntl(fd, F_SETFL, 0);
             fchmodat(AT_FDCWD, "Cargo.toml", 0644, 0);
             fchownat(AT_FDCWD, "Cargo.toml", -1, -1, 0);
+            faccessat(AT_FDCWD, "Cargo.toml", F_OK, 0);
             mkdirat(AT_FDCWD, "/tmp/lnp64_mkdirat_compile_only", 0755);
             unlinkat(AT_FDCWD, "/tmp/lnp64_unlinkat_compile_only", 0);
             linkat(AT_FDCWD, "Cargo.toml", AT_FDCWD, "/tmp/lnp64_linkat_compile_only", 0);
@@ -20052,6 +20074,7 @@ int main() {
         assert!(asm.contains("OPEN_AT_DYN"));
         assert!(asm.contains("CHMOD_PATH_AT"));
         assert!(asm.contains("CHOWN_PATH_AT"));
+        assert!(asm.contains("STAT_PATH_AT"));
         assert!(asm.contains("MKDIR_PATH_AT"));
         assert!(asm.contains("UNLINK_PATH_AT"));
         assert!(asm.contains("LINK_PATH_AT"));
