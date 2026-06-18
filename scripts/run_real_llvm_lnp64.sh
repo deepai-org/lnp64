@@ -622,6 +622,7 @@ cat >"$libc_string_c" <<'C'
 typedef unsigned long size_t;
 
 size_t strlen(const char *s);
+long memcmp(const void *lhs, const void *rhs, size_t len);
 void *memcpy(void *dst, const void *src, size_t len);
 void *memmove(void *dst, const void *src, size_t len);
 void *memset(void *dst, int value, size_t len);
@@ -653,6 +654,14 @@ int main(void) {
     return 10;
   if (overlap[3] != 'd')
     return 11;
+  if (memcmp(overlap, "abcd", 4) != 0)
+    return 12;
+  if (memcmp(overlap, "abce", 4) >= 0)
+    return 13;
+  if (memcmp("abce", overlap, 4) <= 0)
+    return 14;
+  if (memcmp(overlap, "zz", 0) != 0)
+    return 15;
   return 0;
 }
 C

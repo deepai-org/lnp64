@@ -151,6 +151,29 @@ memmove_done:
   MOV r1, r4
   RET
 
+.globl memcmp
+.type memcmp,@function
+memcmp:
+  LI r4, 0
+  LI r5, 1
+memcmp_loop:
+  CMPU r4, r3
+  BGE memcmp_equal
+  LD.B r6, 0(r1)
+  LD.B r7, 0(r2)
+  CMPU r6, r7
+  BNE memcmp_diff
+  ADD r1, r1, r5
+  ADD r2, r2, r5
+  ADD r4, r4, r5
+  JMP memcmp_loop
+memcmp_diff:
+  SUB r1, r6, r7
+  RET
+memcmp_equal:
+  LI r1, 0
+  RET
+
 .globl memset
 .type memset,@function
 memset:
