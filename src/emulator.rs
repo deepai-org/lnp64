@@ -2412,6 +2412,11 @@ impl Machine {
                 }
             }
             Instr::Inb(dst, port) => {
+                if self.process()?.uid != 0 {
+                    self.raise_current_signal(SIGSEGV)?;
+                    return Ok(true);
+                }
+                self.require_domain_cap(DOMAIN_CAP_IO)?;
                 let value = self
                     .process()?
                     .ucode_ports
@@ -2421,6 +2426,11 @@ impl Machine {
                 self.write_reg(dst, value as u64)?;
             }
             Instr::Outb(port, src) => {
+                if self.process()?.uid != 0 {
+                    self.raise_current_signal(SIGSEGV)?;
+                    return Ok(true);
+                }
+                self.require_domain_cap(DOMAIN_CAP_IO)?;
                 let port = self.read_reg(port)?;
                 let value = self.read_reg(src)? as u8;
                 self.process_mut()?.ucode_ports.insert(port, value);
@@ -9251,6 +9261,18 @@ mod tests {
                 source: EventSource::HardwareFault,
             })
         ));
+
+        machine.thread_mut().unwrap().regs[4] = 7;
+        machine.thread_mut().unwrap().regs[5] = 0xaa;
+        assert!(machine.exec(Instr::Outb(Reg(4), Reg(5))).unwrap());
+        assert_eq!(machine.process().unwrap().pending_events.len(), 2);
+        assert!(machine.process().unwrap().ucode_ports.is_empty());
+
+        machine.thread_mut().unwrap().regs[6] = 0xdead_beef;
+        assert!(machine.exec(Instr::Inb(Reg(6), Reg(4))).unwrap());
+        assert_eq!(machine.process().unwrap().pending_events.len(), 3);
+        assert_eq!(machine.thread().unwrap().regs[6], 0xdead_beef);
+        assert!(machine.process().unwrap().ucode_ports.is_empty());
     }
 
     #[test]
