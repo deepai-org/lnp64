@@ -1317,6 +1317,31 @@ def check_rtl_refinement_postcondition(
 ) -> None:
     op = require_int(commit_record, "op")
     status = require_int(commit_record, "status")
+    if op == ops.cap_dup:
+        check_projection_cap_matches_commit("consumer", commit_record, post_state_record, context)
+        return
+    if op == ops.cap_send:
+        if post_state_record.get("sent_valid") != 1:
+            fail(f"{context}: capSend postcondition did not publish sent cap")
+        check_projection_cap_matches_commit("sent", commit_record, post_state_record, context)
+        return
+    if op == ops.cap_recv:
+        check_projection_cap_matches_commit("consumer", commit_record, post_state_record, context)
+        if post_state_record.get("sent_valid") != 0:
+            fail(f"{context}: capRecv postcondition did not clear sent cap")
+        return
+    if op == ops.cap_revoke:
+        object_gen = require_int(commit_record, "object_gen")
+        fdr_gen = require_int(commit_record, "fdr_gen")
+        if post_state_record.get("object_gen") != object_gen:
+            fail(f"{context}: capRevoke postcondition object_gen did not match commit")
+        if post_state_record.get("root_generation") != object_gen:
+            fail(f"{context}: capRevoke postcondition root generation did not match live generation")
+        if post_state_record.get("revoked_generation") != fdr_gen:
+            fail(f"{context}: capRevoke postcondition revoked_generation did not match old generation")
+        if post_state_record.get("has_revoked_generation") != 1:
+            fail(f"{context}: capRevoke postcondition did not publish revoked-generation witness")
+        return
     if op == ops.push:
         check_projection_cap_matches_commit("root", commit_record, post_state_record, context)
         if post_state_record.get("wake_pending") != 1:
@@ -1347,6 +1372,13 @@ def check_rtl_refinement_postcondition(
         if post_state_record.get("failed_no_authority") != 1:
             fail(f"{context}: capDupDenied postcondition did not set failed_no_authority")
         check_authority_projection_slots_unchanged(expected_pre_projection, post_state_record, context)
+        return
+    if op == ops.object_create:
+        if post_state_record.get("minted_valid") != 1:
+            fail(f"{context}: objectCreate postcondition did not mint a cap")
+        check_projection_cap_matches_commit("minted", commit_record, post_state_record, context)
+        if post_state_record.get("created_object_created") != 1:
+            fail(f"{context}: objectCreate postcondition did not mark created object")
 
 
 def check_rtl_refinement_step(

@@ -216,10 +216,31 @@ def main() -> None:
     )
 
     bad_post_state_run = copy.deepcopy(valid_state_run)
-    bad_post_state_run[1]["sent_valid"] = 0
+    bad_post_state_run[1]["transfer_valid"] = 0
     expect_failure(
         "RtlM1RefinementStep post-state projection",
         lambda: checker.check_run(valid_run, bad_post_state_run, 0, ops),
+    )
+
+    bad_cap_dup_postcondition_run = copy.deepcopy(valid_state_run)
+    bad_cap_dup_postcondition_run[0]["consumer_rights"] = checker.ROOT_RIGHTS
+    expect_failure(
+        "post consumer projection field consumer_rights",
+        lambda: checker.check_run(valid_run, bad_cap_dup_postcondition_run, 0, ops),
+    )
+
+    bad_cap_send_postcondition_run = copy.deepcopy(valid_state_run)
+    bad_cap_send_postcondition_run[1]["sent_valid"] = 0
+    expect_failure(
+        "capSend postcondition did not publish sent cap",
+        lambda: checker.check_run(valid_run, bad_cap_send_postcondition_run, 0, ops),
+    )
+
+    bad_cap_recv_postcondition_run = copy.deepcopy(valid_state_run)
+    bad_cap_recv_postcondition_run[2]["sent_valid"] = 1
+    expect_failure(
+        "capRecv postcondition did not clear sent cap",
+        lambda: checker.check_run(valid_run, bad_cap_recv_postcondition_run, 0, ops),
     )
 
     bad_non_ok_authority_state_run = copy.deepcopy(valid_state_run)
@@ -255,6 +276,20 @@ def main() -> None:
     expect_failure(
         "rejectStale postcondition did not set stale_rejected",
         lambda: checker.check_run(valid_run, bad_reject_stale_postcondition_run, 0, ops),
+    )
+
+    bad_object_create_postcondition_run = copy.deepcopy(valid_state_run)
+    bad_object_create_postcondition_run[6]["minted_valid"] = 0
+    expect_failure(
+        "objectCreate postcondition did not mint a cap",
+        lambda: checker.check_run(valid_run, bad_object_create_postcondition_run, 0, ops),
+    )
+
+    bad_cap_revoke_postcondition_run = copy.deepcopy(valid_state_run)
+    bad_cap_revoke_postcondition_run[7]["has_revoked_generation"] = 0
+    expect_failure(
+        "capRevoke postcondition did not publish revoked-generation witness",
+        lambda: checker.check_run(valid_run, bad_cap_revoke_postcondition_run, 0, ops),
     )
 
     bad_cap_dup_denied_postcondition_run = copy.deepcopy(valid_denied_state_run)
