@@ -983,6 +983,7 @@ mod tests {
             "psabi",
             "intrinsics",
             "intrinsic_header",
+            "clang_driver",
             "isel",
             "llvm_bootstrap",
             "llvm_gates",
@@ -1136,6 +1137,84 @@ mod tests {
             !linker_script.contains("PT_DYNAMIC"),
             "static v0 linker script must not emit PT_DYNAMIC"
         );
+    }
+
+    #[test]
+    fn clang_driver_manifest_matches_llvm_gates() {
+        let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
+        let driver_manifest = include_str!("../toolchain/lnp64_clang_driver.manifest");
+        let gate_manifest = include_str!("../toolchain/lnp64_llvm_gates.manifest");
+        let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
+        let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
+        let roadmap = include_str!("../toolchain_roadmap.md");
+        let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let driver_path = manifest_field(target_manifest, "clang_driver_contract");
+
+        assert_eq!(driver_path, "toolchain/lnp64_clang_driver.manifest");
+        assert!(manifest_root.join(driver_path).is_file());
+        assert!(contract_index.contains(
+            "clang_driver|toolchain/lnp64_clang_driver.manifest|clang_driver_manifest_matches_llvm_gates"
+        ));
+        assert!(transition_manifest.contains("toolchain/lnp64_clang_driver.manifest"));
+        assert!(roadmap.contains("toolchain/lnp64_clang_driver.manifest"));
+        assert_eq!(
+            manifest_field(driver_manifest, "triple"),
+            manifest_field(target_manifest, "triple")
+        );
+        for flag in ["-ffreestanding", "-fno-pic", "-Itoolchain"] {
+            assert!(
+                manifest_csv_contains(driver_manifest, "cflags", flag),
+                "driver cflags missing {flag}"
+            );
+        }
+        assert_eq!(manifest_field(driver_manifest, "assembler"), "llvm-mc");
+        assert!(manifest_csv_contains(
+            driver_manifest,
+            "assembler_flags",
+            "-triple=lnp64-unknown-none"
+        ));
+        assert!(manifest_csv_contains(
+            driver_manifest,
+            "assembler_flags",
+            "-filetype=obj"
+        ));
+        assert_eq!(manifest_field(driver_manifest, "linker"), "ld.lld");
+        for flag in [
+            "-static",
+            "-m",
+            "elf64lnp64",
+            "-T",
+            "toolchain/lnp64_static.ld",
+        ] {
+            assert!(
+                manifest_csv_contains(driver_manifest, "linker_flags", flag),
+                "driver linker flags missing {flag}"
+            );
+        }
+        assert_eq!(
+            manifest_field(driver_manifest, "crt0"),
+            "toolchain/crt0_lnp64.s"
+        );
+        assert_eq!(
+            manifest_field(driver_manifest, "intrinsic_header"),
+            "toolchain/lnp64_intrinsics.h"
+        );
+        assert_eq!(
+            manifest_field(driver_manifest, "loader_probe"),
+            "lnp64 elf-plan"
+        );
+        assert_eq!(
+            manifest_field(driver_manifest, "status"),
+            "planned_until_backend"
+        );
+
+        assert!(gate_manifest.contains("clang --target=lnp64-unknown-none"));
+        assert!(gate_manifest.contains("-ffreestanding -fno-pic -I toolchain"));
+        assert!(gate_manifest.contains("llvm-mc -triple=lnp64-unknown-none"));
+        assert!(gate_manifest.contains("toolchain/crt0_lnp64.s"));
+        assert!(gate_manifest.contains("ld.lld -static -m elf64lnp64"));
+        assert!(gate_manifest.contains("-T toolchain/lnp64_static.ld"));
+        assert!(gate_manifest.contains("lnp64 elf-plan"));
     }
 
     #[test]
@@ -1315,6 +1394,10 @@ mod tests {
         assert_eq!(
             manifest_field(manifest, "intrinsic_header_contract"),
             "toolchain/lnp64_intrinsics.h"
+        );
+        assert_eq!(
+            manifest_field(manifest, "clang_driver_contract"),
+            "toolchain/lnp64_clang_driver.manifest"
         );
         assert_eq!(
             manifest_field(manifest, "isel_contract"),

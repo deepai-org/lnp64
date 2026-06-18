@@ -128,6 +128,22 @@ rg "MSG_RECV|\\bPIPE\\b"
 rg "EVENT_CTL|TIMER_CTL"
 ```
 
+The command set above is the currently exercised full software hygiene pass:
+`cargo test --quiet` runs the Rust unit/integration suite, `run_demos.sh` covers
+the demo programs, `git diff --check` catches whitespace damage, and the two
+`rg` scans are manual layering audits. Treat `MSG_RECV`, bare `PIPE`,
+`EVENT_CTL`, and `TIMER_CTL` hits as acceptable only when they are docs,
+compatibility-lowering names, or negative assertions.
+
+For toolchain-contract changes, these focused commands have been working:
+
+```sh
+bash scripts/run_toolchain_contracts.sh
+cargo test --quiet toolchain_contract_index_is_complete
+cargo test --quiet llvm_gate_manifest_pins_non_toy_clang_commands
+cargo test --quiet clang_driver_manifest_matches_llvm_gates
+```
+
 Use focused Rust filters while iterating, then run the full suite before a broad
 commit:
 
@@ -145,6 +161,17 @@ Useful one-off software smoke commands:
 cargo run -- cc demos/hello.c -o /tmp/hello.lnp64.s
 cargo run -- run /tmp/hello.lnp64.s
 cargo run -- elf-plan /path/to/program.elf
+```
+
+When measuring actual script behavior instead of compile time, build once and
+pin the binary used by the shell gates:
+
+```sh
+cargo build --release
+export LNP64_BIN="$PWD/target/release/lnp64"
+bash scripts/run_demos.sh
+bash scripts/run_userland.sh
+bash scripts/run_real_packages.sh
 ```
 
 Known working focused checks for recent emulator, loader, classifier, and

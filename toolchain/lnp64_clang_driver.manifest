@@ -1,0 +1,11 @@
+# LNP64 Clang/lld driver contract v0.
+triple=lnp64-unknown-none
+cflags=-ffreestanding,-fno-pic,-Itoolchain
+assembler=llvm-mc
+assembler_flags=-triple=lnp64-unknown-none,-filetype=obj
+linker=ld.lld
+linker_flags=-static,-m,elf64lnp64,-T,toolchain/lnp64_static.ld
+crt0=toolchain/crt0_lnp64.s
+intrinsic_header=toolchain/lnp64_intrinsics.h
+loader_probe=lnp64 elf-plan
+status=planned_until_backend
