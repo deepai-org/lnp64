@@ -1283,6 +1283,70 @@ def check_authority_projection_slots_unchanged(
             )
 
 
+def check_projection_cap_matches_commit(
+    prefix: str,
+    commit_record: dict[str, int | str],
+    post_state_record: dict[str, int | str],
+    context: str,
+) -> None:
+    field_pairs = (
+        (f"{prefix}_object_id", "object_id"),
+        (f"{prefix}_generation", "fdr_gen"),
+        (f"{prefix}_domain_id", "domain_id"),
+        (f"{prefix}_lineage_epoch", "lineage_epoch"),
+        (f"{prefix}_sealed", "sealed"),
+        (f"{prefix}_rights", "rights_mask"),
+    )
+    for projection_field, commit_field in field_pairs:
+        if post_state_record.get(projection_field) != commit_record.get(commit_field):
+            fail(
+                f"{context}: post {prefix} projection field {projection_field} "
+                f"{post_state_record.get(projection_field)!r} != commit {commit_field} "
+                f"{commit_record.get(commit_field)!r}"
+            )
+
+
+def check_rtl_refinement_postcondition(
+    expected_pre_projection: dict[str, int | str],
+    commit_record: dict[str, int | str],
+    post_state_record: dict[str, int | str],
+    context: str,
+    ops: CommitOps,
+) -> None:
+    op = require_int(commit_record, "op")
+    status = require_int(commit_record, "status")
+    if op == ops.push:
+        check_projection_cap_matches_commit("root", commit_record, post_state_record, context)
+        if post_state_record.get("wake_pending") != 1:
+            fail(f"{context}: push postcondition did not set wake_pending")
+        return
+    if op == ops.pull:
+        check_projection_cap_matches_commit("consumer", commit_record, post_state_record, context)
+        if post_state_record.get("wake_pending") != 0:
+            fail(f"{context}: pull postcondition did not clear wake_pending")
+        return
+    if op == ops.reject_full:
+        if status != ERR_EAGAIN:
+            fail(f"{context}: rejectFull postcondition status {status!r} != EAGAIN")
+        if post_state_record.get("full_was_explicit") != 1:
+            fail(f"{context}: rejectFull postcondition did not set full_was_explicit")
+        check_authority_projection_slots_unchanged(expected_pre_projection, post_state_record, context)
+        return
+    if op == ops.reject_stale:
+        if status != ERR_EREVOKED:
+            fail(f"{context}: rejectStale postcondition status {status!r} != EREVOKED")
+        if post_state_record.get("stale_rejected") != 1:
+            fail(f"{context}: rejectStale postcondition did not set stale_rejected")
+        check_authority_projection_slots_unchanged(expected_pre_projection, post_state_record, context)
+        return
+    if op == ops.cap_dup_denied:
+        if status != ERR_EPERM:
+            fail(f"{context}: capDupDenied postcondition status {status!r} != EPERM")
+        if post_state_record.get("failed_no_authority") != 1:
+            fail(f"{context}: capDupDenied postcondition did not set failed_no_authority")
+        check_authority_projection_slots_unchanged(expected_pre_projection, post_state_record, context)
+
+
 def check_rtl_refinement_step(
     state: M1State,
     pre_state_record: dict[str, int | str] | None,
@@ -1316,6 +1380,13 @@ def check_rtl_refinement_step(
             post_state_record,
             f"run {run_index} {transition} RtlM1RefinementStep",
         )
+    check_rtl_refinement_postcondition(
+        expected_pre_projection,
+        commit_record,
+        post_state_record,
+        f"run {run_index} {transition} RtlM1RefinementStep",
+        ops,
+    )
     check_state_projection(
         projection_from_state(state, op, status),
         post_state_record,

@@ -120,6 +120,32 @@ def build_valid_full_run(checker, ops) -> tuple[
     return run, state_run
 
 
+def build_valid_denied_run(checker, ops) -> tuple[
+    list[dict[str, int | str]],
+    list[dict[str, int | str]],
+]:
+    run = [
+        m1_commit_record(
+            ops.cap_dup_denied,
+            1,
+            1,
+            1,
+            1,
+            checker.RIGHT_PUSH | checker.RIGHT_PULL,
+            checker.ERR_EPERM,
+        )
+    ]
+    state = checker.initial_state(run[0], ops)
+    checker.apply_commit(state, run[0], 0, ops)
+    return run, [
+        checker.projection_from_state(
+            state,
+            checker.require_int(run[0], "op"),
+            checker.require_int(run[0], "status"),
+        )
+    ]
+
+
 def main() -> None:
     checker = load_checker()
     commit_fields, state_fields = schema_specs(checker)
@@ -149,6 +175,9 @@ def main() -> None:
 
     valid_run, valid_state_run = build_valid_full_run(checker, ops)
     checker.check_run(valid_run, valid_state_run, 0, ops)
+
+    valid_denied_run, valid_denied_state_run = build_valid_denied_run(checker, ops)
+    checker.check_run(valid_denied_run, valid_denied_state_run, 0, ops)
 
     cap_send_before_dup_state = checker.initial_state(valid_run[0], ops)
     expect_failure(
@@ -198,6 +227,41 @@ def main() -> None:
     expect_failure(
         "non-OK commit changed authority projection field root_rights",
         lambda: checker.check_run(valid_run, bad_non_ok_authority_state_run, 0, ops),
+    )
+
+    bad_push_postcondition_run = copy.deepcopy(valid_state_run)
+    bad_push_postcondition_run[3]["wake_pending"] = 0
+    expect_failure(
+        "push postcondition did not set wake_pending",
+        lambda: checker.check_run(valid_run, bad_push_postcondition_run, 0, ops),
+    )
+
+    bad_pull_postcondition_run = copy.deepcopy(valid_state_run)
+    bad_pull_postcondition_run[4]["wake_pending"] = 1
+    expect_failure(
+        "pull postcondition did not clear wake_pending",
+        lambda: checker.check_run(valid_run, bad_pull_postcondition_run, 0, ops),
+    )
+
+    bad_reject_full_postcondition_run = copy.deepcopy(valid_state_run)
+    bad_reject_full_postcondition_run[5]["full_was_explicit"] = 0
+    expect_failure(
+        "rejectFull postcondition did not set full_was_explicit",
+        lambda: checker.check_run(valid_run, bad_reject_full_postcondition_run, 0, ops),
+    )
+
+    bad_reject_stale_postcondition_run = copy.deepcopy(valid_state_run)
+    bad_reject_stale_postcondition_run[8]["stale_rejected"] = 0
+    expect_failure(
+        "rejectStale postcondition did not set stale_rejected",
+        lambda: checker.check_run(valid_run, bad_reject_stale_postcondition_run, 0, ops),
+    )
+
+    bad_cap_dup_denied_postcondition_run = copy.deepcopy(valid_denied_state_run)
+    bad_cap_dup_denied_postcondition_run[0]["failed_no_authority"] = 0
+    expect_failure(
+        "capDupDenied postcondition did not set failed_no_authority",
+        lambda: checker.check_run(valid_denied_run, bad_cap_dup_denied_postcondition_run, 0, ops),
     )
 
     pre_state = checker.initial_state(valid_run[0], ops)
