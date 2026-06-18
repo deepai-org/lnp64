@@ -13,6 +13,30 @@ using namespace lld::elf;
 
 namespace {
 
+static bool isInt(int64_t Value, unsigned Bits) {
+  int64_t Min = -(int64_t(1) << (Bits - 1));
+  int64_t Max = (int64_t(1) << (Bits - 1)) - 1;
+  return Value >= Min && Value <= Max;
+}
+
+static void relocateBranch26(uint8_t *Loc, uint64_t Val) {
+  int64_t Delta = static_cast<int64_t>(Val);
+  if (Delta % 4 != 0) {
+    error(getErrorLocation(Loc) + "R_LNP64_BRANCH26 target is not aligned");
+    return;
+  }
+
+  int64_t Scaled = Delta / 4;
+  if (!isInt(Scaled, 24)) {
+    error(getErrorLocation(Loc) + "R_LNP64_BRANCH26 out of range");
+    return;
+  }
+
+  uint32_t Word = read32le(Loc);
+  write32le(Loc, (Word & 0xff000000) |
+                     (static_cast<uint32_t>(Scaled) & 0x00ffffff));
+}
+
 class LNP64 final : public TargetInfo {
 public:
   LNP64();
@@ -80,7 +104,7 @@ void LNP64::relocate(uint8_t *Loc, const Relocation &Rel, uint64_t Val) const {
     write32le(Loc, Val);
     return;
   case R_LNP64_BRANCH26:
-    error(getErrorLocation(Loc) + "R_LNP64_BRANCH26 is not encoded yet");
+    relocateBranch26(Loc, Val);
     return;
   default:
     error(getErrorLocation(Loc) + "unknown LNP64 relocation");

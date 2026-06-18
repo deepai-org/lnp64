@@ -53,10 +53,11 @@ Scaffolded llvm-project lit tests now exist for `llc` hello/native-intrinsic
 codegen, `llvm-mc` basic assembly, and Clang driver command shape; they are
 marked `XFAIL` until the target is integrated and executable.
 The MC code emitter now has concrete fixed32 paths for `NOP`, `RET`, `LI`,
-`MOV`, integer ALU/compare operations, and byte/word/doubleword `LD`/`ST`;
-other opcodes remain blocked until operand encodings and fixups are
-implemented. The disassembler decodes that same initial fixed32 subset for
-future `llvm-mc` round trips.
+`MOV`, integer ALU/compare operations, branch/call/return opcodes, and
+byte/word/doubleword `LD`/`ST`; other opcodes remain blocked until operand
+encodings and fixups are implemented. The disassembler decodes that same
+initial fixed32 subset for future `llvm-mc` round trips, and the lld scaffold
+can patch `R_LNP64_BRANCH26` into the aligned signed branch field.
 `LNP64InstrInfo.td` now carries operand-bearing TableGen classes for integer
 RRR/RR/RI, branch, memory, atomic, and native-capability instruction shapes
 instead of name-only opcode stubs.

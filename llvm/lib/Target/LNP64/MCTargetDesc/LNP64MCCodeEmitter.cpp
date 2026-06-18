@@ -41,6 +41,17 @@ static uint32_t encodeFixed32Mem(uint8_t Opcode, unsigned Reg, unsigned Base,
          ((Base & 0x1f) << 14) | (uint32_t(Offset) & 0x3fff);
 }
 
+static uint32_t encodeFixed32Branch(uint8_t Opcode, int64_t Target) {
+  if (Target % 4 != 0)
+    llvm_unreachable("expected instruction-aligned LNP64 branch target");
+  int64_t Scaled = Target / 4;
+  return (uint32_t(Opcode) << 24) | (uint32_t(Scaled) & 0x00ffffff);
+}
+
+static uint32_t encodeFixed32Reg(uint8_t Opcode, unsigned Reg) {
+  return (uint32_t(Opcode) << 24) | ((Reg & 0x1f) << 19);
+}
+
 static unsigned getGPRNo(const MCOperand &Operand) {
   unsigned Reg = Operand.getReg();
   if (Reg < LNP64::R0 || Reg > LNP64::R31)
@@ -139,6 +150,33 @@ public:
       emitLE32(encodeFixed32RR(0x1b, getGPRNo(MI.getOperand(0)),
                                getGPRNo(MI.getOperand(1))),
                CB);
+      return;
+    case LNP64::JMP:
+      emitLE32(encodeFixed32Branch(0x20, MI.getOperand(0).getImm()), CB);
+      return;
+    case LNP64::BEQ:
+      emitLE32(encodeFixed32Branch(0x21, MI.getOperand(0).getImm()), CB);
+      return;
+    case LNP64::BNE:
+      emitLE32(encodeFixed32Branch(0x22, MI.getOperand(0).getImm()), CB);
+      return;
+    case LNP64::BLT:
+      emitLE32(encodeFixed32Branch(0x23, MI.getOperand(0).getImm()), CB);
+      return;
+    case LNP64::BGT:
+      emitLE32(encodeFixed32Branch(0x24, MI.getOperand(0).getImm()), CB);
+      return;
+    case LNP64::BLE:
+      emitLE32(encodeFixed32Branch(0x25, MI.getOperand(0).getImm()), CB);
+      return;
+    case LNP64::BGE:
+      emitLE32(encodeFixed32Branch(0x26, MI.getOperand(0).getImm()), CB);
+      return;
+    case LNP64::CALL:
+      emitLE32(encodeFixed32Branch(0x27, MI.getOperand(0).getImm()), CB);
+      return;
+    case LNP64::CALL_REG:
+      emitLE32(encodeFixed32Reg(0x28, getGPRNo(MI.getOperand(0))), CB);
       return;
     case LNP64::LD:
       emitLE32(encodeFixed32Mem(0x30, getGPRNo(MI.getOperand(0)),

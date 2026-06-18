@@ -113,7 +113,7 @@ Provisional relocation numbers:
 | 1 | `R_LNP64_ABS64` | `S + A` |
 | 2 | `R_LNP64_ABS32` | low 32 bits of `S + A`; overflow is an error |
 | 3 | `R_LNP64_PC32` | `S + A - P`; overflow is an error |
-| 4 | `R_LNP64_BRANCH26` | branch target displacement from `P`; must be instruction aligned and in range |
+| 4 | `R_LNP64_BRANCH26` | branch target byte displacement from `P`; must be instruction aligned and in signed 26-bit range, encoded as a signed 24-bit word displacement |
 | 5 | `R_LNP64_GOT64` | address of GOT entry for `S + A` |
 | 6 | `R_LNP64_GLOB_DAT` | `S + A` for data/code pointer slots |
 | 7 | `R_LNP64_RELATIVE` | `B + A` |

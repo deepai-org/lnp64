@@ -1837,9 +1837,12 @@ mod tests {
         assert!(disassembler.contains("Instr.setOpcode(LNP64::ADD)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::AND)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::CMP)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::CALL)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::CALL_REG)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::LD_W)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::ST_B)"));
         assert!(disassembler.contains("SignExtend64<14>"));
+        assert!(disassembler.contains("decodeBranchTarget"));
         assert!(disassembler.contains("MCDisassembler::Fail"));
         assert!(target_machine.contains("LLVMInitializeLNP64Target"));
         assert!(target_machine.contains("e-m:e-p:64:64-i64:64-n64-S128"));
@@ -2866,6 +2869,7 @@ mod tests {
         let filemap = include_str!("../toolchain/lnp64_llvm_filemap.manifest");
         let mc_emitter =
             include_str!("../llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCCodeEmitter.cpp");
+        let lld_arch = include_str!("../lld/ELF/Arch/LNP64.cpp");
         let rows = mc_encoding_rows(mc_manifest);
         let relocation_names: std::collections::BTreeSet<_> = relocation_rows(relocation_manifest)
             .into_iter()
@@ -2889,6 +2893,7 @@ mod tests {
         assert!(mc_manifest.contains("opcode[31:24]"));
         assert!(mc_manifest.contains("fixed32_rrr"));
         assert!(mc_manifest.contains("fixed32_mem_base_simm"));
+        assert!(mc_manifest.contains("simm24_words[23:0]"));
 
         for (group, format, opcodes, operands, relocations, surfaces) in rows {
             assert!(
@@ -2969,15 +2974,23 @@ mod tests {
         assert!(mc_emitter.contains("encodeFixed32RR"));
         assert!(mc_emitter.contains("encodeFixed32RRR"));
         assert!(mc_emitter.contains("encodeFixed32Mem"));
+        assert!(mc_emitter.contains("encodeFixed32Branch"));
+        assert!(mc_emitter.contains("encodeFixed32Reg"));
         assert!(mc_emitter.contains("case LNP64::NOP"));
         assert!(mc_emitter.contains("case LNP64::RET"));
         assert!(mc_emitter.contains("case LNP64::LI"));
         assert!(mc_emitter.contains("case LNP64::ADD"));
+        assert!(mc_emitter.contains("case LNP64::CALL"));
+        assert!(mc_emitter.contains("case LNP64::CALL_REG"));
         assert!(mc_emitter.contains("case LNP64::LD"));
         assert!(mc_emitter.contains("case LNP64::ST"));
         assert!(mc_emitter.contains("encodeFixed32NoOperand(0x00)"));
         assert!(mc_emitter.contains("encodeFixed32NoOperand(0x1f)"));
         assert!(mc_emitter.contains("emitLE32"));
+        assert!(lld_arch.contains("relocateBranch26"));
+        assert!(lld_arch.contains("read32le(Loc)"));
+        assert!(lld_arch.contains("R_LNP64_BRANCH26 out of range"));
+        assert!(!lld_arch.contains("R_LNP64_BRANCH26 is not encoded yet"));
     }
 
     #[test]

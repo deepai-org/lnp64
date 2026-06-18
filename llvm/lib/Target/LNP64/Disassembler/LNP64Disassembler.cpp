@@ -29,6 +29,10 @@ static void addImm(MCInst &Instr, int64_t Imm) {
   Instr.addOperand(MCOperand::createImm(Imm));
 }
 
+static int64_t decodeBranchTarget(uint32_t Word) {
+  return SignExtend64<24>(Word & 0x00ffffff) * 4;
+}
+
 class LNP64Disassembler : public MCDisassembler {
 public:
   LNP64Disassembler(const MCSubtargetInfo &STI, MCContext &Ctx)
@@ -135,6 +139,42 @@ public:
       return MCDisassembler::Success;
     case 0x1f:
       Instr.setOpcode(LNP64::RET);
+      return MCDisassembler::Success;
+    case 0x20:
+      Instr.setOpcode(LNP64::JMP);
+      addImm(Instr, decodeBranchTarget(Word));
+      return MCDisassembler::Success;
+    case 0x21:
+      Instr.setOpcode(LNP64::BEQ);
+      addImm(Instr, decodeBranchTarget(Word));
+      return MCDisassembler::Success;
+    case 0x22:
+      Instr.setOpcode(LNP64::BNE);
+      addImm(Instr, decodeBranchTarget(Word));
+      return MCDisassembler::Success;
+    case 0x23:
+      Instr.setOpcode(LNP64::BLT);
+      addImm(Instr, decodeBranchTarget(Word));
+      return MCDisassembler::Success;
+    case 0x24:
+      Instr.setOpcode(LNP64::BGT);
+      addImm(Instr, decodeBranchTarget(Word));
+      return MCDisassembler::Success;
+    case 0x25:
+      Instr.setOpcode(LNP64::BLE);
+      addImm(Instr, decodeBranchTarget(Word));
+      return MCDisassembler::Success;
+    case 0x26:
+      Instr.setOpcode(LNP64::BGE);
+      addImm(Instr, decodeBranchTarget(Word));
+      return MCDisassembler::Success;
+    case 0x27:
+      Instr.setOpcode(LNP64::CALL);
+      addImm(Instr, decodeBranchTarget(Word));
+      return MCDisassembler::Success;
+    case 0x28:
+      Instr.setOpcode(LNP64::CALL_REG);
+      addReg(Instr, A);
       return MCDisassembler::Success;
     case 0x30:
       Instr.setOpcode(LNP64::LD);
