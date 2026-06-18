@@ -2866,7 +2866,10 @@ impl Machine {
     }
 
     fn resolve_process_path_from_base(&self, base: &Path, path: &str) -> Result<String, String> {
-        if path.is_empty() || path.starts_with("tcp-listen:") {
+        if path.is_empty() {
+            return Err("path resolution denied: empty path".to_string());
+        }
+        if path.starts_with("tcp-listen:") {
             return Ok(path.to_string());
         }
         let process = self.process()?;
@@ -2899,7 +2902,10 @@ impl Machine {
         base: &Path,
         path: &str,
     ) -> Result<String, String> {
-        if path.is_empty() || path.starts_with("tcp-listen:") {
+        if path.is_empty() {
+            return Err("path resolution denied: empty path".to_string());
+        }
+        if path.starts_with("tcp-listen:") {
             return Ok(path.to_string());
         }
         let process = self.process()?;
@@ -9724,6 +9730,23 @@ mod tests {
         machine.current_tid = 1;
         machine.process_mut().unwrap().namespace_root = None;
         assert!(machine.resolve_process_path("Cargo.toml").is_err());
+    }
+
+    #[test]
+    fn namespace_rejects_empty_paths_instead_of_bypassing_root() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.process_mut().unwrap().namespace_root = None;
+        assert!(machine.resolve_process_path("").is_err());
+
+        let root = PathBuf::from("/tmp/lnp64-ns-root");
+        {
+            let process = machine.process_mut().unwrap();
+            process.namespace_root = Some(root.clone());
+            process.cwd = root;
+        }
+        assert!(machine.resolve_process_path("").is_err());
+        assert!(machine.resolve_process_path_no_follow_final("").is_err());
     }
 
     #[test]
