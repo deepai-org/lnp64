@@ -8695,6 +8695,15 @@ mod tests {
         machine.object_ctl(Reg(5), arg).unwrap();
         assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 1);
+
+        machine
+            .domains
+            .get_mut(&ROOT_DOMAIN_ID)
+            .unwrap()
+            .capability_mask = u64::MAX & !DOMAIN_CAP_FDR;
+        machine.object_ctl(Reg(6), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[6], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
     }
 
     #[test]
