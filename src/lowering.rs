@@ -958,6 +958,7 @@ mod tests {
             "llvm_bootstrap",
             "exec_plan",
             "loader",
+            "exec_descriptor_validator",
             "debug_unwind",
             "inline_asm",
             "crt_startup",
