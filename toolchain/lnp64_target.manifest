@@ -41,3 +41,4 @@ intrinsics=__lnp_openat,__lnp_pull,__lnp_push,__lnp_mmap,__lnp_await,__lnp_gate_
 native_primitives=OPEN_AT,PULL,PUSH,MMAP,AWAIT,GATE_CALL,GATE_RETURN,DOMAIN_CTL,OBJECT_CTL,CAP_DUP,CAP_SEND,CAP_RECV,CAP_REVOKE,CLONE
 clone_profiles=new_process_cow,new_thread_shared_vm,spawn_entry,domain_task
 toy_compiler_policy=bootstrap_smoke_only_after_llvm_gate
+toy_compiler_policy_contract=toolchain/lnp64_toy_compiler_policy.manifest

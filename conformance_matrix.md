@@ -18,6 +18,9 @@ Aggregate gates:
   contract for asm demos, C/libc tests, randomized emulator tests,
   adversarial/fault tests, package tests, NetBSD personality gates, planned
   LLVM-built versions, and aggregate hygiene.
+- `toolchain/lnp64_toy_compiler_policy.manifest` is the checked retirement
+  policy that keeps the toy compiler as a smoke generator while planned
+  LLVM-built versions replace its coverage.
 - `scripts/run_software_gates.sh` runs the host Rust tests, toolchain contract
   checks, demos, userland, NetBSD personality smoke/system gates, and real
   package gates.

@@ -1054,6 +1054,31 @@ mod tests {
             .collect()
     }
 
+    fn toy_compiler_policy_rows(manifest: &str) -> Vec<(&str, &str, Vec<&str>, &str)> {
+        manifest
+            .lines()
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(|line| {
+                let mut fields = line.splitn(4, '|');
+                let rule = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing toy compiler policy rule in {line}"));
+                let status = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing toy compiler policy status in {line}"));
+                let artifacts = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing toy compiler policy artifacts in {line}"))
+                    .split(',')
+                    .collect();
+                let evidence = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing toy compiler policy evidence in {line}"));
+                (rule, status, artifacts, evidence)
+            })
+            .collect()
+    }
+
     fn llvm_bootstrap_rows(manifest: &str) -> Vec<(&str, &str, Vec<&str>, Vec<&str>, &str)> {
         manifest
             .lines()
@@ -1225,6 +1250,7 @@ mod tests {
             "libc_shim",
             "netbsd_layers",
             "conformance_gates",
+            "toy_compiler_policy",
             "isel",
             "llvm_bootstrap",
             "llvm_gates",
@@ -2165,6 +2191,112 @@ mod tests {
     }
 
     #[test]
+    fn toy_compiler_policy_manifest_freezes_bootstrap_role() {
+        let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
+        let policy_manifest = include_str!("../toolchain/lnp64_toy_compiler_policy.manifest");
+        let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
+        let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
+        let roadmap = include_str!("../toolchain_roadmap.md");
+        let conformance = include_str!("../conformance_matrix.md");
+        let llvm_gates = include_str!("../toolchain/lnp64_llvm_gates.manifest");
+        let llvm_bootstrap = include_str!("../toolchain/lnp64_llvm_bootstrap.manifest");
+        let intrinsics = include_str!("../toolchain/lnp64_intrinsics.manifest");
+        let intrinsic_header = include_str!("../toolchain/lnp64_intrinsics.h");
+        let c_compiler = include_str!("c_compiler.rs");
+        let lowering_source = include_str!("lowering.rs");
+        let libc_roadmap = include_str!("../libc_roadmap.md");
+        let evidence_corpus = format!(
+            "{target_manifest}\n{roadmap}\n{conformance}\n{llvm_gates}\n{llvm_bootstrap}\n{intrinsics}\n{intrinsic_header}\n{c_compiler}\n{lowering_source}\n{libc_roadmap}"
+        );
+        let rows = toy_compiler_policy_rows(policy_manifest);
+        let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut rules = std::collections::BTreeMap::new();
+
+        assert_eq!(
+            manifest_field(target_manifest, "toy_compiler_policy"),
+            "bootstrap_smoke_only_after_llvm_gate"
+        );
+        assert_eq!(
+            manifest_field(target_manifest, "toy_compiler_policy_contract"),
+            "toolchain/lnp64_toy_compiler_policy.manifest"
+        );
+        assert!(contract_index.contains(
+            "toy_compiler_policy|toolchain/lnp64_toy_compiler_policy.manifest|toy_compiler_policy_manifest_freezes_bootstrap_role"
+        ));
+        assert!(transition_manifest.contains("toolchain/lnp64_toy_compiler_policy.manifest"));
+        assert!(roadmap.contains("only small fixes needed to keep existing smoke"));
+        assert!(conformance.contains("toolchain/lnp64_toy_compiler_policy.manifest"));
+
+        for (rule, status, artifacts, evidence) in rows {
+            assert!(
+                rules
+                    .insert(rule, (status, artifacts.clone(), evidence))
+                    .is_none(),
+                "duplicate toy compiler policy rule {rule}"
+            );
+            assert!(
+                ["required", "planned"].contains(&status),
+                "unknown toy compiler policy status {status} for {rule}"
+            );
+            assert!(
+                !artifacts.is_empty(),
+                "empty toy compiler policy artifacts for {rule}"
+            );
+            for artifact in artifacts {
+                assert!(
+                    manifest_root.join(artifact).exists(),
+                    "toy compiler policy {rule} names missing artifact {artifact}"
+                );
+            }
+            assert!(
+                !evidence.is_empty(),
+                "empty toy compiler policy evidence for {rule}"
+            );
+            if status == "required" {
+                assert!(
+                    evidence_corpus.contains(evidence),
+                    "toy compiler policy evidence {evidence} for {rule} is not present"
+                );
+            }
+        }
+
+        for rule in [
+            "smoke_generator_only",
+            "private_native_shims",
+            "compat_lowering_boundary",
+            "no_toy_in_llvm_gates",
+            "replacement_program_set",
+        ] {
+            assert!(
+                rules.contains_key(rule),
+                "missing toy compiler policy rule {rule}"
+            );
+        }
+        for rule in [
+            "smoke_generator_only",
+            "private_native_shims",
+            "compat_lowering_boundary",
+            "no_toy_in_llvm_gates",
+        ] {
+            assert_eq!(rules[rule].0, "required", "{rule} should be required");
+        }
+        assert_eq!(rules["replacement_program_set"].0, "planned");
+        for intrinsic in manifest_field(target_manifest, "intrinsics").split(',') {
+            assert!(intrinsic.starts_with("__lnp_"));
+            assert!(intrinsics.contains(intrinsic));
+            assert!(intrinsic_header.contains(intrinsic));
+        }
+        assert!(!llvm_gates.contains("lnp64 cc"));
+        assert!(!llvm_gates.contains("cargo run -- cc"));
+        for case in ["hello", "arithmetic", "memory", "calls", "simple_libc"] {
+            assert!(
+                llvm_bootstrap.contains(case),
+                "replacement program set missing {case}"
+            );
+        }
+    }
+
+    #[test]
     fn llvm_target_manifest_records_required_backend_contract() {
         let manifest = include_str!("../toolchain/lnp64_target.manifest");
         let object_format = include_str!("../object_format.md");
@@ -2344,6 +2476,10 @@ mod tests {
         assert_eq!(
             manifest_field(manifest, "toy_compiler_policy"),
             "bootstrap_smoke_only_after_llvm_gate"
+        );
+        assert_eq!(
+            manifest_field(manifest, "toy_compiler_policy_contract"),
+            "toolchain/lnp64_toy_compiler_policy.manifest"
         );
         assert!(roadmap.contains("`CLONE` is a backend-visible native primitive"));
         assert!(roadmap.contains("new_thread_shared_vm"));
