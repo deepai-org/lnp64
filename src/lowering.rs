@@ -2875,6 +2875,8 @@ mod tests {
         assert!(filemap.contains("LNP64MCCodeEmitter.cpp"));
         assert!(mc_manifest.contains("fixed32_no_operand"));
         assert!(mc_manifest.contains("opcode[31:24]"));
+        assert!(mc_manifest.contains("fixed32_rrr"));
+        assert!(mc_manifest.contains("fixed32_mem_base_simm"));
 
         for (group, format, opcodes, operands, relocations, surfaces) in rows {
             assert!(
@@ -2951,8 +2953,16 @@ mod tests {
                 .contains(&"R_LNP64_CALLGATE64")
         );
         assert!(mc_emitter.contains("encodeFixed32NoOperand"));
+        assert!(mc_emitter.contains("encodeFixed32RI"));
+        assert!(mc_emitter.contains("encodeFixed32RR"));
+        assert!(mc_emitter.contains("encodeFixed32RRR"));
+        assert!(mc_emitter.contains("encodeFixed32Mem"));
         assert!(mc_emitter.contains("case LNP64::NOP"));
         assert!(mc_emitter.contains("case LNP64::RET"));
+        assert!(mc_emitter.contains("case LNP64::LI"));
+        assert!(mc_emitter.contains("case LNP64::ADD"));
+        assert!(mc_emitter.contains("case LNP64::LD"));
+        assert!(mc_emitter.contains("case LNP64::ST"));
         assert!(mc_emitter.contains("encodeFixed32NoOperand(0x00)"));
         assert!(mc_emitter.contains("encodeFixed32NoOperand(0x1f)"));
         assert!(mc_emitter.contains("emitLE32"));
