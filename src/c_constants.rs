@@ -118,6 +118,7 @@ pub fn find_token_constant(name: &str) -> Option<i64> {
         "EINVAL" => Some(22),
         "ENOEXEC" => Some(8),
         "ENOENT" => Some(2),
+        "ENOMEM" => Some(12),
         "ENOTDIR" => Some(20),
         "ERANGE" => Some(34),
         "ESTALE" => Some(116),
