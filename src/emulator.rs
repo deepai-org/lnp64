@@ -3375,6 +3375,13 @@ impl Machine {
         Ok(())
     }
 
+    fn release_fd_locks_for_replacement(&mut self, fd: usize) -> Result<(), String> {
+        if !matches!(self.process()?.fds.get(fd), Some(FdHandle::Closed)) {
+            self.release_process_file_locks_for_fd(fd)?;
+        }
+        Ok(())
+    }
+
     fn fcntl_fd_index(&mut self, fd: usize, cmd: u64, arg: u64) -> Result<(), String> {
         const F_GETLK_LNP64: u64 = 5;
         const F_SETLK_LNP64: u64 = 6;
@@ -4318,6 +4325,8 @@ impl Machine {
             fd
         };
 
+        self.release_fd_locks_for_replacement(dst)
+            .map_err(|_| 9u64)?;
         let mut payload = queue.borrow_mut().capabilities.pop_front().ok_or(11u64)?;
         payload.capability.rights = rights;
         payload.capability.narrowable = payload.capability.narrowable && !payload.capability.sealed;
@@ -4399,6 +4408,8 @@ impl Machine {
             self.ensure_domain_budget_errno(0, 0, 0, delta)?;
             fd
         };
+        self.release_fd_locks_for_replacement(dst)
+            .map_err(|_| 9u64)?;
         self.duplicate_fd_capability(src, dst, rights, sealed)?;
         self.bump_fd_generation(dst).map_err(|_| 9u64)?;
         self.process_mut().map_err(|_| 3u64)?.fds[dst] = handle;
@@ -10690,6 +10701,114 @@ mod tests {
 
         assert_eq!(machine.thread().unwrap().regs[2], 7);
         assert_eq!(machine.process().unwrap().errno, 0);
+        assert!(machine.advisory_locks.is_empty());
+        assert!(matches!(
+            machine.process().unwrap().fds[7],
+            FdHandle::Counter(_)
+        ));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn cap_dup_replacement_releases_old_file_locks() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("lnp64_cap_dup_lock_replace_{unique}"));
+        fs::write(&path, b"locked").unwrap();
+
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[5] = FdHandle::Counter(Rc::new(RefCell::new(99)));
+            process.fd_capabilities[5] = FdCapability::full(5);
+            process.fds[7] = FdHandle::File(
+                OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(&path)
+                    .unwrap(),
+            );
+            process.fd_capabilities[7] = FdCapability::full(7);
+        }
+
+        let lock = ARG_BASE;
+        machine.store_u64(lock, 1).unwrap();
+        machine.fcntl_fd_index(7, 6, lock).unwrap();
+        assert_eq!(machine.advisory_locks.len(), 1);
+
+        let arg = ARG_BASE + 0x100;
+        machine.store_u64(arg, 5).unwrap();
+        machine.store_u64(arg + 8, 7).unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_dup(Reg(2), arg).unwrap();
+
+        assert_eq!(
+            machine.thread().unwrap().regs[2],
+            machine.fd_token(7).unwrap()
+        );
+        assert!(machine.advisory_locks.is_empty());
+        assert!(matches!(
+            machine.process().unwrap().fds[7],
+            FdHandle::Counter(_)
+        ));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn cap_recv_replacement_releases_old_file_locks() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("lnp64_cap_recv_lock_replace_{unique}"));
+        fs::write(&path, b"locked").unwrap();
+
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        create_pipe_pair(&mut machine, 3, 4);
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[5] = FdHandle::Counter(Rc::new(RefCell::new(123)));
+            process.fd_capabilities[5] = FdCapability::full(5);
+            process.fds[7] = FdHandle::File(
+                OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(&path)
+                    .unwrap(),
+            );
+            process.fd_capabilities[7] = FdCapability::full(7);
+        }
+
+        let lock = ARG_BASE;
+        machine.store_u64(lock, 1).unwrap();
+        machine.fcntl_fd_index(7, 6, lock).unwrap();
+        assert_eq!(machine.advisory_locks.len(), 1);
+
+        let arg = ARG_BASE + 0x100;
+        machine.store_u64(arg, 4).unwrap();
+        machine.store_u64(arg + 8, 5).unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_send(Reg(2), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[2], 1);
+
+        machine.store_u64(arg, 3).unwrap();
+        machine.store_u64(arg + 8, 7).unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_recv(Reg(6), arg).unwrap();
+
+        assert_eq!(
+            machine.thread().unwrap().regs[6],
+            machine.fd_token(7).unwrap()
+        );
         assert!(machine.advisory_locks.is_empty());
         assert!(matches!(
             machine.process().unwrap().fds[7],
