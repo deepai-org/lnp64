@@ -42,8 +42,12 @@ const char *LNP64TargetLowering::getTargetNodeName(unsigned Opcode) const {
   switch (Opcode) {
   case LNP64ISD::CALL:
     return "LNP64ISD::CALL";
+  case LNP64ISD::DOMAIN_CTL:
+    return "LNP64ISD::DOMAIN_CTL";
   case LNP64ISD::GATE_CALL:
     return "LNP64ISD::GATE_CALL";
+  case LNP64ISD::OBJECT_CTL:
+    return "LNP64ISD::OBJECT_CTL";
   case LNP64ISD::PULL:
     return "LNP64ISD::PULL";
   case LNP64ISD::PUSH:
@@ -136,6 +140,18 @@ LNP64TargetLowering::LowerCall(CallLoweringInfo &CLI,
     SDValue NativeShim = DAG.getNode(Opcode, DL, NodeTys, Ops);
     InVals.push_back(NativeShim);
     return NativeShim.getValue(1);
+  }
+  if (CalleeName == "__lnp_domain_ctl" || CalleeName == "__lnp_object_ctl") {
+    if (CLI.OutVals.size() != 1 || CLI.Ins.empty())
+      llvm_unreachable(
+          "LNP64 native control lowering expects one argument and a result");
+    SDVTList NodeTys = DAG.getVTList(MVT::i64, MVT::Other);
+    SmallVector<SDValue, 2> Ops = {Chain, CLI.OutVals[0]};
+    unsigned Opcode = CalleeName == "__lnp_domain_ctl" ? LNP64ISD::DOMAIN_CTL
+                                                       : LNP64ISD::OBJECT_CTL;
+    SDValue NativeCtl = DAG.getNode(Opcode, DL, NodeTys, Ops);
+    InVals.push_back(NativeCtl);
+    return NativeCtl.getValue(1);
   }
 
   MachineFunction &MF = DAG.getMachineFunction();

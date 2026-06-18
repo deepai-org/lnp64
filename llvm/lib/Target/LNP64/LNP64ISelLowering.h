@@ -11,7 +11,9 @@ namespace LNP64ISD {
 enum NodeType : unsigned {
   FIRST_NUMBER = ISD::BUILTIN_OP_END,
   CALL,
+  DOMAIN_CTL,
   GATE_CALL,
+  OBJECT_CTL,
   PULL,
   PUSH,
   RET_FLAG,

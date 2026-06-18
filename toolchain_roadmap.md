@@ -76,7 +76,8 @@ Narrow memory selection covers zero-extending byte/half/word loads and
 truncating byte/half/word stores through `LD_B`/`LD_H`/`LD_W` and
 `ST_B`/`ST_H`/`ST_W`.
 The first private native shim lowerings recognize `__lnp_pull`, `__lnp_push`,
-and `__lnp_call` and emit native `PULL`/`PUSH`/`GATE_CALL` operations directly,
+`__lnp_call`, `__lnp_domain_ctl`, and `__lnp_object_ctl` and emit native
+`PULL`/`PUSH`/`GATE_CALL`/`DOMAIN_CTL`/`OBJECT_CTL` operations directly,
 treating the C ABI `lnp64_cap_t` as a GPR capability handle. The remaining
 `__lnp_*` shims still need backend nodes or runtime call fallbacks.
 Return lowering now maps the LLVM return value path through `RetCC_LNP64` into

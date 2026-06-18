@@ -6,6 +6,8 @@
 @msg = private unnamed_addr constant [6 x i8] c"hello\00", align 1
 
 declare i64 @__lnp_call(i64, i64, i64)
+declare i64 @__lnp_domain_ctl(i64)
+declare i64 @__lnp_object_ctl(i64)
 declare i64 @__lnp_pull(i64, ptr, i64)
 declare i64 @__lnp_push(i64, ptr, i64)
 declare i64 @callee(i64)
@@ -26,6 +28,14 @@ define i64 @gate(i64 %cap, i64 %a, i64 %b) {
 entry:
   %r = call i64 @__lnp_call(i64 %cap, i64 %a, i64 %b)
   ret i64 %r
+}
+
+define i64 @control(i64 %record) {
+entry:
+  %d = call i64 @__lnp_domain_ctl(i64 %record)
+  %o = call i64 @__lnp_object_ctl(i64 %record)
+  %sum = add i64 %d, %o
+  ret i64 %sum
 }
 
 define i64 @arith(i64 %a, i64 %b) {
@@ -84,6 +94,10 @@ entry:
 ; CHECK: ret
 ; CHECK-LABEL: gate:
 ; CHECK: gate_call
+; CHECK: ret
+; CHECK-LABEL: control:
+; CHECK: domain_ctl
+; CHECK: object_ctl
 ; CHECK: ret
 ; CHECK-LABEL: arith:
 ; CHECK: li

@@ -14,11 +14,18 @@ def LNP64retflag : SDNode<"LNP64ISD::RET_FLAG", SDTNone,
 def LNP64call : SDNode<"LNP64ISD::CALL", SDTNone,
                        [SDNPHasChain, SDNPOptInGlue, SDNPOutGlue,
                         SDNPVariadic]>;
+def SDT_LNP64Native1 : SDTypeProfile<1, 1, [
+  SDTCisVT<0, i64>, SDTCisVT<1, i64>
+]>;
 def SDT_LNP64Native3 : SDTypeProfile<1, 3, [
   SDTCisVT<0, i64>, SDTCisVT<1, i64>, SDTCisVT<2, i64>, SDTCisVT<3, i64>
 ]>;
+def LNP64domainctl : SDNode<"LNP64ISD::DOMAIN_CTL", SDT_LNP64Native1,
+                            [SDNPHasChain]>;
 def LNP64gatecall : SDNode<"LNP64ISD::GATE_CALL", SDT_LNP64Native3,
                            [SDNPHasChain]>;
+def LNP64objectctl : SDNode<"LNP64ISD::OBJECT_CTL", SDT_LNP64Native1,
+                            [SDNPHasChain]>;
 def LNP64pull : SDNode<"LNP64ISD::PULL", SDT_LNP64Native3,
                        [SDNPHasChain]>;
 def LNP64push : SDNode<"LNP64ISD::PUSH", SDT_LNP64Native3,
@@ -190,8 +197,12 @@ def MMAP : LNP64Inst<(outs GPR:$rd), (ins GPR:$addr, GPR:$len, GPR:$prot),
 def MUNMAP : LNP64Native2<"munmap">;
 def MPROTECT : LNP64Inst<(outs GPR:$rd), (ins GPR:$addr, GPR:$len, GPR:$prot),
                          "mprotect", "\t$rd, $addr, $len, $prot">;
-def OBJECT_CTL : LNP64Native2<"object_ctl">;
-def DOMAIN_CTL : LNP64Native2<"domain_ctl">;
+def OBJECT_CTL : LNP64Native2<"object_ctl"> {
+  let Pattern = [(set GPR:$rd, (LNP64objectctl GPR:$arg))];
+}
+def DOMAIN_CTL : LNP64Native2<"domain_ctl"> {
+  let Pattern = [(set GPR:$rd, (LNP64domainctl GPR:$arg))];
+}
 def CAP_SEND : LNP64Native2<"cap_send">;
 def CAP_RECV : LNP64Native2<"cap_recv">;
 def CAP_DUP : LNP64Native2<"cap_dup">;
