@@ -88,7 +88,7 @@ The current formal/RTL work order is deliberately narrow: finish the M1
 capability/FDR authority slice to the first credible refinement shape before
 starting another vertical proof slice. M1 must show the pattern from
 schema-owned RTL commit/state records through Lean transition preservation,
-executable post-state comparison, bypass/mediation assertions, and honest trust
+executable pre/commit/post refinement comparison, bypass/mediation assertions, and honest trust
 level accounting. Passing typed trace checks and assertions is useful evidence,
 but it is not T4 RTL-to-Lean refinement by itself.
 

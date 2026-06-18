@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import copy
 import contextlib
 import importlib.util
 import io
@@ -66,6 +67,59 @@ def replace_once(source: str, old: str, new: str) -> str:
     return source.replace(old, new, 1)
 
 
+def m1_commit_record(
+    op: int,
+    object_id: int,
+    object_gen: int,
+    fdr_gen: int,
+    domain_id: int,
+    rights_mask: int,
+    status: int,
+) -> dict[str, int | str]:
+    return {
+        "record": "m1_cap_commit",
+        "op": op,
+        "object_id": object_id,
+        "object_gen": object_gen,
+        "fdr_gen": fdr_gen,
+        "domain_id": domain_id,
+        "domain_gen": 1,
+        "rights_mask": rights_mask,
+        "lineage_epoch": 1,
+        "sealed": 0,
+        "status": status,
+    }
+
+
+def build_valid_full_run(checker, ops) -> tuple[
+    list[dict[str, int | str]],
+    list[dict[str, int | str]],
+]:
+    run = [
+        m1_commit_record(ops.cap_dup, 1, 1, 1, 2, checker.RIGHT_PULL, checker.ERR_OK),
+        m1_commit_record(ops.cap_send, 1, 1, 1, 2, checker.RIGHT_PULL, checker.ERR_OK),
+        m1_commit_record(ops.cap_recv, 1, 1, 1, 2, checker.RIGHT_PULL, checker.ERR_OK),
+        m1_commit_record(ops.push, 1, 1, 1, 1, checker.ROOT_RIGHTS, checker.ERR_OK),
+        m1_commit_record(ops.pull, 1, 1, 1, 2, checker.RIGHT_PULL, checker.ERR_OK),
+        m1_commit_record(ops.reject_full, 1, 1, 1, 1, checker.ROOT_RIGHTS, checker.ERR_EAGAIN),
+        m1_commit_record(ops.object_create, 2, 1, 1, 1, checker.ROOT_RIGHTS, checker.ERR_OK),
+        m1_commit_record(ops.cap_revoke, 1, 2, 1, 1, checker.ROOT_RIGHTS, checker.ERR_OK),
+        m1_commit_record(ops.reject_stale, 1, 2, 1, 2, checker.RIGHT_PULL, checker.ERR_EREVOKED),
+    ]
+    state = checker.initial_state(run[0], ops)
+    state_run = []
+    for record in run:
+        checker.apply_commit(state, record, 0, ops)
+        state_run.append(
+            checker.projection_from_state(
+                state,
+                checker.require_int(record, "op"),
+                checker.require_int(record, "status"),
+            )
+        )
+    return run, state_run
+
+
 def main() -> None:
     checker = load_checker()
     commit_fields, state_fields = schema_specs(checker)
@@ -90,6 +144,33 @@ def main() -> None:
     checker.check_lean_typed_commit_mapping(
         checker.load_m1_op_mappings(m1_contract),
         checker.load_m1_status_mappings(m1_contract),
+    )
+    *_contract_prefix, ops = checker.load_schema_contract()
+
+    valid_run, valid_state_run = build_valid_full_run(checker, ops)
+    checker.check_run(valid_run, valid_state_run, 0, ops)
+
+    bad_post_state_run = copy.deepcopy(valid_state_run)
+    bad_post_state_run[1]["sent_valid"] = 0
+    expect_failure(
+        "RtlM1RefinementStep post-state projection",
+        lambda: checker.check_run(valid_run, bad_post_state_run, 0, ops),
+    )
+
+    pre_state = checker.initial_state(valid_run[0], ops)
+    checker.apply_commit(pre_state, valid_run[0], 0, ops)
+    bad_pre_state_record = copy.deepcopy(valid_state_run[0])
+    bad_pre_state_record["consumer_rights"] = checker.ROOT_RIGHTS
+    expect_failure(
+        "RtlM1RefinementStep pre-state projection",
+        lambda: checker.check_rtl_refinement_step(
+            pre_state,
+            bad_pre_state_record,
+            valid_run[1],
+            valid_state_run[1],
+            0,
+            ops,
+        ),
     )
 
     bad_op_key_contract = json.loads(json.dumps(m1_contract))
@@ -158,6 +239,38 @@ def main() -> None:
             engine_source,
             wrong_commit_bits_source,
             assertion_source,
+            commit_field_names,
+            state_field_names,
+        ),
+    )
+
+    projection_derived_queue_generation = replace_once(
+        tb_source,
+        ".queue_generation(dut.queue_generation)",
+        ".queue_generation(typed_state_projection.object_gen)",
+    )
+    expect_failure(
+        "real RTL authority state into projection faithfulness assertions",
+        lambda: checker.check_rtl_state_projection_boundary_sources(
+            engine_source,
+            projection_derived_queue_generation,
+            assertion_source,
+            commit_field_names,
+            state_field_names,
+        ),
+    )
+
+    missing_transfer_mediation_assertion = replace_once(
+        assertion_source,
+        "M1 sent-cap validity set outside capSend owner path",
+        "M1 sent-cap validity set outside unchecked path",
+    )
+    expect_failure(
+        "mediate transfer/mint validity transitions",
+        lambda: checker.check_rtl_state_projection_boundary_sources(
+            engine_source,
+            tb_source,
+            missing_transfer_mediation_assertion,
             commit_field_names,
             state_field_names,
         ),

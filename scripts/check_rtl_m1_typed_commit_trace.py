@@ -394,6 +394,48 @@ def check_rtl_state_projection_boundary_sources(
         fail("M1 assertions no longer consume the schema-owned typed_state_projection")
     if ".typed_state_projection(typed_state_projection)" not in tb_source:
         fail("M1 testbench no longer passes typed_state_projection into assertions")
+    required_faithfulness_ports = (
+        "input logic [31:0] queue_generation",
+        "input logic [31:0] producer_fd_generation",
+        "input logic [31:0] consumer_fd_generation",
+        "input logic [63:0] producer_rights",
+        "input logic [63:0] consumer_rights",
+        "input logic sent_cap_valid",
+        "input logic minted_cap_valid",
+        "input logic created_object_created",
+        "input logic [31:0] created_object_generation",
+    )
+    missing_faithfulness_ports = [
+        port
+        for port in required_faithfulness_ports
+        if port not in assertion_source
+    ]
+    if missing_faithfulness_ports:
+        fail(
+            "M1 assertions no longer receive real RTL authority state for projection faithfulness: "
+            f"{missing_faithfulness_ports}"
+        )
+    required_faithfulness_connections = (
+        ".queue_generation(dut.queue_generation)",
+        ".producer_fd_generation(dut.producer_fd_generation)",
+        ".consumer_fd_generation(dut.consumer_fd_generation)",
+        ".producer_rights(dut.producer_rights)",
+        ".consumer_rights(dut.consumer_rights)",
+        ".sent_cap_valid(dut.sent_cap_valid)",
+        ".minted_cap_valid(dut.minted_cap_valid)",
+        ".created_object_created(dut.created_object_created)",
+        ".created_object_generation(dut.created_object_generation)",
+    )
+    missing_faithfulness_connections = [
+        connection
+        for connection in required_faithfulness_connections
+        if connection not in tb_source
+    ]
+    if missing_faithfulness_connections:
+        fail(
+            "M1 testbench no longer wires real RTL authority state into projection faithfulness assertions: "
+            f"{missing_faithfulness_connections}"
+        )
     if "TTRACE_M1_BITS" not in tb_source or "TTRACE_M1_STATE_BITS" not in tb_source:
         fail("M1 testbench no longer emits packed bit records for commit and state projection")
     require_trace_display_payload_source(
@@ -470,6 +512,30 @@ def check_rtl_state_projection_boundary_sources(
         fail(
             "M1 assertions no longer mediate authority fields through typed_state_projection: "
             f"{missing_assertion_fields}"
+        )
+    required_assertion_hooks = (
+        "M1 typed state projection object generation did not match RTL queue_generation",
+        "M1 typed state projection root generation did not match RTL producer_fd_generation",
+        "M1 typed state projection consumer generation did not match RTL consumer_fd_generation",
+        "M1 typed state projection root rights did not match RTL producer_rights",
+        "M1 typed state projection consumer rights did not match RTL consumer_rights",
+        "M1 typed state projection sent_valid did not match RTL sent_cap_valid",
+        "M1 typed state projection minted_valid did not match RTL minted_cap_valid",
+        "M1 sent-cap validity set outside capSend owner path",
+        "M1 sent-cap validity cleared outside capRecv owner path",
+        "M1 transfer-valid witness set outside capSend owner path",
+        "M1 minted-cap validity set outside objectCreate owner path",
+        "M1 created-object witness set outside objectCreate owner path",
+    )
+    missing_assertion_hooks = [
+        hook
+        for hook in required_assertion_hooks
+        if hook not in assertion_source
+    ]
+    if missing_assertion_hooks:
+        fail(
+            "M1 assertions no longer mediate transfer/mint validity transitions: "
+            f"{missing_assertion_hooks}"
         )
 
 
@@ -1112,6 +1178,38 @@ def check_state_projection(
             fail(f"{context}: state projection field {field} {actual.get(field)!r} != {expected.get(field)!r}")
 
 
+def check_rtl_refinement_step(
+    state: M1State,
+    pre_state_record: dict[str, int | str] | None,
+    commit_record: dict[str, int | str],
+    post_state_record: dict[str, int | str],
+    run_index: int,
+    ops: CommitOps,
+) -> None:
+    """Check the executable mirror of Lean RtlM1RefinementStep.
+
+    The first RTL commit has no emitted reset pre-state, so its pre projection is
+    the synthetic initial Lean state. Every later commit must use the previous
+    emitted RTL post-state projection as the next Lean pre-state projection.
+    """
+    op = require_int(commit_record, "op")
+    status = require_int(commit_record, "status")
+    if pre_state_record is not None:
+        pre_op = require_int(pre_state_record, "op")
+        pre_status = require_int(pre_state_record, "status")
+        check_state_projection(
+            projection_from_state(state, pre_op, pre_status),
+            pre_state_record,
+            f"run {run_index} op {op} RtlM1RefinementStep pre-state projection",
+        )
+    apply_commit(state, commit_record, run_index, ops)
+    check_state_projection(
+        projection_from_state(state, op, status),
+        post_state_record,
+        f"run {run_index} op {op} RtlM1RefinementStep post-state projection",
+    )
+
+
 def initial_state(first_record: dict[str, int | str], ops: CommitOps) -> M1State:
     initial_gen = require_int(first_record, "object_gen")
     root_rights = ROOT_RIGHTS
@@ -1361,13 +1459,17 @@ def check_run(
         check_common(record, ops)
 
     state = initial_state(run[0], ops)
+    previous_state_record: dict[str, int | str] | None = None
     for record, state_record in zip(run, state_run, strict=True):
-        apply_commit(state, record, index, ops)
-        check_state_projection(
-            projection_from_state(state, require_int(record, "op"), require_int(record, "status")),
+        check_rtl_refinement_step(
+            state,
+            previous_state_record,
+            record,
             state_record,
-            f"run {index} op {require_int(record, 'op')}",
+            index,
+            ops,
         )
+        previous_state_record = state_record
     if state.sent_cap is not None:
         fail(f"run {index} ended with an undelivered transferred cap")
     if state.consumer_cap is None:
@@ -1465,11 +1567,13 @@ def check_denied_run(
     record = run[0]
     check_common(record, ops)
     state = initial_state(record, ops)
-    apply_commit(state, record, index, ops)
-    check_state_projection(
-        projection_from_state(state, require_int(record, "op"), require_int(record, "status")),
+    check_rtl_refinement_step(
+        state,
+        None,
+        record,
         state_run[0],
-        f"run {index} capDupDenied",
+        index,
+        ops,
     )
 
 

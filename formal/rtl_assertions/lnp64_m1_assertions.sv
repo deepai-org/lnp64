@@ -16,7 +16,15 @@ module lnp64_m1_assertions (
     input lnp64_m1_cap_commit_t typed_commit,
     input lnp64_m1_state_projection_t typed_state_projection,
     input logic [3:0] rtl_state_projection,
-    input logic [31:0] queue_generation
+    input logic [31:0] queue_generation,
+    input logic [31:0] producer_fd_generation,
+    input logic [31:0] consumer_fd_generation,
+    input logic [63:0] producer_rights,
+    input logic [63:0] consumer_rights,
+    input logic sent_cap_valid,
+    input logic minted_cap_valid,
+    input logic created_object_created,
+    input logic [31:0] created_object_generation
 );
     localparam logic [63:0] M1_RIGHT_PUSH = 64'h1;
     localparam logic [63:0] M1_RIGHT_PULL = 64'h2;
@@ -34,6 +42,9 @@ module lnp64_m1_assertions (
     localparam logic [3:0] M1_STATE_RESET = 4'd0;
     localparam logic [3:0] M1_STATE_BOOT = 4'd1;
     localparam logic [3:0] M1_STATE_CAP_DUP = 4'd2;
+    localparam logic [3:0] M1_STATE_CAP_SEND = 4'd3;
+    localparam logic [3:0] M1_STATE_CAP_RECV = 4'd4;
+    localparam logic [3:0] M1_STATE_OBJECT_CREATE = 4'd10;
     localparam logic [3:0] M1_STATE_CAP_REVOKE = 4'd11;
 
     logic [3:0] commit_index;
@@ -230,26 +241,44 @@ module lnp64_m1_assertions (
             previous_typed_state_projection <= '0;
         end else begin
             // SG-AUTH: authority-bearing state changes are mediated by the M1 owner transitions.
+            assert (typed_state_projection.object_gen == queue_generation)
+                else $fatal(1, "M1 typed state projection object generation did not match RTL queue_generation");
             assert (typed_state_projection.root_object_id == M1_QUEUE_OBJECT_ID)
                 else $fatal(1, "M1 typed state projection root cap object drifted");
+            assert (typed_state_projection.root_generation == producer_fd_generation)
+                else $fatal(1, "M1 typed state projection root generation did not match RTL producer_fd_generation");
             assert (typed_state_projection.root_domain_id == M1_ROOT_DOMAIN_ID)
                 else $fatal(1, "M1 typed state projection root cap domain drifted");
             assert (typed_state_projection.root_lineage_epoch == M1_LINEAGE_EPOCH)
                 else $fatal(1, "M1 typed state projection root cap lineage drifted");
             assert (!typed_state_projection.root_sealed)
                 else $fatal(1, "M1 typed state projection root cap was sealed");
+            assert (typed_state_projection.root_rights == producer_rights)
+                else $fatal(1, "M1 typed state projection root rights did not match RTL producer_rights");
             assert (m1_rights_subset(typed_state_projection.root_rights, M1_ROOT_RIGHTS))
                 else $fatal(1, "M1 typed state projection root rights broadened");
             assert (typed_state_projection.consumer_object_id == M1_QUEUE_OBJECT_ID)
                 else $fatal(1, "M1 typed state projection consumer cap object drifted");
+            assert (typed_state_projection.consumer_generation == consumer_fd_generation)
+                else $fatal(1, "M1 typed state projection consumer generation did not match RTL consumer_fd_generation");
             assert (typed_state_projection.consumer_domain_id == M1_CONSUMER_DOMAIN_ID)
                 else $fatal(1, "M1 typed state projection consumer cap domain drifted");
             assert (typed_state_projection.consumer_lineage_epoch == M1_LINEAGE_EPOCH)
                 else $fatal(1, "M1 typed state projection consumer cap lineage drifted");
             assert (!typed_state_projection.consumer_sealed)
                 else $fatal(1, "M1 typed state projection consumer cap was sealed");
+            assert (typed_state_projection.consumer_rights == consumer_rights)
+                else $fatal(1, "M1 typed state projection consumer rights did not match RTL consumer_rights");
             assert (m1_rights_subset(typed_state_projection.consumer_rights, M1_ROOT_RIGHTS))
                 else $fatal(1, "M1 typed state projection consumer rights broadened");
+            assert (typed_state_projection.sent_valid == sent_cap_valid)
+                else $fatal(1, "M1 typed state projection sent_valid did not match RTL sent_cap_valid");
+            assert (typed_state_projection.minted_valid == minted_cap_valid)
+                else $fatal(1, "M1 typed state projection minted_valid did not match RTL minted_cap_valid");
+            assert (typed_state_projection.created_object_created == created_object_created)
+                else $fatal(1, "M1 typed state projection created_object_created did not match RTL created_object_created");
+            assert (typed_state_projection.created_object_gen == created_object_generation)
+                else $fatal(1, "M1 typed state projection created_object_gen did not match RTL created_object_generation");
             if (!typed_state_projection.sent_valid) begin
                 assert (m1_zero_cap_projection(
                     typed_state_projection.sent_object_id,
@@ -261,11 +290,11 @@ module lnp64_m1_assertions (
                 )) else $fatal(1, "M1 invalid sent-cap projection carried authority fields");
             end else begin
                 assert (typed_state_projection.sent_object_id == M1_QUEUE_OBJECT_ID &&
-                        typed_state_projection.sent_generation == typed_state_projection.consumer_generation &&
+                        typed_state_projection.sent_generation == consumer_fd_generation &&
                         typed_state_projection.sent_domain_id == M1_CONSUMER_DOMAIN_ID &&
                         typed_state_projection.sent_lineage_epoch == M1_LINEAGE_EPOCH &&
                         !typed_state_projection.sent_sealed &&
-                        typed_state_projection.sent_rights == typed_state_projection.consumer_rights)
+                        typed_state_projection.sent_rights == consumer_rights)
                     else $fatal(1, "M1 sent-cap projection did not match transferred consumer authority");
             end
             if (!typed_state_projection.minted_valid) begin
@@ -279,11 +308,11 @@ module lnp64_m1_assertions (
                 )) else $fatal(1, "M1 invalid minted-cap projection carried authority fields");
             end else begin
                 assert (typed_state_projection.minted_object_id == M1_CREATED_OBJECT_ID &&
-                        typed_state_projection.minted_generation == typed_state_projection.created_object_gen &&
+                        typed_state_projection.minted_generation == created_object_generation &&
                         typed_state_projection.minted_domain_id == M1_ROOT_DOMAIN_ID &&
                         typed_state_projection.minted_lineage_epoch == M1_LINEAGE_EPOCH &&
                         !typed_state_projection.minted_sealed &&
-                        typed_state_projection.minted_rights == typed_state_projection.root_rights)
+                        typed_state_projection.minted_rights == producer_rights)
                     else $fatal(1, "M1 minted-cap projection did not match root-created authority");
             end
             if (typed_commit_valid) begin
@@ -338,6 +367,43 @@ module lnp64_m1_assertions (
                     assert (typed_state_projection.object_gen == previous_queue_generation + 32'd1)
                         else $fatal(1, "M1 capRevoke did not advance object generation exactly once");
                 end
+            end
+            if (typed_state_projection.sent_valid != previous_typed_state_projection.sent_valid) begin
+                if (typed_state_projection.sent_valid) begin
+                    assert (previous_rtl_state_projection == M1_STATE_CAP_SEND)
+                        else $fatal(1, "M1 sent-cap validity set outside capSend owner path");
+                    assert (m1_ok_typed_commit(LNP64_M1_COMMIT_CAP_SEND))
+                        else $fatal(1, "M1 sent-cap validity set without an OK capSend commit");
+                end else begin
+                    assert (previous_rtl_state_projection == M1_STATE_CAP_RECV)
+                        else $fatal(1, "M1 sent-cap validity cleared outside capRecv owner path");
+                    assert (m1_ok_typed_commit(LNP64_M1_COMMIT_CAP_RECV))
+                        else $fatal(1, "M1 sent-cap validity cleared without an OK capRecv commit");
+                end
+            end
+            if (typed_state_projection.transfer_valid != previous_typed_state_projection.transfer_valid) begin
+                assert (typed_state_projection.transfer_valid)
+                    else $fatal(1, "M1 transfer-valid witness was cleared after publication");
+                assert (previous_rtl_state_projection == M1_STATE_CAP_SEND)
+                    else $fatal(1, "M1 transfer-valid witness set outside capSend owner path");
+                assert (m1_ok_typed_commit(LNP64_M1_COMMIT_CAP_SEND))
+                    else $fatal(1, "M1 transfer-valid witness set without an OK capSend commit");
+            end
+            if (typed_state_projection.minted_valid != previous_typed_state_projection.minted_valid) begin
+                assert (typed_state_projection.minted_valid)
+                    else $fatal(1, "M1 minted-cap validity was cleared after publication");
+                assert (previous_rtl_state_projection == M1_STATE_OBJECT_CREATE)
+                    else $fatal(1, "M1 minted-cap validity set outside objectCreate owner path");
+                assert (m1_ok_typed_commit(LNP64_M1_COMMIT_OBJECT_CREATE))
+                    else $fatal(1, "M1 minted-cap validity set without an OK objectCreate commit");
+            end
+            if (typed_state_projection.created_object_created != previous_typed_state_projection.created_object_created) begin
+                assert (typed_state_projection.created_object_created)
+                    else $fatal(1, "M1 created-object witness was cleared after publication");
+                assert (previous_rtl_state_projection == M1_STATE_OBJECT_CREATE)
+                    else $fatal(1, "M1 created-object witness set outside objectCreate owner path");
+                assert (m1_ok_typed_commit(LNP64_M1_COMMIT_OBJECT_CREATE))
+                    else $fatal(1, "M1 created-object witness set without an OK objectCreate commit");
             end
 
             assert (exactly_one_scheduler_location || !done)

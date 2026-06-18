@@ -55,7 +55,15 @@ module lnp64_m1_tb;
         .typed_commit(typed_commit),
         .typed_state_projection(typed_state_projection),
         .rtl_state_projection(dut.state),
-        .queue_generation(typed_state_projection.object_gen)
+        .queue_generation(dut.queue_generation),
+        .producer_fd_generation(dut.producer_fd_generation),
+        .consumer_fd_generation(dut.consumer_fd_generation),
+        .producer_rights(dut.producer_rights),
+        .consumer_rights(dut.consumer_rights),
+        .sent_cap_valid(dut.sent_cap_valid),
+        .minted_cap_valid(dut.minted_cap_valid),
+        .created_object_created(dut.created_object_created),
+        .created_object_generation(dut.created_object_generation)
     );
 
     always #5 clk = ~clk;
