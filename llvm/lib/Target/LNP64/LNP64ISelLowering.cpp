@@ -9,6 +9,14 @@ using namespace llvm;
 
 #include "LNP64GenCallingConv.inc"
 
+static StringRef getDirectCalleeName(SDValue Callee) {
+  if (GlobalAddressSDNode *G = dyn_cast<GlobalAddressSDNode>(Callee))
+    return G->getGlobal()->getName();
+  if (ExternalSymbolSDNode *S = dyn_cast<ExternalSymbolSDNode>(Callee))
+    return S->getSymbol();
+  return StringRef();
+}
+
 LNP64TargetLowering::LNP64TargetLowering(const TargetMachine &TM,
                                          const LNP64Subtarget &STI)
     : TargetLowering(TM) {
@@ -34,6 +42,8 @@ const char *LNP64TargetLowering::getTargetNodeName(unsigned Opcode) const {
   switch (Opcode) {
   case LNP64ISD::CALL:
     return "LNP64ISD::CALL";
+  case LNP64ISD::PUSH:
+    return "LNP64ISD::PUSH";
   case LNP64ISD::RET_FLAG:
     return "LNP64ISD::RET_FLAG";
   default:
@@ -106,6 +116,18 @@ LNP64TargetLowering::LowerCall(CallLoweringInfo &CLI,
 
   if (CLI.IsVarArg)
     llvm_unreachable("LNP64 varargs call lowering is not implemented yet");
+
+  if (getDirectCalleeName(Callee) == "__lnp_push") {
+    if (CLI.OutVals.size() != 3 || CLI.Ins.empty())
+      llvm_unreachable(
+          "LNP64 __lnp_push lowering expects three arguments and a result");
+    SDVTList NodeTys = DAG.getVTList(MVT::i64, MVT::Other);
+    SmallVector<SDValue, 4> Ops = {Chain, CLI.OutVals[0], CLI.OutVals[1],
+                                   CLI.OutVals[2]};
+    SDValue Push = DAG.getNode(LNP64ISD::PUSH, DL, NodeTys, Ops);
+    InVals.push_back(Push);
+    return Push.getValue(1);
+  }
 
   MachineFunction &MF = DAG.getMachineFunction();
   SmallVector<CCValAssign, 8> ArgLocs;

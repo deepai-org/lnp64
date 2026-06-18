@@ -11,6 +11,7 @@ namespace LNP64ISD {
 enum NodeType : unsigned {
   FIRST_NUMBER = ISD::BUILTIN_OP_END,
   CALL,
+  PUSH,
   RET_FLAG,
 };
 }
