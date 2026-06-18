@@ -2559,6 +2559,11 @@ impl Machine {
         entry: Option<u64>,
     ) -> Result<(), String> {
         self.require_domain_cap(DOMAIN_CAP_PROCESS)?;
+        if profile == CloneProfile::DomainTask {
+            self.set_status_errno(38)?;
+            self.write_reg(dst, -1i64 as u64)?;
+            return Ok(());
+        }
         if !self.check_domain_budget(0, 0, 1, 0)? {
             self.write_reg(dst, -1i64 as u64)?;
             return Ok(());
@@ -2583,7 +2588,11 @@ impl Machine {
                 self.write_reg(dst, child_pid)?;
             }
             CloneProfile::NewThreadSharedVm | CloneProfile::SpawnEntry => {
-                let entry = entry.ok_or_else(|| "thread clone missing entry point".to_string())?;
+                let Some(entry) = entry else {
+                    self.set_status_errno(22)?;
+                    self.write_reg(dst, -1i64 as u64)?;
+                    return Ok(());
+                };
                 let tid = self.next_tid;
                 self.next_tid += 1;
                 let mut child = self.thread()?.clone();
@@ -2598,10 +2607,7 @@ impl Machine {
                 self.ready.push_back(tid);
                 self.write_reg(dst, tid)?;
             }
-            CloneProfile::DomainTask => {
-                self.set_status_errno(38)?;
-                self.write_reg(dst, -1i64 as u64)?;
-            }
+            CloneProfile::DomainTask => unreachable!("domain task profile returned before budget"),
         }
         Ok(())
     }
@@ -9517,6 +9523,36 @@ mod tests {
             .unwrap();
         assert!(machine.thread().unwrap().regs[6] >= 2);
         assert!(machine.threads.len() >= 3);
+    }
+
+    #[test]
+    fn clone_profile_failures_do_not_allocate_contexts() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let next_pid = machine.next_pid;
+        let next_tid = machine.next_tid;
+        let process_count = machine.processes.len();
+        let thread_count = machine.threads.len();
+
+        machine
+            .clone_with_profile(CloneProfile::DomainTask, Reg(5), Some(0))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 38);
+        assert_eq!(machine.next_pid, next_pid);
+        assert_eq!(machine.next_tid, next_tid);
+        assert_eq!(machine.processes.len(), process_count);
+        assert_eq!(machine.threads.len(), thread_count);
+
+        machine
+            .clone_with_profile(CloneProfile::NewThreadSharedVm, Reg(6), None)
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[6], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert_eq!(machine.next_pid, next_pid);
+        assert_eq!(machine.next_tid, next_tid);
+        assert_eq!(machine.processes.len(), process_count);
+        assert_eq!(machine.threads.len(), thread_count);
     }
 
     #[test]
