@@ -6821,11 +6821,9 @@ impl Machine {
         };
 
         if let Some(value) = scalar {
-            self.set_errno(0)?;
-            self.write_reg(result, value)
+            self.complete_reg_ok(result, value)
         } else {
-            self.set_status_errno(22)?;
-            self.write_reg(result, -1i64 as u64)
+            self.complete_reg_err(result, 22)
         }
     }
 
@@ -6891,24 +6889,18 @@ impl Machine {
         }
         let count = (len as usize).min(record.len());
         if self.write_bytes_offset(buf, 0, &record[..count]).is_err() {
-            self.set_status_errno(14)?;
-            self.write_reg(result, -1i64 as u64)?;
-            return Ok(());
+            return self.complete_reg_err(result, 14);
         }
-        self.set_errno(0)?;
-        self.write_reg(result, count as u64)
+        self.complete_reg_ok(result, count as u64)
     }
 
     fn env_get_topology_records(&mut self, result: Reg, buf: u64, len: u64) -> Result<(), String> {
         let records = self.env_topology_records();
         let count = (len as usize).min(records.len());
         if self.write_bytes_offset(buf, 0, &records[..count]).is_err() {
-            self.set_status_errno(14)?;
-            self.write_reg(result, -1i64 as u64)?;
-            return Ok(());
+            return self.complete_reg_err(result, 14);
         }
-        self.set_errno(0)?;
-        self.write_reg(result, count as u64)
+        self.complete_reg_ok(result, count as u64)
     }
 
     fn env_topology_records(&self) -> Vec<u8> {
@@ -16235,6 +16227,28 @@ mod tests {
         assert_eq!(machine.load_u64(out + 8).unwrap(), 0);
         assert_eq!(machine.load_u64(out + 16).unwrap(), ROOT_DOMAIN_ID);
         assert_eq!(machine.read_bytes(out + 24, 40).unwrap(), vec![0xa5; 40]);
+    }
+
+    #[test]
+    fn env_get_record_rejects_locked_result_before_buffer_or_errno_side_effects() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.set_args(&["prog".to_string()]).unwrap();
+        machine.set_errno(123).unwrap();
+        let out = ARG_BASE + 0x900;
+        let sentinel = vec![0xa5; 64];
+        machine.write_bytes(out, &sentinel).unwrap();
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_PROCESS_ENTRY_RECORD;
+        machine.thread_mut().unwrap().regs[3] = out;
+        machine.thread_mut().unwrap().regs[4] = 32;
+
+        let err = machine
+            .exec(Instr::EnvGet(Reg(31), Reg(2), Reg(3), Reg(4)))
+            .unwrap_err();
+
+        assert!(err.contains("hardware-locked stack pointer"), "{err}");
+        assert_eq!(machine.process().unwrap().errno, 123);
+        assert_eq!(machine.read_bytes(out, 64).unwrap(), sentinel);
     }
 
     #[test]
