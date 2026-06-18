@@ -7534,6 +7534,23 @@ impl CodeGen {
                 self.text.push(format!("  MOV r{dst}, r1"));
                 Ok(dst)
             }
+            "renameat" => {
+                if args.len() != 4 {
+                    return Err(
+                        "renameat(olddirfd, old, newdirfd, new) expects 4 arguments".to_string()
+                    );
+                }
+                let olddirfd = self.emit_expr(&args[0])?;
+                let old = self.emit_expr(&args[1])?;
+                let newdirfd = self.emit_expr(&args[2])?;
+                let new = self.emit_expr(&args[3])?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!(
+                    "  RENAME_PATH_AT r{olddirfd}, r{old}, r{newdirfd}, r{new}"
+                ));
+                self.text.push(format!("  MOV r{dst}, r1"));
+                Ok(dst)
+            }
             "link" => {
                 if args.len() != 2 {
                     return Err("link(old, new) expects 2 arguments".to_string());
@@ -20055,6 +20072,7 @@ int main() {
             fchownat(AT_FDCWD, "Cargo.toml", -1, -1, 0);
             faccessat(AT_FDCWD, "Cargo.toml", F_OK, 0);
             mkdirat(AT_FDCWD, "/tmp/lnp64_mkdirat_compile_only", 0755);
+            renameat(AT_FDCWD, "/tmp/lnp64_renameat_compile_only_a", AT_FDCWD, "/tmp/lnp64_renameat_compile_only_b");
             unlinkat(AT_FDCWD, "/tmp/lnp64_unlinkat_compile_only", 0);
             linkat(AT_FDCWD, "Cargo.toml", AT_FDCWD, "/tmp/lnp64_linkat_compile_only", 0);
             symlinkat("Cargo.toml", AT_FDCWD, "/tmp/lnp64_symlinkat_compile_only");
@@ -20076,6 +20094,7 @@ int main() {
         assert!(asm.contains("CHOWN_PATH_AT"));
         assert!(asm.contains("STAT_PATH_AT"));
         assert!(asm.contains("MKDIR_PATH_AT"));
+        assert!(asm.contains("RENAME_PATH_AT"));
         assert!(asm.contains("UNLINK_PATH_AT"));
         assert!(asm.contains("LINK_PATH_AT"));
         assert!(asm.contains("SYMLINK_PATH_AT"));

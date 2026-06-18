@@ -410,6 +410,15 @@ impl Parser {
                 arity(2)?;
                 Instr::RenamePath(reg(&args[0])?, reg(&args[1])?)
             }
+            "RENAME_PATH_AT" => {
+                arity(4)?;
+                Instr::RenamePathAt(
+                    reg(&args[0])?,
+                    reg(&args[1])?,
+                    reg(&args[2])?,
+                    reg(&args[3])?,
+                )
+            }
             "LINK_PATH" => {
                 arity(3)?;
                 Instr::LinkPath(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)

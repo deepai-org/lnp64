@@ -86,6 +86,14 @@ int main() {
     if (fstatat(dir, "ns_probe_hard", st, 0) != 0) return 49;
     if (unlinkat(dir, "ns_probe_hard", 0) != 0) return 50;
     if (linkat(dir, "ns_probe", dir, "../../etc/ns_probe_hard", 0) != -1) return 51;
+    fd = openat(dir, "rename_probe", O_CREAT | O_TRUNC);
+    if (fd == -1) return 65;
+    close(fd);
+    if (renameat(dir, "rename_probe", dir, "rename_probe_done") != 0) return 66;
+    if (fstatat(dir, "rename_probe_done", st, 0) != 0) return 67;
+    if (renameat(dir, "rename_probe_done", dir, "../../etc/rename_probe") != -1) return 68;
+    if (renameat(dir, "../../etc/motd", dir, "rename_escape") != -1) return 69;
+    if (unlinkat(dir, "rename_probe_done", 0) != 0) return 70;
     fd = openat(dir, "unlink_probe", O_CREAT | O_TRUNC);
     if (fd == -1) return 40;
     close(fd);
