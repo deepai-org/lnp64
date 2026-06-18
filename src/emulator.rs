@@ -8745,6 +8745,58 @@ mod tests {
     }
 
     #[test]
+    fn servicelet_verifier_rejections_do_not_install_requested_fd() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let envelope = ARG_BASE + 0x1000;
+
+        assert_eq!(try_create_servicelet(&mut machine, 7, 0), -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 14);
+        assert!(matches!(
+            machine.process().unwrap().fds[7],
+            FdHandle::Closed
+        ));
+
+        write_servicelet_envelope(&mut machine, envelope, 64, 0x01, 32, 128, 64, 32, 1 << 4);
+        assert_eq!(
+            try_create_servicelet(&mut machine, 7, envelope),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert!(matches!(
+            machine.process().unwrap().fds[7],
+            FdHandle::Closed
+        ));
+
+        let retained = Rc::new(RefCell::new(55));
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[7] = FdHandle::Counter(retained.clone());
+            process.fd_capabilities[7] = FdCapability::full(7);
+        }
+
+        write_servicelet_envelope(&mut machine, envelope, 64, 0x01, 32, 128, 64, 32, 0);
+        machine
+            .store_u64(
+                envelope + 72,
+                machine.domains[&ROOT_DOMAIN_ID].generation + 1,
+            )
+            .unwrap();
+        assert_eq!(
+            try_create_servicelet(&mut machine, 7, envelope),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 116);
+        match &machine.process().unwrap().fds[7] {
+            FdHandle::Counter(value) => {
+                assert!(Rc::ptr_eq(value, &retained));
+                assert_eq!(*value.borrow(), 55);
+            }
+            _ => panic!("expected retained counter fd"),
+        }
+    }
+
+    #[test]
     fn socket_endpoint_object_controls_enforce_capability_rights() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
