@@ -70,7 +70,7 @@ NetBSD policy. Those remain loader, libc, and personality responsibilities.
    - Atomics and fences needed by libc/libpthread.
 
 4. Add native primitive access.
-   - Inline asm constraints for GPR/FDR/PCR operands from
+   - Inline asm constraints for GPR/FDR/FPR/VR/PCR operands from
      `toolchain/lnp64_inline_asm.manifest`.
    - `CLONE` is a backend-visible native primitive with profile operands
      `new_process_cow`, `new_thread_shared_vm`, `spawn_entry`, and

@@ -1522,6 +1522,14 @@ mod tests {
         assert_eq!(constraints["r"], ("gpr", "r0-r31"));
         assert_eq!(constraints["f"], ("fdr", "fd0-fd255"));
         assert_eq!(
+            constraints["d"],
+            ("fpr", manifest_field(target_manifest, "fpr"))
+        );
+        assert_eq!(
+            constraints["v"],
+            ("vr", manifest_field(target_manifest, "vr"))
+        );
+        assert_eq!(
             constraints["p"],
             (
                 "pcr",

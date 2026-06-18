@@ -147,6 +147,17 @@ cargo run -- run /tmp/hello.lnp64.s
 cargo run -- elf-plan /path/to/program.elf
 ```
 
+Known working focused checks for recent emulator, loader, classifier, and
+toolchain-manifest work:
+
+```sh
+cargo test --quiet classifier_
+cargo test --quiet loader::tests
+cargo test --quiet exec_descriptor
+cargo test --quiet inline_asm_manifest_records_backend_constraints
+bash scripts/run_toolchain_contracts.sh
+```
+
 `elf-plan` parses a static LNP64 ELF image, applies supported relocations,
 materializes VMA bytes, builds encoded exec-plan records, and runs the
 emulator-side descriptor validator. It is an inspection/validation command, not
