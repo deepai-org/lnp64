@@ -147,6 +147,11 @@ cargo run -- run /tmp/hello.lnp64.s
 cargo run -- elf-plan /path/to/program.elf
 ```
 
+`elf-plan` parses a static LNP64 ELF image, applies supported relocations,
+materializes VMA bytes, builds encoded exec-plan records, and runs the
+emulator-side descriptor validator. It is an inspection/validation command, not
+yet a full process replacement path for ELF binaries.
+
 The release-reuse path above is the fastest stable way to rerun scripts that
 honor `LNP64_BIN`; unset it when intentionally testing the default
 `cargo run --release` fallback path. `scripts/run_demos.sh` uses localhost for

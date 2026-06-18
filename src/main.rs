@@ -111,6 +111,8 @@ fn run() -> Result<(), String> {
             let prepared = loader::materialize_vmas(&image, &plan)?;
             let descriptor =
                 loader::build_exec_descriptor(&plan, ExecPlanDescriptorOptions::default())?;
+            let descriptor_words = loader::encode_exec_descriptor(&descriptor);
+            Machine::validate_exec_descriptor_words(&descriptor_words)?;
             println!(
                 "exec-plan version={} entry=0x{:x} initial_sp=0x{:x} tls_base=0x{:x} startup_metadata=0x{:x}",
                 plan.version,
@@ -120,8 +122,9 @@ fn run() -> Result<(), String> {
                 plan.entry.startup_metadata_ptr
             );
             println!(
-                "descriptor_length={} vmas={} startup_note={} fdr_grants={} measurements={}",
+                "descriptor_length={} descriptor_words={} descriptor_validated=true vmas={} startup_note={} fdr_grants={} measurements={}",
                 descriptor.header.total_length,
+                descriptor_words.len(),
                 prepared.len(),
                 plan.startup.is_some(),
                 plan.fdr_grants.len(),
