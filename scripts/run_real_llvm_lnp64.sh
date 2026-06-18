@@ -279,6 +279,67 @@ grep -q 'sext.w r' "$scalar_extend_dump"
 printf 'real LLVM LNP64 clang scalar extension object smoke passed: %s\n' \
   "$scalar_extend_obj"
 
+bitmanip_c="$build_dir/bitmanip-smoke.c"
+cat >"$bitmanip_c" <<'C'
+static volatile unsigned long clz_input = 0x00f0000000000000UL;
+static volatile unsigned long ctz_input = 0x10UL;
+static volatile unsigned long pop_input = 0xf0f0UL;
+static volatile unsigned long bswap_input = 0x0123456789abcdefUL;
+static volatile unsigned long rol_input = 1UL;
+static volatile unsigned long ror_input = 0x100UL;
+static volatile unsigned long rotate_count = 8UL;
+
+__attribute__((noinline)) unsigned long clz64(unsigned long x) {
+  return __builtin_clzll(x);
+}
+
+__attribute__((noinline)) unsigned long ctz64(unsigned long x) {
+  return __builtin_ctzll(x);
+}
+
+__attribute__((noinline)) unsigned long pop64(unsigned long x) {
+  return __builtin_popcountll(x);
+}
+
+__attribute__((noinline)) unsigned long rol64(unsigned long x, unsigned long n) {
+  n &= 63;
+  return (x << n) | (x >> ((64 - n) & 63));
+}
+
+__attribute__((noinline)) unsigned long ror64(unsigned long x, unsigned long n) {
+  n &= 63;
+  return (x >> n) | (x << ((64 - n) & 63));
+}
+
+__attribute__((noinline)) unsigned long bswap64(unsigned long x) {
+  return __builtin_bswap64(x);
+}
+
+int main(void) {
+  return (int)((clz64(clz_input) - 8) + (ctz64(ctz_input) - 4) +
+               (pop64(pop_input) - 8) + ((rol64(rol_input, rotate_count) >> 8) - 1) +
+               (ror64(ror_input, rotate_count) - 1) +
+               ((bswap64(bswap_input) & 0xff) - 1));
+}
+C
+
+bitmanip_obj="$build_dir/bitmanip-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -O1 -ffreestanding -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$bitmanip_c" -o "$bitmanip_obj"
+test -s "$bitmanip_obj"
+bitmanip_dump="$build_dir/bitmanip-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$bitmanip_obj" \
+  >"$bitmanip_dump"
+grep -q 'clz r' "$bitmanip_dump"
+grep -q 'ctz r' "$bitmanip_dump"
+grep -q 'popcnt r' "$bitmanip_dump"
+grep -q 'rol r' "$bitmanip_dump"
+grep -q 'ror r' "$bitmanip_dump"
+grep -q 'bswap64 r' "$bitmanip_dump"
+printf 'real LLVM LNP64 clang bit-manip object smoke passed: %s\n' \
+  "$bitmanip_obj"
+
 hello_obj="$build_dir/hello-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
@@ -1086,6 +1147,13 @@ scalar_extend_elf="$build_dir/lnp64-scalar-extend-linked.elf"
 test -s "$scalar_extend_elf"
 printf 'real LLVM LNP64 lld scalar extension link smoke passed: %s\n' \
   "$scalar_extend_elf"
+
+bitmanip_elf="$build_dir/lnp64-bitmanip-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$bitmanip_elf" "$crt0_obj" "$bitmanip_obj"
+test -s "$bitmanip_elf"
+printf 'real LLVM LNP64 lld bit-manip link smoke passed: %s\n' \
+  "$bitmanip_elf"
 
 compare_elf="$build_dir/lnp64-compare-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

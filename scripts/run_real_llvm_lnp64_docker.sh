@@ -109,6 +109,13 @@ grep -q 'exit=0' <<<"$scalar_extend_output"
 printf 'real LLVM LNP64 run-elf scalar extension execution passed: %s\n' \
   "$scalar_extend_probe"
 
+bitmanip_probe="target/llvm-lnp64-build/lnp64-bitmanip-linked.elf"
+cargo run --quiet -- elf-plan "$bitmanip_probe" >/dev/null
+bitmanip_output="$(cargo run --quiet -- run-elf "$bitmanip_probe")"
+grep -q 'exit=0' <<<"$bitmanip_output"
+printf 'real LLVM LNP64 run-elf bit-manip execution passed: %s\n' \
+  "$bitmanip_probe"
+
 compare_probe="target/llvm-lnp64-build/lnp64-compare-linked.elf"
 cargo run --quiet -- elf-plan "$compare_probe" >/dev/null
 compare_output="$(cargo run --quiet -- run-elf "$compare_probe")"

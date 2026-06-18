@@ -296,6 +296,48 @@ public:
                                getGPRNo(MI.getOperand(1))),
                OS);
       return;
+    case LNP64::CLZ:
+      emitLE32(encodeFixed32RR(0xb3, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
+    case LNP64::CTZ:
+      emitLE32(encodeFixed32RR(0xb4, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
+    case LNP64::POPCNT:
+      emitLE32(encodeFixed32RR(0xb5, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
+    case LNP64::ROL:
+      emitLE32(encodeFixed32RRR(0xb6, getGPRNo(MI.getOperand(0)),
+                                getGPRNo(MI.getOperand(1)),
+                                getGPRNo(MI.getOperand(2))),
+               OS);
+      return;
+    case LNP64::ROR:
+      emitLE32(encodeFixed32RRR(0xb7, getGPRNo(MI.getOperand(0)),
+                                getGPRNo(MI.getOperand(1)),
+                                getGPRNo(MI.getOperand(2))),
+               OS);
+      return;
+    case LNP64::BSWAP16:
+      emitLE32(encodeFixed32RR(0xb8, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
+    case LNP64::BSWAP32:
+      emitLE32(encodeFixed32RR(0xb9, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
+    case LNP64::BSWAP64:
+      emitLE32(encodeFixed32RR(0xba, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
     case LNP64::CMP:
       emitLE32(encodeFixed32RR(0x1b, getGPRNo(MI.getOperand(0)),
                                getGPRNo(MI.getOperand(1))),

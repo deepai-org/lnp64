@@ -423,6 +423,28 @@ def ZEXT_W : LNP64RR<"zext.w"> {
   let Pattern = [(set GPR:$rd, (and GPR:$rs, u32_mask_i64_imm))];
 }
 }
+def CLZ : LNP64RR<"clz"> {
+  let Pattern = [(set GPR:$rd, (ctlz GPR:$rs))];
+}
+def : Pat<(i64 (ctlz_zero_undef GPR:$rs)), (CLZ GPR:$rs)>;
+def CTZ : LNP64RR<"ctz"> {
+  let Pattern = [(set GPR:$rd, (cttz GPR:$rs))];
+}
+def : Pat<(i64 (cttz_zero_undef GPR:$rs)), (CTZ GPR:$rs)>;
+def POPCNT : LNP64RR<"popcnt"> {
+  let Pattern = [(set GPR:$rd, (ctpop GPR:$rs))];
+}
+def ROL : LNP64RRR<"rol"> {
+  let Pattern = [(set GPR:$rd, (rotl GPR:$rs1, GPR:$rs2))];
+}
+def ROR : LNP64RRR<"ror"> {
+  let Pattern = [(set GPR:$rd, (rotr GPR:$rs1, GPR:$rs2))];
+}
+def BSWAP16 : LNP64RR<"bswap16">;
+def BSWAP32 : LNP64RR<"bswap32">;
+def BSWAP64 : LNP64RR<"bswap64"> {
+  let Pattern = [(set GPR:$rd, (bswap GPR:$rs))];
+}
 def PseudoFRAMEADDR : LNP64FrameAddrPseudo<"pseudo_frameaddr">;
 def ST : LNP64MemStore<"st">;
 def ST_W : LNP64MemStore<"st.w">;

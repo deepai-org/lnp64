@@ -1439,6 +1439,10 @@ mod tests {
         assert!(real_llc.contains("signed-load-clang-smoke.o"));
         assert!(real_llc.contains("grep -q 'sext.h r'"));
         assert!(real_llc.contains("real LLVM LNP64 clang signed-load object smoke passed"));
+        assert!(real_llc.contains("bitmanip-clang-smoke.o"));
+        assert!(real_llc.contains("grep -q 'clz r'"));
+        assert!(real_llc.contains("grep -q 'bswap64 r'"));
+        assert!(real_llc.contains("real LLVM LNP64 clang bit-manip object smoke passed"));
         assert!(real_llc.contains("-c demos/hello.c"));
         assert!(real_llc.contains("hello-clang-smoke.o"));
         assert!(real_llc.contains("hello-clang-smoke.dump"));
@@ -1515,6 +1519,8 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 lld scalar arithmetic link smoke passed"));
         assert!(real_llc.contains("lnp64-scalar-extend-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld scalar extension link smoke passed"));
+        assert!(real_llc.contains("lnp64-bitmanip-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld bit-manip link smoke passed"));
         assert!(real_llc.contains("lnp64-intrinsic-await-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld intrinsic await link smoke passed"));
         assert!(real_llc.contains("lnp64-intrinsic-call-linked.elf"));
@@ -1762,6 +1768,8 @@ mod tests {
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf scalar extension execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-bitmanip-linked.elf"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf bit-manip execution passed"));
         assert!(real_llc_docker.contains("lnp64-libc-string-linked.elf"));
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf minilibc string execution passed")
@@ -3709,6 +3717,8 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::UREM"));
         assert!(mc_emitter.contains("case LNP64::SEXT_B"));
         assert!(mc_emitter.contains("case LNP64::ZEXT_W"));
+        assert!(mc_emitter.contains("case LNP64::CLZ"));
+        assert!(mc_emitter.contains("case LNP64::BSWAP64"));
         assert!(mc_emitter.contains("case LNP64::CALL"));
         assert!(mc_emitter.contains("case LNP64::CALL_REG"));
         assert!(mc_emitter.contains("case LNP64::CMPU"));

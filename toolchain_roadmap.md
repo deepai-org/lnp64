@@ -36,8 +36,9 @@ verifies trivial LNP64 IR codegen, real Clang compiles of scalar C,
 `demos/hello.c`, `demos/factorial.c`, `demos/allocator.c`, and
 `demos/fibonacci.c` to target objects. It also covers indirect calls, inline
 asm, exit/argc, scalar arithmetic immediates and native remainders, scalar
-extension primitives, signed and unsigned compares, signed loads, wide
-constants, stack aggregate addresses, signed 32-bit return extension, minilibc
+extension primitives, bit-count/rotate/byte-swap primitives, signed and
+unsigned compares, signed loads, wide constants, stack aggregate addresses,
+signed 32-bit return extension, minilibc
 string/compare/`memmove` calls, minilibc
 `calloc`/`realloc`, and minilibc `read` smokes. The gate assembles the checked
 crt0 and minimal libc smoke stubs,

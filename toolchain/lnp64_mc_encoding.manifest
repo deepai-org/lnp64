@@ -16,6 +16,8 @@ wide_constants|fixed32_reg_u32_tail|LA,LI32|gpr_dst,u32_payload|R_LNP64_ABS32|LN
 integer_alu_rrr|fixed32_rrr|ADD,SUB,MUL,DIV,UDIV,SREM,UREM,AND,OR,XOR,LSL,LSR,ASR|gpr_dst,gpr_lhs,gpr_rhs|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp
 integer_alu_rri|fixed32_rri_simm14|ADDI,ANDI,ORI,XORI,LSLI,LSRI,ASRI|gpr_dst,gpr_lhs,signed_imm14|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
 integer_alu_rr|fixed32_rr|NOT,CMP,CMPU,SEXT.B,SEXT.H,SEXT.W,ZEXT.B,ZEXT.H,ZEXT.W|gpr_lhs,gpr_rhs|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
+integer_bitmanip_rr|fixed32_rr|CLZ,CTZ,POPCNT,BSWAP16,BSWAP32,BSWAP64|gpr_dst,gpr_src|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
+integer_bitmanip_rrr|fixed32_rrr|ROL,ROR|gpr_dst,gpr_lhs,gpr_rhs|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
 integer_compare_value|fixed32_cset|CSET.EQ,CSET.NE,CSET.LT,CSET.GT,CSET.LE,CSET.GE,CSET.ULT,CSET.UGT,CSET.ULE,CSET.UGE|gpr_dst|none|LNP64InstrInfo.td,LNP64ISelLowering.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
 control_branch|fixed32_branch26|JMP,BEQ,BNE,BLT,BGT,BLE,BGE,CALL|pc_relative_target|R_LNP64_BRANCH26,R_LNP64_PC32|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64MCAsmBackend.cpp,LNP64AsmParser.cpp
 control_register|fixed32_reg_or_none|CALL_REG,RET|gpr_target_or_none|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp

@@ -66,6 +66,22 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
     return "zext.h";
   case LNP64::ZEXT_W:
     return "zext.w";
+  case LNP64::CLZ:
+    return "clz";
+  case LNP64::CTZ:
+    return "ctz";
+  case LNP64::POPCNT:
+    return "popcnt";
+  case LNP64::ROL:
+    return "rol";
+  case LNP64::ROR:
+    return "ror";
+  case LNP64::BSWAP16:
+    return "bswap16";
+  case LNP64::BSWAP32:
+    return "bswap32";
+  case LNP64::BSWAP64:
+    return "bswap64";
   case LNP64::CMP:
     return "cmp";
   case LNP64::CMPU:
@@ -252,6 +268,8 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::LSRI:
   case LNP64::ASR:
   case LNP64::ASRI:
+  case LNP64::ROL:
+  case LNP64::ROR:
     OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
     printOperand(MI->getOperand(0), OS);
     OS << ", ";
@@ -309,6 +327,12 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::ZEXT_B:
   case LNP64::ZEXT_H:
   case LNP64::ZEXT_W:
+  case LNP64::CLZ:
+  case LNP64::CTZ:
+  case LNP64::POPCNT:
+  case LNP64::BSWAP16:
+  case LNP64::BSWAP32:
+  case LNP64::BSWAP64:
     OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
     printOperand(MI->getOperand(0), OS);
     OS << ", ";

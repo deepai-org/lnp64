@@ -296,6 +296,48 @@ public:
       addReg(Instr, A);
       addReg(Instr, B);
       return MCDisassembler::Success;
+    case 0xb3:
+      Instr.setOpcode(LNP64::CLZ);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      return MCDisassembler::Success;
+    case 0xb4:
+      Instr.setOpcode(LNP64::CTZ);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      return MCDisassembler::Success;
+    case 0xb5:
+      Instr.setOpcode(LNP64::POPCNT);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      return MCDisassembler::Success;
+    case 0xb6:
+      Instr.setOpcode(LNP64::ROL);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0xb7:
+      Instr.setOpcode(LNP64::ROR);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0xb8:
+      Instr.setOpcode(LNP64::BSWAP16);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      return MCDisassembler::Success;
+    case 0xb9:
+      Instr.setOpcode(LNP64::BSWAP32);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      return MCDisassembler::Success;
+    case 0xba:
+      Instr.setOpcode(LNP64::BSWAP64);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      return MCDisassembler::Success;
     case 0x38:
       Instr.setOpcode(LNP64::ERRNO_GET);
       addReg(Instr, A);
