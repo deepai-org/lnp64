@@ -20,6 +20,6 @@ lld|lld/ELF/Arch/LNP64.cpp|scaffolded|ELF64 LNP64 relocations and static executa
 clang_basic|clang/lib/Basic/Targets/LNP64.h|scaffolded|Clang target info, data layout, register names, constraints
 clang_basic|clang/lib/Basic/Targets/LNP64.cpp|scaffolded|Clang target info implementation and builtin feature defaults
 clang_driver|clang/lib/Driver/ToolChains/Arch/LNP64.cpp|scaffolded|driver flags, freestanding defaults, crt and linker selection
-llvm_tests|llvm/test/CodeGen/LNP64/hello.ll|planned|integer, load/store, branch, call, return codegen smoke
-llvm_tests|llvm/test/MC/LNP64/basic.s|planned|assembler, disassembler, relocation, inline asm smoke
-clang_tests|clang/test/Driver/lnp64.c|planned|triple, include path, crt, lld, and no toy compiler driver smoke
+llvm_tests|llvm/test/CodeGen/LNP64/hello.ll|scaffolded|integer, load/store, branch, call, return codegen smoke
+llvm_tests|llvm/test/MC/LNP64/basic.s|scaffolded|assembler, disassembler, relocation, inline asm smoke
+clang_tests|clang/test/Driver/lnp64.c|scaffolded|triple, include path, crt, lld, and no toy compiler driver smoke

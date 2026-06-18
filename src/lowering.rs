@@ -1729,6 +1729,9 @@ mod tests {
             "clang/lib/Basic/Targets/LNP64.h",
             "clang/lib/Basic/Targets/LNP64.cpp",
             "clang/lib/Driver/ToolChains/Arch/LNP64.cpp",
+            "llvm/test/CodeGen/LNP64/hello.ll",
+            "llvm/test/MC/LNP64/basic.s",
+            "clang/test/Driver/lnp64.c",
         ] {
             assert_eq!(statuses[path], "scaffolded", "{path} should be scaffolded");
         }
@@ -1766,6 +1769,9 @@ mod tests {
         let clang_target = include_str!("../clang/lib/Basic/Targets/LNP64.cpp");
         let clang_driver = include_str!("../clang/lib/Driver/ToolChains/Arch/LNP64.cpp");
         let lld_arch = include_str!("../lld/ELF/Arch/LNP64.cpp");
+        let codegen_test = include_str!("../llvm/test/CodeGen/LNP64/hello.ll");
+        let mc_test = include_str!("../llvm/test/MC/LNP64/basic.s");
+        let clang_driver_test = include_str!("../clang/test/Driver/lnp64.c");
 
         assert!(target_td.contains("def LNP64 : Target"));
         for required in ["GPR", "FDR", "FPR", "VR", "PCR", "LR", "R31"] {
@@ -1843,6 +1849,16 @@ mod tests {
         ] {
             assert!(lld_arch.contains(reloc), "lld arch missing {reloc}");
         }
+        assert!(codegen_test.contains("llc -mtriple=lnp64-unknown-none"));
+        assert!(codegen_test.contains("XFAIL: *"));
+        assert!(codegen_test.contains("__lnp_push"));
+        assert!(mc_test.contains("llvm-mc -triple=lnp64-unknown-none"));
+        assert!(mc_test.contains("li r1, 42"));
+        assert!(mc_test.contains("XFAIL: *"));
+        assert!(clang_driver_test.contains("--target=lnp64-unknown-none"));
+        assert!(clang_driver_test.contains("elf64lnp64"));
+        assert!(clang_driver_test.contains("toolchain/crt0_lnp64.s"));
+        assert!(clang_driver_test.contains("XFAIL: *"));
     }
 
     #[test]

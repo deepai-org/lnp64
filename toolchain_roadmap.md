@@ -49,6 +49,9 @@ freestanding driver defaults, inline-asm constraint surface, and relocation
 names pinned to the checked manifests. The MC AsmParser and Disassembler
 components are now registered as scaffolded LLVM components, but still reject
 parsing/decoding until instruction encoding is implemented.
+Scaffolded llvm-project lit tests now exist for `llc` hello/native-intrinsic
+codegen, `llvm-mc` basic assembly, and Clang driver command shape; they are
+marked `XFAIL` until the target is integrated and executable.
 They are scaffolded source files for the real port, not a buildable code
 generator yet.
 `toolchain/lnp64_mc_encoding.manifest` records the initial MC format classes,
