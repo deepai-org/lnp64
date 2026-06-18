@@ -913,6 +913,7 @@ mod tests {
     fn llvm_target_manifest_records_required_backend_contract() {
         let manifest = include_str!("../toolchain/lnp64_target.manifest");
         let object_format = include_str!("../object_format.md");
+        let roadmap = include_str!("../toolchain_roadmap.md");
         assert_eq!(manifest_field(manifest, "triple"), "lnp64-unknown-none");
         assert_eq!(manifest_field(manifest, "object_format"), "ELF64");
         assert_eq!(manifest_field(manifest, "endianness"), "little");
@@ -1011,6 +1012,9 @@ mod tests {
             manifest_field(manifest, "toy_compiler_policy"),
             "bootstrap_smoke_only_after_llvm_gate"
         );
+        assert!(roadmap.contains("## Toy Compiler Freeze Policy"));
+        assert!(roadmap.contains("They are not the long-term application"));
+        assert!(roadmap.contains("only small fixes needed to keep existing smoke"));
     }
 
     #[test]
