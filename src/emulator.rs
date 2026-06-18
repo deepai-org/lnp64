@@ -5352,6 +5352,7 @@ impl Machine {
         self.next_call_op_id = self.next_call_op_id.saturating_add(1);
         if let Some(fd) = completion_fd {
             self.complete_call_fd(fd, op_id, arg0, arg1)?;
+            self.poll_fd_waiters();
         }
         self.complete_reg_ok(result, op_id)
     }
@@ -14663,6 +14664,32 @@ mod tests {
         assert_eq!(machine.process().unwrap().domain_id, 2);
         assert_eq!(machine.thread().unwrap().ip, 1);
         assert!(machine.thread().unwrap().cap_call_stack.is_empty());
+    }
+
+    #[test]
+    fn async_call_completion_wakes_waiting_event_queue_reader() {
+        let mut machine = test_machine_with_child_domain();
+        machine.current_tid = 1;
+        create_pipe_pair(&mut machine, 4, 5);
+        machine.processes.get_mut(&1).unwrap().fds[3] = FdHandle::CallGate {
+            entry: 1,
+            domain_id: 2,
+            domain_generation: 1,
+            mode: CALL_MODE_ASYNC,
+            completion_fd: Some(5),
+            flags: 0,
+        };
+        machine
+            .push_fd_waiter(4, POLLIN_MASK, Some(Reg(8)))
+            .unwrap();
+        machine.ready.retain(|tid| *tid != 1);
+
+        machine.call_cap(Reg(6), 3, 10, 20).unwrap();
+
+        assert!(machine.ready.contains(&1));
+        assert!(machine.fd_waiters.is_empty());
+        assert_eq!(machine.thread().unwrap().regs[6], 1);
+        assert!(machine.fd_read_ready(4).unwrap());
     }
 
     #[test]
