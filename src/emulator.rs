@@ -13154,6 +13154,46 @@ mod tests {
     }
 
     #[test]
+    fn exec_unterminated_envp_preserves_old_image_before_commit() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let path = "/tmp/lnp64_exec_unused_target.s";
+        let path_addr = ARG_BASE + 0x2000;
+        machine.write_bytes(path_addr, path.as_bytes()).unwrap();
+        machine
+            .write_bytes(path_addr + path.len() as u64, &[0])
+            .unwrap();
+        let env_string = ARG_BASE + 0x3000;
+        machine.write_bytes(env_string, b"A=B\0").unwrap();
+        let envp = ARG_BASE + 0x180;
+        for idx in 0..256u64 {
+            machine.store_u64(envp + idx * 8, env_string).unwrap();
+        }
+        machine.write_reg(Reg(1), path_addr).unwrap();
+        machine.write_reg(Reg(2), 0).unwrap();
+        machine.write_reg(Reg(3), envp).unwrap();
+        machine.write_reg(Reg(9), 0xfeed_cafe).unwrap();
+        machine.thread_mut().unwrap().ip = 0;
+
+        let err = machine
+            .exec(Instr::Exec(Reg(1), Reg(2), Reg(3)))
+            .unwrap_err();
+
+        assert!(
+            err.contains("EXEC envp is not null-terminated within 256 entries"),
+            "{err}"
+        );
+        assert!(matches!(
+            machine.process().unwrap().program.instructions.first(),
+            Some(Instr::Nop)
+        ));
+        assert_eq!(machine.thread().unwrap().tid, 1);
+        assert_eq!(machine.thread().unwrap().ip, 0);
+        assert_eq!(machine.read_reg(Reg(9)).unwrap(), 0xfeed_cafe);
+        assert_eq!(machine.load_u64(ARG_BASE).unwrap(), 0);
+    }
+
+    #[test]
     fn exec_oversized_entry_metadata_preserves_old_image_before_commit() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
