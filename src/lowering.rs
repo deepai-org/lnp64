@@ -1109,6 +1109,34 @@ mod tests {
             .collect()
     }
 
+    fn run_elf_rows(manifest: &str) -> Vec<(&str, &str, Vec<&str>, &str, &str)> {
+        manifest
+            .lines()
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(|line| {
+                let mut fields = line.splitn(5, '|');
+                let stage = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing run-elf stage in {line}"));
+                let status = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing run-elf status in {line}"));
+                let artifacts = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing run-elf artifacts in {line}"))
+                    .split(',')
+                    .collect();
+                let evidence = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing run-elf evidence in {line}"));
+                let blocker = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing run-elf blocker in {line}"));
+                (stage, status, artifacts, evidence, blocker)
+            })
+            .collect()
+    }
+
     fn llvm_filemap_rows(manifest: &str) -> Vec<(&str, &str, &str, &str)> {
         manifest
             .lines()
@@ -1200,6 +1228,7 @@ mod tests {
             "isel",
             "llvm_bootstrap",
             "llvm_gates",
+            "run_elf",
             "linker_script",
             "exec_plan",
             "loader_security",
@@ -1274,6 +1303,10 @@ mod tests {
         assert!(
             commands["link_static"].contains("-T toolchain/lnp64_static.ld"),
             "static link gate must use checked LNP64 linker script"
+        );
+        assert!(
+            commands["run_without_toy_compiler"].contains("lnp64 run-elf"),
+            "no-toy execution gate must route through the checked run-elf boundary"
         );
         assert!(
             commands["assemble_crt0"].contains("toolchain/crt0_lnp64.s"),
@@ -1429,6 +1462,106 @@ mod tests {
         assert!(gate_manifest.contains("ld.lld -static -m elf64lnp64"));
         assert!(gate_manifest.contains("-T toolchain/lnp64_static.ld"));
         assert!(gate_manifest.contains("lnp64 elf-plan"));
+    }
+
+    #[test]
+    fn run_elf_manifest_records_execution_boundary() {
+        let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
+        let run_elf_manifest = include_str!("../toolchain/lnp64_run_elf.manifest");
+        let gate_manifest = include_str!("../toolchain/lnp64_llvm_gates.manifest");
+        let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
+        let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
+        let roadmap = include_str!("../toolchain_roadmap.md");
+        let conformance = include_str!("../conformance_matrix.md");
+        let loader_security = include_str!("../toolchain/lnp64_loader_security.manifest");
+        let loader_source = include_str!("loader.rs");
+        let emulator_source = include_str!("emulator.rs");
+        let lowering_source = include_str!("lowering.rs");
+        let evidence_corpus = format!("{loader_source}\n{emulator_source}\n{lowering_source}");
+        let rows = run_elf_rows(run_elf_manifest);
+        let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut stages = std::collections::BTreeMap::new();
+
+        assert_eq!(
+            manifest_field(target_manifest, "run_elf_contract"),
+            "toolchain/lnp64_run_elf.manifest"
+        );
+        assert!(contract_index.contains(
+            "run_elf|toolchain/lnp64_run_elf.manifest|run_elf_manifest_records_execution_boundary"
+        ));
+        assert!(transition_manifest.contains("toolchain/lnp64_run_elf.manifest"));
+        assert!(roadmap.contains("toolchain/lnp64_run_elf.manifest"));
+        assert!(conformance.contains("toolchain/lnp64_run_elf.manifest"));
+        assert!(gate_manifest.contains("lnp64 run-elf"));
+        assert!(loader_security.contains("submit_exec_plan"));
+        assert!(
+            loader_security.contains("emulator_commits_exec_descriptor_memory_image_atomically")
+        );
+
+        for (stage, status, artifacts, evidence, blocker) in rows {
+            assert!(
+                stages
+                    .insert(stage, (status, artifacts.clone(), evidence, blocker))
+                    .is_none(),
+                "duplicate run-elf stage {stage}"
+            );
+            assert!(
+                ["tested", "partial", "planned"].contains(&status),
+                "unknown run-elf status {status} for {stage}"
+            );
+            assert!(
+                !artifacts.is_empty(),
+                "empty artifacts for run-elf stage {stage}"
+            );
+            for artifact in artifacts {
+                assert!(
+                    manifest_root.join(artifact).exists(),
+                    "run-elf stage {stage} names missing artifact {artifact}"
+                );
+            }
+            assert!(!evidence.is_empty(), "empty run-elf evidence for {stage}");
+            if status == "tested" {
+                assert_eq!(blocker, "none", "tested run-elf stage {stage} has blocker");
+                assert!(
+                    evidence_corpus.contains(evidence),
+                    "tested run-elf evidence {evidence} for {stage} is not present"
+                );
+            } else {
+                assert_ne!(
+                    blocker, "none",
+                    "unfinished run-elf stage {stage} lacks blocker"
+                );
+            }
+        }
+
+        for stage in [
+            "load_static_elf",
+            "materialize_vmas",
+            "descriptor_validate",
+            "descriptor_commit",
+            "entry_state",
+            "text_fetch_decode",
+            "stdout_exit",
+            "no_toy_compiler",
+        ] {
+            assert!(stages.contains_key(stage), "missing run-elf stage {stage}");
+        }
+        for stage in [
+            "load_static_elf",
+            "materialize_vmas",
+            "descriptor_validate",
+            "descriptor_commit",
+        ] {
+            assert_eq!(stages[stage].0, "tested", "{stage} should be tested");
+        }
+        assert_eq!(stages["entry_state"].0, "partial");
+        for stage in ["text_fetch_decode", "stdout_exit", "no_toy_compiler"] {
+            assert_eq!(
+                stages[stage].0, "planned",
+                "{stage} must stay planned until ELF execution exists"
+            );
+        }
+        assert!(roadmap.contains("run_without_toy_compiler` gate remains planned"));
     }
 
     #[test]
@@ -2123,6 +2256,10 @@ mod tests {
         assert_eq!(
             manifest_field(manifest, "llvm_gate_contract"),
             "toolchain/lnp64_llvm_gates.manifest"
+        );
+        assert_eq!(
+            manifest_field(manifest, "run_elf_contract"),
+            "toolchain/lnp64_run_elf.manifest"
         );
         assert_eq!(
             manifest_field(manifest, "linker_script_contract"),

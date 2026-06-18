@@ -28,6 +28,7 @@ inline_asm_contract=toolchain/lnp64_inline_asm.manifest
 crt_startup_contract=toolchain/lnp64_crt_startup.manifest
 crt0_contract=toolchain/crt0_lnp64.s
 llvm_gate_contract=toolchain/lnp64_llvm_gates.manifest
+run_elf_contract=toolchain/lnp64_run_elf.manifest
 linker_script_contract=toolchain/lnp64_static.ld
 gpr=r0-r31
 fdr=fd0-fd255
