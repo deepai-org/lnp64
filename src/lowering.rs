@@ -175,7 +175,13 @@ pub const LOWER_ERRNO: &[NativePrimitive] = &[
     NativePrimitive::ExplicitResult,
     NativePrimitive::TlsErrnoView,
 ];
-pub const LOWER_METADATA: &[NativePrimitive] = &[NativePrimitive::Metadata(MetadataOp::GetMeta)];
+pub const LOWER_STAT: &[NativePrimitive] = &[NativePrimitive::Metadata(MetadataOp::GetMeta)];
+pub const LOWER_CHMOD: &[NativePrimitive] = &[NativePrimitive::Metadata(MetadataOp::SetMeta)];
+pub const LOWER_FCNTL: &[NativePrimitive] = &[
+    NativePrimitive::Metadata(MetadataOp::GetMeta),
+    NativePrimitive::Metadata(MetadataOp::SetMeta),
+    NativePrimitive::Metadata(MetadataOp::ObjectCtl),
+];
 pub const LOWER_RESOURCE_DOMAIN: &[NativePrimitive] = &[NativePrimitive::DomainCtl];
 
 pub const COMPATIBILITY_LOWERINGS: &[CompatibilityLowering] = &[
@@ -253,15 +259,15 @@ pub const COMPATIBILITY_LOWERINGS: &[CompatibilityLowering] = &[
     },
     CompatibilityLowering {
         surface: CompatSurface::Stat,
-        native: LOWER_METADATA,
+        native: LOWER_STAT,
     },
     CompatibilityLowering {
         surface: CompatSurface::Chmod,
-        native: LOWER_METADATA,
+        native: LOWER_CHMOD,
     },
     CompatibilityLowering {
         surface: CompatSurface::Fcntl,
-        native: LOWER_METADATA,
+        native: LOWER_FCNTL,
     },
 ];
 
@@ -1437,6 +1443,22 @@ mod tests {
         assert!(lowering_for(CompatSurface::Signal).contains(&NativePrimitive::EventDelivery));
         assert!(lowering_for(CompatSurface::Errno).contains(&NativePrimitive::TlsErrnoView));
         assert!(lowering_for(CompatSurface::ResourceDomain).contains(&NativePrimitive::DomainCtl));
+        assert_eq!(
+            lowering_for(CompatSurface::Stat),
+            &[NativePrimitive::Metadata(MetadataOp::GetMeta)]
+        );
+        assert_eq!(
+            lowering_for(CompatSurface::Chmod),
+            &[NativePrimitive::Metadata(MetadataOp::SetMeta)]
+        );
+        assert_eq!(
+            lowering_for(CompatSurface::Fcntl),
+            &[
+                NativePrimitive::Metadata(MetadataOp::GetMeta),
+                NativePrimitive::Metadata(MetadataOp::SetMeta),
+                NativePrimitive::Metadata(MetadataOp::ObjectCtl),
+            ]
+        );
     }
 
     #[test]
