@@ -2425,7 +2425,33 @@ impl Machine {
                 candidate, root
             ));
         }
+        self.ensure_path_stays_within_namespace_root(&root, &candidate)?;
         Ok(candidate.to_string_lossy().into_owned())
+    }
+
+    fn ensure_path_stays_within_namespace_root(
+        &self,
+        root: &Path,
+        candidate: &Path,
+    ) -> Result<(), String> {
+        let Ok(root) = fs::canonicalize(root) else {
+            return Ok(());
+        };
+        let mut existing = candidate.to_path_buf();
+        while !existing.exists() {
+            if !existing.pop() {
+                return Ok(());
+            }
+        }
+        let resolved = fs::canonicalize(&existing)
+            .map_err(|err| format!("path resolution denied: {:?}: {err}", existing))?;
+        if !resolved.starts_with(&root) {
+            return Err(format!(
+                "path resolution denied: {:?} resolves through {:?} outside namespace root {:?}",
+                candidate, resolved, root
+            ));
+        }
+        Ok(())
     }
 
     fn write_lnp64_stat(&mut self, addr: u64, metadata: &fs::Metadata) -> Result<(), String> {
@@ -7736,6 +7762,46 @@ mod tests {
             machine.resolve_process_path("/etc/motd").unwrap(),
             "/tmp/lnp64-ns-root/etc/motd"
         );
+    }
+
+    #[test]
+    fn namespace_root_rejects_symlink_escape() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let base = std::env::temp_dir().join(format!("lnp64_ns_symlink_{unique}"));
+        let root = base.join("root");
+        let tmp = root.join("tmp");
+        let outside = base.join("outside");
+        let outside_file = outside.join("secret");
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&tmp).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(&outside_file, b"host secret").unwrap();
+        fs::write(tmp.join("inside"), b"inside").unwrap();
+        std::os::unix::fs::symlink(&outside_file, tmp.join("secret_link")).unwrap();
+        std::os::unix::fs::symlink(&outside, tmp.join("outside_dir")).unwrap();
+        std::os::unix::fs::symlink(tmp.join("inside"), tmp.join("inside_link")).unwrap();
+
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let process = machine.process_mut().unwrap();
+        process.namespace_root = Some(root.clone());
+        process.cwd = tmp.clone();
+
+        assert!(machine.resolve_process_path("secret_link").is_err());
+        assert!(
+            machine
+                .resolve_process_path("outside_dir/new_file")
+                .is_err()
+        );
+        assert_eq!(
+            machine.resolve_process_path("inside_link").unwrap(),
+            tmp.join("inside_link").to_string_lossy()
+        );
+
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]
