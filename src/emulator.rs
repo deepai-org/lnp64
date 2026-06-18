@@ -2612,6 +2612,7 @@ impl Machine {
                 }
             }
             Instr::Inb(dst, port) => {
+                Self::ensure_result_reg_writable(dst)?;
                 if self.process()?.uid != 0 {
                     self.raise_current_signal(SIGSEGV)?;
                     return Ok(true);
@@ -10948,6 +10949,20 @@ mod tests {
         let err = machine.exec(Instr::Inb(Reg(3), Reg(1))).unwrap_err();
         assert!(err.contains("resource domain capability denied"), "{err}");
         assert_eq!(machine.thread().unwrap().regs[3], 0xdead_beef);
+        assert!(machine.process().unwrap().ucode_ports.is_empty());
+    }
+
+    #[test]
+    fn inb_rejects_locked_result_before_fault_or_port_access() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.process_mut().unwrap().uid = 1000;
+        machine.thread_mut().unwrap().regs[4] = 7;
+
+        let err = machine.exec(Instr::Inb(Reg(31), Reg(4))).unwrap_err();
+
+        assert!(err.contains("hardware-locked stack pointer"), "{err}");
+        assert!(machine.process().unwrap().pending_events.is_empty());
         assert!(machine.process().unwrap().ucode_ports.is_empty());
     }
 
