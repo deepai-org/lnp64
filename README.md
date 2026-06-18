@@ -255,10 +255,21 @@ this checkout:
 
 ```sh
 cargo test --quiet exec_
+cargo test --quiet classifier_
+cargo test --quiet env_get_
+cargo test --quiet signal_
+cargo test --quiet namespace_
+cargo test --quiet cap_dup_
+cargo test --quiet cap_send_
+cargo test --quiet cap_recv_
+cargo test --quiet cap_revoke_
+cargo test --quiet domain_
 cargo test --quiet socket_
 cargo test --quiet object_ctl_
 cargo test --quiet domain_ctl_
 cargo test --quiet ns_ctl_resolve
+cargo test --quiet memory_object_
+cargo test --quiet pipe_
 cargo test --quiet waiter
 cargo test --quiet microcode
 cargo test --quiet timer_expiration_wakes_reader_waiting_for_tick
@@ -271,6 +282,37 @@ cargo test --quiet repeated_parking_does_not_duplicate_wait_queue_entries
 Use these focused filters for fast confirmation while editing one subsystem.
 They are not replacements for the full host hygiene pass before committing a
 batch that changes emulator or compiler behavior.
+
+Recent focused userland/conformance smoke commands that have also worked from
+this checkout:
+
+```sh
+cargo run --quiet -- cc userland/classifier_test.c -o /tmp/lnp64-classifier-test.s
+cargo run --quiet -- run /tmp/lnp64-classifier-test.s
+
+cargo run --quiet -- cc userland/signal_gate_test.c -o /tmp/lnp64-signal-gate-test.s
+cargo run --quiet -- run /tmp/lnp64-signal-gate-test.s
+
+cargo run --quiet -- cc userland/signal_fault_test.c -o /tmp/lnp64-signal-fault-test.s
+cargo run --quiet -- run /tmp/lnp64-signal-fault-test.s
+
+cargo run --quiet -- cc userland/domain_nested_test.c -o /tmp/lnp64-domain-nested-test.s
+cargo run --quiet -- run /tmp/lnp64-domain-nested-test.s
+
+cargo run --quiet -- cc userland/domain_budget_test.c -o /tmp/lnp64-domain-budget-test.s
+cargo run --quiet -- run /tmp/lnp64-domain-budget-test.s
+
+cargo run --quiet -- cc userland/namespace_test.c -o /tmp/lnp64-namespace-test.s
+root=$(mktemp -d /tmp/lnp64-namespace-root.XXXXXX)
+mkdir -p "$root/etc" "$root/tmp"
+printf '%s\n' 'welcome to lnp64 namespace test' > "$root/etc/motd"
+cargo run --quiet -- run --namespace-root "$root" /tmp/lnp64-namespace-test.s
+rm -rf "$root"
+```
+
+The namespace smoke intentionally needs `--namespace-root`; running the compiled
+program without a root capability is expected to fail because path resolution is
+capability-relative.
 
 For the alias scans, expected hits are documentation, compatibility-lowering
 comments, script negative lists, or compiler negative assertions. Treat new
@@ -496,6 +538,72 @@ board evidence ok
 rtl board ice40 s0 live uart ok
 ```
 
+Focused M5 DMA pin/unpin work was checked from this checkout on 2026-06-18
+with the following commands. The Docker commands are the reproducible proof and
+synthesis paths; the host commands are focused manifest/model/simulation checks
+that do not replace the Docker gates:
+
+```sh
+docker run --rm \
+  -v "$PWD:/work" \
+  -w /work \
+  lnp64-rtl-proof \
+  lean formal/M5DmaModel.lean
+
+python3 formal/m5_dma_model.py
+scripts/check_formal_proof_manifest.py
+scripts/check_rtl_track_b_manifest.py
+bash scripts/run_rtl_m5.sh
+bash scripts/run_rtl_random_cosim.sh
+
+docker run --rm \
+  -v "$PWD:/work" \
+  -w /work \
+  lnp64-rtl-proof \
+  bash scripts/run_rtl_proof_gates.sh
+
+docker run --rm \
+  -v "$PWD:/work" \
+  -w /work \
+  lnp64-rtl-synth \
+  bash scripts/run_rtl_synth_smoke.sh
+
+bash scripts/run_formal_rtl_roadmap_audit.sh
+
+# Expected to fail until a live board run writes this evidence file.
+bash scripts/run_formal_rtl_roadmap_audit.sh \
+  --require-board-evidence \
+  --board-evidence build/lnp64-board-ice40-s0-evidence.json
+```
+
+The M5 traces in those runs include `TRACE dma_pin ... pinned=1` before copy/fill
+and `TRACE dma_unpin ... pinned=0` before the permission/revoke/domain fault
+checks. As of 2026-06-18, the strict roadmap audit reports only the missing live
+board evidence file when no compatible iCE40 board/UART capture has been run.
+
+Focused M2 gate/fault/signal compatibility work was checked from this checkout
+on 2026-06-18 with these commands:
+
+```sh
+python3 -m py_compile \
+  scripts/check_rtl_track_b_manifest.py \
+  scripts/check_rtl_cosim_manifest.py \
+  formal/m2_gate_model.py
+scripts/check_rtl_track_b_manifest.py
+scripts/check_rtl_cosim_manifest.py
+bash scripts/run_rtl_m2.sh
+
+docker run --rm \
+  -v "$PWD:/work" \
+  -w /work \
+  lnp64-rtl-proof \
+  lean formal/M2GateModel.lean
+```
+
+The M2 RTL/model trace now includes
+`TRACE signal_compat mask=honored authority=0`, and the co-sim manifest requires
+that marker together with the honored mask and cleared authority fields.
+
 Run only the bounded randomized RTL/model co-simulation smoke:
 
 ```sh
@@ -509,16 +617,17 @@ the seed set with `LNP64_COSIM_SEEDS`.
 The currently exercised random slices are:
 
 - M1 ping-pong queues: queue generation, push payload, and refill payload.
-- M2 gates: gate generation, continuation id, and call targets.
+- M2 gates: gate generation, continuation id, call targets, fault delivery, and
+  signal compatibility.
 - M3 process/thread lifecycle: parent/child ids, exit code, exec epoch, and
   stopped-sibling count.
 - M4 VMAs: VMA id, page count, base address, and VMA generation.
 - M5 DMA/memory objects: root domain, source/destination buffers, copy/fill
-  sizes, fill value, and isolation-domain checks.
+  sizes, fill value, pin/unpin state, and isolation-domain checks.
 - M6 typed control/service boundary: root/namespace ids, path length, service
   and operation ids, continuation id, returned rights, and returned object id.
 - M7 futex/atomic: root domain, initial atomic value, compare-exchange values,
-  futex address, and bucket id.
+  futex address, timer deadline, and bucket id.
 - M8 heap: root domain, heap generation, pointer, size class, owner/freeing
   thread ids, and pointer generation.
 - M9 classifier/servicelet: root/table ids, verifier program and instruction
