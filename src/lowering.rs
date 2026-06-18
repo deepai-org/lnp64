@@ -957,6 +957,7 @@ mod tests {
             "isel",
             "llvm_bootstrap",
             "exec_plan",
+            "loader",
             "debug_unwind",
             "inline_asm",
             "crt_startup",
