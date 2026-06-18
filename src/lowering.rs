@@ -1889,9 +1889,11 @@ mod tests {
         assert!(isel.contains("setStackPointerRegisterToSaveRestore(LNP64::R31)"));
         assert!(frame.contains("StackGrowsDown"));
         assert!(frame.contains("Align(16)"));
-        assert!(frame.contains("getStackSize() == 0"));
-        assert!(frame.contains("nonzero stack adjustment is not implemented yet"));
+        assert!(frame.contains("emitSPAdjust"));
+        assert!(frame.contains("LNP64::R30"));
+        assert!(frame.contains("TII.get(Amount < 0 ? LNP64::SUB : LNP64::ADD)"));
         assert!(reginfo.contains("Reserved.set(LNP64::R0)"));
+        assert!(reginfo.contains("Reserved.set(LNP64::R30)"));
         assert!(reginfo.contains("eliminateFrameIndex"));
         assert!(reginfo.contains("ChangeToRegister(LNP64::R31"));
         assert!(reginfo.contains("MFI.getObjectOffset"));
@@ -3233,9 +3235,10 @@ mod tests {
         assert_eq!(manifest_field(psabi_manifest, "return_gprs"), "r1");
         assert_eq!(
             manifest_field(psabi_manifest, "caller_clobbered_gprs"),
-            "r1-r30"
+            "r1-r29"
         );
         assert_eq!(manifest_field(psabi_manifest, "callee_saved_gprs"), "none");
+        assert_eq!(manifest_field(psabi_manifest, "backend_scratch_gpr"), "r30");
         assert_eq!(
             manifest_field(psabi_manifest, "entry_page_base"),
             "0x700000"
@@ -3271,7 +3274,9 @@ mod tests {
             psabi_doc.contains("Integer and pointer arguments are passed in `r1` through `r6`.")
         );
         assert!(psabi_doc.contains("Return values are placed in `r1`."));
-        assert!(psabi_doc.contains("There is no callee-saved GPR set"));
+        assert!(psabi_doc.contains("`r30` is reserved as a backend scratch register"));
+        assert!(psabi_doc.contains("`r1` through `r29` as caller-clobbered"));
+        assert!(psabi_doc.contains("callee-saved GPR set in the v0 compiler ABI"));
         assert!(psabi_doc.contains("`r31` points at the current thread's stack/local region."));
         assert!(psabi_doc.contains("The thread pointer is read and written through the `TP` PCR."));
         assert!(psabi_doc.contains("`SIGRET` is the POSIX spelling"));
@@ -3331,8 +3336,9 @@ mod tests {
         assert_eq!(classes["fpr"].0, manifest_field(target_manifest, "fpr"));
         assert_eq!(classes["vr"].0, manifest_field(target_manifest, "vr"));
         assert_eq!(classes["gpr"].1, "64");
-        assert_eq!(classes["gpr"].2, "r1-r30");
+        assert_eq!(classes["gpr"].2, "r1-r29");
         assert!(classes["gpr"].3.contains(&"r0"));
+        assert!(classes["gpr"].3.contains(&"r30"));
         assert!(
             classes["gpr"]
                 .3

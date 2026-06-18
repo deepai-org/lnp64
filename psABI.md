@@ -27,6 +27,10 @@ The v0 psABI covers:
 
 `r0` reads as zero. Writes to `r0` are ignored.
 
+`r30` is reserved as a backend scratch register for compiler-generated
+sequences such as stack adjustment. Portable v0 code should not treat it as an
+allocatable C register.
+
 `r31` is the stack pointer for compiler-generated locals and spills. The current
 emulator protects `r31` from ordinary `write_reg` updates; the hardware design
 allows it to be ordinary thread state with MMU-enforced bounds. Code that needs
@@ -68,9 +72,9 @@ Return values are placed in `r1`. Multi-register returns are not part of the C
 ABI yet. Cross-domain gate profiles use bounded return registers through native
 `GATE_RETURN`; `RET_CAP` is the source-level call-profile spelling.
 
-The current compiler treats GPRs other than `r0` and `r31` as caller-clobbered.
-There is no callee-saved GPR set in the v0 compiler ABI. Runtimes that need
-stable register state across calls must spill it explicitly.
+The current compiler treats `r1` through `r29` as caller-clobbered. There is no
+callee-saved GPR set in the v0 compiler ABI. Runtimes that need stable register
+state across calls must spill it explicitly.
 
 ## Stack and Local Storage
 

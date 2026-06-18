@@ -14,6 +14,7 @@ LNP64RegisterInfo::LNP64RegisterInfo() : LNP64GenRegisterInfo(LNP64::LR) {}
 BitVector LNP64RegisterInfo::getReservedRegs(const MachineFunction &) const {
   BitVector Reserved(getNumRegs());
   Reserved.set(LNP64::R0);
+  Reserved.set(LNP64::R30);
   Reserved.set(LNP64::R31);
   Reserved.set(LNP64::LR);
   Reserved.set(LNP64::TP);

@@ -1,6 +1,6 @@
 # LNP64 register-class manifest v0.
 # Pipe-delimited fields: class|values|width|allocatable|reserved|role|debug
-gpr|r0-r31|64|r1-r30|r0,r31|integer_pointer_status|dwarf_gpr_r0_r31
+gpr|r0-r31|64|r1-r29|r0,r30,r31|integer_pointer_status_backend_scratch_r30|dwarf_gpr_r0_r31
 fdr|fd0-fd255|capability|fd0-fd255|none|authority_object_slots|not_address_unwind_registers
 fpr|f0-f31|implementation_defined|f0-f31|none|future_floating_point|dwarf_fpr_f0_f31
 vr|v0-v15|implementation_defined|v0-v15|none|future_vector|dwarf_vr_v0_v15
