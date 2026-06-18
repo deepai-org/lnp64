@@ -6883,6 +6883,9 @@ impl Machine {
             record.extend_from_slice(&value.to_le_bytes());
         }
         let count = (len as usize).min(record.len());
+        if count == 0 {
+            return self.complete_reg_ok(result, 0);
+        }
         if self.write_bytes_offset(buf, 0, &record[..count]).is_err() {
             return self.complete_reg_err(result, 14);
         }
@@ -6892,6 +6895,9 @@ impl Machine {
     fn env_get_topology_records(&mut self, result: Reg, buf: u64, len: u64) -> Result<(), String> {
         let records = self.env_topology_records();
         let count = (len as usize).min(records.len());
+        if count == 0 {
+            return self.complete_reg_ok(result, 0);
+        }
         if self.write_bytes_offset(buf, 0, &records[..count]).is_err() {
             return self.complete_reg_err(result, 14);
         }
@@ -16776,6 +16782,16 @@ mod tests {
         assert_eq!(machine.thread().unwrap().regs[7], 0);
         assert_eq!(machine.read_bytes(out, 64).unwrap(), sentinel);
 
+        machine.set_errno(123).unwrap();
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_PROCESS_ENTRY_RECORD;
+        machine.thread_mut().unwrap().regs[3] = 0xffff_ffff;
+        machine.thread_mut().unwrap().regs[4] = 0;
+        machine
+            .exec(Instr::EnvGet(Reg(9), Reg(2), Reg(3), Reg(4)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[9], 0);
+        assert_eq!(machine.process().unwrap().errno, 0);
+
         machine.write_bytes(out, &sentinel).unwrap();
         machine.thread_mut().unwrap().regs[2] = ENV_KEY_PROCESS_ENTRY_RECORD;
         machine.thread_mut().unwrap().regs[3] = out;
@@ -16797,6 +16813,16 @@ mod tests {
             .unwrap();
         assert_eq!(machine.thread().unwrap().regs[8], 0);
         assert_eq!(machine.read_bytes(out, 64).unwrap(), sentinel);
+
+        machine.set_errno(123).unwrap();
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_TOPOLOGY_RECORD;
+        machine.thread_mut().unwrap().regs[3] = 0xffff_ffff;
+        machine.thread_mut().unwrap().regs[4] = 0;
+        machine
+            .exec(Instr::EnvGet(Reg(10), Reg(2), Reg(3), Reg(4)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[10], 0);
+        assert_eq!(machine.process().unwrap().errno, 0);
 
         machine.write_bytes(out, &sentinel).unwrap();
         machine.thread_mut().unwrap().regs[2] = ENV_KEY_TOPOLOGY_RECORD;
