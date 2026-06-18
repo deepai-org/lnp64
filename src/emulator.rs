@@ -1888,11 +1888,12 @@ impl Machine {
                 let len = self.read_reg(len_reg)? as usize;
                 let cwd = self.process()?.cwd.to_string_lossy().into_owned();
                 let bytes = cwd.as_bytes();
-                if len == 0 || bytes.len() + 1 > len {
+                let required_len = bytes.len().checked_add(1);
+                if len == 0 || required_len.is_none_or(|required_len| required_len > len) {
                     self.set_status_errno(34)?;
                 } else {
-                    self.write_bytes(buf, bytes)?;
-                    self.write_bytes(buf + bytes.len() as u64, &[0])?;
+                    self.write_bytes_offset(buf, 0, bytes)?;
+                    self.write_bytes_offset(buf, bytes.len() as u64, &[0])?;
                     self.complete_ok(buf)?;
                 }
             }
@@ -6998,7 +6999,9 @@ impl Machine {
                 break;
             }
             bytes.push(byte);
-            pos += 1;
+            pos = pos.checked_add(1).ok_or_else(|| {
+                format!("unterminated string overflows address space at 0x{addr:x}")
+            })?;
         }
         String::from_utf8(bytes).map_err(|err| format!("invalid utf-8 string at 0x{addr:x}: {err}"))
     }
@@ -7024,7 +7027,7 @@ impl Machine {
     ) -> Result<Vec<String>, String> {
         let mut values = Vec::new();
         for idx in 0..256u64 {
-            let ptr = self.load_u64(vector + idx * 8)?;
+            let ptr = self.load_u64(Self::checked_record_base(vector, idx, 8)?)?;
             if ptr == 0 {
                 return Ok(values);
             }
