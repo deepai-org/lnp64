@@ -248,8 +248,7 @@ intrinsic_push_c="$build_dir/intrinsic-push.c"
 cat >"$intrinsic_push_c" <<'C'
 #include "lnp64_intrinsics.h"
 int main(void) {
-  __lnp_push(1, (lnp64_word_t)"intrinsic push ok\n", 18);
-  return 0;
+  return __lnp_push(1, (lnp64_word_t)"intrinsic push ok\n", 18) - 18;
 }
 C
 
