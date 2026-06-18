@@ -4152,6 +4152,9 @@ impl Machine {
                 if !matches!(mode, CALL_MODE_SYNC | CALL_MODE_ASYNC | CALL_MODE_HANDOFF) {
                     return Err(22);
                 }
+                if flags & !CALL_GATE_FLAG_CAP_PASS != 0 {
+                    return Err(22);
+                }
                 let completion_fd = if completion_fd == 0 {
                     None
                 } else if completion_fd as usize >= FDR_COUNT {
@@ -12702,6 +12705,36 @@ mod tests {
         };
         machine.processes.get_mut(&1).unwrap().fd_capabilities[3] = FdCapability::full(3);
         machine
+    }
+
+    #[test]
+    fn object_ctl_call_gate_rejects_unknown_flags_without_installing_fd() {
+        let mut machine = test_machine_with_child_domain();
+        machine.current_tid = 1;
+        let arg = ARG_BASE;
+
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::Queue.code())
+            .unwrap();
+        machine
+            .store_u64(arg + 16, ObjectProfile::CallGate.code())
+            .unwrap();
+        machine.store_u64(arg + 24, 4).unwrap();
+        machine.store_u64(arg + 32, 2).unwrap();
+        machine.store_u64(arg + 40, 1).unwrap();
+        machine.store_u64(arg + 48, CALL_MODE_SYNC).unwrap();
+        machine.store_u64(arg + 56, 0).unwrap();
+        machine.store_u64(arg + 64, 1 << 4).unwrap();
+
+        machine.object_ctl(Reg(5), arg).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert!(matches!(
+            machine.process().unwrap().fds[4],
+            FdHandle::Closed
+        ));
     }
 
     #[test]
