@@ -2812,7 +2812,7 @@ impl Machine {
                 self.processes.insert(child_pid, child_process);
                 self.threads.insert(child_tid, child_thread);
                 self.ready.push_back(child_tid);
-                self.write_reg(dst, child_pid)?;
+                self.complete_reg_ok(dst, child_pid)?;
             }
             CloneProfile::NewThreadSharedVm | CloneProfile::SpawnEntry => {
                 let Some(entry) = entry else {
@@ -2859,7 +2859,7 @@ impl Machine {
                 self.next_tid += 1;
                 self.threads.insert(tid, child);
                 self.ready.push_back(tid);
-                self.write_reg(dst, tid)?;
+                self.complete_reg_ok(dst, tid)?;
             }
             CloneProfile::DomainTask => unreachable!("domain task profile returned before budget"),
         }
@@ -10885,10 +10885,12 @@ mod tests {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
 
+        machine.set_errno(123).unwrap();
         machine
             .clone_with_profile(CloneProfile::NewProcessCow, Reg(5), None)
             .unwrap();
         assert_eq!(machine.thread().unwrap().regs[5], 2);
+        assert_eq!(machine.process().unwrap().errno, 0);
         let child = machine
             .threads
             .values()
@@ -10896,10 +10898,12 @@ mod tests {
             .unwrap();
         assert_eq!(child.regs[5], 0);
 
+        machine.set_errno(77).unwrap();
         machine
             .clone_with_profile(CloneProfile::NewThreadSharedVm, Reg(6), Some(0))
             .unwrap();
         assert!(machine.thread().unwrap().regs[6] >= 2);
+        assert_eq!(machine.process().unwrap().errno, 0);
         assert!(machine.threads.len() >= 3);
     }
 
