@@ -1453,6 +1453,9 @@ mod tests {
         assert!(real_llc.contains("indirect-call-clang-smoke.o"));
         assert!(real_llc.contains("call_reg"));
         assert!(real_llc.contains("real LLVM LNP64 clang indirect call object smoke passed"));
+        assert!(real_llc.contains("intrinsic-await-clang-smoke.o"));
+        assert!(real_llc.contains("await r"));
+        assert!(real_llc.contains("real LLVM LNP64 clang intrinsic await object smoke passed"));
         assert!(real_llc.contains("intrinsic-control-clang-smoke.o"));
         assert!(real_llc.contains("object_ctl r"));
         assert!(real_llc.contains("domain_ctl r"));
@@ -1485,6 +1488,8 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 lld realloc link smoke passed"));
         assert!(real_llc.contains("lnp64-read-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld read link smoke passed"));
+        assert!(real_llc.contains("lnp64-intrinsic-await-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld intrinsic await link smoke passed"));
         assert!(real_llc.contains("--triple=lnp64-unknown-none"));
         assert!(real_llc.contains("errno_set r0"));
         assert!(real_llc.contains("exit r1"));
@@ -1732,6 +1737,10 @@ mod tests {
         assert!(real_llc_docker.contains("intrinsic push ok"));
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic push execution passed")
+        );
+        assert!(real_llc_docker.contains("lnp64-intrinsic-await-linked.elf"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic await execution passed")
         );
         assert!(real_llc_docker.contains("lnp64-intrinsic-control-linked.elf"));
         assert!(
@@ -2022,6 +2031,7 @@ mod tests {
             "CMPU",
             "ERRNO_SET",
             "EXIT",
+            "AWAIT",
             "PULL",
             "OBJECT_CTL",
             "CAP_REVOKE",
@@ -2219,12 +2229,13 @@ mod tests {
         assert!(isel.contains("DAG.getTargetExternalSymbol"));
         assert!(isel.contains("indirect call callee must lower to an i64 register"));
         assert!(isel.contains("LNP64ISD::CALL"));
-        assert!(isel.contains("CalleeName == \"__lnp_call\" || CalleeName == \"__lnp_pull\""));
+        assert!(isel.contains("CalleeName == \"__lnp_await\" || CalleeName == \"__lnp_call\""));
         assert!(
             isel.contains(
                 "CalleeName == \"__lnp_domain_ctl\" || CalleeName == \"__lnp_object_ctl\""
             )
         );
+        assert!(isel.contains("LNP64ISD::AWAIT"));
         assert!(isel.contains("LNP64ISD::DOMAIN_CTL"));
         assert!(isel.contains("LNP64ISD::GATE_CALL"));
         assert!(isel.contains("LNP64ISD::OBJECT_CTL"));
@@ -2256,6 +2267,7 @@ mod tests {
         assert!(isel_header.contains("LowerFormalArguments"));
         assert!(isel_header.contains("LowerReturn"));
         assert!(isel_header.contains("LowerCall"));
+        assert!(isel_header.contains("AWAIT"));
         assert!(isel_header.contains("CALL"));
         assert!(isel_header.contains("DOMAIN_CTL"));
         assert!(isel_header.contains("GATE_CALL"));
@@ -2405,6 +2417,7 @@ mod tests {
         assert!(codegen_test.contains("define i64 @control"));
         assert!(codegen_test.contains("define i64 @gate"));
         assert!(codegen_test.contains("define i64 @read_stream"));
+        assert!(codegen_test.contains("define i64 @wait_ready"));
         assert!(codegen_test.contains("define i64 @jump"));
         assert!(codegen_test.contains("define i64 @branch_if"));
         assert!(codegen_test.contains("define i64 @call_direct"));
@@ -2430,11 +2443,13 @@ mod tests {
         assert!(codegen_test.contains("__lnp_call"));
         assert!(codegen_test.contains("__lnp_domain_ctl"));
         assert!(codegen_test.contains("__lnp_object_ctl"));
+        assert!(codegen_test.contains("__lnp_await"));
         assert!(codegen_test.contains("__lnp_pull"));
         assert!(codegen_test.contains("__lnp_push"));
         assert!(codegen_test.contains("; CHECK: domain_ctl"));
         assert!(codegen_test.contains("; CHECK: gate_call"));
         assert!(codegen_test.contains("; CHECK: object_ctl"));
+        assert!(codegen_test.contains("; CHECK: await"));
         assert!(codegen_test.contains("; CHECK: pull"));
         assert!(codegen_test.contains("; CHECK: push"));
         assert!(mc_test.contains("llvm-mc -triple=lnp64-unknown-none"));
@@ -3633,6 +3648,7 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::ALLOC_EX"));
         assert!(mc_emitter.contains("case LNP64::ALLOC_SIZE"));
         assert!(mc_emitter.contains("case LNP64::FREE"));
+        assert!(mc_emitter.contains("case LNP64::AWAIT"));
         assert!(mc_emitter.contains("case LNP64::OBJECT_CTL"));
         assert!(mc_emitter.contains("case LNP64::DOMAIN_CTL"));
         assert!(mc_emitter.contains("case LNP64::LD"));

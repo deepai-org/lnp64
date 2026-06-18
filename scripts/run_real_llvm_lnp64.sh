@@ -291,6 +291,26 @@ grep -q 'push r' "$intrinsic_push_dump"
 printf 'real LLVM LNP64 clang intrinsic push object smoke passed: %s\n' \
   "$intrinsic_push_obj"
 
+intrinsic_await_c="$build_dir/intrinsic-await.c"
+cat >"$intrinsic_await_c" <<'C'
+#include "lnp64_intrinsics.h"
+int main(void) {
+  return __lnp_await(0, 0, 0);
+}
+C
+
+intrinsic_await_obj="$build_dir/intrinsic-await-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$intrinsic_await_c" -o "$intrinsic_await_obj"
+test -s "$intrinsic_await_obj"
+intrinsic_await_dump="$build_dir/intrinsic-await-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$intrinsic_await_obj" \
+  >"$intrinsic_await_dump"
+grep -q 'await r' "$intrinsic_await_dump"
+printf 'real LLVM LNP64 clang intrinsic await object smoke passed: %s\n' \
+  "$intrinsic_await_obj"
+
 intrinsic_ctl_c="$build_dir/intrinsic-control.c"
 cat >"$intrinsic_ctl_c" <<'C'
 #include "lnp64_intrinsics.h"
@@ -838,6 +858,13 @@ intrinsic_push_elf="$build_dir/lnp64-intrinsic-push-linked.elf"
 test -s "$intrinsic_push_elf"
 printf 'real LLVM LNP64 lld intrinsic push link smoke passed: %s\n' \
   "$intrinsic_push_elf"
+
+intrinsic_await_elf="$build_dir/lnp64-intrinsic-await-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$intrinsic_await_elf" "$crt0_obj" "$intrinsic_await_obj"
+test -s "$intrinsic_await_elf"
+printf 'real LLVM LNP64 lld intrinsic await link smoke passed: %s\n' \
+  "$intrinsic_await_elf"
 
 intrinsic_ctl_elf="$build_dir/lnp64-intrinsic-control-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

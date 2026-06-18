@@ -273,6 +273,8 @@ const char *LNP64TargetLowering::getTargetNodeName(unsigned Opcode) const {
     return "LNP64ISD::BR_ULT";
   case LNP64ISD::CALL:
     return "LNP64ISD::CALL";
+  case LNP64ISD::AWAIT:
+    return "LNP64ISD::AWAIT";
   case LNP64ISD::DOMAIN_CTL:
     return "LNP64ISD::DOMAIN_CTL";
   case LNP64ISD::GATE_CALL:
@@ -486,15 +488,16 @@ LNP64TargetLowering::LowerCall(CallLoweringInfo &CLI,
     report_fatal_error("LNP64 varargs call lowering is not implemented yet");
 
   StringRef CalleeName = getDirectCalleeName(Callee);
-  if (CalleeName == "__lnp_call" || CalleeName == "__lnp_pull" ||
-      CalleeName == "__lnp_push") {
+  if (CalleeName == "__lnp_await" || CalleeName == "__lnp_call" ||
+      CalleeName == "__lnp_pull" || CalleeName == "__lnp_push") {
     if (CLI.OutVals.size() != 3 || CLI.Ins.empty())
       llvm_unreachable(
           "LNP64 native shim lowering expects three arguments and a result");
     SDVTList NodeTys = DAG.getVTList(MVT::i64, MVT::Other);
     SmallVector<SDValue, 4> Ops = {Chain, CLI.OutVals[0], CLI.OutVals[1],
                                    CLI.OutVals[2]};
-    unsigned Opcode = CalleeName == "__lnp_call"    ? LNP64ISD::GATE_CALL
+    unsigned Opcode = CalleeName == "__lnp_await"   ? LNP64ISD::AWAIT
+                      : CalleeName == "__lnp_call"  ? LNP64ISD::GATE_CALL
                       : CalleeName == "__lnp_pull" ? LNP64ISD::PULL
                                                    : LNP64ISD::PUSH;
     SDValue NativeShim = DAG.getNode(Opcode, DL, NodeTys, Ops);

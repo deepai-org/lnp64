@@ -23,6 +23,7 @@ enum NodeType : unsigned {
   BR_ULE,
   BR_ULT,
   CALL,
+  AWAIT,
   DOMAIN_CTL,
   GATE_CALL,
   OBJECT_CTL,

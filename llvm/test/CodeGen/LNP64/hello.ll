@@ -8,6 +8,7 @@
 declare i64 @__lnp_call(i64, i64, i64)
 declare i64 @__lnp_domain_ctl(i64)
 declare i64 @__lnp_object_ctl(i64)
+declare i64 @__lnp_await(i64, i64, i64)
 declare i64 @__lnp_pull(i64, ptr, i64)
 declare i64 @__lnp_push(i64, ptr, i64)
 declare i64 @callee(i64)
@@ -22,6 +23,12 @@ define i64 @read_stream(ptr %p) {
 entry:
   %n = call i64 @__lnp_pull(i64 0, ptr %p, i64 32)
   ret i64 %n
+}
+
+define i64 @wait_ready(i64 %cap, i64 %mask, i64 %timeout) {
+entry:
+  %r = call i64 @__lnp_await(i64 %cap, i64 %mask, i64 %timeout)
+  ret i64 %r
 }
 
 define i64 @gate(i64 %cap, i64 %a, i64 %b) {
@@ -115,6 +122,9 @@ entry:
 ; CHECK: ret
 ; CHECK-LABEL: read_stream:
 ; CHECK: pull
+; CHECK: ret
+; CHECK-LABEL: wait_ready:
+; CHECK: await
 ; CHECK: ret
 ; CHECK-LABEL: gate:
 ; CHECK: gate_call

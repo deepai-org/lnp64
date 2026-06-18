@@ -317,6 +317,7 @@ private:
             .Case("free", LNP64::FREE)
             .Case("object_ctl", LNP64::OBJECT_CTL)
             .Case("domain_ctl", LNP64::DOMAIN_CTL)
+            .Case("await", LNP64::AWAIT)
             .Case("pull", LNP64::PULL)
             .Case("push", LNP64::PUSH)
             .Case("ld", LNP64::LD)
@@ -371,7 +372,7 @@ private:
       return addRegReg(Inst, Operands);
     if (Opcode == LNP64::ALLOC_EX)
       return addRegRegReg(Inst, Operands);
-    if (Opcode == LNP64::PULL || Opcode == LNP64::PUSH)
+    if (Opcode == LNP64::AWAIT || Opcode == LNP64::PULL || Opcode == LNP64::PUSH)
       return addRegRegRegReg(Inst, Operands);
     if (Opcode == LNP64::LD || Opcode == LNP64::LD_W ||
         Opcode == LNP64::LD_H || Opcode == LNP64::LD_B)

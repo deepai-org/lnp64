@@ -44,6 +44,8 @@ def SDT_LNP64Native1 : SDTypeProfile<1, 1, [
 def SDT_LNP64Native3 : SDTypeProfile<1, 3, [
   SDTCisVT<0, i64>, SDTCisVT<1, i64>, SDTCisVT<2, i64>, SDTCisVT<3, i64>
 ]>;
+def LNP64await : SDNode<"LNP64ISD::AWAIT", SDT_LNP64Native3,
+                        [SDNPHasChain]>;
 def LNP64domainctl : SDNode<"LNP64ISD::DOMAIN_CTL", SDT_LNP64Native1,
                             [SDNPHasChain]>;
 def LNP64gatecall : SDNode<"LNP64ISD::GATE_CALL", SDT_LNP64Native3,
@@ -421,8 +423,9 @@ def PULL : LNP64Native4<"pull"> {
 def PUSH : LNP64Native4<"push"> {
   let Pattern = [(set GPR:$rd, (LNP64push GPR:$cap, GPR:$arg0, GPR:$arg1))];
 }
-def AWAIT : LNP64Inst<(outs GPR:$rd), (ins FDR:$cap, GPR:$mask), "await",
-                      "\t$rd, $cap, $mask">;
+def AWAIT : LNP64Native4<"await"> {
+  let Pattern = [(set GPR:$rd, (LNP64await GPR:$cap, GPR:$arg0, GPR:$arg1))];
+}
 def MMAP : LNP64Inst<(outs GPR:$rd), (ins GPR:$addr, GPR:$len, GPR:$prot),
                      "mmap", "\t$rd, $addr, $len, $prot">;
 def MUNMAP : LNP64Native2<"munmap">;
