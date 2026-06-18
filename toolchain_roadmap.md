@@ -46,7 +46,9 @@ initial `MCTargetDesc` registration/code-emitter files, and the first
 The first Clang target-info, Clang driver-arch, and lld ELF arch source files
 also exist under the matching llvm-project paths, with the LNP64 triple,
 freestanding driver defaults, inline-asm constraint surface, and relocation
-names pinned to the checked manifests.
+names pinned to the checked manifests. The MC AsmParser and Disassembler
+components are now registered as scaffolded LLVM components, but still reject
+parsing/decoding until instruction encoding is implemented.
 They are scaffolded source files for the real port, not a buildable code
 generator yet.
 `toolchain/lnp64_mc_encoding.manifest` records the initial MC format classes,
