@@ -6013,6 +6013,8 @@ impl Machine {
     fn domain_ctl_query(&mut self, argblock: u64) -> Result<u64, u64> {
         let id = self.domain_ref_from_arg(argblock)?;
         self.ensure_domain_control(id)?;
+        self.ensure_mapped(argblock, DOMAIN_QUERY_SIZE as usize, true)
+            .map_err(|_| 14u64)?;
         let usage = self.domain_usage(id);
         let domain = self.domains.get(&id).ok_or(3u64)?;
         let state = if domain.destroyed {
@@ -12269,6 +12271,25 @@ mod tests {
             after.executable_source_policy,
             before.executable_source_policy
         );
+    }
+
+    #[test]
+    fn domain_query_prevalidates_full_output_record_before_writing() {
+        let mut machine = test_machine_with_child_domain();
+        let arg = MEMORY_SIZE as u64 - 32;
+        machine
+            .process_mut()
+            .unwrap()
+            .vmas
+            .push(Vma::anonymous(arg, 32, 0b11));
+        machine.store_u64(arg + 8, ROOT_DOMAIN_ID).unwrap();
+        machine
+            .store_u64(arg + 16, machine.domains[&ROOT_DOMAIN_ID].generation)
+            .unwrap();
+        machine.store_u64(arg + 24, 0xfeed_face).unwrap();
+
+        assert_eq!(machine.domain_ctl_query(arg), Err(14));
+        assert_eq!(machine.load_u64(arg + 24).unwrap(), 0xfeed_face);
     }
 
     #[test]
