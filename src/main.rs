@@ -20,7 +20,7 @@ use std::path::PathBuf;
 
 use asm::Program;
 use emulator::Machine;
-use loader::{ExecutableProvenance, LoaderOptions, VmaProtection};
+use loader::{ExecPlanDescriptorOptions, ExecutableProvenance, LoaderOptions, VmaProtection};
 
 fn main() {
     if let Err(err) = run() {
@@ -109,6 +109,8 @@ fn run() -> Result<(), String> {
                 },
             )?;
             let prepared = loader::materialize_vmas(&image, &plan)?;
+            let descriptor =
+                loader::build_exec_descriptor(&plan, ExecPlanDescriptorOptions::default())?;
             println!(
                 "exec-plan version={} entry=0x{:x} initial_sp=0x{:x} tls_base=0x{:x} startup_metadata=0x{:x}",
                 plan.version,
@@ -118,10 +120,12 @@ fn run() -> Result<(), String> {
                 plan.entry.startup_metadata_ptr
             );
             println!(
-                "vmas={} startup_note={} fdr_grants={}",
+                "descriptor_length={} vmas={} startup_note={} fdr_grants={} measurements={}",
+                descriptor.header.total_length,
                 prepared.len(),
                 plan.startup.is_some(),
-                plan.fdr_grants.len()
+                plan.fdr_grants.len(),
+                descriptor.measurements.len()
             );
             for (idx, vma) in plan.vmas.iter().enumerate() {
                 let prepared_len = prepared

@@ -25,6 +25,21 @@ const LNP64_STARTUP_NOTE_MAGIC: &[u8; 8] = b"LNP64ST\0";
 const STARTUP_NOTE_HEADER_SIZE: usize = 64;
 const STARTUP_FDR_RECORD_SIZE: usize = 64;
 const MAX_STARTUP_FDRS: usize = 256;
+const MAX_EXEC_PLAN_VMAS: usize = 256;
+const MAX_EXEC_PLAN_MEASUREMENTS: usize = 64;
+const EXEC_PLAN_HEADER_RECORD_SIZE: u64 = 72;
+const EXEC_PLAN_ENTRY_RECORD_SIZE: u64 = 32;
+const EXEC_PLAN_VMA_RECORD_SIZE: u64 = 88;
+const EXEC_PLAN_FDR_GRANT_RECORD_SIZE: u64 = 64;
+const EXEC_PLAN_MEASUREMENT_RECORD_SIZE: u64 = 32;
+const VMA_PROT_READ: u64 = 1 << 0;
+const VMA_PROT_WRITE: u64 = 1 << 1;
+const VMA_PROT_EXECUTE: u64 = 1 << 2;
+const MEMORY_TYPE_IMAGE: u64 = 1;
+const EXECUTABLE_PROVENANCE_IMAGE_TEXT: u64 = 1;
+const EXECUTABLE_PROVENANCE_NON_EXECUTABLE: u64 = 2;
+const STARTUP_FDR_FLAG_CLOSE_ON_EXEC: u64 = 1 << 0;
+const STARTUP_FDR_FLAG_PRESERVE: u64 = 1 << 1;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExecPlan {
@@ -62,6 +77,63 @@ pub struct PreparedVma {
     pub protection: VmaProtection,
     pub executable_provenance: ExecutableProvenance,
     pub bytes: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecPlanDescriptor {
+    pub header: ExecPlanHeader,
+    pub entry: ExecEntry,
+    pub vmas: Vec<ExecPlanVmaDescriptor>,
+    pub fdr_grants: Vec<ExecPlanFdrGrantDescriptor>,
+    pub measurements: Vec<ExecPlanMeasurementDescriptor>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExecPlanHeader {
+    pub version: u64,
+    pub total_length: u64,
+    pub flags: u64,
+    pub vma_count: u64,
+    pub fdr_count: u64,
+    pub measurement_count: u64,
+    pub expected_domain_generation: u64,
+    pub expected_process_generation: u64,
+    pub expected_lineage_epoch: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExecPlanVmaDescriptor {
+    pub virtual_address: u64,
+    pub length: u64,
+    pub protection: u64,
+    pub memory_type: u64,
+    pub executable_provenance: u64,
+    pub source_cap: u64,
+    pub source_offset: u64,
+    pub source_generation: u64,
+    pub lineage_epoch: u64,
+    pub zero_fill_length: u64,
+    pub mapping_flags: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExecPlanFdrGrantDescriptor {
+    pub slot: u64,
+    pub kind: u64,
+    pub rights: u64,
+    pub flags: u64,
+    pub source_cap: u64,
+    pub source_generation: u64,
+    pub close_on_exec: u64,
+    pub preserve: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExecPlanMeasurementDescriptor {
+    pub algorithm: u64,
+    pub measurement_ref: u64,
+    pub manifest_ref: u64,
+    pub attestation_ref: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -123,6 +195,33 @@ impl Default for LoaderOptions {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecPlanDescriptorOptions {
+    pub flags: u64,
+    pub expected_domain_generation: u64,
+    pub expected_process_generation: u64,
+    pub expected_lineage_epoch: u64,
+    pub image_source_cap: u64,
+    pub image_source_generation: u64,
+    pub image_lineage_epoch: u64,
+    pub measurements: Vec<ExecPlanMeasurementDescriptor>,
+}
+
+impl Default for ExecPlanDescriptorOptions {
+    fn default() -> Self {
+        Self {
+            flags: 0,
+            expected_domain_generation: 0,
+            expected_process_generation: 0,
+            expected_lineage_epoch: 0,
+            image_source_cap: 0,
+            image_source_generation: 0,
+            image_lineage_epoch: 0,
+            measurements: Vec::new(),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 struct ProgramHeader {
     typ: u32,
@@ -165,6 +264,75 @@ pub fn materialize_vmas(image: &[u8], plan: &ExecPlan) -> Result<Vec<PreparedVma
         });
     }
     Ok(prepared)
+}
+
+pub fn build_exec_descriptor(
+    plan: &ExecPlan,
+    options: ExecPlanDescriptorOptions,
+) -> Result<ExecPlanDescriptor, String> {
+    if plan.vmas.len() > MAX_EXEC_PLAN_VMAS {
+        return Err("exec-plan VMA count exceeds architectural limit".to_string());
+    }
+    if plan.fdr_grants.len() > MAX_STARTUP_FDRS {
+        return Err("exec-plan FDR grant count exceeds architectural limit".to_string());
+    }
+    if options.measurements.len() > MAX_EXEC_PLAN_MEASUREMENTS {
+        return Err("exec-plan measurement count exceeds architectural limit".to_string());
+    }
+    let total_length = exec_descriptor_total_length(
+        plan.vmas.len(),
+        plan.fdr_grants.len(),
+        options.measurements.len(),
+    )?;
+    let vmas = plan
+        .vmas
+        .iter()
+        .map(|vma| ExecPlanVmaDescriptor {
+            virtual_address: vma.virtual_address,
+            length: vma.length,
+            protection: protection_bits(vma.protection),
+            memory_type: memory_type_id(vma.memory_type),
+            executable_provenance: executable_provenance_id(vma.executable_provenance),
+            source_cap: options.image_source_cap,
+            source_offset: vma.source_offset,
+            source_generation: options.image_source_generation,
+            lineage_epoch: options.image_lineage_epoch,
+            zero_fill_length: vma.zero_fill_length,
+            mapping_flags: vma.mapping_flags,
+        })
+        .collect();
+    let fdr_grants = plan
+        .fdr_grants
+        .iter()
+        .map(|grant| ExecPlanFdrGrantDescriptor {
+            slot: grant.slot,
+            kind: grant.kind,
+            rights: grant.rights,
+            flags: grant.flags,
+            source_cap: grant.object_id,
+            source_generation: grant.generation,
+            close_on_exec: u64::from(grant.flags & STARTUP_FDR_FLAG_CLOSE_ON_EXEC != 0),
+            preserve: u64::from(grant.flags & STARTUP_FDR_FLAG_PRESERVE != 0),
+        })
+        .collect();
+
+    Ok(ExecPlanDescriptor {
+        header: ExecPlanHeader {
+            version: plan.version,
+            total_length,
+            flags: options.flags,
+            vma_count: plan.vmas.len() as u64,
+            fdr_count: plan.fdr_grants.len() as u64,
+            measurement_count: options.measurements.len() as u64,
+            expected_domain_generation: options.expected_domain_generation,
+            expected_process_generation: options.expected_process_generation,
+            expected_lineage_epoch: options.expected_lineage_epoch,
+        },
+        entry: plan.entry,
+        vmas,
+        fdr_grants,
+        measurements: options.measurements,
+    })
 }
 
 pub fn build_static_exec_plan(image: &[u8], options: LoaderOptions) -> Result<ExecPlan, String> {
@@ -406,6 +574,64 @@ fn relocation_file_offset(plan: &ExecPlan, target: u64) -> Result<usize, String>
         }
     }
     Err("RELA target is outside file-backed PT_LOAD data".to_string())
+}
+
+fn exec_descriptor_total_length(
+    vmas: usize,
+    fdrs: usize,
+    measurements: usize,
+) -> Result<u64, String> {
+    let vma_bytes = checked_mul_u64(vmas, EXEC_PLAN_VMA_RECORD_SIZE, "exec-plan VMA records")?;
+    let fdr_bytes = checked_mul_u64(
+        fdrs,
+        EXEC_PLAN_FDR_GRANT_RECORD_SIZE,
+        "exec-plan FDR grant records",
+    )?;
+    let measurement_bytes = checked_mul_u64(
+        measurements,
+        EXEC_PLAN_MEASUREMENT_RECORD_SIZE,
+        "exec-plan measurement records",
+    )?;
+    EXEC_PLAN_HEADER_RECORD_SIZE
+        .checked_add(EXEC_PLAN_ENTRY_RECORD_SIZE)
+        .and_then(|len| len.checked_add(vma_bytes))
+        .and_then(|len| len.checked_add(fdr_bytes))
+        .and_then(|len| len.checked_add(measurement_bytes))
+        .ok_or_else(|| "exec-plan descriptor length overflows".to_string())
+}
+
+fn checked_mul_u64(count: usize, record_size: u64, field: &str) -> Result<u64, String> {
+    let count = u64::try_from(count).map_err(|_| format!("{field} count exceeds u64"))?;
+    count
+        .checked_mul(record_size)
+        .ok_or_else(|| format!("{field} length overflows"))
+}
+
+fn protection_bits(protection: VmaProtection) -> u64 {
+    let mut bits = 0;
+    if protection.read {
+        bits |= VMA_PROT_READ;
+    }
+    if protection.write {
+        bits |= VMA_PROT_WRITE;
+    }
+    if protection.execute {
+        bits |= VMA_PROT_EXECUTE;
+    }
+    bits
+}
+
+fn memory_type_id(memory_type: MemoryType) -> u64 {
+    match memory_type {
+        MemoryType::Image => MEMORY_TYPE_IMAGE,
+    }
+}
+
+fn executable_provenance_id(provenance: ExecutableProvenance) -> u64 {
+    match provenance {
+        ExecutableProvenance::ImageText => EXECUTABLE_PROVENANCE_IMAGE_TEXT,
+        ExecutableProvenance::NonExecutable => EXECUTABLE_PROVENANCE_NON_EXECUTABLE,
+    }
 }
 
 fn parse_startup_note_segment(
@@ -849,6 +1075,124 @@ mod tests {
         assert_eq!(plan.fdr_grants[0].rights, 0xf);
         assert_eq!(plan.fdr_grants[1].slot, 1);
         assert_eq!(plan.fdr_grants[1].generation, 8);
+    }
+
+    #[test]
+    fn static_elf_loader_builds_manifest_shaped_exec_descriptor() {
+        let mut image = test_elf(&[
+            text_phdr(),
+            TestPhdr {
+                typ: PT_LOAD,
+                flags: PF_R | PF_W,
+                offset: 0x200,
+                vaddr: 0x402000,
+                filesz: 8,
+                memsz: 24,
+                align: PAGE_SIZE,
+            },
+            startup_note_phdr(128),
+        ]);
+        install_startup_note(&mut image, 1);
+        install_startup_fdr(
+            &mut image,
+            0,
+            3,
+            9,
+            0xf0,
+            STARTUP_FDR_FLAG_CLOSE_ON_EXEC | STARTUP_FDR_FLAG_PRESERVE,
+            0xabc,
+            0xdef,
+            0,
+            0,
+        );
+        let plan = build_static_exec_plan(
+            &image,
+            LoaderOptions {
+                initial_sp: 0x700000,
+                tls_base: 0x710000,
+                startup_metadata_ptr: 0x720000,
+                ..LoaderOptions::default()
+            },
+        )
+        .unwrap();
+
+        let descriptor = build_exec_descriptor(
+            &plan,
+            ExecPlanDescriptorOptions {
+                flags: 0x55,
+                expected_domain_generation: 10,
+                expected_process_generation: 11,
+                expected_lineage_epoch: 12,
+                image_source_cap: 0x1000,
+                image_source_generation: 0x2000,
+                image_lineage_epoch: 0x3000,
+                measurements: vec![ExecPlanMeasurementDescriptor {
+                    algorithm: 1,
+                    measurement_ref: 2,
+                    manifest_ref: 3,
+                    attestation_ref: 4,
+                }],
+            },
+        )
+        .unwrap();
+
+        assert_eq!(descriptor.header.version, 1);
+        assert_eq!(descriptor.header.flags, 0x55);
+        assert_eq!(descriptor.header.vma_count, 2);
+        assert_eq!(descriptor.header.fdr_count, 1);
+        assert_eq!(descriptor.header.measurement_count, 1);
+        assert_eq!(descriptor.header.expected_domain_generation, 10);
+        assert_eq!(descriptor.header.expected_process_generation, 11);
+        assert_eq!(descriptor.header.expected_lineage_epoch, 12);
+        assert_eq!(
+            descriptor.header.total_length,
+            EXEC_PLAN_HEADER_RECORD_SIZE
+                + EXEC_PLAN_ENTRY_RECORD_SIZE
+                + 2 * EXEC_PLAN_VMA_RECORD_SIZE
+                + EXEC_PLAN_FDR_GRANT_RECORD_SIZE
+                + EXEC_PLAN_MEASUREMENT_RECORD_SIZE
+        );
+        assert_eq!(descriptor.entry.entry_pc, 0x400000);
+        assert_eq!(descriptor.entry.initial_sp, 0x700000);
+        assert_eq!(descriptor.entry.tls_base, 0x710000);
+        assert_eq!(descriptor.entry.startup_metadata_ptr, 0x720000);
+        assert_eq!(descriptor.vmas[0].source_cap, 0x1000);
+        assert_eq!(descriptor.vmas[0].source_generation, 0x2000);
+        assert_eq!(descriptor.vmas[0].lineage_epoch, 0x3000);
+        assert_eq!(
+            descriptor.vmas[0].protection,
+            VMA_PROT_READ | VMA_PROT_EXECUTE
+        );
+        assert_eq!(
+            descriptor.vmas[0].executable_provenance,
+            EXECUTABLE_PROVENANCE_IMAGE_TEXT
+        );
+        assert_eq!(
+            descriptor.vmas[1].protection,
+            VMA_PROT_READ | VMA_PROT_WRITE
+        );
+        assert_eq!(
+            descriptor.vmas[1].executable_provenance,
+            EXECUTABLE_PROVENANCE_NON_EXECUTABLE
+        );
+        assert_eq!(descriptor.vmas[1].zero_fill_length, 16);
+        assert_eq!(descriptor.fdr_grants[0].slot, 3);
+        assert_eq!(descriptor.fdr_grants[0].source_cap, 0xabc);
+        assert_eq!(descriptor.fdr_grants[0].source_generation, 0xdef);
+        assert_eq!(descriptor.fdr_grants[0].close_on_exec, 1);
+        assert_eq!(descriptor.fdr_grants[0].preserve, 1);
+        assert_eq!(descriptor.measurements[0].measurement_ref, 2);
+    }
+
+    #[test]
+    fn exec_descriptor_rejects_unbounded_record_counts() {
+        let image = test_elf(&[text_phdr()]);
+        let mut plan = build_static_exec_plan(&image, LoaderOptions::default()).unwrap();
+        plan.vmas = vec![plan.vmas[0]; MAX_EXEC_PLAN_VMAS + 1];
+
+        let err = build_exec_descriptor(&plan, ExecPlanDescriptorOptions::default()).unwrap_err();
+
+        assert!(err.contains("VMA count"), "{err}");
     }
 
     #[test]
