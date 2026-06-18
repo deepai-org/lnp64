@@ -11413,6 +11413,39 @@ mod tests {
     }
 
     #[test]
+    fn await_rejects_closed_and_invalid_fds_without_parking() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[2] = POLLIN_MASK;
+
+        let keep_ready = machine
+            .exec(Instr::Await(Reg(5), FdReg(7), Reg(2)))
+            .unwrap();
+        assert!(keep_ready);
+        assert!(machine.fd_waiters.is_empty());
+        assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 9);
+
+        let keep_ready = machine
+            .exec(Instr::Await(Reg(6), FdReg(FDR_COUNT), Reg(2)))
+            .unwrap();
+        assert!(keep_ready);
+        assert!(machine.fd_waiters.is_empty());
+        assert_eq!(machine.thread().unwrap().regs[6], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 9);
+
+        machine.thread_mut().unwrap().regs[7] = 7;
+        machine.thread_mut().unwrap().regs[8] = POLLIN_MASK;
+        let keep_ready = machine
+            .exec(Instr::AwaitDyn(Reg(9), Reg(7), Reg(8)))
+            .unwrap();
+        assert!(keep_ready);
+        assert!(machine.fd_waiters.is_empty());
+        assert_eq!(machine.thread().unwrap().regs[9], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 9);
+    }
+
+    #[test]
     fn multi_source_fd_waiters_wake_only_ready_sources() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
