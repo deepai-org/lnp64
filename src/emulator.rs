@@ -7050,12 +7050,24 @@ impl Machine {
             if let Some(file) = &mut process.vmas[idx].file {
                 file.seek(SeekFrom::Start(file_offset))
                     .map_err(|err| format!("file-backed VMA seek failed: {err}"))?;
-                let mut tmp = vec![0; vma_len as usize];
+                let vma_len = usize::try_from(vma_len)
+                    .map_err(|_| "file-backed VMA length exceeds host usize".to_string())?;
+                if vma_len > process.memory.len() {
+                    return Err("file-backed VMA length exceeds process memory".to_string());
+                }
+                let mut tmp = vec![0; vma_len];
                 let count = file
                     .read(&mut tmp)
                     .map_err(|err| format!("file-backed VMA page-in failed: {err}"))?;
-                let start = start as usize;
-                process.memory[start..start + count].copy_from_slice(&tmp[..count]);
+                let start = usize::try_from(start)
+                    .map_err(|_| "file-backed VMA start exceeds host usize".to_string())?;
+                let end = start
+                    .checked_add(count)
+                    .ok_or_else(|| "file-backed VMA page-in range overflow".to_string())?;
+                if end > process.memory.len() {
+                    return Err("file-backed VMA page-in exceeds process memory".to_string());
+                }
+                process.memory[start..end].copy_from_slice(&tmp[..count]);
             }
             process.vmas[idx].resident = true;
         }
