@@ -18,6 +18,7 @@ const PF_X: u32 = 1;
 const PF_W: u32 = 2;
 const PF_R: u32 = 4;
 const R_LNP64_NONE: u32 = 0;
+const R_LNP64_ABS64: u32 = 1;
 const R_LNP64_RELATIVE: u32 = 7;
 const PAGE_SIZE: u64 = 4096;
 const ELF64_EHDR_SIZE: usize = 64;
@@ -637,9 +638,28 @@ fn apply_rela_sections(image: &mut [u8], plan: &ExecPlan, load_bias: u64) -> Res
             let r_info = read_u64(image, entry + 8)?;
             let r_addend = read_i64(image, entry + 16)?;
             let reloc_type = (r_info & 0xffff_ffff) as u32;
+            let symbol_index = r_info >> 32;
             match reloc_type {
                 R_LNP64_NONE => {}
+                R_LNP64_ABS64 => {
+                    if symbol_index != 0 {
+                        return Err(
+                            "RELA ABS64 with symbol index is unsupported by static loader"
+                                .to_string(),
+                        );
+                    }
+                    let target = r_offset
+                        .checked_add(load_bias)
+                        .ok_or_else(|| "RELA target plus load bias overflows".to_string())?;
+                    let value = u64::try_from(i128::from(r_addend))
+                        .map_err(|_| "RELA ABS64 value is out of range".to_string())?;
+                    let file_offset = relocation_file_offset(plan, target)?;
+                    image[file_offset..file_offset + 8].copy_from_slice(&value.to_le_bytes());
+                }
                 R_LNP64_RELATIVE => {
+                    if symbol_index != 0 {
+                        return Err("RELA relative relocation must not name a symbol".to_string());
+                    }
                     let target = r_offset
                         .checked_add(load_bias)
                         .ok_or_else(|| "RELA target plus load bias overflows".to_string())?;
@@ -1009,7 +1029,7 @@ fn read_i64(bytes: &[u8], offset: usize) -> Result<i64, String> {
 mod tests {
     use super::*;
 
-    const R_LNP64_ABS64: u32 = 1;
+    const R_LNP64_PC32: u32 = 3;
 
     #[derive(Clone, Copy)]
     struct TestPhdr {
@@ -1544,9 +1564,40 @@ mod tests {
     }
 
     #[test]
+    fn static_elf_loader_applies_symbolless_abs64_relocations() {
+        let mut image = test_elf(&[
+            text_phdr(),
+            TestPhdr {
+                typ: PT_LOAD,
+                flags: PF_R | PF_W,
+                offset: 0x200,
+                vaddr: 0x500000,
+                filesz: 8,
+                memsz: 8,
+                align: PAGE_SIZE,
+            },
+        ]);
+        install_rela_section(&mut image, 0x500000, R_LNP64_ABS64, 0x1234);
+
+        load_static_elf(&mut image, LoaderOptions::default()).unwrap();
+
+        assert_eq!(read_u64(&image, 0x200).unwrap(), 0x1234);
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_symbolful_abs64_without_symbol_resolution() {
+        let mut image = test_elf(&[text_phdr()]);
+        install_rela_section_with_symbol(&mut image, 0x400000, R_LNP64_ABS64, 1, 0x1234);
+
+        let err = load_static_elf(&mut image, LoaderOptions::default()).unwrap_err();
+
+        assert!(err.contains("ABS64 with symbol index"), "{err}");
+    }
+
+    #[test]
     fn static_elf_loader_rejects_unsupported_relocations() {
         let mut image = test_elf(&[text_phdr()]);
-        install_rela_section(&mut image, 0x400000, R_LNP64_ABS64, 0);
+        install_rela_section(&mut image, 0x400000, R_LNP64_PC32, 0);
         let err = load_static_elf(&mut image, LoaderOptions::default()).unwrap_err();
         assert!(err.contains("unsupported LNP64 relocation type"), "{err}");
     }
@@ -1877,6 +1928,16 @@ mod tests {
     }
 
     fn install_rela_section(image: &mut [u8], target: u64, reloc_type: u32, addend: i64) {
+        install_rela_section_with_symbol(image, target, reloc_type, 0, addend);
+    }
+
+    fn install_rela_section_with_symbol(
+        image: &mut [u8],
+        target: u64,
+        reloc_type: u32,
+        symbol_index: u64,
+        addend: i64,
+    ) {
         let shoff = 0x300;
         let rela_offset = 0x380;
         put_u64(image, 40, shoff);
@@ -1887,7 +1948,11 @@ mod tests {
         put_u64(image, shoff as usize + 32, ELF64_RELA_SIZE as u64);
         put_u64(image, shoff as usize + 56, ELF64_RELA_SIZE as u64);
         put_u64(image, rela_offset as usize, target);
-        put_u64(image, rela_offset as usize + 8, u64::from(reloc_type));
+        put_u64(
+            image,
+            rela_offset as usize + 8,
+            (symbol_index << 32) | u64::from(reloc_type),
+        );
         put_i64(image, rela_offset as usize + 16, addend);
     }
 
