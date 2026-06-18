@@ -1469,7 +1469,8 @@ mod tests {
         assert!(real_llc.contains("domain_ctl r"));
         assert!(real_llc.contains("real LLVM LNP64 clang intrinsic control object smoke passed"));
         assert!(real_llc.contains("libc-string-clang-smoke.o"));
-        assert!(real_llc.contains("long memcmp"));
+        assert!(real_llc.contains("int memcmp"));
+        assert!(real_llc.contains("grep -q 'sext.w'"));
         assert!(real_llc.contains("void *memmove"));
         assert!(real_llc.contains("real LLVM LNP64 clang minilibc string object smoke passed"));
         assert!(real_llc.contains("calloc-clang-smoke.o"));

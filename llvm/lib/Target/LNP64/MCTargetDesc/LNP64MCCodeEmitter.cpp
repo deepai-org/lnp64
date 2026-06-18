@@ -198,6 +198,11 @@ public:
                                 getGPRNo(MI.getOperand(2))),
                OS);
       return;
+    case LNP64::SEXT_W:
+      emitLE32(encodeFixed32RR(0xaf, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
     case LNP64::CMP:
       emitLE32(encodeFixed32RR(0x1b, getGPRNo(MI.getOperand(0)),
                                getGPRNo(MI.getOperand(1))),

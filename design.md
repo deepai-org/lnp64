@@ -499,6 +499,16 @@ Synchronization rules:
 
 *   `LOCK_CMPXCHG` is a single-copy atomic read-modify-write and is
     sequentially consistent in v1.
+*   `AMO.SWAP`, `AMO.ADD`, `AMO.AND`, and `AMO.OR` are 64-bit atomic
+    read-modify-write operations. The destination receives the old memory value;
+    memory receives the transformed value. Baseline AMOs are sequentially
+    consistent in v1.
+*   `FENCE.ACQ`, `FENCE.REL`, `FENCE.ACQ_REL`, and `FENCE.SC` are architectural
+    profiles of `FENCE`. FPGA v1 may implement them identically, but the
+    ordering meanings are fixed: acquire orders later operations after the
+    fence, release orders earlier operations before the fence, acq_rel does
+    both, and seq_cst also participates in one total order for locked atomics
+    and seq_cst fences.
 *   Futex `AWAIT` performs an acquire-style value check before parking; futex
     `WAKE` performs release-style ordering before making waiters runnable.
 *   `GATE_CALL` commits argument/register state before target entry;
@@ -529,14 +539,47 @@ proofs should not need architecture-specific weak-memory folklore.
 ## 7. Arithmetic and Logic Unit (ALU)
 Standard 64-bit integer operations. Because threads are managed in hardware, the ALU pipeline reads and writes architectural state through hardware thread contexts.
 
+The scalar compute baseline is intentionally conventional. LNP64 should be a
+boring, complete compiler target on the compute side; the distinctive ISA
+surface is the capability/resource side. C, libc, runtimes, packet processing,
+allocators, and personality ports must not need long software sequences for
+ordinary integer operations.
+
 *   **`ADD r_dest, r_src1, r_src2`** / **`SUB r_dest, r_src1, r_src2`**
     *   *Action:* Standard integer addition/subtraction.
+*   **`ADDI r_dest, r_src, imm`** / **`ANDI`** / **`ORI`** / **`XORI`**
+    *   *Action:* Immediate ALU forms with sign-extended immediates. These are
+        baseline instructions, not assembler conveniences, so compiler output
+        does not expand every small constant into `LI` plus a register ALU op.
 *   **`MUL r_dest, r_src1, r_src2`** / **`DIV r_dest, r_src1, r_src2`**
-    *   *Action:* Integer multiplication and hardware division. Division by zero creates a native fault delivery; the POSIX profile maps it to `SIGFPE`.
+    *   *Action:* Signed low multiply and signed quotient. Division by zero
+        creates a native fault delivery; the POSIX profile maps it to `SIGFPE`.
+*   **`UDIV`** / **`SREM`** / **`UREM`**
+    *   *Action:* Unsigned quotient, signed remainder, and unsigned remainder.
+        These are required by C and are baseline scalar instructions.
+*   **`MULH`** / **`MULHU`** / **`MULHSU`**
+    *   *Action:* High-half multiply for signed*signed, unsigned*unsigned, and
+        signed*unsigned operands. These support wide arithmetic, division
+        lowering, hashing, allocators, and runtimes.
 *   **`AND`, `OR`, `XOR`, `NOT`**
     *   *Action:* Standard bitwise operations.
-*   **`LSL`, `LSR`, `ASR`**
-    *   *Action:* Logical Shift Left, Logical Shift Right, Arithmetic Shift Right.
+*   **`LSL`, `LSR`, `ASR`** / **`LSLI`, `LSRI`, `ASRI`**
+    *   *Action:* Register and immediate logical/arithmetic shifts. Shift counts
+        are masked to the low six bits for 64-bit operations.
+*   **`SEXT.B`** / **`SEXT.H`** / **`SEXT.W`** and **`ZEXT.B`** / **`ZEXT.H`** / **`ZEXT.W`**
+    *   *Action:* Sign-extend or zero-extend 8-, 16-, and 32-bit values to
+        64-bit GPRs. These are baseline ABI cleanup and comparison operations.
+*   **`CLZ`** / **`CTZ`** / **`POPCNT`**
+    *   *Action:* Count leading zeroes, trailing zeroes, and one bits. Zero
+        input returns 64 for `CLZ`/`CTZ`.
+*   **`ROL`** / **`ROR`**
+    *   *Action:* 64-bit rotate left/right with the count masked to six bits.
+*   **`BSWAP16`** / **`BSWAP32`** / **`BSWAP64`**
+    *   *Action:* Byte-swap the low 16, low 32, or full 64 bits.
+*   **`CSEL.<cond> r_dest, r_true, r_false`**
+    *   *Action:* Conditional select from the current condition flags. This
+        avoids branchy lowering for ternaries, min/max, clamps, and simple
+        bounds checks.
 
 ## 8. Control Flow (Branching & Execution)
 Since there is no Ring 0 / Ring 3 boundary, native control flow is about
@@ -554,6 +597,13 @@ implemented as syscall traps.
     *   *Action:* Compares two registers and sets the hardware condition flags (Zero, Carry, Negative, Overflow).
 *   **`BEQ`, `BNE`, `BLT`, `BGT`**
     *   *Action:* Branch if Equal, Not Equal, Less Than, Greater Than (evaluates condition flags).
+*   **`AUIPC` / PC-relative `LA` contract**
+    *   *Action:* The v1 software ABI defines a reloc-friendly PC-relative
+        address formation pair. Toolchains may expose it as `AUIPC` plus an
+        add/load low relocation or as an explicit `LA` pseudo that lowers to the
+        same fixed binary sequence. The hardware contract is that position
+        independent code can form code/data addresses without loader-specific
+        instruction rewriting.
 
 ## 9. Hybrid Resource-Compute Instructions
 Because "everything is a capability object" is the native hardware reality, we need instructions to move data between the general compute realm (GPRs) and the resource realm (FDRs and PCRs).
@@ -785,12 +835,21 @@ connection tracking, routing policy, firewall languages, TLS, Wi-Fi management,
 and application semantics remain in software domains.
 
 ## 12. Floating Point and Vector Math
-General compute isn't just integers. We need a standard IEEE 754 Floating Point Unit and SIMD (Single Instruction, Multiple Data) for multimedia and AI.
+Integer scalar compute is the v1 portable baseline. Floating point and vector
+compute are explicit extension profiles until they are specified with the same
+precision as the integer ISA. A half-defined vector ISA is worse than no vector
+baseline.
 
 *   **`FADD`, `FSUB`, `FMUL`, `FDIV`**
-    *   *Action:* Standard floating-point arithmetic operating on dedicated FPU registers (`f0` - `f31`).
+    *   *Action:* Optional IEEE 754 binary64 scalar floating-point arithmetic
+        operating on dedicated FPU registers (`f0` - `f31`). Implementations
+        that do not advertise the FP profile must raise the standard disabled
+        opcode event.
 *   **`VADD.32 v_dest, v_src1, v_src2`**
-    *   *Action:* Vector addition. Adds multiple 32-bit integers simultaneously across wide vector registers (`v0` - `v15`), identical to AVX/NEON.
+    *   *Action:* Optional vector-profile example over vector registers
+        (`v0` - `v15`). The full vector profile, element widths, masks,
+        predication, memory operations, and ABI are deferred to an extension
+        document.
 
 ## 13. Bootstrapping (Hardware PID 1)
 How does this machine actually turn on without a conventional bootloader or

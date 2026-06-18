@@ -622,7 +622,7 @@ cat >"$libc_string_c" <<'C'
 typedef unsigned long size_t;
 
 size_t strlen(const char *s);
-long memcmp(const void *lhs, const void *rhs, size_t len);
+int memcmp(const void *lhs, const void *rhs, size_t len);
 void *memcpy(void *dst, const void *src, size_t len);
 void *memmove(void *dst, const void *src, size_t len);
 void *memset(void *dst, int value, size_t len);
@@ -675,6 +675,7 @@ libc_string_dump="$build_dir/libc-string-clang-smoke.dump"
 "$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_string_obj" \
   >"$libc_string_dump"
 grep -q 'call ' "$libc_string_dump"
+grep -q 'sext.w' "$libc_string_dump"
 printf 'real LLVM LNP64 clang minilibc string object smoke passed: %s\n' \
   "$libc_string_obj"
 

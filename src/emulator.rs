@@ -1579,6 +1579,47 @@ impl Machine {
             0x4d => Instr::AwaitDyn(a, b, c),
             0x4e => Instr::CallCapDyn(a, b, c, Reg(((word >> 4) & 0x1f) as usize)),
             0x4f => Instr::RetCap(a, b, c),
+            0xa0 => Instr::Addi(a, b, imm16),
+            0xa1 => Instr::Andi(a, b, imm16),
+            0xa2 => Instr::Ori(a, b, imm16),
+            0xa3 => Instr::Xori(a, b, imm16),
+            0xa4 => Instr::Lsli(a, b, imm16),
+            0xa5 => Instr::Lsri(a, b, imm16),
+            0xa6 => Instr::Asri(a, b, imm16),
+            0xa7 => Instr::Udiv(a, b, c),
+            0xa8 => Instr::Srem(a, b, c),
+            0xa9 => Instr::Urem(a, b, c),
+            0xaa => Instr::Mulh(a, b, c),
+            0xab => Instr::Mulhu(a, b, c),
+            0xac => Instr::Mulhsu(a, b, c),
+            0xad => Instr::SextB(a, b),
+            0xae => Instr::SextH(a, b),
+            0xaf => Instr::SextW(a, b),
+            0xb0 => Instr::ZextB(a, b),
+            0xb1 => Instr::ZextH(a, b),
+            0xb2 => Instr::ZextW(a, b),
+            0xb3 => Instr::Clz(a, b),
+            0xb4 => Instr::Ctz(a, b),
+            0xb5 => Instr::Popcnt(a, b),
+            0xb6 => Instr::Rol(a, b, c),
+            0xb7 => Instr::Ror(a, b, c),
+            0xb8 => Instr::Bswap16(a, b),
+            0xb9 => Instr::Bswap32(a, b),
+            0xba => Instr::Bswap64(a, b),
+            0xbb => Instr::Csel(a, b, c, Condition::Eq),
+            0xbc => Instr::Csel(a, b, c, Condition::Ne),
+            0xbd => Instr::Csel(a, b, c, Condition::Lt),
+            0xbe => Instr::Csel(a, b, c, Condition::Gt),
+            0xbf => Instr::Csel(a, b, c, Condition::Le),
+            0xc0 => Instr::Csel(a, b, c, Condition::Ge),
+            0xc1 => Instr::Csel(a, b, c, Condition::Ult),
+            0xc2 => Instr::Csel(a, b, c, Condition::Ugt),
+            0xc3 => Instr::Csel(a, b, c, Condition::Ule),
+            0xc4 => Instr::Csel(a, b, c, Condition::Uge),
+            0xc5 => Instr::AmoSwap(a, b, c),
+            0xc6 => Instr::AmoAdd(a, b, c),
+            0xc7 => Instr::AmoAnd(a, b, c),
+            0xc8 => Instr::AmoOr(a, b, c),
             other => {
                 return Err(format!(
                     "unsupported committed exec opcode 0x{other:02x} at 0x{pc:x}"
@@ -1836,11 +1877,29 @@ impl Machine {
             Instr::Add(dst, a, b) => {
                 self.write_alu_reg(dst, self.read_reg(a)?.wrapping_add(self.read_reg(b)?))?
             }
+            Instr::Addi(dst, a, imm) => {
+                self.write_alu_reg(dst, self.read_reg(a)?.wrapping_add(imm as u64))?
+            }
             Instr::Sub(dst, a, b) => {
                 self.write_alu_reg(dst, self.read_reg(a)?.wrapping_sub(self.read_reg(b)?))?
             }
             Instr::Mul(dst, a, b) => {
                 self.write_alu_reg(dst, self.read_reg(a)?.wrapping_mul(self.read_reg(b)?))?
+            }
+            Instr::Mulh(dst, a, b) => {
+                let lhs = self.read_reg(a)? as i64 as i128;
+                let rhs = self.read_reg(b)? as i64 as i128;
+                self.write_alu_reg(dst, ((lhs * rhs) >> 64) as u64)?
+            }
+            Instr::Mulhu(dst, a, b) => {
+                let lhs = self.read_reg(a)? as u128;
+                let rhs = self.read_reg(b)? as u128;
+                self.write_alu_reg(dst, ((lhs * rhs) >> 64) as u64)?
+            }
+            Instr::Mulhsu(dst, a, b) => {
+                let lhs = self.read_reg(a)? as i64 as i128;
+                let rhs = self.read_reg(b)? as u128 as i128;
+                self.write_alu_reg(dst, ((lhs * rhs) >> 64) as u64)?
             }
             Instr::Div(dst, a, b) => {
                 Self::ensure_result_reg_writable(dst)?;
@@ -1849,28 +1908,114 @@ impl Machine {
                     self.raise_current_signal(SIGFPE)?;
                     return Ok(true);
                 }
+                self.write_reg(
+                    dst,
+                    (self.read_reg(a)? as i64).wrapping_div(divisor as i64) as u64,
+                )?;
+            }
+            Instr::Udiv(dst, a, b) => {
+                Self::ensure_result_reg_writable(dst)?;
+                let divisor = self.read_reg(b)?;
+                if divisor == 0 {
+                    self.raise_current_signal(SIGFPE)?;
+                    return Ok(true);
+                }
                 self.write_reg(dst, self.read_reg(a)? / divisor)?;
+            }
+            Instr::Srem(dst, a, b) => {
+                Self::ensure_result_reg_writable(dst)?;
+                let divisor = self.read_reg(b)?;
+                if divisor == 0 {
+                    self.raise_current_signal(SIGFPE)?;
+                    return Ok(true);
+                }
+                self.write_reg(
+                    dst,
+                    (self.read_reg(a)? as i64).wrapping_rem(divisor as i64) as u64,
+                )?;
+            }
+            Instr::Urem(dst, a, b) => {
+                Self::ensure_result_reg_writable(dst)?;
+                let divisor = self.read_reg(b)?;
+                if divisor == 0 {
+                    self.raise_current_signal(SIGFPE)?;
+                    return Ok(true);
+                }
+                self.write_reg(dst, self.read_reg(a)? % divisor)?;
             }
             Instr::And(dst, a, b) => {
                 self.write_alu_reg(dst, self.read_reg(a)? & self.read_reg(b)?)?
             }
+            Instr::Andi(dst, a, imm) => self.write_alu_reg(dst, self.read_reg(a)? & imm as u64)?,
             Instr::Or(dst, a, b) => {
                 self.write_alu_reg(dst, self.read_reg(a)? | self.read_reg(b)?)?
             }
+            Instr::Ori(dst, a, imm) => self.write_alu_reg(dst, self.read_reg(a)? | imm as u64)?,
             Instr::Xor(dst, a, b) => {
                 self.write_alu_reg(dst, self.read_reg(a)? ^ self.read_reg(b)?)?
             }
+            Instr::Xori(dst, a, imm) => self.write_alu_reg(dst, self.read_reg(a)? ^ imm as u64)?,
             Instr::Not(dst, src) => self.write_alu_reg(dst, !self.read_reg(src)?)?,
             Instr::Lsl(dst, a, b) => {
                 self.write_alu_reg(dst, self.read_reg(a)? << (self.read_reg(b)? & 63))?
             }
+            Instr::Lsli(dst, a, imm) => {
+                self.write_alu_reg(dst, self.read_reg(a)? << ((imm as u64) & 63))?
+            }
             Instr::Lsr(dst, a, b) => {
                 self.write_alu_reg(dst, self.read_reg(a)? >> (self.read_reg(b)? & 63))?
+            }
+            Instr::Lsri(dst, a, imm) => {
+                self.write_alu_reg(dst, self.read_reg(a)? >> ((imm as u64) & 63))?
             }
             Instr::Asr(dst, a, b) => self.write_alu_reg(
                 dst,
                 ((self.read_reg(a)? as i64) >> (self.read_reg(b)? & 63)) as u64,
             )?,
+            Instr::Asri(dst, a, imm) => self.write_alu_reg(
+                dst,
+                ((self.read_reg(a)? as i64) >> ((imm as u64) & 63)) as u64,
+            )?,
+            Instr::SextB(dst, src) => {
+                self.write_alu_reg(dst, self.read_reg(src)? as u8 as i8 as i64 as u64)?
+            }
+            Instr::SextH(dst, src) => {
+                self.write_alu_reg(dst, self.read_reg(src)? as u16 as i16 as i64 as u64)?
+            }
+            Instr::SextW(dst, src) => {
+                self.write_alu_reg(dst, self.read_reg(src)? as u32 as i32 as i64 as u64)?
+            }
+            Instr::ZextB(dst, src) => self.write_alu_reg(dst, self.read_reg(src)? & 0xff)?,
+            Instr::ZextH(dst, src) => self.write_alu_reg(dst, self.read_reg(src)? & 0xffff)?,
+            Instr::ZextW(dst, src) => self.write_alu_reg(dst, self.read_reg(src)? & 0xffff_ffff)?,
+            Instr::Clz(dst, src) => {
+                self.write_alu_reg(dst, u64::from(self.read_reg(src)?.leading_zeros()))?
+            }
+            Instr::Ctz(dst, src) => {
+                self.write_alu_reg(dst, u64::from(self.read_reg(src)?.trailing_zeros()))?
+            }
+            Instr::Popcnt(dst, src) => {
+                self.write_alu_reg(dst, u64::from(self.read_reg(src)?.count_ones()))?
+            }
+            Instr::Rol(dst, a, b) => self.write_alu_reg(
+                dst,
+                self.read_reg(a)?
+                    .rotate_left((self.read_reg(b)? & 63) as u32),
+            )?,
+            Instr::Ror(dst, a, b) => self.write_alu_reg(
+                dst,
+                self.read_reg(a)?
+                    .rotate_right((self.read_reg(b)? & 63) as u32),
+            )?,
+            Instr::Bswap16(dst, src) => {
+                self.write_alu_reg(dst, u64::from((self.read_reg(src)? as u16).swap_bytes()))?
+            }
+            Instr::Bswap32(dst, src) => {
+                self.write_alu_reg(dst, u64::from((self.read_reg(src)? as u32).swap_bytes()))?
+            }
+            Instr::Bswap64(dst, src) => {
+                self.write_alu_reg(dst, self.read_reg(src)?.swap_bytes())?
+            }
             Instr::Cmp(a, b) => {
                 let lhs_raw = self.read_reg(a)?;
                 let rhs_raw = self.read_reg(b)?;
@@ -1898,6 +2043,14 @@ impl Machine {
             Instr::Cset(dst, condition) => {
                 let value = u64::from(self.condition(condition)?);
                 self.write_alu_reg(dst, value)?;
+            }
+            Instr::Csel(dst, true_src, false_src, condition) => {
+                let src = if self.condition(condition)? {
+                    true_src
+                } else {
+                    false_src
+                };
+                self.write_alu_reg(dst, self.read_reg(src)?)?;
             }
             Instr::Jmp(target) => {
                 let ip = self.resolve_target(target)?;
@@ -3154,6 +3307,34 @@ impl Machine {
                 if current == self.read_reg(expected)? {
                     self.store_u64(addr, self.read_reg(new_value)?)?;
                 }
+                self.write_reg(dst, current)?;
+            }
+            Instr::AmoSwap(dst, addr_reg, value_reg) => {
+                Self::ensure_result_reg_writable(dst)?;
+                let addr = self.read_reg(addr_reg)?;
+                let current = self.load_u64(addr)?;
+                self.store_u64(addr, self.read_reg(value_reg)?)?;
+                self.write_reg(dst, current)?;
+            }
+            Instr::AmoAdd(dst, addr_reg, value_reg) => {
+                Self::ensure_result_reg_writable(dst)?;
+                let addr = self.read_reg(addr_reg)?;
+                let current = self.load_u64(addr)?;
+                self.store_u64(addr, current.wrapping_add(self.read_reg(value_reg)?))?;
+                self.write_reg(dst, current)?;
+            }
+            Instr::AmoAnd(dst, addr_reg, value_reg) => {
+                Self::ensure_result_reg_writable(dst)?;
+                let addr = self.read_reg(addr_reg)?;
+                let current = self.load_u64(addr)?;
+                self.store_u64(addr, current & self.read_reg(value_reg)?)?;
+                self.write_reg(dst, current)?;
+            }
+            Instr::AmoOr(dst, addr_reg, value_reg) => {
+                Self::ensure_result_reg_writable(dst)?;
+                let addr = self.read_reg(addr_reg)?;
+                let current = self.load_u64(addr)?;
+                self.store_u64(addr, current | self.read_reg(value_reg)?)?;
                 self.write_reg(dst, current)?;
             }
             Instr::FutexWait(addr_reg, expected_reg) => {
@@ -12520,6 +12701,62 @@ mod tests {
 
         assert!(err.contains("hardware-locked stack pointer"), "{err}");
         assert!(machine.process().unwrap().pending_events.is_empty());
+    }
+
+    #[test]
+    fn compiler_baseline_integer_ops_execute() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        {
+            let thread = machine.thread_mut().unwrap();
+            thread.regs[2] = 10;
+            thread.regs[3] = 3;
+            thread.regs[4] = 0xff80;
+            thread.regs[5] = 0x0001_0203_0405_0607;
+            thread.regs[6] = 8;
+            thread.regs[7] = 0xffff_ffff_ffff_ffff;
+            thread.regs[8] = 0x1234;
+            thread.regs[9] = ARG_BASE;
+        }
+
+        assert!(machine.exec(Instr::Addi(Reg(10), Reg(2), -4)).unwrap());
+        assert_eq!(machine.thread().unwrap().regs[10], 6);
+
+        assert!(machine.exec(Instr::Udiv(Reg(11), Reg(2), Reg(3))).unwrap());
+        assert_eq!(machine.thread().unwrap().regs[11], 3);
+        assert!(machine.exec(Instr::Srem(Reg(12), Reg(2), Reg(3))).unwrap());
+        assert_eq!(machine.thread().unwrap().regs[12], 1);
+
+        assert!(machine.exec(Instr::SextB(Reg(13), Reg(4))).unwrap());
+        assert_eq!(machine.thread().unwrap().regs[13], (-128i64) as u64);
+        assert!(machine.exec(Instr::ZextH(Reg(14), Reg(4))).unwrap());
+        assert_eq!(machine.thread().unwrap().regs[14], 0xff80);
+
+        assert!(machine.exec(Instr::Clz(Reg(15), Reg(5))).unwrap());
+        assert_eq!(machine.thread().unwrap().regs[15], 15);
+        assert!(machine.exec(Instr::Popcnt(Reg(16), Reg(7))).unwrap());
+        assert_eq!(machine.thread().unwrap().regs[16], 64);
+        assert!(machine.exec(Instr::Rol(Reg(17), Reg(8), Reg(6))).unwrap());
+        assert_eq!(machine.thread().unwrap().regs[17], 0x123400);
+        assert!(machine.exec(Instr::Bswap32(Reg(18), Reg(5))).unwrap());
+        assert_eq!(machine.thread().unwrap().regs[18], 0x0706_0504);
+
+        assert!(machine.exec(Instr::Cmp(Reg(2), Reg(3))).unwrap());
+        assert!(
+            machine
+                .exec(Instr::Csel(Reg(19), Reg(2), Reg(3), Condition::Gt))
+                .unwrap()
+        );
+        assert_eq!(machine.thread().unwrap().regs[19], 10);
+
+        machine.store_u64(ARG_BASE, 5).unwrap();
+        assert!(
+            machine
+                .exec(Instr::AmoAdd(Reg(20), Reg(9), Reg(3)))
+                .unwrap()
+        );
+        assert_eq!(machine.thread().unwrap().regs[20], 5);
+        assert_eq!(machine.load_u64(ARG_BASE).unwrap(), 8);
     }
 
     #[test]

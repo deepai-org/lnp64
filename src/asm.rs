@@ -181,19 +181,46 @@ impl Parser {
                 Instr::Mov(reg(&args[0])?, reg(&args[1])?)
             }
             "ADD" => alu3(&args, Instr::Add)?,
+            "ADDI" => alu_imm(&args, Instr::Addi)?,
             "SUB" => alu3(&args, Instr::Sub)?,
             "MUL" => alu3(&args, Instr::Mul)?,
+            "MULH" => alu3(&args, Instr::Mulh)?,
+            "MULHU" => alu3(&args, Instr::Mulhu)?,
+            "MULHSU" => alu3(&args, Instr::Mulhsu)?,
             "DIV" => alu3(&args, Instr::Div)?,
+            "UDIV" => alu3(&args, Instr::Udiv)?,
+            "SREM" => alu3(&args, Instr::Srem)?,
+            "UREM" => alu3(&args, Instr::Urem)?,
             "AND" => alu3(&args, Instr::And)?,
+            "ANDI" => alu_imm(&args, Instr::Andi)?,
             "OR" => alu3(&args, Instr::Or)?,
+            "ORI" => alu_imm(&args, Instr::Ori)?,
             "XOR" => alu3(&args, Instr::Xor)?,
+            "XORI" => alu_imm(&args, Instr::Xori)?,
             "NOT" => {
                 arity(2)?;
                 Instr::Not(reg(&args[0])?, reg(&args[1])?)
             }
             "LSL" => alu3(&args, Instr::Lsl)?,
+            "LSLI" => alu_imm(&args, Instr::Lsli)?,
             "LSR" => alu3(&args, Instr::Lsr)?,
+            "LSRI" => alu_imm(&args, Instr::Lsri)?,
             "ASR" => alu3(&args, Instr::Asr)?,
+            "ASRI" => alu_imm(&args, Instr::Asri)?,
+            "SEXT.B" => alu2(&args, Instr::SextB)?,
+            "SEXT.H" => alu2(&args, Instr::SextH)?,
+            "SEXT.W" => alu2(&args, Instr::SextW)?,
+            "ZEXT.B" => alu2(&args, Instr::ZextB)?,
+            "ZEXT.H" => alu2(&args, Instr::ZextH)?,
+            "ZEXT.W" => alu2(&args, Instr::ZextW)?,
+            "CLZ" => alu2(&args, Instr::Clz)?,
+            "CTZ" => alu2(&args, Instr::Ctz)?,
+            "POPCNT" => alu2(&args, Instr::Popcnt)?,
+            "ROL" => alu3(&args, Instr::Rol)?,
+            "ROR" => alu3(&args, Instr::Ror)?,
+            "BSWAP16" => alu2(&args, Instr::Bswap16)?,
+            "BSWAP32" => alu2(&args, Instr::Bswap32)?,
+            "BSWAP64" => alu2(&args, Instr::Bswap64)?,
             "CMP" => {
                 arity(2)?;
                 Instr::Cmp(reg(&args[0])?, reg(&args[1])?)
@@ -212,6 +239,16 @@ impl Parser {
             "CSET.UGT" => cset(&args, Condition::Ugt)?,
             "CSET.ULE" => cset(&args, Condition::Ule)?,
             "CSET.UGE" => cset(&args, Condition::Uge)?,
+            "CSEL.EQ" => csel(&args, Condition::Eq)?,
+            "CSEL.NE" => csel(&args, Condition::Ne)?,
+            "CSEL.LT" => csel(&args, Condition::Lt)?,
+            "CSEL.GT" => csel(&args, Condition::Gt)?,
+            "CSEL.LE" => csel(&args, Condition::Le)?,
+            "CSEL.GE" => csel(&args, Condition::Ge)?,
+            "CSEL.ULT" => csel(&args, Condition::Ult)?,
+            "CSEL.UGT" => csel(&args, Condition::Ugt)?,
+            "CSEL.ULE" => csel(&args, Condition::Ule)?,
+            "CSEL.UGE" => csel(&args, Condition::Uge)?,
             "JMP" => {
                 arity(1)?;
                 Instr::Jmp(target(&args[0]))
@@ -242,7 +279,7 @@ impl Parser {
             "ST.W" => store(&args, Width::Word)?,
             "ST.H" => store(&args, Width::Half)?,
             "ST.B" => store(&args, Width::Byte)?,
-            "FENCE" => {
+            "FENCE" | "FENCE.ACQ" | "FENCE.REL" | "FENCE.ACQ_REL" | "FENCE.SC" => {
                 arity(0)?;
                 Instr::Fence
             }
@@ -701,6 +738,10 @@ impl Parser {
                     reg(&args[3])?,
                 )
             }
+            "AMO.SWAP" => alu3(&args, Instr::AmoSwap)?,
+            "AMO.ADD" => alu3(&args, Instr::AmoAdd)?,
+            "AMO.AND" => alu3(&args, Instr::AmoAnd)?,
+            "AMO.OR" => alu3(&args, Instr::AmoOr)?,
             "FUTEX_WAIT" => {
                 arity(2)?;
                 Instr::FutexWait(reg(&args[0])?, reg(&args[1])?)
@@ -795,6 +836,26 @@ fn alu3(args: &[String], ctor: fn(Reg, Reg, Reg) -> Instr) -> Result<Instr, Stri
     Ok(ctor(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?))
 }
 
+fn alu2(args: &[String], ctor: fn(Reg, Reg) -> Instr) -> Result<Instr, String> {
+    if args.len() != 2 {
+        return Err(format!(
+            "ALU instruction expects 2 operands, got {}",
+            args.len()
+        ));
+    }
+    Ok(ctor(reg(&args[0])?, reg(&args[1])?))
+}
+
+fn alu_imm(args: &[String], ctor: fn(Reg, Reg, i64) -> Instr) -> Result<Instr, String> {
+    if args.len() != 3 {
+        return Err(format!(
+            "immediate ALU instruction expects 3 operands, got {}",
+            args.len()
+        ));
+    }
+    Ok(ctor(reg(&args[0])?, reg(&args[1])?, parse_i64(&args[2])?))
+}
+
 fn fpu3(args: &[String], ctor: fn(FReg, FReg, FReg) -> Instr) -> Result<Instr, String> {
     if args.len() != 3 {
         return Err(format!(
@@ -827,6 +888,18 @@ fn cset(args: &[String], condition: Condition) -> Result<Instr, String> {
         return Err(format!("cset expects 1 operand, got {}", args.len()));
     }
     Ok(Instr::Cset(reg(&args[0])?, condition))
+}
+
+fn csel(args: &[String], condition: Condition) -> Result<Instr, String> {
+    if args.len() != 3 {
+        return Err(format!("csel expects 3 operands, got {}", args.len()));
+    }
+    Ok(Instr::Csel(
+        reg(&args[0])?,
+        reg(&args[1])?,
+        reg(&args[2])?,
+        condition,
+    ))
 }
 
 fn load(args: &[String], width: Width) -> Result<Instr, String> {
@@ -1203,6 +1276,83 @@ mod tests {
             program.instructions[1],
             Instr::Isync(Reg(4), Reg(5), Reg(6))
         ));
+    }
+
+    #[test]
+    fn parses_compiler_baseline_integer_ops() {
+        let program = Program::parse(
+            r#"
+            .text
+              ADDI r1, r2, -7
+              ANDI r3, r4, 255
+              MULHU r5, r6, r7
+              UDIV r8, r9, r10
+              SREM r11, r12, r13
+              SEXT.W r14, r15
+              ZEXT.B r16, r17
+              CLZ r18, r19
+              POPCNT r20, r21
+              ROL r22, r23, r24
+              BSWAP64 r25, r26
+              CSEL.NE r27, r28, r29
+              AMO.ADD r30, r1, r2
+              FENCE.SC
+            "#,
+        )
+        .unwrap();
+        assert!(matches!(
+            program.instructions[0],
+            Instr::Addi(Reg(1), Reg(2), -7)
+        ));
+        assert!(matches!(
+            program.instructions[1],
+            Instr::Andi(Reg(3), Reg(4), 255)
+        ));
+        assert!(matches!(
+            program.instructions[2],
+            Instr::Mulhu(Reg(5), Reg(6), Reg(7))
+        ));
+        assert!(matches!(
+            program.instructions[3],
+            Instr::Udiv(Reg(8), Reg(9), Reg(10))
+        ));
+        assert!(matches!(
+            program.instructions[4],
+            Instr::Srem(Reg(11), Reg(12), Reg(13))
+        ));
+        assert!(matches!(
+            program.instructions[5],
+            Instr::SextW(Reg(14), Reg(15))
+        ));
+        assert!(matches!(
+            program.instructions[6],
+            Instr::ZextB(Reg(16), Reg(17))
+        ));
+        assert!(matches!(
+            program.instructions[7],
+            Instr::Clz(Reg(18), Reg(19))
+        ));
+        assert!(matches!(
+            program.instructions[8],
+            Instr::Popcnt(Reg(20), Reg(21))
+        ));
+        assert!(matches!(
+            program.instructions[9],
+            Instr::Rol(Reg(22), Reg(23), Reg(24))
+        ));
+        assert!(matches!(
+            program.instructions[10],
+            Instr::Bswap64(Reg(25), Reg(26))
+        ));
+        assert!(matches!(
+            program.instructions[11],
+            Instr::Csel(Reg(27), Reg(28), Reg(29), Condition::Ne)
+        ));
+        assert!(matches!(
+            program.instructions[12],
+            Instr::AmoAdd(Reg(30), Reg(1), Reg(2))
+        ));
+        assert!(matches!(program.instructions[13], Instr::Fence));
     }
 
     #[test]

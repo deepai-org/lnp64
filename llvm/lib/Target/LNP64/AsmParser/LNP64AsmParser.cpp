@@ -286,6 +286,7 @@ private:
             .Case("lsl", LNP64::LSL)
             .Case("lsr", LNP64::LSR)
             .Case("asr", LNP64::ASR)
+            .Case("sext.w", LNP64::SEXT_W)
             .Case("cmp", LNP64::CMP)
             .Case("cmpu", LNP64::CMPU)
             .Case("cset.eq", LNP64::CSET_EQ)
@@ -343,7 +344,8 @@ private:
       return addRegImm(Inst, Operands);
     if (Opcode == LNP64::LA || Opcode == LNP64::LI32)
       return addRegAddress(Inst, Operands);
-    if (Opcode == LNP64::MOV || Opcode == LNP64::NOT)
+    if (Opcode == LNP64::MOV || Opcode == LNP64::NOT ||
+        Opcode == LNP64::SEXT_W)
       return addRegReg(Inst, Operands);
     if (Opcode == LNP64::ADD || Opcode == LNP64::SUB ||
         Opcode == LNP64::MUL || Opcode == LNP64::DIV ||

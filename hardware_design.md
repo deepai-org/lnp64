@@ -709,7 +709,11 @@ Used by `NOP`, `RET`, `FENCE`, `YIELD`, and gate-return aliases such as
 a=dst, b=src1, c=src2
 ```
 
-Used by integer ALU, FPU, and vector operations.
+Used by integer ALU, FPU, and vector operations. Immediate ALU forms use `F3`.
+Unary scalar forms such as extension, count, and byte-swap use `F2`.
+`CSEL.<cond>` uses `F1` as `a=dst, b=true_src, c=false_src`, reads the existing
+condition flags, and stores the condition selector in the same branch-condition
+subfield used by `BRANCH`.
 
 `LOCK_CMPXCHG` is the four-register exception using the existing `d` slot:
 
@@ -921,8 +925,10 @@ The opcode map is fixed, but sparse:
 68 ALARM_ALIAS_RESERVED
 
 70 LOCK_CMPXCHG
-71 RESERVED
-72 RESERVED
+71 AMO_SWAP
+72 AMO_ADD
+73 AMO_AND
+74 AMO_OR
 
 80 INB_RESERVED
 81 OUTB_RESERVED
@@ -935,6 +941,38 @@ The opcode map is fixed, but sparse:
 92 FMUL
 93 FDIV
 A0 VADD32
+
+B0 ADDI
+B1 ANDI
+B2 ORI
+B3 XORI
+B4 LSLI
+B5 LSRI
+B6 ASRI
+B7 UDIV
+B8 SREM
+B9 UREM
+BA MULH
+BB MULHU
+BC MULHSU
+
+C0 SEXT_B
+C1 SEXT_H
+C2 SEXT_W
+C3 ZEXT_B
+C4 ZEXT_H
+C5 ZEXT_W
+C6 CLZ
+C7 CTZ
+C8 POPCNT
+C9 ROL
+CA ROR
+CB BSWAP16
+CC BSWAP32
+CD BSWAP64
+CE CSEL
+
+D0 AUIPC
 ```
 
 Illegal or unimplemented opcodes normally deliver hardware `SIGILL`. If the
@@ -1064,8 +1102,13 @@ Atomic and synchronization rules:
 
 - `LOCK_CMPXCHG` is a read-modify-write transaction with sequentially
   consistent ordering in v1.
-- successful and failed locked atomics have acquire+release ordering around the
-  atomic access.
+- `AMO_SWAP`, `AMO_ADD`, `AMO_AND`, and `AMO_OR` are 64-bit read-modify-write
+  transactions that return the old value in `a=dst` and commit the transformed
+  value to memory.
+- successful and failed locked atomics and AMOs have acquire+release ordering
+  around the atomic access. The baseline v1 AMO profile is sequentially
+  consistent; future suffix/profile encodings may expose weaker acquire,
+  release, or relaxed variants.
 - futex `AWAIT` performs an acquire-style expected-value check before parking.
 - futex `WAKE` performs release-style ordering before making waiters runnable.
 - gate-call synchronous entry observes argument/register state after the caller
@@ -1329,8 +1372,15 @@ LNP64 v1 fixes these constants:
 - instruction size: 64 bits, naturally aligned.
 - integer load/store widths: 8, 16, 32, and 64 bits.
 - atomic width for `LOCK_CMPXCHG`: 64 bits in v1.
-- vector register width: 128 bits.
-- floating point format: IEEE-754 binary64.
+- AMO width: 64 bits in v1.
+- scalar ALU baseline: register/immediate arithmetic and logic, sign/zero
+  extension, high multiply, unsigned divide/remainder, count/rotate/byte-swap,
+  and conditional select. These are Class A or bounded fixed-latency datapath
+  operations, not service-engine operations.
+- vector register width: 128 bits when the vector extension profile is
+  implemented.
+- floating point format: IEEE-754 binary64 when the FP extension profile is
+  implemented.
 - VMA memory types: `normal_cached`, `uncached`, `device_ordered`,
   `write_combining`.
 
@@ -1363,6 +1413,9 @@ Device VMA rules:
 
 `FENCE` semantics:
 
+- `FENCE.ACQ`, `FENCE.REL`, `FENCE.ACQ_REL`, and `FENCE.SC` are architectural
+  profiles. FPGA v1 may implement them identically, but the meanings are fixed
+  for toolchains and formal models.
 - drains prior stores from the issuing core into the coherent fabric.
 - waits for invalidation acknowledgements required by prior stores.
 - orders prior normal-memory writes before later DMA or device operations.
