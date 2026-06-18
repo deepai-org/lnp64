@@ -154,6 +154,15 @@ const ENV_SECURITY_PROFILE_ENTROPY_QUOTA: u64 = 1 << 5;
 const ENV_SECURITY_PROFILE_NO_RAW_IRQ: u64 = 1 << 6;
 const ENV_SECURITY_PROFILE_NO_RAW_MMIO: u64 = 1 << 7;
 const ENV_SECURITY_PROFILE_NO_RAW_SYSCALL: u64 = 1 << 8;
+const ENV_SECURITY_PROFILE_ALL: u64 = ENV_SECURITY_PROFILE_ASLR
+    | ENV_SECURITY_PROFILE_NX
+    | ENV_SECURITY_PROFILE_WX_DENY
+    | ENV_SECURITY_PROFILE_GUARD_PAGES
+    | ENV_SECURITY_PROFILE_CAP_REVOCATION
+    | ENV_SECURITY_PROFILE_ENTROPY_QUOTA
+    | ENV_SECURITY_PROFILE_NO_RAW_IRQ
+    | ENV_SECURITY_PROFILE_NO_RAW_MMIO
+    | ENV_SECURITY_PROFILE_NO_RAW_SYSCALL;
 const ENV_SCHEDULER_FEATURE_RUNQUEUE: u64 = 1 << 0;
 const ENV_SCHEDULER_FEATURE_AWAIT: u64 = 1 << 1;
 const ENV_SCHEDULER_FEATURE_FD_WAITERS: u64 = 1 << 2;
@@ -6054,17 +6063,7 @@ impl Machine {
                     | ENV_DOMAIN_FEATURE_SECURITY_POLICY
                     | ENV_DOMAIN_FEATURE_LIFECYCLE,
             ),
-            ENV_KEY_SECURITY_PROFILE_BITS => Some(
-                ENV_SECURITY_PROFILE_ASLR
-                    | ENV_SECURITY_PROFILE_NX
-                    | ENV_SECURITY_PROFILE_WX_DENY
-                    | ENV_SECURITY_PROFILE_GUARD_PAGES
-                    | ENV_SECURITY_PROFILE_CAP_REVOCATION
-                    | ENV_SECURITY_PROFILE_ENTROPY_QUOTA
-                    | ENV_SECURITY_PROFILE_NO_RAW_IRQ
-                    | ENV_SECURITY_PROFILE_NO_RAW_MMIO
-                    | ENV_SECURITY_PROFILE_NO_RAW_SYSCALL,
-            ),
+            ENV_KEY_SECURITY_PROFILE_BITS => Some(ENV_SECURITY_PROFILE_ALL),
             ENV_KEY_SCHEDULER_FEATURE_BITS => Some(
                 ENV_SCHEDULER_FEATURE_RUNQUEUE
                     | ENV_SCHEDULER_FEATURE_AWAIT
@@ -6218,7 +6217,7 @@ impl Machine {
                 MEMORY_SIZE as u64,
                 ASLR_PAGE,
                 ENV_DMA_ALIGNMENT,
-                ENV_SECURITY_PROFILE_NX | ENV_SECURITY_PROFILE_GUARD_PAGES,
+                ENV_SECURITY_PROFILE_ALL,
                 0,
             ],
             [
@@ -10830,6 +10829,11 @@ mod tests {
                 .load_u64(out + ENV_TOPOLOGY_RECORD_SIZE as u64)
                 .unwrap(),
             2
+        );
+        let security_record = out + ENV_TOPOLOGY_RECORD_SIZE as u64;
+        assert_eq!(
+            machine.load_u64(security_record + 48).unwrap(),
+            ENV_SECURITY_PROFILE_ALL
         );
         let classifier_record = out + 3 * ENV_TOPOLOGY_RECORD_SIZE as u64;
         assert_eq!(machine.load_u64(classifier_record).unwrap(), 4);
