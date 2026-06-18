@@ -3850,6 +3850,7 @@ impl Machine {
         if self.ensure_fd_right(fd, CAP_RIGHT_READ).is_err() {
             return Ok(0);
         }
+        self.ensure_mapped(addr, len, true)?;
         let mut tmp = vec![0; len];
         let count = match &mut self.process_mut()?.fds[fd] {
             FdHandle::Stdin => io::stdin()
@@ -3967,6 +3968,7 @@ impl Machine {
         if self.ensure_fd_right(fd, CAP_RIGHT_READ).is_err() {
             return Ok(());
         }
+        self.ensure_mapped(addr, len, true)?;
         let mut tmp = vec![0; len];
         let result = match &mut self.process_mut()?.fds[fd] {
             FdHandle::File(file) => file.read_at(&mut tmp, offset),
@@ -12491,6 +12493,34 @@ mod tests {
         assert!(machine.fd_waiters.is_empty());
         assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 116);
+    }
+
+    #[test]
+    fn fd_reads_reject_huge_destination_lengths_before_allocating() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[4] = FdHandle::Counter(Rc::new(RefCell::new(0xfeed)));
+            process.fd_capabilities[4] = FdCapability::full(4);
+        }
+
+        let err = machine.read_fd_index(4, ARG_BASE, usize::MAX).unwrap_err();
+        assert!(err.contains("unmapped address"), "{err}");
+
+        let path = format!("/tmp/lnp64_pread_huge_{}.txt", std::process::id());
+        fs::write(&path, b"data").unwrap();
+        let file = OpenOptions::new().read(true).open(&path).unwrap();
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[5] = FdHandle::File(file);
+            process.fd_capabilities[5] = FdCapability::full(5);
+        }
+        let err = machine
+            .pread_fd_index(5, ARG_BASE, usize::MAX, 0)
+            .unwrap_err();
+        assert!(err.contains("unmapped address"), "{err}");
+        fs::remove_file(path).unwrap();
     }
 
     #[test]
