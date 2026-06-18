@@ -10357,6 +10357,28 @@ impl CodeGen {
                 self.text.push(format!("  THREAD_DETACH r{dst}, r{tid}"));
                 Ok(dst)
             }
+            "pthread_cancel" => {
+                let _tid = self.one_arg(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 38"));
+                Ok(dst)
+            }
+            "pthread_setcancelstate" | "pthread_setcanceltype" => {
+                if args.len() != 2 {
+                    return Err(format!("{name}(state, oldstate) expects 2 arguments"));
+                }
+                self.emit_expr(&args[0])?;
+                self.emit_expr(&args[1])?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 38"));
+                Ok(dst)
+            }
+            "pthread_testcancel" | "intestcancel" => {
+                self.no_args(name, args)?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{dst}, 0"));
+                Ok(dst)
+            }
             "pthread_mutex_destroy" | "pthread_cond_destroy" => {
                 if args.len() != 1 {
                     return Err(format!("{name}(obj) expects 1 argument"));
@@ -22788,6 +22810,32 @@ int main() {
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains("THREAD_DETACH"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_pthread_cancellation_controls_fail_cleanly() {
+        let source = r#"
+        int main() {
+            int old_state;
+            if (PTHREAD_CANCEL_ENABLE != 0) return 1;
+            if (PTHREAD_CANCEL_DISABLE != 1) return 2;
+            if (PTHREAD_CANCEL_DEFERRED != 0) return 3;
+            if (PTHREAD_CANCEL_ASYNCHRONOUS != 1) return 4;
+            old_state = 77;
+            if (pthread_cancel(pthread_self()) != ENOSYS) return 5;
+            if (pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old_state) != ENOSYS) return 6;
+            if (old_state != 77) return 7;
+            if (pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, &old_state) != ENOSYS) return 8;
+            if (old_state != 77) return 9;
+            pthread_testcancel();
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("LI"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
