@@ -1636,7 +1636,7 @@ impl Machine {
             }
             Instr::ReadlinkPath(path_reg, buf_reg, len_reg) => {
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
-                let Some(path) = self.resolve_process_path_or_errno(&path)? else {
+                let Some(path) = self.resolve_process_path_no_follow_final_or_errno(&path)? else {
                     return Ok(true);
                 };
                 let buf = self.read_reg(buf_reg)?;
@@ -2405,6 +2405,20 @@ impl Machine {
         }
     }
 
+    fn resolve_process_path_no_follow_final_or_errno(
+        &mut self,
+        path: &str,
+    ) -> Result<Option<String>, String> {
+        match self.resolve_process_path_no_follow_final(path) {
+            Ok(path) => Ok(Some(path)),
+            Err(err) if err.starts_with("path resolution denied:") => {
+                self.set_status_errno(13)?;
+                Ok(None)
+            }
+            Err(err) => Err(err),
+        }
+    }
+
     fn resolve_process_path(&self, path: &str) -> Result<String, String> {
         if path.is_empty() || path.starts_with("tcp-listen:") {
             return Ok(path.to_string());
@@ -2426,6 +2440,31 @@ impl Machine {
             ));
         }
         self.ensure_path_stays_within_namespace_root(&root, &candidate)?;
+        Ok(candidate.to_string_lossy().into_owned())
+    }
+
+    fn resolve_process_path_no_follow_final(&self, path: &str) -> Result<String, String> {
+        if path.is_empty() || path.starts_with("tcp-listen:") {
+            return Ok(path.to_string());
+        }
+        let process = self.process()?;
+        let root = process.namespace_root.as_ref().ok_or_else(|| {
+            "path resolution denied: missing namespace root capability".to_string()
+        })?;
+        let candidate = if path.starts_with('/') {
+            normalize_path_lexical(&root.join(path.trim_start_matches('/')))
+        } else {
+            normalize_path_lexical(&process.cwd.join(path))
+        };
+        let root = normalize_path_lexical(root);
+        if !candidate.starts_with(&root) {
+            return Err(format!(
+                "path resolution denied: {:?} escapes namespace root {:?}",
+                candidate, root
+            ));
+        }
+        let parent = candidate.parent().unwrap_or(&candidate);
+        self.ensure_path_stays_within_namespace_root(&root, parent)?;
         Ok(candidate.to_string_lossy().into_owned())
     }
 

@@ -30,22 +30,26 @@ int main() {
     if (symlink("/etc/passwd", "host_passwd_link") != 0) return 12;
     fd = openat(AT_FDCWD, "host_passwd_link", 0);
     if (fd != -1) return 13;
+    if (readlink("host_passwd_link", buf, 16) != 11) return 14;
+    if (loadb(buf) != '/') return 15;
+    if (loadb(buf + 5) != 'p') return 16;
 
-    if (symlink("/tmp", "host_tmp_link") != 0) return 14;
+    if (symlink("/tmp", "host_tmp_link") != 0) return 17;
     fd = openat(AT_FDCWD, "host_tmp_link/lnp64_ns_escape_probe", O_CREAT | O_TRUNC);
-    if (fd != -1) return 15;
+    if (fd != -1) return 18;
+    if (chdir("host_tmp_link") == 0) return 19;
 
     fd = openat(AT_FDCWD, "ns_probe", O_CREAT | O_TRUNC);
-    if (fd == -1) return 16;
-    if (write(fd, "ok", 2) != 2) return 17;
+    if (fd == -1) return 20;
+    if (write(fd, "ok", 2) != 2) return 21;
     close(fd);
 
-    if (chdir("/") != 0) return 18;
+    if (chdir("/") != 0) return 22;
     fd = openat(AT_FDCWD, "tmp/ns_probe", 0);
-    if (fd == -1) return 19;
-    if (read(fd, buf, 2) != 2) return 20;
-    if (loadb(buf) != 'o') return 21;
-    if (loadb(buf + 1) != 'k') return 22;
+    if (fd == -1) return 23;
+    if (read(fd, buf, 2) != 2) return 24;
+    if (loadb(buf) != 'o') return 25;
+    if (loadb(buf + 1) != 'k') return 26;
     close(fd);
 
     write(1, "namespace_test ok\n", 18);
