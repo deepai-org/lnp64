@@ -16,6 +16,11 @@ and conformance gates. The Rust test
 `toolchain_transition_manifest_records_layered_deliverables` keeps those
 roadmap deliverables tied to concrete files and gates.
 
+`toolchain/lnp64_llvm_bootstrap.manifest` names the first Clang-built program
+set that must replace toy-compiler smoke coverage: hello, arithmetic, memory,
+calls, and simple libc. The entries are marked `planned` until a real
+LLVM/lld/software-loader path runs them without the toy compiler.
+
 The current Rust assembler, emulator, and C compiler remain useful bootstrap
 and architecture smoke-test tools. They are not the long-term application
 toolchain.
@@ -141,6 +146,16 @@ The first real-toolchain gate should prove all of the following:
   `OBJECT_CTL`, `DOMAIN_CTL`, and `CAP_*` through backend-supported intrinsics
   or inline asm.
 
+The concrete first-program set is pinned in
+`toolchain/lnp64_llvm_bootstrap.manifest`:
+
+- `hello`: freestanding output/exit path.
+- `arithmetic`: integer ALU, compares, branches, calls, and stack locals.
+- `memory`: loads/stores, global data, allocation, and errno/TLS interaction.
+- `calls`: call/return, `LR`, and spill-slot behavior.
+- `simple_libc`: startup, descriptor I/O, errno/TLS, strings/memory,
+  pthread/futex, event waits, mmap/signal/socket subset, and static linking.
+
 Until those gates exist, the checked NetBSD personality system remains the
 bootstrap compatibility target and the toy compiler remains on the critical
 path.
@@ -154,7 +169,7 @@ platform while remaining useful as a smoke generator:
 | --- | --- | --- |
 | Toy compiler retirement | `toolchain_roadmap.md`, `src/c_compiler.rs`, and private `__lnp_*` shim tests keep new native work out of ad hoc POSIX-shaped compiler features. | `c_private_lnp_manifest_intrinsics_lower_and_run` |
 | Real toolchain target | `toolchain/lnp64_target.manifest`, psABI, relocation, object-format, crt, inline-asm, debug/unwind, intrinsic, isel, and exec-plan manifests. | `toolchain_contract_index_is_complete` |
-| Minimal LLVM/Clang path | Planned narrow path: integer codegen, load/store, branch/call/return, static linking, crt startup, and native intrinsics/inline asm sufficient for current toy-compiler smoke programs. | First real-toolchain gate above |
+| Minimal LLVM/Clang path | `toolchain/lnp64_llvm_bootstrap.manifest` pins the planned hello, arithmetic, memory, calls, and simple-libc replacement gates for the toy-compiler smoke path. | `llvm_bootstrap_manifest_names_first_clang_gate` |
 | Libc/runtime shim layer | `libc_roadmap.md`, crt/startup manifest, and intrinsic manifest define startup, TLS/errno, allocation, FDR I/O, pthread/futex, event waits, mmap, signal, and socket lowering. | `scripts/run_software_gates.sh` |
 | Software loader and exec plan | `object_format.md` and `toolchain/lnp64_exec_plan.manifest` define ELF parsing as loader policy and `EXEC` as a bounded hardware commit descriptor. | `exec_plan_manifest_matches_loader_boundary_contract` |
 | NetBSD personality layering | `netbsd_personality_abi.md`, this roadmap, and the NetBSD system script keep the personality layered over native services. | `scripts/run_netbsd_personality_system.sh` |

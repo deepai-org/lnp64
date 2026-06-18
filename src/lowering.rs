@@ -899,6 +899,36 @@ mod tests {
             .collect()
     }
 
+    fn llvm_bootstrap_rows(manifest: &str) -> Vec<(&str, &str, Vec<&str>, Vec<&str>, &str)> {
+        manifest
+            .lines()
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(|line| {
+                let mut fields = line.splitn(5, '|');
+                let case = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing llvm bootstrap case in {line}"));
+                let source = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing llvm bootstrap source in {line}"));
+                let backend = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing llvm bootstrap backend contracts in {line}"))
+                    .split(',')
+                    .collect();
+                let runtime = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing llvm bootstrap runtime contracts in {line}"))
+                    .split(',')
+                    .collect();
+                let status = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing llvm bootstrap status in {line}"));
+                (case, source, backend, runtime, status)
+            })
+            .collect()
+    }
+
     #[test]
     fn toolchain_contract_index_is_complete() {
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
@@ -925,6 +955,7 @@ mod tests {
             "psabi",
             "intrinsics",
             "isel",
+            "llvm_bootstrap",
             "exec_plan",
             "debug_unwind",
             "inline_asm",
@@ -932,6 +963,53 @@ mod tests {
             "transition",
         ] {
             assert!(names.contains(name), "missing contract index row {name}");
+        }
+    }
+
+    #[test]
+    fn llvm_bootstrap_manifest_names_first_clang_gate() {
+        let bootstrap_manifest = include_str!("../toolchain/lnp64_llvm_bootstrap.manifest");
+        let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
+        let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
+        let roadmap = include_str!("../toolchain_roadmap.md");
+        let rows = llvm_bootstrap_rows(bootstrap_manifest);
+        let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut cases = std::collections::BTreeSet::new();
+
+        assert!(contract_index.contains(
+            "llvm_bootstrap|toolchain/lnp64_llvm_bootstrap.manifest|llvm_bootstrap_manifest_names_first_clang_gate"
+        ));
+        assert!(transition_manifest.contains("toolchain/lnp64_llvm_bootstrap.manifest"));
+        assert!(roadmap.contains("toolchain/lnp64_llvm_bootstrap.manifest"));
+        for case in ["hello", "arithmetic", "memory", "calls", "simple libc"] {
+            assert!(
+                roadmap.contains(case),
+                "roadmap must describe llvm bootstrap case {case}"
+            );
+        }
+
+        for (case, source, backend_contracts, runtime_contracts, status) in rows {
+            assert!(cases.insert(case), "duplicate llvm bootstrap case {case}");
+            assert!(
+                manifest_root.join(source).exists(),
+                "llvm bootstrap case {case} names missing source/gate {source}"
+            );
+            assert_eq!(
+                status, "planned",
+                "case {case} must stay planned until real Clang/lld/loader execution exists"
+            );
+            assert!(
+                backend_contracts.contains(&"static_link"),
+                "case {case} must require static linking"
+            );
+            assert!(
+                !runtime_contracts.is_empty(),
+                "case {case} must name runtime expectations"
+            );
+        }
+
+        for case in ["hello", "arithmetic", "memory", "calls", "simple_libc"] {
+            assert!(cases.contains(case), "missing llvm bootstrap case {case}");
         }
     }
 
