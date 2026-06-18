@@ -167,6 +167,10 @@ const ENV_SCHEDULER_FEATURE_RUNQUEUE: u64 = 1 << 0;
 const ENV_SCHEDULER_FEATURE_AWAIT: u64 = 1 << 1;
 const ENV_SCHEDULER_FEATURE_FD_WAITERS: u64 = 1 << 2;
 const ENV_SCHEDULER_FEATURE_THREAD_JOIN: u64 = 1 << 3;
+const ENV_SCHEDULER_FEATURE_ALL: u64 = ENV_SCHEDULER_FEATURE_RUNQUEUE
+    | ENV_SCHEDULER_FEATURE_AWAIT
+    | ENV_SCHEDULER_FEATURE_FD_WAITERS
+    | ENV_SCHEDULER_FEATURE_THREAD_JOIN;
 const ENV_CLASSIFIER_FEATURE_EXACT: u64 = 1 << 0;
 const ENV_CLASSIFIER_FEATURE_MASKED: u64 = 1 << 1;
 const ENV_CLASSIFIER_FEATURE_RANGE: u64 = 1 << 2;
@@ -6064,12 +6068,7 @@ impl Machine {
                     | ENV_DOMAIN_FEATURE_LIFECYCLE,
             ),
             ENV_KEY_SECURITY_PROFILE_BITS => Some(ENV_SECURITY_PROFILE_ALL),
-            ENV_KEY_SCHEDULER_FEATURE_BITS => Some(
-                ENV_SCHEDULER_FEATURE_RUNQUEUE
-                    | ENV_SCHEDULER_FEATURE_AWAIT
-                    | ENV_SCHEDULER_FEATURE_FD_WAITERS
-                    | ENV_SCHEDULER_FEATURE_THREAD_JOIN,
-            ),
+            ENV_KEY_SCHEDULER_FEATURE_BITS => Some(ENV_SCHEDULER_FEATURE_ALL),
             ENV_KEY_CLASSIFIER_FEATURE_BITS => Some(ENV_CLASSIFIER_FEATURE_ALL),
             ENV_KEY_TOPOLOGY_RECORD_COUNT => Some(ENV_TOPOLOGY_RECORD_COUNT),
             ENV_KEY_TOPOLOGY_RECORD_FORMAT => Some(ENV_TOPOLOGY_RECORD_FORMAT),
@@ -6207,7 +6206,7 @@ impl Machine {
                 ENV_THREAD_LIMIT,
                 ENV_CACHE_LINE_SIZE,
                 ENV_TIMEBASE_HZ,
-                ENV_SCHEDULER_FEATURE_RUNQUEUE | ENV_SCHEDULER_FEATURE_AWAIT,
+                ENV_SCHEDULER_FEATURE_ALL,
                 0,
             ],
             [
@@ -10922,6 +10921,10 @@ mod tests {
             .unwrap();
         assert_eq!(machine.thread().unwrap().regs[1], topology_len);
         assert_eq!(machine.load_u64(out).unwrap(), 1);
+        assert_eq!(
+            machine.load_u64(out + 48).unwrap(),
+            ENV_SCHEDULER_FEATURE_ALL
+        );
         assert_eq!(
             machine
                 .load_u64(out + ENV_TOPOLOGY_RECORD_SIZE as u64)
