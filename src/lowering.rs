@@ -1422,6 +1422,44 @@ mod tests {
     }
 
     #[test]
+    fn compatibility_lowering_pins_native_architecture_boundaries() {
+        assert_eq!(
+            lowering_for(CompatSurface::PollSelectEpoll),
+            &[
+                NativePrimitive::EventQueue,
+                NativePrimitive::Await,
+                NativePrimitive::Pull,
+            ]
+        );
+        assert_eq!(
+            lowering_for(CompatSurface::Fork),
+            &[NativePrimitive::Clone {
+                profile: CloneProfile::NewProcessCow,
+            }]
+        );
+        assert_eq!(
+            lowering_for(CompatSurface::PthreadCreate),
+            &[NativePrimitive::Clone {
+                profile: CloneProfile::NewThreadSharedVm,
+            }]
+        );
+        assert_eq!(
+            lowering_for(CompatSurface::Signal),
+            &[
+                NativePrimitive::EventDelivery,
+                NativePrimitive::AbiSignalFrame,
+            ]
+        );
+        assert_eq!(
+            lowering_for(CompatSurface::Errno),
+            &[
+                NativePrimitive::ExplicitResult,
+                NativePrimitive::TlsErrnoView,
+            ]
+        );
+    }
+
+    #[test]
     fn netbsd_system_gate_surfaces_are_registered() {
         let surfaces = [
             CompatSurface::CwdRoot,
