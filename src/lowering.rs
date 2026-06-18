@@ -1723,14 +1723,16 @@ mod tests {
             "llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCTargetDesc.cpp",
             "llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCCodeEmitter.cpp",
             "llvm/lib/Target/LNP64/TargetInfo/LNP64TargetInfo.cpp",
+            "lld/ELF/Arch/LNP64.cpp",
+            "clang/lib/Basic/Targets/LNP64.h",
+            "clang/lib/Basic/Targets/LNP64.cpp",
+            "clang/lib/Driver/ToolChains/Arch/LNP64.cpp",
         ] {
             assert_eq!(statuses[path], "scaffolded", "{path} should be scaffolded");
         }
         for path in [
             "llvm/lib/Target/LNP64/AsmParser/LNP64AsmParser.cpp",
             "llvm/lib/Target/LNP64/Disassembler/LNP64Disassembler.cpp",
-            "clang/lib/Basic/Targets/LNP64.cpp",
-            "lld/ELF/Arch/LNP64.cpp",
         ] {
             assert_eq!(statuses[path], "planned", "{path} should remain planned");
         }
@@ -1762,6 +1764,9 @@ mod tests {
         let isel = include_str!("../llvm/lib/Target/LNP64/LNP64ISelLowering.cpp");
         let frame = include_str!("../llvm/lib/Target/LNP64/LNP64FrameLowering.cpp");
         let reginfo = include_str!("../llvm/lib/Target/LNP64/LNP64RegisterInfo.cpp");
+        let clang_target = include_str!("../clang/lib/Basic/Targets/LNP64.cpp");
+        let clang_driver = include_str!("../clang/lib/Driver/ToolChains/Arch/LNP64.cpp");
+        let lld_arch = include_str!("../lld/ELF/Arch/LNP64.cpp");
 
         assert!(target_td.contains("def LNP64 : Target"));
         for required in ["GPR", "FDR", "FPR", "VR", "PCR", "LR", "R31"] {
@@ -1809,6 +1814,28 @@ mod tests {
         assert!(frame.contains("Align(16)"));
         assert!(reginfo.contains("Reserved.set(LNP64::R0)"));
         assert!(reginfo.contains("NoCalleeSaved"));
+        assert!(clang_target.contains("resetDataLayout(\"e-m:e-p:64:64-i64:64-n64-S128\")"));
+        assert!(clang_target.contains("__LNP64__"));
+        for constraint in ["case 'r'", "case 'f'", "case 'p'", "case 'm'", "case 'i'"] {
+            assert!(
+                clang_target.contains(constraint),
+                "clang target missing asm constraint {constraint}"
+            );
+        }
+        assert!(clang_driver.contains("getLNP64TargetCPU"));
+        assert!(clang_driver.contains("toolchain/crt0_lnp64.s"));
+        assert!(clang_driver.contains("elf64lnp64"));
+        assert!(clang_driver.contains("toolchain/lnp64_static.ld"));
+        assert!(lld_arch.contains("getLNP64TargetInfo"));
+        for reloc in [
+            "R_LNP64_ABS64",
+            "R_LNP64_RELATIVE",
+            "R_LNP64_TLS_TPREL64",
+            "R_LNP64_FDR_DESC64",
+            "R_LNP64_BRANCH26",
+        ] {
+            assert!(lld_arch.contains(reloc), "lld arch missing {reloc}");
+        }
     }
 
     #[test]

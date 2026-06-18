@@ -43,6 +43,10 @@ The first llvm-project backend files now exist under `llvm/lib/Target/LNP64/`:
 `LNP64CallingConv.td`, `LNP64InstrInfo.td`, `TargetInfo/LNP64TargetInfo.cpp`,
 initial `MCTargetDesc` registration/code-emitter files, and the first
 `TargetMachine`/`Subtarget`/`ISelLowering`/`FrameLowering` class skeletons.
+The first Clang target-info, Clang driver-arch, and lld ELF arch source files
+also exist under the matching llvm-project paths, with the LNP64 triple,
+freestanding driver defaults, inline-asm constraint surface, and relocation
+names pinned to the checked manifests.
 They are scaffolded source files for the real port, not a buildable code
 generator yet.
 `toolchain/lnp64_mc_encoding.manifest` records the initial MC format classes,
