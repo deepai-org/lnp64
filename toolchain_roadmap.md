@@ -46,12 +46,13 @@ initial `MCTargetDesc` registration/code-emitter files, and the first
 The first Clang target-info, Clang driver-arch, and lld ELF arch source files
 also exist under the matching llvm-project paths, with the LNP64 triple,
 freestanding driver defaults, inline-asm constraint surface, and relocation
-names pinned to the checked manifests. The MC AsmParser and Disassembler
-components are now registered as scaffolded LLVM components, but still reject
-parsing/decoding until instruction encoding is implemented.
+names pinned to the checked manifests. The MC AsmParser, code emitter, and
+Disassembler components now cover the first fixed32 integer, memory,
+branch/call, and return subset for future `llvm-mc` round trips.
 Scaffolded llvm-project lit tests now exist for `llc` hello/native-intrinsic
-codegen, `llvm-mc` basic assembly, and Clang driver command shape; they are
-marked `XFAIL` until the target is integrated and executable.
+codegen, `llvm-mc` basic assembly, and Clang driver command shape; they remain
+marked `XFAIL` until the target is integrated into a buildable llvm-project
+tree.
 The MC code emitter now has concrete fixed32 paths for `NOP`, `RET`, `LI`,
 `MOV`, integer ALU/compare operations, branch/call/return opcodes, and
 byte/word/doubleword `LD`/`ST`; other opcodes remain blocked until operand

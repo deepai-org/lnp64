@@ -1,5 +1,5 @@
-# NOTE: Scaffolded LNP64 MC acceptance test. This becomes executable once
-# operand parsing and fixed32 encoding are implemented.
+# NOTE: Scaffolded LNP64 MC acceptance test. This becomes executable once the
+# target is integrated into a buildable llvm-project tree.
 # RUN: llvm-mc -triple=lnp64-unknown-none -show-encoding %s | FileCheck %s
 # XFAIL: *
 

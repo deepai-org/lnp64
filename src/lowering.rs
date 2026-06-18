@@ -1829,7 +1829,10 @@ mod tests {
         assert!(mc_emitter.contains("not implemented yet"));
         assert!(asm_parser.contains("LLVMInitializeLNP64AsmParser"));
         assert!(asm_parser.contains("RegisterMCAsmParser"));
-        assert!(asm_parser.contains("instruction matching is not implemented yet"));
+        assert!(asm_parser.contains("parseImmediateOrMemory"));
+        assert!(asm_parser.contains("buildInstruction"));
+        assert!(asm_parser.contains(r#".Case("call", LNP64::CALL)"#));
+        assert!(asm_parser.contains(r#".Case("ld.w", LNP64::LD_W)"#));
         assert!(disassembler.contains("LLVMInitializeLNP64Disassembler"));
         assert!(disassembler.contains("RegisterMCDisassembler"));
         assert!(disassembler.contains("readLE32"));
