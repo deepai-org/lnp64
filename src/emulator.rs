@@ -1165,6 +1165,11 @@ impl Machine {
 
     pub fn set_process_entry(&mut self, args: &[String], env: &[String]) -> Result<(), String> {
         let pid = self.thread()?.pid;
+        let arg_page = Self::build_process_entry_page(args, env)?;
+        self.install_process_entry_page(pid, &arg_page)
+    }
+
+    fn build_process_entry_page(args: &[String], env: &[String]) -> Result<Vec<u8>, String> {
         let argc_addr = ARG_BASE as usize;
         let argv_addr = (ARG_BASE + 8) as usize;
         let argv_slots = args
@@ -1186,7 +1191,6 @@ impl Machine {
             .ok_or_else(|| "envp table size overflow".to_string())?;
         let mut str_addr = ARG_BASE + 0x1000;
         let arg_page_start = ARG_BASE as usize;
-        let arg_page_end = (ARG_BASE + ARG_SIZE) as usize;
         let mut arg_page = vec![0u8; ARG_SIZE as usize];
         if envp_addr
             .checked_add(env_bytes)
@@ -1281,6 +1285,15 @@ impl Machine {
             .ok_or_else(|| "envp null slot address overflow".to_string())?;
         let null_slot_off = page_offset(null_slot)?;
         arg_page[null_slot_off..null_slot_off + 8].copy_from_slice(&0u64.to_le_bytes());
+        Ok(arg_page)
+    }
+
+    fn install_process_entry_page(&mut self, pid: u64, arg_page: &[u8]) -> Result<(), String> {
+        if arg_page.len() != ARG_SIZE as usize {
+            return Err("process entry page has invalid size".to_string());
+        }
+        let arg_page_start = ARG_BASE as usize;
+        let arg_page_end = (ARG_BASE + ARG_SIZE) as usize;
         let process = self
             .processes
             .get_mut(&pid)
@@ -2361,11 +2374,12 @@ impl Machine {
                     .map(|domain| domain.security.aslr_enabled)
                     .unwrap_or(true);
                 let layout = ProcessLayout::for_process(pid, domain_id, aslr_enabled);
+                let entry_page = Self::build_process_entry_page(&args, &env)?;
                 self.process_mut()?.exec(program, layout);
                 let pid = self.thread()?.pid;
                 let tid = self.thread()?.tid;
                 *self.thread_mut()? = Thread::new(tid, pid, layout.stack_top);
-                self.set_process_entry(&args, &env)?;
+                self.install_process_entry_page(pid, &entry_page)?;
             }
             Instr::Spawn(dst, entry) => {
                 let entry = self.read_reg(entry)?;
@@ -11857,6 +11871,57 @@ mod tests {
         assert_eq!(machine.thread().unwrap().ip, 0);
         assert_eq!(machine.read_reg(Reg(9)).unwrap(), 0xfeed_cafe);
         assert_eq!(machine.load_u64(ARG_BASE).unwrap(), 0);
+    }
+
+    #[test]
+    fn exec_oversized_entry_metadata_preserves_old_image_before_commit() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let child_path = std::env::temp_dir().join(format!("lnp64_big_exec_argv_{unique}.s"));
+        fs::write(&child_path, ".text\n  EXIT r0\n").unwrap();
+        let child_path = child_path.to_string_lossy();
+
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let path_addr = ARG_BASE + 0x2000;
+        machine
+            .write_bytes(path_addr, child_path.as_bytes())
+            .unwrap();
+        machine
+            .write_bytes(path_addr + child_path.len() as u64, &[0])
+            .unwrap();
+        let oversized = machine.alloc_heap(ARG_SIZE as usize + 1, 8, false).unwrap();
+        machine
+            .write_bytes(oversized, &vec![b'x'; ARG_SIZE as usize])
+            .unwrap();
+        machine.write_bytes(oversized + ARG_SIZE, &[0]).unwrap();
+        let argv = ARG_BASE + 0x100;
+        machine.store_u64(argv, oversized).unwrap();
+        machine.store_u64(argv + 8, 0).unwrap();
+        machine.write_reg(Reg(1), path_addr).unwrap();
+        machine.write_reg(Reg(2), argv).unwrap();
+        machine.write_reg(Reg(3), 0).unwrap();
+        machine.write_reg(Reg(9), 0xfeed_cafe).unwrap();
+        machine.thread_mut().unwrap().ip = 0;
+
+        let err = machine
+            .exec(Instr::Exec(Reg(1), Reg(2), Reg(3)))
+            .unwrap_err();
+
+        let _ = fs::remove_file(child_path.as_ref());
+        assert!(
+            err.contains("argv data exceeds emulated argument page"),
+            "{err}"
+        );
+        assert!(matches!(
+            machine.process().unwrap().program.instructions.first(),
+            Some(Instr::Nop)
+        ));
+        assert_eq!(machine.thread().unwrap().tid, 1);
+        assert_eq!(machine.thread().unwrap().ip, 0);
+        assert_eq!(machine.read_reg(Reg(9)).unwrap(), 0xfeed_cafe);
     }
 
     #[test]
