@@ -10,6 +10,7 @@ mod c_support_sources;
 mod c_type_rewrites;
 mod emulator;
 mod isa;
+mod loader;
 mod lowering;
 mod native;
 
