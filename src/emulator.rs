@@ -1753,8 +1753,7 @@ impl Machine {
                         let data = bytes.as_bytes();
                         let count = data.len().min(len);
                         self.write_bytes(buf, &data[..count])?;
-                        self.set_errno(0)?;
-                        self.write_reg(Reg(1), count as u64)?;
+                        self.complete_ok(count as u64)?;
                     }
                     Err(err) => self.set_status_io_error(err)?,
                 }
@@ -1775,8 +1774,7 @@ impl Machine {
                         let data = bytes.as_bytes();
                         let count = data.len().min(len);
                         self.write_bytes(buf, &data[..count])?;
-                        self.set_errno(0)?;
-                        self.write_reg(Reg(1), count as u64)?;
+                        self.complete_ok(count as u64)?;
                     }
                     Err(err) => self.set_status_io_error(err)?,
                 }
@@ -1805,8 +1803,7 @@ impl Machine {
                 } else {
                     self.write_bytes(buf, bytes)?;
                     self.write_bytes(buf + bytes.len() as u64, &[0])?;
-                    self.set_errno(0)?;
-                    self.write_reg(Reg(1), buf)?;
+                    self.complete_ok(buf)?;
                 }
             }
             Instr::ChmodPath(path_reg, mode_reg, _flags_reg) => {
@@ -3233,10 +3230,7 @@ impl Machine {
             )),
         };
         match result {
-            Ok(()) => {
-                self.set_errno(0)?;
-                self.write_reg(Reg(1), data.len() as u64)?;
-            }
+            Ok(()) => self.complete_ok(data.len() as u64)?,
             Err(err) => self.set_status_io_error(err)?,
         }
         Ok(())
@@ -3274,10 +3268,7 @@ impl Machine {
             )),
         };
         match result {
-            Ok(()) => {
-                self.set_errno(0)?;
-                self.write_reg(Reg(1), data.len() as u64)?;
-            }
+            Ok(()) => self.complete_ok(data.len() as u64)?,
             Err(err) => self.set_status_io_error(err)?,
         }
         Ok(())
