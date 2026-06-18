@@ -7057,8 +7057,8 @@ impl Machine {
             self.advisory_locks.retain(|_, lock| lock.owner_pid != pid);
             self.processes.remove(&pid);
             if let Some(parent_pid) = parent_pid {
-                self.completed_children.insert((parent_pid, pid), code);
                 if let Some(parent) = self.processes.get_mut(&parent_pid) {
+                    self.completed_children.insert((parent_pid, pid), code);
                     parent
                         .pending_events
                         .push_back(NativeEvent::child_signal(SIGCHLD));
@@ -12473,6 +12473,31 @@ mod tests {
         assert_eq!(machine.thread().unwrap().regs[1], 0);
         assert!(machine.processes.contains_key(&live_pid));
         assert!(!machine.completed_children.contains_key(&(1, completed_pid)));
+    }
+
+    #[test]
+    fn orphan_child_exit_does_not_record_unwaitable_status() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine
+            .clone_with_profile(CloneProfile::NewProcessCow, Reg(2), None)
+            .unwrap();
+        let child_pid = machine.thread().unwrap().regs[2];
+        let child_tid = machine
+            .threads
+            .values()
+            .find(|thread| thread.pid == child_pid)
+            .unwrap()
+            .tid;
+
+        machine.current_tid = 1;
+        machine.exit_current(0).unwrap();
+        assert!(!machine.processes.contains_key(&1));
+
+        machine.current_tid = child_tid;
+        machine.exit_current(7).unwrap();
+
+        assert!(!machine.completed_children.contains_key(&(1, child_pid)));
     }
 
     #[test]
