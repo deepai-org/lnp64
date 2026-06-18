@@ -244,6 +244,33 @@ grep -q 'ret' "$fibonacci_dump"
 printf 'real LLVM LNP64 clang fibonacci object smoke passed: %s\n' \
   "$fibonacci_obj"
 
+indirect_call_c="$build_dir/indirect-call-smoke.c"
+cat >"$indirect_call_c" <<'C'
+int add3(int x) {
+  return x + 3;
+}
+
+int call_it(int (*fn)(int), int value) {
+  return fn(value);
+}
+
+int main(void) {
+  return call_it(add3, 4) - 7;
+}
+C
+
+indirect_call_obj="$build_dir/indirect-call-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$indirect_call_c" -o "$indirect_call_obj"
+test -s "$indirect_call_obj"
+indirect_call_dump="$build_dir/indirect-call-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$indirect_call_obj" \
+  >"$indirect_call_dump"
+grep -q 'call_reg' "$indirect_call_dump"
+printf 'real LLVM LNP64 clang indirect call object smoke passed: %s\n' \
+  "$indirect_call_obj"
+
 intrinsic_push_c="$build_dir/intrinsic-push.c"
 cat >"$intrinsic_push_c" <<'C'
 #include "lnp64_intrinsics.h"
@@ -634,6 +661,13 @@ stack_aggregate_elf="$build_dir/lnp64-stack-aggregate-linked.elf"
 test -s "$stack_aggregate_elf"
 printf 'real LLVM LNP64 lld stack aggregate link smoke passed: %s\n' \
   "$stack_aggregate_elf"
+
+indirect_call_elf="$build_dir/lnp64-indirect-call-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$indirect_call_elf" "$crt0_obj" "$indirect_call_obj"
+test -s "$indirect_call_elf"
+printf 'real LLVM LNP64 lld indirect call link smoke passed: %s\n' \
+  "$indirect_call_elf"
 
 for demo in hello factorial allocator fibonacci; do
   demo_obj="$build_dir/$demo-clang-smoke.o"

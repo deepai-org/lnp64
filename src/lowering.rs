@@ -1450,6 +1450,9 @@ mod tests {
         assert!(real_llc.contains("<main>:"));
         assert!(real_llc.contains("ret"));
         assert!(real_llc.contains("real LLVM LNP64 clang fibonacci object smoke passed"));
+        assert!(real_llc.contains("indirect-call-clang-smoke.o"));
+        assert!(real_llc.contains("call_reg"));
+        assert!(real_llc.contains("real LLVM LNP64 clang indirect call object smoke passed"));
         assert!(real_llc.contains("toolchain/crt0_lnp64.s"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc crt0 smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_min.s"));
@@ -1676,6 +1679,8 @@ mod tests {
         assert!(real_llc_docker.contains("fibonacci ok"));
         assert!(real_llc_docker.contains("exit=0"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf clang demo execution passed"));
+        assert!(real_llc_docker.contains("lnp64-indirect-call-linked.elf"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf indirect call execution passed"));
         assert!(real_llc_docker.contains("lnp64-intrinsic-push-linked.elf"));
         assert!(real_llc_docker.contains("intrinsic push ok"));
         assert!(

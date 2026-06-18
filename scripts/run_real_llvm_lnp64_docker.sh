@@ -94,3 +94,10 @@ stack_aggregate_output="$(cargo run --quiet -- run-elf "$stack_aggregate_probe")
 grep -q 'exit=0' <<<"$stack_aggregate_output"
 printf 'real LLVM LNP64 run-elf stack aggregate execution passed: %s\n' \
   "$stack_aggregate_probe"
+
+indirect_call_probe="target/llvm-lnp64-build/lnp64-indirect-call-linked.elf"
+cargo run --quiet -- elf-plan "$indirect_call_probe" >/dev/null
+indirect_call_output="$(cargo run --quiet -- run-elf "$indirect_call_probe")"
+grep -q 'exit=0' <<<"$indirect_call_output"
+printf 'real LLVM LNP64 run-elf indirect call execution passed: %s\n' \
+  "$indirect_call_probe"
