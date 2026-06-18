@@ -2436,6 +2436,10 @@ impl Machine {
                     return Ok(true);
                 }
                 let prot = self.read_reg(prot)?;
+                if prot & !0b111 != 0 {
+                    self.complete_reg_err(dst, 22)?;
+                    return Ok(true);
+                }
                 if !self.domain_allows_prot(prot)? {
                     self.set_status_errno(1)?;
                     self.write_reg(dst, -1i64 as u64)?;
@@ -4002,6 +4006,10 @@ impl Machine {
 
     fn mprotect_range(&mut self, addr: u64, len: u64, prot: u64) -> Result<(), String> {
         if len == 0 {
+            self.set_status_errno(22)?;
+            return Ok(());
+        }
+        if prot & !0b111 != 0 {
             self.set_status_errno(22)?;
             return Ok(());
         }
@@ -13546,6 +13554,32 @@ mod tests {
     }
 
     #[test]
+    fn mmap_rejects_unknown_protection_bits_without_vma_side_effects() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let vma_count = machine.process().unwrap().vmas.len();
+        let mmap_next = machine.process().unwrap().mmap_next;
+        machine.thread_mut().unwrap().regs[1] = 4096;
+        machine.thread_mut().unwrap().regs[2] = 0b1000;
+
+        machine
+            .exec(Instr::Mmap(
+                Reg(3),
+                Reg(0),
+                Reg(1),
+                Reg(2),
+                FdReg(0),
+                Reg(0),
+            ))
+            .unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[3], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert_eq!(machine.process().unwrap().vmas.len(), vma_count);
+        assert_eq!(machine.process().unwrap().mmap_next, mmap_next);
+    }
+
+    #[test]
     fn wx_mmap_and_mprotect_follow_domain_policy() {
         let program = Program::parse(
             r#"
@@ -13676,6 +13710,26 @@ mod tests {
         machine.thread_mut().unwrap().regs[1] = u64::MAX - 1;
         machine.thread_mut().unwrap().regs[2] = 8;
         machine.thread_mut().unwrap().regs[3] = 0b001;
+        machine
+            .exec(Instr::Mprotect(Reg(1), Reg(2), Reg(3)))
+            .unwrap();
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert_eq!(machine.process().unwrap().vmas.len(), vma_count);
+        assert_eq!(
+            machine
+                .process()
+                .unwrap()
+                .vmas
+                .iter()
+                .find(|vma| vma.start == mapped)
+                .unwrap()
+                .prot,
+            0b011
+        );
+
+        machine.thread_mut().unwrap().regs[1] = mapped;
+        machine.thread_mut().unwrap().regs[2] = 4096;
+        machine.thread_mut().unwrap().regs[3] = 0b1000;
         machine
             .exec(Instr::Mprotect(Reg(1), Reg(2), Reg(3)))
             .unwrap();
