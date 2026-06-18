@@ -36,6 +36,8 @@ int read_exec_plan(int plan_path, int buf) {
     if (n < 12) return 0;
     if (check_magic(buf) != 0) return 0;
     if (nul_terminate_line(buf, 11, n) != 0) return 0;
+    if (loadb(buf + 11) == 0) return 0;
+    if (loadb(buf + 11) != '/') return 0;
     return buf + 11;
 }
 
@@ -50,6 +52,8 @@ int main() {
     bad_buf = alloc(128);
     if (read_exec_plan("/etc/loader_bad_magic.execplan", bad_buf) != 0) return 1;
     if (read_exec_plan("/etc/loader_missing_path.execplan", bad_buf) != 0) return 2;
+    if (read_exec_plan("/etc/loader_empty_path.execplan", bad_buf) != 0) return 7;
+    if (read_exec_plan("/etc/loader_relative_path.execplan", bad_buf) != 0) return 8;
 
     path = read_exec_plan("/etc/loader_target.execplan", buf);
     if (path == 0) return 3;

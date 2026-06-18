@@ -45,6 +45,14 @@ PLAN
 cat > "$root/etc/loader_missing_path.execplan" <<'PLAN'
 LNP64EXEC1
 PLAN
+cat > "$root/etc/loader_empty_path.execplan" <<'PLAN'
+LNP64EXEC1
+
+PLAN
+cat > "$root/etc/loader_relative_path.execplan" <<'PLAN'
+LNP64EXEC1
+bin/loader_target.s
+PLAN
 
 fs_image="$root/etc/netbsd_personality.fs"
 truncate -s 512 "$fs_image"
