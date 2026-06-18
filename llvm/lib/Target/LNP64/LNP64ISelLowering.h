@@ -26,6 +26,7 @@ enum NodeType : unsigned {
   AWAIT,
   DOMAIN_CTL,
   GATE_CALL,
+  GATE_RETURN,
   OBJECT_CTL,
   PULL,
   PUSH,

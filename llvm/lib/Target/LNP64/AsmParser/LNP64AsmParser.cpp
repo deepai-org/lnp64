@@ -321,6 +321,7 @@ private:
             .Case("pull", LNP64::PULL)
             .Case("push", LNP64::PUSH)
             .Case("gate_call", LNP64::GATE_CALL)
+            .Case("gate_return", LNP64::GATE_RETURN)
             .Case("ld", LNP64::LD)
             .Case("ld.w", LNP64::LD_W)
             .Case("ld.h", LNP64::LD_H)
@@ -374,6 +375,7 @@ private:
     if (Opcode == LNP64::ALLOC_EX)
       return addRegRegReg(Inst, Operands);
     if (Opcode == LNP64::AWAIT || Opcode == LNP64::GATE_CALL ||
+        Opcode == LNP64::GATE_RETURN ||
         Opcode == LNP64::PULL || Opcode == LNP64::PUSH)
       return addRegRegRegReg(Inst, Operands);
     if (Opcode == LNP64::LD || Opcode == LNP64::LD_W ||

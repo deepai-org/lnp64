@@ -119,9 +119,10 @@ The first private native shim lowerings recognize `__lnp_pull`, `__lnp_push`,
 `__lnp_await`, `__lnp_call`, `__lnp_domain_ctl`, and `__lnp_object_ctl` and
 emit native `PULL`/`PUSH`/`AWAIT`/`GATE_CALL`/`DOMAIN_CTL`/`OBJECT_CTL`
 operations directly, treating the C ABI `lnp64_cap_t` as a GPR capability
-handle. `__lnp_push`, `__lnp_await`, `__lnp_call`, `__lnp_domain_ctl`, and
-`__lnp_object_ctl` now have Clang/lld/`run-elf` execution smokes. The remaining
-`__lnp_*` shims still need backend nodes or runtime call fallbacks.
+handle. `__lnp_push`, `__lnp_await`, `__lnp_call`, `__lnp_gate_return`,
+`__lnp_domain_ctl`, and `__lnp_object_ctl` now have Clang/lld/`run-elf`
+execution smokes. The remaining `__lnp_*` shims still need backend nodes or
+runtime call fallbacks.
 Return lowering now maps the LLVM return value path through `RetCC_LNP64` into
 `r1` and selects a target `RET_FLAG` DAG node to the architectural `RET`;
 formal argument lowering maps register arguments from `CC_LNP64` live-ins.

@@ -50,6 +50,8 @@ def LNP64domainctl : SDNode<"LNP64ISD::DOMAIN_CTL", SDT_LNP64Native1,
                             [SDNPHasChain]>;
 def LNP64gatecall : SDNode<"LNP64ISD::GATE_CALL", SDT_LNP64Native3,
                            [SDNPHasChain]>;
+def LNP64gatereturn : SDNode<"LNP64ISD::GATE_RETURN", SDT_LNP64Native3,
+                             [SDNPHasChain]>;
 def LNP64objectctl : SDNode<"LNP64ISD::OBJECT_CTL", SDT_LNP64Native1,
                             [SDNPHasChain]>;
 def LNP64pull : SDNode<"LNP64ISD::PULL", SDT_LNP64Native3,
@@ -445,5 +447,7 @@ def GATE_CALL : LNP64Native4<"gate_call"> {
   let Pattern = [(set GPR:$rd,
                   (LNP64gatecall GPR:$cap, GPR:$arg0, GPR:$arg1))];
 }
-def GATE_RETURN : LNP64Inst<(outs), (ins GPR:$status, GPR:$arg0, GPR:$arg1),
-                            "gate_return", "\t$status, $arg0, $arg1">;
+def GATE_RETURN : LNP64Native4<"gate_return"> {
+  let Pattern = [(set GPR:$rd,
+                  (LNP64gatereturn GPR:$cap, GPR:$arg0, GPR:$arg1))];
+}

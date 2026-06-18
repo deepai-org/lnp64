@@ -333,6 +333,28 @@ grep -q 'gate_call r' "$intrinsic_call_dump"
 printf 'real LLVM LNP64 clang intrinsic call object smoke passed: %s\n' \
   "$intrinsic_call_obj"
 
+intrinsic_gate_return_c="$build_dir/intrinsic-gate-return.c"
+cat >"$intrinsic_gate_return_c" <<'C'
+#include "lnp64_intrinsics.h"
+int main(void) {
+  if (__lnp_gate_return(1, 2, 0) != (lnp64_word_t)-1)
+    return 1;
+  return 0;
+}
+C
+
+intrinsic_gate_return_obj="$build_dir/intrinsic-gate-return-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$intrinsic_gate_return_c" -o "$intrinsic_gate_return_obj"
+test -s "$intrinsic_gate_return_obj"
+intrinsic_gate_return_dump="$build_dir/intrinsic-gate-return-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$intrinsic_gate_return_obj" \
+  >"$intrinsic_gate_return_dump"
+grep -q 'gate_return r' "$intrinsic_gate_return_dump"
+printf 'real LLVM LNP64 clang intrinsic gate return object smoke passed: %s\n' \
+  "$intrinsic_gate_return_obj"
+
 intrinsic_ctl_c="$build_dir/intrinsic-control.c"
 cat >"$intrinsic_ctl_c" <<'C'
 #include "lnp64_intrinsics.h"
@@ -894,6 +916,13 @@ intrinsic_call_elf="$build_dir/lnp64-intrinsic-call-linked.elf"
 test -s "$intrinsic_call_elf"
 printf 'real LLVM LNP64 lld intrinsic call link smoke passed: %s\n' \
   "$intrinsic_call_elf"
+
+intrinsic_gate_return_elf="$build_dir/lnp64-intrinsic-gate-return-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$intrinsic_gate_return_elf" "$crt0_obj" "$intrinsic_gate_return_obj"
+test -s "$intrinsic_gate_return_elf"
+printf 'real LLVM LNP64 lld intrinsic gate return link smoke passed: %s\n' \
+  "$intrinsic_gate_return_elf"
 
 intrinsic_ctl_elf="$build_dir/lnp64-intrinsic-control-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

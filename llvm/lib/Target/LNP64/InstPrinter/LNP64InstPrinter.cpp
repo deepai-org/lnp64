@@ -96,6 +96,8 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
     return "await";
   case LNP64::GATE_CALL:
     return "gate_call";
+  case LNP64::GATE_RETURN:
+    return "gate_return";
   case LNP64::PULL:
     return "pull";
   case LNP64::PUSH:
@@ -274,6 +276,7 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
     break;
   case LNP64::AWAIT:
   case LNP64::GATE_CALL:
+  case LNP64::GATE_RETURN:
   case LNP64::PULL:
   case LNP64::PUSH:
     OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';

@@ -1459,6 +1459,11 @@ mod tests {
         assert!(real_llc.contains("intrinsic-call-clang-smoke.o"));
         assert!(real_llc.contains("gate_call r"));
         assert!(real_llc.contains("real LLVM LNP64 clang intrinsic call object smoke passed"));
+        assert!(real_llc.contains("intrinsic-gate-return-clang-smoke.o"));
+        assert!(real_llc.contains("gate_return r"));
+        assert!(
+            real_llc.contains("real LLVM LNP64 clang intrinsic gate return object smoke passed")
+        );
         assert!(real_llc.contains("intrinsic-control-clang-smoke.o"));
         assert!(real_llc.contains("object_ctl r"));
         assert!(real_llc.contains("domain_ctl r"));
@@ -1495,6 +1500,8 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 lld intrinsic await link smoke passed"));
         assert!(real_llc.contains("lnp64-intrinsic-call-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld intrinsic call link smoke passed"));
+        assert!(real_llc.contains("lnp64-intrinsic-gate-return-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld intrinsic gate return link smoke passed"));
         assert!(real_llc.contains("--triple=lnp64-unknown-none"));
         assert!(real_llc.contains("errno_set r0"));
         assert!(real_llc.contains("exit r1"));
@@ -1751,6 +1758,11 @@ mod tests {
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic call execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-intrinsic-gate-return-linked.elf"));
+        assert!(
+            real_llc_docker
+                .contains("real LLVM LNP64 run-elf intrinsic gate return execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-intrinsic-control-linked.elf"));
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic control execution passed")
@@ -1813,6 +1825,7 @@ mod tests {
             "real_read_execution",
             "real_intrinsic_await_execution",
             "real_intrinsic_call_execution",
+            "real_intrinsic_gate_return_execution",
             "real_intrinsic_push_execution",
             "real_intrinsic_control_execution",
             "real_exit_execution",
@@ -2044,6 +2057,7 @@ mod tests {
             "EXIT",
             "AWAIT",
             "GATE_CALL",
+            "GATE_RETURN",
             "PULL",
             "OBJECT_CTL",
             "CAP_REVOKE",
@@ -2250,6 +2264,7 @@ mod tests {
         assert!(isel.contains("LNP64ISD::AWAIT"));
         assert!(isel.contains("LNP64ISD::DOMAIN_CTL"));
         assert!(isel.contains("LNP64ISD::GATE_CALL"));
+        assert!(isel.contains("LNP64ISD::GATE_RETURN"));
         assert!(isel.contains("LNP64ISD::OBJECT_CTL"));
         assert!(isel.contains("LNP64ISD::PULL"));
         assert!(isel.contains("LNP64ISD::PUSH"));
@@ -2283,6 +2298,7 @@ mod tests {
         assert!(isel_header.contains("CALL"));
         assert!(isel_header.contains("DOMAIN_CTL"));
         assert!(isel_header.contains("GATE_CALL"));
+        assert!(isel_header.contains("GATE_RETURN"));
         assert!(isel_header.contains("OBJECT_CTL"));
         assert!(isel_header.contains("PULL"));
         assert!(isel_header.contains("PUSH"));
@@ -2458,8 +2474,10 @@ mod tests {
         assert!(codegen_test.contains("__lnp_await"));
         assert!(codegen_test.contains("__lnp_pull"));
         assert!(codegen_test.contains("__lnp_push"));
+        assert!(codegen_test.contains("__lnp_gate_return"));
         assert!(codegen_test.contains("; CHECK: domain_ctl"));
         assert!(codegen_test.contains("; CHECK: gate_call"));
+        assert!(codegen_test.contains("; CHECK: gate_return"));
         assert!(codegen_test.contains("; CHECK: object_ctl"));
         assert!(codegen_test.contains("; CHECK: await"));
         assert!(codegen_test.contains("; CHECK: pull"));
@@ -3662,6 +3680,7 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::FREE"));
         assert!(mc_emitter.contains("case LNP64::AWAIT"));
         assert!(mc_emitter.contains("case LNP64::GATE_CALL"));
+        assert!(mc_emitter.contains("case LNP64::GATE_RETURN"));
         assert!(mc_emitter.contains("case LNP64::OBJECT_CTL"));
         assert!(mc_emitter.contains("case LNP64::DOMAIN_CTL"));
         assert!(mc_emitter.contains("case LNP64::LD"));

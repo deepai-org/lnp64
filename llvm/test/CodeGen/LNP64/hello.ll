@@ -9,6 +9,7 @@ declare i64 @__lnp_call(i64, i64, i64)
 declare i64 @__lnp_domain_ctl(i64)
 declare i64 @__lnp_object_ctl(i64)
 declare i64 @__lnp_await(i64, i64, i64)
+declare i64 @__lnp_gate_return(i64, i64, i64)
 declare i64 @__lnp_pull(i64, ptr, i64)
 declare i64 @__lnp_push(i64, ptr, i64)
 declare i64 @callee(i64)
@@ -34,6 +35,12 @@ entry:
 define i64 @gate(i64 %cap, i64 %a, i64 %b) {
 entry:
   %r = call i64 @__lnp_call(i64 %cap, i64 %a, i64 %b)
+  ret i64 %r
+}
+
+define i64 @gate_ret(i64 %value0, i64 %value1, i64 %token) {
+entry:
+  %r = call i64 @__lnp_gate_return(i64 %value0, i64 %value1, i64 %token)
   ret i64 %r
 }
 
@@ -128,6 +135,9 @@ entry:
 ; CHECK: ret
 ; CHECK-LABEL: gate:
 ; CHECK: gate_call
+; CHECK: ret
+; CHECK-LABEL: gate_ret:
+; CHECK: gate_return
 ; CHECK: ret
 ; CHECK-LABEL: control:
 ; CHECK: domain_ctl

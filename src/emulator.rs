@@ -1578,6 +1578,7 @@ impl Machine {
             0x4c => Instr::DomainCtl(a, b),
             0x4d => Instr::AwaitDyn(a, b, c),
             0x4e => Instr::CallCapDyn(a, b, c, Reg(((word >> 4) & 0x1f) as usize)),
+            0x4f => Instr::RetCap(a, b, c),
             other => {
                 return Err(format!(
                     "unsupported committed exec opcode 0x{other:02x} at 0x{pc:x}"
