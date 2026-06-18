@@ -5089,8 +5089,8 @@ impl Machine {
     }
 
     fn object_ctl_socket_bind(&mut self, argblock: u64) -> Result<u64, u64> {
-        let fd_value = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
-        let addr_ptr = self.load_u64(argblock + 40).map_err(|_| 14u64)?;
+        let fd_value = self.load_u64_offset(argblock, 24).map_err(|_| 14u64)?;
+        let addr_ptr = self.load_u64_offset(argblock, 40).map_err(|_| 14u64)?;
         let fd = self.decode_fd_value(fd_value)?;
         self.fd_right_errno(fd, CAP_RIGHT_WRITE)?;
         let addr = self.read_c_string(addr_ptr).map_err(|_| 14u64)?;
@@ -5105,7 +5105,7 @@ impl Machine {
     }
 
     fn object_ctl_socket_listen(&mut self, argblock: u64) -> Result<u64, u64> {
-        let fd_value = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
+        let fd_value = self.load_u64_offset(argblock, 24).map_err(|_| 14u64)?;
         let fd = self.decode_fd_value(fd_value)?;
         self.fd_right_errno(fd, CAP_RIGHT_WRITE | CAP_RIGHT_POLL)?;
         let addr = match &self.process().map_err(|_| 3u64)?.fds[fd] {
@@ -5126,8 +5126,8 @@ impl Machine {
     }
 
     fn object_ctl_socket_connect(&mut self, argblock: u64) -> Result<u64, u64> {
-        let fd_value = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
-        let addr_ptr = self.load_u64(argblock + 40).map_err(|_| 14u64)?;
+        let fd_value = self.load_u64_offset(argblock, 24).map_err(|_| 14u64)?;
+        let addr_ptr = self.load_u64_offset(argblock, 40).map_err(|_| 14u64)?;
         let fd = self.decode_fd_value(fd_value)?;
         self.fd_right_errno(fd, CAP_RIGHT_READ | CAP_RIGHT_WRITE | CAP_RIGHT_POLL)?;
         if !matches!(
@@ -5146,8 +5146,8 @@ impl Machine {
     }
 
     fn object_ctl_socket_accept(&mut self, argblock: u64) -> Result<u64, u64> {
-        let listener_value = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
-        let accepted_req = self.load_u64(argblock + 32).map_err(|_| 14u64)?;
+        let listener_value = self.load_u64_offset(argblock, 24).map_err(|_| 14u64)?;
+        let accepted_req = self.load_u64_offset(argblock, 32).map_err(|_| 14u64)?;
         let listener_fd = self.decode_fd_value(listener_value)?;
         self.fd_right_errno(listener_fd, CAP_RIGHT_READ | CAP_RIGHT_POLL)?;
         let stream = {
@@ -5177,9 +5177,9 @@ impl Machine {
     }
 
     fn object_ctl_socket_getsockname(&mut self, argblock: u64) -> Result<u64, u64> {
-        let fd_value = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
-        let addr_ptr = self.load_u64(argblock + 40).map_err(|_| 14u64)?;
-        let len_ptr = self.load_u64(argblock + 48).map_err(|_| 14u64)?;
+        let fd_value = self.load_u64_offset(argblock, 24).map_err(|_| 14u64)?;
+        let addr_ptr = self.load_u64_offset(argblock, 40).map_err(|_| 14u64)?;
+        let len_ptr = self.load_u64_offset(argblock, 48).map_err(|_| 14u64)?;
         let fd = self.decode_fd_value(fd_value)?;
         self.fd_right_errno(fd, CAP_RIGHT_STAT)?;
         let addr = match &self.process().map_err(|_| 3u64)?.fds[fd] {
@@ -5194,19 +5194,20 @@ impl Machine {
             if capacity < bytes.len() as u64 {
                 return Err(22);
             }
-            self.store_u64(len_ptr, bytes.len() as u64)
+            self.store_u64_offset(len_ptr, 0, bytes.len() as u64)
                 .map_err(|_| 14u64)?;
         }
-        self.write_bytes(addr_ptr, &bytes).map_err(|_| 14u64)?;
+        self.write_bytes_offset(addr_ptr, 0, &bytes)
+            .map_err(|_| 14u64)?;
         Ok(0)
     }
 
     fn object_ctl_socket_getsockopt(&mut self, argblock: u64) -> Result<u64, u64> {
-        let fd_value = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
-        let level = self.load_u64(argblock + 40).map_err(|_| 14u64)?;
-        let optname = self.load_u64(argblock + 48).map_err(|_| 14u64)?;
-        let optval = self.load_u64(argblock + 56).map_err(|_| 14u64)?;
-        let optlen = self.load_u64(argblock + 64).map_err(|_| 14u64)?;
+        let fd_value = self.load_u64_offset(argblock, 24).map_err(|_| 14u64)?;
+        let level = self.load_u64_offset(argblock, 40).map_err(|_| 14u64)?;
+        let optname = self.load_u64_offset(argblock, 48).map_err(|_| 14u64)?;
+        let optval = self.load_u64_offset(argblock, 56).map_err(|_| 14u64)?;
+        let optlen = self.load_u64_offset(argblock, 64).map_err(|_| 14u64)?;
         let fd = self.decode_fd_value(fd_value)?;
         self.fd_right_errno(fd, CAP_RIGHT_STAT)?;
         self.ensure_socket_fd(fd)?;
@@ -5218,20 +5219,20 @@ impl Machine {
             if capacity < 8 {
                 return Err(22);
             }
-            self.store_u64(optlen, 8).map_err(|_| 14u64)?;
+            self.store_u64_offset(optlen, 0, 8).map_err(|_| 14u64)?;
         }
         if optval != 0 {
-            self.store_u64(optval, 0).map_err(|_| 14u64)?;
+            self.store_u64_offset(optval, 0, 0).map_err(|_| 14u64)?;
         }
         Ok(0)
     }
 
     fn object_ctl_socket_setsockopt(&mut self, argblock: u64) -> Result<u64, u64> {
-        let fd_value = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
-        let level = self.load_u64(argblock + 40).map_err(|_| 14u64)?;
-        let optname = self.load_u64(argblock + 48).map_err(|_| 14u64)?;
-        let optval = self.load_u64(argblock + 56).map_err(|_| 14u64)?;
-        let optlen = self.load_u64(argblock + 64).map_err(|_| 14u64)?;
+        let fd_value = self.load_u64_offset(argblock, 24).map_err(|_| 14u64)?;
+        let level = self.load_u64_offset(argblock, 40).map_err(|_| 14u64)?;
+        let optname = self.load_u64_offset(argblock, 48).map_err(|_| 14u64)?;
+        let optval = self.load_u64_offset(argblock, 56).map_err(|_| 14u64)?;
+        let optlen = self.load_u64_offset(argblock, 64).map_err(|_| 14u64)?;
         let fd = self.decode_fd_value(fd_value)?;
         self.fd_right_errno(fd, CAP_RIGHT_WRITE)?;
         self.ensure_socket_fd(fd)?;
