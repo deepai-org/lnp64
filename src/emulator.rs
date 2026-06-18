@@ -2388,6 +2388,7 @@ impl Machine {
                 return Ok(false);
             }
             Instr::Mmap(dst, hint, len, prot, fd, offset) => {
+                Self::ensure_result_reg_writable(dst)?;
                 let len = self.read_reg(len)?;
                 if len == 0 {
                     self.set_status_errno(22)?;
@@ -12786,6 +12787,24 @@ mod tests {
             .unwrap();
         assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 12);
+        assert_eq!(machine.process().unwrap().vmas.len(), vma_count);
+
+        let mmap_next = machine.process().unwrap().mmap_next;
+        machine.thread_mut().unwrap().regs[1] = 0;
+        machine.thread_mut().unwrap().regs[2] = 4096;
+        machine.thread_mut().unwrap().regs[3] = 0b001;
+        let err = machine
+            .exec(Instr::Mmap(
+                Reg(31),
+                Reg(1),
+                Reg(2),
+                Reg(3),
+                FdReg(0),
+                Reg(0),
+            ))
+            .unwrap_err();
+        assert!(err.contains("hardware-locked stack pointer"), "{err}");
+        assert_eq!(machine.process().unwrap().mmap_next, mmap_next);
         assert_eq!(machine.process().unwrap().vmas.len(), vma_count);
     }
 
