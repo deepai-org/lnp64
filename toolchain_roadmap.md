@@ -52,6 +52,9 @@ parsing/decoding until instruction encoding is implemented.
 Scaffolded llvm-project lit tests now exist for `llc` hello/native-intrinsic
 codegen, `llvm-mc` basic assembly, and Clang driver command shape; they are
 marked `XFAIL` until the target is integrated and executable.
+The MC code emitter now has a first concrete fixed32 no-operand path for `NOP`
+and `RET`; other opcodes remain blocked until operand encodings and fixups are
+implemented.
 They are scaffolded source files for the real port, not a buildable code
 generator yet.
 `toolchain/lnp64_mc_encoding.manifest` records the initial MC format classes,

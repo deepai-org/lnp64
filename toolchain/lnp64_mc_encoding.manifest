@@ -1,5 +1,6 @@
 # LNP64 MC encoding contract v0.
 # Pipe-delimited fields: group|format|opcodes|operands|relocations|llvm_surface
+# fixed32_no_operand: opcode[31:24], reserved[23:0]=0; implemented first for NOP and RET
 constants|fixed32_constant|NOP,LI,MOV|none_or_gpr_immediate_or_gpr|R_LNP64_ABS64,R_LNP64_GOT64|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64AsmParser.cpp
 integer_alu_rrr|fixed32_rrr|ADD,SUB,MUL,DIV,AND,OR,XOR,LSL,LSR,ASR|gpr_dst,gpr_lhs,gpr_rhs|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp
 integer_alu_rr|fixed32_rr|NOT,CMP|gpr_lhs,gpr_rhs|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp

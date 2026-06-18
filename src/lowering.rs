@@ -2841,6 +2841,8 @@ mod tests {
         let roadmap = include_str!("../toolchain_roadmap.md");
         let conformance = include_str!("../conformance_matrix.md");
         let filemap = include_str!("../toolchain/lnp64_llvm_filemap.manifest");
+        let mc_emitter =
+            include_str!("../llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCCodeEmitter.cpp");
         let rows = mc_encoding_rows(mc_manifest);
         let relocation_names: std::collections::BTreeSet<_> = relocation_rows(relocation_manifest)
             .into_iter()
@@ -2860,6 +2862,8 @@ mod tests {
         assert!(roadmap.contains("toolchain/lnp64_mc_encoding.manifest"));
         assert!(conformance.contains("toolchain/lnp64_mc_encoding.manifest"));
         assert!(filemap.contains("LNP64MCCodeEmitter.cpp"));
+        assert!(mc_manifest.contains("fixed32_no_operand"));
+        assert!(mc_manifest.contains("opcode[31:24]"));
 
         for (group, format, opcodes, operands, relocations, surfaces) in rows {
             assert!(
@@ -2935,6 +2939,12 @@ mod tests {
                 .3
                 .contains(&"R_LNP64_CALLGATE64")
         );
+        assert!(mc_emitter.contains("encodeFixed32NoOperand"));
+        assert!(mc_emitter.contains("case LNP64::NOP"));
+        assert!(mc_emitter.contains("case LNP64::RET"));
+        assert!(mc_emitter.contains("encodeFixed32NoOperand(0x00)"));
+        assert!(mc_emitter.contains("encodeFixed32NoOperand(0x1f)"));
+        assert!(mc_emitter.contains("emitLE32"));
     }
 
     #[test]
