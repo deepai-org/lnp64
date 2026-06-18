@@ -6555,6 +6555,7 @@ impl Machine {
         index_or_buf_reg: Reg,
         len_or_flags_reg: Reg,
     ) -> Result<(), String> {
+        Self::ensure_result_reg_writable(result)?;
         let key = self.read_reg(key_reg)?;
         let index_or_buf = self.read_reg(index_or_buf_reg)?;
         let len_or_flags = self.read_reg(len_or_flags_reg)?;
@@ -15065,6 +15066,14 @@ mod tests {
             .unwrap();
         assert_eq!(machine.thread().unwrap().regs[1], AT_RANDOM);
         assert_eq!(machine.thread().unwrap().regs[30], 0);
+
+        machine.thread_mut().unwrap().regs[30] = 0xfeed_face;
+        machine.thread_mut().unwrap().regs[3] = 7;
+        let err = machine
+            .exec(Instr::EnvGet(Reg(31), Reg(2), Reg(3), Reg(0)))
+            .unwrap_err();
+        assert!(err.contains("hardware-locked stack pointer"), "{err}");
+        assert_eq!(machine.thread().unwrap().regs[30], 0xfeed_face);
 
         machine.thread_mut().unwrap().regs[30] = 0xfeed_face;
         machine.thread_mut().unwrap().regs[3] = 99;
