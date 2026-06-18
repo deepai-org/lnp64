@@ -59,6 +59,13 @@ int main() {
     if (fd == -1) return 20;
     if (write(fd, "ok", 2) != 2) return 21;
     close(fd);
+    dir = opendir("/tmp");
+    if (dir == 0) return 35;
+    if (fchmodat(dir, "ns_probe", 384, 0) != 0) return 36;
+    if (fstatat(dir, "ns_probe", st, 0) != 0) return 37;
+    if ((load(st) & 511) != 384) return 38;
+    if (fchmodat(dir, "../../etc/motd", 384, 0) != -1) return 39;
+    closedir(dir);
 
     if (chdir("/") != 0) return 22;
     fd = openat(AT_FDCWD, "tmp/ns_probe", 0);

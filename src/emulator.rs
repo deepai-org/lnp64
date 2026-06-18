@@ -1722,6 +1722,18 @@ impl Machine {
                     Err(err) => self.set_status_io_error(err)?,
                 }
             }
+            Instr::ChmodPathAt(dir_reg, path_reg, mode_reg, _flags_reg) => {
+                let dir_value = self.read_reg(dir_reg)?;
+                let path = self.read_c_string(self.read_reg(path_reg)?)?;
+                let Some(path) = self.resolve_process_path_at_or_errno(dir_value, &path)? else {
+                    return Ok(true);
+                };
+                let mode = self.read_reg(mode_reg)? as u32;
+                match fs::set_permissions(&path, fs::Permissions::from_mode(mode)) {
+                    Ok(()) => self.set_status_ok()?,
+                    Err(err) => self.set_status_io_error(err)?,
+                }
+            }
             Instr::ChownPath(path_reg, uid_reg, gid_reg, _flags_reg) => {
                 let path = self.read_c_string(self.read_reg(path_reg)?)?;
                 let Some(path) = self.resolve_process_path_or_errno(&path)? else {

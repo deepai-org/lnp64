@@ -127,6 +127,7 @@ pub enum Instr {
     ChdirPath(Reg),
     GetcwdPath(Reg, Reg),
     ChmodPath(Reg, Reg, Reg),
+    ChmodPathAt(Reg, Reg, Reg, Reg),
     ChownPath(Reg, Reg, Reg, Reg),
     UtimePath(Reg, Reg, Reg),
     UtimeFd(FdReg, Reg),

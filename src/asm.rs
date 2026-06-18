@@ -426,6 +426,15 @@ impl Parser {
                 arity(3)?;
                 Instr::ChmodPath(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
+            "CHMOD_PATH_AT" => {
+                arity(4)?;
+                Instr::ChmodPathAt(
+                    reg(&args[0])?,
+                    reg(&args[1])?,
+                    reg(&args[2])?,
+                    reg(&args[3])?,
+                )
+            }
             "CHOWN_PATH" => {
                 arity(4)?;
                 Instr::ChownPath(

@@ -7156,12 +7156,14 @@ impl CodeGen {
                         "fchmodat(dirfd, path, mode, flags) expects 4 arguments".to_string()
                     );
                 }
+                let dirfd = self.emit_expr(&args[0])?;
                 let path = self.emit_expr(&args[1])?;
                 let mode = self.emit_expr(&args[2])?;
                 let flags = self.emit_expr(&args[3])?;
                 let dst = self.alloc_reg()?;
-                self.text
-                    .push(format!("  CHMOD_PATH r{path}, r{mode}, r{flags}"));
+                self.text.push(format!(
+                    "  CHMOD_PATH_AT r{dirfd}, r{path}, r{mode}, r{flags}"
+                ));
                 self.text.push(format!("  MOV r{dst}, r1"));
                 Ok(dst)
             }
@@ -19988,6 +19990,7 @@ int main() {
             fcntl(fd, F_SETFD, 0);
             fcntl(fd, F_GETFL);
             fcntl(fd, F_SETFL, 0);
+            fchmodat(AT_FDCWD, "Cargo.toml", 0644, 0);
             open(3, "Cargo.toml", 0);
             pread(3, buf, 3, 1);
             pwrite(3, buf, 3, 2);
@@ -20001,6 +20004,7 @@ int main() {
         assert!(asm.contains("READ_FD fd0"));
         assert!(asm.contains("OPEN_AT fd3"));
         assert!(asm.contains("OPEN_AT_DYN"));
+        assert!(asm.contains("CHMOD_PATH_AT"));
         assert!(asm.contains("CAP_DUP"));
         assert!(asm.contains("PULL_DYN"));
         assert!(asm.contains("PREAD_FD_DYN"));
