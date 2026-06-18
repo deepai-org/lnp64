@@ -1,63 +1,112 @@
-class LNP64Inst<string Mnemonic> : Instruction {
+def simm16 : Operand<i64>;
+def simm26 : Operand<i64>;
+
+class LNP64Inst<dag Outs, dag Ins, string Mnemonic, string Operands>
+    : Instruction {
   let Namespace = "LNP64";
   let Size = 4;
-  let OutOperandList = (outs);
-  let InOperandList = (ins);
-  let AsmString = Mnemonic;
+  let OutOperandList = Outs;
+  let InOperandList = Ins;
+  let AsmString = !strconcat(Mnemonic, Operands);
 }
 
-def NOP : LNP64Inst<"nop">;
-def LI : LNP64Inst<"li">;
-def MOV : LNP64Inst<"mov">;
+class LNP64NoOperand<string Mnemonic>
+    : LNP64Inst<(outs), (ins), Mnemonic, "">;
 
-def ADD : LNP64Inst<"add">;
-def SUB : LNP64Inst<"sub">;
-def MUL : LNP64Inst<"mul">;
-def DIV : LNP64Inst<"div">;
-def AND : LNP64Inst<"and">;
-def OR : LNP64Inst<"or">;
-def XOR : LNP64Inst<"xor">;
-def NOT : LNP64Inst<"not">;
-def LSL : LNP64Inst<"lsl">;
-def LSR : LNP64Inst<"lsr">;
-def ASR : LNP64Inst<"asr">;
-def CMP : LNP64Inst<"cmp">;
+class LNP64RI<string Mnemonic>
+    : LNP64Inst<(outs GPR:$rd), (ins simm16:$imm), Mnemonic,
+                "\t$rd, $imm">;
 
-def JMP : LNP64Inst<"jmp">;
-def BEQ : LNP64Inst<"beq">;
-def BNE : LNP64Inst<"bne">;
-def BLT : LNP64Inst<"blt">;
-def BGT : LNP64Inst<"bgt">;
-def BLE : LNP64Inst<"ble">;
-def BGE : LNP64Inst<"bge">;
-def CALL : LNP64Inst<"call">;
-def CALL_REG : LNP64Inst<"call_reg">;
-def RET : LNP64Inst<"ret">;
+class LNP64RR<string Mnemonic>
+    : LNP64Inst<(outs GPR:$rd), (ins GPR:$rs), Mnemonic, "\t$rd, $rs">;
 
-def LD : LNP64Inst<"ld">;
-def LD_W : LNP64Inst<"ld.w">;
-def LD_B : LNP64Inst<"ld.b">;
-def ST : LNP64Inst<"st">;
-def ST_W : LNP64Inst<"st.w">;
-def ST_B : LNP64Inst<"st.b">;
-def FENCE : LNP64Inst<"fence">;
-def ISYNC : LNP64Inst<"isync">;
+class LNP64RRR<string Mnemonic>
+    : LNP64Inst<(outs GPR:$rd), (ins GPR:$rs1, GPR:$rs2), Mnemonic,
+                "\t$rd, $rs1, $rs2">;
 
-def LOCK_CMPXCHG : LNP64Inst<"lock.cmpxchg">;
-def FUTEX_WAIT : LNP64Inst<"futex_wait">;
-def FUTEX_WAKE : LNP64Inst<"futex_wake">;
+class LNP64Cmp<string Mnemonic>
+    : LNP64Inst<(outs), (ins GPR:$rs1, GPR:$rs2), Mnemonic,
+                "\t$rs1, $rs2">;
 
-def PULL : LNP64Inst<"pull">;
-def PUSH : LNP64Inst<"push">;
-def AWAIT : LNP64Inst<"await">;
-def MMAP : LNP64Inst<"mmap">;
-def MUNMAP : LNP64Inst<"munmap">;
-def MPROTECT : LNP64Inst<"mprotect">;
-def OBJECT_CTL : LNP64Inst<"object_ctl">;
-def DOMAIN_CTL : LNP64Inst<"domain_ctl">;
-def CAP_SEND : LNP64Inst<"cap_send">;
-def CAP_RECV : LNP64Inst<"cap_recv">;
-def CAP_DUP : LNP64Inst<"cap_dup">;
-def CAP_REVOKE : LNP64Inst<"cap_revoke">;
-def GATE_CALL : LNP64Inst<"gate_call">;
-def GATE_RETURN : LNP64Inst<"gate_return">;
+class LNP64Branch<string Mnemonic>
+    : LNP64Inst<(outs), (ins simm26:$target), Mnemonic, "\t$target">;
+
+class LNP64MemLoad<string Mnemonic>
+    : LNP64Inst<(outs GPR:$rd), (ins GPR:$base, simm16:$offset), Mnemonic,
+                "\t$rd, $offset($base)">;
+
+class LNP64MemStore<string Mnemonic>
+    : LNP64Inst<(outs), (ins GPR:$rs, GPR:$base, simm16:$offset), Mnemonic,
+                "\t$rs, $offset($base)">;
+
+class LNP64Native4<string Mnemonic>
+    : LNP64Inst<(outs GPR:$rd), (ins FDR:$cap, GPR:$arg0, GPR:$arg1),
+                Mnemonic, "\t$rd, $cap, $arg0, $arg1">;
+
+class LNP64Native2<string Mnemonic>
+    : LNP64Inst<(outs GPR:$rd), (ins GPR:$arg), Mnemonic, "\t$rd, $arg">;
+
+def NOP : LNP64NoOperand<"nop">;
+def LI : LNP64RI<"li">;
+def MOV : LNP64RR<"mov">;
+
+def ADD : LNP64RRR<"add">;
+def SUB : LNP64RRR<"sub">;
+def MUL : LNP64RRR<"mul">;
+def DIV : LNP64RRR<"div">;
+def AND : LNP64RRR<"and">;
+def OR : LNP64RRR<"or">;
+def XOR : LNP64RRR<"xor">;
+def NOT : LNP64RR<"not">;
+def LSL : LNP64RRR<"lsl">;
+def LSR : LNP64RRR<"lsr">;
+def ASR : LNP64RRR<"asr">;
+def CMP : LNP64Cmp<"cmp">;
+
+def JMP : LNP64Branch<"jmp">;
+def BEQ : LNP64Branch<"beq">;
+def BNE : LNP64Branch<"bne">;
+def BLT : LNP64Branch<"blt">;
+def BGT : LNP64Branch<"bgt">;
+def BLE : LNP64Branch<"ble">;
+def BGE : LNP64Branch<"bge">;
+def CALL : LNP64Branch<"call">;
+def CALL_REG : LNP64Inst<(outs), (ins GPR:$target), "call_reg", "\t$target">;
+def RET : LNP64NoOperand<"ret">;
+
+def LD : LNP64MemLoad<"ld">;
+def LD_W : LNP64MemLoad<"ld.w">;
+def LD_B : LNP64MemLoad<"ld.b">;
+def ST : LNP64MemStore<"st">;
+def ST_W : LNP64MemStore<"st.w">;
+def ST_B : LNP64MemStore<"st.b">;
+def FENCE : LNP64NoOperand<"fence">;
+def ISYNC : LNP64Inst<(outs), (ins GPR:$rd, GPR:$rs1, GPR:$rs2), "isync",
+                      "\t$rd, $rs1, $rs2">;
+
+def LOCK_CMPXCHG
+    : LNP64Inst<(outs GPR:$rd), (ins GPR:$addr, GPR:$old, GPR:$new), "lock.cmpxchg",
+                "\t$rd, $addr, $old, $new">;
+def FUTEX_WAIT : LNP64Inst<(outs GPR:$rd), (ins GPR:$addr, GPR:$expected),
+                           "futex_wait", "\t$rd, $addr, $expected">;
+def FUTEX_WAKE : LNP64Inst<(outs GPR:$rd), (ins GPR:$addr, GPR:$count),
+                           "futex_wake", "\t$rd, $addr, $count">;
+
+def PULL : LNP64Native4<"pull">;
+def PUSH : LNP64Native4<"push">;
+def AWAIT : LNP64Inst<(outs GPR:$rd), (ins FDR:$cap, GPR:$mask), "await",
+                      "\t$rd, $cap, $mask">;
+def MMAP : LNP64Inst<(outs GPR:$rd), (ins GPR:$addr, GPR:$len, GPR:$prot),
+                     "mmap", "\t$rd, $addr, $len, $prot">;
+def MUNMAP : LNP64Native2<"munmap">;
+def MPROTECT : LNP64Inst<(outs GPR:$rd), (ins GPR:$addr, GPR:$len, GPR:$prot),
+                         "mprotect", "\t$rd, $addr, $len, $prot">;
+def OBJECT_CTL : LNP64Native2<"object_ctl">;
+def DOMAIN_CTL : LNP64Native2<"domain_ctl">;
+def CAP_SEND : LNP64Native2<"cap_send">;
+def CAP_RECV : LNP64Native2<"cap_recv">;
+def CAP_DUP : LNP64Native2<"cap_dup">;
+def CAP_REVOKE : LNP64Native2<"cap_revoke">;
+def GATE_CALL : LNP64Native4<"gate_call">;
+def GATE_RETURN : LNP64Inst<(outs), (ins GPR:$status, GPR:$arg0, GPR:$arg1),
+                            "gate_return", "\t$status, $arg0, $arg1">;

@@ -1794,6 +1794,17 @@ mod tests {
         ] {
             assert!(instr_td.contains(opcode), "instr TableGen missing {opcode}");
         }
+        for shape in [
+            "class LNP64RRR",
+            "(outs GPR:$rd)",
+            "(ins GPR:$rs1, GPR:$rs2)",
+            "class LNP64MemLoad",
+            "$offset($base)",
+            "class LNP64Native4",
+            "(ins FDR:$cap, GPR:$arg0, GPR:$arg1)",
+        ] {
+            assert!(instr_td.contains(shape), "instr TableGen missing {shape}");
+        }
         assert!(cmake.contains("LNP64GenRegisterInfo.inc"));
         for source in [
             "LNP64TargetMachine.cpp",

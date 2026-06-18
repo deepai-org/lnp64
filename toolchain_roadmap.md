@@ -55,6 +55,9 @@ marked `XFAIL` until the target is integrated and executable.
 The MC code emitter now has a first concrete fixed32 no-operand path for `NOP`
 and `RET`; other opcodes remain blocked until operand encodings and fixups are
 implemented.
+`LNP64InstrInfo.td` now carries operand-bearing TableGen classes for integer
+RRR/RR/RI, branch, memory, atomic, and native-capability instruction shapes
+instead of name-only opcode stubs.
 They are scaffolded source files for the real port, not a buildable code
 generator yet.
 `toolchain/lnp64_mc_encoding.manifest` records the initial MC format classes,
