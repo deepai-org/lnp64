@@ -4506,6 +4506,7 @@ impl Machine {
             .map_err(|_| 9u64)?;
         self.bump_fd_generation(dst).map_err(|_| 9u64)?;
         self.process_mut().map_err(|_| 3u64)?.fds[dst] = payload.handle;
+        self.poll_fd_waiters();
         self.fd_token(dst).map_err(|_| 9u64)
     }
 
@@ -16377,6 +16378,43 @@ mod tests {
         assert_eq!(machine.thread().unwrap().regs[8], 0);
         assert_eq!(machine.process().unwrap().errno, 0);
         assert!(machine.fd_read_ready(3).unwrap());
+    }
+
+    #[test]
+    fn cap_recv_wakes_writer_waiting_for_capability_queue_space() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        create_pipe_pair(&mut machine, 3, 4);
+        let queue = match &machine.process().unwrap().fds[4] {
+            FdHandle::PipeWriter(queue) => Rc::clone(queue),
+            _ => panic!("expected pipe writer"),
+        };
+        {
+            let mut queue = queue.borrow_mut();
+            queue.bytes = vec![0; PIPE_BUFFER_BYTE_LIMIT].into();
+            for idx in 0..PIPE_CAPABILITY_LIMIT {
+                queue.capabilities.push_back(CapabilityPayload {
+                    handle: FdHandle::Counter(Rc::new(RefCell::new(idx as u64))),
+                    capability: FdCapability::full(1000 + idx as u64),
+                });
+            }
+        }
+        machine.push_fd_waiter(4, 0, Some(Reg(8))).unwrap();
+        machine.ready.retain(|tid| *tid != 1);
+
+        let arg = ARG_BASE;
+        machine.store_u64(arg, 3).unwrap();
+        machine.store_u64(arg + 8, 6).unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_recv(Reg(7), arg).unwrap();
+
+        assert_ne!(machine.thread().unwrap().regs[7], -1i64 as u64);
+        assert!(machine.ready.contains(&1));
+        assert!(machine.fd_waiters.is_empty());
+        assert_eq!(machine.thread().unwrap().regs[8], 0);
+        assert_eq!(machine.process().unwrap().errno, 0);
+        assert!(machine.fd_ready(4).unwrap());
     }
 
     #[test]
