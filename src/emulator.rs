@@ -2255,6 +2255,11 @@ impl Machine {
             }
             Instr::WaitPid(status_dst, pid_reg) => {
                 Self::ensure_result_reg_writable(status_dst)?;
+                if status_dst.0 == 1 {
+                    return Err(
+                        "WAIT_PID status destination aliases status register r1".to_string()
+                    );
+                }
                 let pid = self.read_reg(pid_reg)?;
                 let current_pid = self.thread()?.pid;
                 let completed = if pid == 0 {
@@ -14816,6 +14821,33 @@ mod tests {
         assert_eq!(machine.thread().unwrap().regs[4], 42);
         assert_eq!(machine.thread().unwrap().regs[1], 0);
         assert!(!machine.completed_children.contains_key(&(1, child_pid)));
+    }
+
+    #[test]
+    fn waitpid_rejects_status_register_alias() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine
+            .clone_with_profile(CloneProfile::NewProcessCow, Reg(2), None)
+            .unwrap();
+        let child_pid = machine.thread().unwrap().regs[2];
+        let child_tid = machine
+            .threads
+            .values()
+            .find(|thread| thread.pid == child_pid)
+            .unwrap()
+            .tid;
+
+        machine.current_tid = child_tid;
+        machine.exit_current(42).unwrap();
+        assert_eq!(machine.completed_children.get(&(1, child_pid)), Some(&42));
+
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[3] = child_pid;
+        let err = machine.exec(Instr::WaitPid(Reg(1), Reg(3))).unwrap_err();
+
+        assert!(err.contains("aliases status register"), "{err}");
+        assert_eq!(machine.completed_children.get(&(1, child_pid)), Some(&42));
     }
 
     #[test]
