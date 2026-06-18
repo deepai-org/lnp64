@@ -74,6 +74,8 @@ module lnp64_m1_pingpong (
     logic [31:0] created_object_generation;
     logic sent_cap_valid;
     logic minted_cap_valid;
+    lnp64_cap_t sent_cap_state;
+    lnp64_cap_t minted_cap_state;
     logic revoked_rejected;
     logic failed_no_authority;
     logic has_revoked_generation;
@@ -126,21 +128,21 @@ module lnp64_m1_pingpong (
         typed_state_projection.consumer_rights = consumer_rights;
         typed_state_projection.sent_valid = sent_cap_valid;
         if (sent_cap_valid) begin
-            typed_state_projection.sent_object_id = M1_QUEUE_OBJECT_ID;
-            typed_state_projection.sent_generation = consumer_fd_generation;
-            typed_state_projection.sent_domain_id = M1_CONSUMER_DOMAIN_ID;
-            typed_state_projection.sent_lineage_epoch = M1_LINEAGE_EPOCH;
-            typed_state_projection.sent_sealed = 1'b0;
-            typed_state_projection.sent_rights = consumer_rights;
+            typed_state_projection.sent_object_id = sent_cap_state.object_id;
+            typed_state_projection.sent_generation = sent_cap_state.fdr_gen;
+            typed_state_projection.sent_domain_id = sent_cap_state.domain_id;
+            typed_state_projection.sent_lineage_epoch = sent_cap_state.lineage_epoch;
+            typed_state_projection.sent_sealed = sent_cap_state.sealed;
+            typed_state_projection.sent_rights = sent_cap_state.rights_mask;
         end
         typed_state_projection.minted_valid = minted_cap_valid;
         if (minted_cap_valid) begin
-            typed_state_projection.minted_object_id = M1_CREATED_OBJECT_ID;
-            typed_state_projection.minted_generation = created_object_generation;
-            typed_state_projection.minted_domain_id = M1_ROOT_DOMAIN_ID;
-            typed_state_projection.minted_lineage_epoch = M1_LINEAGE_EPOCH;
-            typed_state_projection.minted_sealed = 1'b0;
-            typed_state_projection.minted_rights = producer_rights;
+            typed_state_projection.minted_object_id = minted_cap_state.object_id;
+            typed_state_projection.minted_generation = minted_cap_state.fdr_gen;
+            typed_state_projection.minted_domain_id = minted_cap_state.domain_id;
+            typed_state_projection.minted_lineage_epoch = minted_cap_state.lineage_epoch;
+            typed_state_projection.minted_sealed = minted_cap_state.sealed;
+            typed_state_projection.minted_rights = minted_cap_state.rights_mask;
         end
         typed_state_projection.wake_pending = wake_pending;
         typed_state_projection.transfer_valid = transfer_valid;
@@ -181,6 +183,8 @@ module lnp64_m1_pingpong (
             created_object_generation <= 32'd0;
             sent_cap_valid <= 1'b0;
             minted_cap_valid <= 1'b0;
+            sent_cap_state <= '0;
+            minted_cap_state <= '0;
             revoked_rejected <= 1'b0;
             failed_no_authority <= 1'b0;
             has_revoked_generation <= 1'b0;
@@ -209,6 +213,8 @@ module lnp64_m1_pingpong (
                     created_object_generation <= M1_CREATED_OBJECT_GEN;
                     sent_cap_valid <= 1'b0;
                     minted_cap_valid <= 1'b0;
+                    sent_cap_state <= '0;
+                    minted_cap_state <= '0;
                     revoked_rejected <= 1'b0;
                     failed_no_authority <= 1'b0;
                     has_revoked_generation <= 1'b0;
@@ -269,6 +275,15 @@ module lnp64_m1_pingpong (
                     typed_commit.sealed <= 1'b0;
                     typed_commit.status <= LNP64_ERR_OK;
                     sent_cap_valid <= 1'b1;
+                    sent_cap_state.object_id <= M1_QUEUE_OBJECT_ID;
+                    sent_cap_state.object_gen <= queue_generation;
+                    sent_cap_state.fdr_gen <= consumer_fd_generation;
+                    sent_cap_state.domain_id <= M1_CONSUMER_DOMAIN_ID;
+                    sent_cap_state.domain_gen <= M1_DOMAIN_GEN;
+                    sent_cap_state.rights_mask <= consumer_rights;
+                    sent_cap_state.lineage_epoch <= M1_LINEAGE_EPOCH;
+                    sent_cap_state.sealed <= 1'b0;
+                    sent_cap_state.narrowable <= 1'b1;
                     transfer_valid <= 1'b1;
                     state <= M1_CAP_RECV;
                 end
@@ -285,6 +300,7 @@ module lnp64_m1_pingpong (
                     typed_commit.sealed <= 1'b0;
                     typed_commit.status <= LNP64_ERR_OK;
                     sent_cap_valid <= 1'b0;
+                    sent_cap_state <= '0;
                     transfer_valid <= 1'b1;
                     state <= M1_CONSUMER_AWAIT;
                 end
@@ -401,6 +417,15 @@ module lnp64_m1_pingpong (
                         typed_commit.status <= LNP64_ERR_OK;
                         created_object_created <= 1'b1;
                         minted_cap_valid <= 1'b1;
+                        minted_cap_state.object_id <= M1_CREATED_OBJECT_ID;
+                        minted_cap_state.object_gen <= M1_CREATED_OBJECT_GEN;
+                        minted_cap_state.fdr_gen <= M1_CREATED_OBJECT_GEN;
+                        minted_cap_state.domain_id <= M1_ROOT_DOMAIN_ID;
+                        minted_cap_state.domain_gen <= M1_DOMAIN_GEN;
+                        minted_cap_state.rights_mask <= producer_rights;
+                        minted_cap_state.lineage_epoch <= M1_LINEAGE_EPOCH;
+                        minted_cap_state.sealed <= 1'b0;
+                        minted_cap_state.narrowable <= 1'b1;
                         state <= M1_CAP_REVOKE;
                     end else begin
                         state <= M1_DONE;

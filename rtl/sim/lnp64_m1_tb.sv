@@ -62,6 +62,8 @@ module lnp64_m1_tb;
         .consumer_rights(dut.consumer_rights),
         .sent_cap_valid(dut.sent_cap_valid),
         .minted_cap_valid(dut.minted_cap_valid),
+        .sent_cap_state(dut.sent_cap_state),
+        .minted_cap_state(dut.minted_cap_state),
         .created_object_created(dut.created_object_created),
         .created_object_generation(dut.created_object_generation)
     );

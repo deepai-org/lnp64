@@ -23,6 +23,8 @@ module lnp64_m1_assertions (
     input logic [63:0] consumer_rights,
     input logic sent_cap_valid,
     input logic minted_cap_valid,
+    input lnp64_cap_t sent_cap_state,
+    input lnp64_cap_t minted_cap_state,
     input logic created_object_created,
     input logic [31:0] created_object_generation
 );
@@ -193,6 +195,38 @@ module lnp64_m1_assertions (
             rights == 64'd0;
     endfunction
 
+    function automatic logic m1_cap_state_is_zero(input lnp64_cap_t cap);
+        return cap.object_id == 32'd0 &&
+            cap.object_gen == 32'd0 &&
+            cap.fdr_gen == 32'd0 &&
+            cap.domain_id == 32'd0 &&
+            cap.domain_gen == 32'd0 &&
+            cap.rights_mask == 64'd0 &&
+            cap.lineage_epoch == 32'd0 &&
+            !cap.sealed &&
+            !cap.narrowable;
+    endfunction
+
+    function automatic logic m1_projection_matches_cap_state(
+        input logic [31:0] object_id,
+        input logic [31:0] generation,
+        input logic [31:0] domain_id,
+        input logic [31:0] lineage_epoch,
+        input logic sealed,
+        input logic [63:0] rights,
+        input lnp64_cap_t cap
+    );
+        return object_id == cap.object_id &&
+            generation == cap.fdr_gen &&
+            cap.object_gen == cap.fdr_gen &&
+            domain_id == cap.domain_id &&
+            cap.domain_gen == M1_DOMAIN_GEN &&
+            lineage_epoch == cap.lineage_epoch &&
+            sealed == cap.sealed &&
+            rights == cap.rights_mask &&
+            cap.narrowable;
+    endfunction
+
     function automatic logic m1_authority_projection_slots_match(
         input lnp64_m1_state_projection_t left,
         input lnp64_m1_state_projection_t right
@@ -280,6 +314,8 @@ module lnp64_m1_assertions (
             assert (typed_state_projection.created_object_gen == created_object_generation)
                 else $fatal(1, "M1 typed state projection created_object_gen did not match RTL created_object_generation");
             if (!typed_state_projection.sent_valid) begin
+                assert (m1_cap_state_is_zero(sent_cap_state))
+                    else $fatal(1, "M1 invalid sent-cap state retained authority bits");
                 assert (m1_zero_cap_projection(
                     typed_state_projection.sent_object_id,
                     typed_state_projection.sent_generation,
@@ -289,6 +325,15 @@ module lnp64_m1_assertions (
                     typed_state_projection.sent_rights
                 )) else $fatal(1, "M1 invalid sent-cap projection carried authority fields");
             end else begin
+                assert (m1_projection_matches_cap_state(
+                    typed_state_projection.sent_object_id,
+                    typed_state_projection.sent_generation,
+                    typed_state_projection.sent_domain_id,
+                    typed_state_projection.sent_lineage_epoch,
+                    typed_state_projection.sent_sealed,
+                    typed_state_projection.sent_rights,
+                    sent_cap_state
+                )) else $fatal(1, "M1 sent-cap projection did not match RTL sent_cap_state");
                 assert (typed_state_projection.sent_object_id == M1_QUEUE_OBJECT_ID &&
                         typed_state_projection.sent_generation == consumer_fd_generation &&
                         typed_state_projection.sent_domain_id == M1_CONSUMER_DOMAIN_ID &&
@@ -298,6 +343,8 @@ module lnp64_m1_assertions (
                     else $fatal(1, "M1 sent-cap projection did not match transferred consumer authority");
             end
             if (!typed_state_projection.minted_valid) begin
+                assert (m1_cap_state_is_zero(minted_cap_state))
+                    else $fatal(1, "M1 invalid minted-cap state retained authority bits");
                 assert (m1_zero_cap_projection(
                     typed_state_projection.minted_object_id,
                     typed_state_projection.minted_generation,
@@ -307,6 +354,15 @@ module lnp64_m1_assertions (
                     typed_state_projection.minted_rights
                 )) else $fatal(1, "M1 invalid minted-cap projection carried authority fields");
             end else begin
+                assert (m1_projection_matches_cap_state(
+                    typed_state_projection.minted_object_id,
+                    typed_state_projection.minted_generation,
+                    typed_state_projection.minted_domain_id,
+                    typed_state_projection.minted_lineage_epoch,
+                    typed_state_projection.minted_sealed,
+                    typed_state_projection.minted_rights,
+                    minted_cap_state
+                )) else $fatal(1, "M1 minted-cap projection did not match RTL minted_cap_state");
                 assert (typed_state_projection.minted_object_id == M1_CREATED_OBJECT_ID &&
                         typed_state_projection.minted_generation == created_object_generation &&
                         typed_state_projection.minted_domain_id == M1_ROOT_DOMAIN_ID &&
