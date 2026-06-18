@@ -2319,27 +2319,23 @@ impl Machine {
                 let bytes = if len == 0 { 8 } else { len };
                 if len == 0 {
                     if self.consume_domain_entropy(bytes).is_err() {
-                        self.set_status_errno(1)?;
-                        self.write_reg(result, -1i64 as u64)?;
+                        self.complete_reg_err(result, 1)?;
                         return Ok(true);
                     }
                     let value = self.next_random_u64();
-                    self.set_errno(0)?;
-                    self.write_reg(result, value)?;
+                    self.complete_reg_ok(result, value)?;
                 } else {
                     let addr = self.read_reg(buf)?;
                     let len = usize::try_from(len)
                         .map_err(|_| "RANDOM length does not fit host usize".to_string())?;
                     self.ensure_mapped(addr, len, true)?;
                     if self.consume_domain_entropy(bytes).is_err() {
-                        self.set_status_errno(1)?;
-                        self.write_reg(result, -1i64 as u64)?;
+                        self.complete_reg_err(result, 1)?;
                         return Ok(true);
                     }
                     let data = self.random_bytes(len);
                     self.write_bytes(addr, &data)?;
-                    self.set_errno(0)?;
-                    self.write_reg(result, bytes)?;
+                    self.complete_reg_ok(result, bytes)?;
                 }
             }
             Instr::Fork(dst) => {
@@ -15775,10 +15771,12 @@ mod tests {
         assert_eq!(machine.thread().unwrap().regs[4], 4);
         assert_eq!(machine.domains[&ROOT_DOMAIN_ID].security.entropy_quota, 0);
 
+        let before_denied = machine.read_bytes(ARG_BASE, 4).unwrap();
         machine.thread_mut().unwrap().regs[3] = 1;
         machine.exec(Instr::Random(Reg(5), Reg(2), Reg(3))).unwrap();
         assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 1);
+        assert_eq!(machine.read_bytes(ARG_BASE, 4).unwrap(), before_denied);
     }
 
     #[test]
