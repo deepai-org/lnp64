@@ -10634,6 +10634,20 @@ impl CodeGen {
                 self.text.push(format!("  MOV r{dst}, r1"));
                 Ok(dst)
             }
+            "msync" => {
+                if args.len() != 3 {
+                    return Err("msync(addr, len, flags) expects 3 arguments".to_string());
+                }
+                self.emit_expr(&args[0])?;
+                self.emit_expr(&args[1])?;
+                self.emit_expr(&args[2])?;
+                let err = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{err}, 38"));
+                self.text.push(format!("  ERRNO_SET r{err}"));
+                self.text.push(format!("  LI r{dst}, -1"));
+                Ok(dst)
+            }
             "sigmask_set" => {
                 let mask = self.one_arg(name, args)?;
                 self.text.push(format!("  SIGMASK_SET r{mask}"));
@@ -21313,6 +21327,30 @@ int main() {
         assert!(asm.contains("MMAP"), "{asm}");
         assert!(asm.contains("MPROTECT"), "{asm}");
         assert!(asm.contains("MUNMAP"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_msync_fails_cleanly_until_service_owned_flush_exists() {
+        let source = r#"
+        int main() {
+            int p;
+            if (MS_ASYNC != 1) return 1;
+            if (MS_INVALIDATE != 2) return 2;
+            if (MS_SYNC != 4) return 3;
+            p = mmap(0, 4096, 3);
+            if (p == -1) return 4;
+            errno = 0;
+            if (msync(p, 4096, MS_SYNC) != -1) return 5;
+            if (errno != ENOSYS) return 6;
+            if (munmap(p, 4096) != 0) return 7;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("ERRNO_SET"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
