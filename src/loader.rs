@@ -57,6 +57,14 @@ pub struct VmaRecord {
     pub mapping_flags: u64,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PreparedVma {
+    pub virtual_address: u64,
+    pub protection: VmaProtection,
+    pub executable_provenance: ExecutableProvenance,
+    pub bytes: Vec<u8>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct VmaProtection {
     pub read: bool,
@@ -131,6 +139,33 @@ pub fn load_static_elf(image: &mut [u8], options: LoaderOptions) -> Result<ExecP
     let plan = build_static_exec_plan(image, options)?;
     apply_rela_sections(image, &plan, options.load_bias)?;
     Ok(plan)
+}
+
+pub fn materialize_vmas(image: &[u8], plan: &ExecPlan) -> Result<Vec<PreparedVma>, String> {
+    let mut prepared = Vec::with_capacity(plan.vmas.len());
+    for vma in &plan.vmas {
+        let length = checked_usize(vma.length, "VMA length")?;
+        let source_offset = checked_usize(vma.source_offset, "VMA source offset")?;
+        let source_length = checked_usize(vma.source_length, "VMA source length")?;
+        if vma.source_length > vma.length {
+            return Err("VMA source length exceeds VMA length".to_string());
+        }
+        let source_end = source_offset
+            .checked_add(source_length)
+            .ok_or_else(|| "VMA source range overflows".to_string())?;
+        if source_end > image.len() {
+            return Err("VMA source range is truncated".to_string());
+        }
+        let mut bytes = vec![0; length];
+        bytes[..source_length].copy_from_slice(&image[source_offset..source_end]);
+        prepared.push(PreparedVma {
+            virtual_address: vma.virtual_address,
+            protection: vma.protection,
+            executable_provenance: vma.executable_provenance,
+            bytes,
+        });
+    }
+    Ok(prepared)
 }
 
 pub fn build_static_exec_plan(image: &[u8], options: LoaderOptions) -> Result<ExecPlan, String> {
@@ -592,6 +627,71 @@ mod tests {
             }
         );
         assert_eq!(plan.vmas[1].zero_fill_length, 16);
+    }
+
+    #[test]
+    fn static_elf_loader_materializes_vma_bytes_and_zero_fill() {
+        let image = test_elf(&[
+            TestPhdr {
+                typ: PT_LOAD,
+                flags: PF_R | PF_X,
+                offset: 0x100,
+                vaddr: 0x400000,
+                filesz: 16,
+                memsz: 16,
+                align: PAGE_SIZE,
+            },
+            TestPhdr {
+                typ: PT_LOAD,
+                flags: PF_R | PF_W,
+                offset: 0x200,
+                vaddr: 0x402000,
+                filesz: 8,
+                memsz: 24,
+                align: PAGE_SIZE,
+            },
+        ]);
+        let plan = build_static_exec_plan(&image, LoaderOptions::default()).unwrap();
+
+        let prepared = materialize_vmas(&image, &plan).unwrap();
+
+        assert_eq!(prepared.len(), 2);
+        assert_eq!(prepared[0].virtual_address, 0x400000);
+        assert_eq!(prepared[0].bytes, vec![0xcc; 16]);
+        assert_eq!(
+            prepared[0].executable_provenance,
+            ExecutableProvenance::ImageText
+        );
+        assert_eq!(prepared[1].virtual_address, 0x402000);
+        assert_eq!(prepared[1].bytes.len(), 24);
+        assert_eq!(&prepared[1].bytes[..8], &[0xcc; 8]);
+        assert_eq!(&prepared[1].bytes[8..], &[0; 16]);
+        assert_eq!(
+            prepared[1].protection,
+            VmaProtection {
+                read: true,
+                write: true,
+                execute: false,
+            }
+        );
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_truncated_materialization_source() {
+        let image = test_elf(&[TestPhdr {
+            typ: PT_LOAD,
+            flags: PF_R | PF_X,
+            offset: 0x100,
+            vaddr: 0x400000,
+            filesz: 16,
+            memsz: 16,
+            align: PAGE_SIZE,
+        }]);
+        let plan = build_static_exec_plan(&image, LoaderOptions::default()).unwrap();
+
+        let err = materialize_vmas(&image[..0x108], &plan).unwrap_err();
+
+        assert!(err.contains("VMA source range is truncated"), "{err}");
     }
 
     #[test]
