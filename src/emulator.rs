@@ -1551,6 +1551,8 @@ impl Machine {
             0x38 => Instr::ErrnoGet(a),
             0x39 => Instr::ErrnoSet(a),
             0x3a => Instr::Exit(a),
+            0x3b => Instr::PullDyn(a, b, c, Reg(((word >> 4) & 0x1f) as usize)),
+            0x3c => Instr::PushDyn(a, b, c, Reg(((word >> 4) & 0x1f) as usize)),
             other => {
                 return Err(format!(
                     "unsupported committed exec opcode 0x{other:02x} at 0x{pc:x}"
@@ -1932,12 +1934,58 @@ impl Machine {
                     }
                 }
             }
+            Instr::PullDyn(result, fd_reg, buf, len) => {
+                Self::ensure_result_reg_writable(result)?;
+                self.require_domain_cap(DOMAIN_CAP_IO)?;
+                let fd_value = self.read_reg(fd_reg)?;
+                let fd = match self.decode_fd_value(fd_value) {
+                    Ok(fd) => fd,
+                    Err(errno) => {
+                        self.complete_reg_err(result, errno)?;
+                        return Ok(true);
+                    }
+                };
+                if fd == MESSAGE_ENDPOINT_FD {
+                    let Some((v1, v2)) = self.process_mut()?.inbox.pop_front() else {
+                        self.thread_mut()?.ip = self.thread()?.ip.saturating_sub(1);
+                        self.ready.retain(|tid| *tid != self.current_tid);
+                        return Ok(false);
+                    };
+                    self.complete_reg_ok(result, v1)?;
+                    self.write_reg(Reg(30), v2)?;
+                } else {
+                    let addr = self.read_reg(buf)?;
+                    let len = self.read_reg(len)? as usize;
+                    if let Some(count) = self.read_fd_index(fd, addr, len)? {
+                        self.complete_reg_ok(result, count as u64)?;
+                    } else {
+                        let errno = self.process()?.errno;
+                        self.complete_reg_err(result, errno)?;
+                    }
+                }
+            }
             Instr::Push(result, fd, buf, len) => {
                 Self::ensure_result_reg_writable(result)?;
                 self.require_domain_cap(DOMAIN_CAP_IO)?;
                 let addr = self.read_reg(buf)?;
                 let len = self.read_reg(len)? as usize;
                 self.write_fd_index(fd.0, addr, len)?;
+                self.write_reg(result, self.read_reg(Reg(1))?)?;
+            }
+            Instr::PushDyn(result, fd_reg, buf, len) => {
+                Self::ensure_result_reg_writable(result)?;
+                self.require_domain_cap(DOMAIN_CAP_IO)?;
+                let fd_value = self.read_reg(fd_reg)?;
+                let fd = match self.decode_fd_value(fd_value) {
+                    Ok(fd) => fd,
+                    Err(errno) => {
+                        self.complete_reg_err(result, errno)?;
+                        return Ok(true);
+                    }
+                };
+                let addr = self.read_reg(buf)?;
+                let len = self.read_reg(len)? as usize;
+                self.write_fd_index(fd, addr, len)?;
                 self.write_reg(result, self.read_reg(Reg(1))?)?;
             }
             Instr::Await(result, fd, mask) => {
@@ -8916,6 +8964,30 @@ mod tests {
         machine.store_u64(arg + 40, 64).unwrap();
         machine.object_ctl(Reg(2), arg).unwrap();
         machine.fd_token(fd as usize).unwrap()
+    }
+
+    #[test]
+    fn push_dyn_writes_to_capability_fd_and_sets_result_register() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let (_read_token, write_token) = create_pipe_pair(&mut machine, 3, 4);
+        let payload = ARG_BASE + 0x100;
+        let out = ARG_BASE + 0x200;
+        machine.write_bytes(payload, b"xy").unwrap();
+        machine.thread_mut().unwrap().regs[5] = write_token;
+        machine.thread_mut().unwrap().regs[6] = payload;
+        machine.thread_mut().unwrap().regs[7] = 2;
+
+        assert!(
+            machine
+                .exec(Instr::PushDyn(Reg(9), Reg(5), Reg(6), Reg(7)))
+                .unwrap()
+        );
+
+        assert_eq!(machine.thread().unwrap().regs[9], 2);
+        assert_eq!(machine.process().unwrap().errno, 0);
+        assert_eq!(machine.read_fd_index(3, out, 2).unwrap(), Some(2));
+        assert_eq!(machine.read_bytes(out, 2).unwrap(), b"xy");
     }
 
     fn write_classifier_rule(

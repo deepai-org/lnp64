@@ -46,7 +46,8 @@ contract for lld-produced ELF inputs.
 `toolchain/crt0_lnp64.s` is the initial checked crt0 startup stub for the
 future LLVM/lld path.
 `toolchain/liblnp64_min.s` is a checked smoke-only libc object used to prove
-lld can resolve real Clang demo objects before the native libc/runtime is ready.
+lld can resolve real Clang demo objects and route hello stdout through native
+`PUSH` before the native libc/runtime is ready.
 `toolchain/lnp64_intrinsics.h` is the initial checked private C shim header for
 native `__lnp_*` calls.
 `toolchain/lnp64_clang_driver.manifest` records the planned Clang/lld driver
@@ -325,9 +326,9 @@ gate must assemble `toolchain/crt0_lnp64.s`, the static link gate must use
 `toolchain/lnp64_static.ld`, and all gates must stay Clang/lld/loader based: no
 gate in that manifest or driver script may invoke `lnp64 cc`, `cargo run -- cc`,
 or the in-repo toy C compiler.
-The `run_without_toy_compiler` gate is partial: the linked hello execution smoke
-now runs through real Clang/lld output, while stdout/exit remains planned until
-the Clang-built libc/runtime path replaces the smoke-only shim.
+The `run_without_toy_compiler` gate is partial: the linked hello stdout/exit
+smoke now runs through real Clang/lld output, while the full gate remains open
+until the Clang-built libc/runtime path replaces the smoke-only shim.
 
 ## Checked Transition Deliverables
 

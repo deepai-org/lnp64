@@ -299,6 +299,8 @@ private:
             .Case("errno_get", LNP64::ERRNO_GET)
             .Case("errno_set", LNP64::ERRNO_SET)
             .Case("exit", LNP64::EXIT)
+            .Case("pull", LNP64::PULL)
+            .Case("push", LNP64::PUSH)
             .Case("ld", LNP64::LD)
             .Case("ld.w", LNP64::LD_W)
             .Case("ld.h", LNP64::LD_H)
@@ -340,6 +342,8 @@ private:
     if (Opcode == LNP64::ERRNO_GET || Opcode == LNP64::ERRNO_SET ||
         Opcode == LNP64::EXIT)
       return addReg(Inst, Operands);
+    if (Opcode == LNP64::PULL || Opcode == LNP64::PUSH)
+      return addRegRegRegReg(Inst, Operands);
     if (Opcode == LNP64::LD || Opcode == LNP64::LD_W ||
         Opcode == LNP64::LD_H || Opcode == LNP64::LD_B)
       return addLoad(Inst, Operands);
@@ -416,6 +420,21 @@ private:
     Inst.addOperand(MCOperand::createReg(A->getReg()));
     Inst.addOperand(MCOperand::createReg(B->getReg()));
     Inst.addOperand(MCOperand::createReg(C->getReg()));
+    return true;
+  }
+
+  static bool addRegRegRegReg(MCInst &Inst, const OperandVector &Operands) {
+    const LNP64Operand *A = getOp(Operands, 1);
+    const LNP64Operand *B = getOp(Operands, 2);
+    const LNP64Operand *C = getOp(Operands, 3);
+    const LNP64Operand *D = getOp(Operands, 4);
+    if (Operands.size() != 5 || !A || !B || !C || !D || !A->isReg() ||
+        !B->isReg() || !C->isReg() || !D->isReg())
+      return false;
+    Inst.addOperand(MCOperand::createReg(A->getReg()));
+    Inst.addOperand(MCOperand::createReg(B->getReg()));
+    Inst.addOperand(MCOperand::createReg(C->getReg()));
+    Inst.addOperand(MCOperand::createReg(D->getReg()));
     return true;
   }
 

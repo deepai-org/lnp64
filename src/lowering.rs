@@ -1670,7 +1670,12 @@ mod tests {
         assert!(real_llc_docker.contains("cargo run --quiet -- elf-plan"));
         assert!(real_llc_docker.contains("cargo run --quiet -- run-elf"));
         assert!(real_llc_docker.contains("lnp64-hello-clang-linked.elf"));
-        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf linked hello execution passed"));
+        assert!(real_llc_docker.contains("hello from LNP64"));
+        assert!(real_llc_docker.contains("exit=0"));
+        assert!(
+            real_llc_docker
+                .contains("real LLVM LNP64 run-elf linked hello stdout execution passed")
+        );
         assert!(main_source.contains("\"run-elf\""));
         assert!(main_source.contains("run_committed_exec"));
         assert!(loader_security.contains("submit_exec_plan"));
@@ -1742,13 +1747,8 @@ mod tests {
             assert_eq!(stages[stage].0, "tested", "{stage} should be tested");
         }
         assert_eq!(stages["entry_state"].0, "partial");
+        assert_eq!(stages["stdout_exit"].0, "partial");
         assert_eq!(stages["no_toy_compiler"].0, "partial");
-        for stage in ["stdout_exit"] {
-            assert_eq!(
-                stages[stage].0, "planned",
-                "{stage} must stay planned until the real libc/runtime path exists"
-            );
-        }
         assert!(roadmap.contains("run_without_toy_compiler` gate is partial"));
     }
 
@@ -2562,7 +2562,7 @@ mod tests {
         for required in [
             ".globl write",
             "write:",
-            "MOV r1, r3",
+            "PUSH r1, r1, r2, r3",
             ".globl alloc",
             "alloc:",
             "LA r1, __lnp64_min_heap",

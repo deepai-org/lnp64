@@ -58,6 +58,10 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
     return "errno_set";
   case LNP64::EXIT:
     return "exit";
+  case LNP64::PULL:
+    return "pull";
+  case LNP64::PUSH:
+    return "push";
   case LNP64::LD:
     return "ld";
   case LNP64::LD_W:
@@ -197,6 +201,17 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::EXIT:
     OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
     printOperand(MI->getOperand(0), OS);
+    break;
+  case LNP64::PULL:
+  case LNP64::PUSH:
+    OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
+    printOperand(MI->getOperand(0), OS);
+    OS << ", ";
+    printOperand(MI->getOperand(1), OS);
+    OS << ", ";
+    printOperand(MI->getOperand(2), OS);
+    OS << ", ";
+    printOperand(MI->getOperand(3), OS);
     break;
   case LNP64::LD:
   case LNP64::LD_W:

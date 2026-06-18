@@ -6,7 +6,7 @@
 .globl write
 .type write,@function
 write:
-  MOV r1, r3
+  PUSH r1, r1, r2, r3
   RET
 
 .globl alloc

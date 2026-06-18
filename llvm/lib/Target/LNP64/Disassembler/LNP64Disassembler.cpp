@@ -203,6 +203,20 @@ public:
       Instr.setOpcode(LNP64::EXIT);
       addReg(Instr, A);
       return MCDisassembler::Success;
+    case 0x3b:
+      Instr.setOpcode(LNP64::PULL);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      addReg(Instr, (Word >> 4) & 0x1f);
+      return MCDisassembler::Success;
+    case 0x3c:
+      Instr.setOpcode(LNP64::PUSH);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      addReg(Instr, (Word >> 4) & 0x1f);
+      return MCDisassembler::Success;
     case 0x30:
       Instr.setOpcode(LNP64::LD);
       addReg(Instr, A);

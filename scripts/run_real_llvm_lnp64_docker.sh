@@ -18,6 +18,8 @@ docker run --rm \
 
 linked_probe="target/llvm-lnp64-build/lnp64-hello-clang-linked.elf"
 cargo run --quiet -- elf-plan "$linked_probe" >/dev/null
-cargo run --quiet -- run-elf "$linked_probe" >/dev/null
-printf 'real LLVM LNP64 run-elf linked hello execution passed: %s\n' \
+run_elf_output="$(cargo run --quiet -- run-elf "$linked_probe")"
+grep -q 'hello from LNP64' <<<"$run_elf_output"
+grep -q 'exit=0' <<<"$run_elf_output"
+printf 'real LLVM LNP64 run-elf linked hello stdout execution passed: %s\n' \
   "$linked_probe"

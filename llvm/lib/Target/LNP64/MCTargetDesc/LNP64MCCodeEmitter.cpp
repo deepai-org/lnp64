@@ -49,6 +49,14 @@ static uint32_t encodeFixed32Mem(uint8_t Opcode, unsigned Reg, unsigned Base,
          ((Base & 0x1f) << 14) | (uint32_t(Offset) & 0x3fff);
 }
 
+static uint32_t encodeFixed32Native4(uint8_t Opcode, unsigned Rd,
+                                     unsigned Cap, unsigned Arg0,
+                                     unsigned Arg1) {
+  return (uint32_t(Opcode) << 24) | ((Rd & 0x1f) << 19) |
+         ((Cap & 0x1f) << 14) | ((Arg0 & 0x1f) << 9) |
+         ((Arg1 & 0x1f) << 4);
+}
+
 static uint32_t encodeFixed32Branch(uint8_t Opcode, int64_t Target) {
   if (Target % 4 != 0)
     llvm_unreachable("expected instruction-aligned LNP64 branch target");
@@ -226,6 +234,20 @@ public:
       return;
     case LNP64::EXIT:
       emitLE32(encodeFixed32Reg(0x3a, getGPRNo(MI.getOperand(0))), OS);
+      return;
+    case LNP64::PULL:
+      emitLE32(encodeFixed32Native4(0x3b, getGPRNo(MI.getOperand(0)),
+                                    getGPRNo(MI.getOperand(1)),
+                                    getGPRNo(MI.getOperand(2)),
+                                    getGPRNo(MI.getOperand(3))),
+               OS);
+      return;
+    case LNP64::PUSH:
+      emitLE32(encodeFixed32Native4(0x3c, getGPRNo(MI.getOperand(0)),
+                                    getGPRNo(MI.getOperand(1)),
+                                    getGPRNo(MI.getOperand(2)),
+                                    getGPRNo(MI.getOperand(3))),
+               OS);
       return;
     case LNP64::LD:
       emitLE32(encodeFixed32Mem(0x30, getGPRNo(MI.getOperand(0)),
