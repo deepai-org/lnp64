@@ -2714,6 +2714,9 @@ impl Machine {
         entry: Option<u64>,
     ) -> Result<(), String> {
         self.require_domain_cap(DOMAIN_CAP_PROCESS)?;
+        if dst.0 == 31 {
+            return Err("write to hardware-locked stack pointer r31".to_string());
+        }
         if profile == CloneProfile::DomainTask {
             self.set_status_errno(38)?;
             self.write_reg(dst, -1i64 as u64)?;
@@ -2726,9 +2729,7 @@ impl Machine {
         match profile {
             CloneProfile::NewProcessCow => {
                 let child_pid = self.next_pid;
-                self.next_pid += 1;
                 let child_tid = self.next_tid;
-                self.next_tid += 1;
 
                 let child_process = self.process()?.fork_clone(child_pid)?;
                 let mut child_thread = self.thread()?.clone();
@@ -2737,6 +2738,8 @@ impl Machine {
                 if dst.0 != 0 && dst.0 != 31 {
                     child_thread.regs[dst.0] = 0;
                 }
+                self.next_pid += 1;
+                self.next_tid += 1;
                 self.processes.insert(child_pid, child_process);
                 self.threads.insert(child_tid, child_thread);
                 self.ready.push_back(child_tid);
@@ -10457,6 +10460,15 @@ mod tests {
             .unwrap();
         assert_eq!(machine.thread().unwrap().regs[7], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 12);
+        assert_eq!(machine.next_tid, 17);
+        assert_eq!(machine.processes.len(), process_count);
+        assert_eq!(machine.threads.len(), thread_count);
+
+        let err = machine
+            .clone_with_profile(CloneProfile::NewProcessCow, Reg(31), None)
+            .unwrap_err();
+        assert!(err.contains("hardware-locked stack pointer"), "{err}");
+        assert_eq!(machine.next_pid, next_pid);
         assert_eq!(machine.next_tid, 17);
         assert_eq!(machine.processes.len(), process_count);
         assert_eq!(machine.threads.len(), thread_count);
