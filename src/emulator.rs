@@ -2050,6 +2050,13 @@ impl Machine {
                 }
             }
             Instr::WaitOnFd(fd, _) => {
+                if fd.0 >= FDR_COUNT {
+                    self.set_status_errno(9)?;
+                    return Ok(true);
+                }
+                if self.ensure_fd_right(fd.0, CAP_RIGHT_POLL).is_err() {
+                    return Ok(true);
+                }
                 if !self.fd_ready(fd.0)? {
                     self.push_fd_waiter(fd.0, 0, None)?;
                     self.ready.retain(|tid| *tid != self.current_tid);
@@ -11904,6 +11911,34 @@ mod tests {
         assert!(machine.fd_waiters.is_empty());
         assert_eq!(machine.thread().unwrap().regs[9], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 9);
+    }
+
+    #[test]
+    fn wait_on_fd_rejects_invalid_sources_without_parking() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+
+        let keep_ready = machine
+            .exec(Instr::WaitOnFd(FdReg(FDR_COUNT), Reg(0)))
+            .unwrap();
+        assert!(keep_ready);
+        assert!(machine.ready.contains(&1));
+        assert!(machine.fd_waiters.is_empty());
+        assert_eq!(machine.process().unwrap().errno, 9);
+
+        let keep_ready = machine.exec(Instr::WaitOnFd(FdReg(7), Reg(0))).unwrap();
+        assert!(keep_ready);
+        assert!(machine.ready.contains(&1));
+        assert!(machine.fd_waiters.is_empty());
+        assert_eq!(machine.process().unwrap().errno, 9);
+
+        create_pipe_pair(&mut machine, 3, 4);
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[3].rights &= !CAP_RIGHT_POLL;
+        let keep_ready = machine.exec(Instr::WaitOnFd(FdReg(3), Reg(0))).unwrap();
+        assert!(keep_ready);
+        assert!(machine.ready.contains(&1));
+        assert!(machine.fd_waiters.is_empty());
+        assert_eq!(machine.process().unwrap().errno, 1);
     }
 
     #[test]
