@@ -8774,6 +8774,39 @@ mod tests {
     }
 
     #[test]
+    fn timer_expiration_wakes_reader_waiting_for_tick() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let timer = Rc::new(RefCell::new(TimerState {
+            remaining: 1,
+            interval: 0,
+            expirations: 0,
+        }));
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[3] = FdHandle::Timer(Rc::clone(&timer));
+            process.fd_capabilities[3] = FdCapability::full(3);
+        }
+        machine
+            .push_fd_waiter(3, POLLIN_MASK, Some(Reg(8)))
+            .unwrap();
+        machine.ready.retain(|tid| *tid != 1);
+
+        machine.tick_timers();
+        machine.poll_fd_waiters();
+
+        assert_eq!(timer.borrow().expirations, 1);
+        assert!(machine.ready.contains(&1));
+        assert!(machine.fd_waiters.is_empty());
+        assert_eq!(machine.thread().unwrap().regs[8], 0);
+        assert_eq!(machine.process().unwrap().errno, 0);
+        assert_eq!(
+            machine.poll_fd_index_mask_raw(3, POLLIN_MASK).unwrap(),
+            POLLIN_MASK
+        );
+    }
+
+    #[test]
     fn push_rejects_locked_result_register_before_queue_write() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
