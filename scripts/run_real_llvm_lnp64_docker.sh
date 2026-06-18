@@ -116,6 +116,13 @@ grep -q 'exit=0' <<<"$bitmanip_output"
 printf 'real LLVM LNP64 run-elf bit-manip execution passed: %s\n' \
   "$bitmanip_probe"
 
+csel_probe="target/llvm-lnp64-build/lnp64-csel-linked.elf"
+cargo run --quiet -- elf-plan "$csel_probe" >/dev/null
+csel_output="$(cargo run --quiet -- run-elf "$csel_probe")"
+grep -q 'exit=0' <<<"$csel_output"
+printf 'real LLVM LNP64 run-elf csel execution passed: %s\n' \
+  "$csel_probe"
+
 compare_probe="target/llvm-lnp64-build/lnp64-compare-linked.elf"
 cargo run --quiet -- elf-plan "$compare_probe" >/dev/null
 compare_output="$(cargo run --quiet -- run-elf "$compare_probe")"

@@ -322,6 +322,16 @@ private:
             .Case("cset.ugt", LNP64::CSET_UGT)
             .Case("cset.ule", LNP64::CSET_ULE)
             .Case("cset.uge", LNP64::CSET_UGE)
+            .Case("csel.eq", LNP64::CSEL_EQ)
+            .Case("csel.ne", LNP64::CSEL_NE)
+            .Case("csel.lt", LNP64::CSEL_LT)
+            .Case("csel.gt", LNP64::CSEL_GT)
+            .Case("csel.le", LNP64::CSEL_LE)
+            .Case("csel.ge", LNP64::CSEL_GE)
+            .Case("csel.ult", LNP64::CSEL_ULT)
+            .Case("csel.ugt", LNP64::CSEL_UGT)
+            .Case("csel.ule", LNP64::CSEL_ULE)
+            .Case("csel.uge", LNP64::CSEL_UGE)
             .Case("jmp", LNP64::JMP)
             .Case("beq", LNP64::BEQ)
             .Case("bne", LNP64::BNE)
@@ -387,7 +397,12 @@ private:
         Opcode == LNP64::AND || Opcode == LNP64::OR ||
         Opcode == LNP64::XOR || Opcode == LNP64::LSL ||
         Opcode == LNP64::LSR || Opcode == LNP64::ASR ||
-        Opcode == LNP64::ROL || Opcode == LNP64::ROR)
+        Opcode == LNP64::ROL || Opcode == LNP64::ROR ||
+        Opcode == LNP64::CSEL_EQ || Opcode == LNP64::CSEL_NE ||
+        Opcode == LNP64::CSEL_LT || Opcode == LNP64::CSEL_GT ||
+        Opcode == LNP64::CSEL_LE || Opcode == LNP64::CSEL_GE ||
+        Opcode == LNP64::CSEL_ULT || Opcode == LNP64::CSEL_UGT ||
+        Opcode == LNP64::CSEL_ULE || Opcode == LNP64::CSEL_UGE)
       return addRegRegReg(Inst, Operands);
     if (Opcode == LNP64::CMP || Opcode == LNP64::CMPU)
       return addRegReg(Inst, Operands);

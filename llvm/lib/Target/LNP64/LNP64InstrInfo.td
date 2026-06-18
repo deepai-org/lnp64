@@ -121,6 +121,12 @@ class LNP64Cset<string Mnemonic>
   let Uses = [FLAGS];
 }
 
+class LNP64Csel<string Mnemonic>
+    : LNP64Inst<(outs GPR:$rd), (ins GPR:$true_src, GPR:$false_src),
+                Mnemonic, "\t$rd, $true_src, $false_src"> {
+  let Uses = [FLAGS];
+}
+
 class LNP64SetCCPseudo<string Mnemonic>
     : LNP64Inst<(outs GPR:$rd), (ins GPR:$lhs, GPR:$rhs), Mnemonic,
                 "\t$rd, $lhs, $rhs"> {
@@ -131,6 +137,14 @@ class LNP64SetCCPseudo<string Mnemonic>
 class LNP64SetCCImmPseudo<string Mnemonic>
     : LNP64Inst<(outs GPR:$rd), (ins GPR:$lhs, simm16:$rhs), Mnemonic,
                 "\t$rd, $lhs, $rhs"> {
+  let isPseudo = 1;
+  let usesCustomInserter = 1;
+}
+
+class LNP64SelectCCPseudo<string Mnemonic>
+    : LNP64Inst<(outs GPR:$rd),
+                (ins GPR:$lhs, GPR:$rhs, GPR:$true_src, GPR:$false_src),
+                Mnemonic, "\t$rd, $lhs, $rhs, $true_src, $false_src"> {
   let isPseudo = 1;
   let usesCustomInserter = 1;
 }
@@ -295,6 +309,16 @@ def PseudoCSETULTI : LNP64SetCCImmPseudo<"pseudo_csetulti">;
 def PseudoCSETUGTI : LNP64SetCCImmPseudo<"pseudo_csetugti">;
 def PseudoCSETULEI : LNP64SetCCImmPseudo<"pseudo_csetulei">;
 def PseudoCSETUGEI : LNP64SetCCImmPseudo<"pseudo_csetugei">;
+def PseudoCSELEQ : LNP64SelectCCPseudo<"pseudo_cseleq">;
+def PseudoCSELNE : LNP64SelectCCPseudo<"pseudo_cselne">;
+def PseudoCSELLT : LNP64SelectCCPseudo<"pseudo_csellt">;
+def PseudoCSELGT : LNP64SelectCCPseudo<"pseudo_cselgt">;
+def PseudoCSELLE : LNP64SelectCCPseudo<"pseudo_cselle">;
+def PseudoCSELGE : LNP64SelectCCPseudo<"pseudo_cselge">;
+def PseudoCSELULT : LNP64SelectCCPseudo<"pseudo_cselult">;
+def PseudoCSELUGT : LNP64SelectCCPseudo<"pseudo_cselugt">;
+def PseudoCSELULE : LNP64SelectCCPseudo<"pseudo_cselule">;
+def PseudoCSELUGE : LNP64SelectCCPseudo<"pseudo_cseluge">;
 def : Pat<(i64 (seteq GPR:$lhs, GPR:$rhs)),
           (PseudoCSETEQ GPR:$lhs, GPR:$rhs)>;
 def : Pat<(i64 (setne GPR:$lhs, GPR:$rhs)),
@@ -335,8 +359,38 @@ def : Pat<(i64 (setule GPR:$lhs, simm16_imm:$rhs)),
           (PseudoCSETULEI GPR:$lhs, simm16_imm:$rhs)>;
 def : Pat<(i64 (setuge GPR:$lhs, simm16_imm:$rhs)),
           (PseudoCSETUGEI GPR:$lhs, simm16_imm:$rhs)>;
+def : Pat<(i64 (selectcc GPR:$lhs, GPR:$rhs, GPR:$true_src, GPR:$false_src, SETEQ)),
+          (PseudoCSELEQ GPR:$lhs, GPR:$rhs, GPR:$true_src, GPR:$false_src)>;
+def : Pat<(i64 (selectcc GPR:$lhs, GPR:$rhs, GPR:$true_src, GPR:$false_src, SETNE)),
+          (PseudoCSELNE GPR:$lhs, GPR:$rhs, GPR:$true_src, GPR:$false_src)>;
+def : Pat<(i64 (selectcc GPR:$lhs, GPR:$rhs, GPR:$true_src, GPR:$false_src, SETLT)),
+          (PseudoCSELLT GPR:$lhs, GPR:$rhs, GPR:$true_src, GPR:$false_src)>;
+def : Pat<(i64 (selectcc GPR:$lhs, GPR:$rhs, GPR:$true_src, GPR:$false_src, SETGT)),
+          (PseudoCSELGT GPR:$lhs, GPR:$rhs, GPR:$true_src, GPR:$false_src)>;
+def : Pat<(i64 (selectcc GPR:$lhs, GPR:$rhs, GPR:$true_src, GPR:$false_src, SETLE)),
+          (PseudoCSELLE GPR:$lhs, GPR:$rhs, GPR:$true_src, GPR:$false_src)>;
+def : Pat<(i64 (selectcc GPR:$lhs, GPR:$rhs, GPR:$true_src, GPR:$false_src, SETGE)),
+          (PseudoCSELGE GPR:$lhs, GPR:$rhs, GPR:$true_src, GPR:$false_src)>;
+def : Pat<(i64 (selectcc GPR:$lhs, GPR:$rhs, GPR:$true_src, GPR:$false_src, SETULT)),
+          (PseudoCSELULT GPR:$lhs, GPR:$rhs, GPR:$true_src, GPR:$false_src)>;
+def : Pat<(i64 (selectcc GPR:$lhs, GPR:$rhs, GPR:$true_src, GPR:$false_src, SETUGT)),
+          (PseudoCSELUGT GPR:$lhs, GPR:$rhs, GPR:$true_src, GPR:$false_src)>;
+def : Pat<(i64 (selectcc GPR:$lhs, GPR:$rhs, GPR:$true_src, GPR:$false_src, SETULE)),
+          (PseudoCSELULE GPR:$lhs, GPR:$rhs, GPR:$true_src, GPR:$false_src)>;
+def : Pat<(i64 (selectcc GPR:$lhs, GPR:$rhs, GPR:$true_src, GPR:$false_src, SETUGE)),
+          (PseudoCSELUGE GPR:$lhs, GPR:$rhs, GPR:$true_src, GPR:$false_src)>;
 let isCompare = 1, Defs = [FLAGS] in
 def CMPU : LNP64Cmp<"cmpu">;
+def CSEL_EQ : LNP64Csel<"csel.eq">;
+def CSEL_NE : LNP64Csel<"csel.ne">;
+def CSEL_LT : LNP64Csel<"csel.lt">;
+def CSEL_GT : LNP64Csel<"csel.gt">;
+def CSEL_LE : LNP64Csel<"csel.le">;
+def CSEL_GE : LNP64Csel<"csel.ge">;
+def CSEL_ULT : LNP64Csel<"csel.ult">;
+def CSEL_UGT : LNP64Csel<"csel.ugt">;
+def CSEL_ULE : LNP64Csel<"csel.ule">;
+def CSEL_UGE : LNP64Csel<"csel.uge">;
 
 let isBranch = 1, isTerminator = 1, isBarrier = 1 in
 def JMP : LNP64Branch<"jmp"> {

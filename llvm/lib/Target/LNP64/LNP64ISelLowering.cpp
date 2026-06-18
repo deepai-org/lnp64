@@ -125,6 +125,33 @@ static unsigned getLNP64CSetInstr(unsigned Opcode) {
   }
 }
 
+static unsigned getLNP64CSelectInstr(unsigned Opcode) {
+  switch (Opcode) {
+  case LNP64::PseudoCSELEQ:
+    return LNP64::CSEL_EQ;
+  case LNP64::PseudoCSELNE:
+    return LNP64::CSEL_NE;
+  case LNP64::PseudoCSELLT:
+    return LNP64::CSEL_LT;
+  case LNP64::PseudoCSELGT:
+    return LNP64::CSEL_GT;
+  case LNP64::PseudoCSELLE:
+    return LNP64::CSEL_LE;
+  case LNP64::PseudoCSELGE:
+    return LNP64::CSEL_GE;
+  case LNP64::PseudoCSELULT:
+    return LNP64::CSEL_ULT;
+  case LNP64::PseudoCSELUGT:
+    return LNP64::CSEL_UGT;
+  case LNP64::PseudoCSELULE:
+    return LNP64::CSEL_ULE;
+  case LNP64::PseudoCSELUGE:
+    return LNP64::CSEL_UGE;
+  default:
+    llvm_unreachable("expected LNP64 selectcc pseudo");
+  }
+}
+
 static bool isLNP64SetCCImmPseudo(unsigned Opcode) {
   switch (Opcode) {
   case LNP64::PseudoCSETEQI:
@@ -171,6 +198,24 @@ static bool isLNP64SetCCPseudo(unsigned Opcode) {
   }
 }
 
+static bool isLNP64SelectCCPseudo(unsigned Opcode) {
+  switch (Opcode) {
+  case LNP64::PseudoCSELEQ:
+  case LNP64::PseudoCSELNE:
+  case LNP64::PseudoCSELLT:
+  case LNP64::PseudoCSELGT:
+  case LNP64::PseudoCSELLE:
+  case LNP64::PseudoCSELGE:
+  case LNP64::PseudoCSELULT:
+  case LNP64::PseudoCSELUGT:
+  case LNP64::PseudoCSELULE:
+  case LNP64::PseudoCSELUGE:
+    return true;
+  default:
+    return false;
+  }
+}
+
 static bool isLNP64UnsignedSetCCPseudo(unsigned Opcode) {
   switch (Opcode) {
   case LNP64::PseudoCSETULT:
@@ -181,6 +226,18 @@ static bool isLNP64UnsignedSetCCPseudo(unsigned Opcode) {
   case LNP64::PseudoCSETUGTI:
   case LNP64::PseudoCSETULEI:
   case LNP64::PseudoCSETUGEI:
+    return true;
+  default:
+    return false;
+  }
+}
+
+static bool isLNP64UnsignedSelectCCPseudo(unsigned Opcode) {
+  switch (Opcode) {
+  case LNP64::PseudoCSELULT:
+  case LNP64::PseudoCSELUGT:
+  case LNP64::PseudoCSELULE:
+  case LNP64::PseudoCSELUGE:
     return true;
   default:
     return false;
@@ -400,6 +457,20 @@ MachineBasicBlock *LNP64TargetLowering::EmitInstrWithCustomInserter(
     }
     BuildMI(*BB, MI, DL, TII.get(getLNP64CSetInstr(MI.getOpcode())),
             MI.getOperand(0).getReg());
+    MI.eraseFromParent();
+    return BB;
+  }
+
+  if (isLNP64SelectCCPseudo(MI.getOpcode())) {
+    unsigned CmpOpcode =
+        isLNP64UnsignedSelectCCPseudo(MI.getOpcode()) ? LNP64::CMPU : LNP64::CMP;
+    BuildMI(*BB, MI, DL, TII.get(CmpOpcode))
+        .add(MI.getOperand(1))
+        .add(MI.getOperand(2));
+    BuildMI(*BB, MI, DL, TII.get(getLNP64CSelectInstr(MI.getOpcode())),
+            MI.getOperand(0).getReg())
+        .add(MI.getOperand(3))
+        .add(MI.getOperand(4));
     MI.eraseFromParent();
     return BB;
   }

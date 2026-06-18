@@ -338,6 +338,66 @@ public:
       addReg(Instr, A);
       addReg(Instr, B);
       return MCDisassembler::Success;
+    case 0xbb:
+      Instr.setOpcode(LNP64::CSEL_EQ);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0xbc:
+      Instr.setOpcode(LNP64::CSEL_NE);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0xbd:
+      Instr.setOpcode(LNP64::CSEL_LT);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0xbe:
+      Instr.setOpcode(LNP64::CSEL_GT);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0xbf:
+      Instr.setOpcode(LNP64::CSEL_LE);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0xc0:
+      Instr.setOpcode(LNP64::CSEL_GE);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0xc1:
+      Instr.setOpcode(LNP64::CSEL_ULT);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0xc2:
+      Instr.setOpcode(LNP64::CSEL_UGT);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0xc3:
+      Instr.setOpcode(LNP64::CSEL_ULE);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0xc4:
+      Instr.setOpcode(LNP64::CSEL_UGE);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
     case 0x38:
       Instr.setOpcode(LNP64::ERRNO_GET);
       addReg(Instr, A);

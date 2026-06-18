@@ -106,6 +106,26 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
     return "cset.ule";
   case LNP64::CSET_UGE:
     return "cset.uge";
+  case LNP64::CSEL_EQ:
+    return "csel.eq";
+  case LNP64::CSEL_NE:
+    return "csel.ne";
+  case LNP64::CSEL_LT:
+    return "csel.lt";
+  case LNP64::CSEL_GT:
+    return "csel.gt";
+  case LNP64::CSEL_LE:
+    return "csel.le";
+  case LNP64::CSEL_GE:
+    return "csel.ge";
+  case LNP64::CSEL_ULT:
+    return "csel.ult";
+  case LNP64::CSEL_UGT:
+    return "csel.ugt";
+  case LNP64::CSEL_ULE:
+    return "csel.ule";
+  case LNP64::CSEL_UGE:
+    return "csel.uge";
   case LNP64::JMP:
     return "jmp";
   case LNP64::BEQ:
@@ -270,6 +290,16 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::ASRI:
   case LNP64::ROL:
   case LNP64::ROR:
+  case LNP64::CSEL_EQ:
+  case LNP64::CSEL_NE:
+  case LNP64::CSEL_LT:
+  case LNP64::CSEL_GT:
+  case LNP64::CSEL_LE:
+  case LNP64::CSEL_GE:
+  case LNP64::CSEL_ULT:
+  case LNP64::CSEL_UGT:
+  case LNP64::CSEL_ULE:
+  case LNP64::CSEL_UGE:
     OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
     printOperand(MI->getOperand(0), OS);
     OS << ", ";

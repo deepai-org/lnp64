@@ -340,6 +340,43 @@ grep -q 'bswap64 r' "$bitmanip_dump"
 printf 'real LLVM LNP64 clang bit-manip object smoke passed: %s\n' \
   "$bitmanip_obj"
 
+csel_c="$build_dir/csel-smoke.c"
+cat >"$csel_c" <<'C'
+static volatile long low = 3;
+static volatile long high = 7;
+static volatile long true_value = 11;
+static volatile long false_value = 19;
+
+int main(void) {
+  long lo = low;
+  long hi = high;
+  long tv = true_value;
+  long fv = false_value;
+  long gt_true = hi > lo ? tv : fv;
+  long gt_false = lo > hi ? tv : fv;
+  unsigned long ulo = (unsigned long)lo;
+  unsigned long uhi = (unsigned long)hi;
+  unsigned long utv = (unsigned long)tv;
+  unsigned long ufv = (unsigned long)fv;
+  unsigned long ult_true = ulo < uhi ? utv : ufv;
+  unsigned long ult_false = uhi < ulo ? utv : ufv;
+
+  return (int)((gt_true - tv) + (gt_false - fv) + (ult_true - utv) +
+               (ult_false - ufv));
+}
+C
+
+csel_obj="$build_dir/csel-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -O1 -ffreestanding -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$csel_c" -o "$csel_obj"
+test -s "$csel_obj"
+csel_dump="$build_dir/csel-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$csel_obj" >"$csel_dump"
+grep -q 'csel.gt r' "$csel_dump"
+grep -q 'csel.ult r' "$csel_dump"
+printf 'real LLVM LNP64 clang csel object smoke passed: %s\n' "$csel_obj"
+
 hello_obj="$build_dir/hello-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
@@ -1154,6 +1191,12 @@ bitmanip_elf="$build_dir/lnp64-bitmanip-linked.elf"
 test -s "$bitmanip_elf"
 printf 'real LLVM LNP64 lld bit-manip link smoke passed: %s\n' \
   "$bitmanip_elf"
+
+csel_elf="$build_dir/lnp64-csel-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$csel_elf" "$crt0_obj" "$csel_obj"
+test -s "$csel_elf"
+printf 'real LLVM LNP64 lld csel link smoke passed: %s\n' "$csel_elf"
 
 compare_elf="$build_dir/lnp64-compare-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
