@@ -66,12 +66,12 @@ The first SelectionDAG patterns now select signed-16 constant materialization
 through `LI`, simple i64 ALU operations (`add`/`sub`/`mul`/signed `div`,
 bitwise ops, and shifts), and i64 base+signed-14-offset loads/stores onto the
 fixed32 opcodes. LLVM unconditional `br` now selects the architectural `JMP`
-through a machine-basic-block branch target operand. Direct, non-varargs calls
-now lower register arguments through `CC_LNP64`, emit `CALL` for global or
-external callees, and copy register results through `RetCC_LNP64`. Conditional
-branch lowering, indirect calls, stack call operands/results, call-frame
-pseudos, signed narrow loads, unaligned/large-offset address expansion, and
-globals remain bring-up blockers.
+through a machine-basic-block branch target operand. Non-varargs calls now
+lower register arguments through `CC_LNP64`, emit `CALL` for global or external
+callees, emit `CALL_REG` for register callees, and copy register results through
+`RetCC_LNP64`. Conditional branch lowering, stack call operands/results,
+call-frame pseudos, signed narrow loads, unaligned/large-offset address
+expansion, and globals remain bring-up blockers.
 Narrow memory selection covers zero-extending byte/half/word loads and
 truncating byte/half/word stores through `LD_B`/`LD_H`/`LD_W` and
 `ST_B`/`ST_H`/`ST_W`.

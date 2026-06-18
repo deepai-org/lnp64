@@ -179,8 +179,8 @@ LNP64TargetLowering::LowerCall(CallLoweringInfo &CLI,
     Callee = DAG.getTargetGlobalAddress(G->getGlobal(), DL, MVT::i64);
   else if (ExternalSymbolSDNode *S = dyn_cast<ExternalSymbolSDNode>(Callee))
     Callee = DAG.getTargetExternalSymbol(S->getSymbol(), MVT::i64);
-  else
-    llvm_unreachable("LNP64 indirect call lowering is not implemented yet");
+  else if (Callee.getValueType() != MVT::i64)
+    llvm_unreachable("LNP64 indirect call callee must lower to an i64 register");
 
   SmallVector<SDValue, 12> Ops;
   Ops.push_back(Chain);

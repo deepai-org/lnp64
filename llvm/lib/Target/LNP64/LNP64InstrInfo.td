@@ -134,6 +134,7 @@ def : Pat<(LNP64call tglobaladdr:$target), (CALL tglobaladdr:$target)>;
 def : Pat<(LNP64call texternalsym:$target), (CALL texternalsym:$target)>;
 let isCall = 1, Defs = [LR] in
 def CALL_REG : LNP64Inst<(outs), (ins GPR:$target), "call_reg", "\t$target">;
+def : Pat<(LNP64call GPR:$target), (CALL_REG GPR:$target)>;
 let isReturn = 1, isTerminator = 1, isBarrier = 1, Uses = [LR] in
 def RET : LNP64NoOperand<"ret"> {
   let Pattern = [(LNP64retflag)];

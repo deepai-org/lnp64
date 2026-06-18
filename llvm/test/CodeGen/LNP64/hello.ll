@@ -64,6 +64,12 @@ entry:
   ret i64 %y
 }
 
+define i64 @call_indirect(ptr %fn, i64 %x) {
+entry:
+  %y = call i64 %fn(i64 %x)
+  ret i64 %y
+}
+
 define i64 @memory(ptr %p, i64 %v) {
 entry:
   %p2 = getelementptr i8, ptr %p, i64 2
@@ -110,6 +116,9 @@ entry:
 ; CHECK: ret
 ; CHECK-LABEL: call_direct:
 ; CHECK: call callee
+; CHECK: ret
+; CHECK-LABEL: call_indirect:
+; CHECK: call_reg
 ; CHECK: ret
 ; CHECK-LABEL: memory:
 ; CHECK: ld.b

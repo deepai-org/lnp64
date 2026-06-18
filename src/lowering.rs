@@ -1890,6 +1890,7 @@ mod tests {
         assert!(isel.contains("ArgCCInfo.AnalyzeCallOperands(CLI.Outs, CC_LNP64)"));
         assert!(isel.contains("DAG.getTargetGlobalAddress"));
         assert!(isel.contains("DAG.getTargetExternalSymbol"));
+        assert!(isel.contains("indirect call callee must lower to an i64 register"));
         assert!(isel.contains("LNP64ISD::CALL"));
         assert!(isel.contains("CalleeName == \"__lnp_call\" || CalleeName == \"__lnp_pull\""));
         assert!(
@@ -1938,6 +1939,7 @@ mod tests {
         assert!(instr_td.contains("let Pattern = [(br bb:$target)]"));
         assert!(instr_td.contains("(LNP64call tglobaladdr:$target)"));
         assert!(instr_td.contains("(LNP64call texternalsym:$target)"));
+        assert!(instr_td.contains("(LNP64call GPR:$target)"));
         assert!(instr_td.contains("(i64 (load (add GPR:$base, simm14_imm:$offset)))"));
         assert!(instr_td.contains("(i64 (zextloadi32 (add GPR:$base, simm14_imm:$offset)))"));
         assert!(instr_td.contains("(i64 (zextloadi16 (add GPR:$base, simm14_imm:$offset)))"));
@@ -2004,11 +2006,13 @@ mod tests {
         assert!(codegen_test.contains("define i64 @read_stream"));
         assert!(codegen_test.contains("define i64 @jump"));
         assert!(codegen_test.contains("define i64 @call_direct"));
+        assert!(codegen_test.contains("define i64 @call_indirect"));
         assert!(codegen_test.contains("define i64 @memory"));
         assert!(codegen_test.contains("%biased = add i64 %sum, 7"));
         assert!(codegen_test.contains("br label %exit"));
         assert!(codegen_test.contains("call i64 @callee"));
         assert!(codegen_test.contains("; CHECK: call callee"));
+        assert!(codegen_test.contains("; CHECK: call_reg"));
         assert!(codegen_test.contains("; CHECK: jmp"));
         for mnemonic in ["ld.b", "ld.h", "ld.w", "st.b", "st.h", "st.w"] {
             assert!(
