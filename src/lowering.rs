@@ -1123,6 +1123,8 @@ mod tests {
         );
         assert_eq!(manifest_field(manifest, "gpr"), "r0-r31");
         assert_eq!(manifest_field(manifest, "fdr"), "fd0-fd255");
+        assert_eq!(manifest_field(manifest, "fpr"), "f0-f31");
+        assert_eq!(manifest_field(manifest, "vr"), "v0-v15");
         for pcr in ["PID", "PPID", "TID", "TP", "SIGMASK", "SIGPENDING"] {
             assert!(manifest_csv_contains(manifest, "pcr", pcr), "missing {pcr}");
         }
@@ -1386,6 +1388,8 @@ mod tests {
         );
         assert_eq!(manifest_field(psabi_manifest, "gpr_count"), "32");
         assert_eq!(manifest_field(psabi_manifest, "fdr_count"), "256");
+        assert_eq!(manifest_field(psabi_manifest, "fpr_count"), "32");
+        assert_eq!(manifest_field(psabi_manifest, "vr_count"), "16");
         assert_eq!(manifest_field(psabi_manifest, "zero_register"), "r0");
         assert_eq!(manifest_field(psabi_manifest, "stack_pointer"), "r31");
         assert_eq!(manifest_field(psabi_manifest, "link_register"), "LR");
