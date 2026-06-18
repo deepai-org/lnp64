@@ -7404,26 +7404,27 @@ impl Machine {
                 let vma = &process.vmas[idx];
                 (vma.start, vma.len, vma.file_offset)
             };
+            let vma_len = usize::try_from(vma_len)
+                .map_err(|_| "VMA length exceeds host usize".to_string())?;
+            let start =
+                usize::try_from(start).map_err(|_| "VMA start exceeds host usize".to_string())?;
+            let end = start
+                .checked_add(vma_len)
+                .ok_or_else(|| "VMA page-in range overflow".to_string())?;
+            if end > process.memory.len() {
+                return Err("VMA page-in exceeds process memory".to_string());
+            }
+            process.memory[start..end].fill(0);
             if let Some(file) = &mut process.vmas[idx].file {
                 file.seek(SeekFrom::Start(file_offset))
                     .map_err(|err| format!("file-backed VMA seek failed: {err}"))?;
-                let vma_len = usize::try_from(vma_len)
-                    .map_err(|_| "file-backed VMA length exceeds host usize".to_string())?;
-                if vma_len > process.memory.len() {
-                    return Err("file-backed VMA length exceeds process memory".to_string());
-                }
                 let mut tmp = vec![0; vma_len];
                 let count = file
                     .read(&mut tmp)
                     .map_err(|err| format!("file-backed VMA page-in failed: {err}"))?;
-                let start = usize::try_from(start)
-                    .map_err(|_| "file-backed VMA start exceeds host usize".to_string())?;
                 let end = start
                     .checked_add(count)
                     .ok_or_else(|| "file-backed VMA page-in range overflow".to_string())?;
-                if end > process.memory.len() {
-                    return Err("file-backed VMA page-in exceeds process memory".to_string());
-                }
                 process.memory[start..end].copy_from_slice(&tmp[..count]);
             }
             process.vmas[idx].resident = true;
@@ -15508,6 +15509,71 @@ mod tests {
         assert!(err.contains("unmapped address"), "{err}");
         let err = machine.write_bytes(addr, &[2]).unwrap_err();
         assert!(err.contains("unmapped address"), "{err}");
+    }
+
+    #[test]
+    fn anonymous_mmap_remap_zero_fills_old_bytes() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[1] = 4096;
+        machine.thread_mut().unwrap().regs[2] = 0b011;
+        machine
+            .exec(Instr::Mmap(
+                Reg(3),
+                Reg(0),
+                Reg(1),
+                Reg(2),
+                FdReg(0),
+                Reg(0),
+            ))
+            .unwrap();
+        let addr = machine.thread().unwrap().regs[3];
+        machine
+            .write_bytes(addr, &[0xaa, 0xbb, 0xcc, 0xdd])
+            .unwrap();
+
+        machine.thread_mut().unwrap().regs[4] = addr;
+        machine.thread_mut().unwrap().regs[5] = 4096;
+        machine.exec(Instr::Munmap(Reg(4), Reg(5))).unwrap();
+
+        machine.thread_mut().unwrap().regs[6] = addr;
+        machine
+            .exec(Instr::Mmap(
+                Reg(7),
+                Reg(6),
+                Reg(1),
+                Reg(2),
+                FdReg(0),
+                Reg(0),
+            ))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[7], addr);
+        assert_eq!(machine.read_bytes(addr, 4).unwrap(), vec![0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn file_backed_mmap_zero_fills_short_read_tail() {
+        let path = format!("/tmp/lnp64_short_vma_pagein_{}.bin", std::process::id());
+        fs::write(&path, b"ab").unwrap();
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let addr = 0x270_000;
+        {
+            let process = machine.process_mut().unwrap();
+            process.memory[addr as usize..addr as usize + 4].copy_from_slice(&[9, 9, 9, 9]);
+            process.vmas.push(Vma {
+                start: addr,
+                len: 4,
+                prot: 0b001,
+                file: Some(File::open(&path).unwrap()),
+                file_offset: 0,
+                resident: false,
+                guard: false,
+            });
+        }
+
+        assert_eq!(machine.read_bytes(addr, 4).unwrap(), vec![b'a', b'b', 0, 0]);
+        fs::remove_file(path).unwrap();
     }
 
     #[test]
