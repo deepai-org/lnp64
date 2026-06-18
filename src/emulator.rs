@@ -3946,11 +3946,11 @@ impl Machine {
             self.write_reg(result, -1i64 as u64)?;
             return Ok(());
         }
-        let op = self.load_u64(argblock)?;
-        let dst = self.load_u64(argblock + 8)?;
-        let src_or_value = self.load_u64(argblock + 16)?;
-        let len = self.load_u64(argblock + 24)? as usize;
-        let dma_buffer = self.load_u64(argblock + 32)?;
+        let op = self.load_u64_offset(argblock, 0)?;
+        let dst = self.load_u64_offset(argblock, 8)?;
+        let src_or_value = self.load_u64_offset(argblock, 16)?;
+        let len = self.load_u64_offset(argblock, 24)? as usize;
+        let dma_buffer = self.load_u64_offset(argblock, 32)?;
         if dma_buffer != 0 {
             let validation = self.validate_dma_buffer(dma_buffer, op, dst, src_or_value, len);
             if let Err(errno) = validation {
