@@ -228,6 +228,18 @@ for the full suite. The release-reuse path is the fastest stable way to rerun
 scripts that honor `LNP64_BIN`; unset it when intentionally testing the default
 `cargo run --release` fallback path.
 
+Known command pitfalls from this checkout:
+
+- There is no `docs/` directory. Run repository-wide text checks without a
+  stale `docs` path, for example `rg "MSG_RECV|\\bPIPE\\b"` from the repository
+  root, or scope them to existing files/directories.
+- `bash scripts/run_demos.sh` is the all-demos command. It already covers the
+  assembly demos, C demos, and loopback network demos that are expected to run
+  on the host.
+- Dockerized RTL/proof and synth commands are the reproducible paths for Lean,
+  Verilator, Yosys, nextpnr, and IceStorm. The board bring-up command is a real
+  hardware path and requires an attached board plus UART device.
+
 For the broader host software gate, run:
 
 ```sh
