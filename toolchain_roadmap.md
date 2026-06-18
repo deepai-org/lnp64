@@ -43,12 +43,13 @@ The first llvm-project backend files now exist under `llvm/lib/Target/LNP64/`:
 `LNP64CallingConv.td`, `LNP64InstrInfo.td`, `TargetInfo/LNP64TargetInfo.cpp`,
 initial `MCTargetDesc` registration/code-emitter files, and the first
 `TargetMachine`/`Subtarget`/`ISelLowering`/`FrameLowering` class skeletons.
-The first Clang target-info, Clang driver-arch, and lld ELF arch source files
-also exist under the matching llvm-project paths, with the LNP64 triple,
-freestanding driver defaults, inline-asm constraint surface, and relocation
-names pinned to the checked manifests. The MC AsmParser, code emitter, and
-Disassembler components now cover the first fixed32 integer, memory,
-branch/call, and return subset for future `llvm-mc` round trips.
+The first Clang target-info, Clang driver-arch, lld ELF arch, and MC
+AsmBackend/object-writer source files also exist under the matching
+llvm-project paths, with the LNP64 triple, freestanding driver defaults,
+inline-asm constraint surface, and relocation names pinned to the checked
+manifests. The MC AsmParser, code emitter, and Disassembler components now
+cover the first fixed32 integer, memory, branch/call, and return subset for
+future `llvm-mc` round trips.
 Scaffolded llvm-project lit tests now exist for `llc` hello/native-intrinsic
 codegen, `llvm-mc` basic assembly, and Clang driver command shape; they remain
 marked `XFAIL` until the target is integrated into a buildable llvm-project
@@ -56,10 +57,10 @@ tree.
 The MC code emitter now has concrete fixed32 paths for `NOP`, `RET`, `LI`,
 `MOV`, integer ALU/compare operations, branch/call/return opcodes, and
 byte/word/doubleword `LD`/`ST`; other opcodes remain blocked until operand
-encodings and object-writer relocation hooks are implemented. The disassembler
-decodes that same initial fixed32 subset for future `llvm-mc` round trips. The
-MC layer now has target fixup kinds for branch/data relocations, and the lld
-scaffold can patch `R_LNP64_BRANCH26` into the aligned signed branch field.
+encodings are implemented. The disassembler decodes that same initial fixed32
+subset for future `llvm-mc` round trips. The MC layer now has target fixup
+kinds and object-writer relocation mapping for branch/data relocations, and the
+lld scaffold can patch `R_LNP64_BRANCH26` into the aligned signed branch field.
 `LNP64InstrInfo.td` now carries operand-bearing TableGen classes for integer
 RRR/RR/RI, branch, memory, atomic, and native-capability instruction shapes
 instead of name-only opcode stubs.

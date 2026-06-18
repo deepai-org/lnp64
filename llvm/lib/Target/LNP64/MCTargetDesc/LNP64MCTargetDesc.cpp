@@ -42,4 +42,5 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeLNP64TargetMC() {
   TargetRegistry::RegisterMCRegInfo(T, createLNP64MCRegisterInfo);
   TargetRegistry::RegisterMCSubtargetInfo(T, createLNP64MCSubtargetInfo);
   TargetRegistry::RegisterMCCodeEmitter(T, createLNP64MCCodeEmitter);
+  TargetRegistry::RegisterMCAsmBackend(T, createLNP64AsmBackend);
 }

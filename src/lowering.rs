@@ -1757,9 +1757,12 @@ mod tests {
         let target_info = include_str!("../llvm/lib/Target/LNP64/TargetInfo/LNP64TargetInfo.cpp");
         let mc_desc_header =
             include_str!("../llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCTargetDesc.h");
+        let mc_desc_cmake = include_str!("../llvm/lib/Target/LNP64/MCTargetDesc/CMakeLists.txt");
         let mc_desc = include_str!("../llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCTargetDesc.cpp");
         let mc_emitter =
             include_str!("../llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCCodeEmitter.cpp");
+        let mc_asm_backend =
+            include_str!("../llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCAsmBackend.cpp");
         let asm_parser = include_str!("../llvm/lib/Target/LNP64/AsmParser/LNP64AsmParser.cpp");
         let disassembler =
             include_str!("../llvm/lib/Target/LNP64/Disassembler/LNP64Disassembler.cpp");
@@ -1819,12 +1822,17 @@ mod tests {
             assert!(cmake.contains(source), "CMake missing {source}");
         }
         assert!(cmake.contains("add_llvm_target(LNP64CodeGen"));
+        assert!(mc_desc_cmake.contains("LNP64MCAsmBackend.cpp"));
         assert!(target_info.contains("LLVMInitializeLNP64TargetInfo"));
         assert!(target_info.contains("RegisterTarget<Triple::lnp64>"));
         assert!(mc_desc.contains("LLVMInitializeLNP64TargetMC"));
         assert!(mc_desc.contains("RegisterMCCodeEmitter"));
+        assert!(mc_desc.contains("RegisterMCAsmBackend"));
         assert!(mc_desc_header.contains("fixup_lnp64_branch26"));
         assert!(mc_emitter.contains("createLNP64MCCodeEmitter"));
+        assert!(mc_asm_backend.contains("createLNP64AsmBackend"));
+        assert!(mc_asm_backend.contains("LNP64ELFObjectWriter"));
+        assert!(mc_asm_backend.contains("R_LNP64_BRANCH26"));
         assert!(mc_emitter.contains("case LNP64::AND"));
         assert!(mc_emitter.contains("case LNP64::CMP"));
         assert!(mc_emitter.contains("case LNP64::LD_W"));
@@ -2875,6 +2883,8 @@ mod tests {
         let filemap = include_str!("../toolchain/lnp64_llvm_filemap.manifest");
         let mc_emitter =
             include_str!("../llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCCodeEmitter.cpp");
+        let mc_asm_backend =
+            include_str!("../llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCAsmBackend.cpp");
         let lld_arch = include_str!("../lld/ELF/Arch/LNP64.cpp");
         let rows = mc_encoding_rows(mc_manifest);
         let relocation_names: std::collections::BTreeSet<_> = relocation_rows(relocation_manifest)
@@ -2995,6 +3005,9 @@ mod tests {
         assert!(mc_emitter.contains("encodeFixed32NoOperand(0x00)"));
         assert!(mc_emitter.contains("encodeFixed32NoOperand(0x1f)"));
         assert!(mc_emitter.contains("emitLE32"));
+        assert!(mc_asm_backend.contains("getRelocType"));
+        assert!(mc_asm_backend.contains("fixup_lnp64_branch26"));
+        assert!(mc_asm_backend.contains("writeNopData"));
         assert!(lld_arch.contains("relocateBranch26"));
         assert!(lld_arch.contains("read32le(Loc)"));
         assert!(lld_arch.contains("R_LNP64_BRANCH26 out of range"));

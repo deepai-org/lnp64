@@ -12,6 +12,7 @@ class MCCodeEmitter;
 class MCContext;
 class MCInstrInfo;
 class MCRegisterInfo;
+class MCAsmBackend;
 class MCSubtargetInfo;
 class MCTargetOptions;
 class Target;
@@ -20,7 +21,7 @@ Target &getTheLNP64Target();
 
 namespace LNP64 {
 enum Fixups {
-  fixup_lnp64_abs16 = FirstTargetFixupKind,
+  fixup_lnp64_abs32 = FirstTargetFixupKind,
   fixup_lnp64_pcrel32,
   fixup_lnp64_branch26,
   LastTargetFixupKind,
@@ -30,6 +31,10 @@ enum Fixups {
 
 MCCodeEmitter *createLNP64MCCodeEmitter(const MCInstrInfo &MCII,
                                         MCContext &Ctx);
+MCAsmBackend *createLNP64AsmBackend(const Target &T,
+                                    const MCSubtargetInfo &STI,
+                                    const MCRegisterInfo &MRI,
+                                    const MCTargetOptions &Options);
 
 } // end namespace llvm
 
