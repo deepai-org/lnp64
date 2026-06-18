@@ -2259,10 +2259,11 @@ impl Machine {
                 };
                 if live_child {
                     self.thread_mut()?.ip = self.thread()?.ip.saturating_sub(1);
-                    self.child_waiters
-                        .entry(current_pid)
-                        .or_default()
-                        .push_back(self.current_tid);
+                    let current_tid = self.current_tid;
+                    Self::push_unique_waiter(
+                        self.child_waiters.entry(current_pid).or_default(),
+                        current_tid,
+                    );
                     self.ready.retain(|tid| *tid != self.current_tid);
                     return Ok(false);
                 }
@@ -2371,10 +2372,11 @@ impl Machine {
                     self.write_reg(result, 0)?;
                 } else if self.threads.contains_key(&tid) {
                     self.thread_mut()?.ip = self.thread()?.ip.saturating_sub(1);
-                    self.thread_join_waiters
-                        .entry(tid)
-                        .or_default()
-                        .push_back(self.current_tid);
+                    let current_tid = self.current_tid;
+                    Self::push_unique_waiter(
+                        self.thread_join_waiters.entry(tid).or_default(),
+                        current_tid,
+                    );
                     self.ready
                         .retain(|ready_tid| *ready_tid != self.current_tid);
                     return Ok(false);
@@ -2583,10 +2585,11 @@ impl Machine {
                 let addr = self.read_reg(addr_reg)?;
                 let expected = self.read_reg(expected_reg)?;
                 if self.load_u64(addr)? == expected {
-                    self.futex_waiters
-                        .entry(addr)
-                        .or_default()
-                        .push_back(self.current_tid);
+                    let current_tid = self.current_tid;
+                    Self::push_unique_waiter(
+                        self.futex_waiters.entry(addr).or_default(),
+                        current_tid,
+                    );
                     self.ready.retain(|tid| *tid != self.current_tid);
                     return Ok(false);
                 }
@@ -7501,6 +7504,12 @@ impl Machine {
             waiters.retain(|waiter_tid| *waiter_tid != tid);
         }
         self.child_waiters.retain(|_, waiters| !waiters.is_empty());
+    }
+
+    fn push_unique_waiter(waiters: &mut VecDeque<u64>, tid: u64) {
+        if !waiters.contains(&tid) {
+            waiters.push_back(tid);
+        }
     }
 
     fn wake_thread(&mut self, tid: u64) {
@@ -14243,6 +14252,76 @@ mod tests {
         machine.exec(Instr::WaitPid(Reg(4), Reg(3))).unwrap();
         assert_eq!(machine.thread().unwrap().regs[4], 55);
         assert_eq!(machine.thread().unwrap().regs[1], 0);
+    }
+
+    #[test]
+    fn repeated_parking_does_not_duplicate_wait_queue_entries() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine
+            .clone_with_profile(CloneProfile::NewProcessCow, Reg(2), None)
+            .unwrap();
+        let child_pid = machine.thread().unwrap().regs[2];
+        machine.thread_mut().unwrap().regs[3] = child_pid;
+
+        machine.exec(Instr::WaitPid(Reg(4), Reg(3))).unwrap();
+        machine.exec(Instr::WaitPid(Reg(4), Reg(3))).unwrap();
+        assert_eq!(
+            machine
+                .child_waiters
+                .get(&1)
+                .unwrap()
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![1]
+        );
+
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine
+            .clone_with_profile(CloneProfile::NewThreadSharedVm, Reg(2), Some(0))
+            .unwrap();
+        let child_tid = machine.thread().unwrap().regs[2];
+        machine.thread_mut().unwrap().regs[3] = child_tid;
+        machine.thread_mut().unwrap().regs[4] = 0;
+
+        machine
+            .exec(Instr::ThreadJoin(Reg(5), Reg(3), Reg(4)))
+            .unwrap();
+        machine
+            .exec(Instr::ThreadJoin(Reg(5), Reg(3), Reg(4)))
+            .unwrap();
+        assert_eq!(
+            machine
+                .thread_join_waiters
+                .get(&child_tid)
+                .unwrap()
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![1]
+        );
+
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let futex_addr = ARG_BASE + 0x280;
+        machine.store_u64(futex_addr, 7).unwrap();
+        machine.thread_mut().unwrap().regs[2] = futex_addr;
+        machine.thread_mut().unwrap().regs[3] = 7;
+
+        machine.exec(Instr::FutexWait(Reg(2), Reg(3))).unwrap();
+        machine.exec(Instr::FutexWait(Reg(2), Reg(3))).unwrap();
+        assert_eq!(
+            machine
+                .futex_waiters
+                .get(&futex_addr)
+                .unwrap()
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![1]
+        );
     }
 
     #[test]
