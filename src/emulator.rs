@@ -2279,7 +2279,7 @@ impl Machine {
                 };
                 {
                     let process = self.process_mut()?;
-                    process.mmap_next = end;
+                    process.mmap_next = process.mmap_next.max(end);
                     process.vmas.push(Vma {
                         start: addr,
                         len,
@@ -10415,6 +10415,65 @@ mod tests {
         assert_eq!(machine.process().unwrap().vmas.len(), vma_count);
         machine.write_bytes(addr, &[0xab]).unwrap();
         assert_eq!(machine.read_bytes(addr, 1).unwrap(), vec![0xab]);
+    }
+
+    #[test]
+    fn hinted_mmap_does_not_rewind_default_mapping_cursor() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[1] = 4096;
+        machine.thread_mut().unwrap().regs[2] = 0b011;
+        machine
+            .exec(Instr::Mmap(
+                Reg(3),
+                Reg(0),
+                Reg(1),
+                Reg(2),
+                FdReg(0),
+                Reg(0),
+            ))
+            .unwrap();
+        let base = machine.thread().unwrap().regs[3];
+        assert_ne!(base, -1i64 as u64);
+
+        machine.thread_mut().unwrap().regs[4] = base + 8192;
+        machine
+            .exec(Instr::Mmap(
+                Reg(5),
+                Reg(4),
+                Reg(1),
+                Reg(2),
+                FdReg(0),
+                Reg(0),
+            ))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], base + 8192);
+
+        machine.thread_mut().unwrap().regs[6] = base + 4096;
+        machine
+            .exec(Instr::Mmap(
+                Reg(7),
+                Reg(6),
+                Reg(1),
+                Reg(2),
+                FdReg(0),
+                Reg(0),
+            ))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[7], base + 4096);
+
+        machine
+            .exec(Instr::Mmap(
+                Reg(8),
+                Reg(0),
+                Reg(1),
+                Reg(2),
+                FdReg(0),
+                Reg(0),
+            ))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[8], base + 12288);
+        assert_eq!(machine.process().unwrap().errno, 0);
     }
 
     #[test]
