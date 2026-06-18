@@ -4796,10 +4796,15 @@ impl Machine {
             return Err(ClassifyParseError::Malformed);
         }
         let total_len = u16::from_be_bytes([bytes[offset + 2], bytes[offset + 3]]) as usize;
-        if total_len != 0 && total_len < ihl {
+        if total_len == 0 {
+            let mut parsed = ClassifierParsedFields::default();
+            parsed.needs_software = true;
+            return Ok(parsed);
+        }
+        if total_len < ihl {
             return Err(ClassifyParseError::Malformed);
         }
-        if total_len != 0 && bytes.len() < offset + total_len {
+        if bytes.len() < offset + total_len {
             return Err(ClassifyParseError::Malformed);
         }
         let protocol = bytes[offset + 9];
@@ -4828,11 +4833,7 @@ impl Machine {
         }
         if matches!(protocol, 6 | 17) {
             let port_offset = offset + ihl;
-            let packet_len = if total_len == 0 {
-                bytes.len() - offset
-            } else {
-                total_len
-            };
+            let packet_len = total_len;
             if packet_len < ihl + 4 {
                 return Err(ClassifyParseError::Malformed);
             }
@@ -7653,6 +7654,7 @@ mod tests {
         bytes[13] = 0x00;
         let ip = 14;
         bytes[ip] = 0x45;
+        bytes[ip + 2..ip + 4].copy_from_slice(&(28u16).to_be_bytes());
         bytes[ip + 9] = 17;
         bytes[ip + 12..ip + 16].copy_from_slice(&src);
         bytes[ip + 16..ip + 20].copy_from_slice(&dst);
@@ -7948,6 +7950,57 @@ mod tests {
         );
         assert_eq!(
             machine.load_u64(result).unwrap(),
+            CLASSIFY_ACTION_NEEDS_SOFTWARE
+        );
+        assert!(!machine.fd_read_ready(3).unwrap());
+        query_classifier_counters(&mut machine, classifier, counters);
+        assert_eq!(machine.load_u64(counters + 16).unwrap(), 0);
+        assert_eq!(machine.load_u64(counters + 32).unwrap(), 1);
+    }
+
+    #[test]
+    fn classifier_ipv4_zero_total_length_needs_software_without_routing() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let (_reader_token, writer_token) = create_pipe_pair(&mut machine, 3, 4);
+        let source = create_memory_source(&mut machine, 5);
+        let allowed = ARG_BASE + 0x1000;
+        let rules = ARG_BASE + 0x1100;
+        let packet_ptr = ARG_BASE + 0x1800;
+        let envelope = ARG_BASE + 0x1a00;
+        let result = ARG_BASE + 0x1b00;
+        let counters = ARG_BASE + 0x1c00;
+        machine.store_u64(allowed, writer_token).unwrap();
+        write_classifier_rule(
+            &mut machine,
+            rules,
+            CLASSIFY_RULE_EXACT,
+            CLASSIFY_FIELD_DST_PORT,
+            8080,
+            0,
+            CLASSIFY_ACTION_ROUTE,
+            writer_token,
+            0,
+        );
+        let classifier = create_classifier(&mut machine, 6, rules, 1, allowed, 1);
+        let mut packet = ipv4_udp_packet([10, 1, 2, 3], [192, 168, 1, 44], 1000, 8080);
+        packet[14 + 2] = 0;
+        packet[14 + 3] = 0;
+        machine.write_bytes(packet_ptr, &packet).unwrap();
+        write_envelope(
+            &mut machine,
+            envelope,
+            CLASSIFY_PROFILE_PACKET,
+            source,
+            packet_ptr,
+            packet.len() as u64,
+            0,
+            0,
+            0,
+        );
+
+        assert_eq!(
+            classify(&mut machine, classifier, envelope, result),
             CLASSIFY_ACTION_NEEDS_SOFTWARE
         );
         assert!(!machine.fd_read_ready(3).unwrap());
