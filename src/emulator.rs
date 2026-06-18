@@ -1361,6 +1361,7 @@ impl Machine {
                 self.write_reg(dst, self.read_reg(a)?.wrapping_mul(self.read_reg(b)?))?
             }
             Instr::Div(dst, a, b) => {
+                Self::ensure_result_reg_writable(dst)?;
                 let divisor = self.read_reg(b)?;
                 if divisor == 0 {
                     self.raise_current_signal(SIGFPE)?;
@@ -10893,6 +10894,21 @@ mod tests {
             })
         ));
         assert_eq!(machine.thread().unwrap().regs[1], 0);
+    }
+
+    #[test]
+    fn div_rejects_locked_result_before_fault_event() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[2] = 99;
+        machine.thread_mut().unwrap().regs[3] = 0;
+
+        let err = machine
+            .exec(Instr::Div(Reg(31), Reg(2), Reg(3)))
+            .unwrap_err();
+
+        assert!(err.contains("hardware-locked stack pointer"), "{err}");
+        assert!(machine.process().unwrap().pending_events.is_empty());
     }
 
     #[test]
