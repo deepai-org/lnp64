@@ -835,11 +835,14 @@ fn parse_tls_segment(
     load_bias: u64,
     tls: &mut Option<TlsDescriptor>,
 ) -> Result<(), String> {
+    if ph.memsz == 0 {
+        if ph.filesz != 0 {
+            return Err("PT_TLS file size exceeds memory size".to_string());
+        }
+        return Ok(());
+    }
     if tls.is_some() {
         return Err("duplicate PT_TLS segment".to_string());
-    }
-    if ph.memsz == 0 {
-        return Err("PT_TLS memory size is zero".to_string());
     }
     if ph.filesz > ph.memsz {
         return Err("PT_TLS file size exceeds memory size".to_string());
@@ -1534,6 +1537,26 @@ mod tests {
     }
 
     #[test]
+    fn static_elf_loader_ignores_empty_tls_segment() {
+        let image = test_elf(&[
+            text_phdr(),
+            TestPhdr {
+                typ: PT_TLS,
+                flags: PF_R,
+                offset: 0,
+                vaddr: 0,
+                filesz: 0,
+                memsz: 0,
+                align: 1,
+            },
+        ]);
+
+        let plan = build_static_exec_plan(&image, LoaderOptions::default()).unwrap();
+
+        assert_eq!(plan.tls, None);
+    }
+
+    #[test]
     fn static_elf_loader_rejects_tls_outside_load_segments() {
         let image = test_elf(&[
             text_phdr(),
@@ -1594,6 +1617,29 @@ mod tests {
                 filesz: 24,
                 memsz: 8,
                 align: 16,
+            },
+        ]);
+
+        let err = build_static_exec_plan(&image, LoaderOptions::default()).unwrap_err();
+
+        assert!(
+            err.contains("PT_TLS file size exceeds memory size"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_nonempty_zero_size_tls_segment() {
+        let image = test_elf(&[
+            text_phdr(),
+            TestPhdr {
+                typ: PT_TLS,
+                flags: PF_R,
+                offset: 0x280,
+                vaddr: 0x500000,
+                filesz: 1,
+                memsz: 0,
+                align: 1,
             },
         ]);
 
