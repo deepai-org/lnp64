@@ -13384,6 +13384,31 @@ mod tests {
     }
 
     #[test]
+    fn domain_ctl_rejects_unknown_opcode_without_side_effects() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let arg = ARG_BASE;
+        let next_domain_id = machine.next_domain_id;
+        let domain_count = machine.domains.len();
+        let root_children = machine.domains[&ROOT_DOMAIN_ID].children.clone();
+        machine.store_u64(arg, 0xfeed_beef).unwrap();
+        machine.store_u64(arg + 8, 0x1111).unwrap();
+        machine.store_u64(arg + 16, 0x2222).unwrap();
+        machine.set_errno(123).unwrap();
+
+        machine.domain_ctl(Reg(5), arg).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert_eq!(machine.next_domain_id, next_domain_id);
+        assert_eq!(machine.domains.len(), domain_count);
+        assert_eq!(machine.domains[&ROOT_DOMAIN_ID].children, root_children);
+        assert_eq!(machine.load_u64(arg).unwrap(), 0xfeed_beef);
+        assert_eq!(machine.load_u64(arg + 8).unwrap(), 0x1111);
+        assert_eq!(machine.load_u64(arg + 16).unwrap(), 0x2222);
+    }
+
+    #[test]
     fn domain_security_policy_delegation_is_monotonic() {
         let mut machine = test_machine_with_child_domain();
         let arg = ARG_BASE;
