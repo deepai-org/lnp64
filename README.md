@@ -148,6 +148,10 @@ bash scripts/run_real_llvm_lnp64_docker.sh
 bash scripts/run_toolchain_contracts.sh
 ```
 
+`scripts/run_real_llvm_lnp64_docker.sh` is the active LLVM porting gate: it
+builds upstream LLVM/Clang/lld in Docker with the in-tree LNP64 backend, links
+real Clang objects, and executes the linked ELFs with `lnp64 run-elf`.
+
 ## RTL And Proof Gates
 
 RTL/proof in Docker:

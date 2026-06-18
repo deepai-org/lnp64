@@ -45,3 +45,10 @@ exit_output="$(cargo run --quiet -- run-elf "$exit_probe")"
 grep -q 'exit=0' <<<"$exit_output"
 printf 'real LLVM LNP64 run-elf exit execution passed: %s\n' \
   "$exit_probe"
+
+argc_probe="target/llvm-lnp64-build/lnp64-argc-linked.elf"
+cargo run --quiet -- elf-plan "$argc_probe" >/dev/null
+argc_output="$(cargo run --quiet -- run-elf "$argc_probe")"
+grep -q 'exit=0' <<<"$argc_output"
+printf 'real LLVM LNP64 run-elf argc execution passed: %s\n' \
+  "$argc_probe"

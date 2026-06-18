@@ -283,6 +283,25 @@ exit_dump="$build_dir/exit-clang-smoke.dump"
 grep -q 'call ' "$exit_dump"
 printf 'real LLVM LNP64 clang exit object smoke passed: %s\n' "$exit_obj"
 
+argc_c="$build_dir/argc-smoke.c"
+cat >"$argc_c" <<'C'
+int main(int argc, char **argv) {
+  (void)argv;
+  return argc;
+}
+C
+
+argc_obj="$build_dir/argc-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$argc_c" -o "$argc_obj"
+test -s "$argc_obj"
+argc_dump="$build_dir/argc-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$argc_obj" >"$argc_dump"
+grep -q '<main>:' "$argc_dump"
+grep -q 'ret' "$argc_dump"
+printf 'real LLVM LNP64 clang argc object smoke passed: %s\n' "$argc_obj"
+
 crt0_obj="$build_dir/crt0-smoke.o"
 "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj toolchain/crt0_lnp64.s \
   -o "$crt0_obj"
@@ -334,6 +353,12 @@ exit_elf="$build_dir/lnp64-exit-linked.elf"
   -o "$exit_elf" "$crt0_obj" "$exit_obj" "$minilibc_obj"
 test -s "$exit_elf"
 printf 'real LLVM LNP64 lld exit link smoke passed: %s\n' "$exit_elf"
+
+argc_elf="$build_dir/lnp64-argc-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$argc_elf" "$crt0_obj" "$argc_obj"
+test -s "$argc_elf"
+printf 'real LLVM LNP64 lld argc link smoke passed: %s\n' "$argc_elf"
 
 for demo in hello factorial allocator fibonacci; do
   demo_obj="$build_dir/$demo-clang-smoke.o"
