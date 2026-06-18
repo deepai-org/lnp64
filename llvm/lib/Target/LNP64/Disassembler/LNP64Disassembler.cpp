@@ -272,6 +272,26 @@ public:
       Instr.setOpcode(LNP64::CSET_UGE);
       addReg(Instr, A);
       return MCDisassembler::Success;
+    case 0x47:
+      Instr.setOpcode(LNP64::ALLOC);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      return MCDisassembler::Success;
+    case 0x48:
+      Instr.setOpcode(LNP64::ALLOC_SIZE);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      return MCDisassembler::Success;
+    case 0x49:
+      Instr.setOpcode(LNP64::FREE);
+      addReg(Instr, A);
+      return MCDisassembler::Success;
+    case 0x4a:
+      Instr.setOpcode(LNP64::ALLOC_EX);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
     case 0x30:
       Instr.setOpcode(LNP64::LD);
       addReg(Instr, A);

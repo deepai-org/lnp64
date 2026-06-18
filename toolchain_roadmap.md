@@ -49,8 +49,8 @@ contract for lld-produced ELF inputs.
 future LLVM/lld path.
 `toolchain/liblnp64_min.s` is a checked smoke-only libc object used to prove
 lld can resolve real Clang demo objects, route stdout through native `PUSH`,
-and provide a small bump-allocation surface before the native libc/runtime is
-ready.
+and route `malloc`/`calloc`/`realloc`/`free` through native heap opcodes before
+the full libc/runtime is ready.
 `toolchain/lnp64_intrinsics.h` is the initial checked private C shim header for
 native `__lnp_*` calls.
 `toolchain/lnp64_clang_driver.manifest` records the planned Clang/lld driver
@@ -78,8 +78,9 @@ codegen, `llvm-mc` basic assembly, and Clang driver command shape; they remain
 marked `XFAIL` until the target is integrated into a buildable llvm-project
 tree.
 The MC code emitter now has concrete fixed32 paths for `NOP`, `RET`, `LI`,
-`MOV`, integer ALU/compare operations, branch/call/return opcodes, and
-byte/halfword/word/doubleword `LD`/`ST`; other opcodes remain blocked until
+`MOV`, integer ALU/compare operations, branch/call/return opcodes,
+byte/halfword/word/doubleword `LD`/`ST`, and native heap opcodes
+`ALLOC`/`ALLOC_EX`/`ALLOC_SIZE`/`FREE`; other opcodes remain blocked until
 operand encodings are implemented. The disassembler decodes that same initial
 fixed32 subset for future `llvm-mc` round trips. The MC layer now has target
 fixup kinds and object-writer relocation mapping for branch/data relocations,

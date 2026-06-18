@@ -410,6 +410,11 @@ def FUTEX_WAIT : LNP64Inst<(outs GPR:$rd), (ins GPR:$addr, GPR:$expected),
 def FUTEX_WAKE : LNP64Inst<(outs GPR:$rd), (ins GPR:$addr, GPR:$count),
                            "futex_wake", "\t$rd, $addr, $count">;
 
+def ALLOC : LNP64RR<"alloc">;
+def ALLOC_EX : LNP64RRR<"alloc_ex">;
+def ALLOC_SIZE : LNP64RR<"alloc_size">;
+def FREE : LNP64RuntimeSet<"free">;
+
 def PULL : LNP64Native4<"pull"> {
   let Pattern = [(set GPR:$rd, (LNP64pull GPR:$cap, GPR:$arg0, GPR:$arg1))];
 }

@@ -1463,6 +1463,13 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc crt0 smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_min.s"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc minilibc smoke passed"));
+        assert!(real_llc.contains("liblnp64-min-smoke.dump"));
+        assert!(real_llc.contains("alloc r1, r1"));
+        assert!(real_llc.contains("alloc_size r3, r2"));
+        assert!(real_llc.contains("free r1"));
+        assert!(
+            real_llc.contains("real LLVM LNP64 llvm-objdump minilibc heap decode smoke passed")
+        );
         assert!(real_llc.contains("lnp64-libc-string-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld minilibc string link smoke passed"));
         assert!(real_llc.contains("lnp64-calloc-linked.elf"));
@@ -1473,8 +1480,13 @@ mod tests {
         assert!(real_llc.contains("errno_set r0"));
         assert!(real_llc.contains("exit r1"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-objdump crt0 decode smoke passed"));
+        assert!(real_llc.contains("native-heap-smoke.o"));
+        assert!(real_llc.contains("alloc_ex r3, r1, r2"));
+        assert!(real_llc.contains("real LLVM LNP64 native heap opcode smoke passed"));
         assert!(real_llc.contains("-T toolchain/lnp64_static.ld"));
         assert!(real_llc.contains("real LLVM LNP64 lld static link smoke passed"));
+        assert!(real_llc.contains("lnp64-native-heap-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld native heap link smoke passed"));
         assert!(real_llc.contains("lnp64-$demo-clang-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld clang demo link smoke passed"));
         assert!(real_llc.contains("rewrite_with_perl"));
@@ -1691,6 +1703,8 @@ mod tests {
         assert!(real_llc_docker.contains("fibonacci ok"));
         assert!(real_llc_docker.contains("exit=0"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf clang demo execution passed"));
+        assert!(real_llc_docker.contains("lnp64-native-heap-linked.elf"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf native heap execution passed"));
         assert!(real_llc_docker.contains("lnp64-indirect-call-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf indirect call execution passed"));
         assert!(real_llc_docker.contains("lnp64-libc-string-linked.elf"));
@@ -1760,6 +1774,7 @@ mod tests {
             "cli_surface",
             "real_clang_lld_probe",
             "real_clang_demo_execution",
+            "real_native_heap_execution",
             "real_intrinsic_push_execution",
             "real_exit_execution",
             "entry_state",
@@ -1778,6 +1793,7 @@ mod tests {
             "cli_surface",
             "real_clang_lld_probe",
             "real_clang_demo_execution",
+            "real_native_heap_execution",
             "real_intrinsic_push_execution",
             "real_exit_execution",
             "text_fetch_decode",
@@ -2680,14 +2696,7 @@ mod tests {
             "PUSH r1, r1, r2, r3",
             ".globl alloc",
             "alloc:",
-            "MOV r2, r1",
-            "LA r4, __lnp64_min_heap_cursor",
-            "LD r3, 0(r4)",
-            "LA r1, __lnp64_min_heap",
-            "ADD r1, r1, r3",
-            "ST r2, 0(r1)",
-            "ADD r6, r2, r5",
-            "ST r3, 0(r4)",
+            "ALLOC r1, r1",
             ".globl malloc",
             "malloc:",
             "CALL alloc",
@@ -2696,9 +2705,11 @@ mod tests {
             "CALL memset",
             ".globl realloc",
             "realloc:",
+            "ALLOC_SIZE r3, r2",
             "CALL memcpy",
             ".globl free",
             "free:",
+            "FREE r1",
             "LI r1, 0",
             ".globl strlen",
             "strlen:",
@@ -2714,10 +2725,9 @@ mod tests {
             "EXIT r1",
             ".globl exit",
             "exit:",
-            "__lnp64_min_heap_cursor:",
-            ".quad 0",
-            "__lnp64_min_heap:",
-            ".zero 4096",
+            "__lnp64_min_realloc_old:",
+            "__lnp64_min_realloc_size:",
+            "__lnp64_min_realloc_new:",
         ] {
             assert!(minilibc.contains(required), "minilibc missing {required}");
         }
@@ -3541,6 +3551,9 @@ mod tests {
             "runtime_control",
             "memory",
             "atomics",
+            "heap_rr",
+            "heap_rrr",
+            "heap_reg",
             "native_primitives",
         ] {
             assert!(
@@ -3592,6 +3605,10 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::ERRNO_GET"));
         assert!(mc_emitter.contains("case LNP64::ERRNO_SET"));
         assert!(mc_emitter.contains("case LNP64::EXIT"));
+        assert!(mc_emitter.contains("case LNP64::ALLOC"));
+        assert!(mc_emitter.contains("case LNP64::ALLOC_EX"));
+        assert!(mc_emitter.contains("case LNP64::ALLOC_SIZE"));
+        assert!(mc_emitter.contains("case LNP64::FREE"));
         assert!(mc_emitter.contains("case LNP64::LD"));
         assert!(mc_emitter.contains("case LNP64::ST"));
         assert!(mc_emitter.contains("encodeFixed32NoOperand(0x00)"));

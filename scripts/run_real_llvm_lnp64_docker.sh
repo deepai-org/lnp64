@@ -31,6 +31,13 @@ done
 printf 'real LLVM LNP64 run-elf clang demo execution passed: %s\n' \
   "target/llvm-lnp64-build/lnp64-{hello,factorial,allocator,fibonacci}-clang-linked.elf"
 
+heap_probe="target/llvm-lnp64-build/lnp64-native-heap-linked.elf"
+cargo run --quiet -- elf-plan "$heap_probe" >/dev/null
+heap_output="$(cargo run --quiet -- run-elf "$heap_probe")"
+grep -q 'exit=0' <<<"$heap_output"
+printf 'real LLVM LNP64 run-elf native heap execution passed: %s\n' \
+  "$heap_probe"
+
 intrinsic_probe="target/llvm-lnp64-build/lnp64-intrinsic-push-linked.elf"
 cargo run --quiet -- elf-plan "$intrinsic_probe" >/dev/null
 intrinsic_output="$(cargo run --quiet -- run-elf "$intrinsic_probe")"

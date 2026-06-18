@@ -288,6 +288,25 @@ public:
     case LNP64::CSET_UGE:
       emitLE32(encodeFixed32Reg(0x46, getGPRNo(MI.getOperand(0))), OS);
       return;
+    case LNP64::ALLOC:
+      emitLE32(encodeFixed32RR(0x47, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
+    case LNP64::ALLOC_SIZE:
+      emitLE32(encodeFixed32RR(0x48, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
+    case LNP64::FREE:
+      emitLE32(encodeFixed32Reg(0x49, getGPRNo(MI.getOperand(0))), OS);
+      return;
+    case LNP64::ALLOC_EX:
+      emitLE32(encodeFixed32RRR(0x4a, getGPRNo(MI.getOperand(0)),
+                                getGPRNo(MI.getOperand(1)),
+                                getGPRNo(MI.getOperand(2))),
+               OS);
+      return;
     case LNP64::LD:
       emitLE32(encodeFixed32Mem(0x30, getGPRNo(MI.getOperand(0)),
                                 getGPRNo(MI.getOperand(1)),

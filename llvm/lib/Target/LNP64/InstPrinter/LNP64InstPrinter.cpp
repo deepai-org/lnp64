@@ -80,6 +80,14 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
     return "errno_set";
   case LNP64::EXIT:
     return "exit";
+  case LNP64::ALLOC:
+    return "alloc";
+  case LNP64::ALLOC_EX:
+    return "alloc_ex";
+  case LNP64::ALLOC_SIZE:
+    return "alloc_size";
+  case LNP64::FREE:
+    return "free";
   case LNP64::PULL:
     return "pull";
   case LNP64::PUSH:
@@ -225,6 +233,7 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::ERRNO_GET:
   case LNP64::ERRNO_SET:
   case LNP64::EXIT:
+  case LNP64::FREE:
   case LNP64::CSET_EQ:
   case LNP64::CSET_NE:
   case LNP64::CSET_LT:
@@ -237,6 +246,21 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::CSET_UGE:
     OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
     printOperand(MI->getOperand(0), OS);
+    break;
+  case LNP64::ALLOC:
+  case LNP64::ALLOC_SIZE:
+    OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
+    printOperand(MI->getOperand(0), OS);
+    OS << ", ";
+    printOperand(MI->getOperand(1), OS);
+    break;
+  case LNP64::ALLOC_EX:
+    OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
+    printOperand(MI->getOperand(0), OS);
+    OS << ", ";
+    printOperand(MI->getOperand(1), OS);
+    OS << ", ";
+    printOperand(MI->getOperand(2), OS);
     break;
   case LNP64::PULL:
   case LNP64::PUSH:

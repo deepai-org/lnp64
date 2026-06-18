@@ -712,6 +712,15 @@ minilibc_obj="$build_dir/liblnp64-min-smoke.o"
 test -s "$minilibc_obj"
 printf 'real LLVM LNP64 llvm-mc minilibc smoke passed: %s\n' "$minilibc_obj"
 
+minilibc_dump="$build_dir/liblnp64-min-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$minilibc_obj" \
+  >"$minilibc_dump"
+grep -q 'alloc r1, r1' "$minilibc_dump"
+grep -q 'alloc_size r3, r2' "$minilibc_dump"
+grep -q 'free r1' "$minilibc_dump"
+printf 'real LLVM LNP64 llvm-objdump minilibc heap decode smoke passed: %s\n' \
+  "$minilibc_dump"
+
 cat >"$main_asm" <<'ASM'
 .text
 .globl main
@@ -726,6 +735,32 @@ main_obj="$build_dir/lnp64-main-smoke.o"
   -o "$main_obj"
 test -s "$main_obj"
 
+heap_asm="$build_dir/native-heap-smoke.s"
+cat >"$heap_asm" <<'ASM'
+.text
+.globl main
+.type main,@function
+main:
+  li r1, 32
+  li r2, 16
+  alloc_ex r3, r1, r2
+  alloc_size r4, r3
+  sub r1, r4, r1
+  free r3
+  ret
+ASM
+
+heap_obj="$build_dir/native-heap-smoke.o"
+"$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$heap_asm" \
+  -o "$heap_obj"
+test -s "$heap_obj"
+heap_dump="$build_dir/native-heap-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$heap_obj" >"$heap_dump"
+grep -q 'alloc_ex r3, r1, r2' "$heap_dump"
+grep -q 'alloc_size r4, r3' "$heap_dump"
+grep -q 'free r3' "$heap_dump"
+printf 'real LLVM LNP64 native heap opcode smoke passed: %s\n' "$heap_obj"
+
 crt0_dump="$build_dir/crt0-smoke.dump"
 "$llvm_objdump" -d --triple=lnp64-unknown-none "$crt0_obj" >"$crt0_dump"
 grep -q 'errno_set r0' "$crt0_dump"
@@ -738,6 +773,12 @@ linked_elf="$build_dir/lnp64-linked-smoke.elf"
   -o "$linked_elf" "$crt0_obj" "$main_obj"
 test -s "$linked_elf"
 printf 'real LLVM LNP64 lld static link smoke passed: %s\n' "$linked_elf"
+
+heap_elf="$build_dir/lnp64-native-heap-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$heap_elf" "$crt0_obj" "$heap_obj"
+test -s "$heap_elf"
+printf 'real LLVM LNP64 lld native heap link smoke passed: %s\n' "$heap_elf"
 
 intrinsic_push_elf="$build_dir/lnp64-intrinsic-push-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

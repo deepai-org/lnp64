@@ -1570,6 +1570,10 @@ impl Machine {
             0x44 => Instr::Cset(a, Condition::Ugt),
             0x45 => Instr::Cset(a, Condition::Ule),
             0x46 => Instr::Cset(a, Condition::Uge),
+            0x47 => Instr::Alloc(a, b),
+            0x48 => Instr::AllocSize(a, b),
+            0x49 => Instr::Free(a),
+            0x4a => Instr::AllocEx(a, b, c),
             other => {
                 return Err(format!(
                     "unsupported committed exec opcode 0x{other:02x} at 0x{pc:x}"
@@ -8943,6 +8947,10 @@ mod tests {
             | (((rhs as u32) & 0x1f) << 9)
     }
 
+    fn encode_rr(opcode: u8, rd: usize, rs: usize) -> u32 {
+        (u32::from(opcode) << 24) | (((rd as u32) & 0x1f) << 19) | (((rs as u32) & 0x1f) << 14)
+    }
+
     fn encode_reg(opcode: u8, reg: usize) -> u32 {
         (u32::from(opcode) << 24) | (((reg as u32) & 0x1f) << 19)
     }
@@ -13811,6 +13819,38 @@ mod tests {
 
         assert_eq!(exit, 0);
         assert!(!machine.threads.contains_key(&1));
+    }
+
+    #[test]
+    fn committed_exec_decodes_and_runs_native_heap_alloc_size_free() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let words = encode_exec_descriptor(&descriptor);
+        let mut text = vec![0; 0x1000];
+        put_instruction(&mut text, 0, encode_ri(0x01, 1, 16));
+        put_instruction(&mut text, 4, encode_rr(0x47, 2, 1));
+        put_instruction(&mut text, 8, encode_rr(0x48, 3, 2));
+        put_instruction(&mut text, 12, encode_rrr(0x11, 1, 3, 1));
+        put_instruction(&mut text, 16, encode_reg(0x49, 2));
+        put_instruction(&mut text, 20, encode_reg(0x3a, 1));
+        let mut prepared = prepared_exec_vmas_fixture();
+        prepared[0].bytes = text;
+        let mut machine = Machine::new(empty_program());
+
+        machine
+            .commit_exec_descriptor_memory_image(&words, &prepared)
+            .unwrap();
+        let exit = machine.run_committed_exec().unwrap();
+
+        assert_eq!(exit, 0);
     }
 
     #[test]

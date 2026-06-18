@@ -311,6 +311,10 @@ private:
             .Case("errno_get", LNP64::ERRNO_GET)
             .Case("errno_set", LNP64::ERRNO_SET)
             .Case("exit", LNP64::EXIT)
+            .Case("alloc", LNP64::ALLOC)
+            .Case("alloc_ex", LNP64::ALLOC_EX)
+            .Case("alloc_size", LNP64::ALLOC_SIZE)
+            .Case("free", LNP64::FREE)
             .Case("pull", LNP64::PULL)
             .Case("push", LNP64::PUSH)
             .Case("ld", LNP64::LD)
@@ -357,8 +361,12 @@ private:
         Opcode == LNP64::CSET_UGE)
       return addReg(Inst, Operands);
     if (Opcode == LNP64::ERRNO_GET || Opcode == LNP64::ERRNO_SET ||
-        Opcode == LNP64::EXIT)
+        Opcode == LNP64::EXIT || Opcode == LNP64::FREE)
       return addReg(Inst, Operands);
+    if (Opcode == LNP64::ALLOC || Opcode == LNP64::ALLOC_SIZE)
+      return addRegReg(Inst, Operands);
+    if (Opcode == LNP64::ALLOC_EX)
+      return addRegRegReg(Inst, Operands);
     if (Opcode == LNP64::PULL || Opcode == LNP64::PUSH)
       return addRegRegRegReg(Inst, Operands);
     if (Opcode == LNP64::LD || Opcode == LNP64::LD_W ||
