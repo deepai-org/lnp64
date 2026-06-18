@@ -9257,9 +9257,11 @@ impl CodeGen {
                     }
                 }
             }
-            "cap_dup" => {
+            "cap_dup" | "__lnp_cap_dup" => {
                 if args.len() != 4 {
-                    return Err("cap_dup(src, dst, rights, flags) expects 4 arguments".to_string());
+                    return Err(format!(
+                        "{name}(src, dst, rights, flags) expects 4 arguments"
+                    ));
                 }
                 let src = self.emit_expr(&args[0])?;
                 let dst_req = self.emit_expr(&args[1])?;
@@ -9279,11 +9281,11 @@ impl CodeGen {
                 let flags = self.emit_expr(&args[2])?;
                 self.emit_cap_control("CAP_SEND", &[(0, channel), (8, src), (24, flags)])
             }
-            "cap_recv" => {
+            "cap_recv" | "__lnp_cap_recv" => {
                 if args.len() != 4 {
-                    return Err(
-                        "cap_recv(channel, dst, rights, flags) expects 4 arguments".to_string()
-                    );
+                    return Err(format!(
+                        "{name}(channel, dst, rights, flags) expects 4 arguments"
+                    ));
                 }
                 let channel = self.emit_expr(&args[0])?;
                 let dst_req = self.emit_expr(&args[1])?;
@@ -9294,7 +9296,7 @@ impl CodeGen {
                     &[(0, channel), (8, dst_req), (16, rights), (24, flags)],
                 )
             }
-            "cap_revoke" => {
+            "cap_revoke" | "__lnp_cap_revoke" => {
                 let src = self.one_arg(name, args)?;
                 self.emit_cap_control("CAP_REVOKE", &[(0, src)])
             }
@@ -9768,24 +9770,34 @@ impl CodeGen {
                     .push(format!("  GATE_CALL r{dst}, fd{fd}, r{arg0}, r{arg1}"));
                 Ok(dst)
             }
-            "__lnp_call_cap" | "__lnp_call" => {
-                if args.len() != 3 {
-                    return Err(format!("{name}(fd, arg0, arg1) expects 3 arguments"));
+            "__lnp_call_cap" | "__lnp_call" | "__lnp_gate_call" => {
+                if args.len() != 3 && !(name == "__lnp_gate_call" && args.len() == 4) {
+                    return Err(format!(
+                        "{name}(fd, arg0, arg1[, argblock]) expects 3 or 4 arguments"
+                    ));
                 }
                 let fd = self.numeric_fd(&args[0], name)?;
                 let arg0 = self.emit_expr(&args[1])?;
                 let arg1 = self.emit_expr(&args[2])?;
+                if args.len() == 4 {
+                    self.emit_expr(&args[3])?;
+                }
                 let dst = self.alloc_reg()?;
                 self.text
                     .push(format!("  GATE_CALL r{dst}, fd{fd}, r{arg0}, r{arg1}"));
                 Ok(dst)
             }
-            "ret_cap" => {
-                if args.len() != 2 {
-                    return Err("ret_cap(value0, value1) expects 2 arguments".to_string());
+            "ret_cap" | "__lnp_gate_return" => {
+                if args.len() != 2 && !(name == "__lnp_gate_return" && args.len() == 3) {
+                    return Err(format!(
+                        "{name}(value0, value1[, context_token]) expects 2 or 3 arguments"
+                    ));
                 }
                 let value0 = self.emit_expr(&args[0])?;
                 let value1 = self.emit_expr(&args[1])?;
+                if args.len() == 3 {
+                    self.emit_expr(&args[2])?;
+                }
                 self.text
                     .push(format!("  GATE_RETURN r0, r{value0}, r{value1}"));
                 Ok(0)
@@ -10411,21 +10423,31 @@ impl CodeGen {
                 self.text.push(format!("  LI r{dst}, 0"));
                 Ok(dst)
             }
-            "mmap" => {
+            "mmap" | "__lnp_mmap" => {
                 let (hint, len, prot, fd_num, offset) = match args.len() {
                     3 => {
-                        let fd_num = self.numeric_fd(&args[0], "mmap")?;
-                        (0, self.emit_expr(&args[1])?, self.emit_expr(&args[2])?, fd_num, 0)
+                        let fd_num = self.numeric_fd(&args[0], name)?;
+                        (
+                            0,
+                            self.emit_expr(&args[1])?,
+                            self.emit_expr(&args[2])?,
+                            fd_num,
+                            0,
+                        )
                     }
                     6 => {
                         let hint = self.emit_expr(&args[0])?;
                         let len = self.emit_expr(&args[1])?;
                         let prot = self.emit_expr(&args[2])?;
-                        let fd_num = self.numeric_fd(&args[4], "mmap")?;
+                        let fd_num = self.numeric_fd(&args[4], name)?;
                         let offset = self.emit_expr(&args[5])?;
                         (hint, len, prot, fd_num, offset)
                     }
-                    _ => return Err("mmap expects mmap(fd, len, prot) or POSIX mmap(addr, len, prot, flags, fd, offset)".to_string()),
+                    _ => {
+                        return Err(format!(
+                            "{name} expects {name}(fd, len, prot) or {name}(addr, len, prot, flags, fd, offset)"
+                        ));
+                    }
                 };
                 let dst = self.alloc_reg()?;
                 self.text.push(format!(
@@ -22098,6 +22120,69 @@ int main() {
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains("CAP_SEND"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_private_lnp_manifest_intrinsics_lower_and_run() {
+        let source = r#"
+        int service() {
+            __lnp_gate_return(88, 0, 0);
+            return 1;
+        }
+
+        int main() {
+            int fds[2];
+            int obj;
+            int mapped;
+            int narrowed;
+            int received;
+            int revoked;
+            int domain;
+            int result;
+
+            obj = __lnp_alloc(72);
+            store(obj, 1);
+            store(obj + 8, 3);
+            store(obj + 16, 0);
+            store(obj + 24, 3);
+            store(obj + 40, 8);
+            if (__lnp_object_ctl(obj) == -1) return 1;
+            mapped = __lnp_mmap(3, 8, 3);
+            if (mapped == -1) return 2;
+
+            if (pipe(fds) != 0) return 3;
+            narrowed = __lnp_cap_dup(fds[0], 0, 257, 0);
+            if (narrowed == -1) return 4;
+            if (__lnp_cap_send(fds[1], narrowed, 0) != 1) return 5;
+            received = __lnp_cap_recv(fds[0], 0, 1, 0);
+            if (received == -1) return 6;
+            revoked = __lnp_cap_revoke(fds[1]);
+            if (revoked == -1) return 7;
+
+            domain = __lnp_domain_create(5000000, 2, 8, 63);
+            if (domain == -1) return 8;
+            call_gate(5, domain, service);
+            result = __lnp_gate_call(5, 1, 2, 0);
+            if (result != 88) return 9;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        for expected in [
+            "OBJECT_CTL",
+            "MMAP",
+            "CAP_DUP",
+            "CAP_SEND",
+            "CAP_RECV",
+            "CAP_REVOKE",
+            "GATE_CALL",
+            "GATE_RETURN",
+        ] {
+            assert!(asm.contains(expected), "missing {expected} in:\n{asm}");
+        }
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
