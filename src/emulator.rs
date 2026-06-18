@@ -7328,6 +7328,7 @@ impl Machine {
                 self.wake_thread(waiter);
             }
         }
+        self.remove_thread_wait_state(tid);
         self.last_exit = code;
         if !self.threads.values().any(|thread| thread.pid == pid) {
             self.advisory_locks.retain(|_, lock| lock.owner_pid != pid);
@@ -7345,6 +7346,26 @@ impl Machine {
             }
         }
         Ok(())
+    }
+
+    fn remove_thread_wait_state(&mut self, tid: u64) {
+        self.ready.retain(|ready_tid| *ready_tid != tid);
+        self.domain_parked.retain(|parked_tid| *parked_tid != tid);
+        self.sleepers.retain(|(sleep_tid, _)| *sleep_tid != tid);
+        self.fd_waiters.retain(|waiter| waiter.tid != tid);
+        for waiters in self.futex_waiters.values_mut() {
+            waiters.retain(|waiter_tid| *waiter_tid != tid);
+        }
+        self.futex_waiters.retain(|_, waiters| !waiters.is_empty());
+        for waiters in self.thread_join_waiters.values_mut() {
+            waiters.retain(|waiter_tid| *waiter_tid != tid);
+        }
+        self.thread_join_waiters
+            .retain(|_, waiters| !waiters.is_empty());
+        for waiters in self.child_waiters.values_mut() {
+            waiters.retain(|waiter_tid| *waiter_tid != tid);
+        }
+        self.child_waiters.retain(|_, waiters| !waiters.is_empty());
     }
 
     fn wake_thread(&mut self, tid: u64) {
@@ -13131,6 +13152,41 @@ mod tests {
         assert_eq!(machine.thread().unwrap().regs[5], 0);
         assert_eq!(machine.load_u64(retval).unwrap(), 77);
         assert!(!machine.completed_threads.contains_key(&child_tid));
+    }
+
+    #[test]
+    fn exiting_thread_is_removed_from_all_wait_queues() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.ready.push_back(1);
+        machine.domain_parked.push_back(1);
+        machine.sleepers.push((1, 10));
+        machine.fd_waiters.push(FdWaiter {
+            tid: 1,
+            fd: 0,
+            generation: machine.fd_generation(0).unwrap(),
+            mask: 0,
+            result: None,
+        });
+        machine.futex_waiters.entry(0x100).or_default().push_back(1);
+        machine
+            .thread_join_waiters
+            .entry(99)
+            .or_default()
+            .push_back(1);
+        machine.child_waiters.entry(1).or_default().push_back(1);
+
+        machine.exit_current(9).unwrap();
+
+        assert!(!machine.ready.contains(&1));
+        assert!(!machine.domain_parked.contains(&1));
+        assert!(machine.sleepers.is_empty());
+        assert!(machine.fd_waiters.is_empty());
+        assert!(machine.futex_waiters.is_empty());
+        assert!(machine.thread_join_waiters.is_empty());
+        assert!(machine.child_waiters.is_empty());
+        assert!(!machine.threads.contains_key(&1));
+        assert_eq!(machine.completed_threads.get(&1), Some(&9));
     }
 
     #[test]
