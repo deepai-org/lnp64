@@ -10612,6 +10612,16 @@ mod tests {
         machine.cap_send(Reg(6), arg).unwrap();
         assert_eq!(machine.thread().unwrap().regs[6], 1);
 
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[3].rights &= !CAP_RIGHT_TRANSFER;
+        machine.store_u64(arg, 3).unwrap();
+        machine.store_u64(arg + 8, 0).unwrap();
+        machine.store_u64(arg + 16, CAP_RIGHT_READ).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_recv(Reg(7), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[7], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[3].rights |= CAP_RIGHT_TRANSFER;
+
         machine.store_u64(arg, 3).unwrap();
         machine.store_u64(arg + 8, 0).unwrap();
         machine.store_u64(arg + 16, CAP_RIGHT_READ).unwrap();
