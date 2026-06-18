@@ -76,6 +76,9 @@ emission remain blockers.
 `LNP64RegisterInfo` now rewrites frame-index operands to `R31` plus the stack
 object offset and frame size, giving those stack-slot instructions a first
 SP-relative lowering path.
+Frame lowering now permits stackless leaf functions by emitting empty
+prologue/epilogue sequences for zero-sized frames; nonzero stack adjustment is
+still blocked until immediate materialization and SP update lowering are wired.
 `LNP64InstrInfo.td` now carries operand-bearing TableGen classes for integer
 RRR/RR/RI, branch, memory, atomic, and native-capability instruction shapes
 instead of name-only opcode stubs.

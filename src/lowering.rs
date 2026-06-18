@@ -1889,6 +1889,8 @@ mod tests {
         assert!(isel.contains("setStackPointerRegisterToSaveRestore(LNP64::R31)"));
         assert!(frame.contains("StackGrowsDown"));
         assert!(frame.contains("Align(16)"));
+        assert!(frame.contains("getStackSize() == 0"));
+        assert!(frame.contains("nonzero stack adjustment is not implemented yet"));
         assert!(reginfo.contains("Reserved.set(LNP64::R0)"));
         assert!(reginfo.contains("eliminateFrameIndex"));
         assert!(reginfo.contains("ChangeToRegister(LNP64::R31"));
