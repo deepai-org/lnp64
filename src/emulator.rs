@@ -7930,6 +7930,7 @@ impl Machine {
 
     fn load_microcode(&mut self, blob: &[u8]) -> Result<(), String> {
         let text = String::from_utf8_lossy(blob);
+        let mut updates = Vec::new();
         for line in text.lines() {
             let parts = line.split_whitespace().collect::<Vec<_>>();
             if parts.is_empty() {
@@ -7943,7 +7944,10 @@ impl Machine {
             if value > 255 {
                 return Err(format!("microcode port value out of range: {value}"));
             }
-            self.process_mut()?.ucode_ports.insert(port, value as u8);
+            updates.push((port, value as u8));
+        }
+        for (port, value) in updates {
+            self.process_mut()?.ucode_ports.insert(port, value);
         }
         Ok(())
     }
@@ -11014,6 +11018,21 @@ mod tests {
         assert!(err.contains("hardware-locked stack pointer"), "{err}");
         assert!(machine.process().unwrap().pending_events.is_empty());
         assert!(machine.process().unwrap().ucode_ports.is_empty());
+    }
+
+    #[test]
+    fn malformed_microcode_load_preserves_existing_port_state() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.process_mut().unwrap().ucode_ports.insert(1, 2);
+
+        let err = machine
+            .load_microcode(b"PORT 7 9\nNOT_A_DIRECTIVE\n")
+            .unwrap_err();
+
+        assert!(err.contains("invalid microcode directive"), "{err}");
+        assert_eq!(machine.process().unwrap().ucode_ports.get(&1), Some(&2));
+        assert!(!machine.process().unwrap().ucode_ports.contains_key(&7));
     }
 
     #[test]
