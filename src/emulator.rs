@@ -8569,6 +8569,66 @@ mod tests {
     }
 
     #[test]
+    fn classifier_rejects_full_destination_queue_without_success_counters() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let (_reader_token, writer_token) = create_pipe_pair(&mut machine, 3, 4);
+        let queue = match &machine.process().unwrap().fds[4] {
+            FdHandle::PipeWriter(queue) => Rc::clone(queue),
+            _ => panic!("expected pipe writer"),
+        };
+        queue.borrow_mut().bytes = vec![0; PIPE_BUFFER_BYTE_LIMIT].into();
+        let source = create_memory_source(&mut machine, 5);
+        let rules = ARG_BASE + 0x1000;
+        let allowed = ARG_BASE + 0x1800;
+        let payload = ARG_BASE + 0x1900;
+        let envelope = ARG_BASE + 0x1a00;
+        let result = ARG_BASE + 0x1b00;
+        let counters = ARG_BASE + 0x1c00;
+        machine.write_bytes(payload, b"x").unwrap();
+        machine.store_u64(allowed, writer_token).unwrap();
+        for offset in [0, 8, 16, 24] {
+            machine.store_u64(result + offset, 0xfeed_face).unwrap();
+        }
+        write_classifier_rule(
+            &mut machine,
+            rules,
+            CLASSIFY_RULE_EXACT,
+            CLASSIFY_FIELD_SERVICE_ID,
+            42,
+            0,
+            CLASSIFY_ACTION_ROUTE,
+            writer_token,
+            0,
+        );
+        let classifier = create_classifier(&mut machine, 6, rules, 1, allowed, 1);
+        write_envelope(
+            &mut machine,
+            envelope,
+            CLASSIFY_PROFILE_IPC,
+            source,
+            payload,
+            1,
+            42,
+            0,
+            0,
+        );
+
+        assert_eq!(
+            classify(&mut machine, classifier, envelope, result),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 11);
+        assert_eq!(queue.borrow().bytes.len(), PIPE_BUFFER_BYTE_LIMIT);
+        for offset in [0, 8, 16, 24] {
+            assert_eq!(machine.load_u64(result + offset).unwrap(), 0xfeed_face);
+        }
+        query_classifier_counters(&mut machine, classifier, counters);
+        assert_eq!(machine.load_u64(counters).unwrap(), 0);
+        assert_eq!(machine.load_u64(counters + 16).unwrap(), 0);
+    }
+
+    #[test]
     fn classifier_routes_packets_by_port_subnet_and_hash() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
