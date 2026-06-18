@@ -2547,7 +2547,15 @@ impl Machine {
                     self.set_status_errno(22)?;
                     return Ok(true);
                 }
-                self.queue_process_event(pid, NativeEvent::kill_signal(signum));
+                if !self.processes.contains_key(&pid) {
+                    self.set_status_errno(3)?;
+                    return Ok(true);
+                }
+                if !self.queue_process_event(pid, NativeEvent::kill_signal(signum)) {
+                    self.set_status_errno(11)?;
+                    return Ok(true);
+                }
+                self.set_status_ok()?;
             }
             Instr::Sigret => {
                 let saved = self
@@ -10633,6 +10641,47 @@ mod tests {
             machine.read_pcr(Pcr::Sigpending).unwrap(),
             1u64 << (SIGNAL_NUMBER_LIMIT - 1)
         );
+    }
+
+    #[test]
+    fn kill_reports_missing_target_and_full_event_queue() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+
+        machine.thread_mut().unwrap().regs[4] = 99;
+        machine.thread_mut().unwrap().regs[5] = 2;
+        assert!(machine.exec(Instr::Kill(Reg(4), Reg(5))).unwrap());
+        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 3);
+        assert!(machine.process().unwrap().pending_events.is_empty());
+
+        {
+            let process = machine.process_mut().unwrap();
+            for _ in 0..PROCESS_EVENT_QUEUE_LIMIT {
+                process
+                    .pending_events
+                    .push_back(NativeEvent::timer_signal(SIGALRM));
+            }
+        }
+        machine.thread_mut().unwrap().regs[4] = 1;
+        machine.thread_mut().unwrap().regs[5] = 2;
+        assert!(machine.exec(Instr::Kill(Reg(4), Reg(5))).unwrap());
+        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 11);
+        assert_eq!(
+            machine.process().unwrap().pending_events.len(),
+            PROCESS_EVENT_QUEUE_LIMIT
+        );
+
+        machine.process_mut().unwrap().pending_events.clear();
+        machine.set_errno(123).unwrap();
+        assert!(machine.exec(Instr::Kill(Reg(4), Reg(5))).unwrap());
+        assert_eq!(machine.thread().unwrap().regs[1], 0);
+        assert_eq!(machine.process().unwrap().errno, 0);
+        assert!(matches!(
+            machine.process().unwrap().pending_events.front(),
+            Some(NativeEvent::Signal { signum: 2, .. })
+        ));
     }
 
     #[test]
