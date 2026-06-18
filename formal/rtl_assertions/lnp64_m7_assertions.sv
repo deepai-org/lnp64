@@ -37,8 +37,24 @@ module lnp64_m7_assertions (
         return parked ? M7_LOC_PARKED : M7_LOC_RUNNABLE;
     endfunction
 
+    logic [15:0] previous_projected_location;
+    logic [31:0] previous_wait_generation;
+    logic [31:0] previous_address_generation;
+    logic [31:0] previous_stale_address_generation;
+    logic [31:0] previous_atomic_word;
+    logic [31:0] previous_atomic_count;
+    logic previous_wake_pending;
+
     always_ff @(posedge clk) begin
-        if (reset_n) begin
+        if (!reset_n) begin
+            previous_projected_location <= M7_LOC_RUNNABLE;
+            previous_wait_generation <= 32'd1;
+            previous_address_generation <= 32'd1;
+            previous_stale_address_generation <= 32'd0;
+            previous_atomic_word <= 32'd0;
+            previous_atomic_count <= 32'd0;
+            previous_wake_pending <= 1'b0;
+        end else begin
             assert (typed_state_projection.tid == M7_TID)
                 else $fatal(1, "M7 typed projection TID drifted");
             assert (typed_state_projection.location == projected_location(waiter_parked))
@@ -80,26 +96,120 @@ module lnp64_m7_assertions (
                 assert (typed_commit.after_location == M7_LOC_RUNNABLE ||
                         typed_commit.after_location == M7_LOC_PARKED)
                     else $fatal(1, "M7 typed commit used unknown after location");
+                assert (typed_commit.before_location == previous_projected_location)
+                    else $fatal(1, "M7 typed commit before-location drifted from real prior waiter state");
+                assert (typed_commit.after_location == typed_state_projection.location)
+                    else $fatal(1, "M7 typed commit after-location drifted from real waiter state");
+                assert (typed_commit.address_generation == previous_address_generation)
+                    else $fatal(1, "M7 typed commit address generation drifted from real prior address generation");
                 assert (typed_commit.status == LNP64_ERR_OK ||
                         typed_commit.status == LNP64_ERR_EAGAIN ||
                         typed_commit.status == LNP64_ERR_EREVOKED)
                     else $fatal(1, "M7 typed commit used unexpected status");
 
                 unique case (typed_commit.op)
-                    LNP64_M7_COMMIT_CMPXCHG_SUCCESS,
-                    LNP64_M7_COMMIT_FUTEX_WAIT,
-                    LNP64_M7_COMMIT_FUTEX_WAKE,
-                    LNP64_M7_COMMIT_TIMER_WAIT,
-                    LNP64_M7_COMMIT_TIMER_EXPIRE,
-                    LNP64_M7_COMMIT_CONSUME_WAKE:
+                    LNP64_M7_COMMIT_CMPXCHG_SUCCESS: begin
                         assert (typed_commit.status == LNP64_ERR_OK)
                             else $fatal(1, "M7 OK-only transition emitted non-OK status");
-                    LNP64_M7_COMMIT_CMPXCHG_FAIL:
+                        assert (previous_atomic_count == 32'd0 &&
+                                typed_state_projection.atomic_count == previous_atomic_count + 32'd1)
+                            else $fatal(1, "M7 cmpxchg success did not advance real atomic count by one");
+                        assert (typed_commit.before_location == M7_LOC_RUNNABLE &&
+                                typed_commit.after_location == M7_LOC_RUNNABLE)
+                            else $fatal(1, "M7 cmpxchg success moved scheduler location");
+                        assert (typed_commit.wait_generation == previous_wait_generation)
+                            else $fatal(1, "M7 cmpxchg success commit wait generation drifted");
+                    end
+                    LNP64_M7_COMMIT_CMPXCHG_FAIL: begin
                         assert (typed_commit.status == LNP64_ERR_EAGAIN)
                             else $fatal(1, "M7 cmpxchg failure did not emit EAGAIN");
-                    LNP64_M7_COMMIT_REJECT_STALE_ADDRESS:
+                        assert (previous_atomic_count == 32'd1 &&
+                                typed_state_projection.atomic_count == previous_atomic_count + 32'd1)
+                            else $fatal(1, "M7 cmpxchg failure did not advance real atomic count by one");
+                        assert (typed_state_projection.atomic_word == previous_atomic_word)
+                            else $fatal(1, "M7 cmpxchg failure changed real atomic word");
+                        assert (typed_state_projection.cmpxchg_failure_explicit)
+                            else $fatal(1, "M7 cmpxchg failure did not set explicit failure witness");
+                        assert (typed_commit.before_location == M7_LOC_RUNNABLE &&
+                                typed_commit.after_location == M7_LOC_RUNNABLE)
+                            else $fatal(1, "M7 cmpxchg failure moved scheduler location");
+                        assert (typed_commit.wait_generation == previous_wait_generation)
+                            else $fatal(1, "M7 cmpxchg failure commit wait generation drifted");
+                    end
+                    LNP64_M7_COMMIT_FUTEX_WAIT: begin
+                        assert (typed_commit.status == LNP64_ERR_OK)
+                            else $fatal(1, "M7 OK-only transition emitted non-OK status");
+                        assert (!previous_wake_pending)
+                            else $fatal(1, "M7 futex wait accepted while wake was already pending");
+                        assert (typed_commit.before_location == M7_LOC_RUNNABLE &&
+                                typed_commit.after_location == M7_LOC_PARKED)
+                            else $fatal(1, "M7 futex wait did not record runnable-to-parked transition");
+                        assert (typed_commit.wait_generation == previous_address_generation &&
+                                typed_state_projection.wait_generation == previous_address_generation)
+                            else $fatal(1, "M7 futex wait generation did not bind to address generation");
+                    end
+                    LNP64_M7_COMMIT_FUTEX_WAKE: begin
+                        assert (typed_commit.status == LNP64_ERR_OK)
+                            else $fatal(1, "M7 OK-only transition emitted non-OK status");
+                        assert (previous_projected_location == M7_LOC_PARKED &&
+                                previous_wait_generation == previous_address_generation)
+                            else $fatal(1, "M7 futex wake accepted without a matching parked wait");
+                        assert (typed_commit.after_location == M7_LOC_RUNNABLE &&
+                                typed_state_projection.wake_pending &&
+                                typed_state_projection.futex_wake_delivered)
+                            else $fatal(1, "M7 futex wake did not produce one runnable pending wake");
+                        assert (typed_commit.wait_generation == previous_wait_generation)
+                            else $fatal(1, "M7 futex wake commit wait generation drifted");
+                    end
+                    LNP64_M7_COMMIT_TIMER_WAIT: begin
+                        assert (typed_commit.status == LNP64_ERR_OK)
+                            else $fatal(1, "M7 OK-only transition emitted non-OK status");
+                        assert (!previous_wake_pending)
+                            else $fatal(1, "M7 timer wait accepted while wake was already pending");
+                        assert (typed_commit.before_location == M7_LOC_RUNNABLE &&
+                                typed_commit.after_location == M7_LOC_PARKED)
+                            else $fatal(1, "M7 timer wait did not record runnable-to-parked transition");
+                        assert (typed_commit.wait_generation == previous_address_generation &&
+                                typed_state_projection.wait_generation == previous_address_generation)
+                            else $fatal(1, "M7 timer wait generation did not bind to address generation");
+                    end
+                    LNP64_M7_COMMIT_TIMER_EXPIRE: begin
+                        assert (typed_commit.status == LNP64_ERR_OK)
+                            else $fatal(1, "M7 OK-only transition emitted non-OK status");
+                        assert (previous_projected_location == M7_LOC_PARKED &&
+                                previous_wait_generation == previous_address_generation)
+                            else $fatal(1, "M7 timer expiry accepted without a matching parked wait");
+                        assert (typed_commit.after_location == M7_LOC_RUNNABLE &&
+                                typed_state_projection.wake_pending &&
+                                typed_state_projection.timer_wake_delivered)
+                            else $fatal(1, "M7 timer expiry did not produce one runnable pending wake");
+                        assert (typed_commit.wait_generation == previous_wait_generation)
+                            else $fatal(1, "M7 timer expiry commit wait generation drifted");
+                    end
+                    LNP64_M7_COMMIT_CONSUME_WAKE: begin
+                        assert (typed_commit.status == LNP64_ERR_OK)
+                            else $fatal(1, "M7 OK-only transition emitted non-OK status");
+                        assert (previous_wake_pending && !typed_state_projection.wake_pending)
+                            else $fatal(1, "M7 consume-wake did not consume one real pending wake");
+                        assert (typed_commit.before_location == previous_projected_location &&
+                                typed_commit.after_location == previous_projected_location)
+                            else $fatal(1, "M7 consume-wake changed scheduler location");
+                        assert (typed_commit.wait_generation == previous_wait_generation)
+                            else $fatal(1, "M7 consume-wake commit wait generation drifted");
+                    end
+                    LNP64_M7_COMMIT_REJECT_STALE_ADDRESS: begin
                         assert (typed_commit.status == LNP64_ERR_EREVOKED)
                             else $fatal(1, "M7 stale address rejection did not emit EREVOKED");
+                        assert (previous_stale_address_generation != previous_address_generation)
+                            else $fatal(1, "M7 stale address rejection accepted current address generation");
+                        assert (typed_state_projection.stale_address_rejected)
+                            else $fatal(1, "M7 stale address rejection did not set rejection witness");
+                        assert (typed_commit.before_location == previous_projected_location &&
+                                typed_commit.after_location == previous_projected_location)
+                            else $fatal(1, "M7 stale address rejection changed scheduler location");
+                        assert (typed_commit.wait_generation == previous_wait_generation)
+                            else $fatal(1, "M7 stale address rejection commit wait generation drifted");
+                    end
                     default:
                         assert (1'b0)
                             else $fatal(1, "M7 typed commit used unknown operation");
@@ -128,6 +238,14 @@ module lnp64_m7_assertions (
                 assert (atomic_count_exact)
                     else $fatal(1, "M7 atomic count was not exact");
             end
+
+            previous_projected_location <= typed_state_projection.location;
+            previous_wait_generation <= typed_state_projection.wait_generation;
+            previous_address_generation <= typed_state_projection.address_generation;
+            previous_stale_address_generation <= typed_state_projection.stale_address_generation;
+            previous_atomic_word <= typed_state_projection.atomic_word;
+            previous_atomic_count <= typed_state_projection.atomic_count;
+            previous_wake_pending <= typed_state_projection.wake_pending;
         end
     end
 endmodule

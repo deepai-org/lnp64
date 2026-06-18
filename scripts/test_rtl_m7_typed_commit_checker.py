@@ -148,6 +148,13 @@ def main() -> None:
         lambda: checker.check_transition_trace(wrong_status, states, ops),
     )
 
+    wrong_before_location = copy.deepcopy(commits)
+    wrong_before_location[3]["before_location"] = checker.LOC_RUNNABLE
+    expect_failure(
+        "unexpected before location",
+        lambda: checker.check_transition_trace(wrong_before_location, states, ops),
+    )
+
     commit_bits = [encode_bits(record, commit_fields, commit_widths) for record in commits]
     state_bits = [encode_bits(record, state_fields, state_widths) for record in states]
     checker.check_bits(commits, commit_bits, commit_fields, commit_widths, "M7 typed commit")
