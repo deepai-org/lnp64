@@ -2929,11 +2929,13 @@ impl Machine {
     }
 
     fn complete_reg_ok(&mut self, result: Reg, value: u64) -> Result<(), String> {
+        Self::ensure_result_reg_writable(result)?;
         self.set_errno(0)?;
         self.write_reg(result, value)
     }
 
     fn complete_reg_err(&mut self, result: Reg, errno: u64) -> Result<(), String> {
+        Self::ensure_result_reg_writable(result)?;
         self.set_errno(errno)?;
         self.write_reg(result, -1i64 as u64)
     }
@@ -13006,6 +13008,31 @@ mod tests {
         machine.exec(Instr::Isync(Reg(6), Reg(4), Reg(5))).unwrap();
         assert_eq!(machine.thread().unwrap().regs[6], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 14);
+    }
+
+    #[test]
+    fn completion_helpers_reject_locked_result_before_errno_update() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+
+        machine.set_errno(123).unwrap();
+        let err = machine.complete_reg_ok(Reg(31), 0).unwrap_err();
+        assert!(err.contains("hardware-locked stack pointer"), "{err}");
+        assert_eq!(machine.process().unwrap().errno, 123);
+
+        machine.set_errno(124).unwrap();
+        let err = machine.complete_reg_err(Reg(31), 22).unwrap_err();
+        assert!(err.contains("hardware-locked stack pointer"), "{err}");
+        assert_eq!(machine.process().unwrap().errno, 124);
+
+        machine.thread_mut().unwrap().regs[4] = ARG_BASE;
+        machine.thread_mut().unwrap().regs[5] = 0;
+        machine.set_errno(125).unwrap();
+        let err = machine
+            .exec(Instr::Isync(Reg(31), Reg(4), Reg(5)))
+            .unwrap_err();
+        assert!(err.contains("hardware-locked stack pointer"), "{err}");
+        assert_eq!(machine.process().unwrap().errno, 125);
     }
 
     #[test]
