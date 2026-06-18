@@ -1048,6 +1048,7 @@ pub struct Machine {
     alarms: Vec<(u64, u64)>,
     futex_waiters: HashMap<u64, VecDeque<u64>>,
     thread_join_waiters: HashMap<u64, VecDeque<u64>>,
+    child_waiters: HashMap<u64, VecDeque<u64>>,
     completed_threads: HashMap<u64, u64>,
     completed_children: HashMap<(u64, u64), i32>,
     fd_waiters: Vec<FdWaiter>,
@@ -1090,6 +1091,7 @@ impl Machine {
             alarms: Vec::new(),
             futex_waiters: HashMap::new(),
             thread_join_waiters: HashMap::new(),
+            child_waiters: HashMap::new(),
             completed_threads: HashMap::new(),
             completed_children: HashMap::new(),
             fd_waiters: Vec::new(),
@@ -2143,7 +2145,10 @@ impl Machine {
                 };
                 if live_child {
                     self.thread_mut()?.ip = self.thread()?.ip.saturating_sub(1);
-                    self.sleepers.push((self.current_tid, 1));
+                    self.child_waiters
+                        .entry(current_pid)
+                        .or_default()
+                        .push_back(self.current_tid);
                     self.ready.retain(|tid| *tid != self.current_tid);
                     return Ok(false);
                 }
@@ -7062,6 +7067,11 @@ impl Machine {
                     parent
                         .pending_events
                         .push_back(NativeEvent::child_signal(SIGCHLD));
+                }
+                if let Some(waiters) = self.child_waiters.remove(&parent_pid) {
+                    for waiter in waiters {
+                        self.wake_thread(waiter);
+                    }
                 }
             }
         }
@@ -12425,6 +12435,48 @@ mod tests {
         assert_eq!(machine.thread().unwrap().regs[4], 42);
         assert_eq!(machine.thread().unwrap().regs[1], 0);
         assert!(!machine.completed_children.contains_key(&(1, child_pid)));
+    }
+
+    #[test]
+    fn waitpid_live_child_parks_until_child_exit_event() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine
+            .clone_with_profile(CloneProfile::NewProcessCow, Reg(2), None)
+            .unwrap();
+        let child_pid = machine.thread().unwrap().regs[2];
+        let child_tid = machine
+            .threads
+            .values()
+            .find(|thread| thread.pid == child_pid)
+            .unwrap()
+            .tid;
+
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[3] = child_pid;
+        let keep_ready = machine.exec(Instr::WaitPid(Reg(4), Reg(3))).unwrap();
+        assert!(!keep_ready);
+        assert!(!machine.ready.contains(&1));
+        assert!(machine.sleepers.is_empty());
+        assert_eq!(
+            machine
+                .child_waiters
+                .get(&1)
+                .unwrap()
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![1]
+        );
+
+        machine.current_tid = child_tid;
+        machine.exit_current(55).unwrap();
+        assert!(machine.ready.contains(&1));
+
+        machine.current_tid = 1;
+        machine.exec(Instr::WaitPid(Reg(4), Reg(3))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[4], 55);
+        assert_eq!(machine.thread().unwrap().regs[1], 0);
     }
 
     #[test]
