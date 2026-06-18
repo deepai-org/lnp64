@@ -5385,6 +5385,11 @@ impl Machine {
                 *value.borrow_mut() = op_id;
                 Ok(())
             }
+            FdHandle::EventCounter { value, .. } => {
+                let mut value = value.borrow_mut();
+                *value = value.saturating_add(op_id);
+                Ok(())
+            }
             FdHandle::PipeWriter(queue) => {
                 let mut queue = queue.borrow_mut();
                 queue.bytes.extend(op_id.to_le_bytes());
@@ -14690,6 +14695,37 @@ mod tests {
         assert!(machine.fd_waiters.is_empty());
         assert_eq!(machine.thread().unwrap().regs[6], 1);
         assert!(machine.fd_read_ready(4).unwrap());
+    }
+
+    #[test]
+    fn async_call_completion_wakes_event_counter_waiter() {
+        let mut machine = test_machine_with_child_domain();
+        machine.current_tid = 1;
+        let counter = Rc::new(RefCell::new(0));
+        machine.processes.get_mut(&1).unwrap().fds[4] = FdHandle::EventCounter {
+            value: counter.clone(),
+            semaphore: false,
+        };
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[4] = FdCapability::full(4);
+        machine.processes.get_mut(&1).unwrap().fds[3] = FdHandle::CallGate {
+            entry: 1,
+            domain_id: 2,
+            domain_generation: 1,
+            mode: CALL_MODE_ASYNC,
+            completion_fd: Some(4),
+            flags: 0,
+        };
+        machine
+            .push_fd_waiter(4, POLLIN_MASK, Some(Reg(8)))
+            .unwrap();
+        machine.ready.retain(|tid| *tid != 1);
+
+        machine.call_cap(Reg(6), 3, 10, 20).unwrap();
+
+        assert!(machine.ready.contains(&1));
+        assert!(machine.fd_waiters.is_empty());
+        assert_eq!(machine.thread().unwrap().regs[6], 1);
+        assert_eq!(*counter.borrow(), 1);
     }
 
     #[test]
