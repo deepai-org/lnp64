@@ -377,6 +377,35 @@ grep -q 'csel.gt r' "$csel_dump"
 grep -q 'csel.ult r' "$csel_dump"
 printf 'real LLVM LNP64 clang csel object smoke passed: %s\n' "$csel_obj"
 
+call_clobber_c="$build_dir/call-clobber-smoke.c"
+cat >"$call_clobber_c" <<'C'
+__attribute__((noinline)) unsigned long low8(unsigned long x) {
+  return (unsigned char)x;
+}
+
+__attribute__((noinline)) unsigned long low16(unsigned long x) {
+  return (unsigned short)x;
+}
+
+int main(void) {
+  return (int)((low8(0UL - 2) - 254) + (low16(0UL - 2) - 65534));
+}
+C
+
+call_clobber_obj="$build_dir/call-clobber-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -O1 -ffreestanding -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$call_clobber_c" -o "$call_clobber_obj"
+test -s "$call_clobber_obj"
+call_clobber_dump="$build_dir/call-clobber-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$call_clobber_obj" \
+  >"$call_clobber_dump"
+grep -q 'call ' "$call_clobber_dump"
+grep -q 'zext.b r' "$call_clobber_dump"
+grep -q 'zext.h r' "$call_clobber_dump"
+printf 'real LLVM LNP64 clang call-clobber object smoke passed: %s\n' \
+  "$call_clobber_obj"
+
 hello_obj="$build_dir/hello-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
@@ -1197,6 +1226,13 @@ csel_elf="$build_dir/lnp64-csel-linked.elf"
   -o "$csel_elf" "$crt0_obj" "$csel_obj"
 test -s "$csel_elf"
 printf 'real LLVM LNP64 lld csel link smoke passed: %s\n' "$csel_elf"
+
+call_clobber_elf="$build_dir/lnp64-call-clobber-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$call_clobber_elf" "$crt0_obj" "$call_clobber_obj"
+test -s "$call_clobber_elf"
+printf 'real LLVM LNP64 lld call-clobber link smoke passed: %s\n' \
+  "$call_clobber_elf"
 
 compare_elf="$build_dir/lnp64-compare-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

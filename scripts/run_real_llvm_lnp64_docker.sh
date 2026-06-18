@@ -123,6 +123,13 @@ grep -q 'exit=0' <<<"$csel_output"
 printf 'real LLVM LNP64 run-elf csel execution passed: %s\n' \
   "$csel_probe"
 
+call_clobber_probe="target/llvm-lnp64-build/lnp64-call-clobber-linked.elf"
+cargo run --quiet -- elf-plan "$call_clobber_probe" >/dev/null
+call_clobber_output="$(cargo run --quiet -- run-elf "$call_clobber_probe")"
+grep -q 'exit=0' <<<"$call_clobber_output"
+printf 'real LLVM LNP64 run-elf call-clobber execution passed: %s\n' \
+  "$call_clobber_probe"
+
 compare_probe="target/llvm-lnp64-build/lnp64-compare-linked.elf"
 cargo run --quiet -- elf-plan "$compare_probe" >/dev/null
 compare_output="$(cargo run --quiet -- run-elf "$compare_probe")"

@@ -1447,6 +1447,8 @@ mod tests {
         assert!(real_llc.contains("grep -q 'csel.gt r'"));
         assert!(real_llc.contains("grep -q 'csel.ult r'"));
         assert!(real_llc.contains("real LLVM LNP64 clang csel object smoke passed"));
+        assert!(real_llc.contains("call-clobber-clang-smoke.o"));
+        assert!(real_llc.contains("real LLVM LNP64 clang call-clobber object smoke passed"));
         assert!(real_llc.contains("-c demos/hello.c"));
         assert!(real_llc.contains("hello-clang-smoke.o"));
         assert!(real_llc.contains("hello-clang-smoke.dump"));
@@ -1527,6 +1529,8 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 lld bit-manip link smoke passed"));
         assert!(real_llc.contains("lnp64-csel-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld csel link smoke passed"));
+        assert!(real_llc.contains("lnp64-call-clobber-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld call-clobber link smoke passed"));
         assert!(real_llc.contains("lnp64-intrinsic-await-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld intrinsic await link smoke passed"));
         assert!(real_llc.contains("lnp64-intrinsic-call-linked.elf"));
@@ -1778,6 +1782,8 @@ mod tests {
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf bit-manip execution passed"));
         assert!(real_llc_docker.contains("lnp64-csel-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf csel execution passed"));
+        assert!(real_llc_docker.contains("lnp64-call-clobber-linked.elf"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf call-clobber execution passed"));
         assert!(real_llc_docker.contains("lnp64-libc-string-linked.elf"));
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf minilibc string execution passed")
@@ -2417,7 +2423,8 @@ mod tests {
         assert!(instr_td.contains("(LNP64pull GPR:$cap, GPR:$arg0, GPR:$arg1)"));
         assert!(instr_td.contains("(LNP64push GPR:$cap, GPR:$arg0, GPR:$arg1)"));
         assert!(instr_td.contains("isReturn = 1"));
-        assert!(instr_td.contains("Defs = [LR]"));
+        assert!(instr_td.contains("Defs = [LR, R1, R2"));
+        assert!(instr_td.contains("R28, R29]"));
         assert!(instr_td.contains("Defs = [FLAGS]"));
         assert!(instr_td.contains("Uses = [LR]"));
         assert!(instr_td.contains("Uses = [FLAGS]"));
