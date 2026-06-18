@@ -8531,6 +8531,32 @@ mod tests {
         machine.object_ctl(Reg(3), arg).unwrap();
         assert_eq!(machine.thread().unwrap().regs[3], 0);
 
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[7].rights &= !CAP_RIGHT_POLL;
+        machine.store_u64(arg, OBJECT_OP_SOCKET_LISTEN).unwrap();
+        machine.store_u64(arg + 24, 7).unwrap();
+        machine.object_ctl(Reg(10), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[10], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[7].rights |= CAP_RIGHT_POLL;
+
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[7].rights &= !CAP_RIGHT_READ;
+        machine.store_u64(arg, OBJECT_OP_SOCKET_CONNECT).unwrap();
+        machine.store_u64(arg + 24, 7).unwrap();
+        machine.store_u64(arg + 40, addr).unwrap();
+        machine.object_ctl(Reg(11), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[11], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[7].rights |= CAP_RIGHT_READ;
+
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[7].rights &= !CAP_RIGHT_POLL;
+        machine.store_u64(arg, OBJECT_OP_SOCKET_ACCEPT).unwrap();
+        machine.store_u64(arg + 24, 7).unwrap();
+        machine.store_u64(arg + 32, 0).unwrap();
+        machine.object_ctl(Reg(12), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[12], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[7].rights |= CAP_RIGHT_POLL;
+
         machine.processes.get_mut(&1).unwrap().fd_capabilities[7].rights &= !CAP_RIGHT_STAT;
         machine.store_u64(arg, OBJECT_OP_SOCKET_GETSOCKOPT).unwrap();
         machine.store_u64(arg + 24, 7).unwrap();
