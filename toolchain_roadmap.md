@@ -56,9 +56,10 @@ tree.
 The MC code emitter now has concrete fixed32 paths for `NOP`, `RET`, `LI`,
 `MOV`, integer ALU/compare operations, branch/call/return opcodes, and
 byte/word/doubleword `LD`/`ST`; other opcodes remain blocked until operand
-encodings and fixups are implemented. The disassembler decodes that same
-initial fixed32 subset for future `llvm-mc` round trips, and the lld scaffold
-can patch `R_LNP64_BRANCH26` into the aligned signed branch field.
+encodings and object-writer relocation hooks are implemented. The disassembler
+decodes that same initial fixed32 subset for future `llvm-mc` round trips. The
+MC layer now has target fixup kinds for branch/data relocations, and the lld
+scaffold can patch `R_LNP64_BRANCH26` into the aligned signed branch field.
 `LNP64InstrInfo.td` now carries operand-bearing TableGen classes for integer
 RRR/RR/RI, branch, memory, atomic, and native-capability instruction shapes
 instead of name-only opcode stubs.

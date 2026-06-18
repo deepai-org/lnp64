@@ -2,6 +2,7 @@
 #define LLVM_LIB_TARGET_LNP64_MCTARGETDESC_LNP64MCTARGETDESC_H
 
 #include "llvm/MC/MCInstrInfo.h"
+#include "llvm/MC/MCFixup.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/Support/DataTypes.h"
 
@@ -16,6 +17,16 @@ class MCTargetOptions;
 class Target;
 
 Target &getTheLNP64Target();
+
+namespace LNP64 {
+enum Fixups {
+  fixup_lnp64_abs16 = FirstTargetFixupKind,
+  fixup_lnp64_pcrel32,
+  fixup_lnp64_branch26,
+  LastTargetFixupKind,
+  NumTargetFixupKinds = LastTargetFixupKind - FirstTargetFixupKind
+};
+} // end namespace LNP64
 
 MCCodeEmitter *createLNP64MCCodeEmitter(const MCInstrInfo &MCII,
                                         MCContext &Ctx);

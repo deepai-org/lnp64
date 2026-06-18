@@ -1,6 +1,7 @@
 #include "MCTargetDesc/LNP64MCTargetDesc.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/MC/MCContext.h"
+#include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCParser/MCAsmLexer.h"
 #include "llvm/MC/MCParser/MCAsmParser.h"
@@ -18,13 +19,14 @@ namespace {
 
 class LNP64Operand final : public MCParsedAsmOperand {
 public:
-  enum KindTy { Token, Reg, Imm, Mem };
+  enum KindTy { Token, Reg, Imm, Expr, Mem };
 
 private:
   KindTy Kind;
   StringRef TokenValue;
   unsigned RegNo = 0;
   int64_t ImmValue = 0;
+  const MCExpr *ExprValue = nullptr;
   unsigned BaseRegNo = 0;
   SMLoc Start;
   SMLoc End;
@@ -53,6 +55,13 @@ public:
     return Op;
   }
 
+  static std::unique_ptr<LNP64Operand> createExpr(const MCExpr *ExprValue,
+                                                 SMLoc Start, SMLoc End) {
+    auto Op = std::make_unique<LNP64Operand>(Expr, Start, End);
+    Op->ExprValue = ExprValue;
+    return Op;
+  }
+
   static std::unique_ptr<LNP64Operand> createMem(int64_t Offset,
                                                 unsigned BaseRegNo,
                                                 SMLoc Start, SMLoc End) {
@@ -64,12 +73,15 @@ public:
 
   bool isToken() const override { return Kind == Token; }
   bool isReg() const override { return Kind == Reg; }
-  bool isImm() const override { return Kind == Imm; }
+  bool isImm() const override { return Kind == Imm || Kind == Expr; }
   bool isMem() const override { return Kind == Mem; }
 
   StringRef getToken() const { return TokenValue; }
   unsigned getReg() const override { return RegNo; }
   int64_t getImm() const { return ImmValue; }
+  const MCExpr *getExpr() const { return ExprValue; }
+  bool isImmValue() const { return Kind == Imm; }
+  bool isExprValue() const { return Kind == Expr; }
   unsigned getBaseReg() const { return BaseRegNo; }
 
   SMLoc getStartLoc() const override { return Start; }
@@ -85,6 +97,9 @@ public:
       break;
     case Imm:
       OS << ImmValue;
+      break;
+    case Expr:
+      ExprValue->print(OS, nullptr);
       break;
     case Mem:
       OS << ImmValue << "(r" << (BaseRegNo - LNP64::R0) << ")";
@@ -178,6 +193,7 @@ private:
         Operands.push_back(LNP64Operand::createReg(RegNo, Start, End));
         return false;
       }
+      return parseExpressionOperand(Operands);
     }
 
     if (getLexer().is(AsmToken::Integer) || getLexer().is(AsmToken::Minus))
@@ -185,6 +201,16 @@ private:
 
     return Error(getLexer().getTok().getLoc(),
                  "expected register, immediate, or memory operand");
+  }
+
+  bool parseExpressionOperand(OperandVector &Operands) {
+    SMLoc Start = getLexer().getTok().getLoc();
+    const MCExpr *ExprValue = nullptr;
+    if (getParser().parseExpression(ExprValue))
+      return true;
+    Operands.push_back(
+        LNP64Operand::createExpr(ExprValue, Start, getLexer().getTok().getLoc()));
+    return false;
   }
 
   bool parseImmediateOrMemory(OperandVector &Operands) {
@@ -290,7 +316,7 @@ private:
         Opcode == LNP64::BNE || Opcode == LNP64::BLT ||
         Opcode == LNP64::BGT || Opcode == LNP64::BLE ||
         Opcode == LNP64::BGE || Opcode == LNP64::CALL)
-      return addImm(Inst, Operands);
+      return addBranchTarget(Inst, Operands);
     if (Opcode == LNP64::CALL_REG)
       return addReg(Inst, Operands);
     if (Opcode == LNP64::LD || Opcode == LNP64::LD_W ||
@@ -311,18 +337,22 @@ private:
     return true;
   }
 
-  static bool addImm(MCInst &Inst, const OperandVector &Operands) {
+  static bool addBranchTarget(MCInst &Inst, const OperandVector &Operands) {
     const LNP64Operand *Imm = getOp(Operands, 1);
     if (Operands.size() != 2 || !Imm || !Imm->isImm())
       return false;
-    Inst.addOperand(MCOperand::createImm(Imm->getImm()));
+    if (Imm->isExprValue())
+      Inst.addOperand(MCOperand::createExpr(Imm->getExpr()));
+    else
+      Inst.addOperand(MCOperand::createImm(Imm->getImm()));
     return true;
   }
 
   static bool addRegImm(MCInst &Inst, const OperandVector &Operands) {
     const LNP64Operand *Reg = getOp(Operands, 1);
     const LNP64Operand *Imm = getOp(Operands, 2);
-    if (Operands.size() != 3 || !Reg || !Imm || !Reg->isReg() || !Imm->isImm())
+    if (Operands.size() != 3 || !Reg || !Imm || !Reg->isReg() ||
+        !Imm->isImmValue())
       return false;
     Inst.addOperand(MCOperand::createReg(Reg->getReg()));
     Inst.addOperand(MCOperand::createImm(Imm->getImm()));

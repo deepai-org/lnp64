@@ -9,6 +9,8 @@
   ld r4, 16(r31)
   st r4, 24(r31)
   call 0
+  call main
+main:
   ret
 
 # CHECK: nop
@@ -17,4 +19,5 @@
 # CHECK: ld r4, 16(r31)
 # CHECK: st r4, 24(r31)
 # CHECK: call 0
+# CHECK: call main
 # CHECK: ret

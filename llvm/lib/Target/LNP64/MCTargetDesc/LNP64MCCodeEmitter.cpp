@@ -52,6 +52,19 @@ static uint32_t encodeFixed32Reg(uint8_t Opcode, unsigned Reg) {
   return (uint32_t(Opcode) << 24) | ((Reg & 0x1f) << 19);
 }
 
+static uint32_t encodeFixed32BranchOperand(uint8_t Opcode,
+                                           const MCOperand &Operand,
+                                           SmallVectorImpl<MCFixup> &Fixups) {
+  if (Operand.isImm())
+    return encodeFixed32Branch(Opcode, Operand.getImm());
+  if (Operand.isExpr()) {
+    Fixups.push_back(MCFixup::create(
+        0, Operand.getExpr(), MCFixupKind(LNP64::fixup_lnp64_branch26)));
+    return uint32_t(Opcode) << 24;
+  }
+  llvm_unreachable("expected immediate or expression branch operand");
+}
+
 static unsigned getGPRNo(const MCOperand &Operand) {
   unsigned Reg = Operand.getReg();
   if (Reg < LNP64::R0 || Reg > LNP64::R31)
@@ -62,7 +75,7 @@ static unsigned getGPRNo(const MCOperand &Operand) {
 class LNP64MCCodeEmitter final : public MCCodeEmitter {
 public:
   void encodeInstruction(const MCInst &MI, SmallVectorImpl<char> &CB,
-                         SmallVectorImpl<MCFixup> &,
+                         SmallVectorImpl<MCFixup> &Fixups,
                          const MCSubtargetInfo &) const override {
     switch (MI.getOpcode()) {
     case LNP64::NOP:
@@ -152,28 +165,28 @@ public:
                CB);
       return;
     case LNP64::JMP:
-      emitLE32(encodeFixed32Branch(0x20, MI.getOperand(0).getImm()), CB);
+      emitLE32(encodeFixed32BranchOperand(0x20, MI.getOperand(0), Fixups), CB);
       return;
     case LNP64::BEQ:
-      emitLE32(encodeFixed32Branch(0x21, MI.getOperand(0).getImm()), CB);
+      emitLE32(encodeFixed32BranchOperand(0x21, MI.getOperand(0), Fixups), CB);
       return;
     case LNP64::BNE:
-      emitLE32(encodeFixed32Branch(0x22, MI.getOperand(0).getImm()), CB);
+      emitLE32(encodeFixed32BranchOperand(0x22, MI.getOperand(0), Fixups), CB);
       return;
     case LNP64::BLT:
-      emitLE32(encodeFixed32Branch(0x23, MI.getOperand(0).getImm()), CB);
+      emitLE32(encodeFixed32BranchOperand(0x23, MI.getOperand(0), Fixups), CB);
       return;
     case LNP64::BGT:
-      emitLE32(encodeFixed32Branch(0x24, MI.getOperand(0).getImm()), CB);
+      emitLE32(encodeFixed32BranchOperand(0x24, MI.getOperand(0), Fixups), CB);
       return;
     case LNP64::BLE:
-      emitLE32(encodeFixed32Branch(0x25, MI.getOperand(0).getImm()), CB);
+      emitLE32(encodeFixed32BranchOperand(0x25, MI.getOperand(0), Fixups), CB);
       return;
     case LNP64::BGE:
-      emitLE32(encodeFixed32Branch(0x26, MI.getOperand(0).getImm()), CB);
+      emitLE32(encodeFixed32BranchOperand(0x26, MI.getOperand(0), Fixups), CB);
       return;
     case LNP64::CALL:
-      emitLE32(encodeFixed32Branch(0x27, MI.getOperand(0).getImm()), CB);
+      emitLE32(encodeFixed32BranchOperand(0x27, MI.getOperand(0), Fixups), CB);
       return;
     case LNP64::CALL_REG:
       emitLE32(encodeFixed32Reg(0x28, getGPRNo(MI.getOperand(0))), CB);

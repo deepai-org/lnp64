@@ -1755,6 +1755,8 @@ mod tests {
         let instr_td = include_str!("../llvm/lib/Target/LNP64/LNP64InstrInfo.td");
         let cmake = include_str!("../llvm/lib/Target/LNP64/CMakeLists.txt");
         let target_info = include_str!("../llvm/lib/Target/LNP64/TargetInfo/LNP64TargetInfo.cpp");
+        let mc_desc_header =
+            include_str!("../llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCTargetDesc.h");
         let mc_desc = include_str!("../llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCTargetDesc.cpp");
         let mc_emitter =
             include_str!("../llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCCodeEmitter.cpp");
@@ -1821,6 +1823,7 @@ mod tests {
         assert!(target_info.contains("RegisterTarget<Triple::lnp64>"));
         assert!(mc_desc.contains("LLVMInitializeLNP64TargetMC"));
         assert!(mc_desc.contains("RegisterMCCodeEmitter"));
+        assert!(mc_desc_header.contains("fixup_lnp64_branch26"));
         assert!(mc_emitter.contains("createLNP64MCCodeEmitter"));
         assert!(mc_emitter.contains("case LNP64::AND"));
         assert!(mc_emitter.contains("case LNP64::CMP"));
@@ -2978,6 +2981,8 @@ mod tests {
         assert!(mc_emitter.contains("encodeFixed32RRR"));
         assert!(mc_emitter.contains("encodeFixed32Mem"));
         assert!(mc_emitter.contains("encodeFixed32Branch"));
+        assert!(mc_emitter.contains("encodeFixed32BranchOperand"));
+        assert!(mc_emitter.contains("fixup_lnp64_branch26"));
         assert!(mc_emitter.contains("encodeFixed32Reg"));
         assert!(mc_emitter.contains("case LNP64::NOP"));
         assert!(mc_emitter.contains("case LNP64::RET"));
