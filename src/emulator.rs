@@ -10156,6 +10156,50 @@ mod tests {
     }
 
     #[test]
+    fn domain_security_numeric_policy_delegation_is_monotonic() {
+        let mut machine = test_machine_with_child_domain();
+        let arg = ARG_BASE;
+        {
+            let parent = machine.domains.get_mut(&2).unwrap();
+            parent.security.entropy_quota = 10;
+            parent.security.hardening_profile = 5;
+            parent.security.executable_source_policy = EXEC_SOURCE_FILE_MAPPING;
+        }
+        let next_domain_id = machine.next_domain_id;
+
+        machine.store_u64(arg, DOMAIN_OP_CREATE).unwrap();
+        machine.store_u64(arg + 8, 2).unwrap();
+        machine.store_u64(arg + 16, 1).unwrap();
+        machine
+            .store_u64(arg + DOMAIN_SECURITY_ENTROPY_QUOTA, 11)
+            .unwrap();
+        assert_eq!(machine.domain_ctl_create(arg), Err(1));
+        assert_eq!(machine.next_domain_id, next_domain_id);
+
+        machine
+            .store_u64(arg + DOMAIN_SECURITY_ENTROPY_QUOTA, 10)
+            .unwrap();
+        machine
+            .store_u64(arg + DOMAIN_SECURITY_HARDENING_PROFILE, 4)
+            .unwrap();
+        assert_eq!(machine.domain_ctl_create(arg), Err(1));
+        assert_eq!(machine.next_domain_id, next_domain_id);
+
+        machine
+            .store_u64(arg + DOMAIN_SECURITY_HARDENING_PROFILE, 5)
+            .unwrap();
+        machine
+            .store_u64(
+                arg + DOMAIN_SECURITY_EXEC_SOURCE_POLICY,
+                EXEC_SOURCE_FILE_MAPPING | EXEC_SOURCE_ANONYMOUS_JIT,
+            )
+            .unwrap();
+        assert_eq!(machine.domain_ctl_create(arg), Err(1));
+        assert_eq!(machine.next_domain_id, next_domain_id);
+        assert!(!machine.domains.contains_key(&next_domain_id));
+    }
+
+    #[test]
     fn inactive_current_domain_rejects_sensitive_operations() {
         let mut machine = test_machine_with_child_domain();
         machine.current_tid = 1;
