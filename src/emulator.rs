@@ -12982,6 +12982,36 @@ mod tests {
     }
 
     #[test]
+    fn exec_without_namespace_root_preserves_old_image_before_commit() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.process_mut().unwrap().namespace_root = None;
+        let path = "/tmp/lnp64_exec_should_not_resolve.s";
+        let path_addr = ARG_BASE + 0x2000;
+        machine.write_bytes(path_addr, path.as_bytes()).unwrap();
+        machine
+            .write_bytes(path_addr + path.len() as u64, &[0])
+            .unwrap();
+        machine.write_reg(Reg(1), path_addr).unwrap();
+        machine.write_reg(Reg(2), 0).unwrap();
+        machine.write_reg(Reg(3), 0).unwrap();
+        machine.write_reg(Reg(9), 0xfeed_cafe).unwrap();
+        machine.thread_mut().unwrap().ip = 0;
+
+        assert!(machine.exec(Instr::Exec(Reg(1), Reg(2), Reg(3))).unwrap());
+
+        assert_eq!(machine.process().unwrap().errno, 13);
+        assert_eq!(machine.read_reg(Reg(1)).unwrap(), -1i64 as u64);
+        assert!(matches!(
+            machine.process().unwrap().program.instructions.first(),
+            Some(Instr::Nop)
+        ));
+        assert_eq!(machine.thread().unwrap().tid, 1);
+        assert_eq!(machine.thread().unwrap().ip, 0);
+        assert_eq!(machine.read_reg(Reg(9)).unwrap(), 0xfeed_cafe);
+    }
+
+    #[test]
     fn exec_oversized_entry_metadata_preserves_old_image_before_commit() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
