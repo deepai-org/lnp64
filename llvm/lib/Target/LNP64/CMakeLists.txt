@@ -25,6 +25,7 @@ add_llvm_target(LNP64CodeGen
   CodeGen
   Core
   MC
+  SelectionDAG
   Support
   Target
   LNP64Desc

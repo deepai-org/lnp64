@@ -13,6 +13,22 @@ using namespace lld::elf;
 
 namespace {
 
+enum : uint32_t {
+  R_LNP64_NONE = 0,
+  R_LNP64_ABS64 = 1,
+  R_LNP64_ABS32 = 2,
+  R_LNP64_PC32 = 3,
+  R_LNP64_BRANCH26 = 4,
+  R_LNP64_GOT64 = 5,
+  R_LNP64_GLOB_DAT = 6,
+  R_LNP64_RELATIVE = 7,
+  R_LNP64_TLS_TPREL64 = 8,
+  R_LNP64_TLS_DTPREL64 = 9,
+  R_LNP64_FDR_DESC64 = 10,
+  R_LNP64_CAP_DESC64 = 11,
+  R_LNP64_CALLGATE64 = 12,
+};
+
 static bool isInt(int64_t Value, unsigned Bits) {
   int64_t Min = -(int64_t(1) << (Bits - 1));
   int64_t Max = (int64_t(1) << (Bits - 1)) - 1;
@@ -49,13 +65,13 @@ public:
 } // end anonymous namespace
 
 LNP64::LNP64() {
-  CopyRel = R_LNP64_NONE;
-  RelativeRel = R_LNP64_RELATIVE;
-  SymbolicRel = R_LNP64_ABS64;
-  GotRel = R_LNP64_GLOB_DAT;
-  GotEntrySize = 8;
-  PltEntrySize = 0;
-  DefaultMaxPageSize = 4096;
+  copyRel = R_LNP64_NONE;
+  relativeRel = R_LNP64_RELATIVE;
+  symbolicRel = R_LNP64_ABS64;
+  gotRel = R_LNP64_GLOB_DAT;
+  gotEntrySize = 8;
+  pltEntrySize = 0;
+  defaultMaxPageSize = 4096;
 }
 
 RelExpr LNP64::getRelExpr(RelType Type, const Symbol &,
@@ -71,22 +87,23 @@ RelExpr LNP64::getRelExpr(RelType Type, const Symbol &,
   case R_LNP64_CALLGATE64:
     return R_ABS;
   case R_LNP64_RELATIVE:
-    return R_RELATIVE;
+    return R_ABS;
   case R_LNP64_PC32:
   case R_LNP64_BRANCH26:
     return R_PC;
   case R_LNP64_GOT64:
     return R_GOT;
   case R_LNP64_TLS_TPREL64:
+    return R_TPREL;
   case R_LNP64_TLS_DTPREL64:
-    return R_TLS;
+    return R_DTPREL;
   default:
-    return R_INVALID;
+    return R_NONE;
   }
 }
 
 void LNP64::relocate(uint8_t *Loc, const Relocation &Rel, uint64_t Val) const {
-  switch (Rel.Type) {
+  switch (Rel.type) {
   case R_LNP64_NONE:
     return;
   case R_LNP64_ABS64:

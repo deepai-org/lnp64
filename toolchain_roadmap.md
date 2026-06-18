@@ -29,10 +29,11 @@ the LNP64 LLVM backend exists.
 first real LLVM infrastructure gate: it builds a container with LLVM tools and
 runs `llvm-tblgen` over the LNP64 TableGen target files, writing generated
 includes under `target/real-llvm-tblgen`.
-`scripts/run_real_llvm_lnp64_docker.sh` overlays the backend into upstream
-LLVM 14 and builds real `llc`/`llvm-mc`/`llvm-objdump` tools in Docker; its
-smoke now verifies trivial LNP64 IR codegen, object assembly of the checked
-crt0 stub, and disassembly of the emitted startup object.
+`scripts/run_real_llvm_lnp64_docker.sh` overlays the backend and lld arch hook
+into upstream LLVM 14 and builds real `llc`/`llvm-mc`/`llvm-objdump`/`lld`
+tools in Docker; its smoke now verifies trivial LNP64 IR codegen, object
+assembly of the checked crt0 stub, disassembly of the emitted startup object,
+and a static link of crt0 plus an assembler-built `main`.
 `toolchain/lnp64_static.ld` is the initial checked static linker-script
 contract for lld-produced ELF inputs.
 `toolchain/crt0_lnp64.s` is the initial checked crt0 startup stub for the
@@ -294,8 +295,9 @@ and `scripts/run_real_llvm_tblgen_docker.sh` pin the first real LLVM tool gate:
 the Docker script runs host-independent `llvm-tblgen` over the LNP64 TableGen
 backend files and writes generated includes under `target/real-llvm-tblgen`.
 `scripts/run_real_llvm_lnp64_docker.sh` pins the next real LLVM gate by building
-upstream LLVM 14 `llc` with LNP64 registered; IR emission remains blocked on the
-AsmPrinter/object emission path.
+upstream LLVM 14 `llc`, `llvm-mc`, `llvm-objdump`, and an ELF-only `lld` smoke
+driver with LNP64 registered, then proving IR codegen, crt0 assembly,
+disassembly, and static linking through those real tools.
 The Clang compile gates must include `toolchain/lnp64_intrinsics.h`, the crt
 gate must assemble `toolchain/crt0_lnp64.s`, the static link gate must use
 `toolchain/lnp64_static.ld`, and all gates must stay Clang/lld/loader based: no
@@ -314,7 +316,7 @@ platform while remaining useful as a smoke generator:
 | --- | --- | --- |
 | Toy compiler retirement | `toolchain_roadmap.md`, `toolchain/lnp64_toy_compiler_policy.manifest`, `src/c_compiler.rs`, and private `__lnp_*` shim tests keep new native work out of ad hoc POSIX-shaped compiler features. | `toy_compiler_policy_manifest_freezes_bootstrap_role`, `c_private_lnp_manifest_intrinsics_lower_and_run` |
 | Real toolchain target | `toolchain/lnp64_target.manifest`, register-class, psABI, relocation, MC encoding, object-format, crt, inline-asm, debug/unwind, intrinsic, isel, and exec-plan manifests. | `toolchain_contract_index_is_complete`, `register_manifest_records_backend_classes`, `mc_encoding_manifest_covers_initial_backend_opcodes` |
-| Minimal LLVM/Clang path | `toolchain/lnp64_llvm_bootstrap.manifest` pins the planned hello, arithmetic, memory, calls, and simple-libc replacement gates for the toy-compiler smoke path; `toolchain/lnp64_llvm_gates.manifest` and `scripts/run_llvm_bootstrap_gates.sh --dry-run` pin the Clang/lld/loader command shapes that replace `lnp64 cc`; `Dockerfile.llvm`, `scripts/run_real_llvm_tblgen_docker.sh`, and `scripts/run_real_llvm_lnp64_docker.sh` pin the first real LLVM TableGen and `llc` build gates; `toolchain/lnp64_run_elf.manifest` pins the execution boundary between loader commit and real ELF text execution; `toolchain/lnp64_clang_driver.manifest` pins the driver defaults; `toolchain/lnp64_llvm_filemap.manifest` pins the llvm-project source surface; `toolchain/lnp64_static.ld` pins the first lld static layout; `toolchain/crt0_lnp64.s` pins the first crt0 startup stub; `toolchain/lnp64_intrinsics.h` pins the private C shim header; `toolchain/lnp64_mc_encoding.manifest` pins the first MC encoding and relocation hooks. | `llvm_bootstrap_manifest_names_first_clang_gate`, `llvm_gate_manifest_pins_non_toy_clang_commands`, `run_elf_manifest_records_execution_boundary`, `clang_driver_manifest_matches_llvm_gates`, `llvm_filemap_manifest_names_backend_source_surface`, `mc_encoding_manifest_covers_initial_backend_opcodes`, `crt0_startup_stub_matches_crt_contract`, and `intrinsic_header_matches_intrinsic_manifest` |
+| Minimal LLVM/Clang path | `toolchain/lnp64_llvm_bootstrap.manifest` pins the planned hello, arithmetic, memory, calls, and simple-libc replacement gates for the toy-compiler smoke path; `toolchain/lnp64_llvm_gates.manifest` and `scripts/run_llvm_bootstrap_gates.sh --dry-run` pin the Clang/lld/loader command shapes that replace `lnp64 cc`; `Dockerfile.llvm`, `scripts/run_real_llvm_tblgen_docker.sh`, and `scripts/run_real_llvm_lnp64_docker.sh` pin the first real LLVM TableGen, codegen, MC, disassembly, and lld static-link smoke gates; `toolchain/lnp64_run_elf.manifest` pins the execution boundary between loader commit and real ELF text execution; `toolchain/lnp64_clang_driver.manifest` pins the driver defaults; `toolchain/lnp64_llvm_filemap.manifest` pins the llvm-project source surface; `toolchain/lnp64_static.ld` pins the first lld static layout; `toolchain/crt0_lnp64.s` pins the first crt0 startup stub; `toolchain/lnp64_intrinsics.h` pins the private C shim header; `toolchain/lnp64_mc_encoding.manifest` pins the first MC encoding and relocation hooks. | `llvm_bootstrap_manifest_names_first_clang_gate`, `llvm_gate_manifest_pins_non_toy_clang_commands`, `run_elf_manifest_records_execution_boundary`, `clang_driver_manifest_matches_llvm_gates`, `llvm_filemap_manifest_names_backend_source_surface`, `mc_encoding_manifest_covers_initial_backend_opcodes`, `crt0_startup_stub_matches_crt_contract`, and `intrinsic_header_matches_intrinsic_manifest` |
 | Libc/runtime shim layer | `libc_roadmap.md`, `toolchain/lnp64_libc_shim.manifest`, crt/startup manifest, intrinsic manifest, and private intrinsic header define startup, TLS/errno, allocation, FDR I/O, pthread/futex, event waits, mmap, signal, and socket lowering. | `libc_shim_manifest_covers_runtime_surfaces` plus `scripts/run_software_gates.sh` |
 | Software loader and exec plan | `src/loader.rs`, `src/emulator.rs`, `object_format.md`, `toolchain/lnp64_exec_plan.manifest`, and `toolchain/lnp64_loader_security.manifest` define the initial ELF64 parser, encoded exec-plan records, emulator-side descriptor validation, committed entry/TLS/startup metadata, W^X/NX/ASLR/provenance coverage, and atomic memory-image commit probe for the bounded `EXEC` boundary. | `exec_plan_manifest_matches_loader_boundary_contract`, `loader_security_manifest_covers_exec_plan_security`, plus the `exec_descriptor` test filter |
 | NetBSD personality layering | `netbsd_personality_abi.md`, `toolchain/lnp64_netbsd_layers.manifest`, this roadmap, and the NetBSD system script keep the personality layered over native services. | `netbsd_layers_manifest_preserves_personality_order` plus `scripts/run_netbsd_personality_system.sh` |

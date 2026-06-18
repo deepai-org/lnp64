@@ -3,6 +3,8 @@
 # startup remains separate smoke infrastructure.
 
 .text
+.globl _start
+.type _start,@function
 _start:
   LI r7, 0x7000
   LI r8, 0x100

@@ -35,7 +35,9 @@ if [[ ! -d "$project_dir/.git" ]]; then
     --branch "$tag" \
     https://github.com/llvm/llvm-project.git \
     "$project_dir"
-  git -C "$project_dir" sparse-checkout set llvm cmake
+  git -C "$project_dir" sparse-checkout set llvm cmake lld
+else
+  git -C "$project_dir" sparse-checkout set llvm cmake lld
 fi
 
 if [[ ! -f "$project_dir/llvm/CMakeLists.txt" ]]; then
@@ -45,10 +47,18 @@ fi
 
 mkdir -p "$project_dir/llvm/lib/Target/LNP64"
 cp -a llvm/lib/Target/LNP64/. "$project_dir/llvm/lib/Target/LNP64/"
+mkdir -p "$project_dir/lld/ELF/Arch"
+cp -a lld/ELF/Arch/LNP64.cpp "$project_dir/lld/ELF/Arch/LNP64.cpp"
 
 llvm_cmake="$project_dir/llvm/CMakeLists.txt"
 triple_h="$project_dir/llvm/include/llvm/ADT/Triple.h"
 triple_cpp="$project_dir/llvm/lib/Support/Triple.cpp"
+lld_cmake="$project_dir/lld/ELF/CMakeLists.txt"
+lld_target_h="$project_dir/lld/ELF/Target.h"
+lld_target_cpp="$project_dir/lld/ELF/Target.cpp"
+lld_driver_cpp="$project_dir/lld/ELF/Driver.cpp"
+lld_tool_cmake="$project_dir/lld/tools/lld/CMakeLists.txt"
+lld_tool_cpp="$project_dir/lld/tools/lld/lld.cpp"
 
 if ! grep -q '^  LNP64$' "$llvm_cmake"; then
   perl -0pi -e 's/(^  Lanai\n)/$1  LNP64\n/m' "$llvm_cmake"
@@ -68,8 +78,28 @@ rewrite_with_perl "$triple_cpp" \
   's/^  case llvm::Triple::lnp64:\n//mg' \
   's/(^  case llvm::Triple::le64:\n)/$1  case llvm::Triple::lnp64:\n/m'
 
+rewrite_with_perl "$lld_cmake" \
+  's/^  Arch\/LNP64\.cpp\n//mg; s/(^  Arch\/MSP430\.cpp\n)/  Arch\/LNP64.cpp\n$1/m'
+
+rewrite_with_perl "$lld_target_h" \
+  's/^TargetInfo \*getLNP64TargetInfo\(\);\n//mg; s/(^TargetInfo \*getMSP430TargetInfo\(\);\n)/TargetInfo *getLNP64TargetInfo();\n$1/m'
+
+rewrite_with_perl "$lld_target_cpp" \
+  's/^  case 0x6c64:\n    return getLNP64TargetInfo\(\);\n//mg; s/(^  case EM_MIPS:\n)/  case 0x6c64:\n    return getLNP64TargetInfo();\n$1/m'
+
+rewrite_with_perl "$lld_driver_cpp" \
+  's/^          \.Case\("elf64lnp64", \{ELF64LEKind, 0x6c64\}\)\n//mg; s/(^          \.Case\("elf64lriscv", \{ELF64LEKind, EM_RISCV\}\)\n)/$1          .Case("elf64lnp64", {ELF64LEKind, 0x6c64})\n/m'
+
+rewrite_with_perl "$lld_tool_cmake" \
+  's/target_link_libraries\(lld\n  PRIVATE\n  lldCommon\n  lldCOFF\n  lldELF\n  lldMachO\n  lldMinGW\n  lldWasm\n  \)/target_link_libraries(lld\n  PRIVATE\n  lldCommon\n  lldELF\n  )/ms' \
+  's/set\(LLD_SYMLINKS_TO_CREATE\n      lld-link ld\.lld ld64\.lld wasm-ld\)/set(LLD_SYMLINKS_TO_CREATE\n      ld.lld)/m'
+
+rewrite_with_perl "$lld_tool_cpp" \
+  's/    if \(f == Gnu && isPETarget\(args\)\)\n      return mingw::link;\n    else if \(f == Gnu\)\n      return elf::link;\n    else if \(f == WinLink\)\n      return coff::link;\n    else if \(f == Darwin\)\n      return macho::link;\n    else if \(f == Wasm\)\n      return lld::wasm::link;\n    else\n      die\("lld is a generic driver\.\\n"\n          "Invoke ld\.lld \(Unix\), ld64\.lld \(macOS\), lld-link \(Windows\), wasm-ld"\n          " \(WebAssembly\) instead"\);/    if (f == Gnu)\n      return elf::link;\n    die("lld is built as an ELF-only LNP64 smoke linker; invoke ld.lld or -flavor gnu");/ms'
+
 cmake -S "$project_dir/llvm" -B "$build_dir" -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
+  -DLLVM_ENABLE_PROJECTS=lld \
   -DLLVM_TARGETS_TO_BUILD=LNP64 \
   -DLLVM_INCLUDE_TESTS=OFF \
   -DLLVM_INCLUDE_BENCHMARKS=OFF \
@@ -79,17 +109,19 @@ cmake -S "$project_dir/llvm" -B "$build_dir" -G Ninja \
   -DLLVM_ENABLE_LIBXML2=OFF \
   -DLLVM_ENABLE_LIBEDIT=OFF
 
-ninja -C "$build_dir" -j "$jobs" llc llvm-mc llvm-objdump
+ninja -C "$build_dir" -j "$jobs" llc llvm-mc llvm-objdump lld
 
 llc="$build_dir/bin/llc"
 llvm_mc="$build_dir/bin/llvm-mc"
 llvm_objdump="$build_dir/bin/llvm-objdump"
+lld="$build_dir/bin/lld"
 "$llc" --version | sed -n '1,12p'
 
 smoke_ir="$(mktemp)"
 smoke_asm="$(mktemp)"
+main_asm="$(mktemp)"
 smoke_obj="$build_dir/lnp64-smoke.o"
-trap 'rm -f "$smoke_ir" "$smoke_asm"' EXIT
+trap 'rm -f "$smoke_ir" "$smoke_asm" "$main_asm"' EXIT
 
 cat >"$smoke_ir" <<'IR'
 define i64 @main() {
@@ -113,9 +145,29 @@ crt0_obj="$build_dir/crt0-smoke.o"
 test -s "$crt0_obj"
 printf 'real LLVM LNP64 llvm-mc crt0 smoke passed: %s\n' "$crt0_obj"
 
+cat >"$main_asm" <<'ASM'
+.text
+.globl main
+.type main,@function
+main:
+  li r1, 7
+  ret
+ASM
+
+main_obj="$build_dir/lnp64-main-smoke.o"
+"$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$main_asm" \
+  -o "$main_obj"
+test -s "$main_obj"
+
 crt0_dump="$build_dir/crt0-smoke.dump"
 "$llvm_objdump" -d --triple=lnp64-unknown-none "$crt0_obj" >"$crt0_dump"
 grep -q 'errno_set r0' "$crt0_dump"
 grep -q 'exit r1' "$crt0_dump"
 printf 'real LLVM LNP64 llvm-objdump crt0 decode smoke passed: %s\n' \
   "$crt0_dump"
+
+linked_elf="$build_dir/lnp64-linked-smoke.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$linked_elf" "$crt0_obj" "$main_obj"
+test -s "$linked_elf"
+printf 'real LLVM LNP64 lld static link smoke passed: %s\n' "$linked_elf"

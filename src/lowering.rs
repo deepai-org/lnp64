@@ -1397,13 +1397,20 @@ mod tests {
         assert!(real_tblgen_docker.contains(r#"--user "$uid:$gid""#));
         assert!(real_llc.contains("llvmorg-14.0.6"));
         assert!(real_llc.contains("git clone"));
+        assert!(real_llc.contains("git -C \"$project_dir\" sparse-checkout set llvm cmake lld"));
+        assert!(real_llc.contains("LLVM_ENABLE_PROJECTS=lld"));
         assert!(real_llc.contains("LLVM_TARGETS_TO_BUILD=LNP64"));
         assert!(real_llc.contains(r#"ninja -C "$build_dir""#));
-        assert!(real_llc.contains("llc llvm-mc llvm-objdump"));
+        assert!(real_llc.contains("llc llvm-mc llvm-objdump lld"));
         assert!(real_llc.contains(r#"llc="$build_dir/bin/llc""#));
         assert!(real_llc.contains(r#"llvm_mc="$build_dir/bin/llvm-mc""#));
         assert!(real_llc.contains(r#"llvm_objdump="$build_dir/bin/llvm-objdump""#));
+        assert!(real_llc.contains(r#"lld="$build_dir/bin/lld""#));
         assert!(real_llc.contains(r#""$llc" --version"#));
+        assert!(real_llc.contains("lld/ELF/Arch/LNP64.cpp"));
+        assert!(real_llc.contains("elf64lnp64"));
+        assert!(real_llc.contains("getLNP64TargetInfo"));
+        assert!(real_llc.contains("ELF-only LNP64 smoke linker"));
         assert!(real_llc.contains("-verify-machineinstrs"));
         assert!(real_llc.contains("-filetype=obj"));
         assert!(real_llc.contains("real LLVM LNP64 llc smoke passed"));
@@ -1413,6 +1420,8 @@ mod tests {
         assert!(real_llc.contains("errno_set r0"));
         assert!(real_llc.contains("exit r1"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-objdump crt0 decode smoke passed"));
+        assert!(real_llc.contains("-T toolchain/lnp64_static.ld"));
+        assert!(real_llc.contains("real LLVM LNP64 lld static link smoke passed"));
         assert!(real_llc.contains("rewrite_with_perl"));
         assert!(real_llc_docker.contains("Dockerfile.llvm"));
         assert!(real_llc_docker.contains("scripts/run_real_llvm_lnp64.sh"));
@@ -1904,6 +1913,7 @@ mod tests {
         assert!(cmake.contains("LNP64GenRegisterInfo.inc"));
         assert!(cmake.contains("LNP64GenDAGISel.inc"));
         assert!(cmake.contains("AsmPrinter"));
+        assert!(cmake.contains("SelectionDAG"));
         assert!(cmake.contains("add_llvm_component_group(LNP64)"));
         assert!(cmake.contains("ADD_TO_COMPONENT"));
         for source in [
@@ -2147,6 +2157,9 @@ mod tests {
         assert!(clang_driver.contains("elf64lnp64"));
         assert!(clang_driver.contains("toolchain/lnp64_static.ld"));
         assert!(lld_arch.contains("getLNP64TargetInfo"));
+        assert!(lld_arch.contains("copyRel = R_LNP64_NONE"));
+        assert!(lld_arch.contains("relativeRel = R_LNP64_RELATIVE"));
+        assert!(lld_arch.contains("switch (Rel.type)"));
         for reloc in [
             "R_LNP64_ABS64",
             "R_LNP64_RELATIVE",
@@ -2434,6 +2447,8 @@ mod tests {
 
         for required in [
             "_start:",
+            ".globl _start",
+            ".type _start,@function",
             "LI r7, 0x7000",
             "LI r8, 0x100",
             "MUL r7, r7, r8",
