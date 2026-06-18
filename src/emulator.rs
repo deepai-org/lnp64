@@ -4299,14 +4299,19 @@ impl Machine {
             }
         }
         let outcome: Result<u64, u64> = match op {
-            DMA_OP_COPY => self
-                .read_bytes(src_or_value, len)
-                .map_err(|_| 14u64)
-                .and_then(|bytes| {
-                    self.write_bytes(dst, &bytes)
-                        .map(|_| len as u64)
+            DMA_OP_COPY => {
+                if self.ensure_mapped(dst, len, true).is_err() {
+                    Err(14)
+                } else {
+                    self.read_bytes(src_or_value, len)
                         .map_err(|_| 14u64)
-                }),
+                        .and_then(|bytes| {
+                            self.write_bytes(dst, &bytes)
+                                .map(|_| len as u64)
+                                .map_err(|_| 14u64)
+                        })
+                }
+            }
             DMA_OP_FILL => {
                 if self.ensure_mapped(dst, len, true).is_err() {
                     Err(14)
@@ -16278,6 +16283,49 @@ mod tests {
         assert_eq!(machine.thread().unwrap().regs[3], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 22);
         assert_eq!(machine.read_bytes(dst, 4).unwrap(), vec![9, 9, 9, 9]);
+    }
+
+    #[test]
+    fn dma_copy_prevalidates_destination_before_source_page_in() {
+        let path = format!("/tmp/lnp64_dma_pagein_{}.bin", std::process::id());
+        fs::write(&path, b"abcd").unwrap();
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let src = 0x260_000;
+        {
+            let process = machine.process_mut().unwrap();
+            process.vmas.push(Vma {
+                start: src,
+                len: 4,
+                prot: 0b001,
+                file: Some(File::open(&path).unwrap()),
+                file_offset: 0,
+                resident: false,
+                guard: false,
+            });
+        }
+        let arg = ARG_BASE;
+        machine.store_u64(arg, DMA_OP_COPY).unwrap();
+        machine.store_u64(arg + 8, MEMORY_SIZE as u64).unwrap();
+        machine.store_u64(arg + 16, src).unwrap();
+        machine.store_u64(arg + 24, 4).unwrap();
+        machine.store_u64(arg + 32, 0).unwrap();
+
+        machine.dma_ctl(Reg(3), arg).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[3], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 14);
+        assert!(
+            !machine
+                .process()
+                .unwrap()
+                .vmas
+                .iter()
+                .find(|vma| vma.start == src)
+                .unwrap()
+                .resident
+        );
+        fs::remove_file(path).unwrap();
     }
 
     #[test]
