@@ -2252,8 +2252,8 @@ impl Machine {
                     self.write_reg(dst, -1i64 as u64)?;
                     return Ok(true);
                 }
-                let addr = {
-                    let process = self.process_mut()?;
+                let (addr, end) = {
+                    let process = self.process()?;
                     let addr = if hint != 0 {
                         hint
                     } else {
@@ -2265,6 +2265,20 @@ impl Machine {
                     if end as usize >= process.memory.len() {
                         return Err(format!("MMAP out of range: 0x{addr:x} + {len}"));
                     }
+                    if process.vmas.iter().any(|vma| {
+                        let Some(vma_end) = vma.start.checked_add(vma.len) else {
+                            return true;
+                        };
+                        addr < vma_end && end > vma.start
+                    }) {
+                        self.set_status_errno(12)?;
+                        self.write_reg(dst, -1i64 as u64)?;
+                        return Ok(true);
+                    }
+                    (addr, end)
+                };
+                {
+                    let process = self.process_mut()?;
                     process.mmap_next = end;
                     process.vmas.push(Vma {
                         start: addr,
@@ -2275,8 +2289,7 @@ impl Machine {
                         resident: false,
                         guard: false,
                     });
-                    addr
-                };
+                }
                 self.write_reg(dst, addr)?;
             }
             Instr::Munmap(addr, _len) => {
@@ -10361,6 +10374,47 @@ mod tests {
             .exec(Instr::Mprotect(Reg(1), Reg(2), Reg(3)))
             .unwrap();
         assert_eq!(machine.process().unwrap().errno, 12);
+    }
+
+    #[test]
+    fn mmap_rejects_overlapping_hint_without_mutating_vmas() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[1] = 4096;
+        machine.thread_mut().unwrap().regs[2] = 0b011;
+        machine
+            .exec(Instr::Mmap(
+                Reg(3),
+                Reg(0),
+                Reg(1),
+                Reg(2),
+                FdReg(0),
+                Reg(0),
+            ))
+            .unwrap();
+        let addr = machine.thread().unwrap().regs[3];
+        assert_ne!(addr, -1i64 as u64);
+        let vma_count = machine.process().unwrap().vmas.len();
+
+        machine.thread_mut().unwrap().regs[4] = addr + 128;
+        machine.thread_mut().unwrap().regs[5] = 4096;
+        machine.thread_mut().unwrap().regs[6] = 0b001;
+        machine
+            .exec(Instr::Mmap(
+                Reg(7),
+                Reg(4),
+                Reg(5),
+                Reg(6),
+                FdReg(0),
+                Reg(0),
+            ))
+            .unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[7], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 12);
+        assert_eq!(machine.process().unwrap().vmas.len(), vma_count);
+        machine.write_bytes(addr, &[0xab]).unwrap();
+        assert_eq!(machine.read_bytes(addr, 1).unwrap(), vec![0xab]);
     }
 
     #[test]
