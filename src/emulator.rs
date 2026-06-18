@@ -5527,7 +5527,7 @@ impl Machine {
     }
 
     fn domain_ctl(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
-        let op = self.load_u64(argblock)?;
+        let op = self.load_u64_offset(argblock, 0)?;
         let value = match op {
             DOMAIN_OP_CREATE => self.domain_ctl_create(argblock),
             DOMAIN_OP_CONFIGURE => self.domain_ctl_configure(argblock),
@@ -5597,7 +5597,7 @@ impl Machine {
 
     fn domain_ctl_create(&mut self, argblock: u64) -> Result<u64, u64> {
         let parent_id = self.domain_arg_id(argblock)?;
-        let parent_generation = self.load_u64(argblock + 16).map_err(|_| 14u64)?;
+        let parent_generation = self.load_u64_offset(argblock, 16).map_err(|_| 14u64)?;
         self.domain_ref(parent_id, parent_generation)?;
         let caller = self.current_domain_id().map_err(|_| 3u64)?;
         if !self.domain_is_descendant_or_self(parent_id, caller) {
@@ -5616,13 +5616,13 @@ impl Machine {
         let parent_caps = parent.capability_mask;
         let parent_upcalls = parent.upcall_mask;
         let parent_security = parent.security;
-        let requested_cpu = self.load_u64(argblock + 32).map_err(|_| 14u64)?;
-        let requested_memory = self.load_u64(argblock + 40).map_err(|_| 14u64)?;
-        let requested_pids = self.load_u64(argblock + 48).map_err(|_| 14u64)?;
-        let requested_fdrs = self.load_u64(argblock + 56).map_err(|_| 14u64)?;
-        let profile = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
-        let requested_caps = self.load_u64(argblock + 64).map_err(|_| 14u64)?;
-        let requested_upcalls = self.load_u64(argblock + 72).map_err(|_| 14u64)?;
+        let requested_cpu = self.load_u64_offset(argblock, 32).map_err(|_| 14u64)?;
+        let requested_memory = self.load_u64_offset(argblock, 40).map_err(|_| 14u64)?;
+        let requested_pids = self.load_u64_offset(argblock, 48).map_err(|_| 14u64)?;
+        let requested_fdrs = self.load_u64_offset(argblock, 56).map_err(|_| 14u64)?;
+        let profile = self.load_u64_offset(argblock, 24).map_err(|_| 14u64)?;
+        let requested_caps = self.load_u64_offset(argblock, 64).map_err(|_| 14u64)?;
+        let requested_upcalls = self.load_u64_offset(argblock, 72).map_err(|_| 14u64)?;
         let limits = DomainLimits {
             cpu: Self::delegate_limit(requested_cpu, parent_limits.cpu)?,
             memory: Self::delegate_limit(requested_memory, parent_limits.memory)?,
@@ -5687,10 +5687,10 @@ impl Machine {
         let child_limits = self.max_direct_child_limits(id);
 
         let current_limits = self.domains.get(&id).ok_or(3u64)?.limits;
-        let requested_cpu = self.load_u64(argblock + 32).map_err(|_| 14u64)?;
-        let requested_memory = self.load_u64(argblock + 40).map_err(|_| 14u64)?;
-        let requested_pids = self.load_u64(argblock + 48).map_err(|_| 14u64)?;
-        let requested_fdrs = self.load_u64(argblock + 56).map_err(|_| 14u64)?;
+        let requested_cpu = self.load_u64_offset(argblock, 32).map_err(|_| 14u64)?;
+        let requested_memory = self.load_u64_offset(argblock, 40).map_err(|_| 14u64)?;
+        let requested_pids = self.load_u64_offset(argblock, 48).map_err(|_| 14u64)?;
+        let requested_fdrs = self.load_u64_offset(argblock, 56).map_err(|_| 14u64)?;
         let limits = DomainLimits {
             cpu: Self::configure_limit(
                 requested_cpu,
@@ -5734,9 +5734,9 @@ impl Machine {
         let current_security = self.domains.get(&id).ok_or(3u64)?.security;
         let security =
             self.domain_security_from_arg(argblock, parent_security, current_security)?;
-        let profile = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
-        let caps = self.load_u64(argblock + 64).map_err(|_| 14u64)?;
-        let upcalls = self.load_u64(argblock + 72).map_err(|_| 14u64)?;
+        let profile = self.load_u64_offset(argblock, 24).map_err(|_| 14u64)?;
+        let caps = self.load_u64_offset(argblock, 64).map_err(|_| 14u64)?;
+        let upcalls = self.load_u64_offset(argblock, 72).map_err(|_| 14u64)?;
 
         if caps != 0 {
             if caps & !parent_caps != 0 {
@@ -5910,7 +5910,7 @@ impl Machine {
     }
 
     fn domain_arg_id(&mut self, argblock: u64) -> Result<u64, u64> {
-        let id = self.load_u64(argblock + 8).map_err(|_| 14u64)?;
+        let id = self.load_u64_offset(argblock, 8).map_err(|_| 14u64)?;
         if id == 0 {
             self.current_domain_id().map_err(|_| 3u64)
         } else {
@@ -5920,7 +5920,7 @@ impl Machine {
 
     fn domain_ref_from_arg(&mut self, argblock: u64) -> Result<u64, u64> {
         let id = self.domain_arg_id(argblock)?;
-        let generation = self.load_u64(argblock + 16).map_err(|_| 14u64)?;
+        let generation = self.load_u64_offset(argblock, 16).map_err(|_| 14u64)?;
         self.domain_ref(id, generation)
     }
 
@@ -6081,41 +6081,41 @@ impl Machine {
         current: DomainSecurityPolicy,
     ) -> Result<DomainSecurityPolicy, u64> {
         let aslr_enabled = Self::decode_domain_bool(
-            self.load_u64(argblock + DOMAIN_SECURITY_ASLR_ENABLED)
+            self.load_u64_offset(argblock, DOMAIN_SECURITY_ASLR_ENABLED)
                 .map_err(|_| 14u64)?,
             current.aslr_enabled,
         )?;
         let allow_wx = Self::decode_domain_bool(
-            self.load_u64(argblock + DOMAIN_SECURITY_ALLOW_WX)
+            self.load_u64_offset(argblock, DOMAIN_SECURITY_ALLOW_WX)
                 .map_err(|_| 14u64)?,
             current.allow_wx,
         )?;
         let allow_jit_transition = Self::decode_domain_bool(
-            self.load_u64(argblock + DOMAIN_SECURITY_ALLOW_JIT_TRANSITION)
+            self.load_u64_offset(argblock, DOMAIN_SECURITY_ALLOW_JIT_TRANSITION)
                 .map_err(|_| 14u64)?,
             current.allow_jit_transition,
         )?;
         let entropy_quota = match self
-            .load_u64(argblock + DOMAIN_SECURITY_ENTROPY_QUOTA)
+            .load_u64_offset(argblock, DOMAIN_SECURITY_ENTROPY_QUOTA)
             .map_err(|_| 14u64)?
         {
             0 => current.entropy_quota,
             quota => quota,
         };
         let dma_allowed = Self::decode_domain_bool(
-            self.load_u64(argblock + DOMAIN_SECURITY_DMA_ALLOWED)
+            self.load_u64_offset(argblock, DOMAIN_SECURITY_DMA_ALLOWED)
                 .map_err(|_| 14u64)?,
             current.dma_allowed,
         )?;
         let hardening_profile = match self
-            .load_u64(argblock + DOMAIN_SECURITY_HARDENING_PROFILE)
+            .load_u64_offset(argblock, DOMAIN_SECURITY_HARDENING_PROFILE)
             .map_err(|_| 14u64)?
         {
             0 => current.hardening_profile,
             profile => profile,
         };
         let executable_source_policy = match self
-            .load_u64(argblock + DOMAIN_SECURITY_EXEC_SOURCE_POLICY)
+            .load_u64_offset(argblock, DOMAIN_SECURITY_EXEC_SOURCE_POLICY)
             .map_err(|_| 14u64)?
         {
             0 => current.executable_source_policy,
