@@ -526,6 +526,44 @@ grep -q 'st.b' "$stack_aggregate_dump"
 printf 'real LLVM LNP64 clang stack aggregate object smoke passed: %s\n' \
   "$stack_aggregate_obj"
 
+libc_string_c="$build_dir/libc-string-smoke.c"
+cat >"$libc_string_c" <<'C'
+typedef unsigned long size_t;
+
+size_t strlen(const char *s);
+void *memcpy(void *dst, const void *src, size_t len);
+void *memset(void *dst, int value, size_t len);
+
+int main(void) {
+  char src[8];
+  char dst[8];
+  if (memset(src, 'A', 7) != src)
+    return 1;
+  src[7] = 0;
+  if (strlen(src) != 7)
+    return 2;
+  if (memcpy(dst, src, 8) != dst)
+    return 3;
+  if (strlen(dst) != 7)
+    return 4;
+  if (dst[3] != 'A')
+    return 5;
+  return 0;
+}
+C
+
+libc_string_obj="$build_dir/libc-string-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$libc_string_c" -o "$libc_string_obj"
+test -s "$libc_string_obj"
+libc_string_dump="$build_dir/libc-string-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_string_obj" \
+  >"$libc_string_dump"
+grep -q 'call ' "$libc_string_dump"
+printf 'real LLVM LNP64 clang minilibc string object smoke passed: %s\n' \
+  "$libc_string_obj"
+
 stack_arg_formal_c="$build_dir/stack-arg-formal-negative.c"
 cat >"$stack_arg_formal_c" <<'C'
 int sum7(int a, int b, int c, int d, int e, int f, int g) {
@@ -661,6 +699,13 @@ stack_aggregate_elf="$build_dir/lnp64-stack-aggregate-linked.elf"
 test -s "$stack_aggregate_elf"
 printf 'real LLVM LNP64 lld stack aggregate link smoke passed: %s\n' \
   "$stack_aggregate_elf"
+
+libc_string_elf="$build_dir/lnp64-libc-string-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$libc_string_elf" "$crt0_obj" "$libc_string_obj" "$minilibc_obj"
+test -s "$libc_string_elf"
+printf 'real LLVM LNP64 lld minilibc string link smoke passed: %s\n' \
+  "$libc_string_elf"
 
 indirect_call_elf="$build_dir/lnp64-indirect-call-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

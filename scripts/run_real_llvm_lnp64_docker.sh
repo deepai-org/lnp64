@@ -95,6 +95,13 @@ grep -q 'exit=0' <<<"$stack_aggregate_output"
 printf 'real LLVM LNP64 run-elf stack aggregate execution passed: %s\n' \
   "$stack_aggregate_probe"
 
+libc_string_probe="target/llvm-lnp64-build/lnp64-libc-string-linked.elf"
+cargo run --quiet -- elf-plan "$libc_string_probe" >/dev/null
+libc_string_output="$(cargo run --quiet -- run-elf "$libc_string_probe")"
+grep -q 'exit=0' <<<"$libc_string_output"
+printf 'real LLVM LNP64 run-elf minilibc string execution passed: %s\n' \
+  "$libc_string_probe"
+
 indirect_call_probe="target/llvm-lnp64-build/lnp64-indirect-call-linked.elf"
 cargo run --quiet -- elf-plan "$indirect_call_probe" >/dev/null
 indirect_call_output="$(cargo run --quiet -- run-elf "$indirect_call_probe")"

@@ -1453,10 +1453,14 @@ mod tests {
         assert!(real_llc.contains("indirect-call-clang-smoke.o"));
         assert!(real_llc.contains("call_reg"));
         assert!(real_llc.contains("real LLVM LNP64 clang indirect call object smoke passed"));
+        assert!(real_llc.contains("libc-string-clang-smoke.o"));
+        assert!(real_llc.contains("real LLVM LNP64 clang minilibc string object smoke passed"));
         assert!(real_llc.contains("toolchain/crt0_lnp64.s"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc crt0 smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_min.s"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc minilibc smoke passed"));
+        assert!(real_llc.contains("lnp64-libc-string-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld minilibc string link smoke passed"));
         assert!(real_llc.contains("--triple=lnp64-unknown-none"));
         assert!(real_llc.contains("errno_set r0"));
         assert!(real_llc.contains("exit r1"));
@@ -1681,6 +1685,10 @@ mod tests {
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf clang demo execution passed"));
         assert!(real_llc_docker.contains("lnp64-indirect-call-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf indirect call execution passed"));
+        assert!(real_llc_docker.contains("lnp64-libc-string-linked.elf"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf minilibc string execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-intrinsic-push-linked.elf"));
         assert!(real_llc_docker.contains("intrinsic push ok"));
         assert!(
@@ -2673,6 +2681,15 @@ mod tests {
             ".globl free",
             "free:",
             "LI r1, 0",
+            ".globl strlen",
+            "strlen:",
+            "LD.B r3, 0(r2)",
+            ".globl memcpy",
+            "memcpy:",
+            "ST.B r7, 0(r1)",
+            ".globl memset",
+            "memset:",
+            "ST.B r2, 0(r1)",
             ".globl _exit",
             "_exit:",
             "EXIT r1",
