@@ -11891,6 +11891,29 @@ mod tests {
     }
 
     #[test]
+    fn readlink_without_namespace_root_does_not_write_output_buffer() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.process_mut().unwrap().namespace_root = None;
+        let path = ARG_BASE + 0x1000;
+        let out = ARG_BASE + 0x2000;
+        let sentinel = b"sentinel-buffer".to_vec();
+        machine.write_bytes(path, b"link\0").unwrap();
+        machine.write_bytes(out, &sentinel).unwrap();
+        machine.thread_mut().unwrap().regs[1] = path;
+        machine.thread_mut().unwrap().regs[2] = out;
+        machine.thread_mut().unwrap().regs[3] = sentinel.len() as u64;
+
+        machine
+            .exec(Instr::ReadlinkPath(Reg(1), Reg(2), Reg(3)))
+            .unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 13);
+        assert_eq!(machine.read_bytes(out, sentinel.len()).unwrap(), sentinel);
+    }
+
+    #[test]
     fn open_fd_dyn_without_namespace_root_does_not_allocate_fdr() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
