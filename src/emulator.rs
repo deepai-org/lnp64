@@ -4940,6 +4940,12 @@ impl Machine {
             {
                 return Err(1);
             }
+            if rule.kind == CLASSIFY_RULE_RANGE && rule.value > rule.mask_or_end {
+                return Err(22);
+            }
+            if rule.kind == CLASSIFY_RULE_HASH && rule.hash_mod == 0 {
+                return Err(22);
+            }
             rules.push(rule);
         }
         Ok(rules)
@@ -10049,6 +10055,40 @@ mod tests {
             );
             assert_eq!(machine.process().unwrap().errno, 22);
         }
+
+        write_classifier_rule(
+            &mut machine,
+            rules,
+            CLASSIFY_RULE_RANGE,
+            CLASSIFY_FIELD_SERVICE_ID,
+            10,
+            5,
+            CLASSIFY_ACTION_COUNT,
+            0,
+            0,
+        );
+        assert_eq!(
+            try_create_classifier(&mut machine, 6, rules, 1, 0, 0),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 22);
+
+        write_classifier_rule(
+            &mut machine,
+            rules,
+            CLASSIFY_RULE_HASH,
+            CLASSIFY_FIELD_HASH,
+            0,
+            0,
+            CLASSIFY_ACTION_COUNT,
+            0,
+            0,
+        );
+        assert_eq!(
+            try_create_classifier(&mut machine, 6, rules, 1, 0, 0),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 22);
     }
 
     #[test]
