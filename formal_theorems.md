@@ -25,7 +25,9 @@ or timing model. Its initial proof boundary is:
   ordinary loads/stores, locked atomics, `FENCE`, `ISYNC`, engine completions,
   coherent DMA, and device-memory ordering classes.
 - mandatory object profiles: `counter`, `queue`, `event/completion`, `timer`,
-  `memory_object`, `call_gate`, `dma_buffer`, and `dma_completion`.
+  `memory_object`, `call_gate`, `dma_buffer`, and `dma_completion`; optional
+  acceleration profiles such as `classifier_table` and `servicelet_program`
+  refine these same object/capability invariants.
 - wait/ready/runqueue state, scheduler eligibility, no-lost-wakeup transitions,
   timeout events, gate delivery, continuation return, and fault delivery.
 - service-boundary request/reply records, continuation ids, copied/pinned
@@ -34,10 +36,11 @@ or timing model. Its initial proof boundary is:
 - fault, poison, overflow, watchdog, local-reset, trace/audit/telemetry records
   as data, never authority.
 
-The first model intentionally excludes:
+The first safety model intentionally excludes:
 
-- cycle timing, cache replacement policy, branch pipeline timing, physical DDR
-  controller timing, Ethernet/PCIe electrical behavior, and FPGA-specific CDC.
+- exact cycle timing, cache replacement policy, branch pipeline timing,
+  physical DDR controller timing, Ethernet/PCIe electrical behavior, and
+  FPGA-specific CDC.
 - filesystem formats, executable formats, dynamic-linker behavior, TCP/IP
   protocol policy, PCIe device quirks, orchestration policy, and Linux/BSD ABI
   compatibility details.
@@ -47,6 +50,63 @@ The first model intentionally excludes:
 
 RTL assertions and bounded model checking should later prove that each hard
 block refines the abstract transition relation for its owned state machine.
+
+A separate realtime refinement model should prove that implementation timing
+refines the published `ENV_GET` WCET profile. It does not need to prove
+performance optimality; it must prove that each latency class retires, parks, or
+submits within its bound, that Class D work is explicit, and that shared-fabric
+arbitration cannot create unbounded head-of-line blocking for admitted work.
+
+## 0.1 Proof and Fault Model Assumptions
+
+The theorem roadmap is only credible if its assumptions are explicit. The base
+model assumes:
+
+- clocks, reset distribution, power integrity, physical tamper resistance,
+  analog behavior, and catastrophic silicon destruction are outside the normal
+  architectural proof model.
+- a stronger assurance profile may add measured boot, physical tamper evidence,
+  redundant fabrics, hardened memories, or formal RTL/proof artifact
+  requirements, but those are profile refinements rather than hidden base
+  assumptions.
+- bounded hardware faults include ECC/parity faults, malformed records, stale
+  generations, watchdog timeouts, service crashes/restarts, queue overflow,
+  revoked objects, poisoned metadata, local engine reset, and documented
+  degraded states.
+- Byzantine hardware behavior, malicious FPGA bitstream replacement after boot,
+  arbitrary analog fault injection, and compromised proof tools are outside the
+  base theorem unless bound by measured/quoted assurance profile evidence.
+- liveness and global-progress claims require at least one schedulable core or
+  tile, a functioning scheduler fabric path, a functioning event/fault route,
+  and admitted Resource Domain budget for the work being considered.
+- realtime claims are relative to the immutable `ENV_GET` implementation
+  constants for the current boot epoch; a profile that reports weak or absent
+  bounds cannot claim stronger realtime behavior.
+- software services may be malicious, buggy, crashed, or slow. Theorems about
+  hardware containment do not assume service correctness except where a service
+  implementation is separately verified.
+
+## 0.2 Proof Priority Order
+
+The architecture is intentionally rich, so proof work should start with the
+smallest authority-bearing core and expand outward:
+
+1. Capability/FDR non-forgeability, generation safety, and no authority
+   amplification.
+2. Resource Domain containment, monotonic delegation, accounting rollup, and
+   lifecycle generations.
+3. Scheduler, waitable, gate-continuation, and no-lost-wakeup invariants.
+4. Realtime retire/park/submit and `ENV_GET` WCET/scheduler discovery
+   soundness.
+5. VMA/page-state, W^X/NX/guard, memory visibility, and DMA isolation.
+6. Service-boundary request/reply, returned-capability install, and
+   commit/abort atomicity.
+7. Servicelet verifier/action safety and bounded classifier/queue steering.
+8. Global progress under bounded faults and watchdog/local-reset containment.
+9. Adversarial input containment for hostile code, packets, service payloads,
+   and timing races.
+10. Tenant-strict confidentiality, MLS, audit, debug/forensics, attestation,
+    mission assurance, and personality containment.
 
 ## 1. Global State Validity
 
@@ -189,13 +249,17 @@ Useful sub-theorems:
 
 - every live thread is in exactly one scheduler state: running, runnable,
   blocked, parked, exiting, or destroyed.
-- a thread can run only if its Resource Domain is not frozen and has dispatch
-  budget.
+- every live thread appears in exactly one scheduler location: running lane,
+  ready queue/window/bucket, one wait queue, gate-delivery continuation, zombie
+  table, or destroyed/free state.
+- a thread can run only if its Resource Domain and every ancestor domain are not
+  frozen, have dispatch budget, and permit the selected core/tile.
 - `AWAIT` atomically transitions a thread from running to blocked or returns
   ready without losing an event.
 - `WAKE`, event delivery, gate delivery, fd readiness, timer expiry, call
   completion, classifier queue routing, and domain resume transition eligible
-  threads back to runnable at most once.
+  threads back to runnable at most once, and only when source id, operation id,
+  generation, and wait predicate match.
 - consumed CPU advances virtual runtime/deadline accounting according to the
   fixed weight table.
 - child Resource Domain CPU usage charges all ancestors before later dispatch
@@ -206,11 +270,55 @@ Useful sub-theorems:
   the implementation's stated fairness/approximation bound.
 - scheduler bucket/window spill and refill preserve runnable identity, virtual
   time order within the stated approximation, and domain accounting.
+- hardware thread interleaving preserves single-thread semantics: each tile
+  issues at most one selected TID per issue slot in v1, blocked/pending TIDs are
+  not issue-eligible, and switching issue between TIDs cannot merge registers,
+  continuations, `ERRNO`, delivery masks, FDR authority, or accounting state.
+- Class B/C pending work for one TID cannot freeze unrelated eligible TIDs
+  except through published bounded arbitration on the shared engine or port.
+- wakeup placement grants at most the published bounded latency adjustment and
+  cannot erase accumulated virtual runtime.
+- preemption occurs at published accounting boundaries or forced park points
+  within the maximum preemption latency, except inside non-interruptible
+  Class A-C atomic transitions.
+- frozen/quiescing domain transitions remove descendants from dispatch
+  eligibility without duplicating or losing thread contexts.
 - no software callback, plugin, raw interrupt handler, or policy script can
   mutate ready/blocked state or dispatch order outside the fixed hardware
   weighted-fair transition relation.
 
-## 7.1 Default Operating Envelope
+## 7.1 Realtime Boundedness
+
+**Instruction and fabric boundedness:** every architected instruction either
+retires, parks, or submits an explicit transaction within its published latency
+class, and admitted Resource Domains cannot be blocked indefinitely by
+best-effort traffic on shared fabrics.
+
+Useful sub-theorems:
+
+- Class A/B/C instructions do not perform unbounded DDR walks, path walks,
+  service execution, page fills, queue scans, subtree traversals, or device
+  waits before retire/park.
+- Class D instructions publish an operation id, waitable, completion token, or
+  blocking park state before long-latency work begins.
+- local-cache misses for FDRs, VMAs, heap windows, gates, waitables, scheduler
+  slots, domain records, and servicelet attachments have bounded outcomes:
+  canonical error, park, or explicit refill/owner-engine transaction.
+- metadata engines, event routers, DMA paths, memory-controller ports,
+  servicelet lanes, and queue banks use bounded arbitration for admitted
+  domains.
+- pressure from best-effort domains can delay or fail best-effort work with
+  visible pressure/status events, but cannot violate published bounds for
+  admitted reservations.
+- `ENV_GET` WCET and scheduler discovery records are sound and conservative:
+  reported latency, arbitration, active-window, spill/refill, servicelet-lane,
+  and reservation constants are immutable for the boot epoch and are no weaker
+  than the implementation actually provides.
+- absent realtime, scheduler, servicelet, classifier, DMA, or reservation
+  features fail closed with defined status instead of falling back to hidden
+  unbounded behavior.
+
+## 7.2 Default Operating Envelope
 
 **Reset starts from a valid policy-bearing machine state:** before PID 1 or any
 service thread can dispatch, hardware has created the root domain, PID 1 domain,
@@ -535,6 +643,11 @@ Useful sub-theorems:
 - transport assists such as checksum, timestamp, flow hash, queue steering,
   timer/counter use, and zero-copy handoff cannot create protocol authority or
   bypass endpoint capability scope.
+- network servicelet actions on `net_interface`, `packet_queue`, endpoint, or
+  listener objects can only mark, count, drop, steer to authorized queues,
+  select authorized gates, redact/sample telemetry, or request software; they
+  cannot create namespace authority, mint endpoints, bypass listener policy, or
+  implement a second socket authority path.
 - endpoint substitution preserves authority: software TCP, local IPC, QUIC,
   paravirtual transport, and future accelerators may all implement a
   `stream_endpoint`, but none can broaden rights, bypass namespace scope, or
@@ -544,27 +657,51 @@ Useful sub-theorems:
   and listeners mint accepted endpoint capabilities only through the Capability
   Engine's returned-capability path.
 
-## 18. Classifier Safety
+## 18. Classifier and Servicelet Safety
 
-**Bounded record classification cannot broaden authority or create unbounded
-execution:** classifier tables classify and steer records only within delegated
-source and destination capability scopes.
+**Bounded record classification and servicelets cannot broaden authority or
+create unbounded execution:** classifier tables and verified servicelet programs
+classify and steer records only within delegated source and destination
+capability scopes.
 
 Useful sub-theorems:
 
 - classifier tables are capabilities with owner domain, generation, source
   scope, destination queue set, and bounded rule limits.
+- servicelet programs are capabilities with owner domain, generation, verifier
+  certificate, allowed attachment class, maximum instruction/cycle budget,
+  allowed record fields, and allowed action set.
+- a dedicated servicelet execution lane refines the same verified subset
+  semantics; its implementation may be a tiny programmable engine, but it
+  cannot execute outside the accepted envelope or access state not named by the
+  attached record/profile.
 - rule installation cannot name unauthorized source objects or destination
   queues.
-- rule actions can only mark, count, drop, timestamp, hash-steer, or route
-  records within authorized queues.
+- rule and servicelet actions can only mark, count, drop, timestamp,
+  hash-steer, select authorized gates, redact/sample telemetry, report
+  `needs_software`, or route records within authorized queues.
 - malformed, unknown, too-deep, encrypted, fragmented, or unsupported records
   become `partial`, `unknown`, `needs_software`, dropped, or faulted according
   to policy; they do not produce undefined authority.
 - classifier execution has no loops, recursion, arbitrary bytecode, unbounded
   parse, unbounded rule walk, mutable protocol state, or connection tracking.
-- classifier marks, counters, flow hashes, and routed record envelopes are data,
-  not capabilities.
+- servicelet execution uses only the verified LNP64 ISA subset; it cannot block,
+  allocate, call gates, issue object operations, access arbitrary memory, mint
+  or delegate capabilities, or perform hidden helper calls.
+- verifier acceptance implies termination within the published bound and memory
+  access only to the provided record envelope, constant table, fixed metadata
+  window, and action record.
+- verifier-envelope fields are complete for authority and timing: program
+  length, instruction count, cycle bound, loop bound, ISA subset, attachment
+  class, record profile, allowed fields, action set, authorized destinations,
+  scratch state, and owner/source generations.
+- servicelet semantics are limited to bounded prelude/postlude/filter/steering
+  decisions. They cannot implement general service bodies that require
+  blocking, allocation, unbounded traversal, mutable long-lived protocol state,
+  helper callbacks, storage recovery, path walking, executable loading, or
+  device enumeration.
+- classifier/servicelet marks, counters, flow hashes, redacted records, and
+  routed record envelopes are data, not capabilities.
 
 ## 19. Event, Gate, and Fault Delivery Safety
 
@@ -971,7 +1108,83 @@ Useful sub-theorems:
   artifact hash, domain launch measurement, and delegated capability-root
   summary.
 
-## 32. Refinement Targets
+## 32. Global Progress Under Bounded Faults
+
+**The machine has no unspecified stuck state inside the fault model:** assuming
+clock, reset, power, and at least one schedulable core/fabric path remain within
+the implementation's bounded fault assumptions, every engine, thread, domain,
+and accepted operation either progresses, parks on a valid waitable, fails with
+a typed error, is canceled/revoked, enters a documented degraded state, or
+escalates to a measured/audited machine-fatal state.
+
+Useful sub-theorems:
+
+- every hardware engine state is reachable with a defined outgoing transition,
+  intentionally terminal, watchdog-recoverable, degraded, or machine-fatal.
+- every parked TID is attached to a live waitable, operation id, timer, gate
+  continuation, capacity event, revoked source, or fault source that can wake,
+  cancel, timeout, or fail it.
+- every accepted owner-engine command eventually completes, cancels, faults,
+  times out, is revoked, or transfers to a documented degraded/recovery path.
+- every long-latency command has an operation id, owner domain/thread
+  generation, timeout/watchdog class, cancellation class, and completion/fault
+  target before it can outlive the issuing instruction.
+- queue, ring, fabric, event-router, servicelet-lane, and command-FIFO
+  backpressure is closed: full conditions produce park, `EAGAIN`, `EOVERFLOW`,
+  coalesce/drop-with-count, pressure event, degraded state, or machine-fatal
+  escalation.
+- a local VMA, DMA, Capability, Event, Domain, Scheduler, Servicelet, Stream, or
+  Object engine failure cannot silently corrupt unrelated domains or require
+  full-chip reset when a local recovery/degraded path is specified.
+- local reset/degraded recovery cannot mint authority, skip generation checks,
+  reuse poisoned metadata as valid, or complete stale continuations.
+- if recovery is impossible, hardware enters a structured measured/audited
+  panic or machine-fatal state rather than undefined behavior.
+
+## 33. Adversarial Input Containment
+
+**Hostile code and hostile inputs remain data, pressure, or typed faults:**
+arbitrary malicious user code, malformed packets, hostile peers, malicious
+service payloads, corrupted files, adversarial servicelets, and adversarial
+timing cannot create authority, unbounded execution, cross-tenant observation,
+or unspecified hardware states.
+
+Useful sub-theorems:
+
+- malformed, fragmented, encrypted, extension-header-heavy, oversized, or
+  unsupported packets are dropped, marked `partial`/`unknown`/`needs_software`,
+  queued as data, or faulted according to policy; they cannot crash
+  classifier/servicelet hardware or create authority.
+- all hardware record and packet parsing has bounded depth, bounded field
+  extraction, fail-closed behavior, and no unbounded header walk.
+- adversarial servicelet programs are rejected unless verifier-safe; accepted
+  servicelets terminate within bound and cannot access arbitrary memory, block,
+  allocate, helper-call, or mint/delegate capabilities.
+- remote peers can consume only delegated endpoint, packet-queue, servicelet,
+  event, and Resource Domain budgets; packet floods, connection floods,
+  malformed records, and service-call storms resolve to bounded queueing,
+  throttling, drop/coalesce counters, pressure events, `EAGAIN`, `EOVERFLOW`,
+  quota exhaustion, or domain isolation.
+- packet DMA writes only to authorized DMA buffers and cannot escape VMA,
+  IOMMU, requester id, direction, generation, or Resource Domain scope.
+- packet bytes, protocol payloads, filesystem bytes, service replies, trace
+  records, and event payloads are data only; they cannot become executable
+  mappings, FDR entries, gate continuations, servicelet programs, or scheduler
+  state without explicit loader/verifier/capability paths.
+- processes without `net_namespace`, `packet_queue`, endpoint, listener, or
+  related capabilities cannot observe, inject, or steer network traffic.
+- a compromised namespace, filesystem, loader, network, telemetry, or PCIe
+  service still cannot mint capabilities, receive raw interrupts, perform raw
+  DMA, inspect unrelated memory, bypass Resource Domain limits, or publish
+  broadened returned-capability proposals.
+- telemetry, trace, audit, and fault records caused by hostile input cannot leak
+  unauthorized payloads, tenant secrets, sealed confidential-domain data, or raw
+  packet contents outside delegated observability scope.
+- adversarial timing cannot turn races around revocation, wait/wake, page fill,
+  DMA completion, service reply, or gate return into authority amplification or
+  lost scheduler state.
+
+## 34. Refinement Targets
 
 After the abstract theorems exist, each hardware block should prove or test a
 small refinement claim:

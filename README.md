@@ -24,6 +24,16 @@ compiler for exploring that design. It is not a transistor-accurate RTL model.
 - Native APIs prefer selectors, capabilities, event queues, call gates,
   hardware object profiles, and Resource Domains; POSIX paths, POSIX UID/GID,
   signals, and `errno` are compatibility profiles.
+- The full enterprise profile is intended to be realtime-capable: instructions
+  retire, park, or submit explicit transactions within published latency
+  classes, and long work is represented by waitables/completions rather than
+  hidden stalls.
+- Core tiles are hardware-multithreaded by interleaving in-order issue across
+  many contexts; v1 does not require speculative SMT/hyperthreading.
+- Bounded servicelets provide eBPF-like policy near queues, gates, domains,
+  classifiers, audit streams, and device/event profiles using a verified subset
+  of the existing ISA. They may run on tiny dedicated servicelet engines, but
+  only inside verifier-approved cycle, memory, and authority bounds.
 - The design aims to be useful to hyperscalers, federal/mission deployments,
   and open-source owner-controlled systems without changing the ISA.
 

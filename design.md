@@ -46,7 +46,17 @@ V1 hardware must specify these mechanisms:
 
 *   **Feature discovery:** `ENV_GET` exposes ISA revision, implementation
     profile, supported opcode groups, object profiles, domain/security features,
-    timer features, topology, cache/page/DMA geometry, and architectural limits.
+    timer features, topology, cache/page/DMA geometry, architectural limits,
+    WCET class limits, and servicelet verifier limits.
+*   **Realtime instruction contract:** The full enterprise profile is
+    realtime-capable by construction. Native instructions complete a bounded
+    local architectural step or submit a bounded transaction; no instruction may
+    hide unbounded DDR traversal, path walking, page fill, filesystem policy,
+    device completion, subtree traversal, or service execution in its retire
+    latency. Implementations publish latency classes through `ENV_GET`:
+    Class A register/local datapath, Class B local metadata hit, Class C
+    bounded enqueue/state transition/crossbar arbitration, and Class D
+    bounded-submit asynchronous transaction.
 *   **Time:** hardware provides a monotonic timebase, realtime snapshot fields,
     timer object profiles, timeout semantics for `AWAIT`, and per-domain CPU
     accounting ticks. Timer precision, suspend/freeze behavior, and timestamp
@@ -57,10 +67,22 @@ V1 hardware must specify these mechanisms:
     rings, runqueues, audit streams, classifiers, DMA queues, and event queues
     must define full/overflow behavior: park, `EAGAIN`, `EOVERFLOW`, coalesce,
     drop-with-count, poison, or fatal fault.
+*   **Bounded miss behavior:** User code does not need special slow-path
+    knowledge. If a local FDR, VMA, heap window, gate continuation, waitable,
+    scheduler slot, domain record, or servicelet attachment is cold, missing,
+    full, or spilled, the instruction still completes in its latency class by
+    returning a normal status, parking on an explicit waitable, or submitting a
+    refill/owner-engine transaction. It must not silently become an unbounded
+    instruction.
 *   **Resource accounting:** Resource Domains account for CPU time, threads,
     processes, memory pages, VMAs, heap pages, FDRs, objects, event records,
     DMA bytes/ops, classifier entries, and queue occupancy. Parent domains see
     hierarchical usage snapshots subject to telemetry policy.
+*   **Shared fabric arbitration:** Metadata engines, event routers, DMA paths,
+    memory-controller ports, queue banks, and servicelet lanes expose bounded
+    arbitration and Resource Domain admission. Best-effort traffic may be
+    throttled or failed with pressure events, but it must not violate published
+    bounds for admitted realtime work.
 *   **Domain lifecycle:** `DOMAIN_CTL` defines create, configure, attach,
     detach, freeze, resume, destroy, revoke, query, and quiesce transitions.
     Domain ids, generations, usage records, scheduler state, and capability
@@ -79,9 +101,9 @@ V1 hardware must specify these mechanisms:
 *   **Mandatory object profiles:** the base hardware object set is `counter`,
     `queue`, `event/completion`, `timer`, `memory_object`, `call_gate`,
     `dma_buffer`, `dma_completion`, and, when the classifier engine is present,
-    `classifier_table`. Pipes, semaphores, channels, epoll-like sets, task
-    events, shared arenas, and socket readiness are source/runtime profiles over
-    that set.
+    `classifier_table` and `servicelet_program`. Pipes, semaphores, channels,
+    epoll-like sets, task events, shared arenas, and socket readiness are
+    source/runtime profiles over that set.
 
 Software defines names, policies, file formats, protocol semantics, loader
 rules, orchestration, and compatibility ABIs. Hardware defines the mechanisms,
@@ -100,6 +122,31 @@ admission. The scheduler uses fixed weight tables, virtual runtime/deadline
 accounting, bucketed or small-window runnable queues, and hierarchical domain
 credits. It must not expose scheduler bytecode, callbacks, arbitrary policy
 plugins, or unbounded tree walks.
+
+The scheduler contract is deliberately small and realtime-friendly:
+
+*   Core tiles are hardware-multithreaded by interleaving in-order issue across
+    many hardware contexts. V1 does not require speculative SMT/hyperthreading:
+    one selected ready TID issues from a tile's active window, and blocked or
+    pending TIDs stop occupying the issue lane.
+*   Thread states are architectural: `READY`, `RUNNING`, `WAIT_*`,
+    `GATE_DELIVERY`, `ZOMBIE`, and `DEAD`. A live thread is in exactly one
+    state.
+*   Runnable eligibility requires a non-frozen Resource Domain, positive budget
+    across every ancestor domain, an allowed core/tile mask, and a resident or
+    explicitly refillable scheduler context.
+*   Dispatch chooses the eligible runnable entity with the earliest virtual
+    deadline within a published approximation window; blocked threads do not
+    consume CPU budget.
+*   Wakeup insertion is bounded and may grant only a capped latency adjustment;
+    it cannot reset virtual time or create unbounded credit.
+*   Preemption occurs only at fixed accounting/timer boundaries, blocking
+    resource commands, explicit `YIELD`, engine completion return, gate
+    delivery boundaries, or supervisor-authorized forced park points.
+*   `ENV_GET` exposes scheduler constants: weight table shape, latency classes,
+    fairness approximation window, maximum wakeup insertion latency, maximum
+    preemption latency, runqueue active-window size, spill/refill behavior, and
+    supported reservation features.
 
 *   **`CLONE r_dest, r_flags_or_argblock`**
     *   *Action:* Native process/thread creation primitive. Creates a new thread or process according to an explicit profile and bounded share/copy flags. `pthread_create`-like source forms lower to `profile=thread`; native actor/process creation lowers to explicit `profile=process`; POSIX `fork()` lowers to constrained `profile=posix_fork` with a new PID, exactly one child thread, COW VMAs/heap metadata, defined FDR inheritance, copied credentials/dispositions, copied caller signal mask, cleared child pending signals, and no in-flight operation ownership copied.
@@ -136,7 +183,7 @@ System calls are replaced by direct hardware resource commands. The binary ISA u
 *   **`EVENT_CTL` / `TIMER_CTL` / `SUPERVISOR_CTL`**
     *   *Action:* `EVENT_CTL` and `TIMER_CTL` are source-level/profile aliases over `OBJECT_CTL` for event-queue and timer profiles. `SUPERVISOR_CTL` is a source-level/profile alias over `DOMAIN_CTL` for delegated supervisor domains.
 *   **`OBJECT_CTL r_result, r_argblock`**
-    *   *Action:* Creates, configures, queries, resets, or destroys the mandatory hardware-owned object profiles through the typed control envelope: `counter`, `queue`, `event/completion`, `timer`, `memory_object`, `call_gate`, `dma_buffer`, and `dma_completion`. Semaphores, pipes, channels, task queues, shared arenas, socket readiness, and DMA completions are runtime profiles over these primitives, not separate ad hoc hardware modules.
+    *   *Action:* Creates, configures, queries, resets, or destroys hardware-owned object profiles through the typed control envelope: `counter`, `queue`, `event/completion`, `timer`, `memory_object`, `call_gate`, `dma_buffer`, `dma_completion`, and optional acceleration profiles such as `classifier_table` and `servicelet_program`. Semaphores, pipes, channels, task queues, shared arenas, socket readiness, DMA completions, filters, and servicelet attachments are runtime or acceleration profiles over these primitives, not separate ad hoc hardware modules.
 *   **`DMA_CTL r_result, r_argblock`**
     *   *Action:* Submits bulk memory/object operations to the DMA Fabric: large copy, fill/zero, scatter/gather copy, and optional checksum/hash profiles. Small operations may complete synchronously; long operations can complete through an `event_queue` FDR or a `counter` completion profile. DMA always runs through VMA permissions, capability checks, IOMMU/device scope, and Resource Domain accounting.
 *   **`DOMAIN_CTL r_result, r_argblock`**
@@ -300,6 +347,9 @@ thread-local `ERRNO`. Hardware engines use one canonical error namespace:
 *   `EPIPE`: peer/service endpoint is closed after the request was otherwise
     valid.
 *   `ETIMEDOUT`: timeout expired before readiness or completion.
+*   `EINPROGRESS`: operation was accepted as a bounded asynchronous transaction;
+    completion is reported through the encoded waitable, event queue, counter,
+    or result token.
 *   `EIO`: service/device/storage operation failed after authority checks.
 *   `EPOISONED`: object, page, descriptor, queue, or metadata is poisoned by an
     integrity/RAS failure.
@@ -567,8 +617,14 @@ This preserves the rule that ambient MMIO is forbidden. A process cannot load/st
 
 *   **`INB_RESERVED r_dest, r_port` / `OUTB_RESERVED r_port, r_src`**
     *   *Action:* Reserved fallback/debug port I/O for trusted boot or Bus Master code. Normal applications and ordinary drivers use FDR capabilities and `MMAP`-mapped BARs instead.
-*   **`LOAD_UCODE r_buf_ptr, r_len`**
-    *   *Action:* Reserved device-driver acceleration hook. In FPGA v1 this is a stub; it does not replace the Bus Master, IOMMU, BAR FDR, or capability-delegation model.
+*   **`LOAD_UCODE_RESERVED r_buf_ptr, r_len`**
+    *   *Action:* Reserved compatibility spelling for future driver/service
+        acceleration; source-level `LOAD_UCODE` must lower to a reserved/stub
+        result in v1. It must not install arbitrary microcode. The v1 direction
+        is to load verified bounded servicelets through `OBJECT_CTL` into a
+        `servicelet_program` object, then attach that object to a classifier,
+        queue, gate, domain, telemetry stream, or device profile under
+        capability control.
 
 ### 11.1 Native Networking Model
 
@@ -598,18 +654,28 @@ The same ISA operations cover networking:
 *   `CAP_SEND` passes listeners, accepted connections, packet queues, or namespace subsets between domains.
 *   `CAP_REVOKE` tears down delegated network authority and derived endpoints.
 
+Bounded servicelets are first-class network attachment points. A
+`net_interface`, `packet_queue`, `listener`, `datagram_endpoint`, or
+`stream_endpoint` may reference a `classifier_table` and optional
+`servicelet_program` for RX classification, TX admission, queue selection,
+priority/mark assignment, checksum/offload policy selection, accept filtering,
+endpoint handoff, telemetry redaction, and `needs_software` fallback. The
+attachment is installed through `OBJECT_CTL` only when the caller holds the
+target network object capability, the servicelet capability, and every
+destination queue/gate capability named by possible actions.
+
 The silicon/software split is deliberate:
 
-*   **Silicon owns:** safe packet movement, packet DMA, coherent visibility, IOMMU enforcement, page-granular BAR mappings, `irq_event` delivery, generic queues/counters/events, basic MAC filtering/steering where cheap, simple checksums/classification where cheap, timestamps where cheap, per-domain quotas, counters, trace, fault events, timer/counter objects useful to transport services, and zero-copy buffer handoff.
+*   **Silicon owns:** safe packet movement, packet DMA, coherent visibility, IOMMU enforcement, page-granular BAR mappings, `irq_event` delivery, generic queues/counters/events, basic MAC filtering/steering where cheap, servicelet/classifier execution where enabled, simple checksums/classification where cheap, timestamps where cheap, per-domain quotas, counters, trace, fault events, timer/counter objects useful to transport services, and zero-copy buffer handoff.
 *   **Software domains own:** PCIe enumeration and quirks, Ethernet NIC drivers, Wi-Fi firmware/device protocols, Wi-Fi scan/association/authentication/roaming/regulatory policy, ARP/NDP, IP, TCP, UDP, QUIC policy, routing, firewall/NAT policy, TLS, DNS, socket compatibility, service discovery, congestion control, retransmission, pacing, loss recovery, keepalive policy, and socket-option semantics.
 
 The typed endpoint boundary is stable:
 
-*   `packet_queue` preserves packet record boundaries and carries packet envelopes, payload references, checksum/timestamp/offload metadata, and queue readiness.
+*   `packet_queue` preserves packet record boundaries and carries packet envelopes, payload references, checksum/timestamp/offload metadata, classifier/servicelet marks, and queue readiness.
 *   `datagram_endpoint` preserves datagram boundaries but does not imply hardware UDP; loss, truncation, peer metadata, and reliability are endpoint-profile/service policy.
 *   `stream_endpoint` exposes ordered bytes, backpressure, close/reset/error readiness, and no packet boundaries; it may be backed by software TCP, local IPC, QUIC service, paravirtual transport, or future acceleration.
 *   `listener` is an accept queue that returns endpoint capabilities whose rights and namespace scope derive from the listener and service policy.
-*   `GET_META`, `SET_META`, and `OBJECT_CTL` expose bind/connect/listen/shutdown/nonblocking/buffer/event/socket-option profiles as bounded typed records. Unsupported options fail closed rather than becoming raw `ioctl` blobs.
+*   `GET_META`, `SET_META`, and `OBJECT_CTL` expose bind/connect/listen/shutdown/nonblocking/buffer/event/socket-option profiles, classifier/servicelet attachment, and network queue steering as bounded typed records. Unsupported options fail closed rather than becoming raw `ioctl` blobs.
 
 A future TCP accelerator may be added only as an optional transport service
 profile behind the same `stream_endpoint` capability shape. Applications, libc,
@@ -617,13 +683,13 @@ and POSIX socket compatibility must not depend on whether a stream endpoint is
 implemented by software TCP, local IPC, QUIC service, paravirtual networking, or
 a hardware assist block.
 
-For PCIe Ethernet, the Bus Master requests `pci_function`, `pcie_bar`, `dma_buffer`, and `irq_event` capabilities for a NIC driver domain, and hardware derives/installs them from the PCIe root/function authority. The driver maps BARs with `MMAP`, allocates descriptor rings and packet buffers through `dma_buffer` capabilities, waits on `irq_event` records for MSI/MSI-X completion, and publishes `net_interface` plus packet queue capabilities to a network service domain. That service domain exposes `stream_endpoint`, `datagram_endpoint`, and `listener` FDRs to applications and libc.
+For PCIe Ethernet, the Bus Master requests `pci_function`, `pcie_bar`, `dma_buffer`, and `irq_event` capabilities for a NIC driver domain, and hardware derives/installs them from the PCIe root/function authority. The driver maps BARs with `MMAP`, allocates descriptor rings and packet buffers through `dma_buffer` capabilities, waits on `irq_event` records for MSI/MSI-X completion, and publishes `net_interface` plus packet queue capabilities to a network service domain. The driver or network service may attach classifier tables and verified servicelets to RX/TX queues for steering, marking, admission, and telemetry before packets reach a software stack. That service domain exposes `stream_endpoint`, `datagram_endpoint`, and `listener` FDRs to applications and libc.
 
 For Wi-Fi, silicon remains the same PCIe/DMA/event substrate. Wi-Fi-specific firmware loading, scan, association, WPA/WPA2/WPA3, roaming, regulatory behavior, power management, and link policy belong in a Wi-Fi driver/service domain. Once associated, the service publishes a normal `net_interface` capability to the rest of the system.
 
 POSIX sockets lower cleanly onto this model: `socket()` creates an endpoint under a `net_namespace`, `bind`/`connect`/`listen` become typed metadata/control operations, `accept` pulls a connection capability from a listener, `send`/`recv` become `PUSH`/`PULL`, `poll`/`epoll` bind endpoint readiness into event queues, `getsockopt`/`setsockopt` become typed metadata records, and descriptor passing maps to `CAP_SEND`.
 
-### 11.2 Bounded Record Classification and Queue Steering
+### 11.2 Bounded Record Classification, Servicelets, and Queue Steering
 
 The networking classifier is useful beyond networking, so it is specified as a
 generic `classifier_table` object profile created through `OBJECT_CTL`, with
@@ -652,7 +718,65 @@ Useful profiles include:
 *   **Event/trace profile:** classify structured fault, trace, scheduler, and RAS records for observability without waking a general supervisor for every record.
 *   **Runtime profile:** steer task, actor, or executor records to per-core/per-domain queues.
 
-This is not an arbitrary packet VM or eBPF replacement. V1 classifier rules are bounded, table-driven, versioned, capability-owned, and loop-free. If a record is malformed, too deep, encrypted, fragmented, extension-header-heavy, or unknown, the classifier marks it `partial` or `needs_software` and still delivers it safely to a software-owned queue. Protocol state, connection tracking, routing policy, firewall languages, TLS, Wi-Fi management, and application semantics remain in software domains.
+The fixed table form is the default fast path. For policies that need more than
+a table but still must remain realtime-safe, LNP64 also defines a
+`servicelet_program` object profile. A servicelet is a verified, bounded subset
+of the ordinary LNP64 ISA. It may execute on a small dedicated servicelet
+micro-engine, because this is one place where a tiny programmable lane can be
+physically sensible. The micro-engine is still not arbitrary microcode: it runs
+only verifier-approved servicelet programs, has no ambient authority, and
+publishes a fixed WCET/action contract. Servicelets use normal
+integer/logic/compare/branch instructions, bounded literal loads, fixed-field
+envelope loads, and a small set of object-profile action outputs.
+It cannot block, allocate, perform normal memory loads/stores, issue `PULL` or
+`PUSH`, call gates, touch FDR tables, walk VMAs, access DDR arbitrarily, loop
+without a statically proven bound, or mint capabilities.
+
+Servicelets are installed and attached through `OBJECT_CTL` after verifier
+approval. The verifier checks instruction subset, maximum instruction count,
+branch bounds, record-field bounds, authority scope, action set, stack/register
+use, and a published worst-case cycle budget. A servicelet returns a bounded
+action record such as pass, drop, mark, count, steer-to-authorized-queue,
+select-gate, redact, sample, or `needs_software`. It may read only the provided
+record envelope, constant table, verifier-approved immediate data, and selected
+metadata fields from the object to which it is attached.
+
+The servicelet verifier envelope is deliberately small: version, program length,
+instruction count, maximum cycles, bounded-loop limit, ISA-subset bitmap,
+attachment class, record profile, allowed record fields, immutable constant
+table digest, action bitmap, authorized destination set, scratch-register
+count, owner/source generations, and optional verifier-certificate hash. The
+action record is fixed-width data and cannot carry or mint capabilities.
+
+Useful servicelet attachment points include packet and generic record
+classification, queue steering, socket accept/filter policy, gate admission,
+capability-narrowing policy, Resource Domain accounting/classification, audit
+filtering/redaction, storage/DMA completion routing, IRQ/event routing,
+observability sampling, and seccomp-like personality filtering. Attachment
+authority is capability-scoped: holding a servicelet object is not enough; the
+caller must also hold the target object/control capability and any destination
+queue or gate capabilities named by possible actions.
+
+Servicelets are a bounded prelude/postlude/filter/steering layer for services,
+not a substrate for implementing arbitrary services inside the hardware. A
+filesystem servicelet may reject malformed selectors or steer an `OPEN_AT`
+request, but it does not walk directories, follow symlinks, resolve mounts, or
+perform storage recovery. A network servicelet may classify packets or choose a
+flow queue, but it does not implement TCP congestion control, retransmission,
+reassembly, TLS, routing, NAT, or Wi-Fi association. A loader servicelet may
+recognize or reject a bounded header shape, but it does not perform ELF parsing,
+relocation, dynamic linking, interpreter policy, or credential transitions.
+Those general cases return `needs_software` or are dispatched to software
+service domains.
+
+This is not arbitrary eBPF-scale programmable packet processing. V1 classifier
+rules and servicelets are bounded, versioned, capability-owned, proof-friendly,
+and either table-driven or verified against a fixed LNP64-ISA subset. If a
+record is malformed, too deep, encrypted, fragmented, extension-header-heavy,
+or unknown, the classifier/servicelet marks it `partial` or `needs_software`
+and still delivers it safely to a software-owned queue. Protocol state,
+connection tracking, routing policy, firewall languages, TLS, Wi-Fi management,
+and application semantics remain in software domains.
 
 ## 12. Floating Point and Vector Math
 General compute isn't just integers. We need a standard IEEE 754 Floating Point Unit and SIMD (Single Instruction, Multiple Data) for multimedia and AI.
@@ -865,6 +989,13 @@ Hard v1 requirements:
 *   **Remote attestation primitive:** The boot path records build id, FPGA bitstream/ROM identity, boot manifest hash, image measurements, domain launch measurements, selected boot policy, and delegated capability roots into read-only measurement records. A quote/attestation FDR exposes signed or development-mode attestations to authorized domains.
 *   **Checkpoint and live-migration compatibility hooks:** `DOMAIN_CTL freeze/query-state/resume` must define quiescent state boundaries, bounded state records, dirty-state hooks, service callback events, endpoint drain/redirect hooks, and storage barrier integration for software checkpointing and future live migration. Hardware does not own checkpoint image formats, migration transport, or full restore in v1; future restore must create fresh domain/generation bases and reattach capabilities explicitly.
 *   **Line-rate record classification and queue steering:** The bounded classifier is a first-class v1 datapath for packets, IPC completions, storage/DMA completions, trace records, and RAS events. It provides hash/mark/count/steer/drop actions into capability-scoped queues without becoming an arbitrary packet VM.
+*   **Bounded servicelets:** Where fixed tables are too rigid, verified
+    servicelets provide eBPF-like programmability using a strict subset of the
+    existing LNP64 ISA. Servicelets are capability objects with bounded cycles,
+    bounded actions, no blocking/allocation/arbitrary memory access, and
+    verifier/proof obligations. They make realtime service personalities
+    programmable without introducing general-purpose hidden CPUs, arbitrary
+    bytecode VMs, or loadable control-store microcode.
 *   **Storage durability contract:** Storage services and block objects define commit points, flush/barrier ordering, and replay/fsck expectations before RTL freeze. Live-system atomicity is not enough; power-fail durability must be specified, but general writable filesystem policy is not implemented in hardware.
 *   **Deterministic failure containment proofs:** Each hardware engine must have a small enumerated state model, explicit commit/abort boundaries, local reset/degraded states, and proof or exhaustive-test obligations that faults cannot silently create authority, corrupt unrelated domains, or require full-chip reset when local recovery is possible.
 

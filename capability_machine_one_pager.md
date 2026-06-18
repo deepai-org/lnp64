@@ -99,7 +99,22 @@ telemetry, and upcalls are domain-scoped.
 The hardware scheduler owns ready/blocked transitions, wakeups, no-lost-wakeup
 state, budget accounting, and dispatch. It is a fixed weighted-fair virtual-time
 algorithm with weights, quotas, affinity, and latency-class inputs. It is not a
-scheduler plugin interface.
+scheduler plugin interface. A live thread has exactly one scheduler state and
+location; dispatch requires ancestor-domain budget and affinity eligibility;
+wakeups, preemption, spill/refill, and fairness approximation have published
+bounds.
+
+Core tiles use hardware thread interleaving, not speculative SMT. A tile issues
+one selected ready TID from a bounded active window; a TID waiting on memory,
+objects, gates, or engine responses stops occupying the issue lane while other
+eligible TIDs run.
+
+The enterprise profile is realtime-capable by construction. Native
+instructions complete a bounded local step, park explicitly, or submit an
+explicit transaction with a waitable/completion. Path walking, page fill,
+filesystem work, service execution, and device completion are not hidden inside
+instruction retire latency. Implementations publish WCET classes and fabric
+limits through `ENV_GET`.
 
 Boot creates a default operating envelope before user code: root domain, PID 1
 domain, scheduler profile, security defaults, telemetry/fault routes,
@@ -124,6 +139,22 @@ Networking exposes packet queues, datagram endpoints, stream endpoints,
 listeners, classifiers, counters, and endpoint capabilities. Ethernet, Wi-Fi,
 TCP/IP, routing, firewall, DNS, TLS, socket options, and transport policy remain
 software-owned. Future accelerators must preserve the same endpoint shapes.
+
+Where fixed classifier tables are too rigid, LNP64 uses **bounded servicelets**:
+verified programs written in a strict subset of the existing ISA, attached to
+queues, gates, classifiers, domains, audit streams, or device/event profiles.
+They are the useful eBPF idea without arbitrary packet VMs or hidden authority.
+A servicelet may run on a tiny dedicated engine, but only with
+verifier-approved cycle bounds, record-field access, action sets, and
+attachment authority. It cannot block, allocate, access arbitrary memory, mint
+capabilities, or emit anything beyond small action records such as pass, drop,
+mark, steer, redact, count, or `needs_software`.
+
+Servicelets are for bounded preludes and postludes, not for implementing whole
+services. They can reject, classify, steer, mark, sample, redact, or ask for
+software. Filesystem path walking, TCP, TLS, executable loading, PCIe
+enumeration, storage recovery, allocator slow paths, and complex policy stay in
+software service domains.
 
 ## Security And Assurance
 
@@ -176,19 +207,27 @@ debug/DMA paths.
 
 ## Hardware Philosophy
 
-Hardware modules are small state machines, not hidden CPUs. A block earns
-silicon only when it owns useful local state, enforces a critical invariant,
-reduces memory traffic, improves streaming, or makes an atomic transition
-cheap. Complex or fast-changing policy stays in libc, runtimes, service domains,
-drivers, or Unix personalities.
+Hardware modules are small state machines, pipelines, or verifier-fenced
+servicelet lanes, not general hidden CPUs. A block earns silicon only when it
+owns useful local state, enforces a critical invariant, reduces memory traffic,
+improves streaming, or makes an atomic transition cheap. Complex or
+fast-changing policy stays in libc, runtimes, service domains, drivers, or Unix
+personalities.
 
 The verification target is seL4-like confidence for the hardware-visible
 security model: capability non-forgeability, monotonic delegation, revocation
 soundness, domain containment, W^X, DMA isolation, scheduler validity, no lost
 wakeups, precise gate/fault delivery, service-boundary soundness, and
-crash-free engine transitions. The preferred high-level proof source is a
+crash-free engine transitions. The proof target also includes global progress
+under bounded faults and adversarial input containment: hostile packets,
+service payloads, bytecode, files, peers, and timing races should become data,
+pressure, typed faults, isolation, or measured failure, never authority or
+unspecified machine state. The preferred high-level proof source is a
 Lean-style abstract machine, with RTL assertions and model checking for local
-FSM/refinement checks.
+FSM/refinement checks. Liveness and realtime claims are stated relative to an
+explicit fault model and the implementation constants reported by `ENV_GET`;
+the base proof does not pretend to cover power loss, analog faults, malicious
+bitstream replacement, or unverified service correctness.
 
 LNP64 is therefore not "POSIX in hardware." It is a capability substrate for
 building operating systems, runtimes, drivers, and isolated services on one

@@ -17,6 +17,13 @@ Core ISA:
 
 - ALU, branch, call/return, load/store, atomics, `FENCE`, `ISYNC`.
 - `ENV_GET` scalar keys, buffer keys, bad keys, and buffer faults.
+- `ENV_GET` WCET discovery: latency class bounds, Class D submit bound,
+  metadata/event/memory fabric wait bounds, servicelet lane limits, and absent
+  feature behavior.
+- Instruction-class miss behavior: hot success, bounded canonical error,
+  explicit park, and `EINPROGRESS`/completion-token paths for cold FDR, VMA,
+  heap window, gate continuation, waitable, scheduler slot, domain record, and
+  servicelet attachment misses.
 - Native fault gate delivery and POSIX signal-profile mapping: `SIGFPE`,
   `SIGILL`, `SIGSEGV`, `SIGBUS`, `SIGTRAP`.
 
@@ -51,6 +58,20 @@ Scheduler and waits:
 - Weighted-fair charging, virtual runtime/deadline ordering, quotas,
   hierarchy rollup, wakeup insertion, frozen-domain removal, bounded preemption,
   no lost wakeups, and no scheduler plugin/callback path.
+- Hardware thread interleaving: one selected TID issues per tile per cycle in
+  v1, blocked/pending TIDs leave the issue-eligible set, Class B/C pending work
+  does not freeze unrelated eligible TIDs, and local engines pipeline requests
+  across TIDs within published arbitration bounds.
+- Scheduler contract tests: exactly-one scheduler state/location per live TID,
+  domain-ancestor eligibility, affinity mask intersection, fixed weight-table
+  monotonicity, latency-class placement caps, wakeup generation matching,
+  active-window dispatch, DDR spill/refill preserving identity and accounting,
+  quota-period replenishment, forced park, and stale scheduler-record rejection.
+- Scheduler discovery tests: `ENV_GET` reports scheduler profile version,
+  weight table version/count, latency class count, fairness window, maximum
+  wakeup insertion latency, maximum preemption latency, active-window size,
+  local queue count, spill threshold, refill batch size, migration interval, and
+  reservation features.
 - Futex wait/wake, timer waits, event queues, fd readiness, child waits,
   gate-delivery interruption, and gate waits.
 
@@ -72,11 +93,43 @@ Networking and classifiers:
 - Record classification and queue steering: exact/masked/prefix/range matches,
   hash steering, counters, overflow events, destination authority, and malformed
   rule rejection.
+- Network servicelet integration: attach/detach servicelets to `net_interface`,
+  `packet_queue`, endpoint, and listener objects; verify RX steering, TX
+  admission, accept filtering, priority/mark propagation, telemetry redaction,
+  `needs_software` fallback, destination authority, and stale/revoked attachment
+  rejection.
+- Bounded servicelets: verifier accepts only the LNP64 subset, rejects blocking,
+  allocation, arbitrary memory access, hidden helper calls, capability minting,
+  and unbounded loops; accepted programs meet instruction/cycle limits, match
+  the verifier envelope fields, execute on servicelet lanes or interpreter
+  models equivalently, and can emit only authorized action records.
+- Servicelet boundary tests: accepted programs can classify, steer, mark,
+  count, redact, select authorized gates, or return `needs_software`; rejected
+  programs attempt path walking, TCP-like mutable state, executable loading,
+  PCIe enumeration, blocking waits, allocator slow paths, helper callbacks, or
+  arbitrary service implementation.
+
+Realtime fabric:
+
+- Bounded arbitration for metadata engines, event routers, queue banks, DMA
+  paths, memory-controller ports, and servicelet lanes.
+- Domain reservation/admission tests where best-effort pressure cannot violate
+  admitted WCET/fabric bounds; overflow produces visible pressure/status
+  events instead of hidden stalls.
 
 Assurance and operability:
 
 - Critical metadata ECC/parity correction, poisoning, and fault delivery.
 - Watchdog timeout and local engine reset before and after commit points.
+- Global progress under bounded faults: every accepted long command completes,
+  cancels, faults, times out, revokes, degrades, or escalates to measured
+  machine-fatal state; parked TIDs always have a valid wake/cancel/fault source;
+  full queues/fabrics/FIFOs produce documented backpressure outcomes.
+- Adversarial input containment: malformed packets/records/service replies,
+  hostile peers, adversarial servicelet programs, corrupted file bytes, packet
+  floods, and service-call storms remain data, pressure, typed faults, drops,
+  `needs_software`, quota exhaustion, or domain isolation, never authority or
+  unspecified hardware state.
 - Telemetry FDRs, aggregate/redacted views, trace overflow, destructive and
   snapshot reads, and denial without authority.
 - Measured boot and attestation: bitstream/ROM identity, manifest/image/domain
@@ -110,7 +163,8 @@ Assurance and operability:
 18. PCIe Root Complex, Bus Master enumeration, BAR FDRs, DMA buffers, IOMMU,
     MSI/MSI-X event delivery, and a simple NIC or NVMe driver domain.
 19. RAS, telemetry, measured boot, quote FDR, audit stream, and watchdog reset.
-20. Checkpoint hooks, record classification/queue steering, tenant-strict,
+20. Checkpoint hooks, record classification/queue steering, bounded
+    servicelets, WCET discovery, fabric arbitration, tenant-strict,
     confidential, MLS, mission, and open-assurance smoke tests.
 
 ## Gates
