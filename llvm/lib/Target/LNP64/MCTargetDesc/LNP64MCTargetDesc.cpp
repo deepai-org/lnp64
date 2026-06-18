@@ -1,4 +1,5 @@
 #include "LNP64MCTargetDesc.h"
+#include "InstPrinter/LNP64InstPrinter.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
@@ -43,4 +44,5 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeLNP64TargetMC() {
   TargetRegistry::RegisterMCSubtargetInfo(T, createLNP64MCSubtargetInfo);
   TargetRegistry::RegisterMCCodeEmitter(T, createLNP64MCCodeEmitter);
   TargetRegistry::RegisterMCAsmBackend(T, createLNP64AsmBackend);
+  TargetRegistry::RegisterMCInstPrinter(T, createLNP64MCInstPrinter);
 }

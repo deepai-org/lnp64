@@ -1763,6 +1763,8 @@ mod tests {
             include_str!("../llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCCodeEmitter.cpp");
         let mc_asm_backend =
             include_str!("../llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCAsmBackend.cpp");
+        let inst_printer =
+            include_str!("../llvm/lib/Target/LNP64/InstPrinter/LNP64InstPrinter.cpp");
         let asm_parser = include_str!("../llvm/lib/Target/LNP64/AsmParser/LNP64AsmParser.cpp");
         let disassembler =
             include_str!("../llvm/lib/Target/LNP64/Disassembler/LNP64Disassembler.cpp");
@@ -1816,6 +1818,7 @@ mod tests {
             "LNP64Subtarget.cpp",
             "LNP64ISelLowering.cpp",
             "LNP64FrameLowering.cpp",
+            "add_subdirectory(InstPrinter)",
             "add_subdirectory(AsmParser)",
             "add_subdirectory(Disassembler)",
         ] {
@@ -1828,11 +1831,15 @@ mod tests {
         assert!(mc_desc.contains("LLVMInitializeLNP64TargetMC"));
         assert!(mc_desc.contains("RegisterMCCodeEmitter"));
         assert!(mc_desc.contains("RegisterMCAsmBackend"));
+        assert!(mc_desc.contains("RegisterMCInstPrinter"));
         assert!(mc_desc_header.contains("fixup_lnp64_branch26"));
         assert!(mc_emitter.contains("createLNP64MCCodeEmitter"));
         assert!(mc_asm_backend.contains("createLNP64AsmBackend"));
         assert!(mc_asm_backend.contains("LNP64ELFObjectWriter"));
         assert!(mc_asm_backend.contains("R_LNP64_BRANCH26"));
+        assert!(inst_printer.contains("createLNP64MCInstPrinter"));
+        assert!(inst_printer.contains("printMemOperand"));
+        assert!(inst_printer.contains("call_reg"));
         assert!(mc_emitter.contains("case LNP64::AND"));
         assert!(mc_emitter.contains("case LNP64::CMP"));
         assert!(mc_emitter.contains("case LNP64::LD_W"));

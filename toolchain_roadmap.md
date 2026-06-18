@@ -47,9 +47,9 @@ The first Clang target-info, Clang driver-arch, lld ELF arch, and MC
 AsmBackend/object-writer source files also exist under the matching
 llvm-project paths, with the LNP64 triple, freestanding driver defaults,
 inline-asm constraint surface, and relocation names pinned to the checked
-manifests. The MC AsmParser, code emitter, and Disassembler components now
-cover the first fixed32 integer, memory, branch/call, and return subset for
-future `llvm-mc` round trips.
+manifests. The MC AsmParser, code emitter, InstPrinter, and Disassembler
+components now cover the first fixed32 integer, memory, branch/call, and return
+subset for future `llvm-mc` round trips.
 Scaffolded llvm-project lit tests now exist for `llc` hello/native-intrinsic
 codegen, `llvm-mc` basic assembly, and Clang driver command shape; they remain
 marked `XFAIL` until the target is integrated into a buildable llvm-project
