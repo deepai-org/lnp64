@@ -140,6 +140,40 @@ Assurance and operability:
 
 ## RTL Simulation Milestones
 
+S0 whole-machine skeleton gate:
+
+- `bash scripts/run_rtl_s0.sh`
+- file list: `tests/rtl/s0_filelist.f`
+- expected committed trace shape: `tests/traces/rtl_s0_expected.trace`
+- RTL entry point: `rtl/top/lnp64_top.sv`
+- shared records/constants: `rtl/include/lnp64_pkg.sv`
+- abstract proof artifact: `formal/S0Model.lean`
+- mirrored assertion module: `formal/rtl_assertions/lnp64_s0_assertions.sv`
+
+The S0 gate builds and runs a Verilator simulation that resets the skeleton,
+creates root domain/PID 1/root FDR state, executes `NOP`, `LI32`, `ADD`, `JMP`,
+SRAM `LD/ST`, `YIELD`, `ENV_GET`, `GET_ERRNO`, `SET_ERRNO`, a fail-closed
+resource stub, and an unsupported opcode path. It also checks UART boot output,
+synthetic event wake, structured fault injection, watchdog degraded/fault
+state, live coherence/DMA visibility stub paths, and absence of software-visible
+raw interrupt, raw physical address, raw DMA, or ambient device authority.
+
+M1 proven ping-pong gate:
+
+- `bash scripts/run_rtl_m1.sh`
+- executable model: `formal/m1_model.py`
+- RTL slice: `rtl/engines/lnp64_m1_pingpong.sv`
+- file list: `tests/rtl/m1_filelist.f`
+- mirrored assertion module: `formal/rtl_assertions/lnp64_m1_assertions.sv`
+
+The M1 gate runs the executable model and RTL simulation, extracts normalized
+`TRACE` lines from the RTL log, and diffs them against the model trace. The
+bounded slice covers two hardware thread contexts, a narrowed `CAP_DUP`, FDR
+generation checks, one queue object, `AWAIT`, producer `PUSH`, consumer `PULL`,
+event wake, explicit full-queue `EAGAIN`, stale-generation `EREVOKED`, and
+assertions for no forged FDR, no lost wakeup, exactly-one scheduler location,
+stale generation rejection, and explicit queue-full behavior.
+
 1. Fetch/decode/ALU/load/store from a DDR model.
 2. Weighted-fair multi-context scheduler with `CLONE`, `YIELD`, `AWAIT`,
    `EXIT`, quotas, and bounded wakeup insertion.

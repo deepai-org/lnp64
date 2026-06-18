@@ -67,6 +67,8 @@ Implementation:
 - `src/asm.rs`: assembler.
 - `src/emulator.rs`: emulator runtime.
 - `src/c_compiler.rs`: small C compiler.
+- `rtl/`: synthesizable SystemVerilog S0 skeleton and Verilator testbench.
+- `formal/`: S0 abstract proof model and mirrored RTL assertions.
 - `demos/`: assembly and C demos.
 - `userland/`: minimal bootable userland image with init, shell, and command binaries.
 - `third_party/`: real package smoke targets.
@@ -119,6 +121,18 @@ Run the full checked repository gate:
 
 ```sh
 bash scripts/run_all_gates.sh
+```
+
+Run the first RTL/formal co-design skeleton gate:
+
+```sh
+bash scripts/run_rtl_s0.sh
+```
+
+Run the first RTL/model co-simulation vertical slice:
+
+```sh
+bash scripts/run_rtl_m1.sh
 ```
 
 Build and run a demo:
