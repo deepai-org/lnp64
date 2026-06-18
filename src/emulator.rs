@@ -5821,6 +5821,8 @@ impl Machine {
         if required_len > out_len {
             return Err(34);
         }
+        self.ensure_mapped(out_ptr, required_len, true)
+            .map_err(|_| 14u64)?;
         self.write_bytes_offset(out_ptr, 0, bytes)
             .map_err(|_| 14u64)?;
         self.write_bytes_offset(out_ptr, bytes.len() as u64, &[0])
@@ -11324,6 +11326,25 @@ mod tests {
         assert_eq!(machine.thread().unwrap().regs[7], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 13);
         assert_eq!(machine.read_c_string(out).unwrap(), "sentinel-d");
+
+        machine.write_bytes(path, b"inside\0").unwrap();
+        machine.store_u64(arg + 48, 0).unwrap();
+        let expected = tmp.join("inside").to_string_lossy().into_owned();
+        let boundary_out = MEMORY_SIZE as u64 - expected.len() as u64;
+        machine.process_mut().unwrap().vmas.push(Vma::anonymous(
+            boundary_out,
+            expected.len() as u64,
+            0b11,
+        ));
+        machine.store_u64(arg + 32, boundary_out).unwrap();
+        machine
+            .store_u64(arg + 40, expected.len() as u64 + 1)
+            .unwrap();
+        machine.write_bytes(boundary_out, b"Z").unwrap();
+        machine.ns_ctl(Reg(8), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[8], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 14);
+        assert_eq!(machine.read_bytes(boundary_out, 1).unwrap(), b"Z".to_vec());
 
         let _ = fs::remove_dir_all(&base);
     }
