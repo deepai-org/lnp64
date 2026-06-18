@@ -17,6 +17,8 @@ def LNP64call : SDNode<"LNP64ISD::CALL", SDTNone,
 def SDT_LNP64Native3 : SDTypeProfile<1, 3, [
   SDTCisVT<0, i64>, SDTCisVT<1, i64>, SDTCisVT<2, i64>, SDTCisVT<3, i64>
 ]>;
+def LNP64pull : SDNode<"LNP64ISD::PULL", SDT_LNP64Native3,
+                       [SDNPHasChain]>;
 def LNP64push : SDNode<"LNP64ISD::PUSH", SDT_LNP64Native3,
                        [SDNPHasChain]>;
 
@@ -173,7 +175,9 @@ def FUTEX_WAIT : LNP64Inst<(outs GPR:$rd), (ins GPR:$addr, GPR:$expected),
 def FUTEX_WAKE : LNP64Inst<(outs GPR:$rd), (ins GPR:$addr, GPR:$count),
                            "futex_wake", "\t$rd, $addr, $count">;
 
-def PULL : LNP64Native4<"pull">;
+def PULL : LNP64Native4<"pull"> {
+  let Pattern = [(set GPR:$rd, (LNP64pull GPR:$cap, GPR:$arg0, GPR:$arg1))];
+}
 def PUSH : LNP64Native4<"push"> {
   let Pattern = [(set GPR:$rd, (LNP64push GPR:$cap, GPR:$arg0, GPR:$arg1))];
 }

@@ -5,12 +5,19 @@
 
 @msg = private unnamed_addr constant [6 x i8] c"hello\00", align 1
 
+declare i64 @__lnp_pull(i64, ptr, i64)
 declare i64 @__lnp_push(i64, ptr, i64)
 declare i64 @callee(i64)
 
 define i64 @main() {
 entry:
   %n = call i64 @__lnp_push(i64 1, ptr @msg, i64 5)
+  ret i64 %n
+}
+
+define i64 @read_stream(ptr %p) {
+entry:
+  %n = call i64 @__lnp_pull(i64 0, ptr %p, i64 32)
   ret i64 %n
 }
 
@@ -64,6 +71,9 @@ entry:
 ; CHECK-LABEL: main:
 ; CHECK: li
 ; CHECK: push
+; CHECK: ret
+; CHECK-LABEL: read_stream:
+; CHECK: pull
 ; CHECK: ret
 ; CHECK-LABEL: arith:
 ; CHECK: li

@@ -1891,10 +1891,10 @@ mod tests {
         assert!(isel.contains("DAG.getTargetGlobalAddress"));
         assert!(isel.contains("DAG.getTargetExternalSymbol"));
         assert!(isel.contains("LNP64ISD::CALL"));
-        assert!(isel.contains("getDirectCalleeName(Callee) == \"__lnp_push\""));
-        assert!(isel.contains("DAG.getNode(LNP64ISD::PUSH"));
+        assert!(isel.contains("CalleeName == \"__lnp_pull\" || CalleeName == \"__lnp_push\""));
+        assert!(isel.contains("LNP64ISD::PULL : LNP64ISD::PUSH"));
         assert!(isel.contains("RetCCInfo.AnalyzeCallResult(CLI.Ins, RetCC_LNP64)"));
-        assert!(isel.contains("__lnp_push lowering expects three arguments and a result"));
+        assert!(isel.contains("native stream lowering expects three arguments and a result"));
         assert!(isel.contains("LNP64ISD::RET_FLAG"));
         assert!(isel.contains("setLoadExtAction(ISD::ZEXTLOAD, MVT::i64, MemVT, Legal)"));
         assert!(isel.contains("setTruncStoreAction(MVT::i64, MemVT, Legal)"));
@@ -1905,6 +1905,7 @@ mod tests {
         assert!(isel_header.contains("LowerReturn"));
         assert!(isel_header.contains("LowerCall"));
         assert!(isel_header.contains("CALL"));
+        assert!(isel_header.contains("PULL"));
         assert!(isel_header.contains("PUSH"));
         assert!(isel_header.contains("RET_FLAG"));
         assert!(instr_td.contains("def simm16_imm"));
@@ -1913,6 +1914,7 @@ mod tests {
         assert!(instr_td.contains("(ins brtarget:$target)"));
         assert!(instr_td.contains("def LNP64retflag"));
         assert!(instr_td.contains("def LNP64call"));
+        assert!(instr_td.contains("def LNP64pull"));
         assert!(instr_td.contains("def LNP64push"));
         assert!(instr_td.contains("(set GPR:$rd, simm16_imm:$imm)"));
         assert!(instr_td.contains("(set GPR:$rd, (add GPR:$rs1, GPR:$rs2))"));
@@ -1928,6 +1930,7 @@ mod tests {
         assert!(instr_td.contains("(ST_W GPR:$rs, GPR:$base, simm14_imm:$offset)"));
         assert!(instr_td.contains("(ST_H GPR:$rs, GPR:$base, simm14_imm:$offset)"));
         assert!(instr_td.contains("(ST_B GPR:$rs, GPR:$base, simm14_imm:$offset)"));
+        assert!(instr_td.contains("(LNP64pull GPR:$cap, GPR:$arg0, GPR:$arg1)"));
         assert!(instr_td.contains("(LNP64push GPR:$cap, GPR:$arg0, GPR:$arg1)"));
         assert!(instr_td.contains("isReturn = 1"));
         assert!(instr_td.contains("Defs = [LR]"));
@@ -1977,6 +1980,7 @@ mod tests {
         assert!(codegen_test.contains("llc -mtriple=lnp64-unknown-none"));
         assert!(codegen_test.contains("XFAIL: *"));
         assert!(codegen_test.contains("define i64 @arith"));
+        assert!(codegen_test.contains("define i64 @read_stream"));
         assert!(codegen_test.contains("define i64 @jump"));
         assert!(codegen_test.contains("define i64 @call_direct"));
         assert!(codegen_test.contains("define i64 @memory"));
@@ -1993,7 +1997,9 @@ mod tests {
         }
         assert!(codegen_test.contains("; CHECK: lsl"));
         assert!(codegen_test.contains("; CHECK: ret"));
+        assert!(codegen_test.contains("__lnp_pull"));
         assert!(codegen_test.contains("__lnp_push"));
+        assert!(codegen_test.contains("; CHECK: pull"));
         assert!(codegen_test.contains("; CHECK: push"));
         assert!(mc_test.contains("llvm-mc -triple=lnp64-unknown-none"));
         assert!(mc_test.contains("li r1, 42"));
