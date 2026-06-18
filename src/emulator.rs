@@ -11778,6 +11778,38 @@ mod tests {
     }
 
     #[test]
+    fn rename_without_namespace_root_does_not_touch_host_files() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let old_path = std::env::temp_dir().join(format!("lnp64_rename_no_root_old_{unique}"));
+        let new_path = std::env::temp_dir().join(format!("lnp64_rename_no_root_new_{unique}"));
+        fs::write(&old_path, b"keep").unwrap();
+        let _ = fs::remove_file(&new_path);
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.process_mut().unwrap().namespace_root = None;
+        let old_addr = ARG_BASE + 0x1000;
+        let new_addr = ARG_BASE + 0x1100;
+        let old_bytes = format!("{}\0", old_path.to_string_lossy());
+        let new_bytes = format!("{}\0", new_path.to_string_lossy());
+        machine.write_bytes(old_addr, old_bytes.as_bytes()).unwrap();
+        machine.write_bytes(new_addr, new_bytes.as_bytes()).unwrap();
+        machine.thread_mut().unwrap().regs[1] = old_addr;
+        machine.thread_mut().unwrap().regs[2] = new_addr;
+
+        machine.exec(Instr::RenamePath(Reg(1), Reg(2))).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 13);
+        assert!(old_path.exists());
+        assert!(!new_path.exists());
+        let _ = fs::remove_file(old_path);
+        let _ = fs::remove_file(new_path);
+    }
+
+    #[test]
     fn open_fd_dyn_without_namespace_root_does_not_allocate_fdr() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
