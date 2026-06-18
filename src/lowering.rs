@@ -1783,7 +1783,7 @@ mod tests {
         let clang_driver_test = include_str!("../clang/test/Driver/lnp64.c");
 
         assert!(target_td.contains("def LNP64 : Target"));
-        for required in ["GPR", "FDR", "FPR", "VR", "PCR", "LR", "R31"] {
+        for required in ["GPR", "FDR", "FPR", "VR", "PCR", "LR", "FLAGS", "R31"] {
             assert!(
                 registers_td.contains(required),
                 "register TableGen missing {required}"
@@ -1955,7 +1955,9 @@ mod tests {
         assert!(instr_td.contains("(LNP64push GPR:$cap, GPR:$arg0, GPR:$arg1)"));
         assert!(instr_td.contains("isReturn = 1"));
         assert!(instr_td.contains("Defs = [LR]"));
+        assert!(instr_td.contains("Defs = [FLAGS]"));
         assert!(instr_td.contains("Uses = [LR]"));
+        assert!(instr_td.contains("Uses = [FLAGS]"));
         assert!(instr_td.contains("let Pattern = [(LNP64retflag)]"));
         assert!(instr_td.contains("isBranch = 1"));
         assert!(instr_info.contains("copyPhysReg"));
@@ -3452,14 +3454,26 @@ mod tests {
                 .3
                 .contains(&manifest_field(psabi_manifest, "stack_pointer"))
         );
-        assert_eq!(
-            classes["special"].0,
-            format!(
-                "{},{}",
-                manifest_field(psabi_manifest, "link_register"),
-                manifest_field(psabi_manifest, "thread_pointer_pcr")
-            )
+        assert!(
+            classes["special"]
+                .0
+                .split(',')
+                .any(|value| value == manifest_field(psabi_manifest, "link_register"))
         );
+        assert!(
+            classes["special"]
+                .0
+                .split(',')
+                .any(|value| value == manifest_field(psabi_manifest, "thread_pointer_pcr"))
+        );
+        assert!(
+            classes["special"]
+                .0
+                .split(',')
+                .any(|value| value == "FLAGS")
+        );
+        assert!(classes["special"].3.contains(&"FLAGS"));
+        assert!(classes["special"].4.contains("hidden_compare_flags"));
 
         for pcr in ["PID", "PPID", "TID", "TP", "SIGMASK", "SIGPENDING"] {
             assert!(

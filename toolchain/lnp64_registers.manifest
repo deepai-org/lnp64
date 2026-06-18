@@ -5,4 +5,4 @@ fdr|fd0-fd255|capability|fd0-fd255|none|authority_object_slots|not_address_unwin
 fpr|f0-f31|implementation_defined|f0-f31|none|future_floating_point|dwarf_fpr_f0_f31
 vr|v0-v15|implementation_defined|v0-v15|none|future_vector|dwarf_vr_v0_v15
 pcr|PID,PPID,TID,TP,UID,GID,SIGMASK,SIGPENDING,REALTIME_SEC,REALTIME_NSEC|64_control|named_only|none|process_thread_metadata|named_pseudo_registers
-special|LR,TP|64|LR,TP|none|return_address_and_thread_pointer|dwarf_special_lr_tp
+special|LR,TP,FLAGS|64|LR,TP|FLAGS|return_address_thread_pointer_and_hidden_compare_flags|dwarf_special_lr_tp

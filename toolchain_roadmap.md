@@ -37,7 +37,8 @@ defaults for the first backend bring-up.
 surface for the backend, MC layer, Clang target info, driver, lld relocation
 handler, and smoke tests.
 `toolchain/lnp64_registers.manifest` records the backend-facing register
-classes, reserved registers, allocatable sets, and debug/unwind role names.
+classes, reserved registers, hidden compare flags, allocatable sets, and
+debug/unwind role names.
 The first llvm-project backend files now exist under `llvm/lib/Target/LNP64/`:
 `CMakeLists.txt`, `LNP64.td`, `LNP64RegisterInfo.td`,
 `LNP64CallingConv.td`, `LNP64InstrInfo.td`, `TargetInfo/LNP64TargetInfo.cpp`,
@@ -89,6 +90,9 @@ remain bring-up blockers.
 Control-flow opcodes now carry TableGen instruction properties for branches,
 calls, link-register definition/use, returns, terminators, and barriers, so
 later call/return lowering and verifier work can rely on instruction metadata.
+`CMP` now defines the hidden backend `FLAGS` state and conditional branches use
+it, giving the future LLVM `icmp`/conditional-`br` lowering a real dependency
+model without exposing flags to the C ABI or debug/unwind state.
 `LNP64InstrInfo` now lowers GPR-to-GPR physical register copies through `MOV`,
 giving instruction selection and register allocation a concrete copy path.
 It also emits first GPR-only stack-slot spills/reloads through `ST`/`LD` with a

@@ -37,6 +37,7 @@ def REALTIME_SEC : LNP64PCR<8, "REALTIME_SEC">;
 def REALTIME_NSEC : LNP64PCR<9, "REALTIME_NSEC">;
 
 def LR : LNP64Reg<0x100, "LR">;
+def FLAGS : LNP64Reg<0x101, "FLAGS">;
 
 def GPR : RegisterClass<"LNP64", [i64], 64,
   (add R0, R1, R2, R3, R4, R5, R6, R7,
@@ -56,4 +57,4 @@ def PCR : RegisterClass<"LNP64", [i64], 64,
   (add PID, PPID, TID, TP, UID, GID, SIGMASK, SIGPENDING,
        REALTIME_SEC, REALTIME_NSEC)>;
 
-def SPECIAL : RegisterClass<"LNP64", [i64], 64, (add LR, TP)>;
+def SPECIAL : RegisterClass<"LNP64", [i64], 64, (add LR, TP, FLAGS)>;

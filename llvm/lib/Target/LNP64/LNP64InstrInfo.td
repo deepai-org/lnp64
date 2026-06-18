@@ -113,14 +113,14 @@ def LSR : LNP64RRR<"lsr"> {
 def ASR : LNP64RRR<"asr"> {
   let Pattern = [(set GPR:$rd, (sra GPR:$rs1, GPR:$rs2))];
 }
-let isCompare = 1 in
+let isCompare = 1, Defs = [FLAGS] in
 def CMP : LNP64Cmp<"cmp">;
 
 let isBranch = 1, isTerminator = 1, isBarrier = 1 in
 def JMP : LNP64Branch<"jmp"> {
   let Pattern = [(br bb:$target)];
 }
-let isBranch = 1, isTerminator = 1 in {
+let isBranch = 1, isTerminator = 1, Uses = [FLAGS] in {
 def BEQ : LNP64Branch<"beq">;
 def BNE : LNP64Branch<"bne">;
 def BLT : LNP64Branch<"blt">;
