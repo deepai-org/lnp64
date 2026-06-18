@@ -1,4 +1,5 @@
 #include "LNP64.h"
+#include "InstPrinter/LNP64InstPrinter.h"
 #include "LNP64TargetMachine.h"
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
@@ -25,6 +26,10 @@ public:
   StringRef getPassName() const override { return "LNP64 Assembly Printer"; }
 
   void emitInstruction(const MachineInstr *MI) override;
+  bool PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
+                       const char *ExtraCode, raw_ostream &OS) override;
+  bool PrintAsmMemoryOperand(const MachineInstr *MI, unsigned OpNo,
+                             const char *ExtraCode, raw_ostream &OS) override;
 
 private:
   bool lowerOperand(const MachineOperand &MO, MCOperand &Out) const;
@@ -69,6 +74,57 @@ bool LNP64AsmPrinter::lowerOperand(const MachineOperand &MO,
   default:
     llvm_unreachable("unsupported LNP64 MachineOperand kind for MC lowering");
   }
+}
+
+static void printLNP64AsmReg(raw_ostream &OS, Register Reg) {
+  if (Reg >= LNP64::R0 && Reg <= LNP64::R31) {
+    OS << "r" << unsigned(Reg - LNP64::R0);
+    return;
+  }
+  if (Reg == LNP64::LR) {
+    OS << "lr";
+    return;
+  }
+  if (Reg == LNP64::TP) {
+    OS << "tp";
+    return;
+  }
+  OS << "reg" << unsigned(Reg);
+}
+
+bool LNP64AsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
+                                      const char *ExtraCode,
+                                      raw_ostream &OS) {
+  if (ExtraCode && ExtraCode[0])
+    return true;
+
+  const MachineOperand &MO = MI->getOperand(OpNo);
+  switch (MO.getType()) {
+  case MachineOperand::MO_Register:
+    printLNP64AsmReg(OS, MO.getReg());
+    return false;
+  case MachineOperand::MO_Immediate:
+    OS << MO.getImm();
+    return false;
+  case MachineOperand::MO_GlobalAddress:
+    OS << getSymbol(MO.getGlobal())->getName();
+    if (MO.getOffset())
+      OS << '+' << MO.getOffset();
+    return false;
+  case MachineOperand::MO_ExternalSymbol:
+    OS << MO.getSymbolName();
+    if (MO.getOffset())
+      OS << '+' << MO.getOffset();
+    return false;
+  default:
+    return true;
+  }
+}
+
+bool LNP64AsmPrinter::PrintAsmMemoryOperand(const MachineInstr *, unsigned,
+                                            const char *ExtraCode,
+                                            raw_ostream &) {
+  return ExtraCode == nullptr || ExtraCode[0] == '\0';
 }
 
 void LNP64AsmPrinter::emitInstruction(const MachineInstr *MI) {

@@ -2109,6 +2109,9 @@ mod tests {
         assert!(dag_isel.contains("LNP64::ST_B"));
         assert!(asm_printer.contains("RegisterAsmPrinter<LNP64AsmPrinter>"));
         assert!(asm_printer.contains("void LNP64AsmPrinter::emitInstruction"));
+        assert!(asm_printer.contains("PrintAsmOperand"));
+        assert!(asm_printer.contains("printLNP64AsmReg"));
+        assert!(asm_printer.contains("PrintAsmMemoryOperand"));
         assert!(asm_printer.contains("MachineOperand::MO_MachineBasicBlock"));
         assert!(asm_printer.contains("MachineOperand::MO_GlobalAddress"));
         assert!(asm_printer.contains("MachineOperand::MO_ExternalSymbol"));
@@ -2176,10 +2179,16 @@ mod tests {
         assert!(isel.contains("getLNP64SignedLoadInstr"));
         assert!(isel.contains("getLNP64SignedLoadShift"));
         assert!(isel.contains("setTruncStoreAction(MVT::i64, MemVT, Legal)"));
+        assert!(isel.contains("LNP64TargetLowering::getConstraintType"));
+        assert!(isel.contains("return C_RegisterClass"));
+        assert!(isel.contains("LNP64TargetLowering::getRegForInlineAsmConstraint"));
+        assert!(isel.contains("return std::make_pair(0U, &LNP64::GPRRegClass)"));
         assert!(isel.contains("computeRegisterProperties"));
         assert!(isel.contains("varargs lowering is not implemented yet"));
         assert!(isel_header.contains("getTargetNodeName"));
         assert!(isel_header.contains("LowerOperation"));
+        assert!(isel_header.contains("getConstraintType"));
+        assert!(isel_header.contains("getRegForInlineAsmConstraint"));
         assert!(isel_header.contains("EmitInstrWithCustomInserter"));
         assert!(isel_header.contains("BR_EQ"));
         assert!(isel_header.contains("BR_ULT"));

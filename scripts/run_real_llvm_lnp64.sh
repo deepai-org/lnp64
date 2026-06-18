@@ -264,6 +264,30 @@ grep -q 'push r' "$intrinsic_push_dump"
 printf 'real LLVM LNP64 clang intrinsic push object smoke passed: %s\n' \
   "$intrinsic_push_obj"
 
+inline_asm_c="$build_dir/inline-asm-smoke.c"
+cat >"$inline_asm_c" <<'C'
+unsigned long twice(unsigned long x) {
+  __asm__ volatile ("add %0, %0, %0" : "+r"(x));
+  return x;
+}
+
+int main(void) {
+  return (int)twice(7) - 14;
+}
+C
+
+inline_asm_obj="$build_dir/inline-asm-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$inline_asm_c" -o "$inline_asm_obj"
+test -s "$inline_asm_obj"
+inline_asm_dump="$build_dir/inline-asm-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$inline_asm_obj" \
+  >"$inline_asm_dump"
+grep -q 'add r' "$inline_asm_dump"
+printf 'real LLVM LNP64 clang inline asm object smoke passed: %s\n' \
+  "$inline_asm_obj"
+
 exit_c="$build_dir/exit-smoke.c"
 cat >"$exit_c" <<'C'
 int main(void) {
@@ -556,6 +580,13 @@ intrinsic_push_elf="$build_dir/lnp64-intrinsic-push-linked.elf"
 test -s "$intrinsic_push_elf"
 printf 'real LLVM LNP64 lld intrinsic push link smoke passed: %s\n' \
   "$intrinsic_push_elf"
+
+inline_asm_elf="$build_dir/lnp64-inline-asm-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$inline_asm_elf" "$crt0_obj" "$inline_asm_obj"
+test -s "$inline_asm_elf"
+printf 'real LLVM LNP64 lld inline asm link smoke passed: %s\n' \
+  "$inline_asm_elf"
 
 exit_elf="$build_dir/lnp64-exit-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

@@ -39,6 +39,10 @@ public:
                                const LNP64Subtarget &STI);
 
   const char *getTargetNodeName(unsigned Opcode) const override;
+  ConstraintType getConstraintType(StringRef Constraint) const override;
+  std::pair<unsigned, const TargetRegisterClass *>
+  getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
+                               StringRef Constraint, MVT VT) const override;
   SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const override;
   MachineBasicBlock *
   EmitInstrWithCustomInserter(MachineInstr &MI,

@@ -292,6 +292,31 @@ const char *LNP64TargetLowering::getTargetNodeName(unsigned Opcode) const {
   }
 }
 
+TargetLowering::ConstraintType
+LNP64TargetLowering::getConstraintType(StringRef Constraint) const {
+  if (Constraint.size() == 1) {
+    switch (Constraint[0]) {
+    case 'r':
+      return C_RegisterClass;
+    case 'm':
+      return C_Memory;
+    case 'i':
+      return C_Immediate;
+    default:
+      break;
+    }
+  }
+  return TargetLowering::getConstraintType(Constraint);
+}
+
+std::pair<unsigned, const TargetRegisterClass *>
+LNP64TargetLowering::getRegForInlineAsmConstraint(
+    const TargetRegisterInfo *TRI, StringRef Constraint, MVT VT) const {
+  if (Constraint == "r")
+    return std::make_pair(0U, &LNP64::GPRRegClass);
+  return TargetLowering::getRegForInlineAsmConstraint(TRI, Constraint, VT);
+}
+
 SDValue LNP64TargetLowering::LowerOperation(SDValue Op,
                                             SelectionDAG &DAG) const {
   switch (Op.getOpcode()) {
