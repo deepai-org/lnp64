@@ -532,6 +532,7 @@ struct FdCapability {
     sealed: bool,
     narrowable: bool,
     revocable: bool,
+    close_on_exec: bool,
     lineage: u64,
     revoked: bool,
 }
@@ -543,6 +544,7 @@ impl FdCapability {
             sealed: false,
             narrowable: true,
             revocable: true,
+            close_on_exec: false,
             lineage,
             revoked: false,
         }
@@ -2388,7 +2390,7 @@ impl Machine {
                     .unwrap_or(true);
                 let layout = ProcessLayout::for_process(pid, domain_id, aslr_enabled);
                 let entry_page = Self::build_process_entry_page(&args, &env)?;
-                self.process_mut()?.exec(program, layout);
+                self.exec_process_image(program, layout)?;
                 let pid = self.thread()?.pid;
                 let tid = self.thread()?.tid;
                 *self.thread_mut()? = Thread::new(tid, pid, layout.stack_top);
@@ -3493,6 +3495,32 @@ impl Machine {
         self.process_mut()?.fds[fd] = FdHandle::Closed;
         let lineage = self.fresh_fd_capability().lineage;
         self.install_fd_capability(fd, FdCapability::closed(lineage))?;
+        Ok(())
+    }
+
+    fn exec_process_image(
+        &mut self,
+        program: Program,
+        layout: ProcessLayout,
+    ) -> Result<(), String> {
+        let close_fds: Vec<usize> = {
+            let process = self.process()?;
+            process
+                .fd_capabilities
+                .iter()
+                .enumerate()
+                .filter(|(idx, capability)| {
+                    *idx != MESSAGE_ENDPOINT_FD
+                        && capability.close_on_exec
+                        && !matches!(process.fds.get(*idx), Some(FdHandle::Closed) | None)
+                })
+                .map(|(idx, _)| idx)
+                .collect()
+        };
+        for fd in close_fds {
+            self.close_fd_index(fd)?;
+        }
+        self.process_mut()?.exec(program, layout);
         Ok(())
     }
 
@@ -12986,6 +13014,7 @@ mod tests {
                 sealed: false,
                 narrowable: true,
                 revocable: true,
+                close_on_exec: false,
                 lineage: 99,
                 revoked: false,
             };
@@ -13022,6 +13051,59 @@ mod tests {
         assert_eq!(process.namespace_root.as_ref(), Some(&root));
         assert_eq!(process.cwd, cwd);
         assert_eq!(process.errno, 77);
+    }
+
+    #[test]
+    fn exec_closes_fdrs_marked_close_on_exec_before_replacement() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let child_path = std::env::temp_dir().join(format!("lnp64_exec_cloexec_{unique}.s"));
+        fs::write(&child_path, ".text\n  EXIT r0\n").unwrap();
+        let child_path = child_path.to_string_lossy();
+
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let preserved = Rc::new(RefCell::new(7));
+        let cloexec = Rc::new(RefCell::new(11));
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[9] = FdHandle::Counter(Rc::clone(&preserved));
+            process.fd_generations[9] = 44;
+            process.fd_capabilities[9] = FdCapability::full(90);
+            process.fds[10] = FdHandle::Counter(Rc::clone(&cloexec));
+            process.fd_generations[10] = 55;
+            process.fd_capabilities[10] = FdCapability {
+                close_on_exec: true,
+                ..FdCapability::full(100)
+            };
+        }
+        let path_addr = ARG_BASE + 0x2000;
+        machine
+            .write_bytes(path_addr, child_path.as_bytes())
+            .unwrap();
+        machine
+            .write_bytes(path_addr + child_path.len() as u64, &[0])
+            .unwrap();
+        machine.write_reg(Reg(1), path_addr).unwrap();
+        machine.write_reg(Reg(2), 0).unwrap();
+        machine.write_reg(Reg(3), 0).unwrap();
+
+        assert!(machine.exec(Instr::Exec(Reg(1), Reg(2), Reg(3))).unwrap());
+
+        let _ = fs::remove_file(child_path.as_ref());
+        let process = machine.process().unwrap();
+        match &process.fds[9] {
+            FdHandle::Counter(value) => assert!(Rc::ptr_eq(value, &preserved)),
+            _ => panic!("expected preserved counter FDR"),
+        }
+        assert_eq!(process.fd_generations[9], 44);
+        assert!(!process.fd_capabilities[9].close_on_exec);
+        assert!(matches!(process.fds[10], FdHandle::Closed));
+        assert_ne!(process.fd_generations[10], 55);
+        assert!(process.fd_capabilities[10].revoked);
+        assert!(!process.fd_capabilities[10].close_on_exec);
     }
 
     #[test]
