@@ -7447,6 +7447,14 @@ impl Machine {
 
     fn instruction_fetch_fault(&self, addr: u64) -> Result<Option<String>, String> {
         let process = self.process()?;
+        let start = usize::try_from(addr).map_err(|_| {
+            format!("hardware SIGSEGV: unmapped address 0x{addr:x} + 1 (outside process memory)")
+        })?;
+        if start >= process.memory.len() {
+            return Ok(Some(format!(
+                "hardware SIGSEGV: unmapped address 0x{addr:x} + 1 (outside process memory)"
+            )));
+        }
         let Some(vma) = process.vmas.iter().find(|vma| vma.contains(addr, 1)) else {
             return Ok(None);
         };
@@ -14250,6 +14258,30 @@ mod tests {
         machine.thread_mut().unwrap().ip = guarded as usize;
         let err = machine.run().unwrap_err();
         assert!(err.contains("guard page execute"), "{err}");
+    }
+
+    #[test]
+    fn instruction_fetch_rejects_vma_outside_process_memory() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        let addr = MEMORY_SIZE as u64 + 8;
+        machine
+            .process_mut()
+            .unwrap()
+            .vmas
+            .push(Vma::anonymous(addr, 8, 0b101));
+        machine.thread_mut().unwrap().ip = addr as usize;
+
+        let err = machine.run().unwrap_err();
+        assert!(err.contains("outside process memory"), "{err}");
+        assert!(!err.contains("dynamic instruction fetch"), "{err}");
     }
 
     #[test]
