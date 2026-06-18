@@ -8,7 +8,9 @@ using namespace llvm;
 #define GET_INSTRINFO_CTOR_DTOR
 #include "LNP64GenInstrInfo.inc"
 
-LNP64InstrInfo::LNP64InstrInfo() : LNP64GenInstrInfo(LNP64::RET) {}
+LNP64InstrInfo::LNP64InstrInfo()
+    : LNP64GenInstrInfo(/*CFSetupOpcode=*/~0u, /*CFDestroyOpcode=*/~0u,
+                        /*CatchRetOpcode=*/~0u, /*ReturnOpcode=*/LNP64::RET) {}
 
 void LNP64InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
                                  MachineBasicBlock::iterator I,

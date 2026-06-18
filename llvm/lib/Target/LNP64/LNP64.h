@@ -6,7 +6,11 @@
 
 namespace llvm {
 
+class FunctionPass;
 class LNP64TargetMachine;
+
+FunctionPass *createLNP64ISelDag(LNP64TargetMachine &TM,
+                                 CodeGenOpt::Level OptLevel);
 
 } // end namespace llvm
 

@@ -6,18 +6,22 @@ tablegen(LLVM LNP64GenRegisterInfo.inc -gen-register-info)
 tablegen(LLVM LNP64GenInstrInfo.inc -gen-instr-info)
 tablegen(LLVM LNP64GenCallingConv.inc -gen-callingconv)
 tablegen(LLVM LNP64GenSubtargetInfo.inc -gen-subtarget)
+tablegen(LLVM LNP64GenDAGISel.inc -gen-dag-isel)
 
 add_public_tablegen_target(LNP64CommonTableGen)
 
 add_llvm_target(LNP64CodeGen
+  LNP64AsmPrinter.cpp
   LNP64FrameLowering.cpp
   LNP64ISelLowering.cpp
+  LNP64ISelDAGToDAG.cpp
   LNP64InstrInfo.cpp
   LNP64RegisterInfo.cpp
   LNP64Subtarget.cpp
   LNP64TargetMachine.cpp
 
   LINK_COMPONENTS
+  AsmPrinter
   CodeGen
   Core
   MC

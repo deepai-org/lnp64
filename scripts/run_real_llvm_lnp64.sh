@@ -80,4 +80,27 @@ cmake -S "$project_dir/llvm" -B "$build_dir" -G Ninja \
   -DLLVM_ENABLE_LIBEDIT=OFF
 
 ninja -C "$build_dir" -j "$jobs" llc
-"$build_dir/bin/llc" --version | sed -n '1,12p'
+
+llc="$build_dir/bin/llc"
+"$llc" --version | sed -n '1,12p'
+
+smoke_ir="$(mktemp)"
+smoke_asm="$(mktemp)"
+smoke_obj="$build_dir/lnp64-smoke.o"
+trap 'rm -f "$smoke_ir" "$smoke_asm"' EXIT
+
+cat >"$smoke_ir" <<'IR'
+define i64 @main() {
+entry:
+  ret i64 7
+}
+IR
+
+"$llc" -mtriple=lnp64-unknown-none -verify-machineinstrs -filetype=null \
+  "$smoke_ir" -o /dev/null
+"$llc" -mtriple=lnp64-unknown-none "$smoke_ir" -o "$smoke_asm"
+grep -q '^li r1, 7$' "$smoke_asm"
+grep -q '^ret$' "$smoke_asm"
+"$llc" -mtriple=lnp64-unknown-none -filetype=obj "$smoke_ir" -o "$smoke_obj"
+test -s "$smoke_obj"
+printf 'real LLVM LNP64 llc smoke passed: %s\n' "$smoke_obj"

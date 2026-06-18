@@ -1399,7 +1399,11 @@ mod tests {
         assert!(real_llc.contains("git clone"));
         assert!(real_llc.contains("LLVM_TARGETS_TO_BUILD=LNP64"));
         assert!(real_llc.contains(r#"ninja -C "$build_dir""#));
-        assert!(real_llc.contains(r#""$build_dir/bin/llc" --version"#));
+        assert!(real_llc.contains(r#"llc="$build_dir/bin/llc""#));
+        assert!(real_llc.contains(r#""$llc" --version"#));
+        assert!(real_llc.contains("-verify-machineinstrs"));
+        assert!(real_llc.contains("-filetype=obj"));
+        assert!(real_llc.contains("real LLVM LNP64 llc smoke passed"));
         assert!(real_llc.contains("rewrite_with_perl"));
         assert!(real_llc_docker.contains("Dockerfile.llvm"));
         assert!(real_llc_docker.contains("scripts/run_real_llvm_lnp64.sh"));
@@ -1753,7 +1757,9 @@ mod tests {
             "llvm/lib/Target/LNP64/LNP64InstrInfo.cpp",
             "llvm/lib/Target/LNP64/LNP64RegisterInfo.cpp",
             "llvm/lib/Target/LNP64/LNP64ISelLowering.cpp",
+            "llvm/lib/Target/LNP64/LNP64ISelDAGToDAG.cpp",
             "llvm/lib/Target/LNP64/LNP64FrameLowering.cpp",
+            "llvm/lib/Target/LNP64/LNP64AsmPrinter.cpp",
             "llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCTargetDesc.cpp",
             "llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCAsmInfo.cpp",
             "llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCCodeEmitter.cpp",
@@ -1781,7 +1787,9 @@ mod tests {
             "llvm/lib/Target/LNP64/LNP64InstrInfo.cpp",
             "llvm/lib/Target/LNP64/LNP64RegisterInfo.cpp",
             "llvm/lib/Target/LNP64/LNP64ISelLowering.cpp",
+            "llvm/lib/Target/LNP64/LNP64ISelDAGToDAG.cpp",
             "llvm/lib/Target/LNP64/LNP64FrameLowering.cpp",
+            "llvm/lib/Target/LNP64/LNP64AsmPrinter.cpp",
             "llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCTargetDesc.cpp",
             "llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCAsmInfo.cpp",
             "llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCCodeEmitter.cpp",
@@ -1834,8 +1842,10 @@ mod tests {
         let disassembler =
             include_str!("../llvm/lib/Target/LNP64/Disassembler/LNP64Disassembler.cpp");
         let target_machine = include_str!("../llvm/lib/Target/LNP64/LNP64TargetMachine.cpp");
+        let asm_printer = include_str!("../llvm/lib/Target/LNP64/LNP64AsmPrinter.cpp");
         let subtarget = include_str!("../llvm/lib/Target/LNP64/LNP64Subtarget.cpp");
         let isel = include_str!("../llvm/lib/Target/LNP64/LNP64ISelLowering.cpp");
+        let dag_isel = include_str!("../llvm/lib/Target/LNP64/LNP64ISelDAGToDAG.cpp");
         let isel_header = include_str!("../llvm/lib/Target/LNP64/LNP64ISelLowering.h");
         let frame = include_str!("../llvm/lib/Target/LNP64/LNP64FrameLowering.cpp");
         let reginfo = include_str!("../llvm/lib/Target/LNP64/LNP64RegisterInfo.cpp");
@@ -1881,12 +1891,16 @@ mod tests {
             assert!(instr_td.contains(shape), "instr TableGen missing {shape}");
         }
         assert!(cmake.contains("LNP64GenRegisterInfo.inc"));
+        assert!(cmake.contains("LNP64GenDAGISel.inc"));
+        assert!(cmake.contains("AsmPrinter"));
         assert!(cmake.contains("add_llvm_component_group(LNP64)"));
         assert!(cmake.contains("ADD_TO_COMPONENT"));
         for source in [
             "LNP64TargetMachine.cpp",
+            "LNP64AsmPrinter.cpp",
             "LNP64Subtarget.cpp",
             "LNP64ISelLowering.cpp",
+            "LNP64ISelDAGToDAG.cpp",
             "LNP64FrameLowering.cpp",
             "add_subdirectory(InstPrinter)",
             "add_subdirectory(AsmParser)",
@@ -1948,8 +1962,22 @@ mod tests {
         assert!(disassembler.contains("decodeBranchTarget"));
         assert!(disassembler.contains("MCDisassembler::Fail"));
         assert!(target_machine.contains("LLVMInitializeLNP64Target"));
+        assert!(target_machine.contains("LLVMInitializeLNP64AsmPrinter"));
+        assert!(target_machine.contains("createPassConfig"));
+        assert!(target_machine.contains("addInstSelector"));
+        assert!(target_machine.contains("createLNP64ISelDag"));
+        assert!(target_machine.contains("TargetLoweringObjectFileELF"));
         assert!(target_machine.contains("e-m:e-p:64:64-i64:64-n64-S128"));
         assert!(target_machine.contains("initAsmInfo()"));
+        assert!(dag_isel.contains("SelectionDAGISel"));
+        assert!(dag_isel.contains("LNP64GenDAGISel.inc"));
+        assert!(dag_isel.contains("SelectCode(Node)"));
+        assert!(asm_printer.contains("RegisterAsmPrinter<LNP64AsmPrinter>"));
+        assert!(asm_printer.contains("void LNP64AsmPrinter::emitInstruction"));
+        assert!(asm_printer.contains("MachineOperand::MO_MachineBasicBlock"));
+        assert!(asm_printer.contains("MachineOperand::MO_GlobalAddress"));
+        assert!(asm_printer.contains("MachineOperand::MO_ExternalSymbol"));
+        assert!(asm_printer.contains("EmitToStreamer(*OutStreamer, Inst)"));
         assert!(subtarget.contains("TLInfo(TM, *this)"));
         assert!(isel.contains("addRegisterClass(MVT::i64"));
         assert!(isel.contains("ISD::ADD"));
@@ -2061,6 +2089,9 @@ mod tests {
         assert!(instr_td.contains("Uses = [FLAGS]"));
         assert!(instr_td.contains("let Pattern = [(LNP64retflag)]"));
         assert!(instr_td.contains("isBranch = 1"));
+        assert!(instr_info.contains("/*CFSetupOpcode=*/~0u"));
+        assert!(instr_info.contains("/*CFDestroyOpcode=*/~0u"));
+        assert!(instr_info.contains("/*ReturnOpcode=*/LNP64::RET"));
         assert!(instr_info.contains("copyPhysReg"));
         assert!(instr_info.contains("BuildMI(MBB, I, DL, get(LNP64::MOV), DestReg)"));
         assert!(instr_info.contains("storeRegToStackSlot"));
@@ -2069,6 +2100,7 @@ mod tests {
         assert!(isel.contains("setStackPointerRegisterToSaveRestore(LNP64::R31)"));
         assert!(frame.contains("StackGrowsDown"));
         assert!(frame.contains("bool LNP64FrameLowering::hasFP"));
+        assert!(frame.contains("/*LocalAreaOffset=*/0"));
         assert!(frame.contains("Align(16)"));
         assert!(frame.contains("emitSPAdjust"));
         assert!(frame.contains("LNP64::R30"));

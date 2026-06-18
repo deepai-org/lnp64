@@ -29,7 +29,7 @@ static void emitSPAdjust(MachineFunction &MF, MachineBasicBlock &MBB,
 }
 
 LNP64FrameLowering::LNP64FrameLowering()
-    : TargetFrameLowering(StackGrowsDown, Align(16), /*LocalAreaOffset=*/8) {}
+    : TargetFrameLowering(StackGrowsDown, Align(16), /*LocalAreaOffset=*/0) {}
 
 void LNP64FrameLowering::emitPrologue(MachineFunction &MF,
                                       MachineBasicBlock &MBB) const {
@@ -44,4 +44,4 @@ void LNP64FrameLowering::emitEpilogue(MachineFunction &MF,
                int64_t(StackSize));
 }
 
-bool LNP64FrameLowering::hasFP(const MachineFunction &) const { return true; }
+bool LNP64FrameLowering::hasFP(const MachineFunction &) const { return false; }
