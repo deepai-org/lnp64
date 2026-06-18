@@ -2560,6 +2560,7 @@ impl Machine {
                 let addr = self.read_reg(addr_reg)?;
                 let count = self.read_reg(count_reg)?;
                 let mut to_wake = Vec::new();
+                let mut remove_waiter_entry = false;
                 if let Some(waiters) = self.futex_waiters.get_mut(&addr) {
                     for _ in 0..count {
                         let Some(tid) = waiters.pop_front() else {
@@ -2567,6 +2568,10 @@ impl Machine {
                         };
                         to_wake.push(tid);
                     }
+                    remove_waiter_entry = waiters.is_empty();
+                }
+                if remove_waiter_entry {
+                    self.futex_waiters.remove(&addr);
                 }
                 for tid in to_wake {
                     self.wake_thread(tid);
@@ -13390,6 +13395,29 @@ mod tests {
         machine.tick_sleepers();
         assert!(machine.sleepers.is_empty());
         assert!(machine.ready.contains(&1));
+    }
+
+    #[test]
+    fn futex_wake_removes_empty_waiter_entry() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine
+            .clone_with_profile(CloneProfile::NewThreadSharedVm, Reg(2), Some(0))
+            .unwrap();
+        let waiter_tid = machine.thread().unwrap().regs[2];
+        machine.ready.retain(|tid| *tid != waiter_tid);
+        machine
+            .futex_waiters
+            .entry(0x100)
+            .or_default()
+            .push_back(waiter_tid);
+        machine.thread_mut().unwrap().regs[3] = 0x100;
+        machine.thread_mut().unwrap().regs[4] = 1;
+
+        machine.exec(Instr::FutexWake(Reg(3), Reg(4))).unwrap();
+
+        assert!(!machine.futex_waiters.contains_key(&0x100));
+        assert!(machine.ready.contains(&waiter_tid));
     }
 
     #[test]
