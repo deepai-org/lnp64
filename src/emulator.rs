@@ -1522,15 +1522,14 @@ impl Machine {
                     self.ready.retain(|tid| *tid != self.current_tid);
                     return Ok(false);
                 }
-                self.set_errno(0)?;
-                self.write_reg(result, 0)?;
+                self.complete_reg_ok(result, 0)?;
             }
             Instr::AwaitDyn(result, fd_reg, mask) => {
                 Self::ensure_result_reg_writable(result)?;
                 let fd = self.read_reg(fd_reg)?;
                 let mask = self.read_reg(mask)?;
                 let Some(fd) = self.checked_fd_index(fd)? else {
-                    self.write_reg(result, -1i64 as u64)?;
+                    self.complete_reg_err(result, 9)?;
                     return Ok(true);
                 };
                 let Some(ready) = self.await_fd_ready_or_error(result, fd, mask)? else {
@@ -1541,8 +1540,7 @@ impl Machine {
                     self.ready.retain(|tid| *tid != self.current_tid);
                     return Ok(false);
                 }
-                self.set_errno(0)?;
-                self.write_reg(result, 0)?;
+                self.complete_reg_ok(result, 0)?;
             }
             Instr::PollFd(result, fd, events) => {
                 Self::ensure_result_reg_writable(result)?;
@@ -7849,17 +7847,15 @@ impl Machine {
         mask: u64,
     ) -> Result<Option<bool>, String> {
         if fd >= FDR_COUNT {
-            self.set_status_errno(9)?;
-            self.write_reg(result, -1i64 as u64)?;
+            self.complete_reg_err(result, 9)?;
             return Ok(None);
         }
-        if self.ensure_fd_right(fd, CAP_RIGHT_POLL).is_err() {
-            self.write_reg(result, -1i64 as u64)?;
+        if let Err(errno) = self.fd_right_errno(fd, CAP_RIGHT_POLL) {
+            self.complete_reg_err(result, errno)?;
             return Ok(None);
         }
         if matches!(self.process()?.fds[fd], FdHandle::Closed) {
-            self.set_status_errno(9)?;
-            self.write_reg(result, -1i64 as u64)?;
+            self.complete_reg_err(result, 9)?;
             return Ok(None);
         }
         if mask == 0 {
