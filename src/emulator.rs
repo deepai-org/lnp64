@@ -11489,6 +11489,49 @@ mod tests {
     }
 
     #[test]
+    fn env_get_record_copies_are_length_bounded() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        machine
+            .set_args(&["prog".to_string(), "arg".to_string()])
+            .unwrap();
+        let out = ARG_BASE + 0x900;
+        let sentinel = vec![0xa5; 64];
+
+        machine.write_bytes(out, &sentinel).unwrap();
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_PROCESS_ENTRY_RECORD;
+        machine.thread_mut().unwrap().regs[3] = out;
+        machine.thread_mut().unwrap().regs[4] = 16;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(3), Reg(4)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], 16);
+        assert_eq!(machine.load_u64(out).unwrap(), 2);
+        assert_eq!(machine.load_u64(out + 8).unwrap(), ARG_BASE + 8);
+        assert_eq!(machine.read_bytes(out + 16, 48).unwrap(), vec![0xa5; 48]);
+
+        machine.write_bytes(out, &sentinel).unwrap();
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_TOPOLOGY_RECORD;
+        machine.thread_mut().unwrap().regs[3] = out;
+        machine.thread_mut().unwrap().regs[4] = 24;
+        machine
+            .exec(Instr::EnvGet(Reg(5), Reg(2), Reg(3), Reg(4)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], 24);
+        assert_eq!(machine.load_u64(out).unwrap(), 1);
+        assert_eq!(machine.load_u64(out + 8).unwrap(), 0);
+        assert_eq!(machine.load_u64(out + 16).unwrap(), ROOT_DOMAIN_ID);
+        assert_eq!(machine.read_bytes(out + 24, 40).unwrap(), vec![0xa5; 40]);
+    }
+
+    #[test]
     fn env_get_rejects_bad_keys_and_never_exposes_random_material() {
         let program = Program::parse(
             r#"
