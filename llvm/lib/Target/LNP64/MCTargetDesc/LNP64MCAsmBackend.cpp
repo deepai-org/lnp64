@@ -90,7 +90,8 @@ public:
 
   bool shouldForceRelocation(const MCAssembler &, const MCFixup &Fixup,
                              const MCValue &) override {
-    return Fixup.getKind() == MCFixupKind(LNP64::fixup_lnp64_branch26) ||
+    return Fixup.getKind() == MCFixupKind(LNP64::fixup_lnp64_abs32) ||
+           Fixup.getKind() == MCFixupKind(LNP64::fixup_lnp64_branch26) ||
            Fixup.getKind() == MCFixupKind(LNP64::fixup_lnp64_pcrel32);
   }
 

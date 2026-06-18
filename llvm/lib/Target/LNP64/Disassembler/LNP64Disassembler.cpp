@@ -20,6 +20,12 @@ static uint32_t readLE32(ArrayRef<uint8_t> Bytes) {
          (uint32_t(Bytes[2]) << 16) | (uint32_t(Bytes[3]) << 24);
 }
 
+static uint32_t readLE32At(ArrayRef<uint8_t> Bytes, unsigned Offset) {
+  return uint32_t(Bytes[Offset]) | (uint32_t(Bytes[Offset + 1]) << 8) |
+         (uint32_t(Bytes[Offset + 2]) << 16) |
+         (uint32_t(Bytes[Offset + 3]) << 24);
+}
+
 static void addReg(MCInst &Instr, unsigned Enc) {
   Instr.addOperand(MCOperand::createReg(getGPR(Enc)));
 }
@@ -65,6 +71,16 @@ public:
       Instr.setOpcode(LNP64::MOV);
       addReg(Instr, A);
       addReg(Instr, B);
+      return MCDisassembler::Success;
+    case 0x03:
+      if (Bytes.size() < 8) {
+        Size = 0;
+        return MCDisassembler::Fail;
+      }
+      Size = 8;
+      Instr.setOpcode(LNP64::LA);
+      addReg(Instr, A);
+      addImm(Instr, readLE32At(Bytes, 4));
       return MCDisassembler::Success;
     case 0x10:
       Instr.setOpcode(LNP64::ADD);

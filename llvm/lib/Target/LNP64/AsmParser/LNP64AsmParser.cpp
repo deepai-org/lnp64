@@ -272,6 +272,7 @@ private:
         StringSwitch<unsigned>(Mnemonic)
             .Case("nop", LNP64::NOP)
             .Case("li", LNP64::LI)
+            .Case("la", LNP64::LA)
             .Case("mov", LNP64::MOV)
             .Case("add", LNP64::ADD)
             .Case("sub", LNP64::SUB)
@@ -317,6 +318,8 @@ private:
 
     if (Opcode == LNP64::LI)
       return addRegImm(Inst, Operands);
+    if (Opcode == LNP64::LA)
+      return addRegAddress(Inst, Operands);
     if (Opcode == LNP64::MOV || Opcode == LNP64::NOT)
       return addRegReg(Inst, Operands);
     if (Opcode == LNP64::ADD || Opcode == LNP64::SUB ||
@@ -376,6 +379,20 @@ private:
       return false;
     Inst.addOperand(MCOperand::createReg(Reg->getReg()));
     Inst.addOperand(MCOperand::createImm(Imm->getImm()));
+    return true;
+  }
+
+  static bool addRegAddress(MCInst &Inst, const OperandVector &Operands) {
+    const LNP64Operand *Reg = getOp(Operands, 1);
+    const LNP64Operand *Addr = getOp(Operands, 2);
+    if (Operands.size() != 3 || !Reg || !Addr || !Reg->isReg() ||
+        !Addr->isImm())
+      return false;
+    Inst.addOperand(MCOperand::createReg(Reg->getReg()));
+    if (Addr->isExprValue())
+      Inst.addOperand(MCOperand::createExpr(Addr->getExpr()));
+    else
+      Inst.addOperand(MCOperand::createImm(Addr->getImm()));
     return true;
   }
 

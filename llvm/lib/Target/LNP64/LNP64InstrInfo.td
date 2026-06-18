@@ -116,7 +116,7 @@ def LI : LNP64RI<"li"> {
 def MOV : LNP64RR<"mov">;
 def LA : LNP64Inst<(outs GPR:$rd), (ins i64imm:$target), "la",
                    "\t$rd, $target"> {
-  let isPseudo = 1;
+  let Size = 8;
 }
 def : Pat<(i64 (LNP64wrapper tglobaladdr:$target)), (LA tglobaladdr:$target)>;
 

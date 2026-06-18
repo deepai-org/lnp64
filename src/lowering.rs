@@ -1426,9 +1426,10 @@ mod tests {
         assert!(real_llc.contains("int main(void)"));
         assert!(real_llc.contains("scalar-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang scalar compile smoke passed"));
-        assert!(real_llc.contains("-S demos/hello.c"));
-        assert!(real_llc.contains("hello-clang-smoke.s"));
-        assert!(real_llc.contains("real LLVM LNP64 clang hello assembly smoke passed"));
+        assert!(real_llc.contains("-c demos/hello.c"));
+        assert!(real_llc.contains("hello-clang-smoke.o"));
+        assert!(real_llc.contains("hello-clang-smoke.dump"));
+        assert!(real_llc.contains("real LLVM LNP64 clang hello object smoke passed"));
         assert!(real_llc.contains("toolchain/crt0_lnp64.s"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc crt0 smoke passed"));
         assert!(real_llc.contains("--triple=lnp64-unknown-none"));
@@ -1971,6 +1972,8 @@ mod tests {
         assert!(inst_printer.contains("call_reg"));
         assert!(mc_emitter.contains("case LNP64::AND"));
         assert!(mc_emitter.contains("case LNP64::CMP"));
+        assert!(mc_emitter.contains("case LNP64::LA"));
+        assert!(mc_emitter.contains("fixup_lnp64_abs32"));
         assert!(mc_emitter.contains("case LNP64::LD_W"));
         assert!(mc_emitter.contains("case LNP64::LD_H"));
         assert!(mc_emitter.contains("case LNP64::ST_B"));
@@ -1982,6 +1985,7 @@ mod tests {
         assert!(asm_parser.contains("tryParseRegister"));
         assert!(asm_parser.contains("parseImmediateOrMemory"));
         assert!(asm_parser.contains("buildInstruction"));
+        assert!(asm_parser.contains(r#".Case("la", LNP64::LA)"#));
         assert!(asm_parser.contains(r#".Case("call", LNP64::CALL)"#));
         assert!(asm_parser.contains(r#".Case("errno_get", LNP64::ERRNO_GET)"#));
         assert!(asm_parser.contains(r#".Case("errno_set", LNP64::ERRNO_SET)"#));
@@ -1994,6 +1998,8 @@ mod tests {
         assert!(disassembler.contains("ArrayRef<uint8_t> Bytes"));
         assert!(!disassembler.contains("MemoryObject"));
         assert!(disassembler.contains("case 0x10"));
+        assert!(disassembler.contains("case 0x03"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::LA)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::ADD)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::AND)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::CMP)"));
@@ -2116,6 +2122,7 @@ mod tests {
         assert!(instr_td.contains("def LNP64wrapper"));
         assert!(instr_td.contains("(set GPR:$rd, simm16_imm:$imm)"));
         assert!(instr_td.contains("def LA"));
+        assert!(instr_td.contains("let Size = 8"));
         assert!(instr_td.contains("(i64 (LNP64wrapper tglobaladdr:$target))"));
         assert!(instr_td.contains("(set GPR:$rd, (add GPR:$rs1, GPR:$rs2))"));
         assert!(instr_td.contains("(set GPR:$rd, (xor GPR:$rs, all_ones_imm))"));

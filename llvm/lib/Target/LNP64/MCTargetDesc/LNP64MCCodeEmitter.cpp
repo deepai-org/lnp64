@@ -26,6 +26,10 @@ static uint32_t encodeFixed32RI(uint8_t Opcode, unsigned Rd, int64_t Imm) {
          (uint32_t(Imm) & 0xffff);
 }
 
+static uint32_t encodeFixed32R(uint8_t Opcode, unsigned Rd) {
+  return (uint32_t(Opcode) << 24) | ((Rd & 0x1f) << 19);
+}
+
 static uint32_t encodeFixed32RR(uint8_t Opcode, unsigned Rd, unsigned Rs) {
   return (uint32_t(Opcode) << 24) | ((Rd & 0x1f) << 19) |
          ((Rs & 0x1f) << 14);
@@ -69,6 +73,21 @@ static uint32_t encodeFixed32BranchOperand(uint8_t Opcode,
   llvm_unreachable("expected immediate or expression branch operand");
 }
 
+static void emitFixed32AddressOperand(const MCOperand &Operand, raw_ostream &OS,
+                                      SmallVectorImpl<MCFixup> &Fixups) {
+  if (Operand.isImm()) {
+    emitLE32(static_cast<uint32_t>(Operand.getImm()), OS);
+    return;
+  }
+  if (Operand.isExpr()) {
+    Fixups.push_back(MCFixup::create(
+        4, Operand.getExpr(), MCFixupKind(LNP64::fixup_lnp64_abs32)));
+    emitLE32(0, OS);
+    return;
+  }
+  llvm_unreachable("expected immediate or expression address operand");
+}
+
 static unsigned getGPRNo(const MCOperand &Operand) {
   unsigned Reg = Operand.getReg();
   if (Reg < LNP64::R0 || Reg > LNP64::R31)
@@ -92,6 +111,10 @@ public:
       emitLE32(encodeFixed32RI(0x01, getGPRNo(MI.getOperand(0)),
                                MI.getOperand(1).getImm()),
                OS);
+      return;
+    case LNP64::LA:
+      emitLE32(encodeFixed32R(0x03, getGPRNo(MI.getOperand(0))), OS);
+      emitFixed32AddressOperand(MI.getOperand(1), OS, Fixups);
       return;
     case LNP64::MOV:
       emitLE32(encodeFixed32RR(0x02, getGPRNo(MI.getOperand(0)),
