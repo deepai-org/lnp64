@@ -610,8 +610,10 @@ bash scripts/run_formal_rtl_roadmap_audit.sh \
 
 The M5 traces in those runs include `TRACE dma_pin ... pinned=1` before copy/fill
 and `TRACE dma_unpin ... pinned=0` before the permission/revoke/domain fault
-checks. As of 2026-06-18, the strict roadmap audit reports only the missing live
-board evidence file when no compatible iCE40 board/UART capture has been run.
+checks. As of 2026-06-18, the strict hardware audit reports only the missing
+live board evidence file when no compatible iCE40 board/UART capture has been
+run. In environments without a real FPGA, the Docker proof/synth gates are the
+completion evidence and the live-board command remains hardware-only.
 
 Focused M2 gate/fault/signal compatibility work was checked from this checkout
 on 2026-06-18 with these commands:
@@ -725,7 +727,8 @@ bash scripts/run_rtl_s0.sh
 bash scripts/run_rtl_synth_smoke.sh
 ```
 
-The roadmap audit checker has a strict hardware mode for completion audits:
+The roadmap audit checker has a strict hardware-only mode for optional board
+validation:
 
 ```sh
 bash scripts/run_formal_rtl_roadmap_audit.sh
@@ -743,10 +746,10 @@ LNP64_REQUIRE_BOARD_EVIDENCE=1 \
   --board-evidence build/lnp64-board-ice40-s0-evidence.json
 ```
 
-The first command is the lightweight checklist gate and reports pending hardware
-when no board evidence exists. The strict commands are expected to fail until
-`bash scripts/run_rtl_board_docker.sh` has programmed a real board and
-captured/validated the live UART evidence file.
+The first command is the lightweight checklist gate and succeeds without board
+evidence in no-FPGA environments. The strict hardware commands are expected to
+fail until `bash scripts/run_rtl_board_docker.sh` has programmed a real board
+and captured/validated the live UART evidence file.
 
 Run individual RTL/model vertical slices:
 
