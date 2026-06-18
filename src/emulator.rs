@@ -32,6 +32,8 @@ const SIGALRM: u64 = 14;
 const SIGSEGV: u64 = 11;
 const SIG_DFL_HANDLER: usize = 0;
 const SIG_IGN_HANDLER: usize = 1;
+const SOCKET_AF_INET: u64 = 2;
+const SOCKET_TYPE_STREAM: u64 = 1;
 const SOCKET_LEVEL_SOL_SOCKET: u64 = 1;
 const SOCKET_LEVEL_IPPROTO_TCP: u64 = 6;
 const SOCKET_OPT_TCP_NODELAY: u64 = 1;
@@ -4273,6 +4275,12 @@ impl Machine {
             (ObjectKind::Endpoint, ObjectProfile::TcpStream) => {
                 let sock_type = self.load_u64(argblock + 48).map_err(|_| 14u64)?;
                 let protocol = self.load_u64(argblock + 56).map_err(|_| 14u64)?;
+                if arg != SOCKET_AF_INET
+                    || sock_type != SOCKET_TYPE_STREAM
+                    || !(protocol == 0 || protocol == SOCKET_LEVEL_IPPROTO_TCP)
+                {
+                    return Err(22);
+                }
                 let fd = self.install_object_fd(
                     fd0_req,
                     FdHandle::TcpSocket {
@@ -8755,6 +8763,52 @@ mod tests {
         machine.object_ctl(Reg(6), arg).unwrap();
         assert_eq!(machine.thread().unwrap().regs[6], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 1);
+    }
+
+    #[test]
+    fn socket_endpoint_create_rejects_unsupported_profiles_without_installing_fd() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let arg = ARG_BASE + 0x1000;
+
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::Endpoint.code())
+            .unwrap();
+        machine
+            .store_u64(arg + 16, ObjectProfile::TcpStream.code())
+            .unwrap();
+        machine.store_u64(arg + 24, 7).unwrap();
+        machine.store_u64(arg + 40, SOCKET_AF_INET).unwrap();
+        machine.store_u64(arg + 48, 2).unwrap();
+        machine.store_u64(arg + 56, 0).unwrap();
+        machine.object_ctl(Reg(2), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert!(matches!(
+            machine.process().unwrap().fds[7],
+            FdHandle::Closed
+        ));
+
+        machine.store_u64(arg + 48, SOCKET_TYPE_STREAM).unwrap();
+        machine.store_u64(arg + 56, 17).unwrap();
+        machine.object_ctl(Reg(3), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[3], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert!(matches!(
+            machine.process().unwrap().fds[7],
+            FdHandle::Closed
+        ));
+
+        machine.store_u64(arg + 40, 10).unwrap();
+        machine.store_u64(arg + 56, 0).unwrap();
+        machine.object_ctl(Reg(4), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[4], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert!(matches!(
+            machine.process().unwrap().fds[7],
+            FdHandle::Closed
+        ));
     }
 
     #[test]
