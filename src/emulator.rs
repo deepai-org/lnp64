@@ -1413,8 +1413,8 @@ impl Machine {
                     );
                 }
                 let ip = self.resolve_target(target)?;
-                self.thread_mut()?.regs[31] = sp;
                 self.store_u64(sp, ret)?;
+                self.thread_mut()?.regs[31] = sp;
                 self.thread_mut()?.ip = ip;
             }
             Instr::CallReg(target) => {
@@ -1428,8 +1428,8 @@ impl Machine {
                         thread.regs[1], thread.regs[2], thread.regs[3]
                     );
                 }
-                self.thread_mut()?.regs[31] = sp;
                 self.store_u64(sp, ret)?;
+                self.thread_mut()?.regs[31] = sp;
                 self.thread_mut()?.ip = ip;
             }
             Instr::Ret => {
@@ -8018,6 +8018,29 @@ mod tests {
             "#,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn call_preserves_sp_and_ip_when_return_slot_unmapped() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().ip = 7;
+        machine.thread_mut().unwrap().regs[31] = 0;
+
+        let err = machine.exec(Instr::Call(Target::Address(0))).unwrap_err();
+
+        assert!(err.contains("unmapped address"), "{err}");
+        assert_eq!(machine.thread().unwrap().regs[31], 0);
+        assert_eq!(machine.thread().unwrap().ip, 7);
+
+        machine.thread_mut().unwrap().ip = 9;
+        machine.thread_mut().unwrap().regs[2] = 0;
+
+        let err = machine.exec(Instr::CallReg(Reg(2))).unwrap_err();
+
+        assert!(err.contains("unmapped address"), "{err}");
+        assert_eq!(machine.thread().unwrap().regs[31], 0);
+        assert_eq!(machine.thread().unwrap().ip, 9);
     }
 
     fn create_pipe_pair(machine: &mut Machine, read_fd: u64, write_fd: u64) -> (u64, u64) {
