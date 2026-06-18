@@ -254,6 +254,8 @@ python3 -m py_compile \
   scripts/test_fpga_report_checkers.py \
   scripts/check_rtl_dockerfiles.py \
   scripts/test_rtl_dockerfiles_checker.py \
+  scripts/check_rtl_s0_contract.py \
+  scripts/test_rtl_s0_contract_checker.py \
   scripts/check_formal_rtl_roadmap_audit.py \
   scripts/test_formal_rtl_roadmap_strict_audit.py \
   scripts/test_uart_byte_checker.py \
@@ -266,6 +268,7 @@ scripts/test_fpga_bringup_manifest_checker.py
 scripts/test_rtl_synth_constraints_checker.py
 scripts/test_fpga_report_checkers.py
 scripts/test_rtl_dockerfiles_checker.py
+scripts/test_rtl_s0_contract_checker.py
 scripts/test_board_evidence_checker.py
 scripts/test_uart_byte_checker.py
 scripts/test_formal_rtl_roadmap_strict_audit.py
@@ -693,6 +696,7 @@ scripts/test_fpga_bringup_manifest_checker.py
 scripts/check_rtl_track_b_manifest.py
 scripts/test_rtl_track_b_manifest_checker.py
 scripts/check_rtl_s0_contract.py
+scripts/test_rtl_s0_contract_checker.py
 scripts/check_rtl_dockerfiles.py
 scripts/test_rtl_dockerfiles_checker.py
 scripts/test_board_evidence_checker.py
