@@ -9171,6 +9171,13 @@ mod tests {
         assert_eq!(machine.process().unwrap().errno, 0);
         assert_eq!(machine.read_c_string(out).unwrap(), expected);
 
+        machine.write_bytes(path, b"/tmp/inside\0").unwrap();
+        machine.ns_ctl(Reg(9), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[9], expected.len() as u64);
+        assert_eq!(machine.process().unwrap().errno, 0);
+        assert_eq!(machine.read_c_string(out).unwrap(), expected);
+
+        machine.write_bytes(path, b"inside\0").unwrap();
         machine.processes.get_mut(&1).unwrap().fd_capabilities[10].rights &= !CAP_RIGHT_READ;
         machine.ns_ctl(Reg(8), arg).unwrap();
         assert_eq!(machine.thread().unwrap().regs[8], -1i64 as u64);
