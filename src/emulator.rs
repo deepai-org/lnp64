@@ -1511,11 +1511,13 @@ impl Machine {
                 self.write_reg(result, 0)?;
             }
             Instr::PollFd(result, fd, events) => {
+                Self::ensure_result_reg_writable(result)?;
                 let events = self.read_reg(events)?;
                 let revents = self.poll_fd_mask(fd.0 as u64, events)?;
                 self.write_reg(result, revents)?;
             }
             Instr::PollFdDyn(result, fd_reg, events) => {
+                Self::ensure_result_reg_writable(result)?;
                 let fd = self.read_reg(fd_reg)?;
                 let events = self.read_reg(events)?;
                 let revents = match self.checked_fd_index(fd)? {
@@ -13652,6 +13654,37 @@ mod tests {
             .unwrap_err();
 
         assert!(err.contains("hardware-locked stack pointer"), "{err}");
+        assert!(machine.fd_waiters.is_empty());
+        assert!(machine.ready.contains(&1));
+    }
+
+    #[test]
+    fn poll_fd_rejects_locked_result_register_without_errno_side_effects() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        create_pipe_pair(&mut machine, 3, 4);
+        machine.thread_mut().unwrap().regs[2] = POLLIN_MASK;
+        machine.set_errno(123).unwrap();
+
+        let err = machine
+            .exec(Instr::PollFd(Reg(31), FdReg(3), Reg(2)))
+            .unwrap_err();
+
+        assert!(err.contains("hardware-locked stack pointer"), "{err}");
+        assert_eq!(machine.process().unwrap().errno, 123);
+        assert!(machine.fd_waiters.is_empty());
+        assert!(machine.ready.contains(&1));
+
+        machine.thread_mut().unwrap().regs[4] = 3;
+        machine.thread_mut().unwrap().regs[5] = POLLIN_MASK;
+        machine.set_errno(124).unwrap();
+
+        let err = machine
+            .exec(Instr::PollFdDyn(Reg(31), Reg(4), Reg(5)))
+            .unwrap_err();
+
+        assert!(err.contains("hardware-locked stack pointer"), "{err}");
+        assert_eq!(machine.process().unwrap().errno, 124);
         assert!(machine.fd_waiters.is_empty());
         assert!(machine.ready.contains(&1));
     }
