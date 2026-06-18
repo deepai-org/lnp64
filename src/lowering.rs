@@ -1632,6 +1632,7 @@ mod tests {
         let mut layers = std::collections::BTreeSet::new();
         let mut paths = std::collections::BTreeSet::new();
         let mut purposes = Vec::new();
+        let mut statuses = std::collections::BTreeMap::new();
 
         assert_eq!(filemap_path, "toolchain/lnp64_llvm_filemap.manifest");
         assert!(manifest_root.join(filemap_path).is_file());
@@ -1644,10 +1645,17 @@ mod tests {
         for (layer, path, status, purpose) in rows {
             layers.insert(layer);
             assert!(paths.insert(path), "duplicate llvm-project path {path}");
-            assert_eq!(
-                status, "planned",
-                "llvm-project file {path} must stay planned until backend code exists"
+            statuses.insert(path, status);
+            assert!(
+                ["planned", "scaffolded"].contains(&status),
+                "unknown llvm-project status {status} for {path}"
             );
+            if status == "scaffolded" {
+                assert!(
+                    manifest_root.join(path).is_file(),
+                    "scaffolded llvm-project file {path} is missing"
+                );
+            }
             assert!(
                 path.starts_with("llvm/") || path.starts_with("clang/") || path.starts_with("lld/"),
                 "llvm filemap path {path} must name an llvm-project source tree path"
@@ -1696,6 +1704,27 @@ mod tests {
         ] {
             assert!(paths.contains(path), "missing llvm filemap path {path}");
         }
+        for path in [
+            "llvm/lib/Target/LNP64/CMakeLists.txt",
+            "llvm/lib/Target/LNP64/LNP64.td",
+            "llvm/lib/Target/LNP64/LNP64RegisterInfo.td",
+            "llvm/lib/Target/LNP64/LNP64InstrInfo.td",
+            "llvm/lib/Target/LNP64/LNP64CallingConv.td",
+            "llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCTargetDesc.cpp",
+            "llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCCodeEmitter.cpp",
+            "llvm/lib/Target/LNP64/TargetInfo/LNP64TargetInfo.cpp",
+        ] {
+            assert_eq!(statuses[path], "scaffolded", "{path} should be scaffolded");
+        }
+        for path in [
+            "llvm/lib/Target/LNP64/LNP64ISelLowering.cpp",
+            "llvm/lib/Target/LNP64/AsmParser/LNP64AsmParser.cpp",
+            "llvm/lib/Target/LNP64/Disassembler/LNP64Disassembler.cpp",
+            "clang/lib/Basic/Targets/LNP64.cpp",
+            "lld/ELF/Arch/LNP64.cpp",
+        ] {
+            assert_eq!(statuses[path], "planned", "{path} should remain planned");
+        }
         for concept in [
             "register",
             "calling",
@@ -1710,6 +1739,45 @@ mod tests {
                 "llvm filemap must cover {concept}"
             );
         }
+        let target_td = include_str!("../llvm/lib/Target/LNP64/LNP64.td");
+        let registers_td = include_str!("../llvm/lib/Target/LNP64/LNP64RegisterInfo.td");
+        let calling_td = include_str!("../llvm/lib/Target/LNP64/LNP64CallingConv.td");
+        let instr_td = include_str!("../llvm/lib/Target/LNP64/LNP64InstrInfo.td");
+        let cmake = include_str!("../llvm/lib/Target/LNP64/CMakeLists.txt");
+        let target_info = include_str!("../llvm/lib/Target/LNP64/TargetInfo/LNP64TargetInfo.cpp");
+        let mc_desc = include_str!("../llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCTargetDesc.cpp");
+        let mc_emitter =
+            include_str!("../llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCCodeEmitter.cpp");
+
+        assert!(target_td.contains("def LNP64 : Target"));
+        for required in ["GPR", "FDR", "FPR", "VR", "PCR", "LR", "R31"] {
+            assert!(
+                registers_td.contains(required),
+                "register TableGen missing {required}"
+            );
+        }
+        assert!(registers_td.contains(r#"sequence "FD%u", 0, 255"#));
+        assert!(calling_td.contains("CC_LNP64"));
+        assert!(calling_td.contains("R1, R2, R3, R4, R5, R6"));
+        for opcode in [
+            "ADD",
+            "LD",
+            "CALL",
+            "RET",
+            "PULL",
+            "OBJECT_CTL",
+            "CAP_REVOKE",
+        ] {
+            assert!(instr_td.contains(opcode), "instr TableGen missing {opcode}");
+        }
+        assert!(cmake.contains("LNP64GenRegisterInfo.inc"));
+        assert!(cmake.contains("add_llvm_target(LNP64CodeGen"));
+        assert!(target_info.contains("LLVMInitializeLNP64TargetInfo"));
+        assert!(target_info.contains("RegisterTarget<Triple::lnp64>"));
+        assert!(mc_desc.contains("LLVMInitializeLNP64TargetMC"));
+        assert!(mc_desc.contains("RegisterMCCodeEmitter"));
+        assert!(mc_emitter.contains("createLNP64MCCodeEmitter"));
+        assert!(mc_emitter.contains("not implemented yet"));
     }
 
     #[test]
