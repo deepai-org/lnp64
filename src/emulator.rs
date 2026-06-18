@@ -392,6 +392,7 @@ enum FdHandle {
         domain_generation: u64,
         mode: u64,
         completion_fd: Option<usize>,
+        completion_generation: Option<u64>,
         flags: u64,
     },
     TcpSocket {
@@ -450,6 +451,7 @@ impl FdHandle {
                 domain_generation,
                 mode,
                 completion_fd,
+                completion_generation,
                 flags,
             } => Ok(FdHandle::CallGate {
                 entry: *entry,
@@ -457,6 +459,7 @@ impl FdHandle {
                 domain_generation: *domain_generation,
                 mode: *mode,
                 completion_fd: *completion_fd,
+                completion_generation: *completion_generation,
                 flags: *flags,
             }),
             FdHandle::TcpSocket {
@@ -4265,12 +4268,14 @@ impl Machine {
                 if flags & !CALL_GATE_FLAG_CAP_PASS != 0 {
                     return Err(22);
                 }
-                let completion_fd = if completion_fd == 0 {
-                    None
+                let (completion_fd, completion_generation) = if completion_fd == 0 {
+                    (None, None)
                 } else if completion_fd as usize >= FDR_COUNT {
                     return Err(9);
                 } else {
-                    Some(completion_fd as usize)
+                    let fd = completion_fd as usize;
+                    self.fd_right_errno(fd, CAP_RIGHT_WRITE)?;
+                    (Some(fd), Some(self.fd_generation(fd).map_err(|_| 9u64)?))
                 };
                 if mode == CALL_MODE_ASYNC && completion_fd.is_none() {
                     return Err(22);
@@ -4283,6 +4288,7 @@ impl Machine {
                         domain_generation: target_generation,
                         mode,
                         completion_fd,
+                        completion_generation,
                         flags,
                     },
                 )?;
@@ -5258,29 +5264,38 @@ impl Machine {
             self.write_reg(result, -1i64 as u64)?;
             return Ok(());
         }
-        let (entry, domain_id, domain_generation, mode, completion_fd, flags) =
-            match &self.process()?.fds[call_gate_fd] {
-                FdHandle::CallGate {
-                    entry,
-                    domain_id,
-                    domain_generation,
-                    mode,
-                    completion_fd,
-                    flags,
-                } => (
-                    *entry,
-                    *domain_id,
-                    *domain_generation,
-                    *mode,
-                    *completion_fd,
-                    *flags,
-                ),
-                _ => {
-                    self.set_status_errno(9)?;
-                    self.write_reg(result, -1i64 as u64)?;
-                    return Ok(());
-                }
-            };
+        let (
+            entry,
+            domain_id,
+            domain_generation,
+            mode,
+            completion_fd,
+            completion_generation,
+            flags,
+        ) = match &self.process()?.fds[call_gate_fd] {
+            FdHandle::CallGate {
+                entry,
+                domain_id,
+                domain_generation,
+                mode,
+                completion_fd,
+                completion_generation,
+                flags,
+            } => (
+                *entry,
+                *domain_id,
+                *domain_generation,
+                *mode,
+                *completion_fd,
+                *completion_generation,
+                *flags,
+            ),
+            _ => {
+                self.set_status_errno(9)?;
+                self.write_reg(result, -1i64 as u64)?;
+                return Ok(());
+            }
+        };
         if self.domain_ref(domain_id, domain_generation).is_err() {
             self.set_status_errno(116)?;
             self.write_reg(result, -1i64 as u64)?;
@@ -5304,7 +5319,9 @@ impl Machine {
         }
         match mode {
             CALL_MODE_SYNC => self.call_cap_sync(result, entry, domain_id, arg0, arg1),
-            CALL_MODE_ASYNC => self.call_cap_async(result, completion_fd, arg0, arg1),
+            CALL_MODE_ASYNC => {
+                self.call_cap_async(result, completion_fd.zip(completion_generation), arg0, arg1)
+            }
             CALL_MODE_HANDOFF => self.call_cap_handoff(result, entry, domain_id, arg0, arg1),
             _ => {
                 self.set_status_errno(22)?;
@@ -5344,13 +5361,21 @@ impl Machine {
     fn call_cap_async(
         &mut self,
         result: Reg,
-        completion_fd: Option<usize>,
+        completion: Option<(usize, u64)>,
         arg0: u64,
         arg1: u64,
     ) -> Result<(), String> {
+        if let Some((fd, generation)) = completion {
+            if !self.fd_generation_matches(fd, generation)? {
+                return self.complete_reg_err(result, 116);
+            }
+            if let Err(errno) = self.fd_right_errno(fd, CAP_RIGHT_WRITE) {
+                return self.complete_reg_err(result, errno);
+            }
+        }
         let op_id = self.next_call_op_id;
         self.next_call_op_id = self.next_call_op_id.saturating_add(1);
-        if let Some(fd) = completion_fd {
+        if let Some((fd, _)) = completion {
             self.complete_call_fd(fd, op_id, arg0, arg1)?;
             self.poll_fd_waiters();
         }
@@ -14447,6 +14472,7 @@ mod tests {
             domain_generation: 1,
             mode: CALL_MODE_SYNC,
             completion_fd: None,
+            completion_generation: None,
             flags: 0,
         };
         machine.processes.get_mut(&1).unwrap().fd_capabilities[3] = FdCapability::full(3);
@@ -14643,6 +14669,7 @@ mod tests {
             domain_generation: 1,
             mode: CALL_MODE_ASYNC,
             completion_fd: Some(4),
+            completion_generation: Some(1),
             flags: 0,
         };
         machine.call_cap(Reg(6), 3, 10, 20).unwrap();
@@ -14660,6 +14687,7 @@ mod tests {
             domain_generation: 1,
             mode: CALL_MODE_HANDOFF,
             completion_fd: None,
+            completion_generation: None,
             flags: 0,
         };
         machine.call_cap(Reg(6), 3, 33, 44).unwrap();
@@ -14676,12 +14704,14 @@ mod tests {
         let mut machine = test_machine_with_child_domain();
         machine.current_tid = 1;
         create_pipe_pair(&mut machine, 4, 5);
+        let completion_generation = machine.fd_generation(5).unwrap();
         machine.processes.get_mut(&1).unwrap().fds[3] = FdHandle::CallGate {
             entry: 1,
             domain_id: 2,
             domain_generation: 1,
             mode: CALL_MODE_ASYNC,
             completion_fd: Some(5),
+            completion_generation: Some(completion_generation),
             flags: 0,
         };
         machine
@@ -14713,6 +14743,7 @@ mod tests {
             domain_generation: 1,
             mode: CALL_MODE_ASYNC,
             completion_fd: Some(4),
+            completion_generation: Some(1),
             flags: 0,
         };
         machine
@@ -14726,6 +14757,36 @@ mod tests {
         assert!(machine.fd_waiters.is_empty());
         assert_eq!(machine.thread().unwrap().regs[6], 1);
         assert_eq!(*counter.borrow(), 1);
+    }
+
+    #[test]
+    fn async_call_completion_rejects_reused_completion_slot() {
+        let mut machine = test_machine_with_child_domain();
+        machine.current_tid = 1;
+        let original = Rc::new(RefCell::new(0));
+        machine.processes.get_mut(&1).unwrap().fds[4] = FdHandle::Counter(original);
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[4] = FdCapability::full(4);
+        machine.processes.get_mut(&1).unwrap().fds[3] = FdHandle::CallGate {
+            entry: 1,
+            domain_id: 2,
+            domain_generation: 1,
+            mode: CALL_MODE_ASYNC,
+            completion_fd: Some(4),
+            completion_generation: Some(1),
+            flags: 0,
+        };
+
+        machine.close_fd_index(4).unwrap();
+        let replacement = Rc::new(RefCell::new(77));
+        machine.processes.get_mut(&1).unwrap().fds[4] = FdHandle::Counter(replacement.clone());
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[4] = FdCapability::full(4);
+
+        machine.call_cap(Reg(6), 3, 10, 20).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[6], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 116);
+        assert_eq!(*replacement.borrow(), 77);
+        assert_eq!(machine.next_call_op_id, 1);
     }
 
     #[test]
