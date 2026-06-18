@@ -99,6 +99,7 @@ const ENV_KEY_SERVICELET_ISA_MASK: u64 = 45;
 const ENV_KEY_SERVICELET_FLAG_MASK: u64 = 46;
 const ENV_KEY_CLASSIFIER_ALLOWED_QUEUE_LIMIT: u64 = 47;
 const ENV_KEY_CLASSIFIER_ROUTE_BYTE_LIMIT: u64 = 48;
+const ENV_KEY_SIGNAL_NUMBER_LIMIT: u64 = 49;
 const ENV_KEY_PROCESS_ENTRY_RECORD: u64 = 64;
 const ENV_KEY_TOPOLOGY_RECORD: u64 = 65;
 const ENV_ISA_VERSION: u64 = 1;
@@ -6240,6 +6241,7 @@ impl Machine {
             ENV_KEY_CLASSIFIER_ENTRY_LIMIT => Some(CLASSIFIER_MAX_RULES as u64),
             ENV_KEY_CLASSIFIER_ALLOWED_QUEUE_LIMIT => Some(CLASSIFIER_MAX_ALLOWED_QUEUES as u64),
             ENV_KEY_CLASSIFIER_ROUTE_BYTE_LIMIT => Some(CLASSIFIER_MAX_ROUTE_BYTES as u64),
+            ENV_KEY_SIGNAL_NUMBER_LIMIT => Some(SIGNAL_NUMBER_LIMIT),
             ENV_KEY_STARTUP_METADATA_PTR => Some(ARG_BASE),
             ENV_KEY_STARTUP_METADATA_LEN => Some(ARG_SIZE),
             ENV_KEY_STARTUP_METADATA_FORMAT => Some(ENV_STARTUP_METADATA_FORMAT),
@@ -13135,6 +13137,12 @@ mod tests {
             machine.thread().unwrap().regs[1],
             CLASSIFIER_MAX_ROUTE_BYTES as u64
         );
+
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_SIGNAL_NUMBER_LIMIT;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], SIGNAL_NUMBER_LIMIT);
 
         machine.thread_mut().unwrap().regs[2] = ENV_KEY_STARTUP_METADATA_PTR;
         machine
