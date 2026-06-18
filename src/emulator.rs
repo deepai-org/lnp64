@@ -9276,6 +9276,29 @@ mod tests {
     }
 
     #[test]
+    fn raw_port_hooks_require_io_domain_capability() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine
+            .domains
+            .get_mut(&ROOT_DOMAIN_ID)
+            .unwrap()
+            .capability_mask &= !DOMAIN_CAP_IO;
+
+        machine.thread_mut().unwrap().regs[1] = 7;
+        machine.thread_mut().unwrap().regs[2] = 0xaa;
+        let err = machine.exec(Instr::Outb(Reg(1), Reg(2))).unwrap_err();
+        assert!(err.contains("resource domain capability denied"), "{err}");
+        assert!(machine.process().unwrap().ucode_ports.is_empty());
+
+        machine.thread_mut().unwrap().regs[3] = 0xdead_beef;
+        let err = machine.exec(Instr::Inb(Reg(3), Reg(1))).unwrap_err();
+        assert!(err.contains("resource domain capability denied"), "{err}");
+        assert_eq!(machine.thread().unwrap().regs[3], 0xdead_beef);
+        assert!(machine.process().unwrap().ucode_ports.is_empty());
+    }
+
+    #[test]
     fn signal_delivery_defers_nested_frames_until_sigret() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
