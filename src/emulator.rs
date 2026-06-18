@@ -6391,17 +6391,26 @@ impl Machine {
     }
 
     fn env_envp_base(&mut self) -> Result<u64, String> {
-        Ok(ARG_BASE + 8 + (self.env_argc()?.saturating_add(1) * 8))
+        let argv_slots = self
+            .env_argc()?
+            .checked_add(1)
+            .ok_or_else(|| "startup argv count overflow".to_string())?;
+        Self::checked_record_base(ARG_BASE + 8, argv_slots, 8)
     }
 
     fn env_auxv_base(&mut self) -> Result<u64, String> {
-        Ok(self.env_envp_base()? + ((self.env_count()? + 1) * 8))
+        let env_slots = self
+            .env_count()?
+            .checked_add(1)
+            .ok_or_else(|| "startup env count overflow".to_string())?;
+        let envp_base = self.env_envp_base()?;
+        Self::checked_record_base(envp_base, env_slots, 8)
     }
 
     fn env_count(&mut self) -> Result<u64, String> {
         let envp = self.env_envp_base()?;
         for idx in 0..256u64 {
-            if self.load_u64(envp + idx * 8)? == 0 {
+            if self.load_u64(Self::checked_record_base(envp, idx, 8)?)? == 0 {
                 return Ok(idx);
             }
         }
