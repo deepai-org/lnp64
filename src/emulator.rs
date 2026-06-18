@@ -4782,7 +4782,7 @@ impl Machine {
             _ => return Err(9),
         };
         for (idx, value) in counters.into_iter().enumerate() {
-            self.store_u64(out_ptr + idx as u64 * 8, value)
+            self.store_u64_offset(out_ptr, idx as u64 * 8, value)
                 .map_err(|_| 14u64)?;
         }
         Ok(CLASSIFIER_COUNTERS_SIZE)
@@ -5059,12 +5059,13 @@ impl Machine {
         if result_ptr == 0 {
             return Ok(());
         }
-        self.store_u64(result_ptr, action).map_err(|_| 14u64)?;
-        self.store_u64(result_ptr + 8, action_arg)
+        self.store_u64_offset(result_ptr, 0, action)
             .map_err(|_| 14u64)?;
-        self.store_u64(result_ptr + 16, route_token)
+        self.store_u64_offset(result_ptr, 8, action_arg)
             .map_err(|_| 14u64)?;
-        self.store_u64(result_ptr + 24, rule_idx)
+        self.store_u64_offset(result_ptr, 16, route_token)
+            .map_err(|_| 14u64)?;
+        self.store_u64_offset(result_ptr, 24, rule_idx)
             .map_err(|_| 14u64)?;
         Ok(())
     }
