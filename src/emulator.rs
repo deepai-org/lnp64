@@ -12151,6 +12151,37 @@ mod tests {
         assert_eq!(machine.thread().unwrap().regs[8], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 1);
 
+        machine.store_u64(arg, 3).unwrap();
+        machine.store_u64(arg + 8, 8).unwrap();
+        machine
+            .store_u64(arg + 16, CAP_RIGHT_READ | CAP_RIGHT_WRITE)
+            .unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_recv(Reg(10), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[10], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
+        assert!(matches!(
+            machine.process().unwrap().fds[8],
+            FdHandle::Closed
+        ));
+
+        let retained = Rc::new(RefCell::new(111));
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[8] = FdHandle::Counter(retained.clone());
+            process.fd_capabilities[8] = FdCapability::full(8);
+        }
+        machine.cap_recv(Reg(11), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[11], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
+        match &machine.process().unwrap().fds[8] {
+            FdHandle::Counter(value) => {
+                assert!(Rc::ptr_eq(value, &retained));
+                assert_eq!(*value.borrow(), 111);
+            }
+            _ => panic!("expected retained counter fd"),
+        }
+
         machine.store_u64(arg + 16, CAP_RIGHT_READ).unwrap();
         machine.cap_recv(Reg(9), arg).unwrap();
         let received = machine.thread().unwrap().regs[9];
