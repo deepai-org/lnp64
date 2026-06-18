@@ -4271,7 +4271,10 @@ impl Machine {
                 Ok(fd as u64)
             }
             (ObjectKind::MemoryObject, _) => {
-                let len = arg.max(1) as usize;
+                if arg == 0 {
+                    return Err(22);
+                }
+                let len = arg as usize;
                 let fd = self.install_object_fd(
                     fd0_req,
                     FdHandle::MemoryObject {
@@ -7654,6 +7657,39 @@ mod tests {
         machine.store_u64(arg + 8, classifier).unwrap();
         machine.store_u64(arg + 16, out).unwrap();
         machine.object_ctl(Reg(10), arg).unwrap();
+    }
+
+    #[test]
+    fn memory_object_creation_rejects_zero_length_without_replacing_fd() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let arg = ARG_BASE;
+
+        let retained = Rc::new(RefCell::new(77));
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[5] = FdHandle::Counter(retained.clone());
+            process.fd_capabilities[5] = FdCapability::full(5);
+        }
+
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::MemoryObject.code())
+            .unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 5).unwrap();
+        machine.store_u64(arg + 40, 0).unwrap();
+        machine.object_ctl(Reg(2), arg).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+        match &machine.process().unwrap().fds[5] {
+            FdHandle::Counter(value) => {
+                assert!(Rc::ptr_eq(value, &retained));
+                assert_eq!(*value.borrow(), 77);
+            }
+            _ => panic!("expected retained counter fd"),
+        }
     }
 
     #[test]
