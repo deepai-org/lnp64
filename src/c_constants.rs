@@ -116,6 +116,7 @@ pub fn find_token_constant(name: &str) -> Option<i64> {
         "EDEADLK" => Some(35),
         "EEXIST" => Some(17),
         "EINVAL" => Some(22),
+        "ENOEXEC" => Some(8),
         "ENOENT" => Some(2),
         "ENOTDIR" => Some(20),
         "ERANGE" => Some(34),

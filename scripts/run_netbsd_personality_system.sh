@@ -70,6 +70,10 @@ for program in "${programs[@]}"; do
   "${lnp64[@]}" cc "userland/${program}.c" -o "$root/bin/${program}.s"
   cat "$root/bin/${program}.s" >> "$trace"
 done
+cat > "$root/bin/bad_exec.s" <<'ASM'
+.text
+  BAD_OPCODE r1
+ASM
 
 "${lnp64[@]}" run --namespace-root "$root" "$root/sbin/init.s" -- init / > "$out"
 

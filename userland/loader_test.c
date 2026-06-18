@@ -62,6 +62,13 @@ int main() {
         if (errno != ENOENT) {
             _exit(125);
         }
+        errno = 0;
+        if (execl("/bin/bad_exec.s", "bad_exec", 0) != -1) {
+            _exit(124);
+        }
+        if (errno != ENOEXEC) {
+            _exit(123);
+        }
         execl(path, "loader_target", 0);
         _exit(127);
     }
