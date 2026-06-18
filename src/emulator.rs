@@ -7432,6 +7432,28 @@ mod tests {
             .unwrap();
     }
 
+    fn add_test_domain(machine: &mut Machine, id: u64, parent: u64) {
+        machine.domains.insert(
+            id,
+            ResourceDomain {
+                id,
+                generation: 1,
+                parent: Some(parent),
+                children: Vec::new(),
+                profile: 4,
+                limits: DomainLimits::root(),
+                capability_mask: u64::MAX,
+                upcall_mask: u64::MAX,
+                security: DomainSecurityPolicy::root(),
+                frozen: false,
+                destroyed: false,
+                cpu_ticks: 0,
+            },
+        );
+        machine.domains.get_mut(&parent).unwrap().children.push(id);
+        machine.next_domain_id = machine.next_domain_id.max(id + 1);
+    }
+
     fn try_create_servicelet(machine: &mut Machine, fd: u64, envelope: u64) -> u64 {
         let arg = ARG_BASE + 0x280;
         machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
@@ -8259,6 +8281,33 @@ mod tests {
             _ => panic!("expected servicelet program fd"),
         }
         assert!(machine.fd_token(7).unwrap() & FDR_TOKEN_MARKER != 0);
+    }
+
+    #[test]
+    fn servicelet_program_owner_must_be_current_domain_or_descendant() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        add_test_domain(&mut machine, 2, ROOT_DOMAIN_ID);
+        add_test_domain(&mut machine, 3, ROOT_DOMAIN_ID);
+        machine.processes.get_mut(&1).unwrap().domain_id = 2;
+        let envelope = ARG_BASE + 0x1000;
+        write_servicelet_envelope(&mut machine, envelope, 64, 0x01, 32, 128, 64, 32, 0);
+        machine.store_u64(envelope + 64, 3).unwrap();
+        machine.store_u64(envelope + 72, 1).unwrap();
+
+        assert_eq!(
+            try_create_servicelet(&mut machine, 7, envelope),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 1);
+
+        add_test_domain(&mut machine, 4, 2);
+        machine.store_u64(envelope + 64, 4).unwrap();
+        machine.store_u64(envelope + 72, 1).unwrap();
+        assert_ne!(
+            try_create_servicelet(&mut machine, 7, envelope),
+            -1i64 as u64
+        );
     }
 
     #[test]
