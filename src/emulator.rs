@@ -10760,6 +10760,20 @@ mod tests {
         .unwrap();
         let mut machine = Machine::new(program);
         machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[4] = 4096;
+        machine.thread_mut().unwrap().regs[5] = 0b011;
+        machine
+            .exec(Instr::Mmap(
+                Reg(6),
+                Reg(0),
+                Reg(4),
+                Reg(5),
+                FdReg(0),
+                Reg(0),
+            ))
+            .unwrap();
+        let mapped = machine.thread().unwrap().regs[6];
+        let vma_count = machine.process().unwrap().vmas.len();
 
         machine.thread_mut().unwrap().regs[1] = u64::MAX - 1;
         machine.thread_mut().unwrap().regs[2] = 8;
@@ -10768,6 +10782,18 @@ mod tests {
             .exec(Instr::Mprotect(Reg(1), Reg(2), Reg(3)))
             .unwrap();
         assert_eq!(machine.process().unwrap().errno, 22);
+        assert_eq!(machine.process().unwrap().vmas.len(), vma_count);
+        assert_eq!(
+            machine
+                .process()
+                .unwrap()
+                .vmas
+                .iter()
+                .find(|vma| vma.start == mapped)
+                .unwrap()
+                .prot,
+            0b011
+        );
 
         machine.thread_mut().unwrap().regs[1] = 0xdead_0000;
         machine.thread_mut().unwrap().regs[2] = 4096;
@@ -10776,6 +10802,18 @@ mod tests {
             .exec(Instr::Mprotect(Reg(1), Reg(2), Reg(3)))
             .unwrap();
         assert_eq!(machine.process().unwrap().errno, 12);
+        assert_eq!(machine.process().unwrap().vmas.len(), vma_count);
+        assert_eq!(
+            machine
+                .process()
+                .unwrap()
+                .vmas
+                .iter()
+                .find(|vma| vma.start == mapped)
+                .unwrap()
+                .prot,
+            0b011
+        );
     }
 
     #[test]
