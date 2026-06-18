@@ -823,6 +823,29 @@ mod tests {
             .collect()
     }
 
+    fn inline_asm_rows(manifest: &str) -> Vec<(&str, &str, &str, &str)> {
+        manifest
+            .lines()
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(|line| {
+                let mut fields = line.splitn(4, '|');
+                let constraint = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing inline-asm constraint in {line}"));
+                let class = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing inline-asm class in {line}"));
+                let values = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing inline-asm values in {line}"));
+                let usage = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing inline-asm use in {line}"));
+                (constraint, class, values, usage)
+            })
+            .collect()
+    }
+
     #[test]
     fn toolchain_contract_index_is_complete() {
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
@@ -851,6 +874,7 @@ mod tests {
             "isel",
             "exec_plan",
             "debug_unwind",
+            "inline_asm",
         ] {
             assert!(names.contains(name), "missing contract index row {name}");
         }
@@ -894,6 +918,10 @@ mod tests {
         assert_eq!(
             manifest_field(manifest, "debug_unwind_contract"),
             "toolchain/lnp64_debug_unwind.manifest"
+        );
+        assert_eq!(
+            manifest_field(manifest, "inline_asm_contract"),
+            "toolchain/lnp64_inline_asm.manifest"
         );
         assert_eq!(manifest_field(manifest, "gpr"), "r0-r31");
         assert_eq!(manifest_field(manifest, "fdr"), "fd0-fd255");
@@ -1208,6 +1236,45 @@ mod tests {
         assert!(psabi_doc.contains("## Debug and Unwind Minimum"));
         assert!(psabi_doc.contains("There is no v0 language exception runtime"));
         assert!(roadmap.contains("toolchain/lnp64_debug_unwind.manifest"));
+    }
+
+    #[test]
+    fn inline_asm_manifest_records_backend_constraints() {
+        let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
+        let inline_asm_manifest = include_str!("../toolchain/lnp64_inline_asm.manifest");
+        let roadmap = include_str!("../toolchain_roadmap.md");
+        let rows = inline_asm_rows(inline_asm_manifest);
+        let mut constraints = std::collections::BTreeMap::new();
+
+        assert_eq!(
+            manifest_field(target_manifest, "inline_asm_contract"),
+            "toolchain/lnp64_inline_asm.manifest"
+        );
+        for (constraint, class, values, usage) in rows {
+            assert!(!class.is_empty(), "empty inline-asm class for {constraint}");
+            assert!(
+                !values.is_empty(),
+                "empty inline-asm values for {constraint}"
+            );
+            assert!(!usage.is_empty(), "empty inline-asm use for {constraint}");
+            assert!(
+                constraints.insert(constraint, (class, values)).is_none(),
+                "duplicate inline-asm constraint {constraint}"
+            );
+        }
+
+        assert_eq!(constraints["r"], ("gpr", "r0-r31"));
+        assert_eq!(constraints["f"], ("fdr", "fd0-fd255"));
+        assert_eq!(
+            constraints["p"],
+            (
+                "pcr",
+                "PID,PPID,TID,TP,UID,GID,SIGMASK,SIGPENDING,REALTIME_SEC,REALTIME_NSEC"
+            )
+        );
+        assert_eq!(constraints["m"], ("memory", "base_gpr_plus_signed_offset"));
+        assert_eq!(constraints["i"], ("immediate", "signed_16_or_symbolic"));
+        assert!(roadmap.contains("toolchain/lnp64_inline_asm.manifest"));
     }
 
     #[test]

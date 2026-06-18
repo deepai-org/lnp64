@@ -58,7 +58,8 @@ NetBSD policy. Those remain loader, libc, and personality responsibilities.
    - Atomics and fences needed by libc/libpthread.
 
 4. Add native primitive access.
-   - Inline asm constraints for GPR/FDR/PCR operands.
+   - Inline asm constraints for GPR/FDR/PCR operands from
+     `toolchain/lnp64_inline_asm.manifest`.
    - Backend builtins or Clang intrinsics for private `__lnp_*` shims:
      `__lnp_openat`, `__lnp_pull`, `__lnp_push`, `__lnp_mmap`,
      `__lnp_await`, `__lnp_gate_call`, `__lnp_gate_return`,
