@@ -4457,7 +4457,11 @@ impl Machine {
                 if arg == 0 {
                     return Err(22);
                 }
-                let len = arg as usize;
+                if arg > MEMORY_SIZE as u64 {
+                    return Err(12);
+                }
+                self.ensure_domain_budget_errno(arg, 0, 0, 0)?;
+                let len = usize::try_from(arg).map_err(|_| 12u64)?;
                 let fd = self.install_object_fd(
                     fd0_req,
                     FdHandle::MemoryObject {
@@ -6797,7 +6801,7 @@ impl Machine {
             if self.domain_is_descendant_or_self(process.domain_id, id) {
                 usage.memory = usage
                     .memory
-                    .saturating_add(process.vmas.iter().map(|vma| vma.len).sum::<u64>());
+                    .saturating_add(Self::process_memory_usage(process));
                 usage.fdrs = usage.fdrs.saturating_add(
                     process
                         .fds
@@ -6823,7 +6827,7 @@ impl Machine {
     fn process_usage(&self, pid: u64) -> Option<DomainUsage> {
         let process = self.processes.get(&pid)?;
         let mut usage = DomainUsage::default();
-        usage.memory = process.vmas.iter().map(|vma| vma.len).sum::<u64>();
+        usage.memory = Self::process_memory_usage(process);
         usage.fdrs = process
             .fds
             .iter()
@@ -6836,6 +6840,19 @@ impl Machine {
             .filter(|thread| thread.pid == pid)
             .count() as u64;
         Some(usage)
+    }
+
+    fn process_memory_usage(process: &Process) -> u64 {
+        process.fds.iter().fold(
+            process.vmas.iter().map(|vma| vma.len).sum::<u64>(),
+            |usage, fd| {
+                if let FdHandle::MemoryObject { data, .. } = fd {
+                    usage.saturating_add(data.borrow().len() as u64)
+                } else {
+                    usage
+                }
+            },
+        )
     }
 
     fn ensure_attach_budget(
@@ -7970,6 +7987,65 @@ mod tests {
             }
             _ => panic!("expected retained counter fd"),
         }
+    }
+
+    #[test]
+    fn memory_object_creation_rejects_oversized_without_replacing_fd() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let arg = ARG_BASE;
+
+        let retained = Rc::new(RefCell::new(77));
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[5] = FdHandle::Counter(retained.clone());
+            process.fd_capabilities[5] = FdCapability::full(5);
+        }
+
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::MemoryObject.code())
+            .unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 5).unwrap();
+        machine.store_u64(arg + 40, MEMORY_SIZE as u64 + 1).unwrap();
+        machine.object_ctl(Reg(2), arg).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 12);
+        match &machine.process().unwrap().fds[5] {
+            FdHandle::Counter(value) => {
+                assert!(Rc::ptr_eq(value, &retained));
+                assert_eq!(*value.borrow(), 77);
+            }
+            _ => panic!("expected retained counter fd"),
+        }
+    }
+
+    #[test]
+    fn memory_object_creation_counts_backing_storage_in_domain_usage() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let arg = ARG_BASE;
+        let baseline = machine.domain_usage(ROOT_DOMAIN_ID);
+
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::MemoryObject.code())
+            .unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 5).unwrap();
+        machine.store_u64(arg + 40, 64).unwrap();
+        machine.object_ctl(Reg(2), arg).unwrap();
+
+        assert_ne!(machine.thread().unwrap().regs[2], -1i64 as u64);
+        assert_eq!(
+            machine.domain_usage(ROOT_DOMAIN_ID).memory,
+            baseline.memory + 64
+        );
+
+        machine.close_fd_index(5).unwrap();
+        assert_eq!(machine.domain_usage(ROOT_DOMAIN_ID).memory, baseline.memory);
     }
 
     #[test]
