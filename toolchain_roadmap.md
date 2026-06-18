@@ -70,8 +70,11 @@ through a machine-basic-block branch target operand. Direct, non-varargs calls
 now lower register arguments through `CC_LNP64`, emit `CALL` for global or
 external callees, and copy register results through `RetCC_LNP64`. Conditional
 branch lowering, indirect calls, stack call operands/results, call-frame
-pseudos, narrow memory extension/truncation, and globals remain bring-up
-blockers.
+pseudos, signed narrow loads, unaligned/large-offset address expansion, and
+globals remain bring-up blockers.
+Narrow memory selection covers zero-extending byte/half/word loads and
+truncating byte/half/word stores through `LD_B`/`LD_H`/`LD_W` and
+`ST_B`/`ST_H`/`ST_W`.
 Return lowering now maps the LLVM return value path through `RetCC_LNP64` into
 `r1` and selects a target `RET_FLAG` DAG node to the architectural `RET`;
 formal argument lowering maps register arguments from `CC_LNP64` live-ins.
@@ -152,8 +155,9 @@ NetBSD policy. Those remain loader, libc, and personality responsibilities.
 
 3. Lower normal code.
    - Integer ALU, compares, branches, calls/returns.
-   - Loads/stores with byte/half/word/dword widths; i64 base+offset selection
-     exists first, while narrow extension/truncation selection remains pending.
+   - Loads/stores with byte/half/word/dword widths; i64 base+offset,
+     zero-extending narrow loads, and truncating narrow stores exist first,
+     while signed narrow loads and large-offset expansion remain pending.
    - Global addresses, constant pools, stack slots, and frame lowering.
    - Atomics and fences needed by libc/libpthread.
 

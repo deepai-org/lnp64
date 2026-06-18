@@ -1893,6 +1893,8 @@ mod tests {
         assert!(isel.contains("LNP64ISD::CALL"));
         assert!(isel.contains("RetCCInfo.AnalyzeCallResult(CLI.Ins, RetCC_LNP64)"));
         assert!(isel.contains("LNP64ISD::RET_FLAG"));
+        assert!(isel.contains("setLoadExtAction(ISD::ZEXTLOAD, MVT::i64, MemVT, Legal)"));
+        assert!(isel.contains("setTruncStoreAction(MVT::i64, MemVT, Legal)"));
         assert!(isel.contains("computeRegisterProperties"));
         assert!(isel.contains("varargs lowering is not implemented yet"));
         assert!(isel_header.contains("getTargetNodeName"));
@@ -1914,7 +1916,13 @@ mod tests {
         assert!(instr_td.contains("(LNP64call tglobaladdr:$target)"));
         assert!(instr_td.contains("(LNP64call texternalsym:$target)"));
         assert!(instr_td.contains("(i64 (load (add GPR:$base, simm14_imm:$offset)))"));
+        assert!(instr_td.contains("(i64 (zextloadi32 (add GPR:$base, simm14_imm:$offset)))"));
+        assert!(instr_td.contains("(i64 (zextloadi16 (add GPR:$base, simm14_imm:$offset)))"));
+        assert!(instr_td.contains("(i64 (zextloadi8 (add GPR:$base, simm14_imm:$offset)))"));
         assert!(instr_td.contains("(ST GPR:$rs, GPR:$base, simm14_imm:$offset)"));
+        assert!(instr_td.contains("(ST_W GPR:$rs, GPR:$base, simm14_imm:$offset)"));
+        assert!(instr_td.contains("(ST_H GPR:$rs, GPR:$base, simm14_imm:$offset)"));
+        assert!(instr_td.contains("(ST_B GPR:$rs, GPR:$base, simm14_imm:$offset)"));
         assert!(instr_td.contains("isReturn = 1"));
         assert!(instr_td.contains("Defs = [LR]"));
         assert!(instr_td.contains("Uses = [LR]"));
@@ -1965,11 +1973,18 @@ mod tests {
         assert!(codegen_test.contains("define i64 @arith"));
         assert!(codegen_test.contains("define i64 @jump"));
         assert!(codegen_test.contains("define i64 @call_direct"));
+        assert!(codegen_test.contains("define i64 @memory"));
         assert!(codegen_test.contains("%biased = add i64 %sum, 7"));
         assert!(codegen_test.contains("br label %exit"));
         assert!(codegen_test.contains("call i64 @callee"));
         assert!(codegen_test.contains("; CHECK: call callee"));
         assert!(codegen_test.contains("; CHECK: jmp"));
+        for mnemonic in ["ld.b", "ld.h", "ld.w", "st.b", "st.h", "st.w"] {
+            assert!(
+                codegen_test.contains(&format!("; CHECK: {mnemonic}")),
+                "codegen fixture missing narrow memory check for {mnemonic}"
+            );
+        }
         assert!(codegen_test.contains("; CHECK: lsl"));
         assert!(codegen_test.contains("; CHECK: ret"));
         assert!(codegen_test.contains("__lnp_push"));

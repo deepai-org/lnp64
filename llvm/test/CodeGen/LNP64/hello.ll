@@ -40,6 +40,27 @@ entry:
   ret i64 %y
 }
 
+define i64 @memory(ptr %p, i64 %v) {
+entry:
+  %p2 = getelementptr i8, ptr %p, i64 2
+  %p4 = getelementptr i8, ptr %p, i64 4
+  %b = load i8, ptr %p, align 1
+  %h = load i16, ptr %p2, align 2
+  %w = load i32, ptr %p4, align 4
+  %tb = trunc i64 %v to i8
+  %th = trunc i64 %v to i16
+  %tw = trunc i64 %v to i32
+  store i8 %tb, ptr %p, align 1
+  store i16 %th, ptr %p2, align 2
+  store i32 %tw, ptr %p4, align 4
+  %bz = zext i8 %b to i64
+  %hz = zext i16 %h to i64
+  %wz = zext i32 %w to i64
+  %sum0 = add i64 %bz, %hz
+  %sum1 = add i64 %sum0, %wz
+  ret i64 %sum1
+}
+
 ; CHECK-LABEL: main:
 ; CHECK: li
 ; CHECK: push
@@ -55,4 +76,12 @@ entry:
 ; CHECK: ret
 ; CHECK-LABEL: call_direct:
 ; CHECK: call callee
+; CHECK: ret
+; CHECK-LABEL: memory:
+; CHECK: ld.b
+; CHECK: ld.h
+; CHECK: ld.w
+; CHECK: st.b
+; CHECK: st.h
+; CHECK: st.w
 ; CHECK: ret

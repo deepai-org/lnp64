@@ -23,6 +23,10 @@ LNP64TargetLowering::LNP64TargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::UDIV, MVT::i64, Expand);
   setOperationAction(ISD::UREM, MVT::i64, Expand);
   setOperationAction(ISD::SREM, MVT::i64, Expand);
+  for (MVT MemVT : {MVT::i8, MVT::i16, MVT::i32}) {
+    setLoadExtAction(ISD::ZEXTLOAD, MVT::i64, MemVT, Legal);
+    setTruncStoreAction(MVT::i64, MemVT, Legal);
+  }
   computeRegisterProperties(STI.getRegisterInfo());
 }
 

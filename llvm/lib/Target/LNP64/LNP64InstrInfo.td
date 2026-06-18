@@ -135,9 +135,27 @@ def ST_B : LNP64MemStore<"st.b">;
 def : Pat<(i64 (load (add GPR:$base, simm14_imm:$offset))),
           (LD GPR:$base, simm14_imm:$offset)>;
 def : Pat<(i64 (load GPR:$base)), (LD GPR:$base, 0)>;
+def : Pat<(i64 (zextloadi32 (add GPR:$base, simm14_imm:$offset))),
+          (LD_W GPR:$base, simm14_imm:$offset)>;
+def : Pat<(i64 (zextloadi32 GPR:$base)), (LD_W GPR:$base, 0)>;
+def : Pat<(i64 (zextloadi16 (add GPR:$base, simm14_imm:$offset))),
+          (LD_H GPR:$base, simm14_imm:$offset)>;
+def : Pat<(i64 (zextloadi16 GPR:$base)), (LD_H GPR:$base, 0)>;
+def : Pat<(i64 (zextloadi8 (add GPR:$base, simm14_imm:$offset))),
+          (LD_B GPR:$base, simm14_imm:$offset)>;
+def : Pat<(i64 (zextloadi8 GPR:$base)), (LD_B GPR:$base, 0)>;
 def : Pat<(store GPR:$rs, (add GPR:$base, simm14_imm:$offset)),
           (ST GPR:$rs, GPR:$base, simm14_imm:$offset)>;
 def : Pat<(store GPR:$rs, GPR:$base), (ST GPR:$rs, GPR:$base, 0)>;
+def : Pat<(truncstorei32 GPR:$rs, (add GPR:$base, simm14_imm:$offset)),
+          (ST_W GPR:$rs, GPR:$base, simm14_imm:$offset)>;
+def : Pat<(truncstorei32 GPR:$rs, GPR:$base), (ST_W GPR:$rs, GPR:$base, 0)>;
+def : Pat<(truncstorei16 GPR:$rs, (add GPR:$base, simm14_imm:$offset)),
+          (ST_H GPR:$rs, GPR:$base, simm14_imm:$offset)>;
+def : Pat<(truncstorei16 GPR:$rs, GPR:$base), (ST_H GPR:$rs, GPR:$base, 0)>;
+def : Pat<(truncstorei8 GPR:$rs, (add GPR:$base, simm14_imm:$offset)),
+          (ST_B GPR:$rs, GPR:$base, simm14_imm:$offset)>;
+def : Pat<(truncstorei8 GPR:$rs, GPR:$base), (ST_B GPR:$rs, GPR:$base, 0)>;
 def FENCE : LNP64NoOperand<"fence">;
 def ISYNC : LNP64Inst<(outs), (ins GPR:$rd, GPR:$rs1, GPR:$rs2), "isync",
                       "\t$rd, $rs1, $rs2">;
