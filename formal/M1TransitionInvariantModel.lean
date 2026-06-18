@@ -1551,6 +1551,222 @@ theorem rtl_m1_refinement_object_create_post_minted_matches_commit_projection
           ] using congrArg some hProjectionCap.symm)
       · simp [stateMatchesRtlProjection, stateProjectionOf]
 
+theorem rtl_m1_refinement_push_post_wake_matches_commit_projection
+    {pre : RtlM1StateProjection}
+    {commitProjection : RtlM1CommitProjection}
+    {post : RtlM1StateProjection} :
+    RtlM1RefinementStep pre commitProjection post ->
+    commitProjection.op = CommitOp.push ->
+    post.rootCap = capabilityFromCommitProjection commitProjection /\
+      post.wakePending = true := by
+  intro hRefine hOp
+  rcases hRefine with ⟨s, t, commit, _hPre, hCommitProjection, hCommit, hPost⟩
+  have hCommitOp := commit_projection_op_matches_commit hCommitProjection
+  have hProjectionCap :=
+    capability_from_commit_projection_matches_commit hCommitProjection
+  cases hCommit with
+  | capDup hRootDup =>
+      simp [capDupCommit, commitFromCap, hOp] at hCommitOp
+  | capSend hCap =>
+      simp [capSendCommit, commitFromCap, hOp] at hCommitOp
+  | capRecv cap hSent hCap =>
+      simp [capRecvCommit, commitFromCap, hOp] at hCommitOp
+  | capRevoke =>
+      simp [capRevokeCommit, commitFromCap, hOp] at hCommitOp
+  | rejectStale hStale =>
+      simp [rejectStaleCommit, commitFromCap, hOp] at hCommitOp
+  | push hRootPush =>
+      rw [hPost]
+      constructor
+      · exact (by
+          simpa [
+            stateMatchesRtlProjection, stateProjectionOf, capabilityFromCommitRecord,
+            pushCommit, commitFromCap
+          ] using hProjectionCap.symm)
+      · simp [stateMatchesRtlProjection, stateProjectionOf]
+  | pull hConsumerPull =>
+      simp [pullCommit, commitFromCap, hOp] at hCommitOp
+  | rejectFull =>
+      simp [rejectFullCommit, commitFromCap, hOp] at hCommitOp
+  | capDupDenied hDup =>
+      simp [capDupDeniedCommit, commitFromCap, hOp] at hCommitOp
+  | objectCreate hRootMint =>
+      simp [objectCreateCommit, commitFromCap, hOp] at hCommitOp
+
+theorem rtl_m1_refinement_pull_post_wake_matches_commit_projection
+    {pre : RtlM1StateProjection}
+    {commitProjection : RtlM1CommitProjection}
+    {post : RtlM1StateProjection} :
+    RtlM1RefinementStep pre commitProjection post ->
+    commitProjection.op = CommitOp.pull ->
+    post.consumerCap = capabilityFromCommitProjection commitProjection /\
+      post.wakePending = false := by
+  intro hRefine hOp
+  rcases hRefine with ⟨s, t, commit, _hPre, hCommitProjection, hCommit, hPost⟩
+  have hCommitOp := commit_projection_op_matches_commit hCommitProjection
+  have hProjectionCap :=
+    capability_from_commit_projection_matches_commit hCommitProjection
+  cases hCommit with
+  | capDup hRootDup =>
+      simp [capDupCommit, commitFromCap, hOp] at hCommitOp
+  | capSend hCap =>
+      simp [capSendCommit, commitFromCap, hOp] at hCommitOp
+  | capRecv cap hSent hCap =>
+      simp [capRecvCommit, commitFromCap, hOp] at hCommitOp
+  | capRevoke =>
+      simp [capRevokeCommit, commitFromCap, hOp] at hCommitOp
+  | rejectStale hStale =>
+      simp [rejectStaleCommit, commitFromCap, hOp] at hCommitOp
+  | push hRootPush =>
+      simp [pushCommit, commitFromCap, hOp] at hCommitOp
+  | pull hConsumerPull =>
+      rw [hPost]
+      constructor
+      · exact (by
+          simpa [
+            stateMatchesRtlProjection, stateProjectionOf, capabilityFromCommitRecord,
+            pullCommit, commitFromCap
+          ] using hProjectionCap.symm)
+      · simp [stateMatchesRtlProjection, stateProjectionOf]
+  | rejectFull =>
+      simp [rejectFullCommit, commitFromCap, hOp] at hCommitOp
+  | capDupDenied hDup =>
+      simp [capDupDeniedCommit, commitFromCap, hOp] at hCommitOp
+  | objectCreate hRootMint =>
+      simp [objectCreateCommit, commitFromCap, hOp] at hCommitOp
+
+theorem rtl_m1_refinement_reject_full_post_failure_matches_commit_projection
+    {pre : RtlM1StateProjection}
+    {commitProjection : RtlM1CommitProjection}
+    {post : RtlM1StateProjection} :
+    RtlM1RefinementStep pre commitProjection post ->
+    commitProjection.op = CommitOp.rejectFull ->
+    post.fullWasExplicit = true /\
+      authoritySlotsProjectionUnchanged pre post /\
+      commitProjection.status = CommitStatus.eagain := by
+  intro hRefine hOp
+  rcases hRefine with ⟨s, t, commit, hPre, hCommitProjection, hCommit, hPost⟩
+  have hCommitOp := commit_projection_op_matches_commit hCommitProjection
+  cases hCommit with
+  | capDup hRootDup =>
+      simp [capDupCommit, commitFromCap, hOp] at hCommitOp
+  | capSend hCap =>
+      simp [capSendCommit, commitFromCap, hOp] at hCommitOp
+  | capRecv cap hSent hCap =>
+      simp [capRecvCommit, commitFromCap, hOp] at hCommitOp
+  | capRevoke =>
+      simp [capRevokeCommit, commitFromCap, hOp] at hCommitOp
+  | rejectStale hStale =>
+      simp [rejectStaleCommit, commitFromCap, hOp] at hCommitOp
+  | push hRootPush =>
+      simp [pushCommit, commitFromCap, hOp] at hCommitOp
+  | pull hConsumerPull =>
+      simp [pullCommit, commitFromCap, hOp] at hCommitOp
+  | rejectFull =>
+      constructor
+      · rw [hPost]
+        simp [stateMatchesRtlProjection, stateProjectionOf]
+      constructor
+      · exact state_projection_authority_slots_unchanged hPre hPost
+          (typed_commit_non_ok_status_preserves_authority_slots
+            (TypedCommitTransition.rejectFull s) (by simp [rejectFullCommit, commitFromCap]))
+      · rw [commitMatchesRtlProjection, commitProjectionToRecord] at hCommitProjection
+        have hStatus := congrArg CommitRecord.status hCommitProjection
+        simp [rejectFullCommit, commitFromCap] at hStatus
+        exact hStatus.symm
+  | capDupDenied hDup =>
+      simp [capDupDeniedCommit, commitFromCap, hOp] at hCommitOp
+  | objectCreate hRootMint =>
+      simp [objectCreateCommit, commitFromCap, hOp] at hCommitOp
+
+theorem rtl_m1_refinement_reject_stale_post_failure_matches_commit_projection
+    {pre : RtlM1StateProjection}
+    {commitProjection : RtlM1CommitProjection}
+    {post : RtlM1StateProjection} :
+    RtlM1RefinementStep pre commitProjection post ->
+    commitProjection.op = CommitOp.rejectStale ->
+    post.staleRejected = true /\
+      authoritySlotsProjectionUnchanged pre post /\
+      commitProjection.status = CommitStatus.erevoked := by
+  intro hRefine hOp
+  rcases hRefine with ⟨s, t, commit, hPre, hCommitProjection, hCommit, hPost⟩
+  have hCommitOp := commit_projection_op_matches_commit hCommitProjection
+  cases hCommit with
+  | capDup hRootDup =>
+      simp [capDupCommit, commitFromCap, hOp] at hCommitOp
+  | capSend hCap =>
+      simp [capSendCommit, commitFromCap, hOp] at hCommitOp
+  | capRecv cap hSent hCap =>
+      simp [capRecvCommit, commitFromCap, hOp] at hCommitOp
+  | capRevoke =>
+      simp [capRevokeCommit, commitFromCap, hOp] at hCommitOp
+  | rejectStale hStale =>
+      constructor
+      · rw [hPost]
+        simp [stateMatchesRtlProjection, stateProjectionOf]
+      constructor
+      · exact state_projection_authority_slots_unchanged hPre hPost
+          (typed_commit_non_ok_status_preserves_authority_slots
+            (TypedCommitTransition.rejectStale s hStale) (by simp [rejectStaleCommit, commitFromCap]))
+      · rw [commitMatchesRtlProjection, commitProjectionToRecord] at hCommitProjection
+        have hStatus := congrArg CommitRecord.status hCommitProjection
+        simp [rejectStaleCommit, commitFromCap] at hStatus
+        exact hStatus.symm
+  | push hRootPush =>
+      simp [pushCommit, commitFromCap, hOp] at hCommitOp
+  | pull hConsumerPull =>
+      simp [pullCommit, commitFromCap, hOp] at hCommitOp
+  | rejectFull =>
+      simp [rejectFullCommit, commitFromCap, hOp] at hCommitOp
+  | capDupDenied hDup =>
+      simp [capDupDeniedCommit, commitFromCap, hOp] at hCommitOp
+  | objectCreate hRootMint =>
+      simp [objectCreateCommit, commitFromCap, hOp] at hCommitOp
+
+theorem rtl_m1_refinement_cap_dup_denied_post_failure_matches_commit_projection
+    {pre : RtlM1StateProjection}
+    {commitProjection : RtlM1CommitProjection}
+    {post : RtlM1StateProjection} :
+    RtlM1RefinementStep pre commitProjection post ->
+    commitProjection.op = CommitOp.capDupDenied ->
+    post.failedNoAuthority = true /\
+      authoritySlotsProjectionUnchanged pre post /\
+      commitProjection.status = CommitStatus.eperm := by
+  intro hRefine hOp
+  rcases hRefine with ⟨s, t, commit, hPre, hCommitProjection, hCommit, hPost⟩
+  have hCommitOp := commit_projection_op_matches_commit hCommitProjection
+  cases hCommit with
+  | capDup hRootDup =>
+      simp [capDupCommit, commitFromCap, hOp] at hCommitOp
+  | capSend hCap =>
+      simp [capSendCommit, commitFromCap, hOp] at hCommitOp
+  | capRecv cap hSent hCap =>
+      simp [capRecvCommit, commitFromCap, hOp] at hCommitOp
+  | capRevoke =>
+      simp [capRevokeCommit, commitFromCap, hOp] at hCommitOp
+  | rejectStale hStale =>
+      simp [rejectStaleCommit, commitFromCap, hOp] at hCommitOp
+  | push hRootPush =>
+      simp [pushCommit, commitFromCap, hOp] at hCommitOp
+  | pull hConsumerPull =>
+      simp [pullCommit, commitFromCap, hOp] at hCommitOp
+  | rejectFull =>
+      simp [rejectFullCommit, commitFromCap, hOp] at hCommitOp
+  | capDupDenied hDup =>
+      constructor
+      · rw [hPost]
+        simp [stateMatchesRtlProjection, stateProjectionOf]
+      constructor
+      · exact state_projection_authority_slots_unchanged hPre hPost
+          (typed_commit_non_ok_status_preserves_authority_slots
+            (TypedCommitTransition.capDupDenied s hDup) (by simp [capDupDeniedCommit, commitFromCap]))
+      · rw [commitMatchesRtlProjection, commitProjectionToRecord] at hCommitProjection
+        have hStatus := congrArg CommitRecord.status hCommitProjection
+        simp [capDupDeniedCommit, commitFromCap] at hStatus
+        exact hStatus.symm
+  | objectCreate hRootMint =>
+      simp [objectCreateCommit, commitFromCap, hOp] at hCommitOp
+
 theorem rtl_m1_refinement_cap_revoke_post_generation_matches_commit_projection
     {pre : RtlM1StateProjection}
     {commitProjection : RtlM1CommitProjection}
