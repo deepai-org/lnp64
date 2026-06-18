@@ -36,7 +36,9 @@ int main(int argc, char **argv) {
     if (loadb(buf) != 'w') return 8;
     revoked = cap_revoke(fd);
     if (revoked < 3) return 9;
-    if (read(received, buf, 1) != 0) return 10;
+    errno = 0;
+    if (read(received, buf, 1) != -1) return 10;
+    if (errno != ESTALE) return 11;
 
     write(1, "fd_passing_test ok\n", 19);
     return 0;
