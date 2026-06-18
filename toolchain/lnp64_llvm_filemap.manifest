@@ -1,0 +1,20 @@
+# LNP64 llvm-project file map contract v0.
+# Pipe-delimited fields: layer|path|status|purpose
+llvm_target|llvm/lib/Target/LNP64/CMakeLists.txt|planned|register target components and tablegen files
+llvm_target|llvm/lib/Target/LNP64/LNP64.td|planned|target root, subtarget, instruction namespace
+llvm_target|llvm/lib/Target/LNP64/LNP64RegisterInfo.td|planned|GPR, FDR, FPR, VR, PCR register classes
+llvm_target|llvm/lib/Target/LNP64/LNP64InstrInfo.td|planned|integer, load/store, branch, call, return, native primitive opcodes
+llvm_target|llvm/lib/Target/LNP64/LNP64CallingConv.td|planned|calling convention argument, return, callee-save, and vararg rules
+llvm_target|llvm/lib/Target/LNP64/LNP64ISelLowering.cpp|planned|integer, memory, branch, call, TLS, intrinsic lowering
+llvm_target|llvm/lib/Target/LNP64/LNP64FrameLowering.cpp|planned|stack frame, spill slots, LR save, CFI emission
+llvm_mc|llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCTargetDesc.cpp|planned|ELF machine id, relocations, MC code emitter hooks
+llvm_asmparser|llvm/lib/Target/LNP64/AsmParser/LNP64AsmParser.cpp|planned|assembly parser, inline asm constraints, operand validation
+llvm_disassembler|llvm/lib/Target/LNP64/Disassembler/LNP64Disassembler.cpp|planned|MC disassembly smoke coverage for core instructions
+llvm_targetinfo|llvm/lib/Target/LNP64/TargetInfo/LNP64TargetInfo.cpp|planned|LLVM target registration for lnp64-unknown-none
+lld|lld/ELF/Arch/LNP64.cpp|planned|ELF64 LNP64 relocations and static executable link semantics
+clang_basic|clang/lib/Basic/Targets/LNP64.h|planned|Clang target info, data layout, register names, constraints
+clang_basic|clang/lib/Basic/Targets/LNP64.cpp|planned|Clang target info implementation and builtin feature defaults
+clang_driver|clang/lib/Driver/ToolChains/Arch/LNP64.cpp|planned|driver flags, freestanding defaults, crt and linker selection
+llvm_tests|llvm/test/CodeGen/LNP64/hello.ll|planned|integer, load/store, branch, call, return codegen smoke
+llvm_tests|llvm/test/MC/LNP64/basic.s|planned|assembler, disassembler, relocation, inline asm smoke
+clang_tests|clang/test/Driver/lnp64.c|planned|triple, include path, crt, lld, and no toy compiler driver smoke

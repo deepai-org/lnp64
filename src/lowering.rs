@@ -957,6 +957,29 @@ mod tests {
             .collect()
     }
 
+    fn llvm_filemap_rows(manifest: &str) -> Vec<(&str, &str, &str, &str)> {
+        manifest
+            .lines()
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(|line| {
+                let mut fields = line.splitn(4, '|');
+                let layer = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing llvm filemap layer in {line}"));
+                let path = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing llvm filemap path in {line}"));
+                let status = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing llvm filemap status in {line}"));
+                let purpose = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing llvm filemap purpose in {line}"));
+                (layer, path, status, purpose)
+            })
+            .collect()
+    }
+
     #[test]
     fn toolchain_contract_index_is_complete() {
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
@@ -984,6 +1007,7 @@ mod tests {
             "intrinsics",
             "intrinsic_header",
             "clang_driver",
+            "llvm_filemap",
             "isel",
             "llvm_bootstrap",
             "llvm_gates",
@@ -1218,6 +1242,98 @@ mod tests {
     }
 
     #[test]
+    fn llvm_filemap_manifest_names_backend_source_surface() {
+        let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
+        let filemap_manifest = include_str!("../toolchain/lnp64_llvm_filemap.manifest");
+        let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
+        let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
+        let roadmap = include_str!("../toolchain_roadmap.md");
+        let rows = llvm_filemap_rows(filemap_manifest);
+        let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let filemap_path = manifest_field(target_manifest, "llvm_filemap_contract");
+        let mut layers = std::collections::BTreeSet::new();
+        let mut paths = std::collections::BTreeSet::new();
+        let mut purposes = Vec::new();
+
+        assert_eq!(filemap_path, "toolchain/lnp64_llvm_filemap.manifest");
+        assert!(manifest_root.join(filemap_path).is_file());
+        assert!(contract_index.contains(
+            "llvm_filemap|toolchain/lnp64_llvm_filemap.manifest|llvm_filemap_manifest_names_backend_source_surface"
+        ));
+        assert!(transition_manifest.contains("toolchain/lnp64_llvm_filemap.manifest"));
+        assert!(roadmap.contains("toolchain/lnp64_llvm_filemap.manifest"));
+
+        for (layer, path, status, purpose) in rows {
+            layers.insert(layer);
+            assert!(paths.insert(path), "duplicate llvm-project path {path}");
+            assert_eq!(
+                status, "planned",
+                "llvm-project file {path} must stay planned until backend code exists"
+            );
+            assert!(
+                path.starts_with("llvm/") || path.starts_with("clang/") || path.starts_with("lld/"),
+                "llvm filemap path {path} must name an llvm-project source tree path"
+            );
+            assert!(
+                !purpose.is_empty(),
+                "llvm filemap path {path} must describe its purpose"
+            );
+            purposes.push(purpose);
+        }
+
+        for layer in [
+            "llvm_target",
+            "llvm_mc",
+            "llvm_asmparser",
+            "llvm_disassembler",
+            "llvm_targetinfo",
+            "lld",
+            "clang_basic",
+            "clang_driver",
+            "llvm_tests",
+            "clang_tests",
+        ] {
+            assert!(layers.contains(layer), "missing llvm filemap layer {layer}");
+        }
+        for path in [
+            "llvm/lib/Target/LNP64/CMakeLists.txt",
+            "llvm/lib/Target/LNP64/LNP64.td",
+            "llvm/lib/Target/LNP64/LNP64RegisterInfo.td",
+            "llvm/lib/Target/LNP64/LNP64InstrInfo.td",
+            "llvm/lib/Target/LNP64/LNP64CallingConv.td",
+            "llvm/lib/Target/LNP64/LNP64ISelLowering.cpp",
+            "llvm/lib/Target/LNP64/LNP64FrameLowering.cpp",
+            "llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCTargetDesc.cpp",
+            "llvm/lib/Target/LNP64/AsmParser/LNP64AsmParser.cpp",
+            "llvm/lib/Target/LNP64/Disassembler/LNP64Disassembler.cpp",
+            "llvm/lib/Target/LNP64/TargetInfo/LNP64TargetInfo.cpp",
+            "lld/ELF/Arch/LNP64.cpp",
+            "clang/lib/Basic/Targets/LNP64.h",
+            "clang/lib/Basic/Targets/LNP64.cpp",
+            "clang/lib/Driver/ToolChains/Arch/LNP64.cpp",
+            "llvm/test/CodeGen/LNP64/hello.ll",
+            "llvm/test/MC/LNP64/basic.s",
+            "clang/test/Driver/lnp64.c",
+        ] {
+            assert!(paths.contains(path), "missing llvm filemap path {path}");
+        }
+        for concept in [
+            "register",
+            "calling",
+            "relocation",
+            "inline asm",
+            "driver",
+            "static",
+            "no toy compiler",
+        ] {
+            assert!(
+                purposes.iter().any(|purpose| purpose.contains(concept)),
+                "llvm filemap must cover {concept}"
+            );
+        }
+    }
+
+    #[test]
     fn llvm_bootstrap_manifest_names_first_clang_gate() {
         let bootstrap_manifest = include_str!("../toolchain/lnp64_llvm_bootstrap.manifest");
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
@@ -1398,6 +1514,10 @@ mod tests {
         assert_eq!(
             manifest_field(manifest, "clang_driver_contract"),
             "toolchain/lnp64_clang_driver.manifest"
+        );
+        assert_eq!(
+            manifest_field(manifest, "llvm_filemap_contract"),
+            "toolchain/lnp64_llvm_filemap.manifest"
         );
         assert_eq!(
             manifest_field(manifest, "isel_contract"),

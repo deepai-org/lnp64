@@ -14,6 +14,7 @@ relocation_contract=toolchain/lnp64_relocations.manifest
 intrinsic_contract=toolchain/lnp64_intrinsics.manifest
 intrinsic_header_contract=toolchain/lnp64_intrinsics.h
 clang_driver_contract=toolchain/lnp64_clang_driver.manifest
+llvm_filemap_contract=toolchain/lnp64_llvm_filemap.manifest
 isel_contract=toolchain/lnp64_isel.manifest
 exec_plan_contract=toolchain/lnp64_exec_plan.manifest
 debug_unwind_contract=toolchain/lnp64_debug_unwind.manifest
