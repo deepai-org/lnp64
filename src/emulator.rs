@@ -4281,9 +4281,7 @@ impl Machine {
     fn dma_ctl(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
         Self::ensure_result_reg_writable(result)?;
         if !self.current_domain_dma_allowed()? {
-            self.set_status_errno(1)?;
-            self.write_reg(result, -1i64 as u64)?;
-            return Ok(());
+            return self.complete_reg_err(result, 1);
         }
         let op = self.load_u64_offset(argblock, 0)?;
         let dst = self.load_u64_offset(argblock, 8)?;
@@ -4293,9 +4291,7 @@ impl Machine {
         if dma_buffer != 0 {
             let validation = self.validate_dma_buffer(dma_buffer, op, dst, src_or_value, len);
             if let Err(errno) = validation {
-                self.set_status_errno(errno)?;
-                self.write_reg(result, -1i64 as u64)?;
-                return Ok(());
+                return self.complete_reg_err(result, errno);
             }
         }
         let outcome: Result<u64, u64> = match op {
@@ -4325,14 +4321,8 @@ impl Machine {
             _ => Err(22),
         };
         match outcome {
-            Ok(count) => {
-                self.set_errno(0)?;
-                self.write_reg(result, count)
-            }
-            Err(errno) => {
-                self.set_status_errno(errno)?;
-                self.write_reg(result, -1i64 as u64)
-            }
+            Ok(count) => self.complete_reg_ok(result, count),
+            Err(errno) => self.complete_reg_err(result, errno),
         }
     }
 
@@ -16326,6 +16316,28 @@ mod tests {
                 .resident
         );
         fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn dma_ctl_rejects_locked_result_before_errno_or_memory_side_effects() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.set_errno(123).unwrap();
+        let arg = ARG_BASE;
+        let dst = ARG_BASE + 0x1000;
+        machine.write_bytes(dst, &[0x55, 0x55]).unwrap();
+
+        machine.store_u64(arg, DMA_OP_FILL).unwrap();
+        machine.store_u64(arg + 8, dst).unwrap();
+        machine.store_u64(arg + 16, 0xaa).unwrap();
+        machine.store_u64(arg + 24, 2).unwrap();
+        machine.store_u64(arg + 32, 0).unwrap();
+
+        let err = machine.dma_ctl(Reg(31), arg).unwrap_err();
+
+        assert!(err.contains("stack pointer"), "{err}");
+        assert_eq!(machine.process().unwrap().errno, 123);
+        assert_eq!(machine.read_bytes(dst, 2).unwrap(), vec![0x55, 0x55]);
     }
 
     #[test]
