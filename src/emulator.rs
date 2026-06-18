@@ -120,6 +120,7 @@ const ENV_TIMER_GRANULARITY_NS: u64 = 1_000_000;
 const ENV_THREAD_LIMIT: u64 = 4096;
 const ENV_PROCESS_LIMIT: u64 = 4096;
 const ENV_EVENT_QUEUE_LIMIT: u64 = 4096;
+const PROCESS_EVENT_QUEUE_LIMIT: usize = ENV_EVENT_QUEUE_LIMIT as usize;
 const ENV_FUTEX_BUCKET_COUNT: u64 = 4096;
 const ENV_TOPOLOGY_RECORD_COUNT: u64 = 5;
 const ENV_TOPOLOGY_RECORD_FORMAT: u64 = 1;
@@ -2837,6 +2838,20 @@ impl Machine {
 
     fn valid_signal_number(signum: u64) -> bool {
         (1..SIGNAL_NUMBER_LIMIT).contains(&signum)
+    }
+
+    fn enqueue_pending_event(process: &mut Process, event: NativeEvent) -> bool {
+        if event
+            .signal_number()
+            .is_some_and(|signum| !Self::valid_signal_number(signum))
+        {
+            return false;
+        }
+        if process.pending_events.len() >= PROCESS_EVENT_QUEUE_LIMIT {
+            return false;
+        }
+        process.pending_events.push_back(event);
+        true
     }
 
     fn set_errno(&mut self, errno: u64) -> Result<(), String> {
@@ -7312,9 +7327,7 @@ impl Machine {
             if let Some(parent_pid) = parent_pid {
                 if let Some(parent) = self.processes.get_mut(&parent_pid) {
                     self.completed_children.insert((parent_pid, pid), code);
-                    parent
-                        .pending_events
-                        .push_back(NativeEvent::child_signal(SIGCHLD));
+                    Self::enqueue_pending_event(parent, NativeEvent::child_signal(SIGCHLD));
                 }
                 if let Some(waiters) = self.child_waiters.remove(&parent_pid) {
                     for waiter in waiters {
@@ -7388,15 +7401,11 @@ impl Machine {
         }
     }
 
-    fn queue_process_event(&mut self, pid: u64, event: NativeEvent) {
-        if event
-            .signal_number()
-            .is_some_and(|signum| !Self::valid_signal_number(signum))
-        {
-            return;
-        }
+    fn queue_process_event(&mut self, pid: u64, event: NativeEvent) -> bool {
         if let Some(process) = self.processes.get_mut(&pid) {
-            process.pending_events.push_back(event);
+            if !Self::enqueue_pending_event(process, event) {
+                return false;
+            }
             if let Some(tid) = self
                 .threads
                 .values()
@@ -7405,6 +7414,9 @@ impl Machine {
             {
                 self.wake_thread(tid);
             }
+            true
+        } else {
+            false
         }
     }
 
@@ -10147,11 +10159,11 @@ mod tests {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
 
-        machine.queue_process_event(1, NativeEvent::kill_signal(SIGNAL_NUMBER_LIMIT));
+        assert!(!machine.queue_process_event(1, NativeEvent::kill_signal(SIGNAL_NUMBER_LIMIT)));
         assert!(machine.process().unwrap().pending_events.is_empty());
         assert_eq!(machine.read_pcr(Pcr::Sigpending).unwrap(), 0);
 
-        machine.queue_process_event(1, NativeEvent::kill_signal(SIGNAL_NUMBER_LIMIT - 1));
+        assert!(machine.queue_process_event(1, NativeEvent::kill_signal(SIGNAL_NUMBER_LIMIT - 1)));
         assert!(matches!(
             machine.process().unwrap().pending_events.front(),
             Some(NativeEvent::Signal { signum, .. }) if *signum == SIGNAL_NUMBER_LIMIT - 1
@@ -10160,6 +10172,88 @@ mod tests {
             machine.read_pcr(Pcr::Sigpending).unwrap(),
             1u64 << (SIGNAL_NUMBER_LIMIT - 1)
         );
+    }
+
+    #[test]
+    fn process_event_queue_rejects_overflow_without_replacing_pending_events() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        {
+            let process = machine.process_mut().unwrap();
+            for _ in 0..PROCESS_EVENT_QUEUE_LIMIT {
+                process
+                    .pending_events
+                    .push_back(NativeEvent::timer_signal(SIGALRM));
+            }
+        }
+
+        assert!(!machine.queue_process_event(1, NativeEvent::kill_signal(2)));
+        assert_eq!(
+            machine.process().unwrap().pending_events.len(),
+            PROCESS_EVENT_QUEUE_LIMIT
+        );
+        assert!(
+            machine
+                .process()
+                .unwrap()
+                .pending_events
+                .iter()
+                .all(|event| matches!(
+                    event,
+                    NativeEvent::Signal {
+                        signum: SIGALRM,
+                        source: EventSource::Timer
+                    }
+                ))
+        );
+    }
+
+    #[test]
+    fn child_exit_signal_respects_parent_event_queue_limit() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine
+            .clone_with_profile(CloneProfile::NewProcessCow, Reg(5), None)
+            .unwrap();
+        let child_pid = machine.thread().unwrap().regs[5];
+        let child_tid = machine
+            .threads
+            .values()
+            .find(|thread| thread.pid == child_pid)
+            .unwrap()
+            .tid;
+        {
+            let parent = machine.process_mut().unwrap();
+            for _ in 0..PROCESS_EVENT_QUEUE_LIMIT {
+                parent
+                    .pending_events
+                    .push_back(NativeEvent::timer_signal(SIGALRM));
+            }
+        }
+
+        machine.current_tid = child_tid;
+        machine.exit_current(7).unwrap();
+        machine.current_tid = 1;
+
+        assert_eq!(
+            machine.process().unwrap().pending_events.len(),
+            PROCESS_EVENT_QUEUE_LIMIT
+        );
+        assert!(
+            !machine
+                .process()
+                .unwrap()
+                .pending_events
+                .iter()
+                .any(|event| matches!(
+                    event,
+                    NativeEvent::Signal {
+                        signum: SIGCHLD,
+                        source: EventSource::ChildExit
+                    }
+                ))
+        );
+        assert_eq!(machine.completed_children.get(&(1, child_pid)), Some(&7));
     }
 
     #[test]
