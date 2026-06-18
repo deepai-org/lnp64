@@ -172,6 +172,10 @@ impl Parser {
                 arity(2)?;
                 Instr::Li(reg(&args[0])?, value(&args[1]))
             }
+            "LI32" => {
+                arity(2)?;
+                Instr::Li(reg(&args[0])?, value(&args[1]))
+            }
             "MOV" => {
                 arity(2)?;
                 Instr::Mov(reg(&args[0])?, reg(&args[1])?)

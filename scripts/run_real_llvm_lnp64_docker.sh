@@ -66,3 +66,10 @@ signed_load_output="$(cargo run --quiet -- run-elf "$signed_load_probe")"
 grep -q 'exit=0' <<<"$signed_load_output"
 printf 'real LLVM LNP64 run-elf signed-load execution passed: %s\n' \
   "$signed_load_probe"
+
+wide_const_probe="target/llvm-lnp64-build/lnp64-wide-const-linked.elf"
+cargo run --quiet -- elf-plan "$wide_const_probe" >/dev/null
+wide_const_output="$(cargo run --quiet -- run-elf "$wide_const_probe")"
+grep -q 'exit=0' <<<"$wide_const_output"
+printf 'real LLVM LNP64 run-elf wide-constant execution passed: %s\n' \
+  "$wide_const_probe"

@@ -124,6 +124,10 @@ public:
       emitLE32(encodeFixed32R(0x03, getGPRNo(MI.getOperand(0))), OS);
       emitFixed32AddressOperand(MI.getOperand(1), OS, Fixups);
       return;
+    case LNP64::LI32:
+      emitLE32(encodeFixed32R(0x04, getGPRNo(MI.getOperand(0))), OS);
+      emitFixed32AddressOperand(MI.getOperand(1), OS, Fixups);
+      return;
     case LNP64::MOV:
       emitLE32(encodeFixed32RR(0x02, getGPRNo(MI.getOperand(0)),
                                getGPRNo(MI.getOperand(1))),

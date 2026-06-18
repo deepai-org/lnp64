@@ -1952,6 +1952,7 @@ mod tests {
         assert!(calling_td.contains("iPTR"));
         for opcode in [
             "ADD",
+            "LI32",
             "LD",
             "CALL",
             "RET",
@@ -2018,11 +2019,13 @@ mod tests {
         assert!(inst_printer.contains("cset.eq"));
         assert!(inst_printer.contains("case LNP64::EXIT"));
         assert!(inst_printer.contains("case LNP64::LA"));
+        assert!(inst_printer.contains("case LNP64::LI32"));
         assert!(inst_printer.contains("call_reg"));
         assert!(mc_emitter.contains("case LNP64::AND"));
         assert!(mc_emitter.contains("case LNP64::CMP"));
         assert!(mc_emitter.contains("case LNP64::CSET_EQ"));
         assert!(mc_emitter.contains("case LNP64::LA"));
+        assert!(mc_emitter.contains("case LNP64::LI32"));
         assert!(mc_emitter.contains("fixup_lnp64_abs32"));
         assert!(mc_emitter.contains("case LNP64::LD_W"));
         assert!(mc_emitter.contains("case LNP64::LD_H"));
@@ -2036,6 +2039,7 @@ mod tests {
         assert!(asm_parser.contains("parseImmediateOrMemory"));
         assert!(asm_parser.contains("buildInstruction"));
         assert!(asm_parser.contains(r#".Case("la", LNP64::LA)"#));
+        assert!(asm_parser.contains(r#".Case("li32", LNP64::LI32)"#));
         assert!(asm_parser.contains(r#".Case("call", LNP64::CALL)"#));
         assert!(asm_parser.contains(r#".Case("cset.eq", LNP64::CSET_EQ)"#));
         assert!(asm_parser.contains(r#".Case("errno_get", LNP64::ERRNO_GET)"#));
@@ -2050,7 +2054,9 @@ mod tests {
         assert!(!disassembler.contains("MemoryObject"));
         assert!(disassembler.contains("case 0x10"));
         assert!(disassembler.contains("case 0x03"));
+        assert!(disassembler.contains("case 0x04"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::LA)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::LI32)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::ADD)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::AND)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::CMP)"));
@@ -2102,6 +2108,8 @@ mod tests {
         assert!(isel.contains("ISD::SDIV"));
         assert!(isel.contains("setOperationAction(ISD::BR_CC, MVT::i64, Custom)"));
         assert!(isel.contains("getLNP64CSetInstr"));
+        assert!(isel.contains("LNP64::PseudoLINeg32"));
+        assert!(isel.contains("TII.get(LNP64::LI32)"));
         assert!(isel.contains("LNP64GenCallingConv.inc"));
         assert!(isel.contains("LowerOperation"));
         assert!(isel.contains("setOperationAction(ISD::GlobalAddress, MVT::i64, Custom)"));
@@ -2170,6 +2178,8 @@ mod tests {
         assert!(isel_header.contains("RET_FLAG"));
         assert!(instr_td.contains("def simm16_imm"));
         assert!(instr_td.contains("def simm14_imm"));
+        assert!(instr_td.contains("def uimm32_imm"));
+        assert!(instr_td.contains("def sneg32_imm"));
         assert!(instr_td.contains("def all_ones_imm"));
         assert!(instr_td.contains("def brtarget : Operand<OtherVT>"));
         assert!(instr_td.contains("(ins brtarget:$target)"));
@@ -2201,8 +2211,12 @@ mod tests {
         assert!(instr_td.contains("def LNP64wrapper"));
         assert!(instr_td.contains("(set GPR:$rd, simm16_imm:$imm)"));
         assert!(instr_td.contains("def LA"));
+        assert!(instr_td.contains("def LI32"));
+        assert!(instr_td.contains("def PseudoLINeg32"));
         assert!(instr_td.contains("let Size = 8"));
         assert!(instr_td.contains("(i64 (LNP64wrapper tglobaladdr:$target))"));
+        assert!(instr_td.contains("(set GPR:$rd, uimm32_imm:$imm)"));
+        assert!(instr_td.contains("(PseudoLINeg32 sneg32_imm:$imm)"));
         assert!(instr_td.contains("(set GPR:$rd, (add GPR:$rs1, GPR:$rs2))"));
         assert!(instr_td.contains("(set GPR:$rd, (xor GPR:$rs, all_ones_imm))"));
         assert!(instr_td.contains("(set GPR:$rd, (shl GPR:$rs1, GPR:$rs2))"));
@@ -3441,6 +3455,7 @@ mod tests {
 
         for group in [
             "constants",
+            "wide_constants",
             "integer_alu_rrr",
             "integer_compare_value",
             "control_branch",
@@ -3488,6 +3503,7 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::NOP"));
         assert!(mc_emitter.contains("case LNP64::RET"));
         assert!(mc_emitter.contains("case LNP64::LI"));
+        assert!(mc_emitter.contains("case LNP64::LI32"));
         assert!(mc_emitter.contains("case LNP64::ADD"));
         assert!(mc_emitter.contains("case LNP64::CALL"));
         assert!(mc_emitter.contains("case LNP64::CALL_REG"));

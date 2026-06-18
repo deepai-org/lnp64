@@ -272,6 +272,7 @@ private:
         StringSwitch<unsigned>(Mnemonic)
             .Case("nop", LNP64::NOP)
             .Case("li", LNP64::LI)
+            .Case("li32", LNP64::LI32)
             .Case("la", LNP64::LA)
             .Case("mov", LNP64::MOV)
             .Case("add", LNP64::ADD)
@@ -326,7 +327,7 @@ private:
 
     if (Opcode == LNP64::LI)
       return addRegImm(Inst, Operands);
-    if (Opcode == LNP64::LA)
+    if (Opcode == LNP64::LA || Opcode == LNP64::LI32)
       return addRegAddress(Inst, Operands);
     if (Opcode == LNP64::MOV || Opcode == LNP64::NOT)
       return addRegReg(Inst, Operands);

@@ -2,6 +2,7 @@
 # Pipe-delimited fields: group|format|opcodes|operands|relocations|llvm_surface
 # fixed32_no_operand: opcode[31:24], reserved[23:0]=0; implemented first for NOP and RET
 # fixed32_ri: opcode[31:24], rd[23:19], reserved[18:16], imm16[15:0]
+# fixed32_reg_u32_tail: opcode[31:24], rd[23:19], reserved[18:0], followed by little-endian imm32/address payload
 # fixed32_rr: opcode[31:24], rd[23:19], rs[18:14], reserved[13:0]
 # fixed32_rrr: opcode[31:24], rd[23:19], rs1[18:14], rs2[13:9], reserved[8:0]
 # fixed32_mem_base_simm: opcode[31:24], reg[23:19], base[18:14], simm14[13:0]
@@ -10,6 +11,7 @@
 # fixed32_native4: opcode[31:24], rd[23:19], cap[18:14], arg0[13:9], arg1[8:4], reserved[3:0]
 # fixed32_cset: opcode[31:24], rd[23:19], reserved[18:0]; materializes current FLAGS as 0/1
 constants|fixed32_constant|NOP,LI,MOV|none_or_gpr_immediate_or_gpr|R_LNP64_ABS64,R_LNP64_GOT64|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64AsmParser.cpp
+wide_constants|fixed32_reg_u32_tail|LA,LI32|gpr_dst,u32_payload|R_LNP64_ABS32|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
 integer_alu_rrr|fixed32_rrr|ADD,SUB,MUL,DIV,AND,OR,XOR,LSL,LSR,ASR|gpr_dst,gpr_lhs,gpr_rhs|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp
 integer_alu_rr|fixed32_rr|NOT,CMP|gpr_lhs,gpr_rhs|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp
 integer_compare_value|fixed32_cset|CSET.EQ,CSET.NE,CSET.LT,CSET.GT,CSET.LE,CSET.GE|gpr_dst|none|LNP64InstrInfo.td,LNP64ISelLowering.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp

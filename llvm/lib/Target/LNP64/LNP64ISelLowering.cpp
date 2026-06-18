@@ -247,6 +247,19 @@ MachineBasicBlock *LNP64TargetLowering::EmitInstrWithCustomInserter(
   const TargetInstrInfo &TII = *BB->getParent()->getSubtarget().getInstrInfo();
   DebugLoc DL = MI.getDebugLoc();
 
+  if (MI.getOpcode() == LNP64::PseudoLINeg32) {
+    MachineFunction *MF = BB->getParent();
+    MachineRegisterInfo &MRI = MF->getRegInfo();
+    Register Magnitude = MRI.createVirtualRegister(&LNP64::GPRRegClass);
+    int64_t Value = MI.getOperand(1).getImm();
+    BuildMI(*BB, MI, DL, TII.get(LNP64::LI32), Magnitude).addImm(-Value);
+    BuildMI(*BB, MI, DL, TII.get(LNP64::SUB), MI.getOperand(0).getReg())
+        .addReg(LNP64::R0)
+        .addReg(Magnitude);
+    MI.eraseFromParent();
+    return BB;
+  }
+
   if (isLNP64SignedLoadPseudo(MI.getOpcode())) {
     MachineFunction *MF = BB->getParent();
     MachineRegisterInfo &MRI = MF->getRegInfo();

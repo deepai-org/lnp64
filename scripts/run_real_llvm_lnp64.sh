@@ -367,6 +367,29 @@ grep -q 'asr r' "$signed_load_dump"
 printf 'real LLVM LNP64 clang signed-load object smoke passed: %s\n' \
   "$signed_load_obj"
 
+wide_const_c="$build_dir/wide-const-smoke.c"
+cat >"$wide_const_c" <<'C'
+unsigned int wide_constant(void) {
+  return 65531u;
+}
+
+int main(void) {
+  return (int)(wide_constant() - 65531u);
+}
+C
+
+wide_const_obj="$build_dir/wide-const-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$wide_const_c" -o "$wide_const_obj"
+test -s "$wide_const_obj"
+wide_const_dump="$build_dir/wide-const-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$wide_const_obj" \
+  >"$wide_const_dump"
+grep -q 'li32 r' "$wide_const_dump"
+printf 'real LLVM LNP64 clang wide-constant object smoke passed: %s\n' \
+  "$wide_const_obj"
+
 crt0_obj="$build_dir/crt0-smoke.o"
 "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj toolchain/crt0_lnp64.s \
   -o "$crt0_obj"
@@ -438,6 +461,13 @@ signed_load_elf="$build_dir/lnp64-signed-load-linked.elf"
 test -s "$signed_load_elf"
 printf 'real LLVM LNP64 lld signed-load link smoke passed: %s\n' \
   "$signed_load_elf"
+
+wide_const_elf="$build_dir/lnp64-wide-const-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$wide_const_elf" "$crt0_obj" "$wide_const_obj"
+test -s "$wide_const_elf"
+printf 'real LLVM LNP64 lld wide-constant link smoke passed: %s\n' \
+  "$wide_const_elf"
 
 for demo in hello factorial allocator fibonacci; do
   demo_obj="$build_dir/$demo-clang-smoke.o"

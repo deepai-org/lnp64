@@ -8,6 +8,13 @@ def simm16_imm : PatLeaf<(imm), [{
 def simm14_imm : PatLeaf<(imm), [{
   return isInt<14>(N->getSExtValue());
 }]>;
+def uimm32_imm : PatLeaf<(imm), [{
+  return !isInt<16>(N->getSExtValue()) && isUInt<32>(N->getZExtValue());
+}]>;
+def sneg32_imm : PatLeaf<(imm), [{
+  int64_t Value = N->getSExtValue();
+  return Value < -32768 && isInt<32>(Value);
+}]>;
 def all_ones_imm : PatLeaf<(imm), [{
   return N->isAllOnes();
 }]>;
@@ -63,6 +70,13 @@ class LNP64NoOperand<string Mnemonic>
 class LNP64RI<string Mnemonic>
     : LNP64Inst<(outs GPR:$rd), (ins simm16:$imm), Mnemonic,
                 "\t$rd, $imm">;
+
+class LNP64ConstPseudo<string Mnemonic>
+    : LNP64Inst<(outs GPR:$rd), (ins i64imm:$imm), Mnemonic,
+                "\t$rd, $imm"> {
+  let isPseudo = 1;
+  let usesCustomInserter = 1;
+}
 
 class LNP64RR<string Mnemonic>
     : LNP64Inst<(outs GPR:$rd), (ins GPR:$rs), Mnemonic, "\t$rd, $rs">;
@@ -144,6 +158,13 @@ def LA : LNP64Inst<(outs GPR:$rd), (ins i64imm:$target), "la",
                    "\t$rd, $target"> {
   let Size = 8;
 }
+def LI32 : LNP64Inst<(outs GPR:$rd), (ins i64imm:$imm), "li32",
+                     "\t$rd, $imm"> {
+  let Size = 8;
+  let Pattern = [(set GPR:$rd, uimm32_imm:$imm)];
+}
+def PseudoLINeg32 : LNP64ConstPseudo<"pseudo_li.neg32">;
+def : Pat<(i64 sneg32_imm:$imm), (PseudoLINeg32 sneg32_imm:$imm)>;
 def : Pat<(i64 (LNP64wrapper tglobaladdr:$target)), (LA tglobaladdr:$target)>;
 
 def ADD : LNP64RRR<"add"> {

@@ -1486,6 +1486,10 @@ impl Machine {
                 let addr = self.load_exec_u32(pc + 4)? as i64;
                 return Ok((Instr::Li(a, Value::Imm(addr)), pc + 8));
             }
+            0x04 => {
+                let value = self.load_exec_u32(pc + 4)? as i64;
+                return Ok((Instr::Li(a, Value::Imm(value)), pc + 8));
+            }
             0x10 => Instr::Add(a, b, c),
             0x11 => Instr::Sub(a, b, c),
             0x12 => Instr::Mul(a, b, c),
