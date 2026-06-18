@@ -1489,8 +1489,7 @@ impl Machine {
                         self.ready.retain(|tid| *tid != self.current_tid);
                         return Ok(false);
                     };
-                    self.set_errno(0)?;
-                    self.write_reg(result, v1)?;
+                    self.complete_reg_ok(result, v1)?;
                     self.write_reg(Reg(30), v2)?;
                 } else {
                     let addr = self.read_reg(buf)?;
@@ -8953,6 +8952,29 @@ mod tests {
         assert_eq!(machine.thread().unwrap().regs[1], 0);
         assert_eq!(machine.process().unwrap().errno, 0);
         assert_eq!(machine.process().unwrap().inbox.front(), Some(&(10, 20)));
+    }
+
+    #[test]
+    fn message_endpoint_pull_success_clears_errno_and_sets_secondary_result() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.process_mut().unwrap().inbox.push_back((10, 20));
+        machine.set_errno(123).unwrap();
+
+        let keep_ready = machine
+            .exec(Instr::Pull(
+                Reg(5),
+                FdReg(MESSAGE_ENDPOINT_FD),
+                Reg(0),
+                Reg(0),
+            ))
+            .unwrap();
+
+        assert!(keep_ready);
+        assert_eq!(machine.thread().unwrap().regs[5], 10);
+        assert_eq!(machine.thread().unwrap().regs[30], 20);
+        assert_eq!(machine.process().unwrap().errno, 0);
+        assert!(machine.process().unwrap().inbox.is_empty());
     }
 
     #[test]
