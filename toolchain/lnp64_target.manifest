@@ -18,6 +18,7 @@ llvm_filemap_contract=toolchain/lnp64_llvm_filemap.manifest
 libc_shim_contract=toolchain/lnp64_libc_shim.manifest
 isel_contract=toolchain/lnp64_isel.manifest
 exec_plan_contract=toolchain/lnp64_exec_plan.manifest
+loader_security_contract=toolchain/lnp64_loader_security.manifest
 debug_unwind_contract=toolchain/lnp64_debug_unwind.manifest
 inline_asm_contract=toolchain/lnp64_inline_asm.manifest
 crt_startup_contract=toolchain/lnp64_crt_startup.manifest

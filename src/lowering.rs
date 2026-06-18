@@ -812,6 +812,31 @@ mod tests {
             .collect()
     }
 
+    fn loader_security_rows(manifest: &str) -> Vec<(&str, &str, Vec<&str>, &str)> {
+        manifest
+            .lines()
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(|line| {
+                let mut fields = line.splitn(4, '|');
+                let requirement = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing loader security requirement in {line}"));
+                let boundary = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing loader security boundary in {line}"));
+                let evidence = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing loader security evidence in {line}"))
+                    .split(',')
+                    .collect();
+                let status = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing loader security status in {line}"));
+                (requirement, boundary, evidence, status)
+            })
+            .collect()
+    }
+
     fn contract_rows(manifest: &str) -> Vec<(&str, &str, &str)> {
         manifest
             .lines()
@@ -1046,6 +1071,7 @@ mod tests {
             "llvm_gates",
             "linker_script",
             "exec_plan",
+            "loader_security",
             "loader",
             "exec_descriptor_validator",
             "debug_unwind",
@@ -1724,6 +1750,10 @@ mod tests {
             "toolchain/lnp64_exec_plan.manifest"
         );
         assert_eq!(
+            manifest_field(manifest, "loader_security_contract"),
+            "toolchain/lnp64_loader_security.manifest"
+        );
+        assert_eq!(
             manifest_field(manifest, "debug_unwind_contract"),
             "toolchain/lnp64_debug_unwind.manifest"
         );
@@ -2036,6 +2066,109 @@ mod tests {
         assert!(object_format.contains("VMA records: target virtual address"));
         assert!(object_format.contains("startup FDR grants"));
         assert!(object_format.contains("old image remains"));
+    }
+
+    #[test]
+    fn loader_security_manifest_covers_exec_plan_security() {
+        let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
+        let security_manifest = include_str!("../toolchain/lnp64_loader_security.manifest");
+        let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
+        let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
+        let roadmap = include_str!("../toolchain_roadmap.md");
+        let object_format = include_str!("../object_format.md");
+        let loader_source = include_str!("loader.rs");
+        let emulator_source = include_str!("emulator.rs");
+        let lowering_source = include_str!("lowering.rs");
+        let conformance = include_str!("../conformance_matrix.md");
+        let evidence_corpus =
+            format!("{loader_source}\n{emulator_source}\n{lowering_source}\n{conformance}");
+        let rows = loader_security_rows(security_manifest);
+        let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let security_path = manifest_field(target_manifest, "loader_security_contract");
+        let mut requirements = std::collections::BTreeMap::new();
+
+        assert_eq!(security_path, "toolchain/lnp64_loader_security.manifest");
+        assert!(manifest_root.join(security_path).is_file());
+        assert!(contract_index.contains(
+            "loader_security|toolchain/lnp64_loader_security.manifest|loader_security_manifest_covers_exec_plan_security"
+        ));
+        assert!(transition_manifest.contains("toolchain/lnp64_loader_security.manifest"));
+        assert!(roadmap.contains("toolchain/lnp64_loader_security.manifest"));
+        assert!(object_format.contains("The loader must choose ASLR layout"));
+        assert!(object_format.contains("W^X/NX policy"));
+        assert!(object_format.contains("executable provenance"));
+        assert!(object_format.contains("old image remains"));
+
+        for (requirement, boundary, evidence, status) in rows {
+            assert!(
+                requirements
+                    .insert(requirement, (boundary, evidence.clone(), status))
+                    .is_none(),
+                "duplicate loader security requirement {requirement}"
+            );
+            assert!(
+                [
+                    "software_loader",
+                    "loader_to_emulator",
+                    "loader_and_exec_validator",
+                    "software_loader_and_layout",
+                    "exec_descriptor_validator",
+                    "emulator_exec",
+                ]
+                .contains(&boundary),
+                "unknown loader security boundary {boundary}"
+            );
+            assert!(
+                ["tested", "partial"].contains(&status),
+                "unknown loader security status {status} for {requirement}"
+            );
+            assert!(
+                !evidence.is_empty(),
+                "empty evidence for loader security requirement {requirement}"
+            );
+            for item in evidence {
+                assert!(
+                    evidence_corpus.contains(item),
+                    "loader security evidence {item} for {requirement} is not present"
+                );
+            }
+        }
+
+        for requirement in [
+            "parse_elf_headers",
+            "apply_relocations",
+            "prepare_vmas",
+            "startup_metadata",
+            "submit_exec_plan",
+            "wx_nx_policy",
+            "aslr_load_bias",
+            "provenance_authority",
+            "precommit_preservation",
+        ] {
+            assert!(
+                requirements.contains_key(requirement),
+                "missing loader security requirement {requirement}"
+            );
+        }
+        assert_eq!(
+            requirements["provenance_authority"].2, "partial",
+            "generation/lineage authority validation must not be overclaimed"
+        );
+        for requirement in [
+            "parse_elf_headers",
+            "apply_relocations",
+            "prepare_vmas",
+            "startup_metadata",
+            "submit_exec_plan",
+            "wx_nx_policy",
+            "aslr_load_bias",
+            "precommit_preservation",
+        ] {
+            assert_eq!(
+                requirements[requirement].2, "tested",
+                "{requirement} should be tested"
+            );
+        }
     }
 
     #[test]
