@@ -6655,6 +6655,9 @@ impl Machine {
     }
 
     fn deliver_signal_if_needed(&mut self) -> Result<(), String> {
+        if !self.thread()?.signal_stack.is_empty() {
+            return Ok(());
+        }
         let pid = self.thread()?.pid;
         let signum = {
             let Some(process) = self.processes.get_mut(&pid) else {
@@ -7734,6 +7737,42 @@ mod tests {
         machine.deliver_signal_if_needed().unwrap();
         assert!(machine.process().unwrap().pending_events.is_empty());
         assert_eq!(machine.thread().unwrap().ip, 7);
+        assert_eq!(machine.thread().unwrap().signal_stack.len(), 1);
+    }
+
+    #[test]
+    fn signal_delivery_defers_nested_frames_until_sigret() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine
+            .process_mut()
+            .unwrap()
+            .signal_handlers
+            .insert(2, SignalDisposition::Handler(7));
+        machine
+            .process_mut()
+            .unwrap()
+            .signal_handlers
+            .insert(3, SignalDisposition::Handler(9));
+
+        machine.queue_process_event(1, NativeEvent::kill_signal(2));
+        machine.deliver_signal_if_needed().unwrap();
+        assert_eq!(machine.thread().unwrap().ip, 7);
+        assert_eq!(machine.thread().unwrap().signal_stack.len(), 1);
+
+        machine.queue_process_event(1, NativeEvent::timer_signal(3));
+        machine.deliver_signal_if_needed().unwrap();
+        assert_eq!(machine.thread().unwrap().ip, 7);
+        assert_eq!(machine.thread().unwrap().signal_stack.len(), 1);
+        assert!(matches!(
+            machine.process().unwrap().pending_events.front(),
+            Some(NativeEvent::Signal { signum: 3, .. })
+        ));
+
+        machine.thread_mut().unwrap().signal_stack.clear();
+        machine.deliver_signal_if_needed().unwrap();
+        assert!(machine.process().unwrap().pending_events.is_empty());
+        assert_eq!(machine.thread().unwrap().ip, 9);
         assert_eq!(machine.thread().unwrap().signal_stack.len(), 1);
     }
 
