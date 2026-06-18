@@ -2526,6 +2526,7 @@ impl Machine {
                 self.process_mut()?.sigmask = mask;
             }
             Instr::Alarm(dst, seconds) => {
+                Self::ensure_result_reg_writable(dst)?;
                 let seconds = self.read_reg(seconds)?;
                 let pid = self.thread()?.pid;
                 let previous = self
@@ -10682,6 +10683,19 @@ mod tests {
             machine.process().unwrap().pending_events.front(),
             Some(NativeEvent::Signal { signum: 2, .. })
         ));
+    }
+
+    #[test]
+    fn alarm_rejects_locked_result_without_timer_mutation() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.alarms.push((1, 500));
+        machine.thread_mut().unwrap().regs[2] = 7;
+
+        let err = machine.exec(Instr::Alarm(Reg(31), Reg(2))).unwrap_err();
+
+        assert!(err.contains("hardware-locked stack pointer"), "{err}");
+        assert_eq!(machine.alarms, vec![(1, 500)]);
     }
 
     #[test]
