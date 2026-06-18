@@ -9,6 +9,7 @@ const ET_DYN: u16 = 3;
 const EM_LNP64: u16 = 0x6c64;
 const PT_LOAD: u32 = 1;
 const PT_DYNAMIC: u32 = 2;
+const PT_NOTE: u32 = 4;
 const SHT_RELA: u32 = 4;
 const PF_X: u32 = 1;
 const PF_W: u32 = 2;
@@ -21,12 +22,18 @@ const ELF64_EHDR_SIZE: usize = 64;
 const ELF64_PHDR_SIZE: usize = 56;
 const ELF64_SHDR_SIZE: usize = 64;
 const ELF64_RELA_SIZE: usize = 24;
+const LNP64_STARTUP_NOTE_MAGIC: &[u8; 8] = b"LNP64ST\0";
+const STARTUP_NOTE_HEADER_SIZE: usize = 64;
+const STARTUP_FDR_RECORD_SIZE: usize = 64;
+const MAX_STARTUP_FDRS: usize = 256;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExecPlan {
     pub version: u64,
     pub entry: ExecEntry,
     pub vmas: Vec<VmaRecord>,
+    pub startup: Option<StartupDescriptor>,
+    pub fdr_grants: Vec<StartupFdrDescriptor>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -66,6 +73,26 @@ pub enum MemoryType {
 pub enum ExecutableProvenance {
     ImageText,
     NonExecutable,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StartupDescriptor {
+    pub flags: u64,
+    pub argc_addr: u64,
+    pub argv_addr: u64,
+    pub envp_addr: u64,
+    pub auxv_addr: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StartupFdrDescriptor {
+    pub slot: u64,
+    pub kind: u64,
+    pub rights: u64,
+    pub flags: u64,
+    pub object_id: u64,
+    pub generation: u64,
+    pub name_offset: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -154,6 +181,8 @@ pub fn build_static_exec_plan(image: &[u8], options: LoaderOptions) -> Result<Ex
     }
 
     let mut vmas = Vec::new();
+    let mut startup = None;
+    let mut fdr_grants = Vec::new();
     for idx in 0..phnum {
         let base = phoff + idx * phentsize;
         let ph = read_program_header(image, base)?;
@@ -165,6 +194,7 @@ pub fn build_static_exec_plan(image: &[u8], options: LoaderOptions) -> Result<Ex
                 options.load_bias,
             )?),
             PT_DYNAMIC => return Err("PT_DYNAMIC is unsupported by the static loader".to_string()),
+            PT_NOTE => parse_startup_note_segment(image, ph, &mut startup, &mut fdr_grants)?,
             _ => {}
         }
     }
@@ -189,6 +219,8 @@ pub fn build_static_exec_plan(image: &[u8], options: LoaderOptions) -> Result<Ex
             startup_metadata_ptr: options.startup_metadata_ptr,
         },
         vmas,
+        startup,
+        fdr_grants,
     })
 }
 
@@ -342,6 +374,81 @@ fn relocation_file_offset(plan: &ExecPlan, target: u64) -> Result<usize, String>
     Err("RELA target is outside file-backed PT_LOAD data".to_string())
 }
 
+fn parse_startup_note_segment(
+    image: &[u8],
+    ph: ProgramHeader,
+    startup: &mut Option<StartupDescriptor>,
+    fdr_grants: &mut Vec<StartupFdrDescriptor>,
+) -> Result<(), String> {
+    let note_end = ph
+        .offset
+        .checked_add(ph.filesz)
+        .ok_or_else(|| "PT_NOTE range overflows".to_string())?;
+    let note_start = checked_usize(ph.offset, "PT_NOTE offset")?;
+    let note_end = checked_usize(note_end, "PT_NOTE end")?;
+    if note_end > image.len() {
+        return Err("PT_NOTE range is truncated".to_string());
+    }
+    let note = &image[note_start..note_end];
+    if note.len() < LNP64_STARTUP_NOTE_MAGIC.len()
+        || &note[..LNP64_STARTUP_NOTE_MAGIC.len()] != LNP64_STARTUP_NOTE_MAGIC
+    {
+        return Ok(());
+    }
+    if startup.is_some() {
+        return Err("duplicate LNP64 startup note".to_string());
+    }
+    if note.len() < STARTUP_NOTE_HEADER_SIZE {
+        return Err("LNP64 startup note is truncated".to_string());
+    }
+    let version = read_u64(note, 8)?;
+    if version != 1 {
+        return Err("LNP64 startup note version is unsupported".to_string());
+    }
+    let fdr_count = read_u64(note, 56)?;
+    let fdr_count =
+        usize::try_from(fdr_count).map_err(|_| "startup FDR count exceeds host usize")?;
+    if fdr_count > MAX_STARTUP_FDRS {
+        return Err("startup FDR count exceeds architectural limit".to_string());
+    }
+    let needed = STARTUP_NOTE_HEADER_SIZE
+        .checked_add(
+            fdr_count
+                .checked_mul(STARTUP_FDR_RECORD_SIZE)
+                .ok_or_else(|| "startup FDR table length overflows".to_string())?,
+        )
+        .ok_or_else(|| "startup note length overflows".to_string())?;
+    if needed > note.len() {
+        return Err("startup FDR table is truncated".to_string());
+    }
+
+    *startup = Some(StartupDescriptor {
+        flags: read_u64(note, 16)?,
+        argc_addr: read_u64(note, 24)?,
+        argv_addr: read_u64(note, 32)?,
+        envp_addr: read_u64(note, 40)?,
+        auxv_addr: read_u64(note, 48)?,
+    });
+
+    for idx in 0..fdr_count {
+        let base = STARTUP_NOTE_HEADER_SIZE + idx * STARTUP_FDR_RECORD_SIZE;
+        let reserved = read_u64(note, base + 56)?;
+        if reserved != 0 {
+            return Err("startup FDR record reserved field is nonzero".to_string());
+        }
+        fdr_grants.push(StartupFdrDescriptor {
+            slot: read_u64(note, base)?,
+            kind: read_u64(note, base + 8)?,
+            rights: read_u64(note, base + 16)?,
+            flags: read_u64(note, base + 24)?,
+            object_id: read_u64(note, base + 32)?,
+            generation: read_u64(note, base + 40)?,
+            name_offset: read_u64(note, base + 48)?,
+        });
+    }
+    Ok(())
+}
+
 fn reject_overlapping_vmas(vmas: &[VmaRecord]) -> Result<(), String> {
     for (idx, left) in vmas.iter().enumerate() {
         let left_end = left
@@ -461,6 +568,8 @@ mod tests {
         assert_eq!(plan.version, 1);
         assert_eq!(plan.entry.entry_pc, 0x400000);
         assert_eq!(plan.entry.initial_sp, 0x700000);
+        assert!(plan.startup.is_none());
+        assert!(plan.fdr_grants.is_empty());
         assert_eq!(plan.vmas.len(), 2);
         assert_eq!(
             plan.vmas[0].protection,
@@ -603,6 +712,70 @@ mod tests {
         assert!(err.contains("outside file-backed PT_LOAD"), "{err}");
     }
 
+    #[test]
+    fn static_elf_loader_parses_startup_note_descriptors() {
+        let mut image = test_elf(&[
+            text_phdr(),
+            TestPhdr {
+                typ: PT_NOTE,
+                flags: PF_R,
+                offset: 0x300,
+                vaddr: 0,
+                filesz: 192,
+                memsz: 192,
+                align: 8,
+            },
+        ]);
+        install_startup_note(&mut image, 2);
+        install_startup_fdr(&mut image, 0, 0, 1, 0xf, 0x10, 0x100, 7, 0x40, 0);
+        install_startup_fdr(&mut image, 1, 1, 2, 0x3, 0x20, 0x200, 8, 0x48, 0);
+
+        let plan = build_static_exec_plan(&image, LoaderOptions::default()).unwrap();
+
+        assert_eq!(
+            plan.startup,
+            Some(StartupDescriptor {
+                flags: 0xabc,
+                argc_addr: 0x700000,
+                argv_addr: 0x700008,
+                envp_addr: 0x700080,
+                auxv_addr: 0x700100,
+            })
+        );
+        assert_eq!(plan.fdr_grants.len(), 2);
+        assert_eq!(plan.fdr_grants[0].slot, 0);
+        assert_eq!(plan.fdr_grants[0].kind, 1);
+        assert_eq!(plan.fdr_grants[0].rights, 0xf);
+        assert_eq!(plan.fdr_grants[1].slot, 1);
+        assert_eq!(plan.fdr_grants[1].generation, 8);
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_bad_startup_note_version() {
+        let mut image = test_elf(&[text_phdr(), startup_note_phdr(64)]);
+        install_startup_note(&mut image, 0);
+        put_u64(&mut image, 0x308, 2);
+        let err = build_static_exec_plan(&image, LoaderOptions::default()).unwrap_err();
+        assert!(err.contains("startup note version"), "{err}");
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_truncated_startup_fdr_table() {
+        let mut image = test_elf(&[text_phdr(), startup_note_phdr(64)]);
+        install_startup_note(&mut image, 1);
+        let err = build_static_exec_plan(&image, LoaderOptions::default()).unwrap_err();
+        assert!(err.contains("startup FDR table is truncated"), "{err}");
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_nonzero_startup_fdr_reserved_field() {
+        let mut image = test_elf(&[text_phdr(), startup_note_phdr(128)]);
+        install_startup_note(&mut image, 1);
+        install_startup_fdr(&mut image, 0, 5, 1, 0xf, 0, 1, 1, 0, 99);
+        let err = build_static_exec_plan(&image, LoaderOptions::default()).unwrap_err();
+        assert!(err.contains("reserved field"), "{err}");
+    }
+
     fn text_phdr() -> TestPhdr {
         TestPhdr {
             typ: PT_LOAD,
@@ -612,6 +785,18 @@ mod tests {
             filesz: 16,
             memsz: 16,
             align: PAGE_SIZE,
+        }
+    }
+
+    fn startup_note_phdr(filesz: u64) -> TestPhdr {
+        TestPhdr {
+            typ: PT_NOTE,
+            flags: PF_R,
+            offset: 0x300,
+            vaddr: 0,
+            filesz,
+            memsz: filesz,
+            align: 8,
         }
     }
 
@@ -647,6 +832,42 @@ mod tests {
             }
         }
         image
+    }
+
+    fn install_startup_note(image: &mut [u8], fdr_count: u64) {
+        let base = 0x300;
+        image[base..base + 8].copy_from_slice(LNP64_STARTUP_NOTE_MAGIC);
+        put_u64(image, base + 8, 1);
+        put_u64(image, base + 16, 0xabc);
+        put_u64(image, base + 24, 0x700000);
+        put_u64(image, base + 32, 0x700008);
+        put_u64(image, base + 40, 0x700080);
+        put_u64(image, base + 48, 0x700100);
+        put_u64(image, base + 56, fdr_count);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn install_startup_fdr(
+        image: &mut [u8],
+        index: usize,
+        slot: u64,
+        kind: u64,
+        rights: u64,
+        flags: u64,
+        object_id: u64,
+        generation: u64,
+        name_offset: u64,
+        reserved: u64,
+    ) {
+        let base = 0x300 + STARTUP_NOTE_HEADER_SIZE + index * STARTUP_FDR_RECORD_SIZE;
+        put_u64(image, base, slot);
+        put_u64(image, base + 8, kind);
+        put_u64(image, base + 16, rights);
+        put_u64(image, base + 24, flags);
+        put_u64(image, base + 32, object_id);
+        put_u64(image, base + 40, generation);
+        put_u64(image, base + 48, name_offset);
+        put_u64(image, base + 56, reserved);
     }
 
     fn install_rela_section(image: &mut [u8], target: u64, reloc_type: u32, addend: i64) {
