@@ -4822,7 +4822,7 @@ impl Machine {
             ..ClassifierParsedFields::default()
         };
         let fragment = u16::from_be_bytes([bytes[offset + 6], bytes[offset + 7]]);
-        if fragment & 0x3fff != 0 {
+        if fragment & 0xbfff != 0 {
             parsed.needs_software = true;
             return Ok(parsed);
         }
@@ -8104,12 +8104,33 @@ mod tests {
             CLASSIFY_ACTION_NEEDS_SOFTWARE
         );
 
+        let mut reserved_flag_packet = ipv4_udp_packet([10, 0, 0, 1], [10, 0, 0, 2], 100, 200);
+        reserved_flag_packet[14 + 6] = 0x80;
+        machine
+            .write_bytes(packet_ptr, &reserved_flag_packet)
+            .unwrap();
+        write_envelope(
+            &mut machine,
+            envelope,
+            CLASSIFY_PROFILE_PACKET,
+            source,
+            packet_ptr,
+            reserved_flag_packet.len() as u64,
+            0,
+            0,
+            0,
+        );
+        assert_eq!(
+            classify(&mut machine, classifier, envelope, result),
+            CLASSIFY_ACTION_NEEDS_SOFTWARE
+        );
+
         query_classifier_counters(&mut machine, classifier, counters);
         assert_eq!(machine.load_u64(counters).unwrap(), 1);
         assert_eq!(machine.load_u64(counters + 8).unwrap(), 1);
         assert_eq!(machine.load_u64(counters + 16).unwrap(), 0);
         assert_eq!(machine.load_u64(counters + 24).unwrap(), 1);
-        assert_eq!(machine.load_u64(counters + 32).unwrap(), 3);
+        assert_eq!(machine.load_u64(counters + 32).unwrap(), 4);
     }
 
     #[test]
