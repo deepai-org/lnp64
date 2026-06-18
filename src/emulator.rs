@@ -2359,7 +2359,11 @@ impl Machine {
                 let retval_ptr = self.read_reg(retval_reg)?;
                 if tid == self.current_tid {
                     self.write_reg(result, 35)?;
-                } else if let Some(value) = self.completed_threads.remove(&tid) {
+                } else if let Some(value) = self.completed_threads.get(&tid).copied() {
+                    if retval_ptr != 0 {
+                        self.ensure_mapped(retval_ptr, 8, true)?;
+                    }
+                    self.completed_threads.remove(&tid);
                     if retval_ptr != 0 {
                         self.store_u64(retval_ptr, value)?;
                     }
@@ -13939,6 +13943,41 @@ mod tests {
         assert_eq!(machine.completed_threads.get(&child_tid), Some(&77));
 
         machine.current_tid = 1;
+        machine
+            .exec(Instr::ThreadJoin(Reg(5), Reg(3), Reg(4)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], 0);
+        assert_eq!(machine.load_u64(retval).unwrap(), 77);
+        assert!(!machine.completed_threads.contains_key(&child_tid));
+    }
+
+    #[test]
+    fn thread_join_invalid_retval_preserves_completed_status() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine
+            .clone_with_profile(CloneProfile::NewThreadSharedVm, Reg(2), Some(0))
+            .unwrap();
+        let child_tid = machine.thread().unwrap().regs[2];
+
+        machine.current_tid = child_tid;
+        machine.exit_current(77).unwrap();
+        assert_eq!(machine.completed_threads.get(&child_tid), Some(&77));
+
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[3] = child_tid;
+        machine.thread_mut().unwrap().regs[4] = u64::MAX - 7;
+        machine.thread_mut().unwrap().regs[5] = 0xdead_beef;
+
+        let err = machine
+            .exec(Instr::ThreadJoin(Reg(5), Reg(3), Reg(4)))
+            .unwrap_err();
+        assert!(err.contains("unmapped address"), "{err}");
+        assert_eq!(machine.completed_threads.get(&child_tid), Some(&77));
+        assert_eq!(machine.thread().unwrap().regs[5], 0xdead_beef);
+
+        let retval = ARG_BASE + 0x240;
+        machine.thread_mut().unwrap().regs[4] = retval;
         machine
             .exec(Instr::ThreadJoin(Reg(5), Reg(3), Reg(4)))
             .unwrap();
