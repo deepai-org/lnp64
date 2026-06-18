@@ -4035,10 +4035,14 @@ impl Machine {
                         .map_err(|_| 14u64)
                 }),
             DMA_OP_FILL => {
-                let bytes = vec![src_or_value as u8; len];
-                self.write_bytes(dst, &bytes)
-                    .map(|_| len as u64)
-                    .map_err(|_| 14u64)
+                if self.ensure_mapped(dst, len, true).is_err() {
+                    Err(14)
+                } else {
+                    let bytes = vec![src_or_value as u8; len];
+                    self.write_bytes(dst, &bytes)
+                        .map(|_| len as u64)
+                        .map_err(|_| 14u64)
+                }
             }
             _ => Err(22),
         };
@@ -14018,6 +14022,33 @@ mod tests {
         assert_eq!(machine.thread().unwrap().regs[6], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 1);
         assert_eq!(machine.read_bytes(denied_target, 2).unwrap(), vec![7, 7]);
+    }
+
+    #[test]
+    fn dma_ctl_fill_rejects_huge_unmapped_length_before_allocating() {
+        let program = Program::parse(
+            r#"
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        let arg = ARG_BASE;
+        let dst = ARG_BASE + 0x1000;
+        machine.write_bytes(dst, &[0x55]).unwrap();
+
+        machine.store_u64(arg, DMA_OP_FILL).unwrap();
+        machine.store_u64(arg + 8, dst).unwrap();
+        machine.store_u64(arg + 16, 0xaa).unwrap();
+        machine.store_u64(arg + 24, u64::MAX).unwrap();
+        machine.store_u64(arg + 32, 0).unwrap();
+        machine.dma_ctl(Reg(1), arg).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 14);
+        assert_eq!(machine.read_bytes(dst, 1).unwrap(), vec![0x55]);
     }
 
     #[test]
