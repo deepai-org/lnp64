@@ -340,3 +340,80 @@ fn take_cc_options(args: &mut Vec<String>) -> Result<CcOptions, String> {
         dump_preprocessed,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ELFCLASS64: u8 = 2;
+    const ELFDATA2LSB: u8 = 1;
+    const EV_CURRENT: u8 = 1;
+    const ET_EXEC: u16 = 2;
+    const EM_LNP64: u16 = 0x6c64;
+    const PT_LOAD: u32 = 1;
+    const PF_X: u32 = 1;
+    const PF_R: u32 = 4;
+    const ELF64_EHDR_SIZE: usize = 64;
+    const ELF64_PHDR_SIZE: usize = 56;
+
+    #[test]
+    fn run_elf_probe_loads_and_commits_minimal_static_elf() {
+        let path =
+            std::env::temp_dir().join(format!("lnp64-run-elf-probe-{}.elf", std::process::id()));
+        fs::write(&path, minimal_static_elf()).unwrap();
+
+        let probe = build_elf_exec_probe(&ElfPlanOptions {
+            input: path.clone(),
+            load_bias: 0,
+        })
+        .unwrap();
+
+        assert_eq!(probe.plan.entry.entry_pc, 0x400000);
+        assert_eq!(probe.prepared.len(), 1);
+        assert_eq!(probe.prepared[0].virtual_address, 0x400000);
+        assert_eq!(probe.prepared[0].bytes, vec![0xcc; 16]);
+        assert_eq!(probe.descriptor.vmas.len(), 1);
+        assert!(!probe.descriptor_words.is_empty());
+
+        let _ = fs::remove_file(path);
+    }
+
+    fn minimal_static_elf() -> Vec<u8> {
+        let mut image = vec![0; 0x200];
+        image[0..4].copy_from_slice(b"\x7fELF");
+        image[4] = ELFCLASS64;
+        image[5] = ELFDATA2LSB;
+        image[6] = EV_CURRENT;
+        put_u16(&mut image, 16, ET_EXEC);
+        put_u16(&mut image, 18, EM_LNP64);
+        put_u32(&mut image, 20, u32::from(EV_CURRENT));
+        put_u64(&mut image, 24, 0x400000);
+        put_u64(&mut image, 32, ELF64_EHDR_SIZE as u64);
+        put_u16(&mut image, 52, ELF64_EHDR_SIZE as u16);
+        put_u16(&mut image, 54, ELF64_PHDR_SIZE as u16);
+        put_u16(&mut image, 56, 1);
+
+        let phdr = ELF64_EHDR_SIZE;
+        put_u32(&mut image, phdr, PT_LOAD);
+        put_u32(&mut image, phdr + 4, PF_R | PF_X);
+        put_u64(&mut image, phdr + 8, 0x100);
+        put_u64(&mut image, phdr + 16, 0x400000);
+        put_u64(&mut image, phdr + 32, 16);
+        put_u64(&mut image, phdr + 40, 16);
+        put_u64(&mut image, phdr + 48, 4096);
+        image[0x100..0x110].fill(0xcc);
+        image
+    }
+
+    fn put_u16(image: &mut [u8], offset: usize, value: u16) {
+        image[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+    }
+
+    fn put_u32(image: &mut [u8], offset: usize, value: u32) {
+        image[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+    }
+
+    fn put_u64(image: &mut [u8], offset: usize, value: u64) {
+        image[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+}

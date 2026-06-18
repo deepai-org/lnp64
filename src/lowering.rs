@@ -1569,6 +1569,7 @@ mod tests {
             "materialize_vmas",
             "descriptor_validate",
             "descriptor_commit",
+            "cli_probe",
             "cli_surface",
             "entry_state",
             "text_fetch_decode",
@@ -1582,6 +1583,7 @@ mod tests {
             "materialize_vmas",
             "descriptor_validate",
             "descriptor_commit",
+            "cli_probe",
         ] {
             assert_eq!(stages[stage].0, "tested", "{stage} should be tested");
         }
