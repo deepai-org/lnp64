@@ -2292,9 +2292,24 @@ impl Machine {
                 }
                 self.write_reg(dst, addr)?;
             }
-            Instr::Munmap(addr, _len) => {
+            Instr::Munmap(addr, len) => {
                 let addr = self.read_reg(addr)?;
-                self.process_mut()?.vmas.retain(|vma| vma.start != addr);
+                let len = self.read_reg(len)?.max(1);
+                let Some(_end) = addr.checked_add(len) else {
+                    self.set_status_errno(22)?;
+                    return Ok(true);
+                };
+                let Some(idx) = self
+                    .process()?
+                    .vmas
+                    .iter()
+                    .position(|vma| vma.start == addr && vma.len == len)
+                else {
+                    self.set_status_errno(22)?;
+                    return Ok(true);
+                };
+                self.process_mut()?.vmas.remove(idx);
+                self.set_errno(0)?;
             }
             Instr::Mprotect(addr, len, prot) => {
                 let addr = self.read_reg(addr)?;
@@ -10474,6 +10489,49 @@ mod tests {
             .unwrap();
         assert_eq!(machine.thread().unwrap().regs[8], base + 12288);
         assert_eq!(machine.process().unwrap().errno, 0);
+    }
+
+    #[test]
+    fn munmap_rejects_partial_or_interior_ranges_without_unmapping() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[1] = 4096;
+        machine.thread_mut().unwrap().regs[2] = 0b011;
+        machine
+            .exec(Instr::Mmap(
+                Reg(3),
+                Reg(0),
+                Reg(1),
+                Reg(2),
+                FdReg(0),
+                Reg(0),
+            ))
+            .unwrap();
+        let addr = machine.thread().unwrap().regs[3];
+        assert_ne!(addr, -1i64 as u64);
+        machine.write_bytes(addr, &[0xcc]).unwrap();
+        let vma_count = machine.process().unwrap().vmas.len();
+
+        machine.thread_mut().unwrap().regs[4] = addr + 128;
+        machine.thread_mut().unwrap().regs[5] = 4096;
+        machine.exec(Instr::Munmap(Reg(4), Reg(5))).unwrap();
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert_eq!(machine.process().unwrap().vmas.len(), vma_count);
+        assert_eq!(machine.read_bytes(addr, 1).unwrap(), vec![0xcc]);
+
+        machine.thread_mut().unwrap().regs[4] = addr;
+        machine.thread_mut().unwrap().regs[5] = 2048;
+        machine.exec(Instr::Munmap(Reg(4), Reg(5))).unwrap();
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert_eq!(machine.process().unwrap().vmas.len(), vma_count);
+        assert_eq!(machine.read_bytes(addr, 1).unwrap(), vec![0xcc]);
+
+        machine.thread_mut().unwrap().regs[5] = 4096;
+        machine.exec(Instr::Munmap(Reg(4), Reg(5))).unwrap();
+        assert_eq!(machine.process().unwrap().errno, 0);
+        assert_eq!(machine.process().unwrap().vmas.len(), vma_count - 1);
+        let err = machine.read_bytes(addr, 1).unwrap_err();
+        assert!(err.contains("unmapped address"), "{err}");
     }
 
     #[test]
