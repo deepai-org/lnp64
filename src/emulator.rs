@@ -665,7 +665,10 @@ impl Vma {
         let Some(end) = addr.checked_add(len as u64) else {
             return false;
         };
-        addr >= self.start && end <= self.start + self.len
+        let Some(vma_end) = self.start.checked_add(self.len) else {
+            return false;
+        };
+        addr >= self.start && end <= vma_end
     }
 
     fn clone_vma(&self) -> Result<Self, String> {
@@ -12021,6 +12024,18 @@ mod tests {
         assert_eq!(disabled_child.stack_top, STACK_TOP);
         assert_eq!(disabled_child.heap_base, HEAP_BASE);
         assert_eq!(disabled_child.mmap_base, MMAP_BASE);
+    }
+
+    #[test]
+    fn vma_contains_rejects_overflowing_region_bounds() {
+        let vma = Vma::anonymous(u64::MAX - 8, 16, 0b011);
+
+        assert!(!vma.contains(u64::MAX - 8, 1));
+        assert!(!vma.contains(u64::MAX - 4, 8));
+
+        let normal = Vma::anonymous(0x1000, 0x100, 0b011);
+        assert!(normal.contains(0x1010, 0x20));
+        assert!(!normal.contains(0x10f0, 0x20));
     }
 
     #[test]
