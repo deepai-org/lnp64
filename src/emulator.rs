@@ -10391,6 +10391,93 @@ mod tests {
     }
 
     #[test]
+    fn domain_configure_rejects_unauthorized_masks_without_mutation() {
+        let mut machine = test_machine_with_child_domain();
+        let arg = ARG_BASE;
+
+        {
+            let domain = machine.domains.get_mut(&2).unwrap();
+            domain.profile = 4;
+            domain.limits = DomainLimits {
+                cpu: 100,
+                memory: 200,
+                pids: 3,
+                fdrs: 8,
+            };
+            domain.capability_mask = DOMAIN_CAP_PROCESS | DOMAIN_CAP_MEMORY;
+            domain.upcall_mask = 0b0011;
+            domain.security.entropy_quota = 64;
+        }
+
+        let before_profile = machine.domains[&2].profile;
+        let before_limits = machine.domains[&2].limits;
+        let before_caps = machine.domains[&2].capability_mask;
+        let before_upcalls = machine.domains[&2].upcall_mask;
+        let before_security = machine.domains[&2].security;
+        let assert_domain_unchanged = |domain: &ResourceDomain, before_limits: DomainLimits| {
+            assert_eq!(domain.profile, before_profile);
+            assert_eq!(domain.limits.cpu, before_limits.cpu);
+            assert_eq!(domain.limits.memory, before_limits.memory);
+            assert_eq!(domain.limits.pids, before_limits.pids);
+            assert_eq!(domain.limits.fdrs, before_limits.fdrs);
+            assert_eq!(domain.capability_mask, before_caps);
+            assert_eq!(domain.upcall_mask, before_upcalls);
+            assert_eq!(domain.security.aslr_enabled, before_security.aslr_enabled);
+            assert_eq!(domain.security.allow_wx, before_security.allow_wx);
+            assert_eq!(
+                domain.security.allow_jit_transition,
+                before_security.allow_jit_transition
+            );
+            assert_eq!(domain.security.entropy_quota, before_security.entropy_quota);
+            assert_eq!(domain.security.dma_allowed, before_security.dma_allowed);
+            assert_eq!(
+                domain.security.hardening_profile,
+                before_security.hardening_profile
+            );
+            assert_eq!(
+                domain.security.executable_source_policy,
+                before_security.executable_source_policy
+            );
+        };
+
+        machine
+            .domains
+            .get_mut(&ROOT_DOMAIN_ID)
+            .unwrap()
+            .capability_mask = DOMAIN_CAP_PROCESS;
+        machine.store_u64(arg, DOMAIN_OP_CONFIGURE).unwrap();
+        machine.store_u64(arg + 8, 2).unwrap();
+        machine.store_u64(arg + 16, 1).unwrap();
+        machine.store_u64(arg + 24, 99).unwrap();
+        machine.store_u64(arg + 32, 50).unwrap();
+        machine.store_u64(arg + 40, 150).unwrap();
+        machine.store_u64(arg + 48, 2).unwrap();
+        machine.store_u64(arg + 56, 4).unwrap();
+        machine
+            .store_u64(arg + 64, DOMAIN_CAP_PROCESS | DOMAIN_CAP_MEMORY)
+            .unwrap();
+
+        assert_eq!(machine.domain_ctl_configure(arg), Err(1));
+        assert_domain_unchanged(&machine.domains[&2], before_limits);
+
+        machine
+            .domains
+            .get_mut(&ROOT_DOMAIN_ID)
+            .unwrap()
+            .capability_mask = u64::MAX;
+        machine
+            .domains
+            .get_mut(&ROOT_DOMAIN_ID)
+            .unwrap()
+            .upcall_mask = 0b0001;
+        machine.store_u64(arg + 64, 0).unwrap();
+        machine.store_u64(arg + 72, 0b0010).unwrap();
+
+        assert_eq!(machine.domain_ctl_configure(arg), Err(1));
+        assert_domain_unchanged(&machine.domains[&2], before_limits);
+    }
+
+    #[test]
     fn domain_security_numeric_policy_delegation_is_monotonic() {
         let mut machine = test_machine_with_child_domain();
         let arg = ARG_BASE;
