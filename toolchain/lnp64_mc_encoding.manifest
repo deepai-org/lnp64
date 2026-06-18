@@ -1,0 +1,11 @@
+# LNP64 MC encoding contract v0.
+# Pipe-delimited fields: group|format|opcodes|operands|relocations|llvm_surface
+constants|fixed32_constant|NOP,LI,MOV|none_or_gpr_immediate_or_gpr|R_LNP64_ABS64,R_LNP64_GOT64|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64AsmParser.cpp
+integer_alu_rrr|fixed32_rrr|ADD,SUB,MUL,DIV,AND,OR,XOR,LSL,LSR,ASR|gpr_dst,gpr_lhs,gpr_rhs|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp
+integer_alu_rr|fixed32_rr|NOT,CMP|gpr_lhs,gpr_rhs|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp
+control_branch|fixed32_branch26|JMP,BEQ,BNE,BLT,BGT,BLE,BGE,CALL|pc_relative_target|R_LNP64_BRANCH26,R_LNP64_PC32|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64AsmParser.cpp
+control_register|fixed32_reg_or_none|CALL_REG,RET|gpr_target_or_none|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp
+memory|fixed32_mem_base_simm|LD,LD.W,LD.B,ST,ST.W,ST.B|gpr,base_gpr,signed_offset|R_LNP64_ABS64,R_LNP64_PC32|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64AsmParser.cpp
+barrier|fixed32_misc|FENCE,ISYNC|none_or_gpr_triple|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp
+atomics|fixed32_atomic|LOCK.CMPXCHG,FUTEX_WAIT,FUTEX_WAKE|gpr_memory_or_wait_operands|none|LNP64InstrInfo.td,LNP64ISelLowering.cpp,LNP64MCCodeEmitter.cpp
+native_primitives|fixed32_native|PULL,PUSH,AWAIT,MMAP,MUNMAP,MPROTECT,OBJECT_CTL,DOMAIN_CTL,CAP_SEND,CAP_RECV,CAP_DUP,CAP_REVOKE,GATE_CALL,GATE_RETURN|gpr_fdr_or_capability_operands|R_LNP64_CAP_DESC64,R_LNP64_CALLGATE64|LNP64InstrInfo.td,LNP64ISelLowering.cpp,LNP64AsmParser.cpp

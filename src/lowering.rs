@@ -790,6 +790,43 @@ mod tests {
             .collect()
     }
 
+    fn mc_encoding_rows(
+        manifest: &str,
+    ) -> Vec<(&str, &str, Vec<&str>, &str, Vec<&str>, Vec<&str>)> {
+        manifest
+            .lines()
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(|line| {
+                let mut fields = line.splitn(6, '|');
+                let group = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing MC encoding group in {line}"));
+                let format = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing MC encoding format in {line}"));
+                let opcodes = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing MC encoding opcodes in {line}"))
+                    .split(',')
+                    .collect();
+                let operands = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing MC encoding operands in {line}"));
+                let relocations = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing MC encoding relocations in {line}"))
+                    .split(',')
+                    .collect();
+                let surfaces = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing MC encoding surfaces in {line}"))
+                    .split(',')
+                    .collect();
+                (group, format, opcodes, operands, relocations, surfaces)
+            })
+            .collect()
+    }
+
     fn exec_plan_rows(manifest: &str) -> Vec<(&str, &str, Vec<&str>)> {
         manifest
             .lines()
@@ -1151,6 +1188,7 @@ mod tests {
             "target",
             "registers",
             "relocations",
+            "mc_encoding",
             "psabi",
             "intrinsics",
             "intrinsic_header",
@@ -1456,6 +1494,7 @@ mod tests {
             "llvm/lib/Target/LNP64/LNP64ISelLowering.cpp",
             "llvm/lib/Target/LNP64/LNP64FrameLowering.cpp",
             "llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCTargetDesc.cpp",
+            "llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCCodeEmitter.cpp",
             "llvm/lib/Target/LNP64/AsmParser/LNP64AsmParser.cpp",
             "llvm/lib/Target/LNP64/Disassembler/LNP64Disassembler.cpp",
             "llvm/lib/Target/LNP64/TargetInfo/LNP64TargetInfo.cpp",
@@ -2022,6 +2061,10 @@ mod tests {
             "toolchain/lnp64_relocations.manifest"
         );
         assert_eq!(
+            manifest_field(manifest, "mc_encoding_contract"),
+            "toolchain/lnp64_mc_encoding.manifest"
+        );
+        assert_eq!(
             manifest_field(manifest, "intrinsic_contract"),
             "toolchain/lnp64_intrinsics.manifest"
         );
@@ -2323,6 +2366,113 @@ mod tests {
         ] {
             assert!(groups.contains(group), "missing isel group {group}");
         }
+    }
+
+    #[test]
+    fn mc_encoding_manifest_covers_initial_backend_opcodes() {
+        let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
+        let mc_manifest = include_str!("../toolchain/lnp64_mc_encoding.manifest");
+        let isel_manifest = include_str!("../toolchain/lnp64_isel.manifest");
+        let relocation_manifest = include_str!("../toolchain/lnp64_relocations.manifest");
+        let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
+        let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
+        let roadmap = include_str!("../toolchain_roadmap.md");
+        let conformance = include_str!("../conformance_matrix.md");
+        let filemap = include_str!("../toolchain/lnp64_llvm_filemap.manifest");
+        let rows = mc_encoding_rows(mc_manifest);
+        let relocation_names: std::collections::BTreeSet<_> = relocation_rows(relocation_manifest)
+            .into_iter()
+            .map(|(_, name, _, _)| name)
+            .collect();
+        let mut groups = std::collections::BTreeMap::new();
+        let mut encoded_opcodes = std::collections::BTreeSet::new();
+
+        assert_eq!(
+            manifest_field(target_manifest, "mc_encoding_contract"),
+            "toolchain/lnp64_mc_encoding.manifest"
+        );
+        assert!(contract_index.contains(
+            "mc_encoding|toolchain/lnp64_mc_encoding.manifest|mc_encoding_manifest_covers_initial_backend_opcodes"
+        ));
+        assert!(transition_manifest.contains("toolchain/lnp64_mc_encoding.manifest"));
+        assert!(roadmap.contains("toolchain/lnp64_mc_encoding.manifest"));
+        assert!(conformance.contains("toolchain/lnp64_mc_encoding.manifest"));
+        assert!(filemap.contains("LNP64MCCodeEmitter.cpp"));
+
+        for (group, format, opcodes, operands, relocations, surfaces) in rows {
+            assert!(
+                groups
+                    .insert(
+                        group,
+                        (format, opcodes.clone(), operands, relocations.clone())
+                    )
+                    .is_none(),
+                "duplicate MC encoding group {group}"
+            );
+            assert!(
+                format.starts_with("fixed32_"),
+                "initial MC group {group} must use a fixed32 format class"
+            );
+            assert!(!opcodes.is_empty(), "empty MC opcode group {group}");
+            assert!(!operands.is_empty(), "empty MC operands for {group}");
+            assert!(!surfaces.is_empty(), "empty LLVM surfaces for {group}");
+            for opcode in opcodes {
+                assert!(
+                    encoded_opcodes.insert(opcode),
+                    "duplicate MC opcode {opcode}"
+                );
+            }
+            for relocation in relocations {
+                if relocation != "none" {
+                    assert!(
+                        relocation_names.contains(relocation),
+                        "MC group {group} names unknown relocation {relocation}"
+                    );
+                }
+            }
+            for surface in surfaces {
+                assert!(
+                    surface.ends_with(".td") || surface.ends_with(".cpp"),
+                    "MC group {group} names unexpected LLVM surface {surface}"
+                );
+            }
+        }
+
+        for group in [
+            "constants",
+            "integer_alu_rrr",
+            "control_branch",
+            "memory",
+            "atomics",
+            "native_primitives",
+        ] {
+            assert!(
+                groups.contains_key(group),
+                "missing MC encoding group {group}"
+            );
+        }
+        for (_group, status, opcodes) in isel_rows(isel_manifest) {
+            if status == "required" || status == "intrinsic" {
+                for opcode in opcodes {
+                    assert!(
+                        encoded_opcodes.contains(opcode),
+                        "required/intrinsic isel opcode {opcode} lacks MC encoding coverage"
+                    );
+                }
+            }
+        }
+        assert!(groups["control_branch"].3.contains(&"R_LNP64_BRANCH26"));
+        assert!(groups["control_branch"].3.contains(&"R_LNP64_PC32"));
+        assert!(
+            groups["native_primitives"]
+                .3
+                .contains(&"R_LNP64_CAP_DESC64")
+        );
+        assert!(
+            groups["native_primitives"]
+                .3
+                .contains(&"R_LNP64_CALLGATE64")
+        );
     }
 
     #[test]

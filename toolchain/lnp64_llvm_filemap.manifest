@@ -8,6 +8,7 @@ llvm_target|llvm/lib/Target/LNP64/LNP64CallingConv.td|planned|calling convention
 llvm_target|llvm/lib/Target/LNP64/LNP64ISelLowering.cpp|planned|integer, memory, branch, call, TLS, intrinsic lowering
 llvm_target|llvm/lib/Target/LNP64/LNP64FrameLowering.cpp|planned|stack frame, spill slots, LR save, CFI emission
 llvm_mc|llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCTargetDesc.cpp|planned|ELF machine id, relocations, MC code emitter hooks
+llvm_mc|llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCCodeEmitter.cpp|planned|MC instruction encoding from lnp64_mc_encoding manifest
 llvm_asmparser|llvm/lib/Target/LNP64/AsmParser/LNP64AsmParser.cpp|planned|assembly parser, inline asm constraints, operand validation
 llvm_disassembler|llvm/lib/Target/LNP64/Disassembler/LNP64Disassembler.cpp|planned|MC disassembly smoke coverage for core instructions
 llvm_targetinfo|llvm/lib/Target/LNP64/TargetInfo/LNP64TargetInfo.cpp|planned|LLVM target registration for lnp64-unknown-none
