@@ -3071,6 +3071,13 @@ impl Machine {
         self.store_u64(addr, value)
     }
 
+    fn write_bytes_offset(&mut self, base: u64, offset: u64, data: &[u8]) -> Result<(), String> {
+        let addr = base
+            .checked_add(offset)
+            .ok_or_else(|| "address overflow".to_string())?;
+        self.write_bytes(addr, data)
+    }
+
     fn alloc_heap(&mut self, len: usize, align: u64, guarded: bool) -> Result<u64, String> {
         self.require_domain_cap(DOMAIN_CAP_MEMORY)?;
         let guard_len = if guarded { 4096 } else { 0 };
@@ -6408,7 +6415,7 @@ impl Machine {
             record.extend_from_slice(&value.to_le_bytes());
         }
         let count = (len as usize).min(record.len());
-        if self.write_bytes(buf, &record[..count]).is_err() {
+        if self.write_bytes_offset(buf, 0, &record[..count]).is_err() {
             self.set_status_errno(14)?;
             self.write_reg(result, -1i64 as u64)?;
             return Ok(());
@@ -6420,7 +6427,7 @@ impl Machine {
     fn env_get_topology_records(&mut self, result: Reg, buf: u64, len: u64) -> Result<(), String> {
         let records = self.env_topology_records();
         let count = (len as usize).min(records.len());
-        if self.write_bytes(buf, &records[..count]).is_err() {
+        if self.write_bytes_offset(buf, 0, &records[..count]).is_err() {
             self.set_status_errno(14)?;
             self.write_reg(result, -1i64 as u64)?;
             return Ok(());
@@ -10689,6 +10696,18 @@ mod tests {
 
         let err = machine
             .store_u64_offset(u64::MAX - 4, 8, 0xfeed)
+            .unwrap_err();
+
+        assert!(err.contains("address overflow"), "{err}");
+    }
+
+    #[test]
+    fn write_bytes_offset_rejects_address_overflow() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+
+        let err = machine
+            .write_bytes_offset(u64::MAX - 1, 2, &[0xaa])
             .unwrap_err();
 
         assert!(err.contains("address overflow"), "{err}");
