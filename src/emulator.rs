@@ -11737,6 +11737,30 @@ mod tests {
     }
 
     #[test]
+    fn open_fd_dyn_without_namespace_root_does_not_allocate_fdr() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.process_mut().unwrap().namespace_root = None;
+        let generations = machine.process().unwrap().fd_generations.clone();
+        let path = ARG_BASE + 0x1000;
+        machine.write_bytes(path, b"Cargo.toml\0").unwrap();
+        machine.thread_mut().unwrap().regs[1] = path;
+        machine.thread_mut().unwrap().regs[2] = 0;
+
+        machine
+            .exec(Instr::OpenFdDyn(Reg(3), Reg(1), Reg(2)))
+            .unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[3], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 13);
+        assert_eq!(machine.process().unwrap().fd_generations, generations);
+        assert!(matches!(
+            machine.process().unwrap().fds[3],
+            FdHandle::Closed
+        ));
+    }
+
+    #[test]
     fn namespace_rejects_empty_paths_instead_of_bypassing_root() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
