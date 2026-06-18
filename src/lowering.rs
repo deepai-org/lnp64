@@ -1509,6 +1509,8 @@ mod tests {
         assert!(real_llc.contains("amo.swap r"));
         assert!(real_llc.contains("real LLVM LNP64 clang intrinsic AMO object smoke passed"));
         assert!(real_llc.contains("c11-atomic-clang-smoke.o"));
+        assert!(real_llc.contains("__atomic_load_n"));
+        assert!(real_llc.contains("__atomic_store_n"));
         assert!(real_llc.contains("__atomic_fetch_add"));
         assert!(real_llc.contains("real LLVM LNP64 clang C11 atomic object smoke passed"));
         assert!(real_llc.contains("libc-string-clang-smoke.o"));
@@ -2340,6 +2342,9 @@ mod tests {
         assert!(isel.contains("DAG.getTargetGlobalAddress"));
         assert!(isel.contains("DAG.getTargetExternalSymbol"));
         assert!(isel.contains("indirect call callee must lower to an i64 register"));
+        assert!(isel.contains("ISD::ATOMIC_LOAD"));
+        assert!(isel.contains("ISD::ATOMIC_STORE"));
+        assert!(isel.contains("ISD::ATOMIC_LOAD_ADD"));
         assert!(isel.contains("LNP64ISD::CALL"));
         assert!(isel.contains("CalleeName == \"__lnp_await\" || CalleeName == \"__lnp_call\""));
         assert!(

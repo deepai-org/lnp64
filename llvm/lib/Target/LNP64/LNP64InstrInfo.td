@@ -560,6 +560,8 @@ def : Pat<(truncstorei16 GPR:$rs, GPR:$base), (ST_H GPR:$rs, GPR:$base, 0)>;
 def : Pat<(truncstorei8 GPR:$rs, (add GPR:$base, simm14_imm:$offset)),
           (ST_B GPR:$rs, GPR:$base, simm14_imm:$offset)>;
 def : Pat<(truncstorei8 GPR:$rs, GPR:$base), (ST_B GPR:$rs, GPR:$base, 0)>;
+def : Pat<(i64 (atomic_load_64 GPR:$base)), (LD GPR:$base, 0)>;
+def : Pat<(atomic_store_64 GPR:$base, GPR:$rs), (ST GPR:$rs, GPR:$base, 0)>;
 def FENCE : LNP64NoOperand<"fence">;
 def ISYNC : LNP64Inst<(outs), (ins GPR:$rd, GPR:$rs1, GPR:$rs2), "isync",
                       "\t$rd, $rs1, $rs2">;
