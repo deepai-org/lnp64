@@ -11754,6 +11754,30 @@ mod tests {
     }
 
     #[test]
+    fn unlink_without_namespace_root_does_not_touch_host_file() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let host_path = std::env::temp_dir().join(format!("lnp64_unlink_no_root_{unique}"));
+        fs::write(&host_path, b"keep").unwrap();
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.process_mut().unwrap().namespace_root = None;
+        let path = ARG_BASE + 0x1000;
+        let path_bytes = format!("{}\0", host_path.to_string_lossy());
+        machine.write_bytes(path, path_bytes.as_bytes()).unwrap();
+        machine.thread_mut().unwrap().regs[1] = path;
+
+        machine.exec(Instr::UnlinkPath(Reg(1))).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 13);
+        assert!(host_path.exists());
+        let _ = fs::remove_file(host_path);
+    }
+
+    #[test]
     fn open_fd_dyn_without_namespace_root_does_not_allocate_fdr() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
