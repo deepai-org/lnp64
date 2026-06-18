@@ -2387,6 +2387,8 @@ impl Machine {
             Instr::Yield => return Ok(true),
             Instr::Sleep(ticks_reg) => {
                 let ticks = self.read_reg(ticks_reg)?.max(1);
+                self.sleepers
+                    .retain(|(sleep_tid, _)| *sleep_tid != self.current_tid);
                 self.sleepers.push((self.current_tid, ticks));
                 self.ready.retain(|tid| *tid != self.current_tid);
                 return Ok(false);
@@ -14028,6 +14030,20 @@ mod tests {
         machine.tick_sleepers();
         assert!(machine.sleepers.is_empty());
         assert!(machine.ready.contains(&1));
+    }
+
+    #[test]
+    fn repeated_sleep_replaces_existing_sleep_entry() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[2] = 5;
+
+        machine.exec(Instr::Sleep(Reg(2))).unwrap();
+        machine.thread_mut().unwrap().regs[2] = 9;
+        machine.exec(Instr::Sleep(Reg(2))).unwrap();
+
+        assert_eq!(machine.sleepers, vec![(1, 9)]);
+        assert!(!machine.ready.contains(&1));
     }
 
     #[test]
