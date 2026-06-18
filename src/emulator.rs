@@ -8747,6 +8747,31 @@ mod tests {
     }
 
     #[test]
+    fn ignored_signal_and_default_sigchld_are_consumed_without_frame() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine
+            .process_mut()
+            .unwrap()
+            .signal_handlers
+            .insert(2, SignalDisposition::Ignore);
+
+        machine.queue_process_event(1, NativeEvent::kill_signal(2));
+        machine.deliver_signal_if_needed().unwrap();
+        assert!(machine.process().unwrap().pending_events.is_empty());
+        assert_eq!(machine.thread().unwrap().ip, 0);
+        assert!(machine.thread().unwrap().signal_stack.is_empty());
+        assert!(machine.processes.contains_key(&1));
+
+        machine.queue_process_event(1, NativeEvent::child_signal(SIGCHLD));
+        machine.deliver_signal_if_needed().unwrap();
+        assert!(machine.process().unwrap().pending_events.is_empty());
+        assert_eq!(machine.thread().unwrap().ip, 0);
+        assert!(machine.thread().unwrap().signal_stack.is_empty());
+        assert!(machine.processes.contains_key(&1));
+    }
+
+    #[test]
     fn signal_delivery_defers_nested_frames_until_sigret() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
