@@ -22920,7 +22920,7 @@ int main() {
             if (received == -1) return 4;
             revoked = cap_revoke(fd);
             if (revoked < 3) return 5;
-            if (read(received, buf, 1) != 0) return 6;
+            if (read(received, buf, 1) != -1) return 6;
             return 0;
         }
         "#;

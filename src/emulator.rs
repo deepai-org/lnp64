@@ -1494,9 +1494,12 @@ impl Machine {
                 } else {
                     let addr = self.read_reg(buf)?;
                     let len = self.read_reg(len)? as usize;
-                    let count = self.read_fd_index(fd.0, addr, len)?;
-                    self.set_errno(0)?;
-                    self.write_reg(result, count as u64)?;
+                    if let Some(count) = self.read_fd_index(fd.0, addr, len)? {
+                        self.complete_reg_ok(result, count as u64)?;
+                    } else {
+                        let errno = self.process()?.errno;
+                        self.complete_reg_err(result, errno)?;
+                    }
                 }
             }
             Instr::Push(result, fd, buf, len) => {
@@ -1723,8 +1726,9 @@ impl Machine {
                 self.require_domain_cap(DOMAIN_CAP_IO)?;
                 let addr = self.read_reg(buf)?;
                 let len = self.read_reg(len)? as usize;
-                let count = self.read_fd_index(fd.0, addr, len)?;
-                self.write_reg(Reg(1), count as u64)?;
+                if let Some(count) = self.read_fd_index(fd.0, addr, len)? {
+                    self.complete_ok(count as u64)?;
+                }
             }
             Instr::ReadFdDyn(fd_reg, buf, len) => {
                 self.require_domain_cap(DOMAIN_CAP_IO)?;
@@ -1732,10 +1736,9 @@ impl Machine {
                 let addr = self.read_reg(buf)?;
                 let len = self.read_reg(len)? as usize;
                 if let Some(fd) = self.checked_fd_index(fd)? {
-                    let count = self.read_fd_index(fd, addr, len)?;
-                    self.write_reg(Reg(1), count as u64)?;
-                } else {
-                    self.write_reg(Reg(1), 0)?;
+                    if let Some(count) = self.read_fd_index(fd, addr, len)? {
+                        self.complete_ok(count as u64)?;
+                    }
                 }
             }
             Instr::PreadFd(fd, buf, len, offset) => {
@@ -1753,8 +1756,6 @@ impl Machine {
                 let offset = self.read_reg(offset)?;
                 if let Some(fd) = self.checked_fd_index(fd)? {
                     self.pread_fd_index(fd, addr, len, offset)?;
-                } else {
-                    self.write_reg(Reg(1), 0)?;
                 }
             }
             Instr::ReaddirFd(fd, dirent_buf) => {
@@ -1766,8 +1767,6 @@ impl Machine {
                 let addr = self.read_reg(dirent_buf)?;
                 if let Some(fd) = self.checked_fd_index(fd)? {
                     self.readdir_fd_index(fd, addr)?;
-                } else {
-                    self.write_reg(Reg(1), 0)?;
                 }
             }
             Instr::RewinddirFd(fd) => match &mut self.process_mut()?.fds[fd.0] {
@@ -1796,8 +1795,6 @@ impl Machine {
                 let len = self.read_reg(len)? as usize;
                 if let Some(fd) = self.checked_fd_index(fd)? {
                     self.write_fd_index(fd, addr, len)?;
-                } else {
-                    self.write_reg(Reg(1), 0)?;
                 }
             }
             Instr::PwriteFd(fd, buf, len, offset) => {
@@ -1815,8 +1812,6 @@ impl Machine {
                 let offset = self.read_reg(offset)?;
                 if let Some(fd) = self.checked_fd_index(fd)? {
                     self.pwrite_fd_index(fd, addr, len, offset)?;
-                } else {
-                    self.write_reg(Reg(1), 0)?;
                 }
             }
             Instr::MkdirPath(path_reg, _mode_reg) => {
@@ -4059,9 +4054,9 @@ impl Machine {
         self.complete_reg_ok(result, 0)
     }
 
-    fn read_fd_index(&mut self, fd: usize, addr: u64, len: usize) -> Result<usize, String> {
+    fn read_fd_index(&mut self, fd: usize, addr: u64, len: usize) -> Result<Option<usize>, String> {
         if self.ensure_fd_right(fd, CAP_RIGHT_READ).is_err() {
-            return Ok(0);
+            return Ok(None);
         }
         self.ensure_mapped(addr, len, true)?;
         enum ReadCommit {
@@ -4220,7 +4215,7 @@ impl Machine {
                 timer.borrow_mut().expirations = 0;
             }
         }
-        Ok(count)
+        Ok(Some(count))
     }
 
     fn pread_fd_index(
@@ -8560,14 +8555,14 @@ mod tests {
             process.fd_capabilities[4] = FdCapability::full(4);
         }
 
-        assert_eq!(machine.read_fd_index(3, ARG_BASE, 0).unwrap(), 0);
+        assert_eq!(machine.read_fd_index(3, ARG_BASE, 0).unwrap(), Some(0));
         assert_eq!(*event_counter.borrow(), 3);
-        assert_eq!(machine.read_fd_index(4, ARG_BASE, 0).unwrap(), 0);
+        assert_eq!(machine.read_fd_index(4, ARG_BASE, 0).unwrap(), Some(0));
         assert_eq!(timer.borrow().expirations, 2);
 
-        assert_eq!(machine.read_fd_index(3, ARG_BASE, 8).unwrap(), 8);
+        assert_eq!(machine.read_fd_index(3, ARG_BASE, 8).unwrap(), Some(8));
         assert_eq!(*event_counter.borrow(), 0);
-        assert_eq!(machine.read_fd_index(4, ARG_BASE, 8).unwrap(), 8);
+        assert_eq!(machine.read_fd_index(4, ARG_BASE, 8).unwrap(), Some(8));
         assert_eq!(timer.borrow().expirations, 0);
     }
 
@@ -8855,7 +8850,10 @@ mod tests {
         assert!(machine.ready.contains(&current_tid));
         assert!(machine.fd_read_ready(3).unwrap());
         let mut out = [0u8; 3];
-        machine.read_fd_index(3, ARG_BASE + 0x1c00, 3).unwrap();
+        assert_eq!(
+            machine.read_fd_index(3, ARG_BASE + 0x1c00, 3).unwrap(),
+            Some(3)
+        );
         out.copy_from_slice(&machine.read_bytes(ARG_BASE + 0x1c00, 3).unwrap());
         assert_eq!(&out, b"ipc");
     }
@@ -9328,7 +9326,10 @@ mod tests {
         assert_eq!(machine.load_u64(result).unwrap(), CLASSIFY_ACTION_ROUTE);
         assert_eq!(machine.load_u64(result + 24).unwrap(), 1);
         assert!(machine.fd_read_ready(3).unwrap());
-        machine.read_fd_index(3, ARG_BASE + 0x1c00, 3).unwrap();
+        assert_eq!(
+            machine.read_fd_index(3, ARG_BASE + 0x1c00, 3).unwrap(),
+            Some(3)
+        );
         assert_eq!(
             machine.read_bytes(ARG_BASE + 0x1c00, 3).unwrap(),
             b"evt".to_vec()
@@ -13895,7 +13896,7 @@ mod tests {
             .exec(Instr::ReadFdDyn(Reg(6), Reg(7), Reg(8)))
             .unwrap();
         assert_eq!(machine.process().unwrap().errno, 116);
-        assert_eq!(machine.thread().unwrap().regs[1], 0);
+        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
     }
 
     #[test]
@@ -14010,6 +14011,32 @@ mod tests {
             .unwrap_err();
         assert!(err.contains("unmapped address"), "{err}");
         fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn read_fd_denied_preserves_error_status() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[3] = FdHandle::Counter(Rc::new(RefCell::new(7)));
+            process.fd_capabilities[3] = FdCapability::full(3);
+            process.fd_capabilities[3].rights = CAP_RIGHT_WRITE;
+        }
+
+        assert_eq!(machine.read_fd_index(3, ARG_BASE, 8).unwrap(), None);
+        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
+
+        machine.thread_mut().unwrap().regs[4] = 3;
+        machine.thread_mut().unwrap().regs[5] = ARG_BASE;
+        machine.thread_mut().unwrap().regs[6] = 8;
+        machine.thread_mut().unwrap().regs[1] = 1234;
+        machine
+            .exec(Instr::ReadFdDyn(Reg(4), Reg(5), Reg(6)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
     }
 
     #[test]
@@ -14931,7 +14958,7 @@ mod tests {
             .exec(Instr::ReadFdDyn(Reg(6), Reg(7), Reg(8)))
             .unwrap();
         assert_eq!(machine.process().unwrap().errno, 116);
-        assert_eq!(machine.thread().unwrap().regs[1], 0);
+        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
     }
 
     #[test]
@@ -15270,7 +15297,7 @@ mod tests {
             .exec(Instr::ReadFdDyn(Reg(9), Reg(10), Reg(11)))
             .unwrap();
         assert_eq!(machine.process().unwrap().errno, 116);
-        assert_eq!(machine.thread().unwrap().regs[1], 0);
+        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
     }
 
     #[test]
@@ -16523,7 +16550,7 @@ mod tests {
                 .exec(Instr::ReadFdDyn(Reg(14), Reg(15), Reg(16)))
                 .unwrap();
             assert_eq!(machine.process().unwrap().errno, 116);
-            assert_eq!(machine.thread().unwrap().regs[1], 0);
+            assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
         }
     }
 
