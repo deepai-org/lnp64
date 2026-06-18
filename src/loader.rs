@@ -437,6 +437,9 @@ pub fn build_static_exec_plan(image: &[u8], options: LoaderOptions) -> Result<Ex
     if e_type != ET_EXEC && e_type != ET_DYN {
         return Err("ELF type is not a static executable profile".to_string());
     }
+    if e_type == ET_EXEC && options.load_bias != 0 {
+        return Err("ET_EXEC images cannot be loaded with a nonzero load bias".to_string());
+    }
     if read_u16(image, 18)? != EM_LNP64 {
         return Err("ELF machine is not EM_LNP64".to_string());
     }
@@ -1207,6 +1210,22 @@ mod tests {
     }
 
     #[test]
+    fn static_elf_loader_rejects_rebased_exec_image() {
+        let image = test_elf(&[text_phdr()]);
+
+        let err = build_static_exec_plan(
+            &image,
+            LoaderOptions {
+                load_bias: 0x1000,
+                ..LoaderOptions::default()
+            },
+        )
+        .unwrap_err();
+
+        assert!(err.contains("ET_EXEC"), "{err}");
+    }
+
+    #[test]
     fn static_elf_loader_parses_phdr_segment() {
         let phdrs = [
             TestPhdr {
@@ -1228,7 +1247,8 @@ mod tests {
                 align: 8,
             },
         ];
-        let image = test_elf(&phdrs);
+        let mut image = test_elf(&phdrs);
+        put_u16(&mut image, 16, ET_DYN);
 
         let plan = build_static_exec_plan(
             &image,
@@ -1325,7 +1345,7 @@ mod tests {
 
     #[test]
     fn static_elf_loader_parses_tls_segment() {
-        let image = test_elf(&[
+        let mut image = test_elf(&[
             text_phdr(),
             TestPhdr {
                 typ: PT_LOAD,
@@ -1346,6 +1366,7 @@ mod tests {
                 align: 16,
             },
         ]);
+        put_u16(&mut image, 16, ET_DYN);
 
         let plan = build_static_exec_plan(
             &image,
