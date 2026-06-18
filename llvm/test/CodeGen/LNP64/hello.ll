@@ -6,6 +6,7 @@
 @msg = private unnamed_addr constant [6 x i8] c"hello\00", align 1
 
 declare i64 @__lnp_push(i64, ptr, i64)
+declare i64 @callee(i64)
 
 define i64 @main() {
 entry:
@@ -33,6 +34,12 @@ exit:
   ret i64 %x
 }
 
+define i64 @call_direct(i64 %x) {
+entry:
+  %y = call i64 @callee(i64 %x)
+  ret i64 %y
+}
+
 ; CHECK-LABEL: main:
 ; CHECK: li
 ; CHECK: push
@@ -45,4 +52,7 @@ exit:
 ; CHECK: ret
 ; CHECK-LABEL: jump:
 ; CHECK: jmp
+; CHECK: ret
+; CHECK-LABEL: call_direct:
+; CHECK: call callee
 ; CHECK: ret

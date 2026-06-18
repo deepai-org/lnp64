@@ -11,6 +11,9 @@ def simm14_imm : PatLeaf<(imm), [{
 
 def LNP64retflag : SDNode<"LNP64ISD::RET_FLAG", SDTNone,
                           [SDNPHasChain, SDNPOptInGlue, SDNPVariadic]>;
+def LNP64call : SDNode<"LNP64ISD::CALL", SDTNone,
+                       [SDNPHasChain, SDNPOptInGlue, SDNPOutGlue,
+                        SDNPVariadic]>;
 
 class LNP64Inst<dag Outs, dag Ins, string Mnemonic, string Operands>
     : Instruction {
@@ -111,6 +114,8 @@ def BGE : LNP64Branch<"bge">;
 }
 let isCall = 1, Defs = [LR] in
 def CALL : LNP64Branch<"call">;
+def : Pat<(LNP64call tglobaladdr:$target), (CALL tglobaladdr:$target)>;
+def : Pat<(LNP64call texternalsym:$target), (CALL texternalsym:$target)>;
 let isCall = 1, Defs = [LR] in
 def CALL_REG : LNP64Inst<(outs), (ins GPR:$target), "call_reg", "\t$target">;
 let isReturn = 1, isTerminator = 1, isBarrier = 1, Uses = [LR] in

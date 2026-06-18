@@ -66,14 +66,17 @@ The first SelectionDAG patterns now select signed-16 constant materialization
 through `LI`, simple i64 ALU operations (`add`/`sub`/`mul`/signed `div`,
 bitwise ops, and shifts), and i64 base+signed-14-offset loads/stores onto the
 fixed32 opcodes. LLVM unconditional `br` now selects the architectural `JMP`
-through a machine-basic-block branch target operand. Calls, conditional branch
-lowering, narrow memory extension/truncation, and globals remain bring-up
+through a machine-basic-block branch target operand. Direct, non-varargs calls
+now lower register arguments through `CC_LNP64`, emit `CALL` for global or
+external callees, and copy register results through `RetCC_LNP64`. Conditional
+branch lowering, indirect calls, stack call operands/results, call-frame
+pseudos, narrow memory extension/truncation, and globals remain bring-up
 blockers.
 Return lowering now maps the LLVM return value path through `RetCC_LNP64` into
 `r1` and selects a target `RET_FLAG` DAG node to the architectural `RET`;
 formal argument lowering maps register arguments from `CC_LNP64` live-ins.
 This first call-convention lowering is intentionally register-only: varargs,
-stack arguments, stack returns, outgoing calls, and call-frame pseudo handling
+stack arguments, stack returns, indirect calls, and call-frame pseudo handling
 remain bring-up blockers.
 Control-flow opcodes now carry TableGen instruction properties for branches,
 calls, link-register definition/use, returns, terminators, and barriers, so

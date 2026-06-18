@@ -28,6 +28,8 @@ LNP64TargetLowering::LNP64TargetLowering(const TargetMachine &TM,
 
 const char *LNP64TargetLowering::getTargetNodeName(unsigned Opcode) const {
   switch (Opcode) {
+  case LNP64ISD::CALL:
+    return "LNP64ISD::CALL";
   case LNP64ISD::RET_FLAG:
     return "LNP64ISD::RET_FLAG";
   default:
@@ -88,4 +90,73 @@ SDValue LNP64TargetLowering::LowerReturn(
   if (Glue)
     RetOps.push_back(Glue);
   return DAG.getNode(LNP64ISD::RET_FLAG, DL, MVT::Other, RetOps);
+}
+
+SDValue
+LNP64TargetLowering::LowerCall(CallLoweringInfo &CLI,
+                               SmallVectorImpl<SDValue> &InVals) const {
+  SelectionDAG &DAG = CLI.DAG;
+  SDLoc DL = CLI.DL;
+  SDValue Chain = CLI.Chain;
+  SDValue Callee = CLI.Callee;
+
+  if (CLI.IsVarArg)
+    llvm_unreachable("LNP64 varargs call lowering is not implemented yet");
+
+  MachineFunction &MF = DAG.getMachineFunction();
+  SmallVector<CCValAssign, 8> ArgLocs;
+  CCState ArgCCInfo(CLI.CallConv, CLI.IsVarArg, MF, ArgLocs,
+                    *DAG.getContext());
+  ArgCCInfo.AnalyzeCallOperands(CLI.Outs, CC_LNP64);
+
+  SDValue Glue;
+  SmallVector<std::pair<unsigned, SDValue>, 8> RegsToPass;
+  for (unsigned I = 0, E = ArgLocs.size(); I != E; ++I) {
+    CCValAssign &VA = ArgLocs[I];
+    if (!VA.isRegLoc())
+      llvm_unreachable("LNP64 stack call arguments are not implemented yet");
+    RegsToPass.push_back(std::make_pair(VA.getLocReg(), CLI.OutVals[I]));
+  }
+
+  for (auto &RegAndValue : RegsToPass) {
+    Chain = DAG.getCopyToReg(Chain, DL, RegAndValue.first, RegAndValue.second,
+                             Glue);
+    Glue = Chain.getValue(1);
+  }
+
+  if (GlobalAddressSDNode *G = dyn_cast<GlobalAddressSDNode>(Callee))
+    Callee = DAG.getTargetGlobalAddress(G->getGlobal(), DL, MVT::i64);
+  else if (ExternalSymbolSDNode *S = dyn_cast<ExternalSymbolSDNode>(Callee))
+    Callee = DAG.getTargetExternalSymbol(S->getSymbol(), MVT::i64);
+  else
+    llvm_unreachable("LNP64 indirect call lowering is not implemented yet");
+
+  SmallVector<SDValue, 12> Ops;
+  Ops.push_back(Chain);
+  Ops.push_back(Callee);
+  for (auto &RegAndValue : RegsToPass)
+    Ops.push_back(
+        DAG.getRegister(RegAndValue.first, RegAndValue.second.getValueType()));
+  if (Glue)
+    Ops.push_back(Glue);
+
+  SDVTList NodeTys = DAG.getVTList(MVT::Other, MVT::Glue);
+  Chain = DAG.getNode(LNP64ISD::CALL, DL, NodeTys, Ops);
+  Glue = Chain.getValue(1);
+
+  SmallVector<CCValAssign, 4> RVLocs;
+  CCState RetCCInfo(CLI.CallConv, CLI.IsVarArg, MF, RVLocs,
+                    *DAG.getContext());
+  RetCCInfo.AnalyzeCallResult(CLI.Ins, RetCC_LNP64);
+  for (CCValAssign &VA : RVLocs) {
+    if (!VA.isRegLoc())
+      llvm_unreachable("LNP64 stack call results are not implemented yet");
+    SDValue RetValue = DAG.getCopyFromReg(Chain, DL, VA.getLocReg(),
+                                          VA.getLocVT(), Glue);
+    Chain = RetValue.getValue(1);
+    Glue = RetValue.getValue(2);
+    InVals.push_back(RetValue);
+  }
+
+  return Chain;
 }

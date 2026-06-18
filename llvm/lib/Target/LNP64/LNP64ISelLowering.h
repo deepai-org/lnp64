@@ -10,6 +10,7 @@ class LNP64Subtarget;
 namespace LNP64ISD {
 enum NodeType : unsigned {
   FIRST_NUMBER = ISD::BUILTIN_OP_END,
+  CALL,
   RET_FLAG,
 };
 }
@@ -31,6 +32,9 @@ public:
                       const SmallVectorImpl<ISD::OutputArg> &Outs,
                       const SmallVectorImpl<SDValue> &OutVals, const SDLoc &DL,
                       SelectionDAG &DAG) const override;
+
+  SDValue LowerCall(CallLoweringInfo &CLI,
+                    SmallVectorImpl<SDValue> &InVals) const override;
 };
 
 } // end namespace llvm
