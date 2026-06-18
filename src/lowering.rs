@@ -720,12 +720,12 @@ mod tests {
             .any(|entry| entry == value)
     }
 
-    fn relocation_rows(manifest: &str) -> Vec<(u16, &str, &str)> {
+    fn relocation_rows(manifest: &str) -> Vec<(u16, &str, &str, &str)> {
         manifest
             .lines()
             .filter(|line| !line.is_empty() && !line.starts_with('#'))
             .map(|line| {
-                let mut fields = line.splitn(3, ',');
+                let mut fields = line.splitn(4, ',');
                 let number = fields
                     .next()
                     .unwrap_or_else(|| panic!("missing relocation number in {line}"))
@@ -737,7 +737,10 @@ mod tests {
                 let calculation = fields
                     .next()
                     .unwrap_or_else(|| panic!("missing relocation calculation in {line}"));
-                (number, name, calculation)
+                let loader_status = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing relocation loader status in {line}"));
+                (number, name, calculation, loader_status)
             })
             .collect()
     }
@@ -1681,6 +1684,8 @@ mod tests {
         let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
         let relocation_manifest = include_str!("../toolchain/lnp64_relocations.manifest");
         let object_format = include_str!("../object_format.md");
+        let loader_source = include_str!("loader.rs");
+        let roadmap = include_str!("../toolchain_roadmap.md");
         let rows = relocation_rows(relocation_manifest);
         let target_relocations: std::collections::BTreeSet<_> =
             manifest_field(target_manifest, "relocations")
@@ -1695,7 +1700,7 @@ mod tests {
             rows.len(),
             "target manifest must enumerate the complete relocation contract"
         );
-        for (idx, (number, name, calculation)) in rows.iter().enumerate() {
+        for (idx, (number, name, calculation, loader_status)) in rows.iter().enumerate() {
             assert_eq!(*number as usize, idx, "relocation numbers must be dense");
             assert!(
                 numbers.insert(*number),
@@ -1704,6 +1709,10 @@ mod tests {
             assert!(names.insert(*name), "duplicate relocation name {name}");
             assert!(!calculation.is_empty(), "empty calculation for {name}");
             assert!(
+                loader_status.starts_with("supported_") || loader_status.starts_with("planned_"),
+                "unknown loader status {loader_status} for {name}"
+            );
+            assert!(
                 object_format.contains(&format!("| {number} | `{name}` |")),
                 "relocation {number},{name} is missing from object_format.md"
             );
@@ -1711,6 +1720,18 @@ mod tests {
                 target_relocations.contains(name),
                 "relocation manifest {name} is missing from target manifest"
             );
+            if loader_status.starts_with("supported_") {
+                assert!(
+                    loader_source.contains(&format!("const {name}:")),
+                    "loader-supported relocation {name} is missing from loader constants"
+                );
+                if *name != "R_LNP64_NONE" {
+                    assert!(
+                        roadmap.contains(name),
+                        "loader-supported relocation {name} is missing from toolchain roadmap"
+                    );
+                }
+            }
         }
         for name in target_relocations {
             assert!(
