@@ -4018,9 +4018,9 @@ impl Machine {
     }
 
     fn cap_send(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
-        let channel_value = self.load_u64(argblock)?;
-        let src_value = self.load_u64(argblock + 8)?;
-        let flags = self.load_u64(argblock + 24)?;
+        let channel_value = self.load_u64_offset(argblock, 0)?;
+        let src_value = self.load_u64_offset(argblock, 8)?;
+        let flags = self.load_u64_offset(argblock, 24)?;
         let value = self.cap_send_inner(channel_value, src_value, flags);
         match value {
             Ok(count) => {
@@ -4075,10 +4075,10 @@ impl Machine {
     }
 
     fn cap_recv(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
-        let channel_value = self.load_u64(argblock)?;
-        let dst_req = self.load_u64(argblock + 8)?;
-        let rights_req = self.load_u64(argblock + 16)?;
-        let flags = self.load_u64(argblock + 24)?;
+        let channel_value = self.load_u64_offset(argblock, 0)?;
+        let dst_req = self.load_u64_offset(argblock, 8)?;
+        let rights_req = self.load_u64_offset(argblock, 16)?;
+        let flags = self.load_u64_offset(argblock, 24)?;
         let value = self.cap_recv_inner(channel_value, dst_req, rights_req, flags);
         match value {
             Ok(token) => {
@@ -4166,10 +4166,10 @@ impl Machine {
     }
 
     fn cap_dup(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
-        let src_value = self.load_u64(argblock)?;
-        let dst_req = self.load_u64(argblock + 8)?;
-        let rights_req = self.load_u64(argblock + 16)?;
-        let flags = self.load_u64(argblock + 24)?;
+        let src_value = self.load_u64_offset(argblock, 0)?;
+        let dst_req = self.load_u64_offset(argblock, 8)?;
+        let rights_req = self.load_u64_offset(argblock, 16)?;
+        let flags = self.load_u64_offset(argblock, 24)?;
         let value = self.cap_dup_inner(src_value, dst_req, rights_req, flags);
         match value {
             Ok(token) => {
@@ -4243,7 +4243,7 @@ impl Machine {
     }
 
     fn cap_revoke(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
-        let src_value = self.load_u64(argblock)?;
+        let src_value = self.load_u64_offset(argblock, 0)?;
         let value = self.cap_revoke_inner(src_value);
         match value {
             Ok(count) => {
