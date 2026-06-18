@@ -31,9 +31,12 @@ int main(int argc, char **argv) {
     if (cap_send(fds[1], narrowed, 0) != 1) return 4;
     received = cap_recv(fds[0], 0, 1, 0);
     if (received == -1) return 5;
+    if (write(received, "x", 1) != -1) return 6;
+    if (read(received, buf, 1) != 1) return 7;
+    if (loadb(buf) != 'w') return 8;
     revoked = cap_revoke(fd);
-    if (revoked < 3) return 6;
-    if (read(received, buf, 1) != 0) return 7;
+    if (revoked < 3) return 9;
+    if (read(received, buf, 1) != 0) return 10;
 
     write(1, "fd_passing_test ok\n", 19);
     return 0;
