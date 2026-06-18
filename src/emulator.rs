@@ -4326,7 +4326,10 @@ impl Machine {
                 Ok(fd as u64)
             }
             (ObjectKind::DmaBuffer, _) => {
-                let len = self.load_u64(argblock + 48).map_err(|_| 14u64)?.max(1);
+                let len = self.load_u64(argblock + 48).map_err(|_| 14u64)?;
+                if len == 0 {
+                    return Err(22);
+                }
                 self.ensure_mapped(arg, len as usize, false)
                     .map_err(|_| 14u64)?;
                 self.ensure_mapped(arg, len as usize, true)
@@ -13047,6 +13050,16 @@ mod tests {
         machine.store_u64(arg + 16, 0).unwrap();
         machine.store_u64(arg + 24, 7).unwrap();
         machine.store_u64(arg + 40, readonly).unwrap();
+        machine.store_u64(arg + 48, 0).unwrap();
+        machine.object_ctl(Reg(4), arg).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[4], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert!(matches!(
+            machine.process().unwrap().fds[7],
+            FdHandle::Closed
+        ));
+
         machine.store_u64(arg + 48, 16).unwrap();
         machine.object_ctl(Reg(4), arg).unwrap();
 
