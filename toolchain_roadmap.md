@@ -84,7 +84,8 @@ NetBSD policy. Those remain loader, libc, and personality responsibilities.
 
 1. Clang driver support for `--target=lnp64-unknown-none`.
 2. Private libc/syscall shim layer over `__lnp_*` intrinsics.
-3. Minimal crt objects or documented compiler-emitted startup transition.
+3. Minimal crt objects or documented compiler-emitted startup transition pinned
+   by `toolchain/lnp64_crt_startup.manifest`.
 4. libc surfaces for file descriptors, paths, memory mapping, time, signals,
    pthreads, sockets, and Resource Domain controls.
 5. libpthread over `CLONE`, futexes, TLS, timers, and event queues.

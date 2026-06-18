@@ -1,0 +1,10 @@
+# LNP64 crt/startup manifest v0.
+# Pipe-delimited fields: item|required|contract
+entry_symbol|required|_start
+main_signature|required|main(argc,argv,envp)
+startup_page|required|base=0x700000,size=0x20000,argc,argv,envp
+entry_strings|required|base=0x701000,nul_terminated
+tls|required|thread_pointer_pcr=TP
+errno|required|ERRNO_GET,ERRNO_SET
+auxv|required|ENV_GET,loader_startup_metadata
+process_exit|required|EXIT

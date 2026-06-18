@@ -16,6 +16,7 @@ isel_contract=toolchain/lnp64_isel.manifest
 exec_plan_contract=toolchain/lnp64_exec_plan.manifest
 debug_unwind_contract=toolchain/lnp64_debug_unwind.manifest
 inline_asm_contract=toolchain/lnp64_inline_asm.manifest
+crt_startup_contract=toolchain/lnp64_crt_startup.manifest
 gpr=r0-r31
 fdr=fd0-fd255
 pcr=PID,PPID,TID,TP,UID,GID,SIGMASK,SIGPENDING,REALTIME_SEC,REALTIME_NSEC

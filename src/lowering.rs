@@ -846,6 +846,28 @@ mod tests {
             .collect()
     }
 
+    fn crt_startup_rows(manifest: &str) -> Vec<(&str, &str, Vec<&str>)> {
+        manifest
+            .lines()
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(|line| {
+                let mut fields = line.splitn(3, '|');
+                let item = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing crt startup item in {line}"));
+                let requirement = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing crt startup requirement in {line}"));
+                let contract = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing crt startup contract in {line}"))
+                    .split(',')
+                    .collect();
+                (item, requirement, contract)
+            })
+            .collect()
+    }
+
     #[test]
     fn toolchain_contract_index_is_complete() {
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
@@ -875,6 +897,7 @@ mod tests {
             "exec_plan",
             "debug_unwind",
             "inline_asm",
+            "crt_startup",
         ] {
             assert!(names.contains(name), "missing contract index row {name}");
         }
@@ -922,6 +945,10 @@ mod tests {
         assert_eq!(
             manifest_field(manifest, "inline_asm_contract"),
             "toolchain/lnp64_inline_asm.manifest"
+        );
+        assert_eq!(
+            manifest_field(manifest, "crt_startup_contract"),
+            "toolchain/lnp64_crt_startup.manifest"
         );
         assert_eq!(manifest_field(manifest, "gpr"), "r0-r31");
         assert_eq!(manifest_field(manifest, "fdr"), "fd0-fd255");
@@ -1275,6 +1302,56 @@ mod tests {
         assert_eq!(constraints["m"], ("memory", "base_gpr_plus_signed_offset"));
         assert_eq!(constraints["i"], ("immediate", "signed_16_or_symbolic"));
         assert!(roadmap.contains("toolchain/lnp64_inline_asm.manifest"));
+    }
+
+    #[test]
+    fn crt_startup_manifest_records_process_entry_contract() {
+        let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
+        let crt_manifest = include_str!("../toolchain/lnp64_crt_startup.manifest");
+        let psabi_manifest = include_str!("../toolchain/lnp64_psabi.manifest");
+        let psabi_doc = include_str!("../psABI.md");
+        let roadmap = include_str!("../toolchain_roadmap.md");
+        let rows = crt_startup_rows(crt_manifest);
+        let mut contracts = std::collections::BTreeMap::new();
+
+        assert_eq!(
+            manifest_field(target_manifest, "crt_startup_contract"),
+            "toolchain/lnp64_crt_startup.manifest"
+        );
+        for (item, requirement, contract) in rows {
+            assert_eq!(requirement, "required", "crt startup item {item}");
+            assert!(!contract.is_empty(), "empty crt startup contract {item}");
+            assert!(
+                contracts.insert(item, contract).is_none(),
+                "duplicate crt startup item {item}"
+            );
+        }
+
+        assert!(contracts["entry_symbol"].contains(&"_start"));
+        assert!(contracts["main_signature"].contains(&"main(argc"));
+        assert!(contracts["main_signature"].contains(&"argv"));
+        assert!(contracts["main_signature"].contains(&"envp)"));
+        assert!(contracts["startup_page"].contains(&"base=0x700000"));
+        assert!(contracts["startup_page"].contains(&"size=0x20000"));
+        assert_eq!(
+            manifest_field(psabi_manifest, "entry_page_base"),
+            "0x700000"
+        );
+        assert_eq!(manifest_field(psabi_manifest, "entry_page_size"), "0x20000");
+        assert!(contracts["entry_strings"].contains(&"base=0x701000"));
+        assert_eq!(
+            manifest_field(psabi_manifest, "entry_strings_base"),
+            "0x701000"
+        );
+        assert!(contracts["tls"].contains(&"thread_pointer_pcr=TP"));
+        assert!(contracts["errno"].contains(&"ERRNO_GET"));
+        assert!(contracts["errno"].contains(&"ERRNO_SET"));
+        assert!(contracts["auxv"].contains(&"ENV_GET"));
+        assert!(contracts["process_exit"].contains(&"EXIT"));
+
+        assert!(psabi_doc.contains("If a source file defines `_start`"));
+        assert!(psabi_doc.contains("For C `main`, the compiler initializes parameters specially"));
+        assert!(roadmap.contains("toolchain/lnp64_crt_startup.manifest"));
     }
 
     #[test]
