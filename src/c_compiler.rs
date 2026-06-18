@@ -947,6 +947,7 @@ fn normalize_c_types(source: &str) -> String {
     out = normalize_struct_object_declarations(&out, "struct arg", 24);
     out = normalize_struct_object_declarations(&out, "struct sigaction", 24);
     out = normalize_struct_object_declarations(&out, "struct timespec", 16);
+    out = normalize_struct_object_declarations(&out, "struct kevent", 64);
     out = normalize_struct_object_declarations(&out, "jsmn_parser", 24);
     out = normalize_struct_object_declarations(&out, "struct range", 24);
     out = normalize_struct_object_declarations(&out, "static struct range", 24);
@@ -1016,6 +1017,8 @@ fn normalize_c_types(source: &str) -> String {
         ("struct stat", "int"),
         ("struct timespec *", "int "),
         ("struct timespec", "int"),
+        ("struct kevent *", "int "),
+        ("struct kevent", "int"),
         ("struct sigaction *", "int "),
         ("struct sigaction", "int"),
         ("struct tm *", "int "),
@@ -8966,6 +8969,33 @@ impl CodeGen {
                 self.text.push(format!("  LI r{dst}, -1"));
                 Ok(dst)
             }
+            "kqueue" => {
+                self.no_args(name, args)?;
+                let err = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{err}, 38"));
+                self.text.push(format!("  ERRNO_SET r{err}"));
+                self.text.push(format!("  LI r{dst}, -1"));
+                Ok(dst)
+            }
+            "kevent" => {
+                if args.len() != 6 {
+                    return Err(
+                        "kevent(kq, changelist, nchanges, eventlist, nevents, timeout) expects 6 arguments"
+                            .to_string(),
+                    );
+                }
+                for arg in args {
+                    self.emit_expr(arg)?;
+                    self.temp_reg = 0;
+                }
+                let err = self.alloc_reg()?;
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  LI r{err}, 38"));
+                self.text.push(format!("  ERRNO_SET r{err}"));
+                self.text.push(format!("  LI r{dst}, -1"));
+                Ok(dst)
+            }
             "dlopen" | "dlsym" => {
                 if args.len() != 2 {
                     return Err(format!("{name}(arg0, arg1) expects 2 arguments"));
@@ -15574,6 +15604,7 @@ fn type_aggregate_size(name: &str) -> Option<i64> {
         "struct pollfd" => Some(24),
         "struct timespec" => Some(16),
         "struct timeval" => Some(16),
+        "struct kevent" => Some(64),
         "struct flock" => Some(40),
         _ => None,
     }
@@ -19718,6 +19749,31 @@ int main() {
             asm.contains(&c_string_data("dynamic loading not supported")),
             "{asm}"
         );
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn c_kqueue_kevent_surface_fails_cleanly_until_event_queue_backend_exists() {
+        let source = r#"
+        int main() {
+            int ev;
+            if (EVFILT_READ != -1) return 1;
+            if (EVFILT_WRITE != -2) return 2;
+            if ((EV_ADD | EV_ENABLE | EV_CLEAR | EV_ERROR | EV_EOF | NOTE_TRIGGER) == 0) return 3;
+            errno = 0;
+            if (kqueue() != -1) return 4;
+            if (errno != ENOSYS) return 5;
+            ev = alloc(64);
+            errno = 0;
+            if (kevent(0, ev, 1, ev, 1, 0) != -1) return 6;
+            if (errno != ENOSYS) return 7;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("ERRNO_SET"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
