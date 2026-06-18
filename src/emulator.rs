@@ -2300,7 +2300,12 @@ impl Machine {
                     let addr = if hint != 0 {
                         hint
                     } else {
-                        align_up(process.mmap_next, 4096)
+                        let Some(addr) = checked_align_up(process.mmap_next, 4096) else {
+                            self.set_status_errno(22)?;
+                            self.write_reg(dst, -1i64 as u64)?;
+                            return Ok(true);
+                        };
+                        addr
                     };
                     let Some(end) = addr.checked_add(len) else {
                         self.set_status_errno(22)?;
@@ -3073,15 +3078,17 @@ impl Machine {
         let addr = {
             let process = self.process_mut()?;
             let addr = if guarded {
-                align_up(
+                checked_align_up(
                     process
                         .heap_next
                         .checked_add(guard_len)
                         .ok_or_else(|| "allocation overflow".to_string())?,
                     align,
                 )
+                .ok_or_else(|| "allocation overflow".to_string())?
             } else {
-                align_up(process.heap_next, align)
+                checked_align_up(process.heap_next, align)
+                    .ok_or_else(|| "allocation overflow".to_string())?
             };
             let end = addr
                 .checked_add(len as u64)
@@ -7497,6 +7504,11 @@ impl Machine {
 
 fn align_up(value: u64, align: u64) -> u64 {
     (value + align - 1) & !(align - 1)
+}
+
+fn checked_align_up(value: u64, align: u64) -> Option<u64> {
+    let mask = align.checked_sub(1)?;
+    Some(value.checked_add(mask)? & !mask)
 }
 
 fn normalize_path_lexical(path: &Path) -> PathBuf {
@@ -12036,6 +12048,42 @@ mod tests {
         let normal = Vma::anonymous(0x1000, 0x100, 0b011);
         assert!(normal.contains(0x1010, 0x20));
         assert!(!normal.contains(0x10f0, 0x20));
+    }
+
+    #[test]
+    fn allocation_alignment_rejects_wrapping_heap_cursor() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.process_mut().unwrap().heap_next = u64::MAX - 8;
+        machine.thread_mut().unwrap().regs[1] = 1;
+
+        let err = machine.exec(Instr::Alloc(Reg(2), Reg(1))).unwrap_err();
+
+        assert!(err.contains("allocation overflow"), "{err}");
+        assert_eq!(machine.thread().unwrap().regs[2], 0);
+    }
+
+    #[test]
+    fn anonymous_mmap_rejects_wrapping_cursor_alignment() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.process_mut().unwrap().mmap_next = u64::MAX - 8;
+        machine.thread_mut().unwrap().regs[1] = 4096;
+        machine.thread_mut().unwrap().regs[2] = 0b011;
+
+        machine
+            .exec(Instr::Mmap(
+                Reg(3),
+                Reg(0),
+                Reg(1),
+                Reg(2),
+                FdReg(0),
+                Reg(0),
+            ))
+            .unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[3], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
     }
 
     #[test]
