@@ -2498,7 +2498,7 @@ impl Machine {
                         guard: false,
                     });
                 }
-                self.write_reg(dst, addr)?;
+                self.complete_reg_ok(dst, addr)?;
             }
             Instr::Munmap(addr, len) => {
                 let addr = self.read_reg(addr)?;
@@ -13184,6 +13184,29 @@ mod tests {
         let err = machine.exec(Instr::Alloc(Reg(2), Reg(1))).unwrap_err();
         assert!(err.contains("resource domain inactive"), "{err}");
         assert_eq!(machine.process().unwrap().errno, 11);
+    }
+
+    #[test]
+    fn mmap_success_clears_errno() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.set_errno(123).unwrap();
+        machine.thread_mut().unwrap().regs[1] = 4096;
+        machine.thread_mut().unwrap().regs[2] = 0b011;
+
+        machine
+            .exec(Instr::Mmap(
+                Reg(3),
+                Reg(0),
+                Reg(1),
+                Reg(2),
+                FdReg(0),
+                Reg(0),
+            ))
+            .unwrap();
+
+        assert_ne!(machine.thread().unwrap().regs[3], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 0);
     }
 
     #[test]
