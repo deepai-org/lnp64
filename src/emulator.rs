@@ -5575,6 +5575,7 @@ impl Machine {
         arg0: u64,
         arg1: u64,
     ) -> Result<(), String> {
+        Self::ensure_result_reg_writable(result)?;
         self.require_domain_cap(DOMAIN_CAP_CALL)?;
         if self.ensure_fd_right(call_gate_fd, CAP_RIGHT_CALL).is_err() {
             self.write_reg(result, -1i64 as u64)?;
@@ -16353,6 +16354,14 @@ mod tests {
             completion_generation: Some(1),
             flags: 0,
         };
+        let err = machine.call_cap(Reg(31), 3, 10, 20).unwrap_err();
+        assert!(err.contains("hardware-locked stack pointer"), "{err}");
+        assert_eq!(machine.next_call_op_id, 1);
+        match &machine.process().unwrap().fds[4] {
+            FdHandle::Counter(value) => assert_eq!(*value.borrow(), 0),
+            _ => panic!("expected completion counter"),
+        }
+
         machine.call_cap(Reg(6), 3, 10, 20).unwrap();
         assert_eq!(machine.thread().unwrap().regs[6], 1);
         match &machine.process().unwrap().fds[4] {
