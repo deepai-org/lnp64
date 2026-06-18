@@ -8368,6 +8368,64 @@ mod tests {
     }
 
     #[test]
+    fn classifier_table_create_failures_do_not_install_requested_fd() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let rules = ARG_BASE + 0x1000;
+
+        assert_eq!(
+            try_create_classifier(&mut machine, 6, 0, CLASSIFIER_MAX_RULES as u64 + 1, 0, 0),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert!(matches!(
+            machine.process().unwrap().fds[6],
+            FdHandle::Closed
+        ));
+
+        write_classifier_rule(
+            &mut machine,
+            rules,
+            99,
+            CLASSIFY_FIELD_SERVICE_ID,
+            1,
+            0,
+            CLASSIFY_ACTION_COUNT,
+            0,
+            0,
+        );
+        assert_eq!(
+            try_create_classifier(&mut machine, 6, rules, 1, 0, 0),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert!(matches!(
+            machine.process().unwrap().fds[6],
+            FdHandle::Closed
+        ));
+
+        let retained = Rc::new(RefCell::new(77));
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[6] = FdHandle::Counter(retained.clone());
+            process.fd_capabilities[6] = FdCapability::full(6);
+        }
+
+        assert_eq!(
+            try_create_classifier(&mut machine, 6, 0, 1, 0, 0),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 14);
+        match &machine.process().unwrap().fds[6] {
+            FdHandle::Counter(value) => {
+                assert!(Rc::ptr_eq(value, &retained));
+                assert_eq!(*value.borrow(), 77);
+            }
+            _ => panic!("expected retained counter fd"),
+        }
+    }
+
+    #[test]
     fn classifier_table_rejects_invalid_rule_descriptors() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
