@@ -33,6 +33,8 @@ defaults for the first backend bring-up.
 `toolchain/lnp64_llvm_filemap.manifest` records the first llvm-project source
 surface for the backend, MC layer, Clang target info, driver, lld relocation
 handler, and smoke tests.
+`toolchain/lnp64_registers.manifest` records the backend-facing register
+classes, reserved registers, allocatable sets, and debug/unwind role names.
 
 The current Rust assembler, emulator, and C compiler remain useful bootstrap
 and architecture smoke-test tools. They are not the long-term application
@@ -68,7 +70,8 @@ NetBSD policy. Those remain loader, libc, and personality responsibilities.
 
 2. Define registers and calling convention.
    - GPR `r0`-`r31`, FDR capability registers `fd0`-`fd255`, PCR names, and
-     dedicated FPU/vector register files.
+     dedicated FPU/vector register files from
+     `toolchain/lnp64_registers.manifest`.
    - psABI argument/return rules from `psABI.md`.
    - Stack layout, call frame, callee-save set, TLS pointer, and startup
      metadata access.
@@ -204,7 +207,7 @@ platform while remaining useful as a smoke generator:
 | Phase | Current Artifact | Gate |
 | --- | --- | --- |
 | Toy compiler retirement | `toolchain_roadmap.md`, `src/c_compiler.rs`, and private `__lnp_*` shim tests keep new native work out of ad hoc POSIX-shaped compiler features. | `c_private_lnp_manifest_intrinsics_lower_and_run` |
-| Real toolchain target | `toolchain/lnp64_target.manifest`, psABI, relocation, object-format, crt, inline-asm, debug/unwind, intrinsic, isel, and exec-plan manifests. | `toolchain_contract_index_is_complete` |
+| Real toolchain target | `toolchain/lnp64_target.manifest`, register-class, psABI, relocation, object-format, crt, inline-asm, debug/unwind, intrinsic, isel, and exec-plan manifests. | `toolchain_contract_index_is_complete`, `register_manifest_records_backend_classes` |
 | Minimal LLVM/Clang path | `toolchain/lnp64_llvm_bootstrap.manifest` pins the planned hello, arithmetic, memory, calls, and simple-libc replacement gates for the toy-compiler smoke path; `toolchain/lnp64_llvm_gates.manifest` pins the Clang/lld/loader command shapes that replace `lnp64 cc`; `toolchain/lnp64_clang_driver.manifest` pins the driver defaults; `toolchain/lnp64_llvm_filemap.manifest` pins the llvm-project source surface; `toolchain/lnp64_static.ld` pins the first lld static layout; `toolchain/crt0_lnp64.s` pins the first crt0 startup stub; `toolchain/lnp64_intrinsics.h` pins the private C shim header. | `llvm_bootstrap_manifest_names_first_clang_gate`, `llvm_gate_manifest_pins_non_toy_clang_commands`, `clang_driver_manifest_matches_llvm_gates`, `llvm_filemap_manifest_names_backend_source_surface`, `crt0_startup_stub_matches_crt_contract`, and `intrinsic_header_matches_intrinsic_manifest` |
 | Libc/runtime shim layer | `libc_roadmap.md`, `toolchain/lnp64_libc_shim.manifest`, crt/startup manifest, intrinsic manifest, and private intrinsic header define startup, TLS/errno, allocation, FDR I/O, pthread/futex, event waits, mmap, signal, and socket lowering. | `libc_shim_manifest_covers_runtime_surfaces` plus `scripts/run_software_gates.sh` |
 | Software loader and exec plan | `src/loader.rs`, `src/emulator.rs`, `object_format.md`, `toolchain/lnp64_exec_plan.manifest`, and `toolchain/lnp64_loader_security.manifest` define the initial ELF64 parser, encoded exec-plan records, emulator-side descriptor validation, committed entry/TLS/startup metadata, W^X/NX/ASLR/provenance coverage, and atomic memory-image commit probe for the bounded `EXEC` boundary. | `exec_plan_manifest_matches_loader_boundary_contract`, `loader_security_manifest_covers_exec_plan_security`, plus the `exec_descriptor` test filter |

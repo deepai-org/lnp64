@@ -927,6 +927,40 @@ mod tests {
             .collect()
     }
 
+    fn register_class_rows(manifest: &str) -> Vec<(&str, &str, &str, &str, Vec<&str>, &str, &str)> {
+        manifest
+            .lines()
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(|line| {
+                let mut fields = line.splitn(7, '|');
+                let class = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing register class in {line}"));
+                let values = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing register values in {line}"));
+                let width = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing register width in {line}"));
+                let allocatable = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing allocatable register set in {line}"));
+                let reserved = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing reserved register set in {line}"))
+                    .split(',')
+                    .collect();
+                let role = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing register role in {line}"));
+                let debug = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing debug register role in {line}"));
+                (class, values, width, allocatable, reserved, role, debug)
+            })
+            .collect()
+    }
+
     fn netbsd_layer_rows(manifest: &str) -> Vec<(&str, &str, Vec<&str>, &str, &str)> {
         manifest
             .lines()
@@ -1115,6 +1149,7 @@ mod tests {
         for name in [
             "contract_index",
             "target",
+            "registers",
             "relocations",
             "psabi",
             "intrinsics",
@@ -1975,6 +2010,10 @@ mod tests {
             "toolchain/lnp64_psabi.manifest"
         );
         assert_eq!(
+            manifest_field(manifest, "register_contract"),
+            "toolchain/lnp64_registers.manifest"
+        );
+        assert_eq!(
             manifest_field(manifest, "object_contract"),
             "object_format.md"
         );
@@ -2516,6 +2555,98 @@ mod tests {
         assert!(psabi_doc.contains("The thread pointer is read and written through the `TP` PCR."));
         assert!(psabi_doc.contains("`SIGRET` is the POSIX spelling"));
         assert!(psabi_doc.contains("`GATE_RETURN`"));
+    }
+
+    #[test]
+    fn register_manifest_records_backend_classes() {
+        let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
+        let register_manifest = include_str!("../toolchain/lnp64_registers.manifest");
+        let psabi_manifest = include_str!("../toolchain/lnp64_psabi.manifest");
+        let inline_asm_manifest = include_str!("../toolchain/lnp64_inline_asm.manifest");
+        let debug_unwind_manifest = include_str!("../toolchain/lnp64_debug_unwind.manifest");
+        let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
+        let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
+        let roadmap = include_str!("../toolchain_roadmap.md");
+        let conformance = include_str!("../conformance_matrix.md");
+        let rows = register_class_rows(register_manifest);
+        let mut classes = std::collections::BTreeMap::new();
+
+        assert_eq!(
+            manifest_field(target_manifest, "register_contract"),
+            "toolchain/lnp64_registers.manifest"
+        );
+        assert!(contract_index.contains(
+            "registers|toolchain/lnp64_registers.manifest|register_manifest_records_backend_classes"
+        ));
+        assert!(transition_manifest.contains("toolchain/lnp64_registers.manifest"));
+        assert!(roadmap.contains("toolchain/lnp64_registers.manifest"));
+        assert!(conformance.contains("toolchain/lnp64_registers.manifest"));
+
+        for (class, values, width, allocatable, reserved, role, debug) in rows {
+            assert!(
+                classes
+                    .insert(class, (values, width, allocatable, reserved, role, debug))
+                    .is_none(),
+                "duplicate register class {class}"
+            );
+            assert!(!values.is_empty(), "empty register values for {class}");
+            assert!(!width.is_empty(), "empty register width for {class}");
+            assert!(
+                !allocatable.is_empty(),
+                "empty allocatable register set for {class}"
+            );
+            assert!(!role.is_empty(), "empty register role for {class}");
+            assert!(!debug.is_empty(), "empty debug register role for {class}");
+        }
+
+        for class in ["gpr", "fdr", "fpr", "vr", "pcr", "special"] {
+            assert!(
+                classes.contains_key(class),
+                "missing register class {class}"
+            );
+        }
+        assert_eq!(classes["gpr"].0, manifest_field(target_manifest, "gpr"));
+        assert_eq!(classes["fdr"].0, manifest_field(target_manifest, "fdr"));
+        assert_eq!(classes["fpr"].0, manifest_field(target_manifest, "fpr"));
+        assert_eq!(classes["vr"].0, manifest_field(target_manifest, "vr"));
+        assert_eq!(classes["gpr"].1, "64");
+        assert_eq!(classes["gpr"].2, "r1-r30");
+        assert!(classes["gpr"].3.contains(&"r0"));
+        assert!(
+            classes["gpr"]
+                .3
+                .contains(&manifest_field(psabi_manifest, "stack_pointer"))
+        );
+        assert_eq!(
+            classes["special"].0,
+            format!(
+                "{},{}",
+                manifest_field(psabi_manifest, "link_register"),
+                manifest_field(psabi_manifest, "thread_pointer_pcr")
+            )
+        );
+
+        for pcr in ["PID", "PPID", "TID", "TP", "SIGMASK", "SIGPENDING"] {
+            assert!(
+                classes["pcr"].0.split(',').any(|value| value == pcr),
+                "missing PCR {pcr}"
+            );
+        }
+        for (constraint, class, values, _usage) in inline_asm_rows(inline_asm_manifest) {
+            if ["gpr", "fdr", "fpr", "vr"].contains(&class) {
+                assert_eq!(
+                    classes[class].0, values,
+                    "inline asm constraint {constraint} disagrees with register class {class}"
+                );
+            }
+        }
+        for register in ["r0-r31", "LR", "TP"] {
+            assert!(manifest_csv_contains(
+                debug_unwind_manifest,
+                "register_numbers",
+                register
+            ));
+        }
     }
 
     #[test]
