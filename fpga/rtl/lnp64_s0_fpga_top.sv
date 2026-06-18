@@ -28,6 +28,16 @@ module lnp64_s0_fpga_top (
     logic watchdog_degraded_seen;
     logic no_raw_authority_visible;
     logic coherence_paths_live;
+    logic multicore_no_duplicate_tid;
+    logic tile_reset_stable_all;
+    logic tile1_observable_idle;
+    logic cross_tile_wake_one;
+    logic tile_fault_isolated;
+    logic [31:0] topology_tile_count_seen;
+    logic [63:0] topology_enabled_tile_mask_seen;
+    logic [31:0] topology_coherence_domain_seen;
+    logic [31:0] topology_active_window_base_seen;
+    logic [31:0] topology_active_window_count_seen;
     logic uart_seen_q;
     logic uart_send;
 
@@ -69,7 +79,17 @@ module lnp64_s0_fpga_top (
         .structured_fault_seen(structured_fault_seen),
         .watchdog_degraded_seen(watchdog_degraded_seen),
         .no_raw_authority_visible(no_raw_authority_visible),
-        .coherence_paths_live(coherence_paths_live)
+        .coherence_paths_live(coherence_paths_live),
+        .multicore_no_duplicate_tid(multicore_no_duplicate_tid),
+        .tile_reset_stable_all(tile_reset_stable_all),
+        .tile1_observable_idle(tile1_observable_idle),
+        .cross_tile_wake_one(cross_tile_wake_one),
+        .tile_fault_isolated(tile_fault_isolated),
+        .topology_tile_count_seen(topology_tile_count_seen),
+        .topology_enabled_tile_mask_seen(topology_enabled_tile_mask_seen),
+        .topology_coherence_domain_seen(topology_coherence_domain_seen),
+        .topology_active_window_base_seen(topology_active_window_base_seen),
+        .topology_active_window_count_seen(topology_active_window_count_seen)
     );
 
     lnp64_s0_uart_tx uart_tx_i(

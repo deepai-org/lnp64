@@ -1,5 +1,6 @@
 #include "LNP64MCTargetDesc.h"
 #include "InstPrinter/LNP64InstPrinter.h"
+#include "LNP64MCAsmInfo.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
@@ -39,6 +40,7 @@ static MCSubtargetInfo *createLNP64MCSubtargetInfo(const Triple &TT,
 
 extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeLNP64TargetMC() {
   Target &T = getTheLNP64Target();
+  RegisterMCAsmInfo<LNP64MCAsmInfo> X(T);
   TargetRegistry::RegisterMCInstrInfo(T, createLNP64MCInstrInfo);
   TargetRegistry::RegisterMCRegInfo(T, createLNP64MCRegisterInfo);
   TargetRegistry::RegisterMCSubtargetInfo(T, createLNP64MCSubtargetInfo);

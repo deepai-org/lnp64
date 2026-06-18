@@ -1,4 +1,5 @@
 #include "LNP64InstrInfo.h"
+#include "LNP64.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -22,7 +23,7 @@ void LNP64InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
 void LNP64InstrInfo::storeRegToStackSlot(
     MachineBasicBlock &MBB, MachineBasicBlock::iterator I, Register SrcReg,
     bool IsKill, int FrameIndex, const TargetRegisterClass *RC,
-    const TargetRegisterInfo *, Register) const {
+    const TargetRegisterInfo *) const {
   if (RC != &LNP64::GPRRegClass)
     llvm_unreachable("LNP64 only supports GPR stack spills today");
   DebugLoc DL;
@@ -36,8 +37,8 @@ void LNP64InstrInfo::storeRegToStackSlot(
 
 void LNP64InstrInfo::loadRegFromStackSlot(
     MachineBasicBlock &MBB, MachineBasicBlock::iterator I, Register DestReg,
-    int FrameIndex, const TargetRegisterClass *RC, const TargetRegisterInfo *,
-    Register) const {
+    int FrameIndex, const TargetRegisterClass *RC,
+    const TargetRegisterInfo *) const {
   if (RC != &LNP64::GPRRegClass)
     llvm_unreachable("LNP64 only supports GPR stack reloads today");
   DebugLoc DL;

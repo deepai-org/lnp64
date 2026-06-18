@@ -207,6 +207,7 @@ module lnp64_m10_ras (
                 R_ECC_CORRECT: begin
                     ecc_corrected <= 1'b1;
                     trace_record.trace_id <= 32'd1;
+                    trace_record.tile_id <= 32'd0;
                     trace_record.domain_id <= seeded_root_domain(scenario_seed);
                     trace_record.domain_gen <= 32'd1;
                     trace_record.source <= 16'd1;
@@ -231,6 +232,7 @@ module lnp64_m10_ras (
                     degraded_state <= 1'b1;
                     fault_count <= fault_count + 32'd1;
                     watchdog_record.reset_id <= seeded_reset_id(scenario_seed);
+                    watchdog_record.tile_id <= 32'd0;
                     watchdog_record.op_id <= 32'd10;
                     watchdog_record.domain_id <= seeded_root_domain(scenario_seed);
                     watchdog_record.domain_generation <= 32'd1;
@@ -255,6 +257,7 @@ module lnp64_m10_ras (
                     trace_writes <= seeded_trace_writes(scenario_seed);
                     trace_overflowed <= 1'b1;
                     trace_record.trace_id <= seeded_trace_writes(scenario_seed);
+                    trace_record.tile_id <= 32'd0;
                     trace_record.counter_value <= {
                         seeded_trace_writes(scenario_seed),
                         seeded_trace_capacity(scenario_seed)

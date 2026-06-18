@@ -42,7 +42,7 @@
     },
     {
       "id": 5,
-      "title": "one core tile and simple assembler program ROM",
+      "title": "two core tiles, tile telemetry, and simple assembler program ROM",
       "status": "implemented",
       "gate_scripts": ["scripts/run_rtl_s0.sh"],
       "filelists": ["tests/rtl/s0_filelist.f"],

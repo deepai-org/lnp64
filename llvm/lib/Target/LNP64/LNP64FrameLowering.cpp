@@ -1,8 +1,11 @@
 #include "LNP64FrameLowering.h"
+#include "LNP64.h"
 #include "LNP64InstrInfo.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/CodeGen/TargetInstrInfo.h"
+#include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
 
@@ -40,3 +43,5 @@ void LNP64FrameLowering::emitEpilogue(MachineFunction &MF,
   emitSPAdjust(MF, MBB, MBB.getFirstTerminator(), DebugLoc(),
                int64_t(StackSize));
 }
+
+bool LNP64FrameLowering::hasFP(const MachineFunction &) const { return true; }

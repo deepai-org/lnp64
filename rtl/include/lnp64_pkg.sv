@@ -84,6 +84,19 @@ package lnp64_pkg;
         LNP64_OP_UNSUPPORTED  = 16'h00ff
     } lnp64_opcode_e;
 
+    typedef enum logic [7:0] {
+        LNP64_M1_COMMIT_CAP_DUP      = 8'd1,
+        LNP64_M1_COMMIT_CAP_SEND     = 8'd2,
+        LNP64_M1_COMMIT_CAP_RECV     = 8'd3,
+        LNP64_M1_COMMIT_CAP_REVOKE   = 8'd4,
+        LNP64_M1_COMMIT_REJECT_STALE = 8'd5,
+        LNP64_M1_COMMIT_PUSH         = 8'd6,
+        LNP64_M1_COMMIT_PULL         = 8'd7,
+        LNP64_M1_COMMIT_REJECT_FULL  = 8'd8,
+        LNP64_M1_COMMIT_CAP_DUP_DENIED = 8'd9,
+        LNP64_M1_COMMIT_OBJECT_CREATE = 8'd10
+    } lnp64_m1_commit_op_e;
+
     typedef enum logic [15:0] {
         LNP64_STATUS_OK          = 16'h0000,
         LNP64_STATUS_ERROR       = 16'h0001,
@@ -117,8 +130,33 @@ package lnp64_pkg;
         LNP64_ENGINE_UNSUPPORTED= 16'd255
     } lnp64_engine_e;
 
+    typedef enum logic [15:0] {
+        LNP64_LIFECYCLE_PURE_LOCAL        = 16'd0,
+        LNP64_LIFECYCLE_PIPELINE_QUEUE    = 16'd1,
+        LNP64_LIFECYCLE_OWNER_ENGINE      = 16'd2,
+        LNP64_LIFECYCLE_LONG_OWNER_ENGINE = 16'd3,
+        LNP64_LIFECYCLE_EXTERNAL_IP       = 16'd4
+    } lnp64_lifecycle_profile_e;
+
+    typedef enum logic [15:0] {
+        LNP64_LSTATE_RESET      = 16'd0,
+        LNP64_LSTATE_READY      = 16'd1,
+        LNP64_LSTATE_EMPTY      = 16'd2,
+        LNP64_LSTATE_FULL       = 16'd3,
+        LNP64_LSTATE_PREPARE    = 16'd4,
+        LNP64_LSTATE_COMMIT     = 16'd5,
+        LNP64_LSTATE_COMPLETE   = 16'd6,
+        LNP64_LSTATE_ABORT      = 16'd7,
+        LNP64_LSTATE_POISONED   = 16'd8,
+        LNP64_LSTATE_DEGRADED   = 16'd9,
+        LNP64_LSTATE_LINK_DOWN  = 16'd10,
+        LNP64_LSTATE_TRAINING   = 16'd11,
+        LNP64_LSTATE_ERROR      = 16'd12
+    } lnp64_lifecycle_state_e;
+
     typedef struct packed {
         logic [31:0] op_id;
+        logic [31:0] tile_id;
         logic [15:0] opcode;
         logic [15:0] profile;
         logic [31:0] pid;
@@ -141,6 +179,7 @@ package lnp64_pkg;
 
     typedef struct packed {
         logic [31:0] op_id;
+        logic [31:0] tile_id;
         logic [31:0] pid;
         logic [31:0] tid;
         logic [31:0] domain_id;
@@ -154,6 +193,7 @@ package lnp64_pkg;
 
     typedef struct packed {
         logic [31:0] op_id;
+        logic [31:0] tile_id;
         logic [31:0] pid;
         logic [31:0] tid;
         logic [31:0] domain_id;
@@ -166,6 +206,7 @@ package lnp64_pkg;
 
     typedef struct packed {
         logic [31:0] event_id;
+        logic [31:0] tile_id;
         logic [31:0] op_id;
         logic [31:0] pid;
         logic [31:0] tid;
@@ -178,6 +219,7 @@ package lnp64_pkg;
 
     typedef struct packed {
         logic [31:0] fault_id;
+        logic [31:0] tile_id;
         logic [31:0] op_id;
         logic [31:0] pid;
         logic [31:0] tid;
@@ -187,6 +229,15 @@ package lnp64_pkg;
         logic [15:0] source;
         logic [63:0] detail;
     } lnp64_fault_t;
+
+    typedef struct packed {
+        logic [15:0] engine_id;
+        logic [15:0] profile;
+        logic [15:0] state;
+        logic [31:0] owner_shard_id;
+        logic [31:0] generation;
+        logic [15:0] fault_policy;
+    } lnp64_engine_lifecycle_t;
 
     typedef struct packed {
         logic [31:0] object_id;
@@ -199,6 +250,19 @@ package lnp64_pkg;
         logic        sealed;
         logic        narrowable;
     } lnp64_cap_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [31:0] object_id;
+        logic [31:0] object_gen;
+        logic [31:0] fdr_gen;
+        logic [31:0] domain_id;
+        logic [31:0] domain_gen;
+        logic [63:0] rights_mask;
+        logic [31:0] lineage_epoch;
+        logic        sealed;
+        logic [15:0] status;
+    } lnp64_m1_cap_commit_t;
 
     typedef struct packed {
         logic [31:0] object_id;
@@ -232,6 +296,7 @@ package lnp64_pkg;
     typedef struct packed {
         logic [31:0] pid;
         logic [31:0] tid;
+        logic [31:0] tile_id;
         logic [31:0] domain_id;
         logic [31:0] domain_gen;
         logic [15:0] state;
@@ -310,6 +375,7 @@ package lnp64_pkg;
         logic [31:0] op_id;
         logic [31:0] pid;
         logic [31:0] tid;
+        logic [31:0] tile_id;
         logic [31:0] pc;
         logic [15:0] action;
         logic [15:0] latency_class;
@@ -363,6 +429,7 @@ package lnp64_pkg;
 
     typedef struct packed {
         logic [31:0] invalidate_id;
+        logic [31:0] tile_id;
         logic [31:0] domain_id;
         logic [31:0] domain_generation;
         logic [63:0] virtual_base;
@@ -372,6 +439,7 @@ package lnp64_pkg;
 
     typedef struct packed {
         logic [31:0] txn_id;
+        logic [31:0] tile_id;
         logic [31:0] domain_id;
         logic [31:0] domain_generation;
         logic [63:0] address;
@@ -493,6 +561,7 @@ package lnp64_pkg;
 
     typedef struct packed {
         logic [31:0] reset_id;
+        logic [31:0] tile_id;
         logic [31:0] op_id;
         logic [31:0] domain_id;
         logic [31:0] domain_generation;
@@ -503,6 +572,7 @@ package lnp64_pkg;
 
     typedef struct packed {
         logic [31:0] trace_id;
+        logic [31:0] tile_id;
         logic [31:0] domain_id;
         logic [31:0] domain_gen;
         logic [15:0] source;
@@ -536,6 +606,7 @@ package lnp64_pkg;
     );
         lnp64_rsp_t rsp;
         rsp.op_id = cmd.op_id;
+        rsp.tile_id = cmd.tile_id;
         rsp.pid = cmd.pid;
         rsp.tid = cmd.tid;
         rsp.domain_id = cmd.domain_id;

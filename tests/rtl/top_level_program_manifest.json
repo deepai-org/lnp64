@@ -1,0 +1,54 @@
+{
+  "schema": "lnp64_top_level_program_tests_v1",
+  "stage": "feature_gated_plan",
+  "top": "rtl/top/lnp64_top.sv",
+  "verilator_target": "lnp64_top",
+  "policy": {
+    "activation_rule": "When lnp64_top implements all required_features for an entry, add it to a recurring top-level Verilator gate instead of leaving it as an emulator-only demo.",
+    "blocked_status": "blocked_by_features",
+    "trace_target": "typed_transition_trace",
+    "current_trace_stage": "string_trace_scaffold"
+  },
+  "assembly_programs": [
+    {"source": "demos/allocator_native.s", "required_features": ["core", "heap"], "status": "blocked_by_features"},
+    {"source": "demos/await_timer.s", "required_features": ["core", "scheduler", "waitable", "timer"], "status": "blocked_by_features"},
+    {"source": "demos/call_gate_modes.s", "required_features": ["core", "gate", "continuation"], "status": "blocked_by_features"},
+    {"source": "demos/capability_transfer.s", "required_features": ["core", "fdr", "capability_transfer"], "status": "blocked_by_features"},
+    {"source": "demos/cgroup_domains.s", "required_features": ["core", "resource_domain", "scheduler"], "status": "blocked_by_features"},
+    {"source": "demos/dma_copy.s", "required_features": ["core", "fdr", "dma"], "status": "blocked_by_features"},
+    {"source": "demos/domain_pressure.s", "required_features": ["core", "resource_domain", "accounting"], "status": "blocked_by_features"},
+    {"source": "demos/env_get.s", "required_features": ["core", "env_get"], "status": "blocked_by_features"},
+    {"source": "demos/exec_target.s", "required_features": ["core", "process", "exec"], "status": "blocked_by_features"},
+    {"source": "demos/guarded_heap_overflow.s", "required_features": ["core", "heap", "fault"], "status": "blocked_by_features"},
+    {"source": "demos/memory_order.s", "required_features": ["core", "memory_order"], "status": "blocked_by_features"},
+    {"source": "demos/object_profiles.s", "required_features": ["core", "object_profiles"], "status": "blocked_by_features"},
+    {"source": "demos/resource_domains.s", "required_features": ["core", "resource_domain"], "status": "blocked_by_features"},
+    {"source": "demos/revoked_dma_buffer.s", "required_features": ["core", "fdr", "dma", "revocation"], "status": "blocked_by_features"},
+    {"source": "demos/sandboxed_domain.s", "required_features": ["core", "resource_domain", "policy"], "status": "blocked_by_features"},
+    {"source": "demos/secure_jit.s", "required_features": ["core", "vma", "exec_provenance"], "status": "blocked_by_features"},
+    {"source": "demos/stale_fd_token.s", "required_features": ["core", "fdr", "generation_checks"], "status": "blocked_by_features"},
+    {"source": "demos/system.s", "required_features": ["core", "object", "scheduler", "service"], "status": "blocked_by_features"}
+  ],
+  "compiler_generated_programs": [
+    {"source": "demos/allocator.c", "generated_assembly": "/tmp/allocator.s", "required_features": ["core", "heap"], "status": "blocked_by_features"},
+    {"source": "demos/cat.c", "generated_assembly": "/tmp/cat.s", "required_features": ["core", "storage", "personality"], "status": "blocked_by_features"},
+    {"source": "demos/factorial.c", "generated_assembly": "/tmp/factorial.s", "required_features": ["core", "branch", "stack"], "status": "blocked_by_features"},
+    {"source": "demos/fibonacci.c", "generated_assembly": "/tmp/fibonacci.s", "required_features": ["core", "branch", "stack"], "status": "blocked_by_features"},
+    {"source": "demos/hello.c", "generated_assembly": "/tmp/hello.s", "required_features": ["core", "personality_output"], "status": "blocked_by_features"},
+    {"source": "demos/httpd.c", "generated_assembly": "/tmp/httpd.s", "required_features": ["core", "networking", "personality"], "status": "blocked_by_features"},
+    {"source": "demos/json_parser.c", "generated_assembly": "/tmp/json_parser.s", "required_features": ["core", "memory", "stack"], "status": "blocked_by_features"},
+    {"source": "demos/netbsd_personality_smoke.c", "generated_assembly": "/tmp/netbsd_personality_smoke.s", "required_features": ["core", "netbsd_personality"], "status": "blocked_by_features"},
+    {"source": "demos/netcat.c", "generated_assembly": "/tmp/netcat.s", "required_features": ["core", "networking", "personality"], "status": "blocked_by_features"},
+    {"source": "demos/parallel_hash.c", "generated_assembly": "/tmp/parallel_hash.s", "required_features": ["core", "threads", "futex"], "status": "blocked_by_features"},
+    {"source": "demos/pcr.c", "generated_assembly": "/tmp/pcr.s", "required_features": ["core", "credential_snapshot", "policy"], "status": "blocked_by_features"},
+    {"source": "demos/ping_pong.c", "generated_assembly": "/tmp/ping_pong.s", "required_features": ["core", "queue", "await"], "status": "blocked_by_features"},
+    {"source": "demos/producer_consumer.c", "generated_assembly": "/tmp/producer_consumer.s", "required_features": ["core", "queue", "await"], "status": "blocked_by_features"},
+    {"source": "demos/rot13.c", "generated_assembly": "/tmp/rot13.s", "required_features": ["core", "memory", "personality_io"], "status": "blocked_by_features"},
+    {"source": "demos/sqlite_lite.c", "generated_assembly": "/tmp/sqlite_lite.s", "required_features": ["core", "heap", "storage", "personality"], "status": "blocked_by_features"}
+  ],
+  "recurring_gate_requirements": [
+    "Each active entry must name a top-level Verilator script.",
+    "Each active entry must compare emulator/model and RTL architectural observations.",
+    "Blocked entries must name the missing required_features rather than being copied into synthetic RTL-only tests."
+  ]
+}

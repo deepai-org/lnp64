@@ -9,11 +9,15 @@ in this environment.
 Current completion status: incomplete for the full roadmap. The Docker-backed
 RTL/proof/synthesis/FPGA-smoke scope is implemented and passing.
 `formal_theorems.md` has checked Lean coverage artifacts through
-`formal/FormalTheoremsModel.lean`; remaining work is to replace coverage and
+`formal/FormalTheoremsModel.lean`. M1 capability/FDR, M2 gate/continuation,
+M4 VMA/MMU, M5 DMA, M7 waitable/scheduler, and M14 Resource Domain now have
+transition-invariant proof slices; remaining work is to replace the rest of the
+coverage and
 bounded-witness artifacts with transition-invariant proofs and RTL refinement
 proofs for the full SystemVerilog chip and real architectural programs. The
-current theorem-to-RTL coupling rows are T1 bounded witnesses with assertion
-evidence; they are not T2 until typed transition traces exist.
+current theorem-to-RTL coupling rows remain T1 because their RTL coupling still
+uses string traces and assertion evidence; they are not T2 until typed
+transition traces exist.
 
 The RTL/proof/synthesis/FPGA-smoke deliverables are represented by
 machine-checkable manifests and gates. The strict hardware audit is intentionally
@@ -28,6 +32,7 @@ and validates with `scripts/check_board_evidence.py`.
 | S0 module shells and architectural records | `rtl/include/lnp64_pkg.sv`, `rtl/top/lnp64_top.sv`, `rtl/top/lnp64_reset_boot.sv`, `rtl/core/lnp64_core_tile.sv`, `rtl/engines/lnp64_engine_shells.sv` | `scripts/check_rtl_s0_contract.py` |
 | S0 ready/valid command, response, event, and fault channels | S0 module port checks in `scripts/check_rtl_s0_contract.py` | `scripts/check_rtl_s0_contract.py` |
 | S0 reset, boot, stub-terminal behavior, no raw authority, event, fault, watchdog, UART, and SRAM acceptance tests | `rtl/sim/lnp64_s0_tb.sv`, `formal/rtl_assertions/lnp64_s0_assertions.sv`, `scripts/run_rtl_s0.sh` | `bash scripts/run_rtl_s0.sh` |
+| S0 typed transition trace scaffold | `rtl/sim/lnp64_s0_tb.sv` emits schema-named `TTRACE` JSON records for retire, scheduler, event, fault, TLB/cache invalidation, coherence, and watchdog/telemetry paths | `scripts/check_rtl_typed_trace_contract.py` |
 | RTL S0 contract checker positive and negative checks | `scripts/check_rtl_s0_contract.py`, `scripts/test_rtl_s0_contract_checker.py` | `scripts/test_rtl_s0_contract_checker.py` |
 | S0 proof obligations | `formal/S0Model.lean`, `formal/proof_obligations_manifest.json` | `scripts/check_formal_proof_manifest.py` |
 | Track A A1-A10 formal model and theorem artifacts | `formal/proof_obligations_manifest.json`, `formal/S0Model.lean`, `formal/M1Model.lean`, `formal/M2GateModel.lean` through `formal/M15ObjectProfilesModel.lean` | `scripts/check_formal_proof_manifest.py`; Docker: `bash scripts/run_rtl_proof_docker.sh` |
@@ -58,13 +63,13 @@ and validates with `scripts/check_board_evidence.py`.
 | --- | --- | --- |
 | A1 state core | `formal/S0Model.lean` theorem entries in `formal/proof_obligations_manifest.json` | `scripts/check_formal_proof_manifest.py` |
 | A2 capability/FDR engine | `formal/M1Model.lean` theorem entries in `formal/proof_obligations_manifest.json` | `scripts/check_formal_proof_manifest.py` |
-| A3 waitable/scheduler core | `formal/M7FutexAtomicModel.lean` theorem entries in `formal/proof_obligations_manifest.json` | `scripts/check_formal_proof_manifest.py` |
+| A3 waitable/scheduler core | `formal/M7FutexAtomicModel.lean` bounded-witness theorem entries plus `formal/M7TransitionInvariantModel.lean` reachable-state scheduler/wakeup invariants in `formal/proof_obligations_manifest.json` | `scripts/check_formal_proof_manifest.py` |
 | A4 object profiles | `formal/M15ObjectProfilesModel.lean` theorem entries in `formal/proof_obligations_manifest.json` | `scripts/check_formal_proof_manifest.py` |
-| A5 VMA/DMA slice | `formal/M4VmaModel.lean`, `formal/M5DmaModel.lean`, and theorem entries in `formal/proof_obligations_manifest.json` | `scripts/check_formal_proof_manifest.py` |
+| A5 VMA/DMA slice | `formal/M4VmaModel.lean`, `formal/M4TransitionInvariantModel.lean` reachable-state VMA/MMU invariants, `formal/M5DmaModel.lean`, `formal/M5TransitionInvariantModel.lean` reachable-state DMA confinement invariants, and theorem entries in `formal/proof_obligations_manifest.json` | `scripts/check_formal_proof_manifest.py` |
 | A6 servicelets/classifiers | `formal/M9ClassifierServiceletModel.lean` theorem entries in `formal/proof_obligations_manifest.json` | `scripts/check_formal_proof_manifest.py` |
-| A7 resource domains and policy enforcement | `formal/M14ResourceDomainPolicyModel.lean`, cross-policy theorem entries, and `formal/proof_obligations_manifest.json` | `scripts/check_formal_proof_manifest.py` |
-| A8 gate delivery, faults, and compatibility signals | `formal/M2GateModel.lean`, `formal/M3ProcessModel.lean`, and theorem entries in `formal/proof_obligations_manifest.json` | `scripts/check_formal_proof_manifest.py`; Docker: `docker run --rm -v "$PWD:/work" -w /work lnp64-rtl-proof lean formal/M2GateModel.lean` |
-| A9 memory consistency, coherence, and visibility | `formal/M4VmaModel.lean`, `formal/M5DmaModel.lean`, `formal/M7FutexAtomicModel.lean`, `formal/M11DdrMetadataModel.lean`, `formal/M12StorageBarrierModel.lean`, and `formal/M13PcieIommuModel.lean` entries | `scripts/check_formal_proof_manifest.py` |
+| A7 resource domains and policy enforcement | `formal/M14ResourceDomainPolicyModel.lean` bounded-witness theorem entries, `formal/M14TransitionInvariantModel.lean` reachable-state containment/lifecycle/policy invariants, cross-policy theorem entries, and `formal/proof_obligations_manifest.json` | `scripts/check_formal_proof_manifest.py` |
+| A8 gate delivery, faults, and compatibility signals | `formal/M2GateModel.lean`, `formal/M2TransitionInvariantModel.lean` reachable-state gate/fault-delivery invariants, `formal/M3ProcessModel.lean`, and theorem entries in `formal/proof_obligations_manifest.json` | `scripts/check_formal_proof_manifest.py`; Docker: `docker run --rm -v "$PWD:/work" -w /work lnp64-rtl-proof lean formal/M2TransitionInvariantModel.lean` |
+| A9 memory consistency, coherence, and visibility | `formal/M4VmaModel.lean`, `formal/M4TransitionInvariantModel.lean`, `formal/M5DmaModel.lean`, `formal/M7FutexAtomicModel.lean`, `formal/M11DdrMetadataModel.lean`, `formal/M12StorageBarrierModel.lean`, and `formal/M13PcieIommuModel.lean` entries | `scripts/check_formal_proof_manifest.py` |
 | A10 RAS, adversarial input, and global progress | `formal/M10RasModel.lean`, `formal/M6ServiceModel.lean`, and theorem entries in `formal/proof_obligations_manifest.json` | `scripts/check_formal_proof_manifest.py` |
 
 ## Detailed Track B RTL Checklist
@@ -92,11 +97,13 @@ and validates with `scripts/check_board_evidence.py`.
 | Roadmap item | Evidence | Gate |
 | --- | --- | --- |
 | Same input vector in emulator/model and RTL simulation | `tests/traces/rtl_cosim_manifest.json` fixed M1-M15 entries, `formal/m*_model.py`, and `scripts/run_rtl_m*.sh` trace diff commands | `scripts/check_rtl_cosim_manifest.py`; `bash scripts/run_rtl_random_cosim.sh` |
+| S0 runtime typed trace records | `scripts/check_rtl_typed_trace_contract.py` validates S0 `TTRACE` records against `rtl/schema/lnp64_shared_schema.json`; M1-M15 typed transition comparison is still future refinement work | `scripts/check_rtl_typed_trace_contract.py` |
 | Compare architectural state | `trace_comparison_contract.architectural_state` in `tests/traces/rtl_cosim_manifest.json` and checker trace-token validation | `scripts/check_rtl_cosim_manifest.py` |
 | Compare result codes | `trace_comparison_contract.result_codes` in `tests/traces/rtl_cosim_manifest.json` and checker trace-token validation | `scripts/check_rtl_cosim_manifest.py` |
 | Compare event records | `trace_comparison_contract.event_records` in `tests/traces/rtl_cosim_manifest.json` and checker trace-token validation | `scripts/check_rtl_cosim_manifest.py` |
 | Compare FDR/generation/authority metadata | `trace_comparison_contract.authority_generation_metadata` in `tests/traces/rtl_cosim_manifest.json` and checker trace-token validation | `scripts/check_rtl_cosim_manifest.py` |
 | Random but bounded traces from models | `bounded_random_gates` in `tests/traces/rtl_cosim_manifest.json` and `scripts/run_rtl_random_cosim.sh` shared seed set | `scripts/check_rtl_cosim_manifest.py`; `bash scripts/run_rtl_random_cosim.sh` |
+| Top-level program corpus from existing assembly and compiler demos | `tests/rtl/top_level_program_manifest.json` tracks every `demos/*.s` file and compiler-generated demo assembly as feature-gated future `lnp64_top` Verilator tests | `scripts/check_rtl_top_level_program_manifest.py` |
 | Verilator for fast CI | M1-M15 `scripts/run_rtl_m*.sh` build each RTL testbench with Verilator and require pass markers | `scripts/check_rtl_cosim_manifest.py` |
 | FPGA simulation and synthesis checks | `scripts/run_rtl_fpga_uart_s0.sh`, `scripts/run_rtl_fpga_ice40_s0.sh`, and `scripts/run_rtl_synth_gates.sh` | `bash scripts/run_rtl_synth_docker.sh` |
 
@@ -108,7 +115,7 @@ and validates with `scripts/check_board_evidence.py`.
 | 2. fixed decode table, canonical errors, and `ENV_GET` | `fpga/bringup/lnp64_track_d_bringup.json` step 2 and S0 decode markers | `scripts/check_fpga_bringup_manifest.py`; `bash scripts/run_rtl_s0.sh` |
 | 3. soft SRAM only, no DDR | `fpga/bringup/lnp64_track_d_bringup.json` step 3 and S0 SRAM LD/ST markers | `scripts/check_fpga_bringup_manifest.py`; `bash scripts/run_rtl_s0.sh` |
 | 4. UART output | `fpga/bringup/lnp64_track_d_bringup.json` step 4 and FPGA UART testbench | `scripts/check_fpga_bringup_manifest.py`; `scripts/run_rtl_fpga_uart_s0.sh` |
-| 5. one core tile and simple assembler program ROM | `fpga/bringup/lnp64_track_d_bringup.json` step 5 and S0 retire markers | `scripts/check_fpga_bringup_manifest.py`; `bash scripts/run_rtl_s0.sh` |
+| 5. two core tiles, tile telemetry, and simple assembler program ROM | `fpga/bringup/lnp64_track_d_bringup.json` step 5 and S0 multicore retire/topology markers | `scripts/check_fpga_bringup_manifest.py`; `bash scripts/run_rtl_s0.sh` |
 | 6. FDR/capability table and generation checks | `fpga/bringup/lnp64_track_d_bringup.json` step 6 and M1 cap traces | `scripts/check_fpga_bringup_manifest.py`; `bash scripts/run_rtl_m1.sh` |
 | 7. scheduler, waitable, event router, and object queue smoke | `fpga/bringup/lnp64_track_d_bringup.json` step 7 and S0/M1 traces | `scripts/check_fpga_bringup_manifest.py`; `bash scripts/run_rtl_random_cosim.sh` |
 | 8. gate/continuation and process lifecycle smoke | `fpga/bringup/lnp64_track_d_bringup.json` step 8 and M2/M3 traces | `scripts/check_fpga_bringup_manifest.py`; `bash scripts/run_rtl_random_cosim.sh` |

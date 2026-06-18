@@ -15,6 +15,9 @@
       "required_for_completion": true,
       "evidence_files": [
         "scripts/check_rtl_s0_contract.py",
+        "scripts/check_rtl_shared_schema.py",
+        "scripts/check_rtl_typed_trace_contract.py",
+        "rtl/schema/lnp64_shared_schema.json",
         "rtl/include/lnp64_pkg.sv",
         "rtl/top/lnp64_top.sv",
         "rtl/top/lnp64_reset_boot.sv",
@@ -25,7 +28,17 @@
         "tests/rtl/s0_filelist.f"
       ],
       "checker": "scripts/check_rtl_s0_contract.py",
-      "success_line": "rtl s0 contract ok"
+      "success_line": "rtl s0 contract ok",
+      "additional_checkers": [
+        {
+          "checker": "scripts/check_rtl_shared_schema.py",
+          "success_line": "rtl shared schema ok"
+        },
+        {
+          "checker": "scripts/check_rtl_typed_trace_contract.py",
+          "success_line": "rtl typed trace contract ok"
+        }
+      ]
     },
     {
       "id": "track_a_formal",
@@ -99,11 +112,19 @@
       "required_for_completion": true,
       "evidence_files": [
         "tests/traces/rtl_cosim_manifest.json",
+        "tests/rtl/top_level_program_manifest.json",
         "scripts/check_rtl_cosim_manifest.py",
+        "scripts/check_rtl_top_level_program_manifest.py",
         "scripts/run_rtl_random_cosim.sh"
       ],
       "checker": "scripts/check_rtl_cosim_manifest.py",
-      "success_line": "rtl cosim manifest ok"
+      "success_line": "rtl cosim manifest ok",
+      "additional_checkers": [
+        {
+          "checker": "scripts/check_rtl_top_level_program_manifest.py",
+          "success_line": "rtl top-level program manifest ok"
+        }
+      ]
     },
     {
       "id": "rtl_cosim_manifest_checker_selftest",
@@ -362,6 +383,7 @@
       "scripts/check_formal_proof_manifest.py",
       "scripts/check_theorem_rtl_coupling.py",
       "scripts/check_formal_rtl_roadmap_audit.py",
+      "scripts/check_rtl_typed_trace_contract.py",
       "formal/FormalTheoremsModel.lean",
       "formal/M15ObjectProfilesModel.lean",
       "scripts/run_rtl_random_cosim.sh",
@@ -498,10 +520,13 @@
     "scripts/run_formal_rtl_roadmap_audit.sh": [
       "scripts/check_formal_proof_manifest.py",
       "scripts/check_theorem_rtl_coupling.py",
+      "scripts/check_rtl_shared_schema.py",
+      "scripts/check_rtl_typed_trace_contract.py",
       "scripts/check_rtl_cosim_manifest.py",
       "scripts/check_rtl_synth_constraints.py",
       "scripts/check_fpga_bringup_manifest.py",
       "scripts/check_rtl_track_b_manifest.py",
+      "scripts/check_rtl_top_level_program_manifest.py",
       "scripts/check_rtl_s0_contract.py",
       "scripts/check_rtl_dockerfiles.py",
       "scripts/check_formal_rtl_roadmap_audit.py",
@@ -524,13 +549,17 @@
     "README.md": [
       "bash scripts/run_rtl_proof_docker.sh",
       "bash scripts/run_rtl_synth_docker.sh",
-      "bash scripts/check_theorem_rtl_coupling.py",
+      "scripts/check_rtl_shared_schema.py",
+      "scripts/check_rtl_typed_trace_contract.py",
+      "scripts/check_rtl_top_level_program_manifest.py",
+      "scripts/check_theorem_rtl_coupling.py",
       "bash scripts/run_rtl_proof_gates.sh",
       "bash scripts/run_rtl_synth_gates.sh",
       "formal/theorem_rtl_coupling_index.md",
       "artifact levels, RTL modules, assertion files, trace markers, gates",
-      "not T2/T3/T4 architectural",
-      "or refinement proofs",
+      "rows remain T1 at the RTL-coupling level",
+      "M1, M2, M4, M5, M7, and M14 now",
+      "not T2/T4 refinement",
       "machine-readable coupling manifest",
       "Dockerized RTL/proof and synthesis/FPGA-smoke gates are the reproducible evidence path"
     ],
@@ -599,7 +628,7 @@
       "2. fixed decode table, canonical errors, and `ENV_GET`",
       "3. soft SRAM only, no DDR",
       "4. UART output",
-      "5. one core tile and simple assembler program ROM",
+      "5. two core tiles, tile telemetry, and simple assembler program ROM",
       "6. FDR/capability table and generation checks",
       "7. scheduler, waitable, event router, and object queue smoke",
       "8. gate/continuation and process lifecycle smoke",

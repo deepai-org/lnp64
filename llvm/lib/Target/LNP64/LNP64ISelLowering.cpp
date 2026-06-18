@@ -1,4 +1,5 @@
 #include "LNP64ISelLowering.h"
+#include "LNP64.h"
 #include "LNP64InstrInfo.h"
 #include "LNP64Subtarget.h"
 #include "llvm/CodeGen/CallingConvLower.h"

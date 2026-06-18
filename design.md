@@ -135,6 +135,12 @@ The scheduler contract is deliberately small and realtime-friendly:
 *   Runnable eligibility requires a non-frozen Resource Domain, positive budget
     across every ancestor domain, an allowed core/tile mask, and a resident or
     explicitly refillable scheduler context.
+*   Affinity is split into a hard allowed core/tile mask and a soft preferred
+    current tile. The scheduler is sticky by default: a runnable TID remains on
+    its current tile when that tile is eligible and not under bounded balancing,
+    affinity, quota, reservation, or fault pressure. Migration occurs only at
+    scheduler boundaries and never while an instruction or owner-engine commit
+    is mid-flight.
 *   Dispatch chooses the eligible runnable entity with the earliest virtual
     deadline within a published approximation window; blocked threads do not
     consume CPU budget.

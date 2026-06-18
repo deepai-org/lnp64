@@ -25,13 +25,26 @@ REQUIRED_ACCEPTANCE_MARKERS = [
     "PID 1 retired too few S0 instructions",
     "ENV_GET did not report expected S0 feature bits",
     "SRAM LD/ST path did not roundtrip the ALU value",
+    "OBJECT_CTL did not route through top-level object engine lane",
     "unsupported opcode did not return canonical ENOTSUP",
+    "unsupported command did not route through default fail-closed lane",
     "stub resource operation did not fail closed",
     "synthetic event did not wake or mark the parked thread",
     "synthetic stub-engine fault did not emit a structured fault",
     "watchdog-injected stuck command did not reach degraded/fault state",
     "raw physical interrupt/address/DMA/device authority became visible",
     "coherence/TLB/DMA visibility stub paths were not live",
+    "not every enabled tile reached reset-stable",
+    "tile 1 was not observable, schedulable, and idle",
+    "one TID was issued to two tiles",
+    "tile 0 did not run PID 1",
+    "ENV_GET did not report the two-tile topology",
+    "ENV_GET did not report the enabled tile mask",
+    "ENV_GET did not report the coherence domain id",
+    "ENV_GET did not report the active-window shape",
+    "cross-tile wake did not produce exactly one wake",
+    "tile-local fault corrupted another tile's scheduler state",
+    "4-tile stress configuration did not reach reset-stable",
     "LNP64-RTL-S0 PASS",
 ]
 
@@ -164,8 +177,65 @@ REQUIRED_TELEMETRY_MODULES = [
 
 
 REQUIRED_CHANNEL_PORTS = {
-    "lnp64_core_tile": {"cmd_valid", "cmd_ready", "cmd", "rsp_valid", "rsp_ready", "rsp"},
-    "lnp64_engine_router": {"cmd_valid", "cmd_ready", "cmd", "rsp_valid", "rsp_ready", "rsp"},
+    "lnp64_core_tile": {
+        "tile_enable",
+        "topology_tile_count",
+        "topology_enabled_tile_mask",
+        "topology_coherence_domain_id",
+        "topology_active_window_base",
+        "topology_active_window_count",
+        "cmd_valid",
+        "cmd_ready",
+        "cmd",
+        "rsp_valid",
+        "rsp_ready",
+        "rsp",
+        "tile_reset_stable",
+        "tile_idle",
+        "tile_running",
+        "tile_parked",
+        "tile_faulted",
+        "retire_submit_valid",
+        "retire_submit_record",
+        "park_submit_valid",
+        "park_submit_record",
+        "submit_valid",
+        "submit_record",
+        "icache_invalidate",
+        "icache_invalidate_ack",
+        "dcache_writeback",
+        "dcache_writeback_ack",
+        "tlb_invalidate",
+        "tlb_invalidate_ack",
+    },
+    "lnp64_scheduler": {
+        "tile_idle",
+        "tile_running",
+        "tile_parked",
+        "tile_faulted",
+        "issue_valid",
+        "issue_tid_flat",
+        "no_duplicate_issue",
+        "tile1_schedulable_idle",
+        "tile_fault_isolated",
+    },
+    "lnp64_engine_router": {
+        "cmd_valid",
+        "cmd_ready",
+        "cmd",
+        "rsp_valid",
+        "rsp_ready",
+        "rsp",
+        "object_cmd_valid",
+        "object_cmd_ready",
+        "object_cmd",
+        "object_rsp_valid",
+        "object_rsp_ready",
+        "object_rsp",
+        "fault_valid",
+        "fault_ready",
+        "fault",
+    },
     "lnp64_fail_closed_engine": {
         "cmd_valid",
         "cmd_ready",
@@ -197,6 +267,7 @@ REQUIRED_RECORD_FIELDS = {
     "lnp64_feature_t": {"isa_version", "profile", "opcode", "feature_bits", "supported"},
     "lnp64_cmd_t": {
         "op_id",
+        "tile_id",
         "opcode",
         "profile",
         "pid",
@@ -218,6 +289,7 @@ REQUIRED_RECORD_FIELDS = {
     },
     "lnp64_rsp_t": {
         "op_id",
+        "tile_id",
         "pid",
         "tid",
         "domain_id",
@@ -230,6 +302,7 @@ REQUIRED_RECORD_FIELDS = {
     },
     "lnp64_completion_t": {
         "op_id",
+        "tile_id",
         "pid",
         "tid",
         "domain_id",
@@ -241,6 +314,7 @@ REQUIRED_RECORD_FIELDS = {
     },
     "lnp64_event_t": {
         "event_id",
+        "tile_id",
         "op_id",
         "pid",
         "tid",
@@ -252,9 +326,11 @@ REQUIRED_RECORD_FIELDS = {
     },
     "lnp64_fault_t": {
         "fault_id",
+        "tile_id",
         "op_id",
         "pid",
         "tid",
+        "tile_id",
         "domain_id",
         "domain_gen",
         "fault_code",
@@ -332,6 +408,7 @@ REQUIRED_RECORD_FIELDS = {
     "lnp64_thread_sched_t": {
         "pid",
         "tid",
+        "tile_id",
         "domain_id",
         "domain_gen",
         "state",
@@ -339,7 +416,7 @@ REQUIRED_RECORD_FIELDS = {
         "wait_generation",
         "active_location",
     },
-    "lnp64_retire_submit_t": {"op_id", "pid", "tid", "pc", "action", "latency_class", "wait_source"},
+    "lnp64_retire_submit_t": {"op_id", "pid", "tid", "tile_id", "pc", "action", "latency_class", "wait_source"},
     "lnp64_waitable_t": {
         "wait_id",
         "op_id",
@@ -375,6 +452,7 @@ REQUIRED_RECORD_FIELDS = {
     "lnp64_vma_req_t": {"vma_id", "vma_gen", "domain_id", "domain_gen", "virt_base", "length", "permissions"},
     "lnp64_tlb_cache_invalidate_t": {
         "invalidate_id",
+        "tile_id",
         "domain_id",
         "domain_generation",
         "virtual_base",
@@ -383,6 +461,7 @@ REQUIRED_RECORD_FIELDS = {
     },
     "lnp64_coherence_txn_t": {
         "txn_id",
+        "tile_id",
         "domain_id",
         "domain_generation",
         "address",
@@ -450,6 +529,7 @@ REQUIRED_RECORD_FIELDS = {
     },
     "lnp64_watchdog_reset_t": {
         "reset_id",
+        "tile_id",
         "op_id",
         "domain_id",
         "domain_generation",
@@ -459,6 +539,7 @@ REQUIRED_RECORD_FIELDS = {
     },
     "lnp64_trace_t": {
         "trace_id",
+        "tile_id",
         "domain_id",
         "domain_gen",
         "source",
@@ -540,7 +621,10 @@ def main() -> None:
     for module in required_instantiated_modules:
         if module == "lnp64_top":
             continue
-        instance_pattern = re.compile(rf"(?m)^\s*(?!module\b){re.escape(module)}\s+\w+\s*\(")
+        instance_pattern = re.compile(
+            rf"^\s*(?!module\b){re.escape(module)}\s*(?:#\s*\(.*?\)\s*)?\w+\s*\(",
+            re.M | re.S,
+        )
         if not instance_pattern.search(source_text):
             fail(f"required S0 module is defined but not instantiated: {module}")
 
@@ -607,6 +691,25 @@ def main() -> None:
 
     if "(env_features_seen & REQUIRED_S0_FEATURE_MASK) == REQUIRED_S0_FEATURE_MASK" not in source_text:
         fail("lnp64_top does not require the complete S0 feature mask from ENV_GET")
+
+    for marker in (
+        "parameter int CORE_TILE_COUNT = 2",
+        "parameter int MAX_SUPPORTED_TILE_COUNT = 4",
+        "CORE_TILE_COUNT > MAX_SUPPORTED_TILE_COUNT",
+        "for (tile_id = 0; tile_id < CORE_TILE_COUNT",
+        ".TILE_ID(tile_id)",
+        "core_rsp.tile_id",
+        "COHERENCE_DOMAIN_ID",
+        "ACTIVE_WINDOW_COUNT",
+        "dcache_writeback",
+        "tlb_invalidate",
+        "icache_invalidate",
+        "multicore_no_duplicate_tid",
+        "cross_tile_wake_one",
+        "tile_fault_isolated",
+    ):
+        if marker not in source_text:
+            fail(f"S0 RTL is missing multicore/topology/coherence marker: {marker}")
 
     if "sim_fault_inject" not in source_text or "synthetic stub-engine fault" not in source_text:
         fail("S0 synthetic fault-injection hook is not covered by the testbench")

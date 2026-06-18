@@ -19,19 +19,37 @@
         {"file": "formal/S0Model.lean", "name": "s0_stubs_do_not_create_authority", "artifact_level": "bounded_witness"},
         {"file": "formal/M1Model.lean", "name": "m1_no_forged_fdr", "artifact_level": "bounded_witness"},
         {"file": "formal/M1Model.lean", "name": "m1_no_authority_amplification", "artifact_level": "bounded_witness"},
+        {"file": "formal/M1TransitionInvariantModel.lean", "name": "m1_t3_consumer_cap_lineage_valid_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M1TransitionInvariantModel.lean", "name": "m1_t3_no_authority_amplification_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M1TransitionInvariantModel.lean", "name": "m1_t3_stored_cap_lineage_valid_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M1TransitionInvariantModel.lean", "name": "m1_t3_no_authority_amplification_for_all_stored_caps", "artifact_level": "transition_invariant"},
+        {"file": "formal/M1TransitionInvariantModel.lean", "name": "m1_t3_sent_cap_lineage_valid_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M1TransitionInvariantModel.lean", "name": "m1_t3_valid_transfer_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M1TransitionInvariantModel.lean", "name": "m1_t3_minted_caps_authorized_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M1TransitionInvariantModel.lean", "name": "m1_t3_minted_caps_currently_authorize_created_object_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M1TransitionInvariantModel.lean", "name": "m1_t3_minted_cap_created_only_by_authorized_object_create_for_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M1TransitionInvariantModel.lean", "name": "m1_t3_sent_cap_created_only_by_valid_send_for_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M1TransitionInvariantModel.lean", "name": "m1_t3_consumer_cap_changed_only_by_authorized_transfer_for_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M1TransitionInvariantModel.lean", "name": "m1_t3_cap_send_requires_current_authority_for_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M1TransitionInvariantModel.lean", "name": "m1_t3_cap_recv_requires_current_authority_for_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M1TransitionInvariantModel.lean", "name": "m1_t3_revoke_invalidates_outstanding_main_object_transfer_for_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M1TransitionInvariantModel.lean", "name": "m1_t3_failed_authority_operations_preserve_authority_slots_for_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M1TransitionInvariantModel.lean", "name": "m1_t3_typed_commit_transition_refines_step_for_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M1TransitionInvariantModel.lean", "name": "m1_t3_typed_commit_transition_preserves_invariant_for_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M1TransitionInvariantModel.lean", "name": "m1_t3_typed_commit_failed_authority_transition_preserves_authority_slots_for_reachable", "artifact_level": "transition_invariant"},
         {"file": "formal/FormalTheoremsModel.lean", "name": "ft_capability_non_forgeability", "artifact_level": "coverage"}
       ],
       "rtl_modules": [
         {"file": "rtl/engines/lnp64_m1_pingpong.sv", "module": "lnp64_m1_pingpong"},
         {"file": "rtl/engines/lnp64_engine_shells.sv", "module": "lnp64_cap_engine"}
       ],
-      "rtl_witness_signals": ["no_forged_fdr", "rights", "stale_generation_rejected"],
+      "rtl_witness_signals": ["no_forged_fdr", "rights", "stale_generation_rejected", "typed_commit_valid", "typed_commit", "typed_commit.op", "typed_commit.rights_mask", "typed_commit.fdr_gen", "duplicated_cap", "sent_cap", "have_sent_cap"],
       "assertion_files": ["formal/rtl_assertions/lnp64_m1_assertions.sv"],
-      "trace_sources": ["rtl/sim/lnp64_m1_tb.sv", "formal/m1_model.py", "tests/traces/rtl_cosim_manifest.json"],
-      "trace_markers": ["TRACE cap_dup", "rights=", "TRACE stale_pull"],
-      "gate_scripts": ["scripts/run_rtl_m1.sh", "scripts/run_rtl_random_cosim.sh"],
+      "trace_sources": ["rtl/sim/lnp64_m1_tb.sv", "formal/m1_model.py", "scripts/check_rtl_m1_typed_commit_trace.py", "tests/traces/rtl_cosim_manifest.json"],
+      "trace_markers": ["TTRACE_M1 {\\\"record\\\":\\\"m1_cap_commit\\\"", "LNP64_M1_COMMIT_OBJECT_CREATE", "LNP64_M1_COMMIT_CAP_DUP_DENIED", "TRACE cap_dup", "rights=", "TRACE stale_pull"],
+      "gate_scripts": ["scripts/run_rtl_m1.sh", "scripts/check_rtl_m1_typed_commit_trace.py", "scripts/run_rtl_random_cosim.sh"],
       "assumptions": ["bounded M1 FDR table", "ready/valid fairness for accepted operations"],
-      "known_gaps": ["Not T2 yet: typed transition traces from the shared schema are missing; coupling still uses assertions plus string traces."]
+      "known_gaps": ["M1 now exports schema-backed typed cap commit records at the RTL module boundary, checks the schema against Lean CommitOp/CommitStatus/CommitRecord/TypedCommitTransition plus the typed-commit bridge, transfer-current-authority, and fail-closed authority-slot theorem names, and has local RTL assertions plus executable transition comparison, but no bit-level checked RTL-to-Lean refinement proof or full generated T2/T4 artifact yet."]
     },
     {
       "id": "revocation_generation_safety",
@@ -40,6 +58,9 @@
       "lean_theorems": [
         {"file": "formal/M1Model.lean", "name": "m1_cap_revoke_invalidates_generation", "artifact_level": "bounded_witness"},
         {"file": "formal/M1Model.lean", "name": "m1_revoked_authority_cannot_start_new_work", "artifact_level": "bounded_witness"},
+        {"file": "formal/M1TransitionInvariantModel.lean", "name": "m1_t3_stale_generation_cannot_authorize_pull_from_main_object", "artifact_level": "transition_invariant"},
+        {"file": "formal/M1TransitionInvariantModel.lean", "name": "m1_t3_stale_generation_cannot_authorize_work_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M1TransitionInvariantModel.lean", "name": "m1_t3_revoked_caps_cannot_revive_for_all_reachable", "artifact_level": "transition_invariant"},
         {"file": "formal/M5DmaModel.lean", "name": "m5_revoked_generation_rejected", "artifact_level": "bounded_witness"},
         {"file": "formal/FormalTheoremsModel.lean", "name": "ft_revocation_soundness", "artifact_level": "coverage"}
       ],
@@ -47,13 +68,13 @@
         {"file": "rtl/engines/lnp64_m1_pingpong.sv", "module": "lnp64_m1_pingpong"},
         {"file": "rtl/engines/lnp64_m5_dma.sv", "module": "lnp64_m5_dma"}
       ],
-      "rtl_witness_signals": ["stale_generation_rejected", "revoke_rejected"],
+      "rtl_witness_signals": ["stale_generation_rejected", "revoke_rejected", "typed_commit.op", "typed_commit.object_gen", "typed_commit.fdr_gen", "typed_commit.status"],
       "assertion_files": ["formal/rtl_assertions/lnp64_m1_assertions.sv", "formal/rtl_assertions/lnp64_m5_assertions.sv"],
-      "trace_sources": ["rtl/sim/lnp64_m1_tb.sv", "rtl/sim/lnp64_m5_tb.sv", "formal/m5_dma_model.py"],
-      "trace_markers": ["TRACE stale_pull", "TRACE revoked_submit", "EREVOKED"],
-      "gate_scripts": ["scripts/run_rtl_m1.sh", "scripts/run_rtl_m5.sh", "scripts/run_rtl_random_cosim.sh"],
+      "trace_sources": ["rtl/sim/lnp64_m1_tb.sv", "scripts/check_rtl_m1_typed_commit_trace.py", "rtl/sim/lnp64_m5_tb.sv", "formal/m5_dma_model.py"],
+      "trace_markers": ["LNP64_M1_COMMIT_CAP_REVOKE", "LNP64_M1_COMMIT_REJECT_STALE", "TRACE stale_pull", "TRACE revoked_submit", "ERR_EREVOKED"],
+      "gate_scripts": ["scripts/run_rtl_m1.sh", "scripts/check_rtl_m1_typed_commit_trace.py", "scripts/run_rtl_m5.sh", "scripts/run_rtl_random_cosim.sh"],
       "assumptions": ["generation fields are carried on command/response records", "revocation is observed before new authority-bearing work"],
-      "known_gaps": ["Not T2 yet: typed transition traces are missing; no full lineage/revocation epoch transition or refinement proof across all object classes yet."]
+      "known_gaps": ["M1 now has schema-backed typed revoke/rejectStale commit records at the RTL module boundary and local RTL assertions, but full lineage/revocation refinement across all object classes is still missing."]
     },
     {
       "id": "domain_containment",
@@ -63,6 +84,9 @@
         {"file": "formal/M14ResourceDomainPolicyModel.lean", "name": "m14_child_rights_subset_parent", "artifact_level": "bounded_witness"},
         {"file": "formal/M14ResourceDomainPolicyModel.lean", "name": "m14_child_budget_within_parent", "artifact_level": "bounded_witness"},
         {"file": "formal/M14ResourceDomainPolicyModel.lean", "name": "m14_policy_fail_closed", "artifact_level": "bounded_witness"},
+        {"file": "formal/M14TransitionInvariantModel.lean", "name": "m14_t3_child_rights_subset_parent_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M14TransitionInvariantModel.lean", "name": "m14_t3_child_budget_within_parent_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M14TransitionInvariantModel.lean", "name": "m14_t3_policy_fail_closed_for_all_reachable", "artifact_level": "transition_invariant"},
         {"file": "formal/FormalTheoremsModel.lean", "name": "ft_resource_domain_containment", "artifact_level": "coverage"}
       ],
       "rtl_modules": [
@@ -75,7 +99,7 @@
       "trace_markers": ["TRACE delegate", "child_rights=", "TRACE policy"],
       "gate_scripts": ["scripts/run_rtl_m14.sh", "scripts/run_rtl_random_cosim.sh"],
       "assumptions": ["parent domain budget is authoritative", "policy masks are immutable during a checked transition"],
-      "known_gaps": ["Not T2 yet: typed transition traces are missing; cross-engine domain containment is not yet a T4 composition proof."]
+      "known_gaps": ["Lean now includes an M14 Resource Domain transition-invariant proof slice, but typed transition traces and cross-engine T4 composition/refinement are still missing."]
     },
     {
       "id": "dma_confined",
@@ -85,6 +109,10 @@
         {"file": "formal/M5DmaModel.lean", "name": "m5_dma_confined_to_capability_domain", "artifact_level": "bounded_witness"},
         {"file": "formal/M5DmaModel.lean", "name": "m5_pin_completes_with_authority", "artifact_level": "bounded_witness"},
         {"file": "formal/M5DmaModel.lean", "name": "m5_unpin_clears_pinned_state", "artifact_level": "bounded_witness"},
+        {"file": "formal/M5TransitionInvariantModel.lean", "name": "m5_t3_missing_write_permission_faults_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M5TransitionInvariantModel.lean", "name": "m5_t3_revoked_generation_rejected_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M5TransitionInvariantModel.lean", "name": "m5_t3_cross_domain_rejected_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M5TransitionInvariantModel.lean", "name": "m5_t3_coherent_visibility_observed_for_all_reachable", "artifact_level": "transition_invariant"},
         {"file": "formal/FormalTheoremsModel.lean", "name": "ft_dma_isolation", "artifact_level": "coverage"}
       ],
       "rtl_modules": [
@@ -97,7 +125,34 @@
       "trace_markers": ["TRACE dma_pin", "TRACE dma_unpin", "TRACE domain_isolation", "TRACE coherence_flush"],
       "gate_scripts": ["scripts/run_rtl_m5.sh", "scripts/run_rtl_random_cosim.sh"],
       "assumptions": ["DMA buffers are the authority carrier", "coherence flush is the modeled visibility boundary"],
-      "known_gaps": ["Not T2 yet: typed transition traces are missing; no full cache/TLB/DMA fabric refinement proof yet."]
+      "known_gaps": ["Lean now includes an M5 DMA transition-invariant proof slice, but typed transition traces and full cache/TLB/DMA fabric refinement are still missing."]
+    },
+    {
+      "id": "vma_memory_safety",
+      "claim": "VMA/MMU checks reject unauthorized stores, NX execution, guard-page access, stale generations, and non-quiescent TLB reuse in the modeled path.",
+      "trust_level": "T1",
+      "lean_theorems": [
+        {"file": "formal/M4VmaModel.lean", "name": "m4_no_invalid_memory_access", "artifact_level": "bounded_witness"},
+        {"file": "formal/M4VmaModel.lean", "name": "m4_wx_nx_guard_enforced", "artifact_level": "bounded_witness"},
+        {"file": "formal/M4VmaModel.lean", "name": "m4_no_access_after_unmap_or_revoke_generation_mismatch", "artifact_level": "bounded_witness"},
+        {"file": "formal/M4TransitionInvariantModel.lean", "name": "m4_t3_wx_enforced_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M4TransitionInvariantModel.lean", "name": "m4_t3_write_without_permission_rejected_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M4TransitionInvariantModel.lean", "name": "m4_t3_nx_execute_faulted_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M4TransitionInvariantModel.lean", "name": "m4_t3_guard_access_faulted_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M4TransitionInvariantModel.lean", "name": "m4_t3_stale_generation_rejected_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M4TransitionInvariantModel.lean", "name": "m4_t3_cache_tlb_quiescent_before_authority_reuse_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/FormalTheoremsModel.lean", "name": "ft_vma_memory_safety", "artifact_level": "coverage"}
+      ],
+      "rtl_modules": [
+        {"file": "rtl/engines/lnp64_m4_vma.sv", "module": "lnp64_m4_vma"}
+      ],
+      "rtl_witness_signals": ["guard_faulted", "stale_vma_rejected", "tlb_invalidation_observed", "wx_enforced"],
+      "assertion_files": ["formal/rtl_assertions/lnp64_m4_assertions.sv"],
+      "trace_sources": ["rtl/sim/lnp64_m4_tb.sv", "formal/m4_vma_model.py"],
+      "trace_markers": ["TRACE store_denied", "TRACE exec_fault", "TRACE guard_fault", "TRACE stale_vma", "TRACE tlb_invalidate"],
+      "gate_scripts": ["scripts/run_rtl_m4.sh"],
+      "assumptions": ["the M4 slice models one bounded VMA table entry", "S0 TLB/cache behavior is still a stubbed coherence boundary"],
+      "known_gaps": ["Lean now includes an M4 VMA/MMU transition-invariant proof slice, but typed transition traces and full cache/TLB refinement are still missing."]
     },
     {
       "id": "scheduler_single_location",
@@ -106,6 +161,7 @@
       "lean_theorems": [
         {"file": "formal/S0Model.lean", "name": "s0_every_live_thread_has_exactly_one_scheduler_location", "artifact_level": "bounded_witness"},
         {"file": "formal/M7FutexAtomicModel.lean", "name": "m7_exactly_one_scheduler_location", "artifact_level": "bounded_witness"},
+        {"file": "formal/M7TransitionInvariantModel.lean", "name": "m7_t3_exactly_one_scheduler_location_for_all_reachable", "artifact_level": "transition_invariant"},
         {"file": "formal/FormalTheoremsModel.lean", "name": "ft_scheduler_safety", "artifact_level": "coverage"}
       ],
       "rtl_modules": [
@@ -118,7 +174,7 @@
       "trace_markers": ["state=parked", "woken=1", "TRACE timer_wait"],
       "gate_scripts": ["scripts/run_rtl_s0.sh", "scripts/run_rtl_m7.sh", "scripts/run_rtl_random_cosim.sh"],
       "assumptions": ["one selected hardware TID per issue slot", "bounded ready/wait queues in the smoke model"],
-      "known_gaps": ["Not T2 yet: typed transition traces are missing; no weighted-fair scheduler T3 transition proof yet."]
+      "known_gaps": ["Lean now includes an M7 scheduler-location transition-invariant proof slice, but typed transition traces, weighted-fair scheduler coverage, and checked RTL-to-Lean refinement are still missing."]
     },
     {
       "id": "no_lost_wakeups",
@@ -127,6 +183,9 @@
       "lean_theorems": [
         {"file": "formal/M7FutexAtomicModel.lean", "name": "m7_no_lost_wakeup", "artifact_level": "bounded_witness"},
         {"file": "formal/M7FutexAtomicModel.lean", "name": "m7_futex_wake_delivered", "artifact_level": "bounded_witness"},
+        {"file": "formal/M1TransitionInvariantModel.lean", "name": "m1_t3_no_lost_wakeup_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M7TransitionInvariantModel.lean", "name": "m7_t3_no_lost_wakeup_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M7TransitionInvariantModel.lean", "name": "m7_t3_wake_generation_matches_for_all_reachable", "artifact_level": "transition_invariant"},
         {"file": "formal/FormalTheoremsModel.lean", "name": "ft_no_lost_wakeups", "artifact_level": "coverage"}
       ],
       "rtl_modules": [
@@ -139,7 +198,35 @@
       "trace_markers": ["TRACE futex_wake", "TRACE timer_expire", "wake=2"],
       "gate_scripts": ["scripts/run_rtl_m7.sh", "scripts/run_rtl_m1.sh", "scripts/run_rtl_random_cosim.sh"],
       "assumptions": ["wake source generation matches the armed wait", "bounded smoke traces represent the checked waitable classes"],
-      "known_gaps": ["Not T2 yet: typed transition traces are missing; no full multi-source event-router refinement proof yet."]
+      "known_gaps": ["Lean now includes M1 and M7 no-lost-wakeup transition-invariant proof slices, but typed transition traces and full multi-source event-router refinement are still missing."]
+    },
+    {
+      "id": "gate_fault_delivery_safety",
+      "claim": "Gate calls, continuations, fault delivery, and compatibility signal delivery terminate through explicit safe paths without minting authority or bypassing masks.",
+      "trust_level": "T1",
+      "lean_theorems": [
+        {"file": "formal/M2GateModel.lean", "name": "m2_continuation_unique", "artifact_level": "bounded_witness"},
+        {"file": "formal/M2GateModel.lean", "name": "m2_stale_continuation_rejected", "artifact_level": "bounded_witness"},
+        {"file": "formal/M2GateModel.lean", "name": "m2_fault_delivery_gate_entered", "artifact_level": "bounded_witness"},
+        {"file": "formal/M2GateModel.lean", "name": "m2_signal_compatibility_cannot_create_authority_or_bypass_masks", "artifact_level": "bounded_witness"},
+        {"file": "formal/M2TransitionInvariantModel.lean", "name": "m2_t3_continuation_unique_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M2TransitionInvariantModel.lean", "name": "m2_t3_sync_roundtrip_or_live_continuation_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M2TransitionInvariantModel.lean", "name": "m2_t3_stale_continuation_rejected_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M2TransitionInvariantModel.lean", "name": "m2_t3_fault_delivery_gate_entered_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M2TransitionInvariantModel.lean", "name": "m2_t3_signal_compatibility_safe_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/FormalTheoremsModel.lean", "name": "ft_event_gate_fault_delivery_safety", "artifact_level": "coverage"},
+        {"file": "formal/FormalTheoremsModel.lean", "name": "ft_gate_continuation_safety", "artifact_level": "coverage"}
+      ],
+      "rtl_modules": [
+        {"file": "rtl/engines/lnp64_m2_gate.sv", "module": "lnp64_m2_gate"}
+      ],
+      "rtl_witness_signals": ["continuation_unique", "stale_continuation_rejected", "fault_delivery_gate_ok", "signal_compatibility_ok"],
+      "assertion_files": ["formal/rtl_assertions/lnp64_m2_assertions.sv"],
+      "trace_sources": ["rtl/sim/lnp64_m2_tb.sv", "formal/m2_gate_model.py"],
+      "trace_markers": ["TRACE gate_call", "TRACE gate_return", "TRACE fault_delivery", "TRACE signal_compat"],
+      "gate_scripts": ["scripts/run_rtl_m2.sh", "scripts/run_rtl_random_cosim.sh"],
+      "assumptions": ["the M2 slice models bounded gate queues and one active continuation", "compatibility signal masks are provided by the caller/domain policy"],
+      "known_gaps": ["Lean now includes an M2 gate/continuation transition-invariant proof slice, but typed transition traces and checked RTL-to-Lean refinement are still missing."]
     },
     {
       "id": "servicelets_terminate_contained",

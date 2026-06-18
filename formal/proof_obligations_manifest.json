@@ -11,6 +11,16 @@
     {
       "id": "S0",
       "title": "First Proof Obligations",
+      "severe_goals": ["SG-AUTH", "SG-SCHED", "SG-WAKE", "SG-PROGRESS", "SG-EVIDENCE"],
+      "artifact_level": "bounded_witness",
+      "bridge": {
+        "assumptions": ["S0 ready/valid fairness", "stubbed engines fail closed", "SRAM-backed memory is the S0 memory model"],
+        "rtl_modules": ["rtl/top/lnp64_top.sv", "rtl/core/lnp64_core_tile.sv", "rtl/engines/lnp64_engine_shells.sv"],
+        "rtl_witness_signals": ["multicore_no_duplicate_tid", "cross_tile_wake_one", "tile_fault_isolated", "no_raw_authority_visible"],
+        "trace_evidence": ["rtl/sim/lnp64_s0_tb.sv", "scripts/check_rtl_typed_trace_contract.py", "scripts/run_rtl_s0.sh"],
+        "trust_level": "T1",
+        "known_gaps": ["S0 typed traces are schema-checked but not yet a checked RTL-to-Lean refinement relation."]
+      },
       "lean_file": "formal/S0Model.lean",
       "theorems": [
         "s0_reset_produces_valid_initial_state_or_measured_fault",
@@ -27,6 +37,16 @@
     {
       "id": "A1",
       "title": "State Core",
+      "severe_goals": ["SG-AUTH", "SG-ISO", "SG-SCHED"],
+      "artifact_level": "bounded_witness",
+      "bridge": {
+        "assumptions": ["reset creates the root domain before releasing PID 1", "generation fields are preserved in command and scheduler records"],
+        "rtl_modules": ["rtl/top/lnp64_reset_boot.sv", "rtl/top/lnp64_top.sv", "rtl/engines/lnp64_engine_shells.sv"],
+        "rtl_witness_signals": ["boot_stable", "pid1_exactly_one_location", "tile_reset_stable_all"],
+        "trace_evidence": ["rtl/sim/lnp64_s0_tb.sv", "scripts/run_rtl_s0.sh"],
+        "trust_level": "T1",
+        "known_gaps": ["State-core proof is not yet a full-chip reachable-state/refinement proof."]
+      },
       "lean_file": "formal/S0Model.lean",
       "theorems": [
         "s0_state_core_well_formed",
@@ -40,6 +60,16 @@
     {
       "id": "A2",
       "title": "Capability/FDR Engine",
+      "severe_goals": ["SG-AUTH", "SG-WAKE"],
+      "artifact_level": "transition_invariant",
+      "bridge": {
+        "assumptions": ["bounded FDR table in the M1 slice", "ready/valid fairness for accepted queue operations"],
+        "rtl_modules": ["rtl/engines/lnp64_m1_pingpong.sv", "rtl/engines/lnp64_engine_shells.sv"],
+        "rtl_witness_signals": ["no_forged_fdr", "rights", "stale_generation_rejected", "typed_commit_valid", "typed_commit", "typed_commit.op", "typed_commit.rights_mask", "typed_commit.fdr_gen", "duplicated_cap", "sent_cap", "have_sent_cap"],
+        "trace_evidence": ["rtl/sim/lnp64_m1_tb.sv", "formal/m1_model.py", "scripts/check_rtl_m1_typed_commit_trace.py", "scripts/run_rtl_m1.sh"],
+        "trust_level": "T1",
+        "known_gaps": ["M1 has a transition-invariant Lean slice, schema-backed typed cap commit records checked against Lean CommitOp/CommitStatus/CommitRecord/TypedCommitTransition plus the typed-commit bridge, transfer-current-authority, and fail-closed authority-slot theorem names, local RTL assertions for dup/send/recv transfer continuity, and executable transition comparison, but no bit-level checked RTL-to-Lean refinement proof yet."]
+      },
       "lean_file": "formal/M1Model.lean",
       "theorems": [
         "m1_no_forged_fdr",
@@ -49,11 +79,49 @@
         "m1_cap_revoke_invalidates_generation",
         "m1_revoked_authority_cannot_start_new_work",
         "m1_stale_generation_rejected"
+      ],
+      "additional_lean_files": [
+        {
+          "lean_file": "formal/M1TransitionInvariantModel.lean",
+          "theorems": [
+            "m1_t3_consumer_cap_lineage_valid_for_all_reachable",
+            "m1_t3_no_authority_amplification_for_all_reachable",
+            "m1_t3_stored_cap_lineage_valid_for_all_reachable",
+            "m1_t3_no_authority_amplification_for_all_stored_caps",
+            "m1_t3_sent_cap_lineage_valid_for_all_reachable",
+            "m1_t3_valid_transfer_for_all_reachable",
+            "m1_t3_minted_caps_authorized_for_all_reachable",
+            "m1_t3_minted_caps_currently_authorize_created_object_for_all_reachable",
+            "m1_t3_minted_cap_created_only_by_authorized_object_create_for_reachable",
+            "m1_t3_sent_cap_created_only_by_valid_send_for_reachable",
+            "m1_t3_consumer_cap_changed_only_by_authorized_transfer_for_reachable",
+            "m1_t3_cap_send_requires_current_authority_for_reachable",
+            "m1_t3_cap_recv_requires_current_authority_for_reachable",
+            "m1_t3_revoke_invalidates_outstanding_main_object_transfer_for_reachable",
+            "m1_t3_failed_authority_operations_preserve_authority_slots_for_reachable",
+            "m1_t3_typed_commit_transition_refines_step_for_reachable",
+            "m1_t3_typed_commit_transition_preserves_invariant_for_reachable",
+            "m1_t3_typed_commit_failed_authority_transition_preserves_authority_slots_for_reachable",
+            "m1_t3_stale_generation_cannot_authorize_pull_from_main_object",
+            "m1_t3_stale_generation_cannot_authorize_work_for_all_reachable",
+            "m1_t3_revoked_caps_cannot_revive_for_all_reachable"
+          ]
+        }
       ]
     },
     {
       "id": "A3",
       "title": "Waitable/Scheduler Core",
+      "severe_goals": ["SG-SCHED", "SG-WAKE", "SG-RT"],
+      "artifact_level": "transition_invariant",
+      "bridge": {
+        "assumptions": ["bounded ready/wait queues", "wake source generations match armed waits", "scheduler fairness is bounded in the smoke model"],
+        "rtl_modules": ["rtl/engines/lnp64_m7_futex_atomic.sv", "rtl/engines/lnp64_engine_shells.sv", "rtl/top/lnp64_top.sv"],
+        "rtl_witness_signals": ["futex_wait_parked", "futex_wake_delivered", "timer_wait_parked", "multicore_no_duplicate_tid"],
+        "trace_evidence": ["rtl/sim/lnp64_m7_tb.sv", "rtl/sim/lnp64_s0_tb.sv", "scripts/run_rtl_m7.sh"],
+        "trust_level": "T1",
+        "known_gaps": ["Scheduler proofs cover abstract transition slices, not full weighted-fair RTL refinement."]
+      },
       "lean_file": "formal/M7FutexAtomicModel.lean",
       "theorems": [
         "m7_exactly_one_scheduler_location",
@@ -64,11 +132,38 @@
         "m7_no_lost_wakeup",
         "m7_wake_generation_matches",
         "m7_domain_budget_eligible"
+      ],
+      "additional_lean_files": [
+        {
+          "lean_file": "formal/M1TransitionInvariantModel.lean",
+          "theorems": [
+            "m1_t3_no_lost_wakeup_for_all_reachable"
+          ]
+        },
+        {
+          "lean_file": "formal/M7TransitionInvariantModel.lean",
+          "theorems": [
+            "m7_t3_exactly_one_scheduler_location_for_all_reachable",
+            "m7_t3_wake_generation_matches_for_all_reachable",
+            "m7_t3_no_lost_wakeup_for_all_reachable",
+            "m7_t3_domain_budget_eligible_for_all_reachable"
+          ]
+        }
       ]
     },
     {
       "id": "A4",
       "title": "Object Profiles",
+      "severe_goals": ["SG-AUTH", "SG-WAKE"],
+      "artifact_level": "bounded_witness",
+      "bridge": {
+        "assumptions": ["bounded object profile tables", "queue capacity and event-source generation are finite in the slice"],
+        "rtl_modules": ["rtl/engines/lnp64_m15_object_profiles.sv"],
+        "rtl_witness_signals": ["queue_rights_allow_push", "queue_overflow_explicit", "event_source_generation_safe"],
+        "trace_evidence": ["rtl/sim/lnp64_m15_tb.sv", "formal/m15_object_profiles_model.py", "scripts/run_rtl_m15.sh"],
+        "trust_level": "T1",
+        "known_gaps": ["Object-profile evidence is still bounded witness plus RTL assertions, not transition/refinement complete."]
+      },
       "lean_file": "formal/M15ObjectProfilesModel.lean",
       "theorems": [
         "m15_counter_threshold_event",
@@ -82,6 +177,16 @@
     {
       "id": "A5",
       "title": "VMA/DMA Slice",
+      "severe_goals": ["SG-AUTH", "SG-ISO", "SG-MEM"],
+      "artifact_level": "transition_invariant",
+      "bridge": {
+        "assumptions": ["bounded VMA and DMA buffer tables", "coherence flush is the modeled visibility boundary", "S0 cache behavior is stubbed but explicit"],
+        "rtl_modules": ["rtl/engines/lnp64_m4_vma.sv", "rtl/engines/lnp64_m5_dma.sv", "rtl/engines/lnp64_engine_shells.sv"],
+        "rtl_witness_signals": ["wx_enforced", "tlb_invalidation_observed", "domain_isolation_enforced", "coherence_observed"],
+        "trace_evidence": ["rtl/sim/lnp64_m4_tb.sv", "rtl/sim/lnp64_m5_tb.sv", "scripts/run_rtl_m4.sh", "scripts/run_rtl_m5.sh"],
+        "trust_level": "T1",
+        "known_gaps": ["M4/M5 have transition-invariant slices, but full cache/TLB/DMA fabric refinement is missing."]
+      },
       "lean_file": "formal/M5DmaModel.lean",
       "theorems": [
         "m5_dma_confined_to_capability_domain",
@@ -94,6 +199,30 @@
         "m5_coherent_visibility_observed"
       ],
       "additional_lean_files": [
+        {
+          "lean_file": "formal/M4TransitionInvariantModel.lean",
+          "theorems": [
+            "m4_t3_wx_enforced_for_all_reachable",
+            "m4_t3_mapping_created_for_all_reachable",
+            "m4_t3_write_without_permission_rejected_for_all_reachable",
+            "m4_t3_nx_execute_faulted_for_all_reachable",
+            "m4_t3_guard_access_faulted_for_all_reachable",
+            "m4_t3_stale_generation_rejected_for_all_reachable",
+            "m4_t3_tlb_invalidation_observed_for_all_reachable",
+            "m4_t3_cache_tlb_quiescent_before_authority_reuse_for_all_reachable"
+          ]
+        },
+        {
+          "lean_file": "formal/M5TransitionInvariantModel.lean",
+          "theorems": [
+            "m5_t3_missing_write_permission_faults_for_all_reachable",
+            "m5_t3_revoked_generation_rejected_for_all_reachable",
+            "m5_t3_cross_domain_rejected_for_all_reachable",
+            "m5_t3_coherent_visibility_observed_for_all_reachable",
+            "m5_t3_unpin_clears_pinned_state_for_all_reachable",
+            "m5_t3_completions_are_exact_for_all_reachable"
+          ]
+        },
         {
           "lean_file": "formal/M4VmaModel.lean",
           "theorems": [
@@ -112,6 +241,16 @@
     {
       "id": "A6",
       "title": "Servicelets/Classifiers",
+      "severe_goals": ["SG-AUTH", "SG-PROGRESS", "SG-RT"],
+      "artifact_level": "bounded_witness",
+      "bridge": {
+        "assumptions": ["servicelet ISA subset has no blocking or allocation instructions", "cycle budget is enforced by the lane"],
+        "rtl_modules": ["rtl/engines/lnp64_m9_classifier_servicelet.sv", "rtl/engines/lnp64_engine_shells.sv"],
+        "rtl_witness_signals": ["verifier_accepted", "verifier_rejected", "no_authority_created", "budget_enforced"],
+        "trace_evidence": ["rtl/sim/lnp64_m9_tb.sv", "formal/m9_classifier_servicelet_model.py", "scripts/run_rtl_m9.sh"],
+        "trust_level": "T1",
+        "known_gaps": ["Servicelet evidence lacks extracted typed servicelet semantics and RTL-to-Lean refinement."]
+      },
       "lean_file": "formal/M9ClassifierServiceletModel.lean",
       "theorems": [
         "m9_verifier_accepts_bounded",
@@ -129,6 +268,16 @@
     {
       "id": "A7",
       "title": "Resource Domains and Policy Enforcement",
+      "severe_goals": ["SG-AUTH", "SG-ISO", "SG-RT"],
+      "artifact_level": "transition_invariant",
+      "bridge": {
+        "assumptions": ["parent domain budget is authoritative", "policy masks are immutable during a checked transition"],
+        "rtl_modules": ["rtl/engines/lnp64_m14_resource_domain_policy.sv", "rtl/engines/lnp64_engine_shells.sv"],
+        "rtl_witness_signals": ["child_rights_subset_parent", "child_budget_within_parent", "policy_fail_closed"],
+        "trace_evidence": ["rtl/sim/lnp64_m14_tb.sv", "formal/m14_resource_domain_policy_model.py", "scripts/run_rtl_m14.sh"],
+        "trust_level": "T1",
+        "known_gaps": ["M14 has a transition-invariant Lean slice, but cross-engine policy composition/refinement is missing."]
+      },
       "lean_file": "formal/M14ResourceDomainPolicyModel.lean",
       "theorems": [
         "m14_child_rights_subset_parent",
@@ -143,6 +292,17 @@
       ],
       "additional_lean_files": [
         {
+          "lean_file": "formal/M14TransitionInvariantModel.lean",
+          "theorems": [
+            "m14_t3_child_rights_subset_parent_for_all_reachable",
+            "m14_t3_child_budget_within_parent_for_all_reachable",
+            "m14_t3_frozen_domain_cannot_dispatch_for_all_reachable",
+            "m14_t3_destroyed_domain_cannot_dispatch_for_all_reachable",
+            "m14_t3_usage_rolls_up_for_all_reachable",
+            "m14_t3_policy_fail_closed_for_all_reachable"
+          ]
+        },
+        {
           "lean_file": "formal/M9ClassifierServiceletModel.lean",
           "theorems": [
             "m9_budget_enforced"
@@ -153,6 +313,16 @@
     {
       "id": "A8",
       "title": "Gate Delivery, Faults, and Compatibility Signals",
+      "severe_goals": ["SG-AUTH", "SG-WAKE", "SG-PROGRESS"],
+      "artifact_level": "transition_invariant",
+      "bridge": {
+        "assumptions": ["the M2 slice models bounded gate queues and one active continuation", "compatibility signal masks are supplied by caller/domain policy"],
+        "rtl_modules": ["rtl/engines/lnp64_m2_gate.sv"],
+        "rtl_witness_signals": ["continuation_unique", "stale_continuation_rejected", "fault_delivery_gate_ok", "signal_compatibility_ok"],
+        "trace_evidence": ["rtl/sim/lnp64_m2_tb.sv", "formal/m2_gate_model.py", "scripts/run_rtl_m2.sh"],
+        "trust_level": "T1",
+        "known_gaps": ["M2 has a transition-invariant Lean slice, but no typed transition trace/refinement relation yet."]
+      },
       "lean_file": "formal/M2GateModel.lean",
       "theorems": [
         "m2_continuation_unique",
@@ -161,6 +331,19 @@
         "m2_signal_compatibility_cannot_create_authority_or_bypass_masks"
       ],
       "additional_lean_files": [
+        {
+          "lean_file": "formal/M2TransitionInvariantModel.lean",
+          "theorems": [
+            "m2_t3_continuation_unique_for_all_reachable",
+            "m2_t3_sync_roundtrip_or_live_continuation_for_all_reachable",
+            "m2_t3_sync_return_wakes_caller_for_all_reachable",
+            "m2_t3_async_delivery_does_not_park_caller_for_all_reachable",
+            "m2_t3_handoff_delivery_recorded_for_all_reachable",
+            "m2_t3_stale_continuation_rejected_for_all_reachable",
+            "m2_t3_fault_delivery_gate_entered_for_all_reachable",
+            "m2_t3_signal_compatibility_safe_for_all_reachable"
+          ]
+        },
         {
           "lean_file": "formal/M3ProcessModel.lean",
           "theorems": [
@@ -172,6 +355,16 @@
     {
       "id": "A9",
       "title": "Memory Consistency, Coherence, and Visibility",
+      "severe_goals": ["SG-MEM", "SG-WAKE"],
+      "artifact_level": "bounded_witness",
+      "bridge": {
+        "assumptions": ["early cache/TLB/coherence behavior is modeled as explicit shell events", "DDR/storage/PCIe slices are bounded smoke models"],
+        "rtl_modules": ["rtl/engines/lnp64_m4_vma.sv", "rtl/engines/lnp64_m5_dma.sv", "rtl/engines/lnp64_m11_ddr_metadata.sv", "rtl/engines/lnp64_m12_storage_barrier.sv", "rtl/engines/lnp64_m13_pcie_iommu.sv"],
+        "rtl_witness_signals": ["tlb_invalidation_observed", "coherence_observed", "metadata_barrier_quiescent", "storage_barrier_quiescent"],
+        "trace_evidence": ["rtl/sim/lnp64_m4_tb.sv", "rtl/sim/lnp64_m11_tb.sv", "rtl/sim/lnp64_m12_tb.sv", "rtl/sim/lnp64_m13_tb.sv"],
+        "trust_level": "T1",
+        "known_gaps": ["Memory consistency evidence is not yet a full-chip coherence/refinement proof."]
+      },
       "lean_file": "formal/M7FutexAtomicModel.lean",
       "theorems": [
         "m7_locked_atomic_single_copy",
@@ -187,6 +380,14 @@
             "m4_cache_tlb_quiescent_before_authority_reuse",
             "m4_tlb_invalidation_observed",
             "m4_stale_generation_rejected"
+          ]
+        },
+        {
+          "lean_file": "formal/M4TransitionInvariantModel.lean",
+          "theorems": [
+            "m4_t3_stale_generation_rejected_for_all_reachable",
+            "m4_t3_tlb_invalidation_observed_for_all_reachable",
+            "m4_t3_cache_tlb_quiescent_before_authority_reuse_for_all_reachable"
           ]
         },
         {
@@ -239,6 +440,16 @@
     {
       "id": "A10",
       "title": "RAS, Adversarial Input, and Global Progress",
+      "severe_goals": ["SG-PROGRESS", "SG-RT", "SG-EVIDENCE"],
+      "artifact_level": "bounded_witness",
+      "bridge": {
+        "assumptions": ["watchdog clock is live", "bounded fault classes match formal_theorems.md assumptions", "external IP failure modes are modeled as explicit terminal faults"],
+        "rtl_modules": ["rtl/engines/lnp64_m10_ras.sv", "rtl/engines/lnp64_engine_shells.sv"],
+        "rtl_witness_signals": ["watchdog_timed_out", "degraded_state", "telemetry_scoped", "audit_recorded"],
+        "trace_evidence": ["rtl/sim/lnp64_m10_tb.sv", "formal/m10_ras_model.py", "scripts/run_rtl_m10.sh"],
+        "trust_level": "T1",
+        "known_gaps": ["Reset/degraded/watchdog paths are fault-containment evidence, not normal correctness or global progress refinement."]
+      },
       "lean_file": "formal/M10RasModel.lean",
       "theorems": [
         "m10_adversarial_inputs_cannot_hang_owner_or_create_authority",
@@ -268,10 +479,21 @@
       "id": "FT",
       "title": "LNP64 Formal Theorem Roadmap",
       "source": "formal_theorems.md",
+      "severe_goals": ["SG-AUTH", "SG-ISO", "SG-SCHED", "SG-WAKE", "SG-MEM", "SG-PROGRESS", "SG-RT", "SG-EVIDENCE"],
+      "artifact_level": "coverage",
+      "bridge": {
+        "assumptions": ["FormalTheoremsModel.lean is a coverage ledger, not an architectural proof"],
+        "rtl_modules": ["formal/theorem_rtl_coupling_manifest.json"],
+        "rtl_witness_signals": ["trust_level", "known_gaps", "artifact_level"],
+        "trace_evidence": ["formal/theorem_rtl_coupling_index.md", "scripts/check_theorem_rtl_coupling.py"],
+        "trust_level": "T0",
+        "known_gaps": ["Coverage theorem names do not prove the chip until replaced by transition/refinement artifacts."]
+      },
       "lean_file": "formal/FormalTheoremsModel.lean",
       "theorems": [
         "ft_formal_model_scope",
         "ft_proof_fault_assumptions_explicit",
+        "ft_security_theorem_spine",
         "ft_proof_priority_order",
         "ft_global_state_validity",
         "ft_capability_non_forgeability",

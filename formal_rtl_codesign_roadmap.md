@@ -7,6 +7,22 @@ design that is buildable, lint-clean, and simulatable under Verilator or an
 equivalent simulator. FPGA bring-up comes after the full-chip design has a
 credible simulation/proof base.
 
+The current RTL tree is not that implementation yet. It is a useful broad
+skeleton plus bounded S0/M1-M15 smoke slices: top-level shells, record shapes,
+small standalone engines, testbenches, and trace witnesses. That work is
+valuable only as scaffolding. It must not be mistaken for the real processor,
+for a complete hardware implementation of the ISA, or for a finished
+enterprise/realtime design.
+
+`rtl/top/lnp64_top.sv` is the intended complete top-level implementation file.
+It should not be treated as a throwaway smoke harness. Early versions may expose
+simulation status outputs and connect fail-closed shells, but the same top-level
+module must grow into the integrated chip: real core tiles, scheduler, memory
+fabric, VMA/MMU, capability/domain engines, object/gate engines, DMA, storage,
+networking, RAS, boot, and external interfaces. Test-only behavior should move
+into testbenches, bind modules, trace adapters, or explicitly named simulation
+helpers rather than becoming the architecture.
+
 The goal is not to write RTL first and prove it later. The goal is:
 
 ```text
@@ -19,6 +35,8 @@ The end state is not a partial demo core. The end state is:
 - the full chip design expressed in synthesizable SystemVerilog.
 - the whole machine simulatable with real LNP64 programs and architectural test
   images.
+- existing assembly demos and compiler-generated test programs running through
+  the top-level RTL simulator as features come online.
 - a complete Lean architectural model covering the theorem set in
   `formal_theorems.md`.
 - Lean proofs for the security, isolation, scheduler, capability, memory,
@@ -42,18 +60,93 @@ Each hardware block should have:
 The sequencing rule is:
 
 ```text
-interfaces first -> stub behavior second -> vertical slices third
--> performance and completeness later
+interfaces first -> fail-closed scaffolding second -> real integrated engines third
+-> full architectural coverage fourth -> performance, timing, and FPGA later
 ```
 
 Stubs are acceptable only when they preserve the real command/response shape,
 carry authority/generation/domain metadata, fail closed, and keep reset,
 fault, event, and completion paths live.
 
-Stubs are temporary scaffolding. They are allowed in S0/M1 to lock down the
-whole-machine shape, but the roadmap target is a complete RTL implementation of
-every required architectural block and complete Lean proofs of every theorem we
-claim for the architecture.
+Stubs were enough to build the skeleton, and that was the right first step.
+They showed that the project could name the machine, wire the major modules,
+exercise reset, route commands/events/faults, and keep a proof/simulation gate
+alive. That phase is now only the starting point. From this point forward,
+stubbed behavior must be retired block by block and replaced with real
+integrated RTL.
+
+A block is not implemented merely because it has a shell, a smoke trace, or a
+bounded single-scenario model. The roadmap target is a complete RTL
+implementation of every required architectural block and complete Lean proofs
+of every theorem we claim for the architecture.
+
+The active hardware work should now move from scaffolding to real
+implementation. "Real implementation" means synthesizable RTL state machines,
+pipelines, arbiters, queues, tables, memories, and fabric logic that execute the
+architectural behavior described in `design.md` and `hardware_design.md`, not
+testbench-scripted traces or hardcoded success paths.
+
+The active proof work should now move from coverage plumbing to deep proofs.
+The existing manifests, schema checks, trace gates, and roadmap audits are
+useful guardrails, but they are not the hard result. Do not add new manifest or
+checker layers unless a real proof, typed transition trace, RTL assertion, or
+top-level integration gate needs them. The next proof milestone is one honest
+vertical proof slice deep enough to withstand review:
+
+```text
+Lean transition system -> reachable-state invariant proof
+-> typed RTL commit records -> executable/refinement comparison
+-> RTL assertions for assumptions -> top-level integration gate
+```
+
+The preferred first slice is `SG-AUTH` through the capability/FDR path. It
+should prove non-forgeability, no authority amplification, stale-generation
+rejection, revocation safety, and valid capability transfer for all reachable
+states in the modeled slice. Other evidence work is secondary until this shape
+exists.
+
+## Severe Whole-Chip Proof Goals
+
+The proof program should stay focused on a small set of severe top-level
+claims. Local module proofs matter only because they support these claims at
+the whole-chip boundary:
+
+1. **`SG-AUTH` No forged authority:** no instruction, service, engine, trace,
+   event, fault, DMA operation, reset path, stale cache entry, or compatibility
+   personality can create, broaden, revive, or transfer capability authority
+   outside the capability rules.
+2. **`SG-ISO` Resource Domain isolation:** a domain cannot read, write,
+   schedule, DMA into, signal, observe, debug, trace, or receive events for
+   another domain except through explicitly delegated capabilities and policy.
+3. **`SG-SCHED` Scheduler uniqueness:** every live TID is in exactly one
+   scheduler state and at most one tile-local running lane; migration, wakeup,
+   fault delivery, and cancellation cannot duplicate or lose thread context.
+4. **`SG-WAKE` No lost waits or completions:** every accepted wait, gate call,
+   futex wait, event subscription, DMA request, service request, or long engine
+   operation either completes, wakes, cancels, times out, faults, parks on a
+   valid waitable, or reaches a documented terminal/degraded/machine-fatal path.
+5. **`SG-MEM` Memory and DMA authority:** VMA, TLB, cache, page-state, W^X/NX,
+   guard, revocation, coherence, and DMA/IOMMU rules prevent stale,
+   unauthorized, or cross-domain memory access.
+6. **`SG-PROGRESS` Crash/stall containment:** within the stated reset, clock,
+   fabric, and external-IP assumptions, the machine has no silent stuck state.
+   Faults, backpressure, malformed records, poison, watchdog timeout, and
+   resource exhaustion resolve to typed progress, typed refusal, bounded
+   parking, degraded state where the lifecycle profile permits it, or
+   measured/audited machine-fatal state.
+7. **`SG-RT` Realtime honesty:** any advertised Class A/B/C latency,
+   scheduler, reservation, or servicelet bound is conservative for the
+   implementation; work that cannot meet the bound is Class D bounded-submit
+   work or fails closed.
+8. **`SG-EVIDENCE` Evidence honesty:** trace, telemetry, audit, quote,
+   proof-manifest, and feature-discovery records are data, not authority, and
+   accurately describe the implementation, assumptions, proof level, and known
+   gaps for the boot epoch.
+
+These claims should have stable ids in the theorem/RTL coupling manifest and
+the human-readable evidence index. A proof that does not advance one of these
+claims is allowed as a helper, regression witness, or local sanity check, but it
+should not be presented as an architectural guarantee.
 
 ## Proof/RTL Coupling Contract
 
@@ -74,6 +167,12 @@ The long-term goal is not merely "Lean file exists" or "RTL test passes." The
 goal is a checked refinement claim for each block: every committed RTL-visible
 architectural transition for that block corresponds to an allowed Lean
 transition under an explicit set of assumptions.
+
+The project should avoid evidence plumbing debt. A new JSON manifest, checker,
+Markdown index, or trace vocabulary is justified only when it tightens this
+chain: it must catch a real drift mode, connect a theorem to RTL behavior, record
+an assumption that affects a proof, or make a top-level claim auditable. Pure
+bookkeeping should be folded into an existing manifest or deferred.
 
 ### Proof Artifact Levels
 
@@ -188,6 +287,73 @@ At the typed-trace stage, every trace field used by a proof must come from the
 shared schema. At the refinement stage, the trace is no longer the proof; it is
 debug evidence for a checked relation between RTL commit events and Lean steps.
 
+### Convincing Security and Crash-Freedom Bar
+
+The project should not claim the hardware is convincingly free of security or
+crash/stall bugs until the proof story includes the following artifacts. These
+are stronger than ordinary guardrails; they are the minimum credible path from
+local proofs to whole-chip assurance.
+
+1. **RTL-to-model refinement:** every RTL architectural commit record decodes to
+   an allowed Lean transition for the relevant state projection, or to a typed
+   fail-closed terminal path. This is the main bridge from "the model is safe"
+   to "the chip implements the safe model."
+2. **Mediation completeness:** every write to authority-bearing state is owned
+   by exactly one checked engine or proven shard. This covers FDR tables, VMA
+   tables, domain policy, scheduler slots, continuations, IOMMU tables, object
+   state, debug authority, trace authority, service-return capability install,
+   and reset/recovery state. There must be no alternate RTL write path.
+3. **No-stuck-state theorem:** every accepted command, request, wait, gate,
+   DMA operation, service operation, or long owner-engine operation eventually
+   reaches completion, park on a valid waitable, canonical error/fault, cancel,
+   timeout, degraded state where the lifecycle permits it, or measured/audited
+   fatal state. Watchdogs are fault containment, not normal progress proof.
+4. **Reset and recovery correctness:** reset, local engine reset, poison,
+   abort, degraded state, and recovery cannot publish partial authority,
+   duplicate scheduler state, skip generation checks, or revive stale objects.
+5. **Assume-guarantee composition:** each block publishes assumptions and
+   guarantees; neighboring blocks either discharge those assumptions with
+   assertions/proofs or list them as trusted-platform assumptions. Whole-chip
+   claims are allowed only after the relevant assumptions compose at
+   `lnp64_top`.
+6. **Information-flow and noninterference:** isolation proofs cover observation
+   as well as mutation. Loads, debug, telemetry, trace rings, audit, counters,
+   scheduler pressure, queue occupancy, classifier marks, packet queues,
+   snapshot hooks, and timing-visible features are scoped by Resource Domain
+   policy or explicitly excluded from the claimed profile.
+7. **Bounded parser and adversarial-input proofs:** servicelets, packets,
+   typed control envelopes, PCIe/config records, boot manifests, service
+   replies, returned-capability proposals, and restore records have bounded
+   parse depth, terminate, fail closed on malformed input, and do not allocate
+   hidden authority-bearing state while parsing.
+8. **CDC, reset-domain, and external-IP contracts:** clock crossings, reset
+   release, PLLs, DDR, PCIe, Ethernet PHY/MAC, FPGA memories, SERDES, and
+   vendor primitives are either proved locally or represented by named
+   assume-guarantee contracts with reset behavior, ordering, integrity,
+   maximum-wait/failure behavior, and fault signaling.
+9. **Arithmetic and bounds safety:** address arithmetic, queue indices, bank
+   selectors, generation counters, epochs, lengths, offsets, byte masks,
+   packet sizes, DMA ranges, and table ids cannot overflow, wrap, truncate, or
+   alias into authority outside the checked range. Any intentional wrap has a
+   generation/epoch theorem and stale rejection proof.
+10. **Proof coverage audit:** every top-level security/progress claim has a
+   reviewer-readable row showing the claim, scope, assumptions, Lean theorem,
+   RTL modules/signals, assertions, simulation/formal evidence, trust level,
+   and remaining gaps. Evidence rows are data, not authority; they must not
+   inflate T0/T1 coverage into T4/T5 refinement.
+
+The intended final assurance statement is:
+
+```text
+Lean proves the architectural security and progress invariants.
+RTL refinement proves the chip implements only those transitions.
+Assume-guarantee composition proves the blocks preserve each other's
+assumptions at lnp64_top.
+Fault/recovery proofs show failures are contained and authority-decreasing.
+Information-flow proofs show isolation includes unauthorized observation,
+not only unauthorized mutation.
+```
+
 ### Assumption Discipline
 
 The proof gate must track assumptions as first-class objects:
@@ -242,15 +408,20 @@ reverse-engineering the whole repository.
 For each major guarantee, maintain a short evidence page or generated index
 that shows:
 
+- the severe whole-chip goal id it supports.
 - the plain-English claim.
+- the precise security/progress/realtime property being claimed and the scope:
+  whole chip, block, profile, bounded witness, or external-IP contract.
 - the exact Lean theorem names and their artifact level: coverage, bounded
   witness, transition proof, or refinement proof.
 - the assumptions and trusted-platform contracts used by those theorems.
-- the RTL modules and top-level signals covered by the claim.
+- the RTL modules, top-level `lnp64_top` signals, schema records, and trace
+  fields covered by the claim.
 - the assertion files, simulation gates, co-simulation traces, synthesis checks,
   and board evidence that connect the theorem to the implemented hardware.
 - the current trust level, from T0 through T5.
-- known gaps, exclusions, and reasons the claim is not stronger.
+- known gaps, exclusions, unproven assumptions, unconnected RTL, missing
+  assertions, and reasons the claim is not stronger.
 
 The top-level evidence index should be organized by the guarantees users care
 about: no forged authority, revocation works, domains contain tenants, DMA is
@@ -258,6 +429,16 @@ confined, scheduler state cannot split, wakeups are not lost, servicelets
 terminate, faults reach terminal paths, and admitted work makes bounded
 progress. Each row should link to the theorem, RTL, assertion, trace, and gate
 artifacts that support it.
+
+The review question for every row is deliberately simple:
+
+```text
+What is claimed?
+What assumptions make it true?
+What RTL implements or witnesses it?
+What proof/check/evidence connects the RTL to the claim?
+What remains unproven?
+```
 
 This is not marketing material. It is a review surface for engineers, users,
 security reviewers, open-source contributors, and future hardware partners. If a
@@ -280,8 +461,8 @@ but separate:
 - `rtl/include/`: shared packed structs, constants, opcodes, error codes, and
   feature bits.
 - `rtl/top/`: top-level machine and clock/reset glue.
-- `rtl/core/`: core tile, fetch/decode/issue/retire, register files, thread
-  context window.
+- `rtl/core/`: replicated core tiles, fetch/decode/issue/retire, register
+  files, thread context windows, and tile-local scheduler front ends.
 - `rtl/engines/`: capability, scheduler, object, gate, process, VMA, DMA, heap,
   futex, domain, service, classifier, RAS, and device shells.
 - `rtl/sim/`: Verilator testbench, ROM/SRAM images, synthetic event/fault
@@ -300,7 +481,7 @@ return only stub completions:
 - `lnp64_top`
 - `lnp64_reset_boot`
 - `lnp64_clock_reset`
-- `lnp64_core_tile`
+- `lnp64_core_tile` replicated by `CORE_TILE_COUNT`
 - `lnp64_decode`
 - `lnp64_issue_retire`
 - `lnp64_thread_context`
@@ -335,6 +516,33 @@ return only stub completions:
 
 The names are not sacred, but the boundaries are. Renaming is fine only if the
 same shells and channels remain obvious.
+
+### Multicore From S0
+
+The RTL skeleton should be multicore-shaped from the start. The default
+simulation configuration is two coherent in-order core tiles. The top-level
+should be parameterized so four tiles can be enabled for stress tests without
+rewriting the fabric. A one-tile build may exist only as a debug convenience; it
+must not be the proof or integration baseline.
+
+S0 does not need a high-performance coherence implementation, but it must expose
+the real multicore interfaces:
+
+- per-tile fetch/issue/retire and local ready/park/submit channels.
+- tile id in retire, fault, event, scheduler, trace, and coherence records.
+- a global scheduler path that can assign runnable TIDs to at least two tiles.
+- an inclusive-L2 or coherence-shell interface with invalidate/ack/writeback
+  event records, even if early data traffic is SRAM-backed.
+- per-tile reset, fault, watchdog, idle, and telemetry counters.
+- `ENV_GET` topology records reporting tile count, active-window shape,
+  coherence-domain id, and enabled/disabled tile state.
+- scheduler records carrying hard affinity mask, current tile, preferred tile,
+  and migration generation.
+
+This prevents single-core assumptions from leaking into scheduler,
+capability/domain, VMA/TLB, event, DMA, and proof work. Early tests may run PID
+1 on tile 0, but the top-level machine is incomplete until a second tile can be
+reset, observed, scheduled, faulted, idled, and woken through the same fabric.
 
 ### First Interfaces
 
@@ -420,7 +628,7 @@ S0 reset should be deterministic:
 6. initialize an empty or explicitly granted FDR table.
 7. initialize fault, event, completion, telemetry, and watchdog counters.
 8. load a tiny ROM/SRAM instruction stream for PID 1.
-9. release the core tile.
+9. release all enabled core tiles, with PID 1 initially runnable on tile 0.
 10. if any mandatory step fails, emit a measured/audited boot fault and do not
     create an unaffiliated runnable thread.
 
@@ -455,9 +663,13 @@ No S0 stub may:
 S0 is done only when these tests pass in simulation:
 
 - reset reaches a stable state with exactly one runnable PID 1/TID 1.
+- at least two enabled core tiles reset, report telemetry, and participate in
+  the scheduler topology.
 - PID 1 executes `NOP`, immediate load, simple ALU, branch, SRAM `LD/ST`, and
   `YIELD`.
 - `ENV_GET` reports expected S0 feature bits and limits.
+- `ENV_GET` reports tile count, tile ids, and a single coherent locality domain
+  for the S0 profile.
 - an unsupported opcode returns the canonical unsupported result.
 - a stubbed resource instruction returns the expected fail-closed error.
 - UART emits a boot/status byte or line.
@@ -525,6 +737,8 @@ The Lean work is complete only when it covers:
 - capability non-forgeability, narrowing, sealing, lineage, and revocation.
 - Resource Domain containment, monotonic delegation, and accounting.
 - scheduler state, waitables, no-lost-wakeup, and bounded progress assumptions.
+- multicore topology, tile-local running lanes, cross-tile scheduler handoff,
+  coherence-shell acknowledgements, and tile-local fault containment.
 - object profile state machines.
 - gate delivery, continuations, faults, and compatibility signal profiles.
 - memory permissions, W^X/NX/guards, VMA/TLB coherence, and memory consistency.
@@ -537,6 +751,79 @@ The Lean work is complete only when it covers:
 Proofs may be phased, but every theorem advertised as an architectural guarantee
 must eventually have a corresponding Lean statement and proof, plus a trace,
 assertion, or test hook connecting it to the RTL where practical.
+
+Every Track A theorem should declare which severe whole-chip proof goal it
+supports. The declaration can be in the proof manifest at first, but the final
+form should be mechanically checked by the theorem/RTL coupling gate. This keeps
+the Lean work aimed at whole-chip authority, isolation, scheduler, memory,
+progress, realtime, and evidence-honesty claims instead of accumulating
+unrelated local facts.
+
+Near-term Track A work should be intentionally narrow. Until the first
+capability/FDR transition-invariant slice is complete, do not expand the formal
+surface broadly except to remove false claims or wire that slice to RTL. The
+acceptance bar for the first deep slice is:
+
+- a Lean `State`, `Step`, and `Reachable` model for the capability/FDR path.
+- preservation lemmas for each modeled transition, including failure
+  transitions.
+- top-level reachable-state theorems for non-forgeability, no authority
+  amplification, stale-generation rejection, revocation safety, and valid
+  transfer.
+- typed commit records from the corresponding RTL slice.
+- assertions or explicit assumptions for every precondition the proof needs.
+- a gate that demonstrates the RTL commit records match the executable model
+  for representative and randomized traces.
+
+Only after that pattern is real should the project repeat it for scheduler
+uniqueness, no-lost-wakeups, VMA/DMA authority, Resource Domain isolation, and
+fault/progress containment.
+
+### Immediate Execution Focus
+
+The efficient path from the current repository state is not to start more broad
+proof slices. Finish one vertical slice deeply enough that it becomes the
+template for the rest. The active slice is `SG-AUTH` through M1 capability/FDR.
+
+Do this before opening another large proof area:
+
+1. **Define the M1 refinement relation.** State exactly how an RTL
+   capability/FDR commit record, an RTL state projection, a Lean `State`, and a
+   Lean `Step` correspond. The relation should ignore irrelevant pipeline flops
+   but include every authority-bearing field: object id/generation, FDR
+   generation, rights, lineage, domain id/generation, operation id, status, and
+   transfer/revocation state.
+2. **Make M1 commit records schema-owned.** The typed commit record should be
+   generated from, or mechanically checked against, the shared schema for
+   SystemVerilog, Lean, Python, and any trace JSON. The testbench must not
+   define an independent authority format.
+3. **Prove the M1 model preserves `SG-AUTH`.** Preserve non-forgeability, no
+   authority amplification, current-authority checks, valid transfer, revoke,
+   stale-generation rejection, and fail-closed operations across all reachable
+   states in the modeled slice.
+4. **Check the RTL emits only valid M1 commits.** The RTL gate should decode
+   typed commits, compare them against the executable model, and reject
+   impossible authority transitions. This is still not a bit-level proof, but it
+   is the bridge toward T4.
+5. **Add bypass/mediation checks.** Prove or assert that no RTL path writes
+   capability/FDR authority state except the M1 owner transition path or its
+   explicitly named shard. This is the first concrete mediation-completeness
+   check.
+6. **Record the trust level honestly.** Until a checked RTL-to-Lean refinement
+   relation exists, call the slice transition-proven plus typed-trace/assertion
+   coupled, not finished T4/T5 hardware assurance.
+
+After M1 reaches this shape, repeat the same pattern in this order:
+
+1. scheduler uniqueness and no-lost-wakeup.
+2. composition of M1 authority with scheduler state.
+3. VMA/DMA memory authority.
+4. Resource Domain isolation and monotonic delegation.
+5. fault/progress containment.
+
+This order matters. Scheduler duplication or lost wakeups can invalidate memory,
+domain, and service proofs. VMA/DMA proofs are much more meaningful after the
+thread that issues the memory operation is known to be unique and live.
 
 ### A1. State Core
 
@@ -612,6 +899,9 @@ Model:
 Prove:
 
 - no invalid memory access.
+- end-to-end thread store confinement: a committed store by a running thread is
+  authorized by that thread's current PID/domain, live writable VMA, matching
+  generation/lineage, and Resource Domain policy at the commit point.
 - W^X, NX, and guard-page behavior.
 - DMA confinement.
 
@@ -664,6 +954,10 @@ Prove:
 
 Model:
 
+- tile ids, enabled-tile mask, tile-local running lanes, and coherence-domain
+  membership.
+- hard affinity masks, preferred/current tile placement, migration generation,
+  and allowed migration reasons.
 - TSO-like normal memory rules.
 - locked atomics and futex ordering.
 - VMA/TLB invalidation.
@@ -671,8 +965,24 @@ Model:
 
 Prove:
 
+- no TID runs on two tiles at once.
+- cross-tile migration preserves thread identity, registers, continuations,
+  authority, delivery masks, `ERRNO`, and accounting.
+- sticky placement is preserved unless a documented migration reason applies.
+- migration generation rejects stale tile-local wakeups, completions, and
+  balancing records.
+- cross-tile wake/event/completion delivery cannot lose or duplicate a wakeup.
+- tile-local fault, reset, watchdog, or degraded state cannot corrupt another
+  tile's scheduler, capability, domain, or VMA state.
+- `ENV_GET` topology records match initialized tile/coherence-domain state.
+- coherence-shell invalidation, acknowledgement, writeback, and ownership
+  transfer are paired before stores, remaps, DMA visibility, or authority reuse
+  commit.
 - single-copy atomicity for locked atomics.
 - no access after unmap/revoke generation mismatch.
+- no committed store can use stale TLB/cache authority, a stale migration
+  context, or another domain's mapping unless the mapping was explicitly shared
+  by capability.
 - DMA cannot observe or modify memory outside its capability and domain scope.
 - cache/TLB invalidation reaches a defined quiescent point before authority is
   reused.
@@ -700,13 +1010,306 @@ Start broad. The first RTL objective is not performance or full behavior; it is
 getting the whole architectural skeleton right so later blocks have the right
 interfaces, records, reset paths, ownership fields, and failure paths.
 
-The RTL track does not stop at S0/M1. Those milestones only show that the
-interfaces and proof/simulation loop are viable. The intended deliverable is a
-complete full-chip SystemVerilog implementation of the architecture in
-`hardware_design.md`: core tiles, scheduler, capabilities, Resource Domains,
-VMA/MMU, heap, futexes, gates, service boundary, DMA, networking substrate,
-RAS/telemetry, and device/backend shells. The full design must remain
-simulatable even before it is mapped to a physical FPGA board.
+The RTL track does not stop at S0/M1 or the M1-M15 smoke slices. Those
+milestones only show that the interfaces and proof/simulation loop are viable.
+The intended deliverable is a complete full-chip SystemVerilog implementation
+of the architecture in `hardware_design.md`: core tiles, scheduler,
+capabilities, Resource Domains, VMA/MMU, heap, futexes, gates, service
+boundary, DMA, networking substrate, RAS/telemetry, storage/device frontends,
+PCIe/IOMMU hooks, boot flow, and the shared fabrics that connect them. The full
+design must remain simulatable even before it is mapped to a physical FPGA
+board.
+
+The canonical integration point for that deliverable is
+`rtl/top/lnp64_top.sv`. Block-level RTL, smoke slices, and standalone harnesses
+are useful only to the extent that they converge back into this top-level
+machine. If a feature works only in an isolated testbench and cannot be driven
+through `lnp64_top`, it is not integrated.
+
+### Current RTL Reality Check
+
+The current `rtl/` tree should be classified as **scaffolding plus bounded
+smoke coverage**:
+
+- S0 provides a broad top-level skeleton, reset/boot shape, shared records,
+  stubs, and a small core/test path.
+- `rtl/top/lnp64_top.sv` already names the intended whole-machine boundary, but
+  it currently behaves as a smoke-oriented skeleton rather than a complete
+  processor top.
+- M1-M15 are narrow bounded slices that demonstrate specific ideas against
+  small traces.
+- `lnp64_engine_shells.sv` still contains shell/stub modules for major
+  architectural engines and device frontends.
+- `rtl/track_b_blocks_manifest.json` describes bounded smoke status, not
+  implementation completeness.
+
+This is acceptable as the bootstrap state. It is not acceptable as the final
+RTL claim. New RTL work should preferentially replace these shells and bounded
+slices with integrated engines rather than add more disconnected smoke demos.
+
+### Real RTL Completion Criteria
+
+A block may be marked implemented only when all of these are true:
+
+- it participates in the top-level `rtl/top/lnp64_top.sv` reset, command, response,
+  completion, event, fault, telemetry, and watchdog paths.
+- it implements the architectural state machine, not a scripted trace or one
+  hardcoded positive path.
+- it handles normal success, canonical errors, malformed inputs, stale
+  generations, revoked authority, cancellation, backpressure, timeout/fault
+  paths, and reset/degraded recovery.
+- it carries and checks PID/TID, Resource Domain id/generation, object
+  id/generation, FDR generation, rights, lineage/revocation epoch, operation id,
+  and completion target wherever the interface requires them.
+- it uses real local state, memories, arbiters, queues, FIFOs, CAM/RAM tables,
+  or fabric transactions appropriate to the block.
+- if it owns shared architectural state, it defines whether the physical RTL is
+  monolithic, banked, or sharded; the common case should prefer banking over a
+  single global bottleneck when required for throughput, timing closure, or
+  WCET.
+- banked/sharded owners preserve single-writer semantics: every mutable record
+  has exactly one owning shard at a time, and shard migration uses typed
+  generation/epoch-protected transitions.
+- it has bounded interaction with DDR-backed metadata where the architecture
+  requires spill/refill, and it does not hide unbounded tree walks or software
+  policy inside instruction retirement.
+- it is exercised by top-level programs or architectural images, not only by an
+  isolated block testbench.
+- its assertions check local invariants and interface assumptions.
+- its traces are typed architectural transition records or are on a planned path
+  to typed records.
+- its Lean/executable model has advanced beyond pure final-state witness form
+  for security-critical properties.
+
+Shells, stubs, fixed traces, and bounded smoke modules can remain in the tree as
+bring-up aids, but they must be labeled as such and tracked as incomplete.
+
+### Full Implementation Work Order
+
+The next RTL phase should build the real machine in this order:
+
+0. **Shared schemas and package hardening:** stabilize the packed records,
+   enums, canonical errors, feature bits, latency classes, rights masks, and
+   trace records used by `lnp64_top`, Lean, the emulator, and co-simulation.
+1. **Top-level transaction fabric:** replace ad hoc block wiring with shared
+   command/response/completion/event/fault channels, routing, arbitration,
+   operation ids, cancellation, and backpressure inside `rtl/top/lnp64_top.sv`
+   and its immediate fabric modules.
+2. **Decode, core tiles, and thread contexts:** implement fixed decode,
+   result/error writeback, `ENV_GET`, fetch/decode/issue/retire, register
+   files, thread context windows, branch handling, load/store paths, atomics,
+   faults, and scheduler park/submit hooks for real instruction streams.
+3. **Capability/FDR, Resource Domain, and policy roots:** implement real FDR
+   tables, generation and lineage checks, capability
+   duplication/transfer/revocation, domain lifecycle, monotonic limits,
+   accounting, freeze/resume/destroy, and policy enforcement.
+4. **Scheduler and waitable core:** implement weighted-fair ready queues,
+   active windows, wait queues, timers, futex wait/wake, event delivery,
+   domain budget hooks, frozen/destroyed-domain rejection, spill/refill, and
+   no-lost-wakeup invariants.
+5. **Object, gate, and process engines:** implement queue, counter,
+   event/completion, memory object, call gate, continuation, fault delivery,
+   cancellation, service-boundary object profiles, process/thread lifecycle,
+   and exec-barrier behavior.
+6. **VMA/MMU/page engine:** implement VMA tables, page-state transitions,
+   permission checks, W^X/NX/guard, COW, page fill request/reply, TLB/I-cache
+   invalidation, executable provenance, and deterministic race priority.
+7. **Memory fabric and DDR metadata broker:** implement coherent memory access,
+   metadata storage, ECC/parity hooks, spill/refill protocols, barriers, and
+   cache/TLB/DMA visibility contracts.
+8. **Heap and futex/atomic hard blocks:** implement the default heap algorithm,
+   allocation windows, size classes, free/quarantine, `ALLOC_SIZE`, locked
+   atomics, futex buckets, and waiter spill/refill.
+9. **Service boundary, typed control, and namespace dispatch:** implement
+   typed control parsing, service request/reply continuation records,
+   returned-capability validation, namespace dispatch stubs, and crash/cancel
+   completion paths.
+10. **DMA, storage, networking, and PCIe frontends:** implement DMA buffers and
+    copy/fill/scatter-gather, storage/block/barrier objects, packet queues,
+    endpoint queues, classifier/servicelet lanes, PCIe BAR/IOMMU/MSI event
+    hooks, and driver-facing capability surfaces.
+11. **RAS, assurance, and observability:** implement structured fault events,
+    watchdog/local reset, counters, trace rings, measured boot records, quote
+    FDRs, audit streams, debug/forensics control, MLS labels, and mission
+    profile hooks.
+12. **Full-system programs:** boot realistic LNP64 images through the RTL,
+    exercise libc/personality paths, run userland tests in simulation, and
+    retire the isolated smoke-only test posture.
+
+Each step should leave the top-level simulator runnable. The broad skeleton
+must stay connected while the internals become real.
+
+### Integration Guardrails
+
+The bundled goals are realistic only if the implementation keeps the machine
+regular. The RTL must not grow into a set of mutually blocking owner engines
+with ad hoc side channels. These guardrails are part of the work order:
+
+- **No cyclic backpressure without an escape path.** Every ready/valid cycle
+  must be broken by a bounded queue, credit return path, retry/error response,
+  parkable waitable, watchdog/degraded path, or machine-fatal fault. A module
+  must not hold a resource while waiting for another path that needs the held
+  resource to make progress.
+- **Separate terminal routes.** Command submission, completion, event, fault,
+  cancellation, and telemetry routes may share physical fabric only if their
+  arbitration proves that completion/fault/cancel traffic cannot be starved by
+  new request traffic.
+- **One owner per mutable record family.** Capability tables, domain records,
+  scheduler slots, VMA entries, object state, gate continuations, heap metadata,
+  DMA descriptors, and RAS records each have a named owner engine. Other blocks
+  request changes through typed transactions; they do not mutate shared state
+  behind the owner's back.
+- **Bank shared owners, not ownership rules.** A shared owner engine may be
+  physically banked or sharded by PID, domain, tile, object id, address range,
+  queue id, FDR index, or hash bucket, but each record still has exactly one
+  owning shard. Banking is a scaling and WCET tool, not permission to create
+  competing writers.
+- **Bounded local state first.** Hot paths use small local tables, windows,
+  queues, CAMs, or FIFOs. DDR-backed metadata is accessed through explicit
+  spill/refill transactions with bounded submit behavior, not hidden pointer
+  chasing inside instruction retirement.
+- **Realtime classes are implementation contracts.** A block may not advertise
+  a Class A/B/C path until simulation, assertions, and the timing model show it
+  retires, parks, or submits within the published bound. Long work is Class D:
+  it must publish an operation id, waitable/completion target, timeout/watchdog
+  class, and cancellation class before leaving the issuing instruction.
+- **Best-effort traffic is never proof-critical.** Realtime and assurance
+  proofs are stated for admitted domains and published reservations. Best-effort
+  work may be throttled, failed with pressure events, or delayed within its own
+  profile, but it must not consume the completion/fault/cancel capacity needed
+  by admitted work.
+- **Proof state is projected.** Lean models should prove architectural
+  projections and transition invariants, not every pipeline flop. RTL traces
+  expose commit records, ownership changes, terminal paths, and typed events so
+  the proof model stays small enough to finish.
+- **Composition is staged.** A block is first proved locally, then with its
+  immediate fabric, then through `lnp64_top`. No global claim is made until the
+  block's assumptions are either discharged by neighboring assertions or listed
+  in the trusted-platform contract.
+- **Watchdogs are recovery evidence, not flow control.** A normal progress
+  proof cannot rely on watchdog timeout. Watchdogs prove bounded failure
+  containment when an engine violates its normal ready/progress contract.
+
+Before any milestone is called complete, its test plan should include a small
+deadlock audit: list every queue/fabric dependency, identify the owner of each
+mutable state family, name the terminal path for every accepted command, and
+show which traffic class can still complete under backpressure.
+
+### Milestone Constraint Checklist
+
+Each milestone should also run through a short constraint checklist. This keeps
+the project from satisfying the visible feature requirement while missing a
+hardware condition that later breaks proofs, realtime behavior, or synthesis.
+
+- **Reset and initialization:** every state element has a defined reset,
+  initialization, poison, or scrub state. No engine can accept commands before
+  its owner records, feature bits, and terminal routes are initialized.
+- **Clock and reset domains:** every crossing is explicit. CDC, reset release,
+  PLL/clock-good, external PHY, DDR, PCIe, and debug clock assumptions are named
+  in the trusted-platform contract.
+- **Bounded identifiers:** operation ids, generations, epochs, sequence
+  numbers, counters, and timestamps define wrap behavior, stale rejection, and
+  comparison rules before they are used in proofs.
+- **Resource exhaustion:** every table, FIFO, queue, ring, CAM, spill window,
+  continuation slot, event slot, and trace/audit buffer defines full behavior
+  and ownership of pressure events.
+- **Replay and duplication:** completions, faults, cancels, wakeups, DMA
+  completions, gate returns, and capability transfers are idempotent or
+  generation-checked so a duplicate record cannot create authority or split
+  scheduler state.
+- **Livelock and retry storms:** retry paths are bounded by credits, retry
+  tokens, backoff counters, parking, pressure events, or fault escalation.
+  Proofs must not rely on a requester spinning forever.
+- **Ordering and visibility:** memory, cache, TLB, DMA, engine completion,
+  device, and service-return ordering points are explicit in both RTL and the
+  abstract model.
+- **Timing closure:** any claimed Class A/B/C path has a plausible critical
+  path, fanout, SRAM/CAM count, and arbitration depth for the target frequency.
+  If not, it becomes Class D bounded-submit work.
+- **Area and port pressure:** multiported memories, CAMs, crossbars, and global
+  broadcast signals are treated as risks. The roadmap should prefer sharding,
+  banking, local queues, and bounded migration over global all-to-all paths.
+- **Side channels and observability:** counters, trace rings, timing behavior,
+  queue pressure, classifier marks, and telemetry are scoped by Resource Domain
+  policy. Debug and forensics paths are capability-gated and measured.
+- **Malformed inputs:** every externally influenced record, packet, descriptor,
+  servicelet, selector, and control envelope has bounded parse depth,
+  canonical errors, and no hidden allocation on malformed input.
+- **Vendor and external IP:** DDR, PCIe, Ethernet PHY/MAC, clocking, and FPGA
+  primitives enter proofs only through explicit assume-guarantee contracts.
+- **Synthesis/simulation parity:** simulation-only hooks are isolated in
+  testbenches, binds, or named adapters. The synthesizable path through
+  `lnp64_top` must not depend on testbench behavior.
+
+### First-Pass Engineering Artifacts
+
+Before expanding the RTL beyond the broad skeleton, create five small planning
+artifacts. They are not bureaucracy; they keep the multicore, realtime, and
+proof goals from diverging.
+
+1. **Backpressure diagrams.** For each fabric slice, draw the command,
+   response, completion, event, fault, cancel, telemetry, and refill paths. Each
+   diagram must list queue depths, ready/valid dependencies, traffic classes,
+   resources held while waiting, and the escape path for full/backpressured
+   conditions: complete, retry, park, `EAGAIN`, `EOVERFLOW`, cancel, fault,
+   degraded, or machine-fatal. Any cycle without a terminal escape path blocks
+   milestone completion.
+2. **Bank mapping table.** For each shared owner engine, record whether it is
+   monolithic, banked, or sharded, and name the shard key. First-pass defaults:
+   FDR by `(pid, fdr_index)`, VMA/page by `(pid, virtual_address_range)`, futex
+   by hash bucket, event queue by queue id, object/queue by object id, heap by
+   `(pid, arena, size_class)`, scheduler by `(tile, domain)`, DMA by descriptor
+   queue id, and RAS/trace by source class plus domain. The table must also name
+   the owner migration/rebalancing rule and generation/epoch check.
+3. **Schema source of truth.** Create one checked schema source for packed RTL
+   records, Lean structures, Rust/emulator constants, Python/co-sim records,
+   and Markdown tables. It should cover opcodes, profiles, status/error codes,
+   feature bits, rights masks, latency classes, lifecycle profiles, command and
+   response records, events, faults, capabilities, domains, VMA/page, scheduler,
+   object, DMA, service, telemetry, and trace records. The initial source can
+   be a checked manifest; the target is generated or mechanically validated
+   consumers.
+4. **Reset and lifecycle matrix.** Do not give every module a large
+   busy/fault/degraded/recovery FSM. Assign each module a lifecycle profile:
+   pure combinational, local pipeline, queue/FIFO, owner engine,
+   long-latency owner engine, or external-IP adapter. The profile defines which
+   states are legal. Small blocks should make invalid states unrepresentable
+   where possible; owner engines get typed abort/poison/degraded paths only when
+   they own persistent or externally affected state.
+5. **External IP contracts.** For every DDR, PCIe, Ethernet PHY/MAC, SERDES,
+   clock/reset, FPGA RAM, and vendor primitive, write an assume-guarantee
+   contract. The contract must state reset behavior, clock/CDC assumptions,
+   ordering, integrity/ECC behavior, error signaling, maximum wait or
+   unbounded/Class-D status, DMA/coherence obligations, and what hardware does
+   when the IP violates or cannot meet the contract.
+
+These artifacts should be versioned and referenced by the top-level evidence
+index. A theorem may rely on them only by naming the specific assumption or
+contract it uses.
+
+### Reset, Fault, and Proof Shape
+
+Faults do not replace proofs of correctness. The proof strategy has two layers:
+
+- **Normal-operation proofs:** for modules whose inputs satisfy the contract and
+  whose owned metadata is valid, transitions preserve authority, memory,
+  scheduler, realtime, and object invariants. This is the primary correctness
+  proof.
+- **Fault-containment proofs:** for malformed input, parity/ECC poison,
+  watchdog timeout, external-IP error, overflow, stale generation, or impossible
+  state detection, the module follows a typed fail-closed transition that does
+  not mint authority, skip generation checks, publish partial commits, lose a
+  scheduler context, or reuse poisoned metadata as valid.
+
+A module should not have `busy`, `fault`, `degraded`, and `recovering` states
+unless its lifecycle profile requires them. Pure datapath and decode blocks
+should be total or fail with a canonical result. Small queues should have
+explicit empty/full/poison behavior. Owner engines with commit points may have
+`idle`, `prepare`, `commit`, `complete`, and `abort` phases. External-IP
+adapters may have `link_down`, `training`, `ready`, `error`, and `degraded`
+states. The design goal is still to make invalid states unrepresentable; when
+that is not practical in RTL, invalid encodings assert, emit a structured
+fault, and enter a fail-closed terminal state.
 
 ### B0. Whole-Machine Skeleton
 
@@ -714,11 +1317,18 @@ simulatable even before it is mapped to a physical FPGA board.
 be stubs, but the top-level shape must be representative of the real
 architecture.
 
+The S0 top-level module is `rtl/top/lnp64_top.sv`, and that file remains the
+architectural chip top after S0. S0 may include simulation-visible status
+signals, but completion work must progressively replace those smoke hooks with
+real architectural ports, internal typed traces, and testbench bindings. The
+final `lnp64_top` should be suitable as the root module for full-chip
+simulation, synthesis, and later FPGA integration.
+
 Required top-level modules:
 
 - reset/boot/manifest shell.
 - clock/reset domain shell.
-- core tile shell.
+- replicated core tile shells.
 - ISA format/opcode decode and profile-dispatch shell.
 - fetch/decode/issue/retire shell.
 - register/thread-context file shell.
@@ -772,6 +1382,7 @@ Required architectural records:
 - Resource Domain id/generation/accounting record.
 - PCR/credential snapshot and policy-decision record.
 - thread context/scheduler record.
+- scheduler affinity/current-tile/preferred-tile/migration-generation record.
 - retire/park/submit record.
 - waitable binding record.
 - gate continuation record.
@@ -831,7 +1442,8 @@ Skeleton invariants:
 - every parked thread has a waitable, operation id, timer, gate continuation,
   capacity event, fault source, or revoke source.
 - every command/response path carries domain/generation metadata.
-- every module has reset, idle, busy, fault, and degraded/stub states.
+- every module declares its lifecycle profile and exposes only the legal
+  reset/idle/active/fault/degraded/stub states for that profile.
 - every module exposes a minimal fault/telemetry counter.
 - `ENV_GET` can report feature bits and skeleton limits.
 - event routing and completion writeback exist even when most producers are
@@ -891,22 +1503,27 @@ Why first:
 - every later block needs stable opcodes, result/error conventions, and feature
   discovery before its behavior can be tested or proven.
 
-### B2. Minimal Core Tile
+### B2. Minimal Core Tiles
 
 Implement:
 
+- two replicated core tiles in the default simulation build.
+- parameterized tile count with a four-tile stress configuration.
 - fetch/decode/execute.
 - GPR file.
 - simple branch.
 - load/store to simulated SRAM.
 - hardware thread context switching.
 - retire, park, and submit records.
-- no cache initially.
+- tile-id tagging on retire, fault, event, scheduler, and trace records.
+- a coherence-shell/inclusive-L2 interface; no full cache initially.
 
 Runs:
 
 - tiny assembly programs in simulation.
 - bounded retire/park/submit timing checks.
+- tile-0 and tile-1 independent execution tests.
+- cross-tile wake/scheduler handoff smoke.
 
 ### B3. FDR/Capability Table Block
 
@@ -1109,6 +1726,8 @@ Runs:
 Every RTL block should have a matching harness:
 
 - run the same input vector in emulator/model and RTL simulation.
+- run the smallest existing assembly or compiler-generated program that
+  exercises the block through `rtl/top/lnp64_top.sv`.
 - compare architectural state, result codes, event records, and FDR generations.
 - prefer typed transition-record comparison over free-form string trace
   comparison as soon as the shared schemas exist.
@@ -1119,11 +1738,43 @@ Every RTL block should have a matching harness:
 The emulator remains the executable architectural oracle until the formal model
 is strong enough to generate authoritative traces directly.
 
+### Program Corpus Simulation
+
+The RTL simulator should run real project programs early and continuously. This
+is not a substitute for proofs, but it is the fastest signal that the broad
+architecture is becoming executable rather than only locally correct.
+
+Maintain a small corpus of existing assembly demos and compiler-generated
+programs, tagged by the architectural features they require. Examples include:
+
+- tiny core/branch/load-store smoke programs.
+- `ENV_GET`, canonical-error, and feature-discovery programs.
+- capability/FDR generation and revocation demos.
+- queue, `PUSH`/`PULL`, `AWAIT`, and ping-pong demos.
+- Resource Domain lifecycle and budget demos.
+- gate/call/continuation demos.
+- VMA, heap, futex, poll/event, storage, networking, and servicelet demos as
+  those RTL blocks become real.
+
+For each corpus entry, keep one source path, one emulator expectation, and one
+RTL simulation gate. The same program should run in the emulator and in
+Verilator, with comparison at committed instruction, event, completion, fault,
+and telemetry boundaries. Early gates may compare a short textual trace. The
+target is a typed transition trace generated from the shared schema.
+
+Do not wait for the full ISA before using this corpus. As soon as a milestone
+implements the features needed by an existing demo, add that demo to the
+top-level RTL gate. If the demo needs unavailable features, keep it marked
+`blocked-by:<feature>` rather than copying it into a synthetic RTL-only test.
+This keeps progress visible and prevents the simulator from drifting away from
+the assembler, compiler, emulator, and libc/personality work.
+
 Full-chip simulation is a required deliverable, not a convenience. The design
-should keep a top-level Verilator path alive throughout development, first with
-stubbed engines, then with filled blocks. A block is not considered integrated
-until it participates in top-level reset, command/response routing, event/fault
-delivery, telemetry, and at least one model/emulator/RTL trace comparison.
+should keep a top-level Verilator path alive throughout development. Early
+builds may use stubbed engines, but the active work is to replace them with
+filled blocks. A block is not considered integrated until it participates in
+top-level reset, command/response routing, event/fault delivery, telemetry, and
+at least one model/emulator/RTL trace comparison.
 For high-value guarantees, integration is not complete until the block has a
 documented refinement relation to the Lean transition model and its assumptions
 are either discharged by assertions/checks or listed in the trusted-platform
@@ -1144,19 +1795,21 @@ fill the smallest useful vertical slice:
 2. fixed decode table, canonical errors, and `ENV_GET`.
 3. soft SRAM only, no DDR.
 4. UART output.
-5. one core tile and simple assembler program ROM.
-6. FDR/capability table and generation checks.
-7. scheduler, waitable, event router, and object queue smoke.
-8. gate/continuation and process lifecycle smoke.
-9. tiny VMA/MMU, TLB invalidation, and memory-protection smoke.
-10. external DDR and shared metadata broker.
-11. DMA/memory-object smoke.
-12. typed control, namespace/service dispatch, and capability-return smoke.
-13. futex/atomic and heap smoke.
-14. SD/SPI and storage-barrier smoke.
-15. Ethernet packet queue, classifier, and servicelet smoke.
-16. RAS/telemetry/watchdog/attestation smoke.
-17. PCIe later.
+5. two core tiles, tile telemetry, and simple assembler program ROM.
+6. cross-tile scheduler handoff and synthetic wake.
+7. coherence-shell or inclusive-L2 invalidate/ack/writeback smoke.
+8. FDR/capability table and generation checks.
+9. scheduler, waitable, event router, and object queue smoke.
+10. gate/continuation and process lifecycle smoke.
+11. tiny VMA/MMU, TLB invalidation, and memory-protection smoke.
+12. external DDR and shared metadata broker.
+13. DMA/memory-object smoke.
+14. typed control, namespace/service dispatch, and capability-return smoke.
+15. futex/atomic and heap smoke.
+16. SD/SPI and storage-barrier smoke.
+17. Ethernet packet queue, classifier, and servicelet smoke.
+18. RAS/telemetry/watchdog/attestation smoke.
+19. PCIe later.
 
 ## First Milestone: Whole-Machine Skeleton
 
@@ -1166,6 +1819,8 @@ before any single block becomes sophisticated.
 Required slice:
 
 - synthesizable top-level machine.
+- default two-core-tile simulation topology, parameterized for a four-tile
+  stress build.
 - all major module shells present.
 - command, response, event, fault, completion, capability, domain, scheduler,
   policy, VMA, DMA, service, RAS, and telemetry records defined.
@@ -1174,6 +1829,8 @@ Required slice:
 - stubs fail closed with canonical errors.
 - `ENV_GET` exposes feature bits, limits, topology stubs, and latency-class
   stubs.
+- tile id is carried in retire, scheduler, event, fault, trace, and coherence
+  records where relevant.
 - event router and completion writeback paths exist.
 - coherence/TLB/DMA visibility stubs exist before memory operations complete.
 - no raw physical interrupts, raw DMA, raw physical addresses, or ambient device
@@ -1187,6 +1844,9 @@ Proof targets:
 - no authority from stubs.
 - no accepted stub command without a defined terminal path.
 - exactly-one scheduler state/location.
+- every runnable/running thread is assigned to at most one tile.
+- a tile-local fault/degraded state cannot corrupt another tile's scheduler
+  state.
 - no software-visible raw interrupt/physical-address path.
 - reset produces valid initial state or measured/audited boot fault.
 
@@ -1194,42 +1854,67 @@ Expected demo:
 
 - reset the skeleton.
 - run a tiny PID 1 ROM/SRAM program.
+- observe two enabled tiles, with tile 0 running PID 1 and tile 1 idle or
+  scheduler-ready.
+- run the first corpus entry through the same top-level ROM/SRAM loader path.
 - print status over UART.
 - query `ENV_GET` feature bits.
 - issue one unsupported native command and observe canonical failure.
 - inject one stub-engine fault and observe a structured fault event.
 
-## Second Milestone: Proven Ping-Pong Machine
+## Second Milestone: M1 Authority Refinement Template
 
-`LNP64-RTL-M1` should demonstrate that the architecture is real enough to execute code
-outside the Rust emulator.
+`LNP64-RTL-M1` should demonstrate that the architecture is real enough to
+execute code outside the Rust emulator and that one security-critical block can
+be carried from Lean transition proof to typed RTL commit evidence. This
+milestone is the template for later proof slices, not just a ping-pong demo.
 
 Required slice:
 
 - B1 through B5 implemented enough for the test.
+- two enabled core tiles in the default simulation build.
 - two hardware thread contexts.
 - small FDR table with generation checks.
 - queue object.
 - `PUSH`, `PULL`, and `AWAIT`.
 - scheduler ready/wait transitions.
 - event wake or gate wake.
+- cross-tile wake or scheduler handoff.
+- schema-owned typed capability/FDR commit records.
+- a documented RTL-state-projection to Lean-state relation for the M1 slice.
+- bypass/mediation assertions for capability/FDR authority writes.
 - Verilator simulation.
 - co-simulation against the emulator.
 
 Proof targets:
 
 - no forged FDR.
+- no authority amplification.
+- current-authority checks before transfer, receive, push, pull, revoke, and
+  object creation.
+- stale generation rejection.
+- revoked authority cannot start new work.
+- failed authority operations preserve authority slots and fail closed.
+- M1 typed commit transitions preserve the Lean invariant.
+- no RTL bypass path writes capability/FDR authority outside the owner
+  transition path.
 - no lost wakeup.
 - exactly-one scheduler state/location.
-- stale generation rejection.
+- no runnable thread can execute simultaneously on two tiles.
+- cross-tile wake/event delivery cannot lose or duplicate a wakeup.
 - queue full behavior is explicit.
 
 Expected demo:
 
 - a tiny assembly ping-pong program runs in RTL simulation.
+- one ping-pong variant runs across two tiles.
 - the same program runs in the emulator.
 - architectural traces match at committed instruction/event boundaries.
+- typed M1 commit records match the executable model for representative and
+  randomized traces.
+- the ping-pong program is promoted into the recurring program corpus gate.
 
-This milestone is intentionally small. If it works, the project has a real
-proof/RTL/emulator loop and can grow block by block without betting everything
-on a whole-chip rewrite.
+This milestone is intentionally small but deep. It is not finished until the
+remaining gap to checked RTL-to-Lean refinement is explicit. Once it works, the
+project has a reusable proof/RTL/emulator loop and can grow block by block
+without betting everything on a whole-chip rewrite.

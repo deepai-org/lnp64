@@ -2,7 +2,10 @@
 
 import lnp64_pkg::*;
 
-module lnp64_top (
+module lnp64_top #(
+    parameter int CORE_TILE_COUNT = 2,
+    parameter int MAX_SUPPORTED_TILE_COUNT = 4
+) (
     input  logic clk,
     input  logic reset_n,
     input  logic force_boot_fault,
@@ -24,8 +27,30 @@ module lnp64_top (
     output logic structured_fault_seen,
     output logic watchdog_degraded_seen,
     output logic no_raw_authority_visible,
-    output logic coherence_paths_live
+    output logic coherence_paths_live,
+    output logic multicore_no_duplicate_tid,
+    output logic tile_reset_stable_all,
+    output logic tile1_observable_idle,
+    output logic cross_tile_wake_one,
+    output logic tile_fault_isolated,
+    output logic [31:0] topology_tile_count_seen,
+    output logic [63:0] topology_enabled_tile_mask_seen,
+    output logic [31:0] topology_coherence_domain_seen,
+    output logic [31:0] topology_active_window_base_seen,
+    output logic [31:0] topology_active_window_count_seen
 );
+    localparam logic [63:0] ENABLED_TILE_MASK =
+        CORE_TILE_COUNT >= 64 ? 64'hffff_ffff_ffff_ffff : ((64'd1 << CORE_TILE_COUNT) - 64'd1);
+    localparam logic [31:0] COHERENCE_DOMAIN_ID = 32'd1;
+    localparam logic [31:0] ACTIVE_WINDOW_BASE = 32'd0;
+    localparam logic [31:0] ACTIVE_WINDOW_COUNT = CORE_TILE_COUNT[31:0];
+
+    initial begin
+        if (CORE_TILE_COUNT < 1 || CORE_TILE_COUNT > MAX_SUPPORTED_TILE_COUNT) begin
+            $fatal(1, "CORE_TILE_COUNT must be in the supported 1..4 S0/stress range");
+        end
+    end
+
     logic logic_reset_n;
     logic boot_valid;
     logic release_core;
@@ -37,16 +62,63 @@ module lnp64_top (
     logic [31:0] boot_tid1;
     lnp64_thread_sched_t pid1_context;
 
+    logic [CORE_TILE_COUNT-1:0] tile_enable;
+    logic [CORE_TILE_COUNT-1:0] tile_reset_stable;
+    logic [CORE_TILE_COUNT-1:0] core_tile_idle;
+    logic [CORE_TILE_COUNT-1:0] core_tile_running;
+    logic [CORE_TILE_COUNT-1:0] core_tile_parked;
+    logic [CORE_TILE_COUNT-1:0] core_tile_faulted;
+    logic [CORE_TILE_COUNT-1:0] scheduler_tile_faulted;
+    logic [CORE_TILE_COUNT-1:0] sched_issue_valid;
+    logic [CORE_TILE_COUNT*32-1:0] sched_issue_tid_flat;
+    logic sched_no_duplicate_issue;
+    logic sched_tile1_schedulable_idle;
+    logic sched_tile_fault_isolated;
+
+    logic [CORE_TILE_COUNT-1:0] core_cmd_valid_vec;
+    logic [CORE_TILE_COUNT-1:0] core_cmd_ready_vec;
+    lnp64_cmd_t core_cmd_vec [CORE_TILE_COUNT];
+    logic [CORE_TILE_COUNT-1:0] core_rsp_valid_vec;
+    logic [CORE_TILE_COUNT-1:0] core_rsp_ready_vec;
+    lnp64_rsp_t core_rsp_vec [CORE_TILE_COUNT];
+    logic [CORE_TILE_COUNT-1:0] core_yielded_vec;
+    logic [CORE_TILE_COUNT-1:0] core_pid1_runnable_vec;
+    logic [CORE_TILE_COUNT-1:0] core_pid1_parked_vec;
+    logic [CORE_TILE_COUNT-1:0] core_done_vec;
+    logic [CORE_TILE_COUNT-1:0] retire_submit_valid_vec;
+    logic [CORE_TILE_COUNT-1:0] park_submit_valid_vec;
+    logic [CORE_TILE_COUNT-1:0] submit_valid_vec;
+    lnp64_retire_submit_t retire_submit_record_vec [CORE_TILE_COUNT];
+    lnp64_thread_sched_t park_submit_record_vec [CORE_TILE_COUNT];
+    lnp64_thread_sched_t submit_record_vec [CORE_TILE_COUNT];
+    logic [CORE_TILE_COUNT-1:0] icache_invalidate_vec;
+    logic [CORE_TILE_COUNT-1:0] dcache_writeback_vec;
+    logic [CORE_TILE_COUNT-1:0] tlb_invalidate_vec;
+    logic [CORE_TILE_COUNT-1:0] icache_invalidate_seen;
+    logic [CORE_TILE_COUNT-1:0] dcache_writeback_seen;
+    logic [CORE_TILE_COUNT-1:0] tlb_invalidate_seen;
+
     logic core_cmd_valid;
     logic core_cmd_ready;
     lnp64_cmd_t core_cmd;
+    logic selected_cmd_valid;
+    lnp64_cmd_t selected_cmd;
     logic core_rsp_valid;
     logic core_rsp_ready;
     lnp64_rsp_t core_rsp;
-    logic core_yielded;
-    logic core_pid1_runnable;
-    logic core_pid1_parked;
-    logic core_done;
+    logic [31:0] selected_cmd_tile;
+
+    logic [31:0] retired_count_vec [CORE_TILE_COUNT];
+    logic [63:0] env_features_seen_vec [CORE_TILE_COUNT];
+    logic [31:0] env_tile_count_seen_vec [CORE_TILE_COUNT];
+    logic [63:0] env_enabled_tile_mask_seen_vec [CORE_TILE_COUNT];
+    logic [31:0] env_coherence_domain_seen_vec [CORE_TILE_COUNT];
+    logic [31:0] env_active_window_base_seen_vec [CORE_TILE_COUNT];
+    logic [31:0] env_active_window_count_seen_vec [CORE_TILE_COUNT];
+    logic [63:0] ld_value_seen_vec [CORE_TILE_COUNT];
+    logic [CORE_TILE_COUNT-1:0] object_stub_failed_closed_vec;
+    logic [CORE_TILE_COUNT-1:0] unsupported_failed_closed_vec;
+    logic [CORE_TILE_COUNT-1:0] core_raw_authority_visible_vec;
     logic [63:0] env_features_seen;
     logic [63:0] ld_value_seen;
     logic core_raw_authority_visible;
@@ -57,8 +129,14 @@ module lnp64_top (
     logic wake_valid;
     lnp64_event_t event_record;
     logic [31:0] event_counter;
+    logic cross_tile_wake_valid;
+    logic [31:0] event_wake_counter;
+    logic cross_tile_wake_observed;
+    logic cross_tile_duplicate_wake;
     logic fault_valid;
     lnp64_fault_t fault_record;
+    logic routed_fault_valid;
+    lnp64_fault_t routed_fault;
     logic watchdog_fault_valid;
     lnp64_fault_t watchdog_fault;
     logic watchdog_degraded;
@@ -70,6 +148,12 @@ module lnp64_top (
     lnp64_quote_t quote;
     logic [63:0] env_feature_bits;
     logic [31:0] env_limit_threads;
+    logic object_cmd_valid;
+    logic object_cmd_ready;
+    lnp64_cmd_t object_cmd;
+    logic object_rsp_valid;
+    logic object_rsp_ready;
+    lnp64_rsp_t object_rsp;
     logic page_allocator_idle;
     logic metadata_idle;
     logic futex_idle;
@@ -110,6 +194,22 @@ module lnp64_top (
     lnp64_cmd_t zero_cmd;
 
     assign zero_cmd = '0;
+    assign tile_enable = ENABLED_TILE_MASK[CORE_TILE_COUNT-1:0];
+    assign retired_count = retired_count_vec[0];
+    assign env_features_seen = env_features_seen_vec[0];
+    assign ld_value_seen = ld_value_seen_vec[0];
+    assign stub_failed_closed = object_stub_failed_closed_vec[0];
+    assign unsupported_failed_closed = unsupported_failed_closed_vec[0];
+    assign core_raw_authority_visible = |core_raw_authority_visible_vec;
+    assign multicore_no_duplicate_tid = sched_no_duplicate_issue;
+    assign tile_reset_stable_all = &tile_reset_stable;
+    assign cross_tile_wake_one = cross_tile_wake_observed && !cross_tile_duplicate_wake;
+    assign tile_fault_isolated = sched_tile_fault_isolated;
+    assign topology_tile_count_seen = env_tile_count_seen_vec[0];
+    assign topology_enabled_tile_mask_seen = env_enabled_tile_mask_seen_vec[0];
+    assign topology_coherence_domain_seen = env_coherence_domain_seen_vec[0];
+    assign topology_active_window_base_seen = env_active_window_base_seen_vec[0];
+    assign topology_active_window_count_seen = env_active_window_count_seen_vec[0];
 
     lnp64_clock_reset clock_reset_i(
         .clk(clk),
@@ -138,35 +238,122 @@ module lnp64_top (
         .pid1_context(pid1_context)
     );
 
-    lnp64_core_tile core_i(
-        .clk(clk),
-        .reset_n(logic_reset_n),
-        .release_core(release_core),
-        .cmd_valid(core_cmd_valid),
-        .cmd_ready(core_cmd_ready),
-        .cmd(core_cmd),
-        .rsp_valid(core_rsp_valid),
-        .rsp_ready(core_rsp_ready),
-        .rsp(core_rsp),
-        .yielded(core_yielded),
-        .wake_valid(wake_valid),
-        .done(core_done),
-        .pid1_runnable(core_pid1_runnable),
-        .pid1_parked(core_pid1_parked),
-        .retired_count(retired_count),
-        .env_features_seen(env_features_seen),
-        .ld_value_seen(ld_value_seen),
-        .object_stub_failed_closed(stub_failed_closed),
-        .unsupported_failed_closed(unsupported_failed_closed),
-        .raw_authority_visible(core_raw_authority_visible)
-    );
+    genvar tile_id;
+    generate
+        for (tile_id = 0; tile_id < CORE_TILE_COUNT; tile_id = tile_id + 1) begin : core_tiles
+            lnp64_core_tile #(
+                .TILE_ID(tile_id)
+            ) core_i (
+                .clk(clk),
+                .reset_n(logic_reset_n),
+                .tile_enable(tile_enable[tile_id]),
+                .release_core(
+                    release_core &&
+                    sched_issue_valid[tile_id] &&
+                    sched_issue_tid_flat[tile_id*32 +: 32] == 32'd1
+                ),
+                .topology_tile_count(CORE_TILE_COUNT[31:0]),
+                .topology_enabled_tile_mask(ENABLED_TILE_MASK),
+                .topology_coherence_domain_id(COHERENCE_DOMAIN_ID),
+                .topology_active_window_base(ACTIVE_WINDOW_BASE),
+                .topology_active_window_count(ACTIVE_WINDOW_COUNT),
+                .cmd_valid(core_cmd_valid_vec[tile_id]),
+                .cmd_ready(core_cmd_ready_vec[tile_id]),
+                .cmd(core_cmd_vec[tile_id]),
+                .rsp_valid(core_rsp_valid_vec[tile_id]),
+                .rsp_ready(core_rsp_ready_vec[tile_id]),
+                .rsp(core_rsp_vec[tile_id]),
+                .yielded(core_yielded_vec[tile_id]),
+                .wake_valid(wake_valid && tile_id == 0),
+                .done(core_done_vec[tile_id]),
+                .tile_reset_stable(tile_reset_stable[tile_id]),
+                .tile_idle(core_tile_idle[tile_id]),
+                .tile_running(core_tile_running[tile_id]),
+                .tile_parked(core_tile_parked[tile_id]),
+                .tile_faulted(core_tile_faulted[tile_id]),
+                .tile_telemetry_counter(),
+                .tile_fault_counter(),
+                .retire_submit_valid(retire_submit_valid_vec[tile_id]),
+                .retire_submit_record(retire_submit_record_vec[tile_id]),
+                .park_submit_valid(park_submit_valid_vec[tile_id]),
+                .park_submit_record(park_submit_record_vec[tile_id]),
+                .submit_valid(submit_valid_vec[tile_id]),
+                .submit_record(submit_record_vec[tile_id]),
+                .icache_invalidate(icache_invalidate_vec[tile_id]),
+                .icache_invalidate_ack(1'b1),
+                .dcache_writeback(dcache_writeback_vec[tile_id]),
+                .dcache_writeback_ack(1'b1),
+                .tlb_invalidate(tlb_invalidate_vec[tile_id]),
+                .tlb_invalidate_ack(1'b1),
+                .pid1_runnable(core_pid1_runnable_vec[tile_id]),
+                .pid1_parked(core_pid1_parked_vec[tile_id]),
+                .retired_count(retired_count_vec[tile_id]),
+                .env_features_seen(env_features_seen_vec[tile_id]),
+                .env_tile_count_seen(env_tile_count_seen_vec[tile_id]),
+                .env_enabled_tile_mask_seen(env_enabled_tile_mask_seen_vec[tile_id]),
+                .env_coherence_domain_seen(env_coherence_domain_seen_vec[tile_id]),
+                .env_active_window_base_seen(env_active_window_base_seen_vec[tile_id]),
+                .env_active_window_count_seen(env_active_window_count_seen_vec[tile_id]),
+                .ld_value_seen(ld_value_seen_vec[tile_id]),
+                .object_stub_failed_closed(object_stub_failed_closed_vec[tile_id]),
+                .unsupported_failed_closed(unsupported_failed_closed_vec[tile_id]),
+                .raw_authority_visible(core_raw_authority_visible_vec[tile_id])
+            );
 
-    lnp64_issue_retire issue_retire_i(
-        .clk(clk),
-        .reset_n(logic_reset_n),
-        .retire_valid(core_done),
-        .retire_counter()
-    );
+            lnp64_issue_retire issue_retire_i(
+                .clk(clk),
+                .reset_n(logic_reset_n),
+                .retire_valid(retire_submit_valid_vec[tile_id]),
+                .retire_counter()
+            );
+        end
+    endgenerate
+
+    integer arb_i;
+    always_comb begin
+        selected_cmd_tile = 32'd0;
+        selected_cmd_valid = 1'b0;
+        selected_cmd = '0;
+        for (arb_i = 0; arb_i < CORE_TILE_COUNT; arb_i = arb_i + 1) begin
+            core_cmd_ready_vec[arb_i] = 1'b0;
+            if (!selected_cmd_valid && core_cmd_valid_vec[arb_i]) begin
+                selected_cmd_tile = arb_i[31:0];
+                selected_cmd_valid = 1'b1;
+                selected_cmd = core_cmd_vec[arb_i];
+            end
+        end
+        for (arb_i = 0; arb_i < CORE_TILE_COUNT; arb_i = arb_i + 1) begin
+            core_cmd_ready_vec[arb_i] =
+                !core_cmd_valid && selected_cmd_valid && selected_cmd_tile == arb_i[31:0];
+        end
+    end
+
+    always_ff @(posedge clk or negedge logic_reset_n) begin
+        if (!logic_reset_n) begin
+            core_cmd_valid <= 1'b0;
+            core_cmd <= '0;
+        end else begin
+            if (core_cmd_valid && core_cmd_ready) begin
+                core_cmd_valid <= 1'b0;
+            end
+            if (!core_cmd_valid && selected_cmd_valid) begin
+                core_cmd_valid <= 1'b1;
+                core_cmd <= selected_cmd;
+            end
+        end
+    end
+
+    integer rsp_i;
+    always_comb begin
+        core_rsp_ready = 1'b0;
+        for (rsp_i = 0; rsp_i < CORE_TILE_COUNT; rsp_i = rsp_i + 1) begin
+            core_rsp_vec[rsp_i] = core_rsp;
+            core_rsp_valid_vec[rsp_i] = core_rsp_valid && core_rsp.tile_id == rsp_i[31:0];
+            if (core_rsp_valid_vec[rsp_i]) begin
+                core_rsp_ready = core_rsp_ready | core_rsp_ready_vec[rsp_i];
+            end
+        end
+    end
 
     lnp64_engine_router engine_router_i(
         .clk(clk),
@@ -177,6 +364,15 @@ module lnp64_top (
         .rsp_valid(core_rsp_valid),
         .rsp_ready(core_rsp_ready),
         .rsp(core_rsp),
+        .object_cmd_valid(object_cmd_valid),
+        .object_cmd_ready(object_cmd_ready),
+        .object_cmd(object_cmd),
+        .object_rsp_valid(object_rsp_valid),
+        .object_rsp_ready(object_rsp_ready),
+        .object_rsp(object_rsp),
+        .fault_valid(routed_fault_valid),
+        .fault_ready(1'b1),
+        .fault(routed_fault),
         .routed_counter()
     );
 
@@ -197,32 +393,48 @@ module lnp64_top (
         .errno_value(errno_value)
     );
 
-    lnp64_scheduler scheduler_i(
+    lnp64_scheduler #(
+        .CORE_TILE_COUNT(CORE_TILE_COUNT)
+    ) scheduler_i(
         .clk(clk),
         .reset_n(logic_reset_n),
         .boot_valid(boot_valid),
-        .park_pid1(core_yielded && core_pid1_parked),
+        .park_pid1(core_yielded_vec[0] && core_pid1_parked_vec[0]),
         .wake_pid1(wake_valid),
+        .tile_idle(core_tile_idle),
+        .tile_running(core_tile_running),
+        .tile_parked(core_tile_parked),
+        .tile_faulted(scheduler_tile_faulted),
+        .issue_valid(sched_issue_valid),
+        .issue_tid_flat(sched_issue_tid_flat),
         .exactly_one_location(pid1_exactly_one_location),
         .pid1_runnable(sched_pid1_runnable),
-        .pid1_parked(sched_pid1_parked)
+        .pid1_parked(sched_pid1_parked),
+        .no_duplicate_issue(sched_no_duplicate_issue),
+        .tile1_schedulable_idle(sched_tile1_schedulable_idle),
+        .tile_fault_isolated(sched_tile_fault_isolated)
     );
 
     lnp64_event_router event_router_i(
         .clk(clk),
         .reset_n(logic_reset_n),
         .synthetic_event(sim_event_inject),
-        .pid1_parked(core_pid1_parked || sched_pid1_parked),
+        .source_tile_id(32'd1),
+        .target_tile_id(32'd0),
+        .pid1_parked(core_pid1_parked_vec[0] || sched_pid1_parked),
         .wake_valid(wake_valid),
         .event_valid(event_valid),
         .event_ready(1'b1),
         .event_record(event_record),
-        .event_counter(event_counter)
+        .event_counter(event_counter),
+        .cross_tile_wake_valid(cross_tile_wake_valid),
+        .wake_counter(event_wake_counter)
     );
 
     lnp64_fault_telemetry fault_telemetry_i(
         .clk(clk),
         .reset_n(logic_reset_n),
+        .tile_id(32'd1),
         .inject_fault(sim_fault_inject),
         .fault_valid(fault_valid),
         .fault_ready(1'b1),
@@ -233,6 +445,7 @@ module lnp64_top (
     lnp64_watchdog watchdog_i(
         .clk(clk),
         .reset_n(logic_reset_n),
+        .tile_id(32'd0),
         .inject_stuck(sim_watchdog_inject),
         .degraded(watchdog_degraded),
         .fault_valid(watchdog_fault_valid),
@@ -263,7 +476,7 @@ module lnp64_top (
 
     lnp64_cap_engine cap_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());
     lnp64_domain_engine domain_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());
-    lnp64_object_engine object_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());
+    lnp64_object_engine object_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(object_cmd_valid), .cmd_ready(object_cmd_ready), .cmd(object_cmd), .rsp_valid(object_rsp_valid), .rsp_ready(object_rsp_ready), .rsp(object_rsp), .telemetry_counter(), .fault_counter());
     lnp64_gate_engine gate_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());
     lnp64_process_engine process_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());
     lnp64_vma_engine vma_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());
@@ -281,8 +494,16 @@ module lnp64_top (
     lnp64_eth_stub eth_i(.clk(clk), .reset_n(logic_reset_n), .raw_interrupt_visible(eth_irq_visible), .telemetry_counter(), .fault_counter());
     lnp64_pcie_stub pcie_i(.clk(clk), .reset_n(logic_reset_n), .raw_dma_authority_visible(pcie_dma_visible), .raw_interrupt_visible(pcie_irq_visible), .telemetry_counter(), .fault_counter());
 
-    always_ff @(posedge clk or negedge reset_n) begin
-        if (!reset_n) begin
+    integer status_i;
+    always_comb begin
+        scheduler_tile_faulted = core_tile_faulted;
+        if (CORE_TILE_COUNT > 1 && structured_fault_seen) begin
+            scheduler_tile_faulted[1] = 1'b1;
+        end
+    end
+
+    always_ff @(posedge clk or negedge logic_reset_n) begin
+        if (!logic_reset_n) begin
             boot_stable <= 1'b0;
             pid1_completed <= 1'b0;
             env_get_ok <= 1'b0;
@@ -294,15 +515,26 @@ module lnp64_top (
             watchdog_degraded_seen <= 1'b0;
             no_raw_authority_visible <= 1'b0;
             coherence_paths_live <= 1'b0;
+            icache_invalidate_seen <= '0;
+            dcache_writeback_seen <= '0;
+            tlb_invalidate_seen <= '0;
+            tile1_observable_idle <= 1'b0;
+            cross_tile_wake_observed <= 1'b0;
+            cross_tile_duplicate_wake <= 1'b0;
         end else begin
             if (boot_valid && root_domain.domain_id == 32'd1 && root_domain.domain_gen == 32'd1 &&
                 root_fdr.object_id == 32'd1 && boot_pid1 == 32'd1 && boot_tid1 == 32'd1) begin
                 boot_stable <= 1'b1;
             end
-            if (core_done) begin
+            if (core_done_vec[0]) begin
                 pid1_completed <= 1'b1;
             end
-            if ((env_features_seen & REQUIRED_S0_FEATURE_MASK) == REQUIRED_S0_FEATURE_MASK) begin
+            if ((env_features_seen & REQUIRED_S0_FEATURE_MASK) == REQUIRED_S0_FEATURE_MASK &&
+                env_tile_count_seen_vec[0] == CORE_TILE_COUNT[31:0] &&
+                env_enabled_tile_mask_seen_vec[0] == ENABLED_TILE_MASK &&
+                env_coherence_domain_seen_vec[0] == COHERENCE_DOMAIN_ID &&
+                env_active_window_base_seen_vec[0] == ACTIVE_WINDOW_BASE &&
+                env_active_window_count_seen_vec[0] == ACTIVE_WINDOW_COUNT) begin
                 env_get_ok <= 1'b1;
             end
             if (ld_value_seen == 64'd12) begin
@@ -312,16 +544,25 @@ module lnp64_top (
                 uart_seen <= 1'b1;
                 uart_byte_seen <= uart_byte;
             end
-            if (event_valid && event_record.status == LNP64_STATUS_EVENT && wake_valid) begin
+            if (event_valid && event_record.status == LNP64_STATUS_EVENT && wake_valid && event_record.tile_id == 32'd0) begin
                 event_woke_thread <= 1'b1;
             end
-            if (fault_valid && fault_record.fault_code == LNP64_ERR_EFAULT) begin
+            if ((fault_valid && fault_record.fault_code == LNP64_ERR_EFAULT && fault_record.tile_id == 32'd1) ||
+                (routed_fault_valid && routed_fault.fault_code == LNP64_ERR_EFAULT)) begin
                 structured_fault_seen <= 1'b1;
             end
             if (watchdog_degraded || watchdog_fault_valid) begin
                 watchdog_degraded_seen <= 1'b1;
             end
-            coherence_paths_live <= memory_visibility_live && dma_visibility_live;
+            icache_invalidate_seen <= icache_invalidate_seen | icache_invalidate_vec;
+            dcache_writeback_seen <= dcache_writeback_seen | dcache_writeback_vec;
+            tlb_invalidate_seen <= tlb_invalidate_seen | tlb_invalidate_vec;
+            coherence_paths_live <=
+                memory_visibility_live &&
+                dma_visibility_live &&
+                (|icache_invalidate_seen) &&
+                (|dcache_writeback_seen) &&
+                (|tlb_invalidate_seen);
             no_raw_authority_visible <=
                 !core_raw_authority_visible &&
                 !memory_raw_pa_visible &&
@@ -330,6 +571,14 @@ module lnp64_top (
                 !eth_irq_visible &&
                 !pcie_dma_visible &&
                 !pcie_irq_visible;
+            if (CORE_TILE_COUNT > 1 && tile_reset_stable[1] && sched_tile1_schedulable_idle) begin
+                tile1_observable_idle <= 1'b1;
+            end
+            if (cross_tile_wake_valid && !cross_tile_wake_observed) begin
+                cross_tile_wake_observed <= 1'b1;
+            end else if (cross_tile_wake_valid) begin
+                cross_tile_duplicate_wake <= 1'b1;
+            end
         end
     end
 endmodule

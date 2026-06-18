@@ -83,6 +83,71 @@ The toy C compiler is a bootstrap tool. The intended direction is a real
 LLVM/Clang/lld path plus a software loader that produces hardware `EXEC` plan
 descriptors.
 
+## Long-Term Repo Structure
+
+This repository will stay usable only if every change has a clear layer and a
+clear evidence path. New contributors should start by deciding which contract
+they are changing:
+
+- **Architecture contract:** edit `design.md`, `hardware_design.md`,
+  `formal_theorems.md`, or `psABI.md`. Do not change emulator or RTL behavior
+  first and document it later.
+- **Software execution model:** edit `src/`, `demos/`, `userland/`, libc and
+  personality docs, and the relevant software gates.
+- **RTL implementation:** edit `rtl/include/`, `rtl/top/`, `rtl/core/`,
+  `rtl/engines/`, `rtl/sim/`, and the RTL manifests/gates together.
+- **Proof/evidence:** edit `formal/`, `formal/rtl_assertions/`,
+  `formal/theorem_rtl_coupling_*`, and proof manifests together.
+- **Board/synthesis:** edit `fpga/`, synthesis scripts, constraints, Docker
+  images, and board-evidence manifests together.
+
+Keep these boundaries intact:
+
+- `rtl/top/lnp64_top.sv` is the real chip top. Testbench-only behavior belongs
+  in `rtl/sim/`, bind modules, adapters, or scripts.
+- `rtl/include/lnp64_pkg.sv` and `rtl/schema/lnp64_shared_schema.json` are a
+  checked schema pair. Any record, enum, opcode, status, lifecycle, or trace
+  field change must update both and pass the schema gate.
+- The emulator is the executable oracle until the Lean model is strong enough
+  to generate authoritative traces. Emulator behavior should not become a
+  private second ISA.
+- Lean proofs, RTL assertions, manifests, and trace checks are one refinement
+  chain. Do not add a theorem claim without naming the RTL evidence or known
+  gap.
+- Compatibility layers must lower onto native capability, object, event,
+  domain, VMA, gate, and service primitives. Avoid POSIX/Linux-specific logic in
+  shared hardware or emulator internals unless the file is explicitly a
+  compatibility surface.
+
+Use this placement rule:
+
+- new opcodes/profiles: `design.md`, `src/isa.rs`, assembler/compiler lowering,
+  emulator, schema/RTL package if hardware-visible, demos/tests.
+- new hardware record fields: schema JSON, `lnp64_pkg.sv`, RTL users,
+  emulator/co-sim records, Lean/Python model, docs.
+- new RTL block behavior: roadmap entry, block RTL, top-level wiring through
+  `lnp64_top`, simulation gate, manifest entry, assertion/proof hook.
+- new formal claim: `formal_theorems.md`, Lean model, proof manifest,
+  theorem-to-RTL coupling index, and the gate that checks the evidence.
+- new compatibility behavior: conformance matrix, libc/personality docs,
+  lowering/runtime code, demo or package gate.
+
+Before a broad change, check the affected layer locally:
+
+```sh
+cargo test --quiet
+bash scripts/run_demos.sh
+scripts/check_rtl_shared_schema.py
+scripts/check_theorem_rtl_coupling.py
+bash scripts/run_rtl_s0.sh
+git diff --check
+```
+
+Before claiming an RTL/proof feature is integrated, it must be driven through
+`lnp64_top`, have a manifest/checker entry, preserve the shared schema, and be
+visible in the theorem/RTL coupling surface. Isolated demos are useful bring-up
+tools, not completion evidence.
+
 ## Quick Start
 
 Run the normal host software gate:
@@ -268,16 +333,87 @@ bash scripts/run_rtl_proof_docker.sh
 bash scripts/run_rtl_synth_docker.sh
 ```
 
+The currently working proof-container command used by the RTL/proof gate is:
+
+```sh
+docker run --rm -e LNP64_REQUIRE_LEAN=1 -v "$PWD:/work" -w /work lnp64-rtl-proof bash scripts/run_rtl_proof_gates.sh
+```
+
+The focused Docker loop for the first SG-AUTH capability/FDR transition slice is:
+
+```sh
+docker run --rm -v "$PWD:/work" -w /work lnp64-rtl-proof lean formal/M1TransitionInvariantModel.lean
+docker run --rm -v "$PWD:/work" -w /work lnp64-rtl-proof scripts/check_rtl_m1_typed_commit_trace.py
+```
+
 If the local host already has the required tools, the focused gates are:
 
 ```sh
 bash scripts/run_rtl_s0.sh
+scripts/check_rtl_s0_contract.py
+scripts/check_rtl_typed_trace_contract.py
 bash scripts/run_rtl_m1.sh
-bash scripts/check_theorem_rtl_coupling.py
+scripts/check_rtl_m1_typed_commit_trace.py
+scripts/check_rtl_shared_schema.py
+scripts/check_rtl_top_level_program_manifest.py
+scripts/check_theorem_rtl_coupling.py
 bash scripts/run_rtl_random_cosim.sh
 bash scripts/run_rtl_proof_gates.sh
 bash scripts/run_rtl_synth_gates.sh
 ```
+
+`scripts/run_rtl_s0.sh` now elaborates `lnp64_top` with the default
+`CORE_TILE_COUNT=2` and a supported `CORE_TILE_COUNT=4` stress instance. The S0
+test requires tile 0 to run PID 1, tile 1 to be reset-stable and scheduler
+observable, `ENV_GET` to report tile count/mask/coherence-domain/active-window
+topology, cross-tile wake delivery to produce exactly one wake, and the exposed
+coherence-shell invalidate/writeback paths to be live even while SRAM backs the
+memory model.
+`scripts/check_rtl_typed_trace_contract.py` runs the same S0 path and validates
+the emitted `TTRACE` JSON records for retire, scheduler, event, fault,
+TLB/cache invalidation, coherence, and watchdog/telemetry records against the
+shared schema. This is a first S0 typed trace scaffold, not a full T4
+RTL-to-Lean refinement proof.
+
+`formal/M1TransitionInvariantModel.lean` is the current focused Lean slice for
+SG-AUTH. It is a small transition system, not a mature architecture-wide
+capability proof: one root domain, one consumer domain, one main object, one
+optional created object, one sent cap, and one minted cap. It defines state,
+steps, reachability, capability tables, domains, generations, transfer, revoke,
+object creation, and failed operations, with preservation lemmas and
+reachable-state theorems for lineage-valid non-forgeability, no authority
+amplification across every modeled authority slot, valid transfer, minted caps
+that currently authorize their created object, and transition theorems that new
+minted/sent/consumer authority appears only through authorized `objectCreate`,
+`capSend`, `capDup`, or `capRecv` paths. `capSend` and `capRecv` now require
+current authority, including live generation, known domain/object lineage,
+sealed-state, and rights-subset checks. It also proves that revocation
+invalidates any outstanding live main-object transfer for current-authorization
+purposes; denied, stale, revoked, and full authority operations preserve every
+modeled cap slot through explicit per-operation preservation lemmas;
+stale-generation rejection, revocation safety, no lost wakeup; a narrow theorem
+that every modeled typed commit transition refines an allowed Lean `Step`; and a
+typed-commit theorem that failed authority commits preserve every modeled cap
+slot. The model now
+distinguishes lineage-valid caps from caps that currently authorize work: root
+duplicate/mint/push, all-stored-cap lineage/no-amplification,
+minted-created-object authority, and consumer pull are separate
+predicates/theorems that include generation, domain, sealed-state, and rights
+checks. The local M1 assertions/checker use the same predicate boundaries for
+live root authority, created-object mint authority, consumer pull authority,
+fail-closed duplicate denial, revoke, stale-generation refusal, and
+dup/send/recv transfer continuity. The M1 RTL exports
+`lnp64_m1_cap_commit_t` at the engine boundary, and
+`scripts/check_rtl_m1_typed_commit_trace.py` executes a narrow M1
+state-transition mirror over the RTL `TTRACE_M1` cap commit records. It checks
+that the schema-backed RTL commit fields, op enum, and status enum map to Lean
+`CommitRecord`, `CommitOp`, `CommitStatus`, `TypedCommitTransition`, `Op`, and
+the typed-commit bridge, transfer-current-authority, and fail-closed
+authority-slot theorem names, then
+checks transfer, rights narrowing, fail-closed denied duplication, root-bounded
+object creation/mint, revoke, and stale-generation behavior across the bounded M1 seed set unless
+`LNP64_COSIM_SEEDS` overrides it; it is not a broad manifest expansion or a
+bit-level formal RTL-to-Lean refinement proof.
 
 Individual RTL/model slices are available as `scripts/run_rtl_m2.sh` through
 `scripts/run_rtl_m15.sh`. See `verification_plan.md` for the current evidence
@@ -288,9 +424,28 @@ For a casual theorem-to-RTL review surface, start with
 names, artifact levels, RTL modules, assertion files, trace markers, gates,
 trust levels, and known gaps. The table keeps RTL modules, assertion files,
 trace markers, gates, trust levels, and proof gaps visible together. Current
-rows are T1 bounded witnesses or coverage artifacts, not T2/T3/T4 architectural or refinement proofs.
+rows remain T1 at the RTL-coupling level; M1, M2, M4, M5, M7, and M14 now
+include T3 transition-invariant Lean slices, but the claims are not T2/T4 refinement
+evidence until typed transition traces and checked RTL-to-Lean refinement exist.
 `scripts/check_theorem_rtl_coupling.py` verifies that index against the
 machine-readable coupling manifest.
+
+The shared RTL schema is checked separately:
+
+```sh
+scripts/check_rtl_shared_schema.py
+scripts/check_rtl_typed_trace_contract.py
+scripts/check_rtl_top_level_program_manifest.py
+```
+
+The schema gate compares `rtl/schema/lnp64_shared_schema.json` with
+`rtl/include/lnp64_pkg.sv` and the current trace manifest. The top-level program
+manifest tracks `demos/*.s` and compiler-generated demo assembly as recurring
+future `lnp64_top` Verilator tests once their required features exist. Both
+gates intentionally label most current M1-M15 trace comparison as string-trace
+scaffolding. M1 now has a focused schema-backed typed cap-commit trace and
+executable transition comparison; S0 has an initial runtime schema check. Full generated
+typed transition comparison and checked refinement remain future work.
 
 ## FPGA Board Note
 

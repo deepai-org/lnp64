@@ -332,6 +332,27 @@ Shared fabric arbitration is part of the realtime contract:
 - arbitration constants, maximum wait windows, and unsupported reservation
   features are discoverable through `ENV_GET`.
 
+Shared does not mean monolithic. The architectural rule is single ownership for
+each mutable record family; the physical implementation may and should bank or
+shard that owner where throughput, timing closure, or realtime bounds require
+it. FDR tables may be banked by PID/FDR index, futexes by hash bucket, queues by
+object id, scheduler state by tile/domain, heap metadata by arena/size class,
+event queues by owner, and VMA/page metadata by PID/address range. The shard
+map is fixed or discoverable through `ENV_GET`, and each shard still refines the
+same owner-engine transition relation.
+
+The implementation rule is:
+
+```text
+duplicate per-tile execution and hot datapath;
+share architectural ownership;
+bank shared owners where throughput or WCET requires it.
+```
+
+Banking must not create multiple independent writers for the same record. Every
+record has exactly one owning shard at a time, and shard migration/rebalancing
+is a typed owner transition with generation or epoch protection.
+
 The design is intentionally not "every module can read DDR." Raw memory
 requesters are limited to the core LSU/cache hierarchy, DMA Fabric, VMA/Page
 Walker, Page Allocator, Metadata Table Walker/Broker, and DDR controller.
@@ -479,8 +500,10 @@ Shared table access:
   storage width and target FPGA support. At minimum this includes FDR entries,
   VMA descriptors, domain descriptors, scheduler/runqueue entries, event queue
   heads/tails, heap metadata, DMA descriptors, and namespace/object metadata.
-- Each table has one owning engine that arbitrates mutation. Other engines
-  access it through request channels or read-only cached snapshots.
+- Each table has one architectural owning engine that arbitrates mutation. That
+  owner may be physically banked or sharded, but exactly one owner shard may
+  mutate a given record at a time. Other engines access it through request
+  channels or read-only cached snapshots.
 - Non-owner engines must not independently walk or mutate another engine's DDR
   tables. They request `validate_fd`, `pin_user_buffer`,
   `dispatch_namespace_request`, `allocate_pages`, `enqueue_event`, or similar
@@ -562,8 +585,10 @@ capability.
 
 Hard-block robustness checklist:
 
-- state registers use enumerated encodings with an explicit `INVALID` or
-  recovery state.
+- state registers use small enumerated encodings, and illegal encodings are
+  either structurally unrepresentable or detected by assertion/fault logic. A
+  block gets `INVALID`, recovery, or degraded states only when its lifecycle
+  profile requires them.
 - table/cache entries have valid bits, generation counters, and owner ids where
   stale references are possible.
 - multi-step operations have documented phases: acquire, validate, prepare,
@@ -1377,8 +1402,8 @@ State:
   and load balancing. These are not on the common dispatch critical path.
 - Per-thread scheduler record: TID generation, state, virtual runtime,
   virtual deadline, fixed weight index, latency class, affinity mask, current
-  Resource Domain id/generation, runnable queue location, and preemption
-  accounting.
+  tile id, preferred tile id, Resource Domain id/generation, runnable queue
+  location, migration generation, and preemption accounting.
 - Per-domain scheduler record: domain id/generation, parent id/generation,
   virtual runtime/deadline contribution, hierarchical quota/period counters,
   dispatch budget, weight index, latency class cap, allowed core-tile mask,
@@ -1445,6 +1470,8 @@ Policy inputs:
 - latency class: bounded set of implementation-defined classes used only for
   wakeup/preemption placement and maximum latency hints.
 - affinity/core-tile mask: intersected with every ancestor domain mask.
+- preferred/current tile: a soft sticky placement hint used after hard
+  affinity, domain eligibility, quota, reservation, and fault constraints.
 - reservation/admission flags: authorize use of bounded fabric or CPU
   reservation features reported by `ENV_GET`.
 
@@ -1460,6 +1487,29 @@ Dispatch prefers the eligible runnable entity with the earliest virtual
 deadline within the implementation's bounded approximation window. Blocked
 threads do not consume CPU budget. Runnable threads whose Resource Domains have
 exhausted quota remain ineligible until the next period or budget update.
+
+Thread placement is sticky by default. A TID that was previously running on a
+tile should return to that tile when the tile is enabled, allowed by the
+thread/domain affinity masks, within reservation constraints, and not overloaded
+according to the bounded balancing rule. Migration is permitted only at
+scheduler boundaries:
+
+- initial placement of a new runnable TID.
+- wakeup placement when the previous tile is not eligible or a bounded
+  wake-affinity rule chooses another tile.
+- explicit affinity/domain/cpuset update.
+- quota, reservation, or latency-class pressure.
+- bounded load balancing or work stealing.
+- tile fault, local reset, degraded state, or administrative disable.
+- four-tile stress/balancing tests selected by implementation profile.
+
+Migration transfers only the scheduler's ownership of the thread context. It
+does not migrate a partially retired instruction or an owner-engine commit.
+In-flight Class D engine operations remain tied to operation id and owner
+TID/domain generation; completion delivery returns through the scheduler and
+revalidates affinity before dispatch. The migration generation in the scheduler
+record prevents stale wakeups, completions, or tile-local queues from reviving a
+thread on the wrong tile.
 
 Hardware-shaped representation rules:
 
@@ -4960,6 +5010,28 @@ Open-assurance hooks:
   label, audit, and domain checks.
 
 ### 24.4 Watchdogs and Local Engine Reset
+
+Not every module has the same lifecycle. Pure combinational decode, small
+datapath blocks, and simple FIFOs should avoid broad `busy/fault/degraded`
+state spaces. Their behavior should be total over valid encodings, with
+canonical error/fault outputs for invalid inputs where needed. Long-latency
+owner engines, metadata commit engines, DMA/device frontends, and external-IP
+adapters are the modules that need watchdogs, abort paths, poison handling, or
+degraded states.
+
+Lifecycle profiles:
+
+- **Pure/local datapath:** no persistent busy state; valid input produces valid
+  output or canonical fault result.
+- **Pipeline/queue:** `empty`/`ready`/`full` plus optional `poisoned`; full
+  conditions return pressure, park, or overflow according to profile.
+- **Owner engine:** `idle`, `prepare`, `commit`, `complete`, and `abort`; commit
+  point is explicit and generation-protected.
+- **Long-latency owner engine:** owner-engine states plus operation id,
+  timeout/watchdog class, cancellation class, and completion/fault target.
+- **External-IP adapter:** `reset`, `training/link_down`, `ready`, `error`, and
+  optional `degraded`; hardware-visible behavior is defined by the IP
+  assume-guarantee contract.
 
 Each long-latency engine has a watchdog budget in cycles or fabric ticks.
 

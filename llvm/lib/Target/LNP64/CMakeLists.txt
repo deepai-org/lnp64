@@ -1,3 +1,5 @@
+add_llvm_component_group(LNP64)
+
 set(LLVM_TARGET_DEFINITIONS LNP64.td)
 
 tablegen(LLVM LNP64GenRegisterInfo.inc -gen-register-info)
@@ -23,6 +25,9 @@ add_llvm_target(LNP64CodeGen
   Target
   LNP64Desc
   LNP64Info
+
+  ADD_TO_COMPONENT
+  LNP64
 )
 
 add_subdirectory(TargetInfo)

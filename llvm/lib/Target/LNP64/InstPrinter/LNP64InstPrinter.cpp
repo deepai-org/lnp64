@@ -10,7 +10,7 @@
 
 using namespace llvm;
 
-static StringRef getMnemonic(unsigned Opcode) {
+static const char *getLNP64Mnemonic(unsigned Opcode) {
   switch (Opcode) {
   case LNP64::ADD:
     return "add";
@@ -73,7 +73,12 @@ static StringRef getMnemonic(unsigned Opcode) {
   }
 }
 
-void LNP64InstPrinter::printRegName(raw_ostream &OS, MCRegister Reg) const {
+std::pair<const char *, uint64_t>
+LNP64InstPrinter::getMnemonic(const MCInst *MI) {
+  return std::make_pair(getLNP64Mnemonic(MI->getOpcode()), 0);
+}
+
+void LNP64InstPrinter::printRegName(raw_ostream &OS, unsigned Reg) const {
   if (Reg >= LNP64::R0 && Reg <= LNP64::R31) {
     OS << "r" << unsigned(Reg - LNP64::R0);
     return;
@@ -144,7 +149,7 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::LSL:
   case LNP64::LSR:
   case LNP64::ASR:
-    OS << getMnemonic(MI->getOpcode()) << ' ';
+    OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
     printOperand(MI->getOperand(0), OS);
     OS << ", ";
     printOperand(MI->getOperand(1), OS);
@@ -153,7 +158,7 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
     break;
   case LNP64::NOT:
   case LNP64::CMP:
-    OS << getMnemonic(MI->getOpcode()) << ' ';
+    OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
     printOperand(MI->getOperand(0), OS);
     OS << ", ";
     printOperand(MI->getOperand(1), OS);
@@ -166,7 +171,7 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::BLE:
   case LNP64::BGE:
   case LNP64::CALL:
-    OS << getMnemonic(MI->getOpcode()) << ' ';
+    OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
     printOperand(MI->getOperand(0), OS);
     break;
   case LNP64::CALL_REG:
@@ -181,7 +186,7 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::ST_W:
   case LNP64::ST_H:
   case LNP64::ST_B:
-    OS << getMnemonic(MI->getOpcode()) << ' ';
+    OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
     printMemOperand(MI, 0, 1, 2, OS);
     break;
   default:

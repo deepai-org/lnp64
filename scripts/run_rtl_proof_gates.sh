@@ -7,12 +7,17 @@ cd "$root"
 lean_files=(
   formal/S0Model.lean
   formal/M1Model.lean
+  formal/M1TransitionInvariantModel.lean
   formal/M2GateModel.lean
+  formal/M2TransitionInvariantModel.lean
   formal/M3ProcessModel.lean
   formal/M4VmaModel.lean
+  formal/M4TransitionInvariantModel.lean
   formal/M5DmaModel.lean
+  formal/M5TransitionInvariantModel.lean
   formal/M6ServiceModel.lean
   formal/M7FutexAtomicModel.lean
+  formal/M7TransitionInvariantModel.lean
   formal/M8HeapModel.lean
   formal/M9ClassifierServiceletModel.lean
   formal/M10RasModel.lean
@@ -20,6 +25,7 @@ lean_files=(
   formal/M12StorageBarrierModel.lean
   formal/M13PcieIommuModel.lean
   formal/M14ResourceDomainPolicyModel.lean
+  formal/M14TransitionInvariantModel.lean
   formal/M15ObjectProfilesModel.lean
   formal/FormalTheoremsModel.lean
 )
@@ -61,7 +67,9 @@ formal/m14_resource_domain_policy_model.py >/dev/null
 formal/m15_object_profiles_model.py >/dev/null
 
 bash scripts/run_rtl_s0.sh
+LNP64_TYPED_TRACE_USE_EXISTING=1 scripts/check_rtl_typed_trace_contract.py
 bash scripts/run_rtl_m1.sh
+scripts/check_rtl_m1_typed_commit_trace.py
 bash scripts/run_rtl_m2.sh
 bash scripts/run_rtl_m3.sh
 bash scripts/run_rtl_m4.sh

@@ -45,4 +45,8 @@ for seed in $seeds; do
   grep -q "LNP64-RTL-M1 PASS" "$rtl_log"
 done
 
+deny_log="${TMPDIR:-/tmp}/lnp64_rtl_m1_deny_dup.log"
+"$build_dir/Vlnp64_m1_tb" "+seed=0" "+deny_dup" | tee "$deny_log"
+grep -q "LNP64-RTL-M1 PASS" "$deny_log"
+
 printf '%s\n' "rtl m1 gate ok"

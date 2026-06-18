@@ -28,7 +28,7 @@ public:
                                 /*EMachine=*/0x6c64,
                                 /*HasRelocationAddend=*/true) {}
 
-  unsigned getRelocType(const MCFixup &Fixup, const MCValue &,
+  unsigned getRelocType(MCContext &, const MCValue &, const MCFixup &Fixup,
                         bool IsPCRel) const override {
     switch (Fixup.getKind()) {
     case FK_Data_8:

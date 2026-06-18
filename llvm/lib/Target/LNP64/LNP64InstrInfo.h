@@ -2,6 +2,7 @@
 #define LLVM_LIB_TARGET_LNP64_LNP64INSTRINFO_H
 
 #include "LNP64RegisterInfo.h"
+#include "llvm/CodeGen/TargetInstrInfo.h"
 
 #define GET_INSTRINFO_HEADER
 #include "LNP64GenInstrInfo.inc"
@@ -22,13 +23,11 @@ public:
                            MachineBasicBlock::iterator I, Register SrcReg,
                            bool IsKill, int FrameIndex,
                            const TargetRegisterClass *RC,
-                           const TargetRegisterInfo *TRI,
-                           Register VReg) const override;
+                           const TargetRegisterInfo *TRI) const override;
   void loadRegFromStackSlot(MachineBasicBlock &MBB,
                             MachineBasicBlock::iterator I, Register DestReg,
                             int FrameIndex, const TargetRegisterClass *RC,
-                            const TargetRegisterInfo *TRI,
-                            Register VReg) const override;
+                            const TargetRegisterInfo *TRI) const override;
 };
 
 } // end namespace llvm

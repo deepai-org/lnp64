@@ -19,6 +19,7 @@ class LNP64Subtarget : public LNP64GenSubtargetInfo {
 public:
   LNP64Subtarget(const Triple &TT, StringRef CPU, StringRef FS,
                  const TargetMachine &TM);
+  void ParseSubtargetFeatures(StringRef CPU, StringRef TuneCPU, StringRef FS);
 
   const LNP64FrameLowering *getFrameLowering() const override {
     return &FrameLowering;

@@ -1,6 +1,7 @@
 #ifndef LLVM_LIB_TARGET_LNP64_INSTPRINTER_LNP64INSTPRINTER_H
 #define LLVM_LIB_TARGET_LNP64_INSTPRINTER_LNP64INSTPRINTER_H
 
+#include "llvm/ADT/Triple.h"
 #include "llvm/MC/MCInstPrinter.h"
 
 namespace llvm {
@@ -11,7 +12,8 @@ public:
                    const MCRegisterInfo &MRI)
       : MCInstPrinter(MAI, MII, MRI) {}
 
-  void printRegName(raw_ostream &OS, MCRegister Reg) const override;
+  void printRegName(raw_ostream &OS, unsigned Reg) const override;
+  std::pair<const char *, uint64_t> getMnemonic(const MCInst *MI) override;
   void printInst(const MCInst *MI, uint64_t Address, StringRef Annot,
                  const MCSubtargetInfo &STI, raw_ostream &OS) override;
 

@@ -12,6 +12,7 @@ namespace Lnp64.FormalTheorems
 structure CoverageState where
   formalModelScope : Bool
   proofFaultAssumptions : Bool
+  securityTheoremSpine : Bool
   proofPriorityOrder : Bool
   globalStateValidity : Bool
   capabilityNonForgeability : Bool
@@ -62,6 +63,7 @@ deriving Repr
 def completeCoverage : CoverageState :=
   { formalModelScope := true
     proofFaultAssumptions := true
+    securityTheoremSpine := true
     proofPriorityOrder := true
     globalStateValidity := true
     capabilityNonForgeability := true
@@ -113,6 +115,9 @@ def FormalModelScopeCovered (s : CoverageState) : Prop :=
 
 def ProofFaultAssumptionsExplicit (s : CoverageState) : Prop :=
   s.proofFaultAssumptions = true
+
+def SecurityTheoremSpineCovered (s : CoverageState) : Prop :=
+  s.securityTheoremSpine = true
 
 def ProofPriorityOrderCovered (s : CoverageState) : Prop :=
   s.proofPriorityOrder = true
@@ -255,6 +260,10 @@ theorem ft_formal_model_scope :
 
 theorem ft_proof_fault_assumptions_explicit :
   ProofFaultAssumptionsExplicit completeCoverage := by
+  rfl
+
+theorem ft_security_theorem_spine :
+  SecurityTheoremSpineCovered completeCoverage := by
   rfl
 
 theorem ft_proof_priority_order :

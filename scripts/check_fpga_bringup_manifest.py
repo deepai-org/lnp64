@@ -39,6 +39,8 @@ REQUIRED_STEP_MARKERS = {
     5: [
         "LNP64_OP_NOP",
         "LNP64_OP_LI32",
+        "tile 1 was not observable, schedulable, and idle",
+        "tile 0 did not run PID 1",
         "PID 1 retired too few S0 instructions",
     ],
     6: [

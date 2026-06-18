@@ -30,6 +30,7 @@ enum Fixups {
 } // end namespace LNP64
 
 MCCodeEmitter *createLNP64MCCodeEmitter(const MCInstrInfo &MCII,
+                                        const MCRegisterInfo &MRI,
                                         MCContext &Ctx);
 MCAsmBackend *createLNP64AsmBackend(const Target &T,
                                     const MCSubtargetInfo &STI,

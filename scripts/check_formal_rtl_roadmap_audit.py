@@ -259,6 +259,7 @@ def validate_completion_checklist() -> None:
         "compare event records",
         "compare fdr/generation/authority metadata",
         "random but bounded traces from models",
+        "top-level program corpus from existing assembly and compiler demos",
         "verilator for fast ci",
         "fpga simulation and synthesis checks",
     ):

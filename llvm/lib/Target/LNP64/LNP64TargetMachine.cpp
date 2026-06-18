@@ -10,10 +10,17 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeLNP64Target() {
   RegisterTargetMachine<LNP64TargetMachine> X(getTheLNP64Target());
 }
 
+static Reloc::Model getEffectiveRelocModel(Optional<Reloc::Model> RM) {
+  return RM.getValueOr(Reloc::PIC_);
+}
+
 LNP64TargetMachine::LNP64TargetMachine(
     const Target &T, const Triple &TT, StringRef CPU, StringRef FS,
-    const TargetOptions &Options, std::optional<Reloc::Model> RM,
-    std::optional<CodeModel::Model> CM, CodeGenOpt::Level OL, bool)
+    const TargetOptions &Options, Optional<Reloc::Model> RM,
+    Optional<CodeModel::Model> CM, CodeGenOpt::Level OL, bool)
     : LLVMTargetMachine(T, "e-m:e-p:64:64-i64:64-n64-S128", TT, CPU, FS,
-                        Options, RM, CM, OL),
-      Subtarget(TT, CPU, FS, *this) {}
+                        Options, getEffectiveRelocModel(RM),
+                        getEffectiveCodeModel(CM, CodeModel::Small), OL),
+      Subtarget(TT, CPU, FS, *this) {
+  initAsmInfo();
+}

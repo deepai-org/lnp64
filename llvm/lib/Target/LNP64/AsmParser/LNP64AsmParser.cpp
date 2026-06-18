@@ -48,10 +48,10 @@ public:
     return Op;
   }
 
-  static std::unique_ptr<LNP64Operand> createImm(int64_t Imm, SMLoc Start,
+  static std::unique_ptr<LNP64Operand> createImm(int64_t Value, SMLoc Start,
                                                 SMLoc End) {
     auto Op = std::make_unique<LNP64Operand>(Imm, Start, End);
-    Op->ImmValue = Imm;
+    Op->ImmValue = Value;
     return Op;
   }
 
@@ -113,7 +113,7 @@ public:
   LNP64AsmParser(const MCSubtargetInfo &STI, MCAsmParser &Parser,
                  const MCInstrInfo &MII, const MCTargetOptions &Options)
       : MCTargetAsmParser(Options, STI, MII) {
-    setAvailableFeatures(ComputeAvailableFeatures(STI.getFeatureBits()));
+    setAvailableFeatures(FeatureBitset());
   }
 
   bool ParseRegister(unsigned &RegNo, SMLoc &Start, SMLoc &End) override {
@@ -131,6 +131,16 @@ public:
     getParser().Lex();
     return false;
   }
+
+  OperandMatchResultTy tryParseRegister(unsigned &RegNo, SMLoc &Start,
+                                        SMLoc &End) override {
+    return ParseRegister(RegNo, Start, End) ? MatchOperand_NoMatch
+                                            : MatchOperand_Success;
+  }
+
+  bool ParseDirective(AsmToken) override { return true; }
+
+  void convertToMapAndConstraints(unsigned, const OperandVector &) override {}
 
   bool ParseInstruction(ParseInstructionInfo &, StringRef Name, SMLoc NameLoc,
                         OperandVector &Operands) override {

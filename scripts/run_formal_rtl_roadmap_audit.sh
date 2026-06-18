@@ -63,10 +63,13 @@ esac
 
 scripts/check_formal_proof_manifest.py
 scripts/check_theorem_rtl_coupling.py
+scripts/check_rtl_shared_schema.py
+scripts/check_rtl_typed_trace_contract.py
 scripts/check_rtl_cosim_manifest.py
 scripts/check_rtl_synth_constraints.py
 scripts/check_fpga_bringup_manifest.py
 scripts/check_rtl_track_b_manifest.py
+scripts/check_rtl_top_level_program_manifest.py
 scripts/check_rtl_s0_contract.py
 scripts/check_rtl_dockerfiles.py
 

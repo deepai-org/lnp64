@@ -15,6 +15,8 @@ or timing model. Its initial proof boundary is:
 - instruction decode for the frozen base ISA formats and opcode/profile
   dispatch.
 - GPR/FDR/PCR/thread/process state needed for architectural transitions.
+- core-tile topology, tile-local running lanes, per-tile reset/fault state,
+  cross-tile scheduler assignment, and coherence-domain membership.
 - capability tables, generations, lineage epochs, narrowing, sealing, transfer,
   returned-capability install, and revocation.
 - Resource Domain tree state, monotonic delegation, budgets, usage accounting,
@@ -86,7 +88,99 @@ model assumes:
   hardware containment do not assume service correctness except where a service
   implementation is separately verified.
 
-## 0.2 Proof Priority Order
+Proofs should separate normal correctness from fault containment. Normal
+correctness proves that valid inputs and valid owned metadata preserve the
+architectural invariants. Fault containment proves that malformed inputs,
+poisoned metadata, watchdog timeouts, impossible state encodings, external-IP
+errors, and bounded hardware faults transition only to canonical error,
+poisoned, abort, degraded, or machine-fatal states that are
+authority-decreasing and fail closed.
+
+Not every module should have a large fault/degraded lifecycle. Pure datapath and
+decode blocks should be total over their valid encodings or produce canonical
+fault results. Small queues should expose empty/full/poison behavior. Owner
+engines with commit points need explicit prepare/commit/complete/abort phases.
+External-IP adapters need link/training/error/degraded states because their
+environment is outside the proof boundary. The proof model should make invalid
+states unrepresentable where practical, and otherwise prove that illegal
+encodings cannot publish authority or partial commits.
+
+## 0.2 Security Theorem Spine
+
+The high-level security claim is:
+
+> For every reachable machine state, no subject can gain, use, observe, modify,
+> schedule, signal, debug, DMA, or cause service action on any object outside
+> the authority explicitly delegated to it, except through documented
+> declassification, shared-memory, IPC, or service-boundary paths.
+
+The desired proof list should therefore be organized around these top-level
+security theorems. The detailed sections below are supporting lemmas and
+refinement targets for this spine.
+
+1. **Authority soundness:** all authority originates from boot roots, mint
+   roots, or valid delegation. No register value, memory write, trace record,
+   event, fault, packet, service reply, stale cache entry, or compatibility
+   personality can create or broaden authority.
+2. **Confinement and noninterference:** Resource Domains cannot read, write,
+   execute, schedule, signal, debug, trace, receive events for, or otherwise
+   observe another domain except through explicit capabilities, policy, or
+   documented declassification paths.
+3. **Memory confinement:** loads, stores, instruction fetches, atomics, page
+   fills, DMA, service copies, snapshots, restore hooks, and debug reads all
+   respect live capabilities, VMA permissions, Resource Domain policy,
+   generations, lineage, revocation, guard pages, W^X/NX, and memory type.
+4. **Revocation and freshness:** revoked, stale, poisoned, restored, reused, or
+   generation-mismatched state cannot authorize new work or accidentally alias a
+   new object.
+5. **Mediation completeness:** every path to authority-bearing state goes
+   through exactly one checked owner engine or its proven shard. There are no
+   alternate write paths into FDR tables, VMA tables, scheduler state, domain
+   policy, IOMMU tables, object state, debug authority, trace authority, or
+   service-return capability install.
+6. **Fail-closed fault containment:** malformed inputs, hostile service
+   payloads, bad packets, queue overflow, parity/ECC faults, watchdog timeout,
+   impossible state encodings, service crashes, and external-IP errors cannot
+   mint authority, skip generation checks, publish partial commits, split
+   scheduler state, or bypass memory/domain checks.
+7. **Trusted boundary soundness:** boot, attestation, loader/runtime services,
+   paravirtual personalities, PCIe bus master, debug/forensics mode, and
+   external IP are either inside the proof or represented by explicit
+   assume-guarantee contracts that cannot silently grant stronger authority
+   than the theorem states.
+8. **Compositional security:** local capability, domain, scheduler, VMA, DMA,
+   object, gate, service, RAS, and fabric proofs compose at `lnp64_top`; a
+   global transition preserves authority, confinement, memory safety, freshness,
+   fail-closed behavior, and the trusted-boundary assumptions.
+
+The hardest theorem is mediation completeness. If any authority-relevant state
+can be mutated outside its checked owner path, local proofs can all be true
+while the whole chip is insecure. The first deep proofs should therefore show
+both local transition invariants and absence of bypass paths for the owner
+state they protect.
+
+Three enclave-strengthening theorem families sit on top of this spine:
+
+- **No ambient authority:** supervisors, services, drivers, PCIe bus masters,
+  loaders, personalities, debug tooling, and device frontends have no hidden
+  ring-0 style authority. They can act only through explicit capabilities,
+  Resource Domain policy, and checked owner-engine transitions.
+- **Scoped observation:** official observation surfaces such as debug,
+  forensics, trace, telemetry, audit, event metadata, scheduler pressure,
+  queue occupancy, packet marks, and snapshot hooks expose only data authorized
+  by Resource Domain policy or explicitly documented public/declassified state.
+- **Attested fresh boundary:** a Resource Domain quote describes a fresh,
+  measured, policy-scoped boundary; launch, restore, migration, gate calls, and
+  delegated services cannot revive stale authority or amplify capabilities
+  across that boundary.
+
+These families are the basis for the high-assurance claim that a Resource
+Domain can be treated as the enclave boundary when the corresponding assurance
+profile is enabled. Physical probing, memory-encryption strength, and
+microarchitectural side-channel elimination remain separate profile claims, not
+hidden assumptions of the base proof.
+
+## 0.3 Proof Priority Order
 
 The architecture is intentionally rich, so proof work should start with the
 smallest authority-bearing core and expand outward:
@@ -96,16 +190,18 @@ smallest authority-bearing core and expand outward:
 2. Resource Domain containment, monotonic delegation, accounting rollup, and
    lifecycle generations.
 3. Scheduler, waitable, gate-continuation, and no-lost-wakeup invariants.
-4. Realtime retire/park/submit and `ENV_GET` WCET/scheduler discovery
+4. Multicore topology, unique tile assignment, cross-tile wake, and coherence
+   shell safety.
+5. Realtime retire/park/submit and `ENV_GET` WCET/scheduler discovery
    soundness.
-5. VMA/page-state, W^X/NX/guard, memory visibility, and DMA isolation.
-6. Service-boundary request/reply, returned-capability install, and
+6. VMA/page-state, W^X/NX/guard, memory visibility, and DMA isolation.
+7. Service-boundary request/reply, returned-capability install, and
    commit/abort atomicity.
-7. Servicelet verifier/action safety and bounded classifier/queue steering.
-8. Global progress under bounded faults and watchdog/local-reset containment.
-9. Adversarial input containment for hostile code, packets, service payloads,
+8. Servicelet verifier/action safety and bounded classifier/queue steering.
+9. Global progress under bounded faults and watchdog/local-reset containment.
+10. Adversarial input containment for hostile code, packets, service payloads,
    and timing races.
-10. Tenant-strict confidentiality, MLS, audit, debug/forensics, attestation,
+11. Tenant-strict confidentiality, MLS, audit, debug/forensics, attestation,
     mission assurance, and personality containment.
 
 ## 1. Global State Validity
@@ -122,6 +218,13 @@ Useful sub-theorems:
 - every VMA belongs to exactly one process address space.
 - every wait queue entry references a live blocked thread or is invalid.
 - every Resource Domain has a valid parent/generation except the root domain.
+- every mutable authority-bearing record has exactly one architectural owner at
+  a time. If the owner is physically banked or sharded, the shard map assigns
+  each record to exactly one owning shard, and shard migration preserves
+  generation/epoch safety.
+- no supervisor, personality, service, driver, debug path, or device frontend
+  has ambient authority outside owner-engine transitions and explicit
+  capabilities.
 
 ## 2. Capability Non-Forgeability
 
@@ -254,6 +357,13 @@ Useful sub-theorems:
   table, or destroyed/free state.
 - a thread can run only if its Resource Domain and every ancestor domain are not
   frozen, have dispatch budget, and permit the selected core/tile.
+- hard affinity masks are eligibility constraints: no scheduler transition can
+  dispatch a TID on a tile outside the intersection of thread and ancestor
+  domain core/tile masks.
+- sticky placement preserves the current/preferred tile unless a documented
+  migration reason applies: explicit affinity/domain update, wake placement,
+  quota/reservation/latency pressure, bounded load balancing, work stealing,
+  tile fault/reset/degraded state, or administrative disable.
 - `AWAIT` atomically transitions a thread from running to blocked or returns
   ready without losing an event.
 - `WAKE`, event delivery, gate delivery, fd readiness, timer expiry, call
@@ -307,6 +417,9 @@ Useful sub-theorems:
 - metadata engines, event routers, DMA paths, memory-controller ports,
   servicelet lanes, and queue banks use bounded arbitration for admitted
   domains.
+- banked or sharded owner engines preserve the same transition relation as the
+  abstract owner engine: banking changes placement and arbitration, not the
+  authority, generation, or single-writer rules.
 - pressure from best-effort domains can delay or fail best-effort work with
   visible pressure/status events, but cannot violate published bounds for
   admitted reservations.
@@ -464,6 +577,15 @@ compatible permissions and generation.
 
 Useful sub-theorems:
 
+- **Thread store confinement:** for every reachable machine state, if a thread
+  commits a store to virtual address `A`, then that thread's current
+  PID/Resource Domain owns or has been delegated a live writable VMA covering
+  `A`; the VMA generation, object/capability generation, lineage epoch,
+  permissions, guard status, memory type, and domain policy all match at the
+  store commit point.
+- thread stores cannot bypass the VMA/TLB permission check, cannot commit
+  through stale translations, and cannot write through another PID/domain's VMA
+  unless an explicit shared-memory capability authorized that mapping.
 - no load/store/fetch succeeds through unmapped memory.
 - guard VMAs reject load, store, fetch, and DMA pin.
 - NX mappings reject instruction fetch.
@@ -525,6 +647,53 @@ Useful sub-theorems:
   backing authority is reused.
 - coherent DMA writes are visible before completion events are delivered; a
   non-coherent implementation cannot claim the coherent-DMA feature bit.
+
+## 12.2 Multicore Topology and Cross-Tile Safety
+
+**The multicore machine preserves single-thread identity and cross-tile
+visibility:** adding 2-4 coherent core tiles does not duplicate thread
+execution, lose wakeups, bypass domain eligibility, or publish stale memory,
+TLB, event, or fault state across tiles.
+
+Useful sub-theorems:
+
+- `ENV_GET` topology records are truthful for the boot epoch: enabled tile ids,
+  tile count, active-window shape, coherence-domain membership, and disabled
+  tile state match the initialized hardware state.
+- every running TID is assigned to exactly one tile-local running lane, and no
+  runnable/running TID can execute on two tiles in the same architectural step.
+- tile migration is an atomic scheduler transition: ownership moves from one
+  tile-local lane or ready structure to another without duplicating registers,
+  continuations, `ERRNO`, delivery masks, FDR authority, accounting, or pending
+  engine ownership.
+- migration generation prevents stale tile-local queues, wakeups,
+  completions, or balancing records from reviving a thread on a no-longer-owned
+  tile.
+- a tile-local fault, watchdog timeout, degraded state, or reset cannot corrupt
+  another tile's running-lane state, ready queues, capability state, domain
+  accounting, or VMA/TLB authority.
+- cross-tile wake, event delivery, gate return, timer expiry, futex wake,
+  classifier queue routing, and completion delivery make a blocked thread
+  runnable at most once and on an eligible tile only.
+- cross-tile park/wake races refine the same no-lost-wakeup theorem as
+  single-tile waits: either the waiter observes readiness immediately, or a
+  matching future wake/event remains attached to the wait predicate.
+- coherence-shell invalidate, acknowledge, writeback, and ownership-transfer
+  records are paired: a store, `MPROTECT`, `MUNMAP`, `EXEC`, `ISYNC`, DMA
+  visibility point, or authority reuse cannot commit before required tile
+  acknowledgements have arrived or a documented fault/degraded path is taken.
+- L1/TLB/I-cache invalidation is scoped by generation and address range; an
+  unrelated tile cannot be forced to drop authority it does not hold, and a
+  stale tile cannot continue using authority after invalidation completion.
+- locked atomics and futex expected-value checks are single-copy atomic across
+  all enabled tiles in the coherence domain.
+- tile-id tags on retire, event, fault, telemetry, and trace records are
+  faithful to the tile that produced the architectural transition.
+- a disabled or absent tile cannot be selected by the scheduler, receive new
+  work, acknowledge coherence messages, or appear as live in topology records.
+- four-tile stress configuration refines the same abstract multicore transition
+  relation as the default two-tile configuration; increasing tile count does
+  not add new authority or weaken scheduler/coherence invariants.
 
 ## 13. W^X and Executable Provenance
 
@@ -867,6 +1036,12 @@ Useful sub-theorems:
   measurement is recorded.
 - quote records are derived from measurement records and cannot include
   unmeasured capability roots or omit measured policy bits.
+- Resource Domain quote records include launch generation, restore generation,
+  debug/forensics mode, delegated root capabilities, policy profile, and
+  assurance-profile state for the quoted boundary.
+- launch, restore, migration, and reattachment records cannot mark a boundary
+  fresh unless stale capabilities, stale domain ids, stale generations, and
+  previous restore epochs have been rejected or rebased.
 - boot policy failure either records a structured fault and enters permitted
   development mode or enters hardware panic.
 - boot-control and quote FDR reads cannot alter measurement records or mint
@@ -931,8 +1106,9 @@ Useful sub-theorems:
 - local engine reset does not publish partial state.
 - a local engine fault cannot corrupt unrelated domains or require full-chip
   reset when the engine has a defined recovery/degraded path.
-- degraded engines reject new commands until supervisor/PID 1 policy clears
-  them.
+- engines whose lifecycle profile includes degraded mode reject new commands or
+  accept only explicit recovery/query commands until supervisor/PID 1 policy
+  clears them.
 - trace/fault records cannot grant authority.
 
 ## 28. Telemetry, Trace, and Counter Non-Interference
@@ -1017,6 +1193,9 @@ Useful sub-theorems:
 - personality domains cannot mutate raw page tables, receive raw interrupts,
   bypass the hardware scheduler, perform raw DMA, or mint capabilities outside
   the Capability Engine.
+- a compromised personality remains a confined subject; it cannot inspect,
+  schedule, debug, DMA into, or broaden authority for domains outside its
+  delegated subtree.
 
 ## 31. Tenant-Strict Confidentiality and No Unauthorized Observation
 
@@ -1032,6 +1211,9 @@ Useful sub-theorems:
 - RAS/fault records do not include unauthorized payload bytes.
 - trace and counter records are scoped by control capability and domain policy.
 - scheduler/domain pressure counters expose only permitted aggregate data.
+- debug, forensics, snapshot, telemetry, and audit paths are observation
+  surfaces; they cannot bypass Resource Domain policy or expose another domain
+  without an explicit scoped observation capability.
 - classifier records, marks, hashes, and counters do not leak unauthorized
   packet/message payloads.
 - `DOMAIN_PROFILE_TENANT_STRICT` forbids parent memory inspection without an
@@ -1120,12 +1302,14 @@ escalates to a measured/audited machine-fatal state.
 Useful sub-theorems:
 
 - every hardware engine state is reachable with a defined outgoing transition,
-  intentionally terminal, watchdog-recoverable, degraded, or machine-fatal.
+  intentionally terminal, watchdog-recoverable, degraded if the module profile
+  permits degraded mode, or machine-fatal.
 - every parked TID is attached to a live waitable, operation id, timer, gate
   continuation, capacity event, revoked source, or fault source that can wake,
   cancel, timeout, or fail it.
 - every accepted owner-engine command eventually completes, cancels, faults,
-  times out, is revoked, or transfers to a documented degraded/recovery path.
+  times out, is revoked, or transfers to a documented recovery/degraded path
+  when that path is part of the module lifecycle profile.
 - every long-latency command has an operation id, owner domain/thread
   generation, timeout/watchdog class, cancellation class, and completion/fault
   target before it can outlive the issuing instruction.
@@ -1135,7 +1319,9 @@ Useful sub-theorems:
   escalation.
 - a local VMA, DMA, Capability, Event, Domain, Scheduler, Servicelet, Stream, or
   Object engine failure cannot silently corrupt unrelated domains or require
-  full-chip reset when a local recovery/degraded path is specified.
+  full-chip reset when a local recovery/degraded path is specified; if no such
+  path is specified, the only legal outcomes are typed error, poison, abort, or
+  measured/audited machine-fatal state.
 - local reset/degraded recovery cannot mint authority, skip generation checks,
   reuse poisoned metadata as valid, or complete stale continuations.
 - if recovery is impossible, hardware enters a structured measured/audited

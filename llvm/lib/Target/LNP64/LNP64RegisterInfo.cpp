@@ -1,8 +1,10 @@
 #include "LNP64RegisterInfo.h"
+#include "LNP64FrameLowering.h"
 #include "MCTargetDesc/LNP64MCTargetDesc.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
 
@@ -33,7 +35,7 @@ Register LNP64RegisterInfo::getFrameRegister(const MachineFunction &) const {
   return LNP64::R31;
 }
 
-bool LNP64RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
+void LNP64RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
                                             int, unsigned FIOperandNum,
                                             RegScavenger *) const {
   MachineInstr &MI = *II;
@@ -51,5 +53,4 @@ bool LNP64RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   if (FIOperandNum + 1 < MI.getNumOperands() &&
       MI.getOperand(FIOperandNum + 1).isImm())
     MI.getOperand(FIOperandNum + 1).ChangeToImmediate(Offset);
-  return false;
 }

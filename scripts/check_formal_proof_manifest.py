@@ -16,6 +16,21 @@ FORMAL_THEOREMS = Path(os.environ.get("LNP64_FORMAL_THEOREMS", str(ROOT / "forma
 PROOF_GATE = Path(os.environ.get("LNP64_PROOF_GATE", str(ROOT / "scripts/run_rtl_proof_gates.sh")))
 EXPECTED_IDS = ["S0"] + [f"A{i}" for i in range(1, 11)] + ["FT"]
 FORBIDDEN_LEAN_PLACEHOLDER = re.compile(r"(^|[^A-Za-z0-9_])(axiom|sorry|admit)([^A-Za-z0-9_]|$)")
+ALLOWED_ARTIFACT_LEVELS = {
+    "coverage",
+    "bounded_witness",
+    "transition_invariant",
+    "refinement",
+}
+ALLOWED_TRUST_LEVELS = {"T0", "T1", "T2", "T3", "T4", "T5"}
+REQUIRED_BRIDGE_FIELDS = [
+    "assumptions",
+    "rtl_modules",
+    "rtl_witness_signals",
+    "trace_evidence",
+    "trust_level",
+    "known_gaps",
+]
 REQUIRED_S0_THEOREMS = [
     "s0_reset_produces_valid_initial_state_or_measured_fault",
     "s0_every_live_thread_has_exactly_one_scheduler_location",
@@ -100,6 +115,7 @@ REQUIRED_THEOREMS_BY_ID = {
     "FT": [
         "ft_formal_model_scope",
         "ft_proof_fault_assumptions_explicit",
+        "ft_security_theorem_spine",
         "ft_proof_priority_order",
         "ft_global_state_validity",
         "ft_capability_non_forgeability",
@@ -150,7 +166,8 @@ REQUIRED_THEOREMS_BY_ID = {
 FORMAL_THEOREM_SECTION_REQUIREMENTS = {
     "0. Formal Model Scope": "ft_formal_model_scope",
     "0.1 Proof and Fault Model Assumptions": "ft_proof_fault_assumptions_explicit",
-    "0.2 Proof Priority Order": "ft_proof_priority_order",
+    "0.2 Security Theorem Spine": "ft_security_theorem_spine",
+    "0.3 Proof Priority Order": "ft_proof_priority_order",
     "1. Global State Validity": "ft_global_state_validity",
     "2. Capability Non-Forgeability": "ft_capability_non_forgeability",
     "3. No Authority Amplification": "ft_no_authority_amplification",
@@ -218,6 +235,41 @@ def theorem_exists(source: str, theorem: str) -> bool:
     return re.search(rf"(?m)^theorem\s+{re.escape(theorem)}\b", source) is not None
 
 
+def severe_goals_from_roadmap(roadmap_text: str) -> set[str]:
+    goals = set(re.findall(r"`(SG-[A-Z]+)`", roadmap_text))
+    required = {"SG-AUTH", "SG-ISO", "SG-SCHED", "SG-WAKE", "SG-MEM", "SG-PROGRESS", "SG-RT", "SG-EVIDENCE"}
+    require(required <= goals, f"roadmap omits severe proof goals: {sorted(required - goals)}")
+    return goals
+
+
+def check_nonempty_string_list(value: object, label: str) -> None:
+    require(isinstance(value, list) and value, f"{label} must be a non-empty list")
+    for item in value:
+        require(isinstance(item, str) and item, f"{label} contains an empty/non-string item")
+
+
+def check_bridge_metadata(group: dict, obligation_id: str, severe_goals: set[str]) -> None:
+    goals = group.get("severe_goals")
+    check_nonempty_string_list(goals, f"{obligation_id}: severe_goals")
+    unknown = sorted(set(goals) - severe_goals)
+    require(not unknown, f"{obligation_id}: unknown severe goals: {', '.join(unknown)}")
+
+    artifact_level = group.get("artifact_level")
+    require(
+        artifact_level in ALLOWED_ARTIFACT_LEVELS,
+        f"{obligation_id}: invalid artifact_level {artifact_level}",
+    )
+
+    bridge = group.get("bridge")
+    require(isinstance(bridge, dict), f"{obligation_id}: missing bridge metadata")
+    for field in REQUIRED_BRIDGE_FIELDS:
+        require(field in bridge, f"{obligation_id}: bridge missing {field}")
+    for field in ["assumptions", "rtl_modules", "rtl_witness_signals", "trace_evidence", "known_gaps"]:
+        check_nonempty_string_list(bridge[field], f"{obligation_id}: bridge.{field}")
+    trust_level = bridge["trust_level"]
+    require(trust_level in ALLOWED_TRUST_LEVELS, f"{obligation_id}: invalid bridge trust_level {trust_level}")
+
+
 def check_theorem_group(group: dict, obligation_id: str, proof_gate_text: str) -> None:
     lean_file = ROOT / group["lean_file"]
     require(lean_file.exists(), f"{obligation_id}: missing Lean file {group['lean_file']}")
@@ -275,7 +327,9 @@ def main() -> None:
     ids = [obligation.get("id") for obligation in obligations]
     require(ids == EXPECTED_IDS, f"proof obligation ids must be {EXPECTED_IDS}")
 
-    roadmap_text = read_text(ROADMAP).replace("`", "")
+    raw_roadmap_text = read_text(ROADMAP)
+    severe_goals = severe_goals_from_roadmap(raw_roadmap_text)
+    roadmap_text = raw_roadmap_text.replace("`", "")
     formal_theorems_text = read_text(FORMAL_THEOREMS).replace("`", "")
     for obligation in obligations:
         obligation_id = obligation["id"]
@@ -284,6 +338,7 @@ def main() -> None:
         title_source = formal_theorems_text if obligation_id == "FT" else roadmap_text
         require(title in title_source, f"{obligation_id}: title not present in roadmap source: {title}")
 
+        check_bridge_metadata(obligation, obligation_id, severe_goals)
         check_required_theorems(obligation)
         check_formal_theorem_sections(obligation)
         check_theorem_group(obligation, obligation_id, proof_gate_text)

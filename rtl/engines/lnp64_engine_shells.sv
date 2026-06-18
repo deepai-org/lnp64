@@ -22,18 +22,20 @@ module lnp64_fail_closed_engine #(
     output logic [31:0] fault_counter
 );
     logic have_rsp;
+    logic have_fault;
     lnp64_rsp_t rsp_reg;
     lnp64_fault_t fault_reg;
 
-    assign cmd_ready = reset_n && !have_rsp;
+    assign cmd_ready = reset_n && !have_rsp && !have_fault;
     assign rsp_valid = have_rsp;
     assign rsp = rsp_reg;
-    assign fault_valid = 1'b0;
+    assign fault_valid = have_fault;
     assign fault = fault_reg;
 
     always_ff @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
             have_rsp <= 1'b0;
+            have_fault <= 1'b0;
             rsp_reg <= '0;
             fault_reg <= '0;
             accepted_counter <= 32'd0;
@@ -43,6 +45,7 @@ module lnp64_fail_closed_engine #(
                 have_rsp <= 1'b1;
                 accepted_counter <= accepted_counter + 32'd1;
                 rsp_reg.op_id <= cmd.op_id;
+                rsp_reg.tile_id <= cmd.tile_id;
                 rsp_reg.pid <= cmd.pid;
                 rsp_reg.tid <= cmd.tid;
                 rsp_reg.domain_id <= cmd.domain_id;
@@ -53,6 +56,7 @@ module lnp64_fail_closed_engine #(
                 rsp_reg.status <= STATUS_VALUE;
                 rsp_reg.event_mask <= 64'd0;
                 fault_reg.fault_id <= accepted_counter + 32'd1;
+                fault_reg.tile_id <= cmd.tile_id;
                 fault_reg.op_id <= cmd.op_id;
                 fault_reg.pid <= cmd.pid;
                 fault_reg.tid <= cmd.tid;
@@ -61,11 +65,15 @@ module lnp64_fail_closed_engine #(
                 fault_reg.fault_code <= ERRNO_VALUE;
                 fault_reg.source <= ENGINE_ID;
                 fault_reg.detail <= 64'd0;
+                if (STATUS_VALUE == LNP64_STATUS_FAULT) begin
+                    have_fault <= 1'b1;
+                end
             end
             if (have_rsp && rsp_ready) begin
                 have_rsp <= 1'b0;
             end
-            if (fault_valid && fault_ready) begin
+            if (have_fault && fault_ready) begin
+                have_fault <= 1'b0;
                 fault_counter <= fault_counter + 32'd1;
             end
         end
@@ -81,43 +89,111 @@ module lnp64_engine_router (
     output logic rsp_valid,
     input  logic rsp_ready,
     output lnp64_rsp_t rsp,
+    output logic object_cmd_valid,
+    input  logic object_cmd_ready,
+    output lnp64_cmd_t object_cmd,
+    input  logic object_rsp_valid,
+    output logic object_rsp_ready,
+    input  lnp64_rsp_t object_rsp,
+    output logic fault_valid,
+    input  logic fault_ready,
+    output lnp64_fault_t fault,
     output logic [31:0] routed_counter
 );
-    logic have_rsp;
-    lnp64_rsp_t rsp_reg;
+    logic route_object;
+    logic route_fault;
+    logic route_default;
+    logic fault_cmd_valid;
+    logic fault_cmd_ready;
+    logic fault_rsp_valid;
+    logic fault_rsp_ready;
+    lnp64_rsp_t fault_rsp;
+    logic fault_fault_valid;
+    lnp64_fault_t fault_fault;
+    logic unsupported_cmd_valid;
+    logic unsupported_cmd_ready;
+    logic unsupported_rsp_valid;
+    logic unsupported_rsp_ready;
+    lnp64_rsp_t unsupported_rsp;
+    logic unsupported_fault_valid;
+    lnp64_fault_t unsupported_fault;
+    logic [31:0] fault_accepts;
+    logic [31:0] unsupported_accepts;
+    logic [31:0] fault_faults;
+    logic [31:0] unsupported_faults;
 
-    assign cmd_ready = reset_n && !have_rsp;
-    assign rsp_valid = have_rsp;
-    assign rsp = rsp_reg;
+    assign route_object = cmd.opcode == LNP64_OP_OBJECT_CTL;
+    assign route_fault = cmd.opcode == LNP64_OP_FAULT_INJECT;
+    assign route_default = !route_object && !route_fault;
+
+    assign object_cmd_valid = cmd_valid && route_object;
+    assign object_cmd = cmd;
+    assign fault_cmd_valid = cmd_valid && route_fault;
+    assign unsupported_cmd_valid = cmd_valid && route_default;
+
+    assign cmd_ready =
+        route_object ? object_cmd_ready :
+        route_fault ? fault_cmd_ready :
+        unsupported_cmd_ready;
+
+    assign rsp_valid = object_rsp_valid || fault_rsp_valid || unsupported_rsp_valid;
+    assign rsp =
+        object_rsp_valid ? object_rsp :
+        fault_rsp_valid ? fault_rsp :
+        unsupported_rsp;
+
+    assign object_rsp_ready = rsp_ready && object_rsp_valid;
+    assign fault_rsp_ready = rsp_ready && !object_rsp_valid && fault_rsp_valid;
+    assign unsupported_rsp_ready = rsp_ready && !object_rsp_valid && !fault_rsp_valid && unsupported_rsp_valid;
+
+    assign fault_valid = fault_fault_valid || unsupported_fault_valid;
+    assign fault = fault_fault_valid ? fault_fault : unsupported_fault;
+
+    lnp64_fail_closed_engine #(
+        .ENGINE_ID(LNP64_ENGINE_FAULT),
+        .ERRNO_VALUE(LNP64_ERR_EFAULT),
+        .STATUS_VALUE(LNP64_STATUS_FAULT)
+    ) fault_lane_i (
+        .clk(clk),
+        .reset_n(reset_n),
+        .cmd_valid(fault_cmd_valid),
+        .cmd_ready(fault_cmd_ready),
+        .cmd(cmd),
+        .rsp_valid(fault_rsp_valid),
+        .rsp_ready(fault_rsp_ready),
+        .rsp(fault_rsp),
+        .fault_valid(fault_fault_valid),
+        .fault_ready(fault_ready),
+        .fault(fault_fault),
+        .accepted_counter(fault_accepts),
+        .fault_counter(fault_faults)
+    );
+
+    lnp64_fail_closed_engine #(
+        .ENGINE_ID(LNP64_ENGINE_UNSUPPORTED),
+        .ERRNO_VALUE(LNP64_ERR_ENOTSUP),
+        .STATUS_VALUE(LNP64_STATUS_UNSUPPORTED)
+    ) unsupported_lane_i (
+        .clk(clk),
+        .reset_n(reset_n),
+        .cmd_valid(unsupported_cmd_valid),
+        .cmd_ready(unsupported_cmd_ready),
+        .cmd(cmd),
+        .rsp_valid(unsupported_rsp_valid),
+        .rsp_ready(unsupported_rsp_ready),
+        .rsp(unsupported_rsp),
+        .fault_valid(unsupported_fault_valid),
+        .fault_ready(fault_ready && !fault_fault_valid),
+        .fault(unsupported_fault),
+        .accepted_counter(unsupported_accepts),
+        .fault_counter(unsupported_faults)
+    );
 
     always_ff @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
-            have_rsp <= 1'b0;
-            rsp_reg <= '0;
             routed_counter <= 32'd0;
-        end else begin
-            if (cmd_valid && cmd_ready) begin
+        end else if (cmd_valid && cmd_ready) begin
                 routed_counter <= routed_counter + 32'd1;
-                have_rsp <= 1'b1;
-                rsp_reg.op_id <= cmd.op_id;
-                rsp_reg.pid <= cmd.pid;
-                rsp_reg.tid <= cmd.tid;
-                rsp_reg.domain_id <= cmd.domain_id;
-                rsp_reg.domain_gen <= cmd.domain_gen;
-                rsp_reg.result_reg <= cmd.result_reg;
-                rsp_reg.result_value <= 64'd0;
-                rsp_reg.event_mask <= 64'd0;
-                if (cmd.opcode == LNP64_OP_OBJECT_CTL) begin
-                    rsp_reg.errno_value <= LNP64_ERR_EPERM;
-                    rsp_reg.status <= LNP64_STATUS_ERROR;
-                end else begin
-                    rsp_reg.errno_value <= LNP64_ERR_ENOTSUP;
-                    rsp_reg.status <= LNP64_STATUS_UNSUPPORTED;
-                end
-            end
-            if (have_rsp && rsp_ready) begin
-                have_rsp <= 1'b0;
-            end
         end
     end
 endmodule
@@ -138,6 +214,7 @@ module lnp64_completion_router (
             completion_valid <= rsp_valid;
             if (rsp_valid) begin
                 completion.op_id <= rsp.op_id;
+                completion.tile_id <= rsp.tile_id;
                 completion.pid <= rsp.pid;
                 completion.tid <= rsp.tid;
                 completion.domain_id <= rsp.domain_id;
@@ -167,16 +244,52 @@ module lnp64_errno_writeback (
     end
 endmodule
 
-module lnp64_scheduler (
+module lnp64_scheduler #(
+    parameter int CORE_TILE_COUNT = 2
+) (
     input  logic clk,
     input  logic reset_n,
     input  logic boot_valid,
     input  logic park_pid1,
     input  logic wake_pid1,
+    input  logic [CORE_TILE_COUNT-1:0] tile_idle,
+    input  logic [CORE_TILE_COUNT-1:0] tile_running,
+    input  logic [CORE_TILE_COUNT-1:0] tile_parked,
+    input  logic [CORE_TILE_COUNT-1:0] tile_faulted,
+    output logic [CORE_TILE_COUNT-1:0] issue_valid,
+    output logic [CORE_TILE_COUNT*32-1:0] issue_tid_flat,
     output logic exactly_one_location,
     output logic pid1_runnable,
-    output logic pid1_parked
+    output logic pid1_parked,
+    output logic no_duplicate_issue,
+    output logic tile1_schedulable_idle,
+    output logic tile_fault_isolated
 );
+    integer sched_i;
+
+    always_comb begin
+        issue_valid = '0;
+        issue_tid_flat = '0;
+        for (sched_i = 0; sched_i < CORE_TILE_COUNT; sched_i = sched_i + 1) begin
+            issue_valid[sched_i] = 1'b0;
+        end
+        if (pid1_runnable && !tile_faulted[0]) begin
+            issue_valid[0] = 1'b1;
+            issue_tid_flat[31:0] = 32'd1;
+        end
+
+        no_duplicate_issue = 1'b1;
+        if (issue_valid[0]) begin
+            for (sched_i = 1; sched_i < CORE_TILE_COUNT; sched_i = sched_i + 1) begin
+                if (issue_valid[sched_i]) begin
+                    no_duplicate_issue = 1'b0;
+                end
+            end
+        end
+        tile1_schedulable_idle = (CORE_TILE_COUNT > 1) && tile_idle[1] && !tile_running[1] && !tile_parked[1] && !tile_faulted[1];
+        tile_fault_isolated = (CORE_TILE_COUNT < 2) || !tile_faulted[1] || (issue_valid[0] && issue_tid_flat[31:0] == 32'd1);
+    end
+
     always_ff @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
             pid1_runnable <= 1'b0;
@@ -204,12 +317,16 @@ module lnp64_event_router (
     input  logic clk,
     input  logic reset_n,
     input  logic synthetic_event,
+    input  logic [31:0] source_tile_id,
+    input  logic [31:0] target_tile_id,
     input  logic pid1_parked,
     output logic wake_valid,
     output logic event_valid,
     input  logic event_ready,
     output lnp64_event_t event_record,
-    output logic [31:0] event_counter
+    output logic [31:0] event_counter,
+    output logic cross_tile_wake_valid,
+    output logic [31:0] wake_counter
 );
     always_ff @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
@@ -217,13 +334,19 @@ module lnp64_event_router (
             event_valid <= 1'b0;
             event_record <= '0;
             event_counter <= 32'd0;
+            cross_tile_wake_valid <= 1'b0;
+            wake_counter <= 32'd0;
         end else begin
             wake_valid <= 1'b0;
+            cross_tile_wake_valid <= 1'b0;
             if (synthetic_event && pid1_parked && !event_valid) begin
                 event_counter <= event_counter + 32'd1;
+                wake_counter <= wake_counter + 32'd1;
                 wake_valid <= 1'b1;
+                cross_tile_wake_valid <= source_tile_id != target_tile_id;
                 event_valid <= 1'b1;
                 event_record.event_id <= event_counter + 32'd1;
+                event_record.tile_id <= target_tile_id;
                 event_record.op_id <= 32'd0;
                 event_record.pid <= 32'd1;
                 event_record.tid <= 32'd1;
@@ -243,6 +366,7 @@ endmodule
 module lnp64_fault_telemetry (
     input  logic clk,
     input  logic reset_n,
+    input  logic [31:0] tile_id,
     input  logic inject_fault,
     output logic fault_valid,
     input  logic fault_ready,
@@ -259,6 +383,7 @@ module lnp64_fault_telemetry (
                 fault_counter <= fault_counter + 32'd1;
                 fault_valid <= 1'b1;
                 fault.fault_id <= fault_counter + 32'd1;
+                fault.tile_id <= tile_id;
                 fault.op_id <= 32'd0;
                 fault.pid <= 32'd1;
                 fault.tid <= 32'd1;
@@ -278,6 +403,7 @@ endmodule
 module lnp64_watchdog (
     input  logic clk,
     input  logic reset_n,
+    input  logic [31:0] tile_id,
     input  logic inject_stuck,
     output logic degraded,
     output logic fault_valid,
@@ -299,6 +425,7 @@ module lnp64_watchdog (
                     degraded <= 1'b1;
                     fault_valid <= 1'b1;
                     fault.fault_id <= 32'hd06d_0001;
+                    fault.tile_id <= tile_id;
                     fault.op_id <= 32'hffff_ffff;
                     fault.pid <= 32'd1;
                     fault.tid <= 32'd1;

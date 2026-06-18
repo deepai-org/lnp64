@@ -102,6 +102,7 @@ module lnp64_reset_boot (
                 BOOT_FAULT: begin
                     boot_fault_valid <= 1'b1;
                     boot_fault.fault_id <= 32'hb007_f001;
+                    boot_fault.tile_id <= 32'd0;
                     boot_fault.op_id <= 32'd0;
                     boot_fault.pid <= 32'd0;
                     boot_fault.tid <= 32'd0;
