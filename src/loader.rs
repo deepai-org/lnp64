@@ -24,6 +24,7 @@ const R_LNP64_GLOB_DAT: u32 = 6;
 const R_LNP64_RELATIVE: u32 = 7;
 const R_LNP64_TLS_TPREL64: u32 = 8;
 const R_LNP64_TLS_DTPREL64: u32 = 9;
+const R_LNP64_FDR_DESC64: u32 = 10;
 const PAGE_SIZE: u64 = 4096;
 const ELF64_EHDR_SIZE: usize = 64;
 const ELF64_PHDR_SIZE: usize = 56;
@@ -703,6 +704,27 @@ fn apply_rela_sections(image: &mut [u8], plan: &ExecPlan, load_bias: u64) -> Res
                         .ok_or_else(|| "RELA target plus load bias overflows".to_string())?;
                     let file_offset = relocation_file_offset(plan, target, 8)?;
                     image[file_offset..file_offset + 8].copy_from_slice(&value.to_le_bytes());
+                }
+                R_LNP64_FDR_DESC64 => {
+                    if symbol_index != 0 {
+                        return Err(
+                            "RELA FDR_DESC64 with symbol index is unsupported by static loader"
+                                .to_string(),
+                        );
+                    }
+                    let index = u64::try_from(i128::from(r_addend))
+                        .map_err(|_| "RELA FDR_DESC64 value is out of range".to_string())?;
+                    if usize::try_from(index)
+                        .ok()
+                        .is_none_or(|idx| idx >= plan.fdr_grants.len())
+                    {
+                        return Err("RELA FDR_DESC64 index exceeds startup FDR table".to_string());
+                    }
+                    let target = r_offset
+                        .checked_add(load_bias)
+                        .ok_or_else(|| "RELA target plus load bias overflows".to_string())?;
+                    let file_offset = relocation_file_offset(plan, target, 8)?;
+                    image[file_offset..file_offset + 8].copy_from_slice(&index.to_le_bytes());
                 }
                 R_LNP64_RELATIVE => {
                     if symbol_index != 0 {
@@ -1834,6 +1856,74 @@ mod tests {
     }
 
     #[test]
+    fn static_elf_loader_applies_symbolless_fdr_desc64_relocations() {
+        let mut image = test_elf(&[
+            text_phdr(),
+            TestPhdr {
+                typ: PT_LOAD,
+                flags: PF_R | PF_W,
+                offset: 0x200,
+                vaddr: 0x500000,
+                filesz: 8,
+                memsz: 8,
+                align: PAGE_SIZE,
+            },
+            TestPhdr {
+                typ: PT_NOTE,
+                flags: PF_R,
+                offset: 0x300,
+                vaddr: 0,
+                filesz: 192,
+                memsz: 192,
+                align: 8,
+            },
+        ]);
+        install_startup_note(&mut image, 1);
+        install_startup_fdr(
+            &mut image,
+            0,
+            3,
+            1,
+            0xff,
+            STARTUP_FDR_FLAG_CLOSE_ON_EXEC,
+            0xabc,
+            0xdef,
+            0x44,
+            0,
+        );
+        install_rela_section_at(&mut image, 0x3c0, 0x400, 0x500000, R_LNP64_FDR_DESC64, 0, 0);
+
+        let plan = load_static_elf(&mut image, LoaderOptions::default()).unwrap();
+
+        assert_eq!(plan.fdr_grants.len(), 1);
+        assert_eq!(read_u64(&image, 0x200).unwrap(), 0);
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_fdr_desc64_outside_startup_table() {
+        let mut image = test_elf(&[
+            text_phdr(),
+            TestPhdr {
+                typ: PT_LOAD,
+                flags: PF_R | PF_W,
+                offset: 0x200,
+                vaddr: 0x500000,
+                filesz: 8,
+                memsz: 8,
+                align: PAGE_SIZE,
+            },
+        ]);
+        install_rela_section(&mut image, 0x500000, R_LNP64_FDR_DESC64, 0);
+
+        let err = load_static_elf(&mut image, LoaderOptions::default()).unwrap_err();
+
+        assert!(
+            err.contains("FDR_DESC64 index exceeds startup FDR"),
+            "{err}"
+        );
+    }
+
+    #[test]
     fn static_elf_loader_rejects_symbolful_abs64_without_symbol_resolution() {
         let mut image = test_elf(&[text_phdr()]);
         install_rela_section_with_symbol(&mut image, 0x400000, R_LNP64_ABS64, 1, 0x1234);
@@ -2187,8 +2277,26 @@ mod tests {
         symbol_index: u64,
         addend: i64,
     ) {
-        let shoff = 0x300;
-        let rela_offset = 0x380;
+        install_rela_section_at(
+            image,
+            0x300,
+            0x380,
+            target,
+            reloc_type,
+            symbol_index,
+            addend,
+        );
+    }
+
+    fn install_rela_section_at(
+        image: &mut [u8],
+        shoff: u64,
+        rela_offset: u64,
+        target: u64,
+        reloc_type: u32,
+        symbol_index: u64,
+        addend: i64,
+    ) {
         put_u64(image, 40, shoff);
         put_u16(image, 58, ELF64_SHDR_SIZE as u16);
         put_u16(image, 60, 1);

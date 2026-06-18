@@ -104,10 +104,12 @@ NetBSD policy. Those remain loader, libc, and personality responsibilities.
      symbol-less `R_LNP64_ABS64`, `R_LNP64_ABS32`, and `R_LNP64_GLOB_DAT` slots
      that a static linker has already resolved, applies symbol-less
      `R_LNP64_TLS_TPREL64` and `R_LNP64_TLS_DTPREL64` offsets against `PT_TLS`,
-     and parses `LNP64ST\0` startup/FDR descriptor notes. It can materialize VMA
-     byte images with file-backed contents plus zero-fill tails. Symbolful
-     relocation resolution and richer startup authority installation remain
-     blocked until the fuller lld/loader path exists.
+     resolves symbol-less `R_LNP64_FDR_DESC64` references against authorized
+     startup FDR descriptor records, and parses `LNP64ST\0` startup/FDR
+     descriptor notes. It can materialize VMA byte images with file-backed
+     contents plus zero-fill tails. Symbolful relocation resolution and richer
+     startup authority installation remain blocked until the fuller lld/loader
+     path exists.
 
 ## Clang, Libc, And Runtime Milestones
 
