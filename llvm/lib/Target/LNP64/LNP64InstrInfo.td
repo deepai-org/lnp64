@@ -24,6 +24,15 @@ def sneg32_imm : PatLeaf<(imm), [{
 def all_ones_imm : PatLeaf<(imm), [{
   return N->isAllOnes();
 }]>;
+def u8_mask_i64_imm : PatLeaf<(i64 imm), [{
+  return N->getZExtValue() == 0xff;
+}]>;
+def u16_mask_i64_imm : PatLeaf<(i64 imm), [{
+  return N->getZExtValue() == 0xffff;
+}]>;
+def u32_mask_i64_imm : PatLeaf<(i64 imm), [{
+  return N->getZExtValue() == 0xffffffffULL;
+}]>;
 
 def LNP64retflag : SDNode<"LNP64ISD::RET_FLAG", SDTNone,
                           [SDNPHasChain, SDNPOptInGlue, SDNPVariadic]>;
@@ -394,8 +403,25 @@ def LD_B : LNP64MemLoad<"ld.b">;
 def PseudoLD_SW : LNP64SignedLoadPseudo<"pseudo_ld.sw">;
 def PseudoLD_SH : LNP64SignedLoadPseudo<"pseudo_ld.sh">;
 def PseudoLD_SB : LNP64SignedLoadPseudo<"pseudo_ld.sb">;
+def SEXT_B : LNP64RR<"sext.b"> {
+  let Pattern = [(set GPR:$rd, (sext_inreg GPR:$rs, i8))];
+}
+def SEXT_H : LNP64RR<"sext.h"> {
+  let Pattern = [(set GPR:$rd, (sext_inreg GPR:$rs, i16))];
+}
 def SEXT_W : LNP64RR<"sext.w"> {
   let Pattern = [(set GPR:$rd, (sext_inreg GPR:$rs, i32))];
+}
+let AddedComplexity = 1 in {
+def ZEXT_B : LNP64RR<"zext.b"> {
+  let Pattern = [(set GPR:$rd, (and GPR:$rs, u8_mask_i64_imm))];
+}
+def ZEXT_H : LNP64RR<"zext.h"> {
+  let Pattern = [(set GPR:$rd, (and GPR:$rs, u16_mask_i64_imm))];
+}
+def ZEXT_W : LNP64RR<"zext.w"> {
+  let Pattern = [(set GPR:$rd, (and GPR:$rs, u32_mask_i64_imm))];
+}
 }
 def PseudoFRAMEADDR : LNP64FrameAddrPseudo<"pseudo_frameaddr">;
 def ST : LNP64MemStore<"st">;

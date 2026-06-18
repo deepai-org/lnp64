@@ -102,6 +102,13 @@ grep -q 'exit=0' <<<"$scalar_arith_output"
 printf 'real LLVM LNP64 run-elf scalar arithmetic execution passed: %s\n' \
   "$scalar_arith_probe"
 
+scalar_extend_probe="target/llvm-lnp64-build/lnp64-scalar-extend-linked.elf"
+cargo run --quiet -- elf-plan "$scalar_extend_probe" >/dev/null
+scalar_extend_output="$(cargo run --quiet -- run-elf "$scalar_extend_probe")"
+grep -q 'exit=0' <<<"$scalar_extend_output"
+printf 'real LLVM LNP64 run-elf scalar extension execution passed: %s\n' \
+  "$scalar_extend_probe"
+
 compare_probe="target/llvm-lnp64-build/lnp64-compare-linked.elf"
 cargo run --quiet -- elf-plan "$compare_probe" >/dev/null
 compare_output="$(cargo run --quiet -- run-elf "$compare_probe")"

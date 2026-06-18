@@ -211,14 +211,14 @@ static unsigned getLNP64SignedLoadInstr(unsigned Opcode) {
   }
 }
 
-static int64_t getLNP64SignedLoadShift(unsigned Opcode) {
+static unsigned getLNP64SignExtendInstr(unsigned Opcode) {
   switch (Opcode) {
   case LNP64::PseudoLD_SB:
-    return 56;
+    return LNP64::SEXT_B;
   case LNP64::PseudoLD_SH:
-    return 48;
+    return LNP64::SEXT_H;
   case LNP64::PseudoLD_SW:
-    return 32;
+    return LNP64::SEXT_W;
   default:
     llvm_unreachable("expected LNP64 signed load pseudo");
   }
@@ -366,21 +366,14 @@ MachineBasicBlock *LNP64TargetLowering::EmitInstrWithCustomInserter(
     MachineFunction *MF = BB->getParent();
     MachineRegisterInfo &MRI = MF->getRegInfo();
     Register Loaded = MRI.createVirtualRegister(&LNP64::GPRRegClass);
-    Register Shifted = MRI.createVirtualRegister(&LNP64::GPRRegClass);
-    Register Shift = MRI.createVirtualRegister(&LNP64::GPRRegClass);
 
     BuildMI(*BB, MI, DL, TII.get(getLNP64SignedLoadInstr(MI.getOpcode())),
             Loaded)
         .add(MI.getOperand(1))
         .add(MI.getOperand(2));
-    BuildMI(*BB, MI, DL, TII.get(LNP64::LI), Shift)
-        .addImm(getLNP64SignedLoadShift(MI.getOpcode()));
-    BuildMI(*BB, MI, DL, TII.get(LNP64::LSL), Shifted)
-        .addReg(Loaded)
-        .addReg(Shift);
-    BuildMI(*BB, MI, DL, TII.get(LNP64::ASR), MI.getOperand(0).getReg())
-        .addReg(Shifted)
-        .addReg(Shift);
+    BuildMI(*BB, MI, DL, TII.get(getLNP64SignExtendInstr(MI.getOpcode())),
+            MI.getOperand(0).getReg())
+        .addReg(Loaded);
     MI.eraseFromParent();
     return BB;
   }

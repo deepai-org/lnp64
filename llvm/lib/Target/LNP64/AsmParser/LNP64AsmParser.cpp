@@ -296,7 +296,12 @@ private:
             .Case("lsri", LNP64::LSRI)
             .Case("asr", LNP64::ASR)
             .Case("asri", LNP64::ASRI)
+            .Case("sext.b", LNP64::SEXT_B)
+            .Case("sext.h", LNP64::SEXT_H)
             .Case("sext.w", LNP64::SEXT_W)
+            .Case("zext.b", LNP64::ZEXT_B)
+            .Case("zext.h", LNP64::ZEXT_H)
+            .Case("zext.w", LNP64::ZEXT_W)
             .Case("cmp", LNP64::CMP)
             .Case("cmpu", LNP64::CMPU)
             .Case("cset.eq", LNP64::CSET_EQ)
@@ -355,7 +360,9 @@ private:
     if (Opcode == LNP64::LA || Opcode == LNP64::LI32)
       return addRegAddress(Inst, Operands);
     if (Opcode == LNP64::MOV || Opcode == LNP64::NOT ||
-        Opcode == LNP64::SEXT_W)
+        Opcode == LNP64::SEXT_B || Opcode == LNP64::SEXT_H ||
+        Opcode == LNP64::SEXT_W || Opcode == LNP64::ZEXT_B ||
+        Opcode == LNP64::ZEXT_H || Opcode == LNP64::ZEXT_W)
       return addRegReg(Inst, Operands);
     if (Opcode == LNP64::ADDI || Opcode == LNP64::ANDI ||
         Opcode == LNP64::ORI || Opcode == LNP64::XORI ||

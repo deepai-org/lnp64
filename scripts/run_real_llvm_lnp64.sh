@@ -219,6 +219,66 @@ grep -q 'srem r' "$scalar_arith_dump"
 printf 'real LLVM LNP64 clang scalar arithmetic object smoke passed: %s\n' \
   "$scalar_arith_obj"
 
+scalar_extend_c="$build_dir/scalar-extend-smoke.c"
+cat >"$scalar_extend_c" <<'C'
+static volatile unsigned long minus_two = 0UL - 2;
+static volatile unsigned long minus_sixteen = 0UL - 16;
+
+__attribute__((noinline)) unsigned long zext_byte(unsigned long x) {
+  return (unsigned char)x;
+}
+
+__attribute__((noinline)) unsigned long zext_half(unsigned long x) {
+  return (unsigned short)x;
+}
+
+__attribute__((noinline)) unsigned long zext_word(unsigned long x) {
+  return (unsigned int)x;
+}
+
+__attribute__((noinline)) long sext_byte(unsigned long x) {
+  return (signed char)x;
+}
+
+__attribute__((noinline)) long sext_half(unsigned long x) {
+  return (short)x;
+}
+
+__attribute__((noinline)) long sext_word(unsigned long x) {
+  return (int)x;
+}
+
+int main(void) {
+  unsigned long zb = zext_byte(minus_two);
+  unsigned long zh = zext_half(minus_two);
+  unsigned long zw = zext_word(minus_sixteen);
+  long sb = sext_byte(minus_two);
+  long sh = sext_half(minus_two);
+  long sw = sext_word(minus_sixteen);
+
+  return (int)((zb >> 8) + ((zb + 2) & 0xff) + (zh >> 16) +
+               ((zh + 2) & 0xffff) + (zw >> 32) + ((zw + 16) & 0xff) +
+               (sb + 2) + (sh + 2) + (sw + 16));
+}
+C
+
+scalar_extend_obj="$build_dir/scalar-extend-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -O1 -ffreestanding -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$scalar_extend_c" -o "$scalar_extend_obj"
+test -s "$scalar_extend_obj"
+scalar_extend_dump="$build_dir/scalar-extend-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$scalar_extend_obj" \
+  >"$scalar_extend_dump"
+grep -q 'zext.b r' "$scalar_extend_dump"
+grep -q 'zext.h r' "$scalar_extend_dump"
+grep -q 'zext.w r' "$scalar_extend_dump"
+grep -q 'sext.b r' "$scalar_extend_dump"
+grep -q 'sext.h r' "$scalar_extend_dump"
+grep -q 'sext.w r' "$scalar_extend_dump"
+printf 'real LLVM LNP64 clang scalar extension object smoke passed: %s\n' \
+  "$scalar_extend_obj"
+
 hello_obj="$build_dir/hello-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
@@ -590,7 +650,8 @@ signed_load_dump="$build_dir/signed-load-clang-smoke.dump"
   >"$signed_load_dump"
 grep -q 'ld.b r' "$signed_load_dump"
 grep -q 'ld.h r' "$signed_load_dump"
-grep -q 'asr r' "$signed_load_dump"
+grep -q 'sext.b r' "$signed_load_dump"
+grep -q 'sext.h r' "$signed_load_dump"
 printf 'real LLVM LNP64 clang signed-load object smoke passed: %s\n' \
   "$signed_load_obj"
 
@@ -1018,6 +1079,13 @@ scalar_arith_elf="$build_dir/lnp64-scalar-arith-linked.elf"
 test -s "$scalar_arith_elf"
 printf 'real LLVM LNP64 lld scalar arithmetic link smoke passed: %s\n' \
   "$scalar_arith_elf"
+
+scalar_extend_elf="$build_dir/lnp64-scalar-extend-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$scalar_extend_elf" "$crt0_obj" "$scalar_extend_obj"
+test -s "$scalar_extend_elf"
+printf 'real LLVM LNP64 lld scalar extension link smoke passed: %s\n' \
+  "$scalar_extend_elf"
 
 compare_elf="$build_dir/lnp64-compare-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

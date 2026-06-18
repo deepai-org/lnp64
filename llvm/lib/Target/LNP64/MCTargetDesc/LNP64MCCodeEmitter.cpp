@@ -266,8 +266,33 @@ public:
                                 MI.getOperand(2).getImm()),
                OS);
       return;
+    case LNP64::SEXT_B:
+      emitLE32(encodeFixed32RR(0xad, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
+    case LNP64::SEXT_H:
+      emitLE32(encodeFixed32RR(0xae, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
     case LNP64::SEXT_W:
       emitLE32(encodeFixed32RR(0xaf, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
+    case LNP64::ZEXT_B:
+      emitLE32(encodeFixed32RR(0xb0, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
+    case LNP64::ZEXT_H:
+      emitLE32(encodeFixed32RR(0xb1, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
+    case LNP64::ZEXT_W:
+      emitLE32(encodeFixed32RR(0xb2, getGPRNo(MI.getOperand(0)),
                                getGPRNo(MI.getOperand(1))),
                OS);
       return;

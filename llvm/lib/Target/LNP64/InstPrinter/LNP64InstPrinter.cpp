@@ -54,8 +54,18 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
     return "asri";
   case LNP64::NOT:
     return "not";
+  case LNP64::SEXT_B:
+    return "sext.b";
+  case LNP64::SEXT_H:
+    return "sext.h";
   case LNP64::SEXT_W:
     return "sext.w";
+  case LNP64::ZEXT_B:
+    return "zext.b";
+  case LNP64::ZEXT_H:
+    return "zext.h";
+  case LNP64::ZEXT_W:
+    return "zext.w";
   case LNP64::CMP:
     return "cmp";
   case LNP64::CMPU:
@@ -293,7 +303,12 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::ALLOC_SIZE:
   case LNP64::OBJECT_CTL:
   case LNP64::DOMAIN_CTL:
+  case LNP64::SEXT_B:
+  case LNP64::SEXT_H:
   case LNP64::SEXT_W:
+  case LNP64::ZEXT_B:
+  case LNP64::ZEXT_H:
+  case LNP64::ZEXT_W:
     OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
     printOperand(MI->getOperand(0), OS);
     OS << ", ";
