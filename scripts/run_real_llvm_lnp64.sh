@@ -250,6 +250,12 @@ crt0_obj="$build_dir/crt0-smoke.o"
 test -s "$crt0_obj"
 printf 'real LLVM LNP64 llvm-mc crt0 smoke passed: %s\n' "$crt0_obj"
 
+minilibc_obj="$build_dir/liblnp64-min-smoke.o"
+"$llvm_mc" -triple=lnp64-unknown-none -filetype=obj toolchain/liblnp64_min.s \
+  -o "$minilibc_obj"
+test -s "$minilibc_obj"
+printf 'real LLVM LNP64 llvm-mc minilibc smoke passed: %s\n' "$minilibc_obj"
+
 cat >"$main_asm" <<'ASM'
 .text
 .globl main
@@ -276,3 +282,13 @@ linked_elf="$build_dir/lnp64-linked-smoke.elf"
   -o "$linked_elf" "$crt0_obj" "$main_obj"
 test -s "$linked_elf"
 printf 'real LLVM LNP64 lld static link smoke passed: %s\n' "$linked_elf"
+
+for demo in hello factorial allocator fibonacci; do
+  demo_obj="$build_dir/$demo-clang-smoke.o"
+  demo_elf="$build_dir/lnp64-$demo-clang-linked.elf"
+  "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+    -o "$demo_elf" "$crt0_obj" "$demo_obj" "$minilibc_obj"
+  test -s "$demo_elf"
+done
+printf 'real LLVM LNP64 lld clang demo link smoke passed: %s\n' \
+  "$build_dir/lnp64-hello-clang-linked.elf"

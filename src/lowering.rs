@@ -1264,6 +1264,7 @@ mod tests {
             "inline_asm",
             "crt_startup",
             "crt0",
+            "minilibc_smoke",
             "transition",
         ] {
             assert!(names.contains(name), "missing contract index row {name}");
@@ -1451,12 +1452,16 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang fibonacci object smoke passed"));
         assert!(real_llc.contains("toolchain/crt0_lnp64.s"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc crt0 smoke passed"));
+        assert!(real_llc.contains("toolchain/liblnp64_min.s"));
+        assert!(real_llc.contains("real LLVM LNP64 llvm-mc minilibc smoke passed"));
         assert!(real_llc.contains("--triple=lnp64-unknown-none"));
         assert!(real_llc.contains("errno_set r0"));
         assert!(real_llc.contains("exit r1"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-objdump crt0 decode smoke passed"));
         assert!(real_llc.contains("-T toolchain/lnp64_static.ld"));
         assert!(real_llc.contains("real LLVM LNP64 lld static link smoke passed"));
+        assert!(real_llc.contains("lnp64-$demo-clang-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld clang demo link smoke passed"));
         assert!(real_llc.contains("rewrite_with_perl"));
         assert!(real_llc_docker.contains("Dockerfile.llvm"));
         assert!(real_llc_docker.contains("scripts/run_real_llvm_lnp64.sh"));
@@ -2532,6 +2537,40 @@ mod tests {
         assert!(crt_manifest.contains("process_exit|required|EXIT"));
         assert!(!crt0.contains("lnp64 cc"));
         assert!(!crt0.contains("cargo run -- cc"));
+    }
+
+    #[test]
+    fn minilibc_smoke_stub_matches_real_llvm_gate() {
+        let minilibc = include_str!("../toolchain/liblnp64_min.s");
+        let real_llc = include_str!("../scripts/run_real_llvm_lnp64.sh");
+        let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
+        let roadmap = include_str!("../toolchain_roadmap.md");
+
+        assert!(contract_index.contains(
+            "minilibc_smoke|toolchain/liblnp64_min.s|minilibc_smoke_stub_matches_real_llvm_gate"
+        ));
+        for required in [
+            ".globl write",
+            "write:",
+            "MOV r1, r3",
+            ".globl alloc",
+            "alloc:",
+            "LA r1, __lnp64_min_heap",
+            ".globl free",
+            "free:",
+            "LI r1, 0",
+            "__lnp64_min_heap:",
+            ".zero 256",
+        ] {
+            assert!(minilibc.contains(required), "minilibc missing {required}");
+        }
+        assert!(real_llc.contains("toolchain/liblnp64_min.s"));
+        assert!(real_llc.contains("liblnp64-min-smoke.o"));
+        assert!(real_llc.contains("lnp64-$demo-clang-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld clang demo link smoke passed"));
+        assert!(roadmap.contains("toolchain/liblnp64_min.s"));
+        assert!(!minilibc.contains("lnp64 cc"));
+        assert!(!minilibc.contains("cargo run -- cc"));
     }
 
     #[test]

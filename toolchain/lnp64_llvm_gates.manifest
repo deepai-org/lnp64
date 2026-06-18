@@ -2,7 +2,7 @@
 # Pipe-delimited fields: gate|command|requires|status
 gate_driver|bash scripts/run_llvm_bootstrap_gates.sh --dry-run|manifest_driver,no_toy_compiler,planned_gate_audit|planned
 real_tblgen|bash scripts/run_real_llvm_tblgen_docker.sh|docker,llvm_tblgen,tablegen_target_surface,no_toy_compiler|planned
-real_llc_build|bash scripts/run_real_llvm_lnp64_docker.sh|docker,llvm_project,clang,llc,llvm_mc,llvm_objdump,lld,LNP64_backend_build,clang_scalar_compile,clang_hello_object,clang_arithmetic_object,clang_memory_object,clang_calls_object,crt0_assembly,disassembler_roundtrip,static_link_smoke,no_toy_compiler|planned
+real_llc_build|bash scripts/run_real_llvm_lnp64_docker.sh|docker,llvm_project,clang,llc,llvm_mc,llvm_objdump,lld,LNP64_backend_build,clang_scalar_compile,clang_hello_object,clang_arithmetic_object,clang_memory_object,clang_calls_object,crt0_assembly,minilibc_assembly,disassembler_roundtrip,static_link_smoke,clang_demo_static_link,no_toy_compiler|planned
 compile_hello|clang --target=lnp64-unknown-none -ffreestanding -fno-pic -I toolchain -c demos/hello.c -o {build}/hello.o|clang,target_skeleton,integer_codegen,load_store,branch_call_return,intrinsic_header|planned
 compile_arithmetic|clang --target=lnp64-unknown-none -ffreestanding -fno-pic -I toolchain -c demos/factorial.c -o {build}/factorial.o|clang,integer_alu,compare,branch_call_return,stack_locals,intrinsic_header|planned
 compile_memory|clang --target=lnp64-unknown-none -ffreestanding -fno-pic -I toolchain -c demos/allocator.c -o {build}/allocator.o|clang,load_store,global_data,libc_headers,malloc_free,intrinsic_header|planned
