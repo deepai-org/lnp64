@@ -927,6 +927,34 @@ mod tests {
             .collect()
     }
 
+    fn netbsd_layer_rows(manifest: &str) -> Vec<(&str, &str, Vec<&str>, &str, &str)> {
+        manifest
+            .lines()
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(|line| {
+                let mut fields = line.splitn(5, '|');
+                let layer = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing NetBSD layer in {line}"));
+                let status = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing NetBSD layer status in {line}"));
+                let artifacts = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing NetBSD layer artifacts in {line}"))
+                    .split(',')
+                    .collect();
+                let gate = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing NetBSD layer gate in {line}"));
+                let next_blocker = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing NetBSD layer blocker in {line}"));
+                (layer, status, artifacts, gate, next_blocker)
+            })
+            .collect()
+    }
+
     fn llvm_bootstrap_rows(manifest: &str) -> Vec<(&str, &str, Vec<&str>, Vec<&str>, &str)> {
         manifest
             .lines()
@@ -1066,6 +1094,7 @@ mod tests {
             "clang_driver",
             "llvm_filemap",
             "libc_shim",
+            "netbsd_layers",
             "isel",
             "llvm_bootstrap",
             "llvm_gates",
@@ -1697,6 +1726,101 @@ mod tests {
     }
 
     #[test]
+    fn netbsd_layers_manifest_preserves_personality_order() {
+        let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
+        let layers_manifest = include_str!("../toolchain/lnp64_netbsd_layers.manifest");
+        let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
+        let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
+        let roadmap = include_str!("../toolchain_roadmap.md");
+        let personality_doc = include_str!("../netbsd_personality_abi.md");
+        let system_gate = include_str!("../scripts/run_netbsd_personality_system.sh");
+        let rows = netbsd_layer_rows(layers_manifest);
+        let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let layers_path = manifest_field(target_manifest, "netbsd_layers_contract");
+        let mut seen = std::collections::BTreeSet::new();
+        let mut ordered_layers = Vec::new();
+        let mut statuses = std::collections::BTreeMap::new();
+        let mut blockers = std::collections::BTreeMap::new();
+
+        assert_eq!(layers_path, "toolchain/lnp64_netbsd_layers.manifest");
+        assert!(manifest_root.join(layers_path).is_file());
+        assert!(contract_index.contains(
+            "netbsd_layers|toolchain/lnp64_netbsd_layers.manifest|netbsd_layers_manifest_preserves_personality_order"
+        ));
+        assert!(transition_manifest.contains("toolchain/lnp64_netbsd_layers.manifest"));
+        assert!(roadmap.contains("toolchain/lnp64_netbsd_layers.manifest"));
+        assert!(personality_doc.contains("toolchain/lnp64_netbsd_layers.manifest"));
+        assert!(personality_doc.contains("No full monolithic NetBSD kernel port"));
+        assert!(system_gate.contains("forbidden primitive in trace"));
+        for forbidden in [
+            "IRQ",
+            "MMIO",
+            "DMA_CTL",
+            "PAGE_TABLE",
+            "SCHED_CTL",
+            "RAW_SYSCALL",
+        ] {
+            assert!(
+                system_gate.contains(forbidden),
+                "NetBSD system gate must reject forbidden primitive {forbidden}"
+            );
+        }
+
+        for (layer, status, artifacts, gate, next_blocker) in rows {
+            assert!(seen.insert(layer), "duplicate NetBSD layer {layer}");
+            ordered_layers.push(layer);
+            statuses.insert(layer, status);
+            blockers.insert(layer, next_blocker);
+            assert!(
+                ["bootstrap_gate", "scaffolded", "planned", "blocked"].contains(&status),
+                "unknown NetBSD layer status {status} for {layer}"
+            );
+            assert!(
+                !artifacts.is_empty(),
+                "empty artifacts for NetBSD layer {layer}"
+            );
+            for artifact in artifacts {
+                assert!(
+                    manifest_root.join(artifact).exists(),
+                    "NetBSD layer {layer} names missing artifact {artifact}"
+                );
+            }
+            if gate != "none" {
+                assert!(
+                    manifest_root.join(gate).exists(),
+                    "NetBSD layer {layer} names missing gate {gate}"
+                );
+            }
+            assert!(
+                !next_blocker.is_empty(),
+                "NetBSD layer {layer} must name its next blocker"
+            );
+        }
+
+        assert_eq!(
+            ordered_layers,
+            vec![
+                "libc_userland_pieces",
+                "rump_filesystem_components",
+                "rump_network_socket_personality",
+                "process_signal_thread_compat",
+                "larger_userland_commands",
+                "fuller_machine_port",
+            ],
+            "NetBSD personality layers must stay in the planned bring-up order"
+        );
+        assert_eq!(statuses["fuller_machine_port"], "blocked");
+        assert!(
+            blockers["fuller_machine_port"].contains("not_credible_yet"),
+            "fuller machine port must remain blocked on rump services/static userland credibility"
+        );
+        assert_ne!(
+            statuses["larger_userland_commands"], "bootstrap_gate",
+            "larger NetBSD userland must not be treated as current bootstrap coverage"
+        );
+    }
+
+    #[test]
     fn llvm_target_manifest_records_required_backend_contract() {
         let manifest = include_str!("../toolchain/lnp64_target.manifest");
         let object_format = include_str!("../object_format.md");
@@ -1740,6 +1864,10 @@ mod tests {
         assert_eq!(
             manifest_field(manifest, "libc_shim_contract"),
             "toolchain/lnp64_libc_shim.manifest"
+        );
+        assert_eq!(
+            manifest_field(manifest, "netbsd_layers_contract"),
+            "toolchain/lnp64_netbsd_layers.manifest"
         );
         assert_eq!(
             manifest_field(manifest, "isel_contract"),

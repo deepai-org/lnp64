@@ -16,6 +16,10 @@ several compiled C test programs, and audits the generated native trace.
 surfaces used by this gate. It also carries the initial NetBSD-current
 syscall-number subset for the gate's supported calls, routing them to the same
 compatibility surfaces instead of creating an emulator syscall escape.
+`toolchain/lnp64_netbsd_layers.manifest` is the checked layer-order contract:
+libc/userland smoke first, then rump filesystem, rump networking/socket
+personality, process/signal/thread compatibility, larger userland commands, and
+only then a fuller machine port.
 
 ## ABI Surface
 
