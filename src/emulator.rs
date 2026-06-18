@@ -8878,6 +8878,26 @@ mod tests {
     }
 
     #[test]
+    fn default_fatal_signal_exits_through_native_event_path() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+
+        machine.queue_process_event(1, NativeEvent::fault_signal(SIGSEGV));
+        assert!(matches!(
+            machine.process().unwrap().pending_events.front(),
+            Some(NativeEvent::Signal {
+                signum: SIGSEGV,
+                ..
+            })
+        ));
+
+        machine.deliver_signal_if_needed().unwrap();
+        assert_eq!(machine.last_exit, 128 + SIGSEGV as i32);
+        assert!(!machine.processes.contains_key(&1));
+        assert!(!machine.threads.contains_key(&1));
+    }
+
+    #[test]
     fn signal_delivery_defers_nested_frames_until_sigret() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
