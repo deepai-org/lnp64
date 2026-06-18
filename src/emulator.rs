@@ -12468,6 +12468,16 @@ mod tests {
         machine.write_bytes(out, &sentinel).unwrap();
         machine.thread_mut().unwrap().regs[2] = ENV_KEY_PROCESS_ENTRY_RECORD;
         machine.thread_mut().unwrap().regs[3] = out;
+        machine.thread_mut().unwrap().regs[4] = 0;
+        machine
+            .exec(Instr::EnvGet(Reg(7), Reg(2), Reg(3), Reg(4)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[7], 0);
+        assert_eq!(machine.read_bytes(out, 64).unwrap(), sentinel);
+
+        machine.write_bytes(out, &sentinel).unwrap();
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_PROCESS_ENTRY_RECORD;
+        machine.thread_mut().unwrap().regs[3] = out;
         machine.thread_mut().unwrap().regs[4] = 16;
         machine
             .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(3), Reg(4)))
@@ -12476,6 +12486,16 @@ mod tests {
         assert_eq!(machine.load_u64(out).unwrap(), 2);
         assert_eq!(machine.load_u64(out + 8).unwrap(), ARG_BASE + 8);
         assert_eq!(machine.read_bytes(out + 16, 48).unwrap(), vec![0xa5; 48]);
+
+        machine.write_bytes(out, &sentinel).unwrap();
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_TOPOLOGY_RECORD;
+        machine.thread_mut().unwrap().regs[3] = out;
+        machine.thread_mut().unwrap().regs[4] = 0;
+        machine
+            .exec(Instr::EnvGet(Reg(8), Reg(2), Reg(3), Reg(4)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[8], 0);
+        assert_eq!(machine.read_bytes(out, 64).unwrap(), sentinel);
 
         machine.write_bytes(out, &sentinel).unwrap();
         machine.thread_mut().unwrap().regs[2] = ENV_KEY_TOPOLOGY_RECORD;
