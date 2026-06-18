@@ -46,6 +46,7 @@ const SOCKET_OPT_SO_SNDBUF: u64 = 7;
 const SOCKET_OPT_SO_RCVBUF: u64 = 8;
 const SOCKET_OPT_SO_KEEPALIVE: u64 = 9;
 const MESSAGE_ENDPOINT_FD: usize = FDR_COUNT - 1;
+const PROCESS_INBOX_LIMIT: usize = 1024;
 const UTIME_NOW_LNP64: i64 = 1_073_741_823;
 const UTIME_OMIT_LNP64: i64 = 1_073_741_822;
 const ROOT_DOMAIN_ID: u64 = 1;
@@ -2654,16 +2655,23 @@ impl Machine {
             Instr::MsgSend(pid, v1, v2) => {
                 let pid = self.read_reg(pid)?;
                 let msg = (self.read_reg(v1)?, self.read_reg(v2)?);
-                if let Some(process) = self.processes.get_mut(&pid) {
-                    process.inbox.push_back(msg);
-                    if let Some(tid) = self
-                        .threads
-                        .values()
-                        .find(|thread| thread.pid == pid)
-                        .map(|thread| thread.tid)
-                    {
-                        self.wake_thread(tid);
-                    }
+                let Some(process) = self.processes.get_mut(&pid) else {
+                    self.set_status_errno(3)?;
+                    return Ok(true);
+                };
+                if process.inbox.len() >= PROCESS_INBOX_LIMIT {
+                    self.set_status_errno(11)?;
+                    return Ok(true);
+                }
+                process.inbox.push_back(msg);
+                self.set_status_ok()?;
+                if let Some(tid) = self
+                    .threads
+                    .values()
+                    .find(|thread| thread.pid == pid)
+                    .map(|thread| thread.tid)
+                {
+                    self.wake_thread(tid);
                 }
             }
             Instr::ObjectCtl(result, argblock) => {
@@ -8644,6 +8652,42 @@ mod tests {
             machine.process().unwrap().fds[5],
             FdHandle::Closed
         ));
+    }
+
+    #[test]
+    fn msg_send_reports_missing_target_and_full_inbox() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[2] = 99;
+        machine.thread_mut().unwrap().regs[3] = 10;
+        machine.thread_mut().unwrap().regs[4] = 20;
+
+        machine
+            .exec(Instr::MsgSend(Reg(2), Reg(3), Reg(4)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 3);
+        assert!(machine.process().unwrap().inbox.is_empty());
+
+        for _ in 0..PROCESS_INBOX_LIMIT {
+            machine.process_mut().unwrap().inbox.push_back((1, 2));
+        }
+        machine.thread_mut().unwrap().regs[2] = 1;
+        machine
+            .exec(Instr::MsgSend(Reg(2), Reg(3), Reg(4)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 11);
+        assert_eq!(machine.process().unwrap().inbox.len(), PROCESS_INBOX_LIMIT);
+
+        machine.process_mut().unwrap().inbox.clear();
+        machine.set_errno(123).unwrap();
+        machine
+            .exec(Instr::MsgSend(Reg(2), Reg(3), Reg(4)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], 0);
+        assert_eq!(machine.process().unwrap().errno, 0);
+        assert_eq!(machine.process().unwrap().inbox.front(), Some(&(10, 20)));
     }
 
     #[test]
