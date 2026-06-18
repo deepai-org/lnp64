@@ -2714,9 +2714,7 @@ impl Machine {
         entry: Option<u64>,
     ) -> Result<(), String> {
         self.require_domain_cap(DOMAIN_CAP_PROCESS)?;
-        if dst.0 == 31 {
-            return Err("write to hardware-locked stack pointer r31".to_string());
-        }
+        Self::ensure_result_reg_writable(dst)?;
         if profile == CloneProfile::DomainTask {
             self.set_status_errno(38)?;
             self.write_reg(dst, -1i64 as u64)?;
@@ -4126,6 +4124,7 @@ impl Machine {
     }
 
     fn object_ctl(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
+        Self::ensure_result_reg_writable(result)?;
         let op = self.load_u64_offset(argblock, 0)?;
         let value = match op {
             OBJECT_OP_CREATE => self.object_ctl_create(argblock),
@@ -4147,6 +4146,7 @@ impl Machine {
     }
 
     fn dma_ctl(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
+        Self::ensure_result_reg_writable(result)?;
         if !self.current_domain_dma_allowed()? {
             self.set_status_errno(1)?;
             self.write_reg(result, -1i64 as u64)?;
@@ -4228,6 +4228,7 @@ impl Machine {
     }
 
     fn cap_send(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
+        Self::ensure_result_reg_writable(result)?;
         let channel_value = self.load_u64_offset(argblock, 0)?;
         let src_value = self.load_u64_offset(argblock, 8)?;
         let flags = self.load_u64_offset(argblock, 24)?;
@@ -4285,6 +4286,7 @@ impl Machine {
     }
 
     fn cap_recv(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
+        Self::ensure_result_reg_writable(result)?;
         let channel_value = self.load_u64_offset(argblock, 0)?;
         let dst_req = self.load_u64_offset(argblock, 8)?;
         let rights_req = self.load_u64_offset(argblock, 16)?;
@@ -4378,6 +4380,7 @@ impl Machine {
     }
 
     fn cap_dup(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
+        Self::ensure_result_reg_writable(result)?;
         let src_value = self.load_u64_offset(argblock, 0)?;
         let dst_req = self.load_u64_offset(argblock, 8)?;
         let rights_req = self.load_u64_offset(argblock, 16)?;
@@ -4459,6 +4462,7 @@ impl Machine {
     }
 
     fn cap_revoke(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
+        Self::ensure_result_reg_writable(result)?;
         let src_value = self.load_u64_offset(argblock, 0)?;
         let value = self.cap_revoke_inner(src_value);
         match value {
@@ -5795,6 +5799,7 @@ impl Machine {
     }
 
     fn domain_ctl(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
+        Self::ensure_result_reg_writable(result)?;
         let op = self.load_u64_offset(argblock, 0)?;
         let value = match op {
             DOMAIN_OP_CREATE => self.domain_ctl_create(argblock),
@@ -5814,6 +5819,7 @@ impl Machine {
     }
 
     fn ns_ctl(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
+        Self::ensure_result_reg_writable(result)?;
         let value = self.ns_ctl_record(argblock);
         match value {
             Ok(value) => self.complete_reg_ok(result, value),
@@ -7106,6 +7112,14 @@ impl Machine {
             self.thread_mut()?.regs[reg.0] = value;
         }
         Ok(())
+    }
+
+    fn ensure_result_reg_writable(reg: Reg) -> Result<(), String> {
+        if reg.0 == 31 {
+            Err("write to hardware-locked stack pointer r31".to_string())
+        } else {
+            Ok(())
+        }
     }
 
     fn read_f64(&self, reg: FReg) -> Result<f64, String> {
@@ -8461,6 +8475,30 @@ mod tests {
         machine.store_u64(arg + 56, 0).unwrap();
         machine.object_ctl(Reg(3), arg).unwrap();
         assert_eq!(machine.thread().unwrap().regs[3], 7);
+    }
+
+    #[test]
+    fn object_ctl_rejects_locked_result_register_before_create_side_effects() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let arg = ARG_BASE;
+
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::Counter.code())
+            .unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 7).unwrap();
+        machine.store_u64(arg + 40, 123).unwrap();
+
+        let err = machine.object_ctl(Reg(31), arg).unwrap_err();
+
+        assert!(err.contains("hardware-locked stack pointer"), "{err}");
+        assert_eq!(machine.load_u64(arg + 24).unwrap(), 7);
+        assert!(matches!(
+            machine.process().unwrap().fds[7],
+            FdHandle::Closed
+        ));
     }
 
     #[test]
