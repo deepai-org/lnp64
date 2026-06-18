@@ -125,6 +125,32 @@ memcpy_done:
   MOV r1, r4
   RET
 
+.globl memmove
+.type memmove,@function
+memmove:
+  MOV r4, r1
+  CMPU r1, r2
+  BLE memmove_forward
+  ADD r1, r1, r3
+  ADD r2, r2, r3
+  LI r5, 0
+  LI r6, 1
+memmove_backward_loop:
+  CMPU r5, r3
+  BGE memmove_done
+  SUB r1, r1, r6
+  SUB r2, r2, r6
+  LD.B r7, 0(r2)
+  ST.B r7, 0(r1)
+  ADD r5, r5, r6
+  JMP memmove_backward_loop
+memmove_forward:
+  CALL memcpy
+  RET
+memmove_done:
+  MOV r1, r4
+  RET
+
 .globl memset
 .type memset,@function
 memset:

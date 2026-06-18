@@ -1469,6 +1469,7 @@ mod tests {
         assert!(real_llc.contains("domain_ctl r"));
         assert!(real_llc.contains("real LLVM LNP64 clang intrinsic control object smoke passed"));
         assert!(real_llc.contains("libc-string-clang-smoke.o"));
+        assert!(real_llc.contains("void *memmove"));
         assert!(real_llc.contains("real LLVM LNP64 clang minilibc string object smoke passed"));
         assert!(real_llc.contains("calloc-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang calloc object smoke passed"));
@@ -2785,6 +2786,10 @@ mod tests {
             ".globl memcpy",
             "memcpy:",
             "ST.B r7, 0(r1)",
+            ".globl memmove",
+            "memmove:",
+            "memmove_backward_loop:",
+            "CALL memcpy",
             ".globl memset",
             "memset:",
             "ST.B r2, 0(r1)",

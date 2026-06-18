@@ -623,6 +623,7 @@ typedef unsigned long size_t;
 
 size_t strlen(const char *s);
 void *memcpy(void *dst, const void *src, size_t len);
+void *memmove(void *dst, const void *src, size_t len);
 void *memset(void *dst, int value, size_t len);
 
 int main(void) {
@@ -639,6 +640,19 @@ int main(void) {
     return 4;
   if (dst[3] != 'A')
     return 5;
+  char overlap[8] = {'a', 'b', 'c', 'd', 'e', 'f', 0, 0};
+  if (memmove(overlap + 2, overlap, 4) != overlap + 2)
+    return 6;
+  if (overlap[0] != 'a' || overlap[1] != 'b' || overlap[2] != 'a')
+    return 7;
+  if (overlap[3] != 'b' || overlap[4] != 'c' || overlap[5] != 'd')
+    return 8;
+  if (memmove(overlap, overlap + 2, 4) != overlap)
+    return 9;
+  if (overlap[0] != 'a' || overlap[1] != 'b' || overlap[2] != 'c')
+    return 10;
+  if (overlap[3] != 'd')
+    return 11;
   return 0;
 }
 C

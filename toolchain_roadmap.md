@@ -36,8 +36,9 @@ verifies trivial LNP64 IR codegen, real Clang compiles of scalar C,
 `demos/hello.c`, `demos/factorial.c`, `demos/allocator.c`, and
 `demos/fibonacci.c` to target objects. It also covers indirect calls, inline
 asm, exit/argc, signed and unsigned compares, signed loads, wide constants,
-stack aggregate addresses, minilibc string calls, minilibc `calloc`/`realloc`,
-and minilibc `read` smokes. The gate assembles the checked crt0 and minimal libc smoke stubs,
+stack aggregate addresses, minilibc string and `memmove` calls, minilibc
+`calloc`/`realloc`, and minilibc `read` smokes. The gate assembles the checked
+crt0 and minimal libc smoke stubs,
 disassembles emitted objects, statically links crt0 plus an assembler-built
 `main`, and statically links each Clang-built demo/probe object with crt0 plus
 the smoke libc object. The Docker wrapper submits those linked ELFs through
