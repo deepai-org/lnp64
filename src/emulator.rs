@@ -5784,11 +5784,13 @@ impl Machine {
     }
 
     fn ret_cap(&mut self, result: Reg, value0: u64, value1: u64) -> Result<(), String> {
-        let Some(continuation) = self.thread_mut()?.cap_call_stack.pop() else {
+        Self::ensure_result_reg_writable(result)?;
+        let Some(continuation) = self.thread()?.cap_call_stack.last().cloned() else {
             self.set_status_errno(22)?;
             self.write_reg(result, -1i64 as u64)?;
             return Ok(());
         };
+        Self::ensure_result_reg_writable(continuation.result_reg)?;
         if self.domain_is_frozen_or_destroyed(continuation.caller_domain_id) {
             self.set_status_errno(116)?;
             self.write_reg(result, -1i64 as u64)?;
@@ -5804,6 +5806,7 @@ impl Machine {
             self.write_reg(result, -1i64 as u64)?;
             return Ok(());
         }
+        self.thread_mut()?.cap_call_stack.pop();
         self.process_mut()?.domain_id = continuation.caller_domain_id;
         self.thread_mut()?.ip = continuation.return_ip;
         self.set_errno(0)?;
@@ -16443,6 +16446,41 @@ mod tests {
         machine.ret_cap(Reg(4), 1, 2).unwrap();
         assert_eq!(machine.thread().unwrap().regs[4], -1i64 as u64);
         assert_eq!(machine.process().unwrap().domain_id, 3);
+    }
+
+    #[test]
+    fn ret_cap_rejects_locked_result_registers_without_popping_or_switching() {
+        let mut machine = test_machine_with_child_domain();
+        machine.current_tid = 1;
+        machine.processes.get_mut(&1).unwrap().domain_id = 2;
+        machine.thread_mut().unwrap().ip = 77;
+        machine
+            .thread_mut()
+            .unwrap()
+            .cap_call_stack
+            .push(CallContinuation {
+                return_ip: 123,
+                result_reg: Reg(5),
+                caller_domain_id: ROOT_DOMAIN_ID,
+            });
+
+        let err = machine.ret_cap(Reg(31), 10, 20).unwrap_err();
+        assert!(err.contains("hardware-locked stack pointer"), "{err}");
+        assert_eq!(machine.process().unwrap().domain_id, 2);
+        assert_eq!(machine.thread().unwrap().ip, 77);
+        assert_eq!(machine.thread().unwrap().cap_call_stack.len(), 1);
+        assert_eq!(machine.thread().unwrap().regs[5], 0);
+        assert_eq!(machine.thread().unwrap().regs[30], 0);
+
+        machine.thread_mut().unwrap().cap_call_stack[0].result_reg = Reg(31);
+
+        let err = machine.ret_cap(Reg(5), 10, 20).unwrap_err();
+        assert!(err.contains("hardware-locked stack pointer"), "{err}");
+        assert_eq!(machine.process().unwrap().domain_id, 2);
+        assert_eq!(machine.thread().unwrap().ip, 77);
+        assert_eq!(machine.thread().unwrap().cap_call_stack.len(), 1);
+        assert_eq!(machine.thread().unwrap().regs[5], 0);
+        assert_eq!(machine.thread().unwrap().regs[30], 0);
     }
 
     #[test]
