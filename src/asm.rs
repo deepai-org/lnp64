@@ -410,6 +410,16 @@ impl Parser {
                 arity(3)?;
                 Instr::LinkPath(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
+            "LINK_PATH_AT" => {
+                arity(5)?;
+                Instr::LinkPathAt(
+                    reg(&args[0])?,
+                    reg(&args[1])?,
+                    reg(&args[2])?,
+                    reg(&args[3])?,
+                    reg(&args[4])?,
+                )
+            }
             "SYMLINK_PATH" => {
                 arity(2)?;
                 Instr::SymlinkPath(reg(&args[0])?, reg(&args[1])?)

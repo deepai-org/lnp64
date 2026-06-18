@@ -1667,6 +1667,29 @@ impl Machine {
                     Err(err) => self.set_status_io_error(err)?,
                 }
             }
+            Instr::LinkPathAt(old_dir_reg, old_reg, new_dir_reg, new_reg, flags_reg) => {
+                let old_dir = self.read_reg(old_dir_reg)?;
+                let old = self.read_c_string(self.read_reg(old_reg)?)?;
+                let new_dir = self.read_reg(new_dir_reg)?;
+                let new = self.read_c_string(self.read_reg(new_reg)?)?;
+                let flags = self.read_reg(flags_reg)?;
+                let Some(new_path) = self.resolve_process_path_at_or_errno(new_dir, &new)? else {
+                    return Ok(true);
+                };
+                let result = if flags & 1 == 1 {
+                    std::os::unix::fs::symlink(&old, &new_path)
+                } else {
+                    let Some(old_path) = self.resolve_process_path_at_or_errno(old_dir, &old)?
+                    else {
+                        return Ok(true);
+                    };
+                    fs::hard_link(&old_path, &new_path)
+                };
+                match result {
+                    Ok(()) => self.set_status_ok()?,
+                    Err(err) => self.set_status_io_error(err)?,
+                }
+            }
             Instr::SymlinkPath(target_reg, link_reg) => {
                 let target = self.read_c_string(self.read_reg(target_reg)?)?;
                 let link = self.read_c_string(self.read_reg(link_reg)?)?;

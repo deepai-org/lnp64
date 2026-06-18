@@ -69,6 +69,10 @@ int main() {
     if (fstatat(dir, "ns_probe_link", st, 0) != 0) return 45;
     if (unlinkat(dir, "ns_probe_link", 0) != 0) return 46;
     if (symlinkat("ns_probe", dir, "../../etc/ns_probe_link") != -1) return 47;
+    if (linkat(dir, "ns_probe", dir, "ns_probe_hard", 0) != 0) return 48;
+    if (fstatat(dir, "ns_probe_hard", st, 0) != 0) return 49;
+    if (unlinkat(dir, "ns_probe_hard", 0) != 0) return 50;
+    if (linkat(dir, "ns_probe", dir, "../../etc/ns_probe_hard", 0) != -1) return 51;
     fd = openat(dir, "unlink_probe", O_CREAT | O_TRUNC);
     if (fd == -1) return 40;
     close(fd);

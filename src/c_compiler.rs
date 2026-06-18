@@ -7517,12 +7517,15 @@ impl CodeGen {
                             .to_string(),
                     );
                 }
+                let olddirfd = self.emit_expr(&args[0])?;
                 let old = self.emit_expr(&args[1])?;
+                let newdirfd = self.emit_expr(&args[2])?;
                 let new = self.emit_expr(&args[3])?;
                 let flags = self.emit_expr(&args[4])?;
                 let dst = self.alloc_reg()?;
-                self.text
-                    .push(format!("  LINK_PATH r{old}, r{new}, r{flags}"));
+                self.text.push(format!(
+                    "  LINK_PATH_AT r{olddirfd}, r{old}, r{newdirfd}, r{new}, r{flags}"
+                ));
                 self.text.push(format!("  MOV r{dst}, r1"));
                 Ok(dst)
             }
@@ -19997,6 +20000,7 @@ int main() {
             fcntl(fd, F_SETFL, 0);
             fchmodat(AT_FDCWD, "Cargo.toml", 0644, 0);
             unlinkat(AT_FDCWD, "/tmp/lnp64_unlinkat_compile_only", 0);
+            linkat(AT_FDCWD, "Cargo.toml", AT_FDCWD, "/tmp/lnp64_linkat_compile_only", 0);
             symlinkat("Cargo.toml", AT_FDCWD, "/tmp/lnp64_symlinkat_compile_only");
             open(3, "Cargo.toml", 0);
             pread(3, buf, 3, 1);
@@ -20013,6 +20017,7 @@ int main() {
         assert!(asm.contains("OPEN_AT_DYN"));
         assert!(asm.contains("CHMOD_PATH_AT"));
         assert!(asm.contains("UNLINK_PATH_AT"));
+        assert!(asm.contains("LINK_PATH_AT"));
         assert!(asm.contains("SYMLINK_PATH_AT"));
         assert!(asm.contains("CAP_DUP"));
         assert!(asm.contains("PULL_DYN"));

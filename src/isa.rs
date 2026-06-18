@@ -123,6 +123,7 @@ pub enum Instr {
     UnlinkPathAt(Reg, Reg, Reg),
     RenamePath(Reg, Reg),
     LinkPath(Reg, Reg, Reg),
+    LinkPathAt(Reg, Reg, Reg, Reg, Reg),
     SymlinkPath(Reg, Reg),
     SymlinkPathAt(Reg, Reg, Reg),
     ReadlinkPath(Reg, Reg, Reg),
