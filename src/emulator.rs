@@ -9540,6 +9540,80 @@ mod tests {
     }
 
     #[test]
+    fn ns_ctl_resolve_failures_do_not_write_output_buffer() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let base = std::env::temp_dir().join(format!("lnp64_ns_ctl_fail_{unique}"));
+        let root = base.join("root");
+        let tmp = root.join("tmp");
+        let outside = base.join("outside");
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&tmp).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(tmp.join("inside"), b"inside").unwrap();
+
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        {
+            let process = machine.process_mut().unwrap();
+            process.namespace_root = Some(root.clone());
+            process.cwd = root.clone();
+            process.fds[10] = FdHandle::Dir {
+                path: tmp.to_string_lossy().into_owned(),
+                entries: Vec::new(),
+                pos: 0,
+            };
+            process.fd_capabilities[10] = FdCapability::full(10);
+        }
+
+        let arg = ARG_BASE + 0x1000;
+        let path = ARG_BASE + 0x1100;
+        let out = ARG_BASE + 0x1200;
+        machine.write_bytes(path, b"inside\0").unwrap();
+        machine.store_u64(arg, NS_OP_RESOLVE).unwrap();
+        machine.store_u64(arg + 8, NS_CTL_VERSION).unwrap();
+        machine.store_u64(arg + 16, 10).unwrap();
+        machine.store_u64(arg + 24, path).unwrap();
+        machine.store_u64(arg + 32, out).unwrap();
+        machine.store_u64(arg + 40, 4).unwrap();
+        machine.store_u64(arg + 48, 0).unwrap();
+
+        machine.write_bytes(out, b"sentinel-a\0").unwrap();
+        machine.ns_ctl(Reg(4), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[4], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 34);
+        assert_eq!(machine.read_c_string(out).unwrap(), "sentinel-a");
+
+        machine.store_u64(arg + 40, 256).unwrap();
+        machine.store_u64(arg + 48, 1 << 4).unwrap();
+        machine.write_bytes(out, b"sentinel-b\0").unwrap();
+        machine.ns_ctl(Reg(5), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert_eq!(machine.read_c_string(out).unwrap(), "sentinel-b");
+
+        machine.store_u64(arg + 48, 0).unwrap();
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[10].rights &= !CAP_RIGHT_READ;
+        machine.write_bytes(out, b"sentinel-c\0").unwrap();
+        machine.ns_ctl(Reg(6), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[6], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
+        assert_eq!(machine.read_c_string(out).unwrap(), "sentinel-c");
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[10].rights |= CAP_RIGHT_READ;
+
+        machine.write_bytes(path, b"../../outside\0").unwrap();
+        machine.write_bytes(out, b"sentinel-d\0").unwrap();
+        machine.ns_ctl(Reg(7), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[7], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 13);
+        assert_eq!(machine.read_c_string(out).unwrap(), "sentinel-d");
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
     fn runs_integer_loop() {
         let program = Program::parse(
             r#"
