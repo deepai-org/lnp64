@@ -4462,6 +4462,11 @@ impl Machine {
         let arg = self.load_u64_offset(argblock, 40).map_err(|_| 14u64)?;
         match (kind, profile) {
             (ObjectKind::Queue, ObjectProfile::Pipe) => {
+                self.validate_object_fd_request(fd0_req)?;
+                self.validate_object_fd_request(fd1_req)?;
+                if fd0_req != 0 && fd0_req == fd1_req {
+                    return Err(22);
+                }
                 let buffer = Rc::new(RefCell::new(PipeBuffer::default()));
                 let read_fd =
                     self.install_object_fd(fd0_req, FdHandle::PipeReader(Rc::clone(&buffer)))?;
@@ -5444,6 +5449,15 @@ impl Machine {
             | Some(FdHandle::TcpStream(_)) => Ok(()),
             _ => Err(22),
         }
+    }
+
+    fn validate_object_fd_request(&self, requested: u64) -> Result<(), u64> {
+        if requested != 0
+            && (requested as usize >= FDR_COUNT || requested as usize == MESSAGE_ENDPOINT_FD)
+        {
+            return Err(9);
+        }
+        Ok(())
     }
 
     fn install_object_fd(&mut self, requested: u64, handle: FdHandle) -> Result<usize, u64> {
@@ -8384,6 +8398,53 @@ mod tests {
         machine.store_u64(arg + 56, 0).unwrap();
         machine.object_ctl(Reg(3), arg).unwrap();
         assert_eq!(machine.thread().unwrap().regs[3], 7);
+    }
+
+    #[test]
+    fn pipe_create_prevalidates_fd_pair_before_installing_either_end() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let arg = ARG_BASE;
+
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::Queue.code())
+            .unwrap();
+        machine
+            .store_u64(arg + 16, ObjectProfile::Pipe.code())
+            .unwrap();
+        machine.store_u64(arg + 24, 5).unwrap();
+        machine
+            .store_u64(arg + 32, MESSAGE_ENDPOINT_FD as u64)
+            .unwrap();
+        machine.store_u64(arg + 40, 0).unwrap();
+        machine.object_ctl(Reg(2), arg).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 9);
+        assert!(matches!(
+            machine.process().unwrap().fds[5],
+            FdHandle::Closed
+        ));
+
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::Queue.code())
+            .unwrap();
+        machine
+            .store_u64(arg + 16, ObjectProfile::Pipe.code())
+            .unwrap();
+        machine.store_u64(arg + 24, 5).unwrap();
+        machine.store_u64(arg + 32, 5).unwrap();
+        machine.store_u64(arg + 40, 0).unwrap();
+        machine.object_ctl(Reg(3), arg).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[3], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert!(matches!(
+            machine.process().unwrap().fds[5],
+            FdHandle::Closed
+        ));
     }
 
     #[test]
