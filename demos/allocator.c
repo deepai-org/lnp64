@@ -2,7 +2,7 @@ int main() {
     int ptr;
     int second;
     ptr = alloc(32);
-    second = alloc(16);
+    second = malloc(16);
     if (ptr != 0 && second != 0 && ptr != second) {
         write(1, "alloc ok\n", 9);
         free(second);
