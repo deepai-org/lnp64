@@ -1190,6 +1190,27 @@ mod tests {
     }
 
     #[test]
+    fn rejects_raw_hardware_and_syscall_escape_opcodes() {
+        for opcode in [
+            "IRQ",
+            "INTERRUPT",
+            "MMIO",
+            "MMIO_LOAD",
+            "MMIO_STORE",
+            "RAW_DMA",
+            "RAW_SYSCALL",
+            "SYSCALL",
+        ] {
+            let source = format!(".text\n  {opcode} r1, r2\n");
+            let err = Program::parse(&source).unwrap_err();
+            assert!(
+                err.contains("unknown instruction"),
+                "unexpected error for {opcode}: {err}"
+            );
+        }
+    }
+
+    #[test]
     fn parses_capability_control_instructions() {
         let program = Program::parse(
             r#"
