@@ -30,8 +30,9 @@ first real LLVM infrastructure gate: it builds a container with LLVM tools and
 runs `llvm-tblgen` over the LNP64 TableGen target files, writing generated
 includes under `target/real-llvm-tblgen`.
 `scripts/run_real_llvm_lnp64_docker.sh` overlays the backend into upstream
-LLVM 14 and builds real `llc`/`llvm-mc` tools in Docker; its smoke now verifies
-trivial LNP64 IR codegen plus object assembly of the checked crt0 stub.
+LLVM 14 and builds real `llc`/`llvm-mc`/`llvm-objdump` tools in Docker; its
+smoke now verifies trivial LNP64 IR codegen, object assembly of the checked
+crt0 stub, and disassembly of the emitted startup object.
 `toolchain/lnp64_static.ld` is the initial checked static linker-script
 contract for lld-produced ELF inputs.
 `toolchain/crt0_lnp64.s` is the initial checked crt0 startup stub for the

@@ -79,10 +79,11 @@ cmake -S "$project_dir/llvm" -B "$build_dir" -G Ninja \
   -DLLVM_ENABLE_LIBXML2=OFF \
   -DLLVM_ENABLE_LIBEDIT=OFF
 
-ninja -C "$build_dir" -j "$jobs" llc llvm-mc
+ninja -C "$build_dir" -j "$jobs" llc llvm-mc llvm-objdump
 
 llc="$build_dir/bin/llc"
 llvm_mc="$build_dir/bin/llvm-mc"
+llvm_objdump="$build_dir/bin/llvm-objdump"
 "$llc" --version | sed -n '1,12p'
 
 smoke_ir="$(mktemp)"
@@ -111,3 +112,10 @@ crt0_obj="$build_dir/crt0-smoke.o"
   -o "$crt0_obj"
 test -s "$crt0_obj"
 printf 'real LLVM LNP64 llvm-mc crt0 smoke passed: %s\n' "$crt0_obj"
+
+crt0_dump="$build_dir/crt0-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$crt0_obj" >"$crt0_dump"
+grep -q 'errno_set r0' "$crt0_dump"
+grep -q 'exit r1' "$crt0_dump"
+printf 'real LLVM LNP64 llvm-objdump crt0 decode smoke passed: %s\n' \
+  "$crt0_dump"
