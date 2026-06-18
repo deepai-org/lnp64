@@ -42,6 +42,8 @@ const char *LNP64TargetLowering::getTargetNodeName(unsigned Opcode) const {
   switch (Opcode) {
   case LNP64ISD::CALL:
     return "LNP64ISD::CALL";
+  case LNP64ISD::GATE_CALL:
+    return "LNP64ISD::GATE_CALL";
   case LNP64ISD::PULL:
     return "LNP64ISD::PULL";
   case LNP64ISD::PUSH:
@@ -120,18 +122,20 @@ LNP64TargetLowering::LowerCall(CallLoweringInfo &CLI,
     llvm_unreachable("LNP64 varargs call lowering is not implemented yet");
 
   StringRef CalleeName = getDirectCalleeName(Callee);
-  if (CalleeName == "__lnp_pull" || CalleeName == "__lnp_push") {
+  if (CalleeName == "__lnp_call" || CalleeName == "__lnp_pull" ||
+      CalleeName == "__lnp_push") {
     if (CLI.OutVals.size() != 3 || CLI.Ins.empty())
       llvm_unreachable(
-          "LNP64 native stream lowering expects three arguments and a result");
+          "LNP64 native shim lowering expects three arguments and a result");
     SDVTList NodeTys = DAG.getVTList(MVT::i64, MVT::Other);
     SmallVector<SDValue, 4> Ops = {Chain, CLI.OutVals[0], CLI.OutVals[1],
                                    CLI.OutVals[2]};
-    unsigned Opcode =
-        CalleeName == "__lnp_pull" ? LNP64ISD::PULL : LNP64ISD::PUSH;
-    SDValue NativeStream = DAG.getNode(Opcode, DL, NodeTys, Ops);
-    InVals.push_back(NativeStream);
-    return NativeStream.getValue(1);
+    unsigned Opcode = CalleeName == "__lnp_call"    ? LNP64ISD::GATE_CALL
+                      : CalleeName == "__lnp_pull" ? LNP64ISD::PULL
+                                                   : LNP64ISD::PUSH;
+    SDValue NativeShim = DAG.getNode(Opcode, DL, NodeTys, Ops);
+    InVals.push_back(NativeShim);
+    return NativeShim.getValue(1);
   }
 
   MachineFunction &MF = DAG.getMachineFunction();

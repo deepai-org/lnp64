@@ -17,6 +17,8 @@ def LNP64call : SDNode<"LNP64ISD::CALL", SDTNone,
 def SDT_LNP64Native3 : SDTypeProfile<1, 3, [
   SDTCisVT<0, i64>, SDTCisVT<1, i64>, SDTCisVT<2, i64>, SDTCisVT<3, i64>
 ]>;
+def LNP64gatecall : SDNode<"LNP64ISD::GATE_CALL", SDT_LNP64Native3,
+                           [SDNPHasChain]>;
 def LNP64pull : SDNode<"LNP64ISD::PULL", SDT_LNP64Native3,
                        [SDNPHasChain]>;
 def LNP64push : SDNode<"LNP64ISD::PUSH", SDT_LNP64Native3,
@@ -194,6 +196,9 @@ def CAP_SEND : LNP64Native2<"cap_send">;
 def CAP_RECV : LNP64Native2<"cap_recv">;
 def CAP_DUP : LNP64Native2<"cap_dup">;
 def CAP_REVOKE : LNP64Native2<"cap_revoke">;
-def GATE_CALL : LNP64Native4<"gate_call">;
+def GATE_CALL : LNP64Native4<"gate_call"> {
+  let Pattern = [(set GPR:$rd,
+                  (LNP64gatecall GPR:$cap, GPR:$arg0, GPR:$arg1))];
+}
 def GATE_RETURN : LNP64Inst<(outs), (ins GPR:$status, GPR:$arg0, GPR:$arg1),
                             "gate_return", "\t$status, $arg0, $arg1">;
