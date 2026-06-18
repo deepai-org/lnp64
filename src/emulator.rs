@@ -5729,9 +5729,8 @@ impl Machine {
     ) -> Result<(), String> {
         Self::ensure_result_reg_writable(result)?;
         self.require_domain_cap(DOMAIN_CAP_CALL)?;
-        if self.ensure_fd_right(call_gate_fd, CAP_RIGHT_CALL).is_err() {
-            self.write_reg(result, -1i64 as u64)?;
-            return Ok(());
+        if let Err(errno) = self.fd_right_errno(call_gate_fd, CAP_RIGHT_CALL) {
+            return self.complete_reg_err(result, errno);
         }
         let (
             entry,
@@ -5760,31 +5759,23 @@ impl Machine {
                 *flags,
             ),
             _ => {
-                self.set_status_errno(9)?;
-                self.write_reg(result, -1i64 as u64)?;
-                return Ok(());
+                return self.complete_reg_err(result, 9);
             }
         };
         if self.domain_ref(domain_id, domain_generation).is_err() {
-            self.set_status_errno(116)?;
-            self.write_reg(result, -1i64 as u64)?;
-            return Ok(());
+            return self.complete_reg_err(result, 116);
         }
         if (arg0 & CALL_ARG_CAP_MARKER != 0 || arg1 & CALL_ARG_CAP_MARKER != 0)
             && flags & CALL_GATE_FLAG_CAP_PASS == 0
         {
-            self.set_status_errno(1)?;
-            self.write_reg(result, -1i64 as u64)?;
-            return Ok(());
+            return self.complete_reg_err(result, 1);
         }
         if self.domain_is_frozen_or_destroyed(domain_id) {
-            self.set_status_errno(11)?;
-            self.write_reg(result, -1i64 as u64)?;
-            return Ok(());
+            return self.complete_reg_err(result, 11);
         }
         if !self.check_call_cpu_budget(domain_id)? {
-            self.write_reg(result, -1i64 as u64)?;
-            return Ok(());
+            let errno = self.process()?.errno;
+            return self.complete_reg_err(result, if errno == 0 { 11 } else { errno });
         }
         match mode {
             CALL_MODE_SYNC => self.call_cap_sync(result, entry, domain_id, arg0, arg1),
@@ -5792,11 +5783,7 @@ impl Machine {
                 self.call_cap_async(result, completion_fd.zip(completion_generation), arg0, arg1)
             }
             CALL_MODE_HANDOFF => self.call_cap_handoff(result, entry, domain_id, arg0, arg1),
-            _ => {
-                self.set_status_errno(22)?;
-                self.write_reg(result, -1i64 as u64)?;
-                return Ok(());
-            }
+            _ => self.complete_reg_err(result, 22),
         }
     }
 
@@ -5809,9 +5796,7 @@ impl Machine {
         arg1: u64,
     ) -> Result<(), String> {
         if self.thread()?.cap_call_stack.len() >= MAX_CAP_CALL_DEPTH {
-            self.set_status_errno(11)?;
-            self.write_reg(result, -1i64 as u64)?;
-            return Ok(());
+            return self.complete_reg_err(result, 11);
         }
         let caller_domain_id = self.current_domain_id()?;
         let return_ip = self.thread()?.ip;
