@@ -27,6 +27,17 @@ malloc:
   CALL alloc
   RET
 
+.globl calloc
+.type calloc,@function
+calloc:
+  MUL r8, r1, r2
+  MOV r1, r8
+  CALL malloc
+  MOV r2, r0
+  MOV r3, r8
+  CALL memset
+  RET
+
 .globl free
 .type free,@function
 free:

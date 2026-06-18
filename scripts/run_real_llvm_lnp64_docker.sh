@@ -102,6 +102,13 @@ grep -q 'exit=0' <<<"$libc_string_output"
 printf 'real LLVM LNP64 run-elf minilibc string execution passed: %s\n' \
   "$libc_string_probe"
 
+calloc_probe="target/llvm-lnp64-build/lnp64-calloc-linked.elf"
+cargo run --quiet -- elf-plan "$calloc_probe" >/dev/null
+calloc_output="$(cargo run --quiet -- run-elf "$calloc_probe")"
+grep -q 'exit=0' <<<"$calloc_output"
+printf 'real LLVM LNP64 run-elf calloc execution passed: %s\n' \
+  "$calloc_probe"
+
 indirect_call_probe="target/llvm-lnp64-build/lnp64-indirect-call-linked.elf"
 cargo run --quiet -- elf-plan "$indirect_call_probe" >/dev/null
 indirect_call_output="$(cargo run --quiet -- run-elf "$indirect_call_probe")"

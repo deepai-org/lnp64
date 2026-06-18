@@ -564,6 +564,41 @@ grep -q 'call ' "$libc_string_dump"
 printf 'real LLVM LNP64 clang minilibc string object smoke passed: %s\n' \
   "$libc_string_obj"
 
+calloc_c="$build_dir/calloc-smoke.c"
+cat >"$calloc_c" <<'C'
+typedef unsigned long size_t;
+
+void *calloc(size_t count, size_t size);
+void free(void *ptr);
+
+int main(void) {
+  unsigned char *bytes = calloc(4, 2);
+  if (!bytes)
+    return 1;
+  for (size_t i = 0; i < 8; i = i + 1) {
+    if (bytes[i] != 0)
+      return 2;
+  }
+  bytes[3] = 9;
+  if (bytes[3] != 9)
+    return 3;
+  free(bytes);
+  return 0;
+}
+C
+
+calloc_obj="$build_dir/calloc-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$calloc_c" -o "$calloc_obj"
+test -s "$calloc_obj"
+calloc_dump="$build_dir/calloc-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$calloc_obj" \
+  >"$calloc_dump"
+grep -q 'call ' "$calloc_dump"
+printf 'real LLVM LNP64 clang calloc object smoke passed: %s\n' \
+  "$calloc_obj"
+
 stack_arg_formal_c="$build_dir/stack-arg-formal-negative.c"
 cat >"$stack_arg_formal_c" <<'C'
 int sum7(int a, int b, int c, int d, int e, int f, int g) {
@@ -706,6 +741,13 @@ libc_string_elf="$build_dir/lnp64-libc-string-linked.elf"
 test -s "$libc_string_elf"
 printf 'real LLVM LNP64 lld minilibc string link smoke passed: %s\n' \
   "$libc_string_elf"
+
+calloc_elf="$build_dir/lnp64-calloc-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$calloc_elf" "$crt0_obj" "$calloc_obj" "$minilibc_obj"
+test -s "$calloc_elf"
+printf 'real LLVM LNP64 lld calloc link smoke passed: %s\n' \
+  "$calloc_elf"
 
 indirect_call_elf="$build_dir/lnp64-indirect-call-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
