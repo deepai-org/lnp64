@@ -255,6 +255,8 @@ const EVENTFD_NONBLOCK: u64 = 0x800;
 const CLASSIFIER_MAX_RULES: usize = 64;
 const CLASSIFIER_MAX_ALLOWED_QUEUES: usize = 64;
 const CLASSIFIER_MAX_ROUTE_BYTES: usize = 4096;
+const PIPE_BUFFER_BYTE_LIMIT: usize = ENV_EVENT_QUEUE_LIMIT as usize;
+const PIPE_CAPABILITY_LIMIT: usize = ENV_EVENT_QUEUE_LIMIT as usize;
 const CLASSIFIER_RULE_SIZE: u64 = 64;
 const CLASSIFY_ENVELOPE_SIZE: u64 = 72;
 const CLASSIFY_RESULT_SIZE: u64 = 64;
@@ -544,6 +546,35 @@ struct CapabilityPayload {
 struct PipeBuffer {
     bytes: VecDeque<u8>,
     capabilities: VecDeque<CapabilityPayload>,
+}
+
+impl PipeBuffer {
+    fn can_push_bytes(&self, len: usize) -> bool {
+        self.bytes
+            .len()
+            .checked_add(len)
+            .is_some_and(|next| next <= PIPE_BUFFER_BYTE_LIMIT)
+    }
+
+    fn can_push_capability(&self) -> bool {
+        self.capabilities.len() < PIPE_CAPABILITY_LIMIT
+    }
+
+    fn push_bytes(&mut self, data: &[u8]) -> Result<(), u64> {
+        if !self.can_push_bytes(data.len()) {
+            return Err(11);
+        }
+        self.bytes.extend(data.iter().copied());
+        Ok(())
+    }
+
+    fn push_capability(&mut self, payload: CapabilityPayload) -> Result<(), u64> {
+        if !self.can_push_capability() {
+            return Err(11);
+        }
+        self.capabilities.push_back(payload);
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
@@ -3504,10 +3535,10 @@ impl Machine {
                 err.write_all(&data).and_then(|()| err.flush())
             }
             FdHandle::File(file) => file.write_all(&data),
-            FdHandle::PipeWriter(buffer) => {
-                buffer.borrow_mut().bytes.extend(data.iter().copied());
-                Ok(())
-            }
+            FdHandle::PipeWriter(buffer) => buffer
+                .borrow_mut()
+                .push_bytes(&data)
+                .map_err(|errno| io::Error::from_raw_os_error(errno as i32)),
             FdHandle::Counter(value) => {
                 let next = if data.len() >= 8 {
                     u64::from_le_bytes(data[..8].try_into().unwrap())
@@ -4176,7 +4207,7 @@ impl Machine {
             (queue, CapabilityPayload { handle, capability })
         };
 
-        queue.borrow_mut().capabilities.push_back(payload);
+        queue.borrow_mut().push_capability(payload)?;
         if flags & CAP_SEND_FLAG_MOVE != 0 {
             self.close_fd_index(src).map_err(|_| 9u64)?;
         }
@@ -5173,7 +5204,7 @@ impl Machine {
             envelope.inline0.to_le_bytes().to_vec()
         };
         {
-            queue.borrow_mut().bytes.extend(payload);
+            queue.borrow_mut().push_bytes(&payload)?;
         }
         self.poll_fd_waiters();
         Ok(queue_token)
@@ -5587,26 +5618,47 @@ impl Machine {
         value0: u64,
         value1: u64,
     ) -> Result<(), String> {
-        match &mut self.process_mut()?.fds[fd] {
-            FdHandle::Counter(value) => {
+        enum CompletionTarget {
+            Counter(Rc<RefCell<u64>>),
+            EventCounter(Rc<RefCell<u64>>),
+            Queue(Rc<RefCell<PipeBuffer>>),
+        }
+
+        let target = {
+            let process = self.process()?;
+            match process.fds.get(fd) {
+                Some(FdHandle::Counter(value)) => CompletionTarget::Counter(Rc::clone(value)),
+                Some(FdHandle::EventCounter { value, .. }) => {
+                    CompletionTarget::EventCounter(Rc::clone(value))
+                }
+                Some(FdHandle::PipeWriter(queue)) => CompletionTarget::Queue(Rc::clone(queue)),
+                _ => {
+                    self.set_status_errno(9)?;
+                    return Err("CALL_CAP async completion target is not waitable".to_string());
+                }
+            }
+        };
+
+        match target {
+            CompletionTarget::Counter(value) => {
                 *value.borrow_mut() = op_id;
                 Ok(())
             }
-            FdHandle::EventCounter { value, .. } => {
+            CompletionTarget::EventCounter(value) => {
                 let mut value = value.borrow_mut();
                 *value = value.saturating_add(op_id);
                 Ok(())
             }
-            FdHandle::PipeWriter(queue) => {
-                let mut queue = queue.borrow_mut();
-                queue.bytes.extend(op_id.to_le_bytes());
-                queue.bytes.extend(value0.to_le_bytes());
-                queue.bytes.extend(value1.to_le_bytes());
+            CompletionTarget::Queue(queue) => {
+                let mut payload = [0u8; 24];
+                payload[0..8].copy_from_slice(&op_id.to_le_bytes());
+                payload[8..16].copy_from_slice(&value0.to_le_bytes());
+                payload[16..24].copy_from_slice(&value1.to_le_bytes());
+                if let Err(errno) = queue.borrow_mut().push_bytes(&payload) {
+                    self.set_status_errno(errno)?;
+                    return Err("CALL_CAP async completion queue is full".to_string());
+                }
                 Ok(())
-            }
-            _ => {
-                self.set_status_errno(9)?;
-                Err("CALL_CAP async completion target is not waitable".to_string())
             }
         }
     }
@@ -7554,18 +7606,18 @@ impl Machine {
 
     fn fd_write_ready(&self, fd: usize) -> Result<bool, String> {
         let handle = &self.process()?.fds[fd];
-        Ok(matches!(
-            handle,
+        match handle {
+            FdHandle::PipeWriter(buffer) => Ok(buffer.borrow().can_push_bytes(1)),
             FdHandle::Stdout
-                | FdHandle::Stderr
-                | FdHandle::File(_)
-                | FdHandle::PipeWriter(_)
-                | FdHandle::Counter(_)
-                | FdHandle::EventCounter { .. }
-                | FdHandle::MemoryObject { .. }
-                | FdHandle::Timer(_)
-                | FdHandle::TcpStream(_)
-        ))
+            | FdHandle::Stderr
+            | FdHandle::File(_)
+            | FdHandle::Counter(_)
+            | FdHandle::EventCounter { .. }
+            | FdHandle::MemoryObject { .. }
+            | FdHandle::Timer(_)
+            | FdHandle::TcpStream(_) => Ok(true),
+            _ => Ok(false),
+        }
     }
 
     fn fd_ready(&mut self, fd: usize) -> Result<bool, String> {
@@ -7579,13 +7631,16 @@ impl Machine {
             | FdHandle::Stderr
             | FdHandle::File(_)
             | FdHandle::Dir { .. }
-            | FdHandle::PipeWriter(_)
             | FdHandle::Counter(_)
             | FdHandle::MemoryObject { .. }
             | FdHandle::CallGate { .. }
             | FdHandle::ClassifierTable(_)
             | FdHandle::ServiceletProgram(_)
             | FdHandle::TcpStream(_) => Ok(true),
+            FdHandle::PipeWriter(buffer) => {
+                let buffer = buffer.borrow();
+                Ok(buffer.can_push_bytes(1) || buffer.can_push_capability())
+            }
             FdHandle::EventCounter { value, .. } => Ok(*value.borrow() != 0),
             FdHandle::Timer(timer) => Ok(timer.borrow().expirations != 0),
             FdHandle::MessageEndpoint | FdHandle::TcpSocket { .. } => Ok(false),
@@ -8158,6 +8213,72 @@ mod tests {
             FdHandle::MemoryObject { pos, .. } => assert_eq!(*pos, 8),
             _ => panic!("expected memory object fd"),
         }
+    }
+
+    #[test]
+    fn pipe_writer_rejects_full_byte_queue_and_reports_not_writable() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        create_pipe_pair(&mut machine, 3, 4);
+        let queue = match &machine.process().unwrap().fds[4] {
+            FdHandle::PipeWriter(queue) => Rc::clone(queue),
+            _ => panic!("expected pipe writer"),
+        };
+        queue.borrow_mut().bytes = vec![0; PIPE_BUFFER_BYTE_LIMIT].into();
+
+        assert_eq!(machine.poll_fd_index_mask_raw(4, POLLOUT_MASK).unwrap(), 0);
+        let payload = ARG_BASE + 0x100;
+        machine.write_bytes(payload, b"x").unwrap();
+        machine.write_fd_index(4, payload, 1).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 11);
+        assert_eq!(queue.borrow().bytes.len(), PIPE_BUFFER_BYTE_LIMIT);
+        queue.borrow_mut().bytes.pop_front();
+        assert_eq!(
+            machine.poll_fd_index_mask_raw(4, POLLOUT_MASK).unwrap(),
+            POLLOUT_MASK
+        );
+    }
+
+    #[test]
+    fn cap_send_rejects_full_capability_queue_without_moving_source() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        create_pipe_pair(&mut machine, 3, 4);
+        let queue = match &machine.process().unwrap().fds[4] {
+            FdHandle::PipeWriter(queue) => Rc::clone(queue),
+            _ => panic!("expected pipe writer"),
+        };
+        {
+            let mut queue = queue.borrow_mut();
+            for idx in 0..PIPE_CAPABILITY_LIMIT {
+                queue.capabilities.push_back(CapabilityPayload {
+                    handle: FdHandle::Counter(Rc::new(RefCell::new(idx as u64))),
+                    capability: FdCapability::full(1000 + idx as u64),
+                });
+            }
+        }
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[5] = FdHandle::Counter(Rc::new(RefCell::new(99)));
+            process.fd_capabilities[5] = FdCapability::full(5);
+        }
+
+        let arg = ARG_BASE;
+        machine.store_u64(arg, 4).unwrap();
+        machine.store_u64(arg + 8, 5).unwrap();
+        machine.store_u64(arg + 16, CAP_SEND_FLAG_MOVE).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_send(Reg(6), arg).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[6], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 11);
+        assert_eq!(queue.borrow().capabilities.len(), PIPE_CAPABILITY_LIMIT);
+        assert!(matches!(
+            machine.process().unwrap().fds[5],
+            FdHandle::Counter(_)
+        ));
     }
 
     #[test]
