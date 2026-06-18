@@ -2647,6 +2647,7 @@ impl Machine {
                     self.raise_current_signal(SIGSEGV)?;
                     return Ok(true);
                 }
+                self.require_domain_cap(DOMAIN_CAP_IO)?;
                 let blob = self.read_bytes(self.read_reg(buf)?, self.read_reg(len)? as usize)?;
                 self.load_microcode(&blob)?;
             }
@@ -11003,6 +11004,14 @@ mod tests {
         let err = machine.exec(Instr::Inb(Reg(3), Reg(1))).unwrap_err();
         assert!(err.contains("resource domain capability denied"), "{err}");
         assert_eq!(machine.thread().unwrap().regs[3], 0xdead_beef);
+        assert!(machine.process().unwrap().ucode_ports.is_empty());
+
+        let blob = ARG_BASE + 0x1a00;
+        machine.write_bytes(blob, b"PORT 7 9\n").unwrap();
+        machine.thread_mut().unwrap().regs[4] = blob;
+        machine.thread_mut().unwrap().regs[5] = 9;
+        let err = machine.exec(Instr::LoadUcode(Reg(4), Reg(5))).unwrap_err();
+        assert!(err.contains("resource domain capability denied"), "{err}");
         assert!(machine.process().unwrap().ucode_ports.is_empty());
     }
 
