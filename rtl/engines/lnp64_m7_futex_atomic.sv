@@ -20,7 +20,10 @@ module lnp64_m7_futex_atomic (
     output logic bucket_spill_preserved,
     output logic stale_address_rejected,
     output logic no_lost_wakeup,
-    output logic atomic_count_exact
+    output logic atomic_count_exact,
+    output logic typed_commit_valid,
+    output lnp64_m7_sched_commit_t typed_commit,
+    output lnp64_m7_state_projection_t typed_state_projection
 );
     typedef enum logic [3:0] {
         A_RESET,
@@ -29,6 +32,7 @@ module lnp64_m7_futex_atomic (
         A_CMPXCHG_FAIL,
         A_FUTEX_WAIT,
         A_FUTEX_WAKE,
+        A_CONSUME_FUTEX_WAKE,
         A_TIMER_WAIT,
         A_TIMER_EXPIRE,
         A_BUCKET_SPILL,
@@ -45,11 +49,18 @@ module lnp64_m7_futex_atomic (
     logic [31:0] wait_generation;
     logic [31:0] address_generation;
     logic [31:0] stale_address_generation;
+    logic wake_pending;
     logic waiter_parked;
     logic [31:0] wake_count;
     logic [31:0] timer_deadline;
     logic [31:0] timer_wake_count;
     logic [31:0] atomic_count;
+
+    localparam logic [31:0] M7_TID = 32'd2;
+    localparam logic [15:0] M7_LOC_RUNNABLE = 16'd1;
+    localparam logic [15:0] M7_LOC_PARKED = 16'd3;
+    localparam logic [31:0] M7_DOMAIN_BUDGET = 32'd1;
+    localparam logic [31:0] M7_WAIT_COST = 32'd1;
 
     function automatic logic [31:0] seeded_root_domain(input logic [31:0] seed);
         if (seed == 32'd0) begin
@@ -134,8 +145,32 @@ module lnp64_m7_futex_atomic (
     endfunction
 
     always_comb begin
-        no_lost_wakeup = (wake_count + timer_wake_count) == 32'd0 || !waiter_parked;
+        no_lost_wakeup = !wake_pending || !waiter_parked;
         atomic_count_exact = atomic_count == 32'd2;
+    end
+
+    function automatic logic [15:0] projected_location(input logic parked);
+        return parked ? M7_LOC_PARKED : M7_LOC_RUNNABLE;
+    endfunction
+
+    always_comb begin
+        typed_state_projection = '0;
+        typed_state_projection.op = typed_commit.op;
+        typed_state_projection.status = typed_commit.status;
+        typed_state_projection.tid = M7_TID;
+        typed_state_projection.location = projected_location(waiter_parked);
+        typed_state_projection.wait_generation = wait_generation;
+        typed_state_projection.atomic_word = atomic_word;
+        typed_state_projection.atomic_count = atomic_count;
+        typed_state_projection.cmpxchg_failure_explicit = cmpxchg_failure_explicit;
+        typed_state_projection.address_generation = address_generation;
+        typed_state_projection.stale_address_generation = stale_address_generation;
+        typed_state_projection.domain_budget = M7_DOMAIN_BUDGET;
+        typed_state_projection.wait_cost = M7_WAIT_COST;
+        typed_state_projection.wake_pending = wake_pending;
+        typed_state_projection.futex_wake_delivered = futex_wake_delivered;
+        typed_state_projection.timer_wake_delivered = timer_expired;
+        typed_state_projection.stale_address_rejected = stale_address_rejected;
     end
 
     always_ff @(posedge clk or negedge reset_n) begin
@@ -153,12 +188,15 @@ module lnp64_m7_futex_atomic (
             timer_expired <= 1'b0;
             bucket_spill_preserved <= 1'b0;
             stale_address_rejected <= 1'b0;
+            typed_commit_valid <= 1'b0;
+            typed_commit <= '0;
             atomic_word <= 32'd0;
             expected_value <= 32'd0;
             desired_value <= 32'd0;
             wait_generation <= 32'd1;
             address_generation <= 32'd1;
-            stale_address_generation <= 32'd1;
+            stale_address_generation <= 32'd0;
+            wake_pending <= 1'b0;
             waiter_parked <= 1'b0;
             wake_count <= 32'd0;
             timer_deadline <= 32'd0;
@@ -166,6 +204,7 @@ module lnp64_m7_futex_atomic (
             atomic_count <= 32'd0;
         end else begin
             trace_valid <= 1'b0;
+            typed_commit_valid <= 1'b0;
             unique case (state)
                 A_RESET: begin
                     if (start) begin
@@ -186,6 +225,14 @@ module lnp64_m7_futex_atomic (
                         atomic_word <= seeded_success_desired(scenario_seed);
                         atomic_count <= atomic_count + 32'd1;
                         cmpxchg_success <= 1'b1;
+                        typed_commit_valid <= 1'b1;
+                        typed_commit.op <= LNP64_M7_COMMIT_CMPXCHG_SUCCESS;
+                        typed_commit.status <= LNP64_ERR_OK;
+                        typed_commit.tid <= M7_TID;
+                        typed_commit.before_location <= projected_location(waiter_parked);
+                        typed_commit.after_location <= projected_location(waiter_parked);
+                        typed_commit.wait_generation <= wait_generation;
+                        typed_commit.address_generation <= address_generation;
                         trace_valid <= 1'b1;
                         trace_code <= 8'd2;
                         trace_value <= {
@@ -203,6 +250,14 @@ module lnp64_m7_futex_atomic (
                     desired_value <= seeded_fail_desired(scenario_seed);
                     atomic_count <= atomic_count + 32'd1;
                     cmpxchg_failure_explicit <= 1'b1;
+                    typed_commit_valid <= 1'b1;
+                    typed_commit.op <= LNP64_M7_COMMIT_CMPXCHG_FAIL;
+                    typed_commit.status <= LNP64_ERR_EAGAIN;
+                    typed_commit.tid <= M7_TID;
+                    typed_commit.before_location <= projected_location(waiter_parked);
+                    typed_commit.after_location <= projected_location(waiter_parked);
+                    typed_commit.wait_generation <= wait_generation;
+                    typed_commit.address_generation <= address_generation;
                     trace_valid <= 1'b1;
                     trace_code <= 8'd3;
                     trace_value <= {
@@ -217,6 +272,14 @@ module lnp64_m7_futex_atomic (
                     if (atomic_word == seeded_success_desired(scenario_seed)) begin
                         waiter_parked <= 1'b1;
                         futex_wait_parked <= 1'b1;
+                        typed_commit_valid <= 1'b1;
+                        typed_commit.op <= LNP64_M7_COMMIT_FUTEX_WAIT;
+                        typed_commit.status <= LNP64_ERR_OK;
+                        typed_commit.tid <= M7_TID;
+                        typed_commit.before_location <= projected_location(waiter_parked);
+                        typed_commit.after_location <= M7_LOC_PARKED;
+                        typed_commit.wait_generation <= address_generation;
+                        typed_commit.address_generation <= address_generation;
                         trace_valid <= 1'b1;
                         trace_code <= 8'd4;
                         trace_value <= {seeded_futex_addr_trace(scenario_seed), seeded_success_desired(scenario_seed)};
@@ -229,10 +292,35 @@ module lnp64_m7_futex_atomic (
                     if (waiter_parked && wait_generation == 32'd1) begin
                         waiter_parked <= 1'b0;
                         wake_count <= wake_count + 32'd1;
+                        wake_pending <= 1'b1;
                         futex_wake_delivered <= 1'b1;
+                        typed_commit_valid <= 1'b1;
+                        typed_commit.op <= LNP64_M7_COMMIT_FUTEX_WAKE;
+                        typed_commit.status <= LNP64_ERR_OK;
+                        typed_commit.tid <= M7_TID;
+                        typed_commit.before_location <= projected_location(waiter_parked);
+                        typed_commit.after_location <= M7_LOC_RUNNABLE;
+                        typed_commit.wait_generation <= wait_generation;
+                        typed_commit.address_generation <= address_generation;
                         trace_valid <= 1'b1;
                         trace_code <= 8'd5;
                         trace_value <= {seeded_futex_addr_trace(scenario_seed), 32'd1};
+                        state <= A_CONSUME_FUTEX_WAKE;
+                    end else begin
+                        state <= A_DONE;
+                    end
+                end
+                A_CONSUME_FUTEX_WAKE: begin
+                    if (wake_pending) begin
+                        wake_pending <= 1'b0;
+                        typed_commit_valid <= 1'b1;
+                        typed_commit.op <= LNP64_M7_COMMIT_CONSUME_WAKE;
+                        typed_commit.status <= LNP64_ERR_OK;
+                        typed_commit.tid <= M7_TID;
+                        typed_commit.before_location <= projected_location(waiter_parked);
+                        typed_commit.after_location <= projected_location(waiter_parked);
+                        typed_commit.wait_generation <= wait_generation;
+                        typed_commit.address_generation <= address_generation;
                         state <= A_TIMER_WAIT;
                     end else begin
                         state <= A_DONE;
@@ -242,6 +330,14 @@ module lnp64_m7_futex_atomic (
                     timer_deadline <= seeded_timer_deadline(scenario_seed);
                     waiter_parked <= 1'b1;
                     timer_wait_parked <= 1'b1;
+                    typed_commit_valid <= 1'b1;
+                    typed_commit.op <= LNP64_M7_COMMIT_TIMER_WAIT;
+                    typed_commit.status <= LNP64_ERR_OK;
+                    typed_commit.tid <= M7_TID;
+                    typed_commit.before_location <= projected_location(waiter_parked);
+                    typed_commit.after_location <= M7_LOC_PARKED;
+                    typed_commit.wait_generation <= address_generation;
+                    typed_commit.address_generation <= address_generation;
                     trace_valid <= 1'b1;
                     trace_code <= 8'd6;
                     trace_value <= {seeded_timer_deadline(scenario_seed), 32'd1};
@@ -251,7 +347,16 @@ module lnp64_m7_futex_atomic (
                     if (waiter_parked && timer_deadline == seeded_timer_deadline(scenario_seed)) begin
                         waiter_parked <= 1'b0;
                         timer_wake_count <= timer_wake_count + 32'd1;
+                        wake_pending <= 1'b1;
                         timer_expired <= 1'b1;
+                        typed_commit_valid <= 1'b1;
+                        typed_commit.op <= LNP64_M7_COMMIT_TIMER_EXPIRE;
+                        typed_commit.status <= LNP64_ERR_OK;
+                        typed_commit.tid <= M7_TID;
+                        typed_commit.before_location <= projected_location(waiter_parked);
+                        typed_commit.after_location <= M7_LOC_RUNNABLE;
+                        typed_commit.wait_generation <= wait_generation;
+                        typed_commit.address_generation <= address_generation;
                         trace_valid <= 1'b1;
                         trace_code <= 8'd7;
                         trace_value <= {seeded_timer_deadline(scenario_seed), 32'd1};
@@ -268,9 +373,16 @@ module lnp64_m7_futex_atomic (
                     state <= A_STALE_ADDRESS;
                 end
                 A_STALE_ADDRESS: begin
-                    address_generation <= address_generation + 32'd1;
-                    if (stale_address_generation != address_generation + 32'd1) begin
+                    if (stale_address_generation != address_generation) begin
                         stale_address_rejected <= 1'b1;
+                        typed_commit_valid <= 1'b1;
+                        typed_commit.op <= LNP64_M7_COMMIT_REJECT_STALE_ADDRESS;
+                        typed_commit.status <= LNP64_ERR_EREVOKED;
+                        typed_commit.tid <= M7_TID;
+                        typed_commit.before_location <= projected_location(waiter_parked);
+                        typed_commit.after_location <= projected_location(waiter_parked);
+                        typed_commit.wait_generation <= wait_generation;
+                        typed_commit.address_generation <= address_generation;
                         trace_valid <= 1'b1;
                         trace_code <= 8'd9;
                         trace_value <= {48'd0, LNP64_ERR_EREVOKED};

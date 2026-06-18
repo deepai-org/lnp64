@@ -97,6 +97,17 @@ package lnp64_pkg;
         LNP64_M1_COMMIT_OBJECT_CREATE = 8'd10
     } lnp64_m1_commit_op_e;
 
+    typedef enum logic [7:0] {
+        LNP64_M7_COMMIT_CMPXCHG_SUCCESS      = 8'd1,
+        LNP64_M7_COMMIT_CMPXCHG_FAIL         = 8'd2,
+        LNP64_M7_COMMIT_FUTEX_WAIT           = 8'd3,
+        LNP64_M7_COMMIT_FUTEX_WAKE           = 8'd4,
+        LNP64_M7_COMMIT_TIMER_WAIT           = 8'd5,
+        LNP64_M7_COMMIT_TIMER_EXPIRE         = 8'd6,
+        LNP64_M7_COMMIT_CONSUME_WAKE         = 8'd7,
+        LNP64_M7_COMMIT_REJECT_STALE_ADDRESS = 8'd8
+    } lnp64_m7_commit_op_e;
+
     typedef enum logic [15:0] {
         LNP64_STATUS_OK          = 16'h0000,
         LNP64_STATUS_ERROR       = 16'h0001,
@@ -305,6 +316,35 @@ package lnp64_pkg;
         logic        has_revoked_generation;
         logic [31:0] revoked_generation;
     } lnp64_m1_state_projection_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] tid;
+        logic [15:0] before_location;
+        logic [15:0] after_location;
+        logic [31:0] wait_generation;
+        logic [31:0] address_generation;
+    } lnp64_m7_sched_commit_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] tid;
+        logic [15:0] location;
+        logic [31:0] wait_generation;
+        logic [31:0] atomic_word;
+        logic [31:0] atomic_count;
+        logic        cmpxchg_failure_explicit;
+        logic [31:0] address_generation;
+        logic [31:0] stale_address_generation;
+        logic [31:0] domain_budget;
+        logic [31:0] wait_cost;
+        logic        wake_pending;
+        logic        futex_wake_delivered;
+        logic        timer_wake_delivered;
+        logic        stale_address_rejected;
+    } lnp64_m7_state_projection_t;
 
     typedef struct packed {
         logic [31:0] object_id;

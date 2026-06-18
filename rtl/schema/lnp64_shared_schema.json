@@ -106,6 +106,16 @@
       "LNP64_M1_COMMIT_CAP_DUP_DENIED=8'd9",
       "LNP64_M1_COMMIT_OBJECT_CREATE=8'd10"
     ],
+    "lnp64_m7_commit_op_e": [
+      "LNP64_M7_COMMIT_CMPXCHG_SUCCESS=8'd1",
+      "LNP64_M7_COMMIT_CMPXCHG_FAIL=8'd2",
+      "LNP64_M7_COMMIT_FUTEX_WAIT=8'd3",
+      "LNP64_M7_COMMIT_FUTEX_WAKE=8'd4",
+      "LNP64_M7_COMMIT_TIMER_WAIT=8'd5",
+      "LNP64_M7_COMMIT_TIMER_EXPIRE=8'd6",
+      "LNP64_M7_COMMIT_CONSUME_WAKE=8'd7",
+      "LNP64_M7_COMMIT_REJECT_STALE_ADDRESS=8'd8"
+    ],
     "lnp64_status_e": [
       "LNP64_STATUS_OK=16'h0000",
       "LNP64_STATUS_ERROR=16'h0001",
@@ -182,7 +192,9 @@
       "lnp64_thread_sched_t",
       "lnp64_retire_submit_t",
       "lnp64_waitable_t",
-      "lnp64_futex_wait_t"
+      "lnp64_futex_wait_t",
+      "lnp64_m7_sched_commit_t",
+      "lnp64_m7_state_projection_t"
     ],
     "object_service_memory_device": [
       "lnp64_object_ref_t",
@@ -222,6 +234,8 @@
     "lnp64_cap_t": ["object_id:32", "object_gen:32", "fdr_gen:32", "domain_id:32", "domain_gen:32", "rights_mask:64", "lineage_epoch:32", "sealed:1", "narrowable:1"],
     "lnp64_m1_cap_commit_t": ["op:8", "object_id:32", "object_gen:32", "fdr_gen:32", "domain_id:32", "domain_gen:32", "rights_mask:64", "lineage_epoch:32", "sealed:1", "status:16"],
     "lnp64_m1_state_projection_t": ["op:8", "status:16", "object_gen:32", "created_object_created:1", "created_object_gen:32", "root_object_id:32", "root_generation:32", "root_domain_id:32", "root_lineage_epoch:32", "root_sealed:1", "root_rights:64", "consumer_object_id:32", "consumer_generation:32", "consumer_domain_id:32", "consumer_lineage_epoch:32", "consumer_sealed:1", "consumer_rights:64", "sent_valid:1", "sent_object_id:32", "sent_generation:32", "sent_domain_id:32", "sent_lineage_epoch:32", "sent_sealed:1", "sent_rights:64", "minted_valid:1", "minted_object_id:32", "minted_generation:32", "minted_domain_id:32", "minted_lineage_epoch:32", "minted_sealed:1", "minted_rights:64", "wake_pending:1", "transfer_valid:1", "stale_rejected:1", "revoked_rejected:1", "failed_no_authority:1", "full_was_explicit:1", "has_revoked_generation:1", "revoked_generation:32"],
+    "lnp64_m7_sched_commit_t": ["op:8", "status:16", "tid:32", "before_location:16", "after_location:16", "wait_generation:32", "address_generation:32"],
+    "lnp64_m7_state_projection_t": ["op:8", "status:16", "tid:32", "location:16", "wait_generation:32", "atomic_word:32", "atomic_count:32", "cmpxchg_failure_explicit:1", "address_generation:32", "stale_address_generation:32", "domain_budget:32", "wait_cost:32", "wake_pending:1", "futex_wake_delivered:1", "timer_wake_delivered:1", "stale_address_rejected:1"],
     "lnp64_object_ref_t": ["object_id:32", "object_gen:32", "profile:16", "length:64", "bounds_base:64"],
     "lnp64_control_envelope_t": ["version:16", "profile:16", "byte_len:32", "selector:32", "service_generation:32", "payload_ptr:64"],
     "lnp64_domain_t": ["domain_id:32", "domain_gen:32", "parent_domain_id:32", "parent_domain_gen:32", "budget_limit:64", "budget_used:64", "lifecycle_state:16", "assurance_profile:16", "label_id:32"],

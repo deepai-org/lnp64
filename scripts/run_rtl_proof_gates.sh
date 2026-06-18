@@ -78,6 +78,7 @@ bash scripts/run_rtl_m4.sh
 bash scripts/run_rtl_m5.sh
 bash scripts/run_rtl_m6.sh
 bash scripts/run_rtl_m7.sh
+scripts/check_rtl_m7_typed_commit_trace.py
 bash scripts/run_rtl_m8.sh
 bash scripts/run_rtl_m9.sh
 bash scripts/run_rtl_m10.sh

@@ -170,6 +170,7 @@ scripts/check_rtl_shared_schema.py
 scripts/check_rtl_typed_trace_contract.py
 scripts/check_rtl_top_level_program_manifest.py
 scripts/check_rtl_m1_typed_commit_trace.py
+scripts/check_rtl_m7_typed_commit_trace.py
 scripts/check_theorem_rtl_coupling.py
 bash scripts/run_rtl_proof_gates.sh
 bash scripts/run_rtl_synth_gates.sh
@@ -232,6 +233,9 @@ widths, and the checker compares those Lean schema mirrors to the shared RTL
 schema. M1, M2, M4, M5, M7, and M14 now include T3 transition-invariant Lean
 slices, but the claims are not T2/T4 refinement evidence until generated typed
 transition traces and checked RTL-to-Lean refinement from emitted bits exist.
+M7 now has a first narrow typed scheduler/wakeup commit checker for the seed-0
+Lean transition shape, but the later slices still need the same discipline
+generalized and composed.
 `scripts/check_theorem_rtl_coupling.py` verifies that index against the
 machine-readable coupling manifest.
 

@@ -21,6 +21,9 @@ module lnp64_m7_tb;
     logic stale_address_rejected;
     logic no_lost_wakeup;
     logic atomic_count_exact;
+    logic typed_commit_valid;
+    lnp64_m7_sched_commit_t typed_commit;
+    lnp64_m7_state_projection_t typed_state_projection;
 
     lnp64_m7_futex_atomic dut(
         .clk(clk),
@@ -40,7 +43,10 @@ module lnp64_m7_tb;
         .bucket_spill_preserved(bucket_spill_preserved),
         .stale_address_rejected(stale_address_rejected),
         .no_lost_wakeup(no_lost_wakeup),
-        .atomic_count_exact(atomic_count_exact)
+        .atomic_count_exact(atomic_count_exact),
+        .typed_commit_valid(typed_commit_valid),
+        .typed_commit(typed_commit),
+        .typed_state_projection(typed_state_projection)
     );
 
     lnp64_m7_assertions assertions_i(
@@ -56,7 +62,17 @@ module lnp64_m7_tb;
         .bucket_spill_preserved(bucket_spill_preserved),
         .stale_address_rejected(stale_address_rejected),
         .no_lost_wakeup(no_lost_wakeup),
-        .atomic_count_exact(atomic_count_exact)
+        .atomic_count_exact(atomic_count_exact),
+        .typed_commit_valid(typed_commit_valid),
+        .typed_commit(typed_commit),
+        .typed_state_projection(typed_state_projection),
+        .atomic_word(dut.atomic_word),
+        .atomic_count(dut.atomic_count),
+        .waiter_parked(dut.waiter_parked),
+        .wait_generation(dut.wait_generation),
+        .address_generation(dut.address_generation),
+        .stale_address_generation(dut.stale_address_generation),
+        .wake_pending(dut.wake_pending)
     );
 
     always #5 clk = ~clk;
@@ -68,6 +84,45 @@ module lnp64_m7_tb;
     endtask
 
     always_ff @(posedge clk) begin
+        if (typed_commit_valid) begin
+            $display(
+                "TTRACE_M7 {\"record\":\"m7_sched_commit\",\"op\":%0d,\"status\":%0d,\"tid\":%0d,\"before_location\":%0d,\"after_location\":%0d,\"wait_generation\":%0d,\"address_generation\":%0d}",
+                typed_commit.op,
+                typed_commit.status,
+                typed_commit.tid,
+                typed_commit.before_location,
+                typed_commit.after_location,
+                typed_commit.wait_generation,
+                typed_commit.address_generation
+            );
+            $display(
+                "TTRACE_M7_BITS {\"record\":\"m7_sched_commit_bits\",\"bits\":\"%0h\"}",
+                typed_commit
+            );
+            $display(
+                "TTRACE_M7_STATE {\"record\":\"m7_state_projection\",\"op\":%0d,\"status\":%0d,\"tid\":%0d,\"location\":%0d,\"wait_generation\":%0d,\"atomic_word\":%0d,\"atomic_count\":%0d,\"cmpxchg_failure_explicit\":%0d,\"address_generation\":%0d,\"stale_address_generation\":%0d,\"domain_budget\":%0d,\"wait_cost\":%0d,\"wake_pending\":%0d,\"futex_wake_delivered\":%0d,\"timer_wake_delivered\":%0d,\"stale_address_rejected\":%0d}",
+                typed_state_projection.op,
+                typed_state_projection.status,
+                typed_state_projection.tid,
+                typed_state_projection.location,
+                typed_state_projection.wait_generation,
+                typed_state_projection.atomic_word,
+                typed_state_projection.atomic_count,
+                typed_state_projection.cmpxchg_failure_explicit,
+                typed_state_projection.address_generation,
+                typed_state_projection.stale_address_generation,
+                typed_state_projection.domain_budget,
+                typed_state_projection.wait_cost,
+                typed_state_projection.wake_pending,
+                typed_state_projection.futex_wake_delivered,
+                typed_state_projection.timer_wake_delivered,
+                typed_state_projection.stale_address_rejected
+            );
+            $display(
+                "TTRACE_M7_STATE_BITS {\"record\":\"m7_state_projection_bits\",\"bits\":\"%0h\"}",
+                typed_state_projection
+            );
+        end
         if (trace_valid) begin
             unique case (trace_code)
                 8'd1: $display(
