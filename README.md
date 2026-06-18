@@ -247,6 +247,8 @@ python3 -m py_compile \
   scripts/test_rtl_track_b_manifest_checker.py \
   scripts/check_fpga_bringup_manifest.py \
   scripts/test_fpga_bringup_manifest_checker.py \
+  scripts/check_rtl_synth_constraints.py \
+  scripts/test_rtl_synth_constraints_checker.py \
   scripts/check_formal_rtl_roadmap_audit.py \
   scripts/test_formal_rtl_roadmap_strict_audit.py \
   scripts/test_uart_byte_checker.py \
@@ -256,6 +258,7 @@ scripts/test_formal_proof_manifest_checker.py
 scripts/test_rtl_track_b_manifest_checker.py
 scripts/test_rtl_cosim_manifest_checker.py
 scripts/test_fpga_bringup_manifest_checker.py
+scripts/test_rtl_synth_constraints_checker.py
 scripts/test_board_evidence_checker.py
 scripts/test_uart_byte_checker.py
 scripts/test_formal_rtl_roadmap_strict_audit.py
@@ -676,6 +679,7 @@ scripts/test_formal_proof_manifest_checker.py
 scripts/check_rtl_cosim_manifest.py
 scripts/test_rtl_cosim_manifest_checker.py
 scripts/check_rtl_synth_constraints.py
+scripts/test_rtl_synth_constraints_checker.py
 scripts/check_fpga_bringup_manifest.py
 scripts/test_fpga_bringup_manifest_checker.py
 scripts/check_rtl_track_b_manifest.py
