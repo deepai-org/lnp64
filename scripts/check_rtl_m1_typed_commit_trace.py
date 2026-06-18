@@ -146,6 +146,7 @@ M1_TYPED_COMMIT_LEAN_THEOREMS = (
     "typed_commit_transition_refines_step",
     "typed_commit_transition_preserves_invariant",
     "rtl_m1_refinement_step_refines_lean_step",
+    "rtl_m1_refinement_step_refines_commit_projection_op",
     "rtl_m1_refinement_step_preserves_sg_auth_invariant",
     "m1_t3_typed_commit_transition_refines_step_for_reachable",
     "m1_t3_typed_commit_transition_preserves_invariant_for_reachable",

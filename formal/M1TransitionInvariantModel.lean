@@ -1013,6 +1013,22 @@ theorem rtl_m1_refinement_step_refines_lean_step
   exact ⟨s, t, commit, hPre, hCommitProjection,
     typed_commit_transition_refines_step hCommit, hPost⟩
 
+theorem rtl_m1_refinement_step_refines_commit_projection_op
+    {pre : RtlM1StateProjection}
+    {commitProjection : RtlM1CommitProjection}
+    {post : RtlM1StateProjection} :
+    RtlM1RefinementStep pre commitProjection post ->
+    exists s t,
+      stateMatchesRtlProjection s pre /\
+      Step s (commitOpToStepOp commitProjection.op) t /\
+      stateMatchesRtlProjection t post := by
+  intro hRefine
+  rcases hRefine with ⟨s, t, commit, hPre, hCommitProjection, hCommit, hPost⟩
+  refine ⟨s, t, hPre, ?_, hPost⟩
+  rw [commitMatchesRtlProjection, commitProjectionToRecord] at hCommitProjection
+  subst commit
+  simpa using typed_commit_transition_refines_step hCommit
+
 theorem rtl_m1_refinement_step_preserves_sg_auth_invariant
     {pre : RtlM1StateProjection}
     {commitProjection : RtlM1CommitProjection}
