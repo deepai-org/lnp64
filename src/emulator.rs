@@ -5336,6 +5336,7 @@ impl Machine {
     fn object_ctl_socket_accept(&mut self, argblock: u64) -> Result<u64, u64> {
         let listener_value = self.load_u64_offset(argblock, 24).map_err(|_| 14u64)?;
         let accepted_req = self.load_u64_offset(argblock, 32).map_err(|_| 14u64)?;
+        self.validate_object_fd_request(accepted_req)?;
         let listener_fd = self.decode_fd_value(listener_value)?;
         self.fd_right_errno(listener_fd, CAP_RIGHT_READ | CAP_RIGHT_POLL)?;
         let stream = {
@@ -10004,6 +10005,43 @@ mod tests {
             machine.process().unwrap().fds[7],
             FdHandle::TcpSocket { .. }
         ));
+    }
+
+    #[test]
+    fn socket_accept_prevalidates_destination_before_taking_pending_stream() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let client = TcpStream::connect(addr).unwrap();
+        let (server, _) = listener.accept().unwrap();
+
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[7] = FdHandle::TcpListener {
+                listener,
+                pending: Some(server),
+            };
+            process.fd_capabilities[7] = FdCapability::full(7);
+        }
+
+        let arg = ARG_BASE + 0x1000;
+        machine.store_u64(arg, OBJECT_OP_SOCKET_ACCEPT).unwrap();
+        machine.store_u64(arg + 24, 7).unwrap();
+        machine
+            .store_u64(arg + 32, MESSAGE_ENDPOINT_FD as u64)
+            .unwrap();
+        machine.object_ctl(Reg(2), arg).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 9);
+        match &machine.process().unwrap().fds[7] {
+            FdHandle::TcpListener {
+                pending: Some(_), ..
+            } => {}
+            _ => panic!("expected pending stream to remain queued"),
+        }
+        drop(client);
     }
 
     #[test]
