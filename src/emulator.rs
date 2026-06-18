@@ -15,7 +15,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::asm::Program;
 use crate::isa::*;
-use crate::native::{CloneProfile, NativeEvent, NativeResult, ObjectKind, ObjectProfile};
+use crate::native::{
+    CloneProfile, EventSource, NativeEvent, NativeResult, ObjectKind, ObjectProfile,
+};
 
 const STACK_SIZE: u64 = 4 * 1024 * 1024;
 const CALL_FRAME_SIZE: u64 = 32 * 1024;
@@ -8895,6 +8897,28 @@ mod tests {
         assert_eq!(machine.last_exit, 128 + SIGSEGV as i32);
         assert!(!machine.processes.contains_key(&1));
         assert!(!machine.threads.contains_key(&1));
+    }
+
+    #[test]
+    fn unprivileged_microcode_load_queues_fault_event_without_port_access() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.process_mut().unwrap().uid = 1000;
+        let blob = ARG_BASE + 0x1800;
+        machine.write_bytes(blob, b"PORT 7 9\n").unwrap();
+
+        machine.thread_mut().unwrap().regs[2] = blob;
+        machine.thread_mut().unwrap().regs[3] = 9;
+        assert!(machine.exec(Instr::LoadUcode(Reg(2), Reg(3))).unwrap());
+
+        assert!(machine.process().unwrap().ucode_ports.is_empty());
+        assert!(matches!(
+            machine.process().unwrap().pending_events.front(),
+            Some(NativeEvent::Signal {
+                signum: SIGSEGV,
+                source: EventSource::HardwareFault,
+            })
+        ));
     }
 
     #[test]
