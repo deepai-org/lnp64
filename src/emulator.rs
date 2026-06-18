@@ -8496,6 +8496,76 @@ mod tests {
     }
 
     #[test]
+    fn socket_endpoint_object_controls_enforce_capability_rights() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let arg = ARG_BASE + 0x1000;
+        let addr = ARG_BASE + 0x1100;
+        let optval = ARG_BASE + 0x1200;
+        let optlen = ARG_BASE + 0x1300;
+        machine.write_bytes(addr, b"127.0.0.1:0\0").unwrap();
+        machine.store_u64(optval, 1).unwrap();
+        machine.store_u64(optlen, 8).unwrap();
+
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::Endpoint.code())
+            .unwrap();
+        machine
+            .store_u64(arg + 16, ObjectProfile::TcpStream.code())
+            .unwrap();
+        machine.store_u64(arg + 24, 7).unwrap();
+        machine.store_u64(arg + 40, 2).unwrap();
+        machine.store_u64(arg + 48, 1).unwrap();
+        machine.store_u64(arg + 56, 0).unwrap();
+        machine.object_ctl(Reg(1), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], 7);
+
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[7].rights &= !CAP_RIGHT_WRITE;
+        machine.store_u64(arg, OBJECT_OP_SOCKET_BIND).unwrap();
+        machine.store_u64(arg + 24, 7).unwrap();
+        machine.store_u64(arg + 40, addr).unwrap();
+        machine.object_ctl(Reg(2), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[7].rights |= CAP_RIGHT_WRITE;
+        machine.object_ctl(Reg(3), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[3], 0);
+
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[7].rights &= !CAP_RIGHT_STAT;
+        machine.store_u64(arg, OBJECT_OP_SOCKET_GETSOCKOPT).unwrap();
+        machine.store_u64(arg + 24, 7).unwrap();
+        machine
+            .store_u64(arg + 40, SOCKET_LEVEL_SOL_SOCKET)
+            .unwrap();
+        machine.store_u64(arg + 48, SOCKET_OPT_SO_ERROR).unwrap();
+        machine.store_u64(arg + 56, optval).unwrap();
+        machine.store_u64(arg + 64, optlen).unwrap();
+        machine.object_ctl(Reg(4), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[4], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[7].rights |= CAP_RIGHT_STAT;
+        machine.object_ctl(Reg(5), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[5], 0);
+        assert_eq!(machine.load_u64(optlen).unwrap(), 8);
+
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[7].rights &= !CAP_RIGHT_WRITE;
+        machine.store_u64(arg, OBJECT_OP_SOCKET_SETSOCKOPT).unwrap();
+        machine.store_u64(arg + 24, 7).unwrap();
+        machine
+            .store_u64(arg + 40, SOCKET_LEVEL_SOL_SOCKET)
+            .unwrap();
+        machine
+            .store_u64(arg + 48, SOCKET_OPT_SO_REUSEADDR)
+            .unwrap();
+        machine.store_u64(arg + 56, optval).unwrap();
+        machine.store_u64(arg + 64, 8).unwrap();
+        machine.object_ctl(Reg(6), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[6], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
+    }
+
+    #[test]
     fn completion_helpers_are_errno_compatibility_boundary() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
