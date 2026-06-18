@@ -8381,6 +8381,9 @@ mod tests {
         machine.current_tid = 1;
         let envelope = ARG_BASE + 0x1000;
 
+        assert_eq!(try_create_servicelet(&mut machine, 7, 0), -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 14);
+
         write_servicelet_envelope(&mut machine, envelope, 64, 0x01, 32, 128, 64, 32, 0);
         machine
             .store_u64(envelope, SERVICELET_VERIFY_VERSION + 1)
