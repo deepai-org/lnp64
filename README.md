@@ -138,6 +138,7 @@ compatibility-lowering names, or negative assertions.
 For toolchain-contract changes, these focused commands have been working:
 
 ```sh
+bash scripts/run_real_llvm_tblgen_docker.sh
 bash scripts/run_toolchain_contracts.sh
 cargo test --quiet toolchain_contract_index_is_complete
 cargo test --quiet llvm_gate_manifest_pins_non_toy_clang_commands
@@ -153,6 +154,10 @@ The focused manifest tests are useful while editing one contract file at a
 time. Before committing a toolchain contract batch, also run
 `bash scripts/run_toolchain_contracts.sh`; it checks the manifest index rather
 than only the Rust unit that was under edit.
+
+`scripts/run_real_llvm_tblgen_docker.sh` builds the checked Docker image from
+`Dockerfile.llvm` and runs real `llvm-tblgen` against the LNP64 TableGen target
+files. Its generated includes land under `target/real-llvm-tblgen`.
 
 Use focused Rust filters while iterating, then run the full suite before a broad
 commit:

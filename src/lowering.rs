@@ -1275,6 +1275,9 @@ mod tests {
         let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
         let gate_manifest = include_str!("../toolchain/lnp64_llvm_gates.manifest");
         let gate_driver = include_str!("../scripts/run_llvm_bootstrap_gates.sh");
+        let real_tblgen = include_str!("../scripts/run_real_llvm_tblgen.sh");
+        let real_tblgen_docker = include_str!("../scripts/run_real_llvm_tblgen_docker.sh");
+        let llvm_dockerfile = include_str!("../Dockerfile.llvm");
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
         let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
         let roadmap = include_str!("../toolchain_roadmap.md");
@@ -1292,6 +1295,17 @@ mod tests {
                 .join("scripts/run_llvm_bootstrap_gates.sh")
                 .is_file()
         );
+        assert!(
+            manifest_root
+                .join("scripts/run_real_llvm_tblgen.sh")
+                .is_file()
+        );
+        assert!(
+            manifest_root
+                .join("scripts/run_real_llvm_tblgen_docker.sh")
+                .is_file()
+        );
+        assert!(manifest_root.join("Dockerfile.llvm").is_file());
         assert!(contract_index.contains(
             "llvm_gates|toolchain/lnp64_llvm_gates.manifest|llvm_gate_manifest_pins_non_toy_clang_commands"
         ));
@@ -1299,6 +1313,8 @@ mod tests {
         assert!(transition_manifest.contains("scripts/run_llvm_bootstrap_gates.sh"));
         assert!(roadmap.contains("toolchain/lnp64_llvm_gates.manifest"));
         assert!(roadmap.contains("scripts/run_llvm_bootstrap_gates.sh --dry-run"));
+        assert!(roadmap.contains("scripts/run_real_llvm_tblgen_docker.sh"));
+        assert!(roadmap.contains("Dockerfile.llvm"));
 
         for (gate, command, requirements, status) in rows {
             assert!(gates.insert(gate), "duplicate llvm gate {gate}");
@@ -1324,6 +1340,7 @@ mod tests {
 
         for gate in [
             "gate_driver",
+            "real_tblgen",
             "compile_hello",
             "compile_arithmetic",
             "compile_memory",
@@ -1340,6 +1357,10 @@ mod tests {
             commands["gate_driver"].contains("scripts/run_llvm_bootstrap_gates.sh --dry-run"),
             "llvm gate driver must expose the dry-run script"
         );
+        assert!(
+            commands["real_tblgen"].contains("scripts/run_real_llvm_tblgen_docker.sh"),
+            "real LLVM TableGen gate must run through the Docker-backed script"
+        );
         assert!(gate_driver.contains("toolchain/lnp64_llvm_gates.manifest"));
         assert!(gate_driver.contains("--dry-run"));
         assert!(gate_driver.contains("--run"));
@@ -1347,6 +1368,19 @@ mod tests {
         assert!(gate_driver.contains(r"command//\{build\}/"));
         assert!(!gate_driver.contains("lnp64 cc"));
         assert!(!gate_driver.contains("cargo run -- cc"));
+        assert!(real_tblgen.contains("llvm-tblgen"));
+        assert!(real_tblgen.contains("llvm-config"));
+        assert!(real_tblgen.contains("-gen-register-info"));
+        assert!(real_tblgen.contains("-gen-instr-info"));
+        assert!(real_tblgen.contains("-gen-callingconv"));
+        assert!(real_tblgen.contains("-gen-subtarget"));
+        assert!(real_tblgen_docker.contains("Dockerfile.llvm"));
+        assert!(real_tblgen_docker.contains("scripts/run_real_llvm_tblgen.sh"));
+        assert!(real_tblgen_docker.contains(r#"--user "$uid:$gid""#));
+        assert!(llvm_dockerfile.contains("llvm-dev"));
+        assert!(llvm_dockerfile.contains("llvm-runtime"));
+        assert!(llvm_dockerfile.contains("clang"));
+        assert!(llvm_dockerfile.contains("lld"));
         assert!(
             commands["link_static"].contains("-T toolchain/lnp64_static.ld"),
             "static link gate must use checked LNP64 linker script"
@@ -1790,8 +1824,10 @@ mod tests {
             );
         }
         assert!(registers_td.contains(r#"sequence "FD%u", 0, 255"#));
+        assert!(registers_td.contains("class LNP64GPR<bits<16> Enc"));
         assert!(calling_td.contains("CC_LNP64"));
         assert!(calling_td.contains("R1, R2, R3, R4, R5, R6"));
+        assert!(calling_td.contains("iPTR"));
         for opcode in [
             "ADD",
             "LD",
@@ -1939,6 +1975,7 @@ mod tests {
         assert!(isel_header.contains("RET_FLAG"));
         assert!(instr_td.contains("def simm16_imm"));
         assert!(instr_td.contains("def simm14_imm"));
+        assert!(instr_td.contains("def all_ones_imm"));
         assert!(instr_td.contains("def brtarget : Operand<OtherVT>"));
         assert!(instr_td.contains("(ins brtarget:$target)"));
         assert!(instr_td.contains("def SDT_LNP64BrCC"));
@@ -1949,6 +1986,8 @@ mod tests {
         assert!(instr_td.contains("def PseudoBEQ"));
         assert!(instr_td.contains("(PseudoBEQ GPR:$lhs, GPR:$rhs, bb:$target)"));
         assert!(instr_td.contains("def LNP64retflag"));
+        assert!(instr_td.contains("def SDT_LNP64Call"));
+        assert!(instr_td.contains("SDTypeProfile<0, -1, []>"));
         assert!(instr_td.contains("def LNP64call"));
         assert!(instr_td.contains("def LNP64domainctl"));
         assert!(instr_td.contains("def LNP64gatecall"));
@@ -1957,6 +1996,7 @@ mod tests {
         assert!(instr_td.contains("def LNP64push"));
         assert!(instr_td.contains("(set GPR:$rd, simm16_imm:$imm)"));
         assert!(instr_td.contains("(set GPR:$rd, (add GPR:$rs1, GPR:$rs2))"));
+        assert!(instr_td.contains("(set GPR:$rd, (xor GPR:$rs, all_ones_imm))"));
         assert!(instr_td.contains("(set GPR:$rd, (shl GPR:$rs1, GPR:$rs2))"));
         assert!(instr_td.contains("let Pattern = [(br bb:$target)]"));
         assert!(instr_td.contains("(LNP64call tglobaladdr:$target)"));
@@ -2025,6 +2065,7 @@ mod tests {
         assert!(codegen_test.contains("llc -mtriple=lnp64-unknown-none"));
         assert!(codegen_test.contains("XFAIL: *"));
         assert!(codegen_test.contains("define i64 @arith"));
+        assert!(codegen_test.contains("define i64 @invert"));
         assert!(codegen_test.contains("define i64 @control"));
         assert!(codegen_test.contains("define i64 @gate"));
         assert!(codegen_test.contains("define i64 @read_stream"));
@@ -2048,6 +2089,7 @@ mod tests {
             );
         }
         assert!(codegen_test.contains("; CHECK: lsl"));
+        assert!(codegen_test.contains("; CHECK: not"));
         assert!(codegen_test.contains("; CHECK: ret"));
         assert!(codegen_test.contains("__lnp_call"));
         assert!(codegen_test.contains("__lnp_domain_ctl"));

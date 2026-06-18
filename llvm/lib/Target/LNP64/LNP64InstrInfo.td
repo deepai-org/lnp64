@@ -8,10 +8,14 @@ def simm16_imm : PatLeaf<(imm), [{
 def simm14_imm : PatLeaf<(imm), [{
   return isInt<14>(N->getSExtValue());
 }]>;
+def all_ones_imm : PatLeaf<(imm), [{
+  return N->isAllOnes();
+}]>;
 
 def LNP64retflag : SDNode<"LNP64ISD::RET_FLAG", SDTNone,
                           [SDNPHasChain, SDNPOptInGlue, SDNPVariadic]>;
-def LNP64call : SDNode<"LNP64ISD::CALL", SDTNone,
+def SDT_LNP64Call : SDTypeProfile<0, -1, []>;
+def LNP64call : SDNode<"LNP64ISD::CALL", SDT_LNP64Call,
                        [SDNPHasChain, SDNPOptInGlue, SDNPOutGlue,
                         SDNPVariadic]>;
 def SDT_LNP64BrCC : SDTypeProfile<0, 3, [
@@ -122,7 +126,9 @@ def OR : LNP64RRR<"or"> {
 def XOR : LNP64RRR<"xor"> {
   let Pattern = [(set GPR:$rd, (xor GPR:$rs1, GPR:$rs2))];
 }
-def NOT : LNP64RR<"not">;
+def NOT : LNP64RR<"not"> {
+  let Pattern = [(set GPR:$rd, (xor GPR:$rs, all_ones_imm))];
+}
 def LSL : LNP64RRR<"lsl"> {
   let Pattern = [(set GPR:$rd, (shl GPR:$rs1, GPR:$rs2))];
 }

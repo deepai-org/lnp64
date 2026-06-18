@@ -1,0 +1,21 @@
+FROM debian:bookworm-slim
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      bash \
+      ca-certificates \
+      clang \
+      cmake \
+      g++ \
+      git \
+      lld \
+      llvm \
+      llvm-dev \
+      llvm-runtime \
+      make \
+      ninja-build \
+      python3 && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /work
+CMD ["bash"]

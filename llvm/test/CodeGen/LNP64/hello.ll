@@ -47,6 +47,12 @@ entry:
   ret i64 %shifted
 }
 
+define i64 @invert(i64 %x) {
+entry:
+  %y = xor i64 %x, -1
+  ret i64 %y
+}
+
 define i64 @jump(i64 %x) {
 entry:
   br label %exit
@@ -122,6 +128,9 @@ entry:
 ; CHECK: add
 ; CHECK: and
 ; CHECK: lsl
+; CHECK: ret
+; CHECK-LABEL: invert:
+; CHECK: not
 ; CHECK: ret
 ; CHECK-LABEL: jump:
 ; CHECK: jmp

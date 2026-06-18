@@ -3,11 +3,11 @@ class LNP64Reg<bits<16> Enc, string Name> : Register<Name> {
   let Namespace = "LNP64";
 }
 
-class LNP64GPR<bits<5> Enc, string Name> : LNP64Reg<Enc, Name>;
-class LNP64FDR<bits<8> Enc, string Name> : LNP64Reg<Enc, Name>;
-class LNP64FPR<bits<5> Enc, string Name> : LNP64Reg<Enc, Name>;
-class LNP64VR<bits<4> Enc, string Name> : LNP64Reg<Enc, Name>;
-class LNP64PCR<bits<8> Enc, string Name> : LNP64Reg<Enc, Name>;
+class LNP64GPR<bits<16> Enc, string Name> : LNP64Reg<Enc, Name>;
+class LNP64FDR<bits<16> Enc, string Name> : LNP64Reg<Enc, Name>;
+class LNP64FPR<bits<16> Enc, string Name> : LNP64Reg<Enc, Name>;
+class LNP64VR<bits<16> Enc, string Name> : LNP64Reg<Enc, Name>;
+class LNP64PCR<bits<16> Enc, string Name> : LNP64Reg<Enc, Name>;
 
 foreach I = 0-31 in {
   def R#I : LNP64GPR<I, "r"#I>;
