@@ -250,6 +250,28 @@ scripts/test_formal_rtl_roadmap_strict_audit.py
 scripts/check_formal_rtl_roadmap_audit.py
 ```
 
+Focused Rust regression filters that have recently been used successfully from
+this checkout:
+
+```sh
+cargo test --quiet exec_
+cargo test --quiet socket_
+cargo test --quiet object_ctl_
+cargo test --quiet domain_ctl_
+cargo test --quiet ns_ctl_resolve
+cargo test --quiet waiter
+cargo test --quiet microcode
+cargo test --quiet timer_expiration_wakes_reader_waiting_for_tick
+cargo test --quiet event_counter_write_wakes_reader_waiting_for_nonzero_value
+cargo test --quiet waitpid_live_child_parks_until_child_exit_event
+cargo test --quiet thread_join_waiter_wakes_and_consumes_exit_status
+cargo test --quiet repeated_parking_does_not_duplicate_wait_queue_entries
+```
+
+Use these focused filters for fast confirmation while editing one subsystem.
+They are not replacements for the full host hygiene pass before committing a
+batch that changes emulator or compiler behavior.
+
 For the alias scans, expected hits are documentation, compatibility-lowering
 comments, script negative lists, or compiler negative assertions. Treat new
 matches in emulator internals, RTL opcode definitions, or compiler lowering as
@@ -286,7 +308,7 @@ bash scripts/run_all_gates.sh
 ```
 
 That command runs the RTL/proof Docker gate, the RTL synth/FPGA Docker gate,
-the host software gate, and `git diff --check`.
+the formal RTL roadmap audit, the host software gate, and `git diff --check`.
 
 For RTL/proof work, use the Dockerized gates below first. These commands were
 run successfully in this checkout on 2026-06-18; they are separated from the
@@ -395,7 +417,8 @@ This builds `Dockerfile.rtl-synth`, checks the FPGA constraint manifest under
 `fpga/constraints/`, checks the Track D bring-up coverage manifest under
 `fpga/bringup/`, checks the Track B RTL block manifest under `rtl/`, checks the
 roadmap S0 shell/record contract, runs a Yosys S0 synthesis/netlist smoke,
-statically elaborates the S0 through M15 RTL tops with Verilator, simulates the
+runs Yosys netlist synthesis for the M1-M15 vertical RTL tops, statically
+elaborates the S0 through M15 RTL tops with Verilator, simulates the
 S0 FPGA wrapper UART waveform and status LEDs, then builds a generic iCE40 HX8K
 S0 bitstream with Yosys `synth_ice40`, `nextpnr-ice40`, and `icepack` using the
 package-level CT256 PCF at
