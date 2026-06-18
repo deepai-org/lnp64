@@ -3920,7 +3920,7 @@ impl Machine {
     }
 
     fn object_ctl(&mut self, result: Reg, argblock: u64) -> Result<(), String> {
-        let op = self.load_u64(argblock)?;
+        let op = self.load_u64_offset(argblock, 0)?;
         let value = match op {
             OBJECT_OP_CREATE => self.object_ctl_create(argblock),
             OBJECT_OP_SOCKET_BIND => self.object_ctl_socket_bind(argblock),
@@ -5555,7 +5555,7 @@ impl Machine {
     }
 
     fn ns_ctl_record(&mut self, argblock: u64) -> Result<u64, u64> {
-        let op = self.load_u64(argblock).map_err(|_| 14u64)?;
+        let op = self.load_u64_offset(argblock, 0).map_err(|_| 14u64)?;
         let version = self.load_u64_offset(argblock, 8).map_err(|_| 14u64)?;
         if version != NS_CTL_VERSION {
             return Err(22);
