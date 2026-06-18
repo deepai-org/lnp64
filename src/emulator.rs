@@ -7436,7 +7436,16 @@ impl Machine {
                 })
                 .unwrap_or(FdWaiterState::Stale);
             match state {
-                FdWaiterState::Ready => self.wake_thread(waiter.tid),
+                FdWaiterState::Ready => {
+                    let _ = self.with_thread_process(waiter.tid, |machine| {
+                        machine.set_errno(0)?;
+                        if let Some(result) = waiter.result {
+                            machine.write_reg(result, 0)?;
+                        }
+                        Ok(())
+                    });
+                    self.wake_thread(waiter.tid);
+                }
                 FdWaiterState::Pending if self.threads.contains_key(&waiter.tid) => {
                     self.fd_waiters.push(waiter);
                 }
@@ -12989,6 +12998,32 @@ mod tests {
         assert_eq!(machine.fd_waiters[0].fd, 5);
         assert!(machine.fd_read_ready(3).unwrap());
         assert!(!machine.fd_read_ready(5).unwrap());
+    }
+
+    #[test]
+    fn ready_fd_waiter_completes_result_register_and_errno() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        create_pipe_pair(&mut machine, 3, 4);
+        machine.thread_mut().unwrap().regs[2] = POLLIN_MASK;
+        machine.thread_mut().unwrap().regs[5] = 0xdead_beef;
+
+        let keep_ready = machine
+            .exec(Instr::Await(Reg(5), FdReg(3), Reg(2)))
+            .unwrap();
+        assert!(!keep_ready);
+        assert_eq!(machine.thread().unwrap().regs[5], 0xdead_beef);
+
+        let payload = ARG_BASE + 0x140;
+        machine.write_bytes(payload, b"x").unwrap();
+        machine.write_fd_index(4, payload, 1).unwrap();
+        machine.set_errno(123).unwrap();
+        machine.poll_fd_waiters();
+
+        assert!(machine.ready.contains(&1));
+        assert!(machine.fd_waiters.is_empty());
+        assert_eq!(machine.thread().unwrap().regs[5], 0);
+        assert_eq!(machine.process().unwrap().errno, 0);
     }
 
     #[test]
