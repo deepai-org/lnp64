@@ -3078,6 +3078,14 @@ impl Machine {
         self.load_u64(addr)
     }
 
+    fn checked_record_base(base: u64, index: u64, stride: u64) -> Result<u64, String> {
+        let offset = index
+            .checked_mul(stride)
+            .ok_or_else(|| "address overflow".to_string())?;
+        base.checked_add(offset)
+            .ok_or_else(|| "address overflow".to_string())
+    }
+
     fn write_bytes_offset(&mut self, base: u64, offset: u64, data: &[u8]) -> Result<(), String> {
         let addr = base
             .checked_add(offset)
@@ -4487,15 +4495,16 @@ impl Machine {
         }
         let mut rules = Vec::with_capacity(rule_count);
         for idx in 0..rule_count as u64 {
-            let base = rules_ptr + idx * CLASSIFIER_RULE_SIZE;
+            let base = Self::checked_record_base(rules_ptr, idx, CLASSIFIER_RULE_SIZE)
+                .map_err(|_| 14u64)?;
             let rule = ClassifierRule {
-                kind: self.load_u64(base).map_err(|_| 14u64)?,
-                field: self.load_u64(base + 8).map_err(|_| 14u64)?,
-                value: self.load_u64(base + 16).map_err(|_| 14u64)?,
-                mask_or_end: self.load_u64(base + 24).map_err(|_| 14u64)?,
-                action: self.load_u64(base + 32).map_err(|_| 14u64)?,
-                action_arg: self.load_u64(base + 40).map_err(|_| 14u64)?,
-                hash_mod: self.load_u64(base + 48).map_err(|_| 14u64)?,
+                kind: self.load_u64_offset(base, 0).map_err(|_| 14u64)?,
+                field: self.load_u64_offset(base, 8).map_err(|_| 14u64)?,
+                value: self.load_u64_offset(base, 16).map_err(|_| 14u64)?,
+                mask_or_end: self.load_u64_offset(base, 24).map_err(|_| 14u64)?,
+                action: self.load_u64_offset(base, 32).map_err(|_| 14u64)?,
+                action_arg: self.load_u64_offset(base, 40).map_err(|_| 14u64)?,
+                hash_mod: self.load_u64_offset(base, 48).map_err(|_| 14u64)?,
             };
             if !matches!(
                 rule.kind,
@@ -4550,7 +4559,9 @@ impl Machine {
         }
         let mut allowed = Vec::with_capacity(allowed_count);
         for idx in 0..allowed_count as u64 {
-            let token = self.load_u64(allowed_ptr + idx * 8).map_err(|_| 14u64)?;
+            let token = self
+                .load_u64(Self::checked_record_base(allowed_ptr, idx, 8).map_err(|_| 14u64)?)
+                .map_err(|_| 14u64)?;
             if token & FDR_TOKEN_MARKER == 0 {
                 return Err(9);
             }
@@ -4632,9 +4643,9 @@ impl Machine {
     }
 
     fn object_ctl_classify(&mut self, argblock: u64) -> NativeResult<u64> {
-        let classifier_value = self.load_u64(argblock + 8).map_err(|_| 14u64)?;
-        let envelope_ptr = self.load_u64(argblock + 16).map_err(|_| 14u64)?;
-        let result_ptr = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
+        let classifier_value = self.load_u64_offset(argblock, 8).map_err(|_| 14u64)?;
+        let envelope_ptr = self.load_u64_offset(argblock, 16).map_err(|_| 14u64)?;
+        let result_ptr = self.load_u64_offset(argblock, 24).map_err(|_| 14u64)?;
         if envelope_ptr == 0 {
             return Err(14);
         }
@@ -4651,15 +4662,15 @@ impl Machine {
             _ => return Err(9),
         };
         let envelope = ClassifierEnvelope {
-            profile: self.load_u64(envelope_ptr).map_err(|_| 14u64)?,
-            source: self.load_u64(envelope_ptr + 8).map_err(|_| 14u64)?,
-            source_generation: self.load_u64(envelope_ptr + 16).map_err(|_| 14u64)?,
-            domain_id: self.load_u64(envelope_ptr + 24).map_err(|_| 14u64)?,
-            record_ptr: self.load_u64(envelope_ptr + 32).map_err(|_| 14u64)?,
-            record_len: self.load_u64(envelope_ptr + 40).map_err(|_| 14u64)? as usize,
-            inline0: self.load_u64(envelope_ptr + 48).map_err(|_| 14u64)?,
-            inline1: self.load_u64(envelope_ptr + 56).map_err(|_| 14u64)?,
-            inline2: self.load_u64(envelope_ptr + 64).map_err(|_| 14u64)?,
+            profile: self.load_u64_offset(envelope_ptr, 0).map_err(|_| 14u64)?,
+            source: self.load_u64_offset(envelope_ptr, 8).map_err(|_| 14u64)?,
+            source_generation: self.load_u64_offset(envelope_ptr, 16).map_err(|_| 14u64)?,
+            domain_id: self.load_u64_offset(envelope_ptr, 24).map_err(|_| 14u64)?,
+            record_ptr: self.load_u64_offset(envelope_ptr, 32).map_err(|_| 14u64)?,
+            record_len: self.load_u64_offset(envelope_ptr, 40).map_err(|_| 14u64)? as usize,
+            inline0: self.load_u64_offset(envelope_ptr, 48).map_err(|_| 14u64)?,
+            inline1: self.load_u64_offset(envelope_ptr, 56).map_err(|_| 14u64)?,
+            inline2: self.load_u64_offset(envelope_ptr, 64).map_err(|_| 14u64)?,
         };
         if !matches!(
             envelope.profile,
@@ -4766,8 +4777,8 @@ impl Machine {
     }
 
     fn object_ctl_classifier_query(&mut self, argblock: u64) -> NativeResult<u64> {
-        let classifier_value = self.load_u64(argblock + 8).map_err(|_| 14u64)?;
-        let out_ptr = self.load_u64(argblock + 16).map_err(|_| 14u64)?;
+        let classifier_value = self.load_u64_offset(argblock, 8).map_err(|_| 14u64)?;
+        let out_ptr = self.load_u64_offset(argblock, 16).map_err(|_| 14u64)?;
         if out_ptr == 0 {
             return Err(14);
         }
@@ -10717,6 +10728,15 @@ mod tests {
         let err = machine.load_u64_offset(u64::MAX - 4, 8).unwrap_err();
 
         assert!(err.contains("address overflow"), "{err}");
+    }
+
+    #[test]
+    fn checked_record_base_rejects_address_overflow() {
+        let add_err = Machine::checked_record_base(u64::MAX - 8, 2, 8).unwrap_err();
+        assert!(add_err.contains("address overflow"), "{add_err}");
+
+        let mul_err = Machine::checked_record_base(0, u64::MAX, 2).unwrap_err();
+        assert!(mul_err.contains("address overflow"), "{mul_err}");
     }
 
     #[test]
