@@ -1546,7 +1546,7 @@ impl Machine {
                 Self::ensure_result_reg_writable(result)?;
                 let events = self.read_reg(events)?;
                 let revents = self.poll_fd_mask(fd.0 as u64, events)?;
-                self.write_reg(result, revents)?;
+                self.complete_reg_ok(result, revents)?;
             }
             Instr::PollFdDyn(result, fd_reg, events) => {
                 Self::ensure_result_reg_writable(result)?;
@@ -1556,8 +1556,7 @@ impl Machine {
                     Some(fd) => self.poll_fd_index_mask(fd, events)?,
                     None => POLLNVAL_MASK,
                 };
-                self.set_errno(0)?;
-                self.write_reg(result, revents)?;
+                self.complete_reg_ok(result, revents)?;
             }
             Instr::Alloc(dst, bytes_reg) => {
                 Self::ensure_result_reg_writable(dst)?;
@@ -14478,6 +14477,33 @@ mod tests {
         assert_eq!(machine.process().unwrap().errno, 124);
         assert!(machine.fd_waiters.is_empty());
         assert!(machine.ready.contains(&1));
+    }
+
+    #[test]
+    fn poll_fd_success_clears_errno() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        create_pipe_pair(&mut machine, 3, 4);
+        machine.thread_mut().unwrap().regs[2] = POLLIN_MASK;
+        machine.set_errno(123).unwrap();
+
+        machine
+            .exec(Instr::PollFd(Reg(5), FdReg(3), Reg(2)))
+            .unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[5], 0);
+        assert_eq!(machine.process().unwrap().errno, 0);
+
+        machine.thread_mut().unwrap().regs[6] = 3;
+        machine.thread_mut().unwrap().regs[7] = POLLIN_MASK;
+        machine.set_errno(124).unwrap();
+
+        machine
+            .exec(Instr::PollFdDyn(Reg(8), Reg(6), Reg(7)))
+            .unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[8], 0);
+        assert_eq!(machine.process().unwrap().errno, 0);
     }
 
     #[test]
