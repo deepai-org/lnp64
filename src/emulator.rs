@@ -11761,6 +11761,57 @@ mod tests {
     }
 
     #[test]
+    fn openat_dyn_without_namespace_root_does_not_allocate_fdr_or_bypass_with_dir_cap() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.process_mut().unwrap().namespace_root = None;
+        let generations = machine.process().unwrap().fd_generations.clone();
+        let path = ARG_BASE + 0x1000;
+        machine.write_bytes(path, b"Cargo.toml\0").unwrap();
+        machine.thread_mut().unwrap().regs[1] = AT_FDCWD_VALUE;
+        machine.thread_mut().unwrap().regs[2] = path;
+        machine.thread_mut().unwrap().regs[3] = 0;
+
+        machine
+            .exec(Instr::OpenAtDyn(Reg(4), Reg(1), Reg(2), Reg(3)))
+            .unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[4], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 13);
+        assert_eq!(machine.process().unwrap().fd_generations, generations);
+        assert!(matches!(
+            machine.process().unwrap().fds[3],
+            FdHandle::Closed
+        ));
+
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[10] = FdHandle::Dir {
+                path: std::env::current_dir()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
+                entries: Vec::new(),
+                pos: 0,
+            };
+            process.fd_capabilities[10] = FdCapability::full(10);
+        }
+        machine.thread_mut().unwrap().regs[1] = 10;
+
+        machine
+            .exec(Instr::OpenAtDyn(Reg(5), Reg(1), Reg(2), Reg(3)))
+            .unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 13);
+        assert_eq!(machine.process().unwrap().fd_generations, generations);
+        assert!(matches!(
+            machine.process().unwrap().fds[3],
+            FdHandle::Closed
+        ));
+    }
+
+    #[test]
     fn namespace_rejects_empty_paths_instead_of_bypassing_root() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
