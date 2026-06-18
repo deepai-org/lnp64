@@ -12904,10 +12904,16 @@ mod tests {
             .unwrap()
             .security
             .dma_allowed = false;
-        machine.store_u64(arg + 8, ARG_BASE + 0x1000).unwrap();
+        let denied_target = ARG_BASE + 0x1000;
+        machine.write_bytes(denied_target, &[7, 7]).unwrap();
+        machine.store_u64(arg + 8, denied_target).unwrap();
+        machine.store_u64(arg + 16, 0xff).unwrap();
+        machine.store_u64(arg + 24, 2).unwrap();
+        machine.store_u64(arg + 32, 0).unwrap();
         machine.dma_ctl(Reg(6), arg).unwrap();
         assert_eq!(machine.thread().unwrap().regs[6], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 1);
+        assert_eq!(machine.read_bytes(denied_target, 2).unwrap(), vec![7, 7]);
     }
 
     #[test]
