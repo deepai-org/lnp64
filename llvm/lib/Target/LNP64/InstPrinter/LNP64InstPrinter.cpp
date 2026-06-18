@@ -26,6 +26,14 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
     return "mulhu";
   case LNP64::MULHSU:
     return "mulhsu";
+  case LNP64::AMO_SWAP:
+    return "amo.swap";
+  case LNP64::AMO_ADD:
+    return "amo.add";
+  case LNP64::AMO_AND:
+    return "amo.and";
+  case LNP64::AMO_OR:
+    return "amo.or";
   case LNP64::DIV:
     return "div";
   case LNP64::UDIV:
@@ -281,6 +289,10 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::MULH:
   case LNP64::MULHU:
   case LNP64::MULHSU:
+  case LNP64::AMO_SWAP:
+  case LNP64::AMO_ADD:
+  case LNP64::AMO_AND:
+  case LNP64::AMO_OR:
   case LNP64::DIV:
   case LNP64::UDIV:
   case LNP64::SREM:

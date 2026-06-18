@@ -286,6 +286,10 @@ private:
             .Case("udiv", LNP64::UDIV)
             .Case("srem", LNP64::SREM)
             .Case("urem", LNP64::UREM)
+            .Case("amo.swap", LNP64::AMO_SWAP)
+            .Case("amo.add", LNP64::AMO_ADD)
+            .Case("amo.and", LNP64::AMO_AND)
+            .Case("amo.or", LNP64::AMO_OR)
             .Case("and", LNP64::AND)
             .Case("andi", LNP64::ANDI)
             .Case("or", LNP64::OR)
@@ -398,6 +402,8 @@ private:
         Opcode == LNP64::UDIV || Opcode == LNP64::SREM ||
         Opcode == LNP64::UREM || Opcode == LNP64::MULH ||
         Opcode == LNP64::MULHU || Opcode == LNP64::MULHSU ||
+        Opcode == LNP64::AMO_SWAP || Opcode == LNP64::AMO_ADD ||
+        Opcode == LNP64::AMO_AND || Opcode == LNP64::AMO_OR ||
         Opcode == LNP64::AND || Opcode == LNP64::OR ||
         Opcode == LNP64::XOR || Opcode == LNP64::LSL ||
         Opcode == LNP64::LSR || Opcode == LNP64::ASR ||

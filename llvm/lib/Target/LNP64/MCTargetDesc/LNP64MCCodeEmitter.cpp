@@ -207,6 +207,30 @@ public:
                                 getGPRNo(MI.getOperand(2))),
                OS);
       return;
+    case LNP64::AMO_SWAP:
+      emitLE32(encodeFixed32RRR(0xc5, getGPRNo(MI.getOperand(0)),
+                                getGPRNo(MI.getOperand(1)),
+                                getGPRNo(MI.getOperand(2))),
+               OS);
+      return;
+    case LNP64::AMO_ADD:
+      emitLE32(encodeFixed32RRR(0xc6, getGPRNo(MI.getOperand(0)),
+                                getGPRNo(MI.getOperand(1)),
+                                getGPRNo(MI.getOperand(2))),
+               OS);
+      return;
+    case LNP64::AMO_AND:
+      emitLE32(encodeFixed32RRR(0xc7, getGPRNo(MI.getOperand(0)),
+                                getGPRNo(MI.getOperand(1)),
+                                getGPRNo(MI.getOperand(2))),
+               OS);
+      return;
+    case LNP64::AMO_OR:
+      emitLE32(encodeFixed32RRR(0xc8, getGPRNo(MI.getOperand(0)),
+                                getGPRNo(MI.getOperand(1)),
+                                getGPRNo(MI.getOperand(2))),
+               OS);
+      return;
     case LNP64::AND:
       emitLE32(encodeFixed32RRR(0x14, getGPRNo(MI.getOperand(0)),
                                 getGPRNo(MI.getOperand(1)),

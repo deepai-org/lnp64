@@ -1439,6 +1439,10 @@ mod tests {
         assert!(real_llc.contains("high-mul-mc-smoke.o"));
         assert!(real_llc.contains("mulhsu r7, r8, r9"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc high-multiply smoke passed"));
+        assert!(real_llc.contains("atomic-mc-smoke.o"));
+        assert!(real_llc.contains("amo.swap r1, r2, r3"));
+        assert!(real_llc.contains("amo.or r10, r11, r12"));
+        assert!(real_llc.contains("real LLVM LNP64 llvm-mc atomic opcode smoke passed"));
         assert!(real_llc.contains("scalar-extend-clang-smoke.o"));
         assert!(real_llc.contains("grep -q 'zext.w r'"));
         assert!(real_llc.contains("grep -q 'sext.b r'"));
@@ -3743,6 +3747,8 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::UREM"));
         assert!(mc_emitter.contains("case LNP64::MULH"));
         assert!(mc_emitter.contains("case LNP64::MULHSU"));
+        assert!(mc_emitter.contains("case LNP64::AMO_SWAP"));
+        assert!(mc_emitter.contains("case LNP64::AMO_OR"));
         assert!(mc_emitter.contains("case LNP64::SEXT_B"));
         assert!(mc_emitter.contains("case LNP64::ZEXT_W"));
         assert!(mc_emitter.contains("case LNP64::CLZ"));

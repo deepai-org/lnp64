@@ -284,6 +284,30 @@ public:
       addReg(Instr, B);
       addReg(Instr, C);
       return MCDisassembler::Success;
+    case 0xc5:
+      Instr.setOpcode(LNP64::AMO_SWAP);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0xc6:
+      Instr.setOpcode(LNP64::AMO_ADD);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0xc7:
+      Instr.setOpcode(LNP64::AMO_AND);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0xc8:
+      Instr.setOpcode(LNP64::AMO_OR);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
     case 0xad:
       Instr.setOpcode(LNP64::SEXT_B);
       addReg(Instr, A);

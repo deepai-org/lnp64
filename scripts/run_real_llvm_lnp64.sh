@@ -1134,6 +1134,31 @@ grep -q 'mulhsu r7, r8, r9' "$high_mul_mc_dump"
 printf 'real LLVM LNP64 llvm-mc high-multiply smoke passed: %s\n' \
   "$high_mul_mc_obj"
 
+atomic_asm="$build_dir/atomic-mc-smoke.s"
+cat >"$atomic_asm" <<'ASM'
+  .text
+  .globl _start
+_start:
+  amo.swap r1, r2, r3
+  amo.add r4, r5, r6
+  amo.and r7, r8, r9
+  amo.or r10, r11, r12
+  ret
+ASM
+atomic_mc_obj="$build_dir/atomic-mc-smoke.o"
+"$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$atomic_asm" \
+  -o "$atomic_mc_obj"
+test -s "$atomic_mc_obj"
+atomic_mc_dump="$build_dir/atomic-mc-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$atomic_mc_obj" \
+  >"$atomic_mc_dump"
+grep -q 'amo.swap r1, r2, r3' "$atomic_mc_dump"
+grep -q 'amo.add r4, r5, r6' "$atomic_mc_dump"
+grep -q 'amo.and r7, r8, r9' "$atomic_mc_dump"
+grep -q 'amo.or r10, r11, r12' "$atomic_mc_dump"
+printf 'real LLVM LNP64 llvm-mc atomic opcode smoke passed: %s\n' \
+  "$atomic_mc_obj"
+
 minilibc_dump="$build_dir/liblnp64-min-smoke.dump"
 "$llvm_objdump" -d --triple=lnp64-unknown-none "$minilibc_obj" \
   >"$minilibc_dump"
