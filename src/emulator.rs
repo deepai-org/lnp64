@@ -1980,9 +1980,14 @@ impl Machine {
                 let len = self.read_reg(len_reg)? as usize;
                 let cwd = self.process()?.cwd.to_string_lossy().into_owned();
                 let bytes = cwd.as_bytes();
-                let required_len = bytes.len().checked_add(1);
-                if len == 0 || required_len.is_none_or(|required_len| required_len > len) {
+                let Some(required_len) = bytes.len().checked_add(1) else {
                     self.set_status_errno(34)?;
+                    return Ok(true);
+                };
+                if len == 0 || required_len > len {
+                    self.set_status_errno(34)?;
+                } else if self.ensure_mapped(buf, required_len, true).is_err() {
+                    self.set_status_errno(14)?;
                 } else {
                     self.write_bytes_offset(buf, 0, bytes)?;
                     self.write_bytes_offset(buf, bytes.len() as u64, &[0])?;
@@ -11347,6 +11352,29 @@ mod tests {
         assert_eq!(machine.read_bytes(boundary_out, 1).unwrap(), b"Z".to_vec());
 
         let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn getcwd_path_prevalidates_output_span_before_writing() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let cwd = "/tmp/lnp64_getcwd_boundary";
+        machine.process_mut().unwrap().cwd = PathBuf::from(cwd);
+        let boundary_out = MEMORY_SIZE as u64 - cwd.len() as u64;
+        machine.process_mut().unwrap().vmas.push(Vma::anonymous(
+            boundary_out,
+            cwd.len() as u64,
+            0b11,
+        ));
+        machine.write_bytes(boundary_out, b"Z").unwrap();
+        machine.thread_mut().unwrap().regs[2] = boundary_out;
+        machine.thread_mut().unwrap().regs[3] = cwd.len() as u64 + 1;
+
+        machine.exec(Instr::GetcwdPath(Reg(2), Reg(3))).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 14);
+        assert_eq!(machine.read_bytes(boundary_out, 1).unwrap(), b"Z".to_vec());
     }
 
     #[test]
