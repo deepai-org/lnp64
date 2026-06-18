@@ -1501,6 +1501,10 @@ mod tests {
         assert!(real_llc.contains("object_ctl r"));
         assert!(real_llc.contains("domain_ctl r"));
         assert!(real_llc.contains("real LLVM LNP64 clang intrinsic control object smoke passed"));
+        assert!(real_llc.contains("intrinsic-amo-clang-smoke.o"));
+        assert!(real_llc.contains("amo.add r"));
+        assert!(real_llc.contains("amo.swap r"));
+        assert!(real_llc.contains("real LLVM LNP64 clang intrinsic AMO object smoke passed"));
         assert!(real_llc.contains("libc-string-clang-smoke.o"));
         assert!(real_llc.contains("int memcmp"));
         assert!(real_llc.contains("grep -q 'sext.w'"));
@@ -1563,6 +1567,8 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 lld native heap link smoke passed"));
         assert!(real_llc.contains("lnp64-intrinsic-control-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld intrinsic control link smoke passed"));
+        assert!(real_llc.contains("lnp64-intrinsic-amo-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld intrinsic AMO link smoke passed"));
         assert!(real_llc.contains("lnp64-$demo-clang-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld clang demo link smoke passed"));
         assert!(real_llc.contains("rewrite_with_perl"));
@@ -1831,6 +1837,8 @@ mod tests {
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic control execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-intrinsic-amo-linked.elf"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic AMO execution passed"));
         assert!(real_llc_docker.contains("lnp64-exit-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf exit execution passed"));
         assert!(main_source.contains("\"run-elf\""));
@@ -1892,6 +1900,7 @@ mod tests {
             "real_intrinsic_gate_return_execution",
             "real_intrinsic_push_execution",
             "real_intrinsic_control_execution",
+            "real_intrinsic_amo_execution",
             "real_exit_execution",
             "entry_state",
             "text_fetch_decode",
@@ -1912,6 +1921,7 @@ mod tests {
             "real_native_heap_execution",
             "real_intrinsic_push_execution",
             "real_intrinsic_control_execution",
+            "real_intrinsic_amo_execution",
             "real_exit_execution",
             "text_fetch_decode",
         ] {

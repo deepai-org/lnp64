@@ -641,6 +641,46 @@ grep -q 'domain_ctl r' "$intrinsic_ctl_dump"
 printf 'real LLVM LNP64 clang intrinsic control object smoke passed: %s\n' \
   "$intrinsic_ctl_obj"
 
+intrinsic_amo_c="$build_dir/intrinsic-amo.c"
+cat >"$intrinsic_amo_c" <<'C'
+#include "lnp64_intrinsics.h"
+
+static volatile lnp64_word_t cell = 7;
+
+int main(void) {
+  if (__lnp_amo_add(&cell, 5) != 7)
+    return 1;
+  if (cell != 12)
+    return 2;
+  if (__lnp_amo_and(&cell, 10) != 12)
+    return 3;
+  if (cell != 8)
+    return 4;
+  if (__lnp_amo_or(&cell, 3) != 8)
+    return 5;
+  if (cell != 11)
+    return 6;
+  if (__lnp_amo_swap(&cell, 42) != 11)
+    return 7;
+  return cell == 42 ? 0 : 8;
+}
+C
+
+intrinsic_amo_obj="$build_dir/intrinsic-amo-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$intrinsic_amo_c" -o "$intrinsic_amo_obj"
+test -s "$intrinsic_amo_obj"
+intrinsic_amo_dump="$build_dir/intrinsic-amo-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$intrinsic_amo_obj" \
+  >"$intrinsic_amo_dump"
+grep -q 'amo.add r' "$intrinsic_amo_dump"
+grep -q 'amo.and r' "$intrinsic_amo_dump"
+grep -q 'amo.or r' "$intrinsic_amo_dump"
+grep -q 'amo.swap r' "$intrinsic_amo_dump"
+printf 'real LLVM LNP64 clang intrinsic AMO object smoke passed: %s\n' \
+  "$intrinsic_amo_obj"
+
 inline_asm_c="$build_dir/inline-asm-smoke.c"
 cat >"$inline_asm_c" <<'C'
 unsigned long twice(unsigned long x) {
@@ -1262,6 +1302,13 @@ intrinsic_ctl_elf="$build_dir/lnp64-intrinsic-control-linked.elf"
 test -s "$intrinsic_ctl_elf"
 printf 'real LLVM LNP64 lld intrinsic control link smoke passed: %s\n' \
   "$intrinsic_ctl_elf"
+
+intrinsic_amo_elf="$build_dir/lnp64-intrinsic-amo-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$intrinsic_amo_elf" "$crt0_obj" "$intrinsic_amo_obj"
+test -s "$intrinsic_amo_elf"
+printf 'real LLVM LNP64 lld intrinsic AMO link smoke passed: %s\n' \
+  "$intrinsic_amo_elf"
 
 inline_asm_elf="$build_dir/lnp64-inline-asm-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

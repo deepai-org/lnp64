@@ -19,6 +19,7 @@ real_intrinsic_await_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,tool
 real_intrinsic_call_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64_intrinsics.h|real LLVM LNP64 run-elf intrinsic call execution passed|none
 real_intrinsic_gate_return_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64_intrinsics.h|real LLVM LNP64 run-elf intrinsic gate return execution passed|none
 real_intrinsic_control_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64_intrinsics.h|real LLVM LNP64 run-elf intrinsic control execution passed|none
+real_intrinsic_amo_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64_intrinsics.h|real LLVM LNP64 run-elf intrinsic AMO execution passed|none
 real_inline_asm_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64_inline_asm.manifest|real LLVM LNP64 run-elf inline asm execution passed|none
 real_exit_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/liblnp64_min.s|real LLVM LNP64 run-elf exit execution passed|none
 real_argc_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/crt0_lnp64.s|real LLVM LNP64 run-elf argc execution passed|none

@@ -74,6 +74,13 @@ grep -q 'exit=0' <<<"$intrinsic_ctl_output"
 printf 'real LLVM LNP64 run-elf intrinsic control execution passed: %s\n' \
   "$intrinsic_ctl_probe"
 
+intrinsic_amo_probe="target/llvm-lnp64-build/lnp64-intrinsic-amo-linked.elf"
+cargo run --quiet -- elf-plan "$intrinsic_amo_probe" >/dev/null
+intrinsic_amo_output="$(cargo run --quiet -- run-elf "$intrinsic_amo_probe")"
+grep -q 'exit=0' <<<"$intrinsic_amo_output"
+printf 'real LLVM LNP64 run-elf intrinsic AMO execution passed: %s\n' \
+  "$intrinsic_amo_probe"
+
 inline_asm_probe="target/llvm-lnp64-build/lnp64-inline-asm-linked.elf"
 cargo run --quiet -- elf-plan "$inline_asm_probe" >/dev/null
 inline_asm_output="$(cargo run --quiet -- run-elf "$inline_asm_probe")"

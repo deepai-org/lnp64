@@ -36,4 +36,44 @@ lnp64_word_t __lnp_cap_send(lnp64_cap_t queue_cap, lnp64_cap_t cap,
 lnp64_word_t __lnp_cap_recv(lnp64_cap_t queue_cap, lnp64_word_t flags);
 lnp64_word_t __lnp_cap_revoke(lnp64_cap_t cap, lnp64_word_t flags);
 
+static inline lnp64_word_t __lnp_amo_swap(volatile lnp64_word_t *addr,
+                                          lnp64_word_t value) {
+  lnp64_word_t old;
+  __asm__ volatile("amo.swap %0, %1, %2"
+                   : "=r"(old)
+                   : "r"((lnp64_word_t)addr), "r"(value)
+                   : "memory");
+  return old;
+}
+
+static inline lnp64_word_t __lnp_amo_add(volatile lnp64_word_t *addr,
+                                         lnp64_word_t value) {
+  lnp64_word_t old;
+  __asm__ volatile("amo.add %0, %1, %2"
+                   : "=r"(old)
+                   : "r"((lnp64_word_t)addr), "r"(value)
+                   : "memory");
+  return old;
+}
+
+static inline lnp64_word_t __lnp_amo_and(volatile lnp64_word_t *addr,
+                                         lnp64_word_t value) {
+  lnp64_word_t old;
+  __asm__ volatile("amo.and %0, %1, %2"
+                   : "=r"(old)
+                   : "r"((lnp64_word_t)addr), "r"(value)
+                   : "memory");
+  return old;
+}
+
+static inline lnp64_word_t __lnp_amo_or(volatile lnp64_word_t *addr,
+                                        lnp64_word_t value) {
+  lnp64_word_t old;
+  __asm__ volatile("amo.or %0, %1, %2"
+                   : "=r"(old)
+                   : "r"((lnp64_word_t)addr), "r"(value)
+                   : "memory");
+  return old;
+}
+
 #endif

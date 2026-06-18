@@ -16,3 +16,7 @@ __lnp_cap_dup|CAP_DUP|cap_or_errno|source_cap,rights,flags
 __lnp_cap_send|CAP_SEND|status_or_errno|queue_cap,cap,flags
 __lnp_cap_recv|CAP_RECV|cap_or_errno|queue_cap,flags
 __lnp_cap_revoke|CAP_REVOKE|status_or_errno|cap,flags
+__lnp_amo_swap|AMO.SWAP|old_value|addr,value
+__lnp_amo_add|AMO.ADD|old_value|addr,value
+__lnp_amo_and|AMO.AND|old_value|addr,value
+__lnp_amo_or|AMO.OR|old_value|addr,value
