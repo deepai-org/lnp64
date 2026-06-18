@@ -14510,6 +14510,39 @@ mod tests {
     }
 
     #[test]
+    fn object_ctl_call_gate_requires_completion_write_authority() {
+        let mut machine = test_machine_with_child_domain();
+        machine.current_tid = 1;
+        machine.processes.get_mut(&1).unwrap().fds[4] = FdHandle::Counter(Rc::new(RefCell::new(0)));
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[4] = FdCapability::full(4);
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[4].rights &= !CAP_RIGHT_WRITE;
+        let arg = ARG_BASE;
+
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::Queue.code())
+            .unwrap();
+        machine
+            .store_u64(arg + 16, ObjectProfile::CallGate.code())
+            .unwrap();
+        machine.store_u64(arg + 24, 5).unwrap();
+        machine.store_u64(arg + 32, 2).unwrap();
+        machine.store_u64(arg + 40, 1).unwrap();
+        machine.store_u64(arg + 48, CALL_MODE_ASYNC).unwrap();
+        machine.store_u64(arg + 56, 4).unwrap();
+        machine.store_u64(arg + 64, 0).unwrap();
+
+        machine.object_ctl(Reg(6), arg).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[6], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
+        assert!(matches!(
+            machine.process().unwrap().fds[5],
+            FdHandle::Closed
+        ));
+    }
+
+    #[test]
     fn call_cap_negative_corner_cases() {
         let mut machine = test_machine_with_child_domain();
 
