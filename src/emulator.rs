@@ -7357,9 +7357,8 @@ impl Machine {
     }
 
     fn raise_current_signal(&mut self, signum: u64) -> Result<(), String> {
-        self.process_mut()?
-            .pending_events
-            .push_back(NativeEvent::fault_signal(signum));
+        let pid = self.thread()?.pid;
+        self.queue_process_event(pid, NativeEvent::fault_signal(signum));
         Ok(())
     }
 
