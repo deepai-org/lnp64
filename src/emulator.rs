@@ -5323,6 +5323,9 @@ impl Machine {
         if out_len == 0 {
             return Err(22);
         }
+        if flags & !NS_RESOLVE_FLAG_NOFOLLOW_FINAL != 0 {
+            return Err(22);
+        }
         let path = self.read_c_string(path_ptr).map_err(|_| 14u64)?;
         let resolved = self.resolve_process_path_at_raw(
             dir_value,
@@ -9197,6 +9200,13 @@ mod tests {
         machine.ns_ctl(Reg(6), arg).unwrap();
         assert_eq!(machine.thread().unwrap().regs[6], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 20);
+
+        machine.store_u64(arg + 16, 10).unwrap();
+        machine.store_u64(arg + 48, 1 << 4).unwrap();
+        machine.ns_ctl(Reg(12), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[12], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+        machine.store_u64(arg + 48, 0).unwrap();
 
         machine.store_u64(arg + 8, NS_CTL_VERSION + 1).unwrap();
         machine.ns_ctl(Reg(7), arg).unwrap();
