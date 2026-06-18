@@ -1476,6 +1476,7 @@ impl Machine {
                 self.write_reg(result, self.read_reg(Reg(1))?)?;
             }
             Instr::Await(result, fd, mask) => {
+                Self::ensure_result_reg_writable(result)?;
                 let mask = self.read_reg(mask)?;
                 let Some(ready) = self.await_fd_ready_or_error(result, fd.0, mask)? else {
                     return Ok(true);
@@ -1489,6 +1490,7 @@ impl Machine {
                 self.write_reg(result, 0)?;
             }
             Instr::AwaitDyn(result, fd_reg, mask) => {
+                Self::ensure_result_reg_writable(result)?;
                 let fd = self.read_reg(fd_reg)?;
                 let mask = self.read_reg(mask)?;
                 let Some(fd) = self.checked_fd_index(fd)? else {
@@ -2216,6 +2218,7 @@ impl Machine {
                 self.set_errno(errno)?;
             }
             Instr::WaitPid(status_dst, pid_reg) => {
+                Self::ensure_result_reg_writable(status_dst)?;
                 let pid = self.read_reg(pid_reg)?;
                 let current_pid = self.thread()?.pid;
                 let completed = if pid == 0 {
@@ -2342,6 +2345,7 @@ impl Machine {
                 self.clone_with_profile(CloneProfile::SpawnEntry, dst, Some(entry))?;
             }
             Instr::ThreadJoin(result, tid_reg, retval_reg) => {
+                Self::ensure_result_reg_writable(result)?;
                 let tid = self.read_reg(tid_reg)?;
                 let retval_ptr = self.read_reg(retval_reg)?;
                 if tid == self.current_tid {
@@ -13540,6 +13544,22 @@ mod tests {
         assert!(machine.fd_waiters.is_empty());
         assert_eq!(machine.thread().unwrap().regs[8], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 1);
+    }
+
+    #[test]
+    fn await_rejects_locked_result_register_without_parking() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        create_pipe_pair(&mut machine, 3, 4);
+        machine.thread_mut().unwrap().regs[2] = POLLIN_MASK;
+
+        let err = machine
+            .exec(Instr::Await(Reg(31), FdReg(3), Reg(2)))
+            .unwrap_err();
+
+        assert!(err.contains("hardware-locked stack pointer"), "{err}");
+        assert!(machine.fd_waiters.is_empty());
+        assert!(machine.ready.contains(&1));
     }
 
     #[test]
