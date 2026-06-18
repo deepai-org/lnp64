@@ -2232,7 +2232,12 @@ impl Machine {
                 return Ok(false);
             }
             Instr::Mmap(dst, hint, len, prot, fd, offset) => {
-                let len = self.read_reg(len)?.max(1);
+                let len = self.read_reg(len)?;
+                if len == 0 {
+                    self.set_status_errno(22)?;
+                    self.write_reg(dst, -1i64 as u64)?;
+                    return Ok(true);
+                }
                 self.require_domain_cap(DOMAIN_CAP_MEMORY)?;
                 if !self.check_domain_budget(len, 1, 0, 0)? {
                     self.write_reg(dst, -1i64 as u64)?;
@@ -10866,6 +10871,24 @@ mod tests {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
         let vma_count = machine.process().unwrap().vmas.len();
+
+        machine.thread_mut().unwrap().regs[1] = 0;
+        machine.thread_mut().unwrap().regs[2] = 0;
+        machine.thread_mut().unwrap().regs[3] = 0b001;
+        machine
+            .exec(Instr::Mmap(
+                Reg(4),
+                Reg(0),
+                Reg(1),
+                Reg(3),
+                FdReg(0),
+                Reg(0),
+            ))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[4], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert_eq!(machine.process().unwrap().vmas.len(), vma_count);
+
         machine.thread_mut().unwrap().regs[1] = u64::MAX - 1;
         machine.thread_mut().unwrap().regs[2] = 8;
         machine.thread_mut().unwrap().regs[3] = 0b001;
