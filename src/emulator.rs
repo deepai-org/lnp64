@@ -4399,6 +4399,9 @@ impl Machine {
         {
             return Err(22);
         }
+        if owner_generation == 0 {
+            return Err(116);
+        }
         let owner = self.domain_ref(owner_domain_id, owner_generation)?;
         if !self.domain_is_descendant_or_self(owner, self.current_domain_id().map_err(|_| 3u64)?) {
             return Err(1);
@@ -8316,6 +8319,16 @@ mod tests {
         machine.current_tid = 1;
         let envelope = ARG_BASE + 0x1000;
 
+        write_servicelet_envelope(&mut machine, envelope, 64, 0x01, 32, 128, 64, 32, 0);
+        machine
+            .store_u64(envelope, SERVICELET_VERIFY_VERSION + 1)
+            .unwrap();
+        assert_eq!(
+            try_create_servicelet(&mut machine, 7, envelope),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 22);
+
         write_servicelet_envelope(&mut machine, envelope, 0, 0x01, 32, 128, 64, 32, 0);
         assert_eq!(
             try_create_servicelet(&mut machine, 7, envelope),
@@ -8357,6 +8370,13 @@ mod tests {
         );
         assert_eq!(machine.process().unwrap().errno, 22);
 
+        write_servicelet_envelope(&mut machine, envelope, 64, 0x01, 0, 128, 64, 32, 0);
+        assert_eq!(
+            try_create_servicelet(&mut machine, 7, envelope),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 22);
+
         write_servicelet_envelope(
             &mut machine,
             envelope,
@@ -8374,12 +8394,87 @@ mod tests {
         );
         assert_eq!(machine.process().unwrap().errno, 22);
 
+        write_servicelet_envelope(&mut machine, envelope, 64, 0x01, 32, 0, 64, 32, 0);
+        assert_eq!(
+            try_create_servicelet(&mut machine, 7, envelope),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 22);
+
+        write_servicelet_envelope(
+            &mut machine,
+            envelope,
+            64,
+            0x01,
+            32,
+            SERVICELET_MAX_CYCLES + 1,
+            64,
+            32,
+            0,
+        );
+        assert_eq!(
+            try_create_servicelet(&mut machine, 7, envelope),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 22);
+
+        write_servicelet_envelope(
+            &mut machine,
+            envelope,
+            64,
+            0x01,
+            32,
+            128,
+            SERVICELET_MAX_RECORD_BYTES + 1,
+            32,
+            0,
+        );
+        assert_eq!(
+            try_create_servicelet(&mut machine, 7, envelope),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 22);
+
+        write_servicelet_envelope(
+            &mut machine,
+            envelope,
+            64,
+            0x01,
+            32,
+            128,
+            64,
+            SERVICELET_MAX_ACTION_BYTES + 1,
+            0,
+        );
+        assert_eq!(
+            try_create_servicelet(&mut machine, 7, envelope),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 22);
+
         write_servicelet_envelope(&mut machine, envelope, 64, 0x01, 32, 128, 64, 32, 1 << 4);
         assert_eq!(
             try_create_servicelet(&mut machine, 7, envelope),
             -1i64 as u64
         );
         assert_eq!(machine.process().unwrap().errno, 22);
+
+        write_servicelet_envelope(&mut machine, envelope, 64, 0x01, 32, 128, 64, 32, 0);
+        machine.store_u64(envelope + 64, 999).unwrap();
+        machine.store_u64(envelope + 72, 1).unwrap();
+        assert_eq!(
+            try_create_servicelet(&mut machine, 7, envelope),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 3);
+
+        write_servicelet_envelope(&mut machine, envelope, 64, 0x01, 32, 128, 64, 32, 0);
+        machine.store_u64(envelope + 72, 0).unwrap();
+        assert_eq!(
+            try_create_servicelet(&mut machine, 7, envelope),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 116);
 
         write_servicelet_envelope(&mut machine, envelope, 64, 0x01, 32, 128, 64, 32, 0);
         machine
