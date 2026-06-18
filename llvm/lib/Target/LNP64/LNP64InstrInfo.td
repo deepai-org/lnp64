@@ -1,7 +1,11 @@
 def simm16 : Operand<i64>;
+def simm14 : Operand<i64>;
 def simm26 : Operand<i64>;
 def simm16_imm : PatLeaf<(imm), [{
   return isInt<16>(N->getSExtValue());
+}]>;
+def simm14_imm : PatLeaf<(imm), [{
+  return isInt<14>(N->getSExtValue());
 }]>;
 
 class LNP64Inst<dag Outs, dag Ins, string Mnemonic, string Operands>
@@ -35,11 +39,11 @@ class LNP64Branch<string Mnemonic>
     : LNP64Inst<(outs), (ins simm26:$target), Mnemonic, "\t$target">;
 
 class LNP64MemLoad<string Mnemonic>
-    : LNP64Inst<(outs GPR:$rd), (ins GPR:$base, simm16:$offset), Mnemonic,
+    : LNP64Inst<(outs GPR:$rd), (ins GPR:$base, simm14:$offset), Mnemonic,
                 "\t$rd, $offset($base)">;
 
 class LNP64MemStore<string Mnemonic>
-    : LNP64Inst<(outs), (ins GPR:$rs, GPR:$base, simm16:$offset), Mnemonic,
+    : LNP64Inst<(outs), (ins GPR:$rs, GPR:$base, simm14:$offset), Mnemonic,
                 "\t$rs, $offset($base)">;
 
 class LNP64Native4<string Mnemonic>
@@ -108,10 +112,19 @@ def RET : LNP64NoOperand<"ret">;
 
 def LD : LNP64MemLoad<"ld">;
 def LD_W : LNP64MemLoad<"ld.w">;
+def LD_H : LNP64MemLoad<"ld.h">;
 def LD_B : LNP64MemLoad<"ld.b">;
 def ST : LNP64MemStore<"st">;
 def ST_W : LNP64MemStore<"st.w">;
+def ST_H : LNP64MemStore<"st.h">;
 def ST_B : LNP64MemStore<"st.b">;
+
+def : Pat<(i64 (load (add GPR:$base, simm14_imm:$offset))),
+          (LD GPR:$base, simm14_imm:$offset)>;
+def : Pat<(i64 (load GPR:$base)), (LD GPR:$base, 0)>;
+def : Pat<(store GPR:$rs, (add GPR:$base, simm14_imm:$offset)),
+          (ST GPR:$rs, GPR:$base, simm14_imm:$offset)>;
+def : Pat<(store GPR:$rs, GPR:$base), (ST GPR:$rs, GPR:$base, 0)>;
 def FENCE : LNP64NoOperand<"fence">;
 def ISYNC : LNP64Inst<(outs), (ins GPR:$rd, GPR:$rs1, GPR:$rs2), "isync",
                       "\t$rd, $rs1, $rs2">;

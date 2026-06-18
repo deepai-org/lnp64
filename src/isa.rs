@@ -202,6 +202,7 @@ pub enum Instr {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Width {
     Byte,
+    Half,
     Word,
     Double,
 }
@@ -210,6 +211,7 @@ impl Width {
     pub fn bytes(self) -> usize {
         match self {
             Width::Byte => 1,
+            Width::Half => 2,
             Width::Word => 4,
             Width::Double => 8,
         }

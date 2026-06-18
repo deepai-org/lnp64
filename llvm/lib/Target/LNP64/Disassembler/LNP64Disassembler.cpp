@@ -212,6 +212,18 @@ public:
       addReg(Instr, B);
       addImm(Instr, SignExtend64<14>(Word & 0x3fff));
       return MCDisassembler::Success;
+    case 0x36:
+      Instr.setOpcode(LNP64::LD_H);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addImm(Instr, SignExtend64<14>(Word & 0x3fff));
+      return MCDisassembler::Success;
+    case 0x37:
+      Instr.setOpcode(LNP64::ST_H);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addImm(Instr, SignExtend64<14>(Word & 0x3fff));
+      return MCDisassembler::Success;
     default:
       return MCDisassembler::Fail;
     }

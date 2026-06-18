@@ -3,6 +3,8 @@
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/MathExtras.h"
 
 using namespace llvm;
 
@@ -42,6 +44,8 @@ bool LNP64RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   if (FIOperandNum + 1 < MI.getNumOperands() &&
       MI.getOperand(FIOperandNum + 1).isImm())
     Offset += MI.getOperand(FIOperandNum + 1).getImm();
+  if (!isInt<14>(Offset))
+    llvm_unreachable("LNP64 frame index offset exceeds signed-14 memory field");
 
   MI.getOperand(FIOperandNum).ChangeToRegister(LNP64::R31, false);
   if (FIOperandNum + 1 < MI.getNumOperands() &&

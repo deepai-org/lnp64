@@ -56,15 +56,17 @@ marked `XFAIL` until the target is integrated into a buildable llvm-project
 tree.
 The MC code emitter now has concrete fixed32 paths for `NOP`, `RET`, `LI`,
 `MOV`, integer ALU/compare operations, branch/call/return opcodes, and
-byte/word/doubleword `LD`/`ST`; other opcodes remain blocked until operand
-encodings are implemented. The disassembler decodes that same initial fixed32
-subset for future `llvm-mc` round trips. The MC layer now has target fixup
-kinds and object-writer relocation mapping for branch/data relocations, and the
-lld scaffold can patch `R_LNP64_BRANCH26` into the aligned signed branch field.
+byte/halfword/word/doubleword `LD`/`ST`; other opcodes remain blocked until
+operand encodings are implemented. The disassembler decodes that same initial
+fixed32 subset for future `llvm-mc` round trips. The MC layer now has target
+fixup kinds and object-writer relocation mapping for branch/data relocations,
+and the lld scaffold can patch `R_LNP64_BRANCH26` into the aligned signed
+branch field.
 The first SelectionDAG patterns now select signed-16 constant materialization
-through `LI` and simple i64 ALU operations (`add`/`sub`/`mul`/signed `div`,
-bitwise ops, and shifts) onto the fixed32 ALU opcodes; calls, returns, stack
-frames, memory selection, and branches remain bring-up blockers.
+through `LI`, simple i64 ALU operations (`add`/`sub`/`mul`/signed `div`,
+bitwise ops, and shifts), and i64 base+signed-14-offset loads/stores onto the
+fixed32 opcodes; calls, returns, narrow memory extension/truncation, globals,
+and branches remain bring-up blockers.
 Control-flow opcodes now carry TableGen instruction properties for branches,
 calls, link-register definition/use, returns, terminators, and barriers, so
 later call/return lowering and verifier work can rely on instruction metadata.
@@ -139,7 +141,8 @@ NetBSD policy. Those remain loader, libc, and personality responsibilities.
 
 3. Lower normal code.
    - Integer ALU, compares, branches, calls/returns.
-   - Loads/stores with byte/half/word/dword widths.
+   - Loads/stores with byte/half/word/dword widths; i64 base+offset selection
+     exists first, while narrow extension/truncation selection remains pending.
    - Global addresses, constant pools, stack slots, and frame lowering.
    - Atomics and fences needed by libc/libpthread.
 

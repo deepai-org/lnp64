@@ -7708,6 +7708,7 @@ impl Machine {
         let bytes = self.read_bytes(addr, width.bytes())?;
         Ok(match width {
             Width::Byte => bytes[0] as u64,
+            Width::Half => u16::from_le_bytes(bytes.try_into().unwrap()) as u64,
             Width::Word => u32::from_le_bytes(bytes.try_into().unwrap()) as u64,
             Width::Double => u64::from_le_bytes(bytes.try_into().unwrap()),
         })
@@ -7716,6 +7717,7 @@ impl Machine {
     fn store_width(&mut self, addr: u64, value: u64, width: Width) -> Result<(), String> {
         match width {
             Width::Byte => self.write_bytes(addr, &[value as u8]),
+            Width::Half => self.write_bytes(addr, &(value as u16).to_le_bytes()),
             Width::Word => self.write_bytes(addr, &(value as u32).to_le_bytes()),
             Width::Double => self.write_bytes(addr, &value.to_le_bytes()),
         }

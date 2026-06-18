@@ -7,7 +7,9 @@
   li r1, 42
   add r3, r1, r2
   ld r4, 16(r31)
+  ld.h r5, 18(r31)
   st r4, 24(r31)
+  st.h r5, 26(r31)
   call 0
   call main
 main:
@@ -17,7 +19,9 @@ main:
 # CHECK: li r1, 42
 # CHECK: add r3, r1, r2
 # CHECK: ld r4, 16(r31)
+# CHECK: ld.h r5, 18(r31)
 # CHECK: st r4, 24(r31)
+# CHECK: st.h r5, 26(r31)
 # CHECK: call 0
 # CHECK: call main
 # CHECK: ret

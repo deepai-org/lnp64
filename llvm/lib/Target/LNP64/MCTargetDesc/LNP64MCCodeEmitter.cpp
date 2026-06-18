@@ -3,6 +3,7 @@
 #include "llvm/MC/MCFixup.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/MathExtras.h"
 
 using namespace llvm;
 
@@ -37,6 +38,8 @@ static uint32_t encodeFixed32RRR(uint8_t Opcode, unsigned Rd, unsigned Rs1,
 
 static uint32_t encodeFixed32Mem(uint8_t Opcode, unsigned Reg, unsigned Base,
                                  int64_t Offset) {
+  if (!isInt<14>(Offset))
+    llvm_unreachable("expected signed-14 LNP64 memory offset");
   return (uint32_t(Opcode) << 24) | ((Reg & 0x1f) << 19) |
          ((Base & 0x1f) << 14) | (uint32_t(Offset) & 0x3fff);
 }
@@ -223,6 +226,18 @@ public:
       return;
     case LNP64::ST_B:
       emitLE32(encodeFixed32Mem(0x35, getGPRNo(MI.getOperand(0)),
+                                getGPRNo(MI.getOperand(1)),
+                                MI.getOperand(2).getImm()),
+               CB);
+      return;
+    case LNP64::LD_H:
+      emitLE32(encodeFixed32Mem(0x36, getGPRNo(MI.getOperand(0)),
+                                getGPRNo(MI.getOperand(1)),
+                                MI.getOperand(2).getImm()),
+               CB);
+      return;
+    case LNP64::ST_H:
+      emitLE32(encodeFixed32Mem(0x37, getGPRNo(MI.getOperand(0)),
                                 getGPRNo(MI.getOperand(1)),
                                 MI.getOperand(2).getImm()),
                CB);

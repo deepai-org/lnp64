@@ -56,12 +56,16 @@ static StringRef getMnemonic(unsigned Opcode) {
     return "ld";
   case LNP64::LD_W:
     return "ld.w";
+  case LNP64::LD_H:
+    return "ld.h";
   case LNP64::LD_B:
     return "ld.b";
   case LNP64::ST:
     return "st";
   case LNP64::ST_W:
     return "st.w";
+  case LNP64::ST_H:
+    return "st.h";
   case LNP64::ST_B:
     return "st.b";
   default:
@@ -171,9 +175,11 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
     break;
   case LNP64::LD:
   case LNP64::LD_W:
+  case LNP64::LD_H:
   case LNP64::LD_B:
   case LNP64::ST:
   case LNP64::ST_W:
+  case LNP64::ST_H:
   case LNP64::ST_B:
     OS << getMnemonic(MI->getOpcode()) << ' ';
     printMemOperand(MI, 0, 1, 2, OS);

@@ -1844,14 +1844,18 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::AND"));
         assert!(mc_emitter.contains("case LNP64::CMP"));
         assert!(mc_emitter.contains("case LNP64::LD_W"));
+        assert!(mc_emitter.contains("case LNP64::LD_H"));
         assert!(mc_emitter.contains("case LNP64::ST_B"));
+        assert!(mc_emitter.contains("case LNP64::ST_H"));
         assert!(mc_emitter.contains("not implemented yet"));
+        assert!(mc_emitter.contains("isInt<14>(Offset)"));
         assert!(asm_parser.contains("LLVMInitializeLNP64AsmParser"));
         assert!(asm_parser.contains("RegisterMCAsmParser"));
         assert!(asm_parser.contains("parseImmediateOrMemory"));
         assert!(asm_parser.contains("buildInstruction"));
         assert!(asm_parser.contains(r#".Case("call", LNP64::CALL)"#));
         assert!(asm_parser.contains(r#".Case("ld.w", LNP64::LD_W)"#));
+        assert!(asm_parser.contains(r#".Case("ld.h", LNP64::LD_H)"#));
         assert!(disassembler.contains("LLVMInitializeLNP64Disassembler"));
         assert!(disassembler.contains("RegisterMCDisassembler"));
         assert!(disassembler.contains("readLE32"));
@@ -1862,7 +1866,9 @@ mod tests {
         assert!(disassembler.contains("Instr.setOpcode(LNP64::CALL)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::CALL_REG)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::LD_W)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::LD_H)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::ST_B)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::ST_H)"));
         assert!(disassembler.contains("SignExtend64<14>"));
         assert!(disassembler.contains("decodeBranchTarget"));
         assert!(disassembler.contains("MCDisassembler::Fail"));
@@ -1874,9 +1880,12 @@ mod tests {
         assert!(isel.contains("ISD::SDIV"));
         assert!(isel.contains("computeRegisterProperties"));
         assert!(instr_td.contains("def simm16_imm"));
+        assert!(instr_td.contains("def simm14_imm"));
         assert!(instr_td.contains("(set GPR:$rd, simm16_imm:$imm)"));
         assert!(instr_td.contains("(set GPR:$rd, (add GPR:$rs1, GPR:$rs2))"));
         assert!(instr_td.contains("(set GPR:$rd, (shl GPR:$rs1, GPR:$rs2))"));
+        assert!(instr_td.contains("(i64 (load (add GPR:$base, simm14_imm:$offset)))"));
+        assert!(instr_td.contains("(ST GPR:$rs, GPR:$base, simm14_imm:$offset)"));
         assert!(instr_td.contains("isReturn = 1"));
         assert!(instr_td.contains("Defs = [LR]"));
         assert!(instr_td.contains("Uses = [LR]"));
@@ -1897,6 +1906,7 @@ mod tests {
         assert!(reginfo.contains("eliminateFrameIndex"));
         assert!(reginfo.contains("ChangeToRegister(LNP64::R31"));
         assert!(reginfo.contains("MFI.getObjectOffset"));
+        assert!(reginfo.contains("isInt<14>(Offset)"));
         assert!(reginfo.contains("NoCalleeSaved"));
         assert!(clang_target.contains("resetDataLayout(\"e-m:e-p:64:64-i64:64-n64-S128\")"));
         assert!(clang_target.contains("__LNP64__"));
@@ -1928,6 +1938,8 @@ mod tests {
         assert!(codegen_test.contains("__lnp_push"));
         assert!(mc_test.contains("llvm-mc -triple=lnp64-unknown-none"));
         assert!(mc_test.contains("li r1, 42"));
+        assert!(mc_test.contains("ld.h r5, 18(r31)"));
+        assert!(mc_test.contains("st.h r5, 26(r31)"));
         assert!(mc_test.contains("XFAIL: *"));
         assert!(clang_driver_test.contains("--target=lnp64-unknown-none"));
         assert!(clang_driver_test.contains("elf64lnp64"));

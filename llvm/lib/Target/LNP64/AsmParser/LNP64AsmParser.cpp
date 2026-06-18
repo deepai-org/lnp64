@@ -287,9 +287,11 @@ private:
             .Case("ret", LNP64::RET)
             .Case("ld", LNP64::LD)
             .Case("ld.w", LNP64::LD_W)
+            .Case("ld.h", LNP64::LD_H)
             .Case("ld.b", LNP64::LD_B)
             .Case("st", LNP64::ST)
             .Case("st.w", LNP64::ST_W)
+            .Case("st.h", LNP64::ST_H)
             .Case("st.b", LNP64::ST_B)
             .Default(0);
 
@@ -320,10 +322,10 @@ private:
     if (Opcode == LNP64::CALL_REG)
       return addReg(Inst, Operands);
     if (Opcode == LNP64::LD || Opcode == LNP64::LD_W ||
-        Opcode == LNP64::LD_B)
+        Opcode == LNP64::LD_H || Opcode == LNP64::LD_B)
       return addLoad(Inst, Operands);
     if (Opcode == LNP64::ST || Opcode == LNP64::ST_W ||
-        Opcode == LNP64::ST_B)
+        Opcode == LNP64::ST_H || Opcode == LNP64::ST_B)
       return addStore(Inst, Operands);
 
     return false;

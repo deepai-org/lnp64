@@ -218,9 +218,11 @@ impl Parser {
             }
             "LD" | "LD.D" => load(&args, Width::Double)?,
             "LD.W" => load(&args, Width::Word)?,
+            "LD.H" => load(&args, Width::Half)?,
             "LD.B" => load(&args, Width::Byte)?,
             "ST" | "ST.D" => store(&args, Width::Double)?,
             "ST.W" => store(&args, Width::Word)?,
+            "ST.H" => store(&args, Width::Half)?,
             "ST.B" => store(&args, Width::Byte)?,
             "FENCE" => {
                 arity(0)?;
