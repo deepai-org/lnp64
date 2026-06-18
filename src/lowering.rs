@@ -2143,12 +2143,14 @@ mod tests {
         assert!(isel.contains("BuildMI(*BB, MI, DL, TII.get(BranchOpcode))"));
         assert!(isel.contains("LowerFormalArguments"));
         assert!(isel.contains("CCInfo.AnalyzeFormalArguments(Ins, CC_LNP64)"));
+        assert!(isel.contains("LNP64 stack formal arguments are not implemented yet"));
         assert!(isel.contains("MF.addLiveIn(VA.getLocReg(), &LNP64::GPRRegClass)"));
         assert!(isel.contains("LowerReturn"));
         assert!(isel.contains("CCInfo.AnalyzeReturn(Outs, RetCC_LNP64)"));
         assert!(isel.contains("DAG.getCopyToReg"));
         assert!(isel.contains("LowerCall"));
         assert!(isel.contains("ArgCCInfo.AnalyzeCallOperands(CLI.Outs, CC_LNP64)"));
+        assert!(isel.contains("LNP64 stack call arguments are not implemented yet"));
         assert!(isel.contains("DAG.getTargetGlobalAddress"));
         assert!(isel.contains("DAG.getTargetExternalSymbol"));
         assert!(isel.contains("indirect call callee must lower to an i64 register"));

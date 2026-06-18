@@ -475,6 +475,42 @@ grep -q 'st.b' "$stack_aggregate_dump"
 printf 'real LLVM LNP64 clang stack aggregate object smoke passed: %s\n' \
   "$stack_aggregate_obj"
 
+stack_arg_formal_c="$build_dir/stack-arg-formal-negative.c"
+cat >"$stack_arg_formal_c" <<'C'
+int sum7(int a, int b, int c, int d, int e, int f, int g) {
+  return a + b + c + d + e + f + g;
+}
+C
+
+if "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$stack_arg_formal_c" -o "$build_dir/stack-arg-formal-negative.o" \
+  2>"$build_dir/stack-arg-formal-negative.err"; then
+  printf 'expected LNP64 stack formal argument rejection to fail\n' >&2
+  exit 1
+fi
+grep -q 'LNP64 stack formal arguments are not implemented yet' \
+  "$build_dir/stack-arg-formal-negative.err"
+
+stack_arg_call_c="$build_dir/stack-arg-call-negative.c"
+cat >"$stack_arg_call_c" <<'C'
+extern int sum7(int a, int b, int c, int d, int e, int f, int g);
+int main(void) {
+  return sum7(1, 2, 3, 4, 5, 6, 7);
+}
+C
+
+if "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$stack_arg_call_c" -o "$build_dir/stack-arg-call-negative.o" \
+  2>"$build_dir/stack-arg-call-negative.err"; then
+  printf 'expected LNP64 stack call argument rejection to fail\n' >&2
+  exit 1
+fi
+grep -q 'LNP64 stack call arguments are not implemented yet' \
+  "$build_dir/stack-arg-call-negative.err"
+printf 'real LLVM LNP64 stack argument negative smokes passed\n'
+
 crt0_obj="$build_dir/crt0-smoke.o"
 "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj toolchain/crt0_lnp64.s \
   -o "$crt0_obj"

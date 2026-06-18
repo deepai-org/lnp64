@@ -398,7 +398,7 @@ SDValue LNP64TargetLowering::LowerFormalArguments(
     const SmallVectorImpl<ISD::InputArg> &Ins, const SDLoc &DL,
     SelectionDAG &DAG, SmallVectorImpl<SDValue> &InVals) const {
   if (IsVarArg)
-    llvm_unreachable("LNP64 varargs lowering is not implemented yet");
+    report_fatal_error("LNP64 varargs lowering is not implemented yet");
 
   MachineFunction &MF = DAG.getMachineFunction();
   SmallVector<CCValAssign, 8> ArgLocs;
@@ -407,7 +407,8 @@ SDValue LNP64TargetLowering::LowerFormalArguments(
 
   for (CCValAssign &VA : ArgLocs) {
     if (!VA.isRegLoc())
-      llvm_unreachable("LNP64 stack argument lowering is not implemented yet");
+      report_fatal_error(
+          "LNP64 stack formal arguments are not implemented yet");
 
     Register VReg = MF.addLiveIn(VA.getLocReg(), &LNP64::GPRRegClass);
     SDValue Arg = DAG.getCopyFromReg(Chain, DL, VReg, VA.getLocVT());
@@ -423,7 +424,7 @@ SDValue LNP64TargetLowering::LowerReturn(
     const SmallVectorImpl<SDValue> &OutVals, const SDLoc &DL,
     SelectionDAG &DAG) const {
   if (IsVarArg)
-    llvm_unreachable("LNP64 varargs return lowering is not implemented yet");
+    report_fatal_error("LNP64 varargs return lowering is not implemented yet");
 
   MachineFunction &MF = DAG.getMachineFunction();
   SmallVector<CCValAssign, 4> RetLocs;
@@ -435,7 +436,7 @@ SDValue LNP64TargetLowering::LowerReturn(
   for (unsigned I = 0, E = RetLocs.size(); I != E; ++I) {
     CCValAssign &VA = RetLocs[I];
     if (!VA.isRegLoc())
-      llvm_unreachable("LNP64 stack return lowering is not implemented yet");
+      report_fatal_error("LNP64 stack return lowering is not implemented yet");
 
     Chain = DAG.getCopyToReg(Chain, DL, VA.getLocReg(), OutVals[I], Glue);
     Glue = Chain.getValue(1);
@@ -457,7 +458,7 @@ LNP64TargetLowering::LowerCall(CallLoweringInfo &CLI,
   SDValue Callee = CLI.Callee;
 
   if (CLI.IsVarArg)
-    llvm_unreachable("LNP64 varargs call lowering is not implemented yet");
+    report_fatal_error("LNP64 varargs call lowering is not implemented yet");
 
   StringRef CalleeName = getDirectCalleeName(Callee);
   if (CalleeName == "__lnp_call" || CalleeName == "__lnp_pull" ||
@@ -499,7 +500,8 @@ LNP64TargetLowering::LowerCall(CallLoweringInfo &CLI,
   for (unsigned I = 0, E = ArgLocs.size(); I != E; ++I) {
     CCValAssign &VA = ArgLocs[I];
     if (!VA.isRegLoc())
-      llvm_unreachable("LNP64 stack call arguments are not implemented yet");
+      report_fatal_error(
+          "LNP64 stack call arguments are not implemented yet");
     RegsToPass.push_back(std::make_pair(VA.getLocReg(), CLI.OutVals[I]));
   }
 
@@ -535,7 +537,7 @@ LNP64TargetLowering::LowerCall(CallLoweringInfo &CLI,
   RetCCInfo.AnalyzeCallResult(CLI.Ins, RetCC_LNP64);
   for (CCValAssign &VA : RVLocs) {
     if (!VA.isRegLoc())
-      llvm_unreachable("LNP64 stack call results are not implemented yet");
+      report_fatal_error("LNP64 stack call results are not implemented yet");
     SDValue RetValue = DAG.getCopyFromReg(Chain, DL, VA.getLocReg(),
                                           VA.getLocVT(), Glue);
     Chain = RetValue.getValue(1);
