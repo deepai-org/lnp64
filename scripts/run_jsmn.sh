@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-lnp64=(cargo run --release --quiet --)
+if [[ -n "${LNP64_BIN:-}" ]]; then
+  lnp64=("$LNP64_BIN")
+else
+  lnp64=(cargo run --release --quiet --)
+fi
 
 "${lnp64[@]}" cc third_party/jsmn/example/simple.c -o /tmp/jsmn_simple.s
 "${lnp64[@]}" cc third_party/jsmn/test/tests.c -o /tmp/jsmn_tests.s

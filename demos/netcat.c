@@ -18,5 +18,7 @@ int main() {
     n = recv(client, buf, 128, 0);
     write(1, buf, n);
     send(client, buf, n, MSG_NOSIGNAL);
-    return 0;
+    close(client);
+    close(server);
+    exit(0);
 }

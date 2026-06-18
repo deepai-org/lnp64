@@ -6,6 +6,7 @@ module lnp64_m1_pingpong (
     input  logic clk,
     input  logic reset_n,
     input  logic start,
+    input  logic [31:0] scenario_seed,
     output logic done,
     output logic trace_valid,
     output logic [7:0] trace_code,
@@ -53,6 +54,27 @@ module lnp64_m1_pingpong (
     logic wake_pending;
     logic [31:0] event_count;
 
+    function automatic logic [31:0] seeded_queue_gen(input logic [31:0] seed);
+        if (seed == 32'd0) begin
+            return 32'd1;
+        end
+        return {28'd0, seed[3:0]} + 32'd1;
+    endfunction
+
+    function automatic logic [63:0] seeded_push_value(input logic [31:0] seed);
+        if (seed == 32'd0) begin
+            return 64'd42;
+        end
+        return 64'd32 + {56'd0, seed[7:0]};
+    endfunction
+
+    function automatic logic [63:0] seeded_refill_value(input logic [31:0] seed);
+        if (seed == 32'd0) begin
+            return 64'd7;
+        end
+        return 64'd1 + {56'd0, seed[15:8]};
+    endfunction
+
     function automatic logic exactly_one(input sched_location_e loc);
         return loc != LOC_NONE;
     endfunction
@@ -92,8 +114,8 @@ module lnp64_m1_pingpong (
                 M1_BOOT: begin
                     producer_loc <= LOC_RUNNABLE;
                     consumer_loc <= LOC_RUNNABLE;
-                    queue_generation <= 32'd1;
-                    producer_fd_generation <= 32'd1;
+                    queue_generation <= seeded_queue_gen(scenario_seed);
+                    producer_fd_generation <= seeded_queue_gen(scenario_seed);
                     consumer_fd_generation <= 32'd0;
                     producer_rights <= RIGHT_PUSH | RIGHT_PULL | RIGHT_DUP;
                     consumer_rights <= 64'd0;
@@ -101,7 +123,7 @@ module lnp64_m1_pingpong (
                     no_forged_fdr <= 1'b1;
                     trace_valid <= 1'b1;
                     trace_code <= 8'd1;
-                    trace_value <= 64'd1;
+                    trace_value <= {32'd0, seeded_queue_gen(scenario_seed)};
                     state <= M1_CAP_DUP;
                 end
                 M1_CAP_DUP: begin
@@ -131,14 +153,14 @@ module lnp64_m1_pingpong (
                         producer_fd_generation == queue_generation &&
                         (producer_rights & RIGHT_PUSH) != 64'd0) begin
                         queue_valid <= 1'b1;
-                        queue_value <= 64'd42;
+                        queue_value <= seeded_push_value(scenario_seed);
                         wake_pending <= 1'b1;
                         consumer_loc <= LOC_RUNNABLE;
                         event_count <= event_count + 32'd1;
                         no_lost_wakeup <= 1'b1;
                         trace_valid <= 1'b1;
                         trace_code <= 8'd4;
-                        trace_value <= 64'd42;
+                        trace_value <= seeded_push_value(scenario_seed);
                         state <= M1_CONSUMER_PULL;
                     end else begin
                         state <= M1_DONE;
@@ -163,10 +185,10 @@ module lnp64_m1_pingpong (
                 M1_QUEUE_REFILL: begin
                     consumer_loc <= LOC_RUNNABLE;
                     queue_valid <= 1'b1;
-                    queue_value <= 64'd7;
+                    queue_value <= seeded_refill_value(scenario_seed);
                     trace_valid <= 1'b1;
                     trace_code <= 8'd6;
-                    trace_value <= 64'd7;
+                    trace_value <= seeded_refill_value(scenario_seed);
                     state <= M1_QUEUE_FULL;
                 end
                 M1_QUEUE_FULL: begin

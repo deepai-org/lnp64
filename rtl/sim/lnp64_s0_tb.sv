@@ -83,6 +83,22 @@ module lnp64_s0_tb;
         sim_watchdog_inject = 1'b0;
 
         repeat (4) @(posedge clk);
+        force_boot_fault = 1'b1;
+        reset_n = 1'b1;
+
+        wait (dut.boot_fault_valid);
+        repeat (2) @(posedge clk);
+        require(!boot_stable, "forced boot fault created a stable boot state");
+        require(!dut.release_core, "forced boot fault released the core");
+        require(dut.boot_fault.fault_code == LNP64_ERR_EFAULT, "forced boot fault used the wrong canonical fault code");
+        require(
+            dut.boot_fault.source == 16'hb007 && dut.boot_fault.detail == 64'hb007_fa11,
+            "forced boot fault did not emit measured/audited boot fault"
+        );
+
+        reset_n = 1'b0;
+        force_boot_fault = 1'b0;
+        repeat (4) @(posedge clk);
         reset_n = 1'b1;
 
         wait (boot_stable);

@@ -1,0 +1,635 @@
+{
+  "name": "lnp64_formal_rtl_roadmap_audit",
+  "roadmap": "formal_rtl_codesign_roadmap.md",
+  "objective": "Fully implement formal/RTL co-design roadmap with executable specs, proof models, RTL blocks, RTL simulation, co-simulation, synthesis constraints, FPGA smoke tests, and a separate hardware-only live board validation path.",
+  "notes": [
+    "This audit maps the roadmap to concrete repository artifacts and gates.",
+    "Implemented entries name executable checks or Docker gates.",
+    "No real FPGA is available in this environment, so the live board entry is hardware-only and not required for Docker-backed completion."
+  ],
+  "criteria": [
+    {
+      "id": "s0_contract",
+      "title": "S0 starter contract: modules, interfaces, records, reset, stubs, and acceptance tests",
+      "status": "implemented",
+      "required_for_completion": true,
+      "evidence_files": [
+        "scripts/check_rtl_s0_contract.py",
+        "rtl/include/lnp64_pkg.sv",
+        "rtl/top/lnp64_top.sv",
+        "rtl/top/lnp64_reset_boot.sv",
+        "rtl/core/lnp64_core_tile.sv",
+        "rtl/engines/lnp64_engine_shells.sv",
+        "rtl/sim/lnp64_s0_tb.sv",
+        "formal/rtl_assertions/lnp64_s0_assertions.sv",
+        "tests/rtl/s0_filelist.f"
+      ],
+      "checker": "scripts/check_rtl_s0_contract.py",
+      "success_line": "rtl s0 contract ok"
+    },
+    {
+      "id": "track_a_formal",
+      "title": "Track A formal proof obligations A1-A10 plus S0",
+      "status": "implemented",
+      "required_for_completion": true,
+      "evidence_files": [
+        "formal/proof_obligations_manifest.json",
+        "scripts/check_formal_proof_manifest.py",
+        "scripts/run_rtl_proof_gates.sh",
+        "Dockerfile.rtl-proof"
+      ],
+      "checker": "scripts/check_formal_proof_manifest.py",
+      "success_line": "formal proof manifest ok"
+    },
+    {
+      "id": "formal_proof_manifest_checker_selftest",
+      "title": "Formal proof manifest checker positive and negative self-test",
+      "status": "implemented",
+      "required_for_completion": true,
+      "evidence_files": [
+        "scripts/check_formal_proof_manifest.py",
+        "scripts/test_formal_proof_manifest_checker.py"
+      ],
+      "checker": "scripts/test_formal_proof_manifest_checker.py",
+      "success_line": "formal proof manifest checker self-test ok"
+    },
+    {
+      "id": "track_b_rtl",
+      "title": "Track B RTL skeleton and B0-B14 vertical block smoke coverage",
+      "status": "implemented",
+      "required_for_completion": true,
+      "evidence_files": [
+        "rtl/track_b_blocks_manifest.json",
+        "scripts/check_rtl_track_b_manifest.py",
+        "scripts/run_rtl_synth_smoke.sh",
+        "Dockerfile.rtl-synth"
+      ],
+      "checker": "scripts/check_rtl_track_b_manifest.py",
+      "success_line": "rtl Track B manifest ok"
+    },
+    {
+      "id": "rtl_track_b_manifest_checker_selftest",
+      "title": "RTL Track B manifest checker positive and negative self-test",
+      "status": "implemented",
+      "required_for_completion": true,
+      "evidence_files": [
+        "scripts/check_rtl_track_b_manifest.py",
+        "scripts/test_rtl_track_b_manifest_checker.py"
+      ],
+      "checker": "scripts/test_rtl_track_b_manifest_checker.py",
+      "success_line": "rtl Track B manifest checker self-test ok"
+    },
+    {
+      "id": "track_c_cosim",
+      "title": "Track C model/RTL co-simulation for M1-M15 fixed and bounded random traces",
+      "status": "implemented",
+      "required_for_completion": true,
+      "evidence_files": [
+        "tests/traces/rtl_cosim_manifest.json",
+        "scripts/check_rtl_cosim_manifest.py",
+        "scripts/run_rtl_random_cosim.sh"
+      ],
+      "checker": "scripts/check_rtl_cosim_manifest.py",
+      "success_line": "rtl cosim manifest ok"
+    },
+    {
+      "id": "rtl_cosim_manifest_checker_selftest",
+      "title": "RTL co-simulation manifest checker positive and negative self-test",
+      "status": "implemented",
+      "required_for_completion": true,
+      "evidence_files": [
+        "scripts/check_rtl_cosim_manifest.py",
+        "scripts/test_rtl_cosim_manifest_checker.py"
+      ],
+      "checker": "scripts/test_rtl_cosim_manifest_checker.py",
+      "success_line": "rtl cosim manifest checker self-test ok"
+    },
+    {
+      "id": "track_d_fpga_smoke",
+      "title": "Track D FPGA bring-up smoke through iCE40 bitstream, UART waveform, and timing gates",
+      "status": "implemented",
+      "required_for_completion": true,
+      "evidence_files": [
+        "fpga/bringup/lnp64_track_d_bringup.json",
+        "fpga/constraints/lnp64_s0_smoke.json",
+        "fpga/constraints/lnp64_s0_ice40_hx8k_ct256.pcf",
+        "fpga/rtl/lnp64_s0_fpga_top.sv",
+        "rtl/sim/lnp64_s0_fpga_tb.sv",
+        "scripts/check_fpga_bringup_manifest.py",
+        "scripts/check_rtl_synth_constraints.py",
+        "scripts/run_rtl_fpga_uart_s0.sh",
+        "scripts/run_rtl_fpga_ice40_s0.sh"
+      ],
+      "checker": "scripts/check_fpga_bringup_manifest.py",
+      "success_line": "fpga bringup manifest ok",
+      "additional_checkers": [
+        {
+          "checker": "scripts/check_rtl_synth_constraints.py",
+          "success_line": "rtl synthesis constraints ok"
+        }
+      ]
+    },
+    {
+      "id": "fpga_bringup_manifest_checker_selftest",
+      "title": "FPGA bring-up manifest checker positive and negative self-test",
+      "status": "implemented",
+      "required_for_completion": true,
+      "evidence_files": [
+        "scripts/check_fpga_bringup_manifest.py",
+        "scripts/test_fpga_bringup_manifest_checker.py"
+      ],
+      "checker": "scripts/test_fpga_bringup_manifest_checker.py",
+      "success_line": "fpga bringup manifest checker self-test ok"
+    },
+    {
+      "id": "rtl_synth_constraints_checker_selftest",
+      "title": "RTL synthesis constraints checker positive and negative self-test",
+      "status": "implemented",
+      "required_for_completion": true,
+      "evidence_files": [
+        "scripts/check_rtl_synth_constraints.py",
+        "scripts/test_rtl_synth_constraints_checker.py"
+      ],
+      "checker": "scripts/test_rtl_synth_constraints_checker.py",
+      "success_line": "rtl synthesis constraints checker self-test ok"
+    },
+    {
+      "id": "fpga_report_checkers_selftest",
+      "title": "FPGA report checkers positive and negative self-test",
+      "status": "implemented",
+      "required_for_completion": true,
+      "evidence_files": [
+        "scripts/check_ice40_report.py",
+        "scripts/check_icetime_report.py",
+        "scripts/test_fpga_report_checkers.py"
+      ],
+      "checker": "scripts/test_fpga_report_checkers.py",
+      "success_line": "fpga report checkers self-test ok"
+    },
+    {
+      "id": "dockerized_gates",
+      "title": "Dockerized proof, synthesis, FPGA, and board-tool command paths",
+      "status": "implemented",
+      "required_for_completion": true,
+      "evidence_files": [
+        "Dockerfile.rtl-proof",
+        "Dockerfile.rtl-synth",
+        "Dockerfile.rtl-board",
+        "scripts/run_rtl_proof_docker.sh",
+        "scripts/run_rtl_synth_docker.sh",
+        "scripts/run_rtl_board_docker.sh",
+        "scripts/check_rtl_dockerfiles.py",
+        "scripts/run_formal_rtl_roadmap_audit.sh",
+        "README.md"
+      ],
+      "checker": "scripts/check_rtl_dockerfiles.py",
+      "success_line": "rtl Dockerfile command paths ok"
+    },
+    {
+      "id": "rtl_dockerfiles_checker_selftest",
+      "title": "RTL Dockerfile checker positive and negative self-test",
+      "status": "implemented",
+      "required_for_completion": true,
+      "evidence_files": [
+        "scripts/check_rtl_dockerfiles.py",
+        "scripts/test_rtl_dockerfiles_checker.py"
+      ],
+      "checker": "scripts/test_rtl_dockerfiles_checker.py",
+      "success_line": "rtl Dockerfile checker self-test ok"
+    },
+    {
+      "id": "rtl_s0_contract_checker_selftest",
+      "title": "RTL S0 contract checker positive and negative self-test",
+      "status": "implemented",
+      "required_for_completion": true,
+      "evidence_files": [
+        "scripts/check_rtl_s0_contract.py",
+        "scripts/test_rtl_s0_contract_checker.py"
+      ],
+      "checker": "scripts/test_rtl_s0_contract_checker.py",
+      "success_line": "rtl s0 contract checker self-test ok"
+    },
+    {
+      "id": "completion_checklist",
+      "title": "Prompt-to-artifact completion checklist",
+      "status": "implemented",
+      "required_for_completion": true,
+      "evidence_files": [
+        "formal_rtl_roadmap_completion_checklist.md",
+        "formal_rtl_roadmap_audit.json",
+        "scripts/check_formal_rtl_roadmap_audit.py"
+      ]
+    },
+    {
+      "id": "board_evidence_validator_selftest",
+      "title": "Board evidence validator positive and negative self-test",
+      "status": "implemented",
+      "required_for_completion": true,
+      "evidence_files": [
+        "scripts/check_board_evidence.py",
+        "scripts/test_board_evidence_checker.py"
+      ],
+      "checker": "scripts/test_board_evidence_checker.py",
+      "success_line": "board evidence checker self-test ok"
+    },
+    {
+      "id": "uart_byte_checker_selftest",
+      "title": "UART byte capture helper positive and negative self-test",
+      "status": "implemented",
+      "required_for_completion": true,
+      "evidence_files": [
+        "scripts/check_uart_byte.py",
+        "scripts/test_uart_byte_checker.py"
+      ],
+      "checker": "scripts/test_uart_byte_checker.py",
+      "success_line": "uart byte checker self-test ok"
+    },
+    {
+      "id": "strict_roadmap_audit_selftest",
+      "title": "Strict roadmap audit synthetic board-evidence plumbing self-test",
+      "status": "implemented",
+      "required_for_completion": true,
+      "evidence_files": [
+        "scripts/check_formal_rtl_roadmap_audit.py",
+        "scripts/check_board_evidence.py",
+        "scripts/test_formal_rtl_roadmap_strict_audit.py"
+      ],
+      "checker": "scripts/test_formal_rtl_roadmap_strict_audit.py",
+      "success_line": "formal RTL strict audit self-test ok"
+    },
+    {
+      "id": "board_no_hardware_selftest",
+      "title": "Board Docker wrapper no-hardware failure self-test",
+      "status": "implemented",
+      "required_for_completion": true,
+      "evidence_files": [
+        "scripts/run_rtl_board_docker.sh",
+        "scripts/test_rtl_board_no_hardware.sh"
+      ],
+      "checker": "scripts/test_rtl_board_no_hardware.sh",
+      "success_line": "rtl board no-hardware self-test ok"
+    },
+    {
+      "id": "first_milestone_s0",
+      "title": "First Milestone: Whole-Machine Skeleton",
+      "status": "implemented",
+      "required_for_completion": true,
+      "evidence_files": [
+        "rtl/include/lnp64_pkg.sv",
+        "rtl/top/lnp64_top.sv",
+        "rtl/top/lnp64_reset_boot.sv",
+        "rtl/core/lnp64_core_tile.sv",
+        "rtl/engines/lnp64_engine_shells.sv",
+        "rtl/sim/lnp64_s0_tb.sv",
+        "formal/S0Model.lean",
+        "formal/rtl_assertions/lnp64_s0_assertions.sv",
+        "tests/rtl/s0_filelist.f",
+        "scripts/run_rtl_s0.sh",
+        "scripts/check_rtl_s0_contract.py"
+      ],
+      "checker": "scripts/check_rtl_s0_contract.py",
+      "success_line": "rtl s0 contract ok",
+      "additional_checkers": [
+        {
+          "checker": "scripts/check_formal_proof_manifest.py",
+          "success_line": "formal proof manifest ok"
+        }
+      ]
+    },
+    {
+      "id": "second_milestone_m1_pingpong",
+      "title": "Second Milestone: Proven Ping-Pong Machine",
+      "status": "implemented",
+      "required_for_completion": true,
+      "evidence_files": [
+        "rtl/engines/lnp64_m1_pingpong.sv",
+        "rtl/sim/lnp64_m1_tb.sv",
+        "formal/M1Model.lean",
+        "formal/m1_model.py",
+        "formal/rtl_assertions/lnp64_m1_assertions.sv",
+        "tests/rtl/m1_filelist.f",
+        "tests/traces/rtl_cosim_manifest.json",
+        "scripts/run_rtl_m1.sh",
+        "scripts/run_rtl_random_cosim.sh"
+      ],
+      "checker": "scripts/check_rtl_cosim_manifest.py",
+      "success_line": "rtl cosim manifest ok",
+      "additional_checkers": [
+        {
+          "checker": "scripts/check_formal_proof_manifest.py",
+          "success_line": "formal proof manifest ok"
+        }
+      ]
+    },
+    {
+      "id": "live_board_evidence",
+      "title": "Optional physical iCE40 board programming and live UART boot/status capture",
+      "status": "pending_hardware",
+      "required_for_completion": false,
+      "default_evidence": "build/lnp64-board-ice40-s0-evidence.json",
+      "evidence_files": [
+        "Dockerfile.rtl-board",
+        "scripts/run_rtl_board_docker.sh",
+        "scripts/run_rtl_board_preflight.sh",
+        "scripts/run_rtl_board_ice40_s0.sh",
+        "scripts/check_uart_byte.py",
+        "scripts/check_board_evidence.py"
+      ],
+      "checker": "scripts/check_board_evidence.py",
+      "success_line": "rtl board ice40 s0 live uart ok"
+    }
+  ],
+  "required_strings_by_file": {
+    "scripts/run_all_gates.sh": [
+      "scripts/run_rtl_proof_docker.sh",
+      "scripts/run_rtl_synth_docker.sh",
+      "scripts/run_formal_rtl_roadmap_audit.sh"
+    ],
+    "scripts/run_rtl_proof_gates.sh": [
+      "scripts/check_formal_proof_manifest.py",
+      "scripts/check_formal_rtl_roadmap_audit.py",
+      "formal/M15ObjectProfilesModel.lean",
+      "scripts/run_rtl_random_cosim.sh",
+      "rtl/proof gates ok"
+    ],
+    "scripts/check_formal_proof_manifest.py": [
+      "LNP64_PROOF_MANIFEST",
+      "LNP64_PROOF_GATE",
+      "FORBIDDEN_LEAN_PLACEHOLDER",
+      "missing required roadmap theorem",
+      "forbidden Lean placeholder"
+    ],
+    "scripts/test_formal_proof_manifest_checker.py": [
+      "formal proof manifest checker self-test ok",
+      "A8: missing required roadmap theorem",
+      "S0: forbidden Lean placeholder"
+    ],
+    "scripts/check_rtl_track_b_manifest.py": [
+      "LNP64_TRACK_B_MANIFEST",
+      "REQUIRED_B0_MODULES",
+      "REQUIRED_BLOCK_RUN_MARKERS",
+      "missing roadmap run marker"
+    ],
+    "scripts/test_rtl_track_b_manifest_checker.py": [
+      "rtl Track B manifest checker self-test ok",
+      "B0 manifest omits required skeleton modules",
+      "B6: missing roadmap run marker TRACE gate_call"
+    ],
+    "scripts/check_rtl_cosim_manifest.py": [
+      "LNP64_COSIM_MANIFEST",
+      "LNP64_RANDOM_COSIM",
+      "required_trace_markers",
+      "missing required trace marker"
+    ],
+    "scripts/test_rtl_cosim_manifest_checker.py": [
+      "rtl cosim manifest checker self-test ok",
+      "TRACE missing_signal_compat",
+      "TRACE missing_dma_pin",
+      "m7_futex_atomic_seeded must vary timer_deadline"
+    ],
+    "scripts/check_fpga_bringup_manifest.py": [
+      "LNP64_FPGA_BRINGUP_MANIFEST",
+      "REQUIRED_STEP_MARKERS",
+      "Track D step ids must be",
+      "missing smoke marker"
+    ],
+    "scripts/test_fpga_bringup_manifest_checker.py": [
+      "fpga bringup manifest checker self-test ok",
+      "Track D step ids must be",
+      "step 11 missing smoke marker TRACE dma_copy"
+    ],
+    "scripts/check_rtl_synth_constraints.py": [
+      "LNP64_SYNTH_CONSTRAINTS_MANIFEST",
+      "board validation must require UART device",
+      "unexpected FPGA UART simulation byte",
+      "top port not constrained in manifest"
+    ],
+    "scripts/test_rtl_synth_constraints_checker.py": [
+      "rtl synthesis constraints checker self-test ok",
+      "top port not constrained in manifest: missing_manifest_port",
+      "unexpected FPGA UART simulation byte",
+      "board validation must require UART device"
+    ],
+    "scripts/check_ice40_report.py": [
+      "nextpnr report missing fmax data",
+      "below required",
+      "utilization exceeds availability",
+      "ice40 timing ok"
+    ],
+    "scripts/check_icetime_report.py": [
+      "icetime report missing timing estimate",
+      "below required",
+      "icetime report does not show a passed clock constraint",
+      "icetime timing ok"
+    ],
+    "scripts/test_fpga_report_checkers.py": [
+      "fpga report checkers self-test ok",
+      "clock clk achieved 10.000 MHz below required 12.000 MHz",
+      "ICESTORM_LC utilization exceeds availability",
+      "icetime report does not show a passed clock constraint"
+    ],
+    "scripts/check_rtl_dockerfiles.py": [
+      "LNP64_DOCKERFILES_ROOT",
+      "Dockerfile.rtl-proof",
+      "Dockerfile.rtl-synth",
+      "Dockerfile.rtl-board",
+      "rtl Dockerfile command paths ok"
+    ],
+    "scripts/test_rtl_dockerfiles_checker.py": [
+      "rtl Dockerfile checker self-test ok",
+      "Dockerfile.rtl-board: missing package python3-serial",
+      "scripts/run_rtl_board_docker.sh: missing --device",
+      "scripts/run_rtl_proof_docker.sh: missing bash scripts/run_rtl_proof_gates.sh"
+    ],
+    "scripts/check_rtl_s0_contract.py": [
+      "LNP64_S0_CONTRACT_ROOT",
+      "REQUIRED_ACCEPTANCE_MARKERS",
+      "REQUIRED_RECORD_FIELDS",
+      "S0 gate script is missing marker"
+    ],
+    "scripts/test_rtl_s0_contract_checker.py": [
+      "rtl s0 contract checker self-test ok",
+      "lnp64_cmd_t missing fields: completion_target",
+      "S0 acceptance testbench is missing marker",
+      "S0 gate script is missing marker"
+    ],
+    "scripts/run_rtl_synth_gates.sh": [
+      "scripts/run_rtl_synth_smoke.sh",
+      "scripts/run_rtl_fpga_uart_s0.sh",
+      "scripts/run_rtl_fpga_ice40_s0.sh",
+      "rtl synthesis gates ok"
+    ],
+    "scripts/run_rtl_synth_smoke.sh": [
+      "scripts/check_rtl_synth_constraints.py",
+      "scripts/check_fpga_bringup_manifest.py",
+      "scripts/check_rtl_track_b_manifest.py",
+      "scripts/check_rtl_s0_contract.py",
+      "scripts/check_formal_rtl_roadmap_audit.py",
+      "scripts/run_rtl_yosys_vertical_slices.sh"
+    ],
+    "scripts/run_formal_rtl_roadmap_audit.sh": [
+      "scripts/check_formal_proof_manifest.py",
+      "scripts/check_rtl_cosim_manifest.py",
+      "scripts/check_rtl_synth_constraints.py",
+      "scripts/check_fpga_bringup_manifest.py",
+      "scripts/check_rtl_track_b_manifest.py",
+      "scripts/check_rtl_s0_contract.py",
+      "scripts/check_rtl_dockerfiles.py",
+      "scripts/check_formal_rtl_roadmap_audit.py",
+      "--require-board-evidence",
+      "--docker-rerun",
+      "--docker-build",
+      "docker run --rm",
+      "scripts/run_rtl_proof_docker.sh",
+      "scripts/run_rtl_synth_docker.sh",
+      "formal RTL roadmap audit gate ok"
+    ],
+    "scripts/check_formal_rtl_roadmap_audit.py": [
+      "LNP64_COMPLETION_CHECKLIST",
+      "validate_completion_checklist",
+      "completion checklist omits Track B row",
+      "completion checklist omits Track C row",
+      "completion checklist omits Track D row",
+      "completion checklist omits milestone row"
+    ],
+    "README.md": [
+      "Actually verified Docker commands from this checkout",
+      "bash scripts/run_rtl_proof_docker.sh",
+      "bash scripts/run_rtl_synth_docker.sh",
+      "bash scripts/run_rtl_board_docker.sh",
+      "Board-tool image smoke",
+      "python serial ok",
+      "scripts/test_formal_proof_manifest_checker.py",
+      "scripts/test_rtl_track_b_manifest_checker.py",
+      "scripts/test_rtl_cosim_manifest_checker.py",
+      "scripts/test_fpga_bringup_manifest_checker.py",
+      "scripts/test_rtl_synth_constraints_checker.py",
+      "scripts/test_fpga_report_checkers.py",
+      "scripts/test_rtl_dockerfiles_checker.py",
+      "scripts/test_rtl_s0_contract_checker.py",
+      "scripts/test_board_evidence_checker.py",
+      "scripts/test_uart_byte_checker.py",
+      "scripts/test_formal_rtl_roadmap_strict_audit.py",
+      "scripts/test_rtl_board_no_hardware.sh",
+      "bash scripts/run_formal_rtl_roadmap_audit.sh"
+    ],
+    "formal_rtl_roadmap_completion_checklist.md": [
+      "Roadmap-To-Artifact Checklist",
+      "S0 module shells and architectural records",
+      "RTL S0 contract checker positive and negative checks",
+      "Track A A1-A10 formal model and theorem artifacts",
+      "Formal proof manifest checker positive and negative checks",
+      "Track B B0-B14 RTL skeleton and vertical block coverage",
+      "RTL Track B manifest checker positive and negative checks",
+      "Track C fixed and bounded-random model/RTL co-simulation",
+      "RTL co-simulation manifest checker positive and negative checks",
+      "Track D 17-step FPGA bring-up smoke metadata",
+      "FPGA bring-up manifest checker positive and negative checks",
+      "RTL synthesis constraints checker positive and negative checks",
+      "FPGA report checker positive and negative checks",
+      "First milestone: whole-machine skeleton",
+      "Second milestone: proven ping-pong machine",
+      "Docker-backed proof, synthesis, FPGA, and board command paths",
+      "RTL Dockerfile checker positive and negative checks",
+      "Board UART/evidence validator positive and negative checks",
+      "Strict roadmap audit board-evidence plumbing",
+      "Board Docker wrapper no-hardware failure behavior",
+      "Optional physical iCE40 board programming and live UART capture",
+      "Detailed Track A Proof Checklist",
+      "A1 state core",
+      "A2 capability/FDR engine",
+      "A3 waitable/scheduler core",
+      "A4 object profiles",
+      "A5 VMA/DMA slice",
+      "A6 servicelets/classifiers",
+      "A7 resource domains and policy enforcement",
+      "A8 gate delivery, faults, and compatibility signals",
+      "A9 memory consistency, coherence, and visibility",
+      "A10 RAS, adversarial input, and global progress",
+      "Detailed Track B RTL Checklist",
+      "B0 whole-machine skeleton",
+      "B1 ISA decode, canonical errors, and `ENV_GET`",
+      "B2 minimal core tile",
+      "B3 FDR/capability table block",
+      "B4 scheduler/waitable block",
+      "B5 object queue/counter block",
+      "B6 gate/continuation block",
+      "B7 process/thread lifecycle block",
+      "B8 tiny VMA/MMU block",
+      "B9 DMA/memory object block",
+      "B10 typed control, namespace dispatch, and service boundary",
+      "B11 futex/atomic block",
+      "B12 heap block",
+      "B13 classifier, servicelet, and networking prototype",
+      "B14 RAS, observability, and assurance block",
+      "Detailed Track C Co-Simulation Checklist",
+      "Same input vector in emulator/model and RTL simulation",
+      "Compare architectural state",
+      "Compare result codes",
+      "Compare event records",
+      "Compare FDR/generation/authority metadata",
+      "Random but bounded traces from models",
+      "Verilator for fast CI",
+      "FPGA simulation and synthesis checks",
+      "Detailed Track D FPGA Bring-Up Checklist",
+      "1. top-level skeleton modules connected with stub responses",
+      "2. fixed decode table, canonical errors, and `ENV_GET`",
+      "3. soft SRAM only, no DDR",
+      "4. UART output",
+      "5. one core tile and simple assembler program ROM",
+      "6. FDR/capability table and generation checks",
+      "7. scheduler, waitable, event router, and object queue smoke",
+      "8. gate/continuation and process lifecycle smoke",
+      "9. tiny VMA/MMU, TLB invalidation, and memory-protection smoke",
+      "10. external DDR and shared metadata broker",
+      "11. DMA/memory-object smoke",
+      "12. typed control, namespace/service dispatch, and capability-return smoke",
+      "13. futex/atomic and heap smoke",
+      "14. SD/SPI and storage-barrier smoke",
+      "15. Ethernet packet queue, classifier, and servicelet smoke",
+      "16. RAS/telemetry/watchdog/attestation smoke",
+      "17. PCIe later",
+      "Detailed Milestone Checklist",
+      "First milestone required slice",
+      "First milestone proof targets",
+      "First milestone expected demo",
+      "Second milestone required slice",
+      "Second milestone proof targets",
+      "Second milestone expected demo",
+      "missing required live board evidence",
+      "No real FPGA is available in this environment"
+    ],
+    "scripts/test_board_evidence_checker.py": [
+      "board evidence checker self-test ok",
+      "synthetic /work mounted bitstream",
+      "bitstream SHA-256 does not match evidence",
+      "captured UART bytes do not match UART log contents",
+      "preflight log does not include success line",
+      "missing or invalid board evidence UTC timestamp",
+      "UART device does not look like a serial TTY"
+    ],
+    "scripts/test_uart_byte_checker.py": [
+      "uart byte checker self-test ok",
+      "uart byte ok 0x53",
+      "UART byte 0x53 not observed",
+      "Expected UART value is not a byte"
+    ],
+    "scripts/test_formal_rtl_roadmap_strict_audit.py": [
+      "formal RTL strict audit self-test ok",
+      "--require-board-evidence",
+      "missing required live board evidence",
+      "completion checklist omits Track B row"
+    ],
+    "scripts/test_rtl_board_no_hardware.sh": [
+      "rtl board no-hardware self-test ok",
+      "LNP64_BOARD_UART_DEVICE must be set",
+      "Board UART device does not look like a serial TTY",
+      "LNP64_BOARD_UART_BAUD must be 115200"
+    ],
+    "scripts/run_rtl_board_ice40_s0.sh": [
+      "LNP64_BOARD_UART_BAUD must be 115200",
+      "LNP64_BOARD_UART_BAUD",
+      "uart_baud"
+    ]
+  }
+}

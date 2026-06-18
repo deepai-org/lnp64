@@ -1,0 +1,268 @@
+{
+  "name": "lnp64_formal_proof_obligations",
+  "roadmap": "formal_rtl_codesign_roadmap.md",
+  "track": "Track A: Formal Model",
+  "notes": [
+    "This manifest maps roadmap proof obligations to concrete Lean theorem artifacts.",
+    "The current proofs are bounded architectural slices for S0 and M1-M15, not a full timing proof of the whole chip.",
+    "The checker enforces that every listed theorem exists in the named Lean file and that no obligation is left without an artifact."
+  ],
+  "obligations": [
+    {
+      "id": "S0",
+      "title": "First Proof Obligations",
+      "lean_file": "formal/S0Model.lean",
+      "theorems": [
+        "s0_reset_produces_valid_initial_state_or_measured_fault",
+        "s0_every_live_thread_has_exactly_one_scheduler_location",
+        "s0_every_accepted_command_has_at_most_one_terminal_response_event_or_fault",
+        "s0_every_accepted_command_has_terminal_path",
+        "s0_every_accepted_command_has_terminal_path_under_fairness",
+        "s0_stubs_do_not_create_authority",
+        "s0_unsupported_operations_fail_closed",
+        "s0_parked_threads_name_valid_wake_timeout_cancel_fault_or_completion_source",
+        "s0_software_visible_records_contain_no_raw_interrupt_or_physical_address_authority"
+      ]
+    },
+    {
+      "id": "A1",
+      "title": "State Core",
+      "lean_file": "formal/S0Model.lean",
+      "theorems": [
+        "s0_state_core_well_formed",
+        "s0_no_forged_fdrs",
+        "s0_generation_checks_hold",
+        "s0_domain_parent_validity",
+        "s0_reset_produces_valid_initial_state_or_measured_fault",
+        "s0_every_live_thread_has_exactly_one_scheduler_location"
+      ]
+    },
+    {
+      "id": "A2",
+      "title": "Capability/FDR Engine",
+      "lean_file": "formal/M1Model.lean",
+      "theorems": [
+        "m1_no_forged_fdr",
+        "m1_no_authority_amplification",
+        "m1_cap_send_preserves_narrowing",
+        "m1_cap_recv_installs_sent_cap",
+        "m1_cap_revoke_invalidates_generation",
+        "m1_revoked_authority_cannot_start_new_work",
+        "m1_stale_generation_rejected"
+      ]
+    },
+    {
+      "id": "A3",
+      "title": "Waitable/Scheduler Core",
+      "lean_file": "formal/M7FutexAtomicModel.lean",
+      "theorems": [
+        "m7_exactly_one_scheduler_location",
+        "m7_futex_wait_parked",
+        "m7_futex_wake_delivered",
+        "m7_timer_wait_parked",
+        "m7_timer_expiry_wakes_thread",
+        "m7_no_lost_wakeup",
+        "m7_wake_generation_matches",
+        "m7_domain_budget_eligible"
+      ]
+    },
+    {
+      "id": "A4",
+      "title": "Object Profiles",
+      "lean_file": "formal/M15ObjectProfilesModel.lean",
+      "theorems": [
+        "m15_counter_threshold_event",
+        "m15_queue_rights_allow_push",
+        "m15_queue_overflow_explicit",
+        "m15_event_source_generation_safe",
+        "m15_gate_continuation_unique",
+        "m15_counts_exact"
+      ]
+    },
+    {
+      "id": "A5",
+      "title": "VMA/DMA Slice",
+      "lean_file": "formal/M5DmaModel.lean",
+      "theorems": [
+        "m5_dma_confined_to_capability_domain",
+        "m5_pin_completes_with_authority",
+        "m5_copy_completes_with_authority",
+        "m5_missing_write_permission_faults",
+        "m5_unpin_clears_pinned_state",
+        "m5_revoked_generation_rejected",
+        "m5_cross_domain_rejected",
+        "m5_coherent_visibility_observed"
+      ],
+      "additional_lean_files": [
+        {
+          "lean_file": "formal/M4VmaModel.lean",
+          "theorems": [
+            "m4_no_invalid_memory_access",
+            "m4_wx_nx_guard_enforced",
+            "m4_write_without_permission_rejected",
+            "m4_nx_execute_faulted",
+            "m4_guard_access_faulted",
+            "m4_stale_generation_rejected",
+            "m4_tlb_invalidation_observed",
+            "m4_wx_enforced"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A6",
+      "title": "Servicelets/Classifiers",
+      "lean_file": "formal/M9ClassifierServiceletModel.lean",
+      "theorems": [
+        "m9_verifier_accepts_bounded",
+        "m9_verifier_rejects_blocking",
+        "m9_termination_by_construction",
+        "m9_no_authority_creation",
+        "m9_no_arbitrary_memory_access",
+        "m9_network_action_contained",
+        "m9_packet_steering_works",
+        "m9_ipc_steering_works",
+        "m9_action_authorized_no_authority",
+        "m9_budget_enforced"
+      ]
+    },
+    {
+      "id": "A7",
+      "title": "Resource Domains and Policy Enforcement",
+      "lean_file": "formal/M14ResourceDomainPolicyModel.lean",
+      "theorems": [
+        "m14_child_rights_subset_parent",
+        "m14_child_budget_within_parent",
+        "m14_excess_budget_rejected",
+        "m14_frozen_domain_cannot_dispatch",
+        "m14_destroyed_domain_cannot_dispatch",
+        "m14_usage_rolls_up",
+        "m14_policy_fail_closed",
+        "m14_policy_cannot_be_bypassed_by_another_engine",
+        "m14_counts_exact"
+      ],
+      "additional_lean_files": [
+        {
+          "lean_file": "formal/M9ClassifierServiceletModel.lean",
+          "theorems": [
+            "m9_budget_enforced"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A8",
+      "title": "Gate Delivery, Faults, and Compatibility Signals",
+      "lean_file": "formal/M2GateModel.lean",
+      "theorems": [
+        "m2_continuation_unique",
+        "m2_stale_continuation_rejected",
+        "m2_fault_delivery_gate_entered",
+        "m2_signal_compatibility_cannot_create_authority_or_bypass_masks"
+      ],
+      "additional_lean_files": [
+        {
+          "lean_file": "formal/M3ProcessModel.lean",
+          "theorems": [
+            "m3_exec_cancel_terminal"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A9",
+      "title": "Memory Consistency, Coherence, and Visibility",
+      "lean_file": "formal/M7FutexAtomicModel.lean",
+      "theorems": [
+        "m7_locked_atomic_single_copy",
+        "m7_cmpxchg_success_observed",
+        "m7_cmpxchg_failure_explicit",
+        "m7_atomic_count_exact"
+      ],
+      "additional_lean_files": [
+        {
+          "lean_file": "formal/M4VmaModel.lean",
+          "theorems": [
+            "m4_no_access_after_unmap_or_revoke_generation_mismatch",
+            "m4_cache_tlb_quiescent_before_authority_reuse",
+            "m4_tlb_invalidation_observed",
+            "m4_stale_generation_rejected"
+          ]
+        },
+        {
+          "lean_file": "formal/M5DmaModel.lean",
+          "theorems": [
+            "m5_dma_confined_to_capability_domain",
+            "m5_coherent_visibility_observed"
+          ]
+        },
+        {
+          "lean_file": "formal/M11DdrMetadataModel.lean",
+          "theorems": [
+            "m11_metadata_allocation_safe",
+            "m11_ddr_read_after_write_visible",
+            "m11_stale_generation_fails_closed",
+            "m11_cross_domain_metadata_rejected",
+            "m11_ecc_scrub_terminal",
+            "m11_metadata_barrier_quiescent",
+            "m11_counts_exact"
+          ]
+        },
+        {
+          "lean_file": "formal/M12StorageBarrierModel.lean",
+          "theorems": [
+            "m12_boot_image_read_visible",
+            "m12_block_write_requires_object_authority",
+            "m12_storage_barrier_quiescent",
+            "m12_stale_object_rejected",
+            "m12_cross_domain_rejected",
+            "m12_media_fault_terminal",
+            "m12_no_raw_device_authority",
+            "m12_counts_exact"
+          ]
+        },
+        {
+          "lean_file": "formal/M13PcieIommuModel.lean",
+          "theorems": [
+            "m13_enumeration_safe",
+            "m13_iommu_scoped_dma_safe",
+            "m13_msi_delivered_as_event",
+            "m13_unbound_bus_master_rejected",
+            "m13_stale_bar_rejected",
+            "m13_malformed_config_rejected",
+            "m13_no_raw_pcie_authority",
+            "m13_counts_exact"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A10",
+      "title": "RAS, Adversarial Input, and Global Progress",
+      "lean_file": "formal/M10RasModel.lean",
+      "theorems": [
+        "m10_adversarial_inputs_cannot_hang_owner_or_create_authority",
+        "m10_bounded_local_fault_reaches_terminal_path",
+        "m10_watchdog_reset_preserves_unrelated_domains",
+        "m10_realtime_work_has_bounded_arbitration_progress",
+        "m10_metadata_faults_contained",
+        "m10_watchdog_reaches_degraded_reset",
+        "m10_telemetry_read_scoped",
+        "m10_trace_overflow_visible",
+        "m10_audit_debug_mls_fail_closed",
+        "m10_counts_exact"
+      ],
+      "additional_lean_files": [
+        {
+          "lean_file": "formal/M6ServiceModel.lean",
+          "theorems": [
+            "m6_envelope_validated",
+            "m6_service_cancel_terminal",
+            "m6_stale_service_rejected",
+            "m6_crash_completion_recorded"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -11397,6 +11397,50 @@ mod tests {
     }
 
     #[test]
+    fn fork_clone_inherits_fdr_generation_rights_and_metadata() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let counter = Rc::new(RefCell::new(123));
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[9] = FdHandle::Counter(Rc::clone(&counter));
+            process.fd_generations[9] = 77;
+            process.fd_capabilities[9] = FdCapability {
+                rights: CAP_RIGHT_READ | CAP_RIGHT_STAT | CAP_RIGHT_DUP,
+                sealed: false,
+                narrowable: true,
+                revocable: true,
+                close_on_exec: true,
+                lineage: 909,
+                revoked: false,
+            };
+        }
+
+        machine
+            .clone_with_profile(CloneProfile::NewProcessCow, Reg(5), None)
+            .unwrap();
+
+        let child = machine.processes.get(&2).unwrap();
+        match &child.fds[9] {
+            FdHandle::Counter(value) => {
+                assert!(Rc::ptr_eq(value, &counter));
+                assert_eq!(*value.borrow(), 123);
+            }
+            _ => panic!("expected inherited counter FDR"),
+        }
+        assert_eq!(child.fd_generations[9], 77);
+        assert_eq!(
+            child.fd_capabilities[9].rights,
+            CAP_RIGHT_READ | CAP_RIGHT_STAT | CAP_RIGHT_DUP
+        );
+        assert_eq!(child.fd_capabilities[9].lineage, 909);
+        assert!(child.fd_capabilities[9].close_on_exec);
+        assert!(!child.fd_capabilities[9].revoked);
+        assert_eq!(machine.process().unwrap().fd_generations[9], 77);
+        assert!(machine.process().unwrap().fd_capabilities[9].close_on_exec);
+    }
+
+    #[test]
     fn clone_profile_failures_do_not_allocate_contexts() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;

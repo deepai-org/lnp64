@@ -1,0 +1,103 @@
+{
+  "name": "lnp64_s0_fpga_smoke",
+  "top": "lnp64_top",
+  "source_filelist": "tests/rtl/s0_filelist.f",
+  "xdc": "fpga/constraints/lnp64_s0_stub.xdc",
+  "clock": {
+    "port": "clk",
+    "name": "lnp64_clk",
+    "frequency_hz": 50000000
+  },
+  "reset": {
+    "port": "reset_n",
+    "active": "low",
+    "synchronous": false
+  },
+  "required_top_ports": [
+    "clk",
+    "reset_n",
+    "force_boot_fault",
+    "sim_event_inject",
+    "sim_fault_inject",
+    "sim_watchdog_inject",
+    "boot_stable",
+    "pid1_exactly_one_location",
+    "pid1_completed",
+    "retired_count",
+    "env_get_ok",
+    "sram_ldst_ok",
+    "unsupported_failed_closed",
+    "stub_failed_closed",
+    "uart_seen",
+    "uart_byte_seen",
+    "event_woke_thread",
+    "structured_fault_seen",
+    "watchdog_degraded_seen",
+    "no_raw_authority_visible",
+    "coherence_paths_live"
+  ],
+  "bringup_smoke_steps": [
+    "reset_boot_root_domain_pid1",
+    "decode_env_get_canonical_errors",
+    "sram_load_store",
+    "uart_boot_status",
+    "event_fault_watchdog_paths",
+    "coherence_dma_visibility_stubs",
+    "no_raw_irq_pa_dma_device_authority"
+  ],
+  "fpga_bitstream_smoke": {
+    "target": "ice40-hx8k-ct256",
+    "top": "lnp64_s0_fpga_top",
+    "minimum_frequency_mhz": 12,
+    "source_filelist": "tests/rtl/s0_fpga_filelist.f",
+    "gate_script": "scripts/run_rtl_fpga_ice40_s0.sh",
+    "wrapper": "fpga/rtl/lnp64_s0_fpga_top.sv",
+    "pcf": "fpga/constraints/lnp64_s0_ice40_hx8k_ct256.pcf",
+    "artifacts": ["json", "asc", "bin", "nextpnr-report", "icetime-report"],
+    "note": "Open-source place/route, icepack bitstream, nextpnr timing, and icetime timing smoke with a package-level CT256 PCF; not a board-specific schematic or physical board claim."
+  },
+  "fpga_uart_sim": {
+    "top": "lnp64_s0_fpga_tb",
+    "source_filelist": "tests/rtl/s0_fpga_uart_filelist.f",
+    "gate_script": "scripts/run_rtl_fpga_uart_s0.sh",
+    "expected_uart_hex": "53",
+    "expected_leds": "111111",
+    "expected_success": "rtl fpga uart s0 gate ok"
+  },
+  "board_live_validation": {
+    "target": "ice40-hx8k-ct256",
+    "dockerfile": "Dockerfile.rtl-board",
+    "docker_gate_script": "scripts/run_rtl_board_docker.sh",
+    "preflight_script": "scripts/run_rtl_board_preflight.sh",
+    "gate_script": "scripts/run_rtl_board_ice40_s0.sh",
+    "uart_checker": "scripts/check_uart_byte.py",
+    "evidence_checker": "scripts/check_board_evidence.py",
+    "evidence_schema": "lnp64_board_ice40_s0_v1",
+    "direct_default_evidence": "/tmp/lnp64-board-ice40-s0-evidence.json",
+    "docker_default_evidence": "/work/build/lnp64-board-ice40-s0-evidence.json",
+    "programmer": "iceprog",
+    "required_env": ["LNP64_BOARD_UART_DEVICE"],
+    "uart_baud": 115200,
+    "expected_uart_hex": "53",
+    "expected_preflight_success": "rtl board ice40 s0 preflight ok",
+    "expected_success": "rtl board ice40 s0 live uart ok",
+    "note": "Requires a physically attached compatible iCE40 board and UART adapter; this gate must fail rather than pass when live hardware is not configured."
+  },
+  "vertical_slice_tops": [
+    "lnp64_m1_pingpong",
+    "lnp64_m2_gate",
+    "lnp64_m3_process",
+    "lnp64_m4_vma",
+    "lnp64_m5_dma",
+    "lnp64_m6_service",
+    "lnp64_m7_futex_atomic",
+    "lnp64_m8_heap",
+    "lnp64_m9_classifier_servicelet",
+    "lnp64_m10_ras",
+    "lnp64_m11_ddr_metadata",
+    "lnp64_m12_storage_barrier",
+    "lnp64_m13_pcie_iommu",
+    "lnp64_m14_resource_domain_policy",
+    "lnp64_m15_object_profiles"
+  ]
+}

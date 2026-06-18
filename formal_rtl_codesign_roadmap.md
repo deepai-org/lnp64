@@ -1,8 +1,11 @@
 # LNP64 Formal/RTL Co-Design Roadmap
 
-This roadmap defines a parallel path toward real formal proofs and
-synthesizable SystemVerilog/RTL that can run LNP64 code in simulation and,
-eventually, on FPGA.
+This roadmap defines a parallel path toward complete Lean proofs and a complete
+synthesizable SystemVerilog implementation of the LNP64 chip. Real FPGA hardware
+is not available yet. The immediate hardware target is therefore a full-chip RTL
+design that is buildable, lint-clean, and simulatable under Verilator or an
+equivalent simulator. FPGA bring-up comes after the full-chip design has a
+credible simulation/proof base.
 
 The goal is not to write RTL first and prove it later. The goal is:
 
@@ -10,6 +13,19 @@ The goal is not to write RTL first and prove it later. The goal is:
 executable spec -> proof model -> reference emulator -> RTL block
 -> RTL simulation -> FPGA bring-up
 ```
+
+The end state is not a partial demo core. The end state is:
+
+- the full chip design expressed in synthesizable SystemVerilog.
+- the whole machine simulatable with real LNP64 programs and architectural test
+  images.
+- a complete Lean architectural model covering the theorem set in
+  `formal_theorems.md`.
+- Lean proofs for the security, isolation, scheduler, capability, memory,
+  servicelet, RAS, and global-progress theorems we have specified.
+- RTL assertions and co-simulation traces linked back to the Lean model wherever
+  practical.
+- later FPGA board support once suitable hardware exists.
 
 Each hardware block should have:
 
@@ -19,8 +35,9 @@ Each hardware block should have:
 - synthesizable RTL.
 - RTL assertions.
 - co-simulation against the emulator/model.
+- simulation gates.
 - synthesis constraints.
-- FPGA smoke tests.
+- FPGA smoke tests once real FPGA hardware is available.
 
 The sequencing rule is:
 
@@ -32,6 +49,11 @@ interfaces first -> stub behavior second -> vertical slices third
 Stubs are acceptable only when they preserve the real command/response shape,
 carry authority/generation/domain metadata, fail closed, and keep reset,
 fault, event, and completion paths live.
+
+Stubs are temporary scaffolding. They are allowed in S0/M1 to lock down the
+whole-machine shape, but the roadmap target is a complete RTL implementation of
+every required architectural block and complete Lean proofs of every theorem we
+claim for the architecture.
 
 ## S0 Starter Contract
 
@@ -256,7 +278,28 @@ cover the S0 state record:
 
 ## Track A: Formal Model
 
-Start with a Lean-style architectural model, not a full timing RTL model.
+Start with a Lean architectural model, not a full timing RTL model. Early files
+may be small executable/proof sketches, but the target is a complete Lean model
+and proof suite for the theorem set in `formal_theorems.md`.
+
+The Lean work is complete only when it covers:
+
+- machine state well-formedness.
+- capability non-forgeability, narrowing, sealing, lineage, and revocation.
+- Resource Domain containment, monotonic delegation, and accounting.
+- scheduler state, waitables, no-lost-wakeup, and bounded progress assumptions.
+- object profile state machines.
+- gate delivery, continuations, faults, and compatibility signal profiles.
+- memory permissions, W^X/NX/guards, VMA/TLB coherence, and memory consistency.
+- DMA confinement and device-visible memory rules.
+- service boundary transactions and returned-capability validation.
+- classifier/servicelet termination, bounded action records, and containment.
+- RAS, watchdog, adversarial input containment, and global progress under
+  bounded faults.
+
+Proofs may be phased, but every theorem advertised as an architectural guarantee
+must eventually have a corresponding Lean statement and proof, plus a trace,
+assertion, or test hook connecting it to the RTL where practical.
 
 ### A1. State Core
 
@@ -419,6 +462,14 @@ Prove:
 Start broad. The first RTL objective is not performance or full behavior; it is
 getting the whole architectural skeleton right so later blocks have the right
 interfaces, records, reset paths, ownership fields, and failure paths.
+
+The RTL track does not stop at S0/M1. Those milestones only prove that the
+interfaces and proof/simulation loop are viable. The intended deliverable is a
+complete full-chip SystemVerilog implementation of the architecture in
+`hardware_design.md`: core tiles, scheduler, capabilities, Resource Domains,
+VMA/MMU, heap, futexes, gates, service boundary, DMA, networking substrate,
+RAS/telemetry, and device/backend shells. The full design must remain
+simulatable even before it is mapped to a physical FPGA board.
 
 ### B0. Whole-Machine Skeleton
 
@@ -829,10 +880,22 @@ Every RTL block should have a matching harness:
 The emulator remains the executable architectural oracle until the formal model
 is strong enough to generate authoritative traces directly.
 
+Full-chip simulation is a required deliverable, not a convenience. The design
+should keep a top-level Verilator path alive throughout development, first with
+stubbed engines, then with filled blocks. A block is not considered integrated
+until it participates in top-level reset, command/response routing, event/fault
+delivery, telemetry, and at least one model/emulator/RTL trace comparison.
+
 ## Track D: FPGA Bring-Up
 
-Bring-up should start with the broad skeleton, then fill the smallest useful
-vertical slice:
+Real FPGA hardware is not yet available. Track D is therefore a deferred
+hardware-port track, not the current primary target. Until a target board is
+chosen, the project should optimize for portable synthesizable SystemVerilog,
+clean simulation, clear clock/reset boundaries, and vendor-neutral constraints
+where possible.
+
+When hardware is available, bring-up should start with the broad skeleton, then
+fill the smallest useful vertical slice:
 
 1. top-level skeleton modules connected with stub responses.
 2. fixed decode table, canonical errors, and `ENV_GET`.

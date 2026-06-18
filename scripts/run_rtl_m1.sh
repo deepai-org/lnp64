@@ -28,16 +28,21 @@ common_flags=(
 mapfile -t rtl_files < tests/rtl/m1_filelist.f
 
 build_dir="${TMPDIR:-/tmp}/lnp64_rtl_m1_obj"
-model_trace="${TMPDIR:-/tmp}/lnp64_rtl_m1_model.trace"
-rtl_log="${TMPDIR:-/tmp}/lnp64_rtl_m1_sim.log"
-rtl_trace="${TMPDIR:-/tmp}/lnp64_rtl_m1_rtl.trace"
+seeds="${LNP64_COSIM_SEEDS:-0}"
 rm -rf "$build_dir"
 
-formal/m1_model.py > "$model_trace"
 verilator --lint-only "${common_flags[@]}" "${rtl_files[@]}"
 verilator --binary --Mdir "$build_dir" "${common_flags[@]}" "${rtl_files[@]}" >/tmp/lnp64_rtl_m1_build.log
-"$build_dir/Vlnp64_m1_tb" | tee "$rtl_log"
-grep '^TRACE ' "$rtl_log" > "$rtl_trace"
-diff -u "$model_trace" "$rtl_trace"
-grep -q "LNP64-RTL-M1 PASS" "$rtl_log"
+
+for seed in $seeds; do
+  model_trace="${TMPDIR:-/tmp}/lnp64_rtl_m1_model_${seed}.trace"
+  rtl_log="${TMPDIR:-/tmp}/lnp64_rtl_m1_sim_${seed}.log"
+  rtl_trace="${TMPDIR:-/tmp}/lnp64_rtl_m1_rtl_${seed}.trace"
+  LNP64_COSIM_SEED="$seed" formal/m1_model.py > "$model_trace"
+  "$build_dir/Vlnp64_m1_tb" "+seed=$seed" | tee "$rtl_log"
+  grep '^TRACE ' "$rtl_log" > "$rtl_trace"
+  diff -u "$model_trace" "$rtl_trace"
+  grep -q "LNP64-RTL-M1 PASS" "$rtl_log"
+done
+
 printf '%s\n' "rtl m1 gate ok"

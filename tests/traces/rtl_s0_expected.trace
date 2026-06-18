@@ -9,7 +9,7 @@ pid1: ld r4,[sram0] -> 12
 pid1: jmp +1
 pid1: yield -> parked
 event: synthetic wake pid=1 tid=1 domain=1/gen1
-pid1: env_get -> 0x0000000000003fff
+pid1: env_get -> 0x000000000001ffff
 pid1: set_errno 13
 pid1: get_errno -> 13
 cmd: object_ctl op_id=1 domain=1/gen1 -> status=error errno=EPERM

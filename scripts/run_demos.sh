@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-lnp64=(cargo run --release --quiet --)
+if [[ -n "${LNP64_BIN:-}" ]]; then
+  lnp64=("$LNP64_BIN")
+else
+  lnp64=(cargo run --release --quiet --)
+fi
 
 non_network=(
   demos/allocator.c

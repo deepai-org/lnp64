@@ -17,9 +17,12 @@ package lnp64_pkg;
     localparam logic [63:0] LNP64_FEATURE_UART_STUB        = 64'h0000_0000_0000_0100;
     localparam logic [63:0] LNP64_FEATURE_VMA_ABSENT       = 64'h0000_0000_0000_0200;
     localparam logic [63:0] LNP64_FEATURE_DMA_ABSENT       = 64'h0000_0000_0000_0400;
-    localparam logic [63:0] LNP64_FEATURE_STORAGE_STUB     = 64'h0000_0000_0000_0800;
-    localparam logic [63:0] LNP64_FEATURE_ETH_STUB         = 64'h0000_0000_0000_1000;
-    localparam logic [63:0] LNP64_FEATURE_PCIE_STUB        = 64'h0000_0000_0000_2000;
+    localparam logic [63:0] LNP64_FEATURE_HEAP_STUB        = 64'h0000_0000_0000_0800;
+    localparam logic [63:0] LNP64_FEATURE_FUTEX_STUB       = 64'h0000_0000_0000_1000;
+    localparam logic [63:0] LNP64_FEATURE_CLASSIFIER_STUB  = 64'h0000_0000_0000_2000;
+    localparam logic [63:0] LNP64_FEATURE_STORAGE_STUB     = 64'h0000_0000_0000_4000;
+    localparam logic [63:0] LNP64_FEATURE_ETH_STUB         = 64'h0000_0000_0000_8000;
+    localparam logic [63:0] LNP64_FEATURE_PCIE_STUB        = 64'h0000_0000_0001_0000;
 
     localparam logic [63:0] LNP64_S0_FEATURES =
         LNP64_FEATURE_CORE_TILE |
@@ -33,6 +36,9 @@ package lnp64_pkg;
         LNP64_FEATURE_UART_STUB |
         LNP64_FEATURE_VMA_ABSENT |
         LNP64_FEATURE_DMA_ABSENT |
+        LNP64_FEATURE_HEAP_STUB |
+        LNP64_FEATURE_FUTEX_STUB |
+        LNP64_FEATURE_CLASSIFIER_STUB |
         LNP64_FEATURE_STORAGE_STUB |
         LNP64_FEATURE_ETH_STUB |
         LNP64_FEATURE_PCIE_STUB;
@@ -54,6 +60,27 @@ package lnp64_pkg;
         LNP64_OP_PULL         = 16'h000d,
         LNP64_OP_AWAIT        = 16'h000e,
         LNP64_OP_CAP_DUP      = 16'h000f,
+        LNP64_OP_GATE_CALL    = 16'h0010,
+        LNP64_OP_GATE_RETURN  = 16'h0011,
+        LNP64_OP_CLONE        = 16'h0012,
+        LNP64_OP_EXIT         = 16'h0013,
+        LNP64_OP_JOIN         = 16'h0014,
+        LNP64_OP_EXEC         = 16'h0015,
+        LNP64_OP_MMAP         = 16'h0016,
+        LNP64_OP_MUNMAP       = 16'h0017,
+        LNP64_OP_MPROTECT     = 16'h0018,
+        LNP64_OP_DMA_CTL      = 16'h0019,
+        LNP64_OP_OPEN_AT      = 16'h001a,
+        LNP64_OP_NS_CTL       = 16'h001b,
+        LNP64_OP_SERVICE_REPLY= 16'h001c,
+        LNP64_OP_LOCK_CMPXCHG = 16'h001d,
+        LNP64_OP_FUTEX_WAIT   = 16'h001e,
+        LNP64_OP_FUTEX_WAKE   = 16'h001f,
+        LNP64_OP_ALLOC        = 16'h0020,
+        LNP64_OP_FREE         = 16'h0021,
+        LNP64_OP_ALLOC_SIZE   = 16'h0022,
+        LNP64_OP_CLASSIFY     = 16'h0023,
+        LNP64_OP_SERVICELET_CTL=16'h0024,
         LNP64_OP_UNSUPPORTED  = 16'h00ff
     } lnp64_opcode_e;
 
@@ -69,14 +96,17 @@ package lnp64_pkg;
     typedef enum logic [15:0] {
         LNP64_ERR_OK       = 16'd0,
         LNP64_ERR_EPERM    = 16'd1,
+        LNP64_ERR_EIO      = 16'd5,
         LNP64_ERR_EBADF    = 16'd9,
+        LNP64_ERR_ECHILD   = 16'd10,
         LNP64_ERR_EACCES   = 16'd13,
         LNP64_ERR_EFAULT   = 16'd14,
         LNP64_ERR_EAGAIN   = 16'd11,
         LNP64_ERR_EINVAL   = 16'd22,
         LNP64_ERR_ENOTSUP  = 16'd95,
         LNP64_ERR_EOVERFLOW= 16'd75,
-        LNP64_ERR_EREVOKED = 16'd122
+        LNP64_ERR_EREVOKED = 16'd122,
+        LNP64_ERR_ECANCELED= 16'd125
     } lnp64_errno_e;
 
     typedef enum logic [15:0] {
@@ -265,6 +295,18 @@ package lnp64_pkg;
     } lnp64_policy_decision_t;
 
     typedef struct packed {
+        logic [31:0] snapshot_id;
+        logic [31:0] pid;
+        logic [31:0] tid;
+        logic [31:0] domain_id;
+        logic [31:0] domain_generation;
+        logic [31:0] credential_generation;
+        logic [63:0] delegated_fdr_root;
+        logic [63:0] policy_mask;
+        logic [31:0] label_id;
+    } lnp64_credential_snapshot_t;
+
+    typedef struct packed {
         logic [31:0] op_id;
         logic [31:0] pid;
         logic [31:0] tid;
@@ -339,6 +381,28 @@ package lnp64_pkg;
     } lnp64_coherence_txn_t;
 
     typedef struct packed {
+        logic [31:0] line_id;
+        logic [31:0] line_generation;
+        logic [31:0] domain_id;
+        logic [31:0] domain_generation;
+        logic [63:0] byte_address;
+        logic [63:0] byte_len;
+        logic [63:0] data_value;
+        logic [15:0] latency_class;
+    } lnp64_ddr_line_t;
+
+    typedef struct packed {
+        logic [31:0] entry_id;
+        logic [31:0] line_id;
+        logic [31:0] line_generation;
+        logic [31:0] domain_id;
+        logic [31:0] domain_generation;
+        logic [31:0] metadata_epoch;
+        logic [63:0] rights_mask;
+        logic [15:0] integrity_state;
+    } lnp64_metadata_entry_t;
+
+    typedef struct packed {
         logic [31:0] allocation_id;
         logic [31:0] pid;
         logic [31:0] tid;
@@ -379,6 +443,31 @@ package lnp64_pkg;
         logic [31:0] domain_generation;
         logic [15:0] barrier_kind;
     } lnp64_storage_barrier_t;
+
+    typedef struct packed {
+        logic [31:0] requester_id;
+        logic [31:0] bar_id;
+        logic [31:0] bar_generation;
+        logic [31:0] domain_id;
+        logic [31:0] domain_generation;
+        logic [63:0] bar_base_token;
+        logic [63:0] bar_length;
+        logic [63:0] rights_mask;
+        logic [15:0] msi_vector;
+        logic [15:0] device_state;
+    } lnp64_pcie_device_t;
+
+    typedef struct packed {
+        logic [31:0] context_id;
+        logic [31:0] requester_id;
+        logic [31:0] domain_id;
+        logic [31:0] domain_generation;
+        logic [31:0] bar_id;
+        logic [31:0] bar_generation;
+        logic [63:0] dma_window_token;
+        logic [63:0] byte_len;
+        logic [15:0] permission;
+    } lnp64_iommu_mapping_t;
 
     typedef struct packed {
         logic [31:0] service_id;
@@ -456,6 +545,6 @@ package lnp64_pkg;
         rsp.errno_value = errno_value;
         rsp.status = status;
         rsp.event_mask = 64'd0;
-        return rsp;
+        lnp64_error_rsp = rsp;
     endfunction
 endpackage

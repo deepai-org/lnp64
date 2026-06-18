@@ -9,6 +9,13 @@ future LLVM target contract. The Rust test
 `llvm_target_manifest_records_required_backend_contract` keeps its first
 backend-facing fields synchronized with this roadmap.
 
+`toolchain/lnp64_transition.manifest` records the broader transition checklist:
+toy compiler retirement, real target contracts, the first LLVM/Clang path,
+libc/runtime shims, software loader/exec-plan work, NetBSD personality layering,
+and conformance gates. The Rust test
+`toolchain_transition_manifest_records_layered_deliverables` keeps those
+roadmap deliverables tied to concrete files and gates.
+
 The current Rust assembler, emulator, and C compiler remain useful bootstrap
 and architecture smoke-test tools. They are not the long-term application
 toolchain.
@@ -137,3 +144,22 @@ The first real-toolchain gate should prove all of the following:
 Until those gates exist, the checked NetBSD personality system remains the
 bootstrap compatibility target and the toy compiler remains on the critical
 path.
+
+## Checked Transition Deliverables
+
+The transition is intentionally layered so the toy compiler stops defining the
+platform while remaining useful as a smoke generator:
+
+| Phase | Current Artifact | Gate |
+| --- | --- | --- |
+| Toy compiler retirement | `toolchain_roadmap.md`, `src/c_compiler.rs`, and private `__lnp_*` shim tests keep new native work out of ad hoc POSIX-shaped compiler features. | `c_private_lnp_manifest_intrinsics_lower_and_run` |
+| Real toolchain target | `toolchain/lnp64_target.manifest`, psABI, relocation, object-format, crt, inline-asm, debug/unwind, intrinsic, isel, and exec-plan manifests. | `toolchain_contract_index_is_complete` |
+| Minimal LLVM/Clang path | Planned narrow path: integer codegen, load/store, branch/call/return, static linking, crt startup, and native intrinsics/inline asm sufficient for current toy-compiler smoke programs. | First real-toolchain gate above |
+| Libc/runtime shim layer | `libc_roadmap.md`, crt/startup manifest, and intrinsic manifest define startup, TLS/errno, allocation, FDR I/O, pthread/futex, event waits, mmap, signal, and socket lowering. | `scripts/run_software_gates.sh` |
+| Software loader and exec plan | `object_format.md` and `toolchain/lnp64_exec_plan.manifest` define ELF parsing as loader policy and `EXEC` as a bounded hardware commit descriptor. | `exec_plan_manifest_matches_loader_boundary_contract` |
+| NetBSD personality layering | `netbsd_personality_abi.md`, this roadmap, and the NetBSD system script keep the personality layered over native services. | `scripts/run_netbsd_personality_system.sh` |
+| Conformance gates | `conformance_matrix.md`, `scripts/run_software_gates.sh`, and `scripts/run_all_gates.sh` enumerate host software, package, personality, RTL/proof, and whitespace gates. | `scripts/run_software_gates.sh` plus `scripts/run_all_gates.sh` |
+
+The `minimal_llvm_clang_path` row is still marked planned. It is not complete
+until Clang/lld can build and the software loader can run the small programs
+listed in the first real-toolchain gate without the toy C compiler.

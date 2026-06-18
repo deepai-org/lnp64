@@ -42,7 +42,16 @@ module lnp64_fail_closed_engine #(
             if (cmd_valid && cmd_ready) begin
                 have_rsp <= 1'b1;
                 accepted_counter <= accepted_counter + 32'd1;
-                rsp_reg <= lnp64_error_rsp(cmd, ERRNO_VALUE, STATUS_VALUE);
+                rsp_reg.op_id <= cmd.op_id;
+                rsp_reg.pid <= cmd.pid;
+                rsp_reg.tid <= cmd.tid;
+                rsp_reg.domain_id <= cmd.domain_id;
+                rsp_reg.domain_gen <= cmd.domain_gen;
+                rsp_reg.result_reg <= cmd.result_reg;
+                rsp_reg.result_value <= 64'd0;
+                rsp_reg.errno_value <= ERRNO_VALUE;
+                rsp_reg.status <= STATUS_VALUE;
+                rsp_reg.event_mask <= 64'd0;
                 fault_reg.fault_id <= accepted_counter + 32'd1;
                 fault_reg.op_id <= cmd.op_id;
                 fault_reg.pid <= cmd.pid;
@@ -90,10 +99,20 @@ module lnp64_engine_router (
             if (cmd_valid && cmd_ready) begin
                 routed_counter <= routed_counter + 32'd1;
                 have_rsp <= 1'b1;
+                rsp_reg.op_id <= cmd.op_id;
+                rsp_reg.pid <= cmd.pid;
+                rsp_reg.tid <= cmd.tid;
+                rsp_reg.domain_id <= cmd.domain_id;
+                rsp_reg.domain_gen <= cmd.domain_gen;
+                rsp_reg.result_reg <= cmd.result_reg;
+                rsp_reg.result_value <= 64'd0;
+                rsp_reg.event_mask <= 64'd0;
                 if (cmd.opcode == LNP64_OP_OBJECT_CTL) begin
-                    rsp_reg <= lnp64_error_rsp(cmd, LNP64_ERR_EPERM, LNP64_STATUS_ERROR);
+                    rsp_reg.errno_value <= LNP64_ERR_EPERM;
+                    rsp_reg.status <= LNP64_STATUS_ERROR;
                 end else begin
-                    rsp_reg <= lnp64_error_rsp(cmd, LNP64_ERR_ENOTSUP, LNP64_STATUS_UNSUPPORTED);
+                    rsp_reg.errno_value <= LNP64_ERR_ENOTSUP;
+                    rsp_reg.status <= LNP64_STATUS_UNSUPPORTED;
                 end
             end
             if (have_rsp && rsp_ready) begin
@@ -189,14 +208,14 @@ module lnp64_event_router (
     output logic wake_valid,
     output logic event_valid,
     input  logic event_ready,
-    output lnp64_event_t event_o,
+    output lnp64_event_t event_record,
     output logic [31:0] event_counter
 );
     always_ff @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
             wake_valid <= 1'b0;
             event_valid <= 1'b0;
-            event_o <= '0;
+            event_record <= '0;
             event_counter <= 32'd0;
         end else begin
             wake_valid <= 1'b0;
@@ -204,15 +223,15 @@ module lnp64_event_router (
                 event_counter <= event_counter + 32'd1;
                 wake_valid <= 1'b1;
                 event_valid <= 1'b1;
-                event_o.event_id <= event_counter + 32'd1;
-                event_o.op_id <= 32'd0;
-                event_o.pid <= 32'd1;
-                event_o.tid <= 32'd1;
-                event_o.domain_id <= 32'd1;
-                event_o.domain_gen <= 32'd1;
-                event_o.event_mask <= 64'h1;
-                event_o.source <= LNP64_ENGINE_NONE;
-                event_o.status <= LNP64_STATUS_EVENT;
+                event_record.event_id <= event_counter + 32'd1;
+                event_record.op_id <= 32'd0;
+                event_record.pid <= 32'd1;
+                event_record.tid <= 32'd1;
+                event_record.domain_id <= 32'd1;
+                event_record.domain_gen <= 32'd1;
+                event_record.event_mask <= 64'h1;
+                event_record.source <= LNP64_ENGINE_NONE;
+                event_record.status <= LNP64_STATUS_EVENT;
             end
             if (event_valid && event_ready) begin
                 event_valid <= 1'b0;
@@ -332,99 +351,198 @@ module lnp64_policy_engine (
     end
 endmodule
 
-module lnp64_typed_control_validator(input logic clk, input logic reset_n, output logic idle);
-    always_ff @(posedge clk or negedge reset_n) if (!reset_n) idle <= 1'b0; else idle <= 1'b1;
-endmodule
-
-module lnp64_namespace_dispatch(input logic clk, input logic reset_n, output logic idle);
-    always_ff @(posedge clk or negedge reset_n) if (!reset_n) idle <= 1'b0; else idle <= 1'b1;
-endmodule
-
-module lnp64_stream_frontend(input logic clk, input logic reset_n, output logic idle);
-    always_ff @(posedge clk or negedge reset_n) if (!reset_n) idle <= 1'b0; else idle <= 1'b1;
-endmodule
-
-module lnp64_ddr_controller(input logic clk, input logic reset_n, output logic absent_or_idle);
-    always_ff @(posedge clk or negedge reset_n) if (!reset_n) absent_or_idle <= 1'b0; else absent_or_idle <= 1'b1;
-endmodule
-
-module lnp64_sd_spi_flash(input logic clk, input logic reset_n, output logic absent_or_idle);
-    always_ff @(posedge clk or negedge reset_n) if (!reset_n) absent_or_idle <= 1'b0; else absent_or_idle <= 1'b1;
-endmodule
-
-module lnp64_boot_image_storage(input logic clk, input logic reset_n, output logic idle);
-    always_ff @(posedge clk or negedge reset_n) if (!reset_n) idle <= 1'b0; else idle <= 1'b1;
-endmodule
-
-module lnp64_cap_engine(input logic clk, input logic reset_n, input logic cmd_valid, output logic cmd_ready, input lnp64_cmd_t cmd, output logic rsp_valid, input logic rsp_ready, output lnp64_rsp_t rsp);
-    logic unused_fault_valid; lnp64_fault_t unused_fault; logic [31:0] accepted; logic [31:0] faults;
-    lnp64_fail_closed_engine #(.ENGINE_ID(16'd10), .ERRNO_VALUE(LNP64_ERR_EBADF), .STATUS_VALUE(LNP64_STATUS_ERROR)) shell(.*,.fault_valid(unused_fault_valid),.fault_ready(1'b1),.fault(unused_fault),.accepted_counter(accepted),.fault_counter(faults));
-endmodule
-
-module lnp64_domain_engine(input logic clk, input logic reset_n, input logic cmd_valid, output logic cmd_ready, input lnp64_cmd_t cmd, output logic rsp_valid, input logic rsp_ready, output lnp64_rsp_t rsp);
-    logic unused_fault_valid; lnp64_fault_t unused_fault; logic [31:0] accepted; logic [31:0] faults;
-    lnp64_fail_closed_engine #(.ENGINE_ID(16'd11), .ERRNO_VALUE(LNP64_ERR_EPERM), .STATUS_VALUE(LNP64_STATUS_ERROR)) shell(.*,.fault_valid(unused_fault_valid),.fault_ready(1'b1),.fault(unused_fault),.accepted_counter(accepted),.fault_counter(faults));
-endmodule
-
-module lnp64_object_engine(input logic clk, input logic reset_n, input logic cmd_valid, output logic cmd_ready, input lnp64_cmd_t cmd, output logic rsp_valid, input logic rsp_ready, output lnp64_rsp_t rsp);
-    logic unused_fault_valid; lnp64_fault_t unused_fault; logic [31:0] accepted; logic [31:0] faults;
-    lnp64_fail_closed_engine #(.ENGINE_ID(16'd12), .ERRNO_VALUE(LNP64_ERR_EPERM), .STATUS_VALUE(LNP64_STATUS_ERROR)) shell(.*,.fault_valid(unused_fault_valid),.fault_ready(1'b1),.fault(unused_fault),.accepted_counter(accepted),.fault_counter(faults));
-endmodule
-
-module lnp64_gate_engine(input logic clk, input logic reset_n, input logic cmd_valid, output logic cmd_ready, input lnp64_cmd_t cmd, output logic rsp_valid, input logic rsp_ready, output lnp64_rsp_t rsp);
-    logic unused_fault_valid; lnp64_fault_t unused_fault; logic [31:0] accepted; logic [31:0] faults;
-    lnp64_fail_closed_engine #(.ENGINE_ID(16'd13), .ERRNO_VALUE(LNP64_ERR_ENOTSUP), .STATUS_VALUE(LNP64_STATUS_UNSUPPORTED)) shell(.*,.fault_valid(unused_fault_valid),.fault_ready(1'b1),.fault(unused_fault),.accepted_counter(accepted),.fault_counter(faults));
-endmodule
-
-module lnp64_process_engine(input logic clk, input logic reset_n, input logic cmd_valid, output logic cmd_ready, input lnp64_cmd_t cmd, output logic rsp_valid, input logic rsp_ready, output lnp64_rsp_t rsp);
-    logic unused_fault_valid; lnp64_fault_t unused_fault; logic [31:0] accepted; logic [31:0] faults;
-    lnp64_fail_closed_engine #(.ENGINE_ID(16'd14), .ERRNO_VALUE(LNP64_ERR_ENOTSUP), .STATUS_VALUE(LNP64_STATUS_UNSUPPORTED)) shell(.*,.fault_valid(unused_fault_valid),.fault_ready(1'b1),.fault(unused_fault),.accepted_counter(accepted),.fault_counter(faults));
-endmodule
-
-module lnp64_vma_engine(input logic clk, input logic reset_n, input logic cmd_valid, output logic cmd_ready, input lnp64_cmd_t cmd, output logic rsp_valid, input logic rsp_ready, output lnp64_rsp_t rsp);
-    logic unused_fault_valid; lnp64_fault_t unused_fault; logic [31:0] accepted; logic [31:0] faults;
-    lnp64_fail_closed_engine #(.ENGINE_ID(16'd15), .ERRNO_VALUE(LNP64_ERR_ENOTSUP), .STATUS_VALUE(LNP64_STATUS_UNSUPPORTED)) shell(.*,.fault_valid(unused_fault_valid),.fault_ready(1'b1),.fault(unused_fault),.accepted_counter(accepted),.fault_counter(faults));
-endmodule
-
-module lnp64_page_allocator(input logic clk, input logic reset_n, output logic idle);
-    always_ff @(posedge clk or negedge reset_n) if (!reset_n) idle <= 1'b0; else idle <= 1'b1;
-endmodule
-
-module lnp64_memory_fabric(input logic clk, input logic reset_n, output logic coherence_event_path_live, output logic raw_physical_address_visible);
+module lnp64_typed_control_validator(
+    input  logic clk,
+    input  logic reset_n,
+    output logic idle,
+    output logic [31:0] telemetry_counter,
+    output logic [31:0] fault_counter
+);
     always_ff @(posedge clk or negedge reset_n) begin
-        if (!reset_n) begin coherence_event_path_live <= 1'b0; raw_physical_address_visible <= 1'b0; end
-        else begin coherence_event_path_live <= 1'b1; raw_physical_address_visible <= 1'b0; end
+        if (!reset_n) begin
+            idle <= 1'b0;
+            telemetry_counter <= 32'd0;
+            fault_counter <= 32'd0;
+        end else begin
+            idle <= 1'b1;
+            telemetry_counter <= 32'd1;
+        end
     end
 endmodule
 
-module lnp64_metadata_broker(input logic clk, input logic reset_n, output logic idle);
-    always_ff @(posedge clk or negedge reset_n) if (!reset_n) idle <= 1'b0; else idle <= 1'b1;
-endmodule
-
-module lnp64_dma_fabric(input logic clk, input logic reset_n, output logic visibility_event_path_live, output logic raw_dma_authority_visible);
+module lnp64_namespace_dispatch(
+    input  logic clk,
+    input  logic reset_n,
+    output logic idle,
+    output logic [31:0] telemetry_counter,
+    output logic [31:0] fault_counter
+);
     always_ff @(posedge clk or negedge reset_n) begin
-        if (!reset_n) begin visibility_event_path_live <= 1'b0; raw_dma_authority_visible <= 1'b0; end
-        else begin visibility_event_path_live <= 1'b1; raw_dma_authority_visible <= 1'b0; end
+        if (!reset_n) begin
+            idle <= 1'b0;
+            telemetry_counter <= 32'd0;
+            fault_counter <= 32'd0;
+        end else begin
+            idle <= 1'b1;
+            telemetry_counter <= 32'd1;
+        end
     end
 endmodule
 
-module lnp64_service_boundary(input logic clk, input logic reset_n, input logic cmd_valid, output logic cmd_ready, input lnp64_cmd_t cmd, output logic rsp_valid, input logic rsp_ready, output lnp64_rsp_t rsp);
-    logic unused_fault_valid; lnp64_fault_t unused_fault; logic [31:0] accepted; logic [31:0] faults;
-    lnp64_fail_closed_engine #(.ENGINE_ID(16'd16), .ERRNO_VALUE(LNP64_ERR_ENOTSUP), .STATUS_VALUE(LNP64_STATUS_UNSUPPORTED)) shell(.*,.fault_valid(unused_fault_valid),.fault_ready(1'b1),.fault(unused_fault),.accepted_counter(accepted),.fault_counter(faults));
+module lnp64_stream_frontend(
+    input  logic clk,
+    input  logic reset_n,
+    output logic idle,
+    output logic [31:0] telemetry_counter,
+    output logic [31:0] fault_counter
+);
+    always_ff @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin
+            idle <= 1'b0;
+            telemetry_counter <= 32'd0;
+            fault_counter <= 32'd0;
+        end else begin
+            idle <= 1'b1;
+            telemetry_counter <= 32'd1;
+        end
+    end
 endmodule
 
-module lnp64_futex_atomic(input logic clk, input logic reset_n, output logic idle);
-    always_ff @(posedge clk or negedge reset_n) if (!reset_n) idle <= 1'b0; else idle <= 1'b1;
+module lnp64_ddr_controller(
+    input  logic clk,
+    input  logic reset_n,
+    output logic absent_or_idle,
+    output logic [31:0] telemetry_counter,
+    output logic [31:0] fault_counter
+);
+    always_ff @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin
+            absent_or_idle <= 1'b0;
+            telemetry_counter <= 32'd0;
+            fault_counter <= 32'd0;
+        end else begin
+            absent_or_idle <= 1'b1;
+            telemetry_counter <= 32'd1;
+        end
+    end
 endmodule
 
-module lnp64_heap_engine(input logic clk, input logic reset_n, input logic cmd_valid, output logic cmd_ready, input lnp64_cmd_t cmd, output logic rsp_valid, input logic rsp_ready, output lnp64_rsp_t rsp);
-    logic unused_fault_valid; lnp64_fault_t unused_fault; logic [31:0] accepted; logic [31:0] faults;
-    lnp64_fail_closed_engine #(.ENGINE_ID(16'd17), .ERRNO_VALUE(LNP64_ERR_ENOTSUP), .STATUS_VALUE(LNP64_STATUS_UNSUPPORTED)) shell(.*,.fault_valid(unused_fault_valid),.fault_ready(1'b1),.fault(unused_fault),.accepted_counter(accepted),.fault_counter(faults));
+module lnp64_sd_spi_flash(
+    input  logic clk,
+    input  logic reset_n,
+    output logic absent_or_idle,
+    output logic [31:0] telemetry_counter,
+    output logic [31:0] fault_counter
+);
+    always_ff @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin
+            absent_or_idle <= 1'b0;
+            telemetry_counter <= 32'd0;
+            fault_counter <= 32'd0;
+        end else begin
+            absent_or_idle <= 1'b1;
+            telemetry_counter <= 32'd1;
+        end
+    end
 endmodule
 
-module lnp64_classifier_servicelet(input logic clk, input logic reset_n, input logic cmd_valid, output logic cmd_ready, input lnp64_cmd_t cmd, output logic rsp_valid, input logic rsp_ready, output lnp64_rsp_t rsp);
-    logic unused_fault_valid; lnp64_fault_t unused_fault; logic [31:0] accepted; logic [31:0] faults;
-    lnp64_fail_closed_engine #(.ENGINE_ID(16'd18), .ERRNO_VALUE(LNP64_ERR_ENOTSUP), .STATUS_VALUE(LNP64_STATUS_UNSUPPORTED)) shell(.*,.fault_valid(unused_fault_valid),.fault_ready(1'b1),.fault(unused_fault),.accepted_counter(accepted),.fault_counter(faults));
+module lnp64_boot_image_storage(
+    input  logic clk,
+    input  logic reset_n,
+    output logic idle,
+    output logic [31:0] telemetry_counter,
+    output logic [31:0] fault_counter
+);
+    always_ff @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin
+            idle <= 1'b0;
+            telemetry_counter <= 32'd0;
+            fault_counter <= 32'd0;
+        end else begin
+            idle <= 1'b1;
+            telemetry_counter <= 32'd1;
+        end
+    end
+endmodule
+
+module lnp64_cap_engine(input logic clk, input logic reset_n, input logic cmd_valid, output logic cmd_ready, input lnp64_cmd_t cmd, output logic rsp_valid, input logic rsp_ready, output lnp64_rsp_t rsp, output logic [31:0] telemetry_counter, output logic [31:0] fault_counter);
+    logic unused_fault_valid; lnp64_fault_t unused_fault;
+    lnp64_fail_closed_engine #(.ENGINE_ID(16'd10), .ERRNO_VALUE(LNP64_ERR_EBADF), .STATUS_VALUE(LNP64_STATUS_ERROR)) shell(.*,.fault_valid(unused_fault_valid),.fault_ready(1'b1),.fault(unused_fault),.accepted_counter(telemetry_counter),.fault_counter(fault_counter));
+endmodule
+
+module lnp64_domain_engine(input logic clk, input logic reset_n, input logic cmd_valid, output logic cmd_ready, input lnp64_cmd_t cmd, output logic rsp_valid, input logic rsp_ready, output lnp64_rsp_t rsp, output logic [31:0] telemetry_counter, output logic [31:0] fault_counter);
+    logic unused_fault_valid; lnp64_fault_t unused_fault;
+    lnp64_fail_closed_engine #(.ENGINE_ID(16'd11), .ERRNO_VALUE(LNP64_ERR_EPERM), .STATUS_VALUE(LNP64_STATUS_ERROR)) shell(.*,.fault_valid(unused_fault_valid),.fault_ready(1'b1),.fault(unused_fault),.accepted_counter(telemetry_counter),.fault_counter(fault_counter));
+endmodule
+
+module lnp64_object_engine(input logic clk, input logic reset_n, input logic cmd_valid, output logic cmd_ready, input lnp64_cmd_t cmd, output logic rsp_valid, input logic rsp_ready, output lnp64_rsp_t rsp, output logic [31:0] telemetry_counter, output logic [31:0] fault_counter);
+    logic unused_fault_valid; lnp64_fault_t unused_fault;
+    lnp64_fail_closed_engine #(.ENGINE_ID(16'd12), .ERRNO_VALUE(LNP64_ERR_EPERM), .STATUS_VALUE(LNP64_STATUS_ERROR)) shell(.*,.fault_valid(unused_fault_valid),.fault_ready(1'b1),.fault(unused_fault),.accepted_counter(telemetry_counter),.fault_counter(fault_counter));
+endmodule
+
+module lnp64_gate_engine(input logic clk, input logic reset_n, input logic cmd_valid, output logic cmd_ready, input lnp64_cmd_t cmd, output logic rsp_valid, input logic rsp_ready, output lnp64_rsp_t rsp, output logic [31:0] telemetry_counter, output logic [31:0] fault_counter);
+    logic unused_fault_valid; lnp64_fault_t unused_fault;
+    lnp64_fail_closed_engine #(.ENGINE_ID(16'd13), .ERRNO_VALUE(LNP64_ERR_ENOTSUP), .STATUS_VALUE(LNP64_STATUS_UNSUPPORTED)) shell(.*,.fault_valid(unused_fault_valid),.fault_ready(1'b1),.fault(unused_fault),.accepted_counter(telemetry_counter),.fault_counter(fault_counter));
+endmodule
+
+module lnp64_process_engine(input logic clk, input logic reset_n, input logic cmd_valid, output logic cmd_ready, input lnp64_cmd_t cmd, output logic rsp_valid, input logic rsp_ready, output lnp64_rsp_t rsp, output logic [31:0] telemetry_counter, output logic [31:0] fault_counter);
+    logic unused_fault_valid; lnp64_fault_t unused_fault;
+    lnp64_fail_closed_engine #(.ENGINE_ID(16'd14), .ERRNO_VALUE(LNP64_ERR_ENOTSUP), .STATUS_VALUE(LNP64_STATUS_UNSUPPORTED)) shell(.*,.fault_valid(unused_fault_valid),.fault_ready(1'b1),.fault(unused_fault),.accepted_counter(telemetry_counter),.fault_counter(fault_counter));
+endmodule
+
+module lnp64_vma_engine(input logic clk, input logic reset_n, input logic cmd_valid, output logic cmd_ready, input lnp64_cmd_t cmd, output logic rsp_valid, input logic rsp_ready, output lnp64_rsp_t rsp, output logic [31:0] telemetry_counter, output logic [31:0] fault_counter);
+    logic unused_fault_valid; lnp64_fault_t unused_fault;
+    lnp64_fail_closed_engine #(.ENGINE_ID(16'd15), .ERRNO_VALUE(LNP64_ERR_ENOTSUP), .STATUS_VALUE(LNP64_STATUS_UNSUPPORTED)) shell(.*,.fault_valid(unused_fault_valid),.fault_ready(1'b1),.fault(unused_fault),.accepted_counter(telemetry_counter),.fault_counter(fault_counter));
+endmodule
+
+module lnp64_page_allocator(input logic clk, input logic reset_n, output logic idle, output logic [31:0] telemetry_counter, output logic [31:0] fault_counter);
+    always_ff @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin idle <= 1'b0; telemetry_counter <= 32'd0; fault_counter <= 32'd0; end
+        else begin idle <= 1'b1; telemetry_counter <= 32'd1; end
+    end
+endmodule
+
+module lnp64_memory_fabric(input logic clk, input logic reset_n, output logic coherence_event_path_live, output logic raw_physical_address_visible, output logic [31:0] telemetry_counter, output logic [31:0] fault_counter);
+    always_ff @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin coherence_event_path_live <= 1'b0; raw_physical_address_visible <= 1'b0; telemetry_counter <= 32'd0; fault_counter <= 32'd0; end
+        else begin coherence_event_path_live <= 1'b1; raw_physical_address_visible <= 1'b0; telemetry_counter <= 32'd1; end
+    end
+endmodule
+
+module lnp64_metadata_broker(input logic clk, input logic reset_n, output logic idle, output logic [31:0] telemetry_counter, output logic [31:0] fault_counter);
+    always_ff @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin idle <= 1'b0; telemetry_counter <= 32'd0; fault_counter <= 32'd0; end
+        else begin idle <= 1'b1; telemetry_counter <= 32'd1; end
+    end
+endmodule
+
+module lnp64_dma_fabric(input logic clk, input logic reset_n, output logic visibility_event_path_live, output logic raw_dma_authority_visible, output logic [31:0] telemetry_counter, output logic [31:0] fault_counter);
+    always_ff @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin visibility_event_path_live <= 1'b0; raw_dma_authority_visible <= 1'b0; telemetry_counter <= 32'd0; fault_counter <= 32'd0; end
+        else begin visibility_event_path_live <= 1'b1; raw_dma_authority_visible <= 1'b0; telemetry_counter <= 32'd1; end
+    end
+endmodule
+
+module lnp64_service_boundary(input logic clk, input logic reset_n, input logic cmd_valid, output logic cmd_ready, input lnp64_cmd_t cmd, output logic rsp_valid, input logic rsp_ready, output lnp64_rsp_t rsp, output logic [31:0] telemetry_counter, output logic [31:0] fault_counter);
+    logic unused_fault_valid; lnp64_fault_t unused_fault;
+    lnp64_fail_closed_engine #(.ENGINE_ID(16'd16), .ERRNO_VALUE(LNP64_ERR_ENOTSUP), .STATUS_VALUE(LNP64_STATUS_UNSUPPORTED)) shell(.*,.fault_valid(unused_fault_valid),.fault_ready(1'b1),.fault(unused_fault),.accepted_counter(telemetry_counter),.fault_counter(fault_counter));
+endmodule
+
+module lnp64_futex_atomic(input logic clk, input logic reset_n, output logic idle, output logic [31:0] telemetry_counter, output logic [31:0] fault_counter);
+    always_ff @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin idle <= 1'b0; telemetry_counter <= 32'd0; fault_counter <= 32'd0; end
+        else begin idle <= 1'b1; telemetry_counter <= 32'd1; end
+    end
+endmodule
+
+module lnp64_heap_engine(input logic clk, input logic reset_n, input logic cmd_valid, output logic cmd_ready, input lnp64_cmd_t cmd, output logic rsp_valid, input logic rsp_ready, output lnp64_rsp_t rsp, output logic [31:0] telemetry_counter, output logic [31:0] fault_counter);
+    logic unused_fault_valid; lnp64_fault_t unused_fault;
+    lnp64_fail_closed_engine #(.ENGINE_ID(16'd17), .ERRNO_VALUE(LNP64_ERR_ENOTSUP), .STATUS_VALUE(LNP64_STATUS_UNSUPPORTED)) shell(.*,.fault_valid(unused_fault_valid),.fault_ready(1'b1),.fault(unused_fault),.accepted_counter(telemetry_counter),.fault_counter(fault_counter));
+endmodule
+
+module lnp64_classifier_servicelet(input logic clk, input logic reset_n, input logic cmd_valid, output logic cmd_ready, input lnp64_cmd_t cmd, output logic rsp_valid, input logic rsp_ready, output lnp64_rsp_t rsp, output logic [31:0] telemetry_counter, output logic [31:0] fault_counter);
+    logic unused_fault_valid; lnp64_fault_t unused_fault;
+    lnp64_fail_closed_engine #(.ENGINE_ID(16'd18), .ERRNO_VALUE(LNP64_ERR_ENOTSUP), .STATUS_VALUE(LNP64_STATUS_UNSUPPORTED)) shell(.*,.fault_valid(unused_fault_valid),.fault_ready(1'b1),.fault(unused_fault),.accepted_counter(telemetry_counter),.fault_counter(fault_counter));
 endmodule
 
 module lnp64_entropy_env(input logic clk, input logic reset_n, output logic [63:0] feature_bits, output logic [31:0] limit_threads);
@@ -441,17 +559,23 @@ module lnp64_uart(input logic clk, input logic reset_n, input logic boot_valid, 
     end
 endmodule
 
-module lnp64_storage_stub(input logic clk, input logic reset_n, output logic raw_device_authority_visible);
-    always_ff @(posedge clk or negedge reset_n) if (!reset_n) raw_device_authority_visible <= 1'b0; else raw_device_authority_visible <= 1'b0;
-endmodule
-
-module lnp64_eth_stub(input logic clk, input logic reset_n, output logic raw_interrupt_visible);
-    always_ff @(posedge clk or negedge reset_n) if (!reset_n) raw_interrupt_visible <= 1'b0; else raw_interrupt_visible <= 1'b0;
-endmodule
-
-module lnp64_pcie_stub(input logic clk, input logic reset_n, output logic raw_dma_authority_visible, output logic raw_interrupt_visible);
+module lnp64_storage_stub(input logic clk, input logic reset_n, output logic raw_device_authority_visible, output logic [31:0] telemetry_counter, output logic [31:0] fault_counter);
     always_ff @(posedge clk or negedge reset_n) begin
-        if (!reset_n) begin raw_dma_authority_visible <= 1'b0; raw_interrupt_visible <= 1'b0; end
-        else begin raw_dma_authority_visible <= 1'b0; raw_interrupt_visible <= 1'b0; end
+        if (!reset_n) begin raw_device_authority_visible <= 1'b0; telemetry_counter <= 32'd0; fault_counter <= 32'd0; end
+        else begin raw_device_authority_visible <= 1'b0; telemetry_counter <= 32'd1; end
+    end
+endmodule
+
+module lnp64_eth_stub(input logic clk, input logic reset_n, output logic raw_interrupt_visible, output logic [31:0] telemetry_counter, output logic [31:0] fault_counter);
+    always_ff @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin raw_interrupt_visible <= 1'b0; telemetry_counter <= 32'd0; fault_counter <= 32'd0; end
+        else begin raw_interrupt_visible <= 1'b0; telemetry_counter <= 32'd1; end
+    end
+endmodule
+
+module lnp64_pcie_stub(input logic clk, input logic reset_n, output logic raw_dma_authority_visible, output logic raw_interrupt_visible, output logic [31:0] telemetry_counter, output logic [31:0] fault_counter);
+    always_ff @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin raw_dma_authority_visible <= 1'b0; raw_interrupt_visible <= 1'b0; telemetry_counter <= 32'd0; fault_counter <= 32'd0; end
+        else begin raw_dma_authority_visible <= 1'b0; raw_interrupt_visible <= 1'b0; telemetry_counter <= 32'd1; end
     end
 endmodule

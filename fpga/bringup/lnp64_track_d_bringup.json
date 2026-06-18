@@ -1,0 +1,148 @@
+{
+  "name": "lnp64_track_d_bringup",
+  "roadmap": "formal_rtl_codesign_roadmap.md",
+  "track": "Track D: FPGA Bring-Up",
+  "notes": [
+    "This manifest records the current FPGA bring-up evidence for each Track D smoke step.",
+    "Implemented steps must name concrete gate scripts, RTL modules, and filelists.",
+    "Reserved-stub steps are wired into the S0 skeleton but are not claimed as full device bring-up."
+  ],
+  "steps": [
+    {
+      "id": 1,
+      "title": "top-level skeleton modules connected with stub responses",
+      "status": "implemented",
+      "gate_scripts": ["scripts/run_rtl_s0.sh", "scripts/run_rtl_fpga_uart_s0.sh", "scripts/run_rtl_fpga_ice40_s0.sh"],
+      "filelists": ["tests/rtl/s0_filelist.f", "tests/rtl/s0_fpga_filelist.f", "tests/rtl/s0_fpga_uart_filelist.f"],
+      "modules": ["lnp64_top", "lnp64_s0_fpga_top", "lnp64_engine_router", "lnp64_completion_router", "lnp64_fail_closed_engine"]
+    },
+    {
+      "id": 2,
+      "title": "fixed decode table, canonical errors, and ENV_GET",
+      "status": "implemented",
+      "gate_scripts": ["scripts/run_rtl_s0.sh"],
+      "filelists": ["tests/rtl/s0_filelist.f"],
+      "modules": ["lnp64_decode", "lnp64_errno_writeback", "lnp64_entropy_env"]
+    },
+    {
+      "id": 3,
+      "title": "soft SRAM only, no DDR",
+      "status": "implemented",
+      "gate_scripts": ["scripts/run_rtl_s0.sh"],
+      "filelists": ["tests/rtl/s0_filelist.f"],
+      "modules": ["lnp64_core_tile", "lnp64_memory_fabric"]
+    },
+    {
+      "id": 4,
+      "title": "UART output",
+      "status": "implemented",
+      "gate_scripts": ["scripts/run_rtl_s0.sh"],
+      "filelists": ["tests/rtl/s0_filelist.f"],
+      "modules": ["lnp64_uart"]
+    },
+    {
+      "id": 5,
+      "title": "one core tile and simple assembler program ROM",
+      "status": "implemented",
+      "gate_scripts": ["scripts/run_rtl_s0.sh"],
+      "filelists": ["tests/rtl/s0_filelist.f"],
+      "modules": ["lnp64_core_tile", "lnp64_thread_context", "lnp64_issue_retire"]
+    },
+    {
+      "id": 6,
+      "title": "FDR/capability table and generation checks",
+      "status": "implemented",
+      "gate_scripts": ["scripts/run_rtl_m1.sh", "scripts/run_rtl_random_cosim.sh"],
+      "filelists": ["tests/rtl/m1_filelist.f"],
+      "modules": ["lnp64_m1_pingpong", "lnp64_cap_engine"]
+    },
+    {
+      "id": 7,
+      "title": "scheduler, waitable, event router, and object queue smoke",
+      "status": "implemented",
+      "gate_scripts": ["scripts/run_rtl_s0.sh", "scripts/run_rtl_m1.sh", "scripts/run_rtl_random_cosim.sh"],
+      "filelists": ["tests/rtl/s0_filelist.f", "tests/rtl/m1_filelist.f"],
+      "modules": ["lnp64_scheduler", "lnp64_event_router", "lnp64_object_engine", "lnp64_m1_pingpong"]
+    },
+    {
+      "id": 8,
+      "title": "gate/continuation and process lifecycle smoke",
+      "status": "implemented",
+      "gate_scripts": ["scripts/run_rtl_m2.sh", "scripts/run_rtl_m3.sh", "scripts/run_rtl_random_cosim.sh"],
+      "filelists": ["tests/rtl/m2_filelist.f", "tests/rtl/m3_filelist.f"],
+      "modules": ["lnp64_m2_gate", "lnp64_m3_process", "lnp64_gate_engine", "lnp64_process_engine"]
+    },
+    {
+      "id": 9,
+      "title": "tiny VMA/MMU, TLB invalidation, and memory-protection smoke",
+      "status": "implemented",
+      "gate_scripts": ["scripts/run_rtl_m4.sh", "scripts/run_rtl_random_cosim.sh"],
+      "filelists": ["tests/rtl/m4_filelist.f"],
+      "modules": ["lnp64_m4_vma", "lnp64_vma_engine", "lnp64_page_allocator"]
+    },
+    {
+      "id": 10,
+      "title": "external DDR and shared metadata broker",
+      "status": "implemented",
+      "gate_scripts": ["scripts/run_rtl_s0.sh", "scripts/run_rtl_m11.sh", "scripts/run_rtl_random_cosim.sh"],
+      "filelists": ["tests/rtl/s0_filelist.f", "tests/rtl/m11_filelist.f"],
+      "modules": ["lnp64_ddr_controller", "lnp64_metadata_broker", "lnp64_m11_ddr_metadata"]
+    },
+    {
+      "id": 11,
+      "title": "DMA/memory-object smoke",
+      "status": "implemented",
+      "gate_scripts": ["scripts/run_rtl_m5.sh", "scripts/run_rtl_random_cosim.sh"],
+      "filelists": ["tests/rtl/m5_filelist.f"],
+      "modules": ["lnp64_m5_dma", "lnp64_dma_fabric", "lnp64_memory_fabric"]
+    },
+    {
+      "id": 12,
+      "title": "typed control, namespace/service dispatch, and capability-return smoke",
+      "status": "implemented",
+      "gate_scripts": ["scripts/run_rtl_m6.sh", "scripts/run_rtl_random_cosim.sh"],
+      "filelists": ["tests/rtl/m6_filelist.f"],
+      "modules": ["lnp64_m6_service", "lnp64_typed_control_validator", "lnp64_namespace_dispatch", "lnp64_service_boundary"]
+    },
+    {
+      "id": 13,
+      "title": "futex/atomic and heap smoke",
+      "status": "implemented",
+      "gate_scripts": ["scripts/run_rtl_m7.sh", "scripts/run_rtl_m8.sh", "scripts/run_rtl_random_cosim.sh"],
+      "filelists": ["tests/rtl/m7_filelist.f", "tests/rtl/m8_filelist.f"],
+      "modules": ["lnp64_m7_futex_atomic", "lnp64_m8_heap", "lnp64_futex_atomic", "lnp64_heap_engine"]
+    },
+    {
+      "id": 14,
+      "title": "SD/SPI and storage-barrier smoke",
+      "status": "implemented",
+      "gate_scripts": ["scripts/run_rtl_s0.sh", "scripts/run_rtl_m12.sh", "scripts/run_rtl_random_cosim.sh"],
+      "filelists": ["tests/rtl/s0_filelist.f", "tests/rtl/m12_filelist.f"],
+      "modules": ["lnp64_sd_spi_flash", "lnp64_boot_image_storage", "lnp64_storage_stub", "lnp64_m12_storage_barrier"]
+    },
+    {
+      "id": 15,
+      "title": "Ethernet packet queue, classifier, and servicelet smoke",
+      "status": "implemented",
+      "gate_scripts": ["scripts/run_rtl_m9.sh", "scripts/run_rtl_random_cosim.sh"],
+      "filelists": ["tests/rtl/m9_filelist.f"],
+      "modules": ["lnp64_m9_classifier_servicelet", "lnp64_classifier_servicelet", "lnp64_eth_stub"]
+    },
+    {
+      "id": 16,
+      "title": "RAS/telemetry/watchdog/attestation smoke",
+      "status": "implemented",
+      "gate_scripts": ["scripts/run_rtl_s0.sh", "scripts/run_rtl_m10.sh", "scripts/run_rtl_random_cosim.sh"],
+      "filelists": ["tests/rtl/s0_filelist.f", "tests/rtl/m10_filelist.f"],
+      "modules": ["lnp64_m10_ras", "lnp64_fault_telemetry", "lnp64_watchdog", "lnp64_measurement_attestation"]
+    },
+    {
+      "id": 17,
+      "title": "PCIe later",
+      "status": "implemented",
+      "gate_scripts": ["scripts/run_rtl_s0.sh", "scripts/run_rtl_m13.sh", "scripts/run_rtl_random_cosim.sh"],
+      "filelists": ["tests/rtl/s0_filelist.f", "tests/rtl/m13_filelist.f"],
+      "modules": ["lnp64_pcie_stub", "lnp64_m13_pcie_iommu"]
+    }
+  ]
+}

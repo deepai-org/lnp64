@@ -1,0 +1,9 @@
+set_io clk A1
+set_io reset_n A2
+set_io uart_tx A5
+set_io status_led[0] A6
+set_io status_led[1] A7
+set_io status_led[2] A9
+set_io status_led[3] A10
+set_io status_led[4] A11
+set_io status_led[5] A15

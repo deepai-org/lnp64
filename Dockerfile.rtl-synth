@@ -1,0 +1,27 @@
+FROM debian:bookworm
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG RUN_RTL_SYNTH_SMOKE=1
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        bash \
+        ca-certificates \
+        fpga-icestorm \
+        fpga-icestorm-chipdb \
+        g++ \
+        make \
+        nextpnr-ice40 \
+        python3 \
+        verilator \
+        yosys \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /work
+COPY . .
+
+RUN if [ "${RUN_RTL_SYNTH_SMOKE}" = "1" ]; then \
+        bash scripts/run_rtl_synth_gates.sh; \
+    fi
+
+CMD ["bash", "scripts/run_rtl_synth_gates.sh"]

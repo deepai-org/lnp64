@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-lnp64=(cargo run --release --quiet --)
+if [[ -n "${LNP64_BIN:-}" ]]; then
+  lnp64=("$LNP64_BIN")
+else
+  lnp64=(cargo run --release --quiet --)
+fi
 root="${TMPDIR:-/tmp}/lnp64-netbsd-personality-root"
 out="${TMPDIR:-/tmp}/lnp64-netbsd-personality.out"
 expected="${TMPDIR:-/tmp}/lnp64-netbsd-personality.expected"

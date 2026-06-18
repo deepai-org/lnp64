@@ -874,6 +874,31 @@ mod tests {
             .collect()
     }
 
+    fn transition_rows(manifest: &str) -> Vec<(&str, &str, Vec<&str>, &str)> {
+        manifest
+            .lines()
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(|line| {
+                let mut fields = line.splitn(4, '|');
+                let phase = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing transition phase in {line}"));
+                let status = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing transition status in {line}"));
+                let artifacts = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing transition artifacts in {line}"))
+                    .split(',')
+                    .collect();
+                let gate = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing transition gate in {line}"));
+                (phase, status, artifacts, gate)
+            })
+            .collect()
+    }
+
     #[test]
     fn toolchain_contract_index_is_complete() {
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
@@ -904,9 +929,67 @@ mod tests {
             "debug_unwind",
             "inline_asm",
             "crt_startup",
+            "transition",
         ] {
             assert!(names.contains(name), "missing contract index row {name}");
         }
+    }
+
+    #[test]
+    fn toolchain_transition_manifest_records_layered_deliverables() {
+        let manifest = include_str!("../toolchain/lnp64_transition.manifest");
+        let roadmap = include_str!("../toolchain_roadmap.md");
+        let conformance = include_str!("../conformance_matrix.md");
+        let libc = include_str!("../libc_roadmap.md");
+        let object_format = include_str!("../object_format.md");
+        let psabi = include_str!("../psABI.md");
+        let rows = transition_rows(manifest);
+        let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut phases = std::collections::BTreeSet::new();
+
+        for (phase, status, artifacts, gate) in rows {
+            assert!(phases.insert(phase), "duplicate transition phase {phase}");
+            assert!(
+                ["required", "planned"].contains(&status),
+                "unknown transition status {status} for {phase}"
+            );
+            assert!(!artifacts.is_empty(), "empty artifacts for {phase}");
+            assert!(!gate.is_empty(), "empty gate for {phase}");
+            for artifact in artifacts {
+                assert!(
+                    manifest_root.join(artifact).exists(),
+                    "transition phase {phase} names missing artifact {artifact}"
+                );
+            }
+        }
+
+        for phase in [
+            "toy_compiler_retirement",
+            "real_toolchain_target",
+            "minimal_llvm_clang_path",
+            "libc_runtime_shim",
+            "software_loader_exec_plan",
+            "netbsd_personality_layers",
+            "conformance_gates",
+        ] {
+            assert!(phases.contains(phase), "missing transition phase {phase}");
+        }
+
+        assert!(roadmap.contains("## Toy Compiler Freeze Policy"));
+        assert!(roadmap.contains("## First Acceptance Gates"));
+        assert!(roadmap.contains("## Checked Transition Deliverables"));
+        assert!(roadmap.contains("`minimal_llvm_clang_path` row is still marked planned"));
+        assert!(roadmap.contains("without the toy C compiler"));
+        assert!(psabi.contains("## Register Model"));
+        assert!(psabi.contains("## Calling Convention"));
+        assert!(psabi.contains("## Debug and Unwind Minimum"));
+        assert!(object_format.contains("## Relocation Model"));
+        assert!(object_format.contains("## Exec-Plan Descriptor Boundary"));
+        assert!(libc.contains("startup"));
+        assert!(libc.contains("errno"));
+        assert!(libc.contains("pthread"));
+        assert!(conformance.contains("scripts/run_software_gates.sh"));
+        assert!(conformance.contains("scripts/run_netbsd_personality_system.sh"));
     }
 
     #[test]

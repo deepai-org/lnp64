@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::c_constants::find_token_constant;
 use crate::c_escapes::parse_c_escape;
@@ -23,6 +24,8 @@ use crate::lowering::{
     pthread_clone_profile,
 };
 use crate::native::CloneProfile;
+
+static TMPFILE_NONCE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, PartialEq)]
 enum Token {
@@ -8530,7 +8533,13 @@ impl CodeGen {
             }
             "tmpfile" => {
                 self.no_args(name, args)?;
-                let path_value = format!("/tmp/lnp64_tmpfile_{}", self.string_id);
+                let nonce = TMPFILE_NONCE.fetch_add(1, Ordering::Relaxed);
+                let path_value = format!(
+                    "/tmp/lnp64_tmpfile_{}_{}_{}",
+                    std::process::id(),
+                    nonce,
+                    self.string_id
+                );
                 let path_label = self.intern_string(&path_value);
                 let path = self.alloc_reg()?;
                 let flags = self.alloc_reg()?;

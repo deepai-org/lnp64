@@ -88,6 +88,25 @@ module lnp64_top (
     logic ddr_absent_or_idle;
     logic sd_spi_absent_or_idle;
     logic boot_image_idle;
+
+    localparam logic [63:0] REQUIRED_S0_FEATURE_MASK =
+        LNP64_FEATURE_CORE_TILE |
+        LNP64_FEATURE_DECODE |
+        LNP64_FEATURE_ENV_GET |
+        LNP64_FEATURE_SCHEDULER_STUB |
+        LNP64_FEATURE_EVENT_STUB |
+        LNP64_FEATURE_CAP_STUB |
+        LNP64_FEATURE_DOMAIN_STUB |
+        LNP64_FEATURE_RAS_STUB |
+        LNP64_FEATURE_UART_STUB |
+        LNP64_FEATURE_VMA_ABSENT |
+        LNP64_FEATURE_DMA_ABSENT |
+        LNP64_FEATURE_HEAP_STUB |
+        LNP64_FEATURE_FUTEX_STUB |
+        LNP64_FEATURE_CLASSIFIER_STUB |
+        LNP64_FEATURE_STORAGE_STUB |
+        LNP64_FEATURE_ETH_STUB |
+        LNP64_FEATURE_PCIE_STUB;
     lnp64_cmd_t zero_cmd;
 
     assign zero_cmd = '0;
@@ -197,7 +216,7 @@ module lnp64_top (
         .wake_valid(wake_valid),
         .event_valid(event_valid),
         .event_ready(1'b1),
-        .event_o(event_record),
+        .event_record(event_record),
         .event_counter(event_counter)
     );
 
@@ -235,32 +254,32 @@ module lnp64_top (
         .decision_allow(policy_allow)
     );
 
-    lnp64_typed_control_validator typed_control_i(.clk(clk), .reset_n(logic_reset_n), .idle(typed_control_idle));
-    lnp64_namespace_dispatch namespace_i(.clk(clk), .reset_n(logic_reset_n), .idle(namespace_idle));
-    lnp64_stream_frontend stream_frontend_i(.clk(clk), .reset_n(logic_reset_n), .idle(stream_frontend_idle));
-    lnp64_ddr_controller ddr_i(.clk(clk), .reset_n(logic_reset_n), .absent_or_idle(ddr_absent_or_idle));
-    lnp64_sd_spi_flash sd_spi_i(.clk(clk), .reset_n(logic_reset_n), .absent_or_idle(sd_spi_absent_or_idle));
-    lnp64_boot_image_storage boot_image_i(.clk(clk), .reset_n(logic_reset_n), .idle(boot_image_idle));
+    lnp64_typed_control_validator typed_control_i(.clk(clk), .reset_n(logic_reset_n), .idle(typed_control_idle), .telemetry_counter(), .fault_counter());
+    lnp64_namespace_dispatch namespace_i(.clk(clk), .reset_n(logic_reset_n), .idle(namespace_idle), .telemetry_counter(), .fault_counter());
+    lnp64_stream_frontend stream_frontend_i(.clk(clk), .reset_n(logic_reset_n), .idle(stream_frontend_idle), .telemetry_counter(), .fault_counter());
+    lnp64_ddr_controller ddr_i(.clk(clk), .reset_n(logic_reset_n), .absent_or_idle(ddr_absent_or_idle), .telemetry_counter(), .fault_counter());
+    lnp64_sd_spi_flash sd_spi_i(.clk(clk), .reset_n(logic_reset_n), .absent_or_idle(sd_spi_absent_or_idle), .telemetry_counter(), .fault_counter());
+    lnp64_boot_image_storage boot_image_i(.clk(clk), .reset_n(logic_reset_n), .idle(boot_image_idle), .telemetry_counter(), .fault_counter());
 
-    lnp64_cap_engine cap_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp());
-    lnp64_domain_engine domain_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp());
-    lnp64_object_engine object_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp());
-    lnp64_gate_engine gate_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp());
-    lnp64_process_engine process_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp());
-    lnp64_vma_engine vma_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp());
-    lnp64_page_allocator page_allocator_i(.clk(clk), .reset_n(logic_reset_n), .idle(page_allocator_idle));
-    lnp64_memory_fabric memory_fabric_i(.clk(clk), .reset_n(logic_reset_n), .coherence_event_path_live(memory_visibility_live), .raw_physical_address_visible(memory_raw_pa_visible));
-    lnp64_metadata_broker metadata_i(.clk(clk), .reset_n(logic_reset_n), .idle(metadata_idle));
-    lnp64_dma_fabric dma_i(.clk(clk), .reset_n(logic_reset_n), .visibility_event_path_live(dma_visibility_live), .raw_dma_authority_visible(dma_raw_visible));
-    lnp64_service_boundary service_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp());
-    lnp64_futex_atomic futex_i(.clk(clk), .reset_n(logic_reset_n), .idle(futex_idle));
-    lnp64_heap_engine heap_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp());
-    lnp64_classifier_servicelet classifier_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp());
+    lnp64_cap_engine cap_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());
+    lnp64_domain_engine domain_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());
+    lnp64_object_engine object_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());
+    lnp64_gate_engine gate_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());
+    lnp64_process_engine process_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());
+    lnp64_vma_engine vma_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());
+    lnp64_page_allocator page_allocator_i(.clk(clk), .reset_n(logic_reset_n), .idle(page_allocator_idle), .telemetry_counter(), .fault_counter());
+    lnp64_memory_fabric memory_fabric_i(.clk(clk), .reset_n(logic_reset_n), .coherence_event_path_live(memory_visibility_live), .raw_physical_address_visible(memory_raw_pa_visible), .telemetry_counter(), .fault_counter());
+    lnp64_metadata_broker metadata_i(.clk(clk), .reset_n(logic_reset_n), .idle(metadata_idle), .telemetry_counter(), .fault_counter());
+    lnp64_dma_fabric dma_i(.clk(clk), .reset_n(logic_reset_n), .visibility_event_path_live(dma_visibility_live), .raw_dma_authority_visible(dma_raw_visible), .telemetry_counter(), .fault_counter());
+    lnp64_service_boundary service_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());
+    lnp64_futex_atomic futex_i(.clk(clk), .reset_n(logic_reset_n), .idle(futex_idle), .telemetry_counter(), .fault_counter());
+    lnp64_heap_engine heap_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());
+    lnp64_classifier_servicelet classifier_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());
     lnp64_entropy_env entropy_env_i(.clk(clk), .reset_n(logic_reset_n), .feature_bits(env_feature_bits), .limit_threads(env_limit_threads));
     lnp64_uart uart_i(.clk(clk), .reset_n(logic_reset_n), .boot_valid(boot_valid), .uart_valid(uart_valid), .uart_byte(uart_byte));
-    lnp64_storage_stub storage_i(.clk(clk), .reset_n(logic_reset_n), .raw_device_authority_visible(storage_raw_visible));
-    lnp64_eth_stub eth_i(.clk(clk), .reset_n(logic_reset_n), .raw_interrupt_visible(eth_irq_visible));
-    lnp64_pcie_stub pcie_i(.clk(clk), .reset_n(logic_reset_n), .raw_dma_authority_visible(pcie_dma_visible), .raw_interrupt_visible(pcie_irq_visible));
+    lnp64_storage_stub storage_i(.clk(clk), .reset_n(logic_reset_n), .raw_device_authority_visible(storage_raw_visible), .telemetry_counter(), .fault_counter());
+    lnp64_eth_stub eth_i(.clk(clk), .reset_n(logic_reset_n), .raw_interrupt_visible(eth_irq_visible), .telemetry_counter(), .fault_counter());
+    lnp64_pcie_stub pcie_i(.clk(clk), .reset_n(logic_reset_n), .raw_dma_authority_visible(pcie_dma_visible), .raw_interrupt_visible(pcie_irq_visible), .telemetry_counter(), .fault_counter());
 
     always_ff @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
@@ -283,9 +302,7 @@ module lnp64_top (
             if (core_done) begin
                 pid1_completed <= 1'b1;
             end
-            if ((env_features_seen & LNP64_FEATURE_CORE_TILE) != 64'd0 &&
-                (env_features_seen & LNP64_FEATURE_ENV_GET) != 64'd0 &&
-                (env_features_seen & LNP64_FEATURE_DMA_ABSENT) != 64'd0) begin
+            if ((env_features_seen & REQUIRED_S0_FEATURE_MASK) == REQUIRED_S0_FEATURE_MASK) begin
                 env_get_ok <= 1'b1;
             end
             if (ld_value_seen == 64'd12) begin

@@ -1,0 +1,32 @@
+FROM debian:bookworm
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG LEAN_TOOLCHAIN=stable
+ARG RUN_RTL_PROOF_GATES=1
+
+ENV PATH="/root/.elan/bin:${PATH}"
+ENV LNP64_REQUIRE_LEAN=1
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        bash \
+        build-essential \
+        ca-certificates \
+        curl \
+        git \
+        python3 \
+        verilator \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+    | sh -s -- -y --default-toolchain "${LEAN_TOOLCHAIN}" \
+    && lean --version
+
+WORKDIR /work
+COPY . .
+
+RUN if [ "${RUN_RTL_PROOF_GATES}" = "1" ]; then \
+        bash scripts/run_rtl_proof_gates.sh; \
+    fi
+
+CMD ["bash", "scripts/run_rtl_proof_gates.sh"]

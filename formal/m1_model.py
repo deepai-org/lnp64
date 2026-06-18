@@ -4,8 +4,11 @@
 The model is intentionally bounded: two TIDs, one queue object, one producer
 capability, one narrowed consumer capability, and explicit negative paths for
 queue-full and stale-generation behavior. The RTL gate compares its printed
-trace against this model output.
+trace against this model output. Set LNP64_COSIM_SEED to run a bounded
+co-simulation variant with different queue generation and payload values.
 """
+
+import os
 
 RIGHT_PUSH = 0x1
 RIGHT_PULL = 0x2
@@ -14,8 +17,18 @@ EAGAIN = 11
 EREVOKED = 122
 
 
+def seeded_values() -> tuple[int, int, int]:
+    seed = int(os.environ.get("LNP64_COSIM_SEED", "0"), 0)
+    if seed == 0:
+        return 1, 42, 7
+    queue_gen = (seed & 0xF) + 1
+    push_value = 32 + (seed & 0xFF)
+    refill_value = 1 + ((seed >> 8) & 0xFF)
+    return queue_gen, push_value, refill_value
+
+
 def main() -> None:
-    queue_gen = 1
+    queue_gen, push_value, refill_value = seeded_values()
     producer = {"gen": queue_gen, "rights": RIGHT_PUSH | RIGHT_PULL | RIGHT_DUP}
     assert producer["gen"] == queue_gen
     print(f"TRACE boot root_domain=1 queue_gen={queue_gen}")
@@ -30,18 +43,18 @@ def main() -> None:
     print("TRACE await tid=2 queue=empty state=parked")
 
     assert producer["gen"] == queue_gen and producer["rights"] & RIGHT_PUSH
-    queue.append(42)
+    queue.append(push_value)
     consumer_parked = False
     events = 1
-    print("TRACE push tid=1 value=42 wake=2")
+    print(f"TRACE push tid=1 value={push_value} wake=2")
 
     assert not consumer_parked
     assert consumer["gen"] == queue_gen and consumer["rights"] & RIGHT_PULL
     value = queue.pop(0)
     print(f"TRACE pull tid=2 value={value}")
 
-    queue.append(7)
-    print("TRACE queue_refill value=7")
+    queue.append(refill_value)
+    print(f"TRACE queue_refill value={refill_value}")
 
     if queue:
         print(f"TRACE push_full errno={EAGAIN}")

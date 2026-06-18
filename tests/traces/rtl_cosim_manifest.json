@@ -1,0 +1,267 @@
+{
+  "trace_comparison_contract": {
+    "architectural_state": [
+      "state=",
+      "result=ok",
+      "visible=",
+      "quiescent=",
+      "dispatch=",
+      "running",
+      "parked",
+      "runnable",
+      "exited",
+      "accepted=",
+      "redacted=",
+      "quarantine=",
+      "handoff=",
+      "cap=",
+      "depth=",
+      "unique="
+    ],
+    "result_codes": [
+      "errno=",
+      "result=ok",
+      "accepted=",
+      "denied=",
+      "rejected",
+      "fault"
+    ],
+    "event_records": [
+      "event",
+      "wake",
+      "woken",
+      "completion",
+      "fault",
+      "barrier",
+      "delivered",
+      "emit",
+      "steer",
+      "dispatch"
+    ],
+    "authority_generation_metadata": [
+      "gen=",
+      "generation=",
+      "epoch=",
+      "stale",
+      "revoked",
+      "fdr",
+      "rights="
+    ]
+  },
+  "fixed_trace_gates": [
+    {
+      "name": "m1_pingpong",
+      "script": "scripts/run_rtl_m1.sh",
+      "model": "formal/m1_model.py",
+      "rtl_top": "lnp64_m1_tb",
+      "filelist": "tests/rtl/m1_filelist.f"
+    },
+    {
+      "name": "m2_gate",
+      "script": "scripts/run_rtl_m2.sh",
+      "model": "formal/m2_gate_model.py",
+      "rtl_top": "lnp64_m2_tb",
+      "filelist": "tests/rtl/m2_filelist.f",
+      "required_trace_markers": ["TRACE signal_compat", "mask=honored", "authority=0"]
+    },
+    {
+      "name": "m3_process",
+      "script": "scripts/run_rtl_m3.sh",
+      "model": "formal/m3_process_model.py",
+      "rtl_top": "lnp64_m3_tb",
+      "filelist": "tests/rtl/m3_filelist.f"
+    },
+    {
+      "name": "m4_vma",
+      "script": "scripts/run_rtl_m4.sh",
+      "model": "formal/m4_vma_model.py",
+      "rtl_top": "lnp64_m4_tb",
+      "filelist": "tests/rtl/m4_filelist.f"
+    },
+    {
+      "name": "m5_dma",
+      "script": "scripts/run_rtl_m5.sh",
+      "model": "formal/m5_dma_model.py",
+      "rtl_top": "lnp64_m5_tb",
+      "filelist": "tests/rtl/m5_filelist.f",
+      "required_trace_markers": ["TRACE dma_pin", "TRACE dma_unpin", "pinned="]
+    },
+    {
+      "name": "m6_service",
+      "script": "scripts/run_rtl_m6.sh",
+      "model": "formal/m6_service_model.py",
+      "rtl_top": "lnp64_m6_tb",
+      "filelist": "tests/rtl/m6_filelist.f"
+    },
+    {
+      "name": "m7_futex_atomic",
+      "script": "scripts/run_rtl_m7.sh",
+      "model": "formal/m7_futex_atomic_model.py",
+      "rtl_top": "lnp64_m7_tb",
+      "filelist": "tests/rtl/m7_filelist.f"
+    },
+    {
+      "name": "m8_heap",
+      "script": "scripts/run_rtl_m8.sh",
+      "model": "formal/m8_heap_model.py",
+      "rtl_top": "lnp64_m8_tb",
+      "filelist": "tests/rtl/m8_filelist.f"
+    },
+    {
+      "name": "m9_classifier_servicelet",
+      "script": "scripts/run_rtl_m9.sh",
+      "model": "formal/m9_classifier_servicelet_model.py",
+      "rtl_top": "lnp64_m9_tb",
+      "filelist": "tests/rtl/m9_filelist.f"
+    },
+    {
+      "name": "m10_ras",
+      "script": "scripts/run_rtl_m10.sh",
+      "model": "formal/m10_ras_model.py",
+      "rtl_top": "lnp64_m10_tb",
+      "filelist": "tests/rtl/m10_filelist.f"
+    },
+    {
+      "name": "m11_ddr_metadata",
+      "script": "scripts/run_rtl_m11.sh",
+      "model": "formal/m11_ddr_metadata_model.py",
+      "rtl_top": "lnp64_m11_tb",
+      "filelist": "tests/rtl/m11_filelist.f"
+    },
+    {
+      "name": "m12_storage_barrier",
+      "script": "scripts/run_rtl_m12.sh",
+      "model": "formal/m12_storage_barrier_model.py",
+      "rtl_top": "lnp64_m12_tb",
+      "filelist": "tests/rtl/m12_filelist.f"
+    },
+    {
+      "name": "m13_pcie_iommu",
+      "script": "scripts/run_rtl_m13.sh",
+      "model": "formal/m13_pcie_iommu_model.py",
+      "rtl_top": "lnp64_m13_tb",
+      "filelist": "tests/rtl/m13_filelist.f"
+    },
+    {
+      "name": "m14_resource_domain_policy",
+      "script": "scripts/run_rtl_m14.sh",
+      "model": "formal/m14_resource_domain_policy_model.py",
+      "rtl_top": "lnp64_m14_tb",
+      "filelist": "tests/rtl/m14_filelist.f"
+    },
+    {
+      "name": "m15_object_profiles",
+      "script": "scripts/run_rtl_m15.sh",
+      "model": "formal/m15_object_profiles_model.py",
+      "rtl_top": "lnp64_m15_tb",
+      "filelist": "tests/rtl/m15_filelist.f"
+    }
+  ],
+  "bounded_random_gates": [
+    {
+      "name": "m1_pingpong_seeded",
+      "script": "scripts/run_rtl_m1.sh",
+      "seed_env": "LNP64_COSIM_SEEDS",
+      "default_seeds": [0, 1, 7, 42, 255, 1024, 4095, 4096, 65536, 1048576, 16777216, 134217728, 268435456, 536870912],
+      "varies": ["queue_generation", "push_value", "refill_value"]
+    },
+    {
+      "name": "m2_gate_seeded",
+      "script": "scripts/run_rtl_m2.sh",
+      "seed_env": "LNP64_COSIM_SEEDS",
+      "default_seeds": [0, 1, 7, 42, 255, 1024, 4095, 4096, 65536, 1048576, 16777216, 134217728, 268435456, 536870912],
+      "varies": ["gate_generation", "continuation_id", "sync_target", "async_target", "handoff_target"]
+    },
+    {
+      "name": "m3_process_seeded",
+      "script": "scripts/run_rtl_m3.sh",
+      "seed_env": "LNP64_COSIM_SEEDS",
+      "default_seeds": [0, 1, 7, 42, 255, 1024, 4095, 4096, 65536, 1048576, 16777216, 134217728, 268435456, 536870912],
+      "varies": ["parent_tid", "child_tid", "exit_code", "exec_epoch", "siblings_stopped"]
+    },
+    {
+      "name": "m4_vma_seeded",
+      "script": "scripts/run_rtl_m4.sh",
+      "seed_env": "LNP64_COSIM_SEEDS",
+      "default_seeds": [0, 1, 7, 42, 255, 1024, 4095, 4096, 65536, 1048576, 16777216, 134217728, 268435456, 536870912],
+      "varies": ["vma_id", "page_count", "base_address", "vma_generation"]
+    },
+    {
+      "name": "m5_dma_seeded",
+      "script": "scripts/run_rtl_m5.sh",
+      "seed_env": "LNP64_COSIM_SEEDS",
+      "default_seeds": [0, 1, 7, 42, 255, 1024, 4095, 4096, 65536, 1048576, 16777216, 134217728, 268435456, 536870912],
+      "varies": ["root_domain", "src_buffer", "dst_buffer", "copy_bytes", "fill_value", "fill_bytes", "isolation_domain"]
+    },
+    {
+      "name": "m6_service_seeded",
+      "script": "scripts/run_rtl_m6.sh",
+      "seed_env": "LNP64_COSIM_SEEDS",
+      "default_seeds": [0, 1, 7, 42, 255, 1024, 4095, 4096, 65536, 1048576, 16777216, 134217728, 268435456, 536870912],
+      "varies": ["root_domain", "namespace_root", "path_len", "service_id", "op_id", "continuation_id", "returned_rights", "cap_object"]
+    },
+    {
+      "name": "m7_futex_atomic_seeded",
+      "script": "scripts/run_rtl_m7.sh",
+      "seed_env": "LNP64_COSIM_SEEDS",
+      "default_seeds": [0, 1, 7, 42, 255, 1024, 4095, 4096, 65536, 1048576, 16777216, 134217728, 268435456, 536870912],
+      "varies": ["root_domain", "initial_atomic", "success_desired", "fail_expected", "fail_desired", "futex_addr", "bucket_id", "timer_deadline"]
+    },
+    {
+      "name": "m8_heap_seeded",
+      "script": "scripts/run_rtl_m8.sh",
+      "seed_env": "LNP64_COSIM_SEEDS",
+      "default_seeds": [0, 1, 7, 42, 255, 1024, 4095, 4096, 65536, 1048576, 16777216, 134217728, 268435456, 536870912],
+      "varies": ["root_domain", "heap_generation", "ptr", "size_class", "owner_tid", "freer_tid", "pointer_generation"]
+    },
+    {
+      "name": "m9_classifier_servicelet_seeded",
+      "script": "scripts/run_rtl_m9.sh",
+      "seed_env": "LNP64_COSIM_SEEDS",
+      "default_seeds": [0, 1, 7, 42, 255, 1024, 4095, 4096, 65536, 1048576, 16777216, 134217728, 268435456, 536870912],
+      "varies": ["root_domain", "classifier_table", "program_id", "instructions", "packet_rule", "queue_id", "mark", "service_id", "gate_id", "cycle_budget"]
+    },
+    {
+      "name": "m10_ras_seeded",
+      "script": "scripts/run_rtl_m10.sh",
+      "seed_env": "LNP64_COSIM_SEEDS",
+      "default_seeds": [0, 1, 7, 42, 255, 1024, 4095, 4096, 65536, 1048576, 16777216, 134217728, 268435456, 536870912],
+      "varies": ["root_domain", "measurement", "telemetry_fdr", "ecc_corrections", "reset_id", "counters_visible", "trace_capacity", "trace_writes", "quote_id", "audit_label"]
+    },
+    {
+      "name": "m11_ddr_metadata_seeded",
+      "script": "scripts/run_rtl_m11.sh",
+      "seed_env": "LNP64_COSIM_SEEDS",
+      "default_seeds": [0, 1, 7, 42, 255, 1024, 4095, 4096, 65536, 1048576, 16777216, 134217728, 268435456, 536870912],
+      "varies": ["root_domain", "line_id", "line_generation", "metadata_epoch", "byte_len", "data_value", "cross_domain", "ecc_corrections"]
+    },
+    {
+      "name": "m12_storage_barrier_seeded",
+      "script": "scripts/run_rtl_m12.sh",
+      "seed_env": "LNP64_COSIM_SEEDS",
+      "default_seeds": [0, 1, 7, 42, 255, 1024, 4095, 4096, 65536, 1048576, 16777216, 134217728, 268435456, 536870912],
+      "varies": ["root_domain", "object_id", "object_generation", "barrier_id", "block_index", "byte_len", "data_value", "cross_domain", "media_status"]
+    },
+    {
+      "name": "m13_pcie_iommu_seeded",
+      "script": "scripts/run_rtl_m13.sh",
+      "seed_env": "LNP64_COSIM_SEEDS",
+      "default_seeds": [0, 1, 7, 42, 255, 1024, 4095, 4096, 65536, 1048576, 16777216, 134217728, 268435456, 536870912],
+      "varies": ["root_domain", "requester_id", "bar_id", "bar_generation", "iommu_context", "dma_bytes", "msi_vector", "rogue_domain", "malformed_field"]
+    },
+    {
+      "name": "m14_resource_domain_policy_seeded",
+      "script": "scripts/run_rtl_m14.sh",
+      "seed_env": "LNP64_COSIM_SEEDS",
+      "default_seeds": [0, 1, 7, 42, 255, 1024, 4095, 4096, 65536, 1048576, 16777216, 134217728, 268435456, 536870912],
+      "varies": ["root_domain", "child_domain", "parent_budget", "child_budget", "requested_rights", "child_usage", "sibling_usage", "policy_mask", "policy_label"]
+    },
+    {
+      "name": "m15_object_profiles_seeded",
+      "script": "scripts/run_rtl_m15.sh",
+      "seed_env": "LNP64_COSIM_SEEDS",
+      "default_seeds": [0, 1, 7, 42, 255, 1024, 4095, 4096, 65536, 1048576, 16777216, 134217728, 268435456, 536870912],
+      "varies": ["object_id", "generation", "counter_threshold", "queue_payload", "event_generation", "continuation_id"]
+    }
+  ]
+}

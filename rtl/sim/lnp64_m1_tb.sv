@@ -6,6 +6,7 @@ module lnp64_m1_tb;
     logic clk;
     logic reset_n;
     logic start;
+    logic [31:0] scenario_seed;
     logic done;
     logic trace_valid;
     logic [7:0] trace_code;
@@ -20,6 +21,7 @@ module lnp64_m1_tb;
         .clk(clk),
         .reset_n(reset_n),
         .start(start),
+        .scenario_seed(scenario_seed),
         .done(done),
         .trace_valid(trace_valid),
         .trace_code(trace_code),
@@ -68,6 +70,9 @@ module lnp64_m1_tb;
     end
 
     initial begin
+        if (!$value$plusargs("seed=%d", scenario_seed)) begin
+            scenario_seed = 32'd0;
+        end
         clk = 1'b0;
         reset_n = 1'b0;
         start = 1'b0;
