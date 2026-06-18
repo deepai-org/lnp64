@@ -193,6 +193,13 @@ def main() -> None:
         lambda: checker.check_run(valid_run, bad_post_state_run, 0, ops),
     )
 
+    bad_non_ok_authority_state_run = copy.deepcopy(valid_state_run)
+    bad_non_ok_authority_state_run[5]["root_rights"] = checker.ROOT_RIGHTS ^ checker.RIGHT_MINT
+    expect_failure(
+        "non-OK commit changed authority projection field root_rights",
+        lambda: checker.check_run(valid_run, bad_non_ok_authority_state_run, 0, ops),
+    )
+
     pre_state = checker.initial_state(valid_run[0], ops)
     checker.apply_commit(pre_state, valid_run[0], 0, ops)
     bad_pre_state_record = copy.deepcopy(valid_state_run[0])

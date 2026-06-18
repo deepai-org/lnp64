@@ -96,6 +96,35 @@ STATE_PROJECTION_FIELDS = (
     "revoked_generation",
 )
 
+AUTHORITY_STATE_PROJECTION_FIELDS = (
+    "root_object_id",
+    "root_generation",
+    "root_domain_id",
+    "root_lineage_epoch",
+    "root_sealed",
+    "root_rights",
+    "consumer_object_id",
+    "consumer_generation",
+    "consumer_domain_id",
+    "consumer_lineage_epoch",
+    "consumer_sealed",
+    "consumer_rights",
+    "sent_valid",
+    "sent_object_id",
+    "sent_generation",
+    "sent_domain_id",
+    "sent_lineage_epoch",
+    "sent_sealed",
+    "sent_rights",
+    "minted_valid",
+    "minted_object_id",
+    "minted_generation",
+    "minted_domain_id",
+    "minted_lineage_epoch",
+    "minted_sealed",
+    "minted_rights",
+)
+
 M1_OP_KEYS = (
     "cap_dup",
     "cap_send",
@@ -1236,6 +1265,19 @@ def check_state_projection(
             fail(f"{context}: state projection field {field} {actual.get(field)!r} != {expected.get(field)!r}")
 
 
+def check_authority_projection_slots_unchanged(
+    expected_pre: dict[str, int | str],
+    actual_post: dict[str, int | str],
+    context: str,
+) -> None:
+    for field in AUTHORITY_STATE_PROJECTION_FIELDS:
+        if actual_post.get(field) != expected_pre.get(field):
+            fail(
+                f"{context}: non-OK commit changed authority projection field {field}: "
+                f"{actual_post.get(field)!r} != {expected_pre.get(field)!r}"
+            )
+
+
 def check_rtl_refinement_step(
     state: M1State,
     pre_state_record: dict[str, int | str] | None,
@@ -1253,6 +1295,7 @@ def check_rtl_refinement_step(
     op = require_int(commit_record, "op")
     status = require_int(commit_record, "status")
     transition = lean_transition_constructor(op, ops)
+    expected_pre_projection = projection_from_state(state, op, status)
     if pre_state_record is not None:
         pre_op = require_int(pre_state_record, "op")
         pre_status = require_int(pre_state_record, "status")
@@ -1262,6 +1305,12 @@ def check_rtl_refinement_step(
             f"run {run_index} {transition} RtlM1RefinementStep pre-state projection",
         )
     apply_commit(state, commit_record, run_index, ops)
+    if status != ERR_OK:
+        check_authority_projection_slots_unchanged(
+            expected_pre_projection,
+            post_state_record,
+            f"run {run_index} {transition} RtlM1RefinementStep",
+        )
     check_state_projection(
         projection_from_state(state, op, status),
         post_state_record,
