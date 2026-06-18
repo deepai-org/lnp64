@@ -353,9 +353,15 @@ int above_or_equal(unsigned long a, unsigned long b) {
   return a >= b;
 }
 
+int branch_below(unsigned long a, unsigned long b) {
+  if (a < b)
+    return 0;
+  return 9;
+}
+
 int main(void) {
   return below(3, 4) + above(5, 4) + below_or_equal(4, 4) +
-         above_or_equal(4, 4) - 4;
+         above_or_equal(4, 4) + branch_below(3, 4) - 4;
 }
 C
 
@@ -372,6 +378,7 @@ grep -q 'cset.ult' "$unsigned_compare_dump"
 grep -q 'cset.ugt' "$unsigned_compare_dump"
 grep -q 'cset.ule' "$unsigned_compare_dump"
 grep -q 'cset.uge' "$unsigned_compare_dump"
+grep -q 'bge ' "$unsigned_compare_dump"
 printf 'real LLVM LNP64 clang unsigned comparison object smoke passed: %s\n' \
   "$unsigned_compare_obj"
 

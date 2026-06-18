@@ -1880,8 +1880,8 @@ impl Machine {
                 let rhs = self.read_reg(b)?;
                 self.thread_mut()?.flags = Flags {
                     zero: lhs == rhs,
-                    negative: (lhs as i64) < (rhs as i64),
-                    greater: (lhs as i64) > (rhs as i64),
+                    negative: lhs < rhs,
+                    greater: lhs > rhs,
                     below: lhs < rhs,
                     above: lhs > rhs,
                 };

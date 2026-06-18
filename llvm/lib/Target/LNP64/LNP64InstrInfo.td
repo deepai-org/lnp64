@@ -34,6 +34,10 @@ def LNP64brgt : SDNode<"LNP64ISD::BR_GT", SDT_LNP64BrCC, [SDNPHasChain]>;
 def LNP64brle : SDNode<"LNP64ISD::BR_LE", SDT_LNP64BrCC, [SDNPHasChain]>;
 def LNP64brlt : SDNode<"LNP64ISD::BR_LT", SDT_LNP64BrCC, [SDNPHasChain]>;
 def LNP64brne : SDNode<"LNP64ISD::BR_NE", SDT_LNP64BrCC, [SDNPHasChain]>;
+def LNP64bruge : SDNode<"LNP64ISD::BR_UGE", SDT_LNP64BrCC, [SDNPHasChain]>;
+def LNP64brugt : SDNode<"LNP64ISD::BR_UGT", SDT_LNP64BrCC, [SDNPHasChain]>;
+def LNP64brule : SDNode<"LNP64ISD::BR_ULE", SDT_LNP64BrCC, [SDNPHasChain]>;
+def LNP64brult : SDNode<"LNP64ISD::BR_ULT", SDT_LNP64BrCC, [SDNPHasChain]>;
 def SDT_LNP64Native1 : SDTypeProfile<1, 1, [
   SDTCisVT<0, i64>, SDTCisVT<1, i64>
 ]>;
@@ -293,6 +297,10 @@ def PseudoBLT : LNP64CondBranchPseudo<"pseudo_blt">;
 def PseudoBGT : LNP64CondBranchPseudo<"pseudo_bgt">;
 def PseudoBLE : LNP64CondBranchPseudo<"pseudo_ble">;
 def PseudoBGE : LNP64CondBranchPseudo<"pseudo_bge">;
+def PseudoBUGT : LNP64CondBranchPseudo<"pseudo_bugt">;
+def PseudoBULE : LNP64CondBranchPseudo<"pseudo_bule">;
+def PseudoBULT : LNP64CondBranchPseudo<"pseudo_bult">;
+def PseudoBUGE : LNP64CondBranchPseudo<"pseudo_buge">;
 def : Pat<(LNP64breq GPR:$lhs, GPR:$rhs, bb:$target),
           (PseudoBEQ GPR:$lhs, GPR:$rhs, bb:$target)>;
 def : Pat<(LNP64brne GPR:$lhs, GPR:$rhs, bb:$target),
@@ -305,6 +313,14 @@ def : Pat<(LNP64brle GPR:$lhs, GPR:$rhs, bb:$target),
           (PseudoBLE GPR:$lhs, GPR:$rhs, bb:$target)>;
 def : Pat<(LNP64brge GPR:$lhs, GPR:$rhs, bb:$target),
           (PseudoBGE GPR:$lhs, GPR:$rhs, bb:$target)>;
+def : Pat<(LNP64brult GPR:$lhs, GPR:$rhs, bb:$target),
+          (PseudoBULT GPR:$lhs, GPR:$rhs, bb:$target)>;
+def : Pat<(LNP64brugt GPR:$lhs, GPR:$rhs, bb:$target),
+          (PseudoBUGT GPR:$lhs, GPR:$rhs, bb:$target)>;
+def : Pat<(LNP64brule GPR:$lhs, GPR:$rhs, bb:$target),
+          (PseudoBULE GPR:$lhs, GPR:$rhs, bb:$target)>;
+def : Pat<(LNP64bruge GPR:$lhs, GPR:$rhs, bb:$target),
+          (PseudoBUGE GPR:$lhs, GPR:$rhs, bb:$target)>;
 let isCall = 1, Defs = [LR] in
 def CALL : LNP64Branch<"call">;
 def : Pat<(LNP64call tglobaladdr:$target), (CALL tglobaladdr:$target)>;

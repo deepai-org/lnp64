@@ -2128,12 +2128,15 @@ mod tests {
         assert!(isel.contains("ISD::BR_CC"));
         assert!(
             isel.contains(
-                "LNP64 conditional branch lowering only supports signed comparisons today"
+                "LNP64 conditional branch lowering only supports integer comparisons today"
             )
         );
         assert!(isel.contains("EmitInstrWithCustomInserter"));
         assert!(isel.contains("LNP64::PseudoBEQ"));
-        assert!(isel.contains("BuildMI(*BB, MI, DL, TII.get(LNP64::CMP))"));
+        assert!(isel.contains("LNP64::PseudoBULT"));
+        assert!(isel.contains("isLNP64UnsignedBranchPseudo"));
+        assert!(isel.contains("BuildMI(*BB, MI, DL, TII.get(CmpOpcode))"));
+        assert!(isel.contains("isLNP64UnsignedBranchPseudo(MI.getOpcode()) ? LNP64::CMPU"));
         assert!(isel.contains("TII.get(getLNP64CSetInstr(MI.getOpcode()))"));
         assert!(isel.contains("BuildMI(*BB, MI, DL, TII.get(BranchOpcode))"));
         assert!(isel.contains("LowerFormalArguments"));
@@ -2175,6 +2178,7 @@ mod tests {
         assert!(isel_header.contains("LowerOperation"));
         assert!(isel_header.contains("EmitInstrWithCustomInserter"));
         assert!(isel_header.contains("BR_EQ"));
+        assert!(isel_header.contains("BR_ULT"));
         assert!(isel_header.contains("LowerFormalArguments"));
         assert!(isel_header.contains("LowerReturn"));
         assert!(isel_header.contains("LowerCall"));
@@ -2196,6 +2200,7 @@ mod tests {
         assert!(instr_td.contains("def SDT_LNP64BrCC"));
         assert!(instr_td.contains("def LNP64breq"));
         assert!(instr_td.contains("def LNP64brne"));
+        assert!(instr_td.contains("def LNP64brult"));
         assert!(instr_td.contains("class LNP64CondBranchPseudo"));
         assert!(instr_td.contains("class LNP64SetCCPseudo"));
         assert!(instr_td.contains("class LNP64SignedLoadPseudo"));
@@ -2204,7 +2209,9 @@ mod tests {
         assert!(instr_td.contains("def PseudoLD_SB"));
         assert!(instr_td.contains("usesCustomInserter = 1"));
         assert!(instr_td.contains("def PseudoBEQ"));
+        assert!(instr_td.contains("def PseudoBULT"));
         assert!(instr_td.contains("(PseudoBEQ GPR:$lhs, GPR:$rhs, bb:$target)"));
+        assert!(instr_td.contains("(PseudoBULT GPR:$lhs, GPR:$rhs, bb:$target)"));
         assert!(instr_td.contains("(PseudoCSETEQ GPR:$lhs, GPR:$rhs)"));
         assert!(instr_td.contains("(PseudoCSETULT GPR:$lhs, GPR:$rhs)"));
         assert!(instr_td.contains("(PseudoCSETNEI GPR:$lhs, simm16_imm:$rhs)"));

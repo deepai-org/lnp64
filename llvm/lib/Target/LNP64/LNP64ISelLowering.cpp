@@ -36,9 +36,17 @@ static unsigned getLNP64BranchOpcode(ISD::CondCode CC) {
     return LNP64ISD::BR_LE;
   case ISD::SETGE:
     return LNP64ISD::BR_GE;
+  case ISD::SETULT:
+    return LNP64ISD::BR_ULT;
+  case ISD::SETUGT:
+    return LNP64ISD::BR_UGT;
+  case ISD::SETULE:
+    return LNP64ISD::BR_ULE;
+  case ISD::SETUGE:
+    return LNP64ISD::BR_UGE;
   default:
     llvm_unreachable(
-        "LNP64 conditional branch lowering only supports signed comparisons today");
+        "LNP64 conditional branch lowering only supports integer comparisons today");
   }
 }
 
@@ -55,9 +63,28 @@ static unsigned getLNP64BranchInstr(unsigned Opcode) {
   case LNP64::PseudoBLE:
     return LNP64::BLE;
   case LNP64::PseudoBGE:
+  case LNP64::PseudoBUGE:
     return LNP64::BGE;
+  case LNP64::PseudoBULT:
+    return LNP64::BLT;
+  case LNP64::PseudoBUGT:
+    return LNP64::BGT;
+  case LNP64::PseudoBULE:
+    return LNP64::BLE;
   default:
     llvm_unreachable("expected LNP64 conditional branch pseudo");
+  }
+}
+
+static bool isLNP64UnsignedBranchPseudo(unsigned Opcode) {
+  switch (Opcode) {
+  case LNP64::PseudoBULT:
+  case LNP64::PseudoBUGT:
+  case LNP64::PseudoBULE:
+  case LNP64::PseudoBUGE:
+    return true;
+  default:
+    return false;
   }
 }
 
@@ -236,6 +263,14 @@ const char *LNP64TargetLowering::getTargetNodeName(unsigned Opcode) const {
     return "LNP64ISD::BR_LT";
   case LNP64ISD::BR_NE:
     return "LNP64ISD::BR_NE";
+  case LNP64ISD::BR_UGE:
+    return "LNP64ISD::BR_UGE";
+  case LNP64ISD::BR_UGT:
+    return "LNP64ISD::BR_UGT";
+  case LNP64ISD::BR_ULE:
+    return "LNP64ISD::BR_ULE";
+  case LNP64ISD::BR_ULT:
+    return "LNP64ISD::BR_ULT";
   case LNP64ISD::CALL:
     return "LNP64ISD::CALL";
   case LNP64ISD::DOMAIN_CTL:
@@ -347,8 +382,10 @@ MachineBasicBlock *LNP64TargetLowering::EmitInstrWithCustomInserter(
   }
 
   unsigned BranchOpcode = getLNP64BranchInstr(MI.getOpcode());
+  unsigned CmpOpcode =
+      isLNP64UnsignedBranchPseudo(MI.getOpcode()) ? LNP64::CMPU : LNP64::CMP;
 
-  BuildMI(*BB, MI, DL, TII.get(LNP64::CMP))
+  BuildMI(*BB, MI, DL, TII.get(CmpOpcode))
       .add(MI.getOperand(0))
       .add(MI.getOperand(1));
   BuildMI(*BB, MI, DL, TII.get(BranchOpcode)).add(MI.getOperand(2));
