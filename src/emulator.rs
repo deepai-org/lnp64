@@ -6103,6 +6103,8 @@ impl Machine {
         };
         let security = self.domain_security_from_arg(argblock, parent_security, parent_security)?;
 
+        self.ensure_mapped(argblock, DOMAIN_QUERY_SIZE as usize, true)
+            .map_err(|_| 14u64)?;
         let id = self.next_domain_id;
         self.next_domain_id += 1;
         let domain = ResourceDomain {
@@ -12888,6 +12890,35 @@ mod tests {
         machine.store_u64(arg + 16, 1).unwrap();
         machine.domains.get_mut(&2).unwrap().frozen = true;
         assert_eq!(machine.domain_ctl_configure(arg), Err(11));
+    }
+
+    #[test]
+    fn domain_create_prevalidates_output_record_before_mutation() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let arg = ARG_BASE;
+        machine.store_u64(arg, DOMAIN_OP_CREATE).unwrap();
+        machine.store_u64(arg + 8, ROOT_DOMAIN_ID).unwrap();
+        machine.store_u64(arg + 16, 1).unwrap();
+        let next_domain_id = machine.next_domain_id;
+        let domain_count = machine.domains.len();
+        let parent_children = machine.domains[&ROOT_DOMAIN_ID].children.clone();
+        {
+            let process = machine.process_mut().unwrap();
+            let vma = process
+                .vmas
+                .iter_mut()
+                .find(|vma| vma.contains(arg, DOMAIN_QUERY_SIZE as usize))
+                .expect("domain record VMA");
+            vma.prot = 0b01;
+        }
+
+        assert_eq!(machine.domain_ctl_create(arg), Err(14));
+
+        assert_eq!(machine.next_domain_id, next_domain_id);
+        assert_eq!(machine.domains.len(), domain_count);
+        assert_eq!(machine.domains[&ROOT_DOMAIN_ID].children, parent_children);
+        assert!(!machine.domains.contains_key(&next_domain_id));
     }
 
     #[test]
