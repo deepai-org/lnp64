@@ -1430,6 +1430,14 @@ mod tests {
         assert!(real_llc.contains("hello-clang-smoke.o"));
         assert!(real_llc.contains("hello-clang-smoke.dump"));
         assert!(real_llc.contains("real LLVM LNP64 clang hello object smoke passed"));
+        assert!(real_llc.contains("-c demos/factorial.c"));
+        assert!(real_llc.contains("factorial-clang-smoke.o"));
+        assert!(real_llc.contains("factorial-clang-smoke.dump"));
+        assert!(real_llc.contains("ld.w r"));
+        assert!(real_llc.contains("st.w r"));
+        assert!(real_llc.contains("mul r"));
+        assert!(real_llc.contains("cmp r"));
+        assert!(real_llc.contains("real LLVM LNP64 clang factorial object smoke passed"));
         assert!(real_llc.contains("toolchain/crt0_lnp64.s"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc crt0 smoke passed"));
         assert!(real_llc.contains("--triple=lnp64-unknown-none"));
@@ -2026,6 +2034,13 @@ mod tests {
         assert!(dag_isel.contains("SelectionDAGISel"));
         assert!(dag_isel.contains("LNP64GenDAGISel.inc"));
         assert!(dag_isel.contains("SelectCode(Node)"));
+        assert!(dag_isel.contains("SelectFrameIndexLoad"));
+        assert!(dag_isel.contains("SelectFrameIndexStore"));
+        assert!(dag_isel.contains("getTargetFrameIndex"));
+        assert!(dag_isel.contains("ISD::SEXTLOAD"));
+        assert!(dag_isel.contains("ISD::EXTLOAD"));
+        assert!(dag_isel.contains("LNP64::LD_W"));
+        assert!(dag_isel.contains("LNP64::ST_W"));
         assert!(asm_printer.contains("RegisterAsmPrinter<LNP64AsmPrinter>"));
         assert!(asm_printer.contains("void LNP64AsmPrinter::emitInstruction"));
         assert!(asm_printer.contains("MachineOperand::MO_MachineBasicBlock"));

@@ -1,6 +1,7 @@
 #include "LNP64.h"
 #include "LNP64TargetMachine.h"
 #include "llvm/CodeGen/SelectionDAGISel.h"
+#include "llvm/CodeGen/SelectionDAGNodes.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Debug.h"
 
@@ -20,17 +21,83 @@ public:
   }
 
   void Select(SDNode *Node) override;
+  bool SelectFrameIndexLoad(SDNode *Node);
+  bool SelectFrameIndexStore(SDNode *Node);
 
 #include "LNP64GenDAGISel.inc"
 };
 
 } // end anonymous namespace
 
+bool LNP64DAGToDAGISel::SelectFrameIndexLoad(SDNode *Node) {
+  auto *Load = dyn_cast<LoadSDNode>(Node);
+  if (!Load)
+    return false;
+
+  auto *FI = dyn_cast<FrameIndexSDNode>(Load->getBasePtr());
+  if (!FI)
+    return false;
+
+  unsigned Opcode;
+  EVT MemVT = Load->getMemoryVT();
+  if (MemVT == MVT::i64 && Load->getExtensionType() == ISD::NON_EXTLOAD)
+    Opcode = LNP64::LD;
+  else if (MemVT == MVT::i32 &&
+           (Load->getExtensionType() == ISD::ZEXTLOAD ||
+            Load->getExtensionType() == ISD::SEXTLOAD ||
+            Load->getExtensionType() == ISD::EXTLOAD))
+    Opcode = LNP64::LD_W;
+  else
+    return false;
+
+  SDLoc DL(Node);
+  SDValue Base = CurDAG->getTargetFrameIndex(FI->getIndex(), MVT::i64);
+  SDValue Offset = CurDAG->getTargetConstant(0, DL, MVT::i64);
+  SDValue Chain = Load->getChain();
+  SDNode *Selected =
+      CurDAG->getMachineNode(Opcode, DL, CurDAG->getVTList(MVT::i64, MVT::Other),
+                             {Base, Offset, Chain});
+  ReplaceNode(Node, Selected);
+  return true;
+}
+
+bool LNP64DAGToDAGISel::SelectFrameIndexStore(SDNode *Node) {
+  auto *Store = dyn_cast<StoreSDNode>(Node);
+  if (!Store)
+    return false;
+
+  auto *FI = dyn_cast<FrameIndexSDNode>(Store->getBasePtr());
+  if (!FI)
+    return false;
+
+  unsigned Opcode;
+  EVT MemVT = Store->getMemoryVT();
+  if (MemVT == MVT::i64 && !Store->isTruncatingStore())
+    Opcode = LNP64::ST;
+  else if (MemVT == MVT::i32 && Store->isTruncatingStore())
+    Opcode = LNP64::ST_W;
+  else
+    return false;
+
+  SDLoc DL(Node);
+  SDValue Base = CurDAG->getTargetFrameIndex(FI->getIndex(), MVT::i64);
+  SDValue Offset = CurDAG->getTargetConstant(0, DL, MVT::i64);
+  SDValue Value = Store->getValue();
+  SDValue Chain = Store->getChain();
+  SDNode *Selected = CurDAG->getMachineNode(Opcode, DL, MVT::Other,
+                                            {Value, Base, Offset, Chain});
+  ReplaceNode(Node, Selected);
+  return true;
+}
+
 void LNP64DAGToDAGISel::Select(SDNode *Node) {
   if (Node->isMachineOpcode()) {
     Node->setNodeId(-1);
     return;
   }
+
+  if (SelectFrameIndexLoad(Node) || SelectFrameIndexStore(Node))
+    return;
 
   SelectCode(Node);
 }

@@ -193,6 +193,23 @@ grep -q 'la r' "$hello_dump"
 grep -q 'call ' "$hello_dump"
 printf 'real LLVM LNP64 clang hello object smoke passed: %s\n' "$hello_obj"
 
+factorial_obj="$build_dir/factorial-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables \
+  -Wno-implicit-function-declaration -I toolchain \
+  -c demos/factorial.c -o "$factorial_obj"
+test -s "$factorial_obj"
+factorial_dump="$build_dir/factorial-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$factorial_obj" \
+  >"$factorial_dump"
+grep -q 'ld.w r' "$factorial_dump"
+grep -q 'st.w r' "$factorial_dump"
+grep -q 'mul r' "$factorial_dump"
+grep -q 'cmp r' "$factorial_dump"
+grep -q 'call ' "$factorial_dump"
+printf 'real LLVM LNP64 clang factorial object smoke passed: %s\n' \
+  "$factorial_obj"
+
 crt0_obj="$build_dir/crt0-smoke.o"
 "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj toolchain/crt0_lnp64.s \
   -o "$crt0_obj"
