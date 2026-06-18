@@ -3071,6 +3071,13 @@ impl Machine {
         self.store_u64(addr, value)
     }
 
+    fn load_u64_offset(&mut self, base: u64, offset: u64) -> Result<u64, String> {
+        let addr = base
+            .checked_add(offset)
+            .ok_or_else(|| "address overflow".to_string())?;
+        self.load_u64(addr)
+    }
+
     fn write_bytes_offset(&mut self, base: u64, offset: u64, data: &[u8]) -> Result<(), String> {
         let addr = base
             .checked_add(offset)
@@ -4275,13 +4282,13 @@ impl Machine {
 
     fn object_ctl_create(&mut self, argblock: u64) -> NativeResult<u64> {
         self.require_domain_cap_errno(DOMAIN_CAP_OBJECT | DOMAIN_CAP_FDR)?;
-        let kind_code = self.load_u64(argblock + 8).map_err(|_| 14u64)?;
-        let profile_code = self.load_u64(argblock + 16).map_err(|_| 14u64)?;
+        let kind_code = self.load_u64_offset(argblock, 8).map_err(|_| 14u64)?;
+        let profile_code = self.load_u64_offset(argblock, 16).map_err(|_| 14u64)?;
         let kind = ObjectKind::from_code(kind_code).ok_or(22u64)?;
         let profile = ObjectProfile::from_code_for_kind(kind, profile_code).ok_or(22u64)?;
-        let fd0_req = self.load_u64(argblock + 24).map_err(|_| 14u64)?;
-        let fd1_req = self.load_u64(argblock + 32).map_err(|_| 14u64)?;
-        let arg = self.load_u64(argblock + 40).map_err(|_| 14u64)?;
+        let fd0_req = self.load_u64_offset(argblock, 24).map_err(|_| 14u64)?;
+        let fd1_req = self.load_u64_offset(argblock, 32).map_err(|_| 14u64)?;
+        let arg = self.load_u64_offset(argblock, 40).map_err(|_| 14u64)?;
         match (kind, profile) {
             (ObjectKind::Queue, ObjectProfile::Pipe) => {
                 let buffer = Rc::new(RefCell::new(PipeBuffer::default()));
@@ -4308,9 +4315,9 @@ impl Machine {
                 ) {
                     return Err(1);
                 }
-                let mode = self.load_u64(argblock + 48).map_err(|_| 14u64)?;
-                let completion_fd = self.load_u64(argblock + 56).map_err(|_| 14u64)?;
-                let flags = self.load_u64(argblock + 64).map_err(|_| 14u64)?;
+                let mode = self.load_u64_offset(argblock, 48).map_err(|_| 14u64)?;
+                let completion_fd = self.load_u64_offset(argblock, 56).map_err(|_| 14u64)?;
+                let flags = self.load_u64_offset(argblock, 64).map_err(|_| 14u64)?;
                 if !matches!(mode, CALL_MODE_SYNC | CALL_MODE_ASYNC | CALL_MODE_HANDOFF) {
                     return Err(22);
                 }
@@ -4346,7 +4353,7 @@ impl Machine {
                 Ok(fd as u64)
             }
             (ObjectKind::Counter, ObjectProfile::EventFd) => {
-                let flags = self.load_u64(argblock + 48).map_err(|_| 14u64)?;
+                let flags = self.load_u64_offset(argblock, 48).map_err(|_| 14u64)?;
                 if flags & !(EVENTFD_SEMAPHORE | EVENTFD_NONBLOCK) != 0 {
                     return Err(22);
                 }
@@ -4395,9 +4402,9 @@ impl Machine {
             }
             (ObjectKind::Classifier, ObjectProfile::ClassifierTable) => {
                 let rules_ptr = arg;
-                let rule_count = self.load_u64(argblock + 48).map_err(|_| 14u64)? as usize;
-                let allowed_ptr = self.load_u64(argblock + 56).map_err(|_| 14u64)?;
-                let allowed_count = self.load_u64(argblock + 64).map_err(|_| 14u64)? as usize;
+                let rule_count = self.load_u64_offset(argblock, 48).map_err(|_| 14u64)? as usize;
+                let allowed_ptr = self.load_u64_offset(argblock, 56).map_err(|_| 14u64)?;
+                let allowed_count = self.load_u64_offset(argblock, 64).map_err(|_| 14u64)? as usize;
                 if rule_count > CLASSIFIER_MAX_RULES
                     || allowed_count > CLASSIFIER_MAX_ALLOWED_QUEUES
                 {
@@ -4427,7 +4434,7 @@ impl Machine {
                 Ok(fd as u64)
             }
             (ObjectKind::DmaBuffer, _) => {
-                let len = self.load_u64(argblock + 48).map_err(|_| 14u64)?;
+                let len = self.load_u64_offset(argblock, 48).map_err(|_| 14u64)?;
                 if len == 0 {
                     return Err(22);
                 }
@@ -4441,8 +4448,8 @@ impl Machine {
                 Ok(fd as u64)
             }
             (ObjectKind::Endpoint, ObjectProfile::TcpStream) => {
-                let sock_type = self.load_u64(argblock + 48).map_err(|_| 14u64)?;
-                let protocol = self.load_u64(argblock + 56).map_err(|_| 14u64)?;
+                let sock_type = self.load_u64_offset(argblock, 48).map_err(|_| 14u64)?;
+                let protocol = self.load_u64_offset(argblock, 56).map_err(|_| 14u64)?;
                 if arg != SOCKET_AF_INET
                     || sock_type != SOCKET_TYPE_STREAM
                     || !(protocol == 0 || protocol == SOCKET_LEVEL_IPPROTO_TCP)
@@ -10698,6 +10705,16 @@ mod tests {
         let err = machine
             .store_u64_offset(u64::MAX - 4, 8, 0xfeed)
             .unwrap_err();
+
+        assert!(err.contains("address overflow"), "{err}");
+    }
+
+    #[test]
+    fn load_u64_offset_rejects_address_overflow() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+
+        let err = machine.load_u64_offset(u64::MAX - 4, 8).unwrap_err();
 
         assert!(err.contains("address overflow"), "{err}");
     }
