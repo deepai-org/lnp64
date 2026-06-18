@@ -49,6 +49,7 @@ const MESSAGE_ENDPOINT_FD: usize = FDR_COUNT - 1;
 const PROCESS_INBOX_LIMIT: usize = 1024;
 const UTIME_NOW_LNP64: i64 = 1_073_741_823;
 const UTIME_OMIT_LNP64: i64 = 1_073_741_822;
+const LNP64_STAT_RECORD_SIZE: usize = 104;
 const ROOT_DOMAIN_ID: u64 = 1;
 const MAX_RESOURCE_DOMAINS: usize = 4096;
 const MAX_DOMAIN_DEPTH: u64 = 16;
@@ -3243,6 +3244,7 @@ impl Machine {
     }
 
     fn write_lnp64_stat(&mut self, addr: u64, metadata: &fs::Metadata) -> Result<(), String> {
+        self.ensure_mapped(addr, LNP64_STAT_RECORD_SIZE, true)?;
         let uid = self.process()?.uid;
         let gid = self.process()?.gid;
         let fields = [
@@ -3267,6 +3269,7 @@ impl Machine {
     }
 
     fn write_synthetic_stat(&mut self, addr: u64, mode: u64, size: u64) -> Result<(), String> {
+        self.ensure_mapped(addr, LNP64_STAT_RECORD_SIZE, true)?;
         let fields = [
             (0, mode),
             (8, size),
@@ -14037,6 +14040,26 @@ mod tests {
             .unwrap();
         assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 1);
+    }
+
+    #[test]
+    fn stat_fd_prevalidates_entire_output_record() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let statbuf = MEMORY_SIZE as u64 - 8;
+        {
+            let process = machine.process_mut().unwrap();
+            process.vmas.push(Vma::anonymous(statbuf, 8, 0b11));
+            process.fds[3] = FdHandle::Counter(Rc::new(RefCell::new(0)));
+            process.fd_capabilities[3] = FdCapability::full(3);
+        }
+        let sentinel = 0xfeed_face_cafe_beefu64.to_le_bytes();
+        machine.write_bytes(statbuf, &sentinel).unwrap();
+
+        let err = machine.stat_fd_index(statbuf, 3).unwrap_err();
+
+        assert!(err.contains("unmapped address"), "{err}");
+        assert_eq!(machine.read_bytes(statbuf, 8).unwrap(), sentinel.to_vec());
     }
 
     #[test]
