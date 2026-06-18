@@ -228,6 +228,33 @@ for the full suite. The release-reuse path is the fastest stable way to rerun
 scripts that honor `LNP64_BIN`; unset it when intentionally testing the default
 `cargo run --release` fallback path.
 
+Recent host commands verified from this checkout on 2026-06-18:
+
+```sh
+cargo fmt --check
+cargo test --quiet
+cargo build --release --quiet
+LNP64_BIN="$PWD/target/release/lnp64" bash scripts/run_demos.sh
+git diff --check
+rg -n "MSG_RECV|\\bPIPE\\b"
+rg -n "EVENT_CTL|TIMER_CTL"
+python3 -m py_compile \
+  scripts/check_formal_rtl_roadmap_audit.py \
+  scripts/test_formal_rtl_roadmap_strict_audit.py \
+  scripts/test_uart_byte_checker.py \
+  scripts/test_board_evidence_checker.py
+bash -n scripts/run_rtl_board_ice40_s0.sh
+scripts/test_board_evidence_checker.py
+scripts/test_uart_byte_checker.py
+scripts/test_formal_rtl_roadmap_strict_audit.py
+scripts/check_formal_rtl_roadmap_audit.py
+```
+
+For the alias scans, expected hits are documentation, compatibility-lowering
+comments, script negative lists, or compiler negative assertions. Treat new
+matches in emulator internals, RTL opcode definitions, or compiler lowering as
+things to inspect before committing.
+
 Known command pitfalls from this checkout:
 
 - There is no `docs/` directory. Run repository-wide text checks without a
