@@ -8257,6 +8257,16 @@ mod tests {
             -1i64 as u64
         );
         assert_eq!(machine.process().unwrap().errno, 22);
+        assert_eq!(
+            try_create_classifier(&mut machine, 6, 0, 1, 0, 0),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 14);
+        assert_eq!(
+            try_create_classifier(&mut machine, 6, 0, 0, 0, 1),
+            -1i64 as u64
+        );
+        assert_eq!(machine.process().unwrap().errno, 14);
     }
 
     #[test]
