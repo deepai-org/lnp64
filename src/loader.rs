@@ -335,6 +335,65 @@ pub fn build_exec_descriptor(
     })
 }
 
+pub fn encode_exec_descriptor(descriptor: &ExecPlanDescriptor) -> Vec<u64> {
+    let mut words = Vec::with_capacity(
+        13 + descriptor.vmas.len() * 11
+            + descriptor.fdr_grants.len() * 8
+            + descriptor.measurements.len() * 4,
+    );
+    words.extend_from_slice(&[
+        descriptor.header.version,
+        descriptor.header.total_length,
+        descriptor.header.flags,
+        descriptor.header.vma_count,
+        descriptor.header.fdr_count,
+        descriptor.header.measurement_count,
+        descriptor.header.expected_domain_generation,
+        descriptor.header.expected_process_generation,
+        descriptor.header.expected_lineage_epoch,
+        descriptor.entry.entry_pc,
+        descriptor.entry.initial_sp,
+        descriptor.entry.tls_base,
+        descriptor.entry.startup_metadata_ptr,
+    ]);
+    for vma in &descriptor.vmas {
+        words.extend_from_slice(&[
+            vma.virtual_address,
+            vma.length,
+            vma.protection,
+            vma.memory_type,
+            vma.executable_provenance,
+            vma.source_cap,
+            vma.source_offset,
+            vma.source_generation,
+            vma.lineage_epoch,
+            vma.zero_fill_length,
+            vma.mapping_flags,
+        ]);
+    }
+    for grant in &descriptor.fdr_grants {
+        words.extend_from_slice(&[
+            grant.slot,
+            grant.kind,
+            grant.rights,
+            grant.flags,
+            grant.source_cap,
+            grant.source_generation,
+            grant.close_on_exec,
+            grant.preserve,
+        ]);
+    }
+    for measurement in &descriptor.measurements {
+        words.extend_from_slice(&[
+            measurement.algorithm,
+            measurement.measurement_ref,
+            measurement.manifest_ref,
+            measurement.attestation_ref,
+        ]);
+    }
+    words
+}
+
 pub fn build_static_exec_plan(image: &[u8], options: LoaderOptions) -> Result<ExecPlan, String> {
     if image.len() < ELF64_EHDR_SIZE {
         return Err("ELF header is truncated".to_string());
@@ -1182,6 +1241,44 @@ mod tests {
         assert_eq!(descriptor.fdr_grants[0].close_on_exec, 1);
         assert_eq!(descriptor.fdr_grants[0].preserve, 1);
         assert_eq!(descriptor.measurements[0].measurement_ref, 2);
+
+        let words = encode_exec_descriptor(&descriptor);
+        assert_eq!(words.len(), 47);
+        assert_eq!(
+            &words[0..9],
+            &[1, descriptor.header.total_length, 0x55, 2, 1, 1, 10, 11, 12]
+        );
+        assert_eq!(&words[9..13], &[0x400000, 0x700000, 0x710000, 0x720000]);
+        assert_eq!(
+            &words[13..24],
+            &[
+                0x400000,
+                16,
+                VMA_PROT_READ | VMA_PROT_EXECUTE,
+                MEMORY_TYPE_IMAGE,
+                EXECUTABLE_PROVENANCE_IMAGE_TEXT,
+                0x1000,
+                0x100,
+                0x2000,
+                0x3000,
+                0,
+                0,
+            ]
+        );
+        assert_eq!(
+            &words[35..43],
+            &[
+                3,
+                9,
+                0xf0,
+                STARTUP_FDR_FLAG_CLOSE_ON_EXEC | STARTUP_FDR_FLAG_PRESERVE,
+                0xabc,
+                0xdef,
+                1,
+                1,
+            ]
+        );
+        assert_eq!(&words[43..47], &[1, 2, 3, 4]);
     }
 
     #[test]
