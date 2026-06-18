@@ -916,6 +916,9 @@ struct Process {
     errno: u64,
     namespace_root: Option<PathBuf>,
     cwd: PathBuf,
+    exec_entry_pc: u64,
+    exec_tls_base: u64,
+    exec_startup_metadata_ptr: u64,
 }
 
 #[derive(Clone, Copy)]
@@ -989,6 +992,9 @@ impl Process {
             errno: 0,
             namespace_root: Some(PathBuf::from("/")),
             cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+            exec_entry_pc: 0,
+            exec_tls_base: 0,
+            exec_startup_metadata_ptr: 0,
         }
     }
 
@@ -1025,6 +1031,9 @@ impl Process {
             errno: self.errno,
             namespace_root: self.namespace_root.clone(),
             cwd: self.cwd.clone(),
+            exec_entry_pc: self.exec_entry_pc,
+            exec_tls_base: self.exec_tls_base,
+            exec_startup_metadata_ptr: self.exec_startup_metadata_ptr,
         })
     }
 
@@ -1350,13 +1359,25 @@ impl Machine {
             offset += EXEC_PLAN_VMA_WORDS;
         }
 
+        let entry_pc = words[9];
         let initial_sp = words[10];
-        let process = self.process_mut()?;
-        process.memory = replacement_memory;
-        process.vmas = replacement_vmas;
-        process.allocations.clear();
-        if initial_sp != 0 {
-            self.thread_mut()?.regs[31] = initial_sp;
+        let tls_base = words[11];
+        let startup_metadata_ptr = words[12];
+        {
+            let process = self.process_mut()?;
+            process.memory = replacement_memory;
+            process.vmas = replacement_vmas;
+            process.allocations.clear();
+            process.exec_entry_pc = entry_pc;
+            process.exec_tls_base = tls_base;
+            process.exec_startup_metadata_ptr = startup_metadata_ptr;
+        }
+        {
+            let thread = self.thread_mut()?;
+            if initial_sp != 0 {
+                thread.regs[31] = initial_sp;
+            }
+            thread.thread_pointer = tls_base;
         }
         Ok(())
     }
@@ -13407,7 +13428,11 @@ mod tests {
             EXEC_PLAN_VMA_PROT_READ | EXEC_PLAN_VMA_PROT_WRITE
         );
         assert!(process.allocations.is_empty());
+        assert_eq!(process.exec_entry_pc, 0x400000);
+        assert_eq!(process.exec_tls_base, 0x710000);
+        assert_eq!(process.exec_startup_metadata_ptr, 0x720000);
         assert_eq!(machine.thread().unwrap().regs[31], 0x700000);
+        assert_eq!(machine.thread().unwrap().thread_pointer, 0x710000);
     }
 
     #[test]
