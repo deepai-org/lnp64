@@ -489,6 +489,7 @@ scripts/check_rtl_track_b_manifest.py
 scripts/check_rtl_s0_contract.py
 scripts/check_rtl_dockerfiles.py
 scripts/test_board_evidence_checker.py
+scripts/test_uart_byte_checker.py
 scripts/check_formal_rtl_roadmap_audit.py
 bash scripts/run_formal_rtl_roadmap_audit.sh
 bash scripts/run_rtl_yosys_s0.sh
