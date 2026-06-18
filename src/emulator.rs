@@ -30,6 +30,7 @@ const ASLR_STACK_PAGES: u64 = 16;
 const SIGCHLD: u64 = 17;
 const SIGALRM: u64 = 14;
 const SIGSEGV: u64 = 11;
+const SIGFPE: u64 = 8;
 const SIGNAL_NUMBER_LIMIT: u64 = 64;
 const SIG_DFL_HANDLER: usize = 0;
 const SIG_IGN_HANDLER: usize = 1;
@@ -1260,7 +1261,7 @@ impl Machine {
             Instr::Div(dst, a, b) => {
                 let divisor = self.read_reg(b)?;
                 if divisor == 0 {
-                    self.raise_current_signal(8)?;
+                    self.raise_current_signal(SIGFPE)?;
                     return Ok(true);
                 }
                 self.write_reg(dst, self.read_reg(a)? / divisor)?;
@@ -9751,6 +9752,25 @@ mod tests {
         assert_eq!(machine.last_exit, 128 + SIGSEGV as i32);
         assert!(!machine.processes.contains_key(&1));
         assert!(!machine.threads.contains_key(&1));
+    }
+
+    #[test]
+    fn divide_by_zero_queues_sigfpe_fault_event() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[2] = 99;
+        machine.thread_mut().unwrap().regs[3] = 0;
+
+        assert!(machine.exec(Instr::Div(Reg(1), Reg(2), Reg(3))).unwrap());
+
+        assert!(matches!(
+            machine.process().unwrap().pending_events.front(),
+            Some(NativeEvent::Signal {
+                signum: SIGFPE,
+                source: EventSource::HardwareFault
+            })
+        ));
+        assert_eq!(machine.thread().unwrap().regs[1], 0);
     }
 
     #[test]
