@@ -10927,6 +10927,55 @@ mod tests {
     }
 
     #[test]
+    fn socket_option_controls_reject_unsupported_options_before_buffers() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let arg = ARG_BASE + 0x1000;
+        let optval = ARG_BASE + 0x1200;
+        let optlen = ARG_BASE + 0x1300;
+
+        machine.store_u64(arg, OBJECT_OP_CREATE).unwrap();
+        machine
+            .store_u64(arg + 8, ObjectKind::Endpoint.code())
+            .unwrap();
+        machine
+            .store_u64(arg + 16, ObjectProfile::TcpStream.code())
+            .unwrap();
+        machine.store_u64(arg + 24, 7).unwrap();
+        machine.store_u64(arg + 40, SOCKET_AF_INET).unwrap();
+        machine.store_u64(arg + 48, SOCKET_TYPE_STREAM).unwrap();
+        machine.store_u64(arg + 56, 0).unwrap();
+        machine.object_ctl(Reg(1), arg).unwrap();
+        let socket_token = machine.fd_token(7).unwrap();
+
+        machine.store_u64(optval, 0xfeed_face).unwrap();
+        machine.store_u64(optlen, 64).unwrap();
+        machine.store_u64(arg, OBJECT_OP_SOCKET_GETSOCKOPT).unwrap();
+        machine.store_u64(arg + 24, socket_token).unwrap();
+        machine
+            .store_u64(arg + 40, SOCKET_LEVEL_SOL_SOCKET)
+            .unwrap();
+        machine.store_u64(arg + 48, 99).unwrap();
+        machine.store_u64(arg + 56, optval).unwrap();
+        machine.store_u64(arg + 64, optlen).unwrap();
+        machine.object_ctl(Reg(2), arg).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert_eq!(machine.load_u64(optval).unwrap(), 0xfeed_face);
+        assert_eq!(machine.load_u64(optlen).unwrap(), 64);
+
+        machine.store_u64(arg, OBJECT_OP_SOCKET_SETSOCKOPT).unwrap();
+        machine.store_u64(arg + 48, 99).unwrap();
+        machine.store_u64(arg + 56, MEMORY_SIZE as u64).unwrap();
+        machine.store_u64(arg + 64, 8).unwrap();
+        machine.object_ctl(Reg(3), arg).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[3], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+    }
+
+    #[test]
     fn socket_getsockname_rejects_short_buffer_without_writes() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
