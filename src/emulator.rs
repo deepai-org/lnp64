@@ -3037,7 +3037,7 @@ impl Machine {
             (96, metadata.ctime_nsec() as u64),
         ];
         for (offset, value) in fields {
-            self.store_u64(addr + offset, value)?;
+            self.store_u64_offset(addr, offset, value)?;
         }
         Ok(())
     }
@@ -3059,9 +3059,16 @@ impl Machine {
             (96, 0),
         ];
         for (offset, value) in fields {
-            self.store_u64(addr + offset, value)?;
+            self.store_u64_offset(addr, offset, value)?;
         }
         Ok(())
+    }
+
+    fn store_u64_offset(&mut self, base: u64, offset: u64, value: u64) -> Result<(), String> {
+        let addr = base
+            .checked_add(offset)
+            .ok_or_else(|| "address overflow".to_string())?;
+        self.store_u64(addr, value)
     }
 
     fn alloc_heap(&mut self, len: usize, align: u64, guarded: bool) -> Result<u64, String> {
@@ -10673,6 +10680,18 @@ mod tests {
         assert_eq!(metadata.mtime(), 1);
         assert_eq!(metadata.mtime_nsec(), 0);
         fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn store_u64_offset_rejects_address_overflow() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+
+        let err = machine
+            .store_u64_offset(u64::MAX - 4, 8, 0xfeed)
+            .unwrap_err();
+
+        assert!(err.contains("address overflow"), "{err}");
     }
 
     #[test]
