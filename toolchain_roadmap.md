@@ -24,6 +24,8 @@ LLVM/lld/software-loader path runs them without the toy compiler.
 shapes for compiling, linking, exec-plan inspection, and emulator execution.
 `toolchain/lnp64_static.ld` is the initial checked static linker-script
 contract for lld-produced ELF inputs.
+`toolchain/crt0_lnp64.s` is the initial checked crt0 startup stub for the
+future LLVM/lld path.
 
 The current Rust assembler, emulator, and C compiler remain useful bootstrap
 and architecture smoke-test tools. They are not the long-term application
@@ -119,7 +121,7 @@ NetBSD policy. Those remain loader, libc, and personality responsibilities.
 1. Clang driver support for `--target=lnp64-unknown-none`.
 2. Private libc/syscall shim layer over `__lnp_*` intrinsics.
 3. Minimal crt objects or documented compiler-emitted startup transition pinned
-   by `toolchain/lnp64_crt_startup.manifest`.
+   by `toolchain/lnp64_crt_startup.manifest` and `toolchain/crt0_lnp64.s`.
 4. libc surfaces for file descriptors, paths, memory mapping, time, signals,
    pthreads, sockets, and Resource Domain controls.
 5. libpthread over `CLONE`, futexes, TLS, timers, and event queues.
@@ -178,10 +180,11 @@ bootstrap compatibility target and the toy compiler remains on the critical
 path.
 
 The planned command shapes are pinned in
-`toolchain/lnp64_llvm_gates.manifest`. The static link gate must use
-`toolchain/lnp64_static.ld`, and all gates must stay Clang/lld/loader based:
-no gate in that manifest may invoke `lnp64 cc`, `cargo run -- cc`, or the
-in-repo toy C compiler.
+`toolchain/lnp64_llvm_gates.manifest`. The crt gate must assemble
+`toolchain/crt0_lnp64.s`, the static link gate must use
+`toolchain/lnp64_static.ld`, and all gates must stay Clang/lld/loader based: no
+gate in that manifest may invoke `lnp64 cc`, `cargo run -- cc`, or the in-repo
+toy C compiler.
 
 ## Checked Transition Deliverables
 
@@ -192,7 +195,7 @@ platform while remaining useful as a smoke generator:
 | --- | --- | --- |
 | Toy compiler retirement | `toolchain_roadmap.md`, `src/c_compiler.rs`, and private `__lnp_*` shim tests keep new native work out of ad hoc POSIX-shaped compiler features. | `c_private_lnp_manifest_intrinsics_lower_and_run` |
 | Real toolchain target | `toolchain/lnp64_target.manifest`, psABI, relocation, object-format, crt, inline-asm, debug/unwind, intrinsic, isel, and exec-plan manifests. | `toolchain_contract_index_is_complete` |
-| Minimal LLVM/Clang path | `toolchain/lnp64_llvm_bootstrap.manifest` pins the planned hello, arithmetic, memory, calls, and simple-libc replacement gates for the toy-compiler smoke path; `toolchain/lnp64_llvm_gates.manifest` pins the Clang/lld/loader command shapes that replace `lnp64 cc`; `toolchain/lnp64_static.ld` pins the first lld static layout. | `llvm_bootstrap_manifest_names_first_clang_gate` and `llvm_gate_manifest_pins_non_toy_clang_commands` |
+| Minimal LLVM/Clang path | `toolchain/lnp64_llvm_bootstrap.manifest` pins the planned hello, arithmetic, memory, calls, and simple-libc replacement gates for the toy-compiler smoke path; `toolchain/lnp64_llvm_gates.manifest` pins the Clang/lld/loader command shapes that replace `lnp64 cc`; `toolchain/lnp64_static.ld` pins the first lld static layout; `toolchain/crt0_lnp64.s` pins the first crt0 startup stub. | `llvm_bootstrap_manifest_names_first_clang_gate`, `llvm_gate_manifest_pins_non_toy_clang_commands`, and `crt0_startup_stub_matches_crt_contract` |
 | Libc/runtime shim layer | `libc_roadmap.md`, crt/startup manifest, and intrinsic manifest define startup, TLS/errno, allocation, FDR I/O, pthread/futex, event waits, mmap, signal, and socket lowering. | `scripts/run_software_gates.sh` |
 | Software loader and exec plan | `src/loader.rs`, `src/emulator.rs`, `object_format.md`, and `toolchain/lnp64_exec_plan.manifest` define the initial ELF64 parser, encoded exec-plan records, emulator-side descriptor validation, committed entry/TLS/startup metadata, and atomic memory-image commit probe for the bounded `EXEC` boundary. | `exec_plan_manifest_matches_loader_boundary_contract` plus the `exec_descriptor` test filter |
 | NetBSD personality layering | `netbsd_personality_abi.md`, this roadmap, and the NetBSD system script keep the personality layered over native services. | `scripts/run_netbsd_personality_system.sh` |

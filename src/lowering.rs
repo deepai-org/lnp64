@@ -992,6 +992,7 @@ mod tests {
             "debug_unwind",
             "inline_asm",
             "crt_startup",
+            "crt0",
             "transition",
         ] {
             assert!(names.contains(name), "missing contract index row {name}");
@@ -1046,6 +1047,7 @@ mod tests {
             "compile_arithmetic",
             "compile_memory",
             "compile_calls",
+            "assemble_crt0",
             "link_static",
             "inspect_exec_plan",
             "run_without_toy_compiler",
@@ -1056,6 +1058,10 @@ mod tests {
         assert!(
             commands["link_static"].contains("-T toolchain/lnp64_static.ld"),
             "static link gate must use checked LNP64 linker script"
+        );
+        assert!(
+            commands["assemble_crt0"].contains("toolchain/crt0_lnp64.s"),
+            "crt0 gate must assemble checked startup stub"
         );
     }
 
@@ -1168,6 +1174,47 @@ mod tests {
     }
 
     #[test]
+    fn crt0_startup_stub_matches_crt_contract() {
+        let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
+        let crt_manifest = include_str!("../toolchain/lnp64_crt_startup.manifest");
+        let crt0 = include_str!("../toolchain/crt0_lnp64.s");
+        let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
+        let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
+        let roadmap = include_str!("../toolchain_roadmap.md");
+        let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let crt0_path = manifest_field(target_manifest, "crt0_contract");
+
+        assert_eq!(crt0_path, "toolchain/crt0_lnp64.s");
+        assert!(manifest_root.join(crt0_path).is_file());
+        assert!(
+            contract_index
+                .contains("crt0|toolchain/crt0_lnp64.s|crt0_startup_stub_matches_crt_contract")
+        );
+        assert!(transition_manifest.contains("toolchain/crt0_lnp64.s"));
+        assert!(roadmap.contains("toolchain/crt0_lnp64.s"));
+
+        for required in [
+            "_start:",
+            "LI r7, 0x700000",
+            "LD r1, [r7, 0]",
+            "LI r2, 0x700008",
+            "MUL r3, r1, r8",
+            "ADD r3, r3, r2",
+            "ADD r3, r3, r8",
+            "ERRNO_SET r0",
+            "CALL main",
+            "EXIT r1",
+        ] {
+            assert!(crt0.contains(required), "crt0 missing {required}");
+        }
+        assert!(crt_manifest.contains("entry_symbol|required|_start"));
+        assert!(crt_manifest.contains("main_signature|required|main(argc,argv,envp)"));
+        assert!(crt_manifest.contains("process_exit|required|EXIT"));
+        assert!(!crt0.contains("lnp64 cc"));
+        assert!(!crt0.contains("cargo run -- cc"));
+    }
+
+    #[test]
     fn toolchain_transition_manifest_records_layered_deliverables() {
         let manifest = include_str!("../toolchain/lnp64_transition.manifest");
         let roadmap = include_str!("../toolchain_roadmap.md");
@@ -1272,6 +1319,10 @@ mod tests {
         assert_eq!(
             manifest_field(manifest, "crt_startup_contract"),
             "toolchain/lnp64_crt_startup.manifest"
+        );
+        assert_eq!(
+            manifest_field(manifest, "crt0_contract"),
+            "toolchain/crt0_lnp64.s"
         );
         assert_eq!(
             manifest_field(manifest, "llvm_gate_contract"),

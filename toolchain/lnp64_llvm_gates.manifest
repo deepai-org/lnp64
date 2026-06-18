@@ -4,6 +4,7 @@ compile_hello|clang --target=lnp64-unknown-none -ffreestanding -fno-pic -c demos
 compile_arithmetic|clang --target=lnp64-unknown-none -ffreestanding -fno-pic -c demos/factorial.c -o {build}/factorial.o|clang,integer_alu,compare,branch_call_return,stack_locals|planned
 compile_memory|clang --target=lnp64-unknown-none -ffreestanding -fno-pic -c demos/allocator.c -o {build}/allocator.o|clang,load_store,global_data,libc_headers,malloc_free|planned
 compile_calls|clang --target=lnp64-unknown-none -ffreestanding -fno-pic -c demos/fibonacci.c -o {build}/fibonacci.o|clang,call_return,lr_return_address,spill_slots|planned
+assemble_crt0|llvm-mc -triple=lnp64-unknown-none -filetype=obj toolchain/crt0_lnp64.s -o {build}/crt0.o|llvm_mc,crt_startup,static_link|planned
 link_static|ld.lld -static -m elf64lnp64 -T toolchain/lnp64_static.ld -o {build}/hello.elf {build}/crt0.o {build}/hello.o {build}/liblnp64.a|lld,relocations,crt_startup,static_link,linker_script|planned
 inspect_exec_plan|lnp64 elf-plan {build}/hello.elf|software_loader,exec_plan,wx_nx_provenance|planned
 run_without_toy_compiler|lnp64 run-elf {build}/hello.elf|emulator_exec,stdout_push,exit,no_toy_compiler|planned
