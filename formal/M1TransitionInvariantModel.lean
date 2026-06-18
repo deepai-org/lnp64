@@ -1654,6 +1654,30 @@ theorem m1_t3_rtl_m1_refinement_step_preserves_sg_auth_invariant_for_reachable
     typed_commit_transition_preserves_invariant (reachable_invariant hReach) hCommit
   ⟩
 
+theorem m1_t3_rtl_m1_refinement_step_refines_commit_projection_op_for_reachable
+    {pre : RtlM1StateProjection}
+    {commitProjection : RtlM1CommitProjection}
+    {post : RtlM1StateProjection}
+    {s t : State}
+    {commit : CommitRecord} :
+    Reachable s ->
+    stateMatchesRtlProjection s pre ->
+    commitMatchesRtlProjection commit commitProjection ->
+    TypedCommitTransition s commit t ->
+    stateMatchesRtlProjection t post ->
+    RtlM1RefinementStep pre commitProjection post /\
+      Step s (commitOpToStepOp commitProjection.op) t /\
+      invariant t := by
+  intro hReach hPre hCommitProjection hCommit hPost
+  constructor
+  · exact ⟨s, t, commit, hPre, hCommitProjection, hCommit, hPost⟩
+  constructor
+  · rw [commitMatchesRtlProjection, commitProjectionToRecord] at hCommitProjection
+    subst commit
+    simpa using typed_commit_transition_refines_step hCommit
+  · exact typed_commit_transition_preserves_invariant
+      (reachable_invariant hReach) hCommit
+
 theorem m1_t3_typed_commit_failed_authority_transition_preserves_authority_slots_for_reachable
     {s t : State} {commit : CommitRecord} :
     Reachable s ->

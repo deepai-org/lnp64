@@ -151,6 +151,7 @@ M1_TYPED_COMMIT_LEAN_THEOREMS = (
     "m1_t3_typed_commit_transition_refines_step_for_reachable",
     "m1_t3_typed_commit_transition_preserves_invariant_for_reachable",
     "m1_t3_rtl_m1_refinement_step_preserves_sg_auth_invariant_for_reachable",
+    "m1_t3_rtl_m1_refinement_step_refines_commit_projection_op_for_reachable",
     "m1_t3_cap_send_requires_current_authority_for_reachable",
     "m1_t3_cap_recv_requires_current_authority_for_reachable",
     "m1_t3_revoke_invalidates_outstanding_main_object_transfer_for_reachable",
