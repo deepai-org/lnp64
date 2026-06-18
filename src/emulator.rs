@@ -8688,8 +8688,8 @@ mod tests {
         let arg = ARG_BASE;
         machine.store_u64(arg, 4).unwrap();
         machine.store_u64(arg + 8, 5).unwrap();
-        machine.store_u64(arg + 16, CAP_SEND_FLAG_MOVE).unwrap();
-        machine.store_u64(arg + 24, 0).unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, CAP_SEND_FLAG_MOVE).unwrap();
         machine.cap_send(Reg(6), arg).unwrap();
 
         assert_eq!(machine.thread().unwrap().regs[6], -1i64 as u64);
@@ -8762,6 +8762,55 @@ mod tests {
             _ => panic!("expected pipe reader"),
         };
         assert_eq!(queue.borrow().capabilities.len(), 1);
+    }
+
+    #[test]
+    fn cap_transfer_rejects_unknown_flags_without_queue_mutation() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        create_pipe_pair(&mut machine, 3, 4);
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[5] = FdHandle::Counter(Rc::new(RefCell::new(99)));
+            process.fd_capabilities[5] = FdCapability::full(5);
+        }
+        let arg = ARG_BASE;
+        machine.store_u64(arg, 4).unwrap();
+        machine.store_u64(arg + 8, 5).unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 1 << 9).unwrap();
+        machine.cap_send(Reg(6), arg).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[6], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+        let queue = match &machine.process().unwrap().fds[4] {
+            FdHandle::PipeWriter(queue) => Rc::clone(queue),
+            _ => panic!("expected pipe writer"),
+        };
+        assert!(queue.borrow().capabilities.is_empty());
+        assert!(matches!(
+            machine.process().unwrap().fds[5],
+            FdHandle::Counter(_)
+        ));
+
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_send(Reg(7), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[7], 1);
+        assert_eq!(queue.borrow().capabilities.len(), 1);
+
+        machine.store_u64(arg, 3).unwrap();
+        machine.store_u64(arg + 8, 7).unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 1 << 9).unwrap();
+        machine.cap_recv(Reg(8), arg).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[8], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert_eq!(queue.borrow().capabilities.len(), 1);
+        assert!(matches!(
+            machine.process().unwrap().fds[7],
+            FdHandle::Closed
+        ));
     }
 
     #[test]
