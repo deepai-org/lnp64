@@ -571,10 +571,18 @@ def FUTEX_WAIT : LNP64Inst<(outs GPR:$rd), (ins GPR:$addr, GPR:$expected),
                            "futex_wait", "\t$rd, $addr, $expected">;
 def FUTEX_WAKE : LNP64Inst<(outs GPR:$rd), (ins GPR:$addr, GPR:$count),
                            "futex_wake", "\t$rd, $addr, $count">;
-def AMO_SWAP : LNP64RRR<"amo.swap">;
-def AMO_ADD : LNP64RRR<"amo.add">;
-def AMO_AND : LNP64RRR<"amo.and">;
-def AMO_OR : LNP64RRR<"amo.or">;
+def AMO_SWAP : LNP64RRR<"amo.swap"> {
+  let Pattern = [(set GPR:$rd, (atomic_swap_64 GPR:$rs1, GPR:$rs2))];
+}
+def AMO_ADD : LNP64RRR<"amo.add"> {
+  let Pattern = [(set GPR:$rd, (atomic_load_add_64 GPR:$rs1, GPR:$rs2))];
+}
+def AMO_AND : LNP64RRR<"amo.and"> {
+  let Pattern = [(set GPR:$rd, (atomic_load_and_64 GPR:$rs1, GPR:$rs2))];
+}
+def AMO_OR : LNP64RRR<"amo.or"> {
+  let Pattern = [(set GPR:$rd, (atomic_load_or_64 GPR:$rs1, GPR:$rs2))];
+}
 
 def ALLOC : LNP64RR<"alloc">;
 def ALLOC_EX : LNP64RRR<"alloc_ex">;

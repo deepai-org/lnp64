@@ -20,6 +20,7 @@ LNP64TargetInfo::LNP64TargetInfo(const llvm::Triple &Triple,
   LongWidth = LongAlign = PointerWidth = PointerAlign = 64;
   IntWidth = IntAlign = 32;
   LongLongWidth = LongLongAlign = 64;
+  MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 64;
   SizeType = UnsignedLong;
   PtrDiffType = SignedLong;
   IntPtrType = SignedLong;

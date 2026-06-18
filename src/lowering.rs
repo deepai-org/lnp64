@@ -1280,6 +1280,7 @@ mod tests {
         let real_tblgen_docker = include_str!("../scripts/run_real_llvm_tblgen_docker.sh");
         let real_llc = include_str!("../scripts/run_real_llvm_lnp64.sh");
         let real_llc_docker = include_str!("../scripts/run_real_llvm_lnp64_docker.sh");
+        let real_clang_target = include_str!("../clang/lib/Basic/Targets/LNP64.cpp");
         let llvm_dockerfile = include_str!("../Dockerfile.llvm");
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
         let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
@@ -1413,6 +1414,8 @@ mod tests {
         assert!(real_llc.contains(r#""$llc" --version"#));
         assert!(real_llc.contains("clang/lib/Basic/Targets/LNP64.h"));
         assert!(real_llc.contains("clang/lib/Basic/Targets/LNP64.cpp"));
+        assert!(real_clang_target.contains("MaxAtomicInlineWidth = 64"));
+        assert!(real_clang_target.contains("MaxAtomicPromoteWidth = MaxAtomicInlineWidth"));
         assert!(real_llc.contains("clang/lib/Driver/ToolChains/Arch/LNP64.cpp"));
         assert!(real_llc.contains("Targets/LNP64.cpp"));
         assert!(real_llc.contains("BareMetal(Triple)"));
@@ -1505,6 +1508,9 @@ mod tests {
         assert!(real_llc.contains("amo.add r"));
         assert!(real_llc.contains("amo.swap r"));
         assert!(real_llc.contains("real LLVM LNP64 clang intrinsic AMO object smoke passed"));
+        assert!(real_llc.contains("c11-atomic-clang-smoke.o"));
+        assert!(real_llc.contains("__atomic_fetch_add"));
+        assert!(real_llc.contains("real LLVM LNP64 clang C11 atomic object smoke passed"));
         assert!(real_llc.contains("libc-string-clang-smoke.o"));
         assert!(real_llc.contains("int memcmp"));
         assert!(real_llc.contains("grep -q 'sext.w'"));
@@ -1569,6 +1575,8 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 lld intrinsic control link smoke passed"));
         assert!(real_llc.contains("lnp64-intrinsic-amo-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld intrinsic AMO link smoke passed"));
+        assert!(real_llc.contains("lnp64-c11-atomic-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld C11 atomic link smoke passed"));
         assert!(real_llc.contains("lnp64-$demo-clang-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld clang demo link smoke passed"));
         assert!(real_llc.contains("rewrite_with_perl"));
@@ -1839,6 +1847,8 @@ mod tests {
         );
         assert!(real_llc_docker.contains("lnp64-intrinsic-amo-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic AMO execution passed"));
+        assert!(real_llc_docker.contains("lnp64-c11-atomic-linked.elf"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf C11 atomic execution passed"));
         assert!(real_llc_docker.contains("lnp64-exit-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf exit execution passed"));
         assert!(main_source.contains("\"run-elf\""));
@@ -1901,6 +1911,7 @@ mod tests {
             "real_intrinsic_push_execution",
             "real_intrinsic_control_execution",
             "real_intrinsic_amo_execution",
+            "real_c11_atomic_execution",
             "real_exit_execution",
             "entry_state",
             "text_fetch_decode",
@@ -1922,6 +1933,7 @@ mod tests {
             "real_intrinsic_push_execution",
             "real_intrinsic_control_execution",
             "real_intrinsic_amo_execution",
+            "real_c11_atomic_execution",
             "real_exit_execution",
             "text_fetch_decode",
         ] {

@@ -681,6 +681,46 @@ grep -q 'amo.swap r' "$intrinsic_amo_dump"
 printf 'real LLVM LNP64 clang intrinsic AMO object smoke passed: %s\n' \
   "$intrinsic_amo_obj"
 
+c11_atomic_c="$build_dir/c11-atomic-smoke.c"
+cat >"$c11_atomic_c" <<'C'
+static unsigned long cell = 7;
+
+int main(void) {
+  unsigned long old_add = __atomic_fetch_add(&cell, 5, __ATOMIC_SEQ_CST);
+  if (old_add != 7 || cell != 12)
+    return 1;
+
+  unsigned long old_and = __atomic_fetch_and(&cell, 10, __ATOMIC_SEQ_CST);
+  if (old_and != 12 || cell != 8)
+    return 2;
+
+  unsigned long old_or = __atomic_fetch_or(&cell, 3, __ATOMIC_SEQ_CST);
+  if (old_or != 8 || cell != 11)
+    return 3;
+
+  unsigned long old_swap = __atomic_exchange_n(&cell, 42, __ATOMIC_SEQ_CST);
+  if (old_swap != 11 || cell != 42)
+    return 4;
+
+  return 0;
+}
+C
+
+c11_atomic_obj="$build_dir/c11-atomic-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$c11_atomic_c" -o "$c11_atomic_obj"
+test -s "$c11_atomic_obj"
+c11_atomic_dump="$build_dir/c11-atomic-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$c11_atomic_obj" \
+  >"$c11_atomic_dump"
+grep -q 'amo.add r' "$c11_atomic_dump"
+grep -q 'amo.and r' "$c11_atomic_dump"
+grep -q 'amo.or r' "$c11_atomic_dump"
+grep -q 'amo.swap r' "$c11_atomic_dump"
+printf 'real LLVM LNP64 clang C11 atomic object smoke passed: %s\n' \
+  "$c11_atomic_obj"
+
 inline_asm_c="$build_dir/inline-asm-smoke.c"
 cat >"$inline_asm_c" <<'C'
 unsigned long twice(unsigned long x) {
@@ -1309,6 +1349,13 @@ intrinsic_amo_elf="$build_dir/lnp64-intrinsic-amo-linked.elf"
 test -s "$intrinsic_amo_elf"
 printf 'real LLVM LNP64 lld intrinsic AMO link smoke passed: %s\n' \
   "$intrinsic_amo_elf"
+
+c11_atomic_elf="$build_dir/lnp64-c11-atomic-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$c11_atomic_elf" "$crt0_obj" "$c11_atomic_obj"
+test -s "$c11_atomic_elf"
+printf 'real LLVM LNP64 lld C11 atomic link smoke passed: %s\n' \
+  "$c11_atomic_elf"
 
 inline_asm_elf="$build_dir/lnp64-inline-asm-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

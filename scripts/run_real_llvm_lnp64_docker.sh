@@ -81,6 +81,13 @@ grep -q 'exit=0' <<<"$intrinsic_amo_output"
 printf 'real LLVM LNP64 run-elf intrinsic AMO execution passed: %s\n' \
   "$intrinsic_amo_probe"
 
+c11_atomic_probe="target/llvm-lnp64-build/lnp64-c11-atomic-linked.elf"
+cargo run --quiet -- elf-plan "$c11_atomic_probe" >/dev/null
+c11_atomic_output="$(cargo run --quiet -- run-elf "$c11_atomic_probe")"
+grep -q 'exit=0' <<<"$c11_atomic_output"
+printf 'real LLVM LNP64 run-elf C11 atomic execution passed: %s\n' \
+  "$c11_atomic_probe"
+
 inline_asm_probe="target/llvm-lnp64-build/lnp64-inline-asm-linked.elf"
 cargo run --quiet -- elf-plan "$inline_asm_probe" >/dev/null
 inline_asm_output="$(cargo run --quiet -- run-elf "$inline_asm_probe")"
