@@ -11896,6 +11896,15 @@ mod tests {
         assert_eq!(machine.thread().unwrap().regs[1], AT_RANDOM);
         assert_eq!(machine.thread().unwrap().regs[30], 0);
 
+        machine.thread_mut().unwrap().regs[30] = 0xfeed_face;
+        machine.thread_mut().unwrap().regs[3] = 99;
+        machine
+            .exec(Instr::EnvGet(Reg(3), Reg(2), Reg(3), Reg(0)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[3], 0);
+        assert_eq!(machine.thread().unwrap().regs[30], 0);
+        assert_eq!(machine.process().unwrap().errno, 0);
+
         machine.thread_mut().unwrap().regs[2] = 0xfeed_beef;
         machine
             .exec(Instr::EnvGet(Reg(4), Reg(2), Reg(0), Reg(0)))
