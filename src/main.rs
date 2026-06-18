@@ -20,6 +20,7 @@ use std::path::PathBuf;
 
 use asm::Program;
 use emulator::Machine;
+use loader::{ExecutableProvenance, LoaderOptions, VmaProtection};
 
 fn main() {
     if let Err(err) = run() {
@@ -96,6 +97,51 @@ fn run() -> Result<(), String> {
             }
             Ok(())
         }
+        "elf-plan" => {
+            let options = take_elf_plan_options(&mut args)?;
+            let mut image = fs::read(&options.input)
+                .map_err(|err| format!("failed to read {}: {err}", options.input.display()))?;
+            let plan = loader::load_static_elf(
+                &mut image,
+                LoaderOptions {
+                    load_bias: options.load_bias,
+                    ..LoaderOptions::default()
+                },
+            )?;
+            let prepared = loader::materialize_vmas(&image, &plan)?;
+            println!(
+                "exec-plan version={} entry=0x{:x} initial_sp=0x{:x} tls_base=0x{:x} startup_metadata=0x{:x}",
+                plan.version,
+                plan.entry.entry_pc,
+                plan.entry.initial_sp,
+                plan.entry.tls_base,
+                plan.entry.startup_metadata_ptr
+            );
+            println!(
+                "vmas={} startup_note={} fdr_grants={}",
+                prepared.len(),
+                plan.startup.is_some(),
+                plan.fdr_grants.len()
+            );
+            for (idx, vma) in plan.vmas.iter().enumerate() {
+                let prepared_len = prepared
+                    .get(idx)
+                    .map(|prepared_vma| prepared_vma.bytes.len())
+                    .unwrap_or_default();
+                println!(
+                    "vma[{idx}] addr=0x{:x} len=0x{:x} prot={} provenance={} source=0x{:x}+0x{:x} zero=0x{:x} materialized=0x{:x}",
+                    vma.virtual_address,
+                    vma.length,
+                    format_protection(vma.protection),
+                    format_provenance(vma.executable_provenance),
+                    vma.source_offset,
+                    vma.source_length,
+                    vma.zero_fill_length,
+                    prepared_len
+                );
+            }
+            Ok(())
+        }
         "help" | "--help" | "-h" => {
             usage();
             Ok(())
@@ -108,9 +154,65 @@ fn usage() {
     eprintln!("usage:");
     eprintln!("  lnp64 asm <program.s>");
     eprintln!("  lnp64 run [--namespace-root <dir>] <program.s>");
+    eprintln!("  lnp64 elf-plan [--load-bias <n>] <program.elf>");
     eprintln!(
         "  lnp64 cc [--dump-macros|--dump-preprocessed] <program.c> [more.c ...] [-o program.s]"
     );
+}
+
+struct ElfPlanOptions {
+    input: PathBuf,
+    load_bias: u64,
+}
+
+fn take_elf_plan_options(args: &mut Vec<String>) -> Result<ElfPlanOptions, String> {
+    let mut load_bias = 0;
+    loop {
+        let Some(arg) = args.first() else {
+            break;
+        };
+        if arg != "--load-bias" {
+            break;
+        }
+        args.remove(0);
+        if args.is_empty() {
+            return Err("--load-bias requires a value".to_string());
+        }
+        load_bias = parse_u64_arg(&args.remove(0), "--load-bias")?;
+    }
+    let input = take_input(args)?;
+    if !args.is_empty() {
+        return Err(format!("unexpected elf-plan arguments: {}", args.join(" ")));
+    }
+    Ok(ElfPlanOptions { input, load_bias })
+}
+
+fn parse_u64_arg(value: &str, name: &str) -> Result<u64, String> {
+    if let Some(hex) = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+    {
+        u64::from_str_radix(hex, 16).map_err(|err| format!("{name} value {value:?}: {err}"))
+    } else {
+        value
+            .parse::<u64>()
+            .map_err(|err| format!("{name} value {value:?}: {err}"))
+    }
+}
+
+fn format_protection(protection: VmaProtection) -> String {
+    let mut text = String::with_capacity(3);
+    text.push(if protection.read { 'r' } else { '-' });
+    text.push(if protection.write { 'w' } else { '-' });
+    text.push(if protection.execute { 'x' } else { '-' });
+    text
+}
+
+fn format_provenance(provenance: ExecutableProvenance) -> &'static str {
+    match provenance {
+        ExecutableProvenance::ImageText => "image_text",
+        ExecutableProvenance::NonExecutable => "non_executable",
+    }
 }
 
 fn take_run_namespace_root(args: &mut Vec<String>) -> Result<Option<PathBuf>, String> {

@@ -15,7 +15,6 @@ const PF_X: u32 = 1;
 const PF_W: u32 = 2;
 const PF_R: u32 = 4;
 const R_LNP64_NONE: u32 = 0;
-const R_LNP64_ABS64: u32 = 1;
 const R_LNP64_RELATIVE: u32 = 7;
 const PAGE_SIZE: u64 = 4096;
 const ELF64_EHDR_SIZE: usize = 64;
@@ -554,6 +553,8 @@ fn read_i64(bytes: &[u8], offset: usize) -> Result<i64, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const R_LNP64_ABS64: u32 = 1;
 
     #[derive(Clone, Copy)]
     struct TestPhdr {

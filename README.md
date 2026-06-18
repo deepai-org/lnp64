@@ -114,6 +114,60 @@ bash scripts/run_userland.sh
 bash scripts/run_real_packages.sh
 ```
 
+## Working Commands
+
+These commands are meant to be pasted from the repository root. For the normal
+host-side hygiene pass before emulator, compiler, or libc commits:
+
+```sh
+cargo fmt --check
+cargo test --quiet
+bash scripts/run_demos.sh
+git diff --check
+rg "MSG_RECV|\\bPIPE\\b"
+rg "EVENT_CTL|TIMER_CTL"
+```
+
+Use focused Rust filters while iterating, then run the full suite before a broad
+commit:
+
+```sh
+cargo test --quiet loader::tests
+cargo test --quiet classifier_
+cargo test --quiet namespace_
+cargo test --quiet signal_
+cargo test --quiet object_ctl_
+```
+
+Useful one-off software smoke commands:
+
+```sh
+cargo run -- cc demos/hello.c -o /tmp/hello.lnp64.s
+cargo run -- run /tmp/hello.lnp64.s
+cargo run -- elf-plan /path/to/program.elf
+```
+
+The release-reuse path above is the fastest stable way to rerun scripts that
+honor `LNP64_BIN`; unset it when intentionally testing the default
+`cargo run --release` fallback path. `scripts/run_demos.sh` uses localhost for
+network demos, so it needs free loopback ports and a shell with `/dev/tcp`
+support. The `rg` alias scans should only produce documentation,
+compatibility-lowering, or negative-assertion hits; new emulator/compiler
+implementation hits are layering regressions to inspect before committing.
+
+When unrelated files are already dirty, scope whitespace checks to the files you
+touched:
+
+```sh
+git diff --check -- src/emulator.rs README.md
+```
+
+After heavy Rust gates, reclaim build artifacts with:
+
+```sh
+cargo clean
+```
+
 ## RTL And Proof Gates
 
 The reproducible RTL/proof paths use Docker so Lean, Verilator, Yosys, nextpnr,
