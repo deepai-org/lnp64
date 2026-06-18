@@ -7617,6 +7617,9 @@ impl Machine {
     }
 
     fn push_fd_waiter(&mut self, fd: usize, mask: u64, result: Option<Reg>) -> Result<(), String> {
+        if let Some(result) = result {
+            Self::ensure_result_reg_writable(result)?;
+        }
         let generation = self.fd_generation(fd)?;
         self.fd_waiters.push(FdWaiter {
             tid: self.current_tid,
@@ -13682,6 +13685,21 @@ mod tests {
 
         let err = machine
             .exec(Instr::Await(Reg(31), FdReg(3), Reg(2)))
+            .unwrap_err();
+
+        assert!(err.contains("hardware-locked stack pointer"), "{err}");
+        assert!(machine.fd_waiters.is_empty());
+        assert!(machine.ready.contains(&1));
+    }
+
+    #[test]
+    fn fd_waiter_helper_rejects_locked_result_register() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        create_pipe_pair(&mut machine, 3, 4);
+
+        let err = machine
+            .push_fd_waiter(3, POLLIN_MASK, Some(Reg(31)))
             .unwrap_err();
 
         assert!(err.contains("hardware-locked stack pointer"), "{err}");
