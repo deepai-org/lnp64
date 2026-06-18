@@ -141,12 +141,22 @@ fn run() -> Result<(), String> {
         }
         "run-elf" => {
             let options = take_elf_plan_options(&mut args)?;
-            let probe = build_elf_exec_probe(&options)?;
-            Err(format!(
-                "run-elf loaded and committed exec plan for {} at entry=0x{:x}, but ELF text fetch/decode is not implemented yet; see toolchain/lnp64_run_elf.manifest",
-                options.input.display(),
-                probe.plan.entry.entry_pc
-            ))
+            let mut probe = build_elf_exec_probe(&options)?;
+            let exit = probe.machine.run_committed_exec()?;
+            if exit == 0 {
+                println!(
+                    "run-elf executed {} entry=0x{:x} exit=0",
+                    options.input.display(),
+                    probe.plan.entry.entry_pc
+                );
+                Ok(())
+            } else {
+                Err(format!(
+                    "run-elf executed {} entry=0x{:x} exit={exit}",
+                    options.input.display(),
+                    probe.plan.entry.entry_pc
+                ))
+            }
         }
         "help" | "--help" | "-h" => {
             usage();
@@ -172,6 +182,7 @@ struct ElfExecProbe {
     prepared: Vec<loader::PreparedVma>,
     descriptor: loader::ExecPlanDescriptor,
     descriptor_words: Vec<u64>,
+    machine: Machine,
 }
 
 fn build_elf_exec_probe(options: &ElfPlanOptions) -> Result<ElfExecProbe, String> {
@@ -212,6 +223,7 @@ fn build_elf_exec_probe(options: &ElfPlanOptions) -> Result<ElfExecProbe, String
         prepared,
         descriptor,
         descriptor_words,
+        machine: commit_probe,
     })
 }
 
@@ -378,6 +390,26 @@ mod tests {
         let _ = fs::remove_file(path);
     }
 
+    #[test]
+    fn run_elf_executes_minimal_exit_static_elf() {
+        let path = std::env::temp_dir().join(format!(
+            "lnp64-run-elf-exec-probe-{}.elf",
+            std::process::id()
+        ));
+        fs::write(&path, minimal_static_exit_elf()).unwrap();
+
+        let mut probe = build_elf_exec_probe(&ElfPlanOptions {
+            input: path.clone(),
+            load_bias: 0,
+        })
+        .unwrap();
+        let exit = probe.machine.run_committed_exec().unwrap();
+
+        assert_eq!(exit, 0);
+
+        let _ = fs::remove_file(path);
+    }
+
     fn minimal_static_elf() -> Vec<u8> {
         let mut image = vec![0; 0x200];
         image[0..4].copy_from_slice(b"\x7fELF");
@@ -402,6 +434,13 @@ mod tests {
         put_u64(&mut image, phdr + 40, 16);
         put_u64(&mut image, phdr + 48, 4096);
         image[0x100..0x110].fill(0xcc);
+        image
+    }
+
+    fn minimal_static_exit_elf() -> Vec<u8> {
+        let mut image = minimal_static_elf();
+        put_u32(&mut image, 0x100, 0x3a00_0000);
+        image[0x104..0x110].fill(0);
         image
     }
 

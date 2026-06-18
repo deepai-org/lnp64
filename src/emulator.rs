@@ -1164,6 +1164,19 @@ fn checked_exec_count(value: u64, limit: usize, name: &str) -> Result<usize, Str
     Ok(count)
 }
 
+fn checked_host_usize(value: u64, name: &str) -> Result<usize, String> {
+    usize::try_from(value).map_err(|_| format!("{name} exceeds host usize"))
+}
+
+fn sign_extend(value: u32, bits: u32) -> i64 {
+    let shift = 64 - bits;
+    ((u64::from(value) << shift) as i64) >> shift
+}
+
+fn align_up_page(value: u64) -> u64 {
+    (value + ASLR_PAGE - 1) & !(ASLR_PAGE - 1)
+}
+
 fn validate_exec_vma_words(words: &[u64]) -> Result<(u64, u64), String> {
     let virtual_address = words[0];
     let length = words[1];
@@ -1380,6 +1393,179 @@ impl Machine {
             thread.thread_pointer = tls_base;
         }
         Ok(())
+    }
+
+    pub fn run_committed_exec(&mut self) -> Result<i32, String> {
+        self.install_committed_exec_runtime_vmas()?;
+        let entry = self.process()?.exec_entry_pc;
+        if entry == 0 {
+            return Err("committed exec image has no entry PC".to_string());
+        }
+        self.thread_mut()?.ip = checked_host_usize(entry, "committed exec entry PC")?;
+
+        let mut steps = 0usize;
+        while !self.threads.is_empty() {
+            if steps > 10_000_000 {
+                return Err("committed exec step limit exceeded".to_string());
+            }
+            steps += 1;
+            let tid = self.current_tid;
+            if !self.threads.contains_key(&tid) {
+                break;
+            }
+            let pc = self.thread()?.ip as u64;
+            let (instr, next_pc) = self.decode_committed_exec_instruction(pc)?;
+            self.thread_mut()?.ip = checked_host_usize(next_pc, "committed exec next PC")?;
+            self.charge_cpu_tick()?;
+            self.exec(instr.clone()).map_err(|err| {
+                let context = self.fault_context(tid);
+                format!("{err} at tid {tid} pc 0x{pc:x}: {instr:?}{context}")
+            })?;
+        }
+        Ok(self.last_exit)
+    }
+
+    fn install_committed_exec_runtime_vmas(&mut self) -> Result<(), String> {
+        let process = self.process_mut()?;
+        let desired_stack_start = process.stack_top.saturating_sub(STACK_SIZE);
+        let stack_start = process
+            .vmas
+            .iter()
+            .filter_map(|vma| {
+                let end = vma.start.checked_add(vma.len)?;
+                (desired_stack_start < end && vma.start < process.stack_top).then_some(end)
+            })
+            .max()
+            .map(align_up_page)
+            .unwrap_or(desired_stack_start);
+        let stack_len = process
+            .stack_top
+            .checked_sub(stack_start)
+            .ok_or_else(|| "committed exec stack range overflows".to_string())?;
+        let runtime_vmas = [(stack_start, stack_len), (ARG_BASE, ARG_SIZE)];
+        for (start, len) in runtime_vmas {
+            if len == 0 {
+                continue;
+            }
+            let end = start
+                .checked_add(len)
+                .ok_or_else(|| "runtime VMA range overflows".to_string())?;
+            let overlaps = process.vmas.iter().any(|vma| {
+                vma.start
+                    .checked_add(vma.len)
+                    .is_some_and(|vma_end| start < vma_end && vma.start < end)
+            });
+            if !overlaps {
+                process.vmas.push(Vma::anonymous(start, len, 0b11));
+            }
+        }
+        process.vmas.sort_by_key(|vma| vma.start);
+        Ok(())
+    }
+
+    fn decode_committed_exec_instruction(&mut self, pc: u64) -> Result<(Instr, u64), String> {
+        if let Some(fault) = self.committed_exec_fetch_fault(pc)? {
+            return Err(fault);
+        }
+        let word = self.load_exec_u32(pc)?;
+        let opcode = (word >> 24) as u8;
+        let a = Reg(((word >> 19) & 0x1f) as usize);
+        let b = Reg(((word >> 14) & 0x1f) as usize);
+        let c = Reg(((word >> 9) & 0x1f) as usize);
+        let imm16 = sign_extend(word & 0xffff, 16);
+        let branch_target = || {
+            let delta = sign_extend(word & 0x00ff_ffff, 24) * 4;
+            Target::Address(pc.wrapping_add(delta as u64) as usize)
+        };
+
+        let instr = match opcode {
+            0x00 => Instr::Nop,
+            0x01 => Instr::Li(a, Value::Imm(imm16)),
+            0x02 => Instr::Mov(a, b),
+            0x03 => {
+                let addr = self.load_exec_u32(pc + 4)? as i64;
+                return Ok((Instr::Li(a, Value::Imm(addr)), pc + 8));
+            }
+            0x10 => Instr::Add(a, b, c),
+            0x11 => Instr::Sub(a, b, c),
+            0x12 => Instr::Mul(a, b, c),
+            0x13 => Instr::Div(a, b, c),
+            0x14 => Instr::And(a, b, c),
+            0x15 => Instr::Or(a, b, c),
+            0x16 => Instr::Xor(a, b, c),
+            0x17 => Instr::Not(a, b),
+            0x18 => Instr::Lsl(a, b, c),
+            0x19 => Instr::Lsr(a, b, c),
+            0x1a => Instr::Asr(a, b, c),
+            0x1b => Instr::Cmp(a, b),
+            0x1f => Instr::Ret,
+            0x20 => Instr::Jmp(branch_target()),
+            0x21 => Instr::Branch(Condition::Eq, branch_target()),
+            0x22 => Instr::Branch(Condition::Ne, branch_target()),
+            0x23 => Instr::Branch(Condition::Lt, branch_target()),
+            0x24 => Instr::Branch(Condition::Gt, branch_target()),
+            0x25 => Instr::Branch(Condition::Le, branch_target()),
+            0x26 => Instr::Branch(Condition::Ge, branch_target()),
+            0x27 => Instr::Call(branch_target()),
+            0x28 => Instr::CallReg(a),
+            0x30 => Instr::Ld(
+                a,
+                MemRef::BaseOffset(b, sign_extend(word & 0x3fff, 14)),
+                Width::Double,
+            ),
+            0x31 => Instr::Ld(
+                a,
+                MemRef::BaseOffset(b, sign_extend(word & 0x3fff, 14)),
+                Width::Word,
+            ),
+            0x32 => Instr::Ld(
+                a,
+                MemRef::BaseOffset(b, sign_extend(word & 0x3fff, 14)),
+                Width::Byte,
+            ),
+            0x33 => Instr::St(
+                MemRef::BaseOffset(b, sign_extend(word & 0x3fff, 14)),
+                a,
+                Width::Double,
+            ),
+            0x34 => Instr::St(
+                MemRef::BaseOffset(b, sign_extend(word & 0x3fff, 14)),
+                a,
+                Width::Word,
+            ),
+            0x35 => Instr::St(
+                MemRef::BaseOffset(b, sign_extend(word & 0x3fff, 14)),
+                a,
+                Width::Byte,
+            ),
+            0x36 => Instr::Ld(
+                a,
+                MemRef::BaseOffset(b, sign_extend(word & 0x3fff, 14)),
+                Width::Half,
+            ),
+            0x37 => Instr::St(
+                MemRef::BaseOffset(b, sign_extend(word & 0x3fff, 14)),
+                a,
+                Width::Half,
+            ),
+            0x38 => Instr::ErrnoGet(a),
+            0x39 => Instr::ErrnoSet(a),
+            0x3a => Instr::Exit(a),
+            other => {
+                return Err(format!(
+                    "unsupported committed exec opcode 0x{other:02x} at 0x{pc:x}"
+                ));
+            }
+        };
+        Ok((instr, pc + 4))
+    }
+
+    fn load_exec_u32(&mut self, pc: u64) -> Result<u32, String> {
+        if let Some(fault) = self.committed_exec_fetch_fault(pc)? {
+            return Err(fault);
+        }
+        let bytes = self.read_bytes(pc, 4)?;
+        Ok(u32::from_le_bytes(bytes.try_into().unwrap()))
     }
 
     pub fn set_args(&mut self, args: &[String]) -> Result<(), String> {
@@ -1620,13 +1806,13 @@ impl Machine {
             }
             Instr::Mov(dst, src) => self.write_reg(dst, self.read_reg(src)?)?,
             Instr::Add(dst, a, b) => {
-                self.write_reg(dst, self.read_reg(a)?.wrapping_add(self.read_reg(b)?))?
+                self.write_alu_reg(dst, self.read_reg(a)?.wrapping_add(self.read_reg(b)?))?
             }
             Instr::Sub(dst, a, b) => {
-                self.write_reg(dst, self.read_reg(a)?.wrapping_sub(self.read_reg(b)?))?
+                self.write_alu_reg(dst, self.read_reg(a)?.wrapping_sub(self.read_reg(b)?))?
             }
             Instr::Mul(dst, a, b) => {
-                self.write_reg(dst, self.read_reg(a)?.wrapping_mul(self.read_reg(b)?))?
+                self.write_alu_reg(dst, self.read_reg(a)?.wrapping_mul(self.read_reg(b)?))?
             }
             Instr::Div(dst, a, b) => {
                 Self::ensure_result_reg_writable(dst)?;
@@ -1637,17 +1823,23 @@ impl Machine {
                 }
                 self.write_reg(dst, self.read_reg(a)? / divisor)?;
             }
-            Instr::And(dst, a, b) => self.write_reg(dst, self.read_reg(a)? & self.read_reg(b)?)?,
-            Instr::Or(dst, a, b) => self.write_reg(dst, self.read_reg(a)? | self.read_reg(b)?)?,
-            Instr::Xor(dst, a, b) => self.write_reg(dst, self.read_reg(a)? ^ self.read_reg(b)?)?,
-            Instr::Not(dst, src) => self.write_reg(dst, !self.read_reg(src)?)?,
+            Instr::And(dst, a, b) => {
+                self.write_alu_reg(dst, self.read_reg(a)? & self.read_reg(b)?)?
+            }
+            Instr::Or(dst, a, b) => {
+                self.write_alu_reg(dst, self.read_reg(a)? | self.read_reg(b)?)?
+            }
+            Instr::Xor(dst, a, b) => {
+                self.write_alu_reg(dst, self.read_reg(a)? ^ self.read_reg(b)?)?
+            }
+            Instr::Not(dst, src) => self.write_alu_reg(dst, !self.read_reg(src)?)?,
             Instr::Lsl(dst, a, b) => {
-                self.write_reg(dst, self.read_reg(a)? << (self.read_reg(b)? & 63))?
+                self.write_alu_reg(dst, self.read_reg(a)? << (self.read_reg(b)? & 63))?
             }
             Instr::Lsr(dst, a, b) => {
-                self.write_reg(dst, self.read_reg(a)? >> (self.read_reg(b)? & 63))?
+                self.write_alu_reg(dst, self.read_reg(a)? >> (self.read_reg(b)? & 63))?
             }
-            Instr::Asr(dst, a, b) => self.write_reg(
+            Instr::Asr(dst, a, b) => self.write_alu_reg(
                 dst,
                 ((self.read_reg(a)? as i64) >> (self.read_reg(b)? & 63)) as u64,
             )?,
@@ -7632,6 +7824,13 @@ impl Machine {
         Ok(())
     }
 
+    fn write_alu_reg(&mut self, reg: Reg, value: u64) -> Result<(), String> {
+        if reg.0 != 0 {
+            self.thread_mut()?.regs[reg.0] = value;
+        }
+        Ok(())
+    }
+
     fn ensure_result_reg_writable(reg: Reg) -> Result<(), String> {
         if reg.0 == 31 {
             Err("write to hardware-locked stack pointer r31".to_string())
@@ -7818,6 +8017,18 @@ impl Machine {
     }
 
     fn instruction_fetch_fault(&self, addr: u64) -> Result<Option<String>, String> {
+        self.instruction_fetch_fault_inner(addr, false)
+    }
+
+    fn committed_exec_fetch_fault(&self, addr: u64) -> Result<Option<String>, String> {
+        self.instruction_fetch_fault_inner(addr, true)
+    }
+
+    fn instruction_fetch_fault_inner(
+        &self,
+        addr: u64,
+        allow_committed_exec_fetch: bool,
+    ) -> Result<Option<String>, String> {
         let process = self.process()?;
         let start = usize::try_from(addr).map_err(|_| {
             format!("hardware SIGSEGV: unmapped address 0x{addr:x} + 1 (outside process memory)")
@@ -7844,6 +8055,9 @@ impl Machine {
             return Ok(Some(format!(
                 "hardware SIGSEGV: execute denied at 0x{addr:x}"
             )));
+        }
+        if allow_committed_exec_fetch {
+            return Ok(None);
         }
         Ok(Some(format!(
             "hardware SIGSEGV: dynamic instruction fetch is not modeled at 0x{addr:x}"
@@ -8628,6 +8842,25 @@ mod tests {
                 bytes: vec![0xbb; 0x1000],
             },
         ]
+    }
+
+    fn encode_ri(opcode: u8, rd: usize, imm: i64) -> u32 {
+        (u32::from(opcode) << 24) | (((rd as u32) & 0x1f) << 19) | ((imm as u32) & 0xffff)
+    }
+
+    fn encode_rrr(opcode: u8, rd: usize, lhs: usize, rhs: usize) -> u32 {
+        (u32::from(opcode) << 24)
+            | (((rd as u32) & 0x1f) << 19)
+            | (((lhs as u32) & 0x1f) << 14)
+            | (((rhs as u32) & 0x1f) << 9)
+    }
+
+    fn encode_reg(opcode: u8, reg: usize) -> u32 {
+        (u32::from(opcode) << 24) | (((reg as u32) & 0x1f) << 19)
+    }
+
+    fn put_instruction(bytes: &mut [u8], offset: usize, instruction: u32) {
+        bytes[offset..offset + 4].copy_from_slice(&instruction.to_le_bytes());
     }
 
     #[test]
@@ -13435,6 +13668,37 @@ mod tests {
         assert_eq!(process.exec_startup_metadata_ptr, 0x720000);
         assert_eq!(machine.thread().unwrap().regs[31], 0x700000);
         assert_eq!(machine.thread().unwrap().thread_pointer, 0x710000);
+    }
+
+    #[test]
+    fn committed_exec_decodes_and_runs_stack_pointer_alu_exit() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let words = encode_exec_descriptor(&descriptor);
+        let mut text = vec![0; 0x1000];
+        put_instruction(&mut text, 0, encode_ri(0x01, 1, 16));
+        put_instruction(&mut text, 4, encode_rrr(0x11, 31, 31, 1));
+        put_instruction(&mut text, 8, encode_rrr(0x10, 31, 31, 1));
+        put_instruction(&mut text, 12, encode_reg(0x3a, 0));
+        let mut prepared = prepared_exec_vmas_fixture();
+        prepared[0].bytes = text;
+        let mut machine = Machine::new(empty_program());
+
+        machine
+            .commit_exec_descriptor_memory_image(&words, &prepared)
+            .unwrap();
+        let exit = machine.run_committed_exec().unwrap();
+
+        assert_eq!(exit, 0);
+        assert!(!machine.threads.contains_key(&1));
     }
 
     #[test]

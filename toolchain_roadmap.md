@@ -39,8 +39,8 @@ stub and minimal libc smoke stub, disassembly of emitted objects, a static link
 of crt0 plus an assembler-built `main`, and static lld links of each
 Clang-built demo object with crt0 plus the smoke libc object. The Docker wrapper
 also submits the linked hello ELF through `elf-plan`/`run-elf` and requires it
-to reach the current text fetch/decode blocker after exec-plan validation and
-commit.
+to execute from the committed exec image and exit 0 after exec-plan validation
+and commit.
 `toolchain/lnp64_static.ld` is the initial checked static linker-script
 contract for lld-produced ELF inputs.
 `toolchain/crt0_lnp64.s` is the initial checked crt0 startup stub for the
@@ -143,8 +143,8 @@ generator yet.
 opcode coverage, relocation hooks, and llvm-project surfaces for the first
 assembler/emitter/disassembler path.
 `toolchain/lnp64_run_elf.manifest` records the boundary between the existing
-ELF-to-exec-plan loader probe and the still-planned no-toy-compiler execution
-gate.
+ELF-to-exec-plan loader probe, committed-image text execution, and the still
+unfinished stdout/libc runtime work.
 `toolchain/lnp64_toy_compiler_policy.manifest` records the checked policy that
 keeps the in-repo C compiler as a bootstrap smoke generator rather than the
 platform-defining toolchain.
@@ -318,16 +318,16 @@ upstream LLVM 14 `clang`, `llc`, `llvm-mc`, `llvm-objdump`, and an ELF-only
 `lld` smoke driver with LNP64 registered, then proving IR codegen, real Clang
 scalar C, hello object, factorial object, allocator object, and Fibonacci calls
 object compilation, crt0/minilibc assembly, disassembly, assembler-main static
-linking, per-demo Clang-object static linking, and the linked hello
-`run-elf` decode-gate probe through those real tools.
+linking, per-demo Clang-object static linking, and the linked hello `run-elf`
+execution smoke through those real tools.
 The Clang compile gates must include `toolchain/lnp64_intrinsics.h`, the crt
 gate must assemble `toolchain/crt0_lnp64.s`, the static link gate must use
 `toolchain/lnp64_static.ld`, and all gates must stay Clang/lld/loader based: no
 gate in that manifest or driver script may invoke `lnp64 cc`, `cargo run -- cc`,
 or the in-repo toy C compiler.
-The `run_without_toy_compiler` gate remains planned until
-`toolchain/lnp64_run_elf.manifest` moves text fetch/decode, stdout/exit, and
-no-toy-compiler stages out of `planned`.
+The `run_without_toy_compiler` gate is partial: the linked hello execution smoke
+now runs through real Clang/lld output, while stdout/exit remains planned until
+the Clang-built libc/runtime path replaces the smoke-only shim.
 
 ## Checked Transition Deliverables
 

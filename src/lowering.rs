@@ -1670,11 +1670,9 @@ mod tests {
         assert!(real_llc_docker.contains("cargo run --quiet -- elf-plan"));
         assert!(real_llc_docker.contains("cargo run --quiet -- run-elf"));
         assert!(real_llc_docker.contains("lnp64-hello-clang-linked.elf"));
-        assert!(
-            real_llc_docker.contains("real LLVM LNP64 run-elf linked hello decode gate passed")
-        );
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf linked hello execution passed"));
         assert!(main_source.contains("\"run-elf\""));
-        assert!(main_source.contains("ELF text fetch/decode is not implemented yet"));
+        assert!(main_source.contains("run_committed_exec"));
         assert!(loader_security.contains("submit_exec_plan"));
         assert!(
             loader_security.contains("emulator_commits_exec_descriptor_memory_image_atomically")
@@ -1737,19 +1735,21 @@ mod tests {
             "descriptor_validate",
             "descriptor_commit",
             "cli_probe",
+            "cli_surface",
+            "real_clang_lld_probe",
+            "text_fetch_decode",
         ] {
             assert_eq!(stages[stage].0, "tested", "{stage} should be tested");
         }
         assert_eq!(stages["entry_state"].0, "partial");
-        assert_eq!(stages["cli_surface"].0, "partial");
-        assert_eq!(stages["real_clang_lld_probe"].0, "partial");
-        for stage in ["text_fetch_decode", "stdout_exit", "no_toy_compiler"] {
+        assert_eq!(stages["no_toy_compiler"].0, "partial");
+        for stage in ["stdout_exit"] {
             assert_eq!(
                 stages[stage].0, "planned",
-                "{stage} must stay planned until ELF execution exists"
+                "{stage} must stay planned until the real libc/runtime path exists"
             );
         }
-        assert!(roadmap.contains("run_without_toy_compiler` gate remains planned"));
+        assert!(roadmap.contains("run_without_toy_compiler` gate is partial"));
     }
 
     #[test]
