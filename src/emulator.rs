@@ -1372,7 +1372,10 @@ impl Machine {
             }
             Instr::Await(result, fd, mask) => {
                 let mask = self.read_reg(mask)?;
-                if !self.fd_ready_for_mask(fd.0, mask)? {
+                let Some(ready) = self.await_fd_ready_or_error(result, fd.0, mask)? else {
+                    return Ok(true);
+                };
+                if !ready {
                     self.push_fd_waiter(fd.0, mask, Some(result))?;
                     self.ready.retain(|tid| *tid != self.current_tid);
                     return Ok(false);
@@ -1387,7 +1390,10 @@ impl Machine {
                     self.write_reg(result, -1i64 as u64)?;
                     return Ok(true);
                 };
-                if !self.fd_ready_for_mask(fd, mask)? {
+                let Some(ready) = self.await_fd_ready_or_error(result, fd, mask)? else {
+                    return Ok(true);
+                };
+                if !ready {
                     self.push_fd_waiter(fd, mask, Some(result))?;
                     self.ready.retain(|tid| *tid != self.current_tid);
                     return Ok(false);
@@ -7070,6 +7076,32 @@ impl Machine {
         }
     }
 
+    fn await_fd_ready_or_error(
+        &mut self,
+        result: Reg,
+        fd: usize,
+        mask: u64,
+    ) -> Result<Option<bool>, String> {
+        if mask == 0 {
+            return self.fd_ready(fd).map(Some);
+        }
+        if fd >= FDR_COUNT {
+            self.set_status_errno(9)?;
+            self.write_reg(result, -1i64 as u64)?;
+            return Ok(None);
+        }
+        if self.ensure_fd_right(fd, CAP_RIGHT_POLL).is_err() {
+            self.write_reg(result, -1i64 as u64)?;
+            return Ok(None);
+        }
+        if matches!(self.process()?.fds[fd], FdHandle::Closed) {
+            self.set_status_errno(9)?;
+            self.write_reg(result, -1i64 as u64)?;
+            return Ok(None);
+        }
+        Ok(Some(self.poll_fd_index_mask_raw(fd, mask)? != 0))
+    }
+
     fn fd_read_ready(&mut self, fd: usize) -> Result<bool, String> {
         if fd == MESSAGE_ENDPOINT_FD {
             return Ok(!self.process()?.inbox.is_empty());
@@ -10795,6 +10827,34 @@ mod tests {
         assert!(machine.fd_waiters.is_empty());
         assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 116);
+    }
+
+    #[test]
+    fn masked_await_requires_poll_right_without_parking() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        create_pipe_pair(&mut machine, 3, 4);
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[3].rights &= !CAP_RIGHT_POLL;
+        machine.thread_mut().unwrap().regs[2] = POLLIN_MASK;
+
+        let keep_ready = machine
+            .exec(Instr::Await(Reg(5), FdReg(3), Reg(2)))
+            .unwrap();
+        assert!(keep_ready);
+        assert!(machine.fd_waiters.is_empty());
+        assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
+
+        machine.thread_mut().unwrap().regs[6] = 3;
+        machine.thread_mut().unwrap().regs[7] = POLLIN_MASK;
+
+        let keep_ready = machine
+            .exec(Instr::AwaitDyn(Reg(8), Reg(6), Reg(7)))
+            .unwrap();
+        assert!(keep_ready);
+        assert!(machine.fd_waiters.is_empty());
+        assert_eq!(machine.thread().unwrap().regs[8], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 1);
     }
 
     #[test]
