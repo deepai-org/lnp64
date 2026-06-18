@@ -65,7 +65,7 @@ public:
     case 0x01:
       Instr.setOpcode(LNP64::LI);
       addReg(Instr, A);
-      addImm(Instr, SignExtend64<16>(Word & 0xffff));
+      addImm(Instr, SignExtend64<14>(Word & 0x3fff));
       return MCDisassembler::Success;
     case 0x02:
       Instr.setOpcode(LNP64::MOV);
@@ -205,6 +205,66 @@ public:
     case 0x28:
       Instr.setOpcode(LNP64::CALL_REG);
       addReg(Instr, A);
+      return MCDisassembler::Success;
+    case 0xa0:
+      Instr.setOpcode(LNP64::ADDI);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addImm(Instr, SignExtend64<14>(Word & 0x3fff));
+      return MCDisassembler::Success;
+    case 0xa1:
+      Instr.setOpcode(LNP64::ANDI);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addImm(Instr, SignExtend64<14>(Word & 0x3fff));
+      return MCDisassembler::Success;
+    case 0xa2:
+      Instr.setOpcode(LNP64::ORI);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addImm(Instr, SignExtend64<14>(Word & 0x3fff));
+      return MCDisassembler::Success;
+    case 0xa3:
+      Instr.setOpcode(LNP64::XORI);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addImm(Instr, SignExtend64<14>(Word & 0x3fff));
+      return MCDisassembler::Success;
+    case 0xa4:
+      Instr.setOpcode(LNP64::LSLI);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addImm(Instr, SignExtend64<14>(Word & 0x3fff));
+      return MCDisassembler::Success;
+    case 0xa5:
+      Instr.setOpcode(LNP64::LSRI);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addImm(Instr, SignExtend64<14>(Word & 0x3fff));
+      return MCDisassembler::Success;
+    case 0xa6:
+      Instr.setOpcode(LNP64::ASRI);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addImm(Instr, SignExtend64<16>(Word & 0xffff));
+      return MCDisassembler::Success;
+    case 0xa7:
+      Instr.setOpcode(LNP64::UDIV);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0xa8:
+      Instr.setOpcode(LNP64::SREM);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0xa9:
+      Instr.setOpcode(LNP64::UREM);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
       return MCDisassembler::Success;
     case 0xaf:
       Instr.setOpcode(LNP64::SEXT_W);

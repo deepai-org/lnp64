@@ -1427,6 +1427,11 @@ mod tests {
         assert!(real_llc.contains("int main(void)"));
         assert!(real_llc.contains("scalar-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang scalar compile smoke passed"));
+        assert!(real_llc.contains("scalar-arith-clang-smoke.o"));
+        assert!(real_llc.contains("grep -q 'addi r'"));
+        assert!(real_llc.contains("grep -q 'udiv r'"));
+        assert!(real_llc.contains("grep -q 'srem r'"));
+        assert!(real_llc.contains("real LLVM LNP64 clang scalar arithmetic object smoke passed"));
         assert!(real_llc.contains("-c demos/hello.c"));
         assert!(real_llc.contains("hello-clang-smoke.o"));
         assert!(real_llc.contains("hello-clang-smoke.dump"));
@@ -1499,6 +1504,8 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 lld realloc link smoke passed"));
         assert!(real_llc.contains("lnp64-read-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld read link smoke passed"));
+        assert!(real_llc.contains("lnp64-scalar-arith-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld scalar arithmetic link smoke passed"));
         assert!(real_llc.contains("lnp64-intrinsic-await-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld intrinsic await link smoke passed"));
         assert!(real_llc.contains("lnp64-intrinsic-call-linked.elf"));
@@ -1738,6 +1745,10 @@ mod tests {
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf native heap execution passed"));
         assert!(real_llc_docker.contains("lnp64-indirect-call-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf indirect call execution passed"));
+        assert!(real_llc_docker.contains("lnp64-scalar-arith-linked.elf"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf scalar arithmetic execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-libc-string-linked.elf"));
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf minilibc string execution passed")
@@ -3578,6 +3589,7 @@ mod tests {
         assert!(mc_manifest.contains("fixed32_no_operand"));
         assert!(mc_manifest.contains("opcode[31:24]"));
         assert!(mc_manifest.contains("fixed32_rrr"));
+        assert!(mc_manifest.contains("fixed32_rri_simm14"));
         assert!(mc_manifest.contains("fixed32_mem_base_simm"));
         assert!(mc_manifest.contains("simm24_words[23:0]"));
 
@@ -3624,6 +3636,7 @@ mod tests {
             "constants",
             "wide_constants",
             "integer_alu_rrr",
+            "integer_alu_rri",
             "integer_compare_value",
             "control_branch",
             "runtime_control",
@@ -3666,6 +3679,7 @@ mod tests {
         assert!(mc_emitter.contains("encodeFixed32RI"));
         assert!(mc_emitter.contains("encodeFixed32RR"));
         assert!(mc_emitter.contains("encodeFixed32RRR"));
+        assert!(mc_emitter.contains("encodeFixed32RRI"));
         assert!(mc_emitter.contains("encodeFixed32Mem"));
         assert!(mc_emitter.contains("encodeFixed32Branch"));
         assert!(mc_emitter.contains("encodeFixed32BranchOperand"));
@@ -3676,6 +3690,10 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::LI"));
         assert!(mc_emitter.contains("case LNP64::LI32"));
         assert!(mc_emitter.contains("case LNP64::ADD"));
+        assert!(mc_emitter.contains("case LNP64::ADDI"));
+        assert!(mc_emitter.contains("case LNP64::UDIV"));
+        assert!(mc_emitter.contains("case LNP64::SREM"));
+        assert!(mc_emitter.contains("case LNP64::UREM"));
         assert!(mc_emitter.contains("case LNP64::CALL"));
         assert!(mc_emitter.contains("case LNP64::CALL_REG"));
         assert!(mc_emitter.contains("case LNP64::CMPU"));

@@ -276,16 +276,26 @@ private:
             .Case("la", LNP64::LA)
             .Case("mov", LNP64::MOV)
             .Case("add", LNP64::ADD)
+            .Case("addi", LNP64::ADDI)
             .Case("sub", LNP64::SUB)
             .Case("mul", LNP64::MUL)
             .Case("div", LNP64::DIV)
+            .Case("udiv", LNP64::UDIV)
+            .Case("srem", LNP64::SREM)
+            .Case("urem", LNP64::UREM)
             .Case("and", LNP64::AND)
+            .Case("andi", LNP64::ANDI)
             .Case("or", LNP64::OR)
+            .Case("ori", LNP64::ORI)
             .Case("xor", LNP64::XOR)
+            .Case("xori", LNP64::XORI)
             .Case("not", LNP64::NOT)
             .Case("lsl", LNP64::LSL)
+            .Case("lsli", LNP64::LSLI)
             .Case("lsr", LNP64::LSR)
+            .Case("lsri", LNP64::LSRI)
             .Case("asr", LNP64::ASR)
+            .Case("asri", LNP64::ASRI)
             .Case("sext.w", LNP64::SEXT_W)
             .Case("cmp", LNP64::CMP)
             .Case("cmpu", LNP64::CMPU)
@@ -347,8 +357,15 @@ private:
     if (Opcode == LNP64::MOV || Opcode == LNP64::NOT ||
         Opcode == LNP64::SEXT_W)
       return addRegReg(Inst, Operands);
+    if (Opcode == LNP64::ADDI || Opcode == LNP64::ANDI ||
+        Opcode == LNP64::ORI || Opcode == LNP64::XORI ||
+        Opcode == LNP64::LSLI || Opcode == LNP64::LSRI ||
+        Opcode == LNP64::ASRI)
+      return addRegRegImm(Inst, Operands);
     if (Opcode == LNP64::ADD || Opcode == LNP64::SUB ||
         Opcode == LNP64::MUL || Opcode == LNP64::DIV ||
+        Opcode == LNP64::UDIV || Opcode == LNP64::SREM ||
+        Opcode == LNP64::UREM ||
         Opcode == LNP64::AND || Opcode == LNP64::OR ||
         Opcode == LNP64::XOR || Opcode == LNP64::LSL ||
         Opcode == LNP64::LSR || Opcode == LNP64::ASR)
@@ -443,6 +460,21 @@ private:
       return false;
     Inst.addOperand(MCOperand::createReg(A->getReg()));
     Inst.addOperand(MCOperand::createReg(B->getReg()));
+    return true;
+  }
+
+  static bool addRegRegImm(MCInst &Inst, const OperandVector &Operands) {
+    const LNP64Operand *A = getOp(Operands, 1);
+    const LNP64Operand *B = getOp(Operands, 2);
+    const LNP64Operand *Imm = getOp(Operands, 3);
+    if (Operands.size() != 4 || !A || !B || !Imm || !A->isReg() ||
+        !B->isReg() || !Imm->isImmValue())
+      return false;
+    if (Imm->getImm() < -8192 || Imm->getImm() > 8191)
+      return false;
+    Inst.addOperand(MCOperand::createReg(A->getReg()));
+    Inst.addOperand(MCOperand::createReg(B->getReg()));
+    Inst.addOperand(MCOperand::createImm(Imm->getImm()));
     return true;
   }
 

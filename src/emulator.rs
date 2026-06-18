@@ -1475,6 +1475,7 @@ impl Machine {
         let b = Reg(((word >> 14) & 0x1f) as usize);
         let c = Reg(((word >> 9) & 0x1f) as usize);
         let imm16 = sign_extend(word & 0xffff, 16);
+        let imm14 = sign_extend(word & 0x3fff, 14);
         let branch_target = || {
             let delta = sign_extend(word & 0x00ff_ffff, 24) * 4;
             Target::Address(pc.wrapping_add(delta as u64) as usize)
@@ -1579,13 +1580,13 @@ impl Machine {
             0x4d => Instr::AwaitDyn(a, b, c),
             0x4e => Instr::CallCapDyn(a, b, c, Reg(((word >> 4) & 0x1f) as usize)),
             0x4f => Instr::RetCap(a, b, c),
-            0xa0 => Instr::Addi(a, b, imm16),
-            0xa1 => Instr::Andi(a, b, imm16),
-            0xa2 => Instr::Ori(a, b, imm16),
-            0xa3 => Instr::Xori(a, b, imm16),
-            0xa4 => Instr::Lsli(a, b, imm16),
-            0xa5 => Instr::Lsri(a, b, imm16),
-            0xa6 => Instr::Asri(a, b, imm16),
+            0xa0 => Instr::Addi(a, b, imm14),
+            0xa1 => Instr::Andi(a, b, imm14),
+            0xa2 => Instr::Ori(a, b, imm14),
+            0xa3 => Instr::Xori(a, b, imm14),
+            0xa4 => Instr::Lsli(a, b, imm14),
+            0xa5 => Instr::Lsri(a, b, imm14),
+            0xa6 => Instr::Asri(a, b, imm14),
             0xa7 => Instr::Udiv(a, b, c),
             0xa8 => Instr::Srem(a, b, c),
             0xa9 => Instr::Urem(a, b, c),

@@ -95,6 +95,13 @@ grep -q 'exit=0' <<<"$argc_output"
 printf 'real LLVM LNP64 run-elf argc execution passed: %s\n' \
   "$argc_probe"
 
+scalar_arith_probe="target/llvm-lnp64-build/lnp64-scalar-arith-linked.elf"
+cargo run --quiet -- elf-plan "$scalar_arith_probe" >/dev/null
+scalar_arith_output="$(cargo run --quiet -- run-elf "$scalar_arith_probe")"
+grep -q 'exit=0' <<<"$scalar_arith_output"
+printf 'real LLVM LNP64 run-elf scalar arithmetic execution passed: %s\n' \
+  "$scalar_arith_probe"
+
 compare_probe="target/llvm-lnp64-build/lnp64-compare-linked.elf"
 cargo run --quiet -- elf-plan "$compare_probe" >/dev/null
 compare_output="$(cargo run --quiet -- run-elf "$compare_probe")"

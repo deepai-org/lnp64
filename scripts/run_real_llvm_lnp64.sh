@@ -181,6 +181,44 @@ clang_obj="$build_dir/scalar-clang-smoke.o"
 test -s "$clang_obj"
 printf 'real LLVM LNP64 clang scalar compile smoke passed: %s\n' "$clang_obj"
 
+scalar_arith_c="$build_dir/scalar-arith-smoke.c"
+cat >"$scalar_arith_c" <<'C'
+volatile unsigned long scalar_input = 12345;
+volatile unsigned long scalar_divisor = 37;
+
+int main(void) {
+  unsigned long x = scalar_input;
+  unsigned long y = scalar_divisor;
+  unsigned long v = ((x + 7) & 4095) | 16;
+  v = (v ^ 85) << 2;
+  v = v >> 1;
+  unsigned long q = x / y;
+  unsigned long r = x % y;
+  long sr = (long)x % (long)y;
+  return (v + q + r + (unsigned long)sr) == 391 ? 0 : 1;
+}
+C
+
+scalar_arith_obj="$build_dir/scalar-arith-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$scalar_arith_c" -o "$scalar_arith_obj"
+test -s "$scalar_arith_obj"
+scalar_arith_dump="$build_dir/scalar-arith-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$scalar_arith_obj" \
+  >"$scalar_arith_dump"
+grep -q 'addi r' "$scalar_arith_dump"
+grep -q 'andi r' "$scalar_arith_dump"
+grep -q 'ori r' "$scalar_arith_dump"
+grep -q 'xori r' "$scalar_arith_dump"
+grep -q 'lsli r' "$scalar_arith_dump"
+grep -q 'lsri r' "$scalar_arith_dump"
+grep -q 'udiv r' "$scalar_arith_dump"
+grep -q 'urem r' "$scalar_arith_dump"
+grep -q 'srem r' "$scalar_arith_dump"
+printf 'real LLVM LNP64 clang scalar arithmetic object smoke passed: %s\n' \
+  "$scalar_arith_obj"
+
 hello_obj="$build_dir/hello-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
@@ -973,6 +1011,13 @@ argc_elf="$build_dir/lnp64-argc-linked.elf"
   -o "$argc_elf" "$crt0_obj" "$argc_obj"
 test -s "$argc_elf"
 printf 'real LLVM LNP64 lld argc link smoke passed: %s\n' "$argc_elf"
+
+scalar_arith_elf="$build_dir/lnp64-scalar-arith-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$scalar_arith_elf" "$crt0_obj" "$scalar_arith_obj"
+test -s "$scalar_arith_elf"
+printf 'real LLVM LNP64 lld scalar arithmetic link smoke passed: %s\n' \
+  "$scalar_arith_elf"
 
 compare_elf="$build_dir/lnp64-compare-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

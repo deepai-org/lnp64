@@ -5,6 +5,12 @@ def brtarget : Operand<OtherVT>;
 def simm16_imm : PatLeaf<(imm), [{
   return isInt<16>(N->getSExtValue());
 }]>;
+def simm16_i64_imm : PatLeaf<(i64 imm), [{
+  return isInt<16>(N->getSExtValue());
+}]>;
+def simm14_i64_imm : PatLeaf<(i64 imm), [{
+  return isInt<14>(N->getSExtValue());
+}]>;
 def simm14_imm : PatLeaf<(imm), [{
   return isInt<14>(N->getSExtValue());
 }]>;
@@ -92,6 +98,10 @@ class LNP64RR<string Mnemonic>
 class LNP64RRR<string Mnemonic>
     : LNP64Inst<(outs GPR:$rd), (ins GPR:$rs1, GPR:$rs2), Mnemonic,
                 "\t$rd, $rs1, $rs2">;
+
+class LNP64RRI<string Mnemonic>
+    : LNP64Inst<(outs GPR:$rd), (ins GPR:$rs, simm16:$imm), Mnemonic,
+                "\t$rd, $rs, $imm">;
 
 class LNP64Cmp<string Mnemonic>
     : LNP64Inst<(outs), (ins GPR:$rs1, GPR:$rs2), Mnemonic,
@@ -184,6 +194,9 @@ def : Pat<(i64 (LNP64wrapper tglobaladdr:$target)), (LA tglobaladdr:$target)>;
 def ADD : LNP64RRR<"add"> {
   let Pattern = [(set GPR:$rd, (add GPR:$rs1, GPR:$rs2))];
 }
+def ADDI : LNP64RRI<"addi"> {
+  let Pattern = [(set GPR:$rd, (add GPR:$rs, simm14_i64_imm:$imm))];
+}
 def SUB : LNP64RRR<"sub"> {
   let Pattern = [(set GPR:$rd, (sub GPR:$rs1, GPR:$rs2))];
 }
@@ -193,14 +206,32 @@ def MUL : LNP64RRR<"mul"> {
 def DIV : LNP64RRR<"div"> {
   let Pattern = [(set GPR:$rd, (sdiv GPR:$rs1, GPR:$rs2))];
 }
+def UDIV : LNP64RRR<"udiv"> {
+  let Pattern = [(set GPR:$rd, (udiv GPR:$rs1, GPR:$rs2))];
+}
+def SREM : LNP64RRR<"srem"> {
+  let Pattern = [(set GPR:$rd, (srem GPR:$rs1, GPR:$rs2))];
+}
+def UREM : LNP64RRR<"urem"> {
+  let Pattern = [(set GPR:$rd, (urem GPR:$rs1, GPR:$rs2))];
+}
 def AND : LNP64RRR<"and"> {
   let Pattern = [(set GPR:$rd, (and GPR:$rs1, GPR:$rs2))];
+}
+def ANDI : LNP64RRI<"andi"> {
+  let Pattern = [(set GPR:$rd, (and GPR:$rs, simm14_i64_imm:$imm))];
 }
 def OR : LNP64RRR<"or"> {
   let Pattern = [(set GPR:$rd, (or GPR:$rs1, GPR:$rs2))];
 }
+def ORI : LNP64RRI<"ori"> {
+  let Pattern = [(set GPR:$rd, (or GPR:$rs, simm14_i64_imm:$imm))];
+}
 def XOR : LNP64RRR<"xor"> {
   let Pattern = [(set GPR:$rd, (xor GPR:$rs1, GPR:$rs2))];
+}
+def XORI : LNP64RRI<"xori"> {
+  let Pattern = [(set GPR:$rd, (xor GPR:$rs, simm14_i64_imm:$imm))];
 }
 def NOT : LNP64RR<"not"> {
   let Pattern = [(set GPR:$rd, (xor GPR:$rs, all_ones_imm))];
@@ -208,11 +239,20 @@ def NOT : LNP64RR<"not"> {
 def LSL : LNP64RRR<"lsl"> {
   let Pattern = [(set GPR:$rd, (shl GPR:$rs1, GPR:$rs2))];
 }
+def LSLI : LNP64RRI<"lsli"> {
+  let Pattern = [(set GPR:$rd, (shl GPR:$rs, simm14_i64_imm:$imm))];
+}
 def LSR : LNP64RRR<"lsr"> {
   let Pattern = [(set GPR:$rd, (srl GPR:$rs1, GPR:$rs2))];
 }
+def LSRI : LNP64RRI<"lsri"> {
+  let Pattern = [(set GPR:$rd, (srl GPR:$rs, simm14_i64_imm:$imm))];
+}
 def ASR : LNP64RRR<"asr"> {
   let Pattern = [(set GPR:$rd, (sra GPR:$rs1, GPR:$rs2))];
+}
+def ASRI : LNP64RRI<"asri"> {
+  let Pattern = [(set GPR:$rd, (sra GPR:$rs, simm14_i64_imm:$imm))];
 }
 let isCompare = 1, Defs = [FLAGS] in
 def CMP : LNP64Cmp<"cmp">;

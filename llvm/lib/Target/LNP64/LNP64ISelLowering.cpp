@@ -231,13 +231,11 @@ LNP64TargetLowering::LNP64TargetLowering(const TargetMachine &TM,
   setStackPointerRegisterToSaveRestore(LNP64::R31);
   setBooleanContents(ZeroOrOneBooleanContent);
 
-  for (unsigned Opcode : {ISD::ADD, ISD::SUB, ISD::MUL, ISD::SDIV, ISD::AND,
-                          ISD::OR, ISD::XOR, ISD::SHL, ISD::SRL, ISD::SRA})
+  for (unsigned Opcode : {ISD::ADD, ISD::SUB, ISD::MUL, ISD::SDIV, ISD::UDIV,
+                          ISD::SREM, ISD::UREM, ISD::AND, ISD::OR, ISD::XOR,
+                          ISD::SHL, ISD::SRL, ISD::SRA})
     setOperationAction(Opcode, MVT::i64, Legal);
 
-  setOperationAction(ISD::UDIV, MVT::i64, Expand);
-  setOperationAction(ISD::UREM, MVT::i64, Expand);
-  setOperationAction(ISD::SREM, MVT::i64, Expand);
   setOperationAction(ISD::GlobalAddress, MVT::i64, Custom);
   setOperationAction(ISD::BR_CC, MVT::i64, Custom);
   for (MVT MemVT : {MVT::i8, MVT::i16, MVT::i32}) {

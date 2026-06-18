@@ -14,24 +14,44 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
   switch (Opcode) {
   case LNP64::ADD:
     return "add";
+  case LNP64::ADDI:
+    return "addi";
   case LNP64::SUB:
     return "sub";
   case LNP64::MUL:
     return "mul";
   case LNP64::DIV:
     return "div";
+  case LNP64::UDIV:
+    return "udiv";
+  case LNP64::SREM:
+    return "srem";
+  case LNP64::UREM:
+    return "urem";
   case LNP64::AND:
     return "and";
+  case LNP64::ANDI:
+    return "andi";
   case LNP64::OR:
     return "or";
+  case LNP64::ORI:
+    return "ori";
   case LNP64::XOR:
     return "xor";
+  case LNP64::XORI:
+    return "xori";
   case LNP64::LSL:
     return "lsl";
+  case LNP64::LSLI:
+    return "lsli";
   case LNP64::LSR:
     return "lsr";
+  case LNP64::LSRI:
+    return "lsri";
   case LNP64::ASR:
     return "asr";
+  case LNP64::ASRI:
+    return "asri";
   case LNP64::NOT:
     return "not";
   case LNP64::SEXT_W:
@@ -203,15 +223,25 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
     printOperand(MI->getOperand(1), OS);
     break;
   case LNP64::ADD:
+  case LNP64::ADDI:
   case LNP64::SUB:
   case LNP64::MUL:
   case LNP64::DIV:
+  case LNP64::UDIV:
+  case LNP64::SREM:
+  case LNP64::UREM:
   case LNP64::AND:
+  case LNP64::ANDI:
   case LNP64::OR:
+  case LNP64::ORI:
   case LNP64::XOR:
+  case LNP64::XORI:
   case LNP64::LSL:
+  case LNP64::LSLI:
   case LNP64::LSR:
+  case LNP64::LSRI:
   case LNP64::ASR:
+  case LNP64::ASRI:
     OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
     printOperand(MI->getOperand(0), OS);
     OS << ", ";
