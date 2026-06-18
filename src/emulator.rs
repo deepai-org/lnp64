@@ -6719,6 +6719,11 @@ impl Machine {
         let key = self.read_reg(key_reg)?;
         let index_or_buf = self.read_reg(index_or_buf_reg)?;
         let len_or_flags = self.read_reg(len_or_flags_reg)?;
+        if key == ENV_KEY_AUXV_ENTRY && result.0 == 30 {
+            return Err(
+                "ENV_GET AUXV_ENTRY result aliases secondary return register r30".to_string(),
+            );
+        }
         let scalar = match key {
             ENV_KEY_ISA_VERSION => Some(ENV_ISA_VERSION),
             ENV_KEY_PAGE_SIZE => Some(ASLR_PAGE),
@@ -17176,6 +17181,23 @@ mod tests {
             .unwrap();
         assert_eq!(machine.thread().unwrap().regs[6], AT_RANDOM);
         assert_eq!(machine.thread().unwrap().regs[30], 0);
+    }
+
+    #[test]
+    fn env_get_auxv_rejects_result_aliasing_secondary_return_register() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_AUXV_ENTRY;
+        machine.thread_mut().unwrap().regs[3] = 1;
+        machine.thread_mut().unwrap().regs[30] = 0xfeed_face;
+
+        let err = machine
+            .exec(Instr::EnvGet(Reg(30), Reg(2), Reg(3), Reg(0)))
+            .unwrap_err();
+
+        assert!(err.contains("aliases secondary return register"), "{err}");
+        assert_eq!(machine.thread().unwrap().regs[30], 0xfeed_face);
+        assert_eq!(machine.process().unwrap().errno, 0);
     }
 
     #[test]
