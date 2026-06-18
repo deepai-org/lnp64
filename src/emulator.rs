@@ -47,6 +47,23 @@ const SOCKET_OPT_SO_RCVBUF: u64 = 8;
 const SOCKET_OPT_SO_KEEPALIVE: u64 = 9;
 const MESSAGE_ENDPOINT_FD: usize = FDR_COUNT - 1;
 const PROCESS_INBOX_LIMIT: usize = 1024;
+const EXEC_PLAN_HEADER_WORDS: usize = 9;
+const EXEC_PLAN_ENTRY_WORDS: usize = 4;
+const EXEC_PLAN_VMA_WORDS: usize = 11;
+const EXEC_PLAN_FDR_GRANT_WORDS: usize = 8;
+const EXEC_PLAN_MEASUREMENT_WORDS: usize = 4;
+const EXEC_PLAN_MAX_VMAS: usize = 256;
+const EXEC_PLAN_MAX_FDR_GRANTS: usize = 256;
+const EXEC_PLAN_MAX_MEASUREMENTS: usize = 64;
+const EXEC_PLAN_VERSION: u64 = 1;
+const EXEC_PLAN_VMA_PROT_READ: u64 = 1 << 0;
+const EXEC_PLAN_VMA_PROT_WRITE: u64 = 1 << 1;
+const EXEC_PLAN_VMA_PROT_EXECUTE: u64 = 1 << 2;
+const EXEC_PLAN_VMA_PROT_MASK: u64 =
+    EXEC_PLAN_VMA_PROT_READ | EXEC_PLAN_VMA_PROT_WRITE | EXEC_PLAN_VMA_PROT_EXECUTE;
+const EXEC_PLAN_MEMORY_TYPE_IMAGE: u64 = 1;
+const EXEC_PLAN_PROVENANCE_IMAGE_TEXT: u64 = 1;
+const EXEC_PLAN_PROVENANCE_NON_EXECUTABLE: u64 = 2;
 const UTIME_NOW_LNP64: i64 = 1_073_741_823;
 const UTIME_OMIT_LNP64: i64 = 1_073_741_822;
 const LNP64_STAT_RECORD_SIZE: usize = 104;
@@ -1120,6 +1137,66 @@ pub struct Machine {
     last_exit: i32,
 }
 
+fn checked_exec_count(value: u64, limit: usize, name: &str) -> Result<usize, String> {
+    let count =
+        usize::try_from(value).map_err(|_| format!("exec-plan {name} count exceeds host usize"))?;
+    if count > limit {
+        return Err(format!(
+            "exec-plan {name} count exceeds architectural limit"
+        ));
+    }
+    Ok(count)
+}
+
+fn validate_exec_vma_words(words: &[u64]) -> Result<(), String> {
+    let length = words[1];
+    let protection = words[2];
+    let memory_type = words[3];
+    let provenance = words[4];
+    let zero_fill_length = words[9];
+    if length == 0 {
+        return Err("exec-plan VMA length is zero".to_string());
+    }
+    if protection & !EXEC_PLAN_VMA_PROT_MASK != 0 {
+        return Err("exec-plan VMA protection has unknown bits".to_string());
+    }
+    if protection & EXEC_PLAN_VMA_PROT_WRITE != 0 && protection & EXEC_PLAN_VMA_PROT_EXECUTE != 0 {
+        return Err("exec-plan VMA requests writable executable mapping".to_string());
+    }
+    if memory_type != EXEC_PLAN_MEMORY_TYPE_IMAGE {
+        return Err("exec-plan VMA memory type is unsupported".to_string());
+    }
+    if !matches!(
+        provenance,
+        EXEC_PLAN_PROVENANCE_IMAGE_TEXT | EXEC_PLAN_PROVENANCE_NON_EXECUTABLE
+    ) {
+        return Err("exec-plan VMA executable provenance is unsupported".to_string());
+    }
+    let executable = protection & EXEC_PLAN_VMA_PROT_EXECUTE != 0;
+    if executable && provenance != EXEC_PLAN_PROVENANCE_IMAGE_TEXT {
+        return Err("exec-plan executable VMA lacks image-text provenance".to_string());
+    }
+    if !executable && provenance == EXEC_PLAN_PROVENANCE_IMAGE_TEXT {
+        return Err("exec-plan non-executable VMA uses executable provenance".to_string());
+    }
+    if zero_fill_length > length {
+        return Err("exec-plan VMA zero-fill exceeds mapping length".to_string());
+    }
+    Ok(())
+}
+
+fn validate_exec_fdr_grant_words(words: &[u64]) -> Result<(), String> {
+    let close_on_exec = words[6];
+    let preserve = words[7];
+    if close_on_exec > 1 {
+        return Err("exec-plan FDR close-on-exec decision is not boolean".to_string());
+    }
+    if preserve > 1 {
+        return Err("exec-plan FDR preserve decision is not boolean".to_string());
+    }
+    Ok(())
+}
+
 impl Machine {
     pub fn new(program: Program) -> Self {
         let root_pid = 1;
@@ -1163,6 +1240,50 @@ impl Machine {
             random_state: 0x4d59_5df4_d0f3_3173,
             last_exit: 0,
         }
+    }
+
+    pub fn validate_exec_descriptor_words(words: &[u64]) -> Result<(), String> {
+        let minimum_words = EXEC_PLAN_HEADER_WORDS + EXEC_PLAN_ENTRY_WORDS;
+        if words.len() < minimum_words {
+            return Err("exec-plan descriptor is truncated".to_string());
+        }
+        if words[0] != EXEC_PLAN_VERSION {
+            return Err("exec-plan descriptor version is unsupported".to_string());
+        }
+        let total_length = usize::try_from(words[1])
+            .map_err(|_| "exec-plan descriptor length exceeds host usize".to_string())?;
+        if total_length != words.len() * std::mem::size_of::<u64>() {
+            return Err("exec-plan descriptor total length is inconsistent".to_string());
+        }
+        let vma_count = checked_exec_count(words[3], EXEC_PLAN_MAX_VMAS, "VMA")?;
+        let fdr_count = checked_exec_count(words[4], EXEC_PLAN_MAX_FDR_GRANTS, "FDR grant")?;
+        let measurement_count =
+            checked_exec_count(words[5], EXEC_PLAN_MAX_MEASUREMENTS, "measurement")?;
+        let expected_words = minimum_words
+            .checked_add(
+                vma_count
+                    .checked_mul(EXEC_PLAN_VMA_WORDS)
+                    .ok_or_else(|| "exec-plan VMA word count overflows".to_string())?,
+            )
+            .and_then(|count| count.checked_add(fdr_count.checked_mul(EXEC_PLAN_FDR_GRANT_WORDS)?))
+            .and_then(|count| {
+                count.checked_add(measurement_count.checked_mul(EXEC_PLAN_MEASUREMENT_WORDS)?)
+            })
+            .ok_or_else(|| "exec-plan descriptor word count overflows".to_string())?;
+        if expected_words != words.len() {
+            return Err("exec-plan descriptor record counts do not match length".to_string());
+        }
+
+        let mut offset = minimum_words;
+        for _ in 0..vma_count {
+            validate_exec_vma_words(&words[offset..offset + EXEC_PLAN_VMA_WORDS])?;
+            offset += EXEC_PLAN_VMA_WORDS;
+        }
+        for _ in 0..fdr_count {
+            validate_exec_fdr_grant_words(&words[offset..offset + EXEC_PLAN_FDR_GRANT_WORDS])?;
+            offset += EXEC_PLAN_FDR_GRANT_WORDS;
+        }
+        Ok(())
     }
 
     pub fn set_args(&mut self, args: &[String]) -> Result<(), String> {
@@ -8304,6 +8425,11 @@ fn parse_num(text: &str) -> Result<u64, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::loader::{
+        ExecEntry, ExecPlan, ExecPlanDescriptorOptions, ExecutableProvenance, MemoryType,
+        StartupFdrDescriptor, VmaProtection, VmaRecord, build_exec_descriptor,
+        encode_exec_descriptor,
+    };
 
     struct TestRng(u64);
 
@@ -8333,6 +8459,60 @@ mod tests {
             "#,
         )
         .unwrap()
+    }
+
+    fn loader_exec_plan_fixture() -> ExecPlan {
+        ExecPlan {
+            version: 1,
+            entry: ExecEntry {
+                entry_pc: 0x400000,
+                initial_sp: 0x700000,
+                tls_base: 0x710000,
+                startup_metadata_ptr: 0x720000,
+            },
+            vmas: vec![
+                VmaRecord {
+                    virtual_address: 0x400000,
+                    length: 0x1000,
+                    protection: VmaProtection {
+                        read: true,
+                        write: false,
+                        execute: true,
+                    },
+                    memory_type: MemoryType::Image,
+                    executable_provenance: ExecutableProvenance::ImageText,
+                    source_offset: 0x100,
+                    source_length: 0x800,
+                    zero_fill_length: 0x800,
+                    mapping_flags: 0,
+                },
+                VmaRecord {
+                    virtual_address: 0x402000,
+                    length: 0x1000,
+                    protection: VmaProtection {
+                        read: true,
+                        write: true,
+                        execute: false,
+                    },
+                    memory_type: MemoryType::Image,
+                    executable_provenance: ExecutableProvenance::NonExecutable,
+                    source_offset: 0x900,
+                    source_length: 0x200,
+                    zero_fill_length: 0xe00,
+                    mapping_flags: 0,
+                },
+            ],
+            startup: None,
+            fdr_grants: vec![StartupFdrDescriptor {
+                slot: 3,
+                kind: 1,
+                rights: 0xf,
+                flags: 0,
+                object_id: 0xabc,
+                generation: 0xdef,
+                name_offset: 0,
+            }],
+        }
     }
 
     #[test]
@@ -13014,6 +13194,46 @@ mod tests {
         .unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn emulator_accepts_loader_encoded_exec_descriptor_shape() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                expected_domain_generation: 1,
+                expected_process_generation: 2,
+                expected_lineage_epoch: 3,
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let words = encode_exec_descriptor(&descriptor);
+
+        Machine::validate_exec_descriptor_words(&words).unwrap();
+    }
+
+    #[test]
+    fn emulator_rejects_writable_executable_exec_descriptor_vma() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let mut words = encode_exec_descriptor(&descriptor);
+        words[15] = EXEC_PLAN_VMA_PROT_WRITE | EXEC_PLAN_VMA_PROT_EXECUTE;
+
+        let err = Machine::validate_exec_descriptor_words(&words).unwrap_err();
+
+        assert!(err.contains("writable executable"), "{err}");
     }
 
     #[test]
