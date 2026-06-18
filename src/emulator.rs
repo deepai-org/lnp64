@@ -4021,13 +4021,25 @@ impl Machine {
             self.set_status_errno(22)?;
             return Ok(());
         };
-        let Some(idx) = self.process()?.vmas.iter().position(|vma| {
-            vma.start
-                .checked_add(vma.len)
-                .is_some_and(|vma_end| addr >= vma.start && end <= vma_end)
-        }) else {
-            self.set_status_errno(12)?;
-            return Ok(());
+        let idx = {
+            let process = self.process()?;
+            if let Some(idx) = process
+                .vmas
+                .iter()
+                .position(|vma| vma.start == addr && vma.len == len)
+            {
+                idx
+            } else if process.vmas.iter().any(|vma| {
+                vma.start
+                    .checked_add(vma.len)
+                    .is_some_and(|vma_end| addr >= vma.start && end <= vma_end)
+            }) {
+                self.set_status_errno(22)?;
+                return Ok(());
+            } else {
+                self.set_status_errno(12)?;
+                return Ok(());
+            }
         };
         let (old_prot, file_backed) = {
             let vma = &self.process()?.vmas[idx];
@@ -13730,6 +13742,26 @@ mod tests {
         machine.thread_mut().unwrap().regs[1] = mapped;
         machine.thread_mut().unwrap().regs[2] = 4096;
         machine.thread_mut().unwrap().regs[3] = 0b1000;
+        machine
+            .exec(Instr::Mprotect(Reg(1), Reg(2), Reg(3)))
+            .unwrap();
+        assert_eq!(machine.process().unwrap().errno, 22);
+        assert_eq!(machine.process().unwrap().vmas.len(), vma_count);
+        assert_eq!(
+            machine
+                .process()
+                .unwrap()
+                .vmas
+                .iter()
+                .find(|vma| vma.start == mapped)
+                .unwrap()
+                .prot,
+            0b011
+        );
+
+        machine.thread_mut().unwrap().regs[1] = mapped + 128;
+        machine.thread_mut().unwrap().regs[2] = 1024;
+        machine.thread_mut().unwrap().regs[3] = 0b001;
         machine
             .exec(Instr::Mprotect(Reg(1), Reg(2), Reg(3)))
             .unwrap();
