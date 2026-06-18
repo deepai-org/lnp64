@@ -1274,22 +1274,31 @@ mod tests {
     fn llvm_gate_manifest_pins_non_toy_clang_commands() {
         let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
         let gate_manifest = include_str!("../toolchain/lnp64_llvm_gates.manifest");
+        let gate_driver = include_str!("../scripts/run_llvm_bootstrap_gates.sh");
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
         let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
         let roadmap = include_str!("../toolchain_roadmap.md");
         let rows = llvm_gate_rows(gate_manifest);
         let mut gates = std::collections::BTreeSet::new();
         let mut commands = std::collections::BTreeMap::new();
+        let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
 
         assert_eq!(
             manifest_field(target_manifest, "llvm_gate_contract"),
             "toolchain/lnp64_llvm_gates.manifest"
         );
+        assert!(
+            manifest_root
+                .join("scripts/run_llvm_bootstrap_gates.sh")
+                .is_file()
+        );
         assert!(contract_index.contains(
             "llvm_gates|toolchain/lnp64_llvm_gates.manifest|llvm_gate_manifest_pins_non_toy_clang_commands"
         ));
         assert!(transition_manifest.contains("toolchain/lnp64_llvm_gates.manifest"));
+        assert!(transition_manifest.contains("scripts/run_llvm_bootstrap_gates.sh"));
         assert!(roadmap.contains("toolchain/lnp64_llvm_gates.manifest"));
+        assert!(roadmap.contains("scripts/run_llvm_bootstrap_gates.sh --dry-run"));
 
         for (gate, command, requirements, status) in rows {
             assert!(gates.insert(gate), "duplicate llvm gate {gate}");
@@ -1314,6 +1323,7 @@ mod tests {
         }
 
         for gate in [
+            "gate_driver",
             "compile_hello",
             "compile_arithmetic",
             "compile_memory",
@@ -1326,6 +1336,17 @@ mod tests {
         ] {
             assert!(gates.contains(gate), "missing llvm gate {gate}");
         }
+        assert!(
+            commands["gate_driver"].contains("scripts/run_llvm_bootstrap_gates.sh --dry-run"),
+            "llvm gate driver must expose the dry-run script"
+        );
+        assert!(gate_driver.contains("toolchain/lnp64_llvm_gates.manifest"));
+        assert!(gate_driver.contains("--dry-run"));
+        assert!(gate_driver.contains("--run"));
+        assert!(gate_driver.contains("LNP64_RUN_PLANNED_LLVM_GATES"));
+        assert!(gate_driver.contains(r"command//\{build\}/"));
+        assert!(!gate_driver.contains("lnp64 cc"));
+        assert!(!gate_driver.contains("cargo run -- cc"));
         assert!(
             commands["link_static"].contains("-T toolchain/lnp64_static.ld"),
             "static link gate must use checked LNP64 linker script"

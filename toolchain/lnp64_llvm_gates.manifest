@@ -1,5 +1,6 @@
 # LNP64 first LLVM/Clang gate command manifest v0.
 # Pipe-delimited fields: gate|command|requires|status
+gate_driver|bash scripts/run_llvm_bootstrap_gates.sh --dry-run|manifest_driver,no_toy_compiler,planned_gate_audit|planned
 compile_hello|clang --target=lnp64-unknown-none -ffreestanding -fno-pic -I toolchain -c demos/hello.c -o {build}/hello.o|clang,target_skeleton,integer_codegen,load_store,branch_call_return,intrinsic_header|planned
 compile_arithmetic|clang --target=lnp64-unknown-none -ffreestanding -fno-pic -I toolchain -c demos/factorial.c -o {build}/factorial.o|clang,integer_alu,compare,branch_call_return,stack_locals,intrinsic_header|planned
 compile_memory|clang --target=lnp64-unknown-none -ffreestanding -fno-pic -I toolchain -c demos/allocator.c -o {build}/allocator.o|clang,load_store,global_data,libc_headers,malloc_free,intrinsic_header|planned
