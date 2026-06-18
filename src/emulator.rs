@@ -4862,6 +4862,7 @@ impl Machine {
         if bytes[offset] >> 4 != 6 {
             return Err(ClassifyParseError::Malformed);
         }
+        let payload_len = u16::from_be_bytes([bytes[offset + 4], bytes[offset + 5]]) as usize;
         let next_header = bytes[offset + 6];
         let mut hash = next_header as u64;
         for byte in &bytes[offset + 8..offset + 40] {
@@ -4871,8 +4872,18 @@ impl Machine {
             hash,
             ..ClassifierParsedFields::default()
         };
+        if payload_len == 0 {
+            parsed.needs_software = true;
+            return Ok(parsed);
+        }
+        if bytes.len() < offset + 40 + payload_len {
+            return Err(ClassifyParseError::Malformed);
+        }
         if matches!(next_header, 6 | 17) {
             let port_offset = offset + 40;
+            if payload_len < 4 {
+                return Err(ClassifyParseError::Malformed);
+            }
             if bytes.len() < port_offset + 4 {
                 return Err(ClassifyParseError::Malformed);
             }
@@ -7651,6 +7662,24 @@ mod tests {
         bytes
     }
 
+    fn ipv6_udp_packet(payload_len: u16, src_port: u16, dst_port: u16) -> Vec<u8> {
+        let mut bytes = vec![0u8; 14 + 40 + 8];
+        bytes[12] = 0x86;
+        bytes[13] = 0xdd;
+        let ip = 14;
+        bytes[ip] = 0x60;
+        bytes[ip + 4..ip + 6].copy_from_slice(&payload_len.to_be_bytes());
+        bytes[ip + 6] = 17;
+        bytes[ip + 8..ip + 24]
+            .copy_from_slice(&[0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1]);
+        bytes[ip + 24..ip + 40]
+            .copy_from_slice(&[0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 2]);
+        let udp = ip + 40;
+        bytes[udp..udp + 2].copy_from_slice(&src_port.to_be_bytes());
+        bytes[udp + 2..udp + 4].copy_from_slice(&dst_port.to_be_bytes());
+        bytes
+    }
+
     fn query_classifier_counters(machine: &mut Machine, classifier: u64, out: u64) {
         let arg = ARG_BASE + 0x380;
         machine.store_u64(arg, OBJECT_OP_CLASSIFIER_QUERY).unwrap();
@@ -7872,6 +7901,59 @@ mod tests {
             );
             machine.close_fd_index(6).unwrap();
         }
+    }
+
+    #[test]
+    fn classifier_ipv6_zero_payload_length_needs_software_without_routing() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let (_reader_token, writer_token) = create_pipe_pair(&mut machine, 3, 4);
+        let source = create_memory_source(&mut machine, 5);
+        let allowed = ARG_BASE + 0x1000;
+        let rules = ARG_BASE + 0x1100;
+        let packet_ptr = ARG_BASE + 0x1800;
+        let envelope = ARG_BASE + 0x1a00;
+        let result = ARG_BASE + 0x1b00;
+        let counters = ARG_BASE + 0x1c00;
+        machine.store_u64(allowed, writer_token).unwrap();
+        write_classifier_rule(
+            &mut machine,
+            rules,
+            CLASSIFY_RULE_EXACT,
+            CLASSIFY_FIELD_DST_PORT,
+            8080,
+            0,
+            CLASSIFY_ACTION_ROUTE,
+            writer_token,
+            0,
+        );
+        let classifier = create_classifier(&mut machine, 6, rules, 1, allowed, 1);
+        let packet = ipv6_udp_packet(0, 1000, 8080);
+        machine.write_bytes(packet_ptr, &packet).unwrap();
+        write_envelope(
+            &mut machine,
+            envelope,
+            CLASSIFY_PROFILE_PACKET,
+            source,
+            packet_ptr,
+            packet.len() as u64,
+            0,
+            0,
+            0,
+        );
+
+        assert_eq!(
+            classify(&mut machine, classifier, envelope, result),
+            CLASSIFY_ACTION_NEEDS_SOFTWARE
+        );
+        assert_eq!(
+            machine.load_u64(result).unwrap(),
+            CLASSIFY_ACTION_NEEDS_SOFTWARE
+        );
+        assert!(!machine.fd_read_ready(3).unwrap());
+        query_classifier_counters(&mut machine, classifier, counters);
+        assert_eq!(machine.load_u64(counters + 16).unwrap(), 0);
+        assert_eq!(machine.load_u64(counters + 32).unwrap(), 1);
     }
 
     #[test]
