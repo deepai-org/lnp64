@@ -5612,7 +5612,10 @@ impl Machine {
         let op_id = self.next_call_op_id;
         self.next_call_op_id = self.next_call_op_id.saturating_add(1);
         if let Some((fd, _)) = completion {
-            self.complete_call_fd(fd, op_id, arg0, arg1)?;
+            if self.complete_call_fd(fd, op_id, arg0, arg1).is_err() {
+                let errno = self.process()?.errno;
+                return self.complete_reg_err(result, if errno == 0 { 5 } else { errno });
+            }
             self.poll_fd_waiters();
         }
         self.complete_reg_ok(result, op_id)
@@ -15792,6 +15795,35 @@ mod tests {
         assert!(machine.fd_waiters.is_empty());
         assert_eq!(machine.thread().unwrap().regs[6], 1);
         assert_eq!(*counter.borrow(), 1);
+    }
+
+    #[test]
+    fn async_call_completion_full_queue_reports_errno_without_trapping() {
+        let mut machine = test_machine_with_child_domain();
+        machine.current_tid = 1;
+        create_pipe_pair(&mut machine, 4, 5);
+        let queue = match &machine.process().unwrap().fds[5] {
+            FdHandle::PipeWriter(queue) => Rc::clone(queue),
+            _ => panic!("expected pipe writer"),
+        };
+        queue.borrow_mut().bytes = vec![0; PIPE_BUFFER_BYTE_LIMIT].into();
+        let completion_generation = machine.fd_generation(5).unwrap();
+        machine.processes.get_mut(&1).unwrap().fds[3] = FdHandle::CallGate {
+            entry: 1,
+            domain_id: 2,
+            domain_generation: 1,
+            mode: CALL_MODE_ASYNC,
+            completion_fd: Some(5),
+            completion_generation: Some(completion_generation),
+            flags: 0,
+        };
+
+        machine.call_cap(Reg(6), 3, 10, 20).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[6], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 11);
+        assert_eq!(queue.borrow().bytes.len(), PIPE_BUFFER_BYTE_LIMIT);
+        assert_eq!(machine.next_call_op_id, 2);
     }
 
     #[test]
