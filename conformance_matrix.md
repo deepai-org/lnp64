@@ -22,8 +22,8 @@ Aggregate gates:
   policy that keeps the toy compiler as a smoke generator while planned
   LLVM-built versions replace its coverage.
 - `scripts/run_software_gates.sh` runs the host Rust tests, toolchain contract
-  checks, demos, userland, NetBSD personality smoke/system gates, and real
-  package gates.
+  checks, the planned LLVM gate dry-run, demos, userland, NetBSD personality
+  smoke/system gates, and real package gates.
 - `scripts/run_all_gates.sh` adds the Dockerized RTL/proof and synthesis/FPGA
   gates plus whitespace checks for full repository hygiene.
 - `scripts/run_netbsd_personality_system.sh` is the current layered NetBSD

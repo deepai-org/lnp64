@@ -2165,6 +2165,7 @@ mod tests {
             assert!(
                 gate.starts_with("cargo test")
                     || gate == "simple_libc_gate"
+                    || gate == "scripts/run_llvm_bootstrap_gates.sh --dry-run"
                     || manifest_root.join(gate).exists(),
                 "conformance gate {category} names missing gate {gate}"
             );
@@ -2190,6 +2191,15 @@ mod tests {
             );
         }
         assert_eq!(categories["llvm_built_versions"].0, "planned");
+        assert!(
+            categories["llvm_built_versions"]
+                .1
+                .contains(&"scripts/run_llvm_bootstrap_gates.sh")
+        );
+        assert_eq!(
+            categories["llvm_built_versions"].2,
+            "scripts/run_llvm_bootstrap_gates.sh --dry-run"
+        );
         for category in [
             "asm_demos",
             "c_tests",
@@ -2207,6 +2217,7 @@ mod tests {
 
         assert!(run_software.contains("cargo test"));
         assert!(run_software.contains("bash scripts/run_toolchain_contracts.sh"));
+        assert!(run_software.contains("bash scripts/run_llvm_bootstrap_gates.sh --dry-run"));
         assert!(run_software.contains("bash scripts/run_demos.sh"));
         assert!(run_software.contains("bash scripts/run_userland.sh"));
         assert!(run_software.contains("bash scripts/run_netbsd_personality_system.sh"));
