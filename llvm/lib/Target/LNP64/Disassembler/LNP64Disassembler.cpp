@@ -87,6 +87,52 @@ public:
       addReg(Instr, B);
       addReg(Instr, C);
       return MCDisassembler::Success;
+    case 0x14:
+      Instr.setOpcode(LNP64::AND);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0x15:
+      Instr.setOpcode(LNP64::OR);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0x16:
+      Instr.setOpcode(LNP64::XOR);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0x17:
+      Instr.setOpcode(LNP64::NOT);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      return MCDisassembler::Success;
+    case 0x18:
+      Instr.setOpcode(LNP64::LSL);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0x19:
+      Instr.setOpcode(LNP64::LSR);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0x1a:
+      Instr.setOpcode(LNP64::ASR);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0x1b:
+      Instr.setOpcode(LNP64::CMP);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      return MCDisassembler::Success;
     case 0x1f:
       Instr.setOpcode(LNP64::RET);
       return MCDisassembler::Success;
@@ -96,8 +142,32 @@ public:
       addReg(Instr, B);
       addImm(Instr, SignExtend64<14>(Word & 0x3fff));
       return MCDisassembler::Success;
+    case 0x31:
+      Instr.setOpcode(LNP64::LD_W);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addImm(Instr, SignExtend64<14>(Word & 0x3fff));
+      return MCDisassembler::Success;
+    case 0x32:
+      Instr.setOpcode(LNP64::LD_B);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addImm(Instr, SignExtend64<14>(Word & 0x3fff));
+      return MCDisassembler::Success;
     case 0x33:
       Instr.setOpcode(LNP64::ST);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addImm(Instr, SignExtend64<14>(Word & 0x3fff));
+      return MCDisassembler::Success;
+    case 0x34:
+      Instr.setOpcode(LNP64::ST_W);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addImm(Instr, SignExtend64<14>(Word & 0x3fff));
+      return MCDisassembler::Success;
+    case 0x35:
+      Instr.setOpcode(LNP64::ST_B);
       addReg(Instr, A);
       addReg(Instr, B);
       addImm(Instr, SignExtend64<14>(Word & 0x3fff));

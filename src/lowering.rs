@@ -1822,6 +1822,10 @@ mod tests {
         assert!(mc_desc.contains("LLVMInitializeLNP64TargetMC"));
         assert!(mc_desc.contains("RegisterMCCodeEmitter"));
         assert!(mc_emitter.contains("createLNP64MCCodeEmitter"));
+        assert!(mc_emitter.contains("case LNP64::AND"));
+        assert!(mc_emitter.contains("case LNP64::CMP"));
+        assert!(mc_emitter.contains("case LNP64::LD_W"));
+        assert!(mc_emitter.contains("case LNP64::ST_B"));
         assert!(mc_emitter.contains("not implemented yet"));
         assert!(asm_parser.contains("LLVMInitializeLNP64AsmParser"));
         assert!(asm_parser.contains("RegisterMCAsmParser"));
@@ -1831,6 +1835,10 @@ mod tests {
         assert!(disassembler.contains("readLE32"));
         assert!(disassembler.contains("case 0x10"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::ADD)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::AND)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::CMP)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::LD_W)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::ST_B)"));
         assert!(disassembler.contains("SignExtend64<14>"));
         assert!(disassembler.contains("MCDisassembler::Fail"));
         assert!(target_machine.contains("LLVMInitializeLNP64Target"));
