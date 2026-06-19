@@ -2591,7 +2591,8 @@ mod tests {
             )
         );
         assert!(real_llc.contains("sort-clang-smoke.o"));
-        assert!(real_llc.contains("void qsort"));
+        assert!(real_llc.contains("#include <stdlib.h>"));
+        assert!(real_llc.contains("#include <string.h>"));
         assert!(real_llc.contains("qsort(names, 6"));
         assert!(real_llc.contains("qsort(nums, 8"));
         assert!(real_llc.contains("qsort(chars, sizeof chars - 1"));
