@@ -19,10 +19,6 @@ while (($#)); do
         usage >&2
         exit 2
       fi
-      if [[ "$mode" == "toy" ]]; then
-        printf '%s\n' "toy backend has been removed; use the real LLVM package gate" >&2
-        exit 2
-      fi
       if [[ "$mode" != "llvm" ]]; then
         printf 'unknown backend: %s\n' "$mode" >&2
         usage >&2

@@ -1,9 +1,0 @@
-# LNP64 toy compiler retirement policy v0.
-# Pipe-delimited fields: rule|status|artifacts|evidence
-toy_compiler_removed|required|README.md,src/main.rs,toolchain_roadmap.md|has been removed from the command surface
-no_toy_in_toolchain_gates|required|scripts/run_libc_test.sh,scripts/run_rtl_top_program_smoke.sh,toolchain/lnp64_llvm_gates.manifest|Do not reintroduce
-clang_native_shims|required|toolchain/lnp64_intrinsics.manifest,toolchain/lnp64_intrinsics.h,toolchain/lnp64_intrinsic_lowering.manifest|intrinsic_lowering_manifest_matches_real_llvm_surface
-compat_lowering_boundary|required|src/lowering.rs,libc_roadmap.md,conformance_matrix.md|compatibility_table_names_native_primitives
-real_replacement_program_set|required|toolchain/lnp64_llvm_bootstrap.manifest,toolchain/lnp64_run_elf.manifest,tests/rtl/top_level_program_manifest.json|replaced_by_llvm
-clang_libc_replacements|required|toolchain/lnp64_run_elf.manifest,third_party/libc-test/README.lnp64.md|real_libc_test_fcntl_execution
-retirement_queue_empty|required|toolchain/lnp64_toy_retirement_queue.manifest|no remaining toy compiler retirement surfaces

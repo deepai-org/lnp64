@@ -116,7 +116,7 @@ Software compatibility:
 - `psABI.md`: process ABI, calling convention, signal/gate frame, FDR
   inheritance, and loader boundary.
 - `object_format.md`: static ELF/software-loader profile and exec-plan boundary.
-- `toolchain_roadmap.md`: LLVM/Clang/lld and toy-compiler retirement plan.
+- `toolchain_roadmap.md`: LLVM/Clang/lld and libc/runtime plan.
 
 Implementation:
 
@@ -151,9 +151,9 @@ integration target for later proof slices. M1 capability/FDR refinement remains
 the authority template, but it should become reachable through real retired
 instructions rather than only isolated harness traces.
 
-The bootstrap C compiler is temporary. The intended path is a real
-LLVM/Clang/lld toolchain plus a software loader that emits hardware `EXEC` plan
-descriptors.
+The old in-repo Rust C frontend has been removed. C coverage now belongs on the
+real LLVM/Clang/lld toolchain plus the software loader that emits hardware
+`EXEC` plan descriptors.
 
 Architectural opcodes must be compiler-visible. A native operation is not frozen
 until the real LLVM MC layer can assemble, emit, disassemble, and expose it to C
@@ -195,8 +195,7 @@ bash scripts/run_rtl_top_clang_smoke.sh tests/rtl/programs/top_clang_return_7.c
 bash scripts/run_rtl_top_linked_llvm_smoke.sh tests/rtl/programs/top_linked_main.c
 ```
 
-The bootstrap compiler is deprecated. For real Clang/lld coverage, use the
-Docker LLVM gate:
+For real Clang/lld coverage, use the Docker LLVM gate:
 
 ```sh
 LNP64_LLVM_DOCKER_SKIP_BUILD=1 bash scripts/run_real_llvm_lnp64_docker.sh

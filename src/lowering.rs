@@ -1085,59 +1085,6 @@ mod tests {
             .collect()
     }
 
-    fn toy_compiler_policy_rows(manifest: &str) -> Vec<(&str, &str, Vec<&str>, &str)> {
-        manifest
-            .lines()
-            .filter(|line| !line.is_empty() && !line.starts_with('#'))
-            .map(|line| {
-                let mut fields = line.splitn(4, '|');
-                let rule = fields
-                    .next()
-                    .unwrap_or_else(|| panic!("missing toy compiler policy rule in {line}"));
-                let status = fields
-                    .next()
-                    .unwrap_or_else(|| panic!("missing toy compiler policy status in {line}"));
-                let artifacts = fields
-                    .next()
-                    .unwrap_or_else(|| panic!("missing toy compiler policy artifacts in {line}"))
-                    .split(',')
-                    .collect();
-                let evidence = fields
-                    .next()
-                    .unwrap_or_else(|| panic!("missing toy compiler policy evidence in {line}"));
-                (rule, status, artifacts, evidence)
-            })
-            .collect()
-    }
-
-    fn toy_retirement_queue_rows(manifest: &str) -> Vec<(&str, &str, Vec<&str>, &str, &str)> {
-        manifest
-            .lines()
-            .filter(|line| !line.is_empty() && !line.starts_with('#'))
-            .map(|line| {
-                let mut fields = line.splitn(5, '|');
-                let surface = fields
-                    .next()
-                    .unwrap_or_else(|| panic!("missing toy retirement surface in {line}"));
-                let status = fields
-                    .next()
-                    .unwrap_or_else(|| panic!("missing toy retirement status in {line}"));
-                let toy_artifacts = fields
-                    .next()
-                    .unwrap_or_else(|| panic!("missing toy retirement artifacts in {line}"))
-                    .split(',')
-                    .collect();
-                let replacement_target = fields
-                    .next()
-                    .unwrap_or_else(|| panic!("missing toy retirement replacement in {line}"));
-                let blocker = fields
-                    .next()
-                    .unwrap_or_else(|| panic!("missing toy retirement blocker in {line}"));
-                (surface, status, toy_artifacts, replacement_target, blocker)
-            })
-            .collect()
-    }
-
     fn llvm_bootstrap_rows(manifest: &str) -> Vec<(&str, &str, Vec<&str>, Vec<&str>, &str)> {
         manifest
             .lines()
@@ -1310,8 +1257,6 @@ mod tests {
             "libc_shim",
             "netbsd_layers",
             "conformance_gates",
-            "toy_compiler_policy",
-            "toy_retirement_queue",
             "isel",
             "llvm_bootstrap",
             "llvm_gates",
@@ -1541,7 +1486,7 @@ mod tests {
             );
             assert!(
                 !command.contains("lnp64 cc") && !command.contains("cargo run -- cc"),
-                "llvm gate {gate} must not use the toy compiler command"
+                "llvm gate {gate} must not use the removed C frontend command"
             );
             assert!(
                 !command.contains("src/c_compiler"),
@@ -1750,7 +1695,7 @@ mod tests {
             "assemble_crt0",
             "link_static",
             "inspect_exec_plan",
-            "run_without_toy_compiler",
+            "run_without_removed_frontend",
             "simple_libc_gate",
         ] {
             assert!(gates.contains(gate), "missing llvm gate {gate}");
@@ -1798,7 +1743,7 @@ mod tests {
         assert!(libc_test_driver.contains("loader=\"exec-plan\""));
         assert!(libc_test_driver.contains("--loader exec-plan"));
         assert!(!libc_test_driver.contains("--legacy-toy"));
-        assert!(libc_test_driver.contains("toy backend has been removed"));
+        assert!(!libc_test_driver.contains("toy backend has been removed"));
         assert!(libc_test_driver.contains("exec bash scripts/run_real_llvm_lnp64_docker.sh"));
         assert!(libc_test_driver.contains("llvm backend requires --loader exec-plan"));
         assert!(!libc_test_driver.contains("Use --legacy-toy"));
@@ -3644,8 +3589,8 @@ mod tests {
             "static link gate must use checked LNP64 linker script"
         );
         assert!(
-            commands["run_without_toy_compiler"].contains("lnp64 run-elf"),
-            "no-toy execution gate must route through the checked run-elf boundary"
+            commands["run_without_removed_frontend"].contains("lnp64 run-elf"),
+            "no-frontend execution gate must route through the checked run-elf boundary"
         );
         assert!(
             commands["assemble_crt0"].contains("toolchain/crt0_lnp64.s"),
@@ -4343,7 +4288,7 @@ mod tests {
             "exec_opcode_static_elf",
             "text_fetch_decode",
             "stdout_exit",
-            "no_toy_compiler",
+            "no_removed_frontend",
         ] {
             assert!(stages.contains_key(stage), "missing run-elf stage {stage}");
         }
@@ -4437,12 +4382,12 @@ mod tests {
             "entry_state",
             "exec_opcode_static_elf",
             "text_fetch_decode",
-            "no_toy_compiler",
+            "no_removed_frontend",
         ] {
             assert_eq!(stages[stage].0, "tested", "{stage} should be tested");
         }
         assert_eq!(stages["stdout_exit"].0, "partial");
-        assert!(roadmap.contains("The no-toy run-elf path is tested"));
+        assert!(roadmap.contains("The no-frontend run-elf path is tested"));
     }
 
     #[test]
@@ -4578,7 +4523,7 @@ mod tests {
             "inline asm",
             "driver",
             "static",
-            "no toy compiler",
+            "removed-frontend",
         ] {
             assert!(
                 purposes.iter().any(|purpose| purpose.contains(concept)),
@@ -5758,7 +5703,7 @@ mod tests {
         }
 
         for phase in [
-            "toy_compiler_retirement",
+            "rust_c_frontend_removed",
             "real_toolchain_target",
             "minimal_llvm_clang_path",
             "libc_runtime_shim",
@@ -5800,11 +5745,11 @@ mod tests {
             );
         }
 
-        assert!(roadmap.contains("## Toy Compiler Retirement Policy"));
+        assert!(roadmap.contains("## Removed Rust C Frontend Boundary"));
         assert!(roadmap.contains("## First Acceptance Gates"));
         assert!(roadmap.contains("## Checked Transition Deliverables"));
         assert!(roadmap.contains("`minimal_llvm_clang_path` row is now partial"));
-        assert!(roadmap.contains("without the toy C compiler"));
+        assert!(roadmap.contains("without the removed Rust C frontend"));
         assert!(psabi.contains("## Register Model"));
         assert!(psabi.contains("## Calling Convention"));
         assert!(psabi.contains("## Debug and Unwind Minimum"));
@@ -6077,7 +6022,7 @@ mod tests {
         assert!(run_userland.contains("usage: scripts/run_userland.sh [--backend llvm]"));
         assert!(!run_userland.contains("--legacy-toy"));
         assert!(!run_userland.contains("cc --toy-bootstrap"));
-        assert!(run_userland.contains("toy backend has been removed"));
+        assert!(!run_userland.contains("toy backend has been removed"));
         assert!(!run_userland.contains("[--backend llvm|toy]"));
         assert!(run_netbsd_smoke.contains("LNP64_LLVM_PACKAGE_FILTER=netbsd"));
         assert!(run_netbsd_smoke.contains("scripts/run_real_llvm_package_gate.sh"));
@@ -6085,7 +6030,7 @@ mod tests {
             run_netbsd_smoke
                 .contains("usage: scripts/run_netbsd_personality_smoke.sh [--backend llvm]")
         );
-        assert!(run_netbsd_smoke.contains("toy backend has been removed"));
+        assert!(!run_netbsd_smoke.contains("toy backend has been removed"));
         assert!(!run_netbsd_smoke.contains("[--backend llvm|toy]"));
         assert!(run_netbsd_system.contains("LNP64_LLVM_PACKAGE_FILTER=netbsd"));
         assert!(run_netbsd_system.contains("scripts/run_real_llvm_package_gate.sh"));
@@ -6094,7 +6039,7 @@ mod tests {
             run_netbsd_system
                 .contains("usage: scripts/run_netbsd_personality_system.sh [--backend llvm]")
         );
-        assert!(run_netbsd_system.contains("toy backend has been removed"));
+        assert!(!run_netbsd_system.contains("toy backend has been removed"));
         assert!(!run_netbsd_system.contains("[--backend llvm|toy]"));
         assert_eq!(
             categories["netbsd_personality"].3,
@@ -6129,10 +6074,8 @@ mod tests {
     }
 
     #[test]
-    fn toy_compiler_policy_manifest_freezes_bootstrap_role() {
+    fn removed_rust_c_frontend_stays_out_of_checked_surfaces() {
         let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
-        let policy_manifest = include_str!("../toolchain/lnp64_toy_compiler_policy.manifest");
-        let retirement_queue = include_str!("../toolchain/lnp64_toy_retirement_queue.manifest");
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
         let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
         let roadmap = include_str!("../toolchain_roadmap.md");
@@ -6198,140 +6141,22 @@ mod tests {
                 include_str!("../scripts/run_zlib.sh"),
             ),
         ];
-        let lowering_source = include_str!("lowering.rs");
         let libc_roadmap = include_str!("../libc_roadmap.md");
         let legacy_toy_script_corpus = legacy_toy_scripts
             .iter()
             .map(|(_, script)| *script)
             .collect::<Vec<_>>()
             .join("\n");
-        let evidence_corpus = format!(
-            "{target_manifest}\n{roadmap}\n{psabi}\n{conformance}\n{llvm_gates}\n{llvm_bootstrap}\n{run_elf}\n{libc_test_readme}\n{retirement_queue}\n{intrinsics}\n{intrinsic_header}\n{crt0}\n{main_source}\n{legacy_toy_script_corpus}\n{lowering_source}\n{libc_roadmap}"
+        let checked_corpus = format!(
+            "{target_manifest}\n{contract_index}\n{transition_manifest}\n{roadmap}\n{psabi}\n{conformance}\n{llvm_gates}\n{llvm_bootstrap}\n{run_elf}\n{libc_test_readme}\n{intrinsics}\n{intrinsic_header}\n{crt0}\n{main_source}\n{legacy_toy_script_corpus}\n{libc_roadmap}"
         );
-        let rows = toy_compiler_policy_rows(policy_manifest);
-        let queue_rows = toy_retirement_queue_rows(retirement_queue);
-        let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let mut rules = std::collections::BTreeMap::new();
-        let mut queued_surfaces = std::collections::BTreeMap::new();
 
-        assert_eq!(
-            manifest_field(target_manifest, "toy_compiler_policy"),
-            "removed_after_real_clang_replacement"
-        );
-        assert_eq!(
-            manifest_field(target_manifest, "toy_compiler_policy_contract"),
-            "toolchain/lnp64_toy_compiler_policy.manifest"
-        );
-        assert!(contract_index.contains(
-            "toy_compiler_policy|toolchain/lnp64_toy_compiler_policy.manifest|toy_compiler_policy_manifest_freezes_bootstrap_role"
-        ));
-        assert!(contract_index.contains(
-            "toy_retirement_queue|toolchain/lnp64_toy_retirement_queue.manifest|toy_retirement_queue_manifest_records_remaining_surfaces"
-        ));
-        assert!(transition_manifest.contains("toolchain/lnp64_toy_compiler_policy.manifest"));
-        assert!(transition_manifest.contains("toolchain/lnp64_toy_retirement_queue.manifest"));
-        assert!(roadmap.contains("has been removed from the command surface"));
-        assert!(roadmap.contains("toolchain/lnp64_toy_retirement_queue.manifest"));
-        assert!(conformance.contains("toolchain/lnp64_toy_compiler_policy.manifest"));
-
-        for (rule, status, artifacts, evidence) in rows {
-            assert!(
-                rules
-                    .insert(rule, (status, artifacts.clone(), evidence))
-                    .is_none(),
-                "duplicate toy compiler policy rule {rule}"
-            );
-            assert!(
-                ["required", "partial", "planned", "blocked"].contains(&status),
-                "unknown toy compiler policy status {status} for {rule}"
-            );
-            assert!(
-                !artifacts.is_empty(),
-                "empty toy compiler policy artifacts for {rule}"
-            );
-            for artifact in artifacts {
-                assert!(
-                    manifest_root.join(artifact).exists(),
-                    "toy compiler policy {rule} names missing artifact {artifact}"
-                );
-            }
-            assert!(
-                !evidence.is_empty(),
-                "empty toy compiler policy evidence for {rule}"
-            );
-            if status == "required" || status == "partial" || status == "blocked" {
-                assert!(
-                    evidence_corpus.contains(evidence),
-                    "toy compiler policy evidence {evidence} for {rule} is not present"
-                );
-            }
-        }
-
-        for rule in [
-            "toy_compiler_removed",
-            "no_toy_in_toolchain_gates",
-            "clang_native_shims",
-            "compat_lowering_boundary",
-            "real_replacement_program_set",
-            "clang_libc_replacements",
-            "retirement_queue_empty",
-        ] {
-            assert!(
-                rules.contains_key(rule),
-                "missing toy compiler policy rule {rule}"
-            );
-        }
-        for rule in [
-            "toy_compiler_removed",
-            "no_toy_in_toolchain_gates",
-            "clang_native_shims",
-            "compat_lowering_boundary",
-            "real_replacement_program_set",
-            "clang_libc_replacements",
-            "retirement_queue_empty",
-        ] {
-            assert_eq!(rules[rule].0, "required", "{rule} should be required");
-        }
-        for (script_name, script) in legacy_toy_scripts {
-            if script.contains("cc --toy-bootstrap") {
-                panic!("{script_name} must not invoke the deprecated toy compiler");
-            }
-        }
-        for (surface, status, toy_artifacts, replacement_target, blocker) in queue_rows {
-            assert!(
-                queued_surfaces
-                    .insert(surface, (status, replacement_target, blocker))
-                    .is_none(),
-                "duplicate toy retirement surface {surface}"
-            );
-            assert!(
-                ["partial", "blocked"].contains(&status),
-                "unknown toy retirement status {status} for {surface}"
-            );
-            assert!(
-                !toy_artifacts.is_empty(),
-                "empty toy retirement artifact list for {surface}"
-            );
-            for artifact in toy_artifacts {
-                assert!(
-                    manifest_root.join(artifact).exists(),
-                    "toy retirement surface {surface} names missing artifact {artifact}"
-                );
-            }
-            assert!(
-                replacement_target.contains("Clang")
-                    || replacement_target.contains("scripts/run_real_llvm")
-                    || replacement_target.contains("scripts/run_rtl_top_clang")
-                    || replacement_target.contains("scripts/run_rtl_top_linked_llvm"),
-                "toy retirement surface {surface} lacks a real-toolchain replacement target"
-            );
-            assert!(
-                !blocker.is_empty(),
-                "toy retirement surface {surface} lacks a blocker"
-            );
-        }
-        assert!(queued_surfaces.is_empty());
-        assert!(retirement_queue.contains("no remaining toy compiler retirement surfaces"));
+        assert!(!target_manifest.contains("toy_compiler_policy"));
+        assert!(!contract_index.contains("lnp64_toy_"));
+        assert!(!transition_manifest.contains("lnp64_toy_"));
+        assert!(!conformance.contains("lnp64_toy_"));
+        assert!(roadmap.contains("## Removed Rust C Frontend Boundary"));
+        assert!(roadmap.contains("The old in-repo Rust C frontend is gone"));
         assert!(run_elf.contains("real_libc_test_pthread_tsd_execution"));
         assert!(run_elf.contains("real_libc_test_sem_init_execution"));
         assert!(run_elf.contains("real_libc_test_access_bounded_execution"));
@@ -6348,6 +6173,7 @@ mod tests {
         assert!(!main_source.contains("deprecated Rust bootstrap C compiler"));
         assert!(!main_source.contains("cc --toy-bootstrap"));
         assert!(!main_source.contains("\"cc\""));
+        assert!(!main_source.contains("c_compiler"));
         assert!(!psabi.contains("repository C compiler"));
         assert!(!crt0.contains("current toy compiler"));
         assert!(crt0.contains("real LLVM/lld crt0 object"));
@@ -6363,6 +6189,7 @@ mod tests {
         }
         assert!(!llvm_gates.contains("lnp64 cc"));
         assert!(!llvm_gates.contains("cargo run -- cc"));
+        assert!(!llvm_gates.contains("src/c_compiler"));
         for (script_name, script) in legacy_toy_scripts {
             if matches!(
                 script_name,
@@ -6393,10 +6220,24 @@ mod tests {
         }
         assert!(!legacy_toy_script_corpus.contains("LNP64_RTL_TOP_PROGRAM_C_BACKEND=toy"));
         assert!(!legacy_toy_script_corpus.contains("cc --toy-bootstrap"));
+        assert!(!legacy_toy_script_corpus.contains("--legacy-toy"));
         assert!(legacy_toy_script_corpus.contains("LNP64_LLVM_PACKAGE_FILTER=userland"));
         assert!(legacy_toy_script_corpus.contains("LNP64_LLVM_PACKAGE_FILTER=netbsd"));
         assert!(legacy_toy_script_corpus.contains("scripts/run_real_llvm_package_gate.sh"));
         assert!(!legacy_toy_script_corpus.contains("include_legacy_toy"));
+        for forbidden in [
+            "lnp64_toy_compiler_policy.manifest",
+            "lnp64_toy_retirement_queue.manifest",
+            "lnp64 cc",
+            "cargo run -- cc",
+            "cc --toy-bootstrap",
+            "src/c_compiler",
+        ] {
+            assert!(
+                !checked_corpus.contains(forbidden),
+                "removed Rust C frontend surface is still referenced: {forbidden}"
+            );
+        }
         assert!(rtl_top_manifest_checker.contains("toolchain/lnp64_llvm_bootstrap.manifest"));
         assert!(!rtl_top_manifest_checker.contains("RUN_DEMOS"));
         assert!(!rtl_top_manifest_checker.contains("non_network"));
@@ -6448,61 +6289,6 @@ mod tests {
     }
 
     #[test]
-    fn toy_retirement_queue_manifest_records_remaining_surfaces() {
-        let queue_manifest = include_str!("../toolchain/lnp64_toy_retirement_queue.manifest");
-        let policy_manifest = include_str!("../toolchain/lnp64_toy_compiler_policy.manifest");
-        let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
-        let roadmap = include_str!("../toolchain_roadmap.md");
-        let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let mut queued_surfaces = std::collections::BTreeMap::new();
-
-        assert!(policy_manifest.contains("retirement_queue_empty"));
-        assert!(roadmap.contains("Toy Compiler Retirement Policy"));
-        assert!(contract_index.contains(
-            "toy_retirement_queue|toolchain/lnp64_toy_retirement_queue.manifest|toy_retirement_queue_manifest_records_remaining_surfaces"
-        ));
-
-        for (surface, status, toy_artifacts, replacement_target, blocker) in
-            toy_retirement_queue_rows(queue_manifest)
-        {
-            assert!(
-                queued_surfaces
-                    .insert(surface, (status, replacement_target, blocker))
-                    .is_none(),
-                "duplicate toy retirement surface {surface}"
-            );
-            assert!(
-                ["partial", "blocked"].contains(&status),
-                "unknown toy retirement status {status} for {surface}"
-            );
-            assert!(
-                !toy_artifacts.is_empty(),
-                "empty toy retirement artifact list for {surface}"
-            );
-            for artifact in toy_artifacts {
-                assert!(
-                    manifest_root.join(artifact).exists(),
-                    "toy retirement surface {surface} names missing artifact {artifact}"
-                );
-            }
-            assert!(
-                replacement_target.contains("Clang")
-                    || replacement_target.contains("scripts/run_real_llvm")
-                    || replacement_target.contains("scripts/run_rtl_top_clang")
-                    || replacement_target.contains("scripts/run_rtl_top_linked_llvm"),
-                "toy retirement surface {surface} lacks a real-toolchain replacement target"
-            );
-            assert!(
-                !blocker.is_empty(),
-                "toy retirement surface {surface} lacks a blocker"
-            );
-        }
-
-        assert!(queued_surfaces.is_empty());
-        assert!(queue_manifest.contains("no remaining toy compiler retirement surfaces"));
-    }
-
-    #[test]
     fn rtl_toy_c_smokes_have_linked_llvm_replacement_coverage() {
         let manifest = include_str!("../tests/rtl/top_level_program_manifest.json");
         let linked_gate = "\"rtl_gate\": \"scripts/run_rtl_top_linked_llvm_smoke.sh\"";
@@ -6522,7 +6308,7 @@ mod tests {
             &manifest[entry_start..entry_end]
         };
 
-        for toy_source in [
+        for frontend_source in [
             "tests/rtl/programs/top_return_12.c",
             "tests/rtl/programs/top_branch_if.c",
             "tests/rtl/programs/top_loop_sum.c",
@@ -6544,14 +6330,14 @@ mod tests {
             "demos/ping_pong.c",
             "demos/rot13.c",
         ] {
-            let toy_entry = entry_for(toy_source);
+            let frontend_entry = entry_for(frontend_source);
             assert!(
-                toy_entry.contains("\"status\": \"replaced_by_llvm\""),
-                "{toy_source} should be retired once covered by linked LLVM"
+                frontend_entry.contains("\"status\": \"replaced_by_llvm\""),
+                "{frontend_source} should be retired once covered by linked LLVM"
             );
             assert!(
-                !toy_entry.contains("\"rtl_gate\""),
-                "{toy_source} should not name a toy RTL gate after replacement"
+                !frontend_entry.contains("\"rtl_gate\""),
+                "{frontend_source} should not name an RTL gate after replacement"
             );
         }
 
@@ -6824,20 +6610,14 @@ mod tests {
                 "missing {intrinsic}"
             );
         }
-        assert_eq!(
-            manifest_field(manifest, "toy_compiler_policy"),
-            "removed_after_real_clang_replacement"
-        );
-        assert_eq!(
-            manifest_field(manifest, "toy_compiler_policy_contract"),
-            "toolchain/lnp64_toy_compiler_policy.manifest"
-        );
+        assert!(!manifest.contains("toy_compiler_policy"));
         assert!(roadmap.contains("`CLONE` is a backend-visible native primitive"));
         assert!(roadmap.contains("new_thread_shared_vm"));
         assert!(psabi_doc.contains("## Native Clone Profiles"));
-        assert!(roadmap.contains("## Toy Compiler Retirement Policy"));
-        assert!(roadmap.contains("They are not the long-term application"));
-        assert!(roadmap.contains("has been removed from the command surface"));
+        assert!(roadmap.contains("## Removed Rust C Frontend Boundary"));
+        assert!(roadmap.contains("C and package coverage now belongs"));
+        assert!(roadmap.contains("real Clang/lld"));
+        assert!(roadmap.contains("gone from the command surface"));
     }
 
     #[test]

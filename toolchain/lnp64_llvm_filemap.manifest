@@ -27,4 +27,4 @@ clang_basic|clang/lib/Basic/Targets/LNP64.cpp|scaffolded|Clang target info imple
 clang_driver|clang/lib/Driver/ToolChains/Arch/LNP64.cpp|scaffolded|driver flags, freestanding defaults, crt and linker selection
 llvm_tests|llvm/test/CodeGen/LNP64/hello.ll|scaffolded|integer, load/store, branch, call, return codegen smoke
 llvm_tests|llvm/test/MC/LNP64/basic.s|scaffolded|assembler, disassembler, relocation, inline asm smoke
-clang_tests|clang/test/Driver/lnp64.c|scaffolded|triple, include path, crt, lld, and no toy compiler driver smoke
+clang_tests|clang/test/Driver/lnp64.c|scaffolded|triple, include path, crt, lld, and removed-frontend driver smoke

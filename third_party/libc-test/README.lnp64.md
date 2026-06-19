@@ -84,8 +84,8 @@ overlap, destination-before-source overlap, and zero-length moves.
 
 ## Real Clang replacement status
 
-The real LLVM/Clang/lld `run-elf` gate now covers former toy-only `pthread_tsd.c`
-and `sem_init.c` cases, plus bounded `access_bounded.c` metadata probing and
+The real LLVM/Clang/lld `run-elf` gate now covers `pthread_tsd.c` and
+`sem_init.c`, plus bounded `access_bounded.c` metadata probing and
 `fcntl_basic_bounded.c` descriptor-flag coverage. Upstream `fcntl.c` now runs
 through the real Clang/lld `run-elf` gate for POSIX fork/record-lock behavior.
 

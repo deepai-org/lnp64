@@ -289,7 +289,7 @@ def main() -> None:
         require_entry(entry, "compiler flat")
         if entry.get("status") == "active":
             active_compiler_flat += 1
-    require(active_compiler_flat == 0, "compiler-flat toy C entries should stay retired once linked LLVM replacements exist")
+    require(active_compiler_flat == 0, "compiler-flat C frontend entries should stay retired once linked LLVM replacements exist")
     for entry in assembly_entries:
         require(isinstance(entry, dict), "assembly entry must be an object")
         require_entry(entry, "assembly")
@@ -327,37 +327,37 @@ def main() -> None:
         for entry in llvm_linked_entries
         if entry.get("status") == "active"
     }
-    active_toy_sources = {
+    active_frontend_sources = {
         str(entry["source"])
         for entry in compiler_flat_entries + compiler_entries
         if entry.get("status") == "active"
     }
-    retired_or_active_toy_sources = {
+    retired_or_active_frontend_sources = {
         str(entry["source"])
         for entry in compiler_flat_entries + compiler_entries
         if entry.get("status") in {"active", "replaced_by_llvm"}
     }
-    require(not active_toy_sources, f"toy C sources remain active after linked LLVM replacement: {sorted(active_toy_sources)}")
-    missing_replacements = sorted(retired_or_active_toy_sources - set(LINKED_REPLACEMENTS))
+    require(not active_frontend_sources, f"retired C frontend sources remain active after linked LLVM replacement: {sorted(active_frontend_sources)}")
+    missing_replacements = sorted(retired_or_active_frontend_sources - set(LINKED_REPLACEMENTS))
     require(
         not missing_replacements,
-        f"retired toy C sources lack linked LLVM replacements: {missing_replacements}",
+        f"retired C frontend sources lack linked LLVM replacements: {missing_replacements}",
     )
-    for toy_source in sorted(retired_or_active_toy_sources):
-        linked_source, required_feature = LINKED_REPLACEMENTS[toy_source]
+    for frontend_source in sorted(retired_or_active_frontend_sources):
+        linked_source, required_feature = LINKED_REPLACEMENTS[frontend_source]
         linked_entry = linked_sources.get(linked_source)
         require(
             linked_entry is not None,
-            f"{toy_source} replacement {linked_source} must be an active LLVM linked entry",
+            f"{frontend_source} replacement {linked_source} must be an active LLVM linked entry",
         )
         linked_features = linked_entry.get("required_features")
         require(
             isinstance(linked_features, list) and required_feature in linked_features,
-            f"{toy_source} replacement {linked_source} must advertise {required_feature}",
+            f"{frontend_source} replacement {linked_source} must advertise {required_feature}",
         )
         require(
             linked_entry.get("rtl_gate") == "scripts/run_rtl_top_linked_llvm_smoke.sh",
-            f"{toy_source} replacement {linked_source} must use the linked LLVM smoke gate",
+            f"{frontend_source} replacement {linked_source} must use the linked LLVM smoke gate",
         )
 
     requirements = manifest.get("recurring_gate_requirements", [])

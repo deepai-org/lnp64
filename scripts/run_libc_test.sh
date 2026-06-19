@@ -12,7 +12,7 @@ usage() {
 usage: scripts/run_libc_test.sh [--backend llvm] [--loader exec-plan]
 
 The default llvm/exec-plan backend dispatches to the real Clang/lld/run-elf
-gate and must not route through the Rust bootstrap compiler.
+gate.
 USAGE
 }
 
@@ -23,10 +23,6 @@ while (($#)); do
       if [[ -z "$backend" ]]; then
         printf '%s\n' "missing value for --backend" >&2
         usage >&2
-        exit 2
-      fi
-      if [[ "$backend" == "toy" ]]; then
-        printf '%s\n' "toy backend has been removed; use the real LLVM libc gate" >&2
         exit 2
       fi
       if [[ "$backend" != "llvm" ]]; then
