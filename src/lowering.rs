@@ -1454,6 +1454,7 @@ mod tests {
         assert!(real_tblgen_docker.contains("LNP64_LLVM_DOCKER_SKIP_BUILD"));
         assert!(real_tblgen_docker.contains(r#"--user "$uid:$gid""#));
         assert!(real_llc_docker.contains("LNP64_LLVM_DOCKER_SKIP_BUILD"));
+        assert!(real_llc_docker.contains("LNP64_LLVM_DOCKER_SKIP_RUN_ELF"));
         assert!(real_mc_docker.contains("LNP64_LLVM_DOCKER_SKIP_BUILD"));
         assert!(real_llc.contains("llvmorg-14.0.6"));
         assert!(real_llc.contains("LNP64_LLVM_GATE"));
@@ -2048,8 +2049,12 @@ mod tests {
         assert!(roadmap.contains("toolchain/lnp64_run_elf.manifest"));
         assert!(conformance.contains("toolchain/lnp64_run_elf.manifest"));
         assert!(gate_manifest.contains("lnp64 run-elf"));
-        assert!(real_llc_docker.contains("cargo run --quiet -- elf-plan"));
-        assert!(real_llc_docker.contains("cargo run --quiet -- run-elf"));
+        assert!(real_llc_docker.contains("cargo build --quiet --bin lnp64"));
+        assert!(real_llc_docker.contains(r#""$lnp64_bin" elf-plan"#));
+        assert!(real_llc_docker.contains(r#""$lnp64_bin" run-elf"#));
+        assert!(real_llc_docker.contains("LNP64_LLVM_DOCKER_SKIP_RUN_ELF"));
+        assert!(!real_llc_docker.contains("cargo run --quiet -- elf-plan"));
+        assert!(!real_llc_docker.contains("cargo run --quiet -- run-elf"));
         assert!(real_llc_docker.contains("lnp64-$demo-clang-linked.elf"));
         assert!(real_llc_docker.contains("hello from LNP64"));
         assert!(real_llc_docker.contains("factorial ok"));
