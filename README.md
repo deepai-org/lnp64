@@ -480,11 +480,13 @@ smoke first and then reuse the binary explicitly:
 ```sh
 LNP64_RTL_VERILATOR_BUILD_JOBS=auto LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_manifest.sh
 LNP64_RTL_FAST=1 LNP64_RTL_TOP_PROGRAM_JOBS=auto bash scripts/run_rtl_top_program_manifest.sh
+LNP64_RTL_FAST=1 LNP64_RTL_TOP_PROGRAM_TILE_COUNT=2 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" LNP64_RTL_TOP_PROGRAM_QUIET=1 LNP64_RTL_TOP_PROGRAM_JOBS=auto bash scripts/run_rtl_top_program_manifest.sh
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_SKIP_LINT=1 LNP64_RTL_TOP_PROGRAM_JOBS=4 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_manifest.sh
 LNP64_RTL_FAST=1 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_TOP_PROGRAM_JOBS=4 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_manifest.sh
 LNP64_RTL_FAST=1 LNP64_RTL_TOP_PROGRAM_FILTER='*linked*' bash scripts/run_rtl_top_program_manifest.sh
 LNP64_RTL_FAST=1 LNP64_RTL_TOP_PROGRAM_FILTER='demos/*.s top_heap_byte_lanes.c' bash scripts/run_rtl_top_program_manifest.sh
 LNP64_RTL_FAST=1 LNP64_RTL_TOP_PROGRAM_FILTER='top_dma_revoke_stale.s' bash scripts/run_rtl_top_program_manifest.sh
+LNP64_RTL_TOP_PROGRAM_TILE_COUNT=4 LNP64_RTL_TOP_PROGRAM_QUIET=1 LNP64_RTL_REUSE_BUILD=0 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_cap_transfer_valid.s
 LNP64_RTL_TOP_PROGRAM_QUIET=1 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_dma_revoke_stale.s
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_manifest.sh tests/rtl/programs/top_linked_high_mul.c
 LNP64_RTL_FAST=1 LNP64_RTL_TOP_PROGRAM_FILTER='top_linked_clone_join.c' bash scripts/run_rtl_top_program_manifest.sh
@@ -495,6 +497,13 @@ LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT=
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_clang_smoke.sh
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_linked_llvm_smoke.sh
 ```
+
+The third command above is the current full active top-level manifest loop: it
+reuses the 2-tile Verilator build and has been used to run 83 active assembly,
+LLVM MC, clang, linked LLVM, demo, and compiler-generated programs through
+`lnp64_top` against the emulator comparator. Use
+`LNP64_RTL_TOP_PROGRAM_TILE_COUNT=4` for the supported four-tile stress shape;
+tile-count-specific builds live in separate Verilator object directories.
 
 Set `LNP64_RTL_TOP_PROGRAM_JOBS=4` or
 `LNP64_RTL_TOP_PROGRAM_JOBS=auto` to run the remaining top-level program images
