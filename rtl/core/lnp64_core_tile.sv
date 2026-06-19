@@ -5,7 +5,7 @@ import lnp64_pkg::*;
 module lnp64_core_tile #(
     parameter int TILE_ID = 0,
     parameter int PROGRAM_WORDS = 1024,
-    parameter int SRAM_WORDS = 2176,
+    parameter int SRAM_WORDS = 4224,
     parameter int RETURN_STACK_DEPTH = 64
 ) (
     input  logic clk,
@@ -116,8 +116,11 @@ module lnp64_core_tile #(
     localparam logic [63:0] FLAT_EXEC_INITIAL_SP = 64'h0000_0000_0067_2000;
     localparam logic [63:0] FLAT_EXEC_STACK_BASE_ADDR = 64'h0000_0000_0067_0000;
     localparam logic [63:0] FLAT_EXEC_STACK_WINDOW_BYTES = 64'd16384;
-    localparam logic [63:0] FLAT_EXEC_CALL_FRAME_BYTES = 64'd1024;
-    localparam logic [63:0] FLAT_EXEC_CHILD_SP = 64'h0000_0000_0067_3000;
+    localparam logic [63:0] FLAT_EXEC_CALL_FRAME_BYTES = 64'd0;
+    localparam logic [63:0] FLAT_EXEC_THREAD_STACK_STRIDE = 64'h0000_0000_0004_0000;
+    localparam logic [63:0] FLAT_EXEC_CHILD_SP = FLAT_EXEC_INITIAL_SP - FLAT_EXEC_THREAD_STACK_STRIDE;
+    localparam logic [63:0] FLAT_EXEC_CHILD_STACK_BASE_ADDR =
+        FLAT_EXEC_STACK_BASE_ADDR - FLAT_EXEC_THREAD_STACK_STRIDE;
     localparam logic [63:0] OBJECT_OP_CREATE = LNP64_OBJECT_OP_CREATE;
     localparam logic [63:0] OBJECT_KIND_COUNTER = LNP64_OBJECT_KIND_COUNTER;
     localparam logic [63:0] OBJECT_KIND_QUEUE = LNP64_OBJECT_KIND_QUEUE;
@@ -160,6 +163,8 @@ module lnp64_core_tile #(
     localparam int unsigned DATA_SRAM_BASE_WORD = 16;
     localparam int unsigned HEAP_SRAM_BASE_WORD = 96;
     localparam int unsigned STACK_SRAM_BASE_WORD = 128;
+    localparam int unsigned CHILD_STACK_SRAM_BASE_WORD =
+        STACK_SRAM_BASE_WORD + (FLAT_EXEC_STACK_WINDOW_BYTES >> 3);
     logic [15:0] errno_reg;
     logic cmp_zero;
     logic cmp_negative;
@@ -420,6 +425,10 @@ module lnp64_core_tile #(
                 addr < (FLAT_EXEC_STACK_BASE_ADDR + FLAT_EXEC_STACK_WINDOW_BYTES)) begin
                 rel_addr = addr - FLAT_EXEC_STACK_BASE_ADDR;
                 sram_word_index = STACK_SRAM_BASE_WORD + rel_addr[12:3];
+            end else if (addr >= FLAT_EXEC_CHILD_STACK_BASE_ADDR &&
+                addr < (FLAT_EXEC_CHILD_STACK_BASE_ADDR + FLAT_EXEC_STACK_WINDOW_BYTES)) begin
+                rel_addr = addr - FLAT_EXEC_CHILD_STACK_BASE_ADDR;
+                sram_word_index = CHILD_STACK_SRAM_BASE_WORD + rel_addr[12:3];
             end else if (addr >= HEAP_ARCH_BASE) begin
                 rel_addr = addr - HEAP_ARCH_BASE;
                 sram_word_index = HEAP_SRAM_BASE_WORD + rel_addr[7:3];
@@ -2880,13 +2889,9 @@ module lnp64_core_tile #(
                                         pcr_sigmask <= gpr[dec.rs2];
                                         gpr[dec.rd] <= 64'd0;
                                     end
-                                    5'd0, 5'd1, 5'd2, 5'd7, 5'd8, 5'd9: begin
+                                    5'd0, 5'd1, 5'd2, 5'd7, 5'd8, 5'd9, 5'd10, 5'd11: begin
                                         gpr[dec.rd] <= 64'd0 - {48'd0, LNP64_ERR_EPERM};
                                         errno_reg <= LNP64_ERR_EPERM;
-                                    end
-                                    5'd10, 5'd11: begin
-                                        gpr[dec.rd] <= 64'd0 - {48'd0, LNP64_ERR_ENOTSUP};
-                                        errno_reg <= LNP64_ERR_ENOTSUP;
                                     end
                                     default: begin
                                         gpr[dec.rd] <= 64'd0 - {48'd0, LNP64_ERR_EINVAL};
