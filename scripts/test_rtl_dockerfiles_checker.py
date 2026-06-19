@@ -14,12 +14,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CHECKER = ROOT / "scripts/check_rtl_dockerfiles.py"
 COPIED_FILES = (
+    "Dockerfile.rtl-exec",
     "Dockerfile.rtl-proof",
     "Dockerfile.rtl-synth",
     "Dockerfile.rtl-board",
     "README.md",
     "scripts/run_all_gates.sh",
     "scripts/run_formal_rtl_roadmap_audit.sh",
+    "scripts/run_rtl_execution_fast.sh",
+    "scripts/run_rtl_execution_fast_docker.sh",
     "scripts/run_rtl_m1_refinement_docker.sh",
     "scripts/run_rtl_m1_refinement_gate.sh",
     "scripts/run_rtl_proof_docker.sh",

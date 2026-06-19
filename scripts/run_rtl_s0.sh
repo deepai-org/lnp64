@@ -30,11 +30,15 @@ common_flags=(
 mapfile -t rtl_files < tests/rtl/s0_filelist.f
 
 build_dir="$(rtl_build_dir "s0")"
-rtl_prepare_build_dir "$build_dir"
+rtl_binary="$build_dir/Vlnp64_s0_tb"
 
-rtl_lint "${common_flags[@]}" "${rtl_files[@]}"
-verilator --binary --Mdir "$build_dir" "${common_flags[@]}" "${rtl_files[@]}" >/tmp/lnp64_rtl_s0_build.log
-"$build_dir/Vlnp64_s0_tb" | tee /tmp/lnp64_rtl_s0_sim.log
+rtl_verilator_build_or_reuse \
+  "$build_dir" \
+  "$rtl_binary" \
+  "/tmp/lnp64_rtl_s0_build.log" \
+  "${common_flags[@]}" \
+  "${rtl_files[@]}"
+"$rtl_binary" | tee /tmp/lnp64_rtl_s0_sim.log
 
 grep -q "LNP64-RTL-S0 PASS" /tmp/lnp64_rtl_s0_sim.log
 printf '%s\n' "rtl s0 gate ok"

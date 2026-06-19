@@ -1,0 +1,21 @@
+FROM rust:1.95-bookworm
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG RUN_RTL_EXEC_GATES=0
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        bash \
+        build-essential \
+        python3 \
+        verilator \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /work
+COPY . .
+
+RUN if [ "${RUN_RTL_EXEC_GATES}" = "1" ]; then \
+        bash scripts/run_rtl_execution_fast.sh; \
+    fi
+
+CMD ["bash", "scripts/run_rtl_execution_fast.sh"]

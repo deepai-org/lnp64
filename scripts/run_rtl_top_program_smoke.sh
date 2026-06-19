@@ -75,10 +75,11 @@ emulator_log="$(mktemp "${TMPDIR:-/tmp}/lnp64_emulator_top_program.XXXXXX.log")"
 tmp_files+=("$sim_log" "$emulator_log")
 
 rtl_binary="$build_dir/Vlnp64_top_program_tb"
-if [[ "${LNP64_RTL_TOP_PROGRAM_SKIP_BUILD:-0}" == "1" ]]; then
+if [[ "${LNP64_RTL_TOP_PROGRAM_SKIP_BUILD:-0}" == "1" ||
+      "${LNP64_RTL_SKIP_BUILD:-0}" == "1" ]]; then
   if [[ ! -x "$rtl_binary" ]]; then
     printf 'missing reusable top-level RTL binary: %s\n' "$rtl_binary" >&2
-    printf '%s\n' "unset LNP64_RTL_TOP_PROGRAM_SKIP_BUILD or run one build first" >&2
+    printf '%s\n' "unset LNP64_RTL_TOP_PROGRAM_SKIP_BUILD/LNP64_RTL_SKIP_BUILD or run one build first" >&2
     exit 1
   fi
 else

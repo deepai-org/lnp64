@@ -120,6 +120,56 @@ def check_proof() -> None:
     )
 
 
+def check_execution() -> None:
+    dockerfile = read_text("Dockerfile.rtl-exec")
+    wrapper = read_text("scripts/run_rtl_execution_fast_docker.sh")
+    gate = read_text("scripts/run_rtl_execution_fast.sh")
+
+    require_all(
+        dockerfile,
+        [
+            "FROM rust:1.95-bookworm",
+            "ARG RUN_RTL_EXEC_GATES",
+            "bash scripts/run_rtl_execution_fast.sh",
+            'CMD ["bash", "scripts/run_rtl_execution_fast.sh"]',
+        ],
+        "Dockerfile.rtl-exec",
+    )
+    for package in ("bash", "build-essential", "python3", "verilator"):
+        require_package(dockerfile, package, "Dockerfile.rtl-exec")
+
+    require_all(
+        wrapper,
+        [
+            "docker build",
+            "-f Dockerfile.rtl-exec",
+            "RUN_RTL_EXEC_GATES",
+            "LNP64_RTL_EXEC_SKIP_BUILD",
+            "using existing RTL execution Docker image",
+            "docker run --rm",
+            "CARGO_TARGET_DIR",
+            "LNP64_RTL_BUILD_ROOT",
+            "/work/target/docker-rust",
+            "/work/target/rtl-verilator-docker",
+            "-v \"$root:/work\"",
+            "-w /work",
+            "bash scripts/run_rtl_execution_fast.sh",
+        ],
+        "scripts/run_rtl_execution_fast_docker.sh",
+    )
+    require_all(
+        gate,
+        [
+            "cargo build --quiet",
+            "scripts/check_rtl_top_level_program_manifest.py",
+            "bash scripts/run_rtl_top_program_manifest.sh",
+            "CARGO_TARGET_DIR",
+            "LNP64_RTL_TOP_PROGRAM_JOBS",
+        ],
+        "scripts/run_rtl_execution_fast.sh",
+    )
+
+
 def check_synth() -> None:
     dockerfile = read_text("Dockerfile.rtl-synth")
     wrapper = read_text("scripts/run_rtl_synth_docker.sh")
@@ -249,6 +299,8 @@ def check_aggregate_and_docs() -> None:
         readme,
         [
             "RTL And Proof Gates",
+            "bash scripts/run_rtl_execution_fast_docker.sh",
+            "target/rtl-verilator-docker",
             "bash scripts/run_rtl_proof_docker.sh",
             "LNP64_RTL_PROOF_SKIP_BUILD=1 bash scripts/run_rtl_m1_refinement_docker.sh",
             "LNP64_RTL_PROOF_RANDOM_COSIM=0 bash scripts/run_rtl_proof_docker.sh",
@@ -268,6 +320,7 @@ def check_aggregate_and_docs() -> None:
 
 def main() -> None:
     check_proof()
+    check_execution()
     check_synth()
     check_board()
     check_aggregate_and_docs()

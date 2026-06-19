@@ -208,6 +208,8 @@ bash scripts/run_rtl_synth_docker.sh
 Faster RTL/proof iteration in Docker:
 
 ```sh
+LNP64_RTL_EXEC_SKIP_BUILD=1 bash scripts/run_rtl_execution_fast_docker.sh tests/rtl/programs/top_smoke.s
+LNP64_RTL_EXEC_SKIP_BUILD=1 LNP64_RTL_SKIP_BUILD=1 bash scripts/run_rtl_execution_fast_docker.sh tests/rtl/programs/top_immediate_alu.s
 LNP64_RTL_FAST=1 LNP64_RTL_PROOF_SKIP_BUILD=1 bash scripts/run_rtl_proof_docker.sh
 LNP64_RTL_FAST=1 LNP64_RTL_PROOF_SKIP_BUILD=1 bash scripts/run_rtl_m1_refinement_docker.sh
 LNP64_RTL_PROOF_SKIP_BUILD=1 bash scripts/run_rtl_m1_refinement_docker.sh
@@ -227,20 +229,30 @@ turn it back on. For current execution-first RTL work, start with `run_rtl_s0.sh
 and the top-level program manifest checker; for M1 authority-refinement work,
 use `run_rtl_m1_refinement_docker.sh` and widen
 `LNP64_M1_TYPED_COMMIT_SEEDS` before treating the result as full evidence.
+`run_rtl_execution_fast_docker.sh` is the Dockerized inner loop for the current
+execution-first milestone: it builds or reuses a Rust+Verilator image, mounts
+the checkout, keeps Docker-built Cargo and Verilator artifacts under
+`target/docker-rust` and `target/rtl-verilator-docker`, and runs selected
+programs through `rtl/top/lnp64_top.sv` against the emulator.
 
 The randomized/cosim sweep is serial and full-seed by default for stable logs.
 For an inner loop, run only the slices and seeds you need:
 
 ```sh
 LNP64_RTL_FAST=1 LNP64_RTL_RANDOM_COSIM_GATES="m1 m7" bash scripts/run_rtl_random_cosim.sh
+LNP64_RTL_FAST=1 LNP64_RTL_SKIP_BUILD=1 LNP64_RTL_RANDOM_COSIM_GATES="m1 m7" bash scripts/run_rtl_random_cosim.sh
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_SKIP_LINT=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_s0.sh
+LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_SKIP_LINT=1 LNP64_RTL_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_s0.sh
 LNP64_RTL_FAST=1 LNP64_COSIM_SEEDS="0 1 7" LNP64_RTL_RANDOM_COSIM_JOBS=auto bash scripts/run_rtl_random_cosim.sh
 ```
 
 Set `LNP64_RTL_RANDOM_COSIM_JOBS=4` or
 `LNP64_RTL_RANDOM_COSIM_JOBS=auto` to run independent M1-M15 randomized/cosim
 gates in parallel; each gate writes its own temporary log and failures replay
-that log. Remove `LNP64_RTL_FAST=1` and restore the full seed list before using
+that log. After a successful build, add `LNP64_RTL_SKIP_BUILD=1` to reuse the
+existing S0/M1-M15 Verilator binaries and rerun only model generation, RTL
+simulation, trace extraction, and diffs. Remove `LNP64_RTL_FAST=1`,
+`LNP64_RTL_SKIP_BUILD=1`, and restore the full seed list before using
 randomized/cosim output as broad evidence.
 
 The full RTL/proof gate avoids rerunning the M1 and M7 Verilator builds solely
@@ -257,6 +269,8 @@ LNP64_M7_TYPED_COMMIT_USE_EXISTING=1 LNP64_M7_TYPED_COMMIT_LOG=/tmp/lnp64_rtl_m7
 Focused RTL/proof loop:
 
 ```sh
+bash scripts/run_rtl_execution_fast.sh tests/rtl/programs/top_smoke.s
+LNP64_RTL_SKIP_BUILD=1 bash scripts/run_rtl_execution_fast.sh tests/rtl/programs/top_immediate_alu.s
 bash scripts/run_rtl_s0.sh
 bash scripts/run_rtl_top_program_manifest.sh
 bash scripts/run_rtl_top_program_smoke.sh
@@ -313,6 +327,7 @@ LNP64_RTL_FAST=1 LNP64_RTL_TOP_PROGRAM_JOBS=auto bash scripts/run_rtl_top_progra
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_SKIP_LINT=1 LNP64_RTL_TOP_PROGRAM_JOBS=4 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_manifest.sh
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_smoke.s
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_immediate_alu.s
+LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_extend.s
 ```
 
 Set `LNP64_RTL_TOP_PROGRAM_JOBS=4` or
