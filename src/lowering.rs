@@ -1547,6 +1547,7 @@ mod tests {
         );
         assert!(real_llc.contains("liblnp64-alloc-min.c"));
         assert!(real_llc.contains("#include \"lnp64_intrinsics.h\""));
+        assert!(real_llc.contains("void *alloc(size_t size)"));
         assert!(real_llc.contains("__lnp_alloc(size)"));
         assert!(real_llc.contains("__lnp_alloc_size(ptr)"));
         assert!(real_llc.contains("liblnp64-alloc-min.o"));
@@ -1645,6 +1646,10 @@ mod tests {
         assert!(real_llc.contains("lnp64-stack-args-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld stack-argument link smoke passed"));
         assert!(real_llc.contains("lnp64-$demo-clang-linked.elf"));
+        assert!(real_llc.contains(
+            r#""$demo_obj" "$libc_fd_impl_obj" \
+    "$libc_alloc_impl_obj" "$libc_string_impl_obj" "$libc_process_impl_obj""#
+        ));
         assert!(real_llc.contains("real LLVM LNP64 lld clang demo link smoke passed"));
         assert!(real_llc.contains("rewrite_with_perl"));
         assert!(real_llc_docker.contains("Dockerfile.llvm"));

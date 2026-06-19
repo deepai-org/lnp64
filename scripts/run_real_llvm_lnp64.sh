@@ -1152,6 +1152,10 @@ typedef unsigned long size_t;
 void *memcpy(void *dst, const void *src, size_t len);
 void *memset(void *dst, int value, size_t len);
 
+void *alloc(size_t size) {
+  return __lnp_alloc(size);
+}
+
 void *malloc(size_t size) {
   return __lnp_alloc(size);
 }
@@ -1709,7 +1713,8 @@ for demo in hello factorial allocator fibonacci; do
   demo_obj="$build_dir/$demo-clang-smoke.o"
   demo_elf="$build_dir/lnp64-$demo-clang-linked.elf"
   "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
-    -o "$demo_elf" "$crt0_obj" "$demo_obj" "$minilibc_obj"
+    -o "$demo_elf" "$crt0_obj" "$demo_obj" "$libc_fd_impl_obj" \
+    "$libc_alloc_impl_obj" "$libc_string_impl_obj" "$libc_process_impl_obj"
   test -s "$demo_elf"
 done
 printf 'real LLVM LNP64 lld clang demo link smoke passed: %s\n' \
