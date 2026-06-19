@@ -1407,6 +1407,12 @@ mod tests {
         let signal_fault_test_clang = include_str!("../userland/signal_fault_test_clang.c");
         let socket_loopback_test_clang = include_str!("../userland/socket_loopback_test_clang.c");
         let timer_test_clang = include_str!("../userland/timer_test_clang.c");
+        let httpd_demo = include_str!("../demos/httpd.c");
+        let netcat_demo = include_str!("../demos/netcat.c");
+        let parallel_hash_demo = include_str!("../demos/parallel_hash.c");
+        let ping_pong_demo = include_str!("../demos/ping_pong.c");
+        let producer_consumer_demo = include_str!("../demos/producer_consumer.c");
+        let sqlite_lite_demo = include_str!("../demos/sqlite_lite.c");
         let lnp64_isel_lowering = include_str!("../llvm/lib/Target/LNP64/LNP64ISelLowering.cpp");
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
         let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
@@ -1428,6 +1434,17 @@ mod tests {
         ] {
             assert!(minilibc_intrinsic_source.contains("#include <lnp64/intrinsics.h>"));
             assert!(!minilibc_intrinsic_source.contains("#include \"lnp64_intrinsics.h\""));
+        }
+        for native_demo_source in [
+            httpd_demo,
+            netcat_demo,
+            parallel_hash_demo,
+            ping_pong_demo,
+            producer_consumer_demo,
+            sqlite_lite_demo,
+        ] {
+            assert!(native_demo_source.contains("#include <lnp64/intrinsics.h>"));
+            assert!(!native_demo_source.contains("#include \"lnp64_intrinsics.h\""));
         }
         let real_llc_lines: Vec<_> = real_llc.lines().collect();
         for (index, line) in real_llc_lines.iter().enumerate() {

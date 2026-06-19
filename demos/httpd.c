@@ -1,4 +1,4 @@
-#include "lnp64_intrinsics.h"
+#include <lnp64/intrinsics.h>
 
 typedef unsigned long size_t;
 typedef unsigned long nfds_t;
