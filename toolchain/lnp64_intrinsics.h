@@ -5,6 +5,8 @@
 typedef unsigned long lnp64_word_t;
 typedef lnp64_word_t lnp64_cap_t;
 
+#define LNP64_OBJECT_CTL_CREATE 1UL
+
 lnp64_word_t __lnp_openat(lnp64_cap_t dir_cap, lnp64_word_t path_ptr,
                           lnp64_word_t flags, lnp64_word_t mode);
 lnp64_word_t __lnp_pull(lnp64_cap_t source_cap, lnp64_word_t buf_ptr,
@@ -26,9 +28,25 @@ lnp64_word_t __lnp_domain_ctl(lnp64_word_t record_ptr);
 lnp64_word_t __lnp_domain_create(lnp64_word_t memory, lnp64_word_t pids,
                                  lnp64_word_t fdrs, lnp64_word_t caps);
 lnp64_word_t __lnp_object_ctl(lnp64_word_t record_ptr);
-lnp64_word_t __lnp_object_create(lnp64_word_t kind, lnp64_word_t profile,
-                                 lnp64_cap_t fd0, lnp64_cap_t fd1,
-                                 lnp64_word_t arg);
+
+static inline lnp64_word_t __lnp_object_create(lnp64_word_t kind,
+                                               lnp64_word_t profile,
+                                               lnp64_cap_t fd0,
+                                               lnp64_cap_t fd1,
+                                               lnp64_word_t arg) {
+  lnp64_word_t record[9];
+  record[0] = LNP64_OBJECT_CTL_CREATE;
+  record[1] = kind;
+  record[2] = profile;
+  record[3] = fd0;
+  record[4] = fd1;
+  record[5] = arg;
+  record[6] = 0;
+  record[7] = 0;
+  record[8] = 0;
+  return __lnp_object_ctl((lnp64_word_t)record);
+}
+
 static inline void *__lnp_alloc(lnp64_word_t size) {
   lnp64_word_t ptr;
   __asm__ volatile("alloc %0, %1" : "=r"(ptr) : "r"(size) : "memory");

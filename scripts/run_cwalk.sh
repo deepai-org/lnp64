@@ -7,7 +7,7 @@ else
   lnp64=(cargo run --quiet --)
 fi
 
-"${lnp64[@]}" cc \
+"${lnp64[@]}" cc --toy-bootstrap \
   third_party/cwalk/smoke.c \
   third_party/cwalk/include/cwalk.h \
   third_party/cwalk/src/cwalk.c \

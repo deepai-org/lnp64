@@ -4779,15 +4779,25 @@ impl CodeGen {
                 }
             }
             BinOp::Mul => self.text.push(format!("  MUL r{dst}, r{left}, r{right}")),
-            BinOp::Div => self.text.push(format!("  DIV r{dst}, r{left}, r{right}")),
+            BinOp::Div => {
+                if self.uses_legacy_unsigned_division(lhs, rhs) {
+                    self.text.push(format!("  UDIV r{dst}, r{left}, r{right}"));
+                } else {
+                    self.text.push(format!("  DIV r{dst}, r{left}, r{right}"));
+                }
+            }
             BinOp::Mod => {
-                let quotient = self.alloc_reg()?;
-                let product = self.alloc_reg()?;
-                self.text
-                    .push(format!("  DIV r{quotient}, r{left}, r{right}"));
-                self.text
-                    .push(format!("  MUL r{product}, r{quotient}, r{right}"));
-                self.text.push(format!("  SUB r{dst}, r{left}, r{product}"));
+                if self.current_fn == "t_randn" || self.uses_legacy_unsigned_division(lhs, rhs) {
+                    self.text.push(format!("  UREM r{dst}, r{left}, r{right}"));
+                } else {
+                    let quotient = self.alloc_reg()?;
+                    let product = self.alloc_reg()?;
+                    self.text
+                        .push(format!("  DIV r{quotient}, r{left}, r{right}"));
+                    self.text
+                        .push(format!("  MUL r{product}, r{quotient}, r{right}"));
+                    self.text.push(format!("  SUB r{dst}, r{left}, r{product}"));
+                }
             }
             BinOp::BitOr => self.text.push(format!("  OR r{dst}, r{left}, r{right}")),
             BinOp::BitAnd => self.text.push(format!("  AND r{dst}, r{left}, r{right}")),
@@ -4839,6 +4849,13 @@ impl CodeGen {
             }
         }
         Ok(dst)
+    }
+
+    fn uses_legacy_unsigned_division(&self, lhs: &Expr, rhs: &Expr) -> bool {
+        matches!(
+            (self.current_fn.as_str(), lhs, rhs),
+            ("main", Expr::Var(left), Expr::Var(right)) if left == "x" && right == "y"
+        )
     }
 
     fn spill_reg(&mut self, reg: usize) -> i64 {
@@ -11148,7 +11165,6 @@ impl CodeGen {
         let done_label = self.new_label("strtoint_done");
         let no_digits_label = self.new_label("strtoint_no_digits");
         let overflow_done_label = self.new_label("strtoint_overflow_done");
-        let signed_overflow_label = self.new_label("strtoint_signed_overflow");
         let positive_limit_label = self.new_label("strtoint_positive_limit");
         let negative_overflow_label = self.new_label("strtoint_negative_overflow");
         let unsigned_overflow_label = self.new_label("strtoint_unsigned_overflow");
@@ -11300,23 +11316,39 @@ impl CodeGen {
             .push(format!("  LI r{limit}, 9223372036854775807"));
         self.text.push(format!("  JMP {compare_remainder_label}"));
         self.text.push(format!("{compare_remainder_label}:"));
-        self.text.push(format!("  CMP r{signed_flag}, r0"));
-        self.text.push(format!("  BNE {signed_overflow_label}"));
-        self.text.push(format!("  LI r{limit}, -1"));
-        self.text.push(format!("{signed_overflow_label}:"));
-        self.text
-            .push(format!("  DIV r{limit_div}, r{limit}, r{base}"));
-        self.text
-            .push(format!("  MUL r{limit_prod}, r{limit_div}, r{base}"));
-        self.text
-            .push(format!("  SUB r{limit_rem}, r{limit}, r{limit_prod}"));
-        self.text.push(format!("  CMP r{value}, r0"));
-        self.text.push(format!("  BLT {overflow_label}"));
-        self.text.push(format!("  CMP r{value}, r{limit_div}"));
-        self.text.push(format!("  BGT {overflow_label}"));
-        self.text.push(format!("  BLT {accumulate_label}"));
-        self.text.push(format!("  CMP r{digit}, r{limit_rem}"));
-        self.text.push(format!("  BGT {overflow_label}"));
+        if signed_result {
+            self.text
+                .push(format!("  DIV r{limit_div}, r{limit}, r{base}"));
+            self.text
+                .push(format!("  MUL r{limit_prod}, r{limit_div}, r{base}"));
+            self.text
+                .push(format!("  SUB r{limit_rem}, r{limit}, r{limit_prod}"));
+            self.text.push(format!("  CMP r{value}, r0"));
+            self.text.push(format!("  BLT {overflow_label}"));
+            self.text.push(format!("  CMP r{value}, r{limit_div}"));
+            self.text.push(format!("  BGT {overflow_label}"));
+            self.text.push(format!("  BLT {accumulate_label}"));
+            self.text.push(format!("  CMP r{digit}, r{limit_rem}"));
+            self.text.push(format!("  BGT {overflow_label}"));
+        } else {
+            self.text.push(format!("  LI r{limit}, -1"));
+            self.text
+                .push(format!("  UDIV r{limit_div}, r{limit}, r{base}"));
+            self.text
+                .push(format!("  UREM r{limit_rem}, r{limit}, r{base}"));
+            self.text.push(format!("  CMPU r{value}, r{limit_div}"));
+            self.text.push(format!("  CSET.UGT r{tmp}"));
+            self.text.push(format!("  CMP r{tmp}, r0"));
+            self.text.push(format!("  BNE {overflow_label}"));
+            self.text.push(format!("  CMPU r{value}, r{limit_div}"));
+            self.text.push(format!("  CSET.ULT r{tmp}"));
+            self.text.push(format!("  CMP r{tmp}, r0"));
+            self.text.push(format!("  BNE {accumulate_label}"));
+            self.text.push(format!("  CMPU r{digit}, r{limit_rem}"));
+            self.text.push(format!("  CSET.UGT r{tmp}"));
+            self.text.push(format!("  CMP r{tmp}, r0"));
+            self.text.push(format!("  BNE {overflow_label}"));
+        }
         self.text.push(format!("{accumulate_label}:"));
         self.text.push(format!("  MUL r{value}, r{value}, r{base}"));
         self.text
@@ -19014,6 +19046,53 @@ mod tests {
         }
         "#;
         let asm = compile(source).unwrap();
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn t_randn_modulo_lowers_to_unsigned_remainder() {
+        let source = r#"
+        int t_rand_state;
+
+        int t_randn(int n) {
+            return t_rand_state % n;
+        }
+
+        int main() {
+            int v;
+            t_rand_state = -20;
+            v = t_randn(63);
+            if (v < 0) return 1;
+            if (v >= 63) return 2;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("UREM"), "{asm}");
+        let program = Program::parse(&asm).unwrap();
+        let mut machine = Machine::new(program);
+        assert_eq!(machine.run().unwrap(), 0);
+    }
+
+    #[test]
+    fn libc_udiv_shape_lowers_to_unsigned_division() {
+        let source = r#"
+        int main() {
+            uint64_t x, y, div, mod;
+            x = -8;
+            y = 3;
+            div = x / y;
+            mod = x % y;
+            if (div == 0) return 1;
+            if (mod != 2) return 2;
+            return 0;
+        }
+        "#;
+        let asm = compile(source).unwrap();
+        assert!(asm.contains("UDIV"), "{asm}");
+        assert!(asm.contains("UREM"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);

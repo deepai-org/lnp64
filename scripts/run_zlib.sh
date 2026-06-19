@@ -7,7 +7,7 @@ else
   lnp64=(cargo run --quiet --)
 fi
 
-"${lnp64[@]}" cc \
+"${lnp64[@]}" cc --toy-bootstrap \
   third_party/zlib/smoke.c \
   third_party/zlib/adler32.c \
   third_party/zlib/crc32.c \

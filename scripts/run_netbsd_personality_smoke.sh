@@ -9,7 +9,7 @@ fi
 asm=/tmp/netbsd_personality_smoke.s
 out=/tmp/netbsd_personality_smoke.out
 
-"${lnp64[@]}" cc demos/netbsd_personality_smoke.c -o "$asm"
+"${lnp64[@]}" cc --toy-bootstrap demos/netbsd_personality_smoke.c -o "$asm"
 
 required_native=(
   OPEN_AT

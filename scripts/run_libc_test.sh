@@ -40,7 +40,7 @@ tests=(
 for test_path in "${tests[@]}"; do
   test_name="${test_path##*/}"
   asm="/tmp/libc_test_${test_name}.s"
-  "${lnp64[@]}" cc \
+  "${lnp64[@]}" cc --toy-bootstrap \
     "third_party/libc-test/${test_path}.c" \
     third_party/libc-test/functional/print.c \
     -o "$asm"

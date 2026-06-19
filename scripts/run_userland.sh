@@ -39,9 +39,9 @@ DEVS
 : > "$root/dev/null"
 : > "$root/dev/random"
 
-"${lnp64[@]}" cc userland/lnpsh.c -o "$root/bin/lnpsh.s"
-"${lnp64[@]}" cc userland/ucat.c -o "$root/bin/ucat.s"
-"${lnp64[@]}" cc userland/init.c -o "$root/sbin/init.s"
+"${lnp64[@]}" cc --toy-bootstrap userland/lnpsh.c -o "$root/bin/lnpsh.s"
+"${lnp64[@]}" cc --toy-bootstrap userland/ucat.c -o "$root/bin/ucat.s"
+"${lnp64[@]}" cc --toy-bootstrap userland/init.c -o "$root/sbin/init.s"
 
 "${lnp64[@]}" run "$root/sbin/init.s" -- init "$root" > "$out"
 

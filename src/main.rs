@@ -100,6 +100,12 @@ fn run() -> Result<(), String> {
         }
         "cc" => {
             let options = take_cc_options(&mut args)?;
+            if !options.toy_bootstrap {
+                return Err(
+                    "lnp64 cc is the deprecated Rust bootstrap C compiler; use the real Clang/lld gates, or pass --toy-bootstrap for legacy smoke generation"
+                        .to_string(),
+                );
+            }
             let text = if options.dump_macros {
                 c_compiler::macro_expand_files(&options.inputs)?
             } else if options.dump_preprocessed {
@@ -228,7 +234,7 @@ fn usage() {
     eprintln!("  lnp64 run-elf [--load-bias <n>] <program.elf>");
     eprintln!("  lnp64 run-flat-exec <program.hex>");
     eprintln!(
-        "  lnp64 cc [--dump-macros|--dump-preprocessed] <program.c> [more.c ...] [-o program.s]"
+        "  lnp64 cc --toy-bootstrap [--dump-macros|--dump-preprocessed] <program.c> [more.c ...] [-o program.s]"
     );
 }
 
@@ -645,6 +651,7 @@ struct CcOptions {
     output: Option<PathBuf>,
     dump_macros: bool,
     dump_preprocessed: bool,
+    toy_bootstrap: bool,
 }
 
 fn take_cc_options(args: &mut Vec<String>) -> Result<CcOptions, String> {
@@ -652,6 +659,7 @@ fn take_cc_options(args: &mut Vec<String>) -> Result<CcOptions, String> {
     let mut output = None;
     let mut dump_macros = false;
     let mut dump_preprocessed = false;
+    let mut toy_bootstrap = false;
     while !args.is_empty() {
         let arg = args.remove(0);
         if arg == "-o" {
@@ -666,6 +674,8 @@ fn take_cc_options(args: &mut Vec<String>) -> Result<CcOptions, String> {
             dump_preprocessed = true;
         } else if arg == "--dump-macros" {
             dump_macros = true;
+        } else if arg == "--toy-bootstrap" {
+            toy_bootstrap = true;
         } else if arg.starts_with('-') {
             return Err(format!("unexpected cc option {arg:?}"));
         } else {
@@ -680,6 +690,7 @@ fn take_cc_options(args: &mut Vec<String>) -> Result<CcOptions, String> {
         output,
         dump_macros,
         dump_preprocessed,
+        toy_bootstrap,
     })
 }
 

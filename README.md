@@ -6,9 +6,9 @@ memory, synchronization, service calls, devices, scheduling, and isolation
 hardware-visible capability objects.
 
 This repository contains the architecture documents, Rust emulator, assembler,
-bootstrap C compiler, libc/personality experiments, early LLVM target work, and
-SystemVerilog/formal co-design work. It is an architecture research repo, not a
-finished processor or production OS.
+deprecated Rust bootstrap C compiler, libc/personality experiments, early LLVM
+target work, and SystemVerilog/formal co-design work. It is an architecture
+research repo, not a finished processor or production OS.
 
 For the shortest project thesis, start with
 `capability_machine_one_pager.md`.
@@ -62,7 +62,8 @@ Implementation:
 - `src/isa.rs`: instruction and opcode definitions.
 - `src/asm.rs`: assembler.
 - `src/emulator.rs`: emulator runtime.
-- `src/c_compiler.rs`: bootstrap C compiler.
+- `src/c_compiler.rs`: deprecated Rust bootstrap C compiler, retained only for
+  legacy smoke generation behind `lnp64 cc --toy-bootstrap`.
 - `llvm/lib/Target/LNP64/`: early LLVM target implementation.
 - `rtl/`: SystemVerilog top, core tiles, engines, schema, and simulation
   slices.
@@ -109,11 +110,18 @@ Run the full repository gate:
 bash scripts/run_all_gates.sh
 ```
 
-Run a small demo manually:
+Run a small demo through the legacy bootstrap compiler:
 
 ```sh
-cargo run -- cc demos/hello.c -o /tmp/hello.lnp64.s
+cargo run -- cc --toy-bootstrap demos/hello.c -o /tmp/hello.lnp64.s
 cargo run -- run /tmp/hello.lnp64.s
+```
+
+The bootstrap compiler is deprecated. For real Clang/lld coverage, use the
+Docker LLVM gate:
+
+```sh
+LNP64_LLVM_DOCKER_SKIP_BUILD=1 bash scripts/run_real_llvm_lnp64_docker.sh
 ```
 
 For faster repeated software runs:

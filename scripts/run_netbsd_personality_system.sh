@@ -77,10 +77,10 @@ put_image 256 '1d11/tmp\0'
 put_image 292 'x'
 
 : > "$trace"
-"${lnp64[@]}" cc userland/netbsd_init.c -o "$root/sbin/init.s"
+"${lnp64[@]}" cc --toy-bootstrap userland/netbsd_init.c -o "$root/sbin/init.s"
 cat "$root/sbin/init.s" >> "$trace"
 for program in "${programs[@]}"; do
-  "${lnp64[@]}" cc "userland/${program}.c" -o "$root/bin/${program}.s"
+  "${lnp64[@]}" cc --toy-bootstrap "userland/${program}.c" -o "$root/bin/${program}.s"
   cat "$root/bin/${program}.s" >> "$trace"
 done
 cat > "$root/bin/bad_exec.s" <<'ASM'

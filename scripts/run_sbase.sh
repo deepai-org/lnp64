@@ -7,35 +7,35 @@ else
   lnp64=(cargo run --release --quiet --)
 fi
 
-"${lnp64[@]}" cc third_party/sbase/echo.c -o /tmp/sbase_echo.s
-"${lnp64[@]}" cc third_party/sbase/cat.c -o /tmp/sbase_cat.s
-"${lnp64[@]}" cc third_party/sbase/wc.c -o /tmp/sbase_wc.s
-"${lnp64[@]}" cc third_party/sbase/yes.c -o /tmp/sbase_yes.s
-"${lnp64[@]}" cc third_party/sbase/basename.c -o /tmp/sbase_basename.s
-"${lnp64[@]}" cc third_party/sbase/dirname.c -o /tmp/sbase_dirname.s
-"${lnp64[@]}" cc third_party/sbase/head.c -o /tmp/sbase_head.s
-"${lnp64[@]}" cc third_party/sbase/tee.c -o /tmp/sbase_tee.s
-"${lnp64[@]}" cc third_party/sbase/cksum.c -o /tmp/sbase_cksum.s
-"${lnp64[@]}" cc third_party/sbase/tail.c -o /tmp/sbase_tail.s
-"${lnp64[@]}" cc third_party/sbase/cmp.c -o /tmp/sbase_cmp.s
-"${lnp64[@]}" cc third_party/sbase/uniq.c -o /tmp/sbase_uniq.s
-"${lnp64[@]}" cc third_party/sbase/sort.c -o /tmp/sbase_sort.s
-"${lnp64[@]}" cc third_party/sbase/grep.c -o /tmp/sbase_grep.s
-"${lnp64[@]}" cc third_party/sbase/sed.c -o /tmp/sbase_sed.s
-"${lnp64[@]}" cc third_party/sbase/cp.c -o /tmp/sbase_cp.s
-"${lnp64[@]}" cc third_party/sbase/mv.c -o /tmp/sbase_mv.s
-"${lnp64[@]}" cc third_party/sbase/ls.c -o /tmp/sbase_ls.s
-"${lnp64[@]}" cc third_party/sbase/chmod.c -o /tmp/sbase_chmod.s
-"${lnp64[@]}" cc third_party/sbase/chown.c -o /tmp/sbase_chown.s
-"${lnp64[@]}" cc third_party/sbase/ln.c -o /tmp/sbase_ln.s
-"${lnp64[@]}" cc third_party/sbase/mkdir.c -o /tmp/sbase_mkdir.s
-"${lnp64[@]}" cc third_party/sbase/rm.c -o /tmp/sbase_rm.s
-"${lnp64[@]}" cc third_party/sbase/cut.c -o /tmp/sbase_cut.s
-"${lnp64[@]}" cc third_party/sbase/tr.c -o /tmp/sbase_tr.s
-"${lnp64[@]}" cc third_party/sbase/touch.c -o /tmp/sbase_touch.s
-"${lnp64[@]}" cc third_party/sbase/find.c -o /tmp/sbase_find.s
-"${lnp64[@]}" cc third_party/jsmn/example/simple.c -o /tmp/jsmn_simple.s
-"${lnp64[@]}" cc third_party/jsmn/test/tests.c -o /tmp/jsmn_tests.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/sbase/echo.c -o /tmp/sbase_echo.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/sbase/cat.c -o /tmp/sbase_cat.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/sbase/wc.c -o /tmp/sbase_wc.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/sbase/yes.c -o /tmp/sbase_yes.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/sbase/basename.c -o /tmp/sbase_basename.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/sbase/dirname.c -o /tmp/sbase_dirname.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/sbase/head.c -o /tmp/sbase_head.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/sbase/tee.c -o /tmp/sbase_tee.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/sbase/cksum.c -o /tmp/sbase_cksum.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/sbase/tail.c -o /tmp/sbase_tail.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/sbase/cmp.c -o /tmp/sbase_cmp.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/sbase/uniq.c -o /tmp/sbase_uniq.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/sbase/sort.c -o /tmp/sbase_sort.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/sbase/grep.c -o /tmp/sbase_grep.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/sbase/sed.c -o /tmp/sbase_sed.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/sbase/cp.c -o /tmp/sbase_cp.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/sbase/mv.c -o /tmp/sbase_mv.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/sbase/ls.c -o /tmp/sbase_ls.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/sbase/chmod.c -o /tmp/sbase_chmod.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/sbase/chown.c -o /tmp/sbase_chown.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/sbase/ln.c -o /tmp/sbase_ln.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/sbase/mkdir.c -o /tmp/sbase_mkdir.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/sbase/rm.c -o /tmp/sbase_rm.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/sbase/cut.c -o /tmp/sbase_cut.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/sbase/tr.c -o /tmp/sbase_tr.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/sbase/touch.c -o /tmp/sbase_touch.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/sbase/find.c -o /tmp/sbase_find.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/jsmn/example/simple.c -o /tmp/jsmn_simple.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/jsmn/test/tests.c -o /tmp/jsmn_tests.s
 
 echo "== sbase echo.c =="
 echo_out=$("${lnp64[@]}" run /tmp/sbase_echo.s -- echo hello world)

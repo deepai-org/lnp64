@@ -877,6 +877,8 @@ int main(void) {
     return 1;
   if (__lnp_domain_ctl((lnp64_word_t)record) != (lnp64_word_t)-1)
     return 2;
+  if (__lnp_object_create(999, 0, 0, 0, 0) != (lnp64_word_t)-1)
+    return 3;
   return 0;
 }
 C

@@ -1,6 +1,7 @@
 # LNP64 toy compiler retirement policy v0.
 # Pipe-delimited fields: rule|status|artifacts|evidence
 smoke_generator_only|required|toolchain_roadmap.md,src/c_compiler.rs|toy_compiler_policy=bootstrap_smoke_only_after_llvm_gate
+explicit_legacy_cc_flag|required|src/main.rs,scripts/run_demos.sh,scripts/run_libc_test.sh,scripts/run_real_packages.sh,scripts/run_userland.sh,scripts/run_sbase.sh,scripts/run_rtl_top_program_smoke.sh|--toy-bootstrap
 private_native_shims|required|toolchain/lnp64_intrinsics.manifest,toolchain/lnp64_intrinsics.h,src/c_compiler.rs|c_private_lnp_manifest_intrinsics_lower_and_run
 compat_lowering_boundary|required|src/lowering.rs,libc_roadmap.md,conformance_matrix.md|compatibility_table_names_native_primitives
 no_toy_in_llvm_gates|required|toolchain/lnp64_llvm_gates.manifest|llvm_gate_manifest_pins_non_toy_clang_commands

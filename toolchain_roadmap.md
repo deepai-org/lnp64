@@ -312,6 +312,8 @@ NetBSD personality smoke. After that point:
 - New application/package compatibility work should target Clang first.
 - The toy compiler should receive only small fixes needed to keep existing smoke
   tests useful.
+- Any remaining `lnp64 cc` use must pass `--toy-bootstrap` so the Rust compiler
+  stays visibly legacy and cannot become the implicit C path again.
 - New native primitives should be exposed through libc/private `__lnp_*` shims
   and LLVM intrinsics, not new ad hoc C compiler builtins unless needed for a
   temporary architecture test.

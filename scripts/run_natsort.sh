@@ -7,7 +7,7 @@ else
   lnp64=(cargo run --quiet --)
 fi
 
-"${lnp64[@]}" cc \
+"${lnp64[@]}" cc --toy-bootstrap \
   third_party/natsort/smoke.c \
   third_party/natsort/strnatcmp.c \
   -o /tmp/natsort_smoke.s

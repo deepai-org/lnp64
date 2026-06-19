@@ -25,13 +25,13 @@ non_network=(
 
 for src in "${non_network[@]}"; do
   asm="/tmp/$(basename "$src" .c).s"
-  "${lnp64[@]}" cc "$src" -o "$asm"
+  "${lnp64[@]}" cc --toy-bootstrap "$src" -o "$asm"
   echo "== $src =="
   "${lnp64[@]}" run "$asm"
 done
 
 echo "== demos/netcat.c =="
-"${lnp64[@]}" cc demos/netcat.c -o /tmp/netcat.s
+"${lnp64[@]}" cc --toy-bootstrap demos/netcat.c -o /tmp/netcat.s
 rm -f /tmp/netcat.out
 "${lnp64[@]}" run /tmp/netcat.s > /tmp/netcat.out &
 netcat_pid=$!
@@ -48,7 +48,7 @@ cat /tmp/netcat.out
 test "$netcat_reply" = "netcat ok"
 
 echo "== demos/httpd.c =="
-"${lnp64[@]}" cc demos/httpd.c -o /tmp/httpd.s
+"${lnp64[@]}" cc --toy-bootstrap demos/httpd.c -o /tmp/httpd.s
 rm -f /tmp/httpd.out /tmp/httpd.response
 "${lnp64[@]}" run /tmp/httpd.s > /tmp/httpd.out &
 httpd_pid=$!

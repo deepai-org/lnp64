@@ -7,8 +7,8 @@ else
   lnp64=(cargo run --release --quiet --)
 fi
 
-"${lnp64[@]}" cc third_party/jsmn/example/simple.c -o /tmp/jsmn_simple.s
-"${lnp64[@]}" cc third_party/jsmn/test/tests.c -o /tmp/jsmn_tests.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/jsmn/example/simple.c -o /tmp/jsmn_simple.s
+"${lnp64[@]}" cc --toy-bootstrap third_party/jsmn/test/tests.c -o /tmp/jsmn_tests.s
 
 echo "== jsmn example/simple.c =="
 "${lnp64[@]}" run /tmp/jsmn_simple.s -- simple > /tmp/jsmn_simple.out

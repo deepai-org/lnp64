@@ -1599,6 +1599,7 @@ mod tests {
         assert!(real_llc.contains("intrinsic-control-clang-smoke.o"));
         assert!(real_llc.contains("object_ctl r"));
         assert!(real_llc.contains("domain_ctl r"));
+        assert!(real_llc.contains("__lnp_object_create(999"));
         assert!(real_llc.contains("real LLVM LNP64 clang intrinsic control object smoke passed"));
         assert!(real_llc.contains("intrinsic-cap-control-clang-smoke.o"));
         assert!(real_llc.contains("cap_dup r"));
@@ -3563,11 +3564,67 @@ mod tests {
         let run_elf = include_str!("../toolchain/lnp64_run_elf.manifest");
         let intrinsics = include_str!("../toolchain/lnp64_intrinsics.manifest");
         let intrinsic_header = include_str!("../toolchain/lnp64_intrinsics.h");
+        let main_source = include_str!("main.rs");
+        let legacy_toy_scripts = [
+            (
+                "scripts/run_cwalk.sh",
+                include_str!("../scripts/run_cwalk.sh"),
+            ),
+            (
+                "scripts/run_demos.sh",
+                include_str!("../scripts/run_demos.sh"),
+            ),
+            (
+                "scripts/run_inih.sh",
+                include_str!("../scripts/run_inih.sh"),
+            ),
+            (
+                "scripts/run_jsmn.sh",
+                include_str!("../scripts/run_jsmn.sh"),
+            ),
+            (
+                "scripts/run_libc_test.sh",
+                include_str!("../scripts/run_libc_test.sh"),
+            ),
+            (
+                "scripts/run_natsort.sh",
+                include_str!("../scripts/run_natsort.sh"),
+            ),
+            (
+                "scripts/run_netbsd_personality_smoke.sh",
+                include_str!("../scripts/run_netbsd_personality_smoke.sh"),
+            ),
+            (
+                "scripts/run_netbsd_personality_system.sh",
+                include_str!("../scripts/run_netbsd_personality_system.sh"),
+            ),
+            (
+                "scripts/run_rtl_top_program_smoke.sh",
+                include_str!("../scripts/run_rtl_top_program_smoke.sh"),
+            ),
+            (
+                "scripts/run_sbase.sh",
+                include_str!("../scripts/run_sbase.sh"),
+            ),
+            (
+                "scripts/run_userland.sh",
+                include_str!("../scripts/run_userland.sh"),
+            ),
+            (
+                "scripts/run_zlib.sh",
+                include_str!("../scripts/run_zlib.sh"),
+            ),
+        ];
         let c_compiler = include_str!("c_compiler.rs");
         let lowering_source = include_str!("lowering.rs");
         let libc_roadmap = include_str!("../libc_roadmap.md");
+        let legacy_toy_script_corpus = legacy_toy_scripts
+            .iter()
+            .map(|(_, script)| *script)
+            .collect::<Vec<_>>()
+            .join("\n");
         let evidence_corpus = format!(
-            "{target_manifest}\n{roadmap}\n{conformance}\n{llvm_gates}\n{llvm_bootstrap}\n{run_elf}\n{intrinsics}\n{intrinsic_header}\n{c_compiler}\n{lowering_source}\n{libc_roadmap}"
+            "{target_manifest}\n{roadmap}\n{conformance}\n{llvm_gates}\n{llvm_bootstrap}\n{run_elf}\n{intrinsics}\n{intrinsic_header}\n{main_source}\n{legacy_toy_script_corpus}\n{c_compiler}\n{lowering_source}\n{libc_roadmap}"
         );
         let rows = toy_compiler_policy_rows(policy_manifest);
         let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -3623,6 +3680,7 @@ mod tests {
 
         for rule in [
             "smoke_generator_only",
+            "explicit_legacy_cc_flag",
             "private_native_shims",
             "compat_lowering_boundary",
             "no_toy_in_llvm_gates",
@@ -3635,6 +3693,7 @@ mod tests {
         }
         for rule in [
             "smoke_generator_only",
+            "explicit_legacy_cc_flag",
             "private_native_shims",
             "compat_lowering_boundary",
             "no_toy_in_llvm_gates",
@@ -3646,6 +3705,19 @@ mod tests {
             assert!(intrinsic.starts_with("__lnp_"));
             assert!(intrinsics.contains(intrinsic));
             assert!(intrinsic_header.contains(intrinsic));
+        }
+        assert!(main_source.contains("deprecated Rust bootstrap C compiler"));
+        assert!(main_source.contains("cc --toy-bootstrap"));
+        for (script_name, script) in legacy_toy_scripts {
+            for (idx, line) in script.lines().enumerate() {
+                if line.contains(" cc ") || line.contains(" -- cc ") {
+                    assert!(
+                        line.contains("--toy-bootstrap"),
+                        "{script_name}:{} invokes the legacy C compiler without --toy-bootstrap: {line}",
+                        idx + 1
+                    );
+                }
+            }
         }
         assert!(!llvm_gates.contains("lnp64 cc"));
         assert!(!llvm_gates.contains("cargo run -- cc"));
@@ -3997,6 +4069,21 @@ mod tests {
                         "inline intrinsic {name} is missing asm mnemonic {asm_mnemonic}"
                     );
                 }
+                "inline_record_builder_lowered" => {
+                    assert_eq!(
+                        blocker, "none",
+                        "record-builder intrinsic {name} has blocker"
+                    );
+                    assert!(
+                        intrinsic_header.contains("static inline")
+                            && intrinsic_header.contains(name),
+                        "record-builder intrinsic {name} is missing from the intrinsic header"
+                    );
+                    assert!(
+                        real_llc.contains(name),
+                        "record-builder intrinsic {name} lacks real LLVM smoke coverage"
+                    );
+                }
                 "pending_encoding" | "pending_argblock" | "pending_libc_record_builder" => {
                     assert_ne!(blocker, "none", "pending intrinsic {name} needs a blocker");
                     assert!(
@@ -4018,6 +4105,12 @@ mod tests {
                 "target manifest intrinsic {name} is missing from lowering manifest"
             );
         }
+        assert!(intrinsic_header.contains("#define LNP64_OBJECT_CTL_CREATE 1UL"));
+        assert!(intrinsic_header.contains("static inline lnp64_word_t __lnp_object_create"));
+        assert!(intrinsic_header.contains("lnp64_word_t record[9];"));
+        assert!(intrinsic_header.contains("record[0] = LNP64_OBJECT_CTL_CREATE;"));
+        assert!(intrinsic_header.contains("record[8] = 0;"));
+        assert!(intrinsic_header.contains("return __lnp_object_ctl((lnp64_word_t)record);"));
         for (name, mnemonic) in [
             ("__lnp_cap_dup", "cap_dup"),
             ("__lnp_cap_send", "cap_send"),

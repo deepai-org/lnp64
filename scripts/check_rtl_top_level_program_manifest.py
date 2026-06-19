@@ -37,7 +37,7 @@ def demo_c_sources_from_script(script_text: str) -> set[str]:
     block_match = re.search(r"non_network=\(\n(?P<body>.*?)\n\)", script_text, re.S)
     require(block_match is not None, "scripts/run_demos.sh must keep a non_network source list")
     sources = set(re.findall(r"\s+(demos/[A-Za-z0-9_./-]+\.c)", block_match.group("body")))
-    sources.update(re.findall(r"cc\s+(demos/[A-Za-z0-9_./-]+\.c)\s+-o", script_text))
+    sources.update(re.findall(r"cc\s+--toy-bootstrap\s+(demos/[A-Za-z0-9_./-]+\.c)\s+-o", script_text))
     return sources
 
 

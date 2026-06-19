@@ -51,9 +51,9 @@ if [[ "$program_input" == *.c ]]; then
   program_asm="$(mktemp "${TMPDIR:-/tmp}/lnp64_top_program_from_c.XXXXXX.s")"
   tmp_files+=("$program_asm")
   if [[ -n "${LNP64_BIN:-}" ]]; then
-    "$LNP64_BIN" cc "$program_input" -o "$program_asm"
+    "$LNP64_BIN" cc --toy-bootstrap "$program_input" -o "$program_asm"
   else
-    cargo run --quiet -- cc "$program_input" -o "$program_asm"
+    cargo run --quiet -- cc --toy-bootstrap "$program_input" -o "$program_asm"
   fi
   program_input="$program_asm"
 fi
