@@ -1155,8 +1155,25 @@ pub struct Machine {
     last_exit_regs: Option<[u64; GPR_COUNT]>,
     last_exit_mem0: Option<u64>,
     last_exit_errno: Option<u64>,
-    committed_exec_retire_trace: Vec<(u64, u8)>,
+    committed_exec_retire_trace: Vec<CommittedExecRetireRecord>,
     committed_exec_mode: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CommittedExecRetireRecord {
+    pub pc: u64,
+    pub opcode: u8,
+    pub tile_id: u64,
+    pub pid: u64,
+    pub tid: u64,
+    pub domain_id: u64,
+    pub domain_gen: u64,
+    pub action: u64,
+    pub result_valid: u64,
+    pub result_reg: u64,
+    pub result_value: u64,
+    pub errno: u64,
+    pub status: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1179,6 +1196,30 @@ fn checked_exec_count(value: u64, limit: usize, name: &str) -> Result<usize, Str
 
 fn checked_host_usize(value: u64, name: &str) -> Result<usize, String> {
     usize::try_from(value).map_err(|_| format!("{name} exceeds host usize"))
+}
+
+fn committed_exec_result_reg(raw_word: u32) -> Option<usize> {
+    let opcode = (raw_word >> 24) as u8;
+    match opcode {
+        0x57 => Some(1),
+        0x00
+        | 0x1b
+        | 0x1c
+        | 0x1f
+        | 0x20..=0x28
+        | 0x2a
+        | 0x33..=0x35
+        | 0x37
+        | 0x39
+        | 0x3a
+        | 0x49
+        | 0x55
+        | 0x61
+        | 0x63..=0x65
+        | 0x68
+        | 0xcb..=0xcd => None,
+        _ => Some(((raw_word >> 19) & 0x1f) as usize),
+    }
 }
 
 fn sign_extend(value: u32, bits: u32) -> i64 {
@@ -1462,7 +1503,16 @@ impl Machine {
                 continue;
             }
             let pc = self.thread()?.ip as u64;
-            let opcode = self.load_exec_u32(pc).map(|word| (word >> 24) as u8)?;
+            let raw_word = self.load_exec_u32(pc)?;
+            let opcode = (raw_word >> 24) as u8;
+            let result_reg = committed_exec_result_reg(raw_word);
+            let pid = self.thread()?.pid;
+            let domain_id = self.process()?.domain_id;
+            let domain_gen = self
+                .domains
+                .get(&domain_id)
+                .map(|domain| domain.generation)
+                .unwrap_or_default();
             let (instr, next_pc) = self.decode_committed_exec_instruction(pc)?;
             self.thread_mut()?.ip = checked_host_usize(next_pc, "committed exec next PC")?;
             self.charge_cpu_tick()?;
@@ -1473,7 +1523,34 @@ impl Machine {
             if keep_ready && self.threads.contains_key(&tid) {
                 self.wake_thread(tid);
             }
-            self.committed_exec_retire_trace.push((pc, opcode));
+            let regs = self
+                .threads
+                .get(&tid)
+                .map(|thread| thread.regs)
+                .or(self.last_exit_regs)
+                .unwrap_or([0; GPR_COUNT]);
+            let errno = self
+                .processes
+                .get(&pid)
+                .map(|process| process.errno)
+                .or(self.last_exit_errno)
+                .unwrap_or_default();
+            self.committed_exec_retire_trace
+                .push(CommittedExecRetireRecord {
+                    pc,
+                    opcode,
+                    tile_id: 0,
+                    pid,
+                    tid,
+                    domain_id,
+                    domain_gen,
+                    action: 1,
+                    result_valid: u64::from(result_reg.is_some()),
+                    result_reg: result_reg.unwrap_or_default() as u64,
+                    result_value: result_reg.map(|reg| regs[reg]).unwrap_or_default(),
+                    errno,
+                    status: if errno == 0 { 0 } else { 1 },
+                });
         }
         Ok(self.last_exit)
     }
@@ -1486,7 +1563,7 @@ impl Machine {
         self.last_exit_mem0
     }
 
-    pub fn committed_exec_retire_trace(&self) -> &[(u64, u8)] {
+    pub fn committed_exec_retire_trace(&self) -> &[CommittedExecRetireRecord] {
         &self.committed_exec_retire_trace
     }
 

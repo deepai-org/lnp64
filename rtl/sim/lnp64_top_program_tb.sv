@@ -36,6 +36,10 @@ module lnp64_top_program_tb;
     logic [31:0] topology_active_window_base_seen;
     logic [31:0] topology_active_window_count_seen;
     int unsigned max_cycles;
+    logic [7:0] retire_opcode;
+    logic [4:0] retire_raw_result_reg;
+    logic retire_result_valid;
+    logic [4:0] retire_result_reg;
 
     lnp64_top #(
         .CORE_TILE_COUNT(2)
@@ -75,6 +79,24 @@ module lnp64_top_program_tb;
 
     always #5 clk = ~clk;
 
+    function automatic logic flat_result_valid(input logic [7:0] opcode);
+        unique case (opcode)
+            8'h00, 8'h1b, 8'h1c, 8'h1f, 8'h20, 8'h21, 8'h22, 8'h23,
+            8'h24, 8'h25, 8'h26, 8'h27, 8'h28, 8'h2a, 8'h33, 8'h34,
+            8'h35, 8'h37, 8'h39, 8'h3a, 8'h49, 8'h55, 8'h61, 8'h63,
+            8'h64, 8'h65, 8'h68, 8'hcb, 8'hcc, 8'hcd: flat_result_valid = 1'b0;
+            default: flat_result_valid = 1'b1;
+        endcase
+    endfunction
+
+    always_comb begin
+        retire_opcode = dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc][31:24];
+        retire_raw_result_reg =
+            dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc][23:19];
+        retire_result_valid = flat_result_valid(retire_opcode);
+        retire_result_reg = retire_opcode == 8'h57 ? 5'd1 : retire_raw_result_reg;
+    end
+
     task automatic require(input logic condition, input string message);
         if (!condition) begin
             $fatal(1, "%s", message);
@@ -85,13 +107,20 @@ module lnp64_top_program_tb;
         #1;
         if (dut.retire_submit_valid_vec[0]) begin
             $display(
-                "RTL_RETIRE {\"pc\":%0d,\"opcode\":%0d,\"tile_id\":%0d,\"pid\":%0d,\"tid\":%0d,\"action\":%0d}",
+                "RTL_RETIRE {\"pc\":%0d,\"opcode\":%0d,\"tile_id\":%0d,\"pid\":%0d,\"tid\":%0d,\"domain_id\":%0d,\"domain_gen\":%0d,\"action\":%0d,\"result_valid\":%0d,\"result_reg\":%0d,\"result_value\":%0d,\"errno\":%0d,\"status\":%0d}",
                 dut.retire_submit_record_vec[0].pc,
-                dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc][31:24],
+                retire_opcode,
                 dut.retire_submit_record_vec[0].tile_id,
                 dut.retire_submit_record_vec[0].pid,
                 dut.retire_submit_record_vec[0].tid,
-                dut.retire_submit_record_vec[0].action
+                32'd1,
+                32'd1,
+                dut.retire_submit_record_vec[0].action,
+                retire_result_valid,
+                retire_result_valid ? retire_result_reg : 5'd0,
+                retire_result_valid ? dut.core_tiles[0].core_i.gpr[retire_result_reg] : 64'd0,
+                dut.core_tiles[0].core_i.errno_reg,
+                dut.core_tiles[0].core_i.errno_reg == LNP64_ERR_OK ? 16'd0 : 16'd1
             );
         end
     end

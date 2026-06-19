@@ -212,10 +212,22 @@ fn run() -> Result<(), String> {
             let trace = machine
                 .committed_exec_retire_trace()
                 .iter()
-                .map(|(pc, opcode)| {
-                    let pc_word = pc.saturating_sub(0x1000) / 4;
+                .map(|record| {
+                    let pc_word = record.pc.saturating_sub(0x1000) / 4;
+                    let opcode = record.opcode;
+                    let tile_id = record.tile_id;
+                    let pid = record.pid;
+                    let tid = record.tid;
+                    let domain_id = record.domain_id;
+                    let domain_gen = record.domain_gen;
+                    let action = record.action;
+                    let result_valid = record.result_valid;
+                    let result_reg = record.result_reg;
+                    let result_value = record.result_value;
+                    let errno = record.errno;
+                    let status = record.status;
                     format!(
-                        "{{\"pc\":{pc_word},\"opcode\":{opcode},\"tile_id\":0,\"pid\":1,\"tid\":1,\"action\":1}}"
+                        "{{\"pc\":{pc_word},\"opcode\":{opcode},\"tile_id\":{tile_id},\"pid\":{pid},\"tid\":{tid},\"domain_id\":{domain_id},\"domain_gen\":{domain_gen},\"action\":{action},\"result_valid\":{result_valid},\"result_reg\":{result_reg},\"result_value\":{result_value},\"errno\":{errno},\"status\":{status}}}"
                     )
                 })
                 .collect::<Vec<_>>()
