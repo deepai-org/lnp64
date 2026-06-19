@@ -1694,6 +1694,9 @@ mod tests {
         assert!(gate_driver.contains("toolchain/lnp64_llvm_gates.manifest"));
         assert!(gate_driver.contains("--dry-run"));
         assert!(gate_driver.contains("--run"));
+        assert!(gate_driver.contains("LNP64_LLVM_GATE_FILTER"));
+        assert!(gate_driver.contains("filter_allows_gate"));
+        assert!(gate_driver.contains("no LLVM gate rows matched"));
         assert!(gate_driver.contains("LNP64_RUN_PLANNED_LLVM_GATES"));
         assert!(gate_driver.contains("skipping planned gate"));
         assert!(gate_driver.contains(r"command//\{build\}/"));

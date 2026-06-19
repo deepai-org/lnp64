@@ -173,6 +173,13 @@ Run the fast real LLVM object gate:
 bash scripts/run_real_llvm_lnp64_objects_docker.sh
 ```
 
+For manifest-driven LLVM checks, filter to the row you want instead of
+dry-running or executing the whole list:
+
+```sh
+LNP64_LLVM_GATE_FILTER=real_objects_build bash scripts/run_llvm_bootstrap_gates.sh --dry-run
+```
+
 Use the deprecated bootstrap compiler only when explicitly checking the legacy
 smoke generator:
 
