@@ -5018,6 +5018,7 @@ mod tests {
         let llvm_gates = include_str!("../toolchain/lnp64_llvm_gates.manifest");
         let llvm_bootstrap = include_str!("../toolchain/lnp64_llvm_bootstrap.manifest");
         let run_elf = include_str!("../toolchain/lnp64_run_elf.manifest");
+        let libc_test_readme = include_str!("../third_party/libc-test/README.lnp64.md");
         let intrinsics = include_str!("../toolchain/lnp64_intrinsics.manifest");
         let intrinsic_header = include_str!("../toolchain/lnp64_intrinsics.h");
         let main_source = include_str!("main.rs");
@@ -5082,7 +5083,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         let evidence_corpus = format!(
-            "{target_manifest}\n{roadmap}\n{conformance}\n{llvm_gates}\n{llvm_bootstrap}\n{run_elf}\n{intrinsics}\n{intrinsic_header}\n{main_source}\n{legacy_toy_script_corpus}\n{c_compiler}\n{lowering_source}\n{libc_roadmap}"
+            "{target_manifest}\n{roadmap}\n{conformance}\n{llvm_gates}\n{llvm_bootstrap}\n{run_elf}\n{libc_test_readme}\n{intrinsics}\n{intrinsic_header}\n{main_source}\n{legacy_toy_script_corpus}\n{c_compiler}\n{lowering_source}\n{libc_roadmap}"
         );
         let rows = toy_compiler_policy_rows(policy_manifest);
         let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -5111,7 +5112,7 @@ mod tests {
                 "duplicate toy compiler policy rule {rule}"
             );
             assert!(
-                ["required", "partial", "planned"].contains(&status),
+                ["required", "partial", "planned", "blocked"].contains(&status),
                 "unknown toy compiler policy status {status} for {rule}"
             );
             assert!(
@@ -5128,7 +5129,7 @@ mod tests {
                 !evidence.is_empty(),
                 "empty toy compiler policy evidence for {rule}"
             );
-            if status == "required" || status == "partial" {
+            if status == "required" || status == "partial" || status == "blocked" {
                 assert!(
                     evidence_corpus.contains(evidence),
                     "toy compiler policy evidence {evidence} for {rule} is not present"
@@ -5143,6 +5144,8 @@ mod tests {
             "compat_lowering_boundary",
             "no_toy_in_llvm_gates",
             "replacement_program_set",
+            "clang_libc_replacements",
+            "remaining_toy_only_libc",
         ] {
             assert!(
                 rules.contains_key(rule),
@@ -5159,6 +5162,12 @@ mod tests {
             assert_eq!(rules[rule].0, "required", "{rule} should be required");
         }
         assert_eq!(rules["replacement_program_set"].0, "partial");
+        assert_eq!(rules["clang_libc_replacements"].0, "partial");
+        assert_eq!(rules["remaining_toy_only_libc"].0, "blocked");
+        assert!(run_elf.contains("real_libc_test_pthread_tsd_execution"));
+        assert!(run_elf.contains("real_libc_test_sem_init_execution"));
+        assert!(!run_elf.contains("real_libc_test_fcntl_execution"));
+        assert!(libc_test_readme.contains("Do not add new Rust toy compiler fcntl/fork"));
         for intrinsic in manifest_field(target_manifest, "intrinsics").split(',') {
             assert!(intrinsic.starts_with("__lnp_"));
             assert!(intrinsics.contains(intrinsic));

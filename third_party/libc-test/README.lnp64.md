@@ -74,6 +74,14 @@ alignment loops.
 and function-pointer `memmove` with non-overlap, destination-after-source
 overlap, destination-before-source overlap, and zero-length moves.
 
+## Real Clang replacement status
+
+The real LLVM/Clang/lld `run-elf` gate now covers former toy-only `pthread_tsd.c`
+and `sem_init.c` cases. `fcntl.c` remains toy-only until POSIX `fork()` lowers
+through the formal CLONE-profile compatibility layer and `waitpid()` lowers
+through the event/waitable path. Do not add new Rust toy compiler fcntl/fork
+language features to close that gap.
+
 Run the subset with:
 
 ```sh
