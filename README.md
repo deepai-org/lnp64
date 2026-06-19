@@ -298,9 +298,11 @@ gate finishes, so long-running gates no longer stall a whole fixed batch. Each
 gate writes its own temporary log and failures replay that log. Set
 `LNP64_RTL_COSIM_SEED_JOBS=4` or `auto` when one gate is running many seeds;
 this parallelizes the per-seed model/RTL trace comparisons inside
-`run_rtl_m1.sh` through `run_rtl_m15.sh`. After a successful build, add
-`LNP64_RTL_SKIP_BUILD=1` to reuse the existing S0/M1-M15 Verilator binaries and
-rerun only model generation, RTL simulation, trace extraction, and diffs. Remove
+`run_rtl_m1.sh` through `run_rtl_m15.sh`. The seed runner starts a replacement
+seed as soon as any active seed finishes, so uneven seed runtimes do not stall a
+whole fixed batch. After a successful build, add `LNP64_RTL_SKIP_BUILD=1` to
+reuse the existing S0/M1-M15 Verilator binaries and rerun only model
+generation, RTL simulation, trace extraction, and diffs. Remove
 `LNP64_RTL_FAST=1`, `LNP64_RTL_SKIP_BUILD=1`, seed/gate narrowing, and restore
 the full seed list before using randomized/cosim output as broad evidence.
 

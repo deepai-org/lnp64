@@ -121,45 +121,58 @@ rtl_run_seeded_trace_cosim() {
 
   local log_dir
   log_dir="$(mktemp -d "${TMPDIR:-/tmp}/lnp64_rtl_${tag}_seeds.XXXXXX")"
-  local batch_pids=()
-  local batch_seeds=()
-  local batch_logs=()
+  local active_pids=()
+  local -A active_seeds=()
+  local -A active_logs=()
   local failed=0
 
-  rtl_wait_seed_batch() {
-    local i pid seed log
-    for i in "${!batch_pids[@]}"; do
-      pid="${batch_pids[$i]}"
-      seed="${batch_seeds[$i]}"
-      log="${batch_logs[$i]}"
-      if wait "$pid"; then
-        printf 'rtl %s seed %s ok (%s)\n' "$tag" "$seed" "$log"
-      else
-        failed=1
-        printf 'rtl %s seed %s failed (%s)\n' "$tag" "$seed" "$log" >&2
-        cat "$log" >&2
+  rtl_remove_active_seed_pid() {
+    local done_pid="$1"
+    local remaining=()
+    local pid
+    for pid in "${active_pids[@]}"; do
+      if [[ "$pid" != "$done_pid" ]]; then
+        remaining+=("$pid")
       fi
     done
-    batch_pids=()
-    batch_seeds=()
-    batch_logs=()
+    active_pids=("${remaining[@]}")
+  }
+
+  rtl_wait_one_seed() {
+    local done_pid seed log
+    if wait -n -p done_pid; then
+      seed="${active_seeds[$done_pid]}"
+      log="${active_logs[$done_pid]}"
+      printf 'rtl %s seed %s ok (%s)\n' "$tag" "$seed" "$log"
+    else
+      seed="${active_seeds[$done_pid]}"
+      log="${active_logs[$done_pid]}"
+      failed=1
+      printf 'rtl %s seed %s failed (%s)\n' "$tag" "$seed" "$log" >&2
+      cat "$log" >&2
+    fi
+    unset "active_seeds[$done_pid]" "active_logs[$done_pid]"
+    rtl_remove_active_seed_pid "$done_pid"
   }
 
   printf 'running rtl %s seeds with %s parallel job(s); logs in %s\n' "$tag" "$jobs" "$log_dir"
-  local seed log
+  local seed log pid
   for seed in $seeds; do
     log="$log_dir/seed_${seed}.log"
     (
       rtl_run_seeded_trace_cosim_one "$tag" "$rtl_binary" "$model_program" "$pass_line" "$seed" 0
     ) >"$log" 2>&1 &
-    batch_pids+=("$!")
-    batch_seeds+=("$seed")
-    batch_logs+=("$log")
-    if (( ${#batch_pids[@]} >= jobs )); then
-      rtl_wait_seed_batch
+    pid="$!"
+    active_pids+=("$pid")
+    active_seeds[$pid]="$seed"
+    active_logs[$pid]="$log"
+    if (( ${#active_pids[@]} >= jobs )); then
+      rtl_wait_one_seed
     fi
   done
-  rtl_wait_seed_batch
+  while (( ${#active_pids[@]} > 0 )); do
+    rtl_wait_one_seed
+  done
 
   if [[ "${LNP64_RTL_COSIM_KEEP_SEED_LOGS:-0}" != "1" ]]; then
     rm -rf "$log_dir"
