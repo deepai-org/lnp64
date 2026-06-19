@@ -3,6 +3,8 @@
 import lnp64_pkg::*;
 
 module lnp64_top_program_tb;
+    localparam int TB_CORE_TILE_COUNT = 2;
+
     logic clk;
     logic reset_n;
     logic force_boot_fault;
@@ -39,7 +41,7 @@ module lnp64_top_program_tb;
     logic [7:0] retire_opcode;
     logic [31:0] retire_instr;
     lnp64_decode_t retire_dec;
-    lnp64_m1_state_projection_t sampled_m1_pre_state;
+    lnp64_m1_state_projection_t sampled_m1_pre_state [TB_CORE_TILE_COUNT];
     logic [4:0] retire_raw_result_reg;
     logic retire_result_valid;
     logic [4:0] retire_result_reg;
@@ -49,7 +51,7 @@ module lnp64_top_program_tb;
     logic inject_cross_tile_wake;
 
     lnp64_top #(
-        .CORE_TILE_COUNT(2)
+        .CORE_TILE_COUNT(TB_CORE_TILE_COUNT)
     ) dut(
         .clk(clk),
         .reset_n(reset_n),
@@ -220,8 +222,42 @@ module lnp64_top_program_tb;
         );
     endtask
 
+    task automatic display_m1_top_commit(
+        input lnp64_m1_cap_commit_t commit,
+        input logic [31:0] pc,
+        input logic [31:0] tile_id
+    );
+        begin
+            $display(
+                "RTL_M1_TOP_COMMIT {\"record\":\"m1_cap_commit\",\"op\":%0d,\"object_id\":%0d,\"object_gen\":%0d,\"fdr_gen\":%0d,\"domain_id\":%0d,\"domain_gen\":%0d,\"rights_mask\":%0d,\"lineage_epoch\":%0d,\"sealed\":%0d,\"status\":%0d,\"pc\":%0d,\"tile_id\":%0d}",
+                commit.op,
+                commit.object_id,
+                commit.object_gen,
+                commit.fdr_gen,
+                commit.domain_id,
+                commit.domain_gen,
+                commit.rights_mask,
+                commit.lineage_epoch,
+                commit.sealed,
+                commit.status,
+                pc,
+                tile_id
+            );
+            $display(
+                "RTL_M1_TOP_COMMIT_BITS {\"record\":\"m1_cap_commit_bits\",\"width\":%0d,\"bits\":\"%0h\",\"pc\":%0d,\"tile_id\":%0d}",
+                $bits(lnp64_m1_cap_commit_t),
+                commit,
+                pc,
+                tile_id
+            );
+        end
+    endtask
+
+    integer trace_tile;
     always @(posedge clk) begin
-        sampled_m1_pre_state = dut.m1_pre_state_projection_vec[0];
+        for (trace_tile = 0; trace_tile < TB_CORE_TILE_COUNT; trace_tile = trace_tile + 1) begin
+            sampled_m1_pre_state[trace_tile] = dut.m1_pre_state_projection_vec[trace_tile];
+        end
         #1;
         if (dut.retire_submit_valid_vec[0]) begin
             if (retire_opcode == 8'hff) begin
@@ -251,52 +287,37 @@ module lnp64_top_program_tb;
                 32'd0,
                 32'd0
             );
-            if (dut.m1_commit_valid_vec[0]) begin
-                $display(
-                    "RTL_M1_TOP_COMMIT {\"record\":\"m1_cap_commit\",\"op\":%0d,\"object_id\":%0d,\"object_gen\":%0d,\"fdr_gen\":%0d,\"domain_id\":%0d,\"domain_gen\":%0d,\"rights_mask\":%0d,\"lineage_epoch\":%0d,\"sealed\":%0d,\"status\":%0d,\"pc\":%0d,\"tile_id\":%0d}",
-                    dut.m1_commit_vec[0].op,
-                    dut.m1_commit_vec[0].object_id,
-                    dut.m1_commit_vec[0].object_gen,
-                    dut.m1_commit_vec[0].fdr_gen,
-                    dut.m1_commit_vec[0].domain_id,
-                    dut.m1_commit_vec[0].domain_gen,
-                    dut.m1_commit_vec[0].rights_mask,
-                    dut.m1_commit_vec[0].lineage_epoch,
-                    dut.m1_commit_vec[0].sealed,
-                    dut.m1_commit_vec[0].status,
-                    dut.retire_submit_record_vec[0].pc,
-                    dut.retire_submit_record_vec[0].tile_id
-                );
-                $display(
-                    "RTL_M1_TOP_COMMIT_BITS {\"record\":\"m1_cap_commit_bits\",\"width\":%0d,\"bits\":\"%0h\",\"pc\":%0d,\"tile_id\":%0d}",
-                    $bits(lnp64_m1_cap_commit_t),
-                    dut.m1_commit_vec[0],
-                    dut.retire_submit_record_vec[0].pc,
-                    dut.retire_submit_record_vec[0].tile_id
+        end
+        for (trace_tile = 0; trace_tile < TB_CORE_TILE_COUNT; trace_tile = trace_tile + 1) begin
+            if (dut.m1_commit_valid_vec[trace_tile]) begin
+                display_m1_top_commit(
+                    dut.m1_commit_vec[trace_tile],
+                    dut.retire_submit_record_vec[trace_tile].pc,
+                    dut.retire_submit_record_vec[trace_tile].tile_id
                 );
                 display_m1_top_state(
                     "RTL_M1_TOP_PRE_STATE",
-                    sampled_m1_pre_state,
-                    dut.retire_submit_record_vec[0].pc,
-                    dut.retire_submit_record_vec[0].tile_id
+                    sampled_m1_pre_state[trace_tile],
+                    dut.retire_submit_record_vec[trace_tile].pc,
+                    dut.retire_submit_record_vec[trace_tile].tile_id
                 );
                 display_m1_top_state_bits(
                     "RTL_M1_TOP_PRE_STATE_BITS",
-                    sampled_m1_pre_state,
-                    dut.retire_submit_record_vec[0].pc,
-                    dut.retire_submit_record_vec[0].tile_id
+                    sampled_m1_pre_state[trace_tile],
+                    dut.retire_submit_record_vec[trace_tile].pc,
+                    dut.retire_submit_record_vec[trace_tile].tile_id
                 );
                 display_m1_top_state(
                     "RTL_M1_TOP_STATE",
-                    dut.m1_state_projection_vec[0],
-                    dut.retire_submit_record_vec[0].pc,
-                    dut.retire_submit_record_vec[0].tile_id
+                    dut.m1_state_projection_vec[trace_tile],
+                    dut.retire_submit_record_vec[trace_tile].pc,
+                    dut.retire_submit_record_vec[trace_tile].tile_id
                 );
                 display_m1_top_state_bits(
                     "RTL_M1_TOP_STATE_BITS",
-                    dut.m1_state_projection_vec[0],
-                    dut.retire_submit_record_vec[0].pc,
-                    dut.retire_submit_record_vec[0].tile_id
+                    dut.m1_state_projection_vec[trace_tile],
+                    dut.retire_submit_record_vec[trace_tile].pc,
+                    dut.retire_submit_record_vec[trace_tile].tile_id
                 );
             end
         end

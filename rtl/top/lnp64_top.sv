@@ -453,6 +453,10 @@ module lnp64_top #(
         end else begin
             for (m1_assert_i = 0; m1_assert_i < CORE_TILE_COUNT; m1_assert_i = m1_assert_i + 1) begin
                 if (m1_commit_valid_vec[m1_assert_i]) begin
+                    assert (retire_submit_valid_vec[m1_assert_i])
+                        else $fatal(1, "SG-AUTH M1 commit was not tied to a tile-local retired instruction");
+                    assert (retire_submit_record_vec[m1_assert_i].tile_id == m1_assert_i[31:0])
+                        else $fatal(1, "SG-AUTH M1 retire tile id drifted from top-level tile vector");
                     assert (cap_m1_commit_latched_valid_vec[m1_assert_i])
                         else $fatal(1, "SG-AUTH M1 retire lacked cap-engine-owned commit");
                     assert (m1_state_projection_vec[m1_assert_i].op == m1_commit_vec[m1_assert_i].op)
