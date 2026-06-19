@@ -35,6 +35,7 @@ module lnp64_top_program_tb;
     logic [31:0] topology_coherence_domain_seen;
     logic [31:0] topology_active_window_base_seen;
     logic [31:0] topology_active_window_count_seen;
+    int unsigned max_cycles;
 
     lnp64_top #(
         .CORE_TILE_COUNT(2)
@@ -102,7 +103,11 @@ module lnp64_top_program_tb;
         repeat (4) @(posedge clk);
         reset_n = 1'b1;
 
-        repeat (200) begin
+        if (!$value$plusargs("lnp64_max_cycles=%d", max_cycles)) begin
+            max_cycles = 200;
+        end
+
+        repeat (max_cycles) begin
             @(posedge clk);
             if (pid1_completed) begin
                 break;
@@ -110,7 +115,9 @@ module lnp64_top_program_tb;
         end
 
         require(boot_stable, "top-level program boot did not stabilize");
-        require(pid1_completed, "top-level program did not reach EXIT");
+        if (!pid1_completed) begin
+            $fatal(1, "top-level program did not reach EXIT within %0d cycles", max_cycles);
+        end
         require(tile_reset_stable_all, "top-level program did not reset both tiles");
         require(tile1_observable_idle, "tile 1 was not observable/idled during top-level program");
         require(multicore_no_duplicate_tid, "top-level program duplicated PID 1 across tiles");

@@ -93,6 +93,9 @@ rtl_plusargs=("+lnp64_program_hex=$program_hex")
 if [[ -n "$program_data_hex" && -s "$program_data_hex" ]]; then
   rtl_plusargs+=("+lnp64_data_hex=$program_data_hex")
 fi
+if [[ -n "${LNP64_RTL_TOP_PROGRAM_MAX_CYCLES:-}" ]]; then
+  rtl_plusargs+=("+lnp64_max_cycles=$LNP64_RTL_TOP_PROGRAM_MAX_CYCLES")
+fi
 "$rtl_binary" "${rtl_plusargs[@]}" | tee "$sim_log"
 
 grep -q "LNP64-RTL-TOP-PROGRAM PASS" "$sim_log"
@@ -142,7 +145,19 @@ for field in ("r3", "r4", "r5", "env_page", "mem0"):
 rtl_retire = load_records(sys.argv[1], "RTL_RETIRE ")
 emulator_retire = load_record(sys.argv[2], "EMULATOR_RETIRE ")
 if rtl_retire != emulator_retire:
-    raise SystemExit(f"retire trace mismatch: rtl={rtl_retire} emulator={emulator_retire}")
+    limit = min(len(rtl_retire), len(emulator_retire))
+    first = next(
+        (idx for idx in range(limit) if rtl_retire[idx] != emulator_retire[idx]),
+        limit,
+    )
+    start = max(0, first - 3)
+    end = min(max(len(rtl_retire), len(emulator_retire)), first + 4)
+    raise SystemExit(
+        "retire trace mismatch: "
+        f"first_diff={first} rtl_len={len(rtl_retire)} emulator_len={len(emulator_retire)} "
+        f"rtl_window={rtl_retire[start:min(end, len(rtl_retire))]} "
+        f"emulator_window={emulator_retire[start:min(end, len(emulator_retire))]}"
+    )
 PY
 
 printf '%s\n' "rtl top-level program smoke ok"

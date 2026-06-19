@@ -313,6 +313,13 @@ LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash sc
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_immediate_alu.s
 ```
 
+For longer exploratory top-level programs, raise the simulation retire limit
+without changing the RTL testbench:
+
+```sh
+LNP64_RTL_TOP_PROGRAM_MAX_CYCLES=2000 bash scripts/run_rtl_top_program_smoke.sh demos/rot13.c
+```
+
 `LNP64_RTL_VERILATOR_BUILD_JOBS=0` lets Verilator use all available build jobs;
 set it to a fixed number such as `4` on shared machines. The top-program smoke
 script locks the shared build directory before preparing or compiling it, so
