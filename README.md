@@ -258,6 +258,7 @@ Focused RTL/proof loop:
 
 ```sh
 bash scripts/run_rtl_s0.sh
+bash scripts/run_rtl_top_program_manifest.sh
 bash scripts/run_rtl_top_program_smoke.sh
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_smoke.s
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_return_12.c
