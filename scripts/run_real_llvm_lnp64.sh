@@ -1406,6 +1406,28 @@ grep -q 'auipc r1, 4096' "$auipc_mc_dump"
 grep -q 'auipc r2' "$auipc_mc_dump"
 printf 'real LLVM LNP64 llvm-mc auipc smoke passed: %s\n' "$auipc_mc_obj"
 
+mmap_asm="$build_dir/mmap-mc-smoke.s"
+cat >"$mmap_asm" <<'ASM'
+  .text
+  .globl _start
+_start:
+  mmap r1, r2, r3, r4
+  munmap r5, r6
+  mprotect r7, r8, r9, r10
+  ret
+ASM
+mmap_mc_obj="$build_dir/mmap-mc-smoke.o"
+"$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$mmap_asm" \
+  -o "$mmap_mc_obj"
+test -s "$mmap_mc_obj"
+mmap_mc_dump="$build_dir/mmap-mc-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$mmap_mc_obj" \
+  >"$mmap_mc_dump"
+grep -q 'mmap r1, r2, r3, r4' "$mmap_mc_dump"
+grep -q 'munmap r5, r6' "$mmap_mc_dump"
+grep -q 'mprotect r7, r8, r9, r10' "$mmap_mc_dump"
+printf 'real LLVM LNP64 llvm-mc mmap opcode smoke passed: %s\n' "$mmap_mc_obj"
+
 atomic_asm="$build_dir/atomic-mc-smoke.s"
 cat >"$atomic_asm" <<'ASM'
   .text

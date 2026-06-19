@@ -186,6 +186,12 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
     return "alloc_size";
   case LNP64::FREE:
     return "free";
+  case LNP64::MMAP:
+    return "mmap";
+  case LNP64::MUNMAP:
+    return "munmap";
+  case LNP64::MPROTECT:
+    return "mprotect";
   case LNP64::OBJECT_CTL:
     return "object_ctl";
   case LNP64::DOMAIN_CTL:
@@ -401,6 +407,7 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
     break;
   case LNP64::ALLOC:
   case LNP64::ALLOC_SIZE:
+  case LNP64::MUNMAP:
   case LNP64::OBJECT_CTL:
   case LNP64::DOMAIN_CTL:
   case LNP64::SEXT_B:
@@ -433,6 +440,8 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::GATE_RETURN:
   case LNP64::PULL:
   case LNP64::PUSH:
+  case LNP64::MMAP:
+  case LNP64::MPROTECT:
   case LNP64::LOCK_CMPXCHG:
     OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
     printOperand(MI->getOperand(0), OS);

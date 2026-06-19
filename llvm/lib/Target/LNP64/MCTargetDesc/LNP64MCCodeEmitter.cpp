@@ -628,6 +628,25 @@ public:
     case LNP64::FREE:
       emitLE32(encodeFixed32Reg(0x49, getGPRNo(MI.getOperand(0))), OS);
       return;
+    case LNP64::MMAP:
+      emitLE32(encodeFixed32RRRR(0x60, getGPRNo(MI.getOperand(0)),
+                                 getGPRNo(MI.getOperand(1)),
+                                 getGPRNo(MI.getOperand(2)),
+                                 getGPRNo(MI.getOperand(3))),
+               OS);
+      return;
+    case LNP64::MUNMAP:
+      emitLE32(encodeFixed32RR(0x61, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
+    case LNP64::MPROTECT:
+      emitLE32(encodeFixed32RRRR(0x66, getGPRNo(MI.getOperand(0)),
+                                 getGPRNo(MI.getOperand(1)),
+                                 getGPRNo(MI.getOperand(2)),
+                                 getGPRNo(MI.getOperand(3))),
+               OS);
+      return;
     case LNP64::ALLOC_EX:
       emitLE32(encodeFixed32RRR(0x4a, getGPRNo(MI.getOperand(0)),
                                 getGPRNo(MI.getOperand(1)),

@@ -369,6 +369,9 @@ private:
             .Case("alloc_ex", LNP64::ALLOC_EX)
             .Case("alloc_size", LNP64::ALLOC_SIZE)
             .Case("free", LNP64::FREE)
+            .Case("mmap", LNP64::MMAP)
+            .Case("munmap", LNP64::MUNMAP)
+            .Case("mprotect", LNP64::MPROTECT)
             .Case("object_ctl", LNP64::OBJECT_CTL)
             .Case("domain_ctl", LNP64::DOMAIN_CTL)
             .Case("await", LNP64::AWAIT)
@@ -430,7 +433,8 @@ private:
         Opcode == LNP64::CSEL_ULE || Opcode == LNP64::CSEL_UGE)
       return addRegRegReg(Inst, Operands);
     if (Opcode == LNP64::CMP || Opcode == LNP64::CMPU ||
-        Opcode == LNP64::FUTEX_WAIT || Opcode == LNP64::FUTEX_WAKE)
+        Opcode == LNP64::FUTEX_WAIT || Opcode == LNP64::FUTEX_WAKE ||
+        Opcode == LNP64::MUNMAP)
       return addRegReg(Inst, Operands);
     if (Opcode == LNP64::JMP || Opcode == LNP64::BEQ ||
         Opcode == LNP64::BNE || Opcode == LNP64::BLT ||
@@ -457,7 +461,8 @@ private:
     if (Opcode == LNP64::LOCK_CMPXCHG)
       return addRegRegRegReg(Inst, Operands);
     if (Opcode == LNP64::AWAIT || Opcode == LNP64::GATE_CALL ||
-        Opcode == LNP64::GATE_RETURN ||
+        Opcode == LNP64::GATE_RETURN || Opcode == LNP64::MMAP ||
+        Opcode == LNP64::MPROTECT ||
         Opcode == LNP64::PULL || Opcode == LNP64::PUSH)
       return addRegRegRegReg(Inst, Operands);
     if (Opcode == LNP64::LD || Opcode == LNP64::LD_W ||
