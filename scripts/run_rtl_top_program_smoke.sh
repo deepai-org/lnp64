@@ -133,6 +133,9 @@ fi
 if [[ -n "${LNP64_RTL_TOP_PROGRAM_MAX_CYCLES:-}" ]]; then
   rtl_plusargs+=("+lnp64_max_cycles=$LNP64_RTL_TOP_PROGRAM_MAX_CYCLES")
 fi
+if [[ "${LNP64_RTL_TOP_PROGRAM_CROSS_TILE_WAKE:-0}" == "1" ]]; then
+  rtl_plusargs+=("+lnp64_inject_cross_tile_wake")
+fi
 run_top_program_logged "$sim_log" "$rtl_binary" "${rtl_plusargs[@]}"
 
 if ! grep -q "LNP64-RTL-TOP-PROGRAM PASS" "$sim_log"; then

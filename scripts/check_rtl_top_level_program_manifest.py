@@ -76,6 +76,13 @@ def require_typed_retire_gate(gate_text: str, source: str) -> None:
         require(f'"{field}"' in gate_text, f"{source} gate must require typed retire field {field}")
 
 
+def effective_gate_text(gate_path: str) -> str:
+    gate_text = text(ROOT / gate_path)
+    if gate_path != "scripts/run_rtl_top_program_smoke.sh" and "scripts/run_rtl_top_program_smoke.sh" in gate_text:
+        gate_text += "\n" + text(ROOT / "scripts/run_rtl_top_program_smoke.sh")
+    return gate_text
+
+
 def main() -> None:
     manifest = json.loads(text(MANIFEST))
     manifest_runner = text(ROOT / "scripts/run_rtl_top_program_manifest.sh")
@@ -112,7 +119,7 @@ def main() -> None:
         require_entry(entry, "flat hex")
         if entry.get("status") == "active":
             active_flat_hex += 1
-            gate_text = text(ROOT / str(entry["rtl_gate"]))
+            gate_text = effective_gate_text(str(entry["rtl_gate"]))
             require("program_input=" in gate_text, f"{entry['source']} active gate must accept a program input")
             generated_flat_hex = entry.get("generated_flat_hex")
             require(

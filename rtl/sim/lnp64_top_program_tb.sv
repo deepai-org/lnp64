@@ -46,6 +46,7 @@ module lnp64_top_program_tb;
     logic [31:0] retire_operand_imm;
     logic [63:0] final_mem_checksum;
     logic unsupported_retired_seen;
+    logic inject_cross_tile_wake;
 
     lnp64_top #(
         .CORE_TILE_COUNT(2)
@@ -315,9 +316,17 @@ module lnp64_top_program_tb;
         if (!$value$plusargs("lnp64_max_cycles=%d", max_cycles)) begin
             max_cycles = 200;
         end
+        inject_cross_tile_wake = $test$plusargs("lnp64_inject_cross_tile_wake");
 
         repeat (max_cycles) begin
             @(posedge clk);
+            if (inject_cross_tile_wake &&
+                (dut.core_pid1_parked_vec[0] || dut.sched_pid1_parked) &&
+                !event_woke_thread) begin
+                sim_event_inject = 1'b1;
+            end else begin
+                sim_event_inject = 1'b0;
+            end
             if (pid1_completed) begin
                 break;
             end
@@ -333,6 +342,10 @@ module lnp64_top_program_tb;
         require(retired_count > 32'd0, "top-level program retired no instructions");
         if (unsupported_retired_seen || retire_opcode == 8'hff) begin
             require(unsupported_failed_closed, "unsupported top-level program did not fail closed canonically");
+        end
+        if (inject_cross_tile_wake) begin
+            require(event_woke_thread, "top-level program did not observe event wake");
+            require(cross_tile_wake_one, "top-level program did not observe exactly one cross-tile wake");
         end
 
         $display(
