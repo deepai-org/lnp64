@@ -6,7 +6,7 @@ the current claims remain T1 because their RTL coupling still goes through
 assertions, executable-model traces, and Docker gates. The M1 capability slice
 now has schema-backed typed cap commit and post-state projection records, a
 typed RTL state-projection boundary, local typed-commit assertions, an explicit
-RTL projection/refinement-shape relation, Lean packed-schema mirrors, Lean layout bounds, and RTL
+RTL projection/refinement-shape relation, Lean packed-schema mirrors, Lean layout bounds/coverage, and RTL
 packed typedef layouts checked against the shared RTL schema, and an executable pre/commit/post refinement comparison; M2
 gate/continuation, M4 VMA/MMU, M5 DMA, M7
 waitable/scheduler, and M14 Resource Domain slices now have transition-invariant

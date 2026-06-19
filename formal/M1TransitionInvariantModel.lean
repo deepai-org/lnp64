@@ -576,6 +576,28 @@ def packedFieldWithinWidth (totalWidth : Nat) (field : PackedFieldLayout) : Bool
 def packedLayoutWithinWidth (totalWidth : Nat) (layout : List PackedFieldLayout) : Bool :=
   layout.all (packedFieldWithinWidth totalWidth)
 
+def packedLayoutStartsAtWidth (totalWidth : Nat) : List PackedFieldLayout -> Bool
+  | [] => decide (totalWidth = 0)
+  | field :: _rest => decide (field.msb + 1 = totalWidth)
+
+def packedLayoutAdjacentContiguous : List PackedFieldLayout -> Bool
+  | [] => true
+  | _field :: [] => true
+  | first :: second :: rest =>
+      decide (first.lsb = second.msb + 1) &&
+      packedLayoutAdjacentContiguous (second :: rest)
+
+def packedLayoutEndsAtZero : List PackedFieldLayout -> Bool
+  | [] => true
+  | field :: [] => decide (field.lsb = 0)
+  | _field :: rest => packedLayoutEndsAtZero rest
+
+def packedLayoutCoversWidth (totalWidth : Nat) (layout : List PackedFieldLayout) : Bool :=
+  packedLayoutWithinWidth totalWidth layout &&
+  packedLayoutStartsAtWidth totalWidth layout &&
+  packedLayoutAdjacentContiguous layout &&
+  packedLayoutEndsAtZero layout
+
 theorem rtlM1CommitPackedSchema_width :
     packedSchemaWidth rtlM1CommitPackedSchema = 281 := by
   rfl
@@ -728,6 +750,18 @@ theorem rtlM1CommitPackedLayout_within_schema_width :
 
 theorem rtlM1StateProjectionPackedLayout_within_schema_width :
     packedLayoutWithinWidth
+      (packedSchemaWidth rtlM1StateProjectionPackedSchema)
+      rtlM1StateProjectionPackedLayout = true := by
+  rfl
+
+theorem rtlM1CommitPackedLayout_covers_schema_width :
+    packedLayoutCoversWidth
+      (packedSchemaWidth rtlM1CommitPackedSchema)
+      rtlM1CommitPackedLayout = true := by
+  rfl
+
+theorem rtlM1StateProjectionPackedLayout_covers_schema_width :
+    packedLayoutCoversWidth
       (packedSchemaWidth rtlM1StateProjectionPackedSchema)
       rtlM1StateProjectionPackedLayout = true := by
   rfl
