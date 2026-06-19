@@ -233,6 +233,23 @@ module lnp64_m1_assertions (
             cap.narrowable;
     endfunction
 
+    function automatic logic m1_projection_cap_matches_commit(
+        input logic [31:0] object_id,
+        input logic [31:0] generation,
+        input logic [31:0] domain_id,
+        input logic [31:0] lineage_epoch,
+        input logic sealed,
+        input logic [63:0] rights,
+        input lnp64_m1_cap_commit_t commit
+    );
+        return object_id == commit.object_id &&
+            generation == commit.fdr_gen &&
+            domain_id == commit.domain_id &&
+            lineage_epoch == commit.lineage_epoch &&
+            sealed == commit.sealed &&
+            rights == commit.rights_mask;
+    endfunction
+
     function automatic logic m1_authority_projection_slots_match(
         input lnp64_m1_state_projection_t left,
         input lnp64_m1_state_projection_t right
@@ -520,6 +537,15 @@ module lnp64_m1_assertions (
                     LNP64_M1_COMMIT_CAP_DUP: begin
                         assert (m1_consumer_pull_authority(typed_commit))
                             else $fatal(1, "M1 consumer commit failed pull-authority predicate");
+                        assert (m1_projection_cap_matches_commit(
+                            typed_state_projection.consumer_object_id,
+                            typed_state_projection.consumer_generation,
+                            typed_state_projection.consumer_domain_id,
+                            typed_state_projection.consumer_lineage_epoch,
+                            typed_state_projection.consumer_sealed,
+                            typed_state_projection.consumer_rights,
+                            typed_commit
+                        )) else $fatal(1, "M1 capDup commit did not match consumer post-state projection");
                         duplicated_cap <= typed_commit;
                         have_duplicated_cap <= 1'b1;
                     end
@@ -530,6 +556,17 @@ module lnp64_m1_assertions (
                             else $fatal(1, "M1 capSend occurred before authorized capDup");
                         assert (m1_same_cap_fields(typed_commit, duplicated_cap))
                             else $fatal(1, "M1 capSend changed duplicated cap authority");
+                        assert (typed_state_projection.sent_valid)
+                            else $fatal(1, "M1 capSend did not publish a sent-cap projection");
+                        assert (m1_projection_cap_matches_commit(
+                            typed_state_projection.sent_object_id,
+                            typed_state_projection.sent_generation,
+                            typed_state_projection.sent_domain_id,
+                            typed_state_projection.sent_lineage_epoch,
+                            typed_state_projection.sent_sealed,
+                            typed_state_projection.sent_rights,
+                            typed_commit
+                        )) else $fatal(1, "M1 capSend commit did not match sent-cap post-state projection");
                         sent_cap <= typed_commit;
                         have_sent_cap <= 1'b1;
                     end
@@ -540,35 +577,73 @@ module lnp64_m1_assertions (
                             else $fatal(1, "M1 capRecv occurred before a valid capSend");
                         assert (m1_same_cap_fields(typed_commit, sent_cap))
                             else $fatal(1, "M1 capRecv changed sent cap authority");
+                        assert (!typed_state_projection.sent_valid)
+                            else $fatal(1, "M1 capRecv left the sent-cap projection valid");
+                        assert (m1_projection_cap_matches_commit(
+                            typed_state_projection.consumer_object_id,
+                            typed_state_projection.consumer_generation,
+                            typed_state_projection.consumer_domain_id,
+                            typed_state_projection.consumer_lineage_epoch,
+                            typed_state_projection.consumer_sealed,
+                            typed_state_projection.consumer_rights,
+                            typed_commit
+                        )) else $fatal(1, "M1 capRecv commit did not match consumer post-state projection");
                         have_sent_cap <= 1'b0;
                     end
                     LNP64_M1_COMMIT_PULL: begin
                         assert (m1_consumer_pull_authority(typed_commit))
                             else $fatal(1, "M1 consumer commit failed pull-authority predicate");
+                        assert (!typed_state_projection.wake_pending)
+                            else $fatal(1, "M1 pull commit did not clear wake_pending in post-state projection");
                     end
                     LNP64_M1_COMMIT_PUSH: begin
                         assert (m1_root_live_authority(typed_commit))
                             else $fatal(1, "M1 push failed root live-authority predicate");
+                        assert (typed_state_projection.wake_pending)
+                            else $fatal(1, "M1 push commit did not set wake_pending in post-state projection");
                     end
                     LNP64_M1_COMMIT_REJECT_FULL: begin
                         assert (m1_root_queue_full_reject(typed_commit))
                             else $fatal(1, "M1 rejectFull failed root queue-full predicate");
+                        assert (typed_state_projection.full_was_explicit)
+                            else $fatal(1, "M1 rejectFull commit did not publish full_was_explicit");
                     end
                     LNP64_M1_COMMIT_OBJECT_CREATE: begin
                         assert (m1_root_object_create(typed_commit))
                             else $fatal(1, "M1 objectCreate failed root mint predicate");
+                        assert (typed_state_projection.created_object_created &&
+                                typed_state_projection.minted_valid)
+                            else $fatal(1, "M1 objectCreate did not publish created/minted projections");
+                        assert (m1_projection_cap_matches_commit(
+                            typed_state_projection.minted_object_id,
+                            typed_state_projection.minted_generation,
+                            typed_state_projection.minted_domain_id,
+                            typed_state_projection.minted_lineage_epoch,
+                            typed_state_projection.minted_sealed,
+                            typed_state_projection.minted_rights,
+                            typed_commit
+                        )) else $fatal(1, "M1 objectCreate commit did not match minted-cap post-state projection");
                     end
                     LNP64_M1_COMMIT_CAP_REVOKE: begin
                         assert (m1_root_revoke_commit(typed_commit))
                             else $fatal(1, "M1 revoke failed root revoke-commit predicate");
+                        assert (typed_state_projection.object_gen == typed_commit.object_gen &&
+                                typed_state_projection.root_generation == typed_commit.object_gen &&
+                                typed_state_projection.has_revoked_generation &&
+                                typed_state_projection.revoked_generation == typed_commit.fdr_gen)
+                            else $fatal(1, "M1 capRevoke commit did not match revocation post-state projection");
                     end
                     LNP64_M1_COMMIT_REJECT_STALE: begin
                         assert (m1_consumer_stale_reject(typed_commit))
                             else $fatal(1, "M1 rejectStale failed consumer stale-reject predicate");
+                        assert (typed_state_projection.stale_rejected)
+                            else $fatal(1, "M1 rejectStale commit did not publish stale_rejected");
                     end
                     LNP64_M1_COMMIT_CAP_DUP_DENIED: begin
                         assert (m1_root_dup_denied(typed_commit))
                             else $fatal(1, "M1 denied capDup failed root denied predicate");
+                        assert (typed_state_projection.failed_no_authority)
+                            else $fatal(1, "M1 denied capDup did not publish failed_no_authority");
                     end
                     default: begin
                         assert (1'b0)
