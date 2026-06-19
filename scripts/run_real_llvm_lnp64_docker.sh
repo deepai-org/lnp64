@@ -126,6 +126,9 @@ run_elf_report "real LLVM LNP64 run-elf startup argv/envp execution passed" \
   target/llvm-lnp64-build/lnp64-startup-linked.elf
 run_elf_report "real LLVM LNP64 run-elf getauxval execution passed" \
   target/llvm-lnp64-build/lnp64-getauxval-linked.elf
+run_elf_report "real LLVM LNP64 run-elf libc-test argv execution passed" \
+  target/llvm-lnp64-build/lnp64-libc-test-argv-linked.elf \
+  lnp64-argv --expect
 run_elf_report "real LLVM LNP64 run-elf scalar arithmetic execution passed" \
   target/llvm-lnp64-build/lnp64-scalar-arith-linked.elf
 run_elf_report "real LLVM LNP64 run-elf high-multiply execution passed" \

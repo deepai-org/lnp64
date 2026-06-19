@@ -1950,6 +1950,20 @@ grep -q 'ld ' "$startup_dump"
 printf 'real LLVM LNP64 clang startup argv/envp object smoke passed: %s\n' \
   "$startup_obj"
 
+libc_stdio_impl_c="toolchain/liblnp64_stdio_min.c"
+libc_stdio_impl_obj="$build_dir/liblnp64-stdio-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain/include \
+  -c "$libc_stdio_impl_c" -o "$libc_stdio_impl_obj"
+test -s "$libc_stdio_impl_obj"
+libc_stdio_impl_dump="$build_dir/liblnp64-stdio-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_stdio_impl_obj" \
+  >"$libc_stdio_impl_dump"
+grep -q '<vsnprintf>:' "$libc_stdio_impl_dump"
+grep -q '<snprintf>:' "$libc_stdio_impl_dump"
+printf 'real LLVM LNP64 clang minilibc stdio implementation object smoke passed: %s\n' \
+  "$libc_stdio_impl_obj"
+
 getauxval_c="$build_dir/getauxval-smoke.c"
 cat >"$getauxval_c" <<'C'
 unsigned long getauxval(unsigned long type);
@@ -2360,6 +2374,20 @@ libc_test_print_obj="$build_dir/libc-test-print-clang-smoke.o"
 test -s "$libc_test_print_obj"
 printf 'real LLVM LNP64 clang libc-test harness object smoke passed: %s\n' \
   "$libc_test_print_obj"
+
+libc_test_argv_obj="$build_dir/libc-test-argv-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain/include \
+  -I third_party/libc-test/functional \
+  -c third_party/libc-test/functional/argv.c \
+  -o "$libc_test_argv_obj"
+test -s "$libc_test_argv_obj"
+libc_test_argv_dump="$build_dir/libc-test-argv-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_test_argv_obj" \
+  >"$libc_test_argv_dump"
+grep -q 'call ' "$libc_test_argv_dump"
+printf 'real LLVM LNP64 clang libc-test argv object smoke passed: %s\n' \
+  "$libc_test_argv_obj"
 
 libc_test_ctype_obj="$build_dir/libc-test-ctype-bounded-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
@@ -3964,6 +3992,14 @@ getauxval_elf="$build_dir/lnp64-getauxval-linked.elf"
 test -s "$getauxval_elf"
 printf 'real LLVM LNP64 lld getauxval link smoke passed: %s\n' \
   "$getauxval_elf"
+
+libc_test_argv_elf="$build_dir/lnp64-libc-test-argv-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$libc_test_argv_elf" "$crt0_obj" "$libc_test_argv_obj" \
+  "$libc_test_print_obj" "$libc_stdio_impl_obj" "$libc_fd_impl_obj"
+test -s "$libc_test_argv_elf"
+printf 'real LLVM LNP64 lld libc-test argv link smoke passed: %s\n' \
+  "$libc_test_argv_elf"
 
 scalar_arith_elf="$build_dir/lnp64-scalar-arith-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

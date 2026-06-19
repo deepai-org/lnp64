@@ -1328,6 +1328,7 @@ mod tests {
         let libc_process_min = include_str!("../toolchain/liblnp64_process_min.c");
         let libc_errno_min = include_str!("../toolchain/liblnp64_errno_min.c");
         let libc_startup_min = include_str!("../toolchain/liblnp64_startup_min.c");
+        let libc_stdio_min = include_str!("../toolchain/liblnp64_stdio_min.c");
         let libc_time_min = include_str!("../toolchain/liblnp64_time_min.c");
         let libc_vma_min = include_str!("../toolchain/liblnp64_vma_min.c");
         let libc_futex_min = include_str!("../toolchain/liblnp64_futex_min.c");
@@ -1427,11 +1428,14 @@ mod tests {
             "clang_sbase_command_objects",
             "clang_sbase_libutil_objects",
             "clang_sbase_support_object",
+            "clang_minilibc_stdio_impl_object",
+            "clang_libc_test_argv_object",
             "zlib_package_static_link",
             "natsort_package_static_link",
             "jsmn_package_static_link",
             "inih_package_static_link",
             "cwalk_package_static_link",
+            "libc_test_argv_static_link",
             "libc_test_ctype_static_link",
             "libc_test_string_static_link",
             "libc_test_string_memmem_static_link",
@@ -1449,6 +1453,7 @@ mod tests {
             "jsmn_package_run_elf",
             "inih_package_run_elf",
             "cwalk_package_run_elf",
+            "libc_test_argv_run_elf",
             "libc_test_ctype_run_elf",
             "libc_test_string_run_elf",
             "libc_test_string_memmem_run_elf",
@@ -1785,9 +1790,12 @@ mod tests {
         assert!(libc_string_min.contains("int isgraph(int ch)"));
         assert!(libc_string_min.contains("int ispunct(int ch)"));
         assert!(real_llc.contains("libc-test-print-clang-smoke.o"));
+        assert!(real_llc.contains("libc-test-argv-clang-smoke.o"));
+        assert!(real_llc.contains("third_party/libc-test/functional/argv.c"));
         assert!(real_llc.contains("libc-test-ctype-bounded-clang-smoke.o"));
         assert!(real_llc.contains("third_party/libc-test/functional/ctype_bounded.c"));
         assert!(real_llc.contains("real LLVM LNP64 clang libc-test harness object smoke passed"));
+        assert!(real_llc.contains("real LLVM LNP64 clang libc-test argv object smoke passed"));
         assert!(
             real_llc.contains("real LLVM LNP64 clang libc-test ctype_bounded object smoke passed")
         );
@@ -1973,6 +1981,17 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang errno object smoke passed"));
         assert!(real_llc.contains("startup-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang startup argv/envp object smoke passed"));
+        assert!(real_llc.contains("toolchain/liblnp64_stdio_min.c"));
+        assert!(libc_stdio_min.contains("int vsnprintf("));
+        assert!(libc_stdio_min.contains("int snprintf("));
+        assert!(real_llc.contains("liblnp64-stdio-min.o"));
+        assert!(real_llc.contains("grep -q '<vsnprintf>:'"));
+        assert!(real_llc.contains("grep -q '<snprintf>:'"));
+        assert!(
+            real_llc.contains(
+                "real LLVM LNP64 clang minilibc stdio implementation object smoke passed"
+            )
+        );
         assert!(real_llc.contains("getauxval-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang getauxval object smoke passed"));
         assert!(real_llc.contains("libc-string-clang-smoke.o"));
@@ -2273,6 +2292,10 @@ mod tests {
         assert!(real_llc.contains("lnp64-getauxval-linked.elf"));
         assert!(real_llc.contains(r#""$getauxval_obj" "$libc_startup_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld getauxval link smoke passed"));
+        assert!(real_llc.contains("lnp64-libc-test-argv-linked.elf"));
+        assert!(real_llc.contains(r#""$libc_test_argv_obj" \"#));
+        assert!(real_llc.contains(r#""$libc_stdio_impl_obj" "$libc_fd_impl_obj""#));
+        assert!(real_llc.contains("real LLVM LNP64 lld libc-test argv link smoke passed"));
         assert!(real_llc.contains("lnp64-scalar-arith-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld scalar arithmetic link smoke passed"));
         assert!(real_llc.contains("lnp64-high-mul-linked.elf"));
@@ -2933,6 +2956,11 @@ mod tests {
         );
         assert!(real_llc_docker.contains("lnp64-getauxval-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf getauxval execution passed"));
+        assert!(real_llc_docker.contains("lnp64-libc-test-argv-linked.elf"));
+        assert!(real_llc_docker.contains("lnp64-argv --expect"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf libc-test argv execution passed")
+        );
         assert!(main_source.contains("\"run-elf\""));
         assert!(main_source.contains("take_run_namespace_root(&mut args)?"));
         assert!(main_source.contains("probe.machine.set_namespace_root(root)?"));
@@ -3018,6 +3046,7 @@ mod tests {
             "real_errno_execution",
             "real_startup_execution",
             "real_getauxval_execution",
+            "real_libc_test_argv_execution",
             "real_intrinsic_await_execution",
             "real_intrinsic_call_execution",
             "real_intrinsic_gate_return_execution",
@@ -3077,6 +3106,7 @@ mod tests {
             "real_sbase_cat_execution",
             "real_intrinsic_push_execution",
             "real_intrinsic_control_execution",
+            "real_libc_test_argv_execution",
             "real_intrinsic_mmap_execution",
             "real_intrinsic_amo_execution",
             "real_c11_atomic_execution",
