@@ -492,9 +492,7 @@ fn encode_flat_exec_instr(
             Ok(vec![enc_rrrr(0xc9, *dst, *addr, *expected, *new_value)])
         }
         Instr::ObjectCtl(result, argblock) => Ok(vec![enc_rrr(0x4b, *result, *argblock, Reg(0))]),
-        Instr::CapRevoke(result, argblock) => {
-            Ok(vec![enc_rrr(0x53, *result, *argblock, Reg(0))])
-        }
+        Instr::CapRevoke(result, argblock) => Ok(vec![enc_rrr(0x53, *result, *argblock, Reg(0))]),
         Instr::ErrnoGet(rd) => Ok(vec![enc_reg(0x38, *rd)]),
         Instr::ErrnoSet(src) => Ok(vec![enc_reg(0x39, *src)]),
         Instr::DmaCtl(result, argblock) => Ok(vec![enc_rrr(0x5b, *result, *argblock, Reg(0))]),
@@ -2038,12 +2036,7 @@ mod tests {
 
         assert_eq!(
             hex,
-            concat!(
-                "4b228000\n",
-                "53328000\n",
-                "5b3a8000\n",
-                "3a380000\n",
-            )
+            concat!("4b228000\n", "53328000\n", "5b3a8000\n", "3a380000\n",)
         );
     }
 
