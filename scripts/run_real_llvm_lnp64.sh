@@ -3435,6 +3435,19 @@ grep -q 'call ' "$userland_init_dump"
 printf 'real LLVM LNP64 clang userland init object smoke passed: %s\n' \
   "$userland_init_obj"
 
+userland_lnpsh_obj="$build_dir/userland-lnpsh-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
+  -c userland/lnpsh_clang.c -o "$userland_lnpsh_obj"
+test -s "$userland_lnpsh_obj"
+userland_lnpsh_dump="$build_dir/userland-lnpsh-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$userland_lnpsh_obj" \
+  >"$userland_lnpsh_dump"
+grep -q 'call ' "$userland_lnpsh_dump"
+printf 'real LLVM LNP64 clang userland lnpsh object smoke passed: %s\n' \
+  "$userland_lnpsh_obj"
+
 meta_libc_c="$build_dir/meta-libc-smoke.c"
 cat >"$meta_libc_c" <<'C'
 #include <errno.h>
@@ -4844,6 +4857,14 @@ userland_init_elf="$build_dir/lnp64-userland-init-linked.elf"
 test -s "$userland_init_elf"
 printf 'real LLVM LNP64 lld userland init link smoke passed: %s\n' \
   "$userland_init_elf"
+
+userland_lnpsh_elf="$build_dir/lnp64-userland-lnpsh-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$userland_lnpsh_elf" "$crt0_obj" "$userland_lnpsh_obj" \
+  "$libc_fd_impl_obj"
+test -s "$userland_lnpsh_elf"
+printf 'real LLVM LNP64 lld userland lnpsh link smoke passed: %s\n' \
+  "$userland_lnpsh_elf"
 
 meta_libc_elf="$build_dir/lnp64-meta-libc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

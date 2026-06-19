@@ -45,6 +45,7 @@ real_read_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64
 real_write_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/liblnp64_fd_min.c|real LLVM LNP64 run-elf write execution passed|none
 real_userland_ucat_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,userland/ucat_clang.c,toolchain/liblnp64_fd_min.c|real LLVM LNP64 run-elf userland ucat execution passed|none
 real_userland_init_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,userland/init_clang.c,toolchain/liblnp64_fd_min.c|real LLVM LNP64 run-elf userland init execution passed|none
+real_userland_lnpsh_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,userland/lnpsh_clang.c,toolchain/liblnp64_fd_min.c|real LLVM LNP64 run-elf userland lnpsh execution passed|none
 real_metadata_libc_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/liblnp64_meta_min.c,toolchain/include/fcntl.h,toolchain/include/sys/stat.h|real LLVM LNP64 run-elf metadata libc execution passed|none
 real_mmap_libc_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/liblnp64_vma_min.c|real LLVM LNP64 run-elf mmap libc execution passed|none
 real_futex_libc_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/liblnp64_futex_min.c|real LLVM LNP64 run-elf futex libc execution passed|none

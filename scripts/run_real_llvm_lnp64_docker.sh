@@ -267,8 +267,9 @@ grep -q 'exit=0' <<<"$sbase_cat_output"
 printf 'real LLVM LNP64 run-elf sbase cat execution passed: %s\n' \
   target/llvm-lnp64-build/lnp64-sbase-cat-linked.elf
 userland_fixture_root="target/llvm-lnp64-build/userland-fixture-root"
-mkdir -p "$userland_fixture_root/etc"
+mkdir -p "$userland_fixture_root/dev" "$userland_fixture_root/etc"
 printf 'welcome from clang ucat\n' >"$userland_fixture_root/etc/motd"
+printf 'console\nnull\nrandom\n' >"$userland_fixture_root/dev/devices"
 "$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-userland-ucat-linked.elf \
   >/dev/null
 userland_ucat_output="$("$lnp64_bin" run-elf --namespace-root "$userland_fixture_root" \
@@ -287,5 +288,16 @@ grep -q '^welcome from clang ucat$' <<<"$userland_init_output"
 grep -q 'exit=0' <<<"$userland_init_output"
 printf 'real LLVM LNP64 run-elf userland init execution passed: %s\n' \
   target/llvm-lnp64-build/lnp64-userland-init-linked.elf
+"$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-userland-lnpsh-linked.elf \
+  >/dev/null
+userland_lnpsh_output="$("$lnp64_bin" run-elf --namespace-root "$userland_fixture_root" \
+  target/llvm-lnp64-build/lnp64-userland-lnpsh-linked.elf lnpsh)"
+grep -q '^lnpsh clang: scripted console$' <<<"$userland_lnpsh_output"
+grep -q '^welcome from clang ucat$' <<<"$userland_lnpsh_output"
+grep -q '^console$' <<<"$userland_lnpsh_output"
+grep -q '^random$' <<<"$userland_lnpsh_output"
+grep -q 'exit=0' <<<"$userland_lnpsh_output"
+printf 'real LLVM LNP64 run-elf userland lnpsh execution passed: %s\n' \
+  target/llvm-lnp64-build/lnp64-userland-lnpsh-linked.elf
 run_elf_report "real LLVM LNP64 run-elf indirect call execution passed" \
   target/llvm-lnp64-build/lnp64-indirect-call-linked.elf
