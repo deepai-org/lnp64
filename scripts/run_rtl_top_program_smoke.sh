@@ -384,6 +384,7 @@ def load_rust_flat_to_arch_opcode_map() -> dict[int, int]:
         "Free": "LNP64_OP_FREE",
         "AllocEx": "LNP64_OP_ALLOC_EX",
         "ObjectCtl": "LNP64_OP_OBJECT_CTL",
+        "DomainCtl": "LNP64_OP_DOMAIN_CTL",
         "CapDup": "LNP64_OP_CAP_DUP",
         "CapSend": "LNP64_OP_CAP_SEND",
         "CapRecv": "LNP64_OP_CAP_RECV",

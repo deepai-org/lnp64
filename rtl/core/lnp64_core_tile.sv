@@ -103,6 +103,12 @@ module lnp64_core_tile #(
     localparam logic [63:0] CALL_MODE_SYNC = 64'd0;
     localparam logic [63:0] CALL_MODE_ASYNC = 64'd1;
     localparam logic [63:0] CALL_MODE_HANDOFF = 64'd2;
+    localparam logic [63:0] DOMAIN_OP_CREATE = 64'd1;
+    localparam logic [63:0] DOMAIN_OP_QUERY = 64'd3;
+    localparam logic [63:0] DOMAIN_ROOT_ID = 64'd1;
+    localparam logic [63:0] DOMAIN_QUERY_SIZE = 64'd200;
+    localparam logic [63:0] DOMAIN_STATE_ACTIVE = 64'd0;
+    localparam logic [63:0] DOMAIN_STATE_DESTROYED = 64'd2;
     localparam logic [63:0] RTL_DMA_BUFFER_DEFAULT_FD = 64'd3;
     localparam logic [63:0] RTL_DMA_BUFFER_TOKEN = 64'h4000_0000_0000_0203;
     localparam logic [63:0] FDR_TOKEN_MARKER = 64'h4000_0000_0000_0000;
@@ -120,6 +126,7 @@ module lnp64_core_tile #(
     localparam logic [2:0] FDR_KIND_CALL_GATE = 3'd4;
     localparam logic [15:0] RTL_ERR_ESTALE = 16'd116;
     localparam int unsigned FDR_SLOT_COUNT = 10;
+    localparam int unsigned DOMAIN_SLOT_COUNT = 8;
     localparam int unsigned DATA_SRAM_BASE_WORD = 16;
     localparam int unsigned HEAP_SRAM_BASE_WORD = 96;
     localparam int unsigned STACK_SRAM_BASE_WORD = 128;
@@ -159,6 +166,23 @@ module lnp64_core_tile #(
     logic [63:0] object_gate_mode;
     logic [63:0] object_gate_completion_fd;
     logic [63:0] object_gate_flags;
+    logic [63:0] domain_argblock_addr;
+    logic [63:0] domain_op;
+    logic [63:0] domain_parent_req;
+    logic [63:0] domain_generation_req;
+    logic [63:0] domain_profile_req;
+    logic [63:0] domain_cpu_req;
+    logic [63:0] domain_memory_req;
+    logic [63:0] domain_pids_req;
+    logic [63:0] domain_fdrs_req;
+    logic [63:0] domain_caps_req;
+    logic [63:0] domain_upcalls_req;
+    logic [63:0] domain_ref_id;
+    int unsigned domain_ref_slot;
+    int unsigned domain_create_slot;
+    logic domain_ref_in_range;
+    logic domain_ref_live;
+    logic domain_create_slot_in_range;
     logic [63:0] object_fd_store_addr;
     logic [63:0] object_fd1_store_addr;
     int unsigned object_fd_store_word_index;
@@ -194,6 +218,19 @@ module lnp64_core_tile #(
     logic [31:0] call_continuation_return_pc;
     logic [7:0] call_continuation_result_reg;
     logic [63:0] call_next_op_id;
+    logic [63:0] domain_next_id;
+    logic domain_valid [0:DOMAIN_SLOT_COUNT-1];
+    logic domain_destroyed [0:DOMAIN_SLOT_COUNT-1];
+    logic [63:0] domain_generation [0:DOMAIN_SLOT_COUNT-1];
+    logic [63:0] domain_parent [0:DOMAIN_SLOT_COUNT-1];
+    logic [63:0] domain_profile [0:DOMAIN_SLOT_COUNT-1];
+    logic [63:0] domain_cpu_limit [0:DOMAIN_SLOT_COUNT-1];
+    logic [63:0] domain_memory_limit [0:DOMAIN_SLOT_COUNT-1];
+    logic [63:0] domain_pids_limit [0:DOMAIN_SLOT_COUNT-1];
+    logic [63:0] domain_fdrs_limit [0:DOMAIN_SLOT_COUNT-1];
+    logic [63:0] domain_cap_mask [0:DOMAIN_SLOT_COUNT-1];
+    logic [63:0] domain_upcall_mask [0:DOMAIN_SLOT_COUNT-1];
+    logic [63:0] domain_child_count [0:DOMAIN_SLOT_COUNT-1];
     logic cap_queue_valid;
     logic [63:0] cap_queue_rights;
     logic [63:0] cap_queue_lineage;
@@ -408,6 +445,24 @@ module lnp64_core_tile #(
             end
         end
     endfunction
+
+    task automatic store_double_unaligned_next(
+        input logic [63:0] addr,
+        input logic [63:0] value
+    );
+        int unsigned word_index;
+        int unsigned next_word_index;
+        logic [2:0] lane;
+        begin
+            lane = addr[2:0];
+            word_index = sram_word_index(addr);
+            next_word_index = sram_word_index(addr + (64'd8 - {61'd0, lane}));
+            sram[word_index] <= store_double_low_word(sram[word_index], lane, value);
+            if (lane != 3'd0) begin
+                sram[next_word_index] <= store_double_high_word(sram[next_word_index], lane, value);
+            end
+        end
+    endtask
 
     function automatic logic [63:0] load_word_lane(input logic [63:0] word, input logic upper);
         load_word_lane = upper ? {32'd0, word[63:32]} : {32'd0, word[31:0]};
@@ -864,6 +919,27 @@ module lnp64_core_tile #(
         object_gate_mode = load_double_unaligned(object_argblock_addr + 64'd48);
         object_gate_completion_fd = load_double_unaligned(object_argblock_addr + 64'd56);
         object_gate_flags = load_double_unaligned(object_argblock_addr + 64'd64);
+        domain_argblock_addr = gpr[dec.rs1];
+        domain_op = load_double_unaligned(domain_argblock_addr);
+        domain_parent_req = load_double_unaligned(domain_argblock_addr + 64'd8);
+        domain_generation_req = load_double_unaligned(domain_argblock_addr + 64'd16);
+        domain_profile_req = load_double_unaligned(domain_argblock_addr + 64'd24);
+        domain_cpu_req = load_double_unaligned(domain_argblock_addr + 64'd32);
+        domain_memory_req = load_double_unaligned(domain_argblock_addr + 64'd40);
+        domain_pids_req = load_double_unaligned(domain_argblock_addr + 64'd48);
+        domain_fdrs_req = load_double_unaligned(domain_argblock_addr + 64'd56);
+        domain_caps_req = load_double_unaligned(domain_argblock_addr + 64'd64);
+        domain_upcalls_req = load_double_unaligned(domain_argblock_addr + 64'd72);
+        domain_ref_id = domain_parent_req == 64'd0 ? DOMAIN_ROOT_ID : domain_parent_req;
+        domain_ref_slot = domain_ref_id > 64'd0 ? int'(domain_ref_id - 64'd1) : 0;
+        domain_create_slot = domain_next_id > 64'd0 ? int'(domain_next_id - 64'd1) : 0;
+        domain_ref_in_range = domain_ref_id > 64'd0 && domain_ref_slot < DOMAIN_SLOT_COUNT;
+        domain_ref_live = domain_ref_in_range &&
+            domain_valid[domain_ref_slot] &&
+            !domain_destroyed[domain_ref_slot] &&
+            (domain_generation_req == 64'd0 ||
+                domain_generation_req == domain_generation[domain_ref_slot]);
+        domain_create_slot_in_range = domain_next_id > 64'd0 && domain_create_slot < DOMAIN_SLOT_COUNT;
         object_fd_store_addr = object_argblock_addr + 64'd24;
         object_fd1_store_addr = object_argblock_addr + 64'd32;
         object_fd_store_word_index = sram_word_index(object_fd_store_addr);
@@ -1236,6 +1312,7 @@ module lnp64_core_tile #(
             timer_valid <= 1'b0;
             timer_lineage <= 64'd0;
             timer_expirations <= 64'd0;
+            domain_next_id <= 64'd2;
             m1_projection_root_fd <= 0;
             m1_projection_consumer_fd <= 0;
             topology_record_valid <= 1'b0;
@@ -1260,6 +1337,20 @@ module lnp64_core_tile #(
                 call_gate_entry[i] <= 64'd0;
                 call_gate_mode[i] <= 64'd0;
                 call_gate_completion_fd[i] <= 64'd0;
+            end
+            for (i = 0; i < DOMAIN_SLOT_COUNT; i = i + 1) begin
+                domain_valid[i] <= i == 0;
+                domain_destroyed[i] <= 1'b0;
+                domain_generation[i] <= 64'd1;
+                domain_parent[i] <= i == 0 ? 64'd0 : DOMAIN_ROOT_ID;
+                domain_profile[i] <= 64'd0;
+                domain_cpu_limit[i] <= i == 0 ? 64'hffff_ffff_ffff_ffff : 64'd0;
+                domain_memory_limit[i] <= i == 0 ? 64'hffff_ffff_ffff_ffff : 64'd0;
+                domain_pids_limit[i] <= i == 0 ? 64'hffff_ffff_ffff_ffff : 64'd0;
+                domain_fdrs_limit[i] <= i == 0 ? 64'hffff_ffff_ffff_ffff : 64'd0;
+                domain_cap_mask[i] <= i == 0 ? 64'hffff_ffff_ffff_ffff : 64'd0;
+                domain_upcall_mask[i] <= i == 0 ? 64'hffff_ffff_ffff_ffff : 64'd0;
+                domain_child_count[i] <= 64'd0;
             end
             for (i = 0; i < SRAM_WORDS; i = i + 1) begin
                 sram[i] = initial_sram[i];
@@ -2628,6 +2719,111 @@ module lnp64_core_tile #(
                                     command_pc <= pc;
                                     state <= CORE_SEND_CMD;
                                 end
+                            end
+                            LNP64_OP_DOMAIN_CTL: begin
+                                if (domain_op == DOMAIN_OP_CREATE &&
+                                    domain_ref_live &&
+                                    domain_create_slot_in_range &&
+                                    !domain_valid[domain_create_slot] &&
+                                    (domain_caps_req == 64'd0 ||
+                                        ((domain_caps_req & ~domain_cap_mask[domain_ref_slot]) == 64'd0)) &&
+                                    (domain_upcalls_req == 64'd0 ||
+                                        ((domain_upcalls_req & ~domain_upcall_mask[domain_ref_slot]) == 64'd0))) begin
+                                    domain_valid[domain_create_slot] <= 1'b1;
+                                    domain_destroyed[domain_create_slot] <= 1'b0;
+                                    domain_generation[domain_create_slot] <= 64'd1;
+                                    domain_parent[domain_create_slot] <= domain_ref_id;
+                                    domain_profile[domain_create_slot] <= domain_profile_req;
+                                    domain_cpu_limit[domain_create_slot] <= domain_cpu_req;
+                                    domain_memory_limit[domain_create_slot] <= domain_memory_req;
+                                    domain_pids_limit[domain_create_slot] <= domain_pids_req;
+                                    domain_fdrs_limit[domain_create_slot] <= domain_fdrs_req;
+                                    domain_cap_mask[domain_create_slot] <= domain_caps_req == 64'd0 ?
+                                        domain_cap_mask[domain_ref_slot] : domain_caps_req;
+                                    domain_upcall_mask[domain_create_slot] <= domain_upcalls_req == 64'd0 ?
+                                        domain_upcall_mask[domain_ref_slot] : domain_upcalls_req;
+                                    domain_child_count[domain_create_slot] <= 64'd0;
+                                    domain_child_count[domain_ref_slot] <= domain_child_count[domain_ref_slot] + 64'd1;
+                                    store_double_unaligned_next(domain_argblock_addr + 64'd8, domain_next_id);
+                                    store_double_unaligned_next(domain_argblock_addr + 64'd16, 64'd1);
+                                    store_double_unaligned_next(domain_argblock_addr + 64'd120, domain_ref_id);
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd128,
+                                        domain_ref_id == DOMAIN_ROOT_ID ? 64'd1 : 64'd2
+                                    );
+                                    gpr[dec.rd] <= domain_next_id;
+                                    domain_next_id <= domain_next_id + 64'd1;
+                                    errno_reg <= LNP64_ERR_OK;
+                                end else if (domain_op == DOMAIN_OP_QUERY && domain_ref_live) begin
+                                    store_double_unaligned_next(domain_argblock_addr + 64'd8, domain_ref_id);
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd16,
+                                        domain_generation[domain_ref_slot]
+                                    );
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd24,
+                                        domain_profile[domain_ref_slot]
+                                    );
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd32,
+                                        domain_cpu_limit[domain_ref_slot]
+                                    );
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd40,
+                                        domain_memory_limit[domain_ref_slot]
+                                    );
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd48,
+                                        domain_pids_limit[domain_ref_slot]
+                                    );
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd56,
+                                        domain_fdrs_limit[domain_ref_slot]
+                                    );
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd64,
+                                        domain_cap_mask[domain_ref_slot]
+                                    );
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd72,
+                                        domain_upcall_mask[domain_ref_slot]
+                                    );
+                                    store_double_unaligned_next(domain_argblock_addr + 64'd80, retired_count);
+                                    store_double_unaligned_next(domain_argblock_addr + 64'd88, 64'd0);
+                                    store_double_unaligned_next(domain_argblock_addr + 64'd96, 64'd1);
+                                    store_double_unaligned_next(domain_argblock_addr + 64'd104, 64'd3);
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd112,
+                                        domain_destroyed[domain_ref_slot] ? DOMAIN_STATE_DESTROYED : DOMAIN_STATE_ACTIVE
+                                    );
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd120,
+                                        domain_parent[domain_ref_slot]
+                                    );
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd128,
+                                        domain_ref_id == DOMAIN_ROOT_ID ? 64'd0 : 64'd1
+                                    );
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd136,
+                                        domain_child_count[domain_ref_slot]
+                                    );
+                                    gpr[dec.rd] <= DOMAIN_QUERY_SIZE;
+                                    errno_reg <= LNP64_ERR_OK;
+                                end else if (domain_op == DOMAIN_OP_CREATE) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EPERM;
+                                end else if (domain_op == DOMAIN_OP_QUERY) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= RTL_ERR_ESTALE;
+                                end else begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EINVAL;
+                                end
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_CAP_DUP: begin
                                 if (cap_flags & ~CAP_DUP_FLAG_SEAL) begin

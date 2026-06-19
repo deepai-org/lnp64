@@ -211,6 +211,9 @@ module lnp64_decode (
             8'h4b: begin
                 dec.opcode = LNP64_OP_OBJECT_CTL;
             end
+            8'h4c: begin
+                dec.opcode = LNP64_OP_DOMAIN_CTL;
+            end
             8'h4d: begin
                 dec.opcode = LNP64_OP_AWAIT;
             end
@@ -513,6 +516,7 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_MULHSU ||
             dec.opcode == LNP64_OP_EXIT ||
             dec.opcode == LNP64_OP_OBJECT_CTL ||
+            dec.opcode == LNP64_OP_DOMAIN_CTL ||
             dec.opcode == LNP64_OP_CAP_DUP ||
             dec.opcode == LNP64_OP_CAP_SEND ||
             dec.opcode == LNP64_OP_CAP_RECV ||

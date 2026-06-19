@@ -481,7 +481,13 @@
       "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
       "comparison": "retire_trace_and_final_state"
     },
-    {"source": "demos/sandboxed_domain.s", "required_features": ["core", "resource_domain", "policy"], "status": "blocked_by_features"},
+    {
+      "source": "demos/sandboxed_domain.s",
+      "required_features": ["core", "resource_domain", "domain_ctl_create", "domain_ctl_query", "domain_capability_narrowing"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    },
     {"source": "demos/secure_jit.s", "required_features": ["core", "vma", "exec_provenance"], "status": "blocked_by_features"},
     {"source": "demos/stale_fd_token.s", "required_features": ["core", "fdr", "generation_checks"], "status": "blocked_by_features"},
     {"source": "demos/system.s", "required_features": ["core", "object", "scheduler", "service"], "status": "blocked_by_features"}
