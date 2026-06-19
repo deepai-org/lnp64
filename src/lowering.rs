@@ -1329,7 +1329,6 @@ mod tests {
         let libc_process_min = include_str!("../toolchain/liblnp64_process_min.c");
         let libc_errno_min = include_str!("../toolchain/liblnp64_errno_min.c");
         let libc_startup_min = include_str!("../toolchain/liblnp64_startup_min.c");
-        let libc_random_min = include_str!("../toolchain/liblnp64_random_min.c");
         let libc_stdio_min = include_str!("../toolchain/liblnp64_stdio_min.c");
         let libc_time_min = include_str!("../toolchain/liblnp64_time_min.c");
         let libc_vma_min = include_str!("../toolchain/liblnp64_vma_min.c");
@@ -1430,11 +1429,9 @@ mod tests {
             "clang_sbase_command_objects",
             "clang_sbase_libutil_objects",
             "clang_sbase_support_object",
-            "clang_minilibc_random_impl_object",
             "clang_minilibc_stdio_impl_object",
             "clang_libc_test_argv_object",
             "clang_libc_test_env_object",
-            "clang_libc_test_random_object",
             "clang_libc_test_search_insque_object",
             "clang_libc_test_malloc_0_object",
             "clang_libc_test_fgets_eof_object",
@@ -1445,7 +1442,6 @@ mod tests {
             "cwalk_package_static_link",
             "libc_test_argv_static_link",
             "libc_test_env_static_link",
-            "libc_test_random_static_link",
             "libc_test_ctype_static_link",
             "libc_test_string_static_link",
             "libc_test_string_memmem_static_link",
@@ -1468,7 +1464,6 @@ mod tests {
             "cwalk_package_run_elf",
             "libc_test_argv_run_elf",
             "libc_test_env_run_elf",
-            "libc_test_random_run_elf",
             "libc_test_ctype_run_elf",
             "libc_test_string_run_elf",
             "libc_test_string_memmem_run_elf",
@@ -1797,19 +1792,6 @@ mod tests {
                 "real LLVM LNP64 clang minilibc startup implementation object smoke passed"
             )
         );
-        assert!(real_llc.contains("toolchain/liblnp64_random_min.c"));
-        assert!(libc_random_min.contains("long random(void)"));
-        assert!(libc_random_min.contains("void srandom(unsigned int seed)"));
-        assert!(libc_random_min.contains("char *initstate("));
-        assert!(libc_random_min.contains("char *setstate("));
-        assert!(real_llc.contains("liblnp64-random-min.o"));
-        assert!(real_llc.contains("grep -q '<random>:'"));
-        assert!(real_llc.contains("grep -q '<srandom>:'"));
-        assert!(
-            real_llc.contains(
-                "real LLVM LNP64 clang minilibc random implementation object smoke passed"
-            )
-        );
         assert!(real_llc.contains("toolchain/liblnp64_time_min.c"));
         assert!(libc_time_min.contains("clock_gettime"));
         assert!(libc_time_min.contains("get_pcr %0, REALTIME_SEC"));
@@ -1831,14 +1813,11 @@ mod tests {
         assert!(real_llc.contains("third_party/libc-test/functional/argv.c"));
         assert!(real_llc.contains("libc-test-env-clang-smoke.o"));
         assert!(real_llc.contains("third_party/libc-test/functional/env.c"));
-        assert!(real_llc.contains("libc-test-random-clang-smoke.o"));
-        assert!(real_llc.contains("third_party/libc-test/functional/random.c"));
         assert!(real_llc.contains("libc-test-ctype-bounded-clang-smoke.o"));
         assert!(real_llc.contains("third_party/libc-test/functional/ctype_bounded.c"));
         assert!(real_llc.contains("real LLVM LNP64 clang libc-test harness object smoke passed"));
         assert!(real_llc.contains("real LLVM LNP64 clang libc-test argv object smoke passed"));
         assert!(real_llc.contains("real LLVM LNP64 clang libc-test env object smoke passed"));
-        assert!(real_llc.contains("real LLVM LNP64 clang libc-test random object smoke passed"));
         assert!(
             real_llc.contains("real LLVM LNP64 clang libc-test ctype_bounded object smoke passed")
         );
@@ -2143,12 +2122,6 @@ mod tests {
         assert!(stdlib_header.contains("int unsetenv(const char *name);"));
         assert!(stdlib_header.contains("int clearenv(void);"));
         assert!(stdlib_header.contains("int putenv(char *string);"));
-        assert!(stdlib_header.contains("long random(void);"));
-        assert!(stdlib_header.contains("void srandom(unsigned int seed);"));
-        assert!(
-            stdlib_header.contains("char *initstate(unsigned int seed, char *state, size_t size);")
-        );
-        assert!(stdlib_header.contains("char *setstate(char *state);"));
         assert!(stdlib_header.contains("int atoi(const char *nptr);"));
         assert!(stdlib_header.contains("long atol(const char *nptr);"));
         assert!(stdlib_header.contains("long strtol(const char *nptr, char **endptr, int base);"));
@@ -2387,10 +2360,6 @@ mod tests {
         assert!(real_llc.contains(r#""$libc_startup_impl_obj" "$libc_string_impl_obj""#));
         assert!(real_llc.contains(r#""$libc_errno_impl_obj" "$libc_fd_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld libc-test env link smoke passed"));
-        assert!(real_llc.contains("lnp64-libc-test-random-linked.elf"));
-        assert!(real_llc.contains(r#""$libc_test_random_obj" \"#));
-        assert!(real_llc.contains(r#""$libc_random_impl_obj" "$libc_fd_impl_obj""#));
-        assert!(real_llc.contains("real LLVM LNP64 lld libc-test random link smoke passed"));
         assert!(real_llc.contains("lnp64-scalar-arith-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld scalar arithmetic link smoke passed"));
         assert!(real_llc.contains("lnp64-high-mul-linked.elf"));
@@ -3072,10 +3041,6 @@ mod tests {
         );
         assert!(real_llc_docker.contains("lnp64-libc-test-env-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf libc-test env execution passed"));
-        assert!(real_llc_docker.contains("lnp64-libc-test-random-linked.elf"));
-        assert!(
-            real_llc_docker.contains("real LLVM LNP64 run-elf libc-test random execution passed")
-        );
         assert!(main_source.contains("\"run-elf\""));
         assert!(main_source.contains("take_run_namespace_root(&mut args)?"));
         assert!(main_source.contains("probe.machine.set_namespace_root(root)?"));
@@ -3166,7 +3131,6 @@ mod tests {
             "real_getauxval_execution",
             "real_libc_test_argv_execution",
             "real_libc_test_env_execution",
-            "real_libc_test_random_execution",
             "real_intrinsic_await_execution",
             "real_intrinsic_call_execution",
             "real_intrinsic_gate_return_execution",
@@ -3238,7 +3202,6 @@ mod tests {
             "real_startup_execution",
             "real_getauxval_execution",
             "real_libc_test_env_execution",
-            "real_libc_test_random_execution",
             "text_fetch_decode",
         ] {
             assert_eq!(stages[stage].0, "tested", "{stage} should be tested");
@@ -4050,7 +4013,6 @@ mod tests {
             "errno_tls",
             "string_ctype",
             "numeric_conversion",
-            "random_state",
             "path_helpers",
             "search_helpers",
             "sort_helpers",
@@ -4077,7 +4039,6 @@ mod tests {
             "errno_tls",
             "string_ctype",
             "numeric_conversion",
-            "random_state",
             "path_helpers",
             "search_helpers",
             "sort_helpers",
@@ -4123,11 +4084,6 @@ mod tests {
                 "numeric_conversion",
                 vec!["atoi", "strtol", "strtoull"],
                 vec!["integer_alu", "ERRNO_SET", "static_link"],
-            ),
-            (
-                "random_state",
-                vec!["random", "srandom", "initstate", "setstate"],
-                vec!["integer_alu", "load_store", "static_link"],
             ),
             (
                 "path_helpers",
