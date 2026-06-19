@@ -290,6 +290,7 @@ private:
             .Case("amo.add", LNP64::AMO_ADD)
             .Case("amo.and", LNP64::AMO_AND)
             .Case("amo.or", LNP64::AMO_OR)
+            .Case("lock.cmpxchg", LNP64::LOCK_CMPXCHG)
             .Case("and", LNP64::AND)
             .Case("andi", LNP64::ANDI)
             .Case("or", LNP64::OR)
@@ -437,6 +438,8 @@ private:
       return addRegReg(Inst, Operands);
     if (Opcode == LNP64::ALLOC_EX)
       return addRegRegReg(Inst, Operands);
+    if (Opcode == LNP64::LOCK_CMPXCHG)
+      return addRegRegRegReg(Inst, Operands);
     if (Opcode == LNP64::AWAIT || Opcode == LNP64::GATE_CALL ||
         Opcode == LNP64::GATE_RETURN ||
         Opcode == LNP64::PULL || Opcode == LNP64::PUSH)

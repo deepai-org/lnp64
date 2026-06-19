@@ -710,6 +710,14 @@ int main(void) {
   if (old_swap != 11 || cell != 42)
     return 6;
 
+  unsigned long old_cas = __sync_val_compare_and_swap(&cell, 42, 99);
+  if (old_cas != 42 || cell != 99)
+    return 7;
+
+  old_cas = __sync_val_compare_and_swap(&cell, 42, 123);
+  if (old_cas != 99 || cell != 99)
+    return 8;
+
   return 0;
 }
 C
@@ -726,6 +734,7 @@ grep -q 'amo.add r' "$c11_atomic_dump"
 grep -q 'amo.and r' "$c11_atomic_dump"
 grep -q 'amo.or r' "$c11_atomic_dump"
 grep -q 'amo.swap r' "$c11_atomic_dump"
+grep -q 'lock.cmpxchg r' "$c11_atomic_dump"
 printf 'real LLVM LNP64 clang C11 atomic object smoke passed: %s\n' \
   "$c11_atomic_obj"
 
@@ -1231,6 +1240,7 @@ _start:
   amo.add r4, r5, r6
   amo.and r7, r8, r9
   amo.or r10, r11, r12
+  lock.cmpxchg r13, r14, r15, r16
   ret
 ASM
 atomic_mc_obj="$build_dir/atomic-mc-smoke.o"
@@ -1244,6 +1254,7 @@ grep -q 'amo.swap r1, r2, r3' "$atomic_mc_dump"
 grep -q 'amo.add r4, r5, r6' "$atomic_mc_dump"
 grep -q 'amo.and r7, r8, r9' "$atomic_mc_dump"
 grep -q 'amo.or r10, r11, r12' "$atomic_mc_dump"
+grep -q 'lock.cmpxchg r13, r14, r15, r16' "$atomic_mc_dump"
 printf 'real LLVM LNP64 llvm-mc atomic opcode smoke passed: %s\n' \
   "$atomic_mc_obj"
 

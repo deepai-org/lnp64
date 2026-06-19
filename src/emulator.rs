@@ -1474,6 +1474,7 @@ impl Machine {
         let a = Reg(((word >> 19) & 0x1f) as usize);
         let b = Reg(((word >> 14) & 0x1f) as usize);
         let c = Reg(((word >> 9) & 0x1f) as usize);
+        let d = Reg(((word >> 4) & 0x1f) as usize);
         let imm16 = sign_extend(word & 0xffff, 16);
         let imm14 = sign_extend(word & 0x3fff, 14);
         let branch_target = || {
@@ -1621,6 +1622,7 @@ impl Machine {
             0xc6 => Instr::AmoAdd(a, b, c),
             0xc7 => Instr::AmoAnd(a, b, c),
             0xc8 => Instr::AmoOr(a, b, c),
+            0xc9 => Instr::LockCmpxchg(a, b, c, d),
             other => {
                 return Err(format!(
                     "unsupported committed exec opcode 0x{other:02x} at 0x{pc:x}"

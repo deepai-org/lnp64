@@ -308,6 +308,13 @@ public:
       addReg(Instr, B);
       addReg(Instr, C);
       return MCDisassembler::Success;
+    case 0xc9:
+      Instr.setOpcode(LNP64::LOCK_CMPXCHG);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      addReg(Instr, (Word >> 4) & 0x1f);
+      return MCDisassembler::Success;
     case 0xad:
       Instr.setOpcode(LNP64::SEXT_B);
       addReg(Instr, A);

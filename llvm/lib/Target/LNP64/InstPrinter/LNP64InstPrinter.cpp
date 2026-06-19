@@ -34,6 +34,8 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
     return "amo.and";
   case LNP64::AMO_OR:
     return "amo.or";
+  case LNP64::LOCK_CMPXCHG:
+    return "lock.cmpxchg";
   case LNP64::DIV:
     return "div";
   case LNP64::UDIV:
@@ -402,6 +404,7 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::GATE_RETURN:
   case LNP64::PULL:
   case LNP64::PUSH:
+  case LNP64::LOCK_CMPXCHG:
     OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
     printOperand(MI->getOperand(0), OS);
     OS << ", ";

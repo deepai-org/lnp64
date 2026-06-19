@@ -65,6 +65,13 @@ static uint32_t encodeFixed32Native4(uint8_t Opcode, unsigned Rd,
          ((Arg1 & 0x1f) << 4);
 }
 
+static uint32_t encodeFixed32RRRR(uint8_t Opcode, unsigned Rd, unsigned Rs1,
+                                  unsigned Rs2, unsigned Rs3) {
+  return (uint32_t(Opcode) << 24) | ((Rd & 0x1f) << 19) |
+         ((Rs1 & 0x1f) << 14) | ((Rs2 & 0x1f) << 9) |
+         ((Rs3 & 0x1f) << 4);
+}
+
 static uint32_t encodeFixed32Branch(uint8_t Opcode, int64_t Target) {
   if (Target % 4 != 0)
     llvm_unreachable("expected instruction-aligned LNP64 branch target");
@@ -229,6 +236,13 @@ public:
       emitLE32(encodeFixed32RRR(0xc8, getGPRNo(MI.getOperand(0)),
                                 getGPRNo(MI.getOperand(1)),
                                 getGPRNo(MI.getOperand(2))),
+               OS);
+      return;
+    case LNP64::LOCK_CMPXCHG:
+      emitLE32(encodeFixed32RRRR(0xc9, getGPRNo(MI.getOperand(0)),
+                                 getGPRNo(MI.getOperand(1)),
+                                 getGPRNo(MI.getOperand(2)),
+                                 getGPRNo(MI.getOperand(3))),
                OS);
       return;
     case LNP64::AND:

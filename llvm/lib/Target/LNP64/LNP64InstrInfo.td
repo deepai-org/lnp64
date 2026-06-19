@@ -568,7 +568,10 @@ def ISYNC : LNP64Inst<(outs), (ins GPR:$rd, GPR:$rs1, GPR:$rs2), "isync",
 
 def LOCK_CMPXCHG
     : LNP64Inst<(outs GPR:$rd), (ins GPR:$addr, GPR:$old, GPR:$new), "lock.cmpxchg",
-                "\t$rd, $addr, $old, $new">;
+                "\t$rd, $addr, $old, $new"> {
+  let Pattern = [(set GPR:$rd, (atomic_cmp_swap_64 GPR:$addr, GPR:$old,
+                                GPR:$new))];
+}
 def FUTEX_WAIT : LNP64Inst<(outs GPR:$rd), (ins GPR:$addr, GPR:$expected),
                            "futex_wait", "\t$rd, $addr, $expected">;
 def FUTEX_WAKE : LNP64Inst<(outs GPR:$rd), (ins GPR:$addr, GPR:$count),
