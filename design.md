@@ -341,6 +341,14 @@ condition can be missed, overflow is explicit, revocation wakes or cancels
 waiters, and poisoned objects cannot be recycled as fresh authority without a
 supervisor/PID 1 acknowledgement path.
 
+Realtime delivery paths use precomputed authority. Rich policy decisions happen
+when objects, domains, capabilities, gates, queues, filters, or service bindings
+are created or reconfigured. Later wakeups, events, completions, and gate
+entries validate only compact resident tickets: object id/generation, domain
+id/generation, rights bits, wait predicates, operation ids, and budget/eligibility
+fields. They must not walk policy trees, scan ACLs, allocate memory, call
+software, or parse namespaces in the delivery path.
+
 ### 3.1 Native Service Model
 LNP64's service boundary is architectural. Hardware owns authority, scheduling,
 waitability, memory safety, accounting, and commit semantics. Services own

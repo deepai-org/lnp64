@@ -4611,9 +4611,20 @@ Algorithmic rules:
 - child creation computes effective policy as the monotonic intersection of the
   parent effective policy and requested child profile. Unsupported or broader
   requests fail before publication.
+- rich policy is a setup/control-path concern. Domain creation, capability
+  delegation, gate configuration, queue binding, network steering setup, service
+  binding, and debug/attestation policy may compute or update effective records.
+  Realtime wakeup, event delivery, gate entry/return, async completion,
+  scheduler reinsertion, and owner-engine commit paths consume those records
+  only as compact tickets.
 - hot-path checks use cached effective domain records with generation/epoch
   validation. They must not walk an unbounded ancestor chain during instruction
   retirement.
+- hot-path security checks are fixed predicates over resident fields: domain id
+  and generation, object id and generation, capability/right bits, lineage or
+  revocation epoch, wait-state predicate, operation id, target TID/PID, and
+  budget/eligibility bits. They do not allocate memory, invoke policy services,
+  scan ACLs, parse namespaces, or call software.
 - hierarchy depth is bounded by the implementation profile. Parent-chain checks,
   quota propagation, and policy recomputation are either bounded by that depth or
   submitted as Class D domain-engine work.

@@ -17,6 +17,16 @@ waitable-native, multicore-coherent, compiler-friendly, LLVM-targetable,
 paravirtualization-friendly, servicelet-extensible, interrupt-abstracted,
 bounded-latency.
 
+The design is aware of past complex-silicon failures. LNP64 deliberately moves
+some work now done by operating systems into fixed hardware: scheduling,
+capability checks, wait/wake, allocation fast paths, domains, DMA authority, and
+service boundaries. That is a calculated bet, not an accident. The bet is that a
+small number of mature, carefully chosen algorithms can be frozen, implemented
+efficiently in hardware, and proven correct. If the algorithms are good enough
+and the proof/RTL connection is honest, hardcoding them can make the final
+system simpler, faster, lower-power, and more secure than reimplementing those
+same mechanisms in privileged software on every machine.
+
 Severe proof goals:
 
 - **No forged authority:** capabilities, FDRs, returned capabilities, services,
