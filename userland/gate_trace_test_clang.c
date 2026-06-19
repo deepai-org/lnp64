@@ -1,6 +1,6 @@
 #include <unistd.h>
 
-#include "lnp64_intrinsics.h"
+#include <lnp64/intrinsics.h>
 
 static int gate_service(void) {
   __lnp_gate_return(0x4e425344UL, 0, 0);

@@ -1,7 +1,7 @@
 #include <poll.h>
 #include <unistd.h>
 
-#include "lnp64_intrinsics.h"
+#include <lnp64/intrinsics.h>
 
 enum {
   LNP64_OBJECT_KIND_QUEUE = 2,

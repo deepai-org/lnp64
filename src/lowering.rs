@@ -1385,6 +1385,8 @@ mod tests {
         let libc_vma_min = include_str!("../toolchain/liblnp64_vma_min.c");
         let libc_futex_min = include_str!("../toolchain/liblnp64_futex_min.c");
         let lnp64_futex_header = include_str!("../toolchain/include/lnp64/futex.h");
+        let lnp64_intrinsics_target_header =
+            include_str!("../toolchain/include/lnp64/intrinsics.h");
         let libc_pthread_min = include_str!("../toolchain/liblnp64_pthread_min.c");
         let libc_sem_min = include_str!("../toolchain/liblnp64_sem_min.c");
         let libc_poll_min = include_str!("../toolchain/liblnp64_poll_min.c");
@@ -1392,6 +1394,9 @@ mod tests {
         let libc_socket_min = include_str!("../toolchain/liblnp64_socket_min.c");
         let libc_sbase_min = include_str!("../toolchain/liblnp64_sbase_min.c");
         let elf_exec_test_clang = include_str!("../userland/elf_exec_test_clang.c");
+        let spawn_task_clang = include_str!("../userland/spawn_task_clang.c");
+        let gate_trace_test_clang = include_str!("../userland/gate_trace_test_clang.c");
+        let fd_passing_test_clang = include_str!("../userland/fd_passing_test_clang.c");
         let classifier_test_clang = include_str!("../userland/classifier_test_clang.c");
         let netbsd_init_clang = include_str!("../userland/netbsd_init_clang.c");
         let netbsd_personality_clang = include_str!("../userland/netbsd_personality_clang_smoke.c");
@@ -2789,6 +2794,8 @@ mod tests {
         assert!(real_llc.contains("userland-lnpsh-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang userland lnpsh object smoke passed"));
         assert!(real_llc.contains("userland/spawn_task_clang.c"));
+        assert!(lnp64_intrinsics_target_header.contains("../../lnp64_intrinsics.h"));
+        assert!(spawn_task_clang.contains("#include <lnp64/intrinsics.h>"));
         assert!(real_llc.contains("userland-spawn-task-clang-smoke.o"));
         assert!(real_llc.contains("grep -q 'clone.spawn r'"));
         assert!(real_llc.contains("grep -q 'thread_join r'"));
@@ -2858,6 +2865,7 @@ mod tests {
             real_llc.contains("real LLVM LNP64 clang NetBSD socket loopback child object passed")
         );
         assert!(real_llc.contains("userland/gate_trace_test_clang.c"));
+        assert!(gate_trace_test_clang.contains("#include <lnp64/intrinsics.h>"));
         assert!(real_llc.contains("netbsd-gate-trace-test-clang-smoke.o"));
         assert!(real_llc.contains("__lnp_domain_create"));
         assert!(real_llc.contains("__lnp_call_gate_create"));
@@ -3053,6 +3061,7 @@ mod tests {
         assert!(real_llc.contains(r#""$libc_vma_impl_obj" "$libc_errno_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld NetBSD mmap child link passed"));
         assert!(real_llc.contains("userland/fd_passing_test_clang.c"));
+        assert!(fd_passing_test_clang.contains("#include <lnp64/intrinsics.h>"));
         assert!(real_llc.contains("netbsd-fd-passing-test-clang-smoke.o"));
         assert!(real_llc.contains(r#"grep -q 'cap_dup r' "$netbsd_fd_passing_test_dump""#));
         assert!(real_llc.contains(r#"grep -q 'cap_send r' "$netbsd_fd_passing_test_dump""#));
@@ -3079,6 +3088,7 @@ mod tests {
         assert!(real_llc.contains(r#""$libc_alloc_impl_obj" "$libc_string_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld NetBSD fs service child link passed"));
         assert!(real_llc.contains("userland/classifier_test_clang.c"));
+        assert!(classifier_test_clang.contains("#include <lnp64/intrinsics.h>"));
         assert!(real_llc.contains("netbsd-classifier-test-clang-smoke.o"));
         assert!(classifier_test_clang.contains("#include <poll.h>"));
         assert!(!classifier_test_clang.contains("typedef unsigned long nfds_t"));
