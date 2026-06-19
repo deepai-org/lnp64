@@ -87,6 +87,7 @@ module lnp64_core_tile #(
     logic [63:0] initial_data_sram [0:SRAM_WORDS-1];
     logic [31:0] program_rom [0:PROGRAM_WORDS-1];
     localparam logic [63:0] HEAP_ARCH_BASE = 64'h0000_0000_0010_f000;
+    localparam logic [63:0] MMAP_ARCH_BASE = 64'h0000_0000_0020_e000;
     localparam logic [63:0] FLAT_DATA_BASE_ADDR = 64'h0000_0000_0001_0000;
     localparam logic [63:0] FLAT_EXEC_BASE_ADDR = 64'h0000_0000_0000_1000;
     localparam logic [63:0] FLAT_EXEC_INITIAL_SP = 64'h0000_0000_0067_2000;
@@ -204,6 +205,7 @@ module lnp64_core_tile #(
     logic [63:0] dma_buffer_object_addr;
     logic [63:0] dma_buffer_object_len;
     logic [63:0] heap_next;
+    logic [63:0] mmap_next;
     logic [63:0] heap_alloc_ptr [0:3];
     logic [63:0] heap_alloc_size [0:3];
     logic heap_alloc_valid [0:3];
@@ -1290,6 +1292,7 @@ module lnp64_core_tile #(
             pending_unsupported <= 1'b0;
             command_pc <= 32'd0;
             heap_next <= HEAP_ARCH_BASE;
+            mmap_next <= MMAP_ARCH_BASE;
             heap_alloc_next_slot <= 2'd0;
             dma_buffer_object_valid <= 1'b0;
             dma_buffer_object_revoked <= 1'b0;
@@ -1898,6 +1901,53 @@ module lnp64_core_tile #(
                                     if (heap_alloc_valid[i] && heap_alloc_ptr[i] == gpr[dec.rs1]) begin
                                         gpr[dec.rd] <= heap_alloc_size[i];
                                     end
+                                end
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_MMAP: begin
+                                if (gpr[dec.rs2] == 64'd0 || (gpr[dec.rs3] & ~64'd7) != 64'd0) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EINVAL;
+                                end else if ((gpr[dec.rs3] & 64'd6) == 64'd6) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EPERM;
+                                end else if (program_rom[pc + 32'd1][23:19] != 5'd0 ||
+                                    gpr[program_rom[pc + 32'd1][18:14]] != 64'd0) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EBADF;
+                                end else begin
+                                    gpr[dec.rd] <= gpr[dec.rs1] != 64'd0 ?
+                                        gpr[dec.rs1] : align_up_u64(mmap_next, 64'd4096);
+                                    heap_alloc_ptr[heap_alloc_next_slot] <= gpr[dec.rs1] != 64'd0 ?
+                                        gpr[dec.rs1] : align_up_u64(mmap_next, 64'd4096);
+                                    heap_alloc_size[heap_alloc_next_slot] <= gpr[dec.rs2];
+                                    heap_alloc_valid[heap_alloc_next_slot] <= 1'b1;
+                                    heap_alloc_next_slot <= heap_alloc_next_slot + 2'd1;
+                                    mmap_next <= (gpr[dec.rs1] != 64'd0 ?
+                                        gpr[dec.rs1] : align_up_u64(mmap_next, 64'd4096)) + gpr[dec.rs2];
+                                    errno_reg <= LNP64_ERR_OK;
+                                end
+                                pc <= pc + 32'd2;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_MPROTECT: begin
+                                if (gpr[dec.rs1] == 64'd0 || (gpr[dec.rs2] & ~64'd7) != 64'd0) begin
+                                    gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EINVAL;
+                                end else if ((gpr[dec.rs2] & 64'd6) == 64'd6) begin
+                                    gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EPERM;
+                                end else if (!heap_range_valid(gpr[dec.rd], gpr[dec.rs1])) begin
+                                    gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EINVAL;
+                                end else begin
+                                    gpr[1] <= 64'd0;
+                                    errno_reg <= LNP64_ERR_OK;
                                 end
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;

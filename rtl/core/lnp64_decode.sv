@@ -256,6 +256,12 @@ module lnp64_decode (
             8'h4a: begin
                 dec.opcode = LNP64_OP_ALLOC_EX;
             end
+            8'h6a: begin
+                dec.opcode = LNP64_OP_MMAP;
+            end
+            8'h6c: begin
+                dec.opcode = LNP64_OP_MPROTECT;
+            end
             8'hc5: begin
                 dec.opcode = LNP64_OP_AMO_SWAP;
             end
@@ -495,6 +501,8 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_ST_B ||
             dec.opcode == LNP64_OP_YIELD ||
             dec.opcode == LNP64_OP_SLEEP ||
+            dec.opcode == LNP64_OP_MMAP ||
+            dec.opcode == LNP64_OP_MPROTECT ||
             dec.opcode == LNP64_OP_DMA_CTL ||
             dec.opcode == LNP64_OP_ENV_GET ||
             dec.opcode == LNP64_OP_READ_FD ||

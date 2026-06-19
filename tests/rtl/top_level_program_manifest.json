@@ -494,7 +494,7 @@
       "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
       "comparison": "retire_trace_and_final_state"
     },
-    {"source": "demos/secure_jit.s", "required_features": ["core", "vma", "exec_provenance"], "status": "blocked_by_features"},
+    {"source": "demos/secure_jit.s", "generated_flat_hex": "demos/secure_jit.hex", "required_features": ["core", "vma", "mmap", "mprotect", "wx_refusal", "exec_provenance", "exit"], "status": "active", "rtl_gate": "scripts/run_rtl_top_program_smoke.sh", "comparison": "retire_trace_and_final_state"},
     {"source": "demos/stale_fd_token.s", "required_features": ["core", "fdr", "generation_checks"], "status": "blocked_by_features"},
     {"source": "demos/system.s", "required_features": ["core", "object", "scheduler", "service"], "status": "blocked_by_features"}
   ],

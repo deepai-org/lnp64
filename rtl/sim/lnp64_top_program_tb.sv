@@ -135,7 +135,7 @@ module lnp64_top_program_tb;
         retire_raw_result_reg =
             retire_instr[23:19];
         retire_result_valid = flat_result_valid(retire_opcode);
-        retire_result_reg = (retire_opcode == 8'h2d || retire_opcode == 8'h57) ?
+        retire_result_reg = (retire_opcode == 8'h2d || retire_opcode == 8'h57 || retire_opcode == 8'h6c) ?
             5'd1 : retire_raw_result_reg;
         retire_operand_imm = flat_operand_imm(
             retire_opcode,
