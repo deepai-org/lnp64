@@ -4459,6 +4459,10 @@ mod tests {
         ));
         assert!(transition_manifest.contains("toolchain/lnp64_llvm_filemap.manifest"));
         assert!(roadmap.contains("toolchain/lnp64_llvm_filemap.manifest"));
+        assert!(roadmap.contains("under `llvm/lib/Target/LNP64/`"));
+        assert!(roadmap.contains("top-level `clang/`"));
+        assert!(roadmap.contains("top-level `lld/`"));
+        assert!(!roadmap.contains("under the matching\nllvm-project paths"));
 
         for (layer, path, status, purpose) in rows {
             layers.insert(layer);

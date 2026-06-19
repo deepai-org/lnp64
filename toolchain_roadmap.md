@@ -95,13 +95,15 @@ The first llvm-project backend files now exist under `llvm/lib/Target/LNP64/`:
 `LNP64CallingConv.td`, `LNP64InstrInfo.td`, `TargetInfo/LNP64TargetInfo.cpp`,
 initial `MCTargetDesc` registration/code-emitter files, and the first
 `TargetMachine`/`Subtarget`/`ISelLowering`/`FrameLowering` class skeletons.
-The first Clang target-info, Clang driver-arch, lld ELF arch, and MC
-AsmBackend/object-writer source files also exist under the matching
-llvm-project paths, with the LNP64 triple, freestanding driver defaults,
-inline-asm constraint surface, and relocation names pinned to the checked
-manifests. The MC AsmParser, code emitter, InstPrinter, and Disassembler
-components now cover the first fixed32 integer, memory, branch/call, and return
-subset for future `llvm-mc` round trips.
+The MC AsmBackend/object-writer, AsmParser, code emitter, InstPrinter, and
+Disassembler source files exist under `llvm/lib/Target/LNP64/`. The first Clang
+target-info and driver-arch overlays live under top-level `clang/`, and the lld
+ELF arch overlay lives under top-level `lld/`, matching the filemap entries that
+the Docker gate overlays into an upstream llvm-project checkout. Those files pin
+the LNP64 triple, freestanding driver defaults, inline-asm constraint surface,
+and relocation names to the checked manifests. The MC components now cover the
+first fixed32 integer, memory, branch/call, and return subset for future
+`llvm-mc` round trips.
 Scaffolded llvm-project lit tests now exist for `llc` hello/native-intrinsic
 codegen, `llvm-mc` basic assembly, and Clang driver command shape; they remain
 marked `XFAIL` until the target is integrated into a buildable llvm-project
