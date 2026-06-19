@@ -64,6 +64,9 @@ module lnp64_decode (
             8'h19: begin
                 dec.opcode = LNP64_OP_LSR;
             end
+            8'h1a: begin
+                dec.opcode = LNP64_OP_ASR;
+            end
             8'h1b: begin
                 dec.opcode = LNP64_OP_CMP;
             end
@@ -144,6 +147,27 @@ module lnp64_decode (
             8'hff: begin
                 dec.opcode = LNP64_OP_UNSUPPORTED;
             end
+            8'ha0: begin
+                dec.opcode = LNP64_OP_ADDI;
+            end
+            8'ha1: begin
+                dec.opcode = LNP64_OP_ANDI;
+            end
+            8'ha2: begin
+                dec.opcode = LNP64_OP_ORI;
+            end
+            8'ha3: begin
+                dec.opcode = LNP64_OP_XORI;
+            end
+            8'ha4: begin
+                dec.opcode = LNP64_OP_LSLI;
+            end
+            8'ha5: begin
+                dec.opcode = LNP64_OP_LSRI;
+            end
+            8'ha6: begin
+                dec.opcode = LNP64_OP_ASRI;
+            end
             default: begin
                 dec.opcode = {8'd0, raw_opcode};
             end
@@ -164,6 +188,14 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_NOT ||
             dec.opcode == LNP64_OP_LSL ||
             dec.opcode == LNP64_OP_LSR ||
+            dec.opcode == LNP64_OP_ASR ||
+            dec.opcode == LNP64_OP_ADDI ||
+            dec.opcode == LNP64_OP_ANDI ||
+            dec.opcode == LNP64_OP_ORI ||
+            dec.opcode == LNP64_OP_XORI ||
+            dec.opcode == LNP64_OP_LSLI ||
+            dec.opcode == LNP64_OP_LSRI ||
+            dec.opcode == LNP64_OP_ASRI ||
             dec.opcode == LNP64_OP_CMP ||
             dec.opcode == LNP64_OP_JMP ||
             dec.opcode == LNP64_OP_BRANCH_EQ ||

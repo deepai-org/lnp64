@@ -285,6 +285,12 @@ fn encode_flat_exec_instr(
         Instr::Li(rd, value) => encode_flat_exec_li(*rd, value),
         Instr::Mov(rd, rs1) => Ok(vec![enc_rrr(0x02, *rd, *rs1, Reg(0))]),
         Instr::Add(rd, rs1, rs2) => Ok(vec![enc_rrr(0x10, *rd, *rs1, *rs2)]),
+        Instr::Addi(rd, rs1, imm) => Ok(vec![enc_mem(
+            0xa0,
+            *rd,
+            *rs1,
+            imm14(*imm, "ADDI immediate")?,
+        )]),
         Instr::Sub(rd, rs1, rs2) => Ok(vec![enc_rrr(0x11, *rd, *rs1, *rs2)]),
         Instr::Mul(rd, rs1, rs2) => Ok(vec![enc_rrr(0x12, *rd, *rs1, *rs2)]),
         Instr::Div(rd, rs1, rs2) => Ok(vec![enc_rrr(0x13, *rd, *rs1, *rs2)]),
@@ -292,11 +298,48 @@ fn encode_flat_exec_instr(
         Instr::Srem(rd, rs1, rs2) => Ok(vec![enc_rrr(0xa8, *rd, *rs1, *rs2)]),
         Instr::Urem(rd, rs1, rs2) => Ok(vec![enc_rrr(0xa9, *rd, *rs1, *rs2)]),
         Instr::And(rd, rs1, rs2) => Ok(vec![enc_rrr(0x14, *rd, *rs1, *rs2)]),
+        Instr::Andi(rd, rs1, imm) => Ok(vec![enc_mem(
+            0xa1,
+            *rd,
+            *rs1,
+            imm14(*imm, "ANDI immediate")?,
+        )]),
         Instr::Or(rd, rs1, rs2) => Ok(vec![enc_rrr(0x15, *rd, *rs1, *rs2)]),
+        Instr::Ori(rd, rs1, imm) => Ok(vec![enc_mem(
+            0xa2,
+            *rd,
+            *rs1,
+            imm14(*imm, "ORI immediate")?,
+        )]),
         Instr::Xor(rd, rs1, rs2) => Ok(vec![enc_rrr(0x16, *rd, *rs1, *rs2)]),
+        Instr::Xori(rd, rs1, imm) => Ok(vec![enc_mem(
+            0xa3,
+            *rd,
+            *rs1,
+            imm14(*imm, "XORI immediate")?,
+        )]),
         Instr::Not(rd, rs1) => Ok(vec![enc_rrr(0x17, *rd, *rs1, Reg(0))]),
         Instr::Lsl(rd, rs1, rs2) => Ok(vec![enc_rrr(0x18, *rd, *rs1, *rs2)]),
+        Instr::Lsli(rd, rs1, imm) => Ok(vec![enc_mem(
+            0xa4,
+            *rd,
+            *rs1,
+            imm14(*imm, "LSLI immediate")?,
+        )]),
         Instr::Lsr(rd, rs1, rs2) => Ok(vec![enc_rrr(0x19, *rd, *rs1, *rs2)]),
+        Instr::Lsri(rd, rs1, imm) => Ok(vec![enc_mem(
+            0xa5,
+            *rd,
+            *rs1,
+            imm14(*imm, "LSRI immediate")?,
+        )]),
+        Instr::Asr(rd, rs1, rs2) => Ok(vec![enc_rrr(0x1a, *rd, *rs1, *rs2)]),
+        Instr::Asri(rd, rs1, imm) => Ok(vec![enc_mem(
+            0xa6,
+            *rd,
+            *rs1,
+            imm14(*imm, "ASRI immediate")?,
+        )]),
         Instr::Cmp(lhs, rhs) => Ok(vec![enc_rrr(0x1b, *lhs, *rhs, Reg(0))]),
         Instr::Ret => Ok(vec![enc_reg(0x1f, Reg(0))]),
         Instr::Jmp(target) => Ok(vec![enc_branch(
@@ -347,7 +390,7 @@ fn encode_flat_exec_instr(
         )]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, MOV, ADD, SUB, MUL, DIV, UDIV/UREM/SREM, AND/OR/XOR/NOT, LSL/LSR, CMP, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.B, ALLOC, ERRNO_GET/SET, ENV_GET, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, MOV, ADD/ADDI, SUB, MUL, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XOR/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, CMP, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.B, ALLOC, ERRNO_GET/SET, ENV_GET, EXIT"
         )),
     }
 }
@@ -1001,6 +1044,45 @@ mod tests {
                 "19204400\n",
                 "1028c800\n",
                 "3a280000\n",
+            )
+        );
+    }
+
+    #[test]
+    fn asm_flat_exec_encodes_immediate_alu_subset() {
+        let source = r#"
+            .text
+              LI r1, 8
+              ADDI r2, r1, 5
+              ANDI r3, r2, 15
+              ORI r4, r3, 32
+              XORI r5, r4, 7
+              LSLI r6, r5, 1
+              LSRI r7, r6, 2
+              LI r8, -8
+              ASRI r9, r8, 1
+              ADDI r10, r9, 11
+              ADD r11, r7, r10
+              EXIT r11
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+
+        assert_eq!(
+            hex,
+            concat!(
+                "01080008\n",
+                "a0104005\n",
+                "a118800f\n",
+                "a220c020\n",
+                "a3290007\n",
+                "a4314001\n",
+                "a5398002\n",
+                "0140fff8\n",
+                "a64a0001\n",
+                "a052400b\n",
+                "1059d400\n",
+                "3a580000\n",
             )
         );
     }

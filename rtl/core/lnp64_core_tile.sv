@@ -357,6 +357,13 @@ module lnp64_core_tile #(
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
+                            LNP64_OP_ADDI: begin
+                                gpr[dec.rd] <= gpr[dec.rs1] + {{32{dec.imm[31]}}, dec.imm};
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
                             LNP64_OP_SUB: begin
                                 gpr[dec.rd] <= gpr[dec.rs1] - gpr[dec.rs2];
                                 pc <= pc + 32'd1;
@@ -385,6 +392,13 @@ module lnp64_core_tile #(
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
+                            LNP64_OP_ANDI: begin
+                                gpr[dec.rd] <= gpr[dec.rs1] & {{32{dec.imm[31]}}, dec.imm};
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
                             LNP64_OP_OR: begin
                                 gpr[dec.rd] <= gpr[dec.rs1] | gpr[dec.rs2];
                                 pc <= pc + 32'd1;
@@ -392,8 +406,22 @@ module lnp64_core_tile #(
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
+                            LNP64_OP_ORI: begin
+                                gpr[dec.rd] <= gpr[dec.rs1] | {{32{dec.imm[31]}}, dec.imm};
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
                             LNP64_OP_XOR: begin
                                 gpr[dec.rd] <= gpr[dec.rs1] ^ gpr[dec.rs2];
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_XORI: begin
+                                gpr[dec.rd] <= gpr[dec.rs1] ^ {{32{dec.imm[31]}}, dec.imm};
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
@@ -415,6 +443,34 @@ module lnp64_core_tile #(
                             end
                             LNP64_OP_LSR: begin
                                 gpr[dec.rd] <= gpr[dec.rs1] >> gpr[dec.rs2][5:0];
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_ASR: begin
+                                gpr[dec.rd] <= $signed(gpr[dec.rs1]) >>> gpr[dec.rs2][5:0];
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_LSLI: begin
+                                gpr[dec.rd] <= gpr[dec.rs1] << dec.imm[5:0];
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_LSRI: begin
+                                gpr[dec.rd] <= gpr[dec.rs1] >> dec.imm[5:0];
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_ASRI: begin
+                                gpr[dec.rd] <= $signed(gpr[dec.rs1]) >>> dec.imm[5:0];
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
