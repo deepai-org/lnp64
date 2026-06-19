@@ -269,6 +269,7 @@ bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_bitwise.c
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_shift.c
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_udiv_urem.c
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_not.c
+bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_call_return.c
 cargo run -- asm-flat-exec tests/rtl/programs/top_smoke.s -o /tmp/top_smoke.hex
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_smoke.hex
 bash scripts/run_rtl_m1.sh

@@ -283,6 +283,7 @@ fn encode_flat_exec_instr(
     match instr {
         Instr::Nop => Ok(vec![enc_reg(0x00, Reg(0))]),
         Instr::Li(rd, value) => encode_flat_exec_li(*rd, value),
+        Instr::Mov(rd, rs1) => Ok(vec![enc_rrr(0x02, *rd, *rs1, Reg(0))]),
         Instr::Add(rd, rs1, rs2) => Ok(vec![enc_rrr(0x10, *rd, *rs1, *rs2)]),
         Instr::Sub(rd, rs1, rs2) => Ok(vec![enc_rrr(0x11, *rd, *rs1, *rs2)]),
         Instr::Mul(rd, rs1, rs2) => Ok(vec![enc_rrr(0x12, *rd, *rs1, *rs2)]),
@@ -295,12 +296,17 @@ fn encode_flat_exec_instr(
         Instr::Lsl(rd, rs1, rs2) => Ok(vec![enc_rrr(0x18, *rd, *rs1, *rs2)]),
         Instr::Lsr(rd, rs1, rs2) => Ok(vec![enc_rrr(0x19, *rd, *rs1, *rs2)]),
         Instr::Cmp(lhs, rhs) => Ok(vec![enc_rrr(0x1b, *lhs, *rhs, Reg(0))]),
+        Instr::Ret => Ok(vec![enc_reg(0x1f, Reg(0))]),
         Instr::Jmp(target) => Ok(vec![enc_branch(
             0x20,
             branch_delta(program, word_pcs, pc, target)?,
         )]),
         Instr::Branch(condition, target) => Ok(vec![enc_branch(
             flat_exec_branch_opcode(*condition)?,
+            branch_delta(program, word_pcs, pc, target)?,
+        )]),
+        Instr::Call(target) => Ok(vec![enc_branch(
+            0x27,
             branch_delta(program, word_pcs, pc, target)?,
         )]),
         Instr::Ld(rd, MemRef::BaseOffset(base, offset), Width::Double) => Ok(vec![enc_mem(
@@ -326,7 +332,7 @@ fn encode_flat_exec_instr(
         )]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, ADD, SUB, MUL, UDIV/UREM, AND/OR/XOR/NOT, LSL/LSR, CMP, JMP, signed conditional branch, LD/ST.D base+offset, ERRNO_GET/SET, ENV_GET, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, MOV, ADD, SUB, MUL, UDIV/UREM, AND/OR/XOR/NOT, LSL/LSR, CMP, JMP/CALL/RET, signed conditional branch, LD/ST.D base+offset, ERRNO_GET/SET, ENV_GET, EXIT"
         )),
     }
 }
@@ -1046,6 +1052,34 @@ mod tests {
                 "20000002\n",
                 "01100001\n",
                 "3a080000\n",
+            )
+        );
+    }
+
+    #[test]
+    fn asm_flat_exec_encodes_call_return_subset() {
+        let source = r#"
+            .text
+              LI r1, 5
+              CALL add2
+              EXIT r1
+            add2:
+              LI r2, 2
+              ADD r1, r1, r2
+              RET
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+
+        assert_eq!(
+            hex,
+            concat!(
+                "01080005\n",
+                "27000002\n",
+                "3a080000\n",
+                "01100002\n",
+                "10084400\n",
+                "1f000000\n",
             )
         );
     }

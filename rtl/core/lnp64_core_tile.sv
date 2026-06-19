@@ -81,6 +81,8 @@ module lnp64_core_tile #(
     logic cmp_zero;
     logic cmp_negative;
     logic cmp_greater;
+    logic [31:0] return_stack [0:7];
+    logic [3:0] return_stack_depth;
     logic pending_unsupported;
     logic [31:0] command_pc;
     logic [63:0] mem_addr;
@@ -263,6 +265,7 @@ module lnp64_core_tile #(
             cmp_zero <= 1'b0;
             cmp_negative <= 1'b0;
             cmp_greater <= 1'b0;
+            return_stack_depth <= 4'd0;
             pending_unsupported <= 1'b0;
             command_pc <= 32'd0;
             for (i = 0; i < 32; i = i + 1) begin
@@ -324,6 +327,13 @@ module lnp64_core_tile #(
                             LNP64_OP_LI32_LITERAL: begin
                                 gpr[dec.rd] <= {32'd0, program_rom[pc + 32'd1]};
                                 pc <= pc + 32'd2;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_MOV: begin
+                                gpr[dec.rd] <= gpr[dec.rs1];
+                                pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
@@ -452,6 +462,27 @@ module lnp64_core_tile #(
                             end
                             LNP64_OP_BRANCH_GE: begin
                                 pc <= (cmp_zero || cmp_greater) ? pc + dec.imm : pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_CALL: begin
+                                if (return_stack_depth < 4'd8) begin
+                                    return_stack[return_stack_depth[2:0]] <= pc + 32'd1;
+                                    return_stack_depth <= return_stack_depth + 4'd1;
+                                end
+                                pc <= pc + dec.imm;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_RET: begin
+                                if (return_stack_depth != 4'd0) begin
+                                    pc <= return_stack[return_stack_depth[2:0] - 3'd1];
+                                    return_stack_depth <= return_stack_depth - 4'd1;
+                                end else begin
+                                    pc <= pc + 32'd1;
+                                end
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;

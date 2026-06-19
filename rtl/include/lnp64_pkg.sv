@@ -99,6 +99,9 @@ package lnp64_pkg;
         LNP64_OP_UREM         = 16'h0034,
         LNP64_OP_NOT          = 16'h0035,
         LNP64_OP_LI32_LITERAL = 16'h0036,
+        LNP64_OP_MOV          = 16'h0037,
+        LNP64_OP_CALL         = 16'h0038,
+        LNP64_OP_RET          = 16'h0039,
         LNP64_OP_UNSUPPORTED  = 16'h00ff
     } lnp64_opcode_e;
 
