@@ -1,6 +1,8 @@
 #ifndef LNP64_STDIO_H
 #define LNP64_STDIO_H
 
+#include <stdarg.h>
+
 typedef struct __lnp64_file FILE;
 
 #define EOF (-1)
@@ -32,10 +34,9 @@ long ftell(FILE *stream);
 int fseeko(FILE *stream, long offset, int whence);
 long ftello(FILE *stream);
 int fscanf(FILE *stream, const char *format, ...);
-int vfprintf(FILE *stream, const char *format, __builtin_va_list ap);
+int vfprintf(FILE *stream, const char *format, va_list ap);
 int sprintf(char *str, const char *format, ...);
-int vsnprintf(char *str, unsigned long size, const char *format,
-              __builtin_va_list ap);
+int vsnprintf(char *str, unsigned long size, const char *format, va_list ap);
 int snprintf(char *str, unsigned long size, const char *format, ...);
 long getline(char **lineptr, unsigned long *n, FILE *stream);
 unsigned long fread(void *ptr, unsigned long size, unsigned long count,

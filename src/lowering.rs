@@ -1356,6 +1356,7 @@ mod tests {
         let stdarg_header = include_str!("../toolchain/include/stdarg.h");
         let stddef_header = include_str!("../toolchain/include/stddef.h");
         let stdint_header = include_str!("../toolchain/include/stdint.h");
+        let stdio_header = include_str!("../toolchain/include/stdio.h");
         let stdlib_header = include_str!("../toolchain/include/stdlib.h");
         let string_header = include_str!("../toolchain/include/string.h");
         let sys_mman_header = include_str!("../toolchain/include/sys/mman.h");
@@ -2509,7 +2510,16 @@ mod tests {
         assert!(libc_stdio_min.contains("int fscanf(FILE *stream"));
         assert!(libc_stdio_min.contains("FILE *tmpfile(void)"));
         assert!(libc_stdio_min.contains("int fileno(FILE *stream)"));
+        assert!(stdio_header.contains("#include <stdarg.h>"));
+        assert!(
+            stdio_header.contains("int vfprintf(FILE *stream, const char *format, va_list ap);")
+        );
+        assert!(stdio_header.contains(
+            "int vsnprintf(char *str, unsigned long size, const char *format, va_list ap);"
+        ));
+        assert!(!stdio_header.contains("__builtin_va_list"));
         assert!(real_llc.contains("liblnp64-stdio-min.o"));
+        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_stdio_impl_c\""));
         assert!(real_llc.contains("grep -q '<vsnprintf>:'"));
         assert!(real_llc.contains("grep -q '<snprintf>:'"));
         assert!(real_llc.contains("grep -q '<tmpfile>:'"));
