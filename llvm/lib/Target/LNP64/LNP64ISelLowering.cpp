@@ -298,7 +298,7 @@ LNP64TargetLowering::LNP64TargetLowering(const TargetMachine &TM,
 
   for (unsigned Opcode : {ISD::ATOMIC_SWAP, ISD::ATOMIC_LOAD_ADD,
                           ISD::ATOMIC_LOAD_AND, ISD::ATOMIC_LOAD_OR,
-                          ISD::ATOMIC_CMP_SWAP})
+                          ISD::ATOMIC_LOAD_XOR, ISD::ATOMIC_CMP_SWAP})
     setOperationAction(Opcode, MVT::i64, Legal);
 
   setOperationAction(ISD::ATOMIC_LOAD, MVT::i64, Legal);

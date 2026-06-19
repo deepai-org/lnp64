@@ -76,4 +76,14 @@ static inline lnp64_word_t __lnp_amo_or(volatile lnp64_word_t *addr,
   return old;
 }
 
+static inline lnp64_word_t __lnp_amo_xor(volatile lnp64_word_t *addr,
+                                         lnp64_word_t value) {
+  lnp64_word_t old;
+  __asm__ volatile("amo.xor %0, %1, %2"
+                   : "=r"(old)
+                   : "r"((lnp64_word_t)addr), "r"(value)
+                   : "memory");
+  return old;
+}
+
 #endif

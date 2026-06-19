@@ -238,6 +238,12 @@ public:
                                 getGPRNo(MI.getOperand(2))),
                OS);
       return;
+    case LNP64::AMO_XOR:
+      emitLE32(encodeFixed32RRR(0xca, getGPRNo(MI.getOperand(0)),
+                                getGPRNo(MI.getOperand(1)),
+                                getGPRNo(MI.getOperand(2))),
+               OS);
+      return;
     case LNP64::LOCK_CMPXCHG:
       emitLE32(encodeFixed32RRRR(0xc9, getGPRNo(MI.getOperand(0)),
                                  getGPRNo(MI.getOperand(1)),

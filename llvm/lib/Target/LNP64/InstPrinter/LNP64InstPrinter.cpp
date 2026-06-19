@@ -34,6 +34,8 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
     return "amo.and";
   case LNP64::AMO_OR:
     return "amo.or";
+  case LNP64::AMO_XOR:
+    return "amo.xor";
   case LNP64::LOCK_CMPXCHG:
     return "lock.cmpxchg";
   case LNP64::DIV:
@@ -295,6 +297,7 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::AMO_ADD:
   case LNP64::AMO_AND:
   case LNP64::AMO_OR:
+  case LNP64::AMO_XOR:
   case LNP64::DIV:
   case LNP64::UDIV:
   case LNP64::SREM:

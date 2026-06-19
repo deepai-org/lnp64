@@ -1623,6 +1623,7 @@ impl Machine {
             0xc7 => Instr::AmoAnd(a, b, c),
             0xc8 => Instr::AmoOr(a, b, c),
             0xc9 => Instr::LockCmpxchg(a, b, c, d),
+            0xca => Instr::AmoXor(a, b, c),
             other => {
                 return Err(format!(
                     "unsupported committed exec opcode 0x{other:02x} at 0x{pc:x}"
@@ -3338,6 +3339,13 @@ impl Machine {
                 let addr = self.read_reg(addr_reg)?;
                 let current = self.load_u64(addr)?;
                 self.store_u64(addr, current | self.read_reg(value_reg)?)?;
+                self.write_reg(dst, current)?;
+            }
+            Instr::AmoXor(dst, addr_reg, value_reg) => {
+                Self::ensure_result_reg_writable(dst)?;
+                let addr = self.read_reg(addr_reg)?;
+                let current = self.load_u64(addr)?;
+                self.store_u64(addr, current ^ self.read_reg(value_reg)?)?;
                 self.write_reg(dst, current)?;
             }
             Instr::FutexWait(addr_reg, expected_reg) => {
@@ -12760,6 +12768,15 @@ mod tests {
         );
         assert_eq!(machine.thread().unwrap().regs[20], 5);
         assert_eq!(machine.load_u64(ARG_BASE).unwrap(), 8);
+        machine.thread_mut().unwrap().regs[4] = 0xf0;
+        machine.store_u64(ARG_BASE, 0xaa).unwrap();
+        assert!(
+            machine
+                .exec(Instr::AmoXor(Reg(21), Reg(9), Reg(4)))
+                .unwrap()
+        );
+        assert_eq!(machine.thread().unwrap().regs[21], 0xaa);
+        assert_eq!(machine.load_u64(ARG_BASE).unwrap(), 0x5a);
     }
 
     #[test]

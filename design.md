@@ -499,7 +499,7 @@ Synchronization rules:
 
 *   `LOCK_CMPXCHG` is a single-copy atomic read-modify-write and is
     sequentially consistent in v1.
-*   `AMO.SWAP`, `AMO.ADD`, `AMO.AND`, and `AMO.OR` are 64-bit atomic
+*   `AMO.SWAP`, `AMO.ADD`, `AMO.AND`, `AMO.OR`, and `AMO.XOR` are 64-bit atomic
     read-modify-write operations. The destination receives the old memory value;
     memory receives the transformed value. Baseline AMOs are sequentially
     consistent in v1.

@@ -742,6 +742,7 @@ impl Parser {
             "AMO.ADD" => alu3(&args, Instr::AmoAdd)?,
             "AMO.AND" => alu3(&args, Instr::AmoAnd)?,
             "AMO.OR" => alu3(&args, Instr::AmoOr)?,
+            "AMO.XOR" => alu3(&args, Instr::AmoXor)?,
             "FUTEX_WAIT" => {
                 arity(2)?;
                 Instr::FutexWait(reg(&args[0])?, reg(&args[1])?)
@@ -1296,6 +1297,7 @@ mod tests {
               BSWAP64 r25, r26
               CSEL.NE r27, r28, r29
               AMO.ADD r30, r1, r2
+              AMO.XOR r4, r5, r6
               FENCE.SC
             "#,
         )
@@ -1352,7 +1354,11 @@ mod tests {
             program.instructions[12],
             Instr::AmoAdd(Reg(30), Reg(1), Reg(2))
         ));
-        assert!(matches!(program.instructions[13], Instr::Fence));
+        assert!(matches!(
+            program.instructions[13],
+            Instr::AmoXor(Reg(4), Reg(5), Reg(6))
+        ));
+        assert!(matches!(program.instructions[14], Instr::Fence));
     }
 
     #[test]

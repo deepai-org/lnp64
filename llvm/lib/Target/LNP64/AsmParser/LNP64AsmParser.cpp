@@ -290,6 +290,7 @@ private:
             .Case("amo.add", LNP64::AMO_ADD)
             .Case("amo.and", LNP64::AMO_AND)
             .Case("amo.or", LNP64::AMO_OR)
+            .Case("amo.xor", LNP64::AMO_XOR)
             .Case("lock.cmpxchg", LNP64::LOCK_CMPXCHG)
             .Case("and", LNP64::AND)
             .Case("andi", LNP64::ANDI)
@@ -405,6 +406,7 @@ private:
         Opcode == LNP64::MULHU || Opcode == LNP64::MULHSU ||
         Opcode == LNP64::AMO_SWAP || Opcode == LNP64::AMO_ADD ||
         Opcode == LNP64::AMO_AND || Opcode == LNP64::AMO_OR ||
+        Opcode == LNP64::AMO_XOR ||
         Opcode == LNP64::AND || Opcode == LNP64::OR ||
         Opcode == LNP64::XOR || Opcode == LNP64::LSL ||
         Opcode == LNP64::LSR || Opcode == LNP64::ASR ||

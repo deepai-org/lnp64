@@ -20,3 +20,4 @@ __lnp_amo_swap|AMO.SWAP|old_value|addr,value
 __lnp_amo_add|AMO.ADD|old_value|addr,value
 __lnp_amo_and|AMO.AND|old_value|addr,value
 __lnp_amo_or|AMO.OR|old_value|addr,value
+__lnp_amo_xor|AMO.XOR|old_value|addr,value

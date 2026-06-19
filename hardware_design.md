@@ -929,6 +929,7 @@ The opcode map is fixed, but sparse:
 72 AMO_ADD
 73 AMO_AND
 74 AMO_OR
+75 AMO_XOR
 
 80 INB_RESERVED
 81 OUTB_RESERVED
@@ -1102,7 +1103,7 @@ Atomic and synchronization rules:
 
 - `LOCK_CMPXCHG` is a read-modify-write transaction with sequentially
   consistent ordering in v1.
-- `AMO_SWAP`, `AMO_ADD`, `AMO_AND`, and `AMO_OR` are 64-bit read-modify-write
+- `AMO_SWAP`, `AMO_ADD`, `AMO_AND`, `AMO_OR`, and `AMO_XOR` are 64-bit read-modify-write
   transactions that return the old value in `a=dst` and commit the transformed
   value to memory.
 - successful and failed locked atomics and AMOs have acquire+release ordering

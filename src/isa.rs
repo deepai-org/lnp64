@@ -216,6 +216,7 @@ pub enum Instr {
     AmoAdd(Reg, Reg, Reg),
     AmoAnd(Reg, Reg, Reg),
     AmoOr(Reg, Reg, Reg),
+    AmoXor(Reg, Reg, Reg),
     FutexWait(Reg, Reg),
     FutexWake(Reg, Reg),
     Inb(Reg, Reg),

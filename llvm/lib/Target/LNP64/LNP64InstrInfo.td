@@ -588,6 +588,9 @@ def AMO_AND : LNP64RRR<"amo.and"> {
 def AMO_OR : LNP64RRR<"amo.or"> {
   let Pattern = [(set GPR:$rd, (atomic_load_or_64 GPR:$rs1, GPR:$rs2))];
 }
+def AMO_XOR : LNP64RRR<"amo.xor"> {
+  let Pattern = [(set GPR:$rd, (atomic_load_xor_64 GPR:$rs1, GPR:$rs2))];
+}
 
 def ALLOC : LNP64RR<"alloc">;
 def ALLOC_EX : LNP64RRR<"alloc_ex">;

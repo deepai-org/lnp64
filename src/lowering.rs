@@ -1446,6 +1446,7 @@ mod tests {
         assert!(real_llc.contains("amo.swap r1, r2, r3"));
         assert!(real_llc.contains("amo.or r10, r11, r12"));
         assert!(real_llc.contains("lock.cmpxchg r13, r14, r15, r16"));
+        assert!(real_llc.contains("amo.xor r17, r18, r19"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc atomic opcode smoke passed"));
         assert!(real_llc.contains("scalar-extend-clang-smoke.o"));
         assert!(real_llc.contains("grep -q 'zext.w r'"));
@@ -1507,12 +1508,14 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang intrinsic control object smoke passed"));
         assert!(real_llc.contains("intrinsic-amo-clang-smoke.o"));
         assert!(real_llc.contains("amo.add r"));
+        assert!(real_llc.contains("amo.xor r"));
         assert!(real_llc.contains("amo.swap r"));
         assert!(real_llc.contains("real LLVM LNP64 clang intrinsic AMO object smoke passed"));
         assert!(real_llc.contains("c11-atomic-clang-smoke.o"));
         assert!(real_llc.contains("__atomic_load_n"));
         assert!(real_llc.contains("__atomic_store_n"));
         assert!(real_llc.contains("__atomic_fetch_add"));
+        assert!(real_llc.contains("__atomic_fetch_xor"));
         assert!(real_llc.contains("__atomic_compare_exchange_n"));
         assert!(real_llc.contains("grep -q 'lock.cmpxchg r'"));
         assert!(real_llc.contains("real LLVM LNP64 clang C11 atomic object smoke passed"));
@@ -2348,6 +2351,7 @@ mod tests {
         assert!(isel.contains("ISD::ATOMIC_LOAD"));
         assert!(isel.contains("ISD::ATOMIC_STORE"));
         assert!(isel.contains("ISD::ATOMIC_LOAD_ADD"));
+        assert!(isel.contains("ISD::ATOMIC_LOAD_XOR"));
         assert!(isel.contains("ISD::ATOMIC_CMP_SWAP"));
         assert!(isel.contains("LNP64ISD::CALL"));
         assert!(isel.contains("CalleeName == \"__lnp_await\" || CalleeName == \"__lnp_call\""));
@@ -3780,6 +3784,7 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::MULHSU"));
         assert!(mc_emitter.contains("case LNP64::AMO_SWAP"));
         assert!(mc_emitter.contains("case LNP64::AMO_OR"));
+        assert!(mc_emitter.contains("case LNP64::AMO_XOR"));
         assert!(mc_emitter.contains("case LNP64::LOCK_CMPXCHG"));
         assert!(mc_emitter.contains("encodeFixed32RRRR"));
         assert!(mc_emitter.contains("case LNP64::SEXT_B"));
