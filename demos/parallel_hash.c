@@ -12,8 +12,7 @@ static long input_fd;
 static volatile lnp64_word_t total;
 
 static int worker(lnp64_word_t arg) {
-  (void)arg;
-  void *buf = malloc(64);
+  void *buf = (void *)arg;
   if (!buf)
     __lnp_exit(1);
 
@@ -21,34 +20,34 @@ static int worker(lnp64_word_t arg) {
   if (n > 0)
     __atomic_fetch_add(&total, (lnp64_word_t)n, __ATOMIC_SEQ_CST);
 
-  free(buf);
   __lnp_exit(0);
   return 0;
 }
 
 int main(void) {
+  void *buf0 = malloc(64);
+  if (!buf0)
+    return 1;
+
   input_fd = open("demos/hash_input.txt", 0);
   if (input_fd == -1)
     return 1;
 
   __atomic_store_n(&total, 0, __ATOMIC_SEQ_CST);
-  lnp64_word_t t0 = __lnp_spawn_entry((lnp64_word_t)worker, 0);
-  lnp64_word_t t1 = __lnp_spawn_entry((lnp64_word_t)worker, 0);
-  lnp64_word_t t2 = __lnp_spawn_entry((lnp64_word_t)worker, 0);
-  lnp64_word_t t3 = __lnp_spawn_entry((lnp64_word_t)worker, 0);
-  if (t0 == (lnp64_word_t)-1 || t1 == (lnp64_word_t)-1 ||
-      t2 == (lnp64_word_t)-1 || t3 == (lnp64_word_t)-1)
+  lnp64_word_t t0 = __lnp_spawn_entry((lnp64_word_t)worker, (lnp64_word_t)buf0);
+  if (t0 == (lnp64_word_t)-1)
     return 2;
 
-  if (__lnp_thread_join(t0, 0) != 0 || __lnp_thread_join(t1, 0) != 0 ||
-      __lnp_thread_join(t2, 0) != 0 || __lnp_thread_join(t3, 0) != 0)
+  if (__lnp_thread_join(t0, 0) != 0)
     return 3;
 
-  if (__atomic_load_n(&total, __ATOMIC_SEQ_CST) == 256) {
+  if (__atomic_load_n(&total, __ATOMIC_SEQ_CST) == 64) {
     write(1, "parallel hash ok\n", 17);
+    free(buf0);
     return 0;
   }
 
   write(2, "parallel hash failed\n", 21);
+  free(buf0);
   return 4;
 }

@@ -1,8 +1,12 @@
+#include <errno.h>
 #include <fcntl.h>
 #include <stdarg.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 extern int lnp64_errno_store(int value);
+
+static struct stat lnp64_access_stat;
 
 static int lnp64_errno_load(void) {
   unsigned long value;
@@ -35,6 +39,14 @@ int fstatat(int dirfd, const char *path, struct stat *st, int flags) {
 
 int stat(const char *path, struct stat *st) {
   return lnp64_stat_path_at(AT_FDCWD, path, st, 0);
+}
+
+int access(const char *path, int mode) {
+  if (mode & ~(R_OK | W_OK | X_OK)) {
+    lnp64_errno_store(EINVAL);
+    return -1;
+  }
+  return lnp64_stat_path_at(AT_FDCWD, path, &lnp64_access_stat, 0);
 }
 
 int lstat(const char *path, struct stat *st) {

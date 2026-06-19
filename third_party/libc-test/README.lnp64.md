@@ -8,6 +8,7 @@ The checked gate currently runs these functional and regression tests. Most are
 upstream libc-test files; bounded or locally guarded files are called out below.
 
 - `functional/argv.c`
+- `functional/access_bounded.c`
 - `functional/basename.c`
 - `functional/clock_gettime.c`
 - `functional/ctype_bounded.c`
@@ -55,6 +56,9 @@ records.
 `utime.c` is the upstream file and covers `futimens`/`utimensat` timestamp
 pairs, `UTIME_NOW`, `UTIME_OMIT`, invalid file descriptors, and nested
 timestamp fields in `struct stat`.
+`access_bounded.c` is a local bounded file covering metadata-backed `access`
+existence checks, supported mode constants, missing-path `ENOENT`, and
+invalid-mode `EINVAL`.
 `fcntl.c` is the upstream file and covers whole-file advisory lock rejection
 and `F_GETLK` owner reporting across `fork`.
 `fcntl_basic_bounded.c` is a local bounded file covering descriptor flag queries,
@@ -81,11 +85,13 @@ overlap, destination-before-source overlap, and zero-length moves.
 ## Real Clang replacement status
 
 The real LLVM/Clang/lld `run-elf` gate now covers former toy-only `pthread_tsd.c`
-and `sem_init.c` cases, plus bounded `fcntl_basic_bounded.c` descriptor-flag
-coverage. Upstream `fcntl.c` remains toy-only until POSIX `fork()` lowers
-through the formal CLONE-profile compatibility layer and `waitpid()` lowers
-through the event/waitable path. Do not add new Rust toy compiler fcntl/fork
-language features to close that gap.
+and `sem_init.c` cases, plus bounded `access_bounded.c` metadata probing and
+`fcntl_basic_bounded.c` descriptor-flag coverage. Upstream `fcntl.c` remains
+toy-only until POSIX `fork()` lowers through the formal CLONE-profile
+compatibility layer and `waitpid()` lowers through the event/waitable path. Do
+not add new Rust toy compiler fcntl/fork language features to close that gap.
+
+Do not add new Rust toy compiler fcntl/fork language features.
 
 Run the subset with:
 

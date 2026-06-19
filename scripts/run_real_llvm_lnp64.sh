@@ -2683,6 +2683,20 @@ grep -q 'call ' "$libc_test_clock_gettime_dump"
 printf 'real LLVM LNP64 clang libc-test clock_gettime object smoke passed: %s\n' \
   "$libc_test_clock_gettime_obj"
 
+libc_test_access_bounded_obj="$build_dir/libc-test-access-bounded-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain/include \
+  -I third_party/libc-test/functional \
+  -c third_party/libc-test/functional/access_bounded.c \
+  -o "$libc_test_access_bounded_obj"
+test -s "$libc_test_access_bounded_obj"
+libc_test_access_bounded_dump="$build_dir/libc-test-access-bounded-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_test_access_bounded_obj" \
+  >"$libc_test_access_bounded_dump"
+grep -q 'call ' "$libc_test_access_bounded_dump"
+printf 'real LLVM LNP64 clang libc-test access_bounded object smoke passed: %s\n' \
+  "$libc_test_access_bounded_obj"
+
 libc_test_stat_obj="$build_dir/libc-test-stat-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain/include \
@@ -4735,6 +4749,15 @@ libc_test_clock_gettime_elf="$build_dir/lnp64-libc-test-clock-gettime-linked.elf
 test -s "$libc_test_clock_gettime_elf"
 printf 'real LLVM LNP64 lld libc-test clock_gettime link smoke passed: %s\n' \
   "$libc_test_clock_gettime_elf"
+
+libc_test_access_bounded_elf="$build_dir/lnp64-libc-test-access-bounded-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$libc_test_access_bounded_elf" "$crt0_obj" \
+  "$libc_test_access_bounded_obj" "$libc_test_print_obj" \
+  "$libc_meta_impl_obj" "$libc_fd_impl_obj" "$libc_errno_impl_obj"
+test -s "$libc_test_access_bounded_elf"
+printf 'real LLVM LNP64 lld libc-test access_bounded link smoke passed: %s\n' \
+  "$libc_test_access_bounded_elf"
 
 libc_test_stat_elf="$build_dir/lnp64-libc-test-stat-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
