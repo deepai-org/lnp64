@@ -8,7 +8,9 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -258,6 +260,25 @@ def main() -> None:
         ops,
         transition_names,
     )
+
+    old_use_existing = os.environ.get("LNP64_M1_TYPED_COMMIT_USE_EXISTING")
+    old_log = os.environ.get("LNP64_M1_TYPED_COMMIT_LOG")
+    with tempfile.TemporaryDirectory(prefix="lnp64-m1-existing-log-") as tmp:
+        existing_log = Path(tmp) / "m1.log"
+        existing_log.write_text("existing m1 log\n", encoding="utf-8")
+        os.environ["LNP64_M1_TYPED_COMMIT_USE_EXISTING"] = "1"
+        os.environ["LNP64_M1_TYPED_COMMIT_LOG"] = str(existing_log)
+        require(checker.run_m1_gate() == "existing m1 log\n", "checker did not read existing M1 log")
+        os.environ["LNP64_M1_TYPED_COMMIT_LOG"] = str(Path(tmp) / "missing.log")
+        expect_failure("missing existing M1 typed commit log", lambda: checker.run_m1_gate())
+    if old_use_existing is None:
+        os.environ.pop("LNP64_M1_TYPED_COMMIT_USE_EXISTING", None)
+    else:
+        os.environ["LNP64_M1_TYPED_COMMIT_USE_EXISTING"] = old_use_existing
+    if old_log is None:
+        os.environ.pop("LNP64_M1_TYPED_COMMIT_LOG", None)
+    else:
+        os.environ["LNP64_M1_TYPED_COMMIT_LOG"] = old_log
 
     stale_commit_bits = valid_commit_bits.copy()
     stale_commit_bits[0] = packed_bits(valid_run[1], commit_fields)

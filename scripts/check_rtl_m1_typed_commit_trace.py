@@ -25,6 +25,7 @@ LEAN_M1_MODEL = ROOT / "formal/M1TransitionInvariantModel.lean"
 RTL_M1_ENGINE = ROOT / "rtl/engines/lnp64_m1_pingpong.sv"
 RTL_M1_TB = ROOT / "rtl/sim/lnp64_m1_tb.sv"
 RTL_M1_ASSERTIONS = ROOT / "formal/rtl_assertions/lnp64_m1_assertions.sv"
+DEFAULT_M1_TRACE_LOG = Path("/tmp/lnp64_rtl_m1_typed_commit.log")
 DEFAULT_TYPED_COMMIT_SEEDS = (
     "0 1 7 42 255 1024 4095 4096 65536 1048576 16777216 134217728 268435456 536870912"
 )
@@ -1127,6 +1128,13 @@ def load_schema_contract() -> tuple[
 
 
 def run_m1_gate() -> str:
+    log_path = Path(os.environ.get("LNP64_M1_TYPED_COMMIT_LOG", DEFAULT_M1_TRACE_LOG))
+    if os.environ.get("LNP64_M1_TYPED_COMMIT_USE_EXISTING") == "1":
+        try:
+            return log_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            fail(f"missing existing M1 typed commit log {log_path}: {exc}")
+
     env = os.environ.copy()
     env.setdefault("LNP64_COSIM_SEEDS", DEFAULT_TYPED_COMMIT_SEEDS)
     proc = subprocess.run(
@@ -1141,6 +1149,10 @@ def run_m1_gate() -> str:
     if proc.returncode != 0:
         print(proc.stdout, end="")
         fail(f"scripts/run_rtl_m1.sh exited with {proc.returncode}")
+    try:
+        log_path.write_text(proc.stdout, encoding="utf-8")
+    except OSError as exc:
+        fail(f"could not write M1 typed commit log {log_path}: {exc}")
     return proc.stdout
 
 

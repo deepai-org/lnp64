@@ -107,6 +107,8 @@ def check_proof() -> None:
             "scripts/check_theorem_rtl_coupling.py",
             "formal/m1_model.py",
             "bash scripts/run_rtl_m1.sh",
+            "LNP64_M1_TYPED_COMMIT_USE_EXISTING=1",
+            "LNP64_M1_TYPED_COMMIT_LOG=\"$m1_log\"",
             "scripts/check_rtl_m1_typed_commit_trace.py",
             "scripts/test_rtl_m1_typed_commit_checker.py",
             "scripts/test_rtl_m1_schema_checker.py",

@@ -24,8 +24,13 @@ scripts/check_rtl_shared_schema.py
 scripts/check_theorem_rtl_coupling.py
 formal/m1_model.py >/dev/null
 
-bash scripts/run_rtl_m1.sh
-scripts/check_rtl_m1_typed_commit_trace.py
+m1_log="${TMPDIR:-/tmp}/lnp64_rtl_m1_refinement_gate.log"
+default_m1_seeds="0 1 7 42 255 1024 4095 4096 65536 1048576 16777216 134217728 268435456 536870912"
+export LNP64_COSIM_SEEDS="${LNP64_COSIM_SEEDS:-${LNP64_M1_TYPED_COMMIT_SEEDS:-$default_m1_seeds}}"
+bash scripts/run_rtl_m1.sh | tee "$m1_log"
+LNP64_M1_TYPED_COMMIT_USE_EXISTING=1 \
+  LNP64_M1_TYPED_COMMIT_LOG="$m1_log" \
+  scripts/check_rtl_m1_typed_commit_trace.py
 scripts/test_rtl_m1_typed_commit_checker.py
 scripts/test_rtl_m1_schema_checker.py
 
