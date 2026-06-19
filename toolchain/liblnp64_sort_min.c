@@ -1,4 +1,4 @@
-typedef unsigned long size_t;
+#include <stdlib.h>
 
 static void lnp64_swap_bytes(char *lhs, char *rhs, size_t width) {
   for (size_t i = 0; i < width; i = i + 1) {

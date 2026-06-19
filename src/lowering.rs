@@ -2527,6 +2527,8 @@ mod tests {
         assert!(real_llc.contains("tolower('Q')"));
         assert!(real_llc.contains("toupper('q')"));
         assert!(real_llc.contains("grep -q 'sext.w'"));
+        assert!(libc_string_min.contains("#include <string.h>"));
+        assert!(!libc_string_min.contains("typedef unsigned long size_t;"));
         assert!(libc_string_min.contains("void *memmove"));
         assert!(libc_string_min.contains("int strcmp"));
         assert!(libc_string_min.contains("int strncmp"));
@@ -2552,6 +2554,7 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang minilibc string object smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_string_min.c"));
         assert!(real_llc.contains("liblnp64-string-min.o"));
+        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_string_impl_c\""));
         assert!(
             real_llc.contains(
                 "real LLVM LNP64 clang minilibc string implementation object smoke passed"
@@ -2629,6 +2632,9 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang search helper object smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_search_min.c"));
         assert!(real_llc.contains("liblnp64-search-min.o"));
+        assert!(libc_search_min.contains("#include <search.h>"));
+        assert!(libc_search_min.contains("#include <string.h>"));
+        assert!(!libc_search_min.contains("typedef unsigned long size_t;"));
         assert!(libc_search_min.contains("void *lfind"));
         assert!(libc_search_min.contains("void *lsearch"));
         assert!(libc_search_min.contains("void insque"));
@@ -2639,6 +2645,7 @@ mod tests {
                 "real LLVM LNP64 clang minilibc search implementation object smoke passed"
             )
         );
+        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_search_impl_c\""));
         assert!(real_llc.contains("sort-clang-smoke.o"));
         assert!(stdint_header.contains("typedef unsigned long uint64_t;"));
         assert!(real_llc.contains("#include <stdint.h>"));
@@ -2653,6 +2660,8 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang sort helper object smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_sort_min.c"));
         assert!(real_llc.contains("liblnp64-sort-min.o"));
+        assert!(libc_sort_min.contains("#include <stdlib.h>"));
+        assert!(!libc_sort_min.contains("typedef unsigned long size_t;"));
         assert!(libc_sort_min.contains("void qsort"));
         assert!(libc_sort_min.contains("lnp64_swap_bytes"));
         assert!(libc_sort_min.contains("compar(prev, cur)"));
@@ -2660,8 +2669,12 @@ mod tests {
             real_llc
                 .contains("real LLVM LNP64 clang minilibc sort implementation object smoke passed")
         );
+        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_sort_impl_c\""));
         assert!(real_llc.contains("toolchain/liblnp64_alloc_min.c"));
         assert!(libc_alloc_min.contains("#include \"lnp64_intrinsics.h\""));
+        assert!(libc_alloc_min.contains("#include <stdlib.h>"));
+        assert!(libc_alloc_min.contains("#include <string.h>"));
+        assert!(!libc_alloc_min.contains("typedef unsigned long size_t;"));
         assert!(libc_alloc_min.contains("void *alloc(size_t size)"));
         assert!(libc_alloc_min.contains("__lnp_alloc(size)"));
         assert!(libc_alloc_min.contains("__lnp_alloc_size(ptr)"));
@@ -2669,6 +2682,7 @@ mod tests {
         assert!(stdlib_header.contains("void *realloc(void *ptr, size_t size);"));
         assert!(stdlib_header.contains("void free(void *ptr);"));
         assert!(real_llc.contains("liblnp64-alloc-min.o"));
+        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_alloc_impl_c\""));
         assert!(real_llc.contains("grep -q 'alloc r'"));
         assert!(real_llc.contains("grep -q 'alloc_size r'"));
         assert!(real_llc.contains("grep -q 'free r'"));

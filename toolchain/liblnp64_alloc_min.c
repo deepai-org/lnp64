@@ -1,9 +1,7 @@
 #include "lnp64_intrinsics.h"
 
-typedef unsigned long size_t;
-
-void *memcpy(void *dst, const void *src, size_t len);
-void *memset(void *dst, int value, size_t len);
+#include <stdlib.h>
+#include <string.h>
 
 void *alloc(size_t size) {
   return __lnp_alloc(size);

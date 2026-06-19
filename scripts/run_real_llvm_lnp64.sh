@@ -2485,6 +2485,7 @@ libc_string_impl_c="toolchain/liblnp64_string_min.c"
 libc_string_impl_obj="$build_dir/liblnp64-string-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$libc_string_impl_c" -o "$libc_string_impl_obj"
 test -s "$libc_string_impl_obj"
 libc_string_impl_dump="$build_dir/liblnp64-string-min.dump"
@@ -3204,6 +3205,7 @@ libc_search_impl_c="toolchain/liblnp64_search_min.c"
 libc_search_impl_obj="$build_dir/liblnp64-search-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$libc_search_impl_c" -o "$libc_search_impl_obj"
 test -s "$libc_search_impl_obj"
 libc_search_impl_dump="$build_dir/liblnp64-search-min.dump"
@@ -3297,6 +3299,7 @@ libc_sort_impl_c="toolchain/liblnp64_sort_min.c"
 libc_sort_impl_obj="$build_dir/liblnp64-sort-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$libc_sort_impl_c" -o "$libc_sort_impl_obj"
 test -s "$libc_sort_impl_obj"
 libc_sort_impl_dump="$build_dir/liblnp64-sort-min.dump"
@@ -3311,6 +3314,7 @@ libc_alloc_impl_c="toolchain/liblnp64_alloc_min.c"
 libc_alloc_impl_obj="$build_dir/liblnp64-alloc-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$libc_alloc_impl_c" -o "$libc_alloc_impl_obj"
 test -s "$libc_alloc_impl_obj"
 libc_alloc_impl_dump="$build_dir/liblnp64-alloc-min.dump"

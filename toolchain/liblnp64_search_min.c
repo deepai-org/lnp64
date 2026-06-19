@@ -1,6 +1,6 @@
-typedef unsigned long size_t;
+#include <search.h>
+#include <string.h>
 
-void *memcpy(void *dst, const void *src, size_t len);
 
 static void *lnp64_search_copy_key(void *dst, const void *src, size_t len) {
   char *out = (char *)dst;
