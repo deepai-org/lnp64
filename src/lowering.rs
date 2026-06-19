@@ -1444,6 +1444,7 @@ mod tests {
             "clang_libc_test_malloc_0_object",
             "clang_libc_test_fgets_eof_object",
             "clang_libc_test_stat_object",
+            "clang_libc_test_utime_object",
             "zlib_package_static_link",
             "natsort_package_static_link",
             "jsmn_package_static_link",
@@ -1466,6 +1467,7 @@ mod tests {
             "libc_test_strtol_static_link",
             "libc_test_clock_gettime_static_link",
             "libc_test_stat_static_link",
+            "libc_test_utime_static_link",
             "libc_test_qsort_bounded_static_link",
             "libc_test_search_insque_static_link",
             "libc_test_malloc_0_static_link",
@@ -1492,6 +1494,7 @@ mod tests {
             "libc_test_strtol_run_elf",
             "libc_test_clock_gettime_run_elf",
             "libc_test_stat_run_elf",
+            "libc_test_utime_run_elf",
             "libc_test_qsort_bounded_run_elf",
             "libc_test_search_insque_run_elf",
             "libc_test_malloc_0_run_elf",
@@ -1926,6 +1929,9 @@ mod tests {
         assert!(real_llc.contains("libc-test-stat-clang-smoke.o"));
         assert!(real_llc.contains("third_party/libc-test/functional/stat.c"));
         assert!(real_llc.contains("real LLVM LNP64 clang libc-test stat object smoke passed"));
+        assert!(real_llc.contains("libc-test-utime-clang-smoke.o"));
+        assert!(real_llc.contains("third_party/libc-test/functional/utime.c"));
+        assert!(real_llc.contains("real LLVM LNP64 clang libc-test utime object smoke passed"));
         assert!(real_llc.contains("libc-test-qsort-bounded-clang-smoke.o"));
         assert!(real_llc.contains("third_party/libc-test/functional/qsort_bounded.c"));
         assert!(
@@ -1990,6 +1996,14 @@ mod tests {
   "$libc_process_impl_obj""#
         ));
         assert!(real_llc.contains("real LLVM LNP64 lld libc-test stat link smoke passed"));
+        assert!(real_llc.contains("lnp64-libc-test-utime-linked.elf"));
+        assert!(real_llc.contains(
+            r#""$libc_test_utime_obj" \
+  "$libc_test_print_obj" "$libc_stdio_impl_obj" "$libc_meta_impl_obj" \
+  "$libc_fd_impl_obj" "$libc_errno_impl_obj" "$libc_time_impl_obj" \
+  "$libc_process_impl_obj" "$libc_string_impl_obj""#
+        ));
+        assert!(real_llc.contains("real LLVM LNP64 lld libc-test utime link smoke passed"));
         assert!(real_llc.contains("lnp64-libc-test-qsort-bounded-linked.elf"));
         assert!(real_llc.contains(r#""$libc_test_qsort_bounded_obj" \"#));
         assert!(real_llc.contains(r#""$libc_sort_impl_obj" "$libc_string_impl_obj""#));
@@ -3068,6 +3082,10 @@ mod tests {
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf libc-test stat execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-libc-test-utime-linked.elf"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf libc-test utime execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-libc-test-qsort-bounded-linked.elf"));
         assert!(
             real_llc_docker
@@ -3258,6 +3276,7 @@ mod tests {
             "real_libc_test_strtol_execution",
             "real_libc_test_clock_gettime_execution",
             "real_libc_test_stat_execution",
+            "real_libc_test_utime_execution",
             "real_libc_test_qsort_bounded_execution",
             "real_libc_test_search_insque_execution",
             "real_libc_test_malloc_0_execution",
@@ -3329,6 +3348,7 @@ mod tests {
             "real_libc_test_strtol_execution",
             "real_libc_test_clock_gettime_execution",
             "real_libc_test_stat_execution",
+            "real_libc_test_utime_execution",
             "real_libc_test_qsort_bounded_execution",
             "real_libc_test_search_insque_execution",
             "real_libc_test_malloc_0_execution",
