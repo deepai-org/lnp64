@@ -15,6 +15,7 @@ cleanup() {
 trap cleanup EXIT
 
 top_program_quiet="${LNP64_RTL_TOP_PROGRAM_QUIET:-${LNP64_RTL_FAST:-0}}"
+top_program_max_cycles="${LNP64_RTL_TOP_PROGRAM_MAX_CYCLES:-10000}"
 
 run_top_program_logged() {
   local log="$1"
@@ -130,9 +131,7 @@ rtl_plusargs=("+lnp64_program_hex=$program_hex")
 if [[ -n "$program_data_hex" && -s "$program_data_hex" ]]; then
   rtl_plusargs+=("+lnp64_data_hex=$program_data_hex")
 fi
-if [[ -n "${LNP64_RTL_TOP_PROGRAM_MAX_CYCLES:-}" ]]; then
-  rtl_plusargs+=("+lnp64_max_cycles=$LNP64_RTL_TOP_PROGRAM_MAX_CYCLES")
-fi
+rtl_plusargs+=("+lnp64_max_cycles=$top_program_max_cycles")
 if [[ "${LNP64_RTL_TOP_PROGRAM_CROSS_TILE_WAKE:-0}" == "1" ]]; then
   rtl_plusargs+=("+lnp64_inject_cross_tile_wake")
 fi

@@ -503,16 +503,17 @@ Verilator build lock; the lock only protects the reusable
 `lnp64_top_program_tb` binary. This keeps assembler/C-to-hex prep concurrent
 when `LNP64_RTL_TOP_PROGRAM_JOBS` is greater than one.
 
-For longer exploratory top-level programs, raise the simulation retire limit
-without changing the RTL testbench:
+Individual top-level program smokes default to `10000` cycles, matching the
+manifest runner. For longer exploratory programs, raise the simulation retire
+limit without changing the RTL testbench:
 
 ```sh
 LNP64_RTL_TOP_PROGRAM_MAX_CYCLES=2000 bash scripts/run_rtl_top_program_smoke.sh demos/rot13.c
 LNP64_RTL_TOP_PROGRAM_MAX_CYCLES=10000 bash scripts/run_rtl_top_program_smoke.sh demos/json_parser.c
 ```
 
-The top-level program manifest runner defaults to `10000` cycles so longer
-active compiler-generated demos stay in the recurring gate.
+The top-level program manifest runner uses the same `10000`-cycle default so
+longer active compiler-generated demos stay in the recurring gate.
 
 `scripts/run_rtl_top_linked_llvm_smoke.sh` is the first narrow linked-ELF
 top-level RTL gate. It builds a clang object, links it with LNP64 lld using a
