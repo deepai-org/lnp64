@@ -176,6 +176,12 @@ run_elf_report "real LLVM LNP64 run-elf libc-test string execution passed" \
   target/llvm-lnp64-build/lnp64-libc-test-string-linked.elf
 run_elf_report "real LLVM LNP64 run-elf libc-test string_memmem execution passed" \
   target/llvm-lnp64-build/lnp64-libc-test-string-memmem-linked.elf
+run_elf_report "real LLVM LNP64 run-elf libc-test string_strchr execution passed" \
+  target/llvm-lnp64-build/lnp64-libc-test-string-strchr-linked.elf
+run_elf_report "real LLVM LNP64 run-elf libc-test string_strcspn execution passed" \
+  target/llvm-lnp64-build/lnp64-libc-test-string-strcspn-linked.elf
+run_elf_report "real LLVM LNP64 run-elf libc-test string_strstr execution passed" \
+  target/llvm-lnp64-build/lnp64-libc-test-string-strstr-linked.elf
 run_elf_report "real LLVM LNP64 run-elf libc-test udiv execution passed" \
   target/llvm-lnp64-build/lnp64-libc-test-udiv-linked.elf
 run_elf_report "real LLVM LNP64 run-elf libc-test basename execution passed" \
