@@ -2659,10 +2659,13 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang numeric conversion object smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_convert_min.c"));
         assert!(real_llc.contains("liblnp64-convert-min.o"));
+        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_convert_impl_c\""));
+        assert!(libc_convert_min.contains("#include <errno.h>"));
+        assert!(libc_convert_min.contains("#include <stdlib.h>"));
         assert!(libc_convert_min.contains("strtoull"));
         assert!(libc_convert_min.contains("strtoll"));
-        assert!(libc_convert_min.contains("lnp64_errno_store(LNP64_EINVAL)"));
-        assert!(libc_convert_min.contains("lnp64_errno_store(LNP64_ERANGE)"));
+        assert!(libc_convert_min.contains("lnp64_errno_store(EINVAL)"));
+        assert!(libc_convert_min.contains("lnp64_errno_store(ERANGE)"));
         assert!(real_llc.contains(
             "real LLVM LNP64 clang minilibc numeric conversion implementation object smoke passed"
         ));

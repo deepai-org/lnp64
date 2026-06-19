@@ -1,7 +1,5 @@
-enum {
-  LNP64_EINVAL = 22,
-  LNP64_ERANGE = 34,
-};
+#include <errno.h>
+#include <stdlib.h>
 
 int lnp64_errno_store(int value);
 
@@ -82,7 +80,7 @@ static unsigned long long lnp64_parse_unsigned(const char *nptr,
     s = s + 1;
   }
   if (base != 0 && (base < 2 || base > 36)) {
-    lnp64_errno_store(LNP64_EINVAL);
+    lnp64_errno_store(EINVAL);
     if (endptr)
       *endptr = (char *)start;
     return 0;
@@ -111,7 +109,7 @@ unsigned long long strtoull(const char *nptr, char **endptr, int base) {
   unsigned long long value =
       lnp64_parse_unsigned(nptr, endptr, base, ~0ULL, &negative, &overflow);
   if (overflow) {
-    lnp64_errno_store(LNP64_ERANGE);
+    lnp64_errno_store(ERANGE);
     return ~0ULL;
   }
   if (negative)
@@ -137,7 +135,7 @@ long long strtoll(const char *nptr, char **endptr, int base) {
   }
   value = lnp64_parse_unsigned(nptr, endptr, base, limit, &negative, &overflow);
   if (overflow) {
-    lnp64_errno_store(LNP64_ERANGE);
+    lnp64_errno_store(ERANGE);
     if (negative)
       return (long long)lnp64_signed_min_abs();
     return (long long)lnp64_signed_max_abs();
