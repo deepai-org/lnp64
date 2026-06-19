@@ -932,6 +932,64 @@ grep -q 'thread_join r' "$ping_pong_dump"
 printf 'real LLVM LNP64 clang ping pong demo object smoke passed: %s\n' \
   "$ping_pong_obj"
 
+zlib_adler_obj="$build_dir/zlib-adler32-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -O0 -ffreestanding -fno-builtin \
+  -fno-pic -fno-jump-tables -fno-unwind-tables \
+  -fno-asynchronous-unwind-tables -I toolchain/include -I third_party/zlib \
+  -c third_party/zlib/adler32.c -o "$zlib_adler_obj"
+test -s "$zlib_adler_obj"
+zlib_adler_dump="$build_dir/zlib-adler32-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$zlib_adler_obj" \
+  >"$zlib_adler_dump"
+grep -q '<adler32_z>:' "$zlib_adler_dump"
+printf 'real LLVM LNP64 clang zlib adler32 object smoke passed: %s\n' \
+  "$zlib_adler_obj"
+
+zlib_crc_obj="$build_dir/zlib-crc32-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -O0 -ffreestanding -fno-builtin \
+  -fno-pic -fno-jump-tables -fno-unwind-tables \
+  -fno-asynchronous-unwind-tables -I toolchain/include -I third_party/zlib \
+  -c third_party/zlib/crc32.c -o "$zlib_crc_obj"
+test -s "$zlib_crc_obj"
+zlib_crc_dump="$build_dir/zlib-crc32-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$zlib_crc_obj" \
+  >"$zlib_crc_dump"
+grep -q '<crc32_z>:' "$zlib_crc_dump"
+printf 'real LLVM LNP64 clang zlib crc32 object smoke passed: %s\n' \
+  "$zlib_crc_obj"
+
+zlib_smoke_c="$build_dir/zlib-smoke.c"
+cat >"$zlib_smoke_c" <<'C'
+#include "zlib.h"
+
+int main(void) {
+  const Bytef data[] = "hello zlib";
+  uLong adler = adler32(0L, Z_NULL, 0);
+  uLong crc = crc32(0L, Z_NULL, 0);
+  adler = adler32(adler, data, 10);
+  crc = crc32(crc, data, 10);
+  if (adler != 0x159503e6UL)
+    return 1;
+  if (crc != 0x96b34bd1UL)
+    return 2;
+  return 0;
+}
+C
+
+zlib_smoke_obj="$build_dir/zlib-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -O0 -ffreestanding -fno-builtin \
+  -fno-pic -fno-jump-tables -fno-unwind-tables \
+  -fno-asynchronous-unwind-tables -I toolchain/include -I third_party/zlib \
+  -c "$zlib_smoke_c" -o "$zlib_smoke_obj"
+test -s "$zlib_smoke_obj"
+zlib_smoke_dump="$build_dir/zlib-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$zlib_smoke_obj" \
+  >"$zlib_smoke_dump"
+grep -q '<main>:' "$zlib_smoke_dump"
+grep -q 'call ' "$zlib_smoke_dump"
+printf 'real LLVM LNP64 clang zlib package object smoke passed: %s\n' \
+  "$zlib_smoke_obj"
+
 natsort_impl_obj="$build_dir/natsort-strnatcmp-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic \
   -fno-jump-tables -fno-unwind-tables -fno-asynchronous-unwind-tables \
@@ -3751,6 +3809,14 @@ sort_elf="$build_dir/lnp64-sort-linked.elf"
 test -s "$sort_elf"
 printf 'real LLVM LNP64 lld sort helper link smoke passed: %s\n' \
   "$sort_elf"
+
+zlib_elf="$build_dir/lnp64-zlib-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$zlib_elf" "$crt0_obj" "$zlib_smoke_obj" "$zlib_adler_obj" \
+  "$zlib_crc_obj" "$libc_string_impl_obj"
+test -s "$zlib_elf"
+printf 'real LLVM LNP64 lld zlib package link smoke passed: %s\n' \
+  "$zlib_elf"
 
 natsort_elf="$build_dir/lnp64-natsort-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

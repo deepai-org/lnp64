@@ -2210,6 +2210,16 @@ mod tests {
         assert!(real_llc.contains("-c demos/ping_pong.c"));
         assert!(real_llc.contains("grep -q 'object_ctl r'"));
         assert!(real_llc.contains("real LLVM LNP64 clang ping pong demo object smoke passed"));
+        assert!(real_llc.contains("zlib-adler32-clang-smoke.o"));
+        assert!(real_llc.contains("-c third_party/zlib/adler32.c"));
+        assert!(real_llc.contains("real LLVM LNP64 clang zlib adler32 object smoke passed"));
+        assert!(real_llc.contains("zlib-crc32-clang-smoke.o"));
+        assert!(real_llc.contains("-c third_party/zlib/crc32.c"));
+        assert!(real_llc.contains("real LLVM LNP64 clang zlib crc32 object smoke passed"));
+        assert!(real_llc.contains("zlib-clang-smoke.o"));
+        assert!(real_llc.contains("real LLVM LNP64 clang zlib package object smoke passed"));
+        assert!(real_llc.contains("lnp64-zlib-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld zlib package link smoke passed"));
         assert!(real_llc.contains("natsort-strnatcmp-clang-smoke.o"));
         assert!(real_llc.contains("-c third_party/natsort/strnatcmp.c"));
         assert!(
@@ -2530,6 +2540,8 @@ mod tests {
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf search helper execution passed"));
         assert!(real_llc_docker.contains("lnp64-sort-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sort helper execution passed"));
+        assert!(real_llc_docker.contains("lnp64-zlib-linked.elf"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf zlib package execution passed"));
         assert!(real_llc_docker.contains("lnp64-natsort-linked.elf"));
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf natsort package execution passed")
@@ -3169,7 +3181,10 @@ mod tests {
         assert!(isel.contains("getLNP64CSetInstr"));
         assert!(isel.contains("isLNP64UnsignedSetCCPseudo"));
         assert!(isel.contains("LNP64::PseudoLINeg32"));
+        assert!(isel.contains("LNP64::PseudoLI64"));
         assert!(isel.contains("TII.get(LNP64::LI32)"));
+        assert!(isel.contains("TII.get(LNP64::LSLI)"));
+        assert!(isel.contains("TII.get(LNP64::OR)"));
         assert!(isel.contains("LNP64GenCallingConv.inc"));
         assert!(isel.contains("LowerOperation"));
         assert!(isel.contains("setOperationAction(ISD::GlobalAddress, MVT::i64, Custom)"));
@@ -3267,6 +3282,7 @@ mod tests {
         assert!(instr_td.contains("def simm14_imm"));
         assert!(instr_td.contains("def uimm32_imm"));
         assert!(instr_td.contains("def sneg32_imm"));
+        assert!(instr_td.contains("def wide64_imm"));
         assert!(instr_td.contains("def all_ones_imm"));
         assert!(instr_td.contains("def brtarget : Operand<OtherVT>"));
         assert!(instr_td.contains("(ins brtarget:$target)"));
@@ -3313,6 +3329,7 @@ mod tests {
         assert!(instr_td.contains("(i64 (LNP64wrapper tglobaladdr:$target))"));
         assert!(instr_td.contains("(set GPR:$rd, uimm32_imm:$imm)"));
         assert!(instr_td.contains("(PseudoLINeg32 sneg32_imm:$imm)"));
+        assert!(instr_td.contains("(PseudoLI64 wide64_imm:$imm)"));
         assert!(instr_td.contains("(set GPR:$rd, (add GPR:$rs1, GPR:$rs2))"));
         assert!(instr_td.contains("(set GPR:$rd, (xor GPR:$rs, all_ones_imm))"));
         assert!(instr_td.contains("(set GPR:$rd, (shl GPR:$rs1, GPR:$rs2))"));

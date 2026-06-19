@@ -21,6 +21,12 @@ def sneg32_imm : PatLeaf<(imm), [{
   int64_t Value = N->getSExtValue();
   return Value < -32768 && isInt<32>(Value);
 }]>;
+def wide64_imm : PatLeaf<(imm), [{
+  int64_t Signed = N->getSExtValue();
+  uint64_t Unsigned = N->getZExtValue();
+  return !isInt<16>(Signed) && !isUInt<32>(Unsigned) &&
+         !(Signed < -32768 && isInt<32>(Signed));
+}]>;
 def all_ones_imm : PatLeaf<(imm), [{
   return N->isAllOnes();
 }]>;
@@ -236,6 +242,8 @@ def LI32 : LNP64Inst<(outs GPR:$rd), (ins i64imm:$imm), "li32",
 }
 def PseudoLINeg32 : LNP64ConstPseudo<"pseudo_li.neg32">;
 def : Pat<(i64 sneg32_imm:$imm), (PseudoLINeg32 sneg32_imm:$imm)>;
+def PseudoLI64 : LNP64ConstPseudo<"pseudo_li64">;
+def : Pat<(i64 wide64_imm:$imm), (PseudoLI64 wide64_imm:$imm)>;
 def : Pat<(i64 (LNP64wrapper tglobaladdr:$target)), (LA tglobaladdr:$target)>;
 
 def ADD : LNP64RRR<"add"> {

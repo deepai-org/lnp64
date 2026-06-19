@@ -144,6 +144,8 @@ run_elf_report "real LLVM LNP64 run-elf search helper execution passed" \
   target/llvm-lnp64-build/lnp64-search-linked.elf
 run_elf_report "real LLVM LNP64 run-elf sort helper execution passed" \
   target/llvm-lnp64-build/lnp64-sort-linked.elf
+run_elf_report "real LLVM LNP64 run-elf zlib package execution passed" \
+  target/llvm-lnp64-build/lnp64-zlib-linked.elf
 run_elf_report "real LLVM LNP64 run-elf natsort package execution passed" \
   target/llvm-lnp64-build/lnp64-natsort-linked.elf
 run_elf_report "real LLVM LNP64 run-elf jsmn package execution passed" \

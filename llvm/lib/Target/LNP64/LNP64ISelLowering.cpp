@@ -477,6 +477,33 @@ MachineBasicBlock *LNP64TargetLowering::EmitInstrWithCustomInserter(
     return BB;
   }
 
+  if (MI.getOpcode() == LNP64::PseudoLI64) {
+    MachineFunction *MF = BB->getParent();
+    MachineRegisterInfo &MRI = MF->getRegInfo();
+    uint64_t Value = static_cast<uint64_t>(MI.getOperand(1).getImm());
+    uint32_t Hi = static_cast<uint32_t>(Value >> 32);
+    uint32_t Lo = static_cast<uint32_t>(Value);
+    Register HiReg = MRI.createVirtualRegister(&LNP64::GPRRegClass);
+    Register Shifted = MRI.createVirtualRegister(&LNP64::GPRRegClass);
+
+    BuildMI(*BB, MI, DL, TII.get(LNP64::LI32), HiReg).addImm(Hi);
+    BuildMI(*BB, MI, DL, TII.get(LNP64::LSLI), Shifted)
+        .addReg(HiReg)
+        .addImm(32);
+    if (Lo == 0) {
+      BuildMI(*BB, MI, DL, TII.get(LNP64::MOV), MI.getOperand(0).getReg())
+          .addReg(Shifted);
+    } else {
+      Register LoReg = MRI.createVirtualRegister(&LNP64::GPRRegClass);
+      BuildMI(*BB, MI, DL, TII.get(LNP64::LI32), LoReg).addImm(Lo);
+      BuildMI(*BB, MI, DL, TII.get(LNP64::OR), MI.getOperand(0).getReg())
+          .addReg(Shifted)
+          .addReg(LoReg);
+    }
+    MI.eraseFromParent();
+    return BB;
+  }
+
   if (isLNP64SignedLoadPseudo(MI.getOpcode())) {
     MachineFunction *MF = BB->getParent();
     MachineRegisterInfo &MRI = MF->getRegInfo();
