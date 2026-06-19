@@ -1828,6 +1828,23 @@ grep -q 'ret' "$libc_startup_impl_dump"
 printf 'real LLVM LNP64 clang minilibc startup implementation object smoke passed: %s\n' \
   "$libc_startup_impl_obj"
 
+libc_random_impl_c="toolchain/liblnp64_random_min.c"
+libc_random_impl_obj="$build_dir/liblnp64-random-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
+  -c "$libc_random_impl_c" -o "$libc_random_impl_obj"
+test -s "$libc_random_impl_obj"
+libc_random_impl_dump="$build_dir/liblnp64-random-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_random_impl_obj" \
+  >"$libc_random_impl_dump"
+grep -q '<random>:' "$libc_random_impl_dump"
+grep -q '<srandom>:' "$libc_random_impl_dump"
+grep -q '<initstate>:' "$libc_random_impl_dump"
+grep -q '<setstate>:' "$libc_random_impl_dump"
+printf 'real LLVM LNP64 clang minilibc random implementation object smoke passed: %s\n' \
+  "$libc_random_impl_obj"
+
 libc_time_impl_c="toolchain/liblnp64_time_min.c"
 libc_time_impl_obj="$build_dir/liblnp64-time-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
@@ -2402,6 +2419,20 @@ libc_test_env_dump="$build_dir/libc-test-env-clang-smoke.dump"
 grep -q 'call ' "$libc_test_env_dump"
 printf 'real LLVM LNP64 clang libc-test env object smoke passed: %s\n' \
   "$libc_test_env_obj"
+
+libc_test_random_obj="$build_dir/libc-test-random-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain/include \
+  -I third_party/libc-test/functional \
+  -c third_party/libc-test/functional/random.c \
+  -o "$libc_test_random_obj"
+test -s "$libc_test_random_obj"
+libc_test_random_dump="$build_dir/libc-test-random-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_test_random_obj" \
+  >"$libc_test_random_dump"
+grep -q 'call ' "$libc_test_random_dump"
+printf 'real LLVM LNP64 clang libc-test random object smoke passed: %s\n' \
+  "$libc_test_random_obj"
 
 libc_test_ctype_obj="$build_dir/libc-test-ctype-bounded-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
@@ -4066,6 +4097,14 @@ libc_test_env_elf="$build_dir/lnp64-libc-test-env-linked.elf"
 test -s "$libc_test_env_elf"
 printf 'real LLVM LNP64 lld libc-test env link smoke passed: %s\n' \
   "$libc_test_env_elf"
+
+libc_test_random_elf="$build_dir/lnp64-libc-test-random-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$libc_test_random_elf" "$crt0_obj" "$libc_test_random_obj" \
+  "$libc_test_print_obj" "$libc_random_impl_obj" "$libc_fd_impl_obj"
+test -s "$libc_test_random_elf"
+printf 'real LLVM LNP64 lld libc-test random link smoke passed: %s\n' \
+  "$libc_test_random_elf"
 
 scalar_arith_elf="$build_dir/lnp64-scalar-arith-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

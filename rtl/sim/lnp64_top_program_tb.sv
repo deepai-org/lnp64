@@ -39,6 +39,7 @@ module lnp64_top_program_tb;
     logic [7:0] retire_opcode;
     logic [31:0] retire_instr;
     lnp64_decode_t retire_dec;
+    lnp64_m1_state_projection_t sampled_m1_pre_state;
     logic [4:0] retire_raw_result_reg;
     logic retire_result_valid;
     logic [4:0] retire_result_reg;
@@ -148,7 +149,77 @@ module lnp64_top_program_tb;
         end
     endtask
 
+    task automatic display_m1_top_state(
+        input string prefix,
+        input lnp64_m1_state_projection_t state,
+        input logic [31:0] pc,
+        input logic [31:0] tile_id
+    );
+        $display(
+            "%s {\"record\":\"m1_state_projection\",\"op\":%0d,\"status\":%0d,\"object_gen\":%0d,\"created_object_created\":%0d,\"created_object_gen\":%0d,\"root_object_id\":%0d,\"root_generation\":%0d,\"root_domain_id\":%0d,\"root_lineage_epoch\":%0d,\"root_sealed\":%0d,\"root_rights\":%0d,\"consumer_object_id\":%0d,\"consumer_generation\":%0d,\"consumer_domain_id\":%0d,\"consumer_lineage_epoch\":%0d,\"consumer_sealed\":%0d,\"consumer_rights\":%0d,\"sent_valid\":%0d,\"sent_object_id\":%0d,\"sent_generation\":%0d,\"sent_domain_id\":%0d,\"sent_lineage_epoch\":%0d,\"sent_sealed\":%0d,\"sent_rights\":%0d,\"minted_valid\":%0d,\"minted_object_id\":%0d,\"minted_generation\":%0d,\"minted_domain_id\":%0d,\"minted_lineage_epoch\":%0d,\"minted_sealed\":%0d,\"minted_rights\":%0d,\"wake_pending\":%0d,\"transfer_valid\":%0d,\"stale_rejected\":%0d,\"revoked_rejected\":%0d,\"failed_no_authority\":%0d,\"full_was_explicit\":%0d,\"has_revoked_generation\":%0d,\"revoked_generation\":%0d,\"pc\":%0d,\"tile_id\":%0d}",
+            prefix,
+            state.op,
+            state.status,
+            state.object_gen,
+            state.created_object_created,
+            state.created_object_gen,
+            state.root_object_id,
+            state.root_generation,
+            state.root_domain_id,
+            state.root_lineage_epoch,
+            state.root_sealed,
+            state.root_rights,
+            state.consumer_object_id,
+            state.consumer_generation,
+            state.consumer_domain_id,
+            state.consumer_lineage_epoch,
+            state.consumer_sealed,
+            state.consumer_rights,
+            state.sent_valid,
+            state.sent_object_id,
+            state.sent_generation,
+            state.sent_domain_id,
+            state.sent_lineage_epoch,
+            state.sent_sealed,
+            state.sent_rights,
+            state.minted_valid,
+            state.minted_object_id,
+            state.minted_generation,
+            state.minted_domain_id,
+            state.minted_lineage_epoch,
+            state.minted_sealed,
+            state.minted_rights,
+            state.wake_pending,
+            state.transfer_valid,
+            state.stale_rejected,
+            state.revoked_rejected,
+            state.failed_no_authority,
+            state.full_was_explicit,
+            state.has_revoked_generation,
+            state.revoked_generation,
+            pc,
+            tile_id
+        );
+    endtask
+
+    task automatic display_m1_top_state_bits(
+        input string prefix,
+        input lnp64_m1_state_projection_t state,
+        input logic [31:0] pc,
+        input logic [31:0] tile_id
+    );
+        $display(
+            "%s {\"record\":\"m1_state_projection_bits\",\"width\":%0d,\"bits\":\"%0h\",\"pc\":%0d,\"tile_id\":%0d}",
+            prefix,
+            $bits(lnp64_m1_state_projection_t),
+            state,
+            pc,
+            tile_id
+        );
+    endtask
+
     always @(posedge clk) begin
+        sampled_m1_pre_state = dut.m1_pre_state_projection_vec[0];
         #1;
         if (dut.retire_submit_valid_vec[0]) begin
             if (retire_opcode == 8'hff) begin
@@ -198,6 +269,30 @@ module lnp64_top_program_tb;
                     "RTL_M1_TOP_COMMIT_BITS {\"record\":\"m1_cap_commit_bits\",\"width\":%0d,\"bits\":\"%0h\",\"pc\":%0d,\"tile_id\":%0d}",
                     $bits(lnp64_m1_cap_commit_t),
                     dut.m1_commit_vec[0],
+                    dut.retire_submit_record_vec[0].pc,
+                    dut.retire_submit_record_vec[0].tile_id
+                );
+                display_m1_top_state(
+                    "RTL_M1_TOP_PRE_STATE",
+                    sampled_m1_pre_state,
+                    dut.retire_submit_record_vec[0].pc,
+                    dut.retire_submit_record_vec[0].tile_id
+                );
+                display_m1_top_state_bits(
+                    "RTL_M1_TOP_PRE_STATE_BITS",
+                    sampled_m1_pre_state,
+                    dut.retire_submit_record_vec[0].pc,
+                    dut.retire_submit_record_vec[0].tile_id
+                );
+                display_m1_top_state(
+                    "RTL_M1_TOP_STATE",
+                    dut.m1_state_projection_vec[0],
+                    dut.retire_submit_record_vec[0].pc,
+                    dut.retire_submit_record_vec[0].tile_id
+                );
+                display_m1_top_state_bits(
+                    "RTL_M1_TOP_STATE_BITS",
+                    dut.m1_state_projection_vec[0],
                     dut.retire_submit_record_vec[0].pc,
                     dut.retire_submit_record_vec[0].tile_id
                 );

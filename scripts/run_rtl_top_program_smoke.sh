@@ -180,10 +180,18 @@ def load_records(path: str, prefix: str) -> list[dict]:
 
 
 def load_m1_commit_schema() -> tuple[tuple[str, ...], tuple[int, ...]]:
+    return load_schema_record("lnp64_m1_cap_commit_t")
+
+
+def load_m1_state_schema() -> tuple[tuple[str, ...], tuple[int, ...]]:
+    return load_schema_record("lnp64_m1_state_projection_t")
+
+
+def load_schema_record(record_name: str) -> tuple[tuple[str, ...], tuple[int, ...]]:
     schema_path = Path("rtl/schema/lnp64_shared_schema.json")
     with schema_path.open(encoding="utf-8") as handle:
         schema = json.load(handle)
-    entries = schema["records"]["lnp64_m1_cap_commit_t"]
+    entries = schema["records"][record_name]
     fields = []
     widths = []
     for entry in entries:
@@ -471,6 +479,90 @@ def decode_packed_bits(bits: str, fields: tuple[str, ...], widths: tuple[int, ..
     return decoded
 
 
+def collect_json_records(path: str, prefix: str) -> list[dict]:
+    records = []
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            if not line.startswith(prefix):
+                continue
+            payload = line.removeprefix(prefix)
+            try:
+                records.append(json.loads(payload))
+            except json.JSONDecodeError as exc:
+                raise SystemExit(f"invalid {prefix.strip()} record {payload!r}: {exc}") from exc
+    return records
+
+
+def require_top_state_records(
+    label: str,
+    records: list[dict],
+    bit_records: list[dict],
+    commits: list[dict],
+    state_fields: tuple[str, ...],
+    state_widths: tuple[int, ...],
+) -> None:
+    if len(records) != len(commits):
+        raise SystemExit(
+            f"top-level M1 {label} state count mismatch: "
+            f"commits={len(commits)} states={len(records)}"
+        )
+    if len(bit_records) != len(records):
+        raise SystemExit(
+            f"top-level M1 {label} packed state count mismatch: "
+            f"states={len(records)} packed={len(bit_records)}"
+        )
+    expected_width = sum(state_widths)
+    for idx, (record, bits_record, commit) in enumerate(zip(records, bit_records, commits)):
+        missing = [
+            field
+            for field in ("record", *state_fields, "pc", "tile_id")
+            if field not in record
+        ]
+        if missing:
+            raise SystemExit(f"top-level M1 {label} state {idx} missing field(s): {missing}")
+        if record["record"] != "m1_state_projection":
+            raise SystemExit(
+                f"top-level M1 {label} state {idx} has unexpected record {record['record']!r}"
+            )
+        if record["pc"] != commit["pc"] or record["tile_id"] != commit["tile_id"]:
+            raise SystemExit(
+                f"top-level M1 {label} state {idx} is not tied to commit: "
+                f"state_pc_tile={(record['pc'], record['tile_id'])} "
+                f"commit_pc_tile={(commit['pc'], commit['tile_id'])}"
+            )
+        if record["op"] != commit["op"] or record["status"] != commit["status"]:
+            raise SystemExit(
+                f"top-level M1 {label} state {idx} op/status drifted from commit: "
+                f"state={(record['op'], record['status'])} commit={(commit['op'], commit['status'])}"
+            )
+        if bits_record.get("record") != "m1_state_projection_bits":
+            raise SystemExit(
+                f"top-level M1 {label} packed state {idx} has unexpected record "
+                f"{bits_record.get('record')!r}"
+            )
+        if bits_record.get("width") != expected_width:
+            raise SystemExit(
+                f"top-level M1 {label} packed state {idx} width drifted from schema: "
+                f"{bits_record.get('width')!r} != {expected_width}"
+            )
+        if bits_record.get("pc") != commit["pc"] or bits_record.get("tile_id") != commit["tile_id"]:
+            raise SystemExit(
+                f"top-level M1 {label} packed state {idx} is not tied to commit: "
+                f"bits_pc_tile={(bits_record.get('pc'), bits_record.get('tile_id'))} "
+                f"commit_pc_tile={(commit['pc'], commit['tile_id'])}"
+            )
+        bits = bits_record.get("bits")
+        if not isinstance(bits, str):
+            raise SystemExit(f"top-level M1 {label} packed state {idx} is missing bits")
+        decoded = decode_packed_bits(bits, state_fields, state_widths)
+        for field in state_fields:
+            if decoded[field] != record[field]:
+                raise SystemExit(
+                    f"top-level M1 {label} packed state {idx} field {field} drifted: "
+                    f"packed={decoded[field]} json={record[field]}"
+                )
+
+
 rtl = load_record(sys.argv[1], "RTL_FINAL ")
 emulator = load_record(sys.argv[2], "EMULATOR_FINAL ")
 if rtl["exit_reg"] != emulator["exit"]:
@@ -551,14 +643,27 @@ if rtl_retire != emulator_retire:
 
 rtl_m1_top_commits = []
 rtl_m1_top_commit_bits = []
+rtl_m1_top_pre_states = []
+rtl_m1_top_pre_state_bits = []
+rtl_m1_top_states = []
+rtl_m1_top_state_bits = []
 with open(sys.argv[1], encoding="utf-8") as handle:
     for line in handle:
         if line.startswith("RTL_M1_TOP_COMMIT "):
             rtl_m1_top_commits.append(json.loads(line[len("RTL_M1_TOP_COMMIT "):]))
         elif line.startswith("RTL_M1_TOP_COMMIT_BITS "):
             rtl_m1_top_commit_bits.append(json.loads(line[len("RTL_M1_TOP_COMMIT_BITS "):]))
+        elif line.startswith("RTL_M1_TOP_PRE_STATE "):
+            rtl_m1_top_pre_states.append(json.loads(line[len("RTL_M1_TOP_PRE_STATE "):]))
+        elif line.startswith("RTL_M1_TOP_PRE_STATE_BITS "):
+            rtl_m1_top_pre_state_bits.append(json.loads(line[len("RTL_M1_TOP_PRE_STATE_BITS "):]))
+        elif line.startswith("RTL_M1_TOP_STATE "):
+            rtl_m1_top_states.append(json.loads(line[len("RTL_M1_TOP_STATE "):]))
+        elif line.startswith("RTL_M1_TOP_STATE_BITS "):
+            rtl_m1_top_state_bits.append(json.loads(line[len("RTL_M1_TOP_STATE_BITS "):]))
 load_flat_exec_m1_opcode_map()
 arch_opcode_to_m1_op = load_arch_m1_opcode_map()
+commit_ops = load_m1_commit_op_values()
 cap_retire = [record for record in rtl_retire if record["arch_opcode"] in arch_opcode_to_m1_op]
 if len(rtl_m1_top_commits) != len(cap_retire):
     raise SystemExit(
@@ -634,6 +739,88 @@ for idx, (commit, bits_record) in enumerate(zip(rtl_m1_top_commits, rtl_m1_top_c
             raise SystemExit(
                 f"top-level M1 packed commit {idx} field {field} drifted from JSON commit: "
                 f"packed={decoded[field]} json={commit[field]}"
+            )
+m1_state_fields, m1_state_widths = load_m1_state_schema()
+require_top_state_records(
+    "pre",
+    rtl_m1_top_pre_states,
+    rtl_m1_top_pre_state_bits,
+    rtl_m1_top_commits,
+    m1_state_fields,
+    m1_state_widths,
+)
+require_top_state_records(
+    "post",
+    rtl_m1_top_states,
+    rtl_m1_top_state_bits,
+    rtl_m1_top_commits,
+    m1_state_fields,
+    m1_state_widths,
+)
+
+authority_projection_fields = tuple(
+    field
+    for field in m1_state_fields
+    if field
+    not in {
+        "op",
+        "status",
+        "stale_rejected",
+        "revoked_rejected",
+        "failed_no_authority",
+        "full_was_explicit",
+    }
+)
+for idx, (commit, pre_state, post_state) in enumerate(
+    zip(rtl_m1_top_commits, rtl_m1_top_pre_states, rtl_m1_top_states)
+):
+    if commit["status"] != 0:
+        drift = [
+            (field, pre_state[field], post_state[field])
+            for field in authority_projection_fields
+            if pre_state[field] != post_state[field]
+        ]
+        if drift:
+            raise SystemExit(
+                f"top-level M1 non-OK commit {idx} changed authority projection: {drift}"
+            )
+    elif commit["op"] == commit_ops["CapDup"]:
+        if post_state["consumer_generation"] != commit["fdr_gen"]:
+            raise SystemExit(
+                f"top-level M1 capDup {idx} consumer generation does not match commit: "
+                f"post={post_state['consumer_generation']} commit={commit['fdr_gen']}"
+            )
+        if post_state["consumer_rights"] != commit["rights_mask"]:
+            raise SystemExit(
+                f"top-level M1 capDup {idx} consumer rights do not match narrowed commit: "
+                f"post={post_state['consumer_rights']} commit={commit['rights_mask']}"
+            )
+    elif commit["op"] == commit_ops["CapSend"]:
+        if post_state["sent_valid"] != 1:
+            raise SystemExit(f"top-level M1 capSend {idx} did not publish a sent cap")
+        for state_field, commit_field in (
+            ("sent_object_id", "object_id"),
+            ("sent_generation", "fdr_gen"),
+            ("sent_rights", "rights_mask"),
+            ("sent_lineage_epoch", "lineage_epoch"),
+        ):
+            if post_state[state_field] != commit[commit_field]:
+                raise SystemExit(
+                    f"top-level M1 capSend {idx} {state_field} does not match commit "
+                    f"{commit_field}: post={post_state[state_field]} commit={commit[commit_field]}"
+                )
+    elif commit["op"] == commit_ops["CapRecv"]:
+        if post_state["sent_valid"] != 0:
+            raise SystemExit(f"top-level M1 capRecv {idx} left a sent cap queued")
+        if post_state["consumer_generation"] != commit["fdr_gen"]:
+            raise SystemExit(
+                f"top-level M1 capRecv {idx} consumer generation does not match commit: "
+                f"post={post_state['consumer_generation']} commit={commit['fdr_gen']}"
+            )
+        if post_state["consumer_rights"] != commit["rights_mask"]:
+            raise SystemExit(
+                f"top-level M1 capRecv {idx} consumer rights do not match commit: "
+                f"post={post_state['consumer_rights']} commit={commit['rights_mask']}"
             )
 PY
 

@@ -39,6 +39,8 @@ module lnp64_core_tile #(
     output lnp64_retire_submit_t retire_submit_record,
     output logic m1_commit_valid,
     output lnp64_m1_cap_commit_t m1_commit,
+    output lnp64_m1_state_projection_t m1_pre_state_projection,
+    output lnp64_m1_state_projection_t m1_state_projection,
     output logic park_submit_valid,
     output lnp64_thread_sched_t park_submit_record,
     output logic submit_valid,
@@ -165,6 +167,7 @@ module lnp64_core_tile #(
     logic cap_queue_valid;
     logic [63:0] cap_queue_rights;
     logic [63:0] cap_queue_lineage;
+    logic [63:0] cap_queue_generation;
     logic cap_queue_revoked;
     logic topology_record_valid;
     logic [63:0] topology_record_base;
@@ -195,6 +198,8 @@ module lnp64_core_tile #(
     logic [63:0] cap_recv_rights;
     logic cap_recv_rights_subset;
     lnp64_m1_cap_commit_t m1_commit_next;
+    int unsigned m1_projection_root_fd;
+    int unsigned m1_projection_consumer_fd;
     lnp64_retire_submit_t retire_submit_next;
     lnp64_thread_sched_t thread_submit_next;
 
@@ -504,6 +509,74 @@ module lnp64_core_tile #(
     function automatic logic [63:0] fdr_token(input int unsigned fd);
         begin
             fdr_token = FDR_TOKEN_MARKER | (fdr_generation[fd] << 8) | {56'd0, fd[7:0]};
+        end
+    endfunction
+
+    function automatic int unsigned m1_current_consumer_fd;
+        begin
+            unique case (dec.opcode)
+                LNP64_OP_CAP_SEND: begin
+                    m1_current_consumer_fd = (cap_arg1_fd < FDR_SLOT_COUNT) ? cap_arg1_fd : 0;
+                end
+                LNP64_OP_CAP_DUP, LNP64_OP_CAP_RECV: begin
+                    m1_current_consumer_fd = cap_dst_fd_in_range ? cap_dst_fd : 0;
+                end
+                default: begin
+                    m1_current_consumer_fd = cap_src_fd_in_range ? cap_src_fd : 0;
+                end
+            endcase
+        end
+    endfunction
+
+    function automatic lnp64_m1_state_projection_t build_m1_state_projection(
+        input logic [7:0] op,
+        input logic [15:0] status,
+        input int unsigned root_fd,
+        input int unsigned consumer_fd
+    );
+        lnp64_m1_state_projection_t projection;
+        begin
+            projection = '0;
+            projection.op = op;
+            projection.status = status;
+            if (root_fd < FDR_SLOT_COUNT) begin
+                projection.object_gen = fdr_generation[root_fd][31:0];
+                projection.root_object_id = fdr_lineage[root_fd][31:0];
+                projection.root_generation = fdr_generation[root_fd][31:0];
+                projection.root_domain_id = 32'd1;
+                projection.root_lineage_epoch = fdr_lineage[root_fd][31:0];
+                projection.root_sealed = 1'b0;
+                projection.root_rights = (fdr_valid[root_fd] && !fdr_revoked[root_fd]) ?
+                    fdr_rights[root_fd] : 64'd0;
+                projection.has_revoked_generation = fdr_revoked[root_fd];
+                projection.revoked_generation = fdr_revoked[root_fd] ?
+                    fdr_generation[root_fd][31:0] : 32'd0;
+            end
+            if (consumer_fd < FDR_SLOT_COUNT) begin
+                projection.consumer_object_id = fdr_lineage[consumer_fd][31:0];
+                projection.consumer_generation = fdr_generation[consumer_fd][31:0];
+                projection.consumer_domain_id = 32'd2;
+                projection.consumer_lineage_epoch = fdr_lineage[consumer_fd][31:0];
+                projection.consumer_sealed = 1'b0;
+                projection.consumer_rights = (fdr_valid[consumer_fd] && !fdr_revoked[consumer_fd]) ?
+                    fdr_rights[consumer_fd] : 64'd0;
+            end
+            projection.sent_valid = cap_queue_valid && !cap_queue_revoked;
+            if (projection.sent_valid) begin
+                projection.sent_object_id = cap_queue_lineage[31:0];
+                projection.sent_generation = cap_queue_generation[31:0];
+                projection.sent_domain_id = 32'd2;
+                projection.sent_lineage_epoch = cap_queue_lineage[31:0];
+                projection.sent_sealed = 1'b0;
+                projection.sent_rights = cap_queue_rights;
+            end
+            projection.transfer_valid = projection.sent_valid;
+            projection.stale_rejected = status == RTL_ERR_ESTALE;
+            projection.revoked_rejected = status == RTL_ERR_ESTALE;
+            projection.failed_no_authority =
+                status == LNP64_ERR_EPERM || status == LNP64_ERR_EBADF;
+            projection.full_was_explicit = status == LNP64_ERR_EAGAIN;
+            build_m1_state_projection = projection;
         end
     endfunction
 
@@ -917,6 +990,21 @@ module lnp64_core_tile #(
     end
 
     always_comb begin
+        m1_pre_state_projection = build_m1_state_projection(
+            m1_commit_next.op,
+            m1_commit_next.status,
+            cap_src_fd_in_range ? cap_src_fd : 0,
+            m1_current_consumer_fd()
+        );
+        m1_state_projection = build_m1_state_projection(
+            m1_commit.op,
+            m1_commit.status,
+            m1_projection_root_fd,
+            m1_projection_consumer_fd
+        );
+    end
+
+    always_comb begin
         tile_idle = tile_enable && (state == CORE_WAIT_RELEASE || state == CORE_DONE);
         tile_running = tile_enable && (state == CORE_EXEC || state == CORE_SEND_CMD || state == CORE_WAIT_RSP);
         tile_parked = tile_enable && pid1_parked;
@@ -998,7 +1086,10 @@ module lnp64_core_tile #(
             cap_queue_valid <= 1'b0;
             cap_queue_rights <= 64'd0;
             cap_queue_lineage <= 64'd0;
+            cap_queue_generation <= 64'd0;
             cap_queue_revoked <= 1'b0;
+            m1_projection_root_fd <= 0;
+            m1_projection_consumer_fd <= 0;
             topology_record_valid <= 1'b0;
             topology_record_base <= 64'd0;
             for (i = 0; i < 32; i = i + 1) begin
@@ -1985,6 +2076,8 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                                 m1_commit_valid <= 1'b1;
                                 m1_commit <= m1_commit_next;
+                                m1_projection_root_fd <= cap_src_fd_in_range ? cap_src_fd : 0;
+                                m1_projection_consumer_fd <= m1_current_consumer_fd();
                             end
                             LNP64_OP_CAP_SEND: begin
                                 if (cap_flags != 64'd0) begin
@@ -2009,6 +2102,7 @@ module lnp64_core_tile #(
                                     cap_queue_valid <= 1'b1;
                                     cap_queue_rights <= fdr_rights[cap_arg1_fd];
                                     cap_queue_lineage <= fdr_lineage[cap_arg1_fd];
+                                    cap_queue_generation <= fdr_generation[cap_arg1_fd];
                                     cap_queue_revoked <= fdr_revoked[cap_arg1_fd];
                                     gpr[dec.rd] <= 64'd1;
                                     errno_reg <= LNP64_ERR_OK;
@@ -2019,6 +2113,8 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                                 m1_commit_valid <= 1'b1;
                                 m1_commit <= m1_commit_next;
+                                m1_projection_root_fd <= cap_src_fd_in_range ? cap_src_fd : 0;
+                                m1_projection_consumer_fd <= m1_current_consumer_fd();
                             end
                             LNP64_OP_CAP_RECV: begin
                                 if (cap_flags != 64'd0) begin
@@ -2043,6 +2139,7 @@ module lnp64_core_tile #(
                                     errno_reg <= LNP64_ERR_EBADF;
                                 end else begin
                                     cap_queue_valid <= 1'b0;
+                                    cap_queue_generation <= 64'd0;
                                     fdr_valid[cap_dst_fd] <= 1'b1;
                                     fdr_revoked[cap_dst_fd] <= 1'b0;
                                     fdr_generation[cap_dst_fd] <= fdr_generation[cap_dst_fd] + 64'd1;
@@ -2060,6 +2157,8 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                                 m1_commit_valid <= 1'b1;
                                 m1_commit <= m1_commit_next;
+                                m1_projection_root_fd <= cap_src_fd_in_range ? cap_src_fd : 0;
+                                m1_projection_consumer_fd <= m1_current_consumer_fd();
                             end
                             LNP64_OP_CAP_REVOKE: begin
                                 if (cap_src_stale) begin
@@ -2100,6 +2199,8 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                                 m1_commit_valid <= 1'b1;
                                 m1_commit <= m1_commit_next;
+                                m1_projection_root_fd <= cap_src_fd_in_range ? cap_src_fd : 0;
+                                m1_projection_consumer_fd <= m1_current_consumer_fd();
                             end
                             default: begin
                                 pending_unsupported <= 1'b1;
