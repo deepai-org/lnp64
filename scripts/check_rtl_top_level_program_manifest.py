@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 from pathlib import Path
 
 
@@ -16,7 +15,8 @@ MANIFEST = Path(
         str(ROOT / "tests/rtl/top_level_program_manifest.json"),
     )
 )
-RUN_DEMOS = ROOT / "scripts/run_demos.sh"
+LLVM_BOOTSTRAP = ROOT / "toolchain/lnp64_llvm_bootstrap.manifest"
+LEGACY_COMPILER_SMOKES = {"demos/netbsd_personality_smoke.c"}
 
 
 def fail(message: str) -> None:
@@ -33,11 +33,17 @@ def text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def demo_c_sources_from_script(script_text: str) -> set[str]:
-    block_match = re.search(r"non_network=\(\n(?P<body>.*?)\n\)", script_text, re.S)
-    require(block_match is not None, "scripts/run_demos.sh must keep a non_network source list")
-    sources = set(re.findall(r"\s+(demos/[A-Za-z0-9_./-]+\.c)", block_match.group("body")))
-    sources.update(re.findall(r"cc\s+--toy-bootstrap\s+(demos/[A-Za-z0-9_./-]+\.c)\s+-o", script_text))
+def llvm_bootstrap_demo_c_sources(manifest_text: str) -> set[str]:
+    sources: set[str] = set()
+    for raw_line in manifest_text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        fields = line.split("|")
+        require(len(fields) >= 2, f"invalid LLVM bootstrap manifest row: {line}")
+        source = fields[1]
+        if source.startswith("demos/") and source.endswith(".c"):
+            sources.add(source)
     return sources
 
 
@@ -133,8 +139,11 @@ def main() -> None:
     require(manifest_asm == actual_asm, f"demos/*.s coverage drifted: actual={sorted(actual_asm)} manifest={sorted(manifest_asm)}")
 
     manifest_c = {entry["source"] for entry in compiler_entries}
-    script_c = demo_c_sources_from_script(text(RUN_DEMOS))
-    require(manifest_c == script_c, f"compiler demo coverage drifted: script={sorted(script_c)} manifest={sorted(manifest_c)}")
+    expected_c = llvm_bootstrap_demo_c_sources(text(LLVM_BOOTSTRAP)) | LEGACY_COMPILER_SMOKES
+    require(
+        manifest_c == expected_c,
+        f"compiler demo coverage drifted: expected={sorted(expected_c)} manifest={sorted(manifest_c)}",
+    )
 
     requirements = manifest.get("recurring_gate_requirements", [])
     require(isinstance(requirements, list) and len(requirements) >= 3, "missing recurring gate requirements")

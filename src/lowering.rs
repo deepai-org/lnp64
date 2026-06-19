@@ -4117,6 +4117,8 @@ mod tests {
         let intrinsics = include_str!("../toolchain/lnp64_intrinsics.manifest");
         let intrinsic_header = include_str!("../toolchain/lnp64_intrinsics.h");
         let main_source = include_str!("main.rs");
+        let rtl_top_manifest_checker =
+            include_str!("../scripts/check_rtl_top_level_program_manifest.py");
         let legacy_toy_scripts = [
             (
                 "scripts/run_cwalk.sh",
@@ -4273,6 +4275,9 @@ mod tests {
         }
         assert!(!llvm_gates.contains("lnp64 cc"));
         assert!(!llvm_gates.contains("cargo run -- cc"));
+        assert!(rtl_top_manifest_checker.contains("toolchain/lnp64_llvm_bootstrap.manifest"));
+        assert!(!rtl_top_manifest_checker.contains("RUN_DEMOS"));
+        assert!(!rtl_top_manifest_checker.contains("non_network"));
         for case in [
             "hello",
             "arithmetic",
