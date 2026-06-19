@@ -244,10 +244,12 @@ struct AsmFlatExecOptions {
 }
 
 fn encode_flat_exec_hex(program: &Program) -> Result<String, String> {
+    let word_pcs = flat_exec_word_pcs(program);
     let mut out = String::new();
     for (pc, instr) in program.instructions.iter().enumerate() {
-        let word = encode_flat_exec_instr(program, pc, instr)?;
-        out.push_str(&format!("{word:08x}\n"));
+        for word in encode_flat_exec_instr(program, &word_pcs, pc, instr)? {
+            out.push_str(&format!("{word:08x}\n"));
+        }
     }
     if out.is_empty() {
         return Err("asm-flat-exec input has no text instructions".to_string());
@@ -255,41 +257,86 @@ fn encode_flat_exec_hex(program: &Program) -> Result<String, String> {
     Ok(out)
 }
 
-fn encode_flat_exec_instr(program: &Program, pc: usize, instr: &Instr) -> Result<u32, String> {
+fn flat_exec_word_pcs(program: &Program) -> Vec<usize> {
+    let mut pcs = Vec::with_capacity(program.instructions.len());
+    let mut pc = 0usize;
+    for instr in &program.instructions {
+        pcs.push(pc);
+        pc += flat_exec_instr_word_len(instr);
+    }
+    pcs
+}
+
+fn flat_exec_instr_word_len(instr: &Instr) -> usize {
     match instr {
-        Instr::Nop => Ok(enc_reg(0x00, Reg(0))),
-        Instr::Li(rd, value) => Ok(enc_ri(0x01, *rd, value_imm16(value)?)),
-        Instr::Add(rd, rs1, rs2) => Ok(enc_rrr(0x10, *rd, *rs1, *rs2)),
-        Instr::Sub(rd, rs1, rs2) => Ok(enc_rrr(0x11, *rd, *rs1, *rs2)),
-        Instr::Mul(rd, rs1, rs2) => Ok(enc_rrr(0x12, *rd, *rs1, *rs2)),
-        Instr::Udiv(rd, rs1, rs2) => Ok(enc_rrr(0xa7, *rd, *rs1, *rs2)),
-        Instr::Urem(rd, rs1, rs2) => Ok(enc_rrr(0xa9, *rd, *rs1, *rs2)),
-        Instr::And(rd, rs1, rs2) => Ok(enc_rrr(0x14, *rd, *rs1, *rs2)),
-        Instr::Or(rd, rs1, rs2) => Ok(enc_rrr(0x15, *rd, *rs1, *rs2)),
-        Instr::Xor(rd, rs1, rs2) => Ok(enc_rrr(0x16, *rd, *rs1, *rs2)),
-        Instr::Lsl(rd, rs1, rs2) => Ok(enc_rrr(0x18, *rd, *rs1, *rs2)),
-        Instr::Lsr(rd, rs1, rs2) => Ok(enc_rrr(0x19, *rd, *rs1, *rs2)),
-        Instr::Cmp(lhs, rhs) => Ok(enc_rrr(0x1b, *lhs, *rhs, Reg(0))),
-        Instr::Jmp(target) => Ok(enc_branch(0x20, branch_delta(program, pc, target)?)),
-        Instr::Branch(condition, target) => Ok(enc_branch(
+        Instr::Li(_, Value::Imm(imm)) if imm16(*imm, "LI immediate").is_err() => 2,
+        _ => 1,
+    }
+}
+
+fn encode_flat_exec_instr(
+    program: &Program,
+    word_pcs: &[usize],
+    pc: usize,
+    instr: &Instr,
+) -> Result<Vec<u32>, String> {
+    match instr {
+        Instr::Nop => Ok(vec![enc_reg(0x00, Reg(0))]),
+        Instr::Li(rd, value) => encode_flat_exec_li(*rd, value),
+        Instr::Add(rd, rs1, rs2) => Ok(vec![enc_rrr(0x10, *rd, *rs1, *rs2)]),
+        Instr::Sub(rd, rs1, rs2) => Ok(vec![enc_rrr(0x11, *rd, *rs1, *rs2)]),
+        Instr::Mul(rd, rs1, rs2) => Ok(vec![enc_rrr(0x12, *rd, *rs1, *rs2)]),
+        Instr::Udiv(rd, rs1, rs2) => Ok(vec![enc_rrr(0xa7, *rd, *rs1, *rs2)]),
+        Instr::Urem(rd, rs1, rs2) => Ok(vec![enc_rrr(0xa9, *rd, *rs1, *rs2)]),
+        Instr::And(rd, rs1, rs2) => Ok(vec![enc_rrr(0x14, *rd, *rs1, *rs2)]),
+        Instr::Or(rd, rs1, rs2) => Ok(vec![enc_rrr(0x15, *rd, *rs1, *rs2)]),
+        Instr::Xor(rd, rs1, rs2) => Ok(vec![enc_rrr(0x16, *rd, *rs1, *rs2)]),
+        Instr::Not(rd, rs1) => Ok(vec![enc_rrr(0x17, *rd, *rs1, Reg(0))]),
+        Instr::Lsl(rd, rs1, rs2) => Ok(vec![enc_rrr(0x18, *rd, *rs1, *rs2)]),
+        Instr::Lsr(rd, rs1, rs2) => Ok(vec![enc_rrr(0x19, *rd, *rs1, *rs2)]),
+        Instr::Cmp(lhs, rhs) => Ok(vec![enc_rrr(0x1b, *lhs, *rhs, Reg(0))]),
+        Instr::Jmp(target) => Ok(vec![enc_branch(
+            0x20,
+            branch_delta(program, word_pcs, pc, target)?,
+        )]),
+        Instr::Branch(condition, target) => Ok(vec![enc_branch(
             flat_exec_branch_opcode(*condition)?,
-            branch_delta(program, pc, target)?,
-        )),
-        Instr::Ld(rd, MemRef::BaseOffset(base, offset), Width::Double) => {
-            Ok(enc_mem(0x30, *rd, *base, imm14(*offset, "LD offset")?))
-        }
-        Instr::St(MemRef::BaseOffset(base, offset), src, Width::Double) => {
-            Ok(enc_mem(0x33, *src, *base, imm14(*offset, "ST offset")?))
-        }
-        Instr::ErrnoGet(rd) => Ok(enc_reg(0x38, *rd)),
-        Instr::ErrnoSet(src) => Ok(enc_reg(0x39, *src)),
-        Instr::EnvGet(rd, key, index_or_buf, len_or_flags) => {
-            Ok(enc_rrrr(0x56, *rd, *key, *index_or_buf, *len_or_flags))
-        }
-        Instr::Exit(src) => Ok(enc_reg(0x3a, *src)),
+            branch_delta(program, word_pcs, pc, target)?,
+        )]),
+        Instr::Ld(rd, MemRef::BaseOffset(base, offset), Width::Double) => Ok(vec![enc_mem(
+            0x30,
+            *rd,
+            *base,
+            imm14(*offset, "LD offset")?,
+        )]),
+        Instr::St(MemRef::BaseOffset(base, offset), src, Width::Double) => Ok(vec![enc_mem(
+            0x33,
+            *src,
+            *base,
+            imm14(*offset, "ST offset")?,
+        )]),
+        Instr::ErrnoGet(rd) => Ok(vec![enc_reg(0x38, *rd)]),
+        Instr::ErrnoSet(src) => Ok(vec![enc_reg(0x39, *src)]),
+        Instr::EnvGet(rd, key, index_or_buf, len_or_flags) => Ok(vec![enc_rrrr(
+            0x56,
+            *rd,
+            *key,
+            *index_or_buf,
+            *len_or_flags,
+        )]),
+        Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, ADD, SUB, MUL, UDIV/UREM, AND/OR/XOR, LSL/LSR, CMP, JMP, signed conditional branch, LD/ST.D base+offset, ERRNO_GET/SET, ENV_GET, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, ADD, SUB, MUL, UDIV/UREM, AND/OR/XOR/NOT, LSL/LSR, CMP, JMP, signed conditional branch, LD/ST.D base+offset, ERRNO_GET/SET, ENV_GET, EXIT"
         )),
+    }
+}
+
+fn encode_flat_exec_li(rd: Reg, value: &Value) -> Result<Vec<u32>, String> {
+    let imm = value_imm32(value)?;
+    if let Ok(small) = imm16(imm, "LI immediate") {
+        Ok(vec![enc_ri(0x01, rd, small)])
+    } else {
+        Ok(vec![enc_reg(0x04, rd), imm as u32])
     }
 }
 
@@ -307,16 +354,21 @@ fn flat_exec_branch_opcode(condition: Condition) -> Result<u8, String> {
     }
 }
 
-fn value_imm16(value: &Value) -> Result<i64, String> {
+fn value_imm32(value: &Value) -> Result<i64, String> {
     match value {
-        Value::Imm(imm) => imm16(*imm, "LI immediate"),
+        Value::Imm(imm) => imm32(*imm, "LI immediate"),
         Value::Label(label) => Err(format!(
             "asm-flat-exec does not yet materialize label immediate {label:?}"
         )),
     }
 }
 
-fn branch_delta(program: &Program, pc: usize, target: &Target) -> Result<i64, String> {
+fn branch_delta(
+    program: &Program,
+    word_pcs: &[usize],
+    pc: usize,
+    target: &Target,
+) -> Result<i64, String> {
     let target_pc = match target {
         Target::Address(address) => *address,
         Target::Label(label) => program
@@ -325,12 +377,30 @@ fn branch_delta(program: &Program, pc: usize, target: &Target) -> Result<i64, St
             .copied()
             .ok_or_else(|| format!("unknown branch label {label:?}"))?,
     };
-    imm24(target_pc as i64 - pc as i64, "branch delta")
+    let target_word_pc = word_pcs
+        .get(target_pc)
+        .copied()
+        .ok_or_else(|| format!("branch target out of range: {target_pc}"))?;
+    let current_word_pc = word_pcs
+        .get(pc)
+        .copied()
+        .ok_or_else(|| format!("branch source out of range: {pc}"))?;
+    imm24(
+        target_word_pc as i64 - current_word_pc as i64,
+        "branch delta",
+    )
 }
 
 fn imm16(value: i64, name: &str) -> Result<i64, String> {
     if !(-32768..=32767).contains(&value) {
         return Err(format!("{name} out of signed 16-bit range: {value}"));
+    }
+    Ok(value)
+}
+
+fn imm32(value: i64, name: &str) -> Result<i64, String> {
+    if !(i64::from(i32::MIN)..=i64::from(u32::MAX)).contains(&value) {
+        return Err(format!("{name} out of 32-bit literal range: {value}"));
     }
     Ok(value)
 }
@@ -937,6 +1007,45 @@ mod tests {
                 "a9204400\n",
                 "1028c800\n",
                 "3a280000\n",
+            )
+        );
+    }
+
+    #[test]
+    fn asm_flat_exec_encodes_not_subset() {
+        let source = r#"
+            .text
+              LI r1, 7
+              NOT r2, r1
+              EXIT r2
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+
+        assert_eq!(hex, concat!("01080007\n", "17104000\n", "3a100000\n",));
+    }
+
+    #[test]
+    fn asm_flat_exec_encodes_wide_li_and_word_branch_subset() {
+        let source = r#"
+            .text
+              LI r1, 4294967295
+              JMP done
+              LI r2, 1
+            done:
+              EXIT r1
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+
+        assert_eq!(
+            hex,
+            concat!(
+                "04080000\n",
+                "ffffffff\n",
+                "20000002\n",
+                "01100001\n",
+                "3a080000\n",
             )
         );
     }

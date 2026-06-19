@@ -25,6 +25,9 @@ module lnp64_decode (
                 dec.opcode = LNP64_OP_LI32;
                 dec.imm = {{16{instr[15]}}, instr[15:0]};
             end
+            8'h04: begin
+                dec.opcode = LNP64_OP_LI32_LITERAL;
+            end
             8'h06: begin
                 dec.opcode = LNP64_OP_YIELD;
             end
@@ -45,6 +48,9 @@ module lnp64_decode (
             end
             8'h16: begin
                 dec.opcode = LNP64_OP_XOR;
+            end
+            8'h17: begin
+                dec.opcode = LNP64_OP_NOT;
             end
             8'h18: begin
                 dec.opcode = LNP64_OP_LSL;
@@ -121,12 +127,14 @@ module lnp64_decode (
         dec.supported =
             dec.opcode == LNP64_OP_NOP ||
             dec.opcode == LNP64_OP_LI32 ||
+            dec.opcode == LNP64_OP_LI32_LITERAL ||
             dec.opcode == LNP64_OP_ADD ||
             dec.opcode == LNP64_OP_SUB ||
             dec.opcode == LNP64_OP_MUL ||
             dec.opcode == LNP64_OP_AND ||
             dec.opcode == LNP64_OP_OR ||
             dec.opcode == LNP64_OP_XOR ||
+            dec.opcode == LNP64_OP_NOT ||
             dec.opcode == LNP64_OP_LSL ||
             dec.opcode == LNP64_OP_LSR ||
             dec.opcode == LNP64_OP_CMP ||
