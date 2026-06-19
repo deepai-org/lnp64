@@ -226,7 +226,13 @@
     },
     {"source": "demos/object_profiles.s", "required_features": ["core", "object_profiles"], "status": "blocked_by_features"},
     {"source": "demos/resource_domains.s", "required_features": ["core", "resource_domain"], "status": "blocked_by_features"},
-    {"source": "demos/revoked_dma_buffer.s", "required_features": ["core", "fdr", "dma", "revocation"], "status": "blocked_by_features"},
+    {
+      "source": "demos/revoked_dma_buffer.s",
+      "required_features": ["core", "heap", "object_ctl_dma_buffer_create", "dma_ctl_fill", "dma_buffer_scope", "cap_revoke_dma_buffer", "revoked_dma_buffer_refusal", "errno", "data_labels", "write_fd", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    },
     {"source": "demos/sandboxed_domain.s", "required_features": ["core", "resource_domain", "policy"], "status": "blocked_by_features"},
     {"source": "demos/secure_jit.s", "required_features": ["core", "vma", "exec_provenance"], "status": "blocked_by_features"},
     {"source": "demos/stale_fd_token.s", "required_features": ["core", "fdr", "generation_checks"], "status": "blocked_by_features"},

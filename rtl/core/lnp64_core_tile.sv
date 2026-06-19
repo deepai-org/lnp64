@@ -88,6 +88,7 @@ module lnp64_core_tile #(
     localparam logic [63:0] OBJECT_KIND_DMA_BUFFER = 64'd4;
     localparam logic [63:0] RTL_DMA_BUFFER_DEFAULT_FD = 64'd3;
     localparam logic [63:0] RTL_DMA_BUFFER_TOKEN = 64'h4000_0000_0000_0203;
+    localparam logic [15:0] RTL_ERR_ESTALE = 16'd116;
     localparam int unsigned DATA_SRAM_BASE_WORD = 16;
     localparam int unsigned HEAP_SRAM_BASE_WORD = 96;
     logic [15:0] errno_reg;
@@ -124,6 +125,7 @@ module lnp64_core_tile #(
     int unsigned object_fd_store_next_word_index;
     logic [2:0] object_fd_store_byte_lane;
     logic dma_buffer_object_valid;
+    logic dma_buffer_object_revoked;
     logic [63:0] dma_buffer_object_fd;
     logic [63:0] dma_buffer_object_addr;
     logic [63:0] dma_buffer_object_len;
@@ -417,6 +419,12 @@ module lnp64_core_tile #(
         end
     endfunction
 
+    function automatic logic dma_buffer_ref_revoked(input logic [63:0] value);
+        begin
+            dma_buffer_ref_revoked = dma_buffer_ref_matches(value) && dma_buffer_object_revoked;
+        end
+    endfunction
+
     function automatic logic [63:0] clz64(input logic [63:0] value);
         integer bit_idx;
         logic seen_one;
@@ -701,6 +709,7 @@ module lnp64_core_tile #(
             heap_next <= HEAP_ARCH_BASE;
             heap_alloc_next_slot <= 2'd0;
             dma_buffer_object_valid <= 1'b0;
+            dma_buffer_object_revoked <= 1'b0;
             dma_buffer_object_fd <= RTL_DMA_BUFFER_DEFAULT_FD;
             dma_buffer_object_addr <= 64'd0;
             dma_buffer_object_len <= 64'd0;
@@ -1339,6 +1348,9 @@ module lnp64_core_tile #(
                                 if (dma_buffer != 64'd0 && !dma_buffer_ref_matches(dma_buffer)) begin
                                     gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= LNP64_ERR_EBADF;
+                                end else if (dma_buffer != 64'd0 && dma_buffer_ref_revoked(dma_buffer)) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= RTL_ERR_ESTALE;
                                 end else if (dma_buffer != 64'd0 && !dma_scope_valid) begin
                                     gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= LNP64_ERR_EFAULT;
@@ -1481,6 +1493,7 @@ module lnp64_core_tile #(
                                     heap_range_valid(object_dma_addr, object_dma_len) &&
                                     (object_fd_req == 64'd0 || object_fd_req == RTL_DMA_BUFFER_DEFAULT_FD)) begin
                                     dma_buffer_object_valid <= 1'b1;
+                                    dma_buffer_object_revoked <= 1'b0;
                                     dma_buffer_object_fd <= RTL_DMA_BUFFER_DEFAULT_FD;
                                     dma_buffer_object_addr <= object_dma_addr;
                                     dma_buffer_object_len <= object_dma_len;
@@ -1525,6 +1538,23 @@ module lnp64_core_tile #(
                                     command_pc <= pc;
                                     state <= CORE_SEND_CMD;
                                 end
+                            end
+                            LNP64_OP_CAP_REVOKE: begin
+                                if (dma_buffer_ref_matches(object_op) && !dma_buffer_object_revoked) begin
+                                    dma_buffer_object_revoked <= 1'b1;
+                                    gpr[dec.rd] <= 64'd1;
+                                    errno_reg <= LNP64_ERR_OK;
+                                end else if (dma_buffer_ref_matches(object_op) && dma_buffer_object_revoked) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= RTL_ERR_ESTALE;
+                                end else begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EBADF;
+                                end
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
                             end
                             default: begin
                                 pending_unsupported <= 1'b1;
