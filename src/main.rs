@@ -120,12 +120,7 @@ fn run() -> Result<(), String> {
         }
         "cc" => {
             let options = take_cc_options(&mut args)?;
-            if !options.toy_bootstrap {
-                return Err(
-                    "lnp64 cc is the deprecated Rust bootstrap C compiler; use the real Clang/lld gates, or pass --toy-bootstrap for legacy smoke generation"
-                        .to_string(),
-                );
-            }
+            ensure_cc_toy_bootstrap(&options)?;
             let text = if options.dump_macros {
                 c_compiler::macro_expand_files(&options.inputs)?
             } else if options.dump_preprocessed {
@@ -1382,6 +1377,17 @@ fn take_cc_options(args: &mut Vec<String>) -> Result<CcOptions, String> {
     })
 }
 
+fn ensure_cc_toy_bootstrap(options: &CcOptions) -> Result<(), String> {
+    if options.toy_bootstrap {
+        Ok(())
+    } else {
+        Err(
+            "lnp64 cc is the deprecated Rust bootstrap C compiler; use the real Clang/lld gates, or pass --toy-bootstrap for legacy smoke generation"
+                .to_string(),
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1396,6 +1402,30 @@ mod tests {
     const PF_R: u32 = 4;
     const ELF64_EHDR_SIZE: usize = 64;
     const ELF64_PHDR_SIZE: usize = 56;
+
+    #[test]
+    fn cc_requires_explicit_toy_bootstrap_opt_in() {
+        let mut args = vec!["demo.c".to_string(), "-o".to_string(), "demo.s".to_string()];
+        let options = take_cc_options(&mut args).unwrap();
+
+        assert!(!options.toy_bootstrap);
+        assert!(
+            ensure_cc_toy_bootstrap(&options)
+                .unwrap_err()
+                .contains("deprecated Rust bootstrap C compiler")
+        );
+
+        let mut legacy_args = vec![
+            "--toy-bootstrap".to_string(),
+            "demo.c".to_string(),
+            "-o".to_string(),
+            "demo.s".to_string(),
+        ];
+        let legacy_options = take_cc_options(&mut legacy_args).unwrap();
+
+        assert!(legacy_options.toy_bootstrap);
+        ensure_cc_toy_bootstrap(&legacy_options).unwrap();
+    }
 
     #[test]
     fn run_elf_probe_loads_and_commits_minimal_static_elf() {
