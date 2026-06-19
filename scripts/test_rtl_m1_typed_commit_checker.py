@@ -146,6 +146,19 @@ def build_valid_denied_run(checker, ops) -> tuple[
     ]
 
 
+def packed_bits(record: dict[str, int | str], field_specs: tuple[tuple[str, int], ...]) -> str:
+    raw = 0
+    total_width = 0
+    for field, width in field_specs:
+        value = int(record[field])
+        require(value >= 0, f"negative packed field {field}")
+        require(value < (1 << width), f"packed field {field} overflows {width} bits")
+        raw = (raw << width) | value
+        total_width += width
+    hex_width = (total_width + 3) // 4
+    return f"{raw:0{hex_width}x}"
+
+
 def main() -> None:
     checker = load_checker()
     commit_fields, state_fields = schema_specs(checker)
@@ -176,8 +189,66 @@ def main() -> None:
     valid_run, valid_state_run = build_valid_full_run(checker, ops)
     checker.check_run(valid_run, valid_state_run, 0, ops)
 
+    commit_widths = tuple(width for _name, width in commit_fields)
+    state_widths = tuple(width for _name, width in state_fields)
+    valid_commit_bits = [packed_bits(record, commit_fields) for record in valid_run]
+    valid_state_bits = [packed_bits(record, state_fields) for record in valid_state_run]
+    checker.check_packed_bits_match_records(
+        valid_run,
+        valid_commit_bits,
+        commit_field_names,
+        commit_widths,
+        "M1 typed commit",
+    )
+    checker.check_packed_bits_match_records(
+        valid_state_run,
+        valid_state_bits,
+        state_field_names,
+        state_widths,
+        "M1 state projection",
+    )
+
     valid_denied_run, valid_denied_state_run = build_valid_denied_run(checker, ops)
     checker.check_run(valid_denied_run, valid_denied_state_run, 0, ops)
+
+    stale_commit_bits = valid_commit_bits.copy()
+    stale_commit_bits[0] = packed_bits(valid_run[1], commit_fields)
+    expect_failure(
+        "M1 typed commit packed bit decode drift",
+        lambda: checker.check_packed_bits_match_records(
+            valid_run,
+            stale_commit_bits,
+            commit_field_names,
+            commit_widths,
+            "M1 typed commit",
+        ),
+    )
+
+    stale_state_bits = valid_state_bits.copy()
+    stale_state_bits[1] = packed_bits(valid_state_run[2], state_fields)
+    expect_failure(
+        "M1 state projection packed bit decode drift",
+        lambda: checker.check_packed_bits_match_records(
+            valid_state_run,
+            stale_state_bits,
+            state_field_names,
+            state_widths,
+            "M1 state projection",
+        ),
+    )
+
+    too_wide_commit_bits = valid_commit_bits.copy()
+    too_wide_commit_bits[0] = hex(1 << sum(commit_widths))[2:]
+    expect_failure(
+        "packed bit record is wider than schema width",
+        lambda: checker.check_packed_bits_match_records(
+            valid_run,
+            too_wide_commit_bits,
+            commit_field_names,
+            commit_widths,
+            "M1 typed commit",
+        ),
+    )
 
     cap_send_before_dup_state = checker.initial_state(valid_run[0], ops)
     expect_failure(
