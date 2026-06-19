@@ -108,6 +108,8 @@ module lnp64_core_tile #(
     logic [THREAD_CONTEXT_COUNT-1:0] thread_active_mask;
     logic [THREAD_CONTEXT_COUNT-1:0] thread_parked_mask;
     logic [THREAD_CONTEXT_COUNT-1:0] thread_completed_mask;
+    logic [THREAD_CONTEXT_COUNT-1:0] thread_event_pending_mask;
+    logic [THREAD_CONTEXT_COUNT-1:0] thread_fault_pending_mask;
     logic thread_window_advance_valid;
     logic thread_window_activate_valid;
     logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] thread_window_activate_slot;
@@ -119,6 +121,10 @@ module lnp64_core_tile #(
     logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] thread_window_park_slot;
     logic thread_window_wake_valid;
     logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] thread_window_wake_slot;
+    logic thread_window_event_valid;
+    logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] thread_window_event_slot;
+    logic thread_window_fault_valid;
+    logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] thread_window_fault_slot;
     logic [31:0] active_tid;
     logic [63:0] pcr_thread_pointer;
     logic [63:0] pcr_uid;
@@ -1664,6 +1670,10 @@ module lnp64_core_tile #(
         thread_window_park_slot = active_thread_slot;
         thread_window_wake_valid = wake_valid;
         thread_window_wake_slot = '0;
+        thread_window_event_valid = wake_valid;
+        thread_window_event_slot = '0;
+        thread_window_fault_valid = state == CORE_EXEC && !dec.supported;
+        thread_window_fault_slot = active_thread_slot;
     end
 
     lnp64_thread_window #(
@@ -1684,10 +1694,16 @@ module lnp64_core_tile #(
         .park_slot(thread_window_park_slot),
         .wake_valid(thread_window_wake_valid),
         .wake_slot(thread_window_wake_slot),
+        .event_valid(thread_window_event_valid),
+        .event_slot(thread_window_event_slot),
+        .fault_valid(thread_window_fault_valid),
+        .fault_slot(thread_window_fault_slot),
         .active_slot(active_thread_slot),
         .context_active(thread_active_mask),
         .context_parked(thread_parked_mask),
         .context_completed(thread_completed_mask),
+        .context_event_pending(thread_event_pending_mask),
+        .context_fault_pending(thread_fault_pending_mask),
         .next_slot(next_thread_slot),
         .active_context(active_thread_context),
         .active_fault_pending(active_thread_fault_pending),
@@ -1982,8 +1998,8 @@ module lnp64_core_tile #(
         retire_submit_next.result_value = flat_retire_result_value(dec.opcode);
         retire_submit_next.errno = flat_retire_errno_value(dec.opcode);
         retire_submit_next.status = retire_status_from_errno(retire_submit_next.errno);
-        retire_submit_next.event_id = 32'd0;
-        retire_submit_next.fault_id = 32'd0;
+        retire_submit_next.event_id = active_thread_event_pending ? next_op_id : 32'd0;
+        retire_submit_next.fault_id = active_thread_fault_pending ? next_op_id : 32'd0;
 
         retire_submit_rsp_next = retire_from_response(retire_submit_next, rsp);
 

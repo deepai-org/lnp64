@@ -20,10 +20,16 @@ module lnp64_thread_window #(
     input  logic [CONTEXT_INDEX_WIDTH-1:0] park_slot,
     input  logic wake_valid,
     input  logic [CONTEXT_INDEX_WIDTH-1:0] wake_slot,
+    input  logic event_valid,
+    input  logic [CONTEXT_INDEX_WIDTH-1:0] event_slot,
+    input  logic fault_valid,
+    input  logic [CONTEXT_INDEX_WIDTH-1:0] fault_slot,
     output logic [CONTEXT_INDEX_WIDTH-1:0] active_slot,
     output logic [CONTEXT_COUNT-1:0] context_active,
     output logic [CONTEXT_COUNT-1:0] context_parked,
     output logic [CONTEXT_COUNT-1:0] context_completed,
+    output logic [CONTEXT_COUNT-1:0] context_event_pending,
+    output logic [CONTEXT_COUNT-1:0] context_fault_pending,
     output logic [CONTEXT_INDEX_WIDTH-1:0] next_slot,
     output lnp64_thread_sched_t active_context,
     output logic active_fault_pending,
@@ -37,12 +43,16 @@ module lnp64_thread_window #(
     logic [CONTEXT_COUNT-1:0] context_active_q;
     logic [CONTEXT_COUNT-1:0] context_parked_q;
     logic [CONTEXT_COUNT-1:0] context_completed_q;
+    logic [CONTEXT_COUNT-1:0] context_event_pending_q;
+    logic [CONTEXT_COUNT-1:0] context_fault_pending_q;
     lnp64_thread_sched_t context_record [0:CONTEXT_COUNT-1];
 
     assign active_slot = active_slot_q;
     assign context_active = context_active_q;
     assign context_parked = context_parked_q;
     assign context_completed = context_completed_q;
+    assign context_event_pending = context_event_pending_q;
+    assign context_fault_pending = context_fault_pending_q;
 
     always_comb begin
         for (int unsigned ctx = 0; ctx < CONTEXT_COUNT; ctx = ctx + 1) begin
@@ -79,8 +89,8 @@ module lnp64_thread_window #(
         end
 
         active_context = context_record[active_index];
-        active_fault_pending = 1'b0;
-        active_event_pending = 1'b0;
+        active_fault_pending = context_fault_pending_q[active_index];
+        active_event_pending = context_event_pending_q[active_index];
         active_tid = active_context.tid;
     end
 
@@ -91,11 +101,15 @@ module lnp64_thread_window #(
             context_active_q[0] <= 1'b1;
             context_parked_q <= '0;
             context_completed_q <= '0;
+            context_event_pending_q <= '0;
+            context_fault_pending_q <= '0;
         end else begin
             if (activate_valid) begin
                 context_active_q[activate_slot] <= 1'b1;
                 context_parked_q[activate_slot] <= 1'b0;
                 context_completed_q[activate_slot] <= 1'b0;
+                context_event_pending_q[activate_slot] <= 1'b0;
+                context_fault_pending_q[activate_slot] <= 1'b0;
             end
             if (park_valid) begin
                 context_active_q[park_slot] <= 1'b0;
@@ -105,14 +119,25 @@ module lnp64_thread_window #(
             if (wake_valid) begin
                 context_active_q[wake_slot] <= 1'b1;
                 context_parked_q[wake_slot] <= 1'b0;
+                context_event_pending_q[wake_slot] <= 1'b1;
+            end
+            if (event_valid) begin
+                context_event_pending_q[event_slot] <= 1'b1;
+            end
+            if (fault_valid) begin
+                context_fault_pending_q[fault_slot] <= 1'b1;
             end
             if (complete_valid) begin
                 context_active_q[complete_slot] <= 1'b0;
                 context_parked_q[complete_slot] <= 1'b0;
                 context_completed_q[complete_slot] <= 1'b1;
+                context_event_pending_q[complete_slot] <= 1'b0;
+                context_fault_pending_q[complete_slot] <= 1'b0;
             end
             if (collect_valid) begin
                 context_completed_q[collect_slot] <= 1'b0;
+                context_event_pending_q[collect_slot] <= 1'b0;
+                context_fault_pending_q[collect_slot] <= 1'b0;
             end
             if (advance_valid) begin
                 active_slot_q <= next_slot;
