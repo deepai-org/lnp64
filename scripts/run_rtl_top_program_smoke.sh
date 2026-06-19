@@ -384,6 +384,7 @@ def load_rust_flat_to_arch_opcode_map() -> dict[int, int]:
         "CapRevoke": "LNP64_OP_CAP_REVOKE",
         "DmaCtl": "LNP64_OP_DMA_CTL",
         "EnvGet": "LNP64_OP_ENV_GET",
+        "ReadFd": "LNP64_OP_READ_FD",
         "WriteFd": "LNP64_OP_WRITE_FD",
         "AmoSwap": "LNP64_OP_AMO_SWAP",
         "AmoAdd": "LNP64_OP_AMO_ADD",

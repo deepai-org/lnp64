@@ -59,6 +59,7 @@ package lnp64_pkg;
         LNP64_OP_PUSH         = 16'h000c,
         LNP64_OP_PULL         = 16'h000d,
         LNP64_OP_AWAIT        = 16'h000e,
+        LNP64_OP_READ_FD      = 16'h0081,
         LNP64_OP_CAP_DUP      = 16'h000f,
         LNP64_OP_GATE_CALL    = 16'h0010,
         LNP64_OP_GATE_RETURN  = 16'h0011,

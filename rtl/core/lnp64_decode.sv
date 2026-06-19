@@ -127,6 +127,9 @@ module lnp64_decode (
             8'h2c: begin
                 dec.opcode = LNP64_OP_PUSH;
             end
+            8'h2d: begin
+                dec.opcode = LNP64_OP_READ_FD;
+            end
             8'h30: begin
                 dec.opcode = LNP64_OP_LD;
             end
@@ -470,6 +473,7 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_YIELD ||
             dec.opcode == LNP64_OP_DMA_CTL ||
             dec.opcode == LNP64_OP_ENV_GET ||
+            dec.opcode == LNP64_OP_READ_FD ||
             dec.opcode == LNP64_OP_WRITE_FD ||
             dec.opcode == LNP64_OP_PUSH ||
             dec.opcode == LNP64_OP_PULL ||

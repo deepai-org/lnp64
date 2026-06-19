@@ -93,6 +93,7 @@ module lnp64_core_tile #(
     localparam logic [63:0] FLAT_EXEC_STACK_BASE_ADDR = 64'h0000_0000_0067_1000;
     localparam logic [63:0] FLAT_EXEC_STACK_WINDOW_BYTES = 64'd8192;
     localparam logic [63:0] OBJECT_OP_CREATE = 64'd1;
+    localparam logic [63:0] OBJECT_KIND_MEMORY_OBJECT = 64'd3;
     localparam logic [63:0] OBJECT_KIND_DMA_BUFFER = 64'd4;
     localparam logic [63:0] RTL_DMA_BUFFER_DEFAULT_FD = 64'd3;
     localparam logic [63:0] RTL_DMA_BUFFER_TOKEN = 64'h4000_0000_0000_0203;
@@ -149,6 +150,8 @@ module lnp64_core_tile #(
     int unsigned object_fd1_store_word_index;
     logic [2:0] object_fd_store_byte_lane;
     logic [2:0] object_fd1_store_byte_lane;
+    int unsigned object_memory_fd;
+    logic object_memory_fd_in_range;
     logic dma_buffer_object_valid;
     logic dma_buffer_object_revoked;
     logic [63:0] dma_buffer_object_fd;
@@ -172,6 +175,11 @@ module lnp64_core_tile #(
     logic cap_queue_revoked;
     logic pipe_byte_valid;
     logic [7:0] pipe_byte_value;
+    logic memory_object_valid;
+    logic [63:0] memory_object_lineage;
+    logic [63:0] memory_object_len;
+    logic memory_object_byte_valid;
+    logic [7:0] memory_object_byte_value;
     logic topology_record_valid;
     logic [63:0] topology_record_base;
     int unsigned mem_sram_word_index;
@@ -202,6 +210,11 @@ module lnp64_core_tile #(
     logic cap_recv_rights_subset;
     int unsigned pipe_fd;
     logic pipe_fd_in_range;
+    int unsigned static_fd;
+    logic static_fd_in_range;
+    logic static_fd_is_memory_object;
+    int unsigned static_fd_buf_word_index;
+    logic [2:0] static_fd_buf_byte_lane;
     int unsigned pipe_buf_word_index;
     logic [2:0] pipe_buf_byte_lane;
     lnp64_m1_cap_commit_t m1_commit_next;
@@ -811,6 +824,8 @@ module lnp64_core_tile #(
         object_fd1_store_word_index = sram_word_index(object_fd1_store_addr);
         object_fd_store_byte_lane = object_fd_store_addr[2:0];
         object_fd1_store_byte_lane = object_fd1_store_addr[2:0];
+        object_memory_fd = object_fd_req == 64'd0 ? 5 : object_fd_req[31:0];
+        object_memory_fd_in_range = object_fd_req == 64'd0 || object_fd_req < FDR_SLOT_COUNT;
         cap_src_value = load_double_unaligned(gpr[dec.rs1]);
         cap_dst_req = load_double_unaligned(gpr[dec.rs1] + 64'd8);
         cap_rights_req = load_double_unaligned(gpr[dec.rs1] + 64'd16);
@@ -840,6 +855,15 @@ module lnp64_core_tile #(
             pipe_fd = fdr_value_fd(gpr[dec.rs1]);
         end
         pipe_fd_in_range = pipe_fd < FDR_SLOT_COUNT;
+        static_fd = dec.rd;
+        static_fd_in_range = static_fd < FDR_SLOT_COUNT;
+        static_fd_is_memory_object = 1'b0;
+        if (static_fd_in_range) begin
+            static_fd_is_memory_object = memory_object_valid &&
+                fdr_lineage[static_fd] == memory_object_lineage;
+        end
+        static_fd_buf_word_index = sram_word_index(gpr[dec.rs1]);
+        static_fd_buf_byte_lane = gpr[dec.rs1][2:0];
         pipe_buf_word_index = sram_word_index(gpr[dec.rs2]);
         pipe_buf_byte_lane = gpr[dec.rs2][2:0];
         cap_revoke_count = 64'd0;
@@ -1107,6 +1131,11 @@ module lnp64_core_tile #(
             cap_queue_revoked <= 1'b0;
             pipe_byte_valid <= 1'b0;
             pipe_byte_value <= 8'd0;
+            memory_object_valid <= 1'b0;
+            memory_object_lineage <= 64'd0;
+            memory_object_len <= 64'd0;
+            memory_object_byte_valid <= 1'b0;
+            memory_object_byte_value <= 8'd0;
             m1_projection_root_fd <= 0;
             m1_projection_consumer_fd <= 0;
             topology_record_valid <= 1'b0;
@@ -1939,9 +1968,65 @@ module lnp64_core_tile #(
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
+                            LNP64_OP_READ_FD: begin
+                                if (gpr[dec.rs2] == 64'd0) begin
+                                    gpr[1] <= 64'd0;
+                                    errno_reg <= LNP64_ERR_OK;
+                                end else if (!static_fd_in_range || !fdr_valid[static_fd] ||
+                                    !static_fd_is_memory_object) begin
+                                    gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EBADF;
+                                end else if (fdr_revoked[static_fd]) begin
+                                    gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= RTL_ERR_ESTALE;
+                                end else if ((fdr_rights[static_fd] & 64'd1) == 64'd0) begin
+                                    gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EPERM;
+                                end else if (!memory_object_byte_valid || memory_object_len == 64'd0) begin
+                                    gpr[1] <= 64'd0;
+                                    errno_reg <= LNP64_ERR_OK;
+                                end else begin
+                                    sram[static_fd_buf_word_index] <= store_byte_lane(
+                                        sram[static_fd_buf_word_index],
+                                        static_fd_buf_byte_lane,
+                                        memory_object_byte_value
+                                    );
+                                    dcache_writeback <= 1'b1;
+                                    gpr[1] <= 64'd1;
+                                    errno_reg <= LNP64_ERR_OK;
+                                end
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
                             LNP64_OP_WRITE_FD: begin
-                                gpr[1] <= gpr[dec.rs2];
-                                errno_reg <= LNP64_ERR_OK;
+                                if (gpr[dec.rs2] == 64'd0) begin
+                                    gpr[1] <= 64'd0;
+                                    errno_reg <= LNP64_ERR_OK;
+                                end else if (static_fd_is_memory_object) begin
+                                    if (!fdr_valid[static_fd]) begin
+                                        gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= LNP64_ERR_EBADF;
+                                    end else if (fdr_revoked[static_fd]) begin
+                                        gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= RTL_ERR_ESTALE;
+                                    end else if ((fdr_rights[static_fd] & 64'd2) == 64'd0) begin
+                                        gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= LNP64_ERR_EPERM;
+                                    end else begin
+                                        memory_object_byte_valid <= 1'b1;
+                                        memory_object_byte_value <= load_byte_lane(
+                                            sram[static_fd_buf_word_index],
+                                            static_fd_buf_byte_lane
+                                        );
+                                        gpr[1] <= 64'd1;
+                                        errno_reg <= LNP64_ERR_OK;
+                                    end
+                                end else begin
+                                    gpr[1] <= gpr[dec.rs2];
+                                    errno_reg <= LNP64_ERR_OK;
+                                end
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
@@ -2074,6 +2159,47 @@ module lnp64_core_tile #(
                                     );
                                     gpr[dec.rd] <= 64'd0;
                                     errno_reg <= LNP64_ERR_OK;
+                                    pc <= pc + 32'd1;
+                                    retired_count <= retired_count + 32'd1;
+                                    retire_submit_valid <= 1'b1;
+                                    retire_submit_record <= retire_submit_next;
+                                end else if (object_op == OBJECT_OP_CREATE &&
+                                    object_kind == OBJECT_KIND_MEMORY_OBJECT &&
+                                    object_dma_addr != 64'd0 &&
+                                    object_memory_fd_in_range) begin
+                                    memory_object_valid <= 1'b1;
+                                    memory_object_lineage <= 64'd513;
+                                    memory_object_len <= object_dma_addr;
+                                    memory_object_byte_valid <= 1'b0;
+                                    memory_object_byte_value <= 8'd0;
+                                    fdr_valid[object_memory_fd] <= 1'b1;
+                                    fdr_revoked[object_memory_fd] <= 1'b0;
+                                    fdr_generation[object_memory_fd] <= fdr_generation[object_memory_fd] + 64'd1;
+                                    fdr_rights[object_memory_fd] <= CAP_RIGHT_ALL;
+                                    fdr_lineage[object_memory_fd] <= 64'd513;
+                                    fdr_kind[object_memory_fd] <= FDR_KIND_GENERIC;
+                                    sram[object_fd_store_word_index] <= store_double_low_word(
+                                        sram[object_fd_store_word_index],
+                                        object_fd_store_byte_lane,
+                                        {56'd0, object_memory_fd[7:0]}
+                                    );
+                                    if (object_fd_store_byte_lane != 3'd0) begin
+                                        sram[object_fd_store_next_word_index] <= store_double_high_word(
+                                            sram[object_fd_store_next_word_index],
+                                            object_fd_store_byte_lane,
+                                            {56'd0, object_memory_fd[7:0]}
+                                        );
+                                    end
+                                    gpr[dec.rd] <= {56'd0, object_memory_fd[7:0]};
+                                    errno_reg <= LNP64_ERR_OK;
+                                    pc <= pc + 32'd1;
+                                    retired_count <= retired_count + 32'd1;
+                                    retire_submit_valid <= 1'b1;
+                                    retire_submit_record <= retire_submit_next;
+                                end else if (object_op == OBJECT_OP_CREATE &&
+                                    object_kind == OBJECT_KIND_MEMORY_OBJECT) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EINVAL;
                                     pc <= pc + 32'd1;
                                     retired_count <= retired_count + 32'd1;
                                     retire_submit_valid <= 1'b1;

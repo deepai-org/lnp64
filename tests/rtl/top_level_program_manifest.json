@@ -410,7 +410,13 @@
     },
     {"source": "demos/await_timer.s", "required_features": ["core", "scheduler", "waitable", "timer"], "status": "blocked_by_features"},
     {"source": "demos/call_gate_modes.s", "required_features": ["core", "gate", "continuation"], "status": "blocked_by_features"},
-    {"source": "demos/capability_transfer.s", "required_features": ["core", "fdr", "capability_transfer"], "status": "blocked_by_features"},
+    {
+      "source": "demos/capability_transfer.s",
+      "required_features": ["core", "fdr", "object_ctl_queue_pipe", "object_ctl_memory_object", "capability_transfer", "static_fd_read_write", "errno", "data_labels", "write_fd", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    },
     {"source": "demos/cgroup_domains.s", "required_features": ["core", "resource_domain", "scheduler"], "status": "blocked_by_features"},
     {
       "source": "demos/dma_copy.s",

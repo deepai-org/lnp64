@@ -1221,7 +1221,7 @@ fn checked_host_usize(value: u64, name: &str) -> Result<usize, String> {
 fn committed_exec_result_reg(raw_word: u32) -> Option<usize> {
     let opcode = (raw_word >> 24) as u8;
     match opcode {
-        0x57 | 0x5c..=0x5f | 0x67 => Some(1),
+        0x2d | 0x57 | 0x5c..=0x5f | 0x67 => Some(1),
         0x00
         | 0x1b
         | 0x1c
@@ -1804,6 +1804,7 @@ impl Machine {
             0x2a => Instr::LrSet(a),
             0x2b => Instr::Pull(a, FdReg(b.0), c, Reg(((word >> 4) & 0x1f) as usize)),
             0x2c => Instr::Push(a, FdReg(b.0), c, Reg(((word >> 4) & 0x1f) as usize)),
+            0x2d => Instr::ReadFd(FdReg(a.0), b, c),
             0x30 => Instr::Ld(
                 a,
                 MemRef::BaseOffset(b, sign_extend(word & 0x3fff, 14)),
