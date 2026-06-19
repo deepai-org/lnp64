@@ -1,21 +1,9 @@
 #include "lnp64_intrinsics.h"
 
-typedef unsigned long sigset_t;
-typedef void (*lnp64_sighandler_t)(int);
+#include <signal.h>
+#include <unistd.h>
 
-struct sigaction {
-  lnp64_sighandler_t sa_handler;
-  sigset_t sa_mask;
-  int sa_flags;
-};
-
-enum {
-  LNP64_SIG_BLOCK = 0,
-  LNP64_SIG_UNBLOCK = 1,
-  LNP64_SIG_SETMASK = 2
-};
-
-lnp64_sighandler_t signal(int signum, lnp64_sighandler_t handler) {
+sighandler_t signal(int signum, sighandler_t handler) {
   __lnp_sigaction((lnp64_word_t)(unsigned int)signum,
                   (lnp64_word_t)handler);
   return 0;
@@ -39,11 +27,11 @@ int sigprocmask(int how, const sigset_t *set, sigset_t *oldset) {
     *oldset = 0;
   if (!set)
     return 0;
-  if (how == LNP64_SIG_SETMASK)
+  if (how == SIG_SETMASK)
     __lnp_sigmask_set((lnp64_word_t)*set);
-  if (how == LNP64_SIG_BLOCK)
+  if (how == SIG_BLOCK)
     __lnp_sigmask_set((lnp64_word_t)*set);
-  if (how == LNP64_SIG_UNBLOCK)
+  if (how == SIG_UNBLOCK)
     __lnp_sigmask_set(0);
   return 0;
 }

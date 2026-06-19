@@ -2398,7 +2398,11 @@ mod tests {
             "real LLVM LNP64 clang minilibc poll/select/epoll/kqueue implementation object smoke passed"
         ));
         assert!(real_llc.contains("toolchain/liblnp64_signal_min.c"));
-        assert!(libc_signal_min.contains("lnp64_sighandler_t signal"));
+        assert!(libc_signal_min.contains("#include <signal.h>"));
+        assert!(libc_signal_min.contains("#include <unistd.h>"));
+        assert!(!libc_signal_min.contains("typedef unsigned long sigset_t;"));
+        assert!(!libc_signal_min.contains("struct sigaction {"));
+        assert!(libc_signal_min.contains("sighandler_t signal"));
         assert!(libc_signal_min.contains("int sigaction(int signum"));
         assert!(libc_signal_min.contains("int sigprocmask(int how"));
         assert!(libc_signal_min.contains("int kill(int pid"));
@@ -2423,6 +2427,7 @@ mod tests {
         assert!(real_llc.contains("raise(12)"));
         assert!(real_llc.contains("real LLVM LNP64 clang signal libc object smoke passed"));
         assert!(real_llc.contains("liblnp64-signal-min.o"));
+        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_signal_impl_c\""));
         assert!(real_llc.contains("grep -q 'sigaction r'"));
         assert!(real_llc.contains("grep -q 'sigmask_set r'"));
         assert!(real_llc.contains("grep -q 'kill r'"));

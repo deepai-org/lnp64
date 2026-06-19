@@ -4225,6 +4225,7 @@ libc_signal_impl_c="toolchain/liblnp64_signal_min.c"
 libc_signal_impl_obj="$build_dir/liblnp64-signal-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$libc_signal_impl_c" -o "$libc_signal_impl_obj"
 test -s "$libc_signal_impl_obj"
 libc_signal_impl_dump="$build_dir/liblnp64-signal-min.dump"
