@@ -1052,6 +1052,70 @@ grep -q 'sext.w' "$libc_string_dump"
 printf 'real LLVM LNP64 clang minilibc string object smoke passed: %s\n' \
   "$libc_string_obj"
 
+libc_string_impl_c="$build_dir/liblnp64-string-min.c"
+cat >"$libc_string_impl_c" <<'C'
+typedef unsigned long size_t;
+
+size_t strlen(const char *s) {
+  size_t n = 0;
+  while (s[n] != 0)
+    n = n + 1;
+  return n;
+}
+
+void *memcpy(void *dst, const void *src, size_t len) {
+  unsigned char *d = dst;
+  const unsigned char *s = src;
+  for (size_t i = 0; i < len; i = i + 1)
+    d[i] = s[i];
+  return dst;
+}
+
+void *memmove(void *dst, const void *src, size_t len) {
+  unsigned char *d = dst;
+  const unsigned char *s = src;
+  if (d <= s) {
+    for (size_t i = 0; i < len; i = i + 1)
+      d[i] = s[i];
+  } else {
+    for (size_t i = len; i != 0; i = i - 1)
+      d[i - 1] = s[i - 1];
+  }
+  return dst;
+}
+
+int memcmp(const void *lhs, const void *rhs, size_t len) {
+  const unsigned char *a = lhs;
+  const unsigned char *b = rhs;
+  for (size_t i = 0; i < len; i = i + 1) {
+    if (a[i] != b[i])
+      return (int)a[i] - (int)b[i];
+  }
+  return 0;
+}
+
+void *memset(void *dst, int value, size_t len) {
+  unsigned char *d = dst;
+  for (size_t i = 0; i < len; i = i + 1)
+    d[i] = (unsigned char)value;
+  return dst;
+}
+C
+
+libc_string_impl_obj="$build_dir/liblnp64-string-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$libc_string_impl_c" -o "$libc_string_impl_obj"
+test -s "$libc_string_impl_obj"
+libc_string_impl_dump="$build_dir/liblnp64-string-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_string_impl_obj" \
+  >"$libc_string_impl_dump"
+grep -q 'ld.b r' "$libc_string_impl_dump"
+grep -q 'st.b r' "$libc_string_impl_dump"
+grep -q 'ret' "$libc_string_impl_dump"
+printf 'real LLVM LNP64 clang minilibc string implementation object smoke passed: %s\n' \
+  "$libc_string_impl_obj"
+
 calloc_c="$build_dir/calloc-smoke.c"
 cat >"$calloc_c" <<'C'
 typedef unsigned long size_t;
@@ -1488,7 +1552,7 @@ printf 'real LLVM LNP64 lld stack-argument link smoke passed: %s\n' \
 
 libc_string_elf="$build_dir/lnp64-libc-string-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
-  -o "$libc_string_elf" "$crt0_obj" "$libc_string_obj" "$minilibc_obj"
+  -o "$libc_string_elf" "$crt0_obj" "$libc_string_obj" "$libc_string_impl_obj"
 test -s "$libc_string_elf"
 printf 'real LLVM LNP64 lld minilibc string link smoke passed: %s\n' \
   "$libc_string_elf"

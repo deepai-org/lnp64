@@ -1527,6 +1527,13 @@ mod tests {
         assert!(real_llc.contains("grep -q 'sext.w'"));
         assert!(real_llc.contains("void *memmove"));
         assert!(real_llc.contains("real LLVM LNP64 clang minilibc string object smoke passed"));
+        assert!(real_llc.contains("liblnp64-string-min.c"));
+        assert!(real_llc.contains("liblnp64-string-min.o"));
+        assert!(
+            real_llc.contains(
+                "real LLVM LNP64 clang minilibc string implementation object smoke passed"
+            )
+        );
         assert!(real_llc.contains("calloc-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang calloc object smoke passed"));
         assert!(real_llc.contains("realloc-clang-smoke.o"));
@@ -1548,6 +1555,7 @@ mod tests {
             real_llc.contains("real LLVM LNP64 llvm-objdump minilibc native decode smoke passed")
         );
         assert!(real_llc.contains("lnp64-libc-string-linked.elf"));
+        assert!(real_llc.contains(r#""$libc_string_obj" "$libc_string_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld minilibc string link smoke passed"));
         assert!(real_llc.contains("lnp64-calloc-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld calloc link smoke passed"));
