@@ -5,7 +5,7 @@ import lnp64_pkg::*;
 module lnp64_core_tile #(
     parameter int TILE_ID = 0,
     parameter int PROGRAM_WORDS = 256,
-    parameter int SRAM_WORDS = 128,
+    parameter int SRAM_WORDS = 1152,
     parameter int RETURN_STACK_DEPTH = 64
 ) (
     input  logic clk,
@@ -84,6 +84,9 @@ module lnp64_core_tile #(
     localparam logic [63:0] HEAP_ARCH_BASE = 64'h0000_0000_0010_f000;
     localparam logic [63:0] FLAT_DATA_BASE_ADDR = 64'h0000_0000_0001_0000;
     localparam logic [63:0] FLAT_EXEC_BASE_ADDR = 64'h0000_0000_0000_1000;
+    localparam logic [63:0] FLAT_EXEC_INITIAL_SP = 64'h0000_0000_0067_2000;
+    localparam logic [63:0] FLAT_EXEC_STACK_BASE_ADDR = 64'h0000_0000_0067_1000;
+    localparam logic [63:0] FLAT_EXEC_STACK_WINDOW_BYTES = 64'd8192;
     localparam logic [63:0] OBJECT_OP_CREATE = 64'd1;
     localparam logic [63:0] OBJECT_KIND_DMA_BUFFER = 64'd4;
     localparam logic [63:0] RTL_DMA_BUFFER_DEFAULT_FD = 64'd3;
@@ -91,6 +94,7 @@ module lnp64_core_tile #(
     localparam logic [15:0] RTL_ERR_ESTALE = 16'd116;
     localparam int unsigned DATA_SRAM_BASE_WORD = 16;
     localparam int unsigned HEAP_SRAM_BASE_WORD = 96;
+    localparam int unsigned STACK_SRAM_BASE_WORD = 128;
     logic [15:0] errno_reg;
     logic cmp_zero;
     logic cmp_negative;
@@ -202,7 +206,11 @@ module lnp64_core_tile #(
     function automatic int unsigned sram_word_index(input logic [63:0] addr);
         logic [63:0] rel_addr;
         begin
-            if (addr >= HEAP_ARCH_BASE) begin
+            if (addr >= FLAT_EXEC_STACK_BASE_ADDR &&
+                addr < (FLAT_EXEC_STACK_BASE_ADDR + FLAT_EXEC_STACK_WINDOW_BYTES)) begin
+                rel_addr = addr - FLAT_EXEC_STACK_BASE_ADDR;
+                sram_word_index = STACK_SRAM_BASE_WORD + rel_addr[12:3];
+            end else if (addr >= HEAP_ARCH_BASE) begin
                 rel_addr = addr - HEAP_ARCH_BASE;
                 sram_word_index = HEAP_SRAM_BASE_WORD + rel_addr[7:3];
             end else if (addr >= FLAT_DATA_BASE_ADDR) begin
@@ -732,6 +740,7 @@ module lnp64_core_tile #(
             for (i = 0; i < 32; i = i + 1) begin
                 gpr[i] <= 64'd0;
             end
+            gpr[31] <= FLAT_EXEC_INITIAL_SP;
             for (i = 0; i < 4; i = i + 1) begin
                 heap_alloc_ptr[i] <= 64'd0;
                 heap_alloc_size[i] <= 64'd0;
