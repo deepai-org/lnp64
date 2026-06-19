@@ -451,6 +451,7 @@ fn flat_exec_instr_word_len(program: &Program, instr: &Instr) -> usize {
         Instr::Li(_, Value::Label(label)) if program.data_labels.contains_key(label) => 2,
         Instr::Ld(_, MemRef::Label(_), _) => 3,
         Instr::Auipc(_, _) => 2,
+        Instr::LinkPathAt(_, _, _, _, _) | Instr::ChownPathAt(_, _, _, _, _) => 2,
         _ => 1,
     }
 }
@@ -697,6 +698,30 @@ fn encode_flat_exec_instr(
             Ok(vec![enc_rrrr(0x3c, Reg(1), *fd_reg, *buf, *len)])
         }
         Instr::OpenFdDyn(dst, path, flags) => Ok(vec![enc_rrr(0x6d, *dst, *path, *flags)]),
+        Instr::OpenDirDyn(dst, path, flags) => Ok(vec![enc_rrr(0x73, *dst, *path, *flags)]),
+        Instr::MkdirPathAt(dir, path, mode) => Ok(vec![enc_rrr(0x74, *dir, *path, *mode)]),
+        Instr::RenamePathAt(old_dir, old_path, new_dir, new_path) => Ok(vec![enc_rrrr(
+            0x75, *old_dir, *old_path, *new_dir, *new_path,
+        )]),
+        Instr::LinkPathAt(old_dir, old_path, new_dir, new_path, flags) => Ok(vec![
+            enc_rrrr(0x76, *old_dir, *old_path, *new_dir, *new_path),
+            reg_tail(*flags),
+        ]),
+        Instr::SymlinkPathAt(target, dir, link_path) => {
+            Ok(vec![enc_rrr(0x77, *target, *dir, *link_path)])
+        }
+        Instr::ReadlinkPathAt(dir, path, buf, len) => {
+            Ok(vec![enc_rrrr(0x78, *dir, *path, *buf, *len)])
+        }
+        Instr::ChdirPath(path) => Ok(vec![enc_reg(0x79, *path)]),
+        Instr::GetcwdPath(buf, len) => Ok(vec![enc_rrr(0x7a, *buf, *len, Reg(0))]),
+        Instr::ChmodPathAt(dir, path, mode, flags) => {
+            Ok(vec![enc_rrrr(0x7b, *dir, *path, *mode, *flags)])
+        }
+        Instr::ChownPathAt(dir, path, uid, gid, flags) => Ok(vec![
+            enc_rrrr(0x7c, *dir, *path, *uid, *gid),
+            reg_tail(*flags),
+        ]),
         Instr::FdCloseDyn(fd) => Ok(vec![enc_reg(0x6e, *fd)]),
         Instr::CloneSpawn(dst, entry, arg) => Ok(vec![enc_rrr(0x59, *dst, *entry, *arg)]),
         Instr::ThreadJoin(result, tid, retval) => Ok(vec![enc_rrr(0x5a, *result, *tid, *retval)]),
@@ -704,7 +729,7 @@ fn encode_flat_exec_instr(
         Instr::Isync(result, addr, len) => Ok(vec![enc_rrr(0xce, *result, *addr, *len)]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/CALL_REG/LR_GET/LR_SET/RET, YIELD/SLEEP, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, OBJECT_CTL, DOMAIN_CTL, CAP_DUP/SEND/RECV/REVOKE, ERRNO_GET/SET, GET_PCR/SET_PCR, DMA_CTL, ENV_GET, MMAP/MPROTECT, OPEN_FD_DYN/FD_CLOSE_DYN, CLONE.SPAWN/THREAD_JOIN, READ_FD/WRITE_FD, PULL/PUSH, WAITABLE_PROBE, AWAIT/AWAIT_DYN/AWAIT_EX, CALL_CAP/CALL_CAP_DYN/RET_CAP, READ_FD_DYN/WRITE_FD_DYN, FENCE/ISYNC, AMO, LOCK.CMPXCHG, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/CALL_REG/LR_GET/LR_SET/RET, YIELD/SLEEP, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, OBJECT_CTL, DOMAIN_CTL, CAP_DUP/SEND/RECV/REVOKE, ERRNO_GET/SET, GET_PCR/SET_PCR, DMA_CTL, ENV_GET, MMAP/MPROTECT, OPEN_FD_DYN/FD_CLOSE_DYN, namespace path compatibility ops, CLONE.SPAWN/THREAD_JOIN, READ_FD/WRITE_FD, PULL/PUSH, WAITABLE_PROBE, AWAIT/AWAIT_DYN/AWAIT_EX, CALL_CAP/CALL_CAP_DYN/RET_CAP, READ_FD_DYN/WRITE_FD_DYN, FENCE/ISYNC, AMO, LOCK.CMPXCHG, EXIT"
         )),
     }
 }
@@ -888,6 +913,10 @@ fn enc_rrr(opcode: u8, rd: Reg, rs1: Reg, rs2: Reg) -> u32 {
 
 fn enc_rrrr(opcode: u8, rd: Reg, rs1: Reg, rs2: Reg, rs3: Reg) -> u32 {
     enc_rrr(opcode, rd, rs1, rs2) | (((rs3.0 as u32) & 0x1f) << 4)
+}
+
+fn reg_tail(reg: Reg) -> u32 {
+    (reg.0 as u32) & 0x1f
 }
 
 fn enc_mem(opcode: u8, reg_a: Reg, base: Reg, imm: i64) -> u32 {
@@ -1505,6 +1534,45 @@ mod tests {
                 "01201000\n",
                 "5530c800\n",
                 "5428c000\n",
+                "3a000000\n",
+            )
+        );
+    }
+
+    #[test]
+    fn asm_flat_exec_encodes_namespace_compat_subset() {
+        let source = r#"
+            .text
+              OPEN_DIR_DYN r1, r2, r3
+              MKDIR_PATH_AT r4, r5, r6
+              RENAME_PATH_AT r7, r8, r9, r10
+              LINK_PATH_AT r11, r12, r13, r14, r15
+              SYMLINK_PATH_AT r16, r17, r18
+              READLINK_PATH_AT r19, r20, r21, r22
+              CHDIR_PATH r23
+              GETCWD_PATH r24, r25
+              CHMOD_PATH_AT r26, r27, r28, r29
+              CHOWN_PATH_AT r1, r2, r3, r4, r5
+              EXIT r0
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+
+        assert_eq!(
+            hex,
+            concat!(
+                "73088600\n",
+                "74214c00\n",
+                "753a12a0\n",
+                "765b1ae0\n",
+                "0000000f\n",
+                "77846400\n",
+                "789d2b60\n",
+                "79b80000\n",
+                "7ac64000\n",
+                "7bd6f9d0\n",
+                "7c088640\n",
+                "00000005\n",
                 "3a000000\n",
             )
         );

@@ -1915,6 +1915,22 @@ impl Machine {
             0x70 => Instr::WaitableProbeDyn(a, b, c),
             0x71 => Instr::AwaitEx(a, FdReg(b.0), c),
             0x72 => Instr::AwaitExDyn(a, b, c),
+            0x73 => Instr::OpenDirDyn(a, b, c),
+            0x74 => Instr::MkdirPathAt(a, b, c),
+            0x75 => Instr::RenamePathAt(a, b, c, d),
+            0x76 => {
+                let flags = Reg((self.load_exec_u32(pc + 4)? & 0x1f) as usize);
+                return Ok((Instr::LinkPathAt(a, b, c, d, flags), pc + 8));
+            }
+            0x77 => Instr::SymlinkPathAt(a, b, c),
+            0x78 => Instr::ReadlinkPathAt(a, b, c, d),
+            0x79 => Instr::ChdirPath(a),
+            0x7a => Instr::GetcwdPath(a, b),
+            0x7b => Instr::ChmodPathAt(a, b, c, d),
+            0x7c => {
+                let flags = Reg((self.load_exec_u32(pc + 4)? & 0x1f) as usize);
+                return Ok((Instr::ChownPathAt(a, b, c, d, flags), pc + 8));
+            }
             0xcb => Instr::FutexWait(a, b),
             0xcc => Instr::FutexWake(a, b),
             0xcd => Instr::Fence,
@@ -15016,7 +15032,20 @@ mod tests {
         put_instruction(&mut text, 40, encode_rr(0x5f, 6, 0));
         put_instruction(&mut text, 44, encode_ri(0x01, 7, 1));
         put_instruction(&mut text, 48, encode_rrr(0x67, 6, 7, 0));
-        put_instruction(&mut text, 52, encode_reg(0x3a, 0));
+        put_instruction(&mut text, 52, encode_rrr(0x73, 8, 3, 5));
+        put_instruction(&mut text, 56, encode_rrr(0x74, 4, 3, 5));
+        put_instruction(&mut text, 60, encode_rrr(0x6b, 4, 3, 5));
+        put_instruction(&mut text, 64, encode_rrrr(0x75, 4, 3, 4, 3));
+        put_instruction(&mut text, 68, encode_rrrr(0x76, 4, 3, 4, 3));
+        put_instruction(&mut text, 72, 5);
+        put_instruction(&mut text, 76, encode_rrr(0x77, 3, 4, 3));
+        put_instruction(&mut text, 80, encode_rrrr(0x78, 4, 3, 2, 5));
+        put_instruction(&mut text, 84, encode_reg(0x79, 3));
+        put_instruction(&mut text, 88, encode_rr(0x7a, 2, 5));
+        put_instruction(&mut text, 92, encode_rrrr(0x7b, 4, 3, 5, 5));
+        put_instruction(&mut text, 96, encode_rrrr(0x7c, 4, 3, 5, 5));
+        put_instruction(&mut text, 100, 5);
+        put_instruction(&mut text, 104, encode_reg(0x3a, 0));
         let mut prepared = prepared_exec_vmas_fixture();
         prepared[0].bytes = text;
         prepared[1].bytes[0x100] = b'.';
@@ -15026,6 +15055,7 @@ mod tests {
         machine
             .commit_exec_descriptor_memory_image(&words, &prepared)
             .unwrap();
+        machine.process_mut().unwrap().namespace_root = None;
         let exit = machine.run_committed_exec().unwrap();
 
         assert_eq!(exit, 0);
