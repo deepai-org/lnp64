@@ -4,7 +4,7 @@ import lnp64_pkg::*;
 
 module lnp64_core_tile #(
     parameter int TILE_ID = 0,
-    parameter int PROGRAM_WORDS = 256,
+    parameter int PROGRAM_WORDS = 1024,
     parameter int SRAM_WORDS = 1152,
     parameter int RETURN_STACK_DEPTH = 64
 ) (
