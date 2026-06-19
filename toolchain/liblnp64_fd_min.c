@@ -31,6 +31,15 @@ long write(long fd, const void *buf, size_t len) {
   return (long)__lnp_push((lnp64_cap_t)fd, (lnp64_word_t)buf, len);
 }
 
+long lseek(int fd, long offset, int whence) {
+  unsigned long result;
+  __asm__ volatile("fd_seek_dyn %1, %2, %3\n\tmov %0, r1"
+                   : "=r"(result)
+                   : "r"((long)fd), "r"(offset), "r"((long)whence)
+                   : "memory");
+  return (long)result;
+}
+
 int close(int fd) {
   return __lnp_cap_revoke((lnp64_cap_t)(long)fd, 0) >= 0 ? 0 : -1;
 }

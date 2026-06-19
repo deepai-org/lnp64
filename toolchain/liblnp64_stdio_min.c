@@ -230,9 +230,18 @@ int fclose(FILE *stream) {
     return -1;
   if (stream->kind == LNP64_STREAM_FD && stream->fd > 2)
     rc = close(stream->fd);
+  stream->has_unget = 0;
+  stream->eof = 0;
+  stream->error = 0;
   if (stream != stdin && stream != stdout && stream != stderr)
     stream->kind = LNP64_STREAM_FREE;
   return rc;
+}
+
+static long lnp64_stream_tell(FILE *stream) {
+  if (!stream)
+    return -1;
+  return (long)stream->pos;
 }
 
 int fgetc(FILE *stream) {
@@ -242,6 +251,7 @@ int fgetc(FILE *stream) {
   }
   if (stream->has_unget) {
     stream->has_unget = 0;
+    stream->pos = stream->pos + 1;
     return stream->unget;
   }
   if (stream->kind == LNP64_STREAM_MEMORY) {
@@ -257,8 +267,10 @@ int fgetc(FILE *stream) {
   }
   if (stream->kind == LNP64_STREAM_FD) {
     ssize_t got = read(stream->fd, &ch, 1);
-    if (got == 1)
+    if (got == 1) {
+      stream->pos = stream->pos + 1;
       return ch;
+    }
     if (got == 0)
       stream->eof = 1;
     else
@@ -274,8 +286,25 @@ int ungetc(int ch, FILE *stream) {
     return -1;
   stream->has_unget = 1;
   stream->unget = (unsigned char)ch;
+  if (stream->pos != 0)
+    stream->pos = stream->pos - 1;
   stream->eof = 0;
   return (unsigned char)ch;
+}
+
+static int lnp64_stream_peek(FILE *stream) {
+  if (stream && stream->has_unget)
+    return stream->unget;
+  int ch = fgetc(stream);
+  if (ch < 0)
+    return ch;
+  if (stream->kind == LNP64_STREAM_FD) {
+    if (lseek(stream->fd, -1, SEEK_CUR) >= 0 && stream->pos != 0)
+      stream->pos = stream->pos - 1;
+    return ch;
+  }
+  ungetc(ch, stream);
+  return ch;
 }
 
 char *fgets(char *str, int count, FILE *stream) {
@@ -321,7 +350,11 @@ int fputc(int ch, FILE *stream) {
   if (!stream)
     return -1;
   if (stream->kind == LNP64_STREAM_FD) {
-    return write(stream->fd, &byte, 1) == 1 ? ch : -1;
+    if (write(stream->fd, &byte, 1) == 1) {
+      stream->pos = stream->pos + 1;
+      return ch;
+    }
+    return -1;
   }
   if (stream->kind == LNP64_STREAM_MEMORY) {
     if (stream->pos >= stream->size) {
@@ -355,6 +388,7 @@ unsigned long fwrite(const void *ptr, unsigned long size, unsigned long count,
     ssize_t written = write(stream->fd, ptr, total);
     if (written <= 0)
       return 0;
+    stream->pos = stream->pos + (unsigned long)written;
     return (unsigned long)written / size;
   }
   for (i = 0; i < total; i = i + 1) {
@@ -362,6 +396,102 @@ unsigned long fwrite(const void *ptr, unsigned long size, unsigned long count,
       break;
   }
   return i / size;
+}
+
+int vfprintf(FILE *stream, const char *format, va_list ap) {
+  char buf[256];
+  int len = vsnprintf(buf, sizeof buf, format, ap);
+  unsigned long written_len;
+  if (len < 0)
+    return len;
+  written_len = (unsigned long)len;
+  if (written_len >= sizeof buf)
+    written_len = sizeof buf - 1;
+  if (fwrite(buf, 1, written_len, stream) != written_len)
+    return -1;
+  return len;
+}
+
+int fprintf(FILE *stream, const char *format, ...) {
+  va_list ap;
+  int ret;
+  va_start(ap, format);
+  ret = vfprintf(stream, format, ap);
+  va_end(ap);
+  return ret;
+}
+
+int printf(const char *format, ...) {
+  va_list ap;
+  int ret;
+  va_start(ap, format);
+  ret = vfprintf(stdout, format, ap);
+  va_end(ap);
+  return ret;
+}
+
+int fseek(FILE *stream, long offset, int whence) {
+  long pos;
+  if (!stream)
+    return -1;
+  stream->has_unget = 0;
+  if (stream->kind == LNP64_STREAM_MEMORY) {
+    long base = 0;
+    if (whence == SEEK_CUR)
+      base = (long)stream->pos;
+    else if (whence == SEEK_END)
+      base = (long)stream->size;
+    else if (whence != SEEK_SET)
+      return -1;
+    pos = base + offset;
+    if (pos < 0 || (unsigned long)pos > stream->size)
+      return -1;
+    stream->pos = (unsigned long)pos;
+    stream->eof = 0;
+    return 0;
+  }
+  if (stream->kind != LNP64_STREAM_FD)
+    return -1;
+  pos = lseek(stream->fd, offset, whence);
+  if (pos < 0)
+    return -1;
+  stream->pos = (unsigned long)pos;
+  stream->eof = 0;
+  return 0;
+}
+
+long ftell(FILE *stream) { return lnp64_stream_tell(stream); }
+
+int fscanf(FILE *stream, const char *format, ...) {
+  const char *set;
+  char *out;
+  int matched = 0;
+  va_list ap;
+  if (!stream || !format || format[0] != '%' || format[1] != '[')
+    return -1;
+  set = format + 2;
+  va_start(ap, format);
+  out = va_arg(ap, char *);
+  va_end(ap);
+  while (*set && *set != ']') {
+    int ch = lnp64_stream_peek(stream);
+    if (ch < 0)
+      break;
+    if ((unsigned char)ch != (unsigned char)*set) {
+      set = set + 1;
+      continue;
+    }
+    do {
+      ch = fgetc(stream);
+      out[matched] = (char)ch;
+      matched = matched + 1;
+      ch = lnp64_stream_peek(stream);
+    } while (ch >= 0 && (unsigned char)ch == (unsigned char)*set);
+    break;
+  }
+  if (matched != 0)
+    out[matched] = 0;
+  return matched == 0 ? 0 : 1;
 }
 
 FILE *fopen(const char *path, const char *mode) {
@@ -380,6 +510,10 @@ FILE *fopen(const char *path, const char *mode) {
   }
   stream->kind = LNP64_STREAM_FD;
   stream->fd = fd;
+  stream->pos = 0;
+  stream->eof = 0;
+  stream->error = 0;
+  stream->has_unget = 0;
   return stream;
 }
 
@@ -400,6 +534,10 @@ FILE *tmpfile(void) {
   }
   stream->kind = LNP64_STREAM_FD;
   stream->fd = fd;
+  stream->pos = 0;
+  stream->eof = 0;
+  stream->error = 0;
+  stream->has_unget = 0;
   return stream;
 }
 

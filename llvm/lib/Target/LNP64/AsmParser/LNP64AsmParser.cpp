@@ -405,6 +405,7 @@ private:
             .Case("utime_path_at", LNP64::UTIME_PATH_AT)
             .Case("utime_fd_dyn", LNP64::UTIME_FD_DYN)
             .Case("fcntl_fd_dyn", LNP64::FCNTL_FD_DYN)
+            .Case("fd_seek_dyn", LNP64::FD_SEEK_DYN)
             .Case("object_ctl", LNP64::OBJECT_CTL)
             .Case("domain_ctl", LNP64::DOMAIN_CTL)
             .Case("cap_send", LNP64::CAP_SEND)
@@ -471,7 +472,7 @@ private:
         Opcode == LNP64::CSEL_ULT || Opcode == LNP64::CSEL_UGT ||
         Opcode == LNP64::CSEL_ULE || Opcode == LNP64::CSEL_UGE)
       return addRegRegReg(Inst, Operands);
-    if (Opcode == LNP64::FCNTL_FD_DYN)
+    if (Opcode == LNP64::FCNTL_FD_DYN || Opcode == LNP64::FD_SEEK_DYN)
       return addRegRegReg(Inst, Operands);
     if (Opcode == LNP64::CMP || Opcode == LNP64::CMPU ||
         Opcode == LNP64::FUTEX_WAIT || Opcode == LNP64::FUTEX_WAKE ||

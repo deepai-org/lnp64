@@ -224,6 +224,8 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
     return "utime_fd_dyn";
   case LNP64::FCNTL_FD_DYN:
     return "fcntl_fd_dyn";
+  case LNP64::FD_SEEK_DYN:
+    return "fd_seek_dyn";
   case LNP64::OBJECT_CTL:
     return "object_ctl";
   case LNP64::DOMAIN_CTL:
@@ -522,6 +524,7 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
     break;
   case LNP64::ALLOC_EX:
   case LNP64::FCNTL_FD_DYN:
+  case LNP64::FD_SEEK_DYN:
     OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
     printOperand(MI->getOperand(0), OS);
     OS << ", ";

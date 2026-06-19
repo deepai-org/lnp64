@@ -207,6 +207,8 @@ run_elf_report "real LLVM LNP64 run-elf libc-test stat execution passed" \
   target/llvm-lnp64-build/lnp64-libc-test-stat-linked.elf
 run_elf_report "real LLVM LNP64 run-elf libc-test utime execution passed" \
   target/llvm-lnp64-build/lnp64-libc-test-utime-linked.elf
+run_elf_report "real LLVM LNP64 run-elf libc-test ungetc execution passed" \
+  target/llvm-lnp64-build/lnp64-libc-test-ungetc-linked.elf
 run_elf_report "real LLVM LNP64 run-elf libc-test qsort_bounded execution passed" \
   target/llvm-lnp64-build/lnp64-libc-test-qsort-bounded-linked.elf
 run_elf_report "real LLVM LNP64 run-elf libc-test search_insque execution passed" \

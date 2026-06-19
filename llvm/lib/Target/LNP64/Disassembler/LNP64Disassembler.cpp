@@ -695,6 +695,12 @@ public:
       addReg(Instr, B);
       addReg(Instr, C);
       return MCDisassembler::Success;
+    case 0x69:
+      Instr.setOpcode(LNP64::FD_SEEK_DYN);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
     case 0x62:
       Instr.setOpcode(LNP64::SIGACTION);
       addReg(Instr, A);

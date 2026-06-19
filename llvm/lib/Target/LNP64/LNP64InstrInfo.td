@@ -672,6 +672,7 @@ def STAT_FD_DYN : LNP64Status2<"stat_fd_dyn">;
 def UTIME_PATH_AT : LNP64Status4<"utime_path_at">;
 def UTIME_FD_DYN : LNP64Status2<"utime_fd_dyn">;
 def FCNTL_FD_DYN : LNP64Status3<"fcntl_fd_dyn">;
+def FD_SEEK_DYN : LNP64Status3<"fd_seek_dyn">;
 def PULL : LNP64Native4<"pull"> {
   let Pattern = [(set GPR:$rd, (LNP64pull GPR:$cap, GPR:$arg0, GPR:$arg1))];
 }

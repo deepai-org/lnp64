@@ -27,6 +27,9 @@ int ferror(FILE *stream);
 int feof(FILE *stream);
 void clearerr(FILE *stream);
 int fileno(FILE *stream);
+int fseek(FILE *stream, long offset, int whence);
+long ftell(FILE *stream);
+int fscanf(FILE *stream, const char *format, ...);
 int vfprintf(FILE *stream, const char *format, __builtin_va_list ap);
 int sprintf(char *str, const char *format, ...);
 int vsnprintf(char *str, unsigned long size, const char *format,

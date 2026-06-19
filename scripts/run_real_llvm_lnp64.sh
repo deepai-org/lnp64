@@ -328,6 +328,7 @@ _start:
   utime_path_at r7, r8, r9, r10
   utime_fd_dyn r11, r12
   fcntl_fd_dyn r13, r14, r15
+  fd_seek_dyn r16, r17, r18
   ret
 ASM
   compat_meta_mc_obj="$build_dir/compat-meta-mc-smoke.o"
@@ -342,6 +343,7 @@ ASM
   grep -q 'utime_path_at r7, r8, r9, r10' "$compat_meta_mc_dump"
   grep -q 'utime_fd_dyn r11, r12' "$compat_meta_mc_dump"
   grep -q 'fcntl_fd_dyn r13, r14, r15' "$compat_meta_mc_dump"
+  grep -q 'fd_seek_dyn r16, r17, r18' "$compat_meta_mc_dump"
   printf 'real LLVM LNP64 llvm-mc compatibility metadata opcode smoke passed: %s\n' \
     "$compat_meta_mc_obj"
 
@@ -2675,6 +2677,20 @@ grep -q 'call ' "$libc_test_utime_dump"
 printf 'real LLVM LNP64 clang libc-test utime object smoke passed: %s\n' \
   "$libc_test_utime_obj"
 
+libc_test_ungetc_obj="$build_dir/libc-test-ungetc-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain/include \
+  -I third_party/libc-test/functional \
+  -c third_party/libc-test/functional/ungetc.c \
+  -o "$libc_test_ungetc_obj"
+test -s "$libc_test_ungetc_obj"
+libc_test_ungetc_dump="$build_dir/libc-test-ungetc-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_test_ungetc_obj" \
+  >"$libc_test_ungetc_dump"
+grep -q 'call ' "$libc_test_ungetc_dump"
+printf 'real LLVM LNP64 clang libc-test ungetc object smoke passed: %s\n' \
+  "$libc_test_ungetc_obj"
+
 libc_test_qsort_bounded_obj="$build_dir/libc-test-qsort-bounded-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain/include \
@@ -3699,6 +3715,7 @@ libc_fd_impl_dump="$build_dir/liblnp64-fd-min.dump"
   >"$libc_fd_impl_dump"
 grep -q 'pull r' "$libc_fd_impl_dump"
 grep -q 'push r' "$libc_fd_impl_dump"
+grep -q 'fd_seek_dyn r' "$libc_fd_impl_dump"
 grep -q 'cap_revoke r' "$libc_fd_impl_dump"
 grep -q 'ret' "$libc_fd_impl_dump"
 printf 'real LLVM LNP64 clang minilibc fd implementation object smoke passed: %s\n' \
@@ -3963,6 +3980,7 @@ _start:
   utime_path_at r7, r8, r9, r10
   utime_fd_dyn r11, r12
   fcntl_fd_dyn r13, r14, r15
+  fd_seek_dyn r16, r17, r18
   ret
 ASM
 compat_meta_mc_obj="$build_dir/compat-meta-mc-smoke.o"
@@ -3977,6 +3995,7 @@ grep -q 'stat_fd_dyn r5, r6' "$compat_meta_mc_dump"
 grep -q 'utime_path_at r7, r8, r9, r10' "$compat_meta_mc_dump"
 grep -q 'utime_fd_dyn r11, r12' "$compat_meta_mc_dump"
 grep -q 'fcntl_fd_dyn r13, r14, r15' "$compat_meta_mc_dump"
+grep -q 'fd_seek_dyn r16, r17, r18' "$compat_meta_mc_dump"
 printf 'real LLVM LNP64 llvm-mc compatibility metadata opcode smoke passed: %s\n' \
   "$compat_meta_mc_obj"
 
@@ -4577,6 +4596,15 @@ libc_test_utime_elf="$build_dir/lnp64-libc-test-utime-linked.elf"
 test -s "$libc_test_utime_elf"
 printf 'real LLVM LNP64 lld libc-test utime link smoke passed: %s\n' \
   "$libc_test_utime_elf"
+
+libc_test_ungetc_elf="$build_dir/lnp64-libc-test-ungetc-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$libc_test_ungetc_elf" "$crt0_obj" "$libc_test_ungetc_obj" \
+  "$libc_test_print_obj" "$libc_stdio_impl_obj" "$libc_string_impl_obj" \
+  "$libc_fd_impl_obj" "$libc_errno_impl_obj"
+test -s "$libc_test_ungetc_elf"
+printf 'real LLVM LNP64 lld libc-test ungetc link smoke passed: %s\n' \
+  "$libc_test_ungetc_elf"
 
 libc_test_qsort_bounded_elf="$build_dir/lnp64-libc-test-qsort-bounded-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

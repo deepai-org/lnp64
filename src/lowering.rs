@@ -1932,6 +1932,9 @@ mod tests {
         assert!(real_llc.contains("libc-test-utime-clang-smoke.o"));
         assert!(real_llc.contains("third_party/libc-test/functional/utime.c"));
         assert!(real_llc.contains("real LLVM LNP64 clang libc-test utime object smoke passed"));
+        assert!(real_llc.contains("libc-test-ungetc-clang-smoke.o"));
+        assert!(real_llc.contains("third_party/libc-test/functional/ungetc.c"));
+        assert!(real_llc.contains("real LLVM LNP64 clang libc-test ungetc object smoke passed"));
         assert!(real_llc.contains("libc-test-qsort-bounded-clang-smoke.o"));
         assert!(real_llc.contains("third_party/libc-test/functional/qsort_bounded.c"));
         assert!(
@@ -2004,6 +2007,13 @@ mod tests {
   "$libc_process_impl_obj" "$libc_string_impl_obj""#
         ));
         assert!(real_llc.contains("real LLVM LNP64 lld libc-test utime link smoke passed"));
+        assert!(real_llc.contains("lnp64-libc-test-ungetc-linked.elf"));
+        assert!(real_llc.contains(
+            r#""$libc_test_ungetc_obj" \
+  "$libc_test_print_obj" "$libc_stdio_impl_obj" "$libc_string_impl_obj" \
+  "$libc_fd_impl_obj" "$libc_errno_impl_obj""#
+        ));
+        assert!(real_llc.contains("real LLVM LNP64 lld libc-test ungetc link smoke passed"));
         assert!(real_llc.contains("lnp64-libc-test-qsort-bounded-linked.elf"));
         assert!(real_llc.contains(r#""$libc_test_qsort_bounded_obj" \"#));
         assert!(real_llc.contains(r#""$libc_sort_impl_obj" "$libc_string_impl_obj""#));
@@ -2131,6 +2141,9 @@ mod tests {
         assert!(libc_stdio_min.contains("int snprintf("));
         assert!(libc_stdio_min.contains("FILE *fmemopen("));
         assert!(libc_stdio_min.contains("char *fgets("));
+        assert!(libc_stdio_min.contains("int fseek(FILE *stream"));
+        assert!(libc_stdio_min.contains("long ftell(FILE *stream)"));
+        assert!(libc_stdio_min.contains("int fscanf(FILE *stream"));
         assert!(libc_stdio_min.contains("FILE *tmpfile(void)"));
         assert!(libc_stdio_min.contains("int fileno(FILE *stream)"));
         assert!(real_llc.contains("liblnp64-stdio-min.o"));
@@ -2337,12 +2350,15 @@ mod tests {
         assert!(real_llc.contains("toolchain/liblnp64_fd_min.c"));
         assert!(libc_fd_min.contains("__lnp_pull"));
         assert!(libc_fd_min.contains("__lnp_push"));
+        assert!(libc_fd_min.contains("long lseek(int fd, long offset, int whence)"));
+        assert!(libc_fd_min.contains("fd_seek_dyn %1, %2, %3"));
         assert!(libc_fd_min.contains("LNP64_FDR_TOKEN_MARKER"));
         assert!(libc_fd_min.contains("LNP64_FDR_TOKEN_INDEX_MASK"));
         assert!(libc_fd_min.contains("int close(int fd)"));
         assert!(libc_fd_min.contains("__lnp_cap_revoke"));
         assert!(real_llc.contains("liblnp64-fd-min.o"));
         assert!(real_llc.contains("grep -q 'pull r'"));
+        assert!(real_llc.contains("grep -q 'fd_seek_dyn r'"));
         assert!(real_llc.contains("grep -q 'push r'"));
         assert!(real_llc.contains("grep -q 'cap_revoke r'"));
         assert!(
@@ -3086,6 +3102,10 @@ mod tests {
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf libc-test utime execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-libc-test-ungetc-linked.elf"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf libc-test ungetc execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-libc-test-qsort-bounded-linked.elf"));
         assert!(
             real_llc_docker
@@ -3277,6 +3297,7 @@ mod tests {
             "real_libc_test_clock_gettime_execution",
             "real_libc_test_stat_execution",
             "real_libc_test_utime_execution",
+            "real_libc_test_ungetc_execution",
             "real_libc_test_qsort_bounded_execution",
             "real_libc_test_search_insque_execution",
             "real_libc_test_malloc_0_execution",
@@ -3349,6 +3370,7 @@ mod tests {
             "real_libc_test_clock_gettime_execution",
             "real_libc_test_stat_execution",
             "real_libc_test_utime_execution",
+            "real_libc_test_ungetc_execution",
             "real_libc_test_qsort_bounded_execution",
             "real_libc_test_search_insque_execution",
             "real_libc_test_malloc_0_execution",
@@ -4312,6 +4334,7 @@ mod tests {
                     "FDR",
                     "GET_META",
                     "SET_META",
+                    "FD_SEEK_DYN",
                 ],
             ),
             (
@@ -5807,6 +5830,7 @@ mod tests {
                 .1
                 .contains(&"FCNTL_FD_DYN")
         );
+        assert!(groups["compat_metadata_control"].1.contains(&"FD_SEEK_DYN"));
         assert!(!groups.contains_key("native_control_planned"));
         assert!(asm_parser.contains(r#".Case("clone.spawn", LNP64::CLONE_SPAWN)"#));
         assert!(asm_parser.contains(r#".Case("thread_join", LNP64::THREAD_JOIN)"#));
@@ -5815,6 +5839,10 @@ mod tests {
         assert!(asm_parser.contains(r#".Case("utime_path_at", LNP64::UTIME_PATH_AT)"#));
         assert!(asm_parser.contains(r#".Case("utime_fd_dyn", LNP64::UTIME_FD_DYN)"#));
         assert!(asm_parser.contains(r#".Case("fcntl_fd_dyn", LNP64::FCNTL_FD_DYN)"#));
+        assert!(asm_parser.contains(r#".Case("fd_seek_dyn", LNP64::FD_SEEK_DYN)"#));
+        assert!(
+            asm_parser.contains("Opcode == LNP64::FCNTL_FD_DYN || Opcode == LNP64::FD_SEEK_DYN")
+        );
         assert!(inst_printer.contains(r#"return "clone.spawn";"#));
         assert!(inst_printer.contains(r#"return "thread_join";"#));
         assert!(inst_printer.contains(r#"return "stat_path_at";"#));
@@ -5822,6 +5850,7 @@ mod tests {
         assert!(inst_printer.contains(r#"return "utime_path_at";"#));
         assert!(inst_printer.contains(r#"return "utime_fd_dyn";"#));
         assert!(inst_printer.contains(r#"return "fcntl_fd_dyn";"#));
+        assert!(inst_printer.contains(r#"return "fd_seek_dyn";"#));
         assert!(mc_emitter.contains("case LNP64::CLONE_SPAWN"));
         assert!(mc_emitter.contains("case LNP64::THREAD_JOIN"));
         assert!(mc_emitter.contains("case LNP64::STAT_PATH_AT"));
@@ -5829,6 +5858,7 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::UTIME_PATH_AT"));
         assert!(mc_emitter.contains("case LNP64::UTIME_FD_DYN"));
         assert!(mc_emitter.contains("case LNP64::FCNTL_FD_DYN"));
+        assert!(mc_emitter.contains("case LNP64::FD_SEEK_DYN"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::CLONE_SPAWN)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::THREAD_JOIN)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::STAT_PATH_AT)"));
@@ -5836,6 +5866,7 @@ mod tests {
         assert!(disassembler.contains("Instr.setOpcode(LNP64::UTIME_PATH_AT)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::UTIME_FD_DYN)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::FCNTL_FD_DYN)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::FD_SEEK_DYN)"));
         assert!(asm_parser.contains(r#".Case("cap_send", LNP64::CAP_SEND)"#));
         assert!(asm_parser.contains(r#".Case("cap_recv", LNP64::CAP_RECV)"#));
         assert!(asm_parser.contains(r#".Case("cap_dup", LNP64::CAP_DUP)"#));

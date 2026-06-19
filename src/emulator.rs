@@ -1221,7 +1221,7 @@ fn checked_host_usize(value: u64, name: &str) -> Result<usize, String> {
 fn committed_exec_result_reg(raw_word: u32) -> Option<usize> {
     let opcode = (raw_word >> 24) as u8;
     match opcode {
-        0x2d | 0x57 | 0x5c..=0x5f | 0x67 => Some(1),
+        0x2d | 0x57 | 0x5c..=0x5f | 0x67 | 0x69 => Some(1),
         0x00
         | 0x1b
         | 0x1c
@@ -1897,6 +1897,7 @@ impl Machine {
             0x66 => Instr::MprotectBootstrap(a, b, c, d),
             0x67 => Instr::FcntlFdDyn(a, b, c),
             0x68 => Instr::Alarm(a, b),
+            0x69 => Instr::FdSeekDyn(a, b, c),
             0xcb => Instr::FutexWait(a, b),
             0xcc => Instr::FutexWake(a, b),
             0xcd => Instr::Fence,

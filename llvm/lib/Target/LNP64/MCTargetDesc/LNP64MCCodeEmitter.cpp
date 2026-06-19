@@ -751,6 +751,12 @@ public:
                                 getGPRNo(MI.getOperand(2))),
                OS);
       return;
+    case LNP64::FD_SEEK_DYN:
+      emitLE32(encodeFixed32RRR(0x69, getGPRNo(MI.getOperand(0)),
+                                getGPRNo(MI.getOperand(1)),
+                                getGPRNo(MI.getOperand(2))),
+               OS);
+      return;
     case LNP64::ALARM:
       emitLE32(encodeFixed32RR(0x68, getGPRNo(MI.getOperand(0)),
                                getGPRNo(MI.getOperand(1))),
