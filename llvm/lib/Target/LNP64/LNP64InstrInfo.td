@@ -637,6 +637,8 @@ def MMAP : LNP64Inst<(outs GPR:$rd), (ins GPR:$addr, GPR:$len, GPR:$prot),
 def MUNMAP : LNP64Native2<"munmap">;
 def MPROTECT : LNP64Inst<(outs GPR:$rd), (ins GPR:$addr, GPR:$len, GPR:$prot),
                          "mprotect", "\t$rd, $addr, $len, $prot">;
+def ENV_GET : LNP64Inst<(outs GPR:$rd), (ins GPR:$key, GPR:$index, GPR:$len),
+                        "env_get", "\t$rd, $key, $index, $len">;
 def OBJECT_CTL : LNP64Native2<"object_ctl"> {
   let Pattern = [(set GPR:$rd, (LNP64objectctl GPR:$arg))];
 }

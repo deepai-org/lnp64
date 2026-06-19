@@ -1320,6 +1320,7 @@ mod tests {
         let libc_fd_min = include_str!("../toolchain/liblnp64_fd_min.c");
         let libc_process_min = include_str!("../toolchain/liblnp64_process_min.c");
         let libc_errno_min = include_str!("../toolchain/liblnp64_errno_min.c");
+        let libc_startup_min = include_str!("../toolchain/liblnp64_startup_min.c");
         let libc_vma_min = include_str!("../toolchain/liblnp64_vma_min.c");
         let libc_futex_min = include_str!("../toolchain/liblnp64_futex_min.c");
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
@@ -1509,6 +1510,9 @@ mod tests {
         assert!(real_llc.contains("munmap r5, r6"));
         assert!(real_llc.contains("mprotect r7, r8, r9, r10"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc mmap opcode smoke passed"));
+        assert!(real_llc.contains("env-get-mc-smoke.o"));
+        assert!(real_llc.contains("env_get r1, r2, r3, r4"));
+        assert!(real_llc.contains("real LLVM LNP64 llvm-mc env_get opcode smoke passed"));
         assert!(real_llc.contains("atomic-mc-smoke.o"));
         assert!(real_llc.contains("amo.swap r1, r2, r3"));
         assert!(real_llc.contains("amo.or r10, r11, r12"));
@@ -1613,6 +1617,15 @@ mod tests {
                 "real LLVM LNP64 clang minilibc errno implementation object smoke passed"
             )
         );
+        assert!(real_llc.contains("toolchain/liblnp64_startup_min.c"));
+        assert!(libc_startup_min.contains("getauxval"));
+        assert!(libc_startup_min.contains("env_get %0, %1, %2, %3"));
+        assert!(real_llc.contains("liblnp64-startup-min.o"));
+        assert!(
+            real_llc.contains(
+                "real LLVM LNP64 clang minilibc startup implementation object smoke passed"
+            )
+        );
         assert!(real_llc.contains("toolchain/liblnp64_futex_min.c"));
         assert!(libc_futex_min.contains("__lnp_futex_wait"));
         assert!(libc_futex_min.contains("__lnp_futex_wake"));
@@ -1627,6 +1640,10 @@ mod tests {
         assert!(real_llc.contains("errno-clang-smoke.o"));
         assert!(real_llc.contains("lnp64_errno_store(22)"));
         assert!(real_llc.contains("real LLVM LNP64 clang errno object smoke passed"));
+        assert!(real_llc.contains("startup-clang-smoke.o"));
+        assert!(real_llc.contains("real LLVM LNP64 clang startup argv/envp object smoke passed"));
+        assert!(real_llc.contains("getauxval-clang-smoke.o"));
+        assert!(real_llc.contains("real LLVM LNP64 clang getauxval object smoke passed"));
         assert!(real_llc.contains("libc-string-clang-smoke.o"));
         assert!(real_llc.contains("int memcmp"));
         assert!(real_llc.contains("grep -q 'sext.w'"));
@@ -1722,6 +1739,11 @@ mod tests {
         assert!(real_llc.contains("lnp64-errno-linked.elf"));
         assert!(real_llc.contains(r#""$errno_obj" "$libc_errno_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld errno link smoke passed"));
+        assert!(real_llc.contains("lnp64-startup-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld startup argv/envp link smoke passed"));
+        assert!(real_llc.contains("lnp64-getauxval-linked.elf"));
+        assert!(real_llc.contains(r#""$getauxval_obj" "$libc_startup_impl_obj""#));
+        assert!(real_llc.contains("real LLVM LNP64 lld getauxval link smoke passed"));
         assert!(real_llc.contains("lnp64-scalar-arith-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld scalar arithmetic link smoke passed"));
         assert!(real_llc.contains("lnp64-high-mul-linked.elf"));
@@ -2072,6 +2094,12 @@ mod tests {
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf C11 atomic execution passed"));
         assert!(real_llc_docker.contains("lnp64-exit-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf exit execution passed"));
+        assert!(real_llc_docker.contains("lnp64-startup-linked.elf"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf startup argv/envp execution passed")
+        );
+        assert!(real_llc_docker.contains("lnp64-getauxval-linked.elf"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf getauxval execution passed"));
         assert!(main_source.contains("\"run-elf\""));
         assert!(main_source.contains("run_committed_exec"));
         assert!(loader_security.contains("submit_exec_plan"));
@@ -2128,6 +2156,8 @@ mod tests {
             "real_read_execution",
             "real_mmap_libc_execution",
             "real_errno_execution",
+            "real_startup_execution",
+            "real_getauxval_execution",
             "real_intrinsic_await_execution",
             "real_intrinsic_call_execution",
             "real_intrinsic_gate_return_execution",
@@ -2163,6 +2193,8 @@ mod tests {
             "real_c11_atomic_execution",
             "real_exit_execution",
             "real_errno_execution",
+            "real_startup_execution",
+            "real_getauxval_execution",
             "text_fetch_decode",
         ] {
             assert_eq!(stages[stage].0, "tested", "{stage} should be tested");
@@ -2437,6 +2469,7 @@ mod tests {
         assert!(inst_printer.contains("case LNP64::MMAP"));
         assert!(inst_printer.contains("case LNP64::MUNMAP"));
         assert!(inst_printer.contains("case LNP64::MPROTECT"));
+        assert!(inst_printer.contains("case LNP64::ENV_GET"));
         assert!(inst_printer.contains("case LNP64::LA"));
         assert!(inst_printer.contains("case LNP64::AUIPC"));
         assert!(inst_printer.contains("case LNP64::LI32"));
@@ -2454,6 +2487,7 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::MMAP"));
         assert!(mc_emitter.contains("case LNP64::MUNMAP"));
         assert!(mc_emitter.contains("case LNP64::MPROTECT"));
+        assert!(mc_emitter.contains("case LNP64::ENV_GET"));
         assert!(mc_emitter.contains("fixup_lnp64_pcrel32"));
         assert!(mc_emitter.contains("fixup_lnp64_abs32"));
         assert!(mc_emitter.contains("case LNP64::LD_W"));
@@ -2482,6 +2516,7 @@ mod tests {
         assert!(asm_parser.contains(r#".Case("mmap", LNP64::MMAP)"#));
         assert!(asm_parser.contains(r#".Case("munmap", LNP64::MUNMAP)"#));
         assert!(asm_parser.contains(r#".Case("mprotect", LNP64::MPROTECT)"#));
+        assert!(asm_parser.contains(r#".Case("env_get", LNP64::ENV_GET)"#));
         assert!(asm_parser.contains(r#".Case("ld.w", LNP64::LD_W)"#));
         assert!(asm_parser.contains(r#".Case("ld.h", LNP64::LD_H)"#));
         assert!(disassembler.contains("LLVMInitializeLNP64Disassembler"));
@@ -2511,6 +2546,7 @@ mod tests {
         assert!(disassembler.contains("Instr.setOpcode(LNP64::MMAP)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::MUNMAP)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::MPROTECT)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::ENV_GET)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::LD_W)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::LD_H)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::ST_B)"));
@@ -4066,6 +4102,7 @@ mod tests {
         assert!(mc_manifest.contains("fixed32_mem_base_simm"));
         assert!(mc_manifest.contains("simm24_words[23:0]"));
         assert!(mc_manifest.contains("fixed32_mmap_bootstrap_control"));
+        assert!(mc_manifest.contains("fixed32_env_get_control"));
         assert!(mc_manifest.contains("Final __lnp_mmap remains blocked"));
         assert!(mc_manifest.contains("F9 argument-block encoding"));
 
@@ -4122,6 +4159,7 @@ mod tests {
             "heap_rrr",
             "heap_reg",
             "mmap_bootstrap_control",
+            "env_get_control",
             "native_primitives",
             "native_control_rr",
         ] {
@@ -4181,6 +4219,7 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::FUTEX_WAKE"));
         assert!(mc_emitter.contains("case LNP64::FENCE"));
         assert!(mc_emitter.contains("case LNP64::ISYNC"));
+        assert!(mc_emitter.contains("case LNP64::ENV_GET"));
         assert!(mc_emitter.contains("encodeFixed32RRRR"));
         assert!(mc_emitter.contains("case LNP64::SEXT_B"));
         assert!(mc_emitter.contains("case LNP64::ZEXT_W"));

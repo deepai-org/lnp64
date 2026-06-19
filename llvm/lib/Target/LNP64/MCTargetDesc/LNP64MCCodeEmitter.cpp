@@ -647,6 +647,13 @@ public:
                                  getGPRNo(MI.getOperand(3))),
                OS);
       return;
+    case LNP64::ENV_GET:
+      emitLE32(encodeFixed32RRRR(0x56, getGPRNo(MI.getOperand(0)),
+                                 getGPRNo(MI.getOperand(1)),
+                                 getGPRNo(MI.getOperand(2)),
+                                 getGPRNo(MI.getOperand(3))),
+               OS);
+      return;
     case LNP64::ALLOC_EX:
       emitLE32(encodeFixed32RRR(0x4a, getGPRNo(MI.getOperand(0)),
                                 getGPRNo(MI.getOperand(1)),

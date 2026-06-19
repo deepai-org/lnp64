@@ -348,6 +348,13 @@ public:
       addReg(Instr, B);
       addReg(Instr, C);
       return MCDisassembler::Success;
+    case 0x56:
+      Instr.setOpcode(LNP64::ENV_GET);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      addReg(Instr, (Word >> 4) & 0x1f);
+      return MCDisassembler::Success;
     case 0xcb:
       Instr.setOpcode(LNP64::FUTEX_WAIT);
       addReg(Instr, A);

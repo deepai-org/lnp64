@@ -1599,6 +1599,7 @@ impl Machine {
             0x4d => Instr::AwaitDyn(a, b, c),
             0x4e => Instr::CallCapDyn(a, b, c, Reg(((word >> 4) & 0x1f) as usize)),
             0x4f => Instr::RetCap(a, b, c),
+            0x56 => Instr::EnvGet(a, b, c, d),
             0x60 => Instr::MmapBootstrap(a, b, c, d),
             0x61 => Instr::MunmapBootstrap(a, b),
             0x66 => Instr::MprotectBootstrap(a, b, c, d),
@@ -14332,6 +14333,37 @@ mod tests {
         put_instruction(&mut text, 20, encode_rrrr(0x66, 5, 3, 1, 4));
         put_instruction(&mut text, 24, encode_rr(0x61, 6, 3));
         put_instruction(&mut text, 28, encode_reg(0x3a, 6));
+        let mut prepared = prepared_exec_vmas_fixture();
+        prepared[0].bytes = text;
+        let mut machine = Machine::new(empty_program());
+
+        machine
+            .commit_exec_descriptor_memory_image(&words, &prepared)
+            .unwrap();
+        let exit = machine.run_committed_exec().unwrap();
+
+        assert_eq!(exit, 0);
+    }
+
+    #[test]
+    fn committed_exec_decodes_and_runs_env_get() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let words = encode_exec_descriptor(&descriptor);
+        let mut text = vec![0; 0x1000];
+        put_instruction(&mut text, 0, encode_ri(0x01, 2, ENV_KEY_PAGE_SIZE as i64));
+        put_instruction(&mut text, 4, encode_rrrr(0x56, 1, 2, 0, 0));
+        put_instruction(&mut text, 8, encode_ri(0x01, 3, ASLR_PAGE as i64));
+        put_instruction(&mut text, 12, encode_rrr(0x11, 1, 1, 3));
+        put_instruction(&mut text, 16, encode_reg(0x3a, 1));
         let mut prepared = prepared_exec_vmas_fixture();
         prepared[0].bytes = text;
         let mut machine = Machine::new(empty_program());

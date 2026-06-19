@@ -123,6 +123,20 @@ grep -q 'exit=0' <<<"$argc_output"
 printf 'real LLVM LNP64 run-elf argc execution passed: %s\n' \
   "$argc_probe"
 
+startup_probe="target/llvm-lnp64-build/lnp64-startup-linked.elf"
+cargo run --quiet -- elf-plan "$startup_probe" >/dev/null
+startup_output="$(cargo run --quiet -- run-elf "$startup_probe")"
+grep -q 'exit=0' <<<"$startup_output"
+printf 'real LLVM LNP64 run-elf startup argv/envp execution passed: %s\n' \
+  "$startup_probe"
+
+getauxval_probe="target/llvm-lnp64-build/lnp64-getauxval-linked.elf"
+cargo run --quiet -- elf-plan "$getauxval_probe" >/dev/null
+getauxval_output="$(cargo run --quiet -- run-elf "$getauxval_probe")"
+grep -q 'exit=0' <<<"$getauxval_output"
+printf 'real LLVM LNP64 run-elf getauxval execution passed: %s\n' \
+  "$getauxval_probe"
+
 scalar_arith_probe="target/llvm-lnp64-build/lnp64-scalar-arith-linked.elf"
 cargo run --quiet -- elf-plan "$scalar_arith_probe" >/dev/null
 scalar_arith_output="$(cargo run --quiet -- run-elf "$scalar_arith_probe")"

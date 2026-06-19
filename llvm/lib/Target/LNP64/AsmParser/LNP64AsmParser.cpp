@@ -372,6 +372,7 @@ private:
             .Case("mmap", LNP64::MMAP)
             .Case("munmap", LNP64::MUNMAP)
             .Case("mprotect", LNP64::MPROTECT)
+            .Case("env_get", LNP64::ENV_GET)
             .Case("object_ctl", LNP64::OBJECT_CTL)
             .Case("domain_ctl", LNP64::DOMAIN_CTL)
             .Case("await", LNP64::AWAIT)
@@ -462,7 +463,7 @@ private:
       return addRegRegRegReg(Inst, Operands);
     if (Opcode == LNP64::AWAIT || Opcode == LNP64::GATE_CALL ||
         Opcode == LNP64::GATE_RETURN || Opcode == LNP64::MMAP ||
-        Opcode == LNP64::MPROTECT ||
+        Opcode == LNP64::MPROTECT || Opcode == LNP64::ENV_GET ||
         Opcode == LNP64::PULL || Opcode == LNP64::PUSH)
       return addRegRegRegReg(Inst, Operands);
     if (Opcode == LNP64::LD || Opcode == LNP64::LD_W ||

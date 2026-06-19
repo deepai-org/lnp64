@@ -33,6 +33,7 @@ heap_rr|fixed32_rr|ALLOC,ALLOC_SIZE|gpr_dst,gpr_size_or_ptr|none|LNP64InstrInfo.
 heap_rrr|fixed32_rrr|ALLOC_EX|gpr_dst,gpr_size,gpr_align|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
 heap_reg|fixed32_reg_or_none|FREE|gpr_ptr|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
 mmap_bootstrap_control|fixed32_mmap_bootstrap_control|MMAP,MUNMAP,MPROTECT|MMAP/MPROTECT:gpr_result,gpr_addr,gpr_len,gpr_prot;MUNMAP:gpr_result,gpr_addr|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
+env_get_control|fixed32_env_get_control|ENV_GET|gpr_result,gpr_key,gpr_index_or_buf,gpr_len_or_flags|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
 native_primitives|fixed32_native4|PULL,PUSH,AWAIT,GATE_CALL,GATE_RETURN|gpr_result,gpr_cap,gpr_arg0,gpr_arg1|R_LNP64_CAP_DESC64,R_LNP64_CALLGATE64|LNP64InstrInfo.td,LNP64ISelLowering.cpp,LNP64AsmParser.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64InstPrinter.cpp
 native_control_rr|fixed32_rr|OBJECT_CTL,DOMAIN_CTL|gpr_result,gpr_argblock|none|LNP64InstrInfo.td,LNP64ISelLowering.cpp,LNP64AsmParser.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64InstPrinter.cpp
 native_control_planned|fixed32_native|CAP_SEND,CAP_RECV,CAP_DUP,CAP_REVOKE|gpr_fdr_or_capability_operands|R_LNP64_CAP_DESC64,R_LNP64_CALLGATE64|LNP64InstrInfo.td,LNP64ISelLowering.cpp,LNP64AsmParser.cpp

@@ -240,6 +240,25 @@ ASM
   printf 'real LLVM LNP64 llvm-mc mmap opcode smoke passed: %s\n' \
     "$mmap_mc_obj"
 
+  env_get_asm="$build_dir/env-get-mc-smoke.s"
+  cat >"$env_get_asm" <<'ASM'
+  .text
+  .globl _start
+_start:
+  env_get r1, r2, r3, r4
+  ret
+ASM
+  env_get_mc_obj="$build_dir/env-get-mc-smoke.o"
+  "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$env_get_asm" \
+    -o "$env_get_mc_obj"
+  test -s "$env_get_mc_obj"
+  env_get_mc_dump="$build_dir/env-get-mc-smoke.dump"
+  "$llvm_objdump" -d --triple=lnp64-unknown-none "$env_get_mc_obj" \
+    >"$env_get_mc_dump"
+  grep -q 'env_get r1, r2, r3, r4' "$env_get_mc_dump"
+  printf 'real LLVM LNP64 llvm-mc env_get opcode smoke passed: %s\n' \
+    "$env_get_mc_obj"
+
   atomic_asm="$build_dir/atomic-mc-smoke.s"
   cat >"$atomic_asm" <<'ASM'
   .text
@@ -1066,6 +1085,20 @@ grep -q 'ret' "$libc_errno_impl_dump"
 printf 'real LLVM LNP64 clang minilibc errno implementation object smoke passed: %s\n' \
   "$libc_errno_impl_obj"
 
+libc_startup_impl_c="toolchain/liblnp64_startup_min.c"
+libc_startup_impl_obj="$build_dir/liblnp64-startup-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$libc_startup_impl_c" -o "$libc_startup_impl_obj"
+test -s "$libc_startup_impl_obj"
+libc_startup_impl_dump="$build_dir/liblnp64-startup-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_startup_impl_obj" \
+  >"$libc_startup_impl_dump"
+grep -q 'env_get r' "$libc_startup_impl_dump"
+grep -q 'ret' "$libc_startup_impl_dump"
+printf 'real LLVM LNP64 clang minilibc startup implementation object smoke passed: %s\n' \
+  "$libc_startup_impl_obj"
+
 libc_vma_impl_c="toolchain/liblnp64_vma_min.c"
 libc_vma_impl_obj="$build_dir/liblnp64-vma-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
@@ -1147,6 +1180,63 @@ argc_dump="$build_dir/argc-clang-smoke.dump"
 grep -q '<main>:' "$argc_dump"
 grep -q 'ret' "$argc_dump"
 printf 'real LLVM LNP64 clang argc object smoke passed: %s\n' "$argc_obj"
+
+startup_c="$build_dir/startup-smoke.c"
+cat >"$startup_c" <<'C'
+int main(int argc, char **argv, char **envp) {
+  if (argc != 0)
+    return 1;
+  if (!argv || argv[0] != 0)
+    return 2;
+  if (!envp || envp[0] != 0)
+    return 3;
+  return 0;
+}
+C
+
+startup_obj="$build_dir/startup-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$startup_c" -o "$startup_obj"
+test -s "$startup_obj"
+startup_dump="$build_dir/startup-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$startup_obj" >"$startup_dump"
+grep -q '<main>:' "$startup_dump"
+grep -q 'ld ' "$startup_dump"
+printf 'real LLVM LNP64 clang startup argv/envp object smoke passed: %s\n' \
+  "$startup_obj"
+
+getauxval_c="$build_dir/getauxval-smoke.c"
+cat >"$getauxval_c" <<'C'
+unsigned long getauxval(unsigned long type);
+
+enum {
+  AT_PAGESZ = 6,
+  AT_HWCAP = 16,
+};
+
+int main(void) {
+  if (getauxval(AT_PAGESZ) != 4096)
+    return 1;
+  if (getauxval(AT_HWCAP) == 0)
+    return 2;
+  if (getauxval(9999) != 0)
+    return 3;
+  return 0;
+}
+C
+
+getauxval_obj="$build_dir/getauxval-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$getauxval_c" -o "$getauxval_obj"
+test -s "$getauxval_obj"
+getauxval_dump="$build_dir/getauxval-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$getauxval_obj" \
+  >"$getauxval_dump"
+grep -q 'call ' "$getauxval_dump"
+printf 'real LLVM LNP64 clang getauxval object smoke passed: %s\n' \
+  "$getauxval_obj"
 
 compare_c="$build_dir/compare-smoke.c"
 cat >"$compare_c" <<'C'
@@ -1701,6 +1791,25 @@ grep -q 'munmap r5, r6' "$mmap_mc_dump"
 grep -q 'mprotect r7, r8, r9, r10' "$mmap_mc_dump"
 printf 'real LLVM LNP64 llvm-mc mmap opcode smoke passed: %s\n' "$mmap_mc_obj"
 
+env_get_asm="$build_dir/env-get-mc-smoke.s"
+cat >"$env_get_asm" <<'ASM'
+  .text
+  .globl _start
+_start:
+  env_get r1, r2, r3, r4
+  ret
+ASM
+env_get_mc_obj="$build_dir/env-get-mc-smoke.o"
+"$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$env_get_asm" \
+  -o "$env_get_mc_obj"
+test -s "$env_get_mc_obj"
+env_get_mc_dump="$build_dir/env-get-mc-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$env_get_mc_obj" \
+  >"$env_get_mc_dump"
+grep -q 'env_get r1, r2, r3, r4' "$env_get_mc_dump"
+printf 'real LLVM LNP64 llvm-mc env_get opcode smoke passed: %s\n' \
+  "$env_get_mc_obj"
+
 atomic_asm="$build_dir/atomic-mc-smoke.s"
 cat >"$atomic_asm" <<'ASM'
   .text
@@ -1891,6 +2000,20 @@ argc_elf="$build_dir/lnp64-argc-linked.elf"
   -o "$argc_elf" "$crt0_obj" "$argc_obj"
 test -s "$argc_elf"
 printf 'real LLVM LNP64 lld argc link smoke passed: %s\n' "$argc_elf"
+
+startup_elf="$build_dir/lnp64-startup-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$startup_elf" "$crt0_obj" "$startup_obj"
+test -s "$startup_elf"
+printf 'real LLVM LNP64 lld startup argv/envp link smoke passed: %s\n' \
+  "$startup_elf"
+
+getauxval_elf="$build_dir/lnp64-getauxval-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$getauxval_elf" "$crt0_obj" "$getauxval_obj" "$libc_startup_impl_obj"
+test -s "$getauxval_elf"
+printf 'real LLVM LNP64 lld getauxval link smoke passed: %s\n' \
+  "$getauxval_elf"
 
 scalar_arith_elf="$build_dir/lnp64-scalar-arith-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
