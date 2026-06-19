@@ -4127,6 +4127,7 @@ mod tests {
             "randomized_emulator",
             "adversarial_fault",
             "package_tests",
+            "llvm_package_tests",
             "netbsd_personality",
             "llvm_built_versions",
             "aggregate_hygiene",
@@ -4146,12 +4147,19 @@ mod tests {
             categories["llvm_built_versions"].2,
             "scripts/run_real_llvm_lnp64_docker.sh"
         );
+        assert_eq!(
+            categories["llvm_package_tests"].2,
+            "scripts/run_real_llvm_lnp64_docker.sh"
+        );
+        assert!(categories["llvm_package_tests"].3.contains("zlib"));
+        assert!(categories["llvm_package_tests"].3.contains("cwalk"));
         for category in [
             "asm_demos",
             "c_tests",
             "randomized_emulator",
             "adversarial_fault",
             "package_tests",
+            "llvm_package_tests",
             "netbsd_personality",
             "aggregate_hygiene",
         ] {
