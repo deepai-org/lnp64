@@ -691,11 +691,15 @@ module lnp64_cap_engine(
     output logic rsp_valid,
     input logic rsp_ready,
     output lnp64_rsp_t rsp,
+    output logic m1_commit_valid,
+    output lnp64_m1_cap_commit_t m1_commit,
     output logic [31:0] telemetry_counter,
     output logic [31:0] fault_counter
 );
     logic have_rsp;
     lnp64_rsp_t rsp_reg;
+    logic m1_commit_valid_reg;
+    lnp64_m1_cap_commit_t m1_commit_reg;
     logic fdr_valid [0:LNP64_FDR_SLOT_COUNT-1];
     logic fdr_revoked [0:LNP64_FDR_SLOT_COUNT-1];
     logic [63:0] fdr_generation [0:LNP64_FDR_SLOT_COUNT-1];
@@ -711,6 +715,8 @@ module lnp64_cap_engine(
     assign cmd_ready = reset_n && !have_rsp;
     assign rsp_valid = have_rsp;
     assign rsp = rsp_reg;
+    assign m1_commit_valid = m1_commit_valid_reg;
+    assign m1_commit = m1_commit_reg;
 
     function automatic int unsigned cap_fd(input logic [63:0] value);
         logic [63:0] fd_bits;
@@ -752,6 +758,8 @@ module lnp64_cap_engine(
         if (!reset_n) begin
             have_rsp <= 1'b0;
             rsp_reg <= '0;
+            m1_commit_valid_reg <= 1'b0;
+            m1_commit_reg <= '0;
             telemetry_counter <= 32'd0;
             fault_counter <= 32'd0;
             cap_queue_valid <= 1'b0;
@@ -770,6 +778,7 @@ module lnp64_cap_engine(
         end else begin
             if (have_rsp && rsp_ready) begin
                 have_rsp <= 1'b0;
+                m1_commit_valid_reg <= 1'b0;
             end
             if (object_cap_sync_valid) begin
                 if (object_cap_sync_reader_fd < LNP64_FDR_SLOT_COUNT) begin
@@ -814,8 +823,24 @@ module lnp64_cap_engine(
                 logic [63:0] revoke_count;
 
                 have_rsp <= 1'b1;
+                m1_commit_valid_reg <=
+                    cmd.opcode == LNP64_OP_CAP_DUP ||
+                    cmd.opcode == LNP64_OP_CAP_SEND ||
+                    cmd.opcode == LNP64_OP_CAP_RECV ||
+                    cmd.opcode == LNP64_OP_CAP_REVOKE;
                 telemetry_counter <= telemetry_counter + 32'd1;
                 rsp_reg <= '0;
+                m1_commit_reg <= '0;
+                unique case (cmd.opcode)
+                    LNP64_OP_CAP_DUP: m1_commit_reg.op <= LNP64_M1_COMMIT_CAP_DUP;
+                    LNP64_OP_CAP_SEND: m1_commit_reg.op <= LNP64_M1_COMMIT_CAP_SEND;
+                    LNP64_OP_CAP_RECV: m1_commit_reg.op <= LNP64_M1_COMMIT_CAP_RECV;
+                    LNP64_OP_CAP_REVOKE: m1_commit_reg.op <= LNP64_M1_COMMIT_CAP_REVOKE;
+                    default: m1_commit_reg.op <= 8'd0;
+                endcase
+                m1_commit_reg.domain_id <= cmd.domain_id;
+                m1_commit_reg.domain_gen <= cmd.domain_gen;
+                m1_commit_reg.status <= LNP64_ERR_ENOTSUP;
                 rsp_reg.op_id <= cmd.op_id;
                 rsp_reg.tile_id <= cmd.tile_id;
                 rsp_reg.pid <= cmd.pid;
@@ -841,19 +866,30 @@ module lnp64_cap_engine(
                         (!fdr_valid[src_fd] || fdr_revoked[src_fd] || !src_generation_matches);
                     dup_rights = (cmd.rights_mask == 64'd0 && src_fd < LNP64_FDR_SLOT_COUNT) ?
                         fdr_rights[src_fd] : cmd.rights_mask;
+                    if (src_fd < LNP64_FDR_SLOT_COUNT) begin
+                        m1_commit_reg.object_id <= fdr_lineage[src_fd][31:0];
+                        m1_commit_reg.object_gen <= fdr_generation[src_fd][31:0];
+                        m1_commit_reg.fdr_gen <= fdr_generation[src_fd][31:0];
+                        m1_commit_reg.rights_mask <= fdr_rights[src_fd];
+                        m1_commit_reg.lineage_epoch <= fdr_lineage[src_fd][31:0];
+                    end
                     if (cmd.flags & ~LNP64_CAP_DUP_FLAG_SEAL) begin
                         rsp_reg.errno_value <= LNP64_ERR_EINVAL;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
+                        m1_commit_reg.status <= LNP64_ERR_EINVAL;
                     end else if (src_stale) begin
                         rsp_reg.errno_value <= LNP64_ERR_ESTALE;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
+                        m1_commit_reg.status <= LNP64_ERR_ESTALE;
                     end else if (!src_live || dst_fd >= LNP64_FDR_SLOT_COUNT) begin
                         rsp_reg.errno_value <= LNP64_ERR_EBADF;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
+                        m1_commit_reg.status <= LNP64_ERR_EBADF;
                     end else if ((fdr_rights[src_fd] & LNP64_CAP_RIGHT_DUP) == 64'd0 ||
                         ((dup_rights & ~fdr_rights[src_fd]) != 64'd0)) begin
                         rsp_reg.errno_value <= LNP64_ERR_EPERM;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
+                        m1_commit_reg.status <= LNP64_ERR_EPERM;
                     end else begin
                         next_generation = fdr_generation[dst_fd] + 64'd1;
                         fdr_valid[dst_fd] <= 1'b1;
@@ -865,6 +901,13 @@ module lnp64_cap_engine(
                         rsp_reg.result_value <= cap_token(dst_fd, next_generation);
                         rsp_reg.errno_value <= LNP64_ERR_OK;
                         rsp_reg.status <= LNP64_STATUS_OK;
+                        m1_commit_reg.object_id <= fdr_lineage[src_fd][31:0];
+                        m1_commit_reg.object_gen <= next_generation[31:0];
+                        m1_commit_reg.fdr_gen <= next_generation[31:0];
+                        m1_commit_reg.rights_mask <= dup_rights;
+                        m1_commit_reg.lineage_epoch <= fdr_lineage[src_fd][31:0];
+                        m1_commit_reg.sealed <= (cmd.flags & LNP64_CAP_DUP_FLAG_SEAL) != 64'd0;
+                        m1_commit_reg.status <= LNP64_ERR_OK;
                     end
                 end else if (cmd.opcode == LNP64_OP_CAP_SEND) begin
                     src_fd = cap_fd(cmd.arg0);
@@ -880,6 +923,7 @@ module lnp64_cap_engine(
                     if (cmd.flags != 64'd0) begin
                         rsp_reg.errno_value <= LNP64_ERR_EINVAL;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
+                        m1_commit_reg.status <= LNP64_ERR_EINVAL;
                     end else if (!src_live ||
                         fdr_kind[src_fd] != LNP64_FDR_KIND_PIPE_WRITER ||
                         ((fdr_rights[src_fd] &
@@ -887,15 +931,19 @@ module lnp64_cap_engine(
                             (LNP64_CAP_RIGHT_TRANSFER | 64'd2))) begin
                         rsp_reg.errno_value <= LNP64_ERR_EBADF;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
+                        m1_commit_reg.status <= LNP64_ERR_EBADF;
                     end else if (!payload_live) begin
                         rsp_reg.errno_value <= LNP64_ERR_EBADF;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
+                        m1_commit_reg.status <= LNP64_ERR_EBADF;
                     end else if ((fdr_rights[payload_fd] & LNP64_CAP_RIGHT_TRANSFER) == 64'd0) begin
                         rsp_reg.errno_value <= LNP64_ERR_EPERM;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
+                        m1_commit_reg.status <= LNP64_ERR_EPERM;
                     end else if (cap_queue_valid) begin
                         rsp_reg.errno_value <= LNP64_ERR_EAGAIN;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
+                        m1_commit_reg.status <= LNP64_ERR_EAGAIN;
                     end else begin
                         cap_queue_valid <= 1'b1;
                         cap_queue_rights <= fdr_rights[payload_fd];
@@ -905,6 +953,14 @@ module lnp64_cap_engine(
                         rsp_reg.result_value <= 64'd1;
                         rsp_reg.errno_value <= LNP64_ERR_OK;
                         rsp_reg.status <= LNP64_STATUS_OK;
+                        m1_commit_reg.status <= LNP64_ERR_OK;
+                    end
+                    if (payload_fd < LNP64_FDR_SLOT_COUNT) begin
+                        m1_commit_reg.object_id <= fdr_lineage[payload_fd][31:0];
+                        m1_commit_reg.object_gen <= fdr_generation[payload_fd][31:0];
+                        m1_commit_reg.fdr_gen <= fdr_generation[payload_fd][31:0];
+                        m1_commit_reg.rights_mask <= fdr_rights[payload_fd];
+                        m1_commit_reg.lineage_epoch <= fdr_lineage[payload_fd][31:0];
                     end
                 end else if (cmd.opcode == LNP64_OP_CAP_RECV) begin
                     src_fd = cap_fd(cmd.arg0);
@@ -919,6 +975,7 @@ module lnp64_cap_engine(
                     if (cmd.flags != 64'd0) begin
                         rsp_reg.errno_value <= LNP64_ERR_EINVAL;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
+                        m1_commit_reg.status <= LNP64_ERR_EINVAL;
                     end else if (!src_live ||
                         fdr_kind[src_fd] != LNP64_FDR_KIND_PIPE_READER ||
                         ((fdr_rights[src_fd] &
@@ -926,18 +983,23 @@ module lnp64_cap_engine(
                             (LNP64_CAP_RIGHT_TRANSFER | 64'd1))) begin
                         rsp_reg.errno_value <= LNP64_ERR_EBADF;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
+                        m1_commit_reg.status <= LNP64_ERR_EBADF;
                     end else if (!cap_queue_valid) begin
                         rsp_reg.errno_value <= LNP64_ERR_EAGAIN;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
+                        m1_commit_reg.status <= LNP64_ERR_EAGAIN;
                     end else if (cap_queue_revoked) begin
                         rsp_reg.errno_value <= LNP64_ERR_ESTALE;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
+                        m1_commit_reg.status <= LNP64_ERR_ESTALE;
                     end else if ((recv_rights & ~cap_queue_rights) != 64'd0) begin
                         rsp_reg.errno_value <= LNP64_ERR_EPERM;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
+                        m1_commit_reg.status <= LNP64_ERR_EPERM;
                     end else if (dst_fd >= LNP64_FDR_SLOT_COUNT) begin
                         rsp_reg.errno_value <= LNP64_ERR_EBADF;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
+                        m1_commit_reg.status <= LNP64_ERR_EBADF;
                     end else begin
                         next_generation = fdr_generation[dst_fd] + 64'd1;
                         cap_queue_valid <= 1'b0;
@@ -951,6 +1013,14 @@ module lnp64_cap_engine(
                         rsp_reg.result_value <= cap_token(dst_fd, next_generation);
                         rsp_reg.errno_value <= LNP64_ERR_OK;
                         rsp_reg.status <= LNP64_STATUS_OK;
+                        m1_commit_reg.object_gen <= next_generation[31:0];
+                        m1_commit_reg.fdr_gen <= next_generation[31:0];
+                        m1_commit_reg.status <= LNP64_ERR_OK;
+                    end
+                    if (cap_queue_valid) begin
+                        m1_commit_reg.object_id <= cap_queue_lineage[31:0];
+                        m1_commit_reg.rights_mask <= recv_rights;
+                        m1_commit_reg.lineage_epoch <= cap_queue_lineage[31:0];
                     end
                 end else if (cmd.opcode == LNP64_OP_CAP_REVOKE) begin
                     src_fd = cap_fd(cmd.arg0);
@@ -976,10 +1046,19 @@ module lnp64_cap_engine(
                             revoke_count = revoke_count + 64'd1;
                         end
                     end
+                    if (src_fd < LNP64_FDR_SLOT_COUNT) begin
+                        m1_commit_reg.object_id <= fdr_lineage[src_fd][31:0];
+                        m1_commit_reg.object_gen <= fdr_generation[src_fd][31:0];
+                        m1_commit_reg.fdr_gen <= fdr_generation[src_fd][31:0];
+                        m1_commit_reg.rights_mask <= fdr_rights[src_fd];
+                        m1_commit_reg.lineage_epoch <= fdr_lineage[src_fd][31:0];
+                    end
                     if (src_stale) begin
                         rsp_reg.errno_value <= LNP64_ERR_ESTALE;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
+                        m1_commit_reg.status <= LNP64_ERR_ESTALE;
                     end else if (src_live && ((fdr_rights[src_fd] & LNP64_CAP_RIGHT_REVOKE) != 64'd0)) begin
+                        next_generation = fdr_generation[src_fd] + 64'd1;
                         for (i = 0; i < LNP64_FDR_SLOT_COUNT; i = i + 1) begin
                             if (fdr_valid[i] && !fdr_revoked[i] &&
                                 fdr_lineage[i] == fdr_lineage[src_fd]) begin
@@ -994,14 +1073,19 @@ module lnp64_cap_engine(
                         rsp_reg.result_value <= revoke_count;
                         rsp_reg.errno_value <= LNP64_ERR_OK;
                         rsp_reg.status <= LNP64_STATUS_OK;
+                        m1_commit_reg.object_gen <= next_generation[31:0];
+                        m1_commit_reg.fdr_gen <= next_generation[31:0];
+                        m1_commit_reg.status <= LNP64_ERR_OK;
                     end else if (src_fd < LNP64_FDR_SLOT_COUNT && fdr_valid[src_fd] &&
                         !fdr_revoked[src_fd] &&
                         ((fdr_rights[src_fd] & LNP64_CAP_RIGHT_REVOKE) == 64'd0)) begin
                         rsp_reg.errno_value <= LNP64_ERR_EPERM;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
+                        m1_commit_reg.status <= LNP64_ERR_EPERM;
                     end else begin
                         rsp_reg.errno_value <= LNP64_ERR_EBADF;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
+                        m1_commit_reg.status <= LNP64_ERR_EBADF;
                     end
                 end
             end

@@ -90,7 +90,10 @@ module lnp64_top #(
     logic [CORE_TILE_COUNT-1:0] park_submit_valid_vec;
     logic [CORE_TILE_COUNT-1:0] submit_valid_vec;
     lnp64_retire_submit_t retire_submit_record_vec [CORE_TILE_COUNT];
+    lnp64_m1_cap_commit_t core_m1_commit_vec [CORE_TILE_COUNT];
     lnp64_m1_cap_commit_t m1_commit_vec [CORE_TILE_COUNT];
+    lnp64_m1_cap_commit_t cap_m1_commit_latched_vec [CORE_TILE_COUNT];
+    logic [CORE_TILE_COUNT-1:0] cap_m1_commit_latched_valid_vec;
     lnp64_m1_state_projection_t m1_pre_state_projection_vec [CORE_TILE_COUNT];
     lnp64_m1_state_projection_t m1_state_projection_vec [CORE_TILE_COUNT];
     lnp64_thread_sched_t park_submit_record_vec [CORE_TILE_COUNT];
@@ -158,6 +161,8 @@ module lnp64_top #(
     logic cap_rsp_valid;
     logic cap_rsp_ready;
     lnp64_rsp_t cap_rsp;
+    logic cap_m1_commit_valid;
+    lnp64_m1_cap_commit_t cap_m1_commit;
     logic object_cmd_valid;
     logic object_cmd_ready;
     lnp64_cmd_t object_cmd;
@@ -317,7 +322,7 @@ module lnp64_top #(
                 .retire_submit_valid(retire_submit_valid_vec[tile_id]),
                 .retire_submit_record(retire_submit_record_vec[tile_id]),
                 .m1_commit_valid(m1_commit_valid_vec[tile_id]),
-                .m1_commit(m1_commit_vec[tile_id]),
+                .m1_commit(core_m1_commit_vec[tile_id]),
                 .m1_pre_state_projection(m1_pre_state_projection_vec[tile_id]),
                 .m1_state_projection(m1_state_projection_vec[tile_id]),
                 .park_submit_valid(park_submit_valid_vec[tile_id]),
@@ -344,6 +349,8 @@ module lnp64_top #(
                 .unsupported_failed_closed(unsupported_failed_closed_vec[tile_id]),
                 .raw_authority_visible(core_raw_authority_visible_vec[tile_id])
             );
+            assign m1_commit_vec[tile_id] = cap_m1_commit_latched_valid_vec[tile_id] ?
+                cap_m1_commit_latched_vec[tile_id] : core_m1_commit_vec[tile_id];
 
             lnp64_issue_retire issue_retire_i(
                 .clk(clk),
@@ -397,6 +404,20 @@ module lnp64_top #(
             if (core_rsp_valid_vec[rsp_i]) begin
                 core_rsp_ready = core_rsp_ready | core_rsp_ready_vec[rsp_i];
             end
+        end
+    end
+
+    integer m1_latch_i;
+    always_ff @(posedge clk or negedge logic_reset_n) begin
+        if (!logic_reset_n) begin
+            cap_m1_commit_latched_valid_vec <= '0;
+            for (m1_latch_i = 0; m1_latch_i < CORE_TILE_COUNT; m1_latch_i = m1_latch_i + 1) begin
+                cap_m1_commit_latched_vec[m1_latch_i] <= '0;
+            end
+        end else if (cap_rsp_valid && cap_rsp_ready && cap_m1_commit_valid &&
+            cap_rsp.tile_id < CORE_TILE_COUNT[31:0]) begin
+            cap_m1_commit_latched_valid_vec[cap_rsp.tile_id] <= 1'b1;
+            cap_m1_commit_latched_vec[cap_rsp.tile_id] <= cap_m1_commit;
         end
     end
 
@@ -549,7 +570,7 @@ module lnp64_top #(
     lnp64_sd_spi_flash sd_spi_i(.clk(clk), .reset_n(logic_reset_n), .absent_or_idle(sd_spi_absent_or_idle), .telemetry_counter(), .fault_counter());
     lnp64_boot_image_storage boot_image_i(.clk(clk), .reset_n(logic_reset_n), .idle(boot_image_idle), .telemetry_counter(), .fault_counter());
 
-    lnp64_cap_engine cap_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(cap_cmd_valid), .cmd_ready(cap_cmd_ready), .cmd(cap_cmd), .object_cap_sync_valid(object_cap_sync_valid), .object_cap_sync_reader_fd(object_cap_sync_reader_fd), .object_cap_sync_writer_fd(object_cap_sync_writer_fd), .object_cap_sync_single_valid(object_cap_sync_single_valid), .object_cap_sync_single_fd(object_cap_sync_single_fd), .object_cap_sync_single_kind(object_cap_sync_single_kind), .object_cap_sync_single_lineage(object_cap_sync_single_lineage), .rsp_valid(cap_rsp_valid), .rsp_ready(cap_rsp_ready), .rsp(cap_rsp), .telemetry_counter(), .fault_counter());
+    lnp64_cap_engine cap_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(cap_cmd_valid), .cmd_ready(cap_cmd_ready), .cmd(cap_cmd), .object_cap_sync_valid(object_cap_sync_valid), .object_cap_sync_reader_fd(object_cap_sync_reader_fd), .object_cap_sync_writer_fd(object_cap_sync_writer_fd), .object_cap_sync_single_valid(object_cap_sync_single_valid), .object_cap_sync_single_fd(object_cap_sync_single_fd), .object_cap_sync_single_kind(object_cap_sync_single_kind), .object_cap_sync_single_lineage(object_cap_sync_single_lineage), .rsp_valid(cap_rsp_valid), .rsp_ready(cap_rsp_ready), .rsp(cap_rsp), .m1_commit_valid(cap_m1_commit_valid), .m1_commit(cap_m1_commit), .telemetry_counter(), .fault_counter());
     lnp64_domain_engine domain_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(domain_cmd_valid), .cmd_ready(domain_cmd_ready), .cmd(domain_cmd), .rsp_valid(domain_rsp_valid), .rsp_ready(domain_rsp_ready), .rsp(domain_rsp), .telemetry_counter(), .fault_counter());
     lnp64_object_engine object_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(object_cmd_valid), .cmd_ready(object_cmd_ready), .cmd(object_cmd), .rsp_valid(object_rsp_valid), .rsp_ready(object_rsp_ready), .rsp(object_rsp), .cap_sync_valid(object_cap_sync_valid), .cap_sync_reader_fd(object_cap_sync_reader_fd), .cap_sync_writer_fd(object_cap_sync_writer_fd), .cap_sync_single_valid(object_cap_sync_single_valid), .cap_sync_single_fd(object_cap_sync_single_fd), .cap_sync_single_kind(object_cap_sync_single_kind), .cap_sync_single_lineage(object_cap_sync_single_lineage), .telemetry_counter(), .fault_counter());
     lnp64_gate_engine gate_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());
