@@ -563,6 +563,140 @@ def require_top_state_records(
                 )
 
 
+def rights_subset(child: int, parent: int) -> bool:
+    return (child & ~parent) == 0
+
+
+def check_top_m1_projection_matches_commit(
+    prefix: str,
+    commit: dict,
+    state: dict,
+    idx: int,
+    transition: str,
+) -> None:
+    for state_field, commit_field in (
+        (f"{prefix}_object_id", "object_id"),
+        (f"{prefix}_generation", "fdr_gen"),
+        (f"{prefix}_rights", "rights_mask"),
+        (f"{prefix}_lineage_epoch", "lineage_epoch"),
+        (f"{prefix}_sealed", "sealed"),
+    ):
+        if state[state_field] != commit[commit_field]:
+            raise SystemExit(
+                f"top-level M1 {transition} {idx} {prefix} projection {state_field} "
+                f"does not match commit {commit_field}: "
+                f"state={state[state_field]} commit={commit[commit_field]}"
+            )
+
+
+def check_top_m1_non_ok_transition(
+    idx: int,
+    commit: dict,
+    pre_state: dict,
+    post_state: dict,
+    authority_projection_fields: tuple[str, ...],
+) -> None:
+    drift = [
+        (field, pre_state[field], post_state[field])
+        for field in authority_projection_fields
+        if pre_state[field] != post_state[field]
+    ]
+    if drift:
+        raise SystemExit(
+            f"top-level M1 non-OK commit {idx} changed authority projection: {drift}"
+        )
+    status = commit["status"]
+    if status == 116 and post_state["stale_rejected"] != 1:
+        raise SystemExit(f"top-level M1 non-OK commit {idx} did not mark stale rejection")
+    if status in (1, 9) and post_state["failed_no_authority"] != 1:
+        raise SystemExit(f"top-level M1 non-OK commit {idx} did not mark failed authority")
+    if status == 11 and post_state["full_was_explicit"] != 1:
+        raise SystemExit(f"top-level M1 non-OK commit {idx} did not mark explicit full queue")
+
+
+def check_top_m1_refinement_step(
+    idx: int,
+    commit: dict,
+    pre_state: dict,
+    post_state: dict,
+    commit_ops: dict[str, int],
+    authority_projection_fields: tuple[str, ...],
+) -> None:
+    """Executable top-level mirror of the current M1 RTL-to-Lean step shape."""
+    if commit["status"] != 0:
+        check_top_m1_non_ok_transition(
+            idx,
+            commit,
+            pre_state,
+            post_state,
+            authority_projection_fields,
+        )
+        return
+
+    op = commit["op"]
+    if op == commit_ops["CapDup"]:
+        if pre_state["root_rights"] & 0x40 == 0:
+            raise SystemExit(f"top-level M1 capDup {idx} accepted without DUP right")
+        if not rights_subset(commit["rights_mask"], pre_state["root_rights"]):
+            raise SystemExit(
+                f"top-level M1 capDup {idx} amplified rights: "
+                f"commit={commit['rights_mask']} pre_root={pre_state['root_rights']}"
+            )
+        if commit["object_id"] != pre_state["root_object_id"]:
+            raise SystemExit(f"top-level M1 capDup {idx} changed object lineage")
+        check_top_m1_projection_matches_commit("consumer", commit, post_state, idx, "capDup")
+        return
+
+    if op == commit_ops["CapSend"]:
+        if pre_state["sent_valid"] != 0:
+            raise SystemExit(f"top-level M1 capSend {idx} accepted with occupied transfer slot")
+        if pre_state["consumer_rights"] & 0x100 == 0:
+            raise SystemExit(f"top-level M1 capSend {idx} accepted without TRANSFER right")
+        if not rights_subset(commit["rights_mask"], pre_state["consumer_rights"]):
+            raise SystemExit(
+                f"top-level M1 capSend {idx} amplified rights: "
+                f"commit={commit['rights_mask']} pre_consumer={pre_state['consumer_rights']}"
+            )
+        if post_state["sent_valid"] != 1:
+            raise SystemExit(f"top-level M1 capSend {idx} did not publish a sent cap")
+        check_top_m1_projection_matches_commit("sent", commit, post_state, idx, "capSend")
+        return
+
+    if op == commit_ops["CapRecv"]:
+        if pre_state["sent_valid"] != 1:
+            raise SystemExit(f"top-level M1 capRecv {idx} accepted without a sent cap")
+        if not rights_subset(commit["rights_mask"], pre_state["sent_rights"]):
+            raise SystemExit(
+                f"top-level M1 capRecv {idx} amplified rights: "
+                f"commit={commit['rights_mask']} pre_sent={pre_state['sent_rights']}"
+            )
+        if post_state["sent_valid"] != 0:
+            raise SystemExit(f"top-level M1 capRecv {idx} left a sent cap queued")
+        check_top_m1_projection_matches_commit("consumer", commit, post_state, idx, "capRecv")
+        return
+
+    if op == commit_ops["CapRevoke"]:
+        if not rights_subset(commit["rights_mask"], pre_state["root_rights"]):
+            raise SystemExit(
+                f"top-level M1 capRevoke {idx} commit rights exceed pre root rights: "
+                f"commit={commit['rights_mask']} pre_root={pre_state['root_rights']}"
+            )
+        if post_state["has_revoked_generation"] == 1:
+            if post_state["revoked_generation"] != commit["fdr_gen"]:
+                raise SystemExit(
+                    f"top-level M1 capRevoke {idx} revoked generation does not match commit: "
+                    f"post={post_state['revoked_generation']} commit={commit['fdr_gen']}"
+                )
+            if post_state["root_generation"] != commit["fdr_gen"]:
+                raise SystemExit(
+                    f"top-level M1 capRevoke {idx} root generation does not match commit: "
+                    f"post={post_state['root_generation']} commit={commit['fdr_gen']}"
+                )
+        return
+
+    raise SystemExit(f"top-level M1 accepted unsupported transition op {op}")
+
+
 rtl = load_record(sys.argv[1], "RTL_FINAL ")
 emulator = load_record(sys.argv[2], "EMULATOR_FINAL ")
 if rtl["exit_reg"] != emulator["exit"]:
@@ -774,54 +908,14 @@ authority_projection_fields = tuple(
 for idx, (commit, pre_state, post_state) in enumerate(
     zip(rtl_m1_top_commits, rtl_m1_top_pre_states, rtl_m1_top_states)
 ):
-    if commit["status"] != 0:
-        drift = [
-            (field, pre_state[field], post_state[field])
-            for field in authority_projection_fields
-            if pre_state[field] != post_state[field]
-        ]
-        if drift:
-            raise SystemExit(
-                f"top-level M1 non-OK commit {idx} changed authority projection: {drift}"
-            )
-    elif commit["op"] == commit_ops["CapDup"]:
-        if post_state["consumer_generation"] != commit["fdr_gen"]:
-            raise SystemExit(
-                f"top-level M1 capDup {idx} consumer generation does not match commit: "
-                f"post={post_state['consumer_generation']} commit={commit['fdr_gen']}"
-            )
-        if post_state["consumer_rights"] != commit["rights_mask"]:
-            raise SystemExit(
-                f"top-level M1 capDup {idx} consumer rights do not match narrowed commit: "
-                f"post={post_state['consumer_rights']} commit={commit['rights_mask']}"
-            )
-    elif commit["op"] == commit_ops["CapSend"]:
-        if post_state["sent_valid"] != 1:
-            raise SystemExit(f"top-level M1 capSend {idx} did not publish a sent cap")
-        for state_field, commit_field in (
-            ("sent_object_id", "object_id"),
-            ("sent_generation", "fdr_gen"),
-            ("sent_rights", "rights_mask"),
-            ("sent_lineage_epoch", "lineage_epoch"),
-        ):
-            if post_state[state_field] != commit[commit_field]:
-                raise SystemExit(
-                    f"top-level M1 capSend {idx} {state_field} does not match commit "
-                    f"{commit_field}: post={post_state[state_field]} commit={commit[commit_field]}"
-                )
-    elif commit["op"] == commit_ops["CapRecv"]:
-        if post_state["sent_valid"] != 0:
-            raise SystemExit(f"top-level M1 capRecv {idx} left a sent cap queued")
-        if post_state["consumer_generation"] != commit["fdr_gen"]:
-            raise SystemExit(
-                f"top-level M1 capRecv {idx} consumer generation does not match commit: "
-                f"post={post_state['consumer_generation']} commit={commit['fdr_gen']}"
-            )
-        if post_state["consumer_rights"] != commit["rights_mask"]:
-            raise SystemExit(
-                f"top-level M1 capRecv {idx} consumer rights do not match commit: "
-                f"post={post_state['consumer_rights']} commit={commit['rights_mask']}"
-            )
+    check_top_m1_refinement_step(
+        idx,
+        commit,
+        pre_state,
+        post_state,
+        commit_ops,
+        authority_projection_fields,
+    )
 PY
 
 printf '%s\n' "rtl top-level program smoke ok"
