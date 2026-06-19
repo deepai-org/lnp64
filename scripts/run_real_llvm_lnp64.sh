@@ -797,20 +797,7 @@ exit_dump="$build_dir/exit-clang-smoke.dump"
 grep -q 'call ' "$exit_dump"
 printf 'real LLVM LNP64 clang exit object smoke passed: %s\n' "$exit_obj"
 
-libc_process_impl_c="$build_dir/liblnp64-process-min.c"
-cat >"$libc_process_impl_c" <<'C'
-#include "lnp64_intrinsics.h"
-
-void _exit(int status) {
-  __lnp_exit((lnp64_word_t)(unsigned int)status);
-  __builtin_unreachable();
-}
-
-void exit(int status) {
-  _exit(status);
-}
-C
-
+libc_process_impl_c="toolchain/liblnp64_process_min.c"
 libc_process_impl_obj="$build_dir/liblnp64-process-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
@@ -1079,56 +1066,7 @@ grep -q 'sext.w' "$libc_string_dump"
 printf 'real LLVM LNP64 clang minilibc string object smoke passed: %s\n' \
   "$libc_string_obj"
 
-libc_string_impl_c="$build_dir/liblnp64-string-min.c"
-cat >"$libc_string_impl_c" <<'C'
-typedef unsigned long size_t;
-
-size_t strlen(const char *s) {
-  size_t n = 0;
-  while (s[n] != 0)
-    n = n + 1;
-  return n;
-}
-
-void *memcpy(void *dst, const void *src, size_t len) {
-  unsigned char *d = dst;
-  const unsigned char *s = src;
-  for (size_t i = 0; i < len; i = i + 1)
-    d[i] = s[i];
-  return dst;
-}
-
-void *memmove(void *dst, const void *src, size_t len) {
-  unsigned char *d = dst;
-  const unsigned char *s = src;
-  if (d <= s) {
-    for (size_t i = 0; i < len; i = i + 1)
-      d[i] = s[i];
-  } else {
-    for (size_t i = len; i != 0; i = i - 1)
-      d[i - 1] = s[i - 1];
-  }
-  return dst;
-}
-
-int memcmp(const void *lhs, const void *rhs, size_t len) {
-  const unsigned char *a = lhs;
-  const unsigned char *b = rhs;
-  for (size_t i = 0; i < len; i = i + 1) {
-    if (a[i] != b[i])
-      return (int)a[i] - (int)b[i];
-  }
-  return 0;
-}
-
-void *memset(void *dst, int value, size_t len) {
-  unsigned char *d = dst;
-  for (size_t i = 0; i < len; i = i + 1)
-    d[i] = (unsigned char)value;
-  return dst;
-}
-C
-
+libc_string_impl_c="toolchain/liblnp64_string_min.c"
 libc_string_impl_obj="$build_dir/liblnp64-string-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
@@ -1143,55 +1081,7 @@ grep -q 'ret' "$libc_string_impl_dump"
 printf 'real LLVM LNP64 clang minilibc string implementation object smoke passed: %s\n' \
   "$libc_string_impl_obj"
 
-libc_alloc_impl_c="$build_dir/liblnp64-alloc-min.c"
-cat >"$libc_alloc_impl_c" <<'C'
-#include "lnp64_intrinsics.h"
-
-typedef unsigned long size_t;
-
-void *memcpy(void *dst, const void *src, size_t len);
-void *memset(void *dst, int value, size_t len);
-
-void *alloc(size_t size) {
-  return __lnp_alloc(size);
-}
-
-void *malloc(size_t size) {
-  return __lnp_alloc(size);
-}
-
-void free(void *ptr) {
-  __lnp_free(ptr);
-}
-
-void *calloc(size_t count, size_t size) {
-  size_t total = count * size;
-  void *ptr = malloc(total);
-  if (!ptr)
-    return 0;
-  return memset(ptr, 0, total);
-}
-
-void *realloc(void *ptr, size_t size) {
-  if (!ptr)
-    return malloc(size);
-  if (size == 0) {
-    free(ptr);
-    return 0;
-  }
-
-  void *new_ptr = malloc(size);
-  if (!new_ptr)
-    return 0;
-
-  size_t old_size = __lnp_alloc_size(ptr);
-  size_t copy_size = old_size < size ? old_size : size;
-  memcpy(new_ptr, ptr, copy_size);
-  free(ptr);
-  return new_ptr;
-}
-C
-
+libc_alloc_impl_c="toolchain/liblnp64_alloc_min.c"
 libc_alloc_impl_obj="$build_dir/liblnp64-alloc-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
@@ -1331,23 +1221,7 @@ grep -q 'call ' "$read_dump"
 printf 'real LLVM LNP64 clang read object smoke passed: %s\n' \
   "$read_obj"
 
-libc_fd_impl_c="$build_dir/liblnp64-fd-min.c"
-cat >"$libc_fd_impl_c" <<'C'
-#include "lnp64_intrinsics.h"
-
-typedef unsigned long size_t;
-
-long read(int fd, void *buf, size_t len) {
-  return (long)__lnp_pull((lnp64_cap_t)(unsigned long)fd,
-                          (lnp64_word_t)buf, len);
-}
-
-long write(int fd, const void *buf, size_t len) {
-  return (long)__lnp_push((lnp64_cap_t)(unsigned long)fd,
-                          (lnp64_word_t)buf, len);
-}
-C
-
+libc_fd_impl_c="toolchain/liblnp64_fd_min.c"
 libc_fd_impl_obj="$build_dir/liblnp64-fd-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \

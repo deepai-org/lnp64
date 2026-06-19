@@ -1282,6 +1282,10 @@ mod tests {
         let real_llc_docker = include_str!("../scripts/run_real_llvm_lnp64_docker.sh");
         let real_clang_target = include_str!("../clang/lib/Basic/Targets/LNP64.cpp");
         let llvm_dockerfile = include_str!("../Dockerfile.llvm");
+        let libc_string_min = include_str!("../toolchain/liblnp64_string_min.c");
+        let libc_alloc_min = include_str!("../toolchain/liblnp64_alloc_min.c");
+        let libc_fd_min = include_str!("../toolchain/liblnp64_fd_min.c");
+        let libc_process_min = include_str!("../toolchain/liblnp64_process_min.c");
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
         let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
         let roadmap = include_str!("../toolchain_roadmap.md");
@@ -1524,8 +1528,8 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang C11 atomic object smoke passed"));
         assert!(real_llc.contains("exit-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang exit object smoke passed"));
-        assert!(real_llc.contains("liblnp64-process-min.c"));
-        assert!(real_llc.contains("__lnp_exit"));
+        assert!(real_llc.contains("toolchain/liblnp64_process_min.c"));
+        assert!(libc_process_min.contains("__lnp_exit"));
         assert!(real_llc.contains("liblnp64-process-min.o"));
         assert!(real_llc.contains("grep -q 'exit r'"));
         assert!(
@@ -1536,20 +1540,20 @@ mod tests {
         assert!(real_llc.contains("libc-string-clang-smoke.o"));
         assert!(real_llc.contains("int memcmp"));
         assert!(real_llc.contains("grep -q 'sext.w'"));
-        assert!(real_llc.contains("void *memmove"));
+        assert!(libc_string_min.contains("void *memmove"));
         assert!(real_llc.contains("real LLVM LNP64 clang minilibc string object smoke passed"));
-        assert!(real_llc.contains("liblnp64-string-min.c"));
+        assert!(real_llc.contains("toolchain/liblnp64_string_min.c"));
         assert!(real_llc.contains("liblnp64-string-min.o"));
         assert!(
             real_llc.contains(
                 "real LLVM LNP64 clang minilibc string implementation object smoke passed"
             )
         );
-        assert!(real_llc.contains("liblnp64-alloc-min.c"));
-        assert!(real_llc.contains("#include \"lnp64_intrinsics.h\""));
-        assert!(real_llc.contains("void *alloc(size_t size)"));
-        assert!(real_llc.contains("__lnp_alloc(size)"));
-        assert!(real_llc.contains("__lnp_alloc_size(ptr)"));
+        assert!(real_llc.contains("toolchain/liblnp64_alloc_min.c"));
+        assert!(libc_alloc_min.contains("#include \"lnp64_intrinsics.h\""));
+        assert!(libc_alloc_min.contains("void *alloc(size_t size)"));
+        assert!(libc_alloc_min.contains("__lnp_alloc(size)"));
+        assert!(libc_alloc_min.contains("__lnp_alloc_size(ptr)"));
         assert!(real_llc.contains("liblnp64-alloc-min.o"));
         assert!(real_llc.contains("grep -q 'alloc r'"));
         assert!(real_llc.contains("grep -q 'alloc_size r'"));
@@ -1563,9 +1567,9 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang realloc object smoke passed"));
         assert!(real_llc.contains("read-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang read object smoke passed"));
-        assert!(real_llc.contains("liblnp64-fd-min.c"));
-        assert!(real_llc.contains("__lnp_pull"));
-        assert!(real_llc.contains("__lnp_push"));
+        assert!(real_llc.contains("toolchain/liblnp64_fd_min.c"));
+        assert!(libc_fd_min.contains("__lnp_pull"));
+        assert!(libc_fd_min.contains("__lnp_push"));
         assert!(real_llc.contains("liblnp64-fd-min.o"));
         assert!(real_llc.contains("grep -q 'pull r'"));
         assert!(real_llc.contains("grep -q 'push r'"));
