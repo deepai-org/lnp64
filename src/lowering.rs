@@ -1342,6 +1342,7 @@ mod tests {
         let real_tblgen_docker = include_str!("../scripts/run_real_llvm_tblgen_docker.sh");
         let real_llc = include_str!("../scripts/run_real_llvm_lnp64.sh");
         let real_llc_docker = include_str!("../scripts/run_real_llvm_lnp64_docker.sh");
+        let real_objects_docker = include_str!("../scripts/run_real_llvm_lnp64_objects_docker.sh");
         let real_mc_docker = include_str!("../scripts/run_real_llvm_lnp64_mc_docker.sh");
         let real_clang_target = include_str!("../clang/lib/Basic/Targets/LNP64.cpp");
         let llvm_dockerfile = include_str!("../Dockerfile.llvm");
@@ -1678,7 +1679,7 @@ mod tests {
         );
         assert!(
             commands["real_objects_build"]
-                .contains("LNP64_LLVM_GATE=objects bash scripts/run_real_llvm_lnp64_docker.sh"),
+                .contains("bash scripts/run_real_llvm_lnp64_objects_docker.sh"),
             "real LLVM object gate must run through the Docker-backed script"
         );
         assert!(
@@ -1717,6 +1718,8 @@ mod tests {
         assert!(real_llc_docker.contains("LNP64_LLVM_DOCKER_SKIP_RUN_ELF"));
         assert!(real_llc_docker.contains(r#"LNP64_LLVM_GATE="${LNP64_LLVM_GATE:-full}""#));
         assert!(real_llc_docker.contains("run-elf execution skipped by LNP64_LLVM_GATE"));
+        assert!(real_objects_docker.contains("LNP64_LLVM_GATE=objects"));
+        assert!(real_objects_docker.contains("scripts/run_real_llvm_lnp64_docker.sh"));
         assert!(real_mc_docker.contains("LNP64_LLVM_DOCKER_SKIP_BUILD"));
         assert!(real_llc.contains("llvmorg-14.0.6"));
         assert!(real_llc.contains("LNP64_LLVM_GATE"));
@@ -7746,7 +7749,10 @@ mod tests {
         );
         assert_contains(hardware, "do not change parentage or");
         assert_contains(hardware, "budget ownership");
-        assert_contains(hardware, "Domain operations are fixed owner-engine transitions");
+        assert_contains(
+            hardware,
+            "Domain operations are fixed owner-engine transitions",
+        );
         assert_contains(hardware, "software callbacks or policy bytecode");
         assert_contains(
             design,
@@ -7769,7 +7775,10 @@ mod tests {
             formal_roadmap,
             "effective-domain records consumed by scheduler, heap",
         );
-        assert_contains(formal_roadmap, "resident generation-checked effective records");
+        assert_contains(
+            formal_roadmap,
+            "resident generation-checked effective records",
+        );
         assert_contains(formal_roadmap, "resident effective scheduling records");
         assert_contains(formal_roadmap, "resident effective heap-domain records");
         assert_contains(

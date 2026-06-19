@@ -232,6 +232,7 @@ Toolchain contracts:
 bash scripts/run_llvm_bootstrap_gates.sh --dry-run
 bash scripts/run_real_llvm_tblgen_docker.sh
 bash scripts/run_real_llvm_lnp64_mc_docker.sh
+bash scripts/run_real_llvm_lnp64_objects_docker.sh
 bash scripts/run_real_llvm_lnp64_docker.sh
 bash scripts/run_toolchain_contracts.sh
 ```
@@ -245,9 +246,9 @@ real Clang objects, and executes the linked ELFs with `lnp64 run-elf`.
 `scripts/run_real_llvm_lnp64_mc_docker.sh` is the faster MC-only gate for
 assembler, printer, encoding, and disassembler changes. It reuses the same
 checkout/build directories but builds only `llvm-mc` and `llvm-objdump`.
-Set `LNP64_LLVM_GATE=objects` on `scripts/run_real_llvm_lnp64_docker.sh` for a
-middle-sized backend loop: it builds clang/llc/llvm-mc/llvm-objdump, runs the
-Clang object and disassembly smokes, and stops before lld and `run-elf`.
+`scripts/run_real_llvm_lnp64_objects_docker.sh` is the middle-sized backend
+loop: it builds clang/llc/llvm-mc/llvm-objdump, runs the Clang object and
+disassembly smokes, and stops before lld and `run-elf`.
 
 For LLVM iteration, keep `target/llvm-project-src` and
 `target/llvm-lnp64-build` when disk allows. The gate reuses both directories for
@@ -264,7 +265,7 @@ image build prelude during tight LLVM loops:
 
 ```sh
 LNP64_LLVM_DOCKER_SKIP_BUILD=1 LNP64_LLVM_JOBS=16 bash scripts/run_real_llvm_lnp64_docker.sh
-LNP64_LLVM_DOCKER_SKIP_BUILD=1 LNP64_LLVM_GATE=objects LNP64_LLVM_JOBS=16 bash scripts/run_real_llvm_lnp64_docker.sh
+LNP64_LLVM_DOCKER_SKIP_BUILD=1 LNP64_LLVM_JOBS=16 bash scripts/run_real_llvm_lnp64_objects_docker.sh
 LNP64_LLVM_DOCKER_SKIP_BUILD=1 bash scripts/run_real_llvm_lnp64_mc_docker.sh
 ```
 
