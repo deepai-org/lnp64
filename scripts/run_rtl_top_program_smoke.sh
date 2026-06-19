@@ -158,6 +158,7 @@ run_top_program_logged "$emulator_log" "${emulator_cmd[@]}"
 
 python3 - "$sim_log" "$emulator_log" <<'PY'
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -452,6 +453,38 @@ def check_rtl_decode_matches_rust(rtl_flat_to_arch: dict[int, int], rust_flat_to
     missing_in_rust = sorted(set(rtl_flat_to_arch) - set(rust_flat_to_arch))
     if missing_in_rust:
         raise SystemExit(f"RTL decode has flat opcodes missing from Rust committed exec map: {missing_in_rust}")
+
+
+def check_cross_tile_wake_event(path: str) -> None:
+    events = collect_json_records(path, "RTL_EVENT ")
+    if len(events) != 1:
+        raise SystemExit(f"cross-tile wake expected exactly one RTL_EVENT record, saw {len(events)}")
+    event = events[0]
+    statuses = load_schema_enum_values("lnp64_status_e")
+    engines = load_schema_enum_values("lnp64_engine_e")
+    expected = {
+        "record": "event",
+        "tile_id": 0,
+        "source_tile_id": 1,
+        "op_id": 0,
+        "pid": 1,
+        "tid": 1,
+        "domain_id": 1,
+        "domain_gen": 1,
+        "event_mask": 1,
+        "source": engines["LNP64_ENGINE_NONE"],
+        "status": statuses["LNP64_STATUS_EVENT"],
+        "wake_valid": 1,
+        "cross_tile_wake": 1,
+    }
+    for field, expected_value in expected.items():
+        if event.get(field) != expected_value:
+            raise SystemExit(
+                f"cross-tile wake event field {field} mismatch: "
+                f"rtl={event.get(field)!r} expected={expected_value!r}"
+            )
+    if not isinstance(event.get("event_id"), int) or event["event_id"] <= 0:
+        raise SystemExit(f"cross-tile wake event has invalid event_id: {event.get('event_id')!r}")
 
 
 def add_expected_arch_opcodes(records: list[dict], flat_to_arch: dict[int, int]) -> None:
@@ -777,6 +810,9 @@ if rtl_retire != emulator_retire:
         f"rtl_window={rtl_retire[start:min(end, len(rtl_retire))]} "
         f"emulator_window={emulator_retire[start:min(end, len(emulator_retire))]}"
     )
+
+if os.environ.get("LNP64_RTL_TOP_PROGRAM_CROSS_TILE_WAKE") == "1":
+    check_cross_tile_wake_event(sys.argv[1])
 
 rtl_m1_top_commits = []
 rtl_m1_top_commit_bits = []

@@ -93,6 +93,8 @@ def main() -> None:
     smoke_gate_text = text(ROOT / "scripts/run_rtl_top_program_smoke.sh")
     require("RTL_M1_TOP_PRE_STATE" in smoke_gate_text, "shared top-level comparator must consume M1 pre-state projections")
     require("RTL_M1_TOP_STATE" in smoke_gate_text, "shared top-level comparator must consume M1 post-state projections")
+    require("RTL_EVENT" in smoke_gate_text, "shared top-level comparator must consume top-level event records")
+    require("cross_tile_wake" in smoke_gate_text, "shared top-level comparator must check cross-tile wake events")
     require("lnp64_m1_state_projection_t" in text(ROOT / "rtl/sim/lnp64_top_program_tb.sv"), "top-program testbench must emit schema-owned M1 state projections")
     require(manifest.get("schema") == "lnp64_top_level_program_tests_v1", "unexpected manifest schema")
     require(manifest.get("stage") == "feature_gated_plan", "manifest must be a feature-gated plan")

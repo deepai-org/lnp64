@@ -299,6 +299,24 @@ module lnp64_top_program_tb;
                 );
             end
         end
+        if (dut.event_valid) begin
+            $display(
+                "RTL_EVENT {\"record\":\"event\",\"event_id\":%0d,\"tile_id\":%0d,\"source_tile_id\":%0d,\"op_id\":%0d,\"pid\":%0d,\"tid\":%0d,\"domain_id\":%0d,\"domain_gen\":%0d,\"event_mask\":%0d,\"source\":%0d,\"status\":%0d,\"wake_valid\":%0d,\"cross_tile_wake\":%0d}",
+                dut.event_record.event_id,
+                dut.event_record.tile_id,
+                32'd1,
+                dut.event_record.op_id,
+                dut.event_record.pid,
+                dut.event_record.tid,
+                dut.event_record.domain_id,
+                dut.event_record.domain_gen,
+                dut.event_record.event_mask,
+                dut.event_record.source,
+                dut.event_record.status,
+                dut.wake_valid,
+                dut.cross_tile_wake_valid
+            );
+        end
     end
 
     initial begin
