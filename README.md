@@ -167,7 +167,14 @@ Run the full repository gate:
 bash scripts/run_all_gates.sh
 ```
 
-Run a small demo through the legacy bootstrap compiler:
+Run the fast real LLVM object gate:
+
+```sh
+bash scripts/run_real_llvm_lnp64_objects_docker.sh
+```
+
+Use the deprecated bootstrap compiler only when explicitly checking the legacy
+smoke generator:
 
 ```sh
 cargo run -- cc --toy-bootstrap demos/hello.c -o /tmp/hello.lnp64.s

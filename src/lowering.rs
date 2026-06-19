@@ -5894,6 +5894,15 @@ mod tests {
         assert_eq!(rules["clang_libc_replacements"].0, "partial");
         assert_eq!(rules["remaining_toy_only_libc"].0, "blocked");
         assert_eq!(rules["remaining_toy_queue"].0, "blocked");
+        let explicit_legacy_artifacts = &rules["explicit_legacy_cc_flag"].1;
+        for (script_name, script) in legacy_toy_scripts {
+            if script.contains("cc --toy-bootstrap") {
+                assert!(
+                    explicit_legacy_artifacts.contains(&script_name),
+                    "{script_name} contains a toy compiler invocation but is not covered by explicit_legacy_cc_flag"
+                );
+            }
+        }
         for (surface, status, toy_artifacts, replacement_target, blocker) in queue_rows {
             assert!(
                 queued_surfaces
