@@ -156,6 +156,7 @@ run_top_program_logged "$emulator_log" "${emulator_cmd[@]}"
 python3 - "$sim_log" "$emulator_log" <<'PY'
 import json
 import sys
+from pathlib import Path
 
 
 def load_record(path: str, prefix: str) -> dict:
@@ -175,6 +176,40 @@ def load_records(path: str, prefix: str) -> list[dict]:
     if not records:
         raise SystemExit(f"missing {prefix.strip()} records in {path}")
     return records
+
+
+def load_m1_commit_schema() -> tuple[tuple[str, ...], tuple[int, ...]]:
+    schema_path = Path("rtl/schema/lnp64_shared_schema.json")
+    with schema_path.open(encoding="utf-8") as handle:
+        schema = json.load(handle)
+    entries = schema["records"]["lnp64_m1_cap_commit_t"]
+    fields = []
+    widths = []
+    for entry in entries:
+        field, width = entry.split(":", maxsplit=1)
+        fields.append(field)
+        widths.append(int(width))
+    return tuple(fields), tuple(widths)
+
+
+def decode_packed_bits(bits: str, fields: tuple[str, ...], widths: tuple[int, ...]) -> dict[str, int]:
+    total_width = sum(widths)
+    try:
+        raw = int(bits, 16)
+    except ValueError as exc:
+        raise SystemExit(f"invalid top-level M1 packed commit bits {bits!r}") from exc
+    if raw >= (1 << total_width):
+        raise SystemExit(
+            f"top-level M1 packed commit bits exceed schema width {total_width}: 0x{bits}"
+        )
+    decoded = {}
+    shift = total_width
+    for field, width in zip(fields, widths, strict=True):
+        shift -= width
+        decoded[field] = (raw >> shift) & ((1 << width) - 1)
+    if shift != 0:
+        raise SystemExit("internal top-level M1 packed commit decoder did not consume all bits")
+    return decoded
 
 
 rtl = load_record(sys.argv[1], "RTL_FINAL ")
@@ -265,6 +300,8 @@ commit_required_fields = (
     "pc",
     "tile_id",
 )
+m1_schema_fields, m1_schema_widths = load_m1_commit_schema()
+expected_m1_commit_width = sum(m1_schema_widths)
 opcode_to_m1_op = {0x50: 1, 0x51: 2, 0x52: 3, 0x53: 4}
 for idx, (commit, retire) in enumerate(zip(rtl_m1_top_commits, cap_retire)):
     missing = [field for field in commit_required_fields if field not in commit]
@@ -288,13 +325,32 @@ for idx, (commit, retire) in enumerate(zip(rtl_m1_top_commits, cap_retire)):
             f"top-level M1 commit {idx} status mismatch: "
             f"commit={commit['status']} retire_errno={retire['errno']}"
         )
-for idx, bits in enumerate(rtl_m1_top_commit_bits):
-    if bits.get("record") != "m1_cap_commit_bits":
-        raise SystemExit(f"top-level M1 packed commit {idx} has unexpected record {bits.get('record')!r}")
-    if bits.get("width") != 281:
-        raise SystemExit(f"top-level M1 packed commit {idx} has unexpected width {bits.get('width')!r}")
-    if "bits" not in bits:
+for idx, (commit, bits_record) in enumerate(zip(rtl_m1_top_commits, rtl_m1_top_commit_bits)):
+    if bits_record.get("record") != "m1_cap_commit_bits":
+        raise SystemExit(
+            f"top-level M1 packed commit {idx} has unexpected record "
+            f"{bits_record.get('record')!r}"
+        )
+    if bits_record.get("width") != expected_m1_commit_width:
+        raise SystemExit(
+            f"top-level M1 packed commit {idx} has unexpected width "
+            f"{bits_record.get('width')!r}; expected schema width {expected_m1_commit_width}"
+        )
+    if "bits" not in bits_record:
         raise SystemExit(f"top-level M1 packed commit {idx} is missing bits")
+    if bits_record.get("pc") != commit["pc"] or bits_record.get("tile_id") != commit["tile_id"]:
+        raise SystemExit(
+            f"top-level M1 packed commit {idx} is not tied to JSON commit: "
+            f"bits_pc_tile={(bits_record.get('pc'), bits_record.get('tile_id'))} "
+            f"commit_pc_tile={(commit['pc'], commit['tile_id'])}"
+        )
+    decoded = decode_packed_bits(bits_record["bits"], m1_schema_fields, m1_schema_widths)
+    for field in m1_schema_fields:
+        if decoded[field] != commit[field]:
+            raise SystemExit(
+                f"top-level M1 packed commit {idx} field {field} drifted from JSON commit: "
+                f"packed={decoded[field]} json={commit[field]}"
+            )
 PY
 
 printf '%s\n' "rtl top-level program smoke ok"
