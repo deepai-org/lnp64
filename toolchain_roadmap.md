@@ -374,6 +374,8 @@ The concrete first-program set is pinned in
   replacement built with Clang/lld and run through the ELF loader.
 - `netbsd_thread_child`: the first NetBSD personality child replacement that
   exercises the Clang-built pthread shim.
+- `netbsd_poll_child`: a non-fork NetBSD personality child replacement that
+  exercises native queue readiness through poll/select/epoll shims.
 
 The first four gates now run through real Clang/lld output and the software
 loader without the toy compiler. Full replacement remains partial until the

@@ -79,7 +79,7 @@ int poll(struct pollfd *fds, nfds_t nfds, int timeout) {
     if (status == (lnp64_word_t)-1) {
       fds[i].revents = LNP64_POLLNVAL;
       ready = ready + 1;
-    } else if (status != 0) {
+    } else if (status == 0) {
       fds[i].revents = (short)events;
       ready = ready + 1;
     }
@@ -175,7 +175,7 @@ int epoll_wait(int epfd, struct epoll_event *events, int maxevents,
       continue;
     lnp64_word_t status = __lnp_await(
         (lnp64_cap_t)(unsigned long)lnp64_epoll_fd[i], mask, timeout_word);
-    if (status != 0 && status != (lnp64_word_t)-1) {
+    if (status == 0) {
       events[ready].events = lnp64_epoll_events[i];
       events[ready].data = lnp64_epoll_data[i];
       ready = ready + 1;
@@ -243,7 +243,7 @@ int kevent(int kq, const struct kevent *changelist, int nchanges,
       continue;
     lnp64_word_t status =
         __lnp_await((lnp64_cap_t)lnp64_kqueue_ident[i], mask, timeout_word);
-    if (status != 0 && status != (lnp64_word_t)-1) {
+    if (status == 0) {
       eventlist[ready].ident = lnp64_kqueue_ident[i];
       eventlist[ready].filter = lnp64_kqueue_filter[i];
       eventlist[ready].flags = 0;
@@ -302,12 +302,16 @@ int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
 
     lnp64_word_t status = __lnp_await((lnp64_cap_t)(unsigned long)fd, events,
                                       timeout_word);
-    if (status == 0 || status == (lnp64_word_t)-1) {
+    if (status == (lnp64_word_t)-1) {
       lnp64_fd_clear(fd, readfds);
       lnp64_fd_clear(fd, writefds);
       lnp64_fd_clear(fd, exceptfds);
-    } else {
+    } else if (status == 0) {
       ready = ready + 1;
+    } else {
+      lnp64_fd_clear(fd, readfds);
+      lnp64_fd_clear(fd, writefds);
+      lnp64_fd_clear(fd, exceptfds);
     }
   }
 
