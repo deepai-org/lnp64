@@ -1,45 +1,14 @@
 #include "lnp64_intrinsics.h"
 
+#include <poll.h>
+#include <sys/epoll.h>
+#include <sys/select.h>
 #include <unistd.h>
-
-typedef unsigned long nfds_t;
-
-typedef struct {
-    unsigned long bits[16];
-} fd_set;
-
-struct timeval {
-    long tv_sec;
-    long tv_usec;
-};
-
-struct pollfd {
-    int fd;
-    short events;
-    short revents;
-};
-
-struct epoll_event {
-    unsigned int events;
-    unsigned long data;
-};
 
 enum {
     LNP64_OBJECT_KIND_QUEUE = 2,
     LNP64_OBJECT_PROFILE_PIPE = 1,
-    POLLIN = 0x01,
-    POLLNVAL = 0x20,
-    EPOLLIN = 0x01,
-    EPOLL_CTL_ADD = 1,
 };
-
-int poll(struct pollfd *fds, nfds_t nfds, int timeout);
-int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
-           struct timeval *timeout);
-int epoll_create1(int flags);
-int epoll_ctl(int epfd, int op, int fd, struct epoll_event *event);
-int epoll_wait(int epfd, struct epoll_event *events, int maxevents,
-               int timeout);
 
 static void fd_zero(fd_set *set) {
     for (int i = 0; i < 16; i = i + 1)

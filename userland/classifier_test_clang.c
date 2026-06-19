@@ -1,16 +1,7 @@
+#include <poll.h>
 #include <unistd.h>
 
 #include "lnp64_intrinsics.h"
-
-typedef unsigned long nfds_t;
-
-struct pollfd {
-  int fd;
-  short events;
-  short revents;
-};
-
-int poll(struct pollfd *fds, nfds_t nfds, int timeout);
 
 enum {
   LNP64_OBJECT_KIND_QUEUE = 2,
@@ -22,7 +13,6 @@ enum {
   LNP64_RIGHT_WRITE = 1UL << 1,
   LNP64_RIGHT_STAT = 1UL << 3,
   LNP64_RIGHT_CALL = 1UL << 5,
-  LNP64_POLLIN = 0x01,
   LNP64_CLASSIFIER_RULE_SIZE_WORDS = 8,
   LNP64_OBJECT_OP_CLASSIFY = 9,
   LNP64_OBJECT_OP_CLASSIFIER_QUERY = 10,
@@ -177,11 +167,11 @@ int main(void) {
     return 9;
 
   pfd.fd = (int)read_cap;
-  pfd.events = LNP64_POLLIN;
+  pfd.events = POLLIN;
   pfd.revents = 0;
   if (poll(&pfd, 1, 0) != 1)
     return 10;
-  if (pfd.revents != LNP64_POLLIN)
+  if (pfd.revents != POLLIN)
     return 11;
   if (__lnp_pull(read_cap, (lnp64_word_t)buf, sizeof(buf)) != sizeof(buf))
     return 12;

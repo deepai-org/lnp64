@@ -1,21 +1,10 @@
 #include "lnp64_intrinsics.h"
 
+#include <poll.h>
 #include <signal.h>
 #include <sys/timerfd.h>
 #include <time.h>
 #include <unistd.h>
-
-typedef unsigned long nfds_t;
-
-struct pollfd {
-  int fd;
-  short events;
-  short revents;
-};
-
-enum { POLLIN = 0x01 };
-
-int poll(struct pollfd *fds, nfds_t nfds, int timeout);
 
 static volatile int alarm_seen;
 

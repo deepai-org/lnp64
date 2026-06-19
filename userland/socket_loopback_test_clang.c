@@ -1,19 +1,8 @@
 #include <errno.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
-
-typedef unsigned long nfds_t;
-
-struct pollfd {
-  int fd;
-  short events;
-  short revents;
-};
-
-enum { POLLIN = 0x01 };
-
-int poll(struct pollfd *fds, nfds_t nfds, int timeout);
 
 int main(void) {
   struct pollfd p[1];

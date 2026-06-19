@@ -1386,9 +1386,13 @@ mod tests {
         let libc_socket_min = include_str!("../toolchain/liblnp64_socket_min.c");
         let libc_sbase_min = include_str!("../toolchain/liblnp64_sbase_min.c");
         let elf_exec_test_clang = include_str!("../userland/elf_exec_test_clang.c");
+        let classifier_test_clang = include_str!("../userland/classifier_test_clang.c");
         let netbsd_init_clang = include_str!("../userland/netbsd_init_clang.c");
         let netbsd_personality_clang = include_str!("../userland/netbsd_personality_clang_smoke.c");
         let netbsd_sh_clang = include_str!("../userland/netbsd_sh_clang.c");
+        let poll_test_clang = include_str!("../userland/poll_test_clang.c");
+        let socket_loopback_test_clang = include_str!("../userland/socket_loopback_test_clang.c");
+        let timer_test_clang = include_str!("../userland/timer_test_clang.c");
         let lnp64_isel_lowering = include_str!("../llvm/lib/Target/LNP64/LNP64ISelLowering.cpp");
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
         let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
@@ -2727,6 +2731,11 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang NetBSD thread child object passed"));
         assert!(real_llc.contains("userland/poll_test_clang.c"));
         assert!(real_llc.contains("netbsd-poll-test-clang-smoke.o"));
+        assert!(poll_test_clang.contains("#include <poll.h>"));
+        assert!(poll_test_clang.contains("#include <sys/epoll.h>"));
+        assert!(poll_test_clang.contains("#include <sys/select.h>"));
+        assert!(!poll_test_clang.contains("typedef unsigned long nfds_t"));
+        assert!(!poll_test_clang.contains("int poll(struct pollfd"));
         assert!(real_llc.contains("real LLVM LNP64 clang NetBSD poll child object passed"));
         assert!(real_llc.contains("userland/signal_gate_test_clang.c"));
         assert!(real_llc.contains("netbsd-signal-gate-test-clang-smoke.o"));
@@ -2739,6 +2748,9 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang NetBSD signal fault child object passed"));
         assert!(real_llc.contains("userland/timer_test_clang.c"));
         assert!(real_llc.contains("netbsd-timer-test-clang-smoke.o"));
+        assert!(timer_test_clang.contains("#include <poll.h>"));
+        assert!(!timer_test_clang.contains("typedef unsigned long nfds_t"));
+        assert!(!timer_test_clang.contains("int poll(struct pollfd"));
         assert!(real_llc.contains(r#"grep -q 'yield' "$netbsd_timer_test_dump""#));
         assert!(real_llc.contains(r#"grep -q 'sigret' "$netbsd_timer_test_dump""#));
         assert!(real_llc.contains("real LLVM LNP64 clang NetBSD timer child object passed"));
@@ -2747,6 +2759,9 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang NetBSD mmap child object passed"));
         assert!(real_llc.contains("userland/socket_loopback_test_clang.c"));
         assert!(real_llc.contains("netbsd-socket-loopback-test-clang-smoke.o"));
+        assert!(socket_loopback_test_clang.contains("#include <poll.h>"));
+        assert!(!socket_loopback_test_clang.contains("typedef unsigned long nfds_t"));
+        assert!(!socket_loopback_test_clang.contains("int poll(struct pollfd"));
         assert!(
             real_llc.contains("real LLVM LNP64 clang NetBSD socket loopback child object passed")
         );
@@ -2965,6 +2980,9 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 lld NetBSD fs service child link passed"));
         assert!(real_llc.contains("userland/classifier_test_clang.c"));
         assert!(real_llc.contains("netbsd-classifier-test-clang-smoke.o"));
+        assert!(classifier_test_clang.contains("#include <poll.h>"));
+        assert!(!classifier_test_clang.contains("typedef unsigned long nfds_t"));
+        assert!(!classifier_test_clang.contains("int poll(struct pollfd"));
         assert!(real_llc.contains(r#"grep -q 'object_ctl r' "$netbsd_classifier_test_dump""#));
         assert!(real_llc.contains(r#"grep -q 'cap_dup r' "$netbsd_classifier_test_dump""#));
         assert!(real_llc.contains(r#"grep -q 'pull r' "$netbsd_classifier_test_dump""#));
