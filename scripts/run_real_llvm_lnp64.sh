@@ -1814,6 +1814,118 @@ grep -q 'ret' "$libc_path_impl_dump"
 printf 'real LLVM LNP64 clang minilibc path implementation object smoke passed: %s\n' \
   "$libc_path_impl_obj"
 
+search_c="$build_dir/search-smoke.c"
+cat >"$search_c" <<'C'
+typedef unsigned long size_t;
+int strcmp(const char *lhs, const char *rhs);
+void *lfind(const void *key, const void *base, size_t *nelp, size_t width,
+            int (*compar)(const void *, const void *));
+void *lsearch(const void *key, void *base, size_t *nelp, size_t width,
+              int (*compar)(const void *, const void *));
+void insque(void *elem, void *pred);
+void remque(void *elem);
+
+struct node {
+  struct node *n;
+  struct node *p;
+  int value;
+};
+
+static char tab[16][16];
+static const char key_empty[16] = "";
+static const char key_a[16] = "a";
+static const char key_b[16] = "b";
+static const char key_abc[16] = "abc";
+static const char key_c[16] = "c";
+static const char key_j[16] = "j";
+static size_t nel;
+
+static int set(const char *key) {
+  char *r = lsearch(key, tab, &nel, 16, (int (*)(const void *, const void *))strcmp);
+  return strcmp(r, key) == 0;
+}
+
+static char *get(const char *key) {
+  return lfind(key, tab, &nel, 16, (int (*)(const void *, const void *))strcmp);
+}
+
+int main(void) {
+  size_t before;
+  struct node nodes[10];
+  struct node *q;
+  struct node *p;
+  int i;
+
+  if (!set(key_empty) || !set(key_a) || !set(key_b) || !set(key_abc))
+    return 1;
+  if (!get(key_a))
+    return 2;
+  if (get(key_c))
+    return 3;
+  before = nel;
+  if (!set(key_b))
+    return 4;
+  if (nel != before)
+    return 5;
+  before = nel;
+  if (!set(key_j))
+    return 6;
+  if (nel != before + 1)
+    return 7;
+
+  for (i = 0; i < 10; i = i + 1) {
+    nodes[i].n = 0;
+    nodes[i].p = 0;
+    nodes[i].value = i;
+  }
+  q = &nodes[0];
+  insque(q, 0);
+  for (i = 1; i < 10; i = i + 1) {
+    insque(&nodes[i], q);
+    q = q->n;
+  }
+  p = q;
+  while (q) {
+    i = i - 1;
+    if (q->value != i)
+      return 8;
+    q = q->p;
+  }
+  remque(p->p);
+  if (p->p->value != p->value - 2)
+    return 9;
+  if (p->p->n->value != p->value)
+    return 10;
+  return 0;
+}
+C
+
+search_obj="$build_dir/search-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$search_c" -o "$search_obj"
+test -s "$search_obj"
+search_dump="$build_dir/search-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$search_obj" \
+  >"$search_dump"
+grep -q 'call ' "$search_dump"
+printf 'real LLVM LNP64 clang search helper object smoke passed: %s\n' \
+  "$search_obj"
+
+libc_search_impl_c="toolchain/liblnp64_search_min.c"
+libc_search_impl_obj="$build_dir/liblnp64-search-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$libc_search_impl_c" -o "$libc_search_impl_obj"
+test -s "$libc_search_impl_obj"
+libc_search_impl_dump="$build_dir/liblnp64-search-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_search_impl_obj" \
+  >"$libc_search_impl_dump"
+grep -q 'call ' "$libc_search_impl_dump"
+grep -q 'ret' "$libc_search_impl_dump"
+printf 'real LLVM LNP64 clang minilibc search implementation object smoke passed: %s\n' \
+  "$libc_search_impl_obj"
+
 libc_alloc_impl_c="toolchain/liblnp64_alloc_min.c"
 libc_alloc_impl_obj="$build_dir/liblnp64-alloc-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
@@ -2865,6 +2977,14 @@ path_elf="$build_dir/lnp64-path-linked.elf"
 test -s "$path_elf"
 printf 'real LLVM LNP64 lld path helper link smoke passed: %s\n' \
   "$path_elf"
+
+search_elf="$build_dir/lnp64-search-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$search_elf" "$crt0_obj" "$search_obj" "$libc_search_impl_obj" \
+  "$libc_string_impl_obj"
+test -s "$search_elf"
+printf 'real LLVM LNP64 lld search helper link smoke passed: %s\n' \
+  "$search_elf"
 
 calloc_elf="$build_dir/lnp64-calloc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

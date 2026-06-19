@@ -4,4 +4,4 @@ hello|demos/hello.c|integer_codegen,load_store,branch_call_return,static_link,cr
 arithmetic|demos/factorial.c|integer_alu,compare,branch_call_return,stack_locals,static_link|exit|tested
 memory|demos/allocator.c|load_store,global_data,heap_intrinsic,mmap_or_allocator_shim,static_link|malloc_free,errno_tls|tested
 calls|demos/fibonacci.c|call_return,lr_return_address,spill_slots,static_link|exit|tested
-simple_libc|scripts/run_libc_test.sh|crt_startup,fd_io,errno_tls,string_memory,numeric_conversion,path_helpers,pthread_futex,poll_event,mmap_signal_socket_subset,static_link|libc_shim,software_loader_exec_plan|partial
+simple_libc|scripts/run_libc_test.sh|crt_startup,fd_io,errno_tls,string_memory,numeric_conversion,path_helpers,search_helpers,pthread_futex,poll_event,mmap_signal_socket_subset,static_link|libc_shim,software_loader_exec_plan|partial

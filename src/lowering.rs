@@ -1319,6 +1319,7 @@ mod tests {
         let libc_string_min = include_str!("../toolchain/liblnp64_string_min.c");
         let libc_convert_min = include_str!("../toolchain/liblnp64_convert_min.c");
         let libc_path_min = include_str!("../toolchain/liblnp64_path_min.c");
+        let libc_search_min = include_str!("../toolchain/liblnp64_search_min.c");
         let libc_alloc_min = include_str!("../toolchain/liblnp64_alloc_min.c");
         let libc_fd_min = include_str!("../toolchain/liblnp64_fd_min.c");
         let libc_process_min = include_str!("../toolchain/liblnp64_process_min.c");
@@ -1860,6 +1861,26 @@ mod tests {
             real_llc
                 .contains("real LLVM LNP64 clang minilibc path implementation object smoke passed")
         );
+        assert!(real_llc.contains("search-clang-smoke.o"));
+        assert!(real_llc.contains("void *lfind"));
+        assert!(real_llc.contains("void *lsearch"));
+        assert!(real_llc.contains("void insque"));
+        assert!(real_llc.contains("void remque"));
+        assert!(real_llc.contains("get(key_a)"));
+        assert!(real_llc.contains("remque(p->p)"));
+        assert!(real_llc.contains("real LLVM LNP64 clang search helper object smoke passed"));
+        assert!(real_llc.contains("toolchain/liblnp64_search_min.c"));
+        assert!(real_llc.contains("liblnp64-search-min.o"));
+        assert!(libc_search_min.contains("void *lfind"));
+        assert!(libc_search_min.contains("void *lsearch"));
+        assert!(libc_search_min.contains("void insque"));
+        assert!(libc_search_min.contains("void remque"));
+        assert!(libc_search_min.contains("memcpy(found, key, width)"));
+        assert!(
+            real_llc.contains(
+                "real LLVM LNP64 clang minilibc search implementation object smoke passed"
+            )
+        );
         assert!(real_llc.contains("toolchain/liblnp64_alloc_min.c"));
         assert!(libc_alloc_min.contains("#include \"lnp64_intrinsics.h\""));
         assert!(libc_alloc_min.contains("void *alloc(size_t size)"));
@@ -1920,6 +1941,12 @@ mod tests {
   "$libc_string_impl_obj""#
         ));
         assert!(real_llc.contains("real LLVM LNP64 lld path helper link smoke passed"));
+        assert!(real_llc.contains("lnp64-search-linked.elf"));
+        assert!(real_llc.contains(
+            r#""$search_obj" "$libc_search_impl_obj" \
+  "$libc_string_impl_obj""#
+        ));
+        assert!(real_llc.contains("real LLVM LNP64 lld search helper link smoke passed"));
         assert!(real_llc.contains("lnp64-calloc-linked.elf"));
         assert!(real_llc.contains(
             r#""$calloc_obj" "$libc_alloc_impl_obj" \
@@ -2318,6 +2345,8 @@ mod tests {
         );
         assert!(real_llc_docker.contains("lnp64-path-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf path helper execution passed"));
+        assert!(real_llc_docker.contains("lnp64-search-linked.elf"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf search helper execution passed"));
         assert!(real_llc_docker.contains("lnp64-calloc-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf calloc execution passed"));
         assert!(real_llc_docker.contains("lnp64-realloc-linked.elf"));
@@ -2440,6 +2469,7 @@ mod tests {
             "real_native_heap_execution",
             "real_numeric_conversion_execution",
             "real_path_helper_execution",
+            "real_search_helper_execution",
             "real_read_execution",
             "real_write_execution",
             "real_mmap_libc_execution",
@@ -2480,6 +2510,7 @@ mod tests {
             "real_native_heap_execution",
             "real_numeric_conversion_execution",
             "real_path_helper_execution",
+            "real_search_helper_execution",
             "real_write_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
@@ -3253,6 +3284,7 @@ mod tests {
             "string_ctype",
             "numeric_conversion",
             "path_helpers",
+            "search_helpers",
             "fd_io",
             "malloc_heap",
             "pthread_futex",
@@ -3276,6 +3308,7 @@ mod tests {
             "string_ctype",
             "numeric_conversion",
             "path_helpers",
+            "search_helpers",
             "fd_io",
             "malloc_heap",
             "pthread_futex",
@@ -3310,6 +3343,11 @@ mod tests {
             (
                 "path_helpers",
                 vec!["basename", "dirname"],
+                vec!["load_store", "integer_alu", "static_link"],
+            ),
+            (
+                "search_helpers",
+                vec!["lfind", "lsearch", "insque", "remque"],
                 vec!["load_store", "integer_alu", "static_link"],
             ),
             (
