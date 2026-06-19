@@ -1308,6 +1308,7 @@ mod tests {
         let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
         let gate_manifest = include_str!("../toolchain/lnp64_llvm_gates.manifest");
         let gate_driver = include_str!("../scripts/run_llvm_bootstrap_gates.sh");
+        let libc_test_driver = include_str!("../scripts/run_libc_test.sh");
         let real_tblgen = include_str!("../scripts/run_real_llvm_tblgen.sh");
         let real_tblgen_docker = include_str!("../scripts/run_real_llvm_tblgen_docker.sh");
         let real_llc = include_str!("../scripts/run_real_llvm_lnp64.sh");
@@ -1439,6 +1440,11 @@ mod tests {
             commands["real_mc_build"].contains("scripts/run_real_llvm_lnp64_mc_docker.sh"),
             "real LLVM MC gate must run through the Docker-backed script"
         );
+        assert!(
+            commands["simple_libc_gate"]
+                .contains("scripts/run_libc_test.sh --backend llvm --loader exec-plan"),
+            "simple libc replacement gate must request the LLVM/exec-plan backend"
+        );
         assert!(gate_driver.contains("toolchain/lnp64_llvm_gates.manifest"));
         assert!(gate_driver.contains("--dry-run"));
         assert!(gate_driver.contains("--run"));
@@ -1446,6 +1452,11 @@ mod tests {
         assert!(gate_driver.contains(r"command//\{build\}/"));
         assert!(!gate_driver.contains("lnp64 cc"));
         assert!(!gate_driver.contains("cargo run -- cc"));
+        assert!(libc_test_driver.contains("--backend toy|llvm"));
+        assert!(libc_test_driver.contains("--loader asm|exec-plan"));
+        assert!(libc_test_driver.contains("exec bash scripts/run_real_llvm_lnp64_docker.sh"));
+        assert!(libc_test_driver.contains("llvm backend requires --loader exec-plan"));
+        assert!(libc_test_driver.contains("lnp64 cc --toy-bootstrap"));
         assert!(real_tblgen.contains("llvm-tblgen"));
         assert!(real_tblgen.contains("llvm-config"));
         assert!(real_tblgen.contains("-gen-register-info"));
