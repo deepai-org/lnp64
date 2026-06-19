@@ -2331,38 +2331,8 @@ printf 'real LLVM LNP64 clang stack aggregate object smoke passed: %s\n' \
 
 libc_string_c="$build_dir/libc-string-smoke.c"
 cat >"$libc_string_c" <<'C'
-typedef unsigned long size_t;
-
-size_t strlen(const char *s);
-int memcmp(const void *lhs, const void *rhs, size_t len);
-void *memcpy(void *dst, const void *src, size_t len);
-void *memmove(void *dst, const void *src, size_t len);
-void *memset(void *dst, int value, size_t len);
-int strcmp(const char *lhs, const char *rhs);
-int strncmp(const char *lhs, const char *rhs, size_t len);
-char *strcpy(char *dst, const char *src);
-char *strncpy(char *dst, const char *src, size_t len);
-char *strncat(char *dst, const char *src, size_t len);
-char *strchr(const char *s, int ch);
-char *strrchr(const char *s, int ch);
-char *strstr(const char *haystack, const char *needle);
-size_t strspn(const char *s, const char *accept);
-size_t strcspn(const char *s, const char *reject);
-char *strpbrk(const char *s, const char *accept);
-char *strtok(char *s, const char *delim);
-size_t strlcpy(char *dst, const char *src, size_t size);
-size_t strlcat(char *dst, const char *src, size_t size);
-void *memmem(const void *haystack, size_t haystack_len, const void *needle,
-             size_t needle_len);
-int isalnum(int ch);
-int isalpha(int ch);
-int isdigit(int ch);
-int islower(int ch);
-int isspace(int ch);
-int isupper(int ch);
-int isxdigit(int ch);
-int tolower(int ch);
-int toupper(int ch);
+#include <ctype.h>
+#include <string.h>
 
 int main(void) {
   char src[8];
