@@ -5712,10 +5712,10 @@ mod tests {
     fn toolchain_transition_manifest_records_layered_deliverables() {
         let manifest = include_str!("../toolchain/lnp64_transition.manifest");
         let roadmap = include_str!("../toolchain_roadmap.md");
+        let psabi = include_str!("../psABI.md");
         let conformance = include_str!("../conformance_matrix.md");
         let libc = include_str!("../libc_roadmap.md");
         let object_format = include_str!("../object_format.md");
-        let psabi = include_str!("../psABI.md");
         let rows = transition_rows(manifest);
         let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let mut phases = std::collections::BTreeMap::new();
@@ -5792,6 +5792,8 @@ mod tests {
         assert!(psabi.contains("## Register Model"));
         assert!(psabi.contains("## Calling Convention"));
         assert!(psabi.contains("## Debug and Unwind Minimum"));
+        assert!(psabi.contains("real Clang/lld path"));
+        assert!(!psabi.contains("repository C compiler"));
         assert!(object_format.contains("## Relocation Model"));
         assert!(object_format.contains("## Exec-Plan Descriptor Boundary"));
         assert!(libc.contains("startup"));
@@ -6118,6 +6120,7 @@ mod tests {
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
         let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
         let roadmap = include_str!("../toolchain_roadmap.md");
+        let psabi = include_str!("../psABI.md");
         let conformance = include_str!("../conformance_matrix.md");
         let llvm_gates = include_str!("../toolchain/lnp64_llvm_gates.manifest");
         let llvm_bootstrap = include_str!("../toolchain/lnp64_llvm_bootstrap.manifest");
@@ -6125,6 +6128,7 @@ mod tests {
         let libc_test_readme = include_str!("../third_party/libc-test/README.lnp64.md");
         let intrinsics = include_str!("../toolchain/lnp64_intrinsics.manifest");
         let intrinsic_header = include_str!("../toolchain/lnp64_intrinsics.h");
+        let crt0 = include_str!("../toolchain/crt0_lnp64.s");
         let main_source = include_str!("main.rs");
         let rtl_top_manifest_checker =
             include_str!("../scripts/check_rtl_top_level_program_manifest.py");
@@ -6186,7 +6190,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         let evidence_corpus = format!(
-            "{target_manifest}\n{roadmap}\n{conformance}\n{llvm_gates}\n{llvm_bootstrap}\n{run_elf}\n{libc_test_readme}\n{retirement_queue}\n{intrinsics}\n{intrinsic_header}\n{main_source}\n{legacy_toy_script_corpus}\n{lowering_source}\n{libc_roadmap}"
+            "{target_manifest}\n{roadmap}\n{psabi}\n{conformance}\n{llvm_gates}\n{llvm_bootstrap}\n{run_elf}\n{libc_test_readme}\n{retirement_queue}\n{intrinsics}\n{intrinsic_header}\n{crt0}\n{main_source}\n{legacy_toy_script_corpus}\n{lowering_source}\n{libc_roadmap}"
         );
         let rows = toy_compiler_policy_rows(policy_manifest);
         let queue_rows = toy_retirement_queue_rows(retirement_queue);
@@ -6328,6 +6332,9 @@ mod tests {
         assert!(!main_source.contains("deprecated Rust bootstrap C compiler"));
         assert!(!main_source.contains("cc --toy-bootstrap"));
         assert!(!main_source.contains("\"cc\""));
+        assert!(!psabi.contains("repository C compiler"));
+        assert!(!crt0.contains("current toy compiler"));
+        assert!(crt0.contains("real LLVM/lld crt0 object"));
         for (script_name, script) in legacy_toy_scripts {
             for (idx, line) in script.lines().enumerate() {
                 if line.contains(" cc ") || line.contains(" -- cc ") {

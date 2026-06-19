@@ -1,6 +1,6 @@
 # LNP64 crt0 startup stub v0.
-# Contract source for the future LLVM/lld crt0 object; current toy compiler
-# startup remains separate smoke infrastructure.
+# Contract source for the real LLVM/lld crt0 object used by static Clang-linked
+# run-elf smokes.
 
 .text
 .globl _start

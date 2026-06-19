@@ -307,7 +307,9 @@ the stale generation/epoch.
 There is no dynamic linker ABI in v0. Optional dynamic loading APIs such as
 `dlopen`, `dlsym`, and `dlclose` fail cleanly in the current libc surface.
 
-The v0 package bring-up path is static or compiler-emitted LNP64 assembly.
+The v0 package bring-up path is static Clang/lld-linked LNP64 ELF plus small
+compiler-emitted or hand-written LNP64 assembly where the real backend still
+needs an explicit contract smoke.
 Future dynamic loading is a software loader/personality contract, not a
 hardware `EXEC` contract. Hardware accepts a bounded exec-plan descriptor and
 opaque startup metadata; it does not parse ELF, dynamic-linker state,
@@ -333,5 +335,7 @@ relocation model, executable mapping permissions, ASLR loader behavior,
 dynamic-linking boundary, startup descriptor records, and the boundary between
 loader-owned format policy and hardware `EXEC` commit.
 
-Until those details are implemented, real-package gates should compile through
-the repository C compiler to LNP64 assembly.
+Until those details are complete, real-package gates should continue to compile
+through the real Clang/lld path and run through the software loader or explicit
+object/static-link gates. The deleted in-repo C compiler is not a package
+bring-up path.
