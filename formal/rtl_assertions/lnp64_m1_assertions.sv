@@ -26,7 +26,13 @@ module lnp64_m1_assertions (
     input lnp64_cap_t sent_cap_state,
     input lnp64_cap_t minted_cap_state,
     input logic created_object_created,
-    input logic [31:0] created_object_generation
+    input logic [31:0] created_object_generation,
+    input logic wake_pending,
+    input logic transfer_valid,
+    input logic revoked_rejected,
+    input logic failed_no_authority,
+    input logic has_revoked_generation,
+    input logic [31:0] revoked_generation
 );
     localparam logic [63:0] M1_RIGHT_PUSH = 64'h1;
     localparam logic [63:0] M1_RIGHT_PULL = 64'h2;
@@ -313,6 +319,29 @@ module lnp64_m1_assertions (
                 else $fatal(1, "M1 typed state projection created_object_created did not match RTL created_object_created");
             assert (typed_state_projection.created_object_gen == created_object_generation)
                 else $fatal(1, "M1 typed state projection created_object_gen did not match RTL created_object_generation");
+            assert (typed_state_projection.wake_pending == wake_pending)
+                else $fatal(1, "M1 typed state projection wake_pending did not match RTL wake_pending");
+            assert (typed_state_projection.transfer_valid == transfer_valid)
+                else $fatal(1, "M1 typed state projection transfer_valid did not match RTL transfer_valid");
+            assert (typed_state_projection.stale_rejected == stale_generation_rejected)
+                else $fatal(1, "M1 typed state projection stale_rejected did not match RTL stale_generation_rejected");
+            assert (typed_state_projection.revoked_rejected == revoked_rejected)
+                else $fatal(1, "M1 typed state projection revoked_rejected did not match RTL revoked_rejected");
+            assert (typed_state_projection.failed_no_authority == failed_no_authority)
+                else $fatal(1, "M1 typed state projection failed_no_authority did not match RTL failed_no_authority");
+            assert (typed_state_projection.full_was_explicit == queue_full_explicit)
+                else $fatal(1, "M1 typed state projection full_was_explicit did not match RTL queue_full_explicit");
+            assert (typed_state_projection.has_revoked_generation == has_revoked_generation)
+                else $fatal(1, "M1 typed state projection has_revoked_generation did not match RTL has_revoked_generation");
+            assert (typed_state_projection.revoked_generation == revoked_generation)
+                else $fatal(1, "M1 typed state projection revoked_generation did not match RTL revoked_generation");
+            if (typed_state_projection.has_revoked_generation) begin
+                assert (typed_state_projection.revoked_generation != 32'd0)
+                    else $fatal(1, "M1 revoked-generation witness used zero generation");
+            end else begin
+                assert (typed_state_projection.revoked_generation == 32'd0)
+                    else $fatal(1, "M1 revoked-generation projection was nonzero without a witness");
+            end
             if (!typed_state_projection.sent_valid) begin
                 assert (m1_cap_state_is_zero(sent_cap_state))
                     else $fatal(1, "M1 invalid sent-cap state retained authority bits");

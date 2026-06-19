@@ -65,7 +65,13 @@ module lnp64_m1_tb;
         .sent_cap_state(dut.sent_cap_state),
         .minted_cap_state(dut.minted_cap_state),
         .created_object_created(dut.created_object_created),
-        .created_object_generation(dut.created_object_generation)
+        .created_object_generation(dut.created_object_generation),
+        .wake_pending(dut.wake_pending),
+        .transfer_valid(dut.transfer_valid),
+        .revoked_rejected(dut.revoked_rejected),
+        .failed_no_authority(dut.failed_no_authority),
+        .has_revoked_generation(dut.has_revoked_generation),
+        .revoked_generation(dut.revoked_generation)
     );
 
     always #5 clk = ~clk;
