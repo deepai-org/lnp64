@@ -21,9 +21,7 @@ use crate::native::{
 
 const STACK_SIZE: u64 = 4 * 1024 * 1024;
 const CALL_FRAME_SIZE: u64 = 32 * 1024;
-const COMMITTED_EXEC_CALL_FRAME_SIZE: u64 = 1024;
-const COMMITTED_EXEC_CHILD_SP: u64 = 0x67_3000;
-const COMMITTED_EXEC_THREAD_STACK_STRIDE: u64 = 0x1000;
+const COMMITTED_EXEC_CALL_FRAME_SIZE: u64 = 0;
 const THREAD_STACK_STRIDE: u64 = 0x40_000;
 const MMAP_BASE: u64 = 0x200_000;
 const ASLR_PAGE: u64 = 4096;
@@ -4070,9 +4068,14 @@ impl Machine {
                 };
                 let tid = self.next_tid;
                 let child_stack = if self.committed_exec_mode {
-                    tid.checked_sub(2)
-                        .and_then(|index| index.checked_mul(COMMITTED_EXEC_THREAD_STACK_STRIDE))
-                        .and_then(|offset| COMMITTED_EXEC_CHILD_SP.checked_sub(offset))
+                    let stack_top = self.process()?.stack_top;
+                    tid.checked_sub(1)
+                        .and_then(|index| index.checked_mul(THREAD_STACK_STRIDE))
+                        .and_then(|offset| {
+                            stack_top
+                                .checked_sub(CALL_FRAME_SIZE)
+                                .and_then(|base| base.checked_sub(offset))
+                        })
                 } else {
                     let stack_top = self.process()?.stack_top;
                     tid.checked_sub(1)
@@ -12855,6 +12858,31 @@ mod tests {
         assert!(machine.thread().unwrap().regs[6] >= 2);
         assert_eq!(machine.process().unwrap().errno, 0);
         assert!(machine.threads.len() >= 3);
+    }
+
+    #[test]
+    fn committed_exec_spawn_threads_do_not_overlap_parent_stack() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.committed_exec_mode = true;
+        let parent_sp = machine.thread().unwrap().regs[31];
+
+        machine
+            .clone_with_profile(CloneProfile::SpawnEntry, Reg(5), Some(0))
+            .unwrap();
+        machine
+            .clone_with_profile(CloneProfile::SpawnEntry, Reg(6), Some(0))
+            .unwrap();
+
+        let first_child_sp = machine.threads.get(&2).unwrap().regs[31];
+        let second_child_sp = machine.threads.get(&3).unwrap().regs[31];
+        assert!(first_child_sp < parent_sp);
+        assert!(second_child_sp < first_child_sp);
+        assert_eq!(
+            first_child_sp - second_child_sp,
+            THREAD_STACK_STRIDE,
+            "committed-exec thread stacks must have enough space for LLVM frames"
+        );
     }
 
     #[test]

@@ -15,6 +15,11 @@ static uint64_t getLRSaveSize(const MachineFunction &MF) {
   return MF.getFrameInfo().hasCalls() ? 8 : 0;
 }
 
+static uint64_t getLRSaveOffset(const MachineFunction &MF) {
+  return MF.getFrameInfo().hasCalls() ? MF.getFrameInfo().getMaxCallFrameSize()
+                                     : 0;
+}
+
 static void emitSPAdjust(MachineFunction &MF, MachineBasicBlock &MBB,
                          MachineBasicBlock::iterator I, const DebugLoc &DL,
                          int64_t Amount) {
@@ -48,7 +53,7 @@ void LNP64FrameLowering::emitPrologue(MachineFunction &MF,
     BuildMI(MBB, I, DebugLoc(), TII.get(LNP64::ST))
         .addReg(LNP64::R30)
         .addReg(LNP64::R31)
-        .addImm(0);
+        .addImm(getLRSaveOffset(MF));
   }
 }
 
@@ -62,7 +67,7 @@ void LNP64FrameLowering::emitEpilogue(MachineFunction &MF,
     const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
     BuildMI(MBB, I, DebugLoc(), TII.get(LNP64::LD), LNP64::R30)
         .addReg(LNP64::R31)
-        .addImm(0);
+        .addImm(getLRSaveOffset(MF));
     BuildMI(MBB, I, DebugLoc(), TII.get(LNP64::LR_SET)).addReg(LNP64::R30);
   }
   emitSPAdjust(MF, MBB, I, DebugLoc(), int64_t(StackSize));
