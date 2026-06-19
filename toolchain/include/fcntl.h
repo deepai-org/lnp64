@@ -37,6 +37,7 @@ struct flock {
   short l_whence;
   off_t l_start;
   off_t l_len;
+  long __lnp64_pad;
   pid_t l_pid;
 };
 

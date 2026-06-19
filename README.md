@@ -190,11 +190,10 @@ dry-running or executing the whole list:
 LNP64_LLVM_GATE_FILTER=real_objects_build bash scripts/run_llvm_bootstrap_gates.sh --dry-run
 ```
 
-The deprecated bootstrap compiler is only reachable through explicit legacy
-gates. Use these only when checking the remaining retirement queue entries:
+The deprecated bootstrap compiler is only reachable through the explicit RTL
+legacy gate:
 
 ```sh
-bash scripts/run_libc_test.sh --legacy-toy
 bash scripts/run_rtl_top_toy_c_smoke.sh tests/rtl/programs/top_return_12.c
 ```
 

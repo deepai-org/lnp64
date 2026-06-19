@@ -86,21 +86,11 @@ overlap, destination-before-source overlap, and zero-length moves.
 
 The real LLVM/Clang/lld `run-elf` gate now covers former toy-only `pthread_tsd.c`
 and `sem_init.c` cases, plus bounded `access_bounded.c` metadata probing and
-`fcntl_basic_bounded.c` descriptor-flag coverage. Upstream `fcntl.c` remains
-toy-only until POSIX `fork()` lowers through the formal CLONE-profile
-compatibility layer and `waitpid()` lowers through the event/waitable path. Do
-not add new Rust toy compiler fcntl/fork language features to close that gap.
-
-Do not add new Rust toy compiler fcntl/fork language features.
+`fcntl_basic_bounded.c` descriptor-flag coverage. Upstream `fcntl.c` now runs
+through the real Clang/lld `run-elf` gate for POSIX fork/record-lock behavior.
 
 Run the real Clang/lld replacement gate with:
 
 ```sh
 bash scripts/run_libc_test.sh
-```
-
-Run the legacy toy-bootstrap subset explicitly with:
-
-```sh
-bash scripts/run_libc_test.sh --legacy-toy
 ```

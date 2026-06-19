@@ -1602,6 +1602,7 @@ mod tests {
             "clang_libc_test_utime_object",
             "clang_libc_test_fdopen_object",
             "clang_libc_test_fcntl_basic_bounded_object",
+            "clang_libc_test_fcntl_object",
             "clang_libc_test_pthread_tsd_object",
             "clang_libc_test_sem_init_object",
             "clang_minilibc_pthread_impl_object",
@@ -1632,6 +1633,7 @@ mod tests {
             "libc_test_utime_static_link",
             "libc_test_fdopen_static_link",
             "libc_test_fcntl_basic_bounded_static_link",
+            "libc_test_fcntl_static_link",
             "libc_test_pthread_tsd_static_link",
             "libc_test_sem_init_static_link",
             "libc_test_qsort_bounded_static_link",
@@ -1664,6 +1666,7 @@ mod tests {
             "libc_test_utime_run_elf",
             "libc_test_fdopen_run_elf",
             "libc_test_fcntl_basic_bounded_run_elf",
+            "libc_test_fcntl_run_elf",
             "libc_test_pthread_tsd_run_elf",
             "libc_test_sem_init_run_elf",
             "libc_test_qsort_bounded_run_elf",
@@ -1793,13 +1796,13 @@ mod tests {
         assert!(!libc_test_driver.contains("--backend toy|llvm"));
         assert!(libc_test_driver.contains("backend=\"llvm\""));
         assert!(libc_test_driver.contains("loader=\"exec-plan\""));
-        assert!(libc_test_driver.contains("--loader asm|exec-plan"));
-        assert!(libc_test_driver.contains("--legacy-toy"));
-        assert!(libc_test_driver.contains("toy backend is legacy-only; use --legacy-toy"));
+        assert!(libc_test_driver.contains("--loader exec-plan"));
+        assert!(!libc_test_driver.contains("--legacy-toy"));
+        assert!(libc_test_driver.contains("toy backend has been removed"));
         assert!(libc_test_driver.contains("exec bash scripts/run_real_llvm_lnp64_docker.sh"));
         assert!(libc_test_driver.contains("llvm backend requires --loader exec-plan"));
-        assert!(libc_test_driver.contains("Use --legacy-toy"));
-        assert!(libc_test_driver.contains("cc --toy-bootstrap"));
+        assert!(!libc_test_driver.contains("Use --legacy-toy"));
+        assert!(!libc_test_driver.contains("cc --toy-bootstrap"));
         assert!(real_tblgen.contains("llvm-tblgen"));
         assert!(real_tblgen.contains("llvm-config"));
         assert!(real_tblgen.contains("-gen-register-info"));
@@ -2367,6 +2370,10 @@ mod tests {
             real_llc
                 .contains("real LLVM LNP64 lld libc-test fcntl_basic_bounded link smoke passed")
         );
+        assert!(real_llc.contains("lnp64-libc-test-fcntl-linked.elf"));
+        assert!(real_llc.contains(r#""$libc_test_fcntl_obj""#));
+        assert!(real_llc.contains(r#""$libc_process_impl_obj" "$libc_errno_impl_obj""#));
+        assert!(real_llc.contains("real LLVM LNP64 lld libc-test fcntl link smoke passed"));
         assert!(real_llc.contains("lnp64-libc-test-pthread-tsd-linked.elf"));
         assert!(real_llc.contains(r#""$libc_test_pthread_tsd_obj""#));
         assert!(real_llc.contains(r#""$libc_pthread_impl_obj" "$libc_alloc_impl_obj""#));
@@ -4256,6 +4263,7 @@ mod tests {
             "real_libc_test_ungetc_execution",
             "real_libc_test_fdopen_execution",
             "real_libc_test_fcntl_basic_bounded_execution",
+            "real_libc_test_fcntl_execution",
             "real_libc_test_pthread_tsd_execution",
             "real_libc_test_sem_init_execution",
             "real_libc_test_qsort_bounded_execution",
@@ -4360,6 +4368,7 @@ mod tests {
             "real_libc_test_ungetc_execution",
             "real_libc_test_fdopen_execution",
             "real_libc_test_fcntl_basic_bounded_execution",
+            "real_libc_test_fcntl_execution",
             "real_libc_test_pthread_tsd_execution",
             "real_libc_test_sem_init_execution",
             "real_libc_test_qsort_bounded_execution",
@@ -6253,7 +6262,6 @@ mod tests {
             "no_toy_in_llvm_gates",
             "replacement_program_set",
             "clang_libc_replacements",
-            "remaining_toy_only_libc",
             "remaining_toy_queue",
         ] {
             assert!(
@@ -6272,7 +6280,6 @@ mod tests {
         }
         assert_eq!(rules["replacement_program_set"].0, "partial");
         assert_eq!(rules["clang_libc_replacements"].0, "partial");
-        assert_eq!(rules["remaining_toy_only_libc"].0, "blocked");
         assert_eq!(rules["remaining_toy_queue"].0, "blocked");
         let explicit_legacy_artifacts = &rules["explicit_legacy_cc_flag"].1;
         for (script_name, script) in legacy_toy_scripts {
@@ -6316,10 +6323,7 @@ mod tests {
                 "toy retirement surface {surface} lacks a blocker"
             );
         }
-        for (surface, expected_status) in [
-            ("legacy_libc_test_backend", "partial"),
-            ("rtl_c_program_smoke", "partial"),
-        ] {
+        for (surface, expected_status) in [("rtl_c_program_smoke", "partial")] {
             assert_eq!(
                 queued_surfaces.get(surface).map(|row| row.0),
                 Some(expected_status),
@@ -6330,9 +6334,10 @@ mod tests {
         assert!(run_elf.contains("real_libc_test_sem_init_execution"));
         assert!(run_elf.contains("real_libc_test_access_bounded_execution"));
         assert!(run_elf.contains("real_libc_test_fcntl_basic_bounded_execution"));
-        assert!(!run_elf.contains("real_libc_test_fcntl_execution"));
-        assert!(libc_test_readme.contains("Do not add new Rust toy compiler fcntl/fork"));
-        assert!(libc_test_readme.contains("bash scripts/run_libc_test.sh --legacy-toy"));
+        assert!(run_elf.contains("real_libc_test_fcntl_execution"));
+        assert!(libc_test_readme.contains("`fcntl.c` is the upstream file"));
+        assert!(libc_test_readme.contains("owner reporting across `fork`"));
+        assert!(!libc_test_readme.contains("bash scripts/run_libc_test.sh --legacy-toy"));
         for intrinsic in manifest_field(target_manifest, "intrinsics").split(',') {
             assert!(intrinsic.starts_with("__lnp_"));
             assert!(intrinsics.contains(intrinsic));
@@ -6381,7 +6386,7 @@ mod tests {
                 );
             }
         }
-        assert!(legacy_toy_script_corpus.contains("--legacy-toy"));
+        assert!(legacy_toy_script_corpus.contains("LNP64_RTL_TOP_PROGRAM_C_BACKEND=toy"));
         assert!(legacy_toy_script_corpus.contains("LNP64_LLVM_PACKAGE_FILTER=userland"));
         assert!(legacy_toy_script_corpus.contains("LNP64_LLVM_PACKAGE_FILTER=netbsd"));
         assert!(legacy_toy_script_corpus.contains("scripts/run_real_llvm_package_gate.sh"));
@@ -6487,10 +6492,7 @@ mod tests {
             );
         }
 
-        for (surface, expected_status) in [
-            ("legacy_libc_test_backend", "partial"),
-            ("rtl_c_program_smoke", "partial"),
-        ] {
+        for (surface, expected_status) in [("rtl_c_program_smoke", "partial")] {
             assert_eq!(
                 queued_surfaces.get(surface).map(|row| row.0),
                 Some(expected_status),

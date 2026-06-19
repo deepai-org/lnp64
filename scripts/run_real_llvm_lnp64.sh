@@ -2867,6 +2867,20 @@ grep -q 'call ' "$libc_test_fcntl_basic_dump"
 printf 'real LLVM LNP64 clang libc-test fcntl_basic_bounded object smoke passed: %s\n' \
   "$libc_test_fcntl_basic_obj"
 
+libc_test_fcntl_obj="$build_dir/libc-test-fcntl-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain/include \
+  -I third_party/libc-test/functional \
+  -c third_party/libc-test/functional/fcntl.c \
+  -o "$libc_test_fcntl_obj"
+test -s "$libc_test_fcntl_obj"
+libc_test_fcntl_dump="$build_dir/libc-test-fcntl-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_test_fcntl_obj" \
+  >"$libc_test_fcntl_dump"
+grep -q 'call ' "$libc_test_fcntl_dump"
+printf 'real LLVM LNP64 clang libc-test fcntl object smoke passed: %s\n' \
+  "$libc_test_fcntl_obj"
+
 libc_test_pthread_tsd_obj="$build_dir/libc-test-pthread-tsd-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain/include \
@@ -5208,6 +5222,16 @@ libc_test_fcntl_basic_elf="$build_dir/lnp64-libc-test-fcntl-basic-bounded-linked
 test -s "$libc_test_fcntl_basic_elf"
 printf 'real LLVM LNP64 lld libc-test fcntl_basic_bounded link smoke passed: %s\n' \
   "$libc_test_fcntl_basic_elf"
+
+libc_test_fcntl_elf="$build_dir/lnp64-libc-test-fcntl-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$libc_test_fcntl_elf" "$crt0_obj" "$libc_test_fcntl_obj" \
+  "$libc_test_print_obj" "$libc_stdio_impl_obj" "$libc_meta_impl_obj" \
+  "$libc_fd_impl_obj" "$libc_process_impl_obj" "$libc_errno_impl_obj" \
+  "$libc_string_impl_obj"
+test -s "$libc_test_fcntl_elf"
+printf 'real LLVM LNP64 lld libc-test fcntl link smoke passed: %s\n' \
+  "$libc_test_fcntl_elf"
 
 libc_test_pthread_tsd_elf="$build_dir/lnp64-libc-test-pthread-tsd-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
