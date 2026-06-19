@@ -7,11 +7,16 @@
 #define EXIT_SUCCESS 0
 
 void abort(void);
+int clearenv(void);
 void exit(int status);
 void free(void *ptr);
+char *getenv(const char *name);
 void *malloc(size_t size);
 void *calloc(size_t count, size_t size);
+int putenv(char *string);
 void *realloc(void *ptr, size_t size);
+int setenv(const char *name, const char *value, int overwrite);
+int unsetenv(const char *name);
 int atoi(const char *nptr);
 long atol(const char *nptr);
 void qsort(void *base, size_t count, size_t size,

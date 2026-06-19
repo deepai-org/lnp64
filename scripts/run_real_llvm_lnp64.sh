@@ -2389,6 +2389,20 @@ grep -q 'call ' "$libc_test_argv_dump"
 printf 'real LLVM LNP64 clang libc-test argv object smoke passed: %s\n' \
   "$libc_test_argv_obj"
 
+libc_test_env_obj="$build_dir/libc-test-env-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain/include \
+  -I third_party/libc-test/functional \
+  -c third_party/libc-test/functional/env.c \
+  -o "$libc_test_env_obj"
+test -s "$libc_test_env_obj"
+libc_test_env_dump="$build_dir/libc-test-env-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_test_env_obj" \
+  >"$libc_test_env_dump"
+grep -q 'call ' "$libc_test_env_dump"
+printf 'real LLVM LNP64 clang libc-test env object smoke passed: %s\n' \
+  "$libc_test_env_obj"
+
 libc_test_ctype_obj="$build_dir/libc-test-ctype-bounded-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain/include \
@@ -4030,7 +4044,8 @@ printf 'real LLVM LNP64 lld startup argv/envp link smoke passed: %s\n' \
 
 getauxval_elf="$build_dir/lnp64-getauxval-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
-  -o "$getauxval_elf" "$crt0_obj" "$getauxval_obj" "$libc_startup_impl_obj"
+  -o "$getauxval_elf" "$crt0_obj" "$getauxval_obj" "$libc_startup_impl_obj" \
+  "$libc_errno_impl_obj"
 test -s "$getauxval_elf"
 printf 'real LLVM LNP64 lld getauxval link smoke passed: %s\n' \
   "$getauxval_elf"
@@ -4042,6 +4057,15 @@ libc_test_argv_elf="$build_dir/lnp64-libc-test-argv-linked.elf"
 test -s "$libc_test_argv_elf"
 printf 'real LLVM LNP64 lld libc-test argv link smoke passed: %s\n' \
   "$libc_test_argv_elf"
+
+libc_test_env_elf="$build_dir/lnp64-libc-test-env-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$libc_test_env_elf" "$crt0_obj" "$libc_test_env_obj" \
+  "$libc_test_print_obj" "$libc_startup_impl_obj" "$libc_string_impl_obj" \
+  "$libc_errno_impl_obj" "$libc_fd_impl_obj"
+test -s "$libc_test_env_elf"
+printf 'real LLVM LNP64 lld libc-test env link smoke passed: %s\n' \
+  "$libc_test_env_elf"
 
 scalar_arith_elf="$build_dir/lnp64-scalar-arith-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

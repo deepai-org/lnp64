@@ -1431,6 +1431,7 @@ mod tests {
             "clang_sbase_support_object",
             "clang_minilibc_stdio_impl_object",
             "clang_libc_test_argv_object",
+            "clang_libc_test_env_object",
             "clang_libc_test_search_insque_object",
             "clang_libc_test_malloc_0_object",
             "clang_libc_test_fgets_eof_object",
@@ -1440,6 +1441,7 @@ mod tests {
             "inih_package_static_link",
             "cwalk_package_static_link",
             "libc_test_argv_static_link",
+            "libc_test_env_static_link",
             "libc_test_ctype_static_link",
             "libc_test_string_static_link",
             "libc_test_string_memmem_static_link",
@@ -1461,6 +1463,7 @@ mod tests {
             "inih_package_run_elf",
             "cwalk_package_run_elf",
             "libc_test_argv_run_elf",
+            "libc_test_env_run_elf",
             "libc_test_ctype_run_elf",
             "libc_test_string_run_elf",
             "libc_test_string_memmem_run_elf",
@@ -1776,6 +1779,12 @@ mod tests {
         );
         assert!(real_llc.contains("toolchain/liblnp64_startup_min.c"));
         assert!(libc_startup_min.contains("getauxval"));
+        assert!(libc_startup_min.contains("char **environ"));
+        assert!(libc_startup_min.contains("char *getenv("));
+        assert!(libc_startup_min.contains("int setenv("));
+        assert!(libc_startup_min.contains("int unsetenv("));
+        assert!(libc_startup_min.contains("int clearenv("));
+        assert!(libc_startup_min.contains("int putenv("));
         assert!(libc_startup_min.contains("env_get %0, %1, %2, %3"));
         assert!(real_llc.contains("liblnp64-startup-min.o"));
         assert!(
@@ -1802,10 +1811,13 @@ mod tests {
         assert!(real_llc.contains("libc-test-print-clang-smoke.o"));
         assert!(real_llc.contains("libc-test-argv-clang-smoke.o"));
         assert!(real_llc.contains("third_party/libc-test/functional/argv.c"));
+        assert!(real_llc.contains("libc-test-env-clang-smoke.o"));
+        assert!(real_llc.contains("third_party/libc-test/functional/env.c"));
         assert!(real_llc.contains("libc-test-ctype-bounded-clang-smoke.o"));
         assert!(real_llc.contains("third_party/libc-test/functional/ctype_bounded.c"));
         assert!(real_llc.contains("real LLVM LNP64 clang libc-test harness object smoke passed"));
         assert!(real_llc.contains("real LLVM LNP64 clang libc-test argv object smoke passed"));
+        assert!(real_llc.contains("real LLVM LNP64 clang libc-test env object smoke passed"));
         assert!(
             real_llc.contains("real LLVM LNP64 clang libc-test ctype_bounded object smoke passed")
         );
@@ -2102,6 +2114,14 @@ mod tests {
             )
         );
         assert!(real_llc.contains("convert-clang-smoke.o"));
+        assert!(stdlib_header.contains("char *getenv(const char *name);"));
+        assert!(
+            stdlib_header
+                .contains("int setenv(const char *name, const char *value, int overwrite);")
+        );
+        assert!(stdlib_header.contains("int unsetenv(const char *name);"));
+        assert!(stdlib_header.contains("int clearenv(void);"));
+        assert!(stdlib_header.contains("int putenv(char *string);"));
         assert!(stdlib_header.contains("int atoi(const char *nptr);"));
         assert!(stdlib_header.contains("long atol(const char *nptr);"));
         assert!(stdlib_header.contains("long strtol(const char *nptr, char **endptr, int base);"));
@@ -2328,12 +2348,18 @@ mod tests {
         assert!(real_llc.contains("lnp64-startup-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld startup argv/envp link smoke passed"));
         assert!(real_llc.contains("lnp64-getauxval-linked.elf"));
-        assert!(real_llc.contains(r#""$getauxval_obj" "$libc_startup_impl_obj""#));
+        assert!(real_llc.contains(r#""$getauxval_obj" "$libc_startup_impl_obj" \"#));
+        assert!(real_llc.contains(r#""$libc_errno_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld getauxval link smoke passed"));
         assert!(real_llc.contains("lnp64-libc-test-argv-linked.elf"));
         assert!(real_llc.contains(r#""$libc_test_argv_obj" \"#));
         assert!(real_llc.contains(r#""$libc_stdio_impl_obj" "$libc_fd_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld libc-test argv link smoke passed"));
+        assert!(real_llc.contains("lnp64-libc-test-env-linked.elf"));
+        assert!(real_llc.contains(r#""$libc_test_env_obj" \"#));
+        assert!(real_llc.contains(r#""$libc_startup_impl_obj" "$libc_string_impl_obj""#));
+        assert!(real_llc.contains(r#""$libc_errno_impl_obj" "$libc_fd_impl_obj""#));
+        assert!(real_llc.contains("real LLVM LNP64 lld libc-test env link smoke passed"));
         assert!(real_llc.contains("lnp64-scalar-arith-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld scalar arithmetic link smoke passed"));
         assert!(real_llc.contains("lnp64-high-mul-linked.elf"));
@@ -3013,6 +3039,8 @@ mod tests {
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf libc-test argv execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-libc-test-env-linked.elf"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf libc-test env execution passed"));
         assert!(main_source.contains("\"run-elf\""));
         assert!(main_source.contains("take_run_namespace_root(&mut args)?"));
         assert!(main_source.contains("probe.machine.set_namespace_root(root)?"));
@@ -3102,6 +3130,7 @@ mod tests {
             "real_startup_execution",
             "real_getauxval_execution",
             "real_libc_test_argv_execution",
+            "real_libc_test_env_execution",
             "real_intrinsic_await_execution",
             "real_intrinsic_call_execution",
             "real_intrinsic_gate_return_execution",
@@ -3172,6 +3201,7 @@ mod tests {
             "real_errno_execution",
             "real_startup_execution",
             "real_getauxval_execution",
+            "real_libc_test_env_execution",
             "text_fetch_decode",
         ] {
             assert_eq!(stages[stage].0, "tested", "{stage} should be tested");
@@ -4026,7 +4056,18 @@ mod tests {
         for (group, required_public, required_native) in [
             (
                 "startup_env_auxv",
-                vec!["_start", "argv", "envp", "getauxval"],
+                vec![
+                    "_start",
+                    "argv",
+                    "envp",
+                    "environ",
+                    "getenv",
+                    "setenv",
+                    "unsetenv",
+                    "clearenv",
+                    "putenv",
+                    "getauxval",
+                ],
                 vec!["crt0", "TLS", "ENV_GET", "EXIT"],
             ),
             (
