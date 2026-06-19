@@ -55,6 +55,7 @@ real_futex_libc_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain
 real_poll_select_epoll_kqueue_libc_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/liblnp64_poll_min.c|real LLVM LNP64 run-elf poll/select/epoll/kqueue libc execution passed|none
 real_signal_libc_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/liblnp64_signal_min.c|real LLVM LNP64 run-elf signal libc execution passed|none
 real_socket_libc_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/liblnp64_socket_min.c|real LLVM LNP64 run-elf socket libc execution passed|none
+real_netbsd_personality_clang_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,userland/netbsd_personality_clang_smoke.c,toolchain/liblnp64_fd_min.c,toolchain/liblnp64_vma_min.c,toolchain/liblnp64_poll_min.c,toolchain/liblnp64_signal_min.c,toolchain/liblnp64_socket_min.c,toolchain/liblnp64_pthread_min.c|real LLVM LNP64 run-elf NetBSD personality clang smoke passed|none
 real_sbase_echo_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/liblnp64_sbase_min.c|real LLVM LNP64 run-elf sbase echo execution passed|none
 real_sbase_basename_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/liblnp64_sbase_min.c,toolchain/liblnp64_path_min.c|real LLVM LNP64 run-elf sbase basename execution passed|none
 real_sbase_dirname_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/liblnp64_sbase_min.c,toolchain/liblnp64_path_min.c|real LLVM LNP64 run-elf sbase dirname execution passed|none

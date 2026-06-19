@@ -250,6 +250,11 @@ run_elf_report "real LLVM LNP64 run-elf signal libc execution passed" \
   target/llvm-lnp64-build/lnp64-signal-libc-linked.elf
 run_elf_report "real LLVM LNP64 run-elf socket libc execution passed" \
   target/llvm-lnp64-build/lnp64-socket-libc-linked.elf
+run_elf_report "real LLVM LNP64 run-elf NetBSD personality clang smoke passed" \
+  target/llvm-lnp64-build/lnp64-netbsd-personality-clang-linked.elf \
+  'netbsd clang personality init' \
+  'netbsd clang personality shell' \
+  'netbsd clang personality smoke ok'
 run_elf_report "real LLVM LNP64 run-elf sbase echo execution passed" \
   target/llvm-lnp64-build/lnp64-sbase-echo-linked.elf \
   echo hello clang --expect 'hello clang'

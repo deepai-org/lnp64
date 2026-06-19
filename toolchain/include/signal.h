@@ -11,5 +11,6 @@ typedef void (*__lnp64_sighandler_t)(int);
 #define SIG_IGN ((__lnp64_sighandler_t)1)
 
 __lnp64_sighandler_t signal(int signum, __lnp64_sighandler_t handler);
+int raise(int signum);
 
 #endif

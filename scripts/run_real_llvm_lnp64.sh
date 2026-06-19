@@ -3875,6 +3875,20 @@ grep -q 'call ' "$socket_libc_dump"
 printf 'real LLVM LNP64 clang socket libc object smoke passed: %s\n' \
   "$socket_libc_obj"
 
+netbsd_personality_clang_c="userland/netbsd_personality_clang_smoke.c"
+netbsd_personality_clang_obj="$build_dir/netbsd-personality-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
+  -c "$netbsd_personality_clang_c" -o "$netbsd_personality_clang_obj"
+test -s "$netbsd_personality_clang_obj"
+netbsd_personality_clang_dump="$build_dir/netbsd-personality-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none \
+  "$netbsd_personality_clang_obj" >"$netbsd_personality_clang_dump"
+grep -q 'call ' "$netbsd_personality_clang_dump"
+printf 'real LLVM LNP64 clang NetBSD personality smoke object passed: %s\n' \
+  "$netbsd_personality_clang_obj"
+
 libc_fd_impl_c="toolchain/liblnp64_fd_min.c"
 libc_fd_impl_obj="$build_dir/liblnp64-fd-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
@@ -4980,6 +4994,17 @@ socket_libc_elf="$build_dir/lnp64-socket-libc-linked.elf"
 test -s "$socket_libc_elf"
 printf 'real LLVM LNP64 lld socket libc link smoke passed: %s\n' \
   "$socket_libc_elf"
+
+netbsd_personality_clang_elf="$build_dir/lnp64-netbsd-personality-clang-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$netbsd_personality_clang_elf" "$crt0_obj" \
+  "$netbsd_personality_clang_obj" "$libc_fd_impl_obj" \
+  "$libc_vma_impl_obj" "$libc_poll_impl_obj" "$libc_signal_impl_obj" \
+  "$libc_socket_impl_obj" "$libc_pthread_impl_obj" "$libc_alloc_impl_obj" \
+  "$libc_string_impl_obj" "$libc_errno_impl_obj"
+test -s "$netbsd_personality_clang_elf"
+printf 'real LLVM LNP64 lld NetBSD personality clang smoke link passed: %s\n' \
+  "$netbsd_personality_clang_elf"
 
 sbase_echo_elf="$build_dir/lnp64-sbase-echo-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

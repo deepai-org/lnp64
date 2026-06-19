@@ -2273,6 +2273,9 @@ mod tests {
         assert!(real_llc.contains("send(client, \"z\", 1, MSG_NOSIGNAL)"));
         assert!(real_llc.contains("recv(accepted, buf, 1, 0)"));
         assert!(real_llc.contains("real LLVM LNP64 clang socket libc object smoke passed"));
+        assert!(real_llc.contains("userland/netbsd_personality_clang_smoke.c"));
+        assert!(real_llc.contains("netbsd-personality-clang-smoke.o"));
+        assert!(real_llc.contains("real LLVM LNP64 clang NetBSD personality smoke object passed"));
         assert!(real_llc.contains("liblnp64-socket-min.o"));
         assert!(real_llc.contains("grep -q 'object_ctl r'"));
         assert!(real_llc.contains("grep -q 'push r'"));
@@ -2674,6 +2677,11 @@ mod tests {
   "$libc_socket_impl_obj""#
         ));
         assert!(real_llc.contains("real LLVM LNP64 lld socket libc link smoke passed"));
+        assert!(real_llc.contains("lnp64-netbsd-personality-clang-linked.elf"));
+        assert!(real_llc.contains(r#""$netbsd_personality_clang_obj" "$libc_fd_impl_obj" \"#));
+        assert!(
+            real_llc.contains("real LLVM LNP64 lld NetBSD personality clang smoke link passed")
+        );
         assert!(real_llc.contains("lnp64-exit-linked.elf"));
         assert!(real_llc.contains(r#""$exit_obj" "$libc_process_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld exit link smoke passed"));
@@ -2789,6 +2797,12 @@ mod tests {
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf signal libc execution passed"));
         assert!(real_llc_docker.contains("lnp64-socket-libc-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf socket libc execution passed"));
+        assert!(real_llc_docker.contains("lnp64-netbsd-personality-clang-linked.elf"));
+        assert!(
+            real_llc_docker
+                .contains("real LLVM LNP64 run-elf NetBSD personality clang smoke passed")
+        );
+        assert!(real_llc_docker.contains("netbsd clang personality smoke ok"));
         assert!(real_llc.contains("lnp64-intrinsic-amo-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld intrinsic AMO link smoke passed"));
         assert!(real_llc.contains("lnp64-c11-atomic-linked.elf"));
@@ -3360,6 +3374,12 @@ mod tests {
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf signal libc execution passed"));
         assert!(real_llc_docker.contains("lnp64-socket-libc-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf socket libc execution passed"));
+        assert!(real_llc_docker.contains("lnp64-netbsd-personality-clang-linked.elf"));
+        assert!(
+            real_llc_docker
+                .contains("real LLVM LNP64 run-elf NetBSD personality clang smoke passed")
+        );
+        assert!(real_llc_docker.contains("netbsd clang personality smoke ok"));
         assert!(real_llc_docker.contains("lnp64-sbase-echo-linked.elf"));
         assert!(real_llc_docker.contains("echo hello clang --expect 'hello clang'"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase echo execution passed"));
@@ -3559,6 +3579,7 @@ mod tests {
             "real_poll_select_epoll_kqueue_libc_execution",
             "real_signal_libc_execution",
             "real_socket_libc_execution",
+            "real_netbsd_personality_clang_execution",
             "real_sbase_echo_execution",
             "real_sbase_basename_execution",
             "real_sbase_dirname_execution",
@@ -3641,6 +3662,7 @@ mod tests {
             "real_poll_select_epoll_kqueue_libc_execution",
             "real_signal_libc_execution",
             "real_socket_libc_execution",
+            "real_netbsd_personality_clang_execution",
             "real_sbase_echo_execution",
             "real_sbase_basename_execution",
             "real_sbase_dirname_execution",
@@ -4708,6 +4730,7 @@ mod tests {
             "userland_init",
             "userland_lnpsh",
             "userland_spawn_task",
+            "netbsd_personality_clang",
             "netcat",
             "httpd",
             "simple_libc",
@@ -4740,6 +4763,7 @@ mod tests {
         assert_eq!(statuses["userland_init"], "partial");
         assert_eq!(statuses["userland_lnpsh"], "partial");
         assert_eq!(statuses["userland_spawn_task"], "partial");
+        assert_eq!(statuses["netbsd_personality_clang"], "partial");
         assert_eq!(statuses["netcat"], "partial");
         assert_eq!(statuses["httpd"], "partial");
         assert_eq!(statuses["simple_libc"], "partial");
@@ -5467,6 +5491,7 @@ mod tests {
             "userland_init",
             "userland_lnpsh",
             "userland_spawn_task",
+            "netbsd_personality_clang",
             "simple_libc",
         ] {
             assert!(
