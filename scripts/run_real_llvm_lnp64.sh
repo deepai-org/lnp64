@@ -12,6 +12,16 @@ if [[ "$default_jobs" -gt 16 ]]; then
   default_jobs=16
 fi
 jobs="${LNP64_LLVM_JOBS:-$default_jobs}"
+gate="${LNP64_LLVM_GATE:-full}"
+
+case "$gate" in
+  full|mc) ;;
+  *)
+    printf 'unknown LNP64_LLVM_GATE: %s\n' "$gate" >&2
+    printf 'expected one of: full, mc\n' >&2
+    exit 2
+    ;;
+esac
 
 rewrite_with_perl() {
   local file="$1"
@@ -140,12 +150,184 @@ cmake -S "$project_dir/llvm" -B "$build_dir" -G Ninja \
   -DLLVM_ENABLE_LIBXML2=OFF \
   -DLLVM_ENABLE_LIBEDIT=OFF
 
-ninja -C "$build_dir" -j "$jobs" llc llvm-mc llvm-objdump clang lld
+if [[ "$gate" == "mc" ]]; then
+  ninja -C "$build_dir" -j "$jobs" llvm-mc llvm-objdump
+else
+  ninja -C "$build_dir" -j "$jobs" llc llvm-mc llvm-objdump clang lld
+fi
+
+llvm_mc="$build_dir/bin/llvm-mc"
+llvm_objdump="$build_dir/bin/llvm-objdump"
+
+if [[ "$gate" == "mc" ]]; then
+  crt0_obj="$build_dir/crt0-smoke.o"
+  "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj toolchain/crt0_lnp64.s \
+    -o "$crt0_obj"
+  test -s "$crt0_obj"
+  printf 'real LLVM LNP64 llvm-mc crt0 smoke passed: %s\n' "$crt0_obj"
+
+  minilibc_obj="$build_dir/liblnp64-min-smoke.o"
+  "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj toolchain/liblnp64_min.s \
+    -o "$minilibc_obj"
+  test -s "$minilibc_obj"
+  printf 'real LLVM LNP64 llvm-mc minilibc smoke passed: %s\n' "$minilibc_obj"
+
+  high_mul_asm="$build_dir/high-mul-mc-smoke.s"
+  cat >"$high_mul_asm" <<'ASM'
+  .text
+  .globl _start
+_start:
+  mulh r1, r2, r3
+  mulhu r4, r5, r6
+  mulhsu r7, r8, r9
+  ret
+ASM
+  high_mul_mc_obj="$build_dir/high-mul-mc-smoke.o"
+  "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$high_mul_asm" \
+    -o "$high_mul_mc_obj"
+  test -s "$high_mul_mc_obj"
+  high_mul_mc_dump="$build_dir/high-mul-mc-smoke.dump"
+  "$llvm_objdump" -d --triple=lnp64-unknown-none "$high_mul_mc_obj" \
+    >"$high_mul_mc_dump"
+  grep -q 'mulh r1, r2, r3' "$high_mul_mc_dump"
+  grep -q 'mulhu r4, r5, r6' "$high_mul_mc_dump"
+  grep -q 'mulhsu r7, r8, r9' "$high_mul_mc_dump"
+  printf 'real LLVM LNP64 llvm-mc high-multiply smoke passed: %s\n' \
+    "$high_mul_mc_obj"
+
+  auipc_asm="$build_dir/auipc-mc-smoke.s"
+  cat >"$auipc_asm" <<'ASM'
+  .text
+  .globl _start
+_start:
+  auipc r1, 4096
+  auipc r2, target
+  ret
+target:
+  nop
+ASM
+  auipc_mc_obj="$build_dir/auipc-mc-smoke.o"
+  "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$auipc_asm" \
+    -o "$auipc_mc_obj"
+  test -s "$auipc_mc_obj"
+  auipc_mc_dump="$build_dir/auipc-mc-smoke.dump"
+  "$llvm_objdump" -d --triple=lnp64-unknown-none "$auipc_mc_obj" \
+    >"$auipc_mc_dump"
+  grep -q 'auipc r1, 4096' "$auipc_mc_dump"
+  grep -q 'auipc r2' "$auipc_mc_dump"
+  printf 'real LLVM LNP64 llvm-mc auipc smoke passed: %s\n' "$auipc_mc_obj"
+
+  mmap_asm="$build_dir/mmap-mc-smoke.s"
+  cat >"$mmap_asm" <<'ASM'
+  .text
+  .globl _start
+_start:
+  mmap r1, r2, r3, r4
+  munmap r5, r6
+  mprotect r7, r8, r9, r10
+  ret
+ASM
+  mmap_mc_obj="$build_dir/mmap-mc-smoke.o"
+  "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$mmap_asm" \
+    -o "$mmap_mc_obj"
+  test -s "$mmap_mc_obj"
+  mmap_mc_dump="$build_dir/mmap-mc-smoke.dump"
+  "$llvm_objdump" -d --triple=lnp64-unknown-none "$mmap_mc_obj" \
+    >"$mmap_mc_dump"
+  grep -q 'mmap r1, r2, r3, r4' "$mmap_mc_dump"
+  grep -q 'munmap r5, r6' "$mmap_mc_dump"
+  grep -q 'mprotect r7, r8, r9, r10' "$mmap_mc_dump"
+  printf 'real LLVM LNP64 llvm-mc mmap opcode smoke passed: %s\n' \
+    "$mmap_mc_obj"
+
+  atomic_asm="$build_dir/atomic-mc-smoke.s"
+  cat >"$atomic_asm" <<'ASM'
+  .text
+  .globl _start
+_start:
+  amo.swap r1, r2, r3
+  amo.add r4, r5, r6
+  amo.and r7, r8, r9
+  amo.or r10, r11, r12
+  lock.cmpxchg r13, r14, r15, r16
+  amo.xor r17, r18, r19
+  futex_wait r20, r21
+  futex_wake r22, r23
+  fence
+  fence.acq
+  fence.rel
+  fence.acq_rel
+  fence.sc
+  isync r24, r25, r26
+  ret
+ASM
+  atomic_mc_obj="$build_dir/atomic-mc-smoke.o"
+  "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$atomic_asm" \
+    -o "$atomic_mc_obj"
+  test -s "$atomic_mc_obj"
+  atomic_mc_dump="$build_dir/atomic-mc-smoke.dump"
+  "$llvm_objdump" -d --triple=lnp64-unknown-none "$atomic_mc_obj" \
+    >"$atomic_mc_dump"
+  grep -q 'amo.swap r1, r2, r3' "$atomic_mc_dump"
+  grep -q 'amo.add r4, r5, r6' "$atomic_mc_dump"
+  grep -q 'amo.and r7, r8, r9' "$atomic_mc_dump"
+  grep -q 'amo.or r10, r11, r12' "$atomic_mc_dump"
+  grep -q 'lock.cmpxchg r13, r14, r15, r16' "$atomic_mc_dump"
+  grep -q 'amo.xor r17, r18, r19' "$atomic_mc_dump"
+  grep -q 'futex_wait r20, r21' "$atomic_mc_dump"
+  grep -q 'futex_wake r22, r23' "$atomic_mc_dump"
+  grep -q 'fence' "$atomic_mc_dump"
+  grep -q 'isync r24, r25, r26' "$atomic_mc_dump"
+  printf 'real LLVM LNP64 llvm-mc atomic opcode smoke passed: %s\n' \
+    "$atomic_mc_obj"
+
+  minilibc_dump="$build_dir/liblnp64-min-smoke.dump"
+  "$llvm_objdump" -d --triple=lnp64-unknown-none "$minilibc_obj" \
+    >"$minilibc_dump"
+  grep -q 'pull r1, r1, r2, r3' "$minilibc_dump"
+  grep -q 'alloc r1, r1' "$minilibc_dump"
+  grep -q 'alloc_size r3, r2' "$minilibc_dump"
+  grep -q 'free r1' "$minilibc_dump"
+  printf 'real LLVM LNP64 llvm-objdump minilibc native decode smoke passed: %s\n' \
+    "$minilibc_dump"
+
+  heap_asm="$build_dir/native-heap-smoke.s"
+  cat >"$heap_asm" <<'ASM'
+.text
+.globl main
+.type main,@function
+main:
+  li r1, 32
+  li r2, 16
+  alloc_ex r3, r1, r2
+  alloc_size r4, r3
+  sub r1, r4, r1
+  free r3
+  ret
+ASM
+
+  heap_obj="$build_dir/native-heap-smoke.o"
+  "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$heap_asm" \
+    -o "$heap_obj"
+  test -s "$heap_obj"
+  heap_dump="$build_dir/native-heap-smoke.dump"
+  "$llvm_objdump" -d --triple=lnp64-unknown-none "$heap_obj" >"$heap_dump"
+  grep -q 'alloc_ex r3, r1, r2' "$heap_dump"
+  grep -q 'alloc_size r4, r3' "$heap_dump"
+  grep -q 'free r3' "$heap_dump"
+  printf 'real LLVM LNP64 native heap opcode smoke passed: %s\n' "$heap_obj"
+
+  crt0_dump="$build_dir/crt0-smoke.dump"
+  "$llvm_objdump" -d --triple=lnp64-unknown-none "$crt0_obj" >"$crt0_dump"
+  grep -q 'errno_set r0' "$crt0_dump"
+  grep -q 'exit r1' "$crt0_dump"
+  printf 'real LLVM LNP64 llvm-objdump crt0 decode smoke passed: %s\n' \
+    "$crt0_dump"
+  exit 0
+fi
 
 llc="$build_dir/bin/llc"
 clang="$build_dir/bin/clang"
-llvm_mc="$build_dir/bin/llvm-mc"
-llvm_objdump="$build_dir/bin/llvm-objdump"
 lld="$build_dir/bin/lld"
 "$llc" --version | sed -n '1,12p'
 

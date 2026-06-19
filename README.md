@@ -144,6 +144,7 @@ Toolchain contracts:
 
 ```sh
 bash scripts/run_real_llvm_tblgen_docker.sh
+bash scripts/run_real_llvm_lnp64_mc_docker.sh
 bash scripts/run_real_llvm_lnp64_docker.sh
 bash scripts/run_toolchain_contracts.sh
 ```
@@ -151,6 +152,9 @@ bash scripts/run_toolchain_contracts.sh
 `scripts/run_real_llvm_lnp64_docker.sh` is the active LLVM porting gate: it
 builds upstream LLVM/Clang/lld in Docker with the in-tree LNP64 backend, links
 real Clang objects, and executes the linked ELFs with `lnp64 run-elf`.
+`scripts/run_real_llvm_lnp64_mc_docker.sh` is the faster MC-only gate for
+assembler, printer, encoding, and disassembler changes. It reuses the same
+checkout/build directories but builds only `llvm-mc` and `llvm-objdump`.
 
 For LLVM iteration, keep `target/llvm-project-src` and
 `target/llvm-lnp64-build` when disk allows. The gate reuses both directories for

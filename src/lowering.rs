@@ -1312,6 +1312,7 @@ mod tests {
         let real_tblgen_docker = include_str!("../scripts/run_real_llvm_tblgen_docker.sh");
         let real_llc = include_str!("../scripts/run_real_llvm_lnp64.sh");
         let real_llc_docker = include_str!("../scripts/run_real_llvm_lnp64_docker.sh");
+        let real_mc_docker = include_str!("../scripts/run_real_llvm_lnp64_mc_docker.sh");
         let real_clang_target = include_str!("../clang/lib/Basic/Targets/LNP64.cpp");
         let llvm_dockerfile = include_str!("../Dockerfile.llvm");
         let libc_string_min = include_str!("../toolchain/liblnp64_string_min.c");
@@ -1358,6 +1359,11 @@ mod tests {
                 .join("scripts/run_real_llvm_lnp64_docker.sh")
                 .is_file()
         );
+        assert!(
+            manifest_root
+                .join("scripts/run_real_llvm_lnp64_mc_docker.sh")
+                .is_file()
+        );
         assert!(manifest_root.join("Dockerfile.llvm").is_file());
         assert!(contract_index.contains(
             "llvm_gates|toolchain/lnp64_llvm_gates.manifest|llvm_gate_manifest_pins_non_toy_clang_commands"
@@ -1393,10 +1399,12 @@ mod tests {
             );
         }
         assert_eq!(statuses["real_llc_build"], "tested");
+        assert_eq!(statuses["real_mc_build"], "tested");
 
         for gate in [
             "gate_driver",
             "real_tblgen",
+            "real_mc_build",
             "real_llc_build",
             "compile_hello",
             "compile_arithmetic",
@@ -1422,6 +1430,10 @@ mod tests {
             commands["real_llc_build"].contains("scripts/run_real_llvm_lnp64_docker.sh"),
             "real LLVM llc gate must run through the Docker-backed script"
         );
+        assert!(
+            commands["real_mc_build"].contains("scripts/run_real_llvm_lnp64_mc_docker.sh"),
+            "real LLVM MC gate must run through the Docker-backed script"
+        );
         assert!(gate_driver.contains("toolchain/lnp64_llvm_gates.manifest"));
         assert!(gate_driver.contains("--dry-run"));
         assert!(gate_driver.contains("--run"));
@@ -1439,6 +1451,10 @@ mod tests {
         assert!(real_tblgen_docker.contains("scripts/run_real_llvm_tblgen.sh"));
         assert!(real_tblgen_docker.contains(r#"--user "$uid:$gid""#));
         assert!(real_llc.contains("llvmorg-14.0.6"));
+        assert!(real_llc.contains("LNP64_LLVM_GATE"));
+        assert!(real_llc.contains("full|mc"));
+        assert!(real_llc.contains("ninja -C \"$build_dir\" -j \"$jobs\" llvm-mc llvm-objdump"));
+        assert!(real_llc.contains("real LLVM LNP64 llvm-objdump crt0 decode smoke passed"));
         assert!(real_llc.contains("git clone"));
         assert!(
             real_llc.contains("git -C \"$project_dir\" sparse-checkout set llvm cmake clang lld")
@@ -1735,6 +1751,10 @@ mod tests {
         assert!(real_llc_docker.contains("Dockerfile.llvm"));
         assert!(real_llc_docker.contains("scripts/run_real_llvm_lnp64.sh"));
         assert!(real_llc_docker.contains(r#"--user "$uid:$gid""#));
+        assert!(real_mc_docker.contains("Dockerfile.llvm"));
+        assert!(real_mc_docker.contains("LNP64_LLVM_GATE=mc"));
+        assert!(real_mc_docker.contains("scripts/run_real_llvm_lnp64.sh"));
+        assert!(real_mc_docker.contains(r#"--user "$uid:$gid""#));
         assert!(llvm_dockerfile.contains("llvm-dev"));
         assert!(llvm_dockerfile.contains("llvm-runtime"));
         assert!(llvm_dockerfile.contains("clang"));
