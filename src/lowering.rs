@@ -1464,6 +1464,7 @@ mod tests {
             "clang_sbase_command_objects",
             "clang_sbase_libutil_objects",
             "clang_sbase_support_object",
+            "clang_userland_ucat_object",
             "clang_minilibc_meta_impl_object",
             "clang_meta_libc_object",
             "clang_minilibc_random_impl_object",
@@ -1549,6 +1550,8 @@ mod tests {
             "sbase_path_run_elf",
             "sbase_cat_static_link",
             "sbase_cat_run_elf",
+            "userland_ucat_static_link",
+            "userland_ucat_run_elf",
             "metadata_libc_static_link",
             "metadata_libc_run_elf",
         ] {
@@ -2453,6 +2456,9 @@ mod tests {
         assert!(real_llc.contains("write-clang-smoke.o"));
         assert!(real_llc.contains("fd write ok"));
         assert!(real_llc.contains("real LLVM LNP64 clang write object smoke passed"));
+        assert!(real_llc.contains("userland/ucat_clang.c"));
+        assert!(real_llc.contains("userland-ucat-clang-smoke.o"));
+        assert!(real_llc.contains("real LLVM LNP64 clang userland ucat object smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_fd_min.c"));
         assert!(libc_fd_min.contains("__lnp_pull"));
         assert!(libc_fd_min.contains("__lnp_push"));
@@ -2553,6 +2559,9 @@ mod tests {
         assert!(real_llc.contains("lnp64-write-linked.elf"));
         assert!(real_llc.contains(r#""$write_obj" "$libc_fd_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld write link smoke passed"));
+        assert!(real_llc.contains("lnp64-userland-ucat-linked.elf"));
+        assert!(real_llc.contains(r#""$userland_ucat_obj" \"#));
+        assert!(real_llc.contains("real LLVM LNP64 lld userland ucat link smoke passed"));
         assert!(real_llc.contains("lnp64-meta-libc-linked.elf"));
         assert!(real_llc.contains(
             r#""$meta_libc_obj" "$libc_meta_impl_obj" \
@@ -3291,6 +3300,11 @@ mod tests {
         assert!(real_llc_docker.contains("cat input/cat.txt"));
         assert!(real_llc_docker.contains("cat via clang"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase cat execution passed"));
+        assert!(real_llc_docker.contains("lnp64-userland-ucat-linked.elf"));
+        assert!(real_llc_docker.contains("userland-fixture-root"));
+        assert!(real_llc_docker.contains("ucat etc/motd"));
+        assert!(real_llc_docker.contains("welcome from clang ucat"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf userland ucat execution passed"));
         assert!(real_llc_docker.contains("lnp64-errno-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf errno execution passed"));
         assert!(real_llc_docker.contains("lnp64-intrinsic-push-linked.elf"));
@@ -3436,6 +3450,7 @@ mod tests {
             "real_sort_helper_execution",
             "real_read_execution",
             "real_write_execution",
+            "real_userland_ucat_execution",
             "real_metadata_libc_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
@@ -3512,6 +3527,7 @@ mod tests {
             "real_search_helper_execution",
             "real_sort_helper_execution",
             "real_write_execution",
+            "real_userland_ucat_execution",
             "real_metadata_libc_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
@@ -4581,6 +4597,7 @@ mod tests {
             "inih_parse_string",
             "cwalk",
             "sbase_commands",
+            "userland_ucat",
             "netcat",
             "httpd",
             "simple_libc",
@@ -4609,6 +4626,7 @@ mod tests {
             assert_eq!(statuses[case], "tested", "{case} should be tested");
         }
         assert_eq!(statuses["sbase_commands"], "partial");
+        assert_eq!(statuses["userland_ucat"], "partial");
         assert_eq!(statuses["netcat"], "partial");
         assert_eq!(statuses["httpd"], "partial");
         assert_eq!(statuses["simple_libc"], "partial");
@@ -5040,8 +5058,7 @@ mod tests {
     fn toy_compiler_policy_manifest_freezes_bootstrap_role() {
         let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
         let policy_manifest = include_str!("../toolchain/lnp64_toy_compiler_policy.manifest");
-        let retirement_queue =
-            include_str!("../toolchain/lnp64_toy_retirement_queue.manifest");
+        let retirement_queue = include_str!("../toolchain/lnp64_toy_retirement_queue.manifest");
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
         let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
         let roadmap = include_str!("../toolchain_roadmap.md");
@@ -5239,7 +5256,7 @@ mod tests {
         }
         for (surface, expected_status) in [
             ("legacy_demo_smoke", "blocked"),
-            ("minimal_userland_image", "blocked"),
+            ("minimal_userland_image", "partial"),
             ("netbsd_personality_system", "blocked"),
             ("legacy_libc_test_backend", "partial"),
             ("rtl_c_program_smoke", "partial"),
@@ -5320,6 +5337,7 @@ mod tests {
             "ping_pong",
             "netcat",
             "httpd",
+            "userland_ucat",
             "simple_libc",
         ] {
             assert!(
@@ -5382,7 +5400,7 @@ mod tests {
 
         for (surface, expected_status) in [
             ("legacy_demo_smoke", "blocked"),
-            ("minimal_userland_image", "blocked"),
+            ("minimal_userland_image", "partial"),
             ("netbsd_personality_system", "blocked"),
             ("legacy_libc_test_backend", "partial"),
             ("rtl_c_program_smoke", "partial"),

@@ -3409,6 +3409,19 @@ grep -q 'call ' "$write_dump"
 printf 'real LLVM LNP64 clang write object smoke passed: %s\n' \
   "$write_obj"
 
+userland_ucat_obj="$build_dir/userland-ucat-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
+  -c userland/ucat_clang.c -o "$userland_ucat_obj"
+test -s "$userland_ucat_obj"
+userland_ucat_dump="$build_dir/userland-ucat-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$userland_ucat_obj" \
+  >"$userland_ucat_dump"
+grep -q 'call ' "$userland_ucat_dump"
+printf 'real LLVM LNP64 clang userland ucat object smoke passed: %s\n' \
+  "$userland_ucat_obj"
+
 meta_libc_c="$build_dir/meta-libc-smoke.c"
 cat >"$meta_libc_c" <<'C'
 #include <errno.h>
@@ -4802,6 +4815,14 @@ write_elf="$build_dir/lnp64-write-linked.elf"
 test -s "$write_elf"
 printf 'real LLVM LNP64 lld write link smoke passed: %s\n' \
   "$write_elf"
+
+userland_ucat_elf="$build_dir/lnp64-userland-ucat-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$userland_ucat_elf" "$crt0_obj" "$userland_ucat_obj" \
+  "$libc_fd_impl_obj"
+test -s "$userland_ucat_elf"
+printf 'real LLVM LNP64 lld userland ucat link smoke passed: %s\n' \
+  "$userland_ucat_elf"
 
 meta_libc_elf="$build_dir/lnp64-meta-libc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

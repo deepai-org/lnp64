@@ -266,5 +266,16 @@ grep -q '^cat via clang$' <<<"$sbase_cat_output"
 grep -q 'exit=0' <<<"$sbase_cat_output"
 printf 'real LLVM LNP64 run-elf sbase cat execution passed: %s\n' \
   target/llvm-lnp64-build/lnp64-sbase-cat-linked.elf
+userland_fixture_root="target/llvm-lnp64-build/userland-fixture-root"
+mkdir -p "$userland_fixture_root/etc"
+printf 'welcome from clang ucat\n' >"$userland_fixture_root/etc/motd"
+"$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-userland-ucat-linked.elf \
+  >/dev/null
+userland_ucat_output="$("$lnp64_bin" run-elf --namespace-root "$userland_fixture_root" \
+  target/llvm-lnp64-build/lnp64-userland-ucat-linked.elf ucat etc/motd)"
+grep -q '^welcome from clang ucat$' <<<"$userland_ucat_output"
+grep -q 'exit=0' <<<"$userland_ucat_output"
+printf 'real LLVM LNP64 run-elf userland ucat execution passed: %s\n' \
+  target/llvm-lnp64-build/lnp64-userland-ucat-linked.elf
 run_elf_report "real LLVM LNP64 run-elf indirect call execution passed" \
   target/llvm-lnp64-build/lnp64-indirect-call-linked.elf
