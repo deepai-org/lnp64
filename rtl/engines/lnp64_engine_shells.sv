@@ -924,7 +924,6 @@ module lnp64_cap_engine(
                     projection.sent_rights == queue_rights;
             end else begin
                 sent_projection_backed_by_queue_state =
-                    !projection.transfer_valid &&
                     cap_projection_is_zero(
                         projection.sent_object_id,
                         projection.sent_generation,
@@ -1540,7 +1539,7 @@ module lnp64_cap_engine(
                         m1_state_projection_reg.sent_lineage_epoch <= 32'd0;
                         m1_state_projection_reg.sent_sealed <= 1'b0;
                         m1_state_projection_reg.sent_rights <= 64'd0;
-                        m1_state_projection_reg.transfer_valid <= 1'b0;
+                        m1_state_projection_reg.transfer_valid <= 1'b1;
                     end
                     if (cap_queue_valid) begin
                         m1_commit_reg.object_id <= cap_queue_object_id[31:0];
@@ -1627,7 +1626,7 @@ module lnp64_cap_engine(
                             m1_state_projection_reg.sent_lineage_epoch <= 32'd0;
                             m1_state_projection_reg.sent_sealed <= 1'b0;
                             m1_state_projection_reg.sent_rights <= 64'd0;
-                            m1_state_projection_reg.transfer_valid <= 1'b0;
+                            m1_state_projection_reg.transfer_valid <= 1'b1;
                         end
                     end else if (src_fd < LNP64_FDR_SLOT_COUNT && fdr_valid[src_fd] &&
                         !fdr_revoked[src_fd] &&

@@ -725,10 +725,6 @@ def check_top_m1_optional_authority_slots(
         )
     if state["sent_valid"] == 0:
         check_top_m1_optional_cap_zero("sent", state, idx, label)
-        if state["transfer_valid"] != 0:
-            raise SystemExit(
-                f"top-level M1 {label} state {idx} has transfer_valid without sent_valid"
-            )
     elif state["transfer_valid"] != 1:
         raise SystemExit(
             f"top-level M1 {label} state {idx} has sent_valid without transfer_valid"
@@ -875,6 +871,8 @@ def check_top_m1_refinement_step(
             )
         if post_state["sent_valid"] != 0:
             raise SystemExit(f"top-level M1 capRecv {idx} left a sent cap queued")
+        if post_state["transfer_valid"] != 1:
+            raise SystemExit(f"top-level M1 capRecv {idx} did not preserve valid-transfer witness")
         check_top_m1_projection_matches_commit("consumer", commit, post_state, idx, "capRecv")
         return
 
