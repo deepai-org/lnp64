@@ -1259,6 +1259,9 @@ module lnp64_object_engine(
     output logic [31:0] telemetry_counter,
     output logic [31:0] fault_counter
 );
+    localparam logic [63:0] OBJECT_LINEAGE_DMA_BUFFER = 64'd1281;
+    localparam int unsigned OBJECT_DMA_BUFFER_DEFAULT_FD = 3;
+
     logic have_rsp;
     lnp64_rsp_t rsp_reg;
     logic fdr_valid [0:LNP64_FDR_SLOT_COUNT-1];
@@ -1389,6 +1392,27 @@ module lnp64_object_engine(
                         cap_sync_single_lineage <= 64'd1025;
                     end else begin
                         rsp_reg.errno_value <= LNP64_ERR_EINVAL;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end
+                end else if (cmd.opcode == LNP64_OP_OBJECT_CTL &&
+                    cmd.arg0 == LNP64_OBJECT_OP_CREATE &&
+                    cmd.arg1 == LNP64_OBJECT_KIND_DMA_BUFFER) begin
+                    single_fd = cmd.arg3 == 64'd0 ? OBJECT_DMA_BUFFER_DEFAULT_FD : cmd.arg3[31:0];
+                    if (cmd.arg_block_len == 64'd0) begin
+                        rsp_reg.errno_value <= LNP64_ERR_EINVAL;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end else if (cmd.cancel_class != 16'd0 &&
+                        single_fd == OBJECT_DMA_BUFFER_DEFAULT_FD) begin
+                        fdr_valid[single_fd] <= 1'b1;
+                        rsp_reg.result_value <= {32'd0, single_fd[31:0]};
+                        rsp_reg.errno_value <= LNP64_ERR_OK;
+                        rsp_reg.status <= LNP64_STATUS_OK;
+                        cap_sync_single_valid <= 1'b1;
+                        cap_sync_single_fd <= single_fd[31:0];
+                        cap_sync_single_kind <= LNP64_FDR_KIND_GENERIC;
+                        cap_sync_single_lineage <= OBJECT_LINEAGE_DMA_BUFFER;
+                    end else begin
+                        rsp_reg.errno_value <= LNP64_ERR_EFAULT;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
                     end
                 end

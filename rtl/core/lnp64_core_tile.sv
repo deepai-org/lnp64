@@ -738,7 +738,10 @@ module lnp64_core_tile #(
 
     function automatic logic dma_buffer_ref_revoked(input logic [63:0] value);
         begin
-            dma_buffer_ref_revoked = dma_buffer_ref_matches(value) && dma_buffer_object_revoked;
+            dma_buffer_ref_revoked = dma_buffer_ref_matches(value) &&
+                (dma_buffer_object_revoked ||
+                 (dma_buffer_object_fd < FDR_SLOT_COUNT &&
+                  fdr_revoked[dma_buffer_object_fd[7:0]]));
         end
     endfunction
 
@@ -1271,12 +1274,14 @@ module lnp64_core_tile #(
             end
             LNP64_OP_OBJECT_CTL: begin
                 cmd.rights_mask = object_fd1_req;
+                cmd.flags = object_dma_addr;
                 cmd.arg0 = object_op;
                 cmd.arg1 = object_kind;
                 cmd.arg2 = object_profile;
                 cmd.arg3 = object_fd_req;
                 cmd.arg_block_ptr = gpr[dec.rs1];
-                cmd.arg_block_len = 64'd72;
+                cmd.arg_block_len = object_dma_len;
+                cmd.cancel_class = heap_range_valid(object_dma_addr, object_dma_len) ? 16'd1 : 16'd0;
             end
             LNP64_OP_DOMAIN_CTL: begin
                 cmd.rights_mask = domain_caps_req;
@@ -3213,46 +3218,47 @@ module lnp64_core_tile #(
                                     retire_submit_record <= retire_submit_next;
                                 end else if (object_op == OBJECT_OP_CREATE &&
                                     object_kind == OBJECT_KIND_DMA_BUFFER &&
-                                    object_dma_len != 64'd0 &&
-                                    heap_range_valid(object_dma_addr, object_dma_len) &&
-                                    (object_fd_req == 64'd0 || object_fd_req == RTL_DMA_BUFFER_DEFAULT_FD)) begin
-                                    dma_buffer_object_valid <= 1'b1;
-                                    dma_buffer_object_revoked <= 1'b0;
-                                    dma_buffer_object_fd <= RTL_DMA_BUFFER_DEFAULT_FD;
-                                    dma_buffer_object_addr <= object_dma_addr;
-                                    dma_buffer_object_len <= object_dma_len;
-                                    sram[object_fd_store_word_index] <= store_double_low_word(
-                                        sram[object_fd_store_word_index],
-                                        object_fd_store_byte_lane,
-                                        RTL_DMA_BUFFER_DEFAULT_FD
-                                    );
-                                    if (object_fd_store_byte_lane != 3'd0) begin
-                                        sram[object_fd_store_next_word_index] <= store_double_high_word(
-                                            sram[object_fd_store_next_word_index],
+                                    object_engine_shadow_enabled) begin
+                                    pending_unsupported <= 1'b0;
+                                    command_pc <= pc;
+                                    state <= CORE_SEND_CMD;
+                                end else if (object_op == OBJECT_OP_CREATE &&
+                                    object_kind == OBJECT_KIND_DMA_BUFFER) begin
+                                    if (object_dma_len != 64'd0 &&
+                                        heap_range_valid(object_dma_addr, object_dma_len) &&
+                                        (object_fd_req == 64'd0 || object_fd_req == RTL_DMA_BUFFER_DEFAULT_FD)) begin
+                                        dma_buffer_object_valid <= 1'b1;
+                                        dma_buffer_object_revoked <= 1'b0;
+                                        dma_buffer_object_fd <= RTL_DMA_BUFFER_DEFAULT_FD;
+                                        dma_buffer_object_addr <= object_dma_addr;
+                                        dma_buffer_object_len <= object_dma_len;
+                                        fdr_valid[RTL_DMA_BUFFER_DEFAULT_FD] <= 1'b1;
+                                        fdr_revoked[RTL_DMA_BUFFER_DEFAULT_FD] <= 1'b0;
+                                        fdr_generation[RTL_DMA_BUFFER_DEFAULT_FD] <=
+                                            fdr_generation[RTL_DMA_BUFFER_DEFAULT_FD] + 64'd1;
+                                        fdr_rights[RTL_DMA_BUFFER_DEFAULT_FD] <= CAP_RIGHT_ALL;
+                                        fdr_lineage[RTL_DMA_BUFFER_DEFAULT_FD] <= 64'd1281;
+                                        fdr_kind[RTL_DMA_BUFFER_DEFAULT_FD] <= FDR_KIND_GENERIC;
+                                        sram[object_fd_store_word_index] <= store_double_low_word(
+                                            sram[object_fd_store_word_index],
                                             object_fd_store_byte_lane,
                                             RTL_DMA_BUFFER_DEFAULT_FD
                                         );
+                                        if (object_fd_store_byte_lane != 3'd0) begin
+                                            sram[object_fd_store_next_word_index] <= store_double_high_word(
+                                                sram[object_fd_store_next_word_index],
+                                                object_fd_store_byte_lane,
+                                                RTL_DMA_BUFFER_DEFAULT_FD
+                                            );
+                                        end
+                                        dcache_writeback <= 1'b1;
+                                        gpr[dec.rd] <= RTL_DMA_BUFFER_DEFAULT_FD;
+                                        errno_reg <= LNP64_ERR_OK;
+                                    end else begin
+                                        gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= object_dma_len == 64'd0 ?
+                                            LNP64_ERR_EINVAL : LNP64_ERR_EFAULT;
                                     end
-                                    dcache_writeback <= 1'b1;
-                                    gpr[dec.rd] <= RTL_DMA_BUFFER_DEFAULT_FD;
-                                    errno_reg <= LNP64_ERR_OK;
-                                    pc <= pc + 32'd1;
-                                    retired_count <= retired_count + 32'd1;
-                                    retire_submit_valid <= 1'b1;
-                                    retire_submit_record <= retire_submit_next;
-                                end else if (object_op == OBJECT_OP_CREATE &&
-                                    object_kind == OBJECT_KIND_DMA_BUFFER &&
-                                    object_dma_len == 64'd0) begin
-                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                    errno_reg <= LNP64_ERR_EINVAL;
-                                    pc <= pc + 32'd1;
-                                    retired_count <= retired_count + 32'd1;
-                                    retire_submit_valid <= 1'b1;
-                                    retire_submit_record <= retire_submit_next;
-                                end else if (object_op == OBJECT_OP_CREATE &&
-                                    object_kind == OBJECT_KIND_DMA_BUFFER) begin
-                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                    errno_reg <= LNP64_ERR_EFAULT;
                                     pc <= pc + 32'd1;
                                     retired_count <= retired_count + 32'd1;
                                     retire_submit_valid <= 1'b1;
@@ -3743,6 +3749,12 @@ module lnp64_core_tile #(
                                     cap_queue_lineage == fdr_lineage[cap_src_fd]) begin
                                     cap_queue_revoked <= 1'b1;
                                 end
+                                if (dma_buffer_ref_matches(cap_src_value) ||
+                                    (dma_buffer_object_valid &&
+                                     cap_src_fd == dma_buffer_object_fd[31:0]) ||
+                                    fdr_lineage[cap_src_fd] == 64'd1281) begin
+                                    dma_buffer_object_revoked <= 1'b1;
+                                end
                             end
                             m1_commit_valid <= 1'b1;
                             m1_commit <= m1_commit_next;
@@ -3863,6 +3875,44 @@ module lnp64_core_tile #(
                                         {32'd0, object_rsp_single_fd[31:0]}
                                     );
                                 end
+                            end
+                        end
+                        if (!pending_unsupported &&
+                            dec.opcode == LNP64_OP_OBJECT_CTL &&
+                            object_op == OBJECT_OP_CREATE &&
+                            object_kind == OBJECT_KIND_DMA_BUFFER) begin
+                            if (rsp.status != LNP64_STATUS_OK ||
+                                rsp.errno_value != LNP64_ERR_OK) begin
+                                object_engine_shadow_enabled <= 1'b0;
+                                cap_engine_shadow_enabled <= 1'b0;
+                            end
+                            if (rsp.status == LNP64_STATUS_OK &&
+                                rsp.errno_value == LNP64_ERR_OK &&
+                                object_rsp_single_fd < FDR_SLOT_COUNT) begin
+                                dma_buffer_object_valid <= 1'b1;
+                                dma_buffer_object_revoked <= 1'b0;
+                                dma_buffer_object_fd <= {32'd0, object_rsp_single_fd[31:0]};
+                                dma_buffer_object_addr <= object_dma_addr;
+                                dma_buffer_object_len <= object_dma_len;
+                                fdr_valid[object_rsp_single_fd] <= 1'b1;
+                                fdr_revoked[object_rsp_single_fd] <= 1'b0;
+                                fdr_generation[object_rsp_single_fd] <= fdr_generation[object_rsp_single_fd] + 64'd1;
+                                fdr_rights[object_rsp_single_fd] <= CAP_RIGHT_ALL;
+                                fdr_lineage[object_rsp_single_fd] <= 64'd1281;
+                                fdr_kind[object_rsp_single_fd] <= FDR_KIND_GENERIC;
+                                sram[object_fd_store_word_index] <= store_double_low_word(
+                                    sram[object_fd_store_word_index],
+                                    object_fd_store_byte_lane,
+                                    {32'd0, object_rsp_single_fd[31:0]}
+                                );
+                                if (object_fd_store_byte_lane != 3'd0) begin
+                                    sram[object_fd_store_next_word_index] <= store_double_high_word(
+                                        sram[object_fd_store_next_word_index],
+                                        object_fd_store_byte_lane,
+                                        {32'd0, object_rsp_single_fd[31:0]}
+                                    );
+                                end
+                                dcache_writeback <= 1'b1;
                             end
                         end
                         if (!pending_unsupported &&
