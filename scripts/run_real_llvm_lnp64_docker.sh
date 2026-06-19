@@ -201,6 +201,8 @@ run_elf_report "real LLVM LNP64 run-elf libc-test search_insque execution passed
   target/llvm-lnp64-build/lnp64-libc-test-search-insque-linked.elf
 run_elf_report "real LLVM LNP64 run-elf libc-test malloc-0 execution passed" \
   target/llvm-lnp64-build/lnp64-libc-test-malloc-0-linked.elf
+run_elf_report "real LLVM LNP64 run-elf libc-test fgets-eof execution passed" \
+  target/llvm-lnp64-build/lnp64-libc-test-fgets-eof-linked.elf
 run_elf_report "real LLVM LNP64 run-elf calloc execution passed" \
   target/llvm-lnp64-build/lnp64-calloc-linked.elf
 run_elf_report "real LLVM LNP64 run-elf realloc execution passed" \

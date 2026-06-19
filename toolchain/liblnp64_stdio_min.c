@@ -1,6 +1,19 @@
 #include <stdarg.h>
 #include <stddef.h>
 
+typedef struct __lnp64_file FILE;
+
+struct __lnp64_file {
+  unsigned char *buffer;
+  size_t size;
+  size_t pos;
+  int eof;
+  int error;
+};
+
+static FILE lnp64_mem_streams[4];
+static size_t lnp64_mem_stream_count;
+
 struct lnp64_snprintf_out {
   char *buf;
   size_t size;
@@ -146,4 +159,62 @@ int sprintf(char *str, const char *format, ...) {
   ret = vsnprintf(str, (unsigned long)-1, format, ap);
   va_end(ap);
   return ret;
+}
+
+FILE *fmemopen(void *buf, unsigned long size, const char *mode) {
+  (void)mode;
+  if (!buf || lnp64_mem_stream_count >= sizeof lnp64_mem_streams / sizeof lnp64_mem_streams[0])
+    return 0;
+  FILE *stream = &lnp64_mem_streams[lnp64_mem_stream_count];
+  lnp64_mem_stream_count = lnp64_mem_stream_count + 1;
+  stream->buffer = (unsigned char *)buf;
+  stream->size = size;
+  stream->pos = 0;
+  stream->eof = 0;
+  stream->error = 0;
+  return stream;
+}
+
+char *fgets(char *str, int count, FILE *stream) {
+  int written = 0;
+  if (!str || count <= 0 || !stream) {
+    if (stream)
+      stream->error = 1;
+    return 0;
+  }
+  if (stream->pos >= stream->size) {
+    stream->eof = 1;
+    return 0;
+  }
+  while (written + 1 < count && stream->pos < stream->size) {
+    unsigned char ch = stream->buffer[stream->pos];
+    stream->pos = stream->pos + 1;
+    str[written] = (char)ch;
+    written = written + 1;
+    if (ch == '\n')
+      break;
+  }
+  if (written == 0) {
+    stream->eof = 1;
+    return 0;
+  }
+  str[written] = 0;
+  if (stream->pos >= stream->size)
+    stream->eof = 1;
+  return str;
+}
+
+int feof(FILE *stream) {
+  return stream ? stream->eof : 0;
+}
+
+int ferror(FILE *stream) {
+  return stream ? stream->error : 1;
+}
+
+void clearerr(FILE *stream) {
+  if (!stream)
+    return;
+  stream->eof = 0;
+  stream->error = 0;
 }
