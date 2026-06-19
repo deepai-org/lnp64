@@ -827,6 +827,35 @@ grep -q 'domain_ctl r' "$intrinsic_ctl_dump"
 printf 'real LLVM LNP64 clang intrinsic control object smoke passed: %s\n' \
   "$intrinsic_ctl_obj"
 
+intrinsic_mmap_c="$build_dir/intrinsic-mmap.c"
+cat >"$intrinsic_mmap_c" <<'C'
+#include "lnp64_intrinsics.h"
+
+static volatile void *mapped;
+
+int main(void) {
+  void *p = __lnp_mmap_bootstrap(0, 4096, 3);
+  mapped = p;
+  if (__lnp_mprotect_bootstrap(p, 4096, 1) != 0)
+    return 1;
+  return (int)__lnp_munmap_bootstrap(p);
+}
+C
+
+intrinsic_mmap_obj="$build_dir/intrinsic-mmap-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$intrinsic_mmap_c" -o "$intrinsic_mmap_obj"
+test -s "$intrinsic_mmap_obj"
+intrinsic_mmap_dump="$build_dir/intrinsic-mmap-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$intrinsic_mmap_obj" \
+  >"$intrinsic_mmap_dump"
+grep -q 'mmap r' "$intrinsic_mmap_dump"
+grep -q 'mprotect r' "$intrinsic_mmap_dump"
+grep -q 'munmap r' "$intrinsic_mmap_dump"
+printf 'real LLVM LNP64 clang intrinsic mmap object smoke passed: %s\n' \
+  "$intrinsic_mmap_obj"
+
 intrinsic_amo_c="$build_dir/intrinsic-amo.c"
 cat >"$intrinsic_amo_c" <<'C'
 #include "lnp64_intrinsics.h"

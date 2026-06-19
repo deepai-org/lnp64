@@ -1735,6 +1735,14 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 lld native heap link smoke passed"));
         assert!(real_llc.contains("lnp64-intrinsic-control-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld intrinsic control link smoke passed"));
+        assert!(real_llc.contains("intrinsic-mmap-clang-smoke.o"));
+        assert!(real_llc.contains("__lnp_mmap_bootstrap"));
+        assert!(real_llc.contains("__lnp_mprotect_bootstrap"));
+        assert!(real_llc.contains("__lnp_munmap_bootstrap"));
+        assert!(real_llc.contains("grep -q 'mmap r'"));
+        assert!(real_llc.contains("grep -q 'mprotect r'"));
+        assert!(real_llc.contains("grep -q 'munmap r'"));
+        assert!(real_llc.contains("real LLVM LNP64 clang intrinsic mmap object smoke passed"));
         assert!(real_llc.contains("lnp64-intrinsic-amo-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld intrinsic AMO link smoke passed"));
         assert!(real_llc.contains("lnp64-c11-atomic-linked.elf"));
@@ -3690,6 +3698,9 @@ mod tests {
             "__lnp_alloc_ex",
             "__lnp_alloc_size",
             "__lnp_free",
+            "__lnp_mmap_bootstrap",
+            "__lnp_munmap_bootstrap",
+            "__lnp_mprotect_bootstrap",
             "__lnp_exit",
         ] {
             assert!(

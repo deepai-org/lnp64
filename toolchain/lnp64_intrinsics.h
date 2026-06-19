@@ -64,6 +64,37 @@ static inline void __lnp_free(void *ptr) {
   __asm__ volatile("free %0" : : "r"((lnp64_word_t)ptr) : "memory");
 }
 
+static inline void *__lnp_mmap_bootstrap(lnp64_word_t addr_hint,
+                                         lnp64_word_t len,
+                                         lnp64_word_t prot) {
+  lnp64_word_t addr;
+  __asm__ volatile("mmap %0, %1, %2, %3"
+                   : "=r"(addr)
+                   : "r"(addr_hint), "r"(len), "r"(prot)
+                   : "memory");
+  return (void *)addr;
+}
+
+static inline lnp64_word_t __lnp_munmap_bootstrap(void *addr) {
+  lnp64_word_t status;
+  __asm__ volatile("munmap %0, %1"
+                   : "=r"(status)
+                   : "r"((lnp64_word_t)addr)
+                   : "memory");
+  return status;
+}
+
+static inline lnp64_word_t __lnp_mprotect_bootstrap(void *addr,
+                                                    lnp64_word_t len,
+                                                    lnp64_word_t prot) {
+  lnp64_word_t status;
+  __asm__ volatile("mprotect %0, %1, %2, %3"
+                   : "=r"(status)
+                   : "r"((lnp64_word_t)addr), "r"(len), "r"(prot)
+                   : "memory");
+  return status;
+}
+
 static inline void __lnp_exit(lnp64_word_t status) {
   __asm__ volatile("exit %0" : : "r"(status) : "memory");
 }
