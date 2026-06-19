@@ -489,8 +489,74 @@ def rtlM1StateProjectionPackedSchema : List (String × Nat) := [
   ("revoked_generation", 32)
 ]
 
+-- The packed records are flat RTL bit layouts; these maps state the Lean
+-- projection path each field is allowed to feed.
+def rtlM1CommitSchemaToLeanProjection : List (String × String) := [
+  ("op", "op"),
+  ("object_id", "objectId"),
+  ("object_gen", "objectGeneration"),
+  ("fdr_gen", "fdrGeneration"),
+  ("domain_id", "domainId"),
+  ("domain_gen", "domainGeneration"),
+  ("rights_mask", "rights"),
+  ("lineage_epoch", "lineageEpoch"),
+  ("sealed", "sealed"),
+  ("status", "status")
+]
+
+def rtlM1StateProjectionSchemaToLeanProjection : List (String × String) := [
+  ("op", "transitionTag.op"),
+  ("status", "transitionTag.status"),
+  ("object_gen", "objectGeneration"),
+  ("created_object_created", "createdObjectCreated"),
+  ("created_object_gen", "createdObjectGeneration"),
+  ("root_object_id", "rootCap.objectId"),
+  ("root_generation", "rootCap.generation"),
+  ("root_domain_id", "rootCap.ownerDomain"),
+  ("root_lineage_epoch", "rootCap.lineageEpoch"),
+  ("root_sealed", "rootCap.sealed"),
+  ("root_rights", "rootCap.rights"),
+  ("consumer_object_id", "consumerCap.objectId"),
+  ("consumer_generation", "consumerCap.generation"),
+  ("consumer_domain_id", "consumerCap.ownerDomain"),
+  ("consumer_lineage_epoch", "consumerCap.lineageEpoch"),
+  ("consumer_sealed", "consumerCap.sealed"),
+  ("consumer_rights", "consumerCap.rights"),
+  ("sent_valid", "sentCap.valid"),
+  ("sent_object_id", "sentCap.objectId"),
+  ("sent_generation", "sentCap.generation"),
+  ("sent_domain_id", "sentCap.ownerDomain"),
+  ("sent_lineage_epoch", "sentCap.lineageEpoch"),
+  ("sent_sealed", "sentCap.sealed"),
+  ("sent_rights", "sentCap.rights"),
+  ("minted_valid", "mintedCap.valid"),
+  ("minted_object_id", "mintedCap.objectId"),
+  ("minted_generation", "mintedCap.generation"),
+  ("minted_domain_id", "mintedCap.ownerDomain"),
+  ("minted_lineage_epoch", "mintedCap.lineageEpoch"),
+  ("minted_sealed", "mintedCap.sealed"),
+  ("minted_rights", "mintedCap.rights"),
+  ("wake_pending", "wakePending"),
+  ("transfer_valid", "transferValid"),
+  ("stale_rejected", "staleRejected"),
+  ("revoked_rejected", "revokedRejected"),
+  ("failed_no_authority", "failedNoAuthority"),
+  ("full_was_explicit", "fullWasExplicit"),
+  ("has_revoked_generation", "hasRevokedGeneration"),
+  ("revoked_generation", "revokedGeneration")
+]
+
 def packedSchemaWidth (schema : List (String × Nat)) : Nat :=
   schema.foldl (fun total field => total + field.2) 0
+
+def packedSchemaFieldNames (schema : List (String × Nat)) : List String :=
+  schema.map Prod.fst
+
+def packedProjectionSchemaFieldNames (schema : List (String × String)) : List String :=
+  schema.map Prod.fst
+
+def packedProjectionLeanPaths (schema : List (String × String)) : List String :=
+  schema.map Prod.snd
 
 def packedSchemaLayoutFrom : Nat -> List (String × Nat) -> List PackedFieldLayout
   | _cursor, [] => []
@@ -508,6 +574,77 @@ theorem rtlM1CommitPackedSchema_width :
 
 theorem rtlM1StateProjectionPackedSchema_width :
     packedSchemaWidth rtlM1StateProjectionPackedSchema = 902 := by
+  rfl
+
+theorem rtlM1CommitSchemaToLeanProjection_covers_schema :
+    packedProjectionSchemaFieldNames rtlM1CommitSchemaToLeanProjection =
+      packedSchemaFieldNames rtlM1CommitPackedSchema := by
+  rfl
+
+theorem rtlM1CommitSchemaToLeanProjection_targets_commit_projection :
+    packedProjectionLeanPaths rtlM1CommitSchemaToLeanProjection =
+      [
+        "op",
+        "objectId",
+        "objectGeneration",
+        "fdrGeneration",
+        "domainId",
+        "domainGeneration",
+        "rights",
+        "lineageEpoch",
+        "sealed",
+        "status"
+      ] := by
+  rfl
+
+theorem rtlM1StateProjectionSchemaToLeanProjection_covers_schema :
+    packedProjectionSchemaFieldNames rtlM1StateProjectionSchemaToLeanProjection =
+      packedSchemaFieldNames rtlM1StateProjectionPackedSchema := by
+  rfl
+
+theorem rtlM1StateProjectionSchemaToLeanProjection_targets_state_projection :
+    packedProjectionLeanPaths rtlM1StateProjectionSchemaToLeanProjection =
+      [
+        "transitionTag.op",
+        "transitionTag.status",
+        "objectGeneration",
+        "createdObjectCreated",
+        "createdObjectGeneration",
+        "rootCap.objectId",
+        "rootCap.generation",
+        "rootCap.ownerDomain",
+        "rootCap.lineageEpoch",
+        "rootCap.sealed",
+        "rootCap.rights",
+        "consumerCap.objectId",
+        "consumerCap.generation",
+        "consumerCap.ownerDomain",
+        "consumerCap.lineageEpoch",
+        "consumerCap.sealed",
+        "consumerCap.rights",
+        "sentCap.valid",
+        "sentCap.objectId",
+        "sentCap.generation",
+        "sentCap.ownerDomain",
+        "sentCap.lineageEpoch",
+        "sentCap.sealed",
+        "sentCap.rights",
+        "mintedCap.valid",
+        "mintedCap.objectId",
+        "mintedCap.generation",
+        "mintedCap.ownerDomain",
+        "mintedCap.lineageEpoch",
+        "mintedCap.sealed",
+        "mintedCap.rights",
+        "wakePending",
+        "transferValid",
+        "staleRejected",
+        "revokedRejected",
+        "failedNoAuthority",
+        "fullWasExplicit",
+        "hasRevokedGeneration",
+        "revokedGeneration"
+      ] := by
   rfl
 
 def rtlM1CommitPackedLayout : List PackedFieldLayout := [

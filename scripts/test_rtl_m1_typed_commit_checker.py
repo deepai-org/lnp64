@@ -717,6 +717,34 @@ def main() -> None:
         ),
     )
 
+    wrong_commit_projection_path = replace_once(
+        lean_source,
+        '("rights_mask", "rights")',
+        '("rights_mask", "ambientRights")',
+    )
+    expect_failure(
+        "rtlM1CommitSchemaToLeanProjection drifted",
+        lambda: checker.check_lean_packed_schema_contract(
+            wrong_commit_projection_path,
+            commit_fields,
+            state_fields,
+        ),
+    )
+
+    wrong_state_projection_path = replace_once(
+        lean_source,
+        '("sent_generation", "sentCap.generation")',
+        '("sent_generation", "consumerCap.generation")',
+    )
+    expect_failure(
+        "rtlM1StateProjectionSchemaToLeanProjection drifted",
+        lambda: checker.check_lean_packed_schema_contract(
+            wrong_state_projection_path,
+            commit_fields,
+            state_fields,
+        ),
+    )
+
     print("rtl m1 typed commit checker self-test ok")
 
 

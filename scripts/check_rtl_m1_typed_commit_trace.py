@@ -210,6 +210,10 @@ M1_TYPED_COMMIT_LEAN_THEOREMS = (
     "rtl_m1_refinement_cap_revoke_post_generation_matches_commit_projection",
     "rtlM1CommitPackedSchema_width",
     "rtlM1StateProjectionPackedSchema_width",
+    "rtlM1CommitSchemaToLeanProjection_covers_schema",
+    "rtlM1CommitSchemaToLeanProjection_targets_commit_projection",
+    "rtlM1StateProjectionSchemaToLeanProjection_covers_schema",
+    "rtlM1StateProjectionSchemaToLeanProjection_targets_state_projection",
 )
 
 M1_SCHEMA_TO_LEAN_COMMIT_FIELDS = {
@@ -232,6 +236,48 @@ M1_STATE_CAP_PROJECTION_FIELDS = (
     "lineage_epoch",
     "sealed",
     "rights",
+)
+
+M1_SCHEMA_TO_LEAN_STATE_PROJECTION_PATHS = (
+    ("op", "transitionTag.op"),
+    ("status", "transitionTag.status"),
+    ("object_gen", "objectGeneration"),
+    ("created_object_created", "createdObjectCreated"),
+    ("created_object_gen", "createdObjectGeneration"),
+    ("root_object_id", "rootCap.objectId"),
+    ("root_generation", "rootCap.generation"),
+    ("root_domain_id", "rootCap.ownerDomain"),
+    ("root_lineage_epoch", "rootCap.lineageEpoch"),
+    ("root_sealed", "rootCap.sealed"),
+    ("root_rights", "rootCap.rights"),
+    ("consumer_object_id", "consumerCap.objectId"),
+    ("consumer_generation", "consumerCap.generation"),
+    ("consumer_domain_id", "consumerCap.ownerDomain"),
+    ("consumer_lineage_epoch", "consumerCap.lineageEpoch"),
+    ("consumer_sealed", "consumerCap.sealed"),
+    ("consumer_rights", "consumerCap.rights"),
+    ("sent_valid", "sentCap.valid"),
+    ("sent_object_id", "sentCap.objectId"),
+    ("sent_generation", "sentCap.generation"),
+    ("sent_domain_id", "sentCap.ownerDomain"),
+    ("sent_lineage_epoch", "sentCap.lineageEpoch"),
+    ("sent_sealed", "sentCap.sealed"),
+    ("sent_rights", "sentCap.rights"),
+    ("minted_valid", "mintedCap.valid"),
+    ("minted_object_id", "mintedCap.objectId"),
+    ("minted_generation", "mintedCap.generation"),
+    ("minted_domain_id", "mintedCap.ownerDomain"),
+    ("minted_lineage_epoch", "mintedCap.lineageEpoch"),
+    ("minted_sealed", "mintedCap.sealed"),
+    ("minted_rights", "mintedCap.rights"),
+    ("wake_pending", "wakePending"),
+    ("transfer_valid", "transferValid"),
+    ("stale_rejected", "staleRejected"),
+    ("revoked_rejected", "revokedRejected"),
+    ("failed_no_authority", "failedNoAuthority"),
+    ("full_was_explicit", "fullWasExplicit"),
+    ("has_revoked_generation", "hasRevokedGeneration"),
+    ("revoked_generation", "revokedGeneration"),
 )
 
 
@@ -665,6 +711,22 @@ def load_lean_packed_schema(source: str, name: str) -> tuple[tuple[str, int], ..
     return fields
 
 
+def load_lean_string_pair_list(source: str, name: str) -> tuple[tuple[str, str], ...]:
+    match = re.search(
+        rf"(?ms)^def\s+{re.escape(name)}\s*:\s*List\s*\(String\s*×\s*String\)\s*:=\s*\[(?P<body>.*?)^\]",
+        source,
+    )
+    if not match:
+        fail(f"Lean M1 transition model is missing string pair list {name}")
+    pairs = tuple(
+        (left, right)
+        for left, right in re.findall(r'\("([^"]+)",\s*"([^"]+)"\)', match.group("body"))
+    )
+    if not pairs:
+        fail(f"Lean string pair list {name} has no parsed entries")
+    return pairs
+
+
 def load_lean_packed_schema_width_theorem(source: str, theorem_name: str, schema_name: str) -> int:
     match = re.search(
         rf"(?ms)^theorem\s+{re.escape(theorem_name)}\s*:\s*"
@@ -790,6 +852,37 @@ def check_lean_packed_schema_contract(
         fail(
             "Lean rtlM1StateProjectionPackedSchema_width drifted from shared M1 state schema width: "
             f"{lean_state_schema_width} != {state_schema_width}"
+        )
+    expected_commit_projection_paths = tuple(
+        (field_name, M1_SCHEMA_TO_LEAN_COMMIT_FIELDS[field_name])
+        for field_name, _width in commit_field_specs
+    )
+    lean_commit_projection_paths = load_lean_string_pair_list(
+        lean_source,
+        "rtlM1CommitSchemaToLeanProjection",
+    )
+    if lean_commit_projection_paths != expected_commit_projection_paths:
+        fail(
+            "Lean rtlM1CommitSchemaToLeanProjection drifted from shared M1 commit schema: "
+            f"{lean_commit_projection_paths!r} != {expected_commit_projection_paths!r}"
+        )
+    expected_state_field_names = tuple(field_name for field_name, _width in state_field_specs)
+    actual_state_projection_field_names = tuple(
+        field_name for field_name, _lean_path in M1_SCHEMA_TO_LEAN_STATE_PROJECTION_PATHS
+    )
+    if actual_state_projection_field_names != expected_state_field_names:
+        fail(
+            "internal M1 state schema-to-Lean projection paths drifted from shared M1 state schema: "
+            f"{actual_state_projection_field_names!r} != {expected_state_field_names!r}"
+        )
+    lean_state_projection_paths = load_lean_string_pair_list(
+        lean_source,
+        "rtlM1StateProjectionSchemaToLeanProjection",
+    )
+    if lean_state_projection_paths != M1_SCHEMA_TO_LEAN_STATE_PROJECTION_PATHS:
+        fail(
+            "Lean rtlM1StateProjectionSchemaToLeanProjection drifted from shared M1 state schema: "
+            f"{lean_state_projection_paths!r} != {M1_SCHEMA_TO_LEAN_STATE_PROJECTION_PATHS!r}"
         )
 
 
