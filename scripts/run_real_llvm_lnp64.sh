@@ -280,6 +280,24 @@ ASM
   printf 'real LLVM LNP64 llvm-mc GET_PCR opcode smoke passed: %s\n' \
     "$get_pcr_mc_obj"
 
+  open_at_asm="$build_dir/open-at-mc-smoke.s"
+  cat >"$open_at_asm" <<'ASM'
+  .text
+  .globl _start
+_start:
+  open_at r1, r2, r3, r4
+ASM
+  open_at_mc_obj="$build_dir/open-at-mc-smoke.o"
+  "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$open_at_asm" \
+    -o "$open_at_mc_obj"
+  test -s "$open_at_mc_obj"
+  open_at_mc_dump="$build_dir/open-at-mc-smoke.dump"
+  "$llvm_objdump" -d --triple=lnp64-unknown-none "$open_at_mc_obj" \
+    >"$open_at_mc_dump"
+  grep -q 'open_at r1, r2, r3, r4' "$open_at_mc_dump"
+  printf 'real LLVM LNP64 llvm-mc OPEN_AT opcode smoke passed: %s\n' \
+    "$open_at_mc_obj"
+
   cap_control_asm="$build_dir/cap-control-mc-smoke.s"
   cat >"$cap_control_asm" <<'ASM'
   .text
@@ -789,6 +807,18 @@ grep -q 'call ' "$pcr_dump"
 printf 'real LLVM LNP64 clang PCR demo object smoke passed: %s\n' \
   "$pcr_obj"
 
+cat_obj="$build_dir/cat-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables \
+  -Wno-implicit-function-declaration -I toolchain \
+  -c demos/cat.c -o "$cat_obj"
+test -s "$cat_obj"
+cat_dump="$build_dir/cat-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$cat_obj" >"$cat_dump"
+grep -q 'call ' "$cat_dump"
+printf 'real LLVM LNP64 clang cat demo object smoke passed: %s\n' \
+  "$cat_obj"
+
 indirect_call_c="$build_dir/indirect-call-smoke.c"
 cat >"$indirect_call_c" <<'C'
 int add3(int x) {
@@ -1010,6 +1040,29 @@ intrinsic_get_pcr_dump="$build_dir/intrinsic-get-pcr-clang-smoke.dump"
 grep -q 'get_pcr r' "$intrinsic_get_pcr_dump"
 printf 'real LLVM LNP64 clang intrinsic GET_PCR object smoke passed: %s\n' \
   "$intrinsic_get_pcr_obj"
+
+intrinsic_openat_c="$build_dir/intrinsic-openat.c"
+cat >"$intrinsic_openat_c" <<'C'
+#include "lnp64_intrinsics.h"
+
+int main(void) {
+  lnp64_word_t fd = __lnp_openat((lnp64_cap_t)(long)-100,
+                                 (lnp64_word_t)"demos/cat_input.txt", 0, 0);
+  return fd == (lnp64_word_t)-1 ? 1 : 0;
+}
+C
+
+intrinsic_openat_obj="$build_dir/intrinsic-openat-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$intrinsic_openat_c" -o "$intrinsic_openat_obj"
+test -s "$intrinsic_openat_obj"
+intrinsic_openat_dump="$build_dir/intrinsic-openat-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$intrinsic_openat_obj" \
+  >"$intrinsic_openat_dump"
+grep -q 'open_at r' "$intrinsic_openat_dump"
+printf 'real LLVM LNP64 clang intrinsic OPEN_AT object smoke passed: %s\n' \
+  "$intrinsic_openat_obj"
 
 intrinsic_amo_c="$build_dir/intrinsic-amo.c"
 cat >"$intrinsic_amo_c" <<'C'
@@ -2272,7 +2325,7 @@ read_c="$build_dir/read-smoke.c"
 cat >"$read_c" <<'C'
 typedef unsigned long size_t;
 
-long read(int fd, void *buf, size_t len);
+long read(long fd, void *buf, size_t len);
 
 int main(void) {
   char byte = 0;
@@ -2296,7 +2349,7 @@ write_c="$build_dir/write-smoke.c"
 cat >"$write_c" <<'C'
 typedef unsigned long size_t;
 
-long write(int fd, const void *buf, size_t len);
+long write(long fd, const void *buf, size_t len);
 
 int main(void) {
   const char msg[] = "fd write ok\n";
@@ -2856,6 +2909,24 @@ grep -q 'set_pcr SIGMASK, r2' "$get_pcr_mc_dump"
 printf 'real LLVM LNP64 llvm-mc GET_PCR opcode smoke passed: %s\n' \
   "$get_pcr_mc_obj"
 
+open_at_asm="$build_dir/open-at-mc-smoke.s"
+cat >"$open_at_asm" <<'ASM'
+  .text
+  .globl _start
+_start:
+  open_at r1, r2, r3, r4
+ASM
+open_at_mc_obj="$build_dir/open-at-mc-smoke.o"
+"$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$open_at_asm" \
+  -o "$open_at_mc_obj"
+test -s "$open_at_mc_obj"
+open_at_mc_dump="$build_dir/open-at-mc-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$open_at_mc_obj" \
+  >"$open_at_mc_dump"
+grep -q 'open_at r1, r2, r3, r4' "$open_at_mc_dump"
+printf 'real LLVM LNP64 llvm-mc OPEN_AT opcode smoke passed: %s\n' \
+  "$open_at_mc_obj"
+
 cap_control_asm="$build_dir/cap-control-mc-smoke.s"
 cat >"$cap_control_asm" <<'ASM'
   .text
@@ -3072,6 +3143,13 @@ intrinsic_get_pcr_elf="$build_dir/lnp64-intrinsic-get-pcr-linked.elf"
 test -s "$intrinsic_get_pcr_elf"
 printf 'real LLVM LNP64 lld intrinsic GET_PCR link smoke passed: %s\n' \
   "$intrinsic_get_pcr_elf"
+
+intrinsic_openat_elf="$build_dir/lnp64-intrinsic-openat-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$intrinsic_openat_elf" "$crt0_obj" "$intrinsic_openat_obj"
+test -s "$intrinsic_openat_elf"
+printf 'real LLVM LNP64 lld intrinsic OPEN_AT link smoke passed: %s\n' \
+  "$intrinsic_openat_elf"
 
 intrinsic_amo_elf="$build_dir/lnp64-intrinsic-amo-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
@@ -3323,7 +3401,7 @@ test -s "$indirect_call_elf"
 printf 'real LLVM LNP64 lld indirect call link smoke passed: %s\n' \
   "$indirect_call_elf"
 
-for demo in hello factorial allocator fibonacci pcr; do
+for demo in hello factorial allocator fibonacci pcr cat; do
   demo_obj="$build_dir/$demo-clang-smoke.o"
   demo_elf="$build_dir/lnp64-$demo-clang-linked.elf"
   "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

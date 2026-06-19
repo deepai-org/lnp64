@@ -208,6 +208,8 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
     return "alarm";
   case LNP64::ENV_GET:
     return "env_get";
+  case LNP64::OPEN_AT:
+    return "open_at";
   case LNP64::OBJECT_CTL:
     return "object_ctl";
   case LNP64::DOMAIN_CTL:
@@ -511,6 +513,7 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::AWAIT:
   case LNP64::GATE_CALL:
   case LNP64::GATE_RETURN:
+  case LNP64::OPEN_AT:
   case LNP64::PULL:
   case LNP64::PUSH:
   case LNP64::MMAP:

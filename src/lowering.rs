@@ -1539,6 +1539,9 @@ mod tests {
         assert!(real_llc.contains("get_pcr r1, PID"));
         assert!(real_llc.contains("set_pcr SIGMASK, r2"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc GET_PCR opcode smoke passed"));
+        assert!(real_llc.contains("open-at-mc-smoke.o"));
+        assert!(real_llc.contains("open_at r1, r2, r3, r4"));
+        assert!(real_llc.contains("real LLVM LNP64 llvm-mc OPEN_AT opcode smoke passed"));
         assert!(real_llc.contains("cap-control-mc-smoke.o"));
         assert!(real_llc.contains("cap_dup r1, r2"));
         assert!(real_llc.contains("cap_send r3, r4"));
@@ -2133,6 +2136,16 @@ mod tests {
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic GET_PCR execution passed")
         );
+        assert!(real_llc.contains("intrinsic-openat-clang-smoke.o"));
+        assert!(real_llc.contains("__lnp_openat"));
+        assert!(real_llc.contains("grep -q 'open_at r'"));
+        assert!(real_llc.contains("real LLVM LNP64 clang intrinsic OPEN_AT object smoke passed"));
+        assert!(real_llc.contains("lnp64-intrinsic-openat-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld intrinsic OPEN_AT link smoke passed"));
+        assert!(real_llc_docker.contains("lnp64-intrinsic-openat-linked.elf"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic OPEN_AT execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-poll-libc-linked.elf"));
         assert!(
             real_llc_docker
@@ -2151,6 +2164,9 @@ mod tests {
         assert!(real_llc.contains("pcr-clang-smoke.o"));
         assert!(real_llc.contains("-c demos/pcr.c"));
         assert!(real_llc.contains("real LLVM LNP64 clang PCR demo object smoke passed"));
+        assert!(real_llc.contains("cat-clang-smoke.o"));
+        assert!(real_llc.contains("-c demos/cat.c"));
+        assert!(real_llc.contains("real LLVM LNP64 clang cat demo object smoke passed"));
         assert!(real_llc.contains("lnp64-$demo-clang-linked.elf"));
         assert!(real_llc.contains(
             r#""$demo_obj" "$libc_fd_impl_obj" \
@@ -2383,6 +2399,7 @@ mod tests {
         assert!(real_llc_docker.contains("alloc ok"));
         assert!(real_llc_docker.contains("fibonacci ok"));
         assert!(real_llc_docker.contains("pcr ok"));
+        assert!(real_llc_docker.contains("cat ok"));
         assert!(real_llc_docker.contains("exit=0"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf clang demo execution passed"));
         assert!(real_llc_docker.contains("lnp64-native-heap-linked.elf"));
@@ -2565,6 +2582,7 @@ mod tests {
             "real_intrinsic_capability_control_execution",
             "real_intrinsic_mmap_execution",
             "real_intrinsic_get_pcr_execution",
+            "real_intrinsic_openat_execution",
             "real_intrinsic_amo_execution",
             "real_c11_atomic_execution",
             "real_stack_argument_execution",
@@ -2814,6 +2832,7 @@ mod tests {
             "ERRNO_SET",
             "GET_PCR",
             "SET_PCR",
+            "OPEN_AT",
             "EXIT",
             "AWAIT",
             "GATE_CALL",
@@ -2935,6 +2954,8 @@ mod tests {
         assert!(asm_parser.contains(r#".Case("set_pcr", LNP64::SET_PCR)"#));
         assert!(asm_parser.contains(r#".Case("PID", LNP64::PID)"#));
         assert!(asm_parser.contains(r#".Case("env_get", LNP64::ENV_GET)"#));
+        assert!(asm_parser.contains(r#".Case("open_at", LNP64::OPEN_AT)"#));
+        assert!(instr_td.contains("def OPEN_AT : LNP64Native4"));
         assert!(instr_td.contains("def GET_PCR : LNP64PcrGet"));
         assert!(instr_td.contains("def SET_PCR : LNP64PcrSet"));
         assert!(asm_parser.contains(r#".Case("ld.w", LNP64::LD_W)"#));
@@ -2970,6 +2991,7 @@ mod tests {
         assert!(disassembler.contains("case 0x54"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::GET_PCR)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::SET_PCR)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::OPEN_AT)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::LD_W)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::LD_H)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::ST_B)"));
@@ -3008,6 +3030,9 @@ mod tests {
         assert!(asm_printer.contains("printLNP64AsmReg"));
         assert!(inst_printer.contains("case LNP64::GET_PCR"));
         assert!(inst_printer.contains("return \"get_pcr\""));
+        assert!(inst_printer.contains("case LNP64::OPEN_AT"));
+        assert!(inst_printer.contains("return \"open_at\""));
+        assert!(inst_printer.contains("case LNP64::OPEN_AT:\n  case LNP64::PULL:"));
         assert!(inst_printer.contains("OS << \"PID\""));
         assert!(inst_printer.contains("OS << \"SIGMASK\""));
         assert!(asm_printer.contains("PrintAsmMemoryOperand"));

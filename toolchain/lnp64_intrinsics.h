@@ -7,8 +7,18 @@ typedef lnp64_word_t lnp64_cap_t;
 
 #define LNP64_OBJECT_CTL_CREATE 1UL
 
-lnp64_word_t __lnp_openat(lnp64_cap_t dir_cap, lnp64_word_t path_ptr,
-                          lnp64_word_t flags, lnp64_word_t mode);
+static inline lnp64_word_t __lnp_openat(lnp64_cap_t dir_cap,
+                                        lnp64_word_t path_ptr,
+                                        lnp64_word_t flags,
+                                        lnp64_word_t mode) {
+  lnp64_word_t result;
+  (void)mode;
+  __asm__ volatile("open_at %0, %1, %2, %3"
+                   : "=r"(result)
+                   : "r"(dir_cap), "r"(path_ptr), "r"(flags)
+                   : "memory");
+  return result;
+}
 lnp64_word_t __lnp_pull(lnp64_cap_t source_cap, lnp64_word_t buf_ptr,
                         lnp64_word_t len);
 lnp64_word_t __lnp_push(lnp64_cap_t dest_cap, lnp64_word_t buf_ptr,

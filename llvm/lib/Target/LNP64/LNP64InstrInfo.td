@@ -638,6 +638,7 @@ def ALLOC_EX : LNP64RRR<"alloc_ex">;
 def ALLOC_SIZE : LNP64RR<"alloc_size">;
 def FREE : LNP64RuntimeSet<"free">;
 
+def OPEN_AT : LNP64Native4<"open_at">;
 def PULL : LNP64Native4<"pull"> {
   let Pattern = [(set GPR:$rd, (LNP64pull GPR:$cap, GPR:$arg0, GPR:$arg1))];
 }

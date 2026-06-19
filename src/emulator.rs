@@ -1644,6 +1644,7 @@ impl Machine {
             0x55 => Instr::SetPcr(pcr_operand((word >> 14) & 0x1f)?, a),
             0x56 => Instr::EnvGet(a, b, c, d),
             0x57 => Instr::WriteFd(FdReg(a.0), b, c),
+            0x58 => Instr::OpenAtDyn(a, b, c, d),
             0x60 => Instr::MmapBootstrap(a, b, c, d),
             0x61 => Instr::MunmapBootstrap(a, b),
             0x62 => Instr::Sigaction(a, b),

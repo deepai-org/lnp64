@@ -397,6 +397,7 @@ private:
             .Case("sigret", LNP64::SIGRET)
             .Case("alarm", LNP64::ALARM)
             .Case("env_get", LNP64::ENV_GET)
+            .Case("open_at", LNP64::OPEN_AT)
             .Case("object_ctl", LNP64::OBJECT_CTL)
             .Case("domain_ctl", LNP64::DOMAIN_CTL)
             .Case("cap_send", LNP64::CAP_SEND)
@@ -498,7 +499,8 @@ private:
     if (Opcode == LNP64::AWAIT || Opcode == LNP64::GATE_CALL ||
         Opcode == LNP64::GATE_RETURN || Opcode == LNP64::MMAP ||
         Opcode == LNP64::MPROTECT || Opcode == LNP64::ENV_GET ||
-        Opcode == LNP64::PULL || Opcode == LNP64::PUSH)
+        Opcode == LNP64::OPEN_AT || Opcode == LNP64::PULL ||
+        Opcode == LNP64::PUSH)
       return addRegRegRegReg(Inst, Operands);
     if (Opcode == LNP64::LD || Opcode == LNP64::LD_W ||
         Opcode == LNP64::LD_H || Opcode == LNP64::LD_B)

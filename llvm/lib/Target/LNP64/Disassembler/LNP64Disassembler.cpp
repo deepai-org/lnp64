@@ -557,6 +557,13 @@ public:
       addReg(Instr, C);
       addReg(Instr, (Word >> 4) & 0x1f);
       return MCDisassembler::Success;
+    case 0x58:
+      Instr.setOpcode(LNP64::OPEN_AT);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      addReg(Instr, (Word >> 4) & 0x1f);
+      return MCDisassembler::Success;
     case 0x3d:
       Instr.setOpcode(LNP64::CSET_EQ);
       addReg(Instr, A);
