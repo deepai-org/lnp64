@@ -50,9 +50,10 @@ module lnp64_thread_window #(
     lnp64_thread_sched_t context_record_q [0:CONTEXT_COUNT-1];
     localparam logic [31:0] TILE_MASK_BIT = 32'd1 << TILE_ID;
 
-    function automatic logic context_tile_eligible(input lnp64_thread_sched_t record);
+    function automatic logic context_dispatch_eligible(input lnp64_thread_sched_t record);
         begin
-            context_tile_eligible = (record.effective_tile_mask & TILE_MASK_BIT) != 32'd0;
+            context_dispatch_eligible = record.dispatch_eligible &&
+                ((record.effective_tile_mask & TILE_MASK_BIT) != 32'd0);
         end
     endfunction
 
@@ -85,7 +86,7 @@ module lnp64_thread_window #(
                 candidate_index = candidate_index - CONTEXT_COUNT;
             end
             if (!found_next && context_active_q[candidate_index] &&
-                context_tile_eligible(context_record[candidate_index])) begin
+                context_dispatch_eligible(context_record[candidate_index])) begin
                 next_slot = candidate_index[CONTEXT_INDEX_WIDTH-1:0];
                 found_next = 1'b1;
             end
@@ -117,6 +118,7 @@ module lnp64_thread_window #(
                 context_record_q[reset_ctx].wait_generation <= 32'd1;
                 context_record_q[reset_ctx].weight_index <= 16'd0;
                 context_record_q[reset_ctx].virtual_deadline <= 64'd0;
+                context_record_q[reset_ctx].dispatch_eligible <= 1'b1;
                 context_record_q[reset_ctx].effective_tile_mask <= TILE_MASK_BIT;
                 context_record_q[reset_ctx].active_location <= TILE_ID[31:0];
             end
@@ -193,12 +195,12 @@ module lnp64_thread_window #(
                         else $fatal(1, "SG-SCHED live context missing effective tile mask");
                 end
                 if (context_active_q[assert_ctx]) begin
-                    assert (context_tile_eligible(context_record[assert_ctx]))
+                    assert (context_dispatch_eligible(context_record[assert_ctx]))
                         else $fatal(1, "SG-SCHED resident context not eligible for this tile");
                 end
             end
             if (context_active_q != '0) begin
-                assert (context_active_q[next_slot] && context_tile_eligible(context_record[next_slot]))
+                assert (context_active_q[next_slot] && context_dispatch_eligible(context_record[next_slot]))
                     else $fatal(1, "SG-SCHED barrel selected a non-eligible context");
             end
         end
