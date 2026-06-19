@@ -158,6 +158,7 @@ module lnp64_core_tile #(
     logic [15:0] errno_reg;
     logic cap_engine_shadow_enabled;
     logic object_engine_shadow_enabled;
+    logic domain_engine_shadow_enabled;
     logic cmp_zero;
     logic cmp_negative;
     logic cmp_greater;
@@ -1274,6 +1275,18 @@ module lnp64_core_tile #(
                 cmd.arg_block_ptr = gpr[dec.rs1];
                 cmd.arg_block_len = 64'd72;
             end
+            LNP64_OP_DOMAIN_CTL: begin
+                cmd.rights_mask = domain_caps_req;
+                cmd.flags = domain_upcalls_req;
+                cmd.arg0 = domain_op;
+                cmd.arg1 = domain_ref_id;
+                cmd.arg2 = domain_generation_req;
+                cmd.arg3 = domain_profile_req;
+                cmd.arg_block_ptr = domain_cpu_req;
+                cmd.arg_block_len = domain_memory_req;
+                cmd.cancel_class = domain_pids_req[15:0];
+                cmd.completion_target = domain_fdrs_req[15:0];
+            end
             default: begin
             end
         endcase
@@ -1491,6 +1504,7 @@ module lnp64_core_tile #(
             errno_reg <= LNP64_ERR_OK;
             cap_engine_shadow_enabled <= 1'b1;
             object_engine_shadow_enabled <= 1'b1;
+            domain_engine_shadow_enabled <= 1'b1;
             cmp_zero <= 1'b0;
             cmp_negative <= 1'b0;
             cmp_greater <= 1'b0;
@@ -3163,6 +3177,11 @@ module lnp64_core_tile #(
                                 end
                             end
                             LNP64_OP_DOMAIN_CTL: begin
+                                if (domain_engine_shadow_enabled) begin
+                                    pending_unsupported <= 1'b0;
+                                    command_pc <= pc;
+                                    state <= CORE_SEND_CMD;
+                                end else begin
                                 if (domain_op == DOMAIN_OP_CREATE &&
                                     domain_ref_live &&
                                     domain_create_slot_in_range &&
@@ -3361,6 +3380,7 @@ module lnp64_core_tile #(
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
+                                end
                             end
                             LNP64_OP_CAP_DUP: begin
                                 if (cap_engine_shadow_enabled) begin
@@ -3754,6 +3774,156 @@ module lnp64_core_tile #(
                                         object_fd_store_byte_lane,
                                         {32'd0, object_rsp_single_fd[31:0]}
                                     );
+                                end
+                            end
+                        end
+                        if (!pending_unsupported && dec.opcode == LNP64_OP_DOMAIN_CTL) begin
+                            if (rsp.status == LNP64_STATUS_OK &&
+                                rsp.errno_value == LNP64_ERR_OK) begin
+                                if (domain_op == DOMAIN_OP_CREATE &&
+                                    domain_ref_live &&
+                                    domain_create_slot_in_range &&
+                                    !domain_valid[domain_create_slot]) begin
+                                    domain_valid[domain_create_slot] <= 1'b1;
+                                    domain_destroyed[domain_create_slot] <= 1'b0;
+                                    domain_generation[domain_create_slot] <= 64'd1;
+                                    domain_parent[domain_create_slot] <= domain_ref_id;
+                                    domain_depth[domain_create_slot] <= domain_depth[domain_ref_slot] + 64'd1;
+                                    domain_profile[domain_create_slot] <= domain_profile_req;
+                                    domain_cpu_limit[domain_create_slot] <= domain_cpu_req == 64'd0 ?
+                                        domain_cpu_limit[domain_ref_slot] : domain_cpu_req;
+                                    domain_memory_limit[domain_create_slot] <= domain_memory_req == 64'd0 ?
+                                        domain_memory_limit[domain_ref_slot] : domain_memory_req;
+                                    domain_pids_limit[domain_create_slot] <= domain_pids_req == 64'd0 ?
+                                        domain_pids_limit[domain_ref_slot] : domain_pids_req;
+                                    domain_fdrs_limit[domain_create_slot] <= domain_fdrs_req == 64'd0 ?
+                                        domain_fdrs_limit[domain_ref_slot] : domain_fdrs_req;
+                                    domain_cap_mask[domain_create_slot] <= domain_caps_req == 64'd0 ?
+                                        domain_cap_mask[domain_ref_slot] : domain_caps_req;
+                                    domain_upcall_mask[domain_create_slot] <= domain_upcalls_req == 64'd0 ?
+                                        domain_upcall_mask[domain_ref_slot] : domain_upcalls_req;
+                                    domain_child_count[domain_create_slot] <= 64'd0;
+                                    domain_frozen[domain_create_slot] <= 1'b0;
+                                    domain_child_count[domain_ref_slot] <= domain_child_count[domain_ref_slot] + 64'd1;
+                                    store_double_unaligned_next(domain_argblock_addr + 64'd8, domain_next_id);
+                                    store_double_unaligned_next(domain_argblock_addr + 64'd16, 64'd1);
+                                    store_double_unaligned_next(domain_argblock_addr + 64'd120, domain_ref_id);
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd128,
+                                        domain_depth[domain_ref_slot] + 64'd1
+                                    );
+                                    domain_next_id <= domain_next_id + 64'd1;
+                                end else if (domain_op == DOMAIN_OP_QUERY && domain_ref_live) begin
+                                    store_double_unaligned_next(domain_argblock_addr + 64'd8, domain_ref_id);
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd16,
+                                        domain_generation[domain_ref_slot]
+                                    );
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd24,
+                                        domain_profile[domain_ref_slot]
+                                    );
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd32,
+                                        domain_cpu_limit[domain_ref_slot]
+                                    );
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd40,
+                                        domain_memory_limit[domain_ref_slot]
+                                    );
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd48,
+                                        domain_pids_limit[domain_ref_slot]
+                                    );
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd56,
+                                        domain_fdrs_limit[domain_ref_slot]
+                                    );
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd64,
+                                        domain_cap_mask[domain_ref_slot]
+                                    );
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd72,
+                                        domain_upcall_mask[domain_ref_slot]
+                                    );
+                                    store_double_unaligned_next(domain_argblock_addr + 64'd80, retired_count);
+                                    store_double_unaligned_next(domain_argblock_addr + 64'd88, 64'd0);
+                                    store_double_unaligned_next(domain_argblock_addr + 64'd96, 64'd1);
+                                    store_double_unaligned_next(domain_argblock_addr + 64'd104, 64'd3);
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd112,
+                                        domain_destroyed[domain_ref_slot] ? DOMAIN_STATE_DESTROYED :
+                                            (domain_frozen[domain_ref_slot] ? 64'd1 : DOMAIN_STATE_ACTIVE)
+                                    );
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd120,
+                                        domain_parent[domain_ref_slot]
+                                    );
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd128,
+                                        domain_depth[domain_ref_slot]
+                                    );
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd136,
+                                        domain_child_count[domain_ref_slot]
+                                    );
+                                end else if (domain_op == DOMAIN_OP_CONFIGURE && domain_ref_live) begin
+                                    if (domain_profile_req != 64'd0) begin
+                                        domain_profile[domain_ref_slot] <= domain_profile_req;
+                                    end
+                                    if (domain_cpu_req != 64'd0) begin
+                                        domain_cpu_limit[domain_ref_slot] <= domain_cpu_req;
+                                    end
+                                    if (domain_memory_req != 64'd0) begin
+                                        domain_memory_limit[domain_ref_slot] <= domain_memory_req;
+                                    end
+                                    if (domain_pids_req != 64'd0) begin
+                                        domain_pids_limit[domain_ref_slot] <= domain_pids_req;
+                                    end
+                                    if (domain_fdrs_req != 64'd0) begin
+                                        domain_fdrs_limit[domain_ref_slot] <= domain_fdrs_req;
+                                    end
+                                    if (domain_caps_req != 64'd0) begin
+                                        domain_cap_mask[domain_ref_slot] <= domain_caps_req;
+                                        for (i = 0; i < DOMAIN_SLOT_COUNT; i = i + 1) begin
+                                            if (domain_valid[i] && domain_parent[i] == domain_ref_id) begin
+                                                domain_cap_mask[i] <= domain_cap_mask[i] & domain_caps_req;
+                                            end
+                                        end
+                                    end
+                                    if (domain_upcalls_req != 64'd0) begin
+                                        domain_upcall_mask[domain_ref_slot] <= domain_upcalls_req;
+                                        for (i = 0; i < DOMAIN_SLOT_COUNT; i = i + 1) begin
+                                            if (domain_valid[i] && domain_parent[i] == domain_ref_id) begin
+                                                domain_upcall_mask[i] <= domain_upcall_mask[i] & domain_upcalls_req;
+                                            end
+                                        end
+                                    end
+                                end else if (domain_op == DOMAIN_OP_FREEZE && domain_ref_live) begin
+                                    domain_frozen[domain_ref_slot] <= 1'b1;
+                                    for (i = 0; i < DOMAIN_SLOT_COUNT; i = i + 1) begin
+                                        if (domain_valid[i] && domain_parent[i] == domain_ref_id) begin
+                                            domain_frozen[i] <= 1'b1;
+                                        end
+                                    end
+                                end else if (domain_op == DOMAIN_OP_RESUME && domain_ref_live) begin
+                                    domain_frozen[domain_ref_slot] <= 1'b0;
+                                    for (i = 0; i < DOMAIN_SLOT_COUNT; i = i + 1) begin
+                                        if (domain_valid[i] && domain_parent[i] == domain_ref_id) begin
+                                            domain_frozen[i] <= 1'b0;
+                                        end
+                                    end
+                                end else if (domain_op == DOMAIN_OP_DESTROY && domain_ref_live &&
+                                    domain_ref_id != DOMAIN_ROOT_ID) begin
+                                    domain_destroyed[domain_ref_slot] <= 1'b1;
+                                    domain_generation[domain_ref_slot] <= domain_generation[domain_ref_slot] + 64'd1;
+                                    if (domain_parent[domain_ref_slot] > 64'd0 &&
+                                        (domain_parent[domain_ref_slot] - 64'd1) < DOMAIN_SLOT_COUNT &&
+                                        domain_child_count[domain_parent[domain_ref_slot] - 64'd1] != 64'd0) begin
+                                        domain_child_count[domain_parent[domain_ref_slot] - 64'd1] <=
+                                            domain_child_count[domain_parent[domain_ref_slot] - 64'd1] - 64'd1;
+                                    end
                                 end
                             end
                         end

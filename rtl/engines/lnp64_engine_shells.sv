@@ -101,6 +101,12 @@ module lnp64_engine_router (
     input  logic object_rsp_valid,
     output logic object_rsp_ready,
     input  lnp64_rsp_t object_rsp,
+    output logic domain_cmd_valid,
+    input  logic domain_cmd_ready,
+    output lnp64_cmd_t domain_cmd,
+    input  logic domain_rsp_valid,
+    output logic domain_rsp_ready,
+    input  lnp64_rsp_t domain_rsp,
     output logic fault_valid,
     input  logic fault_ready,
     output lnp64_fault_t fault,
@@ -108,6 +114,7 @@ module lnp64_engine_router (
 );
     logic route_cap;
     logic route_object;
+    logic route_domain;
     logic route_fault;
     logic route_default;
     logic fault_cmd_valid;
@@ -134,33 +141,43 @@ module lnp64_engine_router (
         cmd.opcode == LNP64_OP_CAP_RECV ||
         cmd.opcode == LNP64_OP_CAP_REVOKE;
     assign route_object = cmd.opcode == LNP64_OP_OBJECT_CTL;
+    assign route_domain = cmd.opcode == LNP64_OP_DOMAIN_CTL;
     assign route_fault = cmd.opcode == LNP64_OP_FAULT_INJECT;
-    assign route_default = !route_cap && !route_object && !route_fault;
+    assign route_default = !route_cap && !route_object && !route_domain && !route_fault;
 
     assign cap_cmd_valid = cmd_valid && route_cap;
     assign cap_cmd = cmd;
     assign object_cmd_valid = cmd_valid && route_object;
     assign object_cmd = cmd;
+    assign domain_cmd_valid = cmd_valid && route_domain;
+    assign domain_cmd = cmd;
     assign fault_cmd_valid = cmd_valid && route_fault;
     assign unsupported_cmd_valid = cmd_valid && route_default;
 
     assign cmd_ready =
         route_cap ? cap_cmd_ready :
         route_object ? object_cmd_ready :
+        route_domain ? domain_cmd_ready :
         route_fault ? fault_cmd_ready :
         unsupported_cmd_ready;
 
-    assign rsp_valid = cap_rsp_valid || object_rsp_valid || fault_rsp_valid || unsupported_rsp_valid;
+    assign rsp_valid = cap_rsp_valid || object_rsp_valid || domain_rsp_valid ||
+        fault_rsp_valid || unsupported_rsp_valid;
     assign rsp =
         cap_rsp_valid ? cap_rsp :
         object_rsp_valid ? object_rsp :
+        domain_rsp_valid ? domain_rsp :
         fault_rsp_valid ? fault_rsp :
         unsupported_rsp;
 
     assign cap_rsp_ready = rsp_ready && cap_rsp_valid;
     assign object_rsp_ready = rsp_ready && !cap_rsp_valid && object_rsp_valid;
-    assign fault_rsp_ready = rsp_ready && !cap_rsp_valid && !object_rsp_valid && fault_rsp_valid;
-    assign unsupported_rsp_ready = rsp_ready && !cap_rsp_valid && !object_rsp_valid && !fault_rsp_valid && unsupported_rsp_valid;
+    assign domain_rsp_ready = rsp_ready && !cap_rsp_valid && !object_rsp_valid &&
+        domain_rsp_valid;
+    assign fault_rsp_ready = rsp_ready && !cap_rsp_valid && !object_rsp_valid &&
+        !domain_rsp_valid && fault_rsp_valid;
+    assign unsupported_rsp_ready = rsp_ready && !cap_rsp_valid && !object_rsp_valid &&
+        !domain_rsp_valid && !fault_rsp_valid && unsupported_rsp_valid;
 
     assign fault_valid = fault_fault_valid || unsupported_fault_valid;
     assign fault = fault_fault_valid ? fault_fault : unsupported_fault;
@@ -942,9 +959,235 @@ module lnp64_cap_engine(
     end
 endmodule
 
-module lnp64_domain_engine(input logic clk, input logic reset_n, input logic cmd_valid, output logic cmd_ready, input lnp64_cmd_t cmd, output logic rsp_valid, input logic rsp_ready, output lnp64_rsp_t rsp, output logic [31:0] telemetry_counter, output logic [31:0] fault_counter);
-    logic unused_fault_valid; lnp64_fault_t unused_fault;
-    lnp64_fail_closed_engine #(.ENGINE_ID(16'd11), .ERRNO_VALUE(LNP64_ERR_EPERM), .STATUS_VALUE(LNP64_STATUS_ERROR)) shell(.*,.fault_valid(unused_fault_valid),.fault_ready(1'b1),.fault(unused_fault),.accepted_counter(telemetry_counter),.fault_counter(fault_counter));
+module lnp64_domain_engine(
+    input logic clk,
+    input logic reset_n,
+    input logic cmd_valid,
+    output logic cmd_ready,
+    input lnp64_cmd_t cmd,
+    output logic rsp_valid,
+    input logic rsp_ready,
+    output lnp64_rsp_t rsp,
+    output logic [31:0] telemetry_counter,
+    output logic [31:0] fault_counter
+);
+    localparam int unsigned DOMAIN_SLOT_COUNT = 8;
+    localparam logic [63:0] DOMAIN_OP_CREATE = 64'd1;
+    localparam logic [63:0] DOMAIN_OP_CONFIGURE = 64'd2;
+    localparam logic [63:0] DOMAIN_OP_QUERY = 64'd3;
+    localparam logic [63:0] DOMAIN_OP_FREEZE = 64'd4;
+    localparam logic [63:0] DOMAIN_OP_RESUME = 64'd5;
+    localparam logic [63:0] DOMAIN_OP_DESTROY = 64'd6;
+    localparam logic [63:0] DOMAIN_ROOT_ID = 64'd1;
+    localparam logic [63:0] DOMAIN_QUERY_SIZE = 64'd200;
+
+    logic have_rsp;
+    lnp64_rsp_t rsp_reg;
+    logic [63:0] domain_next_id;
+    logic domain_valid [0:DOMAIN_SLOT_COUNT-1];
+    logic domain_destroyed [0:DOMAIN_SLOT_COUNT-1];
+    logic [63:0] domain_generation [0:DOMAIN_SLOT_COUNT-1];
+    logic [63:0] domain_parent [0:DOMAIN_SLOT_COUNT-1];
+    logic [63:0] domain_profile [0:DOMAIN_SLOT_COUNT-1];
+    logic [63:0] domain_cpu_limit [0:DOMAIN_SLOT_COUNT-1];
+    logic [63:0] domain_memory_limit [0:DOMAIN_SLOT_COUNT-1];
+    logic [63:0] domain_pids_limit [0:DOMAIN_SLOT_COUNT-1];
+    logic [63:0] domain_fdrs_limit [0:DOMAIN_SLOT_COUNT-1];
+    logic [63:0] domain_cap_mask [0:DOMAIN_SLOT_COUNT-1];
+    logic [63:0] domain_upcall_mask [0:DOMAIN_SLOT_COUNT-1];
+    logic domain_frozen [0:DOMAIN_SLOT_COUNT-1];
+
+    assign cmd_ready = reset_n && !have_rsp;
+    assign rsp_valid = have_rsp;
+    assign rsp = rsp_reg;
+
+    integer i;
+    always_ff @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin
+            have_rsp <= 1'b0;
+            rsp_reg <= '0;
+            telemetry_counter <= 32'd0;
+            fault_counter <= 32'd0;
+            domain_next_id <= 64'd2;
+            for (i = 0; i < DOMAIN_SLOT_COUNT; i = i + 1) begin
+                domain_valid[i] <= i == 0;
+                domain_destroyed[i] <= 1'b0;
+                domain_generation[i] <= 64'd1;
+                domain_parent[i] <= i == 0 ? 64'd0 : DOMAIN_ROOT_ID;
+                domain_profile[i] <= 64'd0;
+                domain_cpu_limit[i] <= i == 0 ? 64'hffff_ffff_ffff_ffff : 64'd0;
+                domain_memory_limit[i] <= i == 0 ? 64'hffff_ffff_ffff_ffff : 64'd0;
+                domain_pids_limit[i] <= i == 0 ? 64'hffff_ffff_ffff_ffff : 64'd0;
+                domain_fdrs_limit[i] <= i == 0 ? 64'hffff_ffff_ffff_ffff : 64'd0;
+                domain_cap_mask[i] <= i == 0 ? 64'hffff_ffff_ffff_ffff : 64'd0;
+                domain_upcall_mask[i] <= i == 0 ? 64'hffff_ffff_ffff_ffff : 64'd0;
+                domain_frozen[i] <= 1'b0;
+            end
+        end else begin
+            if (have_rsp && rsp_ready) begin
+                have_rsp <= 1'b0;
+            end
+            if (cmd_valid && cmd_ready) begin : accept_cmd
+                logic [63:0] op;
+                logic [63:0] ref_id;
+                logic [63:0] generation_req;
+                logic [63:0] profile_req;
+                logic [63:0] cpu_req;
+                logic [63:0] memory_req;
+                logic [63:0] pids_req;
+                logic [63:0] fdrs_req;
+                logic [63:0] caps_req;
+                logic [63:0] upcalls_req;
+                int unsigned ref_slot;
+                int unsigned create_slot;
+                logic ref_in_range;
+                logic ref_live;
+                logic create_in_range;
+                logic limits_narrow;
+
+                op = cmd.arg0;
+                ref_id = cmd.arg1 == 64'd0 ? DOMAIN_ROOT_ID : cmd.arg1;
+                generation_req = cmd.arg2;
+                profile_req = cmd.arg3;
+                cpu_req = cmd.arg_block_ptr;
+                memory_req = cmd.arg_block_len;
+                pids_req = {48'd0, cmd.cancel_class};
+                fdrs_req = {48'd0, cmd.completion_target};
+                caps_req = cmd.rights_mask;
+                upcalls_req = cmd.flags;
+                ref_slot = (ref_id > 64'd0 && (ref_id - 64'd1) < DOMAIN_SLOT_COUNT) ?
+                    int'(ref_id - 64'd1) : 0;
+                create_slot = (domain_next_id > 64'd0 &&
+                    (domain_next_id - 64'd1) < DOMAIN_SLOT_COUNT) ?
+                    int'(domain_next_id - 64'd1) : 0;
+                ref_in_range = ref_id > 64'd0 && (ref_id - 64'd1) < DOMAIN_SLOT_COUNT;
+                ref_live = ref_in_range && domain_valid[ref_slot] &&
+                    !domain_destroyed[ref_slot] &&
+                    (generation_req == 64'd0 || generation_req == domain_generation[ref_slot]);
+                create_in_range = domain_next_id > 64'd0 && create_slot < DOMAIN_SLOT_COUNT;
+                limits_narrow =
+                    (cpu_req == 64'd0 || cpu_req <= domain_cpu_limit[ref_slot]) &&
+                    (memory_req == 64'd0 || memory_req <= domain_memory_limit[ref_slot]) &&
+                    (pids_req == 64'd0 || pids_req <= domain_pids_limit[ref_slot]) &&
+                    (fdrs_req == 64'd0 || fdrs_req <= domain_fdrs_limit[ref_slot]) &&
+                    (caps_req == 64'd0 || ((caps_req & ~domain_cap_mask[ref_slot]) == 64'd0)) &&
+                    (upcalls_req == 64'd0 || ((upcalls_req & ~domain_upcall_mask[ref_slot]) == 64'd0));
+
+                have_rsp <= 1'b1;
+                telemetry_counter <= telemetry_counter + 32'd1;
+                rsp_reg <= '0;
+                rsp_reg.op_id <= cmd.op_id;
+                rsp_reg.tile_id <= cmd.tile_id;
+                rsp_reg.pid <= cmd.pid;
+                rsp_reg.tid <= cmd.tid;
+                rsp_reg.domain_id <= cmd.domain_id;
+                rsp_reg.domain_gen <= cmd.domain_gen;
+                rsp_reg.result_reg <= cmd.result_reg;
+                rsp_reg.result_value <= 64'hffff_ffff_ffff_ffff;
+                rsp_reg.errno_value <= LNP64_ERR_EINVAL;
+                rsp_reg.status <= LNP64_STATUS_ERROR;
+
+                if (op == DOMAIN_OP_CREATE && ref_live && create_in_range &&
+                    !domain_valid[create_slot] && limits_narrow) begin
+                    domain_valid[create_slot] <= 1'b1;
+                    domain_destroyed[create_slot] <= 1'b0;
+                    domain_generation[create_slot] <= 64'd1;
+                    domain_parent[create_slot] <= ref_id;
+                    domain_profile[create_slot] <= profile_req;
+                    domain_cpu_limit[create_slot] <= cpu_req == 64'd0 ?
+                        domain_cpu_limit[ref_slot] : cpu_req;
+                    domain_memory_limit[create_slot] <= memory_req == 64'd0 ?
+                        domain_memory_limit[ref_slot] : memory_req;
+                    domain_pids_limit[create_slot] <= pids_req == 64'd0 ?
+                        domain_pids_limit[ref_slot] : pids_req;
+                    domain_fdrs_limit[create_slot] <= fdrs_req == 64'd0 ?
+                        domain_fdrs_limit[ref_slot] : fdrs_req;
+                    domain_cap_mask[create_slot] <= caps_req == 64'd0 ?
+                        domain_cap_mask[ref_slot] : caps_req;
+                    domain_upcall_mask[create_slot] <= upcalls_req == 64'd0 ?
+                        domain_upcall_mask[ref_slot] : upcalls_req;
+                    domain_frozen[create_slot] <= 1'b0;
+                    rsp_reg.result_value <= domain_next_id;
+                    rsp_reg.errno_value <= LNP64_ERR_OK;
+                    rsp_reg.status <= LNP64_STATUS_OK;
+                    domain_next_id <= domain_next_id + 64'd1;
+                end else if (op == DOMAIN_OP_QUERY && ref_live) begin
+                    rsp_reg.result_value <= DOMAIN_QUERY_SIZE;
+                    rsp_reg.errno_value <= LNP64_ERR_OK;
+                    rsp_reg.status <= LNP64_STATUS_OK;
+                end else if (op == DOMAIN_OP_CONFIGURE && ref_live &&
+                    !domain_frozen[ref_slot] && limits_narrow) begin
+                    if (profile_req != 64'd0) begin
+                        domain_profile[ref_slot] <= profile_req;
+                    end
+                    if (cpu_req != 64'd0) begin
+                        domain_cpu_limit[ref_slot] <= cpu_req;
+                    end
+                    if (memory_req != 64'd0) begin
+                        domain_memory_limit[ref_slot] <= memory_req;
+                    end
+                    if (pids_req != 64'd0) begin
+                        domain_pids_limit[ref_slot] <= pids_req;
+                    end
+                    if (fdrs_req != 64'd0) begin
+                        domain_fdrs_limit[ref_slot] <= fdrs_req;
+                    end
+                    if (caps_req != 64'd0) begin
+                        domain_cap_mask[ref_slot] <= caps_req;
+                        for (i = 0; i < DOMAIN_SLOT_COUNT; i = i + 1) begin
+                            if (domain_valid[i] && domain_parent[i] == ref_id) begin
+                                domain_cap_mask[i] <= domain_cap_mask[i] & caps_req;
+                            end
+                        end
+                    end
+                    if (upcalls_req != 64'd0) begin
+                        domain_upcall_mask[ref_slot] <= upcalls_req;
+                        for (i = 0; i < DOMAIN_SLOT_COUNT; i = i + 1) begin
+                            if (domain_valid[i] && domain_parent[i] == ref_id) begin
+                                domain_upcall_mask[i] <= domain_upcall_mask[i] & upcalls_req;
+                            end
+                        end
+                    end
+                    rsp_reg.result_value <= 64'd0;
+                    rsp_reg.errno_value <= LNP64_ERR_OK;
+                    rsp_reg.status <= LNP64_STATUS_OK;
+                end else if (op == DOMAIN_OP_FREEZE && ref_live) begin
+                    domain_frozen[ref_slot] <= 1'b1;
+                    for (i = 0; i < DOMAIN_SLOT_COUNT; i = i + 1) begin
+                        if (domain_valid[i] && domain_parent[i] == ref_id) begin
+                            domain_frozen[i] <= 1'b1;
+                        end
+                    end
+                    rsp_reg.result_value <= 64'd0;
+                    rsp_reg.errno_value <= LNP64_ERR_OK;
+                    rsp_reg.status <= LNP64_STATUS_OK;
+                end else if (op == DOMAIN_OP_RESUME && ref_live) begin
+                    domain_frozen[ref_slot] <= 1'b0;
+                    for (i = 0; i < DOMAIN_SLOT_COUNT; i = i + 1) begin
+                        if (domain_valid[i] && domain_parent[i] == ref_id) begin
+                            domain_frozen[i] <= 1'b0;
+                        end
+                    end
+                    rsp_reg.result_value <= 64'd0;
+                    rsp_reg.errno_value <= LNP64_ERR_OK;
+                    rsp_reg.status <= LNP64_STATUS_OK;
+                end else if (op == DOMAIN_OP_DESTROY && ref_live && ref_id != DOMAIN_ROOT_ID) begin
+                    domain_destroyed[ref_slot] <= 1'b1;
+                    domain_generation[ref_slot] <= domain_generation[ref_slot] + 64'd1;
+                    rsp_reg.result_value <= 64'd0;
+                    rsp_reg.errno_value <= LNP64_ERR_OK;
+                    rsp_reg.status <= LNP64_STATUS_OK;
+                end else if (op == DOMAIN_OP_CREATE) begin
+                    rsp_reg.errno_value <= LNP64_ERR_EPERM;
+                end else if (op == DOMAIN_OP_QUERY || op == DOMAIN_OP_DESTROY) begin
+                    rsp_reg.errno_value <= LNP64_ERR_ESTALE;
+                end else if (op == DOMAIN_OP_CONFIGURE || op == DOMAIN_OP_FREEZE ||
+                    op == DOMAIN_OP_RESUME) begin
+                    rsp_reg.errno_value <= LNP64_ERR_EPERM;
+                end
+            end
+        end
+    end
 endmodule
 
 module lnp64_object_engine(
