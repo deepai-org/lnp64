@@ -29,6 +29,14 @@ root_uid_gid_are_zero:
   CMP r6, r0
   BNE bad
 
+credential_selectors_are_valid:
+  GET_PCR r9, CRED_PROFILE
+  CMP r9, r0
+  BNE bad
+  GET_PCR r10, CRED_HANDLE
+  CMP r10, r0
+  BNE bad
+
 done:
   EXIT r0
 

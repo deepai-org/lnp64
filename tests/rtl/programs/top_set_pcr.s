@@ -41,6 +41,18 @@
   ERRNO_GET r27
   CMP r27, r28
   BNE bad
+  SET_PCR r26, REALTIME_SEC, r20
+  CMP r26, r29
+  BNE bad
+  ERRNO_GET r27
+  CMP r27, r28
+  BNE bad
+  SET_PCR r26, REALTIME_NSEC, r20
+  CMP r26, r29
+  BNE bad
+  ERRNO_GET r27
+  CMP r27, r28
+  BNE bad
 
 done:
   EXIT r0

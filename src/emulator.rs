@@ -9246,6 +9246,7 @@ impl Machine {
                 process.uid = value;
                 Ok(())
             }
+            Pcr::Gid if process.uid != 0 => Err(1),
             Pcr::Gid => {
                 process.gid = value;
                 Ok(())
@@ -13096,6 +13097,46 @@ mod tests {
         machine.complete_err(22).unwrap();
         assert_eq!(machine.process().unwrap().errno, 22);
         assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+    }
+
+    #[test]
+    fn set_pcr_returns_arch_errors_without_errno_side_effects() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        {
+            let process = machine.process_mut().unwrap();
+            process.uid = 1000;
+            process.gid = 1000;
+            process.errno = 77;
+        }
+        machine.thread_mut().unwrap().regs[6] = 1234;
+
+        assert!(
+            machine
+                .exec(Instr::SetPcr(Reg(5), Pcr::Gid, Reg(6)))
+                .unwrap()
+        );
+        assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().gid, 1000);
+        assert_eq!(machine.process().unwrap().errno, 77);
+
+        assert!(
+            machine
+                .exec(Instr::SetPcr(Reg(7), Pcr::RealtimeSec, Reg(6)))
+                .unwrap()
+        );
+        assert_eq!(machine.thread().unwrap().regs[7], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 77);
+
+        machine.process_mut().unwrap().uid = 0;
+        assert!(
+            machine
+                .exec(Instr::SetPcr(Reg(8), Pcr::Gid, Reg(6)))
+                .unwrap()
+        );
+        assert_eq!(machine.thread().unwrap().regs[8], 0);
+        assert_eq!(machine.process().unwrap().gid, 1234);
+        assert_eq!(machine.process().unwrap().errno, 77);
     }
 
     #[test]

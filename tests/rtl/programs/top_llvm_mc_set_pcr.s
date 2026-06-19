@@ -42,5 +42,17 @@ _start:
   errno_get r27
   sub r4, r27, r28
   or r3, r3, r4
+  set_pcr r26, REALTIME_SEC, r20
+  sub r4, r26, r29
+  or r3, r3, r4
+  errno_get r27
+  sub r4, r27, r28
+  or r3, r3, r4
+  set_pcr r26, REALTIME_NSEC, r20
+  sub r4, r26, r29
+  or r3, r3, r4
+  errno_get r27
+  sub r4, r27, r28
+  or r3, r3, r4
 
   exit r3
