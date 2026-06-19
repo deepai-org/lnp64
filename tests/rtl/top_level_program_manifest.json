@@ -241,6 +241,13 @@
       "status": "active",
       "rtl_gate": "scripts/run_rtl_top_llvm_mc_smoke.sh",
       "comparison": "retire_trace_and_final_state"
+    },
+    {
+      "source": "tests/rtl/programs/top_llvm_mc_get_pcr.s",
+      "required_features": ["llvm_mc_object_bytes", "core", "get_pcr", "process_metadata", "thread_metadata", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_llvm_mc_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
     }
   ],
   "llvm_clang_programs": [
