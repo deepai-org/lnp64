@@ -193,6 +193,18 @@ def load_m1_commit_schema() -> tuple[tuple[str, ...], tuple[int, ...]]:
     return tuple(fields), tuple(widths)
 
 
+def load_schema_enum_values(enum_name: str) -> dict[str, int]:
+    schema_path = Path("rtl/schema/lnp64_shared_schema.json")
+    with schema_path.open(encoding="utf-8") as handle:
+        schema = json.load(handle)
+    enum_entries = schema["enums"][enum_name]
+    values = {}
+    for entry in enum_entries:
+        name, value = entry.split("=", maxsplit=1)
+        values[name] = parse_int_literal(value)
+    return values
+
+
 def parse_int_literal(value: str) -> int:
     value = value.strip()
     if "'h" in value:
@@ -205,19 +217,23 @@ def parse_int_literal(value: str) -> int:
 
 
 def load_m1_commit_op_values() -> dict[str, int]:
-    schema_path = Path("rtl/schema/lnp64_shared_schema.json")
-    with schema_path.open(encoding="utf-8") as handle:
-        schema = json.load(handle)
-    enum_entries = schema["enums"]["lnp64_m1_commit_op_e"]
-    values = {}
-    for entry in enum_entries:
-        name, value = entry.split("=", maxsplit=1)
-        values[name] = parse_int_literal(value)
+    values = load_schema_enum_values("lnp64_m1_commit_op_e")
     return {
         "CapDup": values["LNP64_M1_COMMIT_CAP_DUP"],
         "CapSend": values["LNP64_M1_COMMIT_CAP_SEND"],
         "CapRecv": values["LNP64_M1_COMMIT_CAP_RECV"],
         "CapRevoke": values["LNP64_M1_COMMIT_CAP_REVOKE"],
+    }
+
+
+def load_arch_m1_opcode_map() -> dict[int, int]:
+    opcodes = load_schema_enum_values("lnp64_opcode_e")
+    commit_ops = load_m1_commit_op_values()
+    return {
+        opcodes["LNP64_OP_CAP_DUP"]: commit_ops["CapDup"],
+        opcodes["LNP64_OP_CAP_SEND"]: commit_ops["CapSend"],
+        opcodes["LNP64_OP_CAP_RECV"]: commit_ops["CapRecv"],
+        opcodes["LNP64_OP_CAP_REVOKE"]: commit_ops["CapRevoke"],
     }
 
 
@@ -262,6 +278,35 @@ def load_flat_exec_m1_opcode_map() -> dict[int, int]:
     return encoder_ops
 
 
+def load_flat_to_arch_opcode_map() -> dict[int, int]:
+    opcodes = load_schema_enum_values("lnp64_opcode_e")
+    decode_source = Path("rtl/core/lnp64_decode.sv").read_text(encoding="utf-8")
+    pairs = re.findall(
+        r"8'h([0-9a-fA-F]+):\s*begin\s*dec\.opcode\s*=\s*(LNP64_OP_[A-Z0-9_]+)\s*;",
+        decode_source,
+        flags=re.MULTILINE,
+    )
+    flat_to_arch = {}
+    for raw_hex, arch_name in pairs:
+        if arch_name not in opcodes:
+            raise SystemExit(f"RTL decode maps flat opcode 0x{raw_hex} to unknown {arch_name}")
+        raw_opcode = int(raw_hex, 16)
+        if raw_opcode in flat_to_arch:
+            raise SystemExit(f"duplicate RTL flat opcode decode entry: 0x{raw_opcode:02x}")
+        flat_to_arch[raw_opcode] = opcodes[arch_name]
+    if not flat_to_arch:
+        raise SystemExit("could not parse any flat-to-architectural opcode mappings")
+    return flat_to_arch
+
+
+def add_expected_arch_opcodes(records: list[dict], flat_to_arch: dict[int, int]) -> None:
+    for idx, record in enumerate(records):
+        opcode = record.get("opcode")
+        if not isinstance(opcode, int):
+            raise SystemExit(f"retire record {idx} has invalid opcode {opcode!r}")
+        record["arch_opcode"] = flat_to_arch.get(opcode, opcode)
+
+
 def decode_packed_bits(bits: str, fields: tuple[str, ...], widths: tuple[int, ...]) -> dict[str, int]:
     total_width = sum(widths)
     try:
@@ -292,9 +337,12 @@ for field in ("r3", "r4", "r5", "env_page", "mem0", "mem_checksum", "errno"):
 
 rtl_retire = load_records(sys.argv[1], "RTL_RETIRE ")
 emulator_retire = load_record(sys.argv[2], "EMULATOR_RETIRE ")
+flat_to_arch_opcode = load_flat_to_arch_opcode_map()
+add_expected_arch_opcodes(emulator_retire, flat_to_arch_opcode)
 retire_required_fields = (
     "pc",
     "opcode",
+    "arch_opcode",
     "tile_id",
     "pid",
     "tid",
@@ -321,6 +369,12 @@ for label, records in (("rtl", rtl_retire), ("emulator", emulator_retire)):
             raise SystemExit(
                 f"{label} retire record {idx} missing required field(s): {missing}"
             )
+        if record["arch_opcode"] != flat_to_arch_opcode.get(record["opcode"], record["opcode"]):
+            raise SystemExit(
+                f"{label} retire record {idx} arch opcode mismatch: "
+                f"flat={record['opcode']} arch={record['arch_opcode']} "
+                f"expected={flat_to_arch_opcode.get(record['opcode'], record['opcode'])}"
+            )
 if rtl_retire != emulator_retire:
     limit = min(len(rtl_retire), len(emulator_retire))
     first = next(
@@ -344,8 +398,9 @@ with open(sys.argv[1], encoding="utf-8") as handle:
             rtl_m1_top_commits.append(json.loads(line[len("RTL_M1_TOP_COMMIT "):]))
         elif line.startswith("RTL_M1_TOP_COMMIT_BITS "):
             rtl_m1_top_commit_bits.append(json.loads(line[len("RTL_M1_TOP_COMMIT_BITS "):]))
-opcode_to_m1_op = load_flat_exec_m1_opcode_map()
-cap_retire = [record for record in rtl_retire if record["opcode"] in opcode_to_m1_op]
+load_flat_exec_m1_opcode_map()
+arch_opcode_to_m1_op = load_arch_m1_opcode_map()
+cap_retire = [record for record in rtl_retire if record["arch_opcode"] in arch_opcode_to_m1_op]
 if len(rtl_m1_top_commits) != len(cap_retire):
     raise SystemExit(
         "top-level M1 commit trace count mismatch: "
@@ -379,10 +434,10 @@ for idx, (commit, retire) in enumerate(zip(rtl_m1_top_commits, cap_retire)):
         raise SystemExit(f"top-level M1 commit {idx} missing required field(s): {missing}")
     if commit["record"] != "m1_cap_commit":
         raise SystemExit(f"top-level M1 commit {idx} has unexpected record {commit['record']!r}")
-    if commit["op"] != opcode_to_m1_op[retire["opcode"]]:
+    if commit["op"] != arch_opcode_to_m1_op[retire["arch_opcode"]]:
         raise SystemExit(
             f"top-level M1 commit {idx} op mismatch: commit={commit['op']} "
-            f"retire_opcode={retire['opcode']}"
+            f"retire_opcode={retire['opcode']} retire_arch_opcode={retire['arch_opcode']}"
         )
     if commit["pc"] != retire["pc"] or commit["tile_id"] != retire["tile_id"]:
         raise SystemExit(

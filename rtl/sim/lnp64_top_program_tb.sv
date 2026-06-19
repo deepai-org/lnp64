@@ -37,6 +37,8 @@ module lnp64_top_program_tb;
     logic [31:0] topology_active_window_count_seen;
     int unsigned max_cycles;
     logic [7:0] retire_opcode;
+    logic [31:0] retire_instr;
+    lnp64_decode_t retire_dec;
     logic [4:0] retire_raw_result_reg;
     logic retire_result_valid;
     logic [4:0] retire_result_reg;
@@ -80,6 +82,11 @@ module lnp64_top_program_tb;
         .topology_active_window_count_seen(topology_active_window_count_seen)
     );
 
+    lnp64_decode retire_decode_i(
+        .instr(retire_instr),
+        .dec(retire_dec)
+    );
+
     always #5 clk = ~clk;
 
     function automatic logic flat_result_valid(input logic [7:0] opcode);
@@ -121,14 +128,15 @@ module lnp64_top_program_tb;
     endfunction
 
     always_comb begin
-        retire_opcode = dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc][31:24];
+        retire_instr = dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc];
+        retire_opcode = retire_instr[31:24];
         retire_raw_result_reg =
-            dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc][23:19];
+            retire_instr[23:19];
         retire_result_valid = flat_result_valid(retire_opcode);
         retire_result_reg = retire_opcode == 8'h57 ? 5'd1 : retire_raw_result_reg;
         retire_operand_imm = flat_operand_imm(
             retire_opcode,
-            dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc],
+            retire_instr,
             dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc + 32'd1]
         );
         final_mem_checksum = rtl_memory_checksum();
@@ -147,19 +155,20 @@ module lnp64_top_program_tb;
                 unsupported_retired_seen = 1'b1;
             end
             $display(
-                "RTL_RETIRE {\"pc\":%0d,\"opcode\":%0d,\"tile_id\":%0d,\"pid\":%0d,\"tid\":%0d,\"domain_id\":%0d,\"domain_gen\":%0d,\"action\":%0d,\"operand_rd\":%0d,\"operand_rs1\":%0d,\"operand_rs2\":%0d,\"operand_rs3\":%0d,\"operand_imm\":%0d,\"result_valid\":%0d,\"result_reg\":%0d,\"result_value\":%0d,\"errno\":%0d,\"status\":%0d,\"event_id\":%0d,\"fault_id\":%0d}",
+                "RTL_RETIRE {\"pc\":%0d,\"opcode\":%0d,\"arch_opcode\":%0d,\"tile_id\":%0d,\"pid\":%0d,\"tid\":%0d,\"domain_id\":%0d,\"domain_gen\":%0d,\"action\":%0d,\"operand_rd\":%0d,\"operand_rs1\":%0d,\"operand_rs2\":%0d,\"operand_rs3\":%0d,\"operand_imm\":%0d,\"result_valid\":%0d,\"result_reg\":%0d,\"result_value\":%0d,\"errno\":%0d,\"status\":%0d,\"event_id\":%0d,\"fault_id\":%0d}",
                 dut.retire_submit_record_vec[0].pc,
                 retire_opcode,
+                retire_dec.opcode,
                 dut.retire_submit_record_vec[0].tile_id,
                 dut.retire_submit_record_vec[0].pid,
                 dut.retire_submit_record_vec[0].tid,
                 32'd1,
                 32'd1,
                 dut.retire_submit_record_vec[0].action,
-                dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc][23:19],
-                dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc][18:14],
-                dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc][13:9],
-                dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc][8:4],
+                retire_instr[23:19],
+                retire_instr[18:14],
+                retire_instr[13:9],
+                retire_instr[8:4],
                 retire_operand_imm,
                 retire_result_valid,
                 retire_result_valid ? retire_result_reg : 5'd0,
