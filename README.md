@@ -326,7 +326,11 @@ without changing the RTL testbench:
 
 ```sh
 LNP64_RTL_TOP_PROGRAM_MAX_CYCLES=2000 bash scripts/run_rtl_top_program_smoke.sh demos/rot13.c
+LNP64_RTL_TOP_PROGRAM_MAX_CYCLES=10000 bash scripts/run_rtl_top_program_smoke.sh demos/json_parser.c
 ```
+
+The top-level program manifest runner defaults to `10000` cycles so longer
+active compiler-generated demos stay in the recurring gate.
 
 `LNP64_RTL_VERILATOR_BUILD_JOBS=0` lets Verilator use all available build jobs;
 set it to a fixed number such as `4` on shared machines. The top-program smoke

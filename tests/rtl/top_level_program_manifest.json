@@ -255,7 +255,14 @@
       "comparison": "retire_trace_and_final_state"
     },
     {"source": "demos/httpd.c", "generated_assembly": "/tmp/httpd.s", "required_features": ["core", "networking", "personality"], "status": "blocked_by_features"},
-    {"source": "demos/json_parser.c", "generated_assembly": "/tmp/json_parser.s", "required_features": ["core", "memory", "stack"], "status": "blocked_by_features"},
+    {
+      "source": "demos/json_parser.c",
+      "generated_assembly": "/tmp/json_parser.s",
+      "required_features": ["core", "heap", "branch", "load_store", "write_fd", "free", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    },
     {"source": "demos/netbsd_personality_smoke.c", "generated_assembly": "/tmp/netbsd_personality_smoke.s", "required_features": ["core", "netbsd_personality"], "status": "blocked_by_features"},
     {"source": "demos/netcat.c", "generated_assembly": "/tmp/netcat.s", "required_features": ["core", "networking", "personality"], "status": "blocked_by_features"},
     {"source": "demos/parallel_hash.c", "generated_assembly": "/tmp/parallel_hash.s", "required_features": ["core", "threads", "futex"], "status": "blocked_by_features"},
