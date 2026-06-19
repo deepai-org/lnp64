@@ -96,6 +96,7 @@ module lnp64_core_tile #(
     localparam logic [63:0] CAP_DUP_FLAG_SEAL = 64'd1;
     localparam logic [63:0] CAP_RIGHT_ALL = 64'h0000_0000_0000_01ff;
     localparam logic [63:0] CAP_RIGHT_DUP = 64'h0000_0000_0000_0040;
+    localparam logic [63:0] CAP_RIGHT_REVOKE = 64'h0000_0000_0000_0080;
     localparam logic [15:0] RTL_ERR_ESTALE = 16'd116;
     localparam int unsigned FDR_SLOT_COUNT = 8;
     localparam int unsigned DATA_SRAM_BASE_WORD = 16;
@@ -149,6 +150,7 @@ module lnp64_core_tile #(
     logic fdr_revoked [0:FDR_SLOT_COUNT-1];
     logic [63:0] fdr_generation [0:FDR_SLOT_COUNT-1];
     logic [63:0] fdr_rights [0:FDR_SLOT_COUNT-1];
+    logic [63:0] fdr_lineage [0:FDR_SLOT_COUNT-1];
     logic topology_record_valid;
     logic [63:0] topology_record_base;
     int unsigned mem_sram_word_index;
@@ -173,6 +175,7 @@ module lnp64_core_tile #(
     logic cap_src_stale;
     logic [63:0] cap_dup_rights;
     logic cap_dup_rights_subset;
+    logic [63:0] cap_revoke_count;
     lnp64_retire_submit_t retire_submit_next;
     lnp64_thread_sched_t thread_submit_next;
 
@@ -724,6 +727,14 @@ module lnp64_core_tile #(
             (!fdr_valid[cap_src_fd] || fdr_revoked[cap_src_fd] || !cap_src_generation_matches);
         cap_dup_rights = (cap_rights_req == 64'd0 && cap_src_fd_in_range) ? fdr_rights[cap_src_fd] : cap_rights_req;
         cap_dup_rights_subset = cap_src_fd_in_range && ((cap_dup_rights & ~fdr_rights[cap_src_fd]) == 64'd0);
+        cap_revoke_count = 64'd0;
+        if (cap_src_fd_in_range) begin
+            for (int slot = 0; slot < FDR_SLOT_COUNT; slot = slot + 1) begin
+                if (fdr_valid[slot] && !fdr_revoked[slot] && fdr_lineage[slot] == fdr_lineage[cap_src_fd]) begin
+                    cap_revoke_count = cap_revoke_count + 64'd1;
+                end
+            end
+        end
     end
 
     always_comb begin
@@ -842,6 +853,7 @@ module lnp64_core_tile #(
                 fdr_valid[i] <= i < 3;
                 fdr_revoked[i] <= 1'b0;
                 fdr_rights[i] <= i < 3 ? CAP_RIGHT_ALL : 64'd0;
+                fdr_lineage[i] <= {32'd0, i[31:0]} + 64'd1;
             end
             for (i = 0; i < SRAM_WORDS; i = i + 1) begin
                 sram[i] = initial_sram[i];
@@ -1757,6 +1769,7 @@ module lnp64_core_tile #(
                                     fdr_revoked[cap_dst_fd] <= 1'b0;
                                     fdr_generation[cap_dst_fd] <= fdr_generation[cap_dst_fd] + 64'd1;
                                     fdr_rights[cap_dst_fd] <= cap_dup_rights;
+                                    fdr_lineage[cap_dst_fd] <= fdr_lineage[cap_src_fd];
                                     gpr[dec.rd] <= FDR_TOKEN_MARKER |
                                         ((fdr_generation[cap_dst_fd] + 64'd1) << 8) |
                                         {56'd0, cap_dst_fd[7:0]};
@@ -1768,7 +1781,24 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_CAP_REVOKE: begin
-                                if (dma_buffer_ref_matches(object_op) && !dma_buffer_object_revoked) begin
+                                if (cap_src_stale) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= RTL_ERR_ESTALE;
+                                end else if (cap_src_live && ((fdr_rights[cap_src_fd] & CAP_RIGHT_REVOKE) != 64'd0)) begin
+                                    for (i = 0; i < FDR_SLOT_COUNT; i = i + 1) begin
+                                        if (fdr_valid[i] && !fdr_revoked[i] && fdr_lineage[i] == fdr_lineage[cap_src_fd]) begin
+                                            fdr_revoked[i] <= 1'b1;
+                                            fdr_generation[i] <= fdr_generation[i] + 64'd1;
+                                        end
+                                    end
+                                    gpr[dec.rd] <= cap_revoke_count;
+                                    errno_reg <= LNP64_ERR_OK;
+                                end else if (cap_src_fd_in_range && fdr_valid[cap_src_fd] &&
+                                    !fdr_revoked[cap_src_fd] &&
+                                    ((fdr_rights[cap_src_fd] & CAP_RIGHT_REVOKE) == 64'd0)) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EPERM;
+                                end else if (dma_buffer_ref_matches(object_op) && !dma_buffer_object_revoked) begin
                                     dma_buffer_object_revoked <= 1'b1;
                                     gpr[dec.rd] <= 64'd1;
                                     errno_reg <= LNP64_ERR_OK;
