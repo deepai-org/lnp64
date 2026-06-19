@@ -101,6 +101,7 @@ module lnp64_core_tile #(
     localparam logic [RETURN_STACK_INDEX_WIDTH:0] RETURN_STACK_DEPTH_VALUE = RETURN_STACK_DEPTH;
     logic [31:0] return_stack [0:RETURN_STACK_DEPTH-1];
     logic [RETURN_STACK_INDEX_WIDTH:0] return_stack_depth;
+    logic [63:0] link_register;
     logic pending_unsupported;
     logic [31:0] command_pc;
     logic [63:0] mem_addr;
@@ -210,6 +211,18 @@ module lnp64_core_tile #(
             end else begin
                 sram_word_index = addr[8:3];
             end
+        end
+    endfunction
+
+    function automatic logic [63:0] flat_exec_addr(input logic [31:0] pc_word);
+        flat_exec_addr = FLAT_EXEC_BASE_ADDR + {30'd0, pc_word, 2'd0};
+    endfunction
+
+    function automatic logic [31:0] flat_exec_pc_word(input logic [63:0] addr);
+        if (addr >= FLAT_EXEC_BASE_ADDR) begin
+            flat_exec_pc_word = (addr - FLAT_EXEC_BASE_ADDR) >> 2;
+        end else begin
+            flat_exec_pc_word = addr[31:0];
         end
     endfunction
 
@@ -704,6 +717,7 @@ module lnp64_core_tile #(
             cmp_below <= 1'b0;
             cmp_above <= 1'b0;
             return_stack_depth <= '0;
+            link_register <= 64'd0;
             pending_unsupported <= 1'b0;
             command_pc <= 32'd0;
             heap_next <= HEAP_ARCH_BASE;
@@ -1180,7 +1194,33 @@ module lnp64_core_tile #(
                                     return_stack[return_stack_depth[RETURN_STACK_INDEX_WIDTH-1:0]] <= pc + 32'd1;
                                     return_stack_depth <= return_stack_depth + {{RETURN_STACK_INDEX_WIDTH{1'b0}}, 1'b1};
                                 end
+                                link_register <= flat_exec_addr(pc + 32'd1);
                                 pc <= pc + dec.imm;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_CALL_REG: begin
+                                if (return_stack_depth < RETURN_STACK_DEPTH_VALUE) begin
+                                    return_stack[return_stack_depth[RETURN_STACK_INDEX_WIDTH-1:0]] <= pc + 32'd1;
+                                    return_stack_depth <= return_stack_depth + {{RETURN_STACK_INDEX_WIDTH{1'b0}}, 1'b1};
+                                end
+                                link_register <= flat_exec_addr(pc + 32'd1);
+                                pc <= flat_exec_pc_word(gpr[dec.rd]);
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_LR_GET: begin
+                                gpr[dec.rd] <= link_register;
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_LR_SET: begin
+                                link_register <= gpr[dec.rd];
+                                pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
@@ -1190,7 +1230,7 @@ module lnp64_core_tile #(
                                     pc <= return_stack[return_stack_depth[RETURN_STACK_INDEX_WIDTH-1:0] - {{(RETURN_STACK_INDEX_WIDTH-1){1'b0}}, 1'b1}];
                                     return_stack_depth <= return_stack_depth - {{RETURN_STACK_INDEX_WIDTH{1'b0}}, 1'b1};
                                 end else begin
-                                    pc <= pc + 32'd1;
+                                    pc <= flat_exec_pc_word(link_register);
                                 end
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;

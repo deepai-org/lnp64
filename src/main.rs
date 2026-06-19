@@ -445,6 +445,9 @@ fn encode_flat_exec_instr(
             0x27,
             branch_delta(program, word_pcs, pc, target)?,
         )]),
+        Instr::CallReg(target) => Ok(vec![enc_reg(0x28, *target)]),
+        Instr::LrGet(dst) => Ok(vec![enc_reg(0x29, *dst)]),
+        Instr::LrSet(src) => Ok(vec![enc_reg(0x2a, *src)]),
         Instr::Ld(rd, MemRef::BaseOffset(base, offset), Width::Double) => Ok(vec![enc_mem(
             0x30,
             *rd,
@@ -522,7 +525,7 @@ fn encode_flat_exec_instr(
         Instr::Isync(result, addr, len) => Ok(vec![enc_rrr(0xce, *result, *addr, *len)]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, OBJECT_CTL, CAP_REVOKE, ERRNO_GET/SET, DMA_CTL, ENV_GET, WRITE_FD, FENCE/ISYNC, AMO, LOCK.CMPXCHG, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/CALL_REG/LR_GET/LR_SET/RET, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, OBJECT_CTL, CAP_REVOKE, ERRNO_GET/SET, DMA_CTL, ENV_GET, WRITE_FD, FENCE/ISYNC, AMO, LOCK.CMPXCHG, EXIT"
         )),
     }
 }
@@ -1957,6 +1960,9 @@ mod tests {
               CALL add2
               EXIT r1
             add2:
+              LR_GET r3
+              LR_SET r3
+              CALL_REG r3
               LI r2, 2
               ADD r1, r1, r2
               RET
@@ -1970,6 +1976,9 @@ mod tests {
                 "01080005\n",
                 "27000002\n",
                 "3a080000\n",
+                "29180000\n",
+                "2a180000\n",
+                "28180000\n",
                 "01100002\n",
                 "10084400\n",
                 "1f000000\n",

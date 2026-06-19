@@ -109,6 +109,15 @@ module lnp64_decode (
                 dec.opcode = LNP64_OP_CALL;
                 dec.imm = {{8{instr[23]}}, instr[23:0]};
             end
+            8'h28: begin
+                dec.opcode = LNP64_OP_CALL_REG;
+            end
+            8'h29: begin
+                dec.opcode = LNP64_OP_LR_GET;
+            end
+            8'h2a: begin
+                dec.opcode = LNP64_OP_LR_SET;
+            end
             8'h30: begin
                 dec.opcode = LNP64_OP_LD;
             end
@@ -412,6 +421,9 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_BRANCH_LE ||
             dec.opcode == LNP64_OP_BRANCH_GE ||
             dec.opcode == LNP64_OP_CALL ||
+            dec.opcode == LNP64_OP_CALL_REG ||
+            dec.opcode == LNP64_OP_LR_GET ||
+            dec.opcode == LNP64_OP_LR_SET ||
             dec.opcode == LNP64_OP_RET ||
             dec.opcode == LNP64_OP_AUIPC_LITERAL ||
             dec.opcode == LNP64_OP_FENCE ||

@@ -178,6 +178,9 @@
       "LNP64_OP_AMO_AND=16'h0078",
       "LNP64_OP_AMO_OR=16'h0079",
       "LNP64_OP_AMO_XOR=16'h007a",
+      "LNP64_OP_CALL_REG=16'h007b",
+      "LNP64_OP_LR_GET=16'h007c",
+      "LNP64_OP_LR_SET=16'h007d",
       "LNP64_OP_UNSUPPORTED=16'h00ff"
     ],
     "lnp64_m1_commit_op_e": [
