@@ -1472,6 +1472,7 @@ mod tests {
             "clang_netbsd_loader_target_child_object",
             "clang_netbsd_thread_child_object",
             "clang_netbsd_poll_child_object",
+            "clang_netbsd_signal_gate_child_object",
             "clang_minilibc_meta_impl_object",
             "clang_meta_libc_object",
             "clang_minilibc_random_impl_object",
@@ -1577,6 +1578,8 @@ mod tests {
             "netbsd_thread_child_run_elf",
             "netbsd_poll_child_static_link",
             "netbsd_poll_child_run_elf",
+            "netbsd_signal_gate_child_static_link",
+            "netbsd_signal_gate_child_run_elf",
             "metadata_libc_static_link",
             "metadata_libc_run_elf",
         ] {
@@ -1758,6 +1761,7 @@ mod tests {
         assert!(real_llc.contains("sigmask_set r3"));
         assert!(real_llc.contains("kill r4, r5"));
         assert!(real_llc.contains("alarm r6, r7"));
+        assert!(real_llc.contains("yield"));
         assert!(real_llc.contains("sigret"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc signal alias opcode smoke passed"));
         assert!(real_llc.contains("scalar-extend-clang-smoke.o"));
@@ -2239,13 +2243,16 @@ mod tests {
         assert!(libc_signal_min.contains("int sigaction(int signum"));
         assert!(libc_signal_min.contains("int sigprocmask(int how"));
         assert!(libc_signal_min.contains("int kill(int pid"));
+        assert!(libc_signal_min.contains("lnp64_word_t status = __lnp_kill"));
         assert!(libc_signal_min.contains("int raise(int signum"));
+        assert!(libc_signal_min.contains("kill((int)__lnp_get_pid(), signum)"));
         assert!(libc_signal_min.contains("unsigned int alarm(unsigned int seconds)"));
         assert!(real_llc.contains("signal-libc-clang-smoke.o"));
+        assert!(real_llc.contains("#include \"lnp64_intrinsics.h\""));
         assert!(real_llc.contains("signal(10, SIG_IGN)"));
         assert!(real_llc.contains("sigaction(12, &act, 0)"));
         assert!(real_llc.contains("sigprocmask(2, &mask, 0)"));
-        assert!(real_llc.contains("kill(1, 10)"));
+        assert!(real_llc.contains("kill((int)__lnp_get_pid(), 10)"));
         assert!(real_llc.contains("raise(12)"));
         assert!(real_llc.contains("real LLVM LNP64 clang signal libc object smoke passed"));
         assert!(real_llc.contains("liblnp64-signal-min.o"));
@@ -2535,6 +2542,10 @@ mod tests {
         assert!(real_llc.contains("userland/poll_test_clang.c"));
         assert!(real_llc.contains("netbsd-poll-test-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang NetBSD poll child object passed"));
+        assert!(real_llc.contains("userland/signal_gate_test_clang.c"));
+        assert!(real_llc.contains("netbsd-signal-gate-test-clang-smoke.o"));
+        assert!(real_llc.contains(r#"grep -q 'yield' "$netbsd_signal_gate_test_dump""#));
+        assert!(real_llc.contains("real LLVM LNP64 clang NetBSD signal gate child object passed"));
         assert!(real_llc.contains("toolchain/liblnp64_fd_min.c"));
         assert!(libc_fd_min.contains("__lnp_pull"));
         assert!(libc_fd_min.contains("__lnp_push"));
@@ -2663,6 +2674,9 @@ mod tests {
         assert!(real_llc.contains("lnp64-netbsd-poll-test-linked.elf"));
         assert!(real_llc.contains(r#""$netbsd_poll_test_obj" \"#));
         assert!(real_llc.contains("real LLVM LNP64 lld NetBSD poll child link passed"));
+        assert!(real_llc.contains("lnp64-netbsd-signal-gate-test-linked.elf"));
+        assert!(real_llc.contains(r#""$netbsd_signal_gate_test_obj" \"#));
+        assert!(real_llc.contains("real LLVM LNP64 lld NetBSD signal gate child link passed"));
         assert!(real_llc.contains("lnp64-meta-libc-linked.elf"));
         assert!(real_llc.contains(
             r#""$meta_libc_obj" "$libc_meta_impl_obj" \
@@ -3606,6 +3620,7 @@ mod tests {
             "real_netbsd_loader_target_child_execution",
             "real_netbsd_thread_child_execution",
             "real_netbsd_poll_child_execution",
+            "real_netbsd_signal_gate_child_execution",
             "real_metadata_libc_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
@@ -3692,6 +3707,7 @@ mod tests {
             "real_netbsd_loader_target_child_execution",
             "real_netbsd_thread_child_execution",
             "real_netbsd_poll_child_execution",
+            "real_netbsd_signal_gate_child_execution",
             "real_metadata_libc_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
@@ -3915,6 +3931,7 @@ mod tests {
             "LI32",
             "LD",
             "CALL",
+            "YIELD",
             "LR_GET",
             "LR_SET",
             "RET",
@@ -4001,6 +4018,7 @@ mod tests {
         assert!(inst_printer.contains("case LNP64::LA"));
         assert!(inst_printer.contains("case LNP64::AUIPC"));
         assert!(inst_printer.contains("case LNP64::LI32"));
+        assert!(inst_printer.contains("case LNP64::YIELD"));
         assert!(inst_printer.contains("call_reg"));
         assert!(inst_printer.contains("lr_get"));
         assert!(inst_printer.contains("lr_set"));
@@ -4018,6 +4036,7 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::ENV_GET"));
         assert!(mc_emitter.contains("case LNP64::CLONE_SPAWN"));
         assert!(mc_emitter.contains("case LNP64::THREAD_JOIN"));
+        assert!(mc_emitter.contains("case LNP64::YIELD"));
         assert!(mc_emitter.contains("fixup_lnp64_pcrel32"));
         assert!(mc_emitter.contains("fixup_lnp64_abs32"));
         assert!(mc_emitter.contains("case LNP64::LD_W"));
@@ -4034,6 +4053,8 @@ mod tests {
         assert!(asm_parser.contains(r#".Case("la", LNP64::LA)"#));
         assert!(asm_parser.contains(r#".Case("auipc", LNP64::AUIPC)"#));
         assert!(asm_parser.contains(r#".Case("li32", LNP64::LI32)"#));
+        assert!(asm_parser.contains(r#".Case("yield", LNP64::YIELD)"#));
+        assert!(asm_parser.contains("Opcode == LNP64::YIELD"));
         assert!(asm_parser.contains(r#".Case("call", LNP64::CALL)"#));
         assert!(asm_parser.contains(r#".Case("lr_get", LNP64::LR_GET)"#));
         assert!(asm_parser.contains(r#".Case("lr_set", LNP64::LR_SET)"#));
@@ -4053,6 +4074,7 @@ mod tests {
         assert!(asm_parser.contains(r#".Case("open_at", LNP64::OPEN_AT)"#));
         assert!(asm_parser.contains(r#".Case("clone.spawn", LNP64::CLONE_SPAWN)"#));
         assert!(asm_parser.contains(r#".Case("thread_join", LNP64::THREAD_JOIN)"#));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::YIELD)"));
         assert!(instr_td.contains("def OPEN_AT : LNP64Native4"));
         assert!(instr_td.contains("def CLONE_SPAWN : LNP64RRR"));
         assert!(instr_td.contains("def THREAD_JOIN : LNP64RRR"));
@@ -4769,6 +4791,7 @@ mod tests {
             "netbsd_loader_target_child",
             "netbsd_thread_child",
             "netbsd_poll_child",
+            "netbsd_signal_gate_child",
             "netbsd_personality_clang",
             "netcat",
             "httpd",
@@ -4805,6 +4828,7 @@ mod tests {
         assert_eq!(statuses["netbsd_loader_target_child"], "partial");
         assert_eq!(statuses["netbsd_thread_child"], "partial");
         assert_eq!(statuses["netbsd_poll_child"], "partial");
+        assert_eq!(statuses["netbsd_signal_gate_child"], "partial");
         assert_eq!(statuses["netbsd_personality_clang"], "partial");
         assert_eq!(statuses["netcat"], "partial");
         assert_eq!(statuses["httpd"], "partial");
@@ -5536,6 +5560,7 @@ mod tests {
             "netbsd_loader_target_child",
             "netbsd_thread_child",
             "netbsd_poll_child",
+            "netbsd_signal_gate_child",
             "netbsd_personality_clang",
             "simple_libc",
         ] {
@@ -5799,6 +5824,7 @@ mod tests {
             "__lnp_get_pid",
             "__lnp_spawn_entry",
             "__lnp_thread_join",
+            "__lnp_yield",
             "__lnp_mmap_bootstrap",
             "__lnp_munmap_bootstrap",
             "__lnp_mprotect_bootstrap",
@@ -6378,6 +6404,7 @@ mod tests {
         assert!(mc_emitter.contains("fixup_lnp64_branch26"));
         assert!(mc_emitter.contains("encodeFixed32Reg"));
         assert!(mc_emitter.contains("case LNP64::NOP"));
+        assert!(mc_emitter.contains("case LNP64::YIELD"));
         assert!(mc_emitter.contains("case LNP64::RET"));
         assert!(mc_emitter.contains("case LNP64::LI"));
         assert!(mc_emitter.contains("case LNP64::LI32"));
@@ -6430,6 +6457,7 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::LD"));
         assert!(mc_emitter.contains("case LNP64::ST"));
         assert!(mc_emitter.contains("encodeFixed32NoOperand(0x00)"));
+        assert!(mc_emitter.contains("encodeFixed32NoOperand(0x06)"));
         assert!(mc_emitter.contains("encodeFixed32NoOperand(0x1f)"));
         assert!(mc_emitter.contains("emitLE32"));
         assert!(mc_asm_backend.contains("getRelocType"));

@@ -169,6 +169,9 @@ public:
     case LNP64::NOP:
       emitLE32(encodeFixed32NoOperand(0x00), OS);
       return;
+    case LNP64::YIELD:
+      emitLE32(encodeFixed32NoOperand(0x06), OS);
+      return;
     case LNP64::RET:
       emitLE32(encodeFixed32NoOperand(0x1f), OS);
       return;

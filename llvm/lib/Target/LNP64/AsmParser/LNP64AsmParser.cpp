@@ -395,6 +395,7 @@ private:
             .Case("sigmask_set", LNP64::SIGMASK_SET)
             .Case("kill", LNP64::LNP64_KILL)
             .Case("sigret", LNP64::SIGRET)
+            .Case("yield", LNP64::YIELD)
             .Case("alarm", LNP64::ALARM)
             .Case("env_get", LNP64::ENV_GET)
             .Case("open_at", LNP64::OPEN_AT)
@@ -432,7 +433,7 @@ private:
       return false;
 
     Inst.setOpcode(Opcode);
-    if (Opcode == LNP64::NOP || Opcode == LNP64::RET ||
+    if (Opcode == LNP64::NOP || Opcode == LNP64::YIELD || Opcode == LNP64::RET ||
         Opcode == LNP64::FENCE || Opcode == LNP64::SIGRET)
       return Operands.size() == 1;
 

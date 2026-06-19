@@ -111,6 +111,10 @@ static inline lnp64_word_t __lnp_thread_join(lnp64_word_t tid,
   return status;
 }
 
+static inline void __lnp_yield(void) {
+  __asm__ volatile("yield" : : : "memory");
+}
+
 static inline lnp64_word_t __lnp_cap_dup(lnp64_cap_t source_cap,
                                          lnp64_word_t rights,
                                          lnp64_word_t flags) {
@@ -223,11 +227,13 @@ static inline lnp64_word_t __lnp_alarm(lnp64_word_t seconds) {
   return previous;
 }
 
-static inline void __lnp_kill(lnp64_word_t pid, lnp64_word_t signum) {
-  __asm__ volatile("kill %0, %1"
-                   :
+static inline lnp64_word_t __lnp_kill(lnp64_word_t pid, lnp64_word_t signum) {
+  lnp64_word_t status;
+  __asm__ volatile("kill %1, %2\n\tmov %0, r1"
+                   : "=r"(status)
                    : "r"(pid), "r"(signum)
                    : "memory");
+  return status;
 }
 
 static inline void __lnp_sigret(void) {

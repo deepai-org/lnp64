@@ -12,8 +12,7 @@ struct sigaction {
 enum {
   LNP64_SIG_BLOCK = 0,
   LNP64_SIG_UNBLOCK = 1,
-  LNP64_SIG_SETMASK = 2,
-  LNP64_BOOTSTRAP_PID = 1
+  LNP64_SIG_SETMASK = 2
 };
 
 lnp64_sighandler_t signal(int signum, lnp64_sighandler_t handler) {
@@ -50,13 +49,13 @@ int sigprocmask(int how, const sigset_t *set, sigset_t *oldset) {
 }
 
 int kill(int pid, int signum) {
-  __lnp_kill((lnp64_word_t)(unsigned int)pid,
-             (lnp64_word_t)(unsigned int)signum);
-  return 0;
+  lnp64_word_t status = __lnp_kill((lnp64_word_t)(unsigned int)pid,
+                                   (lnp64_word_t)(unsigned int)signum);
+  return (long)status < 0 ? -1 : 0;
 }
 
 int raise(int signum) {
-  return kill(LNP64_BOOTSTRAP_PID, signum);
+  return kill((int)__lnp_get_pid(), signum);
 }
 
 unsigned int alarm(unsigned int seconds) {

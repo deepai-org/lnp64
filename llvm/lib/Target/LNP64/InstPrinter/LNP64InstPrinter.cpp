@@ -364,6 +364,9 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::NOP:
     OS << "nop";
     break;
+  case LNP64::YIELD:
+    OS << "yield";
+    break;
   case LNP64::FENCE:
     OS << "fence";
     break;

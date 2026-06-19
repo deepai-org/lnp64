@@ -376,6 +376,9 @@ public:
     case 0xcd:
       Instr.setOpcode(LNP64::FENCE);
       return MCDisassembler::Success;
+    case 0x06:
+      Instr.setOpcode(LNP64::YIELD);
+      return MCDisassembler::Success;
     case 0xce:
       Instr.setOpcode(LNP64::ISYNC);
       addReg(Instr, A);

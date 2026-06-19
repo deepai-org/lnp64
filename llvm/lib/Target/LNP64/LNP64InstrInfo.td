@@ -235,6 +235,7 @@ class LNP64Signal1<string Mnemonic>
     : LNP64Inst<(outs), (ins GPR:$rs), Mnemonic, "\t$rs">;
 
 def NOP : LNP64NoOperand<"nop">;
+def YIELD : LNP64NoOperand<"yield">;
 def LI : LNP64RI<"li"> {
   let Pattern = [(set GPR:$rd, simm16_imm:$imm)];
 }

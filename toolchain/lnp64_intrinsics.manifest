@@ -23,6 +23,7 @@ __lnp_free|FREE|status_or_errno|ptr
 __lnp_get_pid|GET_PCR|pid|none
 __lnp_spawn_entry|CLONE|tid_or_errno|entry,arg
 __lnp_thread_join|THREAD_JOIN|status|tid,retval_ptr
+__lnp_yield|YIELD|event_delivery_point|none
 __lnp_mmap_bootstrap|MMAP|addr_or_errno|addr_hint,len,prot
 __lnp_munmap_bootstrap|MUNMAP|status_or_errno|addr
 __lnp_mprotect_bootstrap|MPROTECT|status_or_errno|addr,len,prot

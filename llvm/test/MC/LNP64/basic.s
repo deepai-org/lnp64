@@ -4,6 +4,7 @@
 # XFAIL: *
 
   nop
+  yield
   li r1, 42
   add r3, r1, r2
   ld r4, 16(r31)
@@ -16,6 +17,7 @@ main:
   ret
 
 # CHECK: nop
+# CHECK: yield
 # CHECK: li r1, 42
 # CHECK: add r3, r1, r2
 # CHECK: ld r4, 16(r31)

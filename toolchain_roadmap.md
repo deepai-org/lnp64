@@ -376,8 +376,11 @@ The concrete first-program set is pinned in
   exercises the Clang-built pthread shim.
 - `netbsd_poll_child`: a non-fork NetBSD personality child replacement that
   exercises native queue readiness through poll/select/epoll shims.
+- `netbsd_signal_gate_child`: a non-fork NetBSD personality child replacement
+  that exercises signal handler and nested signal delivery through the Clang
+  signal shim.
 
-The first four gates now run through real Clang/lld output and the software
+These bootstrap gates now run through real Clang/lld output and the software
 loader without the toy compiler. Full replacement remains partial until the
 simple-libc gate no longer depends on the smoke-only shim.
 

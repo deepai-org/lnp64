@@ -3531,6 +3531,20 @@ grep -q 'pull r' "$netbsd_poll_test_dump"
 printf 'real LLVM LNP64 clang NetBSD poll child object passed: %s\n' \
   "$netbsd_poll_test_obj"
 
+netbsd_signal_gate_test_obj="$build_dir/netbsd-signal-gate-test-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
+  -c userland/signal_gate_test_clang.c -o "$netbsd_signal_gate_test_obj"
+test -s "$netbsd_signal_gate_test_obj"
+netbsd_signal_gate_test_dump="$build_dir/netbsd-signal-gate-test-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$netbsd_signal_gate_test_obj" \
+  >"$netbsd_signal_gate_test_dump"
+grep -q 'call ' "$netbsd_signal_gate_test_dump"
+grep -q 'yield' "$netbsd_signal_gate_test_dump"
+printf 'real LLVM LNP64 clang NetBSD signal gate child object passed: %s\n' \
+  "$netbsd_signal_gate_test_obj"
+
 meta_libc_c="$build_dir/meta-libc-smoke.c"
 cat >"$meta_libc_c" <<'C'
 #include <errno.h>
@@ -3769,6 +3783,8 @@ printf 'real LLVM LNP64 clang poll/select/epoll/kqueue libc object smoke passed:
 
 signal_libc_c="$build_dir/signal-libc-smoke.c"
 cat >"$signal_libc_c" <<'C'
+#include "lnp64_intrinsics.h"
+
 typedef unsigned long sigset_t;
 typedef void (*sighandler_t)(int);
 
@@ -3800,7 +3816,7 @@ int main(void) {
     return 2;
   if (sigprocmask(2, &mask, 0) != 0)
     return 3;
-  if (kill(1, 10) != 0)
+  if (kill((int)__lnp_get_pid(), 10) != 0)
     return 4;
   if (raise(12) != 0)
     return 5;
@@ -4302,6 +4318,7 @@ _start:
   sigmask_set r3
   kill r4, r5
   alarm r6, r7
+  yield
   sigret
 ASM
 signal_alias_mc_obj="$build_dir/signal-alias-mc-smoke.o"
@@ -4315,6 +4332,7 @@ grep -q 'sigaction r1, r2' "$signal_alias_mc_dump"
 grep -q 'sigmask_set r3' "$signal_alias_mc_dump"
 grep -q 'kill r4, r5' "$signal_alias_mc_dump"
 grep -q 'alarm r6, r7' "$signal_alias_mc_dump"
+grep -q 'yield' "$signal_alias_mc_dump"
 grep -q 'sigret' "$signal_alias_mc_dump"
 printf 'real LLVM LNP64 llvm-mc signal alias opcode smoke passed: %s\n' \
   "$signal_alias_mc_obj"
@@ -5014,6 +5032,14 @@ netbsd_poll_test_elf="$build_dir/lnp64-netbsd-poll-test-linked.elf"
 test -s "$netbsd_poll_test_elf"
 printf 'real LLVM LNP64 lld NetBSD poll child link passed: %s\n' \
   "$netbsd_poll_test_elf"
+
+netbsd_signal_gate_test_elf="$build_dir/lnp64-netbsd-signal-gate-test-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$netbsd_signal_gate_test_elf" "$crt0_obj" "$netbsd_signal_gate_test_obj" \
+  "$libc_signal_impl_obj" "$libc_fd_impl_obj"
+test -s "$netbsd_signal_gate_test_elf"
+printf 'real LLVM LNP64 lld NetBSD signal gate child link passed: %s\n' \
+  "$netbsd_signal_gate_test_elf"
 
 meta_libc_elf="$build_dir/lnp64-meta-libc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
