@@ -1926,6 +1926,101 @@ grep -q 'ret' "$libc_search_impl_dump"
 printf 'real LLVM LNP64 clang minilibc search implementation object smoke passed: %s\n' \
   "$libc_search_impl_obj"
 
+sort_c="$build_dir/sort-smoke.c"
+cat >"$sort_c" <<'C'
+typedef unsigned long size_t;
+typedef unsigned long uint64_t;
+int strcmp(const char *lhs, const char *rhs);
+int memcmp(const void *lhs, const void *rhs, size_t len);
+void qsort(void *base, size_t nmemb, size_t width,
+           int (*compar)(const void *, const void *));
+
+static int scmp(const void *lhs, const void *rhs) {
+  const char *const *a = lhs;
+  const char *const *b = rhs;
+  return strcmp(*a, *b);
+}
+
+static int icmp(const void *lhs, const void *rhs) {
+  const int *a = lhs;
+  const int *b = rhs;
+  return *a - *b;
+}
+
+static int ccmp(const void *lhs, const void *rhs) {
+  const char *a = lhs;
+  const char *b = rhs;
+  return *a - *b;
+}
+
+static int cmp64(const void *lhs, const void *rhs) {
+  const uint64_t *a = lhs;
+  const uint64_t *b = rhs;
+  if (*a < *b)
+    return -1;
+  return *a != *b;
+}
+
+int main(void) {
+  const char *names[6] = {"Bob", "Alice", "John", "Ceres", "Helga", "Drepper"};
+  const char *names_sorted[6] = {"Alice", "Bob", "Ceres", "Drepper", "Helga", "John"};
+  int nums[8] = {879045, 394, 33434, 232323, 4334, 5454, 343, 45545};
+  int nums_sorted[8] = {343, 394, 4334, 5454, 33434, 45545, 232323, 879045};
+  char chars[] = "4517263";
+  uint64_t wide[6] = {55, 3, 1024, 7, 7, 19};
+  uint64_t wide_sorted[6] = {3, 7, 7, 19, 55, 1024};
+  int i;
+
+  qsort(names, 6, sizeof names[0], scmp);
+  for (i = 0; i < 6; i = i + 1) {
+    if (strcmp(names[i], names_sorted[i]) != 0)
+      return 1;
+  }
+  qsort(nums, 8, sizeof nums[0], icmp);
+  for (i = 0; i < 8; i = i + 1) {
+    if (nums[i] != nums_sorted[i])
+      return 2;
+  }
+  qsort(chars, sizeof chars - 1, 1, ccmp);
+  if (memcmp(chars, "1234567", sizeof chars) != 0)
+    return 3;
+  qsort(wide, 6, sizeof wide[0], cmp64);
+  for (i = 0; i < 6; i = i + 1) {
+    if (wide[i] != wide_sorted[i])
+      return 4;
+  }
+  qsort(chars, 0, 1, ccmp);
+  qsort(chars, sizeof chars - 1, 0, ccmp);
+  return 0;
+}
+C
+
+sort_obj="$build_dir/sort-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$sort_c" -o "$sort_obj"
+test -s "$sort_obj"
+sort_dump="$build_dir/sort-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$sort_obj" \
+  >"$sort_dump"
+grep -q 'call ' "$sort_dump"
+printf 'real LLVM LNP64 clang sort helper object smoke passed: %s\n' \
+  "$sort_obj"
+
+libc_sort_impl_c="toolchain/liblnp64_sort_min.c"
+libc_sort_impl_obj="$build_dir/liblnp64-sort-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$libc_sort_impl_c" -o "$libc_sort_impl_obj"
+test -s "$libc_sort_impl_obj"
+libc_sort_impl_dump="$build_dir/liblnp64-sort-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_sort_impl_obj" \
+  >"$libc_sort_impl_dump"
+grep -q 'st.b r' "$libc_sort_impl_dump"
+grep -q 'ret' "$libc_sort_impl_dump"
+printf 'real LLVM LNP64 clang minilibc sort implementation object smoke passed: %s\n' \
+  "$libc_sort_impl_obj"
+
 libc_alloc_impl_c="toolchain/liblnp64_alloc_min.c"
 libc_alloc_impl_obj="$build_dir/liblnp64-alloc-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
@@ -2985,6 +3080,14 @@ search_elf="$build_dir/lnp64-search-linked.elf"
 test -s "$search_elf"
 printf 'real LLVM LNP64 lld search helper link smoke passed: %s\n' \
   "$search_elf"
+
+sort_elf="$build_dir/lnp64-sort-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$sort_elf" "$crt0_obj" "$sort_obj" "$libc_sort_impl_obj" \
+  "$libc_string_impl_obj"
+test -s "$sort_elf"
+printf 'real LLVM LNP64 lld sort helper link smoke passed: %s\n' \
+  "$sort_elf"
 
 calloc_elf="$build_dir/lnp64-calloc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

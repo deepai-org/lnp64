@@ -128,6 +128,8 @@ run_elf_report "real LLVM LNP64 run-elf path helper execution passed" \
   target/llvm-lnp64-build/lnp64-path-linked.elf
 run_elf_report "real LLVM LNP64 run-elf search helper execution passed" \
   target/llvm-lnp64-build/lnp64-search-linked.elf
+run_elf_report "real LLVM LNP64 run-elf sort helper execution passed" \
+  target/llvm-lnp64-build/lnp64-sort-linked.elf
 run_elf_report "real LLVM LNP64 run-elf calloc execution passed" \
   target/llvm-lnp64-build/lnp64-calloc-linked.elf
 run_elf_report "real LLVM LNP64 run-elf realloc execution passed" \
