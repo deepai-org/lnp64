@@ -631,6 +631,18 @@ public:
                                     getGPRNo(MI.getOperand(3))),
                OS);
       return;
+    case LNP64::CLONE_SPAWN:
+      emitLE32(encodeFixed32RRR(0x59, getGPRNo(MI.getOperand(0)),
+                                getGPRNo(MI.getOperand(1)),
+                                getGPRNo(MI.getOperand(2))),
+               OS);
+      return;
+    case LNP64::THREAD_JOIN:
+      emitLE32(encodeFixed32RRR(0x5a, getGPRNo(MI.getOperand(0)),
+                                getGPRNo(MI.getOperand(1)),
+                                getGPRNo(MI.getOperand(2))),
+               OS);
+      return;
     case LNP64::CSET_EQ:
       emitLE32(encodeFixed32Reg(0x3d, getGPRNo(MI.getOperand(0))), OS);
       return;

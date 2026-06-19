@@ -201,6 +201,7 @@ pub enum Instr {
     Fork(Reg),
     Exec(Reg, Reg, Reg),
     Spawn(Reg, Reg),
+    CloneSpawn(Reg, Reg, Reg),
     ThreadJoin(Reg, Reg, Reg),
     ThreadDetach(Reg, Reg),
     Yield,

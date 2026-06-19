@@ -91,6 +91,26 @@ static inline lnp64_word_t __lnp_get_pid(void) {
   return value;
 }
 
+static inline lnp64_word_t __lnp_spawn_entry(lnp64_word_t entry,
+                                             lnp64_word_t arg) {
+  lnp64_word_t tid;
+  __asm__ volatile("clone.spawn %0, %1, %2"
+                   : "=r"(tid)
+                   : "r"(entry), "r"(arg)
+                   : "memory");
+  return tid;
+}
+
+static inline lnp64_word_t __lnp_thread_join(lnp64_word_t tid,
+                                             lnp64_word_t retval_ptr) {
+  lnp64_word_t status;
+  __asm__ volatile("thread_join %0, %1, %2"
+                   : "=r"(status)
+                   : "r"(tid), "r"(retval_ptr)
+                   : "memory");
+  return status;
+}
+
 static inline lnp64_word_t __lnp_cap_dup(lnp64_cap_t source_cap,
                                          lnp64_word_t rights,
                                          lnp64_word_t flags) {

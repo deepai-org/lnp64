@@ -210,6 +210,10 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
     return "env_get";
   case LNP64::OPEN_AT:
     return "open_at";
+  case LNP64::CLONE_SPAWN:
+    return "clone.spawn";
+  case LNP64::THREAD_JOIN:
+    return "thread_join";
   case LNP64::OBJECT_CTL:
     return "object_ctl";
   case LNP64::DOMAIN_CTL:
@@ -416,6 +420,8 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::CSEL_UGT:
   case LNP64::CSEL_ULE:
   case LNP64::CSEL_UGE:
+  case LNP64::CLONE_SPAWN:
+  case LNP64::THREAD_JOIN:
     OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
     printOperand(MI->getOperand(0), OS);
     OS << ", ";

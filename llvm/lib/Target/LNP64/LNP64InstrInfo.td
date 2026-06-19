@@ -639,6 +639,8 @@ def ALLOC_SIZE : LNP64RR<"alloc_size">;
 def FREE : LNP64RuntimeSet<"free">;
 
 def OPEN_AT : LNP64Native4<"open_at">;
+def CLONE_SPAWN : LNP64RRR<"clone.spawn">;
+def THREAD_JOIN : LNP64RRR<"thread_join">;
 def PULL : LNP64Native4<"pull"> {
   let Pattern = [(set GPR:$rd, (LNP64pull GPR:$cap, GPR:$arg0, GPR:$arg1))];
 }

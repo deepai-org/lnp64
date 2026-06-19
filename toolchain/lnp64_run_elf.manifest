@@ -34,6 +34,7 @@ real_intrinsic_capability_control_execution|tested|scripts/run_real_llvm_lnp64_d
 real_intrinsic_mmap_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64_intrinsics.h|real LLVM LNP64 run-elf intrinsic mmap execution passed|none
 real_intrinsic_get_pcr_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64_intrinsics.h|real LLVM LNP64 run-elf intrinsic GET_PCR execution passed|none
 real_intrinsic_openat_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64_intrinsics.h|real LLVM LNP64 run-elf intrinsic OPEN_AT execution passed|none
+real_intrinsic_clone_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64_intrinsics.h|real LLVM LNP64 run-elf intrinsic CLONE execution passed|none
 real_intrinsic_amo_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64_intrinsics.h|real LLVM LNP64 run-elf intrinsic AMO execution passed|none
 real_c11_atomic_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64_isel.manifest|real LLVM LNP64 run-elf C11 atomic execution passed|none
 real_inline_asm_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64_inline_asm.manifest|real LLVM LNP64 run-elf inline asm execution passed|none

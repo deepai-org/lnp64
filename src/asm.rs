@@ -682,6 +682,10 @@ impl Parser {
                 arity(2)?;
                 Instr::Spawn(reg(&args[0])?, reg(&args[1])?)
             }
+            "CLONE.SPAWN" | "CLONE_SPAWN" => {
+                arity(3)?;
+                Instr::CloneSpawn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+            }
             "THREAD_JOIN" => {
                 arity(3)?;
                 Instr::ThreadJoin(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)

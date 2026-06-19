@@ -398,6 +398,8 @@ private:
             .Case("alarm", LNP64::ALARM)
             .Case("env_get", LNP64::ENV_GET)
             .Case("open_at", LNP64::OPEN_AT)
+            .Case("clone.spawn", LNP64::CLONE_SPAWN)
+            .Case("thread_join", LNP64::THREAD_JOIN)
             .Case("object_ctl", LNP64::OBJECT_CTL)
             .Case("domain_ctl", LNP64::DOMAIN_CTL)
             .Case("cap_send", LNP64::CAP_SEND)
@@ -450,6 +452,7 @@ private:
         Opcode == LNP64::UDIV || Opcode == LNP64::SREM ||
         Opcode == LNP64::UREM || Opcode == LNP64::MULH ||
         Opcode == LNP64::MULHU || Opcode == LNP64::MULHSU ||
+        Opcode == LNP64::CLONE_SPAWN || Opcode == LNP64::THREAD_JOIN ||
         Opcode == LNP64::AMO_SWAP || Opcode == LNP64::AMO_ADD ||
         Opcode == LNP64::AMO_AND || Opcode == LNP64::AMO_OR ||
         Opcode == LNP64::AMO_XOR || Opcode == LNP64::ISYNC ||

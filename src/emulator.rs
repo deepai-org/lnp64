@@ -1427,19 +1427,47 @@ impl Machine {
                 return Err("committed exec step limit exceeded".to_string());
             }
             steps += 1;
-            let tid = self.current_tid;
+            self.tick_sleepers();
+            self.tick_alarms();
+            self.tick_timers();
+            self.poll_fd_waiters();
+
+            let Some(tid) = self.ready.pop_front() else {
+                if self.sleepers.is_empty() && self.alarms.is_empty() && self.fd_waiters.is_empty()
+                {
+                    return Err("committed exec runqueue deadlock: no ready threads".to_string());
+                }
+                if !self.fd_waiters.is_empty() {
+                    thread::sleep(Duration::from_millis(10));
+                }
+                continue;
+            };
             if !self.threads.contains_key(&tid) {
-                break;
+                continue;
+            }
+            self.current_tid = tid;
+            if self.thread_domain_frozen(tid)? {
+                if !self.domain_parked.contains(&tid) {
+                    self.domain_parked.push_back(tid);
+                }
+                continue;
+            }
+            self.deliver_signal_if_needed()?;
+            if !self.threads.contains_key(&tid) {
+                continue;
             }
             let pc = self.thread()?.ip as u64;
             let opcode = self.load_exec_u32(pc).map(|word| (word >> 24) as u8)?;
             let (instr, next_pc) = self.decode_committed_exec_instruction(pc)?;
             self.thread_mut()?.ip = checked_host_usize(next_pc, "committed exec next PC")?;
             self.charge_cpu_tick()?;
-            self.exec(instr.clone()).map_err(|err| {
+            let keep_ready = self.exec(instr.clone()).map_err(|err| {
                 let context = self.fault_context(tid);
                 format!("{err} at tid {tid} pc 0x{pc:x}: {instr:?}{context}")
             })?;
+            if keep_ready && self.threads.contains_key(&tid) {
+                self.wake_thread(tid);
+            }
             self.committed_exec_retire_trace.push((pc, opcode));
         }
         Ok(self.last_exit)
@@ -1645,6 +1673,8 @@ impl Machine {
             0x56 => Instr::EnvGet(a, b, c, d),
             0x57 => Instr::WriteFd(FdReg(a.0), b, c),
             0x58 => Instr::OpenAtDyn(a, b, c, d),
+            0x59 => Instr::CloneSpawn(a, b, c),
+            0x5a => Instr::ThreadJoin(a, b, c),
             0x60 => Instr::MmapBootstrap(a, b, c, d),
             0x61 => Instr::MunmapBootstrap(a, b),
             0x62 => Instr::Sigaction(a, b),
@@ -3168,6 +3198,17 @@ impl Machine {
             Instr::Spawn(dst, entry) => {
                 let entry = self.read_reg(entry)?;
                 self.clone_with_profile(CloneProfile::SpawnEntry, dst, Some(entry))?;
+            }
+            Instr::CloneSpawn(dst, entry, arg) => {
+                let entry = self.read_reg(entry)?;
+                let arg = self.read_reg(arg)?;
+                self.clone_with_profile(CloneProfile::SpawnEntry, dst, Some(entry))?;
+                let tid = self.read_reg(dst)?;
+                if tid != -1i64 as u64 {
+                    if let Some(thread) = self.threads.get_mut(&tid) {
+                        thread.regs[1] = arg;
+                    }
+                }
             }
             Instr::ThreadJoin(result, tid_reg, retval_reg) => {
                 Self::ensure_result_reg_writable(result)?;

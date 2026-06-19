@@ -108,7 +108,8 @@ real LLVM MC round trips for AMOs, compare-exchange, and `FUTEX_WAIT`/
 `OBJECT_CTL` and `DOMAIN_CTL` also have real MC and committed-exec coverage
 through private `__lnp_object_ctl`/`__lnp_domain_ctl` Clang smokes. Other
 opcodes remain blocked until operand encodings are implemented.
-`OPEN_AT`, `PULL`, `PUSH`, and `GET_PCR` now have real LLVM MC/object/link
+`OPEN_AT`, `PULL`, `PUSH`, `GET_PCR`, and the `CLONE.SPAWN`/`THREAD_JOIN`
+native thread-control slice now have real LLVM MC/object/link/`run-elf`
 coverage through the private intrinsic header, so POSIX-shaped `openat`,
 `read`, `write`, `pid`, and `getpid` live in libc shim code rather than in the
 Rust compiler frontend. `toolchain/lnp64_intrinsic_lowering.manifest` now

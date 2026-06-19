@@ -1542,6 +1542,10 @@ mod tests {
         assert!(real_llc.contains("open-at-mc-smoke.o"));
         assert!(real_llc.contains("open_at r1, r2, r3, r4"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc OPEN_AT opcode smoke passed"));
+        assert!(real_llc.contains("clone-control-mc-smoke.o"));
+        assert!(real_llc.contains("clone.spawn r1, r2, r3"));
+        assert!(real_llc.contains("thread_join r4, r5, r6"));
+        assert!(real_llc.contains("real LLVM LNP64 llvm-mc clone control opcode smoke passed"));
         assert!(real_llc.contains("cap-control-mc-smoke.o"));
         assert!(real_llc.contains("cap_dup r1, r2"));
         assert!(real_llc.contains("cap_send r3, r4"));
@@ -2146,6 +2150,18 @@ mod tests {
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic OPEN_AT execution passed")
         );
+        assert!(real_llc.contains("intrinsic-clone-clang-smoke.o"));
+        assert!(real_llc.contains("__lnp_spawn_entry"));
+        assert!(real_llc.contains("__lnp_thread_join"));
+        assert!(real_llc.contains("grep -q 'clone.spawn r'"));
+        assert!(real_llc.contains("grep -q 'thread_join r'"));
+        assert!(real_llc.contains("real LLVM LNP64 clang intrinsic CLONE object smoke passed"));
+        assert!(real_llc.contains("lnp64-intrinsic-clone-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld intrinsic CLONE link smoke passed"));
+        assert!(real_llc_docker.contains("lnp64-intrinsic-clone-linked.elf"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic CLONE execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-poll-libc-linked.elf"));
         assert!(
             real_llc_docker
@@ -2503,6 +2519,10 @@ mod tests {
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic mmap execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-intrinsic-clone-linked.elf"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic CLONE execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-intrinsic-amo-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic AMO execution passed"));
         assert!(real_llc_docker.contains("lnp64-c11-atomic-linked.elf"));
@@ -2591,6 +2611,7 @@ mod tests {
             "real_intrinsic_mmap_execution",
             "real_intrinsic_get_pcr_execution",
             "real_intrinsic_openat_execution",
+            "real_intrinsic_clone_execution",
             "real_intrinsic_amo_execution",
             "real_c11_atomic_execution",
             "real_stack_argument_execution",
@@ -2841,6 +2862,8 @@ mod tests {
             "GET_PCR",
             "SET_PCR",
             "OPEN_AT",
+            "CLONE_SPAWN",
+            "THREAD_JOIN",
             "EXIT",
             "AWAIT",
             "GATE_CALL",
@@ -2930,6 +2953,8 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::MUNMAP"));
         assert!(mc_emitter.contains("case LNP64::MPROTECT"));
         assert!(mc_emitter.contains("case LNP64::ENV_GET"));
+        assert!(mc_emitter.contains("case LNP64::CLONE_SPAWN"));
+        assert!(mc_emitter.contains("case LNP64::THREAD_JOIN"));
         assert!(mc_emitter.contains("fixup_lnp64_pcrel32"));
         assert!(mc_emitter.contains("fixup_lnp64_abs32"));
         assert!(mc_emitter.contains("case LNP64::LD_W"));
@@ -2963,7 +2988,11 @@ mod tests {
         assert!(asm_parser.contains(r#".Case("PID", LNP64::PID)"#));
         assert!(asm_parser.contains(r#".Case("env_get", LNP64::ENV_GET)"#));
         assert!(asm_parser.contains(r#".Case("open_at", LNP64::OPEN_AT)"#));
+        assert!(asm_parser.contains(r#".Case("clone.spawn", LNP64::CLONE_SPAWN)"#));
+        assert!(asm_parser.contains(r#".Case("thread_join", LNP64::THREAD_JOIN)"#));
         assert!(instr_td.contains("def OPEN_AT : LNP64Native4"));
+        assert!(instr_td.contains("def CLONE_SPAWN : LNP64RRR"));
+        assert!(instr_td.contains("def THREAD_JOIN : LNP64RRR"));
         assert!(instr_td.contains("def GET_PCR : LNP64PcrGet"));
         assert!(instr_td.contains("def SET_PCR : LNP64PcrSet"));
         assert!(asm_parser.contains(r#".Case("ld.w", LNP64::LD_W)"#));
@@ -3000,6 +3029,8 @@ mod tests {
         assert!(disassembler.contains("Instr.setOpcode(LNP64::GET_PCR)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::SET_PCR)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::OPEN_AT)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::CLONE_SPAWN)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::THREAD_JOIN)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::LD_W)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::LD_H)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::ST_B)"));
@@ -3040,6 +3071,10 @@ mod tests {
         assert!(inst_printer.contains("return \"get_pcr\""));
         assert!(inst_printer.contains("case LNP64::OPEN_AT"));
         assert!(inst_printer.contains("return \"open_at\""));
+        assert!(inst_printer.contains("case LNP64::CLONE_SPAWN"));
+        assert!(inst_printer.contains("return \"clone.spawn\""));
+        assert!(inst_printer.contains("case LNP64::THREAD_JOIN"));
+        assert!(inst_printer.contains("return \"thread_join\""));
         assert!(inst_printer.contains("case LNP64::OPEN_AT:\n  case LNP64::PULL:"));
         assert!(inst_printer.contains("OS << \"PID\""));
         assert!(inst_printer.contains("OS << \"SIGMASK\""));
@@ -4301,6 +4336,11 @@ mod tests {
             "native_primitives",
             "CLONE"
         ));
+        assert!(manifest_csv_contains(
+            manifest,
+            "native_primitives",
+            "THREAD_JOIN"
+        ));
         for profile in [
             "new_process_cow",
             "new_thread_shared_vm",
@@ -4364,6 +4404,8 @@ mod tests {
             "__lnp_alloc_size",
             "__lnp_free",
             "__lnp_get_pid",
+            "__lnp_spawn_entry",
+            "__lnp_thread_join",
             "__lnp_mmap_bootstrap",
             "__lnp_munmap_bootstrap",
             "__lnp_mprotect_bootstrap",
@@ -4811,6 +4853,7 @@ mod tests {
             "env_get_control",
             "pcr_control",
             "native_primitives",
+            "clone_control",
             "native_control_rr",
             "native_capability_rr",
         ] {
@@ -4845,7 +4888,18 @@ mod tests {
         assert!(groups["native_capability_rr"].1.contains(&"CAP_SEND"));
         assert!(groups["native_capability_rr"].1.contains(&"CAP_RECV"));
         assert!(groups["native_capability_rr"].1.contains(&"CAP_REVOKE"));
+        assert!(groups["clone_control"].0.contains("fixed32_clone_control"));
+        assert!(groups["clone_control"].1.contains(&"CLONE.SPAWN"));
+        assert!(groups["clone_control"].1.contains(&"THREAD_JOIN"));
         assert!(!groups.contains_key("native_control_planned"));
+        assert!(asm_parser.contains(r#".Case("clone.spawn", LNP64::CLONE_SPAWN)"#));
+        assert!(asm_parser.contains(r#".Case("thread_join", LNP64::THREAD_JOIN)"#));
+        assert!(inst_printer.contains(r#"return "clone.spawn";"#));
+        assert!(inst_printer.contains(r#"return "thread_join";"#));
+        assert!(mc_emitter.contains("case LNP64::CLONE_SPAWN"));
+        assert!(mc_emitter.contains("case LNP64::THREAD_JOIN"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::CLONE_SPAWN)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::THREAD_JOIN)"));
         assert!(asm_parser.contains(r#".Case("cap_send", LNP64::CAP_SEND)"#));
         assert!(asm_parser.contains(r#".Case("cap_recv", LNP64::CAP_RECV)"#));
         assert!(asm_parser.contains(r#".Case("cap_dup", LNP64::CAP_DUP)"#));

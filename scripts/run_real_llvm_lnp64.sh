@@ -298,6 +298,26 @@ ASM
   printf 'real LLVM LNP64 llvm-mc OPEN_AT opcode smoke passed: %s\n' \
     "$open_at_mc_obj"
 
+  clone_control_asm="$build_dir/clone-control-mc-smoke.s"
+  cat >"$clone_control_asm" <<'ASM'
+  .text
+  .globl _start
+_start:
+  clone.spawn r1, r2, r3
+  thread_join r4, r5, r6
+ASM
+  clone_control_mc_obj="$build_dir/clone-control-mc-smoke.o"
+  "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$clone_control_asm" \
+    -o "$clone_control_mc_obj"
+  test -s "$clone_control_mc_obj"
+  clone_control_mc_dump="$build_dir/clone-control-mc-smoke.dump"
+  "$llvm_objdump" -d --triple=lnp64-unknown-none "$clone_control_mc_obj" \
+    >"$clone_control_mc_dump"
+  grep -q 'clone.spawn r1, r2, r3' "$clone_control_mc_dump"
+  grep -q 'thread_join r4, r5, r6' "$clone_control_mc_dump"
+  printf 'real LLVM LNP64 llvm-mc clone control opcode smoke passed: %s\n' \
+    "$clone_control_mc_obj"
+
   cap_control_asm="$build_dir/cap-control-mc-smoke.s"
   cat >"$cap_control_asm" <<'ASM'
   .text
@@ -1092,6 +1112,41 @@ intrinsic_openat_dump="$build_dir/intrinsic-openat-clang-smoke.dump"
 grep -q 'open_at r' "$intrinsic_openat_dump"
 printf 'real LLVM LNP64 clang intrinsic OPEN_AT object smoke passed: %s\n' \
   "$intrinsic_openat_obj"
+
+intrinsic_clone_c="$build_dir/intrinsic-clone.c"
+cat >"$intrinsic_clone_c" <<'C'
+#include "lnp64_intrinsics.h"
+
+static volatile lnp64_word_t marker;
+
+static int child(lnp64_word_t arg) {
+  marker = arg + 1;
+  __lnp_exit(0);
+  return 0;
+}
+
+int main(void) {
+  lnp64_word_t tid = __lnp_spawn_entry((lnp64_word_t)child, 41);
+  if (tid == (lnp64_word_t)-1)
+    return 1;
+  if (__lnp_thread_join(tid, 0) != 0)
+    return 2;
+  return marker == 42 ? 0 : 3;
+}
+C
+
+intrinsic_clone_obj="$build_dir/intrinsic-clone-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$intrinsic_clone_c" -o "$intrinsic_clone_obj"
+test -s "$intrinsic_clone_obj"
+intrinsic_clone_dump="$build_dir/intrinsic-clone-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$intrinsic_clone_obj" \
+  >"$intrinsic_clone_dump"
+grep -q 'clone.spawn r' "$intrinsic_clone_dump"
+grep -q 'thread_join r' "$intrinsic_clone_dump"
+printf 'real LLVM LNP64 clang intrinsic CLONE object smoke passed: %s\n' \
+  "$intrinsic_clone_obj"
 
 intrinsic_amo_c="$build_dir/intrinsic-amo.c"
 cat >"$intrinsic_amo_c" <<'C'
@@ -2956,6 +3011,26 @@ grep -q 'open_at r1, r2, r3, r4' "$open_at_mc_dump"
 printf 'real LLVM LNP64 llvm-mc OPEN_AT opcode smoke passed: %s\n' \
   "$open_at_mc_obj"
 
+clone_control_asm="$build_dir/clone-control-mc-smoke.s"
+cat >"$clone_control_asm" <<'ASM'
+  .text
+  .globl _start
+_start:
+  clone.spawn r1, r2, r3
+  thread_join r4, r5, r6
+ASM
+clone_control_mc_obj="$build_dir/clone-control-mc-smoke.o"
+"$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$clone_control_asm" \
+  -o "$clone_control_mc_obj"
+test -s "$clone_control_mc_obj"
+clone_control_mc_dump="$build_dir/clone-control-mc-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$clone_control_mc_obj" \
+  >"$clone_control_mc_dump"
+grep -q 'clone.spawn r1, r2, r3' "$clone_control_mc_dump"
+grep -q 'thread_join r4, r5, r6' "$clone_control_mc_dump"
+printf 'real LLVM LNP64 llvm-mc clone control opcode smoke passed: %s\n' \
+  "$clone_control_mc_obj"
+
 cap_control_asm="$build_dir/cap-control-mc-smoke.s"
 cat >"$cap_control_asm" <<'ASM'
   .text
@@ -3179,6 +3254,13 @@ intrinsic_openat_elf="$build_dir/lnp64-intrinsic-openat-linked.elf"
 test -s "$intrinsic_openat_elf"
 printf 'real LLVM LNP64 lld intrinsic OPEN_AT link smoke passed: %s\n' \
   "$intrinsic_openat_elf"
+
+intrinsic_clone_elf="$build_dir/lnp64-intrinsic-clone-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$intrinsic_clone_elf" "$crt0_obj" "$intrinsic_clone_obj"
+test -s "$intrinsic_clone_elf"
+printf 'real LLVM LNP64 lld intrinsic CLONE link smoke passed: %s\n' \
+  "$intrinsic_clone_elf"
 
 intrinsic_amo_elf="$build_dir/lnp64-intrinsic-amo-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

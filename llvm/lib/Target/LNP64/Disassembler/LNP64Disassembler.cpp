@@ -564,6 +564,18 @@ public:
       addReg(Instr, C);
       addReg(Instr, (Word >> 4) & 0x1f);
       return MCDisassembler::Success;
+    case 0x59:
+      Instr.setOpcode(LNP64::CLONE_SPAWN);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0x5a:
+      Instr.setOpcode(LNP64::THREAD_JOIN);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
     case 0x3d:
       Instr.setOpcode(LNP64::CSET_EQ);
       addReg(Instr, A);
