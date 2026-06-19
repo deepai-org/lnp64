@@ -1282,6 +1282,21 @@ done
 printf 'real LLVM LNP64 clang sbase libutil object smokes passed: %s\n' \
   "${sbase_libutil_objs[*]}"
 
+sbase_support_impl_c="toolchain/liblnp64_sbase_min.c"
+sbase_support_impl_obj="$build_dir/liblnp64-sbase-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin \
+  -fno-pic -fno-jump-tables -fno-unwind-tables \
+  -fno-asynchronous-unwind-tables -I toolchain/include -I third_party/sbase \
+  -c "$sbase_support_impl_c" -o "$sbase_support_impl_obj"
+test -s "$sbase_support_impl_obj"
+sbase_support_impl_dump="$build_dir/liblnp64-sbase-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$sbase_support_impl_obj" \
+  >"$sbase_support_impl_dump"
+grep -q '<putword>:' "$sbase_support_impl_dump"
+grep -q '<putchar>:' "$sbase_support_impl_dump"
+printf 'real LLVM LNP64 clang sbase support implementation object smoke passed: %s\n' \
+  "$sbase_support_impl_obj"
+
 netcat_obj="$build_dir/netcat-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
@@ -3982,6 +3997,15 @@ socket_libc_elf="$build_dir/lnp64-socket-libc-linked.elf"
 test -s "$socket_libc_elf"
 printf 'real LLVM LNP64 lld socket libc link smoke passed: %s\n' \
   "$socket_libc_elf"
+
+sbase_echo_elf="$build_dir/lnp64-sbase-echo-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$sbase_echo_elf" "$crt0_obj" "$build_dir/sbase-echo-clang-smoke.o" \
+  "$sbase_support_impl_obj" "$libc_fd_impl_obj" "$libc_string_impl_obj" \
+  "$libc_process_impl_obj"
+test -s "$sbase_echo_elf"
+printf 'real LLVM LNP64 lld sbase echo link smoke passed: %s\n' \
+  "$sbase_echo_elf"
 
 netcat_elf="$build_dir/lnp64-netcat-clang-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

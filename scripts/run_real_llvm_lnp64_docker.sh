@@ -33,9 +33,25 @@ fi
 run_elf_probe() {
   local linked_probe="$1"
   shift
+  local run_args=()
+  local has_arg_marker=0
+  local item
+  for item in "$@"; do
+    if [[ "$item" == "--expect" ]]; then
+      has_arg_marker=1
+      break
+    fi
+  done
+  if [[ "$has_arg_marker" == "1" ]]; then
+    while [[ "$#" -gt 0 && "$1" != "--expect" ]]; do
+      run_args+=("$1")
+      shift
+    done
+    shift
+  fi
   "$lnp64_bin" elf-plan "$linked_probe" >/dev/null
   local run_elf_output
-  run_elf_output="$("$lnp64_bin" run-elf "$linked_probe")"
+  run_elf_output="$("$lnp64_bin" run-elf "$linked_probe" "${run_args[@]}")"
   grep -q 'exit=0' <<<"$run_elf_output"
   local expected
   for expected in "$@"; do
@@ -173,5 +189,8 @@ run_elf_report "real LLVM LNP64 run-elf signal libc execution passed" \
   target/llvm-lnp64-build/lnp64-signal-libc-linked.elf
 run_elf_report "real LLVM LNP64 run-elf socket libc execution passed" \
   target/llvm-lnp64-build/lnp64-socket-libc-linked.elf
+run_elf_report "real LLVM LNP64 run-elf sbase echo execution passed" \
+  target/llvm-lnp64-build/lnp64-sbase-echo-linked.elf \
+  echo hello clang --expect 'hello clang'
 run_elf_report "real LLVM LNP64 run-elf indirect call execution passed" \
   target/llvm-lnp64-build/lnp64-indirect-call-linked.elf

@@ -128,6 +128,12 @@ fn run() -> Result<(), String> {
         }
         "elf-plan" => {
             let options = take_elf_plan_options(&mut args)?;
+            if !options.args.is_empty() {
+                return Err(format!(
+                    "unexpected elf-plan arguments: {}",
+                    options.args.join(" ")
+                ));
+            }
             let probe = build_elf_exec_probe(&options)?;
             println!(
                 "exec-plan version={} entry=0x{:x} initial_sp=0x{:x} tls_base=0x{:x} startup_metadata=0x{:x}",
@@ -171,6 +177,9 @@ fn run() -> Result<(), String> {
         "run-elf" => {
             let options = take_elf_plan_options(&mut args)?;
             let mut probe = build_elf_exec_probe(&options)?;
+            if !options.args.is_empty() {
+                probe.machine.set_args(&options.args)?;
+            }
             let exit = probe.machine.run_committed_exec()?;
             if exit == 0 {
                 println!(
@@ -261,7 +270,7 @@ fn usage() {
     eprintln!("  lnp64 run-flat-exec <program.hex> [--data-hex data.hex]");
     eprintln!("  lnp64 run [--namespace-root <dir>] <program.s>");
     eprintln!("  lnp64 elf-plan [--load-bias <n>] <program.elf>");
-    eprintln!("  lnp64 run-elf [--load-bias <n>] <program.elf>");
+    eprintln!("  lnp64 run-elf [--load-bias <n>] <program.elf> [argv ...]");
     eprintln!("  lnp64 run-flat-exec <program.hex>");
     eprintln!(
         "  lnp64 cc --toy-bootstrap [--dump-macros|--dump-preprocessed] <program.c> [more.c ...] [-o program.s]"
@@ -900,6 +909,7 @@ fn build_elf_exec_probe(options: &ElfPlanOptions) -> Result<ElfExecProbe, String
 struct ElfPlanOptions {
     input: PathBuf,
     load_bias: u64,
+    args: Vec<String>,
 }
 
 fn take_elf_plan_options(args: &mut Vec<String>) -> Result<ElfPlanOptions, String> {
@@ -918,10 +928,12 @@ fn take_elf_plan_options(args: &mut Vec<String>) -> Result<ElfPlanOptions, Strin
         load_bias = parse_u64_arg(&args.remove(0), "--load-bias")?;
     }
     let input = take_input(args)?;
-    if !args.is_empty() {
-        return Err(format!("unexpected elf-plan arguments: {}", args.join(" ")));
-    }
-    Ok(ElfPlanOptions { input, load_bias })
+    let runtime_args = std::mem::take(args);
+    Ok(ElfPlanOptions {
+        input,
+        load_bias,
+        args: runtime_args,
+    })
 }
 
 fn parse_u64_arg(value: &str, name: &str) -> Result<u64, String> {
@@ -1115,6 +1127,7 @@ mod tests {
         let probe = build_elf_exec_probe(&ElfPlanOptions {
             input: path.clone(),
             load_bias: 0,
+            args: Vec::new(),
         })
         .unwrap();
 
@@ -1139,6 +1152,7 @@ mod tests {
         let mut probe = build_elf_exec_probe(&ElfPlanOptions {
             input: path.clone(),
             load_bias: 0,
+            args: Vec::new(),
         })
         .unwrap();
         let exit = probe.machine.run_committed_exec().unwrap();

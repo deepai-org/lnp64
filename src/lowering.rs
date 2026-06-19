@@ -1331,6 +1331,7 @@ mod tests {
         let libc_poll_min = include_str!("../toolchain/liblnp64_poll_min.c");
         let libc_signal_min = include_str!("../toolchain/liblnp64_signal_min.c");
         let libc_socket_min = include_str!("../toolchain/liblnp64_socket_min.c");
+        let libc_sbase_min = include_str!("../toolchain/liblnp64_sbase_min.c");
         let lnp64_isel_lowering = include_str!("../llvm/lib/Target/LNP64/LNP64ISelLowering.cpp");
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
         let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
@@ -1422,6 +1423,7 @@ mod tests {
             "clang_varargs_call_object",
             "clang_sbase_command_objects",
             "clang_sbase_libutil_objects",
+            "clang_sbase_support_object",
             "zlib_package_static_link",
             "natsort_package_static_link",
             "jsmn_package_static_link",
@@ -1432,6 +1434,8 @@ mod tests {
             "jsmn_package_run_elf",
             "inih_package_run_elf",
             "cwalk_package_run_elf",
+            "sbase_echo_static_link",
+            "sbase_echo_run_elf",
         ] {
             assert!(
                 gate_manifest.contains(requirement),
@@ -2304,6 +2308,17 @@ mod tests {
         assert!(real_llc.contains("sbase-libutil-$sbase_libutil-clang-smoke.o"));
         assert!(real_llc.contains("third_party/sbase/libutil/$sbase_libutil.c"));
         assert!(real_llc.contains("real LLVM LNP64 clang sbase libutil object smokes passed"));
+        assert!(real_llc.contains("toolchain/liblnp64_sbase_min.c"));
+        assert!(libc_sbase_min.contains("void putword(FILE *stream, const char *word)"));
+        assert!(libc_sbase_min.contains("char *argv0;"));
+        assert!(real_llc.contains("liblnp64-sbase-min.o"));
+        assert!(
+            real_llc
+                .contains("real LLVM LNP64 clang sbase support implementation object smoke passed")
+        );
+        assert!(real_llc.contains("lnp64-sbase-echo-linked.elf"));
+        assert!(real_llc.contains(r#""$build_dir/sbase-echo-clang-smoke.o" \"#));
+        assert!(real_llc.contains("real LLVM LNP64 lld sbase echo link smoke passed"));
         assert!(real_llc.contains("netcat-clang-smoke.o"));
         assert!(real_llc.contains("-c demos/netcat.c"));
         assert!(real_llc.contains("real LLVM LNP64 clang netcat demo object smoke passed"));
@@ -2631,6 +2646,9 @@ mod tests {
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf signal libc execution passed"));
         assert!(real_llc_docker.contains("lnp64-socket-libc-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf socket libc execution passed"));
+        assert!(real_llc_docker.contains("lnp64-sbase-echo-linked.elf"));
+        assert!(real_llc_docker.contains("echo hello clang --expect 'hello clang'"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase echo execution passed"));
         assert!(real_llc_docker.contains("lnp64-errno-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf errno execution passed"));
         assert!(real_llc_docker.contains("lnp64-intrinsic-push-linked.elf"));
@@ -2744,6 +2762,7 @@ mod tests {
             "real_poll_select_epoll_kqueue_libc_execution",
             "real_signal_libc_execution",
             "real_socket_libc_execution",
+            "real_sbase_echo_execution",
             "real_errno_execution",
             "real_startup_execution",
             "real_getauxval_execution",
@@ -2788,6 +2807,7 @@ mod tests {
             "real_poll_select_epoll_kqueue_libc_execution",
             "real_signal_libc_execution",
             "real_socket_libc_execution",
+            "real_sbase_echo_execution",
             "real_intrinsic_push_execution",
             "real_intrinsic_control_execution",
             "real_intrinsic_mmap_execution",
