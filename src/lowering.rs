@@ -1317,6 +1317,7 @@ mod tests {
         let real_clang_target = include_str!("../clang/lib/Basic/Targets/LNP64.cpp");
         let llvm_dockerfile = include_str!("../Dockerfile.llvm");
         let libc_string_min = include_str!("../toolchain/liblnp64_string_min.c");
+        let libc_convert_min = include_str!("../toolchain/liblnp64_convert_min.c");
         let libc_alloc_min = include_str!("../toolchain/liblnp64_alloc_min.c");
         let libc_fd_min = include_str!("../toolchain/liblnp64_fd_min.c");
         let libc_process_min = include_str!("../toolchain/liblnp64_process_min.c");
@@ -1824,6 +1825,25 @@ mod tests {
                 "real LLVM LNP64 clang minilibc string implementation object smoke passed"
             )
         );
+        assert!(real_llc.contains("convert-clang-smoke.o"));
+        assert!(real_llc.contains("int atoi"));
+        assert!(real_llc.contains("long strtol"));
+        assert!(real_llc.contains("unsigned long strtoul"));
+        assert!(real_llc.contains("long long strtoll"));
+        assert!(real_llc.contains("unsigned long long strtoull"));
+        assert!(real_llc.contains("strtol(s, &end, 8)"));
+        assert!(real_llc.contains("strtol(s, &end, 37)"));
+        assert!(real_llc.contains("strtoull(s, &end, 0)"));
+        assert!(real_llc.contains("real LLVM LNP64 clang numeric conversion object smoke passed"));
+        assert!(real_llc.contains("toolchain/liblnp64_convert_min.c"));
+        assert!(real_llc.contains("liblnp64-convert-min.o"));
+        assert!(libc_convert_min.contains("strtoull"));
+        assert!(libc_convert_min.contains("strtoll"));
+        assert!(libc_convert_min.contains("lnp64_errno_store(LNP64_EINVAL)"));
+        assert!(libc_convert_min.contains("lnp64_errno_store(LNP64_ERANGE)"));
+        assert!(real_llc.contains(
+            "real LLVM LNP64 clang minilibc numeric conversion implementation object smoke passed"
+        ));
         assert!(real_llc.contains("toolchain/liblnp64_alloc_min.c"));
         assert!(libc_alloc_min.contains("#include \"lnp64_intrinsics.h\""));
         assert!(libc_alloc_min.contains("void *alloc(size_t size)"));
@@ -1872,6 +1892,12 @@ mod tests {
         assert!(real_llc.contains("lnp64-libc-string-linked.elf"));
         assert!(real_llc.contains(r#""$libc_string_obj" "$libc_string_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld minilibc string link smoke passed"));
+        assert!(real_llc.contains("lnp64-convert-linked.elf"));
+        assert!(real_llc.contains(
+            r#""$convert_obj" "$libc_convert_impl_obj" \
+  "$libc_errno_impl_obj""#
+        ));
+        assert!(real_llc.contains("real LLVM LNP64 lld numeric conversion link smoke passed"));
         assert!(real_llc.contains("lnp64-calloc-linked.elf"));
         assert!(real_llc.contains(
             r#""$calloc_obj" "$libc_alloc_impl_obj" \
@@ -2264,6 +2290,10 @@ mod tests {
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf minilibc string execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-convert-linked.elf"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf numeric conversion execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-calloc-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf calloc execution passed"));
         assert!(real_llc_docker.contains("lnp64-realloc-linked.elf"));
@@ -2384,6 +2414,7 @@ mod tests {
             "real_clang_lld_probe",
             "real_clang_demo_execution",
             "real_native_heap_execution",
+            "real_numeric_conversion_execution",
             "real_read_execution",
             "real_write_execution",
             "real_mmap_libc_execution",
@@ -2422,6 +2453,7 @@ mod tests {
             "real_clang_lld_probe",
             "real_clang_demo_execution",
             "real_native_heap_execution",
+            "real_numeric_conversion_execution",
             "real_write_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
@@ -3193,6 +3225,7 @@ mod tests {
             "startup_env_auxv",
             "errno_tls",
             "string_ctype",
+            "numeric_conversion",
             "fd_io",
             "malloc_heap",
             "pthread_futex",
@@ -3214,6 +3247,7 @@ mod tests {
             "startup_env_auxv",
             "errno_tls",
             "string_ctype",
+            "numeric_conversion",
             "fd_io",
             "malloc_heap",
             "pthread_futex",
@@ -3239,6 +3273,11 @@ mod tests {
                 "string_ctype",
                 vec!["strlen", "strcmp", "memcpy", "isalpha", "tolower"],
                 vec!["load_store", "integer_alu", "static_link"],
+            ),
+            (
+                "numeric_conversion",
+                vec!["atoi", "strtol", "strtoull"],
+                vec!["integer_alu", "ERRNO_SET", "static_link"],
             ),
             (
                 "fd_io",

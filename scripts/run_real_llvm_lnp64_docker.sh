@@ -122,6 +122,8 @@ run_elf_report "real LLVM LNP64 run-elf stack-argument execution passed" \
   target/llvm-lnp64-build/lnp64-stack-args-linked.elf
 run_elf_report "real LLVM LNP64 run-elf minilibc string execution passed" \
   target/llvm-lnp64-build/lnp64-libc-string-linked.elf
+run_elf_report "real LLVM LNP64 run-elf numeric conversion execution passed" \
+  target/llvm-lnp64-build/lnp64-convert-linked.elf
 run_elf_report "real LLVM LNP64 run-elf calloc execution passed" \
   target/llvm-lnp64-build/lnp64-calloc-linked.elf
 run_elf_report "real LLVM LNP64 run-elf realloc execution passed" \

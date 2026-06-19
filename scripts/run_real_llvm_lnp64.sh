@@ -1613,6 +1613,115 @@ grep -q 'ret' "$libc_string_impl_dump"
 printf 'real LLVM LNP64 clang minilibc string implementation object smoke passed: %s\n' \
   "$libc_string_impl_obj"
 
+convert_c="$build_dir/convert-smoke.c"
+cat >"$convert_c" <<'C'
+int *__errno_location(void);
+int lnp64_errno_store(int value);
+int atoi(const char *nptr);
+long atol(const char *nptr);
+long strtol(const char *nptr, char **endptr, int base);
+unsigned long strtoul(const char *nptr, char **endptr, int base);
+long long strtoll(const char *nptr, char **endptr, int base);
+unsigned long long strtoull(const char *nptr, char **endptr, int base);
+
+int main(void) {
+  char *end;
+  const char *s;
+
+  if (atoi("123") != 123)
+    return 1;
+  if (atol("-42") != -42)
+    return 2;
+  s = "  15437";
+  if (strtol(s, &end, 8) != 015437)
+    return 3;
+  if (end - s != 7)
+    return 4;
+  s = "0xz";
+  if (strtol(s, &end, 16) != 0)
+    return 5;
+  if (end - s != 1)
+    return 6;
+  s = "0x1234";
+  if (strtol(s, &end, 16) != 0x1234)
+    return 7;
+  if (end - s != 6)
+    return 8;
+  if (strtol("z", 0, 36) != 35)
+    return 9;
+  if (strtol("00010010001101000101011001111000", 0, 2) != 0x12345678)
+    return 10;
+  lnp64_errno_store(0);
+  s = "123";
+  if (strtol(s, &end, 37) != 0)
+    return 11;
+  if (end != s)
+    return 12;
+  if (*__errno_location() != 22)
+    return 13;
+  lnp64_errno_store(0);
+  s = "9223372036854775808";
+  if (strtol(s, &end, 0) <= 0)
+    return 14;
+  if (end - s != 19)
+    return 15;
+  if (*__errno_location() != 34)
+    return 16;
+  lnp64_errno_store(0);
+  s = "-9223372036854775809";
+  if (strtoll(s, &end, 0) >= 0)
+    return 17;
+  if (end - s != 20)
+    return 18;
+  if (*__errno_location() != 34)
+    return 19;
+  lnp64_errno_store(0);
+  s = "-1";
+  if (strtoull(s, &end, 0) != ~0ULL)
+    return 20;
+  if (end - s != 2)
+    return 21;
+  if (*__errno_location() != 0)
+    return 22;
+  s = "18446744073709551616";
+  if (strtoull(s, &end, 0) != ~0ULL)
+    return 23;
+  if (end - s != 20)
+    return 24;
+  if (*__errno_location() != 34)
+    return 25;
+  if (strtoul("4294967295", 0, 0) != 4294967295UL)
+    return 26;
+  return 0;
+}
+C
+
+convert_obj="$build_dir/convert-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$convert_c" -o "$convert_obj"
+test -s "$convert_obj"
+convert_dump="$build_dir/convert-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$convert_obj" \
+  >"$convert_dump"
+grep -q 'call ' "$convert_dump"
+printf 'real LLVM LNP64 clang numeric conversion object smoke passed: %s\n' \
+  "$convert_obj"
+
+libc_convert_impl_c="toolchain/liblnp64_convert_min.c"
+libc_convert_impl_obj="$build_dir/liblnp64-convert-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$libc_convert_impl_c" -o "$libc_convert_impl_obj"
+test -s "$libc_convert_impl_obj"
+libc_convert_impl_dump="$build_dir/liblnp64-convert-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_convert_impl_obj" \
+  >"$libc_convert_impl_dump"
+grep -q 'call ' "$libc_convert_impl_dump"
+grep -q 'ret' "$libc_convert_impl_dump"
+printf 'real LLVM LNP64 clang minilibc numeric conversion implementation object smoke passed: %s\n' \
+  "$libc_convert_impl_obj"
+
 libc_alloc_impl_c="toolchain/liblnp64_alloc_min.c"
 libc_alloc_impl_obj="$build_dir/liblnp64-alloc-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
@@ -2648,6 +2757,14 @@ libc_string_elf="$build_dir/lnp64-libc-string-linked.elf"
 test -s "$libc_string_elf"
 printf 'real LLVM LNP64 lld minilibc string link smoke passed: %s\n' \
   "$libc_string_elf"
+
+convert_elf="$build_dir/lnp64-convert-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$convert_elf" "$crt0_obj" "$convert_obj" "$libc_convert_impl_obj" \
+  "$libc_errno_impl_obj"
+test -s "$convert_elf"
+printf 'real LLVM LNP64 lld numeric conversion link smoke passed: %s\n' \
+  "$convert_elf"
 
 calloc_elf="$build_dir/lnp64-calloc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
