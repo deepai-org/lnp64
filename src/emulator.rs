@@ -67,7 +67,7 @@ const EXEC_PLAN_PROVENANCE_NON_EXECUTABLE: u64 = 2;
 const LNP64_ERR_ENOTSUP: u64 = 95;
 const UTIME_NOW_LNP64: i64 = 1_073_741_823;
 const UTIME_OMIT_LNP64: i64 = 1_073_741_822;
-const LNP64_STAT_RECORD_SIZE: usize = 104;
+const LNP64_STAT_RECORD_SIZE: usize = 120;
 const ROOT_DOMAIN_ID: u64 = 1;
 const MAX_RESOURCE_DOMAINS: usize = 4096;
 const MAX_DOMAIN_DEPTH: u64 = 16;
@@ -1805,6 +1805,7 @@ impl Machine {
             0x2b => Instr::Pull(a, FdReg(b.0), c, Reg(((word >> 4) & 0x1f) as usize)),
             0x2c => Instr::Push(a, FdReg(b.0), c, Reg(((word >> 4) & 0x1f) as usize)),
             0x2d => Instr::ReadFd(FdReg(a.0), b, c),
+            0x2e => Instr::Await(a, FdReg(b.0), c),
             0x30 => Instr::Ld(
                 a,
                 MemRef::BaseOffset(b, sign_extend(word & 0x3fff, 14)),
@@ -4463,19 +4464,24 @@ impl Machine {
         let uid = self.process()?.uid;
         let gid = self.process()?.gid;
         let fields = [
-            (0, metadata.mode() as u64),
-            (8, metadata.size()),
-            (16, metadata.dev()),
-            (24, metadata.ino()),
-            (32, metadata.mtime() as u64),
-            (40, metadata.mtime_nsec() as u64),
-            (48, metadata.nlink()),
-            (56, uid),
-            (64, gid),
+            (0, metadata.dev()),
+            (8, metadata.ino()),
+            (16, metadata.nlink()),
+            (
+                24,
+                ((uid as u64) << 32) | (metadata.mode() as u64 & 0xffff_ffff),
+            ),
+            (32, gid),
+            (40, metadata.rdev()),
+            (48, metadata.size()),
+            (56, metadata.blksize() as u64),
+            (64, metadata.blocks() as u64),
             (72, metadata.atime() as u64),
             (80, metadata.atime_nsec() as u64),
-            (88, metadata.ctime() as u64),
-            (96, metadata.ctime_nsec() as u64),
+            (88, metadata.mtime() as u64),
+            (96, metadata.mtime_nsec() as u64),
+            (104, metadata.ctime() as u64),
+            (112, metadata.ctime_nsec() as u64),
         ];
         for (offset, value) in fields {
             self.store_u64_offset(addr, offset, value)?;
@@ -4485,20 +4491,24 @@ impl Machine {
 
     fn write_synthetic_stat(&mut self, addr: u64, mode: u64, size: u64) -> Result<(), String> {
         self.ensure_mapped(addr, LNP64_STAT_RECORD_SIZE, true)?;
+        let uid = self.process()?.uid;
+        let gid = self.process()?.gid;
         let fields = [
-            (0, mode),
-            (8, size),
+            (0, 0),
+            (8, 0),
             (16, 0),
-            (24, 0),
-            (32, 0),
+            (24, ((uid as u64) << 32) | (mode & 0xffff_ffff)),
+            (32, gid),
             (40, 0),
-            (48, 1),
-            (56, self.process()?.uid),
-            (64, self.process()?.gid),
+            (48, size),
+            (56, 0),
+            (64, 0),
             (72, 0),
             (80, 0),
             (88, 0),
             (96, 0),
+            (104, 0),
+            (112, 0),
         ];
         for (offset, value) in fields {
             self.store_u64_offset(addr, offset, value)?;
@@ -15536,6 +15546,50 @@ mod tests {
         let metadata = fs::metadata(&path).unwrap();
         assert_eq!(metadata.mtime(), 1);
         assert_eq!(metadata.mtime_nsec(), 0);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn stat_record_matches_clang_header_layout() {
+        let path = format!("/tmp/lnp64_stat_layout_{}.txt", std::process::id());
+        fs::write(&path, b"layout").unwrap();
+        let metadata = fs::metadata(&path).unwrap();
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let statbuf = ARG_BASE + 0x2000;
+
+        machine.write_lnp64_stat(statbuf, &metadata).unwrap();
+
+        assert_eq!(machine.load_u64_offset(statbuf, 0).unwrap(), metadata.dev());
+        assert_eq!(machine.load_u64_offset(statbuf, 8).unwrap(), metadata.ino());
+        assert_eq!(
+            machine.load_u64_offset(statbuf, 16).unwrap(),
+            metadata.nlink()
+        );
+        let mode_uid = machine.load_u64_offset(statbuf, 24).unwrap();
+        assert_eq!(mode_uid & 0xffff_ffff, metadata.mode() as u64);
+        assert_eq!(mode_uid >> 32, machine.process().unwrap().uid);
+        assert_eq!(
+            machine.load_u64_offset(statbuf, 32).unwrap() & 0xffff_ffff,
+            machine.process().unwrap().gid
+        );
+        assert_eq!(
+            machine.load_u64_offset(statbuf, 40).unwrap(),
+            metadata.rdev()
+        );
+        assert_eq!(
+            machine.load_u64_offset(statbuf, 48).unwrap(),
+            metadata.size()
+        );
+        assert_eq!(
+            machine.load_u64_offset(statbuf, 88).unwrap(),
+            metadata.mtime() as u64
+        );
+        assert_eq!(
+            machine.load_u64_offset(statbuf, 104).unwrap(),
+            metadata.ctime() as u64
+        );
+
         fs::remove_file(path).unwrap();
     }
 

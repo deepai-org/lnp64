@@ -2331,6 +2331,8 @@ mod tests {
             "real LLVM LNP64 clang minilibc metadata implementation object smoke passed"
         ));
         assert!(real_llc.contains("meta-libc-clang-smoke.o"));
+        assert!(real_llc.contains("S_ISREG(st.st_mode)"));
+        assert!(real_llc.contains("st.st_nlink <= 0"));
         assert!(real_llc.contains("futimens(-1, omit)"));
         assert!(real_llc.contains("errno != EBADF"));
         assert!(real_llc.contains("real LLVM LNP64 clang metadata libc object smoke passed"));

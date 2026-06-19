@@ -1788,7 +1788,7 @@ fn normalize_struct_stat_declarations(source: &str) -> String {
                 out.push_str(name);
                 out.push_str("; ");
                 out.push_str(name);
-                out.push_str(" = alloc(104);\n");
+                out.push_str(" = alloc(120);\n");
             }
         } else {
             out.push_str(line);
@@ -4597,6 +4597,11 @@ impl CodeGen {
                 }
                 let dst = self.alloc_reg()?;
                 self.text.push(format!("  LD r{dst}, [r{addr}, 0]"));
+                if let Some(mask) = member_scalar_load_mask(field) {
+                    let mask_reg = self.alloc_reg()?;
+                    self.text.push(format!("  LI r{mask_reg}, {mask}"));
+                    self.text.push(format!("  AND r{dst}, r{dst}, r{mask_reg}"));
+                }
                 Ok(dst)
             }
             Expr::CompoundLiteral(fields) => self.emit_compound_literal(fields),
@@ -5670,20 +5675,20 @@ impl CodeGen {
             return Ok(*offset);
         }
         match field {
-            "st_mode" => Ok(0),
-            "st_size" => Ok(8),
-            "st_dev" => Ok(16),
-            "st_rdev" => Ok(16),
-            "st_ino" => Ok(24),
-            "st_mtime" => Ok(32),
-            "st_nlink" => Ok(48),
-            "st_uid" => Ok(56),
-            "st_gid" => Ok(64),
+            "st_dev" => Ok(0),
+            "st_ino" => Ok(8),
+            "st_nlink" => Ok(16),
+            "st_mode" => Ok(24),
+            "st_uid" => Ok(28),
+            "st_gid" => Ok(32),
+            "st_rdev" => Ok(40),
+            "st_size" => Ok(48),
             "st_atime" => Ok(72),
-            "st_ctime" => Ok(88),
-            "st_mtim" => Ok(32),
+            "st_mtime" => Ok(88),
+            "st_ctime" => Ok(104),
             "st_atim" => Ok(72),
-            "st_ctim" => Ok(88),
+            "st_mtim" => Ok(88),
+            "st_ctim" => Ok(104),
             "l_type" => Ok(0),
             "l_whence" => Ok(8),
             "l_start" => Ok(16),
@@ -7517,7 +7522,7 @@ impl CodeGen {
                 let statbuf = self.alloc_reg()?;
                 let flags = self.alloc_reg()?;
                 let dst = self.alloc_reg()?;
-                self.text.push(format!("  LI r{size}, 104"));
+                self.text.push(format!("  LI r{size}, 120"));
                 self.text.push(format!("  ALLOC r{statbuf}, r{size}"));
                 self.text.push(format!("  LI r{flags}, 0"));
                 self.text
@@ -7538,7 +7543,7 @@ impl CodeGen {
                 let size = self.alloc_reg()?;
                 let statbuf = self.alloc_reg()?;
                 let dst = self.alloc_reg()?;
-                self.text.push(format!("  LI r{size}, 104"));
+                self.text.push(format!("  LI r{size}, 120"));
                 self.text.push(format!("  ALLOC r{statbuf}, r{size}"));
                 self.text.push(format!(
                     "  STAT_PATH_AT r{statbuf}, r{dirfd}, r{path}, r{flags}"
@@ -15605,6 +15610,13 @@ fn is_inline_array_field(field: &str) -> bool {
     )
 }
 
+fn member_scalar_load_mask(field: &str) -> Option<u64> {
+    match field {
+        "st_mode" | "st_uid" | "st_gid" => Some(0xffff_ffff),
+        _ => None,
+    }
+}
+
 fn offsetof_field_name(expr: &Expr) -> Option<&str> {
     match expr {
         Expr::Var(name) => Some(name.as_str()),
@@ -15692,6 +15704,7 @@ fn type_aggregate_size(name: &str) -> Option<i64> {
         "struct pollfd" => Some(24),
         "struct timespec" => Some(16),
         "struct timeval" => Some(16),
+        "struct stat" => Some(120),
         "struct kevent" => Some(64),
         "struct flock" => Some(40),
         _ => None,
@@ -20509,7 +20522,7 @@ int main() {
             int st;
             int f;
             int d;
-            st = alloc(104);
+            st = alloc(120);
             if (stat(".", st) != 0) return 1;
             if (!S_ISDIR(st.st_mode)) return 2;
             if (!((uint)st.st_nlink > 0)) return 3;
@@ -20910,7 +20923,7 @@ int main() {
             remove("/tmp/lnp64_fs_neg_link");
             remove("/tmp/lnp64_fs_neg_missing");
 
-            st = alloc(104);
+            st = alloc(120);
             errno = 0;
             if (stat("/tmp/lnp64_fs_neg_missing", st) != -1) return 1;
             if (errno != ENOENT) return 2;
@@ -21073,7 +21086,7 @@ int main() {
             f = tmpfile();
             if (!f) return 3;
             fd = fileno(f);
-            st = alloc(104);
+            st = alloc(120);
 
             if (futimens(fd, (struct timespec[2]){0}) != 0) return 4;
             if (fstat(fd, st) != 0) return 5;

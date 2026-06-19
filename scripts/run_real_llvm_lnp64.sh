@@ -3291,17 +3291,21 @@ int main(void) {
     return 1;
   if (stat("Cargo.toml", &st) != 0)
     return 2;
-  if (st.st_size <= 0)
+  if (!S_ISREG(st.st_mode))
     return 3;
-  if (fstat(fd, &st) != 0)
+  if (st.st_size <= 0)
     return 4;
-  if (fcntl(fd, F_GETFD) < 0)
+  if (st.st_nlink <= 0)
     return 5;
+  if (fstat(fd, &st) != 0)
+    return 6;
+  if (fcntl(fd, F_GETFD) < 0)
+    return 7;
   errno = 0;
   if (futimens(-1, omit) != -1)
-    return 6;
+    return 8;
   if (errno != EBADF)
-    return 7;
+    return 9;
   close(fd);
   return 0;
 }
