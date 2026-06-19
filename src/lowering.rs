@@ -2559,11 +2559,9 @@ mod tests {
                 "unsigned long long strtoull(const char *nptr, char **endptr, int base);"
             )
         );
-        assert!(real_llc.contains("int atoi"));
-        assert!(real_llc.contains("long strtol"));
-        assert!(real_llc.contains("unsigned long strtoul"));
-        assert!(real_llc.contains("long long strtoll"));
-        assert!(real_llc.contains("unsigned long long strtoull"));
+        assert!(real_llc.contains("#include <errno.h>"));
+        assert!(real_llc.contains("#include <stdlib.h>"));
+        assert!(real_llc.contains("errno = 0;"));
         assert!(real_llc.contains("strtol(s, &end, 8)"));
         assert!(real_llc.contains("strtol(s, &end, 37)"));
         assert!(real_llc.contains("strtoull(s, &end, 0)"));

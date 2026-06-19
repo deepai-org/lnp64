@@ -2943,14 +2943,8 @@ printf 'real LLVM LNP64 clang libc-test fgets-eof object smoke passed: %s\n' \
 
 convert_c="$build_dir/convert-smoke.c"
 cat >"$convert_c" <<'C'
-int *__errno_location(void);
-int lnp64_errno_store(int value);
-int atoi(const char *nptr);
-long atol(const char *nptr);
-long strtol(const char *nptr, char **endptr, int base);
-unsigned long strtoul(const char *nptr, char **endptr, int base);
-long long strtoll(const char *nptr, char **endptr, int base);
-unsigned long long strtoull(const char *nptr, char **endptr, int base);
+#include <errno.h>
+#include <stdlib.h>
 
 int main(void) {
   char *end;
@@ -2979,44 +2973,44 @@ int main(void) {
     return 9;
   if (strtol("00010010001101000101011001111000", 0, 2) != 0x12345678)
     return 10;
-  lnp64_errno_store(0);
+  errno = 0;
   s = "123";
   if (strtol(s, &end, 37) != 0)
     return 11;
   if (end != s)
     return 12;
-  if (*__errno_location() != 22)
+  if (errno != 22)
     return 13;
-  lnp64_errno_store(0);
+  errno = 0;
   s = "9223372036854775808";
   if (strtol(s, &end, 0) <= 0)
     return 14;
   if (end - s != 19)
     return 15;
-  if (*__errno_location() != 34)
+  if (errno != 34)
     return 16;
-  lnp64_errno_store(0);
+  errno = 0;
   s = "-9223372036854775809";
   if (strtoll(s, &end, 0) >= 0)
     return 17;
   if (end - s != 20)
     return 18;
-  if (*__errno_location() != 34)
+  if (errno != 34)
     return 19;
-  lnp64_errno_store(0);
+  errno = 0;
   s = "-1";
   if (strtoull(s, &end, 0) != ~0ULL)
     return 20;
   if (end - s != 2)
     return 21;
-  if (*__errno_location() != 0)
+  if (errno != 0)
     return 22;
   s = "18446744073709551616";
   if (strtoull(s, &end, 0) != ~0ULL)
     return 23;
   if (end - s != 20)
     return 24;
-  if (*__errno_location() != 34)
+  if (errno != 34)
     return 25;
   if (strtoul("4294967295", 0, 0) != 4294967295UL)
     return 26;
