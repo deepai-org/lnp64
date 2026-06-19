@@ -6103,6 +6103,7 @@ mod tests {
             "tests/rtl/programs/top_bitwise.c",
             "tests/rtl/programs/top_shift.c",
             "tests/rtl/programs/top_not.c",
+            "tests/rtl/programs/top_factorial_mul.c",
             "tests/rtl/programs/top_udiv_urem.c",
             "tests/rtl/programs/top_signed_division.c",
             "tests/rtl/programs/top_byte_array.c",
@@ -6121,6 +6122,7 @@ mod tests {
                 "bitwise_alu",
             ),
             ("tests/rtl/programs/top_linked_bitwise_shift.c", "shift_alu"),
+            ("tests/rtl/programs/top_linked_factorial_mul.c", "mul"),
             (
                 "tests/rtl/programs/top_linked_divrem.c",
                 "unsigned_division",
