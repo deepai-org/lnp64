@@ -361,17 +361,17 @@ module lnp64_top #(
                 cap_rsp_valid && cap_rsp_ready && cap_m1_commit_valid &&
                 cap_rsp.tile_id == tile_id[31:0];
             assign m1_commit_vec[tile_id] = cap_m1_commit_latched_valid_vec[tile_id] ?
-                cap_m1_commit_latched_vec[tile_id] : core_m1_commit_vec[tile_id];
+                cap_m1_commit_latched_vec[tile_id] : '0;
             assign m1_pre_state_projection_vec[tile_id] =
                 cap_m1_projection_live ? cap_m1_pre_state_projection :
                 cap_m1_commit_latched_valid_vec[tile_id] ?
                     cap_m1_pre_state_projection_latched_vec[tile_id] :
-                    core_m1_pre_state_projection_vec[tile_id];
+                    '0;
             assign m1_state_projection_vec[tile_id] =
                 cap_m1_projection_live ? cap_m1_state_projection :
                 cap_m1_commit_latched_valid_vec[tile_id] ?
                     cap_m1_state_projection_latched_vec[tile_id] :
-                    core_m1_state_projection_vec[tile_id];
+                    '0;
 
             lnp64_issue_retire issue_retire_i(
                 .clk(clk),
