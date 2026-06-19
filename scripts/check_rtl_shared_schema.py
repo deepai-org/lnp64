@@ -11,6 +11,7 @@ from pathlib import Path
 
 ROOT = Path(os.environ.get("LNP64_SCHEMA_ROOT", str(Path(__file__).resolve().parents[1])))
 SCHEMA = Path(os.environ.get("LNP64_SHARED_SCHEMA", str(ROOT / "rtl/schema/lnp64_shared_schema.json")))
+LEAN_M1_MODEL = ROOT / "formal/M1TransitionInvariantModel.lean"
 
 
 def fail(message: str) -> None:
@@ -144,6 +145,48 @@ def render_sv_struct_from_schema(record_name: str, fields: list[str]) -> str:
     return "\n".join(lines)
 
 
+def render_lean_packed_schema(schema_name: str, fields: list[str]) -> str:
+    lines = [f"def {schema_name} : List (String × Nat) := ["]
+    for index, entry in enumerate(fields):
+        field_name, width = parse_record_entry(entry)
+        comma = "," if index + 1 < len(fields) else ""
+        lines.append(f'  ("{field_name}", {width}){comma}')
+    lines.append("]")
+    return "\n".join(lines)
+
+
+def render_lean_width_theorem(theorem_name: str, schema_name: str, fields: list[str]) -> str:
+    width = sum(parse_record_entry(entry)[1] for entry in fields)
+    return (
+        f"theorem {theorem_name} :\n"
+        f"    packedSchemaWidth {schema_name} = {width} := by\n"
+        "  rfl"
+    )
+
+
+def parse_lean_packed_schema(lean_text: str, schema_name: str) -> list[str]:
+    pattern = re.compile(
+        rf"def\s+{re.escape(schema_name)}\s*:\s*List\s*\(String\s*×\s*Nat\)\s*:=\s*\[(?P<body>.*?)\]",
+        re.S,
+    )
+    match = pattern.search(lean_text)
+    require(match is not None, f"missing Lean packed schema {schema_name}")
+    entries = re.findall(r'\(\s*"(?P<name>[^"]+)"\s*,\s*(?P<width>\d+)\s*\)', match.group("body"))
+    require(entries, f"Lean packed schema {schema_name} has no fields")
+    return [f"{name}:{int(width)}" for name, width in entries]
+
+
+def parse_lean_width_theorem(lean_text: str, theorem_name: str, schema_name: str) -> int:
+    pattern = re.compile(
+        rf"theorem\s+{re.escape(theorem_name)}\s*:\s*"
+        rf"packedSchemaWidth\s+{re.escape(schema_name)}\s*=\s*(?P<width>\d+)\s*:=\s*by",
+        re.S,
+    )
+    match = pattern.search(lean_text)
+    require(match is not None, f"missing Lean packed-schema width theorem {theorem_name}")
+    return int(match.group("width"))
+
+
 def require_m1_generated_structs(
     actual_records: dict[str, list[str]],
     schema: dict,
@@ -164,6 +207,45 @@ def require_m1_generated_structs(
         require(
             actual_sv == expected_sv,
             f"M1 schema-owned generated SV struct {record_name} drifted from shared schema",
+        )
+
+
+def require_m1_generated_lean_packed_schemas(schema: dict, m1_contract: dict, lean_text: str) -> None:
+    """Treat the shared schema as the M1 Lean packed-schema source of truth."""
+    schema_records = schema.get("records", {})
+    require(isinstance(schema_records, dict), "schema records must be an object")
+    pairs = (
+        ("record", "rtlM1CommitPackedSchema", "rtlM1CommitPackedSchema_width"),
+        (
+            "state_record",
+            "rtlM1StateProjectionPackedSchema",
+            "rtlM1StateProjectionPackedSchema_width",
+        ),
+    )
+    for contract_key, schema_name, theorem_name in pairs:
+        record_name = require_string(m1_contract.get(contract_key), f"M1 Lean {schema_name} record")
+        fields = schema_records.get(record_name)
+        require(isinstance(fields, list) and fields, f"M1 Lean {schema_name} record is absent from schema")
+        actual_fields = parse_lean_packed_schema(lean_text, schema_name)
+        require(
+            actual_fields == fields,
+            f"M1 schema-owned generated Lean packed schema {schema_name} drifted from shared schema",
+        )
+        expected_schema = render_lean_packed_schema(schema_name, fields)
+        require(
+            expected_schema in lean_text,
+            f"M1 generated Lean packed schema text for {schema_name} drifted from shared schema",
+        )
+        actual_width = parse_lean_width_theorem(lean_text, theorem_name, schema_name)
+        expected_width = sum(parse_record_entry(entry)[1] for entry in fields)
+        require(
+            actual_width == expected_width,
+            f"M1 schema-owned Lean packed-schema width {theorem_name} drifted from shared schema",
+        )
+        expected_theorem = render_lean_width_theorem(theorem_name, schema_name, fields)
+        require(
+            expected_theorem in lean_text,
+            f"M1 generated Lean packed-schema width theorem {theorem_name} drifted from shared schema",
         )
 
 
@@ -226,6 +308,7 @@ def main() -> None:
     m1_contract = schema.get("m1_typed_commit_contract", {})
     require(isinstance(m1_contract, dict) and m1_contract, "m1_typed_commit_contract must be present")
     require_m1_generated_structs(actual_records, schema, m1_contract)
+    require_m1_generated_lean_packed_schemas(schema, m1_contract, read_text(LEAN_M1_MODEL))
     require(
         m1_contract.get("stage") == "m1_typed_cap_commit_transition_mirror",
         "M1 typed commit stage must identify the transition mirror",

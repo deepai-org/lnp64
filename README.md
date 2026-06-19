@@ -232,7 +232,7 @@ mirror. The Lean M1 model also names the packed commit/projection schema and
 widths, and the checker compares those Lean schema mirrors to the shared RTL
 schema. M1, M2, M4, M5, M7, and M14 now include T3 transition-invariant Lean
 slices. M1 also has a narrow executable RTL-to-Lean-shaped check from emitted
-packed commit/projection bits, but it is still not T2/T4 evidence until the
+packed commit/projection bits, but it is still not T2/T4 refinement evidence until the
 schema is generated or otherwise mechanically owned and the bit-level
 RTL-to-Lean refinement is formal/proven rather than Python-mirrored.
 M7 now has a first narrow typed scheduler/wakeup commit checker for the seed-0

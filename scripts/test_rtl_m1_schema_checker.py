@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CHECKER = ROOT / "scripts/check_rtl_shared_schema.py"
 SCHEMA = ROOT / "rtl/schema/lnp64_shared_schema.json"
 PKG = ROOT / "rtl/include/lnp64_pkg.sv"
+LEAN_M1_MODEL = ROOT / "formal/M1TransitionInvariantModel.lean"
 
 
 def require(condition: bool, message: str) -> None:
@@ -48,11 +49,17 @@ def expect_failure(expected: str, action) -> None:
     require(expected in output, f"checker failure did not include {expected!r}: {output}")
 
 
+def replace_once(text: str, old: str, new: str) -> str:
+    require(old in text, f"test fixture did not contain {old!r}")
+    return text.replace(old, new, 1)
+
+
 def main() -> None:
     checker = load_checker()
     schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
     m1_contract = schema["m1_typed_commit_contract"]
     actual_records = checker.parse_records(PKG.read_text(encoding="utf-8"))
+    lean_source = LEAN_M1_MODEL.read_text(encoding="utf-8")
 
     valid = subprocess.run(
         [sys.executable, str(CHECKER)],
@@ -66,6 +73,7 @@ def main() -> None:
     require("rtl shared schema ok" in valid_output, "current shared schema did not print success")
 
     checker.require_m1_generated_structs(actual_records, schema, m1_contract)
+    checker.require_m1_generated_lean_packed_schemas(schema, m1_contract, lean_source)
 
     package_width_drift = copy.deepcopy(actual_records)
     package_width_drift["lnp64_m1_cap_commit_t"] = [
@@ -92,6 +100,34 @@ def main() -> None:
             actual_records,
             schema_field_drift,
             schema_field_drift["m1_typed_commit_contract"],
+        ),
+    )
+
+    lean_field_width_drift = replace_once(
+        lean_source,
+        '("rights_mask", 64)',
+        '("rights_mask", 63)',
+    )
+    expect_failure(
+        "M1 schema-owned generated Lean packed schema rtlM1CommitPackedSchema drifted",
+        lambda: checker.require_m1_generated_lean_packed_schemas(
+            schema,
+            m1_contract,
+            lean_field_width_drift,
+        ),
+    )
+
+    lean_width_theorem_drift = replace_once(
+        lean_source,
+        "packedSchemaWidth rtlM1StateProjectionPackedSchema = 902",
+        "packedSchemaWidth rtlM1StateProjectionPackedSchema = 901",
+    )
+    expect_failure(
+        "M1 schema-owned Lean packed-schema width rtlM1StateProjectionPackedSchema_width drifted",
+        lambda: checker.require_m1_generated_lean_packed_schemas(
+            schema,
+            m1_contract,
+            lean_width_theorem_drift,
         ),
     )
 
