@@ -193,8 +193,14 @@ module lnp64_decode (
             8'h4a: begin
                 dec.opcode = LNP64_OP_ALLOC_EX;
             end
+            8'hc9: begin
+                dec.opcode = LNP64_OP_LOCK_CMPXCHG;
+            end
             8'hcd: begin
                 dec.opcode = LNP64_OP_FENCE;
+            end
+            8'hce: begin
+                dec.opcode = LNP64_OP_ISYNC;
             end
             8'hd0: begin
                 dec.opcode = LNP64_OP_AUIPC_LITERAL;
@@ -388,6 +394,8 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_RET ||
             dec.opcode == LNP64_OP_AUIPC_LITERAL ||
             dec.opcode == LNP64_OP_FENCE ||
+            dec.opcode == LNP64_OP_ISYNC ||
+            dec.opcode == LNP64_OP_LOCK_CMPXCHG ||
             dec.opcode == LNP64_OP_LD ||
             dec.opcode == LNP64_OP_LD_W ||
             dec.opcode == LNP64_OP_LD_H ||

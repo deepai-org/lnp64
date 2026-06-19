@@ -465,6 +465,9 @@ fn encode_flat_exec_instr(
         Instr::AllocSize(rd, ptr) => Ok(vec![enc_rrr(0x48, *rd, *ptr, Reg(0))]),
         Instr::Free(ptr) => Ok(vec![enc_reg(0x49, *ptr)]),
         Instr::AllocEx(rd, bytes, align) => Ok(vec![enc_rrr(0x4a, *rd, *bytes, *align)]),
+        Instr::LockCmpxchg(dst, addr, expected, new_value) => {
+            Ok(vec![enc_rrrr(0xc9, *dst, *addr, *expected, *new_value)])
+        }
         Instr::ErrnoGet(rd) => Ok(vec![enc_reg(0x38, *rd)]),
         Instr::ErrnoSet(src) => Ok(vec![enc_reg(0x39, *src)]),
         Instr::EnvGet(rd, key, index_or_buf, len_or_flags) => Ok(vec![enc_rrrr(
@@ -476,9 +479,10 @@ fn encode_flat_exec_instr(
         )]),
         Instr::WriteFd(fd, buf, len) => Ok(vec![enc_rrr(0x57, Reg(fd.0), *buf, *len)]),
         Instr::Fence => Ok(vec![enc_reg(0xcd, Reg(0))]),
+        Instr::Isync(result, addr, len) => Ok(vec![enc_rrr(0xce, *result, *addr, *len)]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, ERRNO_GET/SET, ENV_GET, WRITE_FD, FENCE, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, ERRNO_GET/SET, ENV_GET, WRITE_FD, FENCE/ISYNC, LOCK.CMPXCHG, EXIT"
         )),
     }
 }
@@ -1959,6 +1963,35 @@ mod tests {
                 "01300010\n",
                 "4a398200\n",
                 "3a200000\n",
+            )
+        );
+    }
+
+    #[test]
+    fn asm_flat_exec_encodes_memory_order_subset() {
+        let source = r#"
+            .text
+              LI r1, 0
+              LI r2, 8
+              ISYNC r3, r1, r2
+              LI r4, 41
+              LI r5, 42
+              LOCK.CMPXCHG r6, r1, r4, r5
+              EXIT r6
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+
+        assert_eq!(
+            hex,
+            concat!(
+                "01080000\n",
+                "01100008\n",
+                "ce184400\n",
+                "01200029\n",
+                "0128002a\n",
+                "c9304850\n",
+                "3a300000\n",
             )
         );
     }

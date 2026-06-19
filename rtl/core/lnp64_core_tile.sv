@@ -553,6 +553,13 @@ module lnp64_core_tile #(
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
+                            LNP64_OP_ISYNC: begin
+                                gpr[dec.rd] <= 64'd0;
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
                             LNP64_OP_MOV: begin
                                 gpr[dec.rd] <= gpr[dec.rs1];
                                 pc <= pc + 32'd1;
@@ -1099,6 +1106,17 @@ module lnp64_core_tile #(
                                     default: sram[sram_word_index(mem_addr)][63:56] <= gpr[dec.rd][7:0];
                                 endcase
                                 dcache_writeback <= 1'b1;
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_LOCK_CMPXCHG: begin
+                                gpr[dec.rd] <= sram[sram_word_index(gpr[dec.rs1])];
+                                if (sram[sram_word_index(gpr[dec.rs1])] == gpr[dec.rs2]) begin
+                                    sram[sram_word_index(gpr[dec.rs1])] <= gpr[dec.rs3];
+                                    dcache_writeback <= 1'b1;
+                                end
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;

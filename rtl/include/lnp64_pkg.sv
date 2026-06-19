@@ -160,6 +160,7 @@ package lnp64_pkg;
         LNP64_OP_CSET_UGE     = 16'h0071,
         LNP64_OP_WRITE_FD     = 16'h0072,
         LNP64_OP_ALLOC_EX     = 16'h0073,
+        LNP64_OP_ISYNC        = 16'h0074,
         LNP64_OP_UNSUPPORTED  = 16'h00ff
     } lnp64_opcode_e;
 

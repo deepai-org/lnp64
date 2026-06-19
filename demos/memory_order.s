@@ -1,6 +1,6 @@
 .data
-ok_msg: .string "memory order ok\n"
 word: .quad 41
+ok_msg: .string "memory order ok\n"
 
 .text
   LI r4, word

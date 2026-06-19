@@ -287,6 +287,7 @@ bash scripts/run_rtl_top_program_smoke.sh demos/env_get.s
 bash scripts/run_rtl_top_program_smoke.sh demos/exec_target.s
 bash scripts/run_rtl_top_program_smoke.sh demos/factorial.c
 bash scripts/run_rtl_top_program_smoke.sh demos/hello.c
+bash scripts/run_rtl_top_program_smoke.sh demos/memory_order.s
 cargo run -- asm-flat-exec tests/rtl/programs/top_smoke.s -o /tmp/top_smoke.hex
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_smoke.hex
 bash scripts/run_rtl_m1.sh

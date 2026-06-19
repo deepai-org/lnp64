@@ -198,7 +198,13 @@
       "comparison": "retire_trace_and_final_state"
     },
     {"source": "demos/guarded_heap_overflow.s", "required_features": ["core", "heap", "fault"], "status": "blocked_by_features"},
-    {"source": "demos/memory_order.s", "required_features": ["core", "memory_order"], "status": "blocked_by_features"},
+    {
+      "source": "demos/memory_order.s",
+      "required_features": ["core", "memory_order", "isync", "lock_cmpxchg", "data_labels", "write_fd", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    },
     {"source": "demos/object_profiles.s", "required_features": ["core", "object_profiles"], "status": "blocked_by_features"},
     {"source": "demos/resource_domains.s", "required_features": ["core", "resource_domain"], "status": "blocked_by_features"},
     {"source": "demos/revoked_dma_buffer.s", "required_features": ["core", "fdr", "dma", "revocation"], "status": "blocked_by_features"},
