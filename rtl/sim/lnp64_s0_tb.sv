@@ -260,7 +260,7 @@ module lnp64_s0_tb;
             dut.retire_submit_record_vec[0].fault_id
         );
         $display(
-            "TTRACE {\"record\":\"lnp64_thread_sched_t\",\"pid\":%0d,\"tid\":%0d,\"tile_id\":%0d,\"domain_id\":%0d,\"domain_gen\":%0d,\"state\":%0d,\"latency_class\":%0d,\"wait_generation\":%0d,\"active_location\":%0d}",
+            "TTRACE {\"record\":\"lnp64_thread_sched_t\",\"pid\":%0d,\"tid\":%0d,\"tile_id\":%0d,\"domain_id\":%0d,\"domain_gen\":%0d,\"state\":%0d,\"latency_class\":%0d,\"wait_generation\":%0d,\"weight_index\":%0d,\"virtual_deadline\":%0d,\"active_location\":%0d}",
             dut.park_submit_record_vec[0].pid,
             dut.park_submit_record_vec[0].tid,
             dut.park_submit_record_vec[0].tile_id,
@@ -269,6 +269,8 @@ module lnp64_s0_tb;
             dut.park_submit_record_vec[0].state,
             dut.park_submit_record_vec[0].latency_class,
             dut.park_submit_record_vec[0].wait_generation,
+            dut.park_submit_record_vec[0].weight_index,
+            dut.park_submit_record_vec[0].virtual_deadline,
             dut.park_submit_record_vec[0].active_location
         );
         $display(

@@ -352,7 +352,7 @@
     ]
   },
   "records": {
-    "lnp64_cmd_t": ["op_id:32", "tile_id:32", "opcode:16", "profile:16", "pid:32", "tid:32", "domain_id:32", "domain_gen:32", "credential_snapshot_id:32", "result_reg:8", "rights_mask:64", "flags:64", "arg0:64", "arg1:64", "arg2:64", "arg3:64", "arg_block_ptr:64", "arg_block_len:64", "cancel_class:16", "completion_target:16"],
+    "lnp64_cmd_t": ["op_id:32", "tile_id:32", "opcode:16", "profile:16", "pid:32", "tid:32", "domain_id:32", "domain_gen:32", "latency_class:16", "wait_generation:32", "weight_index:16", "virtual_deadline:64", "credential_snapshot_id:32", "result_reg:8", "rights_mask:64", "flags:64", "arg0:64", "arg1:64", "arg2:64", "arg3:64", "arg_block_ptr:64", "arg_block_len:64", "cancel_class:16", "completion_target:16"],
     "lnp64_rsp_t": ["op_id:32", "tile_id:32", "pid:32", "tid:32", "domain_id:32", "domain_gen:32", "result_reg:8", "result_value:64", "errno_value:16", "status:16", "event_mask:64"],
     "lnp64_completion_t": ["op_id:32", "tile_id:32", "pid:32", "tid:32", "domain_id:32", "domain_gen:32", "target:16", "status:16", "errno_value:16", "value:64"],
     "lnp64_event_t": ["event_id:32", "tile_id:32", "op_id:32", "pid:32", "tid:32", "domain_id:32", "domain_gen:32", "event_mask:64", "source:16", "status:16"],
@@ -366,7 +366,7 @@
     "lnp64_object_ref_t": ["object_id:32", "object_gen:32", "profile:16", "length:64", "bounds_base:64"],
     "lnp64_control_envelope_t": ["version:16", "profile:16", "byte_len:32", "selector:32", "service_generation:32", "payload_ptr:64"],
     "lnp64_domain_t": ["domain_id:32", "domain_gen:32", "parent_domain_id:32", "parent_domain_gen:32", "budget_limit:64", "budget_used:64", "lifecycle_state:16", "assurance_profile:16", "label_id:32"],
-    "lnp64_thread_sched_t": ["pid:32", "tid:32", "tile_id:32", "domain_id:32", "domain_gen:32", "state:16", "latency_class:16", "wait_generation:32", "active_location:32"],
+    "lnp64_thread_sched_t": ["pid:32", "tid:32", "tile_id:32", "domain_id:32", "domain_gen:32", "state:16", "latency_class:16", "wait_generation:32", "weight_index:16", "virtual_deadline:64", "active_location:32"],
     "lnp64_decode_t": ["opcode:16", "profile:16", "rd:8", "rs1:8", "rs2:8", "rs3:8", "imm:32", "supported:1"],
     "lnp64_feature_t": ["isa_version:16", "profile:16", "opcode:16", "feature_bits:64", "supported:1"],
     "lnp64_error_cancel_t": ["op_id:32", "errno_value:16", "status:16", "cancel_class:16", "revoke_epoch:32"],

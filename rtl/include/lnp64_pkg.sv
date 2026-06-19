@@ -305,6 +305,8 @@ package lnp64_pkg;
         logic [31:0] domain_gen;
         logic [15:0] latency_class;
         logic [31:0] wait_generation;
+        logic [15:0] weight_index;
+        logic [63:0] virtual_deadline;
         logic [31:0] credential_snapshot_id;
         logic [7:0]  result_reg;
         logic [63:0] rights_mask;
@@ -515,6 +517,8 @@ package lnp64_pkg;
         logic [15:0] state;
         logic [15:0] latency_class;
         logic [31:0] wait_generation;
+        logic [15:0] weight_index;
+        logic [63:0] virtual_deadline;
         logic [31:0] active_location;
     } lnp64_thread_sched_t;
 

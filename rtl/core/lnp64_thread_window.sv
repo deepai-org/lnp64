@@ -107,6 +107,8 @@ module lnp64_thread_window #(
                 context_record_q[reset_ctx].state <= 16'd0;
                 context_record_q[reset_ctx].latency_class <= 16'd0;
                 context_record_q[reset_ctx].wait_generation <= 32'd1;
+                context_record_q[reset_ctx].weight_index <= 16'd0;
+                context_record_q[reset_ctx].virtual_deadline <= 64'd0;
                 context_record_q[reset_ctx].active_location <= TILE_ID[31:0];
             end
         end else begin

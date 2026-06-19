@@ -1663,6 +1663,8 @@ module lnp64_core_tile #(
         thread_window_activate_context.state = 16'd1;
         thread_window_activate_context.latency_class = active_thread_context.latency_class;
         thread_window_activate_context.wait_generation = active_thread_context.wait_generation;
+        thread_window_activate_context.weight_index = active_thread_context.weight_index;
+        thread_window_activate_context.virtual_deadline = active_thread_context.virtual_deadline;
         thread_window_activate_context.active_location = TILE_ID[31:0];
         thread_window_complete_valid = state == CORE_EXEC &&
             dec.supported &&
@@ -1734,6 +1736,8 @@ module lnp64_core_tile #(
         cmd.domain_gen = active_thread_context.domain_gen;
         cmd.latency_class = active_thread_context.latency_class;
         cmd.wait_generation = active_thread_context.wait_generation;
+        cmd.weight_index = active_thread_context.weight_index;
+        cmd.virtual_deadline = active_thread_context.virtual_deadline;
         cmd.credential_snapshot_id = active_thread_context.domain_id;
         cmd.result_reg = dec.rd;
         cmd.rights_mask = 64'd0;
@@ -2028,6 +2032,8 @@ module lnp64_core_tile #(
         thread_submit_next.state = active_thread_context.state;
         thread_submit_next.latency_class = active_thread_context.latency_class;
         thread_submit_next.wait_generation = active_thread_context.wait_generation;
+        thread_submit_next.weight_index = active_thread_context.weight_index;
+        thread_submit_next.virtual_deadline = active_thread_context.virtual_deadline;
         thread_submit_next.active_location = TILE_ID[31:0];
         object_rsp_reader_fd = rsp.event_mask[31:0];
         object_rsp_writer_fd = rsp.event_mask[63:32];
@@ -3509,7 +3515,9 @@ module lnp64_core_tile #(
                             cmd.domain_id == active_thread_context.domain_id &&
                             cmd.domain_gen == active_thread_context.domain_gen &&
                             cmd.latency_class == active_thread_context.latency_class &&
-                            cmd.wait_generation == active_thread_context.wait_generation)
+                            cmd.wait_generation == active_thread_context.wait_generation &&
+                            cmd.weight_index == active_thread_context.weight_index &&
+                            cmd.virtual_deadline == active_thread_context.virtual_deadline)
                             else $fatal(
                                 1,
                                 "SG-SCHED engine command lost active thread metadata"
@@ -4138,6 +4146,8 @@ module lnp64_thread_context (
             pid1_context.state <= 16'd1;
             pid1_context.latency_class <= 16'd0;
             pid1_context.wait_generation <= 32'd1;
+            pid1_context.weight_index <= 16'd0;
+            pid1_context.virtual_deadline <= 64'd0;
             pid1_context.active_location <= 32'd1;
         end
     end
