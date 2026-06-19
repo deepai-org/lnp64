@@ -155,6 +155,7 @@ run_top_program_logged "$emulator_log" "${emulator_cmd[@]}"
 
 python3 - "$sim_log" "$emulator_log" <<'PY'
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -190,6 +191,75 @@ def load_m1_commit_schema() -> tuple[tuple[str, ...], tuple[int, ...]]:
         fields.append(field)
         widths.append(int(width))
     return tuple(fields), tuple(widths)
+
+
+def parse_int_literal(value: str) -> int:
+    value = value.strip()
+    if "'h" in value:
+        return int(value.split("'h", maxsplit=1)[1].replace("_", ""), 16)
+    if "'d" in value:
+        return int(value.split("'d", maxsplit=1)[1].replace("_", ""), 10)
+    if value.lower().startswith("0x"):
+        return int(value, 16)
+    return int(value, 10)
+
+
+def load_m1_commit_op_values() -> dict[str, int]:
+    schema_path = Path("rtl/schema/lnp64_shared_schema.json")
+    with schema_path.open(encoding="utf-8") as handle:
+        schema = json.load(handle)
+    enum_entries = schema["enums"]["lnp64_m1_commit_op_e"]
+    values = {}
+    for entry in enum_entries:
+        name, value = entry.split("=", maxsplit=1)
+        values[name] = parse_int_literal(value)
+    return {
+        "CapDup": values["LNP64_M1_COMMIT_CAP_DUP"],
+        "CapSend": values["LNP64_M1_COMMIT_CAP_SEND"],
+        "CapRecv": values["LNP64_M1_COMMIT_CAP_RECV"],
+        "CapRevoke": values["LNP64_M1_COMMIT_CAP_REVOKE"],
+    }
+
+
+def load_flat_exec_m1_opcode_map() -> dict[int, int]:
+    """Return flat-exec instruction opcodes, not architectural enum ids.
+
+    The current top-level executable path consumes 8-bit flat-exec instruction
+    words from src/main.rs and src/emulator.rs. The architectural opcode enum in
+    rtl/include/lnp64_pkg.sv is wider and has already moved some capability
+    operation ids, so the top-level commit check must follow the executable
+    encoding until the loader/decode path is unified.
+    """
+    commit_ops = load_m1_commit_op_values()
+    encoder = Path("src/main.rs").read_text(encoding="utf-8")
+    decoder = Path("src/emulator.rs").read_text(encoding="utf-8")
+    encoder_ops = {}
+    decoder_ops = {}
+    for instr in ("CapDup", "CapSend", "CapRecv", "CapRevoke"):
+        encoder_match = re.search(
+            rf"Instr::{instr}\([^)]*\)\s*=>\s*Ok\(vec!\[enc_rrr\((0x[0-9a-fA-F]+)",
+            encoder,
+        )
+        if encoder_match is None:
+            raise SystemExit(f"missing flat-exec encoder opcode for Instr::{instr}")
+        decoder_match = re.search(
+            rf"(0x[0-9a-fA-F]+)\s*=>\s*Instr::{instr}\(",
+            decoder,
+        )
+        if decoder_match is None:
+            raise SystemExit(f"missing flat-exec emulator decode opcode for Instr::{instr}")
+        encoder_opcode = parse_int_literal(encoder_match.group(1))
+        decoder_opcode = parse_int_literal(decoder_match.group(1))
+        if encoder_opcode != decoder_opcode:
+            raise SystemExit(
+                f"flat-exec opcode drift for Instr::{instr}: "
+                f"encoder=0x{encoder_opcode:x} decoder=0x{decoder_opcode:x}"
+            )
+        encoder_ops[encoder_opcode] = commit_ops[instr]
+        decoder_ops[instr] = decoder_opcode
+    if len(encoder_ops) != len(decoder_ops):
+        raise SystemExit(f"duplicate flat-exec M1 opcodes detected: {decoder_ops}")
+    return encoder_ops
 
 
 def decode_packed_bits(bits: str, fields: tuple[str, ...], widths: tuple[int, ...]) -> dict[str, int]:
@@ -274,7 +344,8 @@ with open(sys.argv[1], encoding="utf-8") as handle:
             rtl_m1_top_commits.append(json.loads(line[len("RTL_M1_TOP_COMMIT "):]))
         elif line.startswith("RTL_M1_TOP_COMMIT_BITS "):
             rtl_m1_top_commit_bits.append(json.loads(line[len("RTL_M1_TOP_COMMIT_BITS "):]))
-cap_retire = [record for record in rtl_retire if record["opcode"] in (0x50, 0x51, 0x52, 0x53)]
+opcode_to_m1_op = load_flat_exec_m1_opcode_map()
+cap_retire = [record for record in rtl_retire if record["opcode"] in opcode_to_m1_op]
 if len(rtl_m1_top_commits) != len(cap_retire):
     raise SystemExit(
         "top-level M1 commit trace count mismatch: "
@@ -302,7 +373,6 @@ commit_required_fields = (
 )
 m1_schema_fields, m1_schema_widths = load_m1_commit_schema()
 expected_m1_commit_width = sum(m1_schema_widths)
-opcode_to_m1_op = {0x50: 1, 0x51: 2, 0x52: 3, 0x53: 4}
 for idx, (commit, retire) in enumerate(zip(rtl_m1_top_commits, cap_retire)):
     missing = [field for field in commit_required_fields if field not in commit]
     if missing:
