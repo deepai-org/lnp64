@@ -375,6 +375,7 @@ private:
             .Case("env_get", LNP64::ENV_GET)
             .Case("object_ctl", LNP64::OBJECT_CTL)
             .Case("domain_ctl", LNP64::DOMAIN_CTL)
+            .Case("cap_dup", LNP64::CAP_DUP)
             .Case("await", LNP64::AWAIT)
             .Case("pull", LNP64::PULL)
             .Case("push", LNP64::PUSH)
@@ -455,7 +456,8 @@ private:
       return addReg(Inst, Operands);
     if (Opcode == LNP64::ALLOC || Opcode == LNP64::ALLOC_SIZE)
       return addRegReg(Inst, Operands);
-    if (Opcode == LNP64::OBJECT_CTL || Opcode == LNP64::DOMAIN_CTL)
+    if (Opcode == LNP64::OBJECT_CTL || Opcode == LNP64::DOMAIN_CTL ||
+        Opcode == LNP64::CAP_DUP)
       return addRegReg(Inst, Operands);
     if (Opcode == LNP64::ALLOC_EX)
       return addRegRegReg(Inst, Operands);

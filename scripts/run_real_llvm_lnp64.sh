@@ -259,6 +259,25 @@ ASM
   printf 'real LLVM LNP64 llvm-mc env_get opcode smoke passed: %s\n' \
     "$env_get_mc_obj"
 
+  cap_dup_asm="$build_dir/cap-dup-mc-smoke.s"
+  cat >"$cap_dup_asm" <<'ASM'
+  .text
+  .globl _start
+_start:
+  cap_dup r1, r2
+  ret
+ASM
+  cap_dup_mc_obj="$build_dir/cap-dup-mc-smoke.o"
+  "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$cap_dup_asm" \
+    -o "$cap_dup_mc_obj"
+  test -s "$cap_dup_mc_obj"
+  cap_dup_mc_dump="$build_dir/cap-dup-mc-smoke.dump"
+  "$llvm_objdump" -d --triple=lnp64-unknown-none "$cap_dup_mc_obj" \
+    >"$cap_dup_mc_dump"
+  grep -q 'cap_dup r1, r2' "$cap_dup_mc_dump"
+  printf 'real LLVM LNP64 llvm-mc cap_dup opcode smoke passed: %s\n' \
+    "$cap_dup_mc_obj"
+
   atomic_asm="$build_dir/atomic-mc-smoke.s"
   cat >"$atomic_asm" <<'ASM'
   .text
@@ -1861,6 +1880,25 @@ env_get_mc_dump="$build_dir/env-get-mc-smoke.dump"
 grep -q 'env_get r1, r2, r3, r4' "$env_get_mc_dump"
 printf 'real LLVM LNP64 llvm-mc env_get opcode smoke passed: %s\n' \
   "$env_get_mc_obj"
+
+cap_dup_asm="$build_dir/cap-dup-mc-smoke.s"
+cat >"$cap_dup_asm" <<'ASM'
+  .text
+  .globl _start
+_start:
+  cap_dup r1, r2
+  ret
+ASM
+cap_dup_mc_obj="$build_dir/cap-dup-mc-smoke.o"
+"$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$cap_dup_asm" \
+  -o "$cap_dup_mc_obj"
+test -s "$cap_dup_mc_obj"
+cap_dup_mc_dump="$build_dir/cap-dup-mc-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$cap_dup_mc_obj" \
+  >"$cap_dup_mc_dump"
+grep -q 'cap_dup r1, r2' "$cap_dup_mc_dump"
+printf 'real LLVM LNP64 llvm-mc cap_dup opcode smoke passed: %s\n' \
+  "$cap_dup_mc_obj"
 
 atomic_asm="$build_dir/atomic-mc-smoke.s"
 cat >"$atomic_asm" <<'ASM'

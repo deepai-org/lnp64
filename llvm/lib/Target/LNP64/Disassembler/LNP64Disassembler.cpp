@@ -633,6 +633,11 @@ public:
       addReg(Instr, C);
       addReg(Instr, (Word >> 4) & 0x1f);
       return MCDisassembler::Success;
+    case 0x50:
+      Instr.setOpcode(LNP64::CAP_DUP);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      return MCDisassembler::Success;
     case 0x30:
       Instr.setOpcode(LNP64::LD);
       addReg(Instr, A);

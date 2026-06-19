@@ -1516,6 +1516,9 @@ mod tests {
         assert!(real_llc.contains("env-get-mc-smoke.o"));
         assert!(real_llc.contains("env_get r1, r2, r3, r4"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc env_get opcode smoke passed"));
+        assert!(real_llc.contains("cap-dup-mc-smoke.o"));
+        assert!(real_llc.contains("cap_dup r1, r2"));
+        assert!(real_llc.contains("real LLVM LNP64 llvm-mc cap_dup opcode smoke passed"));
         assert!(real_llc.contains("atomic-mc-smoke.o"));
         assert!(real_llc.contains("amo.swap r1, r2, r3"));
         assert!(real_llc.contains("amo.or r10, r11, r12"));
@@ -4098,6 +4101,11 @@ mod tests {
         let filemap = include_str!("../toolchain/lnp64_llvm_filemap.manifest");
         let mc_emitter =
             include_str!("../llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCCodeEmitter.cpp");
+        let asm_parser = include_str!("../llvm/lib/Target/LNP64/AsmParser/LNP64AsmParser.cpp");
+        let inst_printer =
+            include_str!("../llvm/lib/Target/LNP64/InstPrinter/LNP64InstPrinter.cpp");
+        let disassembler =
+            include_str!("../llvm/lib/Target/LNP64/Disassembler/LNP64Disassembler.cpp");
         let mc_asm_backend =
             include_str!("../llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCAsmBackend.cpp");
         let lld_arch = include_str!("../lld/ELF/Arch/LNP64.cpp");
@@ -4187,6 +4195,7 @@ mod tests {
             "env_get_control",
             "native_primitives",
             "native_control_rr",
+            "native_capability_rr",
         ] {
             assert!(
                 groups.contains_key(group),
@@ -4215,6 +4224,11 @@ mod tests {
                 .3
                 .contains(&"R_LNP64_CALLGATE64")
         );
+        assert!(groups["native_capability_rr"].1.contains(&"CAP_DUP"));
+        assert!(!groups["native_control_planned"].1.contains(&"CAP_DUP"));
+        assert!(asm_parser.contains(r#".Case("cap_dup", LNP64::CAP_DUP)"#));
+        assert!(inst_printer.contains(r#"return "cap_dup";"#));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::CAP_DUP)"));
         assert!(mc_emitter.contains("encodeFixed32NoOperand"));
         assert!(mc_emitter.contains("encodeFixed32RI"));
         assert!(mc_emitter.contains("encodeFixed32RR"));
@@ -4271,6 +4285,7 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::GATE_RETURN"));
         assert!(mc_emitter.contains("case LNP64::OBJECT_CTL"));
         assert!(mc_emitter.contains("case LNP64::DOMAIN_CTL"));
+        assert!(mc_emitter.contains("case LNP64::CAP_DUP"));
         assert!(mc_emitter.contains("case LNP64::LD"));
         assert!(mc_emitter.contains("case LNP64::ST"));
         assert!(mc_emitter.contains("encodeFixed32NoOperand(0x00)"));
