@@ -1,7 +1,7 @@
 # LNP64 conformance gate contract v0.
 # Pipe-delimited fields: category|status|artifacts|gate|coverage
 asm_demos|tested|scripts/run_demos.sh,demos/secure_jit.s,demos/stale_fd_token.s,demos/await_timer.s|scripts/run_demos.sh|assembly_and_legacy_toy_smoke_path
-c_tests|tested|scripts/run_libc_test.sh,scripts/run_real_llvm_lnp64_docker.sh,third_party/libc-test/functional/argv.c,third_party/libc-test/functional/string.c,third_party/libc-test/functional/ctype_bounded.c,toolchain/lnp64_toy_compiler_policy.manifest|scripts/run_libc_test.sh|bounded_libc_and_c_surface_tests_on_explicit_toy_bootstrap_with_first_real_clang_libc_test_replacement
+c_tests|tested|scripts/run_libc_test.sh,scripts/run_real_llvm_lnp64_docker.sh,third_party/libc-test/functional/argv.c,third_party/libc-test/functional/string.c,third_party/libc-test/functional/ctype_bounded.c,third_party/libc-test/functional/udiv.c,toolchain/lnp64_toy_compiler_policy.manifest|scripts/run_libc_test.sh|bounded_libc_and_c_surface_tests_on_explicit_toy_bootstrap_with_first_real_clang_libc_test_replacements
 randomized_emulator|tested|src/emulator.rs,conformance_matrix.md|cargo test --quiet randomized_|randomized_mmap_capability_domain_stress
 adversarial_fault|tested|src/emulator.rs,src/asm.rs,src/loader.rs,toolchain/lnp64_loader_security.manifest|cargo test --quiet rejects_|rejects_malformed_faulting_authority_broadening_and_precommit_side_effects
 package_tests|tested|scripts/run_real_packages.sh,scripts/run_real_llvm_package_gate.sh,scripts/run_sbase.sh,scripts/run_zlib.sh,scripts/run_inih.sh,scripts/run_jsmn.sh,scripts/run_natsort.sh,scripts/run_cwalk.sh|scripts/run_real_packages.sh|real_package_smoke_over_real_clang_lld_run_elf_path

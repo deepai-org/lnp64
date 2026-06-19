@@ -2360,6 +2360,21 @@ grep -q 'call ' "$libc_test_ctype_dump"
 printf 'real LLVM LNP64 clang libc-test ctype_bounded object smoke passed: %s\n' \
   "$libc_test_ctype_obj"
 
+libc_test_udiv_obj="$build_dir/libc-test-udiv-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain/include \
+  -I third_party/libc-test/functional \
+  -c third_party/libc-test/functional/udiv.c \
+  -o "$libc_test_udiv_obj"
+test -s "$libc_test_udiv_obj"
+libc_test_udiv_dump="$build_dir/libc-test-udiv-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_test_udiv_obj" \
+  >"$libc_test_udiv_dump"
+grep -q 'udiv r' "$libc_test_udiv_dump"
+grep -q 'urem r' "$libc_test_udiv_dump"
+printf 'real LLVM LNP64 clang libc-test udiv object smoke passed: %s\n' \
+  "$libc_test_udiv_obj"
+
 convert_c="$build_dir/convert-smoke.c"
 cat >"$convert_c" <<'C'
 int *__errno_location(void);
@@ -3962,6 +3977,14 @@ libc_test_ctype_elf="$build_dir/lnp64-libc-test-ctype-bounded-linked.elf"
 test -s "$libc_test_ctype_elf"
 printf 'real LLVM LNP64 lld libc-test ctype_bounded link smoke passed: %s\n' \
   "$libc_test_ctype_elf"
+
+libc_test_udiv_elf="$build_dir/lnp64-libc-test-udiv-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$libc_test_udiv_elf" "$crt0_obj" "$libc_test_udiv_obj" \
+  "$libc_test_print_obj" "$libc_fd_impl_obj"
+test -s "$libc_test_udiv_elf"
+printf 'real LLVM LNP64 lld libc-test udiv link smoke passed: %s\n' \
+  "$libc_test_udiv_elf"
 
 calloc_elf="$build_dir/lnp64-calloc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
