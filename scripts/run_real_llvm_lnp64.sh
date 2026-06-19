@@ -3422,6 +3422,19 @@ grep -q 'call ' "$userland_ucat_dump"
 printf 'real LLVM LNP64 clang userland ucat object smoke passed: %s\n' \
   "$userland_ucat_obj"
 
+userland_init_obj="$build_dir/userland-init-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
+  -c userland/init_clang.c -o "$userland_init_obj"
+test -s "$userland_init_obj"
+userland_init_dump="$build_dir/userland-init-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$userland_init_obj" \
+  >"$userland_init_dump"
+grep -q 'call ' "$userland_init_dump"
+printf 'real LLVM LNP64 clang userland init object smoke passed: %s\n' \
+  "$userland_init_obj"
+
 meta_libc_c="$build_dir/meta-libc-smoke.c"
 cat >"$meta_libc_c" <<'C'
 #include <errno.h>
@@ -4823,6 +4836,14 @@ userland_ucat_elf="$build_dir/lnp64-userland-ucat-linked.elf"
 test -s "$userland_ucat_elf"
 printf 'real LLVM LNP64 lld userland ucat link smoke passed: %s\n' \
   "$userland_ucat_elf"
+
+userland_init_elf="$build_dir/lnp64-userland-init-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$userland_init_elf" "$crt0_obj" "$userland_init_obj" \
+  "$libc_fd_impl_obj"
+test -s "$userland_init_elf"
+printf 'real LLVM LNP64 lld userland init link smoke passed: %s\n' \
+  "$userland_init_elf"
 
 meta_libc_elf="$build_dir/lnp64-meta-libc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

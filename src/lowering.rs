@@ -1465,6 +1465,7 @@ mod tests {
             "clang_sbase_libutil_objects",
             "clang_sbase_support_object",
             "clang_userland_ucat_object",
+            "clang_userland_init_object",
             "clang_minilibc_meta_impl_object",
             "clang_meta_libc_object",
             "clang_minilibc_random_impl_object",
@@ -1552,6 +1553,8 @@ mod tests {
             "sbase_cat_run_elf",
             "userland_ucat_static_link",
             "userland_ucat_run_elf",
+            "userland_init_static_link",
+            "userland_init_run_elf",
             "metadata_libc_static_link",
             "metadata_libc_run_elf",
         ] {
@@ -2459,6 +2462,9 @@ mod tests {
         assert!(real_llc.contains("userland/ucat_clang.c"));
         assert!(real_llc.contains("userland-ucat-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang userland ucat object smoke passed"));
+        assert!(real_llc.contains("userland/init_clang.c"));
+        assert!(real_llc.contains("userland-init-clang-smoke.o"));
+        assert!(real_llc.contains("real LLVM LNP64 clang userland init object smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_fd_min.c"));
         assert!(libc_fd_min.contains("__lnp_pull"));
         assert!(libc_fd_min.contains("__lnp_push"));
@@ -2562,6 +2568,9 @@ mod tests {
         assert!(real_llc.contains("lnp64-userland-ucat-linked.elf"));
         assert!(real_llc.contains(r#""$userland_ucat_obj" \"#));
         assert!(real_llc.contains("real LLVM LNP64 lld userland ucat link smoke passed"));
+        assert!(real_llc.contains("lnp64-userland-init-linked.elf"));
+        assert!(real_llc.contains(r#""$userland_init_obj" \"#));
+        assert!(real_llc.contains("real LLVM LNP64 lld userland init link smoke passed"));
         assert!(real_llc.contains("lnp64-meta-libc-linked.elf"));
         assert!(real_llc.contains(
             r#""$meta_libc_obj" "$libc_meta_impl_obj" \
@@ -3305,6 +3314,13 @@ mod tests {
         assert!(real_llc_docker.contains("ucat etc/motd"));
         assert!(real_llc_docker.contains("welcome from clang ucat"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf userland ucat execution passed"));
+        assert!(real_llc_docker.contains("lnp64-userland-init-linked.elf"));
+        assert!(real_llc_docker.contains("init /"));
+        assert!(real_llc_docker.contains("lnp64 clang init: boot"));
+        assert!(real_llc_docker.contains("lnp64 clang init: root /"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf userland init execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-errno-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf errno execution passed"));
         assert!(real_llc_docker.contains("lnp64-intrinsic-push-linked.elf"));
@@ -3451,6 +3467,7 @@ mod tests {
             "real_read_execution",
             "real_write_execution",
             "real_userland_ucat_execution",
+            "real_userland_init_execution",
             "real_metadata_libc_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
@@ -3528,6 +3545,7 @@ mod tests {
             "real_sort_helper_execution",
             "real_write_execution",
             "real_userland_ucat_execution",
+            "real_userland_init_execution",
             "real_metadata_libc_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
@@ -4598,6 +4616,7 @@ mod tests {
             "cwalk",
             "sbase_commands",
             "userland_ucat",
+            "userland_init",
             "netcat",
             "httpd",
             "simple_libc",
@@ -4627,6 +4646,7 @@ mod tests {
         }
         assert_eq!(statuses["sbase_commands"], "partial");
         assert_eq!(statuses["userland_ucat"], "partial");
+        assert_eq!(statuses["userland_init"], "partial");
         assert_eq!(statuses["netcat"], "partial");
         assert_eq!(statuses["httpd"], "partial");
         assert_eq!(statuses["simple_libc"], "partial");
@@ -5338,6 +5358,7 @@ mod tests {
             "netcat",
             "httpd",
             "userland_ucat",
+            "userland_init",
             "simple_libc",
         ] {
             assert!(

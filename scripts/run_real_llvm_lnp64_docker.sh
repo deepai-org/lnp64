@@ -277,5 +277,15 @@ grep -q '^welcome from clang ucat$' <<<"$userland_ucat_output"
 grep -q 'exit=0' <<<"$userland_ucat_output"
 printf 'real LLVM LNP64 run-elf userland ucat execution passed: %s\n' \
   target/llvm-lnp64-build/lnp64-userland-ucat-linked.elf
+"$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-userland-init-linked.elf \
+  >/dev/null
+userland_init_output="$("$lnp64_bin" run-elf --namespace-root "$userland_fixture_root" \
+  target/llvm-lnp64-build/lnp64-userland-init-linked.elf init /)"
+grep -q '^lnp64 clang init: boot$' <<<"$userland_init_output"
+grep -q '^lnp64 clang init: root /$' <<<"$userland_init_output"
+grep -q '^welcome from clang ucat$' <<<"$userland_init_output"
+grep -q 'exit=0' <<<"$userland_init_output"
+printf 'real LLVM LNP64 run-elf userland init execution passed: %s\n' \
+  target/llvm-lnp64-build/lnp64-userland-init-linked.elf
 run_elf_report "real LLVM LNP64 run-elf indirect call execution passed" \
   target/llvm-lnp64-build/lnp64-indirect-call-linked.elf
