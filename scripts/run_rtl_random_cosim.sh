@@ -6,9 +6,17 @@ cd "$root"
 
 scripts/check_rtl_cosim_manifest.py
 
-export LNP64_COSIM_SEEDS="${LNP64_COSIM_SEEDS:-0 1 7 42 255 1024 4095 4096 65536 1048576 16777216 134217728 268435456 536870912}"
+if [[ "${LNP64_RTL_FAST:-0}" == "1" ]]; then
+  export LNP64_COSIM_SEEDS="${LNP64_COSIM_SEEDS:-0}"
+  export LNP64_RTL_REUSE_BUILD="${LNP64_RTL_REUSE_BUILD:-1}"
+  export LNP64_RTL_SKIP_LINT="${LNP64_RTL_SKIP_LINT:-1}"
+  export LNP64_RTL_BUILD_ROOT="${LNP64_RTL_BUILD_ROOT:-$root/target/rtl-verilator}"
+  export LNP64_RTL_RANDOM_COSIM_JOBS="${LNP64_RTL_RANDOM_COSIM_JOBS:-auto}"
+else
+  export LNP64_COSIM_SEEDS="${LNP64_COSIM_SEEDS:-0 1 7 42 255 1024 4095 4096 65536 1048576 16777216 134217728 268435456 536870912}"
+fi
 
-gates=(
+all_gates=(
   scripts/run_rtl_m1.sh
   scripts/run_rtl_m2.sh
   scripts/run_rtl_m3.sh
@@ -25,6 +33,26 @@ gates=(
   scripts/run_rtl_m14.sh
   scripts/run_rtl_m15.sh
 )
+
+if [[ -n "${LNP64_RTL_RANDOM_COSIM_GATES:-}" ]]; then
+  gates=()
+  for gate in $LNP64_RTL_RANDOM_COSIM_GATES; do
+    if [[ "$gate" == scripts/* ]]; then
+      gates+=("$gate")
+    else
+      gates+=("scripts/run_rtl_${gate}.sh")
+    fi
+  done
+else
+  gates=("${all_gates[@]}")
+fi
+
+for gate in "${gates[@]}"; do
+  if [[ ! -f "$gate" ]]; then
+    printf 'unknown RTL randomized/cosim gate: %s\n' "$gate" >&2
+    exit 1
+  fi
+done
 
 jobs="${LNP64_RTL_RANDOM_COSIM_JOBS:-1}"
 if [[ "$jobs" == "auto" ]]; then

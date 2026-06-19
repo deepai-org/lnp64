@@ -4,6 +4,8 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
+source scripts/rtl_verilator_common.sh
+
 if ! command -v verilator >/dev/null 2>&1; then
   printf '%s\n' "verilator is required for the RTL M6 gate" >&2
   exit 1
@@ -27,11 +29,11 @@ common_flags=(
 
 mapfile -t rtl_files < tests/rtl/m6_filelist.f
 
-build_dir="${TMPDIR:-/tmp}/lnp64_rtl_m6_obj"
+build_dir="$(rtl_build_dir "m6")"
 seeds="${LNP64_COSIM_SEEDS:-0}"
-rm -rf "$build_dir"
+rtl_prepare_build_dir "$build_dir"
 
-verilator --lint-only "${common_flags[@]}" "${rtl_files[@]}"
+rtl_lint "${common_flags[@]}" "${rtl_files[@]}"
 verilator --binary --Mdir "$build_dir" "${common_flags[@]}" "${rtl_files[@]}" >/tmp/lnp64_rtl_m6_build.log
 
 for seed in $seeds; do

@@ -84,13 +84,12 @@ skeleton, M1-M15 vertical slices, shared schema checks, Lean transition models,
 RTL assertions, typed trace checks, randomized co-simulation, and synthesis/FPGA
 smoke scaffolding. These are not yet a complete chip.
 
-The current formal/RTL work order is deliberately narrow: finish the M1
-capability/FDR authority slice to the first credible refinement shape before
-starting another vertical proof slice. M1 must show the pattern from
-schema-owned RTL commit/state records through Lean transition preservation,
-executable pre/commit/post refinement comparison, bypass/mediation assertions, and honest trust
-level accounting. Passing typed trace checks and assertions is useful evidence,
-but it is not T4 RTL-to-Lean refinement by itself.
+The current formal/RTL work order is execution-first: make assembler and
+LLVM-produced programs run through `rtl/top/lnp64_top.sv`, compare their retire
+traces and architectural state against the emulator, and use that path as the
+integration target for later proof slices. M1 capability/FDR refinement remains
+the authority template, but it should become reachable through real retired
+instructions rather than only isolated harness traces.
 
 The bootstrap C compiler is temporary. The intended path is a real
 LLVM/Clang/lld toolchain plus a software loader that emits hardware `EXEC` plan
@@ -174,6 +173,14 @@ LNP64_LLVM_DOCKER_SKIP_BUILD=1 LNP64_LLVM_JOBS=16 bash scripts/run_real_llvm_lnp
 LNP64_LLVM_DOCKER_SKIP_BUILD=1 bash scripts/run_real_llvm_lnp64_mc_docker.sh
 ```
 
+When iterating only on LLVM compile/link behavior, skip the host `run-elf`
+execution pass too. The full wrapper still builds the `lnp64` host binary once
+and reuses it for all execution probes, but this shortens backend-only loops:
+
+```sh
+LNP64_LLVM_DOCKER_SKIP_BUILD=1 LNP64_LLVM_DOCKER_SKIP_RUN_ELF=1 LNP64_LLVM_JOBS=16 bash scripts/run_real_llvm_lnp64_docker.sh
+```
+
 Only remove the LLVM cache when you need the space or want to force a clean
 checkout:
 
@@ -193,6 +200,8 @@ bash scripts/run_rtl_synth_docker.sh
 Faster RTL/proof iteration in Docker:
 
 ```sh
+LNP64_RTL_FAST=1 LNP64_RTL_PROOF_SKIP_BUILD=1 bash scripts/run_rtl_proof_docker.sh
+LNP64_RTL_FAST=1 LNP64_RTL_PROOF_SKIP_BUILD=1 bash scripts/run_rtl_m1_refinement_docker.sh
 LNP64_RTL_PROOF_SKIP_BUILD=1 bash scripts/run_rtl_m1_refinement_docker.sh
 LNP64_RTL_PROOF_SKIP_BUILD=1 LNP64_M1_TYPED_COMMIT_SEEDS="0 1 7" bash scripts/run_rtl_m1_refinement_docker.sh
 LNP64_RTL_PROOF_RANDOM_COSIM=0 bash scripts/run_rtl_proof_docker.sh
@@ -202,22 +211,29 @@ LNP64_RTL_PROOF_SKIP_BUILD=1 LNP64_RTL_RANDOM_COSIM_JOBS=4 bash scripts/run_rtl_
 
 The default Docker proof wrapper builds the tool image and runs the mounted
 checkout once. Set `LNP64_RTL_PROOF_BUILD_GATES=1` only when you also want the
-full proof gate to run during `docker build`. The quick command above still runs
-the Lean, schema, M1/M7 typed-checker, and per-slice RTL gates, but skips the
-long multi-seed randomized/cosim sweep after checking its manifest. For current
-M1 authority-refinement work, prefer `run_rtl_m1_refinement_docker.sh`; it runs
-only the M1 Lean model, shared-schema/coupling checks, M1 RTL gate, M1 typed
-pre/commit/post checker, and M1 checker self-tests. Add
-`LNP64_RTL_PROOF_SKIP_BUILD=1` for repeated local runs after the Docker image
-already exists. Use `LNP64_M1_TYPED_COMMIT_SEEDS="0 1 7"` for a quick M1 smoke
-while editing, then remove it before treating the M1 refinement gate as full
-evidence.
+full proof gate to run during `docker build`. `LNP64_RTL_FAST=1` is the tight
+iteration profile: it reuses Verilator build products under
+`target/rtl-verilator`, skips the separate lint-only pass, reduces default M1
+typed-commit seeds to `0`, and skips the long randomized/cosim sweep unless you
+turn it back on. For current execution-first RTL work, start with `run_rtl_s0.sh`
+and the top-level program manifest checker; for M1 authority-refinement work,
+use `run_rtl_m1_refinement_docker.sh` and widen
+`LNP64_M1_TYPED_COMMIT_SEEDS` before treating the result as full evidence.
 
-The randomized/cosim sweep is serial by default for stable logs. Set
-`LNP64_RTL_RANDOM_COSIM_JOBS=4` or `LNP64_RTL_RANDOM_COSIM_JOBS=auto` to run the
-independent M1-M15 randomized/cosim gates in parallel; each gate writes its own
-temporary log and failures replay that log. Use this for full Docker runs when
-the machine has enough CPU headroom.
+The randomized/cosim sweep is serial and full-seed by default for stable logs.
+For an inner loop, run only the slices and seeds you need:
+
+```sh
+LNP64_RTL_FAST=1 LNP64_RTL_RANDOM_COSIM_GATES="m1 m7" bash scripts/run_rtl_random_cosim.sh
+LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_SKIP_LINT=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_s0.sh
+LNP64_RTL_FAST=1 LNP64_COSIM_SEEDS="0 1 7" LNP64_RTL_RANDOM_COSIM_JOBS=auto bash scripts/run_rtl_random_cosim.sh
+```
+
+Set `LNP64_RTL_RANDOM_COSIM_JOBS=4` or
+`LNP64_RTL_RANDOM_COSIM_JOBS=auto` to run independent M1-M15 randomized/cosim
+gates in parallel; each gate writes its own temporary log and failures replay
+that log. Remove `LNP64_RTL_FAST=1` and restore the full seed list before using
+randomized/cosim output as broad evidence.
 
 The full RTL/proof gate avoids rerunning the M1 and M7 Verilator builds solely
 for typed-checker parsing: it tees each gate log once and then runs the matching

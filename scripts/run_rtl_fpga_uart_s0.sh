@@ -4,6 +4,8 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
+source scripts/rtl_verilator_common.sh
+
 if ! command -v verilator >/dev/null 2>&1; then
   printf '%s\n' "verilator is required for the RTL FPGA UART S0 gate" >&2
   exit 1
@@ -27,10 +29,10 @@ common_flags=(
 
 mapfile -t rtl_files < tests/rtl/s0_fpga_uart_filelist.f
 
-build_dir="${TMPDIR:-/tmp}/lnp64_rtl_s0_fpga_obj"
-rm -rf "$build_dir"
+build_dir="$(rtl_build_dir "s0_fpga")"
+rtl_prepare_build_dir "$build_dir"
 
-verilator --lint-only "${common_flags[@]}" "${rtl_files[@]}"
+rtl_lint "${common_flags[@]}" "${rtl_files[@]}"
 verilator --binary --Mdir "$build_dir" "${common_flags[@]}" "${rtl_files[@]}" >/tmp/lnp64_rtl_s0_fpga_build.log
 "$build_dir/Vlnp64_s0_fpga_tb" | tee /tmp/lnp64_rtl_s0_fpga_sim.log
 

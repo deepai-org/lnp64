@@ -4,6 +4,13 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
+if [[ "${LNP64_RTL_FAST:-0}" == "1" ]]; then
+  export LNP64_RTL_REUSE_BUILD="${LNP64_RTL_REUSE_BUILD:-1}"
+  export LNP64_RTL_SKIP_LINT="${LNP64_RTL_SKIP_LINT:-1}"
+  export LNP64_RTL_BUILD_ROOT="${LNP64_RTL_BUILD_ROOT:-$root/target/rtl-verilator}"
+  export LNP64_RTL_PROOF_RANDOM_COSIM="${LNP64_RTL_PROOF_RANDOM_COSIM:-0}"
+fi
+
 lean_files=(
   formal/S0Model.lean
   formal/M1Model.lean
@@ -70,7 +77,11 @@ bash scripts/run_rtl_s0.sh
 LNP64_TYPED_TRACE_USE_EXISTING=1 scripts/check_rtl_typed_trace_contract.py
 
 m1_log="${TMPDIR:-/tmp}/lnp64_rtl_proof_m1.log"
-default_m1_seeds="0 1 7 42 255 1024 4095 4096 65536 1048576 16777216 134217728 268435456 536870912"
+if [[ "${LNP64_RTL_FAST:-0}" == "1" ]]; then
+  default_m1_seeds="0"
+else
+  default_m1_seeds="0 1 7 42 255 1024 4095 4096 65536 1048576 16777216 134217728 268435456 536870912"
+fi
 LNP64_COSIM_SEEDS="${LNP64_M1_TYPED_COMMIT_SEEDS:-$default_m1_seeds}" \
   bash scripts/run_rtl_m1.sh | tee "$m1_log"
 LNP64_M1_TYPED_COMMIT_USE_EXISTING=1 \
