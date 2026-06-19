@@ -36,6 +36,34 @@ lnp64_word_t __lnp_cap_send(lnp64_cap_t queue_cap, lnp64_cap_t cap,
 lnp64_word_t __lnp_cap_recv(lnp64_cap_t queue_cap, lnp64_word_t flags);
 lnp64_word_t __lnp_cap_revoke(lnp64_cap_t cap, lnp64_word_t flags);
 
+static inline void *__lnp_alloc(lnp64_word_t size) {
+  lnp64_word_t ptr;
+  __asm__ volatile("alloc %0, %1" : "=r"(ptr) : "r"(size) : "memory");
+  return (void *)ptr;
+}
+
+static inline void *__lnp_alloc_ex(lnp64_word_t size, lnp64_word_t align) {
+  lnp64_word_t ptr;
+  __asm__ volatile("alloc_ex %0, %1, %2"
+                   : "=r"(ptr)
+                   : "r"(size), "r"(align)
+                   : "memory");
+  return (void *)ptr;
+}
+
+static inline lnp64_word_t __lnp_alloc_size(const void *ptr) {
+  lnp64_word_t size;
+  __asm__ volatile("alloc_size %0, %1"
+                   : "=r"(size)
+                   : "r"((lnp64_word_t)ptr)
+                   : "memory");
+  return size;
+}
+
+static inline void __lnp_free(void *ptr) {
+  __asm__ volatile("free %0" : : "r"((lnp64_word_t)ptr) : "memory");
+}
+
 static inline lnp64_word_t __lnp_amo_swap(volatile lnp64_word_t *addr,
                                           lnp64_word_t value) {
   lnp64_word_t old;

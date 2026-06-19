@@ -1534,6 +1534,17 @@ mod tests {
                 "real LLVM LNP64 clang minilibc string implementation object smoke passed"
             )
         );
+        assert!(real_llc.contains("liblnp64-alloc-min.c"));
+        assert!(real_llc.contains("#include \"lnp64_intrinsics.h\""));
+        assert!(real_llc.contains("__lnp_alloc(size)"));
+        assert!(real_llc.contains("__lnp_alloc_size(ptr)"));
+        assert!(real_llc.contains("liblnp64-alloc-min.o"));
+        assert!(real_llc.contains("grep -q 'alloc r'"));
+        assert!(real_llc.contains("grep -q 'alloc_size r'"));
+        assert!(real_llc.contains("grep -q 'free r'"));
+        assert!(real_llc.contains(
+            "real LLVM LNP64 clang minilibc allocation implementation object smoke passed"
+        ));
         assert!(real_llc.contains("calloc-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang calloc object smoke passed"));
         assert!(real_llc.contains("realloc-clang-smoke.o"));
@@ -1558,8 +1569,16 @@ mod tests {
         assert!(real_llc.contains(r#""$libc_string_obj" "$libc_string_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld minilibc string link smoke passed"));
         assert!(real_llc.contains("lnp64-calloc-linked.elf"));
+        assert!(real_llc.contains(
+            r#""$calloc_obj" "$libc_alloc_impl_obj" \
+  "$libc_string_impl_obj""#
+        ));
         assert!(real_llc.contains("real LLVM LNP64 lld calloc link smoke passed"));
         assert!(real_llc.contains("lnp64-realloc-linked.elf"));
+        assert!(real_llc.contains(
+            r#""$realloc_obj" "$libc_alloc_impl_obj" \
+  "$libc_string_impl_obj""#
+        ));
         assert!(real_llc.contains("real LLVM LNP64 lld realloc link smoke passed"));
         assert!(real_llc.contains("lnp64-read-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld read link smoke passed"));
@@ -3501,6 +3520,10 @@ mod tests {
             "__lnp_cap_send",
             "__lnp_cap_recv",
             "__lnp_cap_revoke",
+            "__lnp_alloc",
+            "__lnp_alloc_ex",
+            "__lnp_alloc_size",
+            "__lnp_free",
         ] {
             assert!(
                 manifest_csv_contains(manifest, "intrinsics", intrinsic),
@@ -3598,7 +3621,8 @@ mod tests {
                 "duplicate intrinsic declaration check for {name}"
             );
             assert!(
-                intrinsic_header.contains(&format!(" {name}(")),
+                intrinsic_header.contains(&format!(" {name}("))
+                    || intrinsic_header.contains(&format!("*{name}(")),
                 "intrinsic header is missing declaration for {name}"
             );
             assert!(

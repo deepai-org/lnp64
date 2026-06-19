@@ -1116,6 +1116,66 @@ grep -q 'ret' "$libc_string_impl_dump"
 printf 'real LLVM LNP64 clang minilibc string implementation object smoke passed: %s\n' \
   "$libc_string_impl_obj"
 
+libc_alloc_impl_c="$build_dir/liblnp64-alloc-min.c"
+cat >"$libc_alloc_impl_c" <<'C'
+#include "lnp64_intrinsics.h"
+
+typedef unsigned long size_t;
+
+void *memcpy(void *dst, const void *src, size_t len);
+void *memset(void *dst, int value, size_t len);
+
+void *malloc(size_t size) {
+  return __lnp_alloc(size);
+}
+
+void free(void *ptr) {
+  __lnp_free(ptr);
+}
+
+void *calloc(size_t count, size_t size) {
+  size_t total = count * size;
+  void *ptr = malloc(total);
+  if (!ptr)
+    return 0;
+  return memset(ptr, 0, total);
+}
+
+void *realloc(void *ptr, size_t size) {
+  if (!ptr)
+    return malloc(size);
+  if (size == 0) {
+    free(ptr);
+    return 0;
+  }
+
+  void *new_ptr = malloc(size);
+  if (!new_ptr)
+    return 0;
+
+  size_t old_size = __lnp_alloc_size(ptr);
+  size_t copy_size = old_size < size ? old_size : size;
+  memcpy(new_ptr, ptr, copy_size);
+  free(ptr);
+  return new_ptr;
+}
+C
+
+libc_alloc_impl_obj="$build_dir/liblnp64-alloc-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$libc_alloc_impl_c" -o "$libc_alloc_impl_obj"
+test -s "$libc_alloc_impl_obj"
+libc_alloc_impl_dump="$build_dir/liblnp64-alloc-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_alloc_impl_obj" \
+  >"$libc_alloc_impl_dump"
+grep -q 'alloc r' "$libc_alloc_impl_dump"
+grep -q 'alloc_size r' "$libc_alloc_impl_dump"
+grep -q 'free r' "$libc_alloc_impl_dump"
+grep -q 'call ' "$libc_alloc_impl_dump"
+printf 'real LLVM LNP64 clang minilibc allocation implementation object smoke passed: %s\n' \
+  "$libc_alloc_impl_obj"
+
 calloc_c="$build_dir/calloc-smoke.c"
 cat >"$calloc_c" <<'C'
 typedef unsigned long size_t;
@@ -1559,14 +1619,16 @@ printf 'real LLVM LNP64 lld minilibc string link smoke passed: %s\n' \
 
 calloc_elf="$build_dir/lnp64-calloc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
-  -o "$calloc_elf" "$crt0_obj" "$calloc_obj" "$minilibc_obj"
+  -o "$calloc_elf" "$crt0_obj" "$calloc_obj" "$libc_alloc_impl_obj" \
+  "$libc_string_impl_obj"
 test -s "$calloc_elf"
 printf 'real LLVM LNP64 lld calloc link smoke passed: %s\n' \
   "$calloc_elf"
 
 realloc_elf="$build_dir/lnp64-realloc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
-  -o "$realloc_elf" "$crt0_obj" "$realloc_obj" "$minilibc_obj"
+  -o "$realloc_elf" "$crt0_obj" "$realloc_obj" "$libc_alloc_impl_obj" \
+  "$libc_string_impl_obj"
 test -s "$realloc_elf"
 printf 'real LLVM LNP64 lld realloc link smoke passed: %s\n' \
   "$realloc_elf"
