@@ -93,8 +93,14 @@ not add new Rust toy compiler fcntl/fork language features to close that gap.
 
 Do not add new Rust toy compiler fcntl/fork language features.
 
-Run the subset with:
+Run the real Clang/lld replacement gate with:
 
 ```sh
 bash scripts/run_libc_test.sh
+```
+
+Run the legacy toy-bootstrap subset explicitly with:
+
+```sh
+bash scripts/run_libc_test.sh --backend toy --loader asm
 ```

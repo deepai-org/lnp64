@@ -4,16 +4,17 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
-backend="toy"
-loader="asm"
+backend="llvm"
+loader="exec-plan"
 
 usage() {
   cat <<'USAGE'
 usage: scripts/run_libc_test.sh [--backend toy|llvm] [--loader asm|exec-plan]
 
-The default toy backend runs the legacy libc-test subset through
-lnp64 cc --toy-bootstrap. The llvm/exec-plan backend dispatches to the real
-Clang/lld/run-elf gate and must not route through the Rust bootstrap compiler.
+The default llvm/exec-plan backend dispatches to the real Clang/lld/run-elf
+gate and must not route through the Rust bootstrap compiler. Use
+--backend toy --loader asm only for the legacy libc-test subset that still runs
+through lnp64 cc --toy-bootstrap.
 USAGE
 }
 
