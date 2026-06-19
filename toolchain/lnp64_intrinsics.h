@@ -60,11 +60,12 @@ static inline void __lnp_free(void *ptr) {
 static inline lnp64_word_t __lnp_cap_dup(lnp64_cap_t source_cap,
                                          lnp64_word_t rights,
                                          lnp64_word_t flags) {
-  lnp64_word_t record[3];
+  lnp64_word_t record[4];
   lnp64_word_t result;
   record[0] = source_cap;
-  record[1] = rights;
-  record[2] = flags;
+  record[1] = 0;
+  record[2] = rights;
+  record[3] = flags;
   __asm__ volatile("cap_dup %0, %1"
                    : "=r"(result)
                    : "r"((lnp64_word_t)record)
@@ -75,11 +76,12 @@ static inline lnp64_word_t __lnp_cap_dup(lnp64_cap_t source_cap,
 static inline lnp64_word_t __lnp_cap_send(lnp64_cap_t queue_cap,
                                           lnp64_cap_t cap,
                                           lnp64_word_t flags) {
-  lnp64_word_t record[3];
+  lnp64_word_t record[4];
   lnp64_word_t result;
   record[0] = queue_cap;
   record[1] = cap;
-  record[2] = flags;
+  record[2] = 0;
+  record[3] = flags;
   __asm__ volatile("cap_send %0, %1"
                    : "=r"(result)
                    : "r"((lnp64_word_t)record)
@@ -89,10 +91,12 @@ static inline lnp64_word_t __lnp_cap_send(lnp64_cap_t queue_cap,
 
 static inline lnp64_word_t __lnp_cap_recv(lnp64_cap_t queue_cap,
                                           lnp64_word_t flags) {
-  lnp64_word_t record[2];
+  lnp64_word_t record[4];
   lnp64_word_t result;
   record[0] = queue_cap;
-  record[1] = flags;
+  record[1] = 0;
+  record[2] = 0;
+  record[3] = flags;
   __asm__ volatile("cap_recv %0, %1"
                    : "=r"(result)
                    : "r"((lnp64_word_t)record)

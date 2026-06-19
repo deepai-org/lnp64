@@ -1602,6 +1602,10 @@ mod tests {
             real_llc
                 .contains("real LLVM LNP64 clang intrinsic capability control object smoke passed")
         );
+        assert!(real_llc.contains("lnp64-intrinsic-cap-control-linked.elf"));
+        assert!(
+            real_llc.contains("real LLVM LNP64 lld intrinsic capability control link smoke passed")
+        );
         assert!(real_llc.contains("intrinsic-amo-clang-smoke.o"));
         assert!(real_llc.contains("amo.add r"));
         assert!(real_llc.contains("amo.xor r"));
@@ -1809,6 +1813,10 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 lld native heap link smoke passed"));
         assert!(real_llc.contains("lnp64-intrinsic-control-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld intrinsic control link smoke passed"));
+        assert!(real_llc.contains("lnp64-intrinsic-cap-control-linked.elf"));
+        assert!(
+            real_llc.contains("real LLVM LNP64 lld intrinsic capability control link smoke passed")
+        );
         assert!(real_llc.contains("intrinsic-mmap-clang-smoke.o"));
         assert!(real_llc.contains("__lnp_mmap_bootstrap"));
         assert!(real_llc.contains("__lnp_mprotect_bootstrap"));
@@ -2127,6 +2135,11 @@ mod tests {
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic control execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-intrinsic-cap-control-linked.elf"));
+        assert!(
+            real_llc_docker
+                .contains("real LLVM LNP64 run-elf intrinsic capability control execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-intrinsic-mmap-linked.elf"));
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic mmap execution passed")
@@ -2208,6 +2221,7 @@ mod tests {
             "real_intrinsic_gate_return_execution",
             "real_intrinsic_push_execution",
             "real_intrinsic_control_execution",
+            "real_intrinsic_capability_control_execution",
             "real_intrinsic_mmap_execution",
             "real_intrinsic_amo_execution",
             "real_c11_atomic_execution",
@@ -4013,6 +4027,16 @@ mod tests {
                 "capability intrinsic {name} lacks real LLVM object smoke coverage"
             );
         }
+        assert!(intrinsic_header.contains("lnp64_word_t record[4];"));
+        assert!(
+            intrinsic_header
+                .contains("record[1] = 0;\n  record[2] = rights;\n  record[3] = flags;")
+        );
+        assert!(intrinsic_header.contains("record[2] = 0;\n  record[3] = flags;"));
+        assert!(real_llc.contains("lnp64-intrinsic-cap-control-linked.elf"));
+        assert!(
+            real_llc.contains("real LLVM LNP64 lld intrinsic capability control link smoke passed")
+        );
     }
 
     #[test]

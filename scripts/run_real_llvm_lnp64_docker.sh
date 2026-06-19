@@ -76,6 +76,8 @@ run_elf_report "real LLVM LNP64 run-elf intrinsic gate return execution passed" 
   target/llvm-lnp64-build/lnp64-intrinsic-gate-return-linked.elf
 run_elf_report "real LLVM LNP64 run-elf intrinsic control execution passed" \
   target/llvm-lnp64-build/lnp64-intrinsic-control-linked.elf
+run_elf_report "real LLVM LNP64 run-elf intrinsic capability control execution passed" \
+  target/llvm-lnp64-build/lnp64-intrinsic-cap-control-linked.elf
 run_elf_report "real LLVM LNP64 run-elf intrinsic mmap execution passed" \
   target/llvm-lnp64-build/lnp64-intrinsic-mmap-linked.elf
 run_elf_report "real LLVM LNP64 run-elf intrinsic AMO execution passed" \

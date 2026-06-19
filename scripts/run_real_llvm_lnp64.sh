@@ -876,12 +876,15 @@ cat >"$intrinsic_cap_c" <<'C'
 #include "lnp64_intrinsics.h"
 
 int main(void) {
-  lnp64_word_t total = 0;
-  total += __lnp_cap_dup(1, 2, 0);
-  total += __lnp_cap_send(3, 4, 0);
-  total += __lnp_cap_recv(5, 0);
-  total += __lnp_cap_revoke(6, 0);
-  return (int)total;
+  if (__lnp_cap_dup(999, 0, 0) != (lnp64_word_t)-1)
+    return 1;
+  if (__lnp_cap_send(998, 997, 0) != (lnp64_word_t)-1)
+    return 2;
+  if (__lnp_cap_recv(996, 0) != (lnp64_word_t)-1)
+    return 3;
+  if (__lnp_cap_revoke(995, 0) != (lnp64_word_t)-1)
+    return 4;
+  return 0;
 }
 C
 
@@ -2085,6 +2088,13 @@ intrinsic_ctl_elf="$build_dir/lnp64-intrinsic-control-linked.elf"
 test -s "$intrinsic_ctl_elf"
 printf 'real LLVM LNP64 lld intrinsic control link smoke passed: %s\n' \
   "$intrinsic_ctl_elf"
+
+intrinsic_cap_elf="$build_dir/lnp64-intrinsic-cap-control-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$intrinsic_cap_elf" "$crt0_obj" "$intrinsic_cap_obj"
+test -s "$intrinsic_cap_elf"
+printf 'real LLVM LNP64 lld intrinsic capability control link smoke passed: %s\n' \
+  "$intrinsic_cap_elf"
 
 intrinsic_mmap_elf="$build_dir/lnp64-intrinsic-mmap-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
