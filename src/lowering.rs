@@ -6196,7 +6196,7 @@ mod tests {
 
         assert_eq!(
             manifest_field(target_manifest, "toy_compiler_policy"),
-            "bootstrap_smoke_only_after_llvm_gate"
+            "removed_after_real_clang_replacement"
         );
         assert_eq!(
             manifest_field(target_manifest, "toy_compiler_policy_contract"),
@@ -6803,7 +6803,7 @@ mod tests {
         }
         assert_eq!(
             manifest_field(manifest, "toy_compiler_policy"),
-            "bootstrap_smoke_only_after_llvm_gate"
+            "removed_after_real_clang_replacement"
         );
         assert_eq!(
             manifest_field(manifest, "toy_compiler_policy_contract"),

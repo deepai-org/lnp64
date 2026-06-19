@@ -208,12 +208,9 @@ assembler/emitter/disassembler path.
 ELF-to-exec-plan loader probe, committed-image text execution, and the still
 unfinished stdout/libc runtime work.
 `toolchain/lnp64_toy_compiler_policy.manifest` records the checked policy that
-keeps the in-repo C compiler as a bootstrap smoke generator rather than the
-platform-defining toolchain.
-`toolchain/lnp64_toy_retirement_queue.manifest` records the remaining
-toy-compiler retirement queue: legacy demo smoke, minimal userland, NetBSD
-personality, legacy libc-test backend coverage, and RTL C-program fallback
-surfaces that still need Clang/lld/loader replacements.
+keeps the deleted in-repo C compiler out of command surfaces and checked gates.
+`toolchain/lnp64_toy_retirement_queue.manifest` records that no toy-compiler
+retirement surfaces remain.
 
 The current Rust assembler, emulator, and C compiler remain useful bootstrap
 and architecture smoke-test tools. They are not the long-term application

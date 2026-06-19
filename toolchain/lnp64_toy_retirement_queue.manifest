@@ -1,3 +1,3 @@
-# LNP64 remaining toy-compiler retirement queue v0.
+# LNP64 toy-compiler retirement queue v0.
 # Pipe-delimited fields: surface|status|toy_artifacts|replacement_target|blocker
 # no remaining toy compiler retirement surfaces
