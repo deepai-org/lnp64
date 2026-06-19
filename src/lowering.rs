@@ -1318,6 +1318,7 @@ mod tests {
         let llvm_dockerfile = include_str!("../Dockerfile.llvm");
         let errno_header = include_str!("../toolchain/include/errno.h");
         let search_header = include_str!("../toolchain/include/search.h");
+        let pthread_header = include_str!("../toolchain/include/pthread.h");
         let stdlib_header = include_str!("../toolchain/include/stdlib.h");
         let libc_string_min = include_str!("../toolchain/liblnp64_string_min.c");
         let libc_convert_min = include_str!("../toolchain/liblnp64_convert_min.c");
@@ -1335,6 +1336,7 @@ mod tests {
         let libc_time_min = include_str!("../toolchain/liblnp64_time_min.c");
         let libc_vma_min = include_str!("../toolchain/liblnp64_vma_min.c");
         let libc_futex_min = include_str!("../toolchain/liblnp64_futex_min.c");
+        let libc_pthread_min = include_str!("../toolchain/liblnp64_pthread_min.c");
         let libc_poll_min = include_str!("../toolchain/liblnp64_poll_min.c");
         let libc_signal_min = include_str!("../toolchain/liblnp64_signal_min.c");
         let libc_socket_min = include_str!("../toolchain/liblnp64_socket_min.c");
@@ -1446,6 +1448,8 @@ mod tests {
             "clang_libc_test_stat_object",
             "clang_libc_test_utime_object",
             "clang_libc_test_fdopen_object",
+            "clang_libc_test_pthread_tsd_object",
+            "clang_minilibc_pthread_impl_object",
             "zlib_package_static_link",
             "natsort_package_static_link",
             "jsmn_package_static_link",
@@ -1470,6 +1474,7 @@ mod tests {
             "libc_test_stat_static_link",
             "libc_test_utime_static_link",
             "libc_test_fdopen_static_link",
+            "libc_test_pthread_tsd_static_link",
             "libc_test_qsort_bounded_static_link",
             "libc_test_search_insque_static_link",
             "libc_test_malloc_0_static_link",
@@ -1498,6 +1503,7 @@ mod tests {
             "libc_test_stat_run_elf",
             "libc_test_utime_run_elf",
             "libc_test_fdopen_run_elf",
+            "libc_test_pthread_tsd_run_elf",
             "libc_test_qsort_bounded_run_elf",
             "libc_test_search_insque_run_elf",
             "libc_test_malloc_0_run_elf",
@@ -1941,6 +1947,11 @@ mod tests {
         assert!(real_llc.contains("libc-test-fdopen-clang-smoke.o"));
         assert!(real_llc.contains("third_party/libc-test/functional/fdopen.c"));
         assert!(real_llc.contains("real LLVM LNP64 clang libc-test fdopen object smoke passed"));
+        assert!(real_llc.contains("libc-test-pthread-tsd-clang-smoke.o"));
+        assert!(real_llc.contains("third_party/libc-test/functional/pthread_tsd.c"));
+        assert!(
+            real_llc.contains("real LLVM LNP64 clang libc-test pthread_tsd object smoke passed")
+        );
         assert!(real_llc.contains("libc-test-qsort-bounded-clang-smoke.o"));
         assert!(real_llc.contains("third_party/libc-test/functional/qsort_bounded.c"));
         assert!(
@@ -2032,6 +2043,11 @@ mod tests {
   "$libc_fd_impl_obj" "$libc_errno_impl_obj""#
         ));
         assert!(real_llc.contains("real LLVM LNP64 lld libc-test fdopen link smoke passed"));
+        assert!(real_llc.contains("lnp64-libc-test-pthread-tsd-linked.elf"));
+        assert!(real_llc.contains(r#""$libc_test_pthread_tsd_obj""#));
+        assert!(real_llc.contains(r#""$libc_pthread_impl_obj" "$libc_alloc_impl_obj""#));
+        assert!(real_llc.contains(r#""$libc_alloc_impl_obj" "$libc_string_impl_obj""#));
+        assert!(real_llc.contains("real LLVM LNP64 lld libc-test pthread_tsd link smoke passed"));
         assert!(real_llc.contains("lnp64-libc-test-qsort-bounded-linked.elf"));
         assert!(real_llc.contains(r#""$libc_test_qsort_bounded_obj" \"#));
         assert!(real_llc.contains(r#""$libc_sort_impl_obj" "$libc_string_impl_obj""#));
@@ -2071,6 +2087,19 @@ mod tests {
         assert!(real_llc.contains("futex_wait(volatile lnp64_word_t *addr"));
         assert!(real_llc.contains("futex_wake(volatile lnp64_word_t *addr"));
         assert!(real_llc.contains("real LLVM LNP64 clang futex libc object smoke passed"));
+        assert!(pthread_header.contains("int pthread_create("));
+        assert!(pthread_header.contains("int pthread_key_create("));
+        assert!(pthread_header.contains("void *pthread_getspecific("));
+        assert!(libc_pthread_min.contains("__lnp_spawn_entry"));
+        assert!(libc_pthread_min.contains("__lnp_thread_join"));
+        assert!(libc_pthread_min.contains("lnp64_run_tsd_destructors"));
+        assert!(real_llc.contains("toolchain/liblnp64_pthread_min.c"));
+        assert!(real_llc.contains("liblnp64-pthread-min.o"));
+        assert!(
+            real_llc.contains(
+                "real LLVM LNP64 clang minilibc pthread implementation object smoke passed"
+            )
+        );
         assert!(real_llc.contains("toolchain/liblnp64_poll_min.c"));
         assert!(libc_poll_min.contains("int poll(struct pollfd *fds"));
         assert!(libc_poll_min.contains("int select(int nfds"));
@@ -3133,6 +3162,11 @@ mod tests {
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf libc-test fdopen execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-libc-test-pthread-tsd-linked.elf"));
+        assert!(
+            real_llc_docker
+                .contains("real LLVM LNP64 run-elf libc-test pthread_tsd execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-libc-test-qsort-bounded-linked.elf"));
         assert!(
             real_llc_docker
@@ -3331,6 +3365,7 @@ mod tests {
             "real_libc_test_utime_execution",
             "real_libc_test_ungetc_execution",
             "real_libc_test_fdopen_execution",
+            "real_libc_test_pthread_tsd_execution",
             "real_libc_test_qsort_bounded_execution",
             "real_libc_test_search_insque_execution",
             "real_libc_test_search_lsearch_execution",
@@ -3406,6 +3441,7 @@ mod tests {
             "real_libc_test_utime_execution",
             "real_libc_test_ungetc_execution",
             "real_libc_test_fdopen_execution",
+            "real_libc_test_pthread_tsd_execution",
             "real_libc_test_qsort_bounded_execution",
             "real_libc_test_search_insque_execution",
             "real_libc_test_search_lsearch_execution",
