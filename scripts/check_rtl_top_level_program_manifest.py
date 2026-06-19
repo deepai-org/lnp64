@@ -85,6 +85,13 @@ def main() -> None:
             active_flat_hex += 1
             gate_text = text(ROOT / str(entry["rtl_gate"]))
             require(str(entry["source"]) in gate_text, f"{entry['source']} active gate must consume the named image")
+            generated_flat_hex = entry.get("generated_flat_hex")
+            require(
+                isinstance(generated_flat_hex, str) and generated_flat_hex.endswith(".hex"),
+                f"{entry['source']} active entry must name generated_flat_hex",
+            )
+            require((ROOT / generated_flat_hex).exists(), f"{entry['source']} generated_flat_hex is missing")
+            require("asm-flat-exec" in gate_text, f"{entry['source']} active gate must assemble source to flat hex")
             require("RTL_RETIRE" in gate_text and "EMULATOR_RETIRE" in gate_text, f"{entry['source']} gate must compare retire traces")
             require("RTL_FINAL" in gate_text and "EMULATOR_FINAL" in gate_text, f"{entry['source']} gate must compare final state")
     require(active_flat_hex >= 1, "manifest must keep at least one active top-level flat hex program")

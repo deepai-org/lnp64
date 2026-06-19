@@ -11,7 +11,8 @@
   },
   "flat_hex_programs": [
     {
-      "source": "tests/rtl/programs/top_smoke.hex",
+      "source": "tests/rtl/programs/top_smoke.s",
+      "generated_flat_hex": "tests/rtl/programs/top_smoke.hex",
       "required_features": ["core", "branch", "load_store", "env_get", "exit"],
       "status": "active",
       "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",

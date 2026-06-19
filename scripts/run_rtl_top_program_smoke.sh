@@ -32,10 +32,19 @@ mapfile -t rtl_files < tests/rtl/top_program_filelist.f
 build_dir="$(rtl_build_dir "top_program")"
 rtl_prepare_build_dir "$build_dir"
 
-program_hex="${1:-tests/rtl/programs/top_smoke.hex}"
-if [[ ! -f "$program_hex" ]]; then
-  printf 'missing top-level program hex image: %s\n' "$program_hex" >&2
+program_input="${1:-tests/rtl/programs/top_smoke.s}"
+if [[ ! -f "$program_input" ]]; then
+  printf 'missing top-level program input: %s\n' "$program_input" >&2
   exit 1
+fi
+program_hex="$program_input"
+if [[ "$program_input" == *.s ]]; then
+  program_hex="${TMPDIR:-/tmp}/lnp64_top_program_from_asm.hex"
+  if [[ -n "${LNP64_BIN:-}" ]]; then
+    "$LNP64_BIN" asm-flat-exec "$program_input" -o "$program_hex"
+  else
+    cargo run --quiet -- asm-flat-exec "$program_input" -o "$program_hex"
+  fi
 fi
 
 rtl_lint "${common_flags[@]}" "${rtl_files[@]}"

@@ -1,5 +1,3 @@
-# Committed-exec words for scripts/run_rtl_top_program_smoke.sh.
-# Covers LI, ADD, ST, LD, branch skip, ENV_GET(page size), and EXIT.
 01080007
 01100005
 10184400

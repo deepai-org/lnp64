@@ -20,6 +20,7 @@ use std::path::PathBuf;
 
 use asm::Program;
 use emulator::{Machine, PreparedExecVma};
+use isa::{Instr, MemRef, Reg, Target, Value, Width};
 use loader::{
     ExecEntry, ExecPlan, ExecPlanDescriptorOptions, ExecutableProvenance, LoaderOptions,
     MemoryType, VmaProtection, VmaRecord,
@@ -50,6 +51,20 @@ fn run() -> Result<(), String> {
                 program.instructions.len(),
                 program.data.len()
             );
+            Ok(())
+        }
+        "asm-flat-exec" => {
+            let options = take_asm_flat_exec_options(&mut args)?;
+            let source = fs::read_to_string(&options.input)
+                .map_err(|err| format!("failed to read {}: {err}", options.input.display()))?;
+            let program = Program::parse(&source)?;
+            let hex = encode_flat_exec_hex(&program)?;
+            if let Some(output) = options.output {
+                fs::write(&output, hex)
+                    .map_err(|err| format!("failed to write {}: {err}", output.display()))?;
+            } else {
+                print!("{hex}");
+            }
             Ok(())
         }
         "run" => {
@@ -207,6 +222,7 @@ fn run() -> Result<(), String> {
 fn usage() {
     eprintln!("usage:");
     eprintln!("  lnp64 asm <program.s>");
+    eprintln!("  lnp64 asm-flat-exec <program.s> [-o program.hex]");
     eprintln!("  lnp64 run [--namespace-root <dir>] <program.s>");
     eprintln!("  lnp64 elf-plan [--load-bias <n>] <program.elf>");
     eprintln!("  lnp64 run-elf [--load-bias <n>] <program.elf>");
@@ -214,6 +230,122 @@ fn usage() {
     eprintln!(
         "  lnp64 cc [--dump-macros|--dump-preprocessed] <program.c> [more.c ...] [-o program.s]"
     );
+}
+
+struct AsmFlatExecOptions {
+    input: PathBuf,
+    output: Option<PathBuf>,
+}
+
+fn encode_flat_exec_hex(program: &Program) -> Result<String, String> {
+    if !program.data.is_empty() {
+        return Err("asm-flat-exec does not yet materialize .data sections".to_string());
+    }
+    let mut out = String::new();
+    for (pc, instr) in program.instructions.iter().enumerate() {
+        let word = encode_flat_exec_instr(program, pc, instr)?;
+        out.push_str(&format!("{word:08x}\n"));
+    }
+    if out.is_empty() {
+        return Err("asm-flat-exec input has no text instructions".to_string());
+    }
+    Ok(out)
+}
+
+fn encode_flat_exec_instr(program: &Program, pc: usize, instr: &Instr) -> Result<u32, String> {
+    match instr {
+        Instr::Nop => Ok(enc_reg(0x00, Reg(0))),
+        Instr::Li(rd, value) => Ok(enc_ri(0x01, *rd, value_imm16(value)?)),
+        Instr::Add(rd, rs1, rs2) => Ok(enc_rrr(0x10, *rd, *rs1, *rs2)),
+        Instr::Jmp(target) => Ok(enc_branch(0x20, branch_delta(program, pc, target)?)),
+        Instr::Ld(rd, MemRef::BaseOffset(base, offset), Width::Double) => {
+            Ok(enc_mem(0x30, *rd, *base, imm14(*offset, "LD offset")?))
+        }
+        Instr::St(MemRef::BaseOffset(base, offset), src, Width::Double) => {
+            Ok(enc_mem(0x33, *src, *base, imm14(*offset, "ST offset")?))
+        }
+        Instr::ErrnoGet(rd) => Ok(enc_reg(0x38, *rd)),
+        Instr::ErrnoSet(src) => Ok(enc_reg(0x39, *src)),
+        Instr::EnvGet(rd, key, index_or_buf, len_or_flags) => {
+            Ok(enc_rrrr(0x56, *rd, *key, *index_or_buf, *len_or_flags))
+        }
+        Instr::Exit(src) => Ok(enc_reg(0x3a, *src)),
+        other => Err(format!(
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, ADD, JMP, LD/ST.D base+offset, ERRNO_GET/SET, ENV_GET, EXIT"
+        )),
+    }
+}
+
+fn value_imm16(value: &Value) -> Result<i64, String> {
+    match value {
+        Value::Imm(imm) => imm16(*imm, "LI immediate"),
+        Value::Label(label) => Err(format!(
+            "asm-flat-exec does not yet materialize label immediate {label:?}"
+        )),
+    }
+}
+
+fn branch_delta(program: &Program, pc: usize, target: &Target) -> Result<i64, String> {
+    let target_pc = match target {
+        Target::Address(address) => *address,
+        Target::Label(label) => program
+            .labels
+            .get(label)
+            .copied()
+            .ok_or_else(|| format!("unknown branch label {label:?}"))?,
+    };
+    imm24(target_pc as i64 - pc as i64, "branch delta")
+}
+
+fn imm16(value: i64, name: &str) -> Result<i64, String> {
+    if !(-32768..=32767).contains(&value) {
+        return Err(format!("{name} out of signed 16-bit range: {value}"));
+    }
+    Ok(value)
+}
+
+fn imm14(value: i64, name: &str) -> Result<i64, String> {
+    if !(-8192..=8191).contains(&value) {
+        return Err(format!("{name} out of signed 14-bit range: {value}"));
+    }
+    Ok(value)
+}
+
+fn imm24(value: i64, name: &str) -> Result<i64, String> {
+    if !(-8_388_608..=8_388_607).contains(&value) {
+        return Err(format!("{name} out of signed 24-bit range: {value}"));
+    }
+    Ok(value)
+}
+
+fn enc_ri(opcode: u8, rd: Reg, imm: i64) -> u32 {
+    (u32::from(opcode) << 24) | (((rd.0 as u32) & 0x1f) << 19) | ((imm as u32) & 0xffff)
+}
+
+fn enc_rrr(opcode: u8, rd: Reg, rs1: Reg, rs2: Reg) -> u32 {
+    (u32::from(opcode) << 24)
+        | (((rd.0 as u32) & 0x1f) << 19)
+        | (((rs1.0 as u32) & 0x1f) << 14)
+        | (((rs2.0 as u32) & 0x1f) << 9)
+}
+
+fn enc_rrrr(opcode: u8, rd: Reg, rs1: Reg, rs2: Reg, rs3: Reg) -> u32 {
+    enc_rrr(opcode, rd, rs1, rs2) | (((rs3.0 as u32) & 0x1f) << 4)
+}
+
+fn enc_mem(opcode: u8, reg_a: Reg, base: Reg, imm: i64) -> u32 {
+    (u32::from(opcode) << 24)
+        | (((reg_a.0 as u32) & 0x1f) << 19)
+        | (((base.0 as u32) & 0x1f) << 14)
+        | ((imm as u32) & 0x3fff)
+}
+
+fn enc_reg(opcode: u8, reg: Reg) -> u32 {
+    (u32::from(opcode) << 24) | (((reg.0 as u32) & 0x1f) << 19)
+}
+
+fn enc_branch(opcode: u8, delta_words: i64) -> u32 {
+    (u32::from(opcode) << 24) | ((delta_words as u32) & 0x00ff_ffff)
 }
 
 fn build_flat_exec_machine(hex_words: &str) -> Result<Machine, String> {
@@ -462,6 +594,31 @@ fn take_input(args: &mut Vec<String>) -> Result<PathBuf, String> {
     Ok(PathBuf::from(args.remove(0)))
 }
 
+fn take_asm_flat_exec_options(args: &mut Vec<String>) -> Result<AsmFlatExecOptions, String> {
+    let mut input = None;
+    let mut output = None;
+    while !args.is_empty() {
+        let arg = args.remove(0);
+        if arg == "-o" {
+            if output.is_some() {
+                return Err("duplicate -o".to_string());
+            }
+            if args.is_empty() {
+                return Err("-o requires a path".to_string());
+            }
+            output = Some(PathBuf::from(args.remove(0)));
+        } else if arg.starts_with('-') {
+            return Err(format!("unexpected asm-flat-exec option {arg:?}"));
+        } else if input.is_some() {
+            return Err(format!("unexpected asm-flat-exec argument {arg:?}"));
+        } else {
+            input = Some(PathBuf::from(arg));
+        }
+    }
+    let input = input.ok_or_else(|| "missing input path".to_string())?;
+    Ok(AsmFlatExecOptions { input, output })
+}
+
 struct CcOptions {
     inputs: Vec<PathBuf>,
     output: Option<PathBuf>,
@@ -560,6 +717,42 @@ mod tests {
         assert_eq!(exit, 0);
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn asm_flat_exec_encodes_top_level_smoke_subset() {
+        let source = r#"
+            .text
+              LI r1, 7
+              LI r2, 5
+              ADD r3, r1, r2
+              ST [r0, 0], r3
+              LD r4, [r0, 0]
+              JMP after_skip
+              LI r5, 99
+            after_skip:
+              LI r10, 2
+              ENV_GET r6, r10, r0, r0
+              EXIT r4
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+
+        assert_eq!(
+            hex,
+            concat!(
+                "01080007\n",
+                "01100005\n",
+                "10184400\n",
+                "33180000\n",
+                "30200000\n",
+                "20000002\n",
+                "01280063\n",
+                "01500002\n",
+                "56328000\n",
+                "3a200000\n",
+            )
+        );
     }
 
     fn minimal_static_elf() -> Vec<u8> {

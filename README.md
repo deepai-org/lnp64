@@ -251,6 +251,8 @@ Focused RTL/proof loop:
 ```sh
 bash scripts/run_rtl_s0.sh
 bash scripts/run_rtl_top_program_smoke.sh
+bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_smoke.s
+cargo run -- asm-flat-exec tests/rtl/programs/top_smoke.s -o /tmp/top_smoke.hex
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_smoke.hex
 bash scripts/run_rtl_m1.sh
 scripts/run_rtl_m1_refinement_gate.sh
