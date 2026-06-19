@@ -229,7 +229,16 @@ def main() -> None:
         require_entry(entry, "compiler flat")
         if entry.get("status") == "active":
             active_compiler_flat += 1
-            gate_text = text(ROOT / str(entry["rtl_gate"]))
+            gate_path = str(entry["rtl_gate"])
+            gate_text = effective_gate_text(gate_path)
+            require(
+                gate_path == "scripts/run_rtl_top_toy_c_smoke.sh",
+                f"{entry['source']} legacy compiler-flat entry must use the explicit toy C wrapper",
+            )
+            require(
+                "LNP64_RTL_TOP_PROGRAM_C_BACKEND=toy" in gate_text,
+                f"{entry['source']} toy C gate must opt in to toy backend explicitly",
+            )
             require("*.c" in gate_text, f"{entry['source']} active gate must accept compiler input")
             require(
                 (" cc " in gate_text or " cc --toy-bootstrap " in gate_text)
@@ -262,7 +271,16 @@ def main() -> None:
         generated = entry.get("generated_assembly")
         require(isinstance(generated, str) and generated.endswith(".s"), f"{entry['source']} must name generated assembly")
         if entry.get("status") == "active":
-            gate_text = text(ROOT / str(entry["rtl_gate"]))
+            gate_path = str(entry["rtl_gate"])
+            gate_text = effective_gate_text(gate_path)
+            require(
+                gate_path == "scripts/run_rtl_top_toy_c_smoke.sh",
+                f"{entry['source']} legacy compiler demo must use the explicit toy C wrapper",
+            )
+            require(
+                "LNP64_RTL_TOP_PROGRAM_C_BACKEND=toy" in gate_text,
+                f"{entry['source']} toy C gate must opt in to toy backend explicitly",
+            )
             require("RTL_RETIRE" in gate_text and "EMULATOR_RETIRE" in gate_text, f"{entry['source']} gate must compare retire traces")
             require_typed_retire_gate(gate_text, str(entry["source"]))
             require("RTL_FINAL" in gate_text and "EMULATOR_FINAL" in gate_text, f"{entry['source']} gate must compare final state")

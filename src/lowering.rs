@@ -5743,6 +5743,10 @@ mod tests {
                 include_str!("../scripts/run_rtl_top_program_smoke.sh"),
             ),
             (
+                "scripts/run_rtl_top_toy_c_smoke.sh",
+                include_str!("../scripts/run_rtl_top_toy_c_smoke.sh"),
+            ),
+            (
                 "scripts/run_sbase.sh",
                 include_str!("../scripts/run_sbase.sh"),
             ),
