@@ -2836,6 +2836,28 @@ theorem rtl_m1_refinement_step_satisfies_postcondition
   · exact rtl_m1_refinement_cap_dup_denied_post_failure_matches_commit_projection hRefine hOp
   · exact rtl_m1_refinement_object_create_post_minted_matches_commit_projection hRefine hOp
 
+theorem top_m1_refinement_step_status_matches_op
+    {pre : RtlM1TopStateProjection}
+    {commitProjection : RtlM1TopCommitProjection}
+    {post : RtlM1TopStateProjection} :
+    RtlM1TopRefinementStep pre commitProjection post ->
+    (topCommitProjectionToRtlM1CommitProjection commitProjection).status =
+      expectedCommitStatus (topCommitProjectionToRtlM1CommitProjection commitProjection).op := by
+  intro hRefine
+  exact rtl_m1_refinement_step_status_matches_op hRefine
+
+theorem top_m1_refinement_step_satisfies_postcondition
+    {pre : RtlM1TopStateProjection}
+    {commitProjection : RtlM1TopCommitProjection}
+    {post : RtlM1TopStateProjection} :
+    RtlM1TopRefinementStep pre commitProjection post ->
+    RtlM1RefinementPostcondition
+      (topCommitProjectionToRtlM1CommitProjection commitProjection)
+      (topStateProjectionToRtlM1StateProjection pre)
+      (topStateProjectionToRtlM1StateProjection post) := by
+  intro hRefine
+  exact rtl_m1_refinement_step_satisfies_postcondition hRefine
+
 theorem reachable_invariant {s : State} :
     Reachable s -> invariant s := by
   intro hReach
