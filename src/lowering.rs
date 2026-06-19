@@ -1516,9 +1516,14 @@ mod tests {
         assert!(real_llc.contains("env-get-mc-smoke.o"));
         assert!(real_llc.contains("env_get r1, r2, r3, r4"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc env_get opcode smoke passed"));
-        assert!(real_llc.contains("cap-dup-mc-smoke.o"));
+        assert!(real_llc.contains("cap-control-mc-smoke.o"));
         assert!(real_llc.contains("cap_dup r1, r2"));
-        assert!(real_llc.contains("real LLVM LNP64 llvm-mc cap_dup opcode smoke passed"));
+        assert!(real_llc.contains("cap_send r3, r4"));
+        assert!(real_llc.contains("cap_recv r5, r6"));
+        assert!(real_llc.contains("cap_revoke r7, r8"));
+        assert!(
+            real_llc.contains("real LLVM LNP64 llvm-mc capability control opcode smoke passed")
+        );
         assert!(real_llc.contains("atomic-mc-smoke.o"));
         assert!(real_llc.contains("amo.swap r1, r2, r3"));
         assert!(real_llc.contains("amo.or r10, r11, r12"));
@@ -4225,10 +4230,22 @@ mod tests {
                 .contains(&"R_LNP64_CALLGATE64")
         );
         assert!(groups["native_capability_rr"].1.contains(&"CAP_DUP"));
-        assert!(!groups["native_control_planned"].1.contains(&"CAP_DUP"));
+        assert!(groups["native_capability_rr"].1.contains(&"CAP_SEND"));
+        assert!(groups["native_capability_rr"].1.contains(&"CAP_RECV"));
+        assert!(groups["native_capability_rr"].1.contains(&"CAP_REVOKE"));
+        assert!(!groups.contains_key("native_control_planned"));
+        assert!(asm_parser.contains(r#".Case("cap_send", LNP64::CAP_SEND)"#));
+        assert!(asm_parser.contains(r#".Case("cap_recv", LNP64::CAP_RECV)"#));
         assert!(asm_parser.contains(r#".Case("cap_dup", LNP64::CAP_DUP)"#));
+        assert!(asm_parser.contains(r#".Case("cap_revoke", LNP64::CAP_REVOKE)"#));
+        assert!(inst_printer.contains(r#"return "cap_send";"#));
+        assert!(inst_printer.contains(r#"return "cap_recv";"#));
         assert!(inst_printer.contains(r#"return "cap_dup";"#));
+        assert!(inst_printer.contains(r#"return "cap_revoke";"#));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::CAP_SEND)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::CAP_RECV)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::CAP_DUP)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::CAP_REVOKE)"));
         assert!(mc_emitter.contains("encodeFixed32NoOperand"));
         assert!(mc_emitter.contains("encodeFixed32RI"));
         assert!(mc_emitter.contains("encodeFixed32RR"));
@@ -4285,7 +4302,10 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::GATE_RETURN"));
         assert!(mc_emitter.contains("case LNP64::OBJECT_CTL"));
         assert!(mc_emitter.contains("case LNP64::DOMAIN_CTL"));
+        assert!(mc_emitter.contains("case LNP64::CAP_SEND"));
+        assert!(mc_emitter.contains("case LNP64::CAP_RECV"));
         assert!(mc_emitter.contains("case LNP64::CAP_DUP"));
+        assert!(mc_emitter.contains("case LNP64::CAP_REVOKE"));
         assert!(mc_emitter.contains("case LNP64::LD"));
         assert!(mc_emitter.contains("case LNP64::ST"));
         assert!(mc_emitter.contains("encodeFixed32NoOperand(0x00)"));

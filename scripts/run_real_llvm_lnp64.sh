@@ -259,24 +259,30 @@ ASM
   printf 'real LLVM LNP64 llvm-mc env_get opcode smoke passed: %s\n' \
     "$env_get_mc_obj"
 
-  cap_dup_asm="$build_dir/cap-dup-mc-smoke.s"
-  cat >"$cap_dup_asm" <<'ASM'
+  cap_control_asm="$build_dir/cap-control-mc-smoke.s"
+  cat >"$cap_control_asm" <<'ASM'
   .text
   .globl _start
 _start:
   cap_dup r1, r2
+  cap_send r3, r4
+  cap_recv r5, r6
+  cap_revoke r7, r8
   ret
 ASM
-  cap_dup_mc_obj="$build_dir/cap-dup-mc-smoke.o"
-  "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$cap_dup_asm" \
-    -o "$cap_dup_mc_obj"
-  test -s "$cap_dup_mc_obj"
-  cap_dup_mc_dump="$build_dir/cap-dup-mc-smoke.dump"
-  "$llvm_objdump" -d --triple=lnp64-unknown-none "$cap_dup_mc_obj" \
-    >"$cap_dup_mc_dump"
-  grep -q 'cap_dup r1, r2' "$cap_dup_mc_dump"
-  printf 'real LLVM LNP64 llvm-mc cap_dup opcode smoke passed: %s\n' \
-    "$cap_dup_mc_obj"
+  cap_control_mc_obj="$build_dir/cap-control-mc-smoke.o"
+  "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$cap_control_asm" \
+    -o "$cap_control_mc_obj"
+  test -s "$cap_control_mc_obj"
+  cap_control_mc_dump="$build_dir/cap-control-mc-smoke.dump"
+  "$llvm_objdump" -d --triple=lnp64-unknown-none "$cap_control_mc_obj" \
+    >"$cap_control_mc_dump"
+  grep -q 'cap_dup r1, r2' "$cap_control_mc_dump"
+  grep -q 'cap_send r3, r4' "$cap_control_mc_dump"
+  grep -q 'cap_recv r5, r6' "$cap_control_mc_dump"
+  grep -q 'cap_revoke r7, r8' "$cap_control_mc_dump"
+  printf 'real LLVM LNP64 llvm-mc capability control opcode smoke passed: %s\n' \
+    "$cap_control_mc_obj"
 
   atomic_asm="$build_dir/atomic-mc-smoke.s"
   cat >"$atomic_asm" <<'ASM'
@@ -1881,24 +1887,30 @@ grep -q 'env_get r1, r2, r3, r4' "$env_get_mc_dump"
 printf 'real LLVM LNP64 llvm-mc env_get opcode smoke passed: %s\n' \
   "$env_get_mc_obj"
 
-cap_dup_asm="$build_dir/cap-dup-mc-smoke.s"
-cat >"$cap_dup_asm" <<'ASM'
+cap_control_asm="$build_dir/cap-control-mc-smoke.s"
+cat >"$cap_control_asm" <<'ASM'
   .text
   .globl _start
 _start:
   cap_dup r1, r2
+  cap_send r3, r4
+  cap_recv r5, r6
+  cap_revoke r7, r8
   ret
 ASM
-cap_dup_mc_obj="$build_dir/cap-dup-mc-smoke.o"
-"$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$cap_dup_asm" \
-  -o "$cap_dup_mc_obj"
-test -s "$cap_dup_mc_obj"
-cap_dup_mc_dump="$build_dir/cap-dup-mc-smoke.dump"
-"$llvm_objdump" -d --triple=lnp64-unknown-none "$cap_dup_mc_obj" \
-  >"$cap_dup_mc_dump"
-grep -q 'cap_dup r1, r2' "$cap_dup_mc_dump"
-printf 'real LLVM LNP64 llvm-mc cap_dup opcode smoke passed: %s\n' \
-  "$cap_dup_mc_obj"
+cap_control_mc_obj="$build_dir/cap-control-mc-smoke.o"
+"$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$cap_control_asm" \
+  -o "$cap_control_mc_obj"
+test -s "$cap_control_mc_obj"
+cap_control_mc_dump="$build_dir/cap-control-mc-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$cap_control_mc_obj" \
+  >"$cap_control_mc_dump"
+grep -q 'cap_dup r1, r2' "$cap_control_mc_dump"
+grep -q 'cap_send r3, r4' "$cap_control_mc_dump"
+grep -q 'cap_recv r5, r6' "$cap_control_mc_dump"
+grep -q 'cap_revoke r7, r8' "$cap_control_mc_dump"
+printf 'real LLVM LNP64 llvm-mc capability control opcode smoke passed: %s\n' \
+  "$cap_control_mc_obj"
 
 atomic_asm="$build_dir/atomic-mc-smoke.s"
 cat >"$atomic_asm" <<'ASM'

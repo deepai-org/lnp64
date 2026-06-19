@@ -670,8 +670,23 @@ public:
                                getGPRNo(MI.getOperand(1))),
                OS);
       return;
+    case LNP64::CAP_SEND:
+      emitLE32(encodeFixed32RR(0x51, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
+    case LNP64::CAP_RECV:
+      emitLE32(encodeFixed32RR(0x52, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
     case LNP64::CAP_DUP:
       emitLE32(encodeFixed32RR(0x50, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
+    case LNP64::CAP_REVOKE:
+      emitLE32(encodeFixed32RR(0x53, getGPRNo(MI.getOperand(0)),
                                getGPRNo(MI.getOperand(1))),
                OS);
       return;

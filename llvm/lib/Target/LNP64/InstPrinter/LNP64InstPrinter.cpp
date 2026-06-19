@@ -198,8 +198,14 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
     return "object_ctl";
   case LNP64::DOMAIN_CTL:
     return "domain_ctl";
+  case LNP64::CAP_SEND:
+    return "cap_send";
+  case LNP64::CAP_RECV:
+    return "cap_recv";
   case LNP64::CAP_DUP:
     return "cap_dup";
+  case LNP64::CAP_REVOKE:
+    return "cap_revoke";
   case LNP64::AWAIT:
     return "await";
   case LNP64::GATE_CALL:
@@ -414,7 +420,10 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::MUNMAP:
   case LNP64::OBJECT_CTL:
   case LNP64::DOMAIN_CTL:
+  case LNP64::CAP_SEND:
+  case LNP64::CAP_RECV:
   case LNP64::CAP_DUP:
+  case LNP64::CAP_REVOKE:
   case LNP64::SEXT_B:
   case LNP64::SEXT_H:
   case LNP64::SEXT_W:
