@@ -1353,8 +1353,10 @@ mod tests {
         let pthread_header = include_str!("../toolchain/include/pthread.h");
         let semaphore_header = include_str!("../toolchain/include/semaphore.h");
         let signal_header = include_str!("../toolchain/include/signal.h");
+        let stddef_header = include_str!("../toolchain/include/stddef.h");
         let stdint_header = include_str!("../toolchain/include/stdint.h");
         let stdlib_header = include_str!("../toolchain/include/stdlib.h");
+        let string_header = include_str!("../toolchain/include/string.h");
         let sys_mman_header = include_str!("../toolchain/include/sys/mman.h");
         let sys_epoll_header = include_str!("../toolchain/include/sys/epoll.h");
         let sys_event_header = include_str!("../toolchain/include/sys/event.h");
@@ -2541,6 +2543,10 @@ mod tests {
         assert!(real_llc.contains("tolower('Q')"));
         assert!(real_llc.contains("toupper('q')"));
         assert!(real_llc.contains("grep -q 'sext.w'"));
+        assert!(stddef_header.contains("typedef unsigned long size_t;"));
+        assert!(stddef_header.contains("typedef long ptrdiff_t;"));
+        assert!(stddef_header.contains("#define NULL ((void *)0)"));
+        assert!(string_header.contains("#include <stddef.h>"));
         assert!(libc_string_min.contains("#include <string.h>"));
         assert!(!libc_string_min.contains("typedef unsigned long size_t;"));
         assert!(libc_string_min.contains("void *memmove"));
