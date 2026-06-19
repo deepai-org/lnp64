@@ -1961,10 +1961,12 @@ mod tests {
         assert!(libc_process_min.contains("int waitpid(int pid, int *status, int options)"));
         assert!(libc_process_min.contains("int execve(const char *path"));
         assert!(libc_process_min.contains("int execl(const char *path"));
+        assert!(libc_process_min.contains("#include <stdarg.h>"));
         assert!(libc_process_min.contains("lnp64_exec_compat"));
         assert!(libc_process_min.contains("lnp64_fork_compat"));
         assert!(libc_process_min.contains("lnp64_wait_pid_compat"));
         assert!(real_llc.contains("liblnp64-process-min.o"));
+        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_process_impl_c\""));
         assert!(real_llc.contains("grep -q 'exit r'"));
         assert!(real_llc.contains("grep -q 'get_pcr r'"));
         assert!(real_llc.contains("grep -q 'fork r'"));
