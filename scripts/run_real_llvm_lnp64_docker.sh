@@ -279,6 +279,18 @@ run_elf_report "real LLVM LNP64 run-elf NetBSD mmap child passed" \
 run_elf_report "real LLVM LNP64 run-elf NetBSD fd passing child passed" \
   target/llvm-lnp64-build/lnp64-netbsd-fd-passing-test-linked.elf \
   'fd_passing_test ok'
+netbsd_namespace_fixture_root="target/llvm-lnp64-build/netbsd-namespace-fixture-root"
+rm -rf "$netbsd_namespace_fixture_root"
+mkdir -p "$netbsd_namespace_fixture_root/etc" "$netbsd_namespace_fixture_root/tmp"
+printf 'welcome\n' >"$netbsd_namespace_fixture_root/etc/motd"
+"$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-netbsd-namespace-test-linked.elf \
+  >/dev/null
+netbsd_namespace_output="$("$lnp64_bin" run-elf --namespace-root "$netbsd_namespace_fixture_root" \
+  target/llvm-lnp64-build/lnp64-netbsd-namespace-test-linked.elf)"
+grep -q 'namespace_test ok' <<<"$netbsd_namespace_output"
+grep -q 'exit=0' <<<"$netbsd_namespace_output"
+printf 'real LLVM LNP64 run-elf NetBSD namespace child passed: %s\n' \
+  target/llvm-lnp64-build/lnp64-netbsd-namespace-test-linked.elf
 netbsd_fixture_root="target/llvm-lnp64-build/netbsd-fixture-root"
 rm -rf "$netbsd_fixture_root"
 mkdir -p "$netbsd_fixture_root/etc" "$netbsd_fixture_root/tmp"

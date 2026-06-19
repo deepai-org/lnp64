@@ -1605,6 +1605,8 @@ mod tests {
             "netbsd_mmap_child_run_elf",
             "netbsd_fd_passing_child_static_link",
             "netbsd_fd_passing_child_run_elf",
+            "netbsd_namespace_child_static_link",
+            "netbsd_namespace_child_run_elf",
             "netbsd_fs_service_child_static_link",
             "netbsd_fs_service_child_run_elf",
             "netbsd_classifier_child_static_link",
@@ -2822,6 +2824,13 @@ mod tests {
         assert!(real_llc.contains("lnp64-netbsd-fd-passing-test-linked.elf"));
         assert!(real_llc.contains(r#""$netbsd_fd_passing_test_obj" \"#));
         assert!(real_llc.contains("real LLVM LNP64 lld NetBSD fd passing child link passed"));
+        assert!(real_llc.contains("userland/namespace_test_clang.c"));
+        assert!(real_llc.contains("netbsd-namespace-test-clang-smoke.o"));
+        assert!(real_llc.contains("real LLVM LNP64 clang NetBSD namespace child object passed"));
+        assert!(real_llc.contains("lnp64-netbsd-namespace-test-linked.elf"));
+        assert!(real_llc.contains(r#""$netbsd_namespace_test_obj" \"#));
+        assert!(real_llc.contains(r#""$libc_meta_impl_obj" "$libc_errno_impl_obj""#));
+        assert!(real_llc.contains("real LLVM LNP64 lld NetBSD namespace child link passed"));
         assert!(real_llc.contains("userland/fs_service_test_clang.c"));
         assert!(real_llc.contains("netbsd-fs-service-test-clang-smoke.o"));
         assert!(real_llc.contains(r#"grep -q 'ld.b r' "$netbsd_fs_service_test_dump""#));
@@ -3620,6 +3629,10 @@ mod tests {
                 .contains("real LLVM LNP64 run-elf NetBSD personality clang smoke passed")
         );
         assert!(real_llc_docker.contains("netbsd clang personality smoke ok"));
+        assert!(real_llc_docker.contains("netbsd-namespace-fixture-root"));
+        assert!(real_llc_docker.contains("lnp64-netbsd-namespace-test-linked.elf"));
+        assert!(real_llc_docker.contains("namespace_test ok"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf NetBSD namespace child passed"));
         assert!(real_llc_docker.contains("lnp64-sbase-echo-linked.elf"));
         assert!(real_llc_docker.contains("echo hello clang --expect 'hello clang'"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase echo execution passed"));
@@ -3821,6 +3834,7 @@ mod tests {
             "real_netbsd_timer_child_execution",
             "real_netbsd_mmap_child_execution",
             "real_netbsd_fd_passing_child_execution",
+            "real_netbsd_namespace_child_execution",
             "real_netbsd_fs_service_child_execution",
             "real_netbsd_classifier_child_execution",
             "real_netbsd_socket_loopback_child_execution",
@@ -3918,6 +3932,7 @@ mod tests {
             "real_netbsd_timer_child_execution",
             "real_netbsd_mmap_child_execution",
             "real_netbsd_fd_passing_child_execution",
+            "real_netbsd_namespace_child_execution",
             "real_netbsd_fs_service_child_execution",
             "real_netbsd_classifier_child_execution",
             "real_netbsd_socket_loopback_child_execution",
@@ -5030,6 +5045,7 @@ mod tests {
             "netbsd_timer_child",
             "netbsd_mmap_child",
             "netbsd_fd_passing_child",
+            "netbsd_namespace_child",
             "netbsd_fs_service_child",
             "netbsd_classifier_child",
             "netbsd_socket_loopback_child",
@@ -5077,6 +5093,7 @@ mod tests {
         assert_eq!(statuses["netbsd_timer_child"], "partial");
         assert_eq!(statuses["netbsd_mmap_child"], "partial");
         assert_eq!(statuses["netbsd_fd_passing_child"], "partial");
+        assert_eq!(statuses["netbsd_namespace_child"], "partial");
         assert_eq!(statuses["netbsd_fs_service_child"], "partial");
         assert_eq!(statuses["netbsd_classifier_child"], "partial");
         assert_eq!(statuses["netbsd_socket_loopback_child"], "partial");
@@ -5819,6 +5836,7 @@ mod tests {
             "netbsd_timer_child",
             "netbsd_mmap_child",
             "netbsd_fd_passing_child",
+            "netbsd_namespace_child",
             "netbsd_fs_service_child",
             "netbsd_classifier_child",
             "netbsd_socket_loopback_child",

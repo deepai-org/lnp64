@@ -3646,6 +3646,19 @@ grep -q 'errno_get r' "$netbsd_fd_passing_test_dump"
 printf 'real LLVM LNP64 clang NetBSD fd passing child object passed: %s\n' \
   "$netbsd_fd_passing_test_obj"
 
+netbsd_namespace_test_obj="$build_dir/netbsd-namespace-test-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
+  -c userland/namespace_test_clang.c -o "$netbsd_namespace_test_obj"
+test -s "$netbsd_namespace_test_obj"
+netbsd_namespace_test_dump="$build_dir/netbsd-namespace-test-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$netbsd_namespace_test_obj" \
+  >"$netbsd_namespace_test_dump"
+grep -q 'call ' "$netbsd_namespace_test_dump"
+printf 'real LLVM LNP64 clang NetBSD namespace child object passed: %s\n' \
+  "$netbsd_namespace_test_obj"
+
 netbsd_fs_service_test_obj="$build_dir/netbsd-fs-service-test-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
@@ -5362,6 +5375,14 @@ netbsd_fd_passing_test_elf="$build_dir/lnp64-netbsd-fd-passing-test-linked.elf"
 test -s "$netbsd_fd_passing_test_elf"
 printf 'real LLVM LNP64 lld NetBSD fd passing child link passed: %s\n' \
   "$netbsd_fd_passing_test_elf"
+
+netbsd_namespace_test_elf="$build_dir/lnp64-netbsd-namespace-test-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$netbsd_namespace_test_elf" "$crt0_obj" "$netbsd_namespace_test_obj" \
+  "$libc_fd_impl_obj" "$libc_meta_impl_obj" "$libc_errno_impl_obj"
+test -s "$netbsd_namespace_test_elf"
+printf 'real LLVM LNP64 lld NetBSD namespace child link passed: %s\n' \
+  "$netbsd_namespace_test_elf"
 
 netbsd_fs_service_test_elf="$build_dir/lnp64-netbsd-fs-service-test-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
