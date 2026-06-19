@@ -640,6 +640,8 @@ module lnp64_m1_assertions (
                             else $fatal(1, "M1 capSend changed duplicated cap authority");
                         assert (typed_state_projection.sent_valid)
                             else $fatal(1, "M1 capSend did not publish a sent-cap projection");
+                        assert (typed_state_projection.transfer_valid)
+                            else $fatal(1, "M1 capSend did not publish transfer-valid witness");
                         assert (m1_projection_cap_matches_commit(
                             typed_state_projection.sent_object_id,
                             typed_state_projection.sent_generation,

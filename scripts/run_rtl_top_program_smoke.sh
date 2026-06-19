@@ -849,6 +849,8 @@ def check_top_m1_refinement_step(
             )
         if post_state["sent_valid"] != 1:
             raise SystemExit(f"top-level M1 capSend {idx} did not publish a sent cap")
+        if post_state["transfer_valid"] != 1:
+            raise SystemExit(f"top-level M1 capSend {idx} did not publish valid-transfer witness")
         check_top_m1_projection_matches_commit("sent", commit, post_state, idx, "capSend")
         return
 

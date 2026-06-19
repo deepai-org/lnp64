@@ -601,6 +601,8 @@ module lnp64_top #(
                             LNP64_M1_COMMIT_CAP_SEND: begin
                                 assert (m1_state_projection_vec[m1_assert_i].sent_valid)
                                     else $fatal(1, "SG-AUTH M1 capSend did not project a sent cap");
+                                assert (m1_state_projection_vec[m1_assert_i].transfer_valid)
+                                    else $fatal(1, "SG-AUTH M1 capSend did not publish transfer-valid witness");
                                 assert (m1_state_projection_vec[m1_assert_i].sent_object_id ==
                                     m1_commit_vec[m1_assert_i].object_id)
                                     else $fatal(1, "SG-AUTH M1 sent object id drifted from cap-engine commit");
