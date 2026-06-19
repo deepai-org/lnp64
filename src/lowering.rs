@@ -1410,6 +1410,30 @@ mod tests {
         }
         assert_eq!(statuses["real_llc_build"], "tested");
         assert_eq!(statuses["real_mc_build"], "tested");
+        for requirement in [
+            "clang_zlib_adler32_object",
+            "clang_zlib_crc32_object",
+            "clang_zlib_package_object",
+            "clang_natsort_package_object",
+            "clang_jsmn_package_object",
+            "clang_inih_package_object",
+            "clang_cwalk_package_object",
+            "zlib_package_static_link",
+            "natsort_package_static_link",
+            "jsmn_package_static_link",
+            "inih_package_static_link",
+            "cwalk_package_static_link",
+            "zlib_package_run_elf",
+            "natsort_package_run_elf",
+            "jsmn_package_run_elf",
+            "inih_package_run_elf",
+            "cwalk_package_run_elf",
+        ] {
+            assert!(
+                gate_manifest.contains(requirement),
+                "real LLVM gate manifest missing package requirement {requirement}"
+            );
+        }
 
         for gate in [
             "gate_driver",
@@ -3729,6 +3753,11 @@ mod tests {
             "parallel_hash",
             "sqlite_lite",
             "ping_pong",
+            "zlib_checksum",
+            "natsort",
+            "jsmn",
+            "inih_parse_string",
+            "cwalk",
             "netcat",
             "httpd",
             "simple_libc",
@@ -3748,6 +3777,11 @@ mod tests {
             "parallel_hash",
             "sqlite_lite",
             "ping_pong",
+            "zlib_checksum",
+            "natsort",
+            "jsmn",
+            "inih_parse_string",
+            "cwalk",
         ] {
             assert_eq!(statuses[case], "tested", "{case} should be tested");
         }
