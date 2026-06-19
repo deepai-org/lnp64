@@ -16,6 +16,7 @@ mc_encoding_contract=toolchain/lnp64_mc_encoding.manifest
 intrinsic_contract=toolchain/lnp64_intrinsics.manifest
 intrinsic_lowering_contract=toolchain/lnp64_intrinsic_lowering.manifest
 intrinsic_header_contract=toolchain/lnp64_intrinsics.h
+target_intrinsic_header_contract=toolchain/include/lnp64/intrinsics.h
 clang_driver_contract=toolchain/lnp64_clang_driver.manifest
 llvm_filemap_contract=toolchain/lnp64_llvm_filemap.manifest
 libc_shim_contract=toolchain/lnp64_libc_shim.manifest

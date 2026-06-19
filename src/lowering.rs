@@ -3653,7 +3653,7 @@ mod tests {
         );
         assert_eq!(
             manifest_field(driver_manifest, "intrinsic_header"),
-            "toolchain/lnp64_intrinsics.h"
+            "toolchain/include/lnp64/intrinsics.h"
         );
         assert_eq!(
             manifest_field(driver_manifest, "loader_probe"),
@@ -6520,6 +6520,10 @@ mod tests {
             "toolchain/lnp64_intrinsics.h"
         );
         assert_eq!(
+            manifest_field(manifest, "target_intrinsic_header_contract"),
+            "toolchain/include/lnp64/intrinsics.h"
+        );
+        assert_eq!(
             manifest_field(manifest, "clang_driver_contract"),
             "toolchain/lnp64_clang_driver.manifest"
         );
@@ -6917,21 +6921,31 @@ mod tests {
         let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
         let intrinsic_manifest = include_str!("../toolchain/lnp64_intrinsics.manifest");
         let intrinsic_header = include_str!("../toolchain/lnp64_intrinsics.h");
+        let target_intrinsic_header = include_str!("../toolchain/include/lnp64/intrinsics.h");
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
         let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
         let roadmap = include_str!("../toolchain_roadmap.md");
         let rows = intrinsic_rows(intrinsic_manifest);
         let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let header_path = manifest_field(target_manifest, "intrinsic_header_contract");
+        let target_header_path =
+            manifest_field(target_manifest, "target_intrinsic_header_contract");
         let mut declarations = std::collections::BTreeSet::new();
 
         assert_eq!(header_path, "toolchain/lnp64_intrinsics.h");
+        assert_eq!(target_header_path, "toolchain/include/lnp64/intrinsics.h");
         assert!(manifest_root.join(header_path).is_file());
+        assert!(manifest_root.join(target_header_path).is_file());
         assert!(contract_index.contains(
             "intrinsic_header|toolchain/lnp64_intrinsics.h|intrinsic_header_matches_intrinsic_manifest"
         ));
+        assert!(contract_index.contains(
+            "target_intrinsic_header|toolchain/include/lnp64/intrinsics.h|target_intrinsic_header_wraps_canonical_header"
+        ));
         assert!(transition_manifest.contains("toolchain/lnp64_intrinsics.h"));
+        assert!(transition_manifest.contains("toolchain/include/lnp64/intrinsics.h"));
         assert!(roadmap.contains("toolchain/lnp64_intrinsics.h"));
+        assert!(target_intrinsic_header.contains("#include \"../../lnp64_intrinsics.h\""));
         assert!(intrinsic_header.contains("#ifndef LNP64_INTRINSICS_H"));
         assert!(intrinsic_header.contains("typedef unsigned long lnp64_word_t;"));
         assert!(intrinsic_header.contains("typedef lnp64_word_t lnp64_cap_t;"));
@@ -6959,6 +6973,25 @@ mod tests {
                 "private intrinsic header leaks compatibility word {forbidden}"
             );
         }
+    }
+
+    #[test]
+    fn target_intrinsic_header_wraps_canonical_header() {
+        let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
+        let target_intrinsic_header = include_str!("../toolchain/include/lnp64/intrinsics.h");
+        let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
+        let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
+        let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let target_header_path =
+            manifest_field(target_manifest, "target_intrinsic_header_contract");
+
+        assert_eq!(target_header_path, "toolchain/include/lnp64/intrinsics.h");
+        assert!(manifest_root.join(target_header_path).is_file());
+        assert!(target_intrinsic_header.contains("#include \"../../lnp64_intrinsics.h\""));
+        assert!(contract_index.contains(
+            "target_intrinsic_header|toolchain/include/lnp64/intrinsics.h|target_intrinsic_header_wraps_canonical_header"
+        ));
+        assert!(transition_manifest.contains("toolchain/include/lnp64/intrinsics.h"));
     }
 
     #[test]
