@@ -710,12 +710,18 @@ int main(void) {
   if (old_swap != 11 || cell != 42)
     return 6;
 
-  unsigned long old_cas = __sync_val_compare_and_swap(&cell, 42, 99);
-  if (old_cas != 42 || cell != 99)
+  unsigned long expected = 42;
+  int exchanged = __atomic_compare_exchange_n(&cell, &expected, 99, 0,
+                                              __ATOMIC_SEQ_CST,
+                                              __ATOMIC_SEQ_CST);
+  if (!exchanged || expected != 42 || cell != 99)
     return 7;
 
-  old_cas = __sync_val_compare_and_swap(&cell, 42, 123);
-  if (old_cas != 99 || cell != 99)
+  expected = 42;
+  exchanged = __atomic_compare_exchange_n(&cell, &expected, 123, 0,
+                                          __ATOMIC_SEQ_CST,
+                                          __ATOMIC_SEQ_CST);
+  if (exchanged || expected != 99 || cell != 99)
     return 8;
 
   return 0;

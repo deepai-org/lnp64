@@ -1513,7 +1513,7 @@ mod tests {
         assert!(real_llc.contains("__atomic_load_n"));
         assert!(real_llc.contains("__atomic_store_n"));
         assert!(real_llc.contains("__atomic_fetch_add"));
-        assert!(real_llc.contains("__sync_val_compare_and_swap"));
+        assert!(real_llc.contains("__atomic_compare_exchange_n"));
         assert!(real_llc.contains("grep -q 'lock.cmpxchg r'"));
         assert!(real_llc.contains("real LLVM LNP64 clang C11 atomic object smoke passed"));
         assert!(real_llc.contains("libc-string-clang-smoke.o"));
