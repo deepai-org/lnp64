@@ -2000,6 +2000,7 @@ mod tests {
         assert!(libc_startup_min.contains("int clearenv("));
         assert!(libc_startup_min.contains("int putenv("));
         assert!(libc_startup_min.contains("env_get %0, %1, %2, %3"));
+        assert!(unistd_header.contains("extern char **environ;"));
         assert!(real_llc.contains("liblnp64-startup-min.o"));
         assert!(
             real_llc.contains(

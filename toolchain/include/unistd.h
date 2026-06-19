@@ -21,6 +21,8 @@
 #define SEEK_CUR 1
 #define SEEK_END 2
 
+extern char **environ;
+
 int access(const char *path, int mode);
 unsigned int alarm(unsigned int seconds);
 int chdir(const char *path);
