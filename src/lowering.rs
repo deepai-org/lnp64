@@ -1326,6 +1326,7 @@ mod tests {
         let libc_sort_min = include_str!("../toolchain/liblnp64_sort_min.c");
         let libc_alloc_min = include_str!("../toolchain/liblnp64_alloc_min.c");
         let libc_fd_min = include_str!("../toolchain/liblnp64_fd_min.c");
+        let libc_meta_min = include_str!("../toolchain/liblnp64_meta_min.c");
         let libc_process_min = include_str!("../toolchain/liblnp64_process_min.c");
         let libc_errno_min = include_str!("../toolchain/liblnp64_errno_min.c");
         let libc_startup_min = include_str!("../toolchain/liblnp64_startup_min.c");
@@ -1430,6 +1431,8 @@ mod tests {
             "clang_sbase_command_objects",
             "clang_sbase_libutil_objects",
             "clang_sbase_support_object",
+            "clang_minilibc_meta_impl_object",
+            "clang_meta_libc_object",
             "clang_minilibc_random_impl_object",
             "clang_minilibc_stdio_impl_object",
             "clang_libc_test_argv_object",
@@ -1496,6 +1499,8 @@ mod tests {
             "sbase_path_run_elf",
             "sbase_cat_static_link",
             "sbase_cat_run_elf",
+            "metadata_libc_static_link",
+            "metadata_libc_run_elf",
         ] {
             assert!(
                 gate_manifest.contains(requirement),
@@ -2308,6 +2313,27 @@ mod tests {
             real_llc
                 .contains("real LLVM LNP64 clang minilibc fd implementation object smoke passed")
         );
+        assert!(real_llc.contains("toolchain/liblnp64_meta_min.c"));
+        assert!(libc_meta_min.contains("stat_path_at"));
+        assert!(libc_meta_min.contains("stat_fd_dyn"));
+        assert!(libc_meta_min.contains("utime_path_at"));
+        assert!(libc_meta_min.contains("utime_fd_dyn"));
+        assert!(libc_meta_min.contains("fcntl_fd_dyn"));
+        assert!(libc_meta_min.contains("lnp64_complete_status"));
+        assert!(real_llc.contains("liblnp64-meta-min.o"));
+        assert!(real_llc.contains("grep -q 'stat_path_at r'"));
+        assert!(real_llc.contains("grep -q 'stat_fd_dyn r'"));
+        assert!(real_llc.contains("grep -q 'utime_path_at r'"));
+        assert!(real_llc.contains("grep -q 'utime_fd_dyn r'"));
+        assert!(real_llc.contains("grep -q 'fcntl_fd_dyn r'"));
+        assert!(real_llc.contains("grep -q 'errno_get r'"));
+        assert!(real_llc.contains(
+            "real LLVM LNP64 clang minilibc metadata implementation object smoke passed"
+        ));
+        assert!(real_llc.contains("meta-libc-clang-smoke.o"));
+        assert!(real_llc.contains("futimens(-1, omit)"));
+        assert!(real_llc.contains("errno != EBADF"));
+        assert!(real_llc.contains("real LLVM LNP64 clang metadata libc object smoke passed"));
         assert!(real_llc.contains("stack-args-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang stack-argument object smoke passed"));
         assert!(real_llc.contains("toolchain/crt0_lnp64.s"));
@@ -2367,6 +2393,12 @@ mod tests {
         assert!(real_llc.contains("lnp64-write-linked.elf"));
         assert!(real_llc.contains(r#""$write_obj" "$libc_fd_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld write link smoke passed"));
+        assert!(real_llc.contains("lnp64-meta-libc-linked.elf"));
+        assert!(real_llc.contains(
+            r#""$meta_libc_obj" "$libc_meta_impl_obj" \
+  "$libc_fd_impl_obj" "$libc_errno_impl_obj""#
+        ));
+        assert!(real_llc.contains("real LLVM LNP64 lld metadata libc link smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_vma_min.c"));
         assert!(libc_vma_min.contains("void *mmap("));
         assert!(libc_vma_min.contains("int mprotect("));
@@ -3036,6 +3068,8 @@ mod tests {
         assert!(real_llc_docker.contains("lnp64-write-linked.elf"));
         assert!(real_llc_docker.contains("fd write ok"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf write execution passed"));
+        assert!(real_llc_docker.contains("lnp64-meta-libc-linked.elf"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf metadata libc execution passed"));
         assert!(real_llc_docker.contains("lnp64-mmap-libc-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf mmap libc execution passed"));
         assert!(real_llc_docker.contains("lnp64-futex-libc-linked.elf"));
@@ -3205,6 +3239,7 @@ mod tests {
             "real_sort_helper_execution",
             "real_read_execution",
             "real_write_execution",
+            "real_metadata_libc_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
             "real_poll_select_epoll_kqueue_libc_execution",
@@ -3273,6 +3308,7 @@ mod tests {
             "real_search_helper_execution",
             "real_sort_helper_execution",
             "real_write_execution",
+            "real_metadata_libc_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
             "real_poll_select_epoll_kqueue_libc_execution",
@@ -4206,8 +4242,18 @@ mod tests {
             ),
             (
                 "fd_io",
-                vec!["openat", "read", "write", "fcntl", "stdio"],
-                vec!["__lnp_openat", "__lnp_pull", "__lnp_push", "CAP_DUP", "FDR"],
+                vec![
+                    "openat", "read", "write", "fcntl", "stat", "fstat", "futimens", "stdio",
+                ],
+                vec![
+                    "__lnp_openat",
+                    "__lnp_pull",
+                    "__lnp_push",
+                    "CAP_DUP",
+                    "FDR",
+                    "GET_META",
+                    "SET_META",
+                ],
             ),
             (
                 "malloc_heap",

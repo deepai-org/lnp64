@@ -12,10 +12,33 @@
 #define O_APPEND 0x0400
 #define O_CLOEXEC 0x80000
 
+#define F_DUPFD 0
+#define F_GETFD 1
+#define F_SETFD 2
+#define F_GETFL 3
+#define F_SETFL 4
+#define F_GETLK 5
+#define F_SETLK 6
+#define F_SETLKW 7
+
+#define FD_CLOEXEC 1
+
+#define F_RDLCK 0
+#define F_WRLCK 1
+#define F_UNLCK 2
+
 #define AT_FDCWD (-100)
 #define AT_SYMLINK_NOFOLLOW 0x0100
 #define AT_SYMLINK_FOLLOW 0x0400
 #define AT_REMOVEDIR 0x0200
+
+struct flock {
+  short l_type;
+  short l_whence;
+  off_t l_start;
+  off_t l_len;
+  pid_t l_pid;
+};
 
 int open(const char *path, int flags, ...);
 int openat(int dirfd, const char *path, int flags, ...);

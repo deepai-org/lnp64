@@ -220,6 +220,8 @@ run_elf_report "real LLVM LNP64 run-elf read execution passed" \
 run_elf_report "real LLVM LNP64 run-elf write execution passed" \
   target/llvm-lnp64-build/lnp64-write-linked.elf \
   'fd write ok'
+run_elf_report "real LLVM LNP64 run-elf metadata libc execution passed" \
+  target/llvm-lnp64-build/lnp64-meta-libc-linked.elf
 run_elf_report "real LLVM LNP64 run-elf mmap libc execution passed" \
   target/llvm-lnp64-build/lnp64-mmap-libc-linked.elf
 run_elf_report "real LLVM LNP64 run-elf futex libc execution passed" \

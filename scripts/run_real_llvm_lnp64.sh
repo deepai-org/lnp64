@@ -3272,6 +3272,54 @@ grep -q 'call ' "$write_dump"
 printf 'real LLVM LNP64 clang write object smoke passed: %s\n' \
   "$write_obj"
 
+meta_libc_c="$build_dir/meta-libc-smoke.c"
+cat >"$meta_libc_c" <<'C'
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <time.h>
+#include <unistd.h>
+
+int main(void) {
+  struct stat st;
+  struct timespec omit[2] = {
+      {.tv_nsec = UTIME_OMIT},
+      {.tv_nsec = UTIME_OMIT},
+  };
+  int fd = open("Cargo.toml", O_RDONLY);
+  if (fd < 0)
+    return 1;
+  if (stat("Cargo.toml", &st) != 0)
+    return 2;
+  if (st.st_size <= 0)
+    return 3;
+  if (fstat(fd, &st) != 0)
+    return 4;
+  if (fcntl(fd, F_GETFD) < 0)
+    return 5;
+  errno = 0;
+  if (futimens(-1, omit) != -1)
+    return 6;
+  if (errno != EBADF)
+    return 7;
+  close(fd);
+  return 0;
+}
+C
+
+meta_libc_obj="$build_dir/meta-libc-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
+  -c "$meta_libc_c" -o "$meta_libc_obj"
+test -s "$meta_libc_obj"
+meta_libc_dump="$build_dir/meta-libc-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$meta_libc_obj" \
+  >"$meta_libc_dump"
+grep -q 'call ' "$meta_libc_dump"
+printf 'real LLVM LNP64 clang metadata libc object smoke passed: %s\n' \
+  "$meta_libc_obj"
+
 mmap_libc_c="$build_dir/mmap-libc-smoke.c"
 cat >"$mmap_libc_c" <<'C'
 typedef unsigned long size_t;
@@ -3620,6 +3668,25 @@ grep -q 'cap_revoke r' "$libc_fd_impl_dump"
 grep -q 'ret' "$libc_fd_impl_dump"
 printf 'real LLVM LNP64 clang minilibc fd implementation object smoke passed: %s\n' \
   "$libc_fd_impl_obj"
+
+libc_meta_impl_c="toolchain/liblnp64_meta_min.c"
+libc_meta_impl_obj="$build_dir/liblnp64-meta-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
+  -c "$libc_meta_impl_c" -o "$libc_meta_impl_obj"
+test -s "$libc_meta_impl_obj"
+libc_meta_impl_dump="$build_dir/liblnp64-meta-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_meta_impl_obj" \
+  >"$libc_meta_impl_dump"
+grep -q 'stat_path_at r' "$libc_meta_impl_dump"
+grep -q 'stat_fd_dyn r' "$libc_meta_impl_dump"
+grep -q 'utime_path_at r' "$libc_meta_impl_dump"
+grep -q 'utime_fd_dyn r' "$libc_meta_impl_dump"
+grep -q 'fcntl_fd_dyn r' "$libc_meta_impl_dump"
+grep -q 'errno_get r' "$libc_meta_impl_dump"
+printf 'real LLVM LNP64 clang minilibc metadata implementation object smoke passed: %s\n' \
+  "$libc_meta_impl_obj"
 
 libc_poll_impl_c="toolchain/liblnp64_poll_min.c"
 libc_poll_impl_obj="$build_dir/liblnp64-poll-min.o"
@@ -4521,6 +4588,14 @@ write_elf="$build_dir/lnp64-write-linked.elf"
 test -s "$write_elf"
 printf 'real LLVM LNP64 lld write link smoke passed: %s\n' \
   "$write_elf"
+
+meta_libc_elf="$build_dir/lnp64-meta-libc-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$meta_libc_elf" "$crt0_obj" "$meta_libc_obj" "$libc_meta_impl_obj" \
+  "$libc_fd_impl_obj" "$libc_errno_impl_obj"
+test -s "$meta_libc_elf"
+printf 'real LLVM LNP64 lld metadata libc link smoke passed: %s\n' \
+  "$meta_libc_elf"
 
 mmap_libc_elf="$build_dir/lnp64-mmap-libc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
