@@ -281,9 +281,12 @@ bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_signed_division
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_not.c
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_call_return.c
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_byte_array.c
+bash scripts/run_rtl_top_program_smoke.sh demos/allocator.c
 bash scripts/run_rtl_top_program_smoke.sh demos/allocator_native.s
 bash scripts/run_rtl_top_program_smoke.sh demos/env_get.s
 bash scripts/run_rtl_top_program_smoke.sh demos/exec_target.s
+bash scripts/run_rtl_top_program_smoke.sh demos/factorial.c
+bash scripts/run_rtl_top_program_smoke.sh demos/hello.c
 cargo run -- asm-flat-exec tests/rtl/programs/top_smoke.s -o /tmp/top_smoke.hex
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_smoke.hex
 bash scripts/run_rtl_m1.sh
@@ -304,9 +307,15 @@ images. For a manual multi-program loop, run one normal smoke first and then
 reuse the binary explicitly:
 
 ```sh
+LNP64_RTL_VERILATOR_BUILD_JOBS=0 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_manifest.sh
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_smoke.s
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_immediate_alu.s
 ```
+
+`LNP64_RTL_VERILATOR_BUILD_JOBS=0` lets Verilator use all available build jobs;
+set it to a fixed number such as `4` on shared machines. The top-program smoke
+script locks the shared build directory before preparing or compiling it, so
+parallel ad hoc probes do not corrupt the reusable Verilator object tree.
 
 Board validation commands require compatible hardware. Until then, Dockerized RTL/proof and synthesis/FPGA-smoke gates are the reproducible evidence path.
 

@@ -208,11 +208,32 @@
     {"source": "demos/system.s", "required_features": ["core", "object", "scheduler", "service"], "status": "blocked_by_features"}
   ],
   "compiler_generated_programs": [
-    {"source": "demos/allocator.c", "generated_assembly": "/tmp/allocator.s", "required_features": ["core", "heap"], "status": "blocked_by_features"},
+    {
+      "source": "demos/allocator.c",
+      "generated_assembly": "/tmp/allocator.s",
+      "required_features": ["core", "heap", "load_store", "free", "write_fd", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    },
     {"source": "demos/cat.c", "generated_assembly": "/tmp/cat.s", "required_features": ["core", "storage", "personality"], "status": "blocked_by_features"},
-    {"source": "demos/factorial.c", "generated_assembly": "/tmp/factorial.s", "required_features": ["core", "branch", "stack"], "status": "blocked_by_features"},
+    {
+      "source": "demos/factorial.c",
+      "generated_assembly": "/tmp/factorial.s",
+      "required_features": ["core", "branch", "stack", "mul", "write_fd", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    },
     {"source": "demos/fibonacci.c", "generated_assembly": "/tmp/fibonacci.s", "required_features": ["core", "branch", "stack"], "status": "blocked_by_features"},
-    {"source": "demos/hello.c", "generated_assembly": "/tmp/hello.s", "required_features": ["core", "personality_output"], "status": "blocked_by_features"},
+    {
+      "source": "demos/hello.c",
+      "generated_assembly": "/tmp/hello.s",
+      "required_features": ["core", "data_labels", "write_fd", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    },
     {"source": "demos/httpd.c", "generated_assembly": "/tmp/httpd.s", "required_features": ["core", "networking", "personality"], "status": "blocked_by_features"},
     {"source": "demos/json_parser.c", "generated_assembly": "/tmp/json_parser.s", "required_features": ["core", "memory", "stack"], "status": "blocked_by_features"},
     {"source": "demos/netbsd_personality_smoke.c", "generated_assembly": "/tmp/netbsd_personality_smoke.s", "required_features": ["core", "netbsd_personality"], "status": "blocked_by_features"},

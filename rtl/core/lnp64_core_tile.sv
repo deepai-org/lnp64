@@ -1150,6 +1150,7 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_WRITE_FD: begin
+                                gpr[1] <= gpr[dec.rs2];
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;

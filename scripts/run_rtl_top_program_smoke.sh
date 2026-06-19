@@ -38,6 +38,7 @@ common_flags=(
 mapfile -t rtl_files < tests/rtl/top_program_filelist.f
 
 build_dir="$(rtl_build_dir "top_program")"
+rtl_lock_build_dir "$build_dir"
 rtl_prepare_build_dir "$build_dir"
 
 program_input="${1:-tests/rtl/programs/top_smoke.s}"
@@ -81,8 +82,12 @@ if [[ "${LNP64_RTL_TOP_PROGRAM_SKIP_BUILD:-0}" == "1" ]]; then
     exit 1
   fi
 else
+  mapfile -t verilator_build_job_args < <(rtl_verilator_build_job_args)
   rtl_lint "${common_flags[@]}" "${rtl_files[@]}"
-  verilator --binary --Mdir "$build_dir" "${common_flags[@]}" "${rtl_files[@]}" >/tmp/lnp64_rtl_top_program_build.log
+  verilator --binary --Mdir "$build_dir" "${verilator_build_job_args[@]}" "${common_flags[@]}" "${rtl_files[@]}" >/tmp/lnp64_rtl_top_program_build.log
+fi
+if [[ -n "${LNP64_RTL_BUILD_LOCK_FD:-}" ]]; then
+  flock -u "$LNP64_RTL_BUILD_LOCK_FD"
 fi
 rtl_plusargs=("+lnp64_program_hex=$program_hex")
 if [[ -n "$program_data_hex" && -s "$program_data_hex" ]]; then

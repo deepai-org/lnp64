@@ -13,6 +13,7 @@ fi
 
 export LNP64_RTL_REUSE_BUILD="${LNP64_RTL_REUSE_BUILD:-1}"
 export LNP64_RTL_BUILD_ROOT="${LNP64_RTL_BUILD_ROOT:-$root/target/rtl-verilator}"
+first_program_reuse_build="$LNP64_RTL_REUSE_BUILD"
 
 if [[ "$#" -gt 0 ]]; then
   programs=("$@")
@@ -23,7 +24,7 @@ import json
 from pathlib import Path
 
 manifest = json.loads(Path("tests/rtl/top_level_program_manifest.json").read_text(encoding="utf-8"))
-for section in ("flat_hex_programs", "compiler_flat_programs", "assembly_programs"):
+for section in ("flat_hex_programs", "compiler_flat_programs", "assembly_programs", "compiler_generated_programs"):
     for entry in manifest[section]:
         if entry["status"] == "active":
             print(entry["source"])
@@ -41,8 +42,10 @@ for program in "${programs[@]}"; do
   printf '\n==> top-level RTL program: %s\n' "$program"
   if [[ "$first" -eq 1 ]]; then
     first=0
-    bash scripts/run_rtl_top_program_smoke.sh "$program"
+    LNP64_RTL_REUSE_BUILD="$first_program_reuse_build" \
+      bash scripts/run_rtl_top_program_smoke.sh "$program"
   else
+    LNP64_RTL_REUSE_BUILD=1 \
     LNP64_RTL_SKIP_LINT="${LNP64_RTL_SKIP_LINT:-1}" \
       LNP64_RTL_TOP_PROGRAM_SKIP_BUILD="${LNP64_RTL_TOP_PROGRAM_SKIP_BUILD:-1}" \
       bash scripts/run_rtl_top_program_smoke.sh "$program"
