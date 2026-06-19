@@ -334,6 +334,16 @@ _start:
   fcntl_fd_dyn r13, r14, r15
   fd_seek_dyn r16, r17, r18
   unlink_path_at r19, r20, r21
+  open_dir_dyn r22, r23, r24
+  mkdir_path_at r25, r26, r27
+  rename_path_at r1, r2, r3, r4
+  link_path_at r5, r6, r7, r8, r9
+  symlink_path_at r10, r11, r12
+  readlink_path_at r13, r14, r15, r16
+  chdir_path r17
+  getcwd_path r18, r19
+  chmod_path_at r20, r21, r22, r23
+  chown_path_at r24, r25, r26, r27, r28
   ret
 ASM
   compat_meta_mc_obj="$build_dir/compat-meta-mc-smoke.o"
@@ -350,6 +360,16 @@ ASM
   grep -q 'fcntl_fd_dyn r13, r14, r15' "$compat_meta_mc_dump"
   grep -q 'fd_seek_dyn r16, r17, r18' "$compat_meta_mc_dump"
   grep -q 'unlink_path_at r19, r20, r21' "$compat_meta_mc_dump"
+  grep -q 'open_dir_dyn r22, r23, r24' "$compat_meta_mc_dump"
+  grep -q 'mkdir_path_at r25, r26, r27' "$compat_meta_mc_dump"
+  grep -q 'rename_path_at r1, r2, r3, r4' "$compat_meta_mc_dump"
+  grep -q 'link_path_at r5, r6, r7, r8, r9' "$compat_meta_mc_dump"
+  grep -q 'symlink_path_at r10, r11, r12' "$compat_meta_mc_dump"
+  grep -q 'readlink_path_at r13, r14, r15, r16' "$compat_meta_mc_dump"
+  grep -q 'chdir_path r17' "$compat_meta_mc_dump"
+  grep -q 'getcwd_path r18, r19' "$compat_meta_mc_dump"
+  grep -q 'chmod_path_at r20, r21, r22, r23' "$compat_meta_mc_dump"
+  grep -q 'chown_path_at r24, r25, r26, r27, r28' "$compat_meta_mc_dump"
   printf 'real LLVM LNP64 llvm-mc compatibility metadata opcode smoke passed: %s\n' \
     "$compat_meta_mc_obj"
 
@@ -4382,6 +4402,16 @@ _start:
   fcntl_fd_dyn r13, r14, r15
   fd_seek_dyn r16, r17, r18
   unlink_path_at r19, r20, r21
+  open_dir_dyn r22, r23, r24
+  mkdir_path_at r25, r26, r27
+  rename_path_at r1, r2, r3, r4
+  link_path_at r5, r6, r7, r8, r9
+  symlink_path_at r10, r11, r12
+  readlink_path_at r13, r14, r15, r16
+  chdir_path r17
+  getcwd_path r18, r19
+  chmod_path_at r20, r21, r22, r23
+  chown_path_at r24, r25, r26, r27, r28
   ret
 ASM
 compat_meta_mc_obj="$build_dir/compat-meta-mc-smoke.o"
@@ -4398,6 +4428,16 @@ grep -q 'utime_fd_dyn r11, r12' "$compat_meta_mc_dump"
 grep -q 'fcntl_fd_dyn r13, r14, r15' "$compat_meta_mc_dump"
 grep -q 'fd_seek_dyn r16, r17, r18' "$compat_meta_mc_dump"
 grep -q 'unlink_path_at r19, r20, r21' "$compat_meta_mc_dump"
+grep -q 'open_dir_dyn r22, r23, r24' "$compat_meta_mc_dump"
+grep -q 'mkdir_path_at r25, r26, r27' "$compat_meta_mc_dump"
+grep -q 'rename_path_at r1, r2, r3, r4' "$compat_meta_mc_dump"
+grep -q 'link_path_at r5, r6, r7, r8, r9' "$compat_meta_mc_dump"
+grep -q 'symlink_path_at r10, r11, r12' "$compat_meta_mc_dump"
+grep -q 'readlink_path_at r13, r14, r15, r16' "$compat_meta_mc_dump"
+grep -q 'chdir_path r17' "$compat_meta_mc_dump"
+grep -q 'getcwd_path r18, r19' "$compat_meta_mc_dump"
+grep -q 'chmod_path_at r20, r21, r22, r23' "$compat_meta_mc_dump"
+grep -q 'chown_path_at r24, r25, r26, r27, r28' "$compat_meta_mc_dump"
 printf 'real LLVM LNP64 llvm-mc compatibility metadata opcode smoke passed: %s\n' \
   "$compat_meta_mc_obj"
 

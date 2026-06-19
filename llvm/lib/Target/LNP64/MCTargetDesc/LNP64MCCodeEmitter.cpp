@@ -651,11 +651,74 @@ public:
                                 getGPRNo(MI.getOperand(2))),
                OS);
       return;
+    case LNP64::OPEN_DIR_DYN:
+      emitLE32(encodeFixed32RRR(0x73, getGPRNo(MI.getOperand(0)),
+                                getGPRNo(MI.getOperand(1)),
+                                getGPRNo(MI.getOperand(2))),
+               OS);
+      return;
+    case LNP64::MKDIR_PATH_AT:
+      emitLE32(encodeFixed32RRR(0x74, getGPRNo(MI.getOperand(0)),
+                                getGPRNo(MI.getOperand(1)),
+                                getGPRNo(MI.getOperand(2))),
+               OS);
+      return;
     case LNP64::UNLINK_PATH_AT:
       emitLE32(encodeFixed32RRR(0x6b, getGPRNo(MI.getOperand(0)),
                                 getGPRNo(MI.getOperand(1)),
                                 getGPRNo(MI.getOperand(2))),
                OS);
+      return;
+    case LNP64::RENAME_PATH_AT:
+      emitLE32(encodeFixed32RRRR(0x75, getGPRNo(MI.getOperand(0)),
+                                 getGPRNo(MI.getOperand(1)),
+                                 getGPRNo(MI.getOperand(2)),
+                                 getGPRNo(MI.getOperand(3))),
+               OS);
+      return;
+    case LNP64::LINK_PATH_AT:
+      emitLE32(encodeFixed32RRRR(0x76, getGPRNo(MI.getOperand(0)),
+                                 getGPRNo(MI.getOperand(1)),
+                                 getGPRNo(MI.getOperand(2)),
+                                 getGPRNo(MI.getOperand(3))),
+               OS);
+      emitLE32(getGPRNo(MI.getOperand(4)) & 0x1f, OS);
+      return;
+    case LNP64::SYMLINK_PATH_AT:
+      emitLE32(encodeFixed32RRR(0x77, getGPRNo(MI.getOperand(0)),
+                                getGPRNo(MI.getOperand(1)),
+                                getGPRNo(MI.getOperand(2))),
+               OS);
+      return;
+    case LNP64::READLINK_PATH_AT:
+      emitLE32(encodeFixed32RRRR(0x78, getGPRNo(MI.getOperand(0)),
+                                 getGPRNo(MI.getOperand(1)),
+                                 getGPRNo(MI.getOperand(2)),
+                                 getGPRNo(MI.getOperand(3))),
+               OS);
+      return;
+    case LNP64::CHDIR_PATH:
+      emitLE32(encodeFixed32Reg(0x79, getGPRNo(MI.getOperand(0))), OS);
+      return;
+    case LNP64::GETCWD_PATH:
+      emitLE32(encodeFixed32RR(0x7a, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
+    case LNP64::CHMOD_PATH_AT:
+      emitLE32(encodeFixed32RRRR(0x7b, getGPRNo(MI.getOperand(0)),
+                                 getGPRNo(MI.getOperand(1)),
+                                 getGPRNo(MI.getOperand(2)),
+                                 getGPRNo(MI.getOperand(3))),
+               OS);
+      return;
+    case LNP64::CHOWN_PATH_AT:
+      emitLE32(encodeFixed32RRRR(0x7c, getGPRNo(MI.getOperand(0)),
+                                 getGPRNo(MI.getOperand(1)),
+                                 getGPRNo(MI.getOperand(2)),
+                                 getGPRNo(MI.getOperand(3))),
+               OS);
+      emitLE32(getGPRNo(MI.getOperand(4)) & 0x1f, OS);
       return;
     case LNP64::STAT_PATH_AT:
       emitLE32(encodeFixed32RRRR(0x5c, getGPRNo(MI.getOperand(0)),

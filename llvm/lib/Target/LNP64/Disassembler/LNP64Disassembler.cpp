@@ -583,11 +583,85 @@ public:
       addReg(Instr, B);
       addReg(Instr, C);
       return MCDisassembler::Success;
+    case 0x73:
+      Instr.setOpcode(LNP64::OPEN_DIR_DYN);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0x74:
+      Instr.setOpcode(LNP64::MKDIR_PATH_AT);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
     case 0x6b:
       Instr.setOpcode(LNP64::UNLINK_PATH_AT);
       addReg(Instr, A);
       addReg(Instr, B);
       addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0x75:
+      Instr.setOpcode(LNP64::RENAME_PATH_AT);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      addReg(Instr, (Word >> 4) & 0x1f);
+      return MCDisassembler::Success;
+    case 0x76:
+      if (Bytes.size() < 8) {
+        Size = 0;
+        return MCDisassembler::Fail;
+      }
+      Size = 8;
+      Instr.setOpcode(LNP64::LINK_PATH_AT);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      addReg(Instr, (Word >> 4) & 0x1f);
+      addReg(Instr, readLE32At(Bytes, 4) & 0x1f);
+      return MCDisassembler::Success;
+    case 0x77:
+      Instr.setOpcode(LNP64::SYMLINK_PATH_AT);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
+    case 0x78:
+      Instr.setOpcode(LNP64::READLINK_PATH_AT);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      addReg(Instr, (Word >> 4) & 0x1f);
+      return MCDisassembler::Success;
+    case 0x79:
+      Instr.setOpcode(LNP64::CHDIR_PATH);
+      addReg(Instr, A);
+      return MCDisassembler::Success;
+    case 0x7a:
+      Instr.setOpcode(LNP64::GETCWD_PATH);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      return MCDisassembler::Success;
+    case 0x7b:
+      Instr.setOpcode(LNP64::CHMOD_PATH_AT);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      addReg(Instr, (Word >> 4) & 0x1f);
+      return MCDisassembler::Success;
+    case 0x7c:
+      if (Bytes.size() < 8) {
+        Size = 0;
+        return MCDisassembler::Fail;
+      }
+      Size = 8;
+      Instr.setOpcode(LNP64::CHOWN_PATH_AT);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      addReg(Instr, (Word >> 4) & 0x1f);
+      addReg(Instr, readLE32At(Bytes, 4) & 0x1f);
       return MCDisassembler::Success;
     case 0x5c:
       Instr.setOpcode(LNP64::STAT_PATH_AT);

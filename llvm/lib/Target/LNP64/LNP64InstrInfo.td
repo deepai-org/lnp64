@@ -207,6 +207,13 @@ class LNP64Status4<string Mnemonic>
     : LNP64Inst<(outs), (ins GPR:$arg0, GPR:$arg1, GPR:$arg2, GPR:$arg3),
                 Mnemonic, "\t$arg0, $arg1, $arg2, $arg3">;
 
+class LNP64Status5<string Mnemonic>
+    : LNP64Inst<(outs), (ins GPR:$arg0, GPR:$arg1, GPR:$arg2, GPR:$arg3,
+                         GPR:$arg4),
+                Mnemonic, "\t$arg0, $arg1, $arg2, $arg3, $arg4"> {
+  let Size = 8;
+}
+
 class LNP64Status3<string Mnemonic>
     : LNP64Inst<(outs), (ins GPR:$arg0, GPR:$arg1, GPR:$arg2),
                 Mnemonic, "\t$arg0, $arg1, $arg2">;
@@ -214,6 +221,9 @@ class LNP64Status3<string Mnemonic>
 class LNP64Status2<string Mnemonic>
     : LNP64Inst<(outs), (ins GPR:$arg0, GPR:$arg1), Mnemonic,
                 "\t$arg0, $arg1">;
+
+class LNP64Status1<string Mnemonic>
+    : LNP64Inst<(outs), (ins GPR:$arg0), Mnemonic, "\t$arg0">;
 
 class LNP64RuntimeGet<string Mnemonic>
     : LNP64Inst<(outs GPR:$rd), (ins), Mnemonic, "\t$rd">;
@@ -669,7 +679,17 @@ def FREE : LNP64RuntimeSet<"free">;
 def OPEN_AT : LNP64Native4<"open_at">;
 def CLONE_SPAWN : LNP64RRR<"clone.spawn">;
 def THREAD_JOIN : LNP64RRR<"thread_join">;
+def OPEN_DIR_DYN : LNP64Status3<"open_dir_dyn">;
+def MKDIR_PATH_AT : LNP64Status3<"mkdir_path_at">;
 def UNLINK_PATH_AT : LNP64Status3<"unlink_path_at">;
+def RENAME_PATH_AT : LNP64Status4<"rename_path_at">;
+def LINK_PATH_AT : LNP64Status5<"link_path_at">;
+def SYMLINK_PATH_AT : LNP64Status3<"symlink_path_at">;
+def READLINK_PATH_AT : LNP64Status4<"readlink_path_at">;
+def CHDIR_PATH : LNP64Status1<"chdir_path">;
+def GETCWD_PATH : LNP64Status2<"getcwd_path">;
+def CHMOD_PATH_AT : LNP64Status4<"chmod_path_at">;
+def CHOWN_PATH_AT : LNP64Status5<"chown_path_at">;
 def STAT_PATH_AT : LNP64Status4<"stat_path_at">;
 def STAT_FD_DYN : LNP64Status2<"stat_fd_dyn">;
 def UTIME_PATH_AT : LNP64Status4<"utime_path_at">;

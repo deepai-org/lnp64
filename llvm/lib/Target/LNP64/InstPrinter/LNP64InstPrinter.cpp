@@ -214,8 +214,28 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
     return "clone.spawn";
   case LNP64::THREAD_JOIN:
     return "thread_join";
+  case LNP64::OPEN_DIR_DYN:
+    return "open_dir_dyn";
+  case LNP64::MKDIR_PATH_AT:
+    return "mkdir_path_at";
   case LNP64::UNLINK_PATH_AT:
     return "unlink_path_at";
+  case LNP64::RENAME_PATH_AT:
+    return "rename_path_at";
+  case LNP64::LINK_PATH_AT:
+    return "link_path_at";
+  case LNP64::SYMLINK_PATH_AT:
+    return "symlink_path_at";
+  case LNP64::READLINK_PATH_AT:
+    return "readlink_path_at";
+  case LNP64::CHDIR_PATH:
+    return "chdir_path";
+  case LNP64::GETCWD_PATH:
+    return "getcwd_path";
+  case LNP64::CHMOD_PATH_AT:
+    return "chmod_path_at";
+  case LNP64::CHOWN_PATH_AT:
+    return "chown_path_at";
   case LNP64::STAT_PATH_AT:
     return "stat_path_at";
   case LNP64::STAT_FD_DYN:
@@ -493,6 +513,7 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::EXIT:
   case LNP64::FREE:
   case LNP64::SIGMASK_SET:
+  case LNP64::CHDIR_PATH:
   case LNP64::CSET_EQ:
   case LNP64::CSET_NE:
   case LNP64::CSET_LT:
@@ -510,6 +531,7 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::ALLOC_SIZE:
   case LNP64::MUNMAP:
   case LNP64::ALARM:
+  case LNP64::GETCWD_PATH:
   case LNP64::GET_PCR:
   case LNP64::OBJECT_CTL:
   case LNP64::DOMAIN_CTL:
@@ -545,7 +567,10 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::ALLOC_EX:
   case LNP64::FCNTL_FD_DYN:
   case LNP64::FD_SEEK_DYN:
+  case LNP64::OPEN_DIR_DYN:
+  case LNP64::MKDIR_PATH_AT:
   case LNP64::UNLINK_PATH_AT:
+  case LNP64::SYMLINK_PATH_AT:
     OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
     printOperand(MI->getOperand(0), OS);
     OS << ", ";
@@ -565,6 +590,9 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::LOCK_CMPXCHG:
   case LNP64::STAT_PATH_AT:
   case LNP64::UTIME_PATH_AT:
+  case LNP64::RENAME_PATH_AT:
+  case LNP64::READLINK_PATH_AT:
+  case LNP64::CHMOD_PATH_AT:
     OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
     printOperand(MI->getOperand(0), OS);
     OS << ", ";
@@ -573,6 +601,19 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
     printOperand(MI->getOperand(2), OS);
     OS << ", ";
     printOperand(MI->getOperand(3), OS);
+    break;
+  case LNP64::LINK_PATH_AT:
+  case LNP64::CHOWN_PATH_AT:
+    OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
+    printOperand(MI->getOperand(0), OS);
+    OS << ", ";
+    printOperand(MI->getOperand(1), OS);
+    OS << ", ";
+    printOperand(MI->getOperand(2), OS);
+    OS << ", ";
+    printOperand(MI->getOperand(3), OS);
+    OS << ", ";
+    printOperand(MI->getOperand(4), OS);
     break;
   case LNP64::LD:
   case LNP64::LD_W:

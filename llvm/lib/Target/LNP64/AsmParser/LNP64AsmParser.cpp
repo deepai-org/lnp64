@@ -430,7 +430,17 @@ private:
             .Case("open_at", LNP64::OPEN_AT)
             .Case("clone.spawn", LNP64::CLONE_SPAWN)
             .Case("thread_join", LNP64::THREAD_JOIN)
+            .Case("open_dir_dyn", LNP64::OPEN_DIR_DYN)
+            .Case("mkdir_path_at", LNP64::MKDIR_PATH_AT)
             .Case("unlink_path_at", LNP64::UNLINK_PATH_AT)
+            .Case("rename_path_at", LNP64::RENAME_PATH_AT)
+            .Case("link_path_at", LNP64::LINK_PATH_AT)
+            .Case("symlink_path_at", LNP64::SYMLINK_PATH_AT)
+            .Case("readlink_path_at", LNP64::READLINK_PATH_AT)
+            .Case("chdir_path", LNP64::CHDIR_PATH)
+            .Case("getcwd_path", LNP64::GETCWD_PATH)
+            .Case("chmod_path_at", LNP64::CHMOD_PATH_AT)
+            .Case("chown_path_at", LNP64::CHOWN_PATH_AT)
             .Case("stat_path_at", LNP64::STAT_PATH_AT)
             .Case("stat_fd_dyn", LNP64::STAT_FD_DYN)
             .Case("utime_path_at", LNP64::UTIME_PATH_AT)
@@ -504,14 +514,17 @@ private:
         Opcode == LNP64::CSEL_ULE || Opcode == LNP64::CSEL_UGE)
       return addRegRegReg(Inst, Operands);
     if (Opcode == LNP64::FCNTL_FD_DYN || Opcode == LNP64::FD_SEEK_DYN ||
-        Opcode == LNP64::UNLINK_PATH_AT)
+        Opcode == LNP64::OPEN_DIR_DYN || Opcode == LNP64::MKDIR_PATH_AT ||
+        Opcode == LNP64::UNLINK_PATH_AT ||
+        Opcode == LNP64::SYMLINK_PATH_AT)
       return addRegRegReg(Inst, Operands);
     if (Opcode == LNP64::CMP || Opcode == LNP64::CMPU ||
         Opcode == LNP64::FUTEX_WAIT || Opcode == LNP64::FUTEX_WAKE ||
         Opcode == LNP64::MUNMAP || Opcode == LNP64::SIGACTION ||
         Opcode == LNP64::LNP64_KILL || Opcode == LNP64::ALARM ||
         Opcode == LNP64::GET_PCR ||
-        Opcode == LNP64::STAT_FD_DYN || Opcode == LNP64::UTIME_FD_DYN)
+        Opcode == LNP64::STAT_FD_DYN || Opcode == LNP64::UTIME_FD_DYN ||
+        Opcode == LNP64::GETCWD_PATH)
       return addRegReg(Inst, Operands);
     if (Opcode == LNP64::SET_PCR)
       return addRegPcrReg(Inst, Operands);
@@ -530,7 +543,7 @@ private:
       return addReg(Inst, Operands);
     if (Opcode == LNP64::ERRNO_GET || Opcode == LNP64::ERRNO_SET ||
         Opcode == LNP64::EXIT || Opcode == LNP64::FREE ||
-        Opcode == LNP64::SIGMASK_SET)
+        Opcode == LNP64::SIGMASK_SET || Opcode == LNP64::CHDIR_PATH)
       return addReg(Inst, Operands);
     if (Opcode == LNP64::ALLOC || Opcode == LNP64::ALLOC_SIZE)
       return addRegReg(Inst, Operands);
@@ -547,8 +560,12 @@ private:
         Opcode == LNP64::MPROTECT || Opcode == LNP64::ENV_GET ||
         Opcode == LNP64::OPEN_AT || Opcode == LNP64::PULL ||
         Opcode == LNP64::PUSH || Opcode == LNP64::STAT_PATH_AT ||
-        Opcode == LNP64::UTIME_PATH_AT)
+        Opcode == LNP64::UTIME_PATH_AT || Opcode == LNP64::RENAME_PATH_AT ||
+        Opcode == LNP64::READLINK_PATH_AT ||
+        Opcode == LNP64::CHMOD_PATH_AT)
       return addRegRegRegReg(Inst, Operands);
+    if (Opcode == LNP64::LINK_PATH_AT || Opcode == LNP64::CHOWN_PATH_AT)
+      return addRegRegRegRegReg(Inst, Operands);
     if (Opcode == LNP64::LD || Opcode == LNP64::LD_W ||
         Opcode == LNP64::LD_H || Opcode == LNP64::LD_B)
       return addLoad(Inst, Operands);
@@ -669,6 +686,25 @@ private:
     Inst.addOperand(MCOperand::createReg(B->getReg()));
     Inst.addOperand(MCOperand::createReg(C->getReg()));
     Inst.addOperand(MCOperand::createReg(D->getReg()));
+    return true;
+  }
+
+  static bool addRegRegRegRegReg(MCInst &Inst,
+                                 const OperandVector &Operands) {
+    const LNP64Operand *A = getOp(Operands, 1);
+    const LNP64Operand *B = getOp(Operands, 2);
+    const LNP64Operand *C = getOp(Operands, 3);
+    const LNP64Operand *D = getOp(Operands, 4);
+    const LNP64Operand *E = getOp(Operands, 5);
+    if (Operands.size() != 6 || !A || !B || !C || !D || !E ||
+        !A->isReg() || !B->isReg() || !C->isReg() || !D->isReg() ||
+        !E->isReg())
+      return false;
+    Inst.addOperand(MCOperand::createReg(A->getReg()));
+    Inst.addOperand(MCOperand::createReg(B->getReg()));
+    Inst.addOperand(MCOperand::createReg(C->getReg()));
+    Inst.addOperand(MCOperand::createReg(D->getReg()));
+    Inst.addOperand(MCOperand::createReg(E->getReg()));
     return true;
   }
 

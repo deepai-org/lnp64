@@ -6605,6 +6605,23 @@ mod tests {
                 .1
                 .contains(&"UNLINK_PATH_AT")
         );
+        for opcode in [
+            "OPEN_DIR_DYN",
+            "MKDIR_PATH_AT",
+            "RENAME_PATH_AT",
+            "LINK_PATH_AT",
+            "SYMLINK_PATH_AT",
+            "READLINK_PATH_AT",
+            "CHDIR_PATH",
+            "GETCWD_PATH",
+            "CHMOD_PATH_AT",
+            "CHOWN_PATH_AT",
+        ] {
+            assert!(
+                groups["compat_namespace_control"].1.contains(&opcode),
+                "missing namespace opcode {opcode}"
+            );
+        }
         assert!(!groups.contains_key("native_control_planned"));
         assert!(asm_parser.contains(r#".Case("clone.spawn", LNP64::CLONE_SPAWN)"#));
         assert!(asm_parser.contains(r#".Case("thread_join", LNP64::THREAD_JOIN)"#));
@@ -6643,6 +6660,23 @@ mod tests {
         assert!(disassembler.contains("Instr.setOpcode(LNP64::UTIME_FD_DYN)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::FCNTL_FD_DYN)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::FD_SEEK_DYN)"));
+        for (mnemonic, opcode) in [
+            ("open_dir_dyn", "OPEN_DIR_DYN"),
+            ("mkdir_path_at", "MKDIR_PATH_AT"),
+            ("rename_path_at", "RENAME_PATH_AT"),
+            ("link_path_at", "LINK_PATH_AT"),
+            ("symlink_path_at", "SYMLINK_PATH_AT"),
+            ("readlink_path_at", "READLINK_PATH_AT"),
+            ("chdir_path", "CHDIR_PATH"),
+            ("getcwd_path", "GETCWD_PATH"),
+            ("chmod_path_at", "CHMOD_PATH_AT"),
+            ("chown_path_at", "CHOWN_PATH_AT"),
+        ] {
+            assert!(asm_parser.contains(&format!(r#".Case("{mnemonic}", LNP64::{opcode})"#)));
+            assert!(inst_printer.contains(&format!(r#"return "{mnemonic}";"#)));
+            assert!(mc_emitter.contains(&format!("case LNP64::{opcode}")));
+            assert!(disassembler.contains(&format!("Instr.setOpcode(LNP64::{opcode})")));
+        }
         assert!(asm_parser.contains(r#".Case("cap_send", LNP64::CAP_SEND)"#));
         assert!(asm_parser.contains(r#".Case("cap_recv", LNP64::CAP_RECV)"#));
         assert!(asm_parser.contains(r#".Case("cap_dup", LNP64::CAP_DUP)"#));
