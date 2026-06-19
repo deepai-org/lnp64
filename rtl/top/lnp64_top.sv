@@ -489,6 +489,26 @@ module lnp64_top #(
         end
     endfunction
 
+    function automatic logic top_m1_non_ok_failure_witness_matches(
+        input lnp64_m1_cap_commit_t commit,
+        input lnp64_m1_state_projection_t state
+    );
+        begin
+            unique case (commit.status)
+                LNP64_ERR_ESTALE:
+                    top_m1_non_ok_failure_witness_matches =
+                        state.stale_rejected && state.revoked_rejected;
+                LNP64_ERR_EPERM,
+                LNP64_ERR_EBADF:
+                    top_m1_non_ok_failure_witness_matches = state.failed_no_authority;
+                LNP64_ERR_EAGAIN:
+                    top_m1_non_ok_failure_witness_matches = state.full_was_explicit;
+                default:
+                    top_m1_non_ok_failure_witness_matches = 1'b1;
+            endcase
+        end
+    endfunction
+
     integer m1_assert_i;
     always_ff @(posedge clk or negedge logic_reset_n) begin
         if (!logic_reset_n) begin
@@ -557,6 +577,10 @@ module lnp64_top #(
                             m1_pre_state_projection_vec[m1_assert_i],
                             m1_state_projection_vec[m1_assert_i]
                         )) else $fatal(1, "SG-AUTH M1 non-OK top-level commit changed authority projection slots");
+                        assert (top_m1_non_ok_failure_witness_matches(
+                            m1_commit_vec[m1_assert_i],
+                            m1_state_projection_vec[m1_assert_i]
+                        )) else $fatal(1, "SG-AUTH M1 non-OK top-level commit lacked matching failure witness");
                     end
                 end
             end
