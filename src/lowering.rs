@@ -4286,8 +4286,9 @@ mod tests {
         assert!(run_software.contains("bash scripts/run_real_packages.sh"));
         assert!(run_all.contains("bash scripts/run_software_gates.sh"));
         assert!(run_all.contains("git diff --check"));
-        assert!(run_real_packages.contains("scripts/run_libc_test.sh"));
-        assert!(run_real_packages.contains("scripts/run_sbase.sh"));
+        assert!(run_real_packages.contains("scripts/run_real_llvm_package_gate.sh"));
+        assert!(run_real_packages.contains("real LLVM LNP64 package gate"));
+        assert!(!run_real_packages.contains("cc --toy-bootstrap"));
         assert!(run_demos.contains("scripts/run_real_llvm_lnp64_docker.sh"));
         assert!(run_demos.contains("demos/netbsd_personality_smoke.c"));
         assert!(run_demos.contains("for src in demos/*.s"));
@@ -4486,6 +4487,34 @@ mod tests {
         }
         assert!(!llvm_gates.contains("lnp64 cc"));
         assert!(!llvm_gates.contains("cargo run -- cc"));
+        for (script_name, script) in legacy_toy_scripts {
+            if matches!(
+                script_name,
+                "scripts/run_cwalk.sh"
+                    | "scripts/run_inih.sh"
+                    | "scripts/run_jsmn.sh"
+                    | "scripts/run_natsort.sh"
+                    | "scripts/run_sbase.sh"
+                    | "scripts/run_zlib.sh"
+            ) {
+                assert!(
+                    script.contains("scripts/run_real_llvm_package_gate.sh"),
+                    "{script_name} should route package coverage through real LLVM"
+                );
+                let package_name = script_name
+                    .strip_prefix("scripts/run_")
+                    .and_then(|name| name.strip_suffix(".sh"))
+                    .expect("legacy package script name shape");
+                assert!(
+                    script.contains(&format!("LNP64_LLVM_PACKAGE_FILTER={package_name}")),
+                    "{script_name} should run only its own package subset"
+                );
+                assert!(
+                    !script.contains("cc --toy-bootstrap"),
+                    "{script_name} must not invoke the toy compiler"
+                );
+            }
+        }
         assert!(rtl_top_manifest_checker.contains("toolchain/lnp64_llvm_bootstrap.manifest"));
         assert!(!rtl_top_manifest_checker.contains("RUN_DEMOS"));
         assert!(!rtl_top_manifest_checker.contains("non_network"));
