@@ -4031,6 +4031,9 @@ mod tests {
         assert!(mc_manifest.contains("fixed32_rri_simm14"));
         assert!(mc_manifest.contains("fixed32_mem_base_simm"));
         assert!(mc_manifest.contains("simm24_words[23:0]"));
+        assert!(mc_manifest.contains("fixed32_mmap_bootstrap_control"));
+        assert!(mc_manifest.contains("Final __lnp_mmap remains blocked"));
+        assert!(mc_manifest.contains("F9 argument-block encoding"));
 
         for (group, format, opcodes, operands, relocations, surfaces) in rows {
             assert!(
@@ -4084,6 +4087,7 @@ mod tests {
             "heap_rr",
             "heap_rrr",
             "heap_reg",
+            "mmap_bootstrap_control",
             "native_primitives",
             "native_control_rr",
         ] {

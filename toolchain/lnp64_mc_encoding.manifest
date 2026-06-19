@@ -10,6 +10,9 @@
 # fixed32_branch26: opcode[31:24], simm24_words[23:0]; encodes aligned signed 26-bit byte displacement
 # fixed32_reg_or_none: opcode[31:24], reg[23:19], reserved[18:0] or all reserved for RET
 # fixed32_native4: opcode[31:24], rd[23:19], cap[18:14], arg0[13:9], arg1[8:4], reserved[3:0]
+# fixed32_mmap_bootstrap_control: compact LLVM bootstrap VMA control form.
+# Final __lnp_mmap remains blocked on the F9 argument-block encoding described
+# in hardware_design.md section 17.
 # fixed32_cset: opcode[31:24], rd[23:19], reserved[18:0]; materializes current FLAGS as 0/1
 constants|fixed32_constant|NOP,LI,MOV|none_or_gpr_immediate_or_gpr|R_LNP64_ABS64,R_LNP64_GOT64|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64AsmParser.cpp
 wide_constants|fixed32_reg_u32_tail|LA,LI32,AUIPC|gpr_dst,u32_payload|R_LNP64_ABS32,R_LNP64_PC32|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
@@ -29,7 +32,7 @@ atomics|fixed32_atomic|LOCK.CMPXCHG,AMO.SWAP,AMO.ADD,AMO.AND,AMO.OR,AMO.XOR,FUTE
 heap_rr|fixed32_rr|ALLOC,ALLOC_SIZE|gpr_dst,gpr_size_or_ptr|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
 heap_rrr|fixed32_rrr|ALLOC_EX|gpr_dst,gpr_size,gpr_align|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
 heap_reg|fixed32_reg_or_none|FREE|gpr_ptr|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
-mmap_control|fixed32_mmap_control|MMAP,MUNMAP,MPROTECT|gpr_result,gpr_addr,gpr_len,gpr_prot|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
+mmap_bootstrap_control|fixed32_mmap_bootstrap_control|MMAP,MUNMAP,MPROTECT|MMAP/MPROTECT:gpr_result,gpr_addr,gpr_len,gpr_prot;MUNMAP:gpr_result,gpr_addr|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
 native_primitives|fixed32_native4|PULL,PUSH,AWAIT,GATE_CALL,GATE_RETURN|gpr_result,gpr_cap,gpr_arg0,gpr_arg1|R_LNP64_CAP_DESC64,R_LNP64_CALLGATE64|LNP64InstrInfo.td,LNP64ISelLowering.cpp,LNP64AsmParser.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64InstPrinter.cpp
 native_control_rr|fixed32_rr|OBJECT_CTL,DOMAIN_CTL|gpr_result,gpr_argblock|none|LNP64InstrInfo.td,LNP64ISelLowering.cpp,LNP64AsmParser.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64InstPrinter.cpp
 native_control_planned|fixed32_native|CAP_SEND,CAP_RECV,CAP_DUP,CAP_REVOKE|gpr_fdr_or_capability_operands|R_LNP64_CAP_DESC64,R_LNP64_CALLGATE64|LNP64InstrInfo.td,LNP64ISelLowering.cpp,LNP64AsmParser.cpp
