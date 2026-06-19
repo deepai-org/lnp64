@@ -353,10 +353,10 @@ NetBSD policy. Those remain loader, libc, and personality responsibilities.
    capabilities.
 4. Replace fixed-record smoke fixtures with loader-produced EXEC plans.
 5. Keep moving the NetBSD personality system gate from toy-compiled `.s`
-   programs to Clang/lld produced ELF inputs. The default gate now runs the
-   first Clang/lld/run-elf child ELF set; the integrated toy root script remains
-   explicit `--legacy-toy` coverage until `netbsd_init` and `netbsd_sh` become
-   ELF exec-plan children.
+   programs to Clang/lld produced ELF inputs. The default gate now runs a
+   Clang/lld/run-elf init/shell root plus child ELF set; the integrated toy root
+   script remains explicit `--legacy-toy` coverage for primitive-trace negative
+   assertions while rump-style services mature.
 6. Consider a fuller `evb-lnp64` machine port only after rump-style services
    and static userland are credible.
 

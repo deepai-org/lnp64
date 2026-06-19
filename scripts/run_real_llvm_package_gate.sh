@@ -31,6 +31,8 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-userland-init-linked.elf"
         "$build_dir/lnp64-userland-lnpsh-linked.elf"
         "$build_dir/lnp64-userland-spawn-task-linked.elf"
+        "$build_dir/lnp64-netbsd-init-linked.elf"
+        "$build_dir/lnp64-netbsd-sh-linked.elf"
         "$build_dir/lnp64-netbsd-personality-clang-linked.elf"
         "$build_dir/lnp64-netbsd-loader-target-linked.elf"
         "$build_dir/lnp64-netbsd-elf-exec-test-linked.elf"
@@ -72,6 +74,8 @@ for package in $(split_filters "$package_filter"); do
       ;;
     netbsd)
       needed_elfs+=(
+        "$build_dir/lnp64-netbsd-init-linked.elf"
+        "$build_dir/lnp64-netbsd-sh-linked.elf"
         "$build_dir/lnp64-netbsd-personality-clang-linked.elf"
         "$build_dir/lnp64-netbsd-loader-target-linked.elf"
         "$build_dir/lnp64-netbsd-elf-exec-test-linked.elf"
@@ -350,6 +354,79 @@ run_package() {
       run_elf_report "real LLVM LNP64 run-elf NetBSD domain budget child passed" \
         "$build_dir/lnp64-netbsd-domain-budget-test-linked.elf" \
         'domain_budget_test ok'
+      local netbsd_system_root="$build_dir/netbsd-system-fixture-root"
+      rm -rf "$netbsd_system_root"
+      mkdir -p "$netbsd_system_root/bin" "$netbsd_system_root/etc" \
+        "$netbsd_system_root/tmp"
+      printf 'welcome\n' >"$netbsd_system_root/etc/motd"
+      local netbsd_system_fs_image="$netbsd_system_root/etc/netbsd_personality.fs"
+      truncate -s 512 "$netbsd_system_fs_image"
+      put_netbsd_system_fs_image() {
+        local offset="$1"
+        local bytes="$2"
+        printf '%b' "$bytes" | dd of="$netbsd_system_fs_image" bs=1 \
+          seek="$offset" conv=notrunc status=none
+      }
+      put_netbsd_system_fs_image 0 'LNPFS2\n0'
+      put_netbsd_system_fs_image 64 '1d11/\0'
+      put_netbsd_system_fs_image 100 'x'
+      put_netbsd_system_fs_image 128 '1d11/etc\0'
+      put_netbsd_system_fs_image 164 'x'
+      put_netbsd_system_fs_image 192 '1f11/etc/motd\0'
+      put_netbsd_system_fs_image 228 'r'
+      put_netbsd_system_fs_image 232 'welcome\0'
+      put_netbsd_system_fs_image 256 '1d11/tmp\0'
+      put_netbsd_system_fs_image 292 'x'
+      cp "$build_dir/lnp64-netbsd-sh-linked.elf" \
+        "$netbsd_system_root/bin/netbsd_sh.elf"
+      cp "$build_dir/lnp64-netbsd-loader-target-linked.elf" \
+        "$netbsd_system_root/bin/loader_target.elf"
+      cp "$build_dir/lnp64-netbsd-elf-exec-test-linked.elf" \
+        "$netbsd_system_root/bin/elf_exec_test.elf"
+      cp "$build_dir/lnp64-netbsd-fork-wait-test-linked.elf" \
+        "$netbsd_system_root/bin/fork_wait_test.elf"
+      cp "$build_dir/lnp64-netbsd-thread-test-linked.elf" \
+        "$netbsd_system_root/bin/thread_test.elf"
+      cp "$build_dir/lnp64-netbsd-poll-test-linked.elf" \
+        "$netbsd_system_root/bin/poll_test.elf"
+      cp "$build_dir/lnp64-netbsd-signal-gate-test-linked.elf" \
+        "$netbsd_system_root/bin/signal_gate_test.elf"
+      cp "$build_dir/lnp64-netbsd-signal-fault-test-linked.elf" \
+        "$netbsd_system_root/bin/signal_fault_test.elf"
+      cp "$build_dir/lnp64-netbsd-timer-test-linked.elf" \
+        "$netbsd_system_root/bin/timer_test.elf"
+      cp "$build_dir/lnp64-netbsd-mmap-test-linked.elf" \
+        "$netbsd_system_root/bin/mmap_test.elf"
+      cp "$build_dir/lnp64-netbsd-fd-passing-test-linked.elf" \
+        "$netbsd_system_root/bin/fd_passing_test.elf"
+      cp "$build_dir/lnp64-netbsd-namespace-test-linked.elf" \
+        "$netbsd_system_root/bin/namespace_test.elf"
+      cp "$build_dir/lnp64-netbsd-fs-service-test-linked.elf" \
+        "$netbsd_system_root/bin/fs_service_test.elf"
+      cp "$build_dir/lnp64-netbsd-classifier-test-linked.elf" \
+        "$netbsd_system_root/bin/classifier_test.elf"
+      cp "$build_dir/lnp64-netbsd-socket-loopback-test-linked.elf" \
+        "$netbsd_system_root/bin/socket_loopback_test.elf"
+      cp "$build_dir/lnp64-netbsd-gate-trace-test-linked.elf" \
+        "$netbsd_system_root/bin/gate_trace_test.elf"
+      cp "$build_dir/lnp64-netbsd-domain-nested-test-linked.elf" \
+        "$netbsd_system_root/bin/domain_nested_test.elf"
+      cp "$build_dir/lnp64-netbsd-domain-budget-test-linked.elf" \
+        "$netbsd_system_root/bin/domain_budget_test.elf"
+      "$lnp64_bin" elf-plan "$build_dir/lnp64-netbsd-init-linked.elf" \
+        >/dev/null
+      local netbsd_system_output
+      netbsd_system_output="$("$lnp64_bin" run-elf --namespace-root \
+        "$netbsd_system_root" "$build_dir/lnp64-netbsd-init-linked.elf" init /)"
+      grep -q 'lnp64-netbsd-personality: supervisor boot' \
+        <<<"$netbsd_system_output"
+      grep -q 'fork_wait_test ok' <<<"$netbsd_system_output"
+      grep -q 'loader_target ok' <<<"$netbsd_system_output"
+      grep -q 'elf_exec_test ok' <<<"$netbsd_system_output"
+      grep -q 'netbsd personality system ok' <<<"$netbsd_system_output"
+      grep -q 'exit=0' <<<"$netbsd_system_output"
+      printf 'real LLVM LNP64 run-elf NetBSD init/shell system passed: %s\n' \
+        "$build_dir/lnp64-netbsd-init-linked.elf"
       ;;
     all)
       for selected in zlib natsort jsmn inih cwalk sbase userland netbsd; do

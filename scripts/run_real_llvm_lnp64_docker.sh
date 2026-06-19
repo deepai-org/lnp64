@@ -351,6 +351,8 @@ run_elf_report "real LLVM LNP64 run-elf NetBSD domain nested child passed" \
 run_elf_report "real LLVM LNP64 run-elf NetBSD domain budget child passed" \
   target/llvm-lnp64-build/lnp64-netbsd-domain-budget-test-linked.elf \
   'domain_budget_test ok'
+LNP64_LLVM_PACKAGE_FILTER=netbsd bash scripts/run_real_llvm_package_gate.sh
+printf '%s\n' "real LLVM LNP64 run-elf NetBSD package/system gate passed"
 run_elf_report "real LLVM LNP64 run-elf sbase echo execution passed" \
   target/llvm-lnp64-build/lnp64-sbase-echo-linked.elf \
   echo hello clang --expect 'hello clang'

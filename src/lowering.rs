@@ -1380,6 +1380,8 @@ mod tests {
         let libc_socket_min = include_str!("../toolchain/liblnp64_socket_min.c");
         let libc_sbase_min = include_str!("../toolchain/liblnp64_sbase_min.c");
         let elf_exec_test_clang = include_str!("../userland/elf_exec_test_clang.c");
+        let netbsd_init_clang = include_str!("../userland/netbsd_init_clang.c");
+        let netbsd_sh_clang = include_str!("../userland/netbsd_sh_clang.c");
         let lnp64_isel_lowering = include_str!("../llvm/lib/Target/LNP64/LNP64ISelLowering.cpp");
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
         let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
@@ -1477,6 +1479,8 @@ mod tests {
             "clang_userland_init_object",
             "clang_userland_lnpsh_object",
             "clang_userland_spawn_task_object",
+            "clang_netbsd_init_object",
+            "clang_netbsd_shell_object",
             "clang_netbsd_loader_target_child_object",
             "clang_netbsd_elf_exec_parent_object",
             "clang_netbsd_fork_wait_child_object",
@@ -1592,6 +1596,9 @@ mod tests {
             "userland_lnpsh_run_elf",
             "userland_spawn_task_static_link",
             "userland_spawn_task_run_elf",
+            "netbsd_init_static_link",
+            "netbsd_shell_static_link",
+            "netbsd_init_shell_system_run_elf",
             "netbsd_loader_target_child_static_link",
             "netbsd_loader_target_child_run_elf",
             "netbsd_elf_exec_parent_static_link",
@@ -2627,6 +2634,16 @@ mod tests {
         assert!(real_llc.contains("grep -q 'clone.spawn r'"));
         assert!(real_llc.contains("grep -q 'thread_join r'"));
         assert!(real_llc.contains("real LLVM LNP64 clang userland spawn task object smoke passed"));
+        assert!(real_llc.contains("userland/netbsd_init_clang.c"));
+        assert!(real_llc.contains("netbsd-init-clang-smoke.o"));
+        assert!(netbsd_init_clang.contains("execl(\"/bin/netbsd_sh.elf\""));
+        assert!(real_llc.contains("real LLVM LNP64 clang NetBSD init object passed"));
+        assert!(real_llc.contains("userland/netbsd_sh_clang.c"));
+        assert!(real_llc.contains("netbsd-sh-clang-smoke.o"));
+        assert!(netbsd_sh_clang.contains("\"/bin/fork_wait_test.elf\""));
+        assert!(netbsd_sh_clang.contains("\"/bin/domain_budget_test.elf\""));
+        assert!(!netbsd_sh_clang.contains(".s\""));
+        assert!(real_llc.contains("real LLVM LNP64 clang NetBSD shell object passed"));
         assert!(real_llc.contains("userland/loader_target_clang.c"));
         assert!(real_llc.contains("netbsd-loader-target-clang-smoke.o"));
         assert!(
@@ -2817,6 +2834,12 @@ mod tests {
         assert!(real_llc.contains("lnp64-userland-spawn-task-linked.elf"));
         assert!(real_llc.contains(r#""$userland_spawn_obj" \"#));
         assert!(real_llc.contains("real LLVM LNP64 lld userland spawn task link smoke passed"));
+        assert!(real_llc.contains("lnp64-netbsd-init-linked.elf"));
+        assert!(real_llc.contains(r#""$netbsd_init_obj" \"#));
+        assert!(real_llc.contains("real LLVM LNP64 lld NetBSD init link passed"));
+        assert!(real_llc.contains("lnp64-netbsd-sh-linked.elf"));
+        assert!(real_llc.contains(r#""$netbsd_sh_obj" \"#));
+        assert!(real_llc.contains("real LLVM LNP64 lld NetBSD shell link passed"));
         assert!(real_llc.contains("lnp64-netbsd-loader-target-linked.elf"));
         assert!(real_llc.contains(r#""$netbsd_loader_target_obj" \"#));
         assert!(real_llc.contains("real LLVM LNP64 lld NetBSD loader target child link passed"));
@@ -3678,6 +3701,13 @@ mod tests {
         assert!(real_llc_docker.contains("lnp64-netbsd-fork-wait-test-linked.elf"));
         assert!(real_llc_docker.contains("fork_wait_test ok"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf NetBSD fork/wait child passed"));
+        assert!(real_llc_docker.contains("LNP64_LLVM_PACKAGE_FILTER=netbsd"));
+        assert!(real_llc_docker.contains(
+            "LNP64_LLVM_PACKAGE_FILTER=netbsd bash scripts/run_real_llvm_package_gate.sh"
+        ));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf NetBSD package/system gate passed")
+        );
         assert!(real_llc_docker.contains("lnp64-sbase-echo-linked.elf"));
         assert!(real_llc_docker.contains("echo hello clang --expect 'hello clang'"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase echo execution passed"));
@@ -3900,6 +3930,7 @@ mod tests {
             "real_netbsd_gate_trace_child_execution",
             "real_netbsd_domain_nested_child_execution",
             "real_netbsd_domain_budget_child_execution",
+            "real_netbsd_init_shell_system_execution",
             "real_metadata_libc_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
@@ -4001,6 +4032,7 @@ mod tests {
             "real_netbsd_gate_trace_child_execution",
             "real_netbsd_domain_nested_child_execution",
             "real_netbsd_domain_budget_child_execution",
+            "real_netbsd_init_shell_system_execution",
             "real_metadata_libc_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
@@ -5115,6 +5147,8 @@ mod tests {
             "userland_init",
             "userland_lnpsh",
             "userland_spawn_task",
+            "netbsd_init_root",
+            "netbsd_shell_root",
             "netbsd_loader_target_child",
             "netbsd_elf_exec_parent",
             "netbsd_fork_wait_child",
@@ -5165,6 +5199,8 @@ mod tests {
         assert_eq!(statuses["userland_init"], "partial");
         assert_eq!(statuses["userland_lnpsh"], "partial");
         assert_eq!(statuses["userland_spawn_task"], "partial");
+        assert_eq!(statuses["netbsd_init_root"], "partial");
+        assert_eq!(statuses["netbsd_shell_root"], "partial");
         assert_eq!(statuses["netbsd_loader_target_child"], "partial");
         assert_eq!(statuses["netbsd_elf_exec_parent"], "partial");
         assert_eq!(statuses["netbsd_fork_wait_child"], "partial");
@@ -5586,6 +5622,14 @@ mod tests {
         assert!(run_real_packages.contains("scripts/run_real_llvm_package_gate.sh"));
         assert!(run_real_packages.contains("real LLVM LNP64 package gate"));
         assert!(run_real_package_gate.contains("netbsd)"));
+        assert!(run_real_package_gate.contains("lnp64-netbsd-init-linked.elf"));
+        assert!(run_real_package_gate.contains("lnp64-netbsd-sh-linked.elf"));
+        assert!(run_real_package_gate.contains("netbsd-system-fixture-root"));
+        assert!(run_real_package_gate.contains("netbsd personality system ok"));
+        assert!(
+            run_real_package_gate
+                .contains("real LLVM LNP64 run-elf NetBSD init/shell system passed")
+        );
         assert!(
             run_real_package_gate
                 .contains("for selected in zlib natsort jsmn inih cwalk sbase userland netbsd")
@@ -5925,6 +5969,8 @@ mod tests {
             "userland_init",
             "userland_lnpsh",
             "userland_spawn_task",
+            "netbsd_init_root",
+            "netbsd_shell_root",
             "netbsd_loader_target_child",
             "netbsd_fork_wait_child",
             "netbsd_thread_child",

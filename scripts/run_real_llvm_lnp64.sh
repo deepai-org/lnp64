@@ -3534,6 +3534,33 @@ grep -q 'thread_join r' "$userland_spawn_dump"
 printf 'real LLVM LNP64 clang userland spawn task object smoke passed: %s\n' \
   "$userland_spawn_obj"
 
+netbsd_init_obj="$build_dir/netbsd-init-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
+  -c userland/netbsd_init_clang.c -o "$netbsd_init_obj"
+test -s "$netbsd_init_obj"
+netbsd_init_dump="$build_dir/netbsd-init-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$netbsd_init_obj" \
+  >"$netbsd_init_dump"
+grep -q 'call ' "$netbsd_init_dump"
+printf 'real LLVM LNP64 clang NetBSD init object passed: %s\n' \
+  "$netbsd_init_obj"
+
+netbsd_sh_obj="$build_dir/netbsd-sh-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
+  -c userland/netbsd_sh_clang.c -o "$netbsd_sh_obj"
+test -s "$netbsd_sh_obj"
+netbsd_sh_dump="$build_dir/netbsd-sh-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$netbsd_sh_obj" \
+  >"$netbsd_sh_dump"
+grep -q 'call ' "$netbsd_sh_dump"
+grep -q 'domain_ctl r' "$netbsd_sh_dump"
+printf 'real LLVM LNP64 clang NetBSD shell object passed: %s\n' \
+  "$netbsd_sh_obj"
+
 netbsd_loader_target_obj="$build_dir/netbsd-loader-target-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
@@ -5338,6 +5365,24 @@ userland_spawn_elf="$build_dir/lnp64-userland-spawn-task-linked.elf"
 test -s "$userland_spawn_elf"
 printf 'real LLVM LNP64 lld userland spawn task link smoke passed: %s\n' \
   "$userland_spawn_elf"
+
+netbsd_init_elf="$build_dir/lnp64-netbsd-init-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$netbsd_init_elf" "$crt0_obj" "$netbsd_init_obj" \
+  "$libc_process_impl_obj" "$libc_errno_impl_obj" "$libc_fd_impl_obj" \
+  "$libc_startup_impl_obj"
+test -s "$netbsd_init_elf"
+printf 'real LLVM LNP64 lld NetBSD init link passed: %s\n' \
+  "$netbsd_init_elf"
+
+netbsd_sh_elf="$build_dir/lnp64-netbsd-sh-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$netbsd_sh_elf" "$crt0_obj" "$netbsd_sh_obj" \
+  "$libc_process_impl_obj" "$libc_errno_impl_obj" "$libc_fd_impl_obj" \
+  "$libc_meta_impl_obj" "$libc_startup_impl_obj"
+test -s "$netbsd_sh_elf"
+printf 'real LLVM LNP64 lld NetBSD shell link passed: %s\n' \
+  "$netbsd_sh_elf"
 
 netbsd_loader_target_elf="$build_dir/lnp64-netbsd-loader-target-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
