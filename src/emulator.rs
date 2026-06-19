@@ -1154,6 +1154,7 @@ pub struct Machine {
     last_exit: i32,
     last_exit_regs: Option<[u64; GPR_COUNT]>,
     last_exit_mem0: Option<u64>,
+    last_exit_mem_checksum: Option<u64>,
     last_exit_errno: Option<u64>,
     committed_exec_retire_trace: Vec<CommittedExecRetireRecord>,
     committed_exec_mode: bool,
@@ -1169,11 +1170,18 @@ pub struct CommittedExecRetireRecord {
     pub domain_id: u64,
     pub domain_gen: u64,
     pub action: u64,
+    pub operand_rd: u64,
+    pub operand_rs1: u64,
+    pub operand_rs2: u64,
+    pub operand_rs3: u64,
+    pub operand_imm: u64,
     pub result_valid: u64,
     pub result_reg: u64,
     pub result_value: u64,
     pub errno: u64,
     pub status: u64,
+    pub event_id: u64,
+    pub fault_id: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1220,6 +1228,38 @@ fn committed_exec_result_reg(raw_word: u32) -> Option<usize> {
         | 0xcb..=0xcd => None,
         _ => Some(((raw_word >> 19) & 0x1f) as usize),
     }
+}
+
+fn committed_exec_trace_imm(raw_word: u32, literal_word: Option<u32>) -> u32 {
+    let opcode = (raw_word >> 24) as u8;
+    match opcode {
+        0x04 | 0xd0 => literal_word.unwrap_or_default(),
+        0x01 => sign_extend(raw_word & 0xffff, 16) as u32,
+        0x20..=0x27 => sign_extend(raw_word & 0x00ff_ffff, 24) as u32,
+        _ => sign_extend(raw_word & 0x3fff, 14) as u32,
+    }
+}
+
+fn flat_exec_memory_checksum(process: &Process) -> u64 {
+    const FLAT_SRAM_WORDS: usize = 96;
+    const DATA_SRAM_BASE_WORD: usize = 16;
+
+    let mut checksum = 0x6c6e_7036_345f_7331u64;
+    for word_idx in 0..FLAT_SRAM_WORDS {
+        let addr = if word_idx < DATA_SRAM_BASE_WORD {
+            (word_idx * 8) as u64
+        } else {
+            DATA_BASE + ((word_idx - DATA_SRAM_BASE_WORD) * 8) as u64
+        };
+        let value = usize::try_from(addr)
+            .ok()
+            .and_then(|start| start.checked_add(8).map(|end| (start, end)))
+            .and_then(|(start, end)| process.memory.get(start..end))
+            .and_then(|bytes| bytes.try_into().ok().map(u64::from_le_bytes))
+            .unwrap_or_default();
+        checksum = checksum.rotate_left(7) ^ checksum.rotate_right(3) ^ value ^ word_idx as u64;
+    }
+    checksum
 }
 
 fn sign_extend(value: u32, bits: u32) -> i64 {
@@ -1332,6 +1372,7 @@ impl Machine {
             last_exit: 0,
             last_exit_regs: None,
             last_exit_mem0: None,
+            last_exit_mem_checksum: None,
             last_exit_errno: None,
             committed_exec_retire_trace: Vec::new(),
             committed_exec_mode: false,
@@ -1464,6 +1505,7 @@ impl Machine {
         self.committed_exec_mode = true;
         self.last_exit_regs = None;
         self.last_exit_mem0 = None;
+        self.last_exit_mem_checksum = None;
         self.last_exit_errno = None;
         self.committed_exec_retire_trace.clear();
 
@@ -1505,6 +1547,14 @@ impl Machine {
             let pc = self.thread()?.ip as u64;
             let raw_word = self.load_exec_u32(pc)?;
             let opcode = (raw_word >> 24) as u8;
+            let literal_word = matches!(opcode, 0x04 | 0xd0)
+                .then(|| self.load_exec_u32(pc + 4))
+                .transpose()?;
+            let operand_rd = ((raw_word >> 19) & 0x1f) as u64;
+            let operand_rs1 = ((raw_word >> 14) & 0x1f) as u64;
+            let operand_rs2 = ((raw_word >> 9) & 0x1f) as u64;
+            let operand_rs3 = ((raw_word >> 4) & 0x1f) as u64;
+            let operand_imm = u64::from(committed_exec_trace_imm(raw_word, literal_word));
             let result_reg = committed_exec_result_reg(raw_word);
             let pid = self.thread()?.pid;
             let domain_id = self.process()?.domain_id;
@@ -1545,11 +1595,18 @@ impl Machine {
                     domain_id,
                     domain_gen,
                     action: 1,
+                    operand_rd,
+                    operand_rs1,
+                    operand_rs2,
+                    operand_rs3,
+                    operand_imm,
                     result_valid: u64::from(result_reg.is_some()),
                     result_reg: result_reg.unwrap_or_default() as u64,
                     result_value: result_reg.map(|reg| regs[reg]).unwrap_or_default(),
                     errno,
                     status: if errno == 0 { 0 } else { 1 },
+                    event_id: 0,
+                    fault_id: 0,
                 });
         }
         Ok(self.last_exit)
@@ -1561,6 +1618,10 @@ impl Machine {
 
     pub fn last_exit_mem0(&self) -> Option<u64> {
         self.last_exit_mem0
+    }
+
+    pub fn last_exit_mem_checksum(&self) -> Option<u64> {
+        self.last_exit_mem_checksum
     }
 
     pub fn committed_exec_retire_trace(&self) -> &[CommittedExecRetireRecord] {
@@ -8841,6 +8902,7 @@ impl Machine {
                 .get(0..8)
                 .and_then(|bytes| bytes.try_into().ok().map(u64::from_le_bytes))
         });
+        self.last_exit_mem_checksum = self.processes.get(&pid).map(flat_exec_memory_checksum);
         self.threads.remove(&tid);
         if !self.detached_threads.remove(&tid) {
             self.completed_threads.insert(tid, code as u64);

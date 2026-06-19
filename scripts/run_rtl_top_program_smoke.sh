@@ -139,7 +139,7 @@ rtl = load_record(sys.argv[1], "RTL_FINAL ")
 emulator = load_record(sys.argv[2], "EMULATOR_FINAL ")
 if rtl["exit_reg"] != emulator["exit"]:
     raise SystemExit(f"exit mismatch: rtl={rtl['exit_reg']} emulator={emulator['exit']}")
-for field in ("r3", "r4", "r5", "env_page", "mem0", "errno"):
+for field in ("r3", "r4", "r5", "env_page", "mem0", "mem_checksum", "errno"):
     if rtl[field] != emulator[field]:
         raise SystemExit(f"{field} mismatch: rtl={rtl[field]} emulator={emulator[field]}")
 
@@ -154,11 +154,18 @@ retire_required_fields = (
     "domain_id",
     "domain_gen",
     "action",
+    "operand_rd",
+    "operand_rs1",
+    "operand_rs2",
+    "operand_rs3",
+    "operand_imm",
     "result_valid",
     "result_reg",
     "result_value",
     "errno",
     "status",
+    "event_id",
+    "fault_id",
 )
 for label, records in (("rtl", rtl_retire), ("emulator", emulator_retire)):
     for idx, record in enumerate(records):

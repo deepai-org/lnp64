@@ -208,6 +208,7 @@ fn run() -> Result<(), String> {
             let r5 = regs.get(5).copied().unwrap_or_default();
             let env_page = regs.get(6).copied().unwrap_or_default();
             let mem0 = machine.last_exit_mem0().unwrap_or_default();
+            let mem_checksum = machine.last_exit_mem_checksum().unwrap_or_default();
             let errno = machine.current_errno()?;
             let trace = machine
                 .committed_exec_retire_trace()
@@ -221,20 +222,27 @@ fn run() -> Result<(), String> {
                     let domain_id = record.domain_id;
                     let domain_gen = record.domain_gen;
                     let action = record.action;
+                    let operand_rd = record.operand_rd;
+                    let operand_rs1 = record.operand_rs1;
+                    let operand_rs2 = record.operand_rs2;
+                    let operand_rs3 = record.operand_rs3;
+                    let operand_imm = record.operand_imm;
                     let result_valid = record.result_valid;
                     let result_reg = record.result_reg;
                     let result_value = record.result_value;
                     let errno = record.errno;
                     let status = record.status;
+                    let event_id = record.event_id;
+                    let fault_id = record.fault_id;
                     format!(
-                        "{{\"pc\":{pc_word},\"opcode\":{opcode},\"tile_id\":{tile_id},\"pid\":{pid},\"tid\":{tid},\"domain_id\":{domain_id},\"domain_gen\":{domain_gen},\"action\":{action},\"result_valid\":{result_valid},\"result_reg\":{result_reg},\"result_value\":{result_value},\"errno\":{errno},\"status\":{status}}}"
+                        "{{\"pc\":{pc_word},\"opcode\":{opcode},\"tile_id\":{tile_id},\"pid\":{pid},\"tid\":{tid},\"domain_id\":{domain_id},\"domain_gen\":{domain_gen},\"action\":{action},\"operand_rd\":{operand_rd},\"operand_rs1\":{operand_rs1},\"operand_rs2\":{operand_rs2},\"operand_rs3\":{operand_rs3},\"operand_imm\":{operand_imm},\"result_valid\":{result_valid},\"result_reg\":{result_reg},\"result_value\":{result_value},\"errno\":{errno},\"status\":{status},\"event_id\":{event_id},\"fault_id\":{fault_id}}}"
                     )
                 })
                 .collect::<Vec<_>>()
                 .join(",");
             println!("EMULATOR_RETIRE [{trace}]");
             println!(
-                "EMULATOR_FINAL {{\"exit\":{exit},\"r3\":{r3},\"r4\":{r4},\"r5\":{r5},\"env_page\":{env_page},\"mem0\":{mem0},\"errno\":{errno}}}"
+                "EMULATOR_FINAL {{\"exit\":{exit},\"r3\":{r3},\"r4\":{r4},\"r5\":{r5},\"env_page\":{env_page},\"mem0\":{mem0},\"mem_checksum\":{mem_checksum},\"errno\":{errno}}}"
             );
             Ok(())
         }

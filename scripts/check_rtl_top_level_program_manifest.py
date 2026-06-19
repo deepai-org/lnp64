@@ -72,7 +72,7 @@ def require_entry(entry: dict[str, object], source_kind: str) -> None:
 
 def require_typed_retire_gate(gate_text: str, source: str) -> None:
     require("retire_required_fields" in gate_text, f"{source} gate must validate typed retire fields")
-    for field in ("tile_id", "pid", "tid", "domain_id", "domain_gen", "result_valid", "result_reg", "result_value", "errno", "status"):
+    for field in ("tile_id", "pid", "tid", "domain_id", "domain_gen", "operand_rd", "operand_rs1", "operand_rs2", "operand_rs3", "operand_imm", "result_valid", "result_reg", "result_value", "errno", "status", "event_id", "fault_id"):
         require(f'"{field}"' in gate_text, f"{source} gate must require typed retire field {field}")
 
 
@@ -110,6 +110,7 @@ def main() -> None:
             require_typed_retire_gate(gate_text, str(entry["source"]))
             require("RTL_FINAL" in gate_text and "EMULATOR_FINAL" in gate_text, f"{entry['source']} gate must compare final state")
             require('"errno"' in gate_text, f"{entry['source']} gate must compare final errno")
+            require('"mem_checksum"' in gate_text, f"{entry['source']} gate must compare final memory checksum")
     require(active_flat_hex >= 1, "manifest must keep at least one active top-level flat hex program")
     active_compiler_flat = 0
     for entry in compiler_flat_entries:
@@ -128,6 +129,7 @@ def main() -> None:
             require_typed_retire_gate(gate_text, str(entry["source"]))
             require("RTL_FINAL" in gate_text and "EMULATOR_FINAL" in gate_text, f"{entry['source']} gate must compare final state")
             require('"errno"' in gate_text, f"{entry['source']} gate must compare final errno")
+            require('"mem_checksum"' in gate_text, f"{entry['source']} gate must compare final memory checksum")
     require(active_compiler_flat >= 1, "manifest must keep at least one active compiler-generated top-level program")
     for entry in assembly_entries:
         require(isinstance(entry, dict), "assembly entry must be an object")
@@ -140,6 +142,7 @@ def main() -> None:
             require_typed_retire_gate(gate_text, str(entry["source"]))
             require("RTL_FINAL" in gate_text and "EMULATOR_FINAL" in gate_text, f"{entry['source']} gate must compare final state")
             require('"errno"' in gate_text, f"{entry['source']} gate must compare final errno")
+            require('"mem_checksum"' in gate_text, f"{entry['source']} gate must compare final memory checksum")
     for entry in compiler_entries:
         require(isinstance(entry, dict), "compiler entry must be an object")
         require_entry(entry, "compiler")
@@ -151,6 +154,7 @@ def main() -> None:
             require_typed_retire_gate(gate_text, str(entry["source"]))
             require("RTL_FINAL" in gate_text and "EMULATOR_FINAL" in gate_text, f"{entry['source']} gate must compare final state")
             require('"errno"' in gate_text, f"{entry['source']} gate must compare final errno")
+            require('"mem_checksum"' in gate_text, f"{entry['source']} gate must compare final memory checksum")
 
     manifest_asm = {entry["source"] for entry in assembly_entries}
     actual_asm = {str(path.relative_to(ROOT)) for path in sorted((ROOT / "demos").glob("*.s"))}

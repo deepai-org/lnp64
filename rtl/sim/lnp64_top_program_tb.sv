@@ -40,6 +40,8 @@ module lnp64_top_program_tb;
     logic [4:0] retire_raw_result_reg;
     logic retire_result_valid;
     logic [4:0] retire_result_reg;
+    logic [31:0] retire_operand_imm;
+    logic [63:0] final_mem_checksum;
 
     lnp64_top #(
         .CORE_TILE_COUNT(2)
@@ -89,12 +91,46 @@ module lnp64_top_program_tb;
         endcase
     endfunction
 
+    function automatic logic [31:0] flat_operand_imm(
+        input logic [7:0] opcode,
+        input logic [31:0] instr,
+        input logic [31:0] literal
+    );
+        unique case (opcode)
+            8'h04, 8'hd0: flat_operand_imm = literal;
+            8'h01: flat_operand_imm = {{16{instr[15]}}, instr[15:0]};
+            8'h20, 8'h21, 8'h22, 8'h23, 8'h24, 8'h25, 8'h26, 8'h27:
+                flat_operand_imm = {{8{instr[23]}}, instr[23:0]};
+            default: flat_operand_imm = {{18{instr[13]}}, instr[13:0]};
+        endcase
+    endfunction
+
+    function automatic logic [63:0] rtl_memory_checksum;
+        logic [63:0] checksum;
+        begin
+            checksum = 64'h6c6e_7036_345f_7331;
+            for (int word_idx = 0; word_idx < 96; word_idx = word_idx + 1) begin
+                checksum = {checksum[56:0], checksum[63:57]} ^
+                    {checksum[2:0], checksum[63:3]} ^
+                    dut.core_tiles[0].core_i.sram[word_idx] ^
+                    {57'd0, word_idx[6:0]};
+            end
+            rtl_memory_checksum = checksum;
+        end
+    endfunction
+
     always_comb begin
         retire_opcode = dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc][31:24];
         retire_raw_result_reg =
             dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc][23:19];
         retire_result_valid = flat_result_valid(retire_opcode);
         retire_result_reg = retire_opcode == 8'h57 ? 5'd1 : retire_raw_result_reg;
+        retire_operand_imm = flat_operand_imm(
+            retire_opcode,
+            dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc],
+            dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc + 32'd1]
+        );
+        final_mem_checksum = rtl_memory_checksum();
     end
 
     task automatic require(input logic condition, input string message);
@@ -107,7 +143,7 @@ module lnp64_top_program_tb;
         #1;
         if (dut.retire_submit_valid_vec[0]) begin
             $display(
-                "RTL_RETIRE {\"pc\":%0d,\"opcode\":%0d,\"tile_id\":%0d,\"pid\":%0d,\"tid\":%0d,\"domain_id\":%0d,\"domain_gen\":%0d,\"action\":%0d,\"result_valid\":%0d,\"result_reg\":%0d,\"result_value\":%0d,\"errno\":%0d,\"status\":%0d}",
+                "RTL_RETIRE {\"pc\":%0d,\"opcode\":%0d,\"tile_id\":%0d,\"pid\":%0d,\"tid\":%0d,\"domain_id\":%0d,\"domain_gen\":%0d,\"action\":%0d,\"operand_rd\":%0d,\"operand_rs1\":%0d,\"operand_rs2\":%0d,\"operand_rs3\":%0d,\"operand_imm\":%0d,\"result_valid\":%0d,\"result_reg\":%0d,\"result_value\":%0d,\"errno\":%0d,\"status\":%0d,\"event_id\":%0d,\"fault_id\":%0d}",
                 dut.retire_submit_record_vec[0].pc,
                 retire_opcode,
                 dut.retire_submit_record_vec[0].tile_id,
@@ -116,11 +152,18 @@ module lnp64_top_program_tb;
                 32'd1,
                 32'd1,
                 dut.retire_submit_record_vec[0].action,
+                dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc][23:19],
+                dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc][18:14],
+                dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc][13:9],
+                dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc][8:4],
+                retire_operand_imm,
                 retire_result_valid,
                 retire_result_valid ? retire_result_reg : 5'd0,
                 retire_result_valid ? dut.core_tiles[0].core_i.gpr[retire_result_reg] : 64'd0,
                 dut.core_tiles[0].core_i.errno_reg,
-                dut.core_tiles[0].core_i.errno_reg == LNP64_ERR_OK ? 16'd0 : 16'd1
+                dut.core_tiles[0].core_i.errno_reg == LNP64_ERR_OK ? 16'd0 : 16'd1,
+                32'd0,
+                32'd0
             );
         end
     end
@@ -157,7 +200,7 @@ module lnp64_top_program_tb;
         require(retired_count > 32'd0, "top-level program retired no instructions");
 
         $display(
-            "RTL_FINAL {\"retired\":%0d,\"exit_reg\":%0d,\"r3\":%0d,\"r4\":%0d,\"r5\":%0d,\"env_page\":%0d,\"mem0\":%0d,\"errno\":%0d}",
+            "RTL_FINAL {\"retired\":%0d,\"exit_reg\":%0d,\"r3\":%0d,\"r4\":%0d,\"r5\":%0d,\"env_page\":%0d,\"mem0\":%0d,\"mem_checksum\":%0d,\"errno\":%0d}",
             retired_count,
             dut.core_tiles[0].core_i.gpr[
                 dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc][23:19]
@@ -167,6 +210,7 @@ module lnp64_top_program_tb;
             dut.core_tiles[0].core_i.gpr[5],
             dut.core_tiles[0].core_i.gpr[6],
             dut.core_tiles[0].core_i.sram[0],
+            final_mem_checksum,
             dut.core_tiles[0].core_i.errno_reg
         );
         $display("LNP64-RTL-TOP-PROGRAM PASS");
