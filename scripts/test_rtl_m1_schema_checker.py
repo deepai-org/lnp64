@@ -145,6 +145,34 @@ def main() -> None:
         ),
     )
 
+    lean_layout_bounds_theorem_drift = replace_once(
+        lean_source,
+        "packedLayoutWithinWidth\n      (packedSchemaWidth rtlM1CommitPackedSchema)",
+        "packedLayoutWithinWidth\n      (packedSchemaWidth rtlM1StateProjectionPackedSchema)",
+    )
+    expect_failure(
+        "M1 generated Lean packed-layout bounds theorem rtlM1CommitPackedLayout_within_schema_width drifted",
+        lambda: checker.require_m1_generated_lean_packed_schemas(
+            schema,
+            m1_contract,
+            lean_layout_bounds_theorem_drift,
+        ),
+    )
+
+    lean_layout_coverage_theorem_drift = replace_once(
+        lean_source,
+        "packedLayoutCoversWidth\n      (packedSchemaWidth rtlM1StateProjectionPackedSchema)",
+        "packedLayoutCoversWidth\n      (packedSchemaWidth rtlM1CommitPackedSchema)",
+    )
+    expect_failure(
+        "M1 generated Lean packed-layout coverage theorem rtlM1StateProjectionPackedLayout_covers_schema_width drifted",
+        lambda: checker.require_m1_generated_lean_packed_schemas(
+            schema,
+            m1_contract,
+            lean_layout_coverage_theorem_drift,
+        ),
+    )
+
     print("rtl m1 schema checker self-test ok")
 
 

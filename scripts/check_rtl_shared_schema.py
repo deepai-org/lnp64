@@ -190,6 +190,21 @@ def render_lean_layout_theorem(theorem_name: str, schema_name: str, layout_name:
     )
 
 
+def render_lean_layout_bool_theorem(
+    theorem_name: str,
+    predicate_name: str,
+    schema_name: str,
+    layout_name: str,
+) -> str:
+    return (
+        f"theorem {theorem_name} :\n"
+        f"    {predicate_name}\n"
+        f"      (packedSchemaWidth {schema_name})\n"
+        f"      {layout_name} = true := by\n"
+        "  rfl"
+    )
+
+
 def parse_lean_packed_schema(lean_text: str, schema_name: str) -> list[str]:
     pattern = re.compile(
         rf"def\s+{re.escape(schema_name)}\s*:\s*List\s*\(String\s*×\s*Nat\)\s*:=\s*\[(?P<body>.*?)\]",
@@ -281,6 +296,8 @@ def require_m1_generated_lean_packed_schemas(schema: dict, m1_contract: dict, le
             "rtlM1CommitPackedSchema_width",
             "rtlM1CommitPackedLayout",
             "rtlM1CommitPackedLayout_from_schema",
+            "rtlM1CommitPackedLayout_within_schema_width",
+            "rtlM1CommitPackedLayout_covers_schema_width",
         ),
         (
             "state_record",
@@ -288,9 +305,19 @@ def require_m1_generated_lean_packed_schemas(schema: dict, m1_contract: dict, le
             "rtlM1StateProjectionPackedSchema_width",
             "rtlM1StateProjectionPackedLayout",
             "rtlM1StateProjectionPackedLayout_from_schema",
+            "rtlM1StateProjectionPackedLayout_within_schema_width",
+            "rtlM1StateProjectionPackedLayout_covers_schema_width",
         ),
     )
-    for contract_key, schema_name, theorem_name, layout_name, layout_theorem_name in pairs:
+    for (
+        contract_key,
+        schema_name,
+        theorem_name,
+        layout_name,
+        layout_theorem_name,
+        layout_within_theorem_name,
+        layout_covers_theorem_name,
+    ) in pairs:
         record_name = require_string(m1_contract.get(contract_key), f"M1 Lean {schema_name} record")
         fields = schema_records.get(record_name)
         require(isinstance(fields, list) and fields, f"M1 Lean {schema_name} record is absent from schema")
@@ -334,6 +361,26 @@ def require_m1_generated_lean_packed_schemas(schema: dict, m1_contract: dict, le
         require(
             expected_layout_theorem in lean_text,
             f"M1 generated Lean packed-layout theorem {layout_theorem_name} drifted from shared schema",
+        )
+        expected_within_theorem = render_lean_layout_bool_theorem(
+            layout_within_theorem_name,
+            "packedLayoutWithinWidth",
+            schema_name,
+            layout_name,
+        )
+        require(
+            expected_within_theorem in lean_text,
+            f"M1 generated Lean packed-layout bounds theorem {layout_within_theorem_name} drifted from shared schema",
+        )
+        expected_covers_theorem = render_lean_layout_bool_theorem(
+            layout_covers_theorem_name,
+            "packedLayoutCoversWidth",
+            schema_name,
+            layout_name,
+        )
+        require(
+            expected_covers_theorem in lean_text,
+            f"M1 generated Lean packed-layout coverage theorem {layout_covers_theorem_name} drifted from shared schema",
         )
 
 
