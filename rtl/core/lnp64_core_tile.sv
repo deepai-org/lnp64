@@ -539,6 +539,38 @@ module lnp64_core_tile #(
         end
     endfunction
 
+    function automatic logic [63:0] div_signed64(input logic [63:0] lhs, input logic [63:0] rhs);
+        logic [63:0] lhs_abs;
+        logic [63:0] rhs_abs;
+        logic [63:0] quotient_abs;
+        begin
+            if (rhs == 64'd0) begin
+                div_signed64 = 64'd0;
+            end else begin
+                lhs_abs = lhs[63] ? (~lhs + 64'd1) : lhs;
+                rhs_abs = rhs[63] ? (~rhs + 64'd1) : rhs;
+                quotient_abs = lhs_abs / rhs_abs;
+                div_signed64 = lhs[63] ^ rhs[63] ? (~quotient_abs + 64'd1) : quotient_abs;
+            end
+        end
+    endfunction
+
+    function automatic logic [63:0] rem_signed64(input logic [63:0] lhs, input logic [63:0] rhs);
+        logic [63:0] lhs_abs;
+        logic [63:0] rhs_abs;
+        logic [63:0] remainder_abs;
+        begin
+            if (rhs == 64'd0) begin
+                rem_signed64 = 64'd0;
+            end else begin
+                lhs_abs = lhs[63] ? (~lhs + 64'd1) : lhs;
+                rhs_abs = rhs[63] ? (~rhs + 64'd1) : rhs;
+                remainder_abs = lhs_abs % rhs_abs;
+                rem_signed64 = lhs[63] ? (~remainder_abs + 64'd1) : remainder_abs;
+            end
+        end
+    endfunction
+
     function automatic logic csel_condition(input logic [15:0] opcode);
         begin
             unique case (opcode)
@@ -893,7 +925,7 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_DIV: begin
-                                gpr[dec.rd] <= gpr[dec.rs2] == 64'd0 ? 64'd0 : $signed(gpr[dec.rs1]) / $signed(gpr[dec.rs2]);
+                                gpr[dec.rd] <= div_signed64(gpr[dec.rs1], gpr[dec.rs2]);
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
@@ -1103,7 +1135,7 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_SREM: begin
-                                gpr[dec.rd] <= gpr[dec.rs2] == 64'd0 ? 64'd0 : $signed(gpr[dec.rs1]) % $signed(gpr[dec.rs2]);
+                                gpr[dec.rd] <= rem_signed64(gpr[dec.rs1], gpr[dec.rs2]);
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
