@@ -57,6 +57,11 @@ def require_entry(entry: dict[str, object], source_kind: str) -> None:
         rtl_gate = entry.get("rtl_gate")
         require(isinstance(rtl_gate, str) and rtl_gate, f"{source} active entry must name rtl_gate")
         require((ROOT / rtl_gate).exists(), f"{source} rtl_gate is missing: {rtl_gate}")
+        comparison = entry.get("comparison")
+        require(
+            comparison == "retire_trace_and_final_state",
+            f"{source} active entry must compare retire_trace_and_final_state",
+        )
 
 
 def main() -> None:
@@ -66,10 +71,23 @@ def main() -> None:
     require(manifest.get("top") == "rtl/top/lnp64_top.sv", "manifest must target lnp64_top")
     require((ROOT / "rtl/top/lnp64_top.sv").exists(), "lnp64_top is missing")
 
+    flat_hex_entries = manifest.get("flat_hex_programs")
     assembly_entries = manifest.get("assembly_programs")
     compiler_entries = manifest.get("compiler_generated_programs")
+    require(isinstance(flat_hex_entries, list) and flat_hex_entries, "missing flat_hex_programs")
     require(isinstance(assembly_entries, list) and assembly_entries, "missing assembly_programs")
     require(isinstance(compiler_entries, list) and compiler_entries, "missing compiler_generated_programs")
+    active_flat_hex = 0
+    for entry in flat_hex_entries:
+        require(isinstance(entry, dict), "flat hex entry must be an object")
+        require_entry(entry, "flat hex")
+        if entry.get("status") == "active":
+            active_flat_hex += 1
+            gate_text = text(ROOT / str(entry["rtl_gate"]))
+            require(str(entry["source"]) in gate_text, f"{entry['source']} active gate must consume the named image")
+            require("RTL_RETIRE" in gate_text and "EMULATOR_RETIRE" in gate_text, f"{entry['source']} gate must compare retire traces")
+            require("RTL_FINAL" in gate_text and "EMULATOR_FINAL" in gate_text, f"{entry['source']} gate must compare final state")
+    require(active_flat_hex >= 1, "manifest must keep at least one active top-level flat hex program")
     for entry in assembly_entries:
         require(isinstance(entry, dict), "assembly entry must be an object")
         require_entry(entry, "assembly")

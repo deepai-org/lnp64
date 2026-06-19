@@ -32,56 +32,11 @@ mapfile -t rtl_files < tests/rtl/top_program_filelist.f
 build_dir="$(rtl_build_dir "top_program")"
 rtl_prepare_build_dir "$build_dir"
 
-program_hex="${TMPDIR:-/tmp}/lnp64_top_program.hex"
-python3 - "$program_hex" <<'PY'
-from pathlib import Path
-import sys
-
-
-def enc_ri(opcode: int, rd: int, imm: int) -> int:
-    return (opcode << 24) | ((rd & 0x1f) << 19) | (imm & 0xffff)
-
-
-def enc_rrr(opcode: int, rd: int, rs1: int, rs2: int) -> int:
-    return (
-        (opcode << 24)
-        | ((rd & 0x1f) << 19)
-        | ((rs1 & 0x1f) << 14)
-        | ((rs2 & 0x1f) << 9)
-    )
-
-
-def enc_mem(opcode: int, reg_a: int, base: int, imm: int) -> int:
-    return (opcode << 24) | ((reg_a & 0x1f) << 19) | ((base & 0x1f) << 14) | (imm & 0x3fff)
-
-
-def enc_reg(opcode: int, reg: int) -> int:
-    return (opcode << 24) | ((reg & 0x1f) << 19)
-
-
-def enc_rrrr(opcode: int, rd: int, a: int, b: int, c: int) -> int:
-    return enc_rrr(opcode, rd, a, b) | ((c & 0x1f) << 4)
-
-
-def enc_branch(opcode: int, delta_words: int) -> int:
-    return (opcode << 24) | (delta_words & 0x00ff_ffff)
-
-
-program = [
-    enc_ri(0x01, 1, 7),
-    enc_ri(0x01, 2, 5),
-    enc_rrr(0x10, 3, 1, 2),
-    enc_mem(0x33, 3, 0, 0),
-    enc_mem(0x30, 4, 0, 0),
-    enc_branch(0x20, 2),
-    enc_ri(0x01, 5, 99),
-    enc_ri(0x01, 10, 2),
-    enc_rrrr(0x56, 6, 10, 0, 0),
-    enc_reg(0x3a, 4),
-]
-
-Path(sys.argv[1]).write_text("".join(f"{word:08x}\n" for word in program))
-PY
+program_hex="${1:-tests/rtl/programs/top_smoke.hex}"
+if [[ ! -f "$program_hex" ]]; then
+  printf 'missing top-level program hex image: %s\n' "$program_hex" >&2
+  exit 1
+fi
 
 rtl_lint "${common_flags[@]}" "${rtl_files[@]}"
 verilator --binary --Mdir "$build_dir" "${common_flags[@]}" "${rtl_files[@]}" >/tmp/lnp64_rtl_top_program_build.log

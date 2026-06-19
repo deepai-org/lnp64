@@ -9,6 +9,15 @@
     "trace_target": "typed_transition_trace",
     "current_trace_stage": "string_trace_scaffold"
   },
+  "flat_hex_programs": [
+    {
+      "source": "tests/rtl/programs/top_smoke.hex",
+      "required_features": ["core", "branch", "load_store", "env_get", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    }
+  ],
   "assembly_programs": [
     {"source": "demos/allocator_native.s", "required_features": ["core", "heap"], "status": "blocked_by_features"},
     {"source": "demos/await_timer.s", "required_features": ["core", "scheduler", "waitable", "timer"], "status": "blocked_by_features"},
