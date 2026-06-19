@@ -138,6 +138,7 @@ pub fn find_token_constant(name: &str) -> Option<i64> {
         "ENOTDIR" => Some(20),
         "ERANGE" => Some(34),
         "ESTALE" => Some(116),
+        "LNP64_OBJECT_CTL_CREATE" => Some(1),
         "ETIMEDOUT" => Some(110),
         "EXDEV" => Some(18),
         "ENOSYS" => Some(38),

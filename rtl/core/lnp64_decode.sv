@@ -241,6 +241,12 @@ module lnp64_decode (
             8'h57: begin
                 dec.opcode = LNP64_OP_WRITE_FD;
             end
+            8'h59: begin
+                dec.opcode = LNP64_OP_CLONE;
+            end
+            8'h5a: begin
+                dec.opcode = LNP64_OP_JOIN;
+            end
             8'h5b: begin
                 dec.opcode = LNP64_OP_DMA_CTL;
             end
@@ -511,6 +517,8 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_MPROTECT ||
             dec.opcode == LNP64_OP_OPEN_FD ||
             dec.opcode == LNP64_OP_FD_CLOSE ||
+            dec.opcode == LNP64_OP_CLONE ||
+            dec.opcode == LNP64_OP_JOIN ||
             dec.opcode == LNP64_OP_DMA_CTL ||
             dec.opcode == LNP64_OP_ENV_GET ||
             dec.opcode == LNP64_OP_READ_FD ||

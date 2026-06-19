@@ -21,6 +21,9 @@ use crate::native::{
 
 const STACK_SIZE: u64 = 4 * 1024 * 1024;
 const CALL_FRAME_SIZE: u64 = 32 * 1024;
+const COMMITTED_EXEC_CALL_FRAME_SIZE: u64 = 1024;
+const COMMITTED_EXEC_CHILD_SP: u64 = 0x67_3000;
+const COMMITTED_EXEC_THREAD_STACK_STRIDE: u64 = 0x1000;
 const THREAD_STACK_STRIDE: u64 = 0x40_000;
 const MMAP_BASE: u64 = 0x200_000;
 const ASLR_PAGE: u64 = 4096;
@@ -2409,7 +2412,12 @@ impl Machine {
             }
             Instr::Call(target) => {
                 let ret = self.thread()?.ip as u64;
-                let legacy_sp = self.thread()?.regs[31].wrapping_sub(CALL_FRAME_SIZE);
+                let frame_size = if self.committed_exec_mode {
+                    COMMITTED_EXEC_CALL_FRAME_SIZE
+                } else {
+                    CALL_FRAME_SIZE
+                };
+                let legacy_sp = self.thread()?.regs[31].wrapping_sub(frame_size);
                 if std::env::var_os("LNP64_TRACE_CALLS").is_some() {
                     let thread = self.thread()?;
                     eprintln!(
@@ -2418,7 +2426,9 @@ impl Machine {
                     );
                 }
                 let ip = self.resolve_target(target)?;
-                if !self.committed_exec_mode {
+                if self.committed_exec_mode {
+                    self.thread_mut()?.regs[31] = legacy_sp;
+                } else {
                     self.store_u64(legacy_sp, ret)?;
                     self.thread_mut()?.regs[31] = legacy_sp;
                 }
@@ -2429,7 +2439,12 @@ impl Machine {
             Instr::CallReg(target) => {
                 let ip = self.read_reg(target)? as usize;
                 let ret = self.thread()?.ip as u64;
-                let legacy_sp = self.thread()?.regs[31].wrapping_sub(CALL_FRAME_SIZE);
+                let frame_size = if self.committed_exec_mode {
+                    COMMITTED_EXEC_CALL_FRAME_SIZE
+                } else {
+                    CALL_FRAME_SIZE
+                };
+                let legacy_sp = self.thread()?.regs[31].wrapping_sub(frame_size);
                 if std::env::var_os("LNP64_TRACE_CALLS").is_some() {
                     let thread = self.thread()?;
                     eprintln!(
@@ -2437,7 +2452,9 @@ impl Machine {
                         thread.regs[31], thread.regs[1], thread.regs[2], thread.regs[3]
                     );
                 }
-                if !self.committed_exec_mode {
+                if self.committed_exec_mode {
+                    self.thread_mut()?.regs[31] = legacy_sp;
+                } else {
                     self.store_u64(legacy_sp, ret)?;
                     self.thread_mut()?.regs[31] = legacy_sp;
                 }
@@ -2456,7 +2473,9 @@ impl Machine {
             Instr::Ret => {
                 let next = if self.committed_exec_mode {
                     let thread = self.thread_mut()?;
-                    thread.return_stack.pop().unwrap_or(thread.lr)
+                    let next = thread.return_stack.pop().unwrap_or(thread.lr);
+                    thread.regs[31] = thread.regs[31].wrapping_add(COMMITTED_EXEC_CALL_FRAME_SIZE);
+                    next
                 } else {
                     let sp = self.thread()?.regs[31];
                     let next = self.load_u64(sp)?;
@@ -4050,28 +4069,32 @@ impl Machine {
                     return Ok(());
                 };
                 let tid = self.next_tid;
-                let stack_top = self.process()?.stack_top;
-                let stack_offset = match tid
-                    .checked_sub(1)
-                    .and_then(|index| index.checked_mul(THREAD_STACK_STRIDE))
-                {
-                    Some(offset) => offset,
-                    None => {
-                        self.set_status_errno(12)?;
-                        self.write_reg(dst, -1i64 as u64)?;
-                        return Ok(());
-                    }
+                let child_stack = if self.committed_exec_mode {
+                    tid.checked_sub(2)
+                        .and_then(|index| index.checked_mul(COMMITTED_EXEC_THREAD_STACK_STRIDE))
+                        .and_then(|offset| COMMITTED_EXEC_CHILD_SP.checked_sub(offset))
+                } else {
+                    let stack_top = self.process()?.stack_top;
+                    tid.checked_sub(1)
+                        .and_then(|index| index.checked_mul(THREAD_STACK_STRIDE))
+                        .and_then(|offset| {
+                            stack_top
+                                .checked_sub(CALL_FRAME_SIZE)
+                                .and_then(|base| base.checked_sub(offset))
+                        })
                 };
-                let Some(child_stack) = stack_top
-                    .checked_sub(CALL_FRAME_SIZE)
-                    .and_then(|base| base.checked_sub(stack_offset))
-                else {
+                let Some(child_stack) = child_stack else {
                     self.set_status_errno(12)?;
                     self.write_reg(dst, -1i64 as u64)?;
                     return Ok(());
                 };
+                let frame_size = if self.committed_exec_mode {
+                    COMMITTED_EXEC_CALL_FRAME_SIZE
+                } else {
+                    CALL_FRAME_SIZE
+                };
                 if self
-                    .ensure_mapped(child_stack, CALL_FRAME_SIZE as usize, true)
+                    .ensure_mapped(child_stack, frame_size as usize, true)
                     .is_err()
                 {
                     self.set_status_errno(12)?;

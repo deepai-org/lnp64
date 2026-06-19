@@ -2967,7 +2967,14 @@ impl Parser {
             Token::For => {
                 self.advance();
                 self.expect(Token::LParen)?;
-                let init = if self.check(&Token::Semi) {
+                let init_decl = if self.is_local_declaration_start() {
+                    Some(self.parse_local_decl_stmt()?)
+                } else {
+                    None
+                };
+                let init = if init_decl.is_some() {
+                    Vec::new()
+                } else if self.check(&Token::Semi) {
                     self.advance();
                     Vec::new()
                 } else {
@@ -3002,12 +3009,17 @@ impl Parser {
                 }
                 self.expect(Token::RParen)?;
                 let body = self.parse_stmt_or_block()?;
-                Ok(Stmt::For {
+                let for_stmt = Stmt::For {
                     init,
                     cond,
                     post,
                     body,
-                })
+                };
+                if let Some(init_decl) = init_decl {
+                    Ok(Stmt::Block(vec![init_decl, for_stmt]))
+                } else {
+                    Ok(for_stmt)
+                }
             }
             Token::Switch => {
                 self.advance();
@@ -9722,7 +9734,7 @@ impl CodeGen {
                 let fds_ptr = self.emit_expr(&args[0])?;
                 self.emit_pipe_queue_create(fds_ptr)
             }
-            "queue_create" => {
+            "queue_create" if !self.function_names.contains("queue_create") => {
                 if args.len() != 1 {
                     return Err("queue_create(fds) expects 1 argument".to_string());
                 }
@@ -10162,6 +10174,20 @@ impl CodeGen {
                 }
                 self.emit_clone_profile(CloneProfile::SpawnEntry, Some(label))
             }
+            "__lnp_spawn_entry" => {
+                if args.len() != 2 {
+                    return Err("__lnp_spawn_entry(entry, arg) expects 2 arguments".to_string());
+                }
+                let entry = self.emit_expr(&args[0])?;
+                let entry_slot = self.spill_reg(entry);
+                self.temp_reg = 0;
+                let arg = self.emit_expr(&args[1])?;
+                let entry = self.reload_reg(entry_slot)?;
+                let dst = self.alloc_reg()?;
+                self.text
+                    .push(format!("  CLONE.SPAWN r{dst}, r{entry}, r{arg}"));
+                Ok(dst)
+            }
             "yield_cpu" => {
                 self.no_args(name, args)?;
                 self.text.push("  YIELD".to_string());
@@ -10172,7 +10198,7 @@ impl CodeGen {
                 self.text.push(format!("  SLEEP r{ticks}"));
                 Ok(0)
             }
-            "exit" => {
+            "exit" | "__lnp_exit" => {
                 let code = self.one_arg(name, args)?;
                 self.emit_process_exit(code);
                 Ok(0)
@@ -10356,6 +10382,20 @@ impl CodeGen {
             "pthread_join" => {
                 if args.len() != 2 {
                     return Err("pthread_join(thread, retval) expects 2 arguments".to_string());
+                }
+                let tid = self.emit_expr(&args[0])?;
+                let tid_slot = self.spill_reg(tid);
+                self.temp_reg = 0;
+                let retval = self.emit_expr(&args[1])?;
+                let tid = self.reload_reg(tid_slot)?;
+                let dst = self.alloc_reg()?;
+                self.text
+                    .push(format!("  THREAD_JOIN r{dst}, r{tid}, r{retval}"));
+                Ok(dst)
+            }
+            "__lnp_thread_join" => {
+                if args.len() != 2 {
+                    return Err("__lnp_thread_join(thread, retval) expects 2 arguments".to_string());
                 }
                 let tid = self.emit_expr(&args[0])?;
                 let tid_slot = self.spill_reg(tid);

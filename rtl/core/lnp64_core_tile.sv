@@ -5,7 +5,7 @@ import lnp64_pkg::*;
 module lnp64_core_tile #(
     parameter int TILE_ID = 0,
     parameter int PROGRAM_WORDS = 1024,
-    parameter int SRAM_WORDS = 1152,
+    parameter int SRAM_WORDS = 2176,
     parameter int RETURN_STACK_DEPTH = 64
 ) (
     input  logic clk,
@@ -72,6 +72,7 @@ module lnp64_core_tile #(
         CORE_EXEC,
         CORE_SEND_CMD,
         CORE_WAIT_RSP,
+        CORE_SWITCH,
         CORE_DONE
     } core_state_e;
 
@@ -81,7 +82,24 @@ module lnp64_core_tile #(
     logic [7:0] raw_opcode;
     logic [31:0] pc;
     logic [31:0] next_op_id;
+    localparam int RETURN_STACK_INDEX_WIDTH = $clog2(RETURN_STACK_DEPTH);
     logic [63:0] gpr [0:31];
+    logic [63:0] thread_gpr [0:1][0:31];
+    logic [31:0] thread_pc [0:1];
+    logic [31:0] thread_return_stack [0:1][0:RETURN_STACK_DEPTH-1];
+    logic [RETURN_STACK_INDEX_WIDTH:0] thread_return_stack_depth [0:1];
+    logic [63:0] thread_link_register [0:1];
+    logic thread_cmp_zero [0:1];
+    logic thread_cmp_negative [0:1];
+    logic thread_cmp_greater [0:1];
+    logic thread_cmp_below [0:1];
+    logic thread_cmp_above [0:1];
+    logic thread_active [0:1];
+    logic thread_completed [0:1];
+    logic [63:0] thread_exit_code [0:1];
+    logic active_thread_slot;
+    logic next_thread_slot;
+    logic [31:0] active_tid;
     logic [63:0] sram [0:SRAM_WORDS-1];
     logic [63:0] initial_sram [0:SRAM_WORDS-1];
     logic [63:0] initial_data_sram [0:SRAM_WORDS-1];
@@ -91,8 +109,10 @@ module lnp64_core_tile #(
     localparam logic [63:0] FLAT_DATA_BASE_ADDR = 64'h0000_0000_0001_0000;
     localparam logic [63:0] FLAT_EXEC_BASE_ADDR = 64'h0000_0000_0000_1000;
     localparam logic [63:0] FLAT_EXEC_INITIAL_SP = 64'h0000_0000_0067_2000;
-    localparam logic [63:0] FLAT_EXEC_STACK_BASE_ADDR = 64'h0000_0000_0067_1000;
-    localparam logic [63:0] FLAT_EXEC_STACK_WINDOW_BYTES = 64'd8192;
+    localparam logic [63:0] FLAT_EXEC_STACK_BASE_ADDR = 64'h0000_0000_0067_0000;
+    localparam logic [63:0] FLAT_EXEC_STACK_WINDOW_BYTES = 64'd16384;
+    localparam logic [63:0] FLAT_EXEC_CALL_FRAME_BYTES = 64'd1024;
+    localparam logic [63:0] FLAT_EXEC_CHILD_SP = 64'h0000_0000_0067_3000;
     localparam logic [63:0] OBJECT_OP_CREATE = 64'd1;
     localparam logic [63:0] OBJECT_KIND_COUNTER = 64'd1;
     localparam logic [63:0] OBJECT_KIND_QUEUE = 64'd2;
@@ -141,7 +161,6 @@ module lnp64_core_tile #(
     logic cmp_greater;
     logic cmp_below;
     logic cmp_above;
-    localparam int RETURN_STACK_INDEX_WIDTH = $clog2(RETURN_STACK_DEPTH);
     localparam logic [RETURN_STACK_INDEX_WIDTH:0] RETURN_STACK_DEPTH_VALUE = RETURN_STACK_DEPTH;
     logic [31:0] return_stack [0:RETURN_STACK_DEPTH-1];
     logic [RETURN_STACK_INDEX_WIDTH:0] return_stack_depth;
@@ -164,6 +183,7 @@ module lnp64_core_tile #(
     logic [63:0] object_kind;
     logic [63:0] object_profile;
     logic [63:0] object_fd_req;
+    logic [63:0] object_fd1_req;
     logic [63:0] object_dma_addr;
     logic [63:0] object_dma_len;
     logic [63:0] object_gate_domain;
@@ -244,8 +264,9 @@ module lnp64_core_tile #(
     logic [63:0] cap_queue_lineage;
     logic [63:0] cap_queue_generation;
     logic cap_queue_revoked;
-    logic pipe_byte_valid;
-    logic [7:0] pipe_byte_value;
+    logic pipe_payload_valid [0:FDR_SLOT_COUNT-1];
+    logic [63:0] pipe_payload_value [0:FDR_SLOT_COUNT-1];
+    logic [3:0] pipe_payload_len [0:FDR_SLOT_COUNT-1];
     logic memory_object_valid;
     logic [63:0] memory_object_lineage;
     logic [63:0] memory_object_len;
@@ -286,11 +307,16 @@ module lnp64_core_tile #(
     logic [63:0] cap_recv_rights;
     logic cap_recv_rights_subset;
     int unsigned pipe_fd;
+    int unsigned pipe_queue_slot;
     logic pipe_fd_in_range;
     logic pipe_fd_is_token;
     logic pipe_fd_token_shape_valid;
     logic pipe_fd_generation_matches;
     logic pipe_fd_token_stale;
+    int unsigned pipe_alloc_reader_fd;
+    int unsigned pipe_alloc_writer_fd;
+    logic pipe_alloc_available;
+    logic [3:0] pipe_pull_len;
     int unsigned close_fd;
     logic close_fd_in_range;
     logic close_fd_is_token;
@@ -557,6 +583,75 @@ module lnp64_core_tile #(
     function automatic logic [63:0] min_u64(input logic [63:0] lhs, input logic [63:0] rhs);
         min_u64 = lhs < rhs ? lhs : rhs;
     endfunction
+
+    function automatic logic [63:0] low_bytes_mask(input logic [3:0] len);
+        begin
+            unique case (len)
+                4'd0: low_bytes_mask = 64'h0000_0000_0000_0000;
+                4'd1: low_bytes_mask = 64'h0000_0000_0000_00ff;
+                4'd2: low_bytes_mask = 64'h0000_0000_0000_ffff;
+                4'd3: low_bytes_mask = 64'h0000_0000_00ff_ffff;
+                4'd4: low_bytes_mask = 64'h0000_0000_ffff_ffff;
+                4'd5: low_bytes_mask = 64'h0000_00ff_ffff_ffff;
+                4'd6: low_bytes_mask = 64'h0000_ffff_ffff_ffff;
+                4'd7: low_bytes_mask = 64'h00ff_ffff_ffff_ffff;
+                default: low_bytes_mask = 64'hffff_ffff_ffff_ffff;
+            endcase
+        end
+    endfunction
+
+    function automatic logic [63:0] store_payload_low_word(
+        input logic [63:0] word,
+        input logic [2:0] lane,
+        input logic [63:0] value,
+        input logic [3:0] len
+    );
+        begin
+            store_payload_low_word = word;
+            for (int byte_idx = 0; byte_idx < 8; byte_idx = byte_idx + 1) begin
+                if (byte_idx >= lane && (byte_idx - lane) < len) begin
+                    store_payload_low_word[byte_idx * 8 +: 8] =
+                        value[(byte_idx - lane) * 8 +: 8];
+                end
+            end
+        end
+    endfunction
+
+    function automatic logic [63:0] store_payload_high_word(
+        input logic [63:0] word,
+        input logic [2:0] lane,
+        input logic [63:0] value,
+        input logic [3:0] len
+    );
+        begin
+            store_payload_high_word = word;
+            for (int byte_idx = 0; byte_idx < 8; byte_idx = byte_idx + 1) begin
+                if (byte_idx < lane && (8 - lane + byte_idx) < len) begin
+                    store_payload_high_word[byte_idx * 8 +: 8] =
+                        value[(8 - lane + byte_idx) * 8 +: 8];
+                end
+            end
+        end
+    endfunction
+
+    task automatic store_payload_unaligned_next(
+        input logic [63:0] addr,
+        input logic [63:0] value,
+        input logic [3:0] len
+    );
+        int unsigned word_index;
+        int unsigned next_word_index;
+        logic [2:0] lane;
+        begin
+            lane = addr[2:0];
+            word_index = sram_word_index(addr);
+            next_word_index = sram_word_index(addr + (64'd8 - {61'd0, lane}));
+            sram[word_index] <= store_payload_low_word(sram[word_index], lane, value, len);
+            if ({1'b0, lane} + len > 4'd8) begin
+                sram[next_word_index] <= store_payload_high_word(sram[next_word_index], lane, value, len);
+            end
+        end
+    endtask
 
     function automatic logic [63:0] align_up_u64(input logic [63:0] value, input logic [63:0] align);
         logic [63:0] mask;
@@ -933,6 +1028,7 @@ module lnp64_core_tile #(
         object_kind = load_double_unaligned(object_argblock_addr + 64'd8);
         object_profile = load_double_unaligned(object_argblock_addr + 64'd16);
         object_fd_req = load_double_unaligned(object_argblock_addr + 64'd24);
+        object_fd1_req = load_double_unaligned(object_argblock_addr + 64'd32);
         object_dma_addr = load_double_unaligned(object_argblock_addr + 64'd40);
         object_dma_len = load_double_unaligned(object_argblock_addr + 64'd48);
         object_gate_domain = load_double_unaligned(object_argblock_addr + 64'd32);
@@ -1002,6 +1098,15 @@ module lnp64_core_tile #(
         end else begin
             pipe_fd = fdr_value_fd(gpr[dec.rs1]);
         end
+        if (pipe_fd == 4) begin
+            pipe_queue_slot = 3;
+        end else if (pipe_fd == 6) begin
+            pipe_queue_slot = 5;
+        end else if (pipe_fd == 8) begin
+            pipe_queue_slot = 7;
+        end else begin
+            pipe_queue_slot = pipe_fd;
+        end
         pipe_fd_in_range = pipe_fd < FDR_SLOT_COUNT;
         pipe_fd_is_token = gpr[dec.rs1] >= 64'd256;
         pipe_fd_token_shape_valid = (gpr[dec.rs1] & FDR_TOKEN_MARKER) != 64'd0 &&
@@ -1011,6 +1116,14 @@ module lnp64_core_tile #(
             (((gpr[dec.rs1] & ~FDR_TOKEN_MARKER) >> 8) == fdr_generation[pipe_fd]);
         pipe_fd_token_stale = pipe_fd_is_token && pipe_fd_token_shape_valid && pipe_fd_in_range &&
             (!fdr_valid[pipe_fd] || fdr_revoked[pipe_fd] || !pipe_fd_generation_matches);
+        pipe_pull_len = 4'd0;
+        if (pipe_queue_slot < FDR_SLOT_COUNT && pipe_payload_valid[pipe_queue_slot]) begin
+            if (gpr[dec.rs3] < {60'd0, pipe_payload_len[pipe_queue_slot]}) begin
+                pipe_pull_len = gpr[dec.rs3][3:0];
+            end else begin
+                pipe_pull_len = pipe_payload_len[pipe_queue_slot];
+            end
+        end
         close_fd = fdr_value_fd(gpr[dec.rd]);
         close_fd_in_range = close_fd < FDR_SLOT_COUNT;
         close_fd_is_token = gpr[dec.rd] >= 64'd256;
@@ -1027,6 +1140,16 @@ module lnp64_core_tile #(
             if (!file_open_available && !fdr_valid[slot]) begin
                 file_open_fd = slot;
                 file_open_available = 1'b1;
+            end
+        end
+        pipe_alloc_reader_fd = 3;
+        pipe_alloc_writer_fd = 4;
+        pipe_alloc_available = 1'b0;
+        for (int slot = 3; slot + 1 < FDR_SLOT_COUNT; slot = slot + 2) begin
+            if (!pipe_alloc_available && !fdr_valid[slot] && !fdr_valid[slot + 1]) begin
+                pipe_alloc_reader_fd = slot;
+                pipe_alloc_writer_fd = slot + 1;
+                pipe_alloc_available = 1'b1;
             end
         end
         dynamic_file_read_count = min_u64(gpr[dec.rs3], 64'd8);
@@ -1094,12 +1217,21 @@ module lnp64_core_tile #(
     end
 
     always_comb begin
+        active_tid = {31'd0, active_thread_slot} + 32'd1;
+        if (active_thread_slot == 1'b0 && thread_active[1]) begin
+            next_thread_slot = 1'b1;
+        end else if (active_thread_slot == 1'b1 && thread_active[0]) begin
+            next_thread_slot = 1'b0;
+        end else begin
+            next_thread_slot = active_thread_slot;
+        end
+
         cmd.op_id = next_op_id;
         cmd.tile_id = TILE_ID[31:0];
         cmd.opcode = pending_unsupported ? LNP64_OP_UNSUPPORTED : dec.opcode;
         cmd.profile = 16'd0;
         cmd.pid = 32'd1;
-        cmd.tid = 32'd1;
+        cmd.tid = active_tid;
         cmd.domain_id = 32'd1;
         cmd.domain_gen = 32'd1;
         cmd.credential_snapshot_id = 32'd1;
@@ -1271,7 +1403,7 @@ module lnp64_core_tile #(
         retire_submit_next.op_id = next_op_id;
         retire_submit_next.tile_id = TILE_ID[31:0];
         retire_submit_next.pid = 32'd1;
-        retire_submit_next.tid = 32'd1;
+        retire_submit_next.tid = active_tid;
         retire_submit_next.pc = pc;
         retire_submit_next.action = 16'd1;
 
@@ -1287,6 +1419,7 @@ module lnp64_core_tile #(
     end
 
     integer i;
+    integer j;
     always_ff @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
             state <= CORE_RESET;
@@ -1329,6 +1462,26 @@ module lnp64_core_tile #(
             cmp_above <= 1'b0;
             return_stack_depth <= '0;
             link_register <= 64'd0;
+            active_thread_slot <= 1'b0;
+            for (i = 0; i < 2; i = i + 1) begin
+                thread_pc[i] <= 32'd0;
+                thread_return_stack_depth[i] <= '0;
+                thread_link_register[i] <= 64'd0;
+                thread_cmp_zero[i] <= 1'b0;
+                thread_cmp_negative[i] <= 1'b0;
+                thread_cmp_greater[i] <= 1'b0;
+                thread_cmp_below[i] <= 1'b0;
+                thread_cmp_above[i] <= 1'b0;
+                thread_active[i] <= i == 0;
+                thread_completed[i] <= 1'b0;
+                thread_exit_code[i] <= 64'd0;
+                for (j = 0; j < 32; j = j + 1) begin
+                    thread_gpr[i][j] <= 64'd0;
+                end
+                for (j = 0; j < RETURN_STACK_DEPTH; j = j + 1) begin
+                    thread_return_stack[i][j] <= 32'd0;
+                end
+            end
             pending_unsupported <= 1'b0;
             command_pc <= 32'd0;
             heap_next <= HEAP_ARCH_BASE;
@@ -1348,8 +1501,6 @@ module lnp64_core_tile #(
             call_continuation_return_pc <= 32'd0;
             call_continuation_result_reg <= 8'd0;
             call_next_op_id <= 64'd1;
-            pipe_byte_valid <= 1'b0;
-            pipe_byte_value <= 8'd0;
             memory_object_valid <= 1'b0;
             memory_object_lineage <= 64'd0;
             memory_object_len <= 64'd0;
@@ -1382,6 +1533,9 @@ module lnp64_core_tile #(
                 fdr_rights[i] <= i < 3 ? CAP_RIGHT_ALL : 64'd0;
                 fdr_lineage[i] <= {32'd0, i[31:0]} + 64'd1;
                 fdr_kind[i] <= i < 3 ? FDR_KIND_GENERIC : FDR_KIND_CLOSED;
+                pipe_payload_valid[i] <= 1'b0;
+                pipe_payload_value[i] <= 64'd0;
+                pipe_payload_len[i] <= 4'd0;
                 call_gate_valid[i] <= 1'b0;
                 call_gate_entry[i] <= 64'd0;
                 call_gate_mode[i] <= 64'd0;
@@ -1441,6 +1595,7 @@ module lnp64_core_tile #(
                 CORE_EXEC: begin
                     cmd_valid <= 1'b0;
                     rsp_ready <= 1'b0;
+                    state <= CORE_SWITCH;
                     if (!dec.supported) begin
                         pending_unsupported <= 1'b1;
                         command_pc <= pc;
@@ -1868,6 +2023,7 @@ module lnp64_core_tile #(
                                     return_stack[return_stack_depth[RETURN_STACK_INDEX_WIDTH-1:0]] <= pc + 32'd1;
                                     return_stack_depth <= return_stack_depth + {{RETURN_STACK_INDEX_WIDTH{1'b0}}, 1'b1};
                                 end
+                                gpr[31] <= gpr[31] - FLAT_EXEC_CALL_FRAME_BYTES;
                                 link_register <= flat_exec_addr(pc + 32'd1);
                                 pc <= pc + dec.imm;
                                 retired_count <= retired_count + 32'd1;
@@ -1879,6 +2035,7 @@ module lnp64_core_tile #(
                                     return_stack[return_stack_depth[RETURN_STACK_INDEX_WIDTH-1:0]] <= pc + 32'd1;
                                     return_stack_depth <= return_stack_depth + {{RETURN_STACK_INDEX_WIDTH{1'b0}}, 1'b1};
                                 end
+                                gpr[31] <= gpr[31] - FLAT_EXEC_CALL_FRAME_BYTES;
                                 link_register <= flat_exec_addr(pc + 32'd1);
                                 pc <= flat_exec_pc_word(gpr[dec.rd]);
                                 retired_count <= retired_count + 32'd1;
@@ -1906,6 +2063,7 @@ module lnp64_core_tile #(
                                 end else begin
                                     pc <= flat_exec_pc_word(link_register);
                                 end
+                                gpr[31] <= gpr[31] + FLAT_EXEC_CALL_FRAME_BYTES;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
@@ -2535,20 +2693,20 @@ module lnp64_core_tile #(
                                     ((fdr_rights[pipe_fd] & 64'd2) == 64'd0)) begin
                                     gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= LNP64_ERR_EBADF;
-                                end else if (gpr[dec.rs3] != 64'd1) begin
+                                end else if (gpr[dec.rs3] > 64'd8) begin
                                     gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= LNP64_ERR_EINVAL;
-                                end else if (pipe_byte_valid) begin
+                                end else if (pipe_payload_valid[pipe_queue_slot]) begin
                                     gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= LNP64_ERR_EAGAIN;
                                 end else begin
-                                    pipe_byte_valid <= 1'b1;
-                                    pipe_byte_value <= load_byte_lane(
-                                        sram[pipe_buf_word_index],
-                                        pipe_buf_byte_lane
-                                    );
-                                    gpr[1] <= 64'd1;
-                                    gpr[dec.rd] <= 64'd1;
+                                    pipe_payload_valid[pipe_queue_slot] <= 1'b1;
+                                    pipe_payload_value[pipe_queue_slot] <=
+                                        load_double_unaligned(gpr[dec.rs2]) &
+                                        low_bytes_mask(gpr[dec.rs3][3:0]);
+                                    pipe_payload_len[pipe_queue_slot] <= gpr[dec.rs3][3:0];
+                                    gpr[1] <= gpr[dec.rs3];
+                                    gpr[dec.rd] <= gpr[dec.rs3];
                                     errno_reg <= LNP64_ERR_OK;
                                 end
                                 pc <= pc + 32'd1;
@@ -2579,22 +2737,32 @@ module lnp64_core_tile #(
                                     ((fdr_rights[pipe_fd] & 64'd1) == 64'd0)) begin
                                     gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= LNP64_ERR_EBADF;
-                                end else if (gpr[dec.rs3] != 64'd1) begin
+                                end else if (gpr[dec.rs3] > 64'd8) begin
                                     gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= LNP64_ERR_EINVAL;
-                                end else if (!pipe_byte_valid) begin
-                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                    errno_reg <= LNP64_ERR_EAGAIN;
+                                end else if (!pipe_payload_valid[pipe_queue_slot]) begin
+                                    gpr[1] <= 64'd0;
+                                    gpr[dec.rd] <= 64'd0;
+                                    errno_reg <= LNP64_ERR_OK;
                                 end else begin
-                                    sram[pipe_buf_word_index] <= store_byte_lane(
-                                        sram[pipe_buf_word_index],
-                                        pipe_buf_byte_lane,
-                                        pipe_byte_value
+                                    store_payload_unaligned_next(
+                                        gpr[dec.rs2],
+                                        pipe_payload_value[pipe_queue_slot],
+                                        pipe_pull_len
                                     );
-                                    pipe_byte_valid <= 1'b0;
-                                    pipe_byte_value <= 8'd0;
-                                    gpr[1] <= 64'd1;
-                                    gpr[dec.rd] <= 64'd1;
+                                    if (pipe_pull_len == pipe_payload_len[pipe_queue_slot]) begin
+                                        pipe_payload_valid[pipe_queue_slot] <= 1'b0;
+                                        pipe_payload_value[pipe_queue_slot] <= 64'd0;
+                                        pipe_payload_len[pipe_queue_slot] <= 4'd0;
+                                    end else begin
+                                        pipe_payload_value[pipe_queue_slot] <=
+                                            pipe_payload_value[pipe_queue_slot] >>
+                                            ({2'd0, pipe_pull_len} * 6'd8);
+                                        pipe_payload_len[pipe_queue_slot] <=
+                                            pipe_payload_len[pipe_queue_slot] - pipe_pull_len;
+                                    end
+                                    gpr[1] <= {60'd0, pipe_pull_len};
+                                    gpr[dec.rd] <= {60'd0, pipe_pull_len};
                                     errno_reg <= LNP64_ERR_OK;
                                 end
                                 pc <= pc + 32'd1;
@@ -2616,15 +2784,78 @@ module lnp64_core_tile #(
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
-                            LNP64_OP_EXIT: begin
-                                done <= 1'b1;
-                                pid1_runnable <= 1'b0;
-                                pid1_parked <= 1'b0;
+                            LNP64_OP_CLONE: begin
+                                if (active_thread_slot == 1'b0 && !thread_active[1]) begin
+                                    for (i = 0; i < 32; i = i + 1) begin
+                                        thread_gpr[1][i] <= gpr[i];
+                                    end
+                                    thread_gpr[1][1] <= gpr[dec.rs2];
+                                    thread_gpr[1][31] <= FLAT_EXEC_CHILD_SP;
+                                    thread_gpr[1][0] <= 64'd0;
+                                    thread_pc[1] <= flat_exec_pc_word(gpr[dec.rs1]);
+                                    thread_return_stack_depth[1] <= '0;
+                                    for (i = 0; i < RETURN_STACK_DEPTH; i = i + 1) begin
+                                        thread_return_stack[1][i] <= 32'd0;
+                                    end
+                                    thread_link_register[1] <= 64'd0;
+                                    thread_cmp_zero[1] <= 1'b0;
+                                    thread_cmp_negative[1] <= 1'b0;
+                                    thread_cmp_greater[1] <= 1'b0;
+                                    thread_cmp_below[1] <= 1'b0;
+                                    thread_cmp_above[1] <= 1'b0;
+                                    thread_active[1] <= 1'b1;
+                                    thread_completed[1] <= 1'b0;
+                                    thread_exit_code[1] <= 64'd0;
+                                    gpr[dec.rd] <= 64'd2;
+                                    errno_reg <= LNP64_ERR_OK;
+                                end else begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EAGAIN;
+                                end
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
-                                state <= CORE_DONE;
+                            end
+                            LNP64_OP_JOIN: begin
+                                if (gpr[dec.rs1] == active_tid) begin
+                                    gpr[dec.rd] <= 64'd35;
+                                    errno_reg <= LNP64_ERR_OK;
+                                end else if (gpr[dec.rs1] == 64'd2 && thread_completed[1]) begin
+                                    if (gpr[dec.rs2] != 64'd0) begin
+                                        store_double_unaligned_next(gpr[dec.rs2], thread_exit_code[1]);
+                                    end
+                                    thread_completed[1] <= 1'b0;
+                                    gpr[dec.rd] <= 64'd0;
+                                    errno_reg <= LNP64_ERR_OK;
+                                end else if (gpr[dec.rs1] == 64'd2 && thread_active[1]) begin
+                                    gpr[dec.rd] <= 64'd11;
+                                    errno_reg <= LNP64_ERR_EAGAIN;
+                                end else begin
+                                    gpr[dec.rd] <= 64'd3;
+                                    errno_reg <= LNP64_ERR_OK;
+                                end
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_EXIT: begin
+                                if (active_thread_slot == 1'b0) begin
+                                    done <= 1'b1;
+                                    pid1_runnable <= 1'b0;
+                                    pid1_parked <= 1'b0;
+                                    state <= CORE_DONE;
+                                end else begin
+                                    thread_active[active_thread_slot] <= 1'b0;
+                                    thread_completed[active_thread_slot] <= 1'b1;
+                                    thread_exit_code[active_thread_slot] <= gpr[dec.rd];
+                                    state <= CORE_SWITCH;
+                                end
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_OBJECT_CTL: begin
                                 if (object_op == OBJECT_OP_CREATE &&
@@ -2681,36 +2912,41 @@ module lnp64_core_tile #(
                                 end else if (object_op == OBJECT_OP_CREATE &&
                                     object_kind == OBJECT_KIND_QUEUE &&
                                     object_profile == OBJECT_PROFILE_PIPE &&
-                                    (object_fd_req == 64'd0 || object_fd_req == 64'd3) &&
-                                    load_double_unaligned(object_argblock_addr + 64'd32) == 64'd4) begin
-                                    fdr_valid[3] <= 1'b1;
-                                    fdr_revoked[3] <= 1'b0;
-                                    fdr_generation[3] <= fdr_generation[3] + 64'd1;
-                                    fdr_rights[3] <= CAP_RIGHT_ALL;
-                                    fdr_lineage[3] <= 64'd257;
-                                    fdr_kind[3] <= FDR_KIND_PIPE_READER;
-                                    fdr_valid[4] <= 1'b1;
-                                    fdr_revoked[4] <= 1'b0;
-                                    fdr_generation[4] <= fdr_generation[4] + 64'd1;
-                                    fdr_rights[4] <= CAP_RIGHT_ALL;
-                                    fdr_lineage[4] <= 64'd258;
-                                    fdr_kind[4] <= FDR_KIND_PIPE_WRITER;
+                                    ((object_fd_req == 64'd0 && object_fd1_req == 64'd0 &&
+                                        pipe_alloc_available) ||
+                                     (object_fd_req != 64'd0 && object_fd_req < FDR_SLOT_COUNT &&
+                                        object_fd1_req == object_fd_req + 64'd1 &&
+                                        object_fd1_req < FDR_SLOT_COUNT &&
+                                        !fdr_valid[object_fd_req[31:0]] &&
+                                        !fdr_valid[object_fd1_req[31:0]]))) begin
+                                    fdr_valid[pipe_alloc_reader_fd] <= 1'b1;
+                                    fdr_revoked[pipe_alloc_reader_fd] <= 1'b0;
+                                    fdr_generation[pipe_alloc_reader_fd] <= fdr_generation[pipe_alloc_reader_fd] + 64'd1;
+                                    fdr_rights[pipe_alloc_reader_fd] <= CAP_RIGHT_ALL;
+                                    fdr_lineage[pipe_alloc_reader_fd] <= 64'd257 + {32'd0, pipe_alloc_reader_fd[31:0]};
+                                    fdr_kind[pipe_alloc_reader_fd] <= FDR_KIND_PIPE_READER;
+                                    fdr_valid[pipe_alloc_writer_fd] <= 1'b1;
+                                    fdr_revoked[pipe_alloc_writer_fd] <= 1'b0;
+                                    fdr_generation[pipe_alloc_writer_fd] <= fdr_generation[pipe_alloc_writer_fd] + 64'd1;
+                                    fdr_rights[pipe_alloc_writer_fd] <= CAP_RIGHT_ALL;
+                                    fdr_lineage[pipe_alloc_writer_fd] <= 64'd257 + {32'd0, pipe_alloc_writer_fd[31:0]};
+                                    fdr_kind[pipe_alloc_writer_fd] <= FDR_KIND_PIPE_WRITER;
                                     sram[object_fd_store_word_index] <= store_double_low_word(
                                         sram[object_fd_store_word_index],
                                         object_fd_store_byte_lane,
-                                        64'd3
+                                        {32'd0, pipe_alloc_reader_fd[31:0]}
                                     );
                                     if (object_fd_store_byte_lane != 3'd0) begin
                                         sram[object_fd_store_next_word_index] <= store_double_high_word(
                                             sram[object_fd_store_next_word_index],
                                             object_fd_store_byte_lane,
-                                            64'd3
+                                            {32'd0, pipe_alloc_reader_fd[31:0]}
                                         );
                                     end
                                     sram[object_fd1_store_word_index] <= store_double_low_word(
                                         sram[object_fd1_store_word_index],
                                         object_fd1_store_byte_lane,
-                                        64'd4
+                                        {32'd0, pipe_alloc_writer_fd[31:0]}
                                     );
                                     gpr[dec.rd] <= 64'd0;
                                     errno_reg <= LNP64_ERR_OK;
@@ -3274,9 +3510,45 @@ module lnp64_core_tile #(
                             pid1_parked <= 1'b0;
                             state <= CORE_DONE;
                         end else begin
-                            state <= CORE_EXEC;
+                            state <= CORE_SWITCH;
                         end
                     end
+                end
+                CORE_SWITCH: begin
+                    cmd_valid <= 1'b0;
+                    rsp_ready <= 1'b0;
+                    thread_pc[active_thread_slot] <= pc;
+                    thread_return_stack_depth[active_thread_slot] <= return_stack_depth;
+                    thread_link_register[active_thread_slot] <= link_register;
+                    thread_cmp_zero[active_thread_slot] <= cmp_zero;
+                    thread_cmp_negative[active_thread_slot] <= cmp_negative;
+                    thread_cmp_greater[active_thread_slot] <= cmp_greater;
+                    thread_cmp_below[active_thread_slot] <= cmp_below;
+                    thread_cmp_above[active_thread_slot] <= cmp_above;
+                    for (i = 0; i < 32; i = i + 1) begin
+                        thread_gpr[active_thread_slot][i] <= gpr[i];
+                    end
+                    for (i = 0; i < RETURN_STACK_DEPTH; i = i + 1) begin
+                        thread_return_stack[active_thread_slot][i] <= return_stack[i];
+                    end
+                    if (next_thread_slot != active_thread_slot) begin
+                        active_thread_slot <= next_thread_slot;
+                        pc <= thread_pc[next_thread_slot];
+                        return_stack_depth <= thread_return_stack_depth[next_thread_slot];
+                        link_register <= thread_link_register[next_thread_slot];
+                        cmp_zero <= thread_cmp_zero[next_thread_slot];
+                        cmp_negative <= thread_cmp_negative[next_thread_slot];
+                        cmp_greater <= thread_cmp_greater[next_thread_slot];
+                        cmp_below <= thread_cmp_below[next_thread_slot];
+                        cmp_above <= thread_cmp_above[next_thread_slot];
+                        for (i = 0; i < 32; i = i + 1) begin
+                            gpr[i] <= thread_gpr[next_thread_slot][i];
+                        end
+                        for (i = 0; i < RETURN_STACK_DEPTH; i = i + 1) begin
+                            return_stack[i] <= thread_return_stack[next_thread_slot][i];
+                        end
+                    end
+                    state <= CORE_EXEC;
                 end
                 CORE_DONE: begin
                     cmd_valid <= 1'b0;

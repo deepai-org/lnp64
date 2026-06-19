@@ -449,6 +449,7 @@ fn flat_exec_instr_word_len(program: &Program, instr: &Instr) -> usize {
     match instr {
         Instr::Li(_, Value::Imm(imm)) if imm16(*imm, "LI immediate").is_err() => 2,
         Instr::Li(_, Value::Label(label)) if program.data_labels.contains_key(label) => 2,
+        Instr::Ld(_, MemRef::Label(_), _) => 3,
         Instr::Auipc(_, _) => 2,
         _ => 1,
     }
@@ -589,6 +590,18 @@ fn encode_flat_exec_instr(
             *base,
             imm14(*offset, "LD.B offset")?,
         )]),
+        Instr::Ld(rd, MemRef::Label(label), width) => {
+            let mut words =
+                encode_flat_exec_li(program, word_pcs, *rd, &Value::Label(label.clone()))?;
+            let opcode = match width {
+                Width::Double => 0x30,
+                Width::Word => 0x31,
+                Width::Half => 0x36,
+                Width::Byte => 0x32,
+            };
+            words.push(enc_mem(opcode, *rd, *rd, 0));
+            Ok(words)
+        }
         Instr::St(MemRef::BaseOffset(base, offset), src, Width::Double) => Ok(vec![enc_mem(
             0x33,
             *src,
@@ -669,11 +682,13 @@ fn encode_flat_exec_instr(
         }
         Instr::OpenFdDyn(dst, path, flags) => Ok(vec![enc_rrr(0x6d, *dst, *path, *flags)]),
         Instr::FdCloseDyn(fd) => Ok(vec![enc_reg(0x6e, *fd)]),
+        Instr::CloneSpawn(dst, entry, arg) => Ok(vec![enc_rrr(0x59, *dst, *entry, *arg)]),
+        Instr::ThreadJoin(result, tid, retval) => Ok(vec![enc_rrr(0x5a, *result, *tid, *retval)]),
         Instr::Fence => Ok(vec![enc_reg(0xcd, Reg(0))]),
         Instr::Isync(result, addr, len) => Ok(vec![enc_rrr(0xce, *result, *addr, *len)]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/CALL_REG/LR_GET/LR_SET/RET, YIELD/SLEEP, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, OBJECT_CTL, DOMAIN_CTL, CAP_DUP/SEND/RECV/REVOKE, ERRNO_GET/SET, DMA_CTL, ENV_GET, MMAP/MPROTECT, OPEN_FD_DYN/FD_CLOSE_DYN, READ_FD/WRITE_FD, PULL/PUSH, AWAIT/AWAIT_DYN, CALL_CAP/CALL_CAP_DYN/RET_CAP, READ_FD_DYN/WRITE_FD_DYN, FENCE/ISYNC, AMO, LOCK.CMPXCHG, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/CALL_REG/LR_GET/LR_SET/RET, YIELD/SLEEP, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, OBJECT_CTL, DOMAIN_CTL, CAP_DUP/SEND/RECV/REVOKE, ERRNO_GET/SET, DMA_CTL, ENV_GET, MMAP/MPROTECT, OPEN_FD_DYN/FD_CLOSE_DYN, CLONE.SPAWN/THREAD_JOIN, READ_FD/WRITE_FD, PULL/PUSH, AWAIT/AWAIT_DYN, CALL_CAP/CALL_CAP_DYN/RET_CAP, READ_FD_DYN/WRITE_FD_DYN, FENCE/ISYNC, AMO, LOCK.CMPXCHG, EXIT"
         )),
     }
 }

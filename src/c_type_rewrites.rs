@@ -112,7 +112,15 @@ pub fn apply_scalar_type_rewrites(source: &str) -> String {
     for alias in ["FILE", "DIR", "bool", "regex_t", "regmatch_t"] {
         out = replace_ident_token(&out, alias, "int");
     }
-    for alias in ["uint8_t", "uint16_t", "uint32_t", "uint64_t", "uintptr_t"] {
+    for alias in [
+        "uint8_t",
+        "uint16_t",
+        "uint32_t",
+        "uint64_t",
+        "uintptr_t",
+        "lnp64_word_t",
+        "lnp64_cap_t",
+    ] {
         out = replace_ident_token(&out, alias, "int");
     }
     out

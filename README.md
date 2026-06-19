@@ -349,6 +349,7 @@ bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_signed_division
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_not.c
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_call_return.c
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_byte_array.c
+bash scripts/run_rtl_top_program_smoke.sh demos/ping_pong.c
 bash scripts/run_rtl_top_program_smoke.sh demos/allocator.c
 bash scripts/run_rtl_top_program_smoke.sh demos/allocator_native.s
 bash scripts/run_rtl_top_program_smoke.sh demos/env_get.s
@@ -371,6 +372,21 @@ scripts/check_rtl_m7_typed_commit_trace.py
 scripts/check_theorem_rtl_coupling.py
 bash scripts/run_rtl_proof_gates.sh
 bash scripts/run_rtl_synth_gates.sh
+```
+
+The current execution-first top-level smoke that exercises a compiler-generated
+two-thread queue path is:
+
+```sh
+LNP64_RTL_TOP_PROGRAM_QUIET=1 LNP64_RTL_TOP_PROGRAM_MAX_CYCLES=50000 bash scripts/run_rtl_top_program_smoke.sh demos/ping_pong.c
+```
+
+After one normal top-program run has rebuilt the Verilator binary, reuse it for
+fast checks:
+
+```sh
+LNP64_RTL_TOP_PROGRAM_QUIET=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_TOP_PROGRAM_MAX_CYCLES=5000 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_smoke.s
+LNP64_RTL_TOP_PROGRAM_QUIET=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_TOP_PROGRAM_MAX_CYCLES=5000 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_call_return.c
 ```
 
 `scripts/run_rtl_top_program_manifest.sh` builds the top-level Verilator
