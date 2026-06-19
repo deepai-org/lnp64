@@ -1789,14 +1789,17 @@ mod tests {
         assert!(gate_driver.contains(r"command//\{build\}/"));
         assert!(!gate_driver.contains("lnp64 cc"));
         assert!(!gate_driver.contains("cargo run -- cc"));
-        assert!(libc_test_driver.contains("--backend toy|llvm"));
+        assert!(libc_test_driver.contains("--backend llvm"));
+        assert!(!libc_test_driver.contains("--backend toy|llvm"));
         assert!(libc_test_driver.contains("backend=\"llvm\""));
         assert!(libc_test_driver.contains("loader=\"exec-plan\""));
         assert!(libc_test_driver.contains("--loader asm|exec-plan"));
+        assert!(libc_test_driver.contains("--legacy-toy"));
+        assert!(libc_test_driver.contains("toy backend is legacy-only; use --legacy-toy"));
         assert!(libc_test_driver.contains("exec bash scripts/run_real_llvm_lnp64_docker.sh"));
         assert!(libc_test_driver.contains("llvm backend requires --loader exec-plan"));
-        assert!(libc_test_driver.contains("Use\n--backend toy --loader asm"));
-        assert!(libc_test_driver.contains("lnp64 cc --toy-bootstrap"));
+        assert!(libc_test_driver.contains("Use --legacy-toy"));
+        assert!(libc_test_driver.contains("cc --toy-bootstrap"));
         assert!(real_tblgen.contains("llvm-tblgen"));
         assert!(real_tblgen.contains("llvm-config"));
         assert!(real_tblgen.contains("-gen-register-info"));
@@ -6334,9 +6337,7 @@ mod tests {
         assert!(run_elf.contains("real_libc_test_fcntl_basic_bounded_execution"));
         assert!(!run_elf.contains("real_libc_test_fcntl_execution"));
         assert!(libc_test_readme.contains("Do not add new Rust toy compiler fcntl/fork"));
-        assert!(
-            libc_test_readme.contains("bash scripts/run_libc_test.sh --backend toy --loader asm")
-        );
+        assert!(libc_test_readme.contains("bash scripts/run_libc_test.sh --legacy-toy"));
         for intrinsic in manifest_field(target_manifest, "intrinsics").split(',') {
             assert!(intrinsic.starts_with("__lnp_"));
             assert!(intrinsics.contains(intrinsic));

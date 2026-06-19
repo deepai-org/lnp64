@@ -9,12 +9,12 @@ loader="exec-plan"
 
 usage() {
   cat <<'USAGE'
-usage: scripts/run_libc_test.sh [--backend toy|llvm] [--loader asm|exec-plan]
+usage: scripts/run_libc_test.sh [--backend llvm] [--loader asm|exec-plan] [--legacy-toy]
 
 The default llvm/exec-plan backend dispatches to the real Clang/lld/run-elf
-gate and must not route through the Rust bootstrap compiler. Use
---backend toy --loader asm only for the legacy libc-test subset that still runs
-through lnp64 cc --toy-bootstrap.
+gate and must not route through the Rust bootstrap compiler. Use --legacy-toy
+only for the legacy libc-test subset that still runs through lnp64 cc
+--toy-bootstrap.
 USAGE
 }
 
@@ -27,6 +27,10 @@ while (($#)); do
         usage >&2
         exit 2
       fi
+      if [[ "$backend" == "toy" ]]; then
+        printf '%s\n' "toy backend is legacy-only; use --legacy-toy" >&2
+        exit 2
+      fi
       shift 2
       ;;
     --loader)
@@ -37,6 +41,11 @@ while (($#)); do
         exit 2
       fi
       shift 2
+      ;;
+    --legacy-toy)
+      backend="toy"
+      loader="asm"
+      shift
       ;;
     -h|--help)
       usage

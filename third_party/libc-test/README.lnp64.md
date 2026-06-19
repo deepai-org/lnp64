@@ -102,5 +102,5 @@ bash scripts/run_libc_test.sh
 Run the legacy toy-bootstrap subset explicitly with:
 
 ```sh
-bash scripts/run_libc_test.sh --backend toy --loader asm
+bash scripts/run_libc_test.sh --legacy-toy
 ```
