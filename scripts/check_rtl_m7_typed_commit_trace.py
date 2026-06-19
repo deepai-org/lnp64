@@ -19,6 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = ROOT / "rtl/schema/lnp64_shared_schema.json"
+RTL_M7_TB = ROOT / "rtl/sim/lnp64_m7_tb.sv"
 DEFAULT_M7_TRACE_LOG = Path("/tmp/lnp64_rtl_m7_typed_commit.log")
 
 ERR_OK = 0
@@ -144,6 +145,56 @@ def parse_sv_int(value: str) -> int:
 def parse_schema_field(entry: str) -> tuple[str, int]:
     name, raw_width = entry.split(":", 1)
     return name, int(raw_width)
+
+
+def require_trace_display_payload_source(
+    tb_source: str,
+    marker: str,
+    source_signal: str,
+    message: str,
+) -> None:
+    marker_index = tb_source.find(marker)
+    if marker_index < 0:
+        fail(message)
+    display_end = tb_source.find(");", marker_index)
+    if display_end < 0:
+        fail(message)
+    display_call = tb_source[marker_index:display_end]
+    if re.search(rf"\b{re.escape(source_signal)}\b", display_call) is None:
+        fail(message)
+
+
+def check_m7_testbench_trace_source_contract() -> None:
+    try:
+        tb_source = RTL_M7_TB.read_text(encoding="utf-8")
+    except OSError as exc:
+        fail(f"could not read M7 testbench source: {exc}")
+    required_bit_width_sources = (
+        "$bits(lnp64_m7_sched_commit_t)",
+        "$bits(lnp64_m7_state_projection_t)",
+    )
+    missing_bit_width_sources = [
+        source
+        for source in required_bit_width_sources
+        if source not in tb_source
+    ]
+    if missing_bit_width_sources:
+        fail(
+            "M7 testbench no longer emits schema-owned packed bit widths: "
+            f"{missing_bit_width_sources}"
+        )
+    require_trace_display_payload_source(
+        tb_source,
+        "TTRACE_M7_BITS",
+        "typed_commit",
+        "M7 testbench no longer emits packed commit bits from typed_commit",
+    )
+    require_trace_display_payload_source(
+        tb_source,
+        "TTRACE_M7_STATE_BITS",
+        "typed_state_projection",
+        "M7 testbench no longer emits packed state bits from typed_state_projection",
+    )
 
 
 def load_schema() -> tuple[tuple[str, ...], tuple[int, ...], tuple[str, ...], tuple[int, ...], Ops]:
@@ -385,6 +436,7 @@ def check_transition_trace(
 
 def main() -> int:
     commit_fields, commit_widths, state_fields, state_widths, ops = load_schema()
+    check_m7_testbench_trace_source_contract()
     output = run_m7_gate()
     commits = parse_json_records(output, "TTRACE_M7 ", COMMIT_NAME, commit_fields)
     commit_bits = parse_bit_records(output, "TTRACE_M7_BITS ", COMMIT_BITS_NAME, sum(commit_widths))

@@ -6,6 +6,7 @@ from __future__ import annotations
 import copy
 import importlib.util
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -38,6 +39,11 @@ def expect_failure(expected: str, action) -> None:
         require(expected in output, f"checker failure did not include {expected!r}: {output}")
     else:
         raise SystemExit("expected checker failure")
+
+
+def replace_once(text: str, old: str, new: str) -> str:
+    require(old in text, f"missing text to replace: {old!r}")
+    return text.replace(old, new, 1)
 
 
 def commit_record(
@@ -200,6 +206,40 @@ def main() -> None:
             sum(state_widths),
         ),
     )
+
+    tb_source = checker.RTL_M7_TB.read_text(encoding="utf-8")
+    checker.check_m7_testbench_trace_source_contract()
+    original_tb_path = checker.RTL_M7_TB
+    try:
+        with tempfile.TemporaryDirectory(prefix="lnp64-m7-source-contract-") as raw_tmp:
+            tmp = Path(raw_tmp)
+            missing_width_tb = tmp / "missing_width.sv"
+            missing_width_tb.write_text(
+                replace_once(tb_source, "$bits(lnp64_m7_sched_commit_t)", "152"),
+                encoding="utf-8",
+            )
+            checker.RTL_M7_TB = missing_width_tb
+            expect_failure(
+                "M7 testbench no longer emits schema-owned packed bit widths",
+                checker.check_m7_testbench_trace_source_contract,
+            )
+
+            wrong_payload_tb = tmp / "wrong_payload.sv"
+            wrong_payload_tb.write_text(
+                replace_once(
+                    tb_source,
+                    "                typed_commit\n            );",
+                    "                typed_state_projection\n            );",
+                ),
+                encoding="utf-8",
+            )
+            checker.RTL_M7_TB = wrong_payload_tb
+            expect_failure(
+                "M7 testbench no longer emits packed commit bits from typed_commit",
+                checker.check_m7_testbench_trace_source_contract,
+            )
+    finally:
+        checker.RTL_M7_TB = original_tb_path
 
     bad_commit_bits = list(commit_bits)
     bad_commit_bits[0] = encode_bits({**commits[0], "tid": checker.M7_TID + 1}, commit_fields, commit_widths)
