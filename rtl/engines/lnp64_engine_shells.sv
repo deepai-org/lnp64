@@ -617,6 +617,10 @@ module lnp64_cap_engine(
     input logic object_cap_sync_valid,
     input logic [31:0] object_cap_sync_reader_fd,
     input logic [31:0] object_cap_sync_writer_fd,
+    input logic object_cap_sync_single_valid,
+    input logic [31:0] object_cap_sync_single_fd,
+    input logic [2:0] object_cap_sync_single_kind,
+    input logic [63:0] object_cap_sync_single_lineage,
     output logic rsp_valid,
     input logic rsp_ready,
     output lnp64_rsp_t rsp,
@@ -717,6 +721,15 @@ module lnp64_cap_engine(
                     fdr_lineage[object_cap_sync_writer_fd] <= 64'd257 + {32'd0, object_cap_sync_writer_fd};
                     fdr_kind[object_cap_sync_writer_fd] <= LNP64_FDR_KIND_PIPE_WRITER;
                 end
+            end
+            if (object_cap_sync_single_valid &&
+                object_cap_sync_single_fd < LNP64_FDR_SLOT_COUNT) begin
+                fdr_valid[object_cap_sync_single_fd] <= 1'b1;
+                fdr_revoked[object_cap_sync_single_fd] <= 1'b0;
+                fdr_generation[object_cap_sync_single_fd] <= fdr_generation[object_cap_sync_single_fd] + 64'd1;
+                fdr_rights[object_cap_sync_single_fd] <= LNP64_CAP_RIGHT_ALL;
+                fdr_lineage[object_cap_sync_single_fd] <= object_cap_sync_single_lineage;
+                fdr_kind[object_cap_sync_single_fd] <= object_cap_sync_single_kind;
             end
             if (cmd_valid && cmd_ready) begin : accept_cmd
                 int unsigned src_fd;
@@ -946,6 +959,10 @@ module lnp64_object_engine(
     output logic cap_sync_valid,
     output logic [31:0] cap_sync_reader_fd,
     output logic [31:0] cap_sync_writer_fd,
+    output logic cap_sync_single_valid,
+    output logic [31:0] cap_sync_single_fd,
+    output logic [2:0] cap_sync_single_kind,
+    output logic [63:0] cap_sync_single_lineage,
     output logic [31:0] telemetry_counter,
     output logic [31:0] fault_counter
 );
@@ -984,17 +1001,23 @@ module lnp64_object_engine(
             cap_sync_valid <= 1'b0;
             cap_sync_reader_fd <= 32'd0;
             cap_sync_writer_fd <= 32'd0;
+            cap_sync_single_valid <= 1'b0;
+            cap_sync_single_fd <= 32'd0;
+            cap_sync_single_kind <= LNP64_FDR_KIND_CLOSED;
+            cap_sync_single_lineage <= 64'd0;
             for (i = 0; i < LNP64_FDR_SLOT_COUNT; i = i + 1) begin
                 fdr_valid[i] <= i < 3;
             end
         end else begin
             cap_sync_valid <= 1'b0;
+            cap_sync_single_valid <= 1'b0;
             if (have_rsp && rsp_ready) begin
                 have_rsp <= 1'b0;
             end
             if (cmd_valid && cmd_ready) begin : accept_cmd
                 int unsigned reader_fd;
                 int unsigned writer_fd;
+                int unsigned single_fd;
                 logic explicit_pair_valid;
                 logic auto_pair_valid;
 
@@ -1036,6 +1059,41 @@ module lnp64_object_engine(
                         cap_sync_valid <= 1'b1;
                         cap_sync_reader_fd <= reader_fd[31:0];
                         cap_sync_writer_fd <= writer_fd[31:0];
+                    end else begin
+                        rsp_reg.errno_value <= LNP64_ERR_EINVAL;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end
+                end else if (cmd.opcode == LNP64_OP_OBJECT_CTL &&
+                    cmd.arg0 == LNP64_OBJECT_OP_CREATE &&
+                    cmd.arg1 == LNP64_OBJECT_KIND_COUNTER &&
+                    (cmd.arg2 == 64'd0 || cmd.arg2 == 64'd1)) begin
+                    single_fd = cmd.arg3 == 64'd0 ? 3 : cmd.arg3[31:0];
+                    if (single_fd < LNP64_FDR_SLOT_COUNT) begin
+                        fdr_valid[single_fd] <= 1'b1;
+                        rsp_reg.result_value <= {32'd0, single_fd[31:0]};
+                        rsp_reg.errno_value <= LNP64_ERR_OK;
+                        rsp_reg.status <= LNP64_STATUS_OK;
+                        cap_sync_single_valid <= 1'b1;
+                        cap_sync_single_fd <= single_fd[31:0];
+                        cap_sync_single_kind <= LNP64_FDR_KIND_GENERIC;
+                        cap_sync_single_lineage <= 64'd769;
+                    end else begin
+                        rsp_reg.errno_value <= LNP64_ERR_EINVAL;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end
+                end else if (cmd.opcode == LNP64_OP_OBJECT_CTL &&
+                    cmd.arg0 == LNP64_OBJECT_OP_CREATE &&
+                    cmd.arg1 == LNP64_OBJECT_KIND_TIMER) begin
+                    single_fd = cmd.arg3 == 64'd0 ? 3 : cmd.arg3[31:0];
+                    if (single_fd < LNP64_FDR_SLOT_COUNT) begin
+                        fdr_valid[single_fd] <= 1'b1;
+                        rsp_reg.result_value <= {32'd0, single_fd[31:0]};
+                        rsp_reg.errno_value <= LNP64_ERR_OK;
+                        rsp_reg.status <= LNP64_STATUS_OK;
+                        cap_sync_single_valid <= 1'b1;
+                        cap_sync_single_fd <= single_fd[31:0];
+                        cap_sync_single_kind <= LNP64_FDR_KIND_GENERIC;
+                        cap_sync_single_lineage <= 64'd1025;
                     end else begin
                         rsp_reg.errno_value <= LNP64_ERR_EINVAL;
                         rsp_reg.status <= LNP64_STATUS_ERROR;

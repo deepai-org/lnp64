@@ -167,6 +167,10 @@ module lnp64_top #(
     logic object_cap_sync_valid;
     logic [31:0] object_cap_sync_reader_fd;
     logic [31:0] object_cap_sync_writer_fd;
+    logic object_cap_sync_single_valid;
+    logic [31:0] object_cap_sync_single_fd;
+    logic [2:0] object_cap_sync_single_kind;
+    logic [63:0] object_cap_sync_single_lineage;
     logic page_allocator_idle;
     logic metadata_idle;
     logic futex_idle;
@@ -497,9 +501,9 @@ module lnp64_top #(
     lnp64_sd_spi_flash sd_spi_i(.clk(clk), .reset_n(logic_reset_n), .absent_or_idle(sd_spi_absent_or_idle), .telemetry_counter(), .fault_counter());
     lnp64_boot_image_storage boot_image_i(.clk(clk), .reset_n(logic_reset_n), .idle(boot_image_idle), .telemetry_counter(), .fault_counter());
 
-    lnp64_cap_engine cap_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(cap_cmd_valid), .cmd_ready(cap_cmd_ready), .cmd(cap_cmd), .object_cap_sync_valid(object_cap_sync_valid), .object_cap_sync_reader_fd(object_cap_sync_reader_fd), .object_cap_sync_writer_fd(object_cap_sync_writer_fd), .rsp_valid(cap_rsp_valid), .rsp_ready(cap_rsp_ready), .rsp(cap_rsp), .telemetry_counter(), .fault_counter());
+    lnp64_cap_engine cap_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(cap_cmd_valid), .cmd_ready(cap_cmd_ready), .cmd(cap_cmd), .object_cap_sync_valid(object_cap_sync_valid), .object_cap_sync_reader_fd(object_cap_sync_reader_fd), .object_cap_sync_writer_fd(object_cap_sync_writer_fd), .object_cap_sync_single_valid(object_cap_sync_single_valid), .object_cap_sync_single_fd(object_cap_sync_single_fd), .object_cap_sync_single_kind(object_cap_sync_single_kind), .object_cap_sync_single_lineage(object_cap_sync_single_lineage), .rsp_valid(cap_rsp_valid), .rsp_ready(cap_rsp_ready), .rsp(cap_rsp), .telemetry_counter(), .fault_counter());
     lnp64_domain_engine domain_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());
-    lnp64_object_engine object_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(object_cmd_valid), .cmd_ready(object_cmd_ready), .cmd(object_cmd), .rsp_valid(object_rsp_valid), .rsp_ready(object_rsp_ready), .rsp(object_rsp), .cap_sync_valid(object_cap_sync_valid), .cap_sync_reader_fd(object_cap_sync_reader_fd), .cap_sync_writer_fd(object_cap_sync_writer_fd), .telemetry_counter(), .fault_counter());
+    lnp64_object_engine object_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(object_cmd_valid), .cmd_ready(object_cmd_ready), .cmd(object_cmd), .rsp_valid(object_rsp_valid), .rsp_ready(object_rsp_ready), .rsp(object_rsp), .cap_sync_valid(object_cap_sync_valid), .cap_sync_reader_fd(object_cap_sync_reader_fd), .cap_sync_writer_fd(object_cap_sync_writer_fd), .cap_sync_single_valid(object_cap_sync_single_valid), .cap_sync_single_fd(object_cap_sync_single_fd), .cap_sync_single_kind(object_cap_sync_single_kind), .cap_sync_single_lineage(object_cap_sync_single_lineage), .telemetry_counter(), .fault_counter());
     lnp64_gate_engine gate_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());
     lnp64_process_engine process_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());
     lnp64_vma_engine vma_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());

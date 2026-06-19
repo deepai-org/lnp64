@@ -223,6 +223,7 @@ module lnp64_core_tile #(
     logic object_single_fd_in_range;
     int unsigned object_rsp_reader_fd;
     int unsigned object_rsp_writer_fd;
+    int unsigned object_rsp_single_fd;
     logic dma_buffer_object_valid;
     logic dma_buffer_object_revoked;
     logic [63:0] dma_buffer_object_fd;
@@ -1446,6 +1447,7 @@ module lnp64_core_tile #(
         thread_submit_next.active_location = TILE_ID[31:0];
         object_rsp_reader_fd = rsp.event_mask[31:0];
         object_rsp_writer_fd = rsp.event_mask[63:32];
+        object_rsp_single_fd = rsp.result_value[31:0];
     end
 
     integer i;
@@ -2894,8 +2896,13 @@ module lnp64_core_tile #(
                             LNP64_OP_OBJECT_CTL: begin
                                 if (object_engine_shadow_enabled &&
                                     object_op == OBJECT_OP_CREATE &&
-                                    object_kind == OBJECT_KIND_QUEUE &&
-                                    object_profile == OBJECT_PROFILE_PIPE) begin
+                                    ((object_kind == OBJECT_KIND_QUEUE &&
+                                        object_profile == OBJECT_PROFILE_PIPE) ||
+                                     (object_kind == OBJECT_KIND_COUNTER &&
+                                        (object_profile == 64'd0 || object_profile == 64'd1) &&
+                                        object_single_fd_in_range) ||
+                                     (object_kind == OBJECT_KIND_TIMER &&
+                                        object_single_fd_in_range))) begin
                                     pending_unsupported <= 1'b0;
                                     command_pc <= pc;
                                     state <= CORE_SEND_CMD;
@@ -3637,7 +3644,11 @@ module lnp64_core_tile #(
                             object_op == OBJECT_OP_CREATE &&
                             object_kind == OBJECT_KIND_QUEUE &&
                             object_profile == OBJECT_PROFILE_PIPE) begin
-                            object_engine_shadow_enabled <= 1'b0;
+                            if (rsp.status != LNP64_STATUS_OK ||
+                                rsp.errno_value != LNP64_ERR_OK) begin
+                                object_engine_shadow_enabled <= 1'b0;
+                                cap_engine_shadow_enabled <= 1'b0;
+                            end
                             if (rsp.status == LNP64_STATUS_OK &&
                                 rsp.errno_value == LNP64_ERR_OK &&
                                 object_rsp_reader_fd < FDR_SLOT_COUNT &&
@@ -3671,6 +3682,77 @@ module lnp64_core_tile #(
                                     object_fd1_store_byte_lane,
                                     {32'd0, object_rsp_writer_fd[31:0]}
                                 );
+                            end
+                        end
+                        if (!pending_unsupported &&
+                            dec.opcode == LNP64_OP_OBJECT_CTL &&
+                            object_op == OBJECT_OP_CREATE &&
+                            object_kind == OBJECT_KIND_COUNTER &&
+                            (object_profile == 64'd0 || object_profile == 64'd1)) begin
+                            if (rsp.status != LNP64_STATUS_OK ||
+                                rsp.errno_value != LNP64_ERR_OK) begin
+                                object_engine_shadow_enabled <= 1'b0;
+                                cap_engine_shadow_enabled <= 1'b0;
+                            end
+                            if (rsp.status == LNP64_STATUS_OK &&
+                                rsp.errno_value == LNP64_ERR_OK &&
+                                object_rsp_single_fd < FDR_SLOT_COUNT) begin
+                                event_counter_valid <= 1'b1;
+                                event_counter_lineage <= 64'd769;
+                                event_counter_value <= object_dma_addr;
+                                fdr_valid[object_rsp_single_fd] <= 1'b1;
+                                fdr_revoked[object_rsp_single_fd] <= 1'b0;
+                                fdr_generation[object_rsp_single_fd] <= fdr_generation[object_rsp_single_fd] + 64'd1;
+                                fdr_rights[object_rsp_single_fd] <= CAP_RIGHT_ALL;
+                                fdr_lineage[object_rsp_single_fd] <= 64'd769;
+                                fdr_kind[object_rsp_single_fd] <= FDR_KIND_GENERIC;
+                                sram[object_fd_store_word_index] <= store_double_low_word(
+                                    sram[object_fd_store_word_index],
+                                    object_fd_store_byte_lane,
+                                    {32'd0, object_rsp_single_fd[31:0]}
+                                );
+                                if (object_fd_store_byte_lane != 3'd0) begin
+                                    sram[object_fd_store_next_word_index] <= store_double_high_word(
+                                        sram[object_fd_store_next_word_index],
+                                        object_fd_store_byte_lane,
+                                        {32'd0, object_rsp_single_fd[31:0]}
+                                    );
+                                end
+                            end
+                        end
+                        if (!pending_unsupported &&
+                            dec.opcode == LNP64_OP_OBJECT_CTL &&
+                            object_op == OBJECT_OP_CREATE &&
+                            object_kind == OBJECT_KIND_TIMER) begin
+                            if (rsp.status != LNP64_STATUS_OK ||
+                                rsp.errno_value != LNP64_ERR_OK) begin
+                                object_engine_shadow_enabled <= 1'b0;
+                                cap_engine_shadow_enabled <= 1'b0;
+                            end
+                            if (rsp.status == LNP64_STATUS_OK &&
+                                rsp.errno_value == LNP64_ERR_OK &&
+                                object_rsp_single_fd < FDR_SLOT_COUNT) begin
+                                timer_valid <= 1'b1;
+                                timer_lineage <= 64'd1025;
+                                timer_expirations <= 64'd0;
+                                fdr_valid[object_rsp_single_fd] <= 1'b1;
+                                fdr_revoked[object_rsp_single_fd] <= 1'b0;
+                                fdr_generation[object_rsp_single_fd] <= fdr_generation[object_rsp_single_fd] + 64'd1;
+                                fdr_rights[object_rsp_single_fd] <= CAP_RIGHT_ALL;
+                                fdr_lineage[object_rsp_single_fd] <= 64'd1025;
+                                fdr_kind[object_rsp_single_fd] <= FDR_KIND_GENERIC;
+                                sram[object_fd_store_word_index] <= store_double_low_word(
+                                    sram[object_fd_store_word_index],
+                                    object_fd_store_byte_lane,
+                                    {32'd0, object_rsp_single_fd[31:0]}
+                                );
+                                if (object_fd_store_byte_lane != 3'd0) begin
+                                    sram[object_fd_store_next_word_index] <= store_double_high_word(
+                                        sram[object_fd_store_next_word_index],
+                                        object_fd_store_byte_lane,
+                                        {32'd0, object_rsp_single_fd[31:0]}
+                                    );
+                                end
                             end
                         end
                         if (!pending_unsupported &&
