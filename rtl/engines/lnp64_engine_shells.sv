@@ -113,6 +113,12 @@ module lnp64_engine_router (
     input  logic heap_rsp_valid,
     output logic heap_rsp_ready,
     input  lnp64_rsp_t heap_rsp,
+    output logic vma_cmd_valid,
+    input  logic vma_cmd_ready,
+    output lnp64_cmd_t vma_cmd,
+    input  logic vma_rsp_valid,
+    output logic vma_rsp_ready,
+    input  lnp64_rsp_t vma_rsp,
     output logic fault_valid,
     input  logic fault_ready,
     output lnp64_fault_t fault,
@@ -122,6 +128,7 @@ module lnp64_engine_router (
     logic route_object;
     logic route_domain;
     logic route_heap;
+    logic route_vma;
     logic route_fault;
     logic route_default;
     logic fault_cmd_valid;
@@ -153,9 +160,11 @@ module lnp64_engine_router (
         cmd.opcode == LNP64_OP_ALLOC_EX ||
         cmd.opcode == LNP64_OP_ALLOC_SIZE ||
         cmd.opcode == LNP64_OP_FREE;
+    assign route_vma = cmd.opcode == LNP64_OP_MMAP ||
+        cmd.opcode == LNP64_OP_MPROTECT;
     assign route_fault = cmd.opcode == LNP64_OP_FAULT_INJECT;
     assign route_default = !route_cap && !route_object && !route_domain &&
-        !route_heap && !route_fault;
+        !route_heap && !route_vma && !route_fault;
 
     assign cap_cmd_valid = cmd_valid && route_cap;
     assign cap_cmd = cmd;
@@ -165,6 +174,8 @@ module lnp64_engine_router (
     assign domain_cmd = cmd;
     assign heap_cmd_valid = cmd_valid && route_heap;
     assign heap_cmd = cmd;
+    assign vma_cmd_valid = cmd_valid && route_vma;
+    assign vma_cmd = cmd;
     assign fault_cmd_valid = cmd_valid && route_fault;
     assign unsupported_cmd_valid = cmd_valid && route_default;
 
@@ -173,16 +184,18 @@ module lnp64_engine_router (
         route_object ? object_cmd_ready :
         route_domain ? domain_cmd_ready :
         route_heap ? heap_cmd_ready :
+        route_vma ? vma_cmd_ready :
         route_fault ? fault_cmd_ready :
         unsupported_cmd_ready;
 
     assign rsp_valid = cap_rsp_valid || object_rsp_valid || domain_rsp_valid ||
-        heap_rsp_valid || fault_rsp_valid || unsupported_rsp_valid;
+        heap_rsp_valid || vma_rsp_valid || fault_rsp_valid || unsupported_rsp_valid;
     assign rsp =
         cap_rsp_valid ? cap_rsp :
         object_rsp_valid ? object_rsp :
         domain_rsp_valid ? domain_rsp :
         heap_rsp_valid ? heap_rsp :
+        vma_rsp_valid ? vma_rsp :
         fault_rsp_valid ? fault_rsp :
         unsupported_rsp;
 
@@ -193,9 +206,12 @@ module lnp64_engine_router (
     assign heap_rsp_ready = rsp_ready && !cap_rsp_valid && !object_rsp_valid &&
         !domain_rsp_valid && heap_rsp_valid;
     assign fault_rsp_ready = rsp_ready && !cap_rsp_valid && !object_rsp_valid &&
-        !domain_rsp_valid && !heap_rsp_valid && fault_rsp_valid;
+        !domain_rsp_valid && !heap_rsp_valid && !vma_rsp_valid && fault_rsp_valid;
+    assign vma_rsp_ready = rsp_ready && !cap_rsp_valid && !object_rsp_valid &&
+        !domain_rsp_valid && !heap_rsp_valid && vma_rsp_valid;
     assign unsupported_rsp_ready = rsp_ready && !cap_rsp_valid && !object_rsp_valid &&
-        !domain_rsp_valid && !heap_rsp_valid && !fault_rsp_valid && unsupported_rsp_valid;
+        !domain_rsp_valid && !heap_rsp_valid && !vma_rsp_valid && !fault_rsp_valid &&
+        unsupported_rsp_valid;
 
     assign fault_valid = fault_fault_valid || unsupported_fault_valid;
     assign fault = fault_fault_valid ? fault_fault : unsupported_fault;
@@ -1375,9 +1391,134 @@ module lnp64_process_engine(input logic clk, input logic reset_n, input logic cm
     lnp64_fail_closed_engine #(.ENGINE_ID(16'd14), .ERRNO_VALUE(LNP64_ERR_ENOTSUP), .STATUS_VALUE(LNP64_STATUS_UNSUPPORTED)) shell(.*,.fault_valid(unused_fault_valid),.fault_ready(1'b1),.fault(unused_fault),.accepted_counter(telemetry_counter),.fault_counter(fault_counter));
 endmodule
 
-module lnp64_vma_engine(input logic clk, input logic reset_n, input logic cmd_valid, output logic cmd_ready, input lnp64_cmd_t cmd, output logic rsp_valid, input logic rsp_ready, output lnp64_rsp_t rsp, output logic [31:0] telemetry_counter, output logic [31:0] fault_counter);
-    logic unused_fault_valid; lnp64_fault_t unused_fault;
-    lnp64_fail_closed_engine #(.ENGINE_ID(16'd15), .ERRNO_VALUE(LNP64_ERR_ENOTSUP), .STATUS_VALUE(LNP64_STATUS_UNSUPPORTED)) shell(.*,.fault_valid(unused_fault_valid),.fault_ready(1'b1),.fault(unused_fault),.accepted_counter(telemetry_counter),.fault_counter(fault_counter));
+module lnp64_vma_engine(
+    input logic clk,
+    input logic reset_n,
+    input logic cmd_valid,
+    output logic cmd_ready,
+    input lnp64_cmd_t cmd,
+    output logic rsp_valid,
+    input logic rsp_ready,
+    output lnp64_rsp_t rsp,
+    output logic [31:0] telemetry_counter,
+    output logic [31:0] fault_counter
+);
+    localparam logic [63:0] MMAP_ARCH_BASE = 64'h0000_0000_0020_e000;
+
+    logic have_rsp;
+    lnp64_rsp_t rsp_reg;
+    logic [63:0] mmap_next;
+    logic [63:0] vma_start [0:3];
+    logic [63:0] vma_len [0:3];
+    logic [63:0] vma_prot [0:3];
+    logic vma_valid [0:3];
+    logic [1:0] vma_next_slot;
+
+    assign cmd_ready = reset_n && !have_rsp;
+    assign rsp_valid = have_rsp;
+    assign rsp = rsp_reg;
+
+    function automatic logic [63:0] align_up_u64(input logic [63:0] value, input logic [63:0] align);
+        logic [63:0] mask;
+        begin
+            if (align <= 64'd1) begin
+                align_up_u64 = value;
+            end else begin
+                mask = align - 64'd1;
+                align_up_u64 = (value + mask) & ~mask;
+            end
+        end
+    endfunction
+
+    integer i;
+    always_ff @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin
+            have_rsp <= 1'b0;
+            rsp_reg <= '0;
+            telemetry_counter <= 32'd0;
+            fault_counter <= 32'd0;
+            mmap_next <= MMAP_ARCH_BASE;
+            vma_next_slot <= 2'd0;
+            for (i = 0; i < 4; i = i + 1) begin
+                vma_start[i] <= 64'd0;
+                vma_len[i] <= 64'd0;
+                vma_prot[i] <= 64'd0;
+                vma_valid[i] <= 1'b0;
+            end
+        end else begin
+            if (have_rsp && rsp_ready) begin
+                have_rsp <= 1'b0;
+            end
+            if (cmd_valid && cmd_ready) begin : accept_cmd
+                logic [63:0] map_addr;
+                logic range_hit;
+                int unsigned hit_slot;
+
+                have_rsp <= 1'b1;
+                telemetry_counter <= telemetry_counter + 32'd1;
+                rsp_reg <= '0;
+                rsp_reg.op_id <= cmd.op_id;
+                rsp_reg.tile_id <= cmd.tile_id;
+                rsp_reg.pid <= cmd.pid;
+                rsp_reg.tid <= cmd.tid;
+                rsp_reg.domain_id <= cmd.domain_id;
+                rsp_reg.domain_gen <= cmd.domain_gen;
+                rsp_reg.result_reg <= cmd.result_reg;
+                rsp_reg.result_value <= 64'hffff_ffff_ffff_ffff;
+                rsp_reg.errno_value <= LNP64_ERR_OK;
+                rsp_reg.status <= LNP64_STATUS_OK;
+
+                if (cmd.opcode == LNP64_OP_MMAP) begin
+                    map_addr = cmd.arg0 != 64'd0 ? cmd.arg0 : align_up_u64(mmap_next, 64'd4096);
+                    if (cmd.arg1 == 64'd0 || (cmd.arg2 & ~64'd7) != 64'd0) begin
+                        rsp_reg.errno_value <= LNP64_ERR_EINVAL;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end else if ((cmd.arg2 & 64'd6) == 64'd6) begin
+                        rsp_reg.errno_value <= LNP64_ERR_EPERM;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end else if (cmd.arg3 != 64'd0 || cmd.flags != 64'd0) begin
+                        rsp_reg.errno_value <= LNP64_ERR_EBADF;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end else begin
+                        vma_start[vma_next_slot] <= map_addr;
+                        vma_len[vma_next_slot] <= cmd.arg1;
+                        vma_prot[vma_next_slot] <= cmd.arg2;
+                        vma_valid[vma_next_slot] <= 1'b1;
+                        vma_next_slot <= vma_next_slot + 2'd1;
+                        mmap_next <= map_addr + cmd.arg1;
+                        rsp_reg.result_value <= map_addr;
+                    end
+                end else if (cmd.opcode == LNP64_OP_MPROTECT) begin
+                    range_hit = 1'b0;
+                    hit_slot = 0;
+                    for (i = 0; i < 4; i = i + 1) begin
+                        if (!range_hit && vma_valid[i] &&
+                            cmd.arg0 >= vma_start[i] &&
+                            (cmd.arg0 + cmd.arg1) <= (vma_start[i] + vma_len[i])) begin
+                            range_hit = 1'b1;
+                            hit_slot = i;
+                        end
+                    end
+                    if (cmd.arg1 == 64'd0 || (cmd.arg2 & ~64'd7) != 64'd0) begin
+                        rsp_reg.errno_value <= LNP64_ERR_EINVAL;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end else if ((cmd.arg2 & 64'd6) == 64'd6) begin
+                        rsp_reg.errno_value <= LNP64_ERR_EPERM;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end else if (!range_hit) begin
+                        rsp_reg.errno_value <= LNP64_ERR_EINVAL;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end else begin
+                        vma_prot[hit_slot] <= cmd.arg2;
+                        rsp_reg.result_value <= 64'd0;
+                    end
+                end else begin
+                    rsp_reg.errno_value <= LNP64_ERR_ENOTSUP;
+                    rsp_reg.status <= LNP64_STATUS_UNSUPPORTED;
+                end
+            end
+        end
+    end
 endmodule
 
 module lnp64_page_allocator(input logic clk, input logic reset_n, output logic idle, output logic [31:0] telemetry_counter, output logic [31:0] fault_counter);
