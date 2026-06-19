@@ -769,6 +769,23 @@ def main() -> None:
     finally:
         checker.load_lean_model_source = original_load_lean_model_source
 
+    missing_packed_refinement_theorem = replace_once(
+        lean_source,
+        "theorem rtl_m1_packed_refinement_step_refines_lean_step",
+        "theorem rtl_m1_packed_step_no_refinement_artifact",
+    )
+    checker.load_lean_model_source = lambda: missing_packed_refinement_theorem
+    try:
+        expect_failure(
+            "typed commit bridge theorems are missing from Lean",
+            lambda: checker.check_lean_typed_commit_mapping(
+                checker.load_m1_op_mappings(m1_contract),
+                checker.load_m1_status_mappings(m1_contract),
+            ),
+        )
+    finally:
+        checker.load_lean_model_source = original_load_lean_model_source
+
     expect_failure(
         "every commit trace field from typed_commit",
         lambda: checker.check_rtl_state_projection_boundary_sources(
