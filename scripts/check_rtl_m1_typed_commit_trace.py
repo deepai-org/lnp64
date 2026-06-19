@@ -220,6 +220,8 @@ M1_TYPED_COMMIT_LEAN_THEOREMS = (
     "rtlM1CommitSchemaToLeanProjection_targets_commit_projection",
     "rtlM1StateProjectionSchemaToLeanProjection_covers_schema",
     "rtlM1StateProjectionSchemaToLeanProjection_targets_state_projection",
+    "rtlM1CommitPackedLayout_within_schema_width",
+    "rtlM1StateProjectionPackedLayout_within_schema_width",
 )
 
 M1_SCHEMA_TO_LEAN_COMMIT_FIELDS = {

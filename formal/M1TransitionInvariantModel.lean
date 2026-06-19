@@ -568,6 +568,14 @@ def packedSchemaLayoutFrom : Nat -> List (String × Nat) -> List PackedFieldLayo
 def packedSchemaLayout (schema : List (String × Nat)) : List PackedFieldLayout :=
   packedSchemaLayoutFrom (packedSchemaWidth schema) schema
 
+def packedFieldWithinWidth (totalWidth : Nat) (field : PackedFieldLayout) : Bool :=
+  decide (field.width > 0) &&
+  decide (field.lsb + field.width = field.msb + 1) &&
+  decide (field.msb < totalWidth)
+
+def packedLayoutWithinWidth (totalWidth : Nat) (layout : List PackedFieldLayout) : Bool :=
+  layout.all (packedFieldWithinWidth totalWidth)
+
 theorem rtlM1CommitPackedSchema_width :
     packedSchemaWidth rtlM1CommitPackedSchema = 281 := by
   rfl
@@ -710,6 +718,18 @@ theorem rtlM1CommitPackedLayout_from_schema :
 theorem rtlM1StateProjectionPackedLayout_from_schema :
     packedSchemaLayout rtlM1StateProjectionPackedSchema =
       rtlM1StateProjectionPackedLayout := by
+  rfl
+
+theorem rtlM1CommitPackedLayout_within_schema_width :
+    packedLayoutWithinWidth
+      (packedSchemaWidth rtlM1CommitPackedSchema)
+      rtlM1CommitPackedLayout = true := by
+  rfl
+
+theorem rtlM1StateProjectionPackedLayout_within_schema_width :
+    packedLayoutWithinWidth
+      (packedSchemaWidth rtlM1StateProjectionPackedSchema)
+      rtlM1StateProjectionPackedLayout = true := by
   rfl
 
 def commitOpToStepOp : CommitOp -> Op
