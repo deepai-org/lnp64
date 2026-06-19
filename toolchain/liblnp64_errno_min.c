@@ -1,4 +1,5 @@
 static int lnp64_errno_slot;
+static int lnp64_errno_initialized;
 
 static int lnp64_errno_get(void) {
   unsigned long value;
@@ -14,12 +15,16 @@ static void lnp64_errno_set(int value) {
 }
 
 int *__errno_location(void) {
-  lnp64_errno_slot = lnp64_errno_get();
+  if (!lnp64_errno_initialized) {
+    lnp64_errno_slot = lnp64_errno_get();
+    lnp64_errno_initialized = 1;
+  }
   return &lnp64_errno_slot;
 }
 
 int lnp64_errno_store(int value) {
   lnp64_errno_slot = value;
+  lnp64_errno_initialized = 1;
   lnp64_errno_set(value);
   return value;
 }

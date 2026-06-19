@@ -12,11 +12,15 @@ void free(void *ptr);
 void *malloc(size_t size);
 void *calloc(size_t count, size_t size);
 void *realloc(void *ptr, size_t size);
+int atoi(const char *nptr);
+long atol(const char *nptr);
 void qsort(void *base, size_t count, size_t size,
            int (*compar)(const void *, const void *));
 long long llabs(long long value);
 double strtod(const char *nptr, char **endptr);
 long strtol(const char *nptr, char **endptr, int base);
 unsigned long strtoul(const char *nptr, char **endptr, int base);
+long long strtoll(const char *nptr, char **endptr, int base);
+unsigned long long strtoull(const char *nptr, char **endptr, int base);
 
 #endif

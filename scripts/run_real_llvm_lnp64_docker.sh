@@ -182,6 +182,8 @@ run_elf_report "real LLVM LNP64 run-elf libc-test basename execution passed" \
   target/llvm-lnp64-build/lnp64-libc-test-basename-linked.elf
 run_elf_report "real LLVM LNP64 run-elf libc-test dirname execution passed" \
   target/llvm-lnp64-build/lnp64-libc-test-dirname-linked.elf
+run_elf_report "real LLVM LNP64 run-elf libc-test strtol execution passed" \
+  target/llvm-lnp64-build/lnp64-libc-test-strtol-linked.elf
 run_elf_report "real LLVM LNP64 run-elf calloc execution passed" \
   target/llvm-lnp64-build/lnp64-calloc-linked.elf
 run_elf_report "real LLVM LNP64 run-elf realloc execution passed" \
