@@ -1828,6 +1828,21 @@ grep -q 'ret' "$libc_startup_impl_dump"
 printf 'real LLVM LNP64 clang minilibc startup implementation object smoke passed: %s\n' \
   "$libc_startup_impl_obj"
 
+libc_time_impl_c="toolchain/liblnp64_time_min.c"
+libc_time_impl_obj="$build_dir/liblnp64-time-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
+  -c "$libc_time_impl_c" -o "$libc_time_impl_obj"
+test -s "$libc_time_impl_obj"
+libc_time_impl_dump="$build_dir/liblnp64-time-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_time_impl_obj" \
+  >"$libc_time_impl_dump"
+grep -q 'get_pcr r' "$libc_time_impl_dump"
+grep -q 'ret' "$libc_time_impl_dump"
+printf 'real LLVM LNP64 clang minilibc time implementation object smoke passed: %s\n' \
+  "$libc_time_impl_obj"
+
 libc_vma_impl_c="toolchain/liblnp64_vma_min.c"
 libc_vma_impl_obj="$build_dir/liblnp64-vma-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
@@ -2486,6 +2501,20 @@ libc_test_strtol_dump="$build_dir/libc-test-strtol-clang-smoke.dump"
 grep -q 'call ' "$libc_test_strtol_dump"
 printf 'real LLVM LNP64 clang libc-test strtol object smoke passed: %s\n' \
   "$libc_test_strtol_obj"
+
+libc_test_clock_gettime_obj="$build_dir/libc-test-clock-gettime-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain/include \
+  -I third_party/libc-test/functional \
+  -c third_party/libc-test/functional/clock_gettime.c \
+  -o "$libc_test_clock_gettime_obj"
+test -s "$libc_test_clock_gettime_obj"
+libc_test_clock_gettime_dump="$build_dir/libc-test-clock-gettime-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_test_clock_gettime_obj" \
+  >"$libc_test_clock_gettime_dump"
+grep -q 'call ' "$libc_test_clock_gettime_dump"
+printf 'real LLVM LNP64 clang libc-test clock_gettime object smoke passed: %s\n' \
+  "$libc_test_clock_gettime_obj"
 
 convert_c="$build_dir/convert-smoke.c"
 cat >"$convert_c" <<'C'
@@ -4164,6 +4193,15 @@ libc_test_strtol_elf="$build_dir/lnp64-libc-test-strtol-linked.elf"
 test -s "$libc_test_strtol_elf"
 printf 'real LLVM LNP64 lld libc-test strtol link smoke passed: %s\n' \
   "$libc_test_strtol_elf"
+
+libc_test_clock_gettime_elf="$build_dir/lnp64-libc-test-clock-gettime-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$libc_test_clock_gettime_elf" "$crt0_obj" "$libc_test_clock_gettime_obj" \
+  "$libc_test_print_obj" "$libc_time_impl_obj" "$libc_errno_impl_obj" \
+  "$libc_fd_impl_obj"
+test -s "$libc_test_clock_gettime_elf"
+printf 'real LLVM LNP64 lld libc-test clock_gettime link smoke passed: %s\n' \
+  "$libc_test_clock_gettime_elf"
 
 calloc_elf="$build_dir/lnp64-calloc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

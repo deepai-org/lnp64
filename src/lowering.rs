@@ -1328,6 +1328,7 @@ mod tests {
         let libc_process_min = include_str!("../toolchain/liblnp64_process_min.c");
         let libc_errno_min = include_str!("../toolchain/liblnp64_errno_min.c");
         let libc_startup_min = include_str!("../toolchain/liblnp64_startup_min.c");
+        let libc_time_min = include_str!("../toolchain/liblnp64_time_min.c");
         let libc_vma_min = include_str!("../toolchain/liblnp64_vma_min.c");
         let libc_futex_min = include_str!("../toolchain/liblnp64_futex_min.c");
         let libc_poll_min = include_str!("../toolchain/liblnp64_poll_min.c");
@@ -1441,6 +1442,7 @@ mod tests {
             "libc_test_basename_static_link",
             "libc_test_dirname_static_link",
             "libc_test_strtol_static_link",
+            "libc_test_clock_gettime_static_link",
             "zlib_package_run_elf",
             "natsort_package_run_elf",
             "jsmn_package_run_elf",
@@ -1456,6 +1458,7 @@ mod tests {
             "libc_test_basename_run_elf",
             "libc_test_dirname_run_elf",
             "libc_test_strtol_run_elf",
+            "libc_test_clock_gettime_run_elf",
             "sbase_echo_static_link",
             "sbase_echo_run_elf",
             "sbase_path_static_link",
@@ -1763,6 +1766,16 @@ mod tests {
                 "real LLVM LNP64 clang minilibc startup implementation object smoke passed"
             )
         );
+        assert!(real_llc.contains("toolchain/liblnp64_time_min.c"));
+        assert!(libc_time_min.contains("clock_gettime"));
+        assert!(libc_time_min.contains("get_pcr %0, REALTIME_SEC"));
+        assert!(libc_time_min.contains("get_pcr %0, REALTIME_NSEC"));
+        assert!(real_llc.contains("liblnp64-time-min.o"));
+        assert!(real_llc.contains("grep -q 'get_pcr r'"));
+        assert!(
+            real_llc
+                .contains("real LLVM LNP64 clang minilibc time implementation object smoke passed")
+        );
         assert!(libc_string_min.contains("int isascii(int ch)"));
         assert!(libc_string_min.contains("int isblank(int ch)"));
         assert!(libc_string_min.contains("int iscntrl(int ch)"));
@@ -1813,6 +1826,11 @@ mod tests {
         assert!(real_llc.contains("libc-test-strtol-clang-smoke.o"));
         assert!(real_llc.contains("third_party/libc-test/functional/strtol.c"));
         assert!(real_llc.contains("real LLVM LNP64 clang libc-test strtol object smoke passed"));
+        assert!(real_llc.contains("libc-test-clock-gettime-clang-smoke.o"));
+        assert!(real_llc.contains("third_party/libc-test/functional/clock_gettime.c"));
+        assert!(
+            real_llc.contains("real LLVM LNP64 clang libc-test clock_gettime object smoke passed")
+        );
         assert!(real_llc.contains("lnp64-libc-test-ctype-bounded-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld libc-test ctype_bounded link smoke passed"));
         assert!(real_llc.contains("lnp64-libc-test-string-linked.elf"));
@@ -1835,6 +1853,12 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 lld libc-test dirname link smoke passed"));
         assert!(real_llc.contains("lnp64-libc-test-strtol-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld libc-test strtol link smoke passed"));
+        assert!(real_llc.contains("lnp64-libc-test-clock-gettime-linked.elf"));
+        assert!(real_llc.contains(
+            r#""$libc_test_clock_gettime_obj" \
+  "$libc_test_print_obj" "$libc_time_impl_obj" "$libc_errno_impl_obj""#
+        ));
+        assert!(real_llc.contains("real LLVM LNP64 lld libc-test clock_gettime link smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_futex_min.c"));
         assert!(libc_futex_min.contains("__lnp_futex_wait"));
         assert!(libc_futex_min.contains("__lnp_futex_wake"));
@@ -2799,6 +2823,11 @@ mod tests {
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf libc-test strtol execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-libc-test-clock-gettime-linked.elf"));
+        assert!(
+            real_llc_docker
+                .contains("real LLVM LNP64 run-elf libc-test clock_gettime execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-calloc-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf calloc execution passed"));
         assert!(real_llc_docker.contains("lnp64-realloc-linked.elf"));
@@ -2953,6 +2982,7 @@ mod tests {
             "real_libc_test_basename_execution",
             "real_libc_test_dirname_execution",
             "real_libc_test_strtol_execution",
+            "real_libc_test_clock_gettime_execution",
             "real_numeric_conversion_execution",
             "real_path_helper_execution",
             "real_search_helper_execution",
@@ -3012,6 +3042,7 @@ mod tests {
             "real_libc_test_basename_execution",
             "real_libc_test_dirname_execution",
             "real_libc_test_strtol_execution",
+            "real_libc_test_clock_gettime_execution",
             "real_numeric_conversion_execution",
             "real_path_helper_execution",
             "real_search_helper_execution",
@@ -3849,6 +3880,7 @@ mod tests {
             "path_helpers",
             "search_helpers",
             "sort_helpers",
+            "time_clock",
             "fd_io",
             "malloc_heap",
             "pthread_futex",
@@ -3874,6 +3906,7 @@ mod tests {
             "path_helpers",
             "search_helpers",
             "sort_helpers",
+            "time_clock",
             "fd_io",
             "malloc_heap",
             "pthread_futex",
@@ -3919,6 +3952,11 @@ mod tests {
                 "sort_helpers",
                 vec!["qsort"],
                 vec!["load_store", "integer_alu", "static_link"],
+            ),
+            (
+                "time_clock",
+                vec!["clock_gettime", "time"],
+                vec!["GET_PCR", "REALTIME_SEC", "REALTIME_NSEC", "errno_tls"],
             ),
             (
                 "fd_io",
