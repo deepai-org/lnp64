@@ -7,6 +7,7 @@ cd "$root"
 image="${LNP64_RTL_EXEC_IMAGE:-lnp64-rtl-exec}"
 build_gates="${LNP64_RTL_EXEC_BUILD_GATES:-0}"
 skip_build="${LNP64_RTL_EXEC_SKIP_BUILD:-0}"
+rebuild_image="${LNP64_RTL_EXEC_REBUILD_IMAGE:-0}"
 
 docker_env=()
 docker_env+=(-e "CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-/work/target/docker-rust}")
@@ -22,6 +23,7 @@ for var in \
   LNP64_RTL_TOP_PROGRAM_FILTER \
   LNP64_RTL_TOP_PROGRAM_KEEP_LOGS \
   LNP64_RTL_TOP_PROGRAM_MAX_CYCLES \
+  LNP64_RTL_TOP_PROGRAM_QUIET \
   LNP64_RTL_TOP_PROGRAM_SKIP_BUILD
 do
   if [[ -n "${!var+x}" ]]; then
@@ -29,8 +31,14 @@ do
   fi
 done
 
-if [[ "$skip_build" == "1" ]]; then
-  printf 'using existing RTL execution Docker image %s (LNP64_RTL_EXEC_SKIP_BUILD=1)\n' "$image"
+image_exists=0
+if docker image inspect "$image" >/dev/null 2>&1; then
+  image_exists=1
+fi
+
+if [[ "$skip_build" == "1" ]] ||
+   [[ "$rebuild_image" != "1" && "$image_exists" == "1" ]]; then
+  printf 'using existing RTL execution Docker image %s\n' "$image"
 else
   docker build \
     -f Dockerfile.rtl-exec \

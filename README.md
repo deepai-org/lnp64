@@ -228,31 +228,35 @@ LNP64_RTL_TOP_PROGRAM_FILTER='*linked*' bash scripts/run_rtl_quick_docker.sh top
 bash scripts/run_rtl_quick_docker.sh cosim
 bash scripts/run_rtl_quick_docker.sh cosim m1 m7
 bash scripts/run_rtl_quick_docker.sh proof
-LNP64_RTL_EXEC_SKIP_BUILD=1 bash scripts/run_rtl_execution_fast_docker.sh tests/rtl/programs/top_smoke.s
-LNP64_RTL_EXEC_SKIP_BUILD=1 LNP64_RTL_SKIP_BUILD=1 bash scripts/run_rtl_execution_fast_docker.sh tests/rtl/programs/top_immediate_alu.s
-LNP64_RTL_EXEC_SKIP_BUILD=1 LNP64_RTL_TOP_PROGRAM_FILTER='*linked*' bash scripts/run_rtl_execution_fast_docker.sh
-LNP64_RTL_FAST=1 LNP64_RTL_PROOF_SKIP_BUILD=1 bash scripts/run_rtl_proof_docker.sh
-LNP64_RTL_FAST=1 LNP64_RTL_PROOF_SKIP_BUILD=1 bash scripts/run_rtl_m1_refinement_docker.sh
+LNP64_RTL_TOP_PROGRAM_FILTER='top_*alu* demos/env_get.s' bash scripts/run_rtl_quick_docker.sh top
+bash scripts/run_rtl_execution_fast_docker.sh tests/rtl/programs/top_smoke.s
+LNP64_RTL_SKIP_BUILD=1 bash scripts/run_rtl_execution_fast_docker.sh tests/rtl/programs/top_immediate_alu.s
+LNP64_RTL_TOP_PROGRAM_FILTER='*linked*' bash scripts/run_rtl_execution_fast_docker.sh
+LNP64_RTL_FAST=1 bash scripts/run_rtl_proof_docker.sh
+LNP64_RTL_FAST=1 bash scripts/run_rtl_m1_refinement_docker.sh
 LNP64_RTL_PROOF_SKIP_BUILD=1 LNP64_RTL_FAST=1 LNP64_M1_TYPED_COMMIT_SEEDS="0 1 7" bash scripts/run_rtl_m1_refinement_docker.sh
-LNP64_RTL_PROOF_SKIP_BUILD=1 bash scripts/run_rtl_m1_refinement_docker.sh
-LNP64_RTL_PROOF_SKIP_BUILD=1 LNP64_M1_TYPED_COMMIT_SEEDS="0 1 7" bash scripts/run_rtl_m1_refinement_docker.sh
 LNP64_RTL_PROOF_RANDOM_COSIM=0 bash scripts/run_rtl_proof_docker.sh
 LNP64_RTL_PROOF_SKIP_BUILD=1 LNP64_RTL_PROOF_RANDOM_COSIM=0 bash scripts/run_rtl_proof_docker.sh
 LNP64_RTL_PROOF_SKIP_BUILD=1 LNP64_RTL_RANDOM_COSIM_JOBS=4 bash scripts/run_rtl_proof_docker.sh
+LNP64_RTL_EXEC_REBUILD_IMAGE=1 bash scripts/run_rtl_execution_fast_docker.sh tests/rtl/programs/top_smoke.s
+LNP64_RTL_PROOF_REBUILD_IMAGE=1 bash scripts/run_rtl_proof_docker.sh
 ```
 
-The default Docker proof wrapper builds the tool image and runs the mounted
-checkout once. Set `LNP64_RTL_PROOF_BUILD_GATES=1` only when you also want the
-full proof gate to run during `docker build`. `LNP64_RTL_FAST=1` is the tight
-iteration profile: it reuses Verilator build products under
-`target/rtl-verilator`, skips the separate lint-only pass, reduces default M1
-typed-commit seeds to `0`, and skips the long randomized/cosim sweep unless you
-turn it back on. For current execution-first RTL work, start with `run_rtl_s0.sh`
-and the top-level program manifest checker; for M1 authority-refinement work,
-use `run_rtl_m1_refinement_docker.sh` and widen
+The Docker RTL/proof wrappers now reuse an existing tool image by default and
+mount the checkout so Cargo and Verilator artifacts persist under `target/`.
+Set `LNP64_RTL_EXEC_REBUILD_IMAGE=1` or `LNP64_RTL_PROOF_REBUILD_IMAGE=1` only
+after changing a Dockerfile or base tool dependency. Set
+`LNP64_RTL_PROOF_BUILD_GATES=1` only when you also want the full proof gate to
+run during `docker build`. `LNP64_RTL_FAST=1` is the tight iteration profile: it
+reuses Verilator build products under `target/rtl-verilator`, skips the
+separate lint-only pass, uses parallel Verilator builds by default, reduces
+default M1 typed-commit seeds to `0`, and skips the long randomized/cosim sweep
+unless you turn it back on. For current execution-first RTL work, start with
+`run_rtl_quick_docker.sh top` or `run_rtl_execution_fast_docker.sh`; for M1
+authority-refinement work, use `run_rtl_m1_refinement_docker.sh` and widen
 `LNP64_M1_TYPED_COMMIT_SEEDS` before treating the result as full evidence.
 `run_rtl_execution_fast_docker.sh` is the Dockerized inner loop for the current
-execution-first milestone: it builds or reuses a Rust+Verilator image, mounts
+execution-first milestone: it reuses or builds a Rust+Verilator image, mounts
 the checkout, keeps Docker-built Cargo and Verilator artifacts under
 `target/docker-rust` and `target/rtl-verilator-docker`, and runs selected
 programs through `rtl/top/lnp64_top.sv` against the emulator.
@@ -371,7 +375,7 @@ using a non-default tool path. For a manual multi-program loop, run one normal
 smoke first and then reuse the binary explicitly:
 
 ```sh
-LNP64_RTL_VERILATOR_BUILD_JOBS=0 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_manifest.sh
+LNP64_RTL_VERILATOR_BUILD_JOBS=auto LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_manifest.sh
 LNP64_RTL_FAST=1 LNP64_RTL_TOP_PROGRAM_JOBS=auto bash scripts/run_rtl_top_program_manifest.sh
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_SKIP_LINT=1 LNP64_RTL_TOP_PROGRAM_JOBS=4 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_manifest.sh
 LNP64_RTL_FAST=1 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_TOP_PROGRAM_JOBS=4 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_manifest.sh
@@ -423,10 +427,11 @@ LLVM MC that calls `main` and exits with `r1`. Linked data images are passed as
 top-level SRAM data hex when present. It is not a full VMA/MMU loader in RTL yet;
 non-flat ELF layouts intentionally fail at export time.
 
-`LNP64_RTL_VERILATOR_BUILD_JOBS=0` lets Verilator use all available build jobs;
-set it to a fixed number such as `4` on shared machines. The top-program smoke
-script locks the shared build directory before preparing or compiling it, so
-parallel ad hoc probes do not corrupt the reusable Verilator object tree.
+`LNP64_RTL_VERILATOR_BUILD_JOBS=auto` uses the host CPU count for the Verilator
+build step; set it to a fixed number such as `4` on shared machines. The
+top-program smoke script locks the shared build directory before preparing or
+compiling it, so parallel ad hoc probes do not corrupt the reusable Verilator
+object tree.
 
 Board validation commands require compatible hardware. Until then, Dockerized RTL/proof and synthesis/FPGA-smoke gates are the reproducible evidence path.
 

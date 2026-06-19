@@ -32,9 +32,18 @@ rtl_lint() {
 }
 
 rtl_verilator_build_job_args() {
-  if [[ -n "${LNP64_RTL_VERILATOR_BUILD_JOBS:-}" ]]; then
-    printf '%s\n' --build-jobs "$LNP64_RTL_VERILATOR_BUILD_JOBS"
+  local jobs="${LNP64_RTL_VERILATOR_BUILD_JOBS:-}"
+  if [[ -z "$jobs" ]]; then
+    return
   fi
+  if [[ "$jobs" == "auto" ]]; then
+    jobs="$(nproc 2>/dev/null || printf '1')"
+  fi
+  if ! [[ "$jobs" =~ ^[0-9]+$ ]]; then
+    printf 'LNP64_RTL_VERILATOR_BUILD_JOBS must be a non-negative integer or auto, got %q\n' "$jobs" >&2
+    exit 1
+  fi
+  printf '%s\n' --build-jobs "$jobs"
 }
 
 rtl_verilator_build_or_reuse() {

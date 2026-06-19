@@ -8,6 +8,7 @@ image="${LNP64_RTL_PROOF_IMAGE:-lnp64-rtl-proof}"
 lean_toolchain="${LNP64_LEAN_TOOLCHAIN:-stable}"
 build_gates="${LNP64_RTL_PROOF_BUILD_GATES:-0}"
 skip_build="${LNP64_RTL_PROOF_SKIP_BUILD:-0}"
+rebuild_image="${LNP64_RTL_PROOF_REBUILD_IMAGE:-0}"
 
 docker_env=(
   -e LNP64_REQUIRE_LEAN=1
@@ -29,8 +30,14 @@ do
   fi
 done
 
-if [[ "$skip_build" == "1" ]]; then
-  printf 'using existing RTL/proof Docker image %s (LNP64_RTL_PROOF_SKIP_BUILD=1)\n' "$image"
+image_exists=0
+if docker image inspect "$image" >/dev/null 2>&1; then
+  image_exists=1
+fi
+
+if [[ "$skip_build" == "1" ]] ||
+   [[ "$rebuild_image" != "1" && "$image_exists" == "1" ]]; then
+  printf 'using existing RTL/proof Docker image %s\n' "$image"
 else
   docker build \
     -f Dockerfile.rtl-proof \
