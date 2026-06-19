@@ -159,7 +159,6 @@ module lnp64_core_tile #(
     logic cap_engine_shadow_enabled;
     logic object_engine_shadow_enabled;
     logic domain_engine_shadow_enabled;
-    logic vma_engine_shadow_enabled;
     logic dma_engine_shadow_enabled;
     logic cmp_zero;
     logic cmp_negative;
@@ -1552,7 +1551,6 @@ module lnp64_core_tile #(
             cap_engine_shadow_enabled <= 1'b1;
             object_engine_shadow_enabled <= 1'b1;
             domain_engine_shadow_enabled <= 1'b1;
-            vma_engine_shadow_enabled <= 1'b1;
             dma_engine_shadow_enabled <= 1'b1;
             cmp_zero <= 1'b0;
             cmp_negative <= 1'b0;
@@ -2183,63 +2181,14 @@ module lnp64_core_tile #(
                                 state <= CORE_SEND_CMD;
                             end
                             LNP64_OP_MMAP: begin
-                                if (vma_engine_shadow_enabled) begin
-                                    pending_unsupported <= 1'b0;
-                                    command_pc <= pc + 32'd1;
-                                    state <= CORE_SEND_CMD;
-                                end else begin
-                                    if (gpr[dec.rs2] == 64'd0 || (gpr[dec.rs3] & ~64'd7) != 64'd0) begin
-                                        gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                        errno_reg <= LNP64_ERR_EINVAL;
-                                    end else if ((gpr[dec.rs3] & 64'd6) == 64'd6) begin
-                                        gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                        errno_reg <= LNP64_ERR_EPERM;
-                                    end else if (program_rom[pc + 32'd1][23:19] != 5'd0 ||
-                                        gpr[program_rom[pc + 32'd1][18:14]] != 64'd0) begin
-                                        gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                        errno_reg <= LNP64_ERR_EBADF;
-                                    end else begin
-                                        gpr[dec.rd] <= gpr[dec.rs1] != 64'd0 ?
-                                            gpr[dec.rs1] : align_up_u64(mmap_next, 64'd4096);
-                                        heap_alloc_ptr[heap_alloc_next_slot] <= gpr[dec.rs1] != 64'd0 ?
-                                            gpr[dec.rs1] : align_up_u64(mmap_next, 64'd4096);
-                                        heap_alloc_size[heap_alloc_next_slot] <= gpr[dec.rs2];
-                                        heap_alloc_valid[heap_alloc_next_slot] <= 1'b1;
-                                        heap_alloc_next_slot <= heap_alloc_next_slot + 2'd1;
-                                        mmap_next <= (gpr[dec.rs1] != 64'd0 ?
-                                            gpr[dec.rs1] : align_up_u64(mmap_next, 64'd4096)) + gpr[dec.rs2];
-                                        errno_reg <= LNP64_ERR_OK;
-                                    end
-                                    pc <= pc + 32'd2;
-                                    retired_count <= retired_count + 32'd1;
-                                    retire_submit_valid <= 1'b1;
-                                    retire_submit_record <= retire_submit_next;
-                                end
+                                pending_unsupported <= 1'b0;
+                                command_pc <= pc + 32'd1;
+                                state <= CORE_SEND_CMD;
                             end
                             LNP64_OP_MPROTECT: begin
-                                if (vma_engine_shadow_enabled) begin
-                                    pending_unsupported <= 1'b0;
-                                    command_pc <= pc;
-                                    state <= CORE_SEND_CMD;
-                                end else begin
-                                    if (gpr[dec.rs1] == 64'd0 || (gpr[dec.rs2] & ~64'd7) != 64'd0) begin
-                                        gpr[1] <= 64'hffff_ffff_ffff_ffff;
-                                        errno_reg <= LNP64_ERR_EINVAL;
-                                    end else if ((gpr[dec.rs2] & 64'd6) == 64'd6) begin
-                                        gpr[1] <= 64'hffff_ffff_ffff_ffff;
-                                        errno_reg <= LNP64_ERR_EPERM;
-                                    end else if (!heap_range_valid(gpr[dec.rd], gpr[dec.rs1])) begin
-                                        gpr[1] <= 64'hffff_ffff_ffff_ffff;
-                                        errno_reg <= LNP64_ERR_EINVAL;
-                                    end else begin
-                                        gpr[1] <= 64'd0;
-                                        errno_reg <= LNP64_ERR_OK;
-                                    end
-                                    pc <= pc + 32'd1;
-                                    retired_count <= retired_count + 32'd1;
-                                    retire_submit_valid <= 1'b1;
-                                    retire_submit_record <= retire_submit_next;
-                                end
+                                pending_unsupported <= 1'b0;
+                                command_pc <= pc;
+                                state <= CORE_SEND_CMD;
                             end
                             LNP64_OP_FREE: begin
                                 pending_unsupported <= 1'b0;
