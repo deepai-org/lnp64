@@ -2519,6 +2519,7 @@ mod tests {
         assert!(libc_stdio_min.contains("int fileno(FILE *stream)"));
         assert!(stdio_header.contains("#include <stdarg.h>"));
         assert!(stdio_header.contains("#include <stddef.h>"));
+        assert!(stdio_header.contains("#include <sys/types.h>"));
         assert!(
             stdio_header.contains("int vfprintf(FILE *stream, const char *format, va_list ap);")
         );
@@ -2529,6 +2530,7 @@ mod tests {
         assert!(
             stdio_header.contains("int snprintf(char *str, size_t size, const char *format, ...);")
         );
+        assert!(stdio_header.contains("ssize_t getline(char **lineptr, size_t *n, FILE *stream);"));
         assert!(stdio_header.contains("size_t fread(void *ptr, size_t size, size_t count"));
         assert!(stdio_header.contains("size_t fwrite(const void *ptr, size_t size, size_t count"));
         assert!(stdio_header.contains("FILE *fmemopen(void *buf, size_t size"));

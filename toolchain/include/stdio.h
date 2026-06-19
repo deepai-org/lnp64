@@ -3,6 +3,7 @@
 
 #include <stdarg.h>
 #include <stddef.h>
+#include <sys/types.h>
 
 typedef struct __lnp64_file FILE;
 
@@ -39,7 +40,7 @@ int vfprintf(FILE *stream, const char *format, va_list ap);
 int sprintf(char *str, const char *format, ...);
 int vsnprintf(char *str, size_t size, const char *format, va_list ap);
 int snprintf(char *str, size_t size, const char *format, ...);
-long getline(char **lineptr, unsigned long *n, FILE *stream);
+ssize_t getline(char **lineptr, size_t *n, FILE *stream);
 size_t fread(void *ptr, size_t size, size_t count, FILE *stream);
 size_t fwrite(const void *ptr, size_t size, size_t count, FILE *stream);
 char *fgets(char *str, int count, FILE *stream);
