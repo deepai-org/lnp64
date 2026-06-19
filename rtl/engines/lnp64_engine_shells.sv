@@ -817,6 +817,82 @@ module lnp64_cap_engine(
         end
     endfunction
 
+    function automatic logic cap_projection_is_zero(
+        input logic [31:0] object_id,
+        input logic [31:0] generation,
+        input logic [31:0] domain_id,
+        input logic [31:0] lineage_epoch,
+        input logic sealed,
+        input logic [63:0] rights
+    );
+        begin
+            cap_projection_is_zero =
+                object_id == 32'd0 &&
+                generation == 32'd0 &&
+                domain_id == 32'd0 &&
+                lineage_epoch == 32'd0 &&
+                !sealed &&
+                rights == 64'd0;
+        end
+    endfunction
+
+    function automatic logic fdr_projection_backed_by_state(
+        input logic [31:0] object_id,
+        input logic [31:0] generation,
+        input logic [31:0] domain_id,
+        input logic [31:0] lineage_epoch,
+        input logic sealed,
+        input logic [63:0] rights
+    );
+        int unsigned slot;
+        begin
+            fdr_projection_backed_by_state = cap_projection_is_zero(
+                object_id,
+                generation,
+                domain_id,
+                lineage_epoch,
+                sealed,
+                rights
+            );
+            for (slot = 0; slot < LNP64_FDR_SLOT_COUNT; slot = slot + 1) begin
+                if (fdr_valid[slot] &&
+                    fdr_object_id[slot][31:0] == object_id &&
+                    fdr_generation[slot][31:0] == generation &&
+                    fdr_domain_id[slot] == domain_id &&
+                    fdr_lineage[slot][31:0] == lineage_epoch &&
+                    !sealed &&
+                    ((!fdr_revoked[slot] && fdr_rights[slot] == rights) ||
+                     (fdr_revoked[slot] && rights == 64'd0))) begin
+                    fdr_projection_backed_by_state = 1'b1;
+                end
+            end
+        end
+    endfunction
+
+    function automatic logic projection_root_and_consumer_backed_by_fdr(
+        input lnp64_m1_state_projection_t projection
+    );
+        begin
+            projection_root_and_consumer_backed_by_fdr =
+                fdr_projection_backed_by_state(
+                    projection.root_object_id,
+                    projection.root_generation,
+                    projection.root_domain_id,
+                    projection.root_lineage_epoch,
+                    projection.root_sealed,
+                    projection.root_rights
+                ) &&
+                fdr_projection_backed_by_state(
+                    projection.consumer_object_id,
+                    projection.consumer_generation,
+                    projection.consumer_domain_id,
+                    projection.consumer_lineage_epoch,
+                    projection.consumer_sealed,
+                    projection.consumer_rights
+                );
+        end
+    endfunction
+
     function automatic logic live_lineage_exists(input logic [31:0] lineage_epoch);
         int unsigned slot;
         begin
@@ -1476,6 +1552,10 @@ module lnp64_cap_engine(
     always_ff @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
         end else if (m1_commit_valid_reg && have_rsp) begin
+            assert (projection_root_and_consumer_backed_by_fdr(m1_pre_state_projection_reg))
+                else $fatal(1, "SG-AUTH cap-engine M1 pre-state projection was not backed by FDR state");
+            assert (projection_root_and_consumer_backed_by_fdr(m1_state_projection_reg))
+                else $fatal(1, "SG-AUTH cap-engine M1 post-state projection was not backed by FDR state");
             if (m1_commit_reg.status == LNP64_ERR_OK) begin
                 unique case (m1_commit_reg.op)
                     LNP64_M1_COMMIT_CAP_DUP,
