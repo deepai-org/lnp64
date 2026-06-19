@@ -928,6 +928,19 @@ grep -q 'call ' "$netcat_dump"
 printf 'real LLVM LNP64 clang netcat demo object smoke passed: %s\n' \
   "$netcat_obj"
 
+httpd_obj="$build_dir/httpd-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables \
+  -Wno-implicit-function-declaration -I toolchain \
+  -c demos/httpd.c -o "$httpd_obj"
+test -s "$httpd_obj"
+httpd_dump="$build_dir/httpd-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$httpd_obj" \
+  >"$httpd_dump"
+grep -q 'call ' "$httpd_dump"
+printf 'real LLVM LNP64 clang httpd demo object smoke passed: %s\n' \
+  "$httpd_obj"
+
 indirect_call_c="$build_dir/indirect-call-smoke.c"
 cat >"$indirect_call_c" <<'C'
 int add3(int x) {
@@ -3573,6 +3586,15 @@ netcat_elf="$build_dir/lnp64-netcat-clang-linked.elf"
 test -s "$netcat_elf"
 printf 'real LLVM LNP64 lld netcat demo link smoke passed: %s\n' \
   "$netcat_elf"
+
+httpd_elf="$build_dir/lnp64-httpd-clang-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$httpd_elf" "$crt0_obj" "$httpd_obj" "$libc_fd_impl_obj" \
+  "$libc_alloc_impl_obj" "$libc_string_impl_obj" "$libc_poll_impl_obj" \
+  "$libc_socket_impl_obj"
+test -s "$httpd_elf"
+printf 'real LLVM LNP64 lld httpd demo link smoke passed: %s\n' \
+  "$httpd_elf"
 
 indirect_call_elf="$build_dir/lnp64-indirect-call-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
