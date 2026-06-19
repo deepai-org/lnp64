@@ -709,6 +709,7 @@ module lnp64_cap_engine(
     logic [63:0] fdr_generation [0:LNP64_FDR_SLOT_COUNT-1];
     logic [63:0] fdr_rights [0:LNP64_FDR_SLOT_COUNT-1];
     logic [63:0] fdr_lineage [0:LNP64_FDR_SLOT_COUNT-1];
+    logic [31:0] fdr_domain_id [0:LNP64_FDR_SLOT_COUNT-1];
     logic [2:0] fdr_kind [0:LNP64_FDR_SLOT_COUNT-1];
     logic cap_queue_valid;
     logic [63:0] cap_queue_rights;
@@ -725,9 +726,16 @@ module lnp64_cap_engine(
     assign m1_pre_state_projection = m1_pre_state_projection_reg;
     assign m1_state_projection = m1_state_projection_reg;
 
+    function automatic logic [31:0] default_cap_domain_id(input int unsigned fd);
+        begin
+            default_cap_domain_id = fd < 3 ? 32'd1 : 32'd2;
+        end
+    endfunction
+
     function automatic logic [31:0] cap_domain_id(input int unsigned fd);
         begin
-            cap_domain_id = fd < 3 ? 32'd1 : 32'd2;
+            cap_domain_id = fd < LNP64_FDR_SLOT_COUNT ?
+                fdr_domain_id[fd] : default_cap_domain_id(fd);
         end
     endfunction
 
@@ -782,6 +790,102 @@ module lnp64_cap_engine(
             build_m1_state_projection = projection;
         end
     endfunction
+
+`ifndef SYNTHESIS
+    function automatic logic live_fdr_projection_exists(
+        input logic [31:0] object_id,
+        input logic [31:0] generation,
+        input logic [31:0] domain_id,
+        input logic [31:0] lineage_epoch,
+        input logic [63:0] rights
+    );
+        int unsigned slot;
+        begin
+            live_fdr_projection_exists = 1'b0;
+            for (slot = 0; slot < LNP64_FDR_SLOT_COUNT; slot = slot + 1) begin
+                if (fdr_valid[slot] && !fdr_revoked[slot] &&
+                    fdr_lineage[slot][31:0] == object_id &&
+                    fdr_generation[slot][31:0] == generation &&
+                    fdr_domain_id[slot] == domain_id &&
+                    fdr_lineage[slot][31:0] == lineage_epoch &&
+                    fdr_rights[slot] == rights) begin
+                    live_fdr_projection_exists = 1'b1;
+                end
+            end
+        end
+    endfunction
+
+    function automatic logic live_lineage_exists(input logic [31:0] lineage_epoch);
+        int unsigned slot;
+        begin
+            live_lineage_exists = 1'b0;
+            for (slot = 0; slot < LNP64_FDR_SLOT_COUNT; slot = slot + 1) begin
+                if (fdr_valid[slot] && !fdr_revoked[slot] &&
+                    fdr_lineage[slot][31:0] == lineage_epoch) begin
+                    live_lineage_exists = 1'b1;
+                end
+            end
+        end
+    endfunction
+
+    function automatic logic cap_queue_matches_sent_projection(
+        input lnp64_m1_state_projection_t projection
+    );
+        begin
+            cap_queue_matches_sent_projection =
+                cap_queue_valid && !cap_queue_revoked &&
+                projection.sent_valid &&
+                projection.sent_object_id == cap_queue_lineage[31:0] &&
+                projection.sent_generation == cap_queue_generation[31:0] &&
+                projection.sent_domain_id == cap_queue_domain_id &&
+                projection.sent_lineage_epoch == cap_queue_lineage[31:0] &&
+                !projection.sent_sealed &&
+                projection.sent_rights == cap_queue_rights;
+        end
+    endfunction
+
+    function automatic logic authority_projection_slots_match(
+        input lnp64_m1_state_projection_t left,
+        input lnp64_m1_state_projection_t right
+    );
+        begin
+            authority_projection_slots_match =
+                left.object_gen == right.object_gen &&
+                left.created_object_created == right.created_object_created &&
+                left.created_object_gen == right.created_object_gen &&
+                left.root_object_id == right.root_object_id &&
+                left.root_generation == right.root_generation &&
+                left.root_domain_id == right.root_domain_id &&
+                left.root_lineage_epoch == right.root_lineage_epoch &&
+                left.root_sealed == right.root_sealed &&
+                left.root_rights == right.root_rights &&
+                left.consumer_object_id == right.consumer_object_id &&
+                left.consumer_generation == right.consumer_generation &&
+                left.consumer_domain_id == right.consumer_domain_id &&
+                left.consumer_lineage_epoch == right.consumer_lineage_epoch &&
+                left.consumer_sealed == right.consumer_sealed &&
+                left.consumer_rights == right.consumer_rights &&
+                left.sent_valid == right.sent_valid &&
+                left.sent_object_id == right.sent_object_id &&
+                left.sent_generation == right.sent_generation &&
+                left.sent_domain_id == right.sent_domain_id &&
+                left.sent_lineage_epoch == right.sent_lineage_epoch &&
+                left.sent_sealed == right.sent_sealed &&
+                left.sent_rights == right.sent_rights &&
+                left.minted_valid == right.minted_valid &&
+                left.minted_object_id == right.minted_object_id &&
+                left.minted_generation == right.minted_generation &&
+                left.minted_domain_id == right.minted_domain_id &&
+                left.minted_lineage_epoch == right.minted_lineage_epoch &&
+                left.minted_sealed == right.minted_sealed &&
+                left.minted_rights == right.minted_rights &&
+                left.wake_pending == right.wake_pending &&
+                left.transfer_valid == right.transfer_valid &&
+                left.has_revoked_generation == right.has_revoked_generation &&
+                left.revoked_generation == right.revoked_generation;
+        end
+    endfunction
+`endif
 
     function automatic int unsigned cap_fd(input logic [63:0] value);
         logic [63:0] fd_bits;
@@ -841,6 +945,7 @@ module lnp64_cap_engine(
                 fdr_revoked[i] <= 1'b0;
                 fdr_rights[i] <= i < 3 ? LNP64_CAP_RIGHT_ALL : 64'd0;
                 fdr_lineage[i] <= {32'd0, i[31:0]} + 64'd1;
+                fdr_domain_id[i] <= default_cap_domain_id(i);
                 fdr_kind[i] <= i < 3 ? LNP64_FDR_KIND_GENERIC : LNP64_FDR_KIND_CLOSED;
             end
         end else begin
@@ -855,6 +960,8 @@ module lnp64_cap_engine(
                     fdr_generation[object_cap_sync_reader_fd] <= fdr_generation[object_cap_sync_reader_fd] + 64'd1;
                     fdr_rights[object_cap_sync_reader_fd] <= LNP64_CAP_RIGHT_ALL;
                     fdr_lineage[object_cap_sync_reader_fd] <= 64'd257 + {32'd0, object_cap_sync_reader_fd};
+                    fdr_domain_id[object_cap_sync_reader_fd] <=
+                        default_cap_domain_id(object_cap_sync_reader_fd);
                     fdr_kind[object_cap_sync_reader_fd] <= LNP64_FDR_KIND_PIPE_READER;
                 end
                 if (object_cap_sync_writer_fd < LNP64_FDR_SLOT_COUNT) begin
@@ -863,6 +970,8 @@ module lnp64_cap_engine(
                     fdr_generation[object_cap_sync_writer_fd] <= fdr_generation[object_cap_sync_writer_fd] + 64'd1;
                     fdr_rights[object_cap_sync_writer_fd] <= LNP64_CAP_RIGHT_ALL;
                     fdr_lineage[object_cap_sync_writer_fd] <= 64'd257 + {32'd0, object_cap_sync_writer_fd};
+                    fdr_domain_id[object_cap_sync_writer_fd] <=
+                        default_cap_domain_id(object_cap_sync_writer_fd);
                     fdr_kind[object_cap_sync_writer_fd] <= LNP64_FDR_KIND_PIPE_WRITER;
                 end
             end
@@ -873,6 +982,8 @@ module lnp64_cap_engine(
                 fdr_generation[object_cap_sync_single_fd] <= fdr_generation[object_cap_sync_single_fd] + 64'd1;
                 fdr_rights[object_cap_sync_single_fd] <= LNP64_CAP_RIGHT_ALL;
                 fdr_lineage[object_cap_sync_single_fd] <= object_cap_sync_single_lineage;
+                fdr_domain_id[object_cap_sync_single_fd] <=
+                    default_cap_domain_id(object_cap_sync_single_fd);
                 fdr_kind[object_cap_sync_single_fd] <= object_cap_sync_single_kind;
             end
             if (cmd_valid && cmd_ready) begin : accept_cmd
@@ -984,6 +1095,7 @@ module lnp64_cap_engine(
                         fdr_generation[dst_fd] <= next_generation;
                         fdr_rights[dst_fd] <= dup_rights;
                         fdr_lineage[dst_fd] <= fdr_lineage[src_fd];
+                        fdr_domain_id[dst_fd] <= cap_domain_id(dst_fd);
                         fdr_kind[dst_fd] <= fdr_kind[src_fd];
                         rsp_reg.result_value <= cap_token(dst_fd, next_generation);
                         rsp_reg.errno_value <= LNP64_ERR_OK;
@@ -1168,6 +1280,7 @@ module lnp64_cap_engine(
                         fdr_generation[dst_fd] <= next_generation;
                         fdr_rights[dst_fd] <= recv_rights;
                         fdr_lineage[dst_fd] <= cap_queue_lineage;
+                        fdr_domain_id[dst_fd] <= cap_queue_domain_id;
                         fdr_kind[dst_fd] <= LNP64_FDR_KIND_GENERIC;
                         rsp_reg.result_value <= cap_token(dst_fd, next_generation);
                         rsp_reg.errno_value <= LNP64_ERR_OK;
@@ -1300,6 +1413,43 @@ module lnp64_cap_engine(
             end
         end
     end
+
+`ifndef SYNTHESIS
+    always_ff @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin
+        end else if (m1_commit_valid_reg && have_rsp) begin
+            if (m1_commit_reg.status == LNP64_ERR_OK) begin
+                unique case (m1_commit_reg.op)
+                    LNP64_M1_COMMIT_CAP_DUP,
+                    LNP64_M1_COMMIT_CAP_RECV: begin
+                        assert (live_fdr_projection_exists(
+                            m1_state_projection_reg.consumer_object_id,
+                            m1_state_projection_reg.consumer_generation,
+                            m1_state_projection_reg.consumer_domain_id,
+                            m1_state_projection_reg.consumer_lineage_epoch,
+                            m1_state_projection_reg.consumer_rights
+                        )) else $fatal(1, "SG-AUTH cap-engine M1 consumer projection was not backed by live FDR state");
+                    end
+                    LNP64_M1_COMMIT_CAP_SEND: begin
+                        assert (cap_queue_matches_sent_projection(m1_state_projection_reg))
+                            else $fatal(1, "SG-AUTH cap-engine M1 sent projection was not backed by transfer queue state");
+                    end
+                    LNP64_M1_COMMIT_CAP_REVOKE: begin
+                        assert (!live_lineage_exists(m1_commit_reg.lineage_epoch))
+                            else $fatal(1, "SG-AUTH cap-engine M1 revoke left live FDR authority in revoked lineage");
+                    end
+                    default: begin
+                    end
+                endcase
+            end else begin
+                assert (authority_projection_slots_match(
+                    m1_pre_state_projection_reg,
+                    m1_state_projection_reg
+                )) else $fatal(1, "SG-AUTH cap-engine M1 non-OK commit changed authority projection");
+            end
+        end
+    end
+`endif
 endmodule
 
 module lnp64_domain_engine(
