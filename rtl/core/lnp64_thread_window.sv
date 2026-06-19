@@ -40,6 +40,7 @@ module lnp64_thread_window #(
     int unsigned active_index;
     int unsigned candidate_index;
     logic found_next;
+    logic [63:0] best_virtual_deadline;
     logic [CONTEXT_INDEX_WIDTH-1:0] active_slot_q;
     logic [CONTEXT_COUNT-1:0] context_active_q;
     logic [CONTEXT_COUNT-1:0] context_parked_q;
@@ -80,14 +81,18 @@ module lnp64_thread_window #(
 
         next_slot = active_slot_q;
         found_next = 1'b0;
+        best_virtual_deadline = '1;
         for (int unsigned offset = 1; offset <= CONTEXT_COUNT; offset = offset + 1) begin
             candidate_index = active_index + offset;
             if (candidate_index >= CONTEXT_COUNT) begin
                 candidate_index = candidate_index - CONTEXT_COUNT;
             end
-            if (!found_next && context_active_q[candidate_index] &&
-                context_dispatch_eligible(context_record[candidate_index])) begin
+            if (context_active_q[candidate_index] &&
+                context_dispatch_eligible(context_record[candidate_index]) &&
+                (!found_next ||
+                 context_record[candidate_index].virtual_deadline < best_virtual_deadline)) begin
                 next_slot = candidate_index[CONTEXT_INDEX_WIDTH-1:0];
+                best_virtual_deadline = context_record[candidate_index].virtual_deadline;
                 found_next = 1'b1;
             end
         end
@@ -200,6 +205,9 @@ module lnp64_thread_window #(
                 if (context_active_q[assert_ctx]) begin
                     assert (context_dispatch_eligible(context_record[assert_ctx]))
                         else $fatal(1, "SG-SCHED resident context not eligible for this tile");
+                    assert (context_record[next_slot].virtual_deadline <=
+                        context_record[assert_ctx].virtual_deadline)
+                        else $fatal(1, "SG-SCHED barrel skipped earlier virtual deadline");
                 end
             end
             if (context_active_q != '0) begin

@@ -793,6 +793,8 @@ def main() -> None:
         "thread_submit_next.migration_generation = active_thread_context.migration_generation",
         "SG-SCHED live context missing migration generation",
         "context_dispatch_eligible",
+        "best_virtual_deadline",
+        "SG-SCHED barrel skipped earlier virtual deadline",
         "SG-SCHED barrel selected a non-eligible context",
         "SG-SCHED resident context not eligible for this tile",
         "SG-SCHED engine command lost active thread metadata",
