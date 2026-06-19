@@ -155,6 +155,7 @@ def check_execution() -> None:
             "LNP64_RTL_BUILD_ROOT",
             "/work/target/docker-rust",
             "/work/target/rtl-verilator-docker",
+            "LNP64_RTL_TOP_PROGRAM_FILTER",
             "-v \"$root:/work\"",
             "-w /work",
             "bash scripts/run_rtl_execution_fast.sh",

@@ -224,6 +224,7 @@ Faster RTL/proof iteration in Docker:
 ```sh
 LNP64_RTL_EXEC_SKIP_BUILD=1 bash scripts/run_rtl_execution_fast_docker.sh tests/rtl/programs/top_smoke.s
 LNP64_RTL_EXEC_SKIP_BUILD=1 LNP64_RTL_SKIP_BUILD=1 bash scripts/run_rtl_execution_fast_docker.sh tests/rtl/programs/top_immediate_alu.s
+LNP64_RTL_EXEC_SKIP_BUILD=1 LNP64_RTL_TOP_PROGRAM_FILTER='*linked*' bash scripts/run_rtl_execution_fast_docker.sh
 LNP64_RTL_FAST=1 LNP64_RTL_PROOF_SKIP_BUILD=1 bash scripts/run_rtl_proof_docker.sh
 LNP64_RTL_FAST=1 LNP64_RTL_PROOF_SKIP_BUILD=1 bash scripts/run_rtl_m1_refinement_docker.sh
 LNP64_RTL_PROOF_SKIP_BUILD=1 bash scripts/run_rtl_m1_refinement_docker.sh
