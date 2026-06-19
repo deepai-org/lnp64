@@ -1503,6 +1503,13 @@ impl Machine {
                 let value = self.load_exec_u32(pc + 4)? as i64;
                 return Ok((Instr::Li(a, Value::Imm(value)), pc + 8));
             }
+            0xd0 => {
+                let offset = sign_extend(self.load_exec_u32(pc + 4)?, 32);
+                return Ok((
+                    Instr::Li(a, Value::Imm(pc.wrapping_add(offset as u64) as i64)),
+                    pc + 8,
+                ));
+            }
             0x10 => Instr::Add(a, b, c),
             0x11 => Instr::Sub(a, b, c),
             0x12 => Instr::Mul(a, b, c),
@@ -1891,6 +1898,15 @@ impl Machine {
             Instr::Li(dst, value) => {
                 let v = self.resolve_value(value)?;
                 self.write_reg(dst, v)?;
+            }
+            Instr::Auipc(dst, value) => {
+                let offset = self.resolve_value(value)?;
+                let pc = if self.committed_exec_mode {
+                    (self.thread()?.ip as u64).saturating_sub(8)
+                } else {
+                    (self.thread()?.ip as u64).saturating_sub(1)
+                };
+                self.write_reg(dst, pc.wrapping_add(offset))?;
             }
             Instr::Mov(dst, src) => self.write_reg(dst, self.read_reg(src)?)?,
             Instr::Add(dst, a, b) => {

@@ -1484,6 +1484,9 @@ mod tests {
         assert!(real_llc.contains("high-mul-mc-smoke.o"));
         assert!(real_llc.contains("mulhsu r7, r8, r9"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc high-multiply smoke passed"));
+        assert!(real_llc.contains("auipc-mc-smoke.o"));
+        assert!(real_llc.contains("auipc r1, 4096"));
+        assert!(real_llc.contains("real LLVM LNP64 llvm-mc auipc smoke passed"));
         assert!(real_llc.contains("atomic-mc-smoke.o"));
         assert!(real_llc.contains("amo.swap r1, r2, r3"));
         assert!(real_llc.contains("amo.or r10, r11, r12"));
@@ -2365,6 +2368,7 @@ mod tests {
         assert!(inst_printer.contains("cset.ult"));
         assert!(inst_printer.contains("case LNP64::EXIT"));
         assert!(inst_printer.contains("case LNP64::LA"));
+        assert!(inst_printer.contains("case LNP64::AUIPC"));
         assert!(inst_printer.contains("case LNP64::LI32"));
         assert!(inst_printer.contains("call_reg"));
         assert!(inst_printer.contains("lr_get"));
@@ -2375,7 +2379,9 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::CSET_EQ"));
         assert!(mc_emitter.contains("case LNP64::CSET_ULT"));
         assert!(mc_emitter.contains("case LNP64::LA"));
+        assert!(mc_emitter.contains("case LNP64::AUIPC"));
         assert!(mc_emitter.contains("case LNP64::LI32"));
+        assert!(mc_emitter.contains("fixup_lnp64_pcrel32"));
         assert!(mc_emitter.contains("fixup_lnp64_abs32"));
         assert!(mc_emitter.contains("case LNP64::LD_W"));
         assert!(mc_emitter.contains("case LNP64::LD_H"));
@@ -2389,6 +2395,7 @@ mod tests {
         assert!(asm_parser.contains("parseImmediateOrMemory"));
         assert!(asm_parser.contains("buildInstruction"));
         assert!(asm_parser.contains(r#".Case("la", LNP64::LA)"#));
+        assert!(asm_parser.contains(r#".Case("auipc", LNP64::AUIPC)"#));
         assert!(asm_parser.contains(r#".Case("li32", LNP64::LI32)"#));
         assert!(asm_parser.contains(r#".Case("call", LNP64::CALL)"#));
         assert!(asm_parser.contains(r#".Case("lr_get", LNP64::LR_GET)"#));
@@ -2410,6 +2417,7 @@ mod tests {
         assert!(disassembler.contains("case 0x03"));
         assert!(disassembler.contains("case 0x04"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::LA)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::AUIPC)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::LI32)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::ADD)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::AND)"));
@@ -2606,6 +2614,7 @@ mod tests {
         assert!(instr_td.contains("def LNP64wrapper"));
         assert!(instr_td.contains("(set GPR:$rd, simm16_imm:$imm)"));
         assert!(instr_td.contains("def LA"));
+        assert!(instr_td.contains("def AUIPC"));
         assert!(instr_td.contains("def LI32"));
         assert!(instr_td.contains("def PseudoLINeg32"));
         assert!(instr_td.contains("let Size = 8"));

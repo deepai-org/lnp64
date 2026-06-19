@@ -176,6 +176,10 @@ impl Parser {
                 arity(2)?;
                 Instr::Li(reg(&args[0])?, value(&args[1]))
             }
+            "AUIPC" => {
+                arity(2)?;
+                Instr::Auipc(reg(&args[0])?, value(&args[1]))
+            }
             "MOV" => {
                 arity(2)?;
                 Instr::Mov(reg(&args[0])?, reg(&args[1])?)
@@ -1293,6 +1297,7 @@ mod tests {
             r#"
             .text
               ADDI r1, r2, -7
+              AUIPC r2, 4096
               ANDI r3, r4, 255
               MULHU r5, r6, r7
               UDIV r8, r9, r10
@@ -1316,57 +1321,61 @@ mod tests {
         ));
         assert!(matches!(
             program.instructions[1],
-            Instr::Andi(Reg(3), Reg(4), 255)
+            Instr::Auipc(Reg(2), Value::Imm(4096))
         ));
         assert!(matches!(
             program.instructions[2],
-            Instr::Mulhu(Reg(5), Reg(6), Reg(7))
+            Instr::Andi(Reg(3), Reg(4), 255)
         ));
         assert!(matches!(
             program.instructions[3],
-            Instr::Udiv(Reg(8), Reg(9), Reg(10))
+            Instr::Mulhu(Reg(5), Reg(6), Reg(7))
         ));
         assert!(matches!(
             program.instructions[4],
-            Instr::Srem(Reg(11), Reg(12), Reg(13))
+            Instr::Udiv(Reg(8), Reg(9), Reg(10))
         ));
         assert!(matches!(
             program.instructions[5],
-            Instr::SextW(Reg(14), Reg(15))
+            Instr::Srem(Reg(11), Reg(12), Reg(13))
         ));
         assert!(matches!(
             program.instructions[6],
-            Instr::ZextB(Reg(16), Reg(17))
+            Instr::SextW(Reg(14), Reg(15))
         ));
         assert!(matches!(
             program.instructions[7],
-            Instr::Clz(Reg(18), Reg(19))
+            Instr::ZextB(Reg(16), Reg(17))
         ));
         assert!(matches!(
             program.instructions[8],
-            Instr::Popcnt(Reg(20), Reg(21))
+            Instr::Clz(Reg(18), Reg(19))
         ));
         assert!(matches!(
             program.instructions[9],
-            Instr::Rol(Reg(22), Reg(23), Reg(24))
+            Instr::Popcnt(Reg(20), Reg(21))
         ));
         assert!(matches!(
             program.instructions[10],
-            Instr::Bswap64(Reg(25), Reg(26))
+            Instr::Rol(Reg(22), Reg(23), Reg(24))
         ));
         assert!(matches!(
             program.instructions[11],
-            Instr::Csel(Reg(27), Reg(28), Reg(29), Condition::Ne)
+            Instr::Bswap64(Reg(25), Reg(26))
         ));
         assert!(matches!(
             program.instructions[12],
-            Instr::AmoAdd(Reg(30), Reg(1), Reg(2))
+            Instr::Csel(Reg(27), Reg(28), Reg(29), Condition::Ne)
         ));
         assert!(matches!(
             program.instructions[13],
+            Instr::AmoAdd(Reg(30), Reg(1), Reg(2))
+        ));
+        assert!(matches!(
+            program.instructions[14],
             Instr::AmoXor(Reg(4), Reg(5), Reg(6))
         ));
-        assert!(matches!(program.instructions[14], Instr::Fence));
+        assert!(matches!(program.instructions[15], Instr::Fence));
     }
 
     #[test]

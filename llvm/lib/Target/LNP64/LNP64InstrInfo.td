@@ -212,6 +212,10 @@ def LA : LNP64Inst<(outs GPR:$rd), (ins i64imm:$target), "la",
                    "\t$rd, $target"> {
   let Size = 8;
 }
+def AUIPC : LNP64Inst<(outs GPR:$rd), (ins i64imm:$target), "auipc",
+                      "\t$rd, $target"> {
+  let Size = 8;
+}
 def LI32 : LNP64Inst<(outs GPR:$rd), (ins i64imm:$imm), "li32",
                      "\t$rd, $imm"> {
   let Size = 8;

@@ -92,6 +92,16 @@ public:
       addReg(Instr, A);
       addImm(Instr, readLE32At(Bytes, 4));
       return MCDisassembler::Success;
+    case 0xd0:
+      if (Bytes.size() < 8) {
+        Size = 0;
+        return MCDisassembler::Fail;
+      }
+      Size = 8;
+      Instr.setOpcode(LNP64::AUIPC);
+      addReg(Instr, A);
+      addImm(Instr, SignExtend64<32>(readLE32At(Bytes, 4)));
+      return MCDisassembler::Success;
     case 0x10:
       Instr.setOpcode(LNP64::ADD);
       addReg(Instr, A);

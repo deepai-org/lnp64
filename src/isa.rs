@@ -73,6 +73,7 @@ pub enum MemRef {
 pub enum Instr {
     Nop,
     Li(Reg, Value),
+    Auipc(Reg, Value),
     Mov(Reg, Reg),
     Add(Reg, Reg, Reg),
     Addi(Reg, Reg, i64),

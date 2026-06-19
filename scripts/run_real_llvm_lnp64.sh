@@ -1384,6 +1384,28 @@ grep -q 'mulhsu r7, r8, r9' "$high_mul_mc_dump"
 printf 'real LLVM LNP64 llvm-mc high-multiply smoke passed: %s\n' \
   "$high_mul_mc_obj"
 
+auipc_asm="$build_dir/auipc-mc-smoke.s"
+cat >"$auipc_asm" <<'ASM'
+  .text
+  .globl _start
+_start:
+  auipc r1, 4096
+  auipc r2, target
+  ret
+target:
+  nop
+ASM
+auipc_mc_obj="$build_dir/auipc-mc-smoke.o"
+"$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$auipc_asm" \
+  -o "$auipc_mc_obj"
+test -s "$auipc_mc_obj"
+auipc_mc_dump="$build_dir/auipc-mc-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$auipc_mc_obj" \
+  >"$auipc_mc_dump"
+grep -q 'auipc r1, 4096' "$auipc_mc_dump"
+grep -q 'auipc r2' "$auipc_mc_dump"
+printf 'real LLVM LNP64 llvm-mc auipc smoke passed: %s\n' "$auipc_mc_obj"
+
 atomic_asm="$build_dir/atomic-mc-smoke.s"
 cat >"$atomic_asm" <<'ASM'
   .text

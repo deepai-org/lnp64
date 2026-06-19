@@ -274,6 +274,7 @@ private:
             .Case("li", LNP64::LI)
             .Case("li32", LNP64::LI32)
             .Case("la", LNP64::LA)
+            .Case("auipc", LNP64::AUIPC)
             .Case("mov", LNP64::MOV)
             .Case("add", LNP64::ADD)
             .Case("addi", LNP64::ADDI)
@@ -394,7 +395,8 @@ private:
 
     if (Opcode == LNP64::LI)
       return addRegImm(Inst, Operands);
-    if (Opcode == LNP64::LA || Opcode == LNP64::LI32)
+    if (Opcode == LNP64::LA || Opcode == LNP64::AUIPC ||
+        Opcode == LNP64::LI32)
       return addRegAddress(Inst, Operands);
     if (Opcode == LNP64::MOV || Opcode == LNP64::NOT ||
         Opcode == LNP64::SEXT_B || Opcode == LNP64::SEXT_H ||
