@@ -93,8 +93,10 @@ module lnp64_core_tile #(
     localparam logic [63:0] FLAT_EXEC_STACK_BASE_ADDR = 64'h0000_0000_0067_1000;
     localparam logic [63:0] FLAT_EXEC_STACK_WINDOW_BYTES = 64'd8192;
     localparam logic [63:0] OBJECT_OP_CREATE = 64'd1;
+    localparam logic [63:0] OBJECT_KIND_COUNTER = 64'd1;
     localparam logic [63:0] OBJECT_KIND_MEMORY_OBJECT = 64'd3;
     localparam logic [63:0] OBJECT_KIND_DMA_BUFFER = 64'd4;
+    localparam logic [63:0] OBJECT_KIND_TIMER = 64'd6;
     localparam logic [63:0] RTL_DMA_BUFFER_DEFAULT_FD = 64'd3;
     localparam logic [63:0] RTL_DMA_BUFFER_TOKEN = 64'h4000_0000_0000_0203;
     localparam logic [63:0] FDR_TOKEN_MARKER = 64'h4000_0000_0000_0000;
@@ -140,6 +142,7 @@ module lnp64_core_tile #(
     logic [63:0] object_argblock_addr;
     logic [63:0] object_op;
     logic [63:0] object_kind;
+    logic [63:0] object_profile;
     logic [63:0] object_fd_req;
     logic [63:0] object_dma_addr;
     logic [63:0] object_dma_len;
@@ -152,6 +155,8 @@ module lnp64_core_tile #(
     logic [2:0] object_fd1_store_byte_lane;
     int unsigned object_memory_fd;
     logic object_memory_fd_in_range;
+    int unsigned object_single_fd;
+    logic object_single_fd_in_range;
     logic dma_buffer_object_valid;
     logic dma_buffer_object_revoked;
     logic [63:0] dma_buffer_object_fd;
@@ -180,6 +185,12 @@ module lnp64_core_tile #(
     logic [63:0] memory_object_len;
     logic memory_object_byte_valid;
     logic [7:0] memory_object_byte_value;
+    logic event_counter_valid;
+    logic [63:0] event_counter_lineage;
+    logic [63:0] event_counter_value;
+    logic timer_valid;
+    logic [63:0] timer_lineage;
+    logic [63:0] timer_expirations;
     logic topology_record_valid;
     logic [63:0] topology_record_base;
     int unsigned mem_sram_word_index;
@@ -213,8 +224,14 @@ module lnp64_core_tile #(
     int unsigned static_fd;
     logic static_fd_in_range;
     logic static_fd_is_memory_object;
+    logic static_fd_is_event_counter;
+    logic static_fd_is_timer;
     int unsigned static_fd_buf_word_index;
+    int unsigned static_fd_buf_next_word_index;
     logic [2:0] static_fd_buf_byte_lane;
+    int unsigned await_fd;
+    logic await_fd_in_range;
+    logic await_fd_ready;
     int unsigned pipe_buf_word_index;
     logic [2:0] pipe_buf_byte_lane;
     lnp64_m1_cap_commit_t m1_commit_next;
@@ -812,6 +829,7 @@ module lnp64_core_tile #(
         object_argblock_addr = gpr[dec.rs1];
         object_op = load_double_unaligned(object_argblock_addr);
         object_kind = load_double_unaligned(object_argblock_addr + 64'd8);
+        object_profile = load_double_unaligned(object_argblock_addr + 64'd16);
         object_fd_req = load_double_unaligned(object_argblock_addr + 64'd24);
         object_dma_addr = load_double_unaligned(object_argblock_addr + 64'd40);
         object_dma_len = load_double_unaligned(object_argblock_addr + 64'd48);
@@ -826,6 +844,8 @@ module lnp64_core_tile #(
         object_fd1_store_byte_lane = object_fd1_store_addr[2:0];
         object_memory_fd = object_fd_req == 64'd0 ? 5 : object_fd_req[31:0];
         object_memory_fd_in_range = object_fd_req == 64'd0 || object_fd_req < FDR_SLOT_COUNT;
+        object_single_fd = object_fd_req == 64'd0 ? 3 : object_fd_req[31:0];
+        object_single_fd_in_range = object_fd_req == 64'd0 || object_fd_req < FDR_SLOT_COUNT;
         cap_src_value = load_double_unaligned(gpr[dec.rs1]);
         cap_dst_req = load_double_unaligned(gpr[dec.rs1] + 64'd8);
         cap_rights_req = load_double_unaligned(gpr[dec.rs1] + 64'd16);
@@ -858,12 +878,32 @@ module lnp64_core_tile #(
         static_fd = dec.rd;
         static_fd_in_range = static_fd < FDR_SLOT_COUNT;
         static_fd_is_memory_object = 1'b0;
+        static_fd_is_event_counter = 1'b0;
+        static_fd_is_timer = 1'b0;
         if (static_fd_in_range) begin
             static_fd_is_memory_object = memory_object_valid &&
                 fdr_lineage[static_fd] == memory_object_lineage;
+            static_fd_is_event_counter = event_counter_valid &&
+                fdr_lineage[static_fd] == event_counter_lineage;
+            static_fd_is_timer = timer_valid &&
+                fdr_lineage[static_fd] == timer_lineage;
         end
         static_fd_buf_word_index = sram_word_index(gpr[dec.rs1]);
+        static_fd_buf_next_word_index = sram_word_index(gpr[dec.rs1] + (64'd8 - {61'd0, gpr[dec.rs1][2:0]}));
         static_fd_buf_byte_lane = gpr[dec.rs1][2:0];
+        if (raw_opcode == 8'h2e) begin
+            await_fd = dec.rs1;
+        end else begin
+            await_fd = fdr_value_fd(gpr[dec.rs1]);
+        end
+        await_fd_in_range = await_fd < FDR_SLOT_COUNT;
+        await_fd_ready = 1'b0;
+        if (await_fd_in_range && fdr_valid[await_fd] && !fdr_revoked[await_fd]) begin
+            await_fd_ready =
+                (timer_valid && fdr_lineage[await_fd] == timer_lineage && timer_expirations != 64'd0) ||
+                (event_counter_valid && fdr_lineage[await_fd] == event_counter_lineage &&
+                    event_counter_value != 64'd0);
+        end
         pipe_buf_word_index = sram_word_index(gpr[dec.rs2]);
         pipe_buf_byte_lane = gpr[dec.rs2][2:0];
         cap_revoke_count = 64'd0;
@@ -1136,6 +1176,12 @@ module lnp64_core_tile #(
             memory_object_len <= 64'd0;
             memory_object_byte_valid <= 1'b0;
             memory_object_byte_value <= 8'd0;
+            event_counter_valid <= 1'b0;
+            event_counter_lineage <= 64'd0;
+            event_counter_value <= 64'd0;
+            timer_valid <= 1'b0;
+            timer_lineage <= 64'd0;
+            timer_expirations <= 64'd0;
             m1_projection_root_fd <= 0;
             m1_projection_consumer_fd <= 0;
             topology_record_valid <= 1'b0;
@@ -1973,7 +2019,8 @@ module lnp64_core_tile #(
                                     gpr[1] <= 64'd0;
                                     errno_reg <= LNP64_ERR_OK;
                                 end else if (!static_fd_in_range || !fdr_valid[static_fd] ||
-                                    !static_fd_is_memory_object) begin
+                                    !(static_fd_is_memory_object || static_fd_is_event_counter ||
+                                        static_fd_is_timer)) begin
                                     gpr[1] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= LNP64_ERR_EBADF;
                                 end else if (fdr_revoked[static_fd]) begin
@@ -1982,6 +2029,40 @@ module lnp64_core_tile #(
                                 end else if ((fdr_rights[static_fd] & 64'd1) == 64'd0) begin
                                     gpr[1] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= LNP64_ERR_EPERM;
+                                end else if (static_fd_is_event_counter) begin
+                                    sram[static_fd_buf_word_index] <= store_double_low_word(
+                                        sram[static_fd_buf_word_index],
+                                        static_fd_buf_byte_lane,
+                                        event_counter_value
+                                    );
+                                    if (static_fd_buf_byte_lane != 3'd0) begin
+                                        sram[static_fd_buf_next_word_index] <= store_double_high_word(
+                                            sram[static_fd_buf_next_word_index],
+                                            static_fd_buf_byte_lane,
+                                            event_counter_value
+                                        );
+                                    end
+                                    event_counter_value <= 64'd0;
+                                    dcache_writeback <= 1'b1;
+                                    gpr[1] <= gpr[dec.rs2] < 64'd8 ? gpr[dec.rs2] : 64'd8;
+                                    errno_reg <= LNP64_ERR_OK;
+                                end else if (static_fd_is_timer) begin
+                                    sram[static_fd_buf_word_index] <= store_double_low_word(
+                                        sram[static_fd_buf_word_index],
+                                        static_fd_buf_byte_lane,
+                                        timer_expirations
+                                    );
+                                    if (static_fd_buf_byte_lane != 3'd0) begin
+                                        sram[static_fd_buf_next_word_index] <= store_double_high_word(
+                                            sram[static_fd_buf_next_word_index],
+                                            static_fd_buf_byte_lane,
+                                            timer_expirations
+                                        );
+                                    end
+                                    timer_expirations <= 64'd0;
+                                    dcache_writeback <= 1'b1;
+                                    gpr[1] <= gpr[dec.rs2] < 64'd8 ? gpr[dec.rs2] : 64'd8;
+                                    errno_reg <= LNP64_ERR_OK;
                                 end else if (!memory_object_byte_valid || memory_object_len == 64'd0) begin
                                     gpr[1] <= 64'd0;
                                     errno_reg <= LNP64_ERR_OK;
@@ -2004,6 +2085,38 @@ module lnp64_core_tile #(
                                 if (gpr[dec.rs2] == 64'd0) begin
                                     gpr[1] <= 64'd0;
                                     errno_reg <= LNP64_ERR_OK;
+                                end else if (static_fd_is_event_counter) begin
+                                    if (!fdr_valid[static_fd]) begin
+                                        gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= LNP64_ERR_EBADF;
+                                    end else if (fdr_revoked[static_fd]) begin
+                                        gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= RTL_ERR_ESTALE;
+                                    end else if ((fdr_rights[static_fd] & 64'd2) == 64'd0) begin
+                                        gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= LNP64_ERR_EPERM;
+                                    end else begin
+                                        event_counter_value <= event_counter_value +
+                                            load_double_unaligned(gpr[dec.rs1]);
+                                        gpr[1] <= gpr[dec.rs2] < 64'd8 ? gpr[dec.rs2] : 64'd8;
+                                        errno_reg <= LNP64_ERR_OK;
+                                    end
+                                end else if (static_fd_is_timer) begin
+                                    if (!fdr_valid[static_fd]) begin
+                                        gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= LNP64_ERR_EBADF;
+                                    end else if (fdr_revoked[static_fd]) begin
+                                        gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= RTL_ERR_ESTALE;
+                                    end else if ((fdr_rights[static_fd] & 64'd2) == 64'd0) begin
+                                        gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= LNP64_ERR_EPERM;
+                                    end else begin
+                                        timer_expirations <= load_double_unaligned(gpr[dec.rs1]) == 64'd0 ?
+                                            64'd0 : 64'd1;
+                                        gpr[1] <= gpr[dec.rs2] < 64'd8 ? gpr[dec.rs2] : 64'd8;
+                                        errno_reg <= LNP64_ERR_OK;
+                                    end
                                 end else if (static_fd_is_memory_object) begin
                                     if (!fdr_valid[static_fd]) begin
                                         gpr[1] <= 64'hffff_ffff_ffff_ffff;
@@ -2025,6 +2138,28 @@ module lnp64_core_tile #(
                                     end
                                 end else begin
                                     gpr[1] <= gpr[dec.rs2];
+                                    errno_reg <= LNP64_ERR_OK;
+                                end
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_AWAIT: begin
+                                if (!await_fd_in_range || !fdr_valid[await_fd]) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EBADF;
+                                end else if (fdr_revoked[await_fd]) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= RTL_ERR_ESTALE;
+                                end else if ((fdr_rights[await_fd] & 64'd16) == 64'd0) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EPERM;
+                                end else if (!await_fd_ready) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EAGAIN;
+                                end else begin
+                                    gpr[dec.rd] <= 64'd0;
                                     errno_reg <= LNP64_ERR_OK;
                                 end
                                 pc <= pc + 32'd1;
@@ -2158,6 +2293,67 @@ module lnp64_core_tile #(
                                         64'd4
                                     );
                                     gpr[dec.rd] <= 64'd0;
+                                    errno_reg <= LNP64_ERR_OK;
+                                    pc <= pc + 32'd1;
+                                    retired_count <= retired_count + 32'd1;
+                                    retire_submit_valid <= 1'b1;
+                                    retire_submit_record <= retire_submit_next;
+                                end else if (object_op == OBJECT_OP_CREATE &&
+                                    object_kind == OBJECT_KIND_COUNTER &&
+                                    object_profile == 64'd1 &&
+                                    object_single_fd_in_range) begin
+                                    event_counter_valid <= 1'b1;
+                                    event_counter_lineage <= 64'd769;
+                                    event_counter_value <= object_dma_addr;
+                                    fdr_valid[object_single_fd] <= 1'b1;
+                                    fdr_revoked[object_single_fd] <= 1'b0;
+                                    fdr_generation[object_single_fd] <= fdr_generation[object_single_fd] + 64'd1;
+                                    fdr_rights[object_single_fd] <= CAP_RIGHT_ALL;
+                                    fdr_lineage[object_single_fd] <= 64'd769;
+                                    fdr_kind[object_single_fd] <= FDR_KIND_GENERIC;
+                                    sram[object_fd_store_word_index] <= store_double_low_word(
+                                        sram[object_fd_store_word_index],
+                                        object_fd_store_byte_lane,
+                                        {56'd0, object_single_fd[7:0]}
+                                    );
+                                    if (object_fd_store_byte_lane != 3'd0) begin
+                                        sram[object_fd_store_next_word_index] <= store_double_high_word(
+                                            sram[object_fd_store_next_word_index],
+                                            object_fd_store_byte_lane,
+                                            {56'd0, object_single_fd[7:0]}
+                                        );
+                                    end
+                                    gpr[dec.rd] <= {56'd0, object_single_fd[7:0]};
+                                    errno_reg <= LNP64_ERR_OK;
+                                    pc <= pc + 32'd1;
+                                    retired_count <= retired_count + 32'd1;
+                                    retire_submit_valid <= 1'b1;
+                                    retire_submit_record <= retire_submit_next;
+                                end else if (object_op == OBJECT_OP_CREATE &&
+                                    object_kind == OBJECT_KIND_TIMER &&
+                                    object_single_fd_in_range) begin
+                                    timer_valid <= 1'b1;
+                                    timer_lineage <= 64'd1025;
+                                    timer_expirations <= 64'd0;
+                                    fdr_valid[object_single_fd] <= 1'b1;
+                                    fdr_revoked[object_single_fd] <= 1'b0;
+                                    fdr_generation[object_single_fd] <= fdr_generation[object_single_fd] + 64'd1;
+                                    fdr_rights[object_single_fd] <= CAP_RIGHT_ALL;
+                                    fdr_lineage[object_single_fd] <= 64'd1025;
+                                    fdr_kind[object_single_fd] <= FDR_KIND_GENERIC;
+                                    sram[object_fd_store_word_index] <= store_double_low_word(
+                                        sram[object_fd_store_word_index],
+                                        object_fd_store_byte_lane,
+                                        {56'd0, object_single_fd[7:0]}
+                                    );
+                                    if (object_fd_store_byte_lane != 3'd0) begin
+                                        sram[object_fd_store_next_word_index] <= store_double_high_word(
+                                            sram[object_fd_store_next_word_index],
+                                            object_fd_store_byte_lane,
+                                            {56'd0, object_single_fd[7:0]}
+                                        );
+                                    end
+                                    gpr[dec.rd] <= {56'd0, object_single_fd[7:0]};
                                     errno_reg <= LNP64_ERR_OK;
                                     pc <= pc + 32'd1;
                                     retired_count <= retired_count + 32'd1;

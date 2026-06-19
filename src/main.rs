@@ -641,6 +641,8 @@ fn encode_flat_exec_instr(
         )]),
         Instr::WriteFd(fd, buf, len) => Ok(vec![enc_rrr(0x57, Reg(fd.0), *buf, *len)]),
         Instr::ReadFd(fd, buf, len) => Ok(vec![enc_rrr(0x2d, Reg(fd.0), *buf, *len)]),
+        Instr::Await(result, fd, mask) => Ok(vec![enc_rrr(0x2e, *result, Reg(fd.0), *mask)]),
+        Instr::AwaitDyn(result, fd_reg, mask) => Ok(vec![enc_rrr(0x4d, *result, *fd_reg, *mask)]),
         Instr::Pull(result, fd, buf, len) => {
             Ok(vec![enc_rrrr(0x2b, *result, Reg(fd.0), *buf, *len)])
         }
@@ -655,7 +657,7 @@ fn encode_flat_exec_instr(
         Instr::Isync(result, addr, len) => Ok(vec![enc_rrr(0xce, *result, *addr, *len)]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/CALL_REG/LR_GET/LR_SET/RET, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, OBJECT_CTL, CAP_DUP/SEND/RECV/REVOKE, ERRNO_GET/SET, DMA_CTL, ENV_GET, READ_FD/WRITE_FD, PULL/PUSH, READ_FD_DYN/WRITE_FD_DYN, FENCE/ISYNC, AMO, LOCK.CMPXCHG, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/CALL_REG/LR_GET/LR_SET/RET, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, OBJECT_CTL, CAP_DUP/SEND/RECV/REVOKE, ERRNO_GET/SET, DMA_CTL, ENV_GET, READ_FD/WRITE_FD, PULL/PUSH, AWAIT/AWAIT_DYN, READ_FD_DYN/WRITE_FD_DYN, FENCE/ISYNC, AMO, LOCK.CMPXCHG, EXIT"
         )),
     }
 }
@@ -1479,6 +1481,31 @@ mod tests {
                 "572b1a00\n",
                 "2d339a00\n",
                 "3a080000\n",
+            )
+        );
+    }
+
+    #[test]
+    fn asm_flat_exec_encodes_await_static_and_dynamic() {
+        let source = r#"
+            .text
+              LI r16, 4
+              LI r20, 1
+              AWAIT r14, fd3, r20
+              AWAIT_DYN r17, r16, r20
+              EXIT r17
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+
+        assert_eq!(
+            hex,
+            concat!(
+                "01800004\n",
+                "01a00001\n",
+                "2e70e800\n",
+                "4d8c2800\n",
+                "3a880000\n",
             )
         );
     }

@@ -130,6 +130,9 @@ module lnp64_decode (
             8'h2d: begin
                 dec.opcode = LNP64_OP_READ_FD;
             end
+            8'h2e: begin
+                dec.opcode = LNP64_OP_AWAIT;
+            end
             8'h30: begin
                 dec.opcode = LNP64_OP_LD;
             end
@@ -201,6 +204,9 @@ module lnp64_decode (
             end
             8'h4b: begin
                 dec.opcode = LNP64_OP_OBJECT_CTL;
+            end
+            8'h4d: begin
+                dec.opcode = LNP64_OP_AWAIT;
             end
             8'h50: begin
                 dec.opcode = LNP64_OP_CAP_DUP;
@@ -475,6 +481,7 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_ENV_GET ||
             dec.opcode == LNP64_OP_READ_FD ||
             dec.opcode == LNP64_OP_WRITE_FD ||
+            dec.opcode == LNP64_OP_AWAIT ||
             dec.opcode == LNP64_OP_PUSH ||
             dec.opcode == LNP64_OP_PULL ||
             dec.opcode == LNP64_OP_ALLOC ||
