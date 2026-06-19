@@ -32,25 +32,49 @@ if ! [[ "$top_program_jobs" =~ ^[0-9]+$ ]] || (( top_program_jobs < 1 )); then
   exit 1
 fi
 
-if [[ "$#" -gt 0 ]]; then
-  program_specs=()
-  for program in "$@"; do
-    program_specs+=("${program}"$'\t'"scripts/run_rtl_top_program_smoke.sh")
-  done
-else
-  mapfile -t program_specs < <(
-    python3 - <<'PY'
+mapfile -t program_specs < <(
+  python3 - "$@" <<'PY'
 import json
+import fnmatch
+import os
+import sys
 from pathlib import Path
 
 manifest = json.loads(Path("tests/rtl/top_level_program_manifest.json").read_text(encoding="utf-8"))
+entries = []
 for section in ("flat_hex_programs", "llvm_mc_programs", "llvm_clang_programs", "llvm_linked_programs", "compiler_flat_programs", "assembly_programs", "compiler_generated_programs"):
     for entry in manifest[section]:
         if entry["status"] == "active":
-            print(f"{entry['source']}\t{entry['rtl_gate']}")
+            entries.append(entry)
+
+by_source = {entry["source"]: entry for entry in entries}
+requested = sys.argv[1:]
+if requested:
+    for source in requested:
+        entry = by_source.get(source)
+        gate = entry["rtl_gate"] if entry else "scripts/run_rtl_top_program_smoke.sh"
+        print(f"{source}\t{gate}")
+else:
+    patterns = [
+        pattern
+        for raw in os.environ.get("LNP64_RTL_TOP_PROGRAM_FILTER", "").replace(",", " ").split()
+        for pattern in [raw.strip()]
+        if pattern
+    ]
+    selected = entries
+    if patterns:
+        selected = [
+            entry
+            for entry in entries
+            if any(
+                fnmatch.fnmatch(entry["source"], pattern) or pattern in entry["source"]
+                for pattern in patterns
+            )
+        ]
+    for entry in selected:
+        print(f"{entry['source']}\t{entry['rtl_gate']}")
 PY
-  )
-fi
+)
 
 if [[ "${#program_specs[@]}" -eq 0 ]]; then
   printf '%s\n' "no active top-level RTL programs selected" >&2
