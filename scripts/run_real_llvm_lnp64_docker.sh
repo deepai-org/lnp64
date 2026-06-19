@@ -135,5 +135,7 @@ run_elf_report "real LLVM LNP64 run-elf mmap libc execution passed" \
   target/llvm-lnp64-build/lnp64-mmap-libc-linked.elf
 run_elf_report "real LLVM LNP64 run-elf futex libc execution passed" \
   target/llvm-lnp64-build/lnp64-futex-libc-linked.elf
+run_elf_report "real LLVM LNP64 run-elf poll libc execution passed" \
+  target/llvm-lnp64-build/lnp64-poll-libc-linked.elf
 run_elf_report "real LLVM LNP64 run-elf indirect call execution passed" \
   target/llvm-lnp64-build/lnp64-indirect-call-linked.elf

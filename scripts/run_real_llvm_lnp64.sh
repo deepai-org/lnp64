@@ -1805,6 +1805,48 @@ grep -q 'call ' "$futex_libc_dump"
 printf 'real LLVM LNP64 clang futex libc object smoke passed: %s\n' \
   "$futex_libc_obj"
 
+poll_libc_c="$build_dir/poll-libc-smoke.c"
+cat >"$poll_libc_c" <<'C'
+typedef unsigned long nfds_t;
+
+struct pollfd {
+  int fd;
+  short events;
+  short revents;
+};
+
+int poll(struct pollfd *fds, nfds_t nfds, int timeout);
+
+int main(void) {
+  struct pollfd fds[2];
+  fds[0].fd = 0;
+  fds[0].events = 0;
+  fds[0].revents = 7;
+  fds[1].fd = -1;
+  fds[1].events = 1;
+  fds[1].revents = 9;
+  if (poll(fds, 2, 0) != 0)
+    return 1;
+  if (fds[0].revents != 0)
+    return 2;
+  if (fds[1].revents != 0)
+    return 3;
+  return 0;
+}
+C
+
+poll_libc_obj="$build_dir/poll-libc-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$poll_libc_c" -o "$poll_libc_obj"
+test -s "$poll_libc_obj"
+poll_libc_dump="$build_dir/poll-libc-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$poll_libc_obj" \
+  >"$poll_libc_dump"
+grep -q 'call ' "$poll_libc_dump"
+printf 'real LLVM LNP64 clang poll libc object smoke passed: %s\n' \
+  "$poll_libc_obj"
+
 libc_fd_impl_c="toolchain/liblnp64_fd_min.c"
 libc_fd_impl_obj="$build_dir/liblnp64-fd-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
@@ -1819,6 +1861,20 @@ grep -q 'push r' "$libc_fd_impl_dump"
 grep -q 'ret' "$libc_fd_impl_dump"
 printf 'real LLVM LNP64 clang minilibc fd implementation object smoke passed: %s\n' \
   "$libc_fd_impl_obj"
+
+libc_poll_impl_c="toolchain/liblnp64_poll_min.c"
+libc_poll_impl_obj="$build_dir/liblnp64-poll-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$libc_poll_impl_c" -o "$libc_poll_impl_obj"
+test -s "$libc_poll_impl_obj"
+libc_poll_impl_dump="$build_dir/liblnp64-poll-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_poll_impl_obj" \
+  >"$libc_poll_impl_dump"
+grep -q 'await r' "$libc_poll_impl_dump"
+grep -q 'ret' "$libc_poll_impl_dump"
+printf 'real LLVM LNP64 clang minilibc poll implementation object smoke passed: %s\n' \
+  "$libc_poll_impl_obj"
 
 stack_args_c="$build_dir/stack-args-smoke.c"
 cat >"$stack_args_c" <<'C'
@@ -2315,6 +2371,13 @@ futex_libc_elf="$build_dir/lnp64-futex-libc-linked.elf"
 test -s "$futex_libc_elf"
 printf 'real LLVM LNP64 lld futex libc link smoke passed: %s\n' \
   "$futex_libc_elf"
+
+poll_libc_elf="$build_dir/lnp64-poll-libc-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$poll_libc_elf" "$crt0_obj" "$poll_libc_obj" "$libc_poll_impl_obj"
+test -s "$poll_libc_elf"
+printf 'real LLVM LNP64 lld poll libc link smoke passed: %s\n' \
+  "$poll_libc_elf"
 
 indirect_call_elf="$build_dir/lnp64-indirect-call-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
