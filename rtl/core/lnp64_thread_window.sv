@@ -144,4 +144,32 @@ module lnp64_thread_window #(
             end
         end
     end
+
+`ifndef SYNTHESIS
+    always_ff @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin
+        end else begin
+            assert (active_slot_q < CONTEXT_COUNT)
+                else $fatal(1, "SG-SCHED barrel active slot out of range");
+            assert (next_slot < CONTEXT_COUNT)
+                else $fatal(1, "SG-SCHED barrel next slot out of range");
+            for (int unsigned assert_ctx = 0; assert_ctx < CONTEXT_COUNT; assert_ctx = assert_ctx + 1) begin
+                assert (!(context_active_q[assert_ctx] && context_parked_q[assert_ctx]))
+                    else $fatal(1, "SG-SCHED context active and parked simultaneously");
+                assert (!(context_active_q[assert_ctx] && context_completed_q[assert_ctx]))
+                    else $fatal(1, "SG-SCHED context active and completed simultaneously");
+                assert (!(context_parked_q[assert_ctx] && context_completed_q[assert_ctx]))
+                    else $fatal(1, "SG-SCHED context parked and completed simultaneously");
+                assert (!(context_completed_q[assert_ctx] && context_event_pending_q[assert_ctx]))
+                    else $fatal(1, "SG-WAKE completed context retained pending event");
+                assert (!(context_completed_q[assert_ctx] && context_fault_pending_q[assert_ctx]))
+                    else $fatal(1, "SG-SCHED completed context retained pending fault");
+            end
+            if (context_active_q != '0) begin
+                assert (context_active_q[next_slot])
+                    else $fatal(1, "SG-SCHED barrel selected a non-active context");
+            end
+        end
+    end
+`endif
 endmodule
