@@ -724,6 +724,12 @@ def commitOpToStepOp : CommitOp -> Op
   | CommitOp.capDupDenied => Op.capDupDenied
   | CommitOp.objectCreate => Op.objectCreate
 
+def expectedCommitStatus : CommitOp -> CommitStatus
+  | CommitOp.rejectStale => CommitStatus.erevoked
+  | CommitOp.rejectFull => CommitStatus.eagain
+  | CommitOp.capDupDenied => CommitStatus.eperm
+  | _ => CommitStatus.ok
+
 def commitFromCap
     (op : CommitOp)
     (cap : Capability)
@@ -1288,6 +1294,33 @@ theorem typed_commit_transition_preserves_invariant
   intro hInv hCommit
   exact invariant_step hInv (typed_commit_transition_refines_step hCommit)
 
+theorem typed_commit_transition_status_matches_op
+    {s t : State} {commit : CommitRecord} :
+    TypedCommitTransition s commit t ->
+    commit.status = expectedCommitStatus commit.op := by
+  intro hCommit
+  cases hCommit with
+  | capDup hRootDup =>
+      simp [capDupCommit, commitFromCap, expectedCommitStatus]
+  | capSend hCap =>
+      simp [capSendCommit, commitFromCap, expectedCommitStatus]
+  | capRecv cap hSent hCap =>
+      simp [capRecvCommit, commitFromCap, expectedCommitStatus]
+  | capRevoke =>
+      simp [capRevokeCommit, commitFromCap, expectedCommitStatus]
+  | rejectStale hStale =>
+      simp [rejectStaleCommit, commitFromCap, expectedCommitStatus]
+  | push hRootPush =>
+      simp [pushCommit, commitFromCap, expectedCommitStatus]
+  | pull hConsumerPull =>
+      simp [pullCommit, commitFromCap, expectedCommitStatus]
+  | rejectFull =>
+      simp [rejectFullCommit, commitFromCap, expectedCommitStatus]
+  | capDupDenied hDup =>
+      simp [capDupDeniedCommit, commitFromCap, expectedCommitStatus]
+  | objectCreate hRootMint =>
+      simp [objectCreateCommit, commitFromCap, expectedCommitStatus]
+
 theorem rtl_m1_refinement_step_refines_lean_step
     {pre : RtlM1StateProjection}
     {commitProjection : RtlM1CommitProjection}
@@ -1318,6 +1351,19 @@ theorem rtl_m1_refinement_step_refines_commit_projection_op
   rw [commitMatchesRtlProjection, commitProjectionToRecord] at hCommitProjection
   subst commit
   simpa using typed_commit_transition_refines_step hCommit
+
+theorem rtl_m1_refinement_step_status_matches_op
+    {pre : RtlM1StateProjection}
+    {commitProjection : RtlM1CommitProjection}
+    {post : RtlM1StateProjection} :
+    RtlM1RefinementStep pre commitProjection post ->
+    commitProjection.status = expectedCommitStatus commitProjection.op := by
+  intro hRefine
+  rcases hRefine with ⟨_s, _t, commit, _hPre, hCommitProjection, hCommit, _hPost⟩
+  have hStatus := typed_commit_transition_status_matches_op hCommit
+  rw [commitMatchesRtlProjection, commitProjectionToRecord] at hCommitProjection
+  subst commit
+  simpa [commitProjectionToRecord] using hStatus
 
 theorem rtl_m1_refinement_step_projection_faithful
     {pre : RtlM1StateProjection}
@@ -2219,6 +2265,14 @@ theorem m1_t3_typed_commit_transition_preserves_invariant_for_reachable
   exact typed_commit_transition_preserves_invariant
     (reachable_invariant hReach) hCommit
 
+theorem m1_t3_typed_commit_transition_status_matches_op_for_reachable
+    {s t : State} {commit : CommitRecord} :
+    Reachable s ->
+    TypedCommitTransition s commit t ->
+    commit.status = expectedCommitStatus commit.op := by
+  intro _hReach hCommit
+  exact typed_commit_transition_status_matches_op hCommit
+
 theorem m1_t3_rtl_m1_refinement_step_preserves_sg_auth_invariant_for_reachable
     {pre : RtlM1StateProjection}
     {commitProjection : RtlM1CommitProjection}
@@ -2291,6 +2345,23 @@ theorem m1_t3_rtl_m1_refinement_step_refines_preserves_and_satisfies_postconditi
     hBundle.2.2,
     rtl_m1_refinement_step_satisfies_postcondition hRefine
   ⟩
+
+theorem m1_t3_rtl_m1_refinement_step_status_matches_op_for_reachable
+    {pre : RtlM1StateProjection}
+    {commitProjection : RtlM1CommitProjection}
+    {post : RtlM1StateProjection}
+    {s t : State}
+    {commit : CommitRecord} :
+    Reachable s ->
+    stateMatchesRtlProjection s pre ->
+    commitMatchesRtlProjection commit commitProjection ->
+    TypedCommitTransition s commit t ->
+    stateMatchesRtlProjection t post ->
+    commitProjection.status = expectedCommitStatus commitProjection.op := by
+  intro _hReach hPre hCommitProjection hCommit hPost
+  have hRefine : RtlM1RefinementStep pre commitProjection post :=
+    ⟨s, t, commit, hPre, hCommitProjection, hCommit, hPost⟩
+  exact rtl_m1_refinement_step_status_matches_op hRefine
 
 theorem m1_t3_typed_commit_failed_authority_transition_preserves_authority_slots_for_reachable
     {s t : State} {commit : CommitRecord} :
