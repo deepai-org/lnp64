@@ -3405,7 +3405,7 @@ impl Machine {
                 Self::ensure_result_reg_writable(result)?;
                 match self.write_pcr(pcr, self.read_reg(src)?) {
                     Ok(()) => self.write_reg(result, 0)?,
-                    Err(errno) => self.complete_reg_negative_errno(result, errno)?,
+                    Err(errno) => self.complete_reg_arch_error(result, errno)?,
                 }
             }
             Instr::EnvGet(result, key, index_or_buf, len_or_flags) => {
@@ -4317,6 +4317,11 @@ impl Machine {
     fn complete_reg_negative_errno(&mut self, result: Reg, errno: u64) -> Result<(), String> {
         Self::ensure_result_reg_writable(result)?;
         self.set_errno(errno)?;
+        self.write_reg(result, 0u64.wrapping_sub(errno))
+    }
+
+    fn complete_reg_arch_error(&mut self, result: Reg, errno: u64) -> Result<(), String> {
+        Self::ensure_result_reg_writable(result)?;
         self.write_reg(result, 0u64.wrapping_sub(errno))
     }
 
@@ -15595,11 +15600,19 @@ mod tests {
               GET_PCR r20, CRED_HANDLE
               CMP r20, r0
               BNE bad
+              LI r30, 77
+              ERRNO_SET r30
               SET_PCR r21, CRED_PROFILE, r2
               CMP r21, r29
               BNE bad
+              ERRNO_GET r23
+              CMP r23, r30
+              BNE bad
               SET_PCR r22, CRED_HANDLE, r2
               CMP r22, r29
+              BNE bad
+              ERRNO_GET r23
+              CMP r23, r30
               BNE bad
 
               LI r3, 16

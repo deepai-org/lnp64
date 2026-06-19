@@ -1758,6 +1758,7 @@ mod tests {
         assert!(real_llc.contains("get-pcr-mc-smoke.o"));
         assert!(real_llc.contains("get_pcr r1, PID"));
         assert!(real_llc.contains("set_pcr r3, SIGMASK, r2"));
+        assert!(real_llc.contains("stale two-operand SET_PCR unexpectedly assembled"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc GET_PCR opcode smoke passed"));
         assert!(real_llc.contains("open-at-mc-smoke.o"));
         assert!(real_llc.contains("open_at r1, r2, r3, r4"));

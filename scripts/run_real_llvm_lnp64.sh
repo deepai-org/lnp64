@@ -281,6 +281,20 @@ ASM
   grep -q 'set_pcr r3, SIGMASK, r2' "$get_pcr_mc_dump"
   grep -q 'get_pcr r4, CRED_PROFILE' "$get_pcr_mc_dump"
   grep -q 'set_pcr r5, CRED_HANDLE, r2' "$get_pcr_mc_dump"
+  stale_set_pcr_asm="$build_dir/stale-set-pcr-mc-smoke.s"
+  cat >"$stale_set_pcr_asm" <<'ASM'
+  .text
+  .globl _start
+_start:
+  set_pcr TP, r2
+  ret
+ASM
+  stale_set_pcr_err="$build_dir/stale-set-pcr-mc-smoke.err"
+  if "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$stale_set_pcr_asm" \
+    -o "$build_dir/stale-set-pcr-mc-smoke.o" 2>"$stale_set_pcr_err"; then
+    printf 'stale two-operand SET_PCR unexpectedly assembled\n' >&2
+    exit 1
+  fi
   printf 'real LLVM LNP64 llvm-mc GET_PCR opcode smoke passed: %s\n' \
     "$get_pcr_mc_obj"
 
@@ -4349,6 +4363,20 @@ grep -q 'get_pcr r1, PID' "$get_pcr_mc_dump"
 grep -q 'set_pcr r3, SIGMASK, r2' "$get_pcr_mc_dump"
 grep -q 'get_pcr r4, CRED_PROFILE' "$get_pcr_mc_dump"
 grep -q 'set_pcr r5, CRED_HANDLE, r2' "$get_pcr_mc_dump"
+stale_set_pcr_asm="$build_dir/stale-set-pcr-mc-smoke.s"
+cat >"$stale_set_pcr_asm" <<'ASM'
+  .text
+  .globl _start
+_start:
+  set_pcr TP, r2
+  ret
+ASM
+stale_set_pcr_err="$build_dir/stale-set-pcr-mc-smoke.err"
+if "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$stale_set_pcr_asm" \
+  -o "$build_dir/stale-set-pcr-mc-smoke.o" 2>"$stale_set_pcr_err"; then
+  printf 'stale two-operand SET_PCR unexpectedly assembled\n' >&2
+  exit 1
+fi
 printf 'real LLVM LNP64 llvm-mc GET_PCR opcode smoke passed: %s\n' \
   "$get_pcr_mc_obj"
 

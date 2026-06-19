@@ -1316,7 +1316,7 @@ mod tests {
     fn parses_get_pcr_tls_base_alias() {
         let program = Program::parse(
             r#"
-            .text
+              .text
               GET_PCR r1, TLS_BASE
             "#,
         )
@@ -1324,6 +1324,34 @@ mod tests {
         assert!(matches!(
             program.instructions[0],
             Instr::GetPcr(Reg(1), Pcr::Tp)
+        ));
+    }
+
+    #[test]
+    fn set_pcr_requires_result_selector_and_source() {
+        let err = Program::parse(
+            r#"
+              .text
+              SET_PCR TP, r1
+            "#,
+        )
+        .unwrap_err();
+
+        assert!(
+            err.contains("SET_PCR expects 3 operands"),
+            "unexpected error: {err}"
+        );
+
+        let program = Program::parse(
+            r#"
+              .text
+              SET_PCR r2, TP, r1
+            "#,
+        )
+        .unwrap();
+        assert!(matches!(
+            program.instructions[0],
+            Instr::SetPcr(Reg(2), Pcr::Tp, Reg(1))
         ));
     }
 
