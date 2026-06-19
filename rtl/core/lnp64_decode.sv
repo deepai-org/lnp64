@@ -121,6 +121,12 @@ module lnp64_decode (
             8'h2a: begin
                 dec.opcode = LNP64_OP_LR_SET;
             end
+            8'h2b: begin
+                dec.opcode = LNP64_OP_PULL;
+            end
+            8'h2c: begin
+                dec.opcode = LNP64_OP_PUSH;
+            end
             8'h30: begin
                 dec.opcode = LNP64_OP_LD;
             end

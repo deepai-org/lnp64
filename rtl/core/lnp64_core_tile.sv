@@ -78,6 +78,7 @@ module lnp64_core_tile #(
     core_state_e state;
     lnp64_decode_t dec;
     logic [31:0] instr;
+    logic [7:0] raw_opcode;
     logic [31:0] pc;
     logic [31:0] next_op_id;
     logic [63:0] gpr [0:31];
@@ -769,8 +770,10 @@ module lnp64_core_tile #(
     always_comb begin
         if (pc < PROGRAM_WORDS[31:0]) begin
             instr = program_rom[pc];
+            raw_opcode = program_rom[pc][31:24];
         end else begin
             instr = enc_reg(8'hff, 5'd0);
+            raw_opcode = 8'hff;
         end
         mem_addr = gpr[dec.rs1] + {{32{dec.imm[31]}}, dec.imm};
         mem_sram_word_index = sram_word_index(mem_addr);
@@ -831,7 +834,11 @@ module lnp64_core_tile #(
         cap_dup_rights_subset = cap_src_fd_in_range && ((cap_dup_rights & ~fdr_rights[cap_src_fd]) == 64'd0);
         cap_recv_rights = cap_rights_req == 64'd0 ? cap_queue_rights : cap_rights_req;
         cap_recv_rights_subset = (cap_recv_rights & ~cap_queue_rights) == 64'd0;
-        pipe_fd = fdr_value_fd(gpr[dec.rs1]);
+        if (raw_opcode == 8'h2b || raw_opcode == 8'h2c) begin
+            pipe_fd = dec.rs1;
+        end else begin
+            pipe_fd = fdr_value_fd(gpr[dec.rs1]);
+        end
         pipe_fd_in_range = pipe_fd < FDR_SLOT_COUNT;
         pipe_buf_word_index = sram_word_index(gpr[dec.rs2]);
         pipe_buf_byte_lane = gpr[dec.rs2][2:0];
