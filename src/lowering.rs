@@ -5607,9 +5607,19 @@ mod tests {
                 .1
                 .contains(&"scripts/run_llvm_bootstrap_gates.sh")
         );
+        assert!(
+            categories["llvm_built_versions"]
+                .1
+                .contains(&"scripts/run_real_llvm_lnp64_objects_docker.sh")
+        );
         assert_eq!(
             categories["llvm_built_versions"].2,
             "scripts/run_real_llvm_lnp64_docker.sh"
+        );
+        assert!(
+            categories["llvm_built_versions"]
+                .3
+                .contains("real_clang_object_gate")
         );
         assert_eq!(
             categories["llvm_package_tests"].2,
