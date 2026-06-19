@@ -250,6 +250,32 @@ module lnp64_m1_assertions (
             rights == commit.rights_mask;
     endfunction
 
+    function automatic logic m1_sent_projection_slots_match(
+        input lnp64_m1_state_projection_t left,
+        input lnp64_m1_state_projection_t right
+    );
+        return left.sent_valid == right.sent_valid &&
+            left.sent_object_id == right.sent_object_id &&
+            left.sent_generation == right.sent_generation &&
+            left.sent_domain_id == right.sent_domain_id &&
+            left.sent_lineage_epoch == right.sent_lineage_epoch &&
+            left.sent_sealed == right.sent_sealed &&
+            left.sent_rights == right.sent_rights;
+    endfunction
+
+    function automatic logic m1_minted_projection_slots_match(
+        input lnp64_m1_state_projection_t left,
+        input lnp64_m1_state_projection_t right
+    );
+        return left.minted_valid == right.minted_valid &&
+            left.minted_object_id == right.minted_object_id &&
+            left.minted_generation == right.minted_generation &&
+            left.minted_domain_id == right.minted_domain_id &&
+            left.minted_lineage_epoch == right.minted_lineage_epoch &&
+            left.minted_sealed == right.minted_sealed &&
+            left.minted_rights == right.minted_rights;
+    endfunction
+
     function automatic logic m1_authority_projection_slots_match(
         input lnp64_m1_state_projection_t left,
         input lnp64_m1_state_projection_t right
@@ -483,6 +509,31 @@ module lnp64_m1_assertions (
                         else $fatal(1, "M1 sent-cap validity cleared without an OK capRecv commit");
                 end
             end
+            if (!m1_sent_projection_slots_match(
+                typed_state_projection,
+                previous_typed_state_projection
+            )) begin
+                if (typed_state_projection.sent_valid) begin
+                    assert (previous_rtl_state_projection == M1_STATE_CAP_SEND)
+                        else $fatal(1, "M1 sent-cap payload changed outside capSend owner path");
+                    assert (m1_ok_typed_commit(LNP64_M1_COMMIT_CAP_SEND))
+                        else $fatal(1, "M1 sent-cap payload changed without an OK capSend commit");
+                    assert (m1_projection_cap_matches_commit(
+                        typed_state_projection.sent_object_id,
+                        typed_state_projection.sent_generation,
+                        typed_state_projection.sent_domain_id,
+                        typed_state_projection.sent_lineage_epoch,
+                        typed_state_projection.sent_sealed,
+                        typed_state_projection.sent_rights,
+                        typed_commit
+                    )) else $fatal(1, "M1 sent-cap payload did not match capSend commit");
+                end else begin
+                    assert (previous_rtl_state_projection == M1_STATE_CAP_RECV)
+                        else $fatal(1, "M1 sent-cap payload cleared outside capRecv owner path");
+                    assert (m1_ok_typed_commit(LNP64_M1_COMMIT_CAP_RECV))
+                        else $fatal(1, "M1 sent-cap payload cleared without an OK capRecv commit");
+                end
+            end
             if (typed_state_projection.transfer_valid != previous_typed_state_projection.transfer_valid) begin
                 assert (typed_state_projection.transfer_valid)
                     else $fatal(1, "M1 transfer-valid witness was cleared after publication");
@@ -498,6 +549,26 @@ module lnp64_m1_assertions (
                     else $fatal(1, "M1 minted-cap validity set outside objectCreate owner path");
                 assert (m1_ok_typed_commit(LNP64_M1_COMMIT_OBJECT_CREATE))
                     else $fatal(1, "M1 minted-cap validity set without an OK objectCreate commit");
+            end
+            if (!m1_minted_projection_slots_match(
+                typed_state_projection,
+                previous_typed_state_projection
+            )) begin
+                assert (typed_state_projection.minted_valid)
+                    else $fatal(1, "M1 minted-cap payload was cleared after publication");
+                assert (previous_rtl_state_projection == M1_STATE_OBJECT_CREATE)
+                    else $fatal(1, "M1 minted-cap payload changed outside objectCreate owner path");
+                assert (m1_ok_typed_commit(LNP64_M1_COMMIT_OBJECT_CREATE))
+                    else $fatal(1, "M1 minted-cap payload changed without an OK objectCreate commit");
+                assert (m1_projection_cap_matches_commit(
+                    typed_state_projection.minted_object_id,
+                    typed_state_projection.minted_generation,
+                    typed_state_projection.minted_domain_id,
+                    typed_state_projection.minted_lineage_epoch,
+                    typed_state_projection.minted_sealed,
+                    typed_state_projection.minted_rights,
+                    typed_commit
+                )) else $fatal(1, "M1 minted-cap payload did not match objectCreate commit");
             end
             if (typed_state_projection.created_object_created != previous_typed_state_projection.created_object_created) begin
                 assert (typed_state_projection.created_object_created)
