@@ -421,6 +421,73 @@ module lnp64_top #(
         end
     end
 
+`ifndef SYNTHESIS
+    integer m1_assert_i;
+    always_ff @(posedge clk or negedge logic_reset_n) begin
+        if (!logic_reset_n) begin
+        end else begin
+            for (m1_assert_i = 0; m1_assert_i < CORE_TILE_COUNT; m1_assert_i = m1_assert_i + 1) begin
+                if (m1_commit_valid_vec[m1_assert_i]) begin
+                    assert (cap_m1_commit_latched_valid_vec[m1_assert_i])
+                        else $fatal(1, "SG-AUTH M1 retire lacked cap-engine-owned commit");
+                    assert (m1_state_projection_vec[m1_assert_i].op == m1_commit_vec[m1_assert_i].op)
+                        else $fatal(1, "SG-AUTH M1 state projection op drifted from cap-engine commit");
+                    assert (m1_state_projection_vec[m1_assert_i].status == m1_commit_vec[m1_assert_i].status)
+                        else $fatal(1, "SG-AUTH M1 state projection status drifted from cap-engine commit");
+                    if (m1_commit_vec[m1_assert_i].status == LNP64_ERR_OK) begin
+                        unique case (m1_commit_vec[m1_assert_i].op)
+                            LNP64_M1_COMMIT_CAP_DUP,
+                            LNP64_M1_COMMIT_CAP_RECV: begin
+                                assert (m1_state_projection_vec[m1_assert_i].consumer_object_id ==
+                                    m1_commit_vec[m1_assert_i].object_id)
+                                    else $fatal(1, "SG-AUTH M1 consumer object id drifted from cap-engine commit");
+                                assert (m1_state_projection_vec[m1_assert_i].consumer_generation ==
+                                    m1_commit_vec[m1_assert_i].fdr_gen)
+                                    else $fatal(1, "SG-AUTH M1 consumer generation drifted from cap-engine commit");
+                                assert (m1_state_projection_vec[m1_assert_i].consumer_rights ==
+                                    m1_commit_vec[m1_assert_i].rights_mask)
+                                    else $fatal(1, "SG-AUTH M1 consumer rights drifted from cap-engine commit");
+                                assert (m1_state_projection_vec[m1_assert_i].consumer_lineage_epoch ==
+                                    m1_commit_vec[m1_assert_i].lineage_epoch)
+                                    else $fatal(1, "SG-AUTH M1 consumer lineage drifted from cap-engine commit");
+                            end
+                            LNP64_M1_COMMIT_CAP_SEND: begin
+                                assert (m1_state_projection_vec[m1_assert_i].sent_valid)
+                                    else $fatal(1, "SG-AUTH M1 capSend did not project a sent cap");
+                                assert (m1_state_projection_vec[m1_assert_i].sent_object_id ==
+                                    m1_commit_vec[m1_assert_i].object_id)
+                                    else $fatal(1, "SG-AUTH M1 sent object id drifted from cap-engine commit");
+                                assert (m1_state_projection_vec[m1_assert_i].sent_generation ==
+                                    m1_commit_vec[m1_assert_i].fdr_gen)
+                                    else $fatal(1, "SG-AUTH M1 sent generation drifted from cap-engine commit");
+                                assert (m1_state_projection_vec[m1_assert_i].sent_rights ==
+                                    m1_commit_vec[m1_assert_i].rights_mask)
+                                    else $fatal(1, "SG-AUTH M1 sent rights drifted from cap-engine commit");
+                                assert (m1_state_projection_vec[m1_assert_i].sent_lineage_epoch ==
+                                    m1_commit_vec[m1_assert_i].lineage_epoch)
+                                    else $fatal(1, "SG-AUTH M1 sent lineage drifted from cap-engine commit");
+                            end
+                            LNP64_M1_COMMIT_CAP_REVOKE: begin
+                                assert (m1_state_projection_vec[m1_assert_i].root_object_id ==
+                                    m1_commit_vec[m1_assert_i].object_id)
+                                    else $fatal(1, "SG-AUTH M1 revoked root object id drifted from cap-engine commit");
+                                assert (m1_state_projection_vec[m1_assert_i].root_generation ==
+                                    m1_commit_vec[m1_assert_i].fdr_gen)
+                                    else $fatal(1, "SG-AUTH M1 revoked root generation drifted from cap-engine commit");
+                                assert (m1_state_projection_vec[m1_assert_i].root_lineage_epoch ==
+                                    m1_commit_vec[m1_assert_i].lineage_epoch)
+                                    else $fatal(1, "SG-AUTH M1 revoked root lineage drifted from cap-engine commit");
+                            end
+                            default: begin
+                            end
+                        endcase
+                    end
+                end
+            end
+        end
+    end
+`endif
+
     lnp64_engine_router engine_router_i(
         .clk(clk),
         .reset_n(logic_reset_n),
