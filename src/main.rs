@@ -354,6 +354,13 @@ fn encode_flat_exec_instr(
         Instr::Bswap16(rd, rs1) => Ok(vec![enc_rrr(0xb8, *rd, *rs1, Reg(0))]),
         Instr::Bswap32(rd, rs1) => Ok(vec![enc_rrr(0xb9, *rd, *rs1, Reg(0))]),
         Instr::Bswap64(rd, rs1) => Ok(vec![enc_rrr(0xba, *rd, *rs1, Reg(0))]),
+        Instr::Cmpu(lhs, rhs) => Ok(vec![enc_rrr(0x1c, *lhs, *rhs, Reg(0))]),
+        Instr::Csel(rd, true_src, false_src, condition) => Ok(vec![enc_rrr(
+            flat_exec_csel_opcode(*condition)?,
+            *rd,
+            *true_src,
+            *false_src,
+        )]),
         Instr::Cmp(lhs, rhs) => Ok(vec![enc_rrr(0x1b, *lhs, *rhs, Reg(0))]),
         Instr::Ret => Ok(vec![enc_reg(0x1f, Reg(0))]),
         Instr::Jmp(target) => Ok(vec![enc_branch(
@@ -404,7 +411,7 @@ fn encode_flat_exec_instr(
         )]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, MOV, ADD/ADDI, SUB, MUL, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XOR/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.B, ALLOC, ERRNO_GET/SET, ENV_GET, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, MOV, ADD/ADDI, SUB, MUL, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XOR/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSEL, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.B, ALLOC, ERRNO_GET/SET, ENV_GET, EXIT"
         )),
     }
 }
@@ -429,6 +436,21 @@ fn flat_exec_branch_opcode(condition: Condition) -> Result<u8, String> {
         other => Err(format!(
             "asm-flat-exec does not yet encode unsigned branch condition {other:?}"
         )),
+    }
+}
+
+fn flat_exec_csel_opcode(condition: Condition) -> Result<u8, String> {
+    match condition {
+        Condition::Eq => Ok(0xbb),
+        Condition::Ne => Ok(0xbc),
+        Condition::Lt => Ok(0xbd),
+        Condition::Gt => Ok(0xbe),
+        Condition::Le => Ok(0xbf),
+        Condition::Ge => Ok(0xc0),
+        Condition::Ult => Ok(0xc1),
+        Condition::Ugt => Ok(0xc2),
+        Condition::Ule => Ok(0xc3),
+        Condition::Uge => Ok(0xc4),
     }
 }
 
@@ -1220,6 +1242,95 @@ mod tests {
                 "106b5600\n",
                 "106b5800\n",
                 "3a680000\n",
+            )
+        );
+    }
+
+    #[test]
+    fn asm_flat_exec_encodes_cmpu_csel_subset() {
+        let source = r#"
+            .text
+              LI r1, 5
+              LI r2, 9
+              LI r3, 1
+              LI r4, 2
+              LI r5, 4
+              LI r6, 8
+              CMP r1, r2
+              CSEL.LT r7, r3, r4
+              CSEL.GT r8, r3, r4
+              CSEL.LE r9, r5, r6
+              CSEL.GE r10, r5, r6
+              LI r11, 16
+              LI r12, 32
+              CMP r1, r1
+              CSEL.EQ r13, r11, r12
+              CSEL.NE r14, r11, r12
+              LI r15, -1
+              LI r16, 1
+              CMPU r15, r16
+              LI r17, 64
+              LI r18, 128
+              LI r19, 256
+              LI r21, 512
+              CSEL.ULT r22, r17, r18
+              CSEL.UGT r23, r17, r18
+              CSEL.ULE r24, r19, r21
+              CSEL.UGE r25, r19, r21
+              ADD r26, r7, r8
+              ADD r26, r26, r9
+              ADD r26, r26, r10
+              ADD r26, r26, r13
+              ADD r26, r26, r14
+              ADD r26, r26, r22
+              ADD r26, r26, r23
+              ADD r26, r26, r24
+              ADD r26, r26, r25
+              EXIT r26
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+
+        assert_eq!(
+            hex,
+            concat!(
+                "01080005\n",
+                "01100009\n",
+                "01180001\n",
+                "01200002\n",
+                "01280004\n",
+                "01300008\n",
+                "1b088000\n",
+                "bd38c800\n",
+                "be40c800\n",
+                "bf494c00\n",
+                "c0514c00\n",
+                "01580010\n",
+                "01600020\n",
+                "1b084000\n",
+                "bb6ad800\n",
+                "bc72d800\n",
+                "0178ffff\n",
+                "01800001\n",
+                "1c7c0000\n",
+                "01880040\n",
+                "01900080\n",
+                "01980100\n",
+                "01a80200\n",
+                "c1b46400\n",
+                "c2bc6400\n",
+                "c3c4ea00\n",
+                "c4ccea00\n",
+                "10d1d000\n",
+                "10d69200\n",
+                "10d69400\n",
+                "10d69a00\n",
+                "10d69c00\n",
+                "10d6ac00\n",
+                "10d6ae00\n",
+                "10d6b000\n",
+                "10d6b200\n",
+                "3ad00000\n",
             )
         );
     }

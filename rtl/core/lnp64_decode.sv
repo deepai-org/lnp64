@@ -70,6 +70,9 @@ module lnp64_decode (
             8'h1b: begin
                 dec.opcode = LNP64_OP_CMP;
             end
+            8'h1c: begin
+                dec.opcode = LNP64_OP_CMPU;
+            end
             8'h1f: begin
                 dec.opcode = LNP64_OP_RET;
             end
@@ -210,6 +213,36 @@ module lnp64_decode (
             8'hba: begin
                 dec.opcode = LNP64_OP_BSWAP64;
             end
+            8'hbb: begin
+                dec.opcode = LNP64_OP_CSEL_EQ;
+            end
+            8'hbc: begin
+                dec.opcode = LNP64_OP_CSEL_NE;
+            end
+            8'hbd: begin
+                dec.opcode = LNP64_OP_CSEL_LT;
+            end
+            8'hbe: begin
+                dec.opcode = LNP64_OP_CSEL_GT;
+            end
+            8'hbf: begin
+                dec.opcode = LNP64_OP_CSEL_LE;
+            end
+            8'hc0: begin
+                dec.opcode = LNP64_OP_CSEL_GE;
+            end
+            8'hc1: begin
+                dec.opcode = LNP64_OP_CSEL_ULT;
+            end
+            8'hc2: begin
+                dec.opcode = LNP64_OP_CSEL_UGT;
+            end
+            8'hc3: begin
+                dec.opcode = LNP64_OP_CSEL_ULE;
+            end
+            8'hc4: begin
+                dec.opcode = LNP64_OP_CSEL_UGE;
+            end
             default: begin
                 dec.opcode = {8'd0, raw_opcode};
             end
@@ -253,6 +286,17 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_BSWAP32 ||
             dec.opcode == LNP64_OP_BSWAP64 ||
             dec.opcode == LNP64_OP_CMP ||
+            dec.opcode == LNP64_OP_CMPU ||
+            dec.opcode == LNP64_OP_CSEL_EQ ||
+            dec.opcode == LNP64_OP_CSEL_NE ||
+            dec.opcode == LNP64_OP_CSEL_LT ||
+            dec.opcode == LNP64_OP_CSEL_GT ||
+            dec.opcode == LNP64_OP_CSEL_LE ||
+            dec.opcode == LNP64_OP_CSEL_GE ||
+            dec.opcode == LNP64_OP_CSEL_ULT ||
+            dec.opcode == LNP64_OP_CSEL_UGT ||
+            dec.opcode == LNP64_OP_CSEL_ULE ||
+            dec.opcode == LNP64_OP_CSEL_UGE ||
             dec.opcode == LNP64_OP_JMP ||
             dec.opcode == LNP64_OP_BRANCH_EQ ||
             dec.opcode == LNP64_OP_BRANCH_NE ||

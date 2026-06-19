@@ -41,6 +41,14 @@
       "status": "active",
       "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
       "comparison": "retire_trace_and_final_state"
+    },
+    {
+      "source": "tests/rtl/programs/top_cmpu_csel.s",
+      "generated_flat_hex": "tests/rtl/programs/top_cmpu_csel.hex",
+      "required_features": ["core", "cmpu", "conditional_select", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
     }
   ],
   "compiler_flat_programs": [
