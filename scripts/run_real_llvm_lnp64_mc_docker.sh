@@ -8,7 +8,9 @@ image="${LNP64_LLVM_DOCKER_IMAGE:-lnp64-real-llvm:bookworm}"
 uid="$(id -u)"
 gid="$(id -g)"
 
-docker build -f Dockerfile.llvm -t "$image" .
+if [[ "${LNP64_LLVM_DOCKER_SKIP_BUILD:-0}" != "1" ]]; then
+  docker build -f Dockerfile.llvm -t "$image" .
+fi
 docker run --rm \
   --user "$uid:$gid" \
   -e LNP64_LLVM_GATE=mc \

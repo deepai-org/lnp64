@@ -8,7 +8,9 @@ image="${LNP64_LLVM_DOCKER_IMAGE:-lnp64-real-llvm:bookworm}"
 uid="$(id -u)"
 gid="$(id -g)"
 
-docker build -f Dockerfile.llvm -t "$image" .
+if [[ "${LNP64_LLVM_DOCKER_SKIP_BUILD:-0}" != "1" ]]; then
+  docker build -f Dockerfile.llvm -t "$image" .
+fi
 docker run --rm \
   --user "$uid:$gid" \
   -v "$root:/work" \
@@ -255,6 +257,13 @@ mmap_libc_output="$(cargo run --quiet -- run-elf "$mmap_libc_probe")"
 grep -q 'exit=0' <<<"$mmap_libc_output"
 printf 'real LLVM LNP64 run-elf mmap libc execution passed: %s\n' \
   "$mmap_libc_probe"
+
+futex_libc_probe="target/llvm-lnp64-build/lnp64-futex-libc-linked.elf"
+cargo run --quiet -- elf-plan "$futex_libc_probe" >/dev/null
+futex_libc_output="$(cargo run --quiet -- run-elf "$futex_libc_probe")"
+grep -q 'exit=0' <<<"$futex_libc_output"
+printf 'real LLVM LNP64 run-elf futex libc execution passed: %s\n' \
+  "$futex_libc_probe"
 
 indirect_call_probe="target/llvm-lnp64-build/lnp64-indirect-call-linked.elf"
 cargo run --quiet -- elf-plan "$indirect_call_probe" >/dev/null

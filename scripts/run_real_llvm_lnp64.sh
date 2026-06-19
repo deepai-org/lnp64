@@ -1671,6 +1671,34 @@ grep -q 'call ' "$mmap_libc_dump"
 printf 'real LLVM LNP64 clang mmap libc object smoke passed: %s\n' \
   "$mmap_libc_obj"
 
+futex_libc_c="$build_dir/futex-libc-smoke.c"
+cat >"$futex_libc_c" <<'C'
+typedef unsigned long lnp64_word_t;
+
+int futex_wait(volatile lnp64_word_t *addr, lnp64_word_t expected);
+int futex_wake(volatile lnp64_word_t *addr, lnp64_word_t count);
+
+static volatile lnp64_word_t futex_cell = 1;
+
+int main(void) {
+  if (futex_wait(&futex_cell, 0) != 0)
+    return 1;
+  return futex_wake(&futex_cell, 1);
+}
+C
+
+futex_libc_obj="$build_dir/futex-libc-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$futex_libc_c" -o "$futex_libc_obj"
+test -s "$futex_libc_obj"
+futex_libc_dump="$build_dir/futex-libc-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$futex_libc_obj" \
+  >"$futex_libc_dump"
+grep -q 'call ' "$futex_libc_dump"
+printf 'real LLVM LNP64 clang futex libc object smoke passed: %s\n' \
+  "$futex_libc_obj"
+
 libc_fd_impl_c="toolchain/liblnp64_fd_min.c"
 libc_fd_impl_obj="$build_dir/liblnp64-fd-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
@@ -2135,6 +2163,13 @@ mmap_libc_elf="$build_dir/lnp64-mmap-libc-linked.elf"
 test -s "$mmap_libc_elf"
 printf 'real LLVM LNP64 lld mmap libc link smoke passed: %s\n' \
   "$mmap_libc_elf"
+
+futex_libc_elf="$build_dir/lnp64-futex-libc-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$futex_libc_elf" "$crt0_obj" "$futex_libc_obj" "$libc_futex_impl_obj"
+test -s "$futex_libc_elf"
+printf 'real LLVM LNP64 lld futex libc link smoke passed: %s\n' \
+  "$futex_libc_elf"
 
 indirect_call_elf="$build_dir/lnp64-indirect-call-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

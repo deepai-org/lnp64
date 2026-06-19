@@ -166,6 +166,14 @@ override it explicitly:
 LNP64_LLVM_JOBS=16 bash scripts/run_real_llvm_lnp64_docker.sh
 ```
 
+After the Docker image exists and `Dockerfile.llvm` has not changed, skip the
+image build prelude during tight LLVM loops:
+
+```sh
+LNP64_LLVM_DOCKER_SKIP_BUILD=1 LNP64_LLVM_JOBS=16 bash scripts/run_real_llvm_lnp64_docker.sh
+LNP64_LLVM_DOCKER_SKIP_BUILD=1 bash scripts/run_real_llvm_lnp64_mc_docker.sh
+```
+
 Only remove the LLVM cache when you need the space or want to force a clean
 checkout:
 
