@@ -883,6 +883,21 @@ grep -q 'lock.cmpxchg r' "$producer_consumer_dump"
 printf 'real LLVM LNP64 clang producer consumer demo object smoke passed: %s\n' \
   "$producer_consumer_obj"
 
+parallel_hash_obj="$build_dir/parallel-hash-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables \
+  -Wno-implicit-function-declaration -I toolchain \
+  -c demos/parallel_hash.c -o "$parallel_hash_obj"
+test -s "$parallel_hash_obj"
+parallel_hash_dump="$build_dir/parallel-hash-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$parallel_hash_obj" \
+  >"$parallel_hash_dump"
+grep -q 'clone.spawn r' "$parallel_hash_dump"
+grep -q 'thread_join r' "$parallel_hash_dump"
+grep -q 'amo.add r' "$parallel_hash_dump"
+printf 'real LLVM LNP64 clang parallel hash demo object smoke passed: %s\n' \
+  "$parallel_hash_obj"
+
 indirect_call_c="$build_dir/indirect-call-smoke.c"
 cat >"$indirect_call_c" <<'C'
 int add3(int x) {
@@ -3527,7 +3542,7 @@ test -s "$indirect_call_elf"
 printf 'real LLVM LNP64 lld indirect call link smoke passed: %s\n' \
   "$indirect_call_elf"
 
-for demo in hello factorial allocator fibonacci pcr cat json-parser rot13 producer-consumer; do
+for demo in hello factorial allocator fibonacci pcr cat json-parser rot13 producer-consumer parallel-hash; do
   demo_obj="$build_dir/$demo-clang-smoke.o"
   demo_elf="$build_dir/lnp64-$demo-clang-linked.elf"
   "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
