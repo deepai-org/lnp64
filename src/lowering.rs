@@ -2206,6 +2206,10 @@ mod tests {
         assert!(real_llc.contains("grep -q 'mmap r'"));
         assert!(real_llc.contains("grep -q 'fence'"));
         assert!(real_llc.contains("real LLVM LNP64 clang sqlite lite demo object smoke passed"));
+        assert!(real_llc.contains("ping-pong-clang-smoke.o"));
+        assert!(real_llc.contains("-c demos/ping_pong.c"));
+        assert!(real_llc.contains("grep -q 'object_ctl r'"));
+        assert!(real_llc.contains("real LLVM LNP64 clang ping pong demo object smoke passed"));
         assert!(real_llc.contains("netcat-clang-smoke.o"));
         assert!(real_llc.contains("-c demos/netcat.c"));
         assert!(real_llc.contains("real LLVM LNP64 clang netcat demo object smoke passed"));
@@ -2457,6 +2461,7 @@ mod tests {
         assert!(real_llc_docker.contains("producer consumer ok"));
         assert!(real_llc_docker.contains("parallel hash ok"));
         assert!(real_llc_docker.contains("sqlite lite ok"));
+        assert!(real_llc_docker.contains("ping pong ok"));
         assert!(real_llc_docker.contains("exit=0"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf clang demo execution passed"));
         assert!(real_llc_docker.contains("lnp64-native-heap-linked.elf"));
@@ -3662,6 +3667,7 @@ mod tests {
             "producer_consumer",
             "parallel_hash",
             "sqlite_lite",
+            "ping_pong",
             "netcat",
             "httpd",
             "simple_libc",
@@ -3680,6 +3686,7 @@ mod tests {
             "producer_consumer",
             "parallel_hash",
             "sqlite_lite",
+            "ping_pong",
         ] {
             assert_eq!(statuses[case], "tested", "{case} should be tested");
         }
@@ -4256,6 +4263,7 @@ mod tests {
             "producer_consumer",
             "parallel_hash",
             "sqlite_lite",
+            "ping_pong",
             "netcat",
             "httpd",
             "simple_libc",

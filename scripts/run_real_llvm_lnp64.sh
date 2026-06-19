@@ -915,6 +915,23 @@ grep -q 'fence' "$sqlite_lite_dump"
 printf 'real LLVM LNP64 clang sqlite lite demo object smoke passed: %s\n' \
   "$sqlite_lite_obj"
 
+ping_pong_obj="$build_dir/ping-pong-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables \
+  -Wno-implicit-function-declaration -I toolchain \
+  -c demos/ping_pong.c -o "$ping_pong_obj"
+test -s "$ping_pong_obj"
+ping_pong_dump="$build_dir/ping-pong-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$ping_pong_obj" \
+  >"$ping_pong_dump"
+grep -q 'object_ctl r' "$ping_pong_dump"
+grep -q 'push r' "$ping_pong_dump"
+grep -q 'pull r' "$ping_pong_dump"
+grep -q 'clone.spawn r' "$ping_pong_dump"
+grep -q 'thread_join r' "$ping_pong_dump"
+printf 'real LLVM LNP64 clang ping pong demo object smoke passed: %s\n' \
+  "$ping_pong_obj"
+
 netcat_obj="$build_dir/netcat-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
@@ -3603,7 +3620,7 @@ test -s "$indirect_call_elf"
 printf 'real LLVM LNP64 lld indirect call link smoke passed: %s\n' \
   "$indirect_call_elf"
 
-for demo in hello factorial allocator fibonacci pcr cat json-parser rot13 producer-consumer parallel-hash sqlite-lite; do
+for demo in hello factorial allocator fibonacci pcr cat json-parser rot13 producer-consumer parallel-hash sqlite-lite ping-pong; do
   demo_obj="$build_dir/$demo-clang-smoke.o"
   demo_elf="$build_dir/lnp64-$demo-clang-linked.elf"
   "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
