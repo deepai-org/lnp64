@@ -3,7 +3,8 @@
 import lnp64_pkg::*;
 
 module lnp64_top_program_tb #(
-    parameter int TB_CORE_TILE_COUNT = 2
+    parameter int TB_CORE_TILE_COUNT = 2,
+    parameter int TB_CORE_THREAD_CONTEXT_COUNT = 2
 );
 
     logic clk;
@@ -49,7 +50,8 @@ module lnp64_top_program_tb #(
     logic inject_cross_tile_wake;
 
     lnp64_top #(
-        .CORE_TILE_COUNT(TB_CORE_TILE_COUNT)
+        .CORE_TILE_COUNT(TB_CORE_TILE_COUNT),
+        .CORE_THREAD_CONTEXT_COUNT(TB_CORE_THREAD_CONTEXT_COUNT)
     ) dut(
         .clk(clk),
         .reset_n(reset_n),

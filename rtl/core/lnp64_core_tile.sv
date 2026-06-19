@@ -7,7 +7,8 @@ module lnp64_core_tile #(
     parameter int TILE_ID = 0,
     parameter int PROGRAM_WORDS = 1024,
     parameter int SRAM_WORDS = 4224,
-    parameter int RETURN_STACK_DEPTH = 64
+    parameter int RETURN_STACK_DEPTH = 64,
+    parameter int THREAD_CONTEXT_COUNT = 2
 ) (
     input  logic clk,
     input  logic reset_n,
@@ -84,25 +85,33 @@ module lnp64_core_tile #(
     logic [31:0] pc;
     logic [31:0] next_op_id;
     localparam int RETURN_STACK_INDEX_WIDTH = $clog2(RETURN_STACK_DEPTH);
+    localparam int THREAD_CONTEXT_INDEX_WIDTH =
+        THREAD_CONTEXT_COUNT <= 1 ? 1 : $clog2(THREAD_CONTEXT_COUNT);
     logic [63:0] gpr [0:31];
-    logic [63:0] thread_gpr [0:1][0:31];
-    logic [31:0] thread_pc [0:1];
-    logic [31:0] thread_return_stack [0:1][0:RETURN_STACK_DEPTH-1];
-    logic [RETURN_STACK_INDEX_WIDTH:0] thread_return_stack_depth [0:1];
-    logic [63:0] thread_link_register [0:1];
-    logic thread_cmp_zero [0:1];
-    logic thread_cmp_negative [0:1];
-    logic thread_cmp_greater [0:1];
-    logic thread_cmp_below [0:1];
-    logic thread_cmp_above [0:1];
-    logic [63:0] thread_pcr_tp [0:1];
-    logic thread_active [0:1];
-    logic thread_completed [0:1];
-    logic [63:0] thread_exit_code [0:1];
-    logic active_thread_slot;
-    logic next_thread_slot;
+    logic [63:0] thread_gpr [0:THREAD_CONTEXT_COUNT-1][0:31];
+    logic [31:0] thread_pc [0:THREAD_CONTEXT_COUNT-1];
+    logic [31:0] thread_return_stack [0:THREAD_CONTEXT_COUNT-1][0:RETURN_STACK_DEPTH-1];
+    logic [RETURN_STACK_INDEX_WIDTH:0] thread_return_stack_depth [0:THREAD_CONTEXT_COUNT-1];
+    logic [63:0] thread_link_register [0:THREAD_CONTEXT_COUNT-1];
+    logic thread_cmp_zero [0:THREAD_CONTEXT_COUNT-1];
+    logic thread_cmp_negative [0:THREAD_CONTEXT_COUNT-1];
+    logic thread_cmp_greater [0:THREAD_CONTEXT_COUNT-1];
+    logic thread_cmp_below [0:THREAD_CONTEXT_COUNT-1];
+    logic thread_cmp_above [0:THREAD_CONTEXT_COUNT-1];
+    logic [63:0] thread_pcr_tp [0:THREAD_CONTEXT_COUNT-1];
+    logic thread_active [0:THREAD_CONTEXT_COUNT-1];
+    logic thread_completed [0:THREAD_CONTEXT_COUNT-1];
+    logic [63:0] thread_exit_code [0:THREAD_CONTEXT_COUNT-1];
+    lnp64_thread_sched_t thread_context [0:THREAD_CONTEXT_COUNT-1];
+    lnp64_thread_sched_t active_thread_context;
+    logic [THREAD_CONTEXT_COUNT-1:0] thread_fault_pending_mask;
+    logic [THREAD_CONTEXT_COUNT-1:0] thread_event_pending_mask;
+    logic active_thread_fault_pending;
+    logic active_thread_event_pending;
+    logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] active_thread_slot;
+    logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] next_thread_slot;
     logic [31:0] active_tid;
-    logic [1:0] thread_ready_mask;
+    logic [THREAD_CONTEXT_COUNT-1:0] thread_ready_mask;
     logic [63:0] pcr_thread_pointer;
     logic [63:0] pcr_uid;
     logic [63:0] pcr_gid;
@@ -1621,12 +1630,38 @@ module lnp64_core_tile #(
         pipe_buf_byte_lane = gpr[dec.rs2][2:0];
     end
 
-    assign thread_ready_mask = {thread_active[1], thread_active[0]};
+    always_comb begin
+        for (int unsigned ctx = 0; ctx < THREAD_CONTEXT_COUNT; ctx = ctx + 1) begin
+            thread_ready_mask[ctx] = thread_active[ctx];
+            thread_fault_pending_mask[ctx] = 1'b0;
+            thread_event_pending_mask[ctx] = 1'b0;
+            thread_context[ctx] = '0;
+            thread_context[ctx].pid = 32'd1;
+            thread_context[ctx].tid = ctx[31:0] + 32'd1;
+            thread_context[ctx].tile_id = TILE_ID[31:0];
+            thread_context[ctx].domain_id = 32'd1;
+            thread_context[ctx].domain_gen = 32'd1;
+            thread_context[ctx].state = thread_completed[ctx] ? 16'd3 :
+                (thread_active[ctx] ? 16'd1 : 16'd0);
+            thread_context[ctx].latency_class = 16'd0;
+            thread_context[ctx].wait_generation = 32'd1;
+            thread_context[ctx].active_location = TILE_ID[31:0];
+        end
+    end
 
-    lnp64_thread_window thread_window_i(
+    lnp64_thread_window #(
+        .CONTEXT_COUNT(THREAD_CONTEXT_COUNT),
+        .CONTEXT_INDEX_WIDTH(THREAD_CONTEXT_INDEX_WIDTH)
+    ) thread_window_i(
         .active_slot(active_thread_slot),
         .context_ready(thread_ready_mask),
+        .context_record(thread_context),
+        .context_fault_pending(thread_fault_pending_mask),
+        .context_event_pending(thread_event_pending_mask),
         .next_slot(next_thread_slot),
+        .active_context(active_thread_context),
+        .active_fault_pending(active_thread_fault_pending),
+        .active_event_pending(active_thread_event_pending),
         .active_tid(active_tid)
     );
 
@@ -1635,11 +1670,11 @@ module lnp64_core_tile #(
         cmd.tile_id = TILE_ID[31:0];
         cmd.opcode = pending_unsupported ? LNP64_OP_UNSUPPORTED : dec.opcode;
         cmd.profile = 16'd0;
-        cmd.pid = 32'd1;
-        cmd.tid = active_tid;
-        cmd.domain_id = 32'd1;
-        cmd.domain_gen = 32'd1;
-        cmd.credential_snapshot_id = 32'd1;
+        cmd.pid = active_thread_context.pid;
+        cmd.tid = active_thread_context.tid;
+        cmd.domain_id = active_thread_context.domain_id;
+        cmd.domain_gen = active_thread_context.domain_gen;
+        cmd.credential_snapshot_id = active_thread_context.domain_id;
         cmd.result_reg = dec.rd;
         cmd.rights_mask = 64'd0;
         cmd.flags = 64'd0;
@@ -1748,8 +1783,8 @@ module lnp64_core_tile #(
             LNP64_OP_CAP_REVOKE: m1_commit_next.op = LNP64_M1_COMMIT_CAP_REVOKE;
             default: m1_commit_next.op = 8'd0;
         endcase
-        m1_commit_next.domain_id = 32'd1;
-        m1_commit_next.domain_gen = 32'd1;
+        m1_commit_next.domain_id = active_thread_context.domain_id;
+        m1_commit_next.domain_gen = active_thread_context.domain_gen;
         m1_commit_next.status = errno_reg;
 
         unique case (dec.opcode)
@@ -1893,10 +1928,10 @@ module lnp64_core_tile #(
         retire_submit_next = '0;
         retire_submit_next.op_id = next_op_id;
         retire_submit_next.tile_id = TILE_ID[31:0];
-        retire_submit_next.pid = 32'd1;
-        retire_submit_next.tid = active_tid;
-        retire_submit_next.domain_id = 32'd1;
-        retire_submit_next.domain_gen = 32'd1;
+        retire_submit_next.pid = active_thread_context.pid;
+        retire_submit_next.tid = active_thread_context.tid;
+        retire_submit_next.domain_id = active_thread_context.domain_id;
+        retire_submit_next.domain_gen = active_thread_context.domain_gen;
         retire_submit_next.pc = pc;
         retire_submit_next.opcode = raw_opcode;
         retire_submit_next.arch_opcode = dec.opcode;
@@ -1921,11 +1956,11 @@ module lnp64_core_tile #(
         retire_submit_rsp_next = retire_from_response(retire_submit_next, rsp);
 
         thread_submit_next = '0;
-        thread_submit_next.pid = 32'd1;
-        thread_submit_next.tid = 32'd1;
+        thread_submit_next.pid = active_thread_context.pid;
+        thread_submit_next.tid = active_thread_context.tid;
         thread_submit_next.tile_id = TILE_ID[31:0];
-        thread_submit_next.domain_id = 32'd1;
-        thread_submit_next.domain_gen = 32'd1;
+        thread_submit_next.domain_id = active_thread_context.domain_id;
+        thread_submit_next.domain_gen = active_thread_context.domain_gen;
         thread_submit_next.state = pid1_parked ? 16'd2 : (pid1_runnable ? 16'd1 : 16'd0);
         thread_submit_next.wait_generation = 32'd1;
         thread_submit_next.active_location = TILE_ID[31:0];
@@ -1983,7 +2018,7 @@ module lnp64_core_tile #(
             pcr_gid <= 64'd0;
             pcr_sigmask <= 64'd0;
             active_thread_slot <= 1'b0;
-            for (i = 0; i < 2; i = i + 1) begin
+            for (i = 0; i < THREAD_CONTEXT_COUNT; i = i + 1) begin
                 thread_pc[i] <= 32'd0;
                 thread_return_stack_depth[i] <= '0;
                 thread_link_register[i] <= 64'd0;

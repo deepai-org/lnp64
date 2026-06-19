@@ -745,9 +745,12 @@ def main() -> None:
 
     for marker in (
         "parameter int CORE_TILE_COUNT = 2",
+        "parameter int CORE_THREAD_CONTEXT_COUNT = 2",
         "parameter int MAX_SUPPORTED_TILE_COUNT = 4",
         "CORE_TILE_COUNT > MAX_SUPPORTED_TILE_COUNT",
+        "CORE_THREAD_CONTEXT_COUNT > 4",
         "for (tile_id = 0; tile_id < CORE_TILE_COUNT",
+        ".THREAD_CONTEXT_COUNT(CORE_THREAD_CONTEXT_COUNT)",
         ".TILE_ID(tile_id)",
         "core_rsp.tile_id",
         "COHERENCE_DOMAIN_ID",

@@ -4,6 +4,7 @@ import lnp64_pkg::*;
 
 module lnp64_top #(
     parameter int CORE_TILE_COUNT = 2,
+    parameter int CORE_THREAD_CONTEXT_COUNT = 2,
     parameter int MAX_SUPPORTED_TILE_COUNT = 4
 ) (
     input  logic clk,
@@ -48,6 +49,9 @@ module lnp64_top #(
     initial begin
         if (CORE_TILE_COUNT < 1 || CORE_TILE_COUNT > MAX_SUPPORTED_TILE_COUNT) begin
             $fatal(1, "CORE_TILE_COUNT must be in the supported 1..4 S0/stress range");
+        end
+        if (CORE_THREAD_CONTEXT_COUNT < 2 || CORE_THREAD_CONTEXT_COUNT > 4) begin
+            $fatal(1, "CORE_THREAD_CONTEXT_COUNT must be in the supported 2..4 barrel context range");
         end
     end
 
@@ -317,7 +321,8 @@ module lnp64_top #(
     generate
         for (tile_id = 0; tile_id < CORE_TILE_COUNT; tile_id = tile_id + 1) begin : core_tiles
             lnp64_core_tile #(
-                .TILE_ID(tile_id)
+                .TILE_ID(tile_id),
+                .THREAD_CONTEXT_COUNT(CORE_THREAD_CONTEXT_COUNT)
             ) core_i (
                 .clk(clk),
                 .reset_n(logic_reset_n),

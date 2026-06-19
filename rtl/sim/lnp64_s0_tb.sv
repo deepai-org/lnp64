@@ -78,7 +78,8 @@ module lnp64_s0_tb;
     );
 
     lnp64_top #(
-        .CORE_TILE_COUNT(4)
+        .CORE_TILE_COUNT(4),
+        .CORE_THREAD_CONTEXT_COUNT(4)
     ) stress_dut(
         .clk(clk),
         .reset_n(reset_n),
