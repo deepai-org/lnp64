@@ -1320,6 +1320,7 @@ mod tests {
         let libc_fd_min = include_str!("../toolchain/liblnp64_fd_min.c");
         let libc_process_min = include_str!("../toolchain/liblnp64_process_min.c");
         let libc_errno_min = include_str!("../toolchain/liblnp64_errno_min.c");
+        let libc_vma_min = include_str!("../toolchain/liblnp64_vma_min.c");
         let libc_futex_min = include_str!("../toolchain/liblnp64_futex_min.c");
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
         let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
@@ -1698,6 +1699,23 @@ mod tests {
         assert!(real_llc.contains("lnp64-read-linked.elf"));
         assert!(real_llc.contains(r#""$read_obj" "$libc_fd_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld read link smoke passed"));
+        assert!(real_llc.contains("toolchain/liblnp64_vma_min.c"));
+        assert!(libc_vma_min.contains("void *mmap("));
+        assert!(libc_vma_min.contains("int mprotect("));
+        assert!(libc_vma_min.contains("int munmap("));
+        assert!(libc_vma_min.contains("__lnp_mmap_bootstrap"));
+        assert!(libc_vma_min.contains("__lnp_mprotect_bootstrap"));
+        assert!(libc_vma_min.contains("__lnp_munmap_bootstrap"));
+        assert!(real_llc.contains("liblnp64-vma-min.o"));
+        assert!(
+            real_llc
+                .contains("real LLVM LNP64 clang minilibc VMA implementation object smoke passed")
+        );
+        assert!(real_llc.contains("mmap-libc-clang-smoke.o"));
+        assert!(real_llc.contains("real LLVM LNP64 clang mmap libc object smoke passed"));
+        assert!(real_llc.contains("lnp64-mmap-libc-linked.elf"));
+        assert!(real_llc.contains(r#""$mmap_libc_obj" "$libc_vma_impl_obj" \"#));
+        assert!(real_llc.contains("real LLVM LNP64 lld mmap libc link smoke passed"));
         assert!(real_llc.contains("lnp64-exit-linked.elf"));
         assert!(real_llc.contains(r#""$exit_obj" "$libc_process_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld exit link smoke passed"));
@@ -2018,6 +2036,8 @@ mod tests {
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf realloc execution passed"));
         assert!(real_llc_docker.contains("lnp64-read-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf read execution passed"));
+        assert!(real_llc_docker.contains("lnp64-mmap-libc-linked.elf"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf mmap libc execution passed"));
         assert!(real_llc_docker.contains("lnp64-errno-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf errno execution passed"));
         assert!(real_llc_docker.contains("lnp64-intrinsic-push-linked.elf"));
@@ -2106,6 +2126,7 @@ mod tests {
             "real_clang_demo_execution",
             "real_native_heap_execution",
             "real_read_execution",
+            "real_mmap_libc_execution",
             "real_errno_execution",
             "real_intrinsic_await_execution",
             "real_intrinsic_call_execution",
@@ -2134,6 +2155,7 @@ mod tests {
             "real_clang_lld_probe",
             "real_clang_demo_execution",
             "real_native_heap_execution",
+            "real_mmap_libc_execution",
             "real_intrinsic_push_execution",
             "real_intrinsic_control_execution",
             "real_intrinsic_mmap_execution",

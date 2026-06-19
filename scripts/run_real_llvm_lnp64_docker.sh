@@ -235,6 +235,13 @@ grep -q 'exit=0' <<<"$read_output"
 printf 'real LLVM LNP64 run-elf read execution passed: %s\n' \
   "$read_probe"
 
+mmap_libc_probe="target/llvm-lnp64-build/lnp64-mmap-libc-linked.elf"
+cargo run --quiet -- elf-plan "$mmap_libc_probe" >/dev/null
+mmap_libc_output="$(cargo run --quiet -- run-elf "$mmap_libc_probe")"
+grep -q 'exit=0' <<<"$mmap_libc_output"
+printf 'real LLVM LNP64 run-elf mmap libc execution passed: %s\n' \
+  "$mmap_libc_probe"
+
 indirect_call_probe="target/llvm-lnp64-build/lnp64-indirect-call-linked.elf"
 cargo run --quiet -- elf-plan "$indirect_call_probe" >/dev/null
 indirect_call_output="$(cargo run --quiet -- run-elf "$indirect_call_probe")"

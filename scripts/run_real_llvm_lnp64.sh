@@ -1066,6 +1066,22 @@ grep -q 'ret' "$libc_errno_impl_dump"
 printf 'real LLVM LNP64 clang minilibc errno implementation object smoke passed: %s\n' \
   "$libc_errno_impl_obj"
 
+libc_vma_impl_c="toolchain/liblnp64_vma_min.c"
+libc_vma_impl_obj="$build_dir/liblnp64-vma-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$libc_vma_impl_c" -o "$libc_vma_impl_obj"
+test -s "$libc_vma_impl_obj"
+libc_vma_impl_dump="$build_dir/liblnp64-vma-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_vma_impl_obj" \
+  >"$libc_vma_impl_dump"
+grep -q 'mmap r' "$libc_vma_impl_dump"
+grep -q 'mprotect r' "$libc_vma_impl_dump"
+grep -q 'munmap r' "$libc_vma_impl_dump"
+grep -q 'call ' "$libc_vma_impl_dump"
+printf 'real LLVM LNP64 clang minilibc VMA implementation object smoke passed: %s\n' \
+  "$libc_vma_impl_obj"
+
 libc_futex_impl_c="toolchain/liblnp64_futex_min.c"
 libc_futex_impl_obj="$build_dir/liblnp64-futex-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
@@ -1523,6 +1539,48 @@ grep -q 'call ' "$read_dump"
 printf 'real LLVM LNP64 clang read object smoke passed: %s\n' \
   "$read_obj"
 
+mmap_libc_c="$build_dir/mmap-libc-smoke.c"
+cat >"$mmap_libc_c" <<'C'
+typedef unsigned long size_t;
+
+void *mmap(void *addr, size_t len, int prot, int flags, int fd, long offset);
+int mprotect(void *addr, size_t len, int prot);
+int munmap(void *addr, size_t len);
+
+enum {
+  MAP_PRIVATE = 0x02,
+  MAP_ANONYMOUS = 0x20,
+};
+
+int main(void) {
+  unsigned char *bytes =
+      mmap(0, 4096, 3, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (bytes == (void *)~0UL)
+    return 1;
+  bytes[0] = 0x5a;
+  bytes[7] = 0xa5;
+  if (bytes[0] != 0x5a || bytes[7] != 0xa5)
+    return 2;
+  if (mprotect(bytes, 4096, 1) != 0)
+    return 3;
+  if (munmap(bytes, 4096) != 0)
+    return 4;
+  return 0;
+}
+C
+
+mmap_libc_obj="$build_dir/mmap-libc-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$mmap_libc_c" -o "$mmap_libc_obj"
+test -s "$mmap_libc_obj"
+mmap_libc_dump="$build_dir/mmap-libc-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$mmap_libc_obj" \
+  >"$mmap_libc_dump"
+grep -q 'call ' "$mmap_libc_dump"
+printf 'real LLVM LNP64 clang mmap libc object smoke passed: %s\n' \
+  "$mmap_libc_obj"
+
 libc_fd_impl_c="toolchain/liblnp64_fd_min.c"
 libc_fd_impl_obj="$build_dir/liblnp64-fd-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
@@ -1946,6 +2004,14 @@ read_elf="$build_dir/lnp64-read-linked.elf"
 test -s "$read_elf"
 printf 'real LLVM LNP64 lld read link smoke passed: %s\n' \
   "$read_elf"
+
+mmap_libc_elf="$build_dir/lnp64-mmap-libc-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$mmap_libc_elf" "$crt0_obj" "$mmap_libc_obj" "$libc_vma_impl_obj" \
+  "$libc_errno_impl_obj"
+test -s "$mmap_libc_elf"
+printf 'real LLVM LNP64 lld mmap libc link smoke passed: %s\n' \
+  "$mmap_libc_elf"
 
 indirect_call_elf="$build_dir/lnp64-indirect-call-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
