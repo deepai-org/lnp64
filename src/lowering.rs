@@ -1353,6 +1353,7 @@ mod tests {
         let pthread_header = include_str!("../toolchain/include/pthread.h");
         let semaphore_header = include_str!("../toolchain/include/semaphore.h");
         let signal_header = include_str!("../toolchain/include/signal.h");
+        let stdint_header = include_str!("../toolchain/include/stdint.h");
         let stdlib_header = include_str!("../toolchain/include/stdlib.h");
         let sys_mman_header = include_str!("../toolchain/include/sys/mman.h");
         let sys_epoll_header = include_str!("../toolchain/include/sys/epoll.h");
@@ -2639,8 +2640,11 @@ mod tests {
             )
         );
         assert!(real_llc.contains("sort-clang-smoke.o"));
+        assert!(stdint_header.contains("typedef unsigned long uint64_t;"));
+        assert!(real_llc.contains("#include <stdint.h>"));
         assert!(real_llc.contains("#include <stdlib.h>"));
         assert!(real_llc.contains("#include <string.h>"));
+        assert!(!real_llc.contains("typedef unsigned long uint64_t;"));
         assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$sort_c\""));
         assert!(real_llc.contains("qsort(names, 6"));
         assert!(real_llc.contains("qsort(nums, 8"));

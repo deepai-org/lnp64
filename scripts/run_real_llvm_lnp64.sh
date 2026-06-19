@@ -3216,10 +3216,9 @@ printf 'real LLVM LNP64 clang minilibc search implementation object smoke passed
 
 sort_c="$build_dir/sort-smoke.c"
 cat >"$sort_c" <<'C'
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-
-typedef unsigned long uint64_t;
 
 static int scmp(const void *lhs, const void *rhs) {
   const char *const *a = lhs;
