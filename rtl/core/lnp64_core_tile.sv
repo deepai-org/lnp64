@@ -102,6 +102,7 @@ module lnp64_core_tile #(
     logic active_thread_slot;
     logic next_thread_slot;
     logic [31:0] active_tid;
+    logic [1:0] thread_ready_mask;
     logic [63:0] pcr_thread_pointer;
     logic [63:0] pcr_uid;
     logic [63:0] pcr_gid;
@@ -1620,16 +1621,16 @@ module lnp64_core_tile #(
         pipe_buf_byte_lane = gpr[dec.rs2][2:0];
     end
 
-    always_comb begin
-        active_tid = {31'd0, active_thread_slot} + 32'd1;
-        if (active_thread_slot == 1'b0 && thread_active[1]) begin
-            next_thread_slot = 1'b1;
-        end else if (active_thread_slot == 1'b1 && thread_active[0]) begin
-            next_thread_slot = 1'b0;
-        end else begin
-            next_thread_slot = active_thread_slot;
-        end
+    assign thread_ready_mask = {thread_active[1], thread_active[0]};
 
+    lnp64_thread_window thread_window_i(
+        .active_slot(active_thread_slot),
+        .context_ready(thread_ready_mask),
+        .next_slot(next_thread_slot),
+        .active_tid(active_tid)
+    );
+
+    always_comb begin
         cmd.op_id = next_op_id;
         cmd.tile_id = TILE_ID[31:0];
         cmd.opcode = pending_unsupported ? LNP64_OP_UNSUPPORTED : dec.opcode;
