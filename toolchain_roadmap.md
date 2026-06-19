@@ -359,20 +359,19 @@ NetBSD policy. Those remain loader, libc, and personality responsibilities.
 6. Consider a fuller `evb-lnp64` machine port only after rump-style services
    and static userland are credible.
 
-## Toy Compiler Freeze Policy
+## Toy Compiler Retirement Policy
 
-The in-repo C compiler is frozen as a bootstrap/test artifact once an LLVM
-target skeleton can compile and run a comparable hello-world, syscall-shim, and
-NetBSD personality smoke. After that point:
+The in-repo C compiler has been removed from the command surface. Real C
+coverage now runs through Clang/lld, libc shims, software-loader paths, and
+linked LLVM RTL replacements. Going forward:
 
 - New application/package compatibility work should target Clang first.
-- The toy compiler should receive only small fixes needed to keep existing smoke
-  tests useful.
-- Any remaining `lnp64 cc` use must pass `--toy-bootstrap` so the Rust compiler
-  stays visibly legacy and cannot become the implicit C path again.
+- Do not reintroduce `lnp64 cc`, `--toy-bootstrap`, or Rust-side C language
+  extensions for platform bring-up.
+- All checked C smoke coverage should run through real Clang/lld gates or
+  linked LLVM RTL replacements.
 - New native primitives should be exposed through libc/private `__lnp_*` shims
-  and LLVM intrinsics, not new ad hoc C compiler builtins unless needed for a
-  temporary architecture test.
+  and LLVM intrinsics, not ad hoc C compiler builtins.
 
 ## First Acceptance Gates
 
@@ -442,8 +441,8 @@ The concrete first-program set is pinned in
   through real Clang/lld output.
 
 These bootstrap gates now run through real Clang/lld output and the software
-loader without the toy compiler. Full replacement remains partial until the
-simple-libc gate no longer depends on the smoke-only shim.
+loader without the toy compiler. Full replacement remains partial while broader
+libc, package, and NetBSD-derived coverage continues moving onto those gates.
 
 The planned command shapes are pinned in
 `toolchain/lnp64_llvm_gates.manifest`, the dry-run gate driver is
@@ -476,12 +475,12 @@ smoke-only shim.
 
 ## Checked Transition Deliverables
 
-The transition is intentionally layered so the toy compiler stops defining the
-platform while remaining useful as a smoke generator:
+The transition is intentionally layered so real Clang/lld and the software
+loader define C execution instead of a repository-local compiler:
 
 | Phase | Current Artifact | Gate |
 | --- | --- | --- |
-| Toy compiler retirement | `toolchain_roadmap.md`, `toolchain/lnp64_toy_compiler_policy.manifest`, `toolchain/lnp64_toy_retirement_queue.manifest`, `src/c_compiler.rs`, and private `__lnp_*` shim tests keep new native work out of ad hoc POSIX-shaped compiler features while the remaining toy-only gates are explicitly queued for Clang/lld/loader replacement. | `toy_compiler_policy_manifest_freezes_bootstrap_role`, `c_private_lnp_manifest_intrinsics_lower_and_run` |
+| Toy compiler retirement | `toolchain_roadmap.md`, `README.md`, `src/main.rs`, `toolchain/lnp64_toy_compiler_policy.manifest`, and `toolchain/lnp64_toy_retirement_queue.manifest` keep the removed Rust C compiler out of scripts, manifests, and command help while Clang/lld/loader gates carry C coverage. | `toy_compiler_policy_manifest_freezes_bootstrap_role`, `toy_retirement_queue_manifest_records_remaining_surfaces` |
 | Real toolchain target | `toolchain/lnp64_target.manifest`, register-class, psABI, relocation, MC encoding, object-format, crt, inline-asm, debug/unwind, intrinsic, isel, and exec-plan manifests. | `toolchain_contract_index_is_complete`, `register_manifest_records_backend_classes`, `mc_encoding_manifest_covers_initial_backend_opcodes` |
 | Minimal LLVM/Clang path | `toolchain/lnp64_llvm_bootstrap.manifest` pins tested hello, arithmetic, memory, calls, PCR, cat/openat, json parser, rot13, producer/consumer, parallel hash, sqlite lite, and ping-pong replacement gates plus partial netcat, httpd, userland init/lnpsh/spawn-task/ucat, NetBSD personality clang smoke, and simple-libc replacement gates; `toolchain/lnp64_llvm_gates.manifest` and `scripts/run_llvm_bootstrap_gates.sh --dry-run` pin the remaining Clang/lld/loader command shapes that replace `lnp64 cc`; `Dockerfile.llvm`, `scripts/run_real_llvm_tblgen_docker.sh`, and `scripts/run_real_llvm_lnp64_docker.sh` pin the real LLVM TableGen, Clang scalar, hello object, factorial object, allocator object, Fibonacci calls object, PCR demo object, cat demo object, json parser demo object, rot13 demo object, producer/consumer demo object, parallel hash demo object, sqlite lite demo object, ping-pong demo object, netcat/httpd demo object/static links, zlib checksum, natsort, jsmn, inih, and cwalk package object/link/run-elf smokes, sbase 27-command and libutil object smokes, sbase echo, path-command, cat link/run-elf smokes, userland init/lnpsh/spawn-task/ucat link/run-elf smokes, NetBSD personality clang link/run-elf smoke, Clang-built string/memory/ctype, numeric conversion, path helper, search helper, sort helper, allocation, fd, process, errno, futex, poll/select/epoll/kqueue, signal, and socket libc objects, legacy smoke libc assembly, codegen, MC, disassembly, GET_PCR and OPEN_AT intrinsics, lld static-link, and run-elf smoke gates; `toolchain/lnp64_run_elf.manifest` pins the execution boundary between loader commit and real ELF text execution; `toolchain/lnp64_clang_driver.manifest` pins the driver defaults and `third_party/sbase/fs.h` pins the sbase recursive-file frontend declarations and `toolchain/include/{assert,ctype,dirent,errno,fcntl,fnmatch,grp,inttypes,libgen,limits,pwd,regex,signal,stdio,stdlib,string,strings,netinet/in,sys/auxv,sys/mman,sys/socket,sys/stat,sys/sysmacros,sys/timerfd,sys/types,sys/wait,time,unistd,utime}.h` pins the first target C header root; `toolchain/lnp64_llvm_filemap.manifest` pins the llvm-project source surface; `toolchain/lnp64_static.ld` pins the first lld static layout; `toolchain/crt0_lnp64.s` pins the first crt0 startup stub; `toolchain/liblnp64_min.s` pins the legacy assembler libc opcode smoke; `toolchain/liblnp64_string_min.c`, `toolchain/liblnp64_convert_min.c`, `toolchain/liblnp64_path_min.c`, `toolchain/liblnp64_search_min.c`, `toolchain/liblnp64_sort_min.c`, `toolchain/liblnp64_alloc_min.c`, `toolchain/liblnp64_fd_min.c`, `toolchain/liblnp64_process_min.c`, `toolchain/liblnp64_errno_min.c`, `toolchain/liblnp64_time_min.c`, `toolchain/liblnp64_vma_min.c`, `toolchain/liblnp64_poll_min.c`, `toolchain/liblnp64_signal_min.c`, `toolchain/liblnp64_socket_min.c`, and `toolchain/liblnp64_sbase_min.c` pin the checked C shim sources; `toolchain/lnp64_intrinsics.h` pins the private C shim header; `toolchain/lnp64_mc_encoding.manifest` pins the first MC encoding and relocation hooks. | `llvm_bootstrap_manifest_names_first_clang_gate`, `llvm_gate_manifest_pins_non_toy_clang_commands`, `run_elf_manifest_records_execution_boundary`, `clang_driver_manifest_matches_llvm_gates`, `llvm_filemap_manifest_names_backend_source_surface`, `mc_encoding_manifest_covers_initial_backend_opcodes`, `crt0_startup_stub_matches_crt_contract`, and `intrinsic_header_matches_intrinsic_manifest` |
 | Libc/runtime shim layer | `libc_roadmap.md`, `toolchain/lnp64_libc_shim.manifest`, crt/startup manifest, intrinsic manifest, and private intrinsic header define startup, TLS/errno, allocation, FDR I/O, pthread/futex, event waits, mmap, signal, and socket lowering. | `libc_shim_manifest_covers_runtime_surfaces` plus `scripts/run_software_gates.sh` |

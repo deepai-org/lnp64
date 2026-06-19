@@ -67,9 +67,9 @@ Severe proof goals:
   cannot become hidden authority or bypass enforcement.
 
 This repository contains the architecture documents, Rust emulator, assembler,
-deprecated Rust bootstrap C compiler, libc/personality experiments, early LLVM
-target work, and SystemVerilog/formal co-design work. It is an architecture
-research repo, not a finished processor or production OS.
+libc/personality experiments, early LLVM target work, and SystemVerilog/formal
+co-design work. It is an architecture research repo, not a finished processor
+or production OS.
 
 For the shortest project thesis, start with
 `capability_machine_one_pager.md`.
@@ -123,8 +123,6 @@ Implementation:
 - `src/isa.rs`: instruction and opcode definitions.
 - `src/asm.rs`: assembler.
 - `src/emulator.rs`: emulator runtime.
-- `src/c_compiler.rs`: deprecated Rust bootstrap C compiler, retained only for
-  legacy smoke generation behind `lnp64 cc --toy-bootstrap`.
 - `llvm/lib/Target/LNP64/`: early LLVM target implementation.
 - `rtl/`: SystemVerilog top, core tiles, engines, schema, and simulation
   slices.
@@ -190,11 +188,11 @@ dry-running or executing the whole list:
 LNP64_LLVM_GATE_FILTER=real_objects_build bash scripts/run_llvm_bootstrap_gates.sh --dry-run
 ```
 
-The deprecated bootstrap compiler is only reachable through the explicit RTL
-legacy gate:
+RTL C inputs should use the real Clang object-byte or linked LLVM gates:
 
 ```sh
-bash scripts/run_rtl_top_toy_c_smoke.sh tests/rtl/programs/top_return_12.c
+bash scripts/run_rtl_top_clang_smoke.sh tests/rtl/programs/top_clang_return_7.c
+bash scripts/run_rtl_top_linked_llvm_smoke.sh tests/rtl/programs/top_linked_main.c
 ```
 
 The bootstrap compiler is deprecated. For real Clang/lld coverage, use the

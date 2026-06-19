@@ -84,25 +84,9 @@ if [[ -n "$program_data_hex" && ! -f "$program_data_hex" ]]; then
   exit 1
 fi
 if [[ "$program_input" == *.c ]]; then
-  if [[ -n "$program_data_hex" ]]; then
-    printf '%s\n' "explicit data hex is only supported for raw .hex top-level program inputs" >&2
-    exit 1
-  fi
-  c_backend="${LNP64_RTL_TOP_PROGRAM_C_BACKEND:-}"
-  if [[ "$c_backend" != "toy" ]]; then
-    printf '%s\n' "direct .c input to run_rtl_top_program_smoke.sh no longer selects the toy compiler implicitly" >&2
-    printf '%s\n' "use scripts/run_rtl_top_clang_smoke.sh or scripts/run_rtl_top_linked_llvm_smoke.sh for real Clang paths" >&2
-    printf '%s\n' "use scripts/run_rtl_top_toy_c_smoke.sh only for explicit legacy toy-bootstrap smoke coverage" >&2
-    exit 1
-  fi
-  program_asm="$(mktemp "${TMPDIR:-/tmp}/lnp64_top_program_from_c.XXXXXX.s")"
-  tmp_files+=("$program_asm")
-  if [[ -n "${LNP64_BIN:-}" ]]; then
-    "$LNP64_BIN" cc --toy-bootstrap "$program_input" -o "$program_asm"
-  else
-    cargo run --quiet -- cc --toy-bootstrap "$program_input" -o "$program_asm"
-  fi
-  program_input="$program_asm"
+  printf '%s\n' "direct .c input to run_rtl_top_program_smoke.sh is retired" >&2
+  printf '%s\n' "use scripts/run_rtl_top_clang_smoke.sh or scripts/run_rtl_top_linked_llvm_smoke.sh for C inputs" >&2
+  exit 1
 fi
 if [[ "$program_input" == *.s ]]; then
   if [[ -n "$program_data_hex" ]]; then

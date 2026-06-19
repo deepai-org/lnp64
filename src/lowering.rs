@@ -5198,11 +5198,9 @@ mod tests {
         let run_elf_manifest = include_str!("../toolchain/lnp64_run_elf.manifest");
         let real_llc = include_str!("../scripts/run_real_llvm_lnp64.sh");
         let real_llc_docker = include_str!("../scripts/run_real_llvm_lnp64_docker.sh");
-        let c_compiler = include_str!("c_compiler.rs");
         let emulator = include_str!("emulator.rs");
-        let evidence_corpus = format!(
-            "{conformance}\n{run_elf_manifest}\n{real_llc}\n{real_llc_docker}\n{c_compiler}\n{emulator}"
-        );
+        let evidence_corpus =
+            format!("{conformance}\n{run_elf_manifest}\n{real_llc}\n{real_llc_docker}\n{emulator}");
         let rows = libc_shim_rows(shim_manifest);
         let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let shim_path = manifest_field(target_manifest, "libc_shim_contract");
@@ -5786,7 +5784,7 @@ mod tests {
             );
         }
 
-        assert!(roadmap.contains("## Toy Compiler Freeze Policy"));
+        assert!(roadmap.contains("## Toy Compiler Retirement Policy"));
         assert!(roadmap.contains("## First Acceptance Gates"));
         assert!(roadmap.contains("## Checked Transition Deliverables"));
         assert!(roadmap.contains("`minimal_llvm_clang_path` row is now partial"));
@@ -6168,10 +6166,6 @@ mod tests {
                 include_str!("../scripts/run_rtl_top_program_smoke.sh"),
             ),
             (
-                "scripts/run_rtl_top_toy_c_smoke.sh",
-                include_str!("../scripts/run_rtl_top_toy_c_smoke.sh"),
-            ),
-            (
                 "scripts/run_sbase.sh",
                 include_str!("../scripts/run_sbase.sh"),
             ),
@@ -6184,7 +6178,6 @@ mod tests {
                 include_str!("../scripts/run_zlib.sh"),
             ),
         ];
-        let c_compiler = include_str!("c_compiler.rs");
         let lowering_source = include_str!("lowering.rs");
         let libc_roadmap = include_str!("../libc_roadmap.md");
         let legacy_toy_script_corpus = legacy_toy_scripts
@@ -6193,7 +6186,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         let evidence_corpus = format!(
-            "{target_manifest}\n{roadmap}\n{conformance}\n{llvm_gates}\n{llvm_bootstrap}\n{run_elf}\n{libc_test_readme}\n{retirement_queue}\n{intrinsics}\n{intrinsic_header}\n{main_source}\n{legacy_toy_script_corpus}\n{c_compiler}\n{lowering_source}\n{libc_roadmap}"
+            "{target_manifest}\n{roadmap}\n{conformance}\n{llvm_gates}\n{llvm_bootstrap}\n{run_elf}\n{libc_test_readme}\n{retirement_queue}\n{intrinsics}\n{intrinsic_header}\n{main_source}\n{legacy_toy_script_corpus}\n{lowering_source}\n{libc_roadmap}"
         );
         let rows = toy_compiler_policy_rows(policy_manifest);
         let queue_rows = toy_retirement_queue_rows(retirement_queue);
@@ -6217,7 +6210,7 @@ mod tests {
         ));
         assert!(transition_manifest.contains("toolchain/lnp64_toy_compiler_policy.manifest"));
         assert!(transition_manifest.contains("toolchain/lnp64_toy_retirement_queue.manifest"));
-        assert!(roadmap.contains("only small fixes needed to keep existing smoke"));
+        assert!(roadmap.contains("has been removed from the command surface"));
         assert!(roadmap.contains("toolchain/lnp64_toy_retirement_queue.manifest"));
         assert!(conformance.contains("toolchain/lnp64_toy_compiler_policy.manifest"));
 
@@ -6255,14 +6248,13 @@ mod tests {
         }
 
         for rule in [
-            "smoke_generator_only",
-            "explicit_legacy_cc_flag",
-            "private_native_shims",
+            "toy_compiler_removed",
+            "no_toy_in_toolchain_gates",
+            "clang_native_shims",
             "compat_lowering_boundary",
-            "no_toy_in_llvm_gates",
-            "replacement_program_set",
+            "real_replacement_program_set",
             "clang_libc_replacements",
-            "remaining_toy_queue",
+            "retirement_queue_empty",
         ] {
             assert!(
                 rules.contains_key(rule),
@@ -6270,24 +6262,19 @@ mod tests {
             );
         }
         for rule in [
-            "smoke_generator_only",
-            "explicit_legacy_cc_flag",
-            "private_native_shims",
+            "toy_compiler_removed",
+            "no_toy_in_toolchain_gates",
+            "clang_native_shims",
             "compat_lowering_boundary",
-            "no_toy_in_llvm_gates",
+            "real_replacement_program_set",
+            "clang_libc_replacements",
+            "retirement_queue_empty",
         ] {
             assert_eq!(rules[rule].0, "required", "{rule} should be required");
         }
-        assert_eq!(rules["replacement_program_set"].0, "partial");
-        assert_eq!(rules["clang_libc_replacements"].0, "partial");
-        assert_eq!(rules["remaining_toy_queue"].0, "blocked");
-        let explicit_legacy_artifacts = &rules["explicit_legacy_cc_flag"].1;
         for (script_name, script) in legacy_toy_scripts {
             if script.contains("cc --toy-bootstrap") {
-                assert!(
-                    explicit_legacy_artifacts.contains(&script_name),
-                    "{script_name} contains a toy compiler invocation but is not covered by explicit_legacy_cc_flag"
-                );
+                panic!("{script_name} must not invoke the deprecated toy compiler");
             }
         }
         for (surface, status, toy_artifacts, replacement_target, blocker) in queue_rows {
@@ -6323,13 +6310,8 @@ mod tests {
                 "toy retirement surface {surface} lacks a blocker"
             );
         }
-        for (surface, expected_status) in [("rtl_c_program_smoke", "partial")] {
-            assert_eq!(
-                queued_surfaces.get(surface).map(|row| row.0),
-                Some(expected_status),
-                "missing or wrong toy retirement queue status for {surface}"
-            );
-        }
+        assert!(queued_surfaces.is_empty());
+        assert!(retirement_queue.contains("no remaining toy compiler retirement surfaces"));
         assert!(run_elf.contains("real_libc_test_pthread_tsd_execution"));
         assert!(run_elf.contains("real_libc_test_sem_init_execution"));
         assert!(run_elf.contains("real_libc_test_access_bounded_execution"));
@@ -6343,14 +6325,14 @@ mod tests {
             assert!(intrinsics.contains(intrinsic));
             assert!(intrinsic_header.contains(intrinsic));
         }
-        assert!(main_source.contains("deprecated Rust bootstrap C compiler"));
-        assert!(main_source.contains("cc --toy-bootstrap"));
+        assert!(!main_source.contains("deprecated Rust bootstrap C compiler"));
+        assert!(!main_source.contains("cc --toy-bootstrap"));
+        assert!(!main_source.contains("\"cc\""));
         for (script_name, script) in legacy_toy_scripts {
             for (idx, line) in script.lines().enumerate() {
                 if line.contains(" cc ") || line.contains(" -- cc ") {
-                    assert!(
-                        line.contains("--toy-bootstrap"),
-                        "{script_name}:{} invokes the legacy C compiler without --toy-bootstrap: {line}",
+                    panic!(
+                        "{script_name}:{} must not invoke the deprecated C compiler: {line}",
                         idx + 1
                     );
                 }
@@ -6386,7 +6368,8 @@ mod tests {
                 );
             }
         }
-        assert!(legacy_toy_script_corpus.contains("LNP64_RTL_TOP_PROGRAM_C_BACKEND=toy"));
+        assert!(!legacy_toy_script_corpus.contains("LNP64_RTL_TOP_PROGRAM_C_BACKEND=toy"));
+        assert!(!legacy_toy_script_corpus.contains("cc --toy-bootstrap"));
         assert!(legacy_toy_script_corpus.contains("LNP64_LLVM_PACKAGE_FILTER=userland"));
         assert!(legacy_toy_script_corpus.contains("LNP64_LLVM_PACKAGE_FILTER=netbsd"));
         assert!(legacy_toy_script_corpus.contains("scripts/run_real_llvm_package_gate.sh"));
@@ -6450,8 +6433,8 @@ mod tests {
         let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let mut queued_surfaces = std::collections::BTreeMap::new();
 
-        assert!(policy_manifest.contains("remaining_toy_queue"));
-        assert!(roadmap.contains("toy-compiler retirement queue"));
+        assert!(policy_manifest.contains("retirement_queue_empty"));
+        assert!(roadmap.contains("Toy Compiler Retirement Policy"));
         assert!(contract_index.contains(
             "toy_retirement_queue|toolchain/lnp64_toy_retirement_queue.manifest|toy_retirement_queue_manifest_records_remaining_surfaces"
         ));
@@ -6492,13 +6475,8 @@ mod tests {
             );
         }
 
-        for (surface, expected_status) in [("rtl_c_program_smoke", "partial")] {
-            assert_eq!(
-                queued_surfaces.get(surface).map(|row| row.0),
-                Some(expected_status),
-                "missing or wrong toy retirement queue status for {surface}"
-            );
-        }
+        assert!(queued_surfaces.is_empty());
+        assert!(queue_manifest.contains("no remaining toy compiler retirement surfaces"));
     }
 
     #[test]
@@ -6545,8 +6523,12 @@ mod tests {
         ] {
             let toy_entry = entry_for(toy_source);
             assert!(
-                toy_entry.contains("\"rtl_gate\": \"scripts/run_rtl_top_toy_c_smoke.sh\""),
-                "{toy_source} should remain an explicit legacy toy-C smoke while covered by linked LLVM"
+                toy_entry.contains("\"status\": \"replaced_by_llvm\""),
+                "{toy_source} should be retired once covered by linked LLVM"
+            );
+            assert!(
+                !toy_entry.contains("\"rtl_gate\""),
+                "{toy_source} should not name a toy RTL gate after replacement"
             );
         }
 
@@ -6830,9 +6812,9 @@ mod tests {
         assert!(roadmap.contains("`CLONE` is a backend-visible native primitive"));
         assert!(roadmap.contains("new_thread_shared_vm"));
         assert!(psabi_doc.contains("## Native Clone Profiles"));
-        assert!(roadmap.contains("## Toy Compiler Freeze Policy"));
+        assert!(roadmap.contains("## Toy Compiler Retirement Policy"));
         assert!(roadmap.contains("They are not the long-term application"));
-        assert!(roadmap.contains("only small fixes needed to keep existing smoke"));
+        assert!(roadmap.contains("has been removed from the command surface"));
     }
 
     #[test]

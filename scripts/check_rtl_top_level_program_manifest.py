@@ -115,10 +115,10 @@ def require_entry(entry: dict[str, object], source_kind: str) -> None:
     require(isinstance(features, list) and features, f"{source} must list required_features")
     require(all(isinstance(feature, str) and feature for feature in features), f"{source} has invalid required_features")
     status = entry.get("status")
-    require(status in {"blocked_by_features", "active"}, f"{source} has invalid status {status}")
-    if status == "blocked_by_features":
-        require(features, f"{source} is blocked but has no required_features")
-        require("rtl_gate" not in entry, f"{source} should not name an RTL gate until it is active")
+    require(status in {"blocked_by_features", "active", "replaced_by_llvm"}, f"{source} has invalid status {status}")
+    if status in {"blocked_by_features", "replaced_by_llvm"}:
+        require(features, f"{source} is non-active but has no required_features")
+        require("rtl_gate" not in entry, f"{source} should not name an RTL gate unless it is active")
     else:
         rtl_gate = entry.get("rtl_gate")
         require(isinstance(rtl_gate, str) and rtl_gate, f"{source} active entry must name rtl_gate")
@@ -289,29 +289,7 @@ def main() -> None:
         require_entry(entry, "compiler flat")
         if entry.get("status") == "active":
             active_compiler_flat += 1
-            gate_path = str(entry["rtl_gate"])
-            gate_text = effective_gate_text(gate_path)
-            require(
-                gate_path == "scripts/run_rtl_top_toy_c_smoke.sh",
-                f"{entry['source']} legacy compiler-flat entry must use the explicit toy C wrapper",
-            )
-            require(
-                "LNP64_RTL_TOP_PROGRAM_C_BACKEND=toy" in gate_text,
-                f"{entry['source']} toy C gate must opt in to toy backend explicitly",
-            )
-            require("*.c" in gate_text, f"{entry['source']} active gate must accept compiler input")
-            require(
-                (" cc " in gate_text or " cc --toy-bootstrap " in gate_text)
-                and "asm-flat-exec" in gate_text,
-                f"{entry['source']} active gate must compile C to flat hex",
-            )
-            require("RTL_RETIRE" in gate_text and "EMULATOR_RETIRE" in gate_text, f"{entry['source']} gate must compare retire traces")
-            require_typed_retire_gate(gate_text, str(entry["source"]))
-            require("RTL_FINAL" in gate_text and "EMULATOR_FINAL" in gate_text, f"{entry['source']} gate must compare final state")
-            require('"regs"' in gate_text, f"{entry['source']} gate must compare final register file")
-            require('"errno"' in gate_text, f"{entry['source']} gate must compare final errno")
-            require('"mem_checksum"' in gate_text, f"{entry['source']} gate must compare final memory checksum")
-    require(active_compiler_flat >= 1, "manifest must keep at least one active compiler-generated top-level program")
+    require(active_compiler_flat == 0, "compiler-flat toy C entries should stay retired once linked LLVM replacements exist")
     for entry in assembly_entries:
         require(isinstance(entry, dict), "assembly entry must be an object")
         require_entry(entry, "assembly")
@@ -331,22 +309,7 @@ def main() -> None:
         generated = entry.get("generated_assembly")
         require(isinstance(generated, str) and generated.endswith(".s"), f"{entry['source']} must name generated assembly")
         if entry.get("status") == "active":
-            gate_path = str(entry["rtl_gate"])
-            gate_text = effective_gate_text(gate_path)
-            require(
-                gate_path == "scripts/run_rtl_top_toy_c_smoke.sh",
-                f"{entry['source']} legacy compiler demo must use the explicit toy C wrapper",
-            )
-            require(
-                "LNP64_RTL_TOP_PROGRAM_C_BACKEND=toy" in gate_text,
-                f"{entry['source']} toy C gate must opt in to toy backend explicitly",
-            )
-            require("RTL_RETIRE" in gate_text and "EMULATOR_RETIRE" in gate_text, f"{entry['source']} gate must compare retire traces")
-            require_typed_retire_gate(gate_text, str(entry["source"]))
-            require("RTL_FINAL" in gate_text and "EMULATOR_FINAL" in gate_text, f"{entry['source']} gate must compare final state")
-            require('"regs"' in gate_text, f"{entry['source']} gate must compare final register file")
-            require('"errno"' in gate_text, f"{entry['source']} gate must compare final errno")
-            require('"mem_checksum"' in gate_text, f"{entry['source']} gate must compare final memory checksum")
+            pass
 
     manifest_asm = {entry["source"] for entry in assembly_entries}
     actual_asm = {str(path.relative_to(ROOT)) for path in sorted((ROOT / "demos").glob("*.s"))}
@@ -369,12 +332,18 @@ def main() -> None:
         for entry in compiler_flat_entries + compiler_entries
         if entry.get("status") == "active"
     }
-    missing_replacements = sorted(active_toy_sources - set(LINKED_REPLACEMENTS))
+    retired_or_active_toy_sources = {
+        str(entry["source"])
+        for entry in compiler_flat_entries + compiler_entries
+        if entry.get("status") in {"active", "replaced_by_llvm"}
+    }
+    require(not active_toy_sources, f"toy C sources remain active after linked LLVM replacement: {sorted(active_toy_sources)}")
+    missing_replacements = sorted(retired_or_active_toy_sources - set(LINKED_REPLACEMENTS))
     require(
         not missing_replacements,
-        f"active toy C sources lack linked LLVM replacements: {missing_replacements}",
+        f"retired toy C sources lack linked LLVM replacements: {missing_replacements}",
     )
-    for toy_source in sorted(active_toy_sources):
+    for toy_source in sorted(retired_or_active_toy_sources):
         linked_source, required_feature = LINKED_REPLACEMENTS[toy_source]
         linked_entry = linked_sources.get(linked_source)
         require(

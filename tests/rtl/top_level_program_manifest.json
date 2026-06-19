@@ -455,93 +455,67 @@
     {
       "source": "tests/rtl/programs/top_return_12.c",
       "required_features": ["core", "exit"],
-      "status": "active",
-      "rtl_gate": "scripts/run_rtl_top_toy_c_smoke.sh",
-      "comparison": "retire_trace_and_final_state"
+      "status": "replaced_by_llvm"
     },
     {
       "source": "tests/rtl/programs/top_branch_if.c",
       "required_features": ["core", "branch", "load_store", "exit"],
-      "status": "active",
-      "rtl_gate": "scripts/run_rtl_top_toy_c_smoke.sh",
-      "comparison": "retire_trace_and_final_state"
+      "status": "replaced_by_llvm"
     },
     {
       "source": "tests/rtl/programs/top_loop_sum.c",
       "required_features": ["core", "branch", "load_store", "exit"],
-      "status": "active",
-      "rtl_gate": "scripts/run_rtl_top_toy_c_smoke.sh",
-      "comparison": "retire_trace_and_final_state"
+      "status": "replaced_by_llvm"
     },
     {
       "source": "tests/rtl/programs/top_factorial_mul.c",
       "required_features": ["core", "branch", "load_store", "mul", "exit"],
-      "status": "active",
-      "rtl_gate": "scripts/run_rtl_top_toy_c_smoke.sh",
-      "comparison": "retire_trace_and_final_state"
+      "status": "replaced_by_llvm"
     },
     {
       "source": "tests/rtl/programs/top_subtract.c",
       "required_features": ["core", "load_store", "sub", "exit"],
-      "status": "active",
-      "rtl_gate": "scripts/run_rtl_top_toy_c_smoke.sh",
-      "comparison": "retire_trace_and_final_state"
+      "status": "replaced_by_llvm"
     },
     {
       "source": "tests/rtl/programs/top_bitwise.c",
       "required_features": ["core", "load_store", "bitwise_alu", "exit"],
-      "status": "active",
-      "rtl_gate": "scripts/run_rtl_top_toy_c_smoke.sh",
-      "comparison": "retire_trace_and_final_state"
+      "status": "replaced_by_llvm"
     },
     {
       "source": "tests/rtl/programs/top_shift.c",
       "required_features": ["core", "load_store", "shift_alu", "exit"],
-      "status": "active",
-      "rtl_gate": "scripts/run_rtl_top_toy_c_smoke.sh",
-      "comparison": "retire_trace_and_final_state"
+      "status": "replaced_by_llvm"
     },
     {
       "source": "tests/rtl/programs/top_udiv_urem.c",
       "required_features": ["core", "load_store", "unsigned_division", "exit"],
-      "status": "active",
-      "rtl_gate": "scripts/run_rtl_top_toy_c_smoke.sh",
-      "comparison": "retire_trace_and_final_state"
+      "status": "replaced_by_llvm"
     },
     {
       "source": "tests/rtl/programs/top_signed_division.c",
       "required_features": ["core", "load_store", "signed_division", "exit"],
-      "status": "active",
-      "rtl_gate": "scripts/run_rtl_top_toy_c_smoke.sh",
-      "comparison": "retire_trace_and_final_state"
+      "status": "replaced_by_llvm"
     },
     {
       "source": "tests/rtl/programs/top_not.c",
       "required_features": ["core", "load_store", "bitwise_alu", "exit"],
-      "status": "active",
-      "rtl_gate": "scripts/run_rtl_top_toy_c_smoke.sh",
-      "comparison": "retire_trace_and_final_state"
+      "status": "replaced_by_llvm"
     },
     {
       "source": "tests/rtl/programs/top_call_return.c",
       "required_features": ["core", "branch", "call_return", "load_store", "exit"],
-      "status": "active",
-      "rtl_gate": "scripts/run_rtl_top_toy_c_smoke.sh",
-      "comparison": "retire_trace_and_final_state"
+      "status": "replaced_by_llvm"
     },
     {
       "source": "tests/rtl/programs/top_byte_array.c",
       "required_features": ["core", "heap", "byte_load_store", "load_store", "exit"],
-      "status": "active",
-      "rtl_gate": "scripts/run_rtl_top_toy_c_smoke.sh",
-      "comparison": "retire_trace_and_final_state"
+      "status": "replaced_by_llvm"
     },
     {
       "source": "tests/rtl/programs/top_heap_byte_lanes.c",
       "required_features": ["core", "heap", "byte_load_store", "load_store", "exit"],
-      "status": "active",
-      "rtl_gate": "scripts/run_rtl_top_toy_c_smoke.sh",
-      "comparison": "retire_trace_and_final_state"
+      "status": "replaced_by_llvm"
     }
   ],
   "assembly_programs": [
@@ -647,43 +621,33 @@
       "source": "demos/allocator.c",
       "generated_assembly": "/tmp/allocator.s",
       "required_features": ["core", "heap", "load_store", "free", "write_fd", "exit"],
-      "status": "active",
-      "rtl_gate": "scripts/run_rtl_top_toy_c_smoke.sh",
-      "comparison": "retire_trace_and_final_state"
+      "status": "replaced_by_llvm"
     },
     {"source": "demos/cat.c", "generated_assembly": "/tmp/cat.s", "required_features": ["core", "storage", "personality"], "status": "blocked_by_features"},
     {
       "source": "demos/factorial.c",
       "generated_assembly": "/tmp/factorial.s",
       "required_features": ["core", "branch", "stack", "mul", "write_fd", "exit"],
-      "status": "active",
-      "rtl_gate": "scripts/run_rtl_top_toy_c_smoke.sh",
-      "comparison": "retire_trace_and_final_state"
+      "status": "replaced_by_llvm"
     },
     {
       "source": "demos/fibonacci.c",
       "generated_assembly": "/tmp/fibonacci.s",
       "required_features": ["core", "branch", "call_return", "stack", "write_fd", "exit"],
-      "status": "active",
-      "rtl_gate": "scripts/run_rtl_top_toy_c_smoke.sh",
-      "comparison": "retire_trace_and_final_state"
+      "status": "replaced_by_llvm"
     },
     {
       "source": "demos/hello.c",
       "generated_assembly": "/tmp/hello.s",
       "required_features": ["core", "data_labels", "write_fd", "exit"],
-      "status": "active",
-      "rtl_gate": "scripts/run_rtl_top_toy_c_smoke.sh",
-      "comparison": "retire_trace_and_final_state"
+      "status": "replaced_by_llvm"
     },
     {"source": "demos/httpd.c", "generated_assembly": "/tmp/httpd.s", "required_features": ["core", "networking", "personality"], "status": "blocked_by_features"},
     {
       "source": "demos/json_parser.c",
       "generated_assembly": "/tmp/json_parser.s",
       "required_features": ["core", "heap", "branch", "load_store", "write_fd", "free", "exit"],
-      "status": "active",
-      "rtl_gate": "scripts/run_rtl_top_toy_c_smoke.sh",
-      "comparison": "retire_trace_and_final_state"
+      "status": "replaced_by_llvm"
     },
     {"source": "demos/netcat.c", "generated_assembly": "/tmp/netcat.s", "required_features": ["core", "networking", "personality"], "status": "blocked_by_features"},
     {"source": "demos/parallel_hash.c", "generated_assembly": "/tmp/parallel_hash.s", "required_features": ["core", "threads", "futex"], "status": "blocked_by_features"},
@@ -692,18 +656,14 @@
       "source": "demos/ping_pong.c",
       "generated_assembly": "/tmp/ping_pong.s",
       "required_features": ["core", "queue", "push_pull", "clone_spawn", "thread_join", "two_thread_context", "exit"],
-      "status": "active",
-      "rtl_gate": "scripts/run_rtl_top_toy_c_smoke.sh",
-      "comparison": "retire_trace_and_final_state"
+      "status": "replaced_by_llvm"
     },
     {"source": "demos/producer_consumer.c", "generated_assembly": "/tmp/producer_consumer.s", "required_features": ["core", "queue", "await"], "status": "blocked_by_features"},
     {
       "source": "demos/rot13.c",
       "generated_assembly": "/tmp/rot13.s",
       "required_features": ["core", "heap", "branch", "byte_load_store", "load_store", "write_fd", "free", "exit"],
-      "status": "active",
-      "rtl_gate": "scripts/run_rtl_top_toy_c_smoke.sh",
-      "comparison": "retire_trace_and_final_state"
+      "status": "replaced_by_llvm"
     },
     {"source": "demos/sqlite_lite.c", "generated_assembly": "/tmp/sqlite_lite.s", "required_features": ["core", "heap", "storage", "personality"], "status": "blocked_by_features"}
   ],
@@ -713,6 +673,6 @@
     "LLVM MC entries must assemble with llvm-mc, decode object bytes with llvm-objdump, and feed those bytes to the shared top-level RTL/emulator comparator.",
     "LLVM clang entries must compile with clang, decode object bytes with llvm-objdump, add only an explicit top-level exit harness when needed, and feed those bytes to the shared top-level RTL/emulator comparator.",
     "Blocked entries must name the missing required_features rather than being copied into synthetic RTL-only tests.",
-    "Legacy toy C entries must use scripts/run_rtl_top_toy_c_smoke.sh so the shared comparator never selects the toy compiler implicitly."
+    "Retired toy C entries must have active linked LLVM replacements so the shared comparator never selects the toy compiler."
   ]
 }

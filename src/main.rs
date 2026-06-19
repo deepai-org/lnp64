@@ -1,13 +1,4 @@
 mod asm;
-mod c_compiler;
-mod c_constants;
-mod c_escapes;
-mod c_layouts;
-mod c_macro_rewrites;
-mod c_queue_rewrites;
-mod c_static_rewrites;
-mod c_support_sources;
-mod c_type_rewrites;
 mod emulator;
 mod isa;
 mod loader;
@@ -115,24 +106,6 @@ fn run() -> Result<(), String> {
             let code = machine.run()?;
             if code != 0 {
                 std::process::exit(code.clamp(1, 255));
-            }
-            Ok(())
-        }
-        "cc" => {
-            let options = take_cc_options(&mut args)?;
-            ensure_cc_toy_bootstrap(&options)?;
-            let text = if options.dump_macros {
-                c_compiler::macro_expand_files(&options.inputs)?
-            } else if options.dump_preprocessed {
-                c_compiler::preprocess_files(&options.inputs)?
-            } else {
-                c_compiler::compile_files(&options.inputs)?
-            };
-            if let Some(output) = options.output {
-                fs::write(&output, text)
-                    .map_err(|err| format!("failed to write {}: {err}", output.display()))?;
-            } else {
-                print!("{text}");
             }
             Ok(())
         }
@@ -294,9 +267,6 @@ fn usage() {
         "  lnp64 run-elf [--namespace-root <dir>] [--load-bias <n>] <program.elf> [argv ...]"
     );
     eprintln!("  lnp64 run-flat-exec <program.hex>");
-    eprintln!(
-        "  lnp64 cc --toy-bootstrap [--dump-macros|--dump-preprocessed] <program.c> [more.c ...] [-o program.s]"
-    );
 }
 
 struct AsmFlatExecOptions {
@@ -1329,65 +1299,6 @@ fn take_run_flat_exec_options(args: &mut Vec<String>) -> Result<RunFlatExecOptio
     Ok(RunFlatExecOptions { input, data_input })
 }
 
-struct CcOptions {
-    inputs: Vec<PathBuf>,
-    output: Option<PathBuf>,
-    dump_macros: bool,
-    dump_preprocessed: bool,
-    toy_bootstrap: bool,
-}
-
-fn take_cc_options(args: &mut Vec<String>) -> Result<CcOptions, String> {
-    let mut inputs = Vec::new();
-    let mut output = None;
-    let mut dump_macros = false;
-    let mut dump_preprocessed = false;
-    let mut toy_bootstrap = false;
-    while !args.is_empty() {
-        let arg = args.remove(0);
-        if arg == "-o" {
-            if output.is_some() {
-                return Err("duplicate -o".to_string());
-            }
-            if args.is_empty() {
-                return Err("-o requires a path".to_string());
-            }
-            output = Some(PathBuf::from(args.remove(0)));
-        } else if arg == "--dump-preprocessed" {
-            dump_preprocessed = true;
-        } else if arg == "--dump-macros" {
-            dump_macros = true;
-        } else if arg == "--toy-bootstrap" {
-            toy_bootstrap = true;
-        } else if arg.starts_with('-') {
-            return Err(format!("unexpected cc option {arg:?}"));
-        } else {
-            inputs.push(PathBuf::from(arg));
-        }
-    }
-    if inputs.is_empty() {
-        return Err("missing input path".to_string());
-    }
-    Ok(CcOptions {
-        inputs,
-        output,
-        dump_macros,
-        dump_preprocessed,
-        toy_bootstrap,
-    })
-}
-
-fn ensure_cc_toy_bootstrap(options: &CcOptions) -> Result<(), String> {
-    if options.toy_bootstrap {
-        Ok(())
-    } else {
-        Err(
-            "lnp64 cc is the deprecated Rust bootstrap C compiler; use the real Clang/lld gates, or pass --toy-bootstrap for legacy smoke generation"
-                .to_string(),
-        )
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1402,30 +1313,6 @@ mod tests {
     const PF_R: u32 = 4;
     const ELF64_EHDR_SIZE: usize = 64;
     const ELF64_PHDR_SIZE: usize = 56;
-
-    #[test]
-    fn cc_requires_explicit_toy_bootstrap_opt_in() {
-        let mut args = vec!["demo.c".to_string(), "-o".to_string(), "demo.s".to_string()];
-        let options = take_cc_options(&mut args).unwrap();
-
-        assert!(!options.toy_bootstrap);
-        assert!(
-            ensure_cc_toy_bootstrap(&options)
-                .unwrap_err()
-                .contains("deprecated Rust bootstrap C compiler")
-        );
-
-        let mut legacy_args = vec![
-            "--toy-bootstrap".to_string(),
-            "demo.c".to_string(),
-            "-o".to_string(),
-            "demo.s".to_string(),
-        ];
-        let legacy_options = take_cc_options(&mut legacy_args).unwrap();
-
-        assert!(legacy_options.toy_bootstrap);
-        ensure_cc_toy_bootstrap(&legacy_options).unwrap();
-    }
 
     #[test]
     fn run_elf_probe_loads_and_commits_minimal_static_elf() {
