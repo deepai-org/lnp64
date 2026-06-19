@@ -99,7 +99,11 @@ byte/halfword/word/doubleword `LD`/`ST`, and native heap opcodes
 `ALLOC`/`ALLOC_EX`/`ALLOC_SIZE`/`FREE`. The first typed-control opcodes
 `OBJECT_CTL` and `DOMAIN_CTL` also have real MC and committed-exec coverage
 through private `__lnp_object_ctl`/`__lnp_domain_ctl` Clang smokes. Other
-opcodes remain blocked until operand encodings are implemented. The
+opcodes remain blocked until operand encodings are implemented.
+`toolchain/lnp64_intrinsic_lowering.manifest` now separates real LLVM call
+lowerings, inline-asm shims, and declared-but-pending native intrinsics so the
+backend cannot silently lower compatibility-critical calls such as `MMAP` while
+dropping source capability, flags, offset, or argument-block state. The
 disassembler decodes that same initial fixed32 subset for future `llvm-mc`
 round trips. The MC layer now has target fixup kinds and object-writer
 relocation mapping for branch/data relocations, and the lld scaffold can patch

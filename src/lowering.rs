@@ -768,6 +768,37 @@ mod tests {
             .collect()
     }
 
+    fn intrinsic_lowering_rows(manifest: &str) -> Vec<(&str, &str, &str, &str, Vec<&str>, &str)> {
+        manifest
+            .lines()
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(|line| {
+                let mut fields = line.splitn(6, '|');
+                let name = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing intrinsic lowering name in {line}"));
+                let primitive = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing intrinsic lowering primitive in {line}"));
+                let abi_shape = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing intrinsic lowering ABI shape in {line}"));
+                let status = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing intrinsic lowering status in {line}"));
+                let evidence = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing intrinsic lowering evidence in {line}"))
+                    .split(',')
+                    .collect();
+                let blocker = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing intrinsic lowering blocker in {line}"));
+                (name, primitive, abi_shape, status, evidence, blocker)
+            })
+            .collect()
+    }
+
     fn isel_rows(manifest: &str) -> Vec<(&str, &str, Vec<&str>)> {
         manifest
             .lines()
@@ -1244,6 +1275,7 @@ mod tests {
             "mc_encoding",
             "psabi",
             "intrinsics",
+            "intrinsic_lowering",
             "intrinsic_header",
             "clang_driver",
             "llvm_filemap",
@@ -3455,6 +3487,10 @@ mod tests {
             "toolchain/lnp64_intrinsics.manifest"
         );
         assert_eq!(
+            manifest_field(manifest, "intrinsic_lowering_contract"),
+            "toolchain/lnp64_intrinsic_lowering.manifest"
+        );
+        assert_eq!(
             manifest_field(manifest, "intrinsic_header_contract"),
             "toolchain/lnp64_intrinsics.h"
         );
@@ -3656,6 +3692,119 @@ mod tests {
             assert!(
                 names.contains(name),
                 "target manifest intrinsic {name} is missing from intrinsic manifest"
+            );
+        }
+    }
+
+    #[test]
+    fn intrinsic_lowering_manifest_matches_real_llvm_surface() {
+        let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
+        let intrinsic_manifest = include_str!("../toolchain/lnp64_intrinsics.manifest");
+        let lowering_manifest = include_str!("../toolchain/lnp64_intrinsic_lowering.manifest");
+        let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
+        let intrinsic_header = include_str!("../toolchain/lnp64_intrinsics.h");
+        let isel = include_str!("../llvm/lib/Target/LNP64/LNP64ISelLowering.cpp");
+        let real_llc = include_str!("../scripts/run_real_llvm_lnp64.sh");
+        let fd_min = include_str!("../toolchain/liblnp64_fd_min.c");
+        let roadmap = include_str!("../toolchain_roadmap.md");
+        let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let target_intrinsics: std::collections::BTreeSet<_> =
+            manifest_field(target_manifest, "intrinsics")
+                .split(',')
+                .collect();
+        let intrinsic_by_name: std::collections::BTreeMap<_, _> =
+            intrinsic_rows(intrinsic_manifest)
+                .into_iter()
+                .map(|(name, primitive, result, operands)| (name, (primitive, result, operands)))
+                .collect();
+        let rows = intrinsic_lowering_rows(lowering_manifest);
+        let mut names = std::collections::BTreeSet::new();
+
+        assert_eq!(
+            manifest_field(target_manifest, "intrinsic_lowering_contract"),
+            "toolchain/lnp64_intrinsic_lowering.manifest"
+        );
+        assert!(contract_index.contains(
+            "intrinsic_lowering|toolchain/lnp64_intrinsic_lowering.manifest|intrinsic_lowering_manifest_matches_real_llvm_surface"
+        ));
+        assert_eq!(rows.len(), target_intrinsics.len());
+        assert!(roadmap.contains("toolchain/lnp64_intrinsic_lowering.manifest"));
+        assert!(roadmap.contains("cannot silently lower"));
+
+        for (name, primitive, abi_shape, status, evidence, blocker) in rows {
+            assert!(
+                names.insert(name),
+                "duplicate intrinsic lowering row {name}"
+            );
+            assert!(
+                target_intrinsics.contains(name),
+                "lowering manifest names {name}, but target manifest does not"
+            );
+            let Some((declared_primitive, _, declared_operands)) = intrinsic_by_name.get(name)
+            else {
+                panic!("lowering manifest names {name}, but intrinsic manifest does not");
+            };
+            assert_eq!(
+                primitive, *declared_primitive,
+                "lowering primitive for {name} diverges from intrinsic manifest"
+            );
+            assert!(
+                !abi_shape.is_empty() && !declared_operands.is_empty(),
+                "intrinsic {name} must keep ABI operands explicit"
+            );
+            for path in evidence {
+                assert!(
+                    manifest_root.join(path).is_file(),
+                    "lowering evidence path {path} for {name} does not exist"
+                );
+            }
+
+            let callee_probe = format!("CalleeName == \"{name}\"");
+            match status {
+                "call_lowered" => {
+                    assert_eq!(blocker, "none", "lowered intrinsic {name} has blocker");
+                    assert!(
+                        isel.contains(&callee_probe),
+                        "call-lowered intrinsic {name} is missing from LLVM call lowering"
+                    );
+                    assert!(
+                        real_llc.contains(name) || fd_min.contains(name),
+                        "call-lowered intrinsic {name} is missing from real LLVM smoke coverage"
+                    );
+                }
+                "inline_asm_lowered" => {
+                    assert_eq!(blocker, "none", "inline intrinsic {name} has blocker");
+                    let asm_mnemonic = primitive.to_ascii_lowercase().replace('.', ".");
+                    assert!(
+                        intrinsic_header.contains(&format!("static inline"))
+                            && intrinsic_header.contains(name),
+                        "inline intrinsic {name} is missing from the intrinsic header"
+                    );
+                    assert!(
+                        intrinsic_header.contains(&format!("\"{asm_mnemonic} "))
+                            || intrinsic_header.contains(&format!("\"{asm_mnemonic}")),
+                        "inline intrinsic {name} is missing asm mnemonic {asm_mnemonic}"
+                    );
+                }
+                "pending_encoding" | "pending_argblock" | "pending_libc_record_builder" => {
+                    assert_ne!(blocker, "none", "pending intrinsic {name} needs a blocker");
+                    assert!(
+                        !isel.contains(&callee_probe),
+                        "pending intrinsic {name} must not have ad-hoc LLVM call lowering"
+                    );
+                    assert!(
+                        intrinsic_header.contains(name),
+                        "pending intrinsic {name} should remain declared at the ABI boundary"
+                    );
+                }
+                _ => panic!("unknown intrinsic lowering status {status} for {name}"),
+            }
+        }
+
+        for name in target_intrinsics {
+            assert!(
+                names.contains(name),
+                "target manifest intrinsic {name} is missing from lowering manifest"
             );
         }
     }

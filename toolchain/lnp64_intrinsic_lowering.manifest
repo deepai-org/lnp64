@@ -1,0 +1,29 @@
+# LNP64 real-LLVM intrinsic lowering contract v0.
+# Pipe-delimited fields:
+# name|primitive|abi_shape|llvm_status|evidence|blocker
+__lnp_openat|OPEN_AT|dir_cap,path_ptr,flags,mode|pending_encoding|toolchain/lnp64_intrinsics.h|needs_open_at_argblock_or_native4_encoding
+__lnp_pull|PULL|cap,arg0,arg1|call_lowered|llvm/lib/Target/LNP64/LNP64ISelLowering.cpp,toolchain/liblnp64_fd_min.c|none
+__lnp_push|PUSH|cap,arg0,arg1|call_lowered|llvm/lib/Target/LNP64/LNP64ISelLowering.cpp,scripts/run_real_llvm_lnp64.sh|none
+__lnp_mmap|MMAP|source_cap,addr_hint,len,prot,flags,offset|pending_argblock|toolchain/lnp64_intrinsics.h,hardware_design.md|needs_f9_argblock_mc_encoding
+__lnp_await|AWAIT|cap,arg0,arg1|call_lowered|llvm/lib/Target/LNP64/LNP64ISelLowering.cpp,scripts/run_real_llvm_lnp64.sh|none
+__lnp_gate_call|GATE_CALL|gate_cap,arg0,arg1,argblock_ptr|pending_argblock|toolchain/lnp64_intrinsics.h|needs_gate_argblock_call_lowering
+__lnp_call|GATE_CALL|cap,arg0,arg1|call_lowered|llvm/lib/Target/LNP64/LNP64ISelLowering.cpp,scripts/run_real_llvm_lnp64.sh|none
+__lnp_gate_return|GATE_RETURN|value0,value1,context_token|call_lowered|llvm/lib/Target/LNP64/LNP64ISelLowering.cpp,scripts/run_real_llvm_lnp64.sh|none
+__lnp_domain_ctl|DOMAIN_CTL|record_ptr|call_lowered|llvm/lib/Target/LNP64/LNP64ISelLowering.cpp,scripts/run_real_llvm_lnp64.sh|none
+__lnp_domain_create|DOMAIN_CTL|memory,pids,fdrs,caps|pending_libc_record_builder|toolchain/lnp64_intrinsics.h|needs_typed_domain_record_builder
+__lnp_object_ctl|OBJECT_CTL|record_ptr|call_lowered|llvm/lib/Target/LNP64/LNP64ISelLowering.cpp,scripts/run_real_llvm_lnp64.sh|none
+__lnp_object_create|OBJECT_CTL|kind,profile,fd0,fd1,arg|pending_libc_record_builder|toolchain/lnp64_intrinsics.h|needs_typed_object_record_builder
+__lnp_cap_dup|CAP_DUP|source_cap,rights,flags|pending_encoding|toolchain/lnp64_intrinsics.h|needs_capability_operand_mc_encoding
+__lnp_cap_send|CAP_SEND|queue_cap,cap,flags|pending_encoding|toolchain/lnp64_intrinsics.h|needs_capability_operand_mc_encoding
+__lnp_cap_recv|CAP_RECV|queue_cap,flags|pending_encoding|toolchain/lnp64_intrinsics.h|needs_capability_operand_mc_encoding
+__lnp_cap_revoke|CAP_REVOKE|cap,flags|pending_encoding|toolchain/lnp64_intrinsics.h|needs_capability_operand_mc_encoding
+__lnp_alloc|ALLOC|size|inline_asm_lowered|toolchain/lnp64_intrinsics.h,scripts/run_real_llvm_lnp64.sh|none
+__lnp_alloc_ex|ALLOC_EX|size,align|inline_asm_lowered|toolchain/lnp64_intrinsics.h,scripts/run_real_llvm_lnp64.sh|none
+__lnp_alloc_size|ALLOC_SIZE|ptr|inline_asm_lowered|toolchain/lnp64_intrinsics.h,scripts/run_real_llvm_lnp64.sh|none
+__lnp_free|FREE|ptr|inline_asm_lowered|toolchain/lnp64_intrinsics.h,scripts/run_real_llvm_lnp64.sh|none
+__lnp_exit|EXIT|status|inline_asm_lowered|toolchain/lnp64_intrinsics.h,toolchain/liblnp64_process_min.c|none
+__lnp_amo_swap|AMO.SWAP|addr,value|inline_asm_lowered|toolchain/lnp64_intrinsics.h,scripts/run_real_llvm_lnp64.sh|none
+__lnp_amo_add|AMO.ADD|addr,value|inline_asm_lowered|toolchain/lnp64_intrinsics.h,scripts/run_real_llvm_lnp64.sh|none
+__lnp_amo_and|AMO.AND|addr,value|inline_asm_lowered|toolchain/lnp64_intrinsics.h,scripts/run_real_llvm_lnp64.sh|none
+__lnp_amo_or|AMO.OR|addr,value|inline_asm_lowered|toolchain/lnp64_intrinsics.h,scripts/run_real_llvm_lnp64.sh|none
+__lnp_amo_xor|AMO.XOR|addr,value|inline_asm_lowered|toolchain/lnp64_intrinsics.h,scripts/run_real_llvm_lnp64.sh|none
