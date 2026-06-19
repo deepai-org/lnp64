@@ -3577,6 +3577,19 @@ grep -q 'sigret' "$netbsd_timer_test_dump"
 printf 'real LLVM LNP64 clang NetBSD timer child object passed: %s\n' \
   "$netbsd_timer_test_obj"
 
+netbsd_mmap_test_obj="$build_dir/netbsd-mmap-test-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
+  -c userland/mmap_test_clang.c -o "$netbsd_mmap_test_obj"
+test -s "$netbsd_mmap_test_obj"
+netbsd_mmap_test_dump="$build_dir/netbsd-mmap-test-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$netbsd_mmap_test_obj" \
+  >"$netbsd_mmap_test_dump"
+grep -q 'call ' "$netbsd_mmap_test_dump"
+printf 'real LLVM LNP64 clang NetBSD mmap child object passed: %s\n' \
+  "$netbsd_mmap_test_obj"
+
 meta_libc_c="$build_dir/meta-libc-smoke.c"
 cat >"$meta_libc_c" <<'C'
 #include <errno.h>
@@ -5089,6 +5102,14 @@ netbsd_timer_test_elf="$build_dir/lnp64-netbsd-timer-test-linked.elf"
 test -s "$netbsd_timer_test_elf"
 printf 'real LLVM LNP64 lld NetBSD timer child link passed: %s\n' \
   "$netbsd_timer_test_elf"
+
+netbsd_mmap_test_elf="$build_dir/lnp64-netbsd-mmap-test-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$netbsd_mmap_test_elf" "$crt0_obj" "$netbsd_mmap_test_obj" \
+  "$libc_vma_impl_obj" "$libc_errno_impl_obj" "$libc_fd_impl_obj"
+test -s "$netbsd_mmap_test_elf"
+printf 'real LLVM LNP64 lld NetBSD mmap child link passed: %s\n' \
+  "$netbsd_mmap_test_elf"
 
 meta_libc_elf="$build_dir/lnp64-meta-libc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
