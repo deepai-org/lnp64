@@ -72,6 +72,21 @@ fn run() -> Result<(), String> {
             }
             Ok(())
         }
+        "elf-flat-exec" => {
+            let options = take_elf_flat_exec_options(&mut args)?;
+            let (hex, data_hex) = encode_elf_flat_exec_images(&options.input)?;
+            if let Some(output) = options.output {
+                fs::write(&output, hex)
+                    .map_err(|err| format!("failed to write {}: {err}", output.display()))?;
+            } else {
+                print!("{hex}");
+            }
+            if let Some(output) = options.data_output {
+                fs::write(&output, data_hex)
+                    .map_err(|err| format!("failed to write {}: {err}", output.display()))?;
+            }
+            Ok(())
+        }
         "run" => {
             let namespace_root = take_run_namespace_root(&mut args)?;
             let input = take_input(&mut args)?;
@@ -267,6 +282,7 @@ fn usage() {
     eprintln!("usage:");
     eprintln!("  lnp64 asm <program.s>");
     eprintln!("  lnp64 asm-flat-exec <program.s> [-o program.hex] [--data-hex data.hex]");
+    eprintln!("  lnp64 elf-flat-exec <program.elf> [-o program.hex] [--data-hex data.hex]");
     eprintln!("  lnp64 run-flat-exec <program.hex> [--data-hex data.hex]");
     eprintln!("  lnp64 run [--namespace-root <dir>] <program.s>");
     eprintln!("  lnp64 elf-plan [--load-bias <n>] <program.elf>");
@@ -286,6 +302,12 @@ struct AsmFlatExecOptions {
 struct RunFlatExecOptions {
     input: PathBuf,
     data_input: Option<PathBuf>,
+}
+
+struct ElfFlatExecOptions {
+    input: PathBuf,
+    output: Option<PathBuf>,
+    data_output: Option<PathBuf>,
 }
 
 fn encode_flat_exec_hex(program: &Program) -> Result<String, String> {
@@ -309,15 +331,97 @@ fn encode_flat_exec_data_hex(program: &Program) -> Result<String, String> {
             program.data.len()
         ));
     }
+    Ok(flat_data_bytes_to_hex(&program.data))
+}
+
+fn flat_data_bytes_to_hex(data: &[u8]) -> String {
     let mut out = String::new();
-    for chunk in program.data.chunks(8) {
+    for chunk in data.chunks(8) {
         let mut word = 0u64;
         for (idx, byte) in chunk.iter().enumerate() {
             word |= u64::from(*byte) << (idx * 8);
         }
         out.push_str(&format!("{word:016x}\n"));
     }
+    out
+}
+
+fn flat_text_bytes_to_hex(text: &[u8]) -> Result<String, String> {
+    if text.is_empty() {
+        return Err("flat exec image is empty".to_string());
+    }
+    let mut padded = text.to_vec();
+    while padded.len() % 4 != 0 {
+        padded.push(0);
+    }
+    let mut out = String::new();
+    for chunk in padded.chunks_exact(4) {
+        let word = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+        out.push_str(&format!("{word:08x}\n"));
+    }
     Ok(out)
+}
+
+fn encode_elf_flat_exec_images(input: &PathBuf) -> Result<(String, String), String> {
+    const TEXT_BASE: u64 = 0x1000;
+    const DATA_BASE: u64 = isa::DATA_BASE;
+    const PAGE_SIZE: u64 = 4096;
+
+    let mut image =
+        fs::read(input).map_err(|err| format!("failed to read {}: {err}", input.display()))?;
+    let plan = loader::load_static_elf(&mut image, LoaderOptions::default())?;
+    if plan.entry.entry_pc != TEXT_BASE {
+        return Err(format!(
+            "elf-flat-exec requires entry 0x{TEXT_BASE:x}, got 0x{:x}",
+            plan.entry.entry_pc
+        ));
+    }
+    let prepared = loader::materialize_vmas(&image, &plan)?;
+    let mut text_bytes: Option<Vec<u8>> = None;
+    let mut data_bytes = vec![0u8; PAGE_SIZE as usize];
+    let mut data_high_water = 0usize;
+
+    for vma in prepared {
+        if vma.protection.execute {
+            if vma.virtual_address != TEXT_BASE {
+                return Err(format!(
+                    "elf-flat-exec executable VMA must start at 0x{TEXT_BASE:x}, got 0x{:x}",
+                    vma.virtual_address
+                ));
+            }
+            if vma.bytes.len() > PAGE_SIZE as usize {
+                return Err(format!(
+                    "elf-flat-exec executable image is too large: {} bytes > {PAGE_SIZE}",
+                    vma.bytes.len()
+                ));
+            }
+            if text_bytes.replace(vma.bytes).is_some() {
+                return Err("elf-flat-exec supports exactly one executable VMA".to_string());
+            }
+            continue;
+        }
+
+        let start = vma.virtual_address;
+        let end = start
+            .checked_add(vma.bytes.len() as u64)
+            .ok_or_else(|| "elf-flat-exec data VMA range overflows".to_string())?;
+        if start < DATA_BASE || end > DATA_BASE + PAGE_SIZE {
+            return Err(format!(
+                "elf-flat-exec non-executable VMA 0x{start:x}..0x{end:x} does not fit flat data page 0x{DATA_BASE:x}..0x{:x}",
+                DATA_BASE + PAGE_SIZE
+            ));
+        }
+        let offset = (start - DATA_BASE) as usize;
+        let end_offset = offset + vma.bytes.len();
+        data_bytes[offset..end_offset].copy_from_slice(&vma.bytes);
+        data_high_water = data_high_water.max(end_offset);
+    }
+
+    let text = text_bytes.ok_or_else(|| "elf-flat-exec found no executable VMA".to_string())?;
+    Ok((
+        flat_text_bytes_to_hex(&text)?,
+        flat_data_bytes_to_hex(&data_bytes[..data_high_water]),
+    ))
 }
 
 fn flat_exec_word_pcs(program: &Program) -> Vec<usize> {
@@ -1033,6 +1137,44 @@ fn take_asm_flat_exec_options(args: &mut Vec<String>) -> Result<AsmFlatExecOptio
     })
 }
 
+fn take_elf_flat_exec_options(args: &mut Vec<String>) -> Result<ElfFlatExecOptions, String> {
+    let mut input = None;
+    let mut output = None;
+    let mut data_output = None;
+    while !args.is_empty() {
+        let arg = args.remove(0);
+        if arg == "-o" {
+            if output.is_some() {
+                return Err("duplicate -o".to_string());
+            }
+            if args.is_empty() {
+                return Err("-o requires a path".to_string());
+            }
+            output = Some(PathBuf::from(args.remove(0)));
+        } else if arg == "--data-hex" {
+            if data_output.is_some() {
+                return Err("duplicate --data-hex".to_string());
+            }
+            if args.is_empty() {
+                return Err("--data-hex requires a path".to_string());
+            }
+            data_output = Some(PathBuf::from(args.remove(0)));
+        } else if arg.starts_with('-') {
+            return Err(format!("unexpected elf-flat-exec option {arg:?}"));
+        } else if input.is_some() {
+            return Err(format!("unexpected elf-flat-exec argument {arg:?}"));
+        } else {
+            input = Some(PathBuf::from(arg));
+        }
+    }
+    let input = input.ok_or_else(|| "missing input path".to_string())?;
+    Ok(ElfFlatExecOptions {
+        input,
+        output,
+        data_output,
+    })
+}
+
 fn take_run_flat_exec_options(args: &mut Vec<String>) -> Result<RunFlatExecOptions, String> {
     let mut input = None;
     let mut data_input = None;
@@ -1161,6 +1303,25 @@ mod tests {
         let exit = probe.machine.run_committed_exec().unwrap();
 
         assert_eq!(exit, 0);
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn elf_flat_exec_exports_flat_compatible_static_elf() {
+        let path = std::env::temp_dir().join(format!(
+            "lnp64-elf-flat-exec-probe-{}.elf",
+            std::process::id()
+        ));
+        fs::write(&path, minimal_static_exit_elf_at(0x1000)).unwrap();
+
+        let (hex, data_hex) = encode_elf_flat_exec_images(&path).unwrap();
+
+        assert_eq!(
+            hex,
+            concat!("3a000000\n", "00000000\n", "00000000\n", "00000000\n",)
+        );
+        assert_eq!(data_hex, "");
 
         let _ = fs::remove_file(path);
     }
@@ -2096,6 +2257,10 @@ mod tests {
     }
 
     fn minimal_static_elf() -> Vec<u8> {
+        minimal_static_elf_at(0x400000)
+    }
+
+    fn minimal_static_elf_at(vaddr: u64) -> Vec<u8> {
         let mut image = vec![0; 0x200];
         image[0..4].copy_from_slice(b"\x7fELF");
         image[4] = ELFCLASS64;
@@ -2104,7 +2269,7 @@ mod tests {
         put_u16(&mut image, 16, ET_EXEC);
         put_u16(&mut image, 18, EM_LNP64);
         put_u32(&mut image, 20, u32::from(EV_CURRENT));
-        put_u64(&mut image, 24, 0x400000);
+        put_u64(&mut image, 24, vaddr);
         put_u64(&mut image, 32, ELF64_EHDR_SIZE as u64);
         put_u16(&mut image, 52, ELF64_EHDR_SIZE as u16);
         put_u16(&mut image, 54, ELF64_PHDR_SIZE as u16);
@@ -2114,7 +2279,7 @@ mod tests {
         put_u32(&mut image, phdr, PT_LOAD);
         put_u32(&mut image, phdr + 4, PF_R | PF_X);
         put_u64(&mut image, phdr + 8, 0x100);
-        put_u64(&mut image, phdr + 16, 0x400000);
+        put_u64(&mut image, phdr + 16, vaddr);
         put_u64(&mut image, phdr + 32, 16);
         put_u64(&mut image, phdr + 40, 16);
         put_u64(&mut image, phdr + 48, 4096);
@@ -2123,7 +2288,11 @@ mod tests {
     }
 
     fn minimal_static_exit_elf() -> Vec<u8> {
-        let mut image = minimal_static_elf();
+        minimal_static_exit_elf_at(0x400000)
+    }
+
+    fn minimal_static_exit_elf_at(vaddr: u64) -> Vec<u8> {
+        let mut image = minimal_static_elf_at(vaddr);
         put_u32(&mut image, 0x100, 0x3a00_0000);
         image[0x104..0x110].fill(0);
         image

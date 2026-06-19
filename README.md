@@ -298,6 +298,7 @@ bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_half_word_load_
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_amo.s
 bash scripts/run_rtl_top_llvm_mc_smoke.sh
 bash scripts/run_rtl_top_clang_smoke.sh
+bash scripts/run_rtl_top_linked_llvm_smoke.sh
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_return_12.c
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_branch_if.c
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_loop_sum.c
@@ -351,6 +352,7 @@ LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT=
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_extend.s
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_llvm_mc_smoke.sh
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_clang_smoke.sh
+LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_linked_llvm_smoke.sh
 ```
 
 Set `LNP64_RTL_TOP_PROGRAM_JOBS=4` or
@@ -369,6 +371,13 @@ LNP64_RTL_TOP_PROGRAM_MAX_CYCLES=10000 bash scripts/run_rtl_top_program_smoke.sh
 
 The top-level program manifest runner defaults to `10000` cycles so longer
 active compiler-generated demos stay in the recurring gate.
+
+`scripts/run_rtl_top_linked_llvm_smoke.sh` is the first narrow linked-ELF
+top-level RTL gate. It builds a clang object, links it with LNP64 lld using a
+flat-compatible linker script, validates the existing software-loader
+`elf-plan`, exports the ELF through `lnp64 elf-flat-exec`, and feeds the result
+to the same RTL/emulator retire-trace comparator. It is not a full VMA/MMU
+loader in RTL yet; non-flat ELF layouts intentionally fail at export time.
 
 `LNP64_RTL_VERILATOR_BUILD_JOBS=0` lets Verilator use all available build jobs;
 set it to a fixed number such as `4` on shared machines. The top-program smoke

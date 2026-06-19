@@ -125,6 +125,15 @@
       "comparison": "retire_trace_and_final_state"
     }
   ],
+  "llvm_linked_programs": [
+    {
+      "source": "tests/rtl/programs/top_linked_exit.c",
+      "required_features": ["llvm_clang_object", "llvm_lld_static_link", "elf_flat_export", "core", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_linked_llvm_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    }
+  ],
   "compiler_flat_programs": [
     {
       "source": "tests/rtl/programs/top_return_12.c",
