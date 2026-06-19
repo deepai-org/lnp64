@@ -2678,8 +2678,12 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang path helper object smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_path_min.c"));
         assert!(real_llc.contains("liblnp64-path-min.o"));
+        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_path_impl_c\""));
+        assert!(libc_path_min.contains("#include <libgen.h>"));
+        assert!(libc_path_min.contains("#include <string.h>"));
         assert!(libc_path_min.contains("char *basename"));
         assert!(libc_path_min.contains("char *dirname"));
+        assert!(libc_path_min.contains("end = strlen(path);"));
         assert!(libc_path_min.contains("lnp64_dot"));
         assert!(
             real_llc

@@ -1,21 +1,17 @@
+#include <libgen.h>
+#include <string.h>
+
 static char lnp64_dot[] = ".";
 static char lnp64_slash[] = "/";
 
-static unsigned long lnp64_strlen(const char *s) {
-  unsigned long n = 0;
-  while (s[n] != 0)
-    n = n + 1;
-  return n;
-}
-
 char *basename(char *path) {
-  unsigned long end;
-  unsigned long start;
+  size_t end;
+  size_t start;
 
   if (!path || path[0] == 0)
     return lnp64_dot;
 
-  end = lnp64_strlen(path);
+  end = strlen(path);
   while (end > 1 && path[end - 1] == '/')
     end = end - 1;
   if (end == 1 && path[0] == '/')
@@ -29,13 +25,13 @@ char *basename(char *path) {
 }
 
 char *dirname(char *path) {
-  unsigned long end;
-  unsigned long slash_pos;
+  size_t end;
+  size_t slash_pos;
 
   if (!path || path[0] == 0)
     return lnp64_dot;
 
-  end = lnp64_strlen(path);
+  end = strlen(path);
   while (end > 1 && path[end - 1] == '/')
     end = end - 1;
   if (end == 1 && path[0] == '/')

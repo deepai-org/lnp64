@@ -3100,6 +3100,7 @@ libc_path_impl_c="toolchain/liblnp64_path_min.c"
 libc_path_impl_obj="$build_dir/liblnp64-path-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$libc_path_impl_c" -o "$libc_path_impl_obj"
 test -s "$libc_path_impl_obj"
 libc_path_impl_dump="$build_dir/liblnp64-path-min.dump"
