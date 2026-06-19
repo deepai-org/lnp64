@@ -4071,25 +4071,8 @@ printf 'real LLVM LNP64 clang poll/select/epoll/kqueue libc object smoke passed:
 signal_libc_c="$build_dir/signal-libc-smoke.c"
 cat >"$signal_libc_c" <<'C'
 #include "lnp64_intrinsics.h"
-
-typedef unsigned long sigset_t;
-typedef void (*sighandler_t)(int);
-
-struct sigaction {
-  sighandler_t sa_handler;
-  sigset_t sa_mask;
-  int sa_flags;
-};
-
-#define SIG_IGN ((sighandler_t)1)
-
-sighandler_t signal(int signum, sighandler_t handler);
-int sigaction(int signum, const struct sigaction *act,
-              struct sigaction *oldact);
-int sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
-int kill(int pid, int signum);
-int raise(int signum);
-unsigned int alarm(unsigned int seconds);
+#include <signal.h>
+#include <unistd.h>
 
 int main(void) {
   struct sigaction act;
@@ -4101,7 +4084,7 @@ int main(void) {
     return 1;
   if (sigaction(12, &act, 0) != 0)
     return 2;
-  if (sigprocmask(2, &mask, 0) != 0)
+  if (sigprocmask(SIG_SETMASK, &mask, 0) != 0)
     return 3;
   if (kill((int)__lnp_get_pid(), 10) != 0)
     return 4;
