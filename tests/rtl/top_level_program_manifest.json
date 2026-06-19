@@ -115,6 +115,14 @@
       "comparison": "retire_trace_and_final_state"
     },
     {
+      "source": "tests/rtl/programs/top_cap_forged_token_rejected.s",
+      "generated_flat_hex": "tests/rtl/programs/top_cap_forged_token_rejected.hex",
+      "required_features": ["core", "fdr", "cap_dup", "capability_non_forgeability", "failed_authority_operation_preserves_destination", "stale_generation_rejection", "errno", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    },
+    {
       "source": "tests/rtl/programs/top_cap_dup_no_amplify.s",
       "generated_flat_hex": "tests/rtl/programs/top_cap_dup_no_amplify.hex",
       "required_features": ["core", "fdr", "cap_dup", "cap_rights_narrowing", "no_authority_amplification", "errno", "exit"],
