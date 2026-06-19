@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 #include <unistd.h>
 
 struct __lnp64_file {
@@ -78,6 +79,80 @@ void efshut(FILE *stream, const char *name) {
 void enfshut(int status, FILE *stream, const char *name) {
   if (fshut(stream, name) != 0)
     exit(status);
+}
+
+static void lnp64_fprint_int(FILE *stream, int value) {
+  char buf[16];
+  unsigned int next;
+  int pos = 0;
+  if (value < 0) {
+    fputc('-', stream);
+    next = (unsigned int)(-value);
+  } else {
+    next = (unsigned int)value;
+  }
+  do {
+    buf[pos++] = (char)('0' + (next % 10));
+    next = next / 10;
+  } while (next != 0);
+  while (pos > 0)
+    fputc(buf[--pos], stream);
+}
+
+void xvprintf(const char *fmt, va_list ap) {
+  while (*fmt) {
+    if (*fmt != '%') {
+      fputc(*fmt++, stderr);
+      continue;
+    }
+    fmt++;
+    switch (*fmt) {
+    case 0:
+      return;
+    case '%':
+      fputc('%', stderr);
+      break;
+    case 'c':
+      fputc(va_arg(ap, int), stderr);
+      break;
+    case 'd':
+      lnp64_fprint_int(stderr, va_arg(ap, int));
+      break;
+    case 's': {
+      const char *s = va_arg(ap, const char *);
+      fputs(s ? s : "(null)", stderr);
+      break;
+    }
+    default:
+      fputc('%', stderr);
+      fputc(*fmt, stderr);
+      break;
+    }
+    fmt++;
+  }
+}
+
+void weprintf(const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  xvprintf(fmt, ap);
+  va_end(ap);
+}
+
+void enprintf(int status, const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  xvprintf(fmt, ap);
+  va_end(ap);
+  exit(status);
+}
+
+void eprintf(const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  xvprintf(fmt, ap);
+  va_end(ap);
+  exit(1);
 }
 
 void putword(FILE *stream, const char *word) {

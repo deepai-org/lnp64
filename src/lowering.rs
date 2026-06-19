@@ -1436,6 +1436,8 @@ mod tests {
             "cwalk_package_run_elf",
             "sbase_echo_static_link",
             "sbase_echo_run_elf",
+            "sbase_path_static_link",
+            "sbase_path_run_elf",
         ] {
             assert!(
                 gate_manifest.contains(requirement),
@@ -2310,6 +2312,8 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang sbase libutil object smokes passed"));
         assert!(real_llc.contains("toolchain/liblnp64_sbase_min.c"));
         assert!(libc_sbase_min.contains("void putword(FILE *stream, const char *word)"));
+        assert!(libc_sbase_min.contains("void eprintf(const char *fmt, ...)"));
+        assert!(libc_sbase_min.contains("void weprintf(const char *fmt, ...)"));
         assert!(libc_sbase_min.contains("char *argv0;"));
         assert!(real_llc.contains("liblnp64-sbase-min.o"));
         assert!(
@@ -2319,6 +2323,9 @@ mod tests {
         assert!(real_llc.contains("lnp64-sbase-echo-linked.elf"));
         assert!(real_llc.contains(r#""$build_dir/sbase-echo-clang-smoke.o" \"#));
         assert!(real_llc.contains("real LLVM LNP64 lld sbase echo link smoke passed"));
+        assert!(real_llc.contains("for sbase_path_cmd in basename dirname"));
+        assert!(real_llc.contains("lnp64-sbase-$sbase_path_cmd-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld sbase path command link smoke passed"));
         assert!(real_llc.contains("netcat-clang-smoke.o"));
         assert!(real_llc.contains("-c demos/netcat.c"));
         assert!(real_llc.contains("real LLVM LNP64 clang netcat demo object smoke passed"));
@@ -2649,6 +2656,16 @@ mod tests {
         assert!(real_llc_docker.contains("lnp64-sbase-echo-linked.elf"));
         assert!(real_llc_docker.contains("echo hello clang --expect 'hello clang'"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase echo execution passed"));
+        assert!(real_llc_docker.contains("lnp64-sbase-basename-linked.elf"));
+        assert!(real_llc_docker.contains("basename /usr/local/bin/clang --expect '^clang$'"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf sbase basename execution passed")
+        );
+        assert!(real_llc_docker.contains("lnp64-sbase-dirname-linked.elf"));
+        assert!(
+            real_llc_docker.contains("dirname /usr/local/bin/clang --expect '^/usr/local/bin$'")
+        );
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase dirname execution passed"));
         assert!(real_llc_docker.contains("lnp64-errno-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf errno execution passed"));
         assert!(real_llc_docker.contains("lnp64-intrinsic-push-linked.elf"));
@@ -2763,6 +2780,8 @@ mod tests {
             "real_signal_libc_execution",
             "real_socket_libc_execution",
             "real_sbase_echo_execution",
+            "real_sbase_basename_execution",
+            "real_sbase_dirname_execution",
             "real_errno_execution",
             "real_startup_execution",
             "real_getauxval_execution",
@@ -2808,6 +2827,8 @@ mod tests {
             "real_signal_libc_execution",
             "real_socket_libc_execution",
             "real_sbase_echo_execution",
+            "real_sbase_basename_execution",
+            "real_sbase_dirname_execution",
             "real_intrinsic_push_execution",
             "real_intrinsic_control_execution",
             "real_intrinsic_mmap_execution",

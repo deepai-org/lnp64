@@ -1294,6 +1294,7 @@ sbase_support_impl_dump="$build_dir/liblnp64-sbase-min.dump"
   >"$sbase_support_impl_dump"
 grep -q '<putword>:' "$sbase_support_impl_dump"
 grep -q '<putchar>:' "$sbase_support_impl_dump"
+grep -q '<eprintf>:' "$sbase_support_impl_dump"
 printf 'real LLVM LNP64 clang sbase support implementation object smoke passed: %s\n' \
   "$sbase_support_impl_obj"
 
@@ -4006,6 +4007,19 @@ sbase_echo_elf="$build_dir/lnp64-sbase-echo-linked.elf"
 test -s "$sbase_echo_elf"
 printf 'real LLVM LNP64 lld sbase echo link smoke passed: %s\n' \
   "$sbase_echo_elf"
+
+for sbase_path_cmd in basename dirname; do
+  sbase_path_elf="$build_dir/lnp64-sbase-$sbase_path_cmd-linked.elf"
+  "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+    -o "$sbase_path_elf" "$crt0_obj" \
+    "$build_dir/sbase-$sbase_path_cmd-clang-smoke.o" \
+    "$sbase_support_impl_obj" "$libc_fd_impl_obj" "$libc_string_impl_obj" \
+    "$libc_path_impl_obj" "$libc_process_impl_obj"
+  test -s "$sbase_path_elf"
+done
+printf 'real LLVM LNP64 lld sbase path command link smoke passed: %s %s\n' \
+  "$build_dir/lnp64-sbase-basename-linked.elf" \
+  "$build_dir/lnp64-sbase-dirname-linked.elf"
 
 netcat_elf="$build_dir/lnp64-netcat-clang-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

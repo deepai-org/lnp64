@@ -192,5 +192,11 @@ run_elf_report "real LLVM LNP64 run-elf socket libc execution passed" \
 run_elf_report "real LLVM LNP64 run-elf sbase echo execution passed" \
   target/llvm-lnp64-build/lnp64-sbase-echo-linked.elf \
   echo hello clang --expect 'hello clang'
+run_elf_report "real LLVM LNP64 run-elf sbase basename execution passed" \
+  target/llvm-lnp64-build/lnp64-sbase-basename-linked.elf \
+  basename /usr/local/bin/clang --expect '^clang$'
+run_elf_report "real LLVM LNP64 run-elf sbase dirname execution passed" \
+  target/llvm-lnp64-build/lnp64-sbase-dirname-linked.elf \
+  dirname /usr/local/bin/clang --expect '^/usr/local/bin$'
 run_elf_report "real LLVM LNP64 run-elf indirect call execution passed" \
   target/llvm-lnp64-build/lnp64-indirect-call-linked.elf
