@@ -2146,6 +2146,7 @@ C
 getauxval_obj="$build_dir/getauxval-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$getauxval_c" -o "$getauxval_obj"
 test -s "$getauxval_obj"
 getauxval_dump="$build_dir/getauxval-clang-smoke.dump"
@@ -2991,6 +2992,7 @@ C
 convert_obj="$build_dir/convert-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$convert_c" -o "$convert_obj"
 test -s "$convert_obj"
 convert_dump="$build_dir/convert-clang-smoke.dump"
@@ -3080,6 +3082,7 @@ C
 path_obj="$build_dir/path-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$path_c" -o "$path_obj"
 test -s "$path_obj"
 path_dump="$build_dir/path-clang-smoke.dump"
@@ -3187,6 +3190,7 @@ C
 search_obj="$build_dir/search-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$search_c" -o "$search_obj"
 test -s "$search_obj"
 search_dump="$build_dir/search-clang-smoke.dump"
@@ -3280,6 +3284,7 @@ C
 sort_obj="$build_dir/sort-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$sort_c" -o "$sort_obj"
 test -s "$sort_obj"
 sort_dump="$build_dir/sort-clang-smoke.dump"
@@ -3917,6 +3922,7 @@ C
 mmap_libc_obj="$build_dir/mmap-libc-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$mmap_libc_c" -o "$mmap_libc_obj"
 test -s "$mmap_libc_obj"
 mmap_libc_dump="$build_dir/mmap-libc-clang-smoke.dump"
@@ -3956,52 +3962,10 @@ printf 'real LLVM LNP64 clang futex libc object smoke passed: %s\n' \
 
 poll_libc_c="$build_dir/poll-libc-smoke.c"
 cat >"$poll_libc_c" <<'C'
-typedef unsigned long nfds_t;
-
-typedef struct {
-  unsigned long bits[16];
-} fd_set;
-
-struct timeval {
-  long tv_sec;
-  long tv_usec;
-};
-
-struct timespec {
-  long tv_sec;
-  long tv_nsec;
-};
-
-struct pollfd {
-  int fd;
-  short events;
-  short revents;
-};
-
-struct epoll_event {
-  unsigned int events;
-  unsigned long data;
-};
-
-struct kevent {
-  unsigned long ident;
-  short filter;
-  unsigned short flags;
-  unsigned int fflags;
-  long data;
-  void *udata;
-};
-
-int poll(struct pollfd *fds, nfds_t nfds, int timeout);
-int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
-           struct timeval *timeout);
-int epoll_create1(int flags);
-int epoll_ctl(int epfd, int op, int fd, struct epoll_event *event);
-int epoll_wait(int epfd, struct epoll_event *events, int maxevents,
-               int timeout);
-int kqueue(void);
-int kevent(int kq, const struct kevent *changelist, int nchanges,
-           struct kevent *eventlist, int nevents, const struct timespec *timeout);
+#include <poll.h>
+#include <sys/epoll.h>
+#include <sys/event.h>
+#include <sys/select.h>
 
 int main(void) {
   struct pollfd fds[2];
@@ -4022,7 +3986,7 @@ int main(void) {
   fds[0].events = 0;
   fds[0].revents = 7;
   fds[1].fd = -1;
-  fds[1].events = 1;
+  fds[1].events = POLLIN;
   fds[1].revents = 9;
   if (poll(fds, 2, 0) != 0)
     return 1;
@@ -4037,7 +4001,7 @@ int main(void) {
     return 5;
   ev.events = 0;
   ev.data = 42;
-  if (epoll_ctl(ep, 1, 0, &ev) != 0)
+  if (epoll_ctl(ep, EPOLL_CTL_ADD, 0, &ev) != 0)
     return 6;
   if (epoll_wait(ep, &out, 1, 0) != 0)
     return 7;
@@ -4045,8 +4009,8 @@ int main(void) {
   if (kq < 0)
     return 8;
   change.ident = 0;
-  change.filter = -1;
-  change.flags = 1;
+  change.filter = EVFILT_READ;
+  change.flags = EV_ADD;
   change.fflags = 0;
   change.data = 0;
   change.udata = 0;
@@ -4059,6 +4023,7 @@ C
 poll_libc_obj="$build_dir/poll-libc-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$poll_libc_c" -o "$poll_libc_obj"
 test -s "$poll_libc_obj"
 poll_libc_dump="$build_dir/poll-libc-clang-smoke.dump"
@@ -4099,6 +4064,7 @@ C
 signal_libc_obj="$build_dir/signal-libc-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$signal_libc_c" -o "$signal_libc_obj"
 test -s "$signal_libc_obj"
 signal_libc_dump="$build_dir/signal-libc-clang-smoke.dump"
@@ -4172,6 +4138,7 @@ C
 socket_libc_obj="$build_dir/socket-libc-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$socket_libc_c" -o "$socket_libc_obj"
 test -s "$socket_libc_obj"
 socket_libc_dump="$build_dir/socket-libc-clang-smoke.dump"
