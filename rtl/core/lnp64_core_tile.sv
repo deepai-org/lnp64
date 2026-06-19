@@ -2865,19 +2865,32 @@ module lnp64_core_tile #(
                             LNP64_OP_SET_PCR: begin
                                 unique case (dec.rs1[4:0])
                                     5'd3: begin
-                                        pcr_thread_pointer <= gpr[dec.rd];
+                                        pcr_thread_pointer <= gpr[dec.rs2];
+                                        gpr[dec.rd] <= 64'd0;
                                     end
                                     5'd4: begin
-                                        pcr_uid <= gpr[dec.rd];
+                                        pcr_uid <= gpr[dec.rs2];
+                                        gpr[dec.rd] <= 64'd0;
                                     end
                                     5'd5: begin
-                                        pcr_gid <= gpr[dec.rd];
+                                        pcr_gid <= gpr[dec.rs2];
+                                        gpr[dec.rd] <= 64'd0;
                                     end
                                     5'd6: begin
-                                        pcr_sigmask <= gpr[dec.rd];
+                                        pcr_sigmask <= gpr[dec.rs2];
+                                        gpr[dec.rd] <= 64'd0;
+                                    end
+                                    5'd0, 5'd1, 5'd2, 5'd7, 5'd8, 5'd9: begin
+                                        gpr[dec.rd] <= 64'd0 - {48'd0, LNP64_ERR_EPERM};
+                                        errno_reg <= LNP64_ERR_EPERM;
+                                    end
+                                    5'd10, 5'd11: begin
+                                        gpr[dec.rd] <= 64'd0 - {48'd0, LNP64_ERR_ENOTSUP};
+                                        errno_reg <= LNP64_ERR_ENOTSUP;
                                     end
                                     default: begin
-                                        errno_reg <= LNP64_ERR_EPERM;
+                                        gpr[dec.rd] <= 64'd0 - {48'd0, LNP64_ERR_EINVAL};
+                                        errno_reg <= LNP64_ERR_EINVAL;
                                     end
                                 endcase
                                 pc <= pc + 32'd1;

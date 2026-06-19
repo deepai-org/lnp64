@@ -585,8 +585,9 @@ public:
       return;
     case LNP64::SET_PCR:
       emitLE32((uint32_t(0x55) << 24) |
-                   ((getGPRNo(MI.getOperand(1)) & 0x1f) << 19) |
-                   ((getPCRNo(MI.getOperand(0)) & 0x1f) << 14),
+                   ((getGPRNo(MI.getOperand(0)) & 0x1f) << 19) |
+                   ((getPCRNo(MI.getOperand(1)) & 0x1f) << 14) |
+                   ((getGPRNo(MI.getOperand(2)) & 0x1f) << 9),
                OS);
       return;
     case LNP64::EXIT:

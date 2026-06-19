@@ -282,6 +282,11 @@ NetBSD policy. Those remain loader, libc, and personality responsibilities.
      `__lnp_cap_dup`, `__lnp_cap_send`, `__lnp_cap_recv`, and
      `__lnp_cap_revoke`.
    - Application C should normally call libc/POSIX APIs, not raw primitives.
+   - PCR lowering must use the stable selector names from the psABI. `GET_PCR`
+     defines its result register. `SET_PCR` is result-bearing
+     (`SET_PCR result, selector, source`) and must round-trip through MC/objdump
+     with read-only-selector failures represented as ordinary negative native
+     errors, not as hidden traps or backend-only side effects.
 
 5. Implement relocations and lld integration.
    - Absolute, PC-relative branch/call, GOT-like static PIE, TLS, and data
@@ -409,6 +414,10 @@ The concrete first-program set is pinned in
 - `netbsd_mmap_child`: a non-fork NetBSD personality child replacement that
   exercises anonymous `mmap`, `mprotect`, `munmap`, and VMA `errno` reporting
   through the Clang libc shims.
+- `netbsd_fd_passing_child`: a non-fork NetBSD personality child replacement
+  that exercises queue-backed capability transfer, duplicate/revoke lineage,
+  stale received-capability detection, and fd output through real Clang/lld
+  output.
 - `netbsd_socket_loopback_child`: a non-fork NetBSD personality child
   replacement that exercises endpoint-backed socket options, bind/listen,
   connect/accept, poll readiness, send/recv, and socket `errno` reporting

@@ -28,7 +28,7 @@ required_native=(
   AWAIT_DYN
   SIGACTION
   GET_PCR
-  "SET_PCR SIGMASK"
+  "SET_PCR r"
   KILL
   ALARM
   SLEEP

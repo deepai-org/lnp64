@@ -780,8 +780,9 @@ public:
       return MCDisassembler::Success;
     case 0x55:
       Instr.setOpcode(LNP64::SET_PCR);
-      addPcr(Instr, B);
       addReg(Instr, A);
+      addPcr(Instr, B);
+      addReg(Instr, C);
       return MCDisassembler::Success;
     case 0x30:
       Instr.setOpcode(LNP64::LD);

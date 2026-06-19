@@ -1234,7 +1234,6 @@ fn committed_exec_result_reg(raw_word: u32) -> Option<usize> {
         | 0x39
         | 0x3a
         | 0x49
-        | 0x55
         | 0x61
         | 0x63..=0x65
         | 0x68
@@ -1879,7 +1878,7 @@ impl Machine {
             0x52 => Instr::CapRecv(a, b),
             0x53 => Instr::CapRevoke(a, b),
             0x54 => Instr::GetPcr(a, pcr_operand((word >> 14) & 0x1f)?),
-            0x55 => Instr::SetPcr(pcr_operand((word >> 14) & 0x1f)?, a),
+            0x55 => Instr::SetPcr(a, pcr_operand((word >> 14) & 0x1f)?, c),
             0x56 => Instr::EnvGet(a, b, c, d),
             0x57 => Instr::WriteFd(FdReg(a.0), b, c),
             0x58 => Instr::OpenAtDyn(a, b, c, d),
@@ -3384,7 +3383,13 @@ impl Machine {
                 let value = self.read_pcr(pcr)?;
                 self.write_reg(dst, value)?;
             }
-            Instr::SetPcr(pcr, src) => self.write_pcr(pcr, self.read_reg(src)?)?,
+            Instr::SetPcr(result, pcr, src) => {
+                Self::ensure_result_reg_writable(result)?;
+                match self.write_pcr(pcr, self.read_reg(src)?) {
+                    Ok(()) => self.write_reg(result, 0)?,
+                    Err(errno) => self.complete_reg_negative_errno(result, errno)?,
+                }
+            }
             Instr::EnvGet(result, key, index_or_buf, len_or_flags) => {
                 self.env_get(result, key, index_or_buf, len_or_flags)?;
             }
@@ -9040,22 +9045,20 @@ impl Machine {
         })
     }
 
-    fn write_pcr(&mut self, pcr: Pcr, value: u64) -> Result<(), String> {
-        let process = self.process_mut()?;
+    fn write_pcr(&mut self, pcr: Pcr, value: u64) -> Result<(), u64> {
+        let process = self.process_mut().map_err(|_| 22_u64)?;
         match pcr {
             Pcr::Pid
             | Pcr::Ppid
             | Pcr::Tid
             | Pcr::Sigpending
             | Pcr::RealtimeSec
-            | Pcr::RealtimeNsec => Err("selected PCR is read-only".to_string()),
+            | Pcr::RealtimeNsec => Err(1),
             Pcr::Tp => {
-                self.thread_mut()?.thread_pointer = value;
+                self.thread_mut().map_err(|_| 22_u64)?.thread_pointer = value;
                 Ok(())
             }
-            Pcr::Uid if process.uid != 0 => {
-                Err("SET_PCR UID denied: current UID is not 0".to_string())
-            }
+            Pcr::Uid if process.uid != 0 => Err(1),
             Pcr::Uid => {
                 process.uid = value;
                 Ok(())

@@ -5,6 +5,42 @@ ordinary computation as a conventional load/store CPU, while making files,
 memory, synchronization, service calls, devices, scheduling, and isolation
 hardware-visible capability objects.
 
+A formally verifiable, realtime-capable, capability-secure,
+hardware-scheduled, hardware-allocated, service-oriented processor for
+cloud-grade Unix-like systems.
+
+Project keywords: capability-oriented, hardware-enforced, formally verifiable,
+realtime-capable, scheduler-native, allocator-native, capability-secure,
+domain-oriented, tenant-isolating, virtualization-native, container-native,
+POSIX-projectable, attestable, observable, fault-contained, event-driven,
+waitable-native, multicore-coherent, compiler-friendly, LLVM-targetable,
+paravirtualization-friendly, servicelet-extensible, interrupt-abstracted,
+bounded-latency.
+
+Severe proof goals:
+
+- **No forged authority:** capabilities, FDRs, returned capabilities, services,
+  loaders, traces, and personalities cannot create, broaden, revive, or transfer
+  authority outside the Capability Engine rules.
+- **Domain confinement:** tenants, containers, VMs, services, drivers, and
+  supervisors cannot observe or affect memory, devices, events, telemetry, or
+  scheduler state outside delegated Resource Domain authority.
+- **Memory and DMA authority:** loads, stores, VMAs, TLBs, caches, heap objects,
+  device BARs, and DMA descriptors cannot access memory outside capability,
+  VMA, IOMMU, and domain scope.
+- **Scheduler and wait correctness:** every live thread has one scheduler state,
+  waits cannot be lost, wakeups are generation-checked, and admitted work gets
+  bounded service under the published realtime contract.
+- **Bounded hardware behavior:** each instruction, engine command, servicelet,
+  classifier action, queue operation, and fabric arbitration step either
+  completes, parks on a valid waitable, submits bounded work, or fails closed.
+- **Fault containment and recovery:** malformed input, revocation races, ECC
+  faults, watchdog events, service crashes, and local resets cannot publish
+  partial authority or wedge the machine outside the bounded fault model.
+- **Evidence honesty:** attestation, audit, debug, trace, observability counters,
+  proof manifests, and compatibility personalities are data paths only; they
+  cannot become hidden authority or bypass enforcement.
+
 This repository contains the architecture documents, Rust emulator, assembler,
 deprecated Rust bootstrap C compiler, libc/personality experiments, early LLVM
 target work, and SystemVerilog/formal co-design work. It is an architecture

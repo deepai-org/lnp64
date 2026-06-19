@@ -15,10 +15,15 @@ To support hardware-native resource primitives, the standard register file is ex
     *   `PID`: Current Process ID, from process context.
     *   `PPID`: Parent Process ID, from process context, or `0` for root.
     *   `TID`: Current Thread ID, from thread context.
+    *   `TP` / `TLS_BASE`: Thread pointer used by the psABI and local-exec TLS.
     *   `CRED_PROFILE`: Read-only credential profile id for the active personality or service profile.
     *   `CRED_HANDLE`: Read-only opaque credential object/token plus generation for profile-specific checks.
-    *   `POSIX_UID` / `POSIX_GID`: Optional compatibility aliases backed by the active POSIX credential profile. They are not native authority roots.
+    *   `UID` / `GID`: Compatibility PCR names backed by the active POSIX
+        credential profile when present. `POSIX_UID` / `POSIX_GID` are accepted
+        source aliases for the same selectors. They are not native authority
+        roots.
     *   `SIGMASK`: Thread-local 64-bit bitmask of currently blocked signals.
+    *   `SIGPENDING`: Read-only thread/process pending-delivery summary.
     *   `REALTIME_SEC` / `REALTIME_NSEC`: Read-only realtime clock snapshot
         fields used by libc/runtime clock surfaces. Timer waitability remains
         FDR-backed through timer profiles.
@@ -267,6 +272,22 @@ lowered to the native operation or removed before ISA freeze.
 The ISA does not add a general syscall instruction. Linux/POSIX syscall-number
 compatibility, where needed, is a runtime/personality ABI over native calls,
 control FDRs, gate calls, unsupported-opcode upcalls, and ordinary functions.
+
+Compiler-visible system operations use one operand/result discipline:
+
+| Operation family | Canonical source form | Success result | Failure result |
+| --- | --- | --- | --- |
+| `OBJECT_CTL`, `DOMAIN_CTL` | `op r_result, r_argblock` | zero, id, count, state, or snapshot size | negative architectural error |
+| `CAP_DUP`, `CAP_SEND`, `CAP_RECV`, `CAP_REVOKE` | `op r_result, r_argblock` | token, count, operation id, or zero | negative architectural error |
+| `GET_PCR` | `GET_PCR r_result, pcr_name` | PCR value | negative architectural error for malformed/unsupported selector |
+| `SET_PCR` | `SET_PCR r_result, pcr_name, r_src` | zero | negative architectural error |
+| `WAITABLE_PROBE`, `AWAIT_EX` | `op r_result, r_waitable, r_argblock` | ready mask/count/result bits or zero | negative architectural error |
+| `GATE_CALL`, `GATE_RETURN` | fixed register form | value, operation id, token, or zero | negative architectural error |
+
+All of these operations prevalidate the encoded result register before authority,
+domain, VMA, or object mutation. A locked/unwritable result register fails before
+side effects. Compatibility aliases may default the result to `r1` in source
+assembly, but the binary form must still encode a result destination.
 
 Mandatory object profiles have frozen state-machine shapes:
 
@@ -680,13 +701,40 @@ Because "everything is a capability object" is the native hardware reality, we n
     *   *Action:* Move data between general purpose registers.
 *   **`DUP r_result, r_dst_or_flags, r_src`**
     *   *Action:* Duplicates or moves an FDR capability, including `dup`, `dup2`, and narrowed-rights forms where permitted by the source capability.
-*   **`GET_PCR r_dest, pcr_name`**
+*   **`GET_PCR r_result, pcr_name`**
     *   *Action:* Reads a Process Control Register (like `PID`, `CRED_PROFILE`,
         `POSIX_UID`, or `REALTIME_SEC`) into a general-purpose register for
         user-space logic.
         (e.g., `GET_PCR r1, PID`).
-*   **`SET_PCR pcr_name, r_src`**
-    *   *Action:* Writes to a permitted Process Control Register. Credential-profile changes are checked against the current credential object, FDR capabilities, and Resource Domain policy; POSIX UID/GID mutation is a compatibility profile operation, not a native privilege root. Denied changes return a negative permission error; compatibility wrappers may translate that to thread-local `ERRNO`.
+*   **`SET_PCR r_result, pcr_name, r_src`**
+    *   *Action:* Writes to a permitted Process Control Register and reports
+        status in `r_result`. Success returns `0`; failure returns a negative
+        architectural error and performs no PCR update. Writable v1 selectors
+        are `TP`/`TLS_BASE`, `SIGMASK`, and credential-profile `UID`/`GID` only
+        when the active credential profile and Resource Domain policy authorize
+        the mutation. `PID`, `PPID`, `TID`, `CRED_PROFILE`, `CRED_HANDLE`,
+        `SIGPENDING`, `REALTIME_SEC`, and `REALTIME_NSEC` are read-only:
+        `SET_PCR` on them must fail uniformly with `-EPERM`, not trap, not
+        silently ignore, and not partially mutate state. Reserved or malformed
+        PCR selector encodings fail with `-EINVAL`; unsupported optional
+        selectors fail with `-ENOTSUP`.
+
+Stable v1 PCR selector ids:
+
+| Id | Canonical name | Source aliases | Write class |
+| --- | --- | --- | --- |
+| 0 | `PID` | none | read-only |
+| 1 | `PPID` | none | read-only |
+| 2 | `TID` | none | read-only |
+| 3 | `TP` | `TLS_BASE` | writable thread-local |
+| 4 | `UID` | `POSIX_UID` | credential-profile controlled |
+| 5 | `GID` | `POSIX_GID` | credential-profile controlled |
+| 6 | `SIGMASK` | none | writable thread-local |
+| 7 | `SIGPENDING` | none | read-only |
+| 8 | `REALTIME_SEC` | none | read-only |
+| 9 | `REALTIME_NSEC` | none | read-only |
+| 10 | `CRED_PROFILE` | none | read-only, optional until credential profiles are implemented |
+| 11 | `CRED_HANDLE` | none | read-only, optional until credential profiles are implemented |
 *   **`ENV_GET r_dest, r_key, r_index_or_buf, r_len_or_flags`**
     *   *Action:* Reads read-only process and machine metadata for libc/runtime startup: ISA version, implementation profile, page size, cache-line size, DMA alignment, hardware feature bits, supported opcode groups, object profiles, domain/security features, architectural limits, bounded topology records, startup metadata pointer, personality flags, and timebase frequency. POSIX `argc`, `argv`, `envp`, and auxv layout are libc/personality ABI data behind that pointer, not hardware-interpreted state. This is not a replacement for immediates; constants still use normal instruction encodings or literal loads.
 *   **`RANDOM r_dest, r_len_or_flags`**

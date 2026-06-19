@@ -717,7 +717,10 @@ fields use the low bits of the 8-bit slots:
 - FPR: 5 bits, values `0..31`.
 - VR: 4 bits, values `0..15`.
 - FDR: 8 bits, values `0..255`.
-- PCR: 4 bits.
+- PCR selector: 5 bits. The stable v1 source names are `PID`, `PPID`, `TID`,
+  `TP`/`TLS_BASE`, `UID`/`POSIX_UID`, `GID`/`POSIX_GID`, `SIGMASK`,
+  `SIGPENDING`, `REALTIME_SEC`, `REALTIME_NSEC`, `CRED_PROFILE`, and
+  `CRED_HANDLE`.
 - condition: 3 bits.
 - width: 2 bits, `0=byte`, `1=half16`, `2=word32`, `3=double64`.
 
@@ -871,6 +874,22 @@ Architectural result convention:
   destination.
 - Documentation must not rely on an implicit `r1` result except as that assembly
   shorthand.
+
+Compiler-visible system-operation operand discipline:
+
+| Family | Source form | Field discipline |
+| --- | --- | --- |
+| `OBJECT_CTL`, `DOMAIN_CTL` | `op r_result, r_argblock` | `a=result`, `b=argblock` |
+| `CAP_DUP`, `CAP_SEND`, `CAP_RECV`, `CAP_REVOKE` | `op r_result, r_argblock` | `a=result`, `b=argblock` |
+| `GET_PCR` | `GET_PCR r_result, pcr_selector` | `a=result`, `b=selector` |
+| `SET_PCR` | `SET_PCR r_result, pcr_selector, r_src` | `a=result`, `b=selector`, `c=source` |
+| `WAITABLE_PROBE`, `AWAIT_EX` | `op r_result, r_waitable, r_argblock` | `a=result`, `b=waitable`, `c=argblock` |
+| `GATE_CALL` | `GATE_CALL r_result, r_gate_fd, r_arg0, r_arg1` | `a=result`, `b=gate`, `c=arg0`, `d=arg1` |
+| `GATE_RETURN` | `GATE_RETURN r_result, r_value0, r_value1` | `a=result`, `b=value0`, `c=value1` |
+
+The result register is prevalidated before any owner-engine commit. If the result
+destination is invalid or locked by the current context, the instruction fails
+before authority, VMA, PCR, domain, or object state changes.
 
 ### 6.2 Opcode Map
 
@@ -2049,8 +2068,9 @@ lineage owner. This makes stale descriptor reuse, post-revocation use, and
 destroy/recreate aliasing fail as `EBADF`, `EREVOKED`, or the object-specific
 stale-reference error instead of silently targeting a new object.
 
-Invalid descriptors write `-1` to the encoded result register where applicable
-and set the issuing thread's `ERRNO=EBADF`.
+Invalid descriptors write a negative architectural error to the encoded result
+register where applicable. POSIX `-1` plus `errno` is a compatibility wrapper
+translation, not FDR-engine behavior.
 
 The FDR/Capability Engine earns hard silicon only if descriptor validation is a
 local fast path:
@@ -4160,22 +4180,53 @@ and thread-local state:
 - PID: read-only, from process context.
 - PPID: read-only, from process context, or `0` for root.
 - TID: read-only, from thread context.
+- TP / TLS_BASE: writable thread pointer, from thread context.
 - CRED_PROFILE: read-only active credential profile id.
 - CRED_HANDLE: read-only opaque credential object/token plus generation.
-- POSIX_UID: optional compatibility alias exposed only when the active
+- UID / POSIX_UID: optional compatibility alias exposed only when the active
   credential profile provides POSIX identity fields.
-- POSIX_GID: optional compatibility alias exposed only when the active
+- GID / POSIX_GID: optional compatibility alias exposed only when the active
   credential profile provides POSIX identity fields.
-- SIGMASK: from thread context.
+- SIGMASK: writable thread-local delivery mask.
+- SIGPENDING: read-only pending-delivery summary.
 - REALTIME_SEC / REALTIME_NSEC: read-only scalar realtime clock snapshot fields
   for libc/runtime clock reads. Timer expiry and waitability remain represented
   by timer profiles and event/waitable FDRs.
 
-`GET_PCR` reads from context into a GPR. `SET_PCR` is permission checked in
-hardware. Credential-profile changes are authorized by the current credential
-object, explicit FDR capabilities, and Resource Domain policy. POSIX UID/GID
-mutation is a compatibility profile operation, not a native privilege root.
-`SIGMASK` updates are thread-local. Realtime clock PCRs are read-only.
+`GET_PCR r_result, selector` reads from context into a GPR. `SET_PCR r_result,
+selector, r_src` is a status-returning control operation. Success writes `0` to
+`r_result`; failure writes a negative architectural error and performs no PCR
+update.
+
+`SET_PCR` on read-only selectors (`PID`, `PPID`, `TID`, `CRED_PROFILE`,
+`CRED_HANDLE`, `SIGPENDING`, `REALTIME_SEC`, `REALTIME_NSEC`) must fail
+uniformly with `-EPERM`. It must not trap, silently ignore, mutate a shadow copy,
+or update compatibility `ERRNO` except when a wrapper requests errno
+translation. Reserved selector encodings fail with `-EINVAL`; unsupported
+optional selector profiles fail with `-ENOTSUP`.
+
+Writable selectors are deliberately small: `TP`/`TLS_BASE`, `SIGMASK`, and
+credential-profile `UID`/`GID` when authorized. Credential-profile changes are
+authorized by the current credential object, explicit FDR capabilities, and
+Resource Domain policy. POSIX UID/GID mutation is a compatibility profile
+operation, not a native privilege root.
+
+Stable v1 selector map:
+
+| Id | Canonical name | Aliases | Write behavior |
+| --- | --- | --- | --- |
+| 0 | `PID` | none | read-only |
+| 1 | `PPID` | none | read-only |
+| 2 | `TID` | none | read-only |
+| 3 | `TP` | `TLS_BASE` | writable thread-local |
+| 4 | `UID` | `POSIX_UID` | credential-profile controlled |
+| 5 | `GID` | `POSIX_GID` | credential-profile controlled |
+| 6 | `SIGMASK` | none | writable thread-local |
+| 7 | `SIGPENDING` | none | read-only |
+| 8 | `REALTIME_SEC` | none | read-only |
+| 9 | `REALTIME_NSEC` | none | read-only |
+| 10 | `CRED_PROFILE` | none | read-only, optional until credential profiles are implemented |
+| 11 | `CRED_HANDLE` | none | read-only, optional until credential profiles are implemented |
 
 Namespace/object permission checks consume a credential snapshot at command
 issue time only when the target profile asks for one. Native authority is still
@@ -4898,12 +4949,14 @@ that emits a UART diagnostic and blinks a board LED pattern.
 
 ## 24. Error Reporting
 
-Fallible POSIX-like instructions follow the emulator convention:
+Fallible native instructions follow the architectural result convention:
 
 - success writes zero or a nonnegative byte/count/value to the instruction's
   encoded result register.
-- failure writes all-ones `-1` to the encoded result register where applicable.
-- issuing thread's `ERRNO` is updated on failure.
+- failure writes the negative architectural error code to the encoded result
+  register where applicable.
+- thread-local `ERRNO` is updated only when the issuing command requests
+  compatibility translation.
 - source assembly may default some legacy static forms to `r1`, but the binary
   encoding always names the result register.
 

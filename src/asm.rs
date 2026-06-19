@@ -673,10 +673,11 @@ impl Parser {
                 )
             }
             "SET_PCR" => {
-                arity(2)?;
+                arity(3)?;
                 Instr::SetPcr(
-                    parse_pcr(&args[0]).map_err(|err| self.err(err))?,
-                    reg(&args[1])?,
+                    reg(&args[0])?,
+                    parse_pcr(&args[1]).map_err(|err| self.err(err))?,
+                    reg(&args[2])?,
                 )
             }
             "FORK" => {

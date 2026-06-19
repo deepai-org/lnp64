@@ -191,8 +191,11 @@ private:
             .Case("PPID", LNP64::PPID)
             .Case("TID", LNP64::TID)
             .Case("TP", LNP64::TP)
+            .Case("TLS_BASE", LNP64::TP)
             .Case("UID", LNP64::UID)
+            .Case("POSIX_UID", LNP64::UID)
             .Case("GID", LNP64::GID)
+            .Case("POSIX_GID", LNP64::GID)
             .Case("SIGMASK", LNP64::SIGMASK)
             .Case("SIGPENDING", LNP64::SIGPENDING)
             .Case("REALTIME_SEC", LNP64::REALTIME_SEC)
@@ -281,6 +284,28 @@ private:
     if (I >= Operands.size())
       return nullptr;
     return static_cast<LNP64Operand *>(Operands[I].get());
+  }
+
+  static bool isPcrReg(unsigned Reg) {
+    switch (Reg) {
+    case LNP64::PID:
+    case LNP64::PPID:
+    case LNP64::TID:
+    case LNP64::TP:
+    case LNP64::UID:
+    case LNP64::GID:
+    case LNP64::SIGMASK:
+    case LNP64::SIGPENDING:
+    case LNP64::REALTIME_SEC:
+    case LNP64::REALTIME_NSEC:
+      return true;
+    default:
+      return false;
+    }
+  }
+
+  static bool isGprReg(unsigned Reg) {
+    return Reg >= LNP64::R0 && Reg <= LNP64::R31;
   }
 
   static bool buildInstruction(StringRef Mnemonic, const OperandVector &Operands,
@@ -481,9 +506,11 @@ private:
         Opcode == LNP64::FUTEX_WAIT || Opcode == LNP64::FUTEX_WAKE ||
         Opcode == LNP64::MUNMAP || Opcode == LNP64::SIGACTION ||
         Opcode == LNP64::LNP64_KILL || Opcode == LNP64::ALARM ||
-        Opcode == LNP64::GET_PCR || Opcode == LNP64::SET_PCR ||
+        Opcode == LNP64::GET_PCR ||
         Opcode == LNP64::STAT_FD_DYN || Opcode == LNP64::UTIME_FD_DYN)
       return addRegReg(Inst, Operands);
+    if (Opcode == LNP64::SET_PCR)
+      return addRegPcrReg(Inst, Operands);
     if (Opcode == LNP64::JMP || Opcode == LNP64::BEQ ||
         Opcode == LNP64::BNE || Opcode == LNP64::BLT ||
         Opcode == LNP64::BGT || Opcode == LNP64::BLE ||
@@ -609,6 +636,20 @@ private:
     Inst.addOperand(MCOperand::createReg(A->getReg()));
     Inst.addOperand(MCOperand::createReg(B->getReg()));
     Inst.addOperand(MCOperand::createReg(C->getReg()));
+    return true;
+  }
+
+  static bool addRegPcrReg(MCInst &Inst, const OperandVector &Operands) {
+    const LNP64Operand *Dst = getOp(Operands, 1);
+    const LNP64Operand *Pcr = getOp(Operands, 2);
+    const LNP64Operand *Src = getOp(Operands, 3);
+    if (Operands.size() != 4 || !Dst || !Pcr || !Src || !Dst->isReg() ||
+        !Pcr->isReg() || !Src->isReg() || !isGprReg(Dst->getReg()) ||
+        !isPcrReg(Pcr->getReg()) || !isGprReg(Src->getReg()))
+      return false;
+    Inst.addOperand(MCOperand::createReg(Dst->getReg()));
+    Inst.addOperand(MCOperand::createReg(Pcr->getReg()));
+    Inst.addOperand(MCOperand::createReg(Src->getReg()));
     return true;
   }
 

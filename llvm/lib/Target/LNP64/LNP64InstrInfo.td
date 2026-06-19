@@ -225,7 +225,8 @@ class LNP64PcrGet<string Mnemonic>
     : LNP64Inst<(outs GPR:$rd), (ins PCR:$pcr), Mnemonic, "\t$rd, $pcr">;
 
 class LNP64PcrSet<string Mnemonic>
-    : LNP64Inst<(outs), (ins PCR:$pcr, GPR:$rs), Mnemonic, "\t$pcr, $rs">;
+    : LNP64Inst<(outs GPR:$rd), (ins PCR:$pcr, GPR:$rs), Mnemonic,
+                "\t$rd, $pcr, $rs">;
 
 class LNP64Signal2<string Mnemonic>
     : LNP64Inst<(outs), (ins GPR:$rs1, GPR:$rs2), Mnemonic,

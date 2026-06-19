@@ -503,7 +503,6 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::MUNMAP:
   case LNP64::ALARM:
   case LNP64::GET_PCR:
-  case LNP64::SET_PCR:
   case LNP64::OBJECT_CTL:
   case LNP64::DOMAIN_CTL:
   case LNP64::CAP_SEND:
@@ -526,6 +525,14 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
     printOperand(MI->getOperand(0), OS);
     OS << ", ";
     printOperand(MI->getOperand(1), OS);
+    break;
+  case LNP64::SET_PCR:
+    OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
+    printOperand(MI->getOperand(0), OS);
+    OS << ", ";
+    printOperand(MI->getOperand(1), OS);
+    OS << ", ";
+    printOperand(MI->getOperand(2), OS);
     break;
   case LNP64::ALLOC_EX:
   case LNP64::FCNTL_FD_DYN:

@@ -176,6 +176,14 @@ Local-exec TLS is the required first TLS model:
 General-dynamic and initial-exec TLS are future loader/personality models, not
 v0 compiler requirements.
 
+`GET_PCR` and `SET_PCR` are compiler-visible control operations, not ambient
+runtime calls. `GET_PCR r_result, selector` returns the selected value.
+`SET_PCR r_result, selector, r_src` returns `0` on success or a negative
+architectural error on failure. Writes to read-only selectors fail with `-EPERM`
+without trapping or mutating state. The first LLVM backend must model `SET_PCR`
+as defining the encoded result register and clobbering only the selected PCR
+when the operation succeeds.
+
 `errno` is hardware-thread-local through `ERRNO_GET` and `ERRNO_SET`, but it is
 a C/POSIX compatibility view rather than the native ISA error channel. Native
 operations return negative architectural errors in their encoded result register.

@@ -647,7 +647,9 @@ fn encode_flat_exec_instr(
         Instr::ErrnoGet(rd) => Ok(vec![enc_reg(0x38, *rd)]),
         Instr::ErrnoSet(src) => Ok(vec![enc_reg(0x39, *src)]),
         Instr::GetPcr(dst, pcr) => Ok(vec![enc_rrr(0x54, *dst, Reg(pcr_selector(*pcr)?), Reg(0))]),
-        Instr::SetPcr(pcr, src) => Ok(vec![enc_rrr(0x55, *src, Reg(pcr_selector(*pcr)?), Reg(0))]),
+        Instr::SetPcr(result, pcr, src) => {
+            Ok(vec![enc_rrr(0x55, *result, Reg(pcr_selector(*pcr)?), *src)])
+        }
         Instr::DmaCtl(result, argblock) => Ok(vec![enc_rrr(0x5b, *result, *argblock, Reg(0))]),
         Instr::EnvGet(rd, key, index_or_buf, len_or_flags) => Ok(vec![enc_rrrr(
             0x56,
@@ -717,9 +719,8 @@ fn pcr_selector(pcr: Pcr) -> Result<usize, String> {
         Pcr::Gid => Ok(5),
         Pcr::Sigmask => Ok(6),
         Pcr::Sigpending => Ok(7),
-        Pcr::RealtimeSec | Pcr::RealtimeNsec => {
-            Err("asm-flat-exec does not encode realtime GET_PCR selectors".to_string())
-        }
+        Pcr::RealtimeSec => Ok(8),
+        Pcr::RealtimeNsec => Ok(9),
     }
 }
 
@@ -1486,7 +1487,7 @@ mod tests {
               GET_PCR r2, TID
               GET_PCR r3, TLS_BASE
               LI r4, 4096
-              SET_PCR TP, r4
+              SET_PCR r6, TP, r4
               GET_PCR r5, TP
               EXIT r0
         "#;
@@ -1500,7 +1501,7 @@ mod tests {
                 "54108000\n",
                 "5418c000\n",
                 "01201000\n",
-                "5520c000\n",
+                "5530c800\n",
                 "5428c000\n",
                 "3a000000\n",
             )

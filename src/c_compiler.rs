@@ -9988,8 +9988,9 @@ impl CodeGen {
                     "set_sigmask" => "SIGMASK",
                     _ => unreachable!(),
                 };
-                self.text.push(format!("  SET_PCR {pcr}, r{value}"));
-                Ok(0)
+                let dst = self.alloc_reg()?;
+                self.text.push(format!("  SET_PCR r{dst}, {pcr}, r{value}"));
+                Ok(dst)
             }
             "fork" => {
                 if !args.is_empty() {
@@ -10375,8 +10376,7 @@ impl CodeGen {
             "__lnp_set_thread_pointer" => {
                 let tp = self.one_arg(name, args)?;
                 let dst = self.alloc_reg()?;
-                self.text.push(format!("  SET_PCR TP, r{tp}"));
-                self.text.push(format!("  LI r{dst}, 0"));
+                self.text.push(format!("  SET_PCR r{dst}, TP, r{tp}"));
                 Ok(dst)
             }
             "pthread_join" => {
@@ -13491,7 +13491,7 @@ impl CodeGen {
         self.text.push(format!("  BNE {done}"));
         self.text.push(format!("  LI r{size}, 2048"));
         self.text.push(format!("  ALLOC r{tp}, r{size}"));
-        self.text.push(format!("  SET_PCR TP, r{tp}"));
+        self.text.push(format!("  SET_PCR r{size}, TP, r{tp}"));
         self.text.push(format!("{done}:"));
         Ok(tp)
     }
@@ -14241,7 +14241,9 @@ impl CodeGen {
         self.text.push(format!("{do_setmask}:"));
         self.text.push(format!("  MOV r{updated}, r{incoming}"));
         self.text.push(format!("{apply}:"));
-        self.text.push(format!("  SET_PCR SIGMASK, r{updated}"));
+        self.text
+            .push(format!("  SET_PCR r{dst}, SIGMASK, r{updated}"));
+        self.text.push(format!("  JMP {done}"));
         self.text.push(format!("{skip_set}:"));
         self.text.push(format!("  LI r{dst}, 0"));
         self.text.push(format!("{done}:"));
@@ -21811,7 +21813,8 @@ int main() {
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains("GET_PCR"), "{asm}");
-        assert!(asm.contains("SET_PCR SIGMASK"), "{asm}");
+        assert!(asm.contains("SET_PCR r"), "{asm}");
+        assert!(asm.contains("SIGMASK"), "{asm}");
         assert!(asm.contains("KILL"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
@@ -22276,7 +22279,7 @@ int main() {
         let asm = compile(source).unwrap();
         for expected in [
             "GET_PCR",
-            "SET_PCR SIGMASK",
+            "SET_PCR r",
             "SIGPENDING",
             "ALLOC_EX",
             "ALLOC_SIZE",
@@ -22981,7 +22984,8 @@ int main() {
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains("GET_PCR"), "{asm}");
-        assert!(asm.contains("SET_PCR TP"), "{asm}");
+        assert!(asm.contains("SET_PCR r"), "{asm}");
+        assert!(asm.contains("TP"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);

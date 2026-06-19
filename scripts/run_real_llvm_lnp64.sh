@@ -265,7 +265,7 @@ ASM
   .globl _start
 _start:
   get_pcr r1, PID
-  set_pcr SIGMASK, r2
+  set_pcr r3, SIGMASK, r2
   ret
 ASM
   get_pcr_mc_obj="$build_dir/get-pcr-mc-smoke.o"
@@ -276,7 +276,7 @@ ASM
   "$llvm_objdump" -d --triple=lnp64-unknown-none "$get_pcr_mc_obj" \
     >"$get_pcr_mc_dump"
   grep -q 'get_pcr r1, PID' "$get_pcr_mc_dump"
-  grep -q 'set_pcr SIGMASK, r2' "$get_pcr_mc_dump"
+  grep -q 'set_pcr r3, SIGMASK, r2' "$get_pcr_mc_dump"
   printf 'real LLVM LNP64 llvm-mc GET_PCR opcode smoke passed: %s\n' \
     "$get_pcr_mc_obj"
 
@@ -3590,6 +3590,24 @@ grep -q 'call ' "$netbsd_mmap_test_dump"
 printf 'real LLVM LNP64 clang NetBSD mmap child object passed: %s\n' \
   "$netbsd_mmap_test_obj"
 
+netbsd_fd_passing_test_obj="$build_dir/netbsd-fd-passing-test-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
+  -c userland/fd_passing_test_clang.c -o "$netbsd_fd_passing_test_obj"
+test -s "$netbsd_fd_passing_test_obj"
+netbsd_fd_passing_test_dump="$build_dir/netbsd-fd-passing-test-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$netbsd_fd_passing_test_obj" \
+  >"$netbsd_fd_passing_test_dump"
+grep -q 'object_ctl r' "$netbsd_fd_passing_test_dump"
+grep -q 'cap_dup r' "$netbsd_fd_passing_test_dump"
+grep -q 'cap_send r' "$netbsd_fd_passing_test_dump"
+grep -q 'cap_recv r' "$netbsd_fd_passing_test_dump"
+grep -q 'cap_revoke r' "$netbsd_fd_passing_test_dump"
+grep -q 'errno_get r' "$netbsd_fd_passing_test_dump"
+printf 'real LLVM LNP64 clang NetBSD fd passing child object passed: %s\n' \
+  "$netbsd_fd_passing_test_obj"
+
 netbsd_socket_loopback_test_obj="$build_dir/netbsd-socket-loopback-test-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
@@ -4261,7 +4279,7 @@ cat >"$get_pcr_asm" <<'ASM'
   .globl _start
 _start:
   get_pcr r1, PID
-  set_pcr SIGMASK, r2
+  set_pcr r3, SIGMASK, r2
   ret
 ASM
 get_pcr_mc_obj="$build_dir/get-pcr-mc-smoke.o"
@@ -4272,7 +4290,7 @@ get_pcr_mc_dump="$build_dir/get-pcr-mc-smoke.dump"
 "$llvm_objdump" -d --triple=lnp64-unknown-none "$get_pcr_mc_obj" \
   >"$get_pcr_mc_dump"
 grep -q 'get_pcr r1, PID' "$get_pcr_mc_dump"
-grep -q 'set_pcr SIGMASK, r2' "$get_pcr_mc_dump"
+grep -q 'set_pcr r3, SIGMASK, r2' "$get_pcr_mc_dump"
 printf 'real LLVM LNP64 llvm-mc GET_PCR opcode smoke passed: %s\n' \
   "$get_pcr_mc_obj"
 
@@ -5167,6 +5185,14 @@ netbsd_mmap_test_elf="$build_dir/lnp64-netbsd-mmap-test-linked.elf"
 test -s "$netbsd_mmap_test_elf"
 printf 'real LLVM LNP64 lld NetBSD mmap child link passed: %s\n' \
   "$netbsd_mmap_test_elf"
+
+netbsd_fd_passing_test_elf="$build_dir/lnp64-netbsd-fd-passing-test-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$netbsd_fd_passing_test_elf" "$crt0_obj" "$netbsd_fd_passing_test_obj" \
+  "$libc_fd_impl_obj"
+test -s "$netbsd_fd_passing_test_elf"
+printf 'real LLVM LNP64 lld NetBSD fd passing child link passed: %s\n' \
+  "$netbsd_fd_passing_test_elf"
 
 netbsd_socket_loopback_test_elf="$build_dir/lnp64-netbsd-socket-loopback-test-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

@@ -1483,6 +1483,7 @@ mod tests {
             "clang_netbsd_signal_fault_child_object",
             "clang_netbsd_timer_child_object",
             "clang_netbsd_mmap_child_object",
+            "clang_netbsd_fd_passing_child_object",
             "clang_netbsd_socket_loopback_child_object",
             "clang_netbsd_gate_trace_child_object",
             "clang_netbsd_domain_nested_child_object",
@@ -1600,6 +1601,8 @@ mod tests {
             "netbsd_timer_child_run_elf",
             "netbsd_mmap_child_static_link",
             "netbsd_mmap_child_run_elf",
+            "netbsd_fd_passing_child_static_link",
+            "netbsd_fd_passing_child_run_elf",
             "netbsd_socket_loopback_child_static_link",
             "netbsd_socket_loopback_child_run_elf",
             "netbsd_gate_trace_child_static_link",
@@ -1748,7 +1751,7 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc env_get opcode smoke passed"));
         assert!(real_llc.contains("get-pcr-mc-smoke.o"));
         assert!(real_llc.contains("get_pcr r1, PID"));
-        assert!(real_llc.contains("set_pcr SIGMASK, r2"));
+        assert!(real_llc.contains("set_pcr r3, SIGMASK, r2"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc GET_PCR opcode smoke passed"));
         assert!(real_llc.contains("open-at-mc-smoke.o"));
         assert!(real_llc.contains("open_at r1, r2, r3, r4"));
@@ -2782,6 +2785,16 @@ mod tests {
         assert!(real_llc.contains(r#""$netbsd_mmap_test_obj" \"#));
         assert!(real_llc.contains(r#""$libc_vma_impl_obj" "$libc_errno_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld NetBSD mmap child link passed"));
+        assert!(real_llc.contains("userland/fd_passing_test_clang.c"));
+        assert!(real_llc.contains("netbsd-fd-passing-test-clang-smoke.o"));
+        assert!(real_llc.contains(r#"grep -q 'cap_dup r' "$netbsd_fd_passing_test_dump""#));
+        assert!(real_llc.contains(r#"grep -q 'cap_send r' "$netbsd_fd_passing_test_dump""#));
+        assert!(real_llc.contains(r#"grep -q 'cap_recv r' "$netbsd_fd_passing_test_dump""#));
+        assert!(real_llc.contains(r#"grep -q 'cap_revoke r' "$netbsd_fd_passing_test_dump""#));
+        assert!(real_llc.contains("real LLVM LNP64 clang NetBSD fd passing child object passed"));
+        assert!(real_llc.contains("lnp64-netbsd-fd-passing-test-linked.elf"));
+        assert!(real_llc.contains(r#""$netbsd_fd_passing_test_obj" \"#));
+        assert!(real_llc.contains("real LLVM LNP64 lld NetBSD fd passing child link passed"));
         assert!(real_llc.contains("lnp64-netbsd-socket-loopback-test-linked.elf"));
         assert!(real_llc.contains(r#""$netbsd_socket_loopback_test_obj" "$libc_socket_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld NetBSD socket loopback child link passed"));
@@ -3759,6 +3772,7 @@ mod tests {
             "real_netbsd_signal_fault_child_execution",
             "real_netbsd_timer_child_execution",
             "real_netbsd_mmap_child_execution",
+            "real_netbsd_fd_passing_child_execution",
             "real_netbsd_socket_loopback_child_execution",
             "real_netbsd_gate_trace_child_execution",
             "real_netbsd_domain_nested_child_execution",
@@ -3853,6 +3867,7 @@ mod tests {
             "real_netbsd_signal_fault_child_execution",
             "real_netbsd_timer_child_execution",
             "real_netbsd_mmap_child_execution",
+            "real_netbsd_fd_passing_child_execution",
             "real_netbsd_socket_loopback_child_execution",
             "real_netbsd_gate_trace_child_execution",
             "real_netbsd_domain_nested_child_execution",
@@ -4962,6 +4977,7 @@ mod tests {
             "netbsd_signal_fault_child",
             "netbsd_timer_child",
             "netbsd_mmap_child",
+            "netbsd_fd_passing_child",
             "netbsd_socket_loopback_child",
             "netbsd_gate_trace_child",
             "netbsd_domain_nested_child",
@@ -5006,6 +5022,7 @@ mod tests {
         assert_eq!(statuses["netbsd_signal_fault_child"], "partial");
         assert_eq!(statuses["netbsd_timer_child"], "partial");
         assert_eq!(statuses["netbsd_mmap_child"], "partial");
+        assert_eq!(statuses["netbsd_fd_passing_child"], "partial");
         assert_eq!(statuses["netbsd_socket_loopback_child"], "partial");
         assert_eq!(statuses["netbsd_gate_trace_child"], "partial");
         assert_eq!(statuses["netbsd_domain_nested_child"], "partial");
@@ -5745,6 +5762,7 @@ mod tests {
             "netbsd_signal_fault_child",
             "netbsd_timer_child",
             "netbsd_mmap_child",
+            "netbsd_fd_passing_child",
             "netbsd_socket_loopback_child",
             "netbsd_gate_trace_child",
             "netbsd_domain_nested_child",
