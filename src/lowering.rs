@@ -1110,6 +1110,34 @@ mod tests {
             .collect()
     }
 
+    fn toy_retirement_queue_rows(manifest: &str) -> Vec<(&str, &str, Vec<&str>, &str, &str)> {
+        manifest
+            .lines()
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(|line| {
+                let mut fields = line.splitn(5, '|');
+                let surface = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing toy retirement surface in {line}"));
+                let status = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing toy retirement status in {line}"));
+                let toy_artifacts = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing toy retirement artifacts in {line}"))
+                    .split(',')
+                    .collect();
+                let replacement_target = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing toy retirement replacement in {line}"));
+                let blocker = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing toy retirement blocker in {line}"));
+                (surface, status, toy_artifacts, replacement_target, blocker)
+            })
+            .collect()
+    }
+
     fn llvm_bootstrap_rows(manifest: &str) -> Vec<(&str, &str, Vec<&str>, Vec<&str>, &str)> {
         manifest
             .lines()
@@ -1283,6 +1311,7 @@ mod tests {
             "netbsd_layers",
             "conformance_gates",
             "toy_compiler_policy",
+            "toy_retirement_queue",
             "isel",
             "llvm_bootstrap",
             "llvm_gates",
@@ -5011,6 +5040,8 @@ mod tests {
     fn toy_compiler_policy_manifest_freezes_bootstrap_role() {
         let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
         let policy_manifest = include_str!("../toolchain/lnp64_toy_compiler_policy.manifest");
+        let retirement_queue =
+            include_str!("../toolchain/lnp64_toy_retirement_queue.manifest");
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
         let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
         let roadmap = include_str!("../toolchain_roadmap.md");
@@ -5083,11 +5114,13 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         let evidence_corpus = format!(
-            "{target_manifest}\n{roadmap}\n{conformance}\n{llvm_gates}\n{llvm_bootstrap}\n{run_elf}\n{libc_test_readme}\n{intrinsics}\n{intrinsic_header}\n{main_source}\n{legacy_toy_script_corpus}\n{c_compiler}\n{lowering_source}\n{libc_roadmap}"
+            "{target_manifest}\n{roadmap}\n{conformance}\n{llvm_gates}\n{llvm_bootstrap}\n{run_elf}\n{libc_test_readme}\n{retirement_queue}\n{intrinsics}\n{intrinsic_header}\n{main_source}\n{legacy_toy_script_corpus}\n{c_compiler}\n{lowering_source}\n{libc_roadmap}"
         );
         let rows = toy_compiler_policy_rows(policy_manifest);
+        let queue_rows = toy_retirement_queue_rows(retirement_queue);
         let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let mut rules = std::collections::BTreeMap::new();
+        let mut queued_surfaces = std::collections::BTreeMap::new();
 
         assert_eq!(
             manifest_field(target_manifest, "toy_compiler_policy"),
@@ -5100,8 +5133,13 @@ mod tests {
         assert!(contract_index.contains(
             "toy_compiler_policy|toolchain/lnp64_toy_compiler_policy.manifest|toy_compiler_policy_manifest_freezes_bootstrap_role"
         ));
+        assert!(contract_index.contains(
+            "toy_retirement_queue|toolchain/lnp64_toy_retirement_queue.manifest|toy_retirement_queue_manifest_records_remaining_surfaces"
+        ));
         assert!(transition_manifest.contains("toolchain/lnp64_toy_compiler_policy.manifest"));
+        assert!(transition_manifest.contains("toolchain/lnp64_toy_retirement_queue.manifest"));
         assert!(roadmap.contains("only small fixes needed to keep existing smoke"));
+        assert!(roadmap.contains("toolchain/lnp64_toy_retirement_queue.manifest"));
         assert!(conformance.contains("toolchain/lnp64_toy_compiler_policy.manifest"));
 
         for (rule, status, artifacts, evidence) in rows {
@@ -5146,6 +5184,7 @@ mod tests {
             "replacement_program_set",
             "clang_libc_replacements",
             "remaining_toy_only_libc",
+            "remaining_toy_queue",
         ] {
             assert!(
                 rules.contains_key(rule),
@@ -5164,6 +5203,53 @@ mod tests {
         assert_eq!(rules["replacement_program_set"].0, "partial");
         assert_eq!(rules["clang_libc_replacements"].0, "partial");
         assert_eq!(rules["remaining_toy_only_libc"].0, "blocked");
+        assert_eq!(rules["remaining_toy_queue"].0, "blocked");
+        for (surface, status, toy_artifacts, replacement_target, blocker) in queue_rows {
+            assert!(
+                queued_surfaces
+                    .insert(surface, (status, replacement_target, blocker))
+                    .is_none(),
+                "duplicate toy retirement surface {surface}"
+            );
+            assert!(
+                ["partial", "blocked"].contains(&status),
+                "unknown toy retirement status {status} for {surface}"
+            );
+            assert!(
+                !toy_artifacts.is_empty(),
+                "empty toy retirement artifact list for {surface}"
+            );
+            for artifact in toy_artifacts {
+                assert!(
+                    manifest_root.join(artifact).exists(),
+                    "toy retirement surface {surface} names missing artifact {artifact}"
+                );
+            }
+            assert!(
+                replacement_target.contains("Clang")
+                    || replacement_target.contains("scripts/run_real_llvm")
+                    || replacement_target.contains("scripts/run_rtl_top_clang")
+                    || replacement_target.contains("scripts/run_rtl_top_linked_llvm"),
+                "toy retirement surface {surface} lacks a real-toolchain replacement target"
+            );
+            assert!(
+                !blocker.is_empty(),
+                "toy retirement surface {surface} lacks a blocker"
+            );
+        }
+        for (surface, expected_status) in [
+            ("legacy_demo_smoke", "blocked"),
+            ("minimal_userland_image", "blocked"),
+            ("netbsd_personality_system", "blocked"),
+            ("legacy_libc_test_backend", "partial"),
+            ("rtl_c_program_smoke", "partial"),
+        ] {
+            assert_eq!(
+                queued_surfaces.get(surface).map(|row| row.0),
+                Some(expected_status),
+                "missing or wrong toy retirement queue status for {surface}"
+            );
+        }
         assert!(run_elf.contains("real_libc_test_pthread_tsd_execution"));
         assert!(run_elf.contains("real_libc_test_sem_init_execution"));
         assert!(!run_elf.contains("real_libc_test_fcntl_execution"));
@@ -5239,6 +5325,72 @@ mod tests {
             assert!(
                 llvm_bootstrap.contains(case),
                 "replacement program set missing {case}"
+            );
+        }
+    }
+
+    #[test]
+    fn toy_retirement_queue_manifest_records_remaining_surfaces() {
+        let queue_manifest = include_str!("../toolchain/lnp64_toy_retirement_queue.manifest");
+        let policy_manifest = include_str!("../toolchain/lnp64_toy_compiler_policy.manifest");
+        let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
+        let roadmap = include_str!("../toolchain_roadmap.md");
+        let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut queued_surfaces = std::collections::BTreeMap::new();
+
+        assert!(policy_manifest.contains("remaining_toy_queue"));
+        assert!(roadmap.contains("toy-compiler retirement queue"));
+        assert!(contract_index.contains(
+            "toy_retirement_queue|toolchain/lnp64_toy_retirement_queue.manifest|toy_retirement_queue_manifest_records_remaining_surfaces"
+        ));
+
+        for (surface, status, toy_artifacts, replacement_target, blocker) in
+            toy_retirement_queue_rows(queue_manifest)
+        {
+            assert!(
+                queued_surfaces
+                    .insert(surface, (status, replacement_target, blocker))
+                    .is_none(),
+                "duplicate toy retirement surface {surface}"
+            );
+            assert!(
+                ["partial", "blocked"].contains(&status),
+                "unknown toy retirement status {status} for {surface}"
+            );
+            assert!(
+                !toy_artifacts.is_empty(),
+                "empty toy retirement artifact list for {surface}"
+            );
+            for artifact in toy_artifacts {
+                assert!(
+                    manifest_root.join(artifact).exists(),
+                    "toy retirement surface {surface} names missing artifact {artifact}"
+                );
+            }
+            assert!(
+                replacement_target.contains("Clang")
+                    || replacement_target.contains("scripts/run_real_llvm")
+                    || replacement_target.contains("scripts/run_rtl_top_clang")
+                    || replacement_target.contains("scripts/run_rtl_top_linked_llvm"),
+                "toy retirement surface {surface} lacks a real-toolchain replacement target"
+            );
+            assert!(
+                !blocker.is_empty(),
+                "toy retirement surface {surface} lacks a blocker"
+            );
+        }
+
+        for (surface, expected_status) in [
+            ("legacy_demo_smoke", "blocked"),
+            ("minimal_userland_image", "blocked"),
+            ("netbsd_personality_system", "blocked"),
+            ("legacy_libc_test_backend", "partial"),
+            ("rtl_c_program_smoke", "partial"),
+        ] {
+            assert_eq!(
+                queued_surfaces.get(surface).map(|row| row.0),
+                Some(expected_status),
+                "missing or wrong toy retirement queue status for {surface}"
             );
         }
     }
