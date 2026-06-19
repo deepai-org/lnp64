@@ -6114,6 +6114,7 @@ mod tests {
             "tests/rtl/programs/top_byte_array.c",
             "tests/rtl/programs/top_heap_byte_lanes.c",
             "demos/hello.c",
+            "demos/factorial.c",
             "demos/rot13.c",
         ] {
             let toy_entry = entry_for(toy_source);
@@ -6133,6 +6134,10 @@ mod tests {
             ),
             ("tests/rtl/programs/top_linked_bitwise_shift.c", "shift_alu"),
             ("tests/rtl/programs/top_linked_factorial_mul.c", "mul"),
+            (
+                "tests/rtl/programs/top_linked_factorial_native.c",
+                "push_pull",
+            ),
             (
                 "tests/rtl/programs/top_linked_divrem.c",
                 "unsigned_division",
