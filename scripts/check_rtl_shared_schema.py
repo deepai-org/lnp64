@@ -164,6 +164,32 @@ def render_lean_width_theorem(theorem_name: str, schema_name: str, fields: list[
     )
 
 
+def render_lean_packed_layout(layout_name: str, fields: list[str]) -> str:
+    total_width = sum(parse_record_entry(entry)[1] for entry in fields)
+    cursor = total_width
+    lines = [f"def {layout_name} : List PackedFieldLayout := ["]
+    for index, entry in enumerate(fields):
+        field_name, width = parse_record_entry(entry)
+        lsb = cursor - width
+        msb = cursor - 1
+        cursor = lsb
+        comma = "," if index + 1 < len(fields) else ""
+        lines.append(
+            f'  {{ name := "{field_name}", width := {width}, lsb := {lsb}, msb := {msb} }}{comma}'
+        )
+    lines.append("]")
+    return "\n".join(lines)
+
+
+def render_lean_layout_theorem(theorem_name: str, schema_name: str, layout_name: str) -> str:
+    return (
+        f"theorem {theorem_name} :\n"
+        f"    packedSchemaLayout {schema_name} =\n"
+        f"      {layout_name} := by\n"
+        "  rfl"
+    )
+
+
 def parse_lean_packed_schema(lean_text: str, schema_name: str) -> list[str]:
     pattern = re.compile(
         rf"def\s+{re.escape(schema_name)}\s*:\s*List\s*\(String\s*×\s*Nat\)\s*:=\s*\[(?P<body>.*?)\]",
@@ -174,6 +200,40 @@ def parse_lean_packed_schema(lean_text: str, schema_name: str) -> list[str]:
     entries = re.findall(r'\(\s*"(?P<name>[^"]+)"\s*,\s*(?P<width>\d+)\s*\)', match.group("body"))
     require(entries, f"Lean packed schema {schema_name} has no fields")
     return [f"{name}:{int(width)}" for name, width in entries]
+
+
+def parse_lean_packed_layout(lean_text: str, layout_name: str) -> list[str]:
+    pattern = re.compile(
+        rf"def\s+{re.escape(layout_name)}\s*:\s*List\s+PackedFieldLayout\s*:=\s*\[(?P<body>.*?)\]",
+        re.S,
+    )
+    match = pattern.search(lean_text)
+    require(match is not None, f"missing Lean packed layout {layout_name}")
+    entries = re.findall(
+        r'\{\s*name\s*:=\s*"(?P<name>[^"]+)"\s*,\s*'
+        r"width\s*:=\s*(?P<width>\d+)\s*,\s*"
+        r"lsb\s*:=\s*(?P<lsb>\d+)\s*,\s*"
+        r"msb\s*:=\s*(?P<msb>\d+)\s*\}",
+        match.group("body"),
+    )
+    require(entries, f"Lean packed layout {layout_name} has no fields")
+    return [
+        f"{name}:{int(width)}:{int(lsb)}:{int(msb)}"
+        for name, width, lsb, msb in entries
+    ]
+
+
+def expected_packed_layout_entries(fields: list[str]) -> list[str]:
+    total_width = sum(parse_record_entry(entry)[1] for entry in fields)
+    cursor = total_width
+    entries: list[str] = []
+    for entry in fields:
+        field_name, width = parse_record_entry(entry)
+        lsb = cursor - width
+        msb = cursor - 1
+        entries.append(f"{field_name}:{width}:{lsb}:{msb}")
+        cursor = lsb
+    return entries
 
 
 def parse_lean_width_theorem(lean_text: str, theorem_name: str, schema_name: str) -> int:
@@ -215,14 +275,22 @@ def require_m1_generated_lean_packed_schemas(schema: dict, m1_contract: dict, le
     schema_records = schema.get("records", {})
     require(isinstance(schema_records, dict), "schema records must be an object")
     pairs = (
-        ("record", "rtlM1CommitPackedSchema", "rtlM1CommitPackedSchema_width"),
+        (
+            "record",
+            "rtlM1CommitPackedSchema",
+            "rtlM1CommitPackedSchema_width",
+            "rtlM1CommitPackedLayout",
+            "rtlM1CommitPackedLayout_from_schema",
+        ),
         (
             "state_record",
             "rtlM1StateProjectionPackedSchema",
             "rtlM1StateProjectionPackedSchema_width",
+            "rtlM1StateProjectionPackedLayout",
+            "rtlM1StateProjectionPackedLayout_from_schema",
         ),
     )
-    for contract_key, schema_name, theorem_name in pairs:
+    for contract_key, schema_name, theorem_name, layout_name, layout_theorem_name in pairs:
         record_name = require_string(m1_contract.get(contract_key), f"M1 Lean {schema_name} record")
         fields = schema_records.get(record_name)
         require(isinstance(fields, list) and fields, f"M1 Lean {schema_name} record is absent from schema")
@@ -246,6 +314,26 @@ def require_m1_generated_lean_packed_schemas(schema: dict, m1_contract: dict, le
         require(
             expected_theorem in lean_text,
             f"M1 generated Lean packed-schema width theorem {theorem_name} drifted from shared schema",
+        )
+        actual_layout = parse_lean_packed_layout(lean_text, layout_name)
+        expected_layout = expected_packed_layout_entries(fields)
+        require(
+            actual_layout == expected_layout,
+            f"M1 schema-owned Lean packed layout {layout_name} drifted from shared schema",
+        )
+        expected_layout_text = render_lean_packed_layout(layout_name, fields)
+        require(
+            expected_layout_text in lean_text,
+            f"M1 generated Lean packed layout text for {layout_name} drifted from shared schema",
+        )
+        expected_layout_theorem = render_lean_layout_theorem(
+            layout_theorem_name,
+            schema_name,
+            layout_name,
+        )
+        require(
+            expected_layout_theorem in lean_text,
+            f"M1 generated Lean packed-layout theorem {layout_theorem_name} drifted from shared schema",
         )
 
 

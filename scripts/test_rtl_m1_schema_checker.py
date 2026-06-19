@@ -131,6 +131,20 @@ def main() -> None:
         ),
     )
 
+    lean_layout_drift = replace_once(
+        lean_source,
+        '{ name := "rights_mask", width := 64, lsb := 49, msb := 112 }',
+        '{ name := "rights_mask", width := 64, lsb := 48, msb := 111 }',
+    )
+    expect_failure(
+        "M1 schema-owned Lean packed layout rtlM1CommitPackedLayout drifted",
+        lambda: checker.require_m1_generated_lean_packed_schemas(
+            schema,
+            m1_contract,
+            lean_layout_drift,
+        ),
+    )
+
     print("rtl m1 schema checker self-test ok")
 
 

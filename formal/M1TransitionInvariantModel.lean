@@ -424,6 +424,13 @@ def authoritySlotsProjectionUnchanged
   post.sentCap = pre.sentCap /\
   post.mintedCap = pre.mintedCap
 
+structure PackedFieldLayout where
+  name : String
+  width : Nat
+  lsb : Nat
+  msb : Nat
+deriving DecidableEq, Repr
+
 -- Schema-owned packed RTL records are still checked by Python against
 -- `rtl/schema/lnp64_shared_schema.json`; these Lean mirrors make the M1 model
 -- name the exact bit-level projection it is willing to consume.
@@ -485,12 +492,87 @@ def rtlM1StateProjectionPackedSchema : List (String × Nat) := [
 def packedSchemaWidth (schema : List (String × Nat)) : Nat :=
   schema.foldl (fun total field => total + field.2) 0
 
+def packedSchemaLayoutFrom : Nat -> List (String × Nat) -> List PackedFieldLayout
+  | _cursor, [] => []
+  | cursor, field :: rest =>
+      let lsb := cursor - field.2
+      { name := field.1, width := field.2, lsb := lsb, msb := cursor - 1 } ::
+        packedSchemaLayoutFrom lsb rest
+
+def packedSchemaLayout (schema : List (String × Nat)) : List PackedFieldLayout :=
+  packedSchemaLayoutFrom (packedSchemaWidth schema) schema
+
 theorem rtlM1CommitPackedSchema_width :
     packedSchemaWidth rtlM1CommitPackedSchema = 281 := by
   rfl
 
 theorem rtlM1StateProjectionPackedSchema_width :
     packedSchemaWidth rtlM1StateProjectionPackedSchema = 902 := by
+  rfl
+
+def rtlM1CommitPackedLayout : List PackedFieldLayout := [
+  { name := "op", width := 8, lsb := 273, msb := 280 },
+  { name := "object_id", width := 32, lsb := 241, msb := 272 },
+  { name := "object_gen", width := 32, lsb := 209, msb := 240 },
+  { name := "fdr_gen", width := 32, lsb := 177, msb := 208 },
+  { name := "domain_id", width := 32, lsb := 145, msb := 176 },
+  { name := "domain_gen", width := 32, lsb := 113, msb := 144 },
+  { name := "rights_mask", width := 64, lsb := 49, msb := 112 },
+  { name := "lineage_epoch", width := 32, lsb := 17, msb := 48 },
+  { name := "sealed", width := 1, lsb := 16, msb := 16 },
+  { name := "status", width := 16, lsb := 0, msb := 15 }
+]
+
+def rtlM1StateProjectionPackedLayout : List PackedFieldLayout := [
+  { name := "op", width := 8, lsb := 894, msb := 901 },
+  { name := "status", width := 16, lsb := 878, msb := 893 },
+  { name := "object_gen", width := 32, lsb := 846, msb := 877 },
+  { name := "created_object_created", width := 1, lsb := 845, msb := 845 },
+  { name := "created_object_gen", width := 32, lsb := 813, msb := 844 },
+  { name := "root_object_id", width := 32, lsb := 781, msb := 812 },
+  { name := "root_generation", width := 32, lsb := 749, msb := 780 },
+  { name := "root_domain_id", width := 32, lsb := 717, msb := 748 },
+  { name := "root_lineage_epoch", width := 32, lsb := 685, msb := 716 },
+  { name := "root_sealed", width := 1, lsb := 684, msb := 684 },
+  { name := "root_rights", width := 64, lsb := 620, msb := 683 },
+  { name := "consumer_object_id", width := 32, lsb := 588, msb := 619 },
+  { name := "consumer_generation", width := 32, lsb := 556, msb := 587 },
+  { name := "consumer_domain_id", width := 32, lsb := 524, msb := 555 },
+  { name := "consumer_lineage_epoch", width := 32, lsb := 492, msb := 523 },
+  { name := "consumer_sealed", width := 1, lsb := 491, msb := 491 },
+  { name := "consumer_rights", width := 64, lsb := 427, msb := 490 },
+  { name := "sent_valid", width := 1, lsb := 426, msb := 426 },
+  { name := "sent_object_id", width := 32, lsb := 394, msb := 425 },
+  { name := "sent_generation", width := 32, lsb := 362, msb := 393 },
+  { name := "sent_domain_id", width := 32, lsb := 330, msb := 361 },
+  { name := "sent_lineage_epoch", width := 32, lsb := 298, msb := 329 },
+  { name := "sent_sealed", width := 1, lsb := 297, msb := 297 },
+  { name := "sent_rights", width := 64, lsb := 233, msb := 296 },
+  { name := "minted_valid", width := 1, lsb := 232, msb := 232 },
+  { name := "minted_object_id", width := 32, lsb := 200, msb := 231 },
+  { name := "minted_generation", width := 32, lsb := 168, msb := 199 },
+  { name := "minted_domain_id", width := 32, lsb := 136, msb := 167 },
+  { name := "minted_lineage_epoch", width := 32, lsb := 104, msb := 135 },
+  { name := "minted_sealed", width := 1, lsb := 103, msb := 103 },
+  { name := "minted_rights", width := 64, lsb := 39, msb := 102 },
+  { name := "wake_pending", width := 1, lsb := 38, msb := 38 },
+  { name := "transfer_valid", width := 1, lsb := 37, msb := 37 },
+  { name := "stale_rejected", width := 1, lsb := 36, msb := 36 },
+  { name := "revoked_rejected", width := 1, lsb := 35, msb := 35 },
+  { name := "failed_no_authority", width := 1, lsb := 34, msb := 34 },
+  { name := "full_was_explicit", width := 1, lsb := 33, msb := 33 },
+  { name := "has_revoked_generation", width := 1, lsb := 32, msb := 32 },
+  { name := "revoked_generation", width := 32, lsb := 0, msb := 31 }
+]
+
+theorem rtlM1CommitPackedLayout_from_schema :
+    packedSchemaLayout rtlM1CommitPackedSchema =
+      rtlM1CommitPackedLayout := by
+  rfl
+
+theorem rtlM1StateProjectionPackedLayout_from_schema :
+    packedSchemaLayout rtlM1StateProjectionPackedSchema =
+      rtlM1StateProjectionPackedLayout := by
   rfl
 
 def commitOpToStepOp : CommitOp -> Op
