@@ -1448,23 +1448,32 @@ mod tests {
         }
         let real_llc_lines: Vec<_> = real_llc.lines().collect();
         for (index, line) in real_llc_lines.iter().enumerate() {
-            if line.contains("-I toolchain") && line.trim_end().ends_with('\\') {
-                let next = real_llc_lines
-                    .get(index + 1)
-                    .expect("continued include line must have a following line");
+            if line.trim_start().starts_with("-I toolchain ") && line.trim_end().ends_with('\\') {
+                let previous = index
+                    .checked_sub(1)
+                    .and_then(|previous| real_llc_lines.get(previous))
+                    .expect("private include line must have a preceding target include line");
                 assert!(
-                    line.contains("-I toolchain/include") || next.contains("-I toolchain/include"),
-                    "real LLVM compile line {} must include installed target headers",
+                    previous.contains("-I toolchain/include"),
+                    "real LLVM compile line {} must search installed target headers before private root",
                     index + 1
                 );
             }
             assert!(
                 !line.contains("-I toolchain -c")
-                    || line.contains("-I toolchain -I toolchain/include -c"),
+                    || line.contains("-I toolchain/include -I toolchain -c"),
                 "single-line real LLVM compile line {} must include installed target headers",
                 index + 1
             );
         }
+        assert!(
+            !real_llc.contains("-I toolchain \\\n  -I toolchain/include"),
+            "real LLVM compile lines must search installed target headers before private toolchain root"
+        );
+        assert!(
+            !real_llc.contains("-I toolchain -I toolchain/include"),
+            "single-line real LLVM compile lines must search installed target headers first"
+        );
         let rows = llvm_gate_rows(gate_manifest);
         let mut gates = std::collections::BTreeSet::new();
         let mut commands = std::collections::BTreeMap::new();
@@ -2029,7 +2038,11 @@ mod tests {
         assert!(libc_process_min.contains("lnp64_fork_compat"));
         assert!(libc_process_min.contains("lnp64_wait_pid_compat"));
         assert!(real_llc.contains("liblnp64-process-min.o"));
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_process_impl_c\""));
+        assert!(
+            real_llc.contains(
+                "-I toolchain/include \\\n  -I toolchain \\\n  -c \"$libc_process_impl_c\""
+            )
+        );
         assert!(real_llc.contains("grep -q 'exit r'"));
         assert!(real_llc.contains("grep -q 'get_pcr r'"));
         assert!(real_llc.contains("grep -q 'fork r'"));
@@ -2081,7 +2094,11 @@ mod tests {
         assert!(libc_startup_min.contains("env_get %0, %1, %2, %3"));
         assert!(unistd_header.contains("extern char **environ;"));
         assert!(real_llc.contains("liblnp64-startup-min.o"));
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_startup_impl_c\""));
+        assert!(
+            real_llc.contains(
+                "-I toolchain/include \\\n  -I toolchain \\\n  -c \"$libc_startup_impl_c\""
+            )
+        );
         assert!(
             real_llc.contains(
                 "real LLVM LNP64 clang minilibc startup implementation object smoke passed"
@@ -2388,7 +2405,11 @@ mod tests {
         assert!(libc_futex_min.contains("__lnp_futex_wait"));
         assert!(libc_futex_min.contains("__lnp_futex_wake"));
         assert!(real_llc.contains("liblnp64-futex-min.o"));
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_futex_impl_c\""));
+        assert!(
+            real_llc.contains(
+                "-I toolchain/include \\\n  -I toolchain \\\n  -c \"$libc_futex_impl_c\""
+            )
+        );
         assert!(real_llc.contains("grep -q 'futex_wait r'"));
         assert!(real_llc.contains("grep -q 'futex_wake r'"));
         assert!(
@@ -2398,7 +2419,9 @@ mod tests {
         );
         assert!(real_llc.contains("futex-libc-clang-smoke.o"));
         assert!(real_llc.contains("#include <lnp64/futex.h>"));
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$futex_libc_c\""));
+        assert!(
+            real_llc.contains("-I toolchain/include \\\n  -I toolchain \\\n  -c \"$futex_libc_c\"")
+        );
         assert!(real_llc.contains("real LLVM LNP64 clang futex libc object smoke passed"));
         assert!(pthread_header.contains("int pthread_create("));
         assert!(pthread_header.contains("int pthread_key_create("));
@@ -2453,7 +2476,9 @@ mod tests {
         assert!(real_llc.contains("#include <sys/epoll.h>"));
         assert!(real_llc.contains("#include <sys/event.h>"));
         assert!(real_llc.contains("#include <sys/select.h>"));
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$poll_libc_c\""));
+        assert!(
+            real_llc.contains("-I toolchain/include \\\n  -I toolchain \\\n  -c \"$poll_libc_c\"")
+        );
         assert!(real_llc.contains("select(1, &readfds, &writefds, &exceptfds, &timeout)"));
         assert!(real_llc.contains("epoll_create1(0)"));
         assert!(real_llc.contains("epoll_ctl(ep, EPOLL_CTL_ADD, 0, &ev)"));
@@ -2464,7 +2489,10 @@ mod tests {
         assert!(real_llc.contains("kevent(kq, &change, 1, 0, 0, &ts)"));
         assert!(real_llc.contains("poll-libc-clang-smoke.o"));
         assert!(real_llc.contains("liblnp64-poll-min.o"));
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_poll_impl_c\""));
+        assert!(
+            real_llc
+                .contains("-I toolchain/include \\\n  -I toolchain \\\n  -c \"$libc_poll_impl_c\"")
+        );
         assert!(real_llc.contains("grep -q 'await r'"));
         assert!(
             real_llc.contains(
@@ -2497,7 +2525,10 @@ mod tests {
         assert!(real_llc.contains("#include <lnp64/intrinsics.h>"));
         assert!(real_llc.contains("#include <signal.h>"));
         assert!(real_llc.contains("#include <unistd.h>"));
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$signal_libc_c\""));
+        assert!(
+            real_llc
+                .contains("-I toolchain/include \\\n  -I toolchain \\\n  -c \"$signal_libc_c\"")
+        );
         assert!(real_llc.contains("signal(10, SIG_IGN)"));
         assert!(real_llc.contains("sigaction(12, &act, 0)"));
         assert!(real_llc.contains("sigprocmask(SIG_SETMASK, &mask, 0)"));
@@ -2505,7 +2536,11 @@ mod tests {
         assert!(real_llc.contains("raise(12)"));
         assert!(real_llc.contains("real LLVM LNP64 clang signal libc object smoke passed"));
         assert!(real_llc.contains("liblnp64-signal-min.o"));
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_signal_impl_c\""));
+        assert!(
+            real_llc.contains(
+                "-I toolchain/include \\\n  -I toolchain \\\n  -c \"$libc_signal_impl_c\""
+            )
+        );
         assert!(real_llc.contains("grep -q 'sigaction r'"));
         assert!(real_llc.contains("grep -q 'sigmask_set r'"));
         assert!(real_llc.contains("grep -q 'kill r'"));
@@ -2539,8 +2574,15 @@ mod tests {
         assert!(netinet_in_header.contains("#define IPPROTO_TCP"));
         assert!(real_llc.contains("socket-libc-clang-smoke.o"));
         assert!(real_llc.contains("#include <sys/socket.h>"));
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_socket_impl_c\""));
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$socket_libc_c\""));
+        assert!(
+            real_llc.contains(
+                "-I toolchain/include \\\n  -I toolchain \\\n  -c \"$libc_socket_impl_c\""
+            )
+        );
+        assert!(
+            real_llc
+                .contains("-I toolchain/include \\\n  -I toolchain \\\n  -c \"$socket_libc_c\"")
+        );
         assert!(real_llc.contains("socket(AF_INET, SOCK_STREAM, 0)"));
         assert!(real_llc.contains("setsockopt(server, SOL_SOCKET, SO_REUSEADDR"));
         assert!(real_llc.contains("getsockopt(server, SOL_SOCKET, SO_ERROR"));
@@ -2629,7 +2671,9 @@ mod tests {
         );
         assert!(real_llc.contains("getauxval-clang-smoke.o"));
         assert!(real_llc.contains("#include <sys/auxv.h>"));
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$getauxval_c\""));
+        assert!(
+            real_llc.contains("-I toolchain/include \\\n  -I toolchain \\\n  -c \"$getauxval_c\"")
+        );
         assert!(real_llc.contains("real LLVM LNP64 clang getauxval object smoke passed"));
         assert!(real_llc.contains("libc-string-clang-smoke.o"));
         assert!(real_llc.contains("#include <ctype.h>"));
@@ -2686,7 +2730,11 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang minilibc string object smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_string_min.c"));
         assert!(real_llc.contains("liblnp64-string-min.o"));
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_string_impl_c\""));
+        assert!(
+            real_llc.contains(
+                "-I toolchain/include \\\n  -I toolchain \\\n  -c \"$libc_string_impl_c\""
+            )
+        );
         assert!(
             real_llc.contains(
                 "real LLVM LNP64 clang minilibc string implementation object smoke passed"
@@ -2724,7 +2772,9 @@ mod tests {
         );
         assert!(real_llc.contains("#include <errno.h>"));
         assert!(real_llc.contains("#include <stdlib.h>"));
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$convert_c\""));
+        assert!(
+            real_llc.contains("-I toolchain/include \\\n  -I toolchain \\\n  -c \"$convert_c\"")
+        );
         assert!(real_llc.contains("errno = 0;"));
         assert!(real_llc.contains("strtol(s, &end, 8)"));
         assert!(real_llc.contains("strtol(s, &end, 37)"));
@@ -2732,7 +2782,11 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang numeric conversion object smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_convert_min.c"));
         assert!(real_llc.contains("liblnp64-convert-min.o"));
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_convert_impl_c\""));
+        assert!(
+            real_llc.contains(
+                "-I toolchain/include \\\n  -I toolchain \\\n  -c \"$libc_convert_impl_c\""
+            )
+        );
         assert!(libc_convert_min.contains("#include <errno.h>"));
         assert!(libc_convert_min.contains("#include <stdlib.h>"));
         assert!(libc_convert_min.contains("strtoull"));
@@ -2745,13 +2799,16 @@ mod tests {
         assert!(real_llc.contains("path-clang-smoke.o"));
         assert!(real_llc.contains("#include <libgen.h>"));
         assert!(real_llc.contains("#include <string.h>"));
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$path_c\""));
+        assert!(real_llc.contains("-I toolchain/include \\\n  -I toolchain \\\n  -c \"$path_c\""));
         assert!(real_llc.contains("check_basename(\"/usr/lib\", \"lib\")"));
         assert!(real_llc.contains("check_dirname(\"/usr/lib\", \"/usr\")"));
         assert!(real_llc.contains("real LLVM LNP64 clang path helper object smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_path_min.c"));
         assert!(real_llc.contains("liblnp64-path-min.o"));
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_path_impl_c\""));
+        assert!(
+            real_llc
+                .contains("-I toolchain/include \\\n  -I toolchain \\\n  -c \"$libc_path_impl_c\"")
+        );
         assert!(libc_path_min.contains("#include <libgen.h>"));
         assert!(libc_path_min.contains("#include <string.h>"));
         assert!(libc_path_min.contains("char *basename"));
@@ -2765,7 +2822,9 @@ mod tests {
         assert!(real_llc.contains("search-clang-smoke.o"));
         assert!(real_llc.contains("#include <search.h>"));
         assert!(real_llc.contains("#include <string.h>"));
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$search_c\""));
+        assert!(
+            real_llc.contains("-I toolchain/include \\\n  -I toolchain \\\n  -c \"$search_c\"")
+        );
         assert!(real_llc.contains("get(key_a)"));
         assert!(real_llc.contains("remque(p->p)"));
         assert!(real_llc.contains("real LLVM LNP64 clang search helper object smoke passed"));
@@ -2784,14 +2843,18 @@ mod tests {
                 "real LLVM LNP64 clang minilibc search implementation object smoke passed"
             )
         );
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_search_impl_c\""));
+        assert!(
+            real_llc.contains(
+                "-I toolchain/include \\\n  -I toolchain \\\n  -c \"$libc_search_impl_c\""
+            )
+        );
         assert!(real_llc.contains("sort-clang-smoke.o"));
         assert!(stdint_header.contains("typedef unsigned long uint64_t;"));
         assert!(real_llc.contains("#include <stdint.h>"));
         assert!(real_llc.contains("#include <stdlib.h>"));
         assert!(real_llc.contains("#include <string.h>"));
         assert!(!real_llc.contains("typedef unsigned long uint64_t;"));
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$sort_c\""));
+        assert!(real_llc.contains("-I toolchain/include \\\n  -I toolchain \\\n  -c \"$sort_c\""));
         assert!(real_llc.contains("qsort(names, 6"));
         assert!(real_llc.contains("qsort(nums, 8"));
         assert!(real_llc.contains("qsort(chars, sizeof chars - 1"));
@@ -2808,7 +2871,10 @@ mod tests {
             real_llc
                 .contains("real LLVM LNP64 clang minilibc sort implementation object smoke passed")
         );
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_sort_impl_c\""));
+        assert!(
+            real_llc
+                .contains("-I toolchain/include \\\n  -I toolchain \\\n  -c \"$libc_sort_impl_c\"")
+        );
         assert!(real_llc.contains("toolchain/liblnp64_alloc_min.c"));
         assert!(libc_alloc_min.contains("#include <stdlib.h>"));
         assert!(libc_alloc_min.contains("#include <string.h>"));
@@ -2820,7 +2886,11 @@ mod tests {
         assert!(stdlib_header.contains("void *realloc(void *ptr, size_t size);"));
         assert!(stdlib_header.contains("void free(void *ptr);"));
         assert!(real_llc.contains("liblnp64-alloc-min.o"));
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_alloc_impl_c\""));
+        assert!(
+            real_llc.contains(
+                "-I toolchain/include \\\n  -I toolchain \\\n  -c \"$libc_alloc_impl_c\""
+            )
+        );
         assert!(real_llc.contains("grep -q 'alloc r'"));
         assert!(real_llc.contains("grep -q 'alloc_size r'"));
         assert!(real_llc.contains("grep -q 'free r'"));
@@ -2828,19 +2898,23 @@ mod tests {
             "real LLVM LNP64 clang minilibc allocation implementation object smoke passed"
         ));
         assert!(real_llc.contains("calloc-clang-smoke.o"));
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$calloc_c\""));
+        assert!(
+            real_llc.contains("-I toolchain/include \\\n  -I toolchain \\\n  -c \"$calloc_c\"")
+        );
         assert!(real_llc.contains("real LLVM LNP64 clang calloc object smoke passed"));
         assert!(real_llc.contains("realloc-clang-smoke.o"));
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$realloc_c\""));
+        assert!(
+            real_llc.contains("-I toolchain/include \\\n  -I toolchain \\\n  -c \"$realloc_c\"")
+        );
         assert!(real_llc.contains("real LLVM LNP64 clang realloc object smoke passed"));
         assert!(real_llc.contains("read-clang-smoke.o"));
         assert!(unistd_header.contains("ssize_t read(int fd, void *buf, size_t count);"));
         assert!(unistd_header.contains("ssize_t write(int fd, const void *buf, size_t count);"));
         assert!(real_llc.contains("#include <unistd.h>"));
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$read_c\""));
+        assert!(real_llc.contains("-I toolchain/include \\\n  -I toolchain \\\n  -c \"$read_c\""));
         assert!(real_llc.contains("real LLVM LNP64 clang read object smoke passed"));
         assert!(real_llc.contains("write-clang-smoke.o"));
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$write_c\""));
+        assert!(real_llc.contains("-I toolchain/include \\\n  -I toolchain \\\n  -c \"$write_c\""));
         assert!(real_llc.contains("fd write ok"));
         assert!(real_llc.contains("real LLVM LNP64 clang write object smoke passed"));
         assert!(real_llc.contains("userland/ucat_clang.c"));
@@ -2954,7 +3028,10 @@ mod tests {
         assert!(libc_fd_min.contains("int close(int fd)"));
         assert!(libc_fd_min.contains("__lnp_cap_revoke"));
         assert!(real_llc.contains("liblnp64-fd-min.o"));
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_fd_impl_c\""));
+        assert!(
+            real_llc
+                .contains("-I toolchain/include \\\n  -I toolchain \\\n  -c \"$libc_fd_impl_c\"")
+        );
         assert!(real_llc.contains("grep -q 'pull r'"));
         assert!(real_llc.contains("grep -q 'fd_seek_dyn r'"));
         assert!(real_llc.contains("grep -q 'push r'"));
@@ -3215,14 +3292,19 @@ mod tests {
         assert!(sys_mman_header.contains("int mprotect("));
         assert!(sys_mman_header.contains("int munmap("));
         assert!(real_llc.contains("liblnp64-vma-min.o"));
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_vma_impl_c\""));
+        assert!(
+            real_llc
+                .contains("-I toolchain/include \\\n  -I toolchain \\\n  -c \"$libc_vma_impl_c\"")
+        );
         assert!(
             real_llc
                 .contains("real LLVM LNP64 clang minilibc VMA implementation object smoke passed")
         );
         assert!(real_llc.contains("mmap-libc-clang-smoke.o"));
         assert!(real_llc.contains("#include <sys/mman.h>"));
-        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$mmap_libc_c\""));
+        assert!(
+            real_llc.contains("-I toolchain/include \\\n  -I toolchain \\\n  -c \"$mmap_libc_c\"")
+        );
         assert!(real_llc.contains("MAP_FAILED"));
         assert!(real_llc.contains("PROT_READ | PROT_WRITE"));
         assert!(real_llc.contains("real LLVM LNP64 clang mmap libc object smoke passed"));
