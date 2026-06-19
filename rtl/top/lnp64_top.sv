@@ -85,18 +85,14 @@ module lnp64_top #(
     logic [CORE_TILE_COUNT-1:0] core_pid1_runnable_vec;
     logic [CORE_TILE_COUNT-1:0] core_pid1_parked_vec;
     logic [CORE_TILE_COUNT-1:0] core_done_vec;
-    logic [CORE_TILE_COUNT-1:0] core_m1_commit_valid_vec;
     logic [CORE_TILE_COUNT-1:0] retire_submit_valid_vec;
     logic [CORE_TILE_COUNT-1:0] m1_commit_valid_vec;
     logic [CORE_TILE_COUNT-1:0] park_submit_valid_vec;
     logic [CORE_TILE_COUNT-1:0] submit_valid_vec;
     lnp64_retire_submit_t retire_submit_record_vec [CORE_TILE_COUNT];
-    lnp64_m1_cap_commit_t core_m1_commit_vec [CORE_TILE_COUNT];
     lnp64_m1_cap_commit_t m1_commit_vec [CORE_TILE_COUNT];
     lnp64_m1_cap_commit_t cap_m1_commit_latched_vec [CORE_TILE_COUNT];
     logic [CORE_TILE_COUNT-1:0] cap_m1_commit_latched_valid_vec;
-    lnp64_m1_state_projection_t core_m1_pre_state_projection_vec [CORE_TILE_COUNT];
-    lnp64_m1_state_projection_t core_m1_state_projection_vec [CORE_TILE_COUNT];
     lnp64_m1_state_projection_t m1_pre_state_projection_vec [CORE_TILE_COUNT];
     lnp64_m1_state_projection_t m1_state_projection_vec [CORE_TILE_COUNT];
     lnp64_m1_state_projection_t cap_m1_pre_state_projection_latched_vec [CORE_TILE_COUNT];
@@ -340,10 +336,10 @@ module lnp64_top #(
                 .tile_fault_counter(),
                 .retire_submit_valid(retire_submit_valid_vec[tile_id]),
                 .retire_submit_record(retire_submit_record_vec[tile_id]),
-                .m1_commit_valid(core_m1_commit_valid_vec[tile_id]),
-                .m1_commit(core_m1_commit_vec[tile_id]),
-                .m1_pre_state_projection(core_m1_pre_state_projection_vec[tile_id]),
-                .m1_state_projection(core_m1_state_projection_vec[tile_id]),
+                .m1_commit_valid(),
+                .m1_commit(),
+                .m1_pre_state_projection(),
+                .m1_state_projection(),
                 .park_submit_valid(park_submit_valid_vec[tile_id]),
                 .park_submit_record(park_submit_record_vec[tile_id]),
                 .submit_valid(submit_valid_vec[tile_id]),
