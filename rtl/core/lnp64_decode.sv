@@ -141,6 +141,36 @@ module lnp64_decode (
             8'h3a: begin
                 dec.opcode = LNP64_OP_EXIT;
             end
+            8'h3d: begin
+                dec.opcode = LNP64_OP_CSET_EQ;
+            end
+            8'h3e: begin
+                dec.opcode = LNP64_OP_CSET_NE;
+            end
+            8'h3f: begin
+                dec.opcode = LNP64_OP_CSET_LT;
+            end
+            8'h40: begin
+                dec.opcode = LNP64_OP_CSET_GT;
+            end
+            8'h41: begin
+                dec.opcode = LNP64_OP_CSET_LE;
+            end
+            8'h42: begin
+                dec.opcode = LNP64_OP_CSET_GE;
+            end
+            8'h43: begin
+                dec.opcode = LNP64_OP_CSET_ULT;
+            end
+            8'h44: begin
+                dec.opcode = LNP64_OP_CSET_UGT;
+            end
+            8'h45: begin
+                dec.opcode = LNP64_OP_CSET_ULE;
+            end
+            8'h46: begin
+                dec.opcode = LNP64_OP_CSET_UGE;
+            end
             8'h4b: begin
                 dec.opcode = LNP64_OP_OBJECT_CTL;
             end
@@ -324,6 +354,16 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_CSEL_UGT ||
             dec.opcode == LNP64_OP_CSEL_ULE ||
             dec.opcode == LNP64_OP_CSEL_UGE ||
+            dec.opcode == LNP64_OP_CSET_EQ ||
+            dec.opcode == LNP64_OP_CSET_NE ||
+            dec.opcode == LNP64_OP_CSET_LT ||
+            dec.opcode == LNP64_OP_CSET_GT ||
+            dec.opcode == LNP64_OP_CSET_LE ||
+            dec.opcode == LNP64_OP_CSET_GE ||
+            dec.opcode == LNP64_OP_CSET_ULT ||
+            dec.opcode == LNP64_OP_CSET_UGT ||
+            dec.opcode == LNP64_OP_CSET_ULE ||
+            dec.opcode == LNP64_OP_CSET_UGE ||
             dec.opcode == LNP64_OP_JMP ||
             dec.opcode == LNP64_OP_BRANCH_EQ ||
             dec.opcode == LNP64_OP_BRANCH_NE ||

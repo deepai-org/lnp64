@@ -360,6 +360,7 @@ fn encode_flat_exec_instr(
         Instr::Bswap32(rd, rs1) => Ok(vec![enc_rrr(0xb9, *rd, *rs1, Reg(0))]),
         Instr::Bswap64(rd, rs1) => Ok(vec![enc_rrr(0xba, *rd, *rs1, Reg(0))]),
         Instr::Cmpu(lhs, rhs) => Ok(vec![enc_rrr(0x1c, *lhs, *rhs, Reg(0))]),
+        Instr::Cset(rd, condition) => Ok(vec![enc_reg(flat_exec_cset_opcode(*condition), *rd)]),
         Instr::Csel(rd, true_src, false_src, condition) => Ok(vec![enc_rrr(
             flat_exec_csel_opcode(*condition)?,
             *rd,
@@ -441,7 +442,7 @@ fn encode_flat_exec_instr(
         Instr::Fence => Ok(vec![enc_reg(0xcd, Reg(0))]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XOR/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSEL, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC, ERRNO_GET/SET, ENV_GET, FENCE, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XOR/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC, ERRNO_GET/SET, ENV_GET, FENCE, EXIT"
         )),
     }
 }
@@ -486,6 +487,21 @@ fn flat_exec_csel_opcode(condition: Condition) -> Result<u8, String> {
         Condition::Ugt => Ok(0xc2),
         Condition::Ule => Ok(0xc3),
         Condition::Uge => Ok(0xc4),
+    }
+}
+
+fn flat_exec_cset_opcode(condition: Condition) -> u8 {
+    match condition {
+        Condition::Eq => 0x3d,
+        Condition::Ne => 0x3e,
+        Condition::Lt => 0x3f,
+        Condition::Gt => 0x40,
+        Condition::Le => 0x41,
+        Condition::Ge => 0x42,
+        Condition::Ult => 0x43,
+        Condition::Ugt => 0x44,
+        Condition::Ule => 0x45,
+        Condition::Uge => 0x46,
     }
 }
 
@@ -1366,6 +1382,75 @@ mod tests {
                 "10d6b000\n",
                 "10d6b200\n",
                 "3ad00000\n",
+            )
+        );
+    }
+
+    #[test]
+    fn asm_flat_exec_encodes_cset_subset() {
+        let source = r#"
+            .text
+              LI r1, 5
+              LI r2, 9
+              CMP r1, r2
+              CSET.LT r3
+              CSET.GT r4
+              CSET.LE r5
+              CSET.GE r6
+              CMP r1, r1
+              CSET.EQ r7
+              CSET.NE r8
+              LI r15, -1
+              LI r16, 1
+              CMPU r15, r16
+              CSET.ULT r9
+              CSET.UGT r10
+              CSET.ULE r11
+              CSET.UGE r12
+              ADD r13, r3, r4
+              ADD r13, r13, r5
+              ADD r13, r13, r6
+              ADD r13, r13, r7
+              ADD r13, r13, r8
+              ADD r13, r13, r9
+              ADD r13, r13, r10
+              ADD r13, r13, r11
+              ADD r13, r13, r12
+              EXIT r13
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+
+        assert_eq!(
+            hex,
+            concat!(
+                "01080005\n",
+                "01100009\n",
+                "1b088000\n",
+                "3f180000\n",
+                "40200000\n",
+                "41280000\n",
+                "42300000\n",
+                "1b084000\n",
+                "3d380000\n",
+                "3e400000\n",
+                "0178ffff\n",
+                "01800001\n",
+                "1c7c0000\n",
+                "43480000\n",
+                "44500000\n",
+                "45580000\n",
+                "46600000\n",
+                "1068c800\n",
+                "106b4a00\n",
+                "106b4c00\n",
+                "106b4e00\n",
+                "106b5000\n",
+                "106b5200\n",
+                "106b5400\n",
+                "106b5600\n",
+                "106b5800\n",
+                "3a680000\n",
             )
         );
     }

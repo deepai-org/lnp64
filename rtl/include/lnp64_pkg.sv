@@ -148,6 +148,16 @@ package lnp64_pkg;
         LNP64_OP_ST_W         = 16'h0065,
         LNP64_OP_LD_H         = 16'h0066,
         LNP64_OP_ST_H         = 16'h0067,
+        LNP64_OP_CSET_EQ      = 16'h0068,
+        LNP64_OP_CSET_NE      = 16'h0069,
+        LNP64_OP_CSET_LT      = 16'h006a,
+        LNP64_OP_CSET_GT      = 16'h006b,
+        LNP64_OP_CSET_LE      = 16'h006c,
+        LNP64_OP_CSET_GE      = 16'h006d,
+        LNP64_OP_CSET_ULT     = 16'h006e,
+        LNP64_OP_CSET_UGT     = 16'h006f,
+        LNP64_OP_CSET_ULE     = 16'h0070,
+        LNP64_OP_CSET_UGE     = 16'h0071,
         LNP64_OP_UNSUPPORTED  = 16'h00ff
     } lnp64_opcode_e;
 

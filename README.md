@@ -265,6 +265,7 @@ bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_immediate_alu.s
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_extend.s
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_count_rotate_bswap.s
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_cmpu_csel.s
+bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_cset.s
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_mulh.s
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_auipc_fence.s
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_half_word_load_store.s

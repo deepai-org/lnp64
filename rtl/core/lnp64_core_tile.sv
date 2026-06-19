@@ -251,16 +251,16 @@ module lnp64_core_tile #(
     function automatic logic csel_condition(input logic [15:0] opcode);
         begin
             unique case (opcode)
-                LNP64_OP_CSEL_EQ: csel_condition = cmp_zero;
-                LNP64_OP_CSEL_NE: csel_condition = !cmp_zero;
-                LNP64_OP_CSEL_LT: csel_condition = cmp_negative;
-                LNP64_OP_CSEL_GT: csel_condition = cmp_greater;
-                LNP64_OP_CSEL_LE: csel_condition = cmp_zero || cmp_negative;
-                LNP64_OP_CSEL_GE: csel_condition = cmp_zero || cmp_greater;
-                LNP64_OP_CSEL_ULT: csel_condition = cmp_below;
-                LNP64_OP_CSEL_UGT: csel_condition = cmp_above;
-                LNP64_OP_CSEL_ULE: csel_condition = cmp_zero || cmp_below;
-                LNP64_OP_CSEL_UGE: csel_condition = cmp_zero || cmp_above;
+                LNP64_OP_CSEL_EQ, LNP64_OP_CSET_EQ: csel_condition = cmp_zero;
+                LNP64_OP_CSEL_NE, LNP64_OP_CSET_NE: csel_condition = !cmp_zero;
+                LNP64_OP_CSEL_LT, LNP64_OP_CSET_LT: csel_condition = cmp_negative;
+                LNP64_OP_CSEL_GT, LNP64_OP_CSET_GT: csel_condition = cmp_greater;
+                LNP64_OP_CSEL_LE, LNP64_OP_CSET_LE: csel_condition = cmp_zero || cmp_negative;
+                LNP64_OP_CSEL_GE, LNP64_OP_CSET_GE: csel_condition = cmp_zero || cmp_greater;
+                LNP64_OP_CSEL_ULT, LNP64_OP_CSET_ULT: csel_condition = cmp_below;
+                LNP64_OP_CSEL_UGT, LNP64_OP_CSET_UGT: csel_condition = cmp_above;
+                LNP64_OP_CSEL_ULE, LNP64_OP_CSET_ULE: csel_condition = cmp_zero || cmp_below;
+                LNP64_OP_CSEL_UGE, LNP64_OP_CSET_UGE: csel_condition = cmp_zero || cmp_above;
                 default: csel_condition = 1'b0;
             endcase
         end
@@ -778,6 +778,22 @@ module lnp64_core_tile #(
                             LNP64_OP_CSEL_ULE,
                             LNP64_OP_CSEL_UGE: begin
                                 gpr[dec.rd] <= csel_condition(dec.opcode) ? gpr[dec.rs1] : gpr[dec.rs2];
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_CSET_EQ,
+                            LNP64_OP_CSET_NE,
+                            LNP64_OP_CSET_LT,
+                            LNP64_OP_CSET_GT,
+                            LNP64_OP_CSET_LE,
+                            LNP64_OP_CSET_GE,
+                            LNP64_OP_CSET_ULT,
+                            LNP64_OP_CSET_UGT,
+                            LNP64_OP_CSET_ULE,
+                            LNP64_OP_CSET_UGE: begin
+                                gpr[dec.rd] <= {63'd0, csel_condition(dec.opcode)};
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
