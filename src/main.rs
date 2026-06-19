@@ -558,6 +558,7 @@ fn encode_flat_exec_instr(
         Instr::CallReg(target) => Ok(vec![enc_reg(0x28, *target)]),
         Instr::LrGet(dst) => Ok(vec![enc_reg(0x29, *dst)]),
         Instr::LrSet(src) => Ok(vec![enc_reg(0x2a, *src)]),
+        Instr::Yield => Ok(vec![enc_reg(0x06, Reg(0))]),
         Instr::Ld(rd, MemRef::BaseOffset(base, offset), Width::Double) => Ok(vec![enc_mem(
             0x30,
             *rd,
@@ -1369,6 +1370,20 @@ mod tests {
                 "3a200000\n",
             )
         );
+    }
+
+    #[test]
+    fn asm_flat_exec_encodes_yield() {
+        let source = r#"
+            .text
+              YIELD
+              LI r1, 0
+              EXIT r1
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+
+        assert_eq!(hex, concat!("06000000\n", "01080000\n", "3a080000\n",));
     }
 
     #[test]

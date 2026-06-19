@@ -1769,6 +1769,7 @@ impl Machine {
                 let value = self.load_exec_u32(pc + 4)? as i64;
                 return Ok((Instr::Li(a, Value::Imm(value)), pc + 8));
             }
+            0x06 => Instr::Yield,
             0xd0 => {
                 let offset = sign_extend(self.load_exec_u32(pc + 4)?, 32);
                 return Ok((
@@ -14603,6 +14604,35 @@ mod tests {
 
         assert_eq!(exit, 0);
         assert!(!machine.threads.contains_key(&1));
+    }
+
+    #[test]
+    fn committed_exec_decodes_and_runs_yield() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let words = encode_exec_descriptor(&descriptor);
+        let mut text = vec![0; 0x1000];
+        put_instruction(&mut text, 0, encode_reg(0x06, 0));
+        put_instruction(&mut text, 4, encode_reg(0x3a, 0));
+        let mut prepared = prepared_exec_vmas_fixture();
+        prepared[0].bytes = text;
+        let mut machine = Machine::new(empty_program());
+
+        machine
+            .commit_exec_descriptor_memory_image(&words, &prepared)
+            .unwrap();
+        let exit = machine.run_committed_exec().unwrap();
+
+        assert_eq!(exit, 0);
+        assert_eq!(machine.committed_exec_retire_trace[0].opcode, 0x06);
     }
 
     #[test]

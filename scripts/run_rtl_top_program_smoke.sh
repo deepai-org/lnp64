@@ -351,6 +351,7 @@ def load_rust_flat_to_arch_opcode_map() -> dict[int, int]:
         "LrGet": "LNP64_OP_LR_GET",
         "LrSet": "LNP64_OP_LR_SET",
         "Ret": "LNP64_OP_RET",
+        "Yield": "LNP64_OP_YIELD",
         "ErrnoGet": "LNP64_OP_GET_ERRNO",
         "ErrnoSet": "LNP64_OP_SET_ERRNO",
         "Exit": "LNP64_OP_EXIT",
@@ -429,7 +430,6 @@ def load_rust_flat_to_arch_opcode_map() -> dict[int, int]:
 
 
 def check_rtl_decode_matches_rust(rtl_flat_to_arch: dict[int, int], rust_flat_to_arch: dict[int, int]) -> None:
-    allowed_rtl_only = {0x06}  # YIELD is RTL-decoded but not in Rust committed-exec yet.
     shared_opcodes = sorted(set(rtl_flat_to_arch) & set(rust_flat_to_arch))
     mismatches = [
         (opcode, rtl_flat_to_arch[opcode], rust_flat_to_arch[opcode])
@@ -438,7 +438,7 @@ def check_rtl_decode_matches_rust(rtl_flat_to_arch: dict[int, int], rust_flat_to
     ]
     if mismatches:
         raise SystemExit(f"RTL/Rust flat-to-architectural opcode drift: {mismatches}")
-    missing_in_rust = sorted(set(rtl_flat_to_arch) - set(rust_flat_to_arch) - allowed_rtl_only)
+    missing_in_rust = sorted(set(rtl_flat_to_arch) - set(rust_flat_to_arch))
     if missing_in_rust:
         raise SystemExit(f"RTL decode has flat opcodes missing from Rust committed exec map: {missing_in_rust}")
 
