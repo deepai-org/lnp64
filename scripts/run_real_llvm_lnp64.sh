@@ -1428,7 +1428,7 @@ printf 'real LLVM LNP64 clang indirect call object smoke passed: %s\n' \
 
 intrinsic_push_c="$build_dir/intrinsic-push.c"
 cat >"$intrinsic_push_c" <<'C'
-#include "lnp64_intrinsics.h"
+#include <lnp64/intrinsics.h>
 int main(void) {
   return __lnp_push(1, (lnp64_word_t)"intrinsic push ok\n", 18) - 18;
 }
@@ -1437,6 +1437,7 @@ C
 intrinsic_push_obj="$build_dir/intrinsic-push-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$intrinsic_push_c" -o "$intrinsic_push_obj"
 test -s "$intrinsic_push_obj"
 intrinsic_push_dump="$build_dir/intrinsic-push-clang-smoke.dump"
@@ -1448,7 +1449,7 @@ printf 'real LLVM LNP64 clang intrinsic push object smoke passed: %s\n' \
 
 intrinsic_await_c="$build_dir/intrinsic-await.c"
 cat >"$intrinsic_await_c" <<'C'
-#include "lnp64_intrinsics.h"
+#include <lnp64/intrinsics.h>
 int main(void) {
   return __lnp_await(0, 0, 0);
 }
@@ -1457,6 +1458,7 @@ C
 intrinsic_await_obj="$build_dir/intrinsic-await-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$intrinsic_await_c" -o "$intrinsic_await_obj"
 test -s "$intrinsic_await_obj"
 intrinsic_await_dump="$build_dir/intrinsic-await-clang-smoke.dump"
@@ -1468,7 +1470,7 @@ printf 'real LLVM LNP64 clang intrinsic await object smoke passed: %s\n' \
 
 intrinsic_call_c="$build_dir/intrinsic-call.c"
 cat >"$intrinsic_call_c" <<'C'
-#include "lnp64_intrinsics.h"
+#include <lnp64/intrinsics.h>
 int main(void) {
   if (__lnp_call(0, 1, 2) != (lnp64_word_t)-1)
     return 1;
@@ -1479,6 +1481,7 @@ C
 intrinsic_call_obj="$build_dir/intrinsic-call-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$intrinsic_call_c" -o "$intrinsic_call_obj"
 test -s "$intrinsic_call_obj"
 intrinsic_call_dump="$build_dir/intrinsic-call-clang-smoke.dump"
@@ -1490,7 +1493,7 @@ printf 'real LLVM LNP64 clang intrinsic call object smoke passed: %s\n' \
 
 intrinsic_gate_return_c="$build_dir/intrinsic-gate-return.c"
 cat >"$intrinsic_gate_return_c" <<'C'
-#include "lnp64_intrinsics.h"
+#include <lnp64/intrinsics.h>
 int main(void) {
   if (__lnp_gate_return(1, 2, 0) != (lnp64_word_t)-1)
     return 1;
@@ -1501,6 +1504,7 @@ C
 intrinsic_gate_return_obj="$build_dir/intrinsic-gate-return-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$intrinsic_gate_return_c" -o "$intrinsic_gate_return_obj"
 test -s "$intrinsic_gate_return_obj"
 intrinsic_gate_return_dump="$build_dir/intrinsic-gate-return-clang-smoke.dump"
@@ -1512,7 +1516,7 @@ printf 'real LLVM LNP64 clang intrinsic gate return object smoke passed: %s\n' \
 
 intrinsic_ctl_c="$build_dir/intrinsic-control.c"
 cat >"$intrinsic_ctl_c" <<'C'
-#include "lnp64_intrinsics.h"
+#include <lnp64/intrinsics.h>
 int main(void) {
   lnp64_word_t record[1];
   record[0] = 99;
@@ -1529,6 +1533,7 @@ C
 intrinsic_ctl_obj="$build_dir/intrinsic-control-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$intrinsic_ctl_c" -o "$intrinsic_ctl_obj"
 test -s "$intrinsic_ctl_obj"
 intrinsic_ctl_dump="$build_dir/intrinsic-control-clang-smoke.dump"
@@ -1541,7 +1546,7 @@ printf 'real LLVM LNP64 clang intrinsic control object smoke passed: %s\n' \
 
 intrinsic_cap_c="$build_dir/intrinsic-cap-control.c"
 cat >"$intrinsic_cap_c" <<'C'
-#include "lnp64_intrinsics.h"
+#include <lnp64/intrinsics.h>
 
 int main(void) {
   if (__lnp_cap_dup(999, 0, 0) != (lnp64_word_t)-1)
@@ -1559,6 +1564,7 @@ C
 intrinsic_cap_obj="$build_dir/intrinsic-cap-control-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$intrinsic_cap_c" -o "$intrinsic_cap_obj"
 test -s "$intrinsic_cap_obj"
 intrinsic_cap_dump="$build_dir/intrinsic-cap-control-clang-smoke.dump"
@@ -1573,7 +1579,7 @@ printf 'real LLVM LNP64 clang intrinsic capability control object smoke passed: 
 
 intrinsic_mmap_c="$build_dir/intrinsic-mmap.c"
 cat >"$intrinsic_mmap_c" <<'C'
-#include "lnp64_intrinsics.h"
+#include <lnp64/intrinsics.h>
 
 static volatile void *mapped;
 
@@ -1589,6 +1595,7 @@ C
 intrinsic_mmap_obj="$build_dir/intrinsic-mmap-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$intrinsic_mmap_c" -o "$intrinsic_mmap_obj"
 test -s "$intrinsic_mmap_obj"
 intrinsic_mmap_dump="$build_dir/intrinsic-mmap-clang-smoke.dump"
@@ -1602,7 +1609,7 @@ printf 'real LLVM LNP64 clang intrinsic mmap object smoke passed: %s\n' \
 
 intrinsic_get_pcr_c="$build_dir/intrinsic-get-pcr.c"
 cat >"$intrinsic_get_pcr_c" <<'C'
-#include "lnp64_intrinsics.h"
+#include <lnp64/intrinsics.h>
 
 int main(void) {
   return __lnp_get_pid() == 1 ? 0 : 1;
@@ -1612,6 +1619,7 @@ C
 intrinsic_get_pcr_obj="$build_dir/intrinsic-get-pcr-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$intrinsic_get_pcr_c" -o "$intrinsic_get_pcr_obj"
 test -s "$intrinsic_get_pcr_obj"
 intrinsic_get_pcr_dump="$build_dir/intrinsic-get-pcr-clang-smoke.dump"
@@ -1623,7 +1631,7 @@ printf 'real LLVM LNP64 clang intrinsic GET_PCR object smoke passed: %s\n' \
 
 intrinsic_set_pcr_c="$build_dir/intrinsic-set-pcr.c"
 cat >"$intrinsic_set_pcr_c" <<'C'
-#include "lnp64_intrinsics.h"
+#include <lnp64/intrinsics.h>
 
 int main(void) {
   lnp64_word_t old_tp = __lnp_get_thread_pointer();
@@ -1642,6 +1650,7 @@ C
 intrinsic_set_pcr_obj="$build_dir/intrinsic-set-pcr-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$intrinsic_set_pcr_c" -o "$intrinsic_set_pcr_obj"
 test -s "$intrinsic_set_pcr_obj"
 intrinsic_set_pcr_dump="$build_dir/intrinsic-set-pcr-clang-smoke.dump"
@@ -1654,7 +1663,7 @@ printf 'real LLVM LNP64 clang intrinsic SET_PCR object smoke passed: %s\n' \
 
 intrinsic_openat_c="$build_dir/intrinsic-openat.c"
 cat >"$intrinsic_openat_c" <<'C'
-#include "lnp64_intrinsics.h"
+#include <lnp64/intrinsics.h>
 
 int main(void) {
   lnp64_word_t fd = __lnp_openat((lnp64_cap_t)(long)-100,
@@ -1666,6 +1675,7 @@ C
 intrinsic_openat_obj="$build_dir/intrinsic-openat-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$intrinsic_openat_c" -o "$intrinsic_openat_obj"
 test -s "$intrinsic_openat_obj"
 intrinsic_openat_dump="$build_dir/intrinsic-openat-clang-smoke.dump"
@@ -1677,7 +1687,7 @@ printf 'real LLVM LNP64 clang intrinsic OPEN_AT object smoke passed: %s\n' \
 
 intrinsic_clone_c="$build_dir/intrinsic-clone.c"
 cat >"$intrinsic_clone_c" <<'C'
-#include "lnp64_intrinsics.h"
+#include <lnp64/intrinsics.h>
 
 static volatile lnp64_word_t marker;
 
@@ -1700,6 +1710,7 @@ C
 intrinsic_clone_obj="$build_dir/intrinsic-clone-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$intrinsic_clone_c" -o "$intrinsic_clone_obj"
 test -s "$intrinsic_clone_obj"
 intrinsic_clone_dump="$build_dir/intrinsic-clone-clang-smoke.dump"
@@ -1712,7 +1723,7 @@ printf 'real LLVM LNP64 clang intrinsic CLONE object smoke passed: %s\n' \
 
 intrinsic_amo_c="$build_dir/intrinsic-amo.c"
 cat >"$intrinsic_amo_c" <<'C'
-#include "lnp64_intrinsics.h"
+#include <lnp64/intrinsics.h>
 
 static volatile lnp64_word_t cell = 7;
 
@@ -1742,6 +1753,7 @@ C
 intrinsic_amo_obj="$build_dir/intrinsic-amo-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$intrinsic_amo_c" -o "$intrinsic_amo_obj"
 test -s "$intrinsic_amo_obj"
 intrinsic_amo_dump="$build_dir/intrinsic-amo-clang-smoke.dump"
@@ -1757,7 +1769,7 @@ printf 'real LLVM LNP64 clang intrinsic AMO object smoke passed: %s\n' \
 
 intrinsic_futex_c="$build_dir/intrinsic-futex.c"
 cat >"$intrinsic_futex_c" <<'C'
-#include "lnp64_intrinsics.h"
+#include <lnp64/intrinsics.h>
 
 static volatile lnp64_word_t futex_cell = 1;
 
@@ -1770,6 +1782,7 @@ C
 intrinsic_futex_obj="$build_dir/intrinsic-futex-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$intrinsic_futex_c" -o "$intrinsic_futex_obj"
 test -s "$intrinsic_futex_obj"
 intrinsic_futex_dump="$build_dir/intrinsic-futex-clang-smoke.dump"
@@ -4035,7 +4048,7 @@ printf 'real LLVM LNP64 clang poll/select/epoll/kqueue libc object smoke passed:
 
 signal_libc_c="$build_dir/signal-libc-smoke.c"
 cat >"$signal_libc_c" <<'C'
-#include "lnp64_intrinsics.h"
+#include <lnp64/intrinsics.h>
 #include <signal.h>
 #include <unistd.h>
 

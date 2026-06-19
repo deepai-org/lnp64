@@ -2441,6 +2441,7 @@ mod tests {
         assert!(real_llc.contains("toolchain/liblnp64_signal_min.c"));
         assert!(libc_signal_min.contains("#include <signal.h>"));
         assert!(libc_signal_min.contains("#include <unistd.h>"));
+        assert!(!real_llc.contains("#include \"lnp64_intrinsics.h\""));
         assert!(!libc_signal_min.contains("typedef unsigned long sigset_t;"));
         assert!(!libc_signal_min.contains("struct sigaction {"));
         assert!(libc_signal_min.contains("sighandler_t signal"));
@@ -2457,7 +2458,7 @@ mod tests {
         assert!(signal_header.contains("int sigprocmask(int how"));
         assert!(signal_header.contains("int kill(int pid"));
         assert!(real_llc.contains("signal-libc-clang-smoke.o"));
-        assert!(real_llc.contains("#include \"lnp64_intrinsics.h\""));
+        assert!(real_llc.contains("#include <lnp64/intrinsics.h>"));
         assert!(real_llc.contains("#include <signal.h>"));
         assert!(real_llc.contains("#include <unistd.h>"));
         assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$signal_libc_c\""));
