@@ -179,6 +179,16 @@ fn run() -> Result<(), String> {
             let r3 = regs.get(3).copied().unwrap_or_default();
             let r4 = regs.get(4).copied().unwrap_or_default();
             let mem0 = machine.last_exit_mem0().unwrap_or_default();
+            let trace = machine
+                .committed_exec_retire_trace()
+                .iter()
+                .map(|(pc, opcode)| {
+                    let pc_word = pc.saturating_sub(0x1000) / 4;
+                    format!("{{\"pc\":{pc_word},\"opcode\":{opcode}}}")
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            println!("EMULATOR_RETIRE [{trace}]");
             println!("EMULATOR_FINAL {{\"exit\":{exit},\"r3\":{r3},\"r4\":{r4},\"mem0\":{mem0}}}");
             Ok(())
         }

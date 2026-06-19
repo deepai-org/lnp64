@@ -80,6 +80,17 @@ module lnp64_top_program_tb;
         end
     endtask
 
+    always @(posedge clk) begin
+        #1;
+        if (dut.retire_submit_valid_vec[0]) begin
+            $display(
+                "RTL_RETIRE {\"pc\":%0d,\"opcode\":%0d}",
+                dut.retire_submit_record_vec[0].pc,
+                dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc][31:24]
+            );
+        end
+    end
+
     initial begin
         clk = 1'b0;
         reset_n = 1'b0;

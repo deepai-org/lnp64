@@ -1154,6 +1154,7 @@ pub struct Machine {
     last_exit: i32,
     last_exit_regs: Option<[u64; GPR_COUNT]>,
     last_exit_mem0: Option<u64>,
+    committed_exec_retire_trace: Vec<(u64, u8)>,
     committed_exec_mode: bool,
 }
 
@@ -1289,6 +1290,7 @@ impl Machine {
             last_exit: 0,
             last_exit_regs: None,
             last_exit_mem0: None,
+            committed_exec_retire_trace: Vec::new(),
             committed_exec_mode: false,
         }
     }
@@ -1417,6 +1419,7 @@ impl Machine {
         }
         self.thread_mut()?.ip = checked_host_usize(entry, "committed exec entry PC")?;
         self.committed_exec_mode = true;
+        self.committed_exec_retire_trace.clear();
 
         let mut steps = 0usize;
         while !self.threads.is_empty() {
@@ -1429,6 +1432,7 @@ impl Machine {
                 break;
             }
             let pc = self.thread()?.ip as u64;
+            let opcode = self.load_exec_u32(pc).map(|word| (word >> 24) as u8)?;
             let (instr, next_pc) = self.decode_committed_exec_instruction(pc)?;
             self.thread_mut()?.ip = checked_host_usize(next_pc, "committed exec next PC")?;
             self.charge_cpu_tick()?;
@@ -1436,6 +1440,7 @@ impl Machine {
                 let context = self.fault_context(tid);
                 format!("{err} at tid {tid} pc 0x{pc:x}: {instr:?}{context}")
             })?;
+            self.committed_exec_retire_trace.push((pc, opcode));
         }
         Ok(self.last_exit)
     }
@@ -1446,6 +1451,10 @@ impl Machine {
 
     pub fn last_exit_mem0(&self) -> Option<u64> {
         self.last_exit_mem0
+    }
+
+    pub fn committed_exec_retire_trace(&self) -> &[(u64, u8)] {
+        &self.committed_exec_retire_trace
     }
 
     fn install_committed_exec_runtime_vmas(&mut self) -> Result<(), String> {
