@@ -447,6 +447,48 @@ module lnp64_top #(
     end
 
 `ifndef SYNTHESIS
+    function automatic logic top_m1_authority_projection_slots_match(
+        input lnp64_m1_state_projection_t left,
+        input lnp64_m1_state_projection_t right
+    );
+        begin
+            top_m1_authority_projection_slots_match =
+                left.object_gen == right.object_gen &&
+                left.created_object_created == right.created_object_created &&
+                left.created_object_gen == right.created_object_gen &&
+                left.root_object_id == right.root_object_id &&
+                left.root_generation == right.root_generation &&
+                left.root_domain_id == right.root_domain_id &&
+                left.root_lineage_epoch == right.root_lineage_epoch &&
+                left.root_sealed == right.root_sealed &&
+                left.root_rights == right.root_rights &&
+                left.consumer_object_id == right.consumer_object_id &&
+                left.consumer_generation == right.consumer_generation &&
+                left.consumer_domain_id == right.consumer_domain_id &&
+                left.consumer_lineage_epoch == right.consumer_lineage_epoch &&
+                left.consumer_sealed == right.consumer_sealed &&
+                left.consumer_rights == right.consumer_rights &&
+                left.sent_valid == right.sent_valid &&
+                left.sent_object_id == right.sent_object_id &&
+                left.sent_generation == right.sent_generation &&
+                left.sent_domain_id == right.sent_domain_id &&
+                left.sent_lineage_epoch == right.sent_lineage_epoch &&
+                left.sent_sealed == right.sent_sealed &&
+                left.sent_rights == right.sent_rights &&
+                left.minted_valid == right.minted_valid &&
+                left.minted_object_id == right.minted_object_id &&
+                left.minted_generation == right.minted_generation &&
+                left.minted_domain_id == right.minted_domain_id &&
+                left.minted_lineage_epoch == right.minted_lineage_epoch &&
+                left.minted_sealed == right.minted_sealed &&
+                left.minted_rights == right.minted_rights &&
+                left.wake_pending == right.wake_pending &&
+                left.transfer_valid == right.transfer_valid &&
+                left.has_revoked_generation == right.has_revoked_generation &&
+                left.revoked_generation == right.revoked_generation;
+        end
+    endfunction
+
     integer m1_assert_i;
     always_ff @(posedge clk or negedge logic_reset_n) begin
         if (!logic_reset_n) begin
@@ -510,6 +552,11 @@ module lnp64_top #(
                             default: begin
                             end
                         endcase
+                    end else begin
+                        assert (top_m1_authority_projection_slots_match(
+                            m1_pre_state_projection_vec[m1_assert_i],
+                            m1_state_projection_vec[m1_assert_i]
+                        )) else $fatal(1, "SG-AUTH M1 non-OK top-level commit changed authority projection slots");
                     end
                 end
             end
