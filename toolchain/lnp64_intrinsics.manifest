@@ -22,6 +22,10 @@ __lnp_alloc_ex|ALLOC_EX|ptr_or_errno|size,align
 __lnp_alloc_size|ALLOC_SIZE|size_or_errno|ptr
 __lnp_free|FREE|status_or_errno|ptr
 __lnp_get_pid|GET_PCR|pid|none
+__lnp_get_thread_pointer|GET_PCR|thread_pointer|none
+__lnp_set_thread_pointer|SET_PCR|status_or_errno|thread_pointer
+__lnp_get_event_mask|GET_PCR|event_mask|none
+__lnp_set_event_mask|SET_PCR|status_or_errno|event_mask
 __lnp_spawn_entry|CLONE|tid_or_errno|entry,arg
 __lnp_thread_join|THREAD_JOIN|status|tid,retval_ptr
 __lnp_yield|YIELD|event_delivery_point|none

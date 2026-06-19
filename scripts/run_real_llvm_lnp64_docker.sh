@@ -106,6 +106,8 @@ run_elf_report "real LLVM LNP64 run-elf intrinsic mmap execution passed" \
   target/llvm-lnp64-build/lnp64-intrinsic-mmap-linked.elf
 run_elf_report "real LLVM LNP64 run-elf intrinsic GET_PCR execution passed" \
   target/llvm-lnp64-build/lnp64-intrinsic-get-pcr-linked.elf
+run_elf_report "real LLVM LNP64 run-elf intrinsic SET_PCR execution passed" \
+  target/llvm-lnp64-build/lnp64-intrinsic-set-pcr-linked.elf
 run_elf_report "real LLVM LNP64 run-elf intrinsic OPEN_AT execution passed" \
   target/llvm-lnp64-build/lnp64-intrinsic-openat-linked.elf
 run_elf_report "real LLVM LNP64 run-elf intrinsic CLONE execution passed" \

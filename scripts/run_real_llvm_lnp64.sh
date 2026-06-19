@@ -1615,6 +1615,37 @@ grep -q 'get_pcr r' "$intrinsic_get_pcr_dump"
 printf 'real LLVM LNP64 clang intrinsic GET_PCR object smoke passed: %s\n' \
   "$intrinsic_get_pcr_obj"
 
+intrinsic_set_pcr_c="$build_dir/intrinsic-set-pcr.c"
+cat >"$intrinsic_set_pcr_c" <<'C'
+#include "lnp64_intrinsics.h"
+
+int main(void) {
+  lnp64_word_t old_tp = __lnp_get_thread_pointer();
+  if (__lnp_set_thread_pointer(0x1234) != 0)
+    return 1;
+  if (__lnp_get_thread_pointer() != 0x1234)
+    return 2;
+  if (__lnp_set_thread_pointer(old_tp) != 0)
+    return 3;
+  if (__lnp_set_event_mask(0x55) != 0)
+    return 4;
+  return __lnp_get_event_mask() == 0x55 ? 0 : 5;
+}
+C
+
+intrinsic_set_pcr_obj="$build_dir/intrinsic-set-pcr-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$intrinsic_set_pcr_c" -o "$intrinsic_set_pcr_obj"
+test -s "$intrinsic_set_pcr_obj"
+intrinsic_set_pcr_dump="$build_dir/intrinsic-set-pcr-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$intrinsic_set_pcr_obj" \
+  >"$intrinsic_set_pcr_dump"
+grep -q 'get_pcr r' "$intrinsic_set_pcr_dump"
+grep -q 'set_pcr r' "$intrinsic_set_pcr_dump"
+printf 'real LLVM LNP64 clang intrinsic SET_PCR object smoke passed: %s\n' \
+  "$intrinsic_set_pcr_obj"
+
 intrinsic_openat_c="$build_dir/intrinsic-openat.c"
 cat >"$intrinsic_openat_c" <<'C'
 #include "lnp64_intrinsics.h"
@@ -4819,6 +4850,13 @@ intrinsic_get_pcr_elf="$build_dir/lnp64-intrinsic-get-pcr-linked.elf"
 test -s "$intrinsic_get_pcr_elf"
 printf 'real LLVM LNP64 lld intrinsic GET_PCR link smoke passed: %s\n' \
   "$intrinsic_get_pcr_elf"
+
+intrinsic_set_pcr_elf="$build_dir/lnp64-intrinsic-set-pcr-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$intrinsic_set_pcr_elf" "$crt0_obj" "$intrinsic_set_pcr_obj"
+test -s "$intrinsic_set_pcr_elf"
+printf 'real LLVM LNP64 lld intrinsic SET_PCR link smoke passed: %s\n' \
+  "$intrinsic_set_pcr_elf"
 
 intrinsic_openat_elf="$build_dir/lnp64-intrinsic-openat-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

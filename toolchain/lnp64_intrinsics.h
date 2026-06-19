@@ -127,6 +127,36 @@ static inline lnp64_word_t __lnp_get_pid(void) {
   return value;
 }
 
+static inline lnp64_word_t __lnp_get_thread_pointer(void) {
+  lnp64_word_t value;
+  __asm__ volatile("get_pcr %0, TP" : "=r"(value));
+  return value;
+}
+
+static inline lnp64_word_t __lnp_set_thread_pointer(lnp64_word_t value) {
+  lnp64_word_t result;
+  __asm__ volatile("set_pcr %0, TP, %1"
+                   : "=r"(result)
+                   : "r"(value)
+                   : "memory");
+  return result;
+}
+
+static inline lnp64_word_t __lnp_get_event_mask(void) {
+  lnp64_word_t value;
+  __asm__ volatile("get_pcr %0, SIGMASK" : "=r"(value));
+  return value;
+}
+
+static inline lnp64_word_t __lnp_set_event_mask(lnp64_word_t value) {
+  lnp64_word_t result;
+  __asm__ volatile("set_pcr %0, SIGMASK, %1"
+                   : "=r"(result)
+                   : "r"(value)
+                   : "memory");
+  return result;
+}
+
 static inline lnp64_word_t __lnp_spawn_entry(lnp64_word_t entry,
                                              lnp64_word_t arg) {
   lnp64_word_t tid;

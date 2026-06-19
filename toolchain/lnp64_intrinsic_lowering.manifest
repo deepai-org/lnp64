@@ -23,6 +23,10 @@ __lnp_alloc_ex|ALLOC_EX|size,align|inline_asm_lowered|toolchain/lnp64_intrinsics
 __lnp_alloc_size|ALLOC_SIZE|ptr|inline_asm_lowered|toolchain/lnp64_intrinsics.h,scripts/run_real_llvm_lnp64.sh|none
 __lnp_free|FREE|ptr|inline_asm_lowered|toolchain/lnp64_intrinsics.h,scripts/run_real_llvm_lnp64.sh|none
 __lnp_get_pid|GET_PCR|none|inline_asm_lowered|toolchain/lnp64_intrinsics.h,scripts/run_real_llvm_lnp64.sh|none
+__lnp_get_thread_pointer|GET_PCR|none|inline_asm_lowered|toolchain/lnp64_intrinsics.h,scripts/run_real_llvm_lnp64.sh|none
+__lnp_set_thread_pointer|SET_PCR|thread_pointer|inline_asm_lowered|toolchain/lnp64_intrinsics.h,scripts/run_real_llvm_lnp64.sh|none
+__lnp_get_event_mask|GET_PCR|none|inline_asm_lowered|toolchain/lnp64_intrinsics.h,scripts/run_real_llvm_lnp64.sh|none
+__lnp_set_event_mask|SET_PCR|event_mask|inline_asm_lowered|toolchain/lnp64_intrinsics.h,scripts/run_real_llvm_lnp64.sh|none
 __lnp_spawn_entry|CLONE|entry,arg|inline_asm_lowered|toolchain/lnp64_intrinsics.h,scripts/run_real_llvm_lnp64.sh|none
 __lnp_thread_join|THREAD_JOIN|tid,retval_ptr|inline_asm_lowered|toolchain/lnp64_intrinsics.h,scripts/run_real_llvm_lnp64.sh|none
 __lnp_yield|YIELD|none|inline_asm_lowered|toolchain/lnp64_intrinsics.h,scripts/run_real_llvm_lnp64.sh|none

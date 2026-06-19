@@ -3075,6 +3075,17 @@ mod tests {
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic GET_PCR execution passed")
         );
+        assert!(real_llc.contains("intrinsic-set-pcr-clang-smoke.o"));
+        assert!(real_llc.contains("__lnp_set_thread_pointer"));
+        assert!(real_llc.contains("__lnp_set_event_mask"));
+        assert!(real_llc.contains("grep -q 'set_pcr r'"));
+        assert!(real_llc.contains("real LLVM LNP64 clang intrinsic SET_PCR object smoke passed"));
+        assert!(real_llc.contains("lnp64-intrinsic-set-pcr-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld intrinsic SET_PCR link smoke passed"));
+        assert!(real_llc_docker.contains("lnp64-intrinsic-set-pcr-linked.elf"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic SET_PCR execution passed")
+        );
         assert!(real_llc.contains("intrinsic-openat-clang-smoke.o"));
         assert!(real_llc.contains("__lnp_openat"));
         assert!(real_llc.contains("grep -q 'open_at r'"));
@@ -3956,6 +3967,7 @@ mod tests {
             "real_intrinsic_capability_control_execution",
             "real_intrinsic_mmap_execution",
             "real_intrinsic_get_pcr_execution",
+            "real_intrinsic_set_pcr_execution",
             "real_intrinsic_openat_execution",
             "real_intrinsic_clone_execution",
             "real_intrinsic_amo_execution",
