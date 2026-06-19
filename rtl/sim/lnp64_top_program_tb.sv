@@ -39,20 +39,11 @@ module lnp64_top_program_tb #(
     logic [31:0] topology_active_window_base_seen;
     logic [31:0] topology_active_window_count_seen;
     int unsigned max_cycles;
-    logic [7:0] retire_opcode;
-    logic [31:0] retire_instr;
-    logic [7:0] retire_opcode_vec [TB_CORE_TILE_COUNT];
-    logic [31:0] retire_instr_vec [TB_CORE_TILE_COUNT];
-    lnp64_decode_t retire_dec_vec [TB_CORE_TILE_COUNT];
     lnp64_m1_state_projection_t sampled_m1_pre_state [TB_CORE_TILE_COUNT];
-    logic [4:0] retire_raw_result_reg;
     logic retire_result_valid;
     logic [4:0] retire_result_reg;
-    logic [31:0] retire_operand_imm;
-    logic [4:0] retire_raw_result_reg_vec [TB_CORE_TILE_COUNT];
     logic retire_result_valid_vec [TB_CORE_TILE_COUNT];
     logic [4:0] retire_result_reg_vec [TB_CORE_TILE_COUNT];
-    logic [31:0] retire_operand_imm_vec [TB_CORE_TILE_COUNT];
     logic [63:0] retire_result_value_vec [TB_CORE_TILE_COUNT];
     logic [15:0] retire_errno_vec [TB_CORE_TILE_COUNT];
     logic [63:0] final_mem_checksum;
@@ -97,56 +88,14 @@ module lnp64_top_program_tb #(
 
     always #5 clk = ~clk;
 
-    function automatic logic flat_result_valid(input logic [7:0] opcode);
-        unique case (opcode)
-            8'h00, 8'h1b, 8'h1c, 8'h1f, 8'h20, 8'h21, 8'h22, 8'h23,
-            8'h24, 8'h25, 8'h26, 8'h27, 8'h28, 8'h2a, 8'h33, 8'h34,
-            8'h35, 8'h37, 8'h39, 8'h3a, 8'h49, 8'h61, 8'h63,
-            8'h64, 8'h65, 8'h68, 8'h6e, 8'hcb, 8'hcc, 8'hcd: flat_result_valid = 1'b0;
-            default: flat_result_valid = 1'b1;
-        endcase
-    endfunction
-
-    function automatic logic [31:0] flat_operand_imm(
-        input logic [7:0] opcode,
-        input logic [31:0] instr,
-        input logic [31:0] literal
-    );
-        unique case (opcode)
-            8'h03, 8'h04, 8'hd0: flat_operand_imm = literal;
-            8'h01: flat_operand_imm = {{16{instr[15]}}, instr[15:0]};
-            8'h20, 8'h21, 8'h22, 8'h23, 8'h24, 8'h25, 8'h26, 8'h27:
-                flat_operand_imm = {{8{instr[23]}}, instr[23:0]};
-            default: flat_operand_imm = {{18{instr[13]}}, instr[13:0]};
-        endcase
-    endfunction
-
     genvar decode_tile_id;
     generate
-        for (decode_tile_id = 0; decode_tile_id < TB_CORE_TILE_COUNT; decode_tile_id = decode_tile_id + 1) begin : retire_decoders
-            lnp64_decode retire_decode_i(
-                .instr(retire_instr_vec[decode_tile_id]),
-                .dec(retire_dec_vec[decode_tile_id])
-            );
-
+        for (decode_tile_id = 0; decode_tile_id < TB_CORE_TILE_COUNT; decode_tile_id = decode_tile_id + 1) begin : retire_value_samplers
             always_comb begin
-                retire_instr_vec[decode_tile_id] =
-                    dut.core_tiles[decode_tile_id].core_i.program_rom[
-                        dut.retire_submit_record_vec[decode_tile_id].pc
-                    ];
-                retire_opcode_vec[decode_tile_id] = retire_instr_vec[decode_tile_id][31:24];
-                retire_raw_result_reg_vec[decode_tile_id] = retire_instr_vec[decode_tile_id][23:19];
                 retire_result_valid_vec[decode_tile_id] =
                     dut.retire_submit_record_vec[decode_tile_id].result_valid;
                 retire_result_reg_vec[decode_tile_id] =
                     dut.retire_submit_record_vec[decode_tile_id].result_reg[4:0];
-                retire_operand_imm_vec[decode_tile_id] = flat_operand_imm(
-                    retire_opcode_vec[decode_tile_id],
-                    retire_instr_vec[decode_tile_id],
-                    dut.core_tiles[decode_tile_id].core_i.program_rom[
-                        dut.retire_submit_record_vec[decode_tile_id].pc + 32'd1
-                    ]
-                );
                 retire_result_value_vec[decode_tile_id] =
                     retire_result_valid_vec[decode_tile_id] ?
                         dut.core_tiles[decode_tile_id].core_i.gpr[retire_result_reg_vec[decode_tile_id]] :
@@ -171,12 +120,8 @@ module lnp64_top_program_tb #(
     endfunction
 
     always_comb begin
-        retire_instr = retire_instr_vec[0];
-        retire_opcode = retire_opcode_vec[0];
-        retire_raw_result_reg = retire_raw_result_reg_vec[0];
         retire_result_valid = retire_result_valid_vec[0];
         retire_result_reg = retire_result_reg_vec[0];
-        retire_operand_imm = retire_operand_imm_vec[0];
         final_mem_checksum = rtl_memory_checksum();
     end
 
@@ -294,7 +239,7 @@ module lnp64_top_program_tb #(
         #1;
         for (trace_tile = 0; trace_tile < TB_CORE_TILE_COUNT; trace_tile = trace_tile + 1) begin
             if (dut.retire_submit_valid_vec[trace_tile]) begin
-                if (retire_opcode_vec[trace_tile] == 8'hff) begin
+                if (dut.retire_submit_record_vec[trace_tile].opcode == 8'hff) begin
                     unsupported_retired_seen = 1'b1;
                 end
                 $display(
@@ -414,7 +359,7 @@ module lnp64_top_program_tb #(
         require(tile1_observable_idle, "tile 1 was not observable/idled during top-level program");
         require(multicore_no_duplicate_tid, "top-level program duplicated PID 1 across tiles");
         require(retired_count > 32'd0, "top-level program retired no instructions");
-        if (unsupported_retired_seen || retire_opcode == 8'hff) begin
+        if (unsupported_retired_seen || dut.retire_submit_record_vec[0].opcode == 8'hff) begin
             require(unsupported_failed_closed, "unsupported top-level program did not fail closed canonically");
         end
         if (inject_cross_tile_wake) begin
@@ -426,7 +371,7 @@ module lnp64_top_program_tb #(
             "RTL_FINAL {\"retired\":%0d,\"exit_reg\":%0d,\"regs\":[%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d],\"r3\":%0d,\"r4\":%0d,\"r5\":%0d,\"env_page\":%0d,\"mem0\":%0d,\"mem_checksum\":%0d,\"errno\":%0d}",
             retired_count,
             dut.core_tiles[0].core_i.gpr[
-                dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc][23:19]
+                dut.retire_submit_record_vec[0].operand_rd[4:0]
             ],
             dut.core_tiles[0].core_i.gpr[0],
             dut.core_tiles[0].core_i.gpr[1],
