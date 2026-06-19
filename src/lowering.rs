@@ -1354,6 +1354,7 @@ mod tests {
         let signal_header = include_str!("../toolchain/include/signal.h");
         let stdlib_header = include_str!("../toolchain/include/stdlib.h");
         let sys_mman_header = include_str!("../toolchain/include/sys/mman.h");
+        let sys_auxv_header = include_str!("../toolchain/include/sys/auxv.h");
         let sys_socket_header = include_str!("../toolchain/include/sys/socket.h");
         let sys_timerfd_header = include_str!("../toolchain/include/sys/timerfd.h");
         let time_header = include_str!("../toolchain/include/time.h");
@@ -1988,6 +1989,10 @@ mod tests {
         );
         assert!(real_llc.contains("toolchain/liblnp64_startup_min.c"));
         assert!(libc_startup_min.contains("getauxval"));
+        assert!(sys_auxv_header.contains("#define AT_PAGESZ 6"));
+        assert!(sys_auxv_header.contains("#define AT_HWCAP 16"));
+        assert!(sys_auxv_header.contains("#define AT_RANDOM 25"));
+        assert!(sys_auxv_header.contains("unsigned long getauxval(unsigned long type);"));
         assert!(libc_startup_min.contains("char **environ"));
         assert!(libc_startup_min.contains("char *getenv("));
         assert!(libc_startup_min.contains("int setenv("));
@@ -2452,6 +2457,7 @@ mod tests {
             )
         );
         assert!(real_llc.contains("getauxval-clang-smoke.o"));
+        assert!(real_llc.contains("#include <sys/auxv.h>"));
         assert!(real_llc.contains("real LLVM LNP64 clang getauxval object smoke passed"));
         assert!(real_llc.contains("libc-string-clang-smoke.o"));
         assert!(real_llc.contains("int memcmp"));

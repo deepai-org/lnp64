@@ -2130,12 +2130,7 @@ printf 'real LLVM LNP64 clang minilibc stdio implementation object smoke passed:
 
 getauxval_c="$build_dir/getauxval-smoke.c"
 cat >"$getauxval_c" <<'C'
-unsigned long getauxval(unsigned long type);
-
-enum {
-  AT_PAGESZ = 6,
-  AT_HWCAP = 16,
-};
+#include <sys/auxv.h>
 
 int main(void) {
   if (getauxval(AT_PAGESZ) != 4096)
