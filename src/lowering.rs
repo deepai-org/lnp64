@@ -1470,6 +1470,7 @@ mod tests {
             "clang_userland_lnpsh_object",
             "clang_userland_spawn_task_object",
             "clang_netbsd_loader_target_child_object",
+            "clang_netbsd_thread_child_object",
             "clang_minilibc_meta_impl_object",
             "clang_meta_libc_object",
             "clang_minilibc_random_impl_object",
@@ -1571,6 +1572,8 @@ mod tests {
             "userland_spawn_task_run_elf",
             "netbsd_loader_target_child_static_link",
             "netbsd_loader_target_child_run_elf",
+            "netbsd_thread_child_static_link",
+            "netbsd_thread_child_run_elf",
             "metadata_libc_static_link",
             "metadata_libc_run_elf",
         ] {
@@ -2523,6 +2526,9 @@ mod tests {
         assert!(
             real_llc.contains("real LLVM LNP64 clang NetBSD loader target child object passed")
         );
+        assert!(real_llc.contains("userland/thread_test_clang.c"));
+        assert!(real_llc.contains("netbsd-thread-test-clang-smoke.o"));
+        assert!(real_llc.contains("real LLVM LNP64 clang NetBSD thread child object passed"));
         assert!(real_llc.contains("toolchain/liblnp64_fd_min.c"));
         assert!(libc_fd_min.contains("__lnp_pull"));
         assert!(libc_fd_min.contains("__lnp_push"));
@@ -2644,6 +2650,10 @@ mod tests {
         assert!(real_llc.contains("lnp64-netbsd-loader-target-linked.elf"));
         assert!(real_llc.contains(r#""$netbsd_loader_target_obj" \"#));
         assert!(real_llc.contains("real LLVM LNP64 lld NetBSD loader target child link passed"));
+        assert!(real_llc.contains("lnp64-netbsd-thread-test-linked.elf"));
+        assert!(real_llc.contains(r#""$netbsd_thread_test_obj" \"#));
+        assert!(real_llc.contains(r#""$libc_string_impl_obj" \"#));
+        assert!(real_llc.contains("real LLVM LNP64 lld NetBSD thread child link passed"));
         assert!(real_llc.contains("lnp64-meta-libc-linked.elf"));
         assert!(real_llc.contains(
             r#""$meta_libc_obj" "$libc_meta_impl_obj" \
@@ -3585,6 +3595,7 @@ mod tests {
             "real_userland_lnpsh_execution",
             "real_userland_spawn_task_execution",
             "real_netbsd_loader_target_child_execution",
+            "real_netbsd_thread_child_execution",
             "real_metadata_libc_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
@@ -3669,6 +3680,7 @@ mod tests {
             "real_userland_lnpsh_execution",
             "real_userland_spawn_task_execution",
             "real_netbsd_loader_target_child_execution",
+            "real_netbsd_thread_child_execution",
             "real_metadata_libc_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
@@ -4744,6 +4756,7 @@ mod tests {
             "userland_lnpsh",
             "userland_spawn_task",
             "netbsd_loader_target_child",
+            "netbsd_thread_child",
             "netbsd_personality_clang",
             "netcat",
             "httpd",
@@ -4778,6 +4791,7 @@ mod tests {
         assert_eq!(statuses["userland_lnpsh"], "partial");
         assert_eq!(statuses["userland_spawn_task"], "partial");
         assert_eq!(statuses["netbsd_loader_target_child"], "partial");
+        assert_eq!(statuses["netbsd_thread_child"], "partial");
         assert_eq!(statuses["netbsd_personality_clang"], "partial");
         assert_eq!(statuses["netcat"], "partial");
         assert_eq!(statuses["httpd"], "partial");
@@ -5507,6 +5521,7 @@ mod tests {
             "userland_lnpsh",
             "userland_spawn_task",
             "netbsd_loader_target_child",
+            "netbsd_thread_child",
             "netbsd_personality_clang",
             "simple_libc",
         ] {

@@ -372,6 +372,8 @@ The concrete first-program set is pinned in
   Clang/lld and run through the ELF loader without the toy compiler.
 - `netbsd_loader_target_child`: the first NetBSD personality system child
   replacement built with Clang/lld and run through the ELF loader.
+- `netbsd_thread_child`: the first NetBSD personality child replacement that
+  exercises the Clang-built pthread shim.
 
 The first four gates now run through real Clang/lld output and the software
 loader without the toy compiler. Full replacement remains partial until the
