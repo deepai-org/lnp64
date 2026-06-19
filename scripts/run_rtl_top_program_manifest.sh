@@ -15,6 +15,22 @@ export LNP64_RTL_REUSE_BUILD="${LNP64_RTL_REUSE_BUILD:-1}"
 export LNP64_RTL_BUILD_ROOT="${LNP64_RTL_BUILD_ROOT:-$root/target/rtl-verilator}"
 first_program_reuse_build="$LNP64_RTL_REUSE_BUILD"
 
+top_program_jobs="${LNP64_RTL_TOP_PROGRAM_JOBS:-}"
+if [[ -z "$top_program_jobs" ]]; then
+  if [[ "${LNP64_RTL_FAST:-0}" == "1" ]]; then
+    top_program_jobs=auto
+  else
+    top_program_jobs=1
+  fi
+fi
+if [[ "$top_program_jobs" == "auto" ]]; then
+  top_program_jobs="$(nproc 2>/dev/null || printf '1')"
+fi
+if ! [[ "$top_program_jobs" =~ ^[0-9]+$ ]] || (( top_program_jobs < 1 )); then
+  printf 'LNP64_RTL_TOP_PROGRAM_JOBS must be a positive integer or auto, got %q\n' "$top_program_jobs" >&2
+  exit 1
+fi
+
 if [[ "$#" -gt 0 ]]; then
   programs=("$@")
 else
@@ -37,19 +53,84 @@ if [[ "${#programs[@]}" -eq 0 ]]; then
   exit 1
 fi
 
+run_reused_program() {
+  local program="$1"
+  LNP64_RTL_REUSE_BUILD=1 \
+  LNP64_RTL_SKIP_LINT="${LNP64_RTL_SKIP_LINT:-1}" \
+  LNP64_RTL_TOP_PROGRAM_SKIP_BUILD="${LNP64_RTL_TOP_PROGRAM_SKIP_BUILD:-1}" \
+    bash scripts/run_rtl_top_program_smoke.sh "$program"
+}
+
 first=1
-for program in "${programs[@]}"; do
-  printf '\n==> top-level RTL program: %s\n' "$program"
-  if [[ "$first" -eq 1 ]]; then
-    first=0
-    LNP64_RTL_REUSE_BUILD="$first_program_reuse_build" \
-      bash scripts/run_rtl_top_program_smoke.sh "$program"
-  else
-    LNP64_RTL_REUSE_BUILD=1 \
-    LNP64_RTL_SKIP_LINT="${LNP64_RTL_SKIP_LINT:-1}" \
-      LNP64_RTL_TOP_PROGRAM_SKIP_BUILD="${LNP64_RTL_TOP_PROGRAM_SKIP_BUILD:-1}" \
-      bash scripts/run_rtl_top_program_smoke.sh "$program"
+if (( top_program_jobs == 1 || ${#programs[@]} == 1 )); then
+  for program in "${programs[@]}"; do
+    printf '\n==> top-level RTL program: %s\n' "$program"
+    if [[ "$first" -eq 1 ]]; then
+      first=0
+      LNP64_RTL_REUSE_BUILD="$first_program_reuse_build" \
+        bash scripts/run_rtl_top_program_smoke.sh "$program"
+    else
+      run_reused_program "$program"
+    fi
+  done
+else
+  first_program="${programs[0]}"
+  printf '\n==> top-level RTL program: %s\n' "$first_program"
+  LNP64_RTL_REUSE_BUILD="$first_program_reuse_build" \
+    bash scripts/run_rtl_top_program_smoke.sh "$first_program"
+
+  log_dir="$(mktemp -d "${TMPDIR:-/tmp}/lnp64_rtl_top_program_manifest.XXXXXX")"
+  cleanup() {
+    if [[ "${LNP64_RTL_TOP_PROGRAM_KEEP_LOGS:-0}" != "1" ]]; then
+      rm -rf "$log_dir"
+    fi
+  }
+  trap cleanup EXIT
+
+  batch_pids=()
+  batch_programs=()
+  batch_logs=()
+  failed=0
+
+  wait_batch() {
+    local i pid program log
+    for i in "${!batch_pids[@]}"; do
+      pid="${batch_pids[$i]}"
+      program="${batch_programs[$i]}"
+      log="${batch_logs[$i]}"
+      if wait "$pid"; then
+        printf 'rtl top-level program %s ok (%s)\n' "$program" "$log"
+      else
+        failed=1
+        printf 'rtl top-level program %s failed (%s)\n' "$program" "$log" >&2
+        cat "$log" >&2
+      fi
+    done
+    batch_pids=()
+    batch_programs=()
+    batch_logs=()
+  }
+
+  printf 'running remaining top-level RTL programs with %s parallel job(s); logs in %s\n' "$top_program_jobs" "$log_dir"
+  for ((idx = 1; idx < ${#programs[@]}; idx++)); do
+    program="${programs[$idx]}"
+    log="$log_dir/program_${idx}.log"
+    (
+      printf '\n==> top-level RTL program: %s\n' "$program"
+      run_reused_program "$program"
+    ) >"$log" 2>&1 &
+    batch_pids+=("$!")
+    batch_programs+=("$program")
+    batch_logs+=("$log")
+    if (( ${#batch_pids[@]} >= top_program_jobs )); then
+      wait_batch
+    fi
+  done
+  wait_batch
+
+  if (( failed != 0 )); then
+    exit 1
   fi
-done
+fi
 
 printf '\n%s\n' "rtl top-level program manifest gate ok (${#programs[@]} programs)"
