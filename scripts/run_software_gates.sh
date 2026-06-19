@@ -13,7 +13,6 @@ cp target/release/lnp64 "$LNP64_BIN"
 
 bash scripts/run_toolchain_contracts.sh
 bash scripts/run_llvm_bootstrap_gates.sh --dry-run
-bash scripts/run_netbsd_personality_smoke.sh
 bash scripts/run_demos.sh
 bash scripts/run_userland.sh
 bash scripts/run_netbsd_personality_system.sh

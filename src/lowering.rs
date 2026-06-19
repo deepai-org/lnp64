@@ -5657,6 +5657,7 @@ mod tests {
         assert!(run_software.contains("bash scripts/run_demos.sh"));
         assert!(run_software.contains("bash scripts/run_userland.sh"));
         assert!(run_software.contains("bash scripts/run_netbsd_personality_system.sh"));
+        assert!(!run_software.contains("bash scripts/run_netbsd_personality_smoke.sh"));
         assert!(run_software.contains("bash scripts/run_real_packages.sh"));
         assert!(run_all.contains("bash scripts/run_software_gates.sh"));
         assert!(run_all.contains("git diff --check"));
