@@ -66,6 +66,7 @@ int fstatat(int dirfd, const char *path, struct stat *st, int flags);
 int futimens(int fd, const struct timespec times[2]);
 int lstat(const char *path, struct stat *st);
 int mkdir(const char *path, mode_t mode);
+int mkdirat(int dirfd, const char *path, mode_t mode);
 int mknod(const char *path, mode_t mode, dev_t dev);
 int stat(const char *path, struct stat *st);
 mode_t umask(mode_t mask);

@@ -2679,6 +2679,13 @@ mod tests {
         assert!(
             libc_meta_min.contains("lnp64_stat_path_at(AT_FDCWD, path, &lnp64_access_stat, 0)")
         );
+        assert!(libc_meta_min.contains("DIR *opendir(const char *name)"));
+        assert!(libc_meta_min.contains("int mkdirat(int dirfd, const char *path, mode_t mode)"));
+        assert!(libc_meta_min.contains("int renameat(int olddirfd, const char *oldpath"));
+        assert!(libc_meta_min.contains("ssize_t readlinkat("));
+        assert!(libc_meta_min.contains("int fchmodat("));
+        assert!(libc_meta_min.contains("int fchownat("));
+        assert!(libc_meta_min.contains("int faccessat("));
         assert!(libc_meta_min.contains("va_arg(ap, long)"));
         assert!(libc_meta_min.contains("lnp64_complete_status"));
         assert!(real_llc.contains("liblnp64-meta-min.o"));
@@ -2687,11 +2694,24 @@ mod tests {
         assert!(real_llc.contains("grep -q 'utime_path_at r'"));
         assert!(real_llc.contains("grep -q 'utime_fd_dyn r'"));
         assert!(real_llc.contains("grep -q 'fcntl_fd_dyn r'"));
+        assert!(real_llc.contains("grep -q 'open_dir_dyn r'"));
+        assert!(real_llc.contains("grep -q 'mkdir_path_at r'"));
+        assert!(real_llc.contains("grep -q 'rename_path_at r'"));
+        assert!(real_llc.contains("grep -q 'link_path_at r'"));
+        assert!(real_llc.contains("grep -q 'symlink_path_at r'"));
+        assert!(real_llc.contains("grep -q 'readlink_path_at r'"));
+        assert!(real_llc.contains("grep -q 'getcwd_path r'"));
+        assert!(real_llc.contains("grep -q 'chmod_path_at r'"));
+        assert!(real_llc.contains("grep -q 'chown_path_at r'"));
         assert!(real_llc.contains("grep -q 'errno_get r'"));
         assert!(real_llc.contains(
             "real LLVM LNP64 clang minilibc metadata implementation object smoke passed"
         ));
         assert!(real_llc.contains("meta-libc-clang-smoke.o"));
+        assert!(real_llc.contains("mkdirat(AT_FDCWD"));
+        assert!(real_llc.contains("renameat(AT_FDCWD"));
+        assert!(real_llc.contains("readlinkat(AT_FDCWD"));
+        assert!(real_llc.contains("opendir(\"target/llvm-lnp64-build\")"));
         assert!(real_llc.contains("S_ISREG(st.st_mode)"));
         assert!(real_llc.contains("st.st_nlink <= 0"));
         assert!(real_llc.contains("futimens(-1, omit)"));

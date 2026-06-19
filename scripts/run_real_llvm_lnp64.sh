@@ -3736,6 +3736,7 @@ printf 'real LLVM LNP64 clang NetBSD domain budget child object passed: %s\n' \
 meta_libc_c="$build_dir/meta-libc-smoke.c"
 cat >"$meta_libc_c" <<'C'
 #include <errno.h>
+#include <dirent.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <time.h>
@@ -3743,10 +3744,25 @@ cat >"$meta_libc_c" <<'C'
 
 int main(void) {
   struct stat st;
+  char cwd[256];
+  char linkbuf[32];
+  DIR *dir;
   struct timespec omit[2] = {
       {.tv_nsec = UTIME_OMIT},
       {.tv_nsec = UTIME_OMIT},
   };
+  unlink("target/llvm-lnp64-build/meta_ns_link");
+  unlink("target/llvm-lnp64-build/meta_ns_hard");
+  unlink("target/llvm-lnp64-build/meta_ns_dir/renamed");
+  unlink("target/llvm-lnp64-build/meta_ns_dir/file");
+  rmdir("target/llvm-lnp64-build/meta_ns_dir");
+  if (!getcwd(cwd, sizeof(cwd)))
+    return 10;
+  dir = opendir("target/llvm-lnp64-build");
+  if (!dir)
+    return 11;
+  if (closedir(dir) != 0)
+    return 12;
   int fd = open("Cargo.toml", O_RDONLY);
   if (fd < 0)
     return 1;
@@ -3768,6 +3784,43 @@ int main(void) {
   if (errno != EBADF)
     return 9;
   close(fd);
+  if (faccessat(AT_FDCWD, "Cargo.toml", F_OK, 0) != 0)
+    return 13;
+  if (mkdirat(AT_FDCWD, "target/llvm-lnp64-build/meta_ns_dir", 0755) != 0)
+    return 14;
+  fd = open("target/llvm-lnp64-build/meta_ns_dir/file", O_CREAT | O_TRUNC | O_RDWR);
+  if (fd < 0)
+    return 15;
+  close(fd);
+  if (fchmodat(AT_FDCWD, "target/llvm-lnp64-build/meta_ns_dir/file", 0600, 0) != 0)
+    return 16;
+  if (fchownat(AT_FDCWD, "target/llvm-lnp64-build/meta_ns_dir/file",
+               (uid_t)-1, (gid_t)-1, 0) != 0)
+    return 17;
+  if (symlinkat("meta_ns_dir/file", AT_FDCWD,
+                "target/llvm-lnp64-build/meta_ns_link") != 0)
+    return 18;
+  if (readlinkat(AT_FDCWD, "target/llvm-lnp64-build/meta_ns_link",
+                 linkbuf, sizeof(linkbuf)) != 16)
+    return 19;
+  if (linkbuf[0] != 'm' || linkbuf[12] != 'f')
+    return 20;
+  if (linkat(AT_FDCWD, "target/llvm-lnp64-build/meta_ns_dir/file",
+             AT_FDCWD, "target/llvm-lnp64-build/meta_ns_hard", 0) != 0)
+    return 21;
+  if (renameat(AT_FDCWD, "target/llvm-lnp64-build/meta_ns_dir/file",
+               AT_FDCWD, "target/llvm-lnp64-build/meta_ns_dir/renamed") != 0)
+    return 22;
+  if (stat("target/llvm-lnp64-build/meta_ns_dir/renamed", &st) != 0)
+    return 23;
+  if (unlink("target/llvm-lnp64-build/meta_ns_link") != 0)
+    return 24;
+  if (unlink("target/llvm-lnp64-build/meta_ns_hard") != 0)
+    return 25;
+  if (unlink("target/llvm-lnp64-build/meta_ns_dir/renamed") != 0)
+    return 26;
+  if (rmdir("target/llvm-lnp64-build/meta_ns_dir") != 0)
+    return 27;
   return 0;
 }
 C
@@ -4166,6 +4219,16 @@ grep -q 'stat_fd_dyn r' "$libc_meta_impl_dump"
 grep -q 'utime_path_at r' "$libc_meta_impl_dump"
 grep -q 'utime_fd_dyn r' "$libc_meta_impl_dump"
 grep -q 'fcntl_fd_dyn r' "$libc_meta_impl_dump"
+grep -q 'open_dir_dyn r' "$libc_meta_impl_dump"
+grep -q 'mkdir_path_at r' "$libc_meta_impl_dump"
+grep -q 'rename_path_at r' "$libc_meta_impl_dump"
+grep -q 'link_path_at r' "$libc_meta_impl_dump"
+grep -q 'symlink_path_at r' "$libc_meta_impl_dump"
+grep -q 'readlink_path_at r' "$libc_meta_impl_dump"
+grep -q 'chdir_path r' "$libc_meta_impl_dump"
+grep -q 'getcwd_path r' "$libc_meta_impl_dump"
+grep -q 'chmod_path_at r' "$libc_meta_impl_dump"
+grep -q 'chown_path_at r' "$libc_meta_impl_dump"
 grep -q 'errno_get r' "$libc_meta_impl_dump"
 printf 'real LLVM LNP64 clang minilibc metadata implementation object smoke passed: %s\n' \
   "$libc_meta_impl_obj"
