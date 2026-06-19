@@ -1467,6 +1467,7 @@ mod tests {
             "clang_userland_ucat_object",
             "clang_userland_init_object",
             "clang_userland_lnpsh_object",
+            "clang_userland_spawn_task_object",
             "clang_minilibc_meta_impl_object",
             "clang_meta_libc_object",
             "clang_minilibc_random_impl_object",
@@ -1558,6 +1559,8 @@ mod tests {
             "userland_init_run_elf",
             "userland_lnpsh_static_link",
             "userland_lnpsh_run_elf",
+            "userland_spawn_task_static_link",
+            "userland_spawn_task_run_elf",
             "metadata_libc_static_link",
             "metadata_libc_run_elf",
         ] {
@@ -2471,6 +2474,11 @@ mod tests {
         assert!(real_llc.contains("userland/lnpsh_clang.c"));
         assert!(real_llc.contains("userland-lnpsh-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang userland lnpsh object smoke passed"));
+        assert!(real_llc.contains("userland/spawn_task_clang.c"));
+        assert!(real_llc.contains("userland-spawn-task-clang-smoke.o"));
+        assert!(real_llc.contains("grep -q 'clone.spawn r'"));
+        assert!(real_llc.contains("grep -q 'thread_join r'"));
+        assert!(real_llc.contains("real LLVM LNP64 clang userland spawn task object smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_fd_min.c"));
         assert!(libc_fd_min.contains("__lnp_pull"));
         assert!(libc_fd_min.contains("__lnp_push"));
@@ -2580,6 +2588,9 @@ mod tests {
         assert!(real_llc.contains("lnp64-userland-lnpsh-linked.elf"));
         assert!(real_llc.contains(r#""$userland_lnpsh_obj" \"#));
         assert!(real_llc.contains("real LLVM LNP64 lld userland lnpsh link smoke passed"));
+        assert!(real_llc.contains("lnp64-userland-spawn-task-linked.elf"));
+        assert!(real_llc.contains(r#""$userland_spawn_obj" \"#));
+        assert!(real_llc.contains("real LLVM LNP64 lld userland spawn task link smoke passed"));
         assert!(real_llc.contains("lnp64-meta-libc-linked.elf"));
         assert!(real_llc.contains(
             r#""$meta_libc_obj" "$libc_meta_impl_obj" \
@@ -3334,6 +3345,14 @@ mod tests {
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf userland lnpsh execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-userland-spawn-task-linked.elf"));
+        assert!(real_llc_docker.contains("userland spawn: parent"));
+        assert!(real_llc_docker.contains("userland spawn: child"));
+        assert!(real_llc_docker.contains("userland spawn: joined"));
+        assert!(
+            real_llc_docker
+                .contains("real LLVM LNP64 run-elf userland spawn task execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-errno-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf errno execution passed"));
         assert!(real_llc_docker.contains("lnp64-intrinsic-push-linked.elf"));
@@ -3482,6 +3501,7 @@ mod tests {
             "real_userland_ucat_execution",
             "real_userland_init_execution",
             "real_userland_lnpsh_execution",
+            "real_userland_spawn_task_execution",
             "real_metadata_libc_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
@@ -3561,6 +3581,7 @@ mod tests {
             "real_userland_ucat_execution",
             "real_userland_init_execution",
             "real_userland_lnpsh_execution",
+            "real_userland_spawn_task_execution",
             "real_metadata_libc_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
@@ -4633,6 +4654,7 @@ mod tests {
             "userland_ucat",
             "userland_init",
             "userland_lnpsh",
+            "userland_spawn_task",
             "netcat",
             "httpd",
             "simple_libc",
@@ -4664,6 +4686,7 @@ mod tests {
         assert_eq!(statuses["userland_ucat"], "partial");
         assert_eq!(statuses["userland_init"], "partial");
         assert_eq!(statuses["userland_lnpsh"], "partial");
+        assert_eq!(statuses["userland_spawn_task"], "partial");
         assert_eq!(statuses["netcat"], "partial");
         assert_eq!(statuses["httpd"], "partial");
         assert_eq!(statuses["simple_libc"], "partial");
@@ -5377,6 +5400,7 @@ mod tests {
             "userland_ucat",
             "userland_init",
             "userland_lnpsh",
+            "userland_spawn_task",
             "simple_libc",
         ] {
             assert!(

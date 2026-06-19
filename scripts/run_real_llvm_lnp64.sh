@@ -3448,6 +3448,20 @@ grep -q 'call ' "$userland_lnpsh_dump"
 printf 'real LLVM LNP64 clang userland lnpsh object smoke passed: %s\n' \
   "$userland_lnpsh_obj"
 
+userland_spawn_obj="$build_dir/userland-spawn-task-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
+  -c userland/spawn_task_clang.c -o "$userland_spawn_obj"
+test -s "$userland_spawn_obj"
+userland_spawn_dump="$build_dir/userland-spawn-task-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$userland_spawn_obj" \
+  >"$userland_spawn_dump"
+grep -q 'clone.spawn r' "$userland_spawn_dump"
+grep -q 'thread_join r' "$userland_spawn_dump"
+printf 'real LLVM LNP64 clang userland spawn task object smoke passed: %s\n' \
+  "$userland_spawn_obj"
+
 meta_libc_c="$build_dir/meta-libc-smoke.c"
 cat >"$meta_libc_c" <<'C'
 #include <errno.h>
@@ -4865,6 +4879,14 @@ userland_lnpsh_elf="$build_dir/lnp64-userland-lnpsh-linked.elf"
 test -s "$userland_lnpsh_elf"
 printf 'real LLVM LNP64 lld userland lnpsh link smoke passed: %s\n' \
   "$userland_lnpsh_elf"
+
+userland_spawn_elf="$build_dir/lnp64-userland-spawn-task-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$userland_spawn_elf" "$crt0_obj" "$userland_spawn_obj" \
+  "$libc_fd_impl_obj"
+test -s "$userland_spawn_elf"
+printf 'real LLVM LNP64 lld userland spawn task link smoke passed: %s\n' \
+  "$userland_spawn_elf"
 
 meta_libc_elf="$build_dir/lnp64-meta-libc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

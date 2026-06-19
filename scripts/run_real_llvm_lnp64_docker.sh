@@ -299,5 +299,15 @@ grep -q '^random$' <<<"$userland_lnpsh_output"
 grep -q 'exit=0' <<<"$userland_lnpsh_output"
 printf 'real LLVM LNP64 run-elf userland lnpsh execution passed: %s\n' \
   target/llvm-lnp64-build/lnp64-userland-lnpsh-linked.elf
+"$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-userland-spawn-task-linked.elf \
+  >/dev/null
+userland_spawn_output="$("$lnp64_bin" run-elf \
+  target/llvm-lnp64-build/lnp64-userland-spawn-task-linked.elf spawn-task)"
+grep -q '^userland spawn: parent$' <<<"$userland_spawn_output"
+grep -q '^userland spawn: child$' <<<"$userland_spawn_output"
+grep -q '^userland spawn: joined$' <<<"$userland_spawn_output"
+grep -q 'exit=0' <<<"$userland_spawn_output"
+printf 'real LLVM LNP64 run-elf userland spawn task execution passed: %s\n' \
+  target/llvm-lnp64-build/lnp64-userland-spawn-task-linked.elf
 run_elf_report "real LLVM LNP64 run-elf indirect call execution passed" \
   target/llvm-lnp64-build/lnp64-indirect-call-linked.elf
