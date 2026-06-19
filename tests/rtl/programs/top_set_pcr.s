@@ -20,12 +20,26 @@
   SET_PCR r24, PID, r20
   CMP r24, r29
   BNE bad
+  LI r28, 77
+  ERRNO_SET r28
+  SET_PCR r24, TID, r20
+  CMP r24, r29
+  BNE bad
+  ERRNO_GET r27
+  CMP r27, r28
+  BNE bad
 
   SET_PCR r25, CRED_PROFILE, r20
   CMP r25, r29
   BNE bad
+  ERRNO_GET r27
+  CMP r27, r28
+  BNE bad
   SET_PCR r26, CRED_HANDLE, r20
   CMP r26, r29
+  BNE bad
+  ERRNO_GET r27
+  CMP r27, r28
   BNE bad
 
 done:

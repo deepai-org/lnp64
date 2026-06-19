@@ -2891,11 +2891,9 @@ module lnp64_core_tile #(
                                     end
                                     5'd0, 5'd1, 5'd2, 5'd7, 5'd8, 5'd9, 5'd10, 5'd11: begin
                                         gpr[dec.rd] <= 64'd0 - {48'd0, LNP64_ERR_EPERM};
-                                        errno_reg <= LNP64_ERR_EPERM;
                                     end
                                     default: begin
                                         gpr[dec.rd] <= 64'd0 - {48'd0, LNP64_ERR_EINVAL};
-                                        errno_reg <= LNP64_ERR_EINVAL;
                                     end
                                 endcase
                                 pc <= pc + 32'd1;
