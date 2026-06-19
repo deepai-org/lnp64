@@ -175,17 +175,26 @@ the whole-chip boundary:
 5. **`SG-MEM` Memory and DMA authority:** VMA, TLB, cache, page-state, W^X/NX,
    guard, revocation, coherence, and DMA/IOMMU rules prevent stale,
    unauthorized, or cross-domain memory access.
-6. **`SG-PROGRESS` Crash/stall containment:** within the stated reset, clock,
-   fabric, and external-IP assumptions, the machine has no silent stuck state.
-   Faults, backpressure, malformed records, poison, watchdog timeout, and
-   resource exhaustion resolve to typed progress, typed refusal, bounded
-   parking, degraded state where the lifecycle profile permits it, or
-   measured/audited machine-fatal state.
-7. **`SG-RT` Realtime honesty:** any advertised Class A/B/C latency,
+6. **`SG-TOTAL` Hardware totality and local progress:** every hardware FSM,
+   pipeline, owner engine, queue, arbiter, decoder, reset path, and recovery path
+   has only defined reachable states. Under its stated environment assumptions,
+   each reachable nonterminal state makes bounded forward progress, applies
+   bounded backpressure with a valid release condition, parks on a valid
+   wake/cancel/fault source, fails closed, resets locally, or escalates to a
+   measured/audited machine-fatal state. No block may spin forever, wait on an
+   impossible condition, hold unbounded backpressure, or require software
+   intervention to escape an internal invalid state.
+7. **`SG-PROGRESS` Fault containment and bounded recovery:** within the stated
+   reset, clock, fabric, and external-IP assumptions, faults, malformed records,
+   poison, watchdog timeout, revocation races, and resource exhaustion resolve to
+   typed progress, typed refusal, bounded parking, degraded state where the
+   lifecycle profile permits it, local reset, or measured/audited machine-fatal
+   state without publishing partial authority or corrupting unrelated domains.
+8. **`SG-RT` Realtime honesty:** any advertised Class A/B/C latency,
    scheduler, reservation, or servicelet bound is conservative for the
    implementation; work that cannot meet the bound is Class D bounded-submit
    work or fails closed.
-8. **`SG-EVIDENCE` Evidence honesty:** trace, telemetry, audit, quote,
+9. **`SG-EVIDENCE` Evidence honesty:** trace, telemetry, audit, quote,
    proof-manifest, and feature-discovery records are data, not authority, and
    accurately describe the implementation, assumptions, proof level, and known
    gaps for the boot epoch.
@@ -803,7 +812,7 @@ Every Track A theorem should declare which severe whole-chip proof goal it
 supports. The declaration can be in the proof manifest at first, but the final
 form should be mechanically checked by the theorem/RTL coupling gate. This keeps
 the Lean work aimed at whole-chip authority, isolation, scheduler, memory,
-progress, realtime, and evidence-honesty claims instead of accumulating
+totality, progress, realtime, and evidence-honesty claims instead of accumulating
 unrelated local facts.
 
 Near-term Track A work should be intentionally narrow. Until the first
@@ -1296,6 +1305,44 @@ Before any milestone is called complete, its test plan should include a small
 deadlock audit: list every queue/fabric dependency, identify the owner of each
 mutable state family, name the terminal path for every accepted command, and
 show which traffic class can still complete under backpressure.
+
+### Per-Engine Progress Contract
+
+Every RTL block that accepts commands, owns mutable architectural state, parks
+threads, arbitrates traffic, or adapts external IP must publish the same small
+progress contract. This is the local contract used to prove `SG-TOTAL`,
+`SG-WAKE`, `SG-PROGRESS`, and `SG-RT` compositionally:
+
+- **Accepted command ownership:** an accepted command receives an operation id or
+  is proven single-cycle/local. The command is owned by exactly one engine or
+  shard until it reaches a terminal state.
+- **Terminal completeness:** every accepted command has exactly one terminal
+  outcome: success response, canonical error, completion event, cancellation,
+  timeout, structured fault, permitted degraded state, local reset, or
+  measured/audited machine-fatal escalation.
+- **Bounded local progress:** from every reachable nonterminal state, the engine
+  advances within a published bound when downstream assumptions hold, or moves
+  to a named backpressure, park, retry, fail-closed, reset, or escalation state.
+- **Backpressure release:** every asserted `ready == 0`, full queue, held credit,
+  retry token, or parked state names the event, credit, drain, timeout, cancel,
+  reset, or fault condition that releases it. No proof may rely on an unbounded
+  spin loop.
+- **No impossible waits:** an engine may not wait for a response on a path that
+  cannot be driven while the engine holds the resource needed to produce that
+  response.
+- **Reset and poison behavior:** reset, local reset, ECC/parity poison, malformed
+  input, and invalid encoded state have defined fail-closed behavior and cannot
+  publish a partial commit.
+- **Bypass exclusion:** any state update that affects authority, scheduler
+  location, memory permission, domain accounting, wake state, or evidence records
+  goes through the named owner transition path or a named shard transition.
+- **Assumption boundary:** any reliance on clocks, CDC, DDR, PCIe, PHYs, SRAM
+  macros, fairness, bounded response time, or arbitration service is named as an
+  assumption and later discharged by a neighboring block, assertion, or
+  trusted-platform contract.
+
+A block without this contract can still be a bring-up stub, but it cannot support
+a severe proof claim.
 
 ### Milestone Constraint Checklist
 

@@ -34,6 +34,15 @@ Severe proof goals:
 - **Bounded hardware behavior:** each instruction, engine command, servicelet,
   classifier action, queue operation, and fabric arbitration step either
   completes, parks on a valid waitable, submits bounded work, or fails closed.
+- **Hardware totality and local progress:** every hardware FSM, pipeline, owner
+  engine, queue, arbiter, decoder, reset path, and recovery path has only defined
+  reachable states. Under its stated environment assumptions, each reachable
+  nonterminal state must make bounded forward progress toward completion, apply
+  bounded backpressure with a valid release condition, park on a valid
+  wake/cancel/fault source, fail closed, reset locally, or escalate to a measured
+  machine-fatal state. No hardware block may spin forever, wait on an impossible
+  condition, hold unbounded backpressure, or require software intervention to
+  escape an internal invalid state.
 - **Fault containment and recovery:** malformed input, revocation races, ECC
   faults, watchdog events, service crashes, and local resets cannot publish
   partial authority or wedge the machine outside the bounded fault model.
