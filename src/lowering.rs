@@ -2170,6 +2170,9 @@ mod tests {
         assert!(real_llc.contains("json-parser-clang-smoke.o"));
         assert!(real_llc.contains("-c demos/json_parser.c"));
         assert!(real_llc.contains("real LLVM LNP64 clang json parser demo object smoke passed"));
+        assert!(real_llc.contains("rot13-clang-smoke.o"));
+        assert!(real_llc.contains("-c demos/rot13.c"));
+        assert!(real_llc.contains("real LLVM LNP64 clang rot13 demo object smoke passed"));
         assert!(real_llc.contains("lnp64-$demo-clang-linked.elf"));
         assert!(real_llc.contains(
             r#""$demo_obj" "$libc_fd_impl_obj" \
@@ -2404,6 +2407,7 @@ mod tests {
         assert!(real_llc_docker.contains("pcr ok"));
         assert!(real_llc_docker.contains("cat ok"));
         assert!(real_llc_docker.contains("json parser ok"));
+        assert!(real_llc_docker.contains("rot13 ok"));
         assert!(real_llc_docker.contains("exit=0"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf clang demo execution passed"));
         assert!(real_llc_docker.contains("lnp64-native-heap-linked.elf"));
@@ -3586,6 +3590,7 @@ mod tests {
             "pcr",
             "cat",
             "json_parser",
+            "rot13",
             "simple_libc",
         ] {
             assert!(cases.contains(case), "missing llvm bootstrap case {case}");
@@ -3598,6 +3603,7 @@ mod tests {
             "pcr",
             "cat",
             "json_parser",
+            "rot13",
         ] {
             assert_eq!(statuses[case], "tested", "{case} should be tested");
         }
@@ -4168,6 +4174,7 @@ mod tests {
             "pcr",
             "cat",
             "json_parser",
+            "rot13",
             "simple_libc",
         ] {
             assert!(

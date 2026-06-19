@@ -834,6 +834,20 @@ grep -q 'call ' "$json_parser_dump"
 printf 'real LLVM LNP64 clang json parser demo object smoke passed: %s\n' \
   "$json_parser_obj"
 
+rot13_obj="$build_dir/rot13-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables \
+  -Wno-implicit-function-declaration -I toolchain \
+  -c demos/rot13.c -o "$rot13_obj"
+test -s "$rot13_obj"
+rot13_dump="$build_dir/rot13-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$rot13_obj" >"$rot13_dump"
+grep -q 'ld.b r' "$rot13_dump"
+grep -q 'st.b r' "$rot13_dump"
+grep -q 'call ' "$rot13_dump"
+printf 'real LLVM LNP64 clang rot13 demo object smoke passed: %s\n' \
+  "$rot13_obj"
+
 indirect_call_c="$build_dir/indirect-call-smoke.c"
 cat >"$indirect_call_c" <<'C'
 int add3(int x) {
@@ -3416,7 +3430,7 @@ test -s "$indirect_call_elf"
 printf 'real LLVM LNP64 lld indirect call link smoke passed: %s\n' \
   "$indirect_call_elf"
 
-for demo in hello factorial allocator fibonacci pcr cat json-parser; do
+for demo in hello factorial allocator fibonacci pcr cat json-parser rot13; do
   demo_obj="$build_dir/$demo-clang-smoke.o"
   demo_elf="$build_dir/lnp64-$demo-clang-linked.elf"
   "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
