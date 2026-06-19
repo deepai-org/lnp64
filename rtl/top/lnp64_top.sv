@@ -521,6 +521,10 @@ module lnp64_top #(
                         else $fatal(1, "SG-AUTH M1 retire tile id drifted from top-level tile vector");
                     assert (cap_m1_commit_latched_valid_vec[m1_assert_i])
                         else $fatal(1, "SG-AUTH M1 retire lacked cap-engine-owned commit");
+                    assert (m1_pre_state_projection_vec[m1_assert_i].op == m1_commit_vec[m1_assert_i].op)
+                        else $fatal(1, "SG-AUTH M1 pre-state projection op drifted from cap-engine commit");
+                    assert (m1_pre_state_projection_vec[m1_assert_i].status == m1_commit_vec[m1_assert_i].status)
+                        else $fatal(1, "SG-AUTH M1 pre-state projection status drifted from cap-engine commit");
                     assert (m1_state_projection_vec[m1_assert_i].op == m1_commit_vec[m1_assert_i].op)
                         else $fatal(1, "SG-AUTH M1 state projection op drifted from cap-engine commit");
                     assert (m1_state_projection_vec[m1_assert_i].status == m1_commit_vec[m1_assert_i].status)
