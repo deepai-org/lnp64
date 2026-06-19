@@ -1,4 +1,5 @@
 rtl/include/lnp64_pkg.sv
+rtl/include/lnp64_core_pkg.sv
 rtl/core/lnp64_decode.sv
 rtl/core/lnp64_core_tile.sv
 rtl/engines/lnp64_engine_shells.sv
