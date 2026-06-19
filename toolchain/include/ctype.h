@@ -3,7 +3,9 @@
 
 int isalnum(int ch);
 int isalpha(int ch);
+int isascii(int ch);
 int isdigit(int ch);
+int isblank(int ch);
 int islower(int ch);
 int isspace(int ch);
 int isupper(int ch);

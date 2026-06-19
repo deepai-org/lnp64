@@ -1238,19 +1238,26 @@ grep -q 'call ' "$varargs_call_dump"
 printf 'real LLVM LNP64 clang varargs call object smoke passed: %s\n' \
   "$varargs_call_obj"
 
-sbase_echo_obj="$build_dir/sbase-echo-clang-smoke.o"
-"$clang" --target=lnp64-unknown-none -O0 -ffreestanding -fno-builtin \
-  -fno-pic -fno-jump-tables -fno-unwind-tables \
-  -fno-asynchronous-unwind-tables -I toolchain/include -I third_party/sbase \
-  -c third_party/sbase/echo.c -o "$sbase_echo_obj"
-test -s "$sbase_echo_obj"
-sbase_echo_dump="$build_dir/sbase-echo-clang-smoke.dump"
-"$llvm_objdump" -d --triple=lnp64-unknown-none "$sbase_echo_obj" \
-  >"$sbase_echo_dump"
-grep -q '<main>:' "$sbase_echo_dump"
-grep -q 'call ' "$sbase_echo_dump"
-printf 'real LLVM LNP64 clang sbase echo object smoke passed: %s\n' \
-  "$sbase_echo_obj"
+sbase_commands=(
+  echo cat wc yes basename dirname head tee cksum tail cmp uniq sort grep sed
+  ls ln mkdir cut tr touch find
+)
+sbase_objs=()
+for sbase_cmd in "${sbase_commands[@]}"; do
+  sbase_obj="$build_dir/sbase-$sbase_cmd-clang-smoke.o"
+  "$clang" --target=lnp64-unknown-none -O0 -ffreestanding -fno-builtin \
+    -fno-pic -fno-jump-tables -fno-unwind-tables \
+    -fno-asynchronous-unwind-tables -I toolchain/include -I third_party/sbase \
+    -c "third_party/sbase/$sbase_cmd.c" -o "$sbase_obj"
+  test -s "$sbase_obj"
+  sbase_dump="$build_dir/sbase-$sbase_cmd-clang-smoke.dump"
+  "$llvm_objdump" -d --triple=lnp64-unknown-none "$sbase_obj" \
+    >"$sbase_dump"
+  grep -q '<main>:' "$sbase_dump"
+  sbase_objs+=("$sbase_obj")
+done
+printf 'real LLVM LNP64 clang sbase command object smokes passed: %s\n' \
+  "${sbase_objs[*]}"
 
 netcat_obj="$build_dir/netcat-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \

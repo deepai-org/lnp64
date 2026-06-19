@@ -1420,7 +1420,7 @@ mod tests {
             "clang_inih_package_object",
             "clang_cwalk_package_object",
             "clang_varargs_call_object",
-            "clang_sbase_echo_object",
+            "clang_sbase_command_objects",
             "zlib_package_static_link",
             "natsort_package_static_link",
             "jsmn_package_static_link",
@@ -2281,9 +2281,17 @@ mod tests {
         assert!(real_llc.contains("varargs-call-clang-smoke.o"));
         assert!(real_llc.contains("printf(\"lnp64 %d %s"));
         assert!(real_llc.contains("real LLVM LNP64 clang varargs call object smoke passed"));
-        assert!(real_llc.contains("sbase-echo-clang-smoke.o"));
-        assert!(real_llc.contains("-c third_party/sbase/echo.c"));
-        assert!(real_llc.contains("real LLVM LNP64 clang sbase echo object smoke passed"));
+        assert!(real_llc.contains("sbase_commands=("));
+        for command in [
+            "echo", "cat", "wc", "yes", "basename", "dirname", "head", "tee", "cksum", "tail",
+            "cmp", "uniq", "sort", "grep", "sed", "ls", "ln", "mkdir", "cut", "tr", "touch",
+            "find",
+        ] {
+            assert!(real_llc.contains(command));
+        }
+        assert!(real_llc.contains("sbase-$sbase_cmd-clang-smoke.o"));
+        assert!(real_llc.contains("third_party/sbase/$sbase_cmd.c"));
+        assert!(real_llc.contains("real LLVM LNP64 clang sbase command object smokes passed"));
         assert!(real_llc.contains("netcat-clang-smoke.o"));
         assert!(real_llc.contains("-c demos/netcat.c"));
         assert!(real_llc.contains("real LLVM LNP64 clang netcat demo object smoke passed"));
@@ -3774,7 +3782,7 @@ mod tests {
             "jsmn",
             "inih_parse_string",
             "cwalk",
-            "sbase_echo",
+            "sbase_commands",
             "netcat",
             "httpd",
             "simple_libc",
@@ -3802,7 +3810,7 @@ mod tests {
         ] {
             assert_eq!(statuses[case], "tested", "{case} should be tested");
         }
-        assert_eq!(statuses["sbase_echo"], "partial");
+        assert_eq!(statuses["sbase_commands"], "partial");
         assert_eq!(statuses["netcat"], "partial");
         assert_eq!(statuses["httpd"], "partial");
         assert_eq!(statuses["simple_libc"], "partial");
@@ -4171,7 +4179,11 @@ mod tests {
         );
         assert!(categories["llvm_package_tests"].3.contains("zlib"));
         assert!(categories["llvm_package_tests"].3.contains("cwalk"));
-        assert!(categories["llvm_package_tests"].3.contains("sbase_echo"));
+        assert!(
+            categories["llvm_package_tests"]
+                .3
+                .contains("sbase_commands")
+        );
         for category in [
             "asm_demos",
             "c_tests",

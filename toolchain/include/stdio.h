@@ -4,6 +4,7 @@
 typedef struct __lnp64_file FILE;
 
 #define EOF (-1)
+#define BUFSIZ 1024
 
 extern FILE *stdin;
 extern FILE *stdout;
@@ -17,17 +18,25 @@ int puts(const char *s);
 int putchar(int ch);
 int fputc(int ch, FILE *stream);
 int fputs(const char *s, FILE *stream);
+int fgetc(FILE *stream);
+int getc(FILE *stream);
+int ungetc(int ch, FILE *stream);
 int ferror(FILE *stream);
+int feof(FILE *stream);
+void clearerr(FILE *stream);
 int fileno(FILE *stream);
 int vfprintf(FILE *stream, const char *format, __builtin_va_list ap);
+int sprintf(char *str, const char *format, ...);
 int vsnprintf(char *str, unsigned long size, const char *format,
               __builtin_va_list ap);
 int snprintf(char *str, unsigned long size, const char *format, ...);
+long getline(char **lineptr, unsigned long *n, FILE *stream);
 unsigned long fread(void *ptr, unsigned long size, unsigned long count,
                     FILE *stream);
 unsigned long fwrite(const void *ptr, unsigned long size, unsigned long count,
                      FILE *stream);
 char *fgets(char *str, int count, FILE *stream);
+FILE *fmemopen(void *buf, unsigned long size, const char *mode);
 FILE *fopen(const char *path, const char *mode);
 
 #endif
