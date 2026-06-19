@@ -292,6 +292,12 @@ private:
             .Case("amo.or", LNP64::AMO_OR)
             .Case("amo.xor", LNP64::AMO_XOR)
             .Case("lock.cmpxchg", LNP64::LOCK_CMPXCHG)
+            .Case("fence", LNP64::FENCE)
+            .Case("fence.acq", LNP64::FENCE)
+            .Case("fence.rel", LNP64::FENCE)
+            .Case("fence.acq_rel", LNP64::FENCE)
+            .Case("fence.sc", LNP64::FENCE)
+            .Case("isync", LNP64::ISYNC)
             .Case("futex_wait", LNP64::FUTEX_WAIT)
             .Case("futex_wake", LNP64::FUTEX_WAKE)
             .Case("and", LNP64::AND)
@@ -383,7 +389,7 @@ private:
       return false;
 
     Inst.setOpcode(Opcode);
-    if (Opcode == LNP64::NOP || Opcode == LNP64::RET)
+    if (Opcode == LNP64::NOP || Opcode == LNP64::RET || Opcode == LNP64::FENCE)
       return Operands.size() == 1;
 
     if (Opcode == LNP64::LI)
@@ -410,7 +416,7 @@ private:
         Opcode == LNP64::MULHU || Opcode == LNP64::MULHSU ||
         Opcode == LNP64::AMO_SWAP || Opcode == LNP64::AMO_ADD ||
         Opcode == LNP64::AMO_AND || Opcode == LNP64::AMO_OR ||
-        Opcode == LNP64::AMO_XOR ||
+        Opcode == LNP64::AMO_XOR || Opcode == LNP64::ISYNC ||
         Opcode == LNP64::AND || Opcode == LNP64::OR ||
         Opcode == LNP64::XOR || Opcode == LNP64::LSL ||
         Opcode == LNP64::LSR || Opcode == LNP64::ASR ||

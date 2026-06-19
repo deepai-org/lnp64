@@ -1490,6 +1490,8 @@ mod tests {
         assert!(real_llc.contains("amo.xor r17, r18, r19"));
         assert!(real_llc.contains("futex_wait r20, r21"));
         assert!(real_llc.contains("futex_wake r22, r23"));
+        assert!(real_llc.contains("fence.acq_rel"));
+        assert!(real_llc.contains("isync r24, r25, r26"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc atomic opcode smoke passed"));
         assert!(real_llc.contains("scalar-extend-clang-smoke.o"));
         assert!(real_llc.contains("grep -q 'zext.w r'"));
@@ -4070,6 +4072,8 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::LOCK_CMPXCHG"));
         assert!(mc_emitter.contains("case LNP64::FUTEX_WAIT"));
         assert!(mc_emitter.contains("case LNP64::FUTEX_WAKE"));
+        assert!(mc_emitter.contains("case LNP64::FENCE"));
+        assert!(mc_emitter.contains("case LNP64::ISYNC"));
         assert!(mc_emitter.contains("encodeFixed32RRRR"));
         assert!(mc_emitter.contains("case LNP64::SEXT_B"));
         assert!(mc_emitter.contains("case LNP64::ZEXT_W"));

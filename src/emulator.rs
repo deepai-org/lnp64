@@ -1594,6 +1594,8 @@ impl Machine {
             0x4f => Instr::RetCap(a, b, c),
             0xcb => Instr::FutexWait(a, b),
             0xcc => Instr::FutexWake(a, b),
+            0xcd => Instr::Fence,
+            0xce => Instr::Isync(a, b, c),
             0xa0 => Instr::Addi(a, b, imm14),
             0xa1 => Instr::Andi(a, b, imm14),
             0xa2 => Instr::Ori(a, b, imm14),

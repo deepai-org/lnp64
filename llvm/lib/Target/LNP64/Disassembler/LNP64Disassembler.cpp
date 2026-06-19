@@ -329,6 +329,15 @@ public:
       addReg(Instr, C);
       addReg(Instr, (Word >> 4) & 0x1f);
       return MCDisassembler::Success;
+    case 0xcd:
+      Instr.setOpcode(LNP64::FENCE);
+      return MCDisassembler::Success;
+    case 0xce:
+      Instr.setOpcode(LNP64::ISYNC);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
     case 0xcb:
       Instr.setOpcode(LNP64::FUTEX_WAIT);
       addReg(Instr, A);

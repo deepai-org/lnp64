@@ -251,6 +251,15 @@ public:
                                  getGPRNo(MI.getOperand(3))),
                OS);
       return;
+    case LNP64::FENCE:
+      emitLE32(encodeFixed32NoOperand(0xcd), OS);
+      return;
+    case LNP64::ISYNC:
+      emitLE32(encodeFixed32RRR(0xce, getGPRNo(MI.getOperand(0)),
+                                getGPRNo(MI.getOperand(1)),
+                                getGPRNo(MI.getOperand(2))),
+               OS);
+      return;
     case LNP64::FUTEX_WAIT:
       emitLE32(encodeFixed32RR(0xcb, getGPRNo(MI.getOperand(0)),
                                getGPRNo(MI.getOperand(1))),

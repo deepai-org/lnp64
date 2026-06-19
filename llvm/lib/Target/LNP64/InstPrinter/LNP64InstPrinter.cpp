@@ -38,6 +38,10 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
     return "amo.xor";
   case LNP64::LOCK_CMPXCHG:
     return "lock.cmpxchg";
+  case LNP64::FENCE:
+    return "fence";
+  case LNP64::ISYNC:
+    return "isync";
   case LNP64::FUTEX_WAIT:
     return "futex_wait";
   case LNP64::FUTEX_WAKE:
@@ -272,6 +276,9 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::NOP:
     OS << "nop";
     break;
+  case LNP64::FENCE:
+    OS << "fence";
+    break;
   case LNP64::RET:
     OS << "ret";
     break;
@@ -306,6 +313,7 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::AMO_AND:
   case LNP64::AMO_OR:
   case LNP64::AMO_XOR:
+  case LNP64::ISYNC:
   case LNP64::DIV:
   case LNP64::UDIV:
   case LNP64::SREM:
