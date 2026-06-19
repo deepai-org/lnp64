@@ -476,6 +476,48 @@ module lnp64_core_tile #(
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
+                            LNP64_OP_SEXT_B: begin
+                                gpr[dec.rd] <= {{56{gpr[dec.rs1][7]}}, gpr[dec.rs1][7:0]};
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_SEXT_H: begin
+                                gpr[dec.rd] <= {{48{gpr[dec.rs1][15]}}, gpr[dec.rs1][15:0]};
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_SEXT_W: begin
+                                gpr[dec.rd] <= {{32{gpr[dec.rs1][31]}}, gpr[dec.rs1][31:0]};
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_ZEXT_B: begin
+                                gpr[dec.rd] <= {56'd0, gpr[dec.rs1][7:0]};
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_ZEXT_H: begin
+                                gpr[dec.rd] <= {48'd0, gpr[dec.rs1][15:0]};
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_ZEXT_W: begin
+                                gpr[dec.rd] <= {32'd0, gpr[dec.rs1][31:0]};
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
                             LNP64_OP_UDIV: begin
                                 gpr[dec.rd] <= gpr[dec.rs2] == 64'd0 ? 64'd0 : gpr[dec.rs1] / gpr[dec.rs2];
                                 pc <= pc + 32'd1;

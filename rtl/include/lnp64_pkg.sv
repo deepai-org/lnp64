@@ -114,6 +114,12 @@ package lnp64_pkg;
         LNP64_OP_LSLI         = 16'h0043,
         LNP64_OP_LSRI         = 16'h0044,
         LNP64_OP_ASRI         = 16'h0045,
+        LNP64_OP_SEXT_B       = 16'h0046,
+        LNP64_OP_SEXT_H       = 16'h0047,
+        LNP64_OP_SEXT_W       = 16'h0048,
+        LNP64_OP_ZEXT_B       = 16'h0049,
+        LNP64_OP_ZEXT_H       = 16'h004a,
+        LNP64_OP_ZEXT_W       = 16'h004b,
         LNP64_OP_UNSUPPORTED  = 16'h00ff
     } lnp64_opcode_e;
 

@@ -25,6 +25,14 @@
       "status": "active",
       "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
       "comparison": "retire_trace_and_final_state"
+    },
+    {
+      "source": "tests/rtl/programs/top_extend.s",
+      "generated_flat_hex": "tests/rtl/programs/top_extend.hex",
+      "required_features": ["core", "extend_alu", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
     }
   ],
   "compiler_flat_programs": [

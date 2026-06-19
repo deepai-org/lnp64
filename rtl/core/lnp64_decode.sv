@@ -168,6 +168,24 @@ module lnp64_decode (
             8'ha6: begin
                 dec.opcode = LNP64_OP_ASRI;
             end
+            8'had: begin
+                dec.opcode = LNP64_OP_SEXT_B;
+            end
+            8'hae: begin
+                dec.opcode = LNP64_OP_SEXT_H;
+            end
+            8'haf: begin
+                dec.opcode = LNP64_OP_SEXT_W;
+            end
+            8'hb0: begin
+                dec.opcode = LNP64_OP_ZEXT_B;
+            end
+            8'hb1: begin
+                dec.opcode = LNP64_OP_ZEXT_H;
+            end
+            8'hb2: begin
+                dec.opcode = LNP64_OP_ZEXT_W;
+            end
             default: begin
                 dec.opcode = {8'd0, raw_opcode};
             end
@@ -196,6 +214,12 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_LSLI ||
             dec.opcode == LNP64_OP_LSRI ||
             dec.opcode == LNP64_OP_ASRI ||
+            dec.opcode == LNP64_OP_SEXT_B ||
+            dec.opcode == LNP64_OP_SEXT_H ||
+            dec.opcode == LNP64_OP_SEXT_W ||
+            dec.opcode == LNP64_OP_ZEXT_B ||
+            dec.opcode == LNP64_OP_ZEXT_H ||
+            dec.opcode == LNP64_OP_ZEXT_W ||
             dec.opcode == LNP64_OP_CMP ||
             dec.opcode == LNP64_OP_JMP ||
             dec.opcode == LNP64_OP_BRANCH_EQ ||

@@ -340,6 +340,12 @@ fn encode_flat_exec_instr(
             *rs1,
             imm14(*imm, "ASRI immediate")?,
         )]),
+        Instr::SextB(rd, rs1) => Ok(vec![enc_rrr(0xad, *rd, *rs1, Reg(0))]),
+        Instr::SextH(rd, rs1) => Ok(vec![enc_rrr(0xae, *rd, *rs1, Reg(0))]),
+        Instr::SextW(rd, rs1) => Ok(vec![enc_rrr(0xaf, *rd, *rs1, Reg(0))]),
+        Instr::ZextB(rd, rs1) => Ok(vec![enc_rrr(0xb0, *rd, *rs1, Reg(0))]),
+        Instr::ZextH(rd, rs1) => Ok(vec![enc_rrr(0xb1, *rd, *rs1, Reg(0))]),
+        Instr::ZextW(rd, rs1) => Ok(vec![enc_rrr(0xb2, *rd, *rs1, Reg(0))]),
         Instr::Cmp(lhs, rhs) => Ok(vec![enc_rrr(0x1b, *lhs, *rhs, Reg(0))]),
         Instr::Ret => Ok(vec![enc_reg(0x1f, Reg(0))]),
         Instr::Jmp(target) => Ok(vec![enc_branch(
@@ -390,7 +396,7 @@ fn encode_flat_exec_instr(
         )]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, MOV, ADD/ADDI, SUB, MUL, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XOR/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, CMP, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.B, ALLOC, ERRNO_GET/SET, ENV_GET, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, MOV, ADD/ADDI, SUB, MUL, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XOR/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CMP, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.B, ALLOC, ERRNO_GET/SET, ENV_GET, EXIT"
         )),
     }
 }
@@ -1083,6 +1089,55 @@ mod tests {
                 "a052400b\n",
                 "1059d400\n",
                 "3a580000\n",
+            )
+        );
+    }
+
+    #[test]
+    fn asm_flat_exec_encodes_extend_subset() {
+        let source = r#"
+            .text
+              LI r1, 255
+              SEXT.B r2, r1
+              ADDI r2, r2, 2
+              ZEXT.B r3, r1
+              LI r4, 65535
+              SEXT.H r5, r4
+              ADDI r5, r5, 3
+              ZEXT.H r6, r4
+              LI r7, 4294967295
+              SEXT.W r8, r7
+              ADDI r8, r8, 4
+              ZEXT.W r9, r7
+              ADD r10, r2, r5
+              ADD r10, r10, r8
+              ADDI r10, r10, 6
+              EXIT r10
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+
+        assert_eq!(
+            hex,
+            concat!(
+                "010800ff\n",
+                "ad104000\n",
+                "a0108002\n",
+                "b0184000\n",
+                "04200000\n",
+                "0000ffff\n",
+                "ae290000\n",
+                "a0294003\n",
+                "b1310000\n",
+                "04380000\n",
+                "ffffffff\n",
+                "af41c000\n",
+                "a0420004\n",
+                "b249c000\n",
+                "10508a00\n",
+                "10529000\n",
+                "a0528006\n",
+                "3a500000\n",
             )
         );
     }
