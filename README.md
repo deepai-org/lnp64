@@ -222,6 +222,12 @@ bash scripts/run_rtl_synth_docker.sh
 Faster RTL/proof iteration in Docker:
 
 ```sh
+bash scripts/run_rtl_quick_docker.sh top tests/rtl/programs/top_smoke.s
+bash scripts/run_rtl_quick_docker.sh top tests/rtl/programs/top_immediate_alu.s
+LNP64_RTL_TOP_PROGRAM_FILTER='*linked*' bash scripts/run_rtl_quick_docker.sh top
+bash scripts/run_rtl_quick_docker.sh cosim
+bash scripts/run_rtl_quick_docker.sh cosim m1 m7
+bash scripts/run_rtl_quick_docker.sh proof
 LNP64_RTL_EXEC_SKIP_BUILD=1 bash scripts/run_rtl_execution_fast_docker.sh tests/rtl/programs/top_smoke.s
 LNP64_RTL_EXEC_SKIP_BUILD=1 LNP64_RTL_SKIP_BUILD=1 bash scripts/run_rtl_execution_fast_docker.sh tests/rtl/programs/top_immediate_alu.s
 LNP64_RTL_EXEC_SKIP_BUILD=1 LNP64_RTL_TOP_PROGRAM_FILTER='*linked*' bash scripts/run_rtl_execution_fast_docker.sh
@@ -253,6 +259,14 @@ programs through `rtl/top/lnp64_top.sv` against the emulator.
 `run_rtl_m1_refinement_docker.sh` sets `LNP64_REQUIRE_LEAN=1`, so it is the
 right fast path when the claim depends on the Lean M1 transition-invariant file;
 the non-Docker host gate may skip Lean if no local Lean toolchain is installed.
+`run_rtl_quick_docker.sh` is the shortest day-to-day wrapper. It uses the repo
+Dockerfiles, reuses existing Docker images unless
+`LNP64_RTL_QUICK_REBUILD_IMAGE=1` is set, keeps Docker-side Cargo and Verilator
+artifacts in `target/docker-rust` and `target/rtl-verilator-docker`, enables
+`LNP64_RTL_FAST=1`, skips standalone lint, runs top-level program tests with
+parallel jobs, and narrows `cosim` mode to M1 seed 0 unless you pass gate names
+or set `LNP64_RTL_RANDOM_COSIM_GATES`/`LNP64_COSIM_SEEDS`. Use the older
+wrappers or unset the narrowing variables for full evidence runs.
 
 The randomized/cosim sweep is serial and full-seed by default for stable logs.
 For an inner loop, run only the slices and seeds you need:
