@@ -154,6 +154,12 @@ module lnp64_decode (
             8'h3a: begin
                 dec.opcode = LNP64_OP_EXIT;
             end
+            8'h3b: begin
+                dec.opcode = LNP64_OP_PULL;
+            end
+            8'h3c: begin
+                dec.opcode = LNP64_OP_PUSH;
+            end
             8'h3d: begin
                 dec.opcode = LNP64_OP_CSET_EQ;
             end
@@ -459,6 +465,8 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_DMA_CTL ||
             dec.opcode == LNP64_OP_ENV_GET ||
             dec.opcode == LNP64_OP_WRITE_FD ||
+            dec.opcode == LNP64_OP_PUSH ||
+            dec.opcode == LNP64_OP_PULL ||
             dec.opcode == LNP64_OP_ALLOC ||
             dec.opcode == LNP64_OP_ALLOC_SIZE ||
             dec.opcode == LNP64_OP_FREE ||

@@ -169,6 +169,8 @@ module lnp64_core_tile #(
     logic [63:0] cap_queue_lineage;
     logic [63:0] cap_queue_generation;
     logic cap_queue_revoked;
+    logic pipe_byte_valid;
+    logic [7:0] pipe_byte_value;
     logic topology_record_valid;
     logic [63:0] topology_record_base;
     int unsigned mem_sram_word_index;
@@ -197,6 +199,10 @@ module lnp64_core_tile #(
     logic [63:0] cap_revoke_count;
     logic [63:0] cap_recv_rights;
     logic cap_recv_rights_subset;
+    int unsigned pipe_fd;
+    logic pipe_fd_in_range;
+    int unsigned pipe_buf_word_index;
+    logic [2:0] pipe_buf_byte_lane;
     lnp64_m1_cap_commit_t m1_commit_next;
     int unsigned m1_projection_root_fd;
     int unsigned m1_projection_consumer_fd;
@@ -825,6 +831,10 @@ module lnp64_core_tile #(
         cap_dup_rights_subset = cap_src_fd_in_range && ((cap_dup_rights & ~fdr_rights[cap_src_fd]) == 64'd0);
         cap_recv_rights = cap_rights_req == 64'd0 ? cap_queue_rights : cap_rights_req;
         cap_recv_rights_subset = (cap_recv_rights & ~cap_queue_rights) == 64'd0;
+        pipe_fd = fdr_value_fd(gpr[dec.rs1]);
+        pipe_fd_in_range = pipe_fd < FDR_SLOT_COUNT;
+        pipe_buf_word_index = sram_word_index(gpr[dec.rs2]);
+        pipe_buf_byte_lane = gpr[dec.rs2][2:0];
         cap_revoke_count = 64'd0;
         if (cap_src_fd_in_range) begin
             for (int slot = 0; slot < FDR_SLOT_COUNT; slot = slot + 1) begin
@@ -1088,6 +1098,8 @@ module lnp64_core_tile #(
             cap_queue_lineage <= 64'd0;
             cap_queue_generation <= 64'd0;
             cap_queue_revoked <= 1'b0;
+            pipe_byte_valid <= 1'b0;
+            pipe_byte_value <= 8'd0;
             m1_projection_root_fd <= 0;
             m1_projection_consumer_fd <= 0;
             topology_record_valid <= 1'b0;
@@ -1923,6 +1935,72 @@ module lnp64_core_tile #(
                             LNP64_OP_WRITE_FD: begin
                                 gpr[1] <= gpr[dec.rs2];
                                 errno_reg <= LNP64_ERR_OK;
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_PUSH: begin
+                                if (gpr[dec.rs3] == 64'd0) begin
+                                    gpr[1] <= 64'd0;
+                                    gpr[dec.rd] <= 64'd0;
+                                    errno_reg <= LNP64_ERR_OK;
+                                end else if (!pipe_fd_in_range || !fdr_valid[pipe_fd] ||
+                                    fdr_revoked[pipe_fd] ||
+                                    fdr_kind[pipe_fd] != FDR_KIND_PIPE_WRITER ||
+                                    ((fdr_rights[pipe_fd] & 64'd2) == 64'd0)) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EBADF;
+                                end else if (gpr[dec.rs3] != 64'd1) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EINVAL;
+                                end else if (pipe_byte_valid) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EAGAIN;
+                                end else begin
+                                    pipe_byte_valid <= 1'b1;
+                                    pipe_byte_value <= load_byte_lane(
+                                        sram[pipe_buf_word_index],
+                                        pipe_buf_byte_lane
+                                    );
+                                    gpr[1] <= 64'd1;
+                                    gpr[dec.rd] <= 64'd1;
+                                    errno_reg <= LNP64_ERR_OK;
+                                end
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_PULL: begin
+                                if (gpr[dec.rs3] == 64'd0) begin
+                                    gpr[1] <= 64'd0;
+                                    gpr[dec.rd] <= 64'd0;
+                                    errno_reg <= LNP64_ERR_OK;
+                                end else if (!pipe_fd_in_range || !fdr_valid[pipe_fd] ||
+                                    fdr_revoked[pipe_fd] ||
+                                    fdr_kind[pipe_fd] != FDR_KIND_PIPE_READER ||
+                                    ((fdr_rights[pipe_fd] & 64'd1) == 64'd0)) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EBADF;
+                                end else if (gpr[dec.rs3] != 64'd1) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EINVAL;
+                                end else if (!pipe_byte_valid) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EAGAIN;
+                                end else begin
+                                    sram[pipe_buf_word_index] <= store_byte_lane(
+                                        sram[pipe_buf_word_index],
+                                        pipe_buf_byte_lane,
+                                        pipe_byte_value
+                                    );
+                                    pipe_byte_valid <= 1'b0;
+                                    pipe_byte_value <= 8'd0;
+                                    gpr[1] <= 64'd1;
+                                    gpr[dec.rd] <= 64'd1;
+                                    errno_reg <= LNP64_ERR_OK;
+                                end
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
