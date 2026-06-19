@@ -104,7 +104,11 @@ module lnp64_core_tile #(
     localparam logic [63:0] CALL_MODE_ASYNC = 64'd1;
     localparam logic [63:0] CALL_MODE_HANDOFF = 64'd2;
     localparam logic [63:0] DOMAIN_OP_CREATE = 64'd1;
+    localparam logic [63:0] DOMAIN_OP_CONFIGURE = 64'd2;
     localparam logic [63:0] DOMAIN_OP_QUERY = 64'd3;
+    localparam logic [63:0] DOMAIN_OP_FREEZE = 64'd4;
+    localparam logic [63:0] DOMAIN_OP_RESUME = 64'd5;
+    localparam logic [63:0] DOMAIN_OP_DESTROY = 64'd6;
     localparam logic [63:0] DOMAIN_ROOT_ID = 64'd1;
     localparam logic [63:0] DOMAIN_QUERY_SIZE = 64'd200;
     localparam logic [63:0] DOMAIN_STATE_ACTIVE = 64'd0;
@@ -223,6 +227,7 @@ module lnp64_core_tile #(
     logic domain_destroyed [0:DOMAIN_SLOT_COUNT-1];
     logic [63:0] domain_generation [0:DOMAIN_SLOT_COUNT-1];
     logic [63:0] domain_parent [0:DOMAIN_SLOT_COUNT-1];
+    logic [63:0] domain_depth [0:DOMAIN_SLOT_COUNT-1];
     logic [63:0] domain_profile [0:DOMAIN_SLOT_COUNT-1];
     logic [63:0] domain_cpu_limit [0:DOMAIN_SLOT_COUNT-1];
     logic [63:0] domain_memory_limit [0:DOMAIN_SLOT_COUNT-1];
@@ -231,6 +236,7 @@ module lnp64_core_tile #(
     logic [63:0] domain_cap_mask [0:DOMAIN_SLOT_COUNT-1];
     logic [63:0] domain_upcall_mask [0:DOMAIN_SLOT_COUNT-1];
     logic [63:0] domain_child_count [0:DOMAIN_SLOT_COUNT-1];
+    logic domain_frozen [0:DOMAIN_SLOT_COUNT-1];
     logic cap_queue_valid;
     logic [63:0] cap_queue_rights;
     logic [63:0] cap_queue_lineage;
@@ -1343,6 +1349,7 @@ module lnp64_core_tile #(
                 domain_destroyed[i] <= 1'b0;
                 domain_generation[i] <= 64'd1;
                 domain_parent[i] <= i == 0 ? 64'd0 : DOMAIN_ROOT_ID;
+                domain_depth[i] <= i == 0 ? 64'd0 : 64'd1;
                 domain_profile[i] <= 64'd0;
                 domain_cpu_limit[i] <= i == 0 ? 64'hffff_ffff_ffff_ffff : 64'd0;
                 domain_memory_limit[i] <= i == 0 ? 64'hffff_ffff_ffff_ffff : 64'd0;
@@ -1351,6 +1358,7 @@ module lnp64_core_tile #(
                 domain_cap_mask[i] <= i == 0 ? 64'hffff_ffff_ffff_ffff : 64'd0;
                 domain_upcall_mask[i] <= i == 0 ? 64'hffff_ffff_ffff_ffff : 64'd0;
                 domain_child_count[i] <= 64'd0;
+                domain_frozen[i] <= 1'b0;
             end
             for (i = 0; i < SRAM_WORDS; i = i + 1) begin
                 sram[i] = initial_sram[i];
@@ -2725,6 +2733,13 @@ module lnp64_core_tile #(
                                     domain_ref_live &&
                                     domain_create_slot_in_range &&
                                     !domain_valid[domain_create_slot] &&
+                                    (domain_cpu_req == 64'd0 || domain_cpu_req <= domain_cpu_limit[domain_ref_slot]) &&
+                                    (domain_memory_req == 64'd0 ||
+                                        domain_memory_req <= domain_memory_limit[domain_ref_slot]) &&
+                                    (domain_pids_req == 64'd0 ||
+                                        domain_pids_req <= domain_pids_limit[domain_ref_slot]) &&
+                                    (domain_fdrs_req == 64'd0 ||
+                                        domain_fdrs_req <= domain_fdrs_limit[domain_ref_slot]) &&
                                     (domain_caps_req == 64'd0 ||
                                         ((domain_caps_req & ~domain_cap_mask[domain_ref_slot]) == 64'd0)) &&
                                     (domain_upcalls_req == 64'd0 ||
@@ -2733,23 +2748,29 @@ module lnp64_core_tile #(
                                     domain_destroyed[domain_create_slot] <= 1'b0;
                                     domain_generation[domain_create_slot] <= 64'd1;
                                     domain_parent[domain_create_slot] <= domain_ref_id;
+                                    domain_depth[domain_create_slot] <= domain_depth[domain_ref_slot] + 64'd1;
                                     domain_profile[domain_create_slot] <= domain_profile_req;
-                                    domain_cpu_limit[domain_create_slot] <= domain_cpu_req;
-                                    domain_memory_limit[domain_create_slot] <= domain_memory_req;
-                                    domain_pids_limit[domain_create_slot] <= domain_pids_req;
-                                    domain_fdrs_limit[domain_create_slot] <= domain_fdrs_req;
+                                    domain_cpu_limit[domain_create_slot] <= domain_cpu_req == 64'd0 ?
+                                        domain_cpu_limit[domain_ref_slot] : domain_cpu_req;
+                                    domain_memory_limit[domain_create_slot] <= domain_memory_req == 64'd0 ?
+                                        domain_memory_limit[domain_ref_slot] : domain_memory_req;
+                                    domain_pids_limit[domain_create_slot] <= domain_pids_req == 64'd0 ?
+                                        domain_pids_limit[domain_ref_slot] : domain_pids_req;
+                                    domain_fdrs_limit[domain_create_slot] <= domain_fdrs_req == 64'd0 ?
+                                        domain_fdrs_limit[domain_ref_slot] : domain_fdrs_req;
                                     domain_cap_mask[domain_create_slot] <= domain_caps_req == 64'd0 ?
                                         domain_cap_mask[domain_ref_slot] : domain_caps_req;
                                     domain_upcall_mask[domain_create_slot] <= domain_upcalls_req == 64'd0 ?
                                         domain_upcall_mask[domain_ref_slot] : domain_upcalls_req;
                                     domain_child_count[domain_create_slot] <= 64'd0;
+                                    domain_frozen[domain_create_slot] <= 1'b0;
                                     domain_child_count[domain_ref_slot] <= domain_child_count[domain_ref_slot] + 64'd1;
                                     store_double_unaligned_next(domain_argblock_addr + 64'd8, domain_next_id);
                                     store_double_unaligned_next(domain_argblock_addr + 64'd16, 64'd1);
                                     store_double_unaligned_next(domain_argblock_addr + 64'd120, domain_ref_id);
                                     store_double_unaligned_next(
                                         domain_argblock_addr + 64'd128,
-                                        domain_ref_id == DOMAIN_ROOT_ID ? 64'd1 : 64'd2
+                                        domain_depth[domain_ref_slot] + 64'd1
                                     );
                                     gpr[dec.rd] <= domain_next_id;
                                     domain_next_id <= domain_next_id + 64'd1;
@@ -2794,7 +2815,8 @@ module lnp64_core_tile #(
                                     store_double_unaligned_next(domain_argblock_addr + 64'd104, 64'd3);
                                     store_double_unaligned_next(
                                         domain_argblock_addr + 64'd112,
-                                        domain_destroyed[domain_ref_slot] ? DOMAIN_STATE_DESTROYED : DOMAIN_STATE_ACTIVE
+                                        domain_destroyed[domain_ref_slot] ? DOMAIN_STATE_DESTROYED :
+                                            (domain_frozen[domain_ref_slot] ? 64'd1 : DOMAIN_STATE_ACTIVE)
                                     );
                                     store_double_unaligned_next(
                                         domain_argblock_addr + 64'd120,
@@ -2802,7 +2824,7 @@ module lnp64_core_tile #(
                                     );
                                     store_double_unaligned_next(
                                         domain_argblock_addr + 64'd128,
-                                        domain_ref_id == DOMAIN_ROOT_ID ? 64'd0 : 64'd1
+                                        domain_depth[domain_ref_slot]
                                     );
                                     store_double_unaligned_next(
                                         domain_argblock_addr + 64'd136,
@@ -2810,12 +2832,93 @@ module lnp64_core_tile #(
                                     );
                                     gpr[dec.rd] <= DOMAIN_QUERY_SIZE;
                                     errno_reg <= LNP64_ERR_OK;
+                                end else if (domain_op == DOMAIN_OP_CONFIGURE && domain_ref_live &&
+                                    !domain_frozen[domain_ref_slot] &&
+                                    (domain_cpu_req == 64'd0 || domain_cpu_req <= domain_cpu_limit[domain_ref_slot]) &&
+                                    (domain_memory_req == 64'd0 ||
+                                        domain_memory_req <= domain_memory_limit[domain_ref_slot]) &&
+                                    (domain_pids_req == 64'd0 ||
+                                        domain_pids_req <= domain_pids_limit[domain_ref_slot]) &&
+                                    (domain_fdrs_req == 64'd0 ||
+                                        domain_fdrs_req <= domain_fdrs_limit[domain_ref_slot]) &&
+                                    (domain_caps_req == 64'd0 ||
+                                        ((domain_caps_req & ~domain_cap_mask[domain_ref_slot]) == 64'd0)) &&
+                                    (domain_upcalls_req == 64'd0 ||
+                                        ((domain_upcalls_req & ~domain_upcall_mask[domain_ref_slot]) == 64'd0))) begin
+                                    if (domain_profile_req != 64'd0) begin
+                                        domain_profile[domain_ref_slot] <= domain_profile_req;
+                                    end
+                                    if (domain_cpu_req != 64'd0) begin
+                                        domain_cpu_limit[domain_ref_slot] <= domain_cpu_req;
+                                    end
+                                    if (domain_memory_req != 64'd0) begin
+                                        domain_memory_limit[domain_ref_slot] <= domain_memory_req;
+                                    end
+                                    if (domain_pids_req != 64'd0) begin
+                                        domain_pids_limit[domain_ref_slot] <= domain_pids_req;
+                                    end
+                                    if (domain_fdrs_req != 64'd0) begin
+                                        domain_fdrs_limit[domain_ref_slot] <= domain_fdrs_req;
+                                    end
+                                    if (domain_caps_req != 64'd0) begin
+                                        domain_cap_mask[domain_ref_slot] <= domain_caps_req;
+                                        for (i = 0; i < DOMAIN_SLOT_COUNT; i = i + 1) begin
+                                            if (domain_valid[i] && domain_parent[i] == domain_ref_id) begin
+                                                domain_cap_mask[i] <= domain_cap_mask[i] & domain_caps_req;
+                                            end
+                                        end
+                                    end
+                                    if (domain_upcalls_req != 64'd0) begin
+                                        domain_upcall_mask[domain_ref_slot] <= domain_upcalls_req;
+                                        for (i = 0; i < DOMAIN_SLOT_COUNT; i = i + 1) begin
+                                            if (domain_valid[i] && domain_parent[i] == domain_ref_id) begin
+                                                domain_upcall_mask[i] <= domain_upcall_mask[i] & domain_upcalls_req;
+                                            end
+                                        end
+                                    end
+                                    gpr[dec.rd] <= 64'd0;
+                                    errno_reg <= LNP64_ERR_OK;
+                                end else if (domain_op == DOMAIN_OP_FREEZE && domain_ref_live) begin
+                                    domain_frozen[domain_ref_slot] <= 1'b1;
+                                    for (i = 0; i < DOMAIN_SLOT_COUNT; i = i + 1) begin
+                                        if (domain_valid[i] && domain_parent[i] == domain_ref_id) begin
+                                            domain_frozen[i] <= 1'b1;
+                                        end
+                                    end
+                                    gpr[dec.rd] <= 64'd0;
+                                    errno_reg <= LNP64_ERR_OK;
+                                end else if (domain_op == DOMAIN_OP_RESUME && domain_ref_live) begin
+                                    domain_frozen[domain_ref_slot] <= 1'b0;
+                                    for (i = 0; i < DOMAIN_SLOT_COUNT; i = i + 1) begin
+                                        if (domain_valid[i] && domain_parent[i] == domain_ref_id) begin
+                                            domain_frozen[i] <= 1'b0;
+                                        end
+                                    end
+                                    gpr[dec.rd] <= 64'd0;
+                                    errno_reg <= LNP64_ERR_OK;
+                                end else if (domain_op == DOMAIN_OP_DESTROY && domain_ref_live &&
+                                    domain_ref_id != DOMAIN_ROOT_ID) begin
+                                    domain_destroyed[domain_ref_slot] <= 1'b1;
+                                    domain_generation[domain_ref_slot] <= domain_generation[domain_ref_slot] + 64'd1;
+                                    if (domain_parent[domain_ref_slot] > 64'd0 &&
+                                        (domain_parent[domain_ref_slot] - 64'd1) < DOMAIN_SLOT_COUNT &&
+                                        domain_child_count[domain_parent[domain_ref_slot] - 64'd1] != 64'd0) begin
+                                        domain_child_count[domain_parent[domain_ref_slot] - 64'd1] <=
+                                            domain_child_count[domain_parent[domain_ref_slot] - 64'd1] - 64'd1;
+                                    end
+                                    gpr[dec.rd] <= 64'd0;
+                                    errno_reg <= LNP64_ERR_OK;
                                 end else if (domain_op == DOMAIN_OP_CREATE) begin
                                     gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= LNP64_ERR_EPERM;
-                                end else if (domain_op == DOMAIN_OP_QUERY) begin
+                                end else if (domain_op == DOMAIN_OP_QUERY || domain_op == DOMAIN_OP_DESTROY) begin
                                     gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= RTL_ERR_ESTALE;
+                                end else if (domain_op == DOMAIN_OP_CONFIGURE ||
+                                    domain_op == DOMAIN_OP_FREEZE ||
+                                    domain_op == DOMAIN_OP_RESUME) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EPERM;
                                 end else begin
                                     gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= LNP64_ERR_EINVAL;
