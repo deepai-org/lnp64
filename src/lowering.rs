@@ -1317,6 +1317,7 @@ mod tests {
         let real_clang_target = include_str!("../clang/lib/Basic/Targets/LNP64.cpp");
         let llvm_dockerfile = include_str!("../Dockerfile.llvm");
         let errno_header = include_str!("../toolchain/include/errno.h");
+        let search_header = include_str!("../toolchain/include/search.h");
         let stdlib_header = include_str!("../toolchain/include/stdlib.h");
         let libc_string_min = include_str!("../toolchain/liblnp64_string_min.c");
         let libc_convert_min = include_str!("../toolchain/liblnp64_convert_min.c");
@@ -1430,6 +1431,7 @@ mod tests {
             "clang_sbase_support_object",
             "clang_minilibc_stdio_impl_object",
             "clang_libc_test_argv_object",
+            "clang_libc_test_search_insque_object",
             "zlib_package_static_link",
             "natsort_package_static_link",
             "jsmn_package_static_link",
@@ -1448,6 +1450,7 @@ mod tests {
             "libc_test_strtol_static_link",
             "libc_test_clock_gettime_static_link",
             "libc_test_qsort_bounded_static_link",
+            "libc_test_search_insque_static_link",
             "zlib_package_run_elf",
             "natsort_package_run_elf",
             "jsmn_package_run_elf",
@@ -1466,6 +1469,7 @@ mod tests {
             "libc_test_strtol_run_elf",
             "libc_test_clock_gettime_run_elf",
             "libc_test_qsort_bounded_run_elf",
+            "libc_test_search_insque_run_elf",
             "sbase_echo_static_link",
             "sbase_echo_run_elf",
             "sbase_path_static_link",
@@ -1846,6 +1850,11 @@ mod tests {
         assert!(
             real_llc.contains("real LLVM LNP64 clang libc-test qsort_bounded object smoke passed")
         );
+        assert!(real_llc.contains("libc-test-search-insque-clang-smoke.o"));
+        assert!(real_llc.contains("third_party/libc-test/functional/search_insque.c"));
+        assert!(
+            real_llc.contains("real LLVM LNP64 clang libc-test search_insque object smoke passed")
+        );
         assert!(real_llc.contains("lnp64-libc-test-ctype-bounded-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld libc-test ctype_bounded link smoke passed"));
         assert!(real_llc.contains("lnp64-libc-test-string-linked.elf"));
@@ -1878,6 +1887,13 @@ mod tests {
         assert!(real_llc.contains(r#""$libc_test_qsort_bounded_obj" \"#));
         assert!(real_llc.contains(r#""$libc_sort_impl_obj" "$libc_string_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld libc-test qsort_bounded link smoke passed"));
+        assert!(real_llc.contains("lnp64-libc-test-search-insque-linked.elf"));
+        assert!(real_llc.contains(r#""$libc_test_search_insque_obj" \"#));
+        assert!(real_llc.contains(r#""$libc_search_impl_obj" "$libc_alloc_impl_obj""#));
+        assert!(real_llc.contains(r#""$libc_string_impl_obj" "$libc_fd_impl_obj""#));
+        assert!(real_llc.contains("real LLVM LNP64 lld libc-test search_insque link smoke passed"));
+        assert!(search_header.contains("void insque(void *elem, void *pred);"));
+        assert!(search_header.contains("void remque(void *elem);"));
         assert!(real_llc.contains("toolchain/liblnp64_futex_min.c"));
         assert!(libc_futex_min.contains("__lnp_futex_wait"));
         assert!(libc_futex_min.contains("__lnp_futex_wake"));
@@ -2867,6 +2883,11 @@ mod tests {
             real_llc_docker
                 .contains("real LLVM LNP64 run-elf libc-test qsort_bounded execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-libc-test-search-insque-linked.elf"));
+        assert!(
+            real_llc_docker
+                .contains("real LLVM LNP64 run-elf libc-test search_insque execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-calloc-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf calloc execution passed"));
         assert!(real_llc_docker.contains("lnp64-realloc-linked.elf"));
@@ -3028,6 +3049,7 @@ mod tests {
             "real_libc_test_strtol_execution",
             "real_libc_test_clock_gettime_execution",
             "real_libc_test_qsort_bounded_execution",
+            "real_libc_test_search_insque_execution",
             "real_numeric_conversion_execution",
             "real_path_helper_execution",
             "real_search_helper_execution",
@@ -3090,6 +3112,7 @@ mod tests {
             "real_libc_test_strtol_execution",
             "real_libc_test_clock_gettime_execution",
             "real_libc_test_qsort_bounded_execution",
+            "real_libc_test_search_insque_execution",
             "real_numeric_conversion_execution",
             "real_path_helper_execution",
             "real_search_helper_execution",
