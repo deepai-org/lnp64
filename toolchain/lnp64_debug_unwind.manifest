@@ -2,6 +2,8 @@
 # Backend-facing minimums for the initial LLVM target.
 debug_format=DWARFv5
 line_tables=required
+real_llvm_debug_sections=clang_debug_sections_object
+line_table_decode=blocked_until_debug_relocation_decoding
 register_numbers=r0-r31,LR,TP
 stack_pointer=r31
 return_address=LR

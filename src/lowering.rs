@@ -1552,6 +1552,13 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang csel object smoke passed"));
         assert!(real_llc.contains("call-clobber-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang call-clobber object smoke passed"));
+        assert!(real_llc.contains("debug-line-clang-smoke.o"));
+        assert!(real_llc.contains("-g -gdwarf-5"));
+        assert!(real_llc.contains("grep -q '.debug_info'"));
+        assert!(real_llc.contains("grep -q '.debug_line'"));
+        assert!(real_llc.contains("grep -q '.debug_frame'"));
+        assert!(real_llc.contains("grep -q '.rela.debug_line'"));
+        assert!(real_llc.contains("real LLVM LNP64 clang debug section smoke passed"));
         assert!(real_llc.contains("-c demos/hello.c"));
         assert!(real_llc.contains("hello-clang-smoke.o"));
         assert!(real_llc.contains("hello-clang-smoke.dump"));
@@ -4732,6 +4739,14 @@ mod tests {
         assert_eq!(
             manifest_field(debug_unwind_manifest, "line_tables"),
             "required"
+        );
+        assert_eq!(
+            manifest_field(debug_unwind_manifest, "real_llvm_debug_sections"),
+            "clang_debug_sections_object"
+        );
+        assert_eq!(
+            manifest_field(debug_unwind_manifest, "line_table_decode"),
+            "blocked_until_debug_relocation_decoding"
         );
         for register in ["r0-r31", "LR", "TP"] {
             assert!(manifest_csv_contains(
