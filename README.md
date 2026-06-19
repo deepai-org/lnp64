@@ -297,6 +297,7 @@ bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_auipc_fence.s
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_half_word_load_store.s
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_amo.s
 bash scripts/run_rtl_top_llvm_mc_smoke.sh
+bash scripts/run_rtl_top_clang_smoke.sh
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_return_12.c
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_branch_if.c
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_loop_sum.c
@@ -335,10 +336,10 @@ bash scripts/run_rtl_synth_gates.sh
 
 `scripts/run_rtl_top_program_manifest.sh` builds the top-level Verilator
 program test once, then reuses that binary for the remaining selected program
-images. The full manifest includes an LLVM MC object-byte smoke, so run the LLVM
-MC Docker gate first or set `LLVM_MC`/`LLVM_OBJDUMP` when using a non-default
-tool path. For a manual multi-program loop, run one normal smoke first and then
-reuse the binary explicitly:
+images. The full manifest includes LLVM MC and clang object-byte smokes, so run
+the LLVM Docker gate first or set `LLVM_MC`/`LLVM_CLANG`/`LLVM_OBJDUMP` when
+using a non-default tool path. For a manual multi-program loop, run one normal
+smoke first and then reuse the binary explicitly:
 
 ```sh
 LNP64_RTL_VERILATOR_BUILD_JOBS=0 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_manifest.sh
@@ -349,6 +350,7 @@ LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash sc
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_immediate_alu.s
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_extend.s
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_llvm_mc_smoke.sh
+LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_clang_smoke.sh
 ```
 
 Set `LNP64_RTL_TOP_PROGRAM_JOBS=4` or

@@ -38,9 +38,16 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("dump", type=Path)
     parser.add_argument("-o", "--output", type=Path)
+    parser.add_argument(
+        "--wrap-call-exit-r1",
+        action="store_true",
+        help="prepend CALL +2 and EXIT r1 so a leaf function RET returns to top-level exit",
+    )
     args = parser.parse_args()
 
     words = dump_to_words(args.dump.read_text(encoding="utf-8"))
+    if args.wrap_call_exit_r1:
+        words = ["27000002", "3a080000", *words]
     output = "\n".join(words) + "\n"
     if args.output:
         args.output.write_text(output, encoding="utf-8")

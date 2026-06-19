@@ -81,6 +81,7 @@ def main() -> None:
     manifest_runner = text(ROOT / "scripts/run_rtl_top_program_manifest.sh")
     require("entry['rtl_gate']" in manifest_runner, "manifest runner must dispatch active entries through their rtl_gate")
     require("llvm_mc_programs" in manifest_runner, "manifest runner must include LLVM MC program entries")
+    require("llvm_clang_programs" in manifest_runner, "manifest runner must include LLVM clang program entries")
     require(manifest.get("schema") == "lnp64_top_level_program_tests_v1", "unexpected manifest schema")
     require(manifest.get("stage") == "feature_gated_plan", "manifest must be a feature-gated plan")
     require(manifest.get("top") == "rtl/top/lnp64_top.sv", "manifest must target lnp64_top")
@@ -88,11 +89,13 @@ def main() -> None:
 
     flat_hex_entries = manifest.get("flat_hex_programs")
     llvm_mc_entries = manifest.get("llvm_mc_programs")
+    llvm_clang_entries = manifest.get("llvm_clang_programs")
     compiler_flat_entries = manifest.get("compiler_flat_programs")
     assembly_entries = manifest.get("assembly_programs")
     compiler_entries = manifest.get("compiler_generated_programs")
     require(isinstance(flat_hex_entries, list) and flat_hex_entries, "missing flat_hex_programs")
     require(isinstance(llvm_mc_entries, list) and llvm_mc_entries, "missing llvm_mc_programs")
+    require(isinstance(llvm_clang_entries, list) and llvm_clang_entries, "missing llvm_clang_programs")
     require(isinstance(compiler_flat_entries, list) and compiler_flat_entries, "missing compiler_flat_programs")
     require(isinstance(assembly_entries, list) and assembly_entries, "missing assembly_programs")
     require(isinstance(compiler_entries, list) and compiler_entries, "missing compiler_generated_programs")
@@ -148,6 +151,29 @@ def main() -> None:
             require('"errno"' in smoke_text, f"{entry['source']} gate must compare final errno")
             require('"mem_checksum"' in smoke_text, f"{entry['source']} gate must compare final memory checksum")
     require(active_llvm_mc >= 1, "manifest must keep at least one active LLVM MC object-byte top-level program")
+    active_llvm_clang = 0
+    for entry in llvm_clang_entries:
+        require(isinstance(entry, dict), "LLVM clang entry must be an object")
+        require_entry(entry, "LLVM clang")
+        if entry.get("status") == "active":
+            active_llvm_clang += 1
+            gate_text = text(ROOT / str(entry["rtl_gate"]))
+            require("--target=lnp64-unknown-none" in gate_text, f"{entry['source']} active gate must compile for LNP64 clang")
+            require("llvm-objdump" in gate_text, f"{entry['source']} active gate must decode object bytes with llvm-objdump")
+            require("--wrap-call-exit-r1" in gate_text, f"{entry['source']} active gate must use an explicit top-level exit harness")
+            require(
+                "scripts/run_rtl_top_program_smoke.sh" in gate_text,
+                f"{entry['source']} active gate must feed bytes to the shared top-level comparator",
+            )
+            converter_text = text(ROOT / "scripts/llvm_objdump_to_flat_hex.py")
+            require("wrap-call-exit-r1" in converter_text, f"{entry['source']} converter must support explicit call/exit harnessing")
+            smoke_text = text(ROOT / "scripts/run_rtl_top_program_smoke.sh")
+            require("RTL_RETIRE" in smoke_text and "EMULATOR_RETIRE" in smoke_text, f"{entry['source']} gate must compare retire traces")
+            require_typed_retire_gate(smoke_text, str(entry["source"]))
+            require("RTL_FINAL" in smoke_text and "EMULATOR_FINAL" in smoke_text, f"{entry['source']} gate must compare final state")
+            require('"errno"' in smoke_text, f"{entry['source']} gate must compare final errno")
+            require('"mem_checksum"' in smoke_text, f"{entry['source']} gate must compare final memory checksum")
+    require(active_llvm_clang >= 1, "manifest must keep at least one active LLVM clang object-byte top-level program")
     active_compiler_flat = 0
     for entry in compiler_flat_entries:
         require(isinstance(entry, dict), "compiler flat entry must be an object")
