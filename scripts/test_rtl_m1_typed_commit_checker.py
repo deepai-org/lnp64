@@ -829,6 +829,22 @@ def main() -> None:
         ),
     )
 
+    missing_status_op_assertion = replace_once(
+        assertion_source,
+        "M1 typed commit status did not match operation",
+        "M1 typed commit status was only range checked",
+    )
+    expect_failure(
+        "mediate transfer/mint validity transitions",
+        lambda: checker.check_rtl_state_projection_boundary_sources(
+            engine_source,
+            tb_source,
+            missing_status_op_assertion,
+            commit_field_names,
+            state_field_names,
+        ),
+    )
+
     missing_transfer_mediation_assertion = replace_once(
         assertion_source,
         "M1 sent-cap validity set outside capSend owner path",

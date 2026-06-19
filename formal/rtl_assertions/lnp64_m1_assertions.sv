@@ -86,6 +86,15 @@ module lnp64_m1_assertions (
         endcase
     endfunction
 
+    function automatic logic [15:0] expected_commit_status(input logic [7:0] op);
+        unique case (op)
+            LNP64_M1_COMMIT_REJECT_FULL: expected_commit_status = LNP64_ERR_EAGAIN;
+            LNP64_M1_COMMIT_REJECT_STALE: expected_commit_status = LNP64_ERR_EREVOKED;
+            LNP64_M1_COMMIT_CAP_DUP_DENIED: expected_commit_status = LNP64_ERR_EPERM;
+            default: expected_commit_status = LNP64_ERR_OK;
+        endcase
+    endfunction
+
     function automatic logic m1_rights_subset(input logic [63:0] child, input logic [63:0] parent);
         return (child & ~parent) == 64'd0;
     endfunction
@@ -584,6 +593,8 @@ module lnp64_m1_assertions (
             if (typed_commit_valid) begin
                 assert (typed_commit.op == expected_commit_op(commit_index))
                     else $fatal(1, "M1 typed commit sequence drifted");
+                assert (typed_commit.status == expected_commit_status(typed_commit.op))
+                    else $fatal(1, "M1 typed commit status did not match operation");
                 assert ((typed_commit.rights_mask & ~M1_ROOT_RIGHTS) == 64'd0)
                     else $fatal(1, "M1 typed commit broadened rights beyond root");
                 assert (typed_commit.fdr_gen != 32'd0)

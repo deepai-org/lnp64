@@ -683,6 +683,7 @@ def check_rtl_state_projection_boundary_sources(
         "M1 typed state projection consumer rights did not match RTL consumer_rights",
         "M1 typed state projection sent_valid did not match RTL sent_cap_valid",
         "M1 typed state projection minted_valid did not match RTL minted_cap_valid",
+        "M1 typed commit status did not match operation",
         "M1 invalid sent-cap state retained authority bits",
         "M1 sent-cap projection did not match RTL sent_cap_state",
         "M1 invalid minted-cap state retained authority bits",
