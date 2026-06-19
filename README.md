@@ -238,6 +238,7 @@ LNP64_RTL_PROOF_SKIP_BUILD=1 LNP64_RTL_FAST=1 LNP64_M1_TYPED_COMMIT_SEEDS="0 1 7
 LNP64_RTL_PROOF_RANDOM_COSIM=0 bash scripts/run_rtl_proof_docker.sh
 LNP64_RTL_PROOF_SKIP_BUILD=1 LNP64_RTL_PROOF_RANDOM_COSIM=0 bash scripts/run_rtl_proof_docker.sh
 LNP64_RTL_PROOF_SKIP_BUILD=1 LNP64_RTL_RANDOM_COSIM_JOBS=4 bash scripts/run_rtl_proof_docker.sh
+LNP64_RTL_FAST=1 LNP64_RTL_PROOF_GATE_JOBS=auto bash scripts/run_rtl_proof_docker.sh
 LNP64_RTL_EXEC_REBUILD_IMAGE=1 bash scripts/run_rtl_execution_fast_docker.sh tests/rtl/programs/top_smoke.s
 LNP64_RTL_PROOF_REBUILD_IMAGE=1 bash scripts/run_rtl_proof_docker.sh
 ```
@@ -271,6 +272,11 @@ artifacts in `target/docker-rust` and `target/rtl-verilator-docker`, enables
 parallel jobs, and narrows `cosim` mode to M1 seed 0 unless you pass gate names
 or set `LNP64_RTL_RANDOM_COSIM_GATES`/`LNP64_COSIM_SEEDS`. Use the older
 wrappers or unset the narrowing variables for full evidence runs.
+For proof-gate iteration, `LNP64_RTL_FAST=1` also defaults
+`LNP64_RTL_PROOF_GATE_JOBS` to `auto`, so the independent M2-M6 and M8-M15
+Verilator/cosim gates run in parallel after the special M1/M7 typed-commit
+checks. Set `LNP64_RTL_PROOF_GATE_JOBS=1` for stable serial logs, or
+`LNP64_RTL_PROOF_KEEP_GATE_LOGS=1` to keep temporary per-gate logs.
 
 The randomized/cosim sweep is serial and full-seed by default for stable logs.
 For an inner loop, run only the slices and seeds you need:
@@ -405,6 +411,10 @@ the generic top-program smoke gate. `LNP64_RTL_FAST=1` also makes individual
 top-program smokes quiet by default: successful runs keep full RTL/emulator logs
 for comparison but only print the final pass line. Set
 `LNP64_RTL_TOP_PROGRAM_QUIET=0` when you need live retire-record output.
+Parallel top-program workers build their own program images outside the shared
+Verilator build lock; the lock only protects the reusable
+`lnp64_top_program_tb` binary. This keeps assembler/C-to-hex prep concurrent
+when `LNP64_RTL_TOP_PROGRAM_JOBS` is greater than one.
 
 For longer exploratory top-level programs, raise the simulation retire limit
 without changing the RTL testbench:

@@ -53,8 +53,6 @@ common_flags=(
 mapfile -t rtl_files < tests/rtl/top_program_filelist.f
 
 build_dir="$(rtl_build_dir "top_program")"
-rtl_lock_build_dir "$build_dir"
-rtl_prepare_build_dir "$build_dir"
 
 program_input="${1:-tests/rtl/programs/top_smoke.s}"
 if [[ ! -f "$program_input" ]]; then
@@ -111,6 +109,7 @@ emulator_log="$(mktemp "${TMPDIR:-/tmp}/lnp64_emulator_top_program.XXXXXX.log")"
 tmp_files+=("$sim_log" "$emulator_log")
 
 rtl_binary="$build_dir/Vlnp64_top_program_tb"
+rtl_lock_build_dir "$build_dir"
 if [[ "${LNP64_RTL_TOP_PROGRAM_SKIP_BUILD:-0}" == "1" ||
       "${LNP64_RTL_SKIP_BUILD:-0}" == "1" ]]; then
   if [[ ! -x "$rtl_binary" ]]; then
@@ -119,6 +118,7 @@ if [[ "${LNP64_RTL_TOP_PROGRAM_SKIP_BUILD:-0}" == "1" ||
     exit 1
   fi
 else
+  rtl_prepare_build_dir "$build_dir"
   mapfile -t verilator_build_job_args < <(rtl_verilator_build_job_args)
   rtl_lint "${common_flags[@]}" "${rtl_files[@]}"
   verilator --binary --Mdir "$build_dir" "${verilator_build_job_args[@]}" "${common_flags[@]}" "${rtl_files[@]}" >/tmp/lnp64_rtl_top_program_build.log

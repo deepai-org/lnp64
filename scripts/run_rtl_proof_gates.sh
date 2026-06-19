@@ -11,6 +11,94 @@ if [[ "${LNP64_RTL_FAST:-0}" == "1" ]]; then
   export LNP64_RTL_PROOF_RANDOM_COSIM="${LNP64_RTL_PROOF_RANDOM_COSIM:-0}"
 fi
 
+proof_gate_jobs="${LNP64_RTL_PROOF_GATE_JOBS:-}"
+if [[ -z "$proof_gate_jobs" ]]; then
+  if [[ "${LNP64_RTL_FAST:-0}" == "1" ]]; then
+    proof_gate_jobs=auto
+  else
+    proof_gate_jobs=1
+  fi
+fi
+if [[ "$proof_gate_jobs" == "auto" ]]; then
+  proof_gate_jobs="$(nproc 2>/dev/null || printf '1')"
+fi
+if ! [[ "$proof_gate_jobs" =~ ^[0-9]+$ ]] || (( proof_gate_jobs < 1 )); then
+  printf 'LNP64_RTL_PROOF_GATE_JOBS must be a positive integer or auto, got %q\n' "$proof_gate_jobs" >&2
+  exit 1
+fi
+
+run_rtl_proof_gate_batch() {
+  if (( proof_gate_jobs == 1 || $# == 1 )); then
+    local gate
+    for gate in "$@"; do
+      bash "$gate"
+    done
+    return
+  fi
+
+  local log_dir
+  log_dir="$(mktemp -d "${TMPDIR:-/tmp}/lnp64_rtl_proof_gates.XXXXXX")"
+  local active_pids=()
+  declare -A active_gates=()
+  declare -A active_logs=()
+  local failed=0
+
+  proof_remove_active_pid() {
+    local done_pid="$1"
+    local remaining=()
+    local pid
+    for pid in "${active_pids[@]}"; do
+      if [[ "$pid" != "$done_pid" ]]; then
+        remaining+=("$pid")
+      fi
+    done
+    active_pids=("${remaining[@]}")
+  }
+
+  proof_wait_one() {
+    local done_pid gate log
+    if wait -n -p done_pid; then
+      gate="${active_gates[$done_pid]}"
+      log="${active_logs[$done_pid]}"
+      printf 'rtl/proof gate %s ok (%s)\n' "$gate" "$log"
+    else
+      gate="${active_gates[$done_pid]}"
+      log="${active_logs[$done_pid]}"
+      failed=1
+      printf 'rtl/proof gate %s failed (%s)\n' "$gate" "$log" >&2
+      cat "$log" >&2
+    fi
+    unset "active_gates[$done_pid]" "active_logs[$done_pid]"
+    proof_remove_active_pid "$done_pid"
+  }
+
+  printf 'running rtl/proof gates with %s parallel job(s); logs in %s\n' "$proof_gate_jobs" "$log_dir"
+  local gate label log pid
+  for gate in "$@"; do
+    label="${gate#scripts/run_rtl_}"
+    label="${label%.sh}"
+    log="$log_dir/${label}.log"
+    bash "$gate" >"$log" 2>&1 &
+    pid="$!"
+    active_pids+=("$pid")
+    active_gates[$pid]="$gate"
+    active_logs[$pid]="$log"
+    if (( ${#active_pids[@]} >= proof_gate_jobs )); then
+      proof_wait_one
+    fi
+  done
+  while (( ${#active_pids[@]} > 0 )); do
+    proof_wait_one
+  done
+
+  if [[ "${LNP64_RTL_PROOF_KEEP_GATE_LOGS:-0}" != "1" ]]; then
+    rm -rf "$log_dir"
+  fi
+  if (( failed != 0 )); then
+    exit 1
+  fi
+}
+
 lean_files=(
   formal/S0Model.lean
   formal/M1Model.lean
@@ -89,11 +177,12 @@ LNP64_M1_TYPED_COMMIT_USE_EXISTING=1 \
   scripts/check_rtl_m1_typed_commit_trace.py
 scripts/test_rtl_m1_typed_commit_checker.py
 scripts/test_rtl_m1_schema_checker.py
-bash scripts/run_rtl_m2.sh
-bash scripts/run_rtl_m3.sh
-bash scripts/run_rtl_m4.sh
-bash scripts/run_rtl_m5.sh
-bash scripts/run_rtl_m6.sh
+run_rtl_proof_gate_batch \
+  scripts/run_rtl_m2.sh \
+  scripts/run_rtl_m3.sh \
+  scripts/run_rtl_m4.sh \
+  scripts/run_rtl_m5.sh \
+  scripts/run_rtl_m6.sh
 
 m7_log="${TMPDIR:-/tmp}/lnp64_rtl_proof_m7.log"
 LNP64_COSIM_SEEDS="${LNP64_M7_TYPED_COMMIT_SEEDS:-0}" \
@@ -102,14 +191,15 @@ LNP64_M7_TYPED_COMMIT_USE_EXISTING=1 \
   LNP64_M7_TYPED_COMMIT_LOG="$m7_log" \
   scripts/check_rtl_m7_typed_commit_trace.py
 scripts/test_rtl_m7_typed_commit_checker.py
-bash scripts/run_rtl_m8.sh
-bash scripts/run_rtl_m9.sh
-bash scripts/run_rtl_m10.sh
-bash scripts/run_rtl_m11.sh
-bash scripts/run_rtl_m12.sh
-bash scripts/run_rtl_m13.sh
-bash scripts/run_rtl_m14.sh
-bash scripts/run_rtl_m15.sh
+run_rtl_proof_gate_batch \
+  scripts/run_rtl_m8.sh \
+  scripts/run_rtl_m9.sh \
+  scripts/run_rtl_m10.sh \
+  scripts/run_rtl_m11.sh \
+  scripts/run_rtl_m12.sh \
+  scripts/run_rtl_m13.sh \
+  scripts/run_rtl_m14.sh \
+  scripts/run_rtl_m15.sh
 
 if [[ "${LNP64_RTL_PROOF_RANDOM_COSIM:-1}" == "0" ||
       "${LNP64_RTL_PROOF_SKIP_RANDOM_COSIM:-0}" == "1" ]]; then
