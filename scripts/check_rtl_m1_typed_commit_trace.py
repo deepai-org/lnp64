@@ -525,8 +525,12 @@ def check_rtl_state_projection_boundary_sources(
             "M1 testbench no longer wires real RTL authority state into projection faithfulness assertions: "
             f"{missing_faithfulness_connections}"
         )
-    if "TTRACE_M1_BITS" not in tb_source or "TTRACE_M1_STATE_BITS" not in tb_source:
-        fail("M1 testbench no longer emits packed bit records for commit and state projection")
+    if (
+        "TTRACE_M1_BITS" not in tb_source
+        or "TTRACE_M1_PRE_STATE_BITS" not in tb_source
+        or "TTRACE_M1_STATE_BITS" not in tb_source
+    ):
+        fail("M1 testbench no longer emits packed bit records for commit and pre/post state projections")
     require_trace_display_payload_source(
         tb_source,
         "TTRACE_M1_BITS",
@@ -535,9 +539,21 @@ def check_rtl_state_projection_boundary_sources(
     )
     require_trace_display_payload_source(
         tb_source,
+        "TTRACE_M1_PRE_STATE_BITS",
+        "typed_pre_state_projection",
+        "M1 testbench no longer emits packed pre-state bits from typed_pre_state_projection",
+    )
+    require_trace_display_payload_source(
+        tb_source,
         "TTRACE_M1_STATE_BITS",
         "typed_state_projection",
         "M1 testbench no longer emits packed state bits from typed_state_projection",
+    )
+    require_trace_display_payload_source(
+        tb_source,
+        "TTRACE_M1_PRE_STATE",
+        "typed_pre_state_projection",
+        "M1 testbench no longer emits every pre-state trace field from typed_pre_state_projection",
     )
     if "m1_authority_projection_slots_match" not in assertion_source:
         fail("M1 assertions no longer check non-OK authority projection preservation")
@@ -584,6 +600,16 @@ def check_rtl_state_projection_boundary_sources(
         fail(
             "M1 testbench no longer emits every state trace field from typed_state_projection: "
             f"{missing_trace_fields}"
+        )
+    missing_pre_trace_fields = [
+        field
+        for field in expected_state_fields
+        if f"typed_pre_state_projection.{field}" not in tb_source
+    ]
+    if missing_pre_trace_fields:
+        fail(
+            "M1 testbench no longer emits every pre-state trace field from typed_pre_state_projection: "
+            f"{missing_pre_trace_fields}"
         )
     required_assertion_fields = (
         "op",
@@ -1125,28 +1151,30 @@ def parse_records(
 
 def parse_state_projection_records(
     output: str,
+    prefix: str,
     expected_record_name: str,
     expected_fields: tuple[str, ...],
+    label: str,
 ) -> list[dict[str, int | str]]:
     records: list[dict[str, int | str]] = []
     for line in output.splitlines():
-        if not line.startswith("TTRACE_M1_STATE "):
+        if not line.startswith(prefix):
             continue
-        payload = line.removeprefix("TTRACE_M1_STATE ")
+        payload = line.removeprefix(prefix)
         try:
             record = json.loads(payload)
         except json.JSONDecodeError as exc:
-            fail(f"invalid M1 state projection record {payload!r}: {exc}")
+            fail(f"invalid M1 {label} projection record {payload!r}: {exc}")
         if record.get("record") != expected_record_name:
-            fail(f"unexpected M1 state projection record type {record.get('record')!r}")
+            fail(f"unexpected M1 {label} projection record type {record.get('record')!r}")
         actual_fields = tuple(key for key in record if key != "record")
         if actual_fields != expected_fields:
-            fail(f"M1 state projection fields drifted: {actual_fields!r} != {expected_fields!r}")
+            fail(f"M1 {label} projection fields drifted: {actual_fields!r} != {expected_fields!r}")
         for field in expected_fields:
             require_int(record, field)
         records.append(record)
     if not records:
-        fail("no TTRACE_M1_STATE records emitted")
+        fail(f"no {prefix.strip()} records emitted")
     return records
 
 
@@ -1493,7 +1521,7 @@ def check_rtl_refinement_postcondition(
 
 def check_rtl_refinement_step(
     state: M1State,
-    pre_state_record: dict[str, int | str] | None,
+    pre_state_record: dict[str, int | str],
     commit_record: dict[str, int | str],
     post_state_record: dict[str, int | str],
     run_index: int,
@@ -1502,22 +1530,19 @@ def check_rtl_refinement_step(
 ) -> None:
     """Check the executable mirror of Lean RtlM1RefinementStep.
 
-    The first RTL commit has no emitted reset pre-state, so its pre projection is
-    the synthetic initial Lean state. Every later commit must use the previous
-    emitted RTL post-state projection as the next Lean pre-state projection.
+    Every RTL commit must carry an emitted pre-state projection sampled from the
+    real RTL boundary before the commit, plus the post-state projection emitted
+    after the commit. Both records use the schema-owned packed state format.
     """
     op = require_int(commit_record, "op")
     status = require_int(commit_record, "status")
     transition = lean_transition_constructor(op, transition_names)
     expected_pre_projection = projection_from_state(state, op, status)
-    if pre_state_record is not None:
-        pre_op = require_int(pre_state_record, "op")
-        pre_status = require_int(pre_state_record, "status")
-        check_state_projection(
-            projection_from_state(state, pre_op, pre_status),
-            pre_state_record,
-            f"run {run_index} {transition} RtlM1RefinementStep pre-state projection",
-        )
+    check_state_projection(
+        expected_pre_projection,
+        pre_state_record,
+        f"run {run_index} {transition} RtlM1RefinementStep pre-state projection",
+    )
     apply_commit(state, commit_record, run_index, ops, transition_names)
     if status != ERR_OK:
         check_authority_projection_slots_unchanged(
@@ -1764,20 +1789,26 @@ def check_common(record: dict[str, int | str], ops: CommitOps) -> None:
 
 def check_run(
     run: list[dict[str, int | str]],
+    pre_state_run: list[dict[str, int | str]],
     state_run: list[dict[str, int | str]],
     index: int,
     ops: CommitOps,
     transition_names: dict[int, str],
 ) -> None:
     sequence = [require_int(record, "op") for record in run]
+    pre_state_sequence = [require_int(record, "op") for record in pre_state_run]
     state_sequence = [require_int(record, "op") for record in state_run]
+    if pre_state_sequence != sequence:
+        fail(f"run {index} pre-state projection op sequence {pre_state_sequence} != commit sequence {sequence}")
     if state_sequence != sequence:
         fail(f"run {index} state projection op sequence {state_sequence} != commit sequence {sequence}")
     if sequence == ops.denied_sequence:
-        check_denied_run(run, state_run, index, ops, transition_names)
+        check_denied_run(run, pre_state_run, state_run, index, ops, transition_names)
         return
     if sequence != ops.expected_sequence:
         fail(f"run {index} op sequence {sequence} != {ops.expected_sequence} or {ops.denied_sequence}")
+    if len(pre_state_run) != len(run):
+        fail(f"run {index} pre-state projection count {len(pre_state_run)} != commit count {len(run)}")
     if len(state_run) != len(run):
         fail(f"run {index} state projection count {len(state_run)} != commit count {len(run)}")
 
@@ -1785,18 +1816,16 @@ def check_run(
         check_common(record, ops)
 
     state = initial_state(run[0], ops)
-    previous_state_record: dict[str, int | str] | None = None
-    for record, state_record in zip(run, state_run, strict=True):
+    for record, pre_state_record, state_record in zip(run, pre_state_run, state_run, strict=True):
         check_rtl_refinement_step(
             state,
-            previous_state_record,
+            pre_state_record,
             record,
             state_record,
             index,
             ops,
             transition_names,
         )
-        previous_state_record = state_record
     if state.sent_cap is not None:
         fail(f"run {index} ended with an undelivered transferred cap")
     if state.consumer_cap is None:
@@ -1883,6 +1912,7 @@ def check_run(
 
 def check_denied_run(
     run: list[dict[str, int | str]],
+    pre_state_run: list[dict[str, int | str]],
     state_run: list[dict[str, int | str]],
     index: int,
     ops: CommitOps,
@@ -1892,12 +1922,14 @@ def check_denied_run(
         fail(f"run {index} denied path emitted more than one commit")
     if len(state_run) != 1:
         fail(f"run {index} denied path emitted more than one state projection")
+    if len(pre_state_run) != 1:
+        fail(f"run {index} denied path emitted more than one pre-state projection")
     record = run[0]
     check_common(record, ops)
     state = initial_state(record, ops)
     check_rtl_refinement_step(
         state,
-        None,
+        pre_state_run[0],
         record,
         state_run[0],
         index,
@@ -1920,7 +1952,25 @@ def main() -> int:
     output = run_m1_gate()
     records = parse_records(output, record_name, schema_fields)
     bit_records = parse_bit_records(output, "TTRACE_M1_BITS ", "m1_cap_commit_bits")
-    state_records = parse_state_projection_records(output, state_record_name, state_schema_fields)
+    pre_state_records = parse_state_projection_records(
+        output,
+        "TTRACE_M1_PRE_STATE ",
+        state_record_name,
+        state_schema_fields,
+        "pre-state",
+    )
+    pre_state_bit_records = parse_bit_records(
+        output,
+        "TTRACE_M1_PRE_STATE_BITS ",
+        "m1_state_projection_bits",
+    )
+    state_records = parse_state_projection_records(
+        output,
+        "TTRACE_M1_STATE ",
+        state_record_name,
+        state_schema_fields,
+        "post-state",
+    )
     state_bit_records = parse_bit_records(
         output,
         "TTRACE_M1_STATE_BITS ",
@@ -1934,6 +1984,13 @@ def main() -> int:
         "M1 typed commit",
     )
     check_packed_bits_match_records(
+        pre_state_records,
+        pre_state_bit_records,
+        state_schema_fields,
+        state_schema_widths,
+        "M1 pre-state projection",
+    )
+    check_packed_bits_match_records(
         state_records,
         state_bit_records,
         state_schema_fields,
@@ -1942,12 +1999,19 @@ def main() -> int:
     )
     if len(state_records) != len(records):
         fail(f"M1 state projection count {len(state_records)} != commit count {len(records)}")
+    if len(pre_state_records) != len(records):
+        fail(f"M1 pre-state projection count {len(pre_state_records)} != commit count {len(records)}")
     runs = split_runs(records, ops)
+    pre_state_runs = split_runs(pre_state_records, ops)
     state_runs = split_runs(state_records, ops)
+    if len(pre_state_runs) != len(runs):
+        fail(f"M1 pre-state projection run count {len(pre_state_runs)} != commit run count {len(runs)}")
     if len(state_runs) != len(runs):
         fail(f"M1 state projection run count {len(state_runs)} != commit run count {len(runs)}")
-    for index, (run, state_run) in enumerate(zip(runs, state_runs, strict=True)):
-        check_run(run, state_run, index, ops, transition_names)
+    for index, (run, pre_state_run, state_run) in enumerate(
+        zip(runs, pre_state_runs, state_runs, strict=True)
+    ):
+        check_run(run, pre_state_run, state_run, index, ops, transition_names)
     print(f"rtl m1 typed commit trace ok ({len(runs)} run(s))")
     return 0
 

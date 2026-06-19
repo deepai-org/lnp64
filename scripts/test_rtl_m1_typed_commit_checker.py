@@ -94,6 +94,7 @@ def m1_commit_record(
 def build_valid_full_run(checker, ops, transition_names) -> tuple[
     list[dict[str, int | str]],
     list[dict[str, int | str]],
+    list[dict[str, int | str]],
 ]:
     run = [
         m1_commit_record(ops.cap_dup, 1, 1, 1, 2, checker.RIGHT_PULL, checker.ERR_OK),
@@ -107,8 +108,16 @@ def build_valid_full_run(checker, ops, transition_names) -> tuple[
         m1_commit_record(ops.reject_stale, 1, 2, 1, 2, checker.RIGHT_PULL, checker.ERR_EREVOKED),
     ]
     state = checker.initial_state(run[0], ops)
+    pre_state_run = []
     state_run = []
     for record in run:
+        pre_state_run.append(
+            checker.projection_from_state(
+                state,
+                checker.require_int(record, "op"),
+                checker.require_int(record, "status"),
+            )
+        )
         checker.apply_commit(state, record, 0, ops, transition_names)
         state_run.append(
             checker.projection_from_state(
@@ -117,10 +126,11 @@ def build_valid_full_run(checker, ops, transition_names) -> tuple[
                 checker.require_int(record, "status"),
             )
         )
-    return run, state_run
+    return run, pre_state_run, state_run
 
 
 def build_valid_denied_run(checker, ops, transition_names) -> tuple[
+    list[dict[str, int | str]],
     list[dict[str, int | str]],
     list[dict[str, int | str]],
 ]:
@@ -136,8 +146,15 @@ def build_valid_denied_run(checker, ops, transition_names) -> tuple[
         )
     ]
     state = checker.initial_state(run[0], ops)
+    pre_state = checker.projection_from_state(
+        state,
+        checker.require_int(run[0], "op"),
+        checker.require_int(run[0], "status"),
+    )
     checker.apply_commit(state, run[0], 0, ops, transition_names)
     return run, [
+        pre_state
+    ], [
         checker.projection_from_state(
             state,
             checker.require_int(run[0], "op"),
@@ -157,6 +174,14 @@ def packed_bits(record: dict[str, int | str], field_specs: tuple[tuple[str, int]
         total_width += width
     hex_width = (total_width + 3) // 4
     return f"{raw:0{hex_width}x}"
+
+
+def pre_projection(checker, state, record: dict[str, int | str]) -> dict[str, int | str]:
+    return checker.projection_from_state(
+        state,
+        checker.require_int(record, "op"),
+        checker.require_int(record, "status"),
+    )
 
 
 def main() -> None:
@@ -186,12 +211,17 @@ def main() -> None:
     )
     *_contract_prefix, ops, transition_names = checker.load_schema_contract()
 
-    valid_run, valid_state_run = build_valid_full_run(checker, ops, transition_names)
-    checker.check_run(valid_run, valid_state_run, 0, ops, transition_names)
+    valid_run, valid_pre_state_run, valid_state_run = build_valid_full_run(
+        checker,
+        ops,
+        transition_names,
+    )
+    checker.check_run(valid_run, valid_pre_state_run, valid_state_run, 0, ops, transition_names)
 
     commit_widths = tuple(width for _name, width in commit_fields)
     state_widths = tuple(width for _name, width in state_fields)
     valid_commit_bits = [packed_bits(record, commit_fields) for record in valid_run]
+    valid_pre_state_bits = [packed_bits(record, state_fields) for record in valid_pre_state_run]
     valid_state_bits = [packed_bits(record, state_fields) for record in valid_state_run]
     checker.check_packed_bits_match_records(
         valid_run,
@@ -201,6 +231,13 @@ def main() -> None:
         "M1 typed commit",
     )
     checker.check_packed_bits_match_records(
+        valid_pre_state_run,
+        valid_pre_state_bits,
+        state_field_names,
+        state_widths,
+        "M1 pre-state projection",
+    )
+    checker.check_packed_bits_match_records(
         valid_state_run,
         valid_state_bits,
         state_field_names,
@@ -208,12 +245,19 @@ def main() -> None:
         "M1 state projection",
     )
 
-    valid_denied_run, valid_denied_state_run = build_valid_denied_run(
+    valid_denied_run, valid_denied_pre_state_run, valid_denied_state_run = build_valid_denied_run(
         checker,
         ops,
         transition_names,
     )
-    checker.check_run(valid_denied_run, valid_denied_state_run, 0, ops, transition_names)
+    checker.check_run(
+        valid_denied_run,
+        valid_denied_pre_state_run,
+        valid_denied_state_run,
+        0,
+        ops,
+        transition_names,
+    )
 
     stale_commit_bits = valid_commit_bits.copy()
     stale_commit_bits[0] = packed_bits(valid_run[1], commit_fields)
@@ -241,6 +285,19 @@ def main() -> None:
         ),
     )
 
+    stale_pre_state_bits = valid_pre_state_bits.copy()
+    stale_pre_state_bits[1] = packed_bits(valid_pre_state_run[2], state_fields)
+    expect_failure(
+        "M1 pre-state projection packed bit decode drift",
+        lambda: checker.check_packed_bits_match_records(
+            valid_pre_state_run,
+            stale_pre_state_bits,
+            state_field_names,
+            state_widths,
+            "M1 pre-state projection",
+        ),
+    )
+
     too_wide_commit_bits = valid_commit_bits.copy()
     too_wide_commit_bits[0] = hex(1 << sum(commit_widths))[2:]
     expect_failure(
@@ -259,7 +316,7 @@ def main() -> None:
         "TypedCommitTransition.capSend before capDup",
         lambda: checker.check_rtl_refinement_step(
             cap_send_before_dup_state,
-            None,
+            pre_projection(checker, cap_send_before_dup_state, valid_run[1]),
             valid_run[1],
             valid_state_run[1],
             0,
@@ -283,7 +340,7 @@ def main() -> None:
         "TypedCommitTransition.objectCreate root mint precondition failed",
         lambda: checker.check_rtl_refinement_step(
             object_create_without_mint_state,
-            None,
+            pre_projection(checker, object_create_without_mint_state, valid_run[6]),
             valid_run[6],
             valid_state_run[6],
             0,
@@ -307,7 +364,7 @@ def main() -> None:
         "TypedCommitTransition.push root push precondition failed",
         lambda: checker.check_rtl_refinement_step(
             push_without_push_right_state,
-            None,
+            pre_projection(checker, push_without_push_right_state, valid_run[3]),
             valid_run[3],
             valid_state_run[3],
             0,
@@ -323,7 +380,7 @@ def main() -> None:
         "TypedCommitTransition.pull while queue is empty",
         lambda: checker.check_rtl_refinement_step(
             pull_empty_queue_state,
-            valid_state_run[2],
+            pre_projection(checker, pull_empty_queue_state, valid_run[4]),
             valid_run[4],
             valid_state_run[4],
             0,
@@ -347,7 +404,7 @@ def main() -> None:
         "TypedCommitTransition.capRevoke root authority precondition failed",
         lambda: checker.check_rtl_refinement_step(
             revoke_stale_root_state,
-            None,
+            pre_projection(checker, revoke_stale_root_state, valid_run[7]),
             valid_run[7],
             valid_state_run[7],
             0,
@@ -371,7 +428,7 @@ def main() -> None:
         "TypedCommitTransition.rejectStale stale consumer cap still authorizes work",
         lambda: checker.check_rtl_refinement_step(
             reject_stale_live_cap_state,
-            valid_state_run[0],
+            pre_projection(checker, reject_stale_live_cap_state, live_reject_stale),
             live_reject_stale,
             valid_state_run[8],
             0,
@@ -385,7 +442,7 @@ def main() -> None:
         "TypedCommitTransition.capDupDenied root duplicate precondition failed",
         lambda: checker.check_rtl_refinement_step(
             denied_with_dup_authority_state,
-            None,
+            pre_projection(checker, denied_with_dup_authority_state, valid_denied_run[0]),
             valid_denied_run[0],
             valid_state_run[0],
             0,
@@ -398,77 +455,133 @@ def main() -> None:
     bad_post_state_run[1]["transfer_valid"] = 0
     expect_failure(
         "RtlM1RefinementStep post-state projection",
-        lambda: checker.check_run(valid_run, bad_post_state_run, 0, ops, transition_names),
+        lambda: checker.check_run(valid_run, valid_pre_state_run, bad_post_state_run, 0, ops, transition_names),
     )
 
     bad_cap_dup_postcondition_run = copy.deepcopy(valid_state_run)
     bad_cap_dup_postcondition_run[0]["consumer_rights"] = checker.ROOT_RIGHTS
     expect_failure(
         "post consumer projection field consumer_rights",
-        lambda: checker.check_run(valid_run, bad_cap_dup_postcondition_run, 0, ops, transition_names),
+        lambda: checker.check_run(
+            valid_run,
+            valid_pre_state_run,
+            bad_cap_dup_postcondition_run,
+            0,
+            ops,
+            transition_names,
+        ),
     )
 
     bad_cap_send_postcondition_run = copy.deepcopy(valid_state_run)
     bad_cap_send_postcondition_run[1]["sent_valid"] = 0
     expect_failure(
         "capSend postcondition did not publish sent cap",
-        lambda: checker.check_run(valid_run, bad_cap_send_postcondition_run, 0, ops, transition_names),
+        lambda: checker.check_run(
+            valid_run,
+            valid_pre_state_run,
+            bad_cap_send_postcondition_run,
+            0,
+            ops,
+            transition_names,
+        ),
     )
 
     bad_cap_recv_postcondition_run = copy.deepcopy(valid_state_run)
     bad_cap_recv_postcondition_run[2]["sent_valid"] = 1
     expect_failure(
         "capRecv postcondition did not clear sent cap",
-        lambda: checker.check_run(valid_run, bad_cap_recv_postcondition_run, 0, ops, transition_names),
+        lambda: checker.check_run(
+            valid_run,
+            valid_pre_state_run,
+            bad_cap_recv_postcondition_run,
+            0,
+            ops,
+            transition_names,
+        ),
     )
 
     bad_non_ok_authority_state_run = copy.deepcopy(valid_state_run)
     bad_non_ok_authority_state_run[5]["root_rights"] = checker.ROOT_RIGHTS ^ checker.RIGHT_MINT
     expect_failure(
         "non-OK commit changed authority projection field root_rights",
-        lambda: checker.check_run(valid_run, bad_non_ok_authority_state_run, 0, ops, transition_names),
+        lambda: checker.check_run(
+            valid_run,
+            valid_pre_state_run,
+            bad_non_ok_authority_state_run,
+            0,
+            ops,
+            transition_names,
+        ),
     )
 
     bad_push_postcondition_run = copy.deepcopy(valid_state_run)
     bad_push_postcondition_run[3]["wake_pending"] = 0
     expect_failure(
         "push postcondition did not set wake_pending",
-        lambda: checker.check_run(valid_run, bad_push_postcondition_run, 0, ops, transition_names),
+        lambda: checker.check_run(valid_run, valid_pre_state_run, bad_push_postcondition_run, 0, ops, transition_names),
     )
 
     bad_pull_postcondition_run = copy.deepcopy(valid_state_run)
     bad_pull_postcondition_run[4]["wake_pending"] = 1
     expect_failure(
         "pull postcondition did not clear wake_pending",
-        lambda: checker.check_run(valid_run, bad_pull_postcondition_run, 0, ops, transition_names),
+        lambda: checker.check_run(valid_run, valid_pre_state_run, bad_pull_postcondition_run, 0, ops, transition_names),
     )
 
     bad_reject_full_postcondition_run = copy.deepcopy(valid_state_run)
     bad_reject_full_postcondition_run[5]["full_was_explicit"] = 0
     expect_failure(
         "rejectFull postcondition did not set full_was_explicit",
-        lambda: checker.check_run(valid_run, bad_reject_full_postcondition_run, 0, ops, transition_names),
+        lambda: checker.check_run(
+            valid_run,
+            valid_pre_state_run,
+            bad_reject_full_postcondition_run,
+            0,
+            ops,
+            transition_names,
+        ),
     )
 
     bad_reject_stale_postcondition_run = copy.deepcopy(valid_state_run)
     bad_reject_stale_postcondition_run[8]["stale_rejected"] = 0
     expect_failure(
         "rejectStale postcondition did not set stale_rejected",
-        lambda: checker.check_run(valid_run, bad_reject_stale_postcondition_run, 0, ops, transition_names),
+        lambda: checker.check_run(
+            valid_run,
+            valid_pre_state_run,
+            bad_reject_stale_postcondition_run,
+            0,
+            ops,
+            transition_names,
+        ),
     )
 
     bad_object_create_postcondition_run = copy.deepcopy(valid_state_run)
     bad_object_create_postcondition_run[6]["minted_valid"] = 0
     expect_failure(
         "objectCreate postcondition did not mint a cap",
-        lambda: checker.check_run(valid_run, bad_object_create_postcondition_run, 0, ops, transition_names),
+        lambda: checker.check_run(
+            valid_run,
+            valid_pre_state_run,
+            bad_object_create_postcondition_run,
+            0,
+            ops,
+            transition_names,
+        ),
     )
 
     bad_cap_revoke_postcondition_run = copy.deepcopy(valid_state_run)
     bad_cap_revoke_postcondition_run[7]["has_revoked_generation"] = 0
     expect_failure(
         "capRevoke postcondition did not publish revoked-generation witness",
-        lambda: checker.check_run(valid_run, bad_cap_revoke_postcondition_run, 0, ops, transition_names),
+        lambda: checker.check_run(
+            valid_run,
+            valid_pre_state_run,
+            bad_cap_revoke_postcondition_run,
+            0,
+            ops,
+            transition_names,
+        ),
     )
 
     bad_cap_dup_denied_postcondition_run = copy.deepcopy(valid_denied_state_run)
@@ -477,6 +590,7 @@ def main() -> None:
         "capDupDenied postcondition did not set failed_no_authority",
         lambda: checker.check_run(
             valid_denied_run,
+            valid_denied_pre_state_run,
             bad_cap_dup_denied_postcondition_run,
             0,
             ops,
@@ -486,7 +600,7 @@ def main() -> None:
 
     pre_state = checker.initial_state(valid_run[0], ops)
     checker.apply_commit(pre_state, valid_run[0], 0, ops, transition_names)
-    bad_pre_state_record = copy.deepcopy(valid_state_run[0])
+    bad_pre_state_record = copy.deepcopy(valid_pre_state_run[1])
     bad_pre_state_record["consumer_rights"] = checker.ROOT_RIGHTS
     expect_failure(
         "RtlM1RefinementStep pre-state projection",
@@ -583,8 +697,8 @@ def main() -> None:
 
     wrong_commit_bits_source = replace_once(
         tb_source,
-        "typed_commit\n            );\n            $display(\n                \"TTRACE_M1_STATE",
-        "typed_state_projection\n            );\n            $display(\n                \"TTRACE_M1_STATE",
+        "typed_commit\n            );\n            $display(\n                \"TTRACE_M1_PRE_STATE",
+        "typed_state_projection\n            );\n            $display(\n                \"TTRACE_M1_PRE_STATE",
     )
     expect_failure(
         "packed commit bits from typed_commit",

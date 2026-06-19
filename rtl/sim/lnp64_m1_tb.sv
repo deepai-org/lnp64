@@ -20,6 +20,8 @@ module lnp64_m1_tb;
     logic typed_commit_valid;
     lnp64_m1_cap_commit_t typed_commit;
     lnp64_m1_state_projection_t typed_state_projection;
+    lnp64_m1_state_projection_t sampled_pre_state_projection;
+    lnp64_m1_state_projection_t typed_pre_state_projection;
 
     lnp64_m1_pingpong dut(
         .clk(clk),
@@ -76,6 +78,12 @@ module lnp64_m1_tb;
 
     always #5 clk = ~clk;
 
+    always_comb begin
+        typed_pre_state_projection = sampled_pre_state_projection;
+        typed_pre_state_projection.op = typed_commit.op;
+        typed_pre_state_projection.status = typed_commit.status;
+    end
+
     task automatic require(input logic condition, input string message);
         if (!condition) begin
             $fatal(1, "%s", message);
@@ -83,6 +91,7 @@ module lnp64_m1_tb;
     endtask
 
     always_ff @(posedge clk) begin
+        sampled_pre_state_projection <= typed_state_projection;
         if (typed_commit_valid) begin
             $display(
                 "TTRACE_M1 {\"record\":\"m1_cap_commit\",\"op\":%0d,\"object_id\":%0d,\"object_gen\":%0d,\"fdr_gen\":%0d,\"domain_id\":%0d,\"domain_gen\":%0d,\"rights_mask\":%0d,\"lineage_epoch\":%0d,\"sealed\":%0d,\"status\":%0d}",
@@ -100,6 +109,52 @@ module lnp64_m1_tb;
             $display(
                 "TTRACE_M1_BITS {\"record\":\"m1_cap_commit_bits\",\"bits\":\"%0h\"}",
                 typed_commit
+            );
+            $display(
+                "TTRACE_M1_PRE_STATE {\"record\":\"m1_state_projection\",\"op\":%0d,\"status\":%0d,\"object_gen\":%0d,\"created_object_created\":%0d,\"created_object_gen\":%0d,\"root_object_id\":%0d,\"root_generation\":%0d,\"root_domain_id\":%0d,\"root_lineage_epoch\":%0d,\"root_sealed\":%0d,\"root_rights\":%0d,\"consumer_object_id\":%0d,\"consumer_generation\":%0d,\"consumer_domain_id\":%0d,\"consumer_lineage_epoch\":%0d,\"consumer_sealed\":%0d,\"consumer_rights\":%0d,\"sent_valid\":%0d,\"sent_object_id\":%0d,\"sent_generation\":%0d,\"sent_domain_id\":%0d,\"sent_lineage_epoch\":%0d,\"sent_sealed\":%0d,\"sent_rights\":%0d,\"minted_valid\":%0d,\"minted_object_id\":%0d,\"minted_generation\":%0d,\"minted_domain_id\":%0d,\"minted_lineage_epoch\":%0d,\"minted_sealed\":%0d,\"minted_rights\":%0d,\"wake_pending\":%0d,\"transfer_valid\":%0d,\"stale_rejected\":%0d,\"revoked_rejected\":%0d,\"failed_no_authority\":%0d,\"full_was_explicit\":%0d,\"has_revoked_generation\":%0d,\"revoked_generation\":%0d}",
+                typed_pre_state_projection.op,
+                typed_pre_state_projection.status,
+                typed_pre_state_projection.object_gen,
+                typed_pre_state_projection.created_object_created,
+                typed_pre_state_projection.created_object_gen,
+                typed_pre_state_projection.root_object_id,
+                typed_pre_state_projection.root_generation,
+                typed_pre_state_projection.root_domain_id,
+                typed_pre_state_projection.root_lineage_epoch,
+                typed_pre_state_projection.root_sealed,
+                typed_pre_state_projection.root_rights,
+                typed_pre_state_projection.consumer_object_id,
+                typed_pre_state_projection.consumer_generation,
+                typed_pre_state_projection.consumer_domain_id,
+                typed_pre_state_projection.consumer_lineage_epoch,
+                typed_pre_state_projection.consumer_sealed,
+                typed_pre_state_projection.consumer_rights,
+                typed_pre_state_projection.sent_valid,
+                typed_pre_state_projection.sent_object_id,
+                typed_pre_state_projection.sent_generation,
+                typed_pre_state_projection.sent_domain_id,
+                typed_pre_state_projection.sent_lineage_epoch,
+                typed_pre_state_projection.sent_sealed,
+                typed_pre_state_projection.sent_rights,
+                typed_pre_state_projection.minted_valid,
+                typed_pre_state_projection.minted_object_id,
+                typed_pre_state_projection.minted_generation,
+                typed_pre_state_projection.minted_domain_id,
+                typed_pre_state_projection.minted_lineage_epoch,
+                typed_pre_state_projection.minted_sealed,
+                typed_pre_state_projection.minted_rights,
+                typed_pre_state_projection.wake_pending,
+                typed_pre_state_projection.transfer_valid,
+                typed_pre_state_projection.stale_rejected,
+                typed_pre_state_projection.revoked_rejected,
+                typed_pre_state_projection.failed_no_authority,
+                typed_pre_state_projection.full_was_explicit,
+                typed_pre_state_projection.has_revoked_generation,
+                typed_pre_state_projection.revoked_generation
+            );
+            $display(
+                "TTRACE_M1_PRE_STATE_BITS {\"record\":\"m1_state_projection_bits\",\"bits\":\"%0h\"}",
+                typed_pre_state_projection
             );
             $display(
                 "TTRACE_M1_STATE {\"record\":\"m1_state_projection\",\"op\":%0d,\"status\":%0d,\"object_gen\":%0d,\"created_object_created\":%0d,\"created_object_gen\":%0d,\"root_object_id\":%0d,\"root_generation\":%0d,\"root_domain_id\":%0d,\"root_lineage_epoch\":%0d,\"root_sealed\":%0d,\"root_rights\":%0d,\"consumer_object_id\":%0d,\"consumer_generation\":%0d,\"consumer_domain_id\":%0d,\"consumer_lineage_epoch\":%0d,\"consumer_sealed\":%0d,\"consumer_rights\":%0d,\"sent_valid\":%0d,\"sent_object_id\":%0d,\"sent_generation\":%0d,\"sent_domain_id\":%0d,\"sent_lineage_epoch\":%0d,\"sent_sealed\":%0d,\"sent_rights\":%0d,\"minted_valid\":%0d,\"minted_object_id\":%0d,\"minted_generation\":%0d,\"minted_domain_id\":%0d,\"minted_lineage_epoch\":%0d,\"minted_sealed\":%0d,\"minted_rights\":%0d,\"wake_pending\":%0d,\"transfer_valid\":%0d,\"stale_rejected\":%0d,\"revoked_rejected\":%0d,\"failed_no_authority\":%0d,\"full_was_explicit\":%0d,\"has_revoked_generation\":%0d,\"revoked_generation\":%0d}",
