@@ -254,6 +254,7 @@ fn encode_flat_exec_instr(program: &Program, pc: usize, instr: &Instr) -> Result
         Instr::Nop => Ok(enc_reg(0x00, Reg(0))),
         Instr::Li(rd, value) => Ok(enc_ri(0x01, *rd, value_imm16(value)?)),
         Instr::Add(rd, rs1, rs2) => Ok(enc_rrr(0x10, *rd, *rs1, *rs2)),
+        Instr::Sub(rd, rs1, rs2) => Ok(enc_rrr(0x11, *rd, *rs1, *rs2)),
         Instr::Mul(rd, rs1, rs2) => Ok(enc_rrr(0x12, *rd, *rs1, *rs2)),
         Instr::Cmp(lhs, rhs) => Ok(enc_rrr(0x1b, *lhs, *rhs, Reg(0))),
         Instr::Jmp(target) => Ok(enc_branch(0x20, branch_delta(program, pc, target)?)),
@@ -274,7 +275,7 @@ fn encode_flat_exec_instr(program: &Program, pc: usize, instr: &Instr) -> Result
         }
         Instr::Exit(src) => Ok(enc_reg(0x3a, *src)),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, ADD, MUL, CMP, JMP, signed conditional branch, LD/ST.D base+offset, ERRNO_GET/SET, ENV_GET, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, ADD, SUB, MUL, CMP, JMP, signed conditional branch, LD/ST.D base+offset, ERRNO_GET/SET, ENV_GET, EXIT"
         )),
     }
 }
@@ -820,6 +821,24 @@ mod tests {
         assert_eq!(
             hex,
             concat!("01080006\n", "01100007\n", "12184400\n", "3a180000\n",)
+        );
+    }
+
+    #[test]
+    fn asm_flat_exec_encodes_sub_subset() {
+        let source = r#"
+            .text
+              LI r1, 9
+              LI r2, 4
+              SUB r3, r1, r2
+              EXIT r3
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+
+        assert_eq!(
+            hex,
+            concat!("01080009\n", "01100004\n", "11184400\n", "3a180000\n",)
         );
     }
 

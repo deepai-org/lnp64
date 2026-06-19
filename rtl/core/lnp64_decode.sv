@@ -31,6 +31,9 @@ module lnp64_decode (
             8'h10: begin
                 dec.opcode = LNP64_OP_ADD;
             end
+            8'h11: begin
+                dec.opcode = LNP64_OP_SUB;
+            end
             8'h12: begin
                 dec.opcode = LNP64_OP_MUL;
             end
@@ -98,6 +101,7 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_NOP ||
             dec.opcode == LNP64_OP_LI32 ||
             dec.opcode == LNP64_OP_ADD ||
+            dec.opcode == LNP64_OP_SUB ||
             dec.opcode == LNP64_OP_MUL ||
             dec.opcode == LNP64_OP_CMP ||
             dec.opcode == LNP64_OP_JMP ||

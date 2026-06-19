@@ -256,6 +256,7 @@ bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_return_12.c
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_branch_if.c
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_loop_sum.c
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_factorial_mul.c
+bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_subtract.c
 cargo run -- asm-flat-exec tests/rtl/programs/top_smoke.s -o /tmp/top_smoke.hex
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_smoke.hex
 bash scripts/run_rtl_m1.sh
