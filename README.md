@@ -361,6 +361,8 @@ LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_SKIP_LINT=1 LNP64_RTL_TOP_PROGRAM_JOBS=4 LNP64
 LNP64_RTL_FAST=1 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_TOP_PROGRAM_JOBS=4 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_manifest.sh
 LNP64_RTL_FAST=1 LNP64_RTL_TOP_PROGRAM_FILTER='*linked*' bash scripts/run_rtl_top_program_manifest.sh
 LNP64_RTL_FAST=1 LNP64_RTL_TOP_PROGRAM_FILTER='demos/*.s top_heap_byte_lanes.c' bash scripts/run_rtl_top_program_manifest.sh
+LNP64_RTL_FAST=1 LNP64_RTL_TOP_PROGRAM_FILTER='top_dma_revoke_stale.s' bash scripts/run_rtl_top_program_manifest.sh
+LNP64_RTL_TOP_PROGRAM_QUIET=1 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_dma_revoke_stale.s
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_manifest.sh tests/rtl/programs/top_linked_high_mul.c
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_smoke.s
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_immediate_alu.s
@@ -379,7 +381,10 @@ space/comma-separated glob or substring patterns and keeps manifest gate
 dispatch, so linked LLVM entries still run through
 `scripts/run_rtl_top_linked_llvm_smoke.sh`. Explicit source arguments also use
 the manifest gate when the source is active; unknown explicit paths fall back to
-the generic top-program smoke gate.
+the generic top-program smoke gate. `LNP64_RTL_FAST=1` also makes individual
+top-program smokes quiet by default: successful runs keep full RTL/emulator logs
+for comparison but only print the final pass line. Set
+`LNP64_RTL_TOP_PROGRAM_QUIET=0` when you need live retire-record output.
 
 For longer exploratory top-level programs, raise the simulation retire limit
 without changing the RTL testbench:

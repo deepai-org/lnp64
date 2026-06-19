@@ -14,6 +14,21 @@ cleanup() {
 }
 trap cleanup EXIT
 
+top_program_quiet="${LNP64_RTL_TOP_PROGRAM_QUIET:-${LNP64_RTL_FAST:-0}}"
+
+run_top_program_logged() {
+  local log="$1"
+  shift
+  if [[ "$top_program_quiet" == "1" ]]; then
+    if ! "$@" >"$log" 2>&1; then
+      cat "$log" >&2
+      return 1
+    fi
+  else
+    "$@" 2>&1 | tee "$log"
+  fi
+}
+
 if ! command -v verilator >/dev/null 2>&1; then
   printf '%s\n' "verilator is required for the RTL top-level program smoke gate" >&2
   exit 1
@@ -118,9 +133,15 @@ fi
 if [[ -n "${LNP64_RTL_TOP_PROGRAM_MAX_CYCLES:-}" ]]; then
   rtl_plusargs+=("+lnp64_max_cycles=$LNP64_RTL_TOP_PROGRAM_MAX_CYCLES")
 fi
-"$rtl_binary" "${rtl_plusargs[@]}" | tee "$sim_log"
+run_top_program_logged "$sim_log" "$rtl_binary" "${rtl_plusargs[@]}"
 
-grep -q "LNP64-RTL-TOP-PROGRAM PASS" "$sim_log"
+if ! grep -q "LNP64-RTL-TOP-PROGRAM PASS" "$sim_log"; then
+  printf '%s\n' "missing RTL top-level pass marker" >&2
+  if [[ "$top_program_quiet" == "1" ]]; then
+    cat "$sim_log" >&2
+  fi
+  exit 1
+fi
 
 if [[ -n "${LNP64_BIN:-}" ]]; then
   emulator_cmd=("$LNP64_BIN" run-flat-exec "$program_hex")
@@ -130,7 +151,7 @@ fi
 if [[ -n "$program_data_hex" && -s "$program_data_hex" ]]; then
   emulator_cmd+=(--data-hex "$program_data_hex")
 fi
-"${emulator_cmd[@]}" | tee "$emulator_log"
+run_top_program_logged "$emulator_log" "${emulator_cmd[@]}"
 
 python3 - "$sim_log" "$emulator_log" <<'PY'
 import json
