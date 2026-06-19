@@ -801,6 +801,23 @@ module lnp64_core_tile #(
         end
     endfunction
 
+    function automatic logic [31:0] flat_retire_operand_imm(
+        input logic [7:0] opcode,
+        input logic [31:0] word,
+        input logic [31:0] literal
+    );
+        begin
+            unique case (opcode)
+                8'h03, 8'h04, 8'hd0: flat_retire_operand_imm = literal;
+                8'h01: flat_retire_operand_imm = {{16{word[15]}}, word[15:0]};
+                8'h20, 8'h21, 8'h22, 8'h23, 8'h24, 8'h25, 8'h26, 8'h27:
+                    flat_retire_operand_imm = {{8{word[23]}}, word[23:0]};
+                default:
+                    flat_retire_operand_imm = {{18{word[13]}}, word[13:0]};
+            endcase
+        end
+    endfunction
+
     function automatic lnp64_m1_state_projection_t build_m1_state_projection(
         input logic [7:0] op,
         input logic [15:0] status,
@@ -1525,7 +1542,18 @@ module lnp64_core_tile #(
         retire_submit_next.domain_id = 32'd1;
         retire_submit_next.domain_gen = 32'd1;
         retire_submit_next.pc = pc;
+        retire_submit_next.opcode = raw_opcode;
+        retire_submit_next.arch_opcode = dec.opcode;
         retire_submit_next.action = 16'd1;
+        retire_submit_next.operand_rd = dec.rd;
+        retire_submit_next.operand_rs1 = dec.rs1;
+        retire_submit_next.operand_rs2 = dec.rs2;
+        retire_submit_next.operand_rs3 = dec.rs3;
+        retire_submit_next.operand_imm = flat_retire_operand_imm(
+            raw_opcode,
+            instr,
+            pc + 32'd1 < PROGRAM_WORDS[31:0] ? program_rom[pc + 32'd1] : 32'd0
+        );
         retire_submit_next.event_id = 32'd0;
         retire_submit_next.fault_id = 32'd0;
 
