@@ -134,10 +134,10 @@ Implementation:
 
 ## Current Status
 
-The emulator and bootstrap compiler exercise many native concepts: FDRs, VMAs,
-allocation, events, futex-like waits, gate/signal delivery, Resource Domains,
-object profiles, sockets/endpoints, namespace dispatch, and NetBSD-personality
-smoke paths.
+The emulator, assembler, and real Clang/lld gates exercise many native
+concepts: FDRs, VMAs, allocation, events, futex-like waits, gate/signal
+delivery, Resource Domains, object profiles, sockets/endpoints, namespace
+dispatch, and NetBSD-personality smoke paths.
 
 The RTL/formal side is early but active. It includes an S0 whole-machine
 skeleton, M1-M15 vertical slices, shared schema checks, Lean transition models,
@@ -652,4 +652,4 @@ machine-readable coupling manifest.
   which RTL modules, assertions, traces, gates, trust levels, and known gaps.
 - Read `verification_plan.md` for the current evidence matrix.
 - Read `toolchain_roadmap.md` before extending LLVM, the loader, or the
-  bootstrap compiler.
+  libc/runtime shim.

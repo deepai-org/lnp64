@@ -44,8 +44,8 @@ stack slots for non-leaf functions.
 
 ## Data Model
 
-The current C compiler uses an LP64-like integer/pointer model with 64-bit words
-as the default scalar storage unit:
+The LNP64 C ABI uses an LP64-like integer/pointer model with 64-bit words as
+the default scalar storage unit:
 
 | C Surface | v0 Size |
 | --- | --- |
@@ -56,7 +56,8 @@ as the default scalar storage unit:
 | word loads/stores | 4 bytes |
 | doubleword loads/stores | 8 bytes |
 
-Aggregate layout is compiler-defined in v0 and is still being hardened by real
+Aggregate layout is ABI-defined only for explicitly documented public records
+in v0 and is still being hardened by real
 package tests. Public psABI structs should be documented explicitly before they
 are used across object or domain boundaries.
 
@@ -64,18 +65,18 @@ are used across object or domain boundaries.
 
 Integer and pointer arguments are passed in `r1` through `r6`.
 
-The current compiler evaluates at most the first six arguments into temporary
-spill slots, reloads them, and moves them into `r1..r6` before `CALL` or
-`CALL_REG`. Additional C varargs are copied into a compiler-managed varargs
-area for the callee's `va_start`/`va_arg` support; they are not passed on a
-hardware stack by generic call lowering.
+LLVM lowering assigns at most the first six integer or pointer arguments to
+`r1..r6` before `CALL` or `CALL_REG`. Additional fixed arguments are passed in
+16-byte-aligned stack argument slots. For variadic calls, non-fixed arguments
+are copied into the caller stack argument area for the callee's `va_start` and
+`va_arg` support.
 
 Return values are placed in `r1`. Multi-register returns are not part of the C
 ABI yet. Cross-domain gate profiles use bounded return registers through native
 `GATE_RETURN`; `RET_CAP` is the source-level call-profile spelling.
 
-The current compiler treats `r1` through `r29` as caller-clobbered. There is no
-callee-saved GPR set in the v0 compiler ABI. Runtimes that need stable register
+The v0 C ABI treats `r1` through `r29` as caller-clobbered. There is no
+callee-saved GPR set in the v0 ABI. Runtimes that need stable register
 state across calls must spill it explicitly.
 
 ## Address Materialization
@@ -103,9 +104,9 @@ The emulator starts each thread with a stack top derived from the process
 layout. ASLR can randomize stack placement; deterministic domain policy can
 disable that randomization for tests.
 
-The v0 compiler does not build a conventional downward-growing C call stack for
-arguments. Function calls rely on registers, compiler-managed spill slots, and
-the hardware `LR`.
+The v0 ABI uses `r31` as the stack pointer and `LR` as the hardware return
+link. Calls use register arguments first and stack argument slots for overflow
+or variadic arguments; non-leaf functions spill `LR` through `LR_GET`/`LR_SET`.
 
 ## Debug and Unwind Minimum
 
@@ -131,16 +132,18 @@ The current emulator reserves the process entry page at `0x700000` with size
 | After final environment pointer | Null `envp` terminator. |
 | `0x701000` onward | NUL-terminated argument and environment strings. |
 
-For C `main`, the compiler initializes parameters specially:
+The static crt0 startup stub initializes C `main` parameters from this page:
 
 - `argc` is loaded from `0x700000`.
 - `argv` is the pointer table beginning at `0x700008`.
 - `envp` is the first pointer slot after the null `argv` terminator.
 - `environ`, when referenced, is initialized to the same `envp` pointer.
 
-If a source file defines `_start`, the compiler emits `_start` as the entry
-symbol before `main`; otherwise it emits `main` first. In v0 there are no
-standalone crt object files. Startup is compiler/runtime modeled.
+Static Clang/lld links use `toolchain/crt0_lnp64.s` as the checked crt0 object
+source. It defines `_start`, loads `argc`, `argv`, and `envp` from the startup
+page, clears TLS errno state, calls `main`, and exits through `EXIT`. Custom
+runtime profiles may still provide their own `_start`, but hosted C coverage is
+crt0/libc/runtime modeled rather than compiler-emitted startup.
 
 ## Auxv and Environment Metadata
 
@@ -174,7 +177,7 @@ Local-exec TLS is the required first TLS model:
   materialization path.
 
 General-dynamic and initial-exec TLS are future loader/personality models, not
-v0 compiler requirements.
+v0 backend requirements.
 
 `GET_PCR` and `SET_PCR` are compiler-visible control operations, not ambient
 runtime calls. `GET_PCR r_result, selector` returns the selected value.

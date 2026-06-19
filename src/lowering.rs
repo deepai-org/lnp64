@@ -7544,7 +7544,8 @@ mod tests {
         assert!(psabi_doc.contains("Return values are placed in `r1`."));
         assert!(psabi_doc.contains("`r30` is reserved as a backend scratch register"));
         assert!(psabi_doc.contains("`r1` through `r29` as caller-clobbered"));
-        assert!(psabi_doc.contains("callee-saved GPR set in the v0 compiler ABI"));
+        assert!(psabi_doc.contains("callee-saved GPR set in the v0 ABI"));
+        assert!(psabi_doc.contains("Additional fixed arguments are passed"));
         assert!(psabi_doc.contains("`r31` points at the current thread's stack/local region."));
         assert!(psabi_doc.contains("The thread pointer is read and written through the `TP` PCR."));
         assert!(psabi_doc.contains("`SIGRET` is the POSIX spelling"));
@@ -7825,8 +7826,8 @@ mod tests {
         assert!(contracts["auxv"].contains(&"ENV_GET"));
         assert!(contracts["process_exit"].contains(&"EXIT"));
 
-        assert!(psabi_doc.contains("If a source file defines `_start`"));
-        assert!(psabi_doc.contains("For C `main`, the compiler initializes parameters specially"));
+        assert!(psabi_doc.contains("The static crt0 startup stub initializes C `main`"));
+        assert!(psabi_doc.contains("Static Clang/lld links use `toolchain/crt0_lnp64.s`"));
         assert!(roadmap.contains("toolchain/lnp64_crt_startup.manifest"));
     }
 
