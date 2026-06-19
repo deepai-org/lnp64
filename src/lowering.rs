@@ -1270,6 +1270,7 @@ mod tests {
             "inline_asm",
             "crt_startup",
             "crt0",
+            "sysroot",
             "minilibc_smoke",
             "transition",
         ] {
@@ -1495,8 +1496,13 @@ mod tests {
         }
         assert_eq!(statuses["real_llc_build"], "tested");
         assert_eq!(statuses["real_mc_build"], "tested");
+        assert_eq!(statuses["sysroot_package"], "tested");
         assert_eq!(statuses["simple_libc_gate"], "tested");
         for requirement in [
+            "packaged_sysroot",
+            "crt0_object",
+            "target_headers",
+            "libc_shim_objects",
             "clang_zlib_adler32_object",
             "clang_zlib_crc32_object",
             "clang_zlib_package_object",
@@ -1712,6 +1718,10 @@ mod tests {
         assert!(
             commands["real_llc_build"].contains("scripts/run_real_llvm_lnp64_docker.sh"),
             "real LLVM llc gate must run through the Docker-backed script"
+        );
+        assert!(
+            commands["sysroot_package"].contains("scripts/package_lnp64_sysroot.sh"),
+            "sysroot package gate must run through the checked package script"
         );
         assert!(
             commands["real_objects_build"]
@@ -5607,6 +5617,77 @@ mod tests {
     }
 
     #[test]
+    fn sysroot_manifest_records_packaged_crt_layout() {
+        let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
+        let sysroot_manifest = include_str!("../toolchain/lnp64_sysroot.manifest");
+        let package_script = include_str!("../scripts/package_lnp64_sysroot.sh");
+        let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
+        let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
+        let roadmap = include_str!("../toolchain_roadmap.md");
+        let conformance = include_str!("../conformance_matrix.md");
+        let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+
+        assert_eq!(
+            manifest_field(target_manifest, "sysroot_contract"),
+            "toolchain/lnp64_sysroot.manifest"
+        );
+        assert!(
+            manifest_root
+                .join("toolchain/lnp64_sysroot.manifest")
+                .is_file()
+        );
+        assert!(
+            manifest_root
+                .join("scripts/package_lnp64_sysroot.sh")
+                .is_file()
+        );
+        assert!(contract_index.contains(
+            "sysroot|toolchain/lnp64_sysroot.manifest|sysroot_manifest_records_packaged_crt_layout"
+        ));
+        assert!(transition_manifest.contains("toolchain/lnp64_sysroot.manifest"));
+        assert!(transition_manifest.contains("scripts/package_lnp64_sysroot.sh"));
+        assert!(roadmap.contains("toolchain/lnp64_sysroot.manifest"));
+        assert!(roadmap.contains("scripts/package_lnp64_sysroot.sh"));
+        assert!(conformance.contains("sysroot_manifest_records_packaged_crt_layout"));
+
+        for row in [
+            "sysroot_root|target/lnp64-sysroot|scripts/package_lnp64_sysroot.sh|generated",
+            "target_headers|usr/include|toolchain/include|generated",
+            "private_intrinsics|usr/include/lnp64/intrinsics.h|toolchain/include/lnp64/intrinsics.h|generated",
+            "canonical_intrinsics|usr/lnp64_intrinsics.h|toolchain/lnp64_intrinsics.h|generated",
+            "crt0_object|usr/lib/lnp64/crt0.o|toolchain/crt0_lnp64.s|generated",
+            "linker_script|usr/lib/lnp64/lnp64_static.ld|toolchain/lnp64_static.ld|generated",
+            "legacy_minilibc_object|usr/lib/lnp64/liblnp64_min.o|toolchain/liblnp64_min.s|generated",
+            "libc_shim_objects|usr/lib/lnp64/liblnp64-*.o|toolchain/liblnp64_*_min.c|generated",
+        ] {
+            assert!(
+                sysroot_manifest.contains(row),
+                "sysroot manifest missing {row}"
+            );
+        }
+        for script_piece in [
+            "LNP64_SYSROOT_DIR:-target/lnp64-sysroot",
+            "mkdir -p \"$sysroot/usr/include\" \"$sysroot/usr/lib/lnp64\"",
+            "cp -a toolchain/include/. \"$sysroot/usr/include/\"",
+            "cp -a toolchain/lnp64_intrinsics.h \"$sysroot/usr/lnp64_intrinsics.h\"",
+            "toolchain/crt0_lnp64.s -o \"$sysroot/usr/lib/lnp64/crt0.o\"",
+            "toolchain/liblnp64_min.s -o \"$sysroot/usr/lib/lnp64/liblnp64_min.o\"",
+            "for source in toolchain/liblnp64_*_min.c",
+            "base=\"${base//_/-}\"",
+            "-I \"$sysroot/usr/include\" -I toolchain",
+            "\"$sysroot/usr/lib/lnp64/${base}-min.o\"",
+        ] {
+            assert!(
+                package_script.contains(script_piece),
+                "sysroot package script missing {script_piece}"
+            );
+        }
+        assert!(!package_script.contains("lnp64 cc"));
+        assert!(!package_script.contains("cargo run -- cc"));
+        assert!(!package_script.contains("cc --toy-bootstrap"));
+    }
+
+    #[test]
     fn minilibc_smoke_stub_matches_real_llvm_gate() {
         let minilibc = include_str!("../toolchain/liblnp64_min.s");
         let real_llc = include_str!("../scripts/run_real_llvm_lnp64.sh");
@@ -6494,6 +6575,10 @@ mod tests {
         assert_eq!(
             manifest_field(manifest, "crt0_contract"),
             "toolchain/crt0_lnp64.s"
+        );
+        assert_eq!(
+            manifest_field(manifest, "sysroot_contract"),
+            "toolchain/lnp64_sysroot.manifest"
         );
         assert_eq!(
             manifest_field(manifest, "llvm_gate_contract"),

@@ -29,6 +29,7 @@ debug_unwind_contract=toolchain/lnp64_debug_unwind.manifest
 inline_asm_contract=toolchain/lnp64_inline_asm.manifest
 crt_startup_contract=toolchain/lnp64_crt_startup.manifest
 crt0_contract=toolchain/crt0_lnp64.s
+sysroot_contract=toolchain/lnp64_sysroot.manifest
 llvm_gate_contract=toolchain/lnp64_llvm_gates.manifest
 run_elf_contract=toolchain/lnp64_run_elf.manifest
 linker_script_contract=toolchain/lnp64_static.ld

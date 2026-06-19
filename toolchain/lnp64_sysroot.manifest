@@ -1,0 +1,10 @@
+# LNP64 packaged sysroot manifest v0.
+# Pipe-delimited fields: item|path|producer|status
+sysroot_root|target/lnp64-sysroot|scripts/package_lnp64_sysroot.sh|generated
+target_headers|usr/include|toolchain/include|generated
+private_intrinsics|usr/include/lnp64/intrinsics.h|toolchain/include/lnp64/intrinsics.h|generated
+canonical_intrinsics|usr/lnp64_intrinsics.h|toolchain/lnp64_intrinsics.h|generated
+crt0_object|usr/lib/lnp64/crt0.o|toolchain/crt0_lnp64.s|generated
+linker_script|usr/lib/lnp64/lnp64_static.ld|toolchain/lnp64_static.ld|generated
+legacy_minilibc_object|usr/lib/lnp64/liblnp64_min.o|toolchain/liblnp64_min.s|generated
+libc_shim_objects|usr/lib/lnp64/liblnp64-*.o|toolchain/liblnp64_*_min.c|generated
