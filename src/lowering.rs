@@ -1318,6 +1318,7 @@ mod tests {
         let llvm_dockerfile = include_str!("../Dockerfile.llvm");
         let libc_string_min = include_str!("../toolchain/liblnp64_string_min.c");
         let libc_convert_min = include_str!("../toolchain/liblnp64_convert_min.c");
+        let libc_path_min = include_str!("../toolchain/liblnp64_path_min.c");
         let libc_alloc_min = include_str!("../toolchain/liblnp64_alloc_min.c");
         let libc_fd_min = include_str!("../toolchain/liblnp64_fd_min.c");
         let libc_process_min = include_str!("../toolchain/liblnp64_process_min.c");
@@ -1844,6 +1845,21 @@ mod tests {
         assert!(real_llc.contains(
             "real LLVM LNP64 clang minilibc numeric conversion implementation object smoke passed"
         ));
+        assert!(real_llc.contains("path-clang-smoke.o"));
+        assert!(real_llc.contains("char *basename"));
+        assert!(real_llc.contains("char *dirname"));
+        assert!(real_llc.contains("check_basename(\"/usr/lib\", \"lib\")"));
+        assert!(real_llc.contains("check_dirname(\"/usr/lib\", \"/usr\")"));
+        assert!(real_llc.contains("real LLVM LNP64 clang path helper object smoke passed"));
+        assert!(real_llc.contains("toolchain/liblnp64_path_min.c"));
+        assert!(real_llc.contains("liblnp64-path-min.o"));
+        assert!(libc_path_min.contains("char *basename"));
+        assert!(libc_path_min.contains("char *dirname"));
+        assert!(libc_path_min.contains("lnp64_dot"));
+        assert!(
+            real_llc
+                .contains("real LLVM LNP64 clang minilibc path implementation object smoke passed")
+        );
         assert!(real_llc.contains("toolchain/liblnp64_alloc_min.c"));
         assert!(libc_alloc_min.contains("#include \"lnp64_intrinsics.h\""));
         assert!(libc_alloc_min.contains("void *alloc(size_t size)"));
@@ -1898,6 +1914,12 @@ mod tests {
   "$libc_errno_impl_obj""#
         ));
         assert!(real_llc.contains("real LLVM LNP64 lld numeric conversion link smoke passed"));
+        assert!(real_llc.contains("lnp64-path-linked.elf"));
+        assert!(real_llc.contains(
+            r#""$path_obj" "$libc_path_impl_obj" \
+  "$libc_string_impl_obj""#
+        ));
+        assert!(real_llc.contains("real LLVM LNP64 lld path helper link smoke passed"));
         assert!(real_llc.contains("lnp64-calloc-linked.elf"));
         assert!(real_llc.contains(
             r#""$calloc_obj" "$libc_alloc_impl_obj" \
@@ -2294,6 +2316,8 @@ mod tests {
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf numeric conversion execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-path-linked.elf"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf path helper execution passed"));
         assert!(real_llc_docker.contains("lnp64-calloc-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf calloc execution passed"));
         assert!(real_llc_docker.contains("lnp64-realloc-linked.elf"));
@@ -2415,6 +2439,7 @@ mod tests {
             "real_clang_demo_execution",
             "real_native_heap_execution",
             "real_numeric_conversion_execution",
+            "real_path_helper_execution",
             "real_read_execution",
             "real_write_execution",
             "real_mmap_libc_execution",
@@ -2454,6 +2479,7 @@ mod tests {
             "real_clang_demo_execution",
             "real_native_heap_execution",
             "real_numeric_conversion_execution",
+            "real_path_helper_execution",
             "real_write_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
@@ -3226,6 +3252,7 @@ mod tests {
             "errno_tls",
             "string_ctype",
             "numeric_conversion",
+            "path_helpers",
             "fd_io",
             "malloc_heap",
             "pthread_futex",
@@ -3248,6 +3275,7 @@ mod tests {
             "errno_tls",
             "string_ctype",
             "numeric_conversion",
+            "path_helpers",
             "fd_io",
             "malloc_heap",
             "pthread_futex",
@@ -3278,6 +3306,11 @@ mod tests {
                 "numeric_conversion",
                 vec!["atoi", "strtol", "strtoull"],
                 vec!["integer_alu", "ERRNO_SET", "static_link"],
+            ),
+            (
+                "path_helpers",
+                vec!["basename", "dirname"],
+                vec!["load_store", "integer_alu", "static_link"],
             ),
             (
                 "fd_io",

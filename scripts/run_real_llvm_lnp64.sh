@@ -1722,6 +1722,98 @@ grep -q 'ret' "$libc_convert_impl_dump"
 printf 'real LLVM LNP64 clang minilibc numeric conversion implementation object smoke passed: %s\n' \
   "$libc_convert_impl_obj"
 
+path_c="$build_dir/path-smoke.c"
+cat >"$path_c" <<'C'
+int strcmp(const char *lhs, const char *rhs);
+char *strcpy(char *dst, const char *src);
+char *basename(char *path);
+char *dirname(char *path);
+
+static int check_basename(const char *path, const char *want) {
+  char tmp[100];
+  char *got = basename(strcpy(tmp, path));
+  return strcmp(got, want) == 0;
+}
+
+static int check_dirname(const char *path, const char *want) {
+  char tmp[100];
+  char *got = dirname(strcpy(tmp, path));
+  return strcmp(got, want) == 0;
+}
+
+int main(void) {
+  if (strcmp(basename(0), ".") != 0)
+    return 1;
+  if (!check_basename("", "."))
+    return 2;
+  if (!check_basename("/usr/lib", "lib"))
+    return 3;
+  if (!check_basename("/usr/", "usr"))
+    return 4;
+  if (!check_basename("usr/", "usr"))
+    return 5;
+  if (!check_basename("/", "/"))
+    return 6;
+  if (!check_basename("///", "/"))
+    return 7;
+  if (!check_basename("//usr//lib//", "lib"))
+    return 8;
+  if (!check_basename(".", "."))
+    return 9;
+  if (!check_basename("..", ".."))
+    return 10;
+
+  if (strcmp(dirname(0), ".") != 0)
+    return 11;
+  if (!check_dirname("", "."))
+    return 12;
+  if (!check_dirname("/usr/lib", "/usr"))
+    return 13;
+  if (!check_dirname("/usr/", "/"))
+    return 14;
+  if (!check_dirname("usr", "."))
+    return 15;
+  if (!check_dirname("usr/", "."))
+    return 16;
+  if (!check_dirname("/", "/"))
+    return 17;
+  if (!check_dirname("///", "/"))
+    return 18;
+  if (!check_dirname(".", "."))
+    return 19;
+  if (!check_dirname("..", "."))
+    return 20;
+  return 0;
+}
+C
+
+path_obj="$build_dir/path-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$path_c" -o "$path_obj"
+test -s "$path_obj"
+path_dump="$build_dir/path-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$path_obj" \
+  >"$path_dump"
+grep -q 'call ' "$path_dump"
+printf 'real LLVM LNP64 clang path helper object smoke passed: %s\n' \
+  "$path_obj"
+
+libc_path_impl_c="toolchain/liblnp64_path_min.c"
+libc_path_impl_obj="$build_dir/liblnp64-path-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$libc_path_impl_c" -o "$libc_path_impl_obj"
+test -s "$libc_path_impl_obj"
+libc_path_impl_dump="$build_dir/liblnp64-path-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_path_impl_obj" \
+  >"$libc_path_impl_dump"
+grep -q 'ld.b r' "$libc_path_impl_dump"
+grep -q 'st.b r' "$libc_path_impl_dump"
+grep -q 'ret' "$libc_path_impl_dump"
+printf 'real LLVM LNP64 clang minilibc path implementation object smoke passed: %s\n' \
+  "$libc_path_impl_obj"
+
 libc_alloc_impl_c="toolchain/liblnp64_alloc_min.c"
 libc_alloc_impl_obj="$build_dir/liblnp64-alloc-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
@@ -2765,6 +2857,14 @@ convert_elf="$build_dir/lnp64-convert-linked.elf"
 test -s "$convert_elf"
 printf 'real LLVM LNP64 lld numeric conversion link smoke passed: %s\n' \
   "$convert_elf"
+
+path_elf="$build_dir/lnp64-path-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$path_elf" "$crt0_obj" "$path_obj" "$libc_path_impl_obj" \
+  "$libc_string_impl_obj"
+test -s "$path_elf"
+printf 'real LLVM LNP64 lld path helper link smoke passed: %s\n' \
+  "$path_elf"
 
 calloc_elf="$build_dir/lnp64-calloc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
