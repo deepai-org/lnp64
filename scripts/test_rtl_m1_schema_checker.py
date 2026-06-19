@@ -230,6 +230,20 @@ def main() -> None:
         ),
     )
 
+    missing_rights_modeled_theorem = replace_once(
+        lean_source,
+        "theorem rtl_m1_commit_projection_from_packed_bits_rights_modeled",
+        "theorem rtl_m1_commit_projection_from_bits_unbounded_rights",
+    )
+    expect_failure(
+        "M1 packed-bit refinement artifact missing: theorem rtl_m1_commit_projection_from_packed_bits_rights_modeled",
+        lambda: checker.require_m1_packed_bit_refinement_contract(
+            schema,
+            m1_contract,
+            missing_rights_modeled_theorem,
+        ),
+    )
+
     print("rtl m1 schema checker self-test ok")
 
 

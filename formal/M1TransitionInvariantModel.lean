@@ -802,6 +802,26 @@ def rightsFromPackedMask (mask : Nat) : Rights :=
     dup := packedRightsBit mask 2
     mint := packedRightsBit mask 3 }
 
+def modeledRightsMaskLimit : Nat := 16
+
+def packedRightsFieldModeled
+    (bits : Nat)
+    (fieldName : String)
+    (layout : List PackedFieldLayout) : Prop :=
+  exists mask,
+    packedLayoutFieldValue bits fieldName layout = some mask /\
+    mask < modeledRightsMaskLimit
+
+def packedRightsFromLayoutMatches
+    (bits : Nat)
+    (fieldName : String)
+    (layout : List PackedFieldLayout)
+    (rights : Rights) : Prop :=
+  exists mask,
+    packedLayoutFieldValue bits fieldName layout = some mask /\
+    mask < modeledRightsMaskLimit /\
+    rightsFromPackedMask mask = rights
+
 theorem rightsFromPackedMask_allRights :
     rightsFromPackedMask 15 = allRights := by
   rfl
@@ -902,6 +922,9 @@ structure RtlM1CommitProjectionFromPackedBits
   domainGeneration :
     packedLayoutFieldValue bits "domain_gen" rtlM1CommitPackedLayout =
       some projection.domainGeneration
+  rightsModeled :
+    packedRightsFromLayoutMatches
+      bits "rights_mask" rtlM1CommitPackedLayout projection.rights
   rights :
     packedRightsFromLayout bits "rights_mask" rtlM1CommitPackedLayout =
       some projection.rights
@@ -940,9 +963,19 @@ structure RtlM1StateProjectionFromPackedBits
   rootCap :
     packedStateCapFromBits bits "root" =
       some projection.rootCap
+  rootRightsModeled :
+    packedRightsFromLayoutMatches
+      bits "root_rights" rtlM1StateProjectionPackedLayout projection.rootCap.rights
   consumerCap :
     packedStateCapFromBits bits "consumer" =
       some projection.consumerCap
+  consumerRightsModeled :
+    packedRightsFromLayoutMatches
+      bits "consumer_rights" rtlM1StateProjectionPackedLayout projection.consumerCap.rights
+  sentRightsModeled :
+    packedRightsFieldModeled bits "sent_rights" rtlM1StateProjectionPackedLayout
+  mintedRightsModeled :
+    packedRightsFieldModeled bits "minted_rights" rtlM1StateProjectionPackedLayout
   sentCap :
     (exists cap,
       packedLayoutBoolValue bits "sent_valid" rtlM1StateProjectionPackedLayout = some true /\
@@ -998,6 +1031,32 @@ theorem rtl_m1_state_projection_from_packed_bits_within_schema_width
     bits < 2 ^ packedSchemaWidth rtlM1StateProjectionPackedSchema := by
   intro hPacked
   exact hPacked.withinSchemaWidth
+
+theorem rtl_m1_commit_projection_from_packed_bits_rights_modeled
+    {bits : Nat} {projection : RtlM1CommitProjection} :
+    RtlM1CommitProjectionFromPackedBits bits projection ->
+    packedRightsFromLayoutMatches
+      bits "rights_mask" rtlM1CommitPackedLayout projection.rights := by
+  intro hPacked
+  exact hPacked.rightsModeled
+
+theorem rtl_m1_state_projection_from_packed_bits_rights_modeled
+    {bits : Nat} {op : CommitOp} {status : CommitStatus}
+    {projection : RtlM1StateProjection} :
+    RtlM1StateProjectionFromPackedBits bits op status projection ->
+    packedRightsFromLayoutMatches
+      bits "root_rights" rtlM1StateProjectionPackedLayout projection.rootCap.rights /\
+    packedRightsFromLayoutMatches
+      bits "consumer_rights" rtlM1StateProjectionPackedLayout projection.consumerCap.rights /\
+    packedRightsFieldModeled bits "sent_rights" rtlM1StateProjectionPackedLayout /\
+    packedRightsFieldModeled bits "minted_rights" rtlM1StateProjectionPackedLayout := by
+  intro hPacked
+  exact ⟨
+    hPacked.rootRightsModeled,
+    hPacked.consumerRightsModeled,
+    hPacked.sentRightsModeled,
+    hPacked.mintedRightsModeled
+  ⟩
 
 def commitOpToStepOp : CommitOp -> Op
   | CommitOp.capDup => Op.capDup
