@@ -437,6 +437,7 @@ REQUIRED_RECORD_FIELDS = {
         "virtual_deadline",
         "dispatch_eligible",
         "effective_tile_mask",
+        "migration_generation",
         "active_location",
     },
     "lnp64_retire_submit_t": {
@@ -789,6 +790,8 @@ def main() -> None:
         "thread_submit_next.virtual_deadline = active_thread_context.virtual_deadline",
         "thread_submit_next.dispatch_eligible = active_thread_context.dispatch_eligible",
         "thread_submit_next.effective_tile_mask = active_thread_context.effective_tile_mask",
+        "thread_submit_next.migration_generation = active_thread_context.migration_generation",
+        "SG-SCHED live context missing migration generation",
         "context_dispatch_eligible",
         "SG-SCHED barrel selected a non-eligible context",
         "SG-SCHED resident context not eligible for this tile",

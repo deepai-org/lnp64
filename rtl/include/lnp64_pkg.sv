@@ -521,6 +521,7 @@ package lnp64_pkg;
         logic [63:0] virtual_deadline;
         logic        dispatch_eligible;
         logic [31:0] effective_tile_mask;
+        logic [31:0] migration_generation;
         logic [31:0] active_location;
     } lnp64_thread_sched_t;
 

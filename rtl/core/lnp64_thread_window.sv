@@ -120,6 +120,7 @@ module lnp64_thread_window #(
                 context_record_q[reset_ctx].virtual_deadline <= 64'd0;
                 context_record_q[reset_ctx].dispatch_eligible <= 1'b1;
                 context_record_q[reset_ctx].effective_tile_mask <= TILE_MASK_BIT;
+                context_record_q[reset_ctx].migration_generation <= 32'd1;
                 context_record_q[reset_ctx].active_location <= TILE_ID[31:0];
             end
         end else begin
@@ -193,6 +194,8 @@ module lnp64_thread_window #(
                         else $fatal(1, "SG-SCHED live context missing architectural metadata");
                     assert (context_record[assert_ctx].effective_tile_mask != 32'd0)
                         else $fatal(1, "SG-SCHED live context missing effective tile mask");
+                    assert (context_record[assert_ctx].migration_generation != 32'd0)
+                        else $fatal(1, "SG-SCHED live context missing migration generation");
                 end
                 if (context_active_q[assert_ctx]) begin
                     assert (context_dispatch_eligible(context_record[assert_ctx]))
