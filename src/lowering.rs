@@ -5384,10 +5384,15 @@ mod tests {
         let psabi = include_str!("../psABI.md");
         let rows = transition_rows(manifest);
         let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let mut phases = std::collections::BTreeSet::new();
+        let mut phases = std::collections::BTreeMap::new();
 
         for (phase, status, artifacts, gate) in rows {
-            assert!(phases.insert(phase), "duplicate transition phase {phase}");
+            assert!(
+                phases
+                    .insert(phase, (status, artifacts.clone(), gate))
+                    .is_none(),
+                "duplicate transition phase {phase}"
+            );
             assert!(
                 ["required", "partial", "planned"].contains(&status),
                 "unknown transition status {status} for {phase}"
@@ -5411,7 +5416,38 @@ mod tests {
             "netbsd_personality_layers",
             "conformance_gates",
         ] {
-            assert!(phases.contains(phase), "missing transition phase {phase}");
+            assert!(
+                phases.contains_key(phase),
+                "missing transition phase {phase}"
+            );
+        }
+
+        assert_eq!(phases["real_toolchain_target"].0, "required");
+        for artifact in [
+            "toolchain/lnp64_target.manifest",
+            "toolchain/lnp64_registers.manifest",
+            "toolchain/lnp64_psabi.manifest",
+            "toolchain/lnp64_relocations.manifest",
+            "toolchain/lnp64_mc_encoding.manifest",
+            "toolchain/lnp64_inline_asm.manifest",
+            "toolchain/lnp64_debug_unwind.manifest",
+            "toolchain/lnp64_crt_startup.manifest",
+            "toolchain/crt0_lnp64.s",
+            "toolchain/lnp64_intrinsics.manifest",
+            "toolchain/lnp64_intrinsic_lowering.manifest",
+            "toolchain/lnp64_intrinsics.h",
+            "toolchain/lnp64_isel.manifest",
+            "toolchain/lnp64_exec_plan.manifest",
+            "toolchain/lnp64_clang_driver.manifest",
+            "toolchain/lnp64_static.ld",
+            "toolchain/lnp64_run_elf.manifest",
+            "psABI.md",
+            "object_format.md",
+        ] {
+            assert!(
+                phases["real_toolchain_target"].1.contains(&artifact),
+                "real_toolchain_target is missing artifact {artifact}"
+            );
         }
 
         assert!(roadmap.contains("## Toy Compiler Freeze Policy"));
