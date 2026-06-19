@@ -25,6 +25,7 @@ LEAN_M1_MODEL = ROOT / "formal/M1TransitionInvariantModel.lean"
 RTL_M1_ENGINE = ROOT / "rtl/engines/lnp64_m1_pingpong.sv"
 RTL_M1_TB = ROOT / "rtl/sim/lnp64_m1_tb.sv"
 RTL_M1_ASSERTIONS = ROOT / "formal/rtl_assertions/lnp64_m1_assertions.sv"
+RTL_PKG = ROOT / "rtl/include/lnp64_pkg.sv"
 DEFAULT_M1_TRACE_LOG = Path("/tmp/lnp64_rtl_m1_typed_commit.log")
 DEFAULT_TYPED_COMMIT_SEEDS = (
     "0 1 7 42 255 1024 4095 4096 65536 1048576 16777216 134217728 268435456 536870912"
@@ -706,6 +707,68 @@ def check_rtl_state_projection_boundary_sources(
         )
 
 
+def parse_sv_packed_struct_fields(source: str, typedef_name: str) -> tuple[tuple[str, int], ...]:
+    match = re.search(
+        rf"(?ms)typedef\s+struct\s+packed\s*\{{(?P<body>[^}}]*)\}}\s*{re.escape(typedef_name)}\s*;",
+        source,
+    )
+    if not match:
+        fail(f"RTL package is missing packed typedef {typedef_name}")
+    fields: list[tuple[str, int]] = []
+    for raw_line in match.group("body").splitlines():
+        line = raw_line.split("//", 1)[0].strip()
+        if not line:
+            continue
+        field_match = re.fullmatch(
+            r"logic(?:\s*\[\s*(?P<msb>[0-9]+)\s*:\s*(?P<lsb>[0-9]+)\s*\])?\s+"
+            r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*;",
+            line,
+        )
+        if not field_match:
+            fail(f"could not parse field in RTL packed typedef {typedef_name}: {raw_line!r}")
+        msb = field_match.group("msb")
+        lsb = field_match.group("lsb")
+        width = 1 if msb is None else abs(int(msb) - int(lsb)) + 1
+        fields.append((field_match.group("name"), width))
+    if not fields:
+        fail(f"RTL packed typedef {typedef_name} has no parsed fields")
+    return tuple(fields)
+
+
+def check_rtl_packed_typedefs_match_schema_sources(
+    pkg_source: str,
+    commit_field_specs: tuple[tuple[str, int], ...],
+    state_field_specs: tuple[tuple[str, int], ...],
+) -> None:
+    commit_typedef = parse_sv_packed_struct_fields(pkg_source, "lnp64_m1_cap_commit_t")
+    if commit_typedef != commit_field_specs:
+        fail(
+            "RTL lnp64_m1_cap_commit_t packed typedef drifted from shared schema: "
+            f"{commit_typedef!r} != {commit_field_specs!r}"
+        )
+    state_typedef = parse_sv_packed_struct_fields(pkg_source, "lnp64_m1_state_projection_t")
+    if state_typedef != state_field_specs:
+        fail(
+            "RTL lnp64_m1_state_projection_t packed typedef drifted from shared schema: "
+            f"{state_typedef!r} != {state_field_specs!r}"
+        )
+
+
+def check_rtl_packed_typedefs_match_schema(
+    commit_field_specs: tuple[tuple[str, int], ...],
+    state_field_specs: tuple[tuple[str, int], ...],
+) -> None:
+    try:
+        pkg_source = RTL_PKG.read_text(encoding="utf-8")
+    except OSError as exc:
+        fail(f"could not read RTL package: {exc}")
+    check_rtl_packed_typedefs_match_schema_sources(
+        pkg_source,
+        commit_field_specs,
+        state_field_specs,
+    )
+
+
 def check_rtl_state_projection_boundary(
     expected_commit_fields: tuple[str, ...],
     expected_state_fields: tuple[str, ...],
@@ -1055,6 +1118,7 @@ def load_schema_contract() -> tuple[
             "M1 state projection schema fields drifted: "
             f"{expected_state_fields!r} != {STATE_PROJECTION_FIELDS!r}"
         )
+    check_rtl_packed_typedefs_match_schema(commit_field_specs, state_field_specs)
     check_rtl_state_projection_boundary(expected_fields, expected_state_fields)
     mapped_lean_state_fields = lean_state_projection_fields_from_schema(expected_state_fields)
     if mapped_lean_state_fields != M1_LEAN_RTL_STATE_PROJECTION_FIELDS:

@@ -21,6 +21,7 @@ LEAN_M1_MODEL = ROOT / "formal/M1TransitionInvariantModel.lean"
 RTL_M1_ENGINE = ROOT / "rtl/engines/lnp64_m1_pingpong.sv"
 RTL_M1_TB = ROOT / "rtl/sim/lnp64_m1_tb.sv"
 RTL_M1_ASSERTIONS = ROOT / "formal/rtl_assertions/lnp64_m1_assertions.sv"
+RTL_PKG = ROOT / "rtl/include/lnp64_pkg.sv"
 
 
 def require(condition: bool, message: str) -> None:
@@ -197,14 +198,48 @@ def main() -> None:
     engine_source = RTL_M1_ENGINE.read_text(encoding="utf-8")
     tb_source = RTL_M1_TB.read_text(encoding="utf-8")
     assertion_source = RTL_M1_ASSERTIONS.read_text(encoding="utf-8")
+    pkg_source = RTL_PKG.read_text(encoding="utf-8")
 
     checker.check_lean_packed_schema_contract(lean_source, commit_fields, state_fields)
+    checker.check_rtl_packed_typedefs_match_schema_sources(
+        pkg_source,
+        commit_fields,
+        state_fields,
+    )
     checker.check_rtl_state_projection_boundary_sources(
         engine_source,
         tb_source,
         assertion_source,
         commit_field_names,
         state_field_names,
+    )
+
+    bad_commit_typedef = replace_once(
+        pkg_source,
+        "logic [7:0]  op;\n        logic [31:0] object_id;",
+        "logic [6:0]  op;\n        logic [31:0] object_id;",
+    )
+    expect_failure(
+        "RTL lnp64_m1_cap_commit_t packed typedef drifted",
+        lambda: checker.check_rtl_packed_typedefs_match_schema_sources(
+            bad_commit_typedef,
+            commit_fields,
+            state_fields,
+        ),
+    )
+
+    bad_state_typedef = replace_once(
+        pkg_source,
+        "logic        created_object_created;",
+        "logic [1:0]  created_object_created;",
+    )
+    expect_failure(
+        "RTL lnp64_m1_state_projection_t packed typedef drifted",
+        lambda: checker.check_rtl_packed_typedefs_match_schema_sources(
+            bad_state_typedef,
+            commit_fields,
+            state_fields,
+        ),
     )
 
     checker.check_lean_typed_commit_mapping(
