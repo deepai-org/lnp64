@@ -1041,6 +1041,17 @@ The key hardware mechanism is a **Resource Domain**, not a privilege ring. A Res
 
 `DOMAIN_CTL` creates child domains by delegating a subset of the caller's own authority downward. Limits are monotonic: a child domain cannot exceed resources or capabilities delegated by its parent. Usage accounting rolls up the domain tree, so CPU, memory, PID/thread, I/O, device, and event pressure can be queried or limited at any nesting level.
 
+Resource Domains are control-plane expensive and data-plane cheap. `DOMAIN_CTL`
+create/configure/freeze/destroy/query may be Class D lifecycle work, but admitted
+execution uses resident flattened effective-domain records. The scheduler consumes
+effective scheduling fields such as dispatch eligibility, quota/reservation,
+latency cap, affinity mask, and frozen/quiescing bits. The Heap Engine consumes
+effective heap fields such as heap budget, allocation profile, hardening policy,
+large-object eligibility, locality/memory-bank policy, and accounting generation.
+Hot scheduler and allocator paths must not walk the domain tree or recompute
+policy; stale or missing effective records park, fail, or submit Class D refill
+work.
+
 Nested virtualization is modeled as nested domains. A Linux personality domain can create a KVM-like guest domain or a container-like child domain with the same `DOMAIN_CTL create child` operation. A VM profile grants stronger supervisor/upcall policy and paravirtual device views; a container profile shares more parent personality/runtime state and receives narrower namespace/device/resource scopes. Each layer may receive, translate, or mask upcalls for its children, but hardware still enforces resource budgets, capability lineage, and VMA/FDR isolation.
 
 `DOMAIN_PROFILE_TENANT_STRICT` is the cloud isolation profile. It requires W^X, NX data, ASLR, guard-page support, generation checks, scoped entropy, DMA isolation, no raw interrupts, no ambient devices, no parent memory inspection unless explicitly delegated, and explicit shared-memory capabilities for every cross-tenant data path. Parent domains may freeze, kill, measure, query permitted aggregate usage, revoke delegated capabilities, and receive fault/pressure events, but they do not gain implicit read/write authority over tenant memory or sealed secrets.

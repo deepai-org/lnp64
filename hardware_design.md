@@ -1559,6 +1559,12 @@ State:
   virtual runtime/deadline contribution, hierarchical quota/period counters,
   dispatch budget, weight index, latency class cap, allowed core-tile mask,
   frozen/quiescing bits, and pressure flags.
+- Resident effective scheduling record consumed by the hot dispatch path:
+  domain id/generation, effective allowed tile mask, effective weight index,
+  effective quota/reservation class, current budget/period counters,
+  latency-class cap, dispatch eligibility, frozen/quiescing/dispatch-denied bits,
+  and accounting generation. This record is computed by `DOMAIN_CTL` lifecycle
+  work or scheduler refill, not by walking the domain tree during dispatch.
 - Bucketed virtual-deadline queues and/or small sorted active windows in FPGA
   RAM, with DDR-backed spill/refill only through Class D scheduler refill
   transactions.
@@ -4046,6 +4052,13 @@ Heap model:
   size-class id, arena id/generation, and domain/accounting id. A window hit
   returns by bumping the cursor and publishing checked metadata without touching
   DDR heap metadata.
+- hot allocation and free consume a resident effective heap-domain record:
+  domain id/generation, heap byte/page budget, precharged allocation-window
+  budget, allowed heap profile (`base_heap` or `hardened_heap`), zero/poison/
+  quarantine policy, large-object/VMA eligibility, shared/DMA eligibility,
+  locality or memory-bank policy, realtime allocation reservation class, and
+  accounting generation. The Heap Engine must not walk the Resource Domain tree
+  on an `ALLOC`/`FREE` hot path.
 - hot free uses per-thread free/quarantine caches and bounded transfer queues.
 - cross-thread frees enter bounded local transfer queues and are batch-drained
   into the owning arena, slab/run, or free cache.
@@ -4525,6 +4538,13 @@ security monotonicity, and upcall routing. Software presentation determines
 whether the child is called a VM, container, cgroup, jail, sandbox, or
 supervisor domain.
 
+V1 uses a **Fixed Monotonic Resource-Domain Tree**. The tree is the only
+ownership, accounting, teardown, and policy-containment structure. Capability
+references, shared memory, queues, and call gates may form graphs across domains,
+but they remain explicit capability edges; they do not change parentage or
+budget ownership. Domain operations are fixed owner-engine transitions, not
+software callbacks or policy bytecode.
+
 Each domain contains:
 
 - parent domain id and generation.
@@ -4568,6 +4588,33 @@ Hard invariants:
 - security policy is monotonic with delegation: a child may become stricter, but
   cannot enable broader executable-memory, DMA, device, entropy, or capability
   transfer authority than its parent delegated.
+
+Algorithmic rules:
+
+- child creation computes effective policy as the monotonic intersection of the
+  parent effective policy and requested child profile. Unsupported or broader
+  requests fail before publication.
+- hot-path checks use cached effective domain records with generation/epoch
+  validation. They must not walk an unbounded ancestor chain during instruction
+  retirement.
+- hierarchy depth is bounded by the implementation profile. Parent-chain checks,
+  quota propagation, and policy recomputation are either bounded by that depth or
+  submitted as Class D domain-engine work.
+- freeze, revoke, destroy, and subtree query use epoch/cancel markers plus
+  bounded cursors. They do not require an immediate full subtree walk before the
+  issuing instruction can retire or park.
+- accounting rollup is single-owner and monotonic: local usage deltas charge the
+  domain and ancestors through bounded counters, cached ancestor vectors, or
+  Class D rollup transactions. A failed or canceled operation rolls back any
+  pre-commit reservations.
+- attaching or detaching a process/thread subtree validates domain generation,
+  scheduler state, outstanding operation ownership, and capability roots before
+  publication; stale attachments fail closed.
+- scheduler and allocator hot paths consume flattened effective records produced
+  by the Domain Engine. Domain lifecycle/control operations may be slower Class D
+  work, but after admission the scheduler, heap, VMA, FDR, DMA, event, and gate
+  engines validate resident domain id/generation and effective policy fields
+  directly.
 
 Linux-style cgroup controllers map directly onto domain fields:
 
