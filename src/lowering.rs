@@ -1477,6 +1477,7 @@ mod tests {
             "clang_userland_lnpsh_object",
             "clang_userland_spawn_task_object",
             "clang_netbsd_loader_target_child_object",
+            "clang_netbsd_elf_exec_parent_object",
             "clang_netbsd_fork_wait_child_object",
             "clang_netbsd_thread_child_object",
             "clang_netbsd_poll_child_object",
@@ -1592,6 +1593,8 @@ mod tests {
             "userland_spawn_task_run_elf",
             "netbsd_loader_target_child_static_link",
             "netbsd_loader_target_child_run_elf",
+            "netbsd_elf_exec_parent_static_link",
+            "netbsd_elf_exec_parent_run_elf",
             "netbsd_fork_wait_child_static_link",
             "netbsd_fork_wait_child_run_elf",
             "netbsd_thread_child_static_link",
@@ -1911,6 +1914,9 @@ mod tests {
         assert!(libc_process_min.contains("__lnp_get_pid"));
         assert!(libc_process_min.contains("int fork(void)"));
         assert!(libc_process_min.contains("int waitpid(int pid, int *status, int options)"));
+        assert!(libc_process_min.contains("int execve(const char *path"));
+        assert!(libc_process_min.contains("int execl(const char *path"));
+        assert!(libc_process_min.contains("lnp64_exec_compat"));
         assert!(libc_process_min.contains("lnp64_fork_compat"));
         assert!(libc_process_min.contains("lnp64_wait_pid_compat"));
         assert!(real_llc.contains("liblnp64-process-min.o"));
@@ -1918,6 +1924,7 @@ mod tests {
         assert!(real_llc.contains("grep -q 'get_pcr r'"));
         assert!(real_llc.contains("grep -q 'fork r'"));
         assert!(real_llc.contains("grep -q 'wait_pid r'"));
+        assert!(real_llc.contains("grep -q 'exec r'"));
         assert!(
             real_llc.contains(
                 "real LLVM LNP64 clang minilibc process implementation object smoke passed"
@@ -2624,6 +2631,9 @@ mod tests {
         assert!(
             real_llc.contains("real LLVM LNP64 clang NetBSD loader target child object passed")
         );
+        assert!(real_llc.contains("userland/elf_exec_test_clang.c"));
+        assert!(real_llc.contains("netbsd-elf-exec-test-clang-smoke.o"));
+        assert!(real_llc.contains("real LLVM LNP64 clang NetBSD ELF exec parent object passed"));
         assert!(real_llc.contains("userland/fork_wait_test_clang.c"));
         assert!(real_llc.contains("netbsd-fork-wait-test-clang-smoke.o"));
         assert!(real_llc.contains(r#"grep -q 'call ' "$netbsd_fork_wait_test_dump""#));
@@ -2806,6 +2816,9 @@ mod tests {
         assert!(real_llc.contains("lnp64-netbsd-loader-target-linked.elf"));
         assert!(real_llc.contains(r#""$netbsd_loader_target_obj" \"#));
         assert!(real_llc.contains("real LLVM LNP64 lld NetBSD loader target child link passed"));
+        assert!(real_llc.contains("lnp64-netbsd-elf-exec-test-linked.elf"));
+        assert!(real_llc.contains(r#""$netbsd_elf_exec_test_obj" \"#));
+        assert!(real_llc.contains("real LLVM LNP64 lld NetBSD ELF exec parent link passed"));
         assert!(real_llc.contains("lnp64-netbsd-fork-wait-test-linked.elf"));
         assert!(real_llc.contains(r#""$netbsd_fork_wait_test_obj" \"#));
         assert!(
@@ -3649,6 +3662,11 @@ mod tests {
                 .contains("real LLVM LNP64 run-elf NetBSD personality clang smoke passed")
         );
         assert!(real_llc_docker.contains("netbsd clang personality smoke ok"));
+        assert!(real_llc_docker.contains("netbsd-elf-exec-fixture-root"));
+        assert!(real_llc_docker.contains("lnp64-netbsd-elf-exec-test-linked.elf"));
+        assert!(real_llc_docker.contains("loader_target ok"));
+        assert!(real_llc_docker.contains("elf_exec_test ok"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf NetBSD ELF exec parent passed"));
         assert!(real_llc_docker.contains("netbsd-namespace-fixture-root"));
         assert!(real_llc_docker.contains("lnp64-netbsd-namespace-test-linked.elf"));
         assert!(real_llc_docker.contains("namespace_test ok"));
@@ -3777,6 +3795,7 @@ mod tests {
         assert!(emulator_source.contains("fn exec_static_elf_image("));
         assert!(emulator_source.contains("committed_exec_opcode_loads_static_elf_child"));
         assert!(emulator_source.contains("crate::loader::load_static_elf"));
+        assert!(emulator_source.contains("0x7f => Instr::Exec(a, b, c)"));
 
         for (stage, status, artifacts, evidence, blocker) in rows {
             assert!(
@@ -3861,6 +3880,7 @@ mod tests {
             "real_userland_lnpsh_execution",
             "real_userland_spawn_task_execution",
             "real_netbsd_loader_target_child_execution",
+            "real_netbsd_elf_exec_parent_execution",
             "real_netbsd_fork_wait_child_execution",
             "real_netbsd_thread_child_execution",
             "real_netbsd_poll_child_execution",
@@ -3961,6 +3981,7 @@ mod tests {
             "real_userland_lnpsh_execution",
             "real_userland_spawn_task_execution",
             "real_netbsd_loader_target_child_execution",
+            "real_netbsd_elf_exec_parent_execution",
             "real_netbsd_fork_wait_child_execution",
             "real_netbsd_thread_child_execution",
             "real_netbsd_poll_child_execution",
@@ -5088,6 +5109,7 @@ mod tests {
             "userland_lnpsh",
             "userland_spawn_task",
             "netbsd_loader_target_child",
+            "netbsd_elf_exec_parent",
             "netbsd_fork_wait_child",
             "netbsd_thread_child",
             "netbsd_poll_child",
@@ -5137,6 +5159,7 @@ mod tests {
         assert_eq!(statuses["userland_lnpsh"], "partial");
         assert_eq!(statuses["userland_spawn_task"], "partial");
         assert_eq!(statuses["netbsd_loader_target_child"], "partial");
+        assert_eq!(statuses["netbsd_elf_exec_parent"], "partial");
         assert_eq!(statuses["netbsd_fork_wait_child"], "partial");
         assert_eq!(statuses["netbsd_thread_child"], "partial");
         assert_eq!(statuses["netbsd_poll_child"], "partial");
@@ -6665,6 +6688,20 @@ mod tests {
         assert!(groups["clone_control"].0.contains("fixed32_clone_control"));
         assert!(groups["clone_control"].1.contains(&"CLONE.SPAWN"));
         assert!(groups["clone_control"].1.contains(&"THREAD_JOIN"));
+        assert!(
+            groups["compat_process_control"]
+                .0
+                .contains("fixed32_compat_process")
+        );
+        assert!(groups["compat_process_control"].1.contains(&"FORK"));
+        assert!(groups["compat_process_control"].1.contains(&"WAIT_PID"));
+        assert!(groups["compat_process_control"].1.contains(&"EXEC"));
+        assert!(mc_emitter.contains("case LNP64::EXEC:"));
+        assert!(mc_emitter.contains("encodeFixed32RRR(0x7f"));
+        assert!(asm_parser.contains(".Case(\"exec\", LNP64::EXEC)"));
+        assert!(inst_printer.contains("case LNP64::EXEC:"));
+        assert!(disassembler.contains("case 0x7f:"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::EXEC)"));
         assert!(
             groups["compat_metadata_control"]
                 .0

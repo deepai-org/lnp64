@@ -1867,6 +1867,7 @@ grep -q 'exit r' "$libc_process_impl_dump"
 grep -q 'get_pcr r' "$libc_process_impl_dump"
 grep -q 'fork r' "$libc_process_impl_dump"
 grep -q 'wait_pid r' "$libc_process_impl_dump"
+grep -q 'exec r' "$libc_process_impl_dump"
 grep -q 'call ' "$libc_process_impl_dump"
 printf 'real LLVM LNP64 clang minilibc process implementation object smoke passed: %s\n' \
   "$libc_process_impl_obj"
@@ -3545,6 +3546,19 @@ netbsd_loader_target_dump="$build_dir/netbsd-loader-target-clang-smoke.dump"
 grep -q 'call ' "$netbsd_loader_target_dump"
 printf 'real LLVM LNP64 clang NetBSD loader target child object passed: %s\n' \
   "$netbsd_loader_target_obj"
+
+netbsd_elf_exec_test_obj="$build_dir/netbsd-elf-exec-test-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
+  -c userland/elf_exec_test_clang.c -o "$netbsd_elf_exec_test_obj"
+test -s "$netbsd_elf_exec_test_obj"
+netbsd_elf_exec_test_dump="$build_dir/netbsd-elf-exec-test-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$netbsd_elf_exec_test_obj" \
+  >"$netbsd_elf_exec_test_dump"
+grep -q 'call ' "$netbsd_elf_exec_test_dump"
+printf 'real LLVM LNP64 clang NetBSD ELF exec parent object passed: %s\n' \
+  "$netbsd_elf_exec_test_obj"
 
 netbsd_fork_wait_test_obj="$build_dir/netbsd-fork-wait-test-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
@@ -5332,6 +5346,15 @@ netbsd_loader_target_elf="$build_dir/lnp64-netbsd-loader-target-linked.elf"
 test -s "$netbsd_loader_target_elf"
 printf 'real LLVM LNP64 lld NetBSD loader target child link passed: %s\n' \
   "$netbsd_loader_target_elf"
+
+netbsd_elf_exec_test_elf="$build_dir/lnp64-netbsd-elf-exec-test-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$netbsd_elf_exec_test_elf" "$crt0_obj" "$netbsd_elf_exec_test_obj" \
+  "$libc_process_impl_obj" "$libc_errno_impl_obj" "$libc_fd_impl_obj" \
+  "$libc_startup_impl_obj"
+test -s "$netbsd_elf_exec_test_elf"
+printf 'real LLVM LNP64 lld NetBSD ELF exec parent link passed: %s\n' \
+  "$netbsd_elf_exec_test_elf"
 
 netbsd_fork_wait_test_elf="$build_dir/lnp64-netbsd-fork-wait-test-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

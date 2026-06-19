@@ -536,6 +536,7 @@ def ERRNO_GET : LNP64RuntimeGet<"errno_get">;
 def ERRNO_SET : LNP64RuntimeSet<"errno_set">;
 def FORK : LNP64RuntimeGet<"fork">;
 def WAIT_PID : LNP64RR<"wait_pid">;
+def EXEC : LNP64RRR<"exec">;
 def GET_PCR : LNP64PcrGet<"get_pcr">;
 def SET_PCR : LNP64PcrSet<"set_pcr">;
 let isTerminator = 1, isBarrier = 1 in

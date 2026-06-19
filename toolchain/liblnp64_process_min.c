@@ -1,5 +1,15 @@
 #include "lnp64_intrinsics.h"
 
+#include <stdarg.h>
+
+enum {
+  LNP64_E2BIG = 7,
+  LNP64_EINVAL = 22,
+};
+
+static char *lnp64_process_empty_environ[1];
+__attribute__((weak)) char **environ = lnp64_process_empty_environ;
+
 __attribute__((weak)) int lnp64_errno_store(int value) {
   __asm__ volatile("errno_set %0"
                    :
@@ -39,6 +49,15 @@ static lnp64_word_t lnp64_wait_pid_compat(lnp64_word_t pid,
   if (status_out)
     *status_out = status;
   return op_status;
+}
+
+static int lnp64_exec_compat(const char *path, char *const argv[],
+                             char *const envp[]) {
+  __asm__ volatile("exec %0, %1, %2"
+                   :
+                   : "r"(path), "r"(argv), "r"(envp)
+                   : "memory");
+  return lnp64_process_error();
 }
 
 static unsigned long lnp64_get_pcr_ppid(void) {
@@ -120,4 +139,41 @@ int waitpid(int pid, int *status, int options) {
 
 int wait(int *status) {
   return waitpid(0, status, 0);
+}
+
+int execve(const char *path, char *const argv[], char *const envp[]) {
+  if (!path) {
+    lnp64_errno_store(LNP64_EINVAL);
+    return -1;
+  }
+  return lnp64_exec_compat(path, argv, envp);
+}
+
+int execv(const char *path, char *const argv[]) {
+  return execve(path, argv, environ);
+}
+
+int execvp(const char *file, char *const argv[]) {
+  return execve(file, argv, environ);
+}
+
+int execl(const char *path, const char *arg, ...) {
+  char *argv[32];
+  int count = 0;
+  const char *item = arg;
+  va_list ap;
+
+  va_start(ap, arg);
+  while (item) {
+    if (count >= 31) {
+      va_end(ap);
+      lnp64_errno_store(LNP64_E2BIG);
+      return -1;
+    }
+    argv[count++] = (char *)item;
+    item = va_arg(ap, const char *);
+  }
+  va_end(ap);
+  argv[count] = 0;
+  return execve(path, argv, environ);
 }

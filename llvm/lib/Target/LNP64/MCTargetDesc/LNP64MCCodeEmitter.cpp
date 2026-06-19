@@ -589,6 +589,12 @@ public:
                                getGPRNo(MI.getOperand(1))),
                OS);
       return;
+    case LNP64::EXEC:
+      emitLE32(encodeFixed32RRR(0x7f, getGPRNo(MI.getOperand(0)),
+                                getGPRNo(MI.getOperand(1)),
+                                getGPRNo(MI.getOperand(2))),
+               OS);
+      return;
     case LNP64::GET_PCR:
       emitLE32((uint32_t(0x54) << 24) |
                    ((getGPRNo(MI.getOperand(0)) & 0x1f) << 19) |

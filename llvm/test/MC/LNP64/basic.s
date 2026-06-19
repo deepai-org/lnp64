@@ -13,6 +13,7 @@
   st.h r5, 26(r31)
   call 0
   call main
+  exec r1, r2, r3
 main:
   ret
 
@@ -26,4 +27,5 @@ main:
 # CHECK: st.h r5, 26(r31)
 # CHECK: call 0
 # CHECK: call main
+# CHECK: exec r1, r2, r3
 # CHECK: ret

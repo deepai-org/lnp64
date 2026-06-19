@@ -180,6 +180,8 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
     return "fork";
   case LNP64::WAIT_PID:
     return "wait_pid";
+  case LNP64::EXEC:
+    return "exec";
   case LNP64::EXIT:
     return "exit";
   case LNP64::ALLOC:
@@ -471,6 +473,7 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::CSEL_UGE:
   case LNP64::CLONE_SPAWN:
   case LNP64::THREAD_JOIN:
+  case LNP64::EXEC:
     OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
     printOperand(MI->getOperand(0), OS);
     OS << ", ";

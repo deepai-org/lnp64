@@ -258,6 +258,20 @@ run_elf_report "real LLVM LNP64 run-elf NetBSD personality clang smoke passed" \
 run_elf_report "real LLVM LNP64 run-elf NetBSD loader target child passed" \
   target/llvm-lnp64-build/lnp64-netbsd-loader-target-linked.elf \
   'loader_target ok'
+netbsd_elf_exec_fixture_root="target/llvm-lnp64-build/netbsd-elf-exec-fixture-root"
+rm -rf "$netbsd_elf_exec_fixture_root"
+mkdir -p "$netbsd_elf_exec_fixture_root/bin"
+cp target/llvm-lnp64-build/lnp64-netbsd-loader-target-linked.elf \
+  "$netbsd_elf_exec_fixture_root/bin/loader_target.elf"
+"$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-netbsd-elf-exec-test-linked.elf \
+  >/dev/null
+netbsd_elf_exec_output="$("$lnp64_bin" run-elf --namespace-root "$netbsd_elf_exec_fixture_root" \
+  target/llvm-lnp64-build/lnp64-netbsd-elf-exec-test-linked.elf)"
+grep -q 'loader_target ok' <<<"$netbsd_elf_exec_output"
+grep -q 'elf_exec_test ok' <<<"$netbsd_elf_exec_output"
+grep -q 'exit=0' <<<"$netbsd_elf_exec_output"
+printf 'real LLVM LNP64 run-elf NetBSD ELF exec parent passed: %s\n' \
+  target/llvm-lnp64-build/lnp64-netbsd-elf-exec-test-linked.elf
 run_elf_report "real LLVM LNP64 run-elf NetBSD fork/wait child passed" \
   target/llvm-lnp64-build/lnp64-netbsd-fork-wait-test-linked.elf \
   'fork_wait_test ok'

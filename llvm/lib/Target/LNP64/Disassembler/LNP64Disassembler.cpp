@@ -555,6 +555,12 @@ public:
       addReg(Instr, A);
       addReg(Instr, B);
       return MCDisassembler::Success;
+    case 0x7f:
+      Instr.setOpcode(LNP64::EXEC);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
     case 0x3a:
       Instr.setOpcode(LNP64::EXIT);
       addReg(Instr, A);

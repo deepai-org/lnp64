@@ -412,6 +412,7 @@ private:
             .Case("errno_set", LNP64::ERRNO_SET)
             .Case("fork", LNP64::FORK)
             .Case("wait_pid", LNP64::WAIT_PID)
+            .Case("exec", LNP64::EXEC)
             .Case("exit", LNP64::EXIT)
             .Case("alloc", LNP64::ALLOC)
             .Case("alloc_ex", LNP64::ALLOC_EX)
@@ -502,6 +503,7 @@ private:
         Opcode == LNP64::UREM || Opcode == LNP64::MULH ||
         Opcode == LNP64::MULHU || Opcode == LNP64::MULHSU ||
         Opcode == LNP64::CLONE_SPAWN || Opcode == LNP64::THREAD_JOIN ||
+        Opcode == LNP64::EXEC ||
         Opcode == LNP64::AMO_SWAP || Opcode == LNP64::AMO_ADD ||
         Opcode == LNP64::AMO_AND || Opcode == LNP64::AMO_OR ||
         Opcode == LNP64::AMO_XOR || Opcode == LNP64::ISYNC ||

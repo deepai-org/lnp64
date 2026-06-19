@@ -1943,6 +1943,7 @@ impl Machine {
             }
             0x7d => Instr::Fork(a),
             0x7e => Instr::WaitPid(a, b),
+            0x7f => Instr::Exec(a, b, c),
             0xcb => Instr::FutexWait(a, b),
             0xcc => Instr::FutexWake(a, b),
             0xcd => Instr::Fence,
