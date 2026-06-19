@@ -6053,10 +6053,10 @@ mod tests {
         assert!(run_demos.contains("for src in demos/*.s"));
         assert!(!run_netbsd_smoke.contains("cc --toy-bootstrap"));
         assert!(!run_netbsd_smoke.contains("--legacy-toy"));
-        assert!(
-            run_userland.contains("usage: scripts/run_userland.sh [--backend llvm] [--legacy-toy]")
-        );
-        assert!(run_userland.contains("toy backend is legacy-only; use --legacy-toy"));
+        assert!(run_userland.contains("usage: scripts/run_userland.sh [--backend llvm]"));
+        assert!(!run_userland.contains("--legacy-toy"));
+        assert!(!run_userland.contains("cc --toy-bootstrap"));
+        assert!(run_userland.contains("toy backend has been removed"));
         assert!(!run_userland.contains("[--backend llvm|toy]"));
         assert!(run_netbsd_smoke.contains("LNP64_LLVM_PACKAGE_FILTER=netbsd"));
         assert!(run_netbsd_smoke.contains("scripts/run_real_llvm_package_gate.sh"));
@@ -6320,7 +6320,6 @@ mod tests {
             );
         }
         for (surface, expected_status) in [
-            ("minimal_userland_image", "partial"),
             ("netbsd_personality_system", "partial"),
             ("legacy_libc_test_backend", "partial"),
             ("rtl_c_program_smoke", "partial"),
@@ -6493,7 +6492,6 @@ mod tests {
         }
 
         for (surface, expected_status) in [
-            ("minimal_userland_image", "partial"),
             ("netbsd_personality_system", "partial"),
             ("legacy_libc_test_backend", "partial"),
             ("rtl_c_program_smoke", "partial"),

@@ -355,8 +355,8 @@ NetBSD policy. Those remain loader, libc, and personality responsibilities.
 5. Keep moving the NetBSD personality system gate from toy-compiled `.s`
    programs to Clang/lld produced ELF inputs. The default gate now runs a
    Clang/lld/run-elf init/shell root plus child ELF set; remaining
-   `--legacy-toy` coverage is limited to larger host-directory system paths that
-   still lack full real-toolchain replacements.
+   `--legacy-toy` coverage is limited to larger NetBSD host-directory system
+   paths that still lack full real-toolchain replacements.
 6. Consider a fuller `evb-lnp64` machine port only after rump-style services
    and static userland are credible.
 
