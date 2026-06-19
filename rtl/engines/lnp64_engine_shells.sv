@@ -693,6 +693,8 @@ module lnp64_cap_engine(
     output lnp64_rsp_t rsp,
     output logic m1_commit_valid,
     output lnp64_m1_cap_commit_t m1_commit,
+    output lnp64_m1_state_projection_t m1_pre_state_projection,
+    output lnp64_m1_state_projection_t m1_state_projection,
     output logic [31:0] telemetry_counter,
     output logic [31:0] fault_counter
 );
@@ -700,6 +702,8 @@ module lnp64_cap_engine(
     lnp64_rsp_t rsp_reg;
     logic m1_commit_valid_reg;
     lnp64_m1_cap_commit_t m1_commit_reg;
+    lnp64_m1_state_projection_t m1_pre_state_projection_reg;
+    lnp64_m1_state_projection_t m1_state_projection_reg;
     logic fdr_valid [0:LNP64_FDR_SLOT_COUNT-1];
     logic fdr_revoked [0:LNP64_FDR_SLOT_COUNT-1];
     logic [63:0] fdr_generation [0:LNP64_FDR_SLOT_COUNT-1];
@@ -717,6 +721,60 @@ module lnp64_cap_engine(
     assign rsp = rsp_reg;
     assign m1_commit_valid = m1_commit_valid_reg;
     assign m1_commit = m1_commit_reg;
+    assign m1_pre_state_projection = m1_pre_state_projection_reg;
+    assign m1_state_projection = m1_state_projection_reg;
+
+    function automatic lnp64_m1_state_projection_t build_m1_state_projection(
+        input logic [7:0] op,
+        input logic [15:0] status,
+        input int unsigned root_fd,
+        input int unsigned consumer_fd
+    );
+        lnp64_m1_state_projection_t projection;
+        begin
+            projection = '0;
+            projection.op = op;
+            projection.status = status;
+            if (root_fd < LNP64_FDR_SLOT_COUNT) begin
+                projection.object_gen = fdr_generation[root_fd][31:0];
+                projection.root_object_id = fdr_lineage[root_fd][31:0];
+                projection.root_generation = fdr_generation[root_fd][31:0];
+                projection.root_domain_id = 32'd1;
+                projection.root_lineage_epoch = fdr_lineage[root_fd][31:0];
+                projection.root_sealed = 1'b0;
+                projection.root_rights = (fdr_valid[root_fd] && !fdr_revoked[root_fd]) ?
+                    fdr_rights[root_fd] : 64'd0;
+                projection.has_revoked_generation = fdr_revoked[root_fd];
+                projection.revoked_generation = fdr_revoked[root_fd] ?
+                    fdr_generation[root_fd][31:0] : 32'd0;
+            end
+            if (consumer_fd < LNP64_FDR_SLOT_COUNT) begin
+                projection.consumer_object_id = fdr_lineage[consumer_fd][31:0];
+                projection.consumer_generation = fdr_generation[consumer_fd][31:0];
+                projection.consumer_domain_id = 32'd2;
+                projection.consumer_lineage_epoch = fdr_lineage[consumer_fd][31:0];
+                projection.consumer_sealed = 1'b0;
+                projection.consumer_rights = (fdr_valid[consumer_fd] && !fdr_revoked[consumer_fd]) ?
+                    fdr_rights[consumer_fd] : 64'd0;
+            end
+            projection.sent_valid = cap_queue_valid && !cap_queue_revoked;
+            if (projection.sent_valid) begin
+                projection.sent_object_id = cap_queue_lineage[31:0];
+                projection.sent_generation = cap_queue_generation[31:0];
+                projection.sent_domain_id = 32'd2;
+                projection.sent_lineage_epoch = cap_queue_lineage[31:0];
+                projection.sent_sealed = 1'b0;
+                projection.sent_rights = cap_queue_rights;
+            end
+            projection.transfer_valid = projection.sent_valid;
+            projection.stale_rejected = status == LNP64_ERR_ESTALE;
+            projection.revoked_rejected = status == LNP64_ERR_ESTALE;
+            projection.failed_no_authority =
+                status == LNP64_ERR_EPERM || status == LNP64_ERR_EBADF;
+            projection.full_was_explicit = status == LNP64_ERR_EAGAIN;
+            build_m1_state_projection = projection;
+        end
+    endfunction
 
     function automatic int unsigned cap_fd(input logic [63:0] value);
         logic [63:0] fd_bits;
@@ -760,6 +818,8 @@ module lnp64_cap_engine(
             rsp_reg <= '0;
             m1_commit_valid_reg <= 1'b0;
             m1_commit_reg <= '0;
+            m1_pre_state_projection_reg <= '0;
+            m1_state_projection_reg <= '0;
             telemetry_counter <= 32'd0;
             fault_counter <= 32'd0;
             cap_queue_valid <= 1'b0;
@@ -831,6 +891,8 @@ module lnp64_cap_engine(
                 telemetry_counter <= telemetry_counter + 32'd1;
                 rsp_reg <= '0;
                 m1_commit_reg <= '0;
+                m1_pre_state_projection_reg <= '0;
+                m1_state_projection_reg <= '0;
                 unique case (cmd.opcode)
                     LNP64_OP_CAP_DUP: m1_commit_reg.op <= LNP64_M1_COMMIT_CAP_DUP;
                     LNP64_OP_CAP_SEND: m1_commit_reg.op <= LNP64_M1_COMMIT_CAP_SEND;
@@ -877,19 +939,35 @@ module lnp64_cap_engine(
                         rsp_reg.errno_value <= LNP64_ERR_EINVAL;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
                         m1_commit_reg.status <= LNP64_ERR_EINVAL;
+                        m1_pre_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_DUP, LNP64_ERR_EINVAL, src_fd, dst_fd);
+                        m1_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_DUP, LNP64_ERR_EINVAL, src_fd, dst_fd);
                     end else if (src_stale) begin
                         rsp_reg.errno_value <= LNP64_ERR_ESTALE;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
                         m1_commit_reg.status <= LNP64_ERR_ESTALE;
+                        m1_pre_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_DUP, LNP64_ERR_ESTALE, src_fd, dst_fd);
+                        m1_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_DUP, LNP64_ERR_ESTALE, src_fd, dst_fd);
                     end else if (!src_live || dst_fd >= LNP64_FDR_SLOT_COUNT) begin
                         rsp_reg.errno_value <= LNP64_ERR_EBADF;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
                         m1_commit_reg.status <= LNP64_ERR_EBADF;
+                        m1_pre_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_DUP, LNP64_ERR_EBADF, src_fd, dst_fd);
+                        m1_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_DUP, LNP64_ERR_EBADF, src_fd, dst_fd);
                     end else if ((fdr_rights[src_fd] & LNP64_CAP_RIGHT_DUP) == 64'd0 ||
                         ((dup_rights & ~fdr_rights[src_fd]) != 64'd0)) begin
                         rsp_reg.errno_value <= LNP64_ERR_EPERM;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
                         m1_commit_reg.status <= LNP64_ERR_EPERM;
+                        m1_pre_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_DUP, LNP64_ERR_EPERM, src_fd, dst_fd);
+                        m1_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_DUP, LNP64_ERR_EPERM, src_fd, dst_fd);
                     end else begin
                         next_generation = fdr_generation[dst_fd] + 64'd1;
                         fdr_valid[dst_fd] <= 1'b1;
@@ -908,6 +986,18 @@ module lnp64_cap_engine(
                         m1_commit_reg.lineage_epoch <= fdr_lineage[src_fd][31:0];
                         m1_commit_reg.sealed <= (cmd.flags & LNP64_CAP_DUP_FLAG_SEAL) != 64'd0;
                         m1_commit_reg.status <= LNP64_ERR_OK;
+                        m1_pre_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_DUP, LNP64_ERR_OK, src_fd, dst_fd);
+                        m1_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_DUP, LNP64_ERR_OK, src_fd, dst_fd);
+                        m1_state_projection_reg.object_gen <= next_generation[31:0];
+                        m1_state_projection_reg.consumer_object_id <= fdr_lineage[src_fd][31:0];
+                        m1_state_projection_reg.consumer_generation <= next_generation[31:0];
+                        m1_state_projection_reg.consumer_domain_id <= 32'd2;
+                        m1_state_projection_reg.consumer_lineage_epoch <= fdr_lineage[src_fd][31:0];
+                        m1_state_projection_reg.consumer_sealed <=
+                            (cmd.flags & LNP64_CAP_DUP_FLAG_SEAL) != 64'd0;
+                        m1_state_projection_reg.consumer_rights <= dup_rights;
                     end
                 end else if (cmd.opcode == LNP64_OP_CAP_SEND) begin
                     src_fd = cap_fd(cmd.arg0);
@@ -924,6 +1014,10 @@ module lnp64_cap_engine(
                         rsp_reg.errno_value <= LNP64_ERR_EINVAL;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
                         m1_commit_reg.status <= LNP64_ERR_EINVAL;
+                        m1_pre_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_SEND, LNP64_ERR_EINVAL, src_fd, payload_fd);
+                        m1_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_SEND, LNP64_ERR_EINVAL, src_fd, payload_fd);
                     end else if (!src_live ||
                         fdr_kind[src_fd] != LNP64_FDR_KIND_PIPE_WRITER ||
                         ((fdr_rights[src_fd] &
@@ -932,18 +1026,34 @@ module lnp64_cap_engine(
                         rsp_reg.errno_value <= LNP64_ERR_EBADF;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
                         m1_commit_reg.status <= LNP64_ERR_EBADF;
+                        m1_pre_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_SEND, LNP64_ERR_EBADF, src_fd, payload_fd);
+                        m1_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_SEND, LNP64_ERR_EBADF, src_fd, payload_fd);
                     end else if (!payload_live) begin
                         rsp_reg.errno_value <= LNP64_ERR_EBADF;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
                         m1_commit_reg.status <= LNP64_ERR_EBADF;
+                        m1_pre_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_SEND, LNP64_ERR_EBADF, src_fd, payload_fd);
+                        m1_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_SEND, LNP64_ERR_EBADF, src_fd, payload_fd);
                     end else if ((fdr_rights[payload_fd] & LNP64_CAP_RIGHT_TRANSFER) == 64'd0) begin
                         rsp_reg.errno_value <= LNP64_ERR_EPERM;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
                         m1_commit_reg.status <= LNP64_ERR_EPERM;
+                        m1_pre_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_SEND, LNP64_ERR_EPERM, src_fd, payload_fd);
+                        m1_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_SEND, LNP64_ERR_EPERM, src_fd, payload_fd);
                     end else if (cap_queue_valid) begin
                         rsp_reg.errno_value <= LNP64_ERR_EAGAIN;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
                         m1_commit_reg.status <= LNP64_ERR_EAGAIN;
+                        m1_pre_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_SEND, LNP64_ERR_EAGAIN, src_fd, payload_fd);
+                        m1_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_SEND, LNP64_ERR_EAGAIN, src_fd, payload_fd);
                     end else begin
                         cap_queue_valid <= 1'b1;
                         cap_queue_rights <= fdr_rights[payload_fd];
@@ -954,6 +1064,18 @@ module lnp64_cap_engine(
                         rsp_reg.errno_value <= LNP64_ERR_OK;
                         rsp_reg.status <= LNP64_STATUS_OK;
                         m1_commit_reg.status <= LNP64_ERR_OK;
+                        m1_pre_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_SEND, LNP64_ERR_OK, src_fd, payload_fd);
+                        m1_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_SEND, LNP64_ERR_OK, src_fd, payload_fd);
+                        m1_state_projection_reg.sent_valid <= 1'b1;
+                        m1_state_projection_reg.sent_object_id <= fdr_lineage[payload_fd][31:0];
+                        m1_state_projection_reg.sent_generation <= fdr_generation[payload_fd][31:0];
+                        m1_state_projection_reg.sent_domain_id <= 32'd2;
+                        m1_state_projection_reg.sent_lineage_epoch <= fdr_lineage[payload_fd][31:0];
+                        m1_state_projection_reg.sent_sealed <= 1'b0;
+                        m1_state_projection_reg.sent_rights <= fdr_rights[payload_fd];
+                        m1_state_projection_reg.transfer_valid <= 1'b1;
                     end
                     if (payload_fd < LNP64_FDR_SLOT_COUNT) begin
                         m1_commit_reg.object_id <= fdr_lineage[payload_fd][31:0];
@@ -976,6 +1098,10 @@ module lnp64_cap_engine(
                         rsp_reg.errno_value <= LNP64_ERR_EINVAL;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
                         m1_commit_reg.status <= LNP64_ERR_EINVAL;
+                        m1_pre_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_RECV, LNP64_ERR_EINVAL, src_fd, dst_fd);
+                        m1_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_RECV, LNP64_ERR_EINVAL, src_fd, dst_fd);
                     end else if (!src_live ||
                         fdr_kind[src_fd] != LNP64_FDR_KIND_PIPE_READER ||
                         ((fdr_rights[src_fd] &
@@ -984,22 +1110,42 @@ module lnp64_cap_engine(
                         rsp_reg.errno_value <= LNP64_ERR_EBADF;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
                         m1_commit_reg.status <= LNP64_ERR_EBADF;
+                        m1_pre_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_RECV, LNP64_ERR_EBADF, src_fd, dst_fd);
+                        m1_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_RECV, LNP64_ERR_EBADF, src_fd, dst_fd);
                     end else if (!cap_queue_valid) begin
                         rsp_reg.errno_value <= LNP64_ERR_EAGAIN;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
                         m1_commit_reg.status <= LNP64_ERR_EAGAIN;
+                        m1_pre_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_RECV, LNP64_ERR_EAGAIN, src_fd, dst_fd);
+                        m1_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_RECV, LNP64_ERR_EAGAIN, src_fd, dst_fd);
                     end else if (cap_queue_revoked) begin
                         rsp_reg.errno_value <= LNP64_ERR_ESTALE;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
                         m1_commit_reg.status <= LNP64_ERR_ESTALE;
+                        m1_pre_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_RECV, LNP64_ERR_ESTALE, src_fd, dst_fd);
+                        m1_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_RECV, LNP64_ERR_ESTALE, src_fd, dst_fd);
                     end else if ((recv_rights & ~cap_queue_rights) != 64'd0) begin
                         rsp_reg.errno_value <= LNP64_ERR_EPERM;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
                         m1_commit_reg.status <= LNP64_ERR_EPERM;
+                        m1_pre_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_RECV, LNP64_ERR_EPERM, src_fd, dst_fd);
+                        m1_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_RECV, LNP64_ERR_EPERM, src_fd, dst_fd);
                     end else if (dst_fd >= LNP64_FDR_SLOT_COUNT) begin
                         rsp_reg.errno_value <= LNP64_ERR_EBADF;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
                         m1_commit_reg.status <= LNP64_ERR_EBADF;
+                        m1_pre_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_RECV, LNP64_ERR_EBADF, src_fd, dst_fd);
+                        m1_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_RECV, LNP64_ERR_EBADF, src_fd, dst_fd);
                     end else begin
                         next_generation = fdr_generation[dst_fd] + 64'd1;
                         cap_queue_valid <= 1'b0;
@@ -1016,6 +1162,25 @@ module lnp64_cap_engine(
                         m1_commit_reg.object_gen <= next_generation[31:0];
                         m1_commit_reg.fdr_gen <= next_generation[31:0];
                         m1_commit_reg.status <= LNP64_ERR_OK;
+                        m1_pre_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_RECV, LNP64_ERR_OK, src_fd, dst_fd);
+                        m1_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_RECV, LNP64_ERR_OK, src_fd, dst_fd);
+                        m1_state_projection_reg.object_gen <= next_generation[31:0];
+                        m1_state_projection_reg.consumer_object_id <= cap_queue_lineage[31:0];
+                        m1_state_projection_reg.consumer_generation <= next_generation[31:0];
+                        m1_state_projection_reg.consumer_domain_id <= 32'd2;
+                        m1_state_projection_reg.consumer_lineage_epoch <= cap_queue_lineage[31:0];
+                        m1_state_projection_reg.consumer_sealed <= 1'b0;
+                        m1_state_projection_reg.consumer_rights <= recv_rights;
+                        m1_state_projection_reg.sent_valid <= 1'b0;
+                        m1_state_projection_reg.sent_object_id <= 32'd0;
+                        m1_state_projection_reg.sent_generation <= 32'd0;
+                        m1_state_projection_reg.sent_domain_id <= 32'd0;
+                        m1_state_projection_reg.sent_lineage_epoch <= 32'd0;
+                        m1_state_projection_reg.sent_sealed <= 1'b0;
+                        m1_state_projection_reg.sent_rights <= 64'd0;
+                        m1_state_projection_reg.transfer_valid <= 1'b0;
                     end
                     if (cap_queue_valid) begin
                         m1_commit_reg.object_id <= cap_queue_lineage[31:0];
@@ -1057,6 +1222,10 @@ module lnp64_cap_engine(
                         rsp_reg.errno_value <= LNP64_ERR_ESTALE;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
                         m1_commit_reg.status <= LNP64_ERR_ESTALE;
+                        m1_pre_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_REVOKE, LNP64_ERR_ESTALE, src_fd, src_fd);
+                        m1_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_REVOKE, LNP64_ERR_ESTALE, src_fd, src_fd);
                     end else if (src_live && ((fdr_rights[src_fd] & LNP64_CAP_RIGHT_REVOKE) != 64'd0)) begin
                         next_generation = fdr_generation[src_fd] + 64'd1;
                         for (i = 0; i < LNP64_FDR_SLOT_COUNT; i = i + 1) begin
@@ -1076,16 +1245,40 @@ module lnp64_cap_engine(
                         m1_commit_reg.object_gen <= next_generation[31:0];
                         m1_commit_reg.fdr_gen <= next_generation[31:0];
                         m1_commit_reg.status <= LNP64_ERR_OK;
+                        m1_pre_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_REVOKE, LNP64_ERR_OK, src_fd, src_fd);
+                        m1_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_REVOKE, LNP64_ERR_OK, src_fd, src_fd);
+                        m1_state_projection_reg.object_gen <= next_generation[31:0];
+                        m1_state_projection_reg.root_generation <= next_generation[31:0];
+                        m1_state_projection_reg.root_rights <= 64'd0;
+                        m1_state_projection_reg.has_revoked_generation <= 1'b1;
+                        m1_state_projection_reg.revoked_generation <= next_generation[31:0];
+                        m1_state_projection_reg.consumer_generation <= next_generation[31:0];
+                        m1_state_projection_reg.consumer_rights <= 64'd0;
+                        if (cap_queue_valid && !cap_queue_revoked &&
+                            cap_queue_lineage == fdr_lineage[src_fd]) begin
+                            m1_state_projection_reg.sent_valid <= 1'b0;
+                            m1_state_projection_reg.transfer_valid <= 1'b0;
+                        end
                     end else if (src_fd < LNP64_FDR_SLOT_COUNT && fdr_valid[src_fd] &&
                         !fdr_revoked[src_fd] &&
                         ((fdr_rights[src_fd] & LNP64_CAP_RIGHT_REVOKE) == 64'd0)) begin
                         rsp_reg.errno_value <= LNP64_ERR_EPERM;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
                         m1_commit_reg.status <= LNP64_ERR_EPERM;
+                        m1_pre_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_REVOKE, LNP64_ERR_EPERM, src_fd, src_fd);
+                        m1_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_REVOKE, LNP64_ERR_EPERM, src_fd, src_fd);
                     end else begin
                         rsp_reg.errno_value <= LNP64_ERR_EBADF;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
                         m1_commit_reg.status <= LNP64_ERR_EBADF;
+                        m1_pre_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_REVOKE, LNP64_ERR_EBADF, src_fd, src_fd);
+                        m1_state_projection_reg <= build_m1_state_projection(
+                            LNP64_M1_COMMIT_CAP_REVOKE, LNP64_ERR_EBADF, src_fd, src_fd);
                     end
                 end
             end
