@@ -1995,6 +1995,7 @@ libc_futex_impl_c="toolchain/liblnp64_futex_min.c"
 libc_futex_impl_obj="$build_dir/liblnp64-futex-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$libc_futex_impl_c" -o "$libc_futex_impl_obj"
 test -s "$libc_futex_impl_obj"
 libc_futex_impl_dump="$build_dir/liblnp64-futex-min.dump"
@@ -3934,10 +3935,7 @@ printf 'real LLVM LNP64 clang mmap libc object smoke passed: %s\n' \
 
 futex_libc_c="$build_dir/futex-libc-smoke.c"
 cat >"$futex_libc_c" <<'C'
-typedef unsigned long lnp64_word_t;
-
-int futex_wait(volatile lnp64_word_t *addr, lnp64_word_t expected);
-int futex_wake(volatile lnp64_word_t *addr, lnp64_word_t count);
+#include <lnp64/futex.h>
 
 static volatile lnp64_word_t futex_cell = 1;
 
@@ -3951,6 +3949,7 @@ C
 futex_libc_obj="$build_dir/futex-libc-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$futex_libc_c" -o "$futex_libc_obj"
 test -s "$futex_libc_obj"
 futex_libc_dump="$build_dir/futex-libc-clang-smoke.dump"

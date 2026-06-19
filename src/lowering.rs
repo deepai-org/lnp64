@@ -1384,6 +1384,7 @@ mod tests {
         let libc_time_min = include_str!("../toolchain/liblnp64_time_min.c");
         let libc_vma_min = include_str!("../toolchain/liblnp64_vma_min.c");
         let libc_futex_min = include_str!("../toolchain/liblnp64_futex_min.c");
+        let lnp64_futex_header = include_str!("../toolchain/include/lnp64/futex.h");
         let libc_pthread_min = include_str!("../toolchain/liblnp64_pthread_min.c");
         let libc_sem_min = include_str!("../toolchain/liblnp64_sem_min.c");
         let libc_poll_min = include_str!("../toolchain/liblnp64_poll_min.c");
@@ -2318,9 +2319,13 @@ mod tests {
         assert!(real_llc.contains(r#""$libc_stdio_impl_obj" "$libc_string_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld libc-test fgets-eof link smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_futex_min.c"));
+        assert!(lnp64_futex_header.contains("int futex_wait("));
+        assert!(lnp64_futex_header.contains("int futex_wake("));
+        assert!(libc_futex_min.contains("#include <lnp64/futex.h>"));
         assert!(libc_futex_min.contains("__lnp_futex_wait"));
         assert!(libc_futex_min.contains("__lnp_futex_wake"));
         assert!(real_llc.contains("liblnp64-futex-min.o"));
+        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_futex_impl_c\""));
         assert!(real_llc.contains("grep -q 'futex_wait r'"));
         assert!(real_llc.contains("grep -q 'futex_wake r'"));
         assert!(
@@ -2329,8 +2334,8 @@ mod tests {
             )
         );
         assert!(real_llc.contains("futex-libc-clang-smoke.o"));
-        assert!(real_llc.contains("futex_wait(volatile lnp64_word_t *addr"));
-        assert!(real_llc.contains("futex_wake(volatile lnp64_word_t *addr"));
+        assert!(real_llc.contains("#include <lnp64/futex.h>"));
+        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$futex_libc_c\""));
         assert!(real_llc.contains("real LLVM LNP64 clang futex libc object smoke passed"));
         assert!(pthread_header.contains("int pthread_create("));
         assert!(pthread_header.contains("int pthread_key_create("));

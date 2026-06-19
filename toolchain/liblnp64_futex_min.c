@@ -1,3 +1,5 @@
+#include <lnp64/futex.h>
+
 #include "lnp64_intrinsics.h"
 
 int futex_wait(volatile lnp64_word_t *addr, lnp64_word_t expected) {
