@@ -658,6 +658,35 @@ def stateMatchesRtlProjection
     (projection : RtlM1StateProjection) : Prop :=
   projection = stateProjectionOf s
 
+def rtlM1ProjectionFaithful
+    (s : State)
+    (projection : RtlM1StateProjection) : Prop :=
+  projection.objectGeneration = s.object.generation /\
+  projection.createdObjectCreated = s.createdObject.created /\
+  projection.createdObjectGeneration = s.createdObject.generation /\
+  projection.rootCap = s.rootCap /\
+  projection.consumerCap = s.consumerCap /\
+  projection.sentCap = s.sentCap /\
+  projection.mintedCap = s.mintedCap /\
+  projection.wakePending = s.wakePending /\
+  projection.transferValid = s.transferValid /\
+  projection.staleRejected = s.staleRejected /\
+  projection.revokedRejected = s.revokedRejected /\
+  projection.failedNoAuthority = s.failedNoAuthority /\
+  projection.fullWasExplicit = s.fullWasExplicit /\
+  projection.hasRevokedGeneration = s.hasRevokedGeneration /\
+  projection.revokedGeneration = s.revokedGeneration
+
+theorem stateMatchesRtlProjection_projection_faithful
+    {s : State}
+    {projection : RtlM1StateProjection} :
+    stateMatchesRtlProjection s projection ->
+    rtlM1ProjectionFaithful s projection := by
+  intro hProjection
+  rw [stateMatchesRtlProjection] at hProjection
+  rw [hProjection]
+  simp [rtlM1ProjectionFaithful, stateProjectionOf]
+
 def capDupCommit (s : State) : CommitRecord :=
   commitFromCap CommitOp.capDup (consumerPullCap s) s.object.generation CommitStatus.ok
 
@@ -1152,6 +1181,28 @@ theorem rtl_m1_refinement_step_refines_commit_projection_op
   rw [commitMatchesRtlProjection, commitProjectionToRecord] at hCommitProjection
   subst commit
   simpa using typed_commit_transition_refines_step hCommit
+
+theorem rtl_m1_refinement_step_projection_faithful
+    {pre : RtlM1StateProjection}
+    {commitProjection : RtlM1CommitProjection}
+    {post : RtlM1StateProjection} :
+    RtlM1RefinementStep pre commitProjection post ->
+      exists s t commit,
+        rtlM1ProjectionFaithful s pre /\
+        commitMatchesRtlProjection commit commitProjection /\
+        TypedCommitTransition s commit t /\
+        rtlM1ProjectionFaithful t post := by
+  intro hRefine
+  rcases hRefine with ⟨s, t, commit, hPre, hCommitProjection, hCommit, hPost⟩
+  exact ⟨
+    s,
+    t,
+    commit,
+    stateMatchesRtlProjection_projection_faithful hPre,
+    hCommitProjection,
+    hCommit,
+    stateMatchesRtlProjection_projection_faithful hPost
+  ⟩
 
 theorem rtl_m1_refinement_step_preserves_sg_auth_invariant
     {pre : RtlM1StateProjection}
