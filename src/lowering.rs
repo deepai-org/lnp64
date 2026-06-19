@@ -6116,6 +6116,7 @@ mod tests {
             "demos/allocator.c",
             "demos/hello.c",
             "demos/factorial.c",
+            "demos/fibonacci.c",
             "demos/rot13.c",
         ] {
             let toy_entry = entry_for(toy_source);
@@ -6138,6 +6139,10 @@ mod tests {
             (
                 "tests/rtl/programs/top_linked_factorial_native.c",
                 "push_pull",
+            ),
+            (
+                "tests/rtl/programs/top_linked_fibonacci_native.c",
+                "call_return",
             ),
             (
                 "tests/rtl/programs/top_linked_divrem.c",
