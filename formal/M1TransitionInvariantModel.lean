@@ -1420,6 +1420,27 @@ def RtlM1RefinementStep
     TypedCommitTransition s commit t /\
     stateMatchesRtlProjection t post
 
+def RtlM1TopRefinementStep
+    (pre : RtlM1TopStateProjection)
+    (commitProjection : RtlM1TopCommitProjection)
+    (post : RtlM1TopStateProjection) : Prop :=
+  RtlM1RefinementStep
+    (topStateProjectionToRtlM1StateProjection pre)
+    (topCommitProjectionToRtlM1CommitProjection commitProjection)
+    (topStateProjectionToRtlM1StateProjection post)
+
+theorem top_m1_refinement_step_refines_modeled_step
+    {pre : RtlM1TopStateProjection}
+    {commitProjection : RtlM1TopCommitProjection}
+    {post : RtlM1TopStateProjection} :
+    RtlM1TopRefinementStep pre commitProjection post ->
+    RtlM1RefinementStep
+      (topStateProjectionToRtlM1StateProjection pre)
+      (topCommitProjectionToRtlM1CommitProjection commitProjection)
+      (topStateProjectionToRtlM1StateProjection post) := by
+  intro hRefine
+  exact hRefine
+
 structure RtlM1PackedRefinementStep
     (preBits commitBits postBits : Nat) where
   commitProjection : RtlM1CommitProjection
@@ -1946,6 +1967,20 @@ theorem rtl_m1_refinement_step_preserves_sg_auth_invariant
   intro hRefine hPreInvariant
   rcases hRefine with ⟨s, t, commit, hPre, _hCommitProjection, hCommit, hPost⟩
   exact ⟨t, hPost, typed_commit_transition_preserves_invariant (hPreInvariant s hPre) hCommit⟩
+
+theorem top_m1_refinement_step_preserves_sg_auth_invariant
+    {pre : RtlM1TopStateProjection}
+    {commitProjection : RtlM1TopCommitProjection}
+    {post : RtlM1TopStateProjection} :
+    RtlM1TopRefinementStep pre commitProjection post ->
+    (forall s,
+      stateMatchesRtlProjection s (topStateProjectionToRtlM1StateProjection pre) ->
+      invariant s) ->
+    exists t,
+      stateMatchesRtlProjection t (topStateProjectionToRtlM1StateProjection post) /\
+      invariant t := by
+  intro hRefine hPreInvariant
+  exact rtl_m1_refinement_step_preserves_sg_auth_invariant hRefine hPreInvariant
 
 theorem rtl_m1_packed_refinement_step_preserves_sg_auth_invariant
     {preBits commitBits postBits : Nat} :
