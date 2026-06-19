@@ -2572,6 +2572,20 @@ grep -q 'call ' "$libc_test_search_insque_dump"
 printf 'real LLVM LNP64 clang libc-test search_insque object smoke passed: %s\n' \
   "$libc_test_search_insque_obj"
 
+libc_test_malloc_0_obj="$build_dir/libc-test-malloc-0-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain/include \
+  -I third_party/libc-test/functional \
+  -c third_party/libc-test/regression/malloc-0.c \
+  -o "$libc_test_malloc_0_obj"
+test -s "$libc_test_malloc_0_obj"
+libc_test_malloc_0_dump="$build_dir/libc-test-malloc-0-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_test_malloc_0_obj" \
+  >"$libc_test_malloc_0_dump"
+grep -q 'call ' "$libc_test_malloc_0_dump"
+printf 'real LLVM LNP64 clang libc-test malloc-0 object smoke passed: %s\n' \
+  "$libc_test_malloc_0_obj"
+
 convert_c="$build_dir/convert-smoke.c"
 cat >"$convert_c" <<'C'
 int *__errno_location(void);
@@ -4284,6 +4298,15 @@ libc_test_search_insque_elf="$build_dir/lnp64-libc-test-search-insque-linked.elf
 test -s "$libc_test_search_insque_elf"
 printf 'real LLVM LNP64 lld libc-test search_insque link smoke passed: %s\n' \
   "$libc_test_search_insque_elf"
+
+libc_test_malloc_0_elf="$build_dir/lnp64-libc-test-malloc-0-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$libc_test_malloc_0_elf" "$crt0_obj" "$libc_test_malloc_0_obj" \
+  "$libc_test_print_obj" "$libc_alloc_impl_obj" "$libc_string_impl_obj" \
+  "$libc_fd_impl_obj"
+test -s "$libc_test_malloc_0_elf"
+printf 'real LLVM LNP64 lld libc-test malloc-0 link smoke passed: %s\n' \
+  "$libc_test_malloc_0_elf"
 
 calloc_elf="$build_dir/lnp64-calloc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
