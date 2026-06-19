@@ -7,7 +7,7 @@ descriptor_commit|tested|src/emulator.rs,toolchain/lnp64_loader_security.manifes
 cli_probe|tested|src/main.rs,toolchain/lnp64_run_elf.manifest|run_elf_probe_loads_and_commits_minimal_static_elf|none
 cli_surface|tested|src/main.rs,toolchain/lnp64_run_elf.manifest|run_elf_executes_minimal_exit_static_elf|none
 real_clang_lld_probe|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64_llvm_gates.manifest|real LLVM LNP64 run-elf clang demo execution passed|none
-real_clang_demo_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64_llvm_gates.manifest|lnp64-{hello,factorial,allocator,fibonacci,pcr,cat}-clang-linked.elf|none
+real_clang_demo_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64_llvm_gates.manifest|lnp64-{hello,factorial,allocator,fibonacci,pcr,cat,json-parser}-clang-linked.elf|none
 real_native_heap_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64_mc_encoding.manifest|real LLVM LNP64 run-elf native heap execution passed|none
 real_indirect_call_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64_llvm_gates.manifest|real LLVM LNP64 run-elf indirect call execution passed|none
 real_minilibc_string_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64_llvm_gates.manifest|real LLVM LNP64 run-elf minilibc string execution passed|none

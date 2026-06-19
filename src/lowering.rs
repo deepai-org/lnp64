@@ -2167,6 +2167,9 @@ mod tests {
         assert!(real_llc.contains("cat-clang-smoke.o"));
         assert!(real_llc.contains("-c demos/cat.c"));
         assert!(real_llc.contains("real LLVM LNP64 clang cat demo object smoke passed"));
+        assert!(real_llc.contains("json-parser-clang-smoke.o"));
+        assert!(real_llc.contains("-c demos/json_parser.c"));
+        assert!(real_llc.contains("real LLVM LNP64 clang json parser demo object smoke passed"));
         assert!(real_llc.contains("lnp64-$demo-clang-linked.elf"));
         assert!(real_llc.contains(
             r#""$demo_obj" "$libc_fd_impl_obj" \
@@ -2400,6 +2403,7 @@ mod tests {
         assert!(real_llc_docker.contains("fibonacci ok"));
         assert!(real_llc_docker.contains("pcr ok"));
         assert!(real_llc_docker.contains("cat ok"));
+        assert!(real_llc_docker.contains("json parser ok"));
         assert!(real_llc_docker.contains("exit=0"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf clang demo execution passed"));
         assert!(real_llc_docker.contains("lnp64-native-heap-linked.elf"));
@@ -3574,10 +3578,27 @@ mod tests {
             );
         }
 
-        for case in ["hello", "arithmetic", "memory", "calls", "simple_libc"] {
+        for case in [
+            "hello",
+            "arithmetic",
+            "memory",
+            "calls",
+            "pcr",
+            "cat",
+            "json_parser",
+            "simple_libc",
+        ] {
             assert!(cases.contains(case), "missing llvm bootstrap case {case}");
         }
-        for case in ["hello", "arithmetic", "memory", "calls"] {
+        for case in [
+            "hello",
+            "arithmetic",
+            "memory",
+            "calls",
+            "pcr",
+            "cat",
+            "json_parser",
+        ] {
             assert_eq!(statuses[case], "tested", "{case} should be tested");
         }
         assert_eq!(statuses["simple_libc"], "partial");
@@ -4139,7 +4160,16 @@ mod tests {
         }
         assert!(!llvm_gates.contains("lnp64 cc"));
         assert!(!llvm_gates.contains("cargo run -- cc"));
-        for case in ["hello", "arithmetic", "memory", "calls", "simple_libc"] {
+        for case in [
+            "hello",
+            "arithmetic",
+            "memory",
+            "calls",
+            "pcr",
+            "cat",
+            "json_parser",
+            "simple_libc",
+        ] {
             assert!(
                 llvm_bootstrap.contains(case),
                 "replacement program set missing {case}"

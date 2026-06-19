@@ -819,6 +819,21 @@ grep -q 'call ' "$cat_dump"
 printf 'real LLVM LNP64 clang cat demo object smoke passed: %s\n' \
   "$cat_obj"
 
+json_parser_obj="$build_dir/json-parser-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables \
+  -Wno-implicit-function-declaration -I toolchain \
+  -c demos/json_parser.c -o "$json_parser_obj"
+test -s "$json_parser_obj"
+json_parser_dump="$build_dir/json-parser-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$json_parser_obj" \
+  >"$json_parser_dump"
+grep -q 'ld r' "$json_parser_dump"
+grep -q 'st r' "$json_parser_dump"
+grep -q 'call ' "$json_parser_dump"
+printf 'real LLVM LNP64 clang json parser demo object smoke passed: %s\n' \
+  "$json_parser_obj"
+
 indirect_call_c="$build_dir/indirect-call-smoke.c"
 cat >"$indirect_call_c" <<'C'
 int add3(int x) {
@@ -3401,7 +3416,7 @@ test -s "$indirect_call_elf"
 printf 'real LLVM LNP64 lld indirect call link smoke passed: %s\n' \
   "$indirect_call_elf"
 
-for demo in hello factorial allocator fibonacci pcr cat; do
+for demo in hello factorial allocator fibonacci pcr cat json-parser; do
   demo_obj="$build_dir/$demo-clang-smoke.o"
   demo_elf="$build_dir/lnp64-$demo-clang-linked.elf"
   "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

@@ -1,18 +1,22 @@
+void *alloc(unsigned long size);
+void free(void *ptr);
+long write(long fd, const void *buf, unsigned long len);
+
 int main() {
-    int nodes;
-    int i;
-    int node;
+    long *nodes;
+    long i;
+    long *node;
     nodes = alloc(8);
-    store(nodes, 0);
+    *nodes = 0;
     i = 0;
     while (i < 64) {
         node = alloc(32);
-        store(node, i);
-        store(nodes, load(nodes) + 1);
+        node[0] = i;
+        *nodes = *nodes + 1;
         free(node);
         i = i + 1;
     }
-    if (load(nodes) == 64) {
+    if (*nodes == 64) {
         write(1, "json parser ok\n", 15);
         free(nodes);
         return 0;
