@@ -139,5 +139,7 @@ run_elf_report "real LLVM LNP64 run-elf poll/select/epoll/kqueue libc execution 
   target/llvm-lnp64-build/lnp64-poll-libc-linked.elf
 run_elf_report "real LLVM LNP64 run-elf signal libc execution passed" \
   target/llvm-lnp64-build/lnp64-signal-libc-linked.elf
+run_elf_report "real LLVM LNP64 run-elf socket libc execution passed" \
+  target/llvm-lnp64-build/lnp64-socket-libc-linked.elf
 run_elf_report "real LLVM LNP64 run-elf indirect call execution passed" \
   target/llvm-lnp64-build/lnp64-indirect-call-linked.elf

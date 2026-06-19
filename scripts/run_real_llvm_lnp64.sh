@@ -1974,6 +1974,100 @@ grep -q 'call ' "$signal_libc_dump"
 printf 'real LLVM LNP64 clang signal libc object smoke passed: %s\n' \
   "$signal_libc_obj"
 
+socket_libc_c="$build_dir/socket-libc-smoke.c"
+cat >"$socket_libc_c" <<'C'
+typedef unsigned long size_t;
+typedef unsigned long socklen_t;
+enum {
+  AF_INET = 2,
+  SOCK_STREAM = 1,
+  SOL_SOCKET = 1,
+  SO_REUSEADDR = 2,
+  SO_ERROR = 4,
+  MSG_NOSIGNAL = 0x4000
+};
+
+int socket(int domain, int type, int protocol);
+int bind(int fd, const void *addr, socklen_t len);
+int listen(int fd, int backlog);
+int connect(int fd, const void *addr, socklen_t len);
+int accept(int fd, void *addr, socklen_t *len);
+int getsockname(int fd, void *addr, socklen_t *len);
+int getsockopt(int fd, int level, int optname, void *optval, socklen_t *optlen);
+int setsockopt(int fd, int level, int optname, const void *optval,
+               socklen_t optlen);
+long send(int fd, const void *buf, size_t len, int flags);
+long recv(int fd, void *buf, size_t len, int flags);
+
+int main(void) {
+  int server;
+  int client;
+  int accepted;
+  int i;
+  long got;
+  int opt = 1;
+  int so_error = 99;
+  socklen_t optlen = 8;
+  char addr[64];
+  socklen_t addrlen = 64;
+  char buf[2];
+
+  server = socket(AF_INET, SOCK_STREAM, 0);
+  if (server < 0)
+    return 1;
+  if (setsockopt(server, SOL_SOCKET, SO_REUSEADDR, &opt, 8) != 0)
+    return 2;
+  if (getsockopt(server, SOL_SOCKET, SO_ERROR, &so_error, &optlen) != 0)
+    return 3;
+  if (so_error != 0 || optlen != 8)
+    return 4;
+  if (bind(server, "127.0.0.1:0", 0) != 0)
+    return 5;
+  if (listen(server, 1) != 0)
+    return 6;
+  if (getsockname(server, addr, &addrlen) != 0)
+    return 7;
+  client = socket(AF_INET, SOCK_STREAM, 0);
+  if (client < 0)
+    return 8;
+  if (connect(client, addr, addrlen) != 0)
+    return 9;
+  accepted = -1;
+  for (i = 0; i < 1000; i = i + 1) {
+    accepted = accept(server, 0, 0);
+    if (accepted >= 0)
+      break;
+  }
+  if (accepted < 0)
+    return 10;
+  if (send(client, "z", 1, MSG_NOSIGNAL) != 1)
+    return 11;
+  got = -1;
+  for (i = 0; i < 1000; i = i + 1) {
+    got = recv(accepted, buf, 1, 0);
+    if (got == 1)
+      break;
+  }
+  if (got != 1)
+    return 12;
+  if (buf[0] != 'z')
+    return 13;
+  return 0;
+}
+C
+
+socket_libc_obj="$build_dir/socket-libc-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$socket_libc_c" -o "$socket_libc_obj"
+test -s "$socket_libc_obj"
+socket_libc_dump="$build_dir/socket-libc-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$socket_libc_obj" \
+  >"$socket_libc_dump"
+grep -q 'call ' "$socket_libc_dump"
+printf 'real LLVM LNP64 clang socket libc object smoke passed: %s\n' \
+  "$socket_libc_obj"
+
 libc_fd_impl_c="toolchain/liblnp64_fd_min.c"
 libc_fd_impl_obj="$build_dir/liblnp64-fd-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
@@ -2019,6 +2113,22 @@ grep -q 'alarm r' "$libc_signal_impl_dump"
 grep -q 'ret' "$libc_signal_impl_dump"
 printf 'real LLVM LNP64 clang minilibc signal implementation object smoke passed: %s\n' \
   "$libc_signal_impl_obj"
+
+libc_socket_impl_c="toolchain/liblnp64_socket_min.c"
+libc_socket_impl_obj="$build_dir/liblnp64-socket-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$libc_socket_impl_c" -o "$libc_socket_impl_obj"
+test -s "$libc_socket_impl_obj"
+libc_socket_impl_dump="$build_dir/liblnp64-socket-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_socket_impl_obj" \
+  >"$libc_socket_impl_dump"
+grep -q 'object_ctl r' "$libc_socket_impl_dump"
+grep -q 'push r' "$libc_socket_impl_dump"
+grep -q 'pull r' "$libc_socket_impl_dump"
+grep -q 'ret' "$libc_socket_impl_dump"
+printf 'real LLVM LNP64 clang minilibc socket implementation object smoke passed: %s\n' \
+  "$libc_socket_impl_obj"
 
 stack_args_c="$build_dir/stack-args-smoke.c"
 cat >"$stack_args_c" <<'C'
@@ -2556,6 +2666,14 @@ signal_libc_elf="$build_dir/lnp64-signal-libc-linked.elf"
 test -s "$signal_libc_elf"
 printf 'real LLVM LNP64 lld signal libc link smoke passed: %s\n' \
   "$signal_libc_elf"
+
+socket_libc_elf="$build_dir/lnp64-socket-libc-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$socket_libc_elf" "$crt0_obj" "$socket_libc_obj" \
+  "$libc_socket_impl_obj"
+test -s "$socket_libc_elf"
+printf 'real LLVM LNP64 lld socket libc link smoke passed: %s\n' \
+  "$socket_libc_elf"
 
 indirect_call_elf="$build_dir/lnp64-indirect-call-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
