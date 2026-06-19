@@ -683,6 +683,65 @@ def modeled_rights(record: dict, field: str) -> int:
     return top_rights_to_modeled_mask(value)
 
 
+def check_top_m1_optional_cap_zero(
+    prefix: str,
+    state: dict,
+    idx: int,
+    label: str,
+) -> None:
+    nonzero = [
+        field
+        for field in (
+            f"{prefix}_object_id",
+            f"{prefix}_generation",
+            f"{prefix}_domain_id",
+            f"{prefix}_lineage_epoch",
+            f"{prefix}_sealed",
+            f"{prefix}_rights",
+        )
+        if state[field] != 0
+    ]
+    if nonzero:
+        raise SystemExit(
+            f"top-level M1 {label} state {idx} invalid {prefix} projection "
+            f"retained authority field(s): {nonzero}"
+        )
+
+
+def check_top_m1_optional_authority_slots(
+    state: dict,
+    idx: int,
+    label: str,
+) -> None:
+    if state["sent_valid"] not in (0, 1):
+        raise SystemExit(
+            f"top-level M1 {label} state {idx} has non-boolean sent_valid "
+            f"{state['sent_valid']!r}"
+        )
+    if state["minted_valid"] not in (0, 1):
+        raise SystemExit(
+            f"top-level M1 {label} state {idx} has non-boolean minted_valid "
+            f"{state['minted_valid']!r}"
+        )
+    if state["sent_valid"] == 0:
+        check_top_m1_optional_cap_zero("sent", state, idx, label)
+        if state["transfer_valid"] != 0:
+            raise SystemExit(
+                f"top-level M1 {label} state {idx} has transfer_valid without sent_valid"
+            )
+    elif state["transfer_valid"] != 1:
+        raise SystemExit(
+            f"top-level M1 {label} state {idx} has sent_valid without transfer_valid"
+        )
+    if state["minted_valid"] == 0:
+        check_top_m1_optional_cap_zero("minted", state, idx, label)
+        if state["created_object_created"] != 0 or state["created_object_gen"] != 0:
+            raise SystemExit(
+                f"top-level M1 {label} state {idx} invalid minted projection "
+                "retained created-object witness"
+            )
+
+
 def check_top_m1_projection_matches_commit(
     prefix: str,
     commit: dict,
@@ -1078,6 +1137,8 @@ authority_projection_fields = tuple(
 for idx, (commit, pre_state, post_state) in enumerate(
     zip(rtl_m1_top_commits, rtl_m1_top_pre_states, rtl_m1_top_states)
 ):
+    check_top_m1_optional_authority_slots(pre_state, idx, "pre")
+    check_top_m1_optional_authority_slots(post_state, idx, "post")
     check_top_m1_refinement_step(
         idx,
         commit,
