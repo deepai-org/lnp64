@@ -2516,6 +2516,20 @@ grep -q 'call ' "$libc_test_clock_gettime_dump"
 printf 'real LLVM LNP64 clang libc-test clock_gettime object smoke passed: %s\n' \
   "$libc_test_clock_gettime_obj"
 
+libc_test_qsort_bounded_obj="$build_dir/libc-test-qsort-bounded-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain/include \
+  -I third_party/libc-test/functional \
+  -c third_party/libc-test/functional/qsort_bounded.c \
+  -o "$libc_test_qsort_bounded_obj"
+test -s "$libc_test_qsort_bounded_obj"
+libc_test_qsort_bounded_dump="$build_dir/libc-test-qsort-bounded-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_test_qsort_bounded_obj" \
+  >"$libc_test_qsort_bounded_dump"
+grep -q 'call ' "$libc_test_qsort_bounded_dump"
+printf 'real LLVM LNP64 clang libc-test qsort_bounded object smoke passed: %s\n' \
+  "$libc_test_qsort_bounded_obj"
+
 convert_c="$build_dir/convert-smoke.c"
 cat >"$convert_c" <<'C'
 int *__errno_location(void);
@@ -4202,6 +4216,15 @@ libc_test_clock_gettime_elf="$build_dir/lnp64-libc-test-clock-gettime-linked.elf
 test -s "$libc_test_clock_gettime_elf"
 printf 'real LLVM LNP64 lld libc-test clock_gettime link smoke passed: %s\n' \
   "$libc_test_clock_gettime_elf"
+
+libc_test_qsort_bounded_elf="$build_dir/lnp64-libc-test-qsort-bounded-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$libc_test_qsort_bounded_elf" "$crt0_obj" "$libc_test_qsort_bounded_obj" \
+  "$libc_test_print_obj" "$libc_sort_impl_obj" "$libc_string_impl_obj" \
+  "$libc_fd_impl_obj"
+test -s "$libc_test_qsort_bounded_elf"
+printf 'real LLVM LNP64 lld libc-test qsort_bounded link smoke passed: %s\n' \
+  "$libc_test_qsort_bounded_elf"
 
 calloc_elf="$build_dir/lnp64-calloc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

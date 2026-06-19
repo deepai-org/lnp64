@@ -1443,6 +1443,7 @@ mod tests {
             "libc_test_dirname_static_link",
             "libc_test_strtol_static_link",
             "libc_test_clock_gettime_static_link",
+            "libc_test_qsort_bounded_static_link",
             "zlib_package_run_elf",
             "natsort_package_run_elf",
             "jsmn_package_run_elf",
@@ -1459,6 +1460,7 @@ mod tests {
             "libc_test_dirname_run_elf",
             "libc_test_strtol_run_elf",
             "libc_test_clock_gettime_run_elf",
+            "libc_test_qsort_bounded_run_elf",
             "sbase_echo_static_link",
             "sbase_echo_run_elf",
             "sbase_path_static_link",
@@ -1831,6 +1833,11 @@ mod tests {
         assert!(
             real_llc.contains("real LLVM LNP64 clang libc-test clock_gettime object smoke passed")
         );
+        assert!(real_llc.contains("libc-test-qsort-bounded-clang-smoke.o"));
+        assert!(real_llc.contains("third_party/libc-test/functional/qsort_bounded.c"));
+        assert!(
+            real_llc.contains("real LLVM LNP64 clang libc-test qsort_bounded object smoke passed")
+        );
         assert!(real_llc.contains("lnp64-libc-test-ctype-bounded-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld libc-test ctype_bounded link smoke passed"));
         assert!(real_llc.contains("lnp64-libc-test-string-linked.elf"));
@@ -1859,6 +1866,10 @@ mod tests {
   "$libc_test_print_obj" "$libc_time_impl_obj" "$libc_errno_impl_obj""#
         ));
         assert!(real_llc.contains("real LLVM LNP64 lld libc-test clock_gettime link smoke passed"));
+        assert!(real_llc.contains("lnp64-libc-test-qsort-bounded-linked.elf"));
+        assert!(real_llc.contains(r#""$libc_test_qsort_bounded_obj" \"#));
+        assert!(real_llc.contains(r#""$libc_sort_impl_obj" "$libc_string_impl_obj""#));
+        assert!(real_llc.contains("real LLVM LNP64 lld libc-test qsort_bounded link smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_futex_min.c"));
         assert!(libc_futex_min.contains("__lnp_futex_wait"));
         assert!(libc_futex_min.contains("__lnp_futex_wake"));
@@ -2828,6 +2839,11 @@ mod tests {
             real_llc_docker
                 .contains("real LLVM LNP64 run-elf libc-test clock_gettime execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-libc-test-qsort-bounded-linked.elf"));
+        assert!(
+            real_llc_docker
+                .contains("real LLVM LNP64 run-elf libc-test qsort_bounded execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-calloc-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf calloc execution passed"));
         assert!(real_llc_docker.contains("lnp64-realloc-linked.elf"));
@@ -2983,6 +2999,7 @@ mod tests {
             "real_libc_test_dirname_execution",
             "real_libc_test_strtol_execution",
             "real_libc_test_clock_gettime_execution",
+            "real_libc_test_qsort_bounded_execution",
             "real_numeric_conversion_execution",
             "real_path_helper_execution",
             "real_search_helper_execution",
@@ -3043,6 +3060,7 @@ mod tests {
             "real_libc_test_dirname_execution",
             "real_libc_test_strtol_execution",
             "real_libc_test_clock_gettime_execution",
+            "real_libc_test_qsort_bounded_execution",
             "real_numeric_conversion_execution",
             "real_path_helper_execution",
             "real_search_helper_execution",
