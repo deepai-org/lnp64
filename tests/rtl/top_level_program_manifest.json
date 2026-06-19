@@ -238,7 +238,14 @@
       "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
       "comparison": "retire_trace_and_final_state"
     },
-    {"source": "demos/fibonacci.c", "generated_assembly": "/tmp/fibonacci.s", "required_features": ["core", "branch", "stack"], "status": "blocked_by_features"},
+    {
+      "source": "demos/fibonacci.c",
+      "generated_assembly": "/tmp/fibonacci.s",
+      "required_features": ["core", "branch", "call_return", "stack", "write_fd", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    },
     {
       "source": "demos/hello.c",
       "generated_assembly": "/tmp/hello.s",

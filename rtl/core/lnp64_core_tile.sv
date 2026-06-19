@@ -5,7 +5,8 @@ import lnp64_pkg::*;
 module lnp64_core_tile #(
     parameter int TILE_ID = 0,
     parameter int PROGRAM_WORDS = 256,
-    parameter int SRAM_WORDS = 128
+    parameter int SRAM_WORDS = 128,
+    parameter int RETURN_STACK_DEPTH = 64
 ) (
     input  logic clk,
     input  logic reset_n,
@@ -91,8 +92,10 @@ module lnp64_core_tile #(
     logic cmp_greater;
     logic cmp_below;
     logic cmp_above;
-    logic [31:0] return_stack [0:7];
-    logic [3:0] return_stack_depth;
+    localparam int RETURN_STACK_INDEX_WIDTH = $clog2(RETURN_STACK_DEPTH);
+    localparam logic [RETURN_STACK_INDEX_WIDTH:0] RETURN_STACK_DEPTH_VALUE = RETURN_STACK_DEPTH;
+    logic [31:0] return_stack [0:RETURN_STACK_DEPTH-1];
+    logic [RETURN_STACK_INDEX_WIDTH:0] return_stack_depth;
     logic pending_unsupported;
     logic [31:0] command_pc;
     logic [63:0] mem_addr;
@@ -539,7 +542,7 @@ module lnp64_core_tile #(
             cmp_greater <= 1'b0;
             cmp_below <= 1'b0;
             cmp_above <= 1'b0;
-            return_stack_depth <= 4'd0;
+            return_stack_depth <= '0;
             pending_unsupported <= 1'b0;
             command_pc <= 32'd0;
             heap_next <= HEAP_ARCH_BASE;
@@ -1007,9 +1010,9 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_CALL: begin
-                                if (return_stack_depth < 4'd8) begin
-                                    return_stack[return_stack_depth[2:0]] <= pc + 32'd1;
-                                    return_stack_depth <= return_stack_depth + 4'd1;
+                                if (return_stack_depth < RETURN_STACK_DEPTH_VALUE) begin
+                                    return_stack[return_stack_depth[RETURN_STACK_INDEX_WIDTH-1:0]] <= pc + 32'd1;
+                                    return_stack_depth <= return_stack_depth + {{RETURN_STACK_INDEX_WIDTH{1'b0}}, 1'b1};
                                 end
                                 pc <= pc + dec.imm;
                                 retired_count <= retired_count + 32'd1;
@@ -1017,9 +1020,9 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_RET: begin
-                                if (return_stack_depth != 4'd0) begin
-                                    pc <= return_stack[return_stack_depth[2:0] - 3'd1];
-                                    return_stack_depth <= return_stack_depth - 4'd1;
+                                if (return_stack_depth != '0) begin
+                                    pc <= return_stack[return_stack_depth[RETURN_STACK_INDEX_WIDTH-1:0] - {{(RETURN_STACK_INDEX_WIDTH-1){1'b0}}, 1'b1}];
+                                    return_stack_depth <= return_stack_depth - {{RETURN_STACK_INDEX_WIDTH{1'b0}}, 1'b1};
                                 end else begin
                                     pc <= pc + 32'd1;
                                 end
