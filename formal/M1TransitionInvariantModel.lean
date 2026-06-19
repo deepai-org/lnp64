@@ -196,7 +196,9 @@ def rootCapCurrentlyAuthorizes (s : State) : Prop :=
   capCurrentlyAuthorizes s s.rootCap /\ s.rootCap.ownerDomain = s.rootDomain.id
 
 def canRootDuplicate (s : State) : Prop :=
-  rootCapCurrentlyAuthorizes s /\ s.rootCap.rights.dup = true
+  rootCapCurrentlyAuthorizes s /\
+  s.rootCap.rights.dup = true /\
+  s.rootCap.rights.pull = true
 
 def canRootMint (s : State) : Prop :=
   rootCapCurrentlyAuthorizes s /\ s.rootCap.rights.mint = true
@@ -230,6 +232,9 @@ def mintedAuthorityState (s : State) : Prop :=
     cap.sealed = false /\
     Rights.subset cap.rights s.rootCap.rights
 
+def rootAuthorityBounded (s : State) : Prop :=
+  Rights.subset s.rootCap.rights allRights
+
 def capStoredInState (s : State) (cap : Capability) : Prop :=
   cap = s.rootCap \/
   cap = s.consumerCap \/
@@ -258,7 +263,7 @@ def invariant (s : State) : Prop :=
   s.rootCap.objectId = s.object.objectId /\
   s.rootCap.generation = s.object.generation /\
   s.rootCap.ownerDomain = s.rootDomain.id /\
-  s.rootCap.rights = allRights /\
+  rootAuthorityBounded s /\
   s.rootCap.sealed = false /\
   s.object.ownerDomain = s.rootDomain.id /\
   s.createdObject.ownerDomain = s.rootDomain.id /\
@@ -680,8 +685,41 @@ theorem invariant_reset :
   simp [
     invariant, reset, rootDomain0, consumerDomain0, object0, createdObject0,
     rootCap0, consumer0, capLineageValid, objectKnown, domainKnown,
-    mintedAuthorityState, validTransferState, revokedGenerationState,
-    noLostWakeupState, Rights.subset, allRights, noRights
+    mintedAuthorityState, validTransferState, rootAuthorityBounded,
+    revokedGenerationState, noLostWakeupState, Rights.subset, allRights,
+    noRights
+  ]
+
+def rootWithoutDupAuthority : Rights :=
+  { allRights with dup := false }
+
+def deniedRootState : State :=
+  { rootDomain := rootDomain0
+    consumerDomain := consumerDomain0
+    object := object0
+    createdObject := createdObject0
+    rootCap := { rootCap0 with rights := rootWithoutDupAuthority }
+    consumerCap := { rootCap0 with rights := noRights, ownerDomain := consumerDomain0.id }
+    sentCap := none
+    mintedCap := none
+    consumer := consumer0
+    wakePending := false
+    transferValid := false
+    staleRejected := false
+    revokedRejected := false
+    failedNoAuthority := false
+    fullWasExplicit := false
+    hasRevokedGeneration := false
+    revokedGeneration := 0 }
+
+theorem denied_root_state_invariant :
+    invariant deniedRootState := by
+  repeat constructor <;> simp [
+    deniedRootState, rootWithoutDupAuthority, rootDomain0, consumerDomain0,
+    object0, createdObject0, rootCap0, consumer0, capLineageValid,
+    objectKnown, domainKnown, mintedAuthorityState, validTransferState,
+    rootAuthorityBounded, revokedGenerationState, noLostWakeupState,
+    Rights.subset, allRights, noRights
   ]
 
 theorem invariant_consumer_cap_lineage_valid {s : State} :
@@ -755,7 +793,7 @@ theorem preserve_cap_dup {s : State} :
   intro hInv hRootDup
   simp_all [
     invariant, consumerPullCap, mintedObjectCap, capLineageValid, capGenerationLive,
-    objectKnown, domainKnown, mintedAuthorityState, validTransferState,
+    objectKnown, domainKnown, mintedAuthorityState, validTransferState, rootAuthorityBounded,
     revokedGenerationState, noLostWakeupState, Rights.subset,
     capCurrentlyAuthorizes, rootCapCurrentlyAuthorizes, canRootDuplicate,
     pullOnly, allRights
@@ -768,10 +806,14 @@ theorem preserve_cap_dup_denied {s : State} :
   intro hInv hDup
   simp_all [
     invariant, consumerPullCap, mintedObjectCap, capLineageValid, capGenerationLive,
-    objectKnown, domainKnown, mintedAuthorityState, validTransferState,
+    objectKnown, domainKnown, mintedAuthorityState, validTransferState, rootAuthorityBounded,
     revokedGenerationState, noLostWakeupState, Rights.subset, pullOnly,
     allRights
   ]
+
+theorem denied_root_cap_dup_preserves_invariant :
+    invariant { deniedRootState with failedNoAuthority := true } := by
+  exact preserve_cap_dup_denied denied_root_state_invariant rfl
 
 theorem preserve_cap_send {s : State} :
     invariant s ->
@@ -780,7 +822,7 @@ theorem preserve_cap_send {s : State} :
   intro hInv hCap
   simp_all [
     invariant, consumerPullCap, mintedObjectCap, capLineageValid, capGenerationLive,
-    objectKnown, domainKnown, mintedAuthorityState, validTransferState,
+    objectKnown, domainKnown, mintedAuthorityState, validTransferState, rootAuthorityBounded,
     revokedGenerationState, noLostWakeupState, Rights.subset, pullOnly,
     allRights
   ]
@@ -793,7 +835,7 @@ theorem preserve_cap_recv {s : State} {cap : Capability} :
   intro hInv hSent hCap
   simp_all [
     invariant, consumerPullCap, mintedObjectCap, capLineageValid, capGenerationLive,
-    objectKnown, domainKnown, mintedAuthorityState, validTransferState,
+    objectKnown, domainKnown, mintedAuthorityState, validTransferState, rootAuthorityBounded,
     revokedGenerationState, noLostWakeupState, Rights.subset, pullOnly,
     allRights
   ]
@@ -805,7 +847,7 @@ theorem preserve_cap_recv_empty {s : State} :
   intro hInv hEmpty
   simp_all [
     invariant, consumerPullCap, mintedObjectCap, capLineageValid, capGenerationLive,
-    objectKnown, domainKnown, mintedAuthorityState, validTransferState,
+    objectKnown, domainKnown, mintedAuthorityState, validTransferState, rootAuthorityBounded,
     revokedGenerationState, noLostWakeupState, Rights.subset, pullOnly,
     allRights
   ]
@@ -823,7 +865,7 @@ theorem preserve_cap_revoke {s : State} :
   intro hInv
   simp_all [
     invariant, consumerPullCap, mintedObjectCap, capLineageValid, capGenerationLive,
-    objectKnown, domainKnown, mintedAuthorityState, validTransferState,
+    objectKnown, domainKnown, mintedAuthorityState, validTransferState, rootAuthorityBounded,
     revokedGenerationState, noLostWakeupState, Rights.subset, pullOnly,
     allRights
   ]
@@ -838,7 +880,7 @@ theorem preserve_object_create {s : State} :
   intro hInv hRootMint
   simp_all [
     invariant, consumerPullCap, mintedObjectCap, capLineageValid, capGenerationLive,
-    objectKnown, domainKnown, mintedAuthorityState, validTransferState,
+    objectKnown, domainKnown, mintedAuthorityState, validTransferState, rootAuthorityBounded,
     revokedGenerationState, noLostWakeupState, Rights.subset,
     capCurrentlyAuthorizes, rootCapCurrentlyAuthorizes, canRootMint,
     pullOnly, allRights
@@ -851,7 +893,7 @@ theorem preserve_object_create_denied {s : State} :
   intro hInv hMint
   simp_all [
     invariant, consumerPullCap, mintedObjectCap, capLineageValid, capGenerationLive,
-    objectKnown, domainKnown, mintedAuthorityState, validTransferState,
+    objectKnown, domainKnown, mintedAuthorityState, validTransferState, rootAuthorityBounded,
     revokedGenerationState, noLostWakeupState, Rights.subset, pullOnly,
     allRights
   ]
@@ -863,7 +905,7 @@ theorem preserve_reject_stale {s : State} :
   intro hInv hStale
   simp_all [
     invariant, consumerPullCap, mintedObjectCap, capLineageValid, capGenerationLive,
-    objectKnown, domainKnown, mintedAuthorityState, validTransferState,
+    objectKnown, domainKnown, mintedAuthorityState, validTransferState, rootAuthorityBounded,
     revokedGenerationState, noLostWakeupState, Rights.subset, pullOnly,
     allRights
   ]
@@ -875,7 +917,7 @@ theorem preserve_reject_revoked {s : State} :
   intro hInv hRevoked
   simp_all [
     invariant, consumerPullCap, mintedObjectCap, capLineageValid, capGenerationLive,
-    objectKnown, domainKnown, mintedAuthorityState, validTransferState,
+    objectKnown, domainKnown, mintedAuthorityState, validTransferState, rootAuthorityBounded,
     revokedGenerationState, noLostWakeupState, Rights.subset, pullOnly,
     allRights
   ]
@@ -890,7 +932,7 @@ theorem preserve_await {s : State} :
   intro hInv hWake
   simp_all [
     invariant, consumerPullCap, mintedObjectCap, capLineageValid, capGenerationLive,
-    objectKnown, domainKnown, mintedAuthorityState, validTransferState,
+    objectKnown, domainKnown, mintedAuthorityState, validTransferState, rootAuthorityBounded,
     revokedGenerationState, noLostWakeupState, Rights.subset, pullOnly,
     allRights
   ]
@@ -913,7 +955,7 @@ theorem preserve_push {s : State} :
   intro hInv hRootPush
   simp_all [
     invariant, consumerPullCap, mintedObjectCap, capLineageValid, capGenerationLive,
-    objectKnown, domainKnown, mintedAuthorityState, validTransferState,
+    objectKnown, domainKnown, mintedAuthorityState, validTransferState, rootAuthorityBounded,
     revokedGenerationState, noLostWakeupState, Rights.subset,
     capCurrentlyAuthorizes, rootCapCurrentlyAuthorizes, canRootPush,
     pullOnly, allRights
@@ -926,7 +968,7 @@ theorem preserve_pull {s : State} :
   intro hInv hConsumerPull
   simp_all [
     invariant, consumerPullCap, mintedObjectCap, capLineageValid, capGenerationLive,
-    objectKnown, domainKnown, mintedAuthorityState, validTransferState,
+    objectKnown, domainKnown, mintedAuthorityState, validTransferState, rootAuthorityBounded,
     revokedGenerationState, noLostWakeupState, Rights.subset,
     capCurrentlyAuthorizes, canConsumerPullFromMainObject,
     generationMatchesLiveObject, pullOnly, allRights
@@ -938,7 +980,7 @@ theorem preserve_reject_full {s : State} :
   intro hInv
   simp_all [
     invariant, consumerPullCap, mintedObjectCap, capLineageValid, capGenerationLive,
-    objectKnown, domainKnown, mintedAuthorityState, validTransferState,
+    objectKnown, domainKnown, mintedAuthorityState, validTransferState, rootAuthorityBounded,
     revokedGenerationState, noLostWakeupState, Rights.subset, pullOnly,
     allRights
   ]

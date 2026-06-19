@@ -99,6 +99,8 @@
             "m1_t3_cap_recv_requires_current_authority_for_reachable",
             "m1_t3_revoke_invalidates_outstanding_main_object_transfer_for_reachable",
             "m1_t3_failed_authority_operations_preserve_authority_slots_for_reachable",
+            "denied_root_state_invariant",
+            "denied_root_cap_dup_preserves_invariant",
             "m1_t3_typed_commit_transition_refines_step_for_reachable",
             "m1_t3_typed_commit_transition_preserves_invariant_for_reachable",
             "m1_t3_typed_commit_failed_authority_transition_preserves_authority_slots_for_reachable",

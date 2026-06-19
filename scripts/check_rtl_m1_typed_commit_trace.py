@@ -1150,7 +1150,11 @@ def root_cap_currently_authorizes(state: M1State) -> bool:
 
 
 def can_root_duplicate(state: M1State) -> bool:
-    return root_cap_currently_authorizes(state) and (state.root_cap.rights_mask & RIGHT_DUP) != 0
+    return (
+        root_cap_currently_authorizes(state)
+        and (state.root_cap.rights_mask & RIGHT_DUP) != 0
+        and (state.root_cap.rights_mask & RIGHT_PULL) != 0
+    )
 
 
 def can_root_push(state: M1State) -> bool:
