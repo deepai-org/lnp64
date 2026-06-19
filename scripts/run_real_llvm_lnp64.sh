@@ -1506,8 +1506,19 @@ void *memset(void *dst, int value, size_t len);
 int strcmp(const char *lhs, const char *rhs);
 int strncmp(const char *lhs, const char *rhs, size_t len);
 char *strcpy(char *dst, const char *src);
+char *strncpy(char *dst, const char *src, size_t len);
+char *strncat(char *dst, const char *src, size_t len);
 char *strchr(const char *s, int ch);
+char *strrchr(const char *s, int ch);
 char *strstr(const char *haystack, const char *needle);
+size_t strspn(const char *s, const char *accept);
+size_t strcspn(const char *s, const char *reject);
+char *strpbrk(const char *s, const char *accept);
+char *strtok(char *s, const char *delim);
+size_t strlcpy(char *dst, const char *src, size_t size);
+size_t strlcat(char *dst, const char *src, size_t size);
+void *memmem(const void *haystack, size_t haystack_len, const void *needle,
+             size_t needle_len);
 int isalnum(int ch);
 int isalpha(int ch);
 int isdigit(int ch);
@@ -1563,24 +1574,90 @@ int main(void) {
     return 19;
   if (strcpy(dst, "xy") != dst || dst[0] != 'x' || dst[1] != 'y' || dst[2] != 0)
     return 20;
-  if (strchr("abcd", 'c') == 0 || *strchr("abcd", 'c') != 'c')
+  char bounded[10];
+  if (strncpy(bounded, "abc", 6) != bounded)
     return 21;
-  if (strchr("abcd", 'z') != 0)
+  if (bounded[0] != 'a' || bounded[2] != 'c' || bounded[3] != 0)
     return 22;
-  if (strstr("abcde", "bcd") == 0 || *strstr("abcde", "bcd") != 'b')
+  if (bounded[4] != 0 || bounded[5] != 0)
     return 23;
-  if (strstr("abcde", "bd") != 0)
+  if (strncpy(bounded, "abcdef", 3) != bounded)
     return 24;
-  if (!isalpha('Q') || !islower('q') || !isupper('Q'))
+  if (bounded[0] != 'a' || bounded[2] != 'c' || bounded[3] != 0)
     return 25;
-  if (!isdigit('7') || !isalnum('7') || !isxdigit('f'))
+  if (strcpy(bounded, "xy") != bounded)
     return 26;
-  if (!isspace('\n') || isspace('x'))
+  if (strncat(bounded, "zpq", 1) != bounded)
     return 27;
-  if (tolower('Q') != 'q' || toupper('q') != 'Q')
+  if (strcmp(bounded, "xyz") != 0)
     return 28;
-  if (tolower('7') != '7' || toupper('7') != '7')
+  if (strchr("abcd", 'c') == 0 || *strchr("abcd", 'c') != 'c')
     return 29;
+  if (strchr("abcd", 'z') != 0)
+    return 30;
+  const char *scan = "abca";
+  if (strrchr(scan, 'a') == 0 || *strrchr(scan, 'a') != 'a')
+    return 31;
+  if (strrchr(scan, 'a') != scan + 3)
+    return 32;
+  if (strrchr(scan, 0) != scan + 4)
+    return 33;
+  if (strstr("abcde", "bcd") == 0 || *strstr("abcde", "bcd") != 'b')
+    return 34;
+  if (strstr("abcde", "bd") != 0)
+    return 35;
+  if (strspn("abc123", "abc") != 3)
+    return 36;
+  if (strcspn("abc123", "321") != 3)
+    return 37;
+  if (strpbrk("abc123", "29") == 0 || *strpbrk("abc123", "29") != '2')
+    return 38;
+  unsigned char high[6] = {1, 2, 127, 128, 255, 0};
+  char reject[2] = {(char)255, 0};
+  if (strcspn((char *)high, reject) != 4)
+    return 39;
+  char tokens[16];
+  strcpy(tokens, ",one,two");
+  char *tok = strtok(tokens, ",");
+  if (tok == 0 || strcmp(tok, "one") != 0)
+    return 40;
+  tok = strtok(0, ",");
+  if (tok == 0 || strcmp(tok, "two") != 0)
+    return 41;
+  if (strtok(0, ",") != 0)
+    return 42;
+  char small[5];
+  if (strlcpy(small, "abcdef", sizeof(small)) != 6)
+    return 43;
+  if (strcmp(small, "abcd") != 0)
+    return 44;
+  strcpy(small, "ab");
+  if (strlcat(small, "cdef", sizeof(small)) != 6)
+    return 45;
+  if (strcmp(small, "abcd") != 0)
+    return 46;
+  if (strlcat(small, "z", 2) != 3)
+    return 47;
+  char hay[7] = {'a', 'b', 0, 'c', 'd', 'e', 0};
+  char needle[2] = {0, 'c'};
+  if (memmem(hay, 7, needle, 2) != hay + 2)
+    return 48;
+  if (memmem(hay, 7, "de", 2) != hay + 4)
+    return 49;
+  if (memmem(hay, 7, "zz", 2) != 0)
+    return 50;
+  if (memmem(hay, 7, "", 0) != hay)
+    return 51;
+  if (!isalpha('Q') || !islower('q') || !isupper('Q'))
+    return 52;
+  if (!isdigit('7') || !isalnum('7') || !isxdigit('f'))
+    return 53;
+  if (!isspace('\n') || isspace('x'))
+    return 54;
+  if (tolower('Q') != 'q' || toupper('q') != 'Q')
+    return 55;
+  if (tolower('7') != '7' || toupper('7') != '7')
+    return 56;
   return 0;
 }
 C
