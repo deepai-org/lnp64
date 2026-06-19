@@ -20,7 +20,7 @@ use std::path::PathBuf;
 
 use asm::Program;
 use emulator::{Machine, PreparedExecVma};
-use isa::{Condition, Instr, MemRef, Reg, Target, Value, Width};
+use isa::{Condition, Instr, MemRef, Pcr, Reg, Target, Value, Width};
 use loader::{
     ExecEntry, ExecPlan, ExecPlanDescriptorOptions, ExecutableProvenance, LoaderOptions,
     MemoryType, VmaProtection, VmaRecord,
@@ -646,6 +646,7 @@ fn encode_flat_exec_instr(
         Instr::DomainCtl(result, argblock) => Ok(vec![enc_rrr(0x4c, *result, *argblock, Reg(0))]),
         Instr::ErrnoGet(rd) => Ok(vec![enc_reg(0x38, *rd)]),
         Instr::ErrnoSet(src) => Ok(vec![enc_reg(0x39, *src)]),
+        Instr::GetPcr(dst, pcr) => Ok(vec![enc_rrr(0x54, *dst, Reg(pcr_selector(*pcr)?), Reg(0))]),
         Instr::DmaCtl(result, argblock) => Ok(vec![enc_rrr(0x5b, *result, *argblock, Reg(0))]),
         Instr::EnvGet(rd, key, index_or_buf, len_or_flags) => Ok(vec![enc_rrrr(
             0x56,
@@ -700,8 +701,24 @@ fn encode_flat_exec_instr(
         Instr::Isync(result, addr, len) => Ok(vec![enc_rrr(0xce, *result, *addr, *len)]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/CALL_REG/LR_GET/LR_SET/RET, YIELD/SLEEP, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, OBJECT_CTL, DOMAIN_CTL, CAP_DUP/SEND/RECV/REVOKE, ERRNO_GET/SET, DMA_CTL, ENV_GET, MMAP/MPROTECT, OPEN_FD_DYN/FD_CLOSE_DYN, CLONE.SPAWN/THREAD_JOIN, READ_FD/WRITE_FD, PULL/PUSH, WAITABLE_PROBE, AWAIT/AWAIT_DYN/AWAIT_EX, CALL_CAP/CALL_CAP_DYN/RET_CAP, READ_FD_DYN/WRITE_FD_DYN, FENCE/ISYNC, AMO, LOCK.CMPXCHG, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/CALL_REG/LR_GET/LR_SET/RET, YIELD/SLEEP, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, OBJECT_CTL, DOMAIN_CTL, CAP_DUP/SEND/RECV/REVOKE, ERRNO_GET/SET, GET_PCR, DMA_CTL, ENV_GET, MMAP/MPROTECT, OPEN_FD_DYN/FD_CLOSE_DYN, CLONE.SPAWN/THREAD_JOIN, READ_FD/WRITE_FD, PULL/PUSH, WAITABLE_PROBE, AWAIT/AWAIT_DYN/AWAIT_EX, CALL_CAP/CALL_CAP_DYN/RET_CAP, READ_FD_DYN/WRITE_FD_DYN, FENCE/ISYNC, AMO, LOCK.CMPXCHG, EXIT"
         )),
+    }
+}
+
+fn pcr_selector(pcr: Pcr) -> Result<usize, String> {
+    match pcr {
+        Pcr::Pid => Ok(0),
+        Pcr::Ppid => Ok(1),
+        Pcr::Tid => Ok(2),
+        Pcr::Tp => Ok(3),
+        Pcr::Uid => Ok(4),
+        Pcr::Gid => Ok(5),
+        Pcr::Sigmask => Ok(6),
+        Pcr::Sigpending => Ok(7),
+        Pcr::RealtimeSec | Pcr::RealtimeNsec => {
+            Err("asm-flat-exec does not encode realtime GET_PCR selectors".to_string())
+        }
     }
 }
 
@@ -1458,6 +1475,24 @@ mod tests {
         let hex = encode_flat_exec_hex(&program).unwrap();
 
         assert_eq!(hex, concat!("06000000\n", "01080000\n", "3a080000\n",));
+    }
+
+    #[test]
+    fn asm_flat_exec_encodes_get_pcr_subset() {
+        let source = r#"
+            .text
+              GET_PCR r1, PID
+              GET_PCR r2, TID
+              GET_PCR r3, TLS_BASE
+              EXIT r0
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+
+        assert_eq!(
+            hex,
+            concat!("54080000\n", "54108000\n", "5418c000\n", "3a000000\n",)
+        );
     }
 
     #[test]

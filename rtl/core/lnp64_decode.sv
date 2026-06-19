@@ -235,6 +235,9 @@ module lnp64_decode (
             8'h53: begin
                 dec.opcode = LNP64_OP_CAP_REVOKE;
             end
+            8'h54: begin
+                dec.opcode = LNP64_OP_GET_PCR;
+            end
             8'h56: begin
                 dec.opcode = LNP64_OP_ENV_GET;
             end
@@ -531,6 +534,7 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_FD_CLOSE ||
             dec.opcode == LNP64_OP_WAITABLE_PROBE ||
             dec.opcode == LNP64_OP_AWAIT_EX ||
+            dec.opcode == LNP64_OP_GET_PCR ||
             dec.opcode == LNP64_OP_CLONE ||
             dec.opcode == LNP64_OP_JOIN ||
             dec.opcode == LNP64_OP_DMA_CTL ||

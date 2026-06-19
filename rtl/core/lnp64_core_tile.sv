@@ -2809,6 +2809,42 @@ module lnp64_core_tile #(
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
+                            LNP64_OP_GET_PCR: begin
+                                unique case (dec.rs1[4:0])
+                                    5'd0: begin
+                                        gpr[dec.rd] <= 64'd1;
+                                    end
+                                    5'd1: begin
+                                        gpr[dec.rd] <= 64'd0;
+                                    end
+                                    5'd2: begin
+                                        gpr[dec.rd] <= {32'd0, active_tid};
+                                    end
+                                    5'd3: begin
+                                        gpr[dec.rd] <= 64'd0;
+                                    end
+                                    5'd4: begin
+                                        gpr[dec.rd] <= 64'd0;
+                                    end
+                                    5'd5: begin
+                                        gpr[dec.rd] <= 64'd0;
+                                    end
+                                    5'd6: begin
+                                        gpr[dec.rd] <= 64'd0;
+                                    end
+                                    5'd7: begin
+                                        gpr[dec.rd] <= 64'd0;
+                                    end
+                                    default: begin
+                                        gpr[dec.rd] <= 64'd0 - {48'd0, LNP64_ERR_EINVAL};
+                                        errno_reg <= LNP64_ERR_EINVAL;
+                                    end
+                                endcase
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
                             LNP64_OP_GET_ERRNO: begin
                                 gpr[dec.rd] <= {48'd0, errno_reg};
                                 pc <= pc + 32'd1;

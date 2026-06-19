@@ -335,6 +335,7 @@ pub fn parse_pcr(text: &str) -> Result<Pcr, String> {
         "UID" => Ok(Pcr::Uid),
         "GID" => Ok(Pcr::Gid),
         "TP" => Ok(Pcr::Tp),
+        "TLS_BASE" => Ok(Pcr::Tp),
         "SIGMASK" => Ok(Pcr::Sigmask),
         "SIGPENDING" => Ok(Pcr::Sigpending),
         "REALTIME_SEC" => Ok(Pcr::RealtimeSec),

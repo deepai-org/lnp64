@@ -1312,6 +1312,21 @@ mod tests {
     }
 
     #[test]
+    fn parses_get_pcr_tls_base_alias() {
+        let program = Program::parse(
+            r#"
+            .text
+              GET_PCR r1, TLS_BASE
+            "#,
+        )
+        .unwrap();
+        assert!(matches!(
+            program.instructions[0],
+            Instr::GetPcr(Reg(1), Pcr::Tp)
+        ));
+    }
+
+    #[test]
     fn parses_gate_and_legacy_call_cap_aliases() {
         let program = Program::parse(
             r#"
