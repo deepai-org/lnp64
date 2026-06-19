@@ -190,12 +190,12 @@ dry-running or executing the whole list:
 LNP64_LLVM_GATE_FILTER=real_objects_build bash scripts/run_llvm_bootstrap_gates.sh --dry-run
 ```
 
-Use the deprecated bootstrap compiler only when explicitly checking the legacy
-smoke generator:
+The deprecated bootstrap compiler is only reachable through explicit legacy
+gates. Use these only when checking the remaining retirement queue entries:
 
 ```sh
-cargo run -- cc --toy-bootstrap demos/hello.c -o /tmp/hello.lnp64.s
-cargo run -- run /tmp/hello.lnp64.s
+bash scripts/run_libc_test.sh --legacy-toy
+bash scripts/run_rtl_top_toy_c_smoke.sh tests/rtl/programs/top_return_12.c
 ```
 
 The bootstrap compiler is deprecated. For real Clang/lld coverage, use the
