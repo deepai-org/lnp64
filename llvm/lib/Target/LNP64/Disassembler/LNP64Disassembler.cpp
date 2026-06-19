@@ -329,6 +329,16 @@ public:
       addReg(Instr, C);
       addReg(Instr, (Word >> 4) & 0x1f);
       return MCDisassembler::Success;
+    case 0xcb:
+      Instr.setOpcode(LNP64::FUTEX_WAIT);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      return MCDisassembler::Success;
+    case 0xcc:
+      Instr.setOpcode(LNP64::FUTEX_WAKE);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      return MCDisassembler::Success;
     case 0xad:
       Instr.setOpcode(LNP64::SEXT_B);
       addReg(Instr, A);

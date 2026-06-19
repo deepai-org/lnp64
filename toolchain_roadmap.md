@@ -96,7 +96,9 @@ tree.
 The MC code emitter now has concrete fixed32 paths for `NOP`, `RET`, `LI`,
 `MOV`, integer ALU/compare operations, branch/call/return opcodes,
 byte/halfword/word/doubleword `LD`/`ST`, and native heap opcodes
-`ALLOC`/`ALLOC_EX`/`ALLOC_SIZE`/`FREE`. The first typed-control opcodes
+`ALLOC`/`ALLOC_EX`/`ALLOC_SIZE`/`FREE`. The atomics/wait subset now includes
+real LLVM MC round trips for AMOs, compare-exchange, and `FUTEX_WAIT`/
+`FUTEX_WAKE`. The first typed-control opcodes
 `OBJECT_CTL` and `DOMAIN_CTL` also have real MC and committed-exec coverage
 through private `__lnp_object_ctl`/`__lnp_domain_ctl` Clang smokes. Other
 opcodes remain blocked until operand encodings are implemented.

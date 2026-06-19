@@ -597,10 +597,8 @@ def LOCK_CMPXCHG
   let Pattern = [(set GPR:$rd, (atomic_cmp_swap_64 GPR:$addr, GPR:$old,
                                 GPR:$new))];
 }
-def FUTEX_WAIT : LNP64Inst<(outs GPR:$rd), (ins GPR:$addr, GPR:$expected),
-                           "futex_wait", "\t$rd, $addr, $expected">;
-def FUTEX_WAKE : LNP64Inst<(outs GPR:$rd), (ins GPR:$addr, GPR:$count),
-                           "futex_wake", "\t$rd, $addr, $count">;
+def FUTEX_WAIT : LNP64Cmp<"futex_wait">;
+def FUTEX_WAKE : LNP64Cmp<"futex_wake">;
 def AMO_SWAP : LNP64RRR<"amo.swap"> {
   let Pattern = [(set GPR:$rd, (atomic_swap_64 GPR:$rs1, GPR:$rs2))];
 }

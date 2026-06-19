@@ -1355,6 +1355,8 @@ _start:
   amo.or r10, r11, r12
   lock.cmpxchg r13, r14, r15, r16
   amo.xor r17, r18, r19
+  futex_wait r20, r21
+  futex_wake r22, r23
   ret
 ASM
 atomic_mc_obj="$build_dir/atomic-mc-smoke.o"
@@ -1370,6 +1372,8 @@ grep -q 'amo.and r7, r8, r9' "$atomic_mc_dump"
 grep -q 'amo.or r10, r11, r12' "$atomic_mc_dump"
 grep -q 'lock.cmpxchg r13, r14, r15, r16' "$atomic_mc_dump"
 grep -q 'amo.xor r17, r18, r19' "$atomic_mc_dump"
+grep -q 'futex_wait r20, r21' "$atomic_mc_dump"
+grep -q 'futex_wake r22, r23' "$atomic_mc_dump"
 printf 'real LLVM LNP64 llvm-mc atomic opcode smoke passed: %s\n' \
   "$atomic_mc_obj"
 

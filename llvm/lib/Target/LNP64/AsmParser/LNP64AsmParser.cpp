@@ -292,6 +292,8 @@ private:
             .Case("amo.or", LNP64::AMO_OR)
             .Case("amo.xor", LNP64::AMO_XOR)
             .Case("lock.cmpxchg", LNP64::LOCK_CMPXCHG)
+            .Case("futex_wait", LNP64::FUTEX_WAIT)
+            .Case("futex_wake", LNP64::FUTEX_WAKE)
             .Case("and", LNP64::AND)
             .Case("andi", LNP64::ANDI)
             .Case("or", LNP64::OR)
@@ -419,7 +421,8 @@ private:
         Opcode == LNP64::CSEL_ULT || Opcode == LNP64::CSEL_UGT ||
         Opcode == LNP64::CSEL_ULE || Opcode == LNP64::CSEL_UGE)
       return addRegRegReg(Inst, Operands);
-    if (Opcode == LNP64::CMP || Opcode == LNP64::CMPU)
+    if (Opcode == LNP64::CMP || Opcode == LNP64::CMPU ||
+        Opcode == LNP64::FUTEX_WAIT || Opcode == LNP64::FUTEX_WAKE)
       return addRegReg(Inst, Operands);
     if (Opcode == LNP64::JMP || Opcode == LNP64::BEQ ||
         Opcode == LNP64::BNE || Opcode == LNP64::BLT ||

@@ -1592,6 +1592,8 @@ impl Machine {
             0x4d => Instr::AwaitDyn(a, b, c),
             0x4e => Instr::CallCapDyn(a, b, c, Reg(((word >> 4) & 0x1f) as usize)),
             0x4f => Instr::RetCap(a, b, c),
+            0xcb => Instr::FutexWait(a, b),
+            0xcc => Instr::FutexWake(a, b),
             0xa0 => Instr::Addi(a, b, imm14),
             0xa1 => Instr::Andi(a, b, imm14),
             0xa2 => Instr::Ori(a, b, imm14),
