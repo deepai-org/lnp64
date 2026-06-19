@@ -421,6 +421,10 @@ The concrete first-program set is pinned in
 - `netbsd_fs_service_child`: a non-fork NetBSD personality child replacement
   that exercises the small LNPFS2 service-image mutation/recovery path through
   real Clang/lld output, explicit fd I/O, and a namespace-rooted fixture.
+- `netbsd_classifier_child`: a non-fork NetBSD personality child replacement
+  that exercises generic classifier-table creation, queue authorization,
+  route/drop/fallback actions, counters, and event wakeup through real
+  Clang/lld output.
 - `netbsd_socket_loopback_child`: a non-fork NetBSD personality child
   replacement that exercises endpoint-backed socket options, bind/listen,
   connect/accept, poll readiness, send/recv, and socket `errno` reporting

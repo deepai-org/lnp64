@@ -3623,6 +3623,21 @@ grep -q 'st.b r' "$netbsd_fs_service_test_dump"
 printf 'real LLVM LNP64 clang NetBSD fs service child object passed: %s\n' \
   "$netbsd_fs_service_test_obj"
 
+netbsd_classifier_test_obj="$build_dir/netbsd-classifier-test-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
+  -c userland/classifier_test_clang.c -o "$netbsd_classifier_test_obj"
+test -s "$netbsd_classifier_test_obj"
+netbsd_classifier_test_dump="$build_dir/netbsd-classifier-test-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$netbsd_classifier_test_obj" \
+  >"$netbsd_classifier_test_dump"
+grep -q 'object_ctl r' "$netbsd_classifier_test_dump"
+grep -q 'cap_dup r' "$netbsd_classifier_test_dump"
+grep -q 'pull r' "$netbsd_classifier_test_dump"
+printf 'real LLVM LNP64 clang NetBSD classifier child object passed: %s\n' \
+  "$netbsd_classifier_test_obj"
+
 netbsd_socket_loopback_test_obj="$build_dir/netbsd-socket-loopback-test-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
@@ -5216,6 +5231,18 @@ netbsd_fs_service_test_elf="$build_dir/lnp64-netbsd-fs-service-test-linked.elf"
 test -s "$netbsd_fs_service_test_elf"
 printf 'real LLVM LNP64 lld NetBSD fs service child link passed: %s\n' \
   "$netbsd_fs_service_test_elf"
+
+netbsd_classifier_test_elf="$build_dir/lnp64-netbsd-classifier-test-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$netbsd_classifier_test_elf" "$crt0_obj" "$netbsd_classifier_test_obj" \
+  "$libc_poll_impl_obj" "$libc_fd_impl_obj"
+test -s "$netbsd_classifier_test_elf"
+netbsd_classifier_test_linked_dump="$build_dir/netbsd-classifier-test-linked.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$netbsd_classifier_test_elf" \
+  >"$netbsd_classifier_test_linked_dump"
+grep -q 'await r' "$netbsd_classifier_test_linked_dump"
+printf 'real LLVM LNP64 lld NetBSD classifier child link passed: %s\n' \
+  "$netbsd_classifier_test_elf"
 
 netbsd_socket_loopback_test_elf="$build_dir/lnp64-netbsd-socket-loopback-test-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

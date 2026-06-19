@@ -307,6 +307,9 @@ grep -q 'fs_service_test ok' <<<"$netbsd_fs_service_output"
 grep -q 'exit=0' <<<"$netbsd_fs_service_output"
 printf 'real LLVM LNP64 run-elf NetBSD fs service child passed: %s\n' \
   target/llvm-lnp64-build/lnp64-netbsd-fs-service-test-linked.elf
+run_elf_report "real LLVM LNP64 run-elf NetBSD classifier child passed" \
+  target/llvm-lnp64-build/lnp64-netbsd-classifier-test-linked.elf \
+  'classifier_test ok'
 run_elf_report "real LLVM LNP64 run-elf NetBSD socket loopback child passed" \
   target/llvm-lnp64-build/lnp64-netbsd-socket-loopback-test-linked.elf \
   'socket_loopback_test ok'
