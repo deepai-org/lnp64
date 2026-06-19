@@ -667,6 +667,7 @@ def FREE : LNP64RuntimeSet<"free">;
 def OPEN_AT : LNP64Native4<"open_at">;
 def CLONE_SPAWN : LNP64RRR<"clone.spawn">;
 def THREAD_JOIN : LNP64RRR<"thread_join">;
+def UNLINK_PATH_AT : LNP64Status3<"unlink_path_at">;
 def STAT_PATH_AT : LNP64Status4<"stat_path_at">;
 def STAT_FD_DYN : LNP64Status2<"stat_fd_dyn">;
 def UTIME_PATH_AT : LNP64Status4<"utime_path_at">;

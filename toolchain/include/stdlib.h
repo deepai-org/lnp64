@@ -17,6 +17,7 @@ int putenv(char *string);
 long random(void);
 void *realloc(void *ptr, size_t size);
 int setenv(const char *name, const char *value, int overwrite);
+int mkstemp(char *template);
 char *initstate(unsigned int seed, char *state, size_t size);
 void srandom(unsigned int seed);
 char *setstate(char *state);

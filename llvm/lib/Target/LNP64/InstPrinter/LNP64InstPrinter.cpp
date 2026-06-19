@@ -214,6 +214,8 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
     return "clone.spawn";
   case LNP64::THREAD_JOIN:
     return "thread_join";
+  case LNP64::UNLINK_PATH_AT:
+    return "unlink_path_at";
   case LNP64::STAT_PATH_AT:
     return "stat_path_at";
   case LNP64::STAT_FD_DYN:
@@ -525,6 +527,7 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::ALLOC_EX:
   case LNP64::FCNTL_FD_DYN:
   case LNP64::FD_SEEK_DYN:
+  case LNP64::UNLINK_PATH_AT:
     OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
     printOperand(MI->getOperand(0), OS);
     OS << ", ";

@@ -576,6 +576,12 @@ public:
       addReg(Instr, B);
       addReg(Instr, C);
       return MCDisassembler::Success;
+    case 0x6b:
+      Instr.setOpcode(LNP64::UNLINK_PATH_AT);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      return MCDisassembler::Success;
     case 0x5c:
       Instr.setOpcode(LNP64::STAT_PATH_AT);
       addReg(Instr, A);

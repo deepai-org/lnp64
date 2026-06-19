@@ -400,6 +400,7 @@ private:
             .Case("open_at", LNP64::OPEN_AT)
             .Case("clone.spawn", LNP64::CLONE_SPAWN)
             .Case("thread_join", LNP64::THREAD_JOIN)
+            .Case("unlink_path_at", LNP64::UNLINK_PATH_AT)
             .Case("stat_path_at", LNP64::STAT_PATH_AT)
             .Case("stat_fd_dyn", LNP64::STAT_FD_DYN)
             .Case("utime_path_at", LNP64::UTIME_PATH_AT)
@@ -472,7 +473,8 @@ private:
         Opcode == LNP64::CSEL_ULT || Opcode == LNP64::CSEL_UGT ||
         Opcode == LNP64::CSEL_ULE || Opcode == LNP64::CSEL_UGE)
       return addRegRegReg(Inst, Operands);
-    if (Opcode == LNP64::FCNTL_FD_DYN || Opcode == LNP64::FD_SEEK_DYN)
+    if (Opcode == LNP64::FCNTL_FD_DYN || Opcode == LNP64::FD_SEEK_DYN ||
+        Opcode == LNP64::UNLINK_PATH_AT)
       return addRegRegReg(Inst, Operands);
     if (Opcode == LNP64::CMP || Opcode == LNP64::CMPU ||
         Opcode == LNP64::FUTEX_WAIT || Opcode == LNP64::FUTEX_WAKE ||

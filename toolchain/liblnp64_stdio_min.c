@@ -462,6 +462,12 @@ int fseek(FILE *stream, long offset, int whence) {
 
 long ftell(FILE *stream) { return lnp64_stream_tell(stream); }
 
+int fseeko(FILE *stream, long offset, int whence) {
+  return fseek(stream, offset, whence);
+}
+
+long ftello(FILE *stream) { return ftell(stream); }
+
 int fscanf(FILE *stream, const char *format, ...) {
   const char *set;
   char *out;
@@ -511,6 +517,23 @@ FILE *fopen(const char *path, const char *mode) {
   stream->kind = LNP64_STREAM_FD;
   stream->fd = fd;
   stream->pos = 0;
+  stream->eof = 0;
+  stream->error = 0;
+  stream->has_unget = 0;
+  return stream;
+}
+
+FILE *fdopen(int fd, const char *mode) {
+  (void)mode;
+  if (fd < 0)
+    return 0;
+  FILE *stream = lnp64_alloc_stream();
+  if (!stream)
+    return 0;
+  stream->kind = LNP64_STREAM_FD;
+  stream->fd = fd;
+  long pos = lseek(fd, 0, SEEK_CUR);
+  stream->pos = pos < 0 ? 0 : (unsigned long)pos;
   stream->eof = 0;
   stream->error = 0;
   stream->has_unget = 0;

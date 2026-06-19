@@ -29,6 +29,8 @@ void clearerr(FILE *stream);
 int fileno(FILE *stream);
 int fseek(FILE *stream, long offset, int whence);
 long ftell(FILE *stream);
+int fseeko(FILE *stream, long offset, int whence);
+long ftello(FILE *stream);
 int fscanf(FILE *stream, const char *format, ...);
 int vfprintf(FILE *stream, const char *format, __builtin_va_list ap);
 int sprintf(char *str, const char *format, ...);
@@ -42,6 +44,7 @@ unsigned long fwrite(const void *ptr, unsigned long size, unsigned long count,
                      FILE *stream);
 char *fgets(char *str, int count, FILE *stream);
 FILE *fmemopen(void *buf, unsigned long size, const char *mode);
+FILE *fdopen(int fd, const char *mode);
 FILE *fopen(const char *path, const char *mode);
 FILE *tmpfile(void);
 

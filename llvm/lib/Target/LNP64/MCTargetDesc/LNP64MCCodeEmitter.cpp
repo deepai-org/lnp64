@@ -643,6 +643,12 @@ public:
                                 getGPRNo(MI.getOperand(2))),
                OS);
       return;
+    case LNP64::UNLINK_PATH_AT:
+      emitLE32(encodeFixed32RRR(0x6b, getGPRNo(MI.getOperand(0)),
+                                getGPRNo(MI.getOperand(1)),
+                                getGPRNo(MI.getOperand(2))),
+               OS);
+      return;
     case LNP64::STAT_PATH_AT:
       emitLE32(encodeFixed32RRRR(0x5c, getGPRNo(MI.getOperand(0)),
                                  getGPRNo(MI.getOperand(1)),
