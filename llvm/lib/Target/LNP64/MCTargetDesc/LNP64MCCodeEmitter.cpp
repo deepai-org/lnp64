@@ -581,6 +581,14 @@ public:
     case LNP64::ERRNO_SET:
       emitLE32(encodeFixed32Reg(0x39, getGPRNo(MI.getOperand(0))), OS);
       return;
+    case LNP64::FORK:
+      emitLE32(encodeFixed32Reg(0x7d, getGPRNo(MI.getOperand(0))), OS);
+      return;
+    case LNP64::WAIT_PID:
+      emitLE32(encodeFixed32RR(0x7e, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
     case LNP64::GET_PCR:
       emitLE32((uint32_t(0x54) << 24) |
                    ((getGPRNo(MI.getOperand(0)) & 0x1f) << 19) |

@@ -410,6 +410,8 @@ private:
             .Case("ret", LNP64::RET)
             .Case("errno_get", LNP64::ERRNO_GET)
             .Case("errno_set", LNP64::ERRNO_SET)
+            .Case("fork", LNP64::FORK)
+            .Case("wait_pid", LNP64::WAIT_PID)
             .Case("exit", LNP64::EXIT)
             .Case("alloc", LNP64::ALLOC)
             .Case("alloc_ex", LNP64::ALLOC_EX)
@@ -524,7 +526,7 @@ private:
         Opcode == LNP64::LNP64_KILL || Opcode == LNP64::ALARM ||
         Opcode == LNP64::GET_PCR ||
         Opcode == LNP64::STAT_FD_DYN || Opcode == LNP64::UTIME_FD_DYN ||
-        Opcode == LNP64::GETCWD_PATH)
+        Opcode == LNP64::GETCWD_PATH || Opcode == LNP64::WAIT_PID)
       return addRegReg(Inst, Operands);
     if (Opcode == LNP64::SET_PCR)
       return addRegPcrReg(Inst, Operands);
@@ -542,7 +544,7 @@ private:
         Opcode == LNP64::CSET_UGE)
       return addReg(Inst, Operands);
     if (Opcode == LNP64::ERRNO_GET || Opcode == LNP64::ERRNO_SET ||
-        Opcode == LNP64::EXIT || Opcode == LNP64::FREE ||
+        Opcode == LNP64::FORK || Opcode == LNP64::EXIT || Opcode == LNP64::FREE ||
         Opcode == LNP64::SIGMASK_SET || Opcode == LNP64::CHDIR_PATH)
       return addReg(Inst, Operands);
     if (Opcode == LNP64::ALLOC || Opcode == LNP64::ALLOC_SIZE)

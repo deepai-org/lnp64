@@ -1931,6 +1931,8 @@ impl Machine {
                 let flags = Reg((self.load_exec_u32(pc + 4)? & 0x1f) as usize);
                 return Ok((Instr::ChownPathAt(a, b, c, d, flags), pc + 8));
             }
+            0x7d => Instr::Fork(a),
+            0x7e => Instr::WaitPid(a, b),
             0xcb => Instr::FutexWait(a, b),
             0xcc => Instr::FutexWake(a, b),
             0xcd => Instr::Fence,

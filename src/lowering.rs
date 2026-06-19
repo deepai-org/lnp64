@@ -1477,6 +1477,7 @@ mod tests {
             "clang_userland_lnpsh_object",
             "clang_userland_spawn_task_object",
             "clang_netbsd_loader_target_child_object",
+            "clang_netbsd_fork_wait_child_object",
             "clang_netbsd_thread_child_object",
             "clang_netbsd_poll_child_object",
             "clang_netbsd_signal_gate_child_object",
@@ -1591,6 +1592,8 @@ mod tests {
             "userland_spawn_task_run_elf",
             "netbsd_loader_target_child_static_link",
             "netbsd_loader_target_child_run_elf",
+            "netbsd_fork_wait_child_static_link",
+            "netbsd_fork_wait_child_run_elf",
             "netbsd_thread_child_static_link",
             "netbsd_thread_child_run_elf",
             "netbsd_poll_child_static_link",
@@ -1906,9 +1909,15 @@ mod tests {
         assert!(libc_process_min.contains("unsigned int getuid(void)"));
         assert!(libc_process_min.contains("unsigned int getegid(void)"));
         assert!(libc_process_min.contains("__lnp_get_pid"));
+        assert!(libc_process_min.contains("int fork(void)"));
+        assert!(libc_process_min.contains("int waitpid(int pid, int *status, int options)"));
+        assert!(libc_process_min.contains("lnp64_fork_compat"));
+        assert!(libc_process_min.contains("lnp64_wait_pid_compat"));
         assert!(real_llc.contains("liblnp64-process-min.o"));
         assert!(real_llc.contains("grep -q 'exit r'"));
         assert!(real_llc.contains("grep -q 'get_pcr r'"));
+        assert!(real_llc.contains("grep -q 'fork r'"));
+        assert!(real_llc.contains("grep -q 'wait_pid r'"));
         assert!(
             real_llc.contains(
                 "real LLVM LNP64 clang minilibc process implementation object smoke passed"
@@ -2615,6 +2624,10 @@ mod tests {
         assert!(
             real_llc.contains("real LLVM LNP64 clang NetBSD loader target child object passed")
         );
+        assert!(real_llc.contains("userland/fork_wait_test_clang.c"));
+        assert!(real_llc.contains("netbsd-fork-wait-test-clang-smoke.o"));
+        assert!(real_llc.contains(r#"grep -q 'call ' "$netbsd_fork_wait_test_dump""#));
+        assert!(real_llc.contains("real LLVM LNP64 clang NetBSD fork/wait child object passed"));
         assert!(real_llc.contains("userland/thread_test_clang.c"));
         assert!(real_llc.contains("netbsd-thread-test-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang NetBSD thread child object passed"));
@@ -2793,6 +2806,13 @@ mod tests {
         assert!(real_llc.contains("lnp64-netbsd-loader-target-linked.elf"));
         assert!(real_llc.contains(r#""$netbsd_loader_target_obj" \"#));
         assert!(real_llc.contains("real LLVM LNP64 lld NetBSD loader target child link passed"));
+        assert!(real_llc.contains("lnp64-netbsd-fork-wait-test-linked.elf"));
+        assert!(real_llc.contains(r#""$netbsd_fork_wait_test_obj" \"#));
+        assert!(
+            real_llc
+                .contains(r#""$libc_process_impl_obj" "$libc_errno_impl_obj" "$libc_fd_impl_obj""#)
+        );
+        assert!(real_llc.contains("real LLVM LNP64 lld NetBSD fork/wait child link passed"));
         assert!(real_llc.contains("lnp64-netbsd-thread-test-linked.elf"));
         assert!(real_llc.contains(r#""$netbsd_thread_test_obj" \"#));
         assert!(real_llc.contains(r#""$libc_string_impl_obj" \"#));
@@ -3633,6 +3653,9 @@ mod tests {
         assert!(real_llc_docker.contains("lnp64-netbsd-namespace-test-linked.elf"));
         assert!(real_llc_docker.contains("namespace_test ok"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf NetBSD namespace child passed"));
+        assert!(real_llc_docker.contains("lnp64-netbsd-fork-wait-test-linked.elf"));
+        assert!(real_llc_docker.contains("fork_wait_test ok"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf NetBSD fork/wait child passed"));
         assert!(real_llc_docker.contains("lnp64-sbase-echo-linked.elf"));
         assert!(real_llc_docker.contains("echo hello clang --expect 'hello clang'"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase echo execution passed"));
@@ -3827,6 +3850,7 @@ mod tests {
             "real_userland_lnpsh_execution",
             "real_userland_spawn_task_execution",
             "real_netbsd_loader_target_child_execution",
+            "real_netbsd_fork_wait_child_execution",
             "real_netbsd_thread_child_execution",
             "real_netbsd_poll_child_execution",
             "real_netbsd_signal_gate_child_execution",
@@ -3925,6 +3949,7 @@ mod tests {
             "real_userland_lnpsh_execution",
             "real_userland_spawn_task_execution",
             "real_netbsd_loader_target_child_execution",
+            "real_netbsd_fork_wait_child_execution",
             "real_netbsd_thread_child_execution",
             "real_netbsd_poll_child_execution",
             "real_netbsd_signal_gate_child_execution",
@@ -4170,6 +4195,8 @@ mod tests {
             "CSET_ULT",
             "CMPU",
             "ERRNO_SET",
+            "FORK",
+            "WAIT_PID",
             "GET_PCR",
             "SET_PCR",
             "OPEN_AT",
@@ -4239,6 +4266,8 @@ mod tests {
         assert!(inst_printer.contains("getLNP64Mnemonic"));
         assert!(inst_printer.contains("printMemOperand"));
         assert!(inst_printer.contains("errno_set"));
+        assert!(inst_printer.contains("fork"));
+        assert!(inst_printer.contains("wait_pid"));
         assert!(inst_printer.contains("cset.eq"));
         assert!(inst_printer.contains("cset.ult"));
         assert!(inst_printer.contains("case LNP64::EXIT"));
@@ -4267,6 +4296,8 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::ENV_GET"));
         assert!(mc_emitter.contains("case LNP64::CLONE_SPAWN"));
         assert!(mc_emitter.contains("case LNP64::THREAD_JOIN"));
+        assert!(mc_emitter.contains("case LNP64::FORK"));
+        assert!(mc_emitter.contains("case LNP64::WAIT_PID"));
         assert!(mc_emitter.contains("case LNP64::YIELD"));
         assert!(mc_emitter.contains("fixup_lnp64_pcrel32"));
         assert!(mc_emitter.contains("fixup_lnp64_abs32"));
@@ -4294,6 +4325,8 @@ mod tests {
         assert!(asm_parser.contains(r#".Case("cset.ult", LNP64::CSET_ULT)"#));
         assert!(asm_parser.contains(r#".Case("errno_get", LNP64::ERRNO_GET)"#));
         assert!(asm_parser.contains(r#".Case("errno_set", LNP64::ERRNO_SET)"#));
+        assert!(asm_parser.contains(r#".Case("fork", LNP64::FORK)"#));
+        assert!(asm_parser.contains(r#".Case("wait_pid", LNP64::WAIT_PID)"#));
         assert!(asm_parser.contains(r#".Case("exit", LNP64::EXIT)"#));
         assert!(asm_parser.contains(r#".Case("mmap", LNP64::MMAP)"#));
         assert!(asm_parser.contains(r#".Case("munmap", LNP64::MUNMAP)"#));
@@ -4307,6 +4340,8 @@ mod tests {
         assert!(asm_parser.contains(r#".Case("thread_join", LNP64::THREAD_JOIN)"#));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::YIELD)"));
         assert!(instr_td.contains("def OPEN_AT : LNP64Native4"));
+        assert!(instr_td.contains("def FORK : LNP64RuntimeGet"));
+        assert!(instr_td.contains("def WAIT_PID : LNP64RR"));
         assert!(instr_td.contains("def CLONE_SPAWN : LNP64RRR"));
         assert!(instr_td.contains("def THREAD_JOIN : LNP64RRR"));
         assert!(instr_td.contains("def GET_PCR : LNP64PcrGet"));
@@ -4314,6 +4349,8 @@ mod tests {
         assert!(asm_parser.contains(r#".Case("ld.w", LNP64::LD_W)"#));
         assert!(asm_parser.contains(r#".Case("ld.h", LNP64::LD_H)"#));
         assert!(disassembler.contains("LLVMInitializeLNP64Disassembler"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::FORK)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::WAIT_PID)"));
         assert!(disassembler.contains("RegisterMCDisassembler"));
         assert!(disassembler.contains("readLE32"));
         assert!(disassembler.contains("ArrayRef<uint8_t> Bytes"));
@@ -5038,6 +5075,7 @@ mod tests {
             "userland_lnpsh",
             "userland_spawn_task",
             "netbsd_loader_target_child",
+            "netbsd_fork_wait_child",
             "netbsd_thread_child",
             "netbsd_poll_child",
             "netbsd_signal_gate_child",
@@ -5086,6 +5124,7 @@ mod tests {
         assert_eq!(statuses["userland_lnpsh"], "partial");
         assert_eq!(statuses["userland_spawn_task"], "partial");
         assert_eq!(statuses["netbsd_loader_target_child"], "partial");
+        assert_eq!(statuses["netbsd_fork_wait_child"], "partial");
         assert_eq!(statuses["netbsd_thread_child"], "partial");
         assert_eq!(statuses["netbsd_poll_child"], "partial");
         assert_eq!(statuses["netbsd_signal_gate_child"], "partial");
@@ -5829,6 +5868,7 @@ mod tests {
             "userland_lnpsh",
             "userland_spawn_task",
             "netbsd_loader_target_child",
+            "netbsd_fork_wait_child",
             "netbsd_thread_child",
             "netbsd_poll_child",
             "netbsd_signal_gate_child",

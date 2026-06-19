@@ -546,6 +546,15 @@ public:
       Instr.setOpcode(LNP64::ERRNO_SET);
       addReg(Instr, A);
       return MCDisassembler::Success;
+    case 0x7d:
+      Instr.setOpcode(LNP64::FORK);
+      addReg(Instr, A);
+      return MCDisassembler::Success;
+    case 0x7e:
+      Instr.setOpcode(LNP64::WAIT_PID);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      return MCDisassembler::Success;
     case 0x3a:
       Instr.setOpcode(LNP64::EXIT);
       addReg(Instr, A);

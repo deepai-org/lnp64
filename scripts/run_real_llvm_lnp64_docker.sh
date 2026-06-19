@@ -258,6 +258,9 @@ run_elf_report "real LLVM LNP64 run-elf NetBSD personality clang smoke passed" \
 run_elf_report "real LLVM LNP64 run-elf NetBSD loader target child passed" \
   target/llvm-lnp64-build/lnp64-netbsd-loader-target-linked.elf \
   'loader_target ok'
+run_elf_report "real LLVM LNP64 run-elf NetBSD fork/wait child passed" \
+  target/llvm-lnp64-build/lnp64-netbsd-fork-wait-test-linked.elf \
+  'fork_wait_test ok'
 run_elf_report "real LLVM LNP64 run-elf NetBSD thread child passed" \
   target/llvm-lnp64-build/lnp64-netbsd-thread-test-linked.elf \
   'thread_test ok'

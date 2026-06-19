@@ -176,6 +176,10 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
     return "errno_get";
   case LNP64::ERRNO_SET:
     return "errno_set";
+  case LNP64::FORK:
+    return "fork";
+  case LNP64::WAIT_PID:
+    return "wait_pid";
   case LNP64::EXIT:
     return "exit";
   case LNP64::ALLOC:
@@ -479,6 +483,7 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::CMPU:
   case LNP64::FUTEX_WAIT:
   case LNP64::FUTEX_WAKE:
+  case LNP64::WAIT_PID:
   case LNP64::STAT_FD_DYN:
   case LNP64::UTIME_FD_DYN:
   case LNP64::SIGACTION:
@@ -510,6 +515,7 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
     break;
   case LNP64::ERRNO_GET:
   case LNP64::ERRNO_SET:
+  case LNP64::FORK:
   case LNP64::EXIT:
   case LNP64::FREE:
   case LNP64::SIGMASK_SET:

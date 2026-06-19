@@ -29,6 +29,7 @@ integer_compare_value|fixed32_cset|CSET.EQ,CSET.NE,CSET.LT,CSET.GT,CSET.LE,CSET.
 control_branch|fixed32_branch26|JMP,BEQ,BNE,BLT,BGT,BLE,BGE,CALL|pc_relative_target|R_LNP64_BRANCH26,R_LNP64_PC32|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64MCAsmBackend.cpp,LNP64AsmParser.cpp
 control_register|fixed32_reg_or_none|CALL_REG,LR_GET,LR_SET,RET|gpr_target_or_link_register_or_none|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp
 runtime_control|fixed32_reg_or_none|ERRNO_GET,ERRNO_SET,EXIT|gpr_status_or_errno|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp
+compat_process_control|fixed32_compat_process|FORK,WAIT_PID|FORK:gpr_result;WAIT_PID:gpr_status,gpr_pid|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
 memory|fixed32_mem_base_simm|LD,LD.W,LD.H,LD.B,ST,ST.W,ST.H,ST.B|gpr,base_gpr,signed_offset|R_LNP64_ABS64,R_LNP64_PC32|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64AsmParser.cpp
 barrier|fixed32_misc|FENCE,ISYNC|none_or_gpr_triple|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp
 atomics|fixed32_atomic|LOCK.CMPXCHG,AMO.SWAP,AMO.ADD,AMO.AND,AMO.OR,AMO.XOR,FUTEX_WAIT,FUTEX_WAKE|gpr_memory_or_wait_operands|none|LNP64InstrInfo.td,LNP64ISelLowering.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
