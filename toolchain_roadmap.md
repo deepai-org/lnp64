@@ -463,12 +463,11 @@ gate must assemble `toolchain/crt0_lnp64.s`, the static link gate must use
 `toolchain/lnp64_static.ld`, and all gates must stay Clang/lld/loader based: no
 gate in that manifest or driver script may invoke `lnp64 cc`, `cargo run -- cc`,
 or the in-repo toy C compiler.
-The `run_without_toy_compiler` gate is partial: linked hello, factorial,
-allocator, Fibonacci, PCR, cat/openat, JSON parser, rot13, producer/consumer,
-parallel hash, sqlite lite, and ping-pong smokes now run through real
-Clang/lld output, while the full
-gate remains open until the Clang-built libc/runtime path replaces the
-smoke-only shim.
+The no-toy run-elf path is tested: linked hello, factorial, allocator,
+Fibonacci, PCR, cat/openat, JSON parser, rot13, producer/consumer, parallel
+hash, sqlite lite, and ping-pong smokes now run through real Clang/lld output.
+The broader runtime replacement remains open until the Clang-built libc/runtime
+path replaces the smoke-only shim.
 
 ## Checked Transition Deliverables
 

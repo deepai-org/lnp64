@@ -4429,12 +4429,12 @@ mod tests {
             "entry_state",
             "exec_opcode_static_elf",
             "text_fetch_decode",
+            "no_toy_compiler",
         ] {
             assert_eq!(stages[stage].0, "tested", "{stage} should be tested");
         }
         assert_eq!(stages["stdout_exit"].0, "partial");
-        assert_eq!(stages["no_toy_compiler"].0, "partial");
-        assert!(roadmap.contains("run_without_toy_compiler` gate is partial"));
+        assert!(roadmap.contains("The no-toy run-elf path is tested"));
     }
 
     #[test]
