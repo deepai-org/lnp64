@@ -174,6 +174,7 @@ package lnp64_pkg;
         LNP64_OP_LA_LITERAL   = 16'h007e,
         LNP64_OP_CAP_SEND     = 16'h007f,
         LNP64_OP_CAP_RECV     = 16'h0080,
+        LNP64_OP_SLEEP        = 16'h0082,
         LNP64_OP_UNSUPPORTED  = 16'h00ff
     } lnp64_opcode_e;
 

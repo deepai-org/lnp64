@@ -364,6 +364,7 @@ def load_rust_flat_to_arch_opcode_map() -> dict[int, int]:
         "LrSet": "LNP64_OP_LR_SET",
         "Ret": "LNP64_OP_RET",
         "Yield": "LNP64_OP_YIELD",
+        "Sleep": "LNP64_OP_SLEEP",
         "Pull": "LNP64_OP_PULL",
         "Push": "LNP64_OP_PUSH",
         "PullDyn": "LNP64_OP_PULL",

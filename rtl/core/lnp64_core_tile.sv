@@ -2042,6 +2042,12 @@ module lnp64_core_tile #(
                                     retire_submit_record <= retire_submit_next;
                                 end
                             end
+                            LNP64_OP_SLEEP: begin
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
                             LNP64_OP_ENV_GET: begin
                                 case (gpr[dec.rs1])
                                     64'd0: gpr[dec.rd] <= LNP64_S0_FEATURES;

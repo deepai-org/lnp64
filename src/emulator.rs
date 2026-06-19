@@ -1770,6 +1770,7 @@ impl Machine {
                 return Ok((Instr::Li(a, Value::Imm(value)), pc + 8));
             }
             0x06 => Instr::Yield,
+            0x07 => Instr::Sleep(a),
             0xd0 => {
                 let offset = sign_extend(self.load_exec_u32(pc + 4)?, 32);
                 return Ok((

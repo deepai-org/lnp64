@@ -466,7 +466,13 @@
       "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
       "comparison": "retire_trace_and_final_state"
     },
-    {"source": "demos/object_profiles.s", "required_features": ["core", "object_profiles"], "status": "blocked_by_features"},
+    {
+      "source": "demos/object_profiles.s",
+      "required_features": ["core", "object_profiles", "sleep", "timer", "event_counter", "memory_object", "sync_call_gate"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    },
     {"source": "demos/resource_domains.s", "required_features": ["core", "resource_domain"], "status": "blocked_by_features"},
     {
       "source": "demos/revoked_dma_buffer.s",

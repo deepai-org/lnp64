@@ -38,6 +38,9 @@ module lnp64_decode (
             8'h06: begin
                 dec.opcode = LNP64_OP_YIELD;
             end
+            8'h07: begin
+                dec.opcode = LNP64_OP_SLEEP;
+            end
             8'h10: begin
                 dec.opcode = LNP64_OP_ADD;
             end
@@ -488,6 +491,7 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_ST_H ||
             dec.opcode == LNP64_OP_ST_B ||
             dec.opcode == LNP64_OP_YIELD ||
+            dec.opcode == LNP64_OP_SLEEP ||
             dec.opcode == LNP64_OP_DMA_CTL ||
             dec.opcode == LNP64_OP_ENV_GET ||
             dec.opcode == LNP64_OP_READ_FD ||
