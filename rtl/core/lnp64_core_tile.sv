@@ -2596,16 +2596,22 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_WAITABLE_PROBE: begin
-                                if (!await_fd_in_range || !fdr_valid[await_fd] ||
-                                    fdr_revoked[await_fd] ||
-                                    ((fdr_rights[await_fd] & 64'd16) == 64'd0)) begin
-                                    gpr[dec.rd] <= 64'd32;
+                                if (!await_fd_in_range || !fdr_valid[await_fd]) begin
+                                    gpr[dec.rd] <= 64'd0 - {48'd0, LNP64_ERR_EBADF};
+                                    errno_reg <= LNP64_ERR_EBADF;
+                                end else if (fdr_revoked[await_fd]) begin
+                                    gpr[dec.rd] <= 64'd0 - {48'd0, RTL_ERR_ESTALE};
+                                    errno_reg <= RTL_ERR_ESTALE;
+                                end else if ((fdr_rights[await_fd] & 64'd16) == 64'd0) begin
+                                    gpr[dec.rd] <= 64'd0 - {48'd0, LNP64_ERR_EPERM};
+                                    errno_reg <= LNP64_ERR_EPERM;
                                 end else if (await_fd_ready && ((gpr[dec.rs2] & 64'd1) != 64'd0)) begin
                                     gpr[dec.rd] <= 64'd1;
+                                    errno_reg <= LNP64_ERR_OK;
                                 end else begin
                                     gpr[dec.rd] <= 64'd0;
+                                    errno_reg <= LNP64_ERR_OK;
                                 end
-                                errno_reg <= LNP64_ERR_OK;
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;

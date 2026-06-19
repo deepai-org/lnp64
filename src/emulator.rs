@@ -2609,18 +2609,16 @@ impl Machine {
             Instr::WaitableProbe(result, fd, events) => {
                 Self::ensure_result_reg_writable(result)?;
                 let events = self.read_reg(events)?;
-                let revents = self.poll_fd_mask(fd.0 as u64, events)?;
-                self.complete_reg_ok(result, revents)?;
+                self.waitable_probe_index(result, fd.0, events)?;
             }
             Instr::WaitableProbeDyn(result, fd_reg, events) => {
                 Self::ensure_result_reg_writable(result)?;
                 let fd = self.read_reg(fd_reg)?;
                 let events = self.read_reg(events)?;
-                let revents = match self.checked_fd_index(fd)? {
-                    Some(fd) => self.poll_fd_index_mask(fd, events)?,
-                    None => POLLNVAL_MASK,
+                match self.decode_fd_value(fd) {
+                    Ok(fd) => self.waitable_probe_index(result, fd, events)?,
+                    Err(errno) => self.complete_reg_negative_errno(result, errno)?,
                 };
-                self.complete_reg_ok(result, revents)?;
             }
             Instr::Alloc(dst, bytes_reg) => {
                 Self::ensure_result_reg_writable(dst)?;
@@ -4251,6 +4249,12 @@ impl Machine {
         Self::ensure_result_reg_writable(result)?;
         self.set_errno(errno)?;
         self.write_reg(result, -1i64 as u64)
+    }
+
+    fn complete_reg_negative_errno(&mut self, result: Reg, errno: u64) -> Result<(), String> {
+        Self::ensure_result_reg_writable(result)?;
+        self.set_errno(errno)?;
+        self.write_reg(result, 0u64.wrapping_sub(errno))
     }
 
     fn set_status_ok(&mut self) -> Result<(), String> {
@@ -9305,19 +9309,15 @@ impl Machine {
         result
     }
 
-    fn poll_fd_mask(&mut self, fd: u64, events: u64) -> Result<u64, String> {
-        let revents = match self.decode_fd_value(fd) {
-            Ok(fd) => self.poll_fd_index_mask_raw(fd, events)?,
-            Err(_) => POLLNVAL_MASK,
-        };
-        self.set_errno(0)?;
-        Ok(revents)
-    }
-
-    fn poll_fd_index_mask(&mut self, fd: usize, events: u64) -> Result<u64, String> {
+    fn waitable_probe_index(&mut self, result: Reg, fd: usize, events: u64) -> Result<(), String> {
+        if fd >= FDR_COUNT {
+            return self.complete_reg_negative_errno(result, 9);
+        }
+        if let Err(errno) = self.fd_right_errno(fd, CAP_RIGHT_POLL) {
+            return self.complete_reg_negative_errno(result, errno);
+        }
         let revents = self.poll_fd_index_mask_raw(fd, events)?;
-        self.set_errno(0)?;
-        Ok(revents)
+        self.complete_reg_ok(result, revents)
     }
 
     fn poll_fd_index_mask_raw(&mut self, fd: usize, events: u64) -> Result<u64, String> {
@@ -17968,6 +17968,36 @@ mod tests {
 
         assert_eq!(machine.thread().unwrap().regs[8], POLLIN_MASK);
         assert_eq!(machine.process().unwrap().errno, 0);
+        assert!(machine.fd_waiters.is_empty());
+        assert!(machine.ready.contains(&1));
+    }
+
+    #[test]
+    fn waitable_probe_failures_return_negative_architectural_errno() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.thread_mut().unwrap().regs[2] = POLLIN_MASK;
+
+        machine
+            .exec(Instr::WaitableProbe(Reg(5), FdReg(7), Reg(2)))
+            .unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[5], 0u64.wrapping_sub(9));
+        assert_eq!(machine.process().unwrap().errno, 9);
+        assert!(machine.fd_waiters.is_empty());
+        assert!(machine.ready.contains(&1));
+
+        create_pipe_pair(&mut machine, 3, 4);
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[3].rights &= !CAP_RIGHT_POLL;
+        machine.thread_mut().unwrap().regs[6] = 3;
+        machine.thread_mut().unwrap().regs[7] = POLLIN_MASK;
+
+        machine
+            .exec(Instr::WaitableProbeDyn(Reg(8), Reg(6), Reg(7)))
+            .unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[8], u64::MAX);
+        assert_eq!(machine.process().unwrap().errno, 1);
         assert!(machine.fd_waiters.is_empty());
         assert!(machine.ready.contains(&1));
     }

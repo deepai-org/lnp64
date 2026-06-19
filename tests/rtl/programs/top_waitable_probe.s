@@ -39,6 +39,16 @@ drain_and_probe_empty:
   CMP r18, r0
   BNE bad
 
+probe_closed_fd_error:
+  WAITABLE_PROBE r19, fd7, r20
+  LI r1, -9
+  CMP r19, r1
+  BNE bad
+  ERRNO_GET r21
+  LI r1, 9
+  CMP r21, r1
+  BNE bad
+
 done:
   EXIT r0
 
