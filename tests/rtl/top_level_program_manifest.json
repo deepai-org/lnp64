@@ -188,7 +188,13 @@
     {"source": "demos/call_gate_modes.s", "required_features": ["core", "gate", "continuation"], "status": "blocked_by_features"},
     {"source": "demos/capability_transfer.s", "required_features": ["core", "fdr", "capability_transfer"], "status": "blocked_by_features"},
     {"source": "demos/cgroup_domains.s", "required_features": ["core", "resource_domain", "scheduler"], "status": "blocked_by_features"},
-    {"source": "demos/dma_copy.s", "required_features": ["core", "fdr", "dma"], "status": "blocked_by_features"},
+    {
+      "source": "demos/dma_copy.s",
+      "required_features": ["core", "heap", "object_ctl_dma_buffer_create", "dma_ctl_copy", "dma_buffer_scope", "errno", "data_labels", "write_fd", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    },
     {"source": "demos/domain_pressure.s", "required_features": ["core", "resource_domain", "accounting"], "status": "blocked_by_features"},
     {
       "source": "demos/env_get.s",

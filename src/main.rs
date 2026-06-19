@@ -468,6 +468,7 @@ fn encode_flat_exec_instr(
         Instr::LockCmpxchg(dst, addr, expected, new_value) => {
             Ok(vec![enc_rrrr(0xc9, *dst, *addr, *expected, *new_value)])
         }
+        Instr::ObjectCtl(result, argblock) => Ok(vec![enc_rrr(0x4b, *result, *argblock, Reg(0))]),
         Instr::ErrnoGet(rd) => Ok(vec![enc_reg(0x38, *rd)]),
         Instr::ErrnoSet(src) => Ok(vec![enc_reg(0x39, *src)]),
         Instr::DmaCtl(result, argblock) => Ok(vec![enc_rrr(0x5b, *result, *argblock, Reg(0))]),
@@ -483,7 +484,7 @@ fn encode_flat_exec_instr(
         Instr::Isync(result, addr, len) => Ok(vec![enc_rrr(0xce, *result, *addr, *len)]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, ERRNO_GET/SET, DMA_CTL, ENV_GET, WRITE_FD, FENCE/ISYNC, LOCK.CMPXCHG, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, OBJECT_CTL, ERRNO_GET/SET, DMA_CTL, ENV_GET, WRITE_FD, FENCE/ISYNC, LOCK.CMPXCHG, EXIT"
         )),
     }
 }
@@ -2001,6 +2002,7 @@ mod tests {
     fn asm_flat_exec_encodes_dma_ctl_subset() {
         let source = r#"
             .text
+              OBJECT_CTL r4, r10
               DMA_CTL r7, r10
               EXIT r7
         "#;
@@ -2010,6 +2012,7 @@ mod tests {
         assert_eq!(
             hex,
             concat!(
+                "4b228000\n",
                 "5b3a8000\n",
                 "3a380000\n",
             )

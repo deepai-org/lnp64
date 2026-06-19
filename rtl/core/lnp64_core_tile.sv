@@ -84,6 +84,10 @@ module lnp64_core_tile #(
     localparam logic [63:0] HEAP_ARCH_BASE = 64'h0000_0000_0010_f000;
     localparam logic [63:0] FLAT_DATA_BASE_ADDR = 64'h0000_0000_0001_0000;
     localparam logic [63:0] FLAT_EXEC_BASE_ADDR = 64'h0000_0000_0000_1000;
+    localparam logic [63:0] OBJECT_OP_CREATE = 64'd1;
+    localparam logic [63:0] OBJECT_KIND_DMA_BUFFER = 64'd4;
+    localparam logic [63:0] RTL_DMA_BUFFER_DEFAULT_FD = 64'd3;
+    localparam logic [63:0] RTL_DMA_BUFFER_TOKEN = 64'h4000_0000_0000_0203;
     localparam int unsigned DATA_SRAM_BASE_WORD = 16;
     localparam int unsigned HEAP_SRAM_BASE_WORD = 96;
     logic [15:0] errno_reg;
@@ -106,6 +110,23 @@ module lnp64_core_tile #(
     logic [63:0] dma_len;
     logic [63:0] dma_buffer;
     logic dma_dst_heap_valid;
+    logic dma_src_heap_valid;
+    logic dma_scope_valid;
+    int unsigned dma_dst_next_sram_word_index;
+    logic [63:0] object_argblock_addr;
+    logic [63:0] object_op;
+    logic [63:0] object_kind;
+    logic [63:0] object_fd_req;
+    logic [63:0] object_dma_addr;
+    logic [63:0] object_dma_len;
+    logic [63:0] object_fd_store_addr;
+    int unsigned object_fd_store_word_index;
+    int unsigned object_fd_store_next_word_index;
+    logic [2:0] object_fd_store_byte_lane;
+    logic dma_buffer_object_valid;
+    logic [63:0] dma_buffer_object_fd;
+    logic [63:0] dma_buffer_object_addr;
+    logic [63:0] dma_buffer_object_len;
     logic [63:0] heap_next;
     logic [63:0] heap_alloc_ptr [0:3];
     logic [63:0] heap_alloc_size [0:3];
@@ -376,6 +397,26 @@ module lnp64_core_tile #(
         end
     endfunction
 
+    function automatic logic range_within(
+        input logic [63:0] base,
+        input logic [63:0] extent,
+        input logic [63:0] addr,
+        input logic [63:0] len
+    );
+        begin
+            range_within = addr >= base &&
+                len <= extent &&
+                (addr - base) <= (extent - len);
+        end
+    endfunction
+
+    function automatic logic dma_buffer_ref_matches(input logic [63:0] value);
+        begin
+            dma_buffer_ref_matches = dma_buffer_object_valid &&
+                (value == dma_buffer_object_fd || value == RTL_DMA_BUFFER_TOKEN);
+        end
+    endfunction
+
     function automatic logic [63:0] clz64(input logic [63:0] value);
         integer bit_idx;
         logic seen_one;
@@ -543,8 +584,26 @@ module lnp64_core_tile #(
         dma_len = load_double_unaligned(dma_argblock_addr + 64'd24);
         dma_buffer = load_double_unaligned(dma_argblock_addr + 64'd32);
         dma_dst_sram_word_index = sram_word_index(dma_dst);
+        dma_dst_next_sram_word_index = sram_word_index(dma_dst + (64'd8 - {61'd0, dma_dst[2:0]}));
         dma_dst_byte_lane = dma_dst[2:0];
         dma_dst_heap_valid = heap_range_valid(dma_dst, dma_len);
+        dma_src_heap_valid = heap_range_valid(dma_src_or_value, dma_len);
+        dma_scope_valid = dma_buffer_ref_matches(dma_buffer) &&
+            range_within(dma_buffer_object_addr, dma_buffer_object_len, dma_dst, dma_len) &&
+            (dma_op != 64'd1 ||
+                range_within(dma_buffer_object_addr, dma_buffer_object_len, dma_src_or_value, dma_len));
+        object_argblock_addr = gpr[dec.rs1];
+        object_op = load_double_unaligned(object_argblock_addr);
+        object_kind = load_double_unaligned(object_argblock_addr + 64'd8);
+        object_fd_req = load_double_unaligned(object_argblock_addr + 64'd24);
+        object_dma_addr = load_double_unaligned(object_argblock_addr + 64'd40);
+        object_dma_len = load_double_unaligned(object_argblock_addr + 64'd48);
+        object_fd_store_addr = object_argblock_addr + 64'd24;
+        object_fd_store_word_index = sram_word_index(object_fd_store_addr);
+        object_fd_store_next_word_index = sram_word_index(
+            object_fd_store_addr + (64'd8 - {61'd0, object_fd_store_addr[2:0]})
+        );
+        object_fd_store_byte_lane = object_fd_store_addr[2:0];
     end
 
     always_comb begin
@@ -641,6 +700,10 @@ module lnp64_core_tile #(
             command_pc <= 32'd0;
             heap_next <= HEAP_ARCH_BASE;
             heap_alloc_next_slot <= 2'd0;
+            dma_buffer_object_valid <= 1'b0;
+            dma_buffer_object_fd <= RTL_DMA_BUFFER_DEFAULT_FD;
+            dma_buffer_object_addr <= 64'd0;
+            dma_buffer_object_len <= 64'd0;
             topology_record_valid <= 1'b0;
             topology_record_base <= 64'd0;
             for (i = 0; i < 32; i = i + 1) begin
@@ -1273,11 +1336,14 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_DMA_CTL: begin
-                                if (dma_buffer != 64'd0) begin
+                                if (dma_buffer != 64'd0 && !dma_buffer_ref_matches(dma_buffer)) begin
                                     gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                    errno_reg <= LNP64_ERR_ENOTSUP;
+                                    errno_reg <= LNP64_ERR_EBADF;
+                                end else if (dma_buffer != 64'd0 && !dma_scope_valid) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EFAULT;
                                 end else if (dma_op == 64'd2) begin
-                                    if (!dma_dst_heap_valid) begin
+                                    if (dma_buffer == 64'd0 && !dma_dst_heap_valid) begin
                                         gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
                                         errno_reg <= LNP64_ERR_EFAULT;
                                     end else if (dma_len == 64'd0) begin
@@ -1297,8 +1363,32 @@ module lnp64_core_tile #(
                                         errno_reg <= LNP64_ERR_ENOTSUP;
                                     end
                                 end else if (dma_op == 64'd1) begin
-                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                    errno_reg <= LNP64_ERR_ENOTSUP;
+                                    if (dma_buffer == 64'd0 && (!dma_dst_heap_valid || !dma_src_heap_valid)) begin
+                                        gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= LNP64_ERR_EFAULT;
+                                    end else if (dma_len == 64'd0) begin
+                                        gpr[dec.rd] <= 64'd0;
+                                        errno_reg <= LNP64_ERR_OK;
+                                    end else if (dma_len == 64'd8) begin
+                                        sram[dma_dst_sram_word_index] <= store_double_low_word(
+                                            sram[dma_dst_sram_word_index],
+                                            dma_dst_byte_lane,
+                                            load_double_unaligned(dma_src_or_value)
+                                        );
+                                        if (dma_dst_byte_lane != 3'd0) begin
+                                            sram[dma_dst_next_sram_word_index] <= store_double_high_word(
+                                                sram[dma_dst_next_sram_word_index],
+                                                dma_dst_byte_lane,
+                                                load_double_unaligned(dma_src_or_value)
+                                            );
+                                        end
+                                        dcache_writeback <= 1'b1;
+                                        gpr[dec.rd] <= 64'd8;
+                                        errno_reg <= LNP64_ERR_OK;
+                                    end else begin
+                                        gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= LNP64_ERR_ENOTSUP;
+                                    end
                                 end else begin
                                     gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= LNP64_ERR_EINVAL;
@@ -1385,9 +1475,56 @@ module lnp64_core_tile #(
                                 state <= CORE_DONE;
                             end
                             LNP64_OP_OBJECT_CTL: begin
-                                pending_unsupported <= 1'b0;
-                                command_pc <= pc;
-                                state <= CORE_SEND_CMD;
+                                if (object_op == OBJECT_OP_CREATE &&
+                                    object_kind == OBJECT_KIND_DMA_BUFFER &&
+                                    object_dma_len != 64'd0 &&
+                                    heap_range_valid(object_dma_addr, object_dma_len) &&
+                                    (object_fd_req == 64'd0 || object_fd_req == RTL_DMA_BUFFER_DEFAULT_FD)) begin
+                                    dma_buffer_object_valid <= 1'b1;
+                                    dma_buffer_object_fd <= RTL_DMA_BUFFER_DEFAULT_FD;
+                                    dma_buffer_object_addr <= object_dma_addr;
+                                    dma_buffer_object_len <= object_dma_len;
+                                    sram[object_fd_store_word_index] <= store_double_low_word(
+                                        sram[object_fd_store_word_index],
+                                        object_fd_store_byte_lane,
+                                        RTL_DMA_BUFFER_DEFAULT_FD
+                                    );
+                                    if (object_fd_store_byte_lane != 3'd0) begin
+                                        sram[object_fd_store_next_word_index] <= store_double_high_word(
+                                            sram[object_fd_store_next_word_index],
+                                            object_fd_store_byte_lane,
+                                            RTL_DMA_BUFFER_DEFAULT_FD
+                                        );
+                                    end
+                                    dcache_writeback <= 1'b1;
+                                    gpr[dec.rd] <= RTL_DMA_BUFFER_DEFAULT_FD;
+                                    errno_reg <= LNP64_ERR_OK;
+                                    pc <= pc + 32'd1;
+                                    retired_count <= retired_count + 32'd1;
+                                    retire_submit_valid <= 1'b1;
+                                    retire_submit_record <= retire_submit_next;
+                                end else if (object_op == OBJECT_OP_CREATE &&
+                                    object_kind == OBJECT_KIND_DMA_BUFFER &&
+                                    object_dma_len == 64'd0) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EINVAL;
+                                    pc <= pc + 32'd1;
+                                    retired_count <= retired_count + 32'd1;
+                                    retire_submit_valid <= 1'b1;
+                                    retire_submit_record <= retire_submit_next;
+                                end else if (object_op == OBJECT_OP_CREATE &&
+                                    object_kind == OBJECT_KIND_DMA_BUFFER) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EFAULT;
+                                    pc <= pc + 32'd1;
+                                    retired_count <= retired_count + 32'd1;
+                                    retire_submit_valid <= 1'b1;
+                                    retire_submit_record <= retire_submit_next;
+                                end else begin
+                                    pending_unsupported <= 1'b0;
+                                    command_pc <= pc;
+                                    state <= CORE_SEND_CMD;
+                                end
                             end
                             default: begin
                                 pending_unsupported <= 1'b1;

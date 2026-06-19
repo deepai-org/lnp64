@@ -306,6 +306,7 @@ bash scripts/run_rtl_top_program_smoke.sh demos/allocator.c
 bash scripts/run_rtl_top_program_smoke.sh demos/allocator_native.s
 bash scripts/run_rtl_top_program_smoke.sh demos/env_get.s
 bash scripts/run_rtl_top_program_smoke.sh demos/exec_target.s
+bash scripts/run_rtl_top_program_smoke.sh demos/dma_copy.s
 bash scripts/run_rtl_top_program_smoke.sh demos/guarded_heap_overflow.s
 bash scripts/run_rtl_top_program_smoke.sh demos/factorial.c
 bash scripts/run_rtl_top_program_smoke.sh demos/hello.c
