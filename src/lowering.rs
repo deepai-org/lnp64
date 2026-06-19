@@ -1278,7 +1278,7 @@ mod tests {
     }
 
     #[test]
-    fn llvm_gate_manifest_pins_non_toy_clang_commands() {
+    fn llvm_gate_manifest_pins_removed_frontend_absence() {
         let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
         let gate_manifest = include_str!("../toolchain/lnp64_llvm_gates.manifest");
         let gate_driver = include_str!("../scripts/run_llvm_bootstrap_gates.sh");
@@ -1461,7 +1461,7 @@ mod tests {
         );
         assert!(manifest_root.join("Dockerfile.llvm").is_file());
         assert!(contract_index.contains(
-            "llvm_gates|toolchain/lnp64_llvm_gates.manifest|llvm_gate_manifest_pins_non_toy_clang_commands"
+            "llvm_gates|toolchain/lnp64_llvm_gates.manifest|llvm_gate_manifest_pins_removed_frontend_absence"
         ));
         assert!(transition_manifest.contains("toolchain/lnp64_llvm_gates.manifest"));
         assert!(transition_manifest.contains("scripts/run_llvm_bootstrap_gates.sh"));
@@ -1743,7 +1743,6 @@ mod tests {
         assert!(libc_test_driver.contains("loader=\"exec-plan\""));
         assert!(libc_test_driver.contains("--loader exec-plan"));
         assert!(!libc_test_driver.contains("--legacy-toy"));
-        assert!(!libc_test_driver.contains("toy backend has been removed"));
         assert!(libc_test_driver.contains("exec bash scripts/run_real_llvm_lnp64_docker.sh"));
         assert!(libc_test_driver.contains("llvm backend requires --loader exec-plan"));
         assert!(!libc_test_driver.contains("Use --legacy-toy"));
@@ -6015,14 +6014,13 @@ mod tests {
         assert!(!run_demos.contains("demos/netbsd_personality_smoke.c"));
         assert!(!run_demos.contains("--legacy-toy"));
         assert!(!run_demos.contains("cc --toy-bootstrap"));
-        assert!(!run_demos.contains("include_legacy_toy"));
+        assert!(!run_demos.contains("include_removed_frontend"));
         assert!(run_demos.contains("for src in demos/*.s"));
         assert!(!run_netbsd_smoke.contains("cc --toy-bootstrap"));
         assert!(!run_netbsd_smoke.contains("--legacy-toy"));
         assert!(run_userland.contains("usage: scripts/run_userland.sh [--backend llvm]"));
         assert!(!run_userland.contains("--legacy-toy"));
         assert!(!run_userland.contains("cc --toy-bootstrap"));
-        assert!(!run_userland.contains("toy backend has been removed"));
         assert!(!run_userland.contains("[--backend llvm|toy]"));
         assert!(run_netbsd_smoke.contains("LNP64_LLVM_PACKAGE_FILTER=netbsd"));
         assert!(run_netbsd_smoke.contains("scripts/run_real_llvm_package_gate.sh"));
@@ -6030,7 +6028,6 @@ mod tests {
             run_netbsd_smoke
                 .contains("usage: scripts/run_netbsd_personality_smoke.sh [--backend llvm]")
         );
-        assert!(!run_netbsd_smoke.contains("toy backend has been removed"));
         assert!(!run_netbsd_smoke.contains("[--backend llvm|toy]"));
         assert!(run_netbsd_system.contains("LNP64_LLVM_PACKAGE_FILTER=netbsd"));
         assert!(run_netbsd_system.contains("scripts/run_real_llvm_package_gate.sh"));
@@ -6039,15 +6036,14 @@ mod tests {
             run_netbsd_system
                 .contains("usage: scripts/run_netbsd_personality_system.sh [--backend llvm]")
         );
-        assert!(!run_netbsd_system.contains("toy backend has been removed"));
         assert!(!run_netbsd_system.contains("[--backend llvm|toy]"));
         assert_eq!(
             categories["netbsd_personality"].3,
-            "real_clang_netbsd_child_elf_gate_without_toy_system"
+            "real_clang_netbsd_child_elf_gate_without_removed_frontend"
         );
         assert_eq!(
             categories["asm_demos"].3,
-            "assembly_demo_smoke_path_without_toy_c"
+            "assembly_demo_smoke_path_without_removed_frontend"
         );
         assert!(categories["c_tests"].3.contains("default_to_real_clang"));
         for migrated_demo in [
@@ -6091,7 +6087,7 @@ mod tests {
         let main_source = include_str!("main.rs");
         let rtl_top_manifest_checker =
             include_str!("../scripts/check_rtl_top_level_program_manifest.py");
-        let legacy_toy_scripts = [
+        let removed_frontend_scripts = [
             (
                 "scripts/run_cwalk.sh",
                 include_str!("../scripts/run_cwalk.sh"),
@@ -6142,13 +6138,13 @@ mod tests {
             ),
         ];
         let libc_roadmap = include_str!("../libc_roadmap.md");
-        let legacy_toy_script_corpus = legacy_toy_scripts
+        let removed_frontend_script_corpus = removed_frontend_scripts
             .iter()
             .map(|(_, script)| *script)
             .collect::<Vec<_>>()
             .join("\n");
         let checked_corpus = format!(
-            "{target_manifest}\n{contract_index}\n{transition_manifest}\n{roadmap}\n{psabi}\n{conformance}\n{llvm_gates}\n{llvm_bootstrap}\n{run_elf}\n{libc_test_readme}\n{intrinsics}\n{intrinsic_header}\n{crt0}\n{main_source}\n{legacy_toy_script_corpus}\n{libc_roadmap}"
+            "{target_manifest}\n{contract_index}\n{transition_manifest}\n{roadmap}\n{psabi}\n{conformance}\n{llvm_gates}\n{llvm_bootstrap}\n{run_elf}\n{libc_test_readme}\n{intrinsics}\n{intrinsic_header}\n{crt0}\n{main_source}\n{removed_frontend_script_corpus}\n{libc_roadmap}"
         );
 
         assert!(!target_manifest.contains("toy_compiler_policy"));
@@ -6177,7 +6173,7 @@ mod tests {
         assert!(!psabi.contains("repository C compiler"));
         assert!(!crt0.contains("current toy compiler"));
         assert!(crt0.contains("real LLVM/lld crt0 object"));
-        for (script_name, script) in legacy_toy_scripts {
+        for (script_name, script) in removed_frontend_scripts {
             for (idx, line) in script.lines().enumerate() {
                 if line.contains(" cc ") || line.contains(" -- cc ") {
                     panic!(
@@ -6190,7 +6186,7 @@ mod tests {
         assert!(!llvm_gates.contains("lnp64 cc"));
         assert!(!llvm_gates.contains("cargo run -- cc"));
         assert!(!llvm_gates.contains("src/c_compiler"));
-        for (script_name, script) in legacy_toy_scripts {
+        for (script_name, script) in removed_frontend_scripts {
             if matches!(
                 script_name,
                 "scripts/run_cwalk.sh"
@@ -6218,13 +6214,13 @@ mod tests {
                 );
             }
         }
-        assert!(!legacy_toy_script_corpus.contains("LNP64_RTL_TOP_PROGRAM_C_BACKEND=toy"));
-        assert!(!legacy_toy_script_corpus.contains("cc --toy-bootstrap"));
-        assert!(!legacy_toy_script_corpus.contains("--legacy-toy"));
-        assert!(legacy_toy_script_corpus.contains("LNP64_LLVM_PACKAGE_FILTER=userland"));
-        assert!(legacy_toy_script_corpus.contains("LNP64_LLVM_PACKAGE_FILTER=netbsd"));
-        assert!(legacy_toy_script_corpus.contains("scripts/run_real_llvm_package_gate.sh"));
-        assert!(!legacy_toy_script_corpus.contains("include_legacy_toy"));
+        assert!(!removed_frontend_script_corpus.contains("LNP64_RTL_TOP_PROGRAM_C_BACKEND=toy"));
+        assert!(!removed_frontend_script_corpus.contains("cc --toy-bootstrap"));
+        assert!(!removed_frontend_script_corpus.contains("--legacy-toy"));
+        assert!(removed_frontend_script_corpus.contains("LNP64_LLVM_PACKAGE_FILTER=userland"));
+        assert!(removed_frontend_script_corpus.contains("LNP64_LLVM_PACKAGE_FILTER=netbsd"));
+        assert!(removed_frontend_script_corpus.contains("scripts/run_real_llvm_package_gate.sh"));
+        assert!(!removed_frontend_script_corpus.contains("include_removed_frontend"));
         for forbidden in [
             "lnp64_toy_compiler_policy.manifest",
             "lnp64_toy_retirement_queue.manifest",
@@ -6289,7 +6285,7 @@ mod tests {
     }
 
     #[test]
-    fn rtl_toy_c_smokes_have_linked_llvm_replacement_coverage() {
+    fn rtl_retired_c_frontend_smokes_have_linked_llvm_replacement_coverage() {
         let manifest = include_str!("../tests/rtl/top_level_program_manifest.json");
         let linked_gate = "\"rtl_gate\": \"scripts/run_rtl_top_linked_llvm_smoke.sh\"";
 
