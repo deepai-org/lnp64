@@ -113,6 +113,7 @@ module lnp64_core_tile #(
     logic thread_window_advance_valid;
     logic thread_window_activate_valid;
     logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] thread_window_activate_slot;
+    lnp64_thread_sched_t thread_window_activate_context;
     logic thread_window_complete_valid;
     logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] thread_window_complete_slot;
     logic thread_window_collect_valid;
@@ -1653,6 +1654,16 @@ module lnp64_core_tile #(
             THREAD_CONTEXT_COUNT > 1 &&
             !thread_active_mask[1];
         thread_window_activate_slot = 1;
+        thread_window_activate_context = '0;
+        thread_window_activate_context.pid = active_thread_context.pid;
+        thread_window_activate_context.tid = 32'd2;
+        thread_window_activate_context.tile_id = TILE_ID[31:0];
+        thread_window_activate_context.domain_id = active_thread_context.domain_id;
+        thread_window_activate_context.domain_gen = active_thread_context.domain_gen;
+        thread_window_activate_context.state = 16'd1;
+        thread_window_activate_context.latency_class = active_thread_context.latency_class;
+        thread_window_activate_context.wait_generation = active_thread_context.wait_generation;
+        thread_window_activate_context.active_location = TILE_ID[31:0];
         thread_window_complete_valid = state == CORE_EXEC &&
             dec.supported &&
             dec.opcode == LNP64_OP_EXIT;
@@ -1686,6 +1697,7 @@ module lnp64_core_tile #(
         .advance_valid(thread_window_advance_valid),
         .activate_valid(thread_window_activate_valid),
         .activate_slot(thread_window_activate_slot),
+        .activate_context(thread_window_activate_context),
         .complete_valid(thread_window_complete_valid),
         .complete_slot(thread_window_complete_slot),
         .collect_valid(thread_window_collect_valid),

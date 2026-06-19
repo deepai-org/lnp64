@@ -12,6 +12,7 @@ module lnp64_thread_window #(
     input  logic advance_valid,
     input  logic activate_valid,
     input  logic [CONTEXT_INDEX_WIDTH-1:0] activate_slot,
+    input  lnp64_thread_sched_t activate_context,
     input  logic complete_valid,
     input  logic [CONTEXT_INDEX_WIDTH-1:0] complete_slot,
     input  logic collect_valid,
@@ -46,6 +47,7 @@ module lnp64_thread_window #(
     logic [CONTEXT_COUNT-1:0] context_event_pending_q;
     logic [CONTEXT_COUNT-1:0] context_fault_pending_q;
     lnp64_thread_sched_t context_record [0:CONTEXT_COUNT-1];
+    lnp64_thread_sched_t context_record_q [0:CONTEXT_COUNT-1];
 
     assign active_slot = active_slot_q;
     assign context_active = context_active_q;
@@ -56,17 +58,10 @@ module lnp64_thread_window #(
 
     always_comb begin
         for (int unsigned ctx = 0; ctx < CONTEXT_COUNT; ctx = ctx + 1) begin
-            context_record[ctx] = '0;
-            context_record[ctx].pid = 32'd1;
-            context_record[ctx].tid = ctx[31:0] + 32'd1;
-            context_record[ctx].tile_id = TILE_ID[31:0];
-            context_record[ctx].domain_id = 32'd1;
-            context_record[ctx].domain_gen = 32'd1;
+            context_record[ctx] = context_record_q[ctx];
             context_record[ctx].state = context_completed_q[ctx] ? 16'd3 :
                 (context_parked_q[ctx] ? 16'd2 :
                     (context_active_q[ctx] ? 16'd1 : 16'd0));
-            context_record[ctx].latency_class = 16'd0;
-            context_record[ctx].wait_generation = 32'd1;
             context_record[ctx].active_location = TILE_ID[31:0];
         end
 
@@ -103,8 +98,20 @@ module lnp64_thread_window #(
             context_completed_q <= '0;
             context_event_pending_q <= '0;
             context_fault_pending_q <= '0;
+            for (int unsigned reset_ctx = 0; reset_ctx < CONTEXT_COUNT; reset_ctx = reset_ctx + 1) begin
+                context_record_q[reset_ctx].pid <= 32'd1;
+                context_record_q[reset_ctx].tid <= reset_ctx[31:0] + 32'd1;
+                context_record_q[reset_ctx].tile_id <= TILE_ID[31:0];
+                context_record_q[reset_ctx].domain_id <= 32'd1;
+                context_record_q[reset_ctx].domain_gen <= 32'd1;
+                context_record_q[reset_ctx].state <= 16'd0;
+                context_record_q[reset_ctx].latency_class <= 16'd0;
+                context_record_q[reset_ctx].wait_generation <= 32'd1;
+                context_record_q[reset_ctx].active_location <= TILE_ID[31:0];
+            end
         end else begin
             if (activate_valid) begin
+                context_record_q[activate_slot] <= activate_context;
                 context_active_q[activate_slot] <= 1'b1;
                 context_parked_q[activate_slot] <= 1'b0;
                 context_completed_q[activate_slot] <= 1'b0;
@@ -164,6 +171,14 @@ module lnp64_thread_window #(
                     else $fatal(1, "SG-WAKE completed context retained pending event");
                 assert (!(context_completed_q[assert_ctx] && context_fault_pending_q[assert_ctx]))
                     else $fatal(1, "SG-SCHED completed context retained pending fault");
+                if (context_active_q[assert_ctx] || context_parked_q[assert_ctx] ||
+                    context_completed_q[assert_ctx]) begin
+                    assert (context_record[assert_ctx].pid != 32'd0 &&
+                        context_record[assert_ctx].tid != 32'd0 &&
+                        context_record[assert_ctx].domain_id != 32'd0 &&
+                        context_record[assert_ctx].domain_gen != 32'd0)
+                        else $fatal(1, "SG-SCHED live context missing architectural metadata");
+                end
             end
             if (context_active_q != '0) begin
                 assert (context_active_q[next_slot])
