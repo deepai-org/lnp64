@@ -1429,11 +1429,13 @@ mod tests {
             "jsmn_package_static_link",
             "inih_package_static_link",
             "cwalk_package_static_link",
+            "libc_test_ctype_static_link",
             "zlib_package_run_elf",
             "natsort_package_run_elf",
             "jsmn_package_run_elf",
             "inih_package_run_elf",
             "cwalk_package_run_elf",
+            "libc_test_ctype_run_elf",
             "sbase_echo_static_link",
             "sbase_echo_run_elf",
             "sbase_path_static_link",
@@ -1738,6 +1740,21 @@ mod tests {
                 "real LLVM LNP64 clang minilibc startup implementation object smoke passed"
             )
         );
+        assert!(libc_string_min.contains("int isascii(int ch)"));
+        assert!(libc_string_min.contains("int isblank(int ch)"));
+        assert!(libc_string_min.contains("int iscntrl(int ch)"));
+        assert!(libc_string_min.contains("int isprint(int ch)"));
+        assert!(libc_string_min.contains("int isgraph(int ch)"));
+        assert!(libc_string_min.contains("int ispunct(int ch)"));
+        assert!(real_llc.contains("libc-test-print-clang-smoke.o"));
+        assert!(real_llc.contains("libc-test-ctype-bounded-clang-smoke.o"));
+        assert!(real_llc.contains("third_party/libc-test/functional/ctype_bounded.c"));
+        assert!(real_llc.contains("real LLVM LNP64 clang libc-test harness object smoke passed"));
+        assert!(
+            real_llc.contains("real LLVM LNP64 clang libc-test ctype_bounded object smoke passed")
+        );
+        assert!(real_llc.contains("lnp64-libc-test-ctype-bounded-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld libc-test ctype_bounded link smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_futex_min.c"));
         assert!(libc_futex_min.contains("__lnp_futex_wait"));
         assert!(libc_futex_min.contains("__lnp_futex_wake"));
@@ -2642,6 +2659,11 @@ mod tests {
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf inih package execution passed"));
         assert!(real_llc_docker.contains("lnp64-cwalk-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf cwalk package execution passed"));
+        assert!(real_llc_docker.contains("lnp64-libc-test-ctype-bounded-linked.elf"));
+        assert!(
+            real_llc_docker
+                .contains("real LLVM LNP64 run-elf libc-test ctype_bounded execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-calloc-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf calloc execution passed"));
         assert!(real_llc_docker.contains("lnp64-realloc-linked.elf"));
@@ -2786,6 +2808,7 @@ mod tests {
             "real_clang_lld_probe",
             "real_clang_demo_execution",
             "real_native_heap_execution",
+            "real_libc_test_ctype_execution",
             "real_numeric_conversion_execution",
             "real_path_helper_execution",
             "real_search_helper_execution",
@@ -2835,6 +2858,7 @@ mod tests {
             "real_clang_lld_probe",
             "real_clang_demo_execution",
             "real_native_heap_execution",
+            "real_libc_test_ctype_execution",
             "real_numeric_conversion_execution",
             "real_path_helper_execution",
             "real_search_helper_execution",

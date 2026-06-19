@@ -170,6 +170,8 @@ run_elf_report "real LLVM LNP64 run-elf inih package execution passed" \
   target/llvm-lnp64-build/lnp64-inih-linked.elf
 run_elf_report "real LLVM LNP64 run-elf cwalk package execution passed" \
   target/llvm-lnp64-build/lnp64-cwalk-linked.elf
+run_elf_report "real LLVM LNP64 run-elf libc-test ctype_bounded execution passed" \
+  target/llvm-lnp64-build/lnp64-libc-test-ctype-bounded-linked.elf
 run_elf_report "real LLVM LNP64 run-elf calloc execution passed" \
   target/llvm-lnp64-build/lnp64-calloc-linked.elf
 run_elf_report "real LLVM LNP64 run-elf realloc execution passed" \

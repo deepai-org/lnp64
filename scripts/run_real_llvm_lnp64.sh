@@ -2337,6 +2337,29 @@ grep -q 'ret' "$libc_string_impl_dump"
 printf 'real LLVM LNP64 clang minilibc string implementation object smoke passed: %s\n' \
   "$libc_string_impl_obj"
 
+libc_test_print_obj="$build_dir/libc-test-print-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain/include \
+  -I third_party/libc-test/functional \
+  -c third_party/libc-test/functional/print.c -o "$libc_test_print_obj"
+test -s "$libc_test_print_obj"
+printf 'real LLVM LNP64 clang libc-test harness object smoke passed: %s\n' \
+  "$libc_test_print_obj"
+
+libc_test_ctype_obj="$build_dir/libc-test-ctype-bounded-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain/include \
+  -I third_party/libc-test/functional \
+  -c third_party/libc-test/functional/ctype_bounded.c \
+  -o "$libc_test_ctype_obj"
+test -s "$libc_test_ctype_obj"
+libc_test_ctype_dump="$build_dir/libc-test-ctype-bounded-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_test_ctype_obj" \
+  >"$libc_test_ctype_dump"
+grep -q 'call ' "$libc_test_ctype_dump"
+printf 'real LLVM LNP64 clang libc-test ctype_bounded object smoke passed: %s\n' \
+  "$libc_test_ctype_obj"
+
 convert_c="$build_dir/convert-smoke.c"
 cat >"$convert_c" <<'C'
 int *__errno_location(void);
@@ -3931,6 +3954,14 @@ cwalk_elf="$build_dir/lnp64-cwalk-linked.elf"
 test -s "$cwalk_elf"
 printf 'real LLVM LNP64 lld cwalk package link smoke passed: %s\n' \
   "$cwalk_elf"
+
+libc_test_ctype_elf="$build_dir/lnp64-libc-test-ctype-bounded-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$libc_test_ctype_elf" "$crt0_obj" "$libc_test_ctype_obj" \
+  "$libc_test_print_obj" "$libc_string_impl_obj" "$libc_fd_impl_obj"
+test -s "$libc_test_ctype_elf"
+printf 'real LLVM LNP64 lld libc-test ctype_bounded link smoke passed: %s\n' \
+  "$libc_test_ctype_elf"
 
 calloc_elf="$build_dir/lnp64-calloc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

@@ -245,6 +245,18 @@ int isdigit(int ch) { return ch >= '0' && ch <= '9'; }
 
 int isalnum(int ch) { return isalpha(ch) || isdigit(ch); }
 
+int isascii(int ch) { return ch >= 0 && ch <= 127; }
+
+int isblank(int ch) { return ch == ' ' || ch == '\t'; }
+
+int iscntrl(int ch) { return (ch >= 0 && ch < ' ') || ch == 127; }
+
+int isprint(int ch) { return ch >= ' ' && ch <= '~'; }
+
+int isgraph(int ch) { return ch > ' ' && ch <= '~'; }
+
+int ispunct(int ch) { return isgraph(ch) && !isalnum(ch); }
+
 int isspace(int ch) {
   return ch == ' ' || (ch >= '\t' && ch <= '\r');
 }
