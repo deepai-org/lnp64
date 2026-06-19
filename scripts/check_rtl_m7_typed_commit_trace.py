@@ -19,6 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = ROOT / "rtl/schema/lnp64_shared_schema.json"
+RTL_PKG = ROOT / "rtl/include/lnp64_pkg.sv"
 RTL_M7_TB = ROOT / "rtl/sim/lnp64_m7_tb.sv"
 DEFAULT_M7_TRACE_LOG = Path("/tmp/lnp64_rtl_m7_typed_commit.log")
 
@@ -147,6 +148,68 @@ def parse_schema_field(entry: str) -> tuple[str, int]:
     return name, int(raw_width)
 
 
+def parse_sv_packed_struct_fields(source: str, typedef_name: str) -> tuple[tuple[str, int], ...]:
+    match = re.search(
+        rf"(?ms)typedef\s+struct\s+packed\s*\{{(?P<body>[^}}]*)\}}\s*{re.escape(typedef_name)}\s*;",
+        source,
+    )
+    if not match:
+        fail(f"RTL package is missing packed typedef {typedef_name}")
+    fields: list[tuple[str, int]] = []
+    for raw_line in match.group("body").splitlines():
+        line = raw_line.split("//", 1)[0].strip()
+        if not line:
+            continue
+        field_match = re.fullmatch(
+            r"logic(?:\s*\[\s*(?P<msb>[0-9]+)\s*:\s*(?P<lsb>[0-9]+)\s*\])?\s+"
+            r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*;",
+            line,
+        )
+        if not field_match:
+            fail(f"could not parse field in RTL packed typedef {typedef_name}: {raw_line!r}")
+        msb = field_match.group("msb")
+        lsb = field_match.group("lsb")
+        width = 1 if msb is None else abs(int(msb) - int(lsb)) + 1
+        fields.append((field_match.group("name"), width))
+    if not fields:
+        fail(f"RTL packed typedef {typedef_name} has no parsed fields")
+    return tuple(fields)
+
+
+def check_rtl_packed_typedefs_match_schema_sources(
+    pkg_source: str,
+    commit_field_specs: tuple[tuple[str, int], ...],
+    state_field_specs: tuple[tuple[str, int], ...],
+) -> None:
+    commit_typedef = parse_sv_packed_struct_fields(pkg_source, COMMIT_RECORD)
+    if commit_typedef != commit_field_specs:
+        fail(
+            f"RTL {COMMIT_RECORD} packed typedef drifted from shared schema: "
+            f"{commit_typedef!r} != {commit_field_specs!r}"
+        )
+    state_typedef = parse_sv_packed_struct_fields(pkg_source, STATE_RECORD)
+    if state_typedef != state_field_specs:
+        fail(
+            f"RTL {STATE_RECORD} packed typedef drifted from shared schema: "
+            f"{state_typedef!r} != {state_field_specs!r}"
+        )
+
+
+def check_rtl_packed_typedefs_match_schema(
+    commit_field_specs: tuple[tuple[str, int], ...],
+    state_field_specs: tuple[tuple[str, int], ...],
+) -> None:
+    try:
+        pkg_source = RTL_PKG.read_text(encoding="utf-8")
+    except OSError as exc:
+        fail(f"could not read RTL package: {exc}")
+    check_rtl_packed_typedefs_match_schema_sources(
+        pkg_source,
+        commit_field_specs,
+        state_field_specs,
+    )
+
+
 def require_trace_display_payload_source(
     tb_source: str,
     marker: str,
@@ -209,6 +272,7 @@ def load_schema() -> tuple[tuple[str, ...], tuple[int, ...], tuple[str, ...], tu
         fail(f"M7 commit schema fields drifted: {commit_fields!r} != {COMMIT_FIELDS!r}")
     if state_fields != STATE_FIELDS:
         fail(f"M7 state projection schema fields drifted: {state_fields!r} != {STATE_FIELDS!r}")
+    check_rtl_packed_typedefs_match_schema(commit_specs, state_specs)
 
     enum_entries = enums.get("lnp64_m7_commit_op_e", [])
     enum_values = {entry.split("=", 1)[0]: parse_sv_int(entry.split("=", 1)[1]) for entry in enum_entries}

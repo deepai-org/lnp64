@@ -130,6 +130,54 @@ def main() -> None:
     checker = load_checker()
     commit_fields, commit_widths, state_fields, state_widths, ops = checker.load_schema()
     commits, states = build_valid_run(checker, ops)
+    pkg_source = checker.RTL_PKG.read_text(encoding="utf-8")
+    commit_specs = tuple(zip(commit_fields, commit_widths, strict=True))
+    state_specs = tuple(zip(state_fields, state_widths, strict=True))
+    checker.check_rtl_packed_typedefs_match_schema_sources(pkg_source, commit_specs, state_specs)
+
+    commit_width_drift = replace_once(
+        pkg_source,
+        (
+            "        logic [15:0] after_location;\n"
+            "        logic [31:0] wait_generation;\n"
+            "        logic [31:0] address_generation;"
+        ),
+        (
+            "        logic [15:0] after_location;\n"
+            "        logic [30:0] wait_generation;\n"
+            "        logic [31:0] address_generation;"
+        ),
+    )
+    expect_failure(
+        "RTL lnp64_m7_sched_commit_t packed typedef drifted from shared schema",
+        lambda: checker.check_rtl_packed_typedefs_match_schema_sources(
+            commit_width_drift,
+            commit_specs,
+            state_specs,
+        ),
+    )
+
+    state_width_drift = replace_once(
+        pkg_source,
+        (
+            "        logic        cmpxchg_failure_explicit;\n"
+            "        logic [31:0] address_generation;\n"
+            "        logic [31:0] stale_address_generation;"
+        ),
+        (
+            "        logic        cmpxchg_failure_explicit;\n"
+            "        logic [30:0] address_generation;\n"
+            "        logic [31:0] stale_address_generation;"
+        ),
+    )
+    expect_failure(
+        "RTL lnp64_m7_state_projection_t packed typedef drifted from shared schema",
+        lambda: checker.check_rtl_packed_typedefs_match_schema_sources(
+            state_width_drift,
+            commit_specs,
+            state_specs,
+        ),
+    )
 
     checker.check_transition_trace(commits, states, ops)
 
