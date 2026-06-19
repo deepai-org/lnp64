@@ -684,6 +684,16 @@ response is not issue-eligible until the matching completion or wake event
 arrives. Local engines may be pipelined across different TIDs, and resource use
 is charged to the owning Resource Domain.
 
+The scheduler/barrel split is architectural. The global and per-tile scheduler
+fabric admits, parks, wakes, migrates, accounts, and enforces Resource Domain
+policy. The tile-local barrel window is the fast issue front end: it holds a
+small resident set of hardware thread contexts and chooses one ready context for
+the next issue slot without consulting a software scheduler or walking global
+policy structures. Every pipeline slot, engine command, completion, fault, and
+event carries the issuing TID/PID, Resource Domain id/generation, operation id,
+and deadline/budget class, so local barrel issue and shared-engine scheduling
+remain part of the same accounting and isolation model.
+
 Each hardware thread context contains:
 
 - `pc`: 64-bit virtual instruction address.
@@ -1645,6 +1655,13 @@ Dispatch prefers the eligible runnable entity with the earliest virtual
 deadline within the implementation's bounded approximation window. Blocked
 threads do not consume CPU budget. Runnable threads whose Resource Domains have
 exhausted quota remain ineligible until the next period or budget update.
+
+The per-cycle barrel picker is intentionally smaller than the scheduler fabric.
+It selects only among resident, already-eligible contexts in the tile's active
+window. Admission, quota checks, domain freeze/resume, migration, spill/refill,
+deadline inheritance for async work, and cross-tile wake placement belong to the
+scheduler fabric. This keeps the hot issue path bounded while preserving the
+hardware scheduler as the owner of runnable state.
 
 Thread placement is sticky by default. A TID that was previously running on a
 tile should return to that tile when the tile is enabled, allowed by the

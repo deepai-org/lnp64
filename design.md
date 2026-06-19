@@ -151,6 +151,11 @@ The scheduler contract is deliberately small and realtime-friendly:
     many hardware contexts. V1 does not require speculative SMT/hyperthreading:
     one selected ready TID issues from a tile's active window, and blocked or
     pending TIDs stop occupying the issue lane.
+*   The scheduler fabric and the barrel issue window are separate layers. The
+    scheduler admits, parks, wakes, migrates, and accounts for threads across
+    Resource Domains; the tile-local barrel window chooses among resident,
+    already-eligible TIDs for the next issue slot. The hot issue path does not
+    call into software, walk domain trees, or run global scheduler policy.
 *   Thread states are architectural: `READY`, `RUNNING`, `WAIT_*`,
     `GATE_DELIVERY`, `ZOMBIE`, and `DEAD`. A live thread is in exactly one
     state.
