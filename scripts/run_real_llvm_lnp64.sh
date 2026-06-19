@@ -3895,27 +3895,18 @@ printf 'real LLVM LNP64 clang metadata libc object smoke passed: %s\n' \
 
 mmap_libc_c="$build_dir/mmap-libc-smoke.c"
 cat >"$mmap_libc_c" <<'C'
-typedef unsigned long size_t;
-
-void *mmap(void *addr, size_t len, int prot, int flags, int fd, long offset);
-int mprotect(void *addr, size_t len, int prot);
-int munmap(void *addr, size_t len);
-
-enum {
-  MAP_PRIVATE = 0x02,
-  MAP_ANONYMOUS = 0x20,
-};
+#include <sys/mman.h>
 
 int main(void) {
   unsigned char *bytes =
-      mmap(0, 4096, 3, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  if (bytes == (void *)~0UL)
+      mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (bytes == MAP_FAILED)
     return 1;
   bytes[0] = 0x5a;
   bytes[7] = 0xa5;
   if (bytes[0] != 0x5a || bytes[7] != 0xa5)
     return 2;
-  if (mprotect(bytes, 4096, 1) != 0)
+  if (mprotect(bytes, 4096, PROT_READ) != 0)
     return 3;
   if (munmap(bytes, 4096) != 0)
     return 4;

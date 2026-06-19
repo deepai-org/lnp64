@@ -2969,6 +2969,9 @@ mod tests {
                 .contains("real LLVM LNP64 clang minilibc VMA implementation object smoke passed")
         );
         assert!(real_llc.contains("mmap-libc-clang-smoke.o"));
+        assert!(real_llc.contains("#include <sys/mman.h>"));
+        assert!(real_llc.contains("MAP_FAILED"));
+        assert!(real_llc.contains("PROT_READ | PROT_WRITE"));
         assert!(real_llc.contains("real LLVM LNP64 clang mmap libc object smoke passed"));
         assert!(real_llc.contains("lnp64-mmap-libc-linked.elf"));
         assert!(real_llc.contains(r#""$mmap_libc_obj" "$libc_vma_impl_obj" \"#));
