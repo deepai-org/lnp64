@@ -1248,7 +1248,7 @@ module lnp64_core_tile #(
         cmd.cancel_class = 16'd0;
         cmd.completion_target = 16'd1;
         unique case (dec.opcode)
-            LNP64_OP_CAP_DUP: begin
+            LNP64_OP_CAP_DUP, LNP64_OP_CAP_REVOKE: begin
                 cmd.rights_mask = cap_rights_req;
                 cmd.flags = cap_flags;
                 cmd.arg0 = cap_src_value;
@@ -3450,47 +3450,53 @@ module lnp64_core_tile #(
                                 m1_projection_consumer_fd <= m1_current_consumer_fd();
                             end
                             LNP64_OP_CAP_REVOKE: begin
-                                cap_engine_shadow_enabled <= 1'b0;
-                                if (cap_src_stale) begin
-                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                    errno_reg <= RTL_ERR_ESTALE;
-                                end else if (cap_src_live && ((fdr_rights[cap_src_fd] & CAP_RIGHT_REVOKE) != 64'd0)) begin
-                                    for (i = 0; i < FDR_SLOT_COUNT; i = i + 1) begin
-                                        if (fdr_valid[i] && !fdr_revoked[i] && fdr_lineage[i] == fdr_lineage[cap_src_fd]) begin
-                                            fdr_revoked[i] <= 1'b1;
-                                            fdr_generation[i] <= fdr_generation[i] + 64'd1;
-                                        end
-                                    end
-                                    if (cap_queue_valid && !cap_queue_revoked &&
-                                        cap_queue_lineage == fdr_lineage[cap_src_fd]) begin
-                                        cap_queue_revoked <= 1'b1;
-                                    end
-                                    gpr[dec.rd] <= cap_revoke_count;
-                                    errno_reg <= LNP64_ERR_OK;
-                                end else if (cap_src_fd_in_range && fdr_valid[cap_src_fd] &&
-                                    !fdr_revoked[cap_src_fd] &&
-                                    ((fdr_rights[cap_src_fd] & CAP_RIGHT_REVOKE) == 64'd0)) begin
-                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                    errno_reg <= LNP64_ERR_EPERM;
-                                end else if (dma_buffer_ref_matches(object_op) && !dma_buffer_object_revoked) begin
-                                    dma_buffer_object_revoked <= 1'b1;
-                                    gpr[dec.rd] <= 64'd1;
-                                    errno_reg <= LNP64_ERR_OK;
-                                end else if (dma_buffer_ref_matches(object_op) && dma_buffer_object_revoked) begin
-                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                    errno_reg <= RTL_ERR_ESTALE;
+                                if (cap_engine_shadow_enabled) begin
+                                    pending_unsupported <= 1'b0;
+                                    command_pc <= pc;
+                                    state <= CORE_SEND_CMD;
                                 end else begin
-                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                    errno_reg <= LNP64_ERR_EBADF;
+                                    if (cap_src_stale) begin
+                                        gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= RTL_ERR_ESTALE;
+                                    end else if (cap_src_live && ((fdr_rights[cap_src_fd] & CAP_RIGHT_REVOKE) != 64'd0)) begin
+                                        for (i = 0; i < FDR_SLOT_COUNT; i = i + 1) begin
+                                            if (fdr_valid[i] && !fdr_revoked[i] && fdr_lineage[i] == fdr_lineage[cap_src_fd]) begin
+                                                fdr_revoked[i] <= 1'b1;
+                                                fdr_generation[i] <= fdr_generation[i] + 64'd1;
+                                            end
+                                        end
+                                        if (cap_queue_valid && !cap_queue_revoked &&
+                                            cap_queue_lineage == fdr_lineage[cap_src_fd]) begin
+                                            cap_queue_revoked <= 1'b1;
+                                        end
+                                        gpr[dec.rd] <= cap_revoke_count;
+                                        errno_reg <= LNP64_ERR_OK;
+                                    end else if (cap_src_fd_in_range && fdr_valid[cap_src_fd] &&
+                                        !fdr_revoked[cap_src_fd] &&
+                                        ((fdr_rights[cap_src_fd] & CAP_RIGHT_REVOKE) == 64'd0)) begin
+                                        gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= LNP64_ERR_EPERM;
+                                    end else if (dma_buffer_ref_matches(object_op) && !dma_buffer_object_revoked) begin
+                                        dma_buffer_object_revoked <= 1'b1;
+                                        gpr[dec.rd] <= 64'd1;
+                                        errno_reg <= LNP64_ERR_OK;
+                                    end else if (dma_buffer_ref_matches(object_op) && dma_buffer_object_revoked) begin
+                                        gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= RTL_ERR_ESTALE;
+                                    end else begin
+                                        gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= LNP64_ERR_EBADF;
+                                    end
+                                    pc <= pc + 32'd1;
+                                    retired_count <= retired_count + 32'd1;
+                                    retire_submit_valid <= 1'b1;
+                                    retire_submit_record <= retire_submit_next;
+                                    m1_commit_valid <= 1'b1;
+                                    m1_commit <= m1_commit_next;
+                                    m1_projection_root_fd <= cap_src_fd_in_range ? cap_src_fd : 0;
+                                    m1_projection_consumer_fd <= m1_current_consumer_fd();
+                                    cap_engine_shadow_enabled <= 1'b0;
                                 end
-                                pc <= pc + 32'd1;
-                                retired_count <= retired_count + 32'd1;
-                                retire_submit_valid <= 1'b1;
-                                retire_submit_record <= retire_submit_next;
-                                m1_commit_valid <= 1'b1;
-                                m1_commit <= m1_commit_next;
-                                m1_projection_root_fd <= cap_src_fd_in_range ? cap_src_fd : 0;
-                                m1_projection_consumer_fd <= m1_current_consumer_fd();
                             end
                             default: begin
                                 pending_unsupported <= 1'b1;
@@ -3526,6 +3532,23 @@ module lnp64_core_tile #(
                                 fdr_rights[cap_dst_fd] <= cap_dup_rights;
                                 fdr_lineage[cap_dst_fd] <= fdr_lineage[cap_src_fd];
                                 fdr_kind[cap_dst_fd] <= fdr_kind[cap_src_fd];
+                            end
+                            m1_commit_valid <= 1'b1;
+                            m1_commit <= m1_commit_next;
+                            m1_projection_root_fd <= cap_src_fd_in_range ? cap_src_fd : 0;
+                            m1_projection_consumer_fd <= m1_current_consumer_fd();
+                        end
+                        if (!pending_unsupported && dec.opcode == LNP64_OP_CAP_REVOKE) begin
+                            if (rsp.status == LNP64_STATUS_OK &&
+                                rsp.errno_value == LNP64_ERR_OK &&
+                                cap_src_fd_in_range) begin
+                                for (i = 0; i < FDR_SLOT_COUNT; i = i + 1) begin
+                                    if (fdr_valid[i] && !fdr_revoked[i] &&
+                                        fdr_lineage[i] == fdr_lineage[cap_src_fd]) begin
+                                        fdr_revoked[i] <= 1'b1;
+                                        fdr_generation[i] <= fdr_generation[i] + 64'd1;
+                                    end
+                                end
                             end
                             m1_commit_valid <= 1'b1;
                             m1_commit <= m1_commit_next;

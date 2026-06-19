@@ -697,6 +697,7 @@ module lnp64_cap_engine(
                 logic src_stale;
                 logic [63:0] dup_rights;
                 logic [63:0] next_generation;
+                logic [63:0] revoke_count;
 
                 have_rsp <= 1'b1;
                 telemetry_counter <= telemetry_counter + 32'd1;
@@ -750,6 +751,49 @@ module lnp64_cap_engine(
                         rsp_reg.result_value <= cap_token(dst_fd, next_generation);
                         rsp_reg.errno_value <= LNP64_ERR_OK;
                         rsp_reg.status <= LNP64_STATUS_OK;
+                    end
+                end else if (cmd.opcode == LNP64_OP_CAP_REVOKE) begin
+                    src_fd = cap_fd(cmd.arg0);
+                    src_is_token = cmd.arg0 >= 64'd256;
+                    src_token_valid = cap_token_shape_valid(cmd.arg0);
+                    src_generation_matches = cap_generation_matches(cmd.arg0, src_fd);
+                    src_live = src_fd < LNP64_FDR_SLOT_COUNT && fdr_valid[src_fd] &&
+                        !fdr_revoked[src_fd] &&
+                        (!src_is_token || (src_token_valid && src_generation_matches));
+                    src_stale = src_is_token && src_token_valid &&
+                        src_fd < LNP64_FDR_SLOT_COUNT &&
+                        (!fdr_valid[src_fd] || fdr_revoked[src_fd] || !src_generation_matches);
+                    revoke_count = 64'd0;
+                    if (src_fd < LNP64_FDR_SLOT_COUNT) begin
+                        for (i = 0; i < LNP64_FDR_SLOT_COUNT; i = i + 1) begin
+                            if (fdr_valid[i] && !fdr_revoked[i] &&
+                                fdr_lineage[i] == fdr_lineage[src_fd]) begin
+                                revoke_count = revoke_count + 64'd1;
+                            end
+                        end
+                    end
+                    if (src_stale) begin
+                        rsp_reg.errno_value <= LNP64_ERR_ESTALE;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end else if (src_live && ((fdr_rights[src_fd] & LNP64_CAP_RIGHT_REVOKE) != 64'd0)) begin
+                        for (i = 0; i < LNP64_FDR_SLOT_COUNT; i = i + 1) begin
+                            if (fdr_valid[i] && !fdr_revoked[i] &&
+                                fdr_lineage[i] == fdr_lineage[src_fd]) begin
+                                fdr_revoked[i] <= 1'b1;
+                                fdr_generation[i] <= fdr_generation[i] + 64'd1;
+                            end
+                        end
+                        rsp_reg.result_value <= revoke_count;
+                        rsp_reg.errno_value <= LNP64_ERR_OK;
+                        rsp_reg.status <= LNP64_STATUS_OK;
+                    end else if (src_fd < LNP64_FDR_SLOT_COUNT && fdr_valid[src_fd] &&
+                        !fdr_revoked[src_fd] &&
+                        ((fdr_rights[src_fd] & LNP64_CAP_RIGHT_REVOKE) == 64'd0)) begin
+                        rsp_reg.errno_value <= LNP64_ERR_EPERM;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end else begin
+                        rsp_reg.errno_value <= LNP64_ERR_EBADF;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
                     end
                 end
             end
