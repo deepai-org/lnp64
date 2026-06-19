@@ -2024,6 +2024,7 @@ mod tests {
             )
         );
         assert!(real_llc.contains("toolchain/liblnp64_random_min.c"));
+        assert!(libc_random_min.contains("#include <stdlib.h>"));
         assert!(libc_random_min.contains("long random(void)"));
         assert!(libc_random_min.contains("void srandom(unsigned int seed)"));
         assert!(libc_random_min.contains("char *initstate("));

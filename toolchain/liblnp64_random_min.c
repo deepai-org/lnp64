@@ -1,4 +1,4 @@
-#include <stddef.h>
+#include <stdlib.h>
 
 static unsigned char lnp64_random_default_state[8];
 static char *lnp64_random_current = (char *)lnp64_random_default_state;
