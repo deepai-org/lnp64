@@ -1642,6 +1642,15 @@ mod tests {
         assert!(real_llc.contains("clone.spawn r1, r2, r3"));
         assert!(real_llc.contains("thread_join r4, r5, r6"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc clone control opcode smoke passed"));
+        assert!(real_llc.contains("compat-meta-mc-smoke.o"));
+        assert!(real_llc.contains("stat_path_at r1, r2, r3, r4"));
+        assert!(real_llc.contains("stat_fd_dyn r5, r6"));
+        assert!(real_llc.contains("utime_path_at r7, r8, r9, r10"));
+        assert!(real_llc.contains("utime_fd_dyn r11, r12"));
+        assert!(real_llc.contains("fcntl_fd_dyn r13, r14, r15"));
+        assert!(
+            real_llc.contains("real LLVM LNP64 llvm-mc compatibility metadata opcode smoke passed")
+        );
         assert!(real_llc.contains("cap-control-mc-smoke.o"));
         assert!(real_llc.contains("cap_dup r1, r2"));
         assert!(real_llc.contains("cap_send r3, r4"));
@@ -5629,6 +5638,7 @@ mod tests {
             "pcr_control",
             "native_primitives",
             "clone_control",
+            "compat_metadata_control",
             "native_control_rr",
             "native_capability_rr",
         ] {
@@ -5666,15 +5676,61 @@ mod tests {
         assert!(groups["clone_control"].0.contains("fixed32_clone_control"));
         assert!(groups["clone_control"].1.contains(&"CLONE.SPAWN"));
         assert!(groups["clone_control"].1.contains(&"THREAD_JOIN"));
+        assert!(
+            groups["compat_metadata_control"]
+                .0
+                .contains("fixed32_compat_metadata")
+        );
+        assert!(
+            groups["compat_metadata_control"]
+                .1
+                .contains(&"STAT_PATH_AT")
+        );
+        assert!(groups["compat_metadata_control"].1.contains(&"STAT_FD_DYN"));
+        assert!(
+            groups["compat_metadata_control"]
+                .1
+                .contains(&"UTIME_PATH_AT")
+        );
+        assert!(
+            groups["compat_metadata_control"]
+                .1
+                .contains(&"UTIME_FD_DYN")
+        );
+        assert!(
+            groups["compat_metadata_control"]
+                .1
+                .contains(&"FCNTL_FD_DYN")
+        );
         assert!(!groups.contains_key("native_control_planned"));
         assert!(asm_parser.contains(r#".Case("clone.spawn", LNP64::CLONE_SPAWN)"#));
         assert!(asm_parser.contains(r#".Case("thread_join", LNP64::THREAD_JOIN)"#));
+        assert!(asm_parser.contains(r#".Case("stat_path_at", LNP64::STAT_PATH_AT)"#));
+        assert!(asm_parser.contains(r#".Case("stat_fd_dyn", LNP64::STAT_FD_DYN)"#));
+        assert!(asm_parser.contains(r#".Case("utime_path_at", LNP64::UTIME_PATH_AT)"#));
+        assert!(asm_parser.contains(r#".Case("utime_fd_dyn", LNP64::UTIME_FD_DYN)"#));
+        assert!(asm_parser.contains(r#".Case("fcntl_fd_dyn", LNP64::FCNTL_FD_DYN)"#));
         assert!(inst_printer.contains(r#"return "clone.spawn";"#));
         assert!(inst_printer.contains(r#"return "thread_join";"#));
+        assert!(inst_printer.contains(r#"return "stat_path_at";"#));
+        assert!(inst_printer.contains(r#"return "stat_fd_dyn";"#));
+        assert!(inst_printer.contains(r#"return "utime_path_at";"#));
+        assert!(inst_printer.contains(r#"return "utime_fd_dyn";"#));
+        assert!(inst_printer.contains(r#"return "fcntl_fd_dyn";"#));
         assert!(mc_emitter.contains("case LNP64::CLONE_SPAWN"));
         assert!(mc_emitter.contains("case LNP64::THREAD_JOIN"));
+        assert!(mc_emitter.contains("case LNP64::STAT_PATH_AT"));
+        assert!(mc_emitter.contains("case LNP64::STAT_FD_DYN"));
+        assert!(mc_emitter.contains("case LNP64::UTIME_PATH_AT"));
+        assert!(mc_emitter.contains("case LNP64::UTIME_FD_DYN"));
+        assert!(mc_emitter.contains("case LNP64::FCNTL_FD_DYN"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::CLONE_SPAWN)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::THREAD_JOIN)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::STAT_PATH_AT)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::STAT_FD_DYN)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::UTIME_PATH_AT)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::UTIME_FD_DYN)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::FCNTL_FD_DYN)"));
         assert!(asm_parser.contains(r#".Case("cap_send", LNP64::CAP_SEND)"#));
         assert!(asm_parser.contains(r#".Case("cap_recv", LNP64::CAP_RECV)"#));
         assert!(asm_parser.contains(r#".Case("cap_dup", LNP64::CAP_DUP)"#));

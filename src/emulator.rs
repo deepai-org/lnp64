@@ -1221,7 +1221,7 @@ fn checked_host_usize(value: u64, name: &str) -> Result<usize, String> {
 fn committed_exec_result_reg(raw_word: u32) -> Option<usize> {
     let opcode = (raw_word >> 24) as u8;
     match opcode {
-        0x57 => Some(1),
+        0x57 | 0x5c..=0x5f | 0x67 => Some(1),
         0x00
         | 0x1b
         | 0x1c
@@ -1878,6 +1878,10 @@ impl Machine {
             0x59 => Instr::CloneSpawn(a, b, c),
             0x5a => Instr::ThreadJoin(a, b, c),
             0x5b => Instr::DmaCtl(a, b),
+            0x5c => Instr::StatPathAt(a, b, c, d),
+            0x5d => Instr::StatFdDyn(a, b),
+            0x5e => Instr::UtimePathAt(a, b, c, d),
+            0x5f => Instr::UtimeFdDyn(a, b),
             0x60 => Instr::MmapBootstrap(a, b, c, d),
             0x61 => Instr::MunmapBootstrap(a, b),
             0x62 => Instr::Sigaction(a, b),
@@ -1885,6 +1889,7 @@ impl Machine {
             0x64 => Instr::Kill(a, b),
             0x65 => Instr::Sigret,
             0x66 => Instr::MprotectBootstrap(a, b, c, d),
+            0x67 => Instr::FcntlFdDyn(a, b, c),
             0x68 => Instr::Alarm(a, b),
             0xcb => Instr::FutexWait(a, b),
             0xcc => Instr::FutexWake(a, b),
@@ -14755,6 +14760,48 @@ mod tests {
         put_instruction(&mut text, 24, encode_reg(0x3a, 0));
         let mut prepared = prepared_exec_vmas_fixture();
         prepared[0].bytes = text;
+        let mut machine = Machine::new(empty_program());
+
+        machine
+            .commit_exec_descriptor_memory_image(&words, &prepared)
+            .unwrap();
+        let exit = machine.run_committed_exec().unwrap();
+
+        assert_eq!(exit, 0);
+    }
+
+    #[test]
+    fn committed_exec_decodes_compatibility_metadata_opcodes() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let words = encode_exec_descriptor(&descriptor);
+        let mut text = vec![0; 0x1000];
+        put_instruction(&mut text, 0, encode_reg(0x03, 2));
+        put_instruction(&mut text, 4, 0x402000);
+        put_instruction(&mut text, 8, encode_reg(0x03, 3));
+        put_instruction(&mut text, 12, 0x402100);
+        put_instruction(&mut text, 16, encode_ri(0x01, 4, -100));
+        put_instruction(&mut text, 20, encode_ri(0x01, 5, 0));
+        put_instruction(&mut text, 24, encode_rrrr(0x5c, 2, 4, 3, 5));
+        put_instruction(&mut text, 28, encode_ri(0x01, 6, 99));
+        put_instruction(&mut text, 32, encode_rr(0x5d, 2, 6));
+        put_instruction(&mut text, 36, encode_rrrr(0x5e, 4, 3, 0, 5));
+        put_instruction(&mut text, 40, encode_rr(0x5f, 6, 0));
+        put_instruction(&mut text, 44, encode_ri(0x01, 7, 1));
+        put_instruction(&mut text, 48, encode_rrr(0x67, 6, 7, 0));
+        put_instruction(&mut text, 52, encode_reg(0x3a, 0));
+        let mut prepared = prepared_exec_vmas_fixture();
+        prepared[0].bytes = text;
+        prepared[1].bytes[0x100] = b'.';
+        prepared[1].bytes[0x101] = 0;
         let mut machine = Machine::new(empty_program());
 
         machine

@@ -203,6 +203,18 @@ class LNP64Native4<string Mnemonic>
 class LNP64Native2<string Mnemonic>
     : LNP64Inst<(outs GPR:$rd), (ins GPR:$arg), Mnemonic, "\t$rd, $arg">;
 
+class LNP64Status4<string Mnemonic>
+    : LNP64Inst<(outs), (ins GPR:$arg0, GPR:$arg1, GPR:$arg2, GPR:$arg3),
+                Mnemonic, "\t$arg0, $arg1, $arg2, $arg3">;
+
+class LNP64Status3<string Mnemonic>
+    : LNP64Inst<(outs), (ins GPR:$arg0, GPR:$arg1, GPR:$arg2),
+                Mnemonic, "\t$arg0, $arg1, $arg2">;
+
+class LNP64Status2<string Mnemonic>
+    : LNP64Inst<(outs), (ins GPR:$arg0, GPR:$arg1), Mnemonic,
+                "\t$arg0, $arg1">;
+
 class LNP64RuntimeGet<string Mnemonic>
     : LNP64Inst<(outs GPR:$rd), (ins), Mnemonic, "\t$rd">;
 
@@ -655,6 +667,11 @@ def FREE : LNP64RuntimeSet<"free">;
 def OPEN_AT : LNP64Native4<"open_at">;
 def CLONE_SPAWN : LNP64RRR<"clone.spawn">;
 def THREAD_JOIN : LNP64RRR<"thread_join">;
+def STAT_PATH_AT : LNP64Status4<"stat_path_at">;
+def STAT_FD_DYN : LNP64Status2<"stat_fd_dyn">;
+def UTIME_PATH_AT : LNP64Status4<"utime_path_at">;
+def UTIME_FD_DYN : LNP64Status2<"utime_fd_dyn">;
+def FCNTL_FD_DYN : LNP64Status3<"fcntl_fd_dyn">;
 def PULL : LNP64Native4<"pull"> {
   let Pattern = [(set GPR:$rd, (LNP64pull GPR:$cap, GPR:$arg0, GPR:$arg1))];
 }

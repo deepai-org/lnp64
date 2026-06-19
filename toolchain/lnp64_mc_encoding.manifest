@@ -15,6 +15,7 @@
 # Final __lnp_mmap remains blocked on the F9 argument-block encoding described
 # in hardware_design.md section 17.
 # fixed32_cset: opcode[31:24], rd[23:19], reserved[18:0]; materializes current FLAGS as 0/1
+# fixed32_compat_metadata: transitional status-in-r1 compatibility metadata/time/fcntl helpers.
 constants|fixed32_constant|NOP,LI,MOV|none_or_gpr_immediate_or_gpr|R_LNP64_ABS64,R_LNP64_GOT64|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64AsmParser.cpp
 wide_constants|fixed32_reg_u32_tail|LA,LI32,AUIPC|gpr_dst,u32_payload|R_LNP64_ABS32,R_LNP64_PC32|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
 integer_alu_rrr|fixed32_rrr|ADD,SUB,MUL,MULH,MULHU,MULHSU,DIV,UDIV,SREM,UREM,AND,OR,XOR,LSL,LSR,ASR|gpr_dst,gpr_lhs,gpr_rhs|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp
@@ -38,5 +39,6 @@ env_get_control|fixed32_env_get_control|ENV_GET|gpr_result,gpr_key,gpr_index_or_
 pcr_control|fixed32_pcr_control|GET_PCR,SET_PCR|GET_PCR:gpr_dst,pcr_name;SET_PCR:pcr_name,gpr_src|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
 native_primitives|fixed32_native4|OPEN_AT,PULL,PUSH,AWAIT,GATE_CALL,GATE_RETURN|gpr_result,gpr_cap,gpr_arg0,gpr_arg1|R_LNP64_CAP_DESC64,R_LNP64_CALLGATE64|LNP64InstrInfo.td,LNP64ISelLowering.cpp,LNP64AsmParser.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64InstPrinter.cpp
 clone_control|fixed32_clone_control|CLONE.SPAWN,THREAD_JOIN|CLONE.SPAWN:gpr_result,gpr_entry,gpr_arg;THREAD_JOIN:gpr_result,gpr_tid,gpr_retval_ptr|none|LNP64InstrInfo.td,LNP64AsmParser.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64InstPrinter.cpp
+compat_metadata_control|fixed32_compat_metadata|STAT_PATH_AT,STAT_FD_DYN,UTIME_PATH_AT,UTIME_FD_DYN,FCNTL_FD_DYN|STAT_PATH_AT:gpr_statbuf,gpr_dir,gpr_path,gpr_flags;STAT_FD_DYN:gpr_statbuf,gpr_fd;UTIME_PATH_AT:gpr_dir,gpr_path,gpr_times,gpr_flags;UTIME_FD_DYN:gpr_fd,gpr_times;FCNTL_FD_DYN:gpr_fd,gpr_cmd,gpr_arg|none|LNP64InstrInfo.td,LNP64AsmParser.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64InstPrinter.cpp
 native_control_rr|fixed32_rr|OBJECT_CTL,DOMAIN_CTL|gpr_result,gpr_argblock|none|LNP64InstrInfo.td,LNP64ISelLowering.cpp,LNP64AsmParser.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64InstPrinter.cpp
 native_capability_rr|fixed32_rr|CAP_DUP,CAP_SEND,CAP_RECV,CAP_REVOKE|gpr_result,gpr_argblock|none|LNP64InstrInfo.td,LNP64AsmParser.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64InstPrinter.cpp

@@ -643,6 +643,30 @@ public:
                                 getGPRNo(MI.getOperand(2))),
                OS);
       return;
+    case LNP64::STAT_PATH_AT:
+      emitLE32(encodeFixed32RRRR(0x5c, getGPRNo(MI.getOperand(0)),
+                                 getGPRNo(MI.getOperand(1)),
+                                 getGPRNo(MI.getOperand(2)),
+                                 getGPRNo(MI.getOperand(3))),
+               OS);
+      return;
+    case LNP64::STAT_FD_DYN:
+      emitLE32(encodeFixed32RR(0x5d, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
+    case LNP64::UTIME_PATH_AT:
+      emitLE32(encodeFixed32RRRR(0x5e, getGPRNo(MI.getOperand(0)),
+                                 getGPRNo(MI.getOperand(1)),
+                                 getGPRNo(MI.getOperand(2)),
+                                 getGPRNo(MI.getOperand(3))),
+               OS);
+      return;
+    case LNP64::UTIME_FD_DYN:
+      emitLE32(encodeFixed32RR(0x5f, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
     case LNP64::CSET_EQ:
       emitLE32(encodeFixed32Reg(0x3d, getGPRNo(MI.getOperand(0))), OS);
       return;
@@ -720,6 +744,12 @@ public:
       return;
     case LNP64::SIGRET:
       emitLE32(encodeFixed32NoOperand(0x65), OS);
+      return;
+    case LNP64::FCNTL_FD_DYN:
+      emitLE32(encodeFixed32RRR(0x67, getGPRNo(MI.getOperand(0)),
+                                getGPRNo(MI.getOperand(1)),
+                                getGPRNo(MI.getOperand(2))),
+               OS);
       return;
     case LNP64::ALARM:
       emitLE32(encodeFixed32RR(0x68, getGPRNo(MI.getOperand(0)),

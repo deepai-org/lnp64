@@ -400,6 +400,11 @@ private:
             .Case("open_at", LNP64::OPEN_AT)
             .Case("clone.spawn", LNP64::CLONE_SPAWN)
             .Case("thread_join", LNP64::THREAD_JOIN)
+            .Case("stat_path_at", LNP64::STAT_PATH_AT)
+            .Case("stat_fd_dyn", LNP64::STAT_FD_DYN)
+            .Case("utime_path_at", LNP64::UTIME_PATH_AT)
+            .Case("utime_fd_dyn", LNP64::UTIME_FD_DYN)
+            .Case("fcntl_fd_dyn", LNP64::FCNTL_FD_DYN)
             .Case("object_ctl", LNP64::OBJECT_CTL)
             .Case("domain_ctl", LNP64::DOMAIN_CTL)
             .Case("cap_send", LNP64::CAP_SEND)
@@ -466,11 +471,14 @@ private:
         Opcode == LNP64::CSEL_ULT || Opcode == LNP64::CSEL_UGT ||
         Opcode == LNP64::CSEL_ULE || Opcode == LNP64::CSEL_UGE)
       return addRegRegReg(Inst, Operands);
+    if (Opcode == LNP64::FCNTL_FD_DYN)
+      return addRegRegReg(Inst, Operands);
     if (Opcode == LNP64::CMP || Opcode == LNP64::CMPU ||
         Opcode == LNP64::FUTEX_WAIT || Opcode == LNP64::FUTEX_WAKE ||
         Opcode == LNP64::MUNMAP || Opcode == LNP64::SIGACTION ||
         Opcode == LNP64::LNP64_KILL || Opcode == LNP64::ALARM ||
-        Opcode == LNP64::GET_PCR || Opcode == LNP64::SET_PCR)
+        Opcode == LNP64::GET_PCR || Opcode == LNP64::SET_PCR ||
+        Opcode == LNP64::STAT_FD_DYN || Opcode == LNP64::UTIME_FD_DYN)
       return addRegReg(Inst, Operands);
     if (Opcode == LNP64::JMP || Opcode == LNP64::BEQ ||
         Opcode == LNP64::BNE || Opcode == LNP64::BLT ||
@@ -503,7 +511,8 @@ private:
         Opcode == LNP64::GATE_RETURN || Opcode == LNP64::MMAP ||
         Opcode == LNP64::MPROTECT || Opcode == LNP64::ENV_GET ||
         Opcode == LNP64::OPEN_AT || Opcode == LNP64::PULL ||
-        Opcode == LNP64::PUSH)
+        Opcode == LNP64::PUSH || Opcode == LNP64::STAT_PATH_AT ||
+        Opcode == LNP64::UTIME_PATH_AT)
       return addRegRegRegReg(Inst, Operands);
     if (Opcode == LNP64::LD || Opcode == LNP64::LD_W ||
         Opcode == LNP64::LD_H || Opcode == LNP64::LD_B)

@@ -214,6 +214,16 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
     return "clone.spawn";
   case LNP64::THREAD_JOIN:
     return "thread_join";
+  case LNP64::STAT_PATH_AT:
+    return "stat_path_at";
+  case LNP64::STAT_FD_DYN:
+    return "stat_fd_dyn";
+  case LNP64::UTIME_PATH_AT:
+    return "utime_path_at";
+  case LNP64::UTIME_FD_DYN:
+    return "utime_fd_dyn";
+  case LNP64::FCNTL_FD_DYN:
+    return "fcntl_fd_dyn";
   case LNP64::OBJECT_CTL:
     return "object_ctl";
   case LNP64::DOMAIN_CTL:
@@ -434,6 +444,8 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::CMPU:
   case LNP64::FUTEX_WAIT:
   case LNP64::FUTEX_WAKE:
+  case LNP64::STAT_FD_DYN:
+  case LNP64::UTIME_FD_DYN:
   case LNP64::SIGACTION:
   case LNP64::LNP64_KILL:
     OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
@@ -509,6 +521,7 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
     printOperand(MI->getOperand(1), OS);
     break;
   case LNP64::ALLOC_EX:
+  case LNP64::FCNTL_FD_DYN:
     OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
     printOperand(MI->getOperand(0), OS);
     OS << ", ";
@@ -526,6 +539,8 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::MPROTECT:
   case LNP64::ENV_GET:
   case LNP64::LOCK_CMPXCHG:
+  case LNP64::STAT_PATH_AT:
+  case LNP64::UTIME_PATH_AT:
     OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
     printOperand(MI->getOperand(0), OS);
     OS << ", ";

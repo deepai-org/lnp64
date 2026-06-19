@@ -576,6 +576,30 @@ public:
       addReg(Instr, B);
       addReg(Instr, C);
       return MCDisassembler::Success;
+    case 0x5c:
+      Instr.setOpcode(LNP64::STAT_PATH_AT);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      addReg(Instr, (Word >> 4) & 0x1f);
+      return MCDisassembler::Success;
+    case 0x5d:
+      Instr.setOpcode(LNP64::STAT_FD_DYN);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      return MCDisassembler::Success;
+    case 0x5e:
+      Instr.setOpcode(LNP64::UTIME_PATH_AT);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
+      addReg(Instr, (Word >> 4) & 0x1f);
+      return MCDisassembler::Success;
+    case 0x5f:
+      Instr.setOpcode(LNP64::UTIME_FD_DYN);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      return MCDisassembler::Success;
     case 0x3d:
       Instr.setOpcode(LNP64::CSET_EQ);
       addReg(Instr, A);
@@ -664,6 +688,12 @@ public:
       addReg(Instr, B);
       addReg(Instr, C);
       addReg(Instr, (Word >> 4) & 0x1f);
+      return MCDisassembler::Success;
+    case 0x67:
+      Instr.setOpcode(LNP64::FCNTL_FD_DYN);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      addReg(Instr, C);
       return MCDisassembler::Success;
     case 0x62:
       Instr.setOpcode(LNP64::SIGACTION);

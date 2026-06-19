@@ -318,6 +318,33 @@ ASM
   printf 'real LLVM LNP64 llvm-mc clone control opcode smoke passed: %s\n' \
     "$clone_control_mc_obj"
 
+  compat_meta_asm="$build_dir/compat-meta-mc-smoke.s"
+  cat >"$compat_meta_asm" <<'ASM'
+  .text
+  .globl _start
+_start:
+  stat_path_at r1, r2, r3, r4
+  stat_fd_dyn r5, r6
+  utime_path_at r7, r8, r9, r10
+  utime_fd_dyn r11, r12
+  fcntl_fd_dyn r13, r14, r15
+  ret
+ASM
+  compat_meta_mc_obj="$build_dir/compat-meta-mc-smoke.o"
+  "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$compat_meta_asm" \
+    -o "$compat_meta_mc_obj"
+  test -s "$compat_meta_mc_obj"
+  compat_meta_mc_dump="$build_dir/compat-meta-mc-smoke.dump"
+  "$llvm_objdump" -d --triple=lnp64-unknown-none "$compat_meta_mc_obj" \
+    >"$compat_meta_mc_dump"
+  grep -q 'stat_path_at r1, r2, r3, r4' "$compat_meta_mc_dump"
+  grep -q 'stat_fd_dyn r5, r6' "$compat_meta_mc_dump"
+  grep -q 'utime_path_at r7, r8, r9, r10' "$compat_meta_mc_dump"
+  grep -q 'utime_fd_dyn r11, r12' "$compat_meta_mc_dump"
+  grep -q 'fcntl_fd_dyn r13, r14, r15' "$compat_meta_mc_dump"
+  printf 'real LLVM LNP64 llvm-mc compatibility metadata opcode smoke passed: %s\n' \
+    "$compat_meta_mc_obj"
+
   cap_control_asm="$build_dir/cap-control-mc-smoke.s"
   cat >"$cap_control_asm" <<'ASM'
   .text
@@ -3823,6 +3850,33 @@ grep -q 'clone.spawn r1, r2, r3' "$clone_control_mc_dump"
 grep -q 'thread_join r4, r5, r6' "$clone_control_mc_dump"
 printf 'real LLVM LNP64 llvm-mc clone control opcode smoke passed: %s\n' \
   "$clone_control_mc_obj"
+
+compat_meta_asm="$build_dir/compat-meta-mc-smoke.s"
+cat >"$compat_meta_asm" <<'ASM'
+  .text
+  .globl _start
+_start:
+  stat_path_at r1, r2, r3, r4
+  stat_fd_dyn r5, r6
+  utime_path_at r7, r8, r9, r10
+  utime_fd_dyn r11, r12
+  fcntl_fd_dyn r13, r14, r15
+  ret
+ASM
+compat_meta_mc_obj="$build_dir/compat-meta-mc-smoke.o"
+"$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$compat_meta_asm" \
+  -o "$compat_meta_mc_obj"
+test -s "$compat_meta_mc_obj"
+compat_meta_mc_dump="$build_dir/compat-meta-mc-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$compat_meta_mc_obj" \
+  >"$compat_meta_mc_dump"
+grep -q 'stat_path_at r1, r2, r3, r4' "$compat_meta_mc_dump"
+grep -q 'stat_fd_dyn r5, r6' "$compat_meta_mc_dump"
+grep -q 'utime_path_at r7, r8, r9, r10' "$compat_meta_mc_dump"
+grep -q 'utime_fd_dyn r11, r12' "$compat_meta_mc_dump"
+grep -q 'fcntl_fd_dyn r13, r14, r15' "$compat_meta_mc_dump"
+printf 'real LLVM LNP64 llvm-mc compatibility metadata opcode smoke passed: %s\n' \
+  "$compat_meta_mc_obj"
 
 cap_control_asm="$build_dir/cap-control-mc-smoke.s"
 cat >"$cap_control_asm" <<'ASM'
