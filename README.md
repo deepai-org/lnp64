@@ -34,6 +34,12 @@ Severe proof goals:
 - **Bounded hardware behavior:** each instruction, engine command, servicelet,
   classifier action, queue operation, and fabric arbitration step either
   completes, parks on a valid waitable, submits bounded work, or fails closed.
+- **Realtime contract soundness:** any advertised instruction latency,
+  engine-submit bound, scheduler reservation, servicelet/classifier budget,
+  fabric arbitration guarantee, or WCET class is conservative for the actual RTL
+  under its named assumptions. Work outside those assumptions must be reported as
+  best-effort, bounded-submit, refused, parked, or faulted; it must not inherit a
+  stronger realtime claim by accident.
 - **Hardware totality and local progress:** every hardware FSM, pipeline, owner
   engine, queue, arbiter, decoder, reset path, and recovery path has only defined
   reachable states. Under its stated environment assumptions, each reachable

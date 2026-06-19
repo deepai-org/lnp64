@@ -69,9 +69,12 @@ V1 hardware must specify these mechanisms:
     Class A register/local datapath, Class B local metadata hit, Class C
     bounded enqueue/state transition/crossbar arbitration, and Class D
     bounded-submit asynchronous transaction.
-*   **Time:** hardware provides a monotonic timebase, realtime snapshot fields,
-    timer object profiles, timeout semantics for `AWAIT`, and per-domain CPU
-    accounting ticks. Timer precision, suspend/freeze behavior, and timestamp
+*   **Time:** hardware provides a tightly synchronized global monotonic timebase,
+    realtime snapshot fields, timer object profiles, timeout semantics for
+    `AWAIT`, and per-domain CPU accounting ticks. Deadlines, timeout expiry,
+    reservations, watchdog windows, and async Class D operation deadlines are
+    evaluated against this global timebase, not unrelated local tile counters.
+    Timer precision, maximum on-chip skew, suspend/freeze behavior, and timestamp
     provenance are implementation-profile fields.
 *   **Faults and overflow:** instruction, memory, capability, domain-policy,
     DMA/IOMMU, device, event overflow, watchdog, metadata, and machine-fatal
@@ -95,6 +98,13 @@ V1 hardware must specify these mechanisms:
     arbitration and Resource Domain admission. Best-effort traffic may be
     throttled or failed with pressure events, but it must not violate published
     bounds for admitted realtime work.
+*   **End-to-end realtime attribution:** every shared queue, fabric, cache
+    partition, memory-controller queue, DMA path, and async engine command is
+    tagged with Resource Domain identity, generation, reservation/deadline
+    metadata, and cancellation epoch. Class D work inherits the submitter's
+    domain, eligibility, deadline, and reservation token; no engine may drop it
+    into an undifferentiated FIFO. Realtime claims apply only when the whole
+    path, including memory-controller service, is admitted and bounded.
 *   **Domain lifecycle:** `DOMAIN_CTL` defines create, configure, attach,
     detach, freeze, resume, destroy, revoke, query, and quiesce transitions.
     Domain ids, generations, usage records, scheduler state, and capability
@@ -124,16 +134,16 @@ state transitions, atomicity, isolation, accounting, and failure semantics above
 ## 2. Process & Scheduling Instructions
 The CPU features a hardware-managed runqueue. There is no mandatory OS scheduler tick; hardware scheduler and context-store blocks dispatch ready threads directly.
 
-The v1 scheduler is a hardware weighted-fair virtual-time scheduler inspired by
-Linux CFS/EEVDF, but it is not Linux CFS in RTL. Hardware owns runnable,
-running, blocked, parked, frozen, and exited state transitions; wakeup
-insertion; runqueue selection; Resource Domain budget accounting; and bounded
-preemption points. Software owns policy intent: domain weights, quotas, latency
-class hints, affinity masks, guest/personality scheduler mappings, and workload
-admission. The scheduler uses fixed weight tables, virtual runtime/deadline
-accounting, bucketed or small-window runnable queues, and hierarchical domain
-credits. It must not expose scheduler bytecode, callbacks, arbitrary policy
-plugins, or unbounded tree walks.
+The v1 scheduler is the **Fixed Weighted-Fair Virtual-Deadline Active-Window
+Scheduler**. It is inspired by Linux CFS/EEVDF, but it is not Linux CFS in RTL.
+Hardware owns runnable, running, blocked, parked, frozen, and exited state
+transitions; wakeup insertion; runqueue selection; Resource Domain budget
+accounting; and bounded preemption points. Software owns policy intent: domain
+weights, quotas, latency class hints, affinity masks, guest/personality scheduler
+mappings, and workload admission. The scheduler uses fixed weight tables, virtual
+runtime/deadline accounting, bounded active windows or virtual-deadline buckets,
+and hierarchical domain credits. It must not expose scheduler bytecode,
+callbacks, arbitrary policy plugins, or unbounded tree walks.
 
 The scheduler contract is deliberately small and realtime-friendly:
 
@@ -464,7 +474,7 @@ Page tables and VMAs are managed by fixed hardware MMU/VMA engines using bounded
 *   **`MPROTECT r_addr, r_len, r_prot`**
     *   *Action:* Updates the protection bits for an existing VMA range and invalidates affected translations. This supports software loaders, guard pages, W^X policy, and paravirtual Unix guests that map their process abstractions onto LNP64 VMAs.
 *   **`ALLOC r_dest, r_size`** / **`ALLOC_EX r_dest, r_request_block`** / **`ALLOC_SIZE r_dest, r_ptr`** / **`FREE r_result, r_ptr`**
-    *   *Action:* Allocates, queries, and frees byte-granular heap memory through the Hardware Heap Engine. The ISA exposes allocation intent and bounded policy hints, not allocator representation. `ALLOC`/`FREE` create hardware-owned allocation objects with object-level safety and accounting. `MMAP`, `memory_object`, and arena-style `ALLOC_EX` create backing regions for software-owned allocation representations with region-level safety and accounting. The heap is process-local, backed by anonymous NX VMAs, thread-safe in hardware, and integrated with `CLONE` copy-on-write and `EXEC` teardown. Hardware freezes the **LNP64 Default Heap Algorithm**: a domain-aware segregated bump allocator with fixed size classes, per-thread allocation windows, domain-owned slab/run pages, batched cross-thread frees, bounded quarantine/guard hooks, page-run large objects, checked metadata, generation checks, and Resource Domain accounting. Libc and language runtimes own higher-level object policy. `ALLOC_EX` supports alignment, zeroing, guard, debug, locality, allocation-class tags, arena profiles, shared/DMA eligibility hints, and optional memory-tag/debug-hardening flags. `ALLOC_SIZE` exposes the usable allocation extent to libc/runtime code so `realloc` can copy only the valid old allocation extent.
+    *   *Action:* Allocates, queries, and frees byte-granular heap memory through the Hardware Heap Engine. The ISA exposes allocation intent and bounded policy hints, not allocator representation. `ALLOC`/`FREE` create hardware-owned allocation objects with object-level safety and accounting. `MMAP`, `memory_object`, and arena-style `ALLOC_EX` create backing regions for software-owned allocation representations with region-level safety and accounting. The heap is process-local, backed by anonymous NX VMAs, thread-safe in hardware, and integrated with `CLONE` copy-on-write and `EXEC` teardown. Hardware freezes the **LNP64 Default Heap Algorithm**: a domain-aware segregated bump allocator with fixed size classes, per-thread allocation windows, domain-owned slab/run pages, batched cross-thread frees, bounded quarantine/guard hooks, page-run large objects, checked metadata, generation checks, and Resource Domain accounting. Libc and language runtimes own higher-level object policy. `ALLOC_EX` supports transparent C-friendly hardening hints such as alignment, zeroing, guard, debug poison, locality, allocation-class tags, arena profiles, and shared/DMA eligibility. Rust-style intra-program memory safety, fat pointers, capability-pointer C ABIs, and compiler-inserted bounds checks are not v1 heap goals. `ALLOC_SIZE` exposes the usable allocation extent to libc/runtime code so `realloc` can copy only the valid old allocation extent.
 
 ## 4.1 Exec-Plan Boundary
 Hardware `EXEC` does not load programs or understand executable formats. It

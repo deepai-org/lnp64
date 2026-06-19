@@ -346,7 +346,8 @@ Useful sub-theorems:
 
 **Scheduler well-formedness and bounded fairness:** hardware scheduling never
 loses or duplicates a thread context, and eligible runnable threads are
-dispatched according to the bounded weighted-fair virtual-time contract.
+dispatched according to the Fixed Weighted-Fair Virtual-Deadline Active-Window
+Scheduler contract.
 
 Useful sub-theorems:
 
@@ -417,6 +418,19 @@ Useful sub-theorems:
 - metadata engines, event routers, DMA paths, memory-controller ports,
   servicelet lanes, and queue banks use bounded arbitration for admitted
   domains.
+- Class D async work preserves the submitter's Resource Domain id/generation,
+  TID/generation, reservation/deadline metadata, operation id, cancellation
+  epoch, and completion target across queues, fabrics, memory-controller
+  requests, DMA descriptors, and completion records.
+- the DDR/HBM controller's admitted-realtime arbitration bound is conservative
+  with respect to its published bank/pseudochannel reservation, refresh,
+  calibration, ECC retry, and vendor-IP assumptions.
+- deadline comparison, timeout expiry, watchdog windows, reservation periods,
+  and Class D async deadlines are evaluated against the synchronized global
+  timebase within the published skew bound.
+- cancellation epochs reclaim reserved capacity for stale, revoked, expired, or
+  dead-thread Class D operations within the published bound, without requiring
+  unbounded queue scans.
 - banked or sharded owner engines preserve the same transition relation as the
   abstract owner engine: banking changes placement and arbitration, not the
   authority, generation, or single-writer rules.
@@ -723,6 +737,31 @@ The theorem has two granularities. Hardware-owned allocations receive
 object-level safety and accounting. Software-owned arenas receive region-level
 VMA/capability/domain safety; object-level correctness inside the arena is a
 runtime theorem, not a Heap Engine theorem.
+
+The base heap theorem is about allocation ownership, metadata integrity,
+exact-pointer free, reuse discipline, and authority. It does not prove that every
+ordinary `LD`/`ST` is checked against allocation-object bounds for untagged
+C-style pointers. Rust-style intra-program memory safety, per-access
+use-after-free prevention, and sub-object bounds enforcement are not v1 hardware
+heap proof goals. Those properties belong to languages, runtimes, sanitizers, or
+software-owned arena policies layered above the hardware heap. Pointer tagging,
+fat pointers, capability-pointer C ABIs, or compiler-inserted bounds checks are
+future profile topics, not default heap proof obligations, unless they can be
+used by ordinary C source and libc with explicit ABI and WCET contracts.
+
+Heap proofs are profile-scoped:
+
+- `base_heap` proves metadata integrity, exact-pointer free, bounded hot
+  allocation/free, domain accounting, NX heap backing, and fail-closed invalid
+  free behavior with VMA/page-granularity load/store enforcement.
+- `hardened_heap` additionally proves bounded quarantine, poison/zero behavior,
+  guarded allocation behavior where selected, generation checks before slot
+  reuse, and heap-corruption fault delivery.
+
+All heap profiles refine the same abstract allocation transition relation.
+Profile selection may strengthen allocator hardening and alter timing constants,
+but it cannot weaken authority, accounting, exact-pointer free, or
+metadata-integrity invariants.
 
 Useful sub-theorems:
 

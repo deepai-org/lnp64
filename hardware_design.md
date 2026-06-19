@@ -98,8 +98,14 @@ Time:
 - hardware provides a monotonic counter, realtime snapshot PCR fields, timer
   object profiles, `WAITABLE_PROBE`/`AWAIT_EX` timeout semantics, and per-domain
   CPU accounting.
+- a synchronized global monotonic timebase is distributed to core tiles,
+  scheduler shards, owner engines, fabrics, DMA engines, servicelet lanes, and
+  memory controllers. Absolute deadlines, reservation periods, timeout expiry,
+  watchdog windows, and Class D async deadlines are evaluated against this
+  timebase, not unrelated local tile counters.
 - `ENV_GET` reports timebase frequency, nominal timer granularity, realtime
-  availability, counter width, suspend/freeze behavior, and audit timestamp
+  availability, counter width, maximum on-chip skew, suspend/freeze behavior,
+  whether local tile counters are cached global views, and audit timestamp
   provenance.
 - Timer expiry is delivered as a waitable event; software clock APIs and Unix
   timer policy are compatibility layers over that event source.
@@ -290,6 +296,14 @@ Architectural completion terms:
   operation id, owner thread/domain generation, argument digest or pinned/copy
   descriptors, cancellation class, and completion target.
 
+Every Class D command also carries the scheduling and realtime identity of the
+submitting context: Resource Domain id/generation, submitter TID/generation,
+weight index or reservation class, absolute deadline/timeout in the global
+timebase, cancellation epoch, latency/WCET class, and completion target. Engines
+must preserve these fields through queues, fabric hops, memory-controller
+requests, DMA descriptors, and completion records. No realtime-admitted Class D
+request may be converted into an undifferentiated FIFO entry.
+
 No architected instruction may synchronously depend on unbounded DDR traversal,
 path walking, filesystem policy, executable loading, device completion, large
 revocation fanout, domain subtree traversal, queue scan, or software service
@@ -348,6 +362,15 @@ Shared fabric arbitration is part of the realtime contract:
   realtime work.
 - arbitration constants, maximum wait windows, and unsupported reservation
   features are discoverable through `ENV_GET`.
+- Class D async work inherits the submitter's Resource Domain attribution,
+  reservation token, and absolute deadline. Owner engines, metadata brokers,
+  DMA engines, servicelet lanes, and memory-controller queues arbitrate admitted
+  async work with the same domain/deadline discipline as the CPU scheduler.
+- revocation, thread death, deadline expiry, and domain teardown advance
+  cancellation epochs. Engines and fabrics must reject or skip stale operations
+  at dequeue, issue, and pre-commit points and reclaim reserved capacity within a
+  published bound. The architecture does not require unbounded immediate FIFO
+  scans.
 
 Shared does not mean monolithic. The architectural rule is single ownership for
 each mutable record family; the physical implementation may and should bank or
@@ -1296,6 +1319,24 @@ External DDR holds:
 The FPGA contains caches and metadata accelerators, but DDR is the architectural
 backing store.
 
+The DDR/HBM controller is part of the realtime contract, not an opaque throughput
+optimizer for admitted realtime traffic. Requests carry Resource Domain
+id/generation, reservation/deadline class, memory type, cancellation epoch, and
+operation id from the issuing engine or core. The controller may reorder
+best-effort requests for row-buffer efficiency, but admitted realtime requests
+must be served by the published domain-aware arbitration rule even when that
+reduces aggregate bandwidth.
+
+Strict realtime domains may reserve DRAM banks, pseudochannels, address-color
+ranges, or controller queue slices when the implementation profile supports it.
+Bank reservation is the preferred proof-friendly DDR mode because it limits
+row-buffer conflict from other domains. DDR refresh, calibration, ECC retry, and
+vendor-controller stalls are still physical assumptions; `ENV_GET` and the
+trusted-platform contract must publish whether they are included in the bound,
+excluded from strict realtime admission, or handled by bounded thermal/fault
+escalation. For the strongest guarantees, TCM/SRAM/cache-reserved memory remains
+the preferred backing store.
+
 The MMU implements:
 
 - 4 KiB pages.
@@ -1487,14 +1528,15 @@ Device VMA rules:
 The scheduler is a fabric block, not software. In the coherent multicore design,
 it has per-core ready queues plus a global scheduler arbiter.
 
-V1 uses a hardware weighted-fair virtual-time model inspired by Linux
-CFS/EEVDF, but not Linux CFS in RTL. The stable contract is weighted fair
-dispatch over threads and Resource Domains using virtual runtime/deadline
-accounting, hierarchical quotas, bounded wakeup placement, and bounded
-preemption points. Linux nice values, cgroup CPU weights/quotas, affinity masks,
-and latency hints map naturally onto this contract, but Linux scheduler
-heuristics, red-black trees, PELT history, NUMA balancing, policy callbacks, and
-plugin schedulers remain software/personality policy.
+V1 uses the **Fixed Weighted-Fair Virtual-Deadline Active-Window Scheduler**. It
+is inspired by Linux CFS/EEVDF, but it is not Linux CFS in RTL. The stable
+contract is weighted fair dispatch over threads and Resource Domains using
+virtual runtime/deadline accounting, hierarchical quotas, bounded active windows
+or virtual-deadline buckets, bounded wakeup placement, and bounded preemption
+points. Linux nice values, cgroup CPU weights/quotas, affinity masks, and latency
+hints map naturally onto this contract, but Linux scheduler heuristics,
+red-black trees, PELT history, NUMA balancing, policy callbacks, and plugin
+schedulers remain software/personality policy.
 
 This is a fixed hardware algorithm, not a policy hook. Software configures
 weights, quotas, latency classes, affinity masks, and domain hierarchy; hardware
@@ -3879,6 +3921,39 @@ region-level safety and accounting; object-level bugs inside the arena are the
 runtime's responsibility unless the runtime uses hardware-owned allocations for
 those objects.
 
+For C-style raw pointers, the base heap guarantee is allocation metadata safety,
+exact-pointer free, bounded reuse, accounting, and fail-closed corruption
+detection. It does not by itself make every ordinary `LD`/`ST` perform
+sub-object bounds checks. Rust-style intra-program memory safety is explicitly
+not a v1 design goal. The Heap Engine prevents allocator metadata corruption,
+invalid frees, silent stale reuse where hardened policy applies, and
+cross-domain/accounting violations; it does not turn ordinary unsafe pointer
+code into a memory-safe language runtime. V1 does not require pointer tagging,
+fat pointers, capability-pointer C ABIs, or compiler-inserted bounds checks for
+normal C programs. Those mechanisms may be useful future profiles, but they are
+not part of the default hardware heap contract unless they can run ordinary C
+source and libc with clear ABI rules, acceptable compatibility, and published
+WCET.
+
+Heap profiles are fixed and discoverable:
+
+- **`base_heap`:** mandatory. Proves allocation ownership, exact-pointer `FREE`,
+  metadata integrity, Resource Domain accounting, NX heap backing, bounded hot
+  `ALLOC`/`FREE`, and fail-closed invalid free behavior. Ordinary `LD`/`ST` are
+  checked at VMA/page granularity.
+- **`hardened_heap`:** recommended enterprise default. Adds bounded quarantine,
+  debug poison/zero policy, optional guard slots/pages for selected allocations,
+  stronger generation checks before slot reuse, heap-corruption fault events, and
+  stricter `ALLOC_SIZE`/`FREE` validation. It still does not require every
+  ordinary `LD`/`ST` to perform sub-object bounds checks.
+
+All profiles share the same abstract allocation transition relation. Profile
+selection changes hardening and timing constants; it must not create new
+authority, weaken Resource Domain accounting, or introduce allocator plugins.
+Slow paths such as window refill, slab/run drain, large-object page allocation,
+and quarantine drain are Class D owner-engine transactions with inherited
+domain/deadline/cancellation metadata.
+
 `ALLOC`:
 
 - uses F2: `a=result_dst`, `b=size_reg`.
@@ -4255,6 +4330,8 @@ V1 metadata keys:
 - `cache_line_size`.
 - `dma_alignment`.
 - `timebase_hz`.
+- `global_timebase_bits`.
+- `global_timebase_max_skew_cycles`.
 - `timer_granularity_ns`.
 - `monotonic_counter_bits`.
 - `time_behavior_flags`.
@@ -4284,8 +4361,12 @@ V1 metadata keys:
 - `latency_class_b_cycles`.
 - `latency_class_c_cycles`.
 - `class_d_submit_cycles`.
+- `class_d_cancel_reclaim_cycles`.
 - `metadata_fabric_max_wait_cycles`.
 - `memory_fabric_reservation_granularity`.
+- `memory_controller_rt_feature_bits`.
+- `memory_controller_max_rt_wait_cycles`.
+- `memory_controller_bank_reservation_granularity`.
 - `event_router_max_wait_cycles`.
 - `servicelet_lane_count`.
 - `servicelet_lane_max_wait_cycles`.

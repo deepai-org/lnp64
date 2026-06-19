@@ -191,9 +191,9 @@ the whole-chip boundary:
    lifecycle profile permits it, local reset, or measured/audited machine-fatal
    state without publishing partial authority or corrupting unrelated domains.
 8. **`SG-RT` Realtime honesty:** any advertised Class A/B/C latency,
-   scheduler, reservation, or servicelet bound is conservative for the
-   implementation; work that cannot meet the bound is Class D bounded-submit
-   work or fails closed.
+   scheduler, reservation, fabric, memory-controller, async-cancellation, or
+   servicelet bound is conservative for the implementation; work that cannot meet
+   the bound is Class D bounded-submit work, best-effort, or fails closed.
 9. **`SG-EVIDENCE` Evidence honesty:** trace, telemetry, audit, quote,
    proof-manifest, and feature-discovery records are data, not authority, and
    accurately describe the implementation, assumptions, proof level, and known
@@ -913,7 +913,8 @@ post-state projection fields match the Lean post-state.
 
 After M1 reaches this shape, repeat the same pattern in this order:
 
-1. scheduler uniqueness and no-lost-wakeup.
+1. scheduler uniqueness, no-lost-wakeup, and the Fixed Weighted-Fair
+   Virtual-Deadline Active-Window Scheduler contract.
 2. composition of M1 authority with scheduler state.
 3. VMA/DMA memory authority.
 4. Resource Domain isolation and monotonic delegation.
@@ -960,7 +961,13 @@ Model:
 
 - ready, running, and wait states.
 - `AWAIT`, wake, timers, and futex bucket head behavior.
-- bounded scheduler eligibility.
+- fixed monotonic weight table, virtual runtime/deadline accounting, sticky
+  affinity, bounded migration, bounded wakeup insertion, and bounded preemption
+  points.
+- bounded active windows or virtual-deadline buckets, with no scheduler
+  bytecode, callbacks, red-black tree policy, plugin dispatch, or unbounded tree
+  walks.
+- hierarchical Resource Domain quota/budget eligibility.
 
 Prove:
 
@@ -968,6 +975,10 @@ Prove:
 - no lost wakeups.
 - wake generation matching.
 - domain budget eligibility.
+- bounded fairness for eligible admitted work under the published active-window
+  approximation.
+- no hidden unbounded path in Class A/B/C retire, park, wake, or dispatch
+  behavior.
 
 ### A4. Object Profiles
 
@@ -1214,10 +1225,15 @@ The next RTL phase should build the real machine in this order:
    tables, generation and lineage checks, capability
    duplication/transfer/revocation, domain lifecycle, monotonic limits,
    accounting, freeze/resume/destroy, and policy enforcement.
-6. **Scheduler and waitable core:** implement weighted-fair ready queues,
-   active windows, wait queues, timers, futex wait/wake, event delivery,
-   domain budget hooks, frozen/destroyed-domain rejection, spill/refill, and
-   no-lost-wakeup invariants.
+6. **Scheduler and waitable core:** implement the Fixed Weighted-Fair
+   Virtual-Deadline Active-Window Scheduler: fixed monotonic weight table,
+   virtual runtime/deadline accounting, bounded active windows or
+   virtual-deadline buckets, hierarchical Resource Domain quota/budget checks,
+   sticky affinity, bounded migration, bounded wakeup insertion, bounded
+   preemption points, wait queues, timers, futex wait/wake, event delivery,
+   frozen/destroyed-domain rejection, spill/refill, no-lost-wakeup invariants,
+   and no scheduler bytecode, callbacks, red-black tree policy, plugin dispatch,
+   or unbounded tree walks.
 7. **Object, gate, and process engines:** implement queue, counter,
    event/completion, memory object, call gate, continuation, fault delivery,
    cancellation, service-boundary object profiles, process/thread lifecycle,
@@ -1228,9 +1244,14 @@ The next RTL phase should build the real machine in this order:
 9. **Memory fabric and DDR metadata broker:** implement coherent memory access,
    metadata storage, ECC/parity hooks, spill/refill protocols, barriers, and
    cache/TLB/DMA visibility contracts.
-10. **Heap and futex/atomic hard blocks:** implement the default heap algorithm,
-   allocation windows, size classes, free/quarantine, `ALLOC_SIZE`, locked
-   atomics, futex buckets, and waiter spill/refill.
+10. **Heap and futex/atomic hard blocks:** implement the LNP64 Default Heap
+   Algorithm: fixed size classes, per-thread allocation windows, local
+   free/quarantine caches, bounded cross-thread free-transfer queues,
+   domain-owned slab/run pages, VMA/Page-Engine large-object paths, protected
+   generation-tagged metadata, exact-pointer `FREE`, invalid/double/foreign-free
+   rejection, NX heap backing, bounded hot `ALLOC`/`FREE`, Class D
+   refill/drain/large-allocation slow paths with inherited domain/deadline/
+   cancellation metadata, locked atomics, futex buckets, and waiter spill/refill.
 11. **Service boundary, typed control, and namespace dispatch:** implement
    typed control parsing, service request/reply continuation records,
    returned-capability validation, namespace dispatch stubs, and crash/cancel
@@ -1284,6 +1305,16 @@ with ad hoc side channels. These guardrails are part of the work order:
   retires, parks, or submits within the published bound. Long work is Class D:
   it must publish an operation id, waitable/completion target, timeout/watchdog
   class, and cancellation class before leaving the issuing instruction.
+- **Realtime attribution is end-to-end.** Shared queues, fabrics, cache/memory
+  partitions, async engines, DMA paths, and memory-controller queues preserve
+  Resource Domain id/generation, submitter TID/generation, reservation/deadline
+  metadata, operation id, cancellation epoch, and completion target. A realtime
+  proof cannot stop at CPU dispatch if downstream shared resources may reorder
+  or throttle the work as best-effort traffic.
+- **Global time is a proof assumption and interface.** Deadlines, timeout expiry,
+  reservation periods, watchdog windows, and Class D async deadlines use the
+  synchronized hardware timebase. Any skew, pause, reset, or clock-domain
+  assumption must be named in `ENV_GET` and the trusted-platform contract.
 - **Best-effort traffic is never proof-critical.** Realtime and assurance
   proofs are stated for admitted domains and published reservations. Best-effort
   work may be throttled, failed with pressure events, or delayed within its own
@@ -1293,6 +1324,13 @@ with ad hoc side channels. These guardrails are part of the work order:
   projections and transition invariants, not every pipeline flop. RTL traces
   expose commit records, ownership changes, terminal paths, and typed events so
   the proof model stays small enough to finish.
+- **Do not prove beyond the contract.** Scheduler proofs target uniqueness,
+  no-lost-wakeup, bounded fairness for eligible admitted work, deadline honesty,
+  and fixed active-window behavior. Heap proofs target metadata integrity,
+  exact-pointer free, invalid/double/foreign-free rejection, domain accounting,
+  NX backing, and bounded hot paths. Ordinary C `LD`/`ST` remain VMA/page
+  granularity checks unless a future ABI-compatible profile explicitly adds
+  per-object memory-safety machinery.
 - **Composition is staged.** A block is first proved locally, then with its
   immediate fabric, then through `lnp64_top`. No global claim is made until the
   block's assumptions are either discharged by neighboring assertions or listed
