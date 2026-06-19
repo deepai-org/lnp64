@@ -1615,20 +1615,9 @@ def apply_commit(state: M1State, record: dict[str, int | str], run_index: int, o
     if op == ops.cap_dup_denied:
         if status != ERR_EPERM:
             fail(f"run {run_index} {transition} did not fail with EPERM")
-        if cap.rights_mask & RIGHT_DUP:
-            fail(f"run {run_index} {transition} still carried dup authority")
-        expected = Cap(
-            object_id=state.root_cap.object_id,
-            object_gen=state.object_gen,
-            fdr_gen=state.object_gen,
-            domain_id=1,
-            domain_gen=1,
-            rights_mask=RIGHT_PUSH | RIGHT_PULL,
-            lineage_epoch=state.root_cap.lineage_epoch,
-            sealed=0,
-        )
-        require_cap_equal(cap, expected, f"run {run_index} {transition} commit projection")
-        state.root_cap = cap
+        if state.root_cap.rights_mask & RIGHT_DUP:
+            fail(f"run {run_index} {transition} root duplicate precondition failed")
+        require_cap_equal(cap, state.root_cap, f"run {run_index} {transition} commit projection")
         state.failed_no_authority = True
         return
 

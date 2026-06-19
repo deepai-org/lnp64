@@ -370,6 +370,19 @@ def main() -> None:
         ),
     )
 
+    denied_with_dup_authority_state = checker.initial_state(valid_run[0], ops)
+    expect_failure(
+        "TypedCommitTransition.capDupDenied root duplicate precondition failed",
+        lambda: checker.check_rtl_refinement_step(
+            denied_with_dup_authority_state,
+            None,
+            valid_denied_run[0],
+            valid_state_run[0],
+            0,
+            ops,
+        ),
+    )
+
     bad_post_state_run = copy.deepcopy(valid_state_run)
     bad_post_state_run[1]["transfer_valid"] = 0
     expect_failure(
