@@ -99,19 +99,22 @@ module lnp64_core_tile #(
     logic thread_cmp_below [0:THREAD_CONTEXT_COUNT-1];
     logic thread_cmp_above [0:THREAD_CONTEXT_COUNT-1];
     logic [63:0] thread_pcr_tp [0:THREAD_CONTEXT_COUNT-1];
-    logic thread_active [0:THREAD_CONTEXT_COUNT-1];
-    logic thread_completed [0:THREAD_CONTEXT_COUNT-1];
     logic [63:0] thread_exit_code [0:THREAD_CONTEXT_COUNT-1];
-    lnp64_thread_sched_t thread_context [0:THREAD_CONTEXT_COUNT-1];
     lnp64_thread_sched_t active_thread_context;
-    logic [THREAD_CONTEXT_COUNT-1:0] thread_fault_pending_mask;
-    logic [THREAD_CONTEXT_COUNT-1:0] thread_event_pending_mask;
     logic active_thread_fault_pending;
     logic active_thread_event_pending;
     logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] active_thread_slot;
     logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] next_thread_slot;
+    logic [THREAD_CONTEXT_COUNT-1:0] thread_active_mask;
+    logic [THREAD_CONTEXT_COUNT-1:0] thread_completed_mask;
+    logic thread_window_advance_valid;
+    logic thread_window_activate_valid;
+    logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] thread_window_activate_slot;
+    logic thread_window_complete_valid;
+    logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] thread_window_complete_slot;
+    logic thread_window_collect_valid;
+    logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] thread_window_collect_slot;
     logic [31:0] active_tid;
-    logic [THREAD_CONTEXT_COUNT-1:0] thread_ready_mask;
     logic [63:0] pcr_thread_pointer;
     logic [63:0] pcr_uid;
     logic [63:0] pcr_gid;
@@ -1125,7 +1128,7 @@ module lnp64_core_tile #(
                     end
                 end
                 LNP64_OP_CLONE:
-                    flat_retire_errno_value = (active_thread_slot == 1'b0 && !thread_active[1]) ?
+                    flat_retire_errno_value = (active_thread_slot == 1'b0 && !thread_active_mask[1]) ?
                         LNP64_ERR_OK : LNP64_ERR_EAGAIN;
                 LNP64_OP_JOIN: flat_retire_errno_value = LNP64_ERR_OK;
                 default: begin
@@ -1344,14 +1347,14 @@ module lnp64_core_tile #(
                 LNP64_OP_GET_ERRNO: result = {48'd0, errno_reg};
                 LNP64_OP_SET_PCR: result = pcr_set_value(dec.rs1[4:0]);
                 LNP64_OP_CLONE:
-                    result = (active_thread_slot == 1'b0 && !thread_active[1]) ?
+                    result = (active_thread_slot == 1'b0 && !thread_active_mask[1]) ?
                         64'd2 : 64'hffff_ffff_ffff_ffff;
                 LNP64_OP_JOIN: begin
                     if (gpr[dec.rs1] == active_tid) begin
                         result = 64'd35;
-                    end else if (gpr[dec.rs1] == 64'd2 && thread_completed[1]) begin
+                    end else if (gpr[dec.rs1] == 64'd2 && thread_completed_mask[1]) begin
                         result = 64'd0;
-                    end else if (gpr[dec.rs1] == 64'd2 && thread_active[1]) begin
+                    end else if (gpr[dec.rs1] == 64'd2 && thread_active_mask[1]) begin
                         result = 64'd11;
                     end else begin
                         result = 64'd3;
@@ -1631,33 +1634,45 @@ module lnp64_core_tile #(
     end
 
     always_comb begin
-        for (int unsigned ctx = 0; ctx < THREAD_CONTEXT_COUNT; ctx = ctx + 1) begin
-            thread_ready_mask[ctx] = thread_active[ctx];
-            thread_fault_pending_mask[ctx] = 1'b0;
-            thread_event_pending_mask[ctx] = 1'b0;
-            thread_context[ctx] = '0;
-            thread_context[ctx].pid = 32'd1;
-            thread_context[ctx].tid = ctx[31:0] + 32'd1;
-            thread_context[ctx].tile_id = TILE_ID[31:0];
-            thread_context[ctx].domain_id = 32'd1;
-            thread_context[ctx].domain_gen = 32'd1;
-            thread_context[ctx].state = thread_completed[ctx] ? 16'd3 :
-                (thread_active[ctx] ? 16'd1 : 16'd0);
-            thread_context[ctx].latency_class = 16'd0;
-            thread_context[ctx].wait_generation = 32'd1;
-            thread_context[ctx].active_location = TILE_ID[31:0];
-        end
+        thread_window_advance_valid = state == CORE_SWITCH;
+        thread_window_activate_valid = state == CORE_EXEC &&
+            dec.supported &&
+            dec.opcode == LNP64_OP_CLONE &&
+            active_thread_slot == '0 &&
+            THREAD_CONTEXT_COUNT > 1 &&
+            !thread_active_mask[1];
+        thread_window_activate_slot = 1;
+        thread_window_complete_valid = state == CORE_EXEC &&
+            dec.supported &&
+            dec.opcode == LNP64_OP_EXIT &&
+            active_thread_slot != '0;
+        thread_window_complete_slot = active_thread_slot;
+        thread_window_collect_valid = state == CORE_EXEC &&
+            dec.supported &&
+            dec.opcode == LNP64_OP_JOIN &&
+            gpr[dec.rs1] == 64'd2 &&
+            THREAD_CONTEXT_COUNT > 1 &&
+            thread_completed_mask[1];
+        thread_window_collect_slot = 1;
     end
 
     lnp64_thread_window #(
+        .TILE_ID(TILE_ID),
         .CONTEXT_COUNT(THREAD_CONTEXT_COUNT),
         .CONTEXT_INDEX_WIDTH(THREAD_CONTEXT_INDEX_WIDTH)
     ) thread_window_i(
+        .clk(clk),
+        .reset_n(reset_n),
+        .advance_valid(thread_window_advance_valid),
+        .activate_valid(thread_window_activate_valid),
+        .activate_slot(thread_window_activate_slot),
+        .complete_valid(thread_window_complete_valid),
+        .complete_slot(thread_window_complete_slot),
+        .collect_valid(thread_window_collect_valid),
+        .collect_slot(thread_window_collect_slot),
         .active_slot(active_thread_slot),
-        .context_ready(thread_ready_mask),
-        .context_record(thread_context),
-        .context_fault_pending(thread_fault_pending_mask),
-        .context_event_pending(thread_event_pending_mask),
+        .context_active(thread_active_mask),
+        .context_completed(thread_completed_mask),
         .next_slot(next_thread_slot),
         .active_context(active_thread_context),
         .active_fault_pending(active_thread_fault_pending),
@@ -2017,7 +2032,6 @@ module lnp64_core_tile #(
             pcr_uid <= 64'd0;
             pcr_gid <= 64'd0;
             pcr_sigmask <= 64'd0;
-            active_thread_slot <= 1'b0;
             for (i = 0; i < THREAD_CONTEXT_COUNT; i = i + 1) begin
                 thread_pc[i] <= 32'd0;
                 thread_return_stack_depth[i] <= '0;
@@ -2028,8 +2042,6 @@ module lnp64_core_tile #(
                 thread_cmp_below[i] <= 1'b0;
                 thread_cmp_above[i] <= 1'b0;
                 thread_pcr_tp[i] <= 64'd0;
-                thread_active[i] <= i == 0;
-                thread_completed[i] <= 1'b0;
                 thread_exit_code[i] <= 64'd0;
                 for (j = 0; j < 32; j = j + 1) begin
                     thread_gpr[i][j] <= 64'd0;
@@ -3343,7 +3355,7 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_CLONE: begin
-                                if (active_thread_slot == 1'b0 && !thread_active[1]) begin
+                                if (active_thread_slot == 1'b0 && !thread_active_mask[1]) begin
                                     for (i = 0; i < 32; i = i + 1) begin
                                         thread_gpr[1][i] <= gpr[i];
                                     end
@@ -3362,8 +3374,6 @@ module lnp64_core_tile #(
                                     thread_cmp_greater[1] <= 1'b0;
                                     thread_cmp_below[1] <= 1'b0;
                                     thread_cmp_above[1] <= 1'b0;
-                                    thread_active[1] <= 1'b1;
-                                    thread_completed[1] <= 1'b0;
                                     thread_exit_code[1] <= 64'd0;
                                     gpr[dec.rd] <= 64'd2;
                                     errno_reg <= LNP64_ERR_OK;
@@ -3380,14 +3390,13 @@ module lnp64_core_tile #(
                                 if (gpr[dec.rs1] == active_tid) begin
                                     gpr[dec.rd] <= 64'd35;
                                     errno_reg <= LNP64_ERR_OK;
-                                end else if (gpr[dec.rs1] == 64'd2 && thread_completed[1]) begin
+                                end else if (gpr[dec.rs1] == 64'd2 && thread_completed_mask[1]) begin
                                     if (gpr[dec.rs2] != 64'd0) begin
                                         store_double_unaligned_next(gpr[dec.rs2], thread_exit_code[1]);
                                     end
-                                    thread_completed[1] <= 1'b0;
                                     gpr[dec.rd] <= 64'd0;
                                     errno_reg <= LNP64_ERR_OK;
-                                end else if (gpr[dec.rs1] == 64'd2 && thread_active[1]) begin
+                                end else if (gpr[dec.rs1] == 64'd2 && thread_active_mask[1]) begin
                                     gpr[dec.rd] <= 64'd11;
                                     errno_reg <= LNP64_ERR_EAGAIN;
                                 end else begin
@@ -3406,8 +3415,6 @@ module lnp64_core_tile #(
                                     pid1_parked <= 1'b0;
                                     state <= CORE_DONE;
                                 end else begin
-                                    thread_active[active_thread_slot] <= 1'b0;
-                                    thread_completed[active_thread_slot] <= 1'b1;
                                     thread_exit_code[active_thread_slot] <= gpr[dec.rd];
                                     state <= CORE_SWITCH;
                                 end
@@ -4017,7 +4024,6 @@ module lnp64_core_tile #(
                         thread_return_stack[active_thread_slot][i] <= return_stack[i];
                     end
                     if (next_thread_slot != active_thread_slot) begin
-                        active_thread_slot <= next_thread_slot;
                         pc <= thread_pc[next_thread_slot];
                         return_stack_depth <= thread_return_stack_depth[next_thread_slot];
                         link_register <= thread_link_register[next_thread_slot];
