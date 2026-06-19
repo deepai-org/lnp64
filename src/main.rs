@@ -256,6 +256,9 @@ fn encode_flat_exec_instr(program: &Program, pc: usize, instr: &Instr) -> Result
         Instr::Add(rd, rs1, rs2) => Ok(enc_rrr(0x10, *rd, *rs1, *rs2)),
         Instr::Sub(rd, rs1, rs2) => Ok(enc_rrr(0x11, *rd, *rs1, *rs2)),
         Instr::Mul(rd, rs1, rs2) => Ok(enc_rrr(0x12, *rd, *rs1, *rs2)),
+        Instr::And(rd, rs1, rs2) => Ok(enc_rrr(0x14, *rd, *rs1, *rs2)),
+        Instr::Or(rd, rs1, rs2) => Ok(enc_rrr(0x15, *rd, *rs1, *rs2)),
+        Instr::Xor(rd, rs1, rs2) => Ok(enc_rrr(0x16, *rd, *rs1, *rs2)),
         Instr::Cmp(lhs, rhs) => Ok(enc_rrr(0x1b, *lhs, *rhs, Reg(0))),
         Instr::Jmp(target) => Ok(enc_branch(0x20, branch_delta(program, pc, target)?)),
         Instr::Branch(condition, target) => Ok(enc_branch(
@@ -275,7 +278,7 @@ fn encode_flat_exec_instr(program: &Program, pc: usize, instr: &Instr) -> Result
         }
         Instr::Exit(src) => Ok(enc_reg(0x3a, *src)),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, ADD, SUB, MUL, CMP, JMP, signed conditional branch, LD/ST.D base+offset, ERRNO_GET/SET, ENV_GET, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, ADD, SUB, MUL, AND/OR/XOR, CMP, JMP, signed conditional branch, LD/ST.D base+offset, ERRNO_GET/SET, ENV_GET, EXIT"
         )),
     }
 }
@@ -839,6 +842,33 @@ mod tests {
         assert_eq!(
             hex,
             concat!("01080009\n", "01100004\n", "11184400\n", "3a180000\n",)
+        );
+    }
+
+    #[test]
+    fn asm_flat_exec_encodes_bitwise_subset() {
+        let source = r#"
+            .text
+              LI r1, 10
+              LI r2, 12
+              AND r3, r1, r2
+              XOR r4, r1, r2
+              OR r5, r3, r4
+              EXIT r5
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+
+        assert_eq!(
+            hex,
+            concat!(
+                "0108000a\n",
+                "0110000c\n",
+                "14184400\n",
+                "16204400\n",
+                "1528c800\n",
+                "3a280000\n",
+            )
         );
     }
 

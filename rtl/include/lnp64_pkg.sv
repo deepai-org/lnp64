@@ -90,6 +90,9 @@ package lnp64_pkg;
         LNP64_OP_BRANCH_GE    = 16'h002b,
         LNP64_OP_MUL          = 16'h002c,
         LNP64_OP_SUB          = 16'h002d,
+        LNP64_OP_AND          = 16'h002e,
+        LNP64_OP_OR           = 16'h002f,
+        LNP64_OP_XOR          = 16'h0030,
         LNP64_OP_UNSUPPORTED  = 16'h00ff
     } lnp64_opcode_e;
 
