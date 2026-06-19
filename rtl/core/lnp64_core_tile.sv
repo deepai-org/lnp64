@@ -1732,6 +1732,8 @@ module lnp64_core_tile #(
         cmd.tid = active_thread_context.tid;
         cmd.domain_id = active_thread_context.domain_id;
         cmd.domain_gen = active_thread_context.domain_gen;
+        cmd.latency_class = active_thread_context.latency_class;
+        cmd.wait_generation = active_thread_context.wait_generation;
         cmd.credential_snapshot_id = active_thread_context.domain_id;
         cmd.result_reg = dec.rd;
         cmd.rights_mask = 64'd0;
@@ -3500,6 +3502,20 @@ module lnp64_core_tile #(
                     end
                 end
                 CORE_SEND_CMD: begin
+`ifndef SYNTHESIS
+                    if (cmd_valid) begin
+                        assert (cmd.pid == active_thread_context.pid &&
+                            cmd.tid == active_thread_context.tid &&
+                            cmd.domain_id == active_thread_context.domain_id &&
+                            cmd.domain_gen == active_thread_context.domain_gen &&
+                            cmd.latency_class == active_thread_context.latency_class &&
+                            cmd.wait_generation == active_thread_context.wait_generation)
+                            else $fatal(
+                                1,
+                                "SG-SCHED engine command lost active thread metadata"
+                            );
+                    end
+`endif
                     if (!cmd_valid) begin
                         cmd_valid <= 1'b1;
                     end else if (cmd_ready) begin
