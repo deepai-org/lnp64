@@ -76,30 +76,38 @@ else
   }
   trap cleanup EXIT
 
-  batch_pids=()
-  batch_gates=()
-  batch_logs=()
+  active_pids=()
+  declare -A active_labels=()
+  declare -A active_logs=()
   failed=0
 
-  wait_batch() {
-    local i gate label log pid
-    for i in "${!batch_pids[@]}"; do
-      pid="${batch_pids[$i]}"
-      gate="${batch_gates[$i]}"
-      label="${gate#scripts/run_rtl_}"
-      label="${label%.sh}"
-      log="${batch_logs[$i]}"
-      if wait "$pid"; then
-        printf 'rtl random cosim %s ok (%s)\n' "$label" "$log"
-      else
-        failed=1
-        printf 'rtl random cosim %s failed (%s)\n' "$label" "$log" >&2
-        cat "$log" >&2
+  remove_active_pid() {
+    local done_pid="$1"
+    local remaining=()
+    local pid
+    for pid in "${active_pids[@]}"; do
+      if [[ "$pid" != "$done_pid" ]]; then
+        remaining+=("$pid")
       fi
     done
-    batch_pids=()
-    batch_gates=()
-    batch_logs=()
+    active_pids=("${remaining[@]}")
+  }
+
+  wait_one() {
+    local done_pid label log
+    if wait -n -p done_pid; then
+      label="${active_labels[$done_pid]}"
+      log="${active_logs[$done_pid]}"
+      printf 'rtl random cosim %s ok (%s)\n' "$label" "$log"
+    else
+      label="${active_labels[$done_pid]}"
+      log="${active_logs[$done_pid]}"
+      failed=1
+      printf 'rtl random cosim %s failed (%s)\n' "$label" "$log" >&2
+      cat "$log" >&2
+    fi
+    unset "active_labels[$done_pid]" "active_logs[$done_pid]"
+    remove_active_pid "$done_pid"
   }
 
   printf 'running rtl random cosim with %s parallel job(s); logs in %s\n' "$jobs" "$log_dir"
@@ -108,14 +116,17 @@ else
     label="${label%.sh}"
     log="$log_dir/${label}.log"
     bash "$gate" >"$log" 2>&1 &
-    batch_pids+=("$!")
-    batch_gates+=("$gate")
-    batch_logs+=("$log")
-    if (( ${#batch_pids[@]} >= jobs )); then
-      wait_batch
+    pid="$!"
+    active_pids+=("$pid")
+    active_labels[$pid]="$label"
+    active_logs[$pid]="$log"
+    if (( ${#active_pids[@]} >= jobs )); then
+      wait_one
     fi
   done
-  wait_batch
+  while (( ${#active_pids[@]} > 0 )); do
+    wait_one
+  done
 
   if (( failed != 0 )); then
     exit 1

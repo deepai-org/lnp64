@@ -132,28 +132,38 @@ else
   }
   trap cleanup EXIT
 
-  batch_pids=()
-  batch_programs=()
-  batch_logs=()
+  active_pids=()
+  declare -A active_programs=()
+  declare -A active_logs=()
   failed=0
 
-  wait_batch() {
-    local i pid program log
-    for i in "${!batch_pids[@]}"; do
-      pid="${batch_pids[$i]}"
-      program="${batch_programs[$i]}"
-      log="${batch_logs[$i]}"
-      if wait "$pid"; then
-        printf 'rtl top-level program %s ok (%s)\n' "$program" "$log"
-      else
-        failed=1
-        printf 'rtl top-level program %s failed (%s)\n' "$program" "$log" >&2
-        cat "$log" >&2
+  remove_active_pid() {
+    local done_pid="$1"
+    local remaining=()
+    local pid
+    for pid in "${active_pids[@]}"; do
+      if [[ "$pid" != "$done_pid" ]]; then
+        remaining+=("$pid")
       fi
     done
-    batch_pids=()
-    batch_programs=()
-    batch_logs=()
+    active_pids=("${remaining[@]}")
+  }
+
+  wait_one() {
+    local done_pid program log
+    if wait -n -p done_pid; then
+      program="${active_programs[$done_pid]}"
+      log="${active_logs[$done_pid]}"
+      printf 'rtl top-level program %s ok (%s)\n' "$program" "$log"
+    else
+      program="${active_programs[$done_pid]}"
+      log="${active_logs[$done_pid]}"
+      failed=1
+      printf 'rtl top-level program %s failed (%s)\n' "$program" "$log" >&2
+      cat "$log" >&2
+    fi
+    unset "active_programs[$done_pid]" "active_logs[$done_pid]"
+    remove_active_pid "$done_pid"
   }
 
   printf 'running remaining top-level RTL programs with %s parallel job(s); logs in %s\n' "$top_program_jobs" "$log_dir"
@@ -165,14 +175,17 @@ else
       printf '\n==> top-level RTL program: %s\n' "$program"
       run_reused_program_spec "$spec"
     ) >"$log" 2>&1 &
-    batch_pids+=("$!")
-    batch_programs+=("$program")
-    batch_logs+=("$log")
-    if (( ${#batch_pids[@]} >= top_program_jobs )); then
-      wait_batch
+    pid="$!"
+    active_pids+=("$pid")
+    active_programs[$pid]="$program"
+    active_logs[$pid]="$log"
+    if (( ${#active_pids[@]} >= top_program_jobs )); then
+      wait_one
     fi
   done
-  wait_batch
+  while (( ${#active_pids[@]} > 0 )); do
+    wait_one
+  done
 
   if (( failed != 0 )); then
     exit 1
