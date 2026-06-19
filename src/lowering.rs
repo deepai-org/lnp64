@@ -6100,6 +6100,11 @@ mod tests {
         };
 
         for toy_source in [
+            "tests/rtl/programs/top_return_12.c",
+            "tests/rtl/programs/top_branch_if.c",
+            "tests/rtl/programs/top_loop_sum.c",
+            "tests/rtl/programs/top_call_return.c",
+            "tests/rtl/programs/top_subtract.c",
             "tests/rtl/programs/top_bitwise.c",
             "tests/rtl/programs/top_shift.c",
             "tests/rtl/programs/top_not.c",
@@ -6117,6 +6122,9 @@ mod tests {
         }
 
         for (linked_source, feature) in [
+            ("tests/rtl/programs/top_linked_main.c", "startup_call_main"),
+            ("tests/rtl/programs/top_linked_loop_branch.c", "branch"),
+            ("tests/rtl/programs/top_linked_loop_branch.c", "call_return"),
             (
                 "tests/rtl/programs/top_linked_bitwise_shift.c",
                 "bitwise_alu",
