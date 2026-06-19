@@ -797,6 +797,33 @@ exit_dump="$build_dir/exit-clang-smoke.dump"
 grep -q 'call ' "$exit_dump"
 printf 'real LLVM LNP64 clang exit object smoke passed: %s\n' "$exit_obj"
 
+libc_process_impl_c="$build_dir/liblnp64-process-min.c"
+cat >"$libc_process_impl_c" <<'C'
+#include "lnp64_intrinsics.h"
+
+void _exit(int status) {
+  __lnp_exit((lnp64_word_t)(unsigned int)status);
+  __builtin_unreachable();
+}
+
+void exit(int status) {
+  _exit(status);
+}
+C
+
+libc_process_impl_obj="$build_dir/liblnp64-process-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$libc_process_impl_c" -o "$libc_process_impl_obj"
+test -s "$libc_process_impl_obj"
+libc_process_impl_dump="$build_dir/liblnp64-process-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_process_impl_obj" \
+  >"$libc_process_impl_dump"
+grep -q 'exit r' "$libc_process_impl_dump"
+grep -q 'call ' "$libc_process_impl_dump"
+printf 'real LLVM LNP64 clang minilibc process implementation object smoke passed: %s\n' \
+  "$libc_process_impl_obj"
+
 argc_c="$build_dir/argc-smoke.c"
 cat >"$argc_c" <<'C'
 int main(int argc, char **argv) {
@@ -1548,7 +1575,7 @@ printf 'real LLVM LNP64 lld inline asm link smoke passed: %s\n' \
 
 exit_elf="$build_dir/lnp64-exit-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
-  -o "$exit_elf" "$crt0_obj" "$exit_obj" "$minilibc_obj"
+  -o "$exit_elf" "$crt0_obj" "$exit_obj" "$libc_process_impl_obj"
 test -s "$exit_elf"
 printf 'real LLVM LNP64 lld exit link smoke passed: %s\n' "$exit_elf"
 

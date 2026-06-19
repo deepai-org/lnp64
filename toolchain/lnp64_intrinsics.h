@@ -64,6 +64,10 @@ static inline void __lnp_free(void *ptr) {
   __asm__ volatile("free %0" : : "r"((lnp64_word_t)ptr) : "memory");
 }
 
+static inline void __lnp_exit(lnp64_word_t status) {
+  __asm__ volatile("exit %0" : : "r"(status) : "memory");
+}
+
 static inline lnp64_word_t __lnp_amo_swap(volatile lnp64_word_t *addr,
                                           lnp64_word_t value) {
   lnp64_word_t old;

@@ -1522,6 +1522,17 @@ mod tests {
         assert!(real_llc.contains("__atomic_compare_exchange_n"));
         assert!(real_llc.contains("grep -q 'lock.cmpxchg r'"));
         assert!(real_llc.contains("real LLVM LNP64 clang C11 atomic object smoke passed"));
+        assert!(real_llc.contains("exit-clang-smoke.o"));
+        assert!(real_llc.contains("real LLVM LNP64 clang exit object smoke passed"));
+        assert!(real_llc.contains("liblnp64-process-min.c"));
+        assert!(real_llc.contains("__lnp_exit"));
+        assert!(real_llc.contains("liblnp64-process-min.o"));
+        assert!(real_llc.contains("grep -q 'exit r'"));
+        assert!(
+            real_llc.contains(
+                "real LLVM LNP64 clang minilibc process implementation object smoke passed"
+            )
+        );
         assert!(real_llc.contains("libc-string-clang-smoke.o"));
         assert!(real_llc.contains("int memcmp"));
         assert!(real_llc.contains("grep -q 'sext.w'"));
@@ -1593,6 +1604,9 @@ mod tests {
         assert!(real_llc.contains("lnp64-read-linked.elf"));
         assert!(real_llc.contains(r#""$read_obj" "$libc_fd_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld read link smoke passed"));
+        assert!(real_llc.contains("lnp64-exit-linked.elf"));
+        assert!(real_llc.contains(r#""$exit_obj" "$libc_process_impl_obj""#));
+        assert!(real_llc.contains("real LLVM LNP64 lld exit link smoke passed"));
         assert!(real_llc.contains("lnp64-scalar-arith-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld scalar arithmetic link smoke passed"));
         assert!(real_llc.contains("lnp64-high-mul-linked.elf"));
@@ -3535,6 +3549,7 @@ mod tests {
             "__lnp_alloc_ex",
             "__lnp_alloc_size",
             "__lnp_free",
+            "__lnp_exit",
         ] {
             assert!(
                 manifest_csv_contains(manifest, "intrinsics", intrinsic),

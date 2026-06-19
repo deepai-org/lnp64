@@ -20,6 +20,7 @@ __lnp_alloc|ALLOC|ptr_or_errno|size
 __lnp_alloc_ex|ALLOC_EX|ptr_or_errno|size,align
 __lnp_alloc_size|ALLOC_SIZE|size_or_errno|ptr
 __lnp_free|FREE|status_or_errno|ptr
+__lnp_exit|EXIT|noreturn|status
 __lnp_amo_swap|AMO.SWAP|old_value|addr,value
 __lnp_amo_add|AMO.ADD|old_value|addr,value
 __lnp_amo_and|AMO.AND|old_value|addr,value
