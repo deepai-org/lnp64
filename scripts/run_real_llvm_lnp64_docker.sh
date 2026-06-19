@@ -198,5 +198,16 @@ run_elf_report "real LLVM LNP64 run-elf sbase basename execution passed" \
 run_elf_report "real LLVM LNP64 run-elf sbase dirname execution passed" \
   target/llvm-lnp64-build/lnp64-sbase-dirname-linked.elf \
   dirname /usr/local/bin/clang --expect '^/usr/local/bin$'
+sbase_fixture_root="target/llvm-lnp64-build/sbase-fixture-root"
+mkdir -p "$sbase_fixture_root/input"
+printf 'cat via clang\n' >"$sbase_fixture_root/input/cat.txt"
+"$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-cat-linked.elf \
+  >/dev/null
+sbase_cat_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+  target/llvm-lnp64-build/lnp64-sbase-cat-linked.elf cat input/cat.txt)"
+grep -q '^cat via clang$' <<<"$sbase_cat_output"
+grep -q 'exit=0' <<<"$sbase_cat_output"
+printf 'real LLVM LNP64 run-elf sbase cat execution passed: %s\n' \
+  target/llvm-lnp64-build/lnp64-sbase-cat-linked.elf
 run_elf_report "real LLVM LNP64 run-elf indirect call execution passed" \
   target/llvm-lnp64-build/lnp64-indirect-call-linked.elf

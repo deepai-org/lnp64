@@ -3253,6 +3253,7 @@ libc_fd_impl_dump="$build_dir/liblnp64-fd-min.dump"
   >"$libc_fd_impl_dump"
 grep -q 'pull r' "$libc_fd_impl_dump"
 grep -q 'push r' "$libc_fd_impl_dump"
+grep -q 'cap_revoke r' "$libc_fd_impl_dump"
 grep -q 'ret' "$libc_fd_impl_dump"
 printf 'real LLVM LNP64 clang minilibc fd implementation object smoke passed: %s\n' \
   "$libc_fd_impl_obj"
@@ -4020,6 +4021,17 @@ done
 printf 'real LLVM LNP64 lld sbase path command link smoke passed: %s %s\n' \
   "$build_dir/lnp64-sbase-basename-linked.elf" \
   "$build_dir/lnp64-sbase-dirname-linked.elf"
+
+sbase_cat_elf="$build_dir/lnp64-sbase-cat-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$sbase_cat_elf" "$crt0_obj" "$build_dir/sbase-cat-clang-smoke.o" \
+  "$build_dir/sbase-libutil-concat-clang-smoke.o" \
+  "$build_dir/sbase-libutil-writeall-clang-smoke.o" \
+  "$sbase_support_impl_obj" "$libc_fd_impl_obj" "$libc_string_impl_obj" \
+  "$libc_process_impl_obj"
+test -s "$sbase_cat_elf"
+printf 'real LLVM LNP64 lld sbase cat link smoke passed: %s\n' \
+  "$sbase_cat_elf"
 
 netcat_elf="$build_dir/lnp64-netcat-clang-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

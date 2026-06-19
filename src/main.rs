@@ -190,8 +190,12 @@ fn run() -> Result<(), String> {
             Ok(())
         }
         "run-elf" => {
+            let namespace_root = take_run_namespace_root(&mut args)?;
             let options = take_elf_plan_options(&mut args)?;
             let mut probe = build_elf_exec_probe(&options)?;
+            if let Some(root) = namespace_root {
+                probe.machine.set_namespace_root(root)?;
+            }
             if !options.args.is_empty() {
                 probe.machine.set_args(&options.args)?;
             }
@@ -286,7 +290,9 @@ fn usage() {
     eprintln!("  lnp64 run-flat-exec <program.hex> [--data-hex data.hex]");
     eprintln!("  lnp64 run [--namespace-root <dir>] <program.s>");
     eprintln!("  lnp64 elf-plan [--load-bias <n>] <program.elf>");
-    eprintln!("  lnp64 run-elf [--load-bias <n>] <program.elf> [argv ...]");
+    eprintln!(
+        "  lnp64 run-elf [--namespace-root <dir>] [--load-bias <n>] <program.elf> [argv ...]"
+    );
     eprintln!("  lnp64 run-flat-exec <program.hex>");
     eprintln!(
         "  lnp64 cc --toy-bootstrap [--dump-macros|--dump-preprocessed] <program.c> [more.c ...] [-o program.s]"
