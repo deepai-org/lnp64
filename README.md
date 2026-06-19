@@ -298,6 +298,14 @@ LNP64_RTL_TOP_PROGRAM_FILTER='*linked*' bash scripts/run_rtl_execution_fast_dock
 LNP64_RTL_FAST=1 bash scripts/run_rtl_proof_docker.sh
 LNP64_RTL_FAST=1 bash scripts/run_rtl_m1_refinement_docker.sh
 LNP64_RTL_PROOF_SKIP_BUILD=1 LNP64_RTL_FAST=1 LNP64_M1_TYPED_COMMIT_SEEDS="0 1 7" bash scripts/run_rtl_m1_refinement_docker.sh
+LNP64_RTL_FAST=1 \
+LNP64_COSIM_SEEDS=0 \
+LNP64_M1_TYPED_COMMIT_SEEDS=0 \
+LNP64_RTL_PROOF_SKIP_BUILD=1 \
+LNP64_RTL_EXEC_SKIP_BUILD=1 \
+LNP64_RTL_TOP_PROGRAM_QUIET=1 \
+LNP64_RTL_TOP_PROGRAM_JOBS=auto \
+  bash scripts/run_rtl_m1_refinement_docker.sh
 LNP64_RTL_PROOF_RANDOM_COSIM=0 bash scripts/run_rtl_proof_docker.sh
 LNP64_RTL_PROOF_SKIP_BUILD=1 LNP64_RTL_PROOF_RANDOM_COSIM=0 bash scripts/run_rtl_proof_docker.sh
 LNP64_RTL_PROOF_SKIP_BUILD=1 LNP64_RTL_RANDOM_COSIM_JOBS=4 bash scripts/run_rtl_proof_docker.sh
