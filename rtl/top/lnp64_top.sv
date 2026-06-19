@@ -85,6 +85,7 @@ module lnp64_top #(
     logic [CORE_TILE_COUNT-1:0] core_pid1_runnable_vec;
     logic [CORE_TILE_COUNT-1:0] core_pid1_parked_vec;
     logic [CORE_TILE_COUNT-1:0] core_done_vec;
+    logic [CORE_TILE_COUNT-1:0] core_m1_commit_valid_vec;
     logic [CORE_TILE_COUNT-1:0] retire_submit_valid_vec;
     logic [CORE_TILE_COUNT-1:0] m1_commit_valid_vec;
     logic [CORE_TILE_COUNT-1:0] park_submit_valid_vec;
@@ -263,6 +264,18 @@ module lnp64_top #(
     assign topology_active_window_base_seen = env_active_window_base_seen_vec[0];
     assign topology_active_window_count_seen = env_active_window_count_seen_vec[0];
 
+    function automatic logic top_m1_retire_is_cap_op(input lnp64_retire_submit_t retire);
+        begin
+            unique case (retire.arch_opcode)
+                LNP64_OP_CAP_DUP,
+                LNP64_OP_CAP_SEND,
+                LNP64_OP_CAP_RECV,
+                LNP64_OP_CAP_REVOKE: top_m1_retire_is_cap_op = 1'b1;
+                default: top_m1_retire_is_cap_op = 1'b0;
+            endcase
+        end
+    endfunction
+
     lnp64_clock_reset clock_reset_i(
         .clk(clk),
         .reset_n(reset_n),
@@ -327,7 +340,7 @@ module lnp64_top #(
                 .tile_fault_counter(),
                 .retire_submit_valid(retire_submit_valid_vec[tile_id]),
                 .retire_submit_record(retire_submit_record_vec[tile_id]),
-                .m1_commit_valid(m1_commit_valid_vec[tile_id]),
+                .m1_commit_valid(core_m1_commit_valid_vec[tile_id]),
                 .m1_commit(core_m1_commit_vec[tile_id]),
                 .m1_pre_state_projection(core_m1_pre_state_projection_vec[tile_id]),
                 .m1_state_projection(core_m1_state_projection_vec[tile_id]),
@@ -360,6 +373,10 @@ module lnp64_top #(
             assign cap_m1_projection_live =
                 cap_rsp_valid && cap_rsp_ready && cap_m1_commit_valid &&
                 cap_rsp.tile_id == tile_id[31:0];
+            assign m1_commit_valid_vec[tile_id] =
+                retire_submit_valid_vec[tile_id] &&
+                cap_m1_commit_latched_valid_vec[tile_id] &&
+                top_m1_retire_is_cap_op(retire_submit_record_vec[tile_id]);
             assign m1_commit_vec[tile_id] = cap_m1_commit_latched_valid_vec[tile_id] ?
                 cap_m1_commit_latched_vec[tile_id] : '0;
             assign m1_pre_state_projection_vec[tile_id] =
@@ -437,12 +454,20 @@ module lnp64_top #(
                 cap_m1_pre_state_projection_latched_vec[m1_latch_i] <= '0;
                 cap_m1_state_projection_latched_vec[m1_latch_i] <= '0;
             end
-        end else if (cap_rsp_valid && cap_rsp_ready && cap_m1_commit_valid &&
-            cap_rsp.tile_id < CORE_TILE_COUNT[31:0]) begin
-            cap_m1_commit_latched_valid_vec[cap_rsp.tile_id] <= 1'b1;
-            cap_m1_commit_latched_vec[cap_rsp.tile_id] <= cap_m1_commit;
-            cap_m1_pre_state_projection_latched_vec[cap_rsp.tile_id] <= cap_m1_pre_state_projection;
-            cap_m1_state_projection_latched_vec[cap_rsp.tile_id] <= cap_m1_state_projection;
+        end else begin
+            for (m1_latch_i = 0; m1_latch_i < CORE_TILE_COUNT; m1_latch_i = m1_latch_i + 1) begin
+                if (m1_commit_valid_vec[m1_latch_i]) begin
+                    cap_m1_commit_latched_valid_vec[m1_latch_i] <= 1'b0;
+                end
+            end
+            if (cap_rsp_valid && cap_rsp_ready && cap_m1_commit_valid &&
+                cap_rsp.tile_id < CORE_TILE_COUNT[31:0]) begin
+                cap_m1_commit_latched_valid_vec[cap_rsp.tile_id] <= 1'b1;
+                cap_m1_commit_latched_vec[cap_rsp.tile_id] <= cap_m1_commit;
+                cap_m1_pre_state_projection_latched_vec[cap_rsp.tile_id] <=
+                    cap_m1_pre_state_projection;
+                cap_m1_state_projection_latched_vec[cap_rsp.tile_id] <= cap_m1_state_projection;
+            end
         end
     end
 
@@ -517,6 +542,8 @@ module lnp64_top #(
                 if (m1_commit_valid_vec[m1_assert_i]) begin
                     assert (retire_submit_valid_vec[m1_assert_i])
                         else $fatal(1, "SG-AUTH M1 commit was not tied to a tile-local retired instruction");
+                    assert (top_m1_retire_is_cap_op(retire_submit_record_vec[m1_assert_i]))
+                        else $fatal(1, "SG-AUTH M1 commit was not tied to a retired cap instruction");
                     assert (retire_submit_record_vec[m1_assert_i].tile_id == m1_assert_i[31:0])
                         else $fatal(1, "SG-AUTH M1 retire tile id drifted from top-level tile vector");
                     assert (cap_m1_commit_latched_valid_vec[m1_assert_i])
