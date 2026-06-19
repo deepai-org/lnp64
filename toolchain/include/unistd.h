@@ -29,6 +29,12 @@ int execvp(const char *file, char *const argv[]);
 void _exit(int status);
 pid_t fork(void);
 char *getcwd(char *buf, size_t size);
+gid_t getegid(void);
+uid_t geteuid(void);
+gid_t getgid(void);
+pid_t getpid(void);
+pid_t getppid(void);
+uid_t getuid(void);
 int linkat(int olddirfd, const char *oldpath, int newdirfd,
            const char *newpath, int flags);
 off_t lseek(int fd, off_t offset, int whence);

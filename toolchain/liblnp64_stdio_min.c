@@ -1,5 +1,7 @@
+#include <fcntl.h>
 #include <stdarg.h>
 #include <stddef.h>
+#include <unistd.h>
 
 typedef struct __lnp64_file FILE;
 
@@ -9,10 +11,46 @@ struct __lnp64_file {
   size_t pos;
   int eof;
   int error;
+  int fd;
+  int kind;
+  int has_unget;
+  unsigned char unget;
 };
 
-static FILE lnp64_mem_streams[4];
-static size_t lnp64_mem_stream_count;
+enum {
+  LNP64_STREAM_FREE = 0,
+  LNP64_STREAM_MEMORY = 1,
+  LNP64_STREAM_FD = 2,
+};
+
+static FILE lnp64_stdin_file = {.fd = 0, .kind = LNP64_STREAM_FD};
+static FILE lnp64_stdout_file = {.fd = 1, .kind = LNP64_STREAM_FD};
+static FILE lnp64_stderr_file = {.fd = 2, .kind = LNP64_STREAM_FD};
+
+FILE *stdin = &lnp64_stdin_file;
+FILE *stdout = &lnp64_stdout_file;
+FILE *stderr = &lnp64_stderr_file;
+
+static FILE lnp64_streams[8];
+static unsigned long lnp64_tmpfile_counter;
+
+static FILE *lnp64_alloc_stream(void) {
+  size_t i;
+  for (i = 0; i < sizeof lnp64_streams / sizeof lnp64_streams[0]; i = i + 1) {
+    if (lnp64_streams[i].kind == LNP64_STREAM_FREE) {
+      lnp64_streams[i].buffer = 0;
+      lnp64_streams[i].size = 0;
+      lnp64_streams[i].pos = 0;
+      lnp64_streams[i].eof = 0;
+      lnp64_streams[i].error = 0;
+      lnp64_streams[i].fd = -1;
+      lnp64_streams[i].has_unget = 0;
+      lnp64_streams[i].unget = 0;
+      return &lnp64_streams[i];
+    }
+  }
+  return 0;
+}
 
 struct lnp64_snprintf_out {
   char *buf;
@@ -163,16 +201,81 @@ int sprintf(char *str, const char *format, ...) {
 
 FILE *fmemopen(void *buf, unsigned long size, const char *mode) {
   (void)mode;
-  if (!buf || lnp64_mem_stream_count >= sizeof lnp64_mem_streams / sizeof lnp64_mem_streams[0])
+  if (!buf)
     return 0;
-  FILE *stream = &lnp64_mem_streams[lnp64_mem_stream_count];
-  lnp64_mem_stream_count = lnp64_mem_stream_count + 1;
+  FILE *stream = lnp64_alloc_stream();
+  if (!stream)
+    return 0;
+  stream->kind = LNP64_STREAM_MEMORY;
   stream->buffer = (unsigned char *)buf;
   stream->size = size;
   stream->pos = 0;
-  stream->eof = 0;
-  stream->error = 0;
   return stream;
+}
+
+int fileno(FILE *stream) {
+  if (!stream || stream->kind != LNP64_STREAM_FD)
+    return -1;
+  return stream->fd;
+}
+
+int fflush(FILE *stream) {
+  (void)stream;
+  return 0;
+}
+
+int fclose(FILE *stream) {
+  int rc = 0;
+  if (!stream)
+    return -1;
+  if (stream->kind == LNP64_STREAM_FD && stream->fd > 2)
+    rc = close(stream->fd);
+  if (stream != stdin && stream != stdout && stream != stderr)
+    stream->kind = LNP64_STREAM_FREE;
+  return rc;
+}
+
+int fgetc(FILE *stream) {
+  unsigned char ch;
+  if (!stream) {
+    return -1;
+  }
+  if (stream->has_unget) {
+    stream->has_unget = 0;
+    return stream->unget;
+  }
+  if (stream->kind == LNP64_STREAM_MEMORY) {
+    if (stream->pos >= stream->size) {
+      stream->eof = 1;
+      return -1;
+    }
+    ch = stream->buffer[stream->pos];
+    stream->pos = stream->pos + 1;
+    if (stream->pos >= stream->size)
+      stream->eof = 1;
+    return ch;
+  }
+  if (stream->kind == LNP64_STREAM_FD) {
+    ssize_t got = read(stream->fd, &ch, 1);
+    if (got == 1)
+      return ch;
+    if (got == 0)
+      stream->eof = 1;
+    else
+      stream->error = 1;
+  }
+  return -1;
+}
+
+int getc(FILE *stream) { return fgetc(stream); }
+
+int ungetc(int ch, FILE *stream) {
+  if (!stream || ch < 0)
+    return -1;
+  stream->has_unget = 1;
+  stream->unget = (unsigned char)ch;
+  stream->eof = 0;
+  return (unsigned char)ch;
 }
 
 char *fgets(char *str, int count, FILE *stream) {
@@ -182,27 +285,133 @@ char *fgets(char *str, int count, FILE *stream) {
       stream->error = 1;
     return 0;
   }
-  if (stream->pos >= stream->size) {
-    stream->eof = 1;
-    return 0;
-  }
-  while (written + 1 < count && stream->pos < stream->size) {
-    unsigned char ch = stream->buffer[stream->pos];
-    stream->pos = stream->pos + 1;
+  while (written + 1 < count) {
+    int ch = fgetc(stream);
+    if (ch < 0)
+      break;
     str[written] = (char)ch;
     written = written + 1;
     if (ch == '\n')
       break;
   }
-  if (written == 0) {
-    stream->eof = 1;
+  if (written == 0)
     return 0;
-  }
   str[written] = 0;
-  if (stream->pos >= stream->size)
-    stream->eof = 1;
   return str;
 }
+
+unsigned long fread(void *ptr, unsigned long size, unsigned long count,
+                    FILE *stream) {
+  unsigned char *out = (unsigned char *)ptr;
+  unsigned long total = size * count;
+  unsigned long i;
+  if (size == 0 || count == 0)
+    return 0;
+  for (i = 0; i < total; i = i + 1) {
+    int ch = fgetc(stream);
+    if (ch < 0)
+      break;
+    out[i] = (unsigned char)ch;
+  }
+  return i / size;
+}
+
+int fputc(int ch, FILE *stream) {
+  unsigned char byte = (unsigned char)ch;
+  if (!stream)
+    return -1;
+  if (stream->kind == LNP64_STREAM_FD) {
+    return write(stream->fd, &byte, 1) == 1 ? ch : -1;
+  }
+  if (stream->kind == LNP64_STREAM_MEMORY) {
+    if (stream->pos >= stream->size) {
+      stream->error = 1;
+      return -1;
+    }
+    stream->buffer[stream->pos] = byte;
+    stream->pos = stream->pos + 1;
+    return ch;
+  }
+  return -1;
+}
+
+int fputs(const char *s, FILE *stream) {
+  while (*s) {
+    if (fputc(*s, stream) < 0)
+      return -1;
+    s = s + 1;
+  }
+  return 0;
+}
+
+unsigned long fwrite(const void *ptr, unsigned long size, unsigned long count,
+                     FILE *stream) {
+  const unsigned char *bytes = (const unsigned char *)ptr;
+  unsigned long total = size * count;
+  unsigned long i;
+  if (size == 0 || count == 0)
+    return count;
+  if (stream && stream->kind == LNP64_STREAM_FD) {
+    ssize_t written = write(stream->fd, ptr, total);
+    if (written <= 0)
+      return 0;
+    return (unsigned long)written / size;
+  }
+  for (i = 0; i < total; i = i + 1) {
+    if (fputc(bytes[i], stream) < 0)
+      break;
+  }
+  return i / size;
+}
+
+FILE *fopen(const char *path, const char *mode) {
+  int flags = O_RDONLY;
+  if (mode && mode[0] == 'w')
+    flags = O_RDWR | O_CREAT | O_TRUNC;
+  else if (mode && mode[0] == 'a')
+    flags = O_RDWR | O_CREAT | O_APPEND;
+  int fd = open(path, flags);
+  if (fd < 0)
+    return 0;
+  FILE *stream = lnp64_alloc_stream();
+  if (!stream) {
+    close(fd);
+    return 0;
+  }
+  stream->kind = LNP64_STREAM_FD;
+  stream->fd = fd;
+  return stream;
+}
+
+FILE *tmpfile(void) {
+  char path[64];
+  int fd;
+  FILE *stream;
+  lnp64_tmpfile_counter = lnp64_tmpfile_counter + 1;
+  snprintf(path, sizeof path, "/tmp/lnp64_tmpfile_%u",
+           (unsigned)lnp64_tmpfile_counter);
+  fd = open(path, O_RDWR | O_CREAT | O_TRUNC);
+  if (fd < 0)
+    return 0;
+  stream = lnp64_alloc_stream();
+  if (!stream) {
+    close(fd);
+    return 0;
+  }
+  stream->kind = LNP64_STREAM_FD;
+  stream->fd = fd;
+  return stream;
+}
+
+int putchar(int ch) { return fputc(ch, stdout); }
+
+int puts(const char *s) {
+  if (fputs(s, stdout) < 0)
+    return -1;
+  return putchar('\n') < 0 ? -1 : 0;
+}
+
+int getchar(void) { return fgetc(stdin); }
 
 int feof(FILE *stream) {
   return stream ? stream->eof : 0;

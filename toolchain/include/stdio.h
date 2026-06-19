@@ -40,5 +40,6 @@ unsigned long fwrite(const void *ptr, unsigned long size, unsigned long count,
 char *fgets(char *str, int count, FILE *stream);
 FILE *fmemopen(void *buf, unsigned long size, const char *mode);
 FILE *fopen(const char *path, const char *mode);
+FILE *tmpfile(void);
 
 #endif

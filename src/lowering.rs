@@ -1443,6 +1443,7 @@ mod tests {
             "clang_libc_test_search_insque_object",
             "clang_libc_test_malloc_0_object",
             "clang_libc_test_fgets_eof_object",
+            "clang_libc_test_stat_object",
             "zlib_package_static_link",
             "natsort_package_static_link",
             "jsmn_package_static_link",
@@ -1464,6 +1465,7 @@ mod tests {
             "libc_test_dirname_static_link",
             "libc_test_strtol_static_link",
             "libc_test_clock_gettime_static_link",
+            "libc_test_stat_static_link",
             "libc_test_qsort_bounded_static_link",
             "libc_test_search_insque_static_link",
             "libc_test_malloc_0_static_link",
@@ -1489,6 +1491,7 @@ mod tests {
             "libc_test_dirname_run_elf",
             "libc_test_strtol_run_elf",
             "libc_test_clock_gettime_run_elf",
+            "libc_test_stat_run_elf",
             "libc_test_qsort_bounded_run_elf",
             "libc_test_search_insque_run_elf",
             "libc_test_malloc_0_run_elf",
@@ -1779,9 +1782,13 @@ mod tests {
         assert!(libc_process_min.contains("__lnp_exit"));
         assert!(libc_process_min.contains("int pid(void)"));
         assert!(libc_process_min.contains("int getpid(void)"));
+        assert!(libc_process_min.contains("int getppid(void)"));
+        assert!(libc_process_min.contains("unsigned int getuid(void)"));
+        assert!(libc_process_min.contains("unsigned int getegid(void)"));
         assert!(libc_process_min.contains("__lnp_get_pid"));
         assert!(real_llc.contains("liblnp64-process-min.o"));
         assert!(real_llc.contains("grep -q 'exit r'"));
+        assert!(real_llc.contains("grep -q 'get_pcr r'"));
         assert!(
             real_llc.contains(
                 "real LLVM LNP64 clang minilibc process implementation object smoke passed"
@@ -1916,6 +1923,9 @@ mod tests {
         assert!(
             real_llc.contains("real LLVM LNP64 clang libc-test clock_gettime object smoke passed")
         );
+        assert!(real_llc.contains("libc-test-stat-clang-smoke.o"));
+        assert!(real_llc.contains("third_party/libc-test/functional/stat.c"));
+        assert!(real_llc.contains("real LLVM LNP64 clang libc-test stat object smoke passed"));
         assert!(real_llc.contains("libc-test-qsort-bounded-clang-smoke.o"));
         assert!(real_llc.contains("third_party/libc-test/functional/qsort_bounded.c"));
         assert!(
@@ -1972,6 +1982,14 @@ mod tests {
   "$libc_test_print_obj" "$libc_time_impl_obj" "$libc_errno_impl_obj""#
         ));
         assert!(real_llc.contains("real LLVM LNP64 lld libc-test clock_gettime link smoke passed"));
+        assert!(real_llc.contains("lnp64-libc-test-stat-linked.elf"));
+        assert!(real_llc.contains(
+            r#""$libc_test_stat_obj" \
+  "$libc_test_print_obj" "$libc_stdio_impl_obj" "$libc_meta_impl_obj" \
+  "$libc_fd_impl_obj" "$libc_errno_impl_obj" "$libc_time_impl_obj" \
+  "$libc_process_impl_obj""#
+        ));
+        assert!(real_llc.contains("real LLVM LNP64 lld libc-test stat link smoke passed"));
         assert!(real_llc.contains("lnp64-libc-test-qsort-bounded-linked.elf"));
         assert!(real_llc.contains(r#""$libc_test_qsort_bounded_obj" \"#));
         assert!(real_llc.contains(r#""$libc_sort_impl_obj" "$libc_string_impl_obj""#));
@@ -2099,9 +2117,13 @@ mod tests {
         assert!(libc_stdio_min.contains("int snprintf("));
         assert!(libc_stdio_min.contains("FILE *fmemopen("));
         assert!(libc_stdio_min.contains("char *fgets("));
+        assert!(libc_stdio_min.contains("FILE *tmpfile(void)"));
+        assert!(libc_stdio_min.contains("int fileno(FILE *stream)"));
         assert!(real_llc.contains("liblnp64-stdio-min.o"));
         assert!(real_llc.contains("grep -q '<vsnprintf>:'"));
         assert!(real_llc.contains("grep -q '<snprintf>:'"));
+        assert!(real_llc.contains("grep -q '<tmpfile>:'"));
+        assert!(real_llc.contains("grep -q '<fileno>:'"));
         assert!(
             real_llc.contains(
                 "real LLVM LNP64 clang minilibc stdio implementation object smoke passed"
@@ -3042,6 +3064,10 @@ mod tests {
             real_llc_docker
                 .contains("real LLVM LNP64 run-elf libc-test clock_gettime execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-libc-test-stat-linked.elf"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf libc-test stat execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-libc-test-qsort-bounded-linked.elf"));
         assert!(
             real_llc_docker
@@ -3231,6 +3257,7 @@ mod tests {
             "real_libc_test_dirname_execution",
             "real_libc_test_strtol_execution",
             "real_libc_test_clock_gettime_execution",
+            "real_libc_test_stat_execution",
             "real_libc_test_qsort_bounded_execution",
             "real_libc_test_search_insque_execution",
             "real_libc_test_malloc_0_execution",
@@ -3301,6 +3328,7 @@ mod tests {
             "real_libc_test_dirname_execution",
             "real_libc_test_strtol_execution",
             "real_libc_test_clock_gettime_execution",
+            "real_libc_test_stat_execution",
             "real_libc_test_qsort_bounded_execution",
             "real_libc_test_search_insque_execution",
             "real_libc_test_malloc_0_execution",
@@ -4143,6 +4171,7 @@ mod tests {
             "errno_tls",
             "string_ctype",
             "numeric_conversion",
+            "process_identity",
             "random_state",
             "path_helpers",
             "search_helpers",
@@ -4170,6 +4199,7 @@ mod tests {
             "errno_tls",
             "string_ctype",
             "numeric_conversion",
+            "process_identity",
             "random_state",
             "path_helpers",
             "search_helpers",
@@ -4216,6 +4246,13 @@ mod tests {
                 "numeric_conversion",
                 vec!["atoi", "strtol", "strtoull"],
                 vec!["integer_alu", "ERRNO_SET", "static_link"],
+            ),
+            (
+                "process_identity",
+                vec![
+                    "pid", "getpid", "getppid", "getuid", "geteuid", "getgid", "getegid",
+                ],
+                vec!["GET_PCR"],
             ),
             (
                 "random_state",
