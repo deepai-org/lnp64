@@ -3106,14 +3106,8 @@ printf 'real LLVM LNP64 clang minilibc path implementation object smoke passed: 
 
 search_c="$build_dir/search-smoke.c"
 cat >"$search_c" <<'C'
-typedef unsigned long size_t;
-int strcmp(const char *lhs, const char *rhs);
-void *lfind(const void *key, const void *base, size_t *nelp, size_t width,
-            int (*compar)(const void *, const void *));
-void *lsearch(const void *key, void *base, size_t *nelp, size_t width,
-              int (*compar)(const void *, const void *));
-void insque(void *elem, void *pred);
-void remque(void *elem);
+#include <search.h>
+#include <string.h>
 
 struct node {
   struct node *n;

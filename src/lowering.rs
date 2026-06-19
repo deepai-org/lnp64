@@ -2573,10 +2573,8 @@ mod tests {
                 .contains("real LLVM LNP64 clang minilibc path implementation object smoke passed")
         );
         assert!(real_llc.contains("search-clang-smoke.o"));
-        assert!(real_llc.contains("void *lfind"));
-        assert!(real_llc.contains("void *lsearch"));
-        assert!(real_llc.contains("void insque"));
-        assert!(real_llc.contains("void remque"));
+        assert!(real_llc.contains("#include <search.h>"));
+        assert!(real_llc.contains("#include <string.h>"));
         assert!(real_llc.contains("get(key_a)"));
         assert!(real_llc.contains("remque(p->p)"));
         assert!(real_llc.contains("real LLVM LNP64 clang search helper object smoke passed"));
