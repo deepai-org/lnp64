@@ -460,11 +460,11 @@ int fseek(FILE *stream, long offset, int whence) {
 
 long ftell(FILE *stream) { return lnp64_stream_tell(stream); }
 
-int fseeko(FILE *stream, long offset, int whence) {
+int fseeko(FILE *stream, off_t offset, int whence) {
   return fseek(stream, offset, whence);
 }
 
-long ftello(FILE *stream) { return ftell(stream); }
+off_t ftello(FILE *stream) { return ftell(stream); }
 
 int fscanf(FILE *stream, const char *format, ...) {
   const char *set;

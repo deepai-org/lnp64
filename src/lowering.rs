@@ -2514,6 +2514,8 @@ mod tests {
         assert!(libc_stdio_min.contains("char *fgets("));
         assert!(libc_stdio_min.contains("int fseek(FILE *stream"));
         assert!(libc_stdio_min.contains("long ftell(FILE *stream)"));
+        assert!(libc_stdio_min.contains("int fseeko(FILE *stream, off_t offset, int whence)"));
+        assert!(libc_stdio_min.contains("off_t ftello(FILE *stream)"));
         assert!(libc_stdio_min.contains("int fscanf(FILE *stream"));
         assert!(libc_stdio_min.contains("FILE *tmpfile(void)"));
         assert!(libc_stdio_min.contains("int fileno(FILE *stream)"));
@@ -2523,6 +2525,8 @@ mod tests {
         assert!(
             stdio_header.contains("int vfprintf(FILE *stream, const char *format, va_list ap);")
         );
+        assert!(stdio_header.contains("int fseeko(FILE *stream, off_t offset, int whence);"));
+        assert!(stdio_header.contains("off_t ftello(FILE *stream);"));
         assert!(
             stdio_header
                 .contains("int vsnprintf(char *str, size_t size, const char *format, va_list ap);")
