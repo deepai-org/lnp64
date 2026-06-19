@@ -1809,6 +1809,15 @@ poll_libc_c="$build_dir/poll-libc-smoke.c"
 cat >"$poll_libc_c" <<'C'
 typedef unsigned long nfds_t;
 
+typedef struct {
+  unsigned long bits[16];
+} fd_set;
+
+struct timeval {
+  long tv_sec;
+  long tv_usec;
+};
+
 struct pollfd {
   int fd;
   short events;
@@ -1816,9 +1825,18 @@ struct pollfd {
 };
 
 int poll(struct pollfd *fds, nfds_t nfds, int timeout);
+int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
+           struct timeval *timeout);
 
 int main(void) {
   struct pollfd fds[2];
+  fd_set readfds;
+  fd_set writefds;
+  fd_set exceptfds;
+  struct timeval timeout = {0, 0};
+  readfds.bits[0] = 0;
+  writefds.bits[0] = 0;
+  exceptfds.bits[0] = 0;
   fds[0].fd = 0;
   fds[0].events = 0;
   fds[0].revents = 7;
@@ -1831,6 +1849,8 @@ int main(void) {
     return 2;
   if (fds[1].revents != 0)
     return 3;
+  if (select(1, &readfds, &writefds, &exceptfds, &timeout) != 0)
+    return 4;
   return 0;
 }
 C
@@ -1844,7 +1864,7 @@ poll_libc_dump="$build_dir/poll-libc-clang-smoke.dump"
 "$llvm_objdump" -d --triple=lnp64-unknown-none "$poll_libc_obj" \
   >"$poll_libc_dump"
 grep -q 'call ' "$poll_libc_dump"
-printf 'real LLVM LNP64 clang poll libc object smoke passed: %s\n' \
+printf 'real LLVM LNP64 clang poll/select libc object smoke passed: %s\n' \
   "$poll_libc_obj"
 
 libc_fd_impl_c="toolchain/liblnp64_fd_min.c"
@@ -1873,7 +1893,7 @@ libc_poll_impl_dump="$build_dir/liblnp64-poll-min.dump"
   >"$libc_poll_impl_dump"
 grep -q 'await r' "$libc_poll_impl_dump"
 grep -q 'ret' "$libc_poll_impl_dump"
-printf 'real LLVM LNP64 clang minilibc poll implementation object smoke passed: %s\n' \
+printf 'real LLVM LNP64 clang minilibc poll/select implementation object smoke passed: %s\n' \
   "$libc_poll_impl_obj"
 
 stack_args_c="$build_dir/stack-args-smoke.c"
@@ -2376,7 +2396,7 @@ poll_libc_elf="$build_dir/lnp64-poll-libc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
   -o "$poll_libc_elf" "$crt0_obj" "$poll_libc_obj" "$libc_poll_impl_obj"
 test -s "$poll_libc_elf"
-printf 'real LLVM LNP64 lld poll libc link smoke passed: %s\n' \
+printf 'real LLVM LNP64 lld poll/select libc link smoke passed: %s\n' \
   "$poll_libc_elf"
 
 indirect_call_elf="$build_dir/lnp64-indirect-call-linked.elf"

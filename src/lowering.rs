@@ -1677,15 +1677,16 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang futex libc object smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_poll_min.c"));
         assert!(libc_poll_min.contains("int poll(struct pollfd *fds"));
+        assert!(libc_poll_min.contains("int select(int nfds"));
         assert!(libc_poll_min.contains("__lnp_await"));
+        assert!(real_llc.contains("select(1, &readfds, &writefds, &exceptfds, &timeout)"));
         assert!(real_llc.contains("poll-libc-clang-smoke.o"));
         assert!(real_llc.contains("liblnp64-poll-min.o"));
         assert!(real_llc.contains("grep -q 'await r'"));
-        assert!(real_llc.contains("real LLVM LNP64 clang poll libc object smoke passed"));
-        assert!(
-            real_llc
-                .contains("real LLVM LNP64 clang minilibc poll implementation object smoke passed")
-        );
+        assert!(real_llc.contains("real LLVM LNP64 clang poll/select libc object smoke passed"));
+        assert!(real_llc.contains(
+            "real LLVM LNP64 clang minilibc poll/select implementation object smoke passed"
+        ));
         assert!(real_llc.contains("errno-clang-smoke.o"));
         assert!(real_llc.contains("lnp64_errno_store(22)"));
         assert!(real_llc.contains("real LLVM LNP64 clang errno object smoke passed"));
@@ -1793,7 +1794,7 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 lld futex libc link smoke passed"));
         assert!(real_llc.contains("lnp64-poll-libc-linked.elf"));
         assert!(real_llc.contains(r#""$poll_libc_obj" "$libc_poll_impl_obj""#));
-        assert!(real_llc.contains("real LLVM LNP64 lld poll libc link smoke passed"));
+        assert!(real_llc.contains("real LLVM LNP64 lld poll/select libc link smoke passed"));
         assert!(real_llc.contains("lnp64-exit-linked.elf"));
         assert!(real_llc.contains(r#""$exit_obj" "$libc_process_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld exit link smoke passed"));
@@ -1855,7 +1856,9 @@ mod tests {
             real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic mmap execution passed")
         );
         assert!(real_llc_docker.contains("lnp64-poll-libc-linked.elf"));
-        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf poll libc execution passed"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf poll/select libc execution passed")
+        );
         assert!(real_llc.contains("lnp64-intrinsic-amo-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld intrinsic AMO link smoke passed"));
         assert!(real_llc.contains("lnp64-c11-atomic-linked.elf"));
@@ -2137,7 +2140,9 @@ mod tests {
         assert!(real_llc_docker.contains("lnp64-futex-libc-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf futex libc execution passed"));
         assert!(real_llc_docker.contains("lnp64-poll-libc-linked.elf"));
-        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf poll libc execution passed"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf poll/select libc execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-errno-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf errno execution passed"));
         assert!(real_llc_docker.contains("lnp64-intrinsic-push-linked.elf"));
@@ -2240,7 +2245,7 @@ mod tests {
             "real_write_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
-            "real_poll_libc_execution",
+            "real_poll_select_libc_execution",
             "real_errno_execution",
             "real_startup_execution",
             "real_getauxval_execution",
@@ -2275,7 +2280,7 @@ mod tests {
             "real_write_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
-            "real_poll_libc_execution",
+            "real_poll_select_libc_execution",
             "real_intrinsic_push_execution",
             "real_intrinsic_control_execution",
             "real_intrinsic_mmap_execution",
