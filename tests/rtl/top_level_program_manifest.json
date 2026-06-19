@@ -187,7 +187,7 @@
       "comparison": "retire_trace_and_final_state"
     },
     {
-      "source": "tests/rtl/programs/top_pipe_push_pull.hex",
+      "source": "tests/rtl/programs/top_pipe_push_pull.s",
       "generated_flat_hex": "tests/rtl/programs/top_pipe_push_pull.hex",
       "required_features": ["core", "object_ctl_queue_pipe", "push_pull", "byte_load_store", "exit"],
       "status": "active",

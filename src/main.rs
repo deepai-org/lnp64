@@ -640,11 +640,15 @@ fn encode_flat_exec_instr(
             *len_or_flags,
         )]),
         Instr::WriteFd(fd, buf, len) => Ok(vec![enc_rrr(0x57, Reg(fd.0), *buf, *len)]),
+        Instr::ReadFdDyn(fd_reg, buf, len) => Ok(vec![enc_rrrr(0x3b, Reg(1), *fd_reg, *buf, *len)]),
+        Instr::WriteFdDyn(fd_reg, buf, len) => {
+            Ok(vec![enc_rrrr(0x3c, Reg(1), *fd_reg, *buf, *len)])
+        }
         Instr::Fence => Ok(vec![enc_reg(0xcd, Reg(0))]),
         Instr::Isync(result, addr, len) => Ok(vec![enc_rrr(0xce, *result, *addr, *len)]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/CALL_REG/LR_GET/LR_SET/RET, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, OBJECT_CTL, CAP_DUP/SEND/RECV/REVOKE, ERRNO_GET/SET, DMA_CTL, ENV_GET, WRITE_FD, FENCE/ISYNC, AMO, LOCK.CMPXCHG, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/CALL_REG/LR_GET/LR_SET/RET, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, OBJECT_CTL, CAP_DUP/SEND/RECV/REVOKE, ERRNO_GET/SET, DMA_CTL, ENV_GET, WRITE_FD, READ_FD_DYN/WRITE_FD_DYN, FENCE/ISYNC, AMO, LOCK.CMPXCHG, EXIT"
         )),
     }
 }
@@ -1389,6 +1393,37 @@ mod tests {
         let hex = encode_flat_exec_hex(&program).unwrap();
 
         assert_eq!(hex, concat!("06000000\n", "01080000\n", "3a080000\n",));
+    }
+
+    #[test]
+    fn asm_flat_exec_encodes_dynamic_fd_push_pull() {
+        let source = r#"
+            .text
+              LI r4, 4
+              LI r12, 80
+              LI r13, 1
+              WRITE_FD_DYN r4, r12, r13
+              LI r3, 3
+              LI r15, 88
+              READ_FD_DYN r3, r15, r13
+              EXIT r1
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+
+        assert_eq!(
+            hex,
+            concat!(
+                "01200004\n",
+                "01600050\n",
+                "01680001\n",
+                "3c0918d0\n",
+                "01180003\n",
+                "01780058\n",
+                "3b08ded0\n",
+                "3a080000\n",
+            )
+        );
     }
 
     #[test]
