@@ -871,6 +871,35 @@ grep -q 'domain_ctl r' "$intrinsic_ctl_dump"
 printf 'real LLVM LNP64 clang intrinsic control object smoke passed: %s\n' \
   "$intrinsic_ctl_obj"
 
+intrinsic_cap_c="$build_dir/intrinsic-cap-control.c"
+cat >"$intrinsic_cap_c" <<'C'
+#include "lnp64_intrinsics.h"
+
+int main(void) {
+  lnp64_word_t total = 0;
+  total += __lnp_cap_dup(1, 2, 0);
+  total += __lnp_cap_send(3, 4, 0);
+  total += __lnp_cap_recv(5, 0);
+  total += __lnp_cap_revoke(6, 0);
+  return (int)total;
+}
+C
+
+intrinsic_cap_obj="$build_dir/intrinsic-cap-control-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$intrinsic_cap_c" -o "$intrinsic_cap_obj"
+test -s "$intrinsic_cap_obj"
+intrinsic_cap_dump="$build_dir/intrinsic-cap-control-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$intrinsic_cap_obj" \
+  >"$intrinsic_cap_dump"
+grep -q 'cap_dup r' "$intrinsic_cap_dump"
+grep -q 'cap_send r' "$intrinsic_cap_dump"
+grep -q 'cap_recv r' "$intrinsic_cap_dump"
+grep -q 'cap_revoke r' "$intrinsic_cap_dump"
+printf 'real LLVM LNP64 clang intrinsic capability control object smoke passed: %s\n' \
+  "$intrinsic_cap_obj"
+
 intrinsic_mmap_c="$build_dir/intrinsic-mmap.c"
 cat >"$intrinsic_mmap_c" <<'C'
 #include "lnp64_intrinsics.h"

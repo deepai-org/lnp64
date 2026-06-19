@@ -29,13 +29,6 @@ lnp64_word_t __lnp_object_ctl(lnp64_word_t record_ptr);
 lnp64_word_t __lnp_object_create(lnp64_word_t kind, lnp64_word_t profile,
                                  lnp64_cap_t fd0, lnp64_cap_t fd1,
                                  lnp64_word_t arg);
-lnp64_word_t __lnp_cap_dup(lnp64_cap_t source_cap, lnp64_word_t rights,
-                           lnp64_word_t flags);
-lnp64_word_t __lnp_cap_send(lnp64_cap_t queue_cap, lnp64_cap_t cap,
-                            lnp64_word_t flags);
-lnp64_word_t __lnp_cap_recv(lnp64_cap_t queue_cap, lnp64_word_t flags);
-lnp64_word_t __lnp_cap_revoke(lnp64_cap_t cap, lnp64_word_t flags);
-
 static inline void *__lnp_alloc(lnp64_word_t size) {
   lnp64_word_t ptr;
   __asm__ volatile("alloc %0, %1" : "=r"(ptr) : "r"(size) : "memory");
@@ -62,6 +55,62 @@ static inline lnp64_word_t __lnp_alloc_size(const void *ptr) {
 
 static inline void __lnp_free(void *ptr) {
   __asm__ volatile("free %0" : : "r"((lnp64_word_t)ptr) : "memory");
+}
+
+static inline lnp64_word_t __lnp_cap_dup(lnp64_cap_t source_cap,
+                                         lnp64_word_t rights,
+                                         lnp64_word_t flags) {
+  lnp64_word_t record[3];
+  lnp64_word_t result;
+  record[0] = source_cap;
+  record[1] = rights;
+  record[2] = flags;
+  __asm__ volatile("cap_dup %0, %1"
+                   : "=r"(result)
+                   : "r"((lnp64_word_t)record)
+                   : "memory");
+  return result;
+}
+
+static inline lnp64_word_t __lnp_cap_send(lnp64_cap_t queue_cap,
+                                          lnp64_cap_t cap,
+                                          lnp64_word_t flags) {
+  lnp64_word_t record[3];
+  lnp64_word_t result;
+  record[0] = queue_cap;
+  record[1] = cap;
+  record[2] = flags;
+  __asm__ volatile("cap_send %0, %1"
+                   : "=r"(result)
+                   : "r"((lnp64_word_t)record)
+                   : "memory");
+  return result;
+}
+
+static inline lnp64_word_t __lnp_cap_recv(lnp64_cap_t queue_cap,
+                                          lnp64_word_t flags) {
+  lnp64_word_t record[2];
+  lnp64_word_t result;
+  record[0] = queue_cap;
+  record[1] = flags;
+  __asm__ volatile("cap_recv %0, %1"
+                   : "=r"(result)
+                   : "r"((lnp64_word_t)record)
+                   : "memory");
+  return result;
+}
+
+static inline lnp64_word_t __lnp_cap_revoke(lnp64_cap_t cap,
+                                            lnp64_word_t flags) {
+  lnp64_word_t record[2];
+  lnp64_word_t result;
+  record[0] = cap;
+  record[1] = flags;
+  __asm__ volatile("cap_revoke %0, %1"
+                   : "=r"(result)
+                   : "r"((lnp64_word_t)record)
+                   : "memory");
+  return result;
 }
 
 static inline void *__lnp_mmap_bootstrap(lnp64_word_t addr_hint,

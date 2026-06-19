@@ -1592,6 +1592,15 @@ mod tests {
         assert!(real_llc.contains("object_ctl r"));
         assert!(real_llc.contains("domain_ctl r"));
         assert!(real_llc.contains("real LLVM LNP64 clang intrinsic control object smoke passed"));
+        assert!(real_llc.contains("intrinsic-cap-control-clang-smoke.o"));
+        assert!(real_llc.contains("cap_dup r"));
+        assert!(real_llc.contains("cap_send r"));
+        assert!(real_llc.contains("cap_recv r"));
+        assert!(real_llc.contains("cap_revoke r"));
+        assert!(
+            real_llc
+                .contains("real LLVM LNP64 clang intrinsic capability control object smoke passed")
+        );
         assert!(real_llc.contains("intrinsic-amo-clang-smoke.o"));
         assert!(real_llc.contains("amo.add r"));
         assert!(real_llc.contains("amo.xor r"));
@@ -3981,6 +3990,22 @@ mod tests {
             assert!(
                 names.contains(name),
                 "target manifest intrinsic {name} is missing from lowering manifest"
+            );
+        }
+        for (name, mnemonic) in [
+            ("__lnp_cap_dup", "cap_dup"),
+            ("__lnp_cap_send", "cap_send"),
+            ("__lnp_cap_recv", "cap_recv"),
+            ("__lnp_cap_revoke", "cap_revoke"),
+        ] {
+            assert!(
+                intrinsic_header.contains(name) && intrinsic_header.contains(mnemonic),
+                "capability intrinsic {name} must lower through {mnemonic} in the header"
+            );
+            assert!(
+                real_llc.contains("intrinsic-cap-control-clang-smoke.o")
+                    && real_llc.contains(mnemonic),
+                "capability intrinsic {name} lacks real LLVM object smoke coverage"
             );
         }
     }
