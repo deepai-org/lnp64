@@ -851,6 +851,7 @@ def load_schema_contract() -> tuple[
     tuple[str, ...],
     tuple[int, ...],
     CommitOps,
+    dict[int, str],
 ]:
     try:
         schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
@@ -916,6 +917,8 @@ def load_schema_contract() -> tuple[
     for entry in enum_entries:
         name, raw_value = entry.split("=", 1)
         enum_values[name] = parse_sv_int(raw_value)
+    if len(enum_values.values()) != len(set(enum_values.values())):
+        fail(f"M1 op enum contains duplicate values: {enum_values!r}")
     missing = sorted({mapping.sv for mapping in op_mappings} - set(enum_values))
     if missing:
         fail(f"M1 op enum is missing values: {missing}")
@@ -945,6 +948,15 @@ def load_schema_contract() -> tuple[
         mapping.key: enum_values[mapping.sv]
         for mapping in op_mappings
     })
+    transition_names = {
+        enum_values[mapping.sv]: f"TypedCommitTransition.{mapping.lean_transition}"
+        for mapping in op_mappings
+    }
+    if set(transition_names) != ops.valid_ops:
+        fail(
+            "M1 schema-owned Lean transition map does not cover the valid RTL op set: "
+            f"{sorted(transition_names)!r} != {sorted(ops.valid_ops)!r}"
+        )
     return (
         record_name,
         expected_fields,
@@ -953,6 +965,7 @@ def load_schema_contract() -> tuple[
         expected_state_fields,
         expected_state_widths,
         ops,
+        transition_names,
     )
 
 
@@ -1182,28 +1195,11 @@ def require_cap_equal(left: Cap, right: Cap, context: str) -> None:
         fail(f"{context}: cap mismatch {left!r} != {right!r}")
 
 
-def lean_transition_constructor(op: int, ops: CommitOps) -> str:
-    if op == ops.cap_dup:
-        return "TypedCommitTransition.capDup"
-    if op == ops.cap_send:
-        return "TypedCommitTransition.capSend"
-    if op == ops.cap_recv:
-        return "TypedCommitTransition.capRecv"
-    if op == ops.cap_revoke:
-        return "TypedCommitTransition.capRevoke"
-    if op == ops.reject_stale:
-        return "TypedCommitTransition.rejectStale"
-    if op == ops.push:
-        return "TypedCommitTransition.push"
-    if op == ops.pull:
-        return "TypedCommitTransition.pull"
-    if op == ops.reject_full:
-        return "TypedCommitTransition.rejectFull"
-    if op == ops.cap_dup_denied:
-        return "TypedCommitTransition.capDupDenied"
-    if op == ops.object_create:
-        return "TypedCommitTransition.objectCreate"
-    fail(f"unsupported M1 commit op {op}")
+def lean_transition_constructor(op: int, transition_names: dict[int, str]) -> str:
+    transition = transition_names.get(op)
+    if transition is None:
+        fail(f"unsupported M1 commit op {op}")
+    return transition
 
 
 def cap_projection(prefix: str, cap: Cap | None) -> dict[str, int]:
@@ -1393,6 +1389,7 @@ def check_rtl_refinement_step(
     post_state_record: dict[str, int | str],
     run_index: int,
     ops: CommitOps,
+    transition_names: dict[int, str],
 ) -> None:
     """Check the executable mirror of Lean RtlM1RefinementStep.
 
@@ -1402,7 +1399,7 @@ def check_rtl_refinement_step(
     """
     op = require_int(commit_record, "op")
     status = require_int(commit_record, "status")
-    transition = lean_transition_constructor(op, ops)
+    transition = lean_transition_constructor(op, transition_names)
     expected_pre_projection = projection_from_state(state, op, status)
     if pre_state_record is not None:
         pre_op = require_int(pre_state_record, "op")
@@ -1412,7 +1409,7 @@ def check_rtl_refinement_step(
             pre_state_record,
             f"run {run_index} {transition} RtlM1RefinementStep pre-state projection",
         )
-    apply_commit(state, commit_record, run_index, ops)
+    apply_commit(state, commit_record, run_index, ops, transition_names)
     if status != ERR_OK:
         check_authority_projection_slots_unchanged(
             expected_pre_projection,
@@ -1451,11 +1448,17 @@ def initial_state(first_record: dict[str, int | str], ops: CommitOps) -> M1State
     return M1State(object_gen=initial_gen, root_cap=root_cap)
 
 
-def apply_commit(state: M1State, record: dict[str, int | str], run_index: int, ops: CommitOps) -> None:
+def apply_commit(
+    state: M1State,
+    record: dict[str, int | str],
+    run_index: int,
+    ops: CommitOps,
+    transition_names: dict[int, str],
+) -> None:
     op = require_int(record, "op")
     cap = cap_from_record(record)
     status = require_int(record, "status")
-    transition = lean_transition_constructor(op, ops)
+    transition = lean_transition_constructor(op, transition_names)
 
     if op == ops.cap_dup:
         if not can_root_duplicate(state):
@@ -1655,13 +1658,14 @@ def check_run(
     state_run: list[dict[str, int | str]],
     index: int,
     ops: CommitOps,
+    transition_names: dict[int, str],
 ) -> None:
     sequence = [require_int(record, "op") for record in run]
     state_sequence = [require_int(record, "op") for record in state_run]
     if state_sequence != sequence:
         fail(f"run {index} state projection op sequence {state_sequence} != commit sequence {sequence}")
     if sequence == ops.denied_sequence:
-        check_denied_run(run, state_run, index, ops)
+        check_denied_run(run, state_run, index, ops, transition_names)
         return
     if sequence != ops.expected_sequence:
         fail(f"run {index} op sequence {sequence} != {ops.expected_sequence} or {ops.denied_sequence}")
@@ -1681,6 +1685,7 @@ def check_run(
             state_record,
             index,
             ops,
+            transition_names,
         )
         previous_state_record = state_record
     if state.sent_cap is not None:
@@ -1772,6 +1777,7 @@ def check_denied_run(
     state_run: list[dict[str, int | str]],
     index: int,
     ops: CommitOps,
+    transition_names: dict[int, str],
 ) -> None:
     if len(run) != 1:
         fail(f"run {index} denied path emitted more than one commit")
@@ -1787,6 +1793,7 @@ def check_denied_run(
         state_run[0],
         index,
         ops,
+        transition_names,
     )
 
 
@@ -1799,6 +1806,7 @@ def main() -> int:
         state_schema_fields,
         state_schema_widths,
         ops,
+        transition_names,
     ) = load_schema_contract()
     output = run_m1_gate()
     records = parse_records(output, record_name, schema_fields)
@@ -1830,7 +1838,7 @@ def main() -> int:
     if len(state_runs) != len(runs):
         fail(f"M1 state projection run count {len(state_runs)} != commit run count {len(runs)}")
     for index, (run, state_run) in enumerate(zip(runs, state_runs, strict=True)):
-        check_run(run, state_run, index, ops)
+        check_run(run, state_run, index, ops, transition_names)
     print(f"rtl m1 typed commit trace ok ({len(runs)} run(s))")
     return 0
 
