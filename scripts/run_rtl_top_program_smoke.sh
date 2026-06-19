@@ -59,12 +59,24 @@ def enc_reg(opcode: int, reg: int) -> int:
     return (opcode << 24) | ((reg & 0x1f) << 19)
 
 
+def enc_rrrr(opcode: int, rd: int, a: int, b: int, c: int) -> int:
+    return enc_rrr(opcode, rd, a, b) | ((c & 0x1f) << 4)
+
+
+def enc_branch(opcode: int, delta_words: int) -> int:
+    return (opcode << 24) | (delta_words & 0x00ff_ffff)
+
+
 program = [
     enc_ri(0x01, 1, 7),
     enc_ri(0x01, 2, 5),
     enc_rrr(0x10, 3, 1, 2),
     enc_mem(0x33, 3, 0, 0),
     enc_mem(0x30, 4, 0, 0),
+    enc_branch(0x20, 2),
+    enc_ri(0x01, 5, 99),
+    enc_ri(0x01, 10, 2),
+    enc_rrrr(0x56, 6, 10, 0, 0),
     enc_reg(0x3a, 4),
 ]
 
@@ -76,7 +88,7 @@ verilator --binary --Mdir "$build_dir" "${common_flags[@]}" "${rtl_files[@]}" >/
 "$build_dir/Vlnp64_top_program_tb" "+lnp64_program_hex=$program_hex" | tee /tmp/lnp64_rtl_top_program_sim.log
 
 grep -q "LNP64-RTL-TOP-PROGRAM PASS" /tmp/lnp64_rtl_top_program_sim.log
-grep -q 'RTL_FINAL {"retired":6,"exit_reg":12,"r3":12,"r4":12,"mem0":12}' /tmp/lnp64_rtl_top_program_sim.log
+grep -q 'RTL_FINAL {"retired":9,"exit_reg":12,"r3":12,"r4":12,"r5":0,"env_page":4096,"mem0":12}' /tmp/lnp64_rtl_top_program_sim.log
 
 if [[ -n "${LNP64_BIN:-}" ]]; then
   "$LNP64_BIN" run-flat-exec "$program_hex" | tee /tmp/lnp64_emulator_top_program.log
@@ -112,7 +124,7 @@ rtl = load_record(sys.argv[1], "RTL_FINAL ")
 emulator = load_record(sys.argv[2], "EMULATOR_FINAL ")
 if rtl["exit_reg"] != emulator["exit"]:
     raise SystemExit(f"exit mismatch: rtl={rtl['exit_reg']} emulator={emulator['exit']}")
-for field in ("r3", "r4", "mem0"):
+for field in ("r3", "r4", "r5", "env_page", "mem0"):
     if rtl[field] != emulator[field]:
         raise SystemExit(f"{field} mismatch: rtl={rtl[field]} emulator={emulator[field]}")
 

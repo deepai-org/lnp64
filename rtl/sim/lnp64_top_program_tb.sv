@@ -114,17 +114,21 @@ module lnp64_top_program_tb;
         require(tile_reset_stable_all, "top-level program did not reset both tiles");
         require(tile1_observable_idle, "tile 1 was not observable/idled during top-level program");
         require(multicore_no_duplicate_tid, "top-level program duplicated PID 1 across tiles");
-        require(retired_count == 32'd6, "top-level program retired an unexpected instruction count");
+        require(retired_count == 32'd9, "top-level program retired an unexpected instruction count");
         require(dut.core_tiles[0].core_i.gpr[3] == 64'd12, "ADD result did not reach r3");
         require(dut.core_tiles[0].core_i.gpr[4] == 64'd12, "LD result did not reach r4");
+        require(dut.core_tiles[0].core_i.gpr[5] == 64'd0, "branch did not skip the r5 write");
+        require(dut.core_tiles[0].core_i.gpr[6] == 64'd4096, "ENV_GET page-size result did not reach r6");
         require(dut.core_tiles[0].core_i.sram[0] == 64'd12, "ST result did not reach SRAM[0]");
 
         $display(
-            "RTL_FINAL {\"retired\":%0d,\"exit_reg\":%0d,\"r3\":%0d,\"r4\":%0d,\"mem0\":%0d}",
+            "RTL_FINAL {\"retired\":%0d,\"exit_reg\":%0d,\"r3\":%0d,\"r4\":%0d,\"r5\":%0d,\"env_page\":%0d,\"mem0\":%0d}",
             retired_count,
             dut.core_tiles[0].core_i.gpr[4],
             dut.core_tiles[0].core_i.gpr[3],
             dut.core_tiles[0].core_i.gpr[4],
+            dut.core_tiles[0].core_i.gpr[5],
+            dut.core_tiles[0].core_i.gpr[6],
             dut.core_tiles[0].core_i.sram[0]
         );
         $display("LNP64-RTL-TOP-PROGRAM PASS");

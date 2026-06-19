@@ -178,6 +178,8 @@ fn run() -> Result<(), String> {
             })?;
             let r3 = regs.get(3).copied().unwrap_or_default();
             let r4 = regs.get(4).copied().unwrap_or_default();
+            let r5 = regs.get(5).copied().unwrap_or_default();
+            let env_page = regs.get(6).copied().unwrap_or_default();
             let mem0 = machine.last_exit_mem0().unwrap_or_default();
             let trace = machine
                 .committed_exec_retire_trace()
@@ -189,7 +191,9 @@ fn run() -> Result<(), String> {
                 .collect::<Vec<_>>()
                 .join(",");
             println!("EMULATOR_RETIRE [{trace}]");
-            println!("EMULATOR_FINAL {{\"exit\":{exit},\"r3\":{r3},\"r4\":{r4},\"mem0\":{mem0}}}");
+            println!(
+                "EMULATOR_FINAL {{\"exit\":{exit},\"r3\":{r3},\"r4\":{r4},\"r5\":{r5},\"env_page\":{env_page},\"mem0\":{mem0}}}"
+            );
             Ok(())
         }
         "help" | "--help" | "-h" => {
