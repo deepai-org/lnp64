@@ -2511,6 +2511,8 @@ mod tests {
         assert!(real_llc.contains("startup-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang startup argv/envp object smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_stdio_min.c"));
+        assert!(libc_stdio_min.contains("#include <stdio.h>"));
+        assert!(!libc_stdio_min.contains("typedef struct __lnp64_file FILE;"));
         assert!(libc_stdio_min.contains("int vsnprintf("));
         assert!(libc_stdio_min.contains("int snprintf("));
         assert!(libc_stdio_min.contains("FILE *fmemopen("));
