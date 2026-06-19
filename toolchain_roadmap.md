@@ -191,13 +191,16 @@ model without exposing flags to the C ABI or debug/unwind state.
 `LNP64InstrInfo` now lowers GPR-to-GPR physical register copies through `MOV`,
 giving instruction selection and register allocation a concrete copy path.
 It also emits first GPR-only stack-slot spills/reloads through `ST`/`LD` with a
-frame-index base and zero offset; full frame layout and prologue/epilogue
-emission remain blockers.
+frame-index base and zero offset.
 `LNP64RegisterInfo` now rewrites frame-index operands to `R31` plus the stack
 object offset and frame size, giving those stack-slot instructions a first
 SP-relative lowering path.
 Frame lowering now reserves `r30` as a backend scratch register and emits
 signed-16 stack adjustments with `LI r30, size` plus `SUB`/`ADD` on `r31`.
+Non-leaf frames spill/restore `LR` with `LR_GET`/`LR_SET` and emit the v0
+minimum DWARF CFI for the CFA offset and saved `LR` slot. Varargs, stack
+returns, aggregate ABI corners, large-frame expansion, and broader call-frame
+stress remain bring-up blockers.
 `LNP64InstrInfo.td` now carries operand-bearing TableGen classes for integer
 RRR/RR/RI, branch, memory, atomic, and native-capability instruction shapes
 instead of name-only opcode stubs.

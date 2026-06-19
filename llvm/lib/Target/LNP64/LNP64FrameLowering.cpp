@@ -6,6 +6,8 @@
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
+#include "llvm/CodeGen/TargetOpcodes.h"
+#include "llvm/MC/MCDwarf.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
 
@@ -18,6 +20,15 @@ static uint64_t getLRSaveSize(const MachineFunction &MF) {
 static uint64_t getLRSaveOffset(const MachineFunction &MF) {
   return MF.getFrameInfo().hasCalls() ? MF.getFrameInfo().getMaxCallFrameSize()
                                      : 0;
+}
+
+static void emitCFI(MachineFunction &MF, MachineBasicBlock &MBB,
+                    MachineBasicBlock::iterator I, const DebugLoc &DL,
+                    const MCCFIInstruction &CFI) {
+  const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
+  unsigned CFIIndex = MF.addFrameInst(CFI);
+  BuildMI(MBB, I, DL, TII.get(TargetOpcode::CFI_INSTRUCTION))
+      .addCFIIndex(CFIIndex);
 }
 
 static void emitSPAdjust(MachineFunction &MF, MachineBasicBlock &MBB,
@@ -46,14 +57,22 @@ void LNP64FrameLowering::emitPrologue(MachineFunction &MF,
   uint64_t StackSize = MF.getFrameInfo().getStackSize() + LRSaveSize;
   MachineBasicBlock::iterator I = MBB.begin();
   emitSPAdjust(MF, MBB, I, DebugLoc(), -int64_t(StackSize));
+  if (StackSize != 0)
+    emitCFI(MF, MBB, I, DebugLoc(),
+            MCCFIInstruction::cfiDefCfaOffset(nullptr, StackSize));
 
   if (LRSaveSize != 0) {
     const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
+    const int64_t LRSaveOffsetFromCFA =
+        int64_t(getLRSaveOffset(MF)) - int64_t(StackSize);
     BuildMI(MBB, I, DebugLoc(), TII.get(LNP64::LR_GET), LNP64::R30);
     BuildMI(MBB, I, DebugLoc(), TII.get(LNP64::ST))
         .addReg(LNP64::R30)
         .addReg(LNP64::R31)
         .addImm(getLRSaveOffset(MF));
+    emitCFI(MF, MBB, I, DebugLoc(),
+            MCCFIInstruction::createOffset(nullptr, /*LR=*/32,
+                                           LRSaveOffsetFromCFA));
   }
 }
 

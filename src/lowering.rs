@@ -2860,6 +2860,11 @@ mod tests {
         );
         assert!(real_llc.contains("sort-clang-smoke.o"));
         assert!(stdint_header.contains("typedef unsigned long uint64_t;"));
+        assert!(stdint_header.contains("typedef long intmax_t;"));
+        assert!(stdint_header.contains("typedef unsigned long uintmax_t;"));
+        assert!(stdint_header.contains("#define INTMAX_MAX INT64_MAX"));
+        assert!(stdint_header.contains("#define UINTMAX_MAX UINT64_MAX"));
+        assert!(stdint_header.contains("#define SIZE_MAX UINT64_MAX"));
         assert!(real_llc.contains("#include <stdint.h>"));
         assert!(real_llc.contains("#include <stdlib.h>"));
         assert!(real_llc.contains("#include <string.h>"));
@@ -5093,6 +5098,10 @@ mod tests {
         assert!(frame.contains("emitSPAdjust"));
         assert!(frame.contains("LNP64::R30"));
         assert!(frame.contains("TII.get(Amount < 0 ? LNP64::SUB : LNP64::ADD)"));
+        assert!(frame.contains("MCCFIInstruction::cfiDefCfaOffset"));
+        assert!(frame.contains("MCCFIInstruction::createOffset"));
+        assert!(frame.contains("TargetOpcode::CFI_INSTRUCTION"));
+        assert!(frame.contains("/*LR=*/32"));
         assert!(reginfo.contains("Reserved.set(LNP64::R0)"));
         assert!(reginfo.contains("Reserved.set(LNP64::R30)"));
         assert!(reginfo.contains("eliminateFrameIndex"));
@@ -7885,6 +7894,7 @@ mod tests {
     fn debug_unwind_manifest_records_minimum_backend_contract() {
         let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
         let debug_unwind_manifest = include_str!("../toolchain/lnp64_debug_unwind.manifest");
+        let frame_lowering = include_str!("../llvm/lib/Target/LNP64/LNP64FrameLowering.cpp");
         let psabi_doc = include_str!("../psABI.md");
         let roadmap = include_str!("../toolchain_roadmap.md");
 
@@ -7939,6 +7949,9 @@ mod tests {
         assert!(psabi_doc.contains("## Debug and Unwind Minimum"));
         assert!(psabi_doc.contains("There is no v0 language exception runtime"));
         assert!(roadmap.contains("toolchain/lnp64_debug_unwind.manifest"));
+        assert!(frame_lowering.contains("MCCFIInstruction::cfiDefCfaOffset"));
+        assert!(frame_lowering.contains("MCCFIInstruction::createOffset"));
+        assert!(frame_lowering.contains("TargetOpcode::CFI_INSTRUCTION"));
     }
 
     #[test]
