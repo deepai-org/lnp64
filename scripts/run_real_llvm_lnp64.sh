@@ -4355,6 +4355,33 @@ grep -q 'ld ' "$stack_args_dump"
 printf 'real LLVM LNP64 clang stack-argument object smoke passed: %s\n' \
   "$stack_args_obj"
 
+large_frame_c="$build_dir/large-frame-smoke.c"
+cat >"$large_frame_c" <<'C'
+extern void touch_large_frame(char *);
+
+int main(void) {
+  char frame[40000];
+  frame[0] = 1;
+  touch_large_frame(frame);
+  return frame[0] - 1;
+}
+C
+
+large_frame_obj="$build_dir/large-frame-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain/include \
+  -I toolchain \
+  -c "$large_frame_c" -o "$large_frame_obj"
+test -s "$large_frame_obj"
+large_frame_dump="$build_dir/large-frame-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$large_frame_obj" \
+  >"$large_frame_dump"
+grep -q 'li32 r30' "$large_frame_dump"
+grep -q 'sub r31, r31, r30' "$large_frame_dump"
+grep -q 'add r31, r31, r30' "$large_frame_dump"
+printf 'real LLVM LNP64 clang large-frame object smoke passed: %s\n' \
+  "$large_frame_obj"
+
 if [[ "$gate" == "objects" ]]; then
   printf 'real LLVM LNP64 object-only gate passed: %s\n' "$build_dir"
   exit 0

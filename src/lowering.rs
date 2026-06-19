@@ -1505,6 +1505,7 @@ mod tests {
             "clang_inih_package_object",
             "clang_cwalk_package_object",
             "clang_varargs_call_object",
+            "clang_large_frame_object",
             "clang_sbase_command_objects",
             "clang_sbase_libutil_objects",
             "clang_sbase_support_object",
@@ -3053,6 +3054,11 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang metadata libc object smoke passed"));
         assert!(real_llc.contains("stack-args-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang stack-argument object smoke passed"));
+        assert!(real_llc.contains("large-frame-clang-smoke.o"));
+        assert!(real_llc.contains("grep -q 'li32 r30'"));
+        assert!(real_llc.contains("grep -q 'sub r31, r31, r30'"));
+        assert!(real_llc.contains("grep -q 'add r31, r31, r30'"));
+        assert!(real_llc.contains("real LLVM LNP64 clang large-frame object smoke passed"));
         assert!(real_llc.contains("toolchain/crt0_lnp64.s"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc crt0 smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_min.s"));
@@ -5044,6 +5050,8 @@ mod tests {
         assert!(frame.contains("Align(16)"));
         assert!(frame.contains("emitSPAdjust"));
         assert!(frame.contains("LNP64::R30"));
+        assert!(frame.contains("TII.get(LNP64::LI32)"));
+        assert!(frame.contains("stack adjustment exceeds 32-bit materialization"));
         assert!(frame.contains("TII.get(Amount < 0 ? LNP64::SUB : LNP64::ADD)"));
         assert!(frame.contains("MCCFIInstruction::cfiDefCfaOffset"));
         assert!(frame.contains("MCCFIInstruction::createOffset"));

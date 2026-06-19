@@ -36,12 +36,17 @@ static void emitSPAdjust(MachineFunction &MF, MachineBasicBlock &MBB,
                          int64_t Amount) {
   if (Amount == 0)
     return;
-  if (!isInt<16>(Amount))
-    llvm_unreachable("LNP64 stack adjustment exceeds signed-16 LI range");
 
   const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
-  int64_t Magnitude = Amount < 0 ? -Amount : Amount;
-  BuildMI(MBB, I, DL, TII.get(LNP64::LI), LNP64::R30).addImm(Magnitude);
+  uint64_t Magnitude =
+      Amount < 0 ? uint64_t(-(Amount + 1)) + 1 : uint64_t(Amount);
+  if (isInt<16>(int64_t(Magnitude))) {
+    BuildMI(MBB, I, DL, TII.get(LNP64::LI), LNP64::R30).addImm(Magnitude);
+  } else {
+    if (!isUInt<32>(Magnitude))
+      llvm_unreachable("LNP64 stack adjustment exceeds 32-bit materialization");
+    BuildMI(MBB, I, DL, TII.get(LNP64::LI32), LNP64::R30).addImm(Magnitude);
+  }
   BuildMI(MBB, I, DL, TII.get(Amount < 0 ? LNP64::SUB : LNP64::ADD),
           LNP64::R31)
       .addReg(LNP64::R31)
