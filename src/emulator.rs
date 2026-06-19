@@ -616,6 +616,17 @@ impl PipeBuffer {
         self.capabilities.push_back(payload);
         Ok(())
     }
+
+    fn revoke_capabilities_by_lineage(&mut self, lineage: u64) -> u64 {
+        let mut revoked = 0;
+        for payload in &mut self.capabilities {
+            if payload.capability.lineage == lineage && !payload.capability.revoked {
+                payload.capability.revoked = true;
+                revoked += 1;
+            }
+        }
+        revoked
+    }
 }
 
 #[derive(Clone)]
@@ -5906,7 +5917,24 @@ impl Machine {
             self.process_mut().map_err(|_| 3u64)?.fd_capabilities[*fd].revoked = true;
             self.bump_fd_generation(*fd).map_err(|_| 9u64)?;
         }
-        Ok(targets.len() as u64)
+        let queued_targets = {
+            let process = self.process().map_err(|_| 3u64)?;
+            process
+                .fds
+                .iter()
+                .filter_map(|handle| match handle {
+                    FdHandle::PipeReader(queue) | FdHandle::PipeWriter(queue) => {
+                        Some(Rc::clone(queue))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let queued_revoked = queued_targets
+            .into_iter()
+            .map(|queue| queue.borrow_mut().revoke_capabilities_by_lineage(lineage))
+            .sum::<u64>();
+        Ok(targets.len() as u64 + queued_revoked)
     }
 
     fn object_ctl_create(&mut self, argblock: u64) -> NativeResult<u64> {
@@ -19056,6 +19084,54 @@ mod tests {
             .unwrap();
         assert_eq!(machine.process().unwrap().errno, 116);
         assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+    }
+
+    #[test]
+    fn cap_revoke_invalidates_queued_capability_payload() {
+        let program = Program::parse(
+            r#"
+            .data
+            path: .string "Cargo.toml"
+
+            .text
+              NOP
+            "#,
+        )
+        .unwrap();
+        let path = program.data_labels["path"];
+        let mut machine = Machine::new(program);
+        machine.current_tid = 1;
+        let pipe = Rc::new(RefCell::new(PipeBuffer::default()));
+        machine.processes.get_mut(&1).unwrap().fds[3] = FdHandle::PipeReader(Rc::clone(&pipe));
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[3] = FdCapability::full(3);
+        machine.processes.get_mut(&1).unwrap().fds[4] = FdHandle::PipeWriter(pipe);
+        machine.processes.get_mut(&1).unwrap().fd_capabilities[4] = FdCapability::full(4);
+
+        machine.thread_mut().unwrap().regs[1] = path;
+        machine.thread_mut().unwrap().regs[2] = 0;
+        machine
+            .exec(Instr::OpenFdDyn(Reg(5), Reg(1), Reg(2)))
+            .unwrap();
+        let source = machine.thread().unwrap().regs[5];
+        let arg = ARG_BASE;
+        machine.store_u64(arg, 4).unwrap();
+        machine.store_u64(arg + 8, source).unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_send(Reg(6), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[6], 1);
+
+        machine.store_u64(arg, source).unwrap();
+        machine.cap_revoke(Reg(7), arg).unwrap();
+        assert!(machine.thread().unwrap().regs[7] >= 2);
+
+        machine.store_u64(arg, 3).unwrap();
+        machine.store_u64(arg + 8, 0).unwrap();
+        machine.store_u64(arg + 16, 0).unwrap();
+        machine.store_u64(arg + 24, 0).unwrap();
+        machine.cap_recv(Reg(8), arg).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[8], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 116);
     }
 
     #[test]

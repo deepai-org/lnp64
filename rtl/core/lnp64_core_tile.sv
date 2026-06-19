@@ -756,6 +756,9 @@ module lnp64_core_tile #(
                     cap_revoke_count = cap_revoke_count + 64'd1;
                 end
             end
+            if (cap_queue_valid && !cap_queue_revoked && cap_queue_lineage == fdr_lineage[cap_src_fd]) begin
+                cap_revoke_count = cap_revoke_count + 64'd1;
+            end
         end
     end
 
@@ -1928,6 +1931,10 @@ module lnp64_core_tile #(
                                             fdr_revoked[i] <= 1'b1;
                                             fdr_generation[i] <= fdr_generation[i] + 64'd1;
                                         end
+                                    end
+                                    if (cap_queue_valid && !cap_queue_revoked &&
+                                        cap_queue_lineage == fdr_lineage[cap_src_fd]) begin
+                                        cap_queue_revoked <= 1'b1;
                                     end
                                     gpr[dec.rd] <= cap_revoke_count;
                                     errno_reg <= LNP64_ERR_OK;
