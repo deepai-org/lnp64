@@ -1430,6 +1430,7 @@ mod tests {
             "inih_package_static_link",
             "cwalk_package_static_link",
             "libc_test_ctype_static_link",
+            "libc_test_string_static_link",
             "libc_test_udiv_static_link",
             "zlib_package_run_elf",
             "natsort_package_run_elf",
@@ -1437,6 +1438,7 @@ mod tests {
             "inih_package_run_elf",
             "cwalk_package_run_elf",
             "libc_test_ctype_run_elf",
+            "libc_test_string_run_elf",
             "libc_test_udiv_run_elf",
             "sbase_echo_static_link",
             "sbase_echo_run_elf",
@@ -1755,6 +1757,9 @@ mod tests {
         assert!(
             real_llc.contains("real LLVM LNP64 clang libc-test ctype_bounded object smoke passed")
         );
+        assert!(real_llc.contains("libc-test-string-clang-smoke.o"));
+        assert!(real_llc.contains("third_party/libc-test/functional/string.c"));
+        assert!(real_llc.contains("real LLVM LNP64 clang libc-test string object smoke passed"));
         assert!(real_llc.contains("libc-test-udiv-clang-smoke.o"));
         assert!(real_llc.contains("third_party/libc-test/functional/udiv.c"));
         assert!(real_llc.contains("grep -q 'udiv r'"));
@@ -1762,6 +1767,8 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang libc-test udiv object smoke passed"));
         assert!(real_llc.contains("lnp64-libc-test-ctype-bounded-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld libc-test ctype_bounded link smoke passed"));
+        assert!(real_llc.contains("lnp64-libc-test-string-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld libc-test string link smoke passed"));
         assert!(real_llc.contains("lnp64-libc-test-udiv-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld libc-test udiv link smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_futex_min.c"));
@@ -2673,6 +2680,10 @@ mod tests {
             real_llc_docker
                 .contains("real LLVM LNP64 run-elf libc-test ctype_bounded execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-libc-test-string-linked.elf"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf libc-test string execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-libc-test-udiv-linked.elf"));
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf libc-test udiv execution passed")
@@ -2822,6 +2833,7 @@ mod tests {
             "real_clang_demo_execution",
             "real_native_heap_execution",
             "real_libc_test_ctype_execution",
+            "real_libc_test_string_execution",
             "real_libc_test_udiv_execution",
             "real_numeric_conversion_execution",
             "real_path_helper_execution",
@@ -2873,6 +2885,7 @@ mod tests {
             "real_clang_demo_execution",
             "real_native_heap_execution",
             "real_libc_test_ctype_execution",
+            "real_libc_test_string_execution",
             "real_libc_test_udiv_execution",
             "real_numeric_conversion_execution",
             "real_path_helper_execution",

@@ -14,10 +14,16 @@ char *strcat(char *dst, const char *src);
 char *strcpy(char *dst, const char *src);
 char *strerror(int errnum);
 size_t strcspn(const char *s, const char *reject);
+size_t strlcat(char *dst, const char *src, size_t size);
+size_t strlcpy(char *dst, const char *src, size_t size);
 size_t strlen(const char *s);
 char *strpbrk(const char *s, const char *accept);
 int strncmp(const char *lhs, const char *rhs, size_t n);
+char *strncat(char *dst, const char *src, size_t n);
 char *strncpy(char *dst, const char *src, size_t n);
+char *strrchr(const char *s, int c);
+size_t strspn(const char *s, const char *accept);
 char *strstr(const char *haystack, const char *needle);
+char *strtok(char *str, const char *delim);
 
 #endif
