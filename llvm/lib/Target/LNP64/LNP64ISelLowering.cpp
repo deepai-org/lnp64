@@ -340,12 +340,14 @@ LNP64TargetLowering::LNP64TargetLowering(const TargetMachine &TM,
 
   setOperationAction(ISD::GlobalAddress, MVT::i64, Custom);
   setOperationAction(ISD::BR_CC, MVT::i64, Custom);
-  for (MVT MemVT : {MVT::i8, MVT::i16, MVT::i32}) {
+  setOperationAction(ISD::BRCOND, MVT::Other, Custom);
+  for (MVT MemVT : {MVT::i1, MVT::i8, MVT::i16, MVT::i32}) {
     setLoadExtAction(ISD::ZEXTLOAD, MVT::i64, MemVT, Legal);
     setLoadExtAction(ISD::SEXTLOAD, MVT::i64, MemVT, Legal);
     setLoadExtAction(ISD::EXTLOAD, MVT::i64, MemVT, Legal);
-    setTruncStoreAction(MVT::i64, MemVT, Legal);
   }
+  for (MVT MemVT : {MVT::i8, MVT::i16, MVT::i32})
+    setTruncStoreAction(MVT::i64, MemVT, Legal);
   computeRegisterProperties(STI.getRegisterInfo());
 }
 
@@ -440,6 +442,17 @@ SDValue LNP64TargetLowering::LowerOperation(SDValue Op,
     SDValue Target = Op.getOperand(4);
     return DAG.getNode(getLNP64BranchOpcode(CC->get()), SDLoc(Op), MVT::Other,
                        {Chain, LHS, RHS, Target});
+  }
+  case ISD::BRCOND: {
+    SDLoc DL(Op);
+    SDValue Chain = Op.getOperand(0);
+    SDValue Cond = Op.getOperand(1);
+    SDValue Target = Op.getOperand(2);
+    if (Cond.getValueType() != MVT::i64)
+      Cond = DAG.getNode(ISD::ZERO_EXTEND, DL, MVT::i64, Cond);
+    SDValue Zero = DAG.getConstant(0, DL, MVT::i64);
+    return DAG.getNode(LNP64ISD::BR_NE, DL, MVT::Other,
+                       {Chain, Cond, Zero, Target});
   }
   default:
     llvm_unreachable("unsupported LNP64 custom lowering opcode");

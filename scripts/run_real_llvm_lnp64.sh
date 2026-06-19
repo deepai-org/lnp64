@@ -1079,6 +1079,84 @@ grep -q '<main>:' "$inih_smoke_dump"
 printf 'real LLVM LNP64 clang inih package object smoke passed: %s\n' \
   "$inih_smoke_obj"
 
+cwalk_impl_obj="$build_dir/cwalk-clang-impl.o"
+"$clang" --target=lnp64-unknown-none -O0 -DNDEBUG -ffreestanding \
+  -fno-builtin -fno-pic -fno-jump-tables -fno-unwind-tables \
+  -fno-asynchronous-unwind-tables -I toolchain/include \
+  -I third_party/cwalk/include \
+  -c third_party/cwalk/src/cwalk.c -o "$cwalk_impl_obj"
+test -s "$cwalk_impl_obj"
+cwalk_impl_dump="$build_dir/cwalk-clang-impl.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$cwalk_impl_obj" \
+  >"$cwalk_impl_dump"
+grep -q '<cwk_path_normalize>:' "$cwalk_impl_dump"
+grep -q '<cwk_path_join>:' "$cwalk_impl_dump"
+printf 'real LLVM LNP64 clang cwalk implementation object smoke passed: %s\n' \
+  "$cwalk_impl_obj"
+
+cwalk_smoke_c="$build_dir/cwalk-smoke.c"
+cat >"$cwalk_smoke_c" <<'C'
+#include "cwalk.h"
+
+static int streq(const char *a, const char *b) {
+  while (*a && *b && *a == *b) {
+    a = a + 1;
+    b = b + 1;
+  }
+  return *a == *b;
+}
+
+int main(void) {
+  char buffer[128];
+  const char *base;
+  size_t length;
+  size_t written;
+  struct cwk_segment segment;
+
+  cwk_path_set_style(CWK_STYLE_UNIX);
+  if (!cwk_path_is_absolute("/tmp/archive.tar.gz"))
+    return 1;
+  if (!cwk_path_is_relative("tmp/archive.tar.gz"))
+    return 2;
+  cwk_path_get_basename("/tmp/archive.tar.gz", &base, &length);
+  if (length != 14)
+    return 3;
+  if (!cwk_path_get_first_segment("/tmp/archive.tar.gz", &segment))
+    return 4;
+  if (segment.size != 3)
+    return 5;
+  written = cwk_path_normalize("/var//log/../tmp/./cache/", buffer,
+                               sizeof(buffer));
+  if (written != 14 || !streq(buffer, "/var/tmp/cache"))
+    return 6;
+  written = cwk_path_join("/var/log", "../tmp/app.log", buffer,
+                          sizeof(buffer));
+  if (written != 16 || !streq(buffer, "/var/tmp/app.log"))
+    return 7;
+  cwk_path_set_style(CWK_STYLE_WINDOWS);
+  written = cwk_path_normalize("C:/temp\\..//out\\file.txt", buffer,
+                               sizeof(buffer));
+  if (written != 15 || !streq(buffer, "C:\\out\\file.txt"))
+    return 8;
+  return 0;
+}
+C
+
+cwalk_smoke_obj="$build_dir/cwalk-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -O0 -ffreestanding -fno-builtin \
+  -fno-pic -fno-jump-tables -fno-unwind-tables \
+  -fno-asynchronous-unwind-tables -I toolchain/include \
+  -I third_party/cwalk/include \
+  -c "$cwalk_smoke_c" -o "$cwalk_smoke_obj"
+test -s "$cwalk_smoke_obj"
+cwalk_smoke_dump="$build_dir/cwalk-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$cwalk_smoke_obj" \
+  >"$cwalk_smoke_dump"
+grep -q '<main>:' "$cwalk_smoke_dump"
+grep -q 'call ' "$cwalk_smoke_dump"
+printf 'real LLVM LNP64 clang cwalk package object smoke passed: %s\n' \
+  "$cwalk_smoke_obj"
+
 netcat_obj="$build_dir/netcat-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
@@ -3695,6 +3773,14 @@ inih_elf="$build_dir/lnp64-inih-linked.elf"
 test -s "$inih_elf"
 printf 'real LLVM LNP64 lld inih package link smoke passed: %s\n' \
   "$inih_elf"
+
+cwalk_elf="$build_dir/lnp64-cwalk-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$cwalk_elf" "$crt0_obj" "$cwalk_smoke_obj" "$cwalk_impl_obj" \
+  "$libc_string_impl_obj"
+test -s "$cwalk_elf"
+printf 'real LLVM LNP64 lld cwalk package link smoke passed: %s\n' \
+  "$cwalk_elf"
 
 calloc_elf="$build_dir/lnp64-calloc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

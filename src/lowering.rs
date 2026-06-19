@@ -2228,6 +2228,15 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang inih package object smoke passed"));
         assert!(real_llc.contains("lnp64-inih-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld inih package link smoke passed"));
+        assert!(real_llc.contains("cwalk-clang-impl.o"));
+        assert!(real_llc.contains("-c third_party/cwalk/src/cwalk.c"));
+        assert!(
+            real_llc.contains("real LLVM LNP64 clang cwalk implementation object smoke passed")
+        );
+        assert!(real_llc.contains("cwalk-clang-smoke.o"));
+        assert!(real_llc.contains("real LLVM LNP64 clang cwalk package object smoke passed"));
+        assert!(real_llc.contains("lnp64-cwalk-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld cwalk package link smoke passed"));
         assert!(real_llc.contains("netcat-clang-smoke.o"));
         assert!(real_llc.contains("-c demos/netcat.c"));
         assert!(real_llc.contains("real LLVM LNP64 clang netcat demo object smoke passed"));
@@ -2526,13 +2535,11 @@ mod tests {
             real_llc_docker.contains("real LLVM LNP64 run-elf natsort package execution passed")
         );
         assert!(real_llc_docker.contains("lnp64-jsmn-linked.elf"));
-        assert!(
-            real_llc_docker.contains("real LLVM LNP64 run-elf jsmn package execution passed")
-        );
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf jsmn package execution passed"));
         assert!(real_llc_docker.contains("lnp64-inih-linked.elf"));
-        assert!(
-            real_llc_docker.contains("real LLVM LNP64 run-elf inih package execution passed")
-        );
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf inih package execution passed"));
+        assert!(real_llc_docker.contains("lnp64-cwalk-linked.elf"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf cwalk package execution passed"));
         assert!(real_llc_docker.contains("lnp64-calloc-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf calloc execution passed"));
         assert!(real_llc_docker.contains("lnp64-realloc-linked.elf"));
@@ -3125,6 +3132,7 @@ mod tests {
         assert!(dag_isel.contains("getTargetFrameIndex"));
         assert!(dag_isel.contains("ISD::SEXTLOAD"));
         assert!(dag_isel.contains("ISD::EXTLOAD"));
+        assert!(dag_isel.contains("MemVT == MVT::i1"));
         assert!(dag_isel.contains("LNP64::PseudoLD_SW"));
         assert!(dag_isel.contains("LNP64::PseudoLD_SH"));
         assert!(dag_isel.contains("LNP64::PseudoLD_SB"));
@@ -3157,6 +3165,7 @@ mod tests {
         assert!(isel.contains("ISD::ADD"));
         assert!(isel.contains("ISD::SDIV"));
         assert!(isel.contains("setOperationAction(ISD::BR_CC, MVT::i64, Custom)"));
+        assert!(isel.contains("setOperationAction(ISD::BRCOND, MVT::Other, Custom)"));
         assert!(isel.contains("getLNP64CSetInstr"));
         assert!(isel.contains("isLNP64UnsignedSetCCPseudo"));
         assert!(isel.contains("LNP64::PseudoLINeg32"));
@@ -3167,6 +3176,8 @@ mod tests {
         assert!(isel.contains("ISD::GlobalAddress"));
         assert!(isel.contains("LNP64ISD::WRAPPER"));
         assert!(isel.contains("ISD::BR_CC"));
+        assert!(isel.contains("ISD::BRCOND"));
+        assert!(isel.contains("DAG.getNode(LNP64ISD::BR_NE"));
         assert!(
             isel.contains(
                 "LNP64 conditional branch lowering only supports integer comparisons today"
@@ -3219,8 +3230,10 @@ mod tests {
         assert!(isel.contains("native control lowering expects one argument and a result"));
         assert!(isel.contains("LNP64ISD::RET_FLAG"));
         assert!(isel.contains("setLoadExtAction(ISD::ZEXTLOAD, MVT::i64, MemVT, Legal)"));
+        assert!(isel.contains("MVT::i1"));
         assert!(isel.contains("setLoadExtAction(ISD::SEXTLOAD, MVT::i64, MemVT, Legal)"));
         assert!(isel.contains("setLoadExtAction(ISD::EXTLOAD, MVT::i64, MemVT, Legal)"));
+        assert!(instr_td.contains("zextloadi1"));
         assert!(isel.contains("getLNP64SignedLoadInstr"));
         assert!(isel.contains("getLNP64SignExtendInstr"));
         assert!(isel.contains("setTruncStoreAction(MVT::i64, MemVT, Legal)"));

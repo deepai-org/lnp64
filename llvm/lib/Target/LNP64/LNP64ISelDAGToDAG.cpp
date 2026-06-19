@@ -72,7 +72,7 @@ bool LNP64DAGToDAGISel::SelectFrameIndexLoad(SDNode *Node) {
            (Load->getExtensionType() == ISD::ZEXTLOAD ||
             Load->getExtensionType() == ISD::EXTLOAD))
     Opcode = LNP64::LD_H;
-  else if (MemVT == MVT::i8 &&
+  else if ((MemVT == MVT::i1 || MemVT == MVT::i8) &&
            (Load->getExtensionType() == ISD::ZEXTLOAD ||
             Load->getExtensionType() == ISD::EXTLOAD))
     Opcode = LNP64::LD_B;
@@ -107,7 +107,7 @@ bool LNP64DAGToDAGISel::SelectFrameIndexStore(SDNode *Node) {
     Opcode = LNP64::ST_W;
   else if (MemVT == MVT::i16 && Store->isTruncatingStore())
     Opcode = LNP64::ST_H;
-  else if (MemVT == MVT::i8 && Store->isTruncatingStore())
+  else if ((MemVT == MVT::i1 || MemVT == MVT::i8) && Store->isTruncatingStore())
     Opcode = LNP64::ST_B;
   else
     return false;

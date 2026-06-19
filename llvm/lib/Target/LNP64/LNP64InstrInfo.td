@@ -589,6 +589,12 @@ def : Pat<(i64 (zextloadi8 GPR:$base)), (LD_B GPR:$base, 0)>;
 def : Pat<(i64 (extloadi8 (add GPR:$base, simm14_imm:$offset))),
           (LD_B GPR:$base, simm14_imm:$offset)>;
 def : Pat<(i64 (extloadi8 GPR:$base)), (LD_B GPR:$base, 0)>;
+def : Pat<(i64 (zextloadi1 (add GPR:$base, simm14_imm:$offset))),
+          (LD_B GPR:$base, simm14_imm:$offset)>;
+def : Pat<(i64 (zextloadi1 GPR:$base)), (LD_B GPR:$base, 0)>;
+def : Pat<(i64 (extloadi1 (add GPR:$base, simm14_imm:$offset))),
+          (LD_B GPR:$base, simm14_imm:$offset)>;
+def : Pat<(i64 (extloadi1 GPR:$base)), (LD_B GPR:$base, 0)>;
 def : Pat<(i64 (sextloadi8 (add GPR:$base, simm14_imm:$offset))),
           (PseudoLD_SB GPR:$base, simm14_imm:$offset)>;
 def : Pat<(i64 (sextloadi8 GPR:$base)), (PseudoLD_SB GPR:$base, 0)>;
