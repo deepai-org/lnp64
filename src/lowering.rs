@@ -1288,6 +1288,7 @@ mod tests {
         let rows = llvm_gate_rows(gate_manifest);
         let mut gates = std::collections::BTreeSet::new();
         let mut commands = std::collections::BTreeMap::new();
+        let mut statuses = std::collections::BTreeMap::new();
         let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
 
         assert_eq!(
@@ -1334,9 +1335,10 @@ mod tests {
         for (gate, command, requirements, status) in rows {
             assert!(gates.insert(gate), "duplicate llvm gate {gate}");
             commands.insert(gate, command);
-            assert_eq!(
-                status, "planned",
-                "gate {gate} must stay planned until real Clang/lld/loader execution exists"
+            statuses.insert(gate, status);
+            assert!(
+                ["planned", "tested"].contains(&status),
+                "unknown LLVM gate status {status} for {gate}"
             );
             assert!(!command.is_empty(), "empty llvm gate command for {gate}");
             assert!(
@@ -1352,6 +1354,7 @@ mod tests {
                 "llvm gate {gate} must not route through the in-repo C compiler"
             );
         }
+        assert_eq!(statuses["real_llc_build"], "tested");
 
         for gate in [
             "gate_driver",
@@ -2782,6 +2785,7 @@ mod tests {
         let rows = llvm_bootstrap_rows(bootstrap_manifest);
         let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let mut cases = std::collections::BTreeSet::new();
+        let mut statuses = std::collections::BTreeMap::new();
 
         assert!(contract_index.contains(
             "llvm_bootstrap|toolchain/lnp64_llvm_bootstrap.manifest|llvm_bootstrap_manifest_names_first_clang_gate"
@@ -2797,13 +2801,14 @@ mod tests {
 
         for (case, source, backend_contracts, runtime_contracts, status) in rows {
             assert!(cases.insert(case), "duplicate llvm bootstrap case {case}");
+            statuses.insert(case, status);
             assert!(
                 manifest_root.join(source).exists(),
                 "llvm bootstrap case {case} names missing source/gate {source}"
             );
-            assert_eq!(
-                status, "planned",
-                "case {case} must stay planned until real Clang/lld/loader execution exists"
+            assert!(
+                ["tested", "partial", "planned"].contains(&status),
+                "unknown LLVM bootstrap status {status} for {case}"
             );
             assert!(
                 backend_contracts.contains(&"static_link"),
@@ -2818,6 +2823,10 @@ mod tests {
         for case in ["hello", "arithmetic", "memory", "calls", "simple_libc"] {
             assert!(cases.contains(case), "missing llvm bootstrap case {case}");
         }
+        for case in ["hello", "arithmetic", "memory", "calls"] {
+            assert_eq!(statuses[case], "tested", "{case} should be tested");
+        }
+        assert_eq!(statuses["simple_libc"], "partial");
     }
 
     #[test]
@@ -2951,7 +2960,7 @@ mod tests {
         for (phase, status, artifacts, gate) in rows {
             assert!(phases.insert(phase), "duplicate transition phase {phase}");
             assert!(
-                ["required", "planned"].contains(&status),
+                ["required", "partial", "planned"].contains(&status),
                 "unknown transition status {status} for {phase}"
             );
             assert!(!artifacts.is_empty(), "empty artifacts for {phase}");
@@ -2979,7 +2988,7 @@ mod tests {
         assert!(roadmap.contains("## Toy Compiler Freeze Policy"));
         assert!(roadmap.contains("## First Acceptance Gates"));
         assert!(roadmap.contains("## Checked Transition Deliverables"));
-        assert!(roadmap.contains("`minimal_llvm_clang_path` row is still marked planned"));
+        assert!(roadmap.contains("`minimal_llvm_clang_path` row is now partial"));
         assert!(roadmap.contains("without the toy C compiler"));
         assert!(psabi.contains("## Register Model"));
         assert!(psabi.contains("## Calling Convention"));
@@ -3122,7 +3131,7 @@ mod tests {
                 "duplicate conformance gate category {category}"
             );
             assert!(
-                ["tested", "planned"].contains(&status),
+                ["tested", "partial", "planned"].contains(&status),
                 "unknown conformance gate status {status} for {category}"
             );
             assert!(
@@ -3142,7 +3151,6 @@ mod tests {
             assert!(
                 gate.starts_with("cargo test")
                     || gate == "simple_libc_gate"
-                    || gate == "scripts/run_llvm_bootstrap_gates.sh --dry-run"
                     || manifest_root.join(gate).exists(),
                 "conformance gate {category} names missing gate {gate}"
             );
@@ -3167,7 +3175,7 @@ mod tests {
                 "missing conformance category {category}"
             );
         }
-        assert_eq!(categories["llvm_built_versions"].0, "planned");
+        assert_eq!(categories["llvm_built_versions"].0, "partial");
         assert!(
             categories["llvm_built_versions"]
                 .1
@@ -3175,7 +3183,7 @@ mod tests {
         );
         assert_eq!(
             categories["llvm_built_versions"].2,
-            "scripts/run_llvm_bootstrap_gates.sh --dry-run"
+            "scripts/run_real_llvm_lnp64_docker.sh"
         );
         for category in [
             "asm_demos",
@@ -3217,13 +3225,14 @@ mod tests {
         let conformance = include_str!("../conformance_matrix.md");
         let llvm_gates = include_str!("../toolchain/lnp64_llvm_gates.manifest");
         let llvm_bootstrap = include_str!("../toolchain/lnp64_llvm_bootstrap.manifest");
+        let run_elf = include_str!("../toolchain/lnp64_run_elf.manifest");
         let intrinsics = include_str!("../toolchain/lnp64_intrinsics.manifest");
         let intrinsic_header = include_str!("../toolchain/lnp64_intrinsics.h");
         let c_compiler = include_str!("c_compiler.rs");
         let lowering_source = include_str!("lowering.rs");
         let libc_roadmap = include_str!("../libc_roadmap.md");
         let evidence_corpus = format!(
-            "{target_manifest}\n{roadmap}\n{conformance}\n{llvm_gates}\n{llvm_bootstrap}\n{intrinsics}\n{intrinsic_header}\n{c_compiler}\n{lowering_source}\n{libc_roadmap}"
+            "{target_manifest}\n{roadmap}\n{conformance}\n{llvm_gates}\n{llvm_bootstrap}\n{run_elf}\n{intrinsics}\n{intrinsic_header}\n{c_compiler}\n{lowering_source}\n{libc_roadmap}"
         );
         let rows = toy_compiler_policy_rows(policy_manifest);
         let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -3252,7 +3261,7 @@ mod tests {
                 "duplicate toy compiler policy rule {rule}"
             );
             assert!(
-                ["required", "planned"].contains(&status),
+                ["required", "partial", "planned"].contains(&status),
                 "unknown toy compiler policy status {status} for {rule}"
             );
             assert!(
@@ -3269,7 +3278,7 @@ mod tests {
                 !evidence.is_empty(),
                 "empty toy compiler policy evidence for {rule}"
             );
-            if status == "required" {
+            if status == "required" || status == "partial" {
                 assert!(
                     evidence_corpus.contains(evidence),
                     "toy compiler policy evidence {evidence} for {rule} is not present"
@@ -3297,7 +3306,7 @@ mod tests {
         ] {
             assert_eq!(rules[rule].0, "required", "{rule} should be required");
         }
-        assert_eq!(rules["replacement_program_set"].0, "planned");
+        assert_eq!(rules["replacement_program_set"].0, "partial");
         for intrinsic in manifest_field(target_manifest, "intrinsics").split(',') {
             assert!(intrinsic.starts_with("__lnp_"));
             assert!(intrinsics.contains(intrinsic));

@@ -1,7 +1,7 @@
 # LNP64 minimal LLVM/Clang bootstrap manifest v0.
 # Pipe-delimited fields: case|source_or_gate|backend_contracts|runtime_contracts|status
-hello|demos/hello.c|integer_codegen,load_store,branch_call_return,static_link,crt_startup|stdout_push,exit|planned
-arithmetic|demos/factorial.c|integer_alu,compare,branch_call_return,stack_locals,static_link|exit|planned
-memory|demos/allocator.c|load_store,global_data,heap_intrinsic,mmap_or_allocator_shim,static_link|malloc_free,errno_tls|planned
-calls|demos/fibonacci.c|call_return,lr_return_address,spill_slots,static_link|exit|planned
-simple_libc|scripts/run_libc_test.sh|crt_startup,fd_io,errno_tls,string_memory,pthread_futex,poll_event,mmap_signal_socket_subset,static_link|libc_shim,software_loader_exec_plan|planned
+hello|demos/hello.c|integer_codegen,load_store,branch_call_return,static_link,crt_startup|stdout_push,exit|tested
+arithmetic|demos/factorial.c|integer_alu,compare,branch_call_return,stack_locals,static_link|exit|tested
+memory|demos/allocator.c|load_store,global_data,heap_intrinsic,mmap_or_allocator_shim,static_link|malloc_free,errno_tls|tested
+calls|demos/fibonacci.c|call_return,lr_return_address,spill_slots,static_link|exit|tested
+simple_libc|scripts/run_libc_test.sh|crt_startup,fd_io,errno_tls,string_memory,pthread_futex,poll_event,mmap_signal_socket_subset,static_link|libc_shim,software_loader_exec_plan|partial
