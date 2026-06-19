@@ -264,6 +264,11 @@ programs through `rtl/top/lnp64_top.sv` against the emulator.
 `run_rtl_m1_refinement_docker.sh` sets `LNP64_REQUIRE_LEAN=1`, so it is the
 right fast path when the claim depends on the Lean M1 transition-invariant file;
 the non-Docker host gate may skip Lean if no local Lean toolchain is installed.
+After the Lean/standalone M1 gate passes, the Docker wrapper also runs the
+top-level M1 capability program subset through `lnp64_top` with the same
+retire-trace/final-state comparator. Set `LNP64_M1_REFINEMENT_SKIP_TOP=1` only
+when intentionally debugging the standalone proof harness, or narrow
+`LNP64_M1_REFINEMENT_TOP_FILTER` to one top-level cap program.
 `run_rtl_quick_docker.sh` is the shortest day-to-day wrapper. It uses the repo
 Dockerfiles, reuses existing Docker images unless
 `LNP64_RTL_QUICK_REBUILD_IMAGE=1` is set, keeps Docker-side Cargo and Verilator

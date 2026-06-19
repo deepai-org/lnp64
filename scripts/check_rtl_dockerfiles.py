@@ -102,9 +102,12 @@ def check_proof() -> None:
             "LNP64_RTL_SKIP_BUILD",
             "LNP64_RTL_COSIM_SEED_JOBS",
             "LNP64_M1_TYPED_COMMIT_SEEDS",
+            "LNP64_M1_REFINEMENT_SKIP_TOP",
+            "LNP64_M1_REFINEMENT_TOP_FILTER",
             "-v \"$root:/work\"",
             "-w /work",
             "bash scripts/run_rtl_m1_refinement_gate.sh",
+            "bash scripts/run_rtl_execution_fast_docker.sh",
         ],
         "scripts/run_rtl_m1_refinement_docker.sh",
     )
