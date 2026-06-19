@@ -102,6 +102,7 @@ def main() -> None:
             require("asm-flat-exec" in gate_text, f"{entry['source']} active gate must assemble source to flat hex")
             require("RTL_RETIRE" in gate_text and "EMULATOR_RETIRE" in gate_text, f"{entry['source']} gate must compare retire traces")
             require("RTL_FINAL" in gate_text and "EMULATOR_FINAL" in gate_text, f"{entry['source']} gate must compare final state")
+            require('"errno"' in gate_text, f"{entry['source']} gate must compare final errno")
     require(active_flat_hex >= 1, "manifest must keep at least one active top-level flat hex program")
     active_compiler_flat = 0
     for entry in compiler_flat_entries:
@@ -118,6 +119,7 @@ def main() -> None:
             )
             require("RTL_RETIRE" in gate_text and "EMULATOR_RETIRE" in gate_text, f"{entry['source']} gate must compare retire traces")
             require("RTL_FINAL" in gate_text and "EMULATOR_FINAL" in gate_text, f"{entry['source']} gate must compare final state")
+            require('"errno"' in gate_text, f"{entry['source']} gate must compare final errno")
     require(active_compiler_flat >= 1, "manifest must keep at least one active compiler-generated top-level program")
     for entry in assembly_entries:
         require(isinstance(entry, dict), "assembly entry must be an object")
@@ -128,11 +130,17 @@ def main() -> None:
             require("asm-flat-exec" in gate_text, f"{entry['source']} active gate must assemble source to flat hex")
             require("RTL_RETIRE" in gate_text and "EMULATOR_RETIRE" in gate_text, f"{entry['source']} gate must compare retire traces")
             require("RTL_FINAL" in gate_text and "EMULATOR_FINAL" in gate_text, f"{entry['source']} gate must compare final state")
+            require('"errno"' in gate_text, f"{entry['source']} gate must compare final errno")
     for entry in compiler_entries:
         require(isinstance(entry, dict), "compiler entry must be an object")
         require_entry(entry, "compiler")
         generated = entry.get("generated_assembly")
         require(isinstance(generated, str) and generated.endswith(".s"), f"{entry['source']} must name generated assembly")
+        if entry.get("status") == "active":
+            gate_text = text(ROOT / str(entry["rtl_gate"]))
+            require("RTL_RETIRE" in gate_text and "EMULATOR_RETIRE" in gate_text, f"{entry['source']} gate must compare retire traces")
+            require("RTL_FINAL" in gate_text and "EMULATOR_FINAL" in gate_text, f"{entry['source']} gate must compare final state")
+            require('"errno"' in gate_text, f"{entry['source']} gate must compare final errno")
 
     manifest_asm = {entry["source"] for entry in assembly_entries}
     actual_asm = {str(path.relative_to(ROOT)) for path in sorted((ROOT / "demos").glob("*.s"))}

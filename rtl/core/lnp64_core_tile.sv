@@ -1457,6 +1457,7 @@ module lnp64_core_tile #(
                             end
                             LNP64_OP_WRITE_FD: begin
                                 gpr[1] <= gpr[dec.rs2];
+                                errno_reg <= LNP64_ERR_OK;
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;

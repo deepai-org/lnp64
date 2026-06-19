@@ -208,6 +208,7 @@ fn run() -> Result<(), String> {
             let r5 = regs.get(5).copied().unwrap_or_default();
             let env_page = regs.get(6).copied().unwrap_or_default();
             let mem0 = machine.last_exit_mem0().unwrap_or_default();
+            let errno = machine.current_errno()?;
             let trace = machine
                 .committed_exec_retire_trace()
                 .iter()
@@ -219,7 +220,7 @@ fn run() -> Result<(), String> {
                 .join(",");
             println!("EMULATOR_RETIRE [{trace}]");
             println!(
-                "EMULATOR_FINAL {{\"exit\":{exit},\"r3\":{r3},\"r4\":{r4},\"r5\":{r5},\"env_page\":{env_page},\"mem0\":{mem0}}}"
+                "EMULATOR_FINAL {{\"exit\":{exit},\"r3\":{r3},\"r4\":{r4},\"r5\":{r5},\"env_page\":{env_page},\"mem0\":{mem0},\"errno\":{errno}}}"
             );
             Ok(())
         }

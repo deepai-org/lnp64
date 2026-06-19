@@ -1154,6 +1154,7 @@ pub struct Machine {
     last_exit: i32,
     last_exit_regs: Option<[u64; GPR_COUNT]>,
     last_exit_mem0: Option<u64>,
+    last_exit_errno: Option<u64>,
     committed_exec_retire_trace: Vec<(u64, u8)>,
     committed_exec_mode: bool,
 }
@@ -1290,6 +1291,7 @@ impl Machine {
             last_exit: 0,
             last_exit_regs: None,
             last_exit_mem0: None,
+            last_exit_errno: None,
             committed_exec_retire_trace: Vec::new(),
             committed_exec_mode: false,
         }
@@ -1419,6 +1421,9 @@ impl Machine {
         }
         self.thread_mut()?.ip = checked_host_usize(entry, "committed exec entry PC")?;
         self.committed_exec_mode = true;
+        self.last_exit_regs = None;
+        self.last_exit_mem0 = None;
+        self.last_exit_errno = None;
         self.committed_exec_retire_trace.clear();
 
         let mut steps = 0usize;
@@ -1483,6 +1488,19 @@ impl Machine {
 
     pub fn committed_exec_retire_trace(&self) -> &[(u64, u8)] {
         &self.committed_exec_retire_trace
+    }
+
+    pub fn current_errno(&self) -> Result<u64, String> {
+        if let Some(errno) = self.last_exit_errno {
+            return Ok(errno);
+        }
+        if let Ok(process) = self.process() {
+            return Ok(process.errno);
+        }
+        self.processes
+            .get(&1)
+            .map(|process| process.errno)
+            .ok_or_else(|| "missing process 1 for errno snapshot".to_string())
     }
 
     fn install_committed_exec_runtime_vmas(&mut self) -> Result<(), String> {
@@ -8739,6 +8757,7 @@ impl Machine {
         let pid = self.thread()?.pid;
         let parent_pid = self.process()?.parent_pid;
         self.last_exit_regs = self.threads.get(&tid).map(|thread| thread.regs);
+        self.last_exit_errno = self.processes.get(&pid).map(|process| process.errno);
         self.last_exit_mem0 = self.processes.get(&pid).and_then(|process| {
             process
                 .memory

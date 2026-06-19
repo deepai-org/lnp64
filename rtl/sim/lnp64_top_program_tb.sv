@@ -124,7 +124,7 @@ module lnp64_top_program_tb;
         require(retired_count > 32'd0, "top-level program retired no instructions");
 
         $display(
-            "RTL_FINAL {\"retired\":%0d,\"exit_reg\":%0d,\"r3\":%0d,\"r4\":%0d,\"r5\":%0d,\"env_page\":%0d,\"mem0\":%0d}",
+            "RTL_FINAL {\"retired\":%0d,\"exit_reg\":%0d,\"r3\":%0d,\"r4\":%0d,\"r5\":%0d,\"env_page\":%0d,\"mem0\":%0d,\"errno\":%0d}",
             retired_count,
             dut.core_tiles[0].core_i.gpr[
                 dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc][23:19]
@@ -133,7 +133,8 @@ module lnp64_top_program_tb;
             dut.core_tiles[0].core_i.gpr[4],
             dut.core_tiles[0].core_i.gpr[5],
             dut.core_tiles[0].core_i.gpr[6],
-            dut.core_tiles[0].core_i.sram[0]
+            dut.core_tiles[0].core_i.sram[0],
+            dut.core_tiles[0].core_i.errno_reg
         );
         $display("LNP64-RTL-TOP-PROGRAM PASS");
         $finish;
