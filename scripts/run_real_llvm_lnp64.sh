@@ -1300,6 +1300,37 @@ grep -q 'call ' "$read_dump"
 printf 'real LLVM LNP64 clang read object smoke passed: %s\n' \
   "$read_obj"
 
+libc_fd_impl_c="$build_dir/liblnp64-fd-min.c"
+cat >"$libc_fd_impl_c" <<'C'
+#include "lnp64_intrinsics.h"
+
+typedef unsigned long size_t;
+
+long read(int fd, void *buf, size_t len) {
+  return (long)__lnp_pull((lnp64_cap_t)(unsigned long)fd,
+                          (lnp64_word_t)buf, len);
+}
+
+long write(int fd, const void *buf, size_t len) {
+  return (long)__lnp_push((lnp64_cap_t)(unsigned long)fd,
+                          (lnp64_word_t)buf, len);
+}
+C
+
+libc_fd_impl_obj="$build_dir/liblnp64-fd-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$libc_fd_impl_c" -o "$libc_fd_impl_obj"
+test -s "$libc_fd_impl_obj"
+libc_fd_impl_dump="$build_dir/liblnp64-fd-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_fd_impl_obj" \
+  >"$libc_fd_impl_dump"
+grep -q 'pull r' "$libc_fd_impl_dump"
+grep -q 'push r' "$libc_fd_impl_dump"
+grep -q 'ret' "$libc_fd_impl_dump"
+printf 'real LLVM LNP64 clang minilibc fd implementation object smoke passed: %s\n' \
+  "$libc_fd_impl_obj"
+
 stack_args_c="$build_dir/stack-args-smoke.c"
 cat >"$stack_args_c" <<'C'
 __attribute__((noinline)) int sum7(int a, int b, int c, int d, int e, int f, int g) {
@@ -1635,7 +1666,7 @@ printf 'real LLVM LNP64 lld realloc link smoke passed: %s\n' \
 
 read_elf="$build_dir/lnp64-read-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
-  -o "$read_elf" "$crt0_obj" "$read_obj" "$minilibc_obj"
+  -o "$read_elf" "$crt0_obj" "$read_obj" "$libc_fd_impl_obj"
 test -s "$read_elf"
 printf 'real LLVM LNP64 lld read link smoke passed: %s\n' \
   "$read_elf"

@@ -1551,6 +1551,16 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang realloc object smoke passed"));
         assert!(real_llc.contains("read-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang read object smoke passed"));
+        assert!(real_llc.contains("liblnp64-fd-min.c"));
+        assert!(real_llc.contains("__lnp_pull"));
+        assert!(real_llc.contains("__lnp_push"));
+        assert!(real_llc.contains("liblnp64-fd-min.o"));
+        assert!(real_llc.contains("grep -q 'pull r'"));
+        assert!(real_llc.contains("grep -q 'push r'"));
+        assert!(
+            real_llc
+                .contains("real LLVM LNP64 clang minilibc fd implementation object smoke passed")
+        );
         assert!(real_llc.contains("stack-args-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang stack-argument object smoke passed"));
         assert!(real_llc.contains("toolchain/crt0_lnp64.s"));
@@ -1581,6 +1591,7 @@ mod tests {
         ));
         assert!(real_llc.contains("real LLVM LNP64 lld realloc link smoke passed"));
         assert!(real_llc.contains("lnp64-read-linked.elf"));
+        assert!(real_llc.contains(r#""$read_obj" "$libc_fd_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld read link smoke passed"));
         assert!(real_llc.contains("lnp64-scalar-arith-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld scalar arithmetic link smoke passed"));
