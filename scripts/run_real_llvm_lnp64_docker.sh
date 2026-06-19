@@ -279,6 +279,34 @@ run_elf_report "real LLVM LNP64 run-elf NetBSD mmap child passed" \
 run_elf_report "real LLVM LNP64 run-elf NetBSD fd passing child passed" \
   target/llvm-lnp64-build/lnp64-netbsd-fd-passing-test-linked.elf \
   'fd_passing_test ok'
+netbsd_fixture_root="target/llvm-lnp64-build/netbsd-fixture-root"
+rm -rf "$netbsd_fixture_root"
+mkdir -p "$netbsd_fixture_root/etc" "$netbsd_fixture_root/tmp"
+netbsd_fs_image="$netbsd_fixture_root/etc/netbsd_personality.fs"
+truncate -s 512 "$netbsd_fs_image"
+put_netbsd_fs_image() {
+  local offset="$1"
+  local bytes="$2"
+  printf '%b' "$bytes" | dd of="$netbsd_fs_image" bs=1 seek="$offset" conv=notrunc status=none
+}
+put_netbsd_fs_image 0 'LNPFS2\n0'
+put_netbsd_fs_image 64 '1d11/\0'
+put_netbsd_fs_image 100 'x'
+put_netbsd_fs_image 128 '1d11/etc\0'
+put_netbsd_fs_image 164 'x'
+put_netbsd_fs_image 192 '1f11/etc/motd\0'
+put_netbsd_fs_image 228 'r'
+put_netbsd_fs_image 232 'welcome\0'
+put_netbsd_fs_image 256 '1d11/tmp\0'
+put_netbsd_fs_image 292 'x'
+"$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-netbsd-fs-service-test-linked.elf \
+  >/dev/null
+netbsd_fs_service_output="$("$lnp64_bin" run-elf --namespace-root "$netbsd_fixture_root" \
+  target/llvm-lnp64-build/lnp64-netbsd-fs-service-test-linked.elf)"
+grep -q 'fs_service_test ok' <<<"$netbsd_fs_service_output"
+grep -q 'exit=0' <<<"$netbsd_fs_service_output"
+printf 'real LLVM LNP64 run-elf NetBSD fs service child passed: %s\n' \
+  target/llvm-lnp64-build/lnp64-netbsd-fs-service-test-linked.elf
 run_elf_report "real LLVM LNP64 run-elf NetBSD socket loopback child passed" \
   target/llvm-lnp64-build/lnp64-netbsd-socket-loopback-test-linked.elf \
   'socket_loopback_test ok'

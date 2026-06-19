@@ -4172,6 +4172,15 @@ impl Machine {
     }
 
     fn open_fd_handle(path: &str, flags: u64) -> Result<FdHandle, String> {
+        const POSIX_O_WRONLY: u64 = 0x0001;
+        const POSIX_O_RDWR: u64 = 0x0002;
+        const POSIX_O_CREAT: u64 = 0x0040;
+        const POSIX_O_TRUNC: u64 = 0x0200;
+        const POSIX_O_APPEND: u64 = 0x0400;
+        const LEGACY_O_APPEND: u64 = 0x0001;
+        const LEGACY_O_TRUNC: u64 = 0x0002;
+        const LEGACY_O_CREAT: u64 = 0x0004;
+
         if let Some(addr) = path.strip_prefix("tcp-listen:") {
             let addr = addr
                 .parse::<SocketAddr>()
@@ -4186,17 +4195,32 @@ impl Machine {
                 pending: None,
             })
         } else {
-            let file = if flags & 1 == 1 {
+            let has_posix_modifier = flags & (POSIX_O_CREAT | POSIX_O_TRUNC | POSIX_O_APPEND) != 0;
+            let file = if has_posix_modifier || flags == POSIX_O_RDWR {
+                let access = flags & 0x3;
+                let write = access == POSIX_O_WRONLY
+                    || access == POSIX_O_RDWR
+                    || flags & (POSIX_O_CREAT | POSIX_O_TRUNC | POSIX_O_APPEND) != 0;
+                OpenOptions::new()
+                    .read(access != POSIX_O_WRONLY || flags & POSIX_O_APPEND != 0)
+                    .write(write)
+                    .create(flags & POSIX_O_CREAT != 0)
+                    .truncate(flags & POSIX_O_TRUNC != 0)
+                    .append(flags & POSIX_O_APPEND != 0)
+                    .open(path)
+            } else if flags & LEGACY_O_APPEND == LEGACY_O_APPEND {
                 OpenOptions::new()
                     .create(true)
                     .truncate(false)
                     .append(true)
                     .read(true)
                     .open(path)
-            } else if flags & 2 == 2 || flags & 4 == 4 {
+            } else if flags & LEGACY_O_TRUNC == LEGACY_O_TRUNC
+                || flags & LEGACY_O_CREAT == LEGACY_O_CREAT
+            {
                 OpenOptions::new()
                     .create(true)
-                    .truncate(flags & 2 == 2)
+                    .truncate(flags & LEGACY_O_TRUNC == LEGACY_O_TRUNC)
                     .write(true)
                     .read(true)
                     .open(path)
@@ -17362,6 +17386,74 @@ mod tests {
             Err(err) => err,
         };
         assert!(err.contains("TCP listener address"), "{err}");
+    }
+
+    #[test]
+    fn open_fd_handle_treats_posix_rdwr_as_read_write_not_truncate() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("lnp64_posix_rdwr_{unique}"));
+        fs::write(&path, b"abcdef").unwrap();
+        let path_string = path.to_string_lossy().into_owned();
+
+        let mut file = match Machine::open_fd_handle(&path_string, 0x0002).unwrap() {
+            FdHandle::File(file) => file,
+            _ => panic!("expected file handle"),
+        };
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes).unwrap();
+        assert_eq!(bytes, b"abcdef");
+        file.seek(SeekFrom::Start(0)).unwrap();
+        file.write_all(b"Z").unwrap();
+        drop(file);
+
+        assert_eq!(fs::read(&path).unwrap(), b"Zbcdef");
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn open_fd_handle_keeps_legacy_create_truncate_flags() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("lnp64_legacy_trunc_{unique}"));
+        fs::write(&path, b"abcdef").unwrap();
+        let path_string = path.to_string_lossy().into_owned();
+
+        let mut file = match Machine::open_fd_handle(&path_string, 0x0004 | 0x0002).unwrap() {
+            FdHandle::File(file) => file,
+            _ => panic!("expected file handle"),
+        };
+        file.write_all(b"ok").unwrap();
+        drop(file);
+
+        assert_eq!(fs::read(&path).unwrap(), b"ok");
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn open_fd_handle_supports_posix_create_truncate_flags() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("lnp64_posix_trunc_{unique}"));
+        fs::write(&path, b"abcdef").unwrap();
+        let path_string = path.to_string_lossy().into_owned();
+
+        let mut file =
+            match Machine::open_fd_handle(&path_string, 0x0002 | 0x0040 | 0x0200).unwrap() {
+                FdHandle::File(file) => file,
+                _ => panic!("expected file handle"),
+            };
+        file.write_all(b"ok").unwrap();
+        drop(file);
+
+        assert_eq!(fs::read(&path).unwrap(), b"ok");
+        let _ = fs::remove_file(path);
     }
 
     #[test]

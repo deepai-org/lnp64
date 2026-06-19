@@ -418,6 +418,9 @@ The concrete first-program set is pinned in
   that exercises queue-backed capability transfer, duplicate/revoke lineage,
   stale received-capability detection, and fd output through real Clang/lld
   output.
+- `netbsd_fs_service_child`: a non-fork NetBSD personality child replacement
+  that exercises the small LNPFS2 service-image mutation/recovery path through
+  real Clang/lld output, explicit fd I/O, and a namespace-rooted fixture.
 - `netbsd_socket_loopback_child`: a non-fork NetBSD personality child
   replacement that exercises endpoint-backed socket options, bind/listen,
   connect/accept, poll readiness, send/recv, and socket `errno` reporting

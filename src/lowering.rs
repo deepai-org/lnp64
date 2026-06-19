@@ -1484,6 +1484,7 @@ mod tests {
             "clang_netbsd_timer_child_object",
             "clang_netbsd_mmap_child_object",
             "clang_netbsd_fd_passing_child_object",
+            "clang_netbsd_fs_service_child_object",
             "clang_netbsd_socket_loopback_child_object",
             "clang_netbsd_gate_trace_child_object",
             "clang_netbsd_domain_nested_child_object",
@@ -1603,6 +1604,8 @@ mod tests {
             "netbsd_mmap_child_run_elf",
             "netbsd_fd_passing_child_static_link",
             "netbsd_fd_passing_child_run_elf",
+            "netbsd_fs_service_child_static_link",
+            "netbsd_fs_service_child_run_elf",
             "netbsd_socket_loopback_child_static_link",
             "netbsd_socket_loopback_child_run_elf",
             "netbsd_gate_trace_child_static_link",
@@ -2795,6 +2798,15 @@ mod tests {
         assert!(real_llc.contains("lnp64-netbsd-fd-passing-test-linked.elf"));
         assert!(real_llc.contains(r#""$netbsd_fd_passing_test_obj" \"#));
         assert!(real_llc.contains("real LLVM LNP64 lld NetBSD fd passing child link passed"));
+        assert!(real_llc.contains("userland/fs_service_test_clang.c"));
+        assert!(real_llc.contains("netbsd-fs-service-test-clang-smoke.o"));
+        assert!(real_llc.contains(r#"grep -q 'ld.b r' "$netbsd_fs_service_test_dump""#));
+        assert!(real_llc.contains(r#"grep -q 'st.b r' "$netbsd_fs_service_test_dump""#));
+        assert!(real_llc.contains("real LLVM LNP64 clang NetBSD fs service child object passed"));
+        assert!(real_llc.contains("lnp64-netbsd-fs-service-test-linked.elf"));
+        assert!(real_llc.contains(r#""$netbsd_fs_service_test_obj" \"#));
+        assert!(real_llc.contains(r#""$libc_alloc_impl_obj" "$libc_string_impl_obj""#));
+        assert!(real_llc.contains("real LLVM LNP64 lld NetBSD fs service child link passed"));
         assert!(real_llc.contains("lnp64-netbsd-socket-loopback-test-linked.elf"));
         assert!(real_llc.contains(r#""$netbsd_socket_loopback_test_obj" "$libc_socket_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld NetBSD socket loopback child link passed"));
@@ -3773,6 +3785,7 @@ mod tests {
             "real_netbsd_timer_child_execution",
             "real_netbsd_mmap_child_execution",
             "real_netbsd_fd_passing_child_execution",
+            "real_netbsd_fs_service_child_execution",
             "real_netbsd_socket_loopback_child_execution",
             "real_netbsd_gate_trace_child_execution",
             "real_netbsd_domain_nested_child_execution",
@@ -3868,6 +3881,7 @@ mod tests {
             "real_netbsd_timer_child_execution",
             "real_netbsd_mmap_child_execution",
             "real_netbsd_fd_passing_child_execution",
+            "real_netbsd_fs_service_child_execution",
             "real_netbsd_socket_loopback_child_execution",
             "real_netbsd_gate_trace_child_execution",
             "real_netbsd_domain_nested_child_execution",
@@ -4978,6 +4992,7 @@ mod tests {
             "netbsd_timer_child",
             "netbsd_mmap_child",
             "netbsd_fd_passing_child",
+            "netbsd_fs_service_child",
             "netbsd_socket_loopback_child",
             "netbsd_gate_trace_child",
             "netbsd_domain_nested_child",
@@ -5023,6 +5038,7 @@ mod tests {
         assert_eq!(statuses["netbsd_timer_child"], "partial");
         assert_eq!(statuses["netbsd_mmap_child"], "partial");
         assert_eq!(statuses["netbsd_fd_passing_child"], "partial");
+        assert_eq!(statuses["netbsd_fs_service_child"], "partial");
         assert_eq!(statuses["netbsd_socket_loopback_child"], "partial");
         assert_eq!(statuses["netbsd_gate_trace_child"], "partial");
         assert_eq!(statuses["netbsd_domain_nested_child"], "partial");
@@ -5763,6 +5779,7 @@ mod tests {
             "netbsd_timer_child",
             "netbsd_mmap_child",
             "netbsd_fd_passing_child",
+            "netbsd_fs_service_child",
             "netbsd_socket_loopback_child",
             "netbsd_gate_trace_child",
             "netbsd_domain_nested_child",
