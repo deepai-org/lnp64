@@ -1349,6 +1349,7 @@ mod tests {
         let search_header = include_str!("../toolchain/include/search.h");
         let pthread_header = include_str!("../toolchain/include/pthread.h");
         let semaphore_header = include_str!("../toolchain/include/semaphore.h");
+        let signal_header = include_str!("../toolchain/include/signal.h");
         let stdlib_header = include_str!("../toolchain/include/stdlib.h");
         let libc_string_min = include_str!("../toolchain/liblnp64_string_min.c");
         let libc_convert_min = include_str!("../toolchain/liblnp64_convert_min.c");
@@ -1473,6 +1474,7 @@ mod tests {
             "clang_netbsd_thread_child_object",
             "clang_netbsd_poll_child_object",
             "clang_netbsd_signal_gate_child_object",
+            "clang_netbsd_signal_fault_child_object",
             "clang_minilibc_meta_impl_object",
             "clang_meta_libc_object",
             "clang_minilibc_random_impl_object",
@@ -1580,6 +1582,8 @@ mod tests {
             "netbsd_poll_child_run_elf",
             "netbsd_signal_gate_child_static_link",
             "netbsd_signal_gate_child_run_elf",
+            "netbsd_signal_fault_child_static_link",
+            "netbsd_signal_fault_child_run_elf",
             "metadata_libc_static_link",
             "metadata_libc_run_elf",
         ] {
@@ -1881,6 +1885,17 @@ mod tests {
         assert!(libc_errno_min.contains("__errno_location"));
         assert!(errno_header.contains("int *__errno_location(void);"));
         assert!(errno_header.contains("#define errno (*__errno_location())"));
+        for signal_define in [
+            "#define SIGINT 2",
+            "#define SIGFPE 8",
+            "#define SIGSEGV 11",
+            "#define SIGALRM 14",
+            "#define SIGTERM 15",
+        ] {
+            assert!(signal_header.contains(signal_define));
+        }
+        assert!(signal_header.contains("__lnp64_sighandler_t signal"));
+        assert!(signal_header.contains("int raise(int signum);"));
         assert!(real_llc.contains("liblnp64-errno-min.o"));
         assert!(real_llc.contains("grep -q 'errno_get r'"));
         assert!(real_llc.contains("grep -q 'errno_set r'"));
@@ -2546,6 +2561,11 @@ mod tests {
         assert!(real_llc.contains("netbsd-signal-gate-test-clang-smoke.o"));
         assert!(real_llc.contains(r#"grep -q 'yield' "$netbsd_signal_gate_test_dump""#));
         assert!(real_llc.contains("real LLVM LNP64 clang NetBSD signal gate child object passed"));
+        assert!(real_llc.contains("userland/signal_fault_test_clang.c"));
+        assert!(real_llc.contains("netbsd-signal-fault-test-clang-smoke.o"));
+        assert!(real_llc.contains(r#"grep -q 'div r' "$netbsd_signal_fault_test_dump""#));
+        assert!(real_llc.contains(r#"grep -q 'sigret' "$netbsd_signal_fault_test_dump""#));
+        assert!(real_llc.contains("real LLVM LNP64 clang NetBSD signal fault child object passed"));
         assert!(real_llc.contains("toolchain/liblnp64_fd_min.c"));
         assert!(libc_fd_min.contains("__lnp_pull"));
         assert!(libc_fd_min.contains("__lnp_push"));
@@ -2677,6 +2697,9 @@ mod tests {
         assert!(real_llc.contains("lnp64-netbsd-signal-gate-test-linked.elf"));
         assert!(real_llc.contains(r#""$netbsd_signal_gate_test_obj" \"#));
         assert!(real_llc.contains("real LLVM LNP64 lld NetBSD signal gate child link passed"));
+        assert!(real_llc.contains("lnp64-netbsd-signal-fault-test-linked.elf"));
+        assert!(real_llc.contains(r#""$netbsd_signal_fault_test_obj" \"#));
+        assert!(real_llc.contains("real LLVM LNP64 lld NetBSD signal fault child link passed"));
         assert!(real_llc.contains("lnp64-meta-libc-linked.elf"));
         assert!(real_llc.contains(
             r#""$meta_libc_obj" "$libc_meta_impl_obj" \
@@ -3621,6 +3644,7 @@ mod tests {
             "real_netbsd_thread_child_execution",
             "real_netbsd_poll_child_execution",
             "real_netbsd_signal_gate_child_execution",
+            "real_netbsd_signal_fault_child_execution",
             "real_metadata_libc_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
@@ -3708,6 +3732,7 @@ mod tests {
             "real_netbsd_thread_child_execution",
             "real_netbsd_poll_child_execution",
             "real_netbsd_signal_gate_child_execution",
+            "real_netbsd_signal_fault_child_execution",
             "real_metadata_libc_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
@@ -4792,6 +4817,7 @@ mod tests {
             "netbsd_thread_child",
             "netbsd_poll_child",
             "netbsd_signal_gate_child",
+            "netbsd_signal_fault_child",
             "netbsd_personality_clang",
             "netcat",
             "httpd",
@@ -4829,6 +4855,7 @@ mod tests {
         assert_eq!(statuses["netbsd_thread_child"], "partial");
         assert_eq!(statuses["netbsd_poll_child"], "partial");
         assert_eq!(statuses["netbsd_signal_gate_child"], "partial");
+        assert_eq!(statuses["netbsd_signal_fault_child"], "partial");
         assert_eq!(statuses["netbsd_personality_clang"], "partial");
         assert_eq!(statuses["netcat"], "partial");
         assert_eq!(statuses["httpd"], "partial");
@@ -5561,6 +5588,7 @@ mod tests {
             "netbsd_thread_child",
             "netbsd_poll_child",
             "netbsd_signal_gate_child",
+            "netbsd_signal_fault_child",
             "netbsd_personality_clang",
             "simple_libc",
         ] {

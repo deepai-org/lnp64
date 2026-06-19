@@ -267,6 +267,9 @@ run_elf_report "real LLVM LNP64 run-elf NetBSD poll child passed" \
 run_elf_report "real LLVM LNP64 run-elf NetBSD signal gate child passed" \
   target/llvm-lnp64-build/lnp64-netbsd-signal-gate-test-linked.elf \
   'signal_gate_test ok'
+run_elf_report "real LLVM LNP64 run-elf NetBSD signal fault child passed" \
+  target/llvm-lnp64-build/lnp64-netbsd-signal-fault-test-linked.elf \
+  'signal_fault_test ok'
 run_elf_report "real LLVM LNP64 run-elf sbase echo execution passed" \
   target/llvm-lnp64-build/lnp64-sbase-echo-linked.elf \
   echo hello clang --expect 'hello clang'

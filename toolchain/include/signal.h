@@ -4,6 +4,9 @@
 typedef void (*__lnp64_sighandler_t)(int);
 
 #define SIGINT 2
+#define SIGFPE 8
+#define SIGSEGV 11
+#define SIGALRM 14
 #define SIGTERM 15
 
 #define SIG_ERR ((__lnp64_sighandler_t)-1)

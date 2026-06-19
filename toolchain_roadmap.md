@@ -379,6 +379,9 @@ The concrete first-program set is pinned in
 - `netbsd_signal_gate_child`: a non-fork NetBSD personality child replacement
   that exercises signal handler and nested signal delivery through the Clang
   signal shim.
+- `netbsd_signal_fault_child`: a non-fork NetBSD personality child replacement
+  that exercises divide-by-zero hardware fault delivery through the Clang signal
+  shim.
 
 These bootstrap gates now run through real Clang/lld output and the software
 loader without the toy compiler. Full replacement remains partial until the
