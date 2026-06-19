@@ -159,7 +159,6 @@ module lnp64_core_tile #(
     logic cap_engine_shadow_enabled;
     logic object_engine_shadow_enabled;
     logic domain_engine_shadow_enabled;
-    logic dma_engine_shadow_enabled;
     logic cmp_zero;
     logic cmp_negative;
     logic cmp_greater;
@@ -1551,7 +1550,6 @@ module lnp64_core_tile #(
             cap_engine_shadow_enabled <= 1'b1;
             object_engine_shadow_enabled <= 1'b1;
             domain_engine_shadow_enabled <= 1'b1;
-            dma_engine_shadow_enabled <= 1'b1;
             cmp_zero <= 1'b0;
             cmp_negative <= 1'b0;
             cmp_greater <= 1'b0;
@@ -2341,76 +2339,9 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_DMA_CTL: begin
-                                if (dma_engine_shadow_enabled) begin
-                                    pending_unsupported <= 1'b0;
-                                    command_pc <= pc;
-                                    state <= CORE_SEND_CMD;
-                                end else begin
-                                    if (dma_buffer != 64'd0 && !dma_buffer_ref_matches(dma_buffer)) begin
-                                        gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                        errno_reg <= LNP64_ERR_EBADF;
-                                    end else if (dma_buffer != 64'd0 && dma_buffer_ref_revoked(dma_buffer)) begin
-                                        gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                        errno_reg <= RTL_ERR_ESTALE;
-                                    end else if (dma_buffer != 64'd0 && !dma_scope_valid) begin
-                                        gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                        errno_reg <= LNP64_ERR_EFAULT;
-                                    end else if (dma_op == 64'd2) begin
-                                        if (dma_buffer == 64'd0 && !dma_dst_heap_valid) begin
-                                            gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                            errno_reg <= LNP64_ERR_EFAULT;
-                                        end else if (dma_len == 64'd0) begin
-                                            gpr[dec.rd] <= 64'd0;
-                                            errno_reg <= LNP64_ERR_OK;
-                                        end else if (dma_len == 64'd1) begin
-                                            sram[dma_dst_sram_word_index] <= store_byte_lane(
-                                                sram[dma_dst_sram_word_index],
-                                                dma_dst_byte_lane,
-                                                dma_src_or_value[7:0]
-                                            );
-                                            dcache_writeback <= 1'b1;
-                                            gpr[dec.rd] <= 64'd1;
-                                            errno_reg <= LNP64_ERR_OK;
-                                        end else begin
-                                            gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                            errno_reg <= LNP64_ERR_ENOTSUP;
-                                        end
-                                    end else if (dma_op == 64'd1) begin
-                                        if (dma_buffer == 64'd0 && (!dma_dst_heap_valid || !dma_src_heap_valid)) begin
-                                            gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                            errno_reg <= LNP64_ERR_EFAULT;
-                                        end else if (dma_len == 64'd0) begin
-                                            gpr[dec.rd] <= 64'd0;
-                                            errno_reg <= LNP64_ERR_OK;
-                                        end else if (dma_len == 64'd8) begin
-                                            sram[dma_dst_sram_word_index] <= store_double_low_word(
-                                                sram[dma_dst_sram_word_index],
-                                                dma_dst_byte_lane,
-                                                load_double_unaligned(dma_src_or_value)
-                                            );
-                                            if (dma_dst_byte_lane != 3'd0) begin
-                                                sram[dma_dst_next_sram_word_index] <= store_double_high_word(
-                                                    sram[dma_dst_next_sram_word_index],
-                                                    dma_dst_byte_lane,
-                                                    load_double_unaligned(dma_src_or_value)
-                                                );
-                                            end
-                                            dcache_writeback <= 1'b1;
-                                            gpr[dec.rd] <= 64'd8;
-                                            errno_reg <= LNP64_ERR_OK;
-                                        end else begin
-                                            gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                            errno_reg <= LNP64_ERR_ENOTSUP;
-                                        end
-                                    end else begin
-                                        gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                        errno_reg <= LNP64_ERR_EINVAL;
-                                    end
-                                    pc <= pc + 32'd1;
-                                    retired_count <= retired_count + 32'd1;
-                                    retire_submit_valid <= 1'b1;
-                                    retire_submit_record <= retire_submit_next;
-                                end
+                                pending_unsupported <= 1'b0;
+                                command_pc <= pc;
+                                state <= CORE_SEND_CMD;
                             end
                             LNP64_OP_YIELD: begin
                                 yielded <= 1'b1;
