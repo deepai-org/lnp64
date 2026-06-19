@@ -818,6 +818,32 @@ module lnp64_core_tile #(
         end
     endfunction
 
+    function automatic logic flat_retire_result_valid(input logic [7:0] opcode);
+        begin
+            unique case (opcode)
+                8'h00, 8'h1b, 8'h1c, 8'h1f, 8'h20, 8'h21, 8'h22, 8'h23,
+                8'h24, 8'h25, 8'h26, 8'h27, 8'h28, 8'h2a, 8'h33, 8'h34,
+                8'h35, 8'h37, 8'h39, 8'h3a, 8'h49, 8'h61, 8'h63,
+                8'h64, 8'h65, 8'h68, 8'h6e, 8'hcb, 8'hcc, 8'hcd:
+                    flat_retire_result_valid = 1'b0;
+                default:
+                    flat_retire_result_valid = 1'b1;
+            endcase
+        end
+    endfunction
+
+    function automatic logic [7:0] flat_retire_result_reg(
+        input logic [7:0] opcode,
+        input logic [7:0] raw_result_reg
+    );
+        begin
+            unique case (opcode)
+                8'h2d, 8'h57, 8'h6c: flat_retire_result_reg = 8'd1;
+                default: flat_retire_result_reg = raw_result_reg;
+            endcase
+        end
+    endfunction
+
     function automatic lnp64_m1_state_projection_t build_m1_state_projection(
         input logic [7:0] op,
         input logic [15:0] status,
@@ -1554,6 +1580,8 @@ module lnp64_core_tile #(
             instr,
             pc + 32'd1 < PROGRAM_WORDS[31:0] ? program_rom[pc + 32'd1] : 32'd0
         );
+        retire_submit_next.result_valid = flat_retire_result_valid(raw_opcode);
+        retire_submit_next.result_reg = flat_retire_result_reg(raw_opcode, dec.rd);
         retire_submit_next.event_id = 32'd0;
         retire_submit_next.fault_id = 32'd0;
 

@@ -374,7 +374,7 @@
     "lnp64_returned_capability_t": ["proposal_id:32", "object_id:32", "object_generation:32", "fdr_generation:32", "domain_id:32", "domain_generation:32", "rights_mask:64"],
     "lnp64_policy_decision_t": ["snapshot_id:32", "pid:32", "tid:32", "domain_id:32", "domain_generation:32", "policy_mask:64", "label_id:32"],
     "lnp64_credential_snapshot_t": ["snapshot_id:32", "pid:32", "tid:32", "domain_id:32", "domain_generation:32", "credential_generation:32", "delegated_fdr_root:64", "policy_mask:64", "label_id:32"],
-    "lnp64_retire_submit_t": ["op_id:32", "pid:32", "tid:32", "tile_id:32", "domain_id:32", "domain_gen:32", "pc:32", "opcode:8", "arch_opcode:16", "action:16", "operand_rd:8", "operand_rs1:8", "operand_rs2:8", "operand_rs3:8", "operand_imm:32", "latency_class:16", "wait_source:64", "event_id:32", "fault_id:32"],
+    "lnp64_retire_submit_t": ["op_id:32", "pid:32", "tid:32", "tile_id:32", "domain_id:32", "domain_gen:32", "pc:32", "opcode:8", "arch_opcode:16", "action:16", "operand_rd:8", "operand_rs1:8", "operand_rs2:8", "operand_rs3:8", "operand_imm:32", "result_valid:1", "result_reg:8", "latency_class:16", "wait_source:64", "event_id:32", "fault_id:32"],
     "lnp64_waitable_t": ["wait_id:32", "op_id:32", "pid:32", "tid:32", "domain_id:32", "domain_gen:32", "wait_kind:16", "source_id:64", "timeout_cycles:64"],
     "lnp64_gate_continuation_t": ["continuation_id:32", "caller_pid:32", "caller_tid:32", "callee_pid:32", "callee_tid:32", "domain_id:32", "domain_gen:32", "generation:32", "mode:16"],
     "lnp64_process_lifecycle_t": ["process_id:32", "process_generation:32", "parent_pid:32", "domain_id:32", "domain_generation:32", "exec_plan_ptr:64", "exec_plan_len:64", "lifecycle_state:16"],

@@ -136,12 +136,10 @@ module lnp64_top_program_tb #(
                     ];
                 retire_opcode_vec[decode_tile_id] = retire_instr_vec[decode_tile_id][31:24];
                 retire_raw_result_reg_vec[decode_tile_id] = retire_instr_vec[decode_tile_id][23:19];
-                retire_result_valid_vec[decode_tile_id] = flat_result_valid(retire_opcode_vec[decode_tile_id]);
+                retire_result_valid_vec[decode_tile_id] =
+                    dut.retire_submit_record_vec[decode_tile_id].result_valid;
                 retire_result_reg_vec[decode_tile_id] =
-                    (retire_opcode_vec[decode_tile_id] == 8'h2d ||
-                     retire_opcode_vec[decode_tile_id] == 8'h57 ||
-                     retire_opcode_vec[decode_tile_id] == 8'h6c) ?
-                        5'd1 : retire_raw_result_reg_vec[decode_tile_id];
+                    dut.retire_submit_record_vec[decode_tile_id].result_reg[4:0];
                 retire_operand_imm_vec[decode_tile_id] = flat_operand_imm(
                     retire_opcode_vec[decode_tile_id],
                     retire_instr_vec[decode_tile_id],
@@ -315,8 +313,9 @@ module lnp64_top_program_tb #(
                     dut.retire_submit_record_vec[trace_tile].operand_rs2,
                     dut.retire_submit_record_vec[trace_tile].operand_rs3,
                     dut.retire_submit_record_vec[trace_tile].operand_imm,
-                    retire_result_valid_vec[trace_tile],
-                    retire_result_valid_vec[trace_tile] ? retire_result_reg_vec[trace_tile] : 5'd0,
+                    dut.retire_submit_record_vec[trace_tile].result_valid,
+                    dut.retire_submit_record_vec[trace_tile].result_valid ?
+                        dut.retire_submit_record_vec[trace_tile].result_reg : 8'd0,
                     retire_result_value_vec[trace_tile],
                     retire_errno_vec[trace_tile],
                     retire_errno_vec[trace_tile] == LNP64_ERR_OK ? 16'd0 : 16'd1,

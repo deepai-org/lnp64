@@ -599,6 +599,8 @@ package lnp64_pkg;
         logic [7:0]  operand_rs2;
         logic [7:0]  operand_rs3;
         logic [31:0] operand_imm;
+        logic        result_valid;
+        logic [7:0]  result_reg;
         logic [15:0] latency_class;
         logic [63:0] wait_source;
         logic [31:0] event_id;

@@ -447,6 +447,8 @@ REQUIRED_RECORD_FIELDS = {
         "operand_rs2",
         "operand_rs3",
         "operand_imm",
+        "result_valid",
+        "result_reg",
         "latency_class",
         "wait_source",
         "event_id",
