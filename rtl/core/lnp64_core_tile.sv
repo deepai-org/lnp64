@@ -3,7 +3,8 @@
 import lnp64_pkg::*;
 
 module lnp64_core_tile #(
-    parameter int TILE_ID = 0
+    parameter int TILE_ID = 0,
+    parameter int PROGRAM_WORDS = 64
 ) (
     input  logic clk,
     input  logic reset_n,
@@ -75,36 +76,101 @@ module lnp64_core_tile #(
     logic [31:0] next_op_id;
     logic [63:0] gpr [0:31];
     logic [63:0] sram [0:15];
+    logic [31:0] program_rom [0:PROGRAM_WORDS-1];
     logic [15:0] errno_reg;
     logic pending_unsupported;
     logic [31:0] command_pc;
+    logic [63:0] mem_addr;
     lnp64_retire_submit_t retire_submit_next;
     lnp64_thread_sched_t thread_submit_next;
 
     lnp64_decode decode_i(.instr(instr), .dec(dec));
 
-    function automatic logic [31:0] rom(input logic [31:0] index);
-        case (index)
-            32'd0:  rom = {LNP64_OP_NOP[7:0],        8'd0, 8'd0, 8'd0};
-            32'd1:  rom = {LNP64_OP_LI32[7:0],       8'd1, 8'd0, 8'd7};
-            32'd2:  rom = {LNP64_OP_LI32[7:0],       8'd2, 8'd0, 8'd5};
-            32'd3:  rom = {LNP64_OP_ADD[7:0],        8'd3, 8'd1, 8'd2};
-            32'd4:  rom = {LNP64_OP_ST[7:0],         8'd0, 8'd3, 8'd0};
-            32'd5:  rom = {LNP64_OP_LD[7:0],         8'd4, 8'd0, 8'd0};
-            32'd6:  rom = {LNP64_OP_JMP[7:0],        8'd0, 8'd0, 8'd1};
-            32'd7:  rom = {LNP64_OP_LI32[7:0],       8'd5, 8'd0, 8'd99};
-            32'd8:  rom = {LNP64_OP_YIELD[7:0],      8'd0, 8'd0, 8'd0};
-            32'd9:  rom = {LNP64_OP_ENV_GET[7:0],    8'd6, 8'd0, 8'd0};
-            32'd10: rom = {LNP64_OP_SET_ERRNO[7:0],  8'd0, 8'd0, 8'd13};
-            32'd11: rom = {LNP64_OP_GET_ERRNO[7:0],  8'd7, 8'd0, 8'd0};
-            32'd12: rom = {LNP64_OP_OBJECT_CTL[7:0], 8'd8, 8'd0, 8'd0};
-            32'd13: rom = {LNP64_OP_UNSUPPORTED[7:0],8'd9, 8'd0, 8'd0};
-            default: rom = {LNP64_OP_NOP[7:0],       8'd0, 8'd0, 8'd0};
-        endcase
+    function automatic logic [31:0] enc_ri(
+        input logic [7:0] opcode,
+        input logic [4:0] rd,
+        input logic signed [15:0] imm
+    );
+        enc_ri = {opcode, rd, 3'd0, imm[15:0]};
     endfunction
 
+    function automatic logic [31:0] enc_rrr(
+        input logic [7:0] opcode,
+        input logic [4:0] rd,
+        input logic [4:0] rs1,
+        input logic [4:0] rs2
+    );
+        enc_rrr = {opcode, rd, rs1, rs2, 9'd0};
+    endfunction
+
+    function automatic logic [31:0] enc_rrrr(
+        input logic [7:0] opcode,
+        input logic [4:0] rd,
+        input logic [4:0] rs1,
+        input logic [4:0] rs2,
+        input logic [4:0] rs3
+    );
+        enc_rrrr = {opcode, rd, rs1, rs2, rs3, 4'd0};
+    endfunction
+
+    function automatic logic [31:0] enc_mem(
+        input logic [7:0] opcode,
+        input logic [4:0] reg_a,
+        input logic [4:0] base,
+        input logic signed [13:0] imm
+    );
+        enc_mem = {opcode, reg_a, base, imm[13:0]};
+    endfunction
+
+    function automatic logic [31:0] enc_reg(
+        input logic [7:0] opcode,
+        input logic [4:0] reg_a
+    );
+        enc_reg = {opcode, reg_a, 19'd0};
+    endfunction
+
+    function automatic logic [31:0] enc_branch(
+        input logic [7:0] opcode,
+        input logic signed [23:0] delta_words
+    );
+        enc_branch = {opcode, delta_words[23:0]};
+    endfunction
+
+    string program_hex_path;
+    integer rom_i;
+    initial begin
+        for (rom_i = 0; rom_i < PROGRAM_WORDS; rom_i = rom_i + 1) begin
+            program_rom[rom_i] = enc_reg(8'h00, 5'd0);
+        end
+        program_rom[0]  = enc_reg(8'h00, 5'd0);
+        program_rom[1]  = enc_ri(8'h01, 5'd1, 16'sd7);
+        program_rom[2]  = enc_ri(8'h01, 5'd2, 16'sd5);
+        program_rom[3]  = enc_rrr(8'h10, 5'd3, 5'd1, 5'd2);
+        program_rom[4]  = enc_mem(8'h33, 5'd3, 5'd0, 14'sd0);
+        program_rom[5]  = enc_mem(8'h30, 5'd4, 5'd0, 14'sd0);
+        program_rom[6]  = enc_branch(8'h20, 24'sd2);
+        program_rom[7]  = enc_ri(8'h01, 5'd5, 16'sd99);
+        program_rom[8]  = enc_reg(8'h06, 5'd0);
+        program_rom[9]  = enc_rrrr(8'h56, 5'd6, 5'd0, 5'd0, 5'd0);
+        program_rom[10] = enc_ri(8'h01, 5'd9, 16'sd13);
+        program_rom[11] = enc_reg(8'h39, 5'd9);
+        program_rom[12] = enc_reg(8'h38, 5'd7);
+        program_rom[13] = enc_rrr(8'h4b, 5'd8, 5'd0, 5'd0);
+        program_rom[14] = enc_reg(8'hff, 5'd9);
+`ifndef SYNTHESIS
+        if ($value$plusargs("lnp64_program_hex=%s", program_hex_path)) begin
+            $readmemh(program_hex_path, program_rom);
+        end
+`endif
+    end
+
     always_comb begin
-        instr = rom(pc);
+        if (pc < PROGRAM_WORDS[31:0]) begin
+            instr = program_rom[pc];
+        end else begin
+            instr = enc_reg(8'hff, 5'd0);
+        end
+        mem_addr = gpr[dec.rs1] + {{32{dec.imm[31]}}, dec.imm};
     end
 
     always_comb begin
@@ -257,21 +323,21 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_JMP: begin
-                                pc <= pc + 32'd1 + dec.imm;
+                                pc <= pc + dec.imm;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_LD: begin
-                                gpr[dec.rd] <= sram[dec.imm[3:0]];
-                                ld_value_seen <= sram[dec.imm[3:0]];
+                                gpr[dec.rd] <= sram[mem_addr[6:3]];
+                                ld_value_seen <= sram[mem_addr[6:3]];
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_ST: begin
-                                sram[dec.imm[3:0]] <= gpr[dec.rs1];
+                                sram[mem_addr[6:3]] <= gpr[dec.rd];
                                 dcache_writeback <= 1'b1;
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
@@ -294,7 +360,14 @@ module lnp64_core_tile #(
                                 end
                             end
                             LNP64_OP_ENV_GET: begin
-                                gpr[dec.rd] <= LNP64_S0_FEATURES;
+                                case (gpr[dec.rs1])
+                                    64'd0: gpr[dec.rd] <= LNP64_S0_FEATURES;
+                                    64'd2: gpr[dec.rd] <= 64'd4096;
+                                    64'd5: gpr[dec.rd] <= LNP64_S0_FEATURES;
+                                    64'd30: gpr[dec.rd] <= 64'd1;
+                                    64'd53: gpr[dec.rd] <= {32'd0, topology_active_window_count};
+                                    default: gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                endcase
                                 env_features_seen <= LNP64_S0_FEATURES;
                                 env_tile_count_seen <= topology_tile_count;
                                 env_enabled_tile_mask_seen <= topology_enabled_tile_mask;
@@ -308,7 +381,7 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_SET_ERRNO: begin
-                                errno_reg <= dec.imm[15:0];
+                                errno_reg <= gpr[dec.rd][15:0];
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
@@ -320,6 +393,16 @@ module lnp64_core_tile #(
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_EXIT: begin
+                                done <= 1'b1;
+                                pid1_runnable <= 1'b0;
+                                pid1_parked <= 1'b0;
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                                state <= CORE_DONE;
                             end
                             LNP64_OP_OBJECT_CTL: begin
                                 pending_unsupported <= 1'b0;
@@ -365,7 +448,7 @@ module lnp64_core_tile #(
                         retire_submit_record <= retire_submit_next;
                         pc <= command_pc + 32'd1;
                         next_op_id <= next_op_id + 32'd1;
-                        if (command_pc == 32'd13) begin
+                        if (pending_unsupported) begin
                             done <= 1'b1;
                             pid1_runnable <= 1'b0;
                             pid1_parked <= 1'b0;

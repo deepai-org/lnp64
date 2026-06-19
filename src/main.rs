@@ -20,7 +20,10 @@ use std::path::PathBuf;
 
 use asm::Program;
 use emulator::{Machine, PreparedExecVma};
-use loader::{ExecPlanDescriptorOptions, ExecutableProvenance, LoaderOptions, VmaProtection};
+use loader::{
+    ExecEntry, ExecPlan, ExecPlanDescriptorOptions, ExecutableProvenance, LoaderOptions,
+    MemoryType, VmaProtection, VmaRecord,
+};
 
 fn main() {
     if let Err(err) = run() {
@@ -158,6 +161,27 @@ fn run() -> Result<(), String> {
                 ))
             }
         }
+        "run-flat-exec" => {
+            let input = take_input(&mut args)?;
+            if !args.is_empty() {
+                return Err(format!(
+                    "unexpected run-flat-exec arguments: {}",
+                    args.join(" ")
+                ));
+            }
+            let text = fs::read_to_string(&input)
+                .map_err(|err| format!("failed to read {}: {err}", input.display()))?;
+            let mut machine = build_flat_exec_machine(&text)?;
+            let exit = machine.run_committed_exec()?;
+            let regs = machine.last_exit_registers().ok_or_else(|| {
+                "flat exec finished without an exit register snapshot".to_string()
+            })?;
+            let r3 = regs.get(3).copied().unwrap_or_default();
+            let r4 = regs.get(4).copied().unwrap_or_default();
+            let mem0 = machine.last_exit_mem0().unwrap_or_default();
+            println!("EMULATOR_FINAL {{\"exit\":{exit},\"r3\":{r3},\"r4\":{r4},\"mem0\":{mem0}}}");
+            Ok(())
+        }
         "help" | "--help" | "-h" => {
             usage();
             Ok(())
@@ -172,9 +196,123 @@ fn usage() {
     eprintln!("  lnp64 run [--namespace-root <dir>] <program.s>");
     eprintln!("  lnp64 elf-plan [--load-bias <n>] <program.elf>");
     eprintln!("  lnp64 run-elf [--load-bias <n>] <program.elf>");
+    eprintln!("  lnp64 run-flat-exec <program.hex>");
     eprintln!(
         "  lnp64 cc [--dump-macros|--dump-preprocessed] <program.c> [more.c ...] [-o program.s]"
     );
+}
+
+fn build_flat_exec_machine(hex_words: &str) -> Result<Machine, String> {
+    const DATA_BASE: u64 = 0;
+    const TEXT_BASE: u64 = 0x1000;
+    const PAGE_SIZE: usize = 4096;
+    const PROT_READ: u64 = 1 << 0;
+    const PROT_WRITE: u64 = 1 << 1;
+    const PROT_EXECUTE: u64 = 1 << 2;
+
+    let text = flat_hex_words_to_bytes(hex_words)?;
+    if text.len() > PAGE_SIZE {
+        return Err(format!(
+            "flat exec image is too large: {} bytes > {PAGE_SIZE}",
+            text.len()
+        ));
+    }
+    let mut text_page = vec![0u8; PAGE_SIZE];
+    text_page[..text.len()].copy_from_slice(&text);
+    let data_page = vec![0u8; PAGE_SIZE];
+
+    let plan = ExecPlan {
+        version: 1,
+        entry: ExecEntry {
+            entry_pc: TEXT_BASE,
+            initial_sp: 0,
+            tls_base: 0,
+            startup_metadata_ptr: 0,
+        },
+        vmas: vec![
+            VmaRecord {
+                virtual_address: DATA_BASE,
+                length: PAGE_SIZE as u64,
+                protection: VmaProtection {
+                    read: true,
+                    write: true,
+                    execute: false,
+                },
+                memory_type: MemoryType::Image,
+                executable_provenance: ExecutableProvenance::NonExecutable,
+                source_offset: 0,
+                source_length: 0,
+                zero_fill_length: PAGE_SIZE as u64,
+                mapping_flags: 0,
+            },
+            VmaRecord {
+                virtual_address: TEXT_BASE,
+                length: PAGE_SIZE as u64,
+                protection: VmaProtection {
+                    read: true,
+                    write: false,
+                    execute: true,
+                },
+                memory_type: MemoryType::Image,
+                executable_provenance: ExecutableProvenance::ImageText,
+                source_offset: 0,
+                source_length: text.len() as u64,
+                zero_fill_length: (PAGE_SIZE - text.len()) as u64,
+                mapping_flags: 0,
+            },
+        ],
+        phdr: None,
+        tls: None,
+        startup: None,
+        fdr_grants: Vec::new(),
+    };
+    let descriptor = loader::build_exec_descriptor(
+        &plan,
+        ExecPlanDescriptorOptions {
+            image_source_cap: 1,
+            image_source_generation: 1,
+            image_lineage_epoch: 1,
+            ..ExecPlanDescriptorOptions::default()
+        },
+    )?;
+    let descriptor_words = loader::encode_exec_descriptor(&descriptor);
+    Machine::validate_exec_descriptor_words(&descriptor_words)?;
+    let prepared = vec![
+        PreparedExecVma {
+            virtual_address: DATA_BASE,
+            protection: PROT_READ | PROT_WRITE,
+            bytes: data_page,
+        },
+        PreparedExecVma {
+            virtual_address: TEXT_BASE,
+            protection: PROT_READ | PROT_EXECUTE,
+            bytes: text_page,
+        },
+    ];
+    let mut machine = Machine::new(Program::parse(".text\n  NOP\n")?);
+    machine.commit_exec_descriptor_memory_image(&descriptor_words, &prepared)?;
+    Ok(machine)
+}
+
+fn flat_hex_words_to_bytes(hex_words: &str) -> Result<Vec<u8>, String> {
+    let mut bytes = Vec::new();
+    for (idx, raw_line) in hex_words.lines().enumerate() {
+        let line = raw_line.split('#').next().unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+        let word_text = line
+            .strip_prefix("0x")
+            .or_else(|| line.strip_prefix("0X"))
+            .unwrap_or(line);
+        let word = u32::from_str_radix(word_text, 16)
+            .map_err(|err| format!("invalid hex word on line {}: {err}", idx + 1))?;
+        bytes.extend_from_slice(&word.to_le_bytes());
+    }
+    if bytes.is_empty() {
+        return Err("flat exec image is empty".to_string());
+    }
+    Ok(bytes)
 }
 
 struct ElfExecProbe {

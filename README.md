@@ -250,6 +250,7 @@ Focused RTL/proof loop:
 
 ```sh
 bash scripts/run_rtl_s0.sh
+bash scripts/run_rtl_top_program_smoke.sh
 bash scripts/run_rtl_m1.sh
 scripts/run_rtl_m1_refinement_gate.sh
 scripts/check_rtl_shared_schema.py

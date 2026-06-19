@@ -129,6 +129,21 @@ REQUIRED_S0_ROM_OPCODES = [
     "LNP64_OP_UNSUPPORTED",
 ]
 
+REQUIRED_S0_PROGRAM_ENCODINGS = {
+    "LNP64_OP_NOP": r"enc_reg\s*\(\s*8'h00\b",
+    "LNP64_OP_LI32": r"enc_ri\s*\(\s*8'h01\b",
+    "LNP64_OP_ADD": r"enc_rrr\s*\(\s*8'h10\b",
+    "LNP64_OP_JMP": r"enc_branch\s*\(\s*8'h20\b",
+    "LNP64_OP_LD": r"enc_mem\s*\(\s*8'h30\b",
+    "LNP64_OP_ST": r"enc_mem\s*\(\s*8'h33\b",
+    "LNP64_OP_YIELD": r"enc_reg\s*\(\s*8'h06\b",
+    "LNP64_OP_ENV_GET": r"enc_rrrr\s*\(\s*8'h56\b",
+    "LNP64_OP_GET_ERRNO": r"enc_reg\s*\(\s*8'h38\b",
+    "LNP64_OP_SET_ERRNO": r"enc_reg\s*\(\s*8'h39\b",
+    "LNP64_OP_OBJECT_CTL": r"enc_rrr\s*\(\s*8'h4b\b",
+    "LNP64_OP_UNSUPPORTED": r"enc_reg\s*\(\s*8'hff\b",
+}
+
 REQUIRED_S0_DECODE_SUPPORTED_OPCODES = [
     opcode for opcode in REQUIRED_S0_OPCODES if opcode != "LNP64_OP_UNSUPPORTED"
 ]
@@ -611,6 +626,8 @@ def main() -> None:
     sources = read_filelist()
     source_text = "\n".join(path.read_text() for path in sources)
     s0_gate_text = S0_GATE.read_text()
+    verilator_common = ROOT / "scripts/rtl_verilator_common.sh"
+    verilator_common_text = verilator_common.read_text() if verilator_common.exists() else ""
 
     defined_modules = set(re.findall(r"(?m)^\s*module\s+(\w+)\b", source_text))
     required_instantiated_modules = REQUIRED_MODULES + REQUIRED_B0_SHELL_MODULES
@@ -660,8 +677,17 @@ def main() -> None:
             fail(f"S0 decode does not mark opcode supported: {opcode}")
 
     for opcode in REQUIRED_S0_ROM_OPCODES:
-        if not re.search(rf"\brom\s*=\s*\{{\s*{opcode}\[7:0\]", source_text):
+        legacy_opcode_literal = rf"\brom\s*=\s*\{{\s*{opcode}\[7:0\]"
+        committed_exec_encoding = REQUIRED_S0_PROGRAM_ENCODINGS[opcode]
+        if not (
+            re.search(legacy_opcode_literal, source_text)
+            or re.search(committed_exec_encoding, source_text)
+        ):
             fail(f"S0 ROM does not exercise opcode: {opcode}")
+
+    for required in ("lnp64_program_hex", "$readmemh", "program_rom"):
+        if required not in source_text:
+            fail(f"S0 program image path missing {required}")
 
     s0_features_match = re.search(
         r"localparam\s+logic\s+\[63:0\]\s+LNP64_S0_FEATURES\s*=\s*(?P<body>.*?);",
@@ -718,8 +744,14 @@ def main() -> None:
         if marker not in source_text:
             fail(f"S0 acceptance testbench is missing marker: {marker}")
 
+    if (
+        verilator_common.exists()
+        and "verilator --lint-only" not in s0_gate_text
+        and "verilator --lint-only" not in verilator_common_text
+    ):
+        fail("S0 gate script is missing marker: verilator --lint-only")
+
     for marker in (
-        "verilator --lint-only",
         "verilator --binary",
         "--top-module lnp64_s0_tb",
         "tests/rtl/s0_filelist.f",

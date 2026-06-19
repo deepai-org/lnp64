@@ -1152,6 +1152,8 @@ pub struct Machine {
     advisory_locks: HashMap<FileLockKey, AdvisoryLock>,
     random_state: u64,
     last_exit: i32,
+    last_exit_regs: Option<[u64; GPR_COUNT]>,
+    last_exit_mem0: Option<u64>,
     committed_exec_mode: bool,
 }
 
@@ -1285,6 +1287,8 @@ impl Machine {
             advisory_locks: HashMap::new(),
             random_state: 0x4d59_5df4_d0f3_3173,
             last_exit: 0,
+            last_exit_regs: None,
+            last_exit_mem0: None,
             committed_exec_mode: false,
         }
     }
@@ -1434,6 +1438,14 @@ impl Machine {
             })?;
         }
         Ok(self.last_exit)
+    }
+
+    pub fn last_exit_registers(&self) -> Option<Vec<u64>> {
+        self.last_exit_regs.map(|regs| regs.to_vec())
+    }
+
+    pub fn last_exit_mem0(&self) -> Option<u64> {
+        self.last_exit_mem0
     }
 
     fn install_committed_exec_runtime_vmas(&mut self) -> Result<(), String> {
@@ -8643,6 +8655,13 @@ impl Machine {
         let tid = self.current_tid;
         let pid = self.thread()?.pid;
         let parent_pid = self.process()?.parent_pid;
+        self.last_exit_regs = self.threads.get(&tid).map(|thread| thread.regs);
+        self.last_exit_mem0 = self.processes.get(&pid).and_then(|process| {
+            process
+                .memory
+                .get(0..8)
+                .and_then(|bytes| bytes.try_into().ok().map(u64::from_le_bytes))
+        });
         self.threads.remove(&tid);
         if !self.detached_threads.remove(&tid) {
             self.completed_threads.insert(tid, code as u64);
