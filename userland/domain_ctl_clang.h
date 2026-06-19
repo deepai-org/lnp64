@@ -1,7 +1,7 @@
 #ifndef LNP64_USERLAND_DOMAIN_CTL_CLANG_H
 #define LNP64_USERLAND_DOMAIN_CTL_CLANG_H
 
-#include "lnp64_intrinsics.h"
+#include <lnp64/intrinsics.h>
 
 #define LNP64_DOMAIN_RECORD_QWORDS 25UL
 #define LNP64_DOMAIN_QUERY_BYTES 200UL

@@ -1398,10 +1398,13 @@ mod tests {
         let gate_trace_test_clang = include_str!("../userland/gate_trace_test_clang.c");
         let fd_passing_test_clang = include_str!("../userland/fd_passing_test_clang.c");
         let classifier_test_clang = include_str!("../userland/classifier_test_clang.c");
+        let domain_ctl_clang = include_str!("../userland/domain_ctl_clang.h");
         let netbsd_init_clang = include_str!("../userland/netbsd_init_clang.c");
         let netbsd_personality_clang = include_str!("../userland/netbsd_personality_clang_smoke.c");
         let netbsd_sh_clang = include_str!("../userland/netbsd_sh_clang.c");
         let poll_test_clang = include_str!("../userland/poll_test_clang.c");
+        let signal_gate_test_clang = include_str!("../userland/signal_gate_test_clang.c");
+        let signal_fault_test_clang = include_str!("../userland/signal_fault_test_clang.c");
         let socket_loopback_test_clang = include_str!("../userland/socket_loopback_test_clang.c");
         let timer_test_clang = include_str!("../userland/timer_test_clang.c");
         let lnp64_isel_lowering = include_str!("../llvm/lib/Target/LNP64/LNP64ISelLowering.cpp");
@@ -2493,6 +2496,7 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang socket libc object smoke passed"));
         assert!(real_llc.contains("userland/netbsd_personality_clang_smoke.c"));
         assert!(real_llc.contains("netbsd-personality-clang-smoke.o"));
+        assert!(netbsd_personality_clang.contains("#include <lnp64/intrinsics.h>"));
         assert!(netbsd_personality_clang.contains("#include <poll.h>"));
         assert!(netbsd_personality_clang.contains("#include <sys/mman.h>"));
         assert!(netbsd_personality_clang.contains("#include <sys/socket.h>"));
@@ -2830,6 +2834,7 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang NetBSD thread child object passed"));
         assert!(real_llc.contains("userland/poll_test_clang.c"));
         assert!(real_llc.contains("netbsd-poll-test-clang-smoke.o"));
+        assert!(poll_test_clang.contains("#include <lnp64/intrinsics.h>"));
         assert!(poll_test_clang.contains("#include <poll.h>"));
         assert!(poll_test_clang.contains("#include <sys/epoll.h>"));
         assert!(poll_test_clang.contains("#include <sys/select.h>"));
@@ -2837,16 +2842,19 @@ mod tests {
         assert!(!poll_test_clang.contains("int poll(struct pollfd"));
         assert!(real_llc.contains("real LLVM LNP64 clang NetBSD poll child object passed"));
         assert!(real_llc.contains("userland/signal_gate_test_clang.c"));
+        assert!(signal_gate_test_clang.contains("#include <lnp64/intrinsics.h>"));
         assert!(real_llc.contains("netbsd-signal-gate-test-clang-smoke.o"));
         assert!(real_llc.contains(r#"grep -q 'yield' "$netbsd_signal_gate_test_dump""#));
         assert!(real_llc.contains("real LLVM LNP64 clang NetBSD signal gate child object passed"));
         assert!(real_llc.contains("userland/signal_fault_test_clang.c"));
+        assert!(signal_fault_test_clang.contains("#include <lnp64/intrinsics.h>"));
         assert!(real_llc.contains("netbsd-signal-fault-test-clang-smoke.o"));
         assert!(real_llc.contains(r#"grep -q 'div r' "$netbsd_signal_fault_test_dump""#));
         assert!(real_llc.contains(r#"grep -q 'sigret' "$netbsd_signal_fault_test_dump""#));
         assert!(real_llc.contains("real LLVM LNP64 clang NetBSD signal fault child object passed"));
         assert!(real_llc.contains("userland/timer_test_clang.c"));
         assert!(real_llc.contains("netbsd-timer-test-clang-smoke.o"));
+        assert!(timer_test_clang.contains("#include <lnp64/intrinsics.h>"));
         assert!(timer_test_clang.contains("#include <poll.h>"));
         assert!(!timer_test_clang.contains("typedef unsigned long nfds_t"));
         assert!(!timer_test_clang.contains("int poll(struct pollfd"));
@@ -3110,6 +3118,7 @@ mod tests {
         assert!(real_llc.contains(r#""$netbsd_gate_trace_test_obj" \"#));
         assert!(real_llc.contains("real LLVM LNP64 lld NetBSD gate trace child link passed"));
         assert!(real_llc.contains("userland/domain_nested_test_clang.c"));
+        assert!(domain_ctl_clang.contains("#include <lnp64/intrinsics.h>"));
         assert!(real_llc.contains("netbsd-domain-nested-test-clang-smoke.o"));
         assert!(
             real_llc.contains("real LLVM LNP64 clang NetBSD domain nested child object passed")
