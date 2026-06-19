@@ -2052,6 +2052,8 @@ mod tests {
         assert!(libc_time_min.contains("__lnp_push"));
         assert!(libc_time_min.contains("__lnp_yield"));
         assert!(time_header.contains("struct itimerspec"));
+        assert!(time_header.contains("#include <stddef.h>"));
+        assert!(time_header.contains("size_t strftime(char *s, size_t max"));
         assert!(sys_timerfd_header.contains("int timerfd_create(int clockid, int flags);"));
         assert!(sys_timerfd_header.contains("int timerfd_settime("));
         assert!(sys_timerfd_header.contains("int timerfd_gettime("));

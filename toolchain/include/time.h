@@ -1,6 +1,8 @@
 #ifndef LNP64_TIME_H
 #define LNP64_TIME_H
 
+#include <stddef.h>
+
 typedef long time_t;
 
 struct timespec {
@@ -38,7 +40,6 @@ int clock_gettime(int clockid, struct timespec *tp);
 struct tm *localtime(const time_t *timer);
 time_t mktime(struct tm *tm);
 char *strptime(const char *s, const char *format, struct tm *tm);
-unsigned long strftime(char *s, unsigned long max, const char *format,
-                       const struct tm *tm);
+size_t strftime(char *s, size_t max, const char *format, const struct tm *tm);
 
 #endif
