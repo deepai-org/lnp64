@@ -1753,6 +1753,8 @@ impl Machine {
                 7 => Ok(Pcr::Sigpending),
                 8 => Ok(Pcr::RealtimeSec),
                 9 => Ok(Pcr::RealtimeNsec),
+                10 => Ok(Pcr::CredProfile),
+                11 => Ok(Pcr::CredHandle),
                 other => Err(format!(
                     "unsupported committed exec PCR selector {other} at 0x{pc:x}"
                 )),
@@ -9066,6 +9068,7 @@ impl Machine {
                 let now = Self::system_time_to_host_timespec(SystemTime::now());
                 now.tv_nsec as u64
             }
+            Pcr::CredProfile | Pcr::CredHandle => 0,
         })
     }
 
@@ -9077,7 +9080,9 @@ impl Machine {
             | Pcr::Tid
             | Pcr::Sigpending
             | Pcr::RealtimeSec
-            | Pcr::RealtimeNsec => Err(1),
+            | Pcr::RealtimeNsec
+            | Pcr::CredProfile
+            | Pcr::CredHandle => Err(1),
             Pcr::Tp => {
                 self.thread_mut().map_err(|_| 22_u64)?.thread_pointer = value;
                 Ok(())
@@ -15552,6 +15557,19 @@ mod tests {
               GET_PCR r1, PID
               LI r2, 1
               CMP r1, r2
+              BNE bad
+              LI r29, -1
+              GET_PCR r20, CRED_PROFILE
+              CMP r20, r0
+              BNE bad
+              GET_PCR r20, CRED_HANDLE
+              CMP r20, r0
+              BNE bad
+              SET_PCR r21, CRED_PROFILE, r2
+              CMP r21, r29
+              BNE bad
+              SET_PCR r22, CRED_HANDLE, r2
+              CMP r22, r29
               BNE bad
 
               LI r3, 16

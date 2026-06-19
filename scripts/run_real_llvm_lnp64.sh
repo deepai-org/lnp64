@@ -266,6 +266,8 @@ ASM
 _start:
   get_pcr r1, PID
   set_pcr r3, SIGMASK, r2
+  get_pcr r4, CRED_PROFILE
+  set_pcr r5, CRED_HANDLE, r2
   ret
 ASM
   get_pcr_mc_obj="$build_dir/get-pcr-mc-smoke.o"
@@ -277,6 +279,8 @@ ASM
     >"$get_pcr_mc_dump"
   grep -q 'get_pcr r1, PID' "$get_pcr_mc_dump"
   grep -q 'set_pcr r3, SIGMASK, r2' "$get_pcr_mc_dump"
+  grep -q 'get_pcr r4, CRED_PROFILE' "$get_pcr_mc_dump"
+  grep -q 'set_pcr r5, CRED_HANDLE, r2' "$get_pcr_mc_dump"
   printf 'real LLVM LNP64 llvm-mc GET_PCR opcode smoke passed: %s\n' \
     "$get_pcr_mc_obj"
 
@@ -4310,6 +4314,8 @@ cat >"$get_pcr_asm" <<'ASM'
 _start:
   get_pcr r1, PID
   set_pcr r3, SIGMASK, r2
+  get_pcr r4, CRED_PROFILE
+  set_pcr r5, CRED_HANDLE, r2
   ret
 ASM
 get_pcr_mc_obj="$build_dir/get-pcr-mc-smoke.o"
@@ -4321,6 +4327,8 @@ get_pcr_mc_dump="$build_dir/get-pcr-mc-smoke.dump"
   >"$get_pcr_mc_dump"
 grep -q 'get_pcr r1, PID' "$get_pcr_mc_dump"
 grep -q 'set_pcr r3, SIGMASK, r2' "$get_pcr_mc_dump"
+grep -q 'get_pcr r4, CRED_PROFILE' "$get_pcr_mc_dump"
+grep -q 'set_pcr r5, CRED_HANDLE, r2' "$get_pcr_mc_dump"
 printf 'real LLVM LNP64 llvm-mc GET_PCR opcode smoke passed: %s\n' \
   "$get_pcr_mc_obj"
 

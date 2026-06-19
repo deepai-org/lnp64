@@ -21,6 +21,13 @@
   CMP r24, r29
   BNE bad
 
+  SET_PCR r25, CRED_PROFILE, r20
+  CMP r25, r29
+  BNE bad
+  SET_PCR r26, CRED_HANDLE, r20
+  CMP r26, r29
+  BNE bad
+
 done:
   EXIT r0
 

@@ -35,6 +35,8 @@ pub enum Pcr {
     Sigpending,
     RealtimeSec,
     RealtimeNsec,
+    CredProfile,
+    CredHandle,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -340,6 +342,8 @@ pub fn parse_pcr(text: &str) -> Result<Pcr, String> {
         "SIGPENDING" => Ok(Pcr::Sigpending),
         "REALTIME_SEC" => Ok(Pcr::RealtimeSec),
         "REALTIME_NSEC" => Ok(Pcr::RealtimeNsec),
+        "CRED_PROFILE" => Ok(Pcr::CredProfile),
+        "CRED_HANDLE" => Ok(Pcr::CredHandle),
         _ => Err(format!("unknown PCR {text:?}")),
     }
 }

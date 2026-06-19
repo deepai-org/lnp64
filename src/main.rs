@@ -721,6 +721,8 @@ fn pcr_selector(pcr: Pcr) -> Result<usize, String> {
         Pcr::Sigpending => Ok(7),
         Pcr::RealtimeSec => Ok(8),
         Pcr::RealtimeNsec => Ok(9),
+        Pcr::CredProfile => Ok(10),
+        Pcr::CredHandle => Ok(11),
     }
 }
 

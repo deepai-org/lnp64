@@ -200,6 +200,8 @@ private:
             .Case("SIGPENDING", LNP64::SIGPENDING)
             .Case("REALTIME_SEC", LNP64::REALTIME_SEC)
             .Case("REALTIME_NSEC", LNP64::REALTIME_NSEC)
+            .Case("CRED_PROFILE", LNP64::CRED_PROFILE)
+            .Case("CRED_HANDLE", LNP64::CRED_HANDLE)
             .Default(0);
     if (PcrNo) {
       RegNo = PcrNo;
@@ -298,6 +300,8 @@ private:
     case LNP64::SIGPENDING:
     case LNP64::REALTIME_SEC:
     case LNP64::REALTIME_NSEC:
+    case LNP64::CRED_PROFILE:
+    case LNP64::CRED_HANDLE:
       return true;
     default:
       return false;

@@ -35,6 +35,8 @@ def SIGMASK : LNP64PCR<6, "SIGMASK">;
 def SIGPENDING : LNP64PCR<7, "SIGPENDING">;
 def REALTIME_SEC : LNP64PCR<8, "REALTIME_SEC">;
 def REALTIME_NSEC : LNP64PCR<9, "REALTIME_NSEC">;
+def CRED_PROFILE : LNP64PCR<10, "CRED_PROFILE">;
+def CRED_HANDLE : LNP64PCR<11, "CRED_HANDLE">;
 
 def LR : LNP64Reg<0x100, "LR">;
 def FLAGS : LNP64Reg<0x101, "FLAGS">;
@@ -55,6 +57,6 @@ def FPR : RegisterClass<"LNP64", [f64], 64, (sequence "F%u", 0, 31)>;
 def VR : RegisterClass<"LNP64", [v2i64], 128, (sequence "V%u", 0, 15)>;
 def PCR : RegisterClass<"LNP64", [i64], 64,
   (add PID, PPID, TID, TP, UID, GID, SIGMASK, SIGPENDING,
-       REALTIME_SEC, REALTIME_NSEC)>;
+       REALTIME_SEC, REALTIME_NSEC, CRED_PROFILE, CRED_HANDLE)>;
 
 def SPECIAL : RegisterClass<"LNP64", [i64], 64, (add LR, TP, FLAGS)>;

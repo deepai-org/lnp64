@@ -4,5 +4,5 @@ gpr|r0-r31|64|r1-r29|r0,r30,r31|integer_pointer_status_backend_scratch_r30|dwarf
 fdr|fd0-fd255|capability|fd0-fd255|none|authority_object_slots|not_address_unwind_registers
 fpr|f0-f31|implementation_defined|f0-f31|none|future_floating_point|dwarf_fpr_f0_f31
 vr|v0-v15|implementation_defined|v0-v15|none|future_vector|dwarf_vr_v0_v15
-pcr|PID,PPID,TID,TP,UID,GID,SIGMASK,SIGPENDING,REALTIME_SEC,REALTIME_NSEC|64_control|named_only|none|process_thread_metadata|named_pseudo_registers
+pcr|PID,PPID,TID,TP,UID,GID,SIGMASK,SIGPENDING,REALTIME_SEC,REALTIME_NSEC,CRED_PROFILE,CRED_HANDLE|64_control|named_only|none|process_thread_metadata|named_pseudo_registers
 special|LR,TP,FLAGS|64|LR,TP|FLAGS|return_address_thread_pointer_and_hidden_compare_flags|dwarf_special_lr_tp

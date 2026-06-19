@@ -331,6 +331,14 @@ void LNP64InstPrinter::printRegName(raw_ostream &OS, unsigned Reg) const {
     OS << "REALTIME_NSEC";
     return;
   }
+  if (Reg == LNP64::CRED_PROFILE) {
+    OS << "CRED_PROFILE";
+    return;
+  }
+  if (Reg == LNP64::CRED_HANDLE) {
+    OS << "CRED_HANDLE";
+    return;
+  }
   OS << MRI.getName(Reg);
 }
 

@@ -5989,7 +5989,20 @@ mod tests {
         assert_eq!(manifest_field(manifest, "fdr"), "fd0-fd255");
         assert_eq!(manifest_field(manifest, "fpr"), "f0-f31");
         assert_eq!(manifest_field(manifest, "vr"), "v0-v15");
-        for pcr in ["PID", "PPID", "TID", "TP", "SIGMASK", "SIGPENDING"] {
+        for pcr in [
+            "PID",
+            "PPID",
+            "TID",
+            "TP",
+            "UID",
+            "GID",
+            "SIGMASK",
+            "SIGPENDING",
+            "REALTIME_SEC",
+            "REALTIME_NSEC",
+            "CRED_PROFILE",
+            "CRED_HANDLE",
+        ] {
             assert!(manifest_csv_contains(manifest, "pcr", pcr), "missing {pcr}");
         }
         assert!(manifest_csv_contains(
@@ -7035,7 +7048,20 @@ mod tests {
         assert!(classes["special"].3.contains(&"FLAGS"));
         assert!(classes["special"].4.contains("hidden_compare_flags"));
 
-        for pcr in ["PID", "PPID", "TID", "TP", "SIGMASK", "SIGPENDING"] {
+        for pcr in [
+            "PID",
+            "PPID",
+            "TID",
+            "TP",
+            "UID",
+            "GID",
+            "SIGMASK",
+            "SIGPENDING",
+            "REALTIME_SEC",
+            "REALTIME_NSEC",
+            "CRED_PROFILE",
+            "CRED_HANDLE",
+        ] {
             assert!(
                 classes["pcr"].0.split(',').any(|value| value == pcr),
                 "missing PCR {pcr}"
@@ -7157,7 +7183,7 @@ mod tests {
             constraints["p"],
             (
                 "pcr",
-                "PID,PPID,TID,TP,UID,GID,SIGMASK,SIGPENDING,REALTIME_SEC,REALTIME_NSEC"
+                "PID,PPID,TID,TP,UID,GID,SIGMASK,SIGPENDING,REALTIME_SEC,REALTIME_NSEC,CRED_PROFILE,CRED_HANDLE"
             )
         );
         assert_eq!(constraints["m"], ("memory", "base_gpr_plus_signed_offset"));

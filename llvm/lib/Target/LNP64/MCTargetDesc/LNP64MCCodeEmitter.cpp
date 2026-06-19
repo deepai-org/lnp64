@@ -155,6 +155,10 @@ static unsigned getPCRNo(const MCOperand &Operand) {
     return 8;
   case LNP64::REALTIME_NSEC:
     return 9;
+  case LNP64::CRED_PROFILE:
+    return 10;
+  case LNP64::CRED_HANDLE:
+    return 11;
   default:
     llvm_unreachable("expected LNP64 PCR operand");
   }

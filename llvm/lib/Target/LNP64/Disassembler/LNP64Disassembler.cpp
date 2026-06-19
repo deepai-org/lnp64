@@ -37,6 +37,10 @@ static unsigned getPCR(unsigned Enc) {
     return LNP64::REALTIME_SEC;
   case 9:
     return LNP64::REALTIME_NSEC;
+  case 10:
+    return LNP64::CRED_PROFILE;
+  case 11:
+    return LNP64::CRED_HANDLE;
   default:
     return 0;
   }

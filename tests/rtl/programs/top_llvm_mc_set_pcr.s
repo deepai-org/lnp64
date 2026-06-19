@@ -22,4 +22,11 @@ _start:
   sub r4, r24, r29
   or r3, r3, r4
 
+  set_pcr r25, CRED_PROFILE, r20
+  sub r4, r25, r29
+  or r3, r3, r4
+  set_pcr r26, CRED_HANDLE, r20
+  sub r4, r26, r29
+  or r3, r3, r4
+
   exit r3

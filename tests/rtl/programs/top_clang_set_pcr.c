@@ -28,6 +28,18 @@ static unsigned long set_pid(unsigned long value) {
   return result;
 }
 
+static unsigned long set_cred_profile(unsigned long value) {
+  unsigned long result;
+  __asm__ volatile("set_pcr %0, CRED_PROFILE, %1" : "=r"(result) : "r"(value) : "memory");
+  return result;
+}
+
+static unsigned long set_cred_handle(unsigned long value) {
+  unsigned long result;
+  __asm__ volatile("set_pcr %0, CRED_HANDLE, %1" : "=r"(result) : "r"(value) : "memory");
+  return result;
+}
+
 int main(void) {
   unsigned long status = 0;
   unsigned long tp = 0x1234;
@@ -40,5 +52,7 @@ int main(void) {
   status |= get_sigmask() ^ mask;
 
   status |= set_pid(tp) ^ ~0ul;
+  status |= set_cred_profile(tp) ^ ~0ul;
+  status |= set_cred_handle(tp) ^ ~0ul;
   return (int)status;
 }
