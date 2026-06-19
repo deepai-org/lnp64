@@ -1,0 +1,72 @@
+.data
+object_arg: .zero 72
+cap_arg: .zero 32
+
+.text
+  LI r29, -1
+  LI r10, object_arg
+  LI r20, cap_arg
+
+create_pipe_queue:
+  LI r1, 1
+  ST [r10, 0], r1
+  LI r1, 2
+  ST [r10, 8], r1
+  LI r1, 1
+  ST [r10, 16], r1
+  LI r1, 3
+  ST [r10, 24], r1
+  LI r1, 4
+  ST [r10, 32], r1
+  ST [r10, 40], r0
+  OBJECT_CTL r11, r10
+  CMP r11, r0
+  BNE bad
+
+make_nontransferable_payload:
+  LI r1, 1
+  ST [r20, 0], r1
+  LI r1, 5
+  ST [r20, 8], r1
+  LI r1, 1
+  ST [r20, 16], r1
+  ST [r20, 24], r0
+  CAP_DUP r12, r20
+  CMP r12, r29
+  BEQ bad
+
+send_denied_without_transfer_right:
+  LI r1, 4
+  ST [r20, 0], r1
+  ST [r20, 8], r12
+  ST [r20, 16], r0
+  ST [r20, 24], r0
+  CAP_SEND r13, r20
+  CMP r13, r29
+  BNE bad
+  ERRNO_GET r14
+  LI r1, 1
+  CMP r14, r1
+  BNE bad
+
+queue_stayed_empty:
+  LI r1, 3
+  ST [r20, 0], r1
+  LI r1, 6
+  ST [r20, 8], r1
+  ST [r20, 16], r0
+  ST [r20, 24], r0
+  CAP_RECV r15, r20
+  CMP r15, r29
+  BNE bad
+  ERRNO_GET r16
+  LI r1, 11
+  CMP r16, r1
+  BNE bad
+
+done:
+  EXIT r0
+
+bad:
+  LI r1, 1
+  EXIT r1

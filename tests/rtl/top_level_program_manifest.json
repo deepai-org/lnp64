@@ -147,6 +147,14 @@
       "comparison": "retire_trace_and_final_state"
     },
     {
+      "source": "tests/rtl/programs/top_cap_send_denied_no_enqueue.s",
+      "generated_flat_hex": "tests/rtl/programs/top_cap_send_denied_no_enqueue.hex",
+      "required_features": ["core", "fdr", "object_ctl_queue_pipe", "cap_dup", "cap_send", "cap_recv", "current_authority_before_transfer", "failed_authority_operation_preserves_queue", "errno", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    },
+    {
       "source": "tests/rtl/programs/top_cap_revoke_received.s",
       "generated_flat_hex": "tests/rtl/programs/top_cap_revoke_received.hex",
       "required_features": ["core", "fdr", "object_ctl_queue_pipe", "cap_send", "cap_recv", "cap_revoke", "fdr_lineage_revoke", "revoked_received_capability_refusal", "stale_generation_rejection", "errno", "exit"],
