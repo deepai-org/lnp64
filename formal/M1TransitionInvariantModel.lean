@@ -882,6 +882,8 @@ def packedStateCapFieldsZero (bits : Nat) (capPrefix : String) : Prop :=
 structure RtlM1CommitProjectionFromPackedBits
     (bits : Nat)
     (projection : RtlM1CommitProjection) : Prop where
+  withinSchemaWidth :
+    bits < 2 ^ packedSchemaWidth rtlM1CommitPackedSchema
   op :
     packedCommitOpFromLayout bits rtlM1CommitPackedLayout =
       some projection.op
@@ -918,6 +920,8 @@ structure RtlM1StateProjectionFromPackedBits
     (op : CommitOp)
     (status : CommitStatus)
     (projection : RtlM1StateProjection) : Prop where
+  withinSchemaWidth :
+    bits < 2 ^ packedSchemaWidth rtlM1StateProjectionPackedSchema
   opTag :
     packedCommitOpFromLayout bits rtlM1StateProjectionPackedLayout =
       some op
@@ -979,6 +983,21 @@ structure RtlM1StateProjectionFromPackedBits
   revokedGeneration :
     packedLayoutFieldValue bits "revoked_generation" rtlM1StateProjectionPackedLayout =
       some projection.revokedGeneration
+
+theorem rtl_m1_commit_projection_from_packed_bits_within_schema_width
+    {bits : Nat} {projection : RtlM1CommitProjection} :
+    RtlM1CommitProjectionFromPackedBits bits projection ->
+    bits < 2 ^ packedSchemaWidth rtlM1CommitPackedSchema := by
+  intro hPacked
+  exact hPacked.withinSchemaWidth
+
+theorem rtl_m1_state_projection_from_packed_bits_within_schema_width
+    {bits : Nat} {op : CommitOp} {status : CommitStatus}
+    {projection : RtlM1StateProjection} :
+    RtlM1StateProjectionFromPackedBits bits op status projection ->
+    bits < 2 ^ packedSchemaWidth rtlM1StateProjectionPackedSchema := by
+  intro hPacked
+  exact hPacked.withinSchemaWidth
 
 def commitOpToStepOp : CommitOp -> Op
   | CommitOp.capDup => Op.capDup

@@ -464,6 +464,8 @@ def require_m1_packed_bit_refinement_contract(schema: dict, m1_contract: dict, l
         "theorem rightsFromPackedMask_noRights",
         "structure RtlM1CommitProjectionFromPackedBits",
         "structure RtlM1StateProjectionFromPackedBits",
+        "theorem rtl_m1_commit_projection_from_packed_bits_within_schema_width",
+        "theorem rtl_m1_state_projection_from_packed_bits_within_schema_width",
         "structure RtlM1PackedRefinementStep",
         "theorem rtl_m1_packed_refinement_step_refines_lean_step",
         "theorem rtl_m1_packed_refinement_step_status_matches_op",

@@ -216,6 +216,20 @@ def main() -> None:
         ),
     )
 
+    missing_width_bound_theorem = replace_once(
+        lean_source,
+        "theorem rtl_m1_commit_projection_from_packed_bits_within_schema_width",
+        "theorem rtl_m1_commit_projection_from_bits_without_bound",
+    )
+    expect_failure(
+        "M1 packed-bit refinement artifact missing: theorem rtl_m1_commit_projection_from_packed_bits_within_schema_width",
+        lambda: checker.require_m1_packed_bit_refinement_contract(
+            schema,
+            m1_contract,
+            missing_width_bound_theorem,
+        ),
+    )
+
     print("rtl m1 schema checker self-test ok")
 
 
