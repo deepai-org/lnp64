@@ -11,4 +11,5 @@ rot13|demos/rot13.c|byte_load_store,pointer_arithmetic,heap_intrinsic,branch_cal
 producer_consumer|demos/producer_consumer.c|thread_clone,atomics,futex,heap_intrinsic,branch_call_return,static_link|malloc_free,futex_wait_wake,thread_join,stdout_push|tested
 parallel_hash|demos/parallel_hash.c|thread_clone,atomics,fd_io,heap_intrinsic,branch_call_return,static_link|open,read,malloc_free,thread_join,stdout_push|tested
 sqlite_lite|demos/sqlite_lite.c|thread_clone,atomics,mmap_bootstrap,fence_profile,branch_call_return,static_link|mmap_bootstrap,thread_join,stdout_push|tested
+netcat|demos/netcat.c|socket_endpoint,poll_event,fd_io,heap_intrinsic,branch_call_return,static_link|socket_listen_accept,recv_send,stdout_push|partial
 simple_libc|scripts/run_libc_test.sh|crt_startup,fd_io,errno_tls,string_memory,numeric_conversion,path_helpers,search_helpers,sort_helpers,pthread_futex,poll_event,mmap_signal_socket_subset,static_link|libc_shim,software_loader_exec_plan|partial

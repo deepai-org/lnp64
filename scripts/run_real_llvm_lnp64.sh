@@ -915,6 +915,19 @@ grep -q 'fence' "$sqlite_lite_dump"
 printf 'real LLVM LNP64 clang sqlite lite demo object smoke passed: %s\n' \
   "$sqlite_lite_obj"
 
+netcat_obj="$build_dir/netcat-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables \
+  -Wno-implicit-function-declaration -I toolchain \
+  -c demos/netcat.c -o "$netcat_obj"
+test -s "$netcat_obj"
+netcat_dump="$build_dir/netcat-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$netcat_obj" \
+  >"$netcat_dump"
+grep -q 'call ' "$netcat_dump"
+printf 'real LLVM LNP64 clang netcat demo object smoke passed: %s\n' \
+  "$netcat_obj"
+
 indirect_call_c="$build_dir/indirect-call-smoke.c"
 cat >"$indirect_call_c" <<'C'
 int add3(int x) {
@@ -3551,6 +3564,15 @@ socket_libc_elf="$build_dir/lnp64-socket-libc-linked.elf"
 test -s "$socket_libc_elf"
 printf 'real LLVM LNP64 lld socket libc link smoke passed: %s\n' \
   "$socket_libc_elf"
+
+netcat_elf="$build_dir/lnp64-netcat-clang-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$netcat_elf" "$crt0_obj" "$netcat_obj" "$libc_fd_impl_obj" \
+  "$libc_alloc_impl_obj" "$libc_string_impl_obj" "$libc_poll_impl_obj" \
+  "$libc_socket_impl_obj"
+test -s "$netcat_elf"
+printf 'real LLVM LNP64 lld netcat demo link smoke passed: %s\n' \
+  "$netcat_elf"
 
 indirect_call_elf="$build_dir/lnp64-indirect-call-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

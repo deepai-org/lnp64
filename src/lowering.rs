@@ -2206,6 +2206,12 @@ mod tests {
         assert!(real_llc.contains("grep -q 'mmap r'"));
         assert!(real_llc.contains("grep -q 'fence'"));
         assert!(real_llc.contains("real LLVM LNP64 clang sqlite lite demo object smoke passed"));
+        assert!(real_llc.contains("netcat-clang-smoke.o"));
+        assert!(real_llc.contains("-c demos/netcat.c"));
+        assert!(real_llc.contains("real LLVM LNP64 clang netcat demo object smoke passed"));
+        assert!(real_llc.contains("lnp64-netcat-clang-linked.elf"));
+        assert!(real_llc.contains(r#""$netcat_obj" "$libc_fd_impl_obj" \"#));
+        assert!(real_llc.contains("real LLVM LNP64 lld netcat demo link smoke passed"));
         assert!(real_llc.contains("lnp64-$demo-clang-linked.elf"));
         assert!(real_llc.contains(
             r#""$demo_obj" "$libc_fd_impl_obj" \
@@ -3650,6 +3656,7 @@ mod tests {
             "producer_consumer",
             "parallel_hash",
             "sqlite_lite",
+            "netcat",
             "simple_libc",
         ] {
             assert!(cases.contains(case), "missing llvm bootstrap case {case}");
@@ -3669,6 +3676,7 @@ mod tests {
         ] {
             assert_eq!(statuses[case], "tested", "{case} should be tested");
         }
+        assert_eq!(statuses["netcat"], "partial");
         assert_eq!(statuses["simple_libc"], "partial");
     }
 
@@ -4240,6 +4248,7 @@ mod tests {
             "producer_consumer",
             "parallel_hash",
             "sqlite_lite",
+            "netcat",
             "simple_libc",
         ] {
             assert!(
