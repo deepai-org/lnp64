@@ -133,6 +133,9 @@ module lnp64_decode (
             8'h2e: begin
                 dec.opcode = LNP64_OP_AWAIT;
             end
+            8'h2f: begin
+                dec.opcode = LNP64_OP_GATE_CALL;
+            end
             8'h30: begin
                 dec.opcode = LNP64_OP_LD;
             end
@@ -207,6 +210,12 @@ module lnp64_decode (
             end
             8'h4d: begin
                 dec.opcode = LNP64_OP_AWAIT;
+            end
+            8'h4e: begin
+                dec.opcode = LNP64_OP_GATE_CALL;
+            end
+            8'h4f: begin
+                dec.opcode = LNP64_OP_GATE_RETURN;
             end
             8'h50: begin
                 dec.opcode = LNP64_OP_CAP_DUP;
@@ -462,6 +471,8 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_AUIPC_LITERAL ||
             dec.opcode == LNP64_OP_FENCE ||
             dec.opcode == LNP64_OP_ISYNC ||
+            dec.opcode == LNP64_OP_GATE_CALL ||
+            dec.opcode == LNP64_OP_GATE_RETURN ||
             dec.opcode == LNP64_OP_AMO_SWAP ||
             dec.opcode == LNP64_OP_AMO_ADD ||
             dec.opcode == LNP64_OP_AMO_AND ||

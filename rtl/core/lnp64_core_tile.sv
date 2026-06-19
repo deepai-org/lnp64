@@ -94,24 +94,32 @@ module lnp64_core_tile #(
     localparam logic [63:0] FLAT_EXEC_STACK_WINDOW_BYTES = 64'd8192;
     localparam logic [63:0] OBJECT_OP_CREATE = 64'd1;
     localparam logic [63:0] OBJECT_KIND_COUNTER = 64'd1;
+    localparam logic [63:0] OBJECT_KIND_QUEUE = 64'd2;
     localparam logic [63:0] OBJECT_KIND_MEMORY_OBJECT = 64'd3;
     localparam logic [63:0] OBJECT_KIND_DMA_BUFFER = 64'd4;
     localparam logic [63:0] OBJECT_KIND_TIMER = 64'd6;
+    localparam logic [63:0] OBJECT_PROFILE_PIPE = 64'd1;
+    localparam logic [63:0] OBJECT_PROFILE_CALL_GATE = 64'd4;
+    localparam logic [63:0] CALL_MODE_SYNC = 64'd0;
+    localparam logic [63:0] CALL_MODE_ASYNC = 64'd1;
+    localparam logic [63:0] CALL_MODE_HANDOFF = 64'd2;
     localparam logic [63:0] RTL_DMA_BUFFER_DEFAULT_FD = 64'd3;
     localparam logic [63:0] RTL_DMA_BUFFER_TOKEN = 64'h4000_0000_0000_0203;
     localparam logic [63:0] FDR_TOKEN_MARKER = 64'h4000_0000_0000_0000;
     localparam logic [63:0] FDR_TOKEN_INDEX_MASK = 64'h0000_0000_0000_00ff;
     localparam logic [63:0] CAP_DUP_FLAG_SEAL = 64'd1;
     localparam logic [63:0] CAP_RIGHT_ALL = 64'h0000_0000_0000_01ff;
+    localparam logic [63:0] CAP_RIGHT_CALL = 64'h0000_0000_0000_0020;
     localparam logic [63:0] CAP_RIGHT_DUP = 64'h0000_0000_0000_0040;
     localparam logic [63:0] CAP_RIGHT_REVOKE = 64'h0000_0000_0000_0080;
     localparam logic [63:0] CAP_RIGHT_TRANSFER = 64'h0000_0000_0000_0100;
-    localparam logic [1:0] FDR_KIND_CLOSED = 2'd0;
-    localparam logic [1:0] FDR_KIND_GENERIC = 2'd1;
-    localparam logic [1:0] FDR_KIND_PIPE_READER = 2'd2;
-    localparam logic [1:0] FDR_KIND_PIPE_WRITER = 2'd3;
+    localparam logic [2:0] FDR_KIND_CLOSED = 3'd0;
+    localparam logic [2:0] FDR_KIND_GENERIC = 3'd1;
+    localparam logic [2:0] FDR_KIND_PIPE_READER = 3'd2;
+    localparam logic [2:0] FDR_KIND_PIPE_WRITER = 3'd3;
+    localparam logic [2:0] FDR_KIND_CALL_GATE = 3'd4;
     localparam logic [15:0] RTL_ERR_ESTALE = 16'd116;
-    localparam int unsigned FDR_SLOT_COUNT = 8;
+    localparam int unsigned FDR_SLOT_COUNT = 10;
     localparam int unsigned DATA_SRAM_BASE_WORD = 16;
     localparam int unsigned HEAP_SRAM_BASE_WORD = 96;
     localparam int unsigned STACK_SRAM_BASE_WORD = 128;
@@ -146,6 +154,11 @@ module lnp64_core_tile #(
     logic [63:0] object_fd_req;
     logic [63:0] object_dma_addr;
     logic [63:0] object_dma_len;
+    logic [63:0] object_gate_domain;
+    logic [63:0] object_gate_entry;
+    logic [63:0] object_gate_mode;
+    logic [63:0] object_gate_completion_fd;
+    logic [63:0] object_gate_flags;
     logic [63:0] object_fd_store_addr;
     logic [63:0] object_fd1_store_addr;
     int unsigned object_fd_store_word_index;
@@ -172,7 +185,15 @@ module lnp64_core_tile #(
     logic [63:0] fdr_generation [0:FDR_SLOT_COUNT-1];
     logic [63:0] fdr_rights [0:FDR_SLOT_COUNT-1];
     logic [63:0] fdr_lineage [0:FDR_SLOT_COUNT-1];
-    logic [1:0] fdr_kind [0:FDR_SLOT_COUNT-1];
+    logic [2:0] fdr_kind [0:FDR_SLOT_COUNT-1];
+    logic call_gate_valid [0:FDR_SLOT_COUNT-1];
+    logic [63:0] call_gate_entry [0:FDR_SLOT_COUNT-1];
+    logic [63:0] call_gate_mode [0:FDR_SLOT_COUNT-1];
+    logic [63:0] call_gate_completion_fd [0:FDR_SLOT_COUNT-1];
+    logic call_continuation_valid;
+    logic [31:0] call_continuation_return_pc;
+    logic [7:0] call_continuation_result_reg;
+    logic [63:0] call_next_op_id;
     logic cap_queue_valid;
     logic [63:0] cap_queue_rights;
     logic [63:0] cap_queue_lineage;
@@ -232,6 +253,11 @@ module lnp64_core_tile #(
     int unsigned await_fd;
     logic await_fd_in_range;
     logic await_fd_ready;
+    int unsigned call_gate_fd;
+    logic call_gate_fd_in_range;
+    logic call_gate_fd_live;
+    logic call_gate_completion_fd_in_range;
+    logic call_gate_completion_is_event_counter;
     int unsigned pipe_buf_word_index;
     logic [2:0] pipe_buf_byte_lane;
     lnp64_m1_cap_commit_t m1_commit_next;
@@ -833,6 +859,11 @@ module lnp64_core_tile #(
         object_fd_req = load_double_unaligned(object_argblock_addr + 64'd24);
         object_dma_addr = load_double_unaligned(object_argblock_addr + 64'd40);
         object_dma_len = load_double_unaligned(object_argblock_addr + 64'd48);
+        object_gate_domain = load_double_unaligned(object_argblock_addr + 64'd32);
+        object_gate_entry = load_double_unaligned(object_argblock_addr + 64'd40);
+        object_gate_mode = load_double_unaligned(object_argblock_addr + 64'd48);
+        object_gate_completion_fd = load_double_unaligned(object_argblock_addr + 64'd56);
+        object_gate_flags = load_double_unaligned(object_argblock_addr + 64'd64);
         object_fd_store_addr = object_argblock_addr + 64'd24;
         object_fd1_store_addr = object_argblock_addr + 64'd32;
         object_fd_store_word_index = sram_word_index(object_fd_store_addr);
@@ -904,6 +935,25 @@ module lnp64_core_tile #(
                 (event_counter_valid && fdr_lineage[await_fd] == event_counter_lineage &&
                     event_counter_value != 64'd0);
         end
+        if (raw_opcode == 8'h2f) begin
+            call_gate_fd = dec.rs1;
+        end else begin
+            call_gate_fd = fdr_value_fd(gpr[dec.rs1]);
+        end
+        call_gate_fd_in_range = call_gate_fd < FDR_SLOT_COUNT;
+        call_gate_fd_live = call_gate_fd_in_range &&
+            fdr_valid[call_gate_fd] &&
+            !fdr_revoked[call_gate_fd] &&
+            fdr_kind[call_gate_fd] == FDR_KIND_CALL_GATE &&
+            call_gate_valid[call_gate_fd] &&
+            ((fdr_rights[call_gate_fd] & CAP_RIGHT_CALL) != 64'd0);
+        call_gate_completion_fd_in_range = call_gate_fd_live &&
+            call_gate_completion_fd[call_gate_fd] < FDR_SLOT_COUNT;
+        call_gate_completion_is_event_counter = call_gate_completion_fd_in_range &&
+            event_counter_valid &&
+            fdr_valid[call_gate_completion_fd[call_gate_fd]] &&
+            !fdr_revoked[call_gate_completion_fd[call_gate_fd]] &&
+            fdr_lineage[call_gate_completion_fd[call_gate_fd]] == event_counter_lineage;
         pipe_buf_word_index = sram_word_index(gpr[dec.rs2]);
         pipe_buf_byte_lane = gpr[dec.rs2][2:0];
         cap_revoke_count = 64'd0;
@@ -1169,6 +1219,10 @@ module lnp64_core_tile #(
             cap_queue_lineage <= 64'd0;
             cap_queue_generation <= 64'd0;
             cap_queue_revoked <= 1'b0;
+            call_continuation_valid <= 1'b0;
+            call_continuation_return_pc <= 32'd0;
+            call_continuation_result_reg <= 8'd0;
+            call_next_op_id <= 64'd1;
             pipe_byte_valid <= 1'b0;
             pipe_byte_value <= 8'd0;
             memory_object_valid <= 1'b0;
@@ -1202,6 +1256,10 @@ module lnp64_core_tile #(
                 fdr_rights[i] <= i < 3 ? CAP_RIGHT_ALL : 64'd0;
                 fdr_lineage[i] <= {32'd0, i[31:0]} + 64'd1;
                 fdr_kind[i] <= i < 3 ? FDR_KIND_GENERIC : FDR_KIND_CLOSED;
+                call_gate_valid[i] <= 1'b0;
+                call_gate_entry[i] <= 64'd0;
+                call_gate_mode[i] <= 64'd0;
+                call_gate_completion_fd[i] <= 64'd0;
             end
             for (i = 0; i < SRAM_WORDS; i = i + 1) begin
                 sram[i] = initial_sram[i];
@@ -2167,6 +2225,68 @@ module lnp64_core_tile #(
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
+                            LNP64_OP_GATE_CALL: begin
+                                if (!call_gate_fd_live) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EBADF;
+                                    pc <= pc + 32'd1;
+                                end else if (call_gate_mode[call_gate_fd] == CALL_MODE_ASYNC) begin
+                                    if (!call_gate_completion_is_event_counter) begin
+                                        gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= LNP64_ERR_EINVAL;
+                                    end else begin
+                                        event_counter_value <= event_counter_value + call_next_op_id;
+                                        gpr[dec.rd] <= call_next_op_id;
+                                        call_next_op_id <= call_next_op_id + 64'd1;
+                                        errno_reg <= LNP64_ERR_OK;
+                                    end
+                                    pc <= pc + 32'd1;
+                                end else if (call_gate_mode[call_gate_fd] == CALL_MODE_HANDOFF) begin
+                                    gpr[dec.rd] <= 64'd0;
+                                    gpr[1] <= gpr[dec.rs2];
+                                    gpr[2] <= gpr[dec.rs3];
+                                    errno_reg <= LNP64_ERR_OK;
+                                    pc <= flat_exec_pc_word(call_gate_entry[call_gate_fd]);
+                                end else if (call_gate_mode[call_gate_fd] == CALL_MODE_SYNC) begin
+                                    if (call_continuation_valid) begin
+                                        gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= LNP64_ERR_EAGAIN;
+                                        pc <= pc + 32'd1;
+                                    end else begin
+                                        call_continuation_valid <= 1'b1;
+                                        call_continuation_return_pc <= pc + 32'd1;
+                                        call_continuation_result_reg <= dec.rd;
+                                        gpr[1] <= gpr[dec.rs2];
+                                        gpr[2] <= gpr[dec.rs3];
+                                        errno_reg <= LNP64_ERR_OK;
+                                        pc <= flat_exec_pc_word(call_gate_entry[call_gate_fd]);
+                                    end
+                                end else begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EINVAL;
+                                    pc <= pc + 32'd1;
+                                end
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_GATE_RETURN: begin
+                                if (!call_continuation_valid) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EINVAL;
+                                    pc <= pc + 32'd1;
+                                end else begin
+                                    gpr[call_continuation_result_reg[4:0]] <= gpr[dec.rs1];
+                                    gpr[30] <= gpr[dec.rs2];
+                                    gpr[dec.rd] <= 64'd0;
+                                    call_continuation_valid <= 1'b0;
+                                    errno_reg <= LNP64_ERR_OK;
+                                    pc <= call_continuation_return_pc;
+                                end
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
                             LNP64_OP_PUSH: begin
                                 if (gpr[dec.rs3] == 64'd0) begin
                                     gpr[1] <= 64'd0;
@@ -2259,8 +2379,59 @@ module lnp64_core_tile #(
                             end
                             LNP64_OP_OBJECT_CTL: begin
                                 if (object_op == OBJECT_OP_CREATE &&
-                                    object_kind == 64'd2 &&
-                                    load_double_unaligned(object_argblock_addr + 64'd16) == 64'd1 &&
+                                    object_kind == OBJECT_KIND_QUEUE &&
+                                    object_profile == OBJECT_PROFILE_CALL_GATE &&
+                                    object_single_fd_in_range &&
+                                    (object_gate_mode == CALL_MODE_SYNC ||
+                                        object_gate_mode == CALL_MODE_ASYNC ||
+                                        object_gate_mode == CALL_MODE_HANDOFF) &&
+                                    object_gate_flags == 64'd0 &&
+                                    (object_gate_mode != CALL_MODE_ASYNC ||
+                                        (object_gate_completion_fd < FDR_SLOT_COUNT &&
+                                            fdr_valid[object_gate_completion_fd] &&
+                                            !fdr_revoked[object_gate_completion_fd] &&
+                                            event_counter_valid &&
+                                            fdr_lineage[object_gate_completion_fd] == event_counter_lineage))) begin
+                                    call_gate_valid[object_single_fd] <= 1'b1;
+                                    call_gate_entry[object_single_fd] <= object_gate_entry;
+                                    call_gate_mode[object_single_fd] <= object_gate_mode;
+                                    call_gate_completion_fd[object_single_fd] <= object_gate_completion_fd;
+                                    fdr_valid[object_single_fd] <= 1'b1;
+                                    fdr_revoked[object_single_fd] <= 1'b0;
+                                    fdr_generation[object_single_fd] <= fdr_generation[object_single_fd] + 64'd1;
+                                    fdr_rights[object_single_fd] <= CAP_RIGHT_ALL;
+                                    fdr_lineage[object_single_fd] <= 64'd1281 + {56'd0, object_single_fd[7:0]};
+                                    fdr_kind[object_single_fd] <= FDR_KIND_CALL_GATE;
+                                    sram[object_fd_store_word_index] <= store_double_low_word(
+                                        sram[object_fd_store_word_index],
+                                        object_fd_store_byte_lane,
+                                        {56'd0, object_single_fd[7:0]}
+                                    );
+                                    if (object_fd_store_byte_lane != 3'd0) begin
+                                        sram[object_fd_store_next_word_index] <= store_double_high_word(
+                                            sram[object_fd_store_next_word_index],
+                                            object_fd_store_byte_lane,
+                                            {56'd0, object_single_fd[7:0]}
+                                        );
+                                    end
+                                    gpr[dec.rd] <= {56'd0, object_single_fd[7:0]};
+                                    errno_reg <= LNP64_ERR_OK;
+                                    pc <= pc + 32'd1;
+                                    retired_count <= retired_count + 32'd1;
+                                    retire_submit_valid <= 1'b1;
+                                    retire_submit_record <= retire_submit_next;
+                                end else if (object_op == OBJECT_OP_CREATE &&
+                                    object_kind == OBJECT_KIND_QUEUE &&
+                                    object_profile == OBJECT_PROFILE_CALL_GATE) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EINVAL;
+                                    pc <= pc + 32'd1;
+                                    retired_count <= retired_count + 32'd1;
+                                    retire_submit_valid <= 1'b1;
+                                    retire_submit_record <= retire_submit_next;
+                                end else if (object_op == OBJECT_OP_CREATE &&
+                                    object_kind == OBJECT_KIND_QUEUE &&
+                                    object_profile == OBJECT_PROFILE_PIPE &&
                                     (object_fd_req == 64'd0 || object_fd_req == 64'd3) &&
                                     load_double_unaligned(object_argblock_addr + 64'd32) == 64'd4) begin
                                     fdr_valid[3] <= 1'b1;
@@ -2300,7 +2471,7 @@ module lnp64_core_tile #(
                                     retire_submit_record <= retire_submit_next;
                                 end else if (object_op == OBJECT_OP_CREATE &&
                                     object_kind == OBJECT_KIND_COUNTER &&
-                                    object_profile == 64'd1 &&
+                                    (object_profile == 64'd0 || object_profile == 64'd1) &&
                                     object_single_fd_in_range) begin
                                     event_counter_valid <= 1'b1;
                                     event_counter_lineage <= 64'd769;

@@ -440,15 +440,15 @@ fn flat_exec_word_pcs(program: &Program) -> Vec<usize> {
     let mut pc = 0usize;
     for instr in &program.instructions {
         pcs.push(pc);
-        pc += flat_exec_instr_word_len(instr);
+        pc += flat_exec_instr_word_len(program, instr);
     }
     pcs
 }
 
-fn flat_exec_instr_word_len(instr: &Instr) -> usize {
+fn flat_exec_instr_word_len(program: &Program, instr: &Instr) -> usize {
     match instr {
         Instr::Li(_, Value::Imm(imm)) if imm16(*imm, "LI immediate").is_err() => 2,
-        Instr::Li(_, Value::Label(_)) => 2,
+        Instr::Li(_, Value::Label(label)) if program.data_labels.contains_key(label) => 2,
         Instr::Auipc(_, _) => 2,
         _ => 1,
     }
@@ -462,7 +462,7 @@ fn encode_flat_exec_instr(
 ) -> Result<Vec<u32>, String> {
     match instr {
         Instr::Nop => Ok(vec![enc_reg(0x00, Reg(0))]),
-        Instr::Li(rd, value) => encode_flat_exec_li(program, *rd, value),
+        Instr::Li(rd, value) => encode_flat_exec_li(program, word_pcs, *rd, value),
         Instr::Auipc(rd, value) => encode_flat_exec_auipc(*rd, value),
         Instr::Mov(rd, rs1) => Ok(vec![enc_rrr(0x02, *rd, *rs1, Reg(0))]),
         Instr::Add(rd, rs1, rs2) => Ok(vec![enc_rrr(0x10, *rd, *rs1, *rs2)]),
@@ -643,6 +643,13 @@ fn encode_flat_exec_instr(
         Instr::ReadFd(fd, buf, len) => Ok(vec![enc_rrr(0x2d, Reg(fd.0), *buf, *len)]),
         Instr::Await(result, fd, mask) => Ok(vec![enc_rrr(0x2e, *result, Reg(fd.0), *mask)]),
         Instr::AwaitDyn(result, fd_reg, mask) => Ok(vec![enc_rrr(0x4d, *result, *fd_reg, *mask)]),
+        Instr::CallCap(result, fd, arg0, arg1) => {
+            Ok(vec![enc_rrrr(0x2f, *result, Reg(fd.0), *arg0, *arg1)])
+        }
+        Instr::CallCapDyn(result, fd_reg, arg0, arg1) => {
+            Ok(vec![enc_rrrr(0x4e, *result, *fd_reg, *arg0, *arg1)])
+        }
+        Instr::RetCap(result, value0, value1) => Ok(vec![enc_rrr(0x4f, *result, *value0, *value1)]),
         Instr::Pull(result, fd, buf, len) => {
             Ok(vec![enc_rrrr(0x2b, *result, Reg(fd.0), *buf, *len)])
         }
@@ -657,13 +664,18 @@ fn encode_flat_exec_instr(
         Instr::Isync(result, addr, len) => Ok(vec![enc_rrr(0xce, *result, *addr, *len)]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/CALL_REG/LR_GET/LR_SET/RET, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, OBJECT_CTL, CAP_DUP/SEND/RECV/REVOKE, ERRNO_GET/SET, DMA_CTL, ENV_GET, READ_FD/WRITE_FD, PULL/PUSH, AWAIT/AWAIT_DYN, READ_FD_DYN/WRITE_FD_DYN, FENCE/ISYNC, AMO, LOCK.CMPXCHG, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/CALL_REG/LR_GET/LR_SET/RET, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, OBJECT_CTL, CAP_DUP/SEND/RECV/REVOKE, ERRNO_GET/SET, DMA_CTL, ENV_GET, READ_FD/WRITE_FD, PULL/PUSH, AWAIT/AWAIT_DYN, CALL_CAP/CALL_CAP_DYN/RET_CAP, READ_FD_DYN/WRITE_FD_DYN, FENCE/ISYNC, AMO, LOCK.CMPXCHG, EXIT"
         )),
     }
 }
 
-fn encode_flat_exec_li(program: &Program, rd: Reg, value: &Value) -> Result<Vec<u32>, String> {
-    let imm = value_imm32(program, value)?;
+fn encode_flat_exec_li(
+    program: &Program,
+    word_pcs: &[usize],
+    rd: Reg,
+    value: &Value,
+) -> Result<Vec<u32>, String> {
+    let imm = value_imm32(program, word_pcs, value)?;
     if let Ok(small) = imm16(imm, "LI immediate") {
         Ok(vec![enc_ri(0x01, rd, small)])
     } else {
@@ -720,16 +732,24 @@ fn flat_exec_cset_opcode(condition: Condition) -> u8 {
     }
 }
 
-fn value_imm32(program: &Program, value: &Value) -> Result<i64, String> {
+fn value_imm32(program: &Program, word_pcs: &[usize], value: &Value) -> Result<i64, String> {
+    const TEXT_BASE: u64 = 0x1000;
     match value {
         Value::Imm(imm) => imm32(*imm, "LI immediate"),
-        Value::Label(label) => program
-            .data_labels
-            .get(label)
-            .copied()
-            .or_else(|| program.labels.get(label).map(|pc| *pc as u64))
-            .ok_or_else(|| format!("unknown label immediate {label:?}"))
-            .and_then(|value| imm32(value as i64, "LI label immediate")),
+        Value::Label(label) => {
+            let value = if let Some(data_addr) = program.data_labels.get(label).copied() {
+                data_addr
+            } else if let Some(text_pc) = program.labels.get(label).copied() {
+                let word_pc = word_pcs
+                    .get(text_pc)
+                    .copied()
+                    .ok_or_else(|| format!("label {label:?} has out-of-range text pc {text_pc}"))?;
+                TEXT_BASE + (word_pc as u64 * 4)
+            } else {
+                return Err(format!("unknown label immediate {label:?}"));
+            };
+            imm32(value as i64, "LI label immediate")
+        }
     }
 }
 

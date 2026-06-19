@@ -1806,6 +1806,7 @@ impl Machine {
             0x2c => Instr::Push(a, FdReg(b.0), c, Reg(((word >> 4) & 0x1f) as usize)),
             0x2d => Instr::ReadFd(FdReg(a.0), b, c),
             0x2e => Instr::Await(a, FdReg(b.0), c),
+            0x2f => Instr::CallCap(a, FdReg(b.0), c, Reg(((word >> 4) & 0x1f) as usize)),
             0x30 => Instr::Ld(
                 a,
                 MemRef::BaseOffset(b, sign_extend(word & 0x3fff, 14)),
