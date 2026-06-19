@@ -278,8 +278,9 @@ NetBSD policy. Those remain loader, libc, and personality responsibilities.
      `__lnp_openat`, `__lnp_pull`, `__lnp_push`, `__lnp_mmap`,
      `__lnp_await`, `__lnp_gate_call`, `__lnp_call`,
      `__lnp_gate_return`, `__lnp_domain_ctl`, `__lnp_domain_create`,
-     `__lnp_object_ctl`, `__lnp_object_create`, `__lnp_cap_dup`,
-     `__lnp_cap_send`, `__lnp_cap_recv`, and `__lnp_cap_revoke`.
+     `__lnp_object_ctl`, `__lnp_object_create`, `__lnp_call_gate_create`,
+     `__lnp_cap_dup`, `__lnp_cap_send`, `__lnp_cap_recv`, and
+     `__lnp_cap_revoke`.
    - Application C should normally call libc/POSIX APIs, not raw primitives.
 
 5. Implement relocations and lld integration.
@@ -412,6 +413,9 @@ The concrete first-program set is pinned in
   replacement that exercises endpoint-backed socket options, bind/listen,
   connect/accept, poll readiness, send/recv, and socket `errno` reporting
   through the Clang libc shims.
+- `netbsd_gate_trace_child`: a non-fork NetBSD personality child replacement
+  that exercises Resource Domain creation, call-gate creation, gate call/return,
+  and ordinary fd output through real Clang/lld output.
 
 These bootstrap gates now run through real Clang/lld output and the software
 loader without the toy compiler. Full replacement remains partial until the

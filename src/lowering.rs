@@ -1484,6 +1484,7 @@ mod tests {
             "clang_netbsd_timer_child_object",
             "clang_netbsd_mmap_child_object",
             "clang_netbsd_socket_loopback_child_object",
+            "clang_netbsd_gate_trace_child_object",
             "clang_minilibc_meta_impl_object",
             "clang_meta_libc_object",
             "clang_minilibc_random_impl_object",
@@ -1599,6 +1600,8 @@ mod tests {
             "netbsd_mmap_child_run_elf",
             "netbsd_socket_loopback_child_static_link",
             "netbsd_socket_loopback_child_run_elf",
+            "netbsd_gate_trace_child_static_link",
+            "netbsd_gate_trace_child_run_elf",
             "metadata_libc_static_link",
             "metadata_libc_run_elf",
         ] {
@@ -2622,6 +2625,15 @@ mod tests {
         assert!(
             real_llc.contains("real LLVM LNP64 clang NetBSD socket loopback child object passed")
         );
+        assert!(real_llc.contains("userland/gate_trace_test_clang.c"));
+        assert!(real_llc.contains("netbsd-gate-trace-test-clang-smoke.o"));
+        assert!(real_llc.contains("__lnp_domain_create"));
+        assert!(real_llc.contains("__lnp_call_gate_create"));
+        assert!(real_llc.contains(r#"grep -q 'domain_ctl r' "$netbsd_gate_trace_test_dump""#));
+        assert!(real_llc.contains(r#"grep -q 'object_ctl r' "$netbsd_gate_trace_test_dump""#));
+        assert!(real_llc.contains(r#"grep -q 'gate_call r' "$netbsd_gate_trace_test_dump""#));
+        assert!(real_llc.contains(r#"grep -q 'gate_return r' "$netbsd_gate_trace_test_dump""#));
+        assert!(real_llc.contains("real LLVM LNP64 clang NetBSD gate trace child object passed"));
         assert!(real_llc.contains("toolchain/liblnp64_fd_min.c"));
         assert!(libc_fd_min.contains("__lnp_pull"));
         assert!(libc_fd_min.contains("__lnp_push"));
@@ -2767,6 +2779,9 @@ mod tests {
         assert!(real_llc.contains("lnp64-netbsd-socket-loopback-test-linked.elf"));
         assert!(real_llc.contains(r#""$netbsd_socket_loopback_test_obj" "$libc_socket_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld NetBSD socket loopback child link passed"));
+        assert!(real_llc.contains("lnp64-netbsd-gate-trace-test-linked.elf"));
+        assert!(real_llc.contains(r#""$netbsd_gate_trace_test_obj" \"#));
+        assert!(real_llc.contains("real LLVM LNP64 lld NetBSD gate trace child link passed"));
         assert!(real_llc.contains("lnp64-meta-libc-linked.elf"));
         assert!(real_llc.contains(
             r#""$meta_libc_obj" "$libc_meta_impl_obj" \
@@ -3722,6 +3737,7 @@ mod tests {
             "real_netbsd_timer_child_execution",
             "real_netbsd_mmap_child_execution",
             "real_netbsd_socket_loopback_child_execution",
+            "real_netbsd_gate_trace_child_execution",
             "real_metadata_libc_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
@@ -3813,6 +3829,7 @@ mod tests {
             "real_netbsd_timer_child_execution",
             "real_netbsd_mmap_child_execution",
             "real_netbsd_socket_loopback_child_execution",
+            "real_netbsd_gate_trace_child_execution",
             "real_metadata_libc_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
@@ -4919,6 +4936,7 @@ mod tests {
             "netbsd_timer_child",
             "netbsd_mmap_child",
             "netbsd_socket_loopback_child",
+            "netbsd_gate_trace_child",
             "netbsd_personality_clang",
             "netcat",
             "httpd",
@@ -4960,6 +4978,7 @@ mod tests {
         assert_eq!(statuses["netbsd_timer_child"], "partial");
         assert_eq!(statuses["netbsd_mmap_child"], "partial");
         assert_eq!(statuses["netbsd_socket_loopback_child"], "partial");
+        assert_eq!(statuses["netbsd_gate_trace_child"], "partial");
         assert_eq!(statuses["netbsd_personality_clang"], "partial");
         assert_eq!(statuses["netcat"], "partial");
         assert_eq!(statuses["httpd"], "partial");
@@ -5696,6 +5715,7 @@ mod tests {
             "netbsd_timer_child",
             "netbsd_mmap_child",
             "netbsd_socket_loopback_child",
+            "netbsd_gate_trace_child",
             "netbsd_personality_clang",
             "simple_libc",
         ] {
@@ -5948,6 +5968,7 @@ mod tests {
             "__lnp_domain_create",
             "__lnp_object_ctl",
             "__lnp_object_create",
+            "__lnp_call_gate_create",
             "__lnp_cap_dup",
             "__lnp_cap_send",
             "__lnp_cap_recv",
@@ -6163,6 +6184,11 @@ mod tests {
         assert!(intrinsic_header.contains("record[0] = LNP64_OBJECT_CTL_CREATE;"));
         assert!(intrinsic_header.contains("record[8] = 0;"));
         assert!(intrinsic_header.contains("return __lnp_object_ctl((lnp64_word_t)record);"));
+        assert!(intrinsic_header.contains("static inline lnp64_word_t __lnp_domain_create"));
+        assert!(intrinsic_header.contains("lnp64_word_t record[25];"));
+        assert!(intrinsic_header.contains("return __lnp_domain_ctl((lnp64_word_t)record);"));
+        assert!(intrinsic_header.contains("static inline lnp64_word_t __lnp_call_gate_create"));
+        assert!(intrinsic_header.contains("record[2] = 4;"));
         for (name, mnemonic) in [
             ("__lnp_cap_dup", "cap_dup"),
             ("__lnp_cap_send", "cap_send"),

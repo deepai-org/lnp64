@@ -3603,6 +3603,23 @@ grep -q 'call ' "$netbsd_socket_loopback_test_dump"
 printf 'real LLVM LNP64 clang NetBSD socket loopback child object passed: %s\n' \
   "$netbsd_socket_loopback_test_obj"
 
+# Exercises __lnp_domain_create and __lnp_call_gate_create record builders.
+netbsd_gate_trace_test_obj="$build_dir/netbsd-gate-trace-test-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
+  -c userland/gate_trace_test_clang.c -o "$netbsd_gate_trace_test_obj"
+test -s "$netbsd_gate_trace_test_obj"
+netbsd_gate_trace_test_dump="$build_dir/netbsd-gate-trace-test-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$netbsd_gate_trace_test_obj" \
+  >"$netbsd_gate_trace_test_dump"
+grep -q 'domain_ctl r' "$netbsd_gate_trace_test_dump"
+grep -q 'object_ctl r' "$netbsd_gate_trace_test_dump"
+grep -q 'gate_call r' "$netbsd_gate_trace_test_dump"
+grep -q 'gate_return r' "$netbsd_gate_trace_test_dump"
+printf 'real LLVM LNP64 clang NetBSD gate trace child object passed: %s\n' \
+  "$netbsd_gate_trace_test_obj"
+
 meta_libc_c="$build_dir/meta-libc-smoke.c"
 cat >"$meta_libc_c" <<'C'
 #include <errno.h>
@@ -5132,6 +5149,14 @@ netbsd_socket_loopback_test_elf="$build_dir/lnp64-netbsd-socket-loopback-test-li
 test -s "$netbsd_socket_loopback_test_elf"
 printf 'real LLVM LNP64 lld NetBSD socket loopback child link passed: %s\n' \
   "$netbsd_socket_loopback_test_elf"
+
+netbsd_gate_trace_test_elf="$build_dir/lnp64-netbsd-gate-trace-test-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$netbsd_gate_trace_test_elf" "$crt0_obj" "$netbsd_gate_trace_test_obj" \
+  "$libc_fd_impl_obj"
+test -s "$netbsd_gate_trace_test_elf"
+printf 'real LLVM LNP64 lld NetBSD gate trace child link passed: %s\n' \
+  "$netbsd_gate_trace_test_elf"
 
 meta_libc_elf="$build_dir/lnp64-meta-libc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

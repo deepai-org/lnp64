@@ -35,9 +35,45 @@ lnp64_word_t __lnp_call(lnp64_cap_t gate_cap, lnp64_word_t arg0,
 lnp64_word_t __lnp_gate_return(lnp64_word_t value0, lnp64_word_t value1,
                                lnp64_word_t context_token);
 lnp64_word_t __lnp_domain_ctl(lnp64_word_t record_ptr);
-lnp64_word_t __lnp_domain_create(lnp64_word_t memory, lnp64_word_t pids,
-                                 lnp64_word_t fdrs, lnp64_word_t caps);
 lnp64_word_t __lnp_object_ctl(lnp64_word_t record_ptr);
+
+static inline lnp64_word_t __lnp_domain_create(lnp64_word_t memory,
+                                               lnp64_word_t pids,
+                                               lnp64_word_t fdrs,
+                                               lnp64_word_t caps) {
+  lnp64_word_t record[25];
+  record[0] = 1;
+  record[1] = 0;
+  record[2] = 0;
+  record[3] = 4;
+  record[4] = 1000;
+  record[5] = memory;
+  record[6] = pids;
+  record[7] = fdrs;
+  record[8] = caps;
+  record[9] = caps;
+  for (lnp64_word_t i = 10; i < 25; i++) {
+    record[i] = 0;
+  }
+  return __lnp_domain_ctl((lnp64_word_t)record);
+}
+
+static inline lnp64_word_t __lnp_call_gate_create(lnp64_cap_t fd,
+                                                  lnp64_word_t domain,
+                                                  lnp64_word_t entry) {
+  lnp64_word_t record[10];
+  record[0] = LNP64_OBJECT_CTL_CREATE;
+  record[1] = 2;
+  record[2] = 4;
+  record[3] = fd;
+  record[4] = domain;
+  record[5] = entry;
+  record[6] = 0;
+  record[7] = 0;
+  record[8] = 0;
+  record[9] = 0;
+  return __lnp_object_ctl((lnp64_word_t)record);
+}
 
 static inline lnp64_word_t __lnp_object_create(lnp64_word_t kind,
                                                lnp64_word_t profile,

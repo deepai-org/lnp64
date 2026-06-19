@@ -12,6 +12,7 @@ __lnp_domain_ctl|DOMAIN_CTL|status_or_bytes|record_ptr
 __lnp_domain_create|DOMAIN_CTL|domain_or_errno|memory,pids,fdrs,caps
 __lnp_object_ctl|OBJECT_CTL|status_or_cap|record_ptr
 __lnp_object_create|OBJECT_CTL|cap_or_errno|kind,profile,fd0,fd1,arg
+__lnp_call_gate_create|OBJECT_CTL|call_gate_or_errno|fd,domain,entry
 __lnp_cap_dup|CAP_DUP|cap_or_errno|source_cap,rights,flags
 __lnp_cap_send|CAP_SEND|status_or_errno|queue_cap,cap,flags
 __lnp_cap_recv|CAP_RECV|cap_or_errno|queue_cap,flags
