@@ -2403,6 +2403,34 @@ grep -q 'urem r' "$libc_test_udiv_dump"
 printf 'real LLVM LNP64 clang libc-test udiv object smoke passed: %s\n' \
   "$libc_test_udiv_obj"
 
+libc_test_basename_obj="$build_dir/libc-test-basename-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain/include \
+  -I third_party/libc-test/functional \
+  -c third_party/libc-test/functional/basename.c \
+  -o "$libc_test_basename_obj"
+test -s "$libc_test_basename_obj"
+libc_test_basename_dump="$build_dir/libc-test-basename-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_test_basename_obj" \
+  >"$libc_test_basename_dump"
+grep -q 'call ' "$libc_test_basename_dump"
+printf 'real LLVM LNP64 clang libc-test basename object smoke passed: %s\n' \
+  "$libc_test_basename_obj"
+
+libc_test_dirname_obj="$build_dir/libc-test-dirname-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain/include \
+  -I third_party/libc-test/functional \
+  -c third_party/libc-test/functional/dirname.c \
+  -o "$libc_test_dirname_obj"
+test -s "$libc_test_dirname_obj"
+libc_test_dirname_dump="$build_dir/libc-test-dirname-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_test_dirname_obj" \
+  >"$libc_test_dirname_dump"
+grep -q 'call ' "$libc_test_dirname_dump"
+printf 'real LLVM LNP64 clang libc-test dirname object smoke passed: %s\n' \
+  "$libc_test_dirname_obj"
+
 convert_c="$build_dir/convert-smoke.c"
 cat >"$convert_c" <<'C'
 int *__errno_location(void);
@@ -4029,6 +4057,24 @@ libc_test_udiv_elf="$build_dir/lnp64-libc-test-udiv-linked.elf"
 test -s "$libc_test_udiv_elf"
 printf 'real LLVM LNP64 lld libc-test udiv link smoke passed: %s\n' \
   "$libc_test_udiv_elf"
+
+libc_test_basename_elf="$build_dir/lnp64-libc-test-basename-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$libc_test_basename_elf" "$crt0_obj" "$libc_test_basename_obj" \
+  "$libc_test_print_obj" "$libc_string_impl_obj" "$libc_path_impl_obj" \
+  "$libc_fd_impl_obj"
+test -s "$libc_test_basename_elf"
+printf 'real LLVM LNP64 lld libc-test basename link smoke passed: %s\n' \
+  "$libc_test_basename_elf"
+
+libc_test_dirname_elf="$build_dir/lnp64-libc-test-dirname-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$libc_test_dirname_elf" "$crt0_obj" "$libc_test_dirname_obj" \
+  "$libc_test_print_obj" "$libc_string_impl_obj" "$libc_path_impl_obj" \
+  "$libc_fd_impl_obj"
+test -s "$libc_test_dirname_elf"
+printf 'real LLVM LNP64 lld libc-test dirname link smoke passed: %s\n' \
+  "$libc_test_dirname_elf"
 
 calloc_elf="$build_dir/lnp64-calloc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

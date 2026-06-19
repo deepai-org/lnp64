@@ -15,6 +15,8 @@ real_libc_test_ctype_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,thir
 real_libc_test_string_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,third_party/libc-test/functional/string.c,toolchain/liblnp64_string_min.c|real LLVM LNP64 run-elf libc-test string execution passed|none
 real_libc_test_string_memmem_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,third_party/libc-test/functional/string_memmem.c,toolchain/liblnp64_string_min.c|real LLVM LNP64 run-elf libc-test string_memmem execution passed|none
 real_libc_test_udiv_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,third_party/libc-test/functional/udiv.c,toolchain/lnp64_isel.manifest|real LLVM LNP64 run-elf libc-test udiv execution passed|none
+real_libc_test_basename_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,third_party/libc-test/functional/basename.c,toolchain/liblnp64_path_min.c|real LLVM LNP64 run-elf libc-test basename execution passed|none
+real_libc_test_dirname_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,third_party/libc-test/functional/dirname.c,toolchain/liblnp64_path_min.c|real LLVM LNP64 run-elf libc-test dirname execution passed|none
 real_numeric_conversion_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/liblnp64_convert_min.c|real LLVM LNP64 run-elf numeric conversion execution passed|none
 real_path_helper_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/liblnp64_path_min.c|real LLVM LNP64 run-elf path helper execution passed|none
 real_search_helper_execution|tested|scripts/run_real_llvm_lnp64_docker.sh,toolchain/liblnp64_search_min.c|real LLVM LNP64 run-elf search helper execution passed|none

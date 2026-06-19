@@ -1433,6 +1433,8 @@ mod tests {
             "libc_test_string_static_link",
             "libc_test_string_memmem_static_link",
             "libc_test_udiv_static_link",
+            "libc_test_basename_static_link",
+            "libc_test_dirname_static_link",
             "zlib_package_run_elf",
             "natsort_package_run_elf",
             "jsmn_package_run_elf",
@@ -1442,6 +1444,8 @@ mod tests {
             "libc_test_string_run_elf",
             "libc_test_string_memmem_run_elf",
             "libc_test_udiv_run_elf",
+            "libc_test_basename_run_elf",
+            "libc_test_dirname_run_elf",
             "sbase_echo_static_link",
             "sbase_echo_run_elf",
             "sbase_path_static_link",
@@ -1772,6 +1776,12 @@ mod tests {
         assert!(real_llc.contains("grep -q 'udiv r'"));
         assert!(real_llc.contains("grep -q 'urem r'"));
         assert!(real_llc.contains("real LLVM LNP64 clang libc-test udiv object smoke passed"));
+        assert!(real_llc.contains("libc-test-basename-clang-smoke.o"));
+        assert!(real_llc.contains("third_party/libc-test/functional/basename.c"));
+        assert!(real_llc.contains("real LLVM LNP64 clang libc-test basename object smoke passed"));
+        assert!(real_llc.contains("libc-test-dirname-clang-smoke.o"));
+        assert!(real_llc.contains("third_party/libc-test/functional/dirname.c"));
+        assert!(real_llc.contains("real LLVM LNP64 clang libc-test dirname object smoke passed"));
         assert!(real_llc.contains("lnp64-libc-test-ctype-bounded-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld libc-test ctype_bounded link smoke passed"));
         assert!(real_llc.contains("lnp64-libc-test-string-linked.elf"));
@@ -1780,6 +1790,10 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 lld libc-test string_memmem link smoke passed"));
         assert!(real_llc.contains("lnp64-libc-test-udiv-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld libc-test udiv link smoke passed"));
+        assert!(real_llc.contains("lnp64-libc-test-basename-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld libc-test basename link smoke passed"));
+        assert!(real_llc.contains("lnp64-libc-test-dirname-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld libc-test dirname link smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_futex_min.c"));
         assert!(libc_futex_min.contains("__lnp_futex_wait"));
         assert!(libc_futex_min.contains("__lnp_futex_wake"));
@@ -2702,6 +2716,14 @@ mod tests {
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf libc-test udiv execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-libc-test-basename-linked.elf"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf libc-test basename execution passed")
+        );
+        assert!(real_llc_docker.contains("lnp64-libc-test-dirname-linked.elf"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf libc-test dirname execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-calloc-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf calloc execution passed"));
         assert!(real_llc_docker.contains("lnp64-realloc-linked.elf"));
@@ -2850,6 +2872,8 @@ mod tests {
             "real_libc_test_string_execution",
             "real_libc_test_string_memmem_execution",
             "real_libc_test_udiv_execution",
+            "real_libc_test_basename_execution",
+            "real_libc_test_dirname_execution",
             "real_numeric_conversion_execution",
             "real_path_helper_execution",
             "real_search_helper_execution",
@@ -2903,6 +2927,8 @@ mod tests {
             "real_libc_test_string_execution",
             "real_libc_test_string_memmem_execution",
             "real_libc_test_udiv_execution",
+            "real_libc_test_basename_execution",
+            "real_libc_test_dirname_execution",
             "real_numeric_conversion_execution",
             "real_path_helper_execution",
             "real_search_helper_execution",
