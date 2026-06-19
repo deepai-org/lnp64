@@ -259,14 +259,16 @@ fn encode_flat_exec_instr(program: &Program, pc: usize, instr: &Instr) -> Result
     match instr {
         Instr::Nop => Ok(enc_reg(0x00, Reg(0))),
         Instr::Li(rd, value) => Ok(enc_ri(0x01, *rd, value_imm16(value)?)),
-        Instr::Lsl(rd, rs1, rs2) => Ok(enc_rrr(0x18, *rd, *rs1, *rs2)),
-        Instr::Lsr(rd, rs1, rs2) => Ok(enc_rrr(0x19, *rd, *rs1, *rs2)),
         Instr::Add(rd, rs1, rs2) => Ok(enc_rrr(0x10, *rd, *rs1, *rs2)),
         Instr::Sub(rd, rs1, rs2) => Ok(enc_rrr(0x11, *rd, *rs1, *rs2)),
         Instr::Mul(rd, rs1, rs2) => Ok(enc_rrr(0x12, *rd, *rs1, *rs2)),
+        Instr::Udiv(rd, rs1, rs2) => Ok(enc_rrr(0xa7, *rd, *rs1, *rs2)),
+        Instr::Urem(rd, rs1, rs2) => Ok(enc_rrr(0xa9, *rd, *rs1, *rs2)),
         Instr::And(rd, rs1, rs2) => Ok(enc_rrr(0x14, *rd, *rs1, *rs2)),
         Instr::Or(rd, rs1, rs2) => Ok(enc_rrr(0x15, *rd, *rs1, *rs2)),
         Instr::Xor(rd, rs1, rs2) => Ok(enc_rrr(0x16, *rd, *rs1, *rs2)),
+        Instr::Lsl(rd, rs1, rs2) => Ok(enc_rrr(0x18, *rd, *rs1, *rs2)),
+        Instr::Lsr(rd, rs1, rs2) => Ok(enc_rrr(0x19, *rd, *rs1, *rs2)),
         Instr::Cmp(lhs, rhs) => Ok(enc_rrr(0x1b, *lhs, *rhs, Reg(0))),
         Instr::Jmp(target) => Ok(enc_branch(0x20, branch_delta(program, pc, target)?)),
         Instr::Branch(condition, target) => Ok(enc_branch(
@@ -286,7 +288,7 @@ fn encode_flat_exec_instr(program: &Program, pc: usize, instr: &Instr) -> Result
         }
         Instr::Exit(src) => Ok(enc_reg(0x3a, *src)),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, ADD, SUB, MUL, AND/OR/XOR, LSL/LSR, CMP, JMP, signed conditional branch, LD/ST.D base+offset, ERRNO_GET/SET, ENV_GET, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, ADD, SUB, MUL, UDIV/UREM, AND/OR/XOR, LSL/LSR, CMP, JMP, signed conditional branch, LD/ST.D base+offset, ERRNO_GET/SET, ENV_GET, EXIT"
         )),
     }
 }
@@ -906,6 +908,33 @@ mod tests {
                 "01100001\n",
                 "18184400\n",
                 "19204400\n",
+                "1028c800\n",
+                "3a280000\n",
+            )
+        );
+    }
+
+    #[test]
+    fn asm_flat_exec_encodes_unsigned_division_subset() {
+        let source = r#"
+            .text
+              LI r1, 17
+              LI r2, 5
+              UDIV r3, r1, r2
+              UREM r4, r1, r2
+              ADD r5, r3, r4
+              EXIT r5
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+
+        assert_eq!(
+            hex,
+            concat!(
+                "01080011\n",
+                "01100005\n",
+                "a7184400\n",
+                "a9204400\n",
                 "1028c800\n",
                 "3a280000\n",
             )

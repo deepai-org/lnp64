@@ -95,6 +95,8 @@ package lnp64_pkg;
         LNP64_OP_XOR          = 16'h0030,
         LNP64_OP_LSL          = 16'h0031,
         LNP64_OP_LSR          = 16'h0032,
+        LNP64_OP_UDIV         = 16'h0033,
+        LNP64_OP_UREM         = 16'h0034,
         LNP64_OP_UNSUPPORTED  = 16'h00ff
     } lnp64_opcode_e;
 
