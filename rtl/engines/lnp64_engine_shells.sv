@@ -614,6 +614,9 @@ module lnp64_cap_engine(
     input logic cmd_valid,
     output logic cmd_ready,
     input lnp64_cmd_t cmd,
+    input logic object_cap_sync_valid,
+    input logic [31:0] object_cap_sync_reader_fd,
+    input logic [31:0] object_cap_sync_writer_fd,
     output logic rsp_valid,
     input logic rsp_ready,
     output lnp64_rsp_t rsp,
@@ -628,6 +631,11 @@ module lnp64_cap_engine(
     logic [63:0] fdr_rights [0:LNP64_FDR_SLOT_COUNT-1];
     logic [63:0] fdr_lineage [0:LNP64_FDR_SLOT_COUNT-1];
     logic [2:0] fdr_kind [0:LNP64_FDR_SLOT_COUNT-1];
+    logic cap_queue_valid;
+    logic [63:0] cap_queue_rights;
+    logic [63:0] cap_queue_lineage;
+    logic [63:0] cap_queue_generation;
+    logic cap_queue_revoked;
 
     assign cmd_ready = reset_n && !have_rsp;
     assign rsp_valid = have_rsp;
@@ -675,6 +683,11 @@ module lnp64_cap_engine(
             rsp_reg <= '0;
             telemetry_counter <= 32'd0;
             fault_counter <= 32'd0;
+            cap_queue_valid <= 1'b0;
+            cap_queue_rights <= 64'd0;
+            cap_queue_lineage <= 64'd0;
+            cap_queue_generation <= 64'd0;
+            cap_queue_revoked <= 1'b0;
             for (i = 0; i < LNP64_FDR_SLOT_COUNT; i = i + 1) begin
                 fdr_generation[i] <= 64'd1;
                 fdr_valid[i] <= i < 3;
@@ -687,15 +700,36 @@ module lnp64_cap_engine(
             if (have_rsp && rsp_ready) begin
                 have_rsp <= 1'b0;
             end
+            if (object_cap_sync_valid) begin
+                if (object_cap_sync_reader_fd < LNP64_FDR_SLOT_COUNT) begin
+                    fdr_valid[object_cap_sync_reader_fd] <= 1'b1;
+                    fdr_revoked[object_cap_sync_reader_fd] <= 1'b0;
+                    fdr_generation[object_cap_sync_reader_fd] <= fdr_generation[object_cap_sync_reader_fd] + 64'd1;
+                    fdr_rights[object_cap_sync_reader_fd] <= LNP64_CAP_RIGHT_ALL;
+                    fdr_lineage[object_cap_sync_reader_fd] <= 64'd257 + {32'd0, object_cap_sync_reader_fd};
+                    fdr_kind[object_cap_sync_reader_fd] <= LNP64_FDR_KIND_PIPE_READER;
+                end
+                if (object_cap_sync_writer_fd < LNP64_FDR_SLOT_COUNT) begin
+                    fdr_valid[object_cap_sync_writer_fd] <= 1'b1;
+                    fdr_revoked[object_cap_sync_writer_fd] <= 1'b0;
+                    fdr_generation[object_cap_sync_writer_fd] <= fdr_generation[object_cap_sync_writer_fd] + 64'd1;
+                    fdr_rights[object_cap_sync_writer_fd] <= LNP64_CAP_RIGHT_ALL;
+                    fdr_lineage[object_cap_sync_writer_fd] <= 64'd257 + {32'd0, object_cap_sync_writer_fd};
+                    fdr_kind[object_cap_sync_writer_fd] <= LNP64_FDR_KIND_PIPE_WRITER;
+                end
+            end
             if (cmd_valid && cmd_ready) begin : accept_cmd
                 int unsigned src_fd;
                 int unsigned dst_fd;
+                int unsigned payload_fd;
                 logic src_is_token;
                 logic src_token_valid;
                 logic src_generation_matches;
                 logic src_live;
                 logic src_stale;
+                logic payload_live;
                 logic [63:0] dup_rights;
+                logic [63:0] recv_rights;
                 logic [63:0] next_generation;
                 logic [63:0] revoke_count;
 
@@ -752,6 +786,92 @@ module lnp64_cap_engine(
                         rsp_reg.errno_value <= LNP64_ERR_OK;
                         rsp_reg.status <= LNP64_STATUS_OK;
                     end
+                end else if (cmd.opcode == LNP64_OP_CAP_SEND) begin
+                    src_fd = cap_fd(cmd.arg0);
+                    payload_fd = cap_fd(cmd.arg1);
+                    src_is_token = cmd.arg0 >= 64'd256;
+                    src_token_valid = cap_token_shape_valid(cmd.arg0);
+                    src_generation_matches = cap_generation_matches(cmd.arg0, src_fd);
+                    src_live = src_fd < LNP64_FDR_SLOT_COUNT && fdr_valid[src_fd] &&
+                        !fdr_revoked[src_fd] &&
+                        (!src_is_token || (src_token_valid && src_generation_matches));
+                    payload_live = payload_fd < LNP64_FDR_SLOT_COUNT &&
+                        fdr_valid[payload_fd] && !fdr_revoked[payload_fd];
+                    if (cmd.flags != 64'd0) begin
+                        rsp_reg.errno_value <= LNP64_ERR_EINVAL;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end else if (!src_live ||
+                        fdr_kind[src_fd] != LNP64_FDR_KIND_PIPE_WRITER ||
+                        ((fdr_rights[src_fd] &
+                            (LNP64_CAP_RIGHT_TRANSFER | 64'd2)) !=
+                            (LNP64_CAP_RIGHT_TRANSFER | 64'd2))) begin
+                        rsp_reg.errno_value <= LNP64_ERR_EBADF;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end else if (!payload_live) begin
+                        rsp_reg.errno_value <= LNP64_ERR_EBADF;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end else if ((fdr_rights[payload_fd] & LNP64_CAP_RIGHT_TRANSFER) == 64'd0) begin
+                        rsp_reg.errno_value <= LNP64_ERR_EPERM;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end else if (cap_queue_valid) begin
+                        rsp_reg.errno_value <= LNP64_ERR_EAGAIN;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end else begin
+                        cap_queue_valid <= 1'b1;
+                        cap_queue_rights <= fdr_rights[payload_fd];
+                        cap_queue_lineage <= fdr_lineage[payload_fd];
+                        cap_queue_generation <= fdr_generation[payload_fd];
+                        cap_queue_revoked <= fdr_revoked[payload_fd];
+                        rsp_reg.result_value <= 64'd1;
+                        rsp_reg.errno_value <= LNP64_ERR_OK;
+                        rsp_reg.status <= LNP64_STATUS_OK;
+                    end
+                end else if (cmd.opcode == LNP64_OP_CAP_RECV) begin
+                    src_fd = cap_fd(cmd.arg0);
+                    dst_fd = cmd.arg1 == 64'd0 ? 3 : cap_fd(cmd.arg1);
+                    src_is_token = cmd.arg0 >= 64'd256;
+                    src_token_valid = cap_token_shape_valid(cmd.arg0);
+                    src_generation_matches = cap_generation_matches(cmd.arg0, src_fd);
+                    src_live = src_fd < LNP64_FDR_SLOT_COUNT && fdr_valid[src_fd] &&
+                        !fdr_revoked[src_fd] &&
+                        (!src_is_token || (src_token_valid && src_generation_matches));
+                    recv_rights = cmd.rights_mask == 64'd0 ? cap_queue_rights : cmd.rights_mask;
+                    if (cmd.flags != 64'd0) begin
+                        rsp_reg.errno_value <= LNP64_ERR_EINVAL;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end else if (!src_live ||
+                        fdr_kind[src_fd] != LNP64_FDR_KIND_PIPE_READER ||
+                        ((fdr_rights[src_fd] &
+                            (LNP64_CAP_RIGHT_TRANSFER | 64'd1)) !=
+                            (LNP64_CAP_RIGHT_TRANSFER | 64'd1))) begin
+                        rsp_reg.errno_value <= LNP64_ERR_EBADF;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end else if (!cap_queue_valid) begin
+                        rsp_reg.errno_value <= LNP64_ERR_EAGAIN;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end else if (cap_queue_revoked) begin
+                        rsp_reg.errno_value <= LNP64_ERR_ESTALE;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end else if ((recv_rights & ~cap_queue_rights) != 64'd0) begin
+                        rsp_reg.errno_value <= LNP64_ERR_EPERM;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end else if (dst_fd >= LNP64_FDR_SLOT_COUNT) begin
+                        rsp_reg.errno_value <= LNP64_ERR_EBADF;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end else begin
+                        next_generation = fdr_generation[dst_fd] + 64'd1;
+                        cap_queue_valid <= 1'b0;
+                        cap_queue_generation <= 64'd0;
+                        fdr_valid[dst_fd] <= 1'b1;
+                        fdr_revoked[dst_fd] <= 1'b0;
+                        fdr_generation[dst_fd] <= next_generation;
+                        fdr_rights[dst_fd] <= recv_rights;
+                        fdr_lineage[dst_fd] <= cap_queue_lineage;
+                        fdr_kind[dst_fd] <= LNP64_FDR_KIND_GENERIC;
+                        rsp_reg.result_value <= cap_token(dst_fd, next_generation);
+                        rsp_reg.errno_value <= LNP64_ERR_OK;
+                        rsp_reg.status <= LNP64_STATUS_OK;
+                    end
                 end else if (cmd.opcode == LNP64_OP_CAP_REVOKE) begin
                     src_fd = cap_fd(cmd.arg0);
                     src_is_token = cmd.arg0 >= 64'd256;
@@ -771,6 +891,10 @@ module lnp64_cap_engine(
                                 revoke_count = revoke_count + 64'd1;
                             end
                         end
+                        if (cap_queue_valid && !cap_queue_revoked &&
+                            cap_queue_lineage == fdr_lineage[src_fd]) begin
+                            revoke_count = revoke_count + 64'd1;
+                        end
                     end
                     if (src_stale) begin
                         rsp_reg.errno_value <= LNP64_ERR_ESTALE;
@@ -782,6 +906,10 @@ module lnp64_cap_engine(
                                 fdr_revoked[i] <= 1'b1;
                                 fdr_generation[i] <= fdr_generation[i] + 64'd1;
                             end
+                        end
+                        if (cap_queue_valid && !cap_queue_revoked &&
+                            cap_queue_lineage == fdr_lineage[src_fd]) begin
+                            cap_queue_revoked <= 1'b1;
                         end
                         rsp_reg.result_value <= revoke_count;
                         rsp_reg.errno_value <= LNP64_ERR_OK;
@@ -815,6 +943,9 @@ module lnp64_object_engine(
     output logic rsp_valid,
     input logic rsp_ready,
     output lnp64_rsp_t rsp,
+    output logic cap_sync_valid,
+    output logic [31:0] cap_sync_reader_fd,
+    output logic [31:0] cap_sync_writer_fd,
     output logic [31:0] telemetry_counter,
     output logic [31:0] fault_counter
 );
@@ -850,10 +981,14 @@ module lnp64_object_engine(
             rsp_reg <= '0;
             telemetry_counter <= 32'd0;
             fault_counter <= 32'd0;
+            cap_sync_valid <= 1'b0;
+            cap_sync_reader_fd <= 32'd0;
+            cap_sync_writer_fd <= 32'd0;
             for (i = 0; i < LNP64_FDR_SLOT_COUNT; i = i + 1) begin
                 fdr_valid[i] <= i < 3;
             end
         end else begin
+            cap_sync_valid <= 1'b0;
             if (have_rsp && rsp_ready) begin
                 have_rsp <= 1'b0;
             end
@@ -898,6 +1033,9 @@ module lnp64_object_engine(
                         rsp_reg.errno_value <= LNP64_ERR_OK;
                         rsp_reg.status <= LNP64_STATUS_OK;
                         rsp_reg.event_mask <= {writer_fd[31:0], reader_fd[31:0]};
+                        cap_sync_valid <= 1'b1;
+                        cap_sync_reader_fd <= reader_fd[31:0];
+                        cap_sync_writer_fd <= writer_fd[31:0];
                     end else begin
                         rsp_reg.errno_value <= LNP64_ERR_EINVAL;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
