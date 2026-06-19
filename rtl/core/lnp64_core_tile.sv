@@ -159,7 +159,6 @@ module lnp64_core_tile #(
     logic cap_engine_shadow_enabled;
     logic object_engine_shadow_enabled;
     logic domain_engine_shadow_enabled;
-    logic heap_engine_shadow_enabled;
     logic vma_engine_shadow_enabled;
     logic dma_engine_shadow_enabled;
     logic cmp_zero;
@@ -1553,7 +1552,6 @@ module lnp64_core_tile #(
             cap_engine_shadow_enabled <= 1'b1;
             object_engine_shadow_enabled <= 1'b1;
             domain_engine_shadow_enabled <= 1'b1;
-            heap_engine_shadow_enabled <= 1'b1;
             vma_engine_shadow_enabled <= 1'b1;
             dma_engine_shadow_enabled <= 1'b1;
             cmp_zero <= 1'b0;
@@ -2170,59 +2168,19 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_ALLOC: begin
-                                if (heap_engine_shadow_enabled) begin
-                                    pending_unsupported <= 1'b0;
-                                    command_pc <= pc;
-                                    state <= CORE_SEND_CMD;
-                                end else begin
-                                    gpr[dec.rd] <= align_up_u64(heap_next, 64'd64);
-                                    heap_alloc_ptr[heap_alloc_next_slot] <= align_up_u64(heap_next, 64'd64);
-                                    heap_alloc_size[heap_alloc_next_slot] <= alloc_len_u64(gpr[dec.rs1]);
-                                    heap_alloc_valid[heap_alloc_next_slot] <= 1'b1;
-                                    heap_alloc_next_slot <= heap_alloc_next_slot + 2'd1;
-                                    heap_next <= align_up_u64(heap_next, 64'd64) + alloc_len_u64(gpr[dec.rs1]);
-                                    pc <= pc + 32'd1;
-                                    retired_count <= retired_count + 32'd1;
-                                    retire_submit_valid <= 1'b1;
-                                    retire_submit_record <= retire_submit_next;
-                                end
+                                pending_unsupported <= 1'b0;
+                                command_pc <= pc;
+                                state <= CORE_SEND_CMD;
                             end
                             LNP64_OP_ALLOC_EX: begin
-                                if (heap_engine_shadow_enabled) begin
-                                    pending_unsupported <= 1'b0;
-                                    command_pc <= pc;
-                                    state <= CORE_SEND_CMD;
-                                end else begin
-                                    gpr[dec.rd] <= align_up_u64(heap_next + 64'd4096, alloc_align_u64(gpr[dec.rs2]));
-                                    heap_alloc_ptr[heap_alloc_next_slot] <= align_up_u64(heap_next + 64'd4096, alloc_align_u64(gpr[dec.rs2]));
-                                    heap_alloc_size[heap_alloc_next_slot] <= alloc_len_u64(gpr[dec.rs1]);
-                                    heap_alloc_valid[heap_alloc_next_slot] <= 1'b1;
-                                    heap_alloc_next_slot <= heap_alloc_next_slot + 2'd1;
-                                    heap_next <= align_up_u64(heap_next + 64'd4096, alloc_align_u64(gpr[dec.rs2])) +
-                                        alloc_len_u64(gpr[dec.rs1]) + 64'd4096;
-                                    pc <= pc + 32'd1;
-                                    retired_count <= retired_count + 32'd1;
-                                    retire_submit_valid <= 1'b1;
-                                    retire_submit_record <= retire_submit_next;
-                                end
+                                pending_unsupported <= 1'b0;
+                                command_pc <= pc;
+                                state <= CORE_SEND_CMD;
                             end
                             LNP64_OP_ALLOC_SIZE: begin
-                                if (heap_engine_shadow_enabled) begin
-                                    pending_unsupported <= 1'b0;
-                                    command_pc <= pc;
-                                    state <= CORE_SEND_CMD;
-                                end else begin
-                                    gpr[dec.rd] <= 64'd0;
-                                    for (i = 0; i < 4; i = i + 1) begin
-                                        if (heap_alloc_valid[i] && heap_alloc_ptr[i] == gpr[dec.rs1]) begin
-                                            gpr[dec.rd] <= heap_alloc_size[i];
-                                        end
-                                    end
-                                    pc <= pc + 32'd1;
-                                    retired_count <= retired_count + 32'd1;
-                                    retire_submit_valid <= 1'b1;
-                                    retire_submit_record <= retire_submit_next;
-                                end
+                                pending_unsupported <= 1'b0;
+                                command_pc <= pc;
+                                state <= CORE_SEND_CMD;
                             end
                             LNP64_OP_MMAP: begin
                                 if (vma_engine_shadow_enabled) begin
@@ -2284,21 +2242,9 @@ module lnp64_core_tile #(
                                 end
                             end
                             LNP64_OP_FREE: begin
-                                if (heap_engine_shadow_enabled) begin
-                                    pending_unsupported <= 1'b0;
-                                    command_pc <= pc;
-                                    state <= CORE_SEND_CMD;
-                                end else begin
-                                    for (i = 0; i < 4; i = i + 1) begin
-                                        if (heap_alloc_valid[i] && heap_alloc_ptr[i] == gpr[dec.rd]) begin
-                                            heap_alloc_valid[i] <= 1'b0;
-                                        end
-                                    end
-                                    pc <= pc + 32'd1;
-                                    retired_count <= retired_count + 32'd1;
-                                    retire_submit_valid <= 1'b1;
-                                    retire_submit_record <= retire_submit_next;
-                                end
+                                pending_unsupported <= 1'b0;
+                                command_pc <= pc;
+                                state <= CORE_SEND_CMD;
                             end
                             LNP64_OP_LD: begin
                                 if (topology_record_valid && mem_addr == topology_record_base) begin
