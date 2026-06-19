@@ -182,6 +182,12 @@ module lnp64_top #(
     logic vma_rsp_valid;
     logic vma_rsp_ready;
     lnp64_rsp_t vma_rsp;
+    logic dma_cmd_valid;
+    logic dma_cmd_ready;
+    lnp64_cmd_t dma_cmd;
+    logic dma_rsp_valid;
+    logic dma_rsp_ready;
+    lnp64_rsp_t dma_rsp;
     logic object_cap_sync_valid;
     logic [31:0] object_cap_sync_reader_fd;
     logic [31:0] object_cap_sync_writer_fd;
@@ -433,6 +439,12 @@ module lnp64_top #(
         .vma_rsp_valid(vma_rsp_valid),
         .vma_rsp_ready(vma_rsp_ready),
         .vma_rsp(vma_rsp),
+        .dma_cmd_valid(dma_cmd_valid),
+        .dma_cmd_ready(dma_cmd_ready),
+        .dma_cmd(dma_cmd),
+        .dma_rsp_valid(dma_rsp_valid),
+        .dma_rsp_ready(dma_rsp_ready),
+        .dma_rsp(dma_rsp),
         .fault_valid(routed_fault_valid),
         .fault_ready(1'b1),
         .fault(routed_fault),
@@ -546,7 +558,7 @@ module lnp64_top #(
     lnp64_page_allocator page_allocator_i(.clk(clk), .reset_n(logic_reset_n), .idle(page_allocator_idle), .telemetry_counter(), .fault_counter());
     lnp64_memory_fabric memory_fabric_i(.clk(clk), .reset_n(logic_reset_n), .coherence_event_path_live(memory_visibility_live), .raw_physical_address_visible(memory_raw_pa_visible), .telemetry_counter(), .fault_counter());
     lnp64_metadata_broker metadata_i(.clk(clk), .reset_n(logic_reset_n), .idle(metadata_idle), .telemetry_counter(), .fault_counter());
-    lnp64_dma_fabric dma_i(.clk(clk), .reset_n(logic_reset_n), .visibility_event_path_live(dma_visibility_live), .raw_dma_authority_visible(dma_raw_visible), .telemetry_counter(), .fault_counter());
+    lnp64_dma_fabric dma_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(dma_cmd_valid), .cmd_ready(dma_cmd_ready), .cmd(dma_cmd), .rsp_valid(dma_rsp_valid), .rsp_ready(dma_rsp_ready), .rsp(dma_rsp), .visibility_event_path_live(dma_visibility_live), .raw_dma_authority_visible(dma_raw_visible), .telemetry_counter(), .fault_counter());
     lnp64_service_boundary service_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());
     lnp64_futex_atomic futex_i(.clk(clk), .reset_n(logic_reset_n), .idle(futex_idle), .telemetry_counter(), .fault_counter());
     lnp64_heap_engine heap_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(heap_cmd_valid), .cmd_ready(heap_cmd_ready), .cmd(heap_cmd), .rsp_valid(heap_rsp_valid), .rsp_ready(heap_rsp_ready), .rsp(heap_rsp), .telemetry_counter(), .fault_counter());
