@@ -6113,6 +6113,7 @@ mod tests {
             "tests/rtl/programs/top_signed_division.c",
             "tests/rtl/programs/top_byte_array.c",
             "tests/rtl/programs/top_heap_byte_lanes.c",
+            "demos/hello.c",
             "demos/rot13.c",
         ] {
             let toy_entry = entry_for(toy_source);
@@ -6142,6 +6143,7 @@ mod tests {
                 "byte_load_store",
             ),
             ("tests/rtl/programs/top_linked_heap_byte_lanes.c", "heap"),
+            ("tests/rtl/programs/top_linked_hello_native.c", "push_pull"),
             ("tests/rtl/programs/top_linked_rot13_native.c", "push_pull"),
             ("tests/rtl/programs/top_linked_rot13_native.c", "free"),
         ] {
