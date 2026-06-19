@@ -152,6 +152,12 @@ module lnp64_top #(
     lnp64_quote_t quote;
     logic [63:0] env_feature_bits;
     logic [31:0] env_limit_threads;
+    logic cap_cmd_valid;
+    logic cap_cmd_ready;
+    lnp64_cmd_t cap_cmd;
+    logic cap_rsp_valid;
+    logic cap_rsp_ready;
+    lnp64_rsp_t cap_rsp;
     logic object_cmd_valid;
     logic object_cmd_ready;
     lnp64_cmd_t object_cmd;
@@ -372,6 +378,12 @@ module lnp64_top #(
         .rsp_valid(core_rsp_valid),
         .rsp_ready(core_rsp_ready),
         .rsp(core_rsp),
+        .cap_cmd_valid(cap_cmd_valid),
+        .cap_cmd_ready(cap_cmd_ready),
+        .cap_cmd(cap_cmd),
+        .cap_rsp_valid(cap_rsp_valid),
+        .cap_rsp_ready(cap_rsp_ready),
+        .cap_rsp(cap_rsp),
         .object_cmd_valid(object_cmd_valid),
         .object_cmd_ready(object_cmd_ready),
         .object_cmd(object_cmd),
@@ -482,7 +494,7 @@ module lnp64_top #(
     lnp64_sd_spi_flash sd_spi_i(.clk(clk), .reset_n(logic_reset_n), .absent_or_idle(sd_spi_absent_or_idle), .telemetry_counter(), .fault_counter());
     lnp64_boot_image_storage boot_image_i(.clk(clk), .reset_n(logic_reset_n), .idle(boot_image_idle), .telemetry_counter(), .fault_counter());
 
-    lnp64_cap_engine cap_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());
+    lnp64_cap_engine cap_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(cap_cmd_valid), .cmd_ready(cap_cmd_ready), .cmd(cap_cmd), .rsp_valid(cap_rsp_valid), .rsp_ready(cap_rsp_ready), .rsp(cap_rsp), .telemetry_counter(), .fault_counter());
     lnp64_domain_engine domain_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());
     lnp64_object_engine object_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(object_cmd_valid), .cmd_ready(object_cmd_ready), .cmd(object_cmd), .rsp_valid(object_rsp_valid), .rsp_ready(object_rsp_ready), .rsp(object_rsp), .telemetry_counter(), .fault_counter());
     lnp64_gate_engine gate_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());

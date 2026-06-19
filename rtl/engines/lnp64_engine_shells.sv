@@ -89,6 +89,12 @@ module lnp64_engine_router (
     output logic rsp_valid,
     input  logic rsp_ready,
     output lnp64_rsp_t rsp,
+    output logic cap_cmd_valid,
+    input  logic cap_cmd_ready,
+    output lnp64_cmd_t cap_cmd,
+    input  logic cap_rsp_valid,
+    output logic cap_rsp_ready,
+    input  lnp64_rsp_t cap_rsp,
     output logic object_cmd_valid,
     input  logic object_cmd_ready,
     output lnp64_cmd_t object_cmd,
@@ -100,6 +106,7 @@ module lnp64_engine_router (
     output lnp64_fault_t fault,
     output logic [31:0] routed_counter
 );
+    logic route_cap;
     logic route_object;
     logic route_fault;
     logic route_default;
@@ -122,29 +129,38 @@ module lnp64_engine_router (
     logic [31:0] fault_faults;
     logic [31:0] unsupported_faults;
 
+    assign route_cap = cmd.opcode == LNP64_OP_CAP_DUP ||
+        cmd.opcode == LNP64_OP_CAP_SEND ||
+        cmd.opcode == LNP64_OP_CAP_RECV ||
+        cmd.opcode == LNP64_OP_CAP_REVOKE;
     assign route_object = cmd.opcode == LNP64_OP_OBJECT_CTL;
     assign route_fault = cmd.opcode == LNP64_OP_FAULT_INJECT;
-    assign route_default = !route_object && !route_fault;
+    assign route_default = !route_cap && !route_object && !route_fault;
 
+    assign cap_cmd_valid = cmd_valid && route_cap;
+    assign cap_cmd = cmd;
     assign object_cmd_valid = cmd_valid && route_object;
     assign object_cmd = cmd;
     assign fault_cmd_valid = cmd_valid && route_fault;
     assign unsupported_cmd_valid = cmd_valid && route_default;
 
     assign cmd_ready =
+        route_cap ? cap_cmd_ready :
         route_object ? object_cmd_ready :
         route_fault ? fault_cmd_ready :
         unsupported_cmd_ready;
 
-    assign rsp_valid = object_rsp_valid || fault_rsp_valid || unsupported_rsp_valid;
+    assign rsp_valid = cap_rsp_valid || object_rsp_valid || fault_rsp_valid || unsupported_rsp_valid;
     assign rsp =
+        cap_rsp_valid ? cap_rsp :
         object_rsp_valid ? object_rsp :
         fault_rsp_valid ? fault_rsp :
         unsupported_rsp;
 
-    assign object_rsp_ready = rsp_ready && object_rsp_valid;
-    assign fault_rsp_ready = rsp_ready && !object_rsp_valid && fault_rsp_valid;
-    assign unsupported_rsp_ready = rsp_ready && !object_rsp_valid && !fault_rsp_valid && unsupported_rsp_valid;
+    assign cap_rsp_ready = rsp_ready && cap_rsp_valid;
+    assign object_rsp_ready = rsp_ready && !cap_rsp_valid && object_rsp_valid;
+    assign fault_rsp_ready = rsp_ready && !cap_rsp_valid && !object_rsp_valid && fault_rsp_valid;
+    assign unsupported_rsp_ready = rsp_ready && !cap_rsp_valid && !object_rsp_valid && !fault_rsp_valid && unsupported_rsp_valid;
 
     assign fault_valid = fault_fault_valid || unsupported_fault_valid;
     assign fault = fault_fault_valid ? fault_fault : unsupported_fault;
