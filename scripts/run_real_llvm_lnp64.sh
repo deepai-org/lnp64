@@ -1818,6 +1818,11 @@ struct timeval {
   long tv_usec;
 };
 
+struct timespec {
+  long tv_sec;
+  long tv_nsec;
+};
+
 struct pollfd {
   int fd;
   short events;
@@ -1829,6 +1834,15 @@ struct epoll_event {
   unsigned long data;
 };
 
+struct kevent {
+  unsigned long ident;
+  short filter;
+  unsigned short flags;
+  unsigned int fflags;
+  long data;
+  void *udata;
+};
+
 int poll(struct pollfd *fds, nfds_t nfds, int timeout);
 int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
            struct timeval *timeout);
@@ -1836,16 +1850,22 @@ int epoll_create1(int flags);
 int epoll_ctl(int epfd, int op, int fd, struct epoll_event *event);
 int epoll_wait(int epfd, struct epoll_event *events, int maxevents,
                int timeout);
+int kqueue(void);
+int kevent(int kq, const struct kevent *changelist, int nchanges,
+           struct kevent *eventlist, int nevents, const struct timespec *timeout);
 
 int main(void) {
   struct pollfd fds[2];
   struct epoll_event ev;
   struct epoll_event out;
+  struct kevent change;
+  struct timespec ts = {0, 0};
   fd_set readfds;
   fd_set writefds;
   fd_set exceptfds;
   struct timeval timeout = {0, 0};
   int ep;
+  int kq;
   readfds.bits[0] = 0;
   writefds.bits[0] = 0;
   exceptfds.bits[0] = 0;
@@ -1872,6 +1892,17 @@ int main(void) {
     return 6;
   if (epoll_wait(ep, &out, 1, 0) != 0)
     return 7;
+  kq = kqueue();
+  if (kq < 0)
+    return 8;
+  change.ident = 0;
+  change.filter = -1;
+  change.flags = 1;
+  change.fflags = 0;
+  change.data = 0;
+  change.udata = 0;
+  if (kevent(kq, &change, 1, 0, 0, &ts) != 0)
+    return 9;
   return 0;
 }
 C
@@ -1885,7 +1916,7 @@ poll_libc_dump="$build_dir/poll-libc-clang-smoke.dump"
 "$llvm_objdump" -d --triple=lnp64-unknown-none "$poll_libc_obj" \
   >"$poll_libc_dump"
 grep -q 'call ' "$poll_libc_dump"
-printf 'real LLVM LNP64 clang poll/select/epoll libc object smoke passed: %s\n' \
+printf 'real LLVM LNP64 clang poll/select/epoll/kqueue libc object smoke passed: %s\n' \
   "$poll_libc_obj"
 
 libc_fd_impl_c="toolchain/liblnp64_fd_min.c"
@@ -1914,7 +1945,7 @@ libc_poll_impl_dump="$build_dir/liblnp64-poll-min.dump"
   >"$libc_poll_impl_dump"
 grep -q 'await r' "$libc_poll_impl_dump"
 grep -q 'ret' "$libc_poll_impl_dump"
-printf 'real LLVM LNP64 clang minilibc poll/select/epoll implementation object smoke passed: %s\n' \
+printf 'real LLVM LNP64 clang minilibc poll/select/epoll/kqueue implementation object smoke passed: %s\n' \
   "$libc_poll_impl_obj"
 
 stack_args_c="$build_dir/stack-args-smoke.c"
@@ -2417,7 +2448,7 @@ poll_libc_elf="$build_dir/lnp64-poll-libc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
   -o "$poll_libc_elf" "$crt0_obj" "$poll_libc_obj" "$libc_poll_impl_obj"
 test -s "$poll_libc_elf"
-printf 'real LLVM LNP64 lld poll/select/epoll libc link smoke passed: %s\n' \
+printf 'real LLVM LNP64 lld poll/select/epoll/kqueue libc link smoke passed: %s\n' \
   "$poll_libc_elf"
 
 indirect_call_elf="$build_dir/lnp64-indirect-call-linked.elf"

@@ -1681,19 +1681,25 @@ mod tests {
         assert!(libc_poll_min.contains("int epoll_create1(int flags)"));
         assert!(libc_poll_min.contains("int epoll_ctl(int epfd, int op, int fd"));
         assert!(libc_poll_min.contains("int epoll_wait(int epfd"));
+        assert!(libc_poll_min.contains("int kqueue(void)"));
+        assert!(libc_poll_min.contains("int kevent(int kq"));
         assert!(libc_poll_min.contains("__lnp_await"));
         assert!(real_llc.contains("select(1, &readfds, &writefds, &exceptfds, &timeout)"));
         assert!(real_llc.contains("epoll_create1(0)"));
         assert!(real_llc.contains("epoll_ctl(ep, 1, 0, &ev)"));
         assert!(real_llc.contains("epoll_wait(ep, &out, 1, 0)"));
+        assert!(real_llc.contains("kqueue()"));
+        assert!(real_llc.contains("kevent(kq, &change, 1, 0, 0, &ts)"));
         assert!(real_llc.contains("poll-libc-clang-smoke.o"));
         assert!(real_llc.contains("liblnp64-poll-min.o"));
         assert!(real_llc.contains("grep -q 'await r'"));
         assert!(
-            real_llc.contains("real LLVM LNP64 clang poll/select/epoll libc object smoke passed")
+            real_llc.contains(
+                "real LLVM LNP64 clang poll/select/epoll/kqueue libc object smoke passed"
+            )
         );
         assert!(real_llc.contains(
-            "real LLVM LNP64 clang minilibc poll/select/epoll implementation object smoke passed"
+            "real LLVM LNP64 clang minilibc poll/select/epoll/kqueue implementation object smoke passed"
         ));
         assert!(real_llc.contains("errno-clang-smoke.o"));
         assert!(real_llc.contains("lnp64_errno_store(22)"));
@@ -1802,7 +1808,10 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 lld futex libc link smoke passed"));
         assert!(real_llc.contains("lnp64-poll-libc-linked.elf"));
         assert!(real_llc.contains(r#""$poll_libc_obj" "$libc_poll_impl_obj""#));
-        assert!(real_llc.contains("real LLVM LNP64 lld poll/select/epoll libc link smoke passed"));
+        assert!(
+            real_llc
+                .contains("real LLVM LNP64 lld poll/select/epoll/kqueue libc link smoke passed")
+        );
         assert!(real_llc.contains("lnp64-exit-linked.elf"));
         assert!(real_llc.contains(r#""$exit_obj" "$libc_process_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld exit link smoke passed"));
@@ -1866,7 +1875,7 @@ mod tests {
         assert!(real_llc_docker.contains("lnp64-poll-libc-linked.elf"));
         assert!(
             real_llc_docker
-                .contains("real LLVM LNP64 run-elf poll/select/epoll libc execution passed")
+                .contains("real LLVM LNP64 run-elf poll/select/epoll/kqueue libc execution passed")
         );
         assert!(real_llc.contains("lnp64-intrinsic-amo-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld intrinsic AMO link smoke passed"));
@@ -2151,7 +2160,7 @@ mod tests {
         assert!(real_llc_docker.contains("lnp64-poll-libc-linked.elf"));
         assert!(
             real_llc_docker
-                .contains("real LLVM LNP64 run-elf poll/select/epoll libc execution passed")
+                .contains("real LLVM LNP64 run-elf poll/select/epoll/kqueue libc execution passed")
         );
         assert!(real_llc_docker.contains("lnp64-errno-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf errno execution passed"));
@@ -2255,7 +2264,7 @@ mod tests {
             "real_write_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
-            "real_poll_select_epoll_libc_execution",
+            "real_poll_select_epoll_kqueue_libc_execution",
             "real_errno_execution",
             "real_startup_execution",
             "real_getauxval_execution",
@@ -2290,7 +2299,7 @@ mod tests {
             "real_write_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
-            "real_poll_select_epoll_libc_execution",
+            "real_poll_select_epoll_kqueue_libc_execution",
             "real_intrinsic_push_execution",
             "real_intrinsic_control_execution",
             "real_intrinsic_mmap_execution",

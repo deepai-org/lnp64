@@ -11,6 +11,11 @@ struct timeval {
   long tv_usec;
 };
 
+struct timespec {
+  long tv_sec;
+  long tv_nsec;
+};
+
 struct pollfd {
   int fd;
   short events;
@@ -22,12 +27,27 @@ struct epoll_event {
   unsigned long data;
 };
 
+struct kevent {
+  unsigned long ident;
+  short filter;
+  unsigned short flags;
+  unsigned int fflags;
+  long data;
+  void *udata;
+};
+
 enum {
+  LNP64_EVFILT_READ = -1,
+  LNP64_EVFILT_WRITE = -2,
+  LNP64_EV_ADD = 0x0001,
+  LNP64_EV_DELETE = 0x0002,
   LNP64_EPOLL_CTL_ADD = 1,
   LNP64_EPOLL_CTL_DEL = 2,
   LNP64_EPOLL_CTL_MOD = 3,
   LNP64_EPOLL_FD = 64,
   LNP64_EPOLL_MAX = 16,
+  LNP64_KQUEUE_FD = 65,
+  LNP64_KQUEUE_MAX = 16,
   LNP64_POLLIN = 0x01,
   LNP64_POLLOUT = 0x04,
   LNP64_POLLERR = 0x08,
@@ -66,6 +86,22 @@ int poll(struct pollfd *fds, nfds_t nfds, int timeout) {
   }
 
   return ready;
+}
+
+static int lnp64_filter_events(short filter) {
+  if (filter == LNP64_EVFILT_READ)
+    return LNP64_POLLIN;
+  if (filter == LNP64_EVFILT_WRITE)
+    return LNP64_POLLOUT;
+  return 0;
+}
+
+static lnp64_word_t lnp64_timespec_timeout_word(const struct timespec *timeout) {
+  if (!timeout)
+    return (lnp64_word_t)-1;
+  if (timeout->tv_sec <= 0 && timeout->tv_nsec <= 0)
+    return 0;
+  return 1;
 }
 
 static int lnp64_epoll_created;
@@ -142,6 +178,78 @@ int epoll_wait(int epfd, struct epoll_event *events, int maxevents,
     if (status != 0 && status != (lnp64_word_t)-1) {
       events[ready].events = lnp64_epoll_events[i];
       events[ready].data = lnp64_epoll_data[i];
+      ready = ready + 1;
+    }
+  }
+
+  return ready;
+}
+
+static int lnp64_kqueue_created;
+static int lnp64_kqueue_count;
+static unsigned long lnp64_kqueue_ident[LNP64_KQUEUE_MAX];
+static short lnp64_kqueue_filter[LNP64_KQUEUE_MAX];
+static void *lnp64_kqueue_udata[LNP64_KQUEUE_MAX];
+
+int kqueue(void) {
+  lnp64_kqueue_created = 1;
+  lnp64_kqueue_count = 0;
+  return LNP64_KQUEUE_FD;
+}
+
+static int lnp64_kqueue_find(unsigned long ident, short filter) {
+  for (int i = 0; i < lnp64_kqueue_count; i = i + 1) {
+    if (lnp64_kqueue_ident[i] == ident && lnp64_kqueue_filter[i] == filter)
+      return i;
+  }
+  return -1;
+}
+
+static int lnp64_kqueue_apply_change(const struct kevent *change) {
+  int slot = lnp64_kqueue_find(change->ident, change->filter);
+  if (slot < 0) {
+    if (lnp64_kqueue_count >= LNP64_KQUEUE_MAX)
+      return -1;
+    slot = lnp64_kqueue_count;
+    lnp64_kqueue_count = lnp64_kqueue_count + 1;
+  }
+  lnp64_kqueue_ident[slot] = change->ident;
+  lnp64_kqueue_filter[slot] = change->filter;
+  lnp64_kqueue_udata[slot] = change->udata;
+  return 0;
+}
+
+int kevent(int kq, const struct kevent *changelist, int nchanges,
+           struct kevent *eventlist, int nevents,
+           const struct timespec *timeout) {
+  int ready = 0;
+  lnp64_word_t timeout_word = lnp64_timespec_timeout_word(timeout);
+
+  if (!lnp64_kqueue_created || kq != LNP64_KQUEUE_FD || nchanges < 0 ||
+      nevents < 0)
+    return -1;
+
+  for (int i = 0; i < nchanges; i = i + 1) {
+    if (!changelist || lnp64_kqueue_apply_change(&changelist[i]) != 0)
+      return -1;
+  }
+
+  if (!eventlist || nevents == 0)
+    return 0;
+
+  for (int i = 0; i < lnp64_kqueue_count && ready < nevents; i = i + 1) {
+    lnp64_word_t mask = (lnp64_word_t)lnp64_filter_events(lnp64_kqueue_filter[i]);
+    if (mask == 0)
+      continue;
+    lnp64_word_t status =
+        __lnp_await((lnp64_cap_t)lnp64_kqueue_ident[i], mask, timeout_word);
+    if (status != 0 && status != (lnp64_word_t)-1) {
+      eventlist[ready].ident = lnp64_kqueue_ident[i];
+      eventlist[ready].filter = lnp64_kqueue_filter[i];
+      eventlist[ready].flags = 0;
+      eventlist[ready].fflags = 0;
+      eventlist[ready].data = 0;
+      eventlist[ready].udata = lnp64_kqueue_udata[i];
       ready = ready + 1;
     }
   }
