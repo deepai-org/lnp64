@@ -1,7 +1,6 @@
 #include "lnp64_intrinsics.h"
 
-typedef unsigned long size_t;
-typedef unsigned long socklen_t;
+#include <sys/socket.h>
 
 enum {
   LNP64_OBJECT_OP_CREATE = 1,

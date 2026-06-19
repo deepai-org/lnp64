@@ -1,40 +1,9 @@
 #include "lnp64_intrinsics.h"
 
-typedef unsigned long nfds_t;
-
-typedef struct {
-  unsigned long bits[16];
-} fd_set;
-
-struct timeval {
-  long tv_sec;
-  long tv_usec;
-};
-
-struct timespec {
-  long tv_sec;
-  long tv_nsec;
-};
-
-struct pollfd {
-  int fd;
-  short events;
-  short revents;
-};
-
-struct epoll_event {
-  unsigned int events;
-  unsigned long data;
-};
-
-struct kevent {
-  unsigned long ident;
-  short filter;
-  unsigned short flags;
-  unsigned int fflags;
-  long data;
-  void *udata;
-};
+#include <poll.h>
+#include <sys/epoll.h>
+#include <sys/event.h>
+#include <sys/select.h>
 
 enum {
   LNP64_EVFILT_READ = -1,

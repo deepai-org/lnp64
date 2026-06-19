@@ -1977,6 +1977,7 @@ libc_vma_impl_c="toolchain/liblnp64_vma_min.c"
 libc_vma_impl_obj="$build_dir/liblnp64-vma-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$libc_vma_impl_c" -o "$libc_vma_impl_obj"
 test -s "$libc_vma_impl_obj"
 libc_vma_impl_dump="$build_dir/liblnp64-vma-min.dump"
@@ -4208,6 +4209,7 @@ libc_poll_impl_c="toolchain/liblnp64_poll_min.c"
 libc_poll_impl_obj="$build_dir/liblnp64-poll-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$libc_poll_impl_c" -o "$libc_poll_impl_obj"
 test -s "$libc_poll_impl_obj"
 libc_poll_impl_dump="$build_dir/liblnp64-poll-min.dump"
@@ -4239,6 +4241,7 @@ libc_socket_impl_c="toolchain/liblnp64_socket_min.c"
 libc_socket_impl_obj="$build_dir/liblnp64-socket-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$libc_socket_impl_c" -o "$libc_socket_impl_obj"
 test -s "$libc_socket_impl_obj"
 libc_socket_impl_dump="$build_dir/liblnp64-socket-min.dump"

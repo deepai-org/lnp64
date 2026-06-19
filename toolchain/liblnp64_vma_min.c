@@ -1,6 +1,6 @@
 #include "lnp64_intrinsics.h"
 
-typedef unsigned long size_t;
+#include <sys/mman.h>
 
 enum {
   LNP64_EINVAL = 22,

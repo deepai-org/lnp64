@@ -2348,6 +2348,11 @@ mod tests {
             "real LLVM LNP64 clang minilibc semaphore implementation object smoke passed"
         ));
         assert!(real_llc.contains("toolchain/liblnp64_poll_min.c"));
+        assert!(libc_poll_min.contains("#include <poll.h>"));
+        assert!(libc_poll_min.contains("#include <sys/epoll.h>"));
+        assert!(libc_poll_min.contains("#include <sys/event.h>"));
+        assert!(libc_poll_min.contains("#include <sys/select.h>"));
+        assert!(!libc_poll_min.contains("typedef unsigned long nfds_t;"));
         assert!(libc_poll_min.contains("int poll(struct pollfd *fds"));
         assert!(libc_poll_min.contains("int select(int nfds"));
         assert!(libc_poll_min.contains("int epoll_create1(int flags)"));
@@ -2382,6 +2387,7 @@ mod tests {
         assert!(real_llc.contains("kevent(kq, &change, 1, 0, 0, &ts)"));
         assert!(real_llc.contains("poll-libc-clang-smoke.o"));
         assert!(real_llc.contains("liblnp64-poll-min.o"));
+        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_poll_impl_c\""));
         assert!(real_llc.contains("grep -q 'await r'"));
         assert!(
             real_llc.contains(
@@ -2427,6 +2433,8 @@ mod tests {
             )
         );
         assert!(real_llc.contains("toolchain/liblnp64_socket_min.c"));
+        assert!(libc_socket_min.contains("#include <sys/socket.h>"));
+        assert!(!libc_socket_min.contains("typedef unsigned long socklen_t;"));
         assert!(libc_socket_min.contains("int socket(int domain"));
         assert!(libc_socket_min.contains("int bind(int fd"));
         assert!(libc_socket_min.contains("int listen(int fd"));
@@ -2448,6 +2456,7 @@ mod tests {
         assert!(netinet_in_header.contains("#define IPPROTO_TCP"));
         assert!(real_llc.contains("socket-libc-clang-smoke.o"));
         assert!(real_llc.contains("#include <sys/socket.h>"));
+        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_socket_impl_c\""));
         assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$socket_libc_c\""));
         assert!(real_llc.contains("socket(AF_INET, SOCK_STREAM, 0)"));
         assert!(real_llc.contains("setsockopt(server, SOL_SOCKET, SO_REUSEADDR"));
@@ -3041,6 +3050,8 @@ mod tests {
         ));
         assert!(real_llc.contains("real LLVM LNP64 lld metadata libc link smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_vma_min.c"));
+        assert!(libc_vma_min.contains("#include <sys/mman.h>"));
+        assert!(!libc_vma_min.contains("typedef unsigned long size_t;"));
         assert!(libc_vma_min.contains("void *mmap("));
         assert!(libc_vma_min.contains("int mprotect("));
         assert!(libc_vma_min.contains("int munmap("));
@@ -3055,6 +3066,7 @@ mod tests {
         assert!(sys_mman_header.contains("int mprotect("));
         assert!(sys_mman_header.contains("int munmap("));
         assert!(real_llc.contains("liblnp64-vma-min.o"));
+        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_vma_impl_c\""));
         assert!(
             real_llc
                 .contains("real LLVM LNP64 clang minilibc VMA implementation object smoke passed")
