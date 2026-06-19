@@ -211,6 +211,17 @@ independent M1-M15 randomized/cosim gates in parallel; each gate writes its own
 temporary log and failures replay that log. Use this for full Docker runs when
 the machine has enough CPU headroom.
 
+The full RTL/proof gate avoids rerunning the M1 and M7 Verilator builds solely
+for typed-checker parsing: it tees each gate log once and then runs the matching
+typed checker with `LNP64_M1_TYPED_COMMIT_USE_EXISTING=1` or
+`LNP64_M7_TYPED_COMMIT_USE_EXISTING=1`. For manual debugging, the same pattern
+works directly:
+
+```sh
+bash scripts/run_rtl_m7.sh | tee /tmp/lnp64_rtl_m7_debug.log
+LNP64_M7_TYPED_COMMIT_USE_EXISTING=1 LNP64_M7_TYPED_COMMIT_LOG=/tmp/lnp64_rtl_m7_debug.log scripts/check_rtl_m7_typed_commit_trace.py
+```
+
 Focused RTL/proof loop:
 
 ```sh

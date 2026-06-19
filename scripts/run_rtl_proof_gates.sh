@@ -68,8 +68,14 @@ formal/m15_object_profiles_model.py >/dev/null
 
 bash scripts/run_rtl_s0.sh
 LNP64_TYPED_TRACE_USE_EXISTING=1 scripts/check_rtl_typed_trace_contract.py
-bash scripts/run_rtl_m1.sh
-scripts/check_rtl_m1_typed_commit_trace.py
+
+m1_log="${TMPDIR:-/tmp}/lnp64_rtl_proof_m1.log"
+default_m1_seeds="0 1 7 42 255 1024 4095 4096 65536 1048576 16777216 134217728 268435456 536870912"
+LNP64_COSIM_SEEDS="${LNP64_M1_TYPED_COMMIT_SEEDS:-$default_m1_seeds}" \
+  bash scripts/run_rtl_m1.sh | tee "$m1_log"
+LNP64_M1_TYPED_COMMIT_USE_EXISTING=1 \
+  LNP64_M1_TYPED_COMMIT_LOG="$m1_log" \
+  scripts/check_rtl_m1_typed_commit_trace.py
 scripts/test_rtl_m1_typed_commit_checker.py
 scripts/test_rtl_m1_schema_checker.py
 bash scripts/run_rtl_m2.sh
@@ -77,8 +83,13 @@ bash scripts/run_rtl_m3.sh
 bash scripts/run_rtl_m4.sh
 bash scripts/run_rtl_m5.sh
 bash scripts/run_rtl_m6.sh
-bash scripts/run_rtl_m7.sh
-scripts/check_rtl_m7_typed_commit_trace.py
+
+m7_log="${TMPDIR:-/tmp}/lnp64_rtl_proof_m7.log"
+LNP64_COSIM_SEEDS="${LNP64_M7_TYPED_COMMIT_SEEDS:-0}" \
+  bash scripts/run_rtl_m7.sh | tee "$m7_log"
+LNP64_M7_TYPED_COMMIT_USE_EXISTING=1 \
+  LNP64_M7_TYPED_COMMIT_LOG="$m7_log" \
+  scripts/check_rtl_m7_typed_commit_trace.py
 scripts/test_rtl_m7_typed_commit_checker.py
 bash scripts/run_rtl_m8.sh
 bash scripts/run_rtl_m9.sh

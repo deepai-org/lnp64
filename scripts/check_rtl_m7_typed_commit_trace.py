@@ -19,6 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = ROOT / "rtl/schema/lnp64_shared_schema.json"
+DEFAULT_M7_TRACE_LOG = Path("/tmp/lnp64_rtl_m7_typed_commit.log")
 
 ERR_OK = 0
 ERR_EAGAIN = 11
@@ -183,6 +184,13 @@ def load_schema() -> tuple[tuple[str, ...], tuple[int, ...], tuple[str, ...], tu
 
 
 def run_m7_gate() -> str:
+    log_path = Path(os.environ.get("LNP64_M7_TYPED_COMMIT_LOG", DEFAULT_M7_TRACE_LOG))
+    if os.environ.get("LNP64_M7_TYPED_COMMIT_USE_EXISTING") == "1":
+        try:
+            return log_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            fail(f"missing existing M7 typed commit log {log_path}: {exc}")
+
     env = os.environ.copy()
     env["LNP64_COSIM_SEEDS"] = os.environ.get("LNP64_M7_TYPED_COMMIT_SEEDS", "0")
     proc = subprocess.run(
@@ -197,6 +205,10 @@ def run_m7_gate() -> str:
     if proc.returncode != 0:
         print(proc.stdout, end="")
         fail(f"scripts/run_rtl_m7.sh exited with {proc.returncode}")
+    try:
+        log_path.write_text(proc.stdout, encoding="utf-8")
+    except OSError as exc:
+        fail(f"could not write M7 typed commit log {log_path}: {exc}")
     return proc.stdout
 
 
