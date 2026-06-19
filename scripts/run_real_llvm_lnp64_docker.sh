@@ -186,6 +186,13 @@ grep -q 'exit=0' <<<"$stack_aggregate_output"
 printf 'real LLVM LNP64 run-elf stack aggregate execution passed: %s\n' \
   "$stack_aggregate_probe"
 
+stack_args_probe="target/llvm-lnp64-build/lnp64-stack-args-linked.elf"
+cargo run --quiet -- elf-plan "$stack_args_probe" >/dev/null
+stack_args_output="$(cargo run --quiet -- run-elf "$stack_args_probe")"
+grep -q 'exit=0' <<<"$stack_args_output"
+printf 'real LLVM LNP64 run-elf stack-argument execution passed: %s\n' \
+  "$stack_args_probe"
+
 libc_string_probe="target/llvm-lnp64-build/lnp64-libc-string-linked.elf"
 cargo run --quiet -- elf-plan "$libc_string_probe" >/dev/null
 libc_string_output="$(cargo run --quiet -- run-elf "$libc_string_probe")"

@@ -1176,41 +1176,31 @@ grep -q 'call ' "$read_dump"
 printf 'real LLVM LNP64 clang read object smoke passed: %s\n' \
   "$read_obj"
 
-stack_arg_formal_c="$build_dir/stack-arg-formal-negative.c"
-cat >"$stack_arg_formal_c" <<'C'
-int sum7(int a, int b, int c, int d, int e, int f, int g) {
+stack_args_c="$build_dir/stack-args-smoke.c"
+cat >"$stack_args_c" <<'C'
+__attribute__((noinline)) int sum7(int a, int b, int c, int d, int e, int f, int g) {
   return a + b + c + d + e + f + g;
 }
-C
-
-if "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
-  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
-  -c "$stack_arg_formal_c" -o "$build_dir/stack-arg-formal-negative.o" \
-  2>"$build_dir/stack-arg-formal-negative.err"; then
-  printf 'expected LNP64 stack formal argument rejection to fail\n' >&2
-  exit 1
-fi
-grep -q 'LNP64 stack formal arguments are not implemented yet' \
-  "$build_dir/stack-arg-formal-negative.err"
-
-stack_arg_call_c="$build_dir/stack-arg-call-negative.c"
-cat >"$stack_arg_call_c" <<'C'
-extern int sum7(int a, int b, int c, int d, int e, int f, int g);
 int main(void) {
-  return sum7(1, 2, 3, 4, 5, 6, 7);
+  return sum7(1, 2, 3, 4, 5, 6, 7) - 28;
 }
 C
 
-if "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
+stack_args_obj="$build_dir/stack-args-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
-  -c "$stack_arg_call_c" -o "$build_dir/stack-arg-call-negative.o" \
-  2>"$build_dir/stack-arg-call-negative.err"; then
-  printf 'expected LNP64 stack call argument rejection to fail\n' >&2
-  exit 1
-fi
-grep -q 'LNP64 stack call arguments are not implemented yet' \
-  "$build_dir/stack-arg-call-negative.err"
-printf 'real LLVM LNP64 stack argument negative smokes passed\n'
+  -c "$stack_args_c" -o "$stack_args_obj"
+test -s "$stack_args_obj"
+stack_args_dump="$build_dir/stack-args-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$stack_args_obj" \
+  >"$stack_args_dump"
+grep -q 'call ' "$stack_args_dump"
+grep -q 'lr_get r' "$stack_args_dump"
+grep -q 'lr_set r' "$stack_args_dump"
+grep -q 'st ' "$stack_args_dump"
+grep -q 'ld ' "$stack_args_dump"
+printf 'real LLVM LNP64 clang stack-argument object smoke passed: %s\n' \
+  "$stack_args_obj"
 
 crt0_obj="$build_dir/crt0-smoke.o"
 "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj toolchain/crt0_lnp64.s \
@@ -1488,6 +1478,13 @@ stack_aggregate_elf="$build_dir/lnp64-stack-aggregate-linked.elf"
 test -s "$stack_aggregate_elf"
 printf 'real LLVM LNP64 lld stack aggregate link smoke passed: %s\n' \
   "$stack_aggregate_elf"
+
+stack_args_elf="$build_dir/lnp64-stack-args-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$stack_args_elf" "$crt0_obj" "$stack_args_obj"
+test -s "$stack_args_elf"
+printf 'real LLVM LNP64 lld stack-argument link smoke passed: %s\n' \
+  "$stack_args_elf"
 
 libc_string_elf="$build_dir/lnp64-libc-string-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

@@ -206,6 +206,14 @@ public:
       Instr.setOpcode(LNP64::CALL_REG);
       addReg(Instr, A);
       return MCDisassembler::Success;
+    case 0x29:
+      Instr.setOpcode(LNP64::LR_GET);
+      addReg(Instr, A);
+      return MCDisassembler::Success;
+    case 0x2a:
+      Instr.setOpcode(LNP64::LR_SET);
+      addReg(Instr, A);
+      return MCDisassembler::Success;
     case 0xa0:
       Instr.setOpcode(LNP64::ADDI);
       addReg(Instr, A);

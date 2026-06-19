@@ -113,9 +113,11 @@ external `alloc`/`free`/`write` call references, stack-local pointer storage,
 and string-address relocations without claiming runtime allocator execution;
 the Fibonacci object gate covers recursive direct calls, returns, local
 spill-slot traffic, and multi-function object emission.
-Stack-passed call operands/results, varargs, richer aggregate ABI cases,
-unaligned/large-offset address expansion, fuller global/constant-pool models,
-and the remaining `__lnp_*` native shim coverage remain bring-up blockers.
+Fixed integer stack-passed call operands now lower through call-frame pseudos,
+SP-relative stores/loads, and non-leaf `LR_GET`/`LR_SET` spill/restore.
+Varargs, stack returns, richer aggregate ABI cases, unaligned/large-offset
+address expansion, fuller global/constant-pool models, and the remaining
+`__lnp_*` native shim coverage remain bring-up blockers.
 Narrow memory selection covers zero-extending byte/half/word loads and
 truncating byte/half/word stores through `LD_B`/`LD_H`/`LD_W` and
 `ST_B`/`ST_H`/`ST_W`.
@@ -129,10 +131,10 @@ execution smokes. The remaining `__lnp_*` shims still need backend nodes or
 runtime call fallbacks.
 Return lowering now maps the LLVM return value path through `RetCC_LNP64` into
 `r1` and selects a target `RET_FLAG` DAG node to the architectural `RET`;
-formal argument lowering maps register arguments from `CC_LNP64` live-ins.
-This first call-convention lowering is intentionally register-only: varargs,
-stack arguments, stack returns, and broader call-frame pseudo handling remain
-bring-up blockers.
+formal argument lowering maps register arguments from `CC_LNP64` live-ins, and
+fixed integer stack arguments use reserved call-frame pseudos plus SP-relative
+stores/loads. Varargs, stack returns, aggregate ABI corners, and broader
+call-frame stress remain bring-up blockers.
 Control-flow opcodes now carry TableGen instruction properties for branches,
 calls, link-register definition/use, returns, terminators, and barriers, so
 later call/return lowering and verifier work can rely on instruction metadata.

@@ -120,6 +120,8 @@ pub enum Instr {
     Branch(Condition, Target),
     Call(Target),
     CallReg(Reg),
+    LrGet(Reg),
+    LrSet(Reg),
     Ret,
     Ld(Reg, MemRef, Width),
     St(MemRef, Reg, Width),

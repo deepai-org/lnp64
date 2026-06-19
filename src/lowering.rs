@@ -1530,6 +1530,8 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang realloc object smoke passed"));
         assert!(real_llc.contains("read-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang read object smoke passed"));
+        assert!(real_llc.contains("stack-args-clang-smoke.o"));
+        assert!(real_llc.contains("real LLVM LNP64 clang stack-argument object smoke passed"));
         assert!(real_llc.contains("toolchain/crt0_lnp64.s"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc crt0 smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_min.s"));
@@ -1585,6 +1587,8 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 lld intrinsic AMO link smoke passed"));
         assert!(real_llc.contains("lnp64-c11-atomic-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld C11 atomic link smoke passed"));
+        assert!(real_llc.contains("lnp64-stack-args-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld stack-argument link smoke passed"));
         assert!(real_llc.contains("lnp64-$demo-clang-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld clang demo link smoke passed"));
         assert!(real_llc.contains("rewrite_with_perl"));
@@ -1821,6 +1825,10 @@ mod tests {
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf csel execution passed"));
         assert!(real_llc_docker.contains("lnp64-call-clobber-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf call-clobber execution passed"));
+        assert!(real_llc_docker.contains("lnp64-stack-args-linked.elf"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf stack-argument execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-libc-string-linked.elf"));
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf minilibc string execution passed")
@@ -1920,6 +1928,7 @@ mod tests {
             "real_intrinsic_control_execution",
             "real_intrinsic_amo_execution",
             "real_c11_atomic_execution",
+            "real_stack_argument_execution",
             "real_exit_execution",
             "entry_state",
             "text_fetch_decode",
@@ -2143,6 +2152,8 @@ mod tests {
             "LI32",
             "LD",
             "CALL",
+            "LR_GET",
+            "LR_SET",
             "RET",
             "CSET_EQ",
             "CSET_ULT",
@@ -2215,6 +2226,8 @@ mod tests {
         assert!(inst_printer.contains("case LNP64::LA"));
         assert!(inst_printer.contains("case LNP64::LI32"));
         assert!(inst_printer.contains("call_reg"));
+        assert!(inst_printer.contains("lr_get"));
+        assert!(inst_printer.contains("lr_set"));
         assert!(mc_emitter.contains("case LNP64::AND"));
         assert!(mc_emitter.contains("case LNP64::CMP"));
         assert!(mc_emitter.contains("case LNP64::CMPU"));
@@ -2237,6 +2250,8 @@ mod tests {
         assert!(asm_parser.contains(r#".Case("la", LNP64::LA)"#));
         assert!(asm_parser.contains(r#".Case("li32", LNP64::LI32)"#));
         assert!(asm_parser.contains(r#".Case("call", LNP64::CALL)"#));
+        assert!(asm_parser.contains(r#".Case("lr_get", LNP64::LR_GET)"#));
+        assert!(asm_parser.contains(r#".Case("lr_set", LNP64::LR_SET)"#));
         assert!(asm_parser.contains(r#".Case("cset.eq", LNP64::CSET_EQ)"#));
         assert!(asm_parser.contains(r#".Case("cmpu", LNP64::CMPU)"#));
         assert!(asm_parser.contains(r#".Case("cset.ult", LNP64::CSET_ULT)"#));
@@ -2263,6 +2278,8 @@ mod tests {
         assert!(disassembler.contains("Instr.setOpcode(LNP64::CSET_ULT)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::CALL)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::CALL_REG)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::LR_GET)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::LR_SET)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::ERRNO_GET)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::ERRNO_SET)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::EXIT)"));
@@ -2337,14 +2354,16 @@ mod tests {
         assert!(isel.contains("BuildMI(*BB, MI, DL, TII.get(BranchOpcode))"));
         assert!(isel.contains("LowerFormalArguments"));
         assert!(isel.contains("CCInfo.AnalyzeFormalArguments(Ins, CC_LNP64)"));
-        assert!(isel.contains("LNP64 stack formal arguments are not implemented yet"));
+        assert!(isel.contains("CreateFixedObject"));
+        assert!(isel.contains("MachinePointerInfo::getFixedStack"));
         assert!(isel.contains("MF.addLiveIn(VA.getLocReg(), &LNP64::GPRRegClass)"));
         assert!(isel.contains("LowerReturn"));
         assert!(isel.contains("CCInfo.AnalyzeReturn(Outs, RetCC_LNP64)"));
         assert!(isel.contains("DAG.getCopyToReg"));
         assert!(isel.contains("LowerCall"));
         assert!(isel.contains("ArgCCInfo.AnalyzeCallOperands(CLI.Outs, CC_LNP64)"));
-        assert!(isel.contains("LNP64 stack call arguments are not implemented yet"));
+        assert!(isel.contains("DAG.getCALLSEQ_START"));
+        assert!(isel.contains("DAG.getCALLSEQ_END"));
         assert!(isel.contains("DAG.getTargetGlobalAddress"));
         assert!(isel.contains("DAG.getTargetExternalSymbol"));
         assert!(isel.contains("indirect call callee must lower to an i64 register"));
@@ -2480,8 +2499,10 @@ mod tests {
         assert!(instr_td.contains("Uses = [FLAGS]"));
         assert!(instr_td.contains("let Pattern = [(LNP64retflag)]"));
         assert!(instr_td.contains("isBranch = 1"));
-        assert!(instr_info.contains("/*CFSetupOpcode=*/~0u"));
-        assert!(instr_info.contains("/*CFDestroyOpcode=*/~0u"));
+        assert!(instr_td.contains("ADJCALLSTACKDOWN"));
+        assert!(instr_td.contains("ADJCALLSTACKUP"));
+        assert!(instr_info.contains("/*CFSetupOpcode=*/LNP64::ADJCALLSTACKDOWN"));
+        assert!(instr_info.contains("/*CFDestroyOpcode=*/LNP64::ADJCALLSTACKUP"));
         assert!(instr_info.contains("/*ReturnOpcode=*/LNP64::RET"));
         assert!(instr_info.contains("copyPhysReg"));
         assert!(instr_info.contains("BuildMI(MBB, I, DL, get(LNP64::MOV), DestReg)"));
@@ -3795,6 +3816,8 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::CSEL_ULT"));
         assert!(mc_emitter.contains("case LNP64::CALL"));
         assert!(mc_emitter.contains("case LNP64::CALL_REG"));
+        assert!(mc_emitter.contains("case LNP64::LR_GET"));
+        assert!(mc_emitter.contains("case LNP64::LR_SET"));
         assert!(mc_emitter.contains("case LNP64::CMPU"));
         assert!(mc_emitter.contains("case LNP64::CSET_ULT"));
         assert!(mc_emitter.contains("case LNP64::CSET_EQ"));

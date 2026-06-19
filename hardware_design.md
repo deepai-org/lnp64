@@ -727,8 +727,8 @@ a=dst_old, b=addr, c=expected, d=desired
 a=dst/src0, b=src
 ```
 
-Used by `MOV`, `NOT`, `CMP`, `FREE`, `ERRNO_SET`, `GATE_MASK_SET`,
-`EXIT`, and similar two-register forms.
+Used by `MOV`, `NOT`, `CMP`, `FREE`, `ERRNO_SET`, `GATE_MASK_SET`, `EXIT`,
+and similar two-register forms.
 
 `F3`: register-immediate.
 
@@ -814,18 +814,19 @@ commands, resource-domain control commands, and capability transfer commands use
 this format. Argument blocks are little-endian, naturally aligned, versioned,
 and copied by the issuing hardware engine before the thread is parked.
 
-`FA`: register-indirect control flow.
+`FA`: single-register control.
 
 ```text
-a=target_reg, rest ignored
+a=gpr, rest ignored
 ```
 
-Used by `CALL_REG`.
+Used by `CALL_REG`, `LR_GET`, and `LR_SET`.
 
 `CALL` writes `pc + 8` to the thread-local `lr` and jumps to the F4 target.
-`CALL_REG` writes `pc + 8` to `lr` and jumps to `a=target_reg`. `RET` is F0 and
-sets `pc = lr`. Software call stacks are psABI conventions layered above this
-architectural link register.
+`CALL_REG` writes `pc + 8` to `lr` and jumps to `a=target_reg`. `LR_GET` copies
+`lr` into a GPR, and `LR_SET` copies a GPR into `lr`, giving non-leaf software a
+normal spill/reload path. `RET` is F0 and sets `pc = lr`. Software call stacks
+are psABI conventions layered above this architectural link register.
 
 Architectural result convention:
 
@@ -865,6 +866,8 @@ The opcode map is fixed, but sparse:
 12 CALL
 13 CALL_REG
 14 RET
+15 LR_GET
+16 LR_SET
 
 18 LD
 19 ST

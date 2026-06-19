@@ -350,6 +350,8 @@ private:
             .Case("bge", LNP64::BGE)
             .Case("call", LNP64::CALL)
             .Case("call_reg", LNP64::CALL_REG)
+            .Case("lr_get", LNP64::LR_GET)
+            .Case("lr_set", LNP64::LR_SET)
             .Case("ret", LNP64::RET)
             .Case("errno_get", LNP64::ERRNO_GET)
             .Case("errno_set", LNP64::ERRNO_SET)
@@ -424,7 +426,8 @@ private:
         Opcode == LNP64::BGT || Opcode == LNP64::BLE ||
         Opcode == LNP64::BGE || Opcode == LNP64::CALL)
       return addBranchTarget(Inst, Operands);
-    if (Opcode == LNP64::CALL_REG || Opcode == LNP64::CSET_EQ ||
+    if (Opcode == LNP64::CALL_REG || Opcode == LNP64::LR_GET ||
+        Opcode == LNP64::LR_SET || Opcode == LNP64::CSET_EQ ||
         Opcode == LNP64::CSET_NE || Opcode == LNP64::CSET_LT ||
         Opcode == LNP64::CSET_GT || Opcode == LNP64::CSET_LE ||
         Opcode == LNP64::CSET_GE || Opcode == LNP64::CSET_ULT ||

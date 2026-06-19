@@ -4,11 +4,13 @@
 #include "LNP64Subtarget.h"
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
+#include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/SelectionDAG.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/MathExtras.h"
 
 using namespace llvm;
 
@@ -253,6 +255,38 @@ static bool isLNP64SignedLoadPseudo(unsigned Opcode) {
   default:
     return false;
   }
+}
+
+static SDValue adjustArgToLocVT(SelectionDAG &DAG, const SDLoc &DL,
+                                const CCValAssign &VA, SDValue Arg) {
+  switch (VA.getLocInfo()) {
+  case CCValAssign::Full:
+    return Arg;
+  case CCValAssign::SExt:
+    return DAG.getNode(ISD::SIGN_EXTEND, DL, VA.getLocVT(), Arg);
+  case CCValAssign::ZExt:
+    return DAG.getNode(ISD::ZERO_EXTEND, DL, VA.getLocVT(), Arg);
+  case CCValAssign::AExt:
+    return DAG.getNode(ISD::ANY_EXTEND, DL, VA.getLocVT(), Arg);
+  case CCValAssign::BCvt:
+    return DAG.getNode(ISD::BITCAST, DL, VA.getLocVT(), Arg);
+  default:
+    llvm_unreachable("unsupported LNP64 call argument location info");
+  }
+}
+
+static SDValue adjustArgToValVT(SelectionDAG &DAG, const SDLoc &DL,
+                                const CCValAssign &VA, SDValue Arg) {
+  if (VA.getLocInfo() == CCValAssign::SExt)
+    Arg = DAG.getNode(ISD::AssertSext, DL, VA.getLocVT(), Arg,
+                      DAG.getValueType(VA.getValVT()));
+  else if (VA.getLocInfo() == CCValAssign::ZExt)
+    Arg = DAG.getNode(ISD::AssertZext, DL, VA.getLocVT(), Arg,
+                      DAG.getValueType(VA.getValVT()));
+
+  if (VA.getLocInfo() != CCValAssign::Full)
+    Arg = DAG.getNode(ISD::TRUNCATE, DL, VA.getValVT(), Arg);
+  return Arg;
 }
 
 static unsigned getLNP64SignedLoadInstr(unsigned Opcode) {
@@ -506,15 +540,23 @@ SDValue LNP64TargetLowering::LowerFormalArguments(
   SmallVector<CCValAssign, 8> ArgLocs;
   CCState CCInfo(CallConv, IsVarArg, MF, ArgLocs, *DAG.getContext());
   CCInfo.AnalyzeFormalArguments(Ins, CC_LNP64);
+  EVT PtrVT = getPointerTy(DAG.getDataLayout());
 
   for (CCValAssign &VA : ArgLocs) {
-    if (!VA.isRegLoc())
-      report_fatal_error(
-          "LNP64 stack formal arguments are not implemented yet");
-
-    Register VReg = MF.addLiveIn(VA.getLocReg(), &LNP64::GPRRegClass);
-    SDValue Arg = DAG.getCopyFromReg(Chain, DL, VReg, VA.getLocVT());
-    InVals.push_back(Arg);
+    SDValue Arg;
+    if (VA.isRegLoc()) {
+      Register VReg = MF.addLiveIn(VA.getLocReg(), &LNP64::GPRRegClass);
+      Arg = DAG.getCopyFromReg(Chain, DL, VReg, VA.getLocVT());
+    } else {
+      unsigned ObjSize = VA.getLocVT().getStoreSize();
+      int FI = MF.getFrameInfo().CreateFixedObject(
+          ObjSize, VA.getLocMemOffset(), /*IsImmutable=*/true);
+      SDValue FIPtr = DAG.getFrameIndex(FI, PtrVT);
+      Arg = DAG.getLoad(
+          VA.getLocVT(), DL, Chain, FIPtr,
+          MachinePointerInfo::getFixedStack(DAG.getMachineFunction(), FI));
+    }
+    InVals.push_back(adjustArgToValVT(DAG, DL, VA, Arg));
   }
 
   return Chain;
@@ -600,16 +642,32 @@ LNP64TargetLowering::LowerCall(CallLoweringInfo &CLI,
   CCState ArgCCInfo(CLI.CallConv, CLI.IsVarArg, MF, ArgLocs,
                     *DAG.getContext());
   ArgCCInfo.AnalyzeCallOperands(CLI.Outs, CC_LNP64);
+  unsigned NumBytes = alignTo(ArgCCInfo.getNextStackOffset(), Align(16));
+  Chain = DAG.getCALLSEQ_START(Chain, NumBytes, 0, DL);
 
   SDValue Glue;
   SmallVector<std::pair<unsigned, SDValue>, 8> RegsToPass;
+  SmallVector<SDValue, 8> MemOpChains;
+  SDValue StackPtr;
+  EVT PtrVT = getPointerTy(DAG.getDataLayout());
   for (unsigned I = 0, E = ArgLocs.size(); I != E; ++I) {
     CCValAssign &VA = ArgLocs[I];
-    if (!VA.isRegLoc())
-      report_fatal_error(
-          "LNP64 stack call arguments are not implemented yet");
-    RegsToPass.push_back(std::make_pair(VA.getLocReg(), CLI.OutVals[I]));
+    SDValue Arg = adjustArgToLocVT(DAG, DL, VA, CLI.OutVals[I]);
+    if (VA.isRegLoc()) {
+      RegsToPass.push_back(std::make_pair(VA.getLocReg(), Arg));
+    } else {
+      if (!StackPtr)
+        StackPtr = DAG.getCopyFromReg(Chain, DL, LNP64::R31, PtrVT);
+      SDValue PtrOff =
+          DAG.getNode(ISD::ADD, DL, PtrVT, StackPtr,
+                      DAG.getIntPtrConstant(VA.getLocMemOffset(), DL));
+      MemOpChains.push_back(
+          DAG.getStore(Chain, DL, Arg, PtrOff, MachinePointerInfo()));
+    }
   }
+
+  if (!MemOpChains.empty())
+    Chain = DAG.getNode(ISD::TokenFactor, DL, MVT::Other, MemOpChains);
 
   for (auto &RegAndValue : RegsToPass) {
     Chain = DAG.getCopyToReg(Chain, DL, RegAndValue.first, RegAndValue.second,
@@ -635,6 +693,10 @@ LNP64TargetLowering::LowerCall(CallLoweringInfo &CLI,
 
   SDVTList NodeTys = DAG.getVTList(MVT::Other, MVT::Glue);
   Chain = DAG.getNode(LNP64ISD::CALL, DL, NodeTys, Ops);
+  Glue = Chain.getValue(1);
+  Chain = DAG.getCALLSEQ_END(
+      Chain, DAG.getIntPtrConstant(NumBytes, DL, true),
+      DAG.getIntPtrConstant(0, DL, true), Glue, DL);
   Glue = Chain.getValue(1);
 
   SmallVector<CCValAssign, 4> RVLocs;

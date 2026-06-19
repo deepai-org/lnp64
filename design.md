@@ -591,6 +591,8 @@ implemented as syscall traps.
     *   *Action:* Unconditional jump to a virtual address.
 *   **`CALL r_target`**
     *   *Action:* Writes `PC + 8` to the thread-local Link Register (`LR`) and jumps to `r_target`.
+*   **`LR_GET r_dst`** / **`LR_SET r_src`**
+    *   *Action:* Copies the thread-local Link Register to or from a GPR so non-leaf functions can spill and restore return state using normal stack-frame policy.
 *   **`RET`**
     *   *Action:* Sets `PC = LR`. Software stack frames and spilling the link register are psABI conventions.
 *   **`CMP r_src1, r_src2`**

@@ -160,6 +160,10 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
     return "bge";
   case LNP64::CALL:
     return "call";
+  case LNP64::LR_GET:
+    return "lr_get";
+  case LNP64::LR_SET:
+    return "lr_set";
   case LNP64::ERRNO_GET:
     return "errno_get";
   case LNP64::ERRNO_SET:
@@ -354,6 +358,11 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
     break;
   case LNP64::CALL_REG:
     OS << "call_reg ";
+    printOperand(MI->getOperand(0), OS);
+    break;
+  case LNP64::LR_GET:
+  case LNP64::LR_SET:
+    OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
     printOperand(MI->getOperand(0), OS);
     break;
   case LNP64::ERRNO_GET:

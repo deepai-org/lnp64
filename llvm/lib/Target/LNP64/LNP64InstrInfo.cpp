@@ -9,7 +9,8 @@ using namespace llvm;
 #include "LNP64GenInstrInfo.inc"
 
 LNP64InstrInfo::LNP64InstrInfo()
-    : LNP64GenInstrInfo(/*CFSetupOpcode=*/~0u, /*CFDestroyOpcode=*/~0u,
+    : LNP64GenInstrInfo(/*CFSetupOpcode=*/LNP64::ADJCALLSTACKDOWN,
+                        /*CFDestroyOpcode=*/LNP64::ADJCALLSTACKUP,
                         /*CatchRetOpcode=*/~0u, /*ReturnOpcode=*/LNP64::RET) {}
 
 void LNP64InstrInfo::copyPhysReg(MachineBasicBlock &MBB,

@@ -15,6 +15,10 @@ using namespace llvm;
 #define GET_REGINFO_TARGET_DESC
 #include "LNP64GenRegisterInfo.inc"
 
+static uint64_t getLRSaveSize(const MachineFunction &MF) {
+  return MF.getFrameInfo().hasCalls() ? 8 : 0;
+}
+
 LNP64RegisterInfo::LNP64RegisterInfo() : LNP64GenRegisterInfo(LNP64::LR) {}
 
 BitVector LNP64RegisterInfo::getReservedRegs(const MachineFunction &) const {
@@ -44,7 +48,8 @@ void LNP64RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   MachineFunction &MF = *MI.getParent()->getParent();
   const MachineFrameInfo &MFI = MF.getFrameInfo();
   int FrameIndex = MI.getOperand(FIOperandNum).getIndex();
-  int64_t Offset = MFI.getObjectOffset(FrameIndex) + MFI.getStackSize();
+  int64_t Offset =
+      MFI.getObjectOffset(FrameIndex) + MFI.getStackSize() + getLRSaveSize(MF);
   if (FIOperandNum + 1 < MI.getNumOperands() &&
       MI.getOperand(FIOperandNum + 1).isImm())
     Offset += MI.getOperand(FIOperandNum + 1).getImm();

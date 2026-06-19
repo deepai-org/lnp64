@@ -11,6 +11,10 @@
 
 using namespace llvm;
 
+static uint64_t getLRSaveSize(const MachineFunction &MF) {
+  return MF.getFrameInfo().hasCalls() ? 8 : 0;
+}
+
 static void emitSPAdjust(MachineFunction &MF, MachineBasicBlock &MBB,
                          MachineBasicBlock::iterator I, const DebugLoc &DL,
                          int64_t Amount) {
@@ -33,15 +37,41 @@ LNP64FrameLowering::LNP64FrameLowering()
 
 void LNP64FrameLowering::emitPrologue(MachineFunction &MF,
                                       MachineBasicBlock &MBB) const {
-  uint64_t StackSize = MF.getFrameInfo().getStackSize();
-  emitSPAdjust(MF, MBB, MBB.begin(), DebugLoc(), -int64_t(StackSize));
+  const uint64_t LRSaveSize = getLRSaveSize(MF);
+  uint64_t StackSize = MF.getFrameInfo().getStackSize() + LRSaveSize;
+  MachineBasicBlock::iterator I = MBB.begin();
+  emitSPAdjust(MF, MBB, I, DebugLoc(), -int64_t(StackSize));
+
+  if (LRSaveSize != 0) {
+    const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
+    BuildMI(MBB, I, DebugLoc(), TII.get(LNP64::LR_GET), LNP64::R30);
+    BuildMI(MBB, I, DebugLoc(), TII.get(LNP64::ST))
+        .addReg(LNP64::R30)
+        .addReg(LNP64::R31)
+        .addImm(0);
+  }
 }
 
 void LNP64FrameLowering::emitEpilogue(MachineFunction &MF,
                                       MachineBasicBlock &MBB) const {
-  uint64_t StackSize = MF.getFrameInfo().getStackSize();
-  emitSPAdjust(MF, MBB, MBB.getFirstTerminator(), DebugLoc(),
-               int64_t(StackSize));
+  const uint64_t LRSaveSize = getLRSaveSize(MF);
+  uint64_t StackSize = MF.getFrameInfo().getStackSize() + LRSaveSize;
+  MachineBasicBlock::iterator I = MBB.getFirstTerminator();
+
+  if (LRSaveSize != 0) {
+    const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
+    BuildMI(MBB, I, DebugLoc(), TII.get(LNP64::LD), LNP64::R30)
+        .addReg(LNP64::R31)
+        .addImm(0);
+    BuildMI(MBB, I, DebugLoc(), TII.get(LNP64::LR_SET)).addReg(LNP64::R30);
+  }
+  emitSPAdjust(MF, MBB, I, DebugLoc(), int64_t(StackSize));
+}
+
+MachineBasicBlock::iterator LNP64FrameLowering::eliminateCallFramePseudoInstr(
+    MachineFunction &, MachineBasicBlock &MBB,
+    MachineBasicBlock::iterator I) const {
+  return MBB.erase(I);
 }
 
 bool LNP64FrameLowering::hasFP(const MachineFunction &) const { return false; }

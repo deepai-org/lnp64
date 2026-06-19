@@ -1061,8 +1061,10 @@ impl Process {
 #[derive(Clone)]
 struct SavedSignalContext {
     ip: usize,
+    lr: u64,
     regs: [u64; GPR_COUNT],
     flags: Flags,
+    return_stack: Vec<u64>,
 }
 
 #[derive(Clone)]
@@ -1081,7 +1083,9 @@ struct Thread {
     fregs: [u64; FPR_COUNT],
     vregs: [u128; VR_COUNT],
     ip: usize,
+    lr: u64,
     flags: Flags,
+    return_stack: Vec<u64>,
     signal_stack: Vec<SavedSignalContext>,
     cap_call_stack: Vec<CallContinuation>,
 }
@@ -1098,7 +1102,9 @@ impl Thread {
             fregs: [0; FPR_COUNT],
             vregs: [0; VR_COUNT],
             ip: 0,
+            lr: 0,
             flags: Flags::default(),
+            return_stack: Vec::new(),
             signal_stack: Vec::new(),
             cap_call_stack: Vec::new(),
         }
@@ -1146,6 +1152,7 @@ pub struct Machine {
     advisory_locks: HashMap<FileLockKey, AdvisoryLock>,
     random_state: u64,
     last_exit: i32,
+    committed_exec_mode: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1278,6 +1285,7 @@ impl Machine {
             advisory_locks: HashMap::new(),
             random_state: 0x4d59_5df4_d0f3_3173,
             last_exit: 0,
+            committed_exec_mode: false,
         }
     }
 
@@ -1404,6 +1412,7 @@ impl Machine {
             return Err("committed exec image has no entry PC".to_string());
         }
         self.thread_mut()?.ip = checked_host_usize(entry, "committed exec entry PC")?;
+        self.committed_exec_mode = true;
 
         let mut steps = 0usize;
         while !self.threads.is_empty() {
@@ -1517,6 +1526,8 @@ impl Machine {
             0x26 => Instr::Branch(Condition::Ge, branch_target()),
             0x27 => Instr::Call(branch_target()),
             0x28 => Instr::CallReg(a),
+            0x29 => Instr::LrGet(a),
+            0x2a => Instr::LrSet(a),
             0x30 => Instr::Ld(
                 a,
                 MemRef::BaseOffset(b, sign_extend(word & 0x3fff, 14)),
@@ -2068,41 +2079,66 @@ impl Machine {
             }
             Instr::Call(target) => {
                 let ret = self.thread()?.ip as u64;
-                let sp = self.thread()?.regs[31].wrapping_sub(CALL_FRAME_SIZE);
+                let legacy_sp = self.thread()?.regs[31].wrapping_sub(CALL_FRAME_SIZE);
                 if std::env::var_os("LNP64_TRACE_CALLS").is_some() {
                     let thread = self.thread()?;
                     eprintln!(
-                        "CALL {target:?} ret={ret} sp={sp:#x} r1={} r2={} r3={}",
-                        thread.regs[1], thread.regs[2], thread.regs[3]
+                        "CALL {target:?} ret={ret} sp={:#x} r1={} r2={} r3={}",
+                        thread.regs[31], thread.regs[1], thread.regs[2], thread.regs[3]
                     );
                 }
                 let ip = self.resolve_target(target)?;
-                self.store_u64(sp, ret)?;
-                self.thread_mut()?.regs[31] = sp;
+                if !self.committed_exec_mode {
+                    self.store_u64(legacy_sp, ret)?;
+                    self.thread_mut()?.regs[31] = legacy_sp;
+                }
+                self.thread_mut()?.lr = ret;
+                self.thread_mut()?.return_stack.push(ret);
                 self.thread_mut()?.ip = ip;
             }
             Instr::CallReg(target) => {
                 let ip = self.read_reg(target)? as usize;
                 let ret = self.thread()?.ip as u64;
-                let sp = self.thread()?.regs[31].wrapping_sub(CALL_FRAME_SIZE);
+                let legacy_sp = self.thread()?.regs[31].wrapping_sub(CALL_FRAME_SIZE);
                 if std::env::var_os("LNP64_TRACE_CALLS").is_some() {
                     let thread = self.thread()?;
                     eprintln!(
-                        "CALL_REG {ip} ret={ret} sp={sp:#x} r1={} r2={} r3={}",
-                        thread.regs[1], thread.regs[2], thread.regs[3]
+                        "CALL_REG {ip} ret={ret} sp={:#x} r1={} r2={} r3={}",
+                        thread.regs[31], thread.regs[1], thread.regs[2], thread.regs[3]
                     );
                 }
-                self.store_u64(sp, ret)?;
-                self.thread_mut()?.regs[31] = sp;
+                if !self.committed_exec_mode {
+                    self.store_u64(legacy_sp, ret)?;
+                    self.thread_mut()?.regs[31] = legacy_sp;
+                }
+                self.thread_mut()?.lr = ret;
+                self.thread_mut()?.return_stack.push(ret);
                 self.thread_mut()?.ip = ip;
             }
+            Instr::LrGet(dst) => {
+                let lr = self.thread()?.lr;
+                self.write_alu_reg(dst, lr)?;
+            }
+            Instr::LrSet(src) => {
+                let value = self.read_reg(src)?;
+                self.thread_mut()?.lr = value;
+            }
             Instr::Ret => {
-                let sp = self.thread()?.regs[31];
-                let next = self.load_u64(sp)?;
+                let next = if self.committed_exec_mode {
+                    let thread = self.thread_mut()?;
+                    thread.return_stack.pop().unwrap_or(thread.lr)
+                } else {
+                    let sp = self.thread()?.regs[31];
+                    let next = self.load_u64(sp)?;
+                    let thread = self.thread_mut()?;
+                    thread.return_stack.pop();
+                    thread.regs[31] = sp.wrapping_add(CALL_FRAME_SIZE);
+                    next
+                };
                 if std::env::var_os("LNP64_TRACE_CALLS").is_some() {
+                    let sp = self.thread()?.regs[31];
                     eprintln!("RET next={next} sp={sp:#x}");
                 }
-                self.thread_mut()?.regs[31] = sp.wrapping_add(CALL_FRAME_SIZE);
                 self.thread_mut()?.ip = next as usize;
             }
             Instr::Ld(dst, mem, width) => {
@@ -3301,8 +3337,10 @@ impl Machine {
                     .ok_or_else(|| "SIGRET with empty signal stack".to_string())?;
                 let thread = self.thread_mut()?;
                 thread.ip = saved.ip;
+                thread.lr = saved.lr;
                 thread.regs = saved.regs;
                 thread.flags = saved.flags;
+                thread.return_stack = saved.return_stack;
             }
             Instr::LockCmpxchg(dst, addr_reg, expected, new_value) => {
                 Self::ensure_result_reg_writable(dst)?;
@@ -8945,8 +8983,10 @@ impl Machine {
                     let thread = self.thread()?;
                     SavedSignalContext {
                         ip: thread.ip,
+                        lr: thread.lr,
                         regs: thread.regs,
                         flags: thread.flags,
+                        return_stack: thread.return_stack.clone(),
                     }
                 };
                 let thread = self.thread_mut()?;
@@ -9170,26 +9210,40 @@ mod tests {
     }
 
     #[test]
-    fn call_preserves_sp_and_ip_when_return_slot_unmapped() {
+    fn call_ret_uses_link_register_without_implicit_stack_frame() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
+        machine.committed_exec_mode = true;
         machine.thread_mut().unwrap().ip = 7;
         machine.thread_mut().unwrap().regs[31] = 0;
 
-        let err = machine.exec(Instr::Call(Target::Address(0))).unwrap_err();
+        machine.exec(Instr::Call(Target::Address(3))).unwrap();
 
-        assert!(err.contains("unmapped address"), "{err}");
+        assert_eq!(machine.thread().unwrap().regs[31], 0);
+        assert_eq!(machine.thread().unwrap().lr, 7);
+        assert_eq!(machine.thread().unwrap().ip, 3);
+
+        machine.exec(Instr::LrGet(Reg(2))).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[2], 7);
+
+        machine.exec(Instr::Ret).unwrap();
         assert_eq!(machine.thread().unwrap().regs[31], 0);
         assert_eq!(machine.thread().unwrap().ip, 7);
+
+        machine.thread_mut().unwrap().regs[2] = 11;
+        machine.exec(Instr::LrSet(Reg(2))).unwrap();
+        machine.exec(Instr::Ret).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[31], 0);
+        assert_eq!(machine.thread().unwrap().ip, 11);
 
         machine.thread_mut().unwrap().ip = 9;
         machine.thread_mut().unwrap().regs[2] = 0;
 
-        let err = machine.exec(Instr::CallReg(Reg(2))).unwrap_err();
+        machine.exec(Instr::CallReg(Reg(2))).unwrap();
 
-        assert!(err.contains("unmapped address"), "{err}");
         assert_eq!(machine.thread().unwrap().regs[31], 0);
-        assert_eq!(machine.thread().unwrap().ip, 9);
+        assert_eq!(machine.thread().unwrap().lr, 9);
+        assert_eq!(machine.thread().unwrap().ip, 0);
     }
 
     fn create_pipe_pair(machine: &mut Machine, read_fd: u64, write_fd: u64) -> (u64, u64) {

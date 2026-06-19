@@ -40,6 +40,13 @@ def SDT_LNP64Call : SDTypeProfile<0, -1, []>;
 def LNP64call : SDNode<"LNP64ISD::CALL", SDT_LNP64Call,
                        [SDNPHasChain, SDNPOptInGlue, SDNPOutGlue,
                         SDNPVariadic]>;
+def SDT_LNP64CallSeqStart : SDCallSeqStart<[SDTCisVT<0, i64>,
+                                             SDTCisVT<1, i64>]>;
+def SDT_LNP64CallSeqEnd : SDCallSeqEnd<[SDTCisVT<0, i64>, SDTCisVT<1, i64>]>;
+def LNP64callseq_start : SDNode<"ISD::CALLSEQ_START", SDT_LNP64CallSeqStart,
+                                [SDNPHasChain, SDNPOutGlue]>;
+def LNP64callseq_end : SDNode<"ISD::CALLSEQ_END", SDT_LNP64CallSeqEnd,
+                              [SDNPHasChain, SDNPOptInGlue, SDNPOutGlue]>;
 def SDT_LNP64BrCC : SDTypeProfile<0, 3, [
   SDTCisVT<0, i64>, SDTCisVT<1, i64>, SDTCisVT<2, OtherVT>
 ]>;
@@ -454,6 +461,24 @@ let isCall = 1,
             R28, R29] in
 def CALL_REG : LNP64Inst<(outs), (ins GPR:$target), "call_reg", "\t$target">;
 def : Pat<(LNP64call GPR:$target), (CALL_REG GPR:$target)>;
+let Uses = [LR] in
+def LR_GET : LNP64Inst<(outs GPR:$rd), (ins), "lr_get", "\t$rd">;
+let Defs = [LR] in
+def LR_SET : LNP64Inst<(outs), (ins GPR:$rs), "lr_set", "\t$rs">;
+let Defs = [R31], Uses = [R31] in {
+def ADJCALLSTACKDOWN
+    : LNP64Inst<(outs), (ins i64imm:$amt1, i64imm:$amt2),
+                "#ADJCALLSTACKDOWN", "\t$amt1, $amt2"> {
+  let isPseudo = 1;
+  let Pattern = [(LNP64callseq_start timm:$amt1, timm:$amt2)];
+}
+def ADJCALLSTACKUP
+    : LNP64Inst<(outs), (ins i64imm:$amt1, i64imm:$amt2),
+                "#ADJCALLSTACKUP", "\t$amt1, $amt2"> {
+  let isPseudo = 1;
+  let Pattern = [(LNP64callseq_end timm:$amt1, timm:$amt2)];
+}
+}
 let isReturn = 1, isTerminator = 1, isBarrier = 1, Uses = [LR] in
 def RET : LNP64NoOperand<"ret"> {
   let Pattern = [(LNP64retflag)];

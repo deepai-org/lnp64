@@ -267,6 +267,14 @@ impl Parser {
                 arity(1)?;
                 Instr::CallReg(reg(&args[0])?)
             }
+            "LR_GET" => {
+                arity(1)?;
+                Instr::LrGet(reg(&args[0])?)
+            }
+            "LR_SET" => {
+                arity(1)?;
+                Instr::LrSet(reg(&args[0])?)
+            }
             "RET" => {
                 arity(0)?;
                 Instr::Ret

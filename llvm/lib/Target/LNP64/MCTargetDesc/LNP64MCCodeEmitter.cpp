@@ -497,6 +497,12 @@ public:
     case LNP64::CALL_REG:
       emitLE32(encodeFixed32Reg(0x28, getGPRNo(MI.getOperand(0))), OS);
       return;
+    case LNP64::LR_GET:
+      emitLE32(encodeFixed32Reg(0x29, getGPRNo(MI.getOperand(0))), OS);
+      return;
+    case LNP64::LR_SET:
+      emitLE32(encodeFixed32Reg(0x2a, getGPRNo(MI.getOperand(0))), OS);
+      return;
     case LNP64::ERRNO_GET:
       emitLE32(encodeFixed32Reg(0x38, getGPRNo(MI.getOperand(0))), OS);
       return;

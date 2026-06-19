@@ -38,7 +38,9 @@ portable v0 behavior should treat `r31` as runtime-owned and should not write it
 directly.
 
 `LR` is a thread-local link register outside the numbered GPR file. `CALL` and
-`CALL_REG` set `LR = PC + 8`; `RET` jumps to `LR`.
+`CALL_REG` set `LR = PC + 8`; `RET` jumps to `LR`. `LR_GET` and `LR_SET`
+are the architectural spill/reload bridge between `LR` and ordinary GPR-backed
+stack slots for non-leaf functions.
 
 ## Data Model
 
