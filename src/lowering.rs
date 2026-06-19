@@ -3766,6 +3766,14 @@ mod tests {
         assert!(
             loader_security.contains("emulator_commits_exec_descriptor_memory_image_atomically")
         );
+        assert!(
+            emulator_source.contains("exec_descriptor_startup_metadata_base_is_runtime_visible")
+        );
+        assert!(emulator_source.contains("fn startup_metadata_base(&self)"));
+        assert!(
+            emulator_source
+                .contains("ENV_KEY_STARTUP_METADATA_PTR => Some(self.startup_metadata_base()?")
+        );
 
         for (stage, status, artifacts, evidence, blocker) in rows {
             assert!(
@@ -3987,11 +3995,11 @@ mod tests {
             "real_getauxval_execution",
             "real_libc_test_env_execution",
             "real_libc_test_random_execution",
+            "entry_state",
             "text_fetch_decode",
         ] {
             assert_eq!(stages[stage].0, "tested", "{stage} should be tested");
         }
-        assert_eq!(stages["entry_state"].0, "partial");
         assert_eq!(stages["stdout_exit"].0, "partial");
         assert_eq!(stages["no_toy_compiler"].0, "partial");
         assert!(roadmap.contains("run_without_toy_compiler` gate is partial"));

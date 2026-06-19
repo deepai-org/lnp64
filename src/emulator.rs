@@ -1704,7 +1704,12 @@ impl Machine {
             .stack_top
             .checked_sub(stack_start)
             .ok_or_else(|| "committed exec stack range overflows".to_string())?;
-        let runtime_vmas = [(stack_start, stack_len), (ARG_BASE, ARG_SIZE)];
+        let startup_metadata_base = if process.exec_startup_metadata_ptr == 0 {
+            ARG_BASE
+        } else {
+            process.exec_startup_metadata_ptr
+        };
+        let runtime_vmas = [(stack_start, stack_len), (startup_metadata_base, ARG_SIZE)];
         for (start, len) in runtime_vmas {
             if len == 0 {
                 continue;
@@ -1723,6 +1728,11 @@ impl Machine {
         }
         process.vmas.sort_by_key(|vma| vma.start);
         Ok(())
+    }
+
+    fn startup_metadata_base(&self) -> Result<u64, String> {
+        let ptr = self.process()?.exec_startup_metadata_ptr;
+        Ok(if ptr == 0 { ARG_BASE } else { ptr })
     }
 
     fn decode_committed_exec_instruction(&mut self, pc: u64) -> Result<(Instr, u64), String> {
@@ -2019,18 +2029,25 @@ impl Machine {
 
     pub fn set_process_entry(&mut self, args: &[String], env: &[String]) -> Result<(), String> {
         let pid = self.thread()?.pid;
-        let arg_page = Self::build_process_entry_page(args, env)?;
-        self.install_process_entry_page(pid, &arg_page)
+        let startup_metadata_base = self.startup_metadata_base()?;
+        let arg_page = Self::build_process_entry_page(startup_metadata_base, args, env)?;
+        self.install_process_entry_page(pid, startup_metadata_base, &arg_page)
     }
 
-    fn build_process_entry_page(args: &[String], env: &[String]) -> Result<Vec<u8>, String> {
-        let argc_addr = ARG_BASE as usize;
-        let argv_addr = (ARG_BASE + 8) as usize;
+    fn build_process_entry_page(
+        startup_metadata_base: u64,
+        args: &[String],
+        env: &[String],
+    ) -> Result<Vec<u8>, String> {
+        let argc_addr = startup_metadata_base;
+        let argv_addr = startup_metadata_base
+            .checked_add(8)
+            .ok_or_else(|| "argv table address overflow".to_string())?;
         let argv_slots = args
             .len()
             .checked_add(1)
             .ok_or_else(|| "argv table size overflow".to_string())?;
-        let argv_bytes = argv_slots
+        let argv_bytes = (argv_slots as u64)
             .checked_mul(8)
             .ok_or_else(|| "argv table size overflow".to_string())?;
         let envp_addr = argv_addr
@@ -2040,21 +2057,26 @@ impl Machine {
             .len()
             .checked_add(1)
             .ok_or_else(|| "envp table size overflow".to_string())?;
-        let env_bytes = env_slots
+        let env_bytes = (env_slots as u64)
             .checked_mul(8)
             .ok_or_else(|| "envp table size overflow".to_string())?;
-        let mut str_addr = ARG_BASE + 0x1000;
-        let arg_page_start = ARG_BASE as usize;
+        let mut str_addr = startup_metadata_base
+            .checked_add(0x1000)
+            .ok_or_else(|| "process entry string area overflows".to_string())?;
+        let arg_page_start = usize::try_from(startup_metadata_base)
+            .map_err(|_| "startup metadata address exceeds host usize".to_string())?;
         let mut arg_page = vec![0u8; ARG_SIZE as usize];
         if envp_addr
             .checked_add(env_bytes)
             .ok_or_else(|| "envp table address overflow".to_string())?
-            > str_addr as usize
+            > str_addr
         {
             return Err("process entry pointer table exceeds reserved argument area".to_string());
         }
         let arg_page_len = arg_page.len();
-        let page_offset = |addr: usize| -> Result<usize, String> {
+        let page_offset = |addr: u64| -> Result<usize, String> {
+            let addr = usize::try_from(addr)
+                .map_err(|_| "process entry address exceeds host usize".to_string())?;
             addr.checked_sub(arg_page_start)
                 .filter(|offset| *offset < arg_page_len)
                 .ok_or_else(|| "process entry address outside argument page".to_string())
@@ -2064,21 +2086,24 @@ impl Machine {
         for (idx, arg) in args.iter().enumerate() {
             let ptr_slot = argv_addr
                 .checked_add(
-                    idx.checked_mul(8)
+                    (idx as u64)
+                        .checked_mul(8)
                         .ok_or_else(|| "argv slot offset overflow".to_string())?,
                 )
                 .ok_or_else(|| "argv slot address overflow".to_string())?;
             let ptr_slot_off = page_offset(ptr_slot)?;
             arg_page[ptr_slot_off..ptr_slot_off + 8].copy_from_slice(&str_addr.to_le_bytes());
             let bytes = arg.as_bytes();
-            let start = str_addr as usize;
+            let start = str_addr;
             let end = start
-                .checked_add(bytes.len())
+                .checked_add(bytes.len() as u64)
                 .ok_or_else(|| "argv data address overflow".to_string())?;
             if end
                 .checked_add(1)
                 .ok_or_else(|| "argv data address overflow".to_string())?
-                >= (ARG_BASE + ARG_SIZE) as usize
+                >= startup_metadata_base
+                    .checked_add(ARG_SIZE)
+                    .ok_or_else(|| "startup metadata page end overflows".to_string())?
             {
                 return Err("argv data exceeds emulated argument page".to_string());
             }
@@ -2093,7 +2118,7 @@ impl Machine {
         }
         let null_slot = argv_addr
             .checked_add(
-                args.len()
+                (args.len() as u64)
                     .checked_mul(8)
                     .ok_or_else(|| "argv null slot offset overflow".to_string())?,
             )
@@ -2103,21 +2128,24 @@ impl Machine {
         for (idx, item) in env.iter().enumerate() {
             let ptr_slot = envp_addr
                 .checked_add(
-                    idx.checked_mul(8)
+                    (idx as u64)
+                        .checked_mul(8)
                         .ok_or_else(|| "envp slot offset overflow".to_string())?,
                 )
                 .ok_or_else(|| "envp slot address overflow".to_string())?;
             let ptr_slot_off = page_offset(ptr_slot)?;
             arg_page[ptr_slot_off..ptr_slot_off + 8].copy_from_slice(&str_addr.to_le_bytes());
             let bytes = item.as_bytes();
-            let start = str_addr as usize;
+            let start = str_addr;
             let end = start
-                .checked_add(bytes.len())
+                .checked_add(bytes.len() as u64)
                 .ok_or_else(|| "envp data address overflow".to_string())?;
             if end
                 .checked_add(1)
                 .ok_or_else(|| "envp data address overflow".to_string())?
-                >= (ARG_BASE + ARG_SIZE) as usize
+                >= startup_metadata_base
+                    .checked_add(ARG_SIZE)
+                    .ok_or_else(|| "startup metadata page end overflows".to_string())?
             {
                 return Err("envp data exceeds emulated argument page".to_string());
             }
@@ -2132,7 +2160,7 @@ impl Machine {
         }
         let null_slot = envp_addr
             .checked_add(
-                env.len()
+                (env.len() as u64)
                     .checked_mul(8)
                     .ok_or_else(|| "envp null slot offset overflow".to_string())?,
             )
@@ -2142,16 +2170,31 @@ impl Machine {
         Ok(arg_page)
     }
 
-    fn install_process_entry_page(&mut self, pid: u64, arg_page: &[u8]) -> Result<(), String> {
+    fn install_process_entry_page(
+        &mut self,
+        pid: u64,
+        startup_metadata_base: u64,
+        arg_page: &[u8],
+    ) -> Result<(), String> {
         if arg_page.len() != ARG_SIZE as usize {
             return Err("process entry page has invalid size".to_string());
         }
-        let arg_page_start = ARG_BASE as usize;
-        let arg_page_end = (ARG_BASE + ARG_SIZE) as usize;
+        let arg_page_start = usize::try_from(startup_metadata_base)
+            .map_err(|_| "startup metadata address exceeds host usize".to_string())?;
+        let arg_page_end = startup_metadata_base
+            .checked_add(ARG_SIZE)
+            .ok_or_else(|| "startup metadata page end overflows".to_string())
+            .and_then(|end| {
+                usize::try_from(end)
+                    .map_err(|_| "startup metadata page end exceeds host usize".to_string())
+            })?;
         let process = self
             .processes
             .get_mut(&pid)
             .ok_or_else(|| format!("missing process {pid}"))?;
+        if arg_page_end > process.memory.len() {
+            return Err("startup metadata page exceeds process memory".to_string());
+        }
         process.memory[arg_page_start..arg_page_end].copy_from_slice(&arg_page);
         Ok(())
     }
@@ -3472,12 +3515,12 @@ impl Machine {
                     .map(|domain| domain.security.aslr_enabled)
                     .unwrap_or(true);
                 let layout = ProcessLayout::for_process(pid, domain_id, aslr_enabled);
-                let entry_page = Self::build_process_entry_page(&args, &env)?;
+                let entry_page = Self::build_process_entry_page(ARG_BASE, &args, &env)?;
                 self.exec_process_image(program, layout)?;
                 let pid = self.thread()?.pid;
                 let tid = self.thread()?.tid;
                 *self.thread_mut()? = Thread::new(tid, pid, layout.stack_top);
-                self.install_process_entry_page(pid, &entry_page)?;
+                self.install_process_entry_page(pid, ARG_BASE, &entry_page)?;
             }
             Instr::Spawn(dst, entry) => {
                 let entry = self.read_reg(entry)?;
@@ -8285,7 +8328,7 @@ impl Machine {
             ENV_KEY_LATENCY_CLASS_B_CYCLES => Some(ENV_LATENCY_CLASS_B_CYCLES),
             ENV_KEY_LATENCY_CLASS_C_CYCLES => Some(ENV_LATENCY_CLASS_C_CYCLES),
             ENV_KEY_LATENCY_CLASS_D_SUBMIT_CYCLES => Some(ENV_LATENCY_CLASS_D_SUBMIT_CYCLES),
-            ENV_KEY_STARTUP_METADATA_PTR => Some(ARG_BASE),
+            ENV_KEY_STARTUP_METADATA_PTR => Some(self.startup_metadata_base()?),
             ENV_KEY_STARTUP_METADATA_LEN => Some(ARG_SIZE),
             ENV_KEY_STARTUP_METADATA_FORMAT => Some(ENV_STARTUP_METADATA_FORMAT),
             ENV_KEY_STARTUP_METADATA_VERSION => Some(ENV_STARTUP_METADATA_VERSION),
@@ -8298,7 +8341,11 @@ impl Machine {
             ENV_KEY_SERVICELET_ISA_MASK => Some(SERVICELET_ALLOWED_ISA_MASK),
             ENV_KEY_SERVICELET_FLAG_MASK => Some(SERVICELET_FLAG_ALLOW_STATIC_LOOPS),
             ENV_KEY_ARGC => Some(self.env_argc()?),
-            ENV_KEY_ARGV_BASE => Some(ARG_BASE + 8),
+            ENV_KEY_ARGV_BASE => Some(
+                self.startup_metadata_base()?
+                    .checked_add(8)
+                    .ok_or_else(|| "startup argv base overflows".to_string())?,
+            ),
             ENV_KEY_ENVP_BASE => Some(self.env_envp_base()?),
             ENV_KEY_AUXV_BASE => Some(self.env_auxv_base()?),
             ENV_KEY_AUXV_ENTRY => {
@@ -8324,7 +8371,7 @@ impl Machine {
     }
 
     fn env_argc(&mut self) -> Result<u64, String> {
-        self.load_u64(ARG_BASE)
+        self.load_u64(self.startup_metadata_base()?)
     }
 
     fn env_envp_base(&mut self) -> Result<u64, String> {
@@ -8332,7 +8379,13 @@ impl Machine {
             .env_argc()?
             .checked_add(1)
             .ok_or_else(|| "startup argv count overflow".to_string())?;
-        Self::checked_record_base(ARG_BASE + 8, argv_slots, 8)
+        Self::checked_record_base(
+            self.startup_metadata_base()?
+                .checked_add(8)
+                .ok_or_else(|| "startup argv base overflows".to_string())?,
+            argv_slots,
+            8,
+        )
     }
 
     fn env_auxv_base(&mut self) -> Result<u64, String> {
@@ -8375,9 +8428,12 @@ impl Machine {
         len: u64,
     ) -> Result<(), String> {
         let mut record = Vec::with_capacity(32);
+        let startup_metadata_base = self.startup_metadata_base()?;
         for value in [
             self.env_argc()?,
-            ARG_BASE + 8,
+            startup_metadata_base
+                .checked_add(8)
+                .ok_or_else(|| "startup argv base overflows".to_string())?,
             self.env_envp_base()?,
             self.env_auxv_base()?,
         ] {
@@ -14820,6 +14876,68 @@ mod tests {
         assert_eq!(process.exec_startup_metadata_ptr, 0x720000);
         assert_eq!(machine.thread().unwrap().regs[31], 0x700000);
         assert_eq!(machine.thread().unwrap().thread_pointer, 0x710000);
+    }
+
+    #[test]
+    fn exec_descriptor_startup_metadata_base_is_runtime_visible() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let words = encode_exec_descriptor(&descriptor);
+        let mut machine = Machine::new(empty_program());
+
+        machine
+            .commit_exec_descriptor_memory_image(&words, &prepared_exec_vmas_fixture())
+            .unwrap();
+        machine.install_committed_exec_runtime_vmas().unwrap();
+        machine
+            .set_process_entry(
+                &["prog".to_string(), "arg".to_string()],
+                &["A=B".to_string()],
+            )
+            .unwrap();
+
+        assert_eq!(
+            &machine.process().unwrap().memory[ARG_BASE as usize..ARG_BASE as usize + 8],
+            &[0; 8]
+        );
+        assert_eq!(machine.load_u64(0x720000).unwrap(), 2);
+
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_STARTUP_METADATA_PTR;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], 0x720000);
+
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_ARGV_BASE;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], 0x720008);
+
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_ENVP_BASE;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(0), Reg(0)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], 0x720020);
+
+        machine.thread_mut().unwrap().regs[2] = ENV_KEY_PROCESS_ENTRY_RECORD;
+        machine.thread_mut().unwrap().regs[3] = 0x720800;
+        machine.thread_mut().unwrap().regs[4] = 32;
+        machine
+            .exec(Instr::EnvGet(Reg(1), Reg(2), Reg(3), Reg(4)))
+            .unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], 32);
+        assert_eq!(machine.load_u64(0x720800).unwrap(), 2);
+        assert_eq!(machine.load_u64(0x720808).unwrap(), 0x720008);
+        assert_eq!(machine.load_u64(0x720810).unwrap(), 0x720020);
     }
 
     #[test]
