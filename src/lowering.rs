@@ -1387,6 +1387,7 @@ mod tests {
         let libc_sbase_min = include_str!("../toolchain/liblnp64_sbase_min.c");
         let elf_exec_test_clang = include_str!("../userland/elf_exec_test_clang.c");
         let netbsd_init_clang = include_str!("../userland/netbsd_init_clang.c");
+        let netbsd_personality_clang = include_str!("../userland/netbsd_personality_clang_smoke.c");
         let netbsd_sh_clang = include_str!("../userland/netbsd_sh_clang.c");
         let lnp64_isel_lowering = include_str!("../llvm/lib/Target/LNP64/LNP64ISelLowering.cpp");
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
@@ -2454,6 +2455,13 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang socket libc object smoke passed"));
         assert!(real_llc.contains("userland/netbsd_personality_clang_smoke.c"));
         assert!(real_llc.contains("netbsd-personality-clang-smoke.o"));
+        assert!(netbsd_personality_clang.contains("#include <poll.h>"));
+        assert!(netbsd_personality_clang.contains("#include <sys/mman.h>"));
+        assert!(netbsd_personality_clang.contains("#include <sys/socket.h>"));
+        assert!(netbsd_personality_clang.contains("MAP_FAILED"));
+        assert!(netbsd_personality_clang.contains("PROT_READ | PROT_WRITE"));
+        assert!(!netbsd_personality_clang.contains("void *mmap(void *addr"));
+        assert!(!netbsd_personality_clang.contains("int socket(int domain"));
         assert!(real_llc.contains("real LLVM LNP64 clang NetBSD personality smoke object passed"));
         assert!(real_llc.contains("liblnp64-socket-min.o"));
         assert!(real_llc.contains("grep -q 'object_ctl r'"));

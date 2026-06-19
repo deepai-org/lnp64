@@ -1,46 +1,12 @@
 #include "lnp64_intrinsics.h"
 
 #include <fcntl.h>
+#include <poll.h>
 #include <pthread.h>
 #include <signal.h>
+#include <sys/mman.h>
+#include <sys/socket.h>
 #include <unistd.h>
-
-typedef unsigned long size_t;
-typedef unsigned long nfds_t;
-typedef unsigned long socklen_t;
-
-struct pollfd {
-  int fd;
-  short events;
-  short revents;
-};
-
-enum {
-  AF_INET = 2,
-  SOCK_STREAM = 1,
-  SOL_SOCKET = 1,
-  SO_REUSEADDR = 2,
-  SO_ERROR = 4,
-  MSG_NOSIGNAL = 0x4000,
-  POLLIN = 0x01,
-  MAP_PRIVATE = 0x02,
-  MAP_ANONYMOUS = 0x20,
-};
-
-void *mmap(void *addr, size_t len, int prot, int flags, int fd, long offset);
-int mprotect(void *addr, size_t len, int prot);
-int munmap(void *addr, size_t len);
-int poll(struct pollfd *fds, nfds_t nfds, int timeout);
-int socket(int domain, int type, int protocol);
-int bind(int fd, const void *addr, socklen_t len);
-int listen(int fd, int backlog);
-int connect(int fd, const void *addr, socklen_t len);
-int accept(int fd, void *addr, socklen_t *len);
-int getsockname(int fd, void *addr, socklen_t *len);
-int setsockopt(int fd, int level, int optname, const void *optval,
-               socklen_t optlen);
-long send(int fd, const void *buf, size_t len, int flags);
-long recv(int fd, void *buf, size_t len, int flags);
 
 static volatile unsigned long thread_marker;
 
@@ -78,14 +44,14 @@ static int check_root_image(void) {
 
 static int check_mmap(void) {
   unsigned char *bytes =
-      mmap(0, 4096, 3, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  if (bytes == (void *)~0UL)
+      mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (bytes == MAP_FAILED)
     return 1;
   bytes[0] = 0x4e;
   bytes[1] = 0x42;
   if (bytes[0] != 0x4e || bytes[1] != 0x42)
     return 2;
-  if (mprotect(bytes, 4096, 1) != 0)
+  if (mprotect(bytes, 4096, PROT_READ) != 0)
     return 3;
   if (bytes[0] != 0x4e)
     return 4;
