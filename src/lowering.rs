@@ -5820,20 +5820,16 @@ mod tests {
         assert!(roadmap.contains("toolchain/lnp64_netbsd_layers.manifest"));
         assert!(personality_doc.contains("toolchain/lnp64_netbsd_layers.manifest"));
         assert!(personality_doc.contains("No full monolithic NetBSD kernel port"));
-        assert!(system_gate.contains("forbidden primitive in trace"));
-        for forbidden in [
-            "IRQ",
-            "MMIO",
-            "DMA_CTL",
-            "PAGE_TABLE",
-            "SCHED_CTL",
-            "RAW_SYSCALL",
-        ] {
-            assert!(
-                system_gate.contains(forbidden),
-                "NetBSD system gate must reject forbidden primitive {forbidden}"
-            );
-        }
+        assert!(system_gate.contains("LNP64_LLVM_PACKAGE_FILTER=netbsd"));
+        assert!(system_gate.contains("scripts/run_real_llvm_package_gate.sh"));
+        assert!(
+            system_gate.contains(
+                "netbsd_system_gate_canonical_native_primitives_cover_runner_requirements"
+            )
+        );
+        assert!(system_gate.contains("demos/stale_fd_token.s"));
+        assert!(!system_gate.contains("cc --toy-bootstrap"));
+        assert!(!system_gate.contains("--legacy-toy"));
 
         for (layer, status, artifacts, gate, next_blocker) in rows {
             assert!(seen.insert(layer), "duplicate NetBSD layer {layer}");
@@ -6068,15 +6064,16 @@ mod tests {
         assert!(!run_netbsd_smoke.contains("[--backend llvm|toy]"));
         assert!(run_netbsd_system.contains("LNP64_LLVM_PACKAGE_FILTER=netbsd"));
         assert!(run_netbsd_system.contains("scripts/run_real_llvm_package_gate.sh"));
-        assert!(run_netbsd_system.contains("--legacy-toy"));
-        assert!(run_netbsd_system.contains(
-            "usage: scripts/run_netbsd_personality_system.sh [--backend llvm] [--legacy-toy]"
-        ));
-        assert!(run_netbsd_system.contains("toy backend is legacy-only; use --legacy-toy"));
+        assert!(!run_netbsd_system.contains("--legacy-toy"));
+        assert!(
+            run_netbsd_system
+                .contains("usage: scripts/run_netbsd_personality_system.sh [--backend llvm]")
+        );
+        assert!(run_netbsd_system.contains("toy backend has been removed"));
         assert!(!run_netbsd_system.contains("[--backend llvm|toy]"));
         assert_eq!(
             categories["netbsd_personality"].3,
-            "real_clang_netbsd_child_elf_gate_with_toy_system_opt_in"
+            "real_clang_netbsd_child_elf_gate_without_toy_system"
         );
         assert_eq!(
             categories["asm_demos"].3,
@@ -6320,7 +6317,6 @@ mod tests {
             );
         }
         for (surface, expected_status) in [
-            ("netbsd_personality_system", "partial"),
             ("legacy_libc_test_backend", "partial"),
             ("rtl_c_program_smoke", "partial"),
         ] {
@@ -6492,7 +6488,6 @@ mod tests {
         }
 
         for (surface, expected_status) in [
-            ("netbsd_personality_system", "partial"),
             ("legacy_libc_test_backend", "partial"),
             ("rtl_c_program_smoke", "partial"),
         ] {

@@ -10,8 +10,9 @@ and gate delivery.
 for this boundary. `scripts/run_netbsd_personality_smoke.sh` runs the real
 Clang/lld NetBSD package gate for this slice.
 `scripts/run_netbsd_personality_system.sh` is the larger userland-style system
-gate: it boots `userland/netbsd_init.c`, executes `userland/netbsd_sh.c`, runs
-several compiled C test programs, and audits the generated native trace.
+gate: it boots `userland/netbsd_init_clang.c`, executes
+`userland/netbsd_sh_clang.c`, and runs the Clang/lld-built child program set
+through the real LLVM package gate.
 `src/lowering.rs` is the typed compatibility dispatch table for NetBSD/POSIX
 surfaces used by this gate. It also carries the initial NetBSD-current
 syscall-number subset for the gate's supported calls, routing them to the same
@@ -87,12 +88,12 @@ used by the system gate.
 ## Current System Gate
 
 `scripts/run_netbsd_personality_system.sh` builds a temporary personality root
-with `/sbin/init.s`, `/bin/netbsd_sh.s`, and compiled test programs, then boots
-it with `run --namespace-root` so guest absolute paths resolve inside that root.
-The test set covers cwd/root/openat, a fixed-record software exec-plan smoke,
-threads, poll/select/epoll, a service-owned filesystem image, mmap, fd passing,
-loopback sockets, signal gates, call gates, timers, and Resource Domain budget
-checks. The scripted shell runs:
+from Clang/lld-linked ELF programs through the real LLVM package gate. Guest
+absolute paths resolve inside that root through `run-elf --namespace-root`.
+The test set covers cwd/root/openat, ELF exec, threads, poll/select/epoll, a
+service-owned filesystem image, mmap, fd passing, loopback sockets, signal
+gates, call gates, timers, and Resource Domain budget checks. The scripted
+shell runs:
 
 ```sh
 /init
@@ -152,8 +153,7 @@ propagates through the nested tree.
   transferred capabilities.
 - Move `poll`/`select` blocking paths toward a first-class event queue profile
   while keeping `WAITABLE_PROBE` readiness probes as native helpers.
-- Replace the current fixed-record exec-plan smoke with a software loader for
-  NetBSD-like userland images instead of relying on compiler-emitted assembly as
-  the image format.
+- Replace the remaining fixed-record exec-plan fixtures with a software loader
+  for NetBSD-like userland images.
 - Import small NetBSD-derived libc/userland components once the ABI smoke stays
   stable under this gate.
