@@ -51,7 +51,7 @@ run_elf_report() {
   printf '%s: %s\n' "$message" "$linked_probe"
 }
 
-for demo in hello factorial allocator fibonacci pcr cat json-parser rot13 producer-consumer parallel-hash; do
+for demo in hello factorial allocator fibonacci pcr cat json-parser rot13 producer-consumer parallel-hash sqlite-lite; do
   linked_probe="target/llvm-lnp64-build/lnp64-$demo-clang-linked.elf"
   case "$demo" in
     hello) run_elf_probe "$linked_probe" 'hello from LNP64' ;;
@@ -64,10 +64,11 @@ for demo in hello factorial allocator fibonacci pcr cat json-parser rot13 produc
     rot13) run_elf_probe "$linked_probe" 'rot13 ok' ;;
     producer-consumer) run_elf_probe "$linked_probe" 'producer consumer ok' ;;
     parallel-hash) run_elf_probe "$linked_probe" 'parallel hash ok' ;;
+    sqlite-lite) run_elf_probe "$linked_probe" 'sqlite lite ok' ;;
   esac
 done
 printf 'real LLVM LNP64 run-elf clang demo execution passed: %s\n' \
-  "target/llvm-lnp64-build/lnp64-{hello,factorial,allocator,fibonacci,pcr,cat,json-parser,rot13,producer-consumer,parallel-hash}-clang-linked.elf"
+  "target/llvm-lnp64-build/lnp64-{hello,factorial,allocator,fibonacci,pcr,cat,json-parser,rot13,producer-consumer,parallel-hash,sqlite-lite}-clang-linked.elf"
 
 run_elf_report "real LLVM LNP64 run-elf native heap execution passed" \
   target/llvm-lnp64-build/lnp64-native-heap-linked.elf

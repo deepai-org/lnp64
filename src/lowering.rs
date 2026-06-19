@@ -2201,6 +2201,11 @@ mod tests {
         assert!(real_llc.contains("-c demos/parallel_hash.c"));
         assert!(real_llc.contains("grep -q 'amo.add r'"));
         assert!(real_llc.contains("real LLVM LNP64 clang parallel hash demo object smoke passed"));
+        assert!(real_llc.contains("sqlite-lite-clang-smoke.o"));
+        assert!(real_llc.contains("-c demos/sqlite_lite.c"));
+        assert!(real_llc.contains("grep -q 'mmap r'"));
+        assert!(real_llc.contains("grep -q 'fence'"));
+        assert!(real_llc.contains("real LLVM LNP64 clang sqlite lite demo object smoke passed"));
         assert!(real_llc.contains("lnp64-$demo-clang-linked.elf"));
         assert!(real_llc.contains(
             r#""$demo_obj" "$libc_fd_impl_obj" \
@@ -2439,6 +2444,7 @@ mod tests {
         assert!(real_llc_docker.contains("rot13 ok"));
         assert!(real_llc_docker.contains("producer consumer ok"));
         assert!(real_llc_docker.contains("parallel hash ok"));
+        assert!(real_llc_docker.contains("sqlite lite ok"));
         assert!(real_llc_docker.contains("exit=0"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf clang demo execution passed"));
         assert!(real_llc_docker.contains("lnp64-native-heap-linked.elf"));
@@ -3643,6 +3649,7 @@ mod tests {
             "rot13",
             "producer_consumer",
             "parallel_hash",
+            "sqlite_lite",
             "simple_libc",
         ] {
             assert!(cases.contains(case), "missing llvm bootstrap case {case}");
@@ -3658,6 +3665,7 @@ mod tests {
             "rot13",
             "producer_consumer",
             "parallel_hash",
+            "sqlite_lite",
         ] {
             assert_eq!(statuses[case], "tested", "{case} should be tested");
         }
@@ -4231,6 +4239,7 @@ mod tests {
             "rot13",
             "producer_consumer",
             "parallel_hash",
+            "sqlite_lite",
             "simple_libc",
         ] {
             assert!(
