@@ -214,7 +214,9 @@ fn run() -> Result<(), String> {
                 .iter()
                 .map(|(pc, opcode)| {
                     let pc_word = pc.saturating_sub(0x1000) / 4;
-                    format!("{{\"pc\":{pc_word},\"opcode\":{opcode}}}")
+                    format!(
+                        "{{\"pc\":{pc_word},\"opcode\":{opcode},\"tile_id\":0,\"pid\":1,\"tid\":1,\"action\":1}}"
+                    )
                 })
                 .collect::<Vec<_>>()
                 .join(",");

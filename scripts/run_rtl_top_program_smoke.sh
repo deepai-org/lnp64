@@ -145,6 +145,14 @@ for field in ("r3", "r4", "r5", "env_page", "mem0", "errno"):
 
 rtl_retire = load_records(sys.argv[1], "RTL_RETIRE ")
 emulator_retire = load_record(sys.argv[2], "EMULATOR_RETIRE ")
+retire_required_fields = ("pc", "opcode", "tile_id", "pid", "tid", "action")
+for label, records in (("rtl", rtl_retire), ("emulator", emulator_retire)):
+    for idx, record in enumerate(records):
+        missing = [field for field in retire_required_fields if field not in record]
+        if missing:
+            raise SystemExit(
+                f"{label} retire record {idx} missing required field(s): {missing}"
+            )
 if rtl_retire != emulator_retire:
     limit = min(len(rtl_retire), len(emulator_retire))
     first = next(

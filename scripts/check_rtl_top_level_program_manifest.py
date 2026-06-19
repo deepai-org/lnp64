@@ -101,6 +101,7 @@ def main() -> None:
             require((ROOT / generated_flat_hex).exists(), f"{entry['source']} generated_flat_hex is missing")
             require("asm-flat-exec" in gate_text, f"{entry['source']} active gate must assemble source to flat hex")
             require("RTL_RETIRE" in gate_text and "EMULATOR_RETIRE" in gate_text, f"{entry['source']} gate must compare retire traces")
+            require("retire_required_fields" in gate_text and "tile_id" in gate_text, f"{entry['source']} gate must require typed retire fields")
             require("RTL_FINAL" in gate_text and "EMULATOR_FINAL" in gate_text, f"{entry['source']} gate must compare final state")
             require('"errno"' in gate_text, f"{entry['source']} gate must compare final errno")
     require(active_flat_hex >= 1, "manifest must keep at least one active top-level flat hex program")
@@ -118,6 +119,7 @@ def main() -> None:
                 f"{entry['source']} active gate must compile C to flat hex",
             )
             require("RTL_RETIRE" in gate_text and "EMULATOR_RETIRE" in gate_text, f"{entry['source']} gate must compare retire traces")
+            require("retire_required_fields" in gate_text and "tile_id" in gate_text, f"{entry['source']} gate must require typed retire fields")
             require("RTL_FINAL" in gate_text and "EMULATOR_FINAL" in gate_text, f"{entry['source']} gate must compare final state")
             require('"errno"' in gate_text, f"{entry['source']} gate must compare final errno")
     require(active_compiler_flat >= 1, "manifest must keep at least one active compiler-generated top-level program")
@@ -129,6 +131,7 @@ def main() -> None:
             require("program_input=" in gate_text, f"{entry['source']} active gate must accept a program input")
             require("asm-flat-exec" in gate_text, f"{entry['source']} active gate must assemble source to flat hex")
             require("RTL_RETIRE" in gate_text and "EMULATOR_RETIRE" in gate_text, f"{entry['source']} gate must compare retire traces")
+            require("retire_required_fields" in gate_text and "tile_id" in gate_text, f"{entry['source']} gate must require typed retire fields")
             require("RTL_FINAL" in gate_text and "EMULATOR_FINAL" in gate_text, f"{entry['source']} gate must compare final state")
             require('"errno"' in gate_text, f"{entry['source']} gate must compare final errno")
     for entry in compiler_entries:
@@ -139,6 +142,7 @@ def main() -> None:
         if entry.get("status") == "active":
             gate_text = text(ROOT / str(entry["rtl_gate"]))
             require("RTL_RETIRE" in gate_text and "EMULATOR_RETIRE" in gate_text, f"{entry['source']} gate must compare retire traces")
+            require("retire_required_fields" in gate_text and "tile_id" in gate_text, f"{entry['source']} gate must require typed retire fields")
             require("RTL_FINAL" in gate_text and "EMULATOR_FINAL" in gate_text, f"{entry['source']} gate must compare final state")
             require('"errno"' in gate_text, f"{entry['source']} gate must compare final errno")
 

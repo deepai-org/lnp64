@@ -85,9 +85,13 @@ module lnp64_top_program_tb;
         #1;
         if (dut.retire_submit_valid_vec[0]) begin
             $display(
-                "RTL_RETIRE {\"pc\":%0d,\"opcode\":%0d}",
+                "RTL_RETIRE {\"pc\":%0d,\"opcode\":%0d,\"tile_id\":%0d,\"pid\":%0d,\"tid\":%0d,\"action\":%0d}",
                 dut.retire_submit_record_vec[0].pc,
-                dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc][31:24]
+                dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc][31:24],
+                dut.retire_submit_record_vec[0].tile_id,
+                dut.retire_submit_record_vec[0].pid,
+                dut.retire_submit_record_vec[0].tid,
+                dut.retire_submit_record_vec[0].action
             );
         end
     end
