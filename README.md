@@ -227,6 +227,7 @@ LNP64_RTL_EXEC_SKIP_BUILD=1 LNP64_RTL_SKIP_BUILD=1 bash scripts/run_rtl_executio
 LNP64_RTL_EXEC_SKIP_BUILD=1 LNP64_RTL_TOP_PROGRAM_FILTER='*linked*' bash scripts/run_rtl_execution_fast_docker.sh
 LNP64_RTL_FAST=1 LNP64_RTL_PROOF_SKIP_BUILD=1 bash scripts/run_rtl_proof_docker.sh
 LNP64_RTL_FAST=1 LNP64_RTL_PROOF_SKIP_BUILD=1 bash scripts/run_rtl_m1_refinement_docker.sh
+LNP64_RTL_PROOF_SKIP_BUILD=1 LNP64_RTL_FAST=1 LNP64_M1_TYPED_COMMIT_SEEDS="0 1 7" bash scripts/run_rtl_m1_refinement_docker.sh
 LNP64_RTL_PROOF_SKIP_BUILD=1 bash scripts/run_rtl_m1_refinement_docker.sh
 LNP64_RTL_PROOF_SKIP_BUILD=1 LNP64_M1_TYPED_COMMIT_SEEDS="0 1 7" bash scripts/run_rtl_m1_refinement_docker.sh
 LNP64_RTL_PROOF_RANDOM_COSIM=0 bash scripts/run_rtl_proof_docker.sh
@@ -249,6 +250,9 @@ execution-first milestone: it builds or reuses a Rust+Verilator image, mounts
 the checkout, keeps Docker-built Cargo and Verilator artifacts under
 `target/docker-rust` and `target/rtl-verilator-docker`, and runs selected
 programs through `rtl/top/lnp64_top.sv` against the emulator.
+`run_rtl_m1_refinement_docker.sh` sets `LNP64_REQUIRE_LEAN=1`, so it is the
+right fast path when the claim depends on the Lean M1 transition-invariant file;
+the non-Docker host gate may skip Lean if no local Lean toolchain is installed.
 
 The randomized/cosim sweep is serial and full-seed by default for stable logs.
 For an inner loop, run only the slices and seeds you need:
