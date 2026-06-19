@@ -211,6 +211,42 @@ module lnp64_core_tile #(
         end
     endfunction
 
+    function automatic logic [63:0] mulh_signed(input logic [63:0] lhs, input logic [63:0] rhs);
+        logic signed [127:0] lhs_ext;
+        logic signed [127:0] rhs_ext;
+        logic signed [127:0] product;
+        begin
+            lhs_ext = {{64{lhs[63]}}, lhs};
+            rhs_ext = {{64{rhs[63]}}, rhs};
+            product = lhs_ext * rhs_ext;
+            mulh_signed = product[127:64];
+        end
+    endfunction
+
+    function automatic logic [63:0] mulh_unsigned(input logic [63:0] lhs, input logic [63:0] rhs);
+        logic [127:0] lhs_ext;
+        logic [127:0] rhs_ext;
+        logic [127:0] product;
+        begin
+            lhs_ext = {64'd0, lhs};
+            rhs_ext = {64'd0, rhs};
+            product = lhs_ext * rhs_ext;
+            mulh_unsigned = product[127:64];
+        end
+    endfunction
+
+    function automatic logic [63:0] mulh_signed_unsigned(input logic [63:0] lhs, input logic [63:0] rhs);
+        logic signed [127:0] lhs_ext;
+        logic signed [127:0] rhs_ext;
+        logic signed [127:0] product;
+        begin
+            lhs_ext = {{64{lhs[63]}}, lhs};
+            rhs_ext = {64'd0, rhs};
+            product = lhs_ext * rhs_ext;
+            mulh_signed_unsigned = product[127:64];
+        end
+    endfunction
+
     function automatic logic csel_condition(input logic [15:0] opcode);
         begin
             unique case (opcode)
@@ -452,6 +488,27 @@ module lnp64_core_tile #(
                             end
                             LNP64_OP_MUL: begin
                                 gpr[dec.rd] <= gpr[dec.rs1] * gpr[dec.rs2];
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_MULH: begin
+                                gpr[dec.rd] <= mulh_signed(gpr[dec.rs1], gpr[dec.rs2]);
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_MULHU: begin
+                                gpr[dec.rd] <= mulh_unsigned(gpr[dec.rs1], gpr[dec.rs2]);
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_MULHSU: begin
+                                gpr[dec.rd] <= mulh_signed_unsigned(gpr[dec.rs1], gpr[dec.rs2]);
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;

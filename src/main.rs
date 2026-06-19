@@ -293,6 +293,9 @@ fn encode_flat_exec_instr(
         )]),
         Instr::Sub(rd, rs1, rs2) => Ok(vec![enc_rrr(0x11, *rd, *rs1, *rs2)]),
         Instr::Mul(rd, rs1, rs2) => Ok(vec![enc_rrr(0x12, *rd, *rs1, *rs2)]),
+        Instr::Mulh(rd, rs1, rs2) => Ok(vec![enc_rrr(0xaa, *rd, *rs1, *rs2)]),
+        Instr::Mulhu(rd, rs1, rs2) => Ok(vec![enc_rrr(0xab, *rd, *rs1, *rs2)]),
+        Instr::Mulhsu(rd, rs1, rs2) => Ok(vec![enc_rrr(0xac, *rd, *rs1, *rs2)]),
         Instr::Div(rd, rs1, rs2) => Ok(vec![enc_rrr(0x13, *rd, *rs1, *rs2)]),
         Instr::Udiv(rd, rs1, rs2) => Ok(vec![enc_rrr(0xa7, *rd, *rs1, *rs2)]),
         Instr::Srem(rd, rs1, rs2) => Ok(vec![enc_rrr(0xa8, *rd, *rs1, *rs2)]),
@@ -411,7 +414,7 @@ fn encode_flat_exec_instr(
         )]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, MOV, ADD/ADDI, SUB, MUL, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XOR/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSEL, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.B, ALLOC, ERRNO_GET/SET, ENV_GET, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XOR/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSEL, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.B, ALLOC, ERRNO_GET/SET, ENV_GET, EXIT"
         )),
     }
 }
@@ -1331,6 +1334,80 @@ mod tests {
                 "10d6b000\n",
                 "10d6b200\n",
                 "3ad00000\n",
+            )
+        );
+    }
+
+    #[test]
+    fn asm_flat_exec_encodes_high_multiply_subset() {
+        let source = r#"
+            .text
+              LI r1, 1
+              LSLI r1, r1, 32
+              MOV r2, r1
+              MULH r3, r1, r2
+              MULHU r4, r1, r2
+              LI r5, -1
+              LSLI r5, r5, 32
+              MULH r6, r5, r1
+              MULHSU r7, r5, r1
+              MULHU r8, r5, r1
+              LI r9, 1
+              LI r10, -1
+              LI r11, 0xffffffff
+              LI r12, 0
+              CMP r3, r9
+              CSEL.EQ r13, r9, r12
+              CMP r4, r9
+              CSEL.EQ r14, r9, r12
+              ADD r13, r13, r14
+              CMP r6, r10
+              CSEL.EQ r15, r9, r12
+              ADD r13, r13, r15
+              CMP r7, r10
+              CSEL.EQ r16, r9, r12
+              ADD r13, r13, r16
+              CMP r8, r11
+              CSEL.EQ r17, r9, r12
+              ADD r13, r13, r17
+              EXIT r13
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+
+        assert_eq!(
+            hex,
+            concat!(
+                "01080001\n",
+                "a4084020\n",
+                "02104000\n",
+                "aa184400\n",
+                "ab204400\n",
+                "0128ffff\n",
+                "a4294020\n",
+                "aa314200\n",
+                "ac394200\n",
+                "ab414200\n",
+                "01480001\n",
+                "0150ffff\n",
+                "04580000\n",
+                "ffffffff\n",
+                "01600000\n",
+                "1b1a4000\n",
+                "bb6a5800\n",
+                "1b224000\n",
+                "bb725800\n",
+                "106b5c00\n",
+                "1b328000\n",
+                "bb7a5800\n",
+                "106b5e00\n",
+                "1b3a8000\n",
+                "bb825800\n",
+                "106b6000\n",
+                "1b42c000\n",
+                "bb8a5800\n",
+                "106b6200\n",
+                "3a680000\n",
             )
         );
     }

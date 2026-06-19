@@ -147,6 +147,15 @@ module lnp64_decode (
             8'ha9: begin
                 dec.opcode = LNP64_OP_UREM;
             end
+            8'haa: begin
+                dec.opcode = LNP64_OP_MULH;
+            end
+            8'hab: begin
+                dec.opcode = LNP64_OP_MULHU;
+            end
+            8'hac: begin
+                dec.opcode = LNP64_OP_MULHSU;
+            end
             8'hff: begin
                 dec.opcode = LNP64_OP_UNSUPPORTED;
             end
@@ -318,6 +327,9 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_UDIV ||
             dec.opcode == LNP64_OP_SREM ||
             dec.opcode == LNP64_OP_UREM ||
+            dec.opcode == LNP64_OP_MULH ||
+            dec.opcode == LNP64_OP_MULHU ||
+            dec.opcode == LNP64_OP_MULHSU ||
             dec.opcode == LNP64_OP_EXIT ||
             dec.opcode == LNP64_OP_OBJECT_CTL ||
             dec.opcode == LNP64_OP_FAULT_INJECT;
