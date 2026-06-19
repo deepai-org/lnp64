@@ -69,6 +69,11 @@ if [[ "$program_input" == *.s ]]; then
     cargo run --quiet -- asm-flat-exec "$program_input" -o "$program_hex" --data-hex "$program_data_hex"
   fi
 fi
+if [[ "$program_input" == *.dump ]]; then
+  program_hex="$(mktemp "${TMPDIR:-/tmp}/lnp64_top_program_from_llvm_dump.XXXXXX.hex")"
+  tmp_files+=("$program_hex")
+  python3 scripts/llvm_objdump_to_flat_hex.py "$program_input" -o "$program_hex"
+fi
 
 sim_log="$(mktemp "${TMPDIR:-/tmp}/lnp64_rtl_top_program_sim.XXXXXX.log")"
 emulator_log="$(mktemp "${TMPDIR:-/tmp}/lnp64_emulator_top_program.XXXXXX.log")"
