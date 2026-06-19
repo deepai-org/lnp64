@@ -262,6 +262,12 @@ module lnp64_decode (
             8'h6c: begin
                 dec.opcode = LNP64_OP_MPROTECT;
             end
+            8'h6d: begin
+                dec.opcode = LNP64_OP_OPEN_FD;
+            end
+            8'h6e: begin
+                dec.opcode = LNP64_OP_FD_CLOSE;
+            end
             8'hc5: begin
                 dec.opcode = LNP64_OP_AMO_SWAP;
             end
@@ -503,6 +509,8 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_SLEEP ||
             dec.opcode == LNP64_OP_MMAP ||
             dec.opcode == LNP64_OP_MPROTECT ||
+            dec.opcode == LNP64_OP_OPEN_FD ||
+            dec.opcode == LNP64_OP_FD_CLOSE ||
             dec.opcode == LNP64_OP_DMA_CTL ||
             dec.opcode == LNP64_OP_ENV_GET ||
             dec.opcode == LNP64_OP_READ_FD ||

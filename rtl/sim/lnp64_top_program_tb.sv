@@ -96,7 +96,7 @@ module lnp64_top_program_tb;
             8'h00, 8'h1b, 8'h1c, 8'h1f, 8'h20, 8'h21, 8'h22, 8'h23,
             8'h24, 8'h25, 8'h26, 8'h27, 8'h28, 8'h2a, 8'h33, 8'h34,
             8'h35, 8'h37, 8'h39, 8'h3a, 8'h49, 8'h55, 8'h61, 8'h63,
-            8'h64, 8'h65, 8'h68, 8'hcb, 8'hcc, 8'hcd: flat_result_valid = 1'b0;
+            8'h64, 8'h65, 8'h68, 8'h6e, 8'hcb, 8'hcc, 8'hcd: flat_result_valid = 1'b0;
             default: flat_result_valid = 1'b1;
         endcase
     endfunction

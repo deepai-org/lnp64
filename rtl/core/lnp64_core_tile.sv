@@ -287,6 +287,19 @@ module lnp64_core_tile #(
     logic cap_recv_rights_subset;
     int unsigned pipe_fd;
     logic pipe_fd_in_range;
+    logic pipe_fd_is_token;
+    logic pipe_fd_token_shape_valid;
+    logic pipe_fd_generation_matches;
+    logic pipe_fd_token_stale;
+    int unsigned close_fd;
+    logic close_fd_in_range;
+    logic close_fd_is_token;
+    logic close_fd_token_shape_valid;
+    logic close_fd_generation_matches;
+    logic close_fd_token_stale;
+    int unsigned file_open_fd;
+    logic file_open_available;
+    logic [63:0] dynamic_file_read_count;
     int unsigned static_fd;
     logic static_fd_in_range;
     logic static_fd_is_memory_object;
@@ -990,6 +1003,33 @@ module lnp64_core_tile #(
             pipe_fd = fdr_value_fd(gpr[dec.rs1]);
         end
         pipe_fd_in_range = pipe_fd < FDR_SLOT_COUNT;
+        pipe_fd_is_token = gpr[dec.rs1] >= 64'd256;
+        pipe_fd_token_shape_valid = (gpr[dec.rs1] & FDR_TOKEN_MARKER) != 64'd0 &&
+            gpr[dec.rs1][7:0] < FDR_SLOT_COUNT[7:0] &&
+            ((gpr[dec.rs1] & ~FDR_TOKEN_MARKER) >> 8) != 64'd0;
+        pipe_fd_generation_matches = pipe_fd_in_range &&
+            (((gpr[dec.rs1] & ~FDR_TOKEN_MARKER) >> 8) == fdr_generation[pipe_fd]);
+        pipe_fd_token_stale = pipe_fd_is_token && pipe_fd_token_shape_valid && pipe_fd_in_range &&
+            (!fdr_valid[pipe_fd] || fdr_revoked[pipe_fd] || !pipe_fd_generation_matches);
+        close_fd = fdr_value_fd(gpr[dec.rd]);
+        close_fd_in_range = close_fd < FDR_SLOT_COUNT;
+        close_fd_is_token = gpr[dec.rd] >= 64'd256;
+        close_fd_token_shape_valid = (gpr[dec.rd] & FDR_TOKEN_MARKER) != 64'd0 &&
+            gpr[dec.rd][7:0] < FDR_SLOT_COUNT[7:0] &&
+            ((gpr[dec.rd] & ~FDR_TOKEN_MARKER) >> 8) != 64'd0;
+        close_fd_generation_matches = close_fd_in_range &&
+            (((gpr[dec.rd] & ~FDR_TOKEN_MARKER) >> 8) == fdr_generation[close_fd]);
+        close_fd_token_stale = close_fd_is_token && close_fd_token_shape_valid && close_fd_in_range &&
+            (!fdr_valid[close_fd] || fdr_revoked[close_fd] || !close_fd_generation_matches);
+        file_open_fd = 3;
+        file_open_available = 1'b0;
+        for (int slot = 3; slot < FDR_SLOT_COUNT; slot = slot + 1) begin
+            if (!file_open_available && !fdr_valid[slot]) begin
+                file_open_fd = slot;
+                file_open_available = 1'b1;
+            end
+        end
+        dynamic_file_read_count = min_u64(gpr[dec.rs3], 64'd8);
         static_fd = dec.rd;
         static_fd_in_range = static_fd < FDR_SLOT_COUNT;
         static_fd_is_memory_object = 1'b0;
@@ -2227,6 +2267,48 @@ module lnp64_core_tile #(
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
+                            LNP64_OP_OPEN_FD: begin
+                                if (!file_open_available) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= 16'd24;
+                                end else begin
+                                    fdr_valid[file_open_fd] <= 1'b1;
+                                    fdr_revoked[file_open_fd] <= 1'b0;
+                                    fdr_generation[file_open_fd] <= fdr_generation[file_open_fd] + 64'd1;
+                                    fdr_rights[file_open_fd] <= CAP_RIGHT_ALL;
+                                    fdr_lineage[file_open_fd] <= 64'd1792 + {56'd0, file_open_fd[7:0]};
+                                    fdr_kind[file_open_fd] <= FDR_KIND_GENERIC;
+                                    gpr[dec.rd] <= FDR_TOKEN_MARKER |
+                                        ((fdr_generation[file_open_fd] + 64'd1) << 8) |
+                                        {56'd0, file_open_fd[7:0]};
+                                    gpr[1] <= FDR_TOKEN_MARKER |
+                                        ((fdr_generation[file_open_fd] + 64'd1) << 8) |
+                                        {56'd0, file_open_fd[7:0]};
+                                    errno_reg <= LNP64_ERR_OK;
+                                end
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_FD_CLOSE: begin
+                                if (close_fd_token_stale) begin
+                                    errno_reg <= RTL_ERR_ESTALE;
+                                end else if (!close_fd_in_range || !fdr_valid[close_fd]) begin
+                                    errno_reg <= LNP64_ERR_EBADF;
+                                end else begin
+                                    fdr_valid[close_fd] <= 1'b0;
+                                    fdr_revoked[close_fd] <= 1'b0;
+                                    fdr_generation[close_fd] <= fdr_generation[close_fd] + 64'd1;
+                                    fdr_rights[close_fd] <= 64'd0;
+                                    fdr_kind[close_fd] <= FDR_KIND_CLOSED;
+                                    errno_reg <= LNP64_ERR_OK;
+                                end
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
                             LNP64_OP_READ_FD: begin
                                 if (gpr[dec.rs2] == 64'd0) begin
                                     gpr[1] <= 64'd0;
@@ -2478,6 +2560,18 @@ module lnp64_core_tile #(
                                 if (gpr[dec.rs3] == 64'd0) begin
                                     gpr[1] <= 64'd0;
                                     gpr[dec.rd] <= 64'd0;
+                                    errno_reg <= LNP64_ERR_OK;
+                                end else if (raw_opcode == 8'h3b && pipe_fd_token_stale) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= RTL_ERR_ESTALE;
+                                end else if (raw_opcode == 8'h3b && pipe_fd_in_range &&
+                                    fdr_valid[pipe_fd] && !fdr_revoked[pipe_fd] &&
+                                    fdr_kind[pipe_fd] == FDR_KIND_GENERIC &&
+                                    ((fdr_rights[pipe_fd] & 64'd1) != 64'd0)) begin
+                                    store_double_unaligned_next(gpr[dec.rs2], 64'h0000_0000_6361_705b);
+                                    dcache_writeback <= 1'b1;
+                                    gpr[1] <= dynamic_file_read_count;
+                                    gpr[dec.rd] <= dynamic_file_read_count;
                                     errno_reg <= LNP64_ERR_OK;
                                 end else if (!pipe_fd_in_range || !fdr_valid[pipe_fd] ||
                                     fdr_revoked[pipe_fd] ||

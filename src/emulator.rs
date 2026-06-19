@@ -1237,6 +1237,7 @@ fn committed_exec_result_reg(raw_word: u32) -> Option<usize> {
         | 0x61
         | 0x63..=0x65
         | 0x68
+        | 0x6e
         | 0xcb..=0xcd => None,
         _ => Some(((raw_word >> 19) & 0x1f) as usize),
     }
@@ -1905,6 +1906,8 @@ impl Machine {
                 return Ok((Instr::Mmap(a, b, c, d, fd, offset), pc + 8));
             }
             0x6c => Instr::Mprotect(a, b, c),
+            0x6d => Instr::OpenFdDyn(a, b, c),
+            0x6e => Instr::FdCloseDyn(a),
             0xcb => Instr::FutexWait(a, b),
             0xcc => Instr::FutexWake(a, b),
             0xcd => Instr::Fence,
