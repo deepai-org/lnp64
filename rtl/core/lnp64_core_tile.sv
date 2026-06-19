@@ -152,6 +152,63 @@ module lnp64_core_tile #(
         end
     endfunction
 
+    function automatic logic [63:0] clz64(input logic [63:0] value);
+        integer bit_idx;
+        logic seen_one;
+        begin
+            clz64 = 64'd0;
+            seen_one = 1'b0;
+            for (bit_idx = 63; bit_idx >= 0; bit_idx = bit_idx - 1) begin
+                if (!seen_one && value[bit_idx]) begin
+                    seen_one = 1'b1;
+                end else if (!seen_one) begin
+                    clz64 = clz64 + 64'd1;
+                end
+            end
+        end
+    endfunction
+
+    function automatic logic [63:0] ctz64(input logic [63:0] value);
+        integer bit_idx;
+        logic seen_one;
+        begin
+            ctz64 = 64'd0;
+            seen_one = 1'b0;
+            for (bit_idx = 0; bit_idx < 64; bit_idx = bit_idx + 1) begin
+                if (!seen_one && value[bit_idx]) begin
+                    seen_one = 1'b1;
+                end else if (!seen_one) begin
+                    ctz64 = ctz64 + 64'd1;
+                end
+            end
+        end
+    endfunction
+
+    function automatic logic [63:0] popcnt64(input logic [63:0] value);
+        integer bit_idx;
+        begin
+            popcnt64 = 64'd0;
+            for (bit_idx = 0; bit_idx < 64; bit_idx = bit_idx + 1) begin
+                popcnt64 = popcnt64 + {63'd0, value[bit_idx]};
+            end
+        end
+    endfunction
+
+    function automatic logic [63:0] bswap64(input logic [63:0] value);
+        begin
+            bswap64 = {
+                value[7:0],
+                value[15:8],
+                value[23:16],
+                value[31:24],
+                value[39:32],
+                value[47:40],
+                value[55:48],
+                value[63:56]
+            };
+        end
+    endfunction
+
     string program_hex_path;
     integer rom_i;
     initial begin
@@ -513,6 +570,62 @@ module lnp64_core_tile #(
                             end
                             LNP64_OP_ZEXT_W: begin
                                 gpr[dec.rd] <= {32'd0, gpr[dec.rs1][31:0]};
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_CLZ: begin
+                                gpr[dec.rd] <= clz64(gpr[dec.rs1]);
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_CTZ: begin
+                                gpr[dec.rd] <= ctz64(gpr[dec.rs1]);
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_POPCNT: begin
+                                gpr[dec.rd] <= popcnt64(gpr[dec.rs1]);
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_ROL: begin
+                                gpr[dec.rd] <= (gpr[dec.rs1] << gpr[dec.rs2][5:0]) | (gpr[dec.rs1] >> (64 - gpr[dec.rs2][5:0]));
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_ROR: begin
+                                gpr[dec.rd] <= (gpr[dec.rs1] >> gpr[dec.rs2][5:0]) | (gpr[dec.rs1] << (64 - gpr[dec.rs2][5:0]));
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_BSWAP16: begin
+                                gpr[dec.rd] <= {48'd0, gpr[dec.rs1][7:0], gpr[dec.rs1][15:8]};
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_BSWAP32: begin
+                                gpr[dec.rd] <= {32'd0, gpr[dec.rs1][7:0], gpr[dec.rs1][15:8], gpr[dec.rs1][23:16], gpr[dec.rs1][31:24]};
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_BSWAP64: begin
+                                gpr[dec.rd] <= bswap64(gpr[dec.rs1]);
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;

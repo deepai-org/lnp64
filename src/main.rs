@@ -346,6 +346,14 @@ fn encode_flat_exec_instr(
         Instr::ZextB(rd, rs1) => Ok(vec![enc_rrr(0xb0, *rd, *rs1, Reg(0))]),
         Instr::ZextH(rd, rs1) => Ok(vec![enc_rrr(0xb1, *rd, *rs1, Reg(0))]),
         Instr::ZextW(rd, rs1) => Ok(vec![enc_rrr(0xb2, *rd, *rs1, Reg(0))]),
+        Instr::Clz(rd, rs1) => Ok(vec![enc_rrr(0xb3, *rd, *rs1, Reg(0))]),
+        Instr::Ctz(rd, rs1) => Ok(vec![enc_rrr(0xb4, *rd, *rs1, Reg(0))]),
+        Instr::Popcnt(rd, rs1) => Ok(vec![enc_rrr(0xb5, *rd, *rs1, Reg(0))]),
+        Instr::Rol(rd, rs1, rs2) => Ok(vec![enc_rrr(0xb6, *rd, *rs1, *rs2)]),
+        Instr::Ror(rd, rs1, rs2) => Ok(vec![enc_rrr(0xb7, *rd, *rs1, *rs2)]),
+        Instr::Bswap16(rd, rs1) => Ok(vec![enc_rrr(0xb8, *rd, *rs1, Reg(0))]),
+        Instr::Bswap32(rd, rs1) => Ok(vec![enc_rrr(0xb9, *rd, *rs1, Reg(0))]),
+        Instr::Bswap64(rd, rs1) => Ok(vec![enc_rrr(0xba, *rd, *rs1, Reg(0))]),
         Instr::Cmp(lhs, rhs) => Ok(vec![enc_rrr(0x1b, *lhs, *rhs, Reg(0))]),
         Instr::Ret => Ok(vec![enc_reg(0x1f, Reg(0))]),
         Instr::Jmp(target) => Ok(vec![enc_branch(
@@ -396,7 +404,7 @@ fn encode_flat_exec_instr(
         )]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, MOV, ADD/ADDI, SUB, MUL, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XOR/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CMP, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.B, ALLOC, ERRNO_GET/SET, ENV_GET, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, MOV, ADD/ADDI, SUB, MUL, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XOR/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.B, ALLOC, ERRNO_GET/SET, ENV_GET, EXIT"
         )),
     }
 }
@@ -1138,6 +1146,80 @@ mod tests {
                 "10529000\n",
                 "a0528006\n",
                 "3a500000\n",
+            )
+        );
+    }
+
+    #[test]
+    fn asm_flat_exec_encodes_count_rotate_bswap_subset() {
+        let source = r#"
+            .text
+              LI r1, 16
+              CLZ r2, r1
+              ADDI r2, r2, -55
+              CTZ r3, r1
+              LI r4, 3855
+              POPCNT r4, r4
+              ADDI r4, r4, -5
+              LI r5, 1
+              LI r6, 8
+              ROL r7, r5, r6
+              ROR r8, r7, r6
+              LI r9, 4660
+              BSWAP16 r10, r9
+              ANDI r10, r10, 15
+              LI r11, 305419896
+              BSWAP32 r11, r11
+              LSRI r11, r11, 24
+              ANDI r11, r11, 15
+              LI r12, 255
+              BSWAP64 r12, r12
+              LSRI r12, r12, 56
+              ANDI r12, r12, 15
+              ADD r13, r2, r3
+              ADD r13, r13, r4
+              ADD r13, r13, r8
+              ADD r13, r13, r10
+              ADD r13, r13, r11
+              ADD r13, r13, r12
+              EXIT r13
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+
+        assert_eq!(
+            hex,
+            concat!(
+                "01080010\n",
+                "b3104000\n",
+                "a010bfc9\n",
+                "b4184000\n",
+                "01200f0f\n",
+                "b5210000\n",
+                "a0213ffb\n",
+                "01280001\n",
+                "01300008\n",
+                "b6394c00\n",
+                "b741cc00\n",
+                "01481234\n",
+                "b8524000\n",
+                "a152800f\n",
+                "04580000\n",
+                "12345678\n",
+                "b95ac000\n",
+                "a55ac018\n",
+                "a15ac00f\n",
+                "016000ff\n",
+                "ba630000\n",
+                "a5630038\n",
+                "a163000f\n",
+                "10688600\n",
+                "106b4800\n",
+                "106b5000\n",
+                "106b5400\n",
+                "106b5600\n",
+                "106b5800\n",
+                "3a680000\n",
             )
         );
     }

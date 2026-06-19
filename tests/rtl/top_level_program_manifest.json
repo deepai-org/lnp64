@@ -33,6 +33,14 @@
       "status": "active",
       "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
       "comparison": "retire_trace_and_final_state"
+    },
+    {
+      "source": "tests/rtl/programs/top_count_rotate_bswap.s",
+      "generated_flat_hex": "tests/rtl/programs/top_count_rotate_bswap.hex",
+      "required_features": ["core", "count_alu", "rotate_alu", "byteswap_alu", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
     }
   ],
   "compiler_flat_programs": [

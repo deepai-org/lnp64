@@ -186,6 +186,30 @@ module lnp64_decode (
             8'hb2: begin
                 dec.opcode = LNP64_OP_ZEXT_W;
             end
+            8'hb3: begin
+                dec.opcode = LNP64_OP_CLZ;
+            end
+            8'hb4: begin
+                dec.opcode = LNP64_OP_CTZ;
+            end
+            8'hb5: begin
+                dec.opcode = LNP64_OP_POPCNT;
+            end
+            8'hb6: begin
+                dec.opcode = LNP64_OP_ROL;
+            end
+            8'hb7: begin
+                dec.opcode = LNP64_OP_ROR;
+            end
+            8'hb8: begin
+                dec.opcode = LNP64_OP_BSWAP16;
+            end
+            8'hb9: begin
+                dec.opcode = LNP64_OP_BSWAP32;
+            end
+            8'hba: begin
+                dec.opcode = LNP64_OP_BSWAP64;
+            end
             default: begin
                 dec.opcode = {8'd0, raw_opcode};
             end
@@ -220,6 +244,14 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_ZEXT_B ||
             dec.opcode == LNP64_OP_ZEXT_H ||
             dec.opcode == LNP64_OP_ZEXT_W ||
+            dec.opcode == LNP64_OP_CLZ ||
+            dec.opcode == LNP64_OP_CTZ ||
+            dec.opcode == LNP64_OP_POPCNT ||
+            dec.opcode == LNP64_OP_ROL ||
+            dec.opcode == LNP64_OP_ROR ||
+            dec.opcode == LNP64_OP_BSWAP16 ||
+            dec.opcode == LNP64_OP_BSWAP32 ||
+            dec.opcode == LNP64_OP_BSWAP64 ||
             dec.opcode == LNP64_OP_CMP ||
             dec.opcode == LNP64_OP_JMP ||
             dec.opcode == LNP64_OP_BRANCH_EQ ||

@@ -120,6 +120,14 @@ package lnp64_pkg;
         LNP64_OP_ZEXT_B       = 16'h0049,
         LNP64_OP_ZEXT_H       = 16'h004a,
         LNP64_OP_ZEXT_W       = 16'h004b,
+        LNP64_OP_CLZ          = 16'h004c,
+        LNP64_OP_CTZ          = 16'h004d,
+        LNP64_OP_POPCNT       = 16'h004e,
+        LNP64_OP_ROL          = 16'h004f,
+        LNP64_OP_ROR          = 16'h0050,
+        LNP64_OP_BSWAP16      = 16'h0051,
+        LNP64_OP_BSWAP32      = 16'h0052,
+        LNP64_OP_BSWAP64      = 16'h0053,
         LNP64_OP_UNSUPPORTED  = 16'h00ff
     } lnp64_opcode_e;
 

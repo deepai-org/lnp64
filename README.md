@@ -263,6 +263,7 @@ bash scripts/run_rtl_top_program_smoke.sh
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_smoke.s
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_immediate_alu.s
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_extend.s
+bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_count_rotate_bswap.s
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_return_12.c
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_branch_if.c
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_loop_sum.c
