@@ -34,6 +34,14 @@ package lnp64_pkg;
     localparam logic [63:0] LNP64_CAP_RIGHT_REVOKE = 64'h0000_0000_0000_0080;
     localparam logic [63:0] LNP64_CAP_RIGHT_TRANSFER = 64'h0000_0000_0000_0100;
     localparam logic [15:0] LNP64_ERR_ESTALE = 16'd116;
+    localparam logic [63:0] LNP64_OBJECT_OP_CREATE = 64'd1;
+    localparam logic [63:0] LNP64_OBJECT_KIND_COUNTER = 64'd1;
+    localparam logic [63:0] LNP64_OBJECT_KIND_QUEUE = 64'd2;
+    localparam logic [63:0] LNP64_OBJECT_KIND_MEMORY_OBJECT = 64'd3;
+    localparam logic [63:0] LNP64_OBJECT_KIND_DMA_BUFFER = 64'd4;
+    localparam logic [63:0] LNP64_OBJECT_KIND_TIMER = 64'd6;
+    localparam logic [63:0] LNP64_OBJECT_PROFILE_PIPE = 64'd1;
+    localparam logic [63:0] LNP64_OBJECT_PROFILE_CALL_GATE = 64'd4;
 
     typedef enum logic [2:0] {
         LNP64_FDR_KIND_CLOSED = 3'd0,

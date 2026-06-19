@@ -113,14 +113,14 @@ module lnp64_core_tile #(
     localparam logic [63:0] FLAT_EXEC_STACK_WINDOW_BYTES = 64'd16384;
     localparam logic [63:0] FLAT_EXEC_CALL_FRAME_BYTES = 64'd1024;
     localparam logic [63:0] FLAT_EXEC_CHILD_SP = 64'h0000_0000_0067_3000;
-    localparam logic [63:0] OBJECT_OP_CREATE = 64'd1;
-    localparam logic [63:0] OBJECT_KIND_COUNTER = 64'd1;
-    localparam logic [63:0] OBJECT_KIND_QUEUE = 64'd2;
-    localparam logic [63:0] OBJECT_KIND_MEMORY_OBJECT = 64'd3;
-    localparam logic [63:0] OBJECT_KIND_DMA_BUFFER = 64'd4;
-    localparam logic [63:0] OBJECT_KIND_TIMER = 64'd6;
-    localparam logic [63:0] OBJECT_PROFILE_PIPE = 64'd1;
-    localparam logic [63:0] OBJECT_PROFILE_CALL_GATE = 64'd4;
+    localparam logic [63:0] OBJECT_OP_CREATE = LNP64_OBJECT_OP_CREATE;
+    localparam logic [63:0] OBJECT_KIND_COUNTER = LNP64_OBJECT_KIND_COUNTER;
+    localparam logic [63:0] OBJECT_KIND_QUEUE = LNP64_OBJECT_KIND_QUEUE;
+    localparam logic [63:0] OBJECT_KIND_MEMORY_OBJECT = LNP64_OBJECT_KIND_MEMORY_OBJECT;
+    localparam logic [63:0] OBJECT_KIND_DMA_BUFFER = LNP64_OBJECT_KIND_DMA_BUFFER;
+    localparam logic [63:0] OBJECT_KIND_TIMER = LNP64_OBJECT_KIND_TIMER;
+    localparam logic [63:0] OBJECT_PROFILE_PIPE = LNP64_OBJECT_PROFILE_PIPE;
+    localparam logic [63:0] OBJECT_PROFILE_CALL_GATE = LNP64_OBJECT_PROFILE_CALL_GATE;
     localparam logic [63:0] CALL_MODE_SYNC = 64'd0;
     localparam logic [63:0] CALL_MODE_ASYNC = 64'd1;
     localparam logic [63:0] CALL_MODE_HANDOFF = 64'd2;
@@ -157,6 +157,7 @@ module lnp64_core_tile #(
     localparam int unsigned STACK_SRAM_BASE_WORD = 128;
     logic [15:0] errno_reg;
     logic cap_engine_shadow_enabled;
+    logic object_engine_shadow_enabled;
     logic cmp_zero;
     logic cmp_negative;
     logic cmp_greater;
@@ -220,6 +221,8 @@ module lnp64_core_tile #(
     logic object_memory_fd_in_range;
     int unsigned object_single_fd;
     logic object_single_fd_in_range;
+    int unsigned object_rsp_reader_fd;
+    int unsigned object_rsp_writer_fd;
     logic dma_buffer_object_valid;
     logic dma_buffer_object_revoked;
     logic [63:0] dma_buffer_object_fd;
@@ -1256,6 +1259,15 @@ module lnp64_core_tile #(
                 cmd.arg_block_ptr = gpr[dec.rs1];
                 cmd.arg_block_len = 64'd32;
             end
+            LNP64_OP_OBJECT_CTL: begin
+                cmd.rights_mask = object_fd1_req;
+                cmd.arg0 = object_op;
+                cmd.arg1 = object_kind;
+                cmd.arg2 = object_profile;
+                cmd.arg3 = object_fd_req;
+                cmd.arg_block_ptr = gpr[dec.rs1];
+                cmd.arg_block_len = 64'd72;
+            end
             default: begin
             end
         endcase
@@ -1429,6 +1441,8 @@ module lnp64_core_tile #(
         thread_submit_next.state = pid1_parked ? 16'd2 : (pid1_runnable ? 16'd1 : 16'd0);
         thread_submit_next.wait_generation = 32'd1;
         thread_submit_next.active_location = TILE_ID[31:0];
+        object_rsp_reader_fd = rsp.event_mask[31:0];
+        object_rsp_writer_fd = rsp.event_mask[63:32];
     end
 
     integer i;
@@ -1469,6 +1483,7 @@ module lnp64_core_tile #(
             raw_authority_visible <= 1'b0;
             errno_reg <= LNP64_ERR_OK;
             cap_engine_shadow_enabled <= 1'b1;
+            object_engine_shadow_enabled <= 1'b1;
             cmp_zero <= 1'b0;
             cmp_negative <= 1'b0;
             cmp_greater <= 1'b0;
@@ -2875,6 +2890,15 @@ module lnp64_core_tile #(
                             end
                             LNP64_OP_OBJECT_CTL: begin
                                 cap_engine_shadow_enabled <= 1'b0;
+                                if (object_engine_shadow_enabled &&
+                                    object_op == OBJECT_OP_CREATE &&
+                                    object_kind == OBJECT_KIND_QUEUE &&
+                                    object_profile == OBJECT_PROFILE_PIPE) begin
+                                    pending_unsupported <= 1'b0;
+                                    command_pc <= pc;
+                                    state <= CORE_SEND_CMD;
+                                end else begin
+                                    object_engine_shadow_enabled <= 1'b0;
                                 if (object_op == OBJECT_OP_CREATE &&
                                     object_kind == OBJECT_KIND_QUEUE &&
                                     object_profile == OBJECT_PROFILE_CALL_GATE &&
@@ -3123,6 +3147,7 @@ module lnp64_core_tile #(
                                     pending_unsupported <= 1'b0;
                                     command_pc <= pc;
                                     state <= CORE_SEND_CMD;
+                                end
                                 end
                             end
                             LNP64_OP_DOMAIN_CTL: begin
@@ -3554,6 +3579,47 @@ module lnp64_core_tile #(
                             m1_commit <= m1_commit_next;
                             m1_projection_root_fd <= cap_src_fd_in_range ? cap_src_fd : 0;
                             m1_projection_consumer_fd <= m1_current_consumer_fd();
+                        end
+                        if (!pending_unsupported &&
+                            dec.opcode == LNP64_OP_OBJECT_CTL &&
+                            object_op == OBJECT_OP_CREATE &&
+                            object_kind == OBJECT_KIND_QUEUE &&
+                            object_profile == OBJECT_PROFILE_PIPE) begin
+                            object_engine_shadow_enabled <= 1'b0;
+                            if (rsp.status == LNP64_STATUS_OK &&
+                                rsp.errno_value == LNP64_ERR_OK &&
+                                object_rsp_reader_fd < FDR_SLOT_COUNT &&
+                                object_rsp_writer_fd < FDR_SLOT_COUNT) begin
+                                fdr_valid[object_rsp_reader_fd] <= 1'b1;
+                                fdr_revoked[object_rsp_reader_fd] <= 1'b0;
+                                fdr_generation[object_rsp_reader_fd] <= fdr_generation[object_rsp_reader_fd] + 64'd1;
+                                fdr_rights[object_rsp_reader_fd] <= CAP_RIGHT_ALL;
+                                fdr_lineage[object_rsp_reader_fd] <= 64'd257 + {32'd0, object_rsp_reader_fd[31:0]};
+                                fdr_kind[object_rsp_reader_fd] <= FDR_KIND_PIPE_READER;
+                                fdr_valid[object_rsp_writer_fd] <= 1'b1;
+                                fdr_revoked[object_rsp_writer_fd] <= 1'b0;
+                                fdr_generation[object_rsp_writer_fd] <= fdr_generation[object_rsp_writer_fd] + 64'd1;
+                                fdr_rights[object_rsp_writer_fd] <= CAP_RIGHT_ALL;
+                                fdr_lineage[object_rsp_writer_fd] <= 64'd257 + {32'd0, object_rsp_writer_fd[31:0]};
+                                fdr_kind[object_rsp_writer_fd] <= FDR_KIND_PIPE_WRITER;
+                                sram[object_fd_store_word_index] <= store_double_low_word(
+                                    sram[object_fd_store_word_index],
+                                    object_fd_store_byte_lane,
+                                    {32'd0, object_rsp_reader_fd[31:0]}
+                                );
+                                if (object_fd_store_byte_lane != 3'd0) begin
+                                    sram[object_fd_store_next_word_index] <= store_double_high_word(
+                                        sram[object_fd_store_next_word_index],
+                                        object_fd_store_byte_lane,
+                                        {32'd0, object_rsp_reader_fd[31:0]}
+                                    );
+                                end
+                                sram[object_fd1_store_word_index] <= store_double_low_word(
+                                    sram[object_fd1_store_word_index],
+                                    object_fd1_store_byte_lane,
+                                    {32'd0, object_rsp_writer_fd[31:0]}
+                                );
+                            end
                         end
                         if (!pending_unsupported &&
                             dec.opcode == LNP64_OP_OBJECT_CTL &&

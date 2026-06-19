@@ -806,9 +806,106 @@ module lnp64_domain_engine(input logic clk, input logic reset_n, input logic cmd
     lnp64_fail_closed_engine #(.ENGINE_ID(16'd11), .ERRNO_VALUE(LNP64_ERR_EPERM), .STATUS_VALUE(LNP64_STATUS_ERROR)) shell(.*,.fault_valid(unused_fault_valid),.fault_ready(1'b1),.fault(unused_fault),.accepted_counter(telemetry_counter),.fault_counter(fault_counter));
 endmodule
 
-module lnp64_object_engine(input logic clk, input logic reset_n, input logic cmd_valid, output logic cmd_ready, input lnp64_cmd_t cmd, output logic rsp_valid, input logic rsp_ready, output lnp64_rsp_t rsp, output logic [31:0] telemetry_counter, output logic [31:0] fault_counter);
-    logic unused_fault_valid; lnp64_fault_t unused_fault;
-    lnp64_fail_closed_engine #(.ENGINE_ID(16'd12), .ERRNO_VALUE(LNP64_ERR_EPERM), .STATUS_VALUE(LNP64_STATUS_ERROR)) shell(.*,.fault_valid(unused_fault_valid),.fault_ready(1'b1),.fault(unused_fault),.accepted_counter(telemetry_counter),.fault_counter(fault_counter));
+module lnp64_object_engine(
+    input logic clk,
+    input logic reset_n,
+    input logic cmd_valid,
+    output logic cmd_ready,
+    input lnp64_cmd_t cmd,
+    output logic rsp_valid,
+    input logic rsp_ready,
+    output lnp64_rsp_t rsp,
+    output logic [31:0] telemetry_counter,
+    output logic [31:0] fault_counter
+);
+    logic have_rsp;
+    lnp64_rsp_t rsp_reg;
+    logic fdr_valid [0:LNP64_FDR_SLOT_COUNT-1];
+    int unsigned pipe_alloc_reader_fd;
+    int unsigned pipe_alloc_writer_fd;
+    logic pipe_alloc_available;
+
+    assign cmd_ready = reset_n && !have_rsp;
+    assign rsp_valid = have_rsp;
+    assign rsp = rsp_reg;
+
+    integer scan_i;
+    always_comb begin
+        pipe_alloc_reader_fd = 3;
+        pipe_alloc_writer_fd = 4;
+        pipe_alloc_available = 1'b0;
+        for (scan_i = 3; scan_i + 1 < LNP64_FDR_SLOT_COUNT; scan_i = scan_i + 2) begin
+            if (!pipe_alloc_available && !fdr_valid[scan_i] && !fdr_valid[scan_i + 1]) begin
+                pipe_alloc_reader_fd = scan_i;
+                pipe_alloc_writer_fd = scan_i + 1;
+                pipe_alloc_available = 1'b1;
+            end
+        end
+    end
+
+    integer i;
+    always_ff @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin
+            have_rsp <= 1'b0;
+            rsp_reg <= '0;
+            telemetry_counter <= 32'd0;
+            fault_counter <= 32'd0;
+            for (i = 0; i < LNP64_FDR_SLOT_COUNT; i = i + 1) begin
+                fdr_valid[i] <= i < 3;
+            end
+        end else begin
+            if (have_rsp && rsp_ready) begin
+                have_rsp <= 1'b0;
+            end
+            if (cmd_valid && cmd_ready) begin : accept_cmd
+                int unsigned reader_fd;
+                int unsigned writer_fd;
+                logic explicit_pair_valid;
+                logic auto_pair_valid;
+
+                have_rsp <= 1'b1;
+                telemetry_counter <= telemetry_counter + 32'd1;
+                rsp_reg <= '0;
+                rsp_reg.op_id <= cmd.op_id;
+                rsp_reg.tile_id <= cmd.tile_id;
+                rsp_reg.pid <= cmd.pid;
+                rsp_reg.tid <= cmd.tid;
+                rsp_reg.domain_id <= cmd.domain_id;
+                rsp_reg.domain_gen <= cmd.domain_gen;
+                rsp_reg.result_reg <= cmd.result_reg;
+                rsp_reg.result_value <= 64'hffff_ffff_ffff_ffff;
+                rsp_reg.errno_value <= LNP64_ERR_EPERM;
+                rsp_reg.status <= LNP64_STATUS_ERROR;
+
+                if (cmd.opcode == LNP64_OP_OBJECT_CTL &&
+                    cmd.arg0 == LNP64_OBJECT_OP_CREATE &&
+                    cmd.arg1 == LNP64_OBJECT_KIND_QUEUE &&
+                    cmd.arg2 == LNP64_OBJECT_PROFILE_PIPE) begin
+                    reader_fd = cmd.arg3 == 64'd0 ? pipe_alloc_reader_fd : cmd.arg3[31:0];
+                    writer_fd = cmd.arg3 == 64'd0 ? pipe_alloc_writer_fd : cmd.rights_mask[31:0];
+                    auto_pair_valid = cmd.arg3 == 64'd0 && cmd.rights_mask == 64'd0 &&
+                        pipe_alloc_available;
+                    explicit_pair_valid = cmd.arg3 != 64'd0 &&
+                        cmd.arg3 < LNP64_FDR_SLOT_COUNT &&
+                        cmd.rights_mask == cmd.arg3 + 64'd1 &&
+                        cmd.rights_mask < LNP64_FDR_SLOT_COUNT &&
+                        !fdr_valid[cmd.arg3[31:0]] &&
+                        !fdr_valid[cmd.rights_mask[31:0]];
+                    if (auto_pair_valid || explicit_pair_valid) begin
+                        fdr_valid[reader_fd] <= 1'b1;
+                        fdr_valid[writer_fd] <= 1'b1;
+                        rsp_reg.result_value <= 64'd0;
+                        rsp_reg.errno_value <= LNP64_ERR_OK;
+                        rsp_reg.status <= LNP64_STATUS_OK;
+                        rsp_reg.event_mask <= {writer_fd[31:0], reader_fd[31:0]};
+                    end else begin
+                        rsp_reg.errno_value <= LNP64_ERR_EINVAL;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end
+                end
+            end
+        end
+    end
 endmodule
 
 module lnp64_gate_engine(input logic clk, input logic reset_n, input logic cmd_valid, output logic cmd_ready, input lnp64_cmd_t cmd, output logic rsp_valid, input logic rsp_ready, output lnp64_rsp_t rsp, output logic [31:0] telemetry_counter, output logic [31:0] fault_counter);
