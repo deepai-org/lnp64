@@ -238,6 +238,11 @@ fn run() -> Result<(), String> {
             let mem0 = machine.last_exit_mem0().unwrap_or_default();
             let mem_checksum = machine.last_exit_mem_checksum().unwrap_or_default();
             let errno = machine.current_errno()?;
+            let regs_json = regs
+                .iter()
+                .map(u64::to_string)
+                .collect::<Vec<_>>()
+                .join(",");
             let trace = machine
                 .committed_exec_retire_trace()
                 .iter()
@@ -270,7 +275,7 @@ fn run() -> Result<(), String> {
                 .join(",");
             println!("EMULATOR_RETIRE [{trace}]");
             println!(
-                "EMULATOR_FINAL {{\"exit\":{exit},\"r3\":{r3},\"r4\":{r4},\"r5\":{r5},\"env_page\":{env_page},\"mem0\":{mem0},\"mem_checksum\":{mem_checksum},\"errno\":{errno}}}"
+                "EMULATOR_FINAL {{\"exit\":{exit},\"regs\":[{regs_json}],\"r3\":{r3},\"r4\":{r4},\"r5\":{r5},\"env_page\":{env_page},\"mem0\":{mem0},\"mem_checksum\":{mem_checksum},\"errno\":{errno}}}"
             );
             Ok(())
         }

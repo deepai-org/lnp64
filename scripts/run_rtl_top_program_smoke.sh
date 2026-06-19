@@ -475,6 +475,19 @@ rtl = load_record(sys.argv[1], "RTL_FINAL ")
 emulator = load_record(sys.argv[2], "EMULATOR_FINAL ")
 if rtl["exit_reg"] != emulator["exit"]:
     raise SystemExit(f"exit mismatch: rtl={rtl['exit_reg']} emulator={emulator['exit']}")
+if not isinstance(rtl.get("regs"), list) or len(rtl["regs"]) != 32:
+    raise SystemExit(f"RTL final register file is missing or malformed: {rtl.get('regs')!r}")
+if not isinstance(emulator.get("regs"), list) or len(emulator["regs"]) != 32:
+    raise SystemExit(
+        f"emulator final register file is missing or malformed: {emulator.get('regs')!r}"
+    )
+if rtl["regs"] != emulator["regs"]:
+    diffs = [
+        (idx, rtl["regs"][idx], emulator["regs"][idx])
+        for idx in range(32)
+        if rtl["regs"][idx] != emulator["regs"][idx]
+    ]
+    raise SystemExit(f"final register file mismatch: {diffs}")
 for field in ("r3", "r4", "r5", "env_page", "mem0", "mem_checksum", "errno"):
     if rtl[field] != emulator[field]:
         raise SystemExit(f"{field} mismatch: rtl={rtl[field]} emulator={emulator[field]}")
