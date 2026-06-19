@@ -511,11 +511,18 @@ def main() -> None:
     bad_lean_transition_contract = json.loads(json.dumps(m1_contract))
     bad_lean_transition_contract["op_mappings"][0]["lean_transition"] = "missingLeanTransition"
     expect_failure(
-        "missing Lean TypedCommitTransition constructors",
+        "exact Lean constructor",
         lambda: checker.check_lean_typed_commit_mapping(
             checker.load_m1_op_mappings(bad_lean_transition_contract),
             checker.load_m1_status_mappings(bad_lean_transition_contract),
         ),
+    )
+
+    swapped_lean_transition_contract = json.loads(json.dumps(m1_contract))
+    swapped_lean_transition_contract["op_mappings"][0]["lean_transition"] = "capSend"
+    expect_failure(
+        "exact Lean constructor",
+        lambda: checker.load_m1_op_mappings(swapped_lean_transition_contract),
     )
 
     missing_refinement_postcondition_theorem = replace_once(

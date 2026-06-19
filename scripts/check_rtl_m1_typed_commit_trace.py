@@ -712,7 +712,23 @@ def load_m1_op_mappings(contract: dict[str, object]) -> tuple[M1OpMapping, ...]:
     sv_names = [mapping.sv for mapping in mappings]
     if len(sv_names) != len(set(sv_names)):
         fail(f"shared schema M1 op mappings contain duplicate SV names: {sv_names!r}")
+    for mapping in mappings:
+        expected_lean_name = lean_constructor_name_from_key(mapping.key)
+        actual_lean_names = (mapping.lean_op, mapping.lean_commit_op, mapping.lean_transition)
+        if actual_lean_names != (expected_lean_name, expected_lean_name, expected_lean_name):
+            fail(
+                "shared schema M1 op mapping no longer names the exact Lean constructor "
+                f"for key {mapping.key!r}: {actual_lean_names!r} != "
+                f"{(expected_lean_name, expected_lean_name, expected_lean_name)!r}"
+            )
     return mappings
+
+
+def lean_constructor_name_from_key(key: str) -> str:
+    parts = key.split("_")
+    if not parts or any(not part for part in parts):
+        fail(f"shared schema M1 op mapping has invalid key {key!r}")
+    return parts[0] + "".join(part.capitalize() for part in parts[1:])
 
 
 def load_m1_status_mappings(contract: dict[str, object]) -> tuple[M1StatusMapping, ...]:
