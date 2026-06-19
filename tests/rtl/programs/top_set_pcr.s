@@ -17,26 +17,42 @@
   CMP r2, r21
   BNE bad
 
+  GET_PCR r18, PID
   SET_PCR r24, PID, r20
   CMP r24, r29
   BNE bad
+  GET_PCR r19, PID
+  CMP r19, r18
+  BNE bad
   LI r28, 77
   ERRNO_SET r28
+  GET_PCR r18, TID
   SET_PCR r24, TID, r20
   CMP r24, r29
+  BNE bad
+  GET_PCR r19, TID
+  CMP r19, r18
   BNE bad
   ERRNO_GET r27
   CMP r27, r28
   BNE bad
 
+  GET_PCR r18, CRED_PROFILE
   SET_PCR r25, CRED_PROFILE, r20
   CMP r25, r29
+  BNE bad
+  GET_PCR r19, CRED_PROFILE
+  CMP r19, r18
   BNE bad
   ERRNO_GET r27
   CMP r27, r28
   BNE bad
+  GET_PCR r18, CRED_HANDLE
   SET_PCR r26, CRED_HANDLE, r20
   CMP r26, r29
+  BNE bad
+  GET_PCR r19, CRED_HANDLE
+  CMP r19, r18
   BNE bad
   ERRNO_GET r27
   CMP r27, r28

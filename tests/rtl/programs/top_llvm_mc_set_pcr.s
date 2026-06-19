@@ -18,26 +18,42 @@ _start:
   sub r4, r2, r21
   or r3, r3, r4
 
+  get_pcr r18, PID
   set_pcr r24, PID, r20
   sub r4, r24, r29
   or r3, r3, r4
+  get_pcr r19, PID
+  sub r4, r19, r18
+  or r3, r3, r4
   li r28, 77
   errno_set r28
+  get_pcr r18, TID
   set_pcr r24, TID, r20
   sub r4, r24, r29
+  or r3, r3, r4
+  get_pcr r19, TID
+  sub r4, r19, r18
   or r3, r3, r4
   errno_get r27
   sub r4, r27, r28
   or r3, r3, r4
 
+  get_pcr r18, CRED_PROFILE
   set_pcr r25, CRED_PROFILE, r20
   sub r4, r25, r29
+  or r3, r3, r4
+  get_pcr r19, CRED_PROFILE
+  sub r4, r19, r18
   or r3, r3, r4
   errno_get r27
   sub r4, r27, r28
   or r3, r3, r4
+  get_pcr r18, CRED_HANDLE
   set_pcr r26, CRED_HANDLE, r20
   sub r4, r26, r29
+  or r3, r3, r4
+  get_pcr r19, CRED_HANDLE
+  sub r4, r19, r18
   or r3, r3, r4
   errno_get r27
   sub r4, r27, r28
