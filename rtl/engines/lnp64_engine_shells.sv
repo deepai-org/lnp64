@@ -708,11 +708,13 @@ module lnp64_cap_engine(
     logic fdr_revoked [0:LNP64_FDR_SLOT_COUNT-1];
     logic [63:0] fdr_generation [0:LNP64_FDR_SLOT_COUNT-1];
     logic [63:0] fdr_rights [0:LNP64_FDR_SLOT_COUNT-1];
+    logic [63:0] fdr_object_id [0:LNP64_FDR_SLOT_COUNT-1];
     logic [63:0] fdr_lineage [0:LNP64_FDR_SLOT_COUNT-1];
     logic [31:0] fdr_domain_id [0:LNP64_FDR_SLOT_COUNT-1];
     logic [2:0] fdr_kind [0:LNP64_FDR_SLOT_COUNT-1];
     logic cap_queue_valid;
     logic [63:0] cap_queue_rights;
+    logic [63:0] cap_queue_object_id;
     logic [63:0] cap_queue_lineage;
     logic [63:0] cap_queue_generation;
     logic [31:0] cap_queue_domain_id;
@@ -752,7 +754,7 @@ module lnp64_cap_engine(
             projection.status = status;
             if (root_fd < LNP64_FDR_SLOT_COUNT) begin
                 projection.object_gen = fdr_generation[root_fd][31:0];
-                projection.root_object_id = fdr_lineage[root_fd][31:0];
+                projection.root_object_id = fdr_object_id[root_fd][31:0];
                 projection.root_generation = fdr_generation[root_fd][31:0];
                 projection.root_domain_id = cap_domain_id(root_fd);
                 projection.root_lineage_epoch = fdr_lineage[root_fd][31:0];
@@ -764,7 +766,7 @@ module lnp64_cap_engine(
                     fdr_generation[root_fd][31:0] : 32'd0;
             end
             if (consumer_fd < LNP64_FDR_SLOT_COUNT) begin
-                projection.consumer_object_id = fdr_lineage[consumer_fd][31:0];
+                projection.consumer_object_id = fdr_object_id[consumer_fd][31:0];
                 projection.consumer_generation = fdr_generation[consumer_fd][31:0];
                 projection.consumer_domain_id = cap_domain_id(consumer_fd);
                 projection.consumer_lineage_epoch = fdr_lineage[consumer_fd][31:0];
@@ -774,7 +776,7 @@ module lnp64_cap_engine(
             end
             projection.sent_valid = cap_queue_valid && !cap_queue_revoked;
             if (projection.sent_valid) begin
-                projection.sent_object_id = cap_queue_lineage[31:0];
+                projection.sent_object_id = cap_queue_object_id[31:0];
                 projection.sent_generation = cap_queue_generation[31:0];
                 projection.sent_domain_id = cap_queue_domain_id;
                 projection.sent_lineage_epoch = cap_queue_lineage[31:0];
@@ -804,7 +806,7 @@ module lnp64_cap_engine(
             live_fdr_projection_exists = 1'b0;
             for (slot = 0; slot < LNP64_FDR_SLOT_COUNT; slot = slot + 1) begin
                 if (fdr_valid[slot] && !fdr_revoked[slot] &&
-                    fdr_lineage[slot][31:0] == object_id &&
+                    fdr_object_id[slot][31:0] == object_id &&
                     fdr_generation[slot][31:0] == generation &&
                     fdr_domain_id[slot] == domain_id &&
                     fdr_lineage[slot][31:0] == lineage_epoch &&
@@ -835,7 +837,7 @@ module lnp64_cap_engine(
             cap_queue_matches_sent_projection =
                 cap_queue_valid && !cap_queue_revoked &&
                 projection.sent_valid &&
-                projection.sent_object_id == cap_queue_lineage[31:0] &&
+                projection.sent_object_id == cap_queue_object_id[31:0] &&
                 projection.sent_generation == cap_queue_generation[31:0] &&
                 projection.sent_domain_id == cap_queue_domain_id &&
                 projection.sent_lineage_epoch == cap_queue_lineage[31:0] &&
@@ -935,6 +937,7 @@ module lnp64_cap_engine(
             fault_counter <= 32'd0;
             cap_queue_valid <= 1'b0;
             cap_queue_rights <= 64'd0;
+            cap_queue_object_id <= 64'd0;
             cap_queue_lineage <= 64'd0;
             cap_queue_generation <= 64'd0;
             cap_queue_domain_id <= 32'd0;
@@ -944,6 +947,7 @@ module lnp64_cap_engine(
                 fdr_valid[i] <= i < 3;
                 fdr_revoked[i] <= 1'b0;
                 fdr_rights[i] <= i < 3 ? LNP64_CAP_RIGHT_ALL : 64'd0;
+                fdr_object_id[i] <= {32'd0, i[31:0]} + 64'd1;
                 fdr_lineage[i] <= {32'd0, i[31:0]} + 64'd1;
                 fdr_domain_id[i] <= default_cap_domain_id(i);
                 fdr_kind[i] <= i < 3 ? LNP64_FDR_KIND_GENERIC : LNP64_FDR_KIND_CLOSED;
@@ -959,6 +963,8 @@ module lnp64_cap_engine(
                     fdr_revoked[object_cap_sync_reader_fd] <= 1'b0;
                     fdr_generation[object_cap_sync_reader_fd] <= fdr_generation[object_cap_sync_reader_fd] + 64'd1;
                     fdr_rights[object_cap_sync_reader_fd] <= LNP64_CAP_RIGHT_ALL;
+                    fdr_object_id[object_cap_sync_reader_fd] <=
+                        {32'd0, object_cap_sync_reader_fd} + 64'd1;
                     fdr_lineage[object_cap_sync_reader_fd] <= 64'd257 + {32'd0, object_cap_sync_reader_fd};
                     fdr_domain_id[object_cap_sync_reader_fd] <=
                         default_cap_domain_id(object_cap_sync_reader_fd);
@@ -969,6 +975,8 @@ module lnp64_cap_engine(
                     fdr_revoked[object_cap_sync_writer_fd] <= 1'b0;
                     fdr_generation[object_cap_sync_writer_fd] <= fdr_generation[object_cap_sync_writer_fd] + 64'd1;
                     fdr_rights[object_cap_sync_writer_fd] <= LNP64_CAP_RIGHT_ALL;
+                    fdr_object_id[object_cap_sync_writer_fd] <=
+                        {32'd0, object_cap_sync_writer_fd} + 64'd1;
                     fdr_lineage[object_cap_sync_writer_fd] <= 64'd257 + {32'd0, object_cap_sync_writer_fd};
                     fdr_domain_id[object_cap_sync_writer_fd] <=
                         default_cap_domain_id(object_cap_sync_writer_fd);
@@ -981,6 +989,7 @@ module lnp64_cap_engine(
                 fdr_revoked[object_cap_sync_single_fd] <= 1'b0;
                 fdr_generation[object_cap_sync_single_fd] <= fdr_generation[object_cap_sync_single_fd] + 64'd1;
                 fdr_rights[object_cap_sync_single_fd] <= LNP64_CAP_RIGHT_ALL;
+                fdr_object_id[object_cap_sync_single_fd] <= {32'd0, object_cap_sync_single_fd} + 64'd1;
                 fdr_lineage[object_cap_sync_single_fd] <= object_cap_sync_single_lineage;
                 fdr_domain_id[object_cap_sync_single_fd] <=
                     default_cap_domain_id(object_cap_sync_single_fd);
@@ -1048,7 +1057,7 @@ module lnp64_cap_engine(
                     dup_rights = (cmd.rights_mask == 64'd0 && src_fd < LNP64_FDR_SLOT_COUNT) ?
                         fdr_rights[src_fd] : cmd.rights_mask;
                     if (src_fd < LNP64_FDR_SLOT_COUNT) begin
-                        m1_commit_reg.object_id <= fdr_lineage[src_fd][31:0];
+                        m1_commit_reg.object_id <= fdr_object_id[src_fd][31:0];
                         m1_commit_reg.object_gen <= fdr_generation[src_fd][31:0];
                         m1_commit_reg.fdr_gen <= fdr_generation[src_fd][31:0];
                         m1_commit_reg.domain_id <= cap_domain_id(src_fd);
@@ -1094,13 +1103,14 @@ module lnp64_cap_engine(
                         fdr_revoked[dst_fd] <= 1'b0;
                         fdr_generation[dst_fd] <= next_generation;
                         fdr_rights[dst_fd] <= dup_rights;
+                        fdr_object_id[dst_fd] <= fdr_object_id[src_fd];
                         fdr_lineage[dst_fd] <= fdr_lineage[src_fd];
                         fdr_domain_id[dst_fd] <= cap_domain_id(dst_fd);
                         fdr_kind[dst_fd] <= fdr_kind[src_fd];
                         rsp_reg.result_value <= cap_token(dst_fd, next_generation);
                         rsp_reg.errno_value <= LNP64_ERR_OK;
                         rsp_reg.status <= LNP64_STATUS_OK;
-                        m1_commit_reg.object_id <= fdr_lineage[src_fd][31:0];
+                        m1_commit_reg.object_id <= fdr_object_id[src_fd][31:0];
                         m1_commit_reg.object_gen <= next_generation[31:0];
                         m1_commit_reg.fdr_gen <= next_generation[31:0];
                         m1_commit_reg.domain_id <= cap_domain_id(dst_fd);
@@ -1113,7 +1123,7 @@ module lnp64_cap_engine(
                         m1_state_projection_reg <= build_m1_state_projection(
                             LNP64_M1_COMMIT_CAP_DUP, LNP64_ERR_OK, src_fd, dst_fd);
                         m1_state_projection_reg.object_gen <= next_generation[31:0];
-                        m1_state_projection_reg.consumer_object_id <= fdr_lineage[src_fd][31:0];
+                        m1_state_projection_reg.consumer_object_id <= fdr_object_id[src_fd][31:0];
                         m1_state_projection_reg.consumer_generation <= next_generation[31:0];
                         m1_state_projection_reg.consumer_domain_id <= cap_domain_id(dst_fd);
                         m1_state_projection_reg.consumer_lineage_epoch <= fdr_lineage[src_fd][31:0];
@@ -1179,6 +1189,7 @@ module lnp64_cap_engine(
                     end else begin
                         cap_queue_valid <= 1'b1;
                         cap_queue_rights <= fdr_rights[payload_fd];
+                        cap_queue_object_id <= fdr_object_id[payload_fd];
                         cap_queue_lineage <= fdr_lineage[payload_fd];
                         cap_queue_generation <= fdr_generation[payload_fd];
                         cap_queue_domain_id <= cap_domain_id(payload_fd);
@@ -1192,7 +1203,7 @@ module lnp64_cap_engine(
                         m1_state_projection_reg <= build_m1_state_projection(
                             LNP64_M1_COMMIT_CAP_SEND, LNP64_ERR_OK, src_fd, payload_fd);
                         m1_state_projection_reg.sent_valid <= 1'b1;
-                        m1_state_projection_reg.sent_object_id <= fdr_lineage[payload_fd][31:0];
+                        m1_state_projection_reg.sent_object_id <= fdr_object_id[payload_fd][31:0];
                         m1_state_projection_reg.sent_generation <= fdr_generation[payload_fd][31:0];
                         m1_state_projection_reg.sent_domain_id <= cap_domain_id(payload_fd);
                         m1_state_projection_reg.sent_lineage_epoch <= fdr_lineage[payload_fd][31:0];
@@ -1201,7 +1212,7 @@ module lnp64_cap_engine(
                         m1_state_projection_reg.transfer_valid <= 1'b1;
                     end
                     if (payload_fd < LNP64_FDR_SLOT_COUNT) begin
-                        m1_commit_reg.object_id <= fdr_lineage[payload_fd][31:0];
+                        m1_commit_reg.object_id <= fdr_object_id[payload_fd][31:0];
                         m1_commit_reg.object_gen <= fdr_generation[payload_fd][31:0];
                         m1_commit_reg.fdr_gen <= fdr_generation[payload_fd][31:0];
                         m1_commit_reg.domain_id <= cap_domain_id(payload_fd);
@@ -1273,12 +1284,14 @@ module lnp64_cap_engine(
                     end else begin
                         next_generation = fdr_generation[dst_fd] + 64'd1;
                         cap_queue_valid <= 1'b0;
+                        cap_queue_object_id <= 64'd0;
                         cap_queue_generation <= 64'd0;
                         cap_queue_domain_id <= 32'd0;
                         fdr_valid[dst_fd] <= 1'b1;
                         fdr_revoked[dst_fd] <= 1'b0;
                         fdr_generation[dst_fd] <= next_generation;
                         fdr_rights[dst_fd] <= recv_rights;
+                        fdr_object_id[dst_fd] <= cap_queue_object_id;
                         fdr_lineage[dst_fd] <= cap_queue_lineage;
                         fdr_domain_id[dst_fd] <= cap_queue_domain_id;
                         fdr_kind[dst_fd] <= LNP64_FDR_KIND_GENERIC;
@@ -1294,7 +1307,7 @@ module lnp64_cap_engine(
                         m1_state_projection_reg <= build_m1_state_projection(
                             LNP64_M1_COMMIT_CAP_RECV, LNP64_ERR_OK, src_fd, dst_fd);
                         m1_state_projection_reg.object_gen <= next_generation[31:0];
-                        m1_state_projection_reg.consumer_object_id <= cap_queue_lineage[31:0];
+                        m1_state_projection_reg.consumer_object_id <= cap_queue_object_id[31:0];
                         m1_state_projection_reg.consumer_generation <= next_generation[31:0];
                         m1_state_projection_reg.consumer_domain_id <= cap_queue_domain_id;
                         m1_state_projection_reg.consumer_lineage_epoch <= cap_queue_lineage[31:0];
@@ -1310,7 +1323,7 @@ module lnp64_cap_engine(
                         m1_state_projection_reg.transfer_valid <= 1'b0;
                     end
                     if (cap_queue_valid) begin
-                        m1_commit_reg.object_id <= cap_queue_lineage[31:0];
+                        m1_commit_reg.object_id <= cap_queue_object_id[31:0];
                         m1_commit_reg.domain_id <= cap_queue_domain_id;
                         m1_commit_reg.rights_mask <= recv_rights;
                         m1_commit_reg.lineage_epoch <= cap_queue_lineage[31:0];
@@ -1340,7 +1353,7 @@ module lnp64_cap_engine(
                         end
                     end
                     if (src_fd < LNP64_FDR_SLOT_COUNT) begin
-                        m1_commit_reg.object_id <= fdr_lineage[src_fd][31:0];
+                        m1_commit_reg.object_id <= fdr_object_id[src_fd][31:0];
                         m1_commit_reg.object_gen <= fdr_generation[src_fd][31:0];
                         m1_commit_reg.fdr_gen <= fdr_generation[src_fd][31:0];
                         m1_commit_reg.domain_id <= cap_domain_id(src_fd);
