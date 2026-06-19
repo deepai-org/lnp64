@@ -1022,6 +1022,63 @@ grep -q '<main>:' "$jsmn_smoke_dump"
 printf 'real LLVM LNP64 clang jsmn package object smoke passed: %s\n' \
   "$jsmn_smoke_obj"
 
+inih_smoke_c="$build_dir/inih-smoke.c"
+cat >"$inih_smoke_c" <<'C'
+#define INI_API static
+#include "ini.c"
+
+static int seen;
+
+static int streq(const char *a, const char *b) {
+  while (*a && *b && *a == *b) {
+    a = a + 1;
+    b = b + 1;
+  }
+  return *a == *b;
+}
+
+static int handler(void *user, const char *section, const char *name,
+                   const char *value) {
+  (void)user;
+  if (streq(section, "server") && streq(name, "host") &&
+      streq(value, "localhost"))
+    seen = seen + 1;
+  if (streq(section, "server") && streq(name, "port") &&
+      streq(value, "41066"))
+    seen = seen + 2;
+  if (streq(section, "feature") && streq(name, "enabled") &&
+      streq(value, "yes"))
+    seen = seen + 4;
+  return 1;
+}
+
+int main(void) {
+  int rc;
+  seen = 0;
+  rc = ini_parse_string("[server]\nhost=localhost\nport=41066\n[feature]\nenabled=yes\n",
+                        handler, 0);
+  if (rc != 0)
+    return 1;
+  if (seen != 7)
+    return 2;
+  return 0;
+}
+C
+
+inih_smoke_obj="$build_dir/inih-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -O0 -ffreestanding -fno-builtin -fno-pic \
+  -fno-jump-tables -fno-unwind-tables -fno-asynchronous-unwind-tables \
+  -I toolchain/include -I third_party/inih \
+  -c "$inih_smoke_c" -o "$inih_smoke_obj"
+test -s "$inih_smoke_obj"
+inih_smoke_dump="$build_dir/inih-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$inih_smoke_obj" \
+  >"$inih_smoke_dump"
+grep -q '<ini_parse_string>:' "$inih_smoke_dump"
+grep -q '<main>:' "$inih_smoke_dump"
+printf 'real LLVM LNP64 clang inih package object smoke passed: %s\n' \
+  "$inih_smoke_obj"
+
 netcat_obj="$build_dir/netcat-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
@@ -3631,6 +3688,13 @@ jsmn_elf="$build_dir/lnp64-jsmn-linked.elf"
 test -s "$jsmn_elf"
 printf 'real LLVM LNP64 lld jsmn package link smoke passed: %s\n' \
   "$jsmn_elf"
+
+inih_elf="$build_dir/lnp64-inih-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$inih_elf" "$crt0_obj" "$inih_smoke_obj" "$libc_string_impl_obj"
+test -s "$inih_elf"
+printf 'real LLVM LNP64 lld inih package link smoke passed: %s\n' \
+  "$inih_elf"
 
 calloc_elf="$build_dir/lnp64-calloc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
