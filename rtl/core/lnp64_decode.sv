@@ -187,6 +187,9 @@ module lnp64_decode (
             8'h4b: begin
                 dec.opcode = LNP64_OP_OBJECT_CTL;
             end
+            8'h50: begin
+                dec.opcode = LNP64_OP_CAP_DUP;
+            end
             8'h53: begin
                 dec.opcode = LNP64_OP_CAP_REVOKE;
             end
@@ -464,6 +467,7 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_MULHSU ||
             dec.opcode == LNP64_OP_EXIT ||
             dec.opcode == LNP64_OP_OBJECT_CTL ||
+            dec.opcode == LNP64_OP_CAP_DUP ||
             dec.opcode == LNP64_OP_CAP_REVOKE ||
             dec.opcode == LNP64_OP_FAULT_INJECT;
     end

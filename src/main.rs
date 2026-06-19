@@ -619,6 +619,7 @@ fn encode_flat_exec_instr(
         }
         Instr::AmoXor(dst, addr, value) => Ok(vec![enc_rrr(0xca, *dst, *addr, *value)]),
         Instr::ObjectCtl(result, argblock) => Ok(vec![enc_rrr(0x4b, *result, *argblock, Reg(0))]),
+        Instr::CapDup(result, argblock) => Ok(vec![enc_rrr(0x50, *result, *argblock, Reg(0))]),
         Instr::CapRevoke(result, argblock) => Ok(vec![enc_rrr(0x53, *result, *argblock, Reg(0))]),
         Instr::ErrnoGet(rd) => Ok(vec![enc_reg(0x38, *rd)]),
         Instr::ErrnoSet(src) => Ok(vec![enc_reg(0x39, *src)]),
@@ -635,7 +636,7 @@ fn encode_flat_exec_instr(
         Instr::Isync(result, addr, len) => Ok(vec![enc_rrr(0xce, *result, *addr, *len)]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/CALL_REG/LR_GET/LR_SET/RET, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, OBJECT_CTL, CAP_REVOKE, ERRNO_GET/SET, DMA_CTL, ENV_GET, WRITE_FD, FENCE/ISYNC, AMO, LOCK.CMPXCHG, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/CALL_REG/LR_GET/LR_SET/RET, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, OBJECT_CTL, CAP_DUP, CAP_REVOKE, ERRNO_GET/SET, DMA_CTL, ENV_GET, WRITE_FD, FENCE/ISYNC, AMO, LOCK.CMPXCHG, EXIT"
         )),
     }
 }
@@ -2249,6 +2250,7 @@ mod tests {
         let source = r#"
             .text
               OBJECT_CTL r4, r10
+              CAP_DUP r5, r10
               CAP_REVOKE r6, r10
               DMA_CTL r7, r10
               EXIT r7
@@ -2258,7 +2260,13 @@ mod tests {
 
         assert_eq!(
             hex,
-            concat!("4b228000\n", "53328000\n", "5b3a8000\n", "3a380000\n",)
+            concat!(
+                "4b228000\n",
+                "502a8000\n",
+                "53328000\n",
+                "5b3a8000\n",
+                "3a380000\n",
+            )
         );
     }
 

@@ -91,7 +91,13 @@ module lnp64_core_tile #(
     localparam logic [63:0] OBJECT_KIND_DMA_BUFFER = 64'd4;
     localparam logic [63:0] RTL_DMA_BUFFER_DEFAULT_FD = 64'd3;
     localparam logic [63:0] RTL_DMA_BUFFER_TOKEN = 64'h4000_0000_0000_0203;
+    localparam logic [63:0] FDR_TOKEN_MARKER = 64'h4000_0000_0000_0000;
+    localparam logic [63:0] FDR_TOKEN_INDEX_MASK = 64'h0000_0000_0000_00ff;
+    localparam logic [63:0] CAP_DUP_FLAG_SEAL = 64'd1;
+    localparam logic [63:0] CAP_RIGHT_ALL = 64'h0000_0000_0000_01ff;
+    localparam logic [63:0] CAP_RIGHT_DUP = 64'h0000_0000_0000_0040;
     localparam logic [15:0] RTL_ERR_ESTALE = 16'd116;
+    localparam int unsigned FDR_SLOT_COUNT = 8;
     localparam int unsigned DATA_SRAM_BASE_WORD = 16;
     localparam int unsigned HEAP_SRAM_BASE_WORD = 96;
     localparam int unsigned STACK_SRAM_BASE_WORD = 128;
@@ -139,6 +145,10 @@ module lnp64_core_tile #(
     logic [63:0] heap_alloc_size [0:3];
     logic heap_alloc_valid [0:3];
     logic [1:0] heap_alloc_next_slot;
+    logic fdr_valid [0:FDR_SLOT_COUNT-1];
+    logic fdr_revoked [0:FDR_SLOT_COUNT-1];
+    logic [63:0] fdr_generation [0:FDR_SLOT_COUNT-1];
+    logic [63:0] fdr_rights [0:FDR_SLOT_COUNT-1];
     logic topology_record_valid;
     logic [63:0] topology_record_base;
     int unsigned mem_sram_word_index;
@@ -148,6 +158,21 @@ module lnp64_core_tile #(
     logic [2:0] dma_dst_byte_lane;
     logic [1:0] mem_half_lane;
     logic mem_word_upper;
+    logic [63:0] cap_src_value;
+    logic [63:0] cap_dst_req;
+    logic [63:0] cap_rights_req;
+    logic [63:0] cap_flags;
+    int unsigned cap_src_fd;
+    int unsigned cap_dst_fd;
+    logic cap_src_fd_in_range;
+    logic cap_dst_fd_in_range;
+    logic cap_src_is_token;
+    logic cap_src_token_shape_valid;
+    logic cap_src_generation_matches;
+    logic cap_src_live;
+    logic cap_src_stale;
+    logic [63:0] cap_dup_rights;
+    logic cap_dup_rights_subset;
     lnp64_retire_submit_t retire_submit_next;
     lnp64_thread_sched_t thread_submit_next;
 
@@ -446,6 +471,20 @@ module lnp64_core_tile #(
         end
     endfunction
 
+    function automatic int unsigned fdr_value_fd(input logic [63:0] value);
+        logic [63:0] fd_bits;
+        begin
+            fd_bits = (value < 64'd256) ? value : (value & FDR_TOKEN_INDEX_MASK);
+            fdr_value_fd = fd_bits[7:0];
+        end
+    endfunction
+
+    function automatic logic [63:0] fdr_token(input int unsigned fd);
+        begin
+            fdr_token = FDR_TOKEN_MARKER | (fdr_generation[fd] << 8) | {56'd0, fd[7:0]};
+        end
+    endfunction
+
     function automatic logic [63:0] clz64(input logic [63:0] value);
         integer bit_idx;
         logic seen_one;
@@ -665,6 +704,26 @@ module lnp64_core_tile #(
             object_fd_store_addr + (64'd8 - {61'd0, object_fd_store_addr[2:0]})
         );
         object_fd_store_byte_lane = object_fd_store_addr[2:0];
+        cap_src_value = load_double_unaligned(gpr[dec.rs1]);
+        cap_dst_req = load_double_unaligned(gpr[dec.rs1] + 64'd8);
+        cap_rights_req = load_double_unaligned(gpr[dec.rs1] + 64'd16);
+        cap_flags = load_double_unaligned(gpr[dec.rs1] + 64'd24);
+        cap_src_fd = fdr_value_fd(cap_src_value);
+        cap_dst_fd = cap_dst_req == 64'd0 ? 3 : fdr_value_fd(cap_dst_req);
+        cap_src_fd_in_range = cap_src_fd < FDR_SLOT_COUNT;
+        cap_dst_fd_in_range = cap_dst_fd < FDR_SLOT_COUNT;
+        cap_src_is_token = cap_src_value >= 64'd256;
+        cap_src_token_shape_valid = (cap_src_value & FDR_TOKEN_MARKER) != 64'd0 &&
+            cap_src_value[7:0] < FDR_SLOT_COUNT[7:0] &&
+            ((cap_src_value & ~FDR_TOKEN_MARKER) >> 8) != 64'd0;
+        cap_src_generation_matches = cap_src_fd_in_range &&
+            (((cap_src_value & ~FDR_TOKEN_MARKER) >> 8) == fdr_generation[cap_src_fd]);
+        cap_src_live = cap_src_fd_in_range && fdr_valid[cap_src_fd] && !fdr_revoked[cap_src_fd] &&
+            (!cap_src_is_token || (cap_src_token_shape_valid && cap_src_generation_matches));
+        cap_src_stale = cap_src_is_token && cap_src_token_shape_valid && cap_src_fd_in_range &&
+            (!fdr_valid[cap_src_fd] || fdr_revoked[cap_src_fd] || !cap_src_generation_matches);
+        cap_dup_rights = (cap_rights_req == 64'd0 && cap_src_fd_in_range) ? fdr_rights[cap_src_fd] : cap_rights_req;
+        cap_dup_rights_subset = cap_src_fd_in_range && ((cap_dup_rights & ~fdr_rights[cap_src_fd]) == 64'd0);
     end
 
     always_comb begin
@@ -777,6 +836,12 @@ module lnp64_core_tile #(
                 heap_alloc_ptr[i] <= 64'd0;
                 heap_alloc_size[i] <= 64'd0;
                 heap_alloc_valid[i] <= 1'b0;
+            end
+            for (i = 0; i < FDR_SLOT_COUNT; i = i + 1) begin
+                fdr_generation[i] <= 64'd1;
+                fdr_valid[i] <= i < 3;
+                fdr_revoked[i] <= 1'b0;
+                fdr_rights[i] <= i < 3 ? CAP_RIGHT_ALL : 64'd0;
             end
             for (i = 0; i < SRAM_WORDS; i = i + 1) begin
                 sram[i] = initial_sram[i];
@@ -1672,6 +1737,35 @@ module lnp64_core_tile #(
                                     command_pc <= pc;
                                     state <= CORE_SEND_CMD;
                                 end
+                            end
+                            LNP64_OP_CAP_DUP: begin
+                                if (cap_flags & ~CAP_DUP_FLAG_SEAL) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EINVAL;
+                                end else if (cap_src_stale) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= RTL_ERR_ESTALE;
+                                end else if (!cap_src_live || !cap_dst_fd_in_range) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EBADF;
+                                end else if ((fdr_rights[cap_src_fd] & CAP_RIGHT_DUP) == 64'd0 ||
+                                    !cap_dup_rights_subset) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EPERM;
+                                end else begin
+                                    fdr_valid[cap_dst_fd] <= 1'b1;
+                                    fdr_revoked[cap_dst_fd] <= 1'b0;
+                                    fdr_generation[cap_dst_fd] <= fdr_generation[cap_dst_fd] + 64'd1;
+                                    fdr_rights[cap_dst_fd] <= cap_dup_rights;
+                                    gpr[dec.rd] <= FDR_TOKEN_MARKER |
+                                        ((fdr_generation[cap_dst_fd] + 64'd1) << 8) |
+                                        {56'd0, cap_dst_fd[7:0]};
+                                    errno_reg <= LNP64_ERR_OK;
+                                end
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_CAP_REVOKE: begin
                                 if (dma_buffer_ref_matches(object_op) && !dma_buffer_object_revoked) begin
