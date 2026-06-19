@@ -1353,6 +1353,7 @@ mod tests {
         let pthread_header = include_str!("../toolchain/include/pthread.h");
         let semaphore_header = include_str!("../toolchain/include/semaphore.h");
         let signal_header = include_str!("../toolchain/include/signal.h");
+        let stdarg_header = include_str!("../toolchain/include/stdarg.h");
         let stddef_header = include_str!("../toolchain/include/stddef.h");
         let stdint_header = include_str!("../toolchain/include/stdint.h");
         let stdlib_header = include_str!("../toolchain/include/stdlib.h");
@@ -2543,6 +2544,9 @@ mod tests {
         assert!(real_llc.contains("tolower('Q')"));
         assert!(real_llc.contains("toupper('q')"));
         assert!(real_llc.contains("grep -q 'sext.w'"));
+        assert!(stdarg_header.contains("typedef __builtin_va_list va_list;"));
+        assert!(stdarg_header.contains("#define va_start(ap, last) __builtin_va_start(ap, last)"));
+        assert!(stdarg_header.contains("#define va_arg(ap, type) __builtin_va_arg(ap, type)"));
         assert!(stddef_header.contains("typedef unsigned long size_t;"));
         assert!(stddef_header.contains("typedef long ptrdiff_t;"));
         assert!(stddef_header.contains("#define NULL ((void *)0)"));
