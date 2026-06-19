@@ -1888,6 +1888,9 @@ libc_time_impl_dump="$build_dir/liblnp64-time-min.dump"
 "$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_time_impl_obj" \
   >"$libc_time_impl_dump"
 grep -q 'get_pcr r' "$libc_time_impl_dump"
+grep -q 'yield' "$libc_time_impl_dump"
+grep -q 'object_ctl r' "$libc_time_impl_dump"
+grep -q 'push r' "$libc_time_impl_dump"
 grep -q 'ret' "$libc_time_impl_dump"
 printf 'real LLVM LNP64 clang minilibc time implementation object smoke passed: %s\n' \
   "$libc_time_impl_obj"
@@ -3559,6 +3562,21 @@ grep -q 'sigret' "$netbsd_signal_fault_test_dump"
 printf 'real LLVM LNP64 clang NetBSD signal fault child object passed: %s\n' \
   "$netbsd_signal_fault_test_obj"
 
+netbsd_timer_test_obj="$build_dir/netbsd-timer-test-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
+  -c userland/timer_test_clang.c -o "$netbsd_timer_test_obj"
+test -s "$netbsd_timer_test_obj"
+netbsd_timer_test_dump="$build_dir/netbsd-timer-test-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$netbsd_timer_test_obj" \
+  >"$netbsd_timer_test_dump"
+grep -q 'call ' "$netbsd_timer_test_dump"
+grep -q 'yield' "$netbsd_timer_test_dump"
+grep -q 'sigret' "$netbsd_timer_test_dump"
+printf 'real LLVM LNP64 clang NetBSD timer child object passed: %s\n' \
+  "$netbsd_timer_test_obj"
+
 meta_libc_c="$build_dir/meta-libc-smoke.c"
 cat >"$meta_libc_c" <<'C'
 #include <errno.h>
@@ -5062,6 +5080,15 @@ netbsd_signal_fault_test_elf="$build_dir/lnp64-netbsd-signal-fault-test-linked.e
 test -s "$netbsd_signal_fault_test_elf"
 printf 'real LLVM LNP64 lld NetBSD signal fault child link passed: %s\n' \
   "$netbsd_signal_fault_test_elf"
+
+netbsd_timer_test_elf="$build_dir/lnp64-netbsd-timer-test-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$netbsd_timer_test_elf" "$crt0_obj" "$netbsd_timer_test_obj" \
+  "$libc_time_impl_obj" "$libc_signal_impl_obj" "$libc_poll_impl_obj" \
+  "$libc_fd_impl_obj" "$libc_errno_impl_obj"
+test -s "$netbsd_timer_test_elf"
+printf 'real LLVM LNP64 lld NetBSD timer child link passed: %s\n' \
+  "$netbsd_timer_test_elf"
 
 meta_libc_elf="$build_dir/lnp64-meta-libc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

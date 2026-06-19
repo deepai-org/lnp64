@@ -22,6 +22,7 @@
 #define SEEK_END 2
 
 int access(const char *path, int mode);
+unsigned int alarm(unsigned int seconds);
 int chdir(const char *path);
 int chown(const char *path, uid_t owner, gid_t group);
 int close(int fd);
@@ -49,6 +50,7 @@ int unlink(const char *path);
 int unlinkat(int dirfd, const char *path, int flags);
 long sysconf(int name);
 unsigned int sleep(unsigned int seconds);
+int usleep(unsigned int usec);
 int symlink(const char *target, const char *linkpath);
 ssize_t write(int fd, const void *buf, size_t count);
 

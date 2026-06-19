@@ -1351,6 +1351,9 @@ mod tests {
         let semaphore_header = include_str!("../toolchain/include/semaphore.h");
         let signal_header = include_str!("../toolchain/include/signal.h");
         let stdlib_header = include_str!("../toolchain/include/stdlib.h");
+        let sys_timerfd_header = include_str!("../toolchain/include/sys/timerfd.h");
+        let time_header = include_str!("../toolchain/include/time.h");
+        let unistd_header = include_str!("../toolchain/include/unistd.h");
         let libc_string_min = include_str!("../toolchain/liblnp64_string_min.c");
         let libc_convert_min = include_str!("../toolchain/liblnp64_convert_min.c");
         let libc_path_min = include_str!("../toolchain/liblnp64_path_min.c");
@@ -1475,6 +1478,7 @@ mod tests {
             "clang_netbsd_poll_child_object",
             "clang_netbsd_signal_gate_child_object",
             "clang_netbsd_signal_fault_child_object",
+            "clang_netbsd_timer_child_object",
             "clang_minilibc_meta_impl_object",
             "clang_meta_libc_object",
             "clang_minilibc_random_impl_object",
@@ -1584,6 +1588,8 @@ mod tests {
             "netbsd_signal_gate_child_run_elf",
             "netbsd_signal_fault_child_static_link",
             "netbsd_signal_fault_child_run_elf",
+            "netbsd_timer_child_static_link",
+            "netbsd_timer_child_run_elf",
             "metadata_libc_static_link",
             "metadata_libc_run_elf",
         ] {
@@ -1936,8 +1942,30 @@ mod tests {
         assert!(libc_time_min.contains("clock_gettime"));
         assert!(libc_time_min.contains("get_pcr %0, REALTIME_SEC"));
         assert!(libc_time_min.contains("get_pcr %0, REALTIME_NSEC"));
+        assert!(libc_time_min.contains("int usleep(unsigned int usec)"));
+        assert!(libc_time_min.contains("unsigned int sleep(unsigned int seconds)"));
+        assert!(libc_time_min.contains("int timerfd_create(int clockid, int flags)"));
+        assert!(libc_time_min.contains("int timerfd_settime("));
+        assert!(libc_time_min.contains("int timerfd_gettime("));
+        assert!(libc_time_min.contains("LNP64_OBJECT_KIND_TIMER"));
+        assert!(libc_time_min.contains("__lnp_object_ctl"));
+        assert!(
+            libc_time_min.contains("long status = (long)__lnp_object_ctl((lnp64_word_t)record);")
+        );
+        assert!(libc_time_min.contains("errno = (int)-status;"));
+        assert!(libc_time_min.contains("__lnp_push"));
+        assert!(libc_time_min.contains("__lnp_yield"));
+        assert!(time_header.contains("struct itimerspec"));
+        assert!(sys_timerfd_header.contains("int timerfd_create(int clockid, int flags);"));
+        assert!(sys_timerfd_header.contains("int timerfd_settime("));
+        assert!(sys_timerfd_header.contains("int timerfd_gettime("));
+        assert!(unistd_header.contains("unsigned int alarm(unsigned int seconds);"));
+        assert!(unistd_header.contains("int usleep(unsigned int usec);"));
         assert!(real_llc.contains("liblnp64-time-min.o"));
         assert!(real_llc.contains("grep -q 'get_pcr r'"));
+        assert!(real_llc.contains("grep -q 'yield' \"$libc_time_impl_dump\""));
+        assert!(real_llc.contains("grep -q 'object_ctl r' \"$libc_time_impl_dump\""));
+        assert!(real_llc.contains("grep -q 'push r' \"$libc_time_impl_dump\""));
         assert!(
             real_llc
                 .contains("real LLVM LNP64 clang minilibc time implementation object smoke passed")
@@ -2566,6 +2594,11 @@ mod tests {
         assert!(real_llc.contains(r#"grep -q 'div r' "$netbsd_signal_fault_test_dump""#));
         assert!(real_llc.contains(r#"grep -q 'sigret' "$netbsd_signal_fault_test_dump""#));
         assert!(real_llc.contains("real LLVM LNP64 clang NetBSD signal fault child object passed"));
+        assert!(real_llc.contains("userland/timer_test_clang.c"));
+        assert!(real_llc.contains("netbsd-timer-test-clang-smoke.o"));
+        assert!(real_llc.contains(r#"grep -q 'yield' "$netbsd_timer_test_dump""#));
+        assert!(real_llc.contains(r#"grep -q 'sigret' "$netbsd_timer_test_dump""#));
+        assert!(real_llc.contains("real LLVM LNP64 clang NetBSD timer child object passed"));
         assert!(real_llc.contains("toolchain/liblnp64_fd_min.c"));
         assert!(libc_fd_min.contains("__lnp_pull"));
         assert!(libc_fd_min.contains("__lnp_push"));
@@ -2700,6 +2733,10 @@ mod tests {
         assert!(real_llc.contains("lnp64-netbsd-signal-fault-test-linked.elf"));
         assert!(real_llc.contains(r#""$netbsd_signal_fault_test_obj" \"#));
         assert!(real_llc.contains("real LLVM LNP64 lld NetBSD signal fault child link passed"));
+        assert!(real_llc.contains("lnp64-netbsd-timer-test-linked.elf"));
+        assert!(real_llc.contains(r#""$netbsd_timer_test_obj" \"#));
+        assert!(real_llc.contains(r#""$libc_time_impl_obj" "$libc_signal_impl_obj""#));
+        assert!(real_llc.contains("real LLVM LNP64 lld NetBSD timer child link passed"));
         assert!(real_llc.contains("lnp64-meta-libc-linked.elf"));
         assert!(real_llc.contains(
             r#""$meta_libc_obj" "$libc_meta_impl_obj" \
@@ -3645,6 +3682,7 @@ mod tests {
             "real_netbsd_poll_child_execution",
             "real_netbsd_signal_gate_child_execution",
             "real_netbsd_signal_fault_child_execution",
+            "real_netbsd_timer_child_execution",
             "real_metadata_libc_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
@@ -3733,6 +3771,7 @@ mod tests {
             "real_netbsd_poll_child_execution",
             "real_netbsd_signal_gate_child_execution",
             "real_netbsd_signal_fault_child_execution",
+            "real_netbsd_timer_child_execution",
             "real_metadata_libc_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
@@ -4678,8 +4717,26 @@ mod tests {
             ),
             (
                 "time_clock",
-                vec!["clock_gettime", "time"],
-                vec!["GET_PCR", "REALTIME_SEC", "REALTIME_NSEC", "errno_tls"],
+                vec![
+                    "clock_gettime",
+                    "time",
+                    "usleep",
+                    "sleep",
+                    "timerfd_create",
+                    "timerfd_settime",
+                    "timerfd_gettime",
+                ],
+                vec![
+                    "GET_PCR",
+                    "REALTIME_SEC",
+                    "REALTIME_NSEC",
+                    "YIELD",
+                    "OBJECT_CTL",
+                    "PUSH",
+                    "AWAIT",
+                    "PULL",
+                    "errno_tls",
+                ],
             ),
             (
                 "fd_io",
@@ -4818,6 +4875,7 @@ mod tests {
             "netbsd_poll_child",
             "netbsd_signal_gate_child",
             "netbsd_signal_fault_child",
+            "netbsd_timer_child",
             "netbsd_personality_clang",
             "netcat",
             "httpd",
@@ -4856,6 +4914,7 @@ mod tests {
         assert_eq!(statuses["netbsd_poll_child"], "partial");
         assert_eq!(statuses["netbsd_signal_gate_child"], "partial");
         assert_eq!(statuses["netbsd_signal_fault_child"], "partial");
+        assert_eq!(statuses["netbsd_timer_child"], "partial");
         assert_eq!(statuses["netbsd_personality_clang"], "partial");
         assert_eq!(statuses["netcat"], "partial");
         assert_eq!(statuses["httpd"], "partial");
@@ -5589,6 +5648,7 @@ mod tests {
             "netbsd_poll_child",
             "netbsd_signal_gate_child",
             "netbsd_signal_fault_child",
+            "netbsd_timer_child",
             "netbsd_personality_clang",
             "simple_libc",
         ] {
