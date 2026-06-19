@@ -341,6 +341,15 @@ Useful sub-theorems:
   of the same child-domain creation transition; profile metadata cannot weaken
   tree topology, monotonic limits, capability lineage, accounting rollup, or
   generation checks.
+- flattened effective-domain records consumed by scheduler, heap, VMA, FDR, DMA,
+  event, and gate engines are monotonic refinements of the Resource Domain tree
+  state at their recorded generation.
+- hot-path enforcement uses resident effective records and generation checks; it
+  does not require an unbounded ancestor walk, policy recomputation, or software
+  callback.
+- Class D domain-engine refill/recompute of effective records preserves
+  monotonic limits, rolls back failed pre-commit reservations, and cannot publish
+  broader authority than the parent delegated.
 
 ## 7. Scheduler Safety
 
@@ -373,6 +382,9 @@ Useful sub-theorems:
   generation, and wait predicate match.
 - consumed CPU advances virtual runtime/deadline accounting according to the
   fixed weight table.
+- scheduler dispatch consumes a resident effective scheduling record whose
+  allowed tile mask, quota/reservation class, latency cap, frozen/quiescing bits,
+  and accounting generation refine the Resource Domain tree.
 - child Resource Domain CPU usage charges all ancestors before later dispatch
   decisions can ignore it.
 - quota exhaustion makes descendant threads ineligible until the next permitted
@@ -778,6 +790,12 @@ Useful sub-theorems:
   transition as central heap metadata updates.
 - slab/run refill and drain preserve size-class membership, live/free counts,
   and per-domain heap accounting.
+- heap hot paths consume a resident effective heap-domain record whose budget,
+  profile, hardening policy, large-object eligibility, locality policy, and
+  accounting generation refine the Resource Domain tree.
+- `ALLOC`/`FREE` hot paths do not walk an unbounded Resource Domain ancestor
+  chain; cold or stale accounting state parks, fails, or submits a Class D
+  heap/domain refill.
 - `ALLOC_EX` policy hints cannot bypass Resource Domain memory, DMA, sharing,
   hardening, or executable-memory restrictions.
 - implementation-specific size classes, allocation-window depth, freelists,

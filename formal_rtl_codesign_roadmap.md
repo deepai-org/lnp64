@@ -1224,12 +1224,17 @@ The next RTL phase should build the real machine in this order:
 5. **Capability/FDR, Resource Domain, and policy roots:** implement real FDR
    tables, generation and lineage checks, capability
    duplication/transfer/revocation, domain lifecycle, monotonic limits,
-   accounting, freeze/resume/destroy, and policy enforcement.
+   accounting, freeze/resume/destroy, policy enforcement, and flattened
+   effective-domain records consumed by scheduler, heap, VMA, FDR, DMA, event,
+   and gate hot paths. `DOMAIN_CTL` lifecycle work may be Class D; admitted
+   execution must use resident generation-checked effective records rather than
+   unbounded domain-tree walks.
 6. **Scheduler and waitable core:** implement the Fixed Weighted-Fair
    Virtual-Deadline Active-Window Scheduler: fixed monotonic weight table,
    virtual runtime/deadline accounting, bounded active windows or
-   virtual-deadline buckets, hierarchical Resource Domain quota/budget checks,
-   sticky affinity, bounded migration, bounded wakeup insertion, bounded
+   virtual-deadline buckets, resident effective scheduling records for
+   hierarchical Resource Domain quota/budget checks, sticky affinity, bounded
+   migration, bounded wakeup insertion, bounded
    preemption points, wait queues, timers, futex wait/wake, event delivery,
    frozen/destroyed-domain rejection, spill/refill, no-lost-wakeup invariants,
    and no scheduler bytecode, callbacks, red-black tree policy, plugin dispatch,
@@ -1251,7 +1256,8 @@ The next RTL phase should build the real machine in this order:
    generation-tagged metadata, exact-pointer `FREE`, invalid/double/foreign-free
    rejection, NX heap backing, bounded hot `ALLOC`/`FREE`, Class D
    refill/drain/large-allocation slow paths with inherited domain/deadline/
-   cancellation metadata, locked atomics, futex buckets, and waiter spill/refill.
+   cancellation metadata, resident effective heap-domain records for budget and
+   hardening policy, locked atomics, futex buckets, and waiter spill/refill.
 11. **Service boundary, typed control, and namespace dispatch:** implement
    typed control parsing, service request/reply continuation records,
    returned-capability validation, namespace dispatch stubs, and crash/cancel

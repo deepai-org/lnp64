@@ -7727,6 +7727,69 @@ mod tests {
     }
 
     #[test]
+    fn resource_domain_tree_contracts_scope_current_architecture() {
+        fn assert_contains(document: &str, needle: &str) {
+            assert!(
+                document.contains(needle),
+                "missing Resource Domain contract text: {needle}"
+            );
+        }
+
+        let design = include_str!("../design.md");
+        let hardware = include_str!("../hardware_design.md");
+        let formal_roadmap = include_str!("../formal_rtl_codesign_roadmap.md");
+        let formal_theorems = include_str!("../formal_theorems.md");
+
+        assert_contains(
+            hardware,
+            "V1 uses a **Fixed Monotonic Resource-Domain Tree**",
+        );
+        assert_contains(hardware, "do not change parentage or");
+        assert_contains(hardware, "budget ownership");
+        assert_contains(hardware, "Domain operations are fixed owner-engine transitions");
+        assert_contains(hardware, "software callbacks or policy bytecode");
+        assert_contains(
+            design,
+            "Resource Domains are control-plane expensive and data-plane cheap",
+        );
+        assert_contains(design, "Hot scheduler and allocator paths must not walk");
+        assert_contains(hardware, "Resident effective scheduling record");
+        assert_contains(hardware, "not by walking the domain tree during dispatch");
+        assert_contains(hardware, "resident effective heap-domain record");
+        assert_contains(hardware, "must not walk the Resource Domain tree");
+        assert_contains(hardware, "`ALLOC`/`FREE` hot path");
+        assert_contains(hardware, "monotonic intersection");
+        assert_contains(hardware, "must not walk an unbounded ancestor chain");
+        assert_contains(hardware, "hierarchy depth is bounded");
+        assert_contains(hardware, "Class D domain-engine work");
+        assert_contains(hardware, "bounded cursors");
+        assert_contains(hardware, "single-owner and monotonic");
+        assert_contains(hardware, "stale attachments fail closed");
+        assert_contains(
+            formal_roadmap,
+            "effective-domain records consumed by scheduler, heap",
+        );
+        assert_contains(formal_roadmap, "resident generation-checked effective records");
+        assert_contains(formal_roadmap, "resident effective scheduling records");
+        assert_contains(formal_roadmap, "resident effective heap-domain records");
+        assert_contains(
+            formal_theorems,
+            "flattened effective-domain records consumed by scheduler, heap",
+        );
+        assert_contains(
+            formal_theorems,
+            "does not require an unbounded ancestor walk",
+        );
+        assert_contains(
+            formal_theorems,
+            "Class D domain-engine refill/recompute of effective records",
+        );
+        assert_contains(formal_theorems, "scheduler dispatch consumes");
+        assert_contains(formal_theorems, "heap hot paths consume");
+        assert_contains(formal_theorems, "`ALLOC`/`FREE` hot paths do not walk");
+    }
+
+    #[test]
     fn compatibility_table_names_native_primitives() {
         assert_eq!(lowering_for(CompatSurface::Open), LOWER_OPEN);
         assert_eq!(lowering_for(CompatSurface::Read), LOWER_READ);
