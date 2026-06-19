@@ -122,6 +122,13 @@
       "status": "active",
       "rtl_gate": "scripts/run_rtl_top_llvm_mc_smoke.sh",
       "comparison": "retire_trace_and_final_state"
+    },
+    {
+      "source": "tests/rtl/programs/top_llvm_mc_scalar.s",
+      "required_features": ["llvm_mc_object_bytes", "core", "mul", "immediate_alu", "extend_alu", "count_alu", "bitwise_alu", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_llvm_mc_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
     }
   ],
   "llvm_clang_programs": [
