@@ -868,6 +868,21 @@ grep -q 'call ' "$rot13_dump"
 printf 'real LLVM LNP64 clang rot13 demo object smoke passed: %s\n' \
   "$rot13_obj"
 
+producer_consumer_obj="$build_dir/producer-consumer-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables \
+  -Wno-implicit-function-declaration -I toolchain \
+  -c demos/producer_consumer.c -o "$producer_consumer_obj"
+test -s "$producer_consumer_obj"
+producer_consumer_dump="$build_dir/producer-consumer-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$producer_consumer_obj" \
+  >"$producer_consumer_dump"
+grep -q 'clone.spawn r' "$producer_consumer_dump"
+grep -q 'thread_join r' "$producer_consumer_dump"
+grep -q 'lock.cmpxchg r' "$producer_consumer_dump"
+printf 'real LLVM LNP64 clang producer consumer demo object smoke passed: %s\n' \
+  "$producer_consumer_obj"
+
 indirect_call_c="$build_dir/indirect-call-smoke.c"
 cat >"$indirect_call_c" <<'C'
 int add3(int x) {
@@ -3512,12 +3527,13 @@ test -s "$indirect_call_elf"
 printf 'real LLVM LNP64 lld indirect call link smoke passed: %s\n' \
   "$indirect_call_elf"
 
-for demo in hello factorial allocator fibonacci pcr cat json-parser rot13; do
+for demo in hello factorial allocator fibonacci pcr cat json-parser rot13 producer-consumer; do
   demo_obj="$build_dir/$demo-clang-smoke.o"
   demo_elf="$build_dir/lnp64-$demo-clang-linked.elf"
   "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
     -o "$demo_elf" "$crt0_obj" "$demo_obj" "$libc_fd_impl_obj" \
-    "$libc_alloc_impl_obj" "$libc_string_impl_obj" "$libc_process_impl_obj"
+    "$libc_alloc_impl_obj" "$libc_string_impl_obj" "$libc_process_impl_obj" \
+    "$libc_futex_impl_obj"
   test -s "$demo_elf"
 done
 printf 'real LLVM LNP64 lld clang demo link smoke passed: %s\n' \

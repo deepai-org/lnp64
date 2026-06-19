@@ -2189,10 +2189,19 @@ mod tests {
         assert!(real_llc.contains("rot13-clang-smoke.o"));
         assert!(real_llc.contains("-c demos/rot13.c"));
         assert!(real_llc.contains("real LLVM LNP64 clang rot13 demo object smoke passed"));
+        assert!(real_llc.contains("producer-consumer-clang-smoke.o"));
+        assert!(real_llc.contains("-c demos/producer_consumer.c"));
+        assert!(real_llc.contains("grep -q 'clone.spawn r'"));
+        assert!(real_llc.contains("grep -q 'thread_join r'"));
+        assert!(real_llc.contains("grep -q 'lock.cmpxchg r'"));
+        assert!(
+            real_llc.contains("real LLVM LNP64 clang producer consumer demo object smoke passed")
+        );
         assert!(real_llc.contains("lnp64-$demo-clang-linked.elf"));
         assert!(real_llc.contains(
             r#""$demo_obj" "$libc_fd_impl_obj" \
-    "$libc_alloc_impl_obj" "$libc_string_impl_obj" "$libc_process_impl_obj""#
+    "$libc_alloc_impl_obj" "$libc_string_impl_obj" "$libc_process_impl_obj" \
+    "$libc_futex_impl_obj""#
         ));
         assert!(real_llc.contains("real LLVM LNP64 lld clang demo link smoke passed"));
         assert!(real_llc.contains("rewrite_with_perl"));
@@ -2424,6 +2433,7 @@ mod tests {
         assert!(real_llc_docker.contains("cat ok"));
         assert!(real_llc_docker.contains("json parser ok"));
         assert!(real_llc_docker.contains("rot13 ok"));
+        assert!(real_llc_docker.contains("producer consumer ok"));
         assert!(real_llc_docker.contains("exit=0"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf clang demo execution passed"));
         assert!(real_llc_docker.contains("lnp64-native-heap-linked.elf"));
@@ -3626,6 +3636,7 @@ mod tests {
             "cat",
             "json_parser",
             "rot13",
+            "producer_consumer",
             "simple_libc",
         ] {
             assert!(cases.contains(case), "missing llvm bootstrap case {case}");
@@ -3639,6 +3650,7 @@ mod tests {
             "cat",
             "json_parser",
             "rot13",
+            "producer_consumer",
         ] {
             assert_eq!(statuses[case], "tested", "{case} should be tested");
         }
@@ -4210,6 +4222,7 @@ mod tests {
             "cat",
             "json_parser",
             "rot13",
+            "producer_consumer",
             "simple_libc",
         ] {
             assert!(

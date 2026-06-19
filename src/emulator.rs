@@ -2259,7 +2259,7 @@ impl Machine {
                 self.require_domain_cap(DOMAIN_CAP_IO)?;
                 if fd.0 == MESSAGE_ENDPOINT_FD {
                     let Some((v1, v2)) = self.process_mut()?.inbox.pop_front() else {
-                        self.thread_mut()?.ip = self.thread()?.ip.saturating_sub(1);
+                        self.rewind_current_ip_for_block()?;
                         self.ready.retain(|tid| *tid != self.current_tid);
                         return Ok(false);
                     };
@@ -2289,7 +2289,7 @@ impl Machine {
                 };
                 if fd == MESSAGE_ENDPOINT_FD {
                     let Some((v1, v2)) = self.process_mut()?.inbox.pop_front() else {
-                        self.thread_mut()?.ip = self.thread()?.ip.saturating_sub(1);
+                        self.rewind_current_ip_for_block()?;
                         self.ready.retain(|tid| *tid != self.current_tid);
                         return Ok(false);
                     };
@@ -3105,7 +3105,7 @@ impl Machine {
                         .is_some_and(|process| process.parent_pid == Some(current_pid))
                 };
                 if live_child {
-                    self.thread_mut()?.ip = self.thread()?.ip.saturating_sub(1);
+                    self.rewind_current_ip_for_block()?;
                     let current_tid = self.current_tid;
                     Self::push_unique_waiter(
                         self.child_waiters.entry(current_pid).or_default(),
@@ -3228,7 +3228,7 @@ impl Machine {
                     }
                     self.write_reg(result, 0)?;
                 } else if self.threads.contains_key(&tid) {
-                    self.thread_mut()?.ip = self.thread()?.ip.saturating_sub(1);
+                    self.rewind_current_ip_for_block()?;
                     let current_tid = self.current_tid;
                     Self::push_unique_waiter(
                         self.thread_join_waiters.entry(tid).or_default(),
@@ -3772,6 +3772,13 @@ impl Machine {
         self.threads
             .get_mut(&self.current_tid)
             .ok_or_else(|| format!("missing current thread {}", self.current_tid))
+    }
+
+    fn rewind_current_ip_for_block(&mut self) -> Result<(), String> {
+        let rewind = if self.committed_exec_mode { 4 } else { 1 };
+        let ip = self.thread()?.ip;
+        self.thread_mut()?.ip = ip.saturating_sub(rewind);
+        Ok(())
     }
 
     fn clone_with_profile(
