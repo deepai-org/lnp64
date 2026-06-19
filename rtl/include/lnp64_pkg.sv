@@ -24,6 +24,25 @@ package lnp64_pkg;
     localparam logic [63:0] LNP64_FEATURE_ETH_STUB         = 64'h0000_0000_0000_8000;
     localparam logic [63:0] LNP64_FEATURE_PCIE_STUB        = 64'h0000_0000_0001_0000;
 
+    localparam int LNP64_FDR_SLOT_COUNT = 10;
+    localparam logic [63:0] LNP64_FDR_TOKEN_MARKER = 64'h4000_0000_0000_0000;
+    localparam logic [63:0] LNP64_FDR_TOKEN_INDEX_MASK = 64'h0000_0000_0000_00ff;
+    localparam logic [63:0] LNP64_CAP_DUP_FLAG_SEAL = 64'd1;
+    localparam logic [63:0] LNP64_CAP_RIGHT_ALL = 64'h0000_0000_0000_01ff;
+    localparam logic [63:0] LNP64_CAP_RIGHT_CALL = 64'h0000_0000_0000_0020;
+    localparam logic [63:0] LNP64_CAP_RIGHT_DUP = 64'h0000_0000_0000_0040;
+    localparam logic [63:0] LNP64_CAP_RIGHT_REVOKE = 64'h0000_0000_0000_0080;
+    localparam logic [63:0] LNP64_CAP_RIGHT_TRANSFER = 64'h0000_0000_0000_0100;
+    localparam logic [15:0] LNP64_ERR_ESTALE = 16'd116;
+
+    typedef enum logic [2:0] {
+        LNP64_FDR_KIND_CLOSED = 3'd0,
+        LNP64_FDR_KIND_GENERIC = 3'd1,
+        LNP64_FDR_KIND_PIPE_READER = 3'd2,
+        LNP64_FDR_KIND_PIPE_WRITER = 3'd3,
+        LNP64_FDR_KIND_CALL_GATE = 3'd4
+    } lnp64_fdr_kind_e;
+
     localparam logic [63:0] LNP64_S0_FEATURES =
         LNP64_FEATURE_CORE_TILE |
         LNP64_FEATURE_DECODE |
@@ -235,6 +254,7 @@ package lnp64_pkg;
         LNP64_ENGINE_OBJECT     = 16'd1,
         LNP64_ENGINE_FAULT      = 16'd2,
         LNP64_ENGINE_WATCHDOG   = 16'd3,
+        LNP64_ENGINE_CAP        = 16'd10,
         LNP64_ENGINE_UNSUPPORTED= 16'd255
     } lnp64_engine_e;
 

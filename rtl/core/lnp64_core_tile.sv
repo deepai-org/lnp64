@@ -156,6 +156,7 @@ module lnp64_core_tile #(
     localparam int unsigned HEAP_SRAM_BASE_WORD = 96;
     localparam int unsigned STACK_SRAM_BASE_WORD = 128;
     logic [15:0] errno_reg;
+    logic cap_engine_shadow_enabled;
     logic cmp_zero;
     logic cmp_negative;
     logic cmp_greater;
@@ -1246,6 +1247,18 @@ module lnp64_core_tile #(
         cmd.arg_block_len = 64'd0;
         cmd.cancel_class = 16'd0;
         cmd.completion_target = 16'd1;
+        unique case (dec.opcode)
+            LNP64_OP_CAP_DUP: begin
+                cmd.rights_mask = cap_rights_req;
+                cmd.flags = cap_flags;
+                cmd.arg0 = cap_src_value;
+                cmd.arg1 = cap_dst_req;
+                cmd.arg_block_ptr = gpr[dec.rs1];
+                cmd.arg_block_len = 64'd32;
+            end
+            default: begin
+            end
+        endcase
     end
 
     always_comb begin
@@ -1455,6 +1468,7 @@ module lnp64_core_tile #(
             unsupported_failed_closed <= 1'b0;
             raw_authority_visible <= 1'b0;
             errno_reg <= LNP64_ERR_OK;
+            cap_engine_shadow_enabled <= 1'b1;
             cmp_zero <= 1'b0;
             cmp_negative <= 1'b0;
             cmp_greater <= 1'b0;
@@ -2426,6 +2440,7 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_OPEN_FD: begin
+                                cap_engine_shadow_enabled <= 1'b0;
                                 if (!file_open_available) begin
                                     gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= 16'd24;
@@ -2450,6 +2465,7 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_FD_CLOSE: begin
+                                cap_engine_shadow_enabled <= 1'b0;
                                 if (close_fd_token_stale) begin
                                     errno_reg <= RTL_ERR_ESTALE;
                                 end else if (!close_fd_in_range || !fdr_valid[close_fd]) begin
@@ -2858,6 +2874,7 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_OBJECT_CTL: begin
+                                cap_engine_shadow_enabled <= 1'b0;
                                 if (object_op == OBJECT_OP_CREATE &&
                                     object_kind == OBJECT_KIND_QUEUE &&
                                     object_profile == OBJECT_PROFILE_CALL_GATE &&
@@ -3309,40 +3326,48 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_CAP_DUP: begin
-                                if (cap_flags & ~CAP_DUP_FLAG_SEAL) begin
-                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                    errno_reg <= LNP64_ERR_EINVAL;
-                                end else if (cap_src_stale) begin
-                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                    errno_reg <= RTL_ERR_ESTALE;
-                                end else if (!cap_src_live || !cap_dst_fd_in_range) begin
-                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                    errno_reg <= LNP64_ERR_EBADF;
-                                end else if ((fdr_rights[cap_src_fd] & CAP_RIGHT_DUP) == 64'd0 ||
-                                    !cap_dup_rights_subset) begin
-                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                    errno_reg <= LNP64_ERR_EPERM;
+                                if (cap_engine_shadow_enabled) begin
+                                    pending_unsupported <= 1'b0;
+                                    command_pc <= pc;
+                                    state <= CORE_SEND_CMD;
                                 end else begin
-                                    fdr_valid[cap_dst_fd] <= 1'b1;
-                                    fdr_revoked[cap_dst_fd] <= 1'b0;
-                                    fdr_generation[cap_dst_fd] <= fdr_generation[cap_dst_fd] + 64'd1;
-                                    fdr_rights[cap_dst_fd] <= cap_dup_rights;
-                                    fdr_lineage[cap_dst_fd] <= fdr_lineage[cap_src_fd];
-                                    gpr[dec.rd] <= FDR_TOKEN_MARKER |
-                                        ((fdr_generation[cap_dst_fd] + 64'd1) << 8) |
-                                        {56'd0, cap_dst_fd[7:0]};
-                                    errno_reg <= LNP64_ERR_OK;
+                                    if (cap_flags & ~CAP_DUP_FLAG_SEAL) begin
+                                        gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= LNP64_ERR_EINVAL;
+                                    end else if (cap_src_stale) begin
+                                        gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= RTL_ERR_ESTALE;
+                                    end else if (!cap_src_live || !cap_dst_fd_in_range) begin
+                                        gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= LNP64_ERR_EBADF;
+                                    end else if ((fdr_rights[cap_src_fd] & CAP_RIGHT_DUP) == 64'd0 ||
+                                        !cap_dup_rights_subset) begin
+                                        gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= LNP64_ERR_EPERM;
+                                    end else begin
+                                        fdr_valid[cap_dst_fd] <= 1'b1;
+                                        fdr_revoked[cap_dst_fd] <= 1'b0;
+                                        fdr_generation[cap_dst_fd] <= fdr_generation[cap_dst_fd] + 64'd1;
+                                        fdr_rights[cap_dst_fd] <= cap_dup_rights;
+                                        fdr_lineage[cap_dst_fd] <= fdr_lineage[cap_src_fd];
+                                        fdr_kind[cap_dst_fd] <= fdr_kind[cap_src_fd];
+                                        gpr[dec.rd] <= FDR_TOKEN_MARKER |
+                                            ((fdr_generation[cap_dst_fd] + 64'd1) << 8) |
+                                            {56'd0, cap_dst_fd[7:0]};
+                                        errno_reg <= LNP64_ERR_OK;
+                                    end
+                                    pc <= pc + 32'd1;
+                                    retired_count <= retired_count + 32'd1;
+                                    retire_submit_valid <= 1'b1;
+                                    retire_submit_record <= retire_submit_next;
+                                    m1_commit_valid <= 1'b1;
+                                    m1_commit <= m1_commit_next;
+                                    m1_projection_root_fd <= cap_src_fd_in_range ? cap_src_fd : 0;
+                                    m1_projection_consumer_fd <= m1_current_consumer_fd();
                                 end
-                                pc <= pc + 32'd1;
-                                retired_count <= retired_count + 32'd1;
-                                retire_submit_valid <= 1'b1;
-                                retire_submit_record <= retire_submit_next;
-                                m1_commit_valid <= 1'b1;
-                                m1_commit <= m1_commit_next;
-                                m1_projection_root_fd <= cap_src_fd_in_range ? cap_src_fd : 0;
-                                m1_projection_consumer_fd <= m1_current_consumer_fd();
                             end
                             LNP64_OP_CAP_SEND: begin
+                                cap_engine_shadow_enabled <= 1'b0;
                                 if (cap_flags != 64'd0) begin
                                     gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= LNP64_ERR_EINVAL;
@@ -3380,6 +3405,7 @@ module lnp64_core_tile #(
                                 m1_projection_consumer_fd <= m1_current_consumer_fd();
                             end
                             LNP64_OP_CAP_RECV: begin
+                                cap_engine_shadow_enabled <= 1'b0;
                                 if (cap_flags != 64'd0) begin
                                     gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= LNP64_ERR_EINVAL;
@@ -3424,6 +3450,7 @@ module lnp64_core_tile #(
                                 m1_projection_consumer_fd <= m1_current_consumer_fd();
                             end
                             LNP64_OP_CAP_REVOKE: begin
+                                cap_engine_shadow_enabled <= 1'b0;
                                 if (cap_src_stale) begin
                                     gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= RTL_ERR_ESTALE;
@@ -3488,7 +3515,25 @@ module lnp64_core_tile #(
                         rsp_ready <= 1'b0;
                         gpr[rsp.result_reg] <= rsp.result_value;
                         errno_reg <= rsp.errno_value;
+                        if (!pending_unsupported && dec.opcode == LNP64_OP_CAP_DUP) begin
+                            if (rsp.status == LNP64_STATUS_OK &&
+                                rsp.errno_value == LNP64_ERR_OK &&
+                                cap_src_fd_in_range &&
+                                cap_dst_fd_in_range) begin
+                                fdr_valid[cap_dst_fd] <= 1'b1;
+                                fdr_revoked[cap_dst_fd] <= 1'b0;
+                                fdr_generation[cap_dst_fd] <= fdr_generation[cap_dst_fd] + 64'd1;
+                                fdr_rights[cap_dst_fd] <= cap_dup_rights;
+                                fdr_lineage[cap_dst_fd] <= fdr_lineage[cap_src_fd];
+                                fdr_kind[cap_dst_fd] <= fdr_kind[cap_src_fd];
+                            end
+                            m1_commit_valid <= 1'b1;
+                            m1_commit <= m1_commit_next;
+                            m1_projection_root_fd <= cap_src_fd_in_range ? cap_src_fd : 0;
+                            m1_projection_consumer_fd <= m1_current_consumer_fd();
+                        end
                         if (!pending_unsupported &&
+                            dec.opcode == LNP64_OP_OBJECT_CTL &&
                             rsp.status == LNP64_STATUS_ERROR &&
                             rsp.errno_value == LNP64_ERR_EPERM) begin
                             object_stub_failed_closed <= 1'b1;

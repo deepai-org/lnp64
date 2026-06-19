@@ -608,9 +608,153 @@ module lnp64_boot_image_storage(
     end
 endmodule
 
-module lnp64_cap_engine(input logic clk, input logic reset_n, input logic cmd_valid, output logic cmd_ready, input lnp64_cmd_t cmd, output logic rsp_valid, input logic rsp_ready, output lnp64_rsp_t rsp, output logic [31:0] telemetry_counter, output logic [31:0] fault_counter);
-    logic unused_fault_valid; lnp64_fault_t unused_fault;
-    lnp64_fail_closed_engine #(.ENGINE_ID(16'd10), .ERRNO_VALUE(LNP64_ERR_EBADF), .STATUS_VALUE(LNP64_STATUS_ERROR)) shell(.*,.fault_valid(unused_fault_valid),.fault_ready(1'b1),.fault(unused_fault),.accepted_counter(telemetry_counter),.fault_counter(fault_counter));
+module lnp64_cap_engine(
+    input logic clk,
+    input logic reset_n,
+    input logic cmd_valid,
+    output logic cmd_ready,
+    input lnp64_cmd_t cmd,
+    output logic rsp_valid,
+    input logic rsp_ready,
+    output lnp64_rsp_t rsp,
+    output logic [31:0] telemetry_counter,
+    output logic [31:0] fault_counter
+);
+    logic have_rsp;
+    lnp64_rsp_t rsp_reg;
+    logic fdr_valid [0:LNP64_FDR_SLOT_COUNT-1];
+    logic fdr_revoked [0:LNP64_FDR_SLOT_COUNT-1];
+    logic [63:0] fdr_generation [0:LNP64_FDR_SLOT_COUNT-1];
+    logic [63:0] fdr_rights [0:LNP64_FDR_SLOT_COUNT-1];
+    logic [63:0] fdr_lineage [0:LNP64_FDR_SLOT_COUNT-1];
+    logic [2:0] fdr_kind [0:LNP64_FDR_SLOT_COUNT-1];
+
+    assign cmd_ready = reset_n && !have_rsp;
+    assign rsp_valid = have_rsp;
+    assign rsp = rsp_reg;
+
+    function automatic int unsigned cap_fd(input logic [63:0] value);
+        logic [63:0] fd_bits;
+        begin
+            fd_bits = (value < 64'd256) ? value : (value & LNP64_FDR_TOKEN_INDEX_MASK);
+            cap_fd = fd_bits[7:0];
+        end
+    endfunction
+
+    function automatic logic cap_token_shape_valid(input logic [63:0] value);
+        begin
+            cap_token_shape_valid = (value & LNP64_FDR_TOKEN_MARKER) != 64'd0 &&
+                value[7:0] < LNP64_FDR_SLOT_COUNT[7:0] &&
+                ((value & ~LNP64_FDR_TOKEN_MARKER) >> 8) != 64'd0;
+        end
+    endfunction
+
+    function automatic logic cap_generation_matches(
+        input logic [63:0] value,
+        input int unsigned fd
+    );
+        begin
+            cap_generation_matches = fd < LNP64_FDR_SLOT_COUNT &&
+                (((value & ~LNP64_FDR_TOKEN_MARKER) >> 8) == fdr_generation[fd]);
+        end
+    endfunction
+
+    function automatic logic [63:0] cap_token(
+        input int unsigned fd,
+        input logic [63:0] generation
+    );
+        begin
+            cap_token = LNP64_FDR_TOKEN_MARKER | (generation << 8) | {56'd0, fd[7:0]};
+        end
+    endfunction
+
+    integer i;
+    always_ff @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin
+            have_rsp <= 1'b0;
+            rsp_reg <= '0;
+            telemetry_counter <= 32'd0;
+            fault_counter <= 32'd0;
+            for (i = 0; i < LNP64_FDR_SLOT_COUNT; i = i + 1) begin
+                fdr_generation[i] <= 64'd1;
+                fdr_valid[i] <= i < 3;
+                fdr_revoked[i] <= 1'b0;
+                fdr_rights[i] <= i < 3 ? LNP64_CAP_RIGHT_ALL : 64'd0;
+                fdr_lineage[i] <= {32'd0, i[31:0]} + 64'd1;
+                fdr_kind[i] <= i < 3 ? LNP64_FDR_KIND_GENERIC : LNP64_FDR_KIND_CLOSED;
+            end
+        end else begin
+            if (have_rsp && rsp_ready) begin
+                have_rsp <= 1'b0;
+            end
+            if (cmd_valid && cmd_ready) begin : accept_cmd
+                int unsigned src_fd;
+                int unsigned dst_fd;
+                logic src_is_token;
+                logic src_token_valid;
+                logic src_generation_matches;
+                logic src_live;
+                logic src_stale;
+                logic [63:0] dup_rights;
+                logic [63:0] next_generation;
+
+                have_rsp <= 1'b1;
+                telemetry_counter <= telemetry_counter + 32'd1;
+                rsp_reg <= '0;
+                rsp_reg.op_id <= cmd.op_id;
+                rsp_reg.tile_id <= cmd.tile_id;
+                rsp_reg.pid <= cmd.pid;
+                rsp_reg.tid <= cmd.tid;
+                rsp_reg.domain_id <= cmd.domain_id;
+                rsp_reg.domain_gen <= cmd.domain_gen;
+                rsp_reg.result_reg <= cmd.result_reg;
+                rsp_reg.result_value <= 64'hffff_ffff_ffff_ffff;
+                rsp_reg.errno_value <= LNP64_ERR_ENOTSUP;
+                rsp_reg.status <= LNP64_STATUS_UNSUPPORTED;
+
+                if (cmd.opcode == LNP64_OP_CAP_DUP) begin
+                    src_fd = cap_fd(cmd.arg0);
+                    dst_fd = cmd.arg1 == 64'd0 ? 3 : cap_fd(cmd.arg1);
+                    src_is_token = cmd.arg0 >= 64'd256;
+                    src_token_valid = cap_token_shape_valid(cmd.arg0);
+                    src_generation_matches = cap_generation_matches(cmd.arg0, src_fd);
+                    src_live = src_fd < LNP64_FDR_SLOT_COUNT && fdr_valid[src_fd] &&
+                        !fdr_revoked[src_fd] &&
+                        (!src_is_token || (src_token_valid && src_generation_matches));
+                    src_stale = src_is_token && src_token_valid &&
+                        src_fd < LNP64_FDR_SLOT_COUNT &&
+                        (!fdr_valid[src_fd] || fdr_revoked[src_fd] || !src_generation_matches);
+                    dup_rights = (cmd.rights_mask == 64'd0 && src_fd < LNP64_FDR_SLOT_COUNT) ?
+                        fdr_rights[src_fd] : cmd.rights_mask;
+                    if (cmd.flags & ~LNP64_CAP_DUP_FLAG_SEAL) begin
+                        rsp_reg.errno_value <= LNP64_ERR_EINVAL;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end else if (src_stale) begin
+                        rsp_reg.errno_value <= LNP64_ERR_ESTALE;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end else if (!src_live || dst_fd >= LNP64_FDR_SLOT_COUNT) begin
+                        rsp_reg.errno_value <= LNP64_ERR_EBADF;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end else if ((fdr_rights[src_fd] & LNP64_CAP_RIGHT_DUP) == 64'd0 ||
+                        ((dup_rights & ~fdr_rights[src_fd]) != 64'd0)) begin
+                        rsp_reg.errno_value <= LNP64_ERR_EPERM;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end else begin
+                        next_generation = fdr_generation[dst_fd] + 64'd1;
+                        fdr_valid[dst_fd] <= 1'b1;
+                        fdr_revoked[dst_fd] <= 1'b0;
+                        fdr_generation[dst_fd] <= next_generation;
+                        fdr_rights[dst_fd] <= dup_rights;
+                        fdr_lineage[dst_fd] <= fdr_lineage[src_fd];
+                        fdr_kind[dst_fd] <= fdr_kind[src_fd];
+                        rsp_reg.result_value <= cap_token(dst_fd, next_generation);
+                        rsp_reg.errno_value <= LNP64_ERR_OK;
+                        rsp_reg.status <= LNP64_STATUS_OK;
+                    end
+                end
+            end
+        end
+    end
 endmodule
 
 module lnp64_domain_engine(input logic clk, input logic reset_n, input logic cmd_valid, output logic cmd_ready, input lnp64_cmd_t cmd, output logic rsp_valid, input logic rsp_ready, output lnp64_rsp_t rsp, output logic [31:0] telemetry_counter, output logic [31:0] fault_counter);
