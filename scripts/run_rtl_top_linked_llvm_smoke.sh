@@ -86,8 +86,7 @@ test -s "$elf"
 "$LNP64_BIN" elf-plan "$elf" >/dev/null
 "$LNP64_BIN" elf-flat-exec "$elf" -o "$hex" --data-hex "$data_hex"
 if [[ -s "$data_hex" ]]; then
-  printf '%s\n' "linked LLVM top smoke generated data; top-level linked data image support is not enabled for this gate yet" >&2
-  exit 1
+  bash scripts/run_rtl_top_program_smoke.sh "$hex" "$data_hex"
+else
+  bash scripts/run_rtl_top_program_smoke.sh "$hex"
 fi
-
-bash scripts/run_rtl_top_program_smoke.sh "$hex"

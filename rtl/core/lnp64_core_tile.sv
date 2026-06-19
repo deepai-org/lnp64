@@ -800,6 +800,13 @@ module lnp64_core_tile #(
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
+                            LNP64_OP_LA_LITERAL: begin
+                                gpr[dec.rd] <= {32'd0, program_rom[pc + 32'd1]};
+                                pc <= pc + 32'd2;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
                             LNP64_OP_AUIPC_LITERAL: begin
                                 gpr[dec.rd] <= FLAT_EXEC_BASE_ADDR + {30'd0, pc, 2'd0} + {{32{program_rom[pc + 32'd1][31]}}, program_rom[pc + 32'd1]};
                                 pc <= pc + 32'd2;

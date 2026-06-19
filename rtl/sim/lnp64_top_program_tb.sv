@@ -98,7 +98,7 @@ module lnp64_top_program_tb;
         input logic [31:0] literal
     );
         unique case (opcode)
-            8'h04, 8'hd0: flat_operand_imm = literal;
+            8'h03, 8'h04, 8'hd0: flat_operand_imm = literal;
             8'h01: flat_operand_imm = {{16{instr[15]}}, instr[15:0]};
             8'h20, 8'h21, 8'h22, 8'h23, 8'h24, 8'h25, 8'h26, 8'h27:
                 flat_operand_imm = {{8{instr[23]}}, instr[23:0]};

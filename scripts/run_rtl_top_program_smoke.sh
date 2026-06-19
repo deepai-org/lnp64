@@ -48,8 +48,16 @@ if [[ ! -f "$program_input" ]]; then
 fi
 program_hex="$program_input"
 program_asm=""
-program_data_hex=""
+program_data_hex="${2:-}"
+if [[ -n "$program_data_hex" && ! -f "$program_data_hex" ]]; then
+  printf 'missing top-level program data hex input: %s\n' "$program_data_hex" >&2
+  exit 1
+fi
 if [[ "$program_input" == *.c ]]; then
+  if [[ -n "$program_data_hex" ]]; then
+    printf '%s\n' "explicit data hex is only supported for raw .hex top-level program inputs" >&2
+    exit 1
+  fi
   program_asm="$(mktemp "${TMPDIR:-/tmp}/lnp64_top_program_from_c.XXXXXX.s")"
   tmp_files+=("$program_asm")
   if [[ -n "${LNP64_BIN:-}" ]]; then
@@ -60,6 +68,10 @@ if [[ "$program_input" == *.c ]]; then
   program_input="$program_asm"
 fi
 if [[ "$program_input" == *.s ]]; then
+  if [[ -n "$program_data_hex" ]]; then
+    printf '%s\n' "explicit data hex is only supported for raw .hex top-level program inputs" >&2
+    exit 1
+  fi
   program_hex="$(mktemp "${TMPDIR:-/tmp}/lnp64_top_program_from_asm.XXXXXX.hex")"
   program_data_hex="$(mktemp "${TMPDIR:-/tmp}/lnp64_top_program_data_from_asm.XXXXXX.hex")"
   tmp_files+=("$program_hex" "$program_data_hex")
@@ -70,6 +82,10 @@ if [[ "$program_input" == *.s ]]; then
   fi
 fi
 if [[ "$program_input" == *.dump ]]; then
+  if [[ -n "$program_data_hex" ]]; then
+    printf '%s\n' "explicit data hex is only supported for raw .hex top-level program inputs" >&2
+    exit 1
+  fi
   program_hex="$(mktemp "${TMPDIR:-/tmp}/lnp64_top_program_from_llvm_dump.XXXXXX.hex")"
   tmp_files+=("$program_hex")
   python3 scripts/llvm_objdump_to_flat_hex.py "$program_input" -o "$program_hex"

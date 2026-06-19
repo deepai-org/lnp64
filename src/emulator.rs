@@ -1234,7 +1234,7 @@ fn committed_exec_result_reg(raw_word: u32) -> Option<usize> {
 fn committed_exec_trace_imm(raw_word: u32, literal_word: Option<u32>) -> u32 {
     let opcode = (raw_word >> 24) as u8;
     match opcode {
-        0x04 | 0xd0 => literal_word.unwrap_or_default(),
+        0x03 | 0x04 | 0xd0 => literal_word.unwrap_or_default(),
         0x01 => sign_extend(raw_word & 0xffff, 16) as u32,
         0x20..=0x27 => sign_extend(raw_word & 0x00ff_ffff, 24) as u32,
         _ => sign_extend(raw_word & 0x3fff, 14) as u32,
@@ -1548,7 +1548,7 @@ impl Machine {
             let pc = self.thread()?.ip as u64;
             let raw_word = self.load_exec_u32(pc)?;
             let opcode = (raw_word >> 24) as u8;
-            let literal_word = matches!(opcode, 0x04 | 0xd0)
+            let literal_word = matches!(opcode, 0x03 | 0x04 | 0xd0)
                 .then(|| self.load_exec_u32(pc + 4))
                 .transpose()?;
             let operand_rd = ((raw_word >> 19) & 0x1f) as u64;
