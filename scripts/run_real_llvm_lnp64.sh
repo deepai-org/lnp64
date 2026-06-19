@@ -932,6 +932,51 @@ grep -q 'thread_join r' "$ping_pong_dump"
 printf 'real LLVM LNP64 clang ping pong demo object smoke passed: %s\n' \
   "$ping_pong_obj"
 
+natsort_impl_obj="$build_dir/natsort-strnatcmp-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic \
+  -fno-jump-tables -fno-unwind-tables -fno-asynchronous-unwind-tables \
+  -I toolchain/include -I third_party/natsort \
+  -c third_party/natsort/strnatcmp.c -o "$natsort_impl_obj"
+test -s "$natsort_impl_obj"
+natsort_impl_dump="$build_dir/natsort-strnatcmp-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$natsort_impl_obj" \
+  >"$natsort_impl_dump"
+grep -q '<strnatcmp>:' "$natsort_impl_dump"
+grep -q '<strnatcasecmp>:' "$natsort_impl_dump"
+grep -q 'call ' "$natsort_impl_dump"
+printf 'real LLVM LNP64 clang natsort implementation object smoke passed: %s\n' \
+  "$natsort_impl_obj"
+
+natsort_smoke_c="$build_dir/natsort-smoke.c"
+cat >"$natsort_smoke_c" <<'C'
+#include "strnatcmp.h"
+
+int main(void) {
+  if (!(strnatcmp("rfc822.txt", "rfc2086.txt") < 0))
+    return 1;
+  if (!(strnatcmp("a10", "a2") > 0))
+    return 2;
+  if (strnatcmp("x2-y08", "x2-y7") >= 0)
+    return 3;
+  if (strnatcasecmp("File9", "file10") >= 0)
+    return 4;
+  return 0;
+}
+C
+
+natsort_smoke_obj="$build_dir/natsort-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic \
+  -fno-jump-tables -fno-unwind-tables -fno-asynchronous-unwind-tables \
+  -I toolchain/include -I third_party/natsort \
+  -c "$natsort_smoke_c" -o "$natsort_smoke_obj"
+test -s "$natsort_smoke_obj"
+natsort_smoke_dump="$build_dir/natsort-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$natsort_smoke_obj" \
+  >"$natsort_smoke_dump"
+grep -q 'call ' "$natsort_smoke_dump"
+printf 'real LLVM LNP64 clang natsort package object smoke passed: %s\n' \
+  "$natsort_smoke_obj"
+
 netcat_obj="$build_dir/netcat-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
@@ -3526,6 +3571,14 @@ sort_elf="$build_dir/lnp64-sort-linked.elf"
 test -s "$sort_elf"
 printf 'real LLVM LNP64 lld sort helper link smoke passed: %s\n' \
   "$sort_elf"
+
+natsort_elf="$build_dir/lnp64-natsort-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$natsort_elf" "$crt0_obj" "$natsort_smoke_obj" "$natsort_impl_obj" \
+  "$libc_string_impl_obj"
+test -s "$natsort_elf"
+printf 'real LLVM LNP64 lld natsort package link smoke passed: %s\n' \
+  "$natsort_elf"
 
 calloc_elf="$build_dir/lnp64-calloc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

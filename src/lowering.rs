@@ -2210,6 +2210,15 @@ mod tests {
         assert!(real_llc.contains("-c demos/ping_pong.c"));
         assert!(real_llc.contains("grep -q 'object_ctl r'"));
         assert!(real_llc.contains("real LLVM LNP64 clang ping pong demo object smoke passed"));
+        assert!(real_llc.contains("natsort-strnatcmp-clang-smoke.o"));
+        assert!(real_llc.contains("-c third_party/natsort/strnatcmp.c"));
+        assert!(
+            real_llc.contains("real LLVM LNP64 clang natsort implementation object smoke passed")
+        );
+        assert!(real_llc.contains("natsort-clang-smoke.o"));
+        assert!(real_llc.contains("real LLVM LNP64 clang natsort package object smoke passed"));
+        assert!(real_llc.contains("lnp64-natsort-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld natsort package link smoke passed"));
         assert!(real_llc.contains("netcat-clang-smoke.o"));
         assert!(real_llc.contains("-c demos/netcat.c"));
         assert!(real_llc.contains("real LLVM LNP64 clang netcat demo object smoke passed"));
@@ -2353,6 +2362,7 @@ mod tests {
             "-ffreestanding",
             "-fno-pic",
             "-fno-jump-tables",
+            "-Itoolchain/include",
             "-Itoolchain",
         ] {
             assert!(
@@ -2502,6 +2512,10 @@ mod tests {
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf search helper execution passed"));
         assert!(real_llc_docker.contains("lnp64-sort-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sort helper execution passed"));
+        assert!(real_llc_docker.contains("lnp64-natsort-linked.elf"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf natsort package execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-calloc-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf calloc execution passed"));
         assert!(real_llc_docker.contains("lnp64-realloc-linked.elf"));

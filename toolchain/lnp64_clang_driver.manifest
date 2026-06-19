@@ -1,6 +1,6 @@
 # LNP64 Clang/lld driver contract v0.
 triple=lnp64-unknown-none
-cflags=-ffreestanding,-fno-pic,-fno-jump-tables,-Itoolchain
+cflags=-ffreestanding,-fno-pic,-fno-jump-tables,-Itoolchain/include,-Itoolchain
 assembler=llvm-mc
 assembler_flags=-triple=lnp64-unknown-none,-filetype=obj
 linker=ld.lld
