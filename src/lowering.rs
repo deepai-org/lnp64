@@ -1951,7 +1951,10 @@ mod tests {
         assert!(real_llc.contains("call-clobber-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang call-clobber object smoke passed"));
         assert!(real_llc.contains("debug-line-clang-smoke.o"));
+        assert!(real_llc.contains("debug-line-clang-smoke.s"));
         assert!(real_llc.contains("-g -gdwarf-5"));
+        assert!(real_llc.contains("grep -q '.cfi_def_cfa_offset'"));
+        assert!(real_llc.contains("grep -q '.cfi_offset 32'"));
         assert!(real_llc.contains("grep -q '.debug_info'"));
         assert!(real_llc.contains("grep -q '.debug_line'"));
         assert!(real_llc.contains("grep -q '.debug_frame'"));

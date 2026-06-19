@@ -813,12 +813,19 @@ printf 'real LLVM LNP64 clang call-clobber object smoke passed: %s\n' \
 
 debug_line_c="$build_dir/debug-line-smoke.c"
 cat >"$debug_line_c" <<'C'
+extern int debug_line_callee(int);
 __attribute__((noinline)) int debug_line_probe(int x) {
   int y = x + 7;
-  return y * 3;
+  return debug_line_callee(y * 3);
 }
 C
 
+debug_line_asm="$build_dir/debug-line-clang-smoke.s"
+"$clang" --target=lnp64-unknown-none -O0 -g -gdwarf-5 -ffreestanding \
+  -fno-pic -fno-jump-tables -fno-unwind-tables -fno-asynchronous-unwind-tables \
+  -I toolchain/include -I toolchain -S "$debug_line_c" -o "$debug_line_asm"
+grep -q '.cfi_def_cfa_offset' "$debug_line_asm"
+grep -q '.cfi_offset 32' "$debug_line_asm"
 debug_line_obj="$build_dir/debug-line-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -O0 -g -gdwarf-5 -ffreestanding \
   -fno-pic -fno-jump-tables -fno-unwind-tables -fno-asynchronous-unwind-tables \
