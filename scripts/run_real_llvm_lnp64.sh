@@ -541,6 +541,7 @@ C
 clang_obj="$build_dir/scalar-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$clang_c" -o "$clang_obj"
 test -s "$clang_obj"
 printf 'real LLVM LNP64 clang scalar compile smoke passed: %s\n' "$clang_obj"
@@ -566,6 +567,7 @@ C
 scalar_arith_obj="$build_dir/scalar-arith-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$scalar_arith_c" -o "$scalar_arith_obj"
 test -s "$scalar_arith_obj"
 scalar_arith_dump="$build_dir/scalar-arith-clang-smoke.dump"
@@ -607,6 +609,7 @@ C
 high_mul_obj="$build_dir/high-mul-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$high_mul_c" -o "$high_mul_obj"
 test -s "$high_mul_obj"
 high_mul_dump="$build_dir/high-mul-clang-smoke.dump"
@@ -663,6 +666,7 @@ C
 scalar_extend_obj="$build_dir/scalar-extend-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -O1 -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$scalar_extend_c" -o "$scalar_extend_obj"
 test -s "$scalar_extend_obj"
 scalar_extend_dump="$build_dir/scalar-extend-clang-smoke.dump"
@@ -724,6 +728,7 @@ C
 bitmanip_obj="$build_dir/bitmanip-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -O1 -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$bitmanip_c" -o "$bitmanip_obj"
 test -s "$bitmanip_obj"
 bitmanip_dump="$build_dir/bitmanip-clang-smoke.dump"
@@ -767,6 +772,7 @@ C
 csel_obj="$build_dir/csel-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -O1 -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$csel_c" -o "$csel_obj"
 test -s "$csel_obj"
 csel_dump="$build_dir/csel-clang-smoke.dump"
@@ -793,6 +799,7 @@ C
 call_clobber_obj="$build_dir/call-clobber-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -O1 -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$call_clobber_c" -o "$call_clobber_obj"
 test -s "$call_clobber_obj"
 call_clobber_dump="$build_dir/call-clobber-clang-smoke.dump"
@@ -815,7 +822,7 @@ C
 debug_line_obj="$build_dir/debug-line-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -O0 -g -gdwarf-5 -ffreestanding \
   -fno-pic -fno-jump-tables -fno-unwind-tables -fno-asynchronous-unwind-tables \
-  -I toolchain -c "$debug_line_c" -o "$debug_line_obj"
+  -I toolchain -I toolchain/include -c "$debug_line_c" -o "$debug_line_obj"
 test -s "$debug_line_obj"
 debug_line_sections="$build_dir/debug-line-clang-smoke.sections"
 "$llvm_objdump" -h --triple=lnp64-unknown-none "$debug_line_obj" \
@@ -831,6 +838,7 @@ hello_obj="$build_dir/hello-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
   -Wno-implicit-function-declaration -I toolchain \
+  -I toolchain/include \
   -c demos/hello.c -o "$hello_obj"
 test -s "$hello_obj"
 hello_dump="$build_dir/hello-clang-smoke.dump"
@@ -843,6 +851,7 @@ factorial_obj="$build_dir/factorial-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
   -Wno-implicit-function-declaration -I toolchain \
+  -I toolchain/include \
   -c demos/factorial.c -o "$factorial_obj"
 test -s "$factorial_obj"
 factorial_dump="$build_dir/factorial-clang-smoke.dump"
@@ -860,6 +869,7 @@ allocator_obj="$build_dir/allocator-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
   -Wno-implicit-function-declaration -I toolchain \
+  -I toolchain/include \
   -c demos/allocator.c -o "$allocator_obj"
 test -s "$allocator_obj"
 allocator_dump="$build_dir/allocator-clang-smoke.dump"
@@ -877,6 +887,7 @@ fibonacci_obj="$build_dir/fibonacci-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
   -Wno-implicit-function-declaration -I toolchain \
+  -I toolchain/include \
   -c demos/fibonacci.c -o "$fibonacci_obj"
 test -s "$fibonacci_obj"
 fibonacci_dump="$build_dir/fibonacci-clang-smoke.dump"
@@ -894,6 +905,7 @@ pcr_obj="$build_dir/pcr-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
   -Wno-implicit-function-declaration -I toolchain \
+  -I toolchain/include \
   -c demos/pcr.c -o "$pcr_obj"
 test -s "$pcr_obj"
 pcr_dump="$build_dir/pcr-clang-smoke.dump"
@@ -906,6 +918,7 @@ cat_obj="$build_dir/cat-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
   -Wno-implicit-function-declaration -I toolchain \
+  -I toolchain/include \
   -c demos/cat.c -o "$cat_obj"
 test -s "$cat_obj"
 cat_dump="$build_dir/cat-clang-smoke.dump"
@@ -918,6 +931,7 @@ json_parser_obj="$build_dir/json-parser-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
   -Wno-implicit-function-declaration -I toolchain \
+  -I toolchain/include \
   -c demos/json_parser.c -o "$json_parser_obj"
 test -s "$json_parser_obj"
 json_parser_dump="$build_dir/json-parser-clang-smoke.dump"
@@ -933,6 +947,7 @@ rot13_obj="$build_dir/rot13-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
   -Wno-implicit-function-declaration -I toolchain \
+  -I toolchain/include \
   -c demos/rot13.c -o "$rot13_obj"
 test -s "$rot13_obj"
 rot13_dump="$build_dir/rot13-clang-smoke.dump"
@@ -947,6 +962,7 @@ producer_consumer_obj="$build_dir/producer-consumer-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
   -Wno-implicit-function-declaration -I toolchain \
+  -I toolchain/include \
   -c demos/producer_consumer.c -o "$producer_consumer_obj"
 test -s "$producer_consumer_obj"
 producer_consumer_dump="$build_dir/producer-consumer-clang-smoke.dump"
@@ -962,6 +978,7 @@ parallel_hash_obj="$build_dir/parallel-hash-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
   -Wno-implicit-function-declaration -I toolchain \
+  -I toolchain/include \
   -c demos/parallel_hash.c -o "$parallel_hash_obj"
 test -s "$parallel_hash_obj"
 parallel_hash_dump="$build_dir/parallel-hash-clang-smoke.dump"
@@ -977,6 +994,7 @@ sqlite_lite_obj="$build_dir/sqlite-lite-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
   -Wno-implicit-function-declaration -I toolchain \
+  -I toolchain/include \
   -c demos/sqlite_lite.c -o "$sqlite_lite_obj"
 test -s "$sqlite_lite_obj"
 sqlite_lite_dump="$build_dir/sqlite-lite-clang-smoke.dump"
@@ -994,6 +1012,7 @@ ping_pong_obj="$build_dir/ping-pong-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
   -Wno-implicit-function-declaration -I toolchain \
+  -I toolchain/include \
   -c demos/ping_pong.c -o "$ping_pong_obj"
 test -s "$ping_pong_obj"
 ping_pong_dump="$build_dir/ping-pong-clang-smoke.dump"
@@ -1377,6 +1396,7 @@ netcat_obj="$build_dir/netcat-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
   -Wno-implicit-function-declaration -I toolchain \
+  -I toolchain/include \
   -c demos/netcat.c -o "$netcat_obj"
 test -s "$netcat_obj"
 netcat_dump="$build_dir/netcat-clang-smoke.dump"
@@ -1390,6 +1410,7 @@ httpd_obj="$build_dir/httpd-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
   -Wno-implicit-function-declaration -I toolchain \
+  -I toolchain/include \
   -c demos/httpd.c -o "$httpd_obj"
 test -s "$httpd_obj"
 httpd_dump="$build_dir/httpd-clang-smoke.dump"
@@ -1417,6 +1438,7 @@ C
 indirect_call_obj="$build_dir/indirect-call-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$indirect_call_c" -o "$indirect_call_obj"
 test -s "$indirect_call_obj"
 indirect_call_dump="$build_dir/indirect-call-clang-smoke.dump"
@@ -1847,6 +1869,7 @@ C
 c11_atomic_obj="$build_dir/c11-atomic-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$c11_atomic_c" -o "$c11_atomic_obj"
 test -s "$c11_atomic_obj"
 c11_atomic_dump="$build_dir/c11-atomic-clang-smoke.dump"
@@ -1876,6 +1899,7 @@ C
 inline_asm_obj="$build_dir/inline-asm-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$inline_asm_c" -o "$inline_asm_obj"
 test -s "$inline_asm_obj"
 inline_asm_dump="$build_dir/inline-asm-clang-smoke.dump"
@@ -1897,6 +1921,7 @@ exit_obj="$build_dir/exit-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
   -Wno-implicit-function-declaration -I toolchain \
+  -I toolchain/include \
   -c "$exit_c" -o "$exit_obj"
 test -s "$exit_obj"
 exit_dump="$build_dir/exit-clang-smoke.dump"
@@ -1927,6 +1952,7 @@ libc_errno_impl_c="toolchain/liblnp64_errno_min.c"
 libc_errno_impl_obj="$build_dir/liblnp64-errno-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$libc_errno_impl_c" -o "$libc_errno_impl_obj"
 test -s "$libc_errno_impl_obj"
 libc_errno_impl_dump="$build_dir/liblnp64-errno-min.dump"
@@ -2078,6 +2104,7 @@ C
 errno_obj="$build_dir/errno-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$errno_c" -o "$errno_obj"
 test -s "$errno_obj"
 errno_dump="$build_dir/errno-clang-smoke.dump"
@@ -2096,6 +2123,7 @@ C
 argc_obj="$build_dir/argc-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$argc_c" -o "$argc_obj"
 test -s "$argc_obj"
 argc_dump="$build_dir/argc-clang-smoke.dump"
@@ -2120,6 +2148,7 @@ C
 startup_obj="$build_dir/startup-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$startup_c" -o "$startup_obj"
 test -s "$startup_obj"
 startup_dump="$build_dir/startup-clang-smoke.dump"
@@ -2195,6 +2224,7 @@ C
 compare_obj="$build_dir/compare-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$compare_c" -o "$compare_obj"
 test -s "$compare_obj"
 compare_dump="$build_dir/compare-clang-smoke.dump"
@@ -2239,6 +2269,7 @@ C
 unsigned_compare_obj="$build_dir/unsigned-compare-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$unsigned_compare_c" -o "$unsigned_compare_obj"
 test -s "$unsigned_compare_obj"
 unsigned_compare_dump="$build_dir/unsigned-compare-clang-smoke.dump"
@@ -2274,6 +2305,7 @@ C
 signed_load_obj="$build_dir/signed-load-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$signed_load_c" -o "$signed_load_obj"
 test -s "$signed_load_obj"
 signed_load_dump="$build_dir/signed-load-clang-smoke.dump"
@@ -2300,6 +2332,7 @@ C
 wide_const_obj="$build_dir/wide-const-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$wide_const_c" -o "$wide_const_obj"
 test -s "$wide_const_obj"
 wide_const_dump="$build_dir/wide-const-clang-smoke.dump"
@@ -2337,6 +2370,7 @@ C
 stack_aggregate_obj="$build_dir/stack-aggregate-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$stack_aggregate_c" -o "$stack_aggregate_obj"
 test -s "$stack_aggregate_obj"
 stack_aggregate_dump="$build_dir/stack-aggregate-clang-smoke.dump"
@@ -2488,6 +2522,7 @@ C
 libc_string_obj="$build_dir/libc-string-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$libc_string_c" -o "$libc_string_obj"
 test -s "$libc_string_obj"
 libc_string_dump="$build_dir/libc-string-clang-smoke.dump"
@@ -4285,6 +4320,7 @@ C
 stack_args_obj="$build_dir/stack-args-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$stack_args_c" -o "$stack_args_obj"
 test -s "$stack_args_obj"
 stack_args_dump="$build_dir/stack-args-clang-smoke.dump"

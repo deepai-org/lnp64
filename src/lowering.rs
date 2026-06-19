@@ -1429,6 +1429,25 @@ mod tests {
             assert!(minilibc_intrinsic_source.contains("#include <lnp64/intrinsics.h>"));
             assert!(!minilibc_intrinsic_source.contains("#include \"lnp64_intrinsics.h\""));
         }
+        let real_llc_lines: Vec<_> = real_llc.lines().collect();
+        for (index, line) in real_llc_lines.iter().enumerate() {
+            if line.contains("-I toolchain") && line.trim_end().ends_with('\\') {
+                let next = real_llc_lines
+                    .get(index + 1)
+                    .expect("continued include line must have a following line");
+                assert!(
+                    line.contains("-I toolchain/include") || next.contains("-I toolchain/include"),
+                    "real LLVM compile line {} must include installed target headers",
+                    index + 1
+                );
+            }
+            assert!(
+                !line.contains("-I toolchain -c")
+                    || line.contains("-I toolchain -I toolchain/include -c"),
+                "single-line real LLVM compile line {} must include installed target headers",
+                index + 1
+            );
+        }
         let rows = llvm_gate_rows(gate_manifest);
         let mut gates = std::collections::BTreeSet::new();
         let mut commands = std::collections::BTreeMap::new();
