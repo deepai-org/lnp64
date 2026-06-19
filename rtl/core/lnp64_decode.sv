@@ -31,8 +31,35 @@ module lnp64_decode (
             8'h10: begin
                 dec.opcode = LNP64_OP_ADD;
             end
+            8'h1b: begin
+                dec.opcode = LNP64_OP_CMP;
+            end
             8'h20: begin
                 dec.opcode = LNP64_OP_JMP;
+                dec.imm = {{8{instr[23]}}, instr[23:0]};
+            end
+            8'h21: begin
+                dec.opcode = LNP64_OP_BRANCH_EQ;
+                dec.imm = {{8{instr[23]}}, instr[23:0]};
+            end
+            8'h22: begin
+                dec.opcode = LNP64_OP_BRANCH_NE;
+                dec.imm = {{8{instr[23]}}, instr[23:0]};
+            end
+            8'h23: begin
+                dec.opcode = LNP64_OP_BRANCH_LT;
+                dec.imm = {{8{instr[23]}}, instr[23:0]};
+            end
+            8'h24: begin
+                dec.opcode = LNP64_OP_BRANCH_GT;
+                dec.imm = {{8{instr[23]}}, instr[23:0]};
+            end
+            8'h25: begin
+                dec.opcode = LNP64_OP_BRANCH_LE;
+                dec.imm = {{8{instr[23]}}, instr[23:0]};
+            end
+            8'h26: begin
+                dec.opcode = LNP64_OP_BRANCH_GE;
                 dec.imm = {{8{instr[23]}}, instr[23:0]};
             end
             8'h30: begin
@@ -68,7 +95,14 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_NOP ||
             dec.opcode == LNP64_OP_LI32 ||
             dec.opcode == LNP64_OP_ADD ||
+            dec.opcode == LNP64_OP_CMP ||
             dec.opcode == LNP64_OP_JMP ||
+            dec.opcode == LNP64_OP_BRANCH_EQ ||
+            dec.opcode == LNP64_OP_BRANCH_NE ||
+            dec.opcode == LNP64_OP_BRANCH_LT ||
+            dec.opcode == LNP64_OP_BRANCH_GT ||
+            dec.opcode == LNP64_OP_BRANCH_LE ||
+            dec.opcode == LNP64_OP_BRANCH_GE ||
             dec.opcode == LNP64_OP_LD ||
             dec.opcode == LNP64_OP_ST ||
             dec.opcode == LNP64_OP_YIELD ||

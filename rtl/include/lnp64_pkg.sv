@@ -81,6 +81,13 @@ package lnp64_pkg;
         LNP64_OP_ALLOC_SIZE   = 16'h0022,
         LNP64_OP_CLASSIFY     = 16'h0023,
         LNP64_OP_SERVICELET_CTL=16'h0024,
+        LNP64_OP_CMP          = 16'h0025,
+        LNP64_OP_BRANCH_EQ    = 16'h0026,
+        LNP64_OP_BRANCH_NE    = 16'h0027,
+        LNP64_OP_BRANCH_LT    = 16'h0028,
+        LNP64_OP_BRANCH_GT    = 16'h0029,
+        LNP64_OP_BRANCH_LE    = 16'h002a,
+        LNP64_OP_BRANCH_GE    = 16'h002b,
         LNP64_OP_UNSUPPORTED  = 16'h00ff
     } lnp64_opcode_e;
 

@@ -253,6 +253,7 @@ bash scripts/run_rtl_s0.sh
 bash scripts/run_rtl_top_program_smoke.sh
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_smoke.s
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_return_12.c
+bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_branch_if.c
 cargo run -- asm-flat-exec tests/rtl/programs/top_smoke.s -o /tmp/top_smoke.hex
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_smoke.hex
 bash scripts/run_rtl_m1.sh

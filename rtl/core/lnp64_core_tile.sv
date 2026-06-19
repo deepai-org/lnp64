@@ -78,6 +78,9 @@ module lnp64_core_tile #(
     logic [63:0] sram [0:15];
     logic [31:0] program_rom [0:PROGRAM_WORDS-1];
     logic [15:0] errno_reg;
+    logic cmp_zero;
+    logic cmp_negative;
+    logic cmp_greater;
     logic pending_unsupported;
     logic [31:0] command_pc;
     logic [63:0] mem_addr;
@@ -257,6 +260,9 @@ module lnp64_core_tile #(
             unsupported_failed_closed <= 1'b0;
             raw_authority_visible <= 1'b0;
             errno_reg <= LNP64_ERR_OK;
+            cmp_zero <= 1'b0;
+            cmp_negative <= 1'b0;
+            cmp_greater <= 1'b0;
             pending_unsupported <= 1'b0;
             command_pc <= 32'd0;
             for (i = 0; i < 32; i = i + 1) begin
@@ -322,8 +328,53 @@ module lnp64_core_tile #(
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
+                            LNP64_OP_CMP: begin
+                                cmp_zero <= gpr[dec.rd] == gpr[dec.rs1];
+                                cmp_negative <= $signed(gpr[dec.rd]) < $signed(gpr[dec.rs1]);
+                                cmp_greater <= $signed(gpr[dec.rd]) > $signed(gpr[dec.rs1]);
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
                             LNP64_OP_JMP: begin
                                 pc <= pc + dec.imm;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_BRANCH_EQ: begin
+                                pc <= cmp_zero ? pc + dec.imm : pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_BRANCH_NE: begin
+                                pc <= !cmp_zero ? pc + dec.imm : pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_BRANCH_LT: begin
+                                pc <= cmp_negative ? pc + dec.imm : pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_BRANCH_GT: begin
+                                pc <= cmp_greater ? pc + dec.imm : pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_BRANCH_LE: begin
+                                pc <= (cmp_zero || cmp_negative) ? pc + dec.imm : pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_BRANCH_GE: begin
+                                pc <= (cmp_zero || cmp_greater) ? pc + dec.imm : pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;

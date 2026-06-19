@@ -20,7 +20,7 @@ use std::path::PathBuf;
 
 use asm::Program;
 use emulator::{Machine, PreparedExecVma};
-use isa::{Instr, MemRef, Reg, Target, Value, Width};
+use isa::{Condition, Instr, MemRef, Reg, Target, Value, Width};
 use loader::{
     ExecEntry, ExecPlan, ExecPlanDescriptorOptions, ExecutableProvenance, LoaderOptions,
     MemoryType, VmaProtection, VmaRecord,
@@ -254,7 +254,12 @@ fn encode_flat_exec_instr(program: &Program, pc: usize, instr: &Instr) -> Result
         Instr::Nop => Ok(enc_reg(0x00, Reg(0))),
         Instr::Li(rd, value) => Ok(enc_ri(0x01, *rd, value_imm16(value)?)),
         Instr::Add(rd, rs1, rs2) => Ok(enc_rrr(0x10, *rd, *rs1, *rs2)),
+        Instr::Cmp(lhs, rhs) => Ok(enc_rrr(0x1b, *lhs, *rhs, Reg(0))),
         Instr::Jmp(target) => Ok(enc_branch(0x20, branch_delta(program, pc, target)?)),
+        Instr::Branch(condition, target) => Ok(enc_branch(
+            flat_exec_branch_opcode(*condition)?,
+            branch_delta(program, pc, target)?,
+        )),
         Instr::Ld(rd, MemRef::BaseOffset(base, offset), Width::Double) => {
             Ok(enc_mem(0x30, *rd, *base, imm14(*offset, "LD offset")?))
         }
@@ -268,7 +273,21 @@ fn encode_flat_exec_instr(program: &Program, pc: usize, instr: &Instr) -> Result
         }
         Instr::Exit(src) => Ok(enc_reg(0x3a, *src)),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, ADD, JMP, LD/ST.D base+offset, ERRNO_GET/SET, ENV_GET, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, ADD, CMP, JMP, signed conditional branch, LD/ST.D base+offset, ERRNO_GET/SET, ENV_GET, EXIT"
+        )),
+    }
+}
+
+fn flat_exec_branch_opcode(condition: Condition) -> Result<u8, String> {
+    match condition {
+        Condition::Eq => Ok(0x21),
+        Condition::Ne => Ok(0x22),
+        Condition::Lt => Ok(0x23),
+        Condition::Gt => Ok(0x24),
+        Condition::Le => Ok(0x25),
+        Condition::Ge => Ok(0x26),
+        other => Err(format!(
+            "asm-flat-exec does not yet encode unsigned branch condition {other:?}"
         )),
     }
 }
@@ -748,6 +767,39 @@ mod tests {
                 "01500002\n",
                 "56328000\n",
                 "3a200000\n",
+            )
+        );
+    }
+
+    #[test]
+    fn asm_flat_exec_encodes_cmp_and_signed_branch_subset() {
+        let source = r#"
+            .text
+              LI r1, 3
+              LI r2, 3
+              CMP r1, r2
+              BEQ equal
+              LI r3, 4
+              JMP done
+            equal:
+              LI r3, 17
+            done:
+              EXIT r3
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+
+        assert_eq!(
+            hex,
+            concat!(
+                "01080003\n",
+                "01100003\n",
+                "1b088000\n",
+                "21000003\n",
+                "01180004\n",
+                "20000002\n",
+                "01180011\n",
+                "3a180000\n",
             )
         );
     }
