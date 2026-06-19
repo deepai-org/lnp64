@@ -413,6 +413,7 @@ LNP64_RTL_FAST=1 LNP64_RTL_TOP_PROGRAM_FILTER='demos/*.s top_heap_byte_lanes.c' 
 LNP64_RTL_FAST=1 LNP64_RTL_TOP_PROGRAM_FILTER='top_dma_revoke_stale.s' bash scripts/run_rtl_top_program_manifest.sh
 LNP64_RTL_TOP_PROGRAM_QUIET=1 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_dma_revoke_stale.s
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_manifest.sh tests/rtl/programs/top_linked_high_mul.c
+LNP64_RTL_FAST=1 LNP64_RTL_TOP_PROGRAM_FILTER='top_linked_clone_join.c' bash scripts/run_rtl_top_program_manifest.sh
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_smoke.s
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_immediate_alu.s
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_extend.s
