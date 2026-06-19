@@ -372,6 +372,13 @@
       "status": "active",
       "rtl_gate": "scripts/run_rtl_top_linked_llvm_smoke.sh",
       "comparison": "retire_trace_and_final_state"
+    },
+    {
+      "source": "tests/rtl/programs/top_linked_set_pcr.c",
+      "required_features": ["llvm_clang_object", "llvm_mc_startup_object", "llvm_lld_static_link", "elf_flat_export", "startup_call_main", "core", "call_return", "set_pcr", "get_pcr", "thread_metadata", "signal_metadata", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_linked_llvm_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
     }
   ],
   "compiler_flat_programs": [
