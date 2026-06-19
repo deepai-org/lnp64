@@ -102,8 +102,14 @@ module lnp64_decode (
             8'h30: begin
                 dec.opcode = LNP64_OP_LD;
             end
+            8'h32: begin
+                dec.opcode = LNP64_OP_LD_B;
+            end
             8'h33: begin
                 dec.opcode = LNP64_OP_ST;
+            end
+            8'h35: begin
+                dec.opcode = LNP64_OP_ST_B;
             end
             8'h38: begin
                 dec.opcode = LNP64_OP_GET_ERRNO;
@@ -119,6 +125,9 @@ module lnp64_decode (
             end
             8'h56: begin
                 dec.opcode = LNP64_OP_ENV_GET;
+            end
+            8'h47: begin
+                dec.opcode = LNP64_OP_ALLOC;
             end
             8'ha7: begin
                 dec.opcode = LNP64_OP_UDIV;
@@ -159,9 +168,12 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_CALL ||
             dec.opcode == LNP64_OP_RET ||
             dec.opcode == LNP64_OP_LD ||
+            dec.opcode == LNP64_OP_LD_B ||
             dec.opcode == LNP64_OP_ST ||
+            dec.opcode == LNP64_OP_ST_B ||
             dec.opcode == LNP64_OP_YIELD ||
             dec.opcode == LNP64_OP_ENV_GET ||
+            dec.opcode == LNP64_OP_ALLOC ||
             dec.opcode == LNP64_OP_GET_ERRNO ||
             dec.opcode == LNP64_OP_SET_ERRNO ||
             dec.opcode == LNP64_OP_UDIV ||

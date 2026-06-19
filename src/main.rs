@@ -315,12 +315,25 @@ fn encode_flat_exec_instr(
             *base,
             imm14(*offset, "LD offset")?,
         )]),
+        Instr::Ld(rd, MemRef::BaseOffset(base, offset), Width::Byte) => Ok(vec![enc_mem(
+            0x32,
+            *rd,
+            *base,
+            imm14(*offset, "LD.B offset")?,
+        )]),
         Instr::St(MemRef::BaseOffset(base, offset), src, Width::Double) => Ok(vec![enc_mem(
             0x33,
             *src,
             *base,
             imm14(*offset, "ST offset")?,
         )]),
+        Instr::St(MemRef::BaseOffset(base, offset), src, Width::Byte) => Ok(vec![enc_mem(
+            0x35,
+            *src,
+            *base,
+            imm14(*offset, "ST.B offset")?,
+        )]),
+        Instr::Alloc(rd, bytes) => Ok(vec![enc_rrr(0x47, *rd, *bytes, Reg(0))]),
         Instr::ErrnoGet(rd) => Ok(vec![enc_reg(0x38, *rd)]),
         Instr::ErrnoSet(src) => Ok(vec![enc_reg(0x39, *src)]),
         Instr::EnvGet(rd, key, index_or_buf, len_or_flags) => Ok(vec![enc_rrrr(
@@ -332,7 +345,7 @@ fn encode_flat_exec_instr(
         )]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, MOV, ADD, SUB, MUL, UDIV/UREM, AND/OR/XOR/NOT, LSL/LSR, CMP, JMP/CALL/RET, signed conditional branch, LD/ST.D base+offset, ERRNO_GET/SET, ENV_GET, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, MOV, ADD, SUB, MUL, UDIV/UREM, AND/OR/XOR/NOT, LSL/LSR, CMP, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.B, ALLOC, ERRNO_GET/SET, ENV_GET, EXIT"
         )),
     }
 }
@@ -1080,6 +1093,33 @@ mod tests {
                 "01100002\n",
                 "10084400\n",
                 "1f000000\n",
+            )
+        );
+    }
+
+    #[test]
+    fn asm_flat_exec_encodes_alloc_and_byte_load_store_subset() {
+        let source = r#"
+            .text
+              LI r1, 2
+              ALLOC r2, r1
+              LI r3, 65
+              ST.B [r2, 0], r3
+              LD.B r4, [r2, 0]
+              EXIT r4
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+
+        assert_eq!(
+            hex,
+            concat!(
+                "01080002\n",
+                "47104000\n",
+                "01180041\n",
+                "35188000\n",
+                "32208000\n",
+                "3a200000\n",
             )
         );
     }
