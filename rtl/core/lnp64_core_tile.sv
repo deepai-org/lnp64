@@ -2010,6 +2010,8 @@ module lnp64_core_tile #(
         retire_submit_next.result_value = flat_retire_result_value(dec.opcode);
         retire_submit_next.errno = flat_retire_errno_value(dec.opcode);
         retire_submit_next.status = retire_status_from_errno(retire_submit_next.errno);
+        retire_submit_next.latency_class = active_thread_context.latency_class;
+        retire_submit_next.wait_source = {32'd0, active_thread_context.wait_generation};
         retire_submit_next.event_id = active_thread_event_pending ? next_op_id : 32'd0;
         retire_submit_next.fault_id = active_thread_fault_pending ? next_op_id : 32'd0;
 
@@ -2022,7 +2024,8 @@ module lnp64_core_tile #(
         thread_submit_next.domain_id = active_thread_context.domain_id;
         thread_submit_next.domain_gen = active_thread_context.domain_gen;
         thread_submit_next.state = active_thread_context.state;
-        thread_submit_next.wait_generation = 32'd1;
+        thread_submit_next.latency_class = active_thread_context.latency_class;
+        thread_submit_next.wait_generation = active_thread_context.wait_generation;
         thread_submit_next.active_location = TILE_ID[31:0];
         object_rsp_reader_fd = rsp.event_mask[31:0];
         object_rsp_writer_fd = rsp.event_mask[63:32];
