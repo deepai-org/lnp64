@@ -264,6 +264,10 @@ objects. If a spelling such as `POLL_FD_DYN` survives in a bootstrap assembler
 or emulator helper, it must be documented as a compatibility alias and either
 lowered to the native operation or removed before ISA freeze.
 
+The ISA does not add a general syscall instruction. Linux/POSIX syscall-number
+compatibility, where needed, is a runtime/personality ABI over native calls,
+control FDRs, gate calls, unsupported-opcode upcalls, and ordinary functions.
+
 Mandatory object profiles have frozen state-machine shapes:
 
 *   **`counter`:** `INVALID -> READY -> WAITING/READY -> REVOKING -> DESTROYED`.
@@ -658,13 +662,16 @@ implemented as syscall traps.
     *   *Action:* Compares two registers and sets the hardware condition flags (Zero, Carry, Negative, Overflow).
 *   **`BEQ`, `BNE`, `BLT`, `BGT`**
     *   *Action:* Branch if Equal, Not Equal, Less Than, Greater Than (evaluates condition flags).
-*   **`AUIPC` / PC-relative `LA` contract**
-    *   *Action:* The v1 software ABI defines a reloc-friendly PC-relative
-        address formation pair. Toolchains may expose it as `AUIPC` plus an
-        add/load low relocation or as an explicit `LA` pseudo that lowers to the
-        same fixed binary sequence. The hardware contract is that position
-        independent code can form code/data addresses without loader-specific
-        instruction rewriting.
+*   **`AUIPC` address materialization contract**
+    *   *Action:* The v1 software ABI has exactly one compiler-visible
+        PC-relative symbol materialization scheme. Direct code/data addresses use
+        `AUIPC rd, %pcrel_hi(symbol)` followed by
+        `ADDI rd, rd, %pcrel_lo(symbol)`. Address slots, large constants, GOT-like
+        entries, and local-exec TLS offsets use `AUIPC tmp, %pcrel_hi(slot)`
+        followed by `LD rd, tmp, %pcrel_lo(slot)`. Assemblers may accept `LA` as a
+        human convenience only if it expands to this exact sequence before
+        object emission; backend, lld, loader, and conformance tests must not
+        depend on any alternate pseudo-contract.
 
 ## 9. Hybrid Resource-Compute Instructions
 Because "everything is a capability object" is the native hardware reality, we need instructions to move data between the general compute realm (GPRs) and the resource realm (FDRs and PCRs).

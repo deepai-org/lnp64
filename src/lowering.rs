@@ -1346,12 +1346,14 @@ mod tests {
         let real_clang_target = include_str!("../clang/lib/Basic/Targets/LNP64.cpp");
         let llvm_dockerfile = include_str!("../Dockerfile.llvm");
         let errno_header = include_str!("../toolchain/include/errno.h");
+        let netinet_in_header = include_str!("../toolchain/include/netinet/in.h");
         let search_header = include_str!("../toolchain/include/search.h");
         let pthread_header = include_str!("../toolchain/include/pthread.h");
         let semaphore_header = include_str!("../toolchain/include/semaphore.h");
         let signal_header = include_str!("../toolchain/include/signal.h");
         let stdlib_header = include_str!("../toolchain/include/stdlib.h");
         let sys_mman_header = include_str!("../toolchain/include/sys/mman.h");
+        let sys_socket_header = include_str!("../toolchain/include/sys/socket.h");
         let sys_timerfd_header = include_str!("../toolchain/include/sys/timerfd.h");
         let time_header = include_str!("../toolchain/include/time.h");
         let unistd_header = include_str!("../toolchain/include/unistd.h");
@@ -1481,6 +1483,7 @@ mod tests {
             "clang_netbsd_signal_fault_child_object",
             "clang_netbsd_timer_child_object",
             "clang_netbsd_mmap_child_object",
+            "clang_netbsd_socket_loopback_child_object",
             "clang_minilibc_meta_impl_object",
             "clang_meta_libc_object",
             "clang_minilibc_random_impl_object",
@@ -1594,6 +1597,8 @@ mod tests {
             "netbsd_timer_child_run_elf",
             "netbsd_mmap_child_static_link",
             "netbsd_mmap_child_run_elf",
+            "netbsd_socket_loopback_child_static_link",
+            "netbsd_socket_loopback_child_run_elf",
             "metadata_libc_static_link",
             "metadata_libc_run_elf",
         ] {
@@ -2323,9 +2328,15 @@ mod tests {
         assert!(libc_socket_min.contains("int setsockopt(int fd"));
         assert!(libc_socket_min.contains("long send(int fd"));
         assert!(libc_socket_min.contains("long recv(int fd"));
+        assert!(libc_socket_min.contains("lnp64_complete_status"));
+        assert!(libc_socket_min.contains("lnp64_errno_store(lnp64_errno_load())"));
         assert!(libc_socket_min.contains("__lnp_object_ctl"));
         assert!(libc_socket_min.contains("__lnp_push"));
         assert!(libc_socket_min.contains("__lnp_pull"));
+        assert!(sys_socket_header.contains("#define AF_INET"));
+        assert!(sys_socket_header.contains("#define MSG_NOSIGNAL"));
+        assert!(sys_socket_header.contains("int socket(int domain, int type, int protocol);"));
+        assert!(netinet_in_header.contains("#define IPPROTO_TCP"));
         assert!(real_llc.contains("socket-libc-clang-smoke.o"));
         assert!(real_llc.contains("socket(AF_INET, SOCK_STREAM, 0)"));
         assert!(real_llc.contains("setsockopt(server, SOL_SOCKET, SO_REUSEADDR"));
@@ -2606,6 +2617,11 @@ mod tests {
         assert!(real_llc.contains("userland/mmap_test_clang.c"));
         assert!(real_llc.contains("netbsd-mmap-test-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang NetBSD mmap child object passed"));
+        assert!(real_llc.contains("userland/socket_loopback_test_clang.c"));
+        assert!(real_llc.contains("netbsd-socket-loopback-test-clang-smoke.o"));
+        assert!(
+            real_llc.contains("real LLVM LNP64 clang NetBSD socket loopback child object passed")
+        );
         assert!(real_llc.contains("toolchain/liblnp64_fd_min.c"));
         assert!(libc_fd_min.contains("__lnp_pull"));
         assert!(libc_fd_min.contains("__lnp_push"));
@@ -2748,6 +2764,9 @@ mod tests {
         assert!(real_llc.contains(r#""$netbsd_mmap_test_obj" \"#));
         assert!(real_llc.contains(r#""$libc_vma_impl_obj" "$libc_errno_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld NetBSD mmap child link passed"));
+        assert!(real_llc.contains("lnp64-netbsd-socket-loopback-test-linked.elf"));
+        assert!(real_llc.contains(r#""$netbsd_socket_loopback_test_obj" "$libc_socket_impl_obj""#));
+        assert!(real_llc.contains("real LLVM LNP64 lld NetBSD socket loopback child link passed"));
         assert!(real_llc.contains("lnp64-meta-libc-linked.elf"));
         assert!(real_llc.contains(
             r#""$meta_libc_obj" "$libc_meta_impl_obj" \
@@ -2796,7 +2815,7 @@ mod tests {
         assert!(real_llc.contains("lnp64-socket-libc-linked.elf"));
         assert!(real_llc.contains(
             r#""$socket_libc_obj" \
-  "$libc_socket_impl_obj""#
+  "$libc_socket_impl_obj" "$libc_errno_impl_obj""#
         ));
         assert!(real_llc.contains("real LLVM LNP64 lld socket libc link smoke passed"));
         assert!(real_llc.contains("lnp64-netbsd-personality-clang-linked.elf"));
@@ -3702,6 +3721,7 @@ mod tests {
             "real_netbsd_signal_fault_child_execution",
             "real_netbsd_timer_child_execution",
             "real_netbsd_mmap_child_execution",
+            "real_netbsd_socket_loopback_child_execution",
             "real_metadata_libc_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
@@ -3792,6 +3812,7 @@ mod tests {
             "real_netbsd_signal_fault_child_execution",
             "real_netbsd_timer_child_execution",
             "real_netbsd_mmap_child_execution",
+            "real_netbsd_socket_loopback_child_execution",
             "real_metadata_libc_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
@@ -4897,6 +4918,7 @@ mod tests {
             "netbsd_signal_fault_child",
             "netbsd_timer_child",
             "netbsd_mmap_child",
+            "netbsd_socket_loopback_child",
             "netbsd_personality_clang",
             "netcat",
             "httpd",
@@ -4937,6 +4959,7 @@ mod tests {
         assert_eq!(statuses["netbsd_signal_fault_child"], "partial");
         assert_eq!(statuses["netbsd_timer_child"], "partial");
         assert_eq!(statuses["netbsd_mmap_child"], "partial");
+        assert_eq!(statuses["netbsd_socket_loopback_child"], "partial");
         assert_eq!(statuses["netbsd_personality_clang"], "partial");
         assert_eq!(statuses["netcat"], "partial");
         assert_eq!(statuses["httpd"], "partial");
@@ -5672,6 +5695,7 @@ mod tests {
             "netbsd_signal_fault_child",
             "netbsd_timer_child",
             "netbsd_mmap_child",
+            "netbsd_socket_loopback_child",
             "netbsd_personality_clang",
             "simple_libc",
         ] {

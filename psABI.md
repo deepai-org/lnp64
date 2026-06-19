@@ -78,6 +78,20 @@ The current compiler treats `r1` through `r29` as caller-clobbered. There is no
 callee-saved GPR set in the v0 compiler ABI. Runtimes that need stable register
 state across calls must spill it explicitly.
 
+## Address Materialization
+
+All compiler-generated symbol materialization uses one explicit sequence:
+
+- direct address: `AUIPC rd, %pcrel_hi(symbol)` followed by
+  `ADDI rd, rd, %pcrel_lo(symbol)`;
+- address, constant, descriptor, or TLS offset through a slot:
+  `AUIPC tmp, %pcrel_hi(slot)` followed by `LD rd, tmp, %pcrel_lo(slot)`.
+
+Assembler `LA` is permitted only as a source macro that expands to the direct
+AUIPC+ADDI sequence before object emission. LLVM, lld, object tests, and the
+loader must use the explicit relocation pair from `object_format.md`; they must
+not create a second pseudo-address contract.
+
 ## Stack and Local Storage
 
 `r31` points at the current thread's stack/local region. Compiler-generated
@@ -143,8 +157,24 @@ Auxv key numbers and the dynamic-loader contract are not frozen in v0.
 
 ## TLS and Errno
 
-The thread pointer is read and written through the `TP` PCR. The C compatibility
-surface uses this for thread-specific storage tests.
+The thread pointer is read and written through the `TP` PCR. `TLS_BASE` is the
+compiler-facing PCR spelling for the same architectural value. LLVM may model it
+as a target thread-pointer register after an explicit `GET_PCR TLS_BASE`
+materialization or as a fixed live-in when the process-entry contract guarantees
+the value is already resident.
+
+Local-exec TLS is the required first TLS model:
+
+- `GET_PCR r_base, TLS_BASE` materializes the thread pointer.
+- If the TP-relative offset is encodable, the backend may use an immediate add.
+- Otherwise the backend loads a linker-filled TP-relative offset slot using the
+  canonical AUIPC+LD sequence and adds it to `r_base`.
+- `R_LNP64_TLS_TPREL64` fills 64-bit TP-relative offset slots;
+  `R_LNP64_TLS_TPREL_SLOT64` marks slots intended for the canonical local-exec
+  materialization path.
+
+General-dynamic and initial-exec TLS are future loader/personality models, not
+v0 compiler requirements.
 
 `errno` is hardware-thread-local through `ERRNO_GET` and `ERRNO_SET`, but it is
 a C/POSIX compatibility view rather than the native ISA error channel. Native
@@ -153,6 +183,33 @@ The C runtime translates those native errors to POSIX `-1` plus thread-local
 `errno` at public API boundaries. A global `errno` symbol, when present in C
 source, is synchronized with that hardware-thread-local errno path by compiler
 lowering.
+
+## Native Capability Call ABI
+
+Native capability calls are compiler-visible intrinsics over `GATE_CALL` and
+`GATE_RETURN`, not syscalls.
+
+- Call instruction shape: `GATE_CALL r_result, r_gate_fd, r_arg0, r_arg1`.
+- `r_gate_fd` holds a call-gate FDR/capability handle.
+- `r_arg0` and `r_arg1` carry the two fast scalar argument words. Larger payloads,
+  buffers, and capabilities are passed through pre-authorized FDRs or typed
+  argument records named by those registers.
+- Synchronous success returns a nonnegative result or small operation value in
+  `r_result`; failure returns a negative architectural error.
+- Asynchronous success returns a nonnegative operation id, event token, or
+  completion handle as defined by the gate profile. Completion payloads are read
+  from the configured event/counter/queue object with `AWAIT_EX` and `PULL` or
+  profile-specific `GET_META`.
+- Handoff success returns zero or a nonnegative handoff token when the caller
+  remains live; otherwise the current activation is ended according to the gate
+  profile.
+- `GATE_RETURN r_result, r_value0, r_value1` returns two fast scalar result words
+  to a trusted continuation. `r_result` reports the return commit status using
+  the same nonnegative-success/negative-error convention.
+- All caller-visible GPRs except the encoded result register are caller-clobbered
+  unless a future psABI revision defines a callee-save set. `LR`, `TP`, and stack
+  pointer semantics follow the ordinary function ABI unless the gate profile
+  explicitly enters a separate domain/thread context.
 
 ## Signals
 

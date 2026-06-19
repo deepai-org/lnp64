@@ -13988,6 +13988,8 @@ impl CodeGen {
         let revents = self.alloc_reg()?;
         let await_result = self.alloc_reg()?;
         let minus_one = self.alloc_reg()?;
+        let pollnval = self.alloc_reg()?;
+        let probe_ok = self.new_label("poll_probe_ok");
 
         self.text.push(format!("{scan_label}:"));
         self.text.push(format!("  LD r{fds}, [r31, {fds_slot}]"));
@@ -13995,6 +13997,7 @@ impl CodeGen {
         self.text.push(format!("  LI r{i}, 0"));
         self.text.push(format!("  LI r{count}, 0"));
         self.text.push(format!("  LI r{one}, 1"));
+        self.text.push(format!("  LI r{pollnval}, 32"));
         self.text.push(format!("  LI r{stride}, 24"));
         self.text.push(format!("{scan_loop}:"));
         self.text.push(format!("  CMP r{i}, r{nfds}"));
@@ -14005,6 +14008,10 @@ impl CodeGen {
         self.text.push(format!("  LD r{events}, [r{entry}, 8]"));
         self.text
             .push(format!("  WAITABLE_PROBE r{revents}, r{fd}, r{events}"));
+        self.text.push(format!("  CMP r{revents}, r0"));
+        self.text.push(format!("  BGE {probe_ok}"));
+        self.text.push(format!("  MOV r{revents}, r{pollnval}"));
+        self.text.push(format!("{probe_ok}:"));
         self.text.push(format!("  ST [r{entry}, 16], r{revents}"));
         self.text.push(format!("  CMP r{revents}, r0"));
         self.text.push(format!("  BEQ {scan_next}"));

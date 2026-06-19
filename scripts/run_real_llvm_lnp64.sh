@@ -3590,6 +3590,19 @@ grep -q 'call ' "$netbsd_mmap_test_dump"
 printf 'real LLVM LNP64 clang NetBSD mmap child object passed: %s\n' \
   "$netbsd_mmap_test_obj"
 
+netbsd_socket_loopback_test_obj="$build_dir/netbsd-socket-loopback-test-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
+  -c userland/socket_loopback_test_clang.c -o "$netbsd_socket_loopback_test_obj"
+test -s "$netbsd_socket_loopback_test_obj"
+netbsd_socket_loopback_test_dump="$build_dir/netbsd-socket-loopback-test-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$netbsd_socket_loopback_test_obj" \
+  >"$netbsd_socket_loopback_test_dump"
+grep -q 'call ' "$netbsd_socket_loopback_test_dump"
+printf 'real LLVM LNP64 clang NetBSD socket loopback child object passed: %s\n' \
+  "$netbsd_socket_loopback_test_obj"
+
 meta_libc_c="$build_dir/meta-libc-smoke.c"
 cat >"$meta_libc_c" <<'C'
 #include <errno.h>
@@ -5111,6 +5124,15 @@ test -s "$netbsd_mmap_test_elf"
 printf 'real LLVM LNP64 lld NetBSD mmap child link passed: %s\n' \
   "$netbsd_mmap_test_elf"
 
+netbsd_socket_loopback_test_elf="$build_dir/lnp64-netbsd-socket-loopback-test-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$netbsd_socket_loopback_test_elf" "$crt0_obj" \
+  "$netbsd_socket_loopback_test_obj" "$libc_socket_impl_obj" \
+  "$libc_poll_impl_obj" "$libc_fd_impl_obj" "$libc_errno_impl_obj"
+test -s "$netbsd_socket_loopback_test_elf"
+printf 'real LLVM LNP64 lld NetBSD socket loopback child link passed: %s\n' \
+  "$netbsd_socket_loopback_test_elf"
+
 meta_libc_elf="$build_dir/lnp64-meta-libc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
   -o "$meta_libc_elf" "$crt0_obj" "$meta_libc_obj" "$libc_meta_impl_obj" \
@@ -5152,7 +5174,7 @@ printf 'real LLVM LNP64 lld signal libc link smoke passed: %s\n' \
 socket_libc_elf="$build_dir/lnp64-socket-libc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
   -o "$socket_libc_elf" "$crt0_obj" "$socket_libc_obj" \
-  "$libc_socket_impl_obj"
+  "$libc_socket_impl_obj" "$libc_errno_impl_obj"
 test -s "$socket_libc_elf"
 printf 'real LLVM LNP64 lld socket libc link smoke passed: %s\n' \
   "$socket_libc_elf"
@@ -5205,7 +5227,7 @@ netcat_elf="$build_dir/lnp64-netcat-clang-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
   -o "$netcat_elf" "$crt0_obj" "$netcat_obj" "$libc_fd_impl_obj" \
   "$libc_alloc_impl_obj" "$libc_string_impl_obj" "$libc_poll_impl_obj" \
-  "$libc_socket_impl_obj"
+  "$libc_socket_impl_obj" "$libc_errno_impl_obj"
 test -s "$netcat_elf"
 printf 'real LLVM LNP64 lld netcat demo link smoke passed: %s\n' \
   "$netcat_elf"
@@ -5214,7 +5236,7 @@ httpd_elf="$build_dir/lnp64-httpd-clang-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
   -o "$httpd_elf" "$crt0_obj" "$httpd_obj" "$libc_fd_impl_obj" \
   "$libc_alloc_impl_obj" "$libc_string_impl_obj" "$libc_poll_impl_obj" \
-  "$libc_socket_impl_obj"
+  "$libc_socket_impl_obj" "$libc_errno_impl_obj"
 test -s "$httpd_elf"
 printf 'real LLVM LNP64 lld httpd demo link smoke passed: %s\n' \
   "$httpd_elf"

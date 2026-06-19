@@ -1912,6 +1912,8 @@ impl Machine {
             0x6e => Instr::FdCloseDyn(a),
             0x6f => Instr::WaitableProbe(a, FdReg(b.0), c),
             0x70 => Instr::WaitableProbeDyn(a, b, c),
+            0x71 => Instr::AwaitEx(a, FdReg(b.0), c),
+            0x72 => Instr::AwaitExDyn(a, b, c),
             0xcb => Instr::FutexWait(a, b),
             0xcc => Instr::FutexWake(a, b),
             0xcd => Instr::Fence,
@@ -2605,6 +2607,20 @@ impl Machine {
                     return Ok(false);
                 }
                 self.complete_reg_ok(result, 0)?;
+            }
+            Instr::AwaitEx(result, fd, argblock) => {
+                Self::ensure_result_reg_writable(result)?;
+                let argblock = self.read_reg(argblock)?;
+                self.await_ex_index(result, fd.0, argblock)?;
+            }
+            Instr::AwaitExDyn(result, fd_reg, argblock) => {
+                Self::ensure_result_reg_writable(result)?;
+                let fd = self.read_reg(fd_reg)?;
+                let argblock = self.read_reg(argblock)?;
+                match self.decode_fd_value(fd) {
+                    Ok(fd) => self.await_ex_index(result, fd, argblock)?,
+                    Err(errno) => self.complete_reg_negative_errno(result, errno)?,
+                };
             }
             Instr::WaitableProbe(result, fd, events) => {
                 Self::ensure_result_reg_writable(result)?;
@@ -9318,6 +9334,27 @@ impl Machine {
         }
         let revents = self.poll_fd_index_mask_raw(fd, events)?;
         self.complete_reg_ok(result, revents)
+    }
+
+    fn await_ex_index(&mut self, result: Reg, fd: usize, argblock: u64) -> Result<(), String> {
+        let mode = self.load_u64_offset(argblock, 0)?;
+        let mask = self.load_u64_offset(argblock, 8)?;
+        if !matches!(mode, 0 | 1 | 4) {
+            return self.complete_reg_negative_errno(result, 22);
+        }
+        if fd >= FDR_COUNT {
+            return self.complete_reg_negative_errno(result, 9);
+        }
+        if let Err(errno) = self.fd_right_errno(fd, CAP_RIGHT_POLL) {
+            return self.complete_reg_negative_errno(result, errno);
+        }
+        let revents = self.poll_fd_index_mask_raw(fd, mask)?;
+        if revents != 0 || matches!(mode, 0 | 1) {
+            return self.complete_reg_ok(result, revents);
+        }
+        self.push_fd_waiter(fd, mask, Some(result))?;
+        self.ready.retain(|tid| *tid != self.current_tid);
+        Ok(())
     }
 
     fn poll_fd_index_mask_raw(&mut self, fd: usize, events: u64) -> Result<u64, String> {
@@ -17998,6 +18035,64 @@ mod tests {
 
         assert_eq!(machine.thread().unwrap().regs[8], u64::MAX);
         assert_eq!(machine.process().unwrap().errno, 1);
+        assert!(machine.fd_waiters.is_empty());
+        assert!(machine.ready.contains(&1));
+    }
+
+    #[test]
+    fn await_ex_uses_argblock_mode_and_mask() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[3] = FdHandle::EventCounter {
+                value: Rc::new(RefCell::new(2)),
+                semaphore: false,
+            };
+            process.fd_capabilities[3] = FdCapability::full(3);
+        }
+        machine.store_u64(ARG_BASE, 0).unwrap();
+        machine.store_u64(ARG_BASE + 8, POLLIN_MASK).unwrap();
+        machine.thread_mut().unwrap().regs[2] = ARG_BASE;
+
+        machine
+            .exec(Instr::AwaitEx(Reg(5), FdReg(3), Reg(2)))
+            .unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[5], POLLIN_MASK);
+        assert_eq!(machine.process().unwrap().errno, 0);
+        assert!(machine.fd_waiters.is_empty());
+
+        create_pipe_pair(&mut machine, 6, 7);
+        machine.store_u64(ARG_BASE, 1).unwrap();
+        machine.store_u64(ARG_BASE + 8, POLLIN_MASK).unwrap();
+        machine.thread_mut().unwrap().regs[2] = ARG_BASE;
+        machine.thread_mut().unwrap().regs[6] = 6;
+
+        machine
+            .exec(Instr::AwaitExDyn(Reg(8), Reg(6), Reg(2)))
+            .unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[8], 0);
+        assert_eq!(machine.process().unwrap().errno, 0);
+        assert!(machine.fd_waiters.is_empty());
+    }
+
+    #[test]
+    fn await_ex_rejects_invalid_mode_with_negative_errno() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        create_pipe_pair(&mut machine, 3, 4);
+        machine.store_u64(ARG_BASE, 99).unwrap();
+        machine.store_u64(ARG_BASE + 8, POLLIN_MASK).unwrap();
+        machine.thread_mut().unwrap().regs[2] = ARG_BASE;
+
+        machine
+            .exec(Instr::AwaitEx(Reg(5), FdReg(3), Reg(2)))
+            .unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[5], 0u64.wrapping_sub(22));
+        assert_eq!(machine.process().unwrap().errno, 22);
         assert!(machine.fd_waiters.is_empty());
         assert!(machine.ready.contains(&1));
     }

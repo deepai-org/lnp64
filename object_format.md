@@ -122,6 +122,10 @@ Provisional relocation numbers:
 | 10 | `R_LNP64_FDR_DESC64` | startup FDR descriptor-table index plus addend |
 | 11 | `R_LNP64_CAP_DESC64` | startup capability descriptor-table index plus addend |
 | 12 | `R_LNP64_CALLGATE64` | call-gate descriptor-table index plus addend |
+| 13 | `R_LNP64_PCREL_HI20` | high relocation for `AUIPC rd, %pcrel_hi(S + A)` |
+| 14 | `R_LNP64_PCREL_LO12_I` | low relocation for `ADDI rd, rd, %pcrel_lo(S + A)` |
+| 15 | `R_LNP64_PCREL_LO12_LD` | low relocation for `LD rd, base, %pcrel_lo(slot)` |
+| 16 | `R_LNP64_TLS_TPREL_SLOT64` | 64-bit local-exec TLS offset slot loaded through AUIPC+LD |
 
 Variables:
 
@@ -134,6 +138,22 @@ Relocations that name FDRs, capabilities, or call gates do not forge authority.
 They resolve to descriptor indexes or metadata records. The loader installs
 actual FDR capabilities only from startup descriptors authorized by the parent
 domain or boot manifest.
+
+Canonical symbol materialization:
+
+- Direct symbol address: `AUIPC rd, R_LNP64_PCREL_HI20(symbol+addend)`;
+  `ADDI rd, rd, R_LNP64_PCREL_LO12_I(symbol+addend)`.
+- Symbol address or constant via slot: `AUIPC tmp, R_LNP64_PCREL_HI20(slot)`;
+  `LD rd, tmp, R_LNP64_PCREL_LO12_LD(slot)`, where the slot contains an
+  `ABS64`, `GLOB_DAT`, `RELATIVE`, descriptor, or TLS offset relocation.
+- Assembler `LA` is only a source macro for the direct two-instruction sequence.
+  Object files, LLVM backend code, lld, and loader tests must use the explicit
+  AUIPC relocation pair.
+- Local-exec TLS address: `GET_PCR r_base, TLS_BASE`; materialize a signed
+  TP-relative offset either directly when the backend can prove it fits the
+  immediate form, or via an `R_LNP64_TLS_TPREL_SLOT64` slot loaded with
+  AUIPC+LD; then add the offset to `r_base`. `R_LNP64_TLS_TPREL64` remains the
+  64-bit relocation used to fill such slots.
 
 ## Static-Only v1 Policy
 

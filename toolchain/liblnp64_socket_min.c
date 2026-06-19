@@ -16,6 +16,22 @@ enum {
   LNP64_OBJECT_PROFILE_TCP_STREAM = 2
 };
 
+int lnp64_errno_store(int value);
+
+static int lnp64_errno_load(void) {
+  unsigned long value;
+  __asm__ volatile("errno_get %0" : "=r"(value) : : "memory");
+  return (int)value;
+}
+
+static long lnp64_complete_status(long status) {
+  if (status < 0) {
+    lnp64_errno_store(lnp64_errno_load());
+    return -1;
+  }
+  return status;
+}
+
 static int lnp64_socket_ctl(unsigned long op, int fd, unsigned long requested_fd,
                             unsigned long arg, unsigned long aux) {
   lnp64_word_t record[9];
@@ -28,7 +44,7 @@ static int lnp64_socket_ctl(unsigned long op, int fd, unsigned long requested_fd
   record[6] = aux;
   record[7] = 0;
   record[8] = 0;
-  return (int)__lnp_object_ctl((lnp64_word_t)record);
+  return (int)lnp64_complete_status((long)__lnp_object_ctl((lnp64_word_t)record));
 }
 
 int socket(int domain, int type, int protocol) {
@@ -42,7 +58,7 @@ int socket(int domain, int type, int protocol) {
   record[6] = (lnp64_word_t)(unsigned int)type;
   record[7] = (lnp64_word_t)(unsigned int)protocol;
   record[8] = 0;
-  return (int)__lnp_object_ctl((lnp64_word_t)record);
+  return (int)lnp64_complete_status((long)__lnp_object_ctl((lnp64_word_t)record));
 }
 
 int bind(int fd, const void *addr, socklen_t len) {
@@ -84,7 +100,7 @@ int getsockopt(int fd, int level, int optname, void *optval, socklen_t *optlen) 
   record[6] = (lnp64_word_t)(unsigned int)optname;
   record[7] = (lnp64_word_t)optval;
   record[8] = (lnp64_word_t)optlen;
-  return (int)__lnp_object_ctl((lnp64_word_t)record);
+  return (int)lnp64_complete_status((long)__lnp_object_ctl((lnp64_word_t)record));
 }
 
 int setsockopt(int fd, int level, int optname, const void *optval,
@@ -99,17 +115,17 @@ int setsockopt(int fd, int level, int optname, const void *optval,
   record[6] = (lnp64_word_t)(unsigned int)optname;
   record[7] = (lnp64_word_t)optval;
   record[8] = (lnp64_word_t)optlen;
-  return (int)__lnp_object_ctl((lnp64_word_t)record);
+  return (int)lnp64_complete_status((long)__lnp_object_ctl((lnp64_word_t)record));
 }
 
 long send(int fd, const void *buf, size_t len, int flags) {
   (void)flags;
-  return (long)__lnp_push((lnp64_cap_t)(unsigned long)fd,
-                          (lnp64_word_t)buf, len);
+  return lnp64_complete_status((long)__lnp_push(
+      (lnp64_cap_t)(unsigned long)fd, (lnp64_word_t)buf, len));
 }
 
 long recv(int fd, void *buf, size_t len, int flags) {
   (void)flags;
-  return (long)__lnp_pull((lnp64_cap_t)(unsigned long)fd,
-                          (lnp64_word_t)buf, len);
+  return lnp64_complete_status((long)__lnp_pull(
+      (lnp64_cap_t)(unsigned long)fd, (lnp64_word_t)buf, len));
 }

@@ -1907,6 +1907,22 @@ a=result_dst, b=call_gate_fd, c=arg0, d=arg1, imm16=flags
 a=result_dst, b=value0, c=value1, d=reserved, imm16=flags
 ```
 
+Compiler-visible call ABI:
+
+- `b` is the call-gate FDR/capability handle.
+- `c` and `d` are the two fast scalar argument words. Larger payloads, buffers,
+  and capability payloads are passed by pre-authorized FDRs or bounded typed
+  records named by those words.
+- `a` receives a nonnegative success value, operation id, handoff token, or zero
+  status. Failures write a negative architectural error.
+- asynchronous completions publish their payload to the configured
+  event/counter/queue object; callers use `AWAIT_EX`, `PULL`, or profile-specific
+  metadata reads to consume completion.
+- `GATE_RETURN` commits `value0` and `value1` to the trusted continuation and
+  writes return-commit status to `a`.
+- LLVM intrinsics and inline assembly use this shape directly. They must not
+  lower native capability calls through a general syscall instruction.
+
 Gate FDRs carry:
 
 - mode: synchronous call, asynchronous call, or handoff.
@@ -4703,10 +4719,11 @@ ABI requirements:
 - LNP64 needs a stable psABI: calling convention, callee-saved registers, stack
   alignment, process entry layout, `argv`/`envp`/auxv layout, TLS register or
   TLS lookup mechanism, errno convention, and POSIX signal/gate-delivery frame layout.
-- The Linux syscall compatibility runtime needs a stable Linux-call dispatch
-  ABI even if the hardware itself has no `SYSCALL` instruction. A conventional
-  trap is not required; the runtime may use a reserved illegal opcode, a call
-  gate function, or a control-FDR command path.
+- The Linux syscall compatibility runtime may define a software ABI for Linux
+  syscall-number dispatch, but hardware does not add a general `SYSCALL`
+  instruction. Compatibility dispatch must lower through native call gates,
+  control FDRs, unsupported-opcode upcalls, or ordinary runtime calls; native
+  object/domain/capability operations remain direct ISA operations.
 - Time support must include monotonic time, realtime clock, timer FDRs, and
   timer upcalls so `clock_gettime`, sleeps, timeouts, poll/epoll emulation, and
   scheduler accounting can be implemented.

@@ -329,6 +329,14 @@ impl Parser {
                 arity(3)?;
                 Instr::AwaitDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
+            "AWAIT_EX" => {
+                arity(3)?;
+                if args[1].starts_with("fd") {
+                    Instr::AwaitEx(reg(&args[0])?, fd(&args[1])?, reg(&args[2])?)
+                } else {
+                    Instr::AwaitExDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+                }
+            }
             "WAITABLE_PROBE" => {
                 arity(3)?;
                 if args[1].starts_with("fd") {
@@ -1280,6 +1288,26 @@ mod tests {
         assert!(matches!(
             program.instructions[3],
             Instr::WaitableProbeDyn(Reg(10), Reg(11), Reg(12))
+        ));
+    }
+
+    #[test]
+    fn parses_await_ex_static_and_dynamic_waitables() {
+        let program = Program::parse(
+            r#"
+            .text
+              AWAIT_EX r1, fd2, r3
+              AWAIT_EX r4, r5, r6
+            "#,
+        )
+        .unwrap();
+        assert!(matches!(
+            program.instructions[0],
+            Instr::AwaitEx(Reg(1), FdReg(2), Reg(3))
+        ));
+        assert!(matches!(
+            program.instructions[1],
+            Instr::AwaitExDyn(Reg(4), Reg(5), Reg(6))
         ));
     }
 

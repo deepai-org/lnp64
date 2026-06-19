@@ -276,6 +276,9 @@ run_elf_report "real LLVM LNP64 run-elf NetBSD timer child passed" \
 run_elf_report "real LLVM LNP64 run-elf NetBSD mmap child passed" \
   target/llvm-lnp64-build/lnp64-netbsd-mmap-test-linked.elf \
   'mmap_test ok'
+run_elf_report "real LLVM LNP64 run-elf NetBSD socket loopback child passed" \
+  target/llvm-lnp64-build/lnp64-netbsd-socket-loopback-test-linked.elf \
+  'socket_loopback_test ok'
 run_elf_report "real LLVM LNP64 run-elf sbase echo execution passed" \
   target/llvm-lnp64-build/lnp64-sbase-echo-linked.elf \
   echo hello clang --expect 'hello clang'
