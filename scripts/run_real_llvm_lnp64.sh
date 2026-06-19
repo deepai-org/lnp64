@@ -1788,6 +1788,13 @@ test -s "$intrinsic_ctl_elf"
 printf 'real LLVM LNP64 lld intrinsic control link smoke passed: %s\n' \
   "$intrinsic_ctl_elf"
 
+intrinsic_mmap_elf="$build_dir/lnp64-intrinsic-mmap-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$intrinsic_mmap_elf" "$crt0_obj" "$intrinsic_mmap_obj"
+test -s "$intrinsic_mmap_elf"
+printf 'real LLVM LNP64 lld intrinsic mmap link smoke passed: %s\n' \
+  "$intrinsic_mmap_elf"
+
 intrinsic_amo_elf="$build_dir/lnp64-intrinsic-amo-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
   -o "$intrinsic_amo_elf" "$crt0_obj" "$intrinsic_amo_obj"

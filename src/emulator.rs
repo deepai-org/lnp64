@@ -1599,6 +1599,9 @@ impl Machine {
             0x4d => Instr::AwaitDyn(a, b, c),
             0x4e => Instr::CallCapDyn(a, b, c, Reg(((word >> 4) & 0x1f) as usize)),
             0x4f => Instr::RetCap(a, b, c),
+            0x60 => Instr::MmapBootstrap(a, b, c, d),
+            0x61 => Instr::MunmapBootstrap(a, b),
+            0x66 => Instr::MprotectBootstrap(a, b, c, d),
             0xcb => Instr::FutexWait(a, b),
             0xcc => Instr::FutexWake(a, b),
             0xcd => Instr::Fence,
@@ -3260,6 +3263,77 @@ impl Machine {
                 }
                 self.complete_reg_ok(dst, addr)?;
             }
+            Instr::MmapBootstrap(dst, hint, len, prot) => {
+                Self::ensure_result_reg_writable(dst)?;
+                let len = self.read_reg(len)?;
+                if len == 0 {
+                    self.complete_reg_err(dst, 22)?;
+                    return Ok(true);
+                }
+                self.require_domain_cap(DOMAIN_CAP_MEMORY)?;
+                if !self.check_domain_budget(len, 1, 0, 0)? {
+                    self.complete_reg_err(dst, 12)?;
+                    return Ok(true);
+                }
+                let prot = self.read_reg(prot)?;
+                if prot & !0b111 != 0 {
+                    self.complete_reg_err(dst, 22)?;
+                    return Ok(true);
+                }
+                if !self.domain_allows_prot(prot)? {
+                    self.complete_reg_err(dst, 1)?;
+                    return Ok(true);
+                }
+                let hint = self.read_reg(hint)?;
+                if !self.domain_allows_executable_source(prot, false)? {
+                    self.complete_reg_err(dst, 1)?;
+                    return Ok(true);
+                }
+                let (addr, end) = {
+                    let process = self.process()?;
+                    let addr = if hint != 0 {
+                        hint
+                    } else {
+                        let Some(addr) = checked_align_up(process.mmap_next, 4096) else {
+                            self.complete_reg_err(dst, 22)?;
+                            return Ok(true);
+                        };
+                        addr
+                    };
+                    let Some(end) = addr.checked_add(len) else {
+                        self.complete_reg_err(dst, 22)?;
+                        return Ok(true);
+                    };
+                    if end as usize > process.memory.len() {
+                        self.complete_reg_err(dst, 12)?;
+                        return Ok(true);
+                    }
+                    if process.vmas.iter().any(|vma| {
+                        let Some(vma_end) = vma.start.checked_add(vma.len) else {
+                            return true;
+                        };
+                        addr < vma_end && end > vma.start
+                    }) {
+                        self.complete_reg_err(dst, 12)?;
+                        return Ok(true);
+                    }
+                    (addr, end)
+                };
+                {
+                    let process = self.process_mut()?;
+                    process.mmap_next = process.mmap_next.max(end);
+                    process.vmas.push(Vma {
+                        start: addr,
+                        len,
+                        prot,
+                        file: None,
+                        file_offset: 0,
+                        resident: false,
+                        guard: false,
+                    });
+                }
+                self.complete_reg_ok(dst, addr)?;
+            }
             Instr::Munmap(addr, len) => {
                 let addr = self.read_reg(addr)?;
                 let len = self.read_reg(len)?;
@@ -3283,11 +3357,32 @@ impl Machine {
                 self.process_mut()?.vmas.remove(idx);
                 self.set_errno(0)?;
             }
+            Instr::MunmapBootstrap(result, addr) => {
+                Self::ensure_result_reg_writable(result)?;
+                let addr = self.read_reg(addr)?;
+                let Some(idx) = self
+                    .process()?
+                    .vmas
+                    .iter()
+                    .position(|vma| vma.start == addr)
+                else {
+                    self.complete_reg_err(result, 22)?;
+                    return Ok(true);
+                };
+                self.process_mut()?.vmas.remove(idx);
+                self.complete_reg_ok(result, 0)?;
+            }
             Instr::Mprotect(addr, len, prot) => {
                 let addr = self.read_reg(addr)?;
                 let len = self.read_reg(len)?;
                 let prot = self.read_reg(prot)?;
                 self.mprotect_range(addr, len, prot)?;
+            }
+            Instr::MprotectBootstrap(result, addr, len, prot) => {
+                let addr = self.read_reg(addr)?;
+                let len = self.read_reg(len)?;
+                let prot = self.read_reg(prot)?;
+                self.mprotect_range_result(result, addr, len, prot)?;
             }
             Instr::Sigaction(signum, handler) => {
                 let signum = self.read_reg(signum)?;
@@ -4892,20 +4987,30 @@ impl Machine {
     }
 
     fn mprotect_range(&mut self, addr: u64, len: u64, prot: u64) -> Result<(), String> {
+        self.mprotect_range_result(Reg(1), addr, len, prot)
+    }
+
+    fn mprotect_range_result(
+        &mut self,
+        result: Reg,
+        addr: u64,
+        len: u64,
+        prot: u64,
+    ) -> Result<(), String> {
         if len == 0 {
-            self.set_status_errno(22)?;
+            self.complete_reg_err(result, 22)?;
             return Ok(());
         }
         if prot & !0b111 != 0 {
-            self.set_status_errno(22)?;
+            self.complete_reg_err(result, 22)?;
             return Ok(());
         }
         if !self.domain_allows_prot(prot)? {
-            self.set_status_errno(1)?;
+            self.complete_reg_err(result, 1)?;
             return Ok(());
         }
         let Some(end) = addr.checked_add(len) else {
-            self.set_status_errno(22)?;
+            self.complete_reg_err(result, 22)?;
             return Ok(());
         };
         let idx = {
@@ -4921,10 +5026,10 @@ impl Machine {
                     .checked_add(vma.len)
                     .is_some_and(|vma_end| addr >= vma.start && end <= vma_end)
             }) {
-                self.set_status_errno(22)?;
+                self.complete_reg_err(result, 22)?;
                 return Ok(());
             } else {
-                self.set_status_errno(12)?;
+                self.complete_reg_err(result, 12)?;
                 return Ok(());
             }
         };
@@ -4934,12 +5039,11 @@ impl Machine {
         };
         let adds_execute = old_prot & 0b100 == 0 && prot & 0b100 != 0;
         if adds_execute && !self.domain_allows_executable_source(prot, file_backed)? {
-            self.set_status_errno(1)?;
+            self.complete_reg_err(result, 1)?;
             return Ok(());
         }
         self.process_mut()?.vmas[idx].prot = prot;
-        self.set_status_ok()?;
-        Ok(())
+        self.complete_reg_ok(result, 0)
     }
 
     fn isync_range(&mut self, result: Reg, addr: u64, len: u64) -> Result<(), String> {
@@ -9215,6 +9319,10 @@ mod tests {
             | (((rd as u32) & 0x1f) << 19)
             | (((lhs as u32) & 0x1f) << 14)
             | (((rhs as u32) & 0x1f) << 9)
+    }
+
+    fn encode_rrrr(opcode: u8, rd: usize, a: usize, b: usize, c: usize) -> u32 {
+        encode_rrr(opcode, rd, a, b) | (((c as u32) & 0x1f) << 4)
     }
 
     fn encode_rr(opcode: u8, rd: usize, rs: usize) -> u32 {
@@ -14190,6 +14298,40 @@ mod tests {
         put_instruction(&mut text, 12, encode_rrr(0x11, 1, 3, 1));
         put_instruction(&mut text, 16, encode_reg(0x49, 2));
         put_instruction(&mut text, 20, encode_reg(0x3a, 1));
+        let mut prepared = prepared_exec_vmas_fixture();
+        prepared[0].bytes = text;
+        let mut machine = Machine::new(empty_program());
+
+        machine
+            .commit_exec_descriptor_memory_image(&words, &prepared)
+            .unwrap();
+        let exit = machine.run_committed_exec().unwrap();
+
+        assert_eq!(exit, 0);
+    }
+
+    #[test]
+    fn committed_exec_decodes_and_runs_bootstrap_vma_control() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let words = encode_exec_descriptor(&descriptor);
+        let mut text = vec![0; 0x1000];
+        put_instruction(&mut text, 0, encode_ri(0x01, 1, 4096));
+        put_instruction(&mut text, 4, encode_ri(0x01, 2, 3));
+        put_instruction(&mut text, 8, encode_ri(0x01, 7, 4096));
+        put_instruction(&mut text, 12, encode_rrrr(0x60, 3, 7, 1, 2));
+        put_instruction(&mut text, 16, encode_ri(0x01, 4, 1));
+        put_instruction(&mut text, 20, encode_rrrr(0x66, 5, 3, 1, 4));
+        put_instruction(&mut text, 24, encode_rr(0x61, 6, 3));
+        put_instruction(&mut text, 28, encode_reg(0x3a, 6));
         let mut prepared = prepared_exec_vmas_fixture();
         prepared[0].bytes = text;
         let mut machine = Machine::new(empty_program());

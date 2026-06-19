@@ -1743,6 +1743,12 @@ mod tests {
         assert!(real_llc.contains("grep -q 'mprotect r'"));
         assert!(real_llc.contains("grep -q 'munmap r'"));
         assert!(real_llc.contains("real LLVM LNP64 clang intrinsic mmap object smoke passed"));
+        assert!(real_llc.contains("lnp64-intrinsic-mmap-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld intrinsic mmap link smoke passed"));
+        assert!(real_llc_docker.contains("lnp64-intrinsic-mmap-linked.elf"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic mmap execution passed")
+        );
         assert!(real_llc.contains("lnp64-intrinsic-amo-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld intrinsic AMO link smoke passed"));
         assert!(real_llc.contains("lnp64-c11-atomic-linked.elf"));
@@ -2036,6 +2042,10 @@ mod tests {
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic control execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-intrinsic-mmap-linked.elf"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic mmap execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-intrinsic-amo-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic AMO execution passed"));
         assert!(real_llc_docker.contains("lnp64-c11-atomic-linked.elf"));
@@ -2102,6 +2112,7 @@ mod tests {
             "real_intrinsic_gate_return_execution",
             "real_intrinsic_push_execution",
             "real_intrinsic_control_execution",
+            "real_intrinsic_mmap_execution",
             "real_intrinsic_amo_execution",
             "real_c11_atomic_execution",
             "real_stack_argument_execution",
@@ -2125,6 +2136,7 @@ mod tests {
             "real_native_heap_execution",
             "real_intrinsic_push_execution",
             "real_intrinsic_control_execution",
+            "real_intrinsic_mmap_execution",
             "real_intrinsic_amo_execution",
             "real_c11_atomic_execution",
             "real_exit_execution",
