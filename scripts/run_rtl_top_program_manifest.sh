@@ -43,7 +43,9 @@ for program in "${programs[@]}"; do
     first=0
     bash scripts/run_rtl_top_program_smoke.sh "$program"
   else
-    LNP64_RTL_SKIP_LINT="${LNP64_RTL_SKIP_LINT:-1}" bash scripts/run_rtl_top_program_smoke.sh "$program"
+    LNP64_RTL_SKIP_LINT="${LNP64_RTL_SKIP_LINT:-1}" \
+      LNP64_RTL_TOP_PROGRAM_SKIP_BUILD="${LNP64_RTL_TOP_PROGRAM_SKIP_BUILD:-1}" \
+      bash scripts/run_rtl_top_program_smoke.sh "$program"
   fi
 done
 

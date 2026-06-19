@@ -67,19 +67,32 @@ if [[ "$program_input" == *.s ]]; then
   fi
 fi
 
-rtl_lint "${common_flags[@]}" "${rtl_files[@]}"
-verilator --binary --Mdir "$build_dir" "${common_flags[@]}" "${rtl_files[@]}" >/tmp/lnp64_rtl_top_program_build.log
-"$build_dir/Vlnp64_top_program_tb" "+lnp64_program_hex=$program_hex" | tee /tmp/lnp64_rtl_top_program_sim.log
+sim_log="$(mktemp "${TMPDIR:-/tmp}/lnp64_rtl_top_program_sim.XXXXXX.log")"
+emulator_log="$(mktemp "${TMPDIR:-/tmp}/lnp64_emulator_top_program.XXXXXX.log")"
+tmp_files+=("$sim_log" "$emulator_log")
 
-grep -q "LNP64-RTL-TOP-PROGRAM PASS" /tmp/lnp64_rtl_top_program_sim.log
+rtl_binary="$build_dir/Vlnp64_top_program_tb"
+if [[ "${LNP64_RTL_TOP_PROGRAM_SKIP_BUILD:-0}" == "1" ]]; then
+  if [[ ! -x "$rtl_binary" ]]; then
+    printf 'missing reusable top-level RTL binary: %s\n' "$rtl_binary" >&2
+    printf '%s\n' "unset LNP64_RTL_TOP_PROGRAM_SKIP_BUILD or run one build first" >&2
+    exit 1
+  fi
+else
+  rtl_lint "${common_flags[@]}" "${rtl_files[@]}"
+  verilator --binary --Mdir "$build_dir" "${common_flags[@]}" "${rtl_files[@]}" >/tmp/lnp64_rtl_top_program_build.log
+fi
+"$rtl_binary" "+lnp64_program_hex=$program_hex" | tee "$sim_log"
+
+grep -q "LNP64-RTL-TOP-PROGRAM PASS" "$sim_log"
 
 if [[ -n "${LNP64_BIN:-}" ]]; then
-  "$LNP64_BIN" run-flat-exec "$program_hex" | tee /tmp/lnp64_emulator_top_program.log
+  "$LNP64_BIN" run-flat-exec "$program_hex" | tee "$emulator_log"
 else
-  cargo run --quiet -- run-flat-exec "$program_hex" | tee /tmp/lnp64_emulator_top_program.log
+  cargo run --quiet -- run-flat-exec "$program_hex" | tee "$emulator_log"
 fi
 
-python3 - /tmp/lnp64_rtl_top_program_sim.log /tmp/lnp64_emulator_top_program.log <<'PY'
+python3 - "$sim_log" "$emulator_log" <<'PY'
 import json
 import sys
 

@@ -295,6 +295,16 @@ bash scripts/run_rtl_proof_gates.sh
 bash scripts/run_rtl_synth_gates.sh
 ```
 
+`scripts/run_rtl_top_program_manifest.sh` builds the top-level Verilator
+program test once, then reuses that binary for the remaining selected program
+images. For a manual multi-program loop, run one normal smoke first and then
+reuse the binary explicitly:
+
+```sh
+LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_smoke.s
+LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_immediate_alu.s
+```
+
 Board validation commands require compatible hardware. Until then, Dockerized RTL/proof and synthesis/FPGA-smoke gates are the reproducible evidence path.
 
 ## FPGA Board Note
