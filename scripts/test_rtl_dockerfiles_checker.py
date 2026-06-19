@@ -20,6 +20,8 @@ COPIED_FILES = (
     "README.md",
     "scripts/run_all_gates.sh",
     "scripts/run_formal_rtl_roadmap_audit.sh",
+    "scripts/run_rtl_m1_refinement_docker.sh",
+    "scripts/run_rtl_m1_refinement_gate.sh",
     "scripts/run_rtl_proof_docker.sh",
     "scripts/run_rtl_proof_gates.sh",
     "scripts/run_rtl_synth_docker.sh",

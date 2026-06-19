@@ -33,6 +33,8 @@ def check_proof() -> None:
     dockerfile = read_text("Dockerfile.rtl-proof")
     wrapper = read_text("scripts/run_rtl_proof_docker.sh")
     gate = read_text("scripts/run_rtl_proof_gates.sh")
+    m1_wrapper = read_text("scripts/run_rtl_m1_refinement_docker.sh")
+    m1_gate = read_text("scripts/run_rtl_m1_refinement_gate.sh")
 
     require_all(
         dockerfile,
@@ -78,6 +80,39 @@ def check_proof() -> None:
             "rtl random cosim skipped",
         ],
         "scripts/run_rtl_proof_gates.sh",
+    )
+    require_all(
+        m1_wrapper,
+        [
+            "docker build",
+            "-f Dockerfile.rtl-proof",
+            "LEAN_TOOLCHAIN",
+            "RUN_RTL_PROOF_GATES",
+            "LNP64_RTL_PROOF_SKIP_BUILD",
+            "docker run --rm",
+            "-e LNP64_REQUIRE_LEAN=1",
+            "LNP64_M1_TYPED_COMMIT_SEEDS",
+            "-v \"$root:/work\"",
+            "-w /work",
+            "bash scripts/run_rtl_m1_refinement_gate.sh",
+        ],
+        "scripts/run_rtl_m1_refinement_docker.sh",
+    )
+    require_all(
+        m1_gate,
+        [
+            "formal/M1TransitionInvariantModel.lean",
+            "lean \"$lean_file\"",
+            "scripts/check_rtl_shared_schema.py",
+            "scripts/check_theorem_rtl_coupling.py",
+            "formal/m1_model.py",
+            "bash scripts/run_rtl_m1.sh",
+            "scripts/check_rtl_m1_typed_commit_trace.py",
+            "scripts/test_rtl_m1_typed_commit_checker.py",
+            "scripts/test_rtl_m1_schema_checker.py",
+            "rtl m1 refinement gate ok",
+        ],
+        "scripts/run_rtl_m1_refinement_gate.sh",
     )
 
 
@@ -211,12 +246,14 @@ def check_aggregate_and_docs() -> None:
         [
             "RTL And Proof Gates",
             "bash scripts/run_rtl_proof_docker.sh",
+            "LNP64_RTL_PROOF_SKIP_BUILD=1 bash scripts/run_rtl_m1_refinement_docker.sh",
             "LNP64_RTL_PROOF_RANDOM_COSIM=0 bash scripts/run_rtl_proof_docker.sh",
             "LNP64_RTL_PROOF_SKIP_BUILD=1 LNP64_RTL_PROOF_RANDOM_COSIM=0 bash scripts/run_rtl_proof_docker.sh",
             "LNP64_RTL_PROOF_BUILD_GATES=1",
             "bash scripts/run_rtl_synth_docker.sh",
             "bash scripts/run_rtl_proof_gates.sh",
             "bash scripts/run_rtl_synth_gates.sh",
+            "scripts/run_rtl_m1_refinement_gate.sh",
             "scripts/check_theorem_rtl_coupling.py",
             "FPGA Board Note",
             "Dockerized RTL/proof and synthesis/FPGA-smoke gates are the reproducible evidence path",
