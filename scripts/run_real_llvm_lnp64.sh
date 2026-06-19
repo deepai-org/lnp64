@@ -3326,10 +3326,7 @@ printf 'real LLVM LNP64 clang minilibc allocation implementation object smoke pa
 
 calloc_c="$build_dir/calloc-smoke.c"
 cat >"$calloc_c" <<'C'
-typedef unsigned long size_t;
-
-void *calloc(size_t count, size_t size);
-void free(void *ptr);
+#include <stdlib.h>
 
 int main(void) {
   unsigned char *bytes = calloc(4, 2);
@@ -3350,6 +3347,7 @@ C
 calloc_obj="$build_dir/calloc-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$calloc_c" -o "$calloc_obj"
 test -s "$calloc_obj"
 calloc_dump="$build_dir/calloc-clang-smoke.dump"
@@ -3361,11 +3359,7 @@ printf 'real LLVM LNP64 clang calloc object smoke passed: %s\n' \
 
 realloc_c="$build_dir/realloc-smoke.c"
 cat >"$realloc_c" <<'C'
-typedef unsigned long size_t;
-
-void *malloc(size_t size);
-void *realloc(void *ptr, size_t size);
-void free(void *ptr);
+#include <stdlib.h>
 
 int main(void) {
   unsigned char *bytes = malloc(4);
@@ -3415,6 +3409,7 @@ C
 realloc_obj="$build_dir/realloc-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$realloc_c" -o "$realloc_obj"
 test -s "$realloc_obj"
 realloc_dump="$build_dir/realloc-clang-smoke.dump"
@@ -3426,9 +3421,7 @@ printf 'real LLVM LNP64 clang realloc object smoke passed: %s\n' \
 
 read_c="$build_dir/read-smoke.c"
 cat >"$read_c" <<'C'
-typedef unsigned long size_t;
-
-long read(long fd, void *buf, size_t len);
+#include <unistd.h>
 
 int main(void) {
   char byte = 0;
@@ -3439,6 +3432,7 @@ C
 read_obj="$build_dir/read-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$read_c" -o "$read_obj"
 test -s "$read_obj"
 read_dump="$build_dir/read-clang-smoke.dump"
@@ -3450,9 +3444,7 @@ printf 'real LLVM LNP64 clang read object smoke passed: %s\n' \
 
 write_c="$build_dir/write-smoke.c"
 cat >"$write_c" <<'C'
-typedef unsigned long size_t;
-
-long write(long fd, const void *buf, size_t len);
+#include <unistd.h>
 
 int main(void) {
   const char msg[] = "fd write ok\n";
@@ -3463,6 +3455,7 @@ C
 write_obj="$build_dir/write-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$write_c" -o "$write_obj"
 test -s "$write_obj"
 write_dump="$build_dir/write-clang-smoke.dump"

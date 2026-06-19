@@ -2649,6 +2649,9 @@ mod tests {
         assert!(libc_alloc_min.contains("void *alloc(size_t size)"));
         assert!(libc_alloc_min.contains("__lnp_alloc(size)"));
         assert!(libc_alloc_min.contains("__lnp_alloc_size(ptr)"));
+        assert!(stdlib_header.contains("void *calloc(size_t count, size_t size);"));
+        assert!(stdlib_header.contains("void *realloc(void *ptr, size_t size);"));
+        assert!(stdlib_header.contains("void free(void *ptr);"));
         assert!(real_llc.contains("liblnp64-alloc-min.o"));
         assert!(real_llc.contains("grep -q 'alloc r'"));
         assert!(real_llc.contains("grep -q 'alloc_size r'"));
@@ -2657,12 +2660,19 @@ mod tests {
             "real LLVM LNP64 clang minilibc allocation implementation object smoke passed"
         ));
         assert!(real_llc.contains("calloc-clang-smoke.o"));
+        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$calloc_c\""));
         assert!(real_llc.contains("real LLVM LNP64 clang calloc object smoke passed"));
         assert!(real_llc.contains("realloc-clang-smoke.o"));
+        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$realloc_c\""));
         assert!(real_llc.contains("real LLVM LNP64 clang realloc object smoke passed"));
         assert!(real_llc.contains("read-clang-smoke.o"));
+        assert!(unistd_header.contains("ssize_t read(int fd, void *buf, size_t count);"));
+        assert!(unistd_header.contains("ssize_t write(int fd, const void *buf, size_t count);"));
+        assert!(real_llc.contains("#include <unistd.h>"));
+        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$read_c\""));
         assert!(real_llc.contains("real LLVM LNP64 clang read object smoke passed"));
         assert!(real_llc.contains("write-clang-smoke.o"));
+        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$write_c\""));
         assert!(real_llc.contains("fd write ok"));
         assert!(real_llc.contains("real LLVM LNP64 clang write object smoke passed"));
         assert!(real_llc.contains("userland/ucat_clang.c"));
