@@ -3490,6 +3490,19 @@ grep -q 'thread_join r' "$userland_spawn_dump"
 printf 'real LLVM LNP64 clang userland spawn task object smoke passed: %s\n' \
   "$userland_spawn_obj"
 
+netbsd_loader_target_obj="$build_dir/netbsd-loader-target-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
+  -c userland/loader_target_clang.c -o "$netbsd_loader_target_obj"
+test -s "$netbsd_loader_target_obj"
+netbsd_loader_target_dump="$build_dir/netbsd-loader-target-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$netbsd_loader_target_obj" \
+  >"$netbsd_loader_target_dump"
+grep -q 'call ' "$netbsd_loader_target_dump"
+printf 'real LLVM LNP64 clang NetBSD loader target child object passed: %s\n' \
+  "$netbsd_loader_target_obj"
+
 meta_libc_c="$build_dir/meta-libc-smoke.c"
 cat >"$meta_libc_c" <<'C'
 #include <errno.h>
@@ -4948,6 +4961,14 @@ userland_spawn_elf="$build_dir/lnp64-userland-spawn-task-linked.elf"
 test -s "$userland_spawn_elf"
 printf 'real LLVM LNP64 lld userland spawn task link smoke passed: %s\n' \
   "$userland_spawn_elf"
+
+netbsd_loader_target_elf="$build_dir/lnp64-netbsd-loader-target-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$netbsd_loader_target_elf" "$crt0_obj" "$netbsd_loader_target_obj" \
+  "$libc_fd_impl_obj"
+test -s "$netbsd_loader_target_elf"
+printf 'real LLVM LNP64 lld NetBSD loader target child link passed: %s\n' \
+  "$netbsd_loader_target_elf"
 
 meta_libc_elf="$build_dir/lnp64-meta-libc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

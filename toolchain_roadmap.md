@@ -370,6 +370,8 @@ The concrete first-program set is pinned in
   pthread/futex, event waits, mmap/signal/socket subset, and static linking.
 - `netbsd_personality_clang`: the first NetBSD personality slice built with
   Clang/lld and run through the ELF loader without the toy compiler.
+- `netbsd_loader_target_child`: the first NetBSD personality system child
+  replacement built with Clang/lld and run through the ELF loader.
 
 The first four gates now run through real Clang/lld output and the software
 loader without the toy compiler. Full replacement remains partial until the

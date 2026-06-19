@@ -255,6 +255,9 @@ run_elf_report "real LLVM LNP64 run-elf NetBSD personality clang smoke passed" \
   'netbsd clang personality init' \
   'netbsd clang personality shell' \
   'netbsd clang personality smoke ok'
+run_elf_report "real LLVM LNP64 run-elf NetBSD loader target child passed" \
+  target/llvm-lnp64-build/lnp64-netbsd-loader-target-linked.elf \
+  'loader_target ok'
 run_elf_report "real LLVM LNP64 run-elf sbase echo execution passed" \
   target/llvm-lnp64-build/lnp64-sbase-echo-linked.elf \
   echo hello clang --expect 'hello clang'
