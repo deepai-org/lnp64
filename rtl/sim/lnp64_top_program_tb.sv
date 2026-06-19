@@ -41,12 +41,20 @@ module lnp64_top_program_tb #(
     int unsigned max_cycles;
     logic [7:0] retire_opcode;
     logic [31:0] retire_instr;
-    lnp64_decode_t retire_dec;
+    logic [7:0] retire_opcode_vec [TB_CORE_TILE_COUNT];
+    logic [31:0] retire_instr_vec [TB_CORE_TILE_COUNT];
+    lnp64_decode_t retire_dec_vec [TB_CORE_TILE_COUNT];
     lnp64_m1_state_projection_t sampled_m1_pre_state [TB_CORE_TILE_COUNT];
     logic [4:0] retire_raw_result_reg;
     logic retire_result_valid;
     logic [4:0] retire_result_reg;
     logic [31:0] retire_operand_imm;
+    logic [4:0] retire_raw_result_reg_vec [TB_CORE_TILE_COUNT];
+    logic retire_result_valid_vec [TB_CORE_TILE_COUNT];
+    logic [4:0] retire_result_reg_vec [TB_CORE_TILE_COUNT];
+    logic [31:0] retire_operand_imm_vec [TB_CORE_TILE_COUNT];
+    logic [63:0] retire_result_value_vec [TB_CORE_TILE_COUNT];
+    logic [15:0] retire_errno_vec [TB_CORE_TILE_COUNT];
     logic [63:0] final_mem_checksum;
     logic unsupported_retired_seen;
     logic inject_cross_tile_wake;
@@ -87,11 +95,6 @@ module lnp64_top_program_tb #(
         .topology_active_window_count_seen(topology_active_window_count_seen)
     );
 
-    lnp64_decode retire_decode_i(
-        .instr(retire_instr),
-        .dec(retire_dec)
-    );
-
     always #5 clk = ~clk;
 
     function automatic logic flat_result_valid(input logic [7:0] opcode);
@@ -118,6 +121,43 @@ module lnp64_top_program_tb #(
         endcase
     endfunction
 
+    genvar decode_tile_id;
+    generate
+        for (decode_tile_id = 0; decode_tile_id < TB_CORE_TILE_COUNT; decode_tile_id = decode_tile_id + 1) begin : retire_decoders
+            lnp64_decode retire_decode_i(
+                .instr(retire_instr_vec[decode_tile_id]),
+                .dec(retire_dec_vec[decode_tile_id])
+            );
+
+            always_comb begin
+                retire_instr_vec[decode_tile_id] =
+                    dut.core_tiles[decode_tile_id].core_i.program_rom[
+                        dut.retire_submit_record_vec[decode_tile_id].pc
+                    ];
+                retire_opcode_vec[decode_tile_id] = retire_instr_vec[decode_tile_id][31:24];
+                retire_raw_result_reg_vec[decode_tile_id] = retire_instr_vec[decode_tile_id][23:19];
+                retire_result_valid_vec[decode_tile_id] = flat_result_valid(retire_opcode_vec[decode_tile_id]);
+                retire_result_reg_vec[decode_tile_id] =
+                    (retire_opcode_vec[decode_tile_id] == 8'h2d ||
+                     retire_opcode_vec[decode_tile_id] == 8'h57 ||
+                     retire_opcode_vec[decode_tile_id] == 8'h6c) ?
+                        5'd1 : retire_raw_result_reg_vec[decode_tile_id];
+                retire_operand_imm_vec[decode_tile_id] = flat_operand_imm(
+                    retire_opcode_vec[decode_tile_id],
+                    retire_instr_vec[decode_tile_id],
+                    dut.core_tiles[decode_tile_id].core_i.program_rom[
+                        dut.retire_submit_record_vec[decode_tile_id].pc + 32'd1
+                    ]
+                );
+                retire_result_value_vec[decode_tile_id] =
+                    retire_result_valid_vec[decode_tile_id] ?
+                        dut.core_tiles[decode_tile_id].core_i.gpr[retire_result_reg_vec[decode_tile_id]] :
+                        64'd0;
+                retire_errno_vec[decode_tile_id] = dut.core_tiles[decode_tile_id].core_i.errno_reg;
+            end
+        end
+    endgenerate
+
     function automatic logic [63:0] rtl_memory_checksum;
         logic [63:0] checksum;
         begin
@@ -133,18 +173,12 @@ module lnp64_top_program_tb #(
     endfunction
 
     always_comb begin
-        retire_instr = dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc];
-        retire_opcode = retire_instr[31:24];
-        retire_raw_result_reg =
-            retire_instr[23:19];
-        retire_result_valid = flat_result_valid(retire_opcode);
-        retire_result_reg = (retire_opcode == 8'h2d || retire_opcode == 8'h57 || retire_opcode == 8'h6c) ?
-            5'd1 : retire_raw_result_reg;
-        retire_operand_imm = flat_operand_imm(
-            retire_opcode,
-            retire_instr,
-            dut.core_tiles[0].core_i.program_rom[dut.retire_submit_record_vec[0].pc + 32'd1]
-        );
+        retire_instr = retire_instr_vec[0];
+        retire_opcode = retire_opcode_vec[0];
+        retire_raw_result_reg = retire_raw_result_reg_vec[0];
+        retire_result_valid = retire_result_valid_vec[0];
+        retire_result_reg = retire_result_reg_vec[0];
+        retire_operand_imm = retire_operand_imm_vec[0];
         final_mem_checksum = rtl_memory_checksum();
     end
 
@@ -260,36 +294,36 @@ module lnp64_top_program_tb #(
             sampled_m1_pre_state[trace_tile] = dut.m1_pre_state_projection_vec[trace_tile];
         end
         #1;
-        if (dut.retire_submit_valid_vec[0]) begin
-            if (retire_opcode == 8'hff) begin
-                unsupported_retired_seen = 1'b1;
-            end
-            $display(
-                "RTL_RETIRE {\"pc\":%0d,\"opcode\":%0d,\"arch_opcode\":%0d,\"tile_id\":%0d,\"pid\":%0d,\"tid\":%0d,\"domain_id\":%0d,\"domain_gen\":%0d,\"action\":%0d,\"operand_rd\":%0d,\"operand_rs1\":%0d,\"operand_rs2\":%0d,\"operand_rs3\":%0d,\"operand_imm\":%0d,\"result_valid\":%0d,\"result_reg\":%0d,\"result_value\":%0d,\"errno\":%0d,\"status\":%0d,\"event_id\":%0d,\"fault_id\":%0d}",
-                dut.retire_submit_record_vec[0].pc,
-                retire_opcode,
-                retire_dec.opcode,
-                dut.retire_submit_record_vec[0].tile_id,
-                dut.retire_submit_record_vec[0].pid,
-                dut.retire_submit_record_vec[0].tid,
-                32'd1,
-                32'd1,
-                dut.retire_submit_record_vec[0].action,
-                retire_instr[23:19],
-                retire_instr[18:14],
-                retire_instr[13:9],
-                retire_instr[8:4],
-                retire_operand_imm,
-                retire_result_valid,
-                retire_result_valid ? retire_result_reg : 5'd0,
-                retire_result_valid ? dut.core_tiles[0].core_i.gpr[retire_result_reg] : 64'd0,
-                dut.core_tiles[0].core_i.errno_reg,
-                dut.core_tiles[0].core_i.errno_reg == LNP64_ERR_OK ? 16'd0 : 16'd1,
-                32'd0,
-                32'd0
-            );
-        end
         for (trace_tile = 0; trace_tile < TB_CORE_TILE_COUNT; trace_tile = trace_tile + 1) begin
+            if (dut.retire_submit_valid_vec[trace_tile]) begin
+                if (retire_opcode_vec[trace_tile] == 8'hff) begin
+                    unsupported_retired_seen = 1'b1;
+                end
+                $display(
+                    "RTL_RETIRE {\"pc\":%0d,\"opcode\":%0d,\"arch_opcode\":%0d,\"tile_id\":%0d,\"pid\":%0d,\"tid\":%0d,\"domain_id\":%0d,\"domain_gen\":%0d,\"action\":%0d,\"operand_rd\":%0d,\"operand_rs1\":%0d,\"operand_rs2\":%0d,\"operand_rs3\":%0d,\"operand_imm\":%0d,\"result_valid\":%0d,\"result_reg\":%0d,\"result_value\":%0d,\"errno\":%0d,\"status\":%0d,\"event_id\":%0d,\"fault_id\":%0d}",
+                    dut.retire_submit_record_vec[trace_tile].pc,
+                    retire_opcode_vec[trace_tile],
+                    retire_dec_vec[trace_tile].opcode,
+                    dut.retire_submit_record_vec[trace_tile].tile_id,
+                    dut.retire_submit_record_vec[trace_tile].pid,
+                    dut.retire_submit_record_vec[trace_tile].tid,
+                    32'd1,
+                    32'd1,
+                    dut.retire_submit_record_vec[trace_tile].action,
+                    retire_instr_vec[trace_tile][23:19],
+                    retire_instr_vec[trace_tile][18:14],
+                    retire_instr_vec[trace_tile][13:9],
+                    retire_instr_vec[trace_tile][8:4],
+                    retire_operand_imm_vec[trace_tile],
+                    retire_result_valid_vec[trace_tile],
+                    retire_result_valid_vec[trace_tile] ? retire_result_reg_vec[trace_tile] : 5'd0,
+                    retire_result_value_vec[trace_tile],
+                    retire_errno_vec[trace_tile],
+                    retire_errno_vec[trace_tile] == LNP64_ERR_OK ? 16'd0 : 16'd1,
+                    32'd0,
+                    32'd0
+                );
+            end
             if (dut.m1_commit_valid_vec[trace_tile]) begin
                 display_m1_top_commit(
                     dut.m1_commit_vec[trace_tile],
