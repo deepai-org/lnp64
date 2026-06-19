@@ -208,6 +208,7 @@ package lnp64_pkg;
         LNP64_OP_WAITABLE_PROBE = 16'h0086,
         LNP64_OP_AWAIT_EX     = 16'h0087,
         LNP64_OP_GET_PCR      = 16'h0088,
+        LNP64_OP_SET_PCR      = 16'h0089,
         LNP64_OP_UNSUPPORTED  = 16'h00ff
     } lnp64_opcode_e;
 

@@ -647,6 +647,7 @@ fn encode_flat_exec_instr(
         Instr::ErrnoGet(rd) => Ok(vec![enc_reg(0x38, *rd)]),
         Instr::ErrnoSet(src) => Ok(vec![enc_reg(0x39, *src)]),
         Instr::GetPcr(dst, pcr) => Ok(vec![enc_rrr(0x54, *dst, Reg(pcr_selector(*pcr)?), Reg(0))]),
+        Instr::SetPcr(pcr, src) => Ok(vec![enc_rrr(0x55, *src, Reg(pcr_selector(*pcr)?), Reg(0))]),
         Instr::DmaCtl(result, argblock) => Ok(vec![enc_rrr(0x5b, *result, *argblock, Reg(0))]),
         Instr::EnvGet(rd, key, index_or_buf, len_or_flags) => Ok(vec![enc_rrrr(
             0x56,
@@ -701,7 +702,7 @@ fn encode_flat_exec_instr(
         Instr::Isync(result, addr, len) => Ok(vec![enc_rrr(0xce, *result, *addr, *len)]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/CALL_REG/LR_GET/LR_SET/RET, YIELD/SLEEP, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, OBJECT_CTL, DOMAIN_CTL, CAP_DUP/SEND/RECV/REVOKE, ERRNO_GET/SET, GET_PCR, DMA_CTL, ENV_GET, MMAP/MPROTECT, OPEN_FD_DYN/FD_CLOSE_DYN, CLONE.SPAWN/THREAD_JOIN, READ_FD/WRITE_FD, PULL/PUSH, WAITABLE_PROBE, AWAIT/AWAIT_DYN/AWAIT_EX, CALL_CAP/CALL_CAP_DYN/RET_CAP, READ_FD_DYN/WRITE_FD_DYN, FENCE/ISYNC, AMO, LOCK.CMPXCHG, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/CALL_REG/LR_GET/LR_SET/RET, YIELD/SLEEP, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, OBJECT_CTL, DOMAIN_CTL, CAP_DUP/SEND/RECV/REVOKE, ERRNO_GET/SET, GET_PCR/SET_PCR, DMA_CTL, ENV_GET, MMAP/MPROTECT, OPEN_FD_DYN/FD_CLOSE_DYN, CLONE.SPAWN/THREAD_JOIN, READ_FD/WRITE_FD, PULL/PUSH, WAITABLE_PROBE, AWAIT/AWAIT_DYN/AWAIT_EX, CALL_CAP/CALL_CAP_DYN/RET_CAP, READ_FD_DYN/WRITE_FD_DYN, FENCE/ISYNC, AMO, LOCK.CMPXCHG, EXIT"
         )),
     }
 }
@@ -1484,6 +1485,9 @@ mod tests {
               GET_PCR r1, PID
               GET_PCR r2, TID
               GET_PCR r3, TLS_BASE
+              LI r4, 4096
+              SET_PCR TP, r4
+              GET_PCR r5, TP
               EXIT r0
         "#;
         let program = Program::parse(source).unwrap();
@@ -1491,7 +1495,15 @@ mod tests {
 
         assert_eq!(
             hex,
-            concat!("54080000\n", "54108000\n", "5418c000\n", "3a000000\n",)
+            concat!(
+                "54080000\n",
+                "54108000\n",
+                "5418c000\n",
+                "01201000\n",
+                "5520c000\n",
+                "5428c000\n",
+                "3a000000\n",
+            )
         );
     }
 

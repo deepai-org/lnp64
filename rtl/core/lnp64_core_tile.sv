@@ -94,12 +94,17 @@ module lnp64_core_tile #(
     logic thread_cmp_greater [0:1];
     logic thread_cmp_below [0:1];
     logic thread_cmp_above [0:1];
+    logic [63:0] thread_pcr_tp [0:1];
     logic thread_active [0:1];
     logic thread_completed [0:1];
     logic [63:0] thread_exit_code [0:1];
     logic active_thread_slot;
     logic next_thread_slot;
     logic [31:0] active_tid;
+    logic [63:0] pcr_thread_pointer;
+    logic [63:0] pcr_uid;
+    logic [63:0] pcr_gid;
+    logic [63:0] pcr_sigmask;
     logic [63:0] sram [0:SRAM_WORDS-1];
     logic [63:0] initial_sram [0:SRAM_WORDS-1];
     logic [63:0] initial_data_sram [0:SRAM_WORDS-1];
@@ -1569,6 +1574,10 @@ module lnp64_core_tile #(
             cmp_above <= 1'b0;
             return_stack_depth <= '0;
             link_register <= 64'd0;
+            pcr_thread_pointer <= 64'd0;
+            pcr_uid <= 64'd0;
+            pcr_gid <= 64'd0;
+            pcr_sigmask <= 64'd0;
             active_thread_slot <= 1'b0;
             for (i = 0; i < 2; i = i + 1) begin
                 thread_pc[i] <= 32'd0;
@@ -1579,6 +1588,7 @@ module lnp64_core_tile #(
                 thread_cmp_greater[i] <= 1'b0;
                 thread_cmp_below[i] <= 1'b0;
                 thread_cmp_above[i] <= 1'b0;
+                thread_pcr_tp[i] <= 64'd0;
                 thread_active[i] <= i == 0;
                 thread_completed[i] <= 1'b0;
                 thread_exit_code[i] <= 64'd0;
@@ -2821,16 +2831,16 @@ module lnp64_core_tile #(
                                         gpr[dec.rd] <= {32'd0, active_tid};
                                     end
                                     5'd3: begin
-                                        gpr[dec.rd] <= 64'd0;
+                                        gpr[dec.rd] <= pcr_thread_pointer;
                                     end
                                     5'd4: begin
-                                        gpr[dec.rd] <= 64'd0;
+                                        gpr[dec.rd] <= pcr_uid;
                                     end
                                     5'd5: begin
-                                        gpr[dec.rd] <= 64'd0;
+                                        gpr[dec.rd] <= pcr_gid;
                                     end
                                     5'd6: begin
-                                        gpr[dec.rd] <= 64'd0;
+                                        gpr[dec.rd] <= pcr_sigmask;
                                     end
                                     5'd7: begin
                                         gpr[dec.rd] <= 64'd0;
@@ -2852,6 +2862,29 @@ module lnp64_core_tile #(
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
+                            LNP64_OP_SET_PCR: begin
+                                unique case (dec.rs1[4:0])
+                                    5'd3: begin
+                                        pcr_thread_pointer <= gpr[dec.rd];
+                                    end
+                                    5'd4: begin
+                                        pcr_uid <= gpr[dec.rd];
+                                    end
+                                    5'd5: begin
+                                        pcr_gid <= gpr[dec.rd];
+                                    end
+                                    5'd6: begin
+                                        pcr_sigmask <= gpr[dec.rd];
+                                    end
+                                    default: begin
+                                        errno_reg <= LNP64_ERR_EPERM;
+                                    end
+                                endcase
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
                             LNP64_OP_CLONE: begin
                                 if (active_thread_slot == 1'b0 && !thread_active[1]) begin
                                     for (i = 0; i < 32; i = i + 1) begin
@@ -2866,6 +2899,7 @@ module lnp64_core_tile #(
                                         thread_return_stack[1][i] <= 32'd0;
                                     end
                                     thread_link_register[1] <= 64'd0;
+                                    thread_pcr_tp[1] <= 64'd0;
                                     thread_cmp_zero[1] <= 1'b0;
                                     thread_cmp_negative[1] <= 1'b0;
                                     thread_cmp_greater[1] <= 1'b0;
@@ -3513,6 +3547,7 @@ module lnp64_core_tile #(
                     thread_pc[active_thread_slot] <= pc;
                     thread_return_stack_depth[active_thread_slot] <= return_stack_depth;
                     thread_link_register[active_thread_slot] <= link_register;
+                    thread_pcr_tp[active_thread_slot] <= pcr_thread_pointer;
                     thread_cmp_zero[active_thread_slot] <= cmp_zero;
                     thread_cmp_negative[active_thread_slot] <= cmp_negative;
                     thread_cmp_greater[active_thread_slot] <= cmp_greater;
@@ -3529,6 +3564,7 @@ module lnp64_core_tile #(
                         pc <= thread_pc[next_thread_slot];
                         return_stack_depth <= thread_return_stack_depth[next_thread_slot];
                         link_register <= thread_link_register[next_thread_slot];
+                        pcr_thread_pointer <= thread_pcr_tp[next_thread_slot];
                         cmp_zero <= thread_cmp_zero[next_thread_slot];
                         cmp_negative <= thread_cmp_negative[next_thread_slot];
                         cmp_greater <= thread_cmp_greater[next_thread_slot];
