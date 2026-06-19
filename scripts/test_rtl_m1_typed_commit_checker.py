@@ -215,6 +215,90 @@ def main() -> None:
         ),
     )
 
+    push_without_push_right_state = checker.initial_state(valid_run[0], ops)
+    push_without_push_right_state.root_cap = checker.Cap(
+        object_id=push_without_push_right_state.root_cap.object_id,
+        object_gen=push_without_push_right_state.object_gen,
+        fdr_gen=push_without_push_right_state.object_gen,
+        domain_id=push_without_push_right_state.root_cap.domain_id,
+        domain_gen=push_without_push_right_state.root_cap.domain_gen,
+        rights_mask=checker.RIGHT_PULL | checker.RIGHT_DUP | checker.RIGHT_MINT,
+        lineage_epoch=push_without_push_right_state.root_cap.lineage_epoch,
+        sealed=push_without_push_right_state.root_cap.sealed,
+    )
+    expect_failure(
+        "TypedCommitTransition.push root push precondition failed",
+        lambda: checker.check_rtl_refinement_step(
+            push_without_push_right_state,
+            None,
+            valid_run[3],
+            valid_state_run[3],
+            0,
+            ops,
+        ),
+    )
+
+    pull_empty_queue_state = checker.initial_state(valid_run[0], ops)
+    for record in valid_run[:3]:
+        checker.apply_commit(pull_empty_queue_state, record, 0, ops)
+    expect_failure(
+        "TypedCommitTransition.pull while queue is empty",
+        lambda: checker.check_rtl_refinement_step(
+            pull_empty_queue_state,
+            valid_state_run[2],
+            valid_run[4],
+            valid_state_run[4],
+            0,
+            ops,
+        ),
+    )
+
+    revoke_stale_root_state = checker.initial_state(valid_run[0], ops)
+    revoke_stale_root_state.root_cap = checker.Cap(
+        object_id=revoke_stale_root_state.root_cap.object_id,
+        object_gen=revoke_stale_root_state.object_gen,
+        fdr_gen=0,
+        domain_id=revoke_stale_root_state.root_cap.domain_id,
+        domain_gen=revoke_stale_root_state.root_cap.domain_gen,
+        rights_mask=revoke_stale_root_state.root_cap.rights_mask,
+        lineage_epoch=revoke_stale_root_state.root_cap.lineage_epoch,
+        sealed=revoke_stale_root_state.root_cap.sealed,
+    )
+    expect_failure(
+        "TypedCommitTransition.capRevoke root authority precondition failed",
+        lambda: checker.check_rtl_refinement_step(
+            revoke_stale_root_state,
+            None,
+            valid_run[7],
+            valid_state_run[7],
+            0,
+            ops,
+        ),
+    )
+
+    reject_stale_live_cap_state = checker.initial_state(valid_run[0], ops)
+    checker.apply_commit(reject_stale_live_cap_state, valid_run[0], 0, ops)
+    live_reject_stale = m1_commit_record(
+        ops.reject_stale,
+        1,
+        1,
+        1,
+        2,
+        checker.RIGHT_PULL,
+        checker.ERR_EREVOKED,
+    )
+    expect_failure(
+        "TypedCommitTransition.rejectStale stale consumer cap still authorizes work",
+        lambda: checker.check_rtl_refinement_step(
+            reject_stale_live_cap_state,
+            valid_state_run[0],
+            live_reject_stale,
+            valid_state_run[8],
+            0,
+            ops,
+        ),
+    )
+
     bad_post_state_run = copy.deepcopy(valid_state_run)
     bad_post_state_run[1]["transfer_valid"] = 0
     expect_failure(
