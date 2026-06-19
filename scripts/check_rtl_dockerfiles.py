@@ -32,6 +32,7 @@ def require_package(dockerfile: str, package: str, label: str) -> None:
 def check_proof() -> None:
     dockerfile = read_text("Dockerfile.rtl-proof")
     wrapper = read_text("scripts/run_rtl_proof_docker.sh")
+    gate = read_text("scripts/run_rtl_proof_gates.sh")
 
     require_all(
         dockerfile,
@@ -55,13 +56,28 @@ def check_proof() -> None:
             "docker build",
             "-f Dockerfile.rtl-proof",
             "LEAN_TOOLCHAIN",
+            "RUN_RTL_PROOF_GATES",
+            "LNP64_RTL_PROOF_BUILD_GATES",
+            "LNP64_RTL_PROOF_SKIP_BUILD",
+            "using existing RTL/proof Docker image",
             "docker run --rm",
             "-e LNP64_REQUIRE_LEAN=1",
+            "LNP64_RTL_PROOF_RANDOM_COSIM",
             "-v \"$root:/work\"",
             "-w /work",
             "bash scripts/run_rtl_proof_gates.sh",
         ],
         "scripts/run_rtl_proof_docker.sh",
+    )
+    require_all(
+        gate,
+        [
+            "LNP64_RTL_PROOF_RANDOM_COSIM",
+            "scripts/check_rtl_cosim_manifest.py",
+            "bash scripts/run_rtl_random_cosim.sh",
+            "rtl random cosim skipped",
+        ],
+        "scripts/run_rtl_proof_gates.sh",
     )
 
 
@@ -195,6 +211,9 @@ def check_aggregate_and_docs() -> None:
         [
             "RTL And Proof Gates",
             "bash scripts/run_rtl_proof_docker.sh",
+            "LNP64_RTL_PROOF_RANDOM_COSIM=0 bash scripts/run_rtl_proof_docker.sh",
+            "LNP64_RTL_PROOF_SKIP_BUILD=1 LNP64_RTL_PROOF_RANDOM_COSIM=0 bash scripts/run_rtl_proof_docker.sh",
+            "LNP64_RTL_PROOF_BUILD_GATES=1",
             "bash scripts/run_rtl_synth_docker.sh",
             "bash scripts/run_rtl_proof_gates.sh",
             "bash scripts/run_rtl_synth_gates.sh",

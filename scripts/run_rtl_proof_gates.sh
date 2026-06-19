@@ -88,6 +88,13 @@ bash scripts/run_rtl_m12.sh
 bash scripts/run_rtl_m13.sh
 bash scripts/run_rtl_m14.sh
 bash scripts/run_rtl_m15.sh
-bash scripts/run_rtl_random_cosim.sh
+
+if [[ "${LNP64_RTL_PROOF_RANDOM_COSIM:-1}" == "0" ||
+      "${LNP64_RTL_PROOF_SKIP_RANDOM_COSIM:-0}" == "1" ]]; then
+  scripts/check_rtl_cosim_manifest.py
+  printf '%s\n' "rtl random cosim skipped (set LNP64_RTL_PROOF_RANDOM_COSIM=1 for full randomized/cosim sweep)"
+else
+  bash scripts/run_rtl_random_cosim.sh
+fi
 
 printf '%s\n' "rtl/proof gates ok"

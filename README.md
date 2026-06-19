@@ -161,6 +161,21 @@ bash scripts/run_rtl_proof_docker.sh
 bash scripts/run_rtl_synth_docker.sh
 ```
 
+Faster RTL/proof iteration in Docker:
+
+```sh
+LNP64_RTL_PROOF_RANDOM_COSIM=0 bash scripts/run_rtl_proof_docker.sh
+LNP64_RTL_PROOF_SKIP_BUILD=1 LNP64_RTL_PROOF_RANDOM_COSIM=0 bash scripts/run_rtl_proof_docker.sh
+```
+
+The default Docker proof wrapper builds the tool image and runs the mounted
+checkout once. Set `LNP64_RTL_PROOF_BUILD_GATES=1` only when you also want the
+full proof gate to run during `docker build`. The quick command above still runs
+the Lean, schema, M1/M7 typed-checker, and per-slice RTL gates, but skips the
+long multi-seed randomized/cosim sweep after checking its manifest. Add
+`LNP64_RTL_PROOF_SKIP_BUILD=1` for repeated local runs after the Docker image
+already exists.
+
 Focused RTL/proof loop:
 
 ```sh

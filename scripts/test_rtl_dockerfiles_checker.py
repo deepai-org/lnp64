@@ -21,6 +21,7 @@ COPIED_FILES = (
     "scripts/run_all_gates.sh",
     "scripts/run_formal_rtl_roadmap_audit.sh",
     "scripts/run_rtl_proof_docker.sh",
+    "scripts/run_rtl_proof_gates.sh",
     "scripts/run_rtl_synth_docker.sh",
     "scripts/run_rtl_board_docker.sh",
     "scripts/run_rtl_board_ice40_s0.sh",
