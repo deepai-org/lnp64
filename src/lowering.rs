@@ -6080,6 +6080,75 @@ mod tests {
     }
 
     #[test]
+    fn rtl_toy_c_smokes_have_linked_llvm_replacement_coverage() {
+        let manifest = include_str!("../tests/rtl/top_level_program_manifest.json");
+        let linked_gate = "\"rtl_gate\": \"scripts/run_rtl_top_linked_llvm_smoke.sh\"";
+
+        let entry_for = |source: &str| {
+            let source_marker = format!("\"source\": \"{source}\"");
+            let source_idx = manifest
+                .find(&source_marker)
+                .unwrap_or_else(|| panic!("missing RTL top-level manifest source {source}"));
+            let entry_start = manifest[..source_idx]
+                .rfind("    {")
+                .unwrap_or_else(|| panic!("missing manifest entry start for {source}"));
+            let entry_end = manifest[source_idx..]
+                .find("\n    }")
+                .map(|offset| source_idx + offset)
+                .unwrap_or_else(|| panic!("missing manifest entry end for {source}"));
+            &manifest[entry_start..entry_end]
+        };
+
+        for toy_source in [
+            "tests/rtl/programs/top_bitwise.c",
+            "tests/rtl/programs/top_shift.c",
+            "tests/rtl/programs/top_not.c",
+            "tests/rtl/programs/top_udiv_urem.c",
+            "tests/rtl/programs/top_signed_division.c",
+            "tests/rtl/programs/top_byte_array.c",
+            "tests/rtl/programs/top_heap_byte_lanes.c",
+        ] {
+            let toy_entry = entry_for(toy_source);
+            assert!(
+                toy_entry.contains("\"rtl_gate\": \"scripts/run_rtl_top_toy_c_smoke.sh\""),
+                "{toy_source} should remain an explicit legacy toy-C smoke while covered by linked LLVM"
+            );
+        }
+
+        for (linked_source, feature) in [
+            (
+                "tests/rtl/programs/top_linked_bitwise_shift.c",
+                "bitwise_alu",
+            ),
+            ("tests/rtl/programs/top_linked_bitwise_shift.c", "shift_alu"),
+            (
+                "tests/rtl/programs/top_linked_divrem.c",
+                "unsigned_division",
+            ),
+            ("tests/rtl/programs/top_linked_divrem.c", "signed_division"),
+            (
+                "tests/rtl/programs/top_linked_byte_array.c",
+                "byte_load_store",
+            ),
+            ("tests/rtl/programs/top_linked_heap_byte_lanes.c", "heap"),
+        ] {
+            let linked_entry = entry_for(linked_source);
+            assert!(
+                linked_entry.contains(linked_gate),
+                "{linked_source} must use the linked LLVM RTL smoke gate"
+            );
+            assert!(
+                linked_entry.contains("\"status\": \"active\""),
+                "{linked_source} should be active replacement coverage"
+            );
+            assert!(
+                linked_entry.contains(feature),
+                "{linked_source} must advertise replacement feature {feature}"
+            );
+        }
+    }
+
+    #[test]
     fn llvm_target_manifest_records_required_backend_contract() {
         let manifest = include_str!("../toolchain/lnp64_target.manifest");
         let object_format = include_str!("../object_format.md");
