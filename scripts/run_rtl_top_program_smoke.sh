@@ -47,6 +47,7 @@ if [[ ! -f "$program_input" ]]; then
 fi
 program_hex="$program_input"
 program_asm=""
+program_data_hex=""
 if [[ "$program_input" == *.c ]]; then
   program_asm="$(mktemp "${TMPDIR:-/tmp}/lnp64_top_program_from_c.XXXXXX.s")"
   tmp_files+=("$program_asm")
@@ -59,11 +60,12 @@ if [[ "$program_input" == *.c ]]; then
 fi
 if [[ "$program_input" == *.s ]]; then
   program_hex="$(mktemp "${TMPDIR:-/tmp}/lnp64_top_program_from_asm.XXXXXX.hex")"
-  tmp_files+=("$program_hex")
+  program_data_hex="$(mktemp "${TMPDIR:-/tmp}/lnp64_top_program_data_from_asm.XXXXXX.hex")"
+  tmp_files+=("$program_hex" "$program_data_hex")
   if [[ -n "${LNP64_BIN:-}" ]]; then
-    "$LNP64_BIN" asm-flat-exec "$program_input" -o "$program_hex"
+    "$LNP64_BIN" asm-flat-exec "$program_input" -o "$program_hex" --data-hex "$program_data_hex"
   else
-    cargo run --quiet -- asm-flat-exec "$program_input" -o "$program_hex"
+    cargo run --quiet -- asm-flat-exec "$program_input" -o "$program_hex" --data-hex "$program_data_hex"
   fi
 fi
 
@@ -82,15 +84,23 @@ else
   rtl_lint "${common_flags[@]}" "${rtl_files[@]}"
   verilator --binary --Mdir "$build_dir" "${common_flags[@]}" "${rtl_files[@]}" >/tmp/lnp64_rtl_top_program_build.log
 fi
-"$rtl_binary" "+lnp64_program_hex=$program_hex" | tee "$sim_log"
+rtl_plusargs=("+lnp64_program_hex=$program_hex")
+if [[ -n "$program_data_hex" && -s "$program_data_hex" ]]; then
+  rtl_plusargs+=("+lnp64_data_hex=$program_data_hex")
+fi
+"$rtl_binary" "${rtl_plusargs[@]}" | tee "$sim_log"
 
 grep -q "LNP64-RTL-TOP-PROGRAM PASS" "$sim_log"
 
 if [[ -n "${LNP64_BIN:-}" ]]; then
-  "$LNP64_BIN" run-flat-exec "$program_hex" | tee "$emulator_log"
+  emulator_cmd=("$LNP64_BIN" run-flat-exec "$program_hex")
 else
-  cargo run --quiet -- run-flat-exec "$program_hex" | tee "$emulator_log"
+  emulator_cmd=(cargo run --quiet -- run-flat-exec "$program_hex")
 fi
+if [[ -n "$program_data_hex" && -s "$program_data_hex" ]]; then
+  emulator_cmd+=(--data-hex "$program_data_hex")
+fi
+"${emulator_cmd[@]}" | tee "$emulator_log"
 
 python3 - "$sim_log" "$emulator_log" <<'PY'
 import json

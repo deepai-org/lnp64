@@ -23,7 +23,7 @@ import json
 from pathlib import Path
 
 manifest = json.loads(Path("tests/rtl/top_level_program_manifest.json").read_text(encoding="utf-8"))
-for section in ("flat_hex_programs", "compiler_flat_programs"):
+for section in ("flat_hex_programs", "compiler_flat_programs", "assembly_programs"):
     for entry in manifest[section]:
         if entry["status"] == "active":
             print(entry["source"])

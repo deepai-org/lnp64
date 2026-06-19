@@ -1511,7 +1511,6 @@ impl Machine {
             let delta = sign_extend(word & 0x00ff_ffff, 24) * 4;
             Target::Address(pc.wrapping_add(delta as u64) as usize)
         };
-
         let instr = match opcode {
             0x00 => Instr::Nop,
             0x01 => Instr::Li(a, Value::Imm(imm16)),
@@ -1625,6 +1624,7 @@ impl Machine {
             0x52 => Instr::CapRecv(a, b),
             0x53 => Instr::CapRevoke(a, b),
             0x56 => Instr::EnvGet(a, b, c, d),
+            0x57 => Instr::WriteFd(FdReg(a.0), b, c),
             0x60 => Instr::MmapBootstrap(a, b, c, d),
             0x61 => Instr::MunmapBootstrap(a, b),
             0x62 => Instr::Sigaction(a, b),

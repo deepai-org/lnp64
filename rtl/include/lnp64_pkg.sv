@@ -158,6 +158,7 @@ package lnp64_pkg;
         LNP64_OP_CSET_UGT     = 16'h006f,
         LNP64_OP_CSET_ULE     = 16'h0070,
         LNP64_OP_CSET_UGE     = 16'h0071,
+        LNP64_OP_WRITE_FD     = 16'h0072,
         LNP64_OP_UNSUPPORTED  = 16'h00ff
     } lnp64_opcode_e;
 
@@ -470,6 +471,7 @@ package lnp64_pkg;
         logic [7:0] rd;
         logic [7:0] rs1;
         logic [7:0] rs2;
+        logic [7:0] rs3;
         logic [31:0] imm;
         logic supported;
     } lnp64_decode_t;

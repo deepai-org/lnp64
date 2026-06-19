@@ -59,11 +59,16 @@ fn run() -> Result<(), String> {
                 .map_err(|err| format!("failed to read {}: {err}", options.input.display()))?;
             let program = Program::parse(&source)?;
             let hex = encode_flat_exec_hex(&program)?;
+            let data_hex = encode_flat_exec_data_hex(&program)?;
             if let Some(output) = options.output {
                 fs::write(&output, hex)
                     .map_err(|err| format!("failed to write {}: {err}", output.display()))?;
             } else {
                 print!("{hex}");
+            }
+            if let Some(output) = options.data_output {
+                fs::write(&output, data_hex)
+                    .map_err(|err| format!("failed to write {}: {err}", output.display()))?;
             }
             Ok(())
         }
@@ -183,16 +188,17 @@ fn run() -> Result<(), String> {
             }
         }
         "run-flat-exec" => {
-            let input = take_input(&mut args)?;
-            if !args.is_empty() {
-                return Err(format!(
-                    "unexpected run-flat-exec arguments: {}",
-                    args.join(" ")
-                ));
-            }
-            let text = fs::read_to_string(&input)
-                .map_err(|err| format!("failed to read {}: {err}", input.display()))?;
-            let mut machine = build_flat_exec_machine(&text)?;
+            let options = take_run_flat_exec_options(&mut args)?;
+            let text = fs::read_to_string(&options.input)
+                .map_err(|err| format!("failed to read {}: {err}", options.input.display()))?;
+            let data = if let Some(input) = options.data_input {
+                let data_hex = fs::read_to_string(&input)
+                    .map_err(|err| format!("failed to read {}: {err}", input.display()))?;
+                flat_data_hex_to_bytes(&data_hex)?
+            } else {
+                Vec::new()
+            };
+            let mut machine = build_flat_exec_machine(&text, &data)?;
             let exit = machine.run_committed_exec()?;
             let regs = machine.last_exit_registers().ok_or_else(|| {
                 "flat exec finished without an exit register snapshot".to_string()
@@ -228,7 +234,8 @@ fn run() -> Result<(), String> {
 fn usage() {
     eprintln!("usage:");
     eprintln!("  lnp64 asm <program.s>");
-    eprintln!("  lnp64 asm-flat-exec <program.s> [-o program.hex]");
+    eprintln!("  lnp64 asm-flat-exec <program.s> [-o program.hex] [--data-hex data.hex]");
+    eprintln!("  lnp64 run-flat-exec <program.hex> [--data-hex data.hex]");
     eprintln!("  lnp64 run [--namespace-root <dir>] <program.s>");
     eprintln!("  lnp64 elf-plan [--load-bias <n>] <program.elf>");
     eprintln!("  lnp64 run-elf [--load-bias <n>] <program.elf>");
@@ -241,6 +248,12 @@ fn usage() {
 struct AsmFlatExecOptions {
     input: PathBuf,
     output: Option<PathBuf>,
+    data_output: Option<PathBuf>,
+}
+
+struct RunFlatExecOptions {
+    input: PathBuf,
+    data_input: Option<PathBuf>,
 }
 
 fn encode_flat_exec_hex(program: &Program) -> Result<String, String> {
@@ -253,6 +266,24 @@ fn encode_flat_exec_hex(program: &Program) -> Result<String, String> {
     }
     if out.is_empty() {
         return Err("asm-flat-exec input has no text instructions".to_string());
+    }
+    Ok(out)
+}
+
+fn encode_flat_exec_data_hex(program: &Program) -> Result<String, String> {
+    if program.data.len() > 4096 {
+        return Err(format!(
+            "flat exec data image is too large: {} bytes > 4096",
+            program.data.len()
+        ));
+    }
+    let mut out = String::new();
+    for chunk in program.data.chunks(8) {
+        let mut word = 0u64;
+        for (idx, byte) in chunk.iter().enumerate() {
+            word |= u64::from(*byte) << (idx * 8);
+        }
+        out.push_str(&format!("{word:016x}\n"));
     }
     Ok(out)
 }
@@ -270,6 +301,7 @@ fn flat_exec_word_pcs(program: &Program) -> Vec<usize> {
 fn flat_exec_instr_word_len(instr: &Instr) -> usize {
     match instr {
         Instr::Li(_, Value::Imm(imm)) if imm16(*imm, "LI immediate").is_err() => 2,
+        Instr::Li(_, Value::Label(_)) => 2,
         Instr::Auipc(_, _) => 2,
         _ => 1,
     }
@@ -283,7 +315,7 @@ fn encode_flat_exec_instr(
 ) -> Result<Vec<u32>, String> {
     match instr {
         Instr::Nop => Ok(vec![enc_reg(0x00, Reg(0))]),
-        Instr::Li(rd, value) => encode_flat_exec_li(*rd, value),
+        Instr::Li(rd, value) => encode_flat_exec_li(program, *rd, value),
         Instr::Auipc(rd, value) => encode_flat_exec_auipc(*rd, value),
         Instr::Mov(rd, rs1) => Ok(vec![enc_rrr(0x02, *rd, *rs1, Reg(0))]),
         Instr::Add(rd, rs1, rs2) => Ok(vec![enc_rrr(0x10, *rd, *rs1, *rs2)]),
@@ -439,16 +471,17 @@ fn encode_flat_exec_instr(
             *index_or_buf,
             *len_or_flags,
         )]),
+        Instr::WriteFd(fd, buf, len) => Ok(vec![enc_rrr(0x57, Reg(fd.0), *buf, *len)]),
         Instr::Fence => Ok(vec![enc_reg(0xcd, Reg(0))]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XOR/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC, ERRNO_GET/SET, ENV_GET, FENCE, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC, ERRNO_GET/SET, ENV_GET, WRITE_FD, FENCE, EXIT"
         )),
     }
 }
 
-fn encode_flat_exec_li(rd: Reg, value: &Value) -> Result<Vec<u32>, String> {
-    let imm = value_imm32(value)?;
+fn encode_flat_exec_li(program: &Program, rd: Reg, value: &Value) -> Result<Vec<u32>, String> {
+    let imm = value_imm32(program, value)?;
     if let Ok(small) = imm16(imm, "LI immediate") {
         Ok(vec![enc_ri(0x01, rd, small)])
     } else {
@@ -457,7 +490,7 @@ fn encode_flat_exec_li(rd: Reg, value: &Value) -> Result<Vec<u32>, String> {
 }
 
 fn encode_flat_exec_auipc(rd: Reg, value: &Value) -> Result<Vec<u32>, String> {
-    let imm = value_imm32(value)?;
+    let imm = value_imm32_without_labels(value)?;
     Ok(vec![enc_reg(0xd0, rd), imm as u32])
 }
 
@@ -505,9 +538,22 @@ fn flat_exec_cset_opcode(condition: Condition) -> u8 {
     }
 }
 
-fn value_imm32(value: &Value) -> Result<i64, String> {
+fn value_imm32(program: &Program, value: &Value) -> Result<i64, String> {
     match value {
         Value::Imm(imm) => imm32(*imm, "LI immediate"),
+        Value::Label(label) => program
+            .data_labels
+            .get(label)
+            .copied()
+            .or_else(|| program.labels.get(label).map(|pc| *pc as u64))
+            .ok_or_else(|| format!("unknown label immediate {label:?}"))
+            .and_then(|value| imm32(value as i64, "LI label immediate")),
+    }
+}
+
+fn value_imm32_without_labels(value: &Value) -> Result<i64, String> {
+    match value {
+        Value::Imm(imm) => imm32(*imm, "immediate"),
         Value::Label(label) => Err(format!(
             "asm-flat-exec does not yet materialize label immediate {label:?}"
         )),
@@ -600,8 +646,9 @@ fn enc_branch(opcode: u8, delta_words: i64) -> u32 {
     (u32::from(opcode) << 24) | ((delta_words as u32) & 0x00ff_ffff)
 }
 
-fn build_flat_exec_machine(hex_words: &str) -> Result<Machine, String> {
-    const DATA_BASE: u64 = 0;
+fn build_flat_exec_machine(hex_words: &str, data: &[u8]) -> Result<Machine, String> {
+    const ZERO_BASE: u64 = 0;
+    const DATA_BASE: u64 = isa::DATA_BASE;
     const TEXT_BASE: u64 = 0x1000;
     const PAGE_SIZE: usize = 4096;
     const PROT_READ: u64 = 1 << 0;
@@ -615,9 +662,17 @@ fn build_flat_exec_machine(hex_words: &str) -> Result<Machine, String> {
             text.len()
         ));
     }
+    if data.len() > PAGE_SIZE {
+        return Err(format!(
+            "flat exec data image is too large: {} bytes > {PAGE_SIZE}",
+            data.len()
+        ));
+    }
+    let zero_page = vec![0u8; PAGE_SIZE];
     let mut text_page = vec![0u8; PAGE_SIZE];
     text_page[..text.len()].copy_from_slice(&text);
-    let data_page = vec![0u8; PAGE_SIZE];
+    let mut data_page = vec![0u8; PAGE_SIZE];
+    data_page[..data.len()].copy_from_slice(data);
 
     let plan = ExecPlan {
         version: 1,
@@ -628,6 +683,21 @@ fn build_flat_exec_machine(hex_words: &str) -> Result<Machine, String> {
             startup_metadata_ptr: 0,
         },
         vmas: vec![
+            VmaRecord {
+                virtual_address: ZERO_BASE,
+                length: PAGE_SIZE as u64,
+                protection: VmaProtection {
+                    read: true,
+                    write: true,
+                    execute: false,
+                },
+                memory_type: MemoryType::Image,
+                executable_provenance: ExecutableProvenance::NonExecutable,
+                source_offset: 0,
+                source_length: 0,
+                zero_fill_length: PAGE_SIZE as u64,
+                mapping_flags: 0,
+            },
             VmaRecord {
                 virtual_address: DATA_BASE,
                 length: PAGE_SIZE as u64,
@@ -677,6 +747,11 @@ fn build_flat_exec_machine(hex_words: &str) -> Result<Machine, String> {
     Machine::validate_exec_descriptor_words(&descriptor_words)?;
     let prepared = vec![
         PreparedExecVma {
+            virtual_address: ZERO_BASE,
+            protection: PROT_READ | PROT_WRITE,
+            bytes: zero_page,
+        },
+        PreparedExecVma {
             virtual_address: DATA_BASE,
             protection: PROT_READ | PROT_WRITE,
             bytes: data_page,
@@ -709,6 +784,27 @@ fn flat_hex_words_to_bytes(hex_words: &str) -> Result<Vec<u8>, String> {
     }
     if bytes.is_empty() {
         return Err("flat exec image is empty".to_string());
+    }
+    Ok(bytes)
+}
+
+fn flat_data_hex_to_bytes(hex_words: &str) -> Result<Vec<u8>, String> {
+    let mut bytes = Vec::new();
+    for (idx, raw_line) in hex_words.lines().enumerate() {
+        let line = raw_line.split('#').next().unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+        let word_text = line
+            .strip_prefix("0x")
+            .or_else(|| line.strip_prefix("0X"))
+            .unwrap_or(line);
+        let word = u64::from_str_radix(word_text, 16)
+            .map_err(|err| format!("invalid data hex word on line {}: {err}", idx + 1))?;
+        bytes.extend_from_slice(&word.to_le_bytes());
+    }
+    while bytes.last().copied() == Some(0) {
+        bytes.pop();
     }
     Ok(bytes)
 }
@@ -849,6 +945,7 @@ fn take_input(args: &mut Vec<String>) -> Result<PathBuf, String> {
 fn take_asm_flat_exec_options(args: &mut Vec<String>) -> Result<AsmFlatExecOptions, String> {
     let mut input = None;
     let mut output = None;
+    let mut data_output = None;
     while !args.is_empty() {
         let arg = args.remove(0);
         if arg == "-o" {
@@ -859,6 +956,14 @@ fn take_asm_flat_exec_options(args: &mut Vec<String>) -> Result<AsmFlatExecOptio
                 return Err("-o requires a path".to_string());
             }
             output = Some(PathBuf::from(args.remove(0)));
+        } else if arg == "--data-hex" {
+            if data_output.is_some() {
+                return Err("duplicate --data-hex".to_string());
+            }
+            if args.is_empty() {
+                return Err("--data-hex requires a path".to_string());
+            }
+            data_output = Some(PathBuf::from(args.remove(0)));
         } else if arg.starts_with('-') {
             return Err(format!("unexpected asm-flat-exec option {arg:?}"));
         } else if input.is_some() {
@@ -868,7 +973,36 @@ fn take_asm_flat_exec_options(args: &mut Vec<String>) -> Result<AsmFlatExecOptio
         }
     }
     let input = input.ok_or_else(|| "missing input path".to_string())?;
-    Ok(AsmFlatExecOptions { input, output })
+    Ok(AsmFlatExecOptions {
+        input,
+        output,
+        data_output,
+    })
+}
+
+fn take_run_flat_exec_options(args: &mut Vec<String>) -> Result<RunFlatExecOptions, String> {
+    let mut input = None;
+    let mut data_input = None;
+    while !args.is_empty() {
+        let arg = args.remove(0);
+        if arg == "--data-hex" {
+            if data_input.is_some() {
+                return Err("duplicate --data-hex".to_string());
+            }
+            if args.is_empty() {
+                return Err("--data-hex requires a path".to_string());
+            }
+            data_input = Some(PathBuf::from(args.remove(0)));
+        } else if arg.starts_with('-') {
+            return Err(format!("unexpected run-flat-exec option {arg:?}"));
+        } else if input.is_some() {
+            return Err(format!("unexpected run-flat-exec argument {arg:?}"));
+        } else {
+            input = Some(PathBuf::from(arg));
+        }
+    }
+    let input = input.ok_or_else(|| "missing input path".to_string())?;
+    Ok(RunFlatExecOptions { input, data_input })
 }
 
 struct CcOptions {
@@ -1010,6 +1144,36 @@ mod tests {
                 "3a200000\n",
             )
         );
+    }
+
+    #[test]
+    fn asm_flat_exec_encodes_data_labels_and_data_hex() {
+        let source = r#"
+            .data
+            msg: .string "ok\n"
+            buf: .zero 1
+            .text
+              LI r1, msg
+              LI r2, buf
+              WRITE_FD fd1, r1, r2
+              EXIT r0
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+        let data_hex = encode_flat_exec_data_hex(&program).unwrap();
+
+        assert_eq!(
+            hex,
+            concat!(
+                "04080000\n",
+                "00010000\n",
+                "04100000\n",
+                "00010004\n",
+                "57084400\n",
+                "3a000000\n",
+            )
+        );
+        assert_eq!(data_hex, "00000000000a6b6f\n");
     }
 
     #[test]

@@ -177,7 +177,13 @@
     {"source": "demos/cgroup_domains.s", "required_features": ["core", "resource_domain", "scheduler"], "status": "blocked_by_features"},
     {"source": "demos/dma_copy.s", "required_features": ["core", "fdr", "dma"], "status": "blocked_by_features"},
     {"source": "demos/domain_pressure.s", "required_features": ["core", "resource_domain", "accounting"], "status": "blocked_by_features"},
-    {"source": "demos/env_get.s", "required_features": ["core", "env_get"], "status": "blocked_by_features"},
+    {
+      "source": "demos/env_get.s",
+      "required_features": ["core", "env_get", "topology_records", "data_labels", "write_fd", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    },
     {"source": "demos/exec_target.s", "required_features": ["core", "process", "exec"], "status": "blocked_by_features"},
     {"source": "demos/guarded_heap_overflow.s", "required_features": ["core", "heap", "fault"], "status": "blocked_by_features"},
     {"source": "demos/memory_order.s", "required_features": ["core", "memory_order"], "status": "blocked_by_features"},

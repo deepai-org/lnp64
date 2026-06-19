@@ -15,6 +15,7 @@ module lnp64_decode (
         dec.rd = {3'd0, instr[23:19]};
         dec.rs1 = {3'd0, instr[18:14]};
         dec.rs2 = {3'd0, instr[13:9]};
+        dec.rs3 = {3'd0, instr[8:4]};
         dec.imm = {{18{instr[13]}}, instr[13:0]};
 
         unique case (raw_opcode)
@@ -176,6 +177,9 @@ module lnp64_decode (
             end
             8'h56: begin
                 dec.opcode = LNP64_OP_ENV_GET;
+            end
+            8'h57: begin
+                dec.opcode = LNP64_OP_WRITE_FD;
             end
             8'h47: begin
                 dec.opcode = LNP64_OP_ALLOC;
@@ -385,6 +389,7 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_ST_B ||
             dec.opcode == LNP64_OP_YIELD ||
             dec.opcode == LNP64_OP_ENV_GET ||
+            dec.opcode == LNP64_OP_WRITE_FD ||
             dec.opcode == LNP64_OP_ALLOC ||
             dec.opcode == LNP64_OP_GET_ERRNO ||
             dec.opcode == LNP64_OP_SET_ERRNO ||

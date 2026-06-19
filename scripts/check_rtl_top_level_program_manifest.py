@@ -116,6 +116,12 @@ def main() -> None:
     for entry in assembly_entries:
         require(isinstance(entry, dict), "assembly entry must be an object")
         require_entry(entry, "assembly")
+        if entry.get("status") == "active":
+            gate_text = text(ROOT / str(entry["rtl_gate"]))
+            require("program_input=" in gate_text, f"{entry['source']} active gate must accept a program input")
+            require("asm-flat-exec" in gate_text, f"{entry['source']} active gate must assemble source to flat hex")
+            require("RTL_RETIRE" in gate_text and "EMULATOR_RETIRE" in gate_text, f"{entry['source']} gate must compare retire traces")
+            require("RTL_FINAL" in gate_text and "EMULATOR_FINAL" in gate_text, f"{entry['source']} gate must compare final state")
     for entry in compiler_entries:
         require(isinstance(entry, dict), "compiler entry must be an object")
         require_entry(entry, "compiler")

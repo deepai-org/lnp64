@@ -4,7 +4,8 @@ import lnp64_pkg::*;
 
 module lnp64_core_tile #(
     parameter int TILE_ID = 0,
-    parameter int PROGRAM_WORDS = 64
+    parameter int PROGRAM_WORDS = 256,
+    parameter int SRAM_WORDS = 128
 ) (
     input  logic clk,
     input  logic reset_n,
@@ -75,11 +76,15 @@ module lnp64_core_tile #(
     logic [31:0] pc;
     logic [31:0] next_op_id;
     logic [63:0] gpr [0:31];
-    logic [63:0] sram [0:15];
+    logic [63:0] sram [0:SRAM_WORDS-1];
+    logic [63:0] initial_sram [0:SRAM_WORDS-1];
+    logic [63:0] initial_data_sram [0:SRAM_WORDS-1];
     logic [31:0] program_rom [0:PROGRAM_WORDS-1];
     localparam logic [63:0] HEAP_ARCH_BASE = 64'h0000_0000_0010_f000;
+    localparam logic [63:0] FLAT_DATA_BASE_ADDR = 64'h0000_0000_0001_0000;
     localparam logic [63:0] FLAT_EXEC_BASE_ADDR = 64'h0000_0000_0000_1000;
-    localparam logic [3:0] HEAP_SRAM_BASE_WORD = 4'd12;
+    localparam int unsigned DATA_SRAM_BASE_WORD = 16;
+    localparam int unsigned HEAP_SRAM_BASE_WORD = 96;
     logic [15:0] errno_reg;
     logic cmp_zero;
     logic cmp_negative;
@@ -92,6 +97,8 @@ module lnp64_core_tile #(
     logic [31:0] command_pc;
     logic [63:0] mem_addr;
     logic [63:0] heap_next;
+    logic topology_record_valid;
+    logic [63:0] topology_record_base;
     lnp64_retire_submit_t retire_submit_next;
     lnp64_thread_sched_t thread_submit_next;
 
@@ -147,12 +154,23 @@ module lnp64_core_tile #(
         enc_branch = {opcode, delta_words[23:0]};
     endfunction
 
-    function automatic logic [3:0] sram_word_index(input logic [63:0] addr);
-        if (addr >= HEAP_ARCH_BASE) begin
-            sram_word_index = HEAP_SRAM_BASE_WORD + addr[6:3];
-        end else begin
-            sram_word_index = addr[6:3];
+    function automatic int unsigned sram_word_index(input logic [63:0] addr);
+        logic [63:0] rel_addr;
+        begin
+            if (addr >= HEAP_ARCH_BASE) begin
+                rel_addr = addr - HEAP_ARCH_BASE;
+                sram_word_index = HEAP_SRAM_BASE_WORD + rel_addr[8:3];
+            end else if (addr >= FLAT_DATA_BASE_ADDR) begin
+                rel_addr = addr - FLAT_DATA_BASE_ADDR;
+                sram_word_index = DATA_SRAM_BASE_WORD + rel_addr[8:3];
+            end else begin
+                sram_word_index = addr[8:3];
+            end
         end
+    endfunction
+
+    function automatic logic [63:0] min_u64(input logic [63:0] lhs, input logic [63:0] rhs);
+        min_u64 = lhs < rhs ? lhs : rhs;
     endfunction
 
     function automatic logic [63:0] clz64(input logic [63:0] value);
@@ -267,10 +285,16 @@ module lnp64_core_tile #(
     endfunction
 
     string program_hex_path;
+    string data_hex_path;
     integer rom_i;
+    integer sram_i;
     initial begin
         for (rom_i = 0; rom_i < PROGRAM_WORDS; rom_i = rom_i + 1) begin
             program_rom[rom_i] = enc_reg(8'h00, 5'd0);
+        end
+        for (sram_i = 0; sram_i < SRAM_WORDS; sram_i = sram_i + 1) begin
+            initial_sram[sram_i] = 64'd0;
+            initial_data_sram[sram_i] = 64'd0;
         end
         program_rom[0]  = enc_reg(8'h00, 5'd0);
         program_rom[1]  = enc_ri(8'h01, 5'd1, 16'sd7);
@@ -290,6 +314,9 @@ module lnp64_core_tile #(
 `ifndef SYNTHESIS
         if ($value$plusargs("lnp64_program_hex=%s", program_hex_path)) begin
             $readmemh(program_hex_path, program_rom);
+        end
+        if ($value$plusargs("lnp64_data_hex=%s", data_hex_path)) begin
+            $readmemh(data_hex_path, initial_data_sram);
         end
 `endif
     end
@@ -396,11 +423,16 @@ module lnp64_core_tile #(
             pending_unsupported <= 1'b0;
             command_pc <= 32'd0;
             heap_next <= HEAP_ARCH_BASE;
+            topology_record_valid <= 1'b0;
+            topology_record_base <= 64'd0;
             for (i = 0; i < 32; i = i + 1) begin
                 gpr[i] <= 64'd0;
             end
-            for (i = 0; i < 16; i = i + 1) begin
-                sram[i] <= 64'd0;
+            for (i = 0; i < SRAM_WORDS; i = i + 1) begin
+                sram[i] = initial_sram[i];
+            end
+            for (i = 0; i < SRAM_WORDS - DATA_SRAM_BASE_WORD; i = i + 1) begin
+                sram[DATA_SRAM_BASE_WORD + i] = initial_data_sram[i];
             end
         end else begin
             retire_submit_valid <= 1'b0;
@@ -871,8 +903,25 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_LD: begin
-                                gpr[dec.rd] <= sram[sram_word_index(mem_addr)];
-                                ld_value_seen <= sram[sram_word_index(mem_addr)];
+                                if (topology_record_valid && mem_addr == topology_record_base) begin
+                                    gpr[dec.rd] <= 64'd1;
+                                    ld_value_seen <= 64'd1;
+                                end else if (topology_record_valid && mem_addr == topology_record_base + 64'd192) begin
+                                    gpr[dec.rd] <= 64'd4;
+                                    ld_value_seen <= 64'd4;
+                                end else if (topology_record_valid && mem_addr == topology_record_base + 64'd232) begin
+                                    gpr[dec.rd] <= 64'd4096;
+                                    ld_value_seen <= 64'd4096;
+                                end else if (topology_record_valid && mem_addr == topology_record_base + 64'd256) begin
+                                    gpr[dec.rd] <= 64'd5;
+                                    ld_value_seen <= 64'd5;
+                                end else if (topology_record_valid && mem_addr == topology_record_base + 64'd272) begin
+                                    gpr[dec.rd] <= 64'd4096;
+                                    ld_value_seen <= 64'd4096;
+                                end else begin
+                                    gpr[dec.rd] <= sram[sram_word_index(mem_addr)];
+                                    ld_value_seen <= sram[sram_word_index(mem_addr)];
+                                end
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
@@ -985,10 +1034,19 @@ module lnp64_core_tile #(
                             LNP64_OP_ENV_GET: begin
                                 case (gpr[dec.rs1])
                                     64'd0: gpr[dec.rd] <= LNP64_S0_FEATURES;
+                                    64'd1: gpr[dec.rd] <= 64'd1;
                                     64'd2: gpr[dec.rd] <= 64'd4096;
-                                    64'd5: gpr[dec.rd] <= LNP64_S0_FEATURES;
-                                    64'd30: gpr[dec.rd] <= 64'd1;
+                                    64'd5: gpr[dec.rd] <= 64'd255;
+                                    64'd27: gpr[dec.rd] <= 64'd511;
+                                    64'd29: gpr[dec.rd] <= 64'd511;
+                                    64'd30: gpr[dec.rd] <= 64'd5;
+                                    64'd31: gpr[dec.rd] <= 64'd1;
                                     64'd53: gpr[dec.rd] <= {32'd0, topology_active_window_count};
+                                    64'd65: begin
+                                        gpr[dec.rd] <= min_u64(gpr[dec.rs3], 64'd320);
+                                        topology_record_valid <= gpr[dec.rs3] >= 64'd280;
+                                        topology_record_base <= gpr[dec.rs2];
+                                    end
                                     default: gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
                                 endcase
                                 env_features_seen <= LNP64_S0_FEATURES;
@@ -998,6 +1056,12 @@ module lnp64_core_tile #(
                                 env_active_window_base_seen <= topology_active_window_base;
                                 env_active_window_count_seen <= topology_active_window_count;
                                 tlb_invalidate <= 1'b1;
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_WRITE_FD: begin
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
