@@ -545,7 +545,14 @@
     {"source": "demos/netcat.c", "generated_assembly": "/tmp/netcat.s", "required_features": ["core", "networking", "personality"], "status": "blocked_by_features"},
     {"source": "demos/parallel_hash.c", "generated_assembly": "/tmp/parallel_hash.s", "required_features": ["core", "threads", "futex"], "status": "blocked_by_features"},
     {"source": "demos/pcr.c", "generated_assembly": "/tmp/pcr.s", "required_features": ["core", "credential_snapshot", "policy"], "status": "blocked_by_features"},
-    {"source": "demos/ping_pong.c", "generated_assembly": "/tmp/ping_pong.s", "required_features": ["core", "queue", "await"], "status": "blocked_by_features"},
+    {
+      "source": "demos/ping_pong.c",
+      "generated_assembly": "/tmp/ping_pong.s",
+      "required_features": ["core", "queue", "push_pull", "clone_spawn", "thread_join", "two_thread_context", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    },
     {"source": "demos/producer_consumer.c", "generated_assembly": "/tmp/producer_consumer.s", "required_features": ["core", "queue", "await"], "status": "blocked_by_features"},
     {
       "source": "demos/rot13.c",
