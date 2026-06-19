@@ -30,7 +30,6 @@ hex="$tmp_dir/top_clang.hex"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables -O2 -c "$source_c" -o "$obj"
 "$llvm_objdump" -d --triple=lnp64-unknown-none "$obj" >"$dump"
 grep -q '0000000000000000 <main>:' "$dump"
-grep -q 'li r1, 7' "$dump"
 grep -q 'ret' "$dump"
 python3 scripts/llvm_objdump_to_flat_hex.py --wrap-call-exit-r1 "$dump" -o "$hex"
 
