@@ -1319,6 +1319,7 @@ mod tests {
         let libc_fd_min = include_str!("../toolchain/liblnp64_fd_min.c");
         let libc_process_min = include_str!("../toolchain/liblnp64_process_min.c");
         let libc_errno_min = include_str!("../toolchain/liblnp64_errno_min.c");
+        let libc_futex_min = include_str!("../toolchain/liblnp64_futex_min.c");
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
         let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
         let roadmap = include_str!("../toolchain_roadmap.md");
@@ -1585,6 +1586,17 @@ mod tests {
         assert!(
             real_llc.contains(
                 "real LLVM LNP64 clang minilibc errno implementation object smoke passed"
+            )
+        );
+        assert!(real_llc.contains("toolchain/liblnp64_futex_min.c"));
+        assert!(libc_futex_min.contains("__lnp_futex_wait"));
+        assert!(libc_futex_min.contains("__lnp_futex_wake"));
+        assert!(real_llc.contains("liblnp64-futex-min.o"));
+        assert!(real_llc.contains("grep -q 'futex_wait r'"));
+        assert!(real_llc.contains("grep -q 'futex_wake r'"));
+        assert!(
+            real_llc.contains(
+                "real LLVM LNP64 clang minilibc futex implementation object smoke passed"
             )
         );
         assert!(real_llc.contains("errno-clang-smoke.o"));

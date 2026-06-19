@@ -851,6 +851,21 @@ grep -q 'ret' "$libc_errno_impl_dump"
 printf 'real LLVM LNP64 clang minilibc errno implementation object smoke passed: %s\n' \
   "$libc_errno_impl_obj"
 
+libc_futex_impl_c="toolchain/liblnp64_futex_min.c"
+libc_futex_impl_obj="$build_dir/liblnp64-futex-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$libc_futex_impl_c" -o "$libc_futex_impl_obj"
+test -s "$libc_futex_impl_obj"
+libc_futex_impl_dump="$build_dir/liblnp64-futex-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_futex_impl_obj" \
+  >"$libc_futex_impl_dump"
+grep -q 'futex_wait r' "$libc_futex_impl_dump"
+grep -q 'futex_wake r' "$libc_futex_impl_dump"
+grep -q 'ret' "$libc_futex_impl_dump"
+printf 'real LLVM LNP64 clang minilibc futex implementation object smoke passed: %s\n' \
+  "$libc_futex_impl_obj"
+
 errno_c="$build_dir/errno-smoke.c"
 cat >"$errno_c" <<'C'
 int *__errno_location(void);
