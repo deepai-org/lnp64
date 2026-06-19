@@ -768,6 +768,22 @@ module lnp64_core_tile #(
         end
     endfunction
 
+    function automatic logic m1_cap_opcode(input logic [15:0] opcode);
+        begin
+            unique case (opcode)
+                LNP64_OP_CAP_DUP,
+                LNP64_OP_CAP_SEND,
+                LNP64_OP_CAP_RECV,
+                LNP64_OP_CAP_REVOKE: begin
+                    m1_cap_opcode = 1'b1;
+                end
+                default: begin
+                    m1_cap_opcode = 1'b0;
+                end
+            endcase
+        end
+    endfunction
+
     function automatic lnp64_m1_state_projection_t build_m1_state_projection(
         input logic [7:0] op,
         input logic [15:0] status,
@@ -2869,6 +2885,15 @@ module lnp64_core_tile #(
                         rsp_ready <= 1'b0;
                         gpr[rsp.result_reg] <= rsp.result_value;
                         errno_reg <= rsp.errno_value;
+`ifndef SYNTHESIS
+                        if (!pending_unsupported && m1_cap_opcode(dec.opcode)) begin
+                            assert (m1_commit_next.status == rsp.errno_value)
+                                else $fatal(
+                                    1,
+                                    "SG-AUTH M1 typed commit status drifted from cap-engine response"
+                                );
+                        end
+`endif
                         if (!pending_unsupported && dec.opcode == LNP64_OP_CAP_DUP) begin
                             if (rsp.status == LNP64_STATUS_OK &&
                                 rsp.errno_value == LNP64_ERR_OK &&
