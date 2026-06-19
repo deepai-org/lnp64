@@ -3493,10 +3493,30 @@ impl Machine {
                 let Some(source_path) = self.resolve_process_path_or_errno(&path)? else {
                     return Ok(true);
                 };
-                let source = match fs::read_to_string(&source_path) {
-                    Ok(source) => source,
+                let image = match fs::read(&source_path) {
+                    Ok(image) => image,
                     Err(err) => {
                         self.set_status_io_error(err)?;
+                        return Ok(true);
+                    }
+                };
+                if image.starts_with(b"\x7fELF") {
+                    if self.committed_exec_mode {
+                        match self.exec_static_elf_image(image, &args, &env) {
+                            Ok(()) => return Ok(true),
+                            Err(_) => {
+                                self.set_status_errno(8)?;
+                                return Ok(true);
+                            }
+                        }
+                    }
+                    self.set_status_errno(8)?;
+                    return Ok(true);
+                }
+                let source = match String::from_utf8(image) {
+                    Ok(source) => source,
+                    Err(_) => {
+                        self.set_status_errno(8)?;
                         return Ok(true);
                     }
                 };
@@ -4842,6 +4862,12 @@ impl Machine {
         program: Program,
         layout: ProcessLayout,
     ) -> Result<(), String> {
+        self.close_on_exec_fds()?;
+        self.process_mut()?.exec(program, layout);
+        Ok(())
+    }
+
+    fn close_on_exec_fds(&mut self) -> Result<(), String> {
         let close_fds: Vec<usize> = {
             let process = self.process()?;
             process
@@ -4859,7 +4885,55 @@ impl Machine {
         for fd in close_fds {
             self.close_fd_index(fd)?;
         }
-        self.process_mut()?.exec(program, layout);
+        Ok(())
+    }
+
+    fn exec_static_elf_image(
+        &mut self,
+        mut image: Vec<u8>,
+        args: &[String],
+        env: &[String],
+    ) -> Result<(), String> {
+        let plan =
+            crate::loader::load_static_elf(&mut image, crate::loader::LoaderOptions::default())?;
+        let prepared = crate::loader::materialize_vmas(&image, &plan)?;
+        let descriptor = crate::loader::build_exec_descriptor(
+            &plan,
+            crate::loader::ExecPlanDescriptorOptions {
+                image_source_cap: 1,
+                image_source_generation: 1,
+                image_lineage_epoch: 1,
+                ..crate::loader::ExecPlanDescriptorOptions::default()
+            },
+        )?;
+        let descriptor_words = crate::loader::encode_exec_descriptor(&descriptor);
+        Self::validate_exec_descriptor_words(&descriptor_words)?;
+        let commit_vmas = prepared
+            .iter()
+            .zip(descriptor.vmas.iter())
+            .map(|(prepared_vma, descriptor_vma)| PreparedExecVma {
+                virtual_address: prepared_vma.virtual_address,
+                protection: descriptor_vma.protection,
+                bytes: prepared_vma.bytes.clone(),
+            })
+            .collect::<Vec<_>>();
+
+        self.close_on_exec_fds()?;
+        self.commit_exec_descriptor_memory_image(&descriptor_words, &commit_vmas)?;
+        self.install_committed_exec_runtime_vmas()?;
+        self.set_process_entry(args, env)?;
+
+        let pid = self.thread()?.pid;
+        let tid = self.thread()?.tid;
+        let stack_pointer = self.thread()?.regs[31];
+        let thread_pointer = self.thread()?.thread_pointer;
+        let entry = checked_host_usize(self.process()?.exec_entry_pc, "committed exec entry PC")?;
+        let stack_top = self.process()?.stack_top;
+        let mut replacement = Thread::new(tid, pid, stack_top);
+        replacement.regs[31] = stack_pointer;
+        replacement.thread_pointer = thread_pointer;
+        replacement.ip = entry;
+        *self.thread_mut()? = replacement;
         Ok(())
     }
 
@@ -9812,6 +9886,45 @@ mod tests {
             "#,
         )
         .unwrap()
+    }
+
+    fn minimal_static_exit_elf() -> Vec<u8> {
+        let mut image = vec![0; 0x200];
+        image[0..4].copy_from_slice(b"\x7fELF");
+        image[4] = 2;
+        image[5] = 1;
+        image[6] = 1;
+        put_test_u16(&mut image, 16, 2);
+        put_test_u16(&mut image, 18, 0x6c64);
+        put_test_u32(&mut image, 20, 1);
+        put_test_u64(&mut image, 24, 0x400000);
+        put_test_u64(&mut image, 32, 64);
+        put_test_u16(&mut image, 52, 64);
+        put_test_u16(&mut image, 54, 56);
+        put_test_u16(&mut image, 56, 1);
+
+        let phdr = 64;
+        put_test_u32(&mut image, phdr, 1);
+        put_test_u32(&mut image, phdr + 4, 5);
+        put_test_u64(&mut image, phdr + 8, 0x100);
+        put_test_u64(&mut image, phdr + 16, 0x400000);
+        put_test_u64(&mut image, phdr + 32, 16);
+        put_test_u64(&mut image, phdr + 40, 16);
+        put_test_u64(&mut image, phdr + 48, 4096);
+        put_test_u32(&mut image, 0x100, 0x3a00_0000);
+        image
+    }
+
+    fn put_test_u16(image: &mut [u8], offset: usize, value: u16) {
+        image[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+    }
+
+    fn put_test_u32(image: &mut [u8], offset: usize, value: u32) {
+        image[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+    }
+
+    fn put_test_u64(image: &mut [u8], offset: usize, value: u64) {
+        image[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
 
     fn loader_exec_plan_fixture() -> ExecPlan {
@@ -15318,6 +15431,36 @@ mod tests {
         let result = machine.run();
         let _ = fs::remove_file(child_path.as_ref());
         assert_eq!(result.unwrap(), 0);
+    }
+
+    #[test]
+    fn committed_exec_opcode_loads_static_elf_child() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let child_path = std::env::temp_dir().join(format!("lnp64_exec_child_{unique}.elf"));
+        fs::write(&child_path, minimal_static_exit_elf()).unwrap();
+        let path = child_path.to_string_lossy();
+        let mut machine = Machine::new(empty_program());
+        machine
+            .write_bytes(ARG_BASE, path.as_bytes())
+            .and_then(|_| machine.write_bytes(ARG_BASE + path.len() as u64, &[0]))
+            .unwrap();
+        machine.thread_mut().unwrap().regs[1] = ARG_BASE;
+        machine.committed_exec_mode = true;
+
+        machine.exec(Instr::Exec(Reg(1), Reg(0), Reg(0))).unwrap();
+
+        assert_eq!(machine.process().unwrap().exec_entry_pc, 0x400000);
+        assert_eq!(machine.thread().unwrap().ip, 0x400000);
+        assert_eq!(
+            &machine.process().unwrap().memory[0x400000..0x400004],
+            &0x3a00_0000u32.to_le_bytes()
+        );
+        assert_eq!(machine.run_committed_exec().unwrap(), 0);
+
+        let _ = fs::remove_file(child_path);
     }
 
     #[test]

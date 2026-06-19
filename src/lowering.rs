@@ -3774,6 +3774,9 @@ mod tests {
             emulator_source
                 .contains("ENV_KEY_STARTUP_METADATA_PTR => Some(self.startup_metadata_base()?")
         );
+        assert!(emulator_source.contains("fn exec_static_elf_image("));
+        assert!(emulator_source.contains("committed_exec_opcode_loads_static_elf_child"));
+        assert!(emulator_source.contains("crate::loader::load_static_elf"));
 
         for (stage, status, artifacts, evidence, blocker) in rows {
             assert!(
@@ -3905,6 +3908,7 @@ mod tests {
             "real_stack_argument_execution",
             "real_exit_execution",
             "entry_state",
+            "exec_opcode_static_elf",
             "text_fetch_decode",
             "stdout_exit",
             "no_toy_compiler",
@@ -3996,6 +4000,7 @@ mod tests {
             "real_libc_test_env_execution",
             "real_libc_test_random_execution",
             "entry_state",
+            "exec_opcode_static_elf",
             "text_fetch_decode",
         ] {
             assert_eq!(stages[stage].0, "tested", "{stage} should be tested");
