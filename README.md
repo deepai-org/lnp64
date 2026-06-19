@@ -152,6 +152,23 @@ bash scripts/run_toolchain_contracts.sh
 builds upstream LLVM/Clang/lld in Docker with the in-tree LNP64 backend, links
 real Clang objects, and executes the linked ELFs with `lnp64 run-elf`.
 
+For LLVM iteration, keep `target/llvm-project-src` and
+`target/llvm-lnp64-build` when disk allows. The gate reuses both directories for
+incremental rebuilds; deleting them turns the next run into a cold LLVM build.
+The script auto-selects Ninja parallelism capped at 16 jobs, and you can
+override it explicitly:
+
+```sh
+LNP64_LLVM_JOBS=16 bash scripts/run_real_llvm_lnp64_docker.sh
+```
+
+Only remove the LLVM cache when you need the space or want to force a clean
+checkout:
+
+```sh
+rm -rf target/llvm-project-src target/llvm-lnp64-build
+```
+
 ## RTL And Proof Gates
 
 RTL/proof in Docker:
@@ -164,6 +181,7 @@ bash scripts/run_rtl_synth_docker.sh
 Faster RTL/proof iteration in Docker:
 
 ```sh
+LNP64_RTL_PROOF_SKIP_BUILD=1 bash scripts/run_rtl_m1_refinement_docker.sh
 LNP64_RTL_PROOF_RANDOM_COSIM=0 bash scripts/run_rtl_proof_docker.sh
 LNP64_RTL_PROOF_SKIP_BUILD=1 LNP64_RTL_PROOF_RANDOM_COSIM=0 bash scripts/run_rtl_proof_docker.sh
 ```
@@ -172,7 +190,10 @@ The default Docker proof wrapper builds the tool image and runs the mounted
 checkout once. Set `LNP64_RTL_PROOF_BUILD_GATES=1` only when you also want the
 full proof gate to run during `docker build`. The quick command above still runs
 the Lean, schema, M1/M7 typed-checker, and per-slice RTL gates, but skips the
-long multi-seed randomized/cosim sweep after checking its manifest. Add
+long multi-seed randomized/cosim sweep after checking its manifest. For current
+M1 authority-refinement work, prefer `run_rtl_m1_refinement_docker.sh`; it runs
+only the M1 Lean model, shared-schema/coupling checks, M1 RTL gate, M1 typed
+pre/commit/post checker, and M1 checker self-tests. Add
 `LNP64_RTL_PROOF_SKIP_BUILD=1` for repeated local runs after the Docker image
 already exists.
 
@@ -181,6 +202,7 @@ Focused RTL/proof loop:
 ```sh
 bash scripts/run_rtl_s0.sh
 bash scripts/run_rtl_m1.sh
+scripts/run_rtl_m1_refinement_gate.sh
 scripts/check_rtl_shared_schema.py
 scripts/check_rtl_typed_trace_contract.py
 scripts/check_rtl_top_level_program_manifest.py

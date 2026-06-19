@@ -7,7 +7,11 @@ cd "$root"
 tag="${LNP64_LLVM_PROJECT_TAG:-llvmorg-14.0.6}"
 project_dir="${LNP64_LLVM_PROJECT_DIR:-target/llvm-project-src}"
 build_dir="${LNP64_LLVM_BUILD_DIR:-target/llvm-lnp64-build}"
-jobs="${LNP64_LLVM_JOBS:-2}"
+default_jobs="$(nproc 2>/dev/null || printf '2')"
+if [[ "$default_jobs" -gt 16 ]]; then
+  default_jobs=16
+fi
+jobs="${LNP64_LLVM_JOBS:-$default_jobs}"
 
 rewrite_with_perl() {
   local file="$1"
