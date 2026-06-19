@@ -473,6 +473,24 @@ def check_rtl_state_projection_boundary_sources(
         fail("M1 engine no longer exposes schema-owned typed_state_projection")
     if "lnp64_m1_cap_commit_t typed_commit" not in tb_source:
         fail("M1 testbench no longer declares the schema-owned typed_commit record")
+    required_pre_state_sampling = (
+        "lnp64_m1_state_projection_t sampled_pre_state_projection",
+        "lnp64_m1_state_projection_t typed_pre_state_projection",
+        "typed_pre_state_projection = sampled_pre_state_projection",
+        "typed_pre_state_projection.op = typed_commit.op",
+        "typed_pre_state_projection.status = typed_commit.status",
+        "sampled_pre_state_projection <= typed_state_projection",
+    )
+    missing_pre_state_sampling = [
+        source
+        for source in required_pre_state_sampling
+        if source not in tb_source
+    ]
+    if missing_pre_state_sampling:
+        fail(
+            "M1 testbench no longer derives emitted pre-state projection by sampling "
+            f"typed_state_projection before the commit: {missing_pre_state_sampling}"
+        )
     if ".typed_state_projection(typed_state_projection)" not in tb_source:
         fail("M1 testbench no longer connects the typed_state_projection boundary")
     if "input lnp64_m1_state_projection_t typed_state_projection" not in assertion_source:

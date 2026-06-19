@@ -711,6 +711,38 @@ def main() -> None:
         ),
     )
 
+    pre_state_not_sampled_from_typed_projection = replace_once(
+        tb_source,
+        "sampled_pre_state_projection <= typed_state_projection;",
+        "sampled_pre_state_projection <= typed_pre_state_projection;",
+    )
+    expect_failure(
+        "sampling typed_state_projection before the commit",
+        lambda: checker.check_rtl_state_projection_boundary_sources(
+            engine_source,
+            pre_state_not_sampled_from_typed_projection,
+            assertion_source,
+            commit_field_names,
+            state_field_names,
+        ),
+    )
+
+    pre_state_not_tagged_with_commit_status = replace_once(
+        tb_source,
+        "typed_pre_state_projection.status = typed_commit.status;",
+        "typed_pre_state_projection.status = typed_state_projection.status;",
+    )
+    expect_failure(
+        "sampling typed_state_projection before the commit",
+        lambda: checker.check_rtl_state_projection_boundary_sources(
+            engine_source,
+            pre_state_not_tagged_with_commit_status,
+            assertion_source,
+            commit_field_names,
+            state_field_names,
+        ),
+    )
+
     projection_derived_queue_generation = replace_once(
         tb_source,
         ".queue_generation(dut.queue_generation)",
