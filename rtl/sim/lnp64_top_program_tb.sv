@@ -307,8 +307,8 @@ module lnp64_top_program_tb #(
                     dut.retire_submit_record_vec[trace_tile].tile_id,
                     dut.retire_submit_record_vec[trace_tile].pid,
                     dut.retire_submit_record_vec[trace_tile].tid,
-                    32'd1,
-                    32'd1,
+                    dut.retire_submit_record_vec[trace_tile].domain_id,
+                    dut.retire_submit_record_vec[trace_tile].domain_gen,
                     dut.retire_submit_record_vec[trace_tile].action,
                     retire_instr_vec[trace_tile][23:19],
                     retire_instr_vec[trace_tile][18:14],
@@ -320,8 +320,8 @@ module lnp64_top_program_tb #(
                     retire_result_value_vec[trace_tile],
                     retire_errno_vec[trace_tile],
                     retire_errno_vec[trace_tile] == LNP64_ERR_OK ? 16'd0 : 16'd1,
-                    32'd0,
-                    32'd0
+                    dut.retire_submit_record_vec[trace_tile].event_id,
+                    dut.retire_submit_record_vec[trace_tile].fault_id
                 );
             end
             if (dut.m1_commit_valid_vec[trace_tile]) begin

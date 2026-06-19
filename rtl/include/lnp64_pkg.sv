@@ -588,10 +588,14 @@ package lnp64_pkg;
         logic [31:0] pid;
         logic [31:0] tid;
         logic [31:0] tile_id;
+        logic [31:0] domain_id;
+        logic [31:0] domain_gen;
         logic [31:0] pc;
         logic [15:0] action;
         logic [15:0] latency_class;
         logic [63:0] wait_source;
+        logic [31:0] event_id;
+        logic [31:0] fault_id;
     } lnp64_retire_submit_t;
 
     typedef struct packed {

@@ -1522,8 +1522,12 @@ module lnp64_core_tile #(
         retire_submit_next.tile_id = TILE_ID[31:0];
         retire_submit_next.pid = 32'd1;
         retire_submit_next.tid = active_tid;
+        retire_submit_next.domain_id = 32'd1;
+        retire_submit_next.domain_gen = 32'd1;
         retire_submit_next.pc = pc;
         retire_submit_next.action = 16'd1;
+        retire_submit_next.event_id = 32'd0;
+        retire_submit_next.fault_id = 32'd0;
 
         thread_submit_next = '0;
         thread_submit_next.pid = 32'd1;

@@ -232,15 +232,19 @@ module lnp64_s0_tb;
             "4-tile stress configuration did not reach reset-stable");
 
         $display(
-            "TTRACE {\"record\":\"lnp64_retire_submit_t\",\"op_id\":%0d,\"pid\":%0d,\"tid\":%0d,\"tile_id\":%0d,\"pc\":%0d,\"action\":%0d,\"latency_class\":%0d,\"wait_source\":%0d}",
+            "TTRACE {\"record\":\"lnp64_retire_submit_t\",\"op_id\":%0d,\"pid\":%0d,\"tid\":%0d,\"tile_id\":%0d,\"domain_id\":%0d,\"domain_gen\":%0d,\"pc\":%0d,\"action\":%0d,\"latency_class\":%0d,\"wait_source\":%0d,\"event_id\":%0d,\"fault_id\":%0d}",
             dut.retire_submit_record_vec[0].op_id,
             dut.retire_submit_record_vec[0].pid,
             dut.retire_submit_record_vec[0].tid,
             dut.retire_submit_record_vec[0].tile_id,
+            dut.retire_submit_record_vec[0].domain_id,
+            dut.retire_submit_record_vec[0].domain_gen,
             dut.retire_submit_record_vec[0].pc,
             dut.retire_submit_record_vec[0].action,
             dut.retire_submit_record_vec[0].latency_class,
-            dut.retire_submit_record_vec[0].wait_source
+            dut.retire_submit_record_vec[0].wait_source,
+            dut.retire_submit_record_vec[0].event_id,
+            dut.retire_submit_record_vec[0].fault_id
         );
         $display(
             "TTRACE {\"record\":\"lnp64_thread_sched_t\",\"pid\":%0d,\"tid\":%0d,\"tile_id\":%0d,\"domain_id\":%0d,\"domain_gen\":%0d,\"state\":%0d,\"latency_class\":%0d,\"wait_generation\":%0d,\"active_location\":%0d}",
