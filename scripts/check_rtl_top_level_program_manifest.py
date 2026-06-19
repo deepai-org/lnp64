@@ -16,7 +16,6 @@ MANIFEST = Path(
     )
 )
 LLVM_BOOTSTRAP = ROOT / "toolchain/lnp64_llvm_bootstrap.manifest"
-LEGACY_COMPILER_SMOKES = {"demos/netbsd_personality_smoke.c"}
 LINKED_REPLACEMENTS = {
     "tests/rtl/programs/top_return_12.c": (
         "tests/rtl/programs/top_linked_main.c",
@@ -354,7 +353,7 @@ def main() -> None:
     require(manifest_asm == actual_asm, f"demos/*.s coverage drifted: actual={sorted(actual_asm)} manifest={sorted(manifest_asm)}")
 
     manifest_c = {entry["source"] for entry in compiler_entries}
-    expected_c = llvm_bootstrap_demo_c_sources(text(LLVM_BOOTSTRAP)) | LEGACY_COMPILER_SMOKES
+    expected_c = llvm_bootstrap_demo_c_sources(text(LLVM_BOOTSTRAP))
     require(
         manifest_c == expected_c,
         f"compiler demo coverage drifted: expected={sorted(expected_c)} manifest={sorted(manifest_c)}",

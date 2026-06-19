@@ -6046,12 +6046,13 @@ mod tests {
         );
         assert!(!run_real_packages.contains("cc --toy-bootstrap"));
         assert!(run_demos.contains("scripts/run_real_llvm_lnp64_docker.sh"));
-        assert!(run_demos.contains("demos/netbsd_personality_smoke.c"));
-        assert!(run_demos.contains("--legacy-toy"));
-        assert!(run_demos.contains("include_legacy_toy=0"));
-        assert!(run_demos.contains("if [[ \"$include_legacy_toy\" == \"1\" ]]"));
+        assert!(!run_demos.contains("demos/netbsd_personality_smoke.c"));
+        assert!(!run_demos.contains("--legacy-toy"));
+        assert!(!run_demos.contains("cc --toy-bootstrap"));
+        assert!(!run_demos.contains("include_legacy_toy"));
         assert!(run_demos.contains("for src in demos/*.s"));
-        assert!(run_netbsd_smoke.contains("mode=\"llvm\""));
+        assert!(!run_netbsd_smoke.contains("cc --toy-bootstrap"));
+        assert!(!run_netbsd_smoke.contains("--legacy-toy"));
         assert!(
             run_userland.contains("usage: scripts/run_userland.sh [--backend llvm] [--legacy-toy]")
         );
@@ -6059,11 +6060,11 @@ mod tests {
         assert!(!run_userland.contains("[--backend llvm|toy]"));
         assert!(run_netbsd_smoke.contains("LNP64_LLVM_PACKAGE_FILTER=netbsd"));
         assert!(run_netbsd_smoke.contains("scripts/run_real_llvm_package_gate.sh"));
-        assert!(run_netbsd_smoke.contains("--legacy-toy"));
-        assert!(run_netbsd_smoke.contains(
-            "usage: scripts/run_netbsd_personality_smoke.sh [--backend llvm] [--legacy-toy]"
-        ));
-        assert!(run_netbsd_smoke.contains("toy backend is legacy-only; use --legacy-toy"));
+        assert!(
+            run_netbsd_smoke
+                .contains("usage: scripts/run_netbsd_personality_smoke.sh [--backend llvm]")
+        );
+        assert!(run_netbsd_smoke.contains("toy backend has been removed"));
         assert!(!run_netbsd_smoke.contains("[--backend llvm|toy]"));
         assert!(run_netbsd_system.contains("LNP64_LLVM_PACKAGE_FILTER=netbsd"));
         assert!(run_netbsd_system.contains("scripts/run_real_llvm_package_gate.sh"));
@@ -6075,11 +6076,11 @@ mod tests {
         assert!(!run_netbsd_system.contains("[--backend llvm|toy]"));
         assert_eq!(
             categories["netbsd_personality"].3,
-            "real_clang_netbsd_child_elf_gate_with_legacy_toy_smoke_system_opt_in"
+            "real_clang_netbsd_child_elf_gate_with_toy_system_opt_in"
         );
         assert_eq!(
             categories["asm_demos"].3,
-            "assembly_demo_smoke_path_with_legacy_toy_c_opt_in"
+            "assembly_demo_smoke_path_without_toy_c"
         );
         assert!(categories["c_tests"].3.contains("default_to_real_clang"));
         for migrated_demo in [
@@ -6319,7 +6320,6 @@ mod tests {
             );
         }
         for (surface, expected_status) in [
-            ("legacy_demo_smoke", "blocked"),
             ("minimal_userland_image", "partial"),
             ("netbsd_personality_system", "partial"),
             ("legacy_libc_test_backend", "partial"),
@@ -6390,7 +6390,7 @@ mod tests {
         assert!(legacy_toy_script_corpus.contains("LNP64_LLVM_PACKAGE_FILTER=userland"));
         assert!(legacy_toy_script_corpus.contains("LNP64_LLVM_PACKAGE_FILTER=netbsd"));
         assert!(legacy_toy_script_corpus.contains("scripts/run_real_llvm_package_gate.sh"));
-        assert!(legacy_toy_script_corpus.contains("include_legacy_toy=0"));
+        assert!(!legacy_toy_script_corpus.contains("include_legacy_toy"));
         assert!(rtl_top_manifest_checker.contains("toolchain/lnp64_llvm_bootstrap.manifest"));
         assert!(!rtl_top_manifest_checker.contains("RUN_DEMOS"));
         assert!(!rtl_top_manifest_checker.contains("non_network"));
@@ -6493,7 +6493,6 @@ mod tests {
         }
 
         for (surface, expected_status) in [
-            ("legacy_demo_smoke", "blocked"),
             ("minimal_userland_image", "partial"),
             ("netbsd_personality_system", "partial"),
             ("legacy_libc_test_backend", "partial"),

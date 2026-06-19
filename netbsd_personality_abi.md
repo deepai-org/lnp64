@@ -6,9 +6,9 @@ The intent is to keep BSD/POSIX compatibility in a software personality while
 LNP64 owns capabilities, VMAs, domains, scheduling, wait/wake, object profiles,
 and gate delivery.
 
-`demos/netbsd_personality_smoke.c` is the focused ABI smoke artifact for this
-boundary. `scripts/run_netbsd_personality_smoke.sh` compiles it, runs it, and
-checks that the generated assembly still uses the expected native primitives.
+`userland/netbsd_personality_clang_smoke.c` is the focused ABI smoke artifact
+for this boundary. `scripts/run_netbsd_personality_smoke.sh` runs the real
+Clang/lld NetBSD package gate for this slice.
 `scripts/run_netbsd_personality_system.sh` is the larger userland-style system
 gate: it boots `userland/netbsd_init.c`, executes `userland/netbsd_sh.c`, runs
 several compiled C test programs, and audits the generated native trace.
