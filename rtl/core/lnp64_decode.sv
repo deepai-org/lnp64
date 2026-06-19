@@ -274,6 +274,12 @@ module lnp64_decode (
             8'h6e: begin
                 dec.opcode = LNP64_OP_FD_CLOSE;
             end
+            8'h6f: begin
+                dec.opcode = LNP64_OP_WAITABLE_PROBE;
+            end
+            8'h70: begin
+                dec.opcode = LNP64_OP_WAITABLE_PROBE;
+            end
             8'hc5: begin
                 dec.opcode = LNP64_OP_AMO_SWAP;
             end
@@ -517,6 +523,7 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_MPROTECT ||
             dec.opcode == LNP64_OP_OPEN_FD ||
             dec.opcode == LNP64_OP_FD_CLOSE ||
+            dec.opcode == LNP64_OP_WAITABLE_PROBE ||
             dec.opcode == LNP64_OP_CLONE ||
             dec.opcode == LNP64_OP_JOIN ||
             dec.opcode == LNP64_OP_DMA_CTL ||

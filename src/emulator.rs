@@ -1910,6 +1910,8 @@ impl Machine {
             0x6c => Instr::Mprotect(a, b, c),
             0x6d => Instr::OpenFdDyn(a, b, c),
             0x6e => Instr::FdCloseDyn(a),
+            0x6f => Instr::WaitableProbe(a, FdReg(b.0), c),
+            0x70 => Instr::WaitableProbeDyn(a, b, c),
             0xcb => Instr::FutexWait(a, b),
             0xcc => Instr::FutexWake(a, b),
             0xcd => Instr::Fence,
@@ -2604,13 +2606,13 @@ impl Machine {
                 }
                 self.complete_reg_ok(result, 0)?;
             }
-            Instr::PollFd(result, fd, events) => {
+            Instr::WaitableProbe(result, fd, events) => {
                 Self::ensure_result_reg_writable(result)?;
                 let events = self.read_reg(events)?;
                 let revents = self.poll_fd_mask(fd.0 as u64, events)?;
                 self.complete_reg_ok(result, revents)?;
             }
-            Instr::PollFdDyn(result, fd_reg, events) => {
+            Instr::WaitableProbeDyn(result, fd_reg, events) => {
                 Self::ensure_result_reg_writable(result)?;
                 let fd = self.read_reg(fd_reg)?;
                 let events = self.read_reg(events)?;
@@ -17879,7 +17881,7 @@ mod tests {
         machine.set_errno(123).unwrap();
 
         let err = machine
-            .exec(Instr::PollFd(Reg(31), FdReg(3), Reg(2)))
+            .exec(Instr::WaitableProbe(Reg(31), FdReg(3), Reg(2)))
             .unwrap_err();
 
         assert!(err.contains("hardware-locked stack pointer"), "{err}");
@@ -17892,7 +17894,7 @@ mod tests {
         machine.set_errno(124).unwrap();
 
         let err = machine
-            .exec(Instr::PollFdDyn(Reg(31), Reg(4), Reg(5)))
+            .exec(Instr::WaitableProbeDyn(Reg(31), Reg(4), Reg(5)))
             .unwrap_err();
 
         assert!(err.contains("hardware-locked stack pointer"), "{err}");
@@ -17910,7 +17912,7 @@ mod tests {
         machine.set_errno(123).unwrap();
 
         machine
-            .exec(Instr::PollFd(Reg(5), FdReg(3), Reg(2)))
+            .exec(Instr::WaitableProbe(Reg(5), FdReg(3), Reg(2)))
             .unwrap();
 
         assert_eq!(machine.thread().unwrap().regs[5], 0);
@@ -17921,11 +17923,53 @@ mod tests {
         machine.set_errno(124).unwrap();
 
         machine
-            .exec(Instr::PollFdDyn(Reg(8), Reg(6), Reg(7)))
+            .exec(Instr::WaitableProbeDyn(Reg(8), Reg(6), Reg(7)))
             .unwrap();
 
         assert_eq!(machine.thread().unwrap().regs[8], 0);
         assert_eq!(machine.process().unwrap().errno, 0);
+    }
+
+    #[test]
+    fn waitable_probe_reports_readiness_without_parking() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[3] = FdHandle::EventCounter {
+                value: Rc::new(RefCell::new(2)),
+                semaphore: false,
+            };
+            process.fd_capabilities[3] = FdCapability::full(3);
+        }
+        machine.thread_mut().unwrap().regs[2] = POLLIN_MASK;
+        machine.set_errno(123).unwrap();
+
+        assert!(
+            machine
+                .exec(Instr::WaitableProbe(Reg(5), FdReg(3), Reg(2)))
+                .unwrap()
+        );
+
+        assert_eq!(machine.thread().unwrap().regs[5], POLLIN_MASK);
+        assert_eq!(machine.process().unwrap().errno, 0);
+        assert!(machine.fd_waiters.is_empty());
+        assert!(machine.ready.contains(&1));
+
+        machine.thread_mut().unwrap().regs[6] = 3;
+        machine.thread_mut().unwrap().regs[7] = POLLIN_MASK;
+        machine.set_errno(124).unwrap();
+
+        assert!(
+            machine
+                .exec(Instr::WaitableProbeDyn(Reg(8), Reg(6), Reg(7)))
+                .unwrap()
+        );
+
+        assert_eq!(machine.thread().unwrap().regs[8], POLLIN_MASK);
+        assert_eq!(machine.process().unwrap().errno, 0);
+        assert!(machine.fd_waiters.is_empty());
+        assert!(machine.ready.contains(&1));
     }
 
     #[test]

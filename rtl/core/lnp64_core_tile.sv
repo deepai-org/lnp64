@@ -1192,7 +1192,7 @@ module lnp64_core_tile #(
         static_fd_buf_next_word_index = sram_word_index(gpr[dec.rs1] + (64'd8 - {61'd0, gpr[dec.rs1][2:0]}));
         static_fd_buf_byte_lane = gpr[dec.rs1][2:0];
         static_fd_write_value = load_double_unaligned(gpr[dec.rs1]);
-        if (raw_opcode == 8'h2e) begin
+        if (raw_opcode == 8'h2e || raw_opcode == 8'h6f) begin
             await_fd = dec.rs1;
         end else begin
             await_fd = fdr_value_fd(gpr[dec.rs1]);
@@ -2590,6 +2590,22 @@ module lnp64_core_tile #(
                                     gpr[dec.rd] <= 64'd0;
                                     errno_reg <= LNP64_ERR_OK;
                                 end
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_WAITABLE_PROBE: begin
+                                if (!await_fd_in_range || !fdr_valid[await_fd] ||
+                                    fdr_revoked[await_fd] ||
+                                    ((fdr_rights[await_fd] & 64'd16) == 64'd0)) begin
+                                    gpr[dec.rd] <= 64'd32;
+                                end else if (await_fd_ready && ((gpr[dec.rs2] & 64'd1) != 64'd0)) begin
+                                    gpr[dec.rd] <= 64'd1;
+                                end else begin
+                                    gpr[dec.rd] <= 64'd0;
+                                end
+                                errno_reg <= LNP64_ERR_OK;
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;

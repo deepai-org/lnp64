@@ -14004,7 +14004,7 @@ impl CodeGen {
         self.text.push(format!("  LD r{fd}, [r{entry}, 0]"));
         self.text.push(format!("  LD r{events}, [r{entry}, 8]"));
         self.text
-            .push(format!("  POLL_FD_DYN r{revents}, r{fd}, r{events}"));
+            .push(format!("  WAITABLE_PROBE r{revents}, r{fd}, r{events}"));
         self.text.push(format!("  ST [r{entry}, 16], r{revents}"));
         self.text.push(format!("  CMP r{revents}, r0"));
         self.text.push(format!("  BEQ {scan_next}"));
@@ -14323,7 +14323,7 @@ impl CodeGen {
         self.text.push(format!("  BEQ {write_check}"));
         self.text.push(format!("  LI r{events}, 1"));
         self.text
-            .push(format!("  POLL_FD_DYN r{revents}, r{i}, r{events}"));
+            .push(format!("  WAITABLE_PROBE r{revents}, r{i}, r{events}"));
         self.text.push(format!("  CMP r{revents}, r0"));
         self.text.push(format!("  BEQ {write_check}"));
         self.text
@@ -14338,7 +14338,7 @@ impl CodeGen {
         self.text.push(format!("  BEQ {scan_next}"));
         self.text.push(format!("  LI r{events}, 4"));
         self.text
-            .push(format!("  POLL_FD_DYN r{revents}, r{i}, r{events}"));
+            .push(format!("  WAITABLE_PROBE r{revents}, r{i}, r{events}"));
         self.text.push(format!("  CMP r{revents}, r0"));
         self.text.push(format!("  BEQ {scan_next}"));
         self.text
@@ -14529,7 +14529,7 @@ impl CodeGen {
         self.text.push(format!("  LD r{fd}, [r{slot}, 0]"));
         self.text.push(format!("  LD r{mask}, [r{slot}, 8]"));
         self.text
-            .push(format!("  POLL_FD_DYN r{revents}, r{fd}, r{mask}"));
+            .push(format!("  WAITABLE_PROBE r{revents}, r{fd}, r{mask}"));
         self.text.push(format!("  CMP r{revents}, r0"));
         self.text.push(format!("  BNE {ready_label}"));
         self.text.push(format!("{next}:"));
@@ -21250,7 +21250,7 @@ int main() {
         let asm = compile(source).unwrap();
         assert!(asm.contains("OBJECT_CTL"), "{asm}");
         assert!(asm.contains("PUSH_DYN"), "{asm}");
-        assert!(asm.contains("POLL_FD_DYN"), "{asm}");
+        assert!(asm.contains("WAITABLE_PROBE"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
@@ -21292,7 +21292,7 @@ int main() {
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains("OBJECT_CTL"), "{asm}");
-        assert!(asm.contains("POLL_FD_DYN"), "{asm}");
+        assert!(asm.contains("WAITABLE_PROBE"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
@@ -21524,7 +21524,7 @@ int main() {
         }
         "#;
         let asm = compile(source).unwrap();
-        assert!(asm.contains("POLL_FD_DYN"), "{asm}");
+        assert!(asm.contains("WAITABLE_PROBE"), "{asm}");
         assert!(asm.contains("LSL"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
@@ -21561,7 +21561,7 @@ int main() {
         }
         "#;
         let asm = compile(source).unwrap();
-        assert!(asm.contains("POLL_FD_DYN"), "{asm}");
+        assert!(asm.contains("WAITABLE_PROBE"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
@@ -21611,7 +21611,7 @@ int main() {
         }
         "#;
         let asm = compile(source).unwrap();
-        assert!(asm.contains("POLL_FD_DYN"), "{asm}");
+        assert!(asm.contains("WAITABLE_PROBE"), "{asm}");
         assert!(asm.contains("AWAIT_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
@@ -21744,7 +21744,7 @@ int main() {
         }
         "#;
         let asm = compile(source).unwrap();
-        assert!(asm.contains("POLL_FD_DYN"), "{asm}");
+        assert!(asm.contains("WAITABLE_PROBE"), "{asm}");
         assert!(asm.contains("AWAIT_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
@@ -22288,7 +22288,7 @@ int main() {
             "MSG_SEND",
             "AWAIT",
             "AWAIT_DYN",
-            "POLL_FD_DYN",
+            "WAITABLE_PROBE",
             "REALTIME_SEC",
             "REALTIME_NSEC",
             "SLEEP",
@@ -22630,7 +22630,7 @@ int main() {
         }
         "#;
         let asm = compile(source).unwrap();
-        assert!(asm.contains("POLL_FD_DYN"), "{asm}");
+        assert!(asm.contains("WAITABLE_PROBE"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);
@@ -22661,7 +22661,7 @@ int main() {
         }
         "#;
         let asm = compile(source).unwrap();
-        assert!(asm.contains("POLL_FD_DYN"), "{asm}");
+        assert!(asm.contains("WAITABLE_PROBE"), "{asm}");
         assert!(asm.contains("AWAIT_DYN"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
@@ -22694,7 +22694,7 @@ int main() {
         }
         "#;
         let asm = compile(source).unwrap();
-        assert!(asm.contains("POLL_FD_DYN"), "{asm}");
+        assert!(asm.contains("WAITABLE_PROBE"), "{asm}");
         assert!(asm.contains("AWAIT_DYN"), "{asm}");
         assert!(asm.contains("SLEEP"), "{asm}");
         let program = Program::parse(&asm).unwrap();
@@ -22734,7 +22734,7 @@ int main() {
         "#;
         let asm = compile(source).unwrap();
         assert!(asm.contains("AWAIT_DYN"), "{asm}");
-        assert!(asm.contains("POLL_FD_DYN"), "{asm}");
+        assert!(asm.contains("WAITABLE_PROBE"), "{asm}");
         let program = Program::parse(&asm).unwrap();
         let mut machine = Machine::new(program);
         assert_eq!(machine.run().unwrap(), 0);

@@ -329,13 +329,21 @@ impl Parser {
                 arity(3)?;
                 Instr::AwaitDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
+            "WAITABLE_PROBE" => {
+                arity(3)?;
+                if args[1].starts_with("fd") {
+                    Instr::WaitableProbe(reg(&args[0])?, fd(&args[1])?, reg(&args[2])?)
+                } else {
+                    Instr::WaitableProbeDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+                }
+            }
             "POLL_FD" => {
                 arity(3)?;
-                Instr::PollFd(reg(&args[0])?, fd(&args[1])?, reg(&args[2])?)
+                Instr::WaitableProbe(reg(&args[0])?, fd(&args[1])?, reg(&args[2])?)
             }
             "POLL_FD_DYN" => {
                 arity(3)?;
-                Instr::PollFdDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+                Instr::WaitableProbeDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
             "ALLOC" => {
                 arity(2)?;
@@ -1242,6 +1250,36 @@ mod tests {
         assert!(matches!(
             program.instructions[3],
             Instr::WriteFdDyn(Reg(10), Reg(11), Reg(12))
+        ));
+    }
+
+    #[test]
+    fn parses_waitable_probe_and_legacy_poll_aliases() {
+        let program = Program::parse(
+            r#"
+            .text
+              WAITABLE_PROBE r1, fd2, r3
+              WAITABLE_PROBE r4, r5, r6
+              POLL_FD r7, fd8, r9
+              POLL_FD_DYN r10, r11, r12
+            "#,
+        )
+        .unwrap();
+        assert!(matches!(
+            program.instructions[0],
+            Instr::WaitableProbe(Reg(1), FdReg(2), Reg(3))
+        ));
+        assert!(matches!(
+            program.instructions[1],
+            Instr::WaitableProbeDyn(Reg(4), Reg(5), Reg(6))
+        ));
+        assert!(matches!(
+            program.instructions[2],
+            Instr::WaitableProbe(Reg(7), FdReg(8), Reg(9))
+        ));
+        assert!(matches!(
+            program.instructions[3],
+            Instr::WaitableProbeDyn(Reg(10), Reg(11), Reg(12))
         ));
     }
 
