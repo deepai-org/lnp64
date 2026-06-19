@@ -34,7 +34,7 @@ static void *lnp64_map_failed(int err) {
   return (void *)~(lnp64_word_t)0;
 }
 
-void *mmap(void *addr, size_t len, int prot, int flags, int fd, long offset) {
+void *mmap(void *addr, size_t len, int prot, int flags, int fd, off_t offset) {
   (void)flags;
   if (len == 0 || (prot & ~LNP64_PROT_MASK) != 0)
     return lnp64_map_failed(LNP64_EINVAL);

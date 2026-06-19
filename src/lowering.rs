@@ -3065,7 +3065,9 @@ mod tests {
         assert!(real_llc.contains("toolchain/liblnp64_vma_min.c"));
         assert!(libc_vma_min.contains("#include <sys/mman.h>"));
         assert!(!libc_vma_min.contains("typedef unsigned long size_t;"));
-        assert!(libc_vma_min.contains("void *mmap("));
+        assert!(libc_vma_min.contains(
+            "void *mmap(void *addr, size_t len, int prot, int flags, int fd, off_t offset)"
+        ));
         assert!(libc_vma_min.contains("int mprotect("));
         assert!(libc_vma_min.contains("int munmap("));
         assert!(libc_vma_min.contains("lnp64_complete_status"));
