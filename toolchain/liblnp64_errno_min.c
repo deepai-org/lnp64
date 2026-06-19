@@ -40,5 +40,7 @@ const char *strerror(int value) {
     return "Bad address";
   if (value == 22)
     return "Invalid argument";
+  if (value == 110)
+    return "Timed out";
   return "Unknown error";
 }

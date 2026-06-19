@@ -1939,6 +1939,22 @@ grep -q 'get_pcr r' "$libc_pthread_impl_dump"
 printf 'real LLVM LNP64 clang minilibc pthread implementation object smoke passed: %s\n' \
   "$libc_pthread_impl_obj"
 
+libc_sem_impl_c="toolchain/liblnp64_sem_min.c"
+libc_sem_impl_obj="$build_dir/liblnp64-sem-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
+  -c "$libc_sem_impl_c" -o "$libc_sem_impl_obj"
+test -s "$libc_sem_impl_obj"
+libc_sem_impl_dump="$build_dir/liblnp64-sem-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_sem_impl_obj" \
+  >"$libc_sem_impl_dump"
+grep -q 'futex_wait r' "$libc_sem_impl_dump"
+grep -q 'futex_wake r' "$libc_sem_impl_dump"
+grep -q 'lock.cmpxchg r' "$libc_sem_impl_dump"
+printf 'real LLVM LNP64 clang minilibc semaphore implementation object smoke passed: %s\n' \
+  "$libc_sem_impl_obj"
+
 errno_c="$build_dir/errno-smoke.c"
 cat >"$errno_c" <<'C'
 int *__errno_location(void);
@@ -2736,6 +2752,20 @@ libc_test_pthread_tsd_dump="$build_dir/libc-test-pthread-tsd-clang-smoke.dump"
 grep -q 'call ' "$libc_test_pthread_tsd_dump"
 printf 'real LLVM LNP64 clang libc-test pthread_tsd object smoke passed: %s\n' \
   "$libc_test_pthread_tsd_obj"
+
+libc_test_sem_init_obj="$build_dir/libc-test-sem-init-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain/include \
+  -I third_party/libc-test/functional \
+  -c third_party/libc-test/functional/sem_init.c \
+  -o "$libc_test_sem_init_obj"
+test -s "$libc_test_sem_init_obj"
+libc_test_sem_init_dump="$build_dir/libc-test-sem-init-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_test_sem_init_obj" \
+  >"$libc_test_sem_init_dump"
+grep -q 'call ' "$libc_test_sem_init_dump"
+printf 'real LLVM LNP64 clang libc-test sem_init object smoke passed: %s\n' \
+  "$libc_test_sem_init_obj"
 
 libc_test_qsort_bounded_obj="$build_dir/libc-test-qsort-bounded-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
@@ -4686,6 +4716,17 @@ libc_test_pthread_tsd_elf="$build_dir/lnp64-libc-test-pthread-tsd-linked.elf"
 test -s "$libc_test_pthread_tsd_elf"
 printf 'real LLVM LNP64 lld libc-test pthread_tsd link smoke passed: %s\n' \
   "$libc_test_pthread_tsd_elf"
+
+libc_test_sem_init_elf="$build_dir/lnp64-libc-test-sem-init-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$libc_test_sem_init_elf" "$crt0_obj" \
+  "$libc_test_sem_init_obj" "$libc_test_print_obj" \
+  "$libc_pthread_impl_obj" "$libc_sem_impl_obj" "$libc_futex_impl_obj" \
+  "$libc_alloc_impl_obj" "$libc_string_impl_obj" "$libc_errno_impl_obj" \
+  "$libc_time_impl_obj" "$libc_fd_impl_obj"
+test -s "$libc_test_sem_init_elf"
+printf 'real LLVM LNP64 lld libc-test sem_init link smoke passed: %s\n' \
+  "$libc_test_sem_init_elf"
 
 libc_test_qsort_bounded_elf="$build_dir/lnp64-libc-test-qsort-bounded-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
