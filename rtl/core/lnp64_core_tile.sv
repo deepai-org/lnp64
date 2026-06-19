@@ -99,6 +99,13 @@ module lnp64_core_tile #(
     logic pending_unsupported;
     logic [31:0] command_pc;
     logic [63:0] mem_addr;
+    logic [63:0] dma_argblock_addr;
+    logic [63:0] dma_op;
+    logic [63:0] dma_dst;
+    logic [63:0] dma_src_or_value;
+    logic [63:0] dma_len;
+    logic [63:0] dma_buffer;
+    logic dma_dst_heap_valid;
     logic [63:0] heap_next;
     logic [63:0] heap_alloc_ptr [0:3];
     logic [63:0] heap_alloc_size [0:3];
@@ -107,7 +114,10 @@ module lnp64_core_tile #(
     logic topology_record_valid;
     logic [63:0] topology_record_base;
     int unsigned mem_sram_word_index;
+    int unsigned mem_sram_next_word_index;
+    int unsigned dma_dst_sram_word_index;
     logic [2:0] mem_byte_lane;
+    logic [2:0] dma_dst_byte_lane;
     logic [1:0] mem_half_lane;
     logic mem_word_upper;
     lnp64_retire_submit_t retire_submit_next;
@@ -170,12 +180,72 @@ module lnp64_core_tile #(
         begin
             if (addr >= HEAP_ARCH_BASE) begin
                 rel_addr = addr - HEAP_ARCH_BASE;
-                sram_word_index = HEAP_SRAM_BASE_WORD + rel_addr[8:3];
+                sram_word_index = HEAP_SRAM_BASE_WORD + rel_addr[7:3];
             end else if (addr >= FLAT_DATA_BASE_ADDR) begin
                 rel_addr = addr - FLAT_DATA_BASE_ADDR;
                 sram_word_index = DATA_SRAM_BASE_WORD + rel_addr[8:3];
             end else begin
                 sram_word_index = addr[8:3];
+            end
+        end
+    endfunction
+
+    function automatic logic [63:0] sram_read_word_or_zero(input logic [63:0] addr);
+        int unsigned idx;
+        begin
+            idx = sram_word_index(addr);
+            if (idx < SRAM_WORDS) begin
+                sram_read_word_or_zero = sram[idx];
+            end else begin
+                sram_read_word_or_zero = 64'd0;
+            end
+        end
+    endfunction
+
+    function automatic logic [63:0] load_double_unaligned(input logic [63:0] addr);
+        logic [2:0] lane;
+        logic [63:0] low_word;
+        logic [63:0] high_word;
+        begin
+            lane = addr[2:0];
+            low_word = sram_read_word_or_zero(addr);
+            high_word = sram_read_word_or_zero(addr + (64'd8 - {61'd0, lane}));
+            if (lane == 3'd0) begin
+                load_double_unaligned = low_word;
+            end else begin
+                load_double_unaligned = (low_word >> ({3'd0, lane} * 6'd8)) |
+                    (high_word << ((6'd8 - {3'd0, lane}) * 6'd8));
+            end
+        end
+    endfunction
+
+    function automatic logic [63:0] store_double_low_word(
+        input logic [63:0] word,
+        input logic [2:0] lane,
+        input logic [63:0] value
+    );
+        begin
+            store_double_low_word = word;
+            for (int byte_idx = 0; byte_idx < 8; byte_idx = byte_idx + 1) begin
+                if (byte_idx >= lane) begin
+                    store_double_low_word[byte_idx * 8 +: 8] = value[(byte_idx - lane) * 8 +: 8];
+                end
+            end
+        end
+    endfunction
+
+    function automatic logic [63:0] store_double_high_word(
+        input logic [63:0] word,
+        input logic [2:0] lane,
+        input logic [63:0] value
+    );
+        begin
+            store_double_high_word = word;
+            for (int byte_idx = 0; byte_idx < 8; byte_idx = byte_idx + 1) begin
+                if (byte_idx < lane) begin
+                    store_double_high_word[byte_idx * 8 +: 8] =
+                        value[(8 - lane + byte_idx) * 8 +: 8];
+                end
             end
         end
     endfunction
@@ -289,6 +359,20 @@ module lnp64_core_tile #(
                 end
             end
             alloc_align_u64 = rounded;
+        end
+    endfunction
+
+    function automatic logic heap_range_valid(input logic [63:0] addr, input logic [63:0] len);
+        begin
+            heap_range_valid = 1'b0;
+            for (int slot = 0; slot < 4; slot = slot + 1) begin
+                if (heap_alloc_valid[slot] &&
+                    addr >= heap_alloc_ptr[slot] &&
+                    len <= heap_alloc_size[slot] &&
+                    (addr - heap_alloc_ptr[slot]) <= (heap_alloc_size[slot] - len)) begin
+                    heap_range_valid = 1'b1;
+                end
+            end
         end
     endfunction
 
@@ -448,9 +532,19 @@ module lnp64_core_tile #(
         end
         mem_addr = gpr[dec.rs1] + {{32{dec.imm[31]}}, dec.imm};
         mem_sram_word_index = sram_word_index(mem_addr);
+        mem_sram_next_word_index = sram_word_index(mem_addr + (64'd8 - {61'd0, mem_addr[2:0]}));
         mem_byte_lane = mem_addr[2:0];
         mem_half_lane = mem_addr[2:1];
         mem_word_upper = mem_addr[2];
+        dma_argblock_addr = gpr[dec.rs1];
+        dma_op = load_double_unaligned(dma_argblock_addr);
+        dma_dst = load_double_unaligned(dma_argblock_addr + 64'd8);
+        dma_src_or_value = load_double_unaligned(dma_argblock_addr + 64'd16);
+        dma_len = load_double_unaligned(dma_argblock_addr + 64'd24);
+        dma_buffer = load_double_unaligned(dma_argblock_addr + 64'd32);
+        dma_dst_sram_word_index = sram_word_index(dma_dst);
+        dma_dst_byte_lane = dma_dst[2:0];
+        dma_dst_heap_valid = heap_range_valid(dma_dst, dma_len);
     end
 
     always_comb begin
@@ -1043,12 +1137,13 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_ALLOC_EX: begin
-                                gpr[dec.rd] <= align_up_u64(heap_next, alloc_align_u64(gpr[dec.rs2]));
-                                heap_alloc_ptr[heap_alloc_next_slot] <= align_up_u64(heap_next, alloc_align_u64(gpr[dec.rs2]));
+                                gpr[dec.rd] <= align_up_u64(heap_next + 64'd4096, alloc_align_u64(gpr[dec.rs2]));
+                                heap_alloc_ptr[heap_alloc_next_slot] <= align_up_u64(heap_next + 64'd4096, alloc_align_u64(gpr[dec.rs2]));
                                 heap_alloc_size[heap_alloc_next_slot] <= alloc_len_u64(gpr[dec.rs1]);
                                 heap_alloc_valid[heap_alloc_next_slot] <= 1'b1;
                                 heap_alloc_next_slot <= heap_alloc_next_slot + 2'd1;
-                                heap_next <= align_up_u64(heap_next, alloc_align_u64(gpr[dec.rs2])) + alloc_len_u64(gpr[dec.rs1]);
+                                heap_next <= align_up_u64(heap_next + 64'd4096, alloc_align_u64(gpr[dec.rs2])) +
+                                    alloc_len_u64(gpr[dec.rs1]) + 64'd4096;
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
@@ -1094,8 +1189,8 @@ module lnp64_core_tile #(
                                     gpr[dec.rd] <= 64'd4096;
                                     ld_value_seen <= 64'd4096;
                                 end else begin
-                                    gpr[dec.rd] <= sram[sram_word_index(mem_addr)];
-                                    ld_value_seen <= sram[sram_word_index(mem_addr)];
+                                    gpr[dec.rd] <= load_double_unaligned(mem_addr);
+                                    ld_value_seen <= load_double_unaligned(mem_addr);
                                 end
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
@@ -1124,7 +1219,18 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_ST: begin
-                                sram[sram_word_index(mem_addr)] <= gpr[dec.rd];
+                                sram[mem_sram_word_index] <= store_double_low_word(
+                                    sram[mem_sram_word_index],
+                                    mem_byte_lane,
+                                    gpr[dec.rd]
+                                );
+                                if (mem_byte_lane != 3'd0) begin
+                                    sram[mem_sram_next_word_index] <= store_double_high_word(
+                                        sram[mem_sram_next_word_index],
+                                        mem_byte_lane,
+                                        gpr[dec.rd]
+                                    );
+                                end
                                 dcache_writeback <= 1'b1;
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
@@ -1160,6 +1266,42 @@ module lnp64_core_tile #(
                                 if (sram[sram_word_index(gpr[dec.rs1])] == gpr[dec.rs2]) begin
                                     sram[sram_word_index(gpr[dec.rs1])] <= gpr[dec.rs3];
                                     dcache_writeback <= 1'b1;
+                                end
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_DMA_CTL: begin
+                                if (dma_buffer != 64'd0) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_ENOTSUP;
+                                end else if (dma_op == 64'd2) begin
+                                    if (!dma_dst_heap_valid) begin
+                                        gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= LNP64_ERR_EFAULT;
+                                    end else if (dma_len == 64'd0) begin
+                                        gpr[dec.rd] <= 64'd0;
+                                        errno_reg <= LNP64_ERR_OK;
+                                    end else if (dma_len == 64'd1) begin
+                                        sram[dma_dst_sram_word_index] <= store_byte_lane(
+                                            sram[dma_dst_sram_word_index],
+                                            dma_dst_byte_lane,
+                                            dma_src_or_value[7:0]
+                                        );
+                                        dcache_writeback <= 1'b1;
+                                        gpr[dec.rd] <= 64'd1;
+                                        errno_reg <= LNP64_ERR_OK;
+                                    end else begin
+                                        gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= LNP64_ERR_ENOTSUP;
+                                    end
+                                end else if (dma_op == 64'd1) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_ENOTSUP;
+                                end else begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EINVAL;
                                 end
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;

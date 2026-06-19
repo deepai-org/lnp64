@@ -470,6 +470,7 @@ fn encode_flat_exec_instr(
         }
         Instr::ErrnoGet(rd) => Ok(vec![enc_reg(0x38, *rd)]),
         Instr::ErrnoSet(src) => Ok(vec![enc_reg(0x39, *src)]),
+        Instr::DmaCtl(result, argblock) => Ok(vec![enc_rrr(0x5b, *result, *argblock, Reg(0))]),
         Instr::EnvGet(rd, key, index_or_buf, len_or_flags) => Ok(vec![enc_rrrr(
             0x56,
             *rd,
@@ -482,7 +483,7 @@ fn encode_flat_exec_instr(
         Instr::Isync(result, addr, len) => Ok(vec![enc_rrr(0xce, *result, *addr, *len)]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, ERRNO_GET/SET, ENV_GET, WRITE_FD, FENCE/ISYNC, LOCK.CMPXCHG, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, ERRNO_GET/SET, DMA_CTL, ENV_GET, WRITE_FD, FENCE/ISYNC, LOCK.CMPXCHG, EXIT"
         )),
     }
 }
@@ -1992,6 +1993,25 @@ mod tests {
                 "0128002a\n",
                 "c9304850\n",
                 "3a300000\n",
+            )
+        );
+    }
+
+    #[test]
+    fn asm_flat_exec_encodes_dma_ctl_subset() {
+        let source = r#"
+            .text
+              DMA_CTL r7, r10
+              EXIT r7
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+
+        assert_eq!(
+            hex,
+            concat!(
+                "5b3a8000\n",
+                "3a380000\n",
             )
         );
     }

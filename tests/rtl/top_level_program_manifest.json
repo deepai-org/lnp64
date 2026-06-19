@@ -204,7 +204,13 @@
       "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
       "comparison": "retire_trace_and_final_state"
     },
-    {"source": "demos/guarded_heap_overflow.s", "required_features": ["core", "heap", "fault"], "status": "blocked_by_features"},
+    {
+      "source": "demos/guarded_heap_overflow.s",
+      "required_features": ["core", "heap", "alloc_ex", "unaligned_doubleword_load_store", "dma_ctl_fill_guard_refusal", "errno", "data_labels", "write_fd", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    },
     {
       "source": "demos/memory_order.s",
       "required_features": ["core", "memory_order", "isync", "lock_cmpxchg", "data_labels", "write_fd", "exit"],

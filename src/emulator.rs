@@ -1675,6 +1675,7 @@ impl Machine {
             0x58 => Instr::OpenAtDyn(a, b, c, d),
             0x59 => Instr::CloneSpawn(a, b, c),
             0x5a => Instr::ThreadJoin(a, b, c),
+            0x5b => Instr::DmaCtl(a, b),
             0x60 => Instr::MmapBootstrap(a, b, c, d),
             0x61 => Instr::MunmapBootstrap(a, b),
             0x62 => Instr::Sigaction(a, b),
