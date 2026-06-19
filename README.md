@@ -193,6 +193,7 @@ bash scripts/run_real_packages.sh
 LNP64_LLVM_PACKAGE_FILTER=zlib bash scripts/run_real_llvm_package_gate.sh
 LNP64_LLVM_PACKAGE_FILTER=sbase bash scripts/run_real_llvm_package_gate.sh
 LNP64_LLVM_PACKAGE_FILTER=userland bash scripts/run_real_llvm_package_gate.sh
+LNP64_LLVM_PACKAGE_FILTER=netbsd bash scripts/run_real_llvm_package_gate.sh
 ```
 
 `scripts/run_demos.sh` now runs checked assembly demos by default. Migrated C
@@ -201,7 +202,10 @@ covered by the real Clang/lld gate above. Use
 `scripts/run_demos.sh --legacy-toy` only for the remaining toy-bootstrap C
 personality smoke. `scripts/run_userland.sh` now defaults to the real Clang/lld
 userland probes; use `scripts/run_userland.sh --legacy-toy` only for the old
-host-directory fork/exec smoke. `scripts/run_real_packages.sh` and the
+host-directory fork/exec smoke. `scripts/run_netbsd_personality_smoke.sh`
+defaults to the real NetBSD package gate; use
+`scripts/run_netbsd_personality_smoke.sh --legacy-toy` only for the old
+single-file toy bootstrap trace. `scripts/run_real_packages.sh` and the
 package-specific wrappers route package coverage through the same real LLVM
 gate, reusing linked ELF artifacts under `target/llvm-lnp64-build` when they
 already exist. `LNP64_LLVM_PACKAGE_FILTER` accepts `all`, `zlib`, `natsort`,

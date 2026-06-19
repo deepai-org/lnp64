@@ -5536,6 +5536,7 @@ mod tests {
         let run_real_packages = include_str!("../scripts/run_real_packages.sh");
         let run_real_package_gate = include_str!("../scripts/run_real_llvm_package_gate.sh");
         let run_demos = include_str!("../scripts/run_demos.sh");
+        let run_netbsd_smoke = include_str!("../scripts/run_netbsd_personality_smoke.sh");
         let run_netbsd_system = include_str!("../scripts/run_netbsd_personality_system.sh");
         let rows = conformance_gate_rows(gate_manifest);
         let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -5683,12 +5684,16 @@ mod tests {
         assert!(run_demos.contains("include_legacy_toy=0"));
         assert!(run_demos.contains("if [[ \"$include_legacy_toy\" == \"1\" ]]"));
         assert!(run_demos.contains("for src in demos/*.s"));
+        assert!(run_netbsd_smoke.contains("mode=\"llvm\""));
+        assert!(run_netbsd_smoke.contains("LNP64_LLVM_PACKAGE_FILTER=netbsd"));
+        assert!(run_netbsd_smoke.contains("scripts/run_real_llvm_package_gate.sh"));
+        assert!(run_netbsd_smoke.contains("--legacy-toy"));
         assert!(run_netbsd_system.contains("LNP64_LLVM_PACKAGE_FILTER=netbsd"));
         assert!(run_netbsd_system.contains("scripts/run_real_llvm_package_gate.sh"));
         assert!(run_netbsd_system.contains("--legacy-toy"));
         assert_eq!(
             categories["netbsd_personality"].3,
-            "real_clang_netbsd_child_elf_gate_with_legacy_toy_system_opt_in"
+            "real_clang_netbsd_child_elf_gate_with_legacy_toy_smoke_system_opt_in"
         );
         assert_eq!(
             categories["asm_demos"].3,
