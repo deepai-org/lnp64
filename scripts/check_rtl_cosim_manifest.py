@@ -12,6 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = Path(os.environ.get("LNP64_COSIM_MANIFEST", str(ROOT / "tests/traces/rtl_cosim_manifest.json")))
 RANDOM_COSIM = Path(os.environ.get("LNP64_RANDOM_COSIM", str(ROOT / "scripts/run_rtl_random_cosim.sh")))
+VERILATOR_COMMON = ROOT / "scripts/rtl_verilator_common.sh"
 EXPECTED_SLICES = list(range(1, 16))
 REQUIRED_TRACE_CATEGORIES = [
     "architectural_state",
@@ -69,6 +70,8 @@ def slice_id_from_top(top: str) -> int:
 def main() -> None:
     require(RANDOM_COSIM.exists(), f"missing random co-sim driver {RANDOM_COSIM}")
     random_driver_text = text(RANDOM_COSIM)
+    require(VERILATOR_COMMON.exists(), f"missing Verilator helper {VERILATOR_COMMON}")
+    verilator_common_text = text(VERILATOR_COMMON)
     require(
         "scripts/check_rtl_cosim_manifest.py" in random_driver_text,
         "random co-sim driver must validate the manifest before running traces",
@@ -109,8 +112,15 @@ def main() -> None:
             f"--top-module {gate['rtl_top']}" in script_text,
             f"{script} does not build top {gate['rtl_top']}",
         )
-        require("grep '^TRACE '" in script_text, f"{script} does not extract normalized TRACE lines")
-        require("diff -u" in script_text, f"{script} does not diff model and RTL traces")
+        trace_driver_text = script_text
+        if "rtl_run_seeded_trace_cosim" in script_text:
+            require(
+                "source scripts/rtl_verilator_common.sh" in script_text,
+                f"{script} uses shared trace helper without sourcing it",
+            )
+            trace_driver_text += "\n" + verilator_common_text
+        require("grep '^TRACE '" in trace_driver_text, f"{script} does not extract normalized TRACE lines")
+        require("diff -u" in trace_driver_text, f"{script} does not diff model and RTL traces")
         require(
             f"LNP64-RTL-M{slice_id} PASS" in script_text,
             f"{script} does not require the M{slice_id} RTL PASS marker",

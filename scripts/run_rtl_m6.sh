@@ -40,15 +40,6 @@ rtl_verilator_build_or_reuse \
   "${common_flags[@]}" \
   "${rtl_files[@]}"
 
-for seed in $seeds; do
-  model_trace="${TMPDIR:-/tmp}/lnp64_rtl_m6_model_${seed}.trace"
-  rtl_log="${TMPDIR:-/tmp}/lnp64_rtl_m6_sim_${seed}.log"
-  rtl_trace="${TMPDIR:-/tmp}/lnp64_rtl_m6_rtl_${seed}.trace"
-  LNP64_COSIM_SEED="$seed" formal/m6_service_model.py > "$model_trace"
-  "$rtl_binary" "+seed=$seed" | tee "$rtl_log"
-  grep '^TRACE ' "$rtl_log" > "$rtl_trace"
-  diff -u "$model_trace" "$rtl_trace"
-  grep -q "LNP64-RTL-M6 PASS" "$rtl_log"
-done
+rtl_run_seeded_trace_cosim "m6" "$rtl_binary" "formal/m6_service_model.py" "LNP64-RTL-M6 PASS" "$seeds"
 
 printf '%s\n' "rtl m6 gate ok"

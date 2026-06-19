@@ -251,16 +251,20 @@ LNP64_RTL_FAST=1 LNP64_RTL_SKIP_BUILD=1 LNP64_RTL_RANDOM_COSIM_GATES="m1 m7" bas
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_SKIP_LINT=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_s0.sh
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_SKIP_LINT=1 LNP64_RTL_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_s0.sh
 LNP64_RTL_FAST=1 LNP64_COSIM_SEEDS="0 1 7" LNP64_RTL_RANDOM_COSIM_JOBS=auto bash scripts/run_rtl_random_cosim.sh
+LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_SKIP_LINT=1 LNP64_RTL_COSIM_SEED_JOBS=auto LNP64_COSIM_SEEDS="0 1 7 42" bash scripts/run_rtl_m1.sh
+LNP64_RTL_PROOF_SKIP_BUILD=1 LNP64_RTL_SKIP_BUILD=1 LNP64_RTL_COSIM_SEED_JOBS=4 LNP64_COSIM_SEEDS="0 1 7 42" bash scripts/run_rtl_proof_docker.sh
 ```
 
 Set `LNP64_RTL_RANDOM_COSIM_JOBS=4` or
 `LNP64_RTL_RANDOM_COSIM_JOBS=auto` to run independent M1-M15 randomized/cosim
 gates in parallel; each gate writes its own temporary log and failures replay
-that log. After a successful build, add `LNP64_RTL_SKIP_BUILD=1` to reuse the
-existing S0/M1-M15 Verilator binaries and rerun only model generation, RTL
-simulation, trace extraction, and diffs. Remove `LNP64_RTL_FAST=1`,
-`LNP64_RTL_SKIP_BUILD=1`, and restore the full seed list before using
-randomized/cosim output as broad evidence.
+that log. Set `LNP64_RTL_COSIM_SEED_JOBS=4` or `auto` when one gate is running
+many seeds; this parallelizes the per-seed model/RTL trace comparisons inside
+`run_rtl_m1.sh` through `run_rtl_m15.sh`. After a successful build, add
+`LNP64_RTL_SKIP_BUILD=1` to reuse the existing S0/M1-M15 Verilator binaries and
+rerun only model generation, RTL simulation, trace extraction, and diffs. Remove
+`LNP64_RTL_FAST=1`, `LNP64_RTL_SKIP_BUILD=1`, seed/gate narrowing, and restore
+the full seed list before using randomized/cosim output as broad evidence.
 
 The full RTL/proof gate avoids rerunning the M1 and M7 Verilator builds solely
 for typed-checker parsing: it tees each gate log once and then runs the matching
