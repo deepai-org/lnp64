@@ -364,6 +364,7 @@ module lnp64_core_tile #(
     int unsigned m1_projection_root_fd;
     int unsigned m1_projection_consumer_fd;
     lnp64_retire_submit_t retire_submit_next;
+    lnp64_retire_submit_t retire_submit_rsp_next;
     lnp64_thread_sched_t thread_submit_next;
 
     lnp64_decode decode_i(.instr(instr), .dec(dec));
@@ -838,7 +839,8 @@ module lnp64_core_tile #(
     );
         begin
             unique case (opcode)
-                8'h2d, 8'h57, 8'h6c: flat_retire_result_reg = 8'd1;
+                8'h2d, 8'h57, 8'h5c, 8'h5d, 8'h5e, 8'h5f,
+                8'h67, 8'h69, 8'h6b, 8'h6c: flat_retire_result_reg = 8'd1;
                 default: flat_retire_result_reg = raw_result_reg;
             endcase
         end
@@ -1036,6 +1038,457 @@ module lnp64_core_tile #(
                 LNP64_OP_CSEL_UGE, LNP64_OP_CSET_UGE: csel_condition = cmp_zero || cmp_above;
                 default: csel_condition = 1'b0;
             endcase
+        end
+    endfunction
+
+    function automatic logic [15:0] retire_status_from_errno(input logic [15:0] errno_value);
+        begin
+            retire_status_from_errno = errno_value == LNP64_ERR_OK ?
+                LNP64_STATUS_OK : LNP64_STATUS_ERROR;
+        end
+    endfunction
+
+    function automatic logic [63:0] negative_errno(input logic [15:0] errno_value);
+        begin
+            negative_errno = 64'd0 - {48'd0, errno_value};
+        end
+    endfunction
+
+    function automatic logic [63:0] env_get_value(input logic [63:0] selector);
+        begin
+            unique case (selector)
+                64'd0: env_get_value = LNP64_S0_FEATURES;
+                64'd1: env_get_value = 64'd1;
+                64'd2: env_get_value = 64'd4096;
+                64'd5: env_get_value = 64'd255;
+                64'd27: env_get_value = 64'd511;
+                64'd29: env_get_value = 64'd511;
+                64'd30: env_get_value = 64'd5;
+                64'd31: env_get_value = 64'd1;
+                64'd53: env_get_value = {32'd0, topology_active_window_count};
+                64'd65: env_get_value = min_u64(gpr[dec.rs3], 64'd320);
+                default: env_get_value = 64'hffff_ffff_ffff_ffff;
+            endcase
+        end
+    endfunction
+
+    function automatic logic [63:0] pcr_get_value(input logic [4:0] selector);
+        begin
+            unique case (selector)
+                5'd0: pcr_get_value = 64'd1;
+                5'd1: pcr_get_value = 64'd0;
+                5'd2: pcr_get_value = {32'd0, active_tid};
+                5'd3: pcr_get_value = pcr_thread_pointer;
+                5'd4: pcr_get_value = pcr_uid;
+                5'd5: pcr_get_value = pcr_gid;
+                5'd6: pcr_get_value = pcr_sigmask;
+                5'd7, 5'd8, 5'd9, 5'd10, 5'd11: pcr_get_value = 64'd0;
+                default: pcr_get_value = negative_errno(LNP64_ERR_EINVAL);
+            endcase
+        end
+    endfunction
+
+    function automatic logic [63:0] pcr_set_value(input logic [4:0] selector);
+        begin
+            unique case (selector)
+                5'd3, 5'd4, 5'd5, 5'd6: pcr_set_value = 64'd0;
+                5'd0, 5'd1, 5'd2, 5'd7, 5'd8, 5'd9, 5'd10, 5'd11:
+                    pcr_set_value = negative_errno(LNP64_ERR_EPERM);
+                default: pcr_set_value = negative_errno(LNP64_ERR_EINVAL);
+            endcase
+        end
+    endfunction
+
+    function automatic logic [15:0] flat_retire_errno_value(input logic [15:0] opcode);
+        begin
+            flat_retire_errno_value = errno_reg;
+            unique case (opcode)
+                LNP64_OP_SET_ERRNO: flat_retire_errno_value = gpr[dec.rd][15:0];
+                LNP64_OP_OPEN_FD:
+                    flat_retire_errno_value = file_open_available ? LNP64_ERR_OK : 16'd24;
+                LNP64_OP_FD_CLOSE: begin
+                    if (close_fd_token_stale) begin
+                        flat_retire_errno_value = RTL_ERR_ESTALE;
+                    end else if (!close_fd_in_range || !fdr_valid[close_fd]) begin
+                        flat_retire_errno_value = LNP64_ERR_EBADF;
+                    end else begin
+                        flat_retire_errno_value = LNP64_ERR_OK;
+                    end
+                end
+                LNP64_OP_READ_FD: begin
+                    if (gpr[dec.rs2] == 64'd0) begin
+                        flat_retire_errno_value = LNP64_ERR_OK;
+                    end else if (!static_fd_in_range || !fdr_valid[static_fd] ||
+                        !(static_fd_is_memory_object || static_fd_is_event_counter || static_fd_is_timer)) begin
+                        flat_retire_errno_value = LNP64_ERR_EBADF;
+                    end else if (fdr_revoked[static_fd]) begin
+                        flat_retire_errno_value = RTL_ERR_ESTALE;
+                    end else if ((fdr_rights[static_fd] & 64'd1) == 64'd0) begin
+                        flat_retire_errno_value = LNP64_ERR_EPERM;
+                    end else begin
+                        flat_retire_errno_value = LNP64_ERR_OK;
+                    end
+                end
+                LNP64_OP_WRITE_FD: begin
+                    if (gpr[dec.rs2] == 64'd0) begin
+                        flat_retire_errno_value = LNP64_ERR_OK;
+                    end else if (static_fd_is_event_counter || static_fd_is_timer || static_fd_is_memory_object) begin
+                        if (!fdr_valid[static_fd]) begin
+                            flat_retire_errno_value = LNP64_ERR_EBADF;
+                        end else if (fdr_revoked[static_fd]) begin
+                            flat_retire_errno_value = RTL_ERR_ESTALE;
+                        end else if ((fdr_rights[static_fd] & 64'd2) == 64'd0) begin
+                            flat_retire_errno_value = LNP64_ERR_EPERM;
+                        end else begin
+                            flat_retire_errno_value = LNP64_ERR_OK;
+                        end
+                    end else begin
+                        flat_retire_errno_value = LNP64_ERR_OK;
+                    end
+                end
+                LNP64_OP_AWAIT: begin
+                    if (!await_fd_in_range || !fdr_valid[await_fd]) begin
+                        flat_retire_errno_value = LNP64_ERR_EBADF;
+                    end else if (fdr_revoked[await_fd]) begin
+                        flat_retire_errno_value = RTL_ERR_ESTALE;
+                    end else if ((fdr_rights[await_fd] & 64'd16) == 64'd0) begin
+                        flat_retire_errno_value = LNP64_ERR_EPERM;
+                    end else if (!await_fd_ready) begin
+                        flat_retire_errno_value = LNP64_ERR_EAGAIN;
+                    end else begin
+                        flat_retire_errno_value = LNP64_ERR_OK;
+                    end
+                end
+                LNP64_OP_WAITABLE_PROBE: begin
+                    if (!await_fd_in_range || !fdr_valid[await_fd]) begin
+                        flat_retire_errno_value = LNP64_ERR_EBADF;
+                    end else if (fdr_revoked[await_fd]) begin
+                        flat_retire_errno_value = RTL_ERR_ESTALE;
+                    end else if ((fdr_rights[await_fd] & 64'd16) == 64'd0) begin
+                        flat_retire_errno_value = LNP64_ERR_EPERM;
+                    end else begin
+                        flat_retire_errno_value = LNP64_ERR_OK;
+                    end
+                end
+                LNP64_OP_AWAIT_EX: begin
+                    if (!(await_ex_mode == 64'd0 || await_ex_mode == 64'd1 || await_ex_mode == 64'd4)) begin
+                        flat_retire_errno_value = LNP64_ERR_EINVAL;
+                    end else if (!await_fd_in_range || !fdr_valid[await_fd]) begin
+                        flat_retire_errno_value = LNP64_ERR_EBADF;
+                    end else if (fdr_revoked[await_fd]) begin
+                        flat_retire_errno_value = RTL_ERR_ESTALE;
+                    end else if ((fdr_rights[await_fd] & 64'd16) == 64'd0) begin
+                        flat_retire_errno_value = LNP64_ERR_EPERM;
+                    end else if (await_fd_ready && ((await_ex_mask & 64'd1) != 64'd0)) begin
+                        flat_retire_errno_value = LNP64_ERR_OK;
+                    end else if (await_ex_mode == 64'd4) begin
+                        flat_retire_errno_value = LNP64_ERR_EAGAIN;
+                    end else begin
+                        flat_retire_errno_value = LNP64_ERR_OK;
+                    end
+                end
+                LNP64_OP_GATE_CALL: begin
+                    if (!call_gate_fd_live) begin
+                        flat_retire_errno_value = LNP64_ERR_EBADF;
+                    end else if (call_gate_mode[call_gate_fd] == CALL_MODE_ASYNC) begin
+                        flat_retire_errno_value = call_gate_completion_is_event_counter ?
+                            LNP64_ERR_OK : LNP64_ERR_EINVAL;
+                    end else if (call_gate_mode[call_gate_fd] == CALL_MODE_HANDOFF) begin
+                        flat_retire_errno_value = LNP64_ERR_OK;
+                    end else if (call_gate_mode[call_gate_fd] == CALL_MODE_SYNC) begin
+                        flat_retire_errno_value = call_continuation_valid ? LNP64_ERR_EAGAIN : LNP64_ERR_OK;
+                    end else begin
+                        flat_retire_errno_value = LNP64_ERR_EINVAL;
+                    end
+                end
+                LNP64_OP_GATE_RETURN:
+                    flat_retire_errno_value = call_continuation_valid ? LNP64_ERR_OK : LNP64_ERR_EINVAL;
+                LNP64_OP_PUSH: begin
+                    if (gpr[dec.rs3] == 64'd0) begin
+                        flat_retire_errno_value = LNP64_ERR_OK;
+                    end else if (!pipe_fd_in_range || !fdr_valid[pipe_fd] ||
+                        fdr_revoked[pipe_fd] || fdr_kind[pipe_fd] != FDR_KIND_PIPE_WRITER ||
+                        ((fdr_rights[pipe_fd] & 64'd2) == 64'd0)) begin
+                        flat_retire_errno_value = LNP64_ERR_EBADF;
+                    end else if (gpr[dec.rs3] > 64'd8) begin
+                        flat_retire_errno_value = LNP64_ERR_EINVAL;
+                    end else if (pipe_payload_valid[pipe_queue_slot]) begin
+                        flat_retire_errno_value = LNP64_ERR_EAGAIN;
+                    end else begin
+                        flat_retire_errno_value = LNP64_ERR_OK;
+                    end
+                end
+                LNP64_OP_PULL: begin
+                    if (gpr[dec.rs3] == 64'd0) begin
+                        flat_retire_errno_value = LNP64_ERR_OK;
+                    end else if (raw_opcode == 8'h3b && pipe_fd_token_stale) begin
+                        flat_retire_errno_value = RTL_ERR_ESTALE;
+                    end else if (raw_opcode == 8'h3b && pipe_fd_in_range &&
+                        fdr_valid[pipe_fd] && !fdr_revoked[pipe_fd] &&
+                        fdr_kind[pipe_fd] == FDR_KIND_GENERIC &&
+                        ((fdr_rights[pipe_fd] & 64'd1) != 64'd0)) begin
+                        flat_retire_errno_value = LNP64_ERR_OK;
+                    end else if (!pipe_fd_in_range || !fdr_valid[pipe_fd] ||
+                        fdr_revoked[pipe_fd] || fdr_kind[pipe_fd] != FDR_KIND_PIPE_READER ||
+                        ((fdr_rights[pipe_fd] & 64'd1) == 64'd0)) begin
+                        flat_retire_errno_value = LNP64_ERR_EBADF;
+                    end else if (gpr[dec.rs3] > 64'd8) begin
+                        flat_retire_errno_value = LNP64_ERR_EINVAL;
+                    end else begin
+                        flat_retire_errno_value = LNP64_ERR_OK;
+                    end
+                end
+                LNP64_OP_CLONE:
+                    flat_retire_errno_value = (active_thread_slot == 1'b0 && !thread_active[1]) ?
+                        LNP64_ERR_OK : LNP64_ERR_EAGAIN;
+                LNP64_OP_JOIN: flat_retire_errno_value = LNP64_ERR_OK;
+                default: begin
+                end
+            endcase
+        end
+    endfunction
+
+    function automatic logic [63:0] flat_retire_result_value(input logic [15:0] opcode);
+        logic [63:0] result;
+        logic [7:0] trace_result_reg;
+        begin
+            trace_result_reg = flat_retire_result_reg(raw_opcode, dec.rd);
+            result = gpr[trace_result_reg[4:0]];
+            unique case (opcode)
+                LNP64_OP_LI32: result = {{32{dec.imm[31]}}, dec.imm};
+                LNP64_OP_LI32_LITERAL, LNP64_OP_LA_LITERAL: result = {32'd0, program_rom[pc + 32'd1]};
+                LNP64_OP_AUIPC_LITERAL:
+                    result = FLAT_EXEC_BASE_ADDR + {30'd0, pc, 2'd0} +
+                        {{32{program_rom[pc + 32'd1][31]}}, program_rom[pc + 32'd1]};
+                LNP64_OP_ISYNC: result = 64'd0;
+                LNP64_OP_MOV: result = gpr[dec.rs1];
+                LNP64_OP_ADD: result = gpr[dec.rs1] + gpr[dec.rs2];
+                LNP64_OP_ADDI: result = gpr[dec.rs1] + {{32{dec.imm[31]}}, dec.imm};
+                LNP64_OP_SUB: result = gpr[dec.rs1] - gpr[dec.rs2];
+                LNP64_OP_MUL: result = gpr[dec.rs1] * gpr[dec.rs2];
+                LNP64_OP_MULH: result = mulh_signed(gpr[dec.rs1], gpr[dec.rs2]);
+                LNP64_OP_MULHU: result = mulh_unsigned(gpr[dec.rs1], gpr[dec.rs2]);
+                LNP64_OP_MULHSU: result = mulh_signed_unsigned(gpr[dec.rs1], gpr[dec.rs2]);
+                LNP64_OP_DIV: result = div_signed64(gpr[dec.rs1], gpr[dec.rs2]);
+                LNP64_OP_UDIV: result = gpr[dec.rs2] == 64'd0 ? 64'd0 : gpr[dec.rs1] / gpr[dec.rs2];
+                LNP64_OP_SREM: result = rem_signed64(gpr[dec.rs1], gpr[dec.rs2]);
+                LNP64_OP_UREM: result = gpr[dec.rs2] == 64'd0 ? 64'd0 : gpr[dec.rs1] % gpr[dec.rs2];
+                LNP64_OP_AND: result = gpr[dec.rs1] & gpr[dec.rs2];
+                LNP64_OP_ANDI: result = gpr[dec.rs1] & {{32{dec.imm[31]}}, dec.imm};
+                LNP64_OP_OR: result = gpr[dec.rs1] | gpr[dec.rs2];
+                LNP64_OP_ORI: result = gpr[dec.rs1] | {{32{dec.imm[31]}}, dec.imm};
+                LNP64_OP_XOR: result = gpr[dec.rs1] ^ gpr[dec.rs2];
+                LNP64_OP_XORI: result = gpr[dec.rs1] ^ {{32{dec.imm[31]}}, dec.imm};
+                LNP64_OP_NOT: result = ~gpr[dec.rs1];
+                LNP64_OP_LSL: result = gpr[dec.rs1] << gpr[dec.rs2][5:0];
+                LNP64_OP_LSR: result = gpr[dec.rs1] >> gpr[dec.rs2][5:0];
+                LNP64_OP_ASR: result = $signed(gpr[dec.rs1]) >>> gpr[dec.rs2][5:0];
+                LNP64_OP_LSLI: result = gpr[dec.rs1] << dec.imm[5:0];
+                LNP64_OP_LSRI: result = gpr[dec.rs1] >> dec.imm[5:0];
+                LNP64_OP_ASRI: result = $signed(gpr[dec.rs1]) >>> dec.imm[5:0];
+                LNP64_OP_SEXT_B: result = {{56{gpr[dec.rs1][7]}}, gpr[dec.rs1][7:0]};
+                LNP64_OP_SEXT_H: result = {{48{gpr[dec.rs1][15]}}, gpr[dec.rs1][15:0]};
+                LNP64_OP_SEXT_W: result = {{32{gpr[dec.rs1][31]}}, gpr[dec.rs1][31:0]};
+                LNP64_OP_ZEXT_B: result = {56'd0, gpr[dec.rs1][7:0]};
+                LNP64_OP_ZEXT_H: result = {48'd0, gpr[dec.rs1][15:0]};
+                LNP64_OP_ZEXT_W: result = {32'd0, gpr[dec.rs1][31:0]};
+                LNP64_OP_CLZ: result = clz64(gpr[dec.rs1]);
+                LNP64_OP_CTZ: result = ctz64(gpr[dec.rs1]);
+                LNP64_OP_POPCNT: result = popcnt64(gpr[dec.rs1]);
+                LNP64_OP_ROL: result = (gpr[dec.rs1] << gpr[dec.rs2][5:0]) |
+                    (gpr[dec.rs1] >> (64 - gpr[dec.rs2][5:0]));
+                LNP64_OP_ROR: result = (gpr[dec.rs1] >> gpr[dec.rs2][5:0]) |
+                    (gpr[dec.rs1] << (64 - gpr[dec.rs2][5:0]));
+                LNP64_OP_BSWAP16: result = {48'd0, gpr[dec.rs1][7:0], gpr[dec.rs1][15:8]};
+                LNP64_OP_BSWAP32:
+                    result = {32'd0, gpr[dec.rs1][7:0], gpr[dec.rs1][15:8],
+                        gpr[dec.rs1][23:16], gpr[dec.rs1][31:24]};
+                LNP64_OP_BSWAP64: result = bswap64(gpr[dec.rs1]);
+                LNP64_OP_CSEL_EQ, LNP64_OP_CSEL_NE, LNP64_OP_CSEL_LT, LNP64_OP_CSEL_GT,
+                LNP64_OP_CSEL_LE, LNP64_OP_CSEL_GE, LNP64_OP_CSEL_ULT, LNP64_OP_CSEL_UGT,
+                LNP64_OP_CSEL_ULE, LNP64_OP_CSEL_UGE:
+                    result = csel_condition(dec.opcode) ? gpr[dec.rs1] : gpr[dec.rs2];
+                LNP64_OP_CSET_EQ, LNP64_OP_CSET_NE, LNP64_OP_CSET_LT, LNP64_OP_CSET_GT,
+                LNP64_OP_CSET_LE, LNP64_OP_CSET_GE, LNP64_OP_CSET_ULT, LNP64_OP_CSET_UGT,
+                LNP64_OP_CSET_ULE, LNP64_OP_CSET_UGE:
+                    result = {63'd0, csel_condition(dec.opcode)};
+                LNP64_OP_LR_GET: result = link_register;
+                LNP64_OP_LD: begin
+                    if (topology_record_valid && mem_addr == topology_record_base) begin
+                        result = 64'd1;
+                    end else if (topology_record_valid && mem_addr == topology_record_base + 64'd192) begin
+                        result = 64'd4;
+                    end else if (topology_record_valid && mem_addr == topology_record_base + 64'd232) begin
+                        result = 64'd4096;
+                    end else if (topology_record_valid && mem_addr == topology_record_base + 64'd256) begin
+                        result = 64'd5;
+                    end else if (topology_record_valid && mem_addr == topology_record_base + 64'd272) begin
+                        result = 64'd4096;
+                    end else begin
+                        result = load_double_unaligned(mem_addr);
+                    end
+                end
+                LNP64_OP_LD_W: result = load_word_lane(sram[mem_sram_word_index], mem_word_upper);
+                LNP64_OP_LD_H: result = load_half_lane(sram[mem_sram_word_index], mem_half_lane);
+                LNP64_OP_LD_B: result = load_byte_lane(sram[mem_sram_word_index], mem_byte_lane);
+                LNP64_OP_AMO_SWAP, LNP64_OP_AMO_ADD, LNP64_OP_AMO_AND,
+                LNP64_OP_AMO_OR, LNP64_OP_AMO_XOR, LNP64_OP_LOCK_CMPXCHG:
+                    result = sram[sram_word_index(gpr[dec.rs1])];
+                LNP64_OP_ENV_GET: result = env_get_value(gpr[dec.rs1]);
+                LNP64_OP_OPEN_FD:
+                    result = file_open_available ?
+                        (FDR_TOKEN_MARKER | ((fdr_generation[file_open_fd] + 64'd1) << 8) |
+                            {56'd0, file_open_fd[7:0]}) :
+                        64'hffff_ffff_ffff_ffff;
+                LNP64_OP_READ_FD: begin
+                    if (gpr[dec.rs2] == 64'd0) begin
+                        result = 64'd0;
+                    end else if (!static_fd_in_range || !fdr_valid[static_fd] ||
+                        !(static_fd_is_memory_object || static_fd_is_event_counter || static_fd_is_timer) ||
+                        fdr_revoked[static_fd] || ((fdr_rights[static_fd] & 64'd1) == 64'd0)) begin
+                        result = 64'hffff_ffff_ffff_ffff;
+                    end else if (static_fd_is_event_counter || static_fd_is_timer) begin
+                        result = gpr[dec.rs2] < 64'd8 ? gpr[dec.rs2] : 64'd8;
+                    end else if (!memory_object_byte_valid || memory_object_len == 64'd0) begin
+                        result = 64'd0;
+                    end else begin
+                        result = 64'd1;
+                    end
+                end
+                LNP64_OP_WRITE_FD: begin
+                    if (gpr[dec.rs2] == 64'd0) begin
+                        result = 64'd0;
+                    end else if (static_fd_is_event_counter || static_fd_is_timer || static_fd_is_memory_object) begin
+                        if (!fdr_valid[static_fd] || fdr_revoked[static_fd] ||
+                            ((fdr_rights[static_fd] & 64'd2) == 64'd0)) begin
+                            result = 64'hffff_ffff_ffff_ffff;
+                        end else if (static_fd_is_event_counter || static_fd_is_timer) begin
+                            result = gpr[dec.rs2] < 64'd8 ? gpr[dec.rs2] : 64'd8;
+                        end else begin
+                            result = 64'd1;
+                        end
+                    end else begin
+                        result = gpr[dec.rs2];
+                    end
+                end
+                LNP64_OP_AWAIT: begin
+                    if (!await_fd_in_range || !fdr_valid[await_fd] || fdr_revoked[await_fd] ||
+                        ((fdr_rights[await_fd] & 64'd16) == 64'd0) || !await_fd_ready) begin
+                        result = 64'hffff_ffff_ffff_ffff;
+                    end else begin
+                        result = 64'd0;
+                    end
+                end
+                LNP64_OP_WAITABLE_PROBE: begin
+                    if (!await_fd_in_range || !fdr_valid[await_fd]) begin
+                        result = negative_errno(LNP64_ERR_EBADF);
+                    end else if (fdr_revoked[await_fd]) begin
+                        result = negative_errno(RTL_ERR_ESTALE);
+                    end else if ((fdr_rights[await_fd] & 64'd16) == 64'd0) begin
+                        result = negative_errno(LNP64_ERR_EPERM);
+                    end else if (await_fd_ready && ((gpr[dec.rs2] & 64'd1) != 64'd0)) begin
+                        result = 64'd1;
+                    end else begin
+                        result = 64'd0;
+                    end
+                end
+                LNP64_OP_AWAIT_EX: begin
+                    if (!(await_ex_mode == 64'd0 || await_ex_mode == 64'd1 || await_ex_mode == 64'd4)) begin
+                        result = negative_errno(LNP64_ERR_EINVAL);
+                    end else if (!await_fd_in_range || !fdr_valid[await_fd]) begin
+                        result = negative_errno(LNP64_ERR_EBADF);
+                    end else if (fdr_revoked[await_fd]) begin
+                        result = negative_errno(RTL_ERR_ESTALE);
+                    end else if ((fdr_rights[await_fd] & 64'd16) == 64'd0) begin
+                        result = negative_errno(LNP64_ERR_EPERM);
+                    end else if (await_fd_ready && ((await_ex_mask & 64'd1) != 64'd0)) begin
+                        result = 64'd1;
+                    end else if (await_ex_mode == 64'd4) begin
+                        result = negative_errno(LNP64_ERR_EAGAIN);
+                    end else begin
+                        result = 64'd0;
+                    end
+                end
+                LNP64_OP_GATE_CALL: begin
+                    if (!call_gate_fd_live) begin
+                        result = 64'hffff_ffff_ffff_ffff;
+                    end else if (call_gate_mode[call_gate_fd] == CALL_MODE_ASYNC) begin
+                        result = call_gate_completion_is_event_counter ? call_next_op_id : 64'hffff_ffff_ffff_ffff;
+                    end else if (call_gate_mode[call_gate_fd] == CALL_MODE_HANDOFF) begin
+                        result = 64'd0;
+                    end else if (call_gate_mode[call_gate_fd] == CALL_MODE_SYNC) begin
+                        result = call_continuation_valid ? 64'hffff_ffff_ffff_ffff : gpr[dec.rd];
+                    end else begin
+                        result = 64'hffff_ffff_ffff_ffff;
+                    end
+                end
+                LNP64_OP_PUSH: begin
+                    if (gpr[dec.rs3] == 64'd0) begin
+                        result = 64'd0;
+                    end else if (!pipe_fd_in_range || !fdr_valid[pipe_fd] || fdr_revoked[pipe_fd] ||
+                        fdr_kind[pipe_fd] != FDR_KIND_PIPE_WRITER ||
+                        ((fdr_rights[pipe_fd] & 64'd2) == 64'd0) ||
+                        gpr[dec.rs3] > 64'd8 || pipe_payload_valid[pipe_queue_slot]) begin
+                        result = 64'hffff_ffff_ffff_ffff;
+                    end else begin
+                        result = gpr[dec.rs3];
+                    end
+                end
+                LNP64_OP_PULL: begin
+                    if (gpr[dec.rs3] == 64'd0) begin
+                        result = 64'd0;
+                    end else if (raw_opcode == 8'h3b && pipe_fd_token_stale) begin
+                        result = 64'hffff_ffff_ffff_ffff;
+                    end else if (raw_opcode == 8'h3b && pipe_fd_in_range &&
+                        fdr_valid[pipe_fd] && !fdr_revoked[pipe_fd] &&
+                        fdr_kind[pipe_fd] == FDR_KIND_GENERIC &&
+                        ((fdr_rights[pipe_fd] & 64'd1) != 64'd0)) begin
+                        result = dynamic_file_read_count;
+                    end else if (!pipe_fd_in_range || !fdr_valid[pipe_fd] || fdr_revoked[pipe_fd] ||
+                        fdr_kind[pipe_fd] != FDR_KIND_PIPE_READER ||
+                        ((fdr_rights[pipe_fd] & 64'd1) == 64'd0) || gpr[dec.rs3] > 64'd8) begin
+                        result = 64'hffff_ffff_ffff_ffff;
+                    end else if (!pipe_payload_valid[pipe_queue_slot]) begin
+                        result = 64'd0;
+                    end else begin
+                        result = {60'd0, pipe_pull_len};
+                    end
+                end
+                LNP64_OP_GET_PCR: result = pcr_get_value(dec.rs1[4:0]);
+                LNP64_OP_GET_ERRNO: result = {48'd0, errno_reg};
+                LNP64_OP_SET_PCR: result = pcr_set_value(dec.rs1[4:0]);
+                LNP64_OP_CLONE:
+                    result = (active_thread_slot == 1'b0 && !thread_active[1]) ?
+                        64'd2 : 64'hffff_ffff_ffff_ffff;
+                LNP64_OP_JOIN: begin
+                    if (gpr[dec.rs1] == active_tid) begin
+                        result = 64'd35;
+                    end else if (gpr[dec.rs1] == 64'd2 && thread_completed[1]) begin
+                        result = 64'd0;
+                    end else if (gpr[dec.rs1] == 64'd2 && thread_active[1]) begin
+                        result = 64'd11;
+                    end else begin
+                        result = 64'd3;
+                    end
+                end
+                default: begin
+                end
+            endcase
+            flat_retire_result_value = flat_retire_result_valid(raw_opcode) ? result : 64'd0;
+        end
+    endfunction
+
+    function automatic lnp64_retire_submit_t retire_from_response(
+        input lnp64_retire_submit_t base,
+        input lnp64_rsp_t response
+    );
+        lnp64_retire_submit_t record;
+        begin
+            record = base;
+            record.result_value = base.result_valid ? response.result_value : 64'd0;
+            record.errno = response.errno_value;
+            record.status = retire_status_from_errno(response.errno_value);
+            retire_from_response = record;
         end
     endfunction
 
@@ -1582,8 +2035,13 @@ module lnp64_core_tile #(
         );
         retire_submit_next.result_valid = flat_retire_result_valid(raw_opcode);
         retire_submit_next.result_reg = flat_retire_result_reg(raw_opcode, dec.rd);
+        retire_submit_next.result_value = flat_retire_result_value(dec.opcode);
+        retire_submit_next.errno = flat_retire_errno_value(dec.opcode);
+        retire_submit_next.status = retire_status_from_errno(retire_submit_next.errno);
         retire_submit_next.event_id = 32'd0;
         retire_submit_next.fault_id = 32'd0;
+
+        retire_submit_rsp_next = retire_from_response(retire_submit_next, rsp);
 
         thread_submit_next = '0;
         thread_submit_next.pid = 32'd1;
@@ -3615,7 +4073,7 @@ module lnp64_core_tile #(
                         pending_unsupported <= 1'b0;
                         retired_count <= retired_count + 32'd1;
                         retire_submit_valid <= 1'b1;
-                        retire_submit_record <= retire_submit_next;
+                        retire_submit_record <= retire_submit_rsp_next;
                         pc <= command_pc + 32'd1;
                         next_op_id <= next_op_id + 32'd1;
                         if (pending_unsupported) begin

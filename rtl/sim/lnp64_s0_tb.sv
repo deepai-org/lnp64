@@ -232,7 +232,7 @@ module lnp64_s0_tb;
             "4-tile stress configuration did not reach reset-stable");
 
         $display(
-            "TTRACE {\"record\":\"lnp64_retire_submit_t\",\"op_id\":%0d,\"pid\":%0d,\"tid\":%0d,\"tile_id\":%0d,\"domain_id\":%0d,\"domain_gen\":%0d,\"pc\":%0d,\"opcode\":%0d,\"arch_opcode\":%0d,\"action\":%0d,\"operand_rd\":%0d,\"operand_rs1\":%0d,\"operand_rs2\":%0d,\"operand_rs3\":%0d,\"operand_imm\":%0d,\"result_valid\":%0d,\"result_reg\":%0d,\"latency_class\":%0d,\"wait_source\":%0d,\"event_id\":%0d,\"fault_id\":%0d}",
+            "TTRACE {\"record\":\"lnp64_retire_submit_t\",\"op_id\":%0d,\"pid\":%0d,\"tid\":%0d,\"tile_id\":%0d,\"domain_id\":%0d,\"domain_gen\":%0d,\"pc\":%0d,\"opcode\":%0d,\"arch_opcode\":%0d,\"action\":%0d,\"operand_rd\":%0d,\"operand_rs1\":%0d,\"operand_rs2\":%0d,\"operand_rs3\":%0d,\"operand_imm\":%0d,\"result_valid\":%0d,\"result_reg\":%0d,\"result_value\":%0d,\"errno\":%0d,\"status\":%0d,\"latency_class\":%0d,\"wait_source\":%0d,\"event_id\":%0d,\"fault_id\":%0d}",
             dut.retire_submit_record_vec[0].op_id,
             dut.retire_submit_record_vec[0].pid,
             dut.retire_submit_record_vec[0].tid,
@@ -250,6 +250,9 @@ module lnp64_s0_tb;
             dut.retire_submit_record_vec[0].operand_imm,
             dut.retire_submit_record_vec[0].result_valid,
             dut.retire_submit_record_vec[0].result_reg,
+            dut.retire_submit_record_vec[0].result_value,
+            dut.retire_submit_record_vec[0].errno,
+            dut.retire_submit_record_vec[0].status,
             dut.retire_submit_record_vec[0].latency_class,
             dut.retire_submit_record_vec[0].wait_source,
             dut.retire_submit_record_vec[0].event_id,

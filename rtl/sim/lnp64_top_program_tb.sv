@@ -44,8 +44,6 @@ module lnp64_top_program_tb #(
     logic [4:0] retire_result_reg;
     logic retire_result_valid_vec [TB_CORE_TILE_COUNT];
     logic [4:0] retire_result_reg_vec [TB_CORE_TILE_COUNT];
-    logic [63:0] retire_result_value_vec [TB_CORE_TILE_COUNT];
-    logic [15:0] retire_errno_vec [TB_CORE_TILE_COUNT];
     logic [63:0] final_mem_checksum;
     logic unsupported_retired_seen;
     logic inject_cross_tile_wake;
@@ -96,11 +94,6 @@ module lnp64_top_program_tb #(
                     dut.retire_submit_record_vec[decode_tile_id].result_valid;
                 retire_result_reg_vec[decode_tile_id] =
                     dut.retire_submit_record_vec[decode_tile_id].result_reg[4:0];
-                retire_result_value_vec[decode_tile_id] =
-                    retire_result_valid_vec[decode_tile_id] ?
-                        dut.core_tiles[decode_tile_id].core_i.gpr[retire_result_reg_vec[decode_tile_id]] :
-                        64'd0;
-                retire_errno_vec[decode_tile_id] = dut.core_tiles[decode_tile_id].core_i.errno_reg;
             end
         end
     endgenerate
@@ -261,9 +254,9 @@ module lnp64_top_program_tb #(
                     dut.retire_submit_record_vec[trace_tile].result_valid,
                     dut.retire_submit_record_vec[trace_tile].result_valid ?
                         dut.retire_submit_record_vec[trace_tile].result_reg : 8'd0,
-                    retire_result_value_vec[trace_tile],
-                    retire_errno_vec[trace_tile],
-                    retire_errno_vec[trace_tile] == LNP64_ERR_OK ? 16'd0 : 16'd1,
+                    dut.retire_submit_record_vec[trace_tile].result_value,
+                    dut.retire_submit_record_vec[trace_tile].errno,
+                    dut.retire_submit_record_vec[trace_tile].status,
                     dut.retire_submit_record_vec[trace_tile].event_id,
                     dut.retire_submit_record_vec[trace_tile].fault_id
                 );
