@@ -170,6 +170,12 @@ module lnp64_top #(
     logic domain_rsp_valid;
     logic domain_rsp_ready;
     lnp64_rsp_t domain_rsp;
+    logic heap_cmd_valid;
+    logic heap_cmd_ready;
+    lnp64_cmd_t heap_cmd;
+    logic heap_rsp_valid;
+    logic heap_rsp_ready;
+    lnp64_rsp_t heap_rsp;
     logic object_cap_sync_valid;
     logic [31:0] object_cap_sync_reader_fd;
     logic [31:0] object_cap_sync_writer_fd;
@@ -409,6 +415,12 @@ module lnp64_top #(
         .domain_rsp_valid(domain_rsp_valid),
         .domain_rsp_ready(domain_rsp_ready),
         .domain_rsp(domain_rsp),
+        .heap_cmd_valid(heap_cmd_valid),
+        .heap_cmd_ready(heap_cmd_ready),
+        .heap_cmd(heap_cmd),
+        .heap_rsp_valid(heap_rsp_valid),
+        .heap_rsp_ready(heap_rsp_ready),
+        .heap_rsp(heap_rsp),
         .fault_valid(routed_fault_valid),
         .fault_ready(1'b1),
         .fault(routed_fault),
@@ -525,7 +537,7 @@ module lnp64_top #(
     lnp64_dma_fabric dma_i(.clk(clk), .reset_n(logic_reset_n), .visibility_event_path_live(dma_visibility_live), .raw_dma_authority_visible(dma_raw_visible), .telemetry_counter(), .fault_counter());
     lnp64_service_boundary service_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());
     lnp64_futex_atomic futex_i(.clk(clk), .reset_n(logic_reset_n), .idle(futex_idle), .telemetry_counter(), .fault_counter());
-    lnp64_heap_engine heap_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());
+    lnp64_heap_engine heap_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(heap_cmd_valid), .cmd_ready(heap_cmd_ready), .cmd(heap_cmd), .rsp_valid(heap_rsp_valid), .rsp_ready(heap_rsp_ready), .rsp(heap_rsp), .telemetry_counter(), .fault_counter());
     lnp64_classifier_servicelet classifier_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());
     lnp64_entropy_env entropy_env_i(.clk(clk), .reset_n(logic_reset_n), .feature_bits(env_feature_bits), .limit_threads(env_limit_threads));
     lnp64_uart uart_i(.clk(clk), .reset_n(logic_reset_n), .boot_valid(boot_valid), .uart_valid(uart_valid), .uart_byte(uart_byte));

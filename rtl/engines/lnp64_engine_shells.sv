@@ -107,6 +107,12 @@ module lnp64_engine_router (
     input  logic domain_rsp_valid,
     output logic domain_rsp_ready,
     input  lnp64_rsp_t domain_rsp,
+    output logic heap_cmd_valid,
+    input  logic heap_cmd_ready,
+    output lnp64_cmd_t heap_cmd,
+    input  logic heap_rsp_valid,
+    output logic heap_rsp_ready,
+    input  lnp64_rsp_t heap_rsp,
     output logic fault_valid,
     input  logic fault_ready,
     output lnp64_fault_t fault,
@@ -115,6 +121,7 @@ module lnp64_engine_router (
     logic route_cap;
     logic route_object;
     logic route_domain;
+    logic route_heap;
     logic route_fault;
     logic route_default;
     logic fault_cmd_valid;
@@ -142,8 +149,13 @@ module lnp64_engine_router (
         cmd.opcode == LNP64_OP_CAP_REVOKE;
     assign route_object = cmd.opcode == LNP64_OP_OBJECT_CTL;
     assign route_domain = cmd.opcode == LNP64_OP_DOMAIN_CTL;
+    assign route_heap = cmd.opcode == LNP64_OP_ALLOC ||
+        cmd.opcode == LNP64_OP_ALLOC_EX ||
+        cmd.opcode == LNP64_OP_ALLOC_SIZE ||
+        cmd.opcode == LNP64_OP_FREE;
     assign route_fault = cmd.opcode == LNP64_OP_FAULT_INJECT;
-    assign route_default = !route_cap && !route_object && !route_domain && !route_fault;
+    assign route_default = !route_cap && !route_object && !route_domain &&
+        !route_heap && !route_fault;
 
     assign cap_cmd_valid = cmd_valid && route_cap;
     assign cap_cmd = cmd;
@@ -151,6 +163,8 @@ module lnp64_engine_router (
     assign object_cmd = cmd;
     assign domain_cmd_valid = cmd_valid && route_domain;
     assign domain_cmd = cmd;
+    assign heap_cmd_valid = cmd_valid && route_heap;
+    assign heap_cmd = cmd;
     assign fault_cmd_valid = cmd_valid && route_fault;
     assign unsupported_cmd_valid = cmd_valid && route_default;
 
@@ -158,15 +172,17 @@ module lnp64_engine_router (
         route_cap ? cap_cmd_ready :
         route_object ? object_cmd_ready :
         route_domain ? domain_cmd_ready :
+        route_heap ? heap_cmd_ready :
         route_fault ? fault_cmd_ready :
         unsupported_cmd_ready;
 
     assign rsp_valid = cap_rsp_valid || object_rsp_valid || domain_rsp_valid ||
-        fault_rsp_valid || unsupported_rsp_valid;
+        heap_rsp_valid || fault_rsp_valid || unsupported_rsp_valid;
     assign rsp =
         cap_rsp_valid ? cap_rsp :
         object_rsp_valid ? object_rsp :
         domain_rsp_valid ? domain_rsp :
+        heap_rsp_valid ? heap_rsp :
         fault_rsp_valid ? fault_rsp :
         unsupported_rsp;
 
@@ -174,10 +190,12 @@ module lnp64_engine_router (
     assign object_rsp_ready = rsp_ready && !cap_rsp_valid && object_rsp_valid;
     assign domain_rsp_ready = rsp_ready && !cap_rsp_valid && !object_rsp_valid &&
         domain_rsp_valid;
+    assign heap_rsp_ready = rsp_ready && !cap_rsp_valid && !object_rsp_valid &&
+        !domain_rsp_valid && heap_rsp_valid;
     assign fault_rsp_ready = rsp_ready && !cap_rsp_valid && !object_rsp_valid &&
-        !domain_rsp_valid && fault_rsp_valid;
+        !domain_rsp_valid && !heap_rsp_valid && fault_rsp_valid;
     assign unsupported_rsp_ready = rsp_ready && !cap_rsp_valid && !object_rsp_valid &&
-        !domain_rsp_valid && !fault_rsp_valid && unsupported_rsp_valid;
+        !domain_rsp_valid && !heap_rsp_valid && !fault_rsp_valid && unsupported_rsp_valid;
 
     assign fault_valid = fault_fault_valid || unsupported_fault_valid;
     assign fault = fault_fault_valid ? fault_fault : unsupported_fault;
@@ -1402,9 +1420,146 @@ module lnp64_futex_atomic(input logic clk, input logic reset_n, output logic idl
     end
 endmodule
 
-module lnp64_heap_engine(input logic clk, input logic reset_n, input logic cmd_valid, output logic cmd_ready, input lnp64_cmd_t cmd, output logic rsp_valid, input logic rsp_ready, output lnp64_rsp_t rsp, output logic [31:0] telemetry_counter, output logic [31:0] fault_counter);
-    logic unused_fault_valid; lnp64_fault_t unused_fault;
-    lnp64_fail_closed_engine #(.ENGINE_ID(16'd17), .ERRNO_VALUE(LNP64_ERR_ENOTSUP), .STATUS_VALUE(LNP64_STATUS_UNSUPPORTED)) shell(.*,.fault_valid(unused_fault_valid),.fault_ready(1'b1),.fault(unused_fault),.accepted_counter(telemetry_counter),.fault_counter(fault_counter));
+module lnp64_heap_engine(
+    input logic clk,
+    input logic reset_n,
+    input logic cmd_valid,
+    output logic cmd_ready,
+    input lnp64_cmd_t cmd,
+    output logic rsp_valid,
+    input logic rsp_ready,
+    output lnp64_rsp_t rsp,
+    output logic [31:0] telemetry_counter,
+    output logic [31:0] fault_counter
+);
+    localparam logic [63:0] HEAP_ARCH_BASE = 64'h0000_0000_0010_f000;
+
+    logic have_rsp;
+    lnp64_rsp_t rsp_reg;
+    logic [63:0] heap_next;
+    logic [63:0] heap_alloc_ptr [0:3];
+    logic [63:0] heap_alloc_size [0:3];
+    logic heap_alloc_valid [0:3];
+    logic [1:0] heap_alloc_next_slot;
+
+    assign cmd_ready = reset_n && !have_rsp;
+    assign rsp_valid = have_rsp;
+    assign rsp = rsp_reg;
+
+    function automatic logic [63:0] align_up_u64(input logic [63:0] value, input logic [63:0] align);
+        logic [63:0] mask;
+        begin
+            if (align <= 64'd1) begin
+                align_up_u64 = value;
+            end else begin
+                mask = align - 64'd1;
+                align_up_u64 = (value + mask) & ~mask;
+            end
+        end
+    endfunction
+
+    function automatic logic [63:0] alloc_len_u64(input logic [63:0] len);
+        begin
+            alloc_len_u64 = len == 64'd0 ? 64'd1 : len;
+        end
+    endfunction
+
+    function automatic logic [63:0] alloc_align_u64(input logic [63:0] requested);
+        logic [63:0] clamped;
+        logic [63:0] rounded;
+        begin
+            if (requested < 64'd1) begin
+                clamped = 64'd1;
+            end else if (requested > 64'd4096) begin
+                clamped = 64'd4096;
+            end else begin
+                clamped = requested;
+            end
+            rounded = 64'd1;
+            for (int align_bit = 0; align_bit < 12; align_bit = align_bit + 1) begin
+                if (rounded < clamped) begin
+                    rounded = rounded << 1;
+                end
+            end
+            alloc_align_u64 = rounded;
+        end
+    endfunction
+
+    integer i;
+    always_ff @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin
+            have_rsp <= 1'b0;
+            rsp_reg <= '0;
+            telemetry_counter <= 32'd0;
+            fault_counter <= 32'd0;
+            heap_next <= HEAP_ARCH_BASE;
+            heap_alloc_next_slot <= 2'd0;
+            for (i = 0; i < 4; i = i + 1) begin
+                heap_alloc_ptr[i] <= 64'd0;
+                heap_alloc_size[i] <= 64'd0;
+                heap_alloc_valid[i] <= 1'b0;
+            end
+        end else begin
+            if (have_rsp && rsp_ready) begin
+                have_rsp <= 1'b0;
+            end
+            if (cmd_valid && cmd_ready) begin : accept_cmd
+                logic [63:0] alloc_addr;
+                logic [63:0] alloc_len;
+                logic [63:0] alloc_align;
+
+                have_rsp <= 1'b1;
+                telemetry_counter <= telemetry_counter + 32'd1;
+                rsp_reg <= '0;
+                rsp_reg.op_id <= cmd.op_id;
+                rsp_reg.tile_id <= cmd.tile_id;
+                rsp_reg.pid <= cmd.pid;
+                rsp_reg.tid <= cmd.tid;
+                rsp_reg.domain_id <= cmd.domain_id;
+                rsp_reg.domain_gen <= cmd.domain_gen;
+                rsp_reg.result_reg <= cmd.result_reg;
+                rsp_reg.result_value <= 64'd0;
+                rsp_reg.errno_value <= LNP64_ERR_OK;
+                rsp_reg.status <= LNP64_STATUS_OK;
+
+                if (cmd.opcode == LNP64_OP_ALLOC) begin
+                    alloc_len = alloc_len_u64(cmd.arg0);
+                    alloc_addr = align_up_u64(heap_next, 64'd64);
+                    heap_alloc_ptr[heap_alloc_next_slot] <= alloc_addr;
+                    heap_alloc_size[heap_alloc_next_slot] <= alloc_len;
+                    heap_alloc_valid[heap_alloc_next_slot] <= 1'b1;
+                    heap_alloc_next_slot <= heap_alloc_next_slot + 2'd1;
+                    heap_next <= alloc_addr + alloc_len;
+                    rsp_reg.result_value <= alloc_addr;
+                end else if (cmd.opcode == LNP64_OP_ALLOC_EX) begin
+                    alloc_len = alloc_len_u64(cmd.arg0);
+                    alloc_align = alloc_align_u64(cmd.arg1);
+                    alloc_addr = align_up_u64(heap_next + 64'd4096, alloc_align);
+                    heap_alloc_ptr[heap_alloc_next_slot] <= alloc_addr;
+                    heap_alloc_size[heap_alloc_next_slot] <= alloc_len;
+                    heap_alloc_valid[heap_alloc_next_slot] <= 1'b1;
+                    heap_alloc_next_slot <= heap_alloc_next_slot + 2'd1;
+                    heap_next <= alloc_addr + alloc_len + 64'd4096;
+                    rsp_reg.result_value <= alloc_addr;
+                end else if (cmd.opcode == LNP64_OP_ALLOC_SIZE) begin
+                    for (i = 0; i < 4; i = i + 1) begin
+                        if (heap_alloc_valid[i] && heap_alloc_ptr[i] == cmd.arg0) begin
+                            rsp_reg.result_value <= heap_alloc_size[i];
+                        end
+                    end
+                end else if (cmd.opcode == LNP64_OP_FREE) begin
+                    for (i = 0; i < 4; i = i + 1) begin
+                        if (heap_alloc_valid[i] && heap_alloc_ptr[i] == cmd.arg0) begin
+                            heap_alloc_valid[i] <= 1'b0;
+                        end
+                    end
+                end else begin
+                    rsp_reg.errno_value <= LNP64_ERR_ENOTSUP;
+                    rsp_reg.status <= LNP64_STATUS_UNSUPPORTED;
+                end
+            end
+        end
+    end
 endmodule
 
 module lnp64_classifier_servicelet(input logic clk, input logic reset_n, input logic cmd_valid, output logic cmd_ready, input lnp64_cmd_t cmd, output logic rsp_valid, input logic rsp_ready, output lnp64_rsp_t rsp, output logic [31:0] telemetry_counter, output logic [31:0] fault_counter);

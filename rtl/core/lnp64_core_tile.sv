@@ -159,6 +159,7 @@ module lnp64_core_tile #(
     logic cap_engine_shadow_enabled;
     logic object_engine_shadow_enabled;
     logic domain_engine_shadow_enabled;
+    logic heap_engine_shadow_enabled;
     logic cmp_zero;
     logic cmp_negative;
     logic cmp_greater;
@@ -1287,6 +1288,16 @@ module lnp64_core_tile #(
                 cmd.cancel_class = domain_pids_req[15:0];
                 cmd.completion_target = domain_fdrs_req[15:0];
             end
+            LNP64_OP_ALLOC,
+            LNP64_OP_ALLOC_EX,
+            LNP64_OP_ALLOC_SIZE: begin
+                cmd.arg0 = gpr[dec.rs1];
+                cmd.arg1 = gpr[dec.rs2];
+            end
+            LNP64_OP_FREE: begin
+                cmd.result_reg = 8'd0;
+                cmd.arg0 = gpr[dec.rd];
+            end
             default: begin
             end
         endcase
@@ -1505,6 +1516,7 @@ module lnp64_core_tile #(
             cap_engine_shadow_enabled <= 1'b1;
             object_engine_shadow_enabled <= 1'b1;
             domain_engine_shadow_enabled <= 1'b1;
+            heap_engine_shadow_enabled <= 1'b1;
             cmp_zero <= 1'b0;
             cmp_negative <= 1'b0;
             cmp_greater <= 1'b0;
@@ -2119,41 +2131,59 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_ALLOC: begin
-                                gpr[dec.rd] <= align_up_u64(heap_next, 64'd64);
-                                heap_alloc_ptr[heap_alloc_next_slot] <= align_up_u64(heap_next, 64'd64);
-                                heap_alloc_size[heap_alloc_next_slot] <= alloc_len_u64(gpr[dec.rs1]);
-                                heap_alloc_valid[heap_alloc_next_slot] <= 1'b1;
-                                heap_alloc_next_slot <= heap_alloc_next_slot + 2'd1;
-                                heap_next <= align_up_u64(heap_next, 64'd64) + alloc_len_u64(gpr[dec.rs1]);
-                                pc <= pc + 32'd1;
-                                retired_count <= retired_count + 32'd1;
-                                retire_submit_valid <= 1'b1;
-                                retire_submit_record <= retire_submit_next;
+                                if (heap_engine_shadow_enabled) begin
+                                    pending_unsupported <= 1'b0;
+                                    command_pc <= pc;
+                                    state <= CORE_SEND_CMD;
+                                end else begin
+                                    gpr[dec.rd] <= align_up_u64(heap_next, 64'd64);
+                                    heap_alloc_ptr[heap_alloc_next_slot] <= align_up_u64(heap_next, 64'd64);
+                                    heap_alloc_size[heap_alloc_next_slot] <= alloc_len_u64(gpr[dec.rs1]);
+                                    heap_alloc_valid[heap_alloc_next_slot] <= 1'b1;
+                                    heap_alloc_next_slot <= heap_alloc_next_slot + 2'd1;
+                                    heap_next <= align_up_u64(heap_next, 64'd64) + alloc_len_u64(gpr[dec.rs1]);
+                                    pc <= pc + 32'd1;
+                                    retired_count <= retired_count + 32'd1;
+                                    retire_submit_valid <= 1'b1;
+                                    retire_submit_record <= retire_submit_next;
+                                end
                             end
                             LNP64_OP_ALLOC_EX: begin
-                                gpr[dec.rd] <= align_up_u64(heap_next + 64'd4096, alloc_align_u64(gpr[dec.rs2]));
-                                heap_alloc_ptr[heap_alloc_next_slot] <= align_up_u64(heap_next + 64'd4096, alloc_align_u64(gpr[dec.rs2]));
-                                heap_alloc_size[heap_alloc_next_slot] <= alloc_len_u64(gpr[dec.rs1]);
-                                heap_alloc_valid[heap_alloc_next_slot] <= 1'b1;
-                                heap_alloc_next_slot <= heap_alloc_next_slot + 2'd1;
-                                heap_next <= align_up_u64(heap_next + 64'd4096, alloc_align_u64(gpr[dec.rs2])) +
-                                    alloc_len_u64(gpr[dec.rs1]) + 64'd4096;
-                                pc <= pc + 32'd1;
-                                retired_count <= retired_count + 32'd1;
-                                retire_submit_valid <= 1'b1;
-                                retire_submit_record <= retire_submit_next;
+                                if (heap_engine_shadow_enabled) begin
+                                    pending_unsupported <= 1'b0;
+                                    command_pc <= pc;
+                                    state <= CORE_SEND_CMD;
+                                end else begin
+                                    gpr[dec.rd] <= align_up_u64(heap_next + 64'd4096, alloc_align_u64(gpr[dec.rs2]));
+                                    heap_alloc_ptr[heap_alloc_next_slot] <= align_up_u64(heap_next + 64'd4096, alloc_align_u64(gpr[dec.rs2]));
+                                    heap_alloc_size[heap_alloc_next_slot] <= alloc_len_u64(gpr[dec.rs1]);
+                                    heap_alloc_valid[heap_alloc_next_slot] <= 1'b1;
+                                    heap_alloc_next_slot <= heap_alloc_next_slot + 2'd1;
+                                    heap_next <= align_up_u64(heap_next + 64'd4096, alloc_align_u64(gpr[dec.rs2])) +
+                                        alloc_len_u64(gpr[dec.rs1]) + 64'd4096;
+                                    pc <= pc + 32'd1;
+                                    retired_count <= retired_count + 32'd1;
+                                    retire_submit_valid <= 1'b1;
+                                    retire_submit_record <= retire_submit_next;
+                                end
                             end
                             LNP64_OP_ALLOC_SIZE: begin
-                                gpr[dec.rd] <= 64'd0;
-                                for (i = 0; i < 4; i = i + 1) begin
-                                    if (heap_alloc_valid[i] && heap_alloc_ptr[i] == gpr[dec.rs1]) begin
-                                        gpr[dec.rd] <= heap_alloc_size[i];
+                                if (heap_engine_shadow_enabled) begin
+                                    pending_unsupported <= 1'b0;
+                                    command_pc <= pc;
+                                    state <= CORE_SEND_CMD;
+                                end else begin
+                                    gpr[dec.rd] <= 64'd0;
+                                    for (i = 0; i < 4; i = i + 1) begin
+                                        if (heap_alloc_valid[i] && heap_alloc_ptr[i] == gpr[dec.rs1]) begin
+                                            gpr[dec.rd] <= heap_alloc_size[i];
+                                        end
                                     end
+                                    pc <= pc + 32'd1;
+                                    retired_count <= retired_count + 32'd1;
+                                    retire_submit_valid <= 1'b1;
+                                    retire_submit_record <= retire_submit_next;
                                 end
-                                pc <= pc + 32'd1;
-                                retired_count <= retired_count + 32'd1;
-                                retire_submit_valid <= 1'b1;
-                                retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_MMAP: begin
                                 if (gpr[dec.rs2] == 64'd0 || (gpr[dec.rs3] & ~64'd7) != 64'd0) begin
@@ -2203,15 +2233,21 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_FREE: begin
-                                for (i = 0; i < 4; i = i + 1) begin
-                                    if (heap_alloc_valid[i] && heap_alloc_ptr[i] == gpr[dec.rd]) begin
-                                        heap_alloc_valid[i] <= 1'b0;
+                                if (heap_engine_shadow_enabled) begin
+                                    pending_unsupported <= 1'b0;
+                                    command_pc <= pc;
+                                    state <= CORE_SEND_CMD;
+                                end else begin
+                                    for (i = 0; i < 4; i = i + 1) begin
+                                        if (heap_alloc_valid[i] && heap_alloc_ptr[i] == gpr[dec.rd]) begin
+                                            heap_alloc_valid[i] <= 1'b0;
+                                        end
                                     end
+                                    pc <= pc + 32'd1;
+                                    retired_count <= retired_count + 32'd1;
+                                    retire_submit_valid <= 1'b1;
+                                    retire_submit_record <= retire_submit_next;
                                 end
-                                pc <= pc + 32'd1;
-                                retired_count <= retired_count + 32'd1;
-                                retire_submit_valid <= 1'b1;
-                                retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_LD: begin
                                 if (topology_record_valid && mem_addr == topology_record_base) begin
@@ -3774,6 +3810,34 @@ module lnp64_core_tile #(
                                         object_fd_store_byte_lane,
                                         {32'd0, object_rsp_single_fd[31:0]}
                                     );
+                                end
+                            end
+                        end
+                        if (!pending_unsupported &&
+                            (dec.opcode == LNP64_OP_ALLOC ||
+                             dec.opcode == LNP64_OP_ALLOC_EX ||
+                             dec.opcode == LNP64_OP_ALLOC_SIZE ||
+                             dec.opcode == LNP64_OP_FREE)) begin
+                            if (rsp.status == LNP64_STATUS_OK &&
+                                rsp.errno_value == LNP64_ERR_OK) begin
+                                if (dec.opcode == LNP64_OP_ALLOC) begin
+                                    heap_alloc_ptr[heap_alloc_next_slot] <= rsp.result_value;
+                                    heap_alloc_size[heap_alloc_next_slot] <= alloc_len_u64(gpr[dec.rs1]);
+                                    heap_alloc_valid[heap_alloc_next_slot] <= 1'b1;
+                                    heap_alloc_next_slot <= heap_alloc_next_slot + 2'd1;
+                                    heap_next <= rsp.result_value + alloc_len_u64(gpr[dec.rs1]);
+                                end else if (dec.opcode == LNP64_OP_ALLOC_EX) begin
+                                    heap_alloc_ptr[heap_alloc_next_slot] <= rsp.result_value;
+                                    heap_alloc_size[heap_alloc_next_slot] <= alloc_len_u64(gpr[dec.rs1]);
+                                    heap_alloc_valid[heap_alloc_next_slot] <= 1'b1;
+                                    heap_alloc_next_slot <= heap_alloc_next_slot + 2'd1;
+                                    heap_next <= rsp.result_value + alloc_len_u64(gpr[dec.rs1]) + 64'd4096;
+                                end else if (dec.opcode == LNP64_OP_FREE) begin
+                                    for (i = 0; i < 4; i = i + 1) begin
+                                        if (heap_alloc_valid[i] && heap_alloc_ptr[i] == gpr[dec.rd]) begin
+                                            heap_alloc_valid[i] <= 1'b0;
+                                        end
+                                    end
                                 end
                             end
                         end
