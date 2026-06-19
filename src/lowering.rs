@@ -1945,6 +1945,11 @@ mod tests {
         assert!(
             real_llc.contains("real LLVM LNP64 clang libc-test search_insque object smoke passed")
         );
+        assert!(real_llc.contains("libc-test-search-lsearch-clang-smoke.o"));
+        assert!(real_llc.contains("third_party/libc-test/functional/search_lsearch.c"));
+        assert!(
+            real_llc.contains("real LLVM LNP64 clang libc-test search_lsearch object smoke passed")
+        );
         assert!(real_llc.contains("libc-test-malloc-0-clang-smoke.o"));
         assert!(real_llc.contains("third_party/libc-test/regression/malloc-0.c"));
         assert!(real_llc.contains("real LLVM LNP64 clang libc-test malloc-0 object smoke passed"));
@@ -2023,6 +2028,11 @@ mod tests {
         assert!(real_llc.contains(r#""$libc_search_impl_obj" "$libc_alloc_impl_obj""#));
         assert!(real_llc.contains(r#""$libc_string_impl_obj" "$libc_fd_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld libc-test search_insque link smoke passed"));
+        assert!(real_llc.contains("lnp64-libc-test-search-lsearch-linked.elf"));
+        assert!(real_llc.contains(r#""$libc_test_search_lsearch_obj""#));
+        assert!(
+            real_llc.contains("real LLVM LNP64 lld libc-test search_lsearch link smoke passed")
+        );
         assert!(search_header.contains("void insque(void *elem, void *pred);"));
         assert!(search_header.contains("void remque(void *elem);"));
         assert!(real_llc.contains("lnp64-libc-test-malloc-0-linked.elf"));
@@ -2304,7 +2314,7 @@ mod tests {
         assert!(libc_search_min.contains("void *lsearch"));
         assert!(libc_search_min.contains("void insque"));
         assert!(libc_search_min.contains("void remque"));
-        assert!(libc_search_min.contains("memcpy(found, key, width)"));
+        assert!(libc_search_min.contains("lnp64_search_copy_key(found, key, width)"));
         assert!(
             real_llc.contains(
                 "real LLVM LNP64 clang minilibc search implementation object smoke passed"
@@ -3116,6 +3126,11 @@ mod tests {
             real_llc_docker
                 .contains("real LLVM LNP64 run-elf libc-test search_insque execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-libc-test-search-lsearch-linked.elf"));
+        assert!(
+            real_llc_docker
+                .contains("real LLVM LNP64 run-elf libc-test search_lsearch execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-libc-test-malloc-0-linked.elf"));
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf libc-test malloc-0 execution passed")
@@ -3300,6 +3315,7 @@ mod tests {
             "real_libc_test_ungetc_execution",
             "real_libc_test_qsort_bounded_execution",
             "real_libc_test_search_insque_execution",
+            "real_libc_test_search_lsearch_execution",
             "real_libc_test_malloc_0_execution",
             "real_libc_test_fgets_eof_execution",
             "real_numeric_conversion_execution",
@@ -3373,6 +3389,7 @@ mod tests {
             "real_libc_test_ungetc_execution",
             "real_libc_test_qsort_bounded_execution",
             "real_libc_test_search_insque_execution",
+            "real_libc_test_search_lsearch_execution",
             "real_libc_test_malloc_0_execution",
             "real_libc_test_fgets_eof_execution",
             "real_numeric_conversion_execution",

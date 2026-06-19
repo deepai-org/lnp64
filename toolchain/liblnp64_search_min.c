@@ -2,6 +2,23 @@ typedef unsigned long size_t;
 
 void *memcpy(void *dst, const void *src, size_t len);
 
+static void *lnp64_search_copy_key(void *dst, const void *src, size_t len) {
+  char *out = (char *)dst;
+  const char *in = (const char *)src;
+  size_t i;
+  int saw_nul = 0;
+  for (i = 0; i < len; i = i + 1) {
+    if (saw_nul) {
+      out[i] = 0;
+      continue;
+    }
+    out[i] = in[i];
+    if (in[i] == 0)
+      saw_nul = 1;
+  }
+  return dst;
+}
+
 struct lnp64_qelem {
   struct lnp64_qelem *q_forw;
   struct lnp64_qelem *q_back;
@@ -25,7 +42,7 @@ void *lsearch(const void *key, void *base, size_t *nelp, size_t width,
   if (found)
     return found;
   found = cursor + (*nelp * width);
-  memcpy(found, key, width);
+  lnp64_search_copy_key(found, key, width);
   *nelp = *nelp + 1;
   return found;
 }

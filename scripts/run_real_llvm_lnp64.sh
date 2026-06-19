@@ -2719,6 +2719,20 @@ grep -q 'call ' "$libc_test_search_insque_dump"
 printf 'real LLVM LNP64 clang libc-test search_insque object smoke passed: %s\n' \
   "$libc_test_search_insque_obj"
 
+libc_test_search_lsearch_obj="$build_dir/libc-test-search-lsearch-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain/include \
+  -I third_party/libc-test/functional \
+  -c third_party/libc-test/functional/search_lsearch.c \
+  -o "$libc_test_search_lsearch_obj"
+test -s "$libc_test_search_lsearch_obj"
+libc_test_search_lsearch_dump="$build_dir/libc-test-search-lsearch-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_test_search_lsearch_obj" \
+  >"$libc_test_search_lsearch_dump"
+grep -q 'call ' "$libc_test_search_lsearch_dump"
+printf 'real LLVM LNP64 clang libc-test search_lsearch object smoke passed: %s\n' \
+  "$libc_test_search_lsearch_obj"
+
 libc_test_malloc_0_obj="$build_dir/libc-test-malloc-0-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain/include \
@@ -4623,6 +4637,15 @@ libc_test_search_insque_elf="$build_dir/lnp64-libc-test-search-insque-linked.elf
 test -s "$libc_test_search_insque_elf"
 printf 'real LLVM LNP64 lld libc-test search_insque link smoke passed: %s\n' \
   "$libc_test_search_insque_elf"
+
+libc_test_search_lsearch_elf="$build_dir/lnp64-libc-test-search-lsearch-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$libc_test_search_lsearch_elf" "$crt0_obj" \
+  "$libc_test_search_lsearch_obj" "$libc_test_print_obj" \
+  "$libc_search_impl_obj" "$libc_string_impl_obj" "$libc_fd_impl_obj"
+test -s "$libc_test_search_lsearch_elf"
+printf 'real LLVM LNP64 lld libc-test search_lsearch link smoke passed: %s\n' \
+  "$libc_test_search_lsearch_elf"
 
 libc_test_malloc_0_elf="$build_dir/lnp64-libc-test-malloc-0-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
