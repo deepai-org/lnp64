@@ -17,6 +17,67 @@ MANIFEST = Path(
 )
 LLVM_BOOTSTRAP = ROOT / "toolchain/lnp64_llvm_bootstrap.manifest"
 LEGACY_COMPILER_SMOKES = {"demos/netbsd_personality_smoke.c"}
+LINKED_REPLACEMENTS = {
+    "tests/rtl/programs/top_return_12.c": (
+        "tests/rtl/programs/top_linked_main.c",
+        "startup_call_main",
+    ),
+    "tests/rtl/programs/top_branch_if.c": (
+        "tests/rtl/programs/top_linked_loop_branch.c",
+        "branch",
+    ),
+    "tests/rtl/programs/top_loop_sum.c": (
+        "tests/rtl/programs/top_linked_loop_branch.c",
+        "branch",
+    ),
+    "tests/rtl/programs/top_factorial_mul.c": (
+        "tests/rtl/programs/top_linked_factorial_mul.c",
+        "mul",
+    ),
+    "tests/rtl/programs/top_subtract.c": (
+        "tests/rtl/programs/top_linked_loop_branch.c",
+        "call_return",
+    ),
+    "tests/rtl/programs/top_bitwise.c": (
+        "tests/rtl/programs/top_linked_bitwise_shift.c",
+        "bitwise_alu",
+    ),
+    "tests/rtl/programs/top_shift.c": (
+        "tests/rtl/programs/top_linked_bitwise_shift.c",
+        "shift_alu",
+    ),
+    "tests/rtl/programs/top_udiv_urem.c": (
+        "tests/rtl/programs/top_linked_divrem.c",
+        "unsigned_division",
+    ),
+    "tests/rtl/programs/top_signed_division.c": (
+        "tests/rtl/programs/top_linked_divrem.c",
+        "signed_division",
+    ),
+    "tests/rtl/programs/top_not.c": (
+        "tests/rtl/programs/top_linked_bitwise_shift.c",
+        "bitwise_alu",
+    ),
+    "tests/rtl/programs/top_call_return.c": (
+        "tests/rtl/programs/top_linked_loop_branch.c",
+        "call_return",
+    ),
+    "tests/rtl/programs/top_byte_array.c": (
+        "tests/rtl/programs/top_linked_byte_array.c",
+        "byte_load_store",
+    ),
+    "tests/rtl/programs/top_heap_byte_lanes.c": (
+        "tests/rtl/programs/top_linked_heap_byte_lanes.c",
+        "heap",
+    ),
+    "demos/allocator.c": ("tests/rtl/programs/top_linked_allocator_native.c", "heap"),
+    "demos/factorial.c": ("tests/rtl/programs/top_linked_factorial_native.c", "push_pull"),
+    "demos/fibonacci.c": ("tests/rtl/programs/top_linked_fibonacci_native.c", "call_return"),
+    "demos/hello.c": ("tests/rtl/programs/top_linked_hello_native.c", "push_pull"),
+    "demos/json_parser.c": ("tests/rtl/programs/top_linked_json_parser_native.c", "heap"),
+    "demos/ping_pong.c": ("tests/rtl/programs/top_linked_clone_join.c", "thread_join"),
+    "demos/rot13.c": ("tests/rtl/programs/top_linked_rot13_native.c", "push_pull"),
+}
 
 
 def fail(message: str) -> None:
@@ -298,6 +359,38 @@ def main() -> None:
         manifest_c == expected_c,
         f"compiler demo coverage drifted: expected={sorted(expected_c)} manifest={sorted(manifest_c)}",
     )
+
+    linked_sources = {
+        str(entry["source"]): entry
+        for entry in llvm_linked_entries
+        if entry.get("status") == "active"
+    }
+    active_toy_sources = {
+        str(entry["source"])
+        for entry in compiler_flat_entries + compiler_entries
+        if entry.get("status") == "active"
+    }
+    missing_replacements = sorted(active_toy_sources - set(LINKED_REPLACEMENTS))
+    require(
+        not missing_replacements,
+        f"active toy C sources lack linked LLVM replacements: {missing_replacements}",
+    )
+    for toy_source in sorted(active_toy_sources):
+        linked_source, required_feature = LINKED_REPLACEMENTS[toy_source]
+        linked_entry = linked_sources.get(linked_source)
+        require(
+            linked_entry is not None,
+            f"{toy_source} replacement {linked_source} must be an active LLVM linked entry",
+        )
+        linked_features = linked_entry.get("required_features")
+        require(
+            isinstance(linked_features, list) and required_feature in linked_features,
+            f"{toy_source} replacement {linked_source} must advertise {required_feature}",
+        )
+        require(
+            linked_entry.get("rtl_gate") == "scripts/run_rtl_top_linked_llvm_smoke.sh",
+            f"{toy_source} replacement {linked_source} must use the linked LLVM smoke gate",
+        )
 
     requirements = manifest.get("recurring_gate_requirements", [])
     require(isinstance(requirements, list) and len(requirements) >= 3, "missing recurring gate requirements")

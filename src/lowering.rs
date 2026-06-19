@@ -6118,6 +6118,7 @@ mod tests {
             "demos/factorial.c",
             "demos/fibonacci.c",
             "demos/json_parser.c",
+            "demos/ping_pong.c",
             "demos/rot13.c",
         ] {
             let toy_entry = entry_for(toy_source);
@@ -6159,6 +6160,7 @@ mod tests {
             ("tests/rtl/programs/top_linked_allocator_native.c", "free"),
             ("tests/rtl/programs/top_linked_json_parser_native.c", "heap"),
             ("tests/rtl/programs/top_linked_json_parser_native.c", "free"),
+            ("tests/rtl/programs/top_linked_clone_join.c", "thread_join"),
             ("tests/rtl/programs/top_linked_hello_native.c", "push_pull"),
             ("tests/rtl/programs/top_linked_rot13_native.c", "push_pull"),
             ("tests/rtl/programs/top_linked_rot13_native.c", "free"),
