@@ -5143,7 +5143,14 @@ mod tests {
         assert!(!run_real_packages.contains("cc --toy-bootstrap"));
         assert!(run_demos.contains("scripts/run_real_llvm_lnp64_docker.sh"));
         assert!(run_demos.contains("demos/netbsd_personality_smoke.c"));
+        assert!(run_demos.contains("--legacy-toy"));
+        assert!(run_demos.contains("include_legacy_toy=0"));
+        assert!(run_demos.contains("if [[ \"$include_legacy_toy\" == \"1\" ]]"));
         assert!(run_demos.contains("for src in demos/*.s"));
+        assert_eq!(
+            categories["asm_demos"].3,
+            "assembly_demo_smoke_path_with_legacy_toy_c_opt_in"
+        );
         for migrated_demo in [
             "demos/allocator.c",
             "demos/cat.c",
@@ -5437,6 +5444,7 @@ mod tests {
         assert!(legacy_toy_script_corpus.contains("--legacy-toy"));
         assert!(legacy_toy_script_corpus.contains("LNP64_LLVM_PACKAGE_FILTER=userland"));
         assert!(legacy_toy_script_corpus.contains("scripts/run_real_llvm_package_gate.sh"));
+        assert!(legacy_toy_script_corpus.contains("include_legacy_toy=0"));
         assert!(rtl_top_manifest_checker.contains("toolchain/lnp64_llvm_bootstrap.manifest"));
         assert!(!rtl_top_manifest_checker.contains("RUN_DEMOS"));
         assert!(!rtl_top_manifest_checker.contains("non_network"));

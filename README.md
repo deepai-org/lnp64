@@ -138,16 +138,18 @@ LNP64_LLVM_PACKAGE_FILTER=sbase bash scripts/run_real_llvm_package_gate.sh
 LNP64_LLVM_PACKAGE_FILTER=userland bash scripts/run_real_llvm_package_gate.sh
 ```
 
-`scripts/run_demos.sh` is now the legacy toy-bootstrap and assembly smoke path.
-Migrated C demos such as `hello`, `sqlite_lite`, `ping_pong`, `netcat`, and
-`httpd` are covered by the real Clang/lld gate above. `scripts/run_userland.sh`
-now defaults to the real Clang/lld userland probes; use
-`scripts/run_userland.sh --legacy-toy` only for the old host-directory
-fork/exec smoke. `scripts/run_real_packages.sh` and the package-specific
-wrappers route package coverage through the same real LLVM gate, reusing linked
-ELF artifacts under `target/llvm-lnp64-build` when they already exist.
-`LNP64_LLVM_PACKAGE_FILTER` accepts `all`, `zlib`, `natsort`, `jsmn`, `inih`,
-`cwalk`, `sbase`, `userland`, or a comma/space separated subset.
+`scripts/run_demos.sh` now runs checked assembly demos by default. Migrated C
+demos such as `hello`, `sqlite_lite`, `ping_pong`, `netcat`, and `httpd` are
+covered by the real Clang/lld gate above. Use
+`scripts/run_demos.sh --legacy-toy` only for the remaining toy-bootstrap C
+personality smoke. `scripts/run_userland.sh` now defaults to the real Clang/lld
+userland probes; use `scripts/run_userland.sh --legacy-toy` only for the old
+host-directory fork/exec smoke. `scripts/run_real_packages.sh` and the
+package-specific wrappers route package coverage through the same real LLVM
+gate, reusing linked ELF artifacts under `target/llvm-lnp64-build` when they
+already exist. `LNP64_LLVM_PACKAGE_FILTER` accepts `all`, `zlib`, `natsort`,
+`jsmn`, `inih`, `cwalk`, `sbase`, `userland`, or a comma/space separated
+subset.
 
 ## Common Gates
 
@@ -164,6 +166,8 @@ git diff --check
 
 `bash scripts/run_demos.sh` intentionally does not prove migrated C demo
 coverage anymore; use `bash scripts/run_real_llvm_lnp64_docker.sh` for that.
+Use `bash scripts/run_demos.sh --legacy-toy` only when checking the remaining
+toy-bootstrap C personality smoke.
 
 Toolchain contracts:
 
