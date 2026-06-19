@@ -167,6 +167,13 @@
       "status": "active",
       "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
       "comparison": "retire_trace_and_final_state"
+    },
+    {
+      "source": "tests/rtl/programs/top_heap_byte_lanes.c",
+      "required_features": ["core", "heap", "byte_load_store", "load_store", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
     }
   ],
   "assembly_programs": [
@@ -248,7 +255,14 @@
     {"source": "demos/pcr.c", "generated_assembly": "/tmp/pcr.s", "required_features": ["core", "credential_snapshot", "policy"], "status": "blocked_by_features"},
     {"source": "demos/ping_pong.c", "generated_assembly": "/tmp/ping_pong.s", "required_features": ["core", "queue", "await"], "status": "blocked_by_features"},
     {"source": "demos/producer_consumer.c", "generated_assembly": "/tmp/producer_consumer.s", "required_features": ["core", "queue", "await"], "status": "blocked_by_features"},
-    {"source": "demos/rot13.c", "generated_assembly": "/tmp/rot13.s", "required_features": ["core", "memory", "personality_io"], "status": "blocked_by_features"},
+    {
+      "source": "demos/rot13.c",
+      "generated_assembly": "/tmp/rot13.s",
+      "required_features": ["core", "heap", "branch", "byte_load_store", "load_store", "write_fd", "free", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    },
     {"source": "demos/sqlite_lite.c", "generated_assembly": "/tmp/sqlite_lite.s", "required_features": ["core", "heap", "storage", "personality"], "status": "blocked_by_features"}
   ],
   "recurring_gate_requirements": [

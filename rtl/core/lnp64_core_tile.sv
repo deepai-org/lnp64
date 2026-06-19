@@ -103,6 +103,10 @@ module lnp64_core_tile #(
     logic [1:0] heap_alloc_next_slot;
     logic topology_record_valid;
     logic [63:0] topology_record_base;
+    int unsigned mem_sram_word_index;
+    logic [2:0] mem_byte_lane;
+    logic [1:0] mem_half_lane;
+    logic mem_word_upper;
     lnp64_retire_submit_t retire_submit_next;
     lnp64_thread_sched_t thread_submit_next;
 
@@ -170,6 +174,75 @@ module lnp64_core_tile #(
             end else begin
                 sram_word_index = addr[8:3];
             end
+        end
+    endfunction
+
+    function automatic logic [63:0] load_word_lane(input logic [63:0] word, input logic upper);
+        load_word_lane = upper ? {32'd0, word[63:32]} : {32'd0, word[31:0]};
+    endfunction
+
+    function automatic logic [63:0] load_half_lane(input logic [63:0] word, input logic [1:0] lane);
+        begin
+            unique case (lane)
+                2'd0: load_half_lane = {48'd0, word[15:0]};
+                2'd1: load_half_lane = {48'd0, word[31:16]};
+                2'd2: load_half_lane = {48'd0, word[47:32]};
+                default: load_half_lane = {48'd0, word[63:48]};
+            endcase
+        end
+    endfunction
+
+    function automatic logic [63:0] load_byte_lane(input logic [63:0] word, input logic [2:0] lane);
+        begin
+            unique case (lane)
+                3'd0: load_byte_lane = {56'd0, word[7:0]};
+                3'd1: load_byte_lane = {56'd0, word[15:8]};
+                3'd2: load_byte_lane = {56'd0, word[23:16]};
+                3'd3: load_byte_lane = {56'd0, word[31:24]};
+                3'd4: load_byte_lane = {56'd0, word[39:32]};
+                3'd5: load_byte_lane = {56'd0, word[47:40]};
+                3'd6: load_byte_lane = {56'd0, word[55:48]};
+                default: load_byte_lane = {56'd0, word[63:56]};
+            endcase
+        end
+    endfunction
+
+    function automatic logic [63:0] store_word_lane(input logic [63:0] word, input logic upper, input logic [31:0] value);
+        begin
+            store_word_lane = word;
+            if (upper) begin
+                store_word_lane[63:32] = value;
+            end else begin
+                store_word_lane[31:0] = value;
+            end
+        end
+    endfunction
+
+    function automatic logic [63:0] store_half_lane(input logic [63:0] word, input logic [1:0] lane, input logic [15:0] value);
+        begin
+            store_half_lane = word;
+            unique case (lane)
+                2'd0: store_half_lane[15:0] = value;
+                2'd1: store_half_lane[31:16] = value;
+                2'd2: store_half_lane[47:32] = value;
+                default: store_half_lane[63:48] = value;
+            endcase
+        end
+    endfunction
+
+    function automatic logic [63:0] store_byte_lane(input logic [63:0] word, input logic [2:0] lane, input logic [7:0] value);
+        begin
+            store_byte_lane = word;
+            unique case (lane)
+                3'd0: store_byte_lane[7:0] = value;
+                3'd1: store_byte_lane[15:8] = value;
+                3'd2: store_byte_lane[23:16] = value;
+                3'd3: store_byte_lane[31:24] = value;
+                3'd4: store_byte_lane[39:32] = value;
+                3'd5: store_byte_lane[47:40] = value;
+                3'd6: store_byte_lane[55:48] = value;
+                default: store_byte_lane[63:56] = value;
+            endcase
         end
     endfunction
 
@@ -371,6 +444,10 @@ module lnp64_core_tile #(
             instr = enc_reg(8'hff, 5'd0);
         end
         mem_addr = gpr[dec.rs1] + {{32{dec.imm[31]}}, dec.imm};
+        mem_sram_word_index = sram_word_index(mem_addr);
+        mem_byte_lane = mem_addr[2:0];
+        mem_half_lane = mem_addr[2:1];
+        mem_word_upper = mem_addr[2];
     end
 
     always_comb begin
@@ -1023,39 +1100,21 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_LD_W: begin
-                                if (mem_addr[2]) begin
-                                    gpr[dec.rd] <= {32'd0, sram[sram_word_index(mem_addr)][63:32]};
-                                end else begin
-                                    gpr[dec.rd] <= {32'd0, sram[sram_word_index(mem_addr)][31:0]};
-                                end
+                                gpr[dec.rd] <= load_word_lane(sram[mem_sram_word_index], mem_word_upper);
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_LD_H: begin
-                                unique case (mem_addr[2:1])
-                                    2'd0: gpr[dec.rd] <= {48'd0, sram[sram_word_index(mem_addr)][15:0]};
-                                    2'd1: gpr[dec.rd] <= {48'd0, sram[sram_word_index(mem_addr)][31:16]};
-                                    2'd2: gpr[dec.rd] <= {48'd0, sram[sram_word_index(mem_addr)][47:32]};
-                                    default: gpr[dec.rd] <= {48'd0, sram[sram_word_index(mem_addr)][63:48]};
-                                endcase
+                                gpr[dec.rd] <= load_half_lane(sram[mem_sram_word_index], mem_half_lane);
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_LD_B: begin
-                                unique case (mem_addr[2:0])
-                                    3'd0: gpr[dec.rd] <= {56'd0, sram[sram_word_index(mem_addr)][7:0]};
-                                    3'd1: gpr[dec.rd] <= {56'd0, sram[sram_word_index(mem_addr)][15:8]};
-                                    3'd2: gpr[dec.rd] <= {56'd0, sram[sram_word_index(mem_addr)][23:16]};
-                                    3'd3: gpr[dec.rd] <= {56'd0, sram[sram_word_index(mem_addr)][31:24]};
-                                    3'd4: gpr[dec.rd] <= {56'd0, sram[sram_word_index(mem_addr)][39:32]};
-                                    3'd5: gpr[dec.rd] <= {56'd0, sram[sram_word_index(mem_addr)][47:40]};
-                                    3'd6: gpr[dec.rd] <= {56'd0, sram[sram_word_index(mem_addr)][55:48]};
-                                    default: gpr[dec.rd] <= {56'd0, sram[sram_word_index(mem_addr)][63:56]};
-                                endcase
+                                gpr[dec.rd] <= load_byte_lane(sram[mem_sram_word_index], mem_byte_lane);
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
@@ -1070,11 +1129,7 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_ST_W: begin
-                                if (mem_addr[2]) begin
-                                    sram[sram_word_index(mem_addr)][63:32] <= gpr[dec.rd][31:0];
-                                end else begin
-                                    sram[sram_word_index(mem_addr)][31:0] <= gpr[dec.rd][31:0];
-                                end
+                                sram[mem_sram_word_index] <= store_word_lane(sram[mem_sram_word_index], mem_word_upper, gpr[dec.rd][31:0]);
                                 dcache_writeback <= 1'b1;
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
@@ -1082,12 +1137,7 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_ST_H: begin
-                                unique case (mem_addr[2:1])
-                                    2'd0: sram[sram_word_index(mem_addr)][15:0] <= gpr[dec.rd][15:0];
-                                    2'd1: sram[sram_word_index(mem_addr)][31:16] <= gpr[dec.rd][15:0];
-                                    2'd2: sram[sram_word_index(mem_addr)][47:32] <= gpr[dec.rd][15:0];
-                                    default: sram[sram_word_index(mem_addr)][63:48] <= gpr[dec.rd][15:0];
-                                endcase
+                                sram[mem_sram_word_index] <= store_half_lane(sram[mem_sram_word_index], mem_half_lane, gpr[dec.rd][15:0]);
                                 dcache_writeback <= 1'b1;
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
@@ -1095,16 +1145,7 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_ST_B: begin
-                                unique case (mem_addr[2:0])
-                                    3'd0: sram[sram_word_index(mem_addr)][7:0] <= gpr[dec.rd][7:0];
-                                    3'd1: sram[sram_word_index(mem_addr)][15:8] <= gpr[dec.rd][7:0];
-                                    3'd2: sram[sram_word_index(mem_addr)][23:16] <= gpr[dec.rd][7:0];
-                                    3'd3: sram[sram_word_index(mem_addr)][31:24] <= gpr[dec.rd][7:0];
-                                    3'd4: sram[sram_word_index(mem_addr)][39:32] <= gpr[dec.rd][7:0];
-                                    3'd5: sram[sram_word_index(mem_addr)][47:40] <= gpr[dec.rd][7:0];
-                                    3'd6: sram[sram_word_index(mem_addr)][55:48] <= gpr[dec.rd][7:0];
-                                    default: sram[sram_word_index(mem_addr)][63:56] <= gpr[dec.rd][7:0];
-                                endcase
+                                sram[mem_sram_word_index] <= store_byte_lane(sram[mem_sram_word_index], mem_byte_lane, gpr[dec.rd][7:0]);
                                 dcache_writeback <= 1'b1;
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
