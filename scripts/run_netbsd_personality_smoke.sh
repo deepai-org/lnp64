@@ -4,7 +4,7 @@ set -euo pipefail
 mode="llvm"
 usage() {
   cat <<'USAGE'
-usage: scripts/run_netbsd_personality_smoke.sh [--backend llvm|toy] [--legacy-toy]
+usage: scripts/run_netbsd_personality_smoke.sh [--backend llvm] [--legacy-toy]
 
 The default llvm backend runs the Clang/lld/run-elf NetBSD personality package
 gate. --legacy-toy preserves the old single-file smoke that compiles C with
@@ -19,6 +19,10 @@ while (($#)); do
       if [[ -z "$mode" ]]; then
         printf '%s\n' "missing value for --backend" >&2
         usage >&2
+        exit 2
+      fi
+      if [[ "$mode" == "toy" ]]; then
+        printf '%s\n' "toy backend is legacy-only; use --legacy-toy" >&2
         exit 2
       fi
       shift 2
