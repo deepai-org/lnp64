@@ -186,8 +186,10 @@ Faster RTL/proof iteration in Docker:
 
 ```sh
 LNP64_RTL_PROOF_SKIP_BUILD=1 bash scripts/run_rtl_m1_refinement_docker.sh
+LNP64_RTL_PROOF_SKIP_BUILD=1 LNP64_M1_TYPED_COMMIT_SEEDS="0 1 7" bash scripts/run_rtl_m1_refinement_docker.sh
 LNP64_RTL_PROOF_RANDOM_COSIM=0 bash scripts/run_rtl_proof_docker.sh
 LNP64_RTL_PROOF_SKIP_BUILD=1 LNP64_RTL_PROOF_RANDOM_COSIM=0 bash scripts/run_rtl_proof_docker.sh
+LNP64_RTL_PROOF_SKIP_BUILD=1 LNP64_RTL_RANDOM_COSIM_JOBS=4 bash scripts/run_rtl_proof_docker.sh
 ```
 
 The default Docker proof wrapper builds the tool image and runs the mounted
@@ -199,7 +201,15 @@ M1 authority-refinement work, prefer `run_rtl_m1_refinement_docker.sh`; it runs
 only the M1 Lean model, shared-schema/coupling checks, M1 RTL gate, M1 typed
 pre/commit/post checker, and M1 checker self-tests. Add
 `LNP64_RTL_PROOF_SKIP_BUILD=1` for repeated local runs after the Docker image
-already exists.
+already exists. Use `LNP64_M1_TYPED_COMMIT_SEEDS="0 1 7"` for a quick M1 smoke
+while editing, then remove it before treating the M1 refinement gate as full
+evidence.
+
+The randomized/cosim sweep is serial by default for stable logs. Set
+`LNP64_RTL_RANDOM_COSIM_JOBS=4` or `LNP64_RTL_RANDOM_COSIM_JOBS=auto` to run the
+independent M1-M15 randomized/cosim gates in parallel; each gate writes its own
+temporary log and failures replay that log. Use this for full Docker runs when
+the machine has enough CPU headroom.
 
 Focused RTL/proof loop:
 

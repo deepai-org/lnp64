@@ -16,6 +16,7 @@ docker_env=(
 for var in \
   LNP64_RTL_PROOF_RANDOM_COSIM \
   LNP64_RTL_PROOF_SKIP_RANDOM_COSIM \
+  LNP64_RTL_RANDOM_COSIM_JOBS \
   LNP64_COSIM_SEEDS
 do
   if [[ -n "${!var+x}" ]]; then

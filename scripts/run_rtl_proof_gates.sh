@@ -94,6 +94,7 @@ if [[ "${LNP64_RTL_PROOF_RANDOM_COSIM:-1}" == "0" ||
   scripts/check_rtl_cosim_manifest.py
   printf '%s\n' "rtl random cosim skipped (set LNP64_RTL_PROOF_RANDOM_COSIM=1 for full randomized/cosim sweep)"
 else
+  # LNP64_RTL_RANDOM_COSIM_JOBS is consumed by the randomized/cosim runner.
   bash scripts/run_rtl_random_cosim.sh
 fi
 
