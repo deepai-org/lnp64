@@ -8,8 +8,7 @@ int main(void) {
   if (child < 0)
     return 1;
   if (child == 0) {
-    char *argv[] = {"loader_target", 0};
-    execv("/bin/loader_target.elf", argv);
+    execl("/bin/loader_target.elf", "loader_target", 0);
     _exit(errno == ENOENT ? 125 : 126);
   }
   if (waitpid(child, &status, 0) != child)

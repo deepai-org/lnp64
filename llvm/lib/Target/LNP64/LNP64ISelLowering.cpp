@@ -462,10 +462,11 @@ SDValue LNP64TargetLowering::LowerOperation(SDValue Op,
     SDLoc DL(Op);
     SDValue Chain = Op.getOperand(0);
     EVT PtrVT = getPointerTy(DAG.getDataLayout());
-    SDValue StackPtr = DAG.getCopyFromReg(Chain, DL, LNP64::R31, PtrVT);
-    Chain = StackPtr.getValue(1);
+    MachineFrameInfo &MFI = DAG.getMachineFunction().getFrameInfo();
+    int FI = MFI.CreateFixedObject(8, 0, /*IsImmutable=*/true);
+    SDValue VarArgsPtr = DAG.getFrameIndex(FI, PtrVT);
     const Value *SV = cast<SrcValueSDNode>(Op.getOperand(2))->getValue();
-    return DAG.getStore(Chain, DL, StackPtr, Op.getOperand(1),
+    return DAG.getStore(Chain, DL, VarArgsPtr, Op.getOperand(1),
                         MachinePointerInfo(SV));
   }
   default:
@@ -687,7 +688,18 @@ LNP64TargetLowering::LowerCall(CallLoweringInfo &CLI,
   CCState ArgCCInfo(CLI.CallConv, CLI.IsVarArg, MF, ArgLocs,
                     *DAG.getContext());
   ArgCCInfo.AnalyzeCallOperands(CLI.Outs, CC_LNP64);
-  unsigned NumBytes = alignTo(ArgCCInfo.getNextStackOffset(), Align(16));
+  unsigned VarArgStackBytes = 0;
+  if (CLI.IsVarArg) {
+    for (unsigned I = 0, E = CLI.Outs.size(); I != E; ++I) {
+      if (!CLI.Outs[I].IsFixed) {
+        EVT ArgVT = CLI.OutVals[I].getValueType();
+        VarArgStackBytes += alignTo(ArgVT.getStoreSize(), Align(8));
+      }
+    }
+  }
+  unsigned NumBytes =
+      alignTo(std::max(ArgCCInfo.getNextStackOffset(), VarArgStackBytes),
+              Align(16));
   Chain = DAG.getCALLSEQ_START(Chain, NumBytes, 0, DL);
 
   SDValue Glue;
@@ -695,9 +707,21 @@ LNP64TargetLowering::LowerCall(CallLoweringInfo &CLI,
   SmallVector<SDValue, 8> MemOpChains;
   SDValue StackPtr;
   EVT PtrVT = getPointerTy(DAG.getDataLayout());
+  unsigned VarArgStackOffset = 0;
   for (unsigned I = 0, E = ArgLocs.size(); I != E; ++I) {
     CCValAssign &VA = ArgLocs[I];
     SDValue Arg = adjustArgToLocVT(DAG, DL, VA, CLI.OutVals[I]);
+    if (CLI.IsVarArg && !CLI.Outs[I].IsFixed) {
+      if (!StackPtr)
+        StackPtr = DAG.getCopyFromReg(Chain, DL, LNP64::R31, PtrVT);
+      SDValue PtrOff =
+          DAG.getNode(ISD::ADD, DL, PtrVT, StackPtr,
+                      DAG.getIntPtrConstant(VarArgStackOffset, DL));
+      MemOpChains.push_back(
+          DAG.getStore(Chain, DL, Arg, PtrOff, MachinePointerInfo()));
+      VarArgStackOffset += alignTo(Arg.getValueType().getStoreSize(), Align(8));
+      continue;
+    }
     if (VA.isRegLoc()) {
       RegsToPass.push_back(std::make_pair(VA.getLocReg(), Arg));
     } else {

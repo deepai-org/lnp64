@@ -1379,6 +1379,7 @@ mod tests {
         let libc_signal_min = include_str!("../toolchain/liblnp64_signal_min.c");
         let libc_socket_min = include_str!("../toolchain/liblnp64_socket_min.c");
         let libc_sbase_min = include_str!("../toolchain/liblnp64_sbase_min.c");
+        let elf_exec_test_clang = include_str!("../userland/elf_exec_test_clang.c");
         let lnp64_isel_lowering = include_str!("../llvm/lib/Target/LNP64/LNP64ISelLowering.cpp");
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
         let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
@@ -2633,6 +2634,9 @@ mod tests {
         );
         assert!(real_llc.contains("userland/elf_exec_test_clang.c"));
         assert!(real_llc.contains("netbsd-elf-exec-test-clang-smoke.o"));
+        assert!(
+            elf_exec_test_clang.contains("execl(\"/bin/loader_target.elf\", \"loader_target\", 0)")
+        );
         assert!(real_llc.contains("real LLVM LNP64 clang NetBSD ELF exec parent object passed"));
         assert!(real_llc.contains("userland/fork_wait_test_clang.c"));
         assert!(real_llc.contains("netbsd-fork-wait-test-clang-smoke.o"));
@@ -4557,10 +4561,13 @@ mod tests {
         assert!(isel.contains("return std::make_pair(0U, &LNP64::GPRRegClass)"));
         assert!(isel.contains("computeRegisterProperties"));
         assert!(isel.contains("CCState ArgCCInfo(CLI.CallConv, CLI.IsVarArg"));
+        assert!(isel.contains("unsigned VarArgStackBytes = 0"));
+        assert!(isel.contains("if (CLI.IsVarArg && !CLI.Outs[I].IsFixed)"));
+        assert!(isel.contains("VarArgStackOffset += alignTo"));
         assert!(isel.contains("setOperationAction(ISD::VASTART, MVT::Other, Custom)"));
         assert!(isel.contains("setOperationAction(ISD::VAEND, MVT::Other, Expand)"));
         assert!(isel.contains("case ISD::VASTART"));
-        assert!(isel.contains("DAG.getCopyFromReg(Chain, DL, LNP64::R31"));
+        assert!(isel.contains("CreateFixedObject(8, 0, /*IsImmutable=*/true)"));
         assert!(!isel.contains("varargs lowering is not implemented yet"));
         assert!(isel_header.contains("getTargetNodeName"));
         assert!(isel_header.contains("LowerOperation"));
