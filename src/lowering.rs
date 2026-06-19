@@ -5434,6 +5434,9 @@ mod tests {
                 );
             }
         }
+        assert!(legacy_toy_script_corpus.contains("--legacy-toy"));
+        assert!(legacy_toy_script_corpus.contains("LNP64_LLVM_PACKAGE_FILTER=userland"));
+        assert!(legacy_toy_script_corpus.contains("scripts/run_real_llvm_package_gate.sh"));
         assert!(rtl_top_manifest_checker.contains("toolchain/lnp64_llvm_bootstrap.manifest"));
         assert!(!rtl_top_manifest_checker.contains("RUN_DEMOS"));
         assert!(!rtl_top_manifest_checker.contains("non_network"));

@@ -27,6 +27,10 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-sbase-basename-linked.elf"
         "$build_dir/lnp64-sbase-dirname-linked.elf"
         "$build_dir/lnp64-sbase-cat-linked.elf"
+        "$build_dir/lnp64-userland-ucat-linked.elf"
+        "$build_dir/lnp64-userland-init-linked.elf"
+        "$build_dir/lnp64-userland-lnpsh-linked.elf"
+        "$build_dir/lnp64-userland-spawn-task-linked.elf"
       )
       ;;
     zlib|natsort|jsmn|inih|cwalk)
@@ -40,9 +44,17 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-sbase-cat-linked.elf"
       )
       ;;
+    userland)
+      needed_elfs+=(
+        "$build_dir/lnp64-userland-ucat-linked.elf"
+        "$build_dir/lnp64-userland-init-linked.elf"
+        "$build_dir/lnp64-userland-lnpsh-linked.elf"
+        "$build_dir/lnp64-userland-spawn-task-linked.elf"
+      )
+      ;;
     *)
       printf 'unknown LNP64_LLVM_PACKAGE_FILTER item: %s\n' "$package" >&2
-      printf 'expected one or more of: all,zlib,natsort,jsmn,inih,cwalk,sbase\n' >&2
+      printf 'expected one or more of: all,zlib,natsort,jsmn,inih,cwalk,sbase,userland\n' >&2
       exit 2
       ;;
   esac
@@ -143,8 +155,53 @@ run_package() {
       printf 'real LLVM LNP64 run-elf sbase cat execution passed: %s\n' \
         "$build_dir/lnp64-sbase-cat-linked.elf"
       ;;
+    userland)
+      local userland_fixture_root="$build_dir/userland-fixture-root"
+      mkdir -p "$userland_fixture_root/dev" "$userland_fixture_root/etc"
+      printf 'welcome from clang ucat\n' >"$userland_fixture_root/etc/motd"
+      printf 'console\nnull\nrandom\n' >"$userland_fixture_root/dev/devices"
+      "$lnp64_bin" elf-plan "$build_dir/lnp64-userland-ucat-linked.elf" >/dev/null
+      local userland_ucat_output
+      userland_ucat_output="$("$lnp64_bin" run-elf --namespace-root "$userland_fixture_root" \
+        "$build_dir/lnp64-userland-ucat-linked.elf" ucat etc/motd)"
+      grep -q '^welcome from clang ucat$' <<<"$userland_ucat_output"
+      grep -q 'exit=0' <<<"$userland_ucat_output"
+      printf 'real LLVM LNP64 run-elf userland ucat execution passed: %s\n' \
+        "$build_dir/lnp64-userland-ucat-linked.elf"
+      "$lnp64_bin" elf-plan "$build_dir/lnp64-userland-init-linked.elf" >/dev/null
+      local userland_init_output
+      userland_init_output="$("$lnp64_bin" run-elf --namespace-root "$userland_fixture_root" \
+        "$build_dir/lnp64-userland-init-linked.elf" init /)"
+      grep -q '^lnp64 clang init: boot$' <<<"$userland_init_output"
+      grep -q '^lnp64 clang init: root /$' <<<"$userland_init_output"
+      grep -q '^welcome from clang ucat$' <<<"$userland_init_output"
+      grep -q 'exit=0' <<<"$userland_init_output"
+      printf 'real LLVM LNP64 run-elf userland init execution passed: %s\n' \
+        "$build_dir/lnp64-userland-init-linked.elf"
+      "$lnp64_bin" elf-plan "$build_dir/lnp64-userland-lnpsh-linked.elf" >/dev/null
+      local userland_lnpsh_output
+      userland_lnpsh_output="$("$lnp64_bin" run-elf --namespace-root "$userland_fixture_root" \
+        "$build_dir/lnp64-userland-lnpsh-linked.elf" lnpsh)"
+      grep -q '^lnpsh clang: scripted console$' <<<"$userland_lnpsh_output"
+      grep -q '^welcome from clang ucat$' <<<"$userland_lnpsh_output"
+      grep -q '^console$' <<<"$userland_lnpsh_output"
+      grep -q '^random$' <<<"$userland_lnpsh_output"
+      grep -q 'exit=0' <<<"$userland_lnpsh_output"
+      printf 'real LLVM LNP64 run-elf userland lnpsh execution passed: %s\n' \
+        "$build_dir/lnp64-userland-lnpsh-linked.elf"
+      "$lnp64_bin" elf-plan "$build_dir/lnp64-userland-spawn-task-linked.elf" >/dev/null
+      local userland_spawn_output
+      userland_spawn_output="$("$lnp64_bin" run-elf \
+        "$build_dir/lnp64-userland-spawn-task-linked.elf" spawn-task)"
+      grep -q '^userland spawn: parent$' <<<"$userland_spawn_output"
+      grep -q '^userland spawn: child$' <<<"$userland_spawn_output"
+      grep -q '^userland spawn: joined$' <<<"$userland_spawn_output"
+      grep -q 'exit=0' <<<"$userland_spawn_output"
+      printf 'real LLVM LNP64 run-elf userland spawn task execution passed: %s\n' \
+        "$build_dir/lnp64-userland-spawn-task-linked.elf"
+      ;;
     all)
-      for selected in zlib natsort jsmn inih cwalk sbase; do
+      for selected in zlib natsort jsmn inih cwalk sbase userland; do
         run_package "$selected"
       done
       ;;
