@@ -1,4 +1,4 @@
-#include "lnp64_intrinsics.h"
+#include <lnp64/intrinsics.h>
 
 #include <stdarg.h>
 

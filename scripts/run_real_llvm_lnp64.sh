@@ -1929,6 +1929,7 @@ libc_startup_impl_c="toolchain/liblnp64_startup_min.c"
 libc_startup_impl_obj="$build_dir/liblnp64-startup-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
   -c "$libc_startup_impl_c" -o "$libc_startup_impl_obj"
 test -s "$libc_startup_impl_obj"
 libc_startup_impl_dump="$build_dir/liblnp64-startup-min.dump"

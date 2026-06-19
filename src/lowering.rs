@@ -1411,6 +1411,24 @@ mod tests {
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
         let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
         let roadmap = include_str!("../toolchain_roadmap.md");
+
+        for minilibc_intrinsic_source in [
+            libc_alloc_min,
+            libc_fd_min,
+            libc_futex_min,
+            libc_poll_min,
+            libc_process_min,
+            libc_pthread_min,
+            libc_sem_min,
+            libc_signal_min,
+            libc_socket_min,
+            libc_startup_min,
+            libc_time_min,
+            libc_vma_min,
+        ] {
+            assert!(minilibc_intrinsic_source.contains("#include <lnp64/intrinsics.h>"));
+            assert!(!minilibc_intrinsic_source.contains("#include \"lnp64_intrinsics.h\""));
+        }
         let rows = llvm_gate_rows(gate_manifest);
         let mut gates = std::collections::BTreeSet::new();
         let mut commands = std::collections::BTreeMap::new();
@@ -2027,6 +2045,7 @@ mod tests {
         assert!(libc_startup_min.contains("env_get %0, %1, %2, %3"));
         assert!(unistd_header.contains("extern char **environ;"));
         assert!(real_llc.contains("liblnp64-startup-min.o"));
+        assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_startup_impl_c\""));
         assert!(
             real_llc.contains(
                 "real LLVM LNP64 clang minilibc startup implementation object smoke passed"
@@ -2754,7 +2773,6 @@ mod tests {
         );
         assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_sort_impl_c\""));
         assert!(real_llc.contains("toolchain/liblnp64_alloc_min.c"));
-        assert!(libc_alloc_min.contains("#include \"lnp64_intrinsics.h\""));
         assert!(libc_alloc_min.contains("#include <stdlib.h>"));
         assert!(libc_alloc_min.contains("#include <string.h>"));
         assert!(!libc_alloc_min.contains("typedef unsigned long size_t;"));

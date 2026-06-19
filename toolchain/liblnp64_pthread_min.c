@@ -2,7 +2,7 @@
 #include <pthread.h>
 #include <stdlib.h>
 
-#include "lnp64_intrinsics.h"
+#include <lnp64/intrinsics.h>
 
 enum {
   LNP64_PTHREAD_MAX_KEYS = 32,

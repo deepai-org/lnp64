@@ -2,7 +2,7 @@
 #include <semaphore.h>
 #include <time.h>
 
-#include "lnp64_intrinsics.h"
+#include <lnp64/intrinsics.h>
 
 extern int lnp64_errno_store(int value);
 
