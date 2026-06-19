@@ -637,6 +637,7 @@ def check_top_m1_projection_matches_commit(
     for state_field, commit_field in (
         (f"{prefix}_object_id", "object_id"),
         (f"{prefix}_generation", "fdr_gen"),
+        (f"{prefix}_domain_id", "domain_id"),
         (f"{prefix}_rights", "rights_mask"),
         (f"{prefix}_lineage_epoch", "lineage_epoch"),
         (f"{prefix}_sealed", "sealed"),
@@ -736,22 +737,36 @@ def check_top_m1_refinement_step(
         return
 
     if op == commit_ops["CapRevoke"]:
+        if pre_state["root_rights"] & 0x80 == 0:
+            raise SystemExit(f"top-level M1 capRevoke {idx} accepted without REVOKE right")
         if not rights_subset(commit["rights_mask"], pre_state["root_rights"]):
             raise SystemExit(
                 f"top-level M1 capRevoke {idx} commit rights exceed pre root rights: "
                 f"commit={commit['rights_mask']} pre_root={pre_state['root_rights']}"
             )
-        if post_state["has_revoked_generation"] == 1:
-            if post_state["revoked_generation"] != commit["fdr_gen"]:
-                raise SystemExit(
-                    f"top-level M1 capRevoke {idx} revoked generation does not match commit: "
-                    f"post={post_state['revoked_generation']} commit={commit['fdr_gen']}"
-                )
-            if post_state["root_generation"] != commit["fdr_gen"]:
-                raise SystemExit(
-                    f"top-level M1 capRevoke {idx} root generation does not match commit: "
-                    f"post={post_state['root_generation']} commit={commit['fdr_gen']}"
-                )
+        if commit["object_id"] != pre_state["root_object_id"]:
+            raise SystemExit(f"top-level M1 capRevoke {idx} changed root object lineage")
+        if commit["lineage_epoch"] != pre_state["root_lineage_epoch"]:
+            raise SystemExit(f"top-level M1 capRevoke {idx} changed root lineage epoch")
+        if post_state["has_revoked_generation"] != 1:
+            raise SystemExit(f"top-level M1 capRevoke {idx} did not publish revoked generation")
+        if post_state["object_gen"] != commit["fdr_gen"]:
+            raise SystemExit(
+                f"top-level M1 capRevoke {idx} object generation does not match commit: "
+                f"post={post_state['object_gen']} commit={commit['fdr_gen']}"
+            )
+        if post_state["revoked_generation"] != commit["fdr_gen"]:
+            raise SystemExit(
+                f"top-level M1 capRevoke {idx} revoked generation does not match commit: "
+                f"post={post_state['revoked_generation']} commit={commit['fdr_gen']}"
+            )
+        if post_state["root_generation"] != commit["fdr_gen"]:
+            raise SystemExit(
+                f"top-level M1 capRevoke {idx} root generation does not match commit: "
+                f"post={post_state['root_generation']} commit={commit['fdr_gen']}"
+            )
+        if post_state["root_rights"] != 0:
+            raise SystemExit(f"top-level M1 capRevoke {idx} left root authority live")
         return
 
     raise SystemExit(f"top-level M1 accepted unsupported transition op {op}")
