@@ -107,6 +107,12 @@ def parse_record_entry(entry: str) -> tuple[str, int]:
     return match.group("name"), width
 
 
+def parse_enum_entry_value(entry: str) -> tuple[str, int]:
+    match = re.fullmatch(r"(?P<name>\w+)=\d+'d(?P<value>\d+)", compact(entry))
+    require(match is not None, f"unsupported enum schema entry: {entry}")
+    return match.group("name"), int(match.group("value"))
+
+
 def require_exact_map(actual: dict[str, list[str]], expected: dict[str, list[str]], label: str) -> None:
     require(set(actual) == set(expected), f"{label} names drifted: actual={sorted(actual)} expected={sorted(expected)}")
     for name, expected_items in expected.items():
@@ -203,6 +209,29 @@ def render_lean_layout_bool_theorem(
         f"      {layout_name} = true := by\n"
         "  rfl"
     )
+
+
+def render_lean_commit_op_decoder(op_mappings: list[dict[str, str]], enum_values: dict[str, int]) -> str:
+    lines = ["def commitOpFromPackedValue : Nat -> Option CommitOp"]
+    for entry in op_mappings:
+        sv_name = entry["sv"]
+        require(sv_name in enum_values, f"M1 op decoder references absent enum {sv_name}")
+        lines.append(f"  | {enum_values[sv_name]} => some CommitOp.{entry['lean_commit_op']}")
+    lines.append("  | _ => none")
+    return "\n".join(lines)
+
+
+def render_lean_commit_status_decoder(
+    status_mappings: list[dict[str, str]],
+    enum_values: dict[str, int],
+) -> str:
+    lines = ["def commitStatusFromPackedValue : Nat -> Option CommitStatus"]
+    for entry in status_mappings:
+        sv_name = entry["sv_errno"]
+        require(sv_name in enum_values, f"M1 status decoder references absent enum {sv_name}")
+        lines.append(f"  | {enum_values[sv_name]} => some CommitStatus.{entry['lean_status']}")
+    lines.append("  | _ => none")
+    return "\n".join(lines)
 
 
 def parse_lean_packed_schema(lean_text: str, schema_name: str) -> list[str]:
@@ -384,6 +413,66 @@ def require_m1_generated_lean_packed_schemas(schema: dict, m1_contract: dict, le
         )
 
 
+def require_m1_packed_bit_refinement_contract(schema: dict, m1_contract: dict, lean_text: str) -> None:
+    """Require the M1 Lean model to relate emitted packed bits to projections."""
+    op_mappings = require_mapping_keys(
+        m1_contract.get("op_mappings"),
+        [
+            "cap_dup",
+            "cap_send",
+            "cap_recv",
+            "cap_revoke",
+            "reject_stale",
+            "push",
+            "pull",
+            "reject_full",
+            "cap_dup_denied",
+            "object_create",
+        ],
+        ["key", "sv", "lean_op", "lean_commit_op", "lean_transition"],
+        "M1 op_mappings",
+    )
+    status_mappings = require_mapping_keys(
+        m1_contract.get("status_mappings"),
+        ["ok", "eperm", "eagain", "erevoked"],
+        ["key", "sv_errno", "lean_status"],
+        "M1 status_mappings",
+    )
+    enums = schema.get("enums", {})
+    require(isinstance(enums, dict), "schema enums must be an object")
+    op_enum = require_string(m1_contract.get("op_enum"), "M1 op enum")
+    require(op_enum in enums, "M1 op enum is absent from schema")
+    require("lnp64_errno_e" in enums, "errno enum is absent from schema")
+    op_enum_values = dict(parse_enum_entry_value(entry) for entry in enums[op_enum])
+    status_enum_values = dict(parse_enum_entry_value(entry) for entry in enums["lnp64_errno_e"])
+    expected_op_decoder = render_lean_commit_op_decoder(op_mappings, op_enum_values)
+    require(
+        expected_op_decoder in lean_text,
+        "M1 generated Lean packed-bit op decoder drifted from shared schema",
+    )
+    expected_status_decoder = render_lean_commit_status_decoder(status_mappings, status_enum_values)
+    require(
+        expected_status_decoder in lean_text,
+        "M1 generated Lean packed-bit status decoder drifted from shared schema",
+    )
+    required_artifacts = [
+        "def packedBitSlice",
+        "def packedLayoutFieldValue",
+        "def rightsFromPackedMask",
+        "theorem rightsFromPackedMask_allRights",
+        "theorem rightsFromPackedMask_pullOnly",
+        "theorem rightsFromPackedMask_noRights",
+        "structure RtlM1CommitProjectionFromPackedBits",
+        "structure RtlM1StateProjectionFromPackedBits",
+        "structure RtlM1PackedRefinementStep",
+        "theorem rtl_m1_packed_refinement_step_refines_lean_step",
+        "theorem rtl_m1_packed_refinement_step_status_matches_op",
+        "theorem rtl_m1_packed_refinement_step_preserves_sg_auth_invariant",
+    ]
+    for artifact in required_artifacts:
+        require(artifact in lean_text, f"M1 packed-bit refinement artifact missing: {artifact}")
+
+
 def main() -> None:
     schema = json.loads(read_text(SCHEMA))
     require(schema.get("schema") == "lnp64_shared_schema_v1", "unexpected schema id")
@@ -443,7 +532,9 @@ def main() -> None:
     m1_contract = schema.get("m1_typed_commit_contract", {})
     require(isinstance(m1_contract, dict) and m1_contract, "m1_typed_commit_contract must be present")
     require_m1_generated_structs(actual_records, schema, m1_contract)
-    require_m1_generated_lean_packed_schemas(schema, m1_contract, read_text(LEAN_M1_MODEL))
+    lean_m1_model = read_text(LEAN_M1_MODEL)
+    require_m1_generated_lean_packed_schemas(schema, m1_contract, lean_m1_model)
+    require_m1_packed_bit_refinement_contract(schema, m1_contract, lean_m1_model)
     require(
         m1_contract.get("stage") == "m1_typed_cap_commit_transition_mirror",
         "M1 typed commit stage must identify the transition mirror",

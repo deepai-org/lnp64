@@ -74,6 +74,7 @@ def main() -> None:
 
     checker.require_m1_generated_structs(actual_records, schema, m1_contract)
     checker.require_m1_generated_lean_packed_schemas(schema, m1_contract, lean_source)
+    checker.require_m1_packed_bit_refinement_contract(schema, m1_contract, lean_source)
 
     package_width_drift = copy.deepcopy(actual_records)
     package_width_drift["lnp64_m1_cap_commit_t"] = [
@@ -170,6 +171,48 @@ def main() -> None:
             schema,
             m1_contract,
             lean_layout_coverage_theorem_drift,
+        ),
+    )
+
+    lean_op_decoder_drift = replace_once(
+        lean_source,
+        "| 2 => some CommitOp.capSend",
+        "| 2 => some CommitOp.capRecv",
+    )
+    expect_failure(
+        "M1 generated Lean packed-bit op decoder drifted from shared schema",
+        lambda: checker.require_m1_packed_bit_refinement_contract(
+            schema,
+            m1_contract,
+            lean_op_decoder_drift,
+        ),
+    )
+
+    lean_status_decoder_drift = replace_once(
+        lean_source,
+        "| 122 => some CommitStatus.erevoked",
+        "| 122 => some CommitStatus.eagain",
+    )
+    expect_failure(
+        "M1 generated Lean packed-bit status decoder drifted from shared schema",
+        lambda: checker.require_m1_packed_bit_refinement_contract(
+            schema,
+            m1_contract,
+            lean_status_decoder_drift,
+        ),
+    )
+
+    missing_packed_refinement_theorem = replace_once(
+        lean_source,
+        "theorem rtl_m1_packed_refinement_step_refines_lean_step",
+        "theorem rtl_m1_packed_step_no_refinement_artifact",
+    )
+    expect_failure(
+        "M1 packed-bit refinement artifact missing: theorem rtl_m1_packed_refinement_step_refines_lean_step",
+        lambda: checker.require_m1_packed_bit_refinement_contract(
+            schema,
+            m1_contract,
+            missing_packed_refinement_theorem,
         ),
     )
 

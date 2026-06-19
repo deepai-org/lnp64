@@ -766,6 +766,220 @@ theorem rtlM1StateProjectionPackedLayout_covers_schema_width :
       rtlM1StateProjectionPackedLayout = true := by
   rfl
 
+def packedBitSlice (bits lsb width : Nat) : Nat :=
+  (bits / (2 ^ lsb)) % (2 ^ width)
+
+def packedFieldValue (bits : Nat) (field : PackedFieldLayout) : Nat :=
+  packedBitSlice bits field.lsb field.width
+
+def packedLayoutFieldValue
+    (bits : Nat)
+    (fieldName : String) : List PackedFieldLayout -> Option Nat
+  | [] => none
+  | field :: rest =>
+      if field.name == fieldName then
+        some (packedFieldValue bits field)
+      else
+        packedLayoutFieldValue bits fieldName rest
+
+def packedBoolFromValue (value : Nat) : Bool :=
+  decide (value = 1)
+
+def packedLayoutBoolValue
+    (bits : Nat)
+    (fieldName : String)
+    (layout : List PackedFieldLayout) : Option Bool :=
+  match packedLayoutFieldValue bits fieldName layout with
+  | some value => some (packedBoolFromValue value)
+  | none => none
+
+def packedRightsBit (mask bit : Nat) : Bool :=
+  decide (((mask / (2 ^ bit)) % 2) = 1)
+
+def rightsFromPackedMask (mask : Nat) : Rights :=
+  { push := packedRightsBit mask 0
+    pull := packedRightsBit mask 1
+    dup := packedRightsBit mask 2
+    mint := packedRightsBit mask 3 }
+
+theorem rightsFromPackedMask_allRights :
+    rightsFromPackedMask 15 = allRights := by
+  rfl
+
+theorem rightsFromPackedMask_pullOnly :
+    rightsFromPackedMask 2 = pullOnly := by
+  rfl
+
+theorem rightsFromPackedMask_noRights :
+    rightsFromPackedMask 0 = noRights := by
+  rfl
+
+def commitOpFromPackedValue : Nat -> Option CommitOp
+  | 1 => some CommitOp.capDup
+  | 2 => some CommitOp.capSend
+  | 3 => some CommitOp.capRecv
+  | 4 => some CommitOp.capRevoke
+  | 5 => some CommitOp.rejectStale
+  | 6 => some CommitOp.push
+  | 7 => some CommitOp.pull
+  | 8 => some CommitOp.rejectFull
+  | 9 => some CommitOp.capDupDenied
+  | 10 => some CommitOp.objectCreate
+  | _ => none
+
+def commitStatusFromPackedValue : Nat -> Option CommitStatus
+  | 0 => some CommitStatus.ok
+  | 1 => some CommitStatus.eperm
+  | 11 => some CommitStatus.eagain
+  | 122 => some CommitStatus.erevoked
+  | _ => none
+
+def packedCommitOpFromLayout
+    (bits : Nat)
+    (layout : List PackedFieldLayout) : Option CommitOp :=
+  match packedLayoutFieldValue bits "op" layout with
+  | some value => commitOpFromPackedValue value
+  | none => none
+
+def packedCommitStatusFromLayout
+    (bits : Nat)
+    (layout : List PackedFieldLayout) : Option CommitStatus :=
+  match packedLayoutFieldValue bits "status" layout with
+  | some value => commitStatusFromPackedValue value
+  | none => none
+
+def packedRightsFromLayout
+    (bits : Nat)
+    (fieldName : String)
+    (layout : List PackedFieldLayout) : Option Rights :=
+  match packedLayoutFieldValue bits fieldName layout with
+  | some value => some (rightsFromPackedMask value)
+  | none => none
+
+def packedStateCapFromBits (bits : Nat) (capPrefix : String) : Option Capability := do
+  let objectId <- packedLayoutFieldValue bits (capPrefix ++ "_object_id") rtlM1StateProjectionPackedLayout
+  let generation <- packedLayoutFieldValue bits (capPrefix ++ "_generation") rtlM1StateProjectionPackedLayout
+  let ownerDomain <- packedLayoutFieldValue bits (capPrefix ++ "_domain_id") rtlM1StateProjectionPackedLayout
+  let lineageEpoch <- packedLayoutFieldValue bits (capPrefix ++ "_lineage_epoch") rtlM1StateProjectionPackedLayout
+  let sealed <- packedLayoutBoolValue bits (capPrefix ++ "_sealed") rtlM1StateProjectionPackedLayout
+  let rights <- packedRightsFromLayout bits (capPrefix ++ "_rights") rtlM1StateProjectionPackedLayout
+  some
+    { objectId := objectId
+      generation := generation
+      rights := rights
+      ownerDomain := ownerDomain
+      lineageEpoch := lineageEpoch
+      sealed := sealed }
+
+def packedStateCapFieldsZero (bits : Nat) (capPrefix : String) : Prop :=
+  packedLayoutFieldValue bits (capPrefix ++ "_object_id") rtlM1StateProjectionPackedLayout = some 0 /\
+  packedLayoutFieldValue bits (capPrefix ++ "_generation") rtlM1StateProjectionPackedLayout = some 0 /\
+  packedLayoutFieldValue bits (capPrefix ++ "_domain_id") rtlM1StateProjectionPackedLayout = some 0 /\
+  packedLayoutFieldValue bits (capPrefix ++ "_lineage_epoch") rtlM1StateProjectionPackedLayout = some 0 /\
+  packedLayoutFieldValue bits (capPrefix ++ "_sealed") rtlM1StateProjectionPackedLayout = some 0 /\
+  packedLayoutFieldValue bits (capPrefix ++ "_rights") rtlM1StateProjectionPackedLayout = some 0
+
+structure RtlM1CommitProjectionFromPackedBits
+    (bits : Nat)
+    (projection : RtlM1CommitProjection) : Prop where
+  op :
+    packedCommitOpFromLayout bits rtlM1CommitPackedLayout =
+      some projection.op
+  objectId :
+    packedLayoutFieldValue bits "object_id" rtlM1CommitPackedLayout =
+      some projection.objectId
+  objectGeneration :
+    packedLayoutFieldValue bits "object_gen" rtlM1CommitPackedLayout =
+      some projection.objectGeneration
+  fdrGeneration :
+    packedLayoutFieldValue bits "fdr_gen" rtlM1CommitPackedLayout =
+      some projection.fdrGeneration
+  domainId :
+    packedLayoutFieldValue bits "domain_id" rtlM1CommitPackedLayout =
+      some projection.domainId
+  domainGeneration :
+    packedLayoutFieldValue bits "domain_gen" rtlM1CommitPackedLayout =
+      some projection.domainGeneration
+  rights :
+    packedRightsFromLayout bits "rights_mask" rtlM1CommitPackedLayout =
+      some projection.rights
+  lineageEpoch :
+    packedLayoutFieldValue bits "lineage_epoch" rtlM1CommitPackedLayout =
+      some projection.lineageEpoch
+  sealed :
+    packedLayoutBoolValue bits "sealed" rtlM1CommitPackedLayout =
+      some projection.sealed
+  status :
+    packedCommitStatusFromLayout bits rtlM1CommitPackedLayout =
+      some projection.status
+
+structure RtlM1StateProjectionFromPackedBits
+    (bits : Nat)
+    (op : CommitOp)
+    (status : CommitStatus)
+    (projection : RtlM1StateProjection) : Prop where
+  opTag :
+    packedCommitOpFromLayout bits rtlM1StateProjectionPackedLayout =
+      some op
+  statusTag :
+    packedCommitStatusFromLayout bits rtlM1StateProjectionPackedLayout =
+      some status
+  objectGeneration :
+    packedLayoutFieldValue bits "object_gen" rtlM1StateProjectionPackedLayout =
+      some projection.objectGeneration
+  createdObjectCreated :
+    packedLayoutBoolValue bits "created_object_created" rtlM1StateProjectionPackedLayout =
+      some projection.createdObjectCreated
+  createdObjectGeneration :
+    packedLayoutFieldValue bits "created_object_gen" rtlM1StateProjectionPackedLayout =
+      some projection.createdObjectGeneration
+  rootCap :
+    packedStateCapFromBits bits "root" =
+      some projection.rootCap
+  consumerCap :
+    packedStateCapFromBits bits "consumer" =
+      some projection.consumerCap
+  sentCap :
+    (exists cap,
+      packedLayoutBoolValue bits "sent_valid" rtlM1StateProjectionPackedLayout = some true /\
+      packedStateCapFromBits bits "sent" = some cap /\
+      projection.sentCap = some cap) \/
+    (packedLayoutBoolValue bits "sent_valid" rtlM1StateProjectionPackedLayout = some false /\
+      packedStateCapFieldsZero bits "sent" /\
+      projection.sentCap = none)
+  mintedCap :
+    (exists cap,
+      packedLayoutBoolValue bits "minted_valid" rtlM1StateProjectionPackedLayout = some true /\
+      packedStateCapFromBits bits "minted" = some cap /\
+      projection.mintedCap = some cap) \/
+    (packedLayoutBoolValue bits "minted_valid" rtlM1StateProjectionPackedLayout = some false /\
+      packedStateCapFieldsZero bits "minted" /\
+      projection.mintedCap = none)
+  wakePending :
+    packedLayoutBoolValue bits "wake_pending" rtlM1StateProjectionPackedLayout =
+      some projection.wakePending
+  transferValid :
+    packedLayoutBoolValue bits "transfer_valid" rtlM1StateProjectionPackedLayout =
+      some projection.transferValid
+  staleRejected :
+    packedLayoutBoolValue bits "stale_rejected" rtlM1StateProjectionPackedLayout =
+      some projection.staleRejected
+  revokedRejected :
+    packedLayoutBoolValue bits "revoked_rejected" rtlM1StateProjectionPackedLayout =
+      some projection.revokedRejected
+  failedNoAuthority :
+    packedLayoutBoolValue bits "failed_no_authority" rtlM1StateProjectionPackedLayout =
+      some projection.failedNoAuthority
+  fullWasExplicit :
+    packedLayoutBoolValue bits "full_was_explicit" rtlM1StateProjectionPackedLayout =
+      some projection.fullWasExplicit
+  hasRevokedGeneration :
+    packedLayoutBoolValue bits "has_revoked_generation" rtlM1StateProjectionPackedLayout =
+      some projection.hasRevokedGeneration
+  revokedGeneration :
+    packedLayoutFieldValue bits "revoked_generation" rtlM1StateProjectionPackedLayout =
+      some projection.revokedGeneration
+
 def commitOpToStepOp : CommitOp -> Op
   | CommitOp.capDup => Op.capDup
   | CommitOp.capSend => Op.capSend
@@ -974,6 +1188,22 @@ def RtlM1RefinementStep
     commitMatchesRtlProjection commit commitProjection /\
     TypedCommitTransition s commit t /\
     stateMatchesRtlProjection t post
+
+structure RtlM1PackedRefinementStep
+    (preBits commitBits postBits : Nat) where
+  commitProjection : RtlM1CommitProjection
+  preProjection : RtlM1StateProjection
+  postProjection : RtlM1StateProjection
+  commitFromBits :
+    RtlM1CommitProjectionFromPackedBits commitBits commitProjection
+  preFromBits :
+    RtlM1StateProjectionFromPackedBits
+      preBits commitProjection.op commitProjection.status preProjection
+  postFromBits :
+    RtlM1StateProjectionFromPackedBits
+      postBits commitProjection.op commitProjection.status postProjection
+  refinementStep :
+    RtlM1RefinementStep preProjection commitProjection postProjection
 
 inductive Reachable : State -> Prop
   | reset : Reachable reset
@@ -1419,6 +1649,40 @@ theorem rtl_m1_refinement_step_status_matches_op
   subst commit
   simpa [commitProjectionToRecord] using hStatus
 
+theorem rtl_m1_packed_refinement_step_refines_lean_step
+    {preBits commitBits postBits : Nat} :
+    RtlM1PackedRefinementStep preBits commitBits postBits ->
+    exists preProjection commitProjection postProjection,
+      RtlM1CommitProjectionFromPackedBits commitBits commitProjection /\
+      RtlM1StateProjectionFromPackedBits
+        preBits commitProjection.op commitProjection.status preProjection /\
+      RtlM1StateProjectionFromPackedBits
+        postBits commitProjection.op commitProjection.status postProjection /\
+      RtlM1RefinementStep preProjection commitProjection postProjection := by
+  intro hPacked
+  exact ⟨
+    hPacked.preProjection,
+    hPacked.commitProjection,
+    hPacked.postProjection,
+    hPacked.commitFromBits,
+    hPacked.preFromBits,
+    hPacked.postFromBits,
+    hPacked.refinementStep
+  ⟩
+
+theorem rtl_m1_packed_refinement_step_status_matches_op
+    {preBits commitBits postBits : Nat} :
+    RtlM1PackedRefinementStep preBits commitBits postBits ->
+    exists commitProjection,
+      RtlM1CommitProjectionFromPackedBits commitBits commitProjection /\
+      commitProjection.status = expectedCommitStatus commitProjection.op := by
+  intro hPacked
+  exact ⟨
+    hPacked.commitProjection,
+    hPacked.commitFromBits,
+    rtl_m1_refinement_step_status_matches_op hPacked.refinementStep
+  ⟩
+
 theorem rtl_m1_refinement_step_projection_faithful
     {pre : RtlM1StateProjection}
     {commitProjection : RtlM1CommitProjection}
@@ -1451,6 +1715,17 @@ theorem rtl_m1_refinement_step_preserves_sg_auth_invariant
   intro hRefine hPreInvariant
   rcases hRefine with ⟨s, t, commit, hPre, _hCommitProjection, hCommit, hPost⟩
   exact ⟨t, hPost, typed_commit_transition_preserves_invariant (hPreInvariant s hPre) hCommit⟩
+
+theorem rtl_m1_packed_refinement_step_preserves_sg_auth_invariant
+    {preBits commitBits postBits : Nat} :
+    (hPacked : RtlM1PackedRefinementStep preBits commitBits postBits) ->
+    (forall s,
+      stateMatchesRtlProjection s hPacked.preProjection -> invariant s) ->
+    exists t,
+      stateMatchesRtlProjection t hPacked.postProjection /\ invariant t := by
+  intro hPacked hPreInvariant
+  exact rtl_m1_refinement_step_preserves_sg_auth_invariant
+    hPacked.refinementStep hPreInvariant
 
 theorem step_minted_cap_created_only_by_authorized_object_create
     {s t : State} {op : Op} {cap : Capability} :
