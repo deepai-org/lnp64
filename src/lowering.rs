@@ -7653,6 +7653,67 @@ mod tests {
     }
 
     #[test]
+    fn scheduler_heap_realtime_contracts_scope_current_architecture() {
+        fn assert_contains(document: &str, needle: &str) {
+            assert!(
+                document.contains(needle),
+                "missing architecture text: {needle}"
+            );
+        }
+
+        let design = include_str!("../design.md");
+        let hardware = include_str!("../hardware_design.md");
+        let formal_roadmap = include_str!("../formal_rtl_codesign_roadmap.md");
+        let formal_theorems = include_str!("../formal_theorems.md");
+        let readme = include_str!("../README.md");
+
+        assert_contains(design, "Fixed Weighted-Fair Virtual-Deadline Active-Window");
+        assert_contains(hardware, "bounded active windows");
+        assert_contains(hardware, "virtual-deadline buckets");
+        assert_contains(formal_roadmap, "fixed monotonic weight table");
+        assert_contains(formal_roadmap, "sticky");
+        assert_contains(formal_roadmap, "bounded migration");
+        assert_contains(formal_roadmap, "bounded wakeup insertion");
+        assert_contains(formal_roadmap, "bounded preemption");
+        assert_contains(formal_roadmap, "no scheduler bytecode");
+        assert_contains(hardware, "red-black trees");
+        assert_contains(hardware, "no red-black tree");
+
+        assert_contains(design, "tightly synchronized global monotonic timebase");
+        assert_contains(hardware, "Resource Domain id/generation");
+        assert_contains(hardware, "submitter TID/generation");
+        assert_contains(formal_theorems, "reservation/deadline metadata");
+        assert_contains(hardware, "operation id");
+        assert_contains(hardware, "cancellation epoch");
+        assert_contains(hardware, "completion target");
+        assert_contains(hardware, "No realtime-admitted Class D");
+        assert_contains(hardware, "undifferentiated FIFO entry");
+
+        assert_contains(design, "LNP64 Default Heap Algorithm");
+        assert_contains(hardware, "fixed size-class dispatch");
+        assert_contains(hardware, "per-thread allocation windows");
+        assert_contains(hardware, "bounded transfer queues");
+        assert_contains(hardware, "domain-owned slab/run pages");
+        assert_contains(hardware, "generation fields");
+        assert_contains(hardware, "exact-pointer free");
+        assert_contains(hardware, "invalid pointers and double free");
+        assert_contains(hardware, "NX heap backing");
+        assert_contains(hardware, "bounded hot");
+        assert_contains(hardware, "Class D owner-engine transactions with inherited");
+        assert_contains(hardware, "Rust-style intra-program memory safety");
+        assert_contains(hardware, "Ordinary `LD`/`ST`");
+
+        assert_contains(formal_roadmap, "no-lost-wakeup");
+        assert_contains(formal_roadmap, "bounded fairness");
+        assert_contains(formal_theorems, "deadline comparison");
+        assert_contains(formal_roadmap, "exact-pointer free");
+        assert_contains(formal_roadmap, "invalid/double/foreign-free rejection");
+        assert_contains(formal_roadmap, "domain accounting");
+        assert_contains(formal_roadmap, "no hidden unbounded path in Class A/B/C");
+        assert_contains(readme, "Realtime contract soundness");
+    }
+
+    #[test]
     fn compatibility_table_names_native_primitives() {
         assert_eq!(lowering_for(CompatSurface::Open), LOWER_OPEN);
         assert_eq!(lowering_for(CompatSurface::Read), LOWER_READ);
