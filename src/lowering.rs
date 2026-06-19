@@ -2284,13 +2284,15 @@ mod tests {
         assert!(real_llc.contains("sbase_commands=("));
         for command in [
             "echo", "cat", "wc", "yes", "basename", "dirname", "head", "tee", "cksum", "tail",
-            "cmp", "uniq", "sort", "grep", "sed", "ls", "ln", "mkdir", "cut", "tr", "touch",
-            "find",
+            "cmp", "uniq", "sort", "grep", "sed", "cp", "mv", "ls", "chmod", "chown", "ln",
+            "mkdir", "rm", "cut", "tr", "touch", "find",
         ] {
             assert!(real_llc.contains(command));
         }
+        assert!(real_llc.contains("-Werror=implicit-function-declaration"));
         assert!(real_llc.contains("sbase-$sbase_cmd-clang-smoke.o"));
         assert!(real_llc.contains("third_party/sbase/$sbase_cmd.c"));
+        assert!(transition_manifest.contains("third_party/sbase/fs.h"));
         assert!(real_llc.contains("real LLVM LNP64 clang sbase command object smokes passed"));
         assert!(real_llc.contains("netcat-clang-smoke.o"));
         assert!(real_llc.contains("-c demos/netcat.c"));

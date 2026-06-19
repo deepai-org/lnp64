@@ -1240,12 +1240,13 @@ printf 'real LLVM LNP64 clang varargs call object smoke passed: %s\n' \
 
 sbase_commands=(
   echo cat wc yes basename dirname head tee cksum tail cmp uniq sort grep sed
-  ls ln mkdir cut tr touch find
+  cp mv ls chmod chown ln mkdir rm cut tr touch find
 )
 sbase_objs=()
 for sbase_cmd in "${sbase_commands[@]}"; do
   sbase_obj="$build_dir/sbase-$sbase_cmd-clang-smoke.o"
-  "$clang" --target=lnp64-unknown-none -O0 -ffreestanding -fno-builtin \
+  "$clang" --target=lnp64-unknown-none -O0 \
+    -Werror=implicit-function-declaration -ffreestanding -fno-builtin \
     -fno-pic -fno-jump-tables -fno-unwind-tables \
     -fno-asynchronous-unwind-tables -I toolchain/include -I third_party/sbase \
     -c "third_party/sbase/$sbase_cmd.c" -o "$sbase_obj"
