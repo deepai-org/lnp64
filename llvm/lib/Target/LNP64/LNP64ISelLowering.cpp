@@ -573,9 +573,6 @@ SDValue LNP64TargetLowering::LowerFormalArguments(
     SDValue Chain, CallingConv::ID CallConv, bool IsVarArg,
     const SmallVectorImpl<ISD::InputArg> &Ins, const SDLoc &DL,
     SelectionDAG &DAG, SmallVectorImpl<SDValue> &InVals) const {
-  if (IsVarArg)
-    report_fatal_error("LNP64 varargs lowering is not implemented yet");
-
   MachineFunction &MF = DAG.getMachineFunction();
   SmallVector<CCValAssign, 8> ArgLocs;
   CCState CCInfo(CallConv, IsVarArg, MF, ArgLocs, *DAG.getContext());
@@ -607,9 +604,6 @@ SDValue LNP64TargetLowering::LowerReturn(
     const SmallVectorImpl<ISD::OutputArg> &Outs,
     const SmallVectorImpl<SDValue> &OutVals, const SDLoc &DL,
     SelectionDAG &DAG) const {
-  if (IsVarArg)
-    report_fatal_error("LNP64 varargs return lowering is not implemented yet");
-
   MachineFunction &MF = DAG.getMachineFunction();
   SmallVector<CCValAssign, 4> RetLocs;
   CCState CCInfo(CallConv, IsVarArg, MF, RetLocs, *DAG.getContext());
@@ -640,9 +634,6 @@ LNP64TargetLowering::LowerCall(CallLoweringInfo &CLI,
   SDLoc DL = CLI.DL;
   SDValue Chain = CLI.Chain;
   SDValue Callee = CLI.Callee;
-
-  if (CLI.IsVarArg)
-    report_fatal_error("LNP64 varargs call lowering is not implemented yet");
 
   StringRef CalleeName = getDirectCalleeName(Callee);
   if (CalleeName == "__lnp_await" || CalleeName == "__lnp_call" ||

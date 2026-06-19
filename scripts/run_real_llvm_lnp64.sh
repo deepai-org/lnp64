@@ -1215,6 +1215,43 @@ grep -q 'call ' "$cwalk_smoke_dump"
 printf 'real LLVM LNP64 clang cwalk package object smoke passed: %s\n' \
   "$cwalk_smoke_obj"
 
+varargs_call_c="$build_dir/varargs-call-smoke.c"
+cat >"$varargs_call_c" <<'C'
+#include <stdio.h>
+
+int main(void) {
+  return printf("lnp64 %d %s\n", 64, "varargs");
+}
+C
+
+varargs_call_obj="$build_dir/varargs-call-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -O0 -ffreestanding -fno-builtin \
+  -fno-pic -fno-jump-tables -fno-unwind-tables \
+  -fno-asynchronous-unwind-tables -I toolchain/include \
+  -c "$varargs_call_c" -o "$varargs_call_obj"
+test -s "$varargs_call_obj"
+varargs_call_dump="$build_dir/varargs-call-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$varargs_call_obj" \
+  >"$varargs_call_dump"
+grep -q '<main>:' "$varargs_call_dump"
+grep -q 'call ' "$varargs_call_dump"
+printf 'real LLVM LNP64 clang varargs call object smoke passed: %s\n' \
+  "$varargs_call_obj"
+
+sbase_echo_obj="$build_dir/sbase-echo-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -O0 -ffreestanding -fno-builtin \
+  -fno-pic -fno-jump-tables -fno-unwind-tables \
+  -fno-asynchronous-unwind-tables -I toolchain/include -I third_party/sbase \
+  -c third_party/sbase/echo.c -o "$sbase_echo_obj"
+test -s "$sbase_echo_obj"
+sbase_echo_dump="$build_dir/sbase-echo-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$sbase_echo_obj" \
+  >"$sbase_echo_dump"
+grep -q '<main>:' "$sbase_echo_dump"
+grep -q 'call ' "$sbase_echo_dump"
+printf 'real LLVM LNP64 clang sbase echo object smoke passed: %s\n' \
+  "$sbase_echo_obj"
+
 netcat_obj="$build_dir/netcat-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \

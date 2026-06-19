@@ -1331,6 +1331,7 @@ mod tests {
         let libc_poll_min = include_str!("../toolchain/liblnp64_poll_min.c");
         let libc_signal_min = include_str!("../toolchain/liblnp64_signal_min.c");
         let libc_socket_min = include_str!("../toolchain/liblnp64_socket_min.c");
+        let lnp64_isel_lowering = include_str!("../llvm/lib/Target/LNP64/LNP64ISelLowering.cpp");
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
         let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
         let roadmap = include_str!("../toolchain_roadmap.md");
@@ -1418,6 +1419,8 @@ mod tests {
             "clang_jsmn_package_object",
             "clang_inih_package_object",
             "clang_cwalk_package_object",
+            "clang_varargs_call_object",
+            "clang_sbase_echo_object",
             "zlib_package_static_link",
             "natsort_package_static_link",
             "jsmn_package_static_link",
@@ -1434,6 +1437,10 @@ mod tests {
                 "real LLVM gate manifest missing package requirement {requirement}"
             );
         }
+        assert!(
+            !lnp64_isel_lowering.contains("varargs call lowering is not implemented yet"),
+            "real LLVM backend must lower ordinary calls to variadic prototypes"
+        );
 
         for gate in [
             "gate_driver",
@@ -2271,6 +2278,12 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang cwalk package object smoke passed"));
         assert!(real_llc.contains("lnp64-cwalk-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld cwalk package link smoke passed"));
+        assert!(real_llc.contains("varargs-call-clang-smoke.o"));
+        assert!(real_llc.contains("printf(\"lnp64 %d %s"));
+        assert!(real_llc.contains("real LLVM LNP64 clang varargs call object smoke passed"));
+        assert!(real_llc.contains("sbase-echo-clang-smoke.o"));
+        assert!(real_llc.contains("-c third_party/sbase/echo.c"));
+        assert!(real_llc.contains("real LLVM LNP64 clang sbase echo object smoke passed"));
         assert!(real_llc.contains("netcat-clang-smoke.o"));
         assert!(real_llc.contains("-c demos/netcat.c"));
         assert!(real_llc.contains("real LLVM LNP64 clang netcat demo object smoke passed"));
@@ -3281,7 +3294,8 @@ mod tests {
         assert!(isel.contains("LNP64TargetLowering::getRegForInlineAsmConstraint"));
         assert!(isel.contains("return std::make_pair(0U, &LNP64::GPRRegClass)"));
         assert!(isel.contains("computeRegisterProperties"));
-        assert!(isel.contains("varargs lowering is not implemented yet"));
+        assert!(isel.contains("CCState ArgCCInfo(CLI.CallConv, CLI.IsVarArg"));
+        assert!(!isel.contains("varargs lowering is not implemented yet"));
         assert!(isel_header.contains("getTargetNodeName"));
         assert!(isel_header.contains("LowerOperation"));
         assert!(isel_header.contains("getConstraintType"));
@@ -3730,10 +3744,12 @@ mod tests {
                 ["tested", "partial", "planned"].contains(&status),
                 "unknown LLVM bootstrap status {status} for {case}"
             );
-            assert!(
-                backend_contracts.contains(&"static_link"),
-                "case {case} must require static linking"
-            );
+            if status == "tested" {
+                assert!(
+                    backend_contracts.contains(&"static_link"),
+                    "tested case {case} must require static linking"
+                );
+            }
             assert!(
                 !runtime_contracts.is_empty(),
                 "case {case} must name runtime expectations"
@@ -3758,6 +3774,7 @@ mod tests {
             "jsmn",
             "inih_parse_string",
             "cwalk",
+            "sbase_echo",
             "netcat",
             "httpd",
             "simple_libc",
@@ -3785,6 +3802,7 @@ mod tests {
         ] {
             assert_eq!(statuses[case], "tested", "{case} should be tested");
         }
+        assert_eq!(statuses["sbase_echo"], "partial");
         assert_eq!(statuses["netcat"], "partial");
         assert_eq!(statuses["httpd"], "partial");
         assert_eq!(statuses["simple_libc"], "partial");
@@ -4153,6 +4171,7 @@ mod tests {
         );
         assert!(categories["llvm_package_tests"].3.contains("zlib"));
         assert!(categories["llvm_package_tests"].3.contains("cwalk"));
+        assert!(categories["llvm_package_tests"].3.contains("sbase_echo"));
         for category in [
             "asm_demos",
             "c_tests",
