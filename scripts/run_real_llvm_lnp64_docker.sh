@@ -181,6 +181,10 @@ run_elf_report "real LLVM LNP64 run-elf libc-test ctype_bounded execution passed
   target/llvm-lnp64-build/lnp64-libc-test-ctype-bounded-linked.elf
 run_elf_report "real LLVM LNP64 run-elf libc-test string execution passed" \
   target/llvm-lnp64-build/lnp64-libc-test-string-linked.elf
+run_elf_report "real LLVM LNP64 run-elf libc-test string_memcpy_bounded execution passed" \
+  target/llvm-lnp64-build/lnp64-libc-test-string-memcpy-bounded-linked.elf
+run_elf_report "real LLVM LNP64 run-elf libc-test string_memmove_bounded execution passed" \
+  target/llvm-lnp64-build/lnp64-libc-test-string-memmove-bounded-linked.elf
 run_elf_report "real LLVM LNP64 run-elf libc-test string_memmem execution passed" \
   target/llvm-lnp64-build/lnp64-libc-test-string-memmem-linked.elf
 run_elf_report "real LLVM LNP64 run-elf libc-test string_strchr execution passed" \

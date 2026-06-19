@@ -1435,6 +1435,8 @@ mod tests {
             "clang_libc_test_argv_object",
             "clang_libc_test_env_object",
             "clang_libc_test_random_object",
+            "clang_libc_test_string_memcpy_bounded_object",
+            "clang_libc_test_string_memmove_bounded_object",
             "clang_libc_test_search_insque_object",
             "clang_libc_test_malloc_0_object",
             "clang_libc_test_fgets_eof_object",
@@ -1448,6 +1450,8 @@ mod tests {
             "libc_test_random_static_link",
             "libc_test_ctype_static_link",
             "libc_test_string_static_link",
+            "libc_test_string_memcpy_bounded_static_link",
+            "libc_test_string_memmove_bounded_static_link",
             "libc_test_string_memmem_static_link",
             "libc_test_string_strchr_static_link",
             "libc_test_string_strcspn_static_link",
@@ -1471,6 +1475,8 @@ mod tests {
             "libc_test_random_run_elf",
             "libc_test_ctype_run_elf",
             "libc_test_string_run_elf",
+            "libc_test_string_memcpy_bounded_run_elf",
+            "libc_test_string_memmove_bounded_run_elf",
             "libc_test_string_memmem_run_elf",
             "libc_test_string_strchr_run_elf",
             "libc_test_string_strcspn_run_elf",
@@ -1845,6 +1851,18 @@ mod tests {
         assert!(real_llc.contains("libc-test-string-clang-smoke.o"));
         assert!(real_llc.contains("third_party/libc-test/functional/string.c"));
         assert!(real_llc.contains("real LLVM LNP64 clang libc-test string object smoke passed"));
+        assert!(real_llc.contains("libc-test-string-memcpy-bounded-clang-smoke.o"));
+        assert!(real_llc.contains("third_party/libc-test/functional/string_memcpy_bounded.c"));
+        assert!(
+            real_llc.contains(
+                "real LLVM LNP64 clang libc-test string_memcpy_bounded object smoke passed"
+            )
+        );
+        assert!(real_llc.contains("libc-test-string-memmove-bounded-clang-smoke.o"));
+        assert!(real_llc.contains("third_party/libc-test/functional/string_memmove_bounded.c"));
+        assert!(real_llc.contains(
+            "real LLVM LNP64 clang libc-test string_memmove_bounded object smoke passed"
+        ));
         assert!(real_llc.contains("libc-test-string-memmem-clang-smoke.o"));
         assert!(real_llc.contains("third_party/libc-test/functional/string_memmem.c"));
         assert!(
@@ -1904,6 +1922,18 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 lld libc-test ctype_bounded link smoke passed"));
         assert!(real_llc.contains("lnp64-libc-test-string-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld libc-test string link smoke passed"));
+        assert!(real_llc.contains("lnp64-libc-test-string-memcpy-bounded-linked.elf"));
+        assert!(real_llc.contains(r#""$libc_test_memcpy_bounded_obj" \"#));
+        assert!(
+            real_llc
+                .contains("real LLVM LNP64 lld libc-test string_memcpy_bounded link smoke passed")
+        );
+        assert!(real_llc.contains("lnp64-libc-test-string-memmove-bounded-linked.elf"));
+        assert!(real_llc.contains(r#""$libc_test_memmove_bounded_obj" \"#));
+        assert!(
+            real_llc
+                .contains("real LLVM LNP64 lld libc-test string_memmove_bounded link smoke passed")
+        );
         assert!(real_llc.contains("lnp64-libc-test-string-memmem-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld libc-test string_memmem link smoke passed"));
         assert!(real_llc.contains("lnp64-libc-test-string-strchr-linked.elf"));
@@ -2916,6 +2946,18 @@ mod tests {
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf libc-test string execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-libc-test-string-memcpy-bounded-linked.elf"));
+        assert!(
+            real_llc_docker.contains(
+                "real LLVM LNP64 run-elf libc-test string_memcpy_bounded execution passed"
+            )
+        );
+        assert!(real_llc_docker.contains("lnp64-libc-test-string-memmove-bounded-linked.elf"));
+        assert!(
+            real_llc_docker.contains(
+                "real LLVM LNP64 run-elf libc-test string_memmove_bounded execution passed"
+            )
+        );
         assert!(real_llc_docker.contains("lnp64-libc-test-string-memmem-linked.elf"));
         assert!(
             real_llc_docker
@@ -3133,6 +3175,8 @@ mod tests {
             "real_native_heap_execution",
             "real_libc_test_ctype_execution",
             "real_libc_test_string_execution",
+            "real_libc_test_string_memcpy_bounded_execution",
+            "real_libc_test_string_memmove_bounded_execution",
             "real_libc_test_string_memmem_execution",
             "real_libc_test_string_strchr_execution",
             "real_libc_test_string_strcspn_execution",
@@ -3200,6 +3244,8 @@ mod tests {
             "real_native_heap_execution",
             "real_libc_test_ctype_execution",
             "real_libc_test_string_execution",
+            "real_libc_test_string_memcpy_bounded_execution",
+            "real_libc_test_string_memmove_bounded_execution",
             "real_libc_test_string_memmem_execution",
             "real_libc_test_string_strchr_execution",
             "real_libc_test_string_strcspn_execution",

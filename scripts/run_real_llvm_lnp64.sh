@@ -2462,6 +2462,34 @@ grep -q 'call ' "$libc_test_string_dump"
 printf 'real LLVM LNP64 clang libc-test string object smoke passed: %s\n' \
   "$libc_test_string_obj"
 
+libc_test_memcpy_bounded_obj="$build_dir/libc-test-string-memcpy-bounded-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain/include \
+  -I third_party/libc-test/functional \
+  -c third_party/libc-test/functional/string_memcpy_bounded.c \
+  -o "$libc_test_memcpy_bounded_obj"
+test -s "$libc_test_memcpy_bounded_obj"
+libc_test_memcpy_bounded_dump="$build_dir/libc-test-string-memcpy-bounded-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_test_memcpy_bounded_obj" \
+  >"$libc_test_memcpy_bounded_dump"
+grep -q 'call ' "$libc_test_memcpy_bounded_dump"
+printf 'real LLVM LNP64 clang libc-test string_memcpy_bounded object smoke passed: %s\n' \
+  "$libc_test_memcpy_bounded_obj"
+
+libc_test_memmove_bounded_obj="$build_dir/libc-test-string-memmove-bounded-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain/include \
+  -I third_party/libc-test/functional \
+  -c third_party/libc-test/functional/string_memmove_bounded.c \
+  -o "$libc_test_memmove_bounded_obj"
+test -s "$libc_test_memmove_bounded_obj"
+libc_test_memmove_bounded_dump="$build_dir/libc-test-string-memmove-bounded-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_test_memmove_bounded_obj" \
+  >"$libc_test_memmove_bounded_dump"
+grep -q 'call ' "$libc_test_memmove_bounded_dump"
+printf 'real LLVM LNP64 clang libc-test string_memmove_bounded object smoke passed: %s\n' \
+  "$libc_test_memmove_bounded_obj"
+
 libc_test_memmem_obj="$build_dir/libc-test-string-memmem-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain/include \
@@ -4281,6 +4309,22 @@ libc_test_string_elf="$build_dir/lnp64-libc-test-string-linked.elf"
 test -s "$libc_test_string_elf"
 printf 'real LLVM LNP64 lld libc-test string link smoke passed: %s\n' \
   "$libc_test_string_elf"
+
+libc_test_memcpy_bounded_elf="$build_dir/lnp64-libc-test-string-memcpy-bounded-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$libc_test_memcpy_bounded_elf" "$crt0_obj" "$libc_test_memcpy_bounded_obj" \
+  "$libc_test_print_obj" "$libc_string_impl_obj" "$libc_fd_impl_obj"
+test -s "$libc_test_memcpy_bounded_elf"
+printf 'real LLVM LNP64 lld libc-test string_memcpy_bounded link smoke passed: %s\n' \
+  "$libc_test_memcpy_bounded_elf"
+
+libc_test_memmove_bounded_elf="$build_dir/lnp64-libc-test-string-memmove-bounded-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$libc_test_memmove_bounded_elf" "$crt0_obj" "$libc_test_memmove_bounded_obj" \
+  "$libc_test_print_obj" "$libc_string_impl_obj" "$libc_fd_impl_obj"
+test -s "$libc_test_memmove_bounded_elf"
+printf 'real LLVM LNP64 lld libc-test string_memmove_bounded link smoke passed: %s\n' \
+  "$libc_test_memmove_bounded_elf"
 
 libc_test_memmem_elf="$build_dir/lnp64-libc-test-string-memmem-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
