@@ -12,4 +12,4 @@ assemble_crt0|llvm-mc -triple=lnp64-unknown-none -filetype=obj toolchain/crt0_ln
 link_static|ld.lld -static -m elf64lnp64 -T toolchain/lnp64_static.ld -o {build}/hello.elf {build}/crt0.o {build}/hello.o {build}/liblnp64.a|lld,relocations,crt_startup,static_link,linker_script|planned
 inspect_exec_plan|lnp64 elf-plan {build}/hello.elf|software_loader,exec_plan,wx_nx_provenance|planned
 run_without_toy_compiler|lnp64 run-elf {build}/hello.elf|emulator_exec,stdout_push,exit,no_toy_compiler|planned
-simple_libc_gate|scripts/run_libc_test.sh --backend llvm --loader exec-plan|libc_shim,errno_tls,pthread_futex,poll_event,mmap_signal_socket_subset|planned
+simple_libc_gate|scripts/run_libc_test.sh --backend llvm --loader exec-plan|libc_shim,errno_tls,pthread_futex,poll_event,mmap_signal_socket_subset|tested

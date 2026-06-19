@@ -22,11 +22,12 @@ calls, and simple libc. The hello, arithmetic, memory, and calls entries are
 now tested through the real LLVM/lld/software-loader path; `simple_libc`
 remains partial until the Clang-built libc/runtime path replaces the smoke-only
 shim.
-`toolchain/lnp64_llvm_gates.manifest` records the concrete planned command
-shapes for compiling, linking, exec-plan inspection, and emulator execution.
-`scripts/run_llvm_bootstrap_gates.sh --dry-run` prints those planned commands
-from the manifest; actual execution is blocked behind an explicit opt-in until
-the LNP64 LLVM backend exists.
+`toolchain/lnp64_llvm_gates.manifest` records the concrete command shapes for
+compiling, linking, exec-plan inspection, and emulator execution.
+`scripts/run_llvm_bootstrap_gates.sh --dry-run` prints those commands from the
+manifest. `scripts/run_llvm_bootstrap_gates.sh --run` executes rows marked
+`tested` and skips rows still marked `planned` unless
+`LNP64_RUN_PLANNED_LLVM_GATES=1` is set.
 `Dockerfile.llvm` and `scripts/run_real_llvm_tblgen_docker.sh` provide the
 first real LLVM infrastructure gate: it builds a container with LLVM tools and
 runs `llvm-tblgen` over the LNP64 TableGen target files, writing generated

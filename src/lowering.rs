@@ -1452,6 +1452,7 @@ mod tests {
         }
         assert_eq!(statuses["real_llc_build"], "tested");
         assert_eq!(statuses["real_mc_build"], "tested");
+        assert_eq!(statuses["simple_libc_gate"], "tested");
         for requirement in [
             "clang_zlib_adler32_object",
             "clang_zlib_crc32_object",
@@ -1622,6 +1623,7 @@ mod tests {
         assert!(gate_driver.contains("--dry-run"));
         assert!(gate_driver.contains("--run"));
         assert!(gate_driver.contains("LNP64_RUN_PLANNED_LLVM_GATES"));
+        assert!(gate_driver.contains("skipping planned gate"));
         assert!(gate_driver.contains(r"command//\{build\}/"));
         assert!(!gate_driver.contains("lnp64 cc"));
         assert!(!gate_driver.contains("cargo run -- cc"));

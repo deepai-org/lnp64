@@ -164,12 +164,16 @@ coverage anymore; use `bash scripts/run_real_llvm_lnp64_docker.sh` for that.
 Toolchain contracts:
 
 ```sh
+bash scripts/run_llvm_bootstrap_gates.sh --dry-run
 bash scripts/run_real_llvm_tblgen_docker.sh
 bash scripts/run_real_llvm_lnp64_mc_docker.sh
 bash scripts/run_real_llvm_lnp64_docker.sh
 bash scripts/run_toolchain_contracts.sh
 ```
 
+`scripts/run_llvm_bootstrap_gates.sh --run` executes manifest rows already
+marked `tested` and skips `planned` rows unless
+`LNP64_RUN_PLANNED_LLVM_GATES=1` is set.
 `scripts/run_real_llvm_lnp64_docker.sh` is the active LLVM porting gate: it
 builds upstream LLVM/Clang/lld in Docker with the in-tree LNP64 backend, links
 real Clang objects, and executes the linked ELFs with `lnp64 run-elf`.
