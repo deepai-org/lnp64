@@ -1503,6 +1503,20 @@ int memcmp(const void *lhs, const void *rhs, size_t len);
 void *memcpy(void *dst, const void *src, size_t len);
 void *memmove(void *dst, const void *src, size_t len);
 void *memset(void *dst, int value, size_t len);
+int strcmp(const char *lhs, const char *rhs);
+int strncmp(const char *lhs, const char *rhs, size_t len);
+char *strcpy(char *dst, const char *src);
+char *strchr(const char *s, int ch);
+char *strstr(const char *haystack, const char *needle);
+int isalnum(int ch);
+int isalpha(int ch);
+int isdigit(int ch);
+int islower(int ch);
+int isspace(int ch);
+int isupper(int ch);
+int isxdigit(int ch);
+int tolower(int ch);
+int toupper(int ch);
 
 int main(void) {
   char src[8];
@@ -1539,6 +1553,34 @@ int main(void) {
     return 14;
   if (memcmp(overlap, "zz", 0) != 0)
     return 15;
+  if (strcmp("abc", "abc") != 0)
+    return 16;
+  if (strcmp("abc", "abd") >= 0)
+    return 17;
+  if (strncmp("abcdef", "abcxyz", 3) != 0)
+    return 18;
+  if (strncmp("abcdef", "abcxyz", 4) >= 0)
+    return 19;
+  if (strcpy(dst, "xy") != dst || dst[0] != 'x' || dst[1] != 'y' || dst[2] != 0)
+    return 20;
+  if (strchr("abcd", 'c') == 0 || *strchr("abcd", 'c') != 'c')
+    return 21;
+  if (strchr("abcd", 'z') != 0)
+    return 22;
+  if (strstr("abcde", "bcd") == 0 || *strstr("abcde", "bcd") != 'b')
+    return 23;
+  if (strstr("abcde", "bd") != 0)
+    return 24;
+  if (!isalpha('Q') || !islower('q') || !isupper('Q'))
+    return 25;
+  if (!isdigit('7') || !isalnum('7') || !isxdigit('f'))
+    return 26;
+  if (!isspace('\n') || isspace('x'))
+    return 27;
+  if (tolower('Q') != 'q' || toupper('q') != 'Q')
+    return 28;
+  if (tolower('7') != '7' || toupper('7') != '7')
+    return 29;
   return 0;
 }
 C

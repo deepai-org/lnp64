@@ -1787,8 +1787,35 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang getauxval object smoke passed"));
         assert!(real_llc.contains("libc-string-clang-smoke.o"));
         assert!(real_llc.contains("int memcmp"));
+        assert!(real_llc.contains("int strcmp"));
+        assert!(real_llc.contains("int strncmp"));
+        assert!(real_llc.contains("char *strcpy"));
+        assert!(real_llc.contains("char *strchr"));
+        assert!(real_llc.contains("char *strstr"));
+        assert!(real_llc.contains("int isalpha"));
+        assert!(real_llc.contains("int isdigit"));
+        assert!(real_llc.contains("int isspace"));
+        assert!(real_llc.contains("int tolower"));
+        assert!(real_llc.contains("strcmp(\"abc\", \"abc\")"));
+        assert!(real_llc.contains("strncmp(\"abcdef\", \"abcxyz\", 3)"));
+        assert!(real_llc.contains("strcpy(dst, \"xy\")"));
+        assert!(real_llc.contains("strchr(\"abcd\", 'c')"));
+        assert!(real_llc.contains("strstr(\"abcde\", \"bcd\")"));
+        assert!(real_llc.contains("tolower('Q')"));
+        assert!(real_llc.contains("toupper('q')"));
         assert!(real_llc.contains("grep -q 'sext.w'"));
         assert!(libc_string_min.contains("void *memmove"));
+        assert!(libc_string_min.contains("int strcmp"));
+        assert!(libc_string_min.contains("int strncmp"));
+        assert!(libc_string_min.contains("char *strcpy"));
+        assert!(libc_string_min.contains("char *strchr"));
+        assert!(libc_string_min.contains("char *strstr"));
+        assert!(libc_string_min.contains("int isalpha"));
+        assert!(libc_string_min.contains("int isdigit"));
+        assert!(libc_string_min.contains("int isspace"));
+        assert!(libc_string_min.contains("int isxdigit"));
+        assert!(libc_string_min.contains("int tolower"));
+        assert!(libc_string_min.contains("int toupper"));
         assert!(real_llc.contains("real LLVM LNP64 clang minilibc string object smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_string_min.c"));
         assert!(real_llc.contains("liblnp64-string-min.o"));
@@ -3165,6 +3192,7 @@ mod tests {
         for group in [
             "startup_env_auxv",
             "errno_tls",
+            "string_ctype",
             "fd_io",
             "malloc_heap",
             "pthread_futex",
@@ -3185,6 +3213,7 @@ mod tests {
         for group in [
             "startup_env_auxv",
             "errno_tls",
+            "string_ctype",
             "fd_io",
             "malloc_heap",
             "pthread_futex",
@@ -3205,6 +3234,11 @@ mod tests {
                 "errno_tls",
                 vec!["errno", "__errno_location", "strerror"],
                 vec!["TLS", "ERRNO_SET", "completion_helpers"],
+            ),
+            (
+                "string_ctype",
+                vec!["strlen", "strcmp", "memcpy", "isalpha", "tolower"],
+                vec!["load_store", "integer_alu", "static_link"],
             ),
             (
                 "fd_io",

@@ -55,8 +55,8 @@ contract for lld-produced ELF inputs.
 future LLVM/lld path.
 `toolchain/liblnp64_min.s` is a checked smoke-only legacy assembler libc object
 kept to prove llvm-mc/objdump coverage for the native libc opcodes while the
-full libc/runtime is not ready. The string/memory, `calloc`/`realloc`, `read`,
-`errno`, `exit`, and real Clang demo link/run smokes now link against
+full libc/runtime is not ready. The string/memory/ctype, `calloc`/`realloc`,
+`read`, `errno`, `exit`, and real Clang demo link/run smokes now link against
 Clang-built tiny C implementations instead of this assembler shim, keeping
 those slices on the real C toolchain path.
 `toolchain/liblnp64_string_min.c`, `toolchain/liblnp64_alloc_min.c`,
