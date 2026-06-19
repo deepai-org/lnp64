@@ -133,6 +133,33 @@ static unsigned getGPRNo(const MCOperand &Operand) {
   return Reg - LNP64::R0;
 }
 
+static unsigned getPCRNo(const MCOperand &Operand) {
+  switch (Operand.getReg()) {
+  case LNP64::PID:
+    return 0;
+  case LNP64::PPID:
+    return 1;
+  case LNP64::TID:
+    return 2;
+  case LNP64::TP:
+    return 3;
+  case LNP64::UID:
+    return 4;
+  case LNP64::GID:
+    return 5;
+  case LNP64::SIGMASK:
+    return 6;
+  case LNP64::SIGPENDING:
+    return 7;
+  case LNP64::REALTIME_SEC:
+    return 8;
+  case LNP64::REALTIME_NSEC:
+    return 9;
+  default:
+    llvm_unreachable("expected LNP64 PCR operand");
+  }
+}
+
 class LNP64MCCodeEmitter final : public MCCodeEmitter {
 public:
   void encodeInstruction(const MCInst &MI, raw_ostream &OS,
@@ -546,6 +573,18 @@ public:
       return;
     case LNP64::ERRNO_SET:
       emitLE32(encodeFixed32Reg(0x39, getGPRNo(MI.getOperand(0))), OS);
+      return;
+    case LNP64::GET_PCR:
+      emitLE32((uint32_t(0x54) << 24) |
+                   ((getGPRNo(MI.getOperand(0)) & 0x1f) << 19) |
+                   ((getPCRNo(MI.getOperand(1)) & 0x1f) << 14),
+               OS);
+      return;
+    case LNP64::SET_PCR:
+      emitLE32((uint32_t(0x55) << 24) |
+                   ((getGPRNo(MI.getOperand(1)) & 0x1f) << 19) |
+                   ((getPCRNo(MI.getOperand(0)) & 0x1f) << 14),
+               OS);
       return;
     case LNP64::EXIT:
       emitLE32(encodeFixed32Reg(0x3a, getGPRNo(MI.getOperand(0))), OS);

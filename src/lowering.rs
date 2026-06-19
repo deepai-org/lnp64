@@ -1535,6 +1535,10 @@ mod tests {
         assert!(real_llc.contains("env-get-mc-smoke.o"));
         assert!(real_llc.contains("env_get r1, r2, r3, r4"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc env_get opcode smoke passed"));
+        assert!(real_llc.contains("get-pcr-mc-smoke.o"));
+        assert!(real_llc.contains("get_pcr r1, PID"));
+        assert!(real_llc.contains("set_pcr SIGMASK, r2"));
+        assert!(real_llc.contains("real LLVM LNP64 llvm-mc GET_PCR opcode smoke passed"));
         assert!(real_llc.contains("cap-control-mc-smoke.o"));
         assert!(real_llc.contains("cap_dup r1, r2"));
         assert!(real_llc.contains("cap_send r3, r4"));
@@ -1656,6 +1660,9 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang exit object smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_process_min.c"));
         assert!(libc_process_min.contains("__lnp_exit"));
+        assert!(libc_process_min.contains("int pid(void)"));
+        assert!(libc_process_min.contains("int getpid(void)"));
+        assert!(libc_process_min.contains("__lnp_get_pid"));
         assert!(real_llc.contains("liblnp64-process-min.o"));
         assert!(real_llc.contains("grep -q 'exit r'"));
         assert!(
@@ -2116,6 +2123,16 @@ mod tests {
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic mmap execution passed")
         );
+        assert!(real_llc.contains("intrinsic-get-pcr-clang-smoke.o"));
+        assert!(real_llc.contains("__lnp_get_pid"));
+        assert!(real_llc.contains("grep -q 'get_pcr r'"));
+        assert!(real_llc.contains("real LLVM LNP64 clang intrinsic GET_PCR object smoke passed"));
+        assert!(real_llc.contains("lnp64-intrinsic-get-pcr-linked.elf"));
+        assert!(real_llc.contains("real LLVM LNP64 lld intrinsic GET_PCR link smoke passed"));
+        assert!(real_llc_docker.contains("lnp64-intrinsic-get-pcr-linked.elf"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf intrinsic GET_PCR execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-poll-libc-linked.elf"));
         assert!(
             real_llc_docker
@@ -2131,6 +2148,9 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 lld C11 atomic link smoke passed"));
         assert!(real_llc.contains("lnp64-stack-args-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld stack-argument link smoke passed"));
+        assert!(real_llc.contains("pcr-clang-smoke.o"));
+        assert!(real_llc.contains("-c demos/pcr.c"));
+        assert!(real_llc.contains("real LLVM LNP64 clang PCR demo object smoke passed"));
         assert!(real_llc.contains("lnp64-$demo-clang-linked.elf"));
         assert!(real_llc.contains(
             r#""$demo_obj" "$libc_fd_impl_obj" \
@@ -2362,6 +2382,7 @@ mod tests {
         assert!(real_llc_docker.contains("factorial ok"));
         assert!(real_llc_docker.contains("alloc ok"));
         assert!(real_llc_docker.contains("fibonacci ok"));
+        assert!(real_llc_docker.contains("pcr ok"));
         assert!(real_llc_docker.contains("exit=0"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf clang demo execution passed"));
         assert!(real_llc_docker.contains("lnp64-native-heap-linked.elf"));
@@ -2543,6 +2564,7 @@ mod tests {
             "real_intrinsic_control_execution",
             "real_intrinsic_capability_control_execution",
             "real_intrinsic_mmap_execution",
+            "real_intrinsic_get_pcr_execution",
             "real_intrinsic_amo_execution",
             "real_c11_atomic_execution",
             "real_stack_argument_execution",
@@ -2790,6 +2812,8 @@ mod tests {
             "CSET_ULT",
             "CMPU",
             "ERRNO_SET",
+            "GET_PCR",
+            "SET_PCR",
             "EXIT",
             "AWAIT",
             "GATE_CALL",
@@ -2808,6 +2832,9 @@ mod tests {
             "$offset($base)",
             "class LNP64Native4",
             "(ins GPR:$cap, GPR:$arg0, GPR:$arg1)",
+            "class LNP64PcrGet",
+            "(ins PCR:$pcr)",
+            "class LNP64PcrSet",
         ] {
             assert!(instr_td.contains(shape), "instr TableGen missing {shape}");
         }
@@ -2904,7 +2931,12 @@ mod tests {
         assert!(asm_parser.contains(r#".Case("mmap", LNP64::MMAP)"#));
         assert!(asm_parser.contains(r#".Case("munmap", LNP64::MUNMAP)"#));
         assert!(asm_parser.contains(r#".Case("mprotect", LNP64::MPROTECT)"#));
+        assert!(asm_parser.contains(r#".Case("get_pcr", LNP64::GET_PCR)"#));
+        assert!(asm_parser.contains(r#".Case("set_pcr", LNP64::SET_PCR)"#));
+        assert!(asm_parser.contains(r#".Case("PID", LNP64::PID)"#));
         assert!(asm_parser.contains(r#".Case("env_get", LNP64::ENV_GET)"#));
+        assert!(instr_td.contains("def GET_PCR : LNP64PcrGet"));
+        assert!(instr_td.contains("def SET_PCR : LNP64PcrSet"));
         assert!(asm_parser.contains(r#".Case("ld.w", LNP64::LD_W)"#));
         assert!(asm_parser.contains(r#".Case("ld.h", LNP64::LD_H)"#));
         assert!(disassembler.contains("LLVMInitializeLNP64Disassembler"));
@@ -2935,6 +2967,9 @@ mod tests {
         assert!(disassembler.contains("Instr.setOpcode(LNP64::MUNMAP)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::MPROTECT)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::ENV_GET)"));
+        assert!(disassembler.contains("case 0x54"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::GET_PCR)"));
+        assert!(disassembler.contains("Instr.setOpcode(LNP64::SET_PCR)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::LD_W)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::LD_H)"));
         assert!(disassembler.contains("Instr.setOpcode(LNP64::ST_B)"));
@@ -2971,6 +3006,10 @@ mod tests {
         assert!(asm_printer.contains("void LNP64AsmPrinter::emitInstruction"));
         assert!(asm_printer.contains("PrintAsmOperand"));
         assert!(asm_printer.contains("printLNP64AsmReg"));
+        assert!(inst_printer.contains("case LNP64::GET_PCR"));
+        assert!(inst_printer.contains("return \"get_pcr\""));
+        assert!(inst_printer.contains("OS << \"PID\""));
+        assert!(inst_printer.contains("OS << \"SIGMASK\""));
         assert!(asm_printer.contains("PrintAsmMemoryOperand"));
         assert!(asm_printer.contains("MachineOperand::MO_MachineBasicBlock"));
         assert!(asm_printer.contains("MachineOperand::MO_GlobalAddress"));
@@ -4262,6 +4301,7 @@ mod tests {
             "__lnp_alloc_ex",
             "__lnp_alloc_size",
             "__lnp_free",
+            "__lnp_get_pid",
             "__lnp_mmap_bootstrap",
             "__lnp_munmap_bootstrap",
             "__lnp_mprotect_bootstrap",
@@ -4649,6 +4689,7 @@ mod tests {
         assert!(mc_manifest.contains("simm24_words[23:0]"));
         assert!(mc_manifest.contains("fixed32_mmap_bootstrap_control"));
         assert!(mc_manifest.contains("fixed32_env_get_control"));
+        assert!(mc_manifest.contains("fixed32_pcr_control"));
         assert!(mc_manifest.contains("Final __lnp_mmap remains blocked"));
         assert!(mc_manifest.contains("F9 argument-block encoding"));
 
@@ -4706,6 +4747,7 @@ mod tests {
             "heap_reg",
             "mmap_bootstrap_control",
             "env_get_control",
+            "pcr_control",
             "native_primitives",
             "native_control_rr",
             "native_capability_rr",

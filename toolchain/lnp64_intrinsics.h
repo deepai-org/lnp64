@@ -75,6 +75,12 @@ static inline void __lnp_free(void *ptr) {
   __asm__ volatile("free %0" : : "r"((lnp64_word_t)ptr) : "memory");
 }
 
+static inline lnp64_word_t __lnp_get_pid(void) {
+  lnp64_word_t value;
+  __asm__ volatile("get_pcr %0, PID" : "=r"(value));
+  return value;
+}
+
 static inline lnp64_word_t __lnp_cap_dup(lnp64_cap_t source_cap,
                                          lnp64_word_t rights,
                                          lnp64_word_t flags) {

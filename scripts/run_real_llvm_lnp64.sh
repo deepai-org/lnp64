@@ -259,6 +259,27 @@ ASM
   printf 'real LLVM LNP64 llvm-mc env_get opcode smoke passed: %s\n' \
     "$env_get_mc_obj"
 
+  get_pcr_asm="$build_dir/get-pcr-mc-smoke.s"
+  cat >"$get_pcr_asm" <<'ASM'
+  .text
+  .globl _start
+_start:
+  get_pcr r1, PID
+  set_pcr SIGMASK, r2
+  ret
+ASM
+  get_pcr_mc_obj="$build_dir/get-pcr-mc-smoke.o"
+  "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$get_pcr_asm" \
+    -o "$get_pcr_mc_obj"
+  test -s "$get_pcr_mc_obj"
+  get_pcr_mc_dump="$build_dir/get-pcr-mc-smoke.dump"
+  "$llvm_objdump" -d --triple=lnp64-unknown-none "$get_pcr_mc_obj" \
+    >"$get_pcr_mc_dump"
+  grep -q 'get_pcr r1, PID' "$get_pcr_mc_dump"
+  grep -q 'set_pcr SIGMASK, r2' "$get_pcr_mc_dump"
+  printf 'real LLVM LNP64 llvm-mc GET_PCR opcode smoke passed: %s\n' \
+    "$get_pcr_mc_obj"
+
   cap_control_asm="$build_dir/cap-control-mc-smoke.s"
   cat >"$cap_control_asm" <<'ASM'
   .text
@@ -756,6 +777,18 @@ grep -q 'ret' "$fibonacci_dump"
 printf 'real LLVM LNP64 clang fibonacci object smoke passed: %s\n' \
   "$fibonacci_obj"
 
+pcr_obj="$build_dir/pcr-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables \
+  -Wno-implicit-function-declaration -I toolchain \
+  -c demos/pcr.c -o "$pcr_obj"
+test -s "$pcr_obj"
+pcr_dump="$build_dir/pcr-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$pcr_obj" >"$pcr_dump"
+grep -q 'call ' "$pcr_dump"
+printf 'real LLVM LNP64 clang PCR demo object smoke passed: %s\n' \
+  "$pcr_obj"
+
 indirect_call_c="$build_dir/indirect-call-smoke.c"
 cat >"$indirect_call_c" <<'C'
 int add3(int x) {
@@ -956,6 +989,27 @@ grep -q 'mprotect r' "$intrinsic_mmap_dump"
 grep -q 'munmap r' "$intrinsic_mmap_dump"
 printf 'real LLVM LNP64 clang intrinsic mmap object smoke passed: %s\n' \
   "$intrinsic_mmap_obj"
+
+intrinsic_get_pcr_c="$build_dir/intrinsic-get-pcr.c"
+cat >"$intrinsic_get_pcr_c" <<'C'
+#include "lnp64_intrinsics.h"
+
+int main(void) {
+  return __lnp_get_pid() == 1 ? 0 : 1;
+}
+C
+
+intrinsic_get_pcr_obj="$build_dir/intrinsic-get-pcr-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$intrinsic_get_pcr_c" -o "$intrinsic_get_pcr_obj"
+test -s "$intrinsic_get_pcr_obj"
+intrinsic_get_pcr_dump="$build_dir/intrinsic-get-pcr-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$intrinsic_get_pcr_obj" \
+  >"$intrinsic_get_pcr_dump"
+grep -q 'get_pcr r' "$intrinsic_get_pcr_dump"
+printf 'real LLVM LNP64 clang intrinsic GET_PCR object smoke passed: %s\n' \
+  "$intrinsic_get_pcr_obj"
 
 intrinsic_amo_c="$build_dir/intrinsic-amo.c"
 cat >"$intrinsic_amo_c" <<'C'
@@ -2781,6 +2835,27 @@ grep -q 'env_get r1, r2, r3, r4' "$env_get_mc_dump"
 printf 'real LLVM LNP64 llvm-mc env_get opcode smoke passed: %s\n' \
   "$env_get_mc_obj"
 
+get_pcr_asm="$build_dir/get-pcr-mc-smoke.s"
+cat >"$get_pcr_asm" <<'ASM'
+  .text
+  .globl _start
+_start:
+  get_pcr r1, PID
+  set_pcr SIGMASK, r2
+  ret
+ASM
+get_pcr_mc_obj="$build_dir/get-pcr-mc-smoke.o"
+"$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$get_pcr_asm" \
+  -o "$get_pcr_mc_obj"
+test -s "$get_pcr_mc_obj"
+get_pcr_mc_dump="$build_dir/get-pcr-mc-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$get_pcr_mc_obj" \
+  >"$get_pcr_mc_dump"
+grep -q 'get_pcr r1, PID' "$get_pcr_mc_dump"
+grep -q 'set_pcr SIGMASK, r2' "$get_pcr_mc_dump"
+printf 'real LLVM LNP64 llvm-mc GET_PCR opcode smoke passed: %s\n' \
+  "$get_pcr_mc_obj"
+
 cap_control_asm="$build_dir/cap-control-mc-smoke.s"
 cat >"$cap_control_asm" <<'ASM'
   .text
@@ -2990,6 +3065,13 @@ intrinsic_mmap_elf="$build_dir/lnp64-intrinsic-mmap-linked.elf"
 test -s "$intrinsic_mmap_elf"
 printf 'real LLVM LNP64 lld intrinsic mmap link smoke passed: %s\n' \
   "$intrinsic_mmap_elf"
+
+intrinsic_get_pcr_elf="$build_dir/lnp64-intrinsic-get-pcr-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$intrinsic_get_pcr_elf" "$crt0_obj" "$intrinsic_get_pcr_obj"
+test -s "$intrinsic_get_pcr_elf"
+printf 'real LLVM LNP64 lld intrinsic GET_PCR link smoke passed: %s\n' \
+  "$intrinsic_get_pcr_elf"
 
 intrinsic_amo_elf="$build_dir/lnp64-intrinsic-amo-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
@@ -3241,7 +3323,7 @@ test -s "$indirect_call_elf"
 printf 'real LLVM LNP64 lld indirect call link smoke passed: %s\n' \
   "$indirect_call_elf"
 
-for demo in hello factorial allocator fibonacci; do
+for demo in hello factorial allocator fibonacci pcr; do
   demo_obj="$build_dir/$demo-clang-smoke.o"
   demo_elf="$build_dir/lnp64-$demo-clang-linked.elf"
   "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

@@ -185,6 +185,23 @@ public:
 
 private:
   static bool parseRegisterName(StringRef Name, unsigned &RegNo) {
+    unsigned PcrNo =
+        StringSwitch<unsigned>(Name.upper())
+            .Case("PID", LNP64::PID)
+            .Case("PPID", LNP64::PPID)
+            .Case("TID", LNP64::TID)
+            .Case("TP", LNP64::TP)
+            .Case("UID", LNP64::UID)
+            .Case("GID", LNP64::GID)
+            .Case("SIGMASK", LNP64::SIGMASK)
+            .Case("SIGPENDING", LNP64::SIGPENDING)
+            .Case("REALTIME_SEC", LNP64::REALTIME_SEC)
+            .Case("REALTIME_NSEC", LNP64::REALTIME_NSEC)
+            .Default(0);
+    if (PcrNo) {
+      RegNo = PcrNo;
+      return true;
+    }
     if (!Name.consume_front("r") && !Name.consume_front("R"))
       return false;
     unsigned Number = 0;
@@ -372,6 +389,8 @@ private:
             .Case("mmap", LNP64::MMAP)
             .Case("munmap", LNP64::MUNMAP)
             .Case("mprotect", LNP64::MPROTECT)
+            .Case("get_pcr", LNP64::GET_PCR)
+            .Case("set_pcr", LNP64::SET_PCR)
             .Case("sigaction", LNP64::SIGACTION)
             .Case("sigmask_set", LNP64::SIGMASK_SET)
             .Case("kill", LNP64::LNP64_KILL)
@@ -446,7 +465,8 @@ private:
     if (Opcode == LNP64::CMP || Opcode == LNP64::CMPU ||
         Opcode == LNP64::FUTEX_WAIT || Opcode == LNP64::FUTEX_WAKE ||
         Opcode == LNP64::MUNMAP || Opcode == LNP64::SIGACTION ||
-        Opcode == LNP64::LNP64_KILL || Opcode == LNP64::ALARM)
+        Opcode == LNP64::LNP64_KILL || Opcode == LNP64::ALARM ||
+        Opcode == LNP64::GET_PCR || Opcode == LNP64::SET_PCR)
       return addRegReg(Inst, Operands);
     if (Opcode == LNP64::JMP || Opcode == LNP64::BEQ ||
         Opcode == LNP64::BNE || Opcode == LNP64::BLT ||

@@ -20,6 +20,7 @@ __lnp_alloc|ALLOC|ptr_or_errno|size
 __lnp_alloc_ex|ALLOC_EX|ptr_or_errno|size,align
 __lnp_alloc_size|ALLOC_SIZE|size_or_errno|ptr
 __lnp_free|FREE|status_or_errno|ptr
+__lnp_get_pid|GET_PCR|pid|none
 __lnp_mmap_bootstrap|MMAP|addr_or_errno|addr_hint,len,prot
 __lnp_munmap_bootstrap|MUNMAP|status_or_errno|addr
 __lnp_mprotect_bootstrap|MPROTECT|status_or_errno|addr,len,prot

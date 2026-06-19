@@ -203,6 +203,12 @@ class LNP64RuntimeGet<string Mnemonic>
 class LNP64RuntimeSet<string Mnemonic>
     : LNP64Inst<(outs), (ins GPR:$rs), Mnemonic, "\t$rs">;
 
+class LNP64PcrGet<string Mnemonic>
+    : LNP64Inst<(outs GPR:$rd), (ins PCR:$pcr), Mnemonic, "\t$rd, $pcr">;
+
+class LNP64PcrSet<string Mnemonic>
+    : LNP64Inst<(outs), (ins PCR:$pcr, GPR:$rs), Mnemonic, "\t$pcr, $rs">;
+
 class LNP64Signal2<string Mnemonic>
     : LNP64Inst<(outs), (ins GPR:$rs1, GPR:$rs2), Mnemonic,
                 "\t$rs1, $rs2">;
@@ -496,6 +502,8 @@ def RET : LNP64NoOperand<"ret"> {
 }
 def ERRNO_GET : LNP64RuntimeGet<"errno_get">;
 def ERRNO_SET : LNP64RuntimeSet<"errno_set">;
+def GET_PCR : LNP64PcrGet<"get_pcr">;
+def SET_PCR : LNP64PcrSet<"set_pcr">;
 let isTerminator = 1, isBarrier = 1 in
 def EXIT : LNP64RuntimeSet<"exit">;
 

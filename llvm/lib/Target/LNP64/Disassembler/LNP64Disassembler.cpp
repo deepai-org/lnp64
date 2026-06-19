@@ -15,6 +15,33 @@ static unsigned getGPR(unsigned Enc) {
   return LNP64::R0 + Enc;
 }
 
+static unsigned getPCR(unsigned Enc) {
+  switch (Enc) {
+  case 0:
+    return LNP64::PID;
+  case 1:
+    return LNP64::PPID;
+  case 2:
+    return LNP64::TID;
+  case 3:
+    return LNP64::TP;
+  case 4:
+    return LNP64::UID;
+  case 5:
+    return LNP64::GID;
+  case 6:
+    return LNP64::SIGMASK;
+  case 7:
+    return LNP64::SIGPENDING;
+  case 8:
+    return LNP64::REALTIME_SEC;
+  case 9:
+    return LNP64::REALTIME_NSEC;
+  default:
+    return 0;
+  }
+}
+
 static uint32_t readLE32(ArrayRef<uint8_t> Bytes) {
   return uint32_t(Bytes[0]) | (uint32_t(Bytes[1]) << 8) |
          (uint32_t(Bytes[2]) << 16) | (uint32_t(Bytes[3]) << 24);
@@ -28,6 +55,13 @@ static uint32_t readLE32At(ArrayRef<uint8_t> Bytes, unsigned Offset) {
 
 static void addReg(MCInst &Instr, unsigned Enc) {
   Instr.addOperand(MCOperand::createReg(getGPR(Enc)));
+}
+
+static void addPcr(MCInst &Instr, unsigned Enc) {
+  unsigned Reg = getPCR(Enc);
+  if (!Reg)
+    return;
+  Instr.addOperand(MCOperand::createReg(Reg));
 }
 
 static void addImm(MCInst &Instr, int64_t Imm) {
@@ -674,6 +708,16 @@ public:
       Instr.setOpcode(LNP64::CAP_REVOKE);
       addReg(Instr, A);
       addReg(Instr, B);
+      return MCDisassembler::Success;
+    case 0x54:
+      Instr.setOpcode(LNP64::GET_PCR);
+      addReg(Instr, A);
+      addPcr(Instr, B);
+      return MCDisassembler::Success;
+    case 0x55:
+      Instr.setOpcode(LNP64::SET_PCR);
+      addPcr(Instr, B);
+      addReg(Instr, A);
       return MCDisassembler::Success;
     case 0x30:
       Instr.setOpcode(LNP64::LD);

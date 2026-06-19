@@ -51,17 +51,18 @@ run_elf_report() {
   printf '%s: %s\n' "$message" "$linked_probe"
 }
 
-for demo in hello factorial allocator fibonacci; do
+for demo in hello factorial allocator fibonacci pcr; do
   linked_probe="target/llvm-lnp64-build/lnp64-$demo-clang-linked.elf"
   case "$demo" in
     hello) run_elf_probe "$linked_probe" 'hello from LNP64' ;;
     factorial) run_elf_probe "$linked_probe" 'factorial ok' ;;
     allocator) run_elf_probe "$linked_probe" 'alloc ok' ;;
     fibonacci) run_elf_probe "$linked_probe" 'fibonacci ok' ;;
+    pcr) run_elf_probe "$linked_probe" 'pcr ok' ;;
   esac
 done
 printf 'real LLVM LNP64 run-elf clang demo execution passed: %s\n' \
-  "target/llvm-lnp64-build/lnp64-{hello,factorial,allocator,fibonacci}-clang-linked.elf"
+  "target/llvm-lnp64-build/lnp64-{hello,factorial,allocator,fibonacci,pcr}-clang-linked.elf"
 
 run_elf_report "real LLVM LNP64 run-elf native heap execution passed" \
   target/llvm-lnp64-build/lnp64-native-heap-linked.elf
@@ -80,6 +81,8 @@ run_elf_report "real LLVM LNP64 run-elf intrinsic capability control execution p
   target/llvm-lnp64-build/lnp64-intrinsic-cap-control-linked.elf
 run_elf_report "real LLVM LNP64 run-elf intrinsic mmap execution passed" \
   target/llvm-lnp64-build/lnp64-intrinsic-mmap-linked.elf
+run_elf_report "real LLVM LNP64 run-elf intrinsic GET_PCR execution passed" \
+  target/llvm-lnp64-build/lnp64-intrinsic-get-pcr-linked.elf
 run_elf_report "real LLVM LNP64 run-elf intrinsic AMO execution passed" \
   target/llvm-lnp64-build/lnp64-intrinsic-amo-linked.elf
 run_elf_report "real LLVM LNP64 run-elf C11 atomic execution passed" \

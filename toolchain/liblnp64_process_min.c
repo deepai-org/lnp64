@@ -8,3 +8,11 @@ void _exit(int status) {
 void exit(int status) {
   _exit(status);
 }
+
+int pid(void) {
+  return (int)__lnp_get_pid();
+}
+
+int getpid(void) {
+  return pid();
+}

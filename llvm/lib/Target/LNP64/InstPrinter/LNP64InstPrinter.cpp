@@ -192,6 +192,10 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
     return "munmap";
   case LNP64::MPROTECT:
     return "mprotect";
+  case LNP64::GET_PCR:
+    return "get_pcr";
+  case LNP64::SET_PCR:
+    return "set_pcr";
   case LNP64::SIGACTION:
     return "sigaction";
   case LNP64::SIGMASK_SET:
@@ -267,8 +271,44 @@ void LNP64InstPrinter::printRegName(raw_ostream &OS, unsigned Reg) const {
     OS << "lr";
     return;
   }
+  if (Reg == LNP64::PID) {
+    OS << "PID";
+    return;
+  }
+  if (Reg == LNP64::PPID) {
+    OS << "PPID";
+    return;
+  }
+  if (Reg == LNP64::TID) {
+    OS << "TID";
+    return;
+  }
   if (Reg == LNP64::TP) {
-    OS << "tp";
+    OS << "TP";
+    return;
+  }
+  if (Reg == LNP64::UID) {
+    OS << "UID";
+    return;
+  }
+  if (Reg == LNP64::GID) {
+    OS << "GID";
+    return;
+  }
+  if (Reg == LNP64::SIGMASK) {
+    OS << "SIGMASK";
+    return;
+  }
+  if (Reg == LNP64::SIGPENDING) {
+    OS << "SIGPENDING";
+    return;
+  }
+  if (Reg == LNP64::REALTIME_SEC) {
+    OS << "REALTIME_SEC";
+    return;
+  }
+  if (Reg == LNP64::REALTIME_NSEC) {
+    OS << "REALTIME_NSEC";
     return;
   }
   OS << MRI.getName(Reg);
@@ -435,6 +475,8 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::ALLOC_SIZE:
   case LNP64::MUNMAP:
   case LNP64::ALARM:
+  case LNP64::GET_PCR:
+  case LNP64::SET_PCR:
   case LNP64::OBJECT_CTL:
   case LNP64::DOMAIN_CTL:
   case LNP64::CAP_SEND:

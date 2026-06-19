@@ -1511,6 +1511,23 @@ impl Machine {
             let delta = sign_extend(word & 0x00ff_ffff, 24) * 4;
             Target::Address(pc.wrapping_add(delta as u64) as usize)
         };
+        let pcr_operand = |bits: u32| -> Result<Pcr, String> {
+            match bits & 0x1f {
+                0 => Ok(Pcr::Pid),
+                1 => Ok(Pcr::Ppid),
+                2 => Ok(Pcr::Tid),
+                3 => Ok(Pcr::Tp),
+                4 => Ok(Pcr::Uid),
+                5 => Ok(Pcr::Gid),
+                6 => Ok(Pcr::Sigmask),
+                7 => Ok(Pcr::Sigpending),
+                8 => Ok(Pcr::RealtimeSec),
+                9 => Ok(Pcr::RealtimeNsec),
+                other => Err(format!(
+                    "unsupported committed exec PCR selector {other} at 0x{pc:x}"
+                )),
+            }
+        };
         let instr = match opcode {
             0x00 => Instr::Nop,
             0x01 => Instr::Li(a, Value::Imm(imm16)),
@@ -1623,6 +1640,8 @@ impl Machine {
             0x51 => Instr::CapSend(a, b),
             0x52 => Instr::CapRecv(a, b),
             0x53 => Instr::CapRevoke(a, b),
+            0x54 => Instr::GetPcr(a, pcr_operand((word >> 14) & 0x1f)?),
+            0x55 => Instr::SetPcr(pcr_operand((word >> 14) & 0x1f)?, a),
             0x56 => Instr::EnvGet(a, b, c, d),
             0x57 => Instr::WriteFd(FdReg(a.0), b, c),
             0x60 => Instr::MmapBootstrap(a, b, c, d),
