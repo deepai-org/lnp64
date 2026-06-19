@@ -270,6 +270,7 @@ fn flat_exec_word_pcs(program: &Program) -> Vec<usize> {
 fn flat_exec_instr_word_len(instr: &Instr) -> usize {
     match instr {
         Instr::Li(_, Value::Imm(imm)) if imm16(*imm, "LI immediate").is_err() => 2,
+        Instr::Auipc(_, _) => 2,
         _ => 1,
     }
 }
@@ -283,6 +284,7 @@ fn encode_flat_exec_instr(
     match instr {
         Instr::Nop => Ok(vec![enc_reg(0x00, Reg(0))]),
         Instr::Li(rd, value) => encode_flat_exec_li(*rd, value),
+        Instr::Auipc(rd, value) => encode_flat_exec_auipc(*rd, value),
         Instr::Mov(rd, rs1) => Ok(vec![enc_rrr(0x02, *rd, *rs1, Reg(0))]),
         Instr::Add(rd, rs1, rs2) => Ok(vec![enc_rrr(0x10, *rd, *rs1, *rs2)]),
         Instr::Addi(rd, rs1, imm) => Ok(vec![enc_mem(
@@ -412,9 +414,10 @@ fn encode_flat_exec_instr(
             *index_or_buf,
             *len_or_flags,
         )]),
+        Instr::Fence => Ok(vec![enc_reg(0xcd, Reg(0))]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XOR/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSEL, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.B, ALLOC, ERRNO_GET/SET, ENV_GET, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XOR/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSEL, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.B, ALLOC, ERRNO_GET/SET, ENV_GET, FENCE, EXIT"
         )),
     }
 }
@@ -426,6 +429,11 @@ fn encode_flat_exec_li(rd: Reg, value: &Value) -> Result<Vec<u32>, String> {
     } else {
         Ok(vec![enc_reg(0x04, rd), imm as u32])
     }
+}
+
+fn encode_flat_exec_auipc(rd: Reg, value: &Value) -> Result<Vec<u32>, String> {
+    let imm = value_imm32(value)?;
+    Ok(vec![enc_reg(0xd0, rd), imm as u32])
 }
 
 fn flat_exec_branch_opcode(condition: Condition) -> Result<u8, String> {
@@ -1408,6 +1416,49 @@ mod tests {
                 "bb8a5800\n",
                 "106b6200\n",
                 "3a680000\n",
+            )
+        );
+    }
+
+    #[test]
+    fn asm_flat_exec_encodes_auipc_fence_subset() {
+        let source = r#"
+            .text
+              AUIPC r3, 0
+              FENCE.SC
+              AUIPC r4, 8
+              LI r1, 1
+              LI r2, 0
+              LI r5, 4096
+              CMP r3, r5
+              CSEL.EQ r6, r1, r2
+              LI r7, 4116
+              CMP r4, r7
+              CSEL.EQ r8, r1, r2
+              ADD r9, r6, r8
+              EXIT r9
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+
+        assert_eq!(
+            hex,
+            concat!(
+                "d0180000\n",
+                "00000000\n",
+                "cd000000\n",
+                "d0200000\n",
+                "00000008\n",
+                "01080001\n",
+                "01100000\n",
+                "01281000\n",
+                "1b194000\n",
+                "bb304400\n",
+                "01381014\n",
+                "1b21c000\n",
+                "bb404400\n",
+                "10499000\n",
+                "3a480000\n",
             )
         );
     }

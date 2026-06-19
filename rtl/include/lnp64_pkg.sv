@@ -142,6 +142,8 @@ package lnp64_pkg;
         LNP64_OP_MULH         = 16'h005f,
         LNP64_OP_MULHU        = 16'h0060,
         LNP64_OP_MULHSU       = 16'h0061,
+        LNP64_OP_AUIPC_LITERAL= 16'h0062,
+        LNP64_OP_FENCE        = 16'h0063,
         LNP64_OP_UNSUPPORTED  = 16'h00ff
     } lnp64_opcode_e;
 

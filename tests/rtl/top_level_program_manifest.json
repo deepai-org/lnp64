@@ -57,6 +57,14 @@
       "status": "active",
       "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
       "comparison": "retire_trace_and_final_state"
+    },
+    {
+      "source": "tests/rtl/programs/top_auipc_fence.s",
+      "generated_flat_hex": "tests/rtl/programs/top_auipc_fence.hex",
+      "required_features": ["core", "auipc", "fence", "conditional_select", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
     }
   ],
   "compiler_flat_programs": [

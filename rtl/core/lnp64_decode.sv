@@ -138,6 +138,12 @@ module lnp64_decode (
             8'h47: begin
                 dec.opcode = LNP64_OP_ALLOC;
             end
+            8'hcd: begin
+                dec.opcode = LNP64_OP_FENCE;
+            end
+            8'hd0: begin
+                dec.opcode = LNP64_OP_AUIPC_LITERAL;
+            end
             8'ha7: begin
                 dec.opcode = LNP64_OP_UDIV;
             end
@@ -315,6 +321,8 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_BRANCH_GE ||
             dec.opcode == LNP64_OP_CALL ||
             dec.opcode == LNP64_OP_RET ||
+            dec.opcode == LNP64_OP_AUIPC_LITERAL ||
+            dec.opcode == LNP64_OP_FENCE ||
             dec.opcode == LNP64_OP_LD ||
             dec.opcode == LNP64_OP_LD_B ||
             dec.opcode == LNP64_OP_ST ||

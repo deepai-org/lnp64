@@ -78,6 +78,7 @@ module lnp64_core_tile #(
     logic [63:0] sram [0:15];
     logic [31:0] program_rom [0:PROGRAM_WORDS-1];
     localparam logic [63:0] HEAP_ARCH_BASE = 64'h0000_0000_0010_f000;
+    localparam logic [63:0] FLAT_EXEC_BASE_ADDR = 64'h0000_0000_0000_1000;
     localparam logic [3:0] HEAP_SRAM_BASE_WORD = 4'd12;
     logic [15:0] errno_reg;
     logic cmp_zero;
@@ -454,6 +455,19 @@ module lnp64_core_tile #(
                             LNP64_OP_LI32_LITERAL: begin
                                 gpr[dec.rd] <= {32'd0, program_rom[pc + 32'd1]};
                                 pc <= pc + 32'd2;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_AUIPC_LITERAL: begin
+                                gpr[dec.rd] <= FLAT_EXEC_BASE_ADDR + {30'd0, pc, 2'd0} + {{32{program_rom[pc + 32'd1][31]}}, program_rom[pc + 32'd1]};
+                                pc <= pc + 32'd2;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_FENCE: begin
+                                pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
