@@ -65,7 +65,16 @@ rtl_verilator_build_or_reuse() {
   rtl_prepare_build_dir "$build_dir"
   rtl_lint "$@"
   mapfile -t verilator_build_job_args < <(rtl_verilator_build_job_args)
-  verilator --binary --Mdir "$build_dir" "${verilator_build_job_args[@]}" "$@" >"$build_log"
+  if ! verilator --binary --Mdir "$build_dir" "${verilator_build_job_args[@]}" "$@" >"$build_log"; then
+    if [[ "${LNP64_RTL_REUSE_BUILD:-0}" == "1" ]]; then
+      printf 'rtl Verilator reusable build failed; retrying clean build: %s\n' "$build_dir" >&2
+      rm -rf "$build_dir"
+      mkdir -p "$(dirname "$build_dir")"
+      verilator --binary --Mdir "$build_dir" "${verilator_build_job_args[@]}" "$@" >"$build_log"
+    else
+      return 1
+    fi
+  fi
 }
 
 rtl_cosim_seed_jobs() {

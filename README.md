@@ -340,6 +340,9 @@ artifacts in `target/docker-rust` and `target/rtl-verilator-docker`, enables
 parallel jobs, and narrows `cosim` mode to M1 seed 0 unless you pass gate names
 or set `LNP64_RTL_RANDOM_COSIM_GATES`/`LNP64_COSIM_SEEDS`. Use the older
 wrappers or unset the narrowing variables for full evidence runs.
+Reusable Verilator builds automatically retry once with a clean object
+directory if generated make dependencies point at a stale host/container
+Verilator install.
 For proof-gate iteration, `LNP64_RTL_FAST=1` also defaults
 `LNP64_RTL_PROOF_GATE_JOBS` to `auto`, so the independent M2-M6 and M8-M15
 Verilator/cosim gates run in parallel after the special M1/M7 typed-commit
