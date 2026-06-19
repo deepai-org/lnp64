@@ -2558,8 +2558,8 @@ mod tests {
             "real LLVM LNP64 clang minilibc numeric conversion implementation object smoke passed"
         ));
         assert!(real_llc.contains("path-clang-smoke.o"));
-        assert!(real_llc.contains("char *basename"));
-        assert!(real_llc.contains("char *dirname"));
+        assert!(real_llc.contains("#include <libgen.h>"));
+        assert!(real_llc.contains("#include <string.h>"));
         assert!(real_llc.contains("check_basename(\"/usr/lib\", \"lib\")"));
         assert!(real_llc.contains("check_dirname(\"/usr/lib\", \"/usr\")"));
         assert!(real_llc.contains("real LLVM LNP64 clang path helper object smoke passed"));

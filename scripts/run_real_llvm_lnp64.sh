@@ -3016,10 +3016,8 @@ printf 'real LLVM LNP64 clang minilibc numeric conversion implementation object 
 
 path_c="$build_dir/path-smoke.c"
 cat >"$path_c" <<'C'
-int strcmp(const char *lhs, const char *rhs);
-char *strcpy(char *dst, const char *src);
-char *basename(char *path);
-char *dirname(char *path);
+#include <libgen.h>
+#include <string.h>
 
 static int check_basename(const char *path, const char *want) {
   char tmp[100];
