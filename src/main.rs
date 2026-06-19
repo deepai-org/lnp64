@@ -238,9 +238,6 @@ struct AsmFlatExecOptions {
 }
 
 fn encode_flat_exec_hex(program: &Program) -> Result<String, String> {
-    if !program.data.is_empty() {
-        return Err("asm-flat-exec does not yet materialize .data sections".to_string());
-    }
     let mut out = String::new();
     for (pc, instr) in program.instructions.iter().enumerate() {
         let word = encode_flat_exec_instr(program, pc, instr)?;

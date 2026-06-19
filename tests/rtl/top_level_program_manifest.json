@@ -19,6 +19,15 @@
       "comparison": "retire_trace_and_final_state"
     }
   ],
+  "compiler_flat_programs": [
+    {
+      "source": "tests/rtl/programs/top_return_12.c",
+      "required_features": ["core", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    }
+  ],
   "assembly_programs": [
     {"source": "demos/allocator_native.s", "required_features": ["core", "heap"], "status": "blocked_by_features"},
     {"source": "demos/await_timer.s", "required_features": ["core", "scheduler", "waitable", "timer"], "status": "blocked_by_features"},

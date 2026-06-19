@@ -72,9 +72,11 @@ def main() -> None:
     require((ROOT / "rtl/top/lnp64_top.sv").exists(), "lnp64_top is missing")
 
     flat_hex_entries = manifest.get("flat_hex_programs")
+    compiler_flat_entries = manifest.get("compiler_flat_programs")
     assembly_entries = manifest.get("assembly_programs")
     compiler_entries = manifest.get("compiler_generated_programs")
     require(isinstance(flat_hex_entries, list) and flat_hex_entries, "missing flat_hex_programs")
+    require(isinstance(compiler_flat_entries, list) and compiler_flat_entries, "missing compiler_flat_programs")
     require(isinstance(assembly_entries, list) and assembly_entries, "missing assembly_programs")
     require(isinstance(compiler_entries, list) and compiler_entries, "missing compiler_generated_programs")
     active_flat_hex = 0
@@ -95,6 +97,22 @@ def main() -> None:
             require("RTL_RETIRE" in gate_text and "EMULATOR_RETIRE" in gate_text, f"{entry['source']} gate must compare retire traces")
             require("RTL_FINAL" in gate_text and "EMULATOR_FINAL" in gate_text, f"{entry['source']} gate must compare final state")
     require(active_flat_hex >= 1, "manifest must keep at least one active top-level flat hex program")
+    active_compiler_flat = 0
+    for entry in compiler_flat_entries:
+        require(isinstance(entry, dict), "compiler flat entry must be an object")
+        require_entry(entry, "compiler flat")
+        if entry.get("status") == "active":
+            active_compiler_flat += 1
+            gate_text = text(ROOT / str(entry["rtl_gate"]))
+            require("*.c" in gate_text, f"{entry['source']} active gate must accept compiler input")
+            require(
+                (" cc " in gate_text or " cc --toy-bootstrap " in gate_text)
+                and "asm-flat-exec" in gate_text,
+                f"{entry['source']} active gate must compile C to flat hex",
+            )
+            require("RTL_RETIRE" in gate_text and "EMULATOR_RETIRE" in gate_text, f"{entry['source']} gate must compare retire traces")
+            require("RTL_FINAL" in gate_text and "EMULATOR_FINAL" in gate_text, f"{entry['source']} gate must compare final state")
+    require(active_compiler_flat >= 1, "manifest must keep at least one active compiler-generated top-level program")
     for entry in assembly_entries:
         require(isinstance(entry, dict), "assembly entry must be an object")
         require_entry(entry, "assembly")

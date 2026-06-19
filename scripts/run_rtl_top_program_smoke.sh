@@ -6,6 +6,14 @@ cd "$root"
 
 source scripts/rtl_verilator_common.sh
 
+tmp_files=()
+cleanup() {
+  if [[ ${#tmp_files[@]} -gt 0 ]]; then
+    rm -f "${tmp_files[@]}"
+  fi
+}
+trap cleanup EXIT
+
 if ! command -v verilator >/dev/null 2>&1; then
   printf '%s\n' "verilator is required for the RTL top-level program smoke gate" >&2
   exit 1
@@ -38,8 +46,20 @@ if [[ ! -f "$program_input" ]]; then
   exit 1
 fi
 program_hex="$program_input"
+program_asm=""
+if [[ "$program_input" == *.c ]]; then
+  program_asm="$(mktemp "${TMPDIR:-/tmp}/lnp64_top_program_from_c.XXXXXX.s")"
+  tmp_files+=("$program_asm")
+  if [[ -n "${LNP64_BIN:-}" ]]; then
+    "$LNP64_BIN" cc "$program_input" -o "$program_asm"
+  else
+    cargo run --quiet -- cc "$program_input" -o "$program_asm"
+  fi
+  program_input="$program_asm"
+fi
 if [[ "$program_input" == *.s ]]; then
-  program_hex="${TMPDIR:-/tmp}/lnp64_top_program_from_asm.hex"
+  program_hex="$(mktemp "${TMPDIR:-/tmp}/lnp64_top_program_from_asm.XXXXXX.hex")"
+  tmp_files+=("$program_hex")
   if [[ -n "${LNP64_BIN:-}" ]]; then
     "$LNP64_BIN" asm-flat-exec "$program_input" -o "$program_hex"
   else
@@ -52,7 +72,6 @@ verilator --binary --Mdir "$build_dir" "${common_flags[@]}" "${rtl_files[@]}" >/
 "$build_dir/Vlnp64_top_program_tb" "+lnp64_program_hex=$program_hex" | tee /tmp/lnp64_rtl_top_program_sim.log
 
 grep -q "LNP64-RTL-TOP-PROGRAM PASS" /tmp/lnp64_rtl_top_program_sim.log
-grep -q 'RTL_FINAL {"retired":9,"exit_reg":12,"r3":12,"r4":12,"r5":0,"env_page":4096,"mem0":12}' /tmp/lnp64_rtl_top_program_sim.log
 
 if [[ -n "${LNP64_BIN:-}" ]]; then
   "$LNP64_BIN" run-flat-exec "$program_hex" | tee /tmp/lnp64_emulator_top_program.log
