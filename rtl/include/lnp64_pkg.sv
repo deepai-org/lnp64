@@ -162,6 +162,11 @@ package lnp64_pkg;
         LNP64_OP_ALLOC_EX     = 16'h0073,
         LNP64_OP_ISYNC        = 16'h0074,
         LNP64_OP_CAP_REVOKE   = 16'h0075,
+        LNP64_OP_AMO_SWAP     = 16'h0076,
+        LNP64_OP_AMO_ADD      = 16'h0077,
+        LNP64_OP_AMO_AND      = 16'h0078,
+        LNP64_OP_AMO_OR       = 16'h0079,
+        LNP64_OP_AMO_XOR      = 16'h007a,
         LNP64_OP_UNSUPPORTED  = 16'h00ff
     } lnp64_opcode_e;
 

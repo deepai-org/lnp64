@@ -291,6 +291,7 @@ bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_cset.s
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_mulh.s
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_auipc_fence.s
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_half_word_load_store.s
+bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_amo.s
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_return_12.c
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_branch_if.c
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_loop_sum.c

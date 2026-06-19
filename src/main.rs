@@ -488,9 +488,14 @@ fn encode_flat_exec_instr(
         Instr::AllocSize(rd, ptr) => Ok(vec![enc_rrr(0x48, *rd, *ptr, Reg(0))]),
         Instr::Free(ptr) => Ok(vec![enc_reg(0x49, *ptr)]),
         Instr::AllocEx(rd, bytes, align) => Ok(vec![enc_rrr(0x4a, *rd, *bytes, *align)]),
+        Instr::AmoSwap(dst, addr, value) => Ok(vec![enc_rrr(0xc5, *dst, *addr, *value)]),
+        Instr::AmoAdd(dst, addr, value) => Ok(vec![enc_rrr(0xc6, *dst, *addr, *value)]),
+        Instr::AmoAnd(dst, addr, value) => Ok(vec![enc_rrr(0xc7, *dst, *addr, *value)]),
+        Instr::AmoOr(dst, addr, value) => Ok(vec![enc_rrr(0xc8, *dst, *addr, *value)]),
         Instr::LockCmpxchg(dst, addr, expected, new_value) => {
             Ok(vec![enc_rrrr(0xc9, *dst, *addr, *expected, *new_value)])
         }
+        Instr::AmoXor(dst, addr, value) => Ok(vec![enc_rrr(0xca, *dst, *addr, *value)]),
         Instr::ObjectCtl(result, argblock) => Ok(vec![enc_rrr(0x4b, *result, *argblock, Reg(0))]),
         Instr::CapRevoke(result, argblock) => Ok(vec![enc_rrr(0x53, *result, *argblock, Reg(0))]),
         Instr::ErrnoGet(rd) => Ok(vec![enc_reg(0x38, *rd)]),
@@ -508,7 +513,7 @@ fn encode_flat_exec_instr(
         Instr::Isync(result, addr, len) => Ok(vec![enc_rrr(0xce, *result, *addr, *len)]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, OBJECT_CTL, CAP_REVOKE, ERRNO_GET/SET, DMA_CTL, ENV_GET, WRITE_FD, FENCE/ISYNC, LOCK.CMPXCHG, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, OBJECT_CTL, CAP_REVOKE, ERRNO_GET/SET, DMA_CTL, ENV_GET, WRITE_FD, FENCE/ISYNC, AMO, LOCK.CMPXCHG, EXIT"
         )),
     }
 }
@@ -2018,6 +2023,33 @@ mod tests {
                 "0128002a\n",
                 "c9304850\n",
                 "3a300000\n",
+            )
+        );
+    }
+
+    #[test]
+    fn asm_flat_exec_encodes_amo_subset() {
+        let source = r#"
+            .text
+              AMO.SWAP r4, r1, r2
+              AMO.ADD r5, r1, r3
+              AMO.AND r6, r1, r4
+              AMO.OR r7, r1, r5
+              AMO.XOR r8, r1, r6
+              EXIT r8
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+
+        assert_eq!(
+            hex,
+            concat!(
+                "c5204400\n",
+                "c6284600\n",
+                "c7304800\n",
+                "c8384a00\n",
+                "ca404c00\n",
+                "3a400000\n",
             )
         );
     }

@@ -1333,6 +1333,51 @@ module lnp64_core_tile #(
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
+                            LNP64_OP_AMO_SWAP: begin
+                                gpr[dec.rd] <= sram[sram_word_index(gpr[dec.rs1])];
+                                sram[sram_word_index(gpr[dec.rs1])] <= gpr[dec.rs2];
+                                dcache_writeback <= 1'b1;
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_AMO_ADD: begin
+                                gpr[dec.rd] <= sram[sram_word_index(gpr[dec.rs1])];
+                                sram[sram_word_index(gpr[dec.rs1])] <= sram[sram_word_index(gpr[dec.rs1])] + gpr[dec.rs2];
+                                dcache_writeback <= 1'b1;
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_AMO_AND: begin
+                                gpr[dec.rd] <= sram[sram_word_index(gpr[dec.rs1])];
+                                sram[sram_word_index(gpr[dec.rs1])] <= sram[sram_word_index(gpr[dec.rs1])] & gpr[dec.rs2];
+                                dcache_writeback <= 1'b1;
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_AMO_OR: begin
+                                gpr[dec.rd] <= sram[sram_word_index(gpr[dec.rs1])];
+                                sram[sram_word_index(gpr[dec.rs1])] <= sram[sram_word_index(gpr[dec.rs1])] | gpr[dec.rs2];
+                                dcache_writeback <= 1'b1;
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_AMO_XOR: begin
+                                gpr[dec.rd] <= sram[sram_word_index(gpr[dec.rs1])];
+                                sram[sram_word_index(gpr[dec.rs1])] <= sram[sram_word_index(gpr[dec.rs1])] ^ gpr[dec.rs2];
+                                dcache_writeback <= 1'b1;
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
                             LNP64_OP_LOCK_CMPXCHG: begin
                                 gpr[dec.rd] <= sram[sram_word_index(gpr[dec.rs1])];
                                 if (sram[sram_word_index(gpr[dec.rs1])] == gpr[dec.rs2]) begin
