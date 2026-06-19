@@ -862,6 +862,29 @@ module lnp64_core_tile #(
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
+                            LNP64_OP_LD_W: begin
+                                if (mem_addr[2]) begin
+                                    gpr[dec.rd] <= {32'd0, sram[sram_word_index(mem_addr)][63:32]};
+                                end else begin
+                                    gpr[dec.rd] <= {32'd0, sram[sram_word_index(mem_addr)][31:0]};
+                                end
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_LD_H: begin
+                                unique case (mem_addr[2:1])
+                                    2'd0: gpr[dec.rd] <= {48'd0, sram[sram_word_index(mem_addr)][15:0]};
+                                    2'd1: gpr[dec.rd] <= {48'd0, sram[sram_word_index(mem_addr)][31:16]};
+                                    2'd2: gpr[dec.rd] <= {48'd0, sram[sram_word_index(mem_addr)][47:32]};
+                                    default: gpr[dec.rd] <= {48'd0, sram[sram_word_index(mem_addr)][63:48]};
+                                endcase
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
                             LNP64_OP_LD_B: begin
                                 unique case (mem_addr[2:0])
                                     3'd0: gpr[dec.rd] <= {56'd0, sram[sram_word_index(mem_addr)][7:0]};
@@ -880,6 +903,31 @@ module lnp64_core_tile #(
                             end
                             LNP64_OP_ST: begin
                                 sram[sram_word_index(mem_addr)] <= gpr[dec.rd];
+                                dcache_writeback <= 1'b1;
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_ST_W: begin
+                                if (mem_addr[2]) begin
+                                    sram[sram_word_index(mem_addr)][63:32] <= gpr[dec.rd][31:0];
+                                end else begin
+                                    sram[sram_word_index(mem_addr)][31:0] <= gpr[dec.rd][31:0];
+                                end
+                                dcache_writeback <= 1'b1;
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_ST_H: begin
+                                unique case (mem_addr[2:1])
+                                    2'd0: sram[sram_word_index(mem_addr)][15:0] <= gpr[dec.rd][15:0];
+                                    2'd1: sram[sram_word_index(mem_addr)][31:16] <= gpr[dec.rd][15:0];
+                                    2'd2: sram[sram_word_index(mem_addr)][47:32] <= gpr[dec.rd][15:0];
+                                    default: sram[sram_word_index(mem_addr)][63:48] <= gpr[dec.rd][15:0];
+                                endcase
                                 dcache_writeback <= 1'b1;
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;

@@ -386,6 +386,18 @@ fn encode_flat_exec_instr(
             *base,
             imm14(*offset, "LD offset")?,
         )]),
+        Instr::Ld(rd, MemRef::BaseOffset(base, offset), Width::Word) => Ok(vec![enc_mem(
+            0x31,
+            *rd,
+            *base,
+            imm14(*offset, "LD.W offset")?,
+        )]),
+        Instr::Ld(rd, MemRef::BaseOffset(base, offset), Width::Half) => Ok(vec![enc_mem(
+            0x36,
+            *rd,
+            *base,
+            imm14(*offset, "LD.H offset")?,
+        )]),
         Instr::Ld(rd, MemRef::BaseOffset(base, offset), Width::Byte) => Ok(vec![enc_mem(
             0x32,
             *rd,
@@ -397,6 +409,18 @@ fn encode_flat_exec_instr(
             *src,
             *base,
             imm14(*offset, "ST offset")?,
+        )]),
+        Instr::St(MemRef::BaseOffset(base, offset), src, Width::Word) => Ok(vec![enc_mem(
+            0x34,
+            *src,
+            *base,
+            imm14(*offset, "ST.W offset")?,
+        )]),
+        Instr::St(MemRef::BaseOffset(base, offset), src, Width::Half) => Ok(vec![enc_mem(
+            0x37,
+            *src,
+            *base,
+            imm14(*offset, "ST.H offset")?,
         )]),
         Instr::St(MemRef::BaseOffset(base, offset), src, Width::Byte) => Ok(vec![enc_mem(
             0x35,
@@ -417,7 +441,7 @@ fn encode_flat_exec_instr(
         Instr::Fence => Ok(vec![enc_reg(0xcd, Reg(0))]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XOR/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSEL, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.B, ALLOC, ERRNO_GET/SET, ENV_GET, FENCE, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XOR/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSEL, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC, ERRNO_GET/SET, ENV_GET, FENCE, EXIT"
         )),
     }
 }
@@ -1459,6 +1483,74 @@ mod tests {
                 "bb404400\n",
                 "10499000\n",
                 "3a480000\n",
+            )
+        );
+    }
+
+    #[test]
+    fn asm_flat_exec_encodes_half_word_load_store_subset() {
+        let source = r#"
+            .text
+              LI r1, 0
+              LI r2, 0x12345678
+              ST.W [r1, 0], r2
+              LD.W r3, [r1, 0]
+              LI r4, 0xabcd
+              ST.H [r1, 4], r4
+              LD.H r5, [r1, 4]
+              LI r6, 0x55aa
+              ST.H [r1, 6], r6
+              LD.W r7, [r1, 4]
+              LI r8, 0x12345678
+              LI r9, 0xabcd
+              LI r10, 0x55aaabcd
+              LI r11, 1
+              LI r12, 0
+              CMP r3, r8
+              CSEL.EQ r13, r11, r12
+              CMP r5, r9
+              CSEL.EQ r14, r11, r12
+              ADD r13, r13, r14
+              CMP r7, r10
+              CSEL.EQ r15, r11, r12
+              ADD r13, r13, r15
+              EXIT r13
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+
+        assert_eq!(
+            hex,
+            concat!(
+                "01080000\n",
+                "04100000\n",
+                "12345678\n",
+                "34104000\n",
+                "31184000\n",
+                "04200000\n",
+                "0000abcd\n",
+                "37204004\n",
+                "36284004\n",
+                "013055aa\n",
+                "37304006\n",
+                "31384004\n",
+                "04400000\n",
+                "12345678\n",
+                "04480000\n",
+                "0000abcd\n",
+                "04500000\n",
+                "55aaabcd\n",
+                "01580001\n",
+                "01600000\n",
+                "1b1a0000\n",
+                "bb6ad800\n",
+                "1b2a4000\n",
+                "bb72d800\n",
+                "106b5c00\n",
+                "1b3a8000\n",
+                "bb7ad800\n",
+                "106b5e00\n",
+                "3a680000\n",
             )
         );
     }
