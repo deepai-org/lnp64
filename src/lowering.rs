@@ -1435,6 +1435,7 @@ mod tests {
         assert!(real_llc.contains("-filetype=obj"));
         assert!(real_llc.contains("real LLVM LNP64 llc smoke passed"));
         assert!(real_llc.contains("--target=lnp64-unknown-none"));
+        assert!(real_llc.contains("-fno-jump-tables"));
         assert!(real_llc.contains("int main(void)"));
         assert!(real_llc.contains("scalar-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang scalar compile smoke passed"));
@@ -1790,7 +1791,12 @@ mod tests {
             manifest_field(driver_manifest, "triple"),
             manifest_field(target_manifest, "triple")
         );
-        for flag in ["-ffreestanding", "-fno-pic", "-Itoolchain"] {
+        for flag in [
+            "-ffreestanding",
+            "-fno-pic",
+            "-fno-jump-tables",
+            "-Itoolchain",
+        ] {
             assert!(
                 manifest_csv_contains(driver_manifest, "cflags", flag),
                 "driver cflags missing {flag}"
@@ -1838,7 +1844,7 @@ mod tests {
         );
 
         assert!(gate_manifest.contains("clang --target=lnp64-unknown-none"));
-        assert!(gate_manifest.contains("-ffreestanding -fno-pic -I toolchain"));
+        assert!(gate_manifest.contains("-ffreestanding -fno-pic -fno-jump-tables -I toolchain"));
         assert!(gate_manifest.contains("llvm-mc -triple=lnp64-unknown-none"));
         assert!(gate_manifest.contains("toolchain/crt0_lnp64.s"));
         assert!(gate_manifest.contains("ld.lld -static -m elf64lnp64"));

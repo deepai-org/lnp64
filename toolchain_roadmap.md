@@ -67,6 +67,10 @@ shim objects.
 native `__lnp_*` calls.
 `toolchain/lnp64_clang_driver.manifest` records the planned Clang/lld driver
 defaults for the first backend bring-up.
+Until LNP64 jump-table lowering is implemented, the checked real LLVM Clang
+gates compile freestanding C with `-fno-jump-tables`; this avoids accidental
+SelectionDAG jump-table emission while keeping ordinary branch lowering under
+test.
 `toolchain/lnp64_llvm_filemap.manifest` records the first llvm-project source
 surface for the backend, MC layer, Clang target info, driver, lld relocation
 handler, and smoke tests.
