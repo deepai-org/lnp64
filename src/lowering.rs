@@ -1324,6 +1324,7 @@ mod tests {
         let libc_vma_min = include_str!("../toolchain/liblnp64_vma_min.c");
         let libc_futex_min = include_str!("../toolchain/liblnp64_futex_min.c");
         let libc_poll_min = include_str!("../toolchain/liblnp64_poll_min.c");
+        let libc_signal_min = include_str!("../toolchain/liblnp64_signal_min.c");
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
         let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
         let roadmap = include_str!("../toolchain_roadmap.md");
@@ -1536,6 +1537,13 @@ mod tests {
         assert!(real_llc.contains("fence.acq_rel"));
         assert!(real_llc.contains("isync r24, r25, r26"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc atomic opcode smoke passed"));
+        assert!(real_llc.contains("signal-alias-mc-smoke.o"));
+        assert!(real_llc.contains("sigaction r1, r2"));
+        assert!(real_llc.contains("sigmask_set r3"));
+        assert!(real_llc.contains("kill r4, r5"));
+        assert!(real_llc.contains("alarm r6, r7"));
+        assert!(real_llc.contains("sigret"));
+        assert!(real_llc.contains("real LLVM LNP64 llvm-mc signal alias opcode smoke passed"));
         assert!(real_llc.contains("scalar-extend-clang-smoke.o"));
         assert!(real_llc.contains("grep -q 'zext.w r'"));
         assert!(real_llc.contains("grep -q 'sext.b r'"));
@@ -1701,6 +1709,30 @@ mod tests {
         assert!(real_llc.contains(
             "real LLVM LNP64 clang minilibc poll/select/epoll/kqueue implementation object smoke passed"
         ));
+        assert!(real_llc.contains("toolchain/liblnp64_signal_min.c"));
+        assert!(libc_signal_min.contains("lnp64_sighandler_t signal"));
+        assert!(libc_signal_min.contains("int sigaction(int signum"));
+        assert!(libc_signal_min.contains("int sigprocmask(int how"));
+        assert!(libc_signal_min.contains("int kill(int pid"));
+        assert!(libc_signal_min.contains("int raise(int signum"));
+        assert!(libc_signal_min.contains("unsigned int alarm(unsigned int seconds)"));
+        assert!(real_llc.contains("signal-libc-clang-smoke.o"));
+        assert!(real_llc.contains("signal(10, SIG_IGN)"));
+        assert!(real_llc.contains("sigaction(12, &act, 0)"));
+        assert!(real_llc.contains("sigprocmask(2, &mask, 0)"));
+        assert!(real_llc.contains("kill(1, 10)"));
+        assert!(real_llc.contains("raise(12)"));
+        assert!(real_llc.contains("real LLVM LNP64 clang signal libc object smoke passed"));
+        assert!(real_llc.contains("liblnp64-signal-min.o"));
+        assert!(real_llc.contains("grep -q 'sigaction r'"));
+        assert!(real_llc.contains("grep -q 'sigmask_set r'"));
+        assert!(real_llc.contains("grep -q 'kill r'"));
+        assert!(real_llc.contains("grep -q 'alarm r'"));
+        assert!(
+            real_llc.contains(
+                "real LLVM LNP64 clang minilibc signal implementation object smoke passed"
+            )
+        );
         assert!(real_llc.contains("errno-clang-smoke.o"));
         assert!(real_llc.contains("lnp64_errno_store(22)"));
         assert!(real_llc.contains("real LLVM LNP64 clang errno object smoke passed"));
@@ -1812,6 +1844,12 @@ mod tests {
             real_llc
                 .contains("real LLVM LNP64 lld poll/select/epoll/kqueue libc link smoke passed")
         );
+        assert!(real_llc.contains("lnp64-signal-libc-linked.elf"));
+        assert!(real_llc.contains(
+            r#""$signal_libc_obj" \
+  "$libc_signal_impl_obj""#
+        ));
+        assert!(real_llc.contains("real LLVM LNP64 lld signal libc link smoke passed"));
         assert!(real_llc.contains("lnp64-exit-linked.elf"));
         assert!(real_llc.contains(r#""$exit_obj" "$libc_process_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld exit link smoke passed"));
@@ -1877,6 +1915,8 @@ mod tests {
             real_llc_docker
                 .contains("real LLVM LNP64 run-elf poll/select/epoll/kqueue libc execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-signal-libc-linked.elf"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf signal libc execution passed"));
         assert!(real_llc.contains("lnp64-intrinsic-amo-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld intrinsic AMO link smoke passed"));
         assert!(real_llc.contains("lnp64-c11-atomic-linked.elf"));
@@ -2162,6 +2202,8 @@ mod tests {
             real_llc_docker
                 .contains("real LLVM LNP64 run-elf poll/select/epoll/kqueue libc execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-signal-libc-linked.elf"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf signal libc execution passed"));
         assert!(real_llc_docker.contains("lnp64-errno-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf errno execution passed"));
         assert!(real_llc_docker.contains("lnp64-intrinsic-push-linked.elf"));
@@ -2265,6 +2307,7 @@ mod tests {
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
             "real_poll_select_epoll_kqueue_libc_execution",
+            "real_signal_libc_execution",
             "real_errno_execution",
             "real_startup_execution",
             "real_getauxval_execution",
@@ -2300,6 +2343,7 @@ mod tests {
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
             "real_poll_select_epoll_kqueue_libc_execution",
+            "real_signal_libc_execution",
             "real_intrinsic_push_execution",
             "real_intrinsic_control_execution",
             "real_intrinsic_mmap_execution",

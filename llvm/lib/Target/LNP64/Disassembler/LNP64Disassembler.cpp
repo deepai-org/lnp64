@@ -612,6 +612,28 @@ public:
       addReg(Instr, C);
       addReg(Instr, (Word >> 4) & 0x1f);
       return MCDisassembler::Success;
+    case 0x62:
+      Instr.setOpcode(LNP64::SIGACTION);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      return MCDisassembler::Success;
+    case 0x63:
+      Instr.setOpcode(LNP64::SIGMASK_SET);
+      addReg(Instr, A);
+      return MCDisassembler::Success;
+    case 0x64:
+      Instr.setOpcode(LNP64::LNP64_KILL);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      return MCDisassembler::Success;
+    case 0x65:
+      Instr.setOpcode(LNP64::SIGRET);
+      return MCDisassembler::Success;
+    case 0x68:
+      Instr.setOpcode(LNP64::ALARM);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      return MCDisassembler::Success;
     case 0x4d:
       Instr.setOpcode(LNP64::AWAIT);
       addReg(Instr, A);

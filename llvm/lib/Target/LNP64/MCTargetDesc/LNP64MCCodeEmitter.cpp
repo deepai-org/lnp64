@@ -647,6 +647,27 @@ public:
                                  getGPRNo(MI.getOperand(3))),
                OS);
       return;
+    case LNP64::SIGACTION:
+      emitLE32(encodeFixed32RR(0x62, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
+    case LNP64::SIGMASK_SET:
+      emitLE32(encodeFixed32Reg(0x63, getGPRNo(MI.getOperand(0))), OS);
+      return;
+    case LNP64::LNP64_KILL:
+      emitLE32(encodeFixed32RR(0x64, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
+    case LNP64::SIGRET:
+      emitLE32(encodeFixed32NoOperand(0x65), OS);
+      return;
+    case LNP64::ALARM:
+      emitLE32(encodeFixed32RR(0x68, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
     case LNP64::ENV_GET:
       emitLE32(encodeFixed32RRRR(0x56, getGPRNo(MI.getOperand(0)),
                                  getGPRNo(MI.getOperand(1)),

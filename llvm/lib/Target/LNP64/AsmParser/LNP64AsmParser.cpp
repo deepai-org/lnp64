@@ -372,6 +372,11 @@ private:
             .Case("mmap", LNP64::MMAP)
             .Case("munmap", LNP64::MUNMAP)
             .Case("mprotect", LNP64::MPROTECT)
+            .Case("sigaction", LNP64::SIGACTION)
+            .Case("sigmask_set", LNP64::SIGMASK_SET)
+            .Case("kill", LNP64::LNP64_KILL)
+            .Case("sigret", LNP64::SIGRET)
+            .Case("alarm", LNP64::ALARM)
             .Case("env_get", LNP64::ENV_GET)
             .Case("object_ctl", LNP64::OBJECT_CTL)
             .Case("domain_ctl", LNP64::DOMAIN_CTL)
@@ -398,7 +403,8 @@ private:
       return false;
 
     Inst.setOpcode(Opcode);
-    if (Opcode == LNP64::NOP || Opcode == LNP64::RET || Opcode == LNP64::FENCE)
+    if (Opcode == LNP64::NOP || Opcode == LNP64::RET ||
+        Opcode == LNP64::FENCE || Opcode == LNP64::SIGRET)
       return Operands.size() == 1;
 
     if (Opcode == LNP64::LI)
@@ -439,7 +445,8 @@ private:
       return addRegRegReg(Inst, Operands);
     if (Opcode == LNP64::CMP || Opcode == LNP64::CMPU ||
         Opcode == LNP64::FUTEX_WAIT || Opcode == LNP64::FUTEX_WAKE ||
-        Opcode == LNP64::MUNMAP)
+        Opcode == LNP64::MUNMAP || Opcode == LNP64::SIGACTION ||
+        Opcode == LNP64::LNP64_KILL || Opcode == LNP64::ALARM)
       return addRegReg(Inst, Operands);
     if (Opcode == LNP64::JMP || Opcode == LNP64::BEQ ||
         Opcode == LNP64::BNE || Opcode == LNP64::BLT ||
@@ -455,7 +462,8 @@ private:
         Opcode == LNP64::CSET_UGE)
       return addReg(Inst, Operands);
     if (Opcode == LNP64::ERRNO_GET || Opcode == LNP64::ERRNO_SET ||
-        Opcode == LNP64::EXIT || Opcode == LNP64::FREE)
+        Opcode == LNP64::EXIT || Opcode == LNP64::FREE ||
+        Opcode == LNP64::SIGMASK_SET)
       return addReg(Inst, Operands);
     if (Opcode == LNP64::ALLOC || Opcode == LNP64::ALLOC_SIZE)
       return addRegReg(Inst, Operands);

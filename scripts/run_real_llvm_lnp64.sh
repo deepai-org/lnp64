@@ -1919,6 +1919,61 @@ grep -q 'call ' "$poll_libc_dump"
 printf 'real LLVM LNP64 clang poll/select/epoll/kqueue libc object smoke passed: %s\n' \
   "$poll_libc_obj"
 
+signal_libc_c="$build_dir/signal-libc-smoke.c"
+cat >"$signal_libc_c" <<'C'
+typedef unsigned long sigset_t;
+typedef void (*sighandler_t)(int);
+
+struct sigaction {
+  sighandler_t sa_handler;
+  sigset_t sa_mask;
+  int sa_flags;
+};
+
+#define SIG_IGN ((sighandler_t)1)
+
+sighandler_t signal(int signum, sighandler_t handler);
+int sigaction(int signum, const struct sigaction *act,
+              struct sigaction *oldact);
+int sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
+int kill(int pid, int signum);
+int raise(int signum);
+unsigned int alarm(unsigned int seconds);
+
+int main(void) {
+  struct sigaction act;
+  sigset_t mask = 0;
+  act.sa_handler = SIG_IGN;
+  act.sa_mask = 0;
+  act.sa_flags = 0;
+  if (signal(10, SIG_IGN) != 0)
+    return 1;
+  if (sigaction(12, &act, 0) != 0)
+    return 2;
+  if (sigprocmask(2, &mask, 0) != 0)
+    return 3;
+  if (kill(1, 10) != 0)
+    return 4;
+  if (raise(12) != 0)
+    return 5;
+  if (alarm(0) != 0)
+    return 6;
+  return 0;
+}
+C
+
+signal_libc_obj="$build_dir/signal-libc-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$signal_libc_c" -o "$signal_libc_obj"
+test -s "$signal_libc_obj"
+signal_libc_dump="$build_dir/signal-libc-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$signal_libc_obj" \
+  >"$signal_libc_dump"
+grep -q 'call ' "$signal_libc_dump"
+printf 'real LLVM LNP64 clang signal libc object smoke passed: %s\n' \
+  "$signal_libc_obj"
+
 libc_fd_impl_c="toolchain/liblnp64_fd_min.c"
 libc_fd_impl_obj="$build_dir/liblnp64-fd-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
@@ -1947,6 +2002,23 @@ grep -q 'await r' "$libc_poll_impl_dump"
 grep -q 'ret' "$libc_poll_impl_dump"
 printf 'real LLVM LNP64 clang minilibc poll/select/epoll/kqueue implementation object smoke passed: %s\n' \
   "$libc_poll_impl_obj"
+
+libc_signal_impl_c="toolchain/liblnp64_signal_min.c"
+libc_signal_impl_obj="$build_dir/liblnp64-signal-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$libc_signal_impl_c" -o "$libc_signal_impl_obj"
+test -s "$libc_signal_impl_obj"
+libc_signal_impl_dump="$build_dir/liblnp64-signal-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_signal_impl_obj" \
+  >"$libc_signal_impl_dump"
+grep -q 'sigaction r' "$libc_signal_impl_dump"
+grep -q 'sigmask_set r' "$libc_signal_impl_dump"
+grep -q 'kill r' "$libc_signal_impl_dump"
+grep -q 'alarm r' "$libc_signal_impl_dump"
+grep -q 'ret' "$libc_signal_impl_dump"
+printf 'real LLVM LNP64 clang minilibc signal implementation object smoke passed: %s\n' \
+  "$libc_signal_impl_obj"
 
 stack_args_c="$build_dir/stack-args-smoke.c"
 cat >"$stack_args_c" <<'C'
@@ -2137,6 +2209,32 @@ grep -q 'fence' "$atomic_mc_dump"
 grep -q 'isync r24, r25, r26' "$atomic_mc_dump"
 printf 'real LLVM LNP64 llvm-mc atomic opcode smoke passed: %s\n' \
   "$atomic_mc_obj"
+
+signal_alias_asm="$build_dir/signal-alias-mc-smoke.s"
+cat >"$signal_alias_asm" <<'ASM'
+  .text
+  .globl _start
+_start:
+  sigaction r1, r2
+  sigmask_set r3
+  kill r4, r5
+  alarm r6, r7
+  sigret
+ASM
+signal_alias_mc_obj="$build_dir/signal-alias-mc-smoke.o"
+"$llvm_mc" -triple=lnp64-unknown-none -filetype=obj "$signal_alias_asm" \
+  -o "$signal_alias_mc_obj"
+test -s "$signal_alias_mc_obj"
+signal_alias_mc_dump="$build_dir/signal-alias-mc-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$signal_alias_mc_obj" \
+  >"$signal_alias_mc_dump"
+grep -q 'sigaction r1, r2' "$signal_alias_mc_dump"
+grep -q 'sigmask_set r3' "$signal_alias_mc_dump"
+grep -q 'kill r4, r5' "$signal_alias_mc_dump"
+grep -q 'alarm r6, r7' "$signal_alias_mc_dump"
+grep -q 'sigret' "$signal_alias_mc_dump"
+printf 'real LLVM LNP64 llvm-mc signal alias opcode smoke passed: %s\n' \
+  "$signal_alias_mc_obj"
 
 minilibc_dump="$build_dir/liblnp64-min-smoke.dump"
 "$llvm_objdump" -d --triple=lnp64-unknown-none "$minilibc_obj" \
@@ -2450,6 +2548,14 @@ poll_libc_elf="$build_dir/lnp64-poll-libc-linked.elf"
 test -s "$poll_libc_elf"
 printf 'real LLVM LNP64 lld poll/select/epoll/kqueue libc link smoke passed: %s\n' \
   "$poll_libc_elf"
+
+signal_libc_elf="$build_dir/lnp64-signal-libc-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$signal_libc_elf" "$crt0_obj" "$signal_libc_obj" \
+  "$libc_signal_impl_obj"
+test -s "$signal_libc_elf"
+printf 'real LLVM LNP64 lld signal libc link smoke passed: %s\n' \
+  "$signal_libc_elf"
 
 indirect_call_elf="$build_dir/lnp64-indirect-call-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

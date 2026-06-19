@@ -192,6 +192,16 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
     return "munmap";
   case LNP64::MPROTECT:
     return "mprotect";
+  case LNP64::SIGACTION:
+    return "sigaction";
+  case LNP64::SIGMASK_SET:
+    return "sigmask_set";
+  case LNP64::LNP64_KILL:
+    return "kill";
+  case LNP64::SIGRET:
+    return "sigret";
+  case LNP64::ALARM:
+    return "alarm";
   case LNP64::ENV_GET:
     return "env_get";
   case LNP64::OBJECT_CTL:
@@ -300,6 +310,9 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::RET:
     OS << "ret";
     break;
+  case LNP64::SIGRET:
+    OS << "sigret";
+    break;
   case LNP64::LI:
     OS << "li ";
     printOperand(MI->getOperand(0), OS);
@@ -373,6 +386,8 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::CMPU:
   case LNP64::FUTEX_WAIT:
   case LNP64::FUTEX_WAKE:
+  case LNP64::SIGACTION:
+  case LNP64::LNP64_KILL:
     OS << getLNP64Mnemonic(MI->getOpcode()) << ' ';
     printOperand(MI->getOperand(0), OS);
     OS << ", ";
@@ -402,6 +417,7 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::ERRNO_SET:
   case LNP64::EXIT:
   case LNP64::FREE:
+  case LNP64::SIGMASK_SET:
   case LNP64::CSET_EQ:
   case LNP64::CSET_NE:
   case LNP64::CSET_LT:
@@ -418,6 +434,7 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::ALLOC:
   case LNP64::ALLOC_SIZE:
   case LNP64::MUNMAP:
+  case LNP64::ALARM:
   case LNP64::OBJECT_CTL:
   case LNP64::DOMAIN_CTL:
   case LNP64::CAP_SEND:

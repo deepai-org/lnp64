@@ -166,6 +166,38 @@ static inline lnp64_word_t __lnp_mprotect_bootstrap(void *addr,
   return status;
 }
 
+static inline void __lnp_sigaction(lnp64_word_t signum,
+                                   lnp64_word_t handler) {
+  __asm__ volatile("sigaction %0, %1"
+                   :
+                   : "r"(signum), "r"(handler)
+                   : "memory");
+}
+
+static inline void __lnp_sigmask_set(lnp64_word_t mask) {
+  __asm__ volatile("sigmask_set %0" : : "r"(mask) : "memory");
+}
+
+static inline lnp64_word_t __lnp_alarm(lnp64_word_t seconds) {
+  lnp64_word_t previous;
+  __asm__ volatile("alarm %0, %1"
+                   : "=r"(previous)
+                   : "r"(seconds)
+                   : "memory");
+  return previous;
+}
+
+static inline void __lnp_kill(lnp64_word_t pid, lnp64_word_t signum) {
+  __asm__ volatile("kill %0, %1"
+                   :
+                   : "r"(pid), "r"(signum)
+                   : "memory");
+}
+
+static inline void __lnp_sigret(void) {
+  __asm__ volatile("sigret" : : : "memory");
+}
+
 static inline void __lnp_exit(lnp64_word_t status) {
   __asm__ volatile("exit %0" : : "r"(status) : "memory");
 }

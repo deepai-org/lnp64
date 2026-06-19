@@ -203,6 +203,13 @@ class LNP64RuntimeGet<string Mnemonic>
 class LNP64RuntimeSet<string Mnemonic>
     : LNP64Inst<(outs), (ins GPR:$rs), Mnemonic, "\t$rs">;
 
+class LNP64Signal2<string Mnemonic>
+    : LNP64Inst<(outs), (ins GPR:$rs1, GPR:$rs2), Mnemonic,
+                "\t$rs1, $rs2">;
+
+class LNP64Signal1<string Mnemonic>
+    : LNP64Inst<(outs), (ins GPR:$rs), Mnemonic, "\t$rs">;
+
 def NOP : LNP64NoOperand<"nop">;
 def LI : LNP64RI<"li"> {
   let Pattern = [(set GPR:$rd, simm16_imm:$imm)];
@@ -637,6 +644,11 @@ def MMAP : LNP64Inst<(outs GPR:$rd), (ins GPR:$addr, GPR:$len, GPR:$prot),
 def MUNMAP : LNP64Native2<"munmap">;
 def MPROTECT : LNP64Inst<(outs GPR:$rd), (ins GPR:$addr, GPR:$len, GPR:$prot),
                          "mprotect", "\t$rd, $addr, $len, $prot">;
+def SIGACTION : LNP64Signal2<"sigaction">;
+def SIGMASK_SET : LNP64Signal1<"sigmask_set">;
+def LNP64_KILL : LNP64Signal2<"kill">;
+def SIGRET : LNP64NoOperand<"sigret">;
+def ALARM : LNP64Native2<"alarm">;
 def ENV_GET : LNP64Inst<(outs GPR:$rd), (ins GPR:$key, GPR:$index, GPR:$len),
                         "env_get", "\t$rd, $key, $index, $len">;
 def OBJECT_CTL : LNP64Native2<"object_ctl"> {
