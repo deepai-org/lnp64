@@ -2411,6 +2411,7 @@ mod tests {
         assert!(sys_socket_header.contains("int socket(int domain, int type, int protocol);"));
         assert!(netinet_in_header.contains("#define IPPROTO_TCP"));
         assert!(real_llc.contains("socket-libc-clang-smoke.o"));
+        assert!(real_llc.contains("#include <sys/socket.h>"));
         assert!(real_llc.contains("socket(AF_INET, SOCK_STREAM, 0)"));
         assert!(real_llc.contains("setsockopt(server, SOL_SOCKET, SO_REUSEADDR"));
         assert!(real_llc.contains("getsockopt(server, SOL_SOCKET, SO_ERROR"));
