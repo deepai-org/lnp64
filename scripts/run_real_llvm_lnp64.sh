@@ -686,6 +686,31 @@ grep -q 'amo.swap r' "$intrinsic_amo_dump"
 printf 'real LLVM LNP64 clang intrinsic AMO object smoke passed: %s\n' \
   "$intrinsic_amo_obj"
 
+intrinsic_futex_c="$build_dir/intrinsic-futex.c"
+cat >"$intrinsic_futex_c" <<'C'
+#include "lnp64_intrinsics.h"
+
+static volatile lnp64_word_t futex_cell = 1;
+
+int main(void) {
+  __lnp_futex_wait(&futex_cell, 0);
+  return __lnp_futex_wake(&futex_cell, 1);
+}
+C
+
+intrinsic_futex_obj="$build_dir/intrinsic-futex-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$intrinsic_futex_c" -o "$intrinsic_futex_obj"
+test -s "$intrinsic_futex_obj"
+intrinsic_futex_dump="$build_dir/intrinsic-futex-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$intrinsic_futex_obj" \
+  >"$intrinsic_futex_dump"
+grep -q 'futex_wait r' "$intrinsic_futex_dump"
+grep -q 'futex_wake r' "$intrinsic_futex_dump"
+printf 'real LLVM LNP64 clang intrinsic futex object smoke passed: %s\n' \
+  "$intrinsic_futex_obj"
+
 c11_atomic_c="$build_dir/c11-atomic-smoke.c"
 cat >"$c11_atomic_c" <<'C'
 static unsigned long cell = 7;

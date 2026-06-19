@@ -26,3 +26,5 @@ __lnp_amo_add|AMO.ADD|old_value|addr,value
 __lnp_amo_and|AMO.AND|old_value|addr,value
 __lnp_amo_or|AMO.OR|old_value|addr,value
 __lnp_amo_xor|AMO.XOR|old_value|addr,value
+__lnp_futex_wait|FUTEX_WAIT|status_or_errno|addr,expected
+__lnp_futex_wake|FUTEX_WAKE|woken_or_errno|addr,count

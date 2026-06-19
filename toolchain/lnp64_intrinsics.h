@@ -118,4 +118,22 @@ static inline lnp64_word_t __lnp_amo_xor(volatile lnp64_word_t *addr,
   return old;
 }
 
+static inline lnp64_word_t __lnp_futex_wait(volatile lnp64_word_t *addr,
+                                            lnp64_word_t expected) {
+  __asm__ volatile("futex_wait %0, %1"
+                   :
+                   : "r"((lnp64_word_t)addr), "r"(expected)
+                   : "memory");
+  return 0;
+}
+
+static inline lnp64_word_t __lnp_futex_wake(volatile lnp64_word_t *addr,
+                                            lnp64_word_t count) {
+  __asm__ volatile("futex_wake %0, %1"
+                   :
+                   : "r"((lnp64_word_t)addr), "r"(count)
+                   : "memory");
+  return 0;
+}
+
 #endif

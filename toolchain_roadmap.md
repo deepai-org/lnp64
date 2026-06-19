@@ -106,7 +106,9 @@ opcodes remain blocked until operand encodings are implemented.
 `toolchain/lnp64_intrinsic_lowering.manifest` now separates real LLVM call
 lowerings, inline-asm shims, and declared-but-pending native intrinsics so the
 backend cannot silently lower compatibility-critical calls such as `MMAP` while
-dropping source capability, flags, offset, or argument-block state. The
+dropping source capability, flags, offset, or argument-block state. The private
+intrinsic header now exposes object-smoked inline futex wait/wake shims over
+the real MC futex opcodes for libc/pthread bring-up. The
 disassembler decodes that same initial fixed32 subset for future `llvm-mc`
 round trips. The MC layer now has target fixup kinds and object-writer
 relocation mapping for branch/data relocations, and the lld scaffold can patch
