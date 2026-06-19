@@ -2504,6 +2504,13 @@ mod tests {
         assert!(libc_stdio_min.contains("int vsnprintf("));
         assert!(libc_stdio_min.contains("int snprintf("));
         assert!(libc_stdio_min.contains("FILE *fmemopen("));
+        assert!(libc_stdio_min.contains("int vsnprintf(char *str, size_t size"));
+        assert!(libc_stdio_min.contains("int snprintf(char *str, size_t size"));
+        assert!(libc_stdio_min.contains("FILE *fmemopen(void *buf, size_t size"));
+        assert!(libc_stdio_min.contains("size_t fread(void *ptr, size_t size, size_t count"));
+        assert!(
+            libc_stdio_min.contains("size_t fwrite(const void *ptr, size_t size, size_t count")
+        );
         assert!(libc_stdio_min.contains("char *fgets("));
         assert!(libc_stdio_min.contains("int fseek(FILE *stream"));
         assert!(libc_stdio_min.contains("long ftell(FILE *stream)"));
@@ -2511,12 +2518,20 @@ mod tests {
         assert!(libc_stdio_min.contains("FILE *tmpfile(void)"));
         assert!(libc_stdio_min.contains("int fileno(FILE *stream)"));
         assert!(stdio_header.contains("#include <stdarg.h>"));
+        assert!(stdio_header.contains("#include <stddef.h>"));
         assert!(
             stdio_header.contains("int vfprintf(FILE *stream, const char *format, va_list ap);")
         );
-        assert!(stdio_header.contains(
-            "int vsnprintf(char *str, unsigned long size, const char *format, va_list ap);"
-        ));
+        assert!(
+            stdio_header
+                .contains("int vsnprintf(char *str, size_t size, const char *format, va_list ap);")
+        );
+        assert!(
+            stdio_header.contains("int snprintf(char *str, size_t size, const char *format, ...);")
+        );
+        assert!(stdio_header.contains("size_t fread(void *ptr, size_t size, size_t count"));
+        assert!(stdio_header.contains("size_t fwrite(const void *ptr, size_t size, size_t count"));
+        assert!(stdio_header.contains("FILE *fmemopen(void *buf, size_t size"));
         assert!(!stdio_header.contains("__builtin_va_list"));
         assert!(real_llc.contains("liblnp64-stdio-min.o"));
         assert!(real_llc.contains("-I toolchain/include \\\n  -c \"$libc_stdio_impl_c\""));

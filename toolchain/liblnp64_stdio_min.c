@@ -104,7 +104,7 @@ static void lnp64_out_signed(struct lnp64_snprintf_out *out, long long value) {
   lnp64_out_unsigned(out, magnitude, 10);
 }
 
-int vsnprintf(char *str, unsigned long size, const char *format, va_list ap) {
+int vsnprintf(char *str, size_t size, const char *format, va_list ap) {
   struct lnp64_snprintf_out out = {str, size, 0};
   while (*format) {
     if (*format != '%') {
@@ -181,7 +181,7 @@ int vsnprintf(char *str, unsigned long size, const char *format, va_list ap) {
   return (int)out.len;
 }
 
-int snprintf(char *str, unsigned long size, const char *format, ...) {
+int snprintf(char *str, size_t size, const char *format, ...) {
   va_list ap;
   int ret;
   va_start(ap, format);
@@ -194,12 +194,12 @@ int sprintf(char *str, const char *format, ...) {
   va_list ap;
   int ret;
   va_start(ap, format);
-  ret = vsnprintf(str, (unsigned long)-1, format, ap);
+  ret = vsnprintf(str, (size_t)-1, format, ap);
   va_end(ap);
   return ret;
 }
 
-FILE *fmemopen(void *buf, unsigned long size, const char *mode) {
+FILE *fmemopen(void *buf, size_t size, const char *mode) {
   (void)mode;
   if (!buf)
     return 0;
@@ -329,11 +329,10 @@ char *fgets(char *str, int count, FILE *stream) {
   return str;
 }
 
-unsigned long fread(void *ptr, unsigned long size, unsigned long count,
-                    FILE *stream) {
+size_t fread(void *ptr, size_t size, size_t count, FILE *stream) {
   unsigned char *out = (unsigned char *)ptr;
-  unsigned long total = size * count;
-  unsigned long i;
+  size_t total = size * count;
+  size_t i;
   if (size == 0 || count == 0)
     return 0;
   for (i = 0; i < total; i = i + 1) {
@@ -377,11 +376,10 @@ int fputs(const char *s, FILE *stream) {
   return 0;
 }
 
-unsigned long fwrite(const void *ptr, unsigned long size, unsigned long count,
-                     FILE *stream) {
+size_t fwrite(const void *ptr, size_t size, size_t count, FILE *stream) {
   const unsigned char *bytes = (const unsigned char *)ptr;
-  unsigned long total = size * count;
-  unsigned long i;
+  size_t total = size * count;
+  size_t i;
   if (size == 0 || count == 0)
     return count;
   if (stream && stream->kind == LNP64_STREAM_FD) {
