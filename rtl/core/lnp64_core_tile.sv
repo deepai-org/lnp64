@@ -156,7 +156,6 @@ module lnp64_core_tile #(
     localparam int unsigned HEAP_SRAM_BASE_WORD = 96;
     localparam int unsigned STACK_SRAM_BASE_WORD = 128;
     logic [15:0] errno_reg;
-    logic object_engine_shadow_enabled;
     logic cmp_zero;
     logic cmp_negative;
     logic cmp_greater;
@@ -1265,6 +1264,14 @@ module lnp64_core_tile #(
                 cmd.arg_block_ptr = gpr[dec.rs1];
                 cmd.arg_block_len = object_dma_len;
                 cmd.cancel_class = heap_range_valid(object_dma_addr, object_dma_len) ? 16'd1 : 16'd0;
+                if (object_kind == OBJECT_KIND_QUEUE &&
+                    object_profile == OBJECT_PROFILE_CALL_GATE) begin
+                    cmd.rights_mask = object_gate_completion_fd;
+                    cmd.flags = object_gate_entry;
+                    cmd.arg_block_len = object_gate_mode;
+                    cmd.cancel_class = object_gate_flags[15:0];
+                    cmd.completion_target = object_gate_domain[15:0];
+                end
             end
             LNP64_OP_DOMAIN_CTL: begin
                 cmd.rights_mask = domain_caps_req;
@@ -1533,7 +1540,6 @@ module lnp64_core_tile #(
             unsupported_failed_closed <= 1'b0;
             raw_authority_visible <= 1'b0;
             errno_reg <= LNP64_ERR_OK;
-            object_engine_shadow_enabled <= 1'b1;
             cmp_zero <= 1'b0;
             cmp_negative <= 1'b0;
             cmp_greater <= 1'b0;
@@ -2811,274 +2817,9 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_OBJECT_CTL: begin
-                                if (object_engine_shadow_enabled &&
-                                    object_op == OBJECT_OP_CREATE &&
-                                    ((object_kind == OBJECT_KIND_QUEUE &&
-                                        object_profile == OBJECT_PROFILE_PIPE) ||
-                                     (object_kind == OBJECT_KIND_COUNTER &&
-                                        (object_profile == 64'd0 || object_profile == 64'd1) &&
-                                        object_single_fd_in_range) ||
-                                     (object_kind == OBJECT_KIND_TIMER &&
-                                        object_single_fd_in_range) ||
-                                     (object_kind == OBJECT_KIND_MEMORY_OBJECT &&
-                                        object_dma_addr != 64'd0 &&
-                                        object_memory_fd_in_range))) begin
-                                    pending_unsupported <= 1'b0;
-                                    command_pc <= pc;
-                                    state <= CORE_SEND_CMD;
-                                end else begin
-                                    object_engine_shadow_enabled <= 1'b0;
-                                if (object_op == OBJECT_OP_CREATE &&
-                                    object_kind == OBJECT_KIND_QUEUE &&
-                                    object_profile == OBJECT_PROFILE_CALL_GATE &&
-                                    object_single_fd_in_range &&
-                                    (object_gate_mode == CALL_MODE_SYNC ||
-                                        object_gate_mode == CALL_MODE_ASYNC ||
-                                        object_gate_mode == CALL_MODE_HANDOFF) &&
-                                    object_gate_flags == 64'd0 &&
-                                    (object_gate_mode != CALL_MODE_ASYNC ||
-                                        (object_gate_completion_fd < FDR_SLOT_COUNT &&
-                                            fdr_valid[object_gate_completion_fd] &&
-                                            !fdr_revoked[object_gate_completion_fd] &&
-                                            event_counter_valid &&
-                                            fdr_lineage[object_gate_completion_fd] == event_counter_lineage))) begin
-                                    call_gate_valid[object_single_fd] <= 1'b1;
-                                    call_gate_entry[object_single_fd] <= object_gate_entry;
-                                    call_gate_mode[object_single_fd] <= object_gate_mode;
-                                    call_gate_completion_fd[object_single_fd] <= object_gate_completion_fd;
-                                    fdr_valid[object_single_fd] <= 1'b1;
-                                    fdr_revoked[object_single_fd] <= 1'b0;
-                                    fdr_generation[object_single_fd] <= fdr_generation[object_single_fd] + 64'd1;
-                                    fdr_rights[object_single_fd] <= CAP_RIGHT_ALL;
-                                    fdr_lineage[object_single_fd] <= 64'd1281 + {56'd0, object_single_fd[7:0]};
-                                    fdr_kind[object_single_fd] <= FDR_KIND_CALL_GATE;
-                                    sram[object_fd_store_word_index] <= store_double_low_word(
-                                        sram[object_fd_store_word_index],
-                                        object_fd_store_byte_lane,
-                                        {56'd0, object_single_fd[7:0]}
-                                    );
-                                    if (object_fd_store_byte_lane != 3'd0) begin
-                                        sram[object_fd_store_next_word_index] <= store_double_high_word(
-                                            sram[object_fd_store_next_word_index],
-                                            object_fd_store_byte_lane,
-                                            {56'd0, object_single_fd[7:0]}
-                                        );
-                                    end
-                                    gpr[dec.rd] <= {56'd0, object_single_fd[7:0]};
-                                    errno_reg <= LNP64_ERR_OK;
-                                    pc <= pc + 32'd1;
-                                    retired_count <= retired_count + 32'd1;
-                                    retire_submit_valid <= 1'b1;
-                                    retire_submit_record <= retire_submit_next;
-                                end else if (object_op == OBJECT_OP_CREATE &&
-                                    object_kind == OBJECT_KIND_QUEUE &&
-                                    object_profile == OBJECT_PROFILE_CALL_GATE) begin
-                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                    errno_reg <= LNP64_ERR_EINVAL;
-                                    pc <= pc + 32'd1;
-                                    retired_count <= retired_count + 32'd1;
-                                    retire_submit_valid <= 1'b1;
-                                    retire_submit_record <= retire_submit_next;
-                                end else if (object_op == OBJECT_OP_CREATE &&
-                                    object_kind == OBJECT_KIND_QUEUE &&
-                                    object_profile == OBJECT_PROFILE_PIPE &&
-                                    ((object_fd_req == 64'd0 && object_fd1_req == 64'd0 &&
-                                        pipe_alloc_available) ||
-                                     (object_fd_req != 64'd0 && object_fd_req < FDR_SLOT_COUNT &&
-                                        object_fd1_req == object_fd_req + 64'd1 &&
-                                        object_fd1_req < FDR_SLOT_COUNT &&
-                                        !fdr_valid[object_fd_req[31:0]] &&
-                                        !fdr_valid[object_fd1_req[31:0]]))) begin
-                                    fdr_valid[pipe_alloc_reader_fd] <= 1'b1;
-                                    fdr_revoked[pipe_alloc_reader_fd] <= 1'b0;
-                                    fdr_generation[pipe_alloc_reader_fd] <= fdr_generation[pipe_alloc_reader_fd] + 64'd1;
-                                    fdr_rights[pipe_alloc_reader_fd] <= CAP_RIGHT_ALL;
-                                    fdr_lineage[pipe_alloc_reader_fd] <= 64'd257 + {32'd0, pipe_alloc_reader_fd[31:0]};
-                                    fdr_kind[pipe_alloc_reader_fd] <= FDR_KIND_PIPE_READER;
-                                    fdr_valid[pipe_alloc_writer_fd] <= 1'b1;
-                                    fdr_revoked[pipe_alloc_writer_fd] <= 1'b0;
-                                    fdr_generation[pipe_alloc_writer_fd] <= fdr_generation[pipe_alloc_writer_fd] + 64'd1;
-                                    fdr_rights[pipe_alloc_writer_fd] <= CAP_RIGHT_ALL;
-                                    fdr_lineage[pipe_alloc_writer_fd] <= 64'd257 + {32'd0, pipe_alloc_writer_fd[31:0]};
-                                    fdr_kind[pipe_alloc_writer_fd] <= FDR_KIND_PIPE_WRITER;
-                                    sram[object_fd_store_word_index] <= store_double_low_word(
-                                        sram[object_fd_store_word_index],
-                                        object_fd_store_byte_lane,
-                                        {32'd0, pipe_alloc_reader_fd[31:0]}
-                                    );
-                                    if (object_fd_store_byte_lane != 3'd0) begin
-                                        sram[object_fd_store_next_word_index] <= store_double_high_word(
-                                            sram[object_fd_store_next_word_index],
-                                            object_fd_store_byte_lane,
-                                            {32'd0, pipe_alloc_reader_fd[31:0]}
-                                        );
-                                    end
-                                    sram[object_fd1_store_word_index] <= store_double_low_word(
-                                        sram[object_fd1_store_word_index],
-                                        object_fd1_store_byte_lane,
-                                        {32'd0, pipe_alloc_writer_fd[31:0]}
-                                    );
-                                    gpr[dec.rd] <= 64'd0;
-                                    errno_reg <= LNP64_ERR_OK;
-                                    pc <= pc + 32'd1;
-                                    retired_count <= retired_count + 32'd1;
-                                    retire_submit_valid <= 1'b1;
-                                    retire_submit_record <= retire_submit_next;
-                                end else if (object_op == OBJECT_OP_CREATE &&
-                                    object_kind == OBJECT_KIND_COUNTER &&
-                                    (object_profile == 64'd0 || object_profile == 64'd1) &&
-                                    object_single_fd_in_range) begin
-                                    event_counter_valid <= 1'b1;
-                                    event_counter_lineage <= 64'd769;
-                                    event_counter_value <= object_dma_addr;
-                                    fdr_valid[object_single_fd] <= 1'b1;
-                                    fdr_revoked[object_single_fd] <= 1'b0;
-                                    fdr_generation[object_single_fd] <= fdr_generation[object_single_fd] + 64'd1;
-                                    fdr_rights[object_single_fd] <= CAP_RIGHT_ALL;
-                                    fdr_lineage[object_single_fd] <= 64'd769;
-                                    fdr_kind[object_single_fd] <= FDR_KIND_GENERIC;
-                                    sram[object_fd_store_word_index] <= store_double_low_word(
-                                        sram[object_fd_store_word_index],
-                                        object_fd_store_byte_lane,
-                                        {56'd0, object_single_fd[7:0]}
-                                    );
-                                    if (object_fd_store_byte_lane != 3'd0) begin
-                                        sram[object_fd_store_next_word_index] <= store_double_high_word(
-                                            sram[object_fd_store_next_word_index],
-                                            object_fd_store_byte_lane,
-                                            {56'd0, object_single_fd[7:0]}
-                                        );
-                                    end
-                                    gpr[dec.rd] <= {56'd0, object_single_fd[7:0]};
-                                    errno_reg <= LNP64_ERR_OK;
-                                    pc <= pc + 32'd1;
-                                    retired_count <= retired_count + 32'd1;
-                                    retire_submit_valid <= 1'b1;
-                                    retire_submit_record <= retire_submit_next;
-                                end else if (object_op == OBJECT_OP_CREATE &&
-                                    object_kind == OBJECT_KIND_TIMER &&
-                                    object_single_fd_in_range) begin
-                                    timer_valid <= 1'b1;
-                                    timer_lineage <= 64'd1025;
-                                    timer_expirations <= 64'd0;
-                                    fdr_valid[object_single_fd] <= 1'b1;
-                                    fdr_revoked[object_single_fd] <= 1'b0;
-                                    fdr_generation[object_single_fd] <= fdr_generation[object_single_fd] + 64'd1;
-                                    fdr_rights[object_single_fd] <= CAP_RIGHT_ALL;
-                                    fdr_lineage[object_single_fd] <= 64'd1025;
-                                    fdr_kind[object_single_fd] <= FDR_KIND_GENERIC;
-                                    sram[object_fd_store_word_index] <= store_double_low_word(
-                                        sram[object_fd_store_word_index],
-                                        object_fd_store_byte_lane,
-                                        {56'd0, object_single_fd[7:0]}
-                                    );
-                                    if (object_fd_store_byte_lane != 3'd0) begin
-                                        sram[object_fd_store_next_word_index] <= store_double_high_word(
-                                            sram[object_fd_store_next_word_index],
-                                            object_fd_store_byte_lane,
-                                            {56'd0, object_single_fd[7:0]}
-                                        );
-                                    end
-                                    gpr[dec.rd] <= {56'd0, object_single_fd[7:0]};
-                                    errno_reg <= LNP64_ERR_OK;
-                                    pc <= pc + 32'd1;
-                                    retired_count <= retired_count + 32'd1;
-                                    retire_submit_valid <= 1'b1;
-                                    retire_submit_record <= retire_submit_next;
-                                end else if (object_op == OBJECT_OP_CREATE &&
-                                    object_kind == OBJECT_KIND_MEMORY_OBJECT &&
-                                    object_dma_addr != 64'd0 &&
-                                    object_memory_fd_in_range) begin
-                                    memory_object_valid <= 1'b1;
-                                    memory_object_lineage <= 64'd513;
-                                    memory_object_len <= object_dma_addr;
-                                    memory_object_byte_valid <= 1'b0;
-                                    memory_object_byte_value <= 8'd0;
-                                    fdr_valid[object_memory_fd] <= 1'b1;
-                                    fdr_revoked[object_memory_fd] <= 1'b0;
-                                    fdr_generation[object_memory_fd] <= fdr_generation[object_memory_fd] + 64'd1;
-                                    fdr_rights[object_memory_fd] <= CAP_RIGHT_ALL;
-                                    fdr_lineage[object_memory_fd] <= 64'd513;
-                                    fdr_kind[object_memory_fd] <= FDR_KIND_GENERIC;
-                                    sram[object_fd_store_word_index] <= store_double_low_word(
-                                        sram[object_fd_store_word_index],
-                                        object_fd_store_byte_lane,
-                                        {56'd0, object_memory_fd[7:0]}
-                                    );
-                                    if (object_fd_store_byte_lane != 3'd0) begin
-                                        sram[object_fd_store_next_word_index] <= store_double_high_word(
-                                            sram[object_fd_store_next_word_index],
-                                            object_fd_store_byte_lane,
-                                            {56'd0, object_memory_fd[7:0]}
-                                        );
-                                    end
-                                    gpr[dec.rd] <= {56'd0, object_memory_fd[7:0]};
-                                    errno_reg <= LNP64_ERR_OK;
-                                    pc <= pc + 32'd1;
-                                    retired_count <= retired_count + 32'd1;
-                                    retire_submit_valid <= 1'b1;
-                                    retire_submit_record <= retire_submit_next;
-                                end else if (object_op == OBJECT_OP_CREATE &&
-                                    object_kind == OBJECT_KIND_MEMORY_OBJECT) begin
-                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                    errno_reg <= LNP64_ERR_EINVAL;
-                                    pc <= pc + 32'd1;
-                                    retired_count <= retired_count + 32'd1;
-                                    retire_submit_valid <= 1'b1;
-                                    retire_submit_record <= retire_submit_next;
-                                end else if (object_op == OBJECT_OP_CREATE &&
-                                    object_kind == OBJECT_KIND_DMA_BUFFER &&
-                                    object_engine_shadow_enabled) begin
-                                    pending_unsupported <= 1'b0;
-                                    command_pc <= pc;
-                                    state <= CORE_SEND_CMD;
-                                end else if (object_op == OBJECT_OP_CREATE &&
-                                    object_kind == OBJECT_KIND_DMA_BUFFER) begin
-                                    if (object_dma_len != 64'd0 &&
-                                        heap_range_valid(object_dma_addr, object_dma_len) &&
-                                        (object_fd_req == 64'd0 || object_fd_req == RTL_DMA_BUFFER_DEFAULT_FD)) begin
-                                        dma_buffer_object_valid <= 1'b1;
-                                        dma_buffer_object_revoked <= 1'b0;
-                                        dma_buffer_object_fd <= RTL_DMA_BUFFER_DEFAULT_FD;
-                                        dma_buffer_object_addr <= object_dma_addr;
-                                        dma_buffer_object_len <= object_dma_len;
-                                        fdr_valid[RTL_DMA_BUFFER_DEFAULT_FD] <= 1'b1;
-                                        fdr_revoked[RTL_DMA_BUFFER_DEFAULT_FD] <= 1'b0;
-                                        fdr_generation[RTL_DMA_BUFFER_DEFAULT_FD] <=
-                                            fdr_generation[RTL_DMA_BUFFER_DEFAULT_FD] + 64'd1;
-                                        fdr_rights[RTL_DMA_BUFFER_DEFAULT_FD] <= CAP_RIGHT_ALL;
-                                        fdr_lineage[RTL_DMA_BUFFER_DEFAULT_FD] <= 64'd1281;
-                                        fdr_kind[RTL_DMA_BUFFER_DEFAULT_FD] <= FDR_KIND_GENERIC;
-                                        sram[object_fd_store_word_index] <= store_double_low_word(
-                                            sram[object_fd_store_word_index],
-                                            object_fd_store_byte_lane,
-                                            RTL_DMA_BUFFER_DEFAULT_FD
-                                        );
-                                        if (object_fd_store_byte_lane != 3'd0) begin
-                                            sram[object_fd_store_next_word_index] <= store_double_high_word(
-                                                sram[object_fd_store_next_word_index],
-                                                object_fd_store_byte_lane,
-                                                RTL_DMA_BUFFER_DEFAULT_FD
-                                            );
-                                        end
-                                        dcache_writeback <= 1'b1;
-                                        gpr[dec.rd] <= RTL_DMA_BUFFER_DEFAULT_FD;
-                                        errno_reg <= LNP64_ERR_OK;
-                                    end else begin
-                                        gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                        errno_reg <= object_dma_len == 64'd0 ?
-                                            LNP64_ERR_EINVAL : LNP64_ERR_EFAULT;
-                                    end
-                                    pc <= pc + 32'd1;
-                                    retired_count <= retired_count + 32'd1;
-                                    retire_submit_valid <= 1'b1;
-                                    retire_submit_record <= retire_submit_next;
-                                end else begin
-                                    pending_unsupported <= 1'b0;
-                                    command_pc <= pc;
-                                    state <= CORE_SEND_CMD;
-                                end
-                                end
+                                pending_unsupported <= 1'b0;
+                                command_pc <= pc;
+                                state <= CORE_SEND_CMD;
                             end
                             LNP64_OP_DOMAIN_CTL: begin
                                 pending_unsupported <= 1'b0;
@@ -3209,11 +2950,39 @@ module lnp64_core_tile #(
                             dec.opcode == LNP64_OP_OBJECT_CTL &&
                             object_op == OBJECT_OP_CREATE &&
                             object_kind == OBJECT_KIND_QUEUE &&
-                            object_profile == OBJECT_PROFILE_PIPE) begin
-                            if (rsp.status != LNP64_STATUS_OK ||
-                                rsp.errno_value != LNP64_ERR_OK) begin
-                                object_engine_shadow_enabled <= 1'b0;
+                            object_profile == OBJECT_PROFILE_CALL_GATE) begin
+                            if (rsp.status == LNP64_STATUS_OK &&
+                                rsp.errno_value == LNP64_ERR_OK &&
+                                object_rsp_single_fd < FDR_SLOT_COUNT) begin
+                                call_gate_valid[object_rsp_single_fd] <= 1'b1;
+                                call_gate_entry[object_rsp_single_fd] <= object_gate_entry;
+                                call_gate_mode[object_rsp_single_fd] <= object_gate_mode;
+                                call_gate_completion_fd[object_rsp_single_fd] <= object_gate_completion_fd;
+                                fdr_valid[object_rsp_single_fd] <= 1'b1;
+                                fdr_revoked[object_rsp_single_fd] <= 1'b0;
+                                fdr_generation[object_rsp_single_fd] <= fdr_generation[object_rsp_single_fd] + 64'd1;
+                                fdr_rights[object_rsp_single_fd] <= CAP_RIGHT_ALL;
+                                fdr_lineage[object_rsp_single_fd] <= 64'd1281 + {32'd0, object_rsp_single_fd[31:0]};
+                                fdr_kind[object_rsp_single_fd] <= FDR_KIND_CALL_GATE;
+                                sram[object_fd_store_word_index] <= store_double_low_word(
+                                    sram[object_fd_store_word_index],
+                                    object_fd_store_byte_lane,
+                                    {32'd0, object_rsp_single_fd[31:0]}
+                                );
+                                if (object_fd_store_byte_lane != 3'd0) begin
+                                    sram[object_fd_store_next_word_index] <= store_double_high_word(
+                                        sram[object_fd_store_next_word_index],
+                                        object_fd_store_byte_lane,
+                                        {32'd0, object_rsp_single_fd[31:0]}
+                                    );
+                                end
                             end
+                        end
+                        if (!pending_unsupported &&
+                            dec.opcode == LNP64_OP_OBJECT_CTL &&
+                            object_op == OBJECT_OP_CREATE &&
+                            object_kind == OBJECT_KIND_QUEUE &&
+                            object_profile == OBJECT_PROFILE_PIPE) begin
                             if (rsp.status == LNP64_STATUS_OK &&
                                 rsp.errno_value == LNP64_ERR_OK &&
                                 object_rsp_reader_fd < FDR_SLOT_COUNT &&
@@ -3254,10 +3023,6 @@ module lnp64_core_tile #(
                             object_op == OBJECT_OP_CREATE &&
                             object_kind == OBJECT_KIND_COUNTER &&
                             (object_profile == 64'd0 || object_profile == 64'd1)) begin
-                            if (rsp.status != LNP64_STATUS_OK ||
-                                rsp.errno_value != LNP64_ERR_OK) begin
-                                object_engine_shadow_enabled <= 1'b0;
-                            end
                             if (rsp.status == LNP64_STATUS_OK &&
                                 rsp.errno_value == LNP64_ERR_OK &&
                                 object_rsp_single_fd < FDR_SLOT_COUNT) begin
@@ -3288,10 +3053,6 @@ module lnp64_core_tile #(
                             dec.opcode == LNP64_OP_OBJECT_CTL &&
                             object_op == OBJECT_OP_CREATE &&
                             object_kind == OBJECT_KIND_TIMER) begin
-                            if (rsp.status != LNP64_STATUS_OK ||
-                                rsp.errno_value != LNP64_ERR_OK) begin
-                                object_engine_shadow_enabled <= 1'b0;
-                            end
                             if (rsp.status == LNP64_STATUS_OK &&
                                 rsp.errno_value == LNP64_ERR_OK &&
                                 object_rsp_single_fd < FDR_SLOT_COUNT) begin
@@ -3322,10 +3083,6 @@ module lnp64_core_tile #(
                             dec.opcode == LNP64_OP_OBJECT_CTL &&
                             object_op == OBJECT_OP_CREATE &&
                             object_kind == OBJECT_KIND_MEMORY_OBJECT) begin
-                            if (rsp.status != LNP64_STATUS_OK ||
-                                rsp.errno_value != LNP64_ERR_OK) begin
-                                object_engine_shadow_enabled <= 1'b0;
-                            end
                             if (rsp.status == LNP64_STATUS_OK &&
                                 rsp.errno_value == LNP64_ERR_OK &&
                                 object_rsp_single_fd < FDR_SLOT_COUNT) begin
@@ -3358,10 +3115,6 @@ module lnp64_core_tile #(
                             dec.opcode == LNP64_OP_OBJECT_CTL &&
                             object_op == OBJECT_OP_CREATE &&
                             object_kind == OBJECT_KIND_DMA_BUFFER) begin
-                            if (rsp.status != LNP64_STATUS_OK ||
-                                rsp.errno_value != LNP64_ERR_OK) begin
-                                object_engine_shadow_enabled <= 1'b0;
-                            end
                             if (rsp.status == LNP64_STATUS_OK &&
                                 rsp.errno_value == LNP64_ERR_OK &&
                                 object_rsp_single_fd < FDR_SLOT_COUNT) begin

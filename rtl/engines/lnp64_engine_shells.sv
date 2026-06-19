@@ -1259,8 +1259,12 @@ module lnp64_object_engine(
     output logic [31:0] telemetry_counter,
     output logic [31:0] fault_counter
 );
+    localparam logic [63:0] OBJECT_LINEAGE_CALL_GATE_BASE = 64'd1281;
     localparam logic [63:0] OBJECT_LINEAGE_MEMORY_OBJECT = 64'd513;
     localparam logic [63:0] OBJECT_LINEAGE_DMA_BUFFER = 64'd1281;
+    localparam logic [63:0] CALL_MODE_SYNC = 64'd0;
+    localparam logic [63:0] CALL_MODE_ASYNC = 64'd1;
+    localparam logic [63:0] CALL_MODE_HANDOFF = 64'd2;
     localparam int unsigned OBJECT_MEMORY_DEFAULT_FD = 5;
     localparam int unsigned OBJECT_DMA_BUFFER_DEFAULT_FD = 3;
 
@@ -1357,6 +1361,31 @@ module lnp64_object_engine(
                         cap_sync_valid <= 1'b1;
                         cap_sync_reader_fd <= reader_fd[31:0];
                         cap_sync_writer_fd <= writer_fd[31:0];
+                    end else begin
+                        rsp_reg.errno_value <= LNP64_ERR_EINVAL;
+                        rsp_reg.status <= LNP64_STATUS_ERROR;
+                    end
+                end else if (cmd.opcode == LNP64_OP_OBJECT_CTL &&
+                    cmd.arg0 == LNP64_OBJECT_OP_CREATE &&
+                    cmd.arg1 == LNP64_OBJECT_KIND_QUEUE &&
+                    cmd.arg2 == LNP64_OBJECT_PROFILE_CALL_GATE) begin
+                    single_fd = cmd.arg3 == 64'd0 ? 3 : cmd.arg3[31:0];
+                    if (single_fd < LNP64_FDR_SLOT_COUNT &&
+                        (cmd.arg_block_len == CALL_MODE_SYNC ||
+                         cmd.arg_block_len == CALL_MODE_ASYNC ||
+                         cmd.arg_block_len == CALL_MODE_HANDOFF) &&
+                        cmd.cancel_class == 16'd0 &&
+                        (cmd.arg_block_len != CALL_MODE_ASYNC ||
+                            (cmd.rights_mask < LNP64_FDR_SLOT_COUNT &&
+                             fdr_valid[cmd.rights_mask[31:0]]))) begin
+                        fdr_valid[single_fd] <= 1'b1;
+                        rsp_reg.result_value <= {32'd0, single_fd[31:0]};
+                        rsp_reg.errno_value <= LNP64_ERR_OK;
+                        rsp_reg.status <= LNP64_STATUS_OK;
+                        cap_sync_single_valid <= 1'b1;
+                        cap_sync_single_fd <= single_fd[31:0];
+                        cap_sync_single_kind <= LNP64_FDR_KIND_CALL_GATE;
+                        cap_sync_single_lineage <= OBJECT_LINEAGE_CALL_GATE_BASE + {32'd0, single_fd[31:0]};
                     end else begin
                         rsp_reg.errno_value <= LNP64_ERR_EINVAL;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
