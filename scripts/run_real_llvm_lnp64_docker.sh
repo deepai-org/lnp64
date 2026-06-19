@@ -102,6 +102,13 @@ grep -q 'exit=0' <<<"$exit_output"
 printf 'real LLVM LNP64 run-elf exit execution passed: %s\n' \
   "$exit_probe"
 
+errno_probe="target/llvm-lnp64-build/lnp64-errno-linked.elf"
+cargo run --quiet -- elf-plan "$errno_probe" >/dev/null
+errno_output="$(cargo run --quiet -- run-elf "$errno_probe")"
+grep -q 'exit=0' <<<"$errno_output"
+printf 'real LLVM LNP64 run-elf errno execution passed: %s\n' \
+  "$errno_probe"
+
 argc_probe="target/llvm-lnp64-build/lnp64-argc-linked.elf"
 cargo run --quiet -- elf-plan "$argc_probe" >/dev/null
 argc_output="$(cargo run --quiet -- run-elf "$argc_probe")"

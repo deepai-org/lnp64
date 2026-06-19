@@ -1286,6 +1286,7 @@ mod tests {
         let libc_alloc_min = include_str!("../toolchain/liblnp64_alloc_min.c");
         let libc_fd_min = include_str!("../toolchain/liblnp64_fd_min.c");
         let libc_process_min = include_str!("../toolchain/liblnp64_process_min.c");
+        let libc_errno_min = include_str!("../toolchain/liblnp64_errno_min.c");
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
         let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
         let roadmap = include_str!("../toolchain_roadmap.md");
@@ -1537,6 +1538,21 @@ mod tests {
                 "real LLVM LNP64 clang minilibc process implementation object smoke passed"
             )
         );
+        assert!(real_llc.contains("toolchain/liblnp64_errno_min.c"));
+        assert!(libc_errno_min.contains("ERRNO_GET") || libc_errno_min.contains("errno_get"));
+        assert!(libc_errno_min.contains("ERRNO_SET") || libc_errno_min.contains("errno_set"));
+        assert!(libc_errno_min.contains("__errno_location"));
+        assert!(real_llc.contains("liblnp64-errno-min.o"));
+        assert!(real_llc.contains("grep -q 'errno_get r'"));
+        assert!(real_llc.contains("grep -q 'errno_set r'"));
+        assert!(
+            real_llc.contains(
+                "real LLVM LNP64 clang minilibc errno implementation object smoke passed"
+            )
+        );
+        assert!(real_llc.contains("errno-clang-smoke.o"));
+        assert!(real_llc.contains("lnp64_errno_store(22)"));
+        assert!(real_llc.contains("real LLVM LNP64 clang errno object smoke passed"));
         assert!(real_llc.contains("libc-string-clang-smoke.o"));
         assert!(real_llc.contains("int memcmp"));
         assert!(real_llc.contains("grep -q 'sext.w'"));
@@ -1612,6 +1628,9 @@ mod tests {
         assert!(real_llc.contains("lnp64-exit-linked.elf"));
         assert!(real_llc.contains(r#""$exit_obj" "$libc_process_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld exit link smoke passed"));
+        assert!(real_llc.contains("lnp64-errno-linked.elf"));
+        assert!(real_llc.contains(r#""$errno_obj" "$libc_errno_impl_obj""#));
+        assert!(real_llc.contains("real LLVM LNP64 lld errno link smoke passed"));
         assert!(real_llc.contains("lnp64-scalar-arith-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld scalar arithmetic link smoke passed"));
         assert!(real_llc.contains("lnp64-high-mul-linked.elf"));
@@ -1903,6 +1922,8 @@ mod tests {
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf realloc execution passed"));
         assert!(real_llc_docker.contains("lnp64-read-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf read execution passed"));
+        assert!(real_llc_docker.contains("lnp64-errno-linked.elf"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf errno execution passed"));
         assert!(real_llc_docker.contains("lnp64-intrinsic-push-linked.elf"));
         assert!(real_llc_docker.contains("intrinsic push ok"));
         assert!(
@@ -1985,6 +2006,7 @@ mod tests {
             "real_clang_demo_execution",
             "real_native_heap_execution",
             "real_read_execution",
+            "real_errno_execution",
             "real_intrinsic_await_execution",
             "real_intrinsic_call_execution",
             "real_intrinsic_gate_return_execution",
@@ -2016,6 +2038,7 @@ mod tests {
             "real_intrinsic_amo_execution",
             "real_c11_atomic_execution",
             "real_exit_execution",
+            "real_errno_execution",
             "text_fetch_decode",
         ] {
             assert_eq!(stages[stage].0, "tested", "{stage} should be tested");
@@ -2687,9 +2710,14 @@ mod tests {
         let roadmap = include_str!("../toolchain_roadmap.md");
         let libc_roadmap = include_str!("../libc_roadmap.md");
         let conformance = include_str!("../conformance_matrix.md");
+        let run_elf_manifest = include_str!("../toolchain/lnp64_run_elf.manifest");
+        let real_llc = include_str!("../scripts/run_real_llvm_lnp64.sh");
+        let real_llc_docker = include_str!("../scripts/run_real_llvm_lnp64_docker.sh");
         let c_compiler = include_str!("c_compiler.rs");
         let emulator = include_str!("emulator.rs");
-        let evidence_corpus = format!("{conformance}\n{c_compiler}\n{emulator}");
+        let evidence_corpus = format!(
+            "{conformance}\n{run_elf_manifest}\n{real_llc}\n{real_llc_docker}\n{c_compiler}\n{emulator}"
+        );
         let rows = libc_shim_rows(shim_manifest);
         let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let shim_path = manifest_field(target_manifest, "libc_shim_contract");

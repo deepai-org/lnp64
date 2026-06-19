@@ -811,6 +811,53 @@ grep -q 'call ' "$libc_process_impl_dump"
 printf 'real LLVM LNP64 clang minilibc process implementation object smoke passed: %s\n' \
   "$libc_process_impl_obj"
 
+libc_errno_impl_c="toolchain/liblnp64_errno_min.c"
+libc_errno_impl_obj="$build_dir/liblnp64-errno-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$libc_errno_impl_c" -o "$libc_errno_impl_obj"
+test -s "$libc_errno_impl_obj"
+libc_errno_impl_dump="$build_dir/liblnp64-errno-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_errno_impl_obj" \
+  >"$libc_errno_impl_dump"
+grep -q 'errno_get r' "$libc_errno_impl_dump"
+grep -q 'errno_set r' "$libc_errno_impl_dump"
+grep -q 'ret' "$libc_errno_impl_dump"
+printf 'real LLVM LNP64 clang minilibc errno implementation object smoke passed: %s\n' \
+  "$libc_errno_impl_obj"
+
+errno_c="$build_dir/errno-smoke.c"
+cat >"$errno_c" <<'C'
+int *__errno_location(void);
+int lnp64_errno_store(int value);
+const char *strerror(int value);
+
+int main(void) {
+  int *slot = __errno_location();
+  if (*slot != 0)
+    return 1;
+  if (lnp64_errno_store(22) != 22)
+    return 2;
+  slot = __errno_location();
+  if (*slot != 22)
+    return 3;
+  if (strerror(*slot)[0] != 'I')
+    return 4;
+  lnp64_errno_store(0);
+  return *__errno_location();
+}
+C
+
+errno_obj="$build_dir/errno-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$errno_c" -o "$errno_obj"
+test -s "$errno_obj"
+errno_dump="$build_dir/errno-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$errno_obj" >"$errno_dump"
+grep -q 'call ' "$errno_dump"
+printf 'real LLVM LNP64 clang errno object smoke passed: %s\n' "$errno_obj"
+
 argc_c="$build_dir/argc-smoke.c"
 cat >"$argc_c" <<'C'
 int main(int argc, char **argv) {
@@ -1456,6 +1503,12 @@ exit_elf="$build_dir/lnp64-exit-linked.elf"
   -o "$exit_elf" "$crt0_obj" "$exit_obj" "$libc_process_impl_obj"
 test -s "$exit_elf"
 printf 'real LLVM LNP64 lld exit link smoke passed: %s\n' "$exit_elf"
+
+errno_elf="$build_dir/lnp64-errno-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$errno_elf" "$crt0_obj" "$errno_obj" "$libc_errno_impl_obj"
+test -s "$errno_elf"
+printf 'real LLVM LNP64 lld errno link smoke passed: %s\n' "$errno_elf"
 
 argc_elf="$build_dir/lnp64-argc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
