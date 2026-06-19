@@ -640,6 +640,34 @@ def rights_subset(child: int, parent: int) -> bool:
     return (child & ~parent) == 0
 
 
+TOP_RIGHT_PULL = 0x1
+TOP_RIGHT_PUSH = 0x2
+TOP_RIGHT_DUP = 0x40
+TOP_RIGHT_TRANSFER = 0x100
+
+MODELED_RIGHT_PUSH = 0x1
+MODELED_RIGHT_PULL = 0x2
+MODELED_RIGHT_DUP = 0x4
+
+
+def top_rights_to_modeled_mask(raw: int) -> int:
+    modeled = 0
+    if raw & TOP_RIGHT_PUSH:
+        modeled |= MODELED_RIGHT_PUSH
+    if raw & TOP_RIGHT_PULL:
+        modeled |= MODELED_RIGHT_PULL
+    if raw & TOP_RIGHT_DUP:
+        modeled |= MODELED_RIGHT_DUP
+    return modeled
+
+
+def modeled_rights(record: dict, field: str) -> int:
+    value = record.get(field)
+    if not isinstance(value, int) or value < 0:
+        raise SystemExit(f"top-level M1 field {field} is not a nonnegative rights mask: {value!r}")
+    return top_rights_to_modeled_mask(value)
+
+
 def check_top_m1_projection_matches_commit(
     prefix: str,
     commit: dict,
@@ -709,12 +737,21 @@ def check_top_m1_refinement_step(
 
     op = commit["op"]
     if op == commit_ops["CapDup"]:
-        if pre_state["root_rights"] & 0x40 == 0:
+        if pre_state["root_rights"] & TOP_RIGHT_DUP == 0:
             raise SystemExit(f"top-level M1 capDup {idx} accepted without DUP right")
         if not rights_subset(commit["rights_mask"], pre_state["root_rights"]):
             raise SystemExit(
                 f"top-level M1 capDup {idx} amplified rights: "
                 f"commit={commit['rights_mask']} pre_root={pre_state['root_rights']}"
+            )
+        if not rights_subset(
+            modeled_rights(commit, "rights_mask"),
+            modeled_rights(pre_state, "root_rights"),
+        ):
+            raise SystemExit(
+                f"top-level M1 capDup {idx} amplified modeled M1 rights: "
+                f"commit={modeled_rights(commit, 'rights_mask')} "
+                f"pre_root={modeled_rights(pre_state, 'root_rights')}"
             )
         if commit["object_id"] != pre_state["root_object_id"]:
             raise SystemExit(f"top-level M1 capDup {idx} changed object lineage")
@@ -724,12 +761,21 @@ def check_top_m1_refinement_step(
     if op == commit_ops["CapSend"]:
         if pre_state["sent_valid"] != 0:
             raise SystemExit(f"top-level M1 capSend {idx} accepted with occupied transfer slot")
-        if pre_state["consumer_rights"] & 0x100 == 0:
+        if pre_state["consumer_rights"] & TOP_RIGHT_TRANSFER == 0:
             raise SystemExit(f"top-level M1 capSend {idx} accepted without TRANSFER right")
         if not rights_subset(commit["rights_mask"], pre_state["consumer_rights"]):
             raise SystemExit(
                 f"top-level M1 capSend {idx} amplified rights: "
                 f"commit={commit['rights_mask']} pre_consumer={pre_state['consumer_rights']}"
+            )
+        if not rights_subset(
+            modeled_rights(commit, "rights_mask"),
+            modeled_rights(pre_state, "consumer_rights"),
+        ):
+            raise SystemExit(
+                f"top-level M1 capSend {idx} amplified modeled M1 rights: "
+                f"commit={modeled_rights(commit, 'rights_mask')} "
+                f"pre_consumer={modeled_rights(pre_state, 'consumer_rights')}"
             )
         if post_state["sent_valid"] != 1:
             raise SystemExit(f"top-level M1 capSend {idx} did not publish a sent cap")
@@ -744,6 +790,15 @@ def check_top_m1_refinement_step(
                 f"top-level M1 capRecv {idx} amplified rights: "
                 f"commit={commit['rights_mask']} pre_sent={pre_state['sent_rights']}"
             )
+        if not rights_subset(
+            modeled_rights(commit, "rights_mask"),
+            modeled_rights(pre_state, "sent_rights"),
+        ):
+            raise SystemExit(
+                f"top-level M1 capRecv {idx} amplified modeled M1 rights: "
+                f"commit={modeled_rights(commit, 'rights_mask')} "
+                f"pre_sent={modeled_rights(pre_state, 'sent_rights')}"
+            )
         if post_state["sent_valid"] != 0:
             raise SystemExit(f"top-level M1 capRecv {idx} left a sent cap queued")
         check_top_m1_projection_matches_commit("consumer", commit, post_state, idx, "capRecv")
@@ -756,6 +811,15 @@ def check_top_m1_refinement_step(
             raise SystemExit(
                 f"top-level M1 capRevoke {idx} commit rights exceed pre root rights: "
                 f"commit={commit['rights_mask']} pre_root={pre_state['root_rights']}"
+            )
+        if not rights_subset(
+            modeled_rights(commit, "rights_mask"),
+            modeled_rights(pre_state, "root_rights"),
+        ):
+            raise SystemExit(
+                f"top-level M1 capRevoke {idx} amplified modeled M1 rights: "
+                f"commit={modeled_rights(commit, 'rights_mask')} "
+                f"pre_root={modeled_rights(pre_state, 'root_rights')}"
             )
         if commit["object_id"] != pre_state["root_object_id"]:
             raise SystemExit(f"top-level M1 capRevoke {idx} changed root object lineage")

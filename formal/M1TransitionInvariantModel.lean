@@ -1176,6 +1176,159 @@ theorem stateMatchesRtlProjection_projection_faithful
   rw [hProjection]
   simp [rtlM1ProjectionFaithful, stateProjectionOf]
 
+/- Top-level RTL M1 traces carry the architectural capability-rights mask and
+dynamic object/domain/lineage ids from `lnp64_top`, while the first M1 proof
+slice models only the authority-relevant push/pull/dup/mint bits. Keep this
+abstraction explicit so top-level evidence cannot be mistaken for the narrower
+standalone packed M1 witness above. -/
+
+def topRightPushMask : Nat := 2
+def topRightPullMask : Nat := 1
+def topRightDupMask : Nat := 64
+
+def topHasRight (raw mask : Nat) : Bool :=
+  if raw / mask % 2 = 1 then true else false
+
+def topRightsToModeledRights (raw : Nat) : Rights :=
+  { push := topHasRight raw topRightPushMask
+    pull := topHasRight raw topRightPullMask
+    dup := topHasRight raw topRightDupMask
+    -- Top-level CAP_SEND transfer authority is not object-create/mint authority.
+    -- Leave mint false until top-level object-create authority is modeled.
+    mint := false }
+
+structure RtlM1TopCapProjection where
+  objectId : Nat
+  generation : Nat
+  domainId : Nat
+  domainGeneration : Nat
+  rawRights : Nat
+  lineageEpoch : Nat
+  sealed : Bool
+deriving DecidableEq, Repr
+
+def topCapProjectionToCapability (projection : RtlM1TopCapProjection) :
+    Capability :=
+  { objectId := projection.objectId
+    generation := projection.generation
+    rights := topRightsToModeledRights projection.rawRights
+    ownerDomain := projection.domainId
+    lineageEpoch := projection.lineageEpoch
+    sealed := projection.sealed }
+
+structure RtlM1TopCommitProjection where
+  op : CommitOp
+  objectGeneration : Nat
+  fdrGeneration : Nat
+  cap : RtlM1TopCapProjection
+  status : CommitStatus
+deriving DecidableEq, Repr
+
+def topCommitProjectionToRtlM1CommitProjection
+    (projection : RtlM1TopCommitProjection) : RtlM1CommitProjection :=
+  { op := projection.op
+    objectId := projection.cap.objectId
+    objectGeneration := projection.objectGeneration
+    fdrGeneration := projection.fdrGeneration
+    domainId := projection.cap.domainId
+    domainGeneration := projection.cap.domainGeneration
+    rights := topRightsToModeledRights projection.cap.rawRights
+    lineageEpoch := projection.cap.lineageEpoch
+    sealed := projection.cap.sealed
+    status := projection.status }
+
+def topOptionalCapProjection
+    (valid : Bool)
+    (projection : RtlM1TopCapProjection) : Option Capability :=
+  if valid then some (topCapProjectionToCapability projection) else none
+
+structure RtlM1TopStateProjection where
+  objectGeneration : Nat
+  createdObjectCreated : Bool
+  createdObjectGeneration : Nat
+  rootCap : RtlM1TopCapProjection
+  consumerCap : RtlM1TopCapProjection
+  sentValid : Bool
+  sentCap : RtlM1TopCapProjection
+  mintedValid : Bool
+  mintedCap : RtlM1TopCapProjection
+  wakePending : Bool
+  transferValid : Bool
+  staleRejected : Bool
+  revokedRejected : Bool
+  failedNoAuthority : Bool
+  fullWasExplicit : Bool
+  hasRevokedGeneration : Bool
+  revokedGeneration : Nat
+deriving DecidableEq, Repr
+
+def topStateProjectionToRtlM1StateProjection
+    (projection : RtlM1TopStateProjection) : RtlM1StateProjection :=
+  { objectGeneration := projection.objectGeneration
+    createdObjectCreated := projection.createdObjectCreated
+    createdObjectGeneration := projection.createdObjectGeneration
+    rootCap := topCapProjectionToCapability projection.rootCap
+    consumerCap := topCapProjectionToCapability projection.consumerCap
+    sentCap := topOptionalCapProjection projection.sentValid projection.sentCap
+    mintedCap := topOptionalCapProjection projection.mintedValid projection.mintedCap
+    wakePending := projection.wakePending
+    transferValid := projection.transferValid
+    staleRejected := projection.staleRejected
+    revokedRejected := projection.revokedRejected
+    failedNoAuthority := projection.failedNoAuthority
+    fullWasExplicit := projection.fullWasExplicit
+    hasRevokedGeneration := projection.hasRevokedGeneration
+    revokedGeneration := projection.revokedGeneration }
+
+def topCommitProjectionRefinesModeledProjection
+    (top : RtlM1TopCommitProjection)
+    (modeled : RtlM1CommitProjection) : Prop :=
+  modeled = topCommitProjectionToRtlM1CommitProjection top
+
+def topStateProjectionRefinesModeledProjection
+    (top : RtlM1TopStateProjection)
+    (modeled : RtlM1StateProjection) : Prop :=
+  modeled = topStateProjectionToRtlM1StateProjection top
+
+theorem top_rights_to_modeled_rights_bounded (raw : Nat) :
+    Rights.subset (topRightsToModeledRights raw) allRights := by
+  simp [Rights.subset, topRightsToModeledRights, allRights]
+
+theorem top_cap_projection_to_capability_rights_bounded
+    (projection : RtlM1TopCapProjection) :
+    Rights.subset (topCapProjectionToCapability projection).rights allRights := by
+  exact top_rights_to_modeled_rights_bounded projection.rawRights
+
+theorem top_commit_projection_refines_modeled_rights_bounded
+    {top : RtlM1TopCommitProjection}
+    {modeled : RtlM1CommitProjection} :
+    topCommitProjectionRefinesModeledProjection top modeled ->
+    Rights.subset modeled.rights allRights := by
+  intro h
+  rw [topCommitProjectionRefinesModeledProjection] at h
+  rw [h]
+  exact top_rights_to_modeled_rights_bounded top.cap.rawRights
+
+theorem top_state_projection_refines_modeled_root_rights_bounded
+    {top : RtlM1TopStateProjection}
+    {modeled : RtlM1StateProjection} :
+    topStateProjectionRefinesModeledProjection top modeled ->
+    Rights.subset modeled.rootCap.rights allRights := by
+  intro h
+  rw [topStateProjectionRefinesModeledProjection] at h
+  rw [h]
+  exact top_rights_to_modeled_rights_bounded top.rootCap.rawRights
+
+theorem top_state_projection_refines_modeled_consumer_rights_bounded
+    {top : RtlM1TopStateProjection}
+    {modeled : RtlM1StateProjection} :
+    topStateProjectionRefinesModeledProjection top modeled ->
+    Rights.subset modeled.consumerCap.rights allRights := by
+  intro h
+  rw [topStateProjectionRefinesModeledProjection] at h
+  rw [h]
+  exact top_rights_to_modeled_rights_bounded top.consumerCap.rawRights
+
 def capDupCommit (s : State) : CommitRecord :=
   commitFromCap CommitOp.capDup (consumerPullCap s) s.object.generation CommitStatus.ok
 
