@@ -1485,6 +1485,8 @@ mod tests {
             "clang_netbsd_mmap_child_object",
             "clang_netbsd_socket_loopback_child_object",
             "clang_netbsd_gate_trace_child_object",
+            "clang_netbsd_domain_nested_child_object",
+            "clang_netbsd_domain_budget_child_object",
             "clang_minilibc_meta_impl_object",
             "clang_meta_libc_object",
             "clang_minilibc_random_impl_object",
@@ -1602,6 +1604,10 @@ mod tests {
             "netbsd_socket_loopback_child_run_elf",
             "netbsd_gate_trace_child_static_link",
             "netbsd_gate_trace_child_run_elf",
+            "netbsd_domain_nested_child_static_link",
+            "netbsd_domain_nested_child_run_elf",
+            "netbsd_domain_budget_child_static_link",
+            "netbsd_domain_budget_child_run_elf",
             "metadata_libc_static_link",
             "metadata_libc_run_elf",
         ] {
@@ -2782,6 +2788,23 @@ mod tests {
         assert!(real_llc.contains("lnp64-netbsd-gate-trace-test-linked.elf"));
         assert!(real_llc.contains(r#""$netbsd_gate_trace_test_obj" \"#));
         assert!(real_llc.contains("real LLVM LNP64 lld NetBSD gate trace child link passed"));
+        assert!(real_llc.contains("userland/domain_nested_test_clang.c"));
+        assert!(real_llc.contains("netbsd-domain-nested-test-clang-smoke.o"));
+        assert!(
+            real_llc.contains("real LLVM LNP64 clang NetBSD domain nested child object passed")
+        );
+        assert!(real_llc.contains("lnp64-netbsd-domain-nested-test-linked.elf"));
+        assert!(real_llc.contains(r#""$netbsd_domain_nested_test_obj" "$libc_fd_impl_obj""#));
+        assert!(real_llc.contains("real LLVM LNP64 lld NetBSD domain nested child link passed"));
+        assert!(real_llc.contains("userland/domain_budget_test_clang.c"));
+        assert!(real_llc.contains("netbsd-domain-budget-test-clang-smoke.o"));
+        assert!(real_llc.contains(r#"grep -q 'alloc r' "$netbsd_domain_budget_test_dump""#));
+        assert!(
+            real_llc.contains("real LLVM LNP64 clang NetBSD domain budget child object passed")
+        );
+        assert!(real_llc.contains("lnp64-netbsd-domain-budget-test-linked.elf"));
+        assert!(real_llc.contains(r#""$netbsd_domain_budget_test_obj" "$libc_fd_impl_obj""#));
+        assert!(real_llc.contains("real LLVM LNP64 lld NetBSD domain budget child link passed"));
         assert!(real_llc.contains("lnp64-meta-libc-linked.elf"));
         assert!(real_llc.contains(
             r#""$meta_libc_obj" "$libc_meta_impl_obj" \
@@ -3738,6 +3761,8 @@ mod tests {
             "real_netbsd_mmap_child_execution",
             "real_netbsd_socket_loopback_child_execution",
             "real_netbsd_gate_trace_child_execution",
+            "real_netbsd_domain_nested_child_execution",
+            "real_netbsd_domain_budget_child_execution",
             "real_metadata_libc_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
@@ -3830,6 +3855,8 @@ mod tests {
             "real_netbsd_mmap_child_execution",
             "real_netbsd_socket_loopback_child_execution",
             "real_netbsd_gate_trace_child_execution",
+            "real_netbsd_domain_nested_child_execution",
+            "real_netbsd_domain_budget_child_execution",
             "real_metadata_libc_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
@@ -4937,6 +4964,8 @@ mod tests {
             "netbsd_mmap_child",
             "netbsd_socket_loopback_child",
             "netbsd_gate_trace_child",
+            "netbsd_domain_nested_child",
+            "netbsd_domain_budget_child",
             "netbsd_personality_clang",
             "netcat",
             "httpd",
@@ -4979,6 +5008,8 @@ mod tests {
         assert_eq!(statuses["netbsd_mmap_child"], "partial");
         assert_eq!(statuses["netbsd_socket_loopback_child"], "partial");
         assert_eq!(statuses["netbsd_gate_trace_child"], "partial");
+        assert_eq!(statuses["netbsd_domain_nested_child"], "partial");
+        assert_eq!(statuses["netbsd_domain_budget_child"], "partial");
         assert_eq!(statuses["netbsd_personality_clang"], "partial");
         assert_eq!(statuses["netcat"], "partial");
         assert_eq!(statuses["httpd"], "partial");
@@ -5716,6 +5747,8 @@ mod tests {
             "netbsd_mmap_child",
             "netbsd_socket_loopback_child",
             "netbsd_gate_trace_child",
+            "netbsd_domain_nested_child",
+            "netbsd_domain_budget_child",
             "netbsd_personality_clang",
             "simple_libc",
         ] {

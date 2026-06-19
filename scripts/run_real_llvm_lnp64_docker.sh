@@ -282,6 +282,12 @@ run_elf_report "real LLVM LNP64 run-elf NetBSD socket loopback child passed" \
 run_elf_report "real LLVM LNP64 run-elf NetBSD gate trace child passed" \
   target/llvm-lnp64-build/lnp64-netbsd-gate-trace-test-linked.elf \
   'gate_trace_test ok'
+run_elf_report "real LLVM LNP64 run-elf NetBSD domain nested child passed" \
+  target/llvm-lnp64-build/lnp64-netbsd-domain-nested-test-linked.elf \
+  'domain_nested_test ok'
+run_elf_report "real LLVM LNP64 run-elf NetBSD domain budget child passed" \
+  target/llvm-lnp64-build/lnp64-netbsd-domain-budget-test-linked.elf \
+  'domain_budget_test ok'
 run_elf_report "real LLVM LNP64 run-elf sbase echo execution passed" \
   target/llvm-lnp64-build/lnp64-sbase-echo-linked.elf \
   echo hello clang --expect 'hello clang'

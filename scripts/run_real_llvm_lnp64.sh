@@ -3620,6 +3620,33 @@ grep -q 'gate_return r' "$netbsd_gate_trace_test_dump"
 printf 'real LLVM LNP64 clang NetBSD gate trace child object passed: %s\n' \
   "$netbsd_gate_trace_test_obj"
 
+netbsd_domain_nested_test_obj="$build_dir/netbsd-domain-nested-test-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
+  -c userland/domain_nested_test_clang.c -o "$netbsd_domain_nested_test_obj"
+test -s "$netbsd_domain_nested_test_obj"
+netbsd_domain_nested_test_dump="$build_dir/netbsd-domain-nested-test-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$netbsd_domain_nested_test_obj" \
+  >"$netbsd_domain_nested_test_dump"
+grep -q 'domain_ctl r' "$netbsd_domain_nested_test_dump"
+printf 'real LLVM LNP64 clang NetBSD domain nested child object passed: %s\n' \
+  "$netbsd_domain_nested_test_obj"
+
+netbsd_domain_budget_test_obj="$build_dir/netbsd-domain-budget-test-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -I toolchain/include \
+  -c userland/domain_budget_test_clang.c -o "$netbsd_domain_budget_test_obj"
+test -s "$netbsd_domain_budget_test_obj"
+netbsd_domain_budget_test_dump="$build_dir/netbsd-domain-budget-test-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$netbsd_domain_budget_test_obj" \
+  >"$netbsd_domain_budget_test_dump"
+grep -q 'domain_ctl r' "$netbsd_domain_budget_test_dump"
+grep -q 'alloc r' "$netbsd_domain_budget_test_dump"
+printf 'real LLVM LNP64 clang NetBSD domain budget child object passed: %s\n' \
+  "$netbsd_domain_budget_test_obj"
+
 meta_libc_c="$build_dir/meta-libc-smoke.c"
 cat >"$meta_libc_c" <<'C'
 #include <errno.h>
@@ -5157,6 +5184,22 @@ netbsd_gate_trace_test_elf="$build_dir/lnp64-netbsd-gate-trace-test-linked.elf"
 test -s "$netbsd_gate_trace_test_elf"
 printf 'real LLVM LNP64 lld NetBSD gate trace child link passed: %s\n' \
   "$netbsd_gate_trace_test_elf"
+
+netbsd_domain_nested_test_elf="$build_dir/lnp64-netbsd-domain-nested-test-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$netbsd_domain_nested_test_elf" "$crt0_obj" \
+  "$netbsd_domain_nested_test_obj" "$libc_fd_impl_obj"
+test -s "$netbsd_domain_nested_test_elf"
+printf 'real LLVM LNP64 lld NetBSD domain nested child link passed: %s\n' \
+  "$netbsd_domain_nested_test_elf"
+
+netbsd_domain_budget_test_elf="$build_dir/lnp64-netbsd-domain-budget-test-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$netbsd_domain_budget_test_elf" "$crt0_obj" \
+  "$netbsd_domain_budget_test_obj" "$libc_fd_impl_obj"
+test -s "$netbsd_domain_budget_test_elf"
+printf 'real LLVM LNP64 lld NetBSD domain budget child link passed: %s\n' \
+  "$netbsd_domain_budget_test_elf"
 
 meta_libc_elf="$build_dir/lnp64-meta-libc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

@@ -416,6 +416,12 @@ The concrete first-program set is pinned in
 - `netbsd_gate_trace_child`: a non-fork NetBSD personality child replacement
   that exercises Resource Domain creation, call-gate creation, gate call/return,
   and ordinary fd output through real Clang/lld output.
+- `netbsd_domain_nested_child`: a non-fork NetBSD personality child replacement
+  that exercises nested Resource Domain create/query/freeze/resume/attach/detach
+  and destroy paths through real Clang/lld output.
+- `netbsd_domain_budget_child`: a non-fork NetBSD personality child replacement
+  that exercises Resource Domain memory-budget enforcement and usage accounting
+  through real Clang/lld output.
 
 These bootstrap gates now run through real Clang/lld output and the software
 loader without the toy compiler. Full replacement remains partial until the
