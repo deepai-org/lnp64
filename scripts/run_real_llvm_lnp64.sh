@@ -1260,6 +1260,28 @@ done
 printf 'real LLVM LNP64 clang sbase command object smokes passed: %s\n' \
   "${sbase_objs[*]}"
 
+sbase_libutil_sources=(
+  concat confirm cp enmasse fnck getlines linecmp writeall
+)
+sbase_libutil_objs=()
+for sbase_libutil in "${sbase_libutil_sources[@]}"; do
+  sbase_libutil_obj="$build_dir/sbase-libutil-$sbase_libutil-clang-smoke.o"
+  "$clang" --target=lnp64-unknown-none -O0 \
+    -Werror=implicit-function-declaration -ffreestanding -fno-builtin \
+    -fno-pic -fno-jump-tables -fno-unwind-tables \
+    -fno-asynchronous-unwind-tables -I toolchain/include -I third_party/sbase \
+    -c "third_party/sbase/libutil/$sbase_libutil.c" \
+    -o "$sbase_libutil_obj"
+  test -s "$sbase_libutil_obj"
+  sbase_libutil_dump="$build_dir/sbase-libutil-$sbase_libutil-clang-smoke.dump"
+  "$llvm_objdump" -d --triple=lnp64-unknown-none "$sbase_libutil_obj" \
+    >"$sbase_libutil_dump"
+  grep -q "<$sbase_libutil>:" "$sbase_libutil_dump"
+  sbase_libutil_objs+=("$sbase_libutil_obj")
+done
+printf 'real LLVM LNP64 clang sbase libutil object smokes passed: %s\n' \
+  "${sbase_libutil_objs[*]}"
+
 netcat_obj="$build_dir/netcat-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \

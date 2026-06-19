@@ -16,6 +16,7 @@ int fprintf(FILE *stream, const char *format, ...);
 int printf(const char *format, ...);
 int puts(const char *s);
 int putchar(int ch);
+int getchar(void);
 int rename(const char *oldpath, const char *newpath);
 int fputc(int ch, FILE *stream);
 int fputs(const char *s, FILE *stream);

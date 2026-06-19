@@ -341,6 +341,10 @@ LNP64TargetLowering::LNP64TargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::GlobalAddress, MVT::i64, Custom);
   setOperationAction(ISD::BR_CC, MVT::i64, Custom);
   setOperationAction(ISD::BRCOND, MVT::Other, Custom);
+  setOperationAction(ISD::VASTART, MVT::Other, Custom);
+  setOperationAction(ISD::VAARG, MVT::Other, Expand);
+  setOperationAction(ISD::VACOPY, MVT::Other, Expand);
+  setOperationAction(ISD::VAEND, MVT::Other, Expand);
   for (MVT MemVT : {MVT::i1, MVT::i8, MVT::i16, MVT::i32}) {
     setLoadExtAction(ISD::ZEXTLOAD, MVT::i64, MemVT, Legal);
     setLoadExtAction(ISD::SEXTLOAD, MVT::i64, MemVT, Legal);
@@ -453,6 +457,16 @@ SDValue LNP64TargetLowering::LowerOperation(SDValue Op,
     SDValue Zero = DAG.getConstant(0, DL, MVT::i64);
     return DAG.getNode(LNP64ISD::BR_NE, DL, MVT::Other,
                        {Chain, Cond, Zero, Target});
+  }
+  case ISD::VASTART: {
+    SDLoc DL(Op);
+    SDValue Chain = Op.getOperand(0);
+    EVT PtrVT = getPointerTy(DAG.getDataLayout());
+    SDValue StackPtr = DAG.getCopyFromReg(Chain, DL, LNP64::R31, PtrVT);
+    Chain = StackPtr.getValue(1);
+    const Value *SV = cast<SrcValueSDNode>(Op.getOperand(2))->getValue();
+    return DAG.getStore(Chain, DL, StackPtr, Op.getOperand(1),
+                        MachinePointerInfo(SV));
   }
   default:
     llvm_unreachable("unsupported LNP64 custom lowering opcode");

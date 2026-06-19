@@ -1,5 +1,8 @@
 /* See LICENSE file for copyright and license details. */
 
+#include <stddef.h>
+#include <stdio.h>
+
 struct line {
 	char *data;
 	size_t len;

@@ -1421,6 +1421,7 @@ mod tests {
             "clang_cwalk_package_object",
             "clang_varargs_call_object",
             "clang_sbase_command_objects",
+            "clang_sbase_libutil_objects",
             "zlib_package_static_link",
             "natsort_package_static_link",
             "jsmn_package_static_link",
@@ -2294,6 +2295,15 @@ mod tests {
         assert!(real_llc.contains("third_party/sbase/$sbase_cmd.c"));
         assert!(transition_manifest.contains("third_party/sbase/fs.h"));
         assert!(real_llc.contains("real LLVM LNP64 clang sbase command object smokes passed"));
+        assert!(real_llc.contains("sbase_libutil_sources=("));
+        for source in [
+            "concat", "confirm", "cp", "enmasse", "fnck", "getlines", "linecmp", "writeall",
+        ] {
+            assert!(real_llc.contains(source));
+        }
+        assert!(real_llc.contains("sbase-libutil-$sbase_libutil-clang-smoke.o"));
+        assert!(real_llc.contains("third_party/sbase/libutil/$sbase_libutil.c"));
+        assert!(real_llc.contains("real LLVM LNP64 clang sbase libutil object smokes passed"));
         assert!(real_llc.contains("netcat-clang-smoke.o"));
         assert!(real_llc.contains("-c demos/netcat.c"));
         assert!(real_llc.contains("real LLVM LNP64 clang netcat demo object smoke passed"));
@@ -3305,6 +3315,10 @@ mod tests {
         assert!(isel.contains("return std::make_pair(0U, &LNP64::GPRRegClass)"));
         assert!(isel.contains("computeRegisterProperties"));
         assert!(isel.contains("CCState ArgCCInfo(CLI.CallConv, CLI.IsVarArg"));
+        assert!(isel.contains("setOperationAction(ISD::VASTART, MVT::Other, Custom)"));
+        assert!(isel.contains("setOperationAction(ISD::VAEND, MVT::Other, Expand)"));
+        assert!(isel.contains("case ISD::VASTART"));
+        assert!(isel.contains("DAG.getCopyFromReg(Chain, DL, LNP64::R31"));
         assert!(!isel.contains("varargs lowering is not implemented yet"));
         assert!(isel_header.contains("getTargetNodeName"));
         assert!(isel_header.contains("LowerOperation"));
