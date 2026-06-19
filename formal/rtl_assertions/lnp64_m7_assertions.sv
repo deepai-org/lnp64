@@ -209,6 +209,15 @@ module lnp64_m7_assertions (
                             else $fatal(1, "M7 stale address rejection changed scheduler location");
                         assert (typed_commit.wait_generation == previous_wait_generation)
                             else $fatal(1, "M7 stale address rejection commit wait generation drifted");
+                        assert (typed_state_projection.wait_generation == previous_wait_generation &&
+                                typed_state_projection.address_generation == previous_address_generation &&
+                                typed_state_projection.stale_address_generation == previous_stale_address_generation)
+                            else $fatal(1, "M7 stale address rejection changed a generation slot");
+                        assert (typed_state_projection.atomic_word == previous_atomic_word &&
+                                typed_state_projection.atomic_count == previous_atomic_count)
+                            else $fatal(1, "M7 stale address rejection changed atomic state");
+                        assert (typed_state_projection.wake_pending == previous_wake_pending)
+                            else $fatal(1, "M7 stale address rejection changed wake-pending state");
                     end
                     default:
                         assert (1'b0)
