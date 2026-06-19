@@ -131,6 +131,14 @@
       "comparison": "retire_trace_and_final_state"
     },
     {
+      "source": "tests/rtl/programs/top_cap_transfer_valid.s",
+      "generated_flat_hex": "tests/rtl/programs/top_cap_transfer_valid.hex",
+      "required_features": ["core", "fdr", "object_ctl_queue_pipe", "cap_send", "cap_recv", "cap_rights_narrowing", "valid_capability_transfer", "no_authority_amplification", "errno", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    },
+    {
       "source": "tests/rtl/programs/top_link_register.s",
       "generated_flat_hex": "tests/rtl/programs/top_link_register.hex",
       "required_features": ["core", "call_return", "link_register", "exit"],

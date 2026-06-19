@@ -182,6 +182,8 @@
       "LNP64_OP_LR_GET=16'h007c",
       "LNP64_OP_LR_SET=16'h007d",
       "LNP64_OP_LA_LITERAL=16'h007e",
+      "LNP64_OP_CAP_SEND=16'h007f",
+      "LNP64_OP_CAP_RECV=16'h0080",
       "LNP64_OP_UNSUPPORTED=16'h00ff"
     ],
     "lnp64_m1_commit_op_e": [
