@@ -977,6 +977,51 @@ grep -q 'call ' "$natsort_smoke_dump"
 printf 'real LLVM LNP64 clang natsort package object smoke passed: %s\n' \
   "$natsort_smoke_obj"
 
+jsmn_smoke_c="$build_dir/jsmn-smoke.c"
+cat >"$jsmn_smoke_c" <<'C'
+#include "jsmn.h"
+
+static unsigned long lnp64_len(const char *s) {
+  unsigned long n = 0;
+  while (s[n])
+    n = n + 1;
+  return n;
+}
+
+int main(void) {
+  const char *json = "{\"name\":\"lnp64\",\"ok\":true}";
+  jsmn_parser parser;
+  jsmntok_t tok[8];
+  int r;
+
+  jsmn_init(&parser);
+  r = jsmn_parse(&parser, json, lnp64_len(json), tok, 8);
+  if (r != 5)
+    return 1;
+  if (tok[0].type != JSMN_OBJECT || tok[0].size != 2)
+    return 2;
+  if (tok[1].type != JSMN_STRING || tok[3].type != JSMN_STRING)
+    return 3;
+  if (tok[4].type != JSMN_PRIMITIVE)
+    return 4;
+  return 0;
+}
+C
+
+jsmn_smoke_obj="$build_dir/jsmn-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic \
+  -fno-jump-tables -fno-unwind-tables -fno-asynchronous-unwind-tables \
+  -I toolchain/include -I third_party/jsmn \
+  -c "$jsmn_smoke_c" -o "$jsmn_smoke_obj"
+test -s "$jsmn_smoke_obj"
+jsmn_smoke_dump="$build_dir/jsmn-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$jsmn_smoke_obj" \
+  >"$jsmn_smoke_dump"
+grep -q '<jsmn_parse>:' "$jsmn_smoke_dump"
+grep -q '<main>:' "$jsmn_smoke_dump"
+printf 'real LLVM LNP64 clang jsmn package object smoke passed: %s\n' \
+  "$jsmn_smoke_obj"
+
 netcat_obj="$build_dir/netcat-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
@@ -3579,6 +3624,13 @@ natsort_elf="$build_dir/lnp64-natsort-linked.elf"
 test -s "$natsort_elf"
 printf 'real LLVM LNP64 lld natsort package link smoke passed: %s\n' \
   "$natsort_elf"
+
+jsmn_elf="$build_dir/lnp64-jsmn-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$jsmn_elf" "$crt0_obj" "$jsmn_smoke_obj"
+test -s "$jsmn_elf"
+printf 'real LLVM LNP64 lld jsmn package link smoke passed: %s\n' \
+  "$jsmn_elf"
 
 calloc_elf="$build_dir/lnp64-calloc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \

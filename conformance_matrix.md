@@ -92,7 +92,7 @@ specific compiler/runtime special casing.
 | Target | Status | Evidence | Compatibility Bugs |
 | --- | --- | --- | --- |
 | sbase subset | passing | `third_party/sbase/*`, `scripts/run_sbase.sh` | Expand command coverage and edge cases under `COMPAT-FS-001`, `COMPAT-STDIO-001`, `COMPAT-LIBC-002`. |
-| jsmn | passing | `third_party/jsmn/example/simple.c`, `third_party/jsmn/test/tests.c`, `scripts/run_jsmn.sh` | None known beyond broader C parser/runtime coverage. |
+| jsmn | passing | `third_party/jsmn/example/simple.c`, `third_party/jsmn/test/tests.c`, `scripts/run_jsmn.sh`, `scripts/run_real_llvm_lnp64_docker.sh` | The toy package smoke still runs the checked-in stdio/test harnesses; the real LLVM gate now compiles and runs a generated no-stdio `jsmn.h` package smoke through `run-elf`. |
 | inih | passing | `third_party/inih/ini.c`, `third_party/inih/smoke.c`, `scripts/run_inih.sh` | File parser and `ini_parse_string` paths pass. Broader allocator/custom-reader configurations are not covered. |
 | zlib upstream | partial / passing checksums | `third_party/zlib/adler32.c`, `third_party/zlib/crc32.c`, `third_party/zlib/crc32.h`, `third_party/zlib/zutil.c`, `third_party/zlib/smoke.c`, `scripts/run_zlib.sh` | Full deflate/inflate remain `COMPAT-PKG-002`. |
 | natsort | passing | `third_party/natsort/strnatcmp.c`, `third_party/natsort/smoke.c`, `scripts/run_natsort.sh`, `scripts/run_real_llvm_lnp64_docker.sh` | The toy package smoke still runs the checked-in stdio smoke; the real LLVM gate now compiles upstream `strnatcmp.c` and runs a generated non-stdio natsort package smoke through `run-elf`. |

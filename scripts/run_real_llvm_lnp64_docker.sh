@@ -146,6 +146,8 @@ run_elf_report "real LLVM LNP64 run-elf sort helper execution passed" \
   target/llvm-lnp64-build/lnp64-sort-linked.elf
 run_elf_report "real LLVM LNP64 run-elf natsort package execution passed" \
   target/llvm-lnp64-build/lnp64-natsort-linked.elf
+run_elf_report "real LLVM LNP64 run-elf jsmn package execution passed" \
+  target/llvm-lnp64-build/lnp64-jsmn-linked.elf
 run_elf_report "real LLVM LNP64 run-elf calloc execution passed" \
   target/llvm-lnp64-build/lnp64-calloc-linked.elf
 run_elf_report "real LLVM LNP64 run-elf realloc execution passed" \
