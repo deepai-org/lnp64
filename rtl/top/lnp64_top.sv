@@ -458,6 +458,10 @@ module lnp64_top #(
             end
             if (cap_rsp_valid && cap_rsp_ready && cap_m1_commit_valid &&
                 cap_rsp.tile_id < CORE_TILE_COUNT[31:0]) begin
+`ifndef SYNTHESIS
+                assert (!cap_m1_commit_latched_valid_vec[cap_rsp.tile_id])
+                    else $fatal(1, "SG-AUTH M1 cap-engine commit overwrote unconsumed top-level evidence");
+`endif
                 cap_m1_commit_latched_valid_vec[cap_rsp.tile_id] <= 1'b1;
                 cap_m1_commit_latched_vec[cap_rsp.tile_id] <= cap_m1_commit;
                 cap_m1_pre_state_projection_latched_vec[cap_rsp.tile_id] <=
@@ -535,6 +539,11 @@ module lnp64_top #(
         if (!logic_reset_n) begin
         end else begin
             for (m1_assert_i = 0; m1_assert_i < CORE_TILE_COUNT; m1_assert_i = m1_assert_i + 1) begin
+                if (cap_m1_commit_latched_valid_vec[m1_assert_i] &&
+                    retire_submit_valid_vec[m1_assert_i]) begin
+                    assert (top_m1_retire_is_cap_op(retire_submit_record_vec[m1_assert_i]))
+                        else $fatal(1, "SG-AUTH M1 pending evidence was bypassed by non-cap retire");
+                end
                 if (m1_commit_valid_vec[m1_assert_i]) begin
                     assert (retire_submit_valid_vec[m1_assert_i])
                         else $fatal(1, "SG-AUTH M1 commit was not tied to a tile-local retired instruction");
