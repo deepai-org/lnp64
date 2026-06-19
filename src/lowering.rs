@@ -1650,6 +1650,7 @@ mod tests {
             "gate_driver",
             "real_tblgen",
             "real_mc_build",
+            "real_objects_build",
             "real_llc_build",
             "compile_hello",
             "compile_arithmetic",
@@ -1674,6 +1675,11 @@ mod tests {
         assert!(
             commands["real_llc_build"].contains("scripts/run_real_llvm_lnp64_docker.sh"),
             "real LLVM llc gate must run through the Docker-backed script"
+        );
+        assert!(
+            commands["real_objects_build"]
+                .contains("LNP64_LLVM_GATE=objects bash scripts/run_real_llvm_lnp64_docker.sh"),
+            "real LLVM object gate must run through the Docker-backed script"
         );
         assert!(
             commands["real_mc_build"].contains("scripts/run_real_llvm_lnp64_mc_docker.sh"),
@@ -1709,11 +1715,18 @@ mod tests {
         assert!(real_tblgen_docker.contains(r#"--user "$uid:$gid""#));
         assert!(real_llc_docker.contains("LNP64_LLVM_DOCKER_SKIP_BUILD"));
         assert!(real_llc_docker.contains("LNP64_LLVM_DOCKER_SKIP_RUN_ELF"));
+        assert!(real_llc_docker.contains(r#"LNP64_LLVM_GATE="${LNP64_LLVM_GATE:-full}""#));
+        assert!(real_llc_docker.contains("run-elf execution skipped by LNP64_LLVM_GATE"));
         assert!(real_mc_docker.contains("LNP64_LLVM_DOCKER_SKIP_BUILD"));
         assert!(real_llc.contains("llvmorg-14.0.6"));
         assert!(real_llc.contains("LNP64_LLVM_GATE"));
-        assert!(real_llc.contains("full|mc"));
+        assert!(real_llc.contains("full|mc|objects"));
         assert!(real_llc.contains("ninja -C \"$build_dir\" -j \"$jobs\" llvm-mc llvm-objdump"));
+        assert!(
+            real_llc
+                .contains("ninja -C \"$build_dir\" -j \"$jobs\" llc llvm-mc llvm-objdump clang")
+        );
+        assert!(real_llc.contains("real LLVM LNP64 object-only gate passed"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-objdump crt0 decode smoke passed"));
         assert!(real_llc.contains("git clone"));
         assert!(

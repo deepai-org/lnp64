@@ -13,10 +13,18 @@ if [[ "${LNP64_LLVM_DOCKER_SKIP_BUILD:-0}" != "1" ]]; then
 fi
 docker run --rm \
   --user "$uid:$gid" \
+  -e LNP64_LLVM_GATE="${LNP64_LLVM_GATE:-full}" \
+  -e LNP64_LLVM_JOBS="${LNP64_LLVM_JOBS:-}" \
   -v "$root:/work" \
   -w /work \
   "$image" \
   bash scripts/run_real_llvm_lnp64.sh
+
+if [[ "${LNP64_LLVM_GATE:-full}" != "full" ]]; then
+  printf 'real LLVM LNP64 run-elf execution skipped by LNP64_LLVM_GATE=%s\n' \
+    "${LNP64_LLVM_GATE:-full}"
+  exit 0
+fi
 
 if [[ "${LNP64_LLVM_DOCKER_SKIP_RUN_ELF:-0}" == "1" ]]; then
   printf 'real LLVM LNP64 run-elf execution skipped by LNP64_LLVM_DOCKER_SKIP_RUN_ELF=1\n'

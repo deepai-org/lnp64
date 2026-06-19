@@ -15,10 +15,10 @@ jobs="${LNP64_LLVM_JOBS:-$default_jobs}"
 gate="${LNP64_LLVM_GATE:-full}"
 
 case "$gate" in
-  full|mc) ;;
+  full|mc|objects) ;;
   *)
     printf 'unknown LNP64_LLVM_GATE: %s\n' "$gate" >&2
-    printf 'expected one of: full, mc\n' >&2
+    printf 'expected one of: full, mc, objects\n' >&2
     exit 2
     ;;
 esac
@@ -150,11 +150,17 @@ cmake -S "$project_dir/llvm" -B "$build_dir" -G Ninja \
   -DLLVM_ENABLE_LIBXML2=OFF \
   -DLLVM_ENABLE_LIBEDIT=OFF
 
-if [[ "$gate" == "mc" ]]; then
-  ninja -C "$build_dir" -j "$jobs" llvm-mc llvm-objdump
-else
-  ninja -C "$build_dir" -j "$jobs" llc llvm-mc llvm-objdump clang lld
-fi
+case "$gate" in
+  mc)
+    ninja -C "$build_dir" -j "$jobs" llvm-mc llvm-objdump
+    ;;
+  objects)
+    ninja -C "$build_dir" -j "$jobs" llc llvm-mc llvm-objdump clang
+    ;;
+  full)
+    ninja -C "$build_dir" -j "$jobs" llc llvm-mc llvm-objdump clang lld
+    ;;
+esac
 
 llvm_mc="$build_dir/bin/llvm-mc"
 llvm_objdump="$build_dir/bin/llvm-objdump"
@@ -4405,6 +4411,11 @@ grep -q 'st ' "$stack_args_dump"
 grep -q 'ld ' "$stack_args_dump"
 printf 'real LLVM LNP64 clang stack-argument object smoke passed: %s\n' \
   "$stack_args_obj"
+
+if [[ "$gate" == "objects" ]]; then
+  printf 'real LLVM LNP64 object-only gate passed: %s\n' "$build_dir"
+  exit 0
+fi
 
 crt0_obj="$build_dir/crt0-smoke.o"
 "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj toolchain/crt0_lnp64.s \
