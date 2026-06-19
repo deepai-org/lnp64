@@ -99,6 +99,15 @@
       "comparison": "retire_trace_and_final_state"
     }
   ],
+  "llvm_mc_programs": [
+    {
+      "source": "tests/rtl/programs/top_llvm_mc_exit.s",
+      "required_features": ["llvm_mc_object_bytes", "core", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_llvm_mc_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    }
+  ],
   "compiler_flat_programs": [
     {
       "source": "tests/rtl/programs/top_return_12.c",
@@ -316,6 +325,7 @@
   "recurring_gate_requirements": [
     "Each active entry must name a top-level Verilator script.",
     "Each active entry must compare emulator/model and RTL architectural observations.",
+    "LLVM MC entries must assemble with llvm-mc, decode object bytes with llvm-objdump, and feed those bytes to the shared top-level RTL/emulator comparator.",
     "Blocked entries must name the missing required_features rather than being copied into synthetic RTL-only tests."
   ]
 }

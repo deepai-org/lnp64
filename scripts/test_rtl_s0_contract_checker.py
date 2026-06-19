@@ -14,7 +14,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CHECKER = ROOT / "scripts/check_rtl_s0_contract.py"
 FILELIST = ROOT / "tests/rtl/s0_filelist.f"
-EXTRA_FILES = ("tests/rtl/s0_filelist.f", "scripts/run_rtl_s0.sh")
+EXTRA_FILES = (
+    "tests/rtl/s0_filelist.f",
+    "scripts/run_rtl_s0.sh",
+    "scripts/rtl_verilator_common.sh",
+)
 
 
 def require(condition: bool, message: str) -> None:

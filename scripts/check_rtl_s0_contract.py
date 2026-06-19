@@ -751,8 +751,10 @@ def main() -> None:
     ):
         fail("S0 gate script is missing marker: verilator --lint-only")
 
+    if "verilator --binary" not in s0_gate_text and "verilator --binary" not in verilator_common_text:
+        fail("S0 gate script is missing marker: verilator --binary")
+
     for marker in (
-        "verilator --binary",
         "--top-module lnp64_s0_tb",
         "tests/rtl/s0_filelist.f",
         "grep -q \"LNP64-RTL-S0 PASS\"",

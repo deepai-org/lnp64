@@ -335,7 +335,9 @@ bash scripts/run_rtl_synth_gates.sh
 
 `scripts/run_rtl_top_program_manifest.sh` builds the top-level Verilator
 program test once, then reuses that binary for the remaining selected program
-images. For a manual multi-program loop, run one normal smoke first and then
+images. The full manifest includes an LLVM MC object-byte smoke, so run the LLVM
+MC Docker gate first or set `LLVM_MC`/`LLVM_OBJDUMP` when using a non-default
+tool path. For a manual multi-program loop, run one normal smoke first and then
 reuse the binary explicitly:
 
 ```sh

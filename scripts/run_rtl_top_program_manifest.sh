@@ -33,52 +33,72 @@ if ! [[ "$top_program_jobs" =~ ^[0-9]+$ ]] || (( top_program_jobs < 1 )); then
 fi
 
 if [[ "$#" -gt 0 ]]; then
-  programs=("$@")
+  program_specs=()
+  for program in "$@"; do
+    program_specs+=("${program}"$'\t'"scripts/run_rtl_top_program_smoke.sh")
+  done
 else
-  mapfile -t programs < <(
+  mapfile -t program_specs < <(
     python3 - <<'PY'
 import json
 from pathlib import Path
 
 manifest = json.loads(Path("tests/rtl/top_level_program_manifest.json").read_text(encoding="utf-8"))
-for section in ("flat_hex_programs", "compiler_flat_programs", "assembly_programs", "compiler_generated_programs"):
+for section in ("flat_hex_programs", "llvm_mc_programs", "compiler_flat_programs", "assembly_programs", "compiler_generated_programs"):
     for entry in manifest[section]:
         if entry["status"] == "active":
-            print(entry["source"])
+            print(f"{entry['source']}\t{entry['rtl_gate']}")
 PY
   )
 fi
 
-if [[ "${#programs[@]}" -eq 0 ]]; then
+if [[ "${#program_specs[@]}" -eq 0 ]]; then
   printf '%s\n' "no active top-level RTL programs selected" >&2
   exit 1
 fi
 
-run_reused_program() {
-  local program="$1"
+run_program_spec() {
+  local spec="$1"
+  local program gate
+  IFS=$'\t' read -r program gate <<< "$spec"
+  if [[ -z "$program" || -z "$gate" ]]; then
+    printf 'invalid top-level RTL program spec: %q\n' "$spec" >&2
+    exit 1
+  fi
+  if [[ ! -x "$gate" && ! -f "$gate" ]]; then
+    printf 'missing top-level RTL gate: %s\n' "$gate" >&2
+    exit 1
+  fi
+  bash "$gate" "$program"
+}
+
+run_reused_program_spec() {
+  local spec="$1"
   LNP64_RTL_REUSE_BUILD=1 \
   LNP64_RTL_SKIP_LINT="${LNP64_RTL_SKIP_LINT:-1}" \
   LNP64_RTL_TOP_PROGRAM_SKIP_BUILD="${LNP64_RTL_TOP_PROGRAM_SKIP_BUILD:-1}" \
-    bash scripts/run_rtl_top_program_smoke.sh "$program"
+    run_program_spec "$spec"
 }
 
 first=1
-if (( top_program_jobs == 1 || ${#programs[@]} == 1 )); then
-  for program in "${programs[@]}"; do
+if (( top_program_jobs == 1 || ${#program_specs[@]} == 1 )); then
+  for spec in "${program_specs[@]}"; do
+    IFS=$'\t' read -r program gate <<< "$spec"
     printf '\n==> top-level RTL program: %s\n' "$program"
     if [[ "$first" -eq 1 ]]; then
       first=0
       LNP64_RTL_REUSE_BUILD="$first_program_reuse_build" \
-        bash scripts/run_rtl_top_program_smoke.sh "$program"
+        run_program_spec "$spec"
     else
-      run_reused_program "$program"
+      run_reused_program_spec "$spec"
     fi
   done
 else
-  first_program="${programs[0]}"
+  first_spec="${program_specs[0]}"
+  IFS=$'\t' read -r first_program first_gate <<< "$first_spec"
   printf '\n==> top-level RTL program: %s\n' "$first_program"
   LNP64_RTL_REUSE_BUILD="$first_program_reuse_build" \
-    bash scripts/run_rtl_top_program_smoke.sh "$first_program"
+    run_program_spec "$first_spec"
 
   log_dir="$(mktemp -d "${TMPDIR:-/tmp}/lnp64_rtl_top_program_manifest.XXXXXX")"
   cleanup() {
@@ -113,12 +133,13 @@ else
   }
 
   printf 'running remaining top-level RTL programs with %s parallel job(s); logs in %s\n' "$top_program_jobs" "$log_dir"
-  for ((idx = 1; idx < ${#programs[@]}; idx++)); do
-    program="${programs[$idx]}"
+  for ((idx = 1; idx < ${#program_specs[@]}; idx++)); do
+    spec="${program_specs[$idx]}"
+    IFS=$'\t' read -r program gate <<< "$spec"
     log="$log_dir/program_${idx}.log"
     (
       printf '\n==> top-level RTL program: %s\n' "$program"
-      run_reused_program "$program"
+      run_reused_program_spec "$spec"
     ) >"$log" 2>&1 &
     batch_pids+=("$!")
     batch_programs+=("$program")
@@ -134,4 +155,4 @@ else
   fi
 fi
 
-printf '\n%s\n' "rtl top-level program manifest gate ok (${#programs[@]} programs)"
+printf '\n%s\n' "rtl top-level program manifest gate ok (${#program_specs[@]} programs)"

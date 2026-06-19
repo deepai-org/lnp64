@@ -78,16 +78,21 @@ def require_typed_retire_gate(gate_text: str, source: str) -> None:
 
 def main() -> None:
     manifest = json.loads(text(MANIFEST))
+    manifest_runner = text(ROOT / "scripts/run_rtl_top_program_manifest.sh")
+    require("entry['rtl_gate']" in manifest_runner, "manifest runner must dispatch active entries through their rtl_gate")
+    require("llvm_mc_programs" in manifest_runner, "manifest runner must include LLVM MC program entries")
     require(manifest.get("schema") == "lnp64_top_level_program_tests_v1", "unexpected manifest schema")
     require(manifest.get("stage") == "feature_gated_plan", "manifest must be a feature-gated plan")
     require(manifest.get("top") == "rtl/top/lnp64_top.sv", "manifest must target lnp64_top")
     require((ROOT / "rtl/top/lnp64_top.sv").exists(), "lnp64_top is missing")
 
     flat_hex_entries = manifest.get("flat_hex_programs")
+    llvm_mc_entries = manifest.get("llvm_mc_programs")
     compiler_flat_entries = manifest.get("compiler_flat_programs")
     assembly_entries = manifest.get("assembly_programs")
     compiler_entries = manifest.get("compiler_generated_programs")
     require(isinstance(flat_hex_entries, list) and flat_hex_entries, "missing flat_hex_programs")
+    require(isinstance(llvm_mc_entries, list) and llvm_mc_entries, "missing llvm_mc_programs")
     require(isinstance(compiler_flat_entries, list) and compiler_flat_entries, "missing compiler_flat_programs")
     require(isinstance(assembly_entries, list) and assembly_entries, "missing assembly_programs")
     require(isinstance(compiler_entries, list) and compiler_entries, "missing compiler_generated_programs")
@@ -118,6 +123,31 @@ def main() -> None:
             require('"errno"' in gate_text, f"{entry['source']} gate must compare final errno")
             require('"mem_checksum"' in gate_text, f"{entry['source']} gate must compare final memory checksum")
     require(active_flat_hex >= 1, "manifest must keep at least one active top-level flat hex program")
+    active_llvm_mc = 0
+    for entry in llvm_mc_entries:
+        require(isinstance(entry, dict), "LLVM MC entry must be an object")
+        require_entry(entry, "LLVM MC")
+        if entry.get("status") == "active":
+            active_llvm_mc += 1
+            gate_text = text(ROOT / str(entry["rtl_gate"]))
+            require("llvm-mc" in gate_text, f"{entry['source']} active gate must assemble with llvm-mc")
+            require("llvm-objdump" in gate_text, f"{entry['source']} active gate must decode object bytes with llvm-objdump")
+            require(".dump" in gate_text, f"{entry['source']} active gate must create an objdump dump")
+            require(
+                "scripts/run_rtl_top_program_smoke.sh" in gate_text,
+                f"{entry['source']} active gate must feed bytes to the shared top-level comparator",
+            )
+            smoke_text = text(ROOT / "scripts/run_rtl_top_program_smoke.sh")
+            require(
+                "scripts/llvm_objdump_to_flat_hex.py" in smoke_text,
+                f"{entry['source']} shared comparator must convert LLVM objdump bytes to flat hex",
+            )
+            require("RTL_RETIRE" in smoke_text and "EMULATOR_RETIRE" in smoke_text, f"{entry['source']} gate must compare retire traces")
+            require_typed_retire_gate(smoke_text, str(entry["source"]))
+            require("RTL_FINAL" in smoke_text and "EMULATOR_FINAL" in smoke_text, f"{entry['source']} gate must compare final state")
+            require('"errno"' in smoke_text, f"{entry['source']} gate must compare final errno")
+            require('"mem_checksum"' in smoke_text, f"{entry['source']} gate must compare final memory checksum")
+    require(active_llvm_mc >= 1, "manifest must keep at least one active LLVM MC object-byte top-level program")
     active_compiler_flat = 0
     for entry in compiler_flat_entries:
         require(isinstance(entry, dict), "compiler flat entry must be an object")
