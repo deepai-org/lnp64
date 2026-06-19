@@ -4077,8 +4077,30 @@ mod tests {
         assert!(run_all.contains("git diff --check"));
         assert!(run_real_packages.contains("scripts/run_libc_test.sh"));
         assert!(run_real_packages.contains("scripts/run_sbase.sh"));
-        assert!(run_demos.contains("demos/hello.c"));
+        assert!(run_demos.contains("scripts/run_real_llvm_lnp64_docker.sh"));
+        assert!(run_demos.contains("demos/netbsd_personality_smoke.c"));
         assert!(run_demos.contains("for src in demos/*.s"));
+        for migrated_demo in [
+            "demos/allocator.c",
+            "demos/cat.c",
+            "demos/factorial.c",
+            "demos/fibonacci.c",
+            "demos/hello.c",
+            "demos/json_parser.c",
+            "demos/netcat.c",
+            "demos/httpd.c",
+            "demos/parallel_hash.c",
+            "demos/pcr.c",
+            "demos/ping_pong.c",
+            "demos/producer_consumer.c",
+            "demos/rot13.c",
+            "demos/sqlite_lite.c",
+        ] {
+            assert!(
+                !run_demos.contains(migrated_demo),
+                "migrated real-Clang demo {migrated_demo} must not be routed through run_demos.sh"
+            );
+        }
     }
 
     #[test]

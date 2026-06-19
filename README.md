@@ -124,7 +124,7 @@ Docker LLVM gate:
 LNP64_LLVM_DOCKER_SKIP_BUILD=1 bash scripts/run_real_llvm_lnp64_docker.sh
 ```
 
-For faster repeated software runs:
+For faster repeated software runs over the remaining legacy software gates:
 
 ```sh
 cargo build --release
@@ -133,6 +133,10 @@ bash scripts/run_demos.sh
 bash scripts/run_userland.sh
 bash scripts/run_real_packages.sh
 ```
+
+`scripts/run_demos.sh` is now the legacy toy-bootstrap and assembly smoke path.
+Migrated C demos such as `hello`, `sqlite_lite`, `ping_pong`, `netcat`, and
+`httpd` are covered by the real Clang/lld gate above.
 
 ## Common Gates
 
@@ -146,6 +150,9 @@ cargo test --quiet
 bash scripts/run_demos.sh
 git diff --check
 ```
+
+`bash scripts/run_demos.sh` intentionally does not prove migrated C demo
+coverage anymore; use `bash scripts/run_real_llvm_lnp64_docker.sh` for that.
 
 Toolchain contracts:
 
