@@ -106,6 +106,7 @@ module lnp64_core_tile #(
     logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] active_thread_slot;
     logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] next_thread_slot;
     logic [THREAD_CONTEXT_COUNT-1:0] thread_active_mask;
+    logic [THREAD_CONTEXT_COUNT-1:0] thread_parked_mask;
     logic [THREAD_CONTEXT_COUNT-1:0] thread_completed_mask;
     logic thread_window_advance_valid;
     logic thread_window_activate_valid;
@@ -114,6 +115,10 @@ module lnp64_core_tile #(
     logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] thread_window_complete_slot;
     logic thread_window_collect_valid;
     logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] thread_window_collect_slot;
+    logic thread_window_park_valid;
+    logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] thread_window_park_slot;
+    logic thread_window_wake_valid;
+    logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] thread_window_wake_slot;
     logic [31:0] active_tid;
     logic [63:0] pcr_thread_pointer;
     logic [63:0] pcr_uid;
@@ -1644,8 +1649,7 @@ module lnp64_core_tile #(
         thread_window_activate_slot = 1;
         thread_window_complete_valid = state == CORE_EXEC &&
             dec.supported &&
-            dec.opcode == LNP64_OP_EXIT &&
-            active_thread_slot != '0;
+            dec.opcode == LNP64_OP_EXIT;
         thread_window_complete_slot = active_thread_slot;
         thread_window_collect_valid = state == CORE_EXEC &&
             dec.supported &&
@@ -1654,6 +1658,12 @@ module lnp64_core_tile #(
             THREAD_CONTEXT_COUNT > 1 &&
             thread_completed_mask[1];
         thread_window_collect_slot = 1;
+        thread_window_park_valid = state == CORE_EXEC &&
+            dec.supported &&
+            dec.opcode == LNP64_OP_YIELD;
+        thread_window_park_slot = active_thread_slot;
+        thread_window_wake_valid = wake_valid;
+        thread_window_wake_slot = '0;
     end
 
     lnp64_thread_window #(
@@ -1670,8 +1680,13 @@ module lnp64_core_tile #(
         .complete_slot(thread_window_complete_slot),
         .collect_valid(thread_window_collect_valid),
         .collect_slot(thread_window_collect_slot),
+        .park_valid(thread_window_park_valid),
+        .park_slot(thread_window_park_slot),
+        .wake_valid(thread_window_wake_valid),
+        .wake_slot(thread_window_wake_slot),
         .active_slot(active_thread_slot),
         .context_active(thread_active_mask),
+        .context_parked(thread_parked_mask),
         .context_completed(thread_completed_mask),
         .next_slot(next_thread_slot),
         .active_context(active_thread_context),
@@ -1933,9 +1948,11 @@ module lnp64_core_tile #(
     end
 
     always_comb begin
+        pid1_runnable = state != CORE_DONE && thread_active_mask[0];
+        pid1_parked = state != CORE_DONE && thread_parked_mask[0];
         tile_idle = tile_enable && (state == CORE_WAIT_RELEASE || state == CORE_DONE);
         tile_running = tile_enable && (state == CORE_EXEC || state == CORE_SEND_CMD || state == CORE_WAIT_RSP);
-        tile_parked = tile_enable && pid1_parked;
+        tile_parked = tile_enable && state != CORE_DONE && thread_parked_mask[0];
         tile_faulted = 1'b0;
         tile_telemetry_counter = retired_count;
         tile_fault_counter = 32'd0;
@@ -1976,7 +1993,7 @@ module lnp64_core_tile #(
         thread_submit_next.tile_id = TILE_ID[31:0];
         thread_submit_next.domain_id = active_thread_context.domain_id;
         thread_submit_next.domain_gen = active_thread_context.domain_gen;
-        thread_submit_next.state = pid1_parked ? 16'd2 : (pid1_runnable ? 16'd1 : 16'd0);
+        thread_submit_next.state = active_thread_context.state;
         thread_submit_next.wait_generation = 32'd1;
         thread_submit_next.active_location = TILE_ID[31:0];
         object_rsp_reader_fd = rsp.event_mask[31:0];
@@ -2007,8 +2024,6 @@ module lnp64_core_tile #(
             icache_invalidate <= 1'b0;
             dcache_writeback <= 1'b0;
             tlb_invalidate <= 1'b0;
-            pid1_runnable <= 1'b0;
-            pid1_parked <= 1'b0;
             retired_count <= 32'd0;
             env_features_seen <= 64'd0;
             env_tile_count_seen <= 32'd0;
@@ -2148,13 +2163,11 @@ module lnp64_core_tile #(
             case (state)
                 CORE_RESET: begin
                     state <= CORE_WAIT_RELEASE;
-                    pid1_runnable <= 1'b0;
                     tile_reset_stable <= tile_enable;
                 end
                 CORE_WAIT_RELEASE: begin
                     if (tile_enable && release_core) begin
                         state <= CORE_EXEC;
-                        pid1_runnable <= 1'b1;
                         submit_valid <= 1'b1;
                         submit_record <= thread_submit_next;
                         icache_invalidate <= 1'b1;
@@ -2818,13 +2831,9 @@ module lnp64_core_tile #(
                             end
                             LNP64_OP_YIELD: begin
                                 yielded <= 1'b1;
-                                pid1_runnable <= 1'b0;
-                                pid1_parked <= 1'b1;
                                 park_submit_valid <= 1'b1;
                                 park_submit_record <= thread_submit_next;
                                 if (wake_valid) begin
-                                    pid1_runnable <= 1'b1;
-                                    pid1_parked <= 1'b0;
                                     pc <= pc + 32'd1;
                                     retired_count <= retired_count + 32'd1;
                                     retire_submit_valid <= 1'b1;
@@ -3411,8 +3420,6 @@ module lnp64_core_tile #(
                             LNP64_OP_EXIT: begin
                                 if (active_thread_slot == 1'b0) begin
                                     done <= 1'b1;
-                                    pid1_runnable <= 1'b0;
-                                    pid1_parked <= 1'b0;
                                     state <= CORE_DONE;
                                 end else begin
                                     thread_exit_code[active_thread_slot] <= gpr[dec.rd];
@@ -3997,8 +4004,6 @@ module lnp64_core_tile #(
                         next_op_id <= next_op_id + 32'd1;
                         if (pending_unsupported) begin
                             done <= 1'b1;
-                            pid1_runnable <= 1'b0;
-                            pid1_parked <= 1'b0;
                             state <= CORE_DONE;
                         end else begin
                             state <= CORE_SWITCH;

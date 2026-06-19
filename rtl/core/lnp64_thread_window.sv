@@ -16,8 +16,13 @@ module lnp64_thread_window #(
     input  logic [CONTEXT_INDEX_WIDTH-1:0] complete_slot,
     input  logic collect_valid,
     input  logic [CONTEXT_INDEX_WIDTH-1:0] collect_slot,
+    input  logic park_valid,
+    input  logic [CONTEXT_INDEX_WIDTH-1:0] park_slot,
+    input  logic wake_valid,
+    input  logic [CONTEXT_INDEX_WIDTH-1:0] wake_slot,
     output logic [CONTEXT_INDEX_WIDTH-1:0] active_slot,
     output logic [CONTEXT_COUNT-1:0] context_active,
+    output logic [CONTEXT_COUNT-1:0] context_parked,
     output logic [CONTEXT_COUNT-1:0] context_completed,
     output logic [CONTEXT_INDEX_WIDTH-1:0] next_slot,
     output lnp64_thread_sched_t active_context,
@@ -30,11 +35,13 @@ module lnp64_thread_window #(
     logic found_next;
     logic [CONTEXT_INDEX_WIDTH-1:0] active_slot_q;
     logic [CONTEXT_COUNT-1:0] context_active_q;
+    logic [CONTEXT_COUNT-1:0] context_parked_q;
     logic [CONTEXT_COUNT-1:0] context_completed_q;
     lnp64_thread_sched_t context_record [0:CONTEXT_COUNT-1];
 
     assign active_slot = active_slot_q;
     assign context_active = context_active_q;
+    assign context_parked = context_parked_q;
     assign context_completed = context_completed_q;
 
     always_comb begin
@@ -46,7 +53,8 @@ module lnp64_thread_window #(
             context_record[ctx].domain_id = 32'd1;
             context_record[ctx].domain_gen = 32'd1;
             context_record[ctx].state = context_completed_q[ctx] ? 16'd3 :
-                (context_active_q[ctx] ? 16'd1 : 16'd0);
+                (context_parked_q[ctx] ? 16'd2 :
+                    (context_active_q[ctx] ? 16'd1 : 16'd0));
             context_record[ctx].latency_class = 16'd0;
             context_record[ctx].wait_generation = 32'd1;
             context_record[ctx].active_location = TILE_ID[31:0];
@@ -81,14 +89,26 @@ module lnp64_thread_window #(
             active_slot_q <= '0;
             context_active_q <= '0;
             context_active_q[0] <= 1'b1;
+            context_parked_q <= '0;
             context_completed_q <= '0;
         end else begin
             if (activate_valid) begin
                 context_active_q[activate_slot] <= 1'b1;
+                context_parked_q[activate_slot] <= 1'b0;
                 context_completed_q[activate_slot] <= 1'b0;
+            end
+            if (park_valid) begin
+                context_active_q[park_slot] <= 1'b0;
+                context_parked_q[park_slot] <= 1'b1;
+                context_completed_q[park_slot] <= 1'b0;
+            end
+            if (wake_valid) begin
+                context_active_q[wake_slot] <= 1'b1;
+                context_parked_q[wake_slot] <= 1'b0;
             end
             if (complete_valid) begin
                 context_active_q[complete_slot] <= 1'b0;
+                context_parked_q[complete_slot] <= 1'b0;
                 context_completed_q[complete_slot] <= 1'b1;
             end
             if (collect_valid) begin
