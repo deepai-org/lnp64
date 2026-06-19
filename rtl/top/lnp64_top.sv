@@ -597,6 +597,12 @@ module lnp64_top #(
                                 assert (m1_state_projection_vec[m1_assert_i].consumer_lineage_epoch ==
                                     m1_commit_vec[m1_assert_i].lineage_epoch)
                                     else $fatal(1, "SG-AUTH M1 consumer lineage drifted from cap-engine commit");
+                                if (m1_commit_vec[m1_assert_i].op == LNP64_M1_COMMIT_CAP_RECV) begin
+                                    assert (!m1_state_projection_vec[m1_assert_i].sent_valid)
+                                        else $fatal(1, "SG-AUTH M1 capRecv left a sent cap queued");
+                                    assert (m1_state_projection_vec[m1_assert_i].transfer_valid)
+                                        else $fatal(1, "SG-AUTH M1 capRecv did not preserve transfer-valid witness");
+                                end
                             end
                             LNP64_M1_COMMIT_CAP_SEND: begin
                                 assert (m1_state_projection_vec[m1_assert_i].sent_valid)

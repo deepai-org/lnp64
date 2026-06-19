@@ -663,6 +663,8 @@ module lnp64_m1_assertions (
                             else $fatal(1, "M1 capRecv changed sent cap authority");
                         assert (!typed_state_projection.sent_valid)
                             else $fatal(1, "M1 capRecv left the sent-cap projection valid");
+                        assert (typed_state_projection.transfer_valid)
+                            else $fatal(1, "M1 capRecv did not preserve transfer-valid witness");
                         assert (m1_projection_cap_matches_commit(
                             typed_state_projection.consumer_object_id,
                             typed_state_projection.consumer_generation,
