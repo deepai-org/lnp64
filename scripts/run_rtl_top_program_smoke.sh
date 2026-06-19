@@ -299,6 +299,150 @@ def load_flat_to_arch_opcode_map() -> dict[int, int]:
     return flat_to_arch
 
 
+def load_rust_flat_to_arch_opcode_map() -> dict[int, int]:
+    opcodes = load_schema_enum_values("lnp64_opcode_e")
+    emulator_source = Path("src/emulator.rs").read_text(encoding="utf-8")
+    direct_instr_to_arch = {
+        "Nop": "LNP64_OP_NOP",
+        "Mov": "LNP64_OP_MOV",
+        "Add": "LNP64_OP_ADD",
+        "Addi": "LNP64_OP_ADDI",
+        "Sub": "LNP64_OP_SUB",
+        "Mul": "LNP64_OP_MUL",
+        "Mulh": "LNP64_OP_MULH",
+        "Mulhu": "LNP64_OP_MULHU",
+        "Mulhsu": "LNP64_OP_MULHSU",
+        "Div": "LNP64_OP_DIV",
+        "Udiv": "LNP64_OP_UDIV",
+        "Srem": "LNP64_OP_SREM",
+        "Urem": "LNP64_OP_UREM",
+        "And": "LNP64_OP_AND",
+        "Andi": "LNP64_OP_ANDI",
+        "Or": "LNP64_OP_OR",
+        "Ori": "LNP64_OP_ORI",
+        "Xor": "LNP64_OP_XOR",
+        "Xori": "LNP64_OP_XORI",
+        "Not": "LNP64_OP_NOT",
+        "Lsl": "LNP64_OP_LSL",
+        "Lsli": "LNP64_OP_LSLI",
+        "Lsr": "LNP64_OP_LSR",
+        "Lsri": "LNP64_OP_LSRI",
+        "Asr": "LNP64_OP_ASR",
+        "Asri": "LNP64_OP_ASRI",
+        "SextB": "LNP64_OP_SEXT_B",
+        "SextH": "LNP64_OP_SEXT_H",
+        "SextW": "LNP64_OP_SEXT_W",
+        "ZextB": "LNP64_OP_ZEXT_B",
+        "ZextH": "LNP64_OP_ZEXT_H",
+        "ZextW": "LNP64_OP_ZEXT_W",
+        "Clz": "LNP64_OP_CLZ",
+        "Ctz": "LNP64_OP_CTZ",
+        "Popcnt": "LNP64_OP_POPCNT",
+        "Rol": "LNP64_OP_ROL",
+        "Ror": "LNP64_OP_ROR",
+        "Bswap16": "LNP64_OP_BSWAP16",
+        "Bswap32": "LNP64_OP_BSWAP32",
+        "Bswap64": "LNP64_OP_BSWAP64",
+        "Cmp": "LNP64_OP_CMP",
+        "Cmpu": "LNP64_OP_CMPU",
+        "Jmp": "LNP64_OP_JMP",
+        "Call": "LNP64_OP_CALL",
+        "CallReg": "LNP64_OP_CALL_REG",
+        "LrGet": "LNP64_OP_LR_GET",
+        "LrSet": "LNP64_OP_LR_SET",
+        "Ret": "LNP64_OP_RET",
+        "ErrnoGet": "LNP64_OP_GET_ERRNO",
+        "ErrnoSet": "LNP64_OP_SET_ERRNO",
+        "Exit": "LNP64_OP_EXIT",
+        "Fence": "LNP64_OP_FENCE",
+        "Isync": "LNP64_OP_ISYNC",
+        "Alloc": "LNP64_OP_ALLOC",
+        "AllocSize": "LNP64_OP_ALLOC_SIZE",
+        "Free": "LNP64_OP_FREE",
+        "AllocEx": "LNP64_OP_ALLOC_EX",
+        "ObjectCtl": "LNP64_OP_OBJECT_CTL",
+        "CapDup": "LNP64_OP_CAP_DUP",
+        "CapSend": "LNP64_OP_CAP_SEND",
+        "CapRecv": "LNP64_OP_CAP_RECV",
+        "CapRevoke": "LNP64_OP_CAP_REVOKE",
+        "DmaCtl": "LNP64_OP_DMA_CTL",
+        "EnvGet": "LNP64_OP_ENV_GET",
+        "WriteFd": "LNP64_OP_WRITE_FD",
+        "AmoSwap": "LNP64_OP_AMO_SWAP",
+        "AmoAdd": "LNP64_OP_AMO_ADD",
+        "AmoAnd": "LNP64_OP_AMO_AND",
+        "AmoOr": "LNP64_OP_AMO_OR",
+        "AmoXor": "LNP64_OP_AMO_XOR",
+        "LockCmpxchg": "LNP64_OP_LOCK_CMPXCHG",
+    }
+    flat_to_arch = {
+        0x01: opcodes["LNP64_OP_LI32"],
+        0x03: opcodes["LNP64_OP_LA_LITERAL"],
+        0x04: opcodes["LNP64_OP_LI32_LITERAL"],
+        0x20: opcodes["LNP64_OP_JMP"],
+        0x21: opcodes["LNP64_OP_BRANCH_EQ"],
+        0x22: opcodes["LNP64_OP_BRANCH_NE"],
+        0x23: opcodes["LNP64_OP_BRANCH_LT"],
+        0x24: opcodes["LNP64_OP_BRANCH_GT"],
+        0x25: opcodes["LNP64_OP_BRANCH_LE"],
+        0x26: opcodes["LNP64_OP_BRANCH_GE"],
+        0x30: opcodes["LNP64_OP_LD"],
+        0x31: opcodes["LNP64_OP_LD_W"],
+        0x32: opcodes["LNP64_OP_LD_B"],
+        0x33: opcodes["LNP64_OP_ST"],
+        0x34: opcodes["LNP64_OP_ST_W"],
+        0x35: opcodes["LNP64_OP_ST_B"],
+        0x36: opcodes["LNP64_OP_LD_H"],
+        0x37: opcodes["LNP64_OP_ST_H"],
+        0x3D: opcodes["LNP64_OP_CSET_EQ"],
+        0x3E: opcodes["LNP64_OP_CSET_NE"],
+        0x3F: opcodes["LNP64_OP_CSET_LT"],
+        0x40: opcodes["LNP64_OP_CSET_GT"],
+        0x41: opcodes["LNP64_OP_CSET_LE"],
+        0x42: opcodes["LNP64_OP_CSET_GE"],
+        0x43: opcodes["LNP64_OP_CSET_ULT"],
+        0x44: opcodes["LNP64_OP_CSET_UGT"],
+        0x45: opcodes["LNP64_OP_CSET_ULE"],
+        0x46: opcodes["LNP64_OP_CSET_UGE"],
+        0xBB: opcodes["LNP64_OP_CSEL_EQ"],
+        0xBC: opcodes["LNP64_OP_CSEL_NE"],
+        0xBD: opcodes["LNP64_OP_CSEL_LT"],
+        0xBE: opcodes["LNP64_OP_CSEL_GT"],
+        0xBF: opcodes["LNP64_OP_CSEL_LE"],
+        0xC0: opcodes["LNP64_OP_CSEL_GE"],
+        0xC1: opcodes["LNP64_OP_CSEL_ULT"],
+        0xC2: opcodes["LNP64_OP_CSEL_UGT"],
+        0xC3: opcodes["LNP64_OP_CSEL_ULE"],
+        0xC4: opcodes["LNP64_OP_CSEL_UGE"],
+        0xD0: opcodes["LNP64_OP_AUIPC_LITERAL"],
+        0xFF: opcodes["LNP64_OP_UNSUPPORTED"],
+    }
+    for raw_hex, instr_name in re.findall(
+        r"(0x[0-9a-fA-F]+)\s*=>\s*Instr::([A-Za-z0-9_]+)\b",
+        emulator_source,
+    ):
+        raw_opcode = parse_int_literal(raw_hex)
+        arch_name = direct_instr_to_arch.get(instr_name)
+        if arch_name is not None:
+            flat_to_arch[raw_opcode] = opcodes[arch_name]
+    return flat_to_arch
+
+
+def check_rtl_decode_matches_rust(rtl_flat_to_arch: dict[int, int], rust_flat_to_arch: dict[int, int]) -> None:
+    allowed_rtl_only = {0x06}  # YIELD is RTL-decoded but not in Rust committed-exec yet.
+    shared_opcodes = sorted(set(rtl_flat_to_arch) & set(rust_flat_to_arch))
+    mismatches = [
+        (opcode, rtl_flat_to_arch[opcode], rust_flat_to_arch[opcode])
+        for opcode in shared_opcodes
+        if rtl_flat_to_arch[opcode] != rust_flat_to_arch[opcode]
+    ]
+    if mismatches:
+        raise SystemExit(f"RTL/Rust flat-to-architectural opcode drift: {mismatches}")
+    missing_in_rust = sorted(set(rtl_flat_to_arch) - set(rust_flat_to_arch) - allowed_rtl_only)
+    if missing_in_rust:
+        raise SystemExit(f"RTL decode has flat opcodes missing from Rust committed exec map: {missing_in_rust}")
+
+
 def add_expected_arch_opcodes(records: list[dict], flat_to_arch: dict[int, int]) -> None:
     for idx, record in enumerate(records):
         opcode = record.get("opcode")
@@ -338,6 +482,8 @@ for field in ("r3", "r4", "r5", "env_page", "mem0", "mem_checksum", "errno"):
 rtl_retire = load_records(sys.argv[1], "RTL_RETIRE ")
 emulator_retire = load_record(sys.argv[2], "EMULATOR_RETIRE ")
 flat_to_arch_opcode = load_flat_to_arch_opcode_map()
+rust_flat_to_arch_opcode = load_rust_flat_to_arch_opcode_map()
+check_rtl_decode_matches_rust(flat_to_arch_opcode, rust_flat_to_arch_opcode)
 add_expected_arch_opcodes(emulator_retire, flat_to_arch_opcode)
 retire_required_fields = (
     "pc",
