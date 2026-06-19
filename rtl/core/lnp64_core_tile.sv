@@ -1665,6 +1665,7 @@ module lnp64_core_tile #(
         thread_window_activate_context.wait_generation = active_thread_context.wait_generation;
         thread_window_activate_context.weight_index = active_thread_context.weight_index;
         thread_window_activate_context.virtual_deadline = active_thread_context.virtual_deadline;
+        thread_window_activate_context.effective_tile_mask = active_thread_context.effective_tile_mask;
         thread_window_activate_context.active_location = TILE_ID[31:0];
         thread_window_complete_valid = state == CORE_EXEC &&
             dec.supported &&
@@ -2034,6 +2035,7 @@ module lnp64_core_tile #(
         thread_submit_next.wait_generation = active_thread_context.wait_generation;
         thread_submit_next.weight_index = active_thread_context.weight_index;
         thread_submit_next.virtual_deadline = active_thread_context.virtual_deadline;
+        thread_submit_next.effective_tile_mask = active_thread_context.effective_tile_mask;
         thread_submit_next.active_location = TILE_ID[31:0];
         object_rsp_reader_fd = rsp.event_mask[31:0];
         object_rsp_writer_fd = rsp.event_mask[63:32];
@@ -4148,6 +4150,7 @@ module lnp64_thread_context (
             pid1_context.wait_generation <= 32'd1;
             pid1_context.weight_index <= 16'd0;
             pid1_context.virtual_deadline <= 64'd0;
+            pid1_context.effective_tile_mask <= 32'd1;
             pid1_context.active_location <= 32'd1;
         end
     end

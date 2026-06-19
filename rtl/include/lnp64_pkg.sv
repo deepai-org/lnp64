@@ -519,6 +519,7 @@ package lnp64_pkg;
         logic [31:0] wait_generation;
         logic [15:0] weight_index;
         logic [63:0] virtual_deadline;
+        logic [31:0] effective_tile_mask;
         logic [31:0] active_location;
     } lnp64_thread_sched_t;
 
