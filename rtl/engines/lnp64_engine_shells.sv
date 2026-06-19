@@ -794,6 +794,14 @@ module lnp64_cap_engine(
     endfunction
 
 `ifndef SYNTHESIS
+    logic sampled_cap_queue_valid;
+    logic [63:0] sampled_cap_queue_rights;
+    logic [63:0] sampled_cap_queue_object_id;
+    logic [63:0] sampled_cap_queue_lineage;
+    logic [63:0] sampled_cap_queue_generation;
+    logic [31:0] sampled_cap_queue_domain_id;
+    logic sampled_cap_queue_revoked;
+
     function automatic logic live_fdr_projection_exists(
         input logic [31:0] object_id,
         input logic [31:0] generation,
@@ -889,6 +897,97 @@ module lnp64_cap_engine(
                     projection.consumer_lineage_epoch,
                     projection.consumer_sealed,
                     projection.consumer_rights
+                );
+        end
+    endfunction
+
+    function automatic logic sent_projection_backed_by_queue_state(
+        input lnp64_m1_state_projection_t projection,
+        input logic queue_valid,
+        input logic queue_revoked,
+        input logic [63:0] queue_object_id,
+        input logic [63:0] queue_generation,
+        input logic [31:0] queue_domain_id,
+        input logic [63:0] queue_lineage,
+        input logic [63:0] queue_rights
+    );
+        begin
+            if (projection.sent_valid) begin
+                sent_projection_backed_by_queue_state =
+                    projection.transfer_valid &&
+                    queue_valid && !queue_revoked &&
+                    projection.sent_object_id == queue_object_id[31:0] &&
+                    projection.sent_generation == queue_generation[31:0] &&
+                    projection.sent_domain_id == queue_domain_id &&
+                    projection.sent_lineage_epoch == queue_lineage[31:0] &&
+                    !projection.sent_sealed &&
+                    projection.sent_rights == queue_rights;
+            end else begin
+                sent_projection_backed_by_queue_state =
+                    !projection.transfer_valid &&
+                    cap_projection_is_zero(
+                        projection.sent_object_id,
+                        projection.sent_generation,
+                        projection.sent_domain_id,
+                        projection.sent_lineage_epoch,
+                        projection.sent_sealed,
+                        projection.sent_rights
+                    );
+            end
+        end
+    endfunction
+
+    function automatic logic sent_projection_backed_by_current_queue(
+        input lnp64_m1_state_projection_t projection
+    );
+        begin
+            sent_projection_backed_by_current_queue =
+                sent_projection_backed_by_queue_state(
+                    projection,
+                    cap_queue_valid,
+                    cap_queue_revoked,
+                    cap_queue_object_id,
+                    cap_queue_generation,
+                    cap_queue_domain_id,
+                    cap_queue_lineage,
+                    cap_queue_rights
+                );
+        end
+    endfunction
+
+    function automatic logic sent_projection_backed_by_sampled_queue(
+        input lnp64_m1_state_projection_t projection
+    );
+        begin
+            sent_projection_backed_by_sampled_queue =
+                sent_projection_backed_by_queue_state(
+                    projection,
+                    sampled_cap_queue_valid,
+                    sampled_cap_queue_revoked,
+                    sampled_cap_queue_object_id,
+                    sampled_cap_queue_generation,
+                    sampled_cap_queue_domain_id,
+                    sampled_cap_queue_lineage,
+                    sampled_cap_queue_rights
+                );
+        end
+    endfunction
+
+    function automatic logic minted_projection_is_zero(
+        input lnp64_m1_state_projection_t projection
+    );
+        begin
+            minted_projection_is_zero =
+                !projection.minted_valid &&
+                !projection.created_object_created &&
+                projection.created_object_gen == 32'd0 &&
+                cap_projection_is_zero(
+                    projection.minted_object_id,
+                    projection.minted_generation,
+                    projection.minted_domain_id,
+                    projection.minted_lineage_epoch,
+                    projection.minted_sealed,
+                    projection.minted_rights
                 );
         end
     endfunction
@@ -1522,6 +1621,12 @@ module lnp64_cap_engine(
                         if (cap_queue_valid && !cap_queue_revoked &&
                             cap_queue_lineage == fdr_lineage[src_fd]) begin
                             m1_state_projection_reg.sent_valid <= 1'b0;
+                            m1_state_projection_reg.sent_object_id <= 32'd0;
+                            m1_state_projection_reg.sent_generation <= 32'd0;
+                            m1_state_projection_reg.sent_domain_id <= 32'd0;
+                            m1_state_projection_reg.sent_lineage_epoch <= 32'd0;
+                            m1_state_projection_reg.sent_sealed <= 1'b0;
+                            m1_state_projection_reg.sent_rights <= 64'd0;
                             m1_state_projection_reg.transfer_valid <= 1'b0;
                         end
                     end else if (src_fd < LNP64_FDR_SLOT_COUNT && fdr_valid[src_fd] &&
@@ -1551,11 +1656,39 @@ module lnp64_cap_engine(
 `ifndef SYNTHESIS
     always_ff @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
+            sampled_cap_queue_valid <= 1'b0;
+            sampled_cap_queue_rights <= 64'd0;
+            sampled_cap_queue_object_id <= 64'd0;
+            sampled_cap_queue_lineage <= 64'd0;
+            sampled_cap_queue_generation <= 64'd0;
+            sampled_cap_queue_domain_id <= 32'd0;
+            sampled_cap_queue_revoked <= 1'b0;
+        end else begin
+            sampled_cap_queue_valid <= cap_queue_valid;
+            sampled_cap_queue_rights <= cap_queue_rights;
+            sampled_cap_queue_object_id <= cap_queue_object_id;
+            sampled_cap_queue_lineage <= cap_queue_lineage;
+            sampled_cap_queue_generation <= cap_queue_generation;
+            sampled_cap_queue_domain_id <= cap_queue_domain_id;
+            sampled_cap_queue_revoked <= cap_queue_revoked;
+        end
+    end
+
+    always_ff @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin
         end else if (m1_commit_valid_reg && have_rsp) begin
             assert (projection_root_and_consumer_backed_by_fdr(m1_pre_state_projection_reg))
                 else $fatal(1, "SG-AUTH cap-engine M1 pre-state projection was not backed by FDR state");
             assert (projection_root_and_consumer_backed_by_fdr(m1_state_projection_reg))
                 else $fatal(1, "SG-AUTH cap-engine M1 post-state projection was not backed by FDR state");
+            assert (sent_projection_backed_by_sampled_queue(m1_pre_state_projection_reg))
+                else $fatal(1, "SG-AUTH cap-engine M1 pre-state sent projection was not queue-backed or zero");
+            assert (sent_projection_backed_by_current_queue(m1_state_projection_reg))
+                else $fatal(1, "SG-AUTH cap-engine M1 post-state sent projection was not queue-backed or zero");
+            assert (minted_projection_is_zero(m1_pre_state_projection_reg))
+                else $fatal(1, "SG-AUTH cap-engine M1 pre-state minted projection carried unowned authority");
+            assert (minted_projection_is_zero(m1_state_projection_reg))
+                else $fatal(1, "SG-AUTH cap-engine M1 post-state minted projection carried unowned authority");
             if (m1_commit_reg.status == LNP64_ERR_OK) begin
                 unique case (m1_commit_reg.op)
                     LNP64_M1_COMMIT_CAP_DUP,
