@@ -846,6 +846,51 @@ module lnp64_cap_engine(
         end
     endfunction
 
+    function automatic logic consumer_projection_matches_commit(
+        input lnp64_m1_state_projection_t projection,
+        input lnp64_m1_cap_commit_t commit
+    );
+        begin
+            consumer_projection_matches_commit =
+                projection.consumer_object_id == commit.object_id &&
+                projection.consumer_generation == commit.fdr_gen &&
+                projection.consumer_domain_id == commit.domain_id &&
+                projection.consumer_lineage_epoch == commit.lineage_epoch &&
+                projection.consumer_sealed == commit.sealed &&
+                projection.consumer_rights == commit.rights_mask;
+        end
+    endfunction
+
+    function automatic logic sent_projection_matches_commit(
+        input lnp64_m1_state_projection_t projection,
+        input lnp64_m1_cap_commit_t commit
+    );
+        begin
+            sent_projection_matches_commit =
+                projection.sent_valid &&
+                projection.sent_object_id == commit.object_id &&
+                projection.sent_generation == commit.fdr_gen &&
+                projection.sent_domain_id == commit.domain_id &&
+                projection.sent_lineage_epoch == commit.lineage_epoch &&
+                projection.sent_sealed == commit.sealed &&
+                projection.sent_rights == commit.rights_mask;
+        end
+    endfunction
+
+    function automatic logic revoked_root_projection_matches_commit(
+        input lnp64_m1_state_projection_t projection,
+        input lnp64_m1_cap_commit_t commit
+    );
+        begin
+            revoked_root_projection_matches_commit =
+                projection.root_object_id == commit.object_id &&
+                projection.root_generation == commit.fdr_gen &&
+                projection.root_domain_id == commit.domain_id &&
+                projection.root_lineage_epoch == commit.lineage_epoch &&
+                projection.has_revoked_generation;
+        end
+    endfunction
+
     function automatic logic authority_projection_slots_match(
         input lnp64_m1_state_projection_t left,
         input lnp64_m1_state_projection_t right
@@ -1435,6 +1480,10 @@ module lnp64_cap_engine(
                 unique case (m1_commit_reg.op)
                     LNP64_M1_COMMIT_CAP_DUP,
                     LNP64_M1_COMMIT_CAP_RECV: begin
+                        assert (consumer_projection_matches_commit(
+                            m1_state_projection_reg,
+                            m1_commit_reg
+                        )) else $fatal(1, "SG-AUTH cap-engine M1 consumer projection drifted from commit");
                         assert (live_fdr_projection_exists(
                             m1_state_projection_reg.consumer_object_id,
                             m1_state_projection_reg.consumer_generation,
@@ -1444,10 +1493,18 @@ module lnp64_cap_engine(
                         )) else $fatal(1, "SG-AUTH cap-engine M1 consumer projection was not backed by live FDR state");
                     end
                     LNP64_M1_COMMIT_CAP_SEND: begin
+                        assert (sent_projection_matches_commit(
+                            m1_state_projection_reg,
+                            m1_commit_reg
+                        )) else $fatal(1, "SG-AUTH cap-engine M1 sent projection drifted from commit");
                         assert (cap_queue_matches_sent_projection(m1_state_projection_reg))
                             else $fatal(1, "SG-AUTH cap-engine M1 sent projection was not backed by transfer queue state");
                     end
                     LNP64_M1_COMMIT_CAP_REVOKE: begin
+                        assert (revoked_root_projection_matches_commit(
+                            m1_state_projection_reg,
+                            m1_commit_reg
+                        )) else $fatal(1, "SG-AUTH cap-engine M1 revoke projection drifted from commit");
                         assert (!live_lineage_exists(m1_commit_reg.lineage_epoch))
                             else $fatal(1, "SG-AUTH cap-engine M1 revoke left live FDR authority in revoked lineage");
                     end
