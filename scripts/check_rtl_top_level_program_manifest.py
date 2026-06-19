@@ -185,6 +185,7 @@ def main() -> None:
             active_llvm_linked += 1
             gate_text = text(ROOT / str(entry["rtl_gate"]))
             require("--target=lnp64-unknown-none" in gate_text, f"{entry['source']} active gate must compile for LNP64 clang")
+            require("llvm-mc" in gate_text, f"{entry['source']} active gate must be able to assemble the flat startup object")
             require("-flavor gnu" in gate_text and "-m elf64lnp64" in gate_text, f"{entry['source']} active gate must link with LNP64 lld")
             require("elf-plan" in gate_text, f"{entry['source']} active gate must validate the linked ELF loader plan")
             require("elf-flat-exec" in gate_text, f"{entry['source']} active gate must export the linked ELF to a top-level flat image")

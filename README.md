@@ -376,9 +376,11 @@ active compiler-generated demos stay in the recurring gate.
 top-level RTL gate. It builds a clang object, links it with LNP64 lld using a
 flat-compatible linker script, validates the existing software-loader
 `elf-plan`, exports the ELF through `lnp64 elf-flat-exec`, and feeds the result
-to the same RTL/emulator retire-trace comparator. Linked data images are passed
-as top-level SRAM data hex when present. It is not a full VMA/MMU loader in RTL
-yet; non-flat ELF layouts intentionally fail at export time.
+to the same RTL/emulator retire-trace comparator. When a source provides
+`main` instead of `_start`, the script assembles a tiny flat startup object with
+LLVM MC that calls `main` and exits with `r1`. Linked data images are passed as
+top-level SRAM data hex when present. It is not a full VMA/MMU loader in RTL yet;
+non-flat ELF layouts intentionally fail at export time.
 
 `LNP64_RTL_VERILATOR_BUILD_JOBS=0` lets Verilator use all available build jobs;
 set it to a fixed number such as `4` on shared machines. The top-program smoke

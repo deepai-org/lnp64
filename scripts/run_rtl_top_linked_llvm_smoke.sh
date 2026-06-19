@@ -6,11 +6,12 @@ cd "$root"
 
 clang="${LLVM_CLANG:-target/llvm-lnp64-build/bin/clang}"
 lld="${LLVM_LLD:-target/llvm-lnp64-build/bin/lld}"
+llvm_mc="${LLVM_MC:-target/llvm-lnp64-build/bin/llvm-mc}"
 source_c="${1:-tests/rtl/programs/top_linked_exit.c}"
 
-if [[ ! -x "$clang" || ! -x "$lld" ]]; then
-  printf '%s\n' "missing clang/lld for LNP64" >&2
-  printf '%s\n' "run LNP64_LLVM_DOCKER_SKIP_BUILD=1 bash scripts/run_real_llvm_lnp64_docker.sh first, or set LLVM_CLANG/LLVM_LLD" >&2
+if [[ ! -x "$clang" || ! -x "$lld" || ! -x "$llvm_mc" ]]; then
+  printf '%s\n' "missing clang/lld/llvm-mc for LNP64" >&2
+  printf '%s\n' "run LNP64_LLVM_DOCKER_SKIP_BUILD=1 bash scripts/run_real_llvm_lnp64_docker.sh first, or set LLVM_CLANG/LLVM_LLD/LLVM_MC" >&2
   exit 1
 fi
 if [[ ! -f "$source_c" ]]; then
@@ -71,6 +72,7 @@ SECTIONS
 LD
 
 obj="$tmp_dir/top_linked.o"
+startup_obj="$tmp_dir/top_linked_startup.o"
 elf="$tmp_dir/top_linked.elf"
 hex="$tmp_dir/top_linked.hex"
 data_hex="$tmp_dir/top_linked.data.hex"
@@ -80,7 +82,24 @@ data_hex="$tmp_dir/top_linked.data.hex"
   -I toolchain -c "$source_c" -o "$obj"
 test -s "$obj"
 
-"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" -o "$elf" "$obj"
+link_objects=()
+if ! grep -Eq '(^|[[:space:]])_start[[:space:]]*\(' "$source_c"; then
+  cat >"$tmp_dir/top_linked_startup.s" <<'ASM'
+.text
+.globl _start
+.type _start,@function
+_start:
+  CALL main
+  EXIT r1
+ASM
+  "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj \
+    "$tmp_dir/top_linked_startup.s" -o "$startup_obj"
+  test -s "$startup_obj"
+  link_objects+=("$startup_obj")
+fi
+link_objects+=("$obj")
+
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" -o "$elf" "${link_objects[@]}"
 test -s "$elf"
 
 "$LNP64_BIN" elf-plan "$elf" >/dev/null
