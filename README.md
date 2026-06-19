@@ -18,9 +18,9 @@ For the shortest project thesis, start with
 - **Capabilities everywhere:** file-descriptor registers, memory objects,
   queues, gates, DMA windows, domains, and services are unforgeable handles with
   generation checks.
-- **Native resource operations:** `PULL`, `PUSH`, `AWAIT`, `MMAP`,
-  `OBJECT_CTL`, `DOMAIN_CTL`, `GATE_CALL`, `CAP_*`, and `DMA_CTL` operate on
-  hardware-visible objects rather than raw global namespaces.
+- **Native resource operations:** `PULL`, `PUSH`, `WAITABLE_PROBE`, `AWAIT_EX`,
+  `MMAP`, `OBJECT_CTL`, `DOMAIN_CTL`, `GATE_CALL`, `CAP_*`, and `DMA_CTL`
+  operate on hardware-visible objects rather than raw global namespaces.
 - **Resource Domains:** containers, VMs, supervisors, sandboxes, assurance
   profiles, and cgroup-like limits are profiles of one nested containment
   primitive.
@@ -95,6 +95,12 @@ instructions rather than only isolated harness traces.
 The bootstrap C compiler is temporary. The intended path is a real
 LLVM/Clang/lld toolchain plus a software loader that emits hardware `EXEC` plan
 descriptors.
+
+Architectural opcodes must be compiler-visible. A native operation is not frozen
+until the real LLVM MC layer can assemble, emit, disassemble, and expose it to C
+runtime code through a target builtin, private `__lnp_*` intrinsic, or explicit
+inline-assembly surface. POSIX-shaped helpers such as `poll`/`select`/`epoll`
+remain libc/personality lowerings over native waitable operations.
 
 ## Quick Start
 

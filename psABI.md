@@ -146,9 +146,13 @@ Auxv key numbers and the dynamic-loader contract are not frozen in v0.
 The thread pointer is read and written through the `TP` PCR. The C compatibility
 surface uses this for thread-specific storage tests.
 
-`errno` is hardware-thread-local through `ERRNO_GET` and `ERRNO_SET`. A global
-`errno` symbol, when present in C source, is synchronized with the hardware
-errno path by compiler lowering.
+`errno` is hardware-thread-local through `ERRNO_GET` and `ERRNO_SET`, but it is
+a C/POSIX compatibility view rather than the native ISA error channel. Native
+operations return negative architectural errors in their encoded result register.
+The C runtime translates those native errors to POSIX `-1` plus thread-local
+`errno` at public API boundaries. A global `errno` symbol, when present in C
+source, is synchronized with that hardware-thread-local errno path by compiler
+lowering.
 
 ## Signals
 

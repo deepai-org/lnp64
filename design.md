@@ -22,7 +22,14 @@ To support hardware-native resource primitives, the standard register file is ex
     *   `REALTIME_SEC` / `REALTIME_NSEC`: Read-only realtime clock snapshot
         fields used by libc/runtime clock surfaces. Timer waitability remains
         FDR-backed through timer profiles.
-*   **ERRNO:** Thread-local compatibility error register. Fallible instructions write their result to the encoded destination register and update thread-local `ERRNO` on failure so libc can expose normal POSIX semantics; the architectural result/error convention remains explicit.
+*   **ERRNO:** Thread-local compatibility error register. Native instructions use
+    explicit result/status conventions: success writes the operation's value, or
+    zero for pure-status operations, to the encoded destination register; failure
+    writes the negative architectural error code to that destination and commits
+    no partial authority/state change unless the object profile explicitly
+    defines a post-commit failure state. Thread-local `ERRNO` is a
+    compatibility view used by libc/personality boundaries; POSIX wrappers
+    translate native negative errors to `-1` plus `ERRNO` where required.
 
 ## 1.1 Architectural Layering
 
@@ -159,7 +166,7 @@ The scheduler contract is deliberately small and realtime-friendly:
 *   **`EXEC r_result, r_exec_argblock`**
     *   *Action:* Commits a loader-produced exec-plan descriptor. POSIX `execve(path, ...)` first performs namespace-dispatch `OPEN_AT`, then a loader service or runtime parses the executable format, applies relocations and interpreter policy in software, prepares memory/source capabilities and startup metadata, and submits a hardware-visible exec plan. Hardware validates that plan, enters a process-wide exec barrier, stops sibling threads, cancels/detaches in-flight operations, invalidates old thread contexts, atomically replaces the VMA/register/startup state, and resumes with exactly one surviving thread. If validation or pre-commit cancellation fails, the old image remains runnable.
 *   **`YIELD`**
-    *   *Action:* Suspends the current thread, saves state to the hardware thread context, and selects another ready TID from the hardware runqueue at a bounded scheduling point.
+    *   *Action:* Suspends the current thread, saves state to the hardware thread context, and selects another ready TID from the hardware runqueue at a bounded scheduling point. `YIELD` is the canonical compiler-visible event-delivery intrinsic for code that wants to give queued gates/events/faults an explicit delivery point without performing I/O. C runtimes expose it as `__lnp_yield()` or an equivalent target builtin.
 *   **`EXIT r_exit_code`**
     *   *Action:* Destroys the current hardware thread context. If it's the last thread in the PID group, triggers hardware VMA teardown and signals the parent PID with `SIGCHLD`.
 
@@ -174,8 +181,35 @@ System calls are replaced by direct hardware resource commands. The binary ISA u
     *   *Action:* Pushes records from memory to a stream object. Files consume bytes, sockets consume packets/messages, control FDRs consume commands, and block-image FDRs may use explicit-offset argument blocks.
 *   **`SEEK r_result, r_fd, r_offset_or_cookie, r_whence`**
     *   *Action:* Repositions a seekable stream. Directory rewind is `SEEK(fd, 0, SET)`, and directory cookies use the same instruction.
+*   **`WAITABLE_PROBE r_result, r_waitable, r_mask_or_argblock`**
+    *   *Action:* Performs a nonblocking readiness probe on a waitable object, fd,
+        event queue, timer, child/process waitable, futex predicate, IRQ-event
+        object, message endpoint, or gate completion. It never parks the caller.
+        Success writes the ready mask/count/result bits to `r_result`; no-ready
+        is a successful zero result; invalid, stale, or unauthorized waitables
+        return a negative architectural error. POSIX `poll(..., timeout=0)`,
+        `select(..., timeout=0)`, and epoll readiness scans lower here.
+*   **`AWAIT_EX r_result, r_waitable, r_argblock`**
+    *   *Action:* Atomically checks readiness and, if requested, parks the current
+        thread on the waitable object. The argument block names wait mode
+        (`probe`, `zero_timeout`, `relative_timeout`, `absolute_timeout`,
+        `indefinite`), readiness mask/predicate, timeout value or timer object,
+        interrupt/cancel policy, and optional completion event target.
+        `probe` is equivalent to `WAITABLE_PROBE`; `zero_timeout` performs the
+        same atomic check/arm path but returns immediately with zero if nothing
+        is ready; bounded modes return zero on timeout unless the profile requests
+        a timeout event record; indefinite mode parks until ready, interrupted,
+        canceled, revoked, faulted, or domain-teardown. Ready completion writes
+        the ready mask/count/result bits to `r_result`; failures write a negative
+        architectural error.
 *   **`AWAIT r_result, r_waitable, r_mask_or_argblock`**
-    *   *Action:* Parks the current thread until a waitable object changes state. FDs, event queues, timers, child exit, futex predicates, PCIe IRQ events, message channels, and supervisor upcalls all lower to `AWAIT`.
+    *   *Action:* Compact source/assembly form for the common indefinite wait.
+        It lowers to `AWAIT_EX mode=indefinite` with the supplied mask or
+        profile-specific wait predicate. FDs, event queues, timers, child exit,
+        futex predicates, PCIe IRQ events, message channels, and supervisor
+        upcalls all lower to `AWAIT_EX`; `POLL_FD`, `POLL_FD_DYN`, and
+        `AWAIT_DYN` are compatibility/backend aliases, not preferred
+        architectural names.
 *   **`CLOSE r_result, r_fd`**
     *   *Action:* Releases an FDR capability reference.
 *   **`GET_META r_result, r_fd, r_meta_ptr, r_flags`** / **`SET_META r_result, r_fd, r_meta_ptr, r_flags`**
@@ -206,6 +240,29 @@ returned-capability verification, explicit commit/cancel rules, and fail-closed
 error behavior. Payload bytes and scalar fields are data only; all authority
 enters through FDR/capability arguments and all returned authority is installed
 only through returned-capability slots verified by the Capability Engine.
+
+### 3.1 Compiler-Visible ISA Contract
+
+The ISA is frozen only where the toolchain contract is also frozen. Every
+architectural opcode or required architectural profile must have:
+
+* a fixed binary encoding and operand/result convention;
+* assembler, disassembler, MC encoder, and object-roundtrip coverage in the real
+  LLVM backend;
+* a target builtin, private `__lnp_*` intrinsic, or inline-assembly constraint
+  surface for C/C++ runtimes where source lowering needs it;
+* emulator decode/execute coverage and an RTL decode path that either implements
+  the operation or fails closed with the canonical architectural error; and
+* conformance tests showing success, malformed input, stale generation,
+  permission failure, and locked/result-prevalidation behavior where applicable.
+
+Compatibility spellings do not become ISA merely because libc uses them.
+`poll`, `select`, `epoll`, `kqueue`, `pipe`, `eventfd`, `timerfd`, POSIX
+signals, and socket APIs are libc/personality names over native
+`WAITABLE_PROBE`, `AWAIT_EX`, `OBJECT_CTL`, event queues, gates, and endpoint
+objects. If a spelling such as `POLL_FD_DYN` survives in a bootstrap assembler
+or emulator helper, it must be documented as a compatibility alias and either
+lowered to the native operation or removed before ISA freeze.
 
 Mandatory object profiles have frozen state-machine shapes:
 
@@ -318,15 +375,17 @@ commit.
 *   **`GATE_CALL r_result, r_gate_fd, r_arg0, r_arg1`** / **`GATE_RETURN r_result, r_value0, r_value1`**
     *   *Action:* Native bounded activation through a gate capability and return through a trusted continuation token. `CALL_CAP`/`RET_CAP` remain source-level names for explicit call-gate profiles. The same Gate/Continuation Engine is also used by delivery profiles for faults, cancellation, supervisor upcalls, debug traps, timers, and POSIX signals. Hot activations use bounded register arguments and pre-provisioned target state; cold domain/container/VM creation remains a `DOMAIN_CTL` operation.
 *   **`ERRNO_GET r_dest`** / **`ERRNO_SET r_src`**
-    *   *Action:* Reads or writes the thread-local POSIX error register. Fallible resource instructions write success or `-1` to their encoded result register and set thread-local `ERRNO` on failure.
+    *   *Action:* Reads or writes the thread-local compatibility error register. Native instructions report failure as a negative architectural error in the encoded result register; libc/personality code uses `ERRNO_SET` when translating that result into a POSIX `-1`/`errno` API boundary.
 *   **Child Waits**
     *   *Action:* Child completion is a waitable event. Source-level `waitpid` lowers to `AWAIT` on a child/process waitable and then `GET_META` for status where needed.
 
 ### 3.2 Canonical Error and Fault Codes
 
-Fallible instructions return success or a nonnegative value in the encoded
-destination register. On ordinary failure they write `-1` and update
-thread-local `ERRNO`. Hardware engines use one canonical error namespace:
+Fallible native instructions return success or a nonnegative value in the
+encoded destination register. On ordinary failure they write the negative
+architectural error code to that destination. Compatibility wrappers may then
+write thread-local `ERRNO` and return `-1` where POSIX requires it. Hardware
+engines use one canonical error namespace:
 
 *   `EINVAL`: malformed record, bad length/alignment, invalid state transition,
     unsupported reserved bits, or invalid scalar shape.
@@ -620,7 +679,7 @@ Because "everything is a capability object" is the native hardware reality, we n
         user-space logic.
         (e.g., `GET_PCR r1, PID`).
 *   **`SET_PCR pcr_name, r_src`**
-    *   *Action:* Writes to a permitted Process Control Register. Credential-profile changes are checked against the current credential object, FDR capabilities, and Resource Domain policy; POSIX UID/GID mutation is a compatibility profile operation, not a native privilege root. Denied changes fail with a permission error and update thread-local `ERRNO`.
+    *   *Action:* Writes to a permitted Process Control Register. Credential-profile changes are checked against the current credential object, FDR capabilities, and Resource Domain policy; POSIX UID/GID mutation is a compatibility profile operation, not a native privilege root. Denied changes return a negative permission error; compatibility wrappers may translate that to thread-local `ERRNO`.
 *   **`ENV_GET r_dest, r_key, r_index_or_buf, r_len_or_flags`**
     *   *Action:* Reads read-only process and machine metadata for libc/runtime startup: ISA version, implementation profile, page size, cache-line size, DMA alignment, hardware feature bits, supported opcode groups, object profiles, domain/security features, architectural limits, bounded topology records, startup metadata pointer, personality flags, and timebase frequency. POSIX `argc`, `argv`, `envp`, and auxv layout are libc/personality ABI data behind that pointer, not hardware-interpreted state. This is not a replacement for immediates; constants still use normal instruction encodings or literal loads.
 *   **`RANDOM r_dest, r_len_or_flags`**

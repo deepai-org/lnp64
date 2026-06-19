@@ -35,7 +35,7 @@ only then a fuller machine port.
 | Threads | `pthread_create`, `pthread_join`, TSD | `CLONE profile=new_thread_shared_vm` or current `SPAWN` lowering |
 | Futex/sync | pthread mutexes, condvars, semaphores, raw futex waits | `LOCK_CMPXCHG`, `FUTEX_WAIT`, `FUTEX_WAKE`, scheduler wakeups |
 | Memory mappings | `mmap`, `munmap`, `mprotect`, allocator arenas | VMAs over anonymous, file, or object capabilities; W^X/NX/domain policy |
-| Polling | `poll`, `select`, `epoll` | readiness probes plus `AWAIT`/event-queue wait paths |
+| Polling | `poll`, `select`, `epoll` | `WAITABLE_PROBE` for nonblocking scans plus `AWAIT_EX`/event-queue wait paths |
 | Timers/time | `timerfd`, `nanosleep`, `usleep`, `alarm`, clocks | timer object profile, PCR/timebase reads, sleep queues, event-queue wake or `GATE_DELIVER` into the POSIX alarm profile |
 | Signals | `signal`, `sigaction`, masks, `raise`, `kill`, `SIGRET` | `GATE_CTL` for POSIX disposition gates, `GATE_MASK_SET`, `GATE_DELIVER`, `GATE_RETURN`; `SIGRET` is the POSIX alias for gate return |
 | Faults/exceptions | `SIGILL`, `SIGFPE`, `SIGSEGV`, `SIGBUS`, `SIGTRAP` | native fault delivery records routed through the Gate/Continuation Engine, then mapped by the POSIX profile |
@@ -80,7 +80,7 @@ used by the system gate.
 - call-gate delivery and Resource Domain freeze/resume/attach/detach/destroy
   with delegated budget isolation,
 - assembly evidence for FDR I/O, `FORK`, `SPAWN`, `FUTEX_*`, `OBJECT_CTL`,
-  `MMAP`, `MPROTECT`, `MUNMAP`, `POLL_FD_DYN`, `AWAIT_DYN`, `SIGACTION`,
+  `MMAP`, `MPROTECT`, `MUNMAP`, `WAITABLE_PROBE`, `AWAIT_EX`, `SIGACTION`,
   `KILL`, `CAP_DUP`, `CAP_SEND`, `CAP_RECV`, `DOMAIN_CTL`,
   `CALL_CAP`/`GATE_CALL`, and `RET_CAP`/`GATE_RETURN`.
 
@@ -119,7 +119,7 @@ ls /tmp
 
 The runner verifies the transcript, checks native primitive evidence including
 FDR I/O, `CHDIR_PATH`, `GETCWD_PATH`, `MMAP`, `PWRITE_FD_DYN`, `FD_SEEK`,
-`AWAIT_DYN`, `OBJECT_CTL`, `DOMAIN_CTL`, `CAP_*`, `CALL_CAP`/`RET_CAP`,
+`WAITABLE_PROBE`, `AWAIT_EX`, `OBJECT_CTL`, `DOMAIN_CTL`, `CAP_*`, `CALL_CAP`/`RET_CAP`,
 `FORK`, `EXEC`, `SPAWN`, `SLEEP`, `ALARM`, `SIGACTION`, `SIGRET`, and rejects
 raw interrupt/MMIO/DMA/page-table/scheduler/syscall trace tokens. It also
 verifies stale FDR generation rejection via
@@ -151,7 +151,7 @@ propagates through the nested tree.
   interrupts, raw DMA, raw page tables, hidden scheduler authority, and widened
   transferred capabilities.
 - Move `poll`/`select` blocking paths toward a first-class event queue profile
-  while keeping readiness probes as compatibility helpers.
+  while keeping `WAITABLE_PROBE` readiness probes as native helpers.
 - Replace the current fixed-record exec-plan smoke with a software loader for
   NetBSD-like userland images instead of relying on compiler-emitted assembly as
   the image format.

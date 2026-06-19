@@ -105,6 +105,53 @@ rejection, revocation safety, and valid capability transfer for all reachable
 states in the modeled slice. Other evidence work is secondary until this shape
 exists.
 
+## Execution-First Correction
+
+The roadmap must not drift into proof artifacts that do not accelerate a real
+machine. From this point forward, the main RTL question is:
+
+```text
+Can a program produced by the current assembler or LLVM path run through
+rtl/top/lnp64_top.sv under simulation and produce the same architectural result
+as the emulator?
+```
+
+Proof work remains central, but it should ride beside executable RTL rather
+than replace it. The fastest useful progress is a narrow but honest vertical
+machine:
+
+1. fetch fixed LNP64 instructions from a ROM/SRAM image.
+2. decode and execute the compiler-critical scalar baseline.
+3. perform load/store against a simple memory model.
+4. retire instructions with typed trace records.
+5. support `ENV_GET`, canonical unsupported-opcode failure, and `EXIT`.
+6. load the same tiny image into the emulator and RTL simulator.
+7. compare final registers, memory checksums, errno/status, event/fault records,
+   and retire traces.
+
+Until this path exists, avoid opening new proof/checker surfaces unless they
+directly help this execution loop. The first serious chip-design milestone is
+not another isolated block trace; it is `lnp64_top` running real project code,
+even if the first code is tiny and the memory system is SRAM-backed.
+
+The near-term priority order is therefore:
+
+1. **Top-level executable core path:** instruction memory, fetch/decode/execute,
+   register file, PC/branch/call/return, scalar ALU, load/store, atomics
+   stubbed or implemented as required by the test, retire trace, and `EXIT`.
+2. **Program-image path:** one build script that takes an assembly file or an
+   LLVM-generated object/flat image and feeds the same bytes to emulator and
+   RTL simulation.
+3. **Architectural comparison:** a checker that compares committed instruction
+   traces and final architectural state, not just string markers.
+4. **Then M1 authority refinement:** once real instruction retirement exists,
+   drive the M1 capability/FDR path from actual instructions through
+   `lnp64_top`, not only through a standalone M1 harness.
+
+This does not reduce the proof ambition. It makes the proof target concrete:
+prove the machine that is actually fetching, decoding, retiring, and running
+programs.
+
 ## Severe Whole-Chip Proof Goals
 
 The proof program should stay focused on a small set of severe top-level
@@ -1133,48 +1180,61 @@ The next RTL phase should build the real machine in this order:
 0. **Shared schemas and package hardening:** stabilize the packed records,
    enums, canonical errors, feature bits, latency classes, rights masks, and
    trace records used by `lnp64_top`, Lean, the emulator, and co-simulation.
-1. **Top-level transaction fabric:** replace ad hoc block wiring with shared
+1. **Executable top-level core path:** make `rtl/top/lnp64_top.sv` fetch,
+   decode, execute, and retire real LNP64 instruction images. The minimum
+   scalar subset is `LI`, `MOV`, integer ALU/immediate ops, extension/count/
+   rotate/byte-swap ops, compare/branch/`CSEL`, load/store, `ENV_GET`,
+   canonical unsupported-opcode failure, and `EXIT`. This path must run at
+   least one assembler program and one LLVM-generated program in Verilator and
+   compare against the emulator.
+2. **Program-image and trace harness:** provide one boring script path that
+   builds a program, creates the RTL ROM/SRAM image, loads the same image into
+   the emulator, runs both, and compares committed retire records, final
+   registers, final memory checksum, events/faults, errno/status, and exit
+   code. Do not fork separate RTL-only demo programs unless they are explicitly
+   temporary bring-up tests.
+3. **Top-level transaction fabric:** replace ad hoc block wiring with shared
    command/response/completion/event/fault channels, routing, arbitration,
    operation ids, cancellation, and backpressure inside `rtl/top/lnp64_top.sv`
    and its immediate fabric modules.
-2. **Decode, core tiles, and thread contexts:** implement fixed decode,
-   result/error writeback, `ENV_GET`, fetch/decode/issue/retire, register
-   files, thread context windows, branch handling, load/store paths, atomics,
-   faults, and scheduler park/submit hooks for real instruction streams.
-3. **Capability/FDR, Resource Domain, and policy roots:** implement real FDR
+4. **Core tiles and thread contexts:** expand the executable core path into
+   replicated core tiles, result/error writeback, thread context windows,
+   scheduler park/submit hooks, precise faults, atomics, and multicore retire
+   records for real instruction streams.
+5. **Capability/FDR, Resource Domain, and policy roots:** implement real FDR
    tables, generation and lineage checks, capability
    duplication/transfer/revocation, domain lifecycle, monotonic limits,
    accounting, freeze/resume/destroy, and policy enforcement.
-4. **Scheduler and waitable core:** implement weighted-fair ready queues,
+6. **Scheduler and waitable core:** implement weighted-fair ready queues,
    active windows, wait queues, timers, futex wait/wake, event delivery,
    domain budget hooks, frozen/destroyed-domain rejection, spill/refill, and
    no-lost-wakeup invariants.
-5. **Object, gate, and process engines:** implement queue, counter,
+7. **Object, gate, and process engines:** implement queue, counter,
    event/completion, memory object, call gate, continuation, fault delivery,
    cancellation, service-boundary object profiles, process/thread lifecycle,
    and exec-barrier behavior.
-6. **VMA/MMU/page engine:** implement VMA tables, page-state transitions,
+8. **VMA/MMU/page engine:** implement VMA tables, page-state transitions,
    permission checks, W^X/NX/guard, COW, page fill request/reply, TLB/I-cache
    invalidation, executable provenance, and deterministic race priority.
-7. **Memory fabric and DDR metadata broker:** implement coherent memory access,
+9. **Memory fabric and DDR metadata broker:** implement coherent memory access,
    metadata storage, ECC/parity hooks, spill/refill protocols, barriers, and
    cache/TLB/DMA visibility contracts.
-8. **Heap and futex/atomic hard blocks:** implement the default heap algorithm,
+10. **Heap and futex/atomic hard blocks:** implement the default heap algorithm,
    allocation windows, size classes, free/quarantine, `ALLOC_SIZE`, locked
    atomics, futex buckets, and waiter spill/refill.
-9. **Service boundary, typed control, and namespace dispatch:** implement
+11. **Service boundary, typed control, and namespace dispatch:** implement
    typed control parsing, service request/reply continuation records,
    returned-capability validation, namespace dispatch stubs, and crash/cancel
    completion paths.
-10. **DMA, storage, networking, and PCIe frontends:** implement DMA buffers and
+12. **DMA, storage, networking, and PCIe frontends:** implement DMA buffers and
     copy/fill/scatter-gather, storage/block/barrier objects, packet queues,
     endpoint queues, classifier/servicelet lanes, PCIe BAR/IOMMU/MSI event
     hooks, and driver-facing capability surfaces.
-11. **RAS, assurance, and observability:** implement structured fault events,
+13. **RAS, assurance, and observability:** implement structured fault events,
     watchdog/local reset, counters, trace rings, measured boot records, quote
     FDRs, audit streams, debug/forensics control, MLS labels, and mission
     profile hooks.
-12. **Full-system programs:** boot realistic LNP64 images through the RTL,
+14. **Full-system programs:** boot realistic LNP64 images through the RTL,
     exercise libc/personality paths, run userland tests in simulation, and
     retire the isolated smoke-only test posture.
 
@@ -1856,7 +1916,9 @@ fill the smallest useful vertical slice:
 ## First Milestone: Whole-Machine Skeleton
 
 `LNP64-RTL-S0` should demonstrate that the overall architecture shape is correct
-before any single block becomes sophisticated.
+before any single block becomes sophisticated. It is not enough for S0 to print
+status from a scripted testbench; S0 must establish the loader, reset, and
+trace path that S1 will use for real programs.
 
 Required slice:
 
@@ -1879,6 +1941,8 @@ Required slice:
   authority are software-visible.
 - UART boot/status output works in simulation.
 - Verilator simulation runs without hanging on stubbed operations.
+- one ROM/SRAM instruction-image path exists and is owned by `lnp64_top`, not
+  by a testbench-only behavioral model.
 
 Proof targets:
 
@@ -1904,7 +1968,55 @@ Expected demo:
 - issue one unsupported native command and observe canonical failure.
 - inject one stub-engine fault and observe a structured fault event.
 
-## Second Milestone: M1 Authority Refinement Template
+## Second Milestone: Executable Compiler Path
+
+`LNP64-RTL-S1` should make the design feel like a processor, not a collection
+of proof slices. The machine should run small programs produced by the project
+assembler and LLVM path through `rtl/top/lnp64_top.sv` under simulation.
+
+Required slice:
+
+- top-level instruction fetch from ROM/SRAM image.
+- fixed decode for the scalar compiler baseline: constants, register moves,
+  ALU/immediate ops, extension/truncation, compare/branch/`CSEL`, load/store,
+  `ENV_GET`, unsupported-opcode failure, and `EXIT`.
+- register file and PC state held in hardware thread context state.
+- simple single-thread retirement, with a clean path to two-core/multithread
+  replication rather than a throwaway single-core harness.
+- SRAM-backed data memory with deterministic load/store semantics.
+- typed retire trace records including pc, opcode, operands needed for replay,
+  result register/value, errno/status, event/fault id, PID/TID, domain id/gen,
+  and tile id.
+- one script that builds a program, creates the RTL image, runs RTL simulation,
+  runs the emulator on the same program, and compares final state plus trace
+  prefixes.
+
+Expected demos:
+
+- tiny assembler arithmetic/branch/load-store program.
+- tiny LLVM-generated integer program that avoids libc at first.
+- `ENV_GET` feature/limit query.
+- unsupported-opcode canonical failure.
+- a final-state memory checksum test.
+
+Acceptance bar:
+
+- the same program source or image is used for emulator and RTL.
+- no hand-authored RTL-only success trace is accepted as program execution.
+- differences are reported as architectural mismatches: pc, register, memory,
+  status/errno, event/fault, or trace divergence.
+- S1 remains synthesizable and keeps `lnp64_top` as the root module.
+
+Proof targets:
+
+- decode is deterministic for the implemented scalar subset.
+- every retired instruction has one architectural retire record.
+- unsupported opcodes fail closed without changing unrelated architectural
+  state.
+- the single-thread register/PC/memory projection matches the emulator for the
+  accepted test subset.
+
+## Third Milestone: M1 Authority Refinement Template
 
 `LNP64-RTL-M1` should demonstrate that the architecture is real enough to
 execute code outside the Rust emulator and that one security-critical block can
@@ -1926,6 +2038,9 @@ Required slice:
 - a documented RTL-state-projection to Lean-state relation for the M1 slice.
 - a documented commit/pre-state/post-state relation showing which Lean `Step`
   each RTL M1 commit corresponds to.
+- M1 operations are reachable from real instructions retired by `lnp64_top`, or
+  the milestone explicitly states which S1 instruction/fabric hook is still
+  missing.
 - packed RTL commit/projection bit decoding checked against the schema before
   JSON trace fields are trusted.
 - bypass/mediation assertions for capability/FDR authority writes.

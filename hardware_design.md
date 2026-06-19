@@ -96,12 +96,28 @@ Feature discovery:
 Time:
 
 - hardware provides a monotonic counter, realtime snapshot PCR fields, timer
-  object profiles, `AWAIT` timeout semantics, and per-domain CPU accounting.
+  object profiles, `WAITABLE_PROBE`/`AWAIT_EX` timeout semantics, and per-domain
+  CPU accounting.
 - `ENV_GET` reports timebase frequency, nominal timer granularity, realtime
   availability, counter width, suspend/freeze behavior, and audit timestamp
   provenance.
 - Timer expiry is delivered as a waitable event; software clock APIs and Unix
   timer policy are compatibility layers over that event source.
+
+Waitability:
+
+- `WAITABLE_PROBE` is the nonparking readiness path. It returns ready
+  mask/count bits or zero for no-ready and is the native substrate for
+  zero-timeout `poll`, `select`, `epoll`, and kqueue scans.
+- `AWAIT_EX` is the atomic check-and-park path. Its bounded argument block names
+  wait mode, readiness mask or predicate, timeout source/value, interrupt/cancel
+  policy, and optional completion target.
+- `AWAIT` is a compact indefinite-wait encoding over `AWAIT_EX`; dynamic or
+  POSIX-flavored spellings such as `AWAIT_DYN`, `POLL_FD`, and `POLL_FD_DYN` are
+  compatibility aliases, not independent hardware state machines.
+- Event delivery points are explicit: `YIELD`, blocking resource commands,
+  engine completions, gate return, timer/preemption boundaries, and
+  supervisor-authorized forced parks.
 
 Fault and overflow taxonomy:
 
@@ -236,8 +252,9 @@ The chip is organized as these blocks:
 - Interrupt and Event Router.
 
 All long-latency resource instructions issue a command into a hardware engine and
-park the issuing thread. Completion events write architectural results, update
-`ERRNO`, and return the thread to the ready queue.
+park the issuing thread. Completion events write architectural results and return
+the thread to the ready queue. The writeback path updates thread-local `ERRNO`
+only when the command requests compatibility translation.
 
 ### 4.0 Realtime Instruction Classes and Miss Behavior
 
@@ -468,6 +485,18 @@ Small engines may use a strict subset of these fields. For example, `YIELD`
 needs only PID/TID and scheduler control; `ALLOC` needs PID/TID, size, result
 register, and heap flags; `PULL` needs an FDR capability reference, buffer
 address, length, operation id, and DMA completion target.
+
+Native command completions use one result convention across engines:
+
+- success writes the operation value, ready mask, count, or zero status to
+  `rsp_result_value` and reports `rsp_status=OK`.
+- failure reports a canonical architectural error in `rsp_errno`; the register
+  writeback path writes `-rsp_errno` to the encoded destination unless
+  `cmd_errno_policy` requests a compatibility translation.
+- POSIX/libc compatibility wrappers may translate negative native errors to
+  `-1` plus thread-local `ERRNO`; engines do not invent per-op result rules.
+- pre-commit failures have no authority/state side effects; post-commit failure
+  states must be explicit in the owning object profile.
 
 Wakeup/event wires:
 
@@ -830,9 +859,13 @@ are psABI conventions layered above this architectural link register.
 
 Architectural result convention:
 
-- Instructions with a `result_dst` write their success value or all-ones `-1`
-  sentinel to that register.
-- Fallible instructions also update the issuing thread's `ERRNO`.
+- Instructions with a `result_dst` write their success value, ready mask, count,
+  or zero status to that register.
+- Fallible native instructions write the negative architectural error code to
+  `result_dst`.
+- Thread-local `ERRNO` is updated only for commands using the compatibility
+  errno policy; libc/personality wrappers translate native errors to POSIX `-1`
+  plus `errno`.
 - Static legacy forms that omit an explicit result in source assembly are
   assembled with `result_dst=r1`; the binary encoding still contains the result
   destination.
@@ -1517,8 +1550,9 @@ Instruction behavior:
 - timer-flavored `AWAIT`: inserts current TID into timer wheel.
 - `AWAIT`: attaches current TID to a waitable object's event mask or predicate.
 - long resource operations: mark current TID blocked on an engine command.
-- engine completion: writes result registers, updates errno, returns TID to
-  ready queue unless a pending gate delivery must run first.
+- engine completion: writes result registers, optionally updates compatibility
+  errno, and returns TID to ready queue unless a pending gate delivery must run
+  first.
 
 Policy inputs:
 
@@ -2512,8 +2546,8 @@ writes.
 - higher-level names such as semaphore, pipe, channel, task queue, shared
   arena, socket readiness, and runtime completion are profiles over those base
   objects.
-- returns a new FDR index, object state, operation id, or `-1` with
-  thread-local `ERRNO`.
+- returns a new FDR index, object state, operation id, zero status, or a
+  negative architectural error.
 - cannot grant authority beyond the caller's existing capabilities and process
   capability bits.
 
@@ -2541,8 +2575,8 @@ writes.
 - configures scheduler, memory, PID/thread, FDR, I/O, device, and event limits.
 - configures upcall policy for virtualization, resource pressure, limit
   violations, namespace delegation, memory-map events, and lifecycle events.
-- returns a domain id, status, usage snapshot size, operation id, or `-1` with
-  thread-local `ERRNO`.
+- returns a domain id, status, usage snapshot size, operation id, zero status,
+  or a negative architectural error.
 - cannot grant authority or budget not already held by the caller's domain.
 
 `SUPERVISOR_CTL`:
@@ -3635,8 +3669,8 @@ Security policy is enforced at VMA creation and permission-change time:
 - invalidates matching TLB entries for that process.
 - revokes or generation-invalidates mapped object views when teardown removes
   the last authority-bearing VMA.
-- writes success or error sentinel to the encoded result register and updates
-  thread-local `ERRNO` on failure.
+- writes zero status or a negative architectural error to the encoded result
+  register.
 
 `MPROTECT`:
 
@@ -3813,8 +3847,7 @@ those objects.
 
 - uses F2: `a=result_dst`, `b=size_reg`.
 - allocates from the current process's default heap.
-- returns a virtual pointer in `result_dst`, or `-1` with thread-local
-  `ERRNO`.
+- returns a virtual pointer in `result_dst`, or a negative architectural error.
 - reports `ENOMEM` for domain/system memory pressure, `EINVAL` for invalid
   size, and `EPERM` if the domain policy disables heap allocation.
 - returns memory aligned to at least 16 bytes.
@@ -3826,7 +3859,7 @@ those objects.
 
 - uses F2: `a=result_dst`, `b=ptr_reg`.
 - frees an exact pointer previously returned by `ALLOC` or `ALLOC_EX`.
-- returns `0` on success or `-1` with thread-local `ERRNO`.
+- returns `0` on success or a negative architectural error.
 - detects invalid pointers and double free when heap metadata is intact; v1
   returns `EINVAL` and may additionally deliver `SIGSEGV`, poison the arena, or
   emit a heap-corruption fault event according to the domain hardening profile.
@@ -3839,8 +3872,7 @@ those objects.
 - reads Heap Engine metadata for an exact allocation pointer.
 - returns the allocation's usable byte extent in `result_dst`.
 - returns `0` for null.
-- returns `-1` with `ERRNO=EINVAL` for unknown, freed, interior, or foreign
-  pointers.
+- returns `-EINVAL` for unknown, freed, interior, or foreign pointers.
 - lets libc implement `realloc` without copying beyond the old allocation's
   valid mapped extent.
 
@@ -4057,8 +4089,9 @@ Continuation and frame rules:
 Interruptible operation behavior:
 
 - if a handled delivery arrives while a thread is blocked in an interruptible
-  operation, the operation returns `-1` with thread-local `ERRNO=EINTR` or the
-  operation's typed interrupted status before handler entry.
+  operation, the operation returns `-EINTR` or the operation's typed interrupted
+  status before handler entry. Compatibility wrappers may translate this to
+  POSIX `-1` plus `errno`.
 - non-interruptible operations that have passed their commit point run to their
   defined completion, roll-forward, or teardown policy before delivery.
 - `AWAIT`, futex waits, timer waits, `PULL`/`PUSH` waits, object-backed page
@@ -4083,7 +4116,7 @@ Futex wait:
 - translates address.
 - atomically reads value.
 - if value equals expected, parks TID on a hash bucket keyed by physical address.
-- if not equal, returns immediately with `ERRNO=EAGAIN`.
+- if not equal, returns immediately with `-EAGAIN`.
 
 `WAKE` with wake kind `futex`:
 
@@ -4145,7 +4178,7 @@ a=result_dst, b=key_reg, c=index_or_buf_reg, d=len_or_flags_reg, imm16=variant
 
 Scalar keys return the value in `result_dst`. Buffer keys use `c` as a user
 buffer pointer and `d` as byte length; success returns the number of bytes
-written. Failure returns `-1` and updates thread-local `ERRNO`.
+written. Failure returns a negative architectural error.
 
 V1 metadata keys:
 
@@ -4235,7 +4268,7 @@ a=result_dst, b=len_or_flags_reg, c=buf_reg, d=reserved, imm16=variant
 
 Scalar variants return up to one machine word of entropy in `result_dst`.
 Buffer variants copy entropy into `c` for `b` bytes and return the byte count.
-Failures return `-1` and update thread-local `ERRNO`.
+Failures return a negative architectural error.
 
 The Entropy and Randomization Engine feeds:
 
@@ -4871,7 +4904,8 @@ Default rules:
 - If the issuing thread receives a fatal signal, cancellable operations are
   canceled before signal termination completes.
 - If the issuing thread receives a handled signal while blocked in an
-  interruptible operation, the operation returns `-1` with `ERRNO=EINTR`.
+  interruptible operation, the operation returns `-EINTR`; compatibility wrappers
+  may translate this to POSIX `-1` plus `errno`.
 - Non-interruptible metadata commits run to completion once they pass their
   commit point.
 - Closing an fd from another thread detaches future access immediately but does

@@ -20,7 +20,9 @@ is the system boundary:
 
 - `PULL` / `PUSH`: move bytes or records through streams, queues, files,
   devices, packet endpoints, and event objects.
-- `AWAIT`: park a hardware thread on a waitable object or futex predicate.
+- `WAITABLE_PROBE` / `AWAIT_EX`: probe readiness, perform zero-timeout checks,
+  wait with a bounded timeout, or park indefinitely on a waitable object or futex
+  predicate. `AWAIT` is the compact indefinite-wait form.
 - `MMAP` / `MPROTECT` / `MUNMAP`: manage VMAs through capability-checked memory
   objects, files, DMA buffers, and BARs.
 - `CAP_*`: duplicate, transfer, narrow, seal, receive, and revoke capabilities.
@@ -43,6 +45,11 @@ Native APIs should prefer selectors, capabilities, event queues, gate
 activations, runtime objects, and Resource Domains. POSIX paths, file
 descriptors, POSIX UID/GID, signals, and `errno` remain compatibility profiles
 over those primitives.
+
+Native operations use native names and native results. Success returns a value,
+mask, count, or zero; failure returns a negative architectural error. POSIX
+`-1` plus `errno`, `poll`/`select`/`epoll`, and similar legacy shapes are
+libc/personality translations over the native capability/event model.
 
 ## Service Boundary
 
