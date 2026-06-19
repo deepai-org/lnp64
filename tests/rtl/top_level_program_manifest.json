@@ -177,6 +177,13 @@
       "comparison": "retire_trace_and_final_state"
     },
     {
+      "source": "tests/rtl/programs/top_linked_stack_bss.c",
+      "required_features": ["llvm_clang_object", "llvm_mc_startup_object", "llvm_lld_static_link", "elf_flat_export", "startup_call_main", "core", "branch", "stack_pointer_init", "call_return", "linked_data_image", "bss_zero_init", "stack_load_store", "load_store", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_linked_llvm_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    },
+    {
       "source": "tests/rtl/programs/top_linked_high_mul.c",
       "required_features": ["llvm_clang_object", "llvm_mc_startup_object", "llvm_lld_static_link", "elf_flat_export", "startup_call_main", "core", "stack_pointer_init", "call_return", "high_multiply", "load_store", "exit"],
       "status": "active",
