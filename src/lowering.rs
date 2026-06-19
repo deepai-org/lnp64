@@ -1483,6 +1483,7 @@ mod tests {
             "clang_libc_test_stat_object",
             "clang_libc_test_utime_object",
             "clang_libc_test_fdopen_object",
+            "clang_libc_test_fcntl_basic_bounded_object",
             "clang_libc_test_pthread_tsd_object",
             "clang_libc_test_sem_init_object",
             "clang_minilibc_pthread_impl_object",
@@ -1511,6 +1512,7 @@ mod tests {
             "libc_test_stat_static_link",
             "libc_test_utime_static_link",
             "libc_test_fdopen_static_link",
+            "libc_test_fcntl_basic_bounded_static_link",
             "libc_test_pthread_tsd_static_link",
             "libc_test_sem_init_static_link",
             "libc_test_qsort_bounded_static_link",
@@ -1541,6 +1543,7 @@ mod tests {
             "libc_test_stat_run_elf",
             "libc_test_utime_run_elf",
             "libc_test_fdopen_run_elf",
+            "libc_test_fcntl_basic_bounded_run_elf",
             "libc_test_pthread_tsd_run_elf",
             "libc_test_sem_init_run_elf",
             "libc_test_qsort_bounded_run_elf",
@@ -1994,6 +1997,13 @@ mod tests {
         assert!(real_llc.contains("libc-test-fdopen-clang-smoke.o"));
         assert!(real_llc.contains("third_party/libc-test/functional/fdopen.c"));
         assert!(real_llc.contains("real LLVM LNP64 clang libc-test fdopen object smoke passed"));
+        assert!(real_llc.contains("libc-test-fcntl-basic-bounded-clang-smoke.o"));
+        assert!(real_llc.contains("third_party/libc-test/functional/fcntl_basic_bounded.c"));
+        assert!(
+            real_llc.contains(
+                "real LLVM LNP64 clang libc-test fcntl_basic_bounded object smoke passed"
+            )
+        );
         assert!(real_llc.contains("libc-test-pthread-tsd-clang-smoke.o"));
         assert!(real_llc.contains("third_party/libc-test/functional/pthread_tsd.c"));
         assert!(
@@ -2093,6 +2103,13 @@ mod tests {
   "$libc_fd_impl_obj" "$libc_errno_impl_obj""#
         ));
         assert!(real_llc.contains("real LLVM LNP64 lld libc-test fdopen link smoke passed"));
+        assert!(real_llc.contains("lnp64-libc-test-fcntl-basic-bounded-linked.elf"));
+        assert!(real_llc.contains(r#""$libc_test_fcntl_basic_obj""#));
+        assert!(real_llc.contains(r#""$libc_stdio_impl_obj" "$libc_meta_impl_obj""#));
+        assert!(
+            real_llc
+                .contains("real LLVM LNP64 lld libc-test fcntl_basic_bounded link smoke passed")
+        );
         assert!(real_llc.contains("lnp64-libc-test-pthread-tsd-linked.elf"));
         assert!(real_llc.contains(r#""$libc_test_pthread_tsd_obj""#));
         assert!(real_llc.contains(r#""$libc_pthread_impl_obj" "$libc_alloc_impl_obj""#));
@@ -2503,6 +2520,7 @@ mod tests {
         assert!(libc_meta_min.contains("utime_path_at"));
         assert!(libc_meta_min.contains("utime_fd_dyn"));
         assert!(libc_meta_min.contains("fcntl_fd_dyn"));
+        assert!(libc_meta_min.contains("va_arg(ap, long)"));
         assert!(libc_meta_min.contains("lnp64_complete_status"));
         assert!(real_llc.contains("liblnp64-meta-min.o"));
         assert!(real_llc.contains("grep -q 'stat_path_at r'"));
@@ -3254,6 +3272,11 @@ mod tests {
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf libc-test fdopen execution passed")
         );
+        assert!(real_llc_docker.contains("lnp64-libc-test-fcntl-basic-bounded-linked.elf"));
+        assert!(
+            real_llc_docker
+                .contains("real LLVM LNP64 run-elf libc-test fcntl_basic_bounded execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-libc-test-pthread-tsd-linked.elf"));
         assert!(
             real_llc_docker
@@ -3485,6 +3508,7 @@ mod tests {
             "real_libc_test_utime_execution",
             "real_libc_test_ungetc_execution",
             "real_libc_test_fdopen_execution",
+            "real_libc_test_fcntl_basic_bounded_execution",
             "real_libc_test_pthread_tsd_execution",
             "real_libc_test_sem_init_execution",
             "real_libc_test_qsort_bounded_execution",
@@ -3566,6 +3590,7 @@ mod tests {
             "real_libc_test_utime_execution",
             "real_libc_test_ungetc_execution",
             "real_libc_test_fdopen_execution",
+            "real_libc_test_fcntl_basic_bounded_execution",
             "real_libc_test_pthread_tsd_execution",
             "real_libc_test_sem_init_execution",
             "real_libc_test_qsort_bounded_execution",
@@ -5329,6 +5354,7 @@ mod tests {
         }
         assert!(run_elf.contains("real_libc_test_pthread_tsd_execution"));
         assert!(run_elf.contains("real_libc_test_sem_init_execution"));
+        assert!(run_elf.contains("real_libc_test_fcntl_basic_bounded_execution"));
         assert!(!run_elf.contains("real_libc_test_fcntl_execution"));
         assert!(libc_test_readme.contains("Do not add new Rust toy compiler fcntl/fork"));
         for intrinsic in manifest_field(target_manifest, "intrinsics").split(',') {

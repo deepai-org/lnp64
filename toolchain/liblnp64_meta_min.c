@@ -77,7 +77,7 @@ int fcntl(int fd, int cmd, ...) {
   va_list ap;
   if (cmd == F_DUPFD || cmd == F_SETFD || cmd == F_SETFL) {
     va_start(ap, cmd);
-    arg = (unsigned long)va_arg(ap, int);
+    arg = (unsigned long)va_arg(ap, long);
     va_end(ap);
   } else if (cmd == F_GETLK || cmd == F_SETLK || cmd == F_SETLKW) {
     va_start(ap, cmd);

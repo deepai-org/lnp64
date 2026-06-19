@@ -211,6 +211,8 @@ run_elf_report "real LLVM LNP64 run-elf libc-test ungetc execution passed" \
   target/llvm-lnp64-build/lnp64-libc-test-ungetc-linked.elf
 run_elf_report "real LLVM LNP64 run-elf libc-test fdopen execution passed" \
   target/llvm-lnp64-build/lnp64-libc-test-fdopen-linked.elf
+run_elf_report "real LLVM LNP64 run-elf libc-test fcntl_basic_bounded execution passed" \
+  target/llvm-lnp64-build/lnp64-libc-test-fcntl-basic-bounded-linked.elf
 run_elf_report "real LLVM LNP64 run-elf libc-test pthread_tsd execution passed" \
   target/llvm-lnp64-build/lnp64-libc-test-pthread-tsd-linked.elf
 run_elf_report "real LLVM LNP64 run-elf libc-test sem_init execution passed" \

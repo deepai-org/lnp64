@@ -4783,6 +4783,7 @@ impl Machine {
     }
 
     fn fcntl_fd_index(&mut self, fd: usize, cmd: u64, arg: u64) -> Result<(), String> {
+        const F_DUPFD_LNP64: u64 = 0;
         const F_GETFD_LNP64: u64 = 1;
         const F_SETFD_LNP64: u64 = 2;
         const F_GETFL_LNP64: u64 = 3;
@@ -4793,6 +4794,43 @@ impl Machine {
         const F_UNLCK_LNP64: u64 = 2;
         const FD_CLOEXEC_LNP64: u64 = 1;
         match cmd {
+            F_DUPFD_LNP64 => {
+                if let Err(errno) = self.fd_right_errno(fd, CAP_RIGHT_DUP) {
+                    return self.set_status_errno(errno);
+                }
+                let min_fd = arg as usize;
+                if min_fd >= FDR_COUNT {
+                    return self.set_status_errno(22);
+                }
+                let dst = self
+                    .process()?
+                    .fds
+                    .iter()
+                    .enumerate()
+                    .skip(min_fd)
+                    .find(|(idx, candidate)| {
+                        *idx != MESSAGE_ENDPOINT_FD && matches!(candidate, FdHandle::Closed)
+                    })
+                    .map(|(idx, _)| idx);
+                let Some(dst) = dst else {
+                    return self.set_status_errno(24);
+                };
+                let delta = self.fd_slot_delta(dst)?;
+                if let Err(errno) = self.ensure_domain_budget_errno(0, 0, 0, delta) {
+                    return self.set_status_errno(errno);
+                }
+                let handle = match self.process()?.fds[fd].clone_handle() {
+                    Ok(handle) => handle,
+                    Err(_) => return self.set_status_errno(9),
+                };
+                let rights = self.process()?.fd_capabilities[fd].rights;
+                if let Err(errno) = self.duplicate_fd_capability(fd, dst, rights, false) {
+                    return self.set_status_errno(errno);
+                }
+                self.bump_fd_generation(dst)?;
+                self.process_mut()?.fds[dst] = handle;
+                self.complete_ok(dst as u64)
+            }
             F_GETFD_LNP64 => {
                 if let Err(errno) = self.fd_right_errno(fd, CAP_RIGHT_STAT) {
                     return self.set_status_errno(errno);
@@ -13547,6 +13585,36 @@ mod tests {
             machine.process().unwrap().fds[7],
             FdHandle::Closed
         ));
+    }
+
+    #[test]
+    fn fcntl_dupfd_uses_lowest_free_descriptor_at_or_above_minimum() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        {
+            let process = machine.process_mut().unwrap();
+            process.fds[5] = FdHandle::Counter(Rc::new(RefCell::new(7)));
+            process.fd_capabilities[5] = FdCapability::full(5);
+            process.fds[10] = FdHandle::Counter(Rc::new(RefCell::new(9)));
+            process.fd_capabilities[10] = FdCapability::full(10);
+        }
+
+        machine.fcntl_fd_index(5, 0, 10).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[1], 11);
+        assert_eq!(machine.process().unwrap().errno, 0);
+        assert!(matches!(
+            machine.process().unwrap().fds[11],
+            FdHandle::Counter(_)
+        ));
+        assert_eq!(
+            machine.process().unwrap().fd_capabilities[11].rights,
+            machine.process().unwrap().fd_capabilities[5].rights
+        );
+
+        machine.fcntl_fd_index(5, 0, FDR_COUNT as u64).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.process().unwrap().errno, 22);
     }
 
     #[test]

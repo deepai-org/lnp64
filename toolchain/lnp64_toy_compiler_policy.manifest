@@ -6,6 +6,6 @@ private_native_shims|required|toolchain/lnp64_intrinsics.manifest,toolchain/lnp6
 compat_lowering_boundary|required|src/lowering.rs,libc_roadmap.md,conformance_matrix.md|compatibility_table_names_native_primitives
 no_toy_in_llvm_gates|required|toolchain/lnp64_llvm_gates.manifest|llvm_gate_manifest_pins_non_toy_clang_commands
 replacement_program_set|partial|toolchain/lnp64_llvm_bootstrap.manifest,toolchain/lnp64_run_elf.manifest|real_clang_demo_execution
-clang_libc_replacements|partial|toolchain/lnp64_run_elf.manifest,third_party/libc-test/README.lnp64.md|former toy-only `pthread_tsd.c`
+clang_libc_replacements|partial|toolchain/lnp64_run_elf.manifest,third_party/libc-test/README.lnp64.md|real_libc_test_fcntl_basic_bounded_execution
 remaining_toy_only_libc|blocked|third_party/libc-test/functional/fcntl.c,third_party/libc-test/README.lnp64.md|Do not add new Rust toy compiler fcntl/fork
 remaining_toy_queue|blocked|toolchain/lnp64_toy_retirement_queue.manifest,toolchain_roadmap.md|remaining toy-compiler retirement queue

@@ -14,6 +14,7 @@ upstream libc-test files; bounded or locally guarded files are called out below.
 - `functional/dirname.c`
 - `functional/env.c`
 - `functional/fdopen.c`
+- `functional/fcntl_basic_bounded.c`
 - `functional/fcntl.c`
 - `functional/pthread_tsd.c`
 - `functional/qsort_bounded.c`
@@ -56,6 +57,9 @@ pairs, `UTIME_NOW`, `UTIME_OMIT`, invalid file descriptors, and nested
 timestamp fields in `struct stat`.
 `fcntl.c` is the upstream file and covers whole-file advisory lock rejection
 and `F_GETLK` owner reporting across `fork`.
+`fcntl_basic_bounded.c` is a local bounded file covering descriptor flag queries,
+zero-valued control calls, and unsupported-command `EINVAL` without depending on
+cross-process advisory locks.
 `sem_init.c` is the upstream file and covers unnamed semaphore init/wait/post,
 try/timed wait errno behavior, and pthread start routines that return normally.
 `pthread_tsd.c` is the upstream file and covers thread-specific storage
@@ -77,7 +81,8 @@ overlap, destination-before-source overlap, and zero-length moves.
 ## Real Clang replacement status
 
 The real LLVM/Clang/lld `run-elf` gate now covers former toy-only `pthread_tsd.c`
-and `sem_init.c` cases. `fcntl.c` remains toy-only until POSIX `fork()` lowers
+and `sem_init.c` cases, plus bounded `fcntl_basic_bounded.c` descriptor-flag
+coverage. Upstream `fcntl.c` remains toy-only until POSIX `fork()` lowers
 through the formal CLONE-profile compatibility layer and `waitpid()` lowers
 through the event/waitable path. Do not add new Rust toy compiler fcntl/fork
 language features to close that gap.
