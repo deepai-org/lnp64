@@ -97,6 +97,10 @@ module lnp64_core_tile #(
     logic [31:0] command_pc;
     logic [63:0] mem_addr;
     logic [63:0] heap_next;
+    logic [63:0] heap_alloc_ptr [0:3];
+    logic [63:0] heap_alloc_size [0:3];
+    logic heap_alloc_valid [0:3];
+    logic [1:0] heap_alloc_next_slot;
     logic topology_record_valid;
     logic [63:0] topology_record_base;
     lnp64_retire_submit_t retire_submit_next;
@@ -171,6 +175,45 @@ module lnp64_core_tile #(
 
     function automatic logic [63:0] min_u64(input logic [63:0] lhs, input logic [63:0] rhs);
         min_u64 = lhs < rhs ? lhs : rhs;
+    endfunction
+
+    function automatic logic [63:0] align_up_u64(input logic [63:0] value, input logic [63:0] align);
+        logic [63:0] mask;
+        begin
+            if (align <= 64'd1) begin
+                align_up_u64 = value;
+            end else begin
+                mask = align - 64'd1;
+                align_up_u64 = (value + mask) & ~mask;
+            end
+        end
+    endfunction
+
+    function automatic logic [63:0] alloc_len_u64(input logic [63:0] len);
+        begin
+            alloc_len_u64 = len == 64'd0 ? 64'd1 : len;
+        end
+    endfunction
+
+    function automatic logic [63:0] alloc_align_u64(input logic [63:0] requested);
+        logic [63:0] clamped;
+        logic [63:0] rounded;
+        begin
+            if (requested < 64'd1) begin
+                clamped = 64'd1;
+            end else if (requested > 64'd4096) begin
+                clamped = 64'd4096;
+            end else begin
+                clamped = requested;
+            end
+            rounded = 64'd1;
+            for (int align_bit = 0; align_bit < 12; align_bit = align_bit + 1) begin
+                if (rounded < clamped) begin
+                    rounded = rounded << 1;
+                end
+            end
+            alloc_align_u64 = rounded;
+        end
     endfunction
 
     function automatic logic [63:0] clz64(input logic [63:0] value);
@@ -423,10 +466,16 @@ module lnp64_core_tile #(
             pending_unsupported <= 1'b0;
             command_pc <= 32'd0;
             heap_next <= HEAP_ARCH_BASE;
+            heap_alloc_next_slot <= 2'd0;
             topology_record_valid <= 1'b0;
             topology_record_base <= 64'd0;
             for (i = 0; i < 32; i = i + 1) begin
                 gpr[i] <= 64'd0;
+            end
+            for (i = 0; i < 4; i = i + 1) begin
+                heap_alloc_ptr[i] <= 64'd0;
+                heap_alloc_size[i] <= 64'd0;
+                heap_alloc_valid[i] <= 1'b0;
             end
             for (i = 0; i < SRAM_WORDS; i = i + 1) begin
                 sram[i] = initial_sram[i];
@@ -895,8 +944,47 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_ALLOC: begin
-                                gpr[dec.rd] <= heap_next;
-                                heap_next <= heap_next + gpr[dec.rs1];
+                                gpr[dec.rd] <= align_up_u64(heap_next, 64'd64);
+                                heap_alloc_ptr[heap_alloc_next_slot] <= align_up_u64(heap_next, 64'd64);
+                                heap_alloc_size[heap_alloc_next_slot] <= alloc_len_u64(gpr[dec.rs1]);
+                                heap_alloc_valid[heap_alloc_next_slot] <= 1'b1;
+                                heap_alloc_next_slot <= heap_alloc_next_slot + 2'd1;
+                                heap_next <= align_up_u64(heap_next, 64'd64) + alloc_len_u64(gpr[dec.rs1]);
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_ALLOC_EX: begin
+                                gpr[dec.rd] <= align_up_u64(heap_next, alloc_align_u64(gpr[dec.rs2]));
+                                heap_alloc_ptr[heap_alloc_next_slot] <= align_up_u64(heap_next, alloc_align_u64(gpr[dec.rs2]));
+                                heap_alloc_size[heap_alloc_next_slot] <= alloc_len_u64(gpr[dec.rs1]);
+                                heap_alloc_valid[heap_alloc_next_slot] <= 1'b1;
+                                heap_alloc_next_slot <= heap_alloc_next_slot + 2'd1;
+                                heap_next <= align_up_u64(heap_next, alloc_align_u64(gpr[dec.rs2])) + alloc_len_u64(gpr[dec.rs1]);
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_ALLOC_SIZE: begin
+                                gpr[dec.rd] <= 64'd0;
+                                for (i = 0; i < 4; i = i + 1) begin
+                                    if (heap_alloc_valid[i] && heap_alloc_ptr[i] == gpr[dec.rs1]) begin
+                                        gpr[dec.rd] <= heap_alloc_size[i];
+                                    end
+                                end
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_FREE: begin
+                                for (i = 0; i < 4; i = i + 1) begin
+                                    if (heap_alloc_valid[i] && heap_alloc_ptr[i] == gpr[dec.rd]) begin
+                                        heap_alloc_valid[i] <= 1'b0;
+                                    end
+                                end
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;

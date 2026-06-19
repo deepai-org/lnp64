@@ -184,6 +184,15 @@ module lnp64_decode (
             8'h47: begin
                 dec.opcode = LNP64_OP_ALLOC;
             end
+            8'h48: begin
+                dec.opcode = LNP64_OP_ALLOC_SIZE;
+            end
+            8'h49: begin
+                dec.opcode = LNP64_OP_FREE;
+            end
+            8'h4a: begin
+                dec.opcode = LNP64_OP_ALLOC_EX;
+            end
             8'hcd: begin
                 dec.opcode = LNP64_OP_FENCE;
             end
@@ -391,6 +400,9 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_ENV_GET ||
             dec.opcode == LNP64_OP_WRITE_FD ||
             dec.opcode == LNP64_OP_ALLOC ||
+            dec.opcode == LNP64_OP_ALLOC_SIZE ||
+            dec.opcode == LNP64_OP_FREE ||
+            dec.opcode == LNP64_OP_ALLOC_EX ||
             dec.opcode == LNP64_OP_GET_ERRNO ||
             dec.opcode == LNP64_OP_SET_ERRNO ||
             dec.opcode == LNP64_OP_UDIV ||

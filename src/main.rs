@@ -462,6 +462,9 @@ fn encode_flat_exec_instr(
             imm14(*offset, "ST.B offset")?,
         )]),
         Instr::Alloc(rd, bytes) => Ok(vec![enc_rrr(0x47, *rd, *bytes, Reg(0))]),
+        Instr::AllocSize(rd, ptr) => Ok(vec![enc_rrr(0x48, *rd, *ptr, Reg(0))]),
+        Instr::Free(ptr) => Ok(vec![enc_reg(0x49, *ptr)]),
+        Instr::AllocEx(rd, bytes, align) => Ok(vec![enc_rrr(0x4a, *rd, *bytes, *align)]),
         Instr::ErrnoGet(rd) => Ok(vec![enc_reg(0x38, *rd)]),
         Instr::ErrnoSet(src) => Ok(vec![enc_reg(0x39, *src)]),
         Instr::EnvGet(rd, key, index_or_buf, len_or_flags) => Ok(vec![enc_rrrr(
@@ -475,7 +478,7 @@ fn encode_flat_exec_instr(
         Instr::Fence => Ok(vec![enc_reg(0xcd, Reg(0))]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC, ERRNO_GET/SET, ENV_GET, WRITE_FD, FENCE, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, ERRNO_GET/SET, ENV_GET, WRITE_FD, FENCE, EXIT"
         )),
     }
 }
@@ -1931,9 +1934,13 @@ mod tests {
             .text
               LI r1, 2
               ALLOC r2, r1
+              ALLOC_SIZE r5, r2
               LI r3, 65
               ST.B [r2, 0], r3
               LD.B r4, [r2, 0]
+              FREE r2
+              LI r6, 16
+              ALLOC_EX r7, r6, r1
               EXIT r4
         "#;
         let program = Program::parse(source).unwrap();
@@ -1944,9 +1951,13 @@ mod tests {
             concat!(
                 "01080002\n",
                 "47104000\n",
+                "48288000\n",
                 "01180041\n",
                 "35188000\n",
                 "32208000\n",
+                "49100000\n",
+                "01300010\n",
+                "4a398200\n",
                 "3a200000\n",
             )
         );
