@@ -230,6 +230,71 @@ if rtl_retire != emulator_retire:
         f"rtl_window={rtl_retire[start:min(end, len(rtl_retire))]} "
         f"emulator_window={emulator_retire[start:min(end, len(emulator_retire))]}"
     )
+
+rtl_m1_top_commits = []
+rtl_m1_top_commit_bits = []
+with open(sys.argv[1], encoding="utf-8") as handle:
+    for line in handle:
+        if line.startswith("RTL_M1_TOP_COMMIT "):
+            rtl_m1_top_commits.append(json.loads(line[len("RTL_M1_TOP_COMMIT "):]))
+        elif line.startswith("RTL_M1_TOP_COMMIT_BITS "):
+            rtl_m1_top_commit_bits.append(json.loads(line[len("RTL_M1_TOP_COMMIT_BITS "):]))
+cap_retire = [record for record in rtl_retire if record["opcode"] in (0x50, 0x51, 0x52, 0x53)]
+if len(rtl_m1_top_commits) != len(cap_retire):
+    raise SystemExit(
+        "top-level M1 commit trace count mismatch: "
+        f"cap_retire={len(cap_retire)} commits={len(rtl_m1_top_commits)}"
+    )
+if len(rtl_m1_top_commit_bits) != len(rtl_m1_top_commits):
+    raise SystemExit(
+        "top-level M1 packed commit trace count mismatch: "
+        f"commits={len(rtl_m1_top_commits)} packed={len(rtl_m1_top_commit_bits)}"
+    )
+commit_required_fields = (
+    "record",
+    "op",
+    "object_id",
+    "object_gen",
+    "fdr_gen",
+    "domain_id",
+    "domain_gen",
+    "rights_mask",
+    "lineage_epoch",
+    "sealed",
+    "status",
+    "pc",
+    "tile_id",
+)
+opcode_to_m1_op = {0x50: 1, 0x51: 2, 0x52: 3, 0x53: 4}
+for idx, (commit, retire) in enumerate(zip(rtl_m1_top_commits, cap_retire)):
+    missing = [field for field in commit_required_fields if field not in commit]
+    if missing:
+        raise SystemExit(f"top-level M1 commit {idx} missing required field(s): {missing}")
+    if commit["record"] != "m1_cap_commit":
+        raise SystemExit(f"top-level M1 commit {idx} has unexpected record {commit['record']!r}")
+    if commit["op"] != opcode_to_m1_op[retire["opcode"]]:
+        raise SystemExit(
+            f"top-level M1 commit {idx} op mismatch: commit={commit['op']} "
+            f"retire_opcode={retire['opcode']}"
+        )
+    if commit["pc"] != retire["pc"] or commit["tile_id"] != retire["tile_id"]:
+        raise SystemExit(
+            f"top-level M1 commit {idx} is not tied to retired instruction: "
+            f"commit_pc_tile={(commit['pc'], commit['tile_id'])} "
+            f"retire_pc_tile={(retire['pc'], retire['tile_id'])}"
+        )
+    if commit["status"] != retire["errno"]:
+        raise SystemExit(
+            f"top-level M1 commit {idx} status mismatch: "
+            f"commit={commit['status']} retire_errno={retire['errno']}"
+        )
+for idx, bits in enumerate(rtl_m1_top_commit_bits):
+    if bits.get("record") != "m1_cap_commit_bits":
+        raise SystemExit(f"top-level M1 packed commit {idx} has unexpected record {bits.get('record')!r}")
+    if bits.get("width") != 281:
+        raise SystemExit(f"top-level M1 packed commit {idx} has unexpected width {bits.get('width')!r}")
+    if "bits" not in bits:
+        raise SystemExit(f"top-level M1 packed commit {idx} is missing bits")
 PY
 
 printf '%s\n' "rtl top-level program smoke ok"

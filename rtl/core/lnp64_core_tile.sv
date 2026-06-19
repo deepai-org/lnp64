@@ -37,6 +37,8 @@ module lnp64_core_tile #(
     output logic [31:0] tile_fault_counter,
     output logic retire_submit_valid,
     output lnp64_retire_submit_t retire_submit_record,
+    output logic m1_commit_valid,
+    output lnp64_m1_cap_commit_t m1_commit,
     output logic park_submit_valid,
     output lnp64_thread_sched_t park_submit_record,
     output logic submit_valid,
@@ -192,6 +194,7 @@ module lnp64_core_tile #(
     logic [63:0] cap_revoke_count;
     logic [63:0] cap_recv_rights;
     logic cap_recv_rights_subset;
+    lnp64_m1_cap_commit_t m1_commit_next;
     lnp64_retire_submit_t retire_submit_next;
     lnp64_thread_sched_t thread_submit_next;
 
@@ -786,6 +789,134 @@ module lnp64_core_tile #(
     end
 
     always_comb begin
+        m1_commit_next = '0;
+        unique case (dec.opcode)
+            LNP64_OP_CAP_DUP: m1_commit_next.op = LNP64_M1_COMMIT_CAP_DUP;
+            LNP64_OP_CAP_SEND: m1_commit_next.op = LNP64_M1_COMMIT_CAP_SEND;
+            LNP64_OP_CAP_RECV: m1_commit_next.op = LNP64_M1_COMMIT_CAP_RECV;
+            LNP64_OP_CAP_REVOKE: m1_commit_next.op = LNP64_M1_COMMIT_CAP_REVOKE;
+            default: m1_commit_next.op = 8'd0;
+        endcase
+        m1_commit_next.domain_id = 32'd1;
+        m1_commit_next.domain_gen = 32'd1;
+        m1_commit_next.status = errno_reg;
+
+        unique case (dec.opcode)
+            LNP64_OP_CAP_DUP: begin
+                if (cap_flags & ~CAP_DUP_FLAG_SEAL) begin
+                    m1_commit_next.status = LNP64_ERR_EINVAL;
+                end else if (cap_src_stale) begin
+                    m1_commit_next.status = RTL_ERR_ESTALE;
+                end else if (!cap_src_live || !cap_dst_fd_in_range) begin
+                    m1_commit_next.status = LNP64_ERR_EBADF;
+                end else if ((fdr_rights[cap_src_fd] & CAP_RIGHT_DUP) == 64'd0 ||
+                    !cap_dup_rights_subset) begin
+                    m1_commit_next.status = LNP64_ERR_EPERM;
+                end else begin
+                    m1_commit_next.status = LNP64_ERR_OK;
+                    m1_commit_next.object_gen = fdr_generation[cap_dst_fd] + 64'd1;
+                    m1_commit_next.fdr_gen = fdr_generation[cap_dst_fd] + 64'd1;
+                    m1_commit_next.object_id = fdr_lineage[cap_src_fd][31:0];
+                    m1_commit_next.rights_mask = cap_dup_rights;
+                    m1_commit_next.lineage_epoch = fdr_lineage[cap_src_fd][31:0];
+                    m1_commit_next.sealed = (cap_flags & CAP_DUP_FLAG_SEAL) != 64'd0;
+                end
+                if (m1_commit_next.status != LNP64_ERR_OK && cap_src_fd_in_range) begin
+                    m1_commit_next.object_id = fdr_lineage[cap_src_fd][31:0];
+                    m1_commit_next.object_gen = fdr_generation[cap_src_fd];
+                    m1_commit_next.fdr_gen = fdr_generation[cap_src_fd];
+                    m1_commit_next.rights_mask = fdr_rights[cap_src_fd];
+                    m1_commit_next.lineage_epoch = fdr_lineage[cap_src_fd][31:0];
+                end
+            end
+            LNP64_OP_CAP_SEND: begin
+                if (cap_flags != 64'd0) begin
+                    m1_commit_next.status = LNP64_ERR_EINVAL;
+                end else if (!cap_src_live || !cap_src_fd_in_range ||
+                    fdr_kind[cap_src_fd] != FDR_KIND_PIPE_WRITER ||
+                    ((fdr_rights[cap_src_fd] & (CAP_RIGHT_TRANSFER | 64'd2)) != (CAP_RIGHT_TRANSFER | 64'd2))) begin
+                    m1_commit_next.status = LNP64_ERR_EBADF;
+                end else if (cap_arg1_fd >= FDR_SLOT_COUNT ||
+                    !fdr_valid[cap_arg1_fd] || fdr_revoked[cap_arg1_fd]) begin
+                    m1_commit_next.status = LNP64_ERR_EBADF;
+                end else if ((fdr_rights[cap_arg1_fd] & CAP_RIGHT_TRANSFER) == 64'd0) begin
+                    m1_commit_next.status = LNP64_ERR_EPERM;
+                end else if (cap_queue_valid) begin
+                    m1_commit_next.status = LNP64_ERR_EAGAIN;
+                end else begin
+                    m1_commit_next.status = LNP64_ERR_OK;
+                end
+                if (cap_arg1_fd < FDR_SLOT_COUNT) begin
+                    m1_commit_next.object_id = fdr_lineage[cap_arg1_fd][31:0];
+                    m1_commit_next.object_gen = fdr_generation[cap_arg1_fd];
+                    m1_commit_next.fdr_gen = fdr_generation[cap_arg1_fd];
+                    m1_commit_next.rights_mask = fdr_rights[cap_arg1_fd];
+                    m1_commit_next.lineage_epoch = fdr_lineage[cap_arg1_fd][31:0];
+                end
+            end
+            LNP64_OP_CAP_RECV: begin
+                if (cap_flags != 64'd0) begin
+                    m1_commit_next.status = LNP64_ERR_EINVAL;
+                end else if (!cap_src_live || !cap_src_fd_in_range ||
+                    fdr_kind[cap_src_fd] != FDR_KIND_PIPE_READER ||
+                    ((fdr_rights[cap_src_fd] & (CAP_RIGHT_TRANSFER | 64'd1)) != (CAP_RIGHT_TRANSFER | 64'd1))) begin
+                    m1_commit_next.status = LNP64_ERR_EBADF;
+                end else if (!cap_queue_valid) begin
+                    m1_commit_next.status = LNP64_ERR_EAGAIN;
+                end else if (cap_queue_revoked) begin
+                    m1_commit_next.status = RTL_ERR_ESTALE;
+                end else if (!cap_recv_rights_subset) begin
+                    m1_commit_next.status = LNP64_ERR_EPERM;
+                end else if (!cap_dst_fd_in_range) begin
+                    m1_commit_next.status = LNP64_ERR_EBADF;
+                end else begin
+                    m1_commit_next.status = LNP64_ERR_OK;
+                    m1_commit_next.object_gen = fdr_generation[cap_dst_fd] + 64'd1;
+                    m1_commit_next.fdr_gen = fdr_generation[cap_dst_fd] + 64'd1;
+                    m1_commit_next.object_id = cap_queue_lineage[31:0];
+                    m1_commit_next.rights_mask = cap_recv_rights;
+                    m1_commit_next.lineage_epoch = cap_queue_lineage[31:0];
+                end
+                if (m1_commit_next.status != LNP64_ERR_OK && cap_queue_valid) begin
+                    m1_commit_next.object_id = cap_queue_lineage[31:0];
+                    m1_commit_next.rights_mask = cap_queue_rights;
+                    m1_commit_next.lineage_epoch = cap_queue_lineage[31:0];
+                end
+            end
+            LNP64_OP_CAP_REVOKE: begin
+                if (cap_src_stale) begin
+                    m1_commit_next.status = RTL_ERR_ESTALE;
+                end else if (cap_src_live && ((fdr_rights[cap_src_fd] & CAP_RIGHT_REVOKE) != 64'd0)) begin
+                    m1_commit_next.status = LNP64_ERR_OK;
+                    m1_commit_next.object_gen = fdr_generation[cap_src_fd] + 64'd1;
+                    m1_commit_next.fdr_gen = fdr_generation[cap_src_fd] + 64'd1;
+                end else if (cap_src_fd_in_range && fdr_valid[cap_src_fd] &&
+                    !fdr_revoked[cap_src_fd] &&
+                    ((fdr_rights[cap_src_fd] & CAP_RIGHT_REVOKE) == 64'd0)) begin
+                    m1_commit_next.status = LNP64_ERR_EPERM;
+                end else if (dma_buffer_ref_matches(object_op) && !dma_buffer_object_revoked) begin
+                    m1_commit_next.status = LNP64_ERR_OK;
+                end else if (dma_buffer_ref_matches(object_op) && dma_buffer_object_revoked) begin
+                    m1_commit_next.status = RTL_ERR_ESTALE;
+                end else begin
+                    m1_commit_next.status = LNP64_ERR_EBADF;
+                end
+                if (cap_src_fd_in_range) begin
+                    m1_commit_next.object_id = fdr_lineage[cap_src_fd][31:0];
+                    if (m1_commit_next.object_gen == 32'd0) begin
+                        m1_commit_next.object_gen = fdr_generation[cap_src_fd];
+                        m1_commit_next.fdr_gen = fdr_generation[cap_src_fd];
+                    end
+                    m1_commit_next.rights_mask = fdr_rights[cap_src_fd];
+                    m1_commit_next.lineage_epoch = fdr_lineage[cap_src_fd][31:0];
+                end
+            end
+            default: begin
+            end
+        endcase
+    end
+
+    always_comb begin
         tile_idle = tile_enable && (state == CORE_WAIT_RELEASE || state == CORE_DONE);
         tile_running = tile_enable && (state == CORE_EXEC || state == CORE_SEND_CMD || state == CORE_WAIT_RSP);
         tile_parked = tile_enable && pid1_parked;
@@ -825,6 +956,8 @@ module lnp64_core_tile #(
             tile_reset_stable <= 1'b0;
             retire_submit_valid <= 1'b0;
             retire_submit_record <= '0;
+            m1_commit_valid <= 1'b0;
+            m1_commit <= '0;
             park_submit_valid <= 1'b0;
             park_submit_record <= '0;
             submit_valid <= 1'b0;
@@ -893,6 +1026,7 @@ module lnp64_core_tile #(
             end
         end else begin
             retire_submit_valid <= 1'b0;
+            m1_commit_valid <= 1'b0;
             park_submit_valid <= 1'b0;
             submit_valid <= 1'b0;
             if (icache_invalidate && icache_invalidate_ack) begin
@@ -1849,6 +1983,8 @@ module lnp64_core_tile #(
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
+                                m1_commit_valid <= 1'b1;
+                                m1_commit <= m1_commit_next;
                             end
                             LNP64_OP_CAP_SEND: begin
                                 if (cap_flags != 64'd0) begin
@@ -1881,6 +2017,8 @@ module lnp64_core_tile #(
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
+                                m1_commit_valid <= 1'b1;
+                                m1_commit <= m1_commit_next;
                             end
                             LNP64_OP_CAP_RECV: begin
                                 if (cap_flags != 64'd0) begin
@@ -1920,6 +2058,8 @@ module lnp64_core_tile #(
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
+                                m1_commit_valid <= 1'b1;
+                                m1_commit <= m1_commit_next;
                             end
                             LNP64_OP_CAP_REVOKE: begin
                                 if (cap_src_stale) begin
@@ -1958,6 +2098,8 @@ module lnp64_core_tile #(
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
+                                m1_commit_valid <= 1'b1;
+                                m1_commit <= m1_commit_next;
                             end
                             default: begin
                                 pending_unsupported <= 1'b1;

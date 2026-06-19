@@ -169,6 +169,30 @@ module lnp64_top_program_tb;
                 32'd0,
                 32'd0
             );
+            if (dut.m1_commit_valid_vec[0]) begin
+                $display(
+                    "RTL_M1_TOP_COMMIT {\"record\":\"m1_cap_commit\",\"op\":%0d,\"object_id\":%0d,\"object_gen\":%0d,\"fdr_gen\":%0d,\"domain_id\":%0d,\"domain_gen\":%0d,\"rights_mask\":%0d,\"lineage_epoch\":%0d,\"sealed\":%0d,\"status\":%0d,\"pc\":%0d,\"tile_id\":%0d}",
+                    dut.m1_commit_vec[0].op,
+                    dut.m1_commit_vec[0].object_id,
+                    dut.m1_commit_vec[0].object_gen,
+                    dut.m1_commit_vec[0].fdr_gen,
+                    dut.m1_commit_vec[0].domain_id,
+                    dut.m1_commit_vec[0].domain_gen,
+                    dut.m1_commit_vec[0].rights_mask,
+                    dut.m1_commit_vec[0].lineage_epoch,
+                    dut.m1_commit_vec[0].sealed,
+                    dut.m1_commit_vec[0].status,
+                    dut.retire_submit_record_vec[0].pc,
+                    dut.retire_submit_record_vec[0].tile_id
+                );
+                $display(
+                    "RTL_M1_TOP_COMMIT_BITS {\"record\":\"m1_cap_commit_bits\",\"width\":%0d,\"bits\":\"%0h\",\"pc\":%0d,\"tile_id\":%0d}",
+                    $bits(lnp64_m1_cap_commit_t),
+                    dut.m1_commit_vec[0],
+                    dut.retire_submit_record_vec[0].pc,
+                    dut.retire_submit_record_vec[0].tile_id
+                );
+            end
         end
     end
 

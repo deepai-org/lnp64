@@ -86,9 +86,11 @@ module lnp64_top #(
     logic [CORE_TILE_COUNT-1:0] core_pid1_parked_vec;
     logic [CORE_TILE_COUNT-1:0] core_done_vec;
     logic [CORE_TILE_COUNT-1:0] retire_submit_valid_vec;
+    logic [CORE_TILE_COUNT-1:0] m1_commit_valid_vec;
     logic [CORE_TILE_COUNT-1:0] park_submit_valid_vec;
     logic [CORE_TILE_COUNT-1:0] submit_valid_vec;
     lnp64_retire_submit_t retire_submit_record_vec [CORE_TILE_COUNT];
+    lnp64_m1_cap_commit_t m1_commit_vec [CORE_TILE_COUNT];
     lnp64_thread_sched_t park_submit_record_vec [CORE_TILE_COUNT];
     lnp64_thread_sched_t submit_record_vec [CORE_TILE_COUNT];
     logic [CORE_TILE_COUNT-1:0] icache_invalidate_vec;
@@ -275,6 +277,8 @@ module lnp64_top #(
                 .tile_fault_counter(),
                 .retire_submit_valid(retire_submit_valid_vec[tile_id]),
                 .retire_submit_record(retire_submit_record_vec[tile_id]),
+                .m1_commit_valid(m1_commit_valid_vec[tile_id]),
+                .m1_commit(m1_commit_vec[tile_id]),
                 .park_submit_valid(park_submit_valid_vec[tile_id]),
                 .park_submit_record(park_submit_record_vec[tile_id]),
                 .submit_valid(submit_valid_vec[tile_id]),
