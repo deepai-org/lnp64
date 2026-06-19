@@ -104,6 +104,8 @@ package lnp64_pkg;
         LNP64_OP_RET          = 16'h0039,
         LNP64_OP_LD_B         = 16'h003a,
         LNP64_OP_ST_B         = 16'h003b,
+        LNP64_OP_DIV          = 16'h003c,
+        LNP64_OP_SREM         = 16'h003d,
         LNP64_OP_UNSUPPORTED  = 16'h00ff
     } lnp64_opcode_e;
 

@@ -371,6 +371,13 @@ module lnp64_core_tile #(
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
+                            LNP64_OP_DIV: begin
+                                gpr[dec.rd] <= gpr[dec.rs2] == 64'd0 ? 64'd0 : $signed(gpr[dec.rs1]) / $signed(gpr[dec.rs2]);
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
                             LNP64_OP_AND: begin
                                 gpr[dec.rd] <= gpr[dec.rs1] & gpr[dec.rs2];
                                 pc <= pc + 32'd1;
@@ -422,6 +429,13 @@ module lnp64_core_tile #(
                             end
                             LNP64_OP_UREM: begin
                                 gpr[dec.rd] <= gpr[dec.rs2] == 64'd0 ? 64'd0 : gpr[dec.rs1] % gpr[dec.rs2];
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_SREM: begin
+                                gpr[dec.rd] <= gpr[dec.rs2] == 64'd0 ? 64'd0 : $signed(gpr[dec.rs1]) % $signed(gpr[dec.rs2]);
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;

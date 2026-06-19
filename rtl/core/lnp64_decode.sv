@@ -43,6 +43,9 @@ module lnp64_decode (
             8'h12: begin
                 dec.opcode = LNP64_OP_MUL;
             end
+            8'h13: begin
+                dec.opcode = LNP64_OP_DIV;
+            end
             8'h14: begin
                 dec.opcode = LNP64_OP_AND;
             end
@@ -132,6 +135,9 @@ module lnp64_decode (
             8'ha7: begin
                 dec.opcode = LNP64_OP_UDIV;
             end
+            8'ha8: begin
+                dec.opcode = LNP64_OP_SREM;
+            end
             8'ha9: begin
                 dec.opcode = LNP64_OP_UREM;
             end
@@ -151,6 +157,7 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_ADD ||
             dec.opcode == LNP64_OP_SUB ||
             dec.opcode == LNP64_OP_MUL ||
+            dec.opcode == LNP64_OP_DIV ||
             dec.opcode == LNP64_OP_AND ||
             dec.opcode == LNP64_OP_OR ||
             dec.opcode == LNP64_OP_XOR ||
@@ -177,6 +184,7 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_GET_ERRNO ||
             dec.opcode == LNP64_OP_SET_ERRNO ||
             dec.opcode == LNP64_OP_UDIV ||
+            dec.opcode == LNP64_OP_SREM ||
             dec.opcode == LNP64_OP_UREM ||
             dec.opcode == LNP64_OP_EXIT ||
             dec.opcode == LNP64_OP_OBJECT_CTL ||

@@ -287,7 +287,9 @@ fn encode_flat_exec_instr(
         Instr::Add(rd, rs1, rs2) => Ok(vec![enc_rrr(0x10, *rd, *rs1, *rs2)]),
         Instr::Sub(rd, rs1, rs2) => Ok(vec![enc_rrr(0x11, *rd, *rs1, *rs2)]),
         Instr::Mul(rd, rs1, rs2) => Ok(vec![enc_rrr(0x12, *rd, *rs1, *rs2)]),
+        Instr::Div(rd, rs1, rs2) => Ok(vec![enc_rrr(0x13, *rd, *rs1, *rs2)]),
         Instr::Udiv(rd, rs1, rs2) => Ok(vec![enc_rrr(0xa7, *rd, *rs1, *rs2)]),
+        Instr::Srem(rd, rs1, rs2) => Ok(vec![enc_rrr(0xa8, *rd, *rs1, *rs2)]),
         Instr::Urem(rd, rs1, rs2) => Ok(vec![enc_rrr(0xa9, *rd, *rs1, *rs2)]),
         Instr::And(rd, rs1, rs2) => Ok(vec![enc_rrr(0x14, *rd, *rs1, *rs2)]),
         Instr::Or(rd, rs1, rs2) => Ok(vec![enc_rrr(0x15, *rd, *rs1, *rs2)]),
@@ -345,7 +347,7 @@ fn encode_flat_exec_instr(
         )]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, MOV, ADD, SUB, MUL, UDIV/UREM, AND/OR/XOR/NOT, LSL/LSR, CMP, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.B, ALLOC, ERRNO_GET/SET, ENV_GET, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, MOV, ADD, SUB, MUL, DIV, UDIV/UREM/SREM, AND/OR/XOR/NOT, LSL/LSR, CMP, JMP/CALL/RET, signed conditional branch, LD/ST.D, LD/ST.B, ALLOC, ERRNO_GET/SET, ENV_GET, EXIT"
         )),
     }
 }
@@ -1024,6 +1026,33 @@ mod tests {
                 "01100005\n",
                 "a7184400\n",
                 "a9204400\n",
+                "1028c800\n",
+                "3a280000\n",
+            )
+        );
+    }
+
+    #[test]
+    fn asm_flat_exec_encodes_signed_division_subset() {
+        let source = r#"
+            .text
+              LI r1, 17
+              LI r2, 5
+              DIV r3, r1, r2
+              SREM r4, r1, r2
+              ADD r5, r3, r4
+              EXIT r5
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+
+        assert_eq!(
+            hex,
+            concat!(
+                "01080011\n",
+                "01100005\n",
+                "13184400\n",
+                "a8204400\n",
                 "1028c800\n",
                 "3a280000\n",
             )
