@@ -16,6 +16,13 @@ trap cleanup EXIT
 
 top_program_quiet="${LNP64_RTL_TOP_PROGRAM_QUIET:-${LNP64_RTL_FAST:-0}}"
 top_program_max_cycles="${LNP64_RTL_TOP_PROGRAM_MAX_CYCLES:-10000}"
+top_program_tile_count="${LNP64_RTL_TOP_PROGRAM_TILE_COUNT:-2}"
+if ! [[ "$top_program_tile_count" =~ ^[0-9]+$ ]] ||
+   (( top_program_tile_count < 1 || top_program_tile_count > 4 )); then
+  printf 'LNP64_RTL_TOP_PROGRAM_TILE_COUNT must be in the supported 1..4 range, got %q\n' \
+    "$top_program_tile_count" >&2
+  exit 1
+fi
 
 run_top_program_logged() {
   local log="$1"
@@ -38,6 +45,7 @@ fi
 common_flags=(
   --timing
   -sv
+  "-GTB_CORE_TILE_COUNT=$top_program_tile_count"
   -Wall
   -Wno-fatal
   -Wno-DECLFILENAME
@@ -53,7 +61,7 @@ common_flags=(
 
 mapfile -t rtl_files < tests/rtl/top_program_filelist.f
 
-build_dir="$(rtl_build_dir "top_program")"
+build_dir="$(rtl_build_dir "top_program_${top_program_tile_count}tile")"
 
 program_input="${1:-tests/rtl/programs/top_smoke.s}"
 if [[ ! -f "$program_input" ]]; then

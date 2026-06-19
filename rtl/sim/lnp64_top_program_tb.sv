@@ -2,8 +2,9 @@
 
 import lnp64_pkg::*;
 
-module lnp64_top_program_tb;
-    localparam int TB_CORE_TILE_COUNT = 2;
+module lnp64_top_program_tb #(
+    parameter int TB_CORE_TILE_COUNT = 2
+);
 
     logic clk;
     logic reset_n;
