@@ -96,7 +96,8 @@ module lnp64_m7_tb;
                 typed_commit.address_generation
             );
             $display(
-                "TTRACE_M7_BITS {\"record\":\"m7_sched_commit_bits\",\"bits\":\"%0h\"}",
+                "TTRACE_M7_BITS {\"record\":\"m7_sched_commit_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m7_sched_commit_t),
                 typed_commit
             );
             $display(
@@ -119,7 +120,8 @@ module lnp64_m7_tb;
                 typed_state_projection.stale_address_rejected
             );
             $display(
-                "TTRACE_M7_STATE_BITS {\"record\":\"m7_state_projection_bits\",\"bits\":\"%0h\"}",
+                "TTRACE_M7_STATE_BITS {\"record\":\"m7_state_projection_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m7_state_projection_t),
                 typed_state_projection
             );
         end

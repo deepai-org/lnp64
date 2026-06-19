@@ -1681,6 +1681,9 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang realloc object smoke passed"));
         assert!(real_llc.contains("read-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang read object smoke passed"));
+        assert!(real_llc.contains("write-clang-smoke.o"));
+        assert!(real_llc.contains("fd write ok"));
+        assert!(real_llc.contains("real LLVM LNP64 clang write object smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_fd_min.c"));
         assert!(libc_fd_min.contains("__lnp_pull"));
         assert!(libc_fd_min.contains("__lnp_push"));
@@ -1723,6 +1726,9 @@ mod tests {
         assert!(real_llc.contains("lnp64-read-linked.elf"));
         assert!(real_llc.contains(r#""$read_obj" "$libc_fd_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld read link smoke passed"));
+        assert!(real_llc.contains("lnp64-write-linked.elf"));
+        assert!(real_llc.contains(r#""$write_obj" "$libc_fd_impl_obj""#));
+        assert!(real_llc.contains("real LLVM LNP64 lld write link smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_vma_min.c"));
         assert!(libc_vma_min.contains("void *mmap("));
         assert!(libc_vma_min.contains("int mprotect("));
@@ -2068,6 +2074,9 @@ mod tests {
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf realloc execution passed"));
         assert!(real_llc_docker.contains("lnp64-read-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf read execution passed"));
+        assert!(real_llc_docker.contains("lnp64-write-linked.elf"));
+        assert!(real_llc_docker.contains("fd write ok"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf write execution passed"));
         assert!(real_llc_docker.contains("lnp64-mmap-libc-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf mmap libc execution passed"));
         assert!(real_llc_docker.contains("lnp64-futex-libc-linked.elf"));
@@ -2166,6 +2175,7 @@ mod tests {
             "real_clang_demo_execution",
             "real_native_heap_execution",
             "real_read_execution",
+            "real_write_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
             "real_errno_execution",
@@ -2198,6 +2208,7 @@ mod tests {
             "real_clang_lld_probe",
             "real_clang_demo_execution",
             "real_native_heap_execution",
+            "real_write_execution",
             "real_mmap_libc_execution",
             "real_futex_libc_execution",
             "real_intrinsic_push_execution",

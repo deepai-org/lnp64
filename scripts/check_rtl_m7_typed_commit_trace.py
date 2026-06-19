@@ -242,18 +242,27 @@ def parse_json_records(output: str, prefix: str, record_name: str, fields: tuple
     return parsed
 
 
-def parse_bit_records(output: str, prefix: str, record_name: str) -> list[str]:
+def parse_bit_records(output: str, prefix: str, record_name: str, expected_width: int) -> list[str]:
     parsed: list[str] = []
     for line in output.splitlines():
         if not line.startswith(prefix):
             continue
         payload = line.removeprefix(prefix)
-        record = json.loads(payload)
+        try:
+            record = json.loads(payload)
+        except json.JSONDecodeError as exc:
+            fail(f"invalid packed bit record {payload!r}: {exc}")
         if record.get("record") != record_name:
             fail(f"unexpected packed bit record type {record.get('record')!r}")
+        width = record.get("width")
+        if width != expected_width:
+            fail(
+                f"packed bit record {record_name} width drifted from schema: "
+                f"{width!r} != {expected_width}"
+            )
         bits = record.get("bits")
         if not isinstance(bits, str) or not re.fullmatch(r"[0-9a-fA-F]+", bits):
-            fail(f"invalid packed bits {bits!r}")
+            fail(f"packed bit record {record_name} has invalid bits {bits!r}")
         parsed.append(bits)
     if not parsed:
         fail(f"no {prefix.strip()} records emitted")
@@ -378,9 +387,9 @@ def main() -> int:
     commit_fields, commit_widths, state_fields, state_widths, ops = load_schema()
     output = run_m7_gate()
     commits = parse_json_records(output, "TTRACE_M7 ", COMMIT_NAME, commit_fields)
-    commit_bits = parse_bit_records(output, "TTRACE_M7_BITS ", COMMIT_BITS_NAME)
+    commit_bits = parse_bit_records(output, "TTRACE_M7_BITS ", COMMIT_BITS_NAME, sum(commit_widths))
     states = parse_json_records(output, "TTRACE_M7_STATE ", STATE_NAME, state_fields)
-    state_bits = parse_bit_records(output, "TTRACE_M7_STATE_BITS ", STATE_BITS_NAME)
+    state_bits = parse_bit_records(output, "TTRACE_M7_STATE_BITS ", STATE_BITS_NAME, sum(state_widths))
     check_bits(commits, commit_bits, commit_fields, commit_widths, "M7 typed commit")
     check_bits(states, state_bits, state_fields, state_widths, "M7 state projection")
     if len(commits) != len(states):

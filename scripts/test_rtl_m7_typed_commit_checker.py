@@ -160,6 +160,47 @@ def main() -> None:
     checker.check_bits(commits, commit_bits, commit_fields, commit_widths, "M7 typed commit")
     checker.check_bits(states, state_bits, state_fields, state_widths, "M7 state projection")
 
+    valid_commit_bit_record_output = (
+        "TTRACE_M7_BITS "
+        f'{{"record":"m7_sched_commit_bits","width":{sum(commit_widths)},'
+        f'"bits":"{commit_bits[0]}"}}\n'
+    )
+    checker.parse_bit_records(
+        valid_commit_bit_record_output,
+        "TTRACE_M7_BITS ",
+        checker.COMMIT_BITS_NAME,
+        sum(commit_widths),
+    )
+
+    missing_width_commit_bit_record_output = (
+        "TTRACE_M7_BITS "
+        f'{{"record":"m7_sched_commit_bits","bits":"{commit_bits[0]}"}}\n'
+    )
+    expect_failure(
+        "packed bit record m7_sched_commit_bits width drifted from schema",
+        lambda: checker.parse_bit_records(
+            missing_width_commit_bit_record_output,
+            "TTRACE_M7_BITS ",
+            checker.COMMIT_BITS_NAME,
+            sum(commit_widths),
+        ),
+    )
+
+    wrong_width_state_bit_record_output = (
+        "TTRACE_M7_STATE_BITS "
+        f'{{"record":"m7_state_projection_bits","width":{sum(state_widths) - 1},'
+        f'"bits":"{state_bits[0]}"}}\n'
+    )
+    expect_failure(
+        "packed bit record m7_state_projection_bits width drifted from schema",
+        lambda: checker.parse_bit_records(
+            wrong_width_state_bit_record_output,
+            "TTRACE_M7_STATE_BITS ",
+            checker.STATE_BITS_NAME,
+            sum(state_widths),
+        ),
+    )
+
     bad_commit_bits = list(commit_bits)
     bad_commit_bits[0] = encode_bits({**commits[0], "tid": checker.M7_TID + 1}, commit_fields, commit_widths)
     expect_failure(

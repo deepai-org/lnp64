@@ -1629,6 +1629,30 @@ grep -q 'call ' "$read_dump"
 printf 'real LLVM LNP64 clang read object smoke passed: %s\n' \
   "$read_obj"
 
+write_c="$build_dir/write-smoke.c"
+cat >"$write_c" <<'C'
+typedef unsigned long size_t;
+
+long write(int fd, const void *buf, size_t len);
+
+int main(void) {
+  const char msg[] = "fd write ok\n";
+  return write(1, msg, sizeof(msg) - 1) == (long)(sizeof(msg) - 1) ? 0 : 1;
+}
+C
+
+write_obj="$build_dir/write-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -I toolchain \
+  -c "$write_c" -o "$write_obj"
+test -s "$write_obj"
+write_dump="$build_dir/write-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$write_obj" \
+  >"$write_dump"
+grep -q 'call ' "$write_dump"
+printf 'real LLVM LNP64 clang write object smoke passed: %s\n' \
+  "$write_obj"
+
 mmap_libc_c="$build_dir/mmap-libc-smoke.c"
 cat >"$mmap_libc_c" <<'C'
 typedef unsigned long size_t;
@@ -2155,6 +2179,13 @@ read_elf="$build_dir/lnp64-read-linked.elf"
 test -s "$read_elf"
 printf 'real LLVM LNP64 lld read link smoke passed: %s\n' \
   "$read_elf"
+
+write_elf="$build_dir/lnp64-write-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  -o "$write_elf" "$crt0_obj" "$write_obj" "$libc_fd_impl_obj"
+test -s "$write_elf"
+printf 'real LLVM LNP64 lld write link smoke passed: %s\n' \
+  "$write_elf"
 
 mmap_libc_elf="$build_dir/lnp64-mmap-libc-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
