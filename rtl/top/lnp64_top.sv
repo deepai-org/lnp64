@@ -626,12 +626,24 @@ module lnp64_top #(
                                 assert (m1_state_projection_vec[m1_assert_i].root_object_id ==
                                     m1_commit_vec[m1_assert_i].object_id)
                                     else $fatal(1, "SG-AUTH M1 revoked root object id drifted from cap-engine commit");
+                                assert (m1_state_projection_vec[m1_assert_i].object_gen ==
+                                    m1_commit_vec[m1_assert_i].fdr_gen)
+                                    else $fatal(1, "SG-AUTH M1 revoked object generation drifted from cap-engine commit");
                                 assert (m1_state_projection_vec[m1_assert_i].root_generation ==
                                     m1_commit_vec[m1_assert_i].fdr_gen)
                                     else $fatal(1, "SG-AUTH M1 revoked root generation drifted from cap-engine commit");
                                 assert (m1_state_projection_vec[m1_assert_i].root_lineage_epoch ==
                                     m1_commit_vec[m1_assert_i].lineage_epoch)
                                     else $fatal(1, "SG-AUTH M1 revoked root lineage drifted from cap-engine commit");
+                                assert (m1_state_projection_vec[m1_assert_i].root_rights == 64'd0)
+                                    else $fatal(1, "SG-AUTH M1 capRevoke left root authority live");
+                                assert (m1_state_projection_vec[m1_assert_i].consumer_rights == 64'd0)
+                                    else $fatal(1, "SG-AUTH M1 capRevoke left consumer authority live");
+                                assert (m1_state_projection_vec[m1_assert_i].has_revoked_generation)
+                                    else $fatal(1, "SG-AUTH M1 capRevoke did not publish revoked-generation witness");
+                                assert (m1_state_projection_vec[m1_assert_i].revoked_generation ==
+                                    m1_commit_vec[m1_assert_i].fdr_gen)
+                                    else $fatal(1, "SG-AUTH M1 capRevoke revoked-generation witness drifted from commit");
                             end
                             default: begin
                             end
