@@ -339,6 +339,7 @@ module lnp64_core_tile #(
     int unsigned static_fd_buf_word_index;
     int unsigned static_fd_buf_next_word_index;
     logic [2:0] static_fd_buf_byte_lane;
+    logic [63:0] static_fd_write_value;
     int unsigned await_fd;
     logic await_fd_in_range;
     logic await_fd_ready;
@@ -1174,6 +1175,7 @@ module lnp64_core_tile #(
         static_fd_buf_word_index = sram_word_index(gpr[dec.rs1]);
         static_fd_buf_next_word_index = sram_word_index(gpr[dec.rs1] + (64'd8 - {61'd0, gpr[dec.rs1][2:0]}));
         static_fd_buf_byte_lane = gpr[dec.rs1][2:0];
+        static_fd_write_value = load_double_unaligned(gpr[dec.rs1]);
         if (raw_opcode == 8'h2e) begin
             await_fd = dec.rs1;
         end else begin
@@ -2586,7 +2588,7 @@ module lnp64_core_tile #(
                                         errno_reg <= LNP64_ERR_EPERM;
                                     end else begin
                                         event_counter_value <= event_counter_value +
-                                            load_double_unaligned(gpr[dec.rs1]);
+                                            static_fd_write_value;
                                         gpr[1] <= gpr[dec.rs2] < 64'd8 ? gpr[dec.rs2] : 64'd8;
                                         errno_reg <= LNP64_ERR_OK;
                                     end
@@ -2601,7 +2603,7 @@ module lnp64_core_tile #(
                                         gpr[1] <= 64'hffff_ffff_ffff_ffff;
                                         errno_reg <= LNP64_ERR_EPERM;
                                     end else begin
-                                        timer_expirations <= load_double_unaligned(gpr[dec.rs1]) == 64'd0 ?
+                                        timer_expirations <= static_fd_write_value == 64'd0 ?
                                             64'd0 : 64'd1;
                                         gpr[1] <= gpr[dec.rs2] < 64'd8 ? gpr[dec.rs2] : 64'd8;
                                         errno_reg <= LNP64_ERR_OK;
