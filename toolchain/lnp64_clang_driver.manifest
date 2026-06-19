@@ -8,4 +8,4 @@ linker_flags=-static,-m,elf64lnp64,-T,toolchain/lnp64_static.ld
 crt0=toolchain/crt0_lnp64.s
 intrinsic_header=toolchain/include/lnp64/intrinsics.h
 loader_probe=lnp64 elf-plan
-status=planned_until_backend
+status=active_real_backend

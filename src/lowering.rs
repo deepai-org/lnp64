@@ -3697,7 +3697,7 @@ mod tests {
         );
         assert_eq!(
             manifest_field(driver_manifest, "status"),
-            "planned_until_backend"
+            "active_real_backend"
         );
 
         assert!(gate_manifest.contains("clang --target=lnp64-unknown-none"));
