@@ -272,6 +272,20 @@ module lnp64_top #(
         end
     endfunction
 
+    function automatic logic [7:0] top_m1_commit_op_for_retire(
+        input lnp64_retire_submit_t retire
+    );
+        begin
+            unique case (retire.arch_opcode)
+                LNP64_OP_CAP_DUP: top_m1_commit_op_for_retire = LNP64_M1_COMMIT_CAP_DUP;
+                LNP64_OP_CAP_SEND: top_m1_commit_op_for_retire = LNP64_M1_COMMIT_CAP_SEND;
+                LNP64_OP_CAP_RECV: top_m1_commit_op_for_retire = LNP64_M1_COMMIT_CAP_RECV;
+                LNP64_OP_CAP_REVOKE: top_m1_commit_op_for_retire = LNP64_M1_COMMIT_CAP_REVOKE;
+                default: top_m1_commit_op_for_retire = 8'd0;
+            endcase
+        end
+    endfunction
+
     lnp64_clock_reset clock_reset_i(
         .clk(clk),
         .reset_n(reset_n),
@@ -549,6 +563,12 @@ module lnp64_top #(
                         else $fatal(1, "SG-AUTH M1 commit was not tied to a tile-local retired instruction");
                     assert (top_m1_retire_is_cap_op(retire_submit_record_vec[m1_assert_i]))
                         else $fatal(1, "SG-AUTH M1 commit was not tied to a retired cap instruction");
+                    assert (m1_commit_vec[m1_assert_i].op ==
+                        top_m1_commit_op_for_retire(retire_submit_record_vec[m1_assert_i]))
+                        else $fatal(1, "SG-AUTH M1 commit op drifted from retired cap opcode");
+                    assert (m1_commit_vec[m1_assert_i].status ==
+                        retire_submit_record_vec[m1_assert_i].errno)
+                        else $fatal(1, "SG-AUTH M1 commit status drifted from retire errno");
                     assert (retire_submit_record_vec[m1_assert_i].tile_id == m1_assert_i[31:0])
                         else $fatal(1, "SG-AUTH M1 retire tile id drifted from top-level tile vector");
                     assert (cap_m1_commit_latched_valid_vec[m1_assert_i])
