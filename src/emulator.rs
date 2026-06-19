@@ -64,6 +64,7 @@ const EXEC_PLAN_VMA_PROT_MASK: u64 =
 const EXEC_PLAN_MEMORY_TYPE_IMAGE: u64 = 1;
 const EXEC_PLAN_PROVENANCE_IMAGE_TEXT: u64 = 1;
 const EXEC_PLAN_PROVENANCE_NON_EXECUTABLE: u64 = 2;
+const LNP64_ERR_ENOTSUP: u64 = 95;
 const UTIME_NOW_LNP64: i64 = 1_073_741_823;
 const UTIME_OMIT_LNP64: i64 = 1_073_741_822;
 const LNP64_STAT_RECORD_SIZE: usize = 104;
@@ -1563,6 +1564,39 @@ impl Machine {
                 .get(&domain_id)
                 .map(|domain| domain.generation)
                 .unwrap_or_default();
+            if opcode == 0xff {
+                if let Some(reg) = result_reg {
+                    self.thread_mut()?.regs[reg] = 0;
+                }
+                self.process_mut()?.errno = LNP64_ERR_ENOTSUP;
+                self.exit_current(0)?;
+                let regs = self.last_exit_regs.unwrap_or([0; GPR_COUNT]);
+                let errno = self.last_exit_errno.unwrap_or_default();
+                self.committed_exec_retire_trace
+                    .push(CommittedExecRetireRecord {
+                        pc,
+                        opcode,
+                        tile_id: 0,
+                        pid,
+                        tid,
+                        domain_id,
+                        domain_gen,
+                        action: 1,
+                        operand_rd,
+                        operand_rs1,
+                        operand_rs2,
+                        operand_rs3,
+                        operand_imm,
+                        result_valid: u64::from(result_reg.is_some()),
+                        result_reg: result_reg.unwrap_or_default() as u64,
+                        result_value: result_reg.map(|reg| regs[reg]).unwrap_or_default(),
+                        errno,
+                        status: 1,
+                        event_id: 0,
+                        fault_id: 0,
+                    });
+                continue;
+            }
             let (instr, next_pc) = self.decode_committed_exec_instruction(pc)?;
             self.thread_mut()?.ip = checked_host_usize(next_pc, "committed exec next PC")?;
             self.charge_cpu_tick()?;
@@ -14671,6 +14705,40 @@ mod tests {
         let exit = machine.run_committed_exec().unwrap();
 
         assert_eq!(exit, 0);
+    }
+
+    #[test]
+    fn committed_exec_unsupported_opcode_fails_closed() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let words = encode_exec_descriptor(&descriptor);
+        let mut text = vec![0; 0x1000];
+        put_instruction(&mut text, 0, 0xff00_0000);
+        let mut prepared = prepared_exec_vmas_fixture();
+        prepared[0].bytes = text;
+        let mut machine = Machine::new(empty_program());
+
+        machine
+            .commit_exec_descriptor_memory_image(&words, &prepared)
+            .unwrap();
+        let exit = machine.run_committed_exec().unwrap();
+
+        assert_eq!(exit, 0);
+        assert_eq!(machine.last_exit_errno, Some(LNP64_ERR_ENOTSUP));
+        let trace = machine.committed_exec_retire_trace();
+        assert_eq!(trace.len(), 1);
+        assert_eq!(trace[0].opcode, 0xff);
+        assert_eq!(trace[0].errno, LNP64_ERR_ENOTSUP);
+        assert_eq!(trace[0].status, 1);
+        assert!(!machine.threads.contains_key(&1));
     }
 
     #[test]

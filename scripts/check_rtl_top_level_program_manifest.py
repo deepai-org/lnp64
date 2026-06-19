@@ -105,7 +105,13 @@ def main() -> None:
                 f"{entry['source']} active entry must name generated_flat_hex",
             )
             require((ROOT / generated_flat_hex).exists(), f"{entry['source']} generated_flat_hex is missing")
-            require("asm-flat-exec" in gate_text, f"{entry['source']} active gate must assemble source to flat hex")
+            if str(entry["source"]).endswith(".hex"):
+                require(
+                    generated_flat_hex == entry["source"],
+                    f"{entry['source']} raw hex entry must use itself as generated_flat_hex",
+                )
+            else:
+                require("asm-flat-exec" in gate_text, f"{entry['source']} active gate must assemble source to flat hex")
             require("RTL_RETIRE" in gate_text and "EMULATOR_RETIRE" in gate_text, f"{entry['source']} gate must compare retire traces")
             require_typed_retire_gate(gate_text, str(entry["source"]))
             require("RTL_FINAL" in gate_text and "EMULATOR_FINAL" in gate_text, f"{entry['source']} gate must compare final state")

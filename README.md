@@ -282,6 +282,7 @@ bash scripts/run_rtl_s0.sh
 bash scripts/run_rtl_top_program_manifest.sh
 bash scripts/run_rtl_top_program_smoke.sh
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_smoke.s
+bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_unsupported_opcode.hex
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_immediate_alu.s
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_extend.s
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_count_rotate_bswap.s
@@ -335,6 +336,7 @@ reuse the binary explicitly:
 LNP64_RTL_VERILATOR_BUILD_JOBS=0 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_manifest.sh
 LNP64_RTL_FAST=1 LNP64_RTL_TOP_PROGRAM_JOBS=auto bash scripts/run_rtl_top_program_manifest.sh
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_SKIP_LINT=1 LNP64_RTL_TOP_PROGRAM_JOBS=4 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_manifest.sh
+LNP64_RTL_FAST=1 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_TOP_PROGRAM_JOBS=4 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_manifest.sh
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_smoke.s
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_immediate_alu.s
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_extend.s

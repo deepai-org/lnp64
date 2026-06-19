@@ -42,6 +42,7 @@ module lnp64_top_program_tb;
     logic [4:0] retire_result_reg;
     logic [31:0] retire_operand_imm;
     logic [63:0] final_mem_checksum;
+    logic unsupported_retired_seen;
 
     lnp64_top #(
         .CORE_TILE_COUNT(2)
@@ -142,6 +143,9 @@ module lnp64_top_program_tb;
     always @(posedge clk) begin
         #1;
         if (dut.retire_submit_valid_vec[0]) begin
+            if (retire_opcode == 8'hff) begin
+                unsupported_retired_seen = 1'b1;
+            end
             $display(
                 "RTL_RETIRE {\"pc\":%0d,\"opcode\":%0d,\"tile_id\":%0d,\"pid\":%0d,\"tid\":%0d,\"domain_id\":%0d,\"domain_gen\":%0d,\"action\":%0d,\"operand_rd\":%0d,\"operand_rs1\":%0d,\"operand_rs2\":%0d,\"operand_rs3\":%0d,\"operand_imm\":%0d,\"result_valid\":%0d,\"result_reg\":%0d,\"result_value\":%0d,\"errno\":%0d,\"status\":%0d,\"event_id\":%0d,\"fault_id\":%0d}",
                 dut.retire_submit_record_vec[0].pc,
@@ -175,6 +179,7 @@ module lnp64_top_program_tb;
         sim_event_inject = 1'b0;
         sim_fault_inject = 1'b0;
         sim_watchdog_inject = 1'b0;
+        unsupported_retired_seen = 1'b0;
 
         repeat (4) @(posedge clk);
         reset_n = 1'b1;
@@ -198,6 +203,9 @@ module lnp64_top_program_tb;
         require(tile1_observable_idle, "tile 1 was not observable/idled during top-level program");
         require(multicore_no_duplicate_tid, "top-level program duplicated PID 1 across tiles");
         require(retired_count > 32'd0, "top-level program retired no instructions");
+        if (unsupported_retired_seen || retire_opcode == 8'hff) begin
+            require(unsupported_failed_closed, "unsupported top-level program did not fail closed canonically");
+        end
 
         $display(
             "RTL_FINAL {\"retired\":%0d,\"exit_reg\":%0d,\"r3\":%0d,\"r4\":%0d,\"r5\":%0d,\"env_page\":%0d,\"mem0\":%0d,\"mem_checksum\":%0d,\"errno\":%0d}",
