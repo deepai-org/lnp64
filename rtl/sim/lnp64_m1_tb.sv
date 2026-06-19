@@ -107,7 +107,8 @@ module lnp64_m1_tb;
                 typed_commit.status
             );
             $display(
-                "TTRACE_M1_BITS {\"record\":\"m1_cap_commit_bits\",\"bits\":\"%0h\"}",
+                "TTRACE_M1_BITS {\"record\":\"m1_cap_commit_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m1_cap_commit_t),
                 typed_commit
             );
             $display(
@@ -153,7 +154,8 @@ module lnp64_m1_tb;
                 typed_pre_state_projection.revoked_generation
             );
             $display(
-                "TTRACE_M1_PRE_STATE_BITS {\"record\":\"m1_state_projection_bits\",\"bits\":\"%0h\"}",
+                "TTRACE_M1_PRE_STATE_BITS {\"record\":\"m1_state_projection_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m1_state_projection_t),
                 typed_pre_state_projection
             );
             $display(
@@ -199,7 +201,8 @@ module lnp64_m1_tb;
                 typed_state_projection.revoked_generation
             );
             $display(
-                "TTRACE_M1_STATE_BITS {\"record\":\"m1_state_projection_bits\",\"bits\":\"%0h\"}",
+                "TTRACE_M1_STATE_BITS {\"record\":\"m1_state_projection_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m1_state_projection_t),
                 typed_state_projection
             );
         end

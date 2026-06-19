@@ -555,6 +555,20 @@ def check_rtl_state_projection_boundary_sources(
         or "TTRACE_M1_STATE_BITS" not in tb_source
     ):
         fail("M1 testbench no longer emits packed bit records for commit and pre/post state projections")
+    required_bit_width_sources = (
+        "$bits(lnp64_m1_cap_commit_t)",
+        "$bits(lnp64_m1_state_projection_t)",
+    )
+    missing_bit_width_sources = [
+        source
+        for source in required_bit_width_sources
+        if source not in tb_source
+    ]
+    if missing_bit_width_sources:
+        fail(
+            "M1 testbench no longer emits schema-owned packed bit widths: "
+            f"{missing_bit_width_sources}"
+        )
     require_trace_display_payload_source(
         tb_source,
         "TTRACE_M1_BITS",
@@ -1277,7 +1291,12 @@ def parse_state_projection_records(
     return records
 
 
-def parse_bit_records(output: str, prefix: str, expected_record_name: str) -> list[str]:
+def parse_bit_records(
+    output: str,
+    prefix: str,
+    expected_record_name: str,
+    expected_width: int,
+) -> list[str]:
     records: list[str] = []
     for line in output.splitlines():
         if not line.startswith(prefix):
@@ -1289,6 +1308,12 @@ def parse_bit_records(output: str, prefix: str, expected_record_name: str) -> li
             fail(f"invalid packed bit record {payload!r}: {exc}")
         if record.get("record") != expected_record_name:
             fail(f"unexpected packed bit record type {record.get('record')!r}")
+        width = record.get("width")
+        if width != expected_width:
+            fail(
+                f"packed bit record {expected_record_name} width drifted from schema: "
+                f"{width!r} != {expected_width}"
+            )
         bits = record.get("bits")
         if not isinstance(bits, str) or not re.fullmatch(r"[0-9a-fA-F]+", bits):
             fail(f"packed bit record {expected_record_name} has invalid bits {bits!r}")
@@ -2050,7 +2075,12 @@ def main() -> int:
     ) = load_schema_contract()
     output = run_m1_gate()
     records = parse_records(output, record_name, schema_fields)
-    bit_records = parse_bit_records(output, "TTRACE_M1_BITS ", "m1_cap_commit_bits")
+    bit_records = parse_bit_records(
+        output,
+        "TTRACE_M1_BITS ",
+        "m1_cap_commit_bits",
+        sum(schema_widths),
+    )
     pre_state_records = parse_state_projection_records(
         output,
         "TTRACE_M1_PRE_STATE ",
@@ -2062,6 +2092,7 @@ def main() -> int:
         output,
         "TTRACE_M1_PRE_STATE_BITS ",
         "m1_state_projection_bits",
+        sum(state_schema_widths),
     )
     state_records = parse_state_projection_records(
         output,
@@ -2074,6 +2105,7 @@ def main() -> int:
         output,
         "TTRACE_M1_STATE_BITS ",
         "m1_state_projection_bits",
+        sum(state_schema_widths),
     )
     check_packed_bits_match_records(
         records,

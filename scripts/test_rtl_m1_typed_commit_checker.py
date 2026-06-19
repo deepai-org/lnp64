@@ -367,6 +367,45 @@ def main() -> None:
         ),
     )
 
+    valid_bit_record_output = (
+        "TTRACE_M1_BITS "
+        f'{{"record":"m1_cap_commit_bits","width":{sum(commit_widths)},'
+        f'"bits":"{valid_commit_bits[0]}"}}\n'
+    )
+    checker.parse_bit_records(
+        valid_bit_record_output,
+        "TTRACE_M1_BITS ",
+        "m1_cap_commit_bits",
+        sum(commit_widths),
+    )
+    missing_width_bit_record_output = (
+        "TTRACE_M1_BITS "
+        f'{{"record":"m1_cap_commit_bits","bits":"{valid_commit_bits[0]}"}}\n'
+    )
+    expect_failure(
+        "packed bit record m1_cap_commit_bits width drifted from schema",
+        lambda: checker.parse_bit_records(
+            missing_width_bit_record_output,
+            "TTRACE_M1_BITS ",
+            "m1_cap_commit_bits",
+            sum(commit_widths),
+        ),
+    )
+    wrong_width_bit_record_output = (
+        "TTRACE_M1_BITS "
+        f'{{"record":"m1_cap_commit_bits","width":{sum(commit_widths) - 1},'
+        f'"bits":"{valid_commit_bits[0]}"}}\n'
+    )
+    expect_failure(
+        "packed bit record m1_cap_commit_bits width drifted from schema",
+        lambda: checker.parse_bit_records(
+            wrong_width_bit_record_output,
+            "TTRACE_M1_BITS ",
+            "m1_cap_commit_bits",
+            sum(commit_widths),
+        ),
+    )
+
     cap_send_before_dup_state = checker.initial_state(valid_run[0], ops)
     expect_failure(
         "TypedCommitTransition.capSend before capDup",
@@ -778,6 +817,22 @@ def main() -> None:
         lambda: checker.check_rtl_state_projection_boundary_sources(
             engine_source,
             wrong_commit_bits_source,
+            assertion_source,
+            commit_field_names,
+            state_field_names,
+        ),
+    )
+
+    missing_commit_bit_width = replace_once(
+        tb_source,
+        "$bits(lnp64_m1_cap_commit_t)",
+        "281",
+    )
+    expect_failure(
+        "schema-owned packed bit widths",
+        lambda: checker.check_rtl_state_projection_boundary_sources(
+            engine_source,
+            missing_commit_bit_width,
             assertion_source,
             commit_field_names,
             state_field_names,
