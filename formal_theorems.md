@@ -7,10 +7,36 @@ RTL assertions and model checking used later for local refinement checks.
 The guiding rule is: authority-bearing behavior should be proven correct,
 locally checkable, or structurally impossible to violate.
 
-## 0. Formal Model Scope
+## 0. Whole-Chip Model Scope
 
-The first formal model should be an architectural abstract machine, not a gate
-or timing model. Its initial proof boundary is:
+The first formal model should be a whole-chip architectural abstract machine,
+not only a set of per-engine models and not a gate/timing model. The top-level
+object is:
+
+```text
+LNP64_Abstract_Machine =
+  architectural threads
+  capability/FDR objects
+  Resource Domains
+  VMAs and memory objects
+  waitables, queues, gates, services, and devices
+  DMA windows and IOMMU state
+  scheduler/run/wait state
+  fabric-visible transactions
+  trace, audit, debug, attestation, and evidence state
+  reset, recovery, poison, and measured-fatal state
+```
+
+The global rule is:
+
+```text
+There is no authority path on the chip except through the architectural object
+model.
+```
+
+Every RTL block refines part of this global state. Local proofs are useful only
+when their assumptions compose at `lnp64_top` and preserve the whole-machine
+invariants. The model's initial proof boundary is:
 
 - instruction decode for the frozen base ISA formats and opcode/profile
   dispatch.
@@ -37,6 +63,25 @@ or timing model. Its initial proof boundary is:
   outcomes.
 - fault, poison, overflow, watchdog, local-reset, trace/audit/telemetry records
   as data, never authority.
+- provenance-bearing transactions for core loads/stores/fetches, engine
+  commands, cache/coherence messages, DMA requests, device events, scheduler
+  transitions, queue operations, service calls, debug reads, trace writes,
+  attestation measurements, reset/recovery messages, and maintenance paths.
+- fabric routing and arbitration at the abstract event level: source identity,
+  destination owner, object home bank, domain tag, message type, budget class,
+  response route, reset epoch, and terminal event preservation.
+- authority-bearing-state inventory: cap registers, FDR registers/tables,
+  capability tables, domain tables, VMA/page/TLB metadata, scheduler/thread
+  tables, waitable tables, queue endpoint metadata, DMA/IOMMU tables, device BAR
+  mappings, service gate metadata, sealed return capabilities, loader/debug/
+  trace/attestation capabilities, and reset/boot roots.
+- reset/boot/recovery lifecycle states: `PowerUnknown`, `ResetScrubbing`,
+  `MeasuredBoot`, `RootDomainConstruction`, `ServiceRootConstruction`,
+  `NormalOperation`, `LocalRecovery`, and `MeasuredFatal`.
+- lifecycle-gated debug, DFT, observability, trace, and crash-dump authority.
+- microarchitectural isolation profiles at the abstract claim level:
+  `BEST_EFFORT_SHARED`, `AUTHORITY_ISOLATED`, `TIMING_PARTITIONED`,
+  `HIGH_ASSURANCE`, and `REALTIME_DETERMINISTIC`.
 
 The first safety model intentionally excludes:
 
@@ -52,6 +97,9 @@ The first safety model intentionally excludes:
 
 RTL assertions and bounded model checking should later prove that each hard
 block refines the abstract transition relation for its owned state machine.
+At the top level, an assume-guarantee composition graph must show that every
+block assumption is discharged by another block guarantee or by an explicit
+external environment assumption.
 
 A separate realtime refinement model should prove that implementation timing
 refines the published `ENV_GET` WCET profile. It does not need to prove
@@ -152,6 +200,24 @@ refinement targets for this spine.
    object, gate, service, RAS, and fabric proofs compose at `lnp64_top`; a
    global transition preserves authority, confinement, memory safety, freshness,
    fail-closed behavior, and the trusted-boundary assumptions.
+9. **Fabric mediation:** command, memory, event, completion, fault, cancel,
+   coherence, trace, debug, and maintenance fabrics preserve transaction
+   provenance, route only to valid owners, cannot broaden authority, and cannot
+   drop committed terminal traffic without producing a valid fault/cancel/fatal
+   path.
+10. **Reset/recovery freshness:** supported reset, local recovery, watchdog,
+    ECC/parity recovery, device reset, and cluster/tile reset paths cannot
+    publish stale responses, reuse old generations as fresh authority, complete
+    old commands under new authority, or leave peers waiting forever without a
+    fault/wake/cancel/fatal path.
+11. **Realtime composition honesty:** no instruction, command, servicelet,
+    classifier action, DMA path, cache/coherence path, fabric route, or memory
+    controller path receives a realtime class stronger than the weakest admitted
+    resource on its actual execution path.
+12. **Policy-service confinement:** a compromised policy service can misuse only
+    authority delegated to that service; it cannot exceed that authority through
+    privilege level, raw page-table writes, DMA, debug, trace, scheduler
+    mutation, servicelet execution, or fabric side channels.
 
 The hardest theorem is mediation completeness. If any authority-relevant state
 can be mutated outside its checked owner path, local proofs can all be true
@@ -225,6 +291,27 @@ Useful sub-theorems:
 - no supervisor, personality, service, driver, debug path, or device frontend
   has ambient authority outside owner-engine transitions and explicit
   capabilities.
+
+Every authority-bearing object follows the common lifecycle:
+
+```text
+Unallocated -> AllocatedUnpublished -> Initialized -> Published -> Live
+  -> Revoking -> Dead -> Scrubbing -> Free
+```
+
+Useful lifecycle sub-theorems:
+
+- only `Published` or `Live` objects may be named by authority-bearing
+  capabilities, FDRs, waiters, DMA descriptors, gates, VMAs, or service
+  invocations.
+- object generation changes before storage can be reused.
+- in-flight messages carry object generation or reset epoch and cannot complete
+  against a reused object generation.
+- reset, local recovery, and poison transitions either preserve a valid sealed
+  root or move affected objects to `Revoking`, `Dead`, `Scrubbing`, `Free`, or a
+  measured-fatal state.
+- debug, trace, audit, counters, and attestation records may describe lifecycle
+  transitions but cannot create or revive lifecycle authority.
 
 ## 2. Capability Non-Forgeability
 

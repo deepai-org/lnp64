@@ -38,6 +38,9 @@ Severe proof goals:
 - **Memory and DMA authority:** loads, stores, VMAs, TLBs, caches, heap objects,
   device BARs, and DMA descriptors cannot access memory outside capability,
   VMA, IOMMU, and domain scope.
+- **Whole-chip mediation:** cores, engines, fabric, caches, DMA, debug, trace,
+  reset, boot, DFT, servicelets, firmware, and maintenance paths cannot affect
+  authority-bearing state except through the architectural object model.
 - **Scheduler and wait correctness:** every live thread has one scheduler state,
   waits cannot be lost, wakeups are generation-checked, and admitted work gets
   bounded service under the published realtime contract.
@@ -76,6 +79,10 @@ For the shortest project thesis, start with
 
 ## Architecture Summary
 
+- **Simple cores, authoritative engines:** LNP64 is a deterministic load/store
+  barrel CPU around typed owner engines. The core executes code and submits
+  native object commands; owner engines mutate capability, domain, scheduler,
+  waitable, VMA, heap, DMA, service, trace, and RAS state.
 - **Capabilities everywhere:** file-descriptor registers, memory objects,
   queues, gates, DMA windows, domains, and services are unforgeable handles with
   generation checks.
@@ -95,6 +102,10 @@ For the shortest project thesis, start with
   SystemVerilog chip plus Lean proofs connected to RTL by schemas, assertions,
   typed traces, and refinement evidence. Real FPGA board evidence is a later
   bring-up step.
+- **Validation direction:** proofs establish the safety envelope; the
+  validation plan uses an executable model, typed traces, differential RTL
+  tests, semantic coverage, fault injection, realtime checks, and software
+  workloads to show the machine actually works.
 
 ## Repository Map
 

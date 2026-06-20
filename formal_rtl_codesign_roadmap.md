@@ -45,6 +45,15 @@ The end state is not a partial demo core. The end state is:
   practical.
 - later FPGA board support once suitable hardware exists.
 
+Formal proof does not replace validation. The parallel validation target is
+described in `verification_plan.md`: a whole-chip executable model, typed
+architectural traces, directed tests, differential model/RTL tests,
+constrained-random stress, semantic coverage, fault injection, realtime
+validation, software workloads, and later FPGA/post-silicon campaigns. Proof
+establishes the safety envelope; validation establishes that the implemented
+machine actually boots, runs useful programs, handles faults, and meets its
+advertised operational contracts.
+
 Each hardware block should have:
 
 - a small abstract model.
@@ -105,6 +114,173 @@ rejection, revocation safety, and valid capability transfer for all reachable
 states in the modeled slice. Other evidence work is secondary until this shape
 exists.
 
+## Sharpened RTL Architecture
+
+The implementation target is a conventional, simple, deterministic load/store
+barrel CPU wrapped around a small set of authoritative object engines. The CPU
+executes ordinary code. It may decode native capability/domain/object
+instructions, but nontrivial authority changes leave the core as typed engine
+commands. The engines own capability validity, FDR state, domain state,
+scheduler/wait state, VMAs, allocation metadata, DMA/IOMMU scope, service/gate
+boundaries, RAS evidence, and auditable commits.
+
+The design must not become a big privileged hardware kernel. The stable shape
+is:
+
+```text
+barrel execution cores
++ typed command/response fabric
++ single-owner object engines
++ generation-checked wait/schedule machinery
++ domain-tagged coherent memory/device fabric
++ explicit service gates
++ traceable commit points
+```
+
+The core rule is:
+
+```text
+Every mutable architectural state has exactly one RTL owner.
+```
+
+For proof and RTL review, every mutable record family must have a named owner
+engine or a named bank/shard of that owner. Other blocks may read cached
+effective records or submit typed commands; they must not write the owner's
+state behind its back. This applies to FDR tables, capability tables, domain
+records, scheduler/thread records, wait queues, VMA/page records, heap metadata,
+DMA descriptors, gate continuations, service invocation state, trace/audit
+state, and RAS metadata.
+
+The barrel core is not the owner of the machine. It owns only the currently
+leased execution slot state: integer/capability/FDR operand registers for the
+running slot, PC/status for that slot, in-flight local instruction state, and
+the retire/writeback decision for the selected instruction. A thread object is
+architectural scheduler state. A barrel slot is a leased execution cache for
+that thread. Dispatch, park, preempt, fault, wait, and writeback transfer the
+thread between the Scheduler/Wait Engine and the slot through explicit
+lease-generation checks.
+
+Every instruction should fit one of these terminal shapes:
+
+```text
+retire one architectural local transition
+submit one bounded engine command
+park on one valid waitable/generation
+fault closed
+yield or preempt at a clean boundary
+```
+
+No instruction may partially mutate authority and discover an authority fault
+later. Authority-changing instructions prevalidate operands and result
+destinations, then commit only through the named owner engine.
+
+The engine command protocol should converge on a small fixed response taxonomy:
+
+```text
+OK              completed atomically
+FAULT           failed closed; no partial authority
+PARK            thread is parked on a valid waitable generation
+COMPLETE_LATER  bounded submit succeeded; completion/event/fault will follow
+RETRY           bounded backpressure with a named release condition
+```
+
+An engine must not expose "maybe still working; poll random state later." Long
+work receives an operation id, owner thread/domain metadata, deadline/budget
+class, cancellation class, and completion/fault/event route before the issuing
+instruction retires or parks.
+
+## Whole-Chip Composition First
+
+Block-local proofs are necessary, but they are not the primary design object.
+The primary design object is the composed chip. A design with locally correct
+cores, engines, caches, DMA, debug, trace, reset, and fabric blocks can still
+violate the severe proof goals if any composition path bypasses the object
+model. The top-level invariant is:
+
+```text
+There is no authority path on the chip except through the architectural object
+model.
+```
+
+This applies to execution cores, owner engines, caches, TLBs, DMA, debug, DFT,
+trace, reset, boot, servicelets, firmware, fabric queues, power management,
+error recovery, maintenance paths, and external-IP adapters. If a block can
+affect architectural state, it must answer:
+
+```text
+what object is touched?
+which owner owns it?
+which capability authorizes it?
+which domain scopes it?
+which generation/epoch prevents stale use?
+which wait/fault/cancel path terminates it?
+which budget/realtime class applies?
+which trace event records it?
+which reset epoch invalidates old work?
+```
+
+The proof architecture therefore needs one whole-chip abstract machine:
+
+```text
+LNP64_Abstract_Machine =
+  threads + capabilities + domains + VMAs + waitables + queues + gates
+  + services + devices + DMA windows + memory objects + scheduler state
+  + fabric-visible transactions + trace/evidence state + reset/recovery state
+```
+
+Each RTL block refines part of this global state. The highest-level theorem is
+not "each block is correct" but "every reachable whole-chip state preserves
+authority, confinement, memory/DMA scope, scheduler/wait correctness, realtime
+honesty, fault containment, evidence honesty, and progress under the stated
+environment assumptions."
+
+Every meaningful transaction must carry authority provenance or an explicitly
+local-only proof tag:
+
+```text
+issuer thread/domain
+source object or owner engine
+authority source capability or boot/reset root
+operation and requested rights
+object id/generation or reset epoch
+budget/realtime class
+fault-containment scope
+trace nonce/event class
+```
+
+That provenance must be preserved through core memory requests, instruction
+fetch, engine commands, cache/coherence messages, DMA requests, device events,
+scheduler operations, queue operations, service invocations, debug reads, trace
+writes, attestation measurements, reset/recovery messages, and maintenance
+interfaces. No transaction may affect architectural state unless its provenance
+authorizes the operation in the global object model.
+
+The fabric is an enforcement component, not neutral wiring. It must preserve
+source identity, destination owner, domain tag, object home bank, message type,
+budget class, response route, and reset epoch. It must not create authority,
+broaden authority, route authority to the wrong owner, drop committed
+wake/fault/completion traffic without a valid terminal path, or introduce
+unbounded backpressure outside admitted assumptions.
+
+The top-level proof must include an authority-bearing-state inventory. Every
+entry in that inventory needs one owner, one creation rule, one transfer rule,
+one revocation/destruction rule, one traceable commit point, and one
+reset/recovery rule. Anything not in the inventory must be unable to grant,
+store, revive, widen, or transfer authority.
+
+Reset, boot, debug, DFT, observability, and local recovery are part of the
+trusted chip boundary. They are not informal exceptions. Production debug and
+trace are capability-scoped services or lifecycle-disabled surfaces; reset and
+recovery advance epochs so stale commands, waiters, DMA completions, cap
+references, cache/TLB entries, and fabric messages cannot publish authority
+after recovery.
+
+Each block may still use assume-guarantee contracts, but `lnp64_top` must carry
+a composition graph: every block assumption is discharged by another block's
+guarantee or listed as an explicit environment assumption. Informal assumptions
+such as "firmware will not do that," "debug is trusted," "the fabric eventually
+responds," or "the device behaves" are not acceptable proof inputs.
+
 ## Execution-First Correction
 
 The roadmap must not drift into proof artifacts that do not accelerate a real
@@ -161,7 +337,10 @@ the whole-chip boundary:
 1. **`SG-AUTH` No forged authority:** no instruction, service, engine, trace,
    event, fault, DMA operation, reset path, stale cache entry, or compatibility
    personality can create, broaden, revive, or transfer capability authority
-   outside the capability rules.
+   outside the capability rules. Every authority-bearing value in every
+   reachable whole-chip state descends from boot/root authority through
+   Capability Engine rules, owner-engine publication, or an explicitly modeled
+   lifecycle transition.
 2. **`SG-ISO` Resource Domain isolation:** a domain cannot read, write,
    schedule, DMA into, signal, observe, debug, trace, or receive events for
    another domain except through explicitly delegated capabilities and policy.
@@ -175,7 +354,24 @@ the whole-chip boundary:
 5. **`SG-MEM` Memory and DMA authority:** VMA, TLB, cache, page-state, W^X/NX,
    guard, revocation, coherence, and DMA/IOMMU rules prevent stale,
    unauthorized, or cross-domain memory access.
-6. **`SG-TOTAL` Hardware totality and local progress:** every hardware FSM,
+6. **`SG-COMP` Global composition/no bypass:** every authority-bearing state
+   family has one owner or owner shard, every block assumption is discharged at
+   `lnp64_top` or named as an environment assumption, and no core, fabric,
+   cache, DMA, debug, trace, boot, reset, DFT, servicelet, maintenance, or
+   external-IP path can bypass the architectural object model.
+7. **`SG-FABRIC` Fabric enforcement:** command, memory, event, coherence,
+   completion, fault, cancel, debug, and trace fabrics preserve provenance,
+   destination owner, object home bank, domain tag, reset epoch, budget class,
+   and response route; they cannot create/broaden authority, misroute authority,
+   silently drop committed terminal traffic, or create unbounded backpressure
+   outside admitted assumptions.
+8. **`SG-RESET` Reset/recovery freshness:** after any supported reset, local
+   recovery, watchdog action, ECC recovery, device reset, or cluster/tile reset,
+   stale in-flight messages, stale object generations, stale waiters, stale DMA
+   completions, stale cache/TLB entries, and stale debug/trace accesses cannot
+   publish authority or wedge peers without a valid fault/wake/cancel/fatal
+   route.
+9. **`SG-TOTAL` Hardware totality and local progress:** every hardware FSM,
    pipeline, owner engine, queue, arbiter, decoder, reset path, and recovery path
    has only defined reachable states. Under its stated environment assumptions,
    each reachable nonterminal state makes bounded forward progress, applies
@@ -184,20 +380,22 @@ the whole-chip boundary:
    measured/audited machine-fatal state. No block may spin forever, wait on an
    impossible condition, hold unbounded backpressure, or require software
    intervention to escape an internal invalid state.
-7. **`SG-PROGRESS` Fault containment and bounded recovery:** within the stated
+10. **`SG-PROGRESS` Fault containment and bounded recovery:** within the stated
    reset, clock, fabric, and external-IP assumptions, faults, malformed records,
    poison, watchdog timeout, revocation races, and resource exhaustion resolve to
    typed progress, typed refusal, bounded parking, degraded state where the
    lifecycle profile permits it, local reset, or measured/audited machine-fatal
    state without publishing partial authority or corrupting unrelated domains.
-8. **`SG-RT` Realtime honesty:** any advertised Class A/B/C latency,
+11. **`SG-RT` Realtime honesty:** any advertised Class A/B/C latency,
    scheduler, reservation, fabric, memory-controller, async-cancellation, or
    servicelet bound is conservative for the implementation; work that cannot meet
-   the bound is Class D bounded-submit work, best-effort, or fails closed.
-9. **`SG-EVIDENCE` Evidence honesty:** trace, telemetry, audit, quote,
-   proof-manifest, and feature-discovery records are data, not authority, and
-   accurately describe the implementation, assumptions, proof level, and known
-   gaps for the boot epoch.
+   the bound is Class D bounded-submit work, best-effort, or fails closed. A
+   realtime claim is valid only if every resource on the actual path is admitted
+   under compatible assumptions.
+12. **`SG-EVIDENCE` Evidence honesty:** trace, telemetry, audit, quote, debug,
+   DFT lifecycle, counter access, proof-manifest, and feature-discovery records
+   are data, not authority, and accurately describe the implementation,
+   assumptions, proof level, and known gaps for the boot epoch.
 
 These claims should have stable ids in the theorem/RTL coupling manifest and
 the human-readable evidence index. A proof that does not advance one of these
@@ -517,10 +715,26 @@ but separate:
 - `rtl/include/`: shared packed structs, constants, opcodes, error codes, and
   feature bits.
 - `rtl/top/`: top-level machine and clock/reset glue.
-- `rtl/core/`: replicated core tiles, fetch/decode/issue/retire, register
-  files, thread context windows, and tile-local scheduler front ends.
-- `rtl/engines/`: capability, scheduler, object, gate, process, VMA, DMA, heap,
-  futex, domain, service, classifier, RAS, and device shells.
+- `rtl/core/`: replicated barrel core tiles and only core-local execution
+  logic: slot file, slot scheduler/window, fetch, decode, integer/branch
+  execute, load/store address generation, engine-command submit, retire, and
+  core trace. The core directory must not become the home of capability,
+  domain, wait, heap, VMA, DMA, service, or RAS owner state.
+- `rtl/engines/`: authoritative owner engines. Over time this should split into
+  subdirectories such as `capability/`, `domain/`, `sched_wait/`, `vma_mmu/`,
+  `alloc/`, `gate_service/`, `dma/`, `object/`, `classifier_servicelet/`, and
+  `trace_ras/`. The existing flat files are acceptable scaffolding, but new
+  real state should move toward owner-specific files.
+- `rtl/fabric/`: typed command/response routing, completion routing,
+  event/wakeup routing, fault/cancel routing, memory request routing, QoS/credit
+  arbitration, and virtual-channel queues. Early implementations may keep some
+  routers in `rtl/engines/`, but the intended ownership is fabric, not core.
+- `rtl/cache/` and `rtl/mem/`: cache/TLB/coherence shells, MSI/directory/home
+  agents, SRAM/DDR models, scrubbers, metadata/ECC sidecars, and memory fabric
+  adapters. Early SRAM helpers should be extracted from the core as these files
+  become real.
+- `rtl/soc/` or `rtl/top/`: top-level SoC integration, cluster/tile wrappers,
+  reset/boot, external IP adapters, and board/simulation top wrappers.
 - `rtl/sim/`: Verilator testbench, ROM/SRAM images, synthetic event/fault
   injectors, and trace comparison utilities.
 - `formal/`: Lean model plus lightweight generated theorem/test artifacts.
@@ -538,13 +752,18 @@ return only stub completions:
 - `lnp64_reset_boot`
 - `lnp64_clock_reset`
 - `lnp64_core_tile` replicated by `CORE_TILE_COUNT`
+- `lnp64_thread_window` or equivalent barrel slot scheduler/window
+- `lnp64_slot_file` or equivalent resident slot register/context file
+- `lnp64_fetch`
 - `lnp64_decode`
-- `lnp64_issue_retire`
-- `lnp64_thread_context`
+- `lnp64_execute`
+- `lnp64_load_store`
+- `lnp64_system_issue`
+- `lnp64_retire`
 - `lnp64_engine_router`
 - `lnp64_completion_router`
 - `lnp64_errno_writeback`
-- `lnp64_scheduler`
+- `lnp64_sched_wait_engine`
 - `lnp64_event_router`
 - `lnp64_cap_engine`
 - `lnp64_domain_engine`
@@ -572,6 +791,11 @@ return only stub completions:
 
 The names are not sacred, but the boundaries are. Renaming is fine only if the
 same shells and channels remain obvious.
+
+The current `lnp64_core_tile` may temporarily instantiate or contain more logic
+than this target shape, but that is technical debt. Each new feature should move
+state mutation out of the core and behind the owner-engine command protocol
+rather than adding another local system special case to the core file.
 
 ### Multicore From S0
 
@@ -1344,6 +1568,24 @@ with ad hoc side channels. These guardrails are part of the work order:
 - **Watchdogs are recovery evidence, not flow control.** A normal progress
   proof cannot rely on watchdog timeout. Watchdogs prove bounded failure
   containment when an engine violates its normal ready/progress contract.
+
+Forbidden early design shapes:
+
+- no ambient supervisor mode that can bypass capabilities.
+- no raw page-table writes by software or by non-VMA owner engines.
+- no direct software mutation of wait queues or scheduler queues.
+- no direct core mutation of FDR, capability, domain, wait, VMA, heap, DMA,
+  service, trace, or RAS owner tables.
+- no untyped DMA descriptors or device events that bypass IOMMU/domain checks.
+- no hidden capability creation in debug, trace, attestation, servicelet, or
+  boot paths.
+- no speculative authority use or out-of-order retirement for cap-affecting
+  instructions.
+- no unbounded engine command queues or completion paths.
+- no best-effort operation may accidentally inherit a realtime class.
+- no shared writable architectural table may have multiple RTL writers.
+- no servicelet path may mint, widen, or transfer authority outside the
+  Capability Engine rules.
 
 Before any milestone is called complete, its test plan should include a small
 deadlock audit: list every queue/fabric dependency, identify the owner of each

@@ -694,6 +694,14 @@ event carries the issuing TID/PID, Resource Domain id/generation, operation id,
 and deadline/budget class, so local barrel issue and shared-engine scheduling
 remain part of the same accounting and isolation model.
 
+The core tile must stay a conventional execution engine, not a privileged
+hardware kernel. It fetches, decodes, executes local ALU/branch/load/store work,
+submits typed commands for native object operations, and retires or parks the
+issuing slot. Capability validity, FDR tables, domain records, wait queues, VMAs,
+heap metadata, DMA descriptors, gate continuations, service invocation state,
+trace/audit records, and RAS metadata are mutated only by their owner engines or
+owner shards.
+
 Each hardware thread context contains:
 
 - `pc`: 64-bit virtual instruction address.

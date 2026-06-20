@@ -138,7 +138,7 @@
         "rtl_witness_signals": ["futex_wait_parked", "futex_wake_delivered", "timer_wait_parked", "multicore_no_duplicate_tid"],
         "trace_evidence": ["rtl/sim/lnp64_m7_tb.sv", "rtl/sim/lnp64_s0_tb.sv", "scripts/run_rtl_m7.sh"],
         "trust_level": "T1",
-        "known_gaps": ["Scheduler proofs cover abstract transition slices, not full weighted-fair RTL refinement."]
+        "known_gaps": ["Scheduler proofs cover abstract transition slices and the M7 typed commit/state trace checker covers the bounded futex/timer path, but not full weighted-fair RTL refinement."]
       },
       "lean_file": "formal/M7FutexAtomicModel.lean",
       "theorems": [

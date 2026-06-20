@@ -164,7 +164,7 @@ REQUIRED_THEOREMS_BY_ID = {
     ],
 }
 FORMAL_THEOREM_SECTION_REQUIREMENTS = {
-    "0. Formal Model Scope": "ft_formal_model_scope",
+    "0. Whole-Chip Model Scope": "ft_formal_model_scope",
     "0.1 Proof and Fault Model Assumptions": "ft_proof_fault_assumptions_explicit",
     "0.2 Security Theorem Spine": "ft_security_theorem_spine",
     "0.3 Proof Priority Order": "ft_proof_priority_order",

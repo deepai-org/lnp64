@@ -5,6 +5,71 @@ tests, RTL assertions, simulation, synthesis, and later FPGA evidence. This file
 is the map. Detailed evidence lives in the manifests, scripts, and focused
 roadmaps referenced below.
 
+## Whole-Chip Validation Charter
+
+Formal proofs and validation answer different questions. Proofs establish the
+safety envelope: authority, confinement, scheduler correctness, DMA scope,
+reset safety, realtime honesty, and bounded-progress contracts should be
+impossible to violate under stated assumptions. Validation establishes feature
+reality: the chip actually boots, runs programs, schedules work, serves I/O,
+handles faults, exposes useful counters, meets advertised latency classes, and
+keeps working under realistic stress.
+
+The validation program should run in parallel with the proof program:
+
+```text
+formal proof        -> impossible states are unreachable
+directed tests      -> intended features work
+random testing      -> weird interactions are explored
+differential tests  -> RTL matches the executable model
+semantic coverage   -> exercised and unexercised behavior is visible
+fault injection     -> recovery paths actually work
+simulation/FPGA     -> long-running system behavior works
+post-silicon tests  -> manufactured hardware matches the advertised contract
+```
+
+The project should treat the Rust emulator plus future model code as the seed
+of a whole-machine executable model, not merely an ISA interpreter. The model
+must cover instruction execution, capability objects, Resource Domains, VMAs,
+scheduler/wait state, allocator behavior, service gates, DMA/IOMMU, queues,
+fault/recovery, trace records, and realtime-class metadata. For each RTL test,
+the long-term target is the same initial machine state, same instruction/device/
+service inputs, and comparison of architectural state, memory effects, faults,
+returned capabilities, scheduler transitions, and typed trace events.
+
+Typed architectural traces are the primary validation interface. Internal RTL
+signals may change; events such as `INSTR_RETIRE`, `CAP_DERIVE`,
+`DOMAIN_TRANSITION`, `THREAD_PARK`, `THREAD_WAKE`, `WAIT_LINK`, `QUEUE_PUSH`,
+`GATE_CALL`, `ALLOC_PUBLISH`, `DMA_COMPLETE`, `FAULT_RAISE`, and
+`RESET_EPOCH_CHANGE` should remain stable enough for model/RTL comparison and
+coverage. A trace checker should answer whether RTL performed the same legal
+architectural transition as the model, emitted the promised evidence, used the
+correct budget/realtime class, and failed closed where expected.
+
+Validation should be tiered:
+
+- unit tests for decoders, queues, tables, FSMs, and arbiters.
+- engine-directed tests for capability, domain, scheduler/wait, VMA/MMU, DMA,
+  gate/service, allocator, classifier/servicelet, RAS, and fabric blocks.
+- differential instruction and object tests against the executable model.
+- constrained-random whole-chip tests over domains, threads, caps, VMAs,
+  queues, services, DMA, faults, revocations, resets, and device events.
+- metamorphic tests for authority attenuation, stricter domains, migration,
+  equivalent gates, debug-cap removal, and timing changes.
+- crash/fault injection at model, RTL simulation, and FPGA/emulation levels.
+- realtime validation for every advertised latency class under its named
+  assumptions, including negative tests where hardware must refuse or downgrade
+  unsupported claims.
+- software workload tests for libc/personality, service, networking, storage,
+  multi-tenant, and long-running scheduler behavior.
+
+For every advertised feature, maintain a readiness scorecard: spec, executable
+model, RTL, directed tests, random tests, differential tests, semantic coverage,
+fault injection, realtime validation where applicable, multicore stress,
+simulation/FPGA long-run evidence, software workload evidence, trace
+observability, and proof connection. A feature is not done because one RTL path
+exists.
+
 ## Model-Level Targets
 
 - Instruction encoding/decoding golden model.
