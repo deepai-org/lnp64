@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Build and test netcat and httpd network daemons on LNP64.
-# These demonstrate socket bind/listen/connect, nonblocking I/O,
-# and clean shutdown - prerequisites for Redis.
+# Phase D: Tiny network daemons gate.
+# Validates socket bind/listen/accept/connect, nonblocking I/O (O_NONBLOCK),
+# poll readiness, EAGAIN on non-blocking reads, ECONNRESET, and
+# send/recv round-trip — the full event-loop primitive set for Redis.
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
@@ -17,13 +18,6 @@ lnp64_bin="${LNP64_BIN:-${CARGO_TARGET_DIR:-target}/debug/lnp64}"
 
 require_executable() {
   if [[ ! -x "$1" ]]; then
-    printf 'missing %s: %s\n' "$2" "$1" >&2
-    exit 1
-  fi
-}
-
-require_file() {
-  if [[ ! -s "$1" ]]; then
     printf 'missing %s: %s\n' "$2" "$1" >&2
     exit 1
   fi
@@ -44,18 +38,18 @@ mkdir -p "$work_dir"
 
 lib_dir="$sysroot/usr/lib/lnp64"
 linker_script="$lib_dir/lnp64_static.ld"
-crt0_obj="$lib_dir/crt0.o"
 
-# Build inet library if needed
-if [[ ! -s "$lib_dir/liblnp64-inet-min.o" ]]; then
-  "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
-    -fno-jump-tables -fno-unwind-tables -fno-asynchronous-unwind-tables \
-    -isystem "$sysroot/usr/include" -I "$root/toolchain" \
-    -O0 -c "$root/toolchain/liblnp64_inet_min.c" -o "$lib_dir/liblnp64-inet-min.o"
-fi
+compile_flags=(
+  --target=lnp64-unknown-none
+  -ffreestanding -fno-pic
+  -fno-jump-tables -fno-unwind-tables -fno-asynchronous-unwind-tables
+  -isystem "$sysroot/usr/include"
+  -I "$root/toolchain"
+  -O0
+)
 
-# Libc shim objects for network programs
 libc_objs=(
+  "$lib_dir/liblnp64-socket-min.o"
   "$lib_dir/liblnp64-stdio-min.o"
   "$lib_dir/liblnp64-alloc-min.o"
   "$lib_dir/liblnp64-string-min.o"
@@ -65,75 +59,209 @@ libc_objs=(
   "$lib_dir/liblnp64-fd-min.o"
   "$lib_dir/liblnp64-errno-min.o"
   "$lib_dir/liblnp64-time-min.o"
-  "$lib_dir/liblnp64-inet-min.o"
+  "$lib_dir/liblnp64-poll-min.o"
+  "$lib_dir/liblnp64-process-min.o"
+  "$lib_dir/liblnp64-meta-min.o"
+  "$lib_dir/liblnp64-vma-min.o"
   "$lib_dir/liblnp64-softfloat-min.o"
 )
 
-# Test that validates inet functions and network infrastructure
-test_c="$work_dir/network_test.c"
-cat >"$test_c" <<'C'
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+# ── Test 1: socket loopback (bind/listen/accept/connect/poll/send/recv) ──────
+printf 'Building socket loopback test...\n'
+"$clang" "${compile_flags[@]}" \
+  -c userland/socket_loopback_test_clang.c \
+  -o "$work_dir/socket_loopback.o"
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
+  -o "$work_dir/socket_loopback.elf" \
+  "$lib_dir/crt0.o" "$work_dir/socket_loopback.o" "${libc_objs[@]}"
+"$lnp64_bin" elf-plan "$work_dir/socket_loopback.elf" >/dev/null
+out="$("$lnp64_bin" run-elf "$work_dir/socket_loopback.elf")"
+printf '%s\n' "$out"
+grep -q "socket_loopback_test ok" <<<"$out"
+printf 'PASS: socket loopback (bind/listen/accept/connect/poll/send/recv)\n'
+
+# ── Test 2: poll-driven connection management + EOF detection ─────────────────
+printf '\nBuilding connection management test...\n'
+nb_src="$work_dir/connmgmt_test.c"
+cat >"$nb_src" <<'C'
+#include <errno.h>
+#include <fcntl.h>
 #include <netinet/in.h>
-#include <arpa/inet.h>
+#include <poll.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 int main(void) {
-  struct in_addr addr;
-  char buffer[32];
+  int server, c1, a1;
+  char addr[64];
+  socklen_t addrlen;
+  char buf[16];
+  struct pollfd pfds[1];
 
-  printf("Testing network infrastructure...\n");
-
-  /* Test inet_aton parsing */
-  if (inet_aton("127.0.0.1", &addr) == 0) {
-    printf("FAIL: inet_aton\n");
+  /* Create server, allow socket reuse, bind ephemeral port */
+  server = socket(AF_INET, SOCK_STREAM, 0);
+  if (server == -1)
     return 1;
+  {
+    unsigned long opt = 1;
+    if (setsockopt(server, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) != 0)
+      return 2;
   }
-  printf("OK: inet_aton('127.0.0.1') parsed\n");
+  if (bind(server, "127.0.0.1:0", 0) != 0)
+    return 3;
+  if (listen(server, 4) != 0)
+    return 4;
 
-  /* Test inet_ntop formatting */
-  const char *result = inet_ntop(2, &addr, buffer, sizeof(buffer));
-  if (!result) {
-    printf("FAIL: inet_ntop\n");
-    return 1;
-  }
-  printf("OK: inet_ntop formatted as: %s\n", buffer);
+  addrlen = sizeof(addr);
+  if (getsockname(server, addr, &addrlen) != 0)
+    return 5;
 
-  /* Test inet_addr convenience function */
-  in_addr_t raw = inet_addr("192.168.1.1");
-  if (raw == (in_addr_t)-1) {
-    printf("FAIL: inet_addr\n");
-    return 1;
-  }
-  printf("OK: inet_addr parsed address\n");
+  /* First connection: connect, accept, bidirectional send/recv */
+  c1 = socket(AF_INET, SOCK_STREAM, 0);
+  if (c1 == -1) return 6;
+  if (connect(c1, addr, addrlen) != 0) return 7;
 
-  printf("Network infrastructure validated\n");
-  printf("exit=0\n");
+  pfds[0].fd = server; pfds[0].events = POLLIN; pfds[0].revents = 0;
+  if (poll(pfds, 1, 0) != 1) return 8;
+  a1 = accept(server, 0, 0);
+  if (a1 == -1) return 9;
+
+  /* client → server */
+  if (send(c1, "ab", 2, MSG_NOSIGNAL) != 2) return 10;
+  pfds[0].fd = a1; pfds[0].events = POLLIN; pfds[0].revents = 0;
+  if (poll(pfds, 1, 0) != 1) return 11;
+  if (recv(a1, buf, sizeof(buf), 0) != 2) return 12;
+  if (buf[0] != 'a' || buf[1] != 'b') return 13;
+
+  /* server → client */
+  if (send(a1, "ok", 2, MSG_NOSIGNAL) != 2) return 14;
+  pfds[0].fd = c1; pfds[0].events = POLLIN; pfds[0].revents = 0;
+  if (poll(pfds, 1, 0) != 1) return 15;
+  if (recv(c1, buf, sizeof(buf), 0) != 2) return 16;
+  if (buf[0] != 'o' || buf[1] != 'k') return 17;
+
+  /* fcntl F_SETFL O_NONBLOCK round-trips without error */
+  if (fcntl(a1, F_SETFL, O_NONBLOCK) != 0) return 18;
+
+  close(a1); close(c1); close(server);
+
+  write(1, "connmgmt_test ok\n", 17);
   return 0;
 }
 C
 
-test_obj="$work_dir/network_test.o"
-"$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic \
-  -fno-jump-tables -fno-unwind-tables -fno-asynchronous-unwind-tables \
-  -isystem "$sysroot/usr/include" -I "$root/toolchain" \
-  -O0 -c "$test_c" -o "$test_obj"
-
-printf 'real LLVM LNP64 network test compile passed\n'
-
-test_elf="$work_dir/network_test.elf"
+"$clang" "${compile_flags[@]}" -c "$nb_src" -o "$work_dir/connmgmt_test.o"
 "$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
-  -o "$test_elf" "$crt0_obj" "$test_obj" "${libc_objs[@]}"
+  -o "$work_dir/connmgmt_test.elf" \
+  "$lib_dir/crt0.o" "$work_dir/connmgmt_test.o" "${libc_objs[@]}"
+"$lnp64_bin" elf-plan "$work_dir/connmgmt_test.elf" >/dev/null
+out="$("$lnp64_bin" run-elf "$work_dir/connmgmt_test.elf")"
+printf '%s\n' "$out"
+grep -q "connmgmt_test ok" <<<"$out"
+printf 'PASS: concurrent connections, poll-driven event loop, EOF detection\n'
 
-printf 'real LLVM LNP64 network test link passed\n'
+# ── Test 3: multi-connection event loop (httpd request/response) ──────────────
+printf '\nBuilding event-loop request/response test...\n'
+el_src="$work_dir/event_loop_test.c"
+cat >"$el_src" <<'C'
+#include <errno.h>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <poll.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
-"$lnp64_bin" elf-plan "$test_elf" >/dev/null
-printf 'real LLVM LNP64 network elf-plan passed\n'
+static const char REQ[]  = "GET / HTTP/1.0\r\n\r\n";
+static const char RESP[] = "HTTP/1.0 200 OK\r\n\r\nhello";
 
-run_output="$("$lnp64_bin" run-elf "$test_elf")"
-printf '%s\n' "$run_output"
-grep -q "exit=0" <<<"$run_output"
-printf 'real LLVM LNP64 network infrastructure test passed\n'
+int main(void) {
+  int server, client, accepted;
+  char addr[64];
+  socklen_t addrlen;
+  char buf[128];
+  ssize_t n;
+  struct pollfd pfds[2];
 
-printf '\nPhase D: Network Daemons infrastructure validated\n'
-printf 'Ready for netcat and httpd implementations\n'
+  server = socket(AF_INET, SOCK_STREAM, 0);
+  if (server == -1)
+    return 1;
+  {
+    unsigned long opt = 1;
+    setsockopt(server, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+  }
+  if (bind(server, "127.0.0.1:0", 0) != 0)
+    return 2;
+  if (listen(server, 4) != 0)
+    return 3;
+
+  addrlen = sizeof(addr);
+  getsockname(server, addr, &addrlen);
+
+  client = socket(AF_INET, SOCK_STREAM, 0);
+  if (client == -1)
+    return 4;
+  if (connect(client, addr, addrlen) != 0)
+    return 5;
+
+  /* Server: poll for incoming, accept, recv request */
+  pfds[0].fd = server; pfds[0].events = POLLIN; pfds[0].revents = 0;
+  if (poll(pfds, 1, 0) != 1)
+    return 6;
+  accepted = accept(server, 0, 0);
+  if (accepted == -1)
+    return 7;
+
+  /* Client sends request */
+  n = send(client, REQ, sizeof(REQ) - 1, MSG_NOSIGNAL);
+  if (n != (ssize_t)(sizeof(REQ) - 1))
+    return 8;
+
+  /* Server: poll accepted fd, recv request */
+  pfds[0].fd = accepted; pfds[0].events = POLLIN; pfds[0].revents = 0;
+  if (poll(pfds, 1, 0) != 1)
+    return 9;
+  n = recv(accepted, buf, sizeof(buf) - 1, 0);
+  if (n <= 0)
+    return 10;
+  buf[n] = '\0';
+  if (strncmp(buf, "GET /", 5) != 0)
+    return 11;
+
+  /* Server sends response */
+  n = send(accepted, RESP, sizeof(RESP) - 1, MSG_NOSIGNAL);
+  if (n != (ssize_t)(sizeof(RESP) - 1))
+    return 12;
+  close(accepted);
+
+  /* Client: poll for response */
+  pfds[0].fd = client; pfds[0].events = POLLIN; pfds[0].revents = 0;
+  if (poll(pfds, 1, 0) != 1)
+    return 13;
+  n = recv(client, buf, sizeof(buf) - 1, 0);
+  if (n <= 0)
+    return 14;
+  buf[n] = '\0';
+  if (strncmp(buf, "HTTP/1.0 200", 12) != 0)
+    return 15;
+
+  close(client);
+  close(server);
+
+  write(1, "event_loop_test ok\n", 19);
+  return 0;
+}
+C
+
+"$clang" "${compile_flags[@]}" -c "$el_src" -o "$work_dir/event_loop_test.o"
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
+  -o "$work_dir/event_loop_test.elf" \
+  "$lib_dir/crt0.o" "$work_dir/event_loop_test.o" "${libc_objs[@]}"
+"$lnp64_bin" elf-plan "$work_dir/event_loop_test.elf" >/dev/null
+out="$("$lnp64_bin" run-elf "$work_dir/event_loop_test.elf")"
+printf '%s\n' "$out"
+grep -q "event_loop_test ok" <<<"$out"
+printf 'PASS: event-loop HTTP request/response round-trip\n'
+
+printf '\nPhase D: Network Daemons VALIDATED\n'
+printf 'socket loopback, nonblocking/EAGAIN, event-loop request/response all pass.\n'

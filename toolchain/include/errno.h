@@ -15,6 +15,7 @@ int *__errno_location(void);
 #define EBADF 9
 #define ECHILD 10
 #define EAGAIN 11
+#define EWOULDBLOCK EAGAIN
 #define ENOMEM 12
 #define EACCES 13
 #define EFAULT 14
@@ -39,6 +40,29 @@ int *__errno_location(void);
 #define ENOSYS 38
 #define ENOTEMPTY 39
 #define ELOOP 40
+#define EDEADLK 35
+#define ENOLCK 37
+#define EPROTO 71
+#define EMSGSIZE 90
+#define ENOTSUP 95
+#define EADDRINUSE 98
+#define EADDRNOTAVAIL 99
+#define ENETDOWN 100
+#define ENETUNREACH 101
+#define ECONNABORTED 103
+#define ECONNRESET 104
+#define ENOBUFS 105
+#define EISCONN 106
+#define ENOTCONN 107
+#define ESHUTDOWN 108
 #define ETIMEDOUT 110
+#define ECONNREFUSED 111
+#define EHOSTUNREACH 113
+#define EALREADY 114
+#define EINPROGRESS 115
+#define ENOLINK 67
+#define EPROTONOSUPPORT 93
+#define EOPNOTSUPP 95
+#define EAFNOSUPPORT 97
 
 #endif
