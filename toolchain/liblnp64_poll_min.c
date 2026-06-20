@@ -186,6 +186,8 @@ static void lnp64_kqueue_remove_slot(int slot) {
 }
 
 static int lnp64_kqueue_apply_change(const struct kevent *change) {
+  if (lnp64_filter_events(change->filter) == 0)
+    return -1;
   int slot = lnp64_kqueue_find(change->ident, change->filter);
   if (change->flags & LNP64_EV_DELETE) {
     if (slot < 0)

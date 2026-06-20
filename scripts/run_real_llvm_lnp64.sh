@@ -4289,6 +4289,10 @@ int main(void) {
   change.flags = EV_DELETE;
   if (kevent(kq, &change, 1, 0, 0, &ts) != 0)
     return 13;
+  change.filter = 99;
+  change.flags = EV_ADD;
+  if (kevent(kq, &change, 1, 0, 0, &ts) != -1)
+    return 14;
   return 0;
 }
 C

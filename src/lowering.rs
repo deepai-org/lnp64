@@ -2604,6 +2604,8 @@ mod tests {
         assert!(real_llc.contains("change.flags = EV_ADD"));
         assert!(real_llc.contains("change.flags = EV_ADD | EV_ONESHOT"));
         assert!(real_llc.contains("change.flags = EV_DELETE"));
+        assert!(real_llc.contains("change.filter = 99"));
+        assert!(real_llc.contains("kevent(kq, &change, 1, 0, 0, &ts) != -1"));
         assert!(real_llc.contains("kevent(kq, &change, 1, 0, 0, &ts)"));
         assert!(real_llc.contains("poll-libc-clang-smoke.o"));
         assert!(real_llc.contains("liblnp64-poll-min.o"));
@@ -3106,6 +3108,8 @@ mod tests {
         assert!(poll_test_clang.contains("out.data != read_cap + 1"));
         assert!(poll_test_clang.contains("change.flags = EV_ADD | EV_ONESHOT"));
         assert!(poll_test_clang.contains("change.flags = EV_DELETE"));
+        assert!(poll_test_clang.contains("change.filter = 99"));
+        assert!(poll_test_clang.contains("kevent(kq, &change, 1, 0, 0, &ktimeout) != -1"));
         assert!(!poll_test_clang.contains("typedef unsigned long nfds_t"));
         assert!(!poll_test_clang.contains("int poll(struct pollfd"));
         assert!(real_llc.contains("real LLVM LNP64 clang NetBSD poll child object passed"));
@@ -5922,7 +5926,8 @@ mod tests {
         assert!(conformance.contains("real-Clang `EPOLL_CTL_MOD` data replacement"));
         assert!(conformance.contains("EV_DELETE removes a registered readiness source"));
         assert!(conformance.contains("EV_ONESHOT removes a source after first delivery"));
-        assert!(conformance.contains("Broader filters, error reporting"));
+        assert!(conformance.contains("unsupported filter registrations fail closed"));
+        assert!(conformance.contains("Broader filters, detailed error reporting"));
         assert!(conformance.contains("`COMPAT-STRESS-005` | poll/epoll races"));
         for group in [
             "startup_env_auxv",

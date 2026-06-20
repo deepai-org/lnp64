@@ -182,6 +182,12 @@ int main(void) {
         return 44;
     if (pull_byte(read_cap, 'x') != 0)
         return 45;
+    change.filter = 99;
+    change.flags = EV_ADD;
+    change.udata = 0;
+    if (kevent(kq, &change, 1, 0, 0, &ktimeout) != -1)
+        return 46;
+    change.filter = EVFILT_READ;
 
     pfd.fd = (int)read_cap;
     pfd.events = POLLIN;
