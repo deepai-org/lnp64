@@ -6394,7 +6394,7 @@ mod tests {
     }
 
     #[test]
-    fn rtl_retired_c_frontend_smokes_have_linked_llvm_replacement_coverage() {
+    fn rtl_c_top_level_smokes_have_direct_linked_llvm_coverage() {
         let manifest = include_str!("../tests/rtl/top_level_program_manifest.json");
         let linked_gate = "\"rtl_gate\": \"scripts/run_rtl_top_linked_llvm_smoke.sh\"";
 
@@ -6413,38 +6413,10 @@ mod tests {
             &manifest[entry_start..entry_end]
         };
 
-        for frontend_source in [
-            "tests/rtl/programs/top_return_12.c",
-            "tests/rtl/programs/top_branch_if.c",
-            "tests/rtl/programs/top_loop_sum.c",
-            "tests/rtl/programs/top_call_return.c",
-            "tests/rtl/programs/top_subtract.c",
-            "tests/rtl/programs/top_bitwise.c",
-            "tests/rtl/programs/top_shift.c",
-            "tests/rtl/programs/top_not.c",
-            "tests/rtl/programs/top_factorial_mul.c",
-            "tests/rtl/programs/top_udiv_urem.c",
-            "tests/rtl/programs/top_signed_division.c",
-            "tests/rtl/programs/top_byte_array.c",
-            "tests/rtl/programs/top_heap_byte_lanes.c",
-            "demos/allocator.c",
-            "demos/hello.c",
-            "demos/factorial.c",
-            "demos/fibonacci.c",
-            "demos/json_parser.c",
-            "demos/ping_pong.c",
-            "demos/rot13.c",
-        ] {
-            let frontend_entry = entry_for(frontend_source);
-            assert!(
-                frontend_entry.contains("\"status\": \"replaced_by_llvm\""),
-                "{frontend_source} should be retired once covered by linked LLVM"
-            );
-            assert!(
-                !frontend_entry.contains("\"rtl_gate\""),
-                "{frontend_source} should not name an RTL gate after replacement"
-            );
-        }
+        assert!(!manifest.contains("compiler_flat_programs"));
+        assert!(!manifest.contains("compiler_generated_programs"));
+        assert!(!manifest.contains("generated_assembly"));
+        assert!(!manifest.contains("\"status\": \"replaced_by_llvm\""));
 
         for (linked_source, feature) in [
             ("tests/rtl/programs/top_linked_main.c", "startup_call_main"),

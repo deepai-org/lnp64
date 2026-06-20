@@ -16,66 +16,21 @@ MANIFEST = Path(
     )
 )
 LLVM_BOOTSTRAP = ROOT / "toolchain/lnp64_llvm_bootstrap.manifest"
-LINKED_REPLACEMENTS = {
-    "tests/rtl/programs/top_return_12.c": (
-        "tests/rtl/programs/top_linked_main.c",
-        "startup_call_main",
-    ),
-    "tests/rtl/programs/top_branch_if.c": (
-        "tests/rtl/programs/top_linked_loop_branch.c",
-        "branch",
-    ),
-    "tests/rtl/programs/top_loop_sum.c": (
-        "tests/rtl/programs/top_linked_loop_branch.c",
-        "branch",
-    ),
-    "tests/rtl/programs/top_factorial_mul.c": (
-        "tests/rtl/programs/top_linked_factorial_mul.c",
-        "mul",
-    ),
-    "tests/rtl/programs/top_subtract.c": (
-        "tests/rtl/programs/top_linked_loop_branch.c",
-        "call_return",
-    ),
-    "tests/rtl/programs/top_bitwise.c": (
-        "tests/rtl/programs/top_linked_bitwise_shift.c",
-        "bitwise_alu",
-    ),
-    "tests/rtl/programs/top_shift.c": (
-        "tests/rtl/programs/top_linked_bitwise_shift.c",
-        "shift_alu",
-    ),
-    "tests/rtl/programs/top_udiv_urem.c": (
-        "tests/rtl/programs/top_linked_divrem.c",
-        "unsigned_division",
-    ),
-    "tests/rtl/programs/top_signed_division.c": (
-        "tests/rtl/programs/top_linked_divrem.c",
-        "signed_division",
-    ),
-    "tests/rtl/programs/top_not.c": (
-        "tests/rtl/programs/top_linked_bitwise_shift.c",
-        "bitwise_alu",
-    ),
-    "tests/rtl/programs/top_call_return.c": (
-        "tests/rtl/programs/top_linked_loop_branch.c",
-        "call_return",
-    ),
-    "tests/rtl/programs/top_byte_array.c": (
-        "tests/rtl/programs/top_linked_byte_array.c",
-        "byte_load_store",
-    ),
-    "tests/rtl/programs/top_heap_byte_lanes.c": (
-        "tests/rtl/programs/top_linked_heap_byte_lanes.c",
-        "heap",
-    ),
-    "demos/allocator.c": ("tests/rtl/programs/top_linked_allocator_native.c", "heap"),
-    "demos/factorial.c": ("tests/rtl/programs/top_linked_factorial_native.c", "push_pull"),
-    "demos/fibonacci.c": ("tests/rtl/programs/top_linked_fibonacci_native.c", "call_return"),
-    "demos/hello.c": ("tests/rtl/programs/top_linked_hello_native.c", "push_pull"),
-    "demos/json_parser.c": ("tests/rtl/programs/top_linked_json_parser_native.c", "heap"),
-    "demos/ping_pong.c": ("tests/rtl/programs/top_linked_clone_join.c", "thread_join"),
-    "demos/rot13.c": ("tests/rtl/programs/top_linked_rot13_native.c", "push_pull"),
+REQUIRED_LINKED_COVERAGE = {
+    "tests/rtl/programs/top_linked_main.c": {"startup_call_main"},
+    "tests/rtl/programs/top_linked_loop_branch.c": {"branch", "call_return"},
+    "tests/rtl/programs/top_linked_factorial_mul.c": {"mul"},
+    "tests/rtl/programs/top_linked_bitwise_shift.c": {"bitwise_alu", "shift_alu"},
+    "tests/rtl/programs/top_linked_divrem.c": {"unsigned_division", "signed_division"},
+    "tests/rtl/programs/top_linked_byte_array.c": {"byte_load_store"},
+    "tests/rtl/programs/top_linked_heap_byte_lanes.c": {"heap"},
+    "tests/rtl/programs/top_linked_allocator_native.c": {"heap", "free"},
+    "tests/rtl/programs/top_linked_factorial_native.c": {"push_pull"},
+    "tests/rtl/programs/top_linked_fibonacci_native.c": {"call_return"},
+    "tests/rtl/programs/top_linked_hello_native.c": {"push_pull"},
+    "tests/rtl/programs/top_linked_json_parser_native.c": {"heap", "free"},
+    "tests/rtl/programs/top_linked_clone_join.c": {"thread_join"},
+    "tests/rtl/programs/top_linked_rot13_native.c": {"push_pull", "free"},
 }
 
 
@@ -93,20 +48,6 @@ def text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def llvm_bootstrap_demo_c_sources(manifest_text: str) -> set[str]:
-    sources: set[str] = set()
-    for raw_line in manifest_text.splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        fields = line.split("|")
-        require(len(fields) >= 2, f"invalid LLVM bootstrap manifest row: {line}")
-        source = fields[1]
-        if source.startswith("demos/") and source.endswith(".c"):
-            sources.add(source)
-    return sources
-
-
 def require_entry(entry: dict[str, object], source_kind: str) -> None:
     source = entry.get("source")
     require(isinstance(source, str) and source, f"{source_kind} entry has no source")
@@ -115,8 +56,8 @@ def require_entry(entry: dict[str, object], source_kind: str) -> None:
     require(isinstance(features, list) and features, f"{source} must list required_features")
     require(all(isinstance(feature, str) and feature for feature in features), f"{source} has invalid required_features")
     status = entry.get("status")
-    require(status in {"blocked_by_features", "active", "replaced_by_llvm"}, f"{source} has invalid status {status}")
-    if status in {"blocked_by_features", "replaced_by_llvm"}:
+    require(status in {"blocked_by_features", "active"}, f"{source} has invalid status {status}")
+    if status == "blocked_by_features":
         require(features, f"{source} is non-active but has no required_features")
         require("rtl_gate" not in entry, f"{source} should not name an RTL gate unless it is active")
     else:
@@ -150,6 +91,8 @@ def main() -> None:
     require("llvm_mc_programs" in manifest_runner, "manifest runner must include LLVM MC program entries")
     require("llvm_clang_programs" in manifest_runner, "manifest runner must include LLVM clang program entries")
     require("llvm_linked_programs" in manifest_runner, "manifest runner must include LLVM linked program entries")
+    require("compiler_flat_programs" not in manifest_runner, "manifest runner must not include removed frontend program entries")
+    require("compiler_generated_programs" not in manifest_runner, "manifest runner must not include removed frontend program entries")
     smoke_gate_text = text(ROOT / "scripts/run_rtl_top_program_smoke.sh")
     require("RTL_M1_TOP_PRE_STATE" in smoke_gate_text, "shared top-level comparator must consume M1 pre-state projections")
     require("RTL_M1_TOP_STATE" in smoke_gate_text, "shared top-level comparator must consume M1 post-state projections")
@@ -171,16 +114,14 @@ def main() -> None:
     llvm_mc_entries = manifest.get("llvm_mc_programs")
     llvm_clang_entries = manifest.get("llvm_clang_programs")
     llvm_linked_entries = manifest.get("llvm_linked_programs")
-    compiler_flat_entries = manifest.get("compiler_flat_programs")
     assembly_entries = manifest.get("assembly_programs")
-    compiler_entries = manifest.get("compiler_generated_programs")
     require(isinstance(flat_hex_entries, list) and flat_hex_entries, "missing flat_hex_programs")
     require(isinstance(llvm_mc_entries, list) and llvm_mc_entries, "missing llvm_mc_programs")
     require(isinstance(llvm_clang_entries, list) and llvm_clang_entries, "missing llvm_clang_programs")
     require(isinstance(llvm_linked_entries, list) and llvm_linked_entries, "missing llvm_linked_programs")
-    require(isinstance(compiler_flat_entries, list) and compiler_flat_entries, "missing compiler_flat_programs")
     require(isinstance(assembly_entries, list) and assembly_entries, "missing assembly_programs")
-    require(isinstance(compiler_entries, list) and compiler_entries, "missing compiler_generated_programs")
+    require("compiler_flat_programs" not in manifest, "removed frontend flat program section must stay deleted")
+    require("compiler_generated_programs" not in manifest, "removed frontend generated program section must stay deleted")
     active_flat_hex = 0
     for entry in flat_hex_entries:
         require(isinstance(entry, dict), "flat hex entry must be an object")
@@ -283,13 +224,25 @@ def main() -> None:
             require('"errno"' in smoke_text, f"{entry['source']} gate must compare final errno")
             require('"mem_checksum"' in smoke_text, f"{entry['source']} gate must compare final memory checksum")
     require(active_llvm_linked >= 1, "manifest must keep at least one active LLVM linked top-level program")
-    active_compiler_flat = 0
-    for entry in compiler_flat_entries:
-        require(isinstance(entry, dict), "compiler flat entry must be an object")
-        require_entry(entry, "compiler flat")
-        if entry.get("status") == "active":
-            active_compiler_flat += 1
-    require(active_compiler_flat == 0, "compiler-flat C frontend entries should stay retired once linked LLVM replacements exist")
+    linked_sources = {
+        str(entry["source"]): entry
+        for entry in llvm_linked_entries
+        if entry.get("status") == "active"
+    }
+    for linked_source, required_features in REQUIRED_LINKED_COVERAGE.items():
+        linked_entry = linked_sources.get(linked_source)
+        require(linked_entry is not None, f"{linked_source} must be active LLVM linked coverage")
+        linked_features = linked_entry.get("required_features")
+        require(isinstance(linked_features, list), f"{linked_source} must list required_features")
+        for required_feature in required_features:
+            require(
+                required_feature in linked_features,
+                f"{linked_source} must advertise required feature {required_feature}",
+            )
+        require(
+            linked_entry.get("rtl_gate") == "scripts/run_rtl_top_linked_llvm_smoke.sh",
+            f"{linked_source} must use the linked LLVM smoke gate",
+        )
     for entry in assembly_entries:
         require(isinstance(entry, dict), "assembly entry must be an object")
         require_entry(entry, "assembly")
@@ -303,62 +256,14 @@ def main() -> None:
             require('"regs"' in gate_text, f"{entry['source']} gate must compare final register file")
             require('"errno"' in gate_text, f"{entry['source']} gate must compare final errno")
             require('"mem_checksum"' in gate_text, f"{entry['source']} gate must compare final memory checksum")
-    for entry in compiler_entries:
-        require(isinstance(entry, dict), "compiler entry must be an object")
-        require_entry(entry, "compiler")
-        generated = entry.get("generated_assembly")
-        require(isinstance(generated, str) and generated.endswith(".s"), f"{entry['source']} must name generated assembly")
-        if entry.get("status") == "active":
-            pass
 
     manifest_asm = {entry["source"] for entry in assembly_entries}
     actual_asm = {str(path.relative_to(ROOT)) for path in sorted((ROOT / "demos").glob("*.s"))}
     require(manifest_asm == actual_asm, f"demos/*.s coverage drifted: actual={sorted(actual_asm)} manifest={sorted(manifest_asm)}")
 
-    manifest_c = {entry["source"] for entry in compiler_entries}
-    expected_c = llvm_bootstrap_demo_c_sources(text(LLVM_BOOTSTRAP))
-    require(
-        manifest_c == expected_c,
-        f"compiler demo coverage drifted: expected={sorted(expected_c)} manifest={sorted(manifest_c)}",
-    )
-
-    linked_sources = {
-        str(entry["source"]): entry
-        for entry in llvm_linked_entries
-        if entry.get("status") == "active"
-    }
-    active_frontend_sources = {
-        str(entry["source"])
-        for entry in compiler_flat_entries + compiler_entries
-        if entry.get("status") == "active"
-    }
-    retired_or_active_frontend_sources = {
-        str(entry["source"])
-        for entry in compiler_flat_entries + compiler_entries
-        if entry.get("status") in {"active", "replaced_by_llvm"}
-    }
-    require(not active_frontend_sources, f"retired C frontend sources remain active after linked LLVM replacement: {sorted(active_frontend_sources)}")
-    missing_replacements = sorted(retired_or_active_frontend_sources - set(LINKED_REPLACEMENTS))
-    require(
-        not missing_replacements,
-        f"retired C frontend sources lack linked LLVM replacements: {missing_replacements}",
-    )
-    for frontend_source in sorted(retired_or_active_frontend_sources):
-        linked_source, required_feature = LINKED_REPLACEMENTS[frontend_source]
-        linked_entry = linked_sources.get(linked_source)
-        require(
-            linked_entry is not None,
-            f"{frontend_source} replacement {linked_source} must be an active LLVM linked entry",
-        )
-        linked_features = linked_entry.get("required_features")
-        require(
-            isinstance(linked_features, list) and required_feature in linked_features,
-            f"{frontend_source} replacement {linked_source} must advertise {required_feature}",
-        )
-        require(
-            linked_entry.get("rtl_gate") == "scripts/run_rtl_top_linked_llvm_smoke.sh",
-            f"{frontend_source} replacement {linked_source} must use the linked LLVM smoke gate",
-        )
+    bootstrap_text = text(LLVM_BOOTSTRAP)
+    for demo_case in ("hello", "arithmetic", "memory", "calls", "json_parser", "rot13", "ping_pong"):
+        require(demo_case in bootstrap_text, f"LLVM bootstrap manifest must retain {demo_case} demo coverage")
 
     requirements = manifest.get("recurring_gate_requirements", [])
     require(isinstance(requirements, list) and len(requirements) >= 3, "missing recurring gate requirements")

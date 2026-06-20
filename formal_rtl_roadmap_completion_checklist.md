@@ -103,7 +103,7 @@ and validates with `scripts/check_board_evidence.py`.
 | Compare event records | `trace_comparison_contract.event_records` in `tests/traces/rtl_cosim_manifest.json` and checker trace-token validation | `scripts/check_rtl_cosim_manifest.py` |
 | Compare FDR/generation/authority metadata | `trace_comparison_contract.authority_generation_metadata` in `tests/traces/rtl_cosim_manifest.json` and checker trace-token validation | `scripts/check_rtl_cosim_manifest.py` |
 | Random but bounded traces from models | `bounded_random_gates` in `tests/traces/rtl_cosim_manifest.json` and `scripts/run_rtl_random_cosim.sh` shared seed set | `scripts/check_rtl_cosim_manifest.py`; `bash scripts/run_rtl_random_cosim.sh` |
-| Top-level program corpus from existing assembly and compiler demos | `tests/rtl/top_level_program_manifest.json` tracks every `demos/*.s` file and compiler-generated demo assembly as feature-gated future `lnp64_top` Verilator tests | `scripts/check_rtl_top_level_program_manifest.py` |
+| Top-level program corpus from existing assembly and LLVM C coverage | `tests/rtl/top_level_program_manifest.json` tracks every `demos/*.s` file plus active LLVM clang/linked C entries as feature-gated future `lnp64_top` Verilator tests | `scripts/check_rtl_top_level_program_manifest.py` |
 | Verilator for fast CI | M1-M15 `scripts/run_rtl_m*.sh` build each RTL testbench with Verilator and require pass markers | `scripts/check_rtl_cosim_manifest.py` |
 | FPGA simulation and synthesis checks | `scripts/run_rtl_fpga_uart_s0.sh`, `scripts/run_rtl_fpga_ice40_s0.sh`, and `scripts/run_rtl_synth_gates.sh` | `bash scripts/run_rtl_synth_docker.sh` |
 
