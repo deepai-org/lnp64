@@ -187,7 +187,19 @@ int main(void) {
     change.udata = 0;
     if (kevent(kq, &change, 1, 0, 0, &ktimeout) != -1)
         return 46;
-    change.filter = EVFILT_READ;
+    change.ident = write_cap;
+    change.filter = EVFILT_WRITE;
+    change.flags = EV_ADD | EV_ONESHOT;
+    change.udata = (void *)(unsigned long)write_cap;
+    if (kevent(kq, &change, 1, 0, 0, &ktimeout) != 0)
+        return 47;
+    if (kevent(kq, 0, 0, &kout, 1, &ktimeout) != 1)
+        return 48;
+    if (kout.ident != write_cap || kout.filter != EVFILT_WRITE ||
+        kout.udata != (void *)(unsigned long)write_cap)
+        return 49;
+    if (kevent(kq, 0, 0, &kout, 1, &ktimeout) != 0)
+        return 50;
 
     pfd.fd = (int)read_cap;
     pfd.events = POLLIN;

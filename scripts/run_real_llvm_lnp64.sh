@@ -4293,6 +4293,9 @@ int main(void) {
   change.flags = EV_ADD;
   if (kevent(kq, &change, 1, 0, 0, &ts) != -1)
     return 14;
+  change.filter = EVFILT_WRITE;
+  if (kevent(kq, &change, 1, 0, 0, &ts) != 0)
+    return 15;
   return 0;
 }
 C
