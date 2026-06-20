@@ -15228,6 +15228,52 @@ mod tests {
     }
 
     #[test]
+    fn emulator_rejects_exec_descriptor_fdr_grant_nonboolean_close_on_exec() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let mut words = encode_exec_descriptor(&descriptor);
+        let fdr_offset = EXEC_PLAN_HEADER_WORDS
+            + EXEC_PLAN_ENTRY_WORDS
+            + descriptor.vmas.len() * EXEC_PLAN_VMA_WORDS;
+        words[fdr_offset + 6] = 2;
+
+        let err = Machine::validate_exec_descriptor_words(&words).unwrap_err();
+
+        assert!(err.contains("close-on-exec"), "{err}");
+    }
+
+    #[test]
+    fn emulator_rejects_exec_descriptor_fdr_grant_nonboolean_preserve() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let mut words = encode_exec_descriptor(&descriptor);
+        let fdr_offset = EXEC_PLAN_HEADER_WORDS
+            + EXEC_PLAN_ENTRY_WORDS
+            + descriptor.vmas.len() * EXEC_PLAN_VMA_WORDS;
+        words[fdr_offset + 7] = 2;
+
+        let err = Machine::validate_exec_descriptor_words(&words).unwrap_err();
+
+        assert!(err.contains("preserve"), "{err}");
+    }
+
+    #[test]
     fn emulator_rejects_exec_descriptor_stale_domain_generation_before_commit() {
         let descriptor = build_exec_descriptor(
             &loader_exec_plan_fixture(),
