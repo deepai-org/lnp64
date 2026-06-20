@@ -6422,6 +6422,7 @@ mod tests {
         let roadmap = include_str!("../toolchain_roadmap.md");
         let personality_doc = include_str!("../netbsd_personality_abi.md");
         let system_gate = include_str!("../scripts/run_netbsd_personality_system.sh");
+        let package_gate = include_str!("../scripts/run_real_llvm_package_gate.sh");
         let rows = netbsd_layer_rows(layers_manifest);
         let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let layers_path = manifest_field(target_manifest, "netbsd_layers_contract");
@@ -6494,10 +6495,35 @@ mod tests {
             "NetBSD personality layers must stay in the planned bring-up order"
         );
         assert_eq!(statuses["fuller_machine_port"], "blocked");
+        assert_eq!(statuses["libc_userland_pieces"], "bootstrap_gate");
+        assert_eq!(statuses["process_signal_thread_compat"], "bootstrap_gate");
+        assert_eq!(statuses["rump_filesystem_components"], "scaffolded");
+        assert_eq!(statuses["rump_network_socket_personality"], "scaffolded");
+        assert_eq!(statuses["larger_userland_commands"], "planned");
         assert!(
             blockers["fuller_machine_port"].contains("not_credible_yet"),
             "fuller machine port must remain blocked on rump services/static userland credibility"
         );
+        assert!(
+            blockers["rump_filesystem_components"].contains("rumpfs_service"),
+            "rump filesystem layer must name the real rumpfs service blocker"
+        );
+        assert!(
+            blockers["rump_network_socket_personality"].contains("socket_service"),
+            "rump socket layer must name the real socket service blocker"
+        );
+        for gate_evidence in [
+            "lnp64-netbsd-fs-service-test-linked.elf",
+            "fs_service_test ok",
+            "LNPFS2",
+            "lnp64-netbsd-socket-loopback-test-linked.elf",
+            "socket_loopback_test ok",
+        ] {
+            assert!(
+                package_gate.contains(gate_evidence),
+                "NetBSD delegated package gate missing scaffold evidence {gate_evidence}"
+            );
+        }
         assert_ne!(
             statuses["larger_userland_commands"], "bootstrap_gate",
             "larger NetBSD userland must not be treated as current bootstrap coverage"
