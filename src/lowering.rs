@@ -6649,6 +6649,7 @@ mod tests {
                 "rump_filesystem_components",
                 "rump_network_socket_personality",
                 "process_signal_thread_compat",
+                "personality_escape_denials",
                 "larger_userland_commands",
                 "fuller_machine_port",
             ],
@@ -6657,9 +6658,32 @@ mod tests {
         assert_eq!(statuses["fuller_machine_port"], "blocked");
         assert_eq!(statuses["libc_userland_pieces"], "bootstrap_gate");
         assert_eq!(statuses["process_signal_thread_compat"], "bootstrap_gate");
+        assert_eq!(statuses["personality_escape_denials"], "bootstrap_gate");
         assert_eq!(statuses["rump_filesystem_components"], "scaffolded");
         assert_eq!(statuses["rump_network_socket_personality"], "scaffolded");
         assert_eq!(statuses["larger_userland_commands"], "planned");
+        assert_eq!(
+            gates["personality_escape_denials"], "scripts/run_netbsd_personality_system.sh",
+            "NetBSD denied escape boundary should stay under the system gate"
+        );
+        for artifact in [
+            "netbsd_personality_abi.md",
+            "src/lowering.rs",
+            "scripts/run_netbsd_personality_system.sh",
+        ] {
+            assert!(
+                layer_artifacts["personality_escape_denials"].contains(&artifact),
+                "NetBSD denied escape row must name artifact {artifact}"
+            );
+        }
+        assert!(
+            blockers["personality_escape_denials"].contains("negative_runtime_escape_tests"),
+            "NetBSD denied escape row should name the runtime negative-test blocker"
+        );
+        assert!(personality_doc.contains("No personality-owned page tables"));
+        assert!(personality_doc.contains("raw interrupt"));
+        assert!(personality_doc.contains("raw DMA"));
+        assert!(personality_doc.contains("capability minting"));
         assert_eq!(
             gates["larger_userland_commands"], "scripts/run_real_packages.sh",
             "larger NetBSD userland should remain delegated to the package gate"
