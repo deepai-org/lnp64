@@ -7045,6 +7045,7 @@ mod tests {
         let waitable_demo = include_str!("../demos/waitable_probe_no_consume.s");
         let object_ctl_demo = include_str!("../demos/object_ctl_bad_profile_no_install.s");
         let cap_dup_demo = include_str!("../demos/cap_dup_narrow_no_amplify.s");
+        let pcr_demo = include_str!("../demos/pcr_readonly_no_mutate.s");
         let conformance = include_str!("../toolchain/lnp64_conformance_gates.manifest");
         let top_program_manifest = include_str!("../tests/rtl/top_level_program_manifest.json");
 
@@ -7072,6 +7073,7 @@ mod tests {
             "waitable_probe_no_consume",
             "object_ctl_bad_profile_no_install",
             "cap_dup_narrow_no_amplify",
+            "pcr_readonly_no_mutate",
             "fdr_stale_generation_rejection",
             "real_clang_loader_exec",
             "libc_runtime_shim",
@@ -7090,12 +7092,15 @@ mod tests {
             "Object/queue owner engine",
             "Object/FDR owner engine",
             "M1 capability/FDR owner engine",
+            "PCR/process metadata owner engine",
             "`fd3` read endpoint and `fd4` write endpoint",
             "requested `fd7` install slot",
             "`fd1` source capability with duplicate authority",
+            "Writable TP/SIGMASK selectors",
             "FDR token generation",
             "`fd7` generation must not advance",
             "`fd4` and `fd5` tokens carry generations",
+            "Process/thread metadata epoch",
             "typed_transition_trace",
             "retire_trace_and_final_state",
             "same source",
@@ -7150,9 +7155,24 @@ mod tests {
             );
         }
 
+        for demo_contract in [
+            "# Object touched: process and thread PCR metadata.",
+            "# Owner: PCR/process metadata owner engine, not caller-side cached register state.",
+            "# Authority: writable TP/SIGMASK selectors only; PID/TID/credential/realtime selectors are read-only.",
+            "# Generation: process/thread metadata epoch must not advance for rejected read-only writes.",
+            "# Trace: GET_PCR, SET_PCR accept, SET_PCR reject, ERRNO_GET, WRITE_FD, EXIT are observable.",
+            "# Differential: same source runs under emulator and RTL top-program smoke input.",
+        ] {
+            assert!(
+                pcr_demo.contains(demo_contract),
+                "pcr stress demo must keep feature-readiness header: {demo_contract}"
+            );
+        }
+
         assert!(conformance.contains("demos/waitable_probe_no_consume.s"));
         assert!(conformance.contains("demos/object_ctl_bad_profile_no_install.s"));
         assert!(conformance.contains("demos/cap_dup_narrow_no_amplify.s"));
+        assert!(conformance.contains("demos/pcr_readonly_no_mutate.s"));
         assert!(top_program_manifest.contains("\"trace_target\": \"typed_transition_trace\""));
         assert!(top_program_manifest.contains("demos/waitable_probe_no_consume.s"));
         assert!(top_program_manifest.contains("\"waitable_probe_no_consume\""));
@@ -7161,6 +7181,9 @@ mod tests {
         assert!(top_program_manifest.contains("demos/cap_dup_narrow_no_amplify.s"));
         assert!(top_program_manifest.contains("\"no_authority_amplification\""));
         assert!(top_program_manifest.contains("tests/rtl/programs/top_cap_dup_no_amplify.s"));
+        assert!(top_program_manifest.contains("demos/pcr_readonly_no_mutate.s"));
+        assert!(top_program_manifest.contains("\"pcr_readonly_no_mutate\""));
+        assert!(top_program_manifest.contains("tests/rtl/programs/top_set_pcr.s"));
         assert!(top_program_manifest.contains("\"status\": \"blocked_by_features\""));
         assert!(top_program_manifest.contains("tests/rtl/programs/top_waitable_probe.s"));
         assert!(top_program_manifest.contains("tests/rtl/programs/top_pipe_push_pull.s"));

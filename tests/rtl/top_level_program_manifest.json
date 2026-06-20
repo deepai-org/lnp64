@@ -656,6 +656,13 @@
       "comparison": "retire_trace_and_final_state"
     },
     {
+      "source": "demos/pcr_readonly_no_mutate.s",
+      "required_features": ["core", "set_pcr", "get_pcr", "pcr_readonly_no_mutate", "thread_metadata", "process_metadata", "errno", "data_labels", "write_fd", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    },
+    {
       "source": "demos/system.s",
       "required_features": ["core", "signal_delivery", "sigaction", "kill", "sigret", "mmap", "load_ucode", "inb", "clone_spawn", "futex_wait", "futex_wake", "fork", "exec", "source_exec_image", "write_fd", "exit"],
       "status": "active",
