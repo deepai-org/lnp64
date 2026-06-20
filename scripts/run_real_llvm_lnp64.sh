@@ -4231,9 +4231,11 @@ int main(void) {
     return 6;
   if (epoll_wait(ep, &out, 1, 0) != 0)
     return 7;
+  if (epoll_ctl(ep, EPOLL_CTL_DEL, 0, 0) != 0)
+    return 8;
   kq = kqueue();
   if (kq < 0)
-    return 8;
+    return 9;
   change.ident = 0;
   change.filter = EVFILT_READ;
   change.flags = EV_ADD;
@@ -4241,7 +4243,10 @@ int main(void) {
   change.data = 0;
   change.udata = 0;
   if (kevent(kq, &change, 1, 0, 0, &ts) != 0)
-    return 9;
+    return 10;
+  change.flags = EV_DELETE;
+  if (kevent(kq, &change, 1, 0, 0, &ts) != 0)
+    return 11;
   return 0;
 }
 C

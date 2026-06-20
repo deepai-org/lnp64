@@ -176,6 +176,18 @@ static int lnp64_kqueue_find(unsigned long ident, short filter) {
 
 static int lnp64_kqueue_apply_change(const struct kevent *change) {
   int slot = lnp64_kqueue_find(change->ident, change->filter);
+  if (change->flags & LNP64_EV_DELETE) {
+    if (slot < 0)
+      return -1;
+    int last = lnp64_kqueue_count - 1;
+    lnp64_kqueue_ident[slot] = lnp64_kqueue_ident[last];
+    lnp64_kqueue_filter[slot] = lnp64_kqueue_filter[last];
+    lnp64_kqueue_udata[slot] = lnp64_kqueue_udata[last];
+    lnp64_kqueue_count = last;
+    return 0;
+  }
+  if (!(change->flags & LNP64_EV_ADD))
+    return -1;
   if (slot < 0) {
     if (lnp64_kqueue_count >= LNP64_KQUEUE_MAX)
       return -1;

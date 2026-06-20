@@ -112,6 +112,14 @@ int main(void) {
         return 14;
     if (pull_byte(read_cap, 'e') != 0)
         return 15;
+    if (epoll_ctl(ep, EPOLL_CTL_DEL, (int)read_cap, 0) != 0)
+        return 25;
+    if (push_byte(write_cap, 'd') != 0)
+        return 26;
+    if (epoll_wait(ep, &out, 1, 0) != 0)
+        return 27;
+    if (pull_byte(read_cap, 'd') != 0)
+        return 28;
 
     kq = kqueue();
     if (kq <= 0)
@@ -133,6 +141,16 @@ int main(void) {
         return 20;
     if (pull_byte(read_cap, 'k') != 0)
         return 21;
+    change.flags = EV_DELETE;
+    change.udata = 0;
+    if (kevent(kq, &change, 1, 0, 0, &ktimeout) != 0)
+        return 29;
+    if (push_byte(write_cap, 'q') != 0)
+        return 30;
+    if (kevent(kq, 0, 0, &kout, 1, &ktimeout) != 0)
+        return 31;
+    if (pull_byte(read_cap, 'q') != 0)
+        return 32;
 
     pfd.fd = (int)read_cap;
     pfd.events = POLLIN;

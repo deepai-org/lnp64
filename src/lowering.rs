@@ -2568,9 +2568,11 @@ mod tests {
         assert!(real_llc.contains("epoll_create1(0)"));
         assert!(real_llc.contains("epoll_ctl(ep, EPOLL_CTL_ADD, 0, &ev)"));
         assert!(real_llc.contains("epoll_wait(ep, &out, 1, 0)"));
+        assert!(real_llc.contains("epoll_ctl(ep, EPOLL_CTL_DEL, 0, 0)"));
         assert!(real_llc.contains("kqueue()"));
         assert!(real_llc.contains("change.filter = EVFILT_READ"));
         assert!(real_llc.contains("change.flags = EV_ADD"));
+        assert!(real_llc.contains("change.flags = EV_DELETE"));
         assert!(real_llc.contains("kevent(kq, &change, 1, 0, 0, &ts)"));
         assert!(real_llc.contains("poll-libc-clang-smoke.o"));
         assert!(real_llc.contains("liblnp64-poll-min.o"));
@@ -3068,6 +3070,8 @@ mod tests {
         assert!(poll_test_clang.contains("change.filter = EVFILT_READ"));
         assert!(poll_test_clang.contains("kevent(kq, &change, 1, 0, 0, &ktimeout)"));
         assert!(poll_test_clang.contains("kevent(kq, 0, 0, &kout, 1, &ktimeout)"));
+        assert!(poll_test_clang.contains("epoll_ctl(ep, EPOLL_CTL_DEL"));
+        assert!(poll_test_clang.contains("change.flags = EV_DELETE"));
         assert!(!poll_test_clang.contains("typedef unsigned long nfds_t"));
         assert!(!poll_test_clang.contains("int poll(struct pollfd"));
         assert!(real_llc.contains("real LLVM LNP64 clang NetBSD poll child object passed"));
@@ -5881,7 +5885,8 @@ mod tests {
             );
         }
         assert!(conformance.contains("| `kqueue`, `kevent` | partial |"));
-        assert!(conformance.contains("Broader filters, delete/oneshot semantics"));
+        assert!(conformance.contains("EV_DELETE removes a registered readiness source"));
+        assert!(conformance.contains("Broader filters, oneshot semantics"));
         assert!(conformance.contains("`COMPAT-STRESS-005` | poll/epoll races"));
         for group in [
             "startup_env_auxv",
@@ -7104,7 +7109,7 @@ mod tests {
             "typed_transition_trace",
             "retire_trace_and_final_state",
             "same source",
-            "blocked_by_features",
+            "active top-program import",
             "stdout/result",
         ] {
             assert!(
@@ -7184,7 +7189,10 @@ mod tests {
         assert!(top_program_manifest.contains("demos/pcr_readonly_no_mutate.s"));
         assert!(top_program_manifest.contains("\"pcr_readonly_no_mutate\""));
         assert!(top_program_manifest.contains("tests/rtl/programs/top_set_pcr.s"));
-        assert!(top_program_manifest.contains("\"status\": \"blocked_by_features\""));
+        assert!(top_program_manifest.contains("\"status\": \"active\""));
+        assert!(
+            top_program_manifest.contains("\"rtl_gate\": \"scripts/run_rtl_top_program_smoke.sh\"")
+        );
         assert!(top_program_manifest.contains("tests/rtl/programs/top_waitable_probe.s"));
         assert!(top_program_manifest.contains("tests/rtl/programs/top_pipe_push_pull.s"));
     }
