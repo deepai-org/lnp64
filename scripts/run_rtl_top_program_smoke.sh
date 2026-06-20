@@ -529,6 +529,7 @@ def check_cross_tile_wake_event(path: str) -> None:
         "source": engines["LNP64_ENGINE_NONE"],
         "status": statuses["LNP64_STATUS_EVENT"],
         "wake_valid": 1,
+        "scheduler_wake_issue": 1,
         "cross_tile_wake": 1,
     }
     for field, expected_value in expected.items():
