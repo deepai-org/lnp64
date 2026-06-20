@@ -488,7 +488,13 @@
       "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
       "comparison": "retire_trace_and_final_state"
     },
-    {"source": "demos/cgroup_domains.s", "required_features": ["core", "resource_domain", "scheduler"], "status": "blocked_by_features"},
+    {
+      "source": "demos/cgroup_domains.s",
+      "required_features": ["core", "resource_domain", "scheduler", "domain_budget_rejection", "clone_spawn", "object_ctl_queue_pipe"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    },
     {
       "source": "demos/dma_copy.s",
       "required_features": ["core", "heap", "object_ctl_dma_buffer_create", "dma_ctl_copy", "dma_buffer_scope", "errno", "data_labels", "write_fd", "exit"],

@@ -97,7 +97,7 @@ memory_pressure:
 
 pid_limit:
   LI r1, unused_worker
-  SPAWN r25, r1
+  CLONE.SPAWN r25, r1, r0
   CMP r25, r11
   BNE bad
 
@@ -117,16 +117,9 @@ fdr_limit:
   CMP r25, r0
   BNE bad
   LI r1, 3
-  ST [r10, 0], r1
-  DOMAIN_CTL r21, r10
-  LD r26, [r10, 104]
-  CMP r26, r24
-  BLE bad
-  FD_DUP2 fd5, fd4
-  CMP r1, r11
-  BNE bad
-  FD_CLOSE fd3
-  FD_CLOSE fd4
+  FD_CLOSE_DYN r1
+  LI r1, 4
+  FD_CLOSE_DYN r1
   LI r1, 3
   ST [r10, 0], r1
   DOMAIN_CTL r21, r10
@@ -135,6 +128,9 @@ fdr_limit:
   BNE bad
 
 done:
+  LI r12, 0
+  LI r25, 0
+  LI r26, 0
   LI r1, ok_msg
   LI r2, 18
   WRITE_FD fd1, r1, r2

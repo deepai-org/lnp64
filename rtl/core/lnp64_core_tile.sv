@@ -879,6 +879,76 @@ module lnp64_core_tile #(
         end
     endfunction
 
+    function automatic logic domain_memory_budget_allows(
+        input logic [63:0] domain_id,
+        input logic [63:0] memory_delta
+    );
+        int unsigned cursor;
+        logic live_cursor;
+        logic [63:0] used;
+        begin
+            domain_memory_budget_allows = 1'b0;
+            live_cursor = 1'b0;
+            cursor = 0;
+            if (domain_id > 64'd0 && (domain_id - 64'd1) < DOMAIN_SLOT_COUNT) begin
+                cursor = int'(domain_id - 64'd1);
+                live_cursor = 1'b1;
+                domain_memory_budget_allows = 1'b1;
+            end
+            for (int unsigned depth_i = 0; depth_i < DOMAIN_SLOT_COUNT; depth_i = depth_i + 1) begin
+                if (live_cursor && cursor < DOMAIN_SLOT_COUNT &&
+                    domain_valid[cursor] && !domain_destroyed[cursor]) begin
+                    used = domain_query_memory_used(cursor);
+                    if (used > domain_memory_limit[cursor] ||
+                        memory_delta > (domain_memory_limit[cursor] - used)) begin
+                        domain_memory_budget_allows = 1'b0;
+                        live_cursor = 1'b0;
+                    end else if (domain_parent[cursor] > 64'd0 &&
+                        (domain_parent[cursor] - 64'd1) < DOMAIN_SLOT_COUNT) begin
+                        cursor = int'(domain_parent[cursor] - 64'd1);
+                    end else begin
+                        live_cursor = 1'b0;
+                    end
+                end
+            end
+        end
+    endfunction
+
+    function automatic logic domain_thread_budget_allows(
+        input logic [63:0] domain_id,
+        input logic [63:0] thread_delta
+    );
+        int unsigned cursor;
+        logic live_cursor;
+        logic [63:0] used;
+        begin
+            domain_thread_budget_allows = 1'b0;
+            live_cursor = 1'b0;
+            cursor = 0;
+            if (domain_id > 64'd0 && (domain_id - 64'd1) < DOMAIN_SLOT_COUNT) begin
+                cursor = int'(domain_id - 64'd1);
+                live_cursor = 1'b1;
+                domain_thread_budget_allows = 1'b1;
+            end
+            for (int unsigned depth_i = 0; depth_i < DOMAIN_SLOT_COUNT; depth_i = depth_i + 1) begin
+                if (live_cursor && cursor < DOMAIN_SLOT_COUNT &&
+                    domain_valid[cursor] && !domain_destroyed[cursor]) begin
+                    used = domain_query_thread_count(cursor);
+                    if (used > domain_pids_limit[cursor] ||
+                        thread_delta > (domain_pids_limit[cursor] - used)) begin
+                        domain_thread_budget_allows = 1'b0;
+                        live_cursor = 1'b0;
+                    end else if (domain_parent[cursor] > 64'd0 &&
+                        (domain_parent[cursor] - 64'd1) < DOMAIN_SLOT_COUNT) begin
+                        cursor = int'(domain_parent[cursor] - 64'd1);
+                    end else begin
+                        live_cursor = 1'b0;
+                    end
+                end
+            end
+        end
+    endfunction
+
     function automatic logic dma_buffer_ref_matches(input logic [63:0] value);
         begin
             dma_buffer_ref_matches = dma_buffer_object_valid &&
@@ -1253,8 +1323,11 @@ module lnp64_core_tile #(
                     end
                 end
                 LNP64_OP_CLONE:
-                    flat_retire_errno_value = (active_thread_slot == 1'b0 && !thread_active_mask[1]) ?
-                        LNP64_ERR_OK : LNP64_ERR_EAGAIN;
+                    flat_retire_errno_value = (active_thread_slot == 1'b0 && !thread_active_mask[1] &&
+                        domain_thread_budget_allows(active_thread_context.domain_id, 64'd1)) ?
+                        LNP64_ERR_OK :
+                        (domain_thread_budget_allows(active_thread_context.domain_id, 64'd1) ?
+                            LNP64_ERR_EAGAIN : LNP64_ERR_ENOMEM);
                 LNP64_OP_JOIN: flat_retire_errno_value = LNP64_ERR_OK;
                 default: begin
                 end
@@ -1472,7 +1545,8 @@ module lnp64_core_tile #(
                 LNP64_OP_GET_ERRNO: result = {48'd0, errno_reg};
                 LNP64_OP_SET_PCR: result = pcr_set_value(dec.rs1[4:0]);
                 LNP64_OP_CLONE:
-                    result = (active_thread_slot == 1'b0 && !thread_active_mask[1]) ?
+                    result = (active_thread_slot == 1'b0 && !thread_active_mask[1] &&
+                        domain_thread_budget_allows(active_thread_context.domain_id, 64'd1)) ?
                         64'd2 : 64'hffff_ffff_ffff_ffff;
                 LNP64_OP_JOIN: begin
                     if (gpr[dec.rs1] == active_tid) begin
@@ -1503,6 +1577,21 @@ module lnp64_core_tile #(
             record.errno = response.errno_value;
             record.status = retire_status_from_errno(response.errno_value);
             retire_from_response = record;
+        end
+    endfunction
+
+    function automatic lnp64_retire_submit_t retire_with_result(
+        input lnp64_retire_submit_t base,
+        input logic [63:0] result_value,
+        input logic [15:0] errno_value
+    );
+        lnp64_retire_submit_t record;
+        begin
+            record = base;
+            record.result_value = base.result_valid ? result_value : 64'd0;
+            record.errno = errno_value;
+            record.status = retire_status_from_errno(errno_value);
+            retire_with_result = record;
         end
     endfunction
 
@@ -2904,14 +2993,46 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_ALLOC: begin
-                                pending_unsupported <= 1'b0;
-                                command_pc <= pc;
-                                state <= CORE_SEND_CMD;
+                                if (!domain_memory_budget_allows(
+                                    active_thread_context.domain_id,
+                                    alloc_len_u64(gpr[dec.rs1])
+                                )) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_OK;
+                                    pc <= pc + 32'd1;
+                                    retired_count <= retired_count + 32'd1;
+                                    retire_submit_valid <= 1'b1;
+                                    retire_submit_record <= retire_with_result(
+                                        retire_submit_next,
+                                        64'hffff_ffff_ffff_ffff,
+                                        LNP64_ERR_OK
+                                    );
+                                end else begin
+                                    pending_unsupported <= 1'b0;
+                                    command_pc <= pc;
+                                    state <= CORE_SEND_CMD;
+                                end
                             end
                             LNP64_OP_ALLOC_EX: begin
-                                pending_unsupported <= 1'b0;
-                                command_pc <= pc;
-                                state <= CORE_SEND_CMD;
+                                if (!domain_memory_budget_allows(
+                                    active_thread_context.domain_id,
+                                    alloc_len_u64(gpr[dec.rs1]) + 64'd8192
+                                )) begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_OK;
+                                    pc <= pc + 32'd1;
+                                    retired_count <= retired_count + 32'd1;
+                                    retire_submit_valid <= 1'b1;
+                                    retire_submit_record <= retire_with_result(
+                                        retire_submit_next,
+                                        64'hffff_ffff_ffff_ffff,
+                                        LNP64_ERR_OK
+                                    );
+                                end else begin
+                                    pending_unsupported <= 1'b0;
+                                    command_pc <= pc;
+                                    state <= CORE_SEND_CMD;
+                                end
                             end
                             LNP64_OP_ALLOC_SIZE: begin
                                 pending_unsupported <= 1'b0;
@@ -3623,7 +3744,11 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_CLONE: begin
-                                if (active_thread_slot == 1'b0 && !thread_active_mask[1]) begin
+                                if (active_thread_slot == 1'b0 && !thread_active_mask[1] &&
+                                    domain_thread_budget_allows(
+                                        active_thread_context.domain_id,
+                                        64'd1
+                                    )) begin
 `ifndef SYNTHESIS
                                     assert (!thread_window_activate_valid)
                                         else $fatal(1, "SG-SCHED clone bypassed scheduler admission");
@@ -3667,7 +3792,10 @@ module lnp64_core_tile #(
                                     end
                                 end else begin
                                     gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
-                                    errno_reg <= LNP64_ERR_EAGAIN;
+                                    errno_reg <= domain_thread_budget_allows(
+                                        active_thread_context.domain_id,
+                                        64'd1
+                                    ) ? LNP64_ERR_EAGAIN : LNP64_ERR_ENOMEM;
                                 end
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
