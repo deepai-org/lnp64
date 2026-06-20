@@ -243,6 +243,16 @@ package lnp64_pkg;
         LNP64_M7_COMMIT_REJECT_STALE_ADDRESS = 8'd8
     } lnp64_m7_commit_op_e;
 
+    typedef enum logic [7:0] {
+        LNP64_M4_COMMIT_MMAP           = 8'd1,
+        LNP64_M4_COMMIT_LOAD           = 8'd2,
+        LNP64_M4_COMMIT_STORE_DENIED   = 8'd3,
+        LNP64_M4_COMMIT_EXEC_FAULT     = 8'd4,
+        LNP64_M4_COMMIT_GUARD_FAULT    = 8'd5,
+        LNP64_M4_COMMIT_STALE_REJECT   = 8'd6,
+        LNP64_M4_COMMIT_TLB_INVALIDATE = 8'd7
+    } lnp64_m4_vma_op_e;
+
     typedef enum logic [15:0] {
         LNP64_STATUS_OK          = 16'h0000,
         LNP64_STATUS_ERROR       = 16'h0001,
@@ -506,6 +516,33 @@ package lnp64_pkg;
         logic        timer_wake_delivered;
         logic        stale_address_rejected;
     } lnp64_m7_state_projection_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] vma_id;
+        logic [31:0] vma_generation;
+        logic [7:0]  permissions;
+        logic [63:0] fault_addr;
+    } lnp64_m4_vma_commit_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] vma_id;
+        logic [31:0] vma_generation;
+        logic [7:0]  permissions;
+        logic        guard_page_valid;
+        logic        tlb_valid;
+        logic        mapping_created;
+        logic        load_permitted;
+        logic        store_rejected;
+        logic        nx_faulted;
+        logic        guard_faulted;
+        logic        stale_vma_rejected;
+        logic        tlb_invalidation_observed;
+        logic        wx_enforced;
+    } lnp64_m4_state_projection_t;
 
     typedef struct packed {
         logic [31:0] object_id;

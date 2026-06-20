@@ -19,6 +19,9 @@ module lnp64_m4_tb;
     logic stale_vma_rejected;
     logic tlb_invalidation_observed;
     logic wx_enforced;
+    logic typed_commit_valid;
+    lnp64_m4_vma_commit_t typed_commit;
+    lnp64_m4_state_projection_t typed_state_projection;
 
     lnp64_m4_vma dut(
         .clk(clk),
@@ -36,7 +39,10 @@ module lnp64_m4_tb;
         .guard_faulted(guard_faulted),
         .stale_vma_rejected(stale_vma_rejected),
         .tlb_invalidation_observed(tlb_invalidation_observed),
-        .wx_enforced(wx_enforced)
+        .wx_enforced(wx_enforced),
+        .typed_commit_valid(typed_commit_valid),
+        .typed_commit(typed_commit),
+        .typed_state_projection(typed_state_projection)
     );
 
     lnp64_m4_assertions assertions_i(
@@ -87,6 +93,45 @@ module lnp64_m4_tb;
                 );
                 default: $display("TRACE unknown code=%0d value=%0d", trace_code, trace_value);
             endcase
+        end
+        if (typed_commit_valid) begin
+            $display(
+                "TTRACE_M4 {\"record\":\"m4_vma_commit\",\"op\":%0d,\"status\":%0d,\"vma_id\":%0d,\"vma_generation\":%0d,\"permissions\":%0d,\"fault_addr\":%0d}",
+                typed_commit.op,
+                typed_commit.status,
+                typed_commit.vma_id,
+                typed_commit.vma_generation,
+                typed_commit.permissions,
+                typed_commit.fault_addr
+            );
+            $display(
+                "TTRACE_M4_BITS {\"record\":\"m4_vma_commit_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m4_vma_commit_t),
+                typed_commit
+            );
+            $display(
+                "TTRACE_M4_STATE {\"record\":\"m4_state_projection\",\"op\":%0d,\"status\":%0d,\"vma_id\":%0d,\"vma_generation\":%0d,\"permissions\":%0d,\"guard_page_valid\":%0d,\"tlb_valid\":%0d,\"mapping_created\":%0d,\"load_permitted\":%0d,\"store_rejected\":%0d,\"nx_faulted\":%0d,\"guard_faulted\":%0d,\"stale_vma_rejected\":%0d,\"tlb_invalidation_observed\":%0d,\"wx_enforced\":%0d}",
+                typed_state_projection.op,
+                typed_state_projection.status,
+                typed_state_projection.vma_id,
+                typed_state_projection.vma_generation,
+                typed_state_projection.permissions,
+                typed_state_projection.guard_page_valid,
+                typed_state_projection.tlb_valid,
+                typed_state_projection.mapping_created,
+                typed_state_projection.load_permitted,
+                typed_state_projection.store_rejected,
+                typed_state_projection.nx_faulted,
+                typed_state_projection.guard_faulted,
+                typed_state_projection.stale_vma_rejected,
+                typed_state_projection.tlb_invalidation_observed,
+                typed_state_projection.wx_enforced
+            );
+            $display(
+                "TTRACE_M4_STATE_BITS {\"record\":\"m4_state_projection_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m4_state_projection_t),
+                typed_state_projection
+            );
         end
     end
 

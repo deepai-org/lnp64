@@ -175,13 +175,13 @@
       "rtl_modules": [
         {"file": "rtl/engines/lnp64_m4_vma.sv", "module": "lnp64_m4_vma"}
       ],
-      "rtl_witness_signals": ["guard_faulted", "stale_vma_rejected", "tlb_invalidation_observed", "wx_enforced"],
+      "rtl_witness_signals": ["guard_faulted", "stale_vma_rejected", "tlb_invalidation_observed", "wx_enforced", "typed_commit_valid", "typed_commit", "typed_state_projection"],
       "assertion_files": ["formal/rtl_assertions/lnp64_m4_assertions.sv"],
-      "trace_sources": ["rtl/sim/lnp64_m4_tb.sv", "formal/m4_vma_model.py"],
-      "trace_markers": ["TRACE store_denied", "TRACE exec_fault", "TRACE guard_fault", "TRACE stale_vma", "TRACE tlb_invalidate"],
-      "gate_scripts": ["scripts/run_rtl_m4.sh"],
+      "trace_sources": ["rtl/sim/lnp64_m4_tb.sv", "formal/m4_vma_model.py", "scripts/check_rtl_m4_typed_commit_trace.py", "scripts/test_rtl_m4_typed_commit_checker.py"],
+      "trace_markers": ["TRACE store_denied", "TRACE exec_fault", "TRACE guard_fault", "TRACE stale_vma", "TRACE tlb_invalidate", "TTRACE_M4 {\\\"record\\\":\\\"m4_vma_commit\\\"", "TTRACE_M4_BITS {\\\"record\\\":\\\"m4_vma_commit_bits\\\"", "TTRACE_M4_STATE {\\\"record\\\":\\\"m4_state_projection\\\"", "TTRACE_M4_STATE_BITS {\\\"record\\\":\\\"m4_state_projection_bits\\\"", "rtl m4 typed commit trace ok"],
+      "gate_scripts": ["scripts/run_rtl_m4.sh", "scripts/check_rtl_m4_typed_commit_trace.py", "scripts/test_rtl_m4_typed_commit_checker.py"],
       "assumptions": ["the M4 slice models one bounded VMA table entry", "S0 TLB/cache behavior is still a stubbed coherence boundary"],
-      "known_gaps": ["Lean now includes an M4 VMA/MMU transition-invariant proof slice, but typed transition traces and full cache/TLB refinement are still missing."]
+      "known_gaps": ["Lean now includes an M4 VMA/MMU transition-invariant proof slice, and the seed-0 VMA path now emits schema-owned typed commit/state packed traces checked against the executable transition contract (scripts/check_rtl_m4_typed_commit_trace.py: op sequence, packed-bit faithfulness, per-op invariants, and the W^X invariant in every projection), but an offline-re-checkable witness, Lean decode-faithfulness, and full cache/TLB refinement are still missing."]
     },
     {
       "id": "scheduler_single_location",

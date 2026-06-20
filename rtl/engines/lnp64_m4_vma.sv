@@ -18,7 +18,10 @@ module lnp64_m4_vma (
     output logic guard_faulted,
     output logic stale_vma_rejected,
     output logic tlb_invalidation_observed,
-    output logic wx_enforced
+    output logic wx_enforced,
+    output logic typed_commit_valid,
+    output lnp64_m4_vma_commit_t typed_commit,
+    output lnp64_m4_state_projection_t typed_state_projection
 );
     typedef enum logic [3:0] {
         V_RESET,
@@ -81,8 +84,44 @@ module lnp64_m4_vma (
         return {28'd0, seed[19:16]} + 32'd1;
     endfunction
 
+    task automatic commit_m4(
+        input lnp64_m4_vma_op_e op,
+        input logic [15:0] status,
+        input logic [31:0] cid,
+        input logic [31:0] cgen,
+        input logic [7:0] perms,
+        input logic [63:0] faddr
+    );
+        typed_commit_valid <= 1'b1;
+        typed_commit.op <= op;
+        typed_commit.status <= status;
+        typed_commit.vma_id <= cid;
+        typed_commit.vma_generation <= cgen;
+        typed_commit.permissions <= perms;
+        typed_commit.fault_addr <= faddr;
+    endtask
+
     always_comb begin
         wx_enforced = (permissions & (PERM_W | PERM_X)) != (PERM_W | PERM_X);
+    end
+
+    always_comb begin
+        typed_state_projection = '0;
+        typed_state_projection.op = typed_commit.op;
+        typed_state_projection.status = typed_commit.status;
+        typed_state_projection.vma_id = vma_id;
+        typed_state_projection.vma_generation = vma_generation;
+        typed_state_projection.permissions = {4'd0, permissions};
+        typed_state_projection.guard_page_valid = guard_page_valid;
+        typed_state_projection.tlb_valid = tlb_valid;
+        typed_state_projection.mapping_created = mapping_created;
+        typed_state_projection.load_permitted = load_permitted;
+        typed_state_projection.store_rejected = store_rejected;
+        typed_state_projection.nx_faulted = nx_faulted;
+        typed_state_projection.guard_faulted = guard_faulted;
+        typed_state_projection.stale_vma_rejected = stale_vma_rejected;
+        typed_state_projection.tlb_invalidation_observed = tlb_invalidation_observed;
+        typed_state_projection.wx_enforced = wx_enforced;
     end
 
     always_ff @(posedge clk or negedge reset_n) begin
@@ -92,6 +131,8 @@ module lnp64_m4_vma (
             trace_valid <= 1'b0;
             trace_code <= 8'd0;
             trace_value <= 64'd0;
+            typed_commit_valid <= 1'b0;
+            typed_commit <= '0;
             mapping_created <= 1'b0;
             load_permitted <= 1'b0;
             store_rejected <= 1'b0;
@@ -107,6 +148,7 @@ module lnp64_m4_vma (
             tlb_valid <= 1'b0;
         end else begin
             trace_valid <= 1'b0;
+            typed_commit_valid <= 1'b0;
             unique case (state)
                 V_RESET: begin
                     if (start) begin
@@ -130,6 +172,9 @@ module lnp64_m4_vma (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd2;
                     trace_value <= {seeded_vma_id_trace(scenario_seed), seeded_pages(scenario_seed), 12'd0, PERM_R | PERM_X};
+                    commit_m4(LNP64_M4_COMMIT_MMAP, LNP64_STATUS_OK,
+                        seeded_vma_id(scenario_seed), seeded_generation(scenario_seed),
+                        {4'd0, PERM_R | PERM_X}, 64'd0);
                     state <= V_LOAD;
                 end
                 V_LOAD: begin
@@ -140,6 +185,9 @@ module lnp64_m4_vma (
                         trace_valid <= 1'b1;
                         trace_code <= 8'd3;
                         trace_value <= seeded_base(scenario_seed);
+                        commit_m4(LNP64_M4_COMMIT_LOAD, LNP64_STATUS_OK,
+                            seeded_vma_id(scenario_seed), seeded_generation(scenario_seed),
+                            {4'd0, PERM_R | PERM_X}, seeded_base(scenario_seed));
                         state <= V_STORE_DENIED;
                     end else begin
                         state <= V_DONE;
@@ -151,6 +199,9 @@ module lnp64_m4_vma (
                         trace_valid <= 1'b1;
                         trace_code <= 8'd4;
                         trace_value <= {48'd0, LNP64_ERR_EACCES};
+                        commit_m4(LNP64_M4_COMMIT_STORE_DENIED, LNP64_ERR_EACCES,
+                            seeded_vma_id(scenario_seed), seeded_generation(scenario_seed),
+                            {4'd0, PERM_R | PERM_X}, 64'd0);
                         state <= V_EXEC_FAULT;
                     end else begin
                         state <= V_DONE;
@@ -163,6 +214,9 @@ module lnp64_m4_vma (
                         trace_valid <= 1'b1;
                         trace_code <= 8'd5;
                         trace_value <= {48'd0, LNP64_ERR_EFAULT};
+                        commit_m4(LNP64_M4_COMMIT_EXEC_FAULT, LNP64_ERR_EFAULT,
+                            seeded_vma_id(scenario_seed), seeded_generation(scenario_seed),
+                            {4'd0, PERM_R}, 64'd0);
                         state <= V_GUARD_FAULT;
                     end else begin
                         state <= V_DONE;
@@ -174,6 +228,9 @@ module lnp64_m4_vma (
                         trace_valid <= 1'b1;
                         trace_code <= 8'd6;
                         trace_value <= {48'd0, LNP64_ERR_EFAULT};
+                        commit_m4(LNP64_M4_COMMIT_GUARD_FAULT, LNP64_ERR_EFAULT,
+                            seeded_vma_id(scenario_seed), seeded_generation(scenario_seed),
+                            {4'd0, PERM_R}, 64'd0);
                         state <= V_STALE_ACCESS;
                     end else begin
                         state <= V_DONE;
@@ -186,6 +243,9 @@ module lnp64_m4_vma (
                         trace_valid <= 1'b1;
                         trace_code <= 8'd7;
                         trace_value <= {48'd0, LNP64_ERR_EREVOKED};
+                        commit_m4(LNP64_M4_COMMIT_STALE_REJECT, LNP64_ERR_EREVOKED,
+                            seeded_vma_id(scenario_seed), seeded_generation(scenario_seed) + 32'd1,
+                            {4'd0, PERM_R}, 64'd0);
                         state <= V_TLB_INVALIDATE;
                     end else begin
                         state <= V_DONE;
@@ -197,6 +257,9 @@ module lnp64_m4_vma (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd8;
                     trace_value <= {seeded_vma_id(scenario_seed), 32'd0};
+                    commit_m4(LNP64_M4_COMMIT_TLB_INVALIDATE, LNP64_STATUS_OK,
+                        seeded_vma_id(scenario_seed), seeded_generation(scenario_seed) + 32'd1,
+                        {4'd0, PERM_R}, 64'd0);
                     state <= V_DONE;
                 end
                 V_DONE: begin

@@ -221,6 +221,41 @@ def check_m7_typed_trace_contract(claim: dict) -> None:
     )
 
 
+def check_m4_typed_trace_contract(claim: dict) -> None:
+    if claim.get("id") != "vma_memory_safety":
+        return
+    trace_sources = claim.get("trace_sources", [])
+    gate_scripts = claim.get("gate_scripts", [])
+    for name in ("scripts/check_rtl_m4_typed_commit_trace.py", "scripts/test_rtl_m4_typed_commit_checker.py"):
+        require(name in trace_sources, f"vma_memory_safety: missing M4 typed trace source {name}")
+        require(name in gate_scripts, f"vma_memory_safety: missing M4 typed trace gate {name}")
+        require((ROOT / name).exists(), f"vma_memory_safety: missing M4 artifact {name}")
+    markers = claim.get("trace_markers", [])
+    require(
+        'TTRACE_M4 {\\"record\\":\\"m4_vma_commit\\"' in markers,
+        "vma_memory_safety: missing M4 typed commit trace marker",
+    )
+    require("rtl m4 typed commit trace ok" in markers, "vma_memory_safety: missing M4 typed trace pass marker")
+    known_gaps = " ".join(claim.get("known_gaps", []))
+    require(
+        "typed transition traces" not in known_gaps,
+        "vma_memory_safety: known gap still claims M4 typed transition traces are missing",
+    )
+    require(
+        "scripts/check_rtl_m4_typed_commit_trace.py" in known_gaps,
+        "vma_memory_safety: known gap must record the M4 typed trace contract",
+    )
+    proof_gate_text = check_file(RTL_PROOF_GATES, "RTL proof gate")
+    require(
+        "scripts/check_rtl_m4_typed_commit_trace.py" in proof_gate_text,
+        "RTL proof gate must run the M4 typed trace checker",
+    )
+    require(
+        "scripts/test_rtl_m4_typed_commit_checker.py" in proof_gate_text,
+        "RTL proof gate must run the M4 typed trace checker self-test",
+    )
+
+
 def check_file(path: Path, label: str) -> str:
     require(path.exists(), f"missing {label} {path}")
     require(path.stat().st_size > 0, f"empty {label} {path}")
@@ -233,6 +268,7 @@ def check_claim(claim: dict) -> None:
     require(isinstance(claim.get("claim"), str) and claim["claim"], f"{claim_id}: missing claim text")
     check_m1_top_level_contract(claim)
     check_m7_typed_trace_contract(claim)
+    check_m4_typed_trace_contract(claim)
 
     trust = claim.get("trust_level")
     require(trust in ALLOWED_TRUST_LEVELS, f"{claim_id}: invalid trust level {trust}")

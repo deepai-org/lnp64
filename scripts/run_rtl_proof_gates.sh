@@ -184,6 +184,11 @@ run_rtl_proof_gate_batch \
   scripts/run_rtl_m5.sh \
   scripts/run_rtl_m6.sh
 
+m4_witness="${TMPDIR:-/tmp}/lnp64_rtl_proof_m4_witness.json"
+LNP64_RTL_M4_WITNESS_OUT="$m4_witness" \
+  scripts/check_rtl_m4_typed_commit_trace.py
+scripts/test_rtl_m4_typed_commit_checker.py
+
 m7_log="${TMPDIR:-/tmp}/lnp64_rtl_proof_m7.log"
 m7_witness="${TMPDIR:-/tmp}/lnp64_rtl_proof_m7_witness.json"
 LNP64_COSIM_SEEDS="${LNP64_M7_TYPED_COMMIT_SEEDS:-0}" \
