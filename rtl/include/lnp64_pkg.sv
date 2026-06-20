@@ -305,6 +305,15 @@ package lnp64_pkg;
     } lnp64_m13_pcie_op_e;
 
     typedef enum logic [7:0] {
+        LNP64_M15_COMMIT_COUNTER        = 8'd1,
+        LNP64_M15_COMMIT_QUEUE_PUSH     = 8'd2,
+        LNP64_M15_COMMIT_QUEUE_OVERFLOW = 8'd3,
+        LNP64_M15_COMMIT_EVENT_EMIT     = 8'd4,
+        LNP64_M15_COMMIT_STALE_EVENT    = 8'd5,
+        LNP64_M15_COMMIT_GATE_PROFILE   = 8'd6
+    } lnp64_m15_object_op_e;
+
+    typedef enum logic [7:0] {
         LNP64_M10_COMMIT_BOOT_MEASURE  = 8'd1,
         LNP64_M10_COMMIT_ECC_CORRECT   = 8'd2,
         LNP64_M10_COMMIT_PARITY_POISON = 8'd3,
@@ -801,6 +810,30 @@ package lnp64_pkg;
         logic        no_raw_pcie_authority;
         logic        counts_exact;
     } lnp64_m13_state_projection_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] object_id;
+        logic [31:0] generation;
+        logic [31:0] threshold;
+        logic [31:0] payload;
+        logic [31:0] event_generation;
+        logic [31:0] continuation;
+    } lnp64_m15_object_commit_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] failures;
+        logic [31:0] events;
+        logic        counter_threshold_event;
+        logic        queue_rights_valid;
+        logic        queue_overflow_explicit;
+        logic        event_source_generation_safe;
+        logic        gate_continuation_unique;
+        logic        counts_exact;
+    } lnp64_m15_state_projection_t;
 
     typedef struct packed {
         logic [7:0]  op;

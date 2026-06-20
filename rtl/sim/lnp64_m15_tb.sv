@@ -17,6 +17,9 @@ module lnp64_m15_tb;
     logic event_source_generation_safe;
     logic gate_continuation_unique;
     logic counts_exact;
+    logic typed_commit_valid;
+    lnp64_m15_object_commit_t typed_commit;
+    lnp64_m15_state_projection_t typed_state_projection;
 
     lnp64_m15_object_profiles dut(
         .clk(clk),
@@ -32,7 +35,10 @@ module lnp64_m15_tb;
         .queue_overflow_explicit(queue_overflow_explicit),
         .event_source_generation_safe(event_source_generation_safe),
         .gate_continuation_unique(gate_continuation_unique),
-        .counts_exact(counts_exact)
+        .counts_exact(counts_exact),
+        .typed_commit_valid(typed_commit_valid),
+        .typed_commit(typed_commit),
+        .typed_state_projection(typed_state_projection)
     );
 
     lnp64_m15_assertions assertions_i(
@@ -101,6 +107,42 @@ module lnp64_m15_tb;
                 );
                 default: $display("TRACE unknown code=%0d value=%0d", trace_code, trace_value);
             endcase
+        end
+        if (typed_commit_valid) begin
+            $display(
+                "TTRACE_M15 {\"record\":\"m15_object_commit\",\"op\":%0d,\"status\":%0d,\"object_id\":%0d,\"generation\":%0d,\"threshold\":%0d,\"payload\":%0d,\"event_generation\":%0d,\"continuation\":%0d}",
+                typed_commit.op,
+                typed_commit.status,
+                typed_commit.object_id,
+                typed_commit.generation,
+                typed_commit.threshold,
+                typed_commit.payload,
+                typed_commit.event_generation,
+                typed_commit.continuation
+            );
+            $display(
+                "TTRACE_M15_BITS {\"record\":\"m15_object_commit_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m15_object_commit_t),
+                typed_commit
+            );
+            $display(
+                "TTRACE_M15_STATE {\"record\":\"m15_state_projection\",\"op\":%0d,\"status\":%0d,\"failures\":%0d,\"events\":%0d,\"counter_threshold_event\":%0d,\"queue_rights_valid\":%0d,\"queue_overflow_explicit\":%0d,\"event_source_generation_safe\":%0d,\"gate_continuation_unique\":%0d,\"counts_exact\":%0d}",
+                typed_state_projection.op,
+                typed_state_projection.status,
+                typed_state_projection.failures,
+                typed_state_projection.events,
+                typed_state_projection.counter_threshold_event,
+                typed_state_projection.queue_rights_valid,
+                typed_state_projection.queue_overflow_explicit,
+                typed_state_projection.event_source_generation_safe,
+                typed_state_projection.gate_continuation_unique,
+                typed_state_projection.counts_exact
+            );
+            $display(
+                "TTRACE_M15_STATE_BITS {\"record\":\"m15_state_projection_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m15_state_projection_t),
+                typed_state_projection
+            );
         end
     end
 

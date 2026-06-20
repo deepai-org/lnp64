@@ -175,4 +175,123 @@ theorem m15_counts_exact :
     incrementCounterToThreshold, initialMachine, rightPush, rightPull
   ]
 
+/- Packed-bit decode machinery for the M15 object-profiles typed commit and
+   state projection records. Mirrors the shared schema layout so the offline
+   witness bits can be decoded back to projection fields and proved faithful in
+   Lean with the kernel `decide` tactic (no native_decide, no axioms). -/
+
+structure PackedFieldLayout where
+  name : String
+  width : Nat
+  lsb : Nat
+  msb : Nat
+deriving DecidableEq, Repr
+
+def packedSchemaWidth (schema : List (String × Nat)) : Nat :=
+  schema.foldl (fun total field => total + field.2) 0
+
+def packedSchemaLayoutFrom : Nat -> List (String × Nat) -> List PackedFieldLayout
+  | _cursor, [] => []
+  | cursor, field :: rest =>
+      let lsb := cursor - field.2
+      { name := field.1, width := field.2, lsb := lsb, msb := cursor - 1 } ::
+        packedSchemaLayoutFrom lsb rest
+
+def packedSchemaLayout (schema : List (String × Nat)) : List PackedFieldLayout :=
+  packedSchemaLayoutFrom (packedSchemaWidth schema) schema
+
+def packedFieldWithinWidth (totalWidth : Nat) (field : PackedFieldLayout) : Bool :=
+  decide (field.width > 0) &&
+  decide (field.lsb + field.width = field.msb + 1) &&
+  decide (field.msb < totalWidth)
+
+def packedLayoutWithinWidth (totalWidth : Nat) (layout : List PackedFieldLayout) : Bool :=
+  layout.all (packedFieldWithinWidth totalWidth)
+
+def packedLayoutStartsAtWidth (totalWidth : Nat) : List PackedFieldLayout -> Bool
+  | [] => decide (totalWidth = 0)
+  | field :: _rest => decide (field.msb + 1 = totalWidth)
+
+def packedLayoutAdjacentContiguous : List PackedFieldLayout -> Bool
+  | [] => true
+  | _field :: [] => true
+  | first :: second :: rest =>
+      decide (first.lsb = second.msb + 1) &&
+      packedLayoutAdjacentContiguous (second :: rest)
+
+def packedLayoutEndsAtZero : List PackedFieldLayout -> Bool
+  | [] => true
+  | field :: [] => decide (field.lsb = 0)
+  | _field :: rest => packedLayoutEndsAtZero rest
+
+def packedLayoutCoversWidth (totalWidth : Nat) (layout : List PackedFieldLayout) : Bool :=
+  packedLayoutWithinWidth totalWidth layout &&
+  packedLayoutStartsAtWidth totalWidth layout &&
+  packedLayoutAdjacentContiguous layout &&
+  packedLayoutEndsAtZero layout
+
+def packedBitSlice (bits lsb width : Nat) : Nat :=
+  (bits / (2 ^ lsb)) % (2 ^ width)
+
+def packedFieldValue (bits : Nat) (field : PackedFieldLayout) : Nat :=
+  packedBitSlice bits field.lsb field.width
+
+def packedLayoutFieldValue
+    (bits : Nat)
+    (fieldName : String) : List PackedFieldLayout -> Option Nat
+  | [] => none
+  | field :: rest =>
+      if field.name == fieldName then
+        some (packedFieldValue bits field)
+      else
+        packedLayoutFieldValue bits fieldName rest
+
+def rtlM15CommitPackedSchema : List (String × Nat) :=
+  [ ("op", 8)
+  , ("status", 16)
+  , ("object_id", 32)
+  , ("generation", 32)
+  , ("threshold", 32)
+  , ("payload", 32)
+  , ("event_generation", 32)
+  , ("continuation", 32) ]
+
+def rtlM15StateProjectionPackedSchema : List (String × Nat) :=
+  [ ("op", 8)
+  , ("status", 16)
+  , ("failures", 32)
+  , ("events", 32)
+  , ("counter_threshold_event", 1)
+  , ("queue_rights_valid", 1)
+  , ("queue_overflow_explicit", 1)
+  , ("event_source_generation_safe", 1)
+  , ("gate_continuation_unique", 1)
+  , ("counts_exact", 1) ]
+
+def rtlM15CommitPackedLayout : List PackedFieldLayout :=
+  packedSchemaLayout rtlM15CommitPackedSchema
+
+def rtlM15StateProjectionPackedLayout : List PackedFieldLayout :=
+  packedSchemaLayout rtlM15StateProjectionPackedSchema
+
+theorem rtlM15CommitPackedSchema_width :
+    packedSchemaWidth rtlM15CommitPackedSchema = 216 := by
+  decide
+
+theorem rtlM15StateProjectionPackedSchema_width :
+    packedSchemaWidth rtlM15StateProjectionPackedSchema = 94 := by
+  decide
+
+theorem rtlM15CommitPackedLayout_covers_schema_width :
+    packedLayoutCoversWidth
+      (packedSchemaWidth rtlM15CommitPackedSchema)
+      rtlM15CommitPackedLayout = true := by
+  decide
+
+theorem rtlM15StateProjectionPackedLayout_covers_schema_width :
+    packedLayoutCoversWidth
+      (packedSchemaWidth rtlM15StateProjectionPackedSchema)
+      rtlM15StateProjectionPackedLayout = true := by
+  decide
+
 end Lnp64.M15
