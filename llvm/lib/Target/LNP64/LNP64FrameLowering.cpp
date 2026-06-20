@@ -13,6 +13,9 @@
 
 using namespace llvm;
 
+static constexpr unsigned LNP64DwarfSP = 31;
+static constexpr unsigned LNP64DwarfLR = 32;
+
 static uint64_t getLRSaveSize(const MachineFunction &MF) {
   return MF.getFrameInfo().hasCalls() ? 8 : 0;
 }
@@ -64,7 +67,7 @@ void LNP64FrameLowering::emitPrologue(MachineFunction &MF,
   emitSPAdjust(MF, MBB, I, DebugLoc(), -int64_t(StackSize));
   if (StackSize != 0)
     emitCFI(MF, MBB, I, DebugLoc(),
-            MCCFIInstruction::cfiDefCfaOffset(nullptr, StackSize));
+            MCCFIInstruction::cfiDefCfa(nullptr, LNP64DwarfSP, StackSize));
 
   if (LRSaveSize != 0) {
     const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
@@ -76,7 +79,7 @@ void LNP64FrameLowering::emitPrologue(MachineFunction &MF,
         .addReg(LNP64::R31)
         .addImm(getLRSaveOffset(MF));
     emitCFI(MF, MBB, I, DebugLoc(),
-            MCCFIInstruction::createOffset(nullptr, /*LR=*/32,
+            MCCFIInstruction::createOffset(nullptr, LNP64DwarfLR,
                                            LRSaveOffsetFromCFA));
   }
 }

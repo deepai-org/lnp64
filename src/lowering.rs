@@ -5603,10 +5603,12 @@ mod tests {
         assert!(frame.contains("TII.get(LNP64::LI32)"));
         assert!(frame.contains("stack adjustment exceeds 32-bit materialization"));
         assert!(frame.contains("TII.get(Amount < 0 ? LNP64::SUB : LNP64::ADD)"));
-        assert!(frame.contains("MCCFIInstruction::cfiDefCfaOffset"));
+        assert!(frame.contains("MCCFIInstruction::cfiDefCfa"));
+        assert!(frame.contains("LNP64DwarfSP = 31"));
+        assert!(frame.contains("LNP64DwarfLR = 32"));
         assert!(frame.contains("MCCFIInstruction::createOffset"));
         assert!(frame.contains("TargetOpcode::CFI_INSTRUCTION"));
-        assert!(frame.contains("/*LR=*/32"));
+        assert!(frame.contains("LNP64DwarfLR,"));
         assert!(reginfo.contains("Reserved.set(LNP64::R0)"));
         assert!(reginfo.contains("Reserved.set(LNP64::R30)"));
         assert!(reginfo.contains("eliminateFrameIndex"));
@@ -8546,6 +8548,11 @@ mod tests {
             "r31"
         );
         assert_eq!(
+            manifest_field(debug_unwind_manifest, "dwarf_register_map"),
+            "r0-r31:0-31,LR:32,TP:33"
+        );
+        assert_eq!(manifest_field(debug_unwind_manifest, "cfa_register"), "r31");
+        assert_eq!(
             manifest_field(debug_unwind_manifest, "return_address"),
             "LR"
         );
@@ -8563,9 +8570,13 @@ mod tests {
         );
 
         assert!(psabi_doc.contains("## Debug and Unwind Minimum"));
+        assert!(psabi_doc.contains("`LR` as `32`, and `TP` as `33`"));
+        assert!(psabi_doc.contains("`r31` as the CFA stack register"));
         assert!(psabi_doc.contains("There is no v0 language exception runtime"));
         assert!(roadmap.contains("toolchain/lnp64_debug_unwind.manifest"));
-        assert!(frame_lowering.contains("MCCFIInstruction::cfiDefCfaOffset"));
+        assert!(frame_lowering.contains("LNP64DwarfSP = 31"));
+        assert!(frame_lowering.contains("LNP64DwarfLR = 32"));
+        assert!(frame_lowering.contains("MCCFIInstruction::cfiDefCfa"));
         assert!(frame_lowering.contains("MCCFIInstruction::createOffset"));
         assert!(frame_lowering.contains("TargetOpcode::CFI_INSTRUCTION"));
     }

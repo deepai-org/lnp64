@@ -111,11 +111,12 @@ or variadic arguments; non-leaf functions spill `LR` through `LR_GET`/`LR_SET`.
 ## Debug and Unwind Minimum
 
 The initial LLVM target should emit DWARF line tables and register mappings for
-GPR `r0`-`r31`, `LR`, and `TP`. Non-leaf functions should carry call-frame
-information sufficient to recover `r31` as the stack pointer and `LR` as the
-return address. There is no v0 language exception runtime and `.eh_frame` is not
-required for the first static C target. POSIX signal and gate-delivery frames
-unwind through the psABI signal frame described below.
+GPR `r0`-`r31`, `LR`, and `TP`. DWARF register numbers are `r0`-`r31` as
+`0`-`31`, `LR` as `32`, and `TP` as `33`. Non-leaf functions should carry
+call-frame information sufficient to recover `r31` as the CFA stack register and
+`LR` as the return address. There is no v0 language exception runtime and
+`.eh_frame` is not required for the first static C target. POSIX signal and
+gate-delivery frames unwind through the psABI signal frame described below.
 
 ## Process Entry
 
