@@ -181,9 +181,17 @@
     {
       "source": "tests/rtl/programs/top_yield_cross_tile_wake.s",
       "generated_flat_hex": "tests/rtl/programs/top_yield_cross_tile_wake.hex",
-      "required_features": ["core", "yield", "scheduler", "event_wake", "cross_tile_wake", "exit"],
+      "required_features": ["core", "sleep", "scheduler", "event_wake", "cross_tile_wake", "exit"],
       "status": "active",
       "rtl_gate": "scripts/run_rtl_top_cross_tile_wake_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    },
+    {
+      "source": "tests/rtl/programs/top_yield.s",
+      "generated_flat_hex": "tests/rtl/programs/top_yield.hex",
+      "required_features": ["core", "yield", "scheduler_hint", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
       "comparison": "retire_trace_and_final_state"
     },
     {

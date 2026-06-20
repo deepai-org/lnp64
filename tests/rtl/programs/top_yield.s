@@ -1,5 +1,4 @@
 .text
-  LI r1, 100
-  SLEEP r1
+  YIELD
   LI r1, 0
   EXIT r1

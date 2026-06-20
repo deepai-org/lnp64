@@ -2045,7 +2045,7 @@ module lnp64_core_tile #(
         end
         thread_window_park_valid = (state == CORE_EXEC &&
             dec.supported &&
-            (dec.opcode == LNP64_OP_YIELD || dec.opcode == LNP64_OP_SLEEP)) ||
+            dec.opcode == LNP64_OP_SLEEP) ||
             thread_join_wait_park_valid;
         thread_window_park_slot = active_thread_slot;
         thread_window_wake_valid =
@@ -3340,14 +3340,10 @@ module lnp64_core_tile #(
                             end
                             LNP64_OP_YIELD: begin
                                 yielded <= 1'b1;
-                                park_submit_valid <= 1'b1;
-                                park_submit_record <= thread_submit_next;
-                                if (wake_valid) begin
-                                    pc <= pc + 32'd1;
-                                    retired_count <= retired_count + 32'd1;
-                                    retire_submit_valid <= 1'b1;
-                                    retire_submit_record <= retire_submit_next;
-                                end
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_SLEEP: begin
                                 thread_sleep_wait_valid[active_thread_slot] <= 1'b1;
