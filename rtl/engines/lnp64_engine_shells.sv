@@ -359,7 +359,11 @@ module lnp64_scheduler #(
     integer sched_state_i;
     lnp64_thread_sched_t pid1_record;
     lnp64_thread_sched_t child_record;
+    lnp64_thread_sched_t child_issue_record;
     logic child_runnable;
+    logic child_issue_pending;
+    logic child_issue_valid;
+    int unsigned child_issue_tile;
 
     function automatic logic is_live_sched_record(input lnp64_thread_sched_t record);
         begin
@@ -409,7 +413,33 @@ module lnp64_scheduler #(
             issue_valid[sched_i] = 1'b0;
             issue_record[sched_i] = '0;
         end
-        if (pid1_runnable && !tile_faulted[0]) begin
+
+        child_issue_pending = child_runnable;
+        child_issue_record = child_record;
+        child_issue_tile = child_record.tile_id;
+        for (sched_i = 0; sched_i < CORE_TILE_COUNT; sched_i = sched_i + 1) begin
+            if (submit_valid[sched_i] &&
+                is_child_record(submit_record[sched_i]) &&
+                submit_record[sched_i].tile_id == sched_i[31:0]) begin
+                child_issue_pending = 1'b1;
+                child_issue_record = submit_record[sched_i];
+                child_issue_record.state = 16'd1;
+                child_issue_record.active_location = submit_record[sched_i].tile_id;
+                child_issue_tile = sched_i;
+            end
+        end
+        child_issue_valid = child_issue_pending &&
+            child_issue_tile < CORE_TILE_COUNT &&
+            !tile_faulted[child_issue_tile];
+
+        if (child_issue_valid) begin
+            issue_valid[child_issue_tile] = 1'b1;
+            issue_tid_flat[child_issue_tile*32 +: 32] = child_issue_record.tid;
+            issue_record[child_issue_tile] = child_issue_record;
+            issue_record[child_issue_tile].state = 16'd1;
+            issue_record[child_issue_tile].tile_id = child_issue_tile[31:0];
+            issue_record[child_issue_tile].active_location = child_issue_tile[31:0];
+        end else if (pid1_runnable && !tile_faulted[0]) begin
             issue_valid[0] = 1'b1;
             issue_tid_flat[31:0] = 32'd1;
             issue_record[0] = pid1_record;
@@ -419,10 +449,14 @@ module lnp64_scheduler #(
         end
 
         no_duplicate_issue = 1'b1;
-        if (issue_valid[0]) begin
-            for (sched_i = 1; sched_i < CORE_TILE_COUNT; sched_i = sched_i + 1) begin
-                if (issue_valid[sched_i]) begin
-                    no_duplicate_issue = 1'b0;
+        for (sched_i = 0; sched_i < CORE_TILE_COUNT; sched_i = sched_i + 1) begin
+            if (issue_valid[sched_i]) begin
+                for (int unsigned dup_i = sched_i + 1; dup_i < CORE_TILE_COUNT; dup_i = dup_i + 1) begin
+                    if (issue_valid[dup_i] &&
+                        issue_record[dup_i].pid == issue_record[sched_i].pid &&
+                        issue_record[dup_i].tid == issue_record[sched_i].tid) begin
+                        no_duplicate_issue = 1'b0;
+                    end
                 end
             end
         end
@@ -486,6 +520,9 @@ module lnp64_scheduler #(
                 pid1_record.state <= 16'd1;
                 pid1_record.active_location <= wake_event.tile_id;
             end
+            if (child_issue_valid && child_runnable) begin
+                child_runnable <= 1'b0;
+            end
             exactly_one_location <= pid1_runnable ^ pid1_parked;
         end
     end
@@ -512,7 +549,8 @@ module lnp64_scheduler #(
                         else $fatal(1, "SG-SCHED scheduler park record tile drift");
                 end
                 if (issue_valid[assert_sched_i]) begin
-                    assert (is_pid1_record(issue_record[assert_sched_i]))
+                    assert (is_pid1_record(issue_record[assert_sched_i]) ||
+                        is_child_record(issue_record[assert_sched_i]))
                         else $fatal(1, "SG-SCHED scheduler issue record missing typed metadata");
                     assert (issue_record[assert_sched_i].tile_id == assert_sched_i[31:0] &&
                         issue_record[assert_sched_i].active_location == assert_sched_i[31:0])

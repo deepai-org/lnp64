@@ -14,6 +14,7 @@ module lnp64_core_tile #(
     input  logic reset_n,
     input  logic tile_enable,
     input  logic release_core,
+    input  logic issue_valid,
     input  lnp64_thread_sched_t issue_context,
     input  logic [31:0] topology_tile_count,
     input  logic [63:0] topology_enabled_tile_mask,
@@ -106,6 +107,7 @@ module lnp64_core_tile #(
     logic active_thread_event_pending;
     logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] active_thread_slot;
     logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] next_thread_slot;
+    logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] switch_thread_slot;
     logic [THREAD_CONTEXT_COUNT-1:0] thread_active_mask;
     logic [THREAD_CONTEXT_COUNT-1:0] thread_parked_mask;
     logic [THREAD_CONTEXT_COUNT-1:0] thread_completed_mask;
@@ -118,6 +120,8 @@ module lnp64_core_tile #(
     logic thread_window_activate_valid;
     logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] thread_window_activate_slot;
     lnp64_thread_sched_t thread_window_activate_context;
+    logic scheduler_child_issue_valid;
+    lnp64_thread_sched_t clone_child_context;
     logic thread_window_complete_valid;
     logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] thread_window_complete_slot;
     logic thread_window_collect_valid;
@@ -1654,28 +1658,40 @@ module lnp64_core_tile #(
         thread_window_seed_valid = state == CORE_WAIT_RELEASE && tile_enable && release_core;
         thread_window_seed_slot = '0;
         thread_window_seed_context = issue_context;
-        thread_window_activate_valid = state == CORE_EXEC &&
-            dec.supported &&
-            dec.opcode == LNP64_OP_CLONE &&
-            active_thread_slot == '0 &&
+        scheduler_child_issue_valid =
+            tile_enable &&
+            issue_valid &&
+            state != CORE_WAIT_RELEASE &&
+            state != CORE_DONE &&
             THREAD_CONTEXT_COUNT > 1 &&
-            !thread_active_mask[1];
+            issue_context.pid == active_thread_context.pid &&
+            issue_context.tid == 32'd2 &&
+            issue_context.tile_id == TILE_ID[31:0] &&
+            issue_context.active_location == TILE_ID[31:0] &&
+            issue_context.domain_id == active_thread_context.domain_id &&
+            issue_context.domain_gen == active_thread_context.domain_gen &&
+            issue_context.dispatch_eligible &&
+            ((issue_context.effective_tile_mask & (32'd1 << TILE_ID)) != 32'd0) &&
+            !thread_active_mask[1] &&
+            !thread_completed_mask[1];
+        thread_window_activate_valid = scheduler_child_issue_valid;
         thread_window_activate_slot = 1;
-        thread_window_activate_context = '0;
-        thread_window_activate_context.pid = active_thread_context.pid;
-        thread_window_activate_context.tid = 32'd2;
-        thread_window_activate_context.tile_id = TILE_ID[31:0];
-        thread_window_activate_context.domain_id = active_thread_context.domain_id;
-        thread_window_activate_context.domain_gen = active_thread_context.domain_gen;
-        thread_window_activate_context.state = 16'd1;
-        thread_window_activate_context.latency_class = active_thread_context.latency_class;
-        thread_window_activate_context.wait_generation = active_thread_context.wait_generation;
-        thread_window_activate_context.weight_index = active_thread_context.weight_index;
-        thread_window_activate_context.virtual_deadline = active_thread_context.virtual_deadline;
-        thread_window_activate_context.dispatch_eligible = active_thread_context.dispatch_eligible;
-        thread_window_activate_context.effective_tile_mask = active_thread_context.effective_tile_mask;
-        thread_window_activate_context.migration_generation = active_thread_context.migration_generation;
-        thread_window_activate_context.active_location = TILE_ID[31:0];
+        thread_window_activate_context = issue_context;
+        clone_child_context = '0;
+        clone_child_context.pid = active_thread_context.pid;
+        clone_child_context.tid = 32'd2;
+        clone_child_context.tile_id = TILE_ID[31:0];
+        clone_child_context.domain_id = active_thread_context.domain_id;
+        clone_child_context.domain_gen = active_thread_context.domain_gen;
+        clone_child_context.state = 16'd1;
+        clone_child_context.latency_class = active_thread_context.latency_class;
+        clone_child_context.wait_generation = active_thread_context.wait_generation;
+        clone_child_context.weight_index = active_thread_context.weight_index;
+        clone_child_context.virtual_deadline = active_thread_context.virtual_deadline;
+        clone_child_context.dispatch_eligible = active_thread_context.dispatch_eligible;
+        clone_child_context.effective_tile_mask = active_thread_context.effective_tile_mask;
+        clone_child_context.migration_generation = active_thread_context.migration_generation;
+        clone_child_context.active_location = TILE_ID[31:0];
         thread_window_complete_valid = state == CORE_EXEC &&
             dec.supported &&
             dec.opcode == LNP64_OP_EXIT;
@@ -1697,6 +1713,8 @@ module lnp64_core_tile #(
         thread_window_event_slot = '0;
         thread_window_fault_valid = state == CORE_EXEC && !dec.supported;
         thread_window_fault_slot = active_thread_slot;
+        switch_thread_slot = scheduler_child_issue_valid ?
+            THREAD_CONTEXT_INDEX_WIDTH'(1) : next_thread_slot;
     end
 
     lnp64_thread_window #(
@@ -3421,14 +3439,15 @@ module lnp64_core_tile #(
                             LNP64_OP_CLONE: begin
                                 if (active_thread_slot == 1'b0 && !thread_active_mask[1]) begin
 `ifndef SYNTHESIS
-                                    assert (thread_window_activate_valid &&
-                                        thread_window_activate_context.tid == 32'd2 &&
-                                        thread_window_activate_context.pid == active_thread_context.pid &&
-                                        thread_window_activate_context.domain_id == active_thread_context.domain_id &&
-                                        thread_window_activate_context.domain_gen == active_thread_context.domain_gen &&
-                                        thread_window_activate_context.tile_id == TILE_ID[31:0] &&
-                                        thread_window_activate_context.active_location == TILE_ID[31:0])
-                                        else $fatal(1, "SG-SCHED clone submit did not match activated child context");
+                                    assert (!thread_window_activate_valid)
+                                        else $fatal(1, "SG-SCHED clone bypassed scheduler admission");
+                                    assert (clone_child_context.tid == 32'd2 &&
+                                        clone_child_context.pid == active_thread_context.pid &&
+                                        clone_child_context.domain_id == active_thread_context.domain_id &&
+                                        clone_child_context.domain_gen == active_thread_context.domain_gen &&
+                                        clone_child_context.tile_id == TILE_ID[31:0] &&
+                                        clone_child_context.active_location == TILE_ID[31:0])
+                                        else $fatal(1, "SG-SCHED clone submit did not match child context");
 `endif
                                     for (i = 0; i < 32; i = i + 1) begin
                                         thread_gpr[1][i] <= gpr[i];
@@ -3452,7 +3471,7 @@ module lnp64_core_tile #(
                                     gpr[dec.rd] <= 64'd2;
                                     errno_reg <= LNP64_ERR_OK;
                                     submit_valid <= 1'b1;
-                                    submit_record <= thread_window_activate_context;
+                                    submit_record <= clone_child_context;
                                 end else begin
                                     gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= LNP64_ERR_EAGAIN;
@@ -4111,21 +4130,21 @@ module lnp64_core_tile #(
                     for (i = 0; i < RETURN_STACK_DEPTH; i = i + 1) begin
                         thread_return_stack[active_thread_slot][i] <= return_stack[i];
                     end
-                    if (next_thread_slot != active_thread_slot) begin
-                        pc <= thread_pc[next_thread_slot];
-                        return_stack_depth <= thread_return_stack_depth[next_thread_slot];
-                        link_register <= thread_link_register[next_thread_slot];
-                        pcr_thread_pointer <= thread_pcr_tp[next_thread_slot];
-                        cmp_zero <= thread_cmp_zero[next_thread_slot];
-                        cmp_negative <= thread_cmp_negative[next_thread_slot];
-                        cmp_greater <= thread_cmp_greater[next_thread_slot];
-                        cmp_below <= thread_cmp_below[next_thread_slot];
-                        cmp_above <= thread_cmp_above[next_thread_slot];
+                    if (switch_thread_slot != active_thread_slot) begin
+                        pc <= thread_pc[switch_thread_slot];
+                        return_stack_depth <= thread_return_stack_depth[switch_thread_slot];
+                        link_register <= thread_link_register[switch_thread_slot];
+                        pcr_thread_pointer <= thread_pcr_tp[switch_thread_slot];
+                        cmp_zero <= thread_cmp_zero[switch_thread_slot];
+                        cmp_negative <= thread_cmp_negative[switch_thread_slot];
+                        cmp_greater <= thread_cmp_greater[switch_thread_slot];
+                        cmp_below <= thread_cmp_below[switch_thread_slot];
+                        cmp_above <= thread_cmp_above[switch_thread_slot];
                         for (i = 0; i < 32; i = i + 1) begin
-                            gpr[i] <= thread_gpr[next_thread_slot][i];
+                            gpr[i] <= thread_gpr[switch_thread_slot][i];
                         end
                         for (i = 0; i < RETURN_STACK_DEPTH; i = i + 1) begin
-                            return_stack[i] <= thread_return_stack[next_thread_slot][i];
+                            return_stack[i] <= thread_return_stack[switch_thread_slot][i];
                         end
                     end
                     state <= CORE_EXEC;

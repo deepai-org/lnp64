@@ -215,7 +215,7 @@ module lnp64_thread_window #(
                         context_record_q[active_slot_q].virtual_deadline +
                         deadline_charge_for_weight(context_record_q[active_slot_q].weight_index);
                 end
-                active_slot_q <= next_slot;
+                active_slot_q <= activate_valid ? activate_slot : next_slot;
             end
         end
     end
