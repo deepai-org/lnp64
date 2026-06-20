@@ -18,7 +18,10 @@ module lnp64_m6_service (
     output logic returned_cap_narrowed,
     output logic cancel_terminal,
     output logic stale_service_rejected,
-    output logic crash_completed
+    output logic crash_completed,
+    output logic typed_commit_valid,
+    output lnp64_m6_service_commit_t typed_commit,
+    output lnp64_m6_state_projection_t typed_state_projection
 );
     typedef enum logic [3:0] {
         S_RESET,
@@ -123,9 +126,46 @@ module lnp64_m6_service (
         return seeded_continuation(seed) + 32'd1;
     endfunction
 
+    task automatic commit_m6(
+        input lnp64_m6_service_op_e op,
+        input logic [15:0] status,
+        input logic [63:0] req_rights,
+        input logic [63:0] ret_rights
+    );
+        typed_commit_valid <= 1'b1;
+        typed_commit.op <= op;
+        typed_commit.status <= status;
+        typed_commit.service_id <= seeded_service_id(scenario_seed);
+        typed_commit.op_id <= seeded_op_id(scenario_seed);
+        typed_commit.continuation_generation <= continuation_generation;
+        typed_commit.service_generation <= service_generation;
+        typed_commit.requested_rights <= req_rights;
+        typed_commit.returned_rights <= ret_rights;
+    endtask
+
+    always_comb begin
+        typed_state_projection = '0;
+        typed_state_projection.op = typed_commit.op;
+        typed_state_projection.status = typed_commit.status;
+        typed_state_projection.service_generation = service_generation;
+        typed_state_projection.continuation_generation = continuation_generation;
+        typed_state_projection.installed_caps = installed_caps;
+        typed_state_projection.completions = completions;
+        typed_state_projection.envelope_validated = envelope_validated;
+        typed_state_projection.namespace_dispatched = namespace_dispatched;
+        typed_state_projection.service_continuation_created = service_continuation_created;
+        typed_state_projection.cap_return_installed = cap_return_installed;
+        typed_state_projection.returned_cap_narrowed = returned_cap_narrowed;
+        typed_state_projection.cancel_terminal = cancel_terminal;
+        typed_state_projection.stale_service_rejected = stale_service_rejected;
+        typed_state_projection.crash_completed = crash_completed;
+    end
+
     always_ff @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
             state <= S_RESET;
+            typed_commit_valid <= 1'b0;
+            typed_commit <= '0;
             done <= 1'b0;
             trace_valid <= 1'b0;
             trace_code <= 8'd0;
@@ -147,6 +187,7 @@ module lnp64_m6_service (
             returned_rights <= 64'd0;
         end else begin
             trace_valid <= 1'b0;
+            typed_commit_valid <= 1'b0;
             unique case (state)
                 S_RESET: begin
                     if (start) begin
@@ -164,6 +205,7 @@ module lnp64_m6_service (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd2;
                     trace_value <= {16'd1, PROFILE_NAMESPACE, 32'd1};
+                    commit_m6(LNP64_M6_COMMIT_ENVELOPE, LNP64_STATUS_OK, 64'd0, 64'd0);
                     state <= S_NS_DISPATCH;
                 end
                 S_NS_DISPATCH: begin
@@ -171,6 +213,7 @@ module lnp64_m6_service (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd3;
                     trace_value <= {SELECTOR_OPEN, seeded_path_len(scenario_seed), seeded_service_id(scenario_seed)};
+                    commit_m6(LNP64_M6_COMMIT_NS_DISPATCH, LNP64_STATUS_OK, 64'd0, 64'd0);
                     state <= S_SERVICE_REQUEST;
                 end
                 S_SERVICE_REQUEST: begin
@@ -179,6 +222,7 @@ module lnp64_m6_service (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd4;
                     trace_value <= {seeded_op_id(scenario_seed), seeded_continuation(scenario_seed)};
+                    commit_m6(LNP64_M6_COMMIT_SERVICE_REQUEST, LNP64_STATUS_OK, 64'd0, 64'd0);
                     state <= S_CAP_RETURN;
                 end
                 S_CAP_RETURN: begin
@@ -192,6 +236,7 @@ module lnp64_m6_service (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd5;
                     trace_value <= {seeded_cap_object(scenario_seed), seeded_returned_rights_trace(scenario_seed)};
+                    commit_m6(LNP64_M6_COMMIT_CAP_RETURN, LNP64_STATUS_OK, RIGHT_READ | RIGHT_WRITE, seeded_returned_rights(scenario_seed));
                     state <= S_SERVICE_CANCEL;
                 end
                 S_SERVICE_CANCEL: begin
@@ -200,6 +245,7 @@ module lnp64_m6_service (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd6;
                     trace_value <= {seeded_cancel_continuation(scenario_seed), 16'd0, LNP64_ERR_ECANCELED};
+                    commit_m6(LNP64_M6_COMMIT_SERVICE_CANCEL, LNP64_ERR_ECANCELED, 64'd0, 64'd0);
                     state <= S_STALE_SERVICE;
                 end
                 S_STALE_SERVICE: begin
@@ -209,6 +255,7 @@ module lnp64_m6_service (
                         trace_valid <= 1'b1;
                         trace_code <= 8'd7;
                         trace_value <= {48'd0, LNP64_ERR_EREVOKED};
+                        commit_m6(LNP64_M6_COMMIT_STALE_SERVICE, LNP64_ERR_EREVOKED, 64'd0, 64'd0);
                         state <= S_CRASH_COMPLETION;
                     end else begin
                         state <= S_DONE;
@@ -220,6 +267,7 @@ module lnp64_m6_service (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd8;
                     trace_value <= {48'd0, LNP64_ERR_EIO};
+                    commit_m6(LNP64_M6_COMMIT_CRASH_COMPLETION, LNP64_ERR_EIO, 64'd0, 64'd0);
                     state <= S_DONE;
                 end
                 S_DONE: begin

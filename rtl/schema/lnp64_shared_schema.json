@@ -270,6 +270,15 @@
       "LNP64_M2_COMMIT_FAULT_DELIVERY=8'd6",
       "LNP64_M2_COMMIT_SIGNAL_COMPAT=8'd7"
     ],
+    "lnp64_m6_service_op_e": [
+      "LNP64_M6_COMMIT_ENVELOPE=8'd1",
+      "LNP64_M6_COMMIT_NS_DISPATCH=8'd2",
+      "LNP64_M6_COMMIT_SERVICE_REQUEST=8'd3",
+      "LNP64_M6_COMMIT_CAP_RETURN=8'd4",
+      "LNP64_M6_COMMIT_SERVICE_CANCEL=8'd5",
+      "LNP64_M6_COMMIT_STALE_SERVICE=8'd6",
+      "LNP64_M6_COMMIT_CRASH_COMPLETION=8'd7"
+    ],
     "lnp64_m3_process_op_e": [
       "LNP64_M3_COMMIT_CLONE=8'd1",
       "LNP64_M3_COMMIT_CHILD_EXIT=8'd2",
@@ -416,7 +425,9 @@
       "lnp64_m14_domain_commit_t",
       "lnp64_m14_state_projection_t",
       "lnp64_m3_process_commit_t",
-      "lnp64_m3_state_projection_t"
+      "lnp64_m3_state_projection_t",
+      "lnp64_m6_service_commit_t",
+      "lnp64_m6_state_projection_t"
     ],
     "ras_and_attestation": [
       "lnp64_error_cancel_t",
@@ -445,6 +456,8 @@
     "lnp64_m5_state_projection_t": ["op:8", "status:16", "dst_buffer_id:32", "dst_generation:32", "requester_domain:32", "dst_domain:32", "dst_rights:8", "dst_pinned:1", "completions:32", "dst_visible:1", "pin_completed:1", "unpin_completed:1", "copy_completed:1", "fill_completed:1", "permission_faulted:1", "revoke_rejected:1", "domain_isolation_enforced:1", "coherence_observed:1", "completions_exact:1"],
     "lnp64_m2_gate_commit_t": ["op:8", "status:16", "continuation_id:32", "continuation_generation:32", "caller_tid:32", "callee_tid:32", "mode:16"],
     "lnp64_m2_state_projection_t": ["op:8", "status:16", "caller_loc:2", "callee_loc:2", "continuation_valid:1", "continuation_id:32", "continuation_generation:32", "delivered_faults:32", "continuation_unique:1", "sync_roundtrip_ok:1", "async_delivery_ok:1", "handoff_delivery_ok:1", "stale_continuation_rejected:1", "fault_delivery_gate_ok:1", "signal_compatibility_ok:1"],
+    "lnp64_m6_service_commit_t": ["op:8", "status:16", "service_id:32", "op_id:32", "continuation_generation:32", "service_generation:32", "requested_rights:64", "returned_rights:64"],
+    "lnp64_m6_state_projection_t": ["op:8", "status:16", "service_generation:32", "continuation_generation:32", "installed_caps:32", "completions:32", "envelope_validated:1", "namespace_dispatched:1", "service_continuation_created:1", "cap_return_installed:1", "returned_cap_narrowed:1", "cancel_terminal:1", "stale_service_rejected:1", "crash_completed:1"],
     "lnp64_m3_process_commit_t": ["op:8", "status:16", "parent_tid:32", "child_tid:32", "child_generation:32", "join_generation:32", "exec_epoch:32", "exit_code:32"],
     "lnp64_m3_state_projection_t": ["op:8", "status:16", "parent_state:2", "child_state:2", "parent_tid:32", "child_tid:32", "child_generation:32", "join_generation:32", "exec_epoch:32", "clone_created:1", "child_exit_signaled:1", "parent_join_completed:1", "exec_barrier_stopped_sibling:1", "stale_join_rejected:1", "exec_cancel_terminal:1", "exactly_one_thread_location:1"],
     "lnp64_m14_domain_commit_t": ["op:8", "status:16", "root_domain:32", "child_domain:32", "child_budget:32", "parent_budget:32", "requested_rights:64", "delegated_rights:64"],

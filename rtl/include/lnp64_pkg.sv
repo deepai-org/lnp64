@@ -275,6 +275,16 @@ package lnp64_pkg;
     } lnp64_m2_gate_op_e;
 
     typedef enum logic [7:0] {
+        LNP64_M6_COMMIT_ENVELOPE         = 8'd1,
+        LNP64_M6_COMMIT_NS_DISPATCH      = 8'd2,
+        LNP64_M6_COMMIT_SERVICE_REQUEST  = 8'd3,
+        LNP64_M6_COMMIT_CAP_RETURN       = 8'd4,
+        LNP64_M6_COMMIT_SERVICE_CANCEL   = 8'd5,
+        LNP64_M6_COMMIT_STALE_SERVICE    = 8'd6,
+        LNP64_M6_COMMIT_CRASH_COMPLETION = 8'd7
+    } lnp64_m6_service_op_e;
+
+    typedef enum logic [7:0] {
         LNP64_M3_COMMIT_CLONE         = 8'd1,
         LNP64_M3_COMMIT_CHILD_EXIT    = 8'd2,
         LNP64_M3_COMMIT_PARENT_JOIN   = 8'd3,
@@ -645,6 +655,34 @@ package lnp64_pkg;
         logic        fault_delivery_gate_ok;
         logic        signal_compatibility_ok;
     } lnp64_m2_state_projection_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] service_id;
+        logic [31:0] op_id;
+        logic [31:0] continuation_generation;
+        logic [31:0] service_generation;
+        logic [63:0] requested_rights;
+        logic [63:0] returned_rights;
+    } lnp64_m6_service_commit_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] service_generation;
+        logic [31:0] continuation_generation;
+        logic [31:0] installed_caps;
+        logic [31:0] completions;
+        logic        envelope_validated;
+        logic        namespace_dispatched;
+        logic        service_continuation_created;
+        logic        cap_return_installed;
+        logic        returned_cap_narrowed;
+        logic        cancel_terminal;
+        logic        stale_service_rejected;
+        logic        crash_completed;
+    } lnp64_m6_state_projection_t;
 
     typedef struct packed {
         logic [7:0]  op;

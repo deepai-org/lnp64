@@ -204,4 +204,129 @@ theorem m6_crash_completion_recorded :
     writeRight
   ]
 
+/- Packed-bit decode model for the M6 service-boundary witness.
+
+Mirrors the M1/M2/M3/M4/M5/M7/M14 packed-bit machinery so the emitted
+lnp64_m6_service_commit_t and lnp64_m6_state_projection_t bit vectors can be
+decode-checked against this Lean model. Every M6 field is a plain scalar/bool
+slice. -/
+
+structure PackedFieldLayout where
+  name : String
+  width : Nat
+  lsb : Nat
+  msb : Nat
+deriving DecidableEq, Repr
+
+def packedSchemaWidth (schema : List (String × Nat)) : Nat :=
+  schema.foldl (fun total field => total + field.2) 0
+
+def packedSchemaLayoutFrom : Nat -> List (String × Nat) -> List PackedFieldLayout
+  | _cursor, [] => []
+  | cursor, field :: rest =>
+      let lsb := cursor - field.2
+      { name := field.1, width := field.2, lsb := lsb, msb := cursor - 1 } ::
+        packedSchemaLayoutFrom lsb rest
+
+def packedSchemaLayout (schema : List (String × Nat)) : List PackedFieldLayout :=
+  packedSchemaLayoutFrom (packedSchemaWidth schema) schema
+
+def packedFieldWithinWidth (totalWidth : Nat) (field : PackedFieldLayout) : Bool :=
+  decide (field.width > 0) &&
+  decide (field.lsb + field.width = field.msb + 1) &&
+  decide (field.msb < totalWidth)
+
+def packedLayoutWithinWidth (totalWidth : Nat) (layout : List PackedFieldLayout) : Bool :=
+  layout.all (packedFieldWithinWidth totalWidth)
+
+def packedLayoutStartsAtWidth (totalWidth : Nat) : List PackedFieldLayout -> Bool
+  | [] => decide (totalWidth = 0)
+  | field :: _rest => decide (field.msb + 1 = totalWidth)
+
+def packedLayoutAdjacentContiguous : List PackedFieldLayout -> Bool
+  | [] => true
+  | _field :: [] => true
+  | first :: second :: rest =>
+      decide (first.lsb = second.msb + 1) &&
+      packedLayoutAdjacentContiguous (second :: rest)
+
+def packedLayoutEndsAtZero : List PackedFieldLayout -> Bool
+  | [] => true
+  | field :: [] => decide (field.lsb = 0)
+  | _field :: rest => packedLayoutEndsAtZero rest
+
+def packedLayoutCoversWidth (totalWidth : Nat) (layout : List PackedFieldLayout) : Bool :=
+  packedLayoutWithinWidth totalWidth layout &&
+  packedLayoutStartsAtWidth totalWidth layout &&
+  packedLayoutAdjacentContiguous layout &&
+  packedLayoutEndsAtZero layout
+
+def packedBitSlice (bits lsb width : Nat) : Nat :=
+  (bits / (2 ^ lsb)) % (2 ^ width)
+
+def packedFieldValue (bits : Nat) (field : PackedFieldLayout) : Nat :=
+  packedBitSlice bits field.lsb field.width
+
+def packedLayoutFieldValue
+    (bits : Nat)
+    (fieldName : String) : List PackedFieldLayout -> Option Nat
+  | [] => none
+  | field :: rest =>
+      if field.name == fieldName then
+        some (packedFieldValue bits field)
+      else
+        packedLayoutFieldValue bits fieldName rest
+
+def rtlM6CommitPackedSchema : List (String × Nat) :=
+  [ ("op", 8)
+  , ("status", 16)
+  , ("service_id", 32)
+  , ("op_id", 32)
+  , ("continuation_generation", 32)
+  , ("service_generation", 32)
+  , ("requested_rights", 64)
+  , ("returned_rights", 64) ]
+
+def rtlM6StateProjectionPackedSchema : List (String × Nat) :=
+  [ ("op", 8)
+  , ("status", 16)
+  , ("service_generation", 32)
+  , ("continuation_generation", 32)
+  , ("installed_caps", 32)
+  , ("completions", 32)
+  , ("envelope_validated", 1)
+  , ("namespace_dispatched", 1)
+  , ("service_continuation_created", 1)
+  , ("cap_return_installed", 1)
+  , ("returned_cap_narrowed", 1)
+  , ("cancel_terminal", 1)
+  , ("stale_service_rejected", 1)
+  , ("crash_completed", 1) ]
+
+def rtlM6CommitPackedLayout : List PackedFieldLayout :=
+  packedSchemaLayout rtlM6CommitPackedSchema
+
+def rtlM6StateProjectionPackedLayout : List PackedFieldLayout :=
+  packedSchemaLayout rtlM6StateProjectionPackedSchema
+
+theorem rtlM6CommitPackedSchema_width :
+    packedSchemaWidth rtlM6CommitPackedSchema = 280 := by
+  decide
+
+theorem rtlM6StateProjectionPackedSchema_width :
+    packedSchemaWidth rtlM6StateProjectionPackedSchema = 160 := by
+  decide
+
+theorem rtlM6CommitPackedLayout_covers_schema_width :
+    packedLayoutCoversWidth
+      (packedSchemaWidth rtlM6CommitPackedSchema)
+      rtlM6CommitPackedLayout = true := by
+  decide
+
+theorem rtlM6StateProjectionPackedLayout_covers_schema_width :
+    packedLayoutCoversWidth
+      (packedSchemaWidth rtlM6StateProjectionPackedSchema)
+      rtlM6StateProjectionPackedLayout = true := by
+  decide
+
 end Lnp64.M6

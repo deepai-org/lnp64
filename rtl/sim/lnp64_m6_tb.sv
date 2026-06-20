@@ -19,6 +19,9 @@ module lnp64_m6_tb;
     logic cancel_terminal;
     logic stale_service_rejected;
     logic crash_completed;
+    logic typed_commit_valid;
+    lnp64_m6_service_commit_t typed_commit;
+    lnp64_m6_state_projection_t typed_state_projection;
 
     lnp64_m6_service dut(
         .clk(clk),
@@ -36,7 +39,10 @@ module lnp64_m6_tb;
         .returned_cap_narrowed(returned_cap_narrowed),
         .cancel_terminal(cancel_terminal),
         .stale_service_rejected(stale_service_rejected),
-        .crash_completed(crash_completed)
+        .crash_completed(crash_completed),
+        .typed_commit_valid(typed_commit_valid),
+        .typed_commit(typed_commit),
+        .typed_state_projection(typed_state_projection)
     );
 
     lnp64_m6_assertions assertions_i(
@@ -104,6 +110,46 @@ module lnp64_m6_tb;
                 );
                 default: $display("TRACE unknown code=%0d value=%0d", trace_code, trace_value);
             endcase
+        end
+        if (typed_commit_valid) begin
+            $display(
+                "TTRACE_M6 {\"record\":\"m6_service_commit\",\"op\":%0d,\"status\":%0d,\"service_id\":%0d,\"op_id\":%0d,\"continuation_generation\":%0d,\"service_generation\":%0d,\"requested_rights\":%0d,\"returned_rights\":%0d}",
+                typed_commit.op,
+                typed_commit.status,
+                typed_commit.service_id,
+                typed_commit.op_id,
+                typed_commit.continuation_generation,
+                typed_commit.service_generation,
+                typed_commit.requested_rights,
+                typed_commit.returned_rights
+            );
+            $display(
+                "TTRACE_M6_BITS {\"record\":\"m6_service_commit_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m6_service_commit_t),
+                typed_commit
+            );
+            $display(
+                "TTRACE_M6_STATE {\"record\":\"m6_state_projection\",\"op\":%0d,\"status\":%0d,\"service_generation\":%0d,\"continuation_generation\":%0d,\"installed_caps\":%0d,\"completions\":%0d,\"envelope_validated\":%0d,\"namespace_dispatched\":%0d,\"service_continuation_created\":%0d,\"cap_return_installed\":%0d,\"returned_cap_narrowed\":%0d,\"cancel_terminal\":%0d,\"stale_service_rejected\":%0d,\"crash_completed\":%0d}",
+                typed_state_projection.op,
+                typed_state_projection.status,
+                typed_state_projection.service_generation,
+                typed_state_projection.continuation_generation,
+                typed_state_projection.installed_caps,
+                typed_state_projection.completions,
+                typed_state_projection.envelope_validated,
+                typed_state_projection.namespace_dispatched,
+                typed_state_projection.service_continuation_created,
+                typed_state_projection.cap_return_installed,
+                typed_state_projection.returned_cap_narrowed,
+                typed_state_projection.cancel_terminal,
+                typed_state_projection.stale_service_rejected,
+                typed_state_projection.crash_completed
+            );
+            $display(
+                "TTRACE_M6_STATE_BITS {\"record\":\"m6_state_projection_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m6_state_projection_t),
+                typed_state_projection
+            );
         end
     end
 
