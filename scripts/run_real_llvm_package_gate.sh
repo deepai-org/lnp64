@@ -36,6 +36,7 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-sbase-tee-linked.elf"
         "$build_dir/lnp64-sbase-cp-linked.elf"
         "$build_dir/lnp64-sbase-cut-linked.elf"
+        "$build_dir/lnp64-sbase-tr-linked.elf"
         "$build_dir/lnp64-sbase-ls-linked.elf"
         "$build_dir/lnp64-sbase-find-linked.elf"
         "$build_dir/lnp64-sbase-mkdir-linked.elf"
@@ -89,6 +90,7 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-sbase-tee-linked.elf"
         "$build_dir/lnp64-sbase-cp-linked.elf"
         "$build_dir/lnp64-sbase-cut-linked.elf"
+        "$build_dir/lnp64-sbase-tr-linked.elf"
         "$build_dir/lnp64-sbase-ls-linked.elf"
         "$build_dir/lnp64-sbase-find-linked.elf"
         "$build_dir/lnp64-sbase-mkdir-linked.elf"
@@ -330,6 +332,15 @@ run_package() {
       grep -q 'exit=0' <<<"$sbase_cut_output"
       printf 'real LLVM LNP64 run-elf sbase cut execution passed: %s\n' \
         "$build_dir/lnp64-sbase-cut-linked.elf"
+      "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-tr-linked.elf" >/dev/null
+      local sbase_tr_output
+      sbase_tr_output="$(printf 'mixed Case 123\n' | "$lnp64_bin" run-elf \
+        --namespace-root "$sbase_fixture_root" \
+        "$build_dir/lnp64-sbase-tr-linked.elf" tr 'a-z' 'A-Z')"
+      grep -q '^MIXED CASE 123$' <<<"$sbase_tr_output"
+      grep -q 'exit=0' <<<"$sbase_tr_output"
+      printf 'real LLVM LNP64 run-elf sbase tr execution passed: %s\n' \
+        "$build_dir/lnp64-sbase-tr-linked.elf"
       "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-ls-linked.elf" >/dev/null
       local sbase_ls_output
       sbase_ls_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \

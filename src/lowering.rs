@@ -1670,6 +1670,8 @@ mod tests {
             "sbase_cp_run_elf",
             "sbase_cut_static_link",
             "sbase_cut_run_elf",
+            "sbase_tr_static_link",
+            "sbase_tr_run_elf",
             "sbase_ls_static_link",
             "sbase_ls_run_elf",
             "sbase_find_static_link",
@@ -3723,6 +3725,13 @@ mod tests {
         assert!(libc_sbase_head_min.contains("int getchar(void)"));
         assert!(libc_sbase_head_min.contains("void xvprintf("));
         assert!(libc_sbase_head_min.contains("struct dirent *readdir(DIR *dirp)"));
+        assert!(libc_sbase_head_min.contains("int chartorune(Rune *r"));
+        assert!(libc_sbase_head_min.contains("size_t utflen(const char *s)"));
+        assert!(libc_sbase_head_min.contains("size_t utftorunestr(const char *s, Rune *r)"));
+        assert!(libc_sbase_head_min.contains("int efgetrune(Rune *r, FILE *stream"));
+        assert!(libc_sbase_head_min.contains("int efputrune(const Rune *r, FILE *stream"));
+        assert!(libc_sbase_head_min.contains("int isalnumrune(Rune r)"));
+        assert!(libc_sbase_head_min.contains("Rune toupperrune(Rune r)"));
         assert!(libc_sbase_head_min.contains("void weprintf("));
         assert!(libc_sbase_head_min.contains("void enprintf("));
         assert!(libc_sbase_head_min.contains("int fprintf(FILE *stream"));
@@ -3785,6 +3794,10 @@ mod tests {
         assert!(real_llc.contains(r#""$build_dir/sbase-cut-clang-smoke.o" \"#));
         assert!(real_llc.contains(r#""$libc_fd_impl_obj" "$libc_convert_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld sbase cut link smoke passed"));
+        assert!(real_llc.contains("lnp64-sbase-tr-linked.elf"));
+        assert!(real_llc.contains(r#""$build_dir/sbase-tr-clang-smoke.o" \"#));
+        assert!(real_llc.contains(r#""$libc_fd_impl_obj" "$libc_string_impl_obj""#));
+        assert!(real_llc.contains("real LLVM LNP64 lld sbase tr link smoke passed"));
         assert!(real_llc.contains("lnp64-sbase-mkdir-linked.elf"));
         assert!(real_llc.contains(r#""$build_dir/sbase-mkdir-clang-smoke.o" \"#));
         assert!(real_llc.contains(r#""$sbase_fs_support_impl_obj" \"#));
@@ -4344,6 +4357,10 @@ mod tests {
         assert!(real_llc_docker.contains("lnp64-sbase-cut-linked.elf"));
         assert!(real_llc_docker.contains("cut -f 2 input/cut.txt"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase cut execution passed"));
+        assert!(real_llc_docker.contains("lnp64-sbase-tr-linked.elf"));
+        assert!(real_llc_docker.contains("tr 'a-z' 'A-Z'"));
+        assert!(real_llc_docker.contains("^MIXED CASE 123$"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase tr execution passed"));
         assert!(real_llc_docker.contains("lnp64-sbase-ls-linked.elf"));
         assert!(real_llc_docker.contains("ls input"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase ls execution passed"));
@@ -6449,6 +6466,7 @@ mod tests {
             "lnp64-sbase-tee-linked.elf",
             "lnp64-sbase-cp-linked.elf",
             "lnp64-sbase-cut-linked.elf",
+            "lnp64-sbase-tr-linked.elf",
             "lnp64-sbase-ls-linked.elf",
             "lnp64-sbase-find-linked.elf",
             "lnp64-sbase-mkdir-linked.elf",
@@ -6471,6 +6489,7 @@ mod tests {
             "real LLVM LNP64 run-elf sbase tee execution passed",
             "real LLVM LNP64 run-elf sbase cp execution passed",
             "real LLVM LNP64 run-elf sbase cut execution passed",
+            "real LLVM LNP64 run-elf sbase tr execution passed",
             "real LLVM LNP64 run-elf sbase ls execution passed",
             "real LLVM LNP64 run-elf sbase find execution passed",
             "real LLVM LNP64 run-elf sbase mkdir execution passed",

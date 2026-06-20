@@ -61,6 +61,72 @@ int charntorune(Rune *r, const char *s, size_t n) {
   return 1;
 }
 
+int chartorune(Rune *r, const char *s) { return charntorune(r, s, 1); }
+
+int runetochar(char *s, const Rune *r) {
+  if (!s || !r)
+    return 0;
+  s[0] = (*r >= 0 && *r < 0x80) ? (char)*r : '?';
+  return 1;
+}
+
+size_t utflen(const char *s) { return strlen(s); }
+
+size_t utftorunestr(const char *s, Rune *r) {
+  size_t len = 0;
+  while (s[len]) {
+    r[len] = (unsigned char)s[len];
+    len++;
+  }
+  r[len] = 0;
+  return len;
+}
+
+static int lnp64_isalpha(Rune r) {
+  return (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z');
+}
+
+static int lnp64_isdigit(Rune r) { return r >= '0' && r <= '9'; }
+
+int isalpharune(Rune r) { return lnp64_isalpha(r); }
+
+int isdigitrune(Rune r) { return lnp64_isdigit(r); }
+
+int isalnumrune(Rune r) { return lnp64_isalpha(r) || lnp64_isdigit(r); }
+
+int isblankrune(Rune r) { return r == ' ' || r == '\t'; }
+
+int iscntrlrune(Rune r) { return (r >= 0 && r < 0x20) || r == 0x7f; }
+
+int isgraphrune(Rune r) { return r > ' ' && r < 0x7f; }
+
+int islowerrune(Rune r) { return r >= 'a' && r <= 'z'; }
+
+int isprintrune(Rune r) { return r >= ' ' && r < 0x7f; }
+
+int ispunctrune(Rune r) {
+  return isgraphrune(r) && !isalnumrune(r);
+}
+
+int isspacerune(Rune r) {
+  return r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == '\f' ||
+         r == '\v';
+}
+
+int isupperrune(Rune r) { return r >= 'A' && r <= 'Z'; }
+
+int isxdigitrune(Rune r) {
+  return lnp64_isdigit(r) || (r >= 'A' && r <= 'F') || (r >= 'a' && r <= 'f');
+}
+
+Rune tolowerrune(Rune r) {
+  return isupperrune(r) ? r + ('a' - 'A') : r;
+}
+
+Rune toupperrune(Rune r) {
+  return islowerrune(r) ? r - ('a' - 'A') : r;
+}
+
 static int lnp64_file_fd(FILE *stream) {
   if (!stream)
     return -1;
@@ -148,6 +214,32 @@ int fgetc(FILE *stream) {
 int getc(FILE *stream) { return fgetc(stream); }
 
 int getchar(void) { return fgetc(stdin); }
+
+int fgetrune(Rune *r, FILE *stream) {
+  int ch = fgetc(stream);
+  if (ch == EOF)
+    return 0;
+  *r = ch < 0x80 ? ch : 0xfffd;
+  return 1;
+}
+
+int efgetrune(Rune *r, FILE *stream, const char *name) {
+  (void)name;
+  return fgetrune(r, stream);
+}
+
+int fputrune(const Rune *r, FILE *stream) {
+  char ch;
+  if (!r)
+    return EOF;
+  ch = (*r >= 0 && *r < 0x80) ? (char)*r : '?';
+  return fputc((unsigned char)ch, stream) == EOF ? EOF : 1;
+}
+
+int efputrune(const Rune *r, FILE *stream, const char *name) {
+  (void)name;
+  return fputrune(r, stream);
+}
 
 int ferror(FILE *stream) { return stream ? stream->error : 1; }
 
