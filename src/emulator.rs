@@ -13659,6 +13659,49 @@ mod tests {
     }
 
     #[test]
+    fn fork_clone_inherits_signal_state_and_clears_pending_events() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+
+        {
+            let process = machine.process_mut().unwrap();
+            process.sigmask = (1 << 2) | (1 << SIGALRM);
+            process
+                .signal_handlers
+                .insert(2, SignalDisposition::Handler(0x1234));
+            process
+                .signal_handlers
+                .insert(SIGALRM, SignalDisposition::Ignore);
+            process
+                .pending_events
+                .push_back(NativeEvent::kill_signal(2));
+            process
+                .pending_events
+                .push_back(NativeEvent::timer_signal(SIGALRM));
+        }
+
+        machine
+            .clone_with_profile(CloneProfile::NewProcessCow, Reg(5), None)
+            .unwrap();
+
+        let parent = machine.process().unwrap();
+        assert_eq!(parent.sigmask, (1 << 2) | (1 << SIGALRM));
+        assert_eq!(parent.pending_events.len(), 2);
+
+        let child = machine.processes.get(&2).unwrap();
+        assert_eq!(child.sigmask, (1 << 2) | (1 << SIGALRM));
+        assert!(matches!(
+            child.signal_handlers.get(&2),
+            Some(SignalDisposition::Handler(0x1234))
+        ));
+        assert!(matches!(
+            child.signal_handlers.get(&SIGALRM),
+            Some(SignalDisposition::Ignore)
+        ));
+        assert!(child.pending_events.is_empty());
+    }
+
+    #[test]
     fn clone_profile_failures_do_not_allocate_contexts() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
