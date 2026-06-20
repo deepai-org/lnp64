@@ -653,6 +653,46 @@ DMA, Resource Domain, scheduler, and RAS guarantees should not be advertised as
 strong hardware guarantees until they reach at least T4 for the relevant RTL
 block, and T5 for cross-module or board-dependent properties.
 
+### Formal Property Verification of Severe Goals on the RTL
+
+The goal is to prove the severe goals against the *actual hardware*, not only an
+abstract model. Three layers exist and must not be confused:
+
+- **Simulation** (testbenches, `formal/rtl_assertions/lnp64_mx_assertions.sv`
+  fired under a seed-driven stimulus) checks a single trace.
+- **Lean** (`formal/Mx*Model.lean`, `formal/MxTransitionInvariantModel.lean`,
+  `formal/WholeChipComposition.lean`) proves properties of a hand-written
+  *abstract* model; it does not, by itself, constrain the SystemVerilog.
+- **Formal property verification (FPV): model-checking SVA assertions on the
+  synthesized RTL, exhaustively over all inputs.** This is the layer that turns a
+  severe goal into a guarantee about the hardware.
+
+FPV flow (open-source, `Dockerfile.rtl-formal`): each engine gets a formal
+wrapper `rtl/formal/lnp64_mx_formal.sv` that instantiates the real RTL with
+`clk`/`reset_n`/`start`/`scenario_seed` as free inputs and encodes the severe
+goals as immediate SVA `assert`s on the engine's output ports (the safety flags
+and the `typed_commit`/`typed_state_projection` records). `scripts/prep_rtl_yosys.py`
++ `yosys -formal` synthesize it, `write_smt2` exports the model, and
+`yosys-smtbmc` (with z3) discharges the assertions by:
+
+- **bounded model checking (BMC)** to a depth that covers every reachable state
+  of the terminating engine FSM for all seeds and reset/start timings (the FSMs
+  reach a `DONE` self-loop in a small fixed number of cycles, so a sufficient
+  BMC depth is a *complete* reachability proof, not merely bounded), and
+- **temporal k-induction** for an unbounded proof where it goes through.
+
+A passing FPV gate (`scripts/run_rtl_mx_formal.sh`) is the rigorous form of
+**T2**: the local severe-goal invariants are not just simulated on one trace but
+machine-checked on the actual RTL over all input sequences. It does not by
+itself reach T4 (that still needs a checked RTL-to-Lean refinement relating the
+RTL transition to the Lean `Step`) or T5 (cross-engine, shared-fabric
+composition checked at the top level). The honest remaining gaps for true
+whole-chip hardware guarantees are: (1) wrappers + FPV for every engine, (2) a
+top-level wrapper that model-checks the severe goals on `lnp64_top` with engines
+sharing real fabric/state (the cross-engine interactions the per-engine
+wrappers and the Lean composition both omit), and (3) the Verilog operational
+semantics remaining the trusted base unless a verified-Verilog path is adopted.
+
 ### Human-Auditable Evidence
 
 The proof system must also be legible. A casual technical observer should be

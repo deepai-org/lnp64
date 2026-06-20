@@ -1,0 +1,39 @@
+# LNP64 RTL formal property-verification image.
+#
+# Model-checks the severe proof goals as SVA assertions on the actual
+# SystemVerilog RTL, exhaustively over all inputs, with SymbiYosys (sby) driving
+# yosys + an SMT solver (BMC + k-induction). This is stronger than simulation
+# (one trace) and is a proof about the hardware itself, not an abstract model.
+FROM debian:bookworm
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG RUN_RTL_FORMAL_SMOKE=1
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        bash \
+        ca-certificates \
+        g++ \
+        gcc \
+        git \
+        make \
+        python3 \
+        yosys \
+        z3 \
+        boolector \
+    && rm -rf /var/lib/apt/lists/*
+
+# SymbiYosys (the sby formal driver) from source; yosys + yosys-smtbmc come from
+# the distro yosys package above.
+RUN git clone --depth 1 https://github.com/YosysHQ/sby.git /opt/sby \
+    && make -C /opt/sby install \
+    && rm -rf /opt/sby/.git
+
+WORKDIR /work
+COPY . .
+
+RUN if [ "${RUN_RTL_FORMAL_SMOKE}" = "1" ]; then \
+        bash scripts/run_rtl_formal_gates.sh; \
+    fi
+
+CMD ["bash", "scripts/run_rtl_formal_gates.sh"]
