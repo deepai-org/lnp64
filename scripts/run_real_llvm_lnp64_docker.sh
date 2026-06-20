@@ -516,6 +516,17 @@ test "$(sed -n '2p' <<<"$sbase_grep_output")" = alphabet
 grep -q 'exit=0' <<<"$sbase_grep_output"
 printf 'real LLVM LNP64 run-elf sbase grep fixed-string execution passed: %s\n' \
   target/llvm-lnp64-build/lnp64-sbase-grep-linked.elf
+printf 'red\ngreen\nblue\n' >"$sbase_fixture_root/input/sed.txt"
+"$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-sed-linked.elf \
+  >/dev/null
+sbase_sed_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+  target/llvm-lnp64-build/lnp64-sbase-sed-linked.elf sed -n p input/sed.txt)"
+test "$(sed -n '1p' <<<"$sbase_sed_output")" = red
+test "$(sed -n '2p' <<<"$sbase_sed_output")" = green
+test "$(sed -n '3p' <<<"$sbase_sed_output")" = blue
+grep -q 'exit=0' <<<"$sbase_sed_output"
+printf 'real LLVM LNP64 run-elf sbase sed no-regex execution passed: %s\n' \
+  target/llvm-lnp64-build/lnp64-sbase-sed-linked.elf
 "$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-ls-linked.elf \
   >/dev/null
 sbase_ls_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \

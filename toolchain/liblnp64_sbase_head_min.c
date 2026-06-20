@@ -15,6 +15,8 @@ struct __lnp64_file {
   int eof;
   int error;
   int memory;
+  int has_ungot;
+  unsigned char ungot;
   const unsigned char *mem;
   size_t mem_size;
   size_t mem_pos;
@@ -90,7 +92,19 @@ int runetochar(char *s, const Rune *r) {
   return 1;
 }
 
+int runelen(Rune r) {
+  (void)r;
+  return 1;
+}
+
 size_t utflen(const char *s) { return strlen(s); }
+
+size_t utfnlen(const char *s, size_t n) {
+  size_t len = 0;
+  while (len < n && s[len])
+    len++;
+  return len;
+}
 
 size_t utftorunestr(const char *s, Rune *r) {
   size_t len = 0;
@@ -171,6 +185,7 @@ int fclose(FILE *stream) {
          i++) {
       if (stream == &lnp64_head_files[i]) {
         lnp64_head_file_used[i] = 0;
+        lnp64_head_files[i].has_ungot = 0;
         lnp64_head_files[i].mem = 0;
         lnp64_head_files[i].mem_size = 0;
         lnp64_head_files[i].mem_pos = 0;
@@ -224,9 +239,32 @@ size_t fwrite(const void *ptr, size_t size, size_t count, FILE *stream) {
   return (size_t)written / size;
 }
 
+char *strcat(char *dst, const char *src) {
+  char *out = dst + strlen(dst);
+  while ((*out++ = *src++)) {
+  }
+  return dst;
+}
+
+char *estrndup(const char *s, size_t n) {
+  size_t len = 0;
+  while (len < n && s[len])
+    len++;
+  char *copy = malloc(len + 1);
+  if (!copy)
+    eprintf("strndup:");
+  memcpy(copy, s, len);
+  copy[len] = 0;
+  return copy;
+}
+
 int fgetc(FILE *stream) {
   unsigned char ch;
   int fd = lnp64_file_fd(stream);
+  if (stream && stream->has_ungot) {
+    stream->has_ungot = 0;
+    return stream->ungot;
+  }
   if (stream && stream->memory) {
     if (stream->mem_pos >= stream->mem_size) {
       stream->eof = 1;
@@ -247,6 +285,24 @@ int fgetc(FILE *stream) {
   else
     stream->error = 1;
   return EOF;
+}
+
+int ungetc(int ch, FILE *stream) {
+  if (!stream || ch == EOF || stream->has_ungot)
+    return EOF;
+  stream->has_ungot = 1;
+  stream->ungot = (unsigned char)ch;
+  stream->eof = 0;
+  return (unsigned char)ch;
+}
+
+int feof(FILE *stream) { return stream ? stream->eof : 1; }
+
+void clearerr(FILE *stream) {
+  if (stream) {
+    stream->eof = 0;
+    stream->error = 0;
+  }
 }
 
 int getc(FILE *stream) { return fgetc(stream); }
@@ -296,6 +352,7 @@ FILE *fopen(const char *path, const char *mode) {
       lnp64_head_files[i].eof = 0;
       lnp64_head_files[i].error = 0;
       lnp64_head_files[i].memory = 0;
+      lnp64_head_files[i].has_ungot = 0;
       lnp64_head_files[i].mem = 0;
       lnp64_head_files[i].mem_size = 0;
       lnp64_head_files[i].mem_pos = 0;
@@ -317,6 +374,7 @@ FILE *fmemopen(void *buf, size_t size, const char *mode) {
       lnp64_head_files[i].eof = 0;
       lnp64_head_files[i].error = 0;
       lnp64_head_files[i].memory = 1;
+      lnp64_head_files[i].has_ungot = 0;
       lnp64_head_files[i].mem = buf;
       lnp64_head_files[i].mem_size = size;
       lnp64_head_files[i].mem_pos = 0;
@@ -654,6 +712,18 @@ size_t estrlcpy(char *dst, const char *src, size_t size) {
   }
   if (len >= size)
     eprintf("strlcpy:");
+  return len;
+}
+
+size_t xstrlcat(char *dst, const char *src, size_t size) {
+  size_t used = strlen(dst);
+  size_t len = used + strlen(src);
+  if (used < size) {
+    size_t room = size - used - 1;
+    size_t copy = strlen(src) < room ? strlen(src) : room;
+    memcpy(dst + used, src, copy);
+    dst[used + copy] = 0;
+  }
   return len;
 }
 
