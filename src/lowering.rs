@@ -7030,6 +7030,87 @@ mod tests {
     }
 
     #[test]
+    fn feature_readiness_ledger_tracks_owner_authority_generation_and_comparison() {
+        let readiness = include_str!("../feature_readiness.md");
+        let demo = include_str!("../demos/waitable_probe_no_consume.s");
+        let conformance = include_str!("../toolchain/lnp64_conformance_gates.manifest");
+        let top_program_manifest = include_str!("../tests/rtl/top_level_program_manifest.json");
+
+        for required_column in [
+            "Feature slice",
+            "Object touched",
+            "Owner",
+            "Authority",
+            "Stale-use generation",
+            "Spec",
+            "Model",
+            "RTL",
+            "Test",
+            "Trace",
+            "Proof",
+            "Differential visibility / next blocker",
+        ] {
+            assert!(
+                readiness.contains(required_column),
+                "feature readiness ledger must retain column {required_column}"
+            );
+        }
+
+        for feature in [
+            "waitable_probe_no_consume",
+            "fdr_stale_generation_rejection",
+            "real_clang_loader_exec",
+            "libc_runtime_shim",
+            "netbsd_personality_layers",
+        ] {
+            assert!(
+                readiness.contains(feature),
+                "feature readiness ledger must track {feature}"
+            );
+        }
+
+        for required_phrase in [
+            "OBJECT_CTL",
+            "WAITABLE_PROBE",
+            "Object/queue owner engine",
+            "`fd3` read endpoint and `fd4` write endpoint",
+            "FDR token generation",
+            "typed_transition_trace",
+            "retire_trace_and_final_state",
+            "same source",
+            "blocked_by_features",
+            "stdout/result",
+        ] {
+            assert!(
+                readiness.contains(required_phrase),
+                "waitable readiness row missing {required_phrase}"
+            );
+        }
+
+        for demo_contract in [
+            "# Object touched: pipe-profile queue created through OBJECT_CTL.",
+            "# Owner: object/queue owner engine, not core-private emulator state.",
+            "# Authority: fd3 read endpoint and fd4 write endpoint returned by OBJECT_CTL.",
+            "# Generation: FDR tokens carry generation; stale use would be rejected by FDR checks.",
+            "# Trace: OBJECT_CTL, PUSH/WRITE_FD, WAITABLE_PROBE, PULL/READ_FD are observable.",
+            "# Differential: same source runs under emulator and RTL top-program smoke input.",
+        ] {
+            assert!(
+                demo.contains(demo_contract),
+                "waitable stress demo must keep feature-readiness header: {demo_contract}"
+            );
+        }
+
+        assert!(conformance.contains("demos/waitable_probe_no_consume.s"));
+        assert!(top_program_manifest.contains("\"trace_target\": \"typed_transition_trace\""));
+        assert!(top_program_manifest.contains("demos/waitable_probe_no_consume.s"));
+        assert!(top_program_manifest.contains("\"waitable_probe_no_consume\""));
+        assert!(top_program_manifest.contains("\"status\": \"blocked_by_features\""));
+        assert!(top_program_manifest.contains("tests/rtl/programs/top_waitable_probe.s"));
+        assert!(top_program_manifest.contains("tests/rtl/programs/top_pipe_push_pull.s"));
+    }
+
+    #[test]
     fn toy_compiler_retirement_manifest_limits_custom_frontend_scope() {
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
         let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
