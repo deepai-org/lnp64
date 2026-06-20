@@ -6243,7 +6243,7 @@ mod tests {
             focus_by_stage.insert(stage, focus.clone());
             blockers.insert(stage, next_blocker);
             assert!(
-                ["bootstrap_gate", "planned", "blocked"].contains(&status),
+                ["bootstrap_gate", "planned", "blocked", "tested"].contains(&status),
                 "unknown real-program ladder status {status} for {stage}"
             );
             assert!(
@@ -6301,7 +6301,7 @@ mod tests {
             ],
             "real-program ladder must keep generic compatibility gates before Redis"
         );
-        assert_eq!(statuses["minimal_lua"], "planned");
+        assert_eq!(statuses["minimal_lua"], "tested");
         assert_eq!(statuses["sqlite_memory_file"], "blocked");
         assert_eq!(
             statuses["netbsd_posix_personality_closure"],

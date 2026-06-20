@@ -43,6 +43,12 @@ time_t time(time_t *timer) {
   return now;
 }
 
+clock_t clock(void) {
+  /* Approximate processor time as elapsed realtime in CLOCKS_PER_SEC ticks. */
+  return (clock_t)lnp64_realtime_sec() * CLOCKS_PER_SEC +
+         (clock_t)(lnp64_realtime_nsec() / 1000L);
+}
+
 int usleep(unsigned int usec) {
   (void)usec;
   __lnp_yield();

@@ -26,6 +26,8 @@ int atoi(const char *nptr);
 long atol(const char *nptr);
 void qsort(void *base, size_t count, size_t size,
            int (*compar)(const void *, const void *));
+int abs(int value);
+long labs(long value);
 long long llabs(long long value);
 double strtod(const char *nptr, char **endptr);
 long strtol(const char *nptr, char **endptr, int base);

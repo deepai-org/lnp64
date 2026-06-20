@@ -8,4 +8,6 @@ typedef long ptrdiff_t;
 #define NULL ((void *)0)
 #endif
 
+#define offsetof(type, member) __builtin_offsetof(type, member)
+
 #endif

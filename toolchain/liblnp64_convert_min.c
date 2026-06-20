@@ -5,6 +5,10 @@ int lnp64_errno_store(int value);
 
 #define LNP64_NOINLINE __attribute__((noinline))
 
+int abs(int value) { return value < 0 ? -value : value; }
+
+long labs(long value) { return value < 0 ? -value : value; }
+
 static int lnp64_isspace(int ch) {
   return ch == ' ' || (ch >= '\t' && ch <= '\r');
 }
@@ -166,14 +170,38 @@ double strtod(const char *nptr, char **endptr) {
   return 0.0;
 }
 
-int __ltdf2(double lhs, double rhs) {
-  (void)lhs;
-  (void)rhs;
-  return 0;
+/* Weak so a full soft-float runtime (liblnp64_softfloat_min) overrides these
+ * when linked. Standalone convert (used by packages without soft-float) still
+ * gets a correct ordered comparison rather than the previous return-0 stub. */
+static int lnp64_convert_dcmp(double a, double b) {
+  union {
+    double d;
+    unsigned long u;
+  } x, y;
+  x.d = a;
+  y.d = b;
+  unsigned long am = x.u & 0x7fffffffffffffffUL;
+  unsigned long bm = y.u & 0x7fffffffffffffffUL;
+  if (am > 0x7ff0000000000000UL || bm > 0x7ff0000000000000UL)
+    return 2; /* unordered (NaN) */
+  if (am == 0 && bm == 0)
+    return 0;
+  if (x.u == y.u)
+    return 0;
+  int as = (int)(x.u >> 63), bs = (int)(y.u >> 63);
+  if (as != bs)
+    return as ? -1 : 1;
+  if (!as)
+    return am < bm ? -1 : 1;
+  return am > bm ? -1 : 1;
 }
 
-int __gtdf2(double lhs, double rhs) {
-  (void)lhs;
-  (void)rhs;
-  return 0;
+__attribute__((weak)) int __ltdf2(double lhs, double rhs) {
+  int c = lnp64_convert_dcmp(lhs, rhs);
+  return c == 2 ? 1 : c;
+}
+
+__attribute__((weak)) int __gtdf2(double lhs, double rhs) {
+  int c = lnp64_convert_dcmp(lhs, rhs);
+  return c == 2 ? -1 : c;
 }

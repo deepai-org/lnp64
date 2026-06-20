@@ -38,6 +38,16 @@ int memcmp(const void *lhs, const void *rhs, size_t len) {
   return 0;
 }
 
+void *memchr(const void *s, int c, size_t n) {
+  const unsigned char *p = s;
+  unsigned char target = (unsigned char)c;
+  for (size_t i = 0; i < n; i = i + 1) {
+    if (p[i] == target)
+      return (void *)(p + i);
+  }
+  return 0;
+}
+
 void *memset(void *dst, int value, size_t len) {
   unsigned char *d = dst;
   for (size_t i = 0; i < len; i = i + 1)
@@ -53,6 +63,11 @@ int strcmp(const char *lhs, const char *rhs) {
     b = b + 1;
   }
   return (int)*a - (int)*b;
+}
+
+int strcoll(const char *lhs, const char *rhs) {
+  /* LNP64 libc shim runs only the C locale, so collation is byte order. */
+  return strcmp(lhs, rhs);
 }
 
 int strncmp(const char *lhs, const char *rhs, size_t len) {

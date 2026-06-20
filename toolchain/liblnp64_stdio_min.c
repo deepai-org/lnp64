@@ -101,6 +101,101 @@ static void lnp64_out_signed(struct lnp64_snprintf_out *out, long long value) {
   lnp64_out_unsigned(out, magnitude, 10);
 }
 
+static void lnp64_out_double(struct lnp64_snprintf_out *out, double value,
+                             int precision, char fmt) {
+  union {
+    double d;
+    unsigned long long u;
+  } bits;
+  bits.d = value;
+
+  if (bits.u & 0x8000000000000000ULL)
+    lnp64_out_char(out, '-');
+  value = value < 0.0 ? -value : value;
+
+  unsigned long long exp_bits = (bits.u >> 52) & 0x7ff;
+  if (exp_bits == 0x7ff) {
+    if ((bits.u & 0x000fffffffffffffULL) != 0)
+      lnp64_out_string(out, "nan");
+    else
+      lnp64_out_string(out, "inf");
+    return;
+  }
+
+  if (precision < 0)
+    precision = 6;
+
+  if (fmt == 'f' || fmt == 'F') {
+    long long int_part = (long long)value;
+    double frac_part = value - (double)int_part;
+    lnp64_out_signed(out, int_part);
+    lnp64_out_char(out, '.');
+    for (int i = 0; i < precision; i++) {
+      frac_part *= 10.0;
+      long long digit = (long long)frac_part;
+      lnp64_out_char(out, '0' + (char)digit);
+      frac_part -= (double)digit;
+    }
+  } else {
+    char buffer[32];
+    int len = 0;
+    if (value == 0.0) {
+      buffer[len++] = '0';
+      if (precision > 0) {
+        buffer[len++] = '.';
+        for (int i = 0; i < precision; i++)
+          buffer[len++] = '0';
+      }
+    } else {
+      int exp = 0;
+      double mant = value;
+      while (mant >= 10.0 && exp < 308) {
+        mant /= 10.0;
+        exp++;
+      }
+      while (mant < 1.0 && exp > -308) {
+        mant *= 10.0;
+        exp--;
+      }
+
+      long long digit = (long long)mant;
+      buffer[len++] = '0' + (char)digit;
+      double frac = mant - (double)digit;
+
+      int digs = (fmt == 'g' || fmt == 'G') ? (precision - 1) : precision;
+      if (digs > 0)
+        buffer[len++] = '.';
+
+      for (int i = 0; i < digs; i++) {
+        frac *= 10.0;
+        digit = (long long)frac;
+        buffer[len++] = '0' + (char)digit;
+        frac -= (double)digit;
+      }
+
+      if (fmt == 'e' || fmt == 'E' || fmt == 'g' || fmt == 'G') {
+        buffer[len++] = (fmt == 'E' || fmt == 'G') ? 'E' : 'e';
+        if (exp < 0) {
+          buffer[len++] = '-';
+          exp = -exp;
+        } else {
+          buffer[len++] = '+';
+        }
+        if (exp < 10)
+          buffer[len++] = '0';
+        if (exp >= 100)
+          buffer[len++] = '0' + (exp / 100);
+        if (exp >= 10)
+          buffer[len++] = '0' + ((exp / 10) % 10);
+        buffer[len++] = '0' + (exp % 10);
+      }
+    }
+
+    for (int i = 0; i < len; i++)
+      lnp64_out_char(out, buffer[i]);
+  }
+}
+
 int vsnprintf(char *str, size_t size, const char *format, va_list ap) {
   struct lnp64_snprintf_out out = {str, size, 0};
   while (*format) {
@@ -121,6 +216,16 @@ int vsnprintf(char *str, size_t size, const char *format, va_list ap) {
     while (*format == 'l') {
       long_count = long_count + 1;
       format = format + 1;
+    }
+
+    int precision = -1;
+    if (*format == '.') {
+      format = format + 1;
+      precision = 0;
+      while (*format >= '0' && *format <= '9') {
+        precision = precision * 10 + (*format - '0');
+        format = format + 1;
+      }
     }
 
     switch (*format) {
@@ -158,6 +263,14 @@ int vsnprintf(char *str, size_t size, const char *format, va_list ap) {
     case 'p':
       lnp64_out_string(&out, "0x");
       lnp64_out_unsigned(&out, (unsigned long)va_arg(ap, void *), 16);
+      break;
+    case 'f':
+    case 'F':
+    case 'e':
+    case 'E':
+    case 'g':
+    case 'G':
+      lnp64_out_double(&out, va_arg(ap, double), precision, *format);
       break;
     case 0:
       format = format - 1;
@@ -516,6 +629,14 @@ FILE *fopen(const char *path, const char *mode) {
   stream->error = 0;
   stream->has_unget = 0;
   return stream;
+}
+
+FILE *freopen(const char *path, const char *mode, FILE *stream) {
+  if (stream && stream != stdin && stream != stdout && stream != stderr)
+    fclose(stream);
+  if (!path)
+    return 0; /* mode-only reopen of an existing stream is unsupported */
+  return fopen(path, mode);
 }
 
 FILE *fdopen(int fd, const char *mode) {

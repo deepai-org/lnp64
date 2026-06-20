@@ -12,6 +12,7 @@ void *memmove(void *dst, const void *src, size_t n);
 void *memset(void *dst, int c, size_t n);
 char *strchr(const char *s, int c);
 int strcmp(const char *lhs, const char *rhs);
+int strcoll(const char *lhs, const char *rhs);
 char *strcat(char *dst, const char *src);
 char *strcpy(char *dst, const char *src);
 char *strerror(int errnum);

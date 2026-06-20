@@ -341,6 +341,9 @@ LNP64TargetLowering::LNP64TargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::GlobalAddress, MVT::i64, Custom);
   setOperationAction(ISD::BR_CC, MVT::i64, Custom);
   setOperationAction(ISD::BRCOND, MVT::Other, Custom);
+  // We only match SELECT_CC (selectcc) patterns; expand bare SELECT nodes
+  // (produced by DAG combines) into SELECT_CC against zero so they select.
+  setOperationAction(ISD::SELECT, MVT::i64, Expand);
   setOperationAction(ISD::VASTART, MVT::Other, Custom);
   setOperationAction(ISD::VAARG, MVT::Other, Expand);
   setOperationAction(ISD::VACOPY, MVT::Other, Expand);

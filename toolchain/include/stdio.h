@@ -47,6 +47,7 @@ char *fgets(char *str, int count, FILE *stream);
 FILE *fmemopen(void *buf, size_t size, const char *mode);
 FILE *fdopen(int fd, const char *mode);
 FILE *fopen(const char *path, const char *mode);
+FILE *freopen(const char *path, const char *mode, FILE *stream);
 FILE *tmpfile(void);
 
 #endif

@@ -4,6 +4,9 @@
 #include <stddef.h>
 
 typedef long time_t;
+typedef long clock_t;
+
+#define CLOCKS_PER_SEC 1000000L
 
 struct timespec {
   time_t tv_sec;
@@ -36,6 +39,7 @@ struct tm {
 #define UTIME_OMIT ((1L << 30) - 2L)
 
 time_t time(time_t *timer);
+clock_t clock(void);
 int clock_gettime(int clockid, struct timespec *tp);
 struct tm *localtime(const time_t *timer);
 time_t mktime(struct tm *tm);

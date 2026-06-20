@@ -4,6 +4,7 @@
 typedef void (*__lnp64_sighandler_t)(int);
 typedef __lnp64_sighandler_t sighandler_t;
 typedef unsigned long sigset_t;
+typedef int sig_atomic_t;
 
 struct sigaction {
   sighandler_t sa_handler;
