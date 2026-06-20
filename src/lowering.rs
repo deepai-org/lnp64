@@ -2111,6 +2111,8 @@ mod tests {
         assert!(libc_process_min.contains("int fork(void)"));
         assert!(libc_process_min.contains("int waitpid(int pid, int *status, int options)"));
         assert!(libc_process_min.contains("int execve(const char *path"));
+        assert!(libc_process_min.contains("int execv(const char *path"));
+        assert!(libc_process_min.contains("int execvp(const char *file"));
         assert!(libc_process_min.contains("int execl(const char *path"));
         assert!(libc_process_min.contains("#include <stdarg.h>"));
         assert!(libc_process_min.contains("lnp64_exec_compat"));
@@ -3044,6 +3046,9 @@ mod tests {
         assert!(
             elf_exec_test_clang.contains("execl(\"/bin/loader_target.elf\", \"loader_target\", 0)")
         );
+        assert!(elf_exec_test_clang.contains("execv(\"/bin/loader_target.elf\", argv)"));
+        assert!(elf_exec_test_clang.contains("execve(\"/bin/loader_target.elf\", argv, envp)"));
+        assert!(elf_exec_test_clang.contains("execvp(\"/bin/loader_target.elf\", argv)"));
         assert!(real_llc.contains("real LLVM LNP64 clang NetBSD ELF exec parent object passed"));
         assert!(real_llc.contains("userland/fork_wait_test_clang.c"));
         assert!(real_llc.contains("netbsd-fork-wait-test-clang-smoke.o"));
