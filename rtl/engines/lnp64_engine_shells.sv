@@ -2266,7 +2266,7 @@ module lnp64_object_engine(
                 rsp_reg.domain_gen <= cmd.domain_gen;
                 rsp_reg.result_reg <= cmd.result_reg;
                 rsp_reg.result_value <= 64'hffff_ffff_ffff_ffff;
-                rsp_reg.errno_value <= LNP64_ERR_EPERM;
+                rsp_reg.errno_value <= LNP64_ERR_EINVAL;
                 rsp_reg.status <= LNP64_STATUS_ERROR;
 
                 if (cmd.opcode == LNP64_OP_OBJECT_CTL &&

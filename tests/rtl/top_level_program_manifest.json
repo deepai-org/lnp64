@@ -646,7 +646,9 @@
     {
       "source": "demos/object_ctl_bad_profile_no_install.s",
       "required_features": ["core", "object_ctl_bad_profile_rejection", "failed_create_preserves_fdr_slot", "static_fd_read_write", "errno", "data_labels", "write_fd", "exit"],
-      "status": "blocked_by_features"
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
     },
     {
       "source": "demos/cap_dup_narrow_no_amplify.s",
