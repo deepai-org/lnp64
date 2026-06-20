@@ -909,6 +909,8 @@ impl ResourceDomain {
 
 struct Process {
     pid: u64,
+    generation: u64,
+    lineage_epoch: u64,
     parent_pid: Option<u64>,
     domain_id: u64,
     program: Program,
@@ -985,6 +987,8 @@ impl Process {
 
         Self {
             pid,
+            generation: 1,
+            lineage_epoch: 1,
             parent_pid,
             domain_id,
             program,
@@ -1024,6 +1028,8 @@ impl Process {
         }
         Ok(Self {
             pid,
+            generation: 1,
+            lineage_epoch: self.lineage_epoch,
             parent_pid: Some(self.pid),
             domain_id: self.domain_id,
             program: self.program.clone(),
@@ -1054,9 +1060,13 @@ impl Process {
 
     fn exec(&mut self, program: Program, layout: ProcessLayout) {
         let pid = self.pid;
+        let generation = self.generation.saturating_add(1).max(1);
+        let lineage_epoch = self.lineage_epoch;
         let parent_pid = self.parent_pid;
         let domain_id = self.domain_id;
         let mut replacement = Process::new(pid, parent_pid, domain_id, program, layout);
+        replacement.generation = generation;
+        replacement.lineage_epoch = lineage_epoch;
         replacement.fds = std::mem::take(&mut self.fds);
         replacement.fd_generations = std::mem::take(&mut self.fd_generations);
         replacement.fd_capabilities = std::mem::take(&mut self.fd_capabilities);
@@ -1457,6 +1467,29 @@ impl Machine {
         prepared_vmas: &[PreparedExecVma],
     ) -> Result<(), String> {
         Self::validate_exec_descriptor_words(words)?;
+        let expected_domain_generation = words[6];
+        let expected_process_generation = words[7];
+        let expected_lineage_epoch = words[8];
+        {
+            let process = self.process()?;
+            if expected_domain_generation != 0 {
+                let domain_generation = self
+                    .domains
+                    .get(&process.domain_id)
+                    .ok_or_else(|| "exec-plan process domain is missing".to_string())?
+                    .generation;
+                if domain_generation != expected_domain_generation {
+                    return Err("exec-plan domain generation mismatch".to_string());
+                }
+            }
+            if expected_process_generation != 0 && process.generation != expected_process_generation
+            {
+                return Err("exec-plan process generation mismatch".to_string());
+            }
+            if expected_lineage_epoch != 0 && process.lineage_epoch != expected_lineage_epoch {
+                return Err("exec-plan lineage epoch mismatch".to_string());
+            }
+        }
         let vma_count = checked_exec_count(words[3], EXEC_PLAN_MAX_VMAS, "VMA")?;
         if prepared_vmas.len() != vma_count {
             return Err("prepared VMA count does not match exec descriptor".to_string());
@@ -1499,6 +1532,7 @@ impl Machine {
         let startup_metadata_ptr = words[12];
         {
             let process = self.process_mut()?;
+            process.generation = process.generation.saturating_add(1).max(1);
             process.memory = replacement_memory;
             process.vmas = replacement_vmas;
             process.allocations.clear();
@@ -15036,10 +15070,103 @@ mod tests {
     }
 
     #[test]
+    fn emulator_rejects_exec_descriptor_stale_domain_generation_before_commit() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                expected_domain_generation: 99,
+                expected_process_generation: 1,
+                expected_lineage_epoch: 1,
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let words = encode_exec_descriptor(&descriptor);
+        let mut machine = Machine::new(empty_program());
+        machine.write_bytes(ARG_BASE, b"old-image").unwrap();
+
+        let err = machine
+            .commit_exec_descriptor_memory_image(&words, &prepared_exec_vmas_fixture())
+            .unwrap_err();
+
+        assert!(err.contains("domain generation"), "{err}");
+        assert_eq!(
+            &machine.process().unwrap().memory[ARG_BASE as usize..ARG_BASE as usize + 9],
+            b"old-image"
+        );
+    }
+
+    #[test]
+    fn emulator_rejects_exec_descriptor_stale_process_generation_before_commit() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                expected_domain_generation: 1,
+                expected_process_generation: 99,
+                expected_lineage_epoch: 1,
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let words = encode_exec_descriptor(&descriptor);
+        let mut machine = Machine::new(empty_program());
+        machine.write_bytes(ARG_BASE, b"old-image").unwrap();
+
+        let err = machine
+            .commit_exec_descriptor_memory_image(&words, &prepared_exec_vmas_fixture())
+            .unwrap_err();
+
+        assert!(err.contains("process generation"), "{err}");
+        assert_eq!(
+            &machine.process().unwrap().memory[ARG_BASE as usize..ARG_BASE as usize + 9],
+            b"old-image"
+        );
+    }
+
+    #[test]
+    fn emulator_rejects_exec_descriptor_stale_lineage_epoch_before_commit() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                expected_domain_generation: 1,
+                expected_process_generation: 1,
+                expected_lineage_epoch: 99,
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let words = encode_exec_descriptor(&descriptor);
+        let mut machine = Machine::new(empty_program());
+        machine.write_bytes(ARG_BASE, b"old-image").unwrap();
+
+        let err = machine
+            .commit_exec_descriptor_memory_image(&words, &prepared_exec_vmas_fixture())
+            .unwrap_err();
+
+        assert!(err.contains("lineage epoch"), "{err}");
+        assert_eq!(
+            &machine.process().unwrap().memory[ARG_BASE as usize..ARG_BASE as usize + 9],
+            b"old-image"
+        );
+    }
+
+    #[test]
     fn emulator_commits_exec_descriptor_memory_image_atomically() {
         let descriptor = build_exec_descriptor(
             &loader_exec_plan_fixture(),
             ExecPlanDescriptorOptions {
+                expected_domain_generation: 1,
+                expected_process_generation: 1,
+                expected_lineage_epoch: 1,
                 image_source_cap: 4,
                 image_source_generation: 5,
                 image_lineage_epoch: 6,
