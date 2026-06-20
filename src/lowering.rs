@@ -8842,6 +8842,16 @@ mod tests {
                 "COMPAT-BIN-001 must keep provenance authority partial gap visible: {remaining_gap}"
             );
         }
+        for covered_rejection in [
+            "entry-PC executable-VMA validation",
+            "reserved mapping flags",
+            "measurement authority",
+        ] {
+            assert!(
+                conformance.contains(covered_rejection),
+                "COMPAT-BIN-001 must keep loader rejection visible: {covered_rejection}"
+            );
+        }
         for requirement in [
             "parse_elf_headers",
             "apply_relocations",
