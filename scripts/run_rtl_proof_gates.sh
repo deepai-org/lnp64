@@ -193,6 +193,8 @@ LNP64_M7_TYPED_COMMIT_USE_EXISTING=1 \
   LNP64_RTL_M7_WITNESS_OUT="$m7_witness" \
   scripts/check_rtl_m7_typed_commit_trace.py
 scripts/check_rtl_m7_witness.py "$m7_witness"
+LNP64_RTL_M7_WITNESS_OUT="$m7_witness" \
+  bash scripts/run_rtl_m7_lean_witness_gate.sh
 scripts/test_rtl_m7_typed_commit_checker.py
 scripts/test_rtl_m7_witness_checker.py
 scripts/test_rtl_top_m1_witness_checker.py

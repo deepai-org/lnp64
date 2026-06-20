@@ -153,6 +153,8 @@ def check_m7_typed_trace_contract(claim: dict) -> None:
     for source in (
         "scripts/check_rtl_m7_witness.py",
         "scripts/run_rtl_m7_witness_gate.sh",
+        "scripts/gen_m7_witness_lean.py",
+        "scripts/run_rtl_m7_lean_witness_gate.sh",
     ):
         require(source in trace_sources, f"{claim_id}: missing M7 witness source {source}")
 
@@ -164,6 +166,8 @@ def check_m7_typed_trace_contract(claim: dict) -> None:
         "scripts/check_rtl_m7_witness.py",
         "scripts/run_rtl_m7_witness_gate.sh",
         "scripts/test_rtl_m7_witness_checker.py",
+        "scripts/gen_m7_witness_lean.py",
+        "scripts/run_rtl_m7_lean_witness_gate.sh",
     ):
         require(gate in gates, f"{claim_id}: missing M7 typed trace gate {gate}")
 
@@ -173,18 +177,24 @@ def check_m7_typed_trace_contract(claim: dict) -> None:
         f"{claim_id}: known gap still claims M7 typed transition traces are missing",
     )
     require(
-        "checked RTL-to-Lean refinement" in known_gaps or "multi-source event-router refinement" in known_gaps,
+        "RTL-to-Lean refinement" in known_gaps or "multi-source event-router refinement" in known_gaps,
         f"{claim_id}: known gap must keep the remaining refinement gap explicit",
     )
     require(
         "scripts/check_rtl_m7_witness.py" in known_gaps,
         f"{claim_id}: known gap must record the offline M7 witness re-check",
     )
+    require(
+        "scripts/run_rtl_m7_lean_witness_gate.sh" in known_gaps,
+        f"{claim_id}: known gap must record the M7 Lean decode-faithfulness proof",
+    )
 
     for witness_file in (
         "scripts/check_rtl_m7_witness.py",
         "scripts/test_rtl_m7_witness_checker.py",
         "scripts/run_rtl_m7_witness_gate.sh",
+        "scripts/gen_m7_witness_lean.py",
+        "scripts/run_rtl_m7_lean_witness_gate.sh",
     ):
         require((ROOT / witness_file).exists(), f"{claim_id}: missing M7 witness artifact {witness_file}")
 
@@ -204,6 +214,10 @@ def check_m7_typed_trace_contract(claim: dict) -> None:
     require(
         "scripts/test_rtl_m7_witness_checker.py" in proof_gate_text,
         "RTL proof gate must run the M7 witness checker self-test",
+    )
+    require(
+        "scripts/run_rtl_m7_lean_witness_gate.sh" in proof_gate_text,
+        "RTL proof gate must run the M7 Lean decode-faithfulness gate",
     )
 
 
