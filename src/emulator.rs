@@ -1353,8 +1353,16 @@ fn validate_exec_vma_words(words: &[u64]) -> Result<(u64, u64), String> {
 }
 
 fn validate_exec_fdr_grant_words(words: &[u64]) -> Result<(), String> {
+    let source_cap = words[4];
+    let source_generation = words[5];
     let close_on_exec = words[6];
     let preserve = words[7];
+    if source_cap == 0 {
+        return Err("exec-plan FDR source capability is missing".to_string());
+    }
+    if source_generation == 0 {
+        return Err("exec-plan FDR source generation is missing".to_string());
+    }
     if close_on_exec > 1 {
         return Err("exec-plan FDR close-on-exec decision is not boolean".to_string());
     }
@@ -8919,9 +8927,7 @@ impl Machine {
             if self.domain_is_descendant_or_self(thread_domain_id, id) {
                 usage.pids = usage.pids.saturating_add(1);
                 if thread_domain_id != ROOT_DOMAIN_ID {
-                    usage.memory = usage
-                        .memory
-                        .saturating_add(FLAT_EXEC_DOMAIN_BASELINE_BYTES);
+                    usage.memory = usage.memory.saturating_add(FLAT_EXEC_DOMAIN_BASELINE_BYTES);
                 }
             }
         }
@@ -15173,6 +15179,52 @@ mod tests {
         let err = Machine::validate_exec_descriptor_words(&words).unwrap_err();
 
         assert!(err.contains("lineage epoch"), "{err}");
+    }
+
+    #[test]
+    fn emulator_rejects_exec_descriptor_fdr_grant_without_source_capability() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let mut words = encode_exec_descriptor(&descriptor);
+        let fdr_offset = EXEC_PLAN_HEADER_WORDS
+            + EXEC_PLAN_ENTRY_WORDS
+            + descriptor.vmas.len() * EXEC_PLAN_VMA_WORDS;
+        words[fdr_offset + 4] = 0;
+
+        let err = Machine::validate_exec_descriptor_words(&words).unwrap_err();
+
+        assert!(err.contains("FDR source capability"), "{err}");
+    }
+
+    #[test]
+    fn emulator_rejects_exec_descriptor_fdr_grant_without_source_generation() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let mut words = encode_exec_descriptor(&descriptor);
+        let fdr_offset = EXEC_PLAN_HEADER_WORDS
+            + EXEC_PLAN_ENTRY_WORDS
+            + descriptor.vmas.len() * EXEC_PLAN_VMA_WORDS;
+        words[fdr_offset + 5] = 0;
+
+        let err = Machine::validate_exec_descriptor_words(&words).unwrap_err();
+
+        assert!(err.contains("FDR source generation"), "{err}");
     }
 
     #[test]
