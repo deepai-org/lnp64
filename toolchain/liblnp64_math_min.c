@@ -225,3 +225,77 @@ double pow(double x, double y) {
     return (y > 0.0) ? 0.0 : HUGE_VAL;
   return exp(y * log(x));
 }
+
+static double lnp64_sin_taylor(double x) {
+  double term = x, sum = x;
+  for (int n = 1; n < 20; n++) {
+    term *= -x * x / ((2.0 * n) * (2.0 * n + 1.0));
+    sum += term;
+  }
+  return sum;
+}
+
+double sin(double x) {
+  if (x != x || x == HUGE_VAL || x == -HUGE_VAL)
+    return NAN;
+  double twopi = 6.283185307179586;
+  double pi = 3.141592653589793;
+  double xr = x;
+  while (xr > pi)
+    xr -= twopi;
+  while (xr < -pi)
+    xr += twopi;
+  return lnp64_sin_taylor(xr);
+}
+
+double cos(double x) {
+  return sin(x + 1.5707963267948966);
+}
+
+double tan(double x) {
+  double c = cos(x);
+  if (c == 0.0)
+    return HUGE_VAL;
+  return sin(x) / c;
+}
+
+double atan(double x) {
+  if (x == 0.0)
+    return x;
+  if (fabs(x) <= 1.0) {
+    double term = x, sum = x, x2 = x * x;
+    for (int n = 1; n < 40; n++) {
+      term *= -x2 * (2.0 * n - 1.0) / (2.0 * n + 1.0);
+      sum += term;
+    }
+    return sum;
+  }
+  double sign = (x < 0.0) ? -1.0 : 1.0;
+  return sign * (1.5707963267948966 - atan(1.0 / x));
+}
+
+double atan2(double y, double x) {
+  if (y == 0.0 && x == 0.0)
+    return 0.0;
+  if (x > 0.0)
+    return atan(y / x);
+  if (x < 0.0) {
+    double base = atan(y / x);
+    return (y >= 0.0) ? base + 3.141592653589793 : base - 3.141592653589793;
+  }
+  return (y > 0.0) ? 1.5707963267948966 : -1.5707963267948966;
+}
+
+double asin(double x) {
+  if (x < -1.0 || x > 1.0)
+    return NAN;
+  if (x == 0.0)
+    return x;
+  return atan2(x, sqrt(1.0 - x * x));
+}
+
+double acos(double x) {
+  if (x < -1.0 || x > 1.0)
+    return NAN;
+  return 1.5707963267948966 - asin(x);
+}
