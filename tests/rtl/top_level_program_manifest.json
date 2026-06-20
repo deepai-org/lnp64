@@ -642,6 +642,11 @@
       "status": "blocked_by_features"
     },
     {
+      "source": "demos/object_ctl_bad_profile_no_install.s",
+      "required_features": ["core", "object_ctl_bad_profile_rejection", "failed_create_preserves_fdr_slot", "static_fd_read_write", "errno", "data_labels", "write_fd", "exit"],
+      "status": "blocked_by_features"
+    },
+    {
       "source": "demos/system.s",
       "required_features": ["core", "signal_delivery", "sigaction", "kill", "sigret", "mmap", "load_ucode", "inb", "clone_spawn", "futex_wait", "futex_wake", "fork", "exec", "source_exec_image", "write_fd", "exit"],
       "status": "active",

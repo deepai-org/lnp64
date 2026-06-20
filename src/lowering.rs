@@ -7004,6 +7004,11 @@ mod tests {
                 .1
                 .contains(&"demos/waitable_probe_no_consume.s")
         );
+        assert!(
+            categories["asm_demos"]
+                .1
+                .contains(&"demos/object_ctl_bad_profile_no_install.s")
+        );
         assert!(run_demos.contains("legacy-assembler smoke demos only"));
         assert!(categories["c_tests"].3.contains("default_to_real_clang"));
         for migrated_demo in [
@@ -7032,7 +7037,8 @@ mod tests {
     #[test]
     fn feature_readiness_ledger_tracks_owner_authority_generation_and_comparison() {
         let readiness = include_str!("../feature_readiness.md");
-        let demo = include_str!("../demos/waitable_probe_no_consume.s");
+        let waitable_demo = include_str!("../demos/waitable_probe_no_consume.s");
+        let object_ctl_demo = include_str!("../demos/object_ctl_bad_profile_no_install.s");
         let conformance = include_str!("../toolchain/lnp64_conformance_gates.manifest");
         let top_program_manifest = include_str!("../tests/rtl/top_level_program_manifest.json");
 
@@ -7058,6 +7064,7 @@ mod tests {
 
         for feature in [
             "waitable_probe_no_consume",
+            "object_ctl_bad_profile_no_install",
             "fdr_stale_generation_rejection",
             "real_clang_loader_exec",
             "libc_runtime_shim",
@@ -7072,9 +7079,13 @@ mod tests {
         for required_phrase in [
             "OBJECT_CTL",
             "WAITABLE_PROBE",
+            "failed create must not mutate caller-visible FDR state",
             "Object/queue owner engine",
+            "Object/FDR owner engine",
             "`fd3` read endpoint and `fd4` write endpoint",
+            "requested `fd7` install slot",
             "FDR token generation",
+            "`fd7` generation must not advance",
             "typed_transition_trace",
             "retire_trace_and_final_state",
             "same source",
@@ -7096,15 +7107,32 @@ mod tests {
             "# Differential: same source runs under emulator and RTL top-program smoke input.",
         ] {
             assert!(
-                demo.contains(demo_contract),
+                waitable_demo.contains(demo_contract),
                 "waitable stress demo must keep feature-readiness header: {demo_contract}"
             );
         }
 
+        for demo_contract in [
+            "# Object touched: requested queue-profile FDR slot in OBJECT_CTL create.",
+            "# Owner: object/FDR owner engine, not caller-owned descriptor table mutation.",
+            "# Authority: current domain object+FDR authority plus requested fd7 install slot.",
+            "# Generation: fd7 generation must not advance because no object is installed.",
+            "# Trace: OBJECT_CTL reject, ERRNO_GET, failed READ_FD on fd7, EXIT are observable.",
+            "# Differential: same source runs under emulator and RTL top-program smoke input.",
+        ] {
+            assert!(
+                object_ctl_demo.contains(demo_contract),
+                "object_ctl stress demo must keep feature-readiness header: {demo_contract}"
+            );
+        }
+
         assert!(conformance.contains("demos/waitable_probe_no_consume.s"));
+        assert!(conformance.contains("demos/object_ctl_bad_profile_no_install.s"));
         assert!(top_program_manifest.contains("\"trace_target\": \"typed_transition_trace\""));
         assert!(top_program_manifest.contains("demos/waitable_probe_no_consume.s"));
         assert!(top_program_manifest.contains("\"waitable_probe_no_consume\""));
+        assert!(top_program_manifest.contains("demos/object_ctl_bad_profile_no_install.s"));
+        assert!(top_program_manifest.contains("\"object_ctl_bad_profile_rejection\""));
         assert!(top_program_manifest.contains("\"status\": \"blocked_by_features\""));
         assert!(top_program_manifest.contains("tests/rtl/programs/top_waitable_probe.s"));
         assert!(top_program_manifest.contains("tests/rtl/programs/top_pipe_push_pull.s"));
