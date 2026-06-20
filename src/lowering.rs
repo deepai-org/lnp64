@@ -6213,6 +6213,8 @@ mod tests {
         let llvm_gates = include_str!("../toolchain/lnp64_llvm_gates.manifest");
         let llvm_bootstrap = include_str!("../toolchain/lnp64_llvm_bootstrap.manifest");
         let run_elf = include_str!("../toolchain/lnp64_run_elf.manifest");
+        let netbsd_layers = include_str!("../toolchain/lnp64_netbsd_layers.manifest");
+        let libc_shim = include_str!("../toolchain/lnp64_libc_shim.manifest");
         let libc_test_readme = include_str!("../third_party/libc-test/README.lnp64.md");
         let intrinsics = include_str!("../toolchain/lnp64_intrinsics.manifest");
         let intrinsic_header = include_str!("../toolchain/lnp64_intrinsics.h");
@@ -6270,6 +6272,7 @@ mod tests {
                 include_str!("../scripts/run_zlib.sh"),
             ),
         ];
+        let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let libc_roadmap = include_str!("../libc_roadmap.md");
         let removed_frontend_script_corpus = removed_frontend_scripts
             .iter()
@@ -6277,7 +6280,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         let checked_corpus = format!(
-            "{target_manifest}\n{contract_index}\n{transition_manifest}\n{roadmap}\n{psabi}\n{conformance}\n{llvm_gates}\n{llvm_bootstrap}\n{run_elf}\n{libc_test_readme}\n{intrinsics}\n{intrinsic_header}\n{crt0}\n{main_source}\n{removed_frontend_script_corpus}\n{libc_roadmap}"
+            "{target_manifest}\n{contract_index}\n{transition_manifest}\n{roadmap}\n{psabi}\n{conformance}\n{llvm_gates}\n{llvm_bootstrap}\n{run_elf}\n{netbsd_layers}\n{libc_shim}\n{libc_test_readme}\n{intrinsics}\n{intrinsic_header}\n{crt0}\n{main_source}\n{removed_frontend_script_corpus}\n{libc_roadmap}"
         );
 
         assert!(!target_manifest.contains("toy_compiler_policy"));
@@ -6394,6 +6397,59 @@ mod tests {
         assert!(removed_frontend_script_corpus.contains("LNP64_LLVM_PACKAGE_FILTER=netbsd"));
         assert!(removed_frontend_script_corpus.contains("scripts/run_real_llvm_package_gate.sh"));
         assert!(!removed_frontend_script_corpus.contains("include_removed_frontend"));
+        for retired_userland in [
+            "userland/classifier_test.c",
+            "userland/domain_budget_test.c",
+            "userland/domain_nested_test.c",
+            "userland/fd_passing_test.c",
+            "userland/fs_service_test.c",
+            "userland/gate_trace_test.c",
+            "userland/loader_target.c",
+            "userland/loader_test.c",
+            "userland/mmap_test.c",
+            "userland/namespace_test.c",
+            "userland/netbsd_init.c",
+            "userland/netbsd_sh.c",
+            "userland/poll_test.c",
+            "userland/signal_fault_test.c",
+            "userland/signal_gate_test.c",
+            "userland/socket_loopback_test.c",
+            "userland/thread_test.c",
+            "userland/timer_test.c",
+        ] {
+            assert!(
+                !manifest_root.join(retired_userland).exists(),
+                "retired toy-dialect userland fixture still exists: {retired_userland}"
+            );
+            assert!(
+                !checked_corpus.contains(retired_userland),
+                "retired toy-dialect userland fixture is still referenced: {retired_userland}"
+            );
+        }
+        for clang_userland in [
+            "userland/classifier_test_clang.c",
+            "userland/domain_budget_test_clang.c",
+            "userland/domain_nested_test_clang.c",
+            "userland/fd_passing_test_clang.c",
+            "userland/fs_service_test_clang.c",
+            "userland/gate_trace_test_clang.c",
+            "userland/loader_target_clang.c",
+            "userland/mmap_test_clang.c",
+            "userland/namespace_test_clang.c",
+            "userland/netbsd_init_clang.c",
+            "userland/netbsd_sh_clang.c",
+            "userland/poll_test_clang.c",
+            "userland/signal_fault_test_clang.c",
+            "userland/signal_gate_test_clang.c",
+            "userland/socket_loopback_test_clang.c",
+            "userland/thread_test_clang.c",
+            "userland/timer_test_clang.c",
+        ] {
+            assert!(
+                manifest_root.join(clang_userland).is_file(),
+                "real-Clang replacement fixture is missing: {clang_userland}"
+            );
+        }
         for forbidden in [
             "lnp64_toy_compiler_policy.manifest",
             "lnp64_toy_retirement_queue.manifest",
