@@ -137,6 +137,10 @@ module lnp64_core_tile #(
     logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] thread_window_event_slot;
     logic thread_window_fault_valid;
     logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] thread_window_fault_slot;
+    logic thread_join_wait_valid;
+    logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] thread_join_wait_slot;
+    logic thread_join_wait_park_valid;
+    logic thread_join_child_exit_wake_valid;
     logic [31:0] active_tid;
     logic [63:0] pcr_thread_pointer;
     logic [63:0] pcr_uid;
@@ -1783,12 +1787,24 @@ module lnp64_core_tile #(
             THREAD_CONTEXT_COUNT > 1 &&
             thread_completed_mask[1];
         thread_window_collect_slot = 1;
-        thread_window_park_valid = state == CORE_EXEC &&
+        thread_join_wait_park_valid = state == CORE_EXEC &&
             dec.supported &&
-            dec.opcode == LNP64_OP_YIELD;
+            dec.opcode == LNP64_OP_JOIN &&
+            gpr[dec.rs1] == 64'd2 &&
+            THREAD_CONTEXT_COUNT > 1 &&
+            thread_active_mask[1];
+        thread_join_child_exit_wake_valid = state == CORE_EXEC &&
+            dec.supported &&
+            dec.opcode == LNP64_OP_EXIT &&
+            active_thread_slot != '0 &&
+            thread_join_wait_valid;
+        thread_window_park_valid = (state == CORE_EXEC &&
+            dec.supported &&
+            dec.opcode == LNP64_OP_YIELD) ||
+            thread_join_wait_park_valid;
         thread_window_park_slot = active_thread_slot;
-        thread_window_wake_valid = wake_valid;
-        thread_window_wake_slot = '0;
+        thread_window_wake_valid = wake_valid || thread_join_child_exit_wake_valid;
+        thread_window_wake_slot = thread_join_child_exit_wake_valid ? thread_join_wait_slot : '0;
         thread_window_event_valid = wake_valid;
         thread_window_event_slot = '0;
         thread_window_fault_valid = state == CORE_EXEC && !dec.supported;
@@ -2251,6 +2267,8 @@ module lnp64_core_tile #(
             timer_valid <= 1'b0;
             timer_lineage <= 64'd0;
             timer_expirations <= 64'd0;
+            thread_join_wait_valid <= 1'b0;
+            thread_join_wait_slot <= '0;
             domain_next_id <= 64'd2;
             m1_projection_root_fd <= 0;
             m1_projection_consumer_fd <= 0;
@@ -3582,17 +3600,24 @@ module lnp64_core_tile #(
                                     end
                                     gpr[dec.rd] <= 64'd0;
                                     errno_reg <= LNP64_ERR_OK;
+                                    if (thread_join_wait_valid &&
+                                        thread_join_wait_slot == active_thread_slot) begin
+                                        thread_join_wait_valid <= 1'b0;
+                                    end
                                 end else if (gpr[dec.rs1] == 64'd2 && thread_active_mask[1]) begin
-                                    gpr[dec.rd] <= 64'd11;
-                                    errno_reg <= LNP64_ERR_EAGAIN;
+                                    thread_join_wait_valid <= 1'b1;
+                                    thread_join_wait_slot <= active_thread_slot;
+                                    state <= CORE_SWITCH;
                                 end else begin
                                     gpr[dec.rd] <= 64'd3;
                                     errno_reg <= LNP64_ERR_OK;
                                 end
-                                pc <= pc + 32'd1;
-                                retired_count <= retired_count + 32'd1;
-                                retire_submit_valid <= 1'b1;
-                                retire_submit_record <= retire_submit_next;
+                                if (!(gpr[dec.rs1] == 64'd2 && thread_active_mask[1])) begin
+                                    pc <= pc + 32'd1;
+                                    retired_count <= retired_count + 32'd1;
+                                    retire_submit_valid <= 1'b1;
+                                    retire_submit_record <= retire_submit_next;
+                                end
                             end
                             LNP64_OP_EXIT: begin
                                 if (active_thread_slot == 1'b0) begin
@@ -3605,6 +3630,9 @@ module lnp64_core_tile #(
                                         domain_thread_count[active_thread_context.domain_id - 32'd1] != 64'd0) begin
                                         domain_thread_count[active_thread_context.domain_id - 32'd1] <=
                                             domain_thread_count[active_thread_context.domain_id - 32'd1] - 64'd1;
+                                    end
+                                    if (thread_join_wait_valid) begin
+                                        thread_join_wait_valid <= 1'b0;
                                     end
                                     state <= CORE_SWITCH;
                                 end

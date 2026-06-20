@@ -226,8 +226,6 @@ create_destroy_empty_leaf:
   CMP r24, r0
   BNE bad
 
-  LI r1, 12
-  SLEEP r1
   LI r1, ok_msg
   LI r2, 19
   WRITE_FD fd1, r1, r2
