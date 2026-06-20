@@ -101,8 +101,10 @@ entries against the cross-cutting foundations, not the app.
 
 ## Suggested immediate order
 
-1. Float formatting `%g`/`%f` (unblocks Lua float output + SQLite/Redis
-   logging) — smallest, highest leverage.
+1. ✅ **DONE** Float formatting `%g`/`%f` (unblocks Lua float output + SQLite/Redis
+   logging) — smallest, highest leverage. Implemented %f (fixed), %g (general),
+   %e (scientific) format specifiers with precision parsing in snprintf. Lua
+   `print(10/4)` => `2.5000000000000e+00` now works.
 2. Open Lua `math`/`io`/`os` + run a `.lua` script file.
 3. Start SQLite `:memory:`, surfacing the next batch of generic gaps (likely
    `-O1`/regalloc, more `printf`, larger frames).
