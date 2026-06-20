@@ -2768,7 +2768,8 @@ impl Machine {
             Instr::Ret => {
                 let next = if self.committed_exec_mode {
                     let thread = self.thread_mut()?;
-                    let next = thread.return_stack.pop().unwrap_or(thread.lr);
+                    let next = thread.lr;
+                    thread.return_stack.pop();
                     thread.regs[31] = thread.regs[31].wrapping_add(COMMITTED_EXEC_CALL_FRAME_SIZE);
                     next
                 } else {
@@ -10524,6 +10525,24 @@ mod tests {
         assert_eq!(machine.thread().unwrap().regs[31], 0);
         assert_eq!(machine.thread().unwrap().lr, 9);
         assert_eq!(machine.thread().unwrap().ip, 0);
+    }
+
+    #[test]
+    fn committed_exec_ret_honors_lr_set_with_live_return_stack() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine.committed_exec_mode = true;
+        machine.thread_mut().unwrap().ip = 7;
+        machine.thread_mut().unwrap().regs[31] = 0;
+
+        machine.exec(Instr::Call(Target::Address(3))).unwrap();
+        machine.thread_mut().unwrap().regs[2] = 11;
+        machine.exec(Instr::LrSet(Reg(2))).unwrap();
+        machine.exec(Instr::Ret).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[31], 0);
+        assert_eq!(machine.thread().unwrap().ip, 11);
+        assert!(machine.thread().unwrap().return_stack.is_empty());
     }
 
     fn create_pipe_pair(machine: &mut Machine, read_fd: u64, write_fd: u64) -> (u64, u64) {

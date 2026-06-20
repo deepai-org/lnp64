@@ -128,6 +128,8 @@ run_elf_report "real LLVM LNP64 run-elf inline asm execution passed" \
   target/llvm-lnp64-build/lnp64-inline-asm-linked.elf
 run_elf_report "real LLVM LNP64 run-elf exit execution passed" \
   target/llvm-lnp64-build/lnp64-exit-linked.elf
+run_elf_report "real LLVM LNP64 run-elf setjmp/longjmp execution passed" \
+  target/llvm-lnp64-build/lnp64-setjmp-linked.elf
 run_elf_report "real LLVM LNP64 run-elf errno execution passed" \
   target/llvm-lnp64-build/lnp64-errno-linked.elf
 run_elf_report "real LLVM LNP64 run-elf argc execution passed" \

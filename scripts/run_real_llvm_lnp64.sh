@@ -2128,6 +2128,49 @@ exit_dump="$build_dir/exit-clang-smoke.dump"
 grep -q 'call ' "$exit_dump"
 printf 'real LLVM LNP64 clang exit object smoke passed: %s\n' "$exit_obj"
 
+setjmp_c="$build_dir/setjmp-smoke.c"
+cat >"$setjmp_c" <<'C'
+#include <setjmp.h>
+
+static jmp_buf env;
+
+int main(void) {
+  volatile int marker = 0;
+  int value = setjmp(env);
+  if (value == 0) {
+    marker = 7;
+    longjmp(env, 42);
+    return 1;
+  }
+  return (value == 42 && marker == 7) ? 0 : 2;
+}
+C
+
+setjmp_obj="$build_dir/setjmp-clang-smoke.o"
+"$clang" --target=lnp64-unknown-none -O0 -ffreestanding -fno-builtin \
+  -fno-pic -fno-jump-tables -fno-unwind-tables \
+  -fno-asynchronous-unwind-tables "${lnp64_target_include_flags[@]}" \
+  -c "$setjmp_c" -o "$setjmp_obj"
+test -s "$setjmp_obj"
+setjmp_dump="$build_dir/setjmp-clang-smoke.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$setjmp_obj" \
+  >"$setjmp_dump"
+grep -q 'call ' "$setjmp_dump"
+printf 'real LLVM LNP64 clang setjmp object smoke passed: %s\n' "$setjmp_obj"
+
+libc_setjmp_impl_s="toolchain/liblnp64_setjmp_min.s"
+libc_setjmp_impl_obj="$build_dir/liblnp64-setjmp-min.o"
+"$llvm_mc" -triple=lnp64-unknown-none -filetype=obj \
+  "$libc_setjmp_impl_s" -o "$libc_setjmp_impl_obj"
+test -s "$libc_setjmp_impl_obj"
+libc_setjmp_impl_dump="$build_dir/liblnp64-setjmp-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_setjmp_impl_obj" \
+  >"$libc_setjmp_impl_dump"
+grep -q 'lr_get r' "$libc_setjmp_impl_dump"
+grep -q 'lr_set r' "$libc_setjmp_impl_dump"
+printf 'real LLVM LNP64 llvm-mc setjmp implementation object smoke passed: %s\n' \
+  "$libc_setjmp_impl_obj"
+
 libc_process_impl_c="toolchain/liblnp64_process_min.c"
 libc_process_impl_obj="$build_dir/liblnp64-process-min.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin -fno-pic -fno-jump-tables \
@@ -5097,6 +5140,12 @@ exit_elf="$build_dir/lnp64-exit-linked.elf"
   -o "$exit_elf" "$crt0_obj" "$exit_obj" "$libc_process_impl_obj"
 test -s "$exit_elf"
 printf 'real LLVM LNP64 lld exit link smoke passed: %s\n' "$exit_elf"
+
+setjmp_elf="$build_dir/lnp64-setjmp-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
+  -o "$setjmp_elf" "$crt0_obj" "$setjmp_obj" "$libc_setjmp_impl_obj"
+test -s "$setjmp_elf"
+printf 'real LLVM LNP64 lld setjmp link smoke passed: %s\n' "$setjmp_elf"
 
 errno_elf="$build_dir/lnp64-errno-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \

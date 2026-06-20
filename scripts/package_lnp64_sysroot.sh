@@ -52,6 +52,20 @@ for source in toolchain/liblnp64_*_min.c; do
   compile_shim "$source"
 done
 
+assemble_shim() {
+  local source="$1"
+  local base
+  base="$(basename "$source")"
+  base="${base%_min.s}"
+  base="${base//_/-}"
+  "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj \
+    "$source" -o "$sysroot/usr/lib/lnp64/${base}-min.o"
+}
+
+for source in toolchain/liblnp64_*_min.s; do
+  assemble_shim "$source"
+done
+
 rm -rf "$smoke_dir"
 mkdir -p "$smoke_dir"
 smoke_c="$smoke_dir/sysroot-smoke.c"

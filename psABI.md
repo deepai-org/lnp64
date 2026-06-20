@@ -79,6 +79,40 @@ The v0 C ABI treats `r1` through `r29` as caller-clobbered. There is no
 callee-saved GPR set in the v0 ABI. Runtimes that need stable register
 state across calls must spill it explicitly.
 
+## Nonlocal Jumps
+
+`setjmp` and `longjmp` are libc/psABI operations over ordinary user-visible
+thread context. A plain `jmp_buf` may save only the state required to resume
+the same live C thread image: `r31` as the stack pointer, `LR` as the return
+link, any future psABI callee-preserved GPRs, and user-visible FDR or
+capability register values only if a future psABI explicitly makes them part
+of the calling convention.
+
+`jmp_buf` must not save or restore Resource Domain authority state, scheduler
+state, waitable membership, gate continuation tokens unless they are explicitly
+ordinary user-visible capabilities, engine operation ownership, in-flight
+command state, raw VMA/MMU/TLB state, debug/trace/attestation authority,
+privileged PCRs, hidden hardware delivery frames, or reset/recovery epochs.
+`longjmp` is therefore just a user-context restore and branch within the same
+live thread and process image. It has no supported meaning across thread,
+domain, or `exec` boundaries.
+
+The libc ABI reserves validation-cookie words in `jmp_buf` for thread
+generation, process/image generation, and stack-bounds generation checks. When
+stable selectors expose those generations, `setjmp` must capture them and
+`longjmp` must cheaply validate them before restoring context; validation
+failure aborts or faults rather than continuing. In v0 those words are reserved
+and zeroed by the minimal shim, while `r31` and `LR` are the active restored
+state.
+
+Corrupting `jmp_buf` remains C undefined behavior, but hardware must not treat
+arbitrary bytes as freshly minted authority. Restored capability-like values are
+only existing typed register/FDR/capability references; `longjmp` cannot mint,
+widen, unseal, or refresh generations. `sigsetjmp(env, 1)` additionally saves
+and restores the compatibility signal-delivery mask through the normal
+`GET_PCR`/`SET_PCR` `SIGMASK` or gate-mask ABI. Plain `setjmp` does not save or
+restore a signal mask.
+
 ## Address Materialization
 
 All compiler-generated symbol materialization uses one explicit sequence:

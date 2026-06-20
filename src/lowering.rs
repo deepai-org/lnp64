@@ -639,6 +639,7 @@ mod tests {
         let netinet_in_header = include_str!("../toolchain/include/netinet/in.h");
         let poll_header = include_str!("../toolchain/include/poll.h");
         let search_header = include_str!("../toolchain/include/search.h");
+        let setjmp_header = include_str!("../toolchain/include/setjmp.h");
         let pthread_header = include_str!("../toolchain/include/pthread.h");
         let semaphore_header = include_str!("../toolchain/include/semaphore.h");
         let signal_header = include_str!("../toolchain/include/signal.h");
@@ -666,6 +667,7 @@ mod tests {
         let libc_fd_min = include_str!("../toolchain/liblnp64_fd_min.c");
         let libc_meta_min = include_str!("../toolchain/liblnp64_meta_min.c");
         let libc_process_min = include_str!("../toolchain/liblnp64_process_min.c");
+        let libc_setjmp_min = include_str!("../toolchain/liblnp64_setjmp_min.s");
         let libc_errno_min = include_str!("../toolchain/liblnp64_errno_min.c");
         let libc_startup_min = include_str!("../toolchain/liblnp64_startup_min.c");
         let libc_random_min = include_str!("../toolchain/liblnp64_random_min.c");
@@ -1445,6 +1447,29 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 clang C11 atomic object smoke passed"));
         assert!(real_llc.contains("exit-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang exit object smoke passed"));
+        assert!(real_llc.contains("setjmp-clang-smoke.o"));
+        assert!(real_llc.contains("#include <setjmp.h>"));
+        assert!(setjmp_header.contains("typedef unsigned long jmp_buf"));
+        assert!(setjmp_header.contains("LNP64_JMPBUF_THREAD_COOKIE"));
+        assert!(setjmp_header.contains("LNP64_JMPBUF_STACK_POINTER"));
+        assert!(setjmp_header.contains("LNP64_JMPBUF_LINK_REGISTER"));
+        assert!(setjmp_header.contains("__attribute__((returns_twice))"));
+        assert!(setjmp_header.contains("__attribute__((noreturn))"));
+        assert!(real_llc.contains("toolchain/liblnp64_setjmp_min.s"));
+        assert!(libc_setjmp_min.contains("LR_GET r2"));
+        assert!(libc_setjmp_min.contains("LR_SET r4"));
+        assert!(libc_setjmp_min.contains("ADD r31, r3, r0"));
+        assert!(libc_setjmp_min.contains("ST r0, 0(r1)"));
+        assert!(libc_setjmp_min.contains("ST r0, 8(r1)"));
+        assert!(libc_setjmp_min.contains("ST r0, 16(r1)"));
+        assert!(libc_setjmp_min.contains("BNE longjmp_value_ready"));
+        assert!(real_llc.contains("liblnp64-setjmp-min.o"));
+        assert!(real_llc.contains("grep -q 'lr_get r'"));
+        assert!(real_llc.contains("grep -q 'lr_set r'"));
+        assert!(real_llc.contains("real LLVM LNP64 clang setjmp object smoke passed"));
+        assert!(
+            real_llc.contains("real LLVM LNP64 llvm-mc setjmp implementation object smoke passed")
+        );
         assert!(real_llc.contains("toolchain/liblnp64_process_min.c"));
         assert!(libc_process_min.contains("__lnp_exit"));
         assert!(libc_process_min.contains("void abort(void)"));
@@ -4018,6 +4043,10 @@ mod tests {
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf C11 atomic execution passed"));
         assert!(real_llc_docker.contains("lnp64-exit-linked.elf"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf exit execution passed"));
+        assert!(real_llc_docker.contains("lnp64-setjmp-linked.elf"));
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 run-elf setjmp/longjmp execution passed")
+        );
         assert!(real_llc_docker.contains("lnp64-startup-linked.elf"));
         assert!(
             real_llc_docker.contains("real LLVM LNP64 run-elf startup argv/envp execution passed")
@@ -5236,6 +5265,7 @@ mod tests {
             "numeric_conversion",
             "process_identity",
             "process_lifecycle_compat",
+            "nonlocal_jump",
             "random_state",
             "path_helpers",
             "search_helpers",
@@ -5259,6 +5289,17 @@ mod tests {
             "broader kqueue filters and semantics must stay partial"
         );
         assert_eq!(groups["process_lifecycle_compat"].2, "tested");
+        assert_eq!(groups["nonlocal_jump"].2, "tested");
+        assert!(conformance.contains("`setjmp`, `longjmp`"));
+        assert!(conformance.contains("user-context restores"));
+        assert!(conformance.contains("Stable generation-cookie validation"));
+        assert!(shim_manifest.contains("toolchain/include/setjmp.h"));
+        assert!(shim_manifest.contains("toolchain/liblnp64_setjmp_min.s"));
+        assert!(
+            group_evidence["nonlocal_jump"]
+                .contains(&"real LLVM LNP64 run-elf setjmp/longjmp execution passed"),
+            "nonlocal_jump row must name run-elf setjmp evidence"
+        );
         assert!(shim_manifest.contains("userland/fork_wait_test_clang.c"));
         assert!(shim_manifest.contains("userland/elf_exec_test_clang.c"));
         assert!(shim_manifest.contains("pthread_atfork"));
@@ -5326,6 +5367,7 @@ mod tests {
             "string_ctype",
             "numeric_conversion",
             "process_identity",
+            "nonlocal_jump",
             "random_state",
             "path_helpers",
             "search_helpers",
@@ -5384,6 +5426,17 @@ mod tests {
                 "process_lifecycle_compat",
                 vec!["_exit", "fork", "waitpid", "execve", "execvp"],
                 vec!["EXIT", "FORK", "WAIT_PID", "EXEC", "errno_tls"],
+            ),
+            (
+                "nonlocal_jump",
+                vec!["setjmp", "longjmp", "jmp_buf"],
+                vec![
+                    "LR_GET",
+                    "LR_SET",
+                    "stack_pointer_restore",
+                    "user_context_only",
+                    "validation_cookies_reserved",
+                ],
             ),
             (
                 "random_state",
@@ -5677,7 +5730,7 @@ mod tests {
             "crt0_object|usr/lib/lnp64/crt0.o|toolchain/crt0_lnp64.s|generated",
             "linker_script|usr/lib/lnp64/lnp64_static.ld|toolchain/lnp64_static.ld|generated",
             "legacy_minilibc_object|usr/lib/lnp64/liblnp64_min.o|toolchain/liblnp64_min.s|generated",
-            "libc_shim_objects|usr/lib/lnp64/liblnp64-*.o|toolchain/liblnp64_*_min.c|generated",
+            "libc_shim_objects|usr/lib/lnp64/liblnp64-*.o|toolchain/liblnp64_*_min.c,toolchain/liblnp64_*_min.s|generated",
             "sysroot_static_link|target/lnp64-sysroot-smoke/sysroot-smoke.elf|scripts/package_lnp64_sysroot.sh|tested",
             "sysroot_run_elf|target/lnp64-sysroot-smoke/sysroot-smoke.elf|lnp64 run-elf|tested",
         ] {
@@ -5695,6 +5748,7 @@ mod tests {
             "toolchain/crt0_lnp64.s -o \"$sysroot/usr/lib/lnp64/crt0.o\"",
             "toolchain/liblnp64_min.s -o \"$sysroot/usr/lib/lnp64/liblnp64_min.o\"",
             "for source in toolchain/liblnp64_*_min.c",
+            "for source in toolchain/liblnp64_*_min.s",
             "base=\"${base//_/-}\"",
             "-I \"$sysroot/usr/include\" -I toolchain",
             "\"$sysroot/usr/lib/lnp64/${base}-min.o\"",
@@ -6268,6 +6322,7 @@ mod tests {
 
         for focus in [
             "real_c_stack_calls",
+            "setjmp_longjmp",
             "varargs_formatting",
             "malloc_realloc_free",
             "basic_stdio_write",
