@@ -150,6 +150,12 @@ Canonical symbol materialization:
 - Assembler `LA` is only a source macro for the direct two-instruction sequence.
   Object files, LLVM backend code, lld, and loader tests must use the explicit
   AUIPC relocation pair.
+- Linker pair binding for `R_LNP64_PCREL_LO12_I` and
+  `R_LNP64_PCREL_LO12_LD` is not finalized yet. Until the psABI chooses
+  whether the low relocation binds by a named high relocation, a relocation
+  group, or a nearest-preceding `R_LNP64_PCREL_HI20` rule, lld must reject the
+  split PC-relative forms instead of applying an approximate per-relocation
+  `S + A - P` calculation.
 - Local-exec TLS address: `GET_PCR r_base, TLS_BASE`; materialize a signed
   TP-relative offset either directly when the backend can prove it fits the
   immediate form, or via an `R_LNP64_TLS_TPREL_SLOT64` slot loaded with

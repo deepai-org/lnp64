@@ -300,9 +300,9 @@ NetBSD policy. Those remain loader, libc, and personality responsibilities.
      layer now declares target fixup kinds and object-writer relocation mapping
      for `%pcrel_hi`, `%pcrel_lo` immediate/load forms, and local-exec TLS
      offset slots. Emitting those fixups from SelectionDAG/asm parsing into
-     paired AUIPC+ADDI/LD sequences remains pending; the existing two-word
-     `AUIPC`/`R_LNP64_PC32` path is an interim scaffold, not the final object
-     contract.
+     paired AUIPC+ADDI/LD sequences and finalizing the lld low-relocation
+     pair-binding rule remain pending; the existing two-word `AUIPC`/
+     `R_LNP64_PC32` path is an interim scaffold, not the final object contract.
    - Implement local-exec TLS first: `GET_PCR TLS_BASE`, TP-relative immediate
      add when encodable, or AUIPC+LD of an `R_LNP64_TLS_TPREL_SLOT64` offset
      slot followed by an add. General-dynamic and initial-exec TLS are future

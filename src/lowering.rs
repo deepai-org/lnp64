@@ -8690,7 +8690,15 @@ mod tests {
         assert!(roadmap.contains("no longer selects `LA` for globals"));
         assert!(roadmap.contains("object-writer relocation mapping"));
         assert!(roadmap.contains("Emitting those fixups from SelectionDAG/asm parsing"));
-        assert!(roadmap.contains("`AUIPC`/`R_LNP64_PC32` path is an interim scaffold"));
+        assert!(roadmap.contains("lld low-relocation\n     pair-binding rule"));
+        assert!(object_format.contains("Linker pair binding"));
+        assert!(object_format.contains("nearest-preceding `R_LNP64_PCREL_HI20` rule"));
+        assert!(object_format.contains("lld must reject the\n  split PC-relative forms"));
+        assert!(
+            lld_backend.contains("split PC-relative LNP64 relocations are not implemented yet")
+        );
+        assert!(roadmap.contains("the existing two-word `AUIPC`/"));
+        assert!(roadmap.contains("`R_LNP64_PC32` path is an interim scaffold"));
         assert_eq!(rows.len(), 17);
         assert_eq!(
             target_relocations.len(),
