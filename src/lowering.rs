@@ -1273,6 +1273,7 @@ mod tests {
             "sysroot",
             "minilibc_smoke",
             "transition",
+            "toy_compiler_retirement",
         ] {
             assert!(names.contains(name), "missing contract index row {name}");
         }
@@ -5945,6 +5946,7 @@ mod tests {
 
         for phase in [
             "real_toolchain_target",
+            "toy_compiler_retirement",
             "minimal_llvm_clang_path",
             "libc_runtime_shim",
             "software_loader_exec_plan",
@@ -6291,8 +6293,9 @@ mod tests {
         );
         assert_eq!(
             categories["asm_demos"].3,
-            "assembly_demo_smoke_path_through_real_clang_loader"
+            "legacy_assembler_smoke_only_C_coverage_lives_in_real_clang_lld_run_elf"
         );
+        assert!(run_demos.contains("legacy-assembler smoke demos only"));
         assert!(categories["c_tests"].3.contains("default_to_real_clang"));
         for migrated_demo in [
             "demos/allocator.c",
@@ -6315,6 +6318,91 @@ mod tests {
                 "migrated real-Clang demo {migrated_demo} must not be routed through run_demos.sh"
             );
         }
+    }
+
+    #[test]
+    fn toy_compiler_retirement_manifest_limits_custom_frontend_scope() {
+        let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
+        let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
+        let retirement_manifest =
+            include_str!("../toolchain/lnp64_toy_compiler_retirement.manifest");
+        let conformance_gates = include_str!("../toolchain/lnp64_conformance_gates.manifest");
+        let run_demos = include_str!("../scripts/run_demos.sh");
+        let run_software = include_str!("../scripts/run_software_gates.sh");
+        let run_real_packages = include_str!("../scripts/run_real_packages.sh");
+        let run_real_llvm = include_str!("../scripts/run_real_llvm_lnp64.sh");
+        let run_real_package_gate = include_str!("../scripts/run_real_llvm_package_gate.sh");
+        let run_userland = include_str!("../scripts/run_userland.sh");
+        let run_netbsd = include_str!("../scripts/run_netbsd_personality_system.sh");
+        let rtl_program_smoke = include_str!("../scripts/run_rtl_top_program_smoke.sh");
+        let rtl_clang_smoke = include_str!("../scripts/run_rtl_top_clang_smoke.sh");
+        let rtl_linked_llvm_smoke = include_str!("../scripts/run_rtl_top_linked_llvm_smoke.sh");
+        let rtl_manifest_runner = include_str!("../scripts/run_rtl_top_program_manifest.sh");
+        let top_manifest = include_str!("../tests/rtl/top_level_program_manifest.json");
+        let rows: Vec<_> = retirement_manifest
+            .lines()
+            .filter(|line| !line.trim().is_empty() && !line.starts_with('#'))
+            .map(|line| {
+                let fields: Vec<_> = line.split('|').collect();
+                assert_eq!(fields.len(), 5, "bad retirement manifest row {line}");
+                (fields[0], fields[1], fields[2], fields[3], fields[4])
+            })
+            .collect();
+        let scopes: std::collections::BTreeSet<_> =
+            rows.iter().map(|(scope, _, _, _, _)| *scope).collect();
+
+        assert!(contract_index.contains(
+            "toy_compiler_retirement|toolchain/lnp64_toy_compiler_retirement.manifest|toy_compiler_retirement_manifest_limits_custom_frontend_scope"
+        ));
+        assert!(transition_manifest.contains(
+            "toy_compiler_retirement|required|toolchain/lnp64_toy_compiler_retirement.manifest"
+        ));
+        assert!(scopes.contains("legacy_assembly_smokes"));
+        assert!(scopes.contains("rtl_flat_exec_smokes"));
+        assert!(scopes.contains("software_package_gates"));
+        for (_, status, artifacts, forbidden, evidence) in &rows {
+            assert!(
+                *status == "allowed_smoke_generator" || *status == "real_toolchain_required",
+                "unknown retirement manifest status {status}"
+            );
+            assert!(!artifacts.is_empty());
+            assert!(!forbidden.is_empty());
+            assert!(!evidence.is_empty());
+        }
+
+        assert!(run_demos.contains("legacy-assembler smoke demos only"));
+        assert!(run_demos.contains("scripts/run_real_llvm_lnp64_docker.sh"));
+        assert!(run_demos.contains("for src in demos/*.s"));
+        assert!(!run_demos.contains("for src in demos/*.c"));
+        assert!(!run_demos.contains("include_legacy_c_frontend"));
+        assert!(
+            conformance_gates
+                .contains("legacy_assembler_smoke_only_C_coverage_lives_in_real_clang_lld_run_elf")
+        );
+
+        assert!(
+            rtl_program_smoke
+                .contains("direct .c input to run_rtl_top_program_smoke.sh is retired")
+        );
+        assert!(rtl_program_smoke.contains("scripts/run_rtl_top_clang_smoke.sh"));
+        assert!(rtl_program_smoke.contains("scripts/run_rtl_top_linked_llvm_smoke.sh"));
+        assert!(rtl_program_smoke.contains("asm-flat-exec"));
+        assert!(rtl_program_smoke.contains("run-flat-exec"));
+        assert!(rtl_clang_smoke.contains("clang"));
+        assert!(rtl_clang_smoke.contains("--target=lnp64-unknown-none"));
+        assert!(rtl_linked_llvm_smoke.contains("\"$lld\""));
+        assert!(rtl_linked_llvm_smoke.contains("elf-flat-exec"));
+        assert!(rtl_manifest_runner.contains("\"llvm_clang_programs\""));
+        assert!(rtl_manifest_runner.contains("\"llvm_linked_programs\""));
+        assert!(top_manifest.contains("\"llvm_clang_programs\""));
+        assert!(top_manifest.contains("\"llvm_linked_programs\""));
+
+        assert!(run_software.contains("bash scripts/run_real_packages.sh"));
+        assert!(run_real_packages.contains("scripts/run_real_llvm_package_gate.sh"));
+        assert!(run_real_llvm.contains(r#""$clang" --target=lnp64-unknown-none"#));
+        assert!(run_real_package_gate.contains("run-elf --namespace-root"));
+        assert!(run_userland.contains("LNP64_LLVM_PACKAGE_FILTER=userland"));
+        assert!(run_netbsd.contains("LNP64_LLVM_PACKAGE_FILTER=netbsd"));
     }
 
     #[test]
