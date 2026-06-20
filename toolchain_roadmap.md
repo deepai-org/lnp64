@@ -295,6 +295,11 @@ NetBSD policy. Those remain loader, libc, and personality responsibilities.
      `AUIPC %pcrel_hi` plus `ADDI %pcrel_lo` for direct addresses, or
      `AUIPC %pcrel_hi` plus `LD %pcrel_lo` for address/constant/TLS slots. Do
      not add backend-only `LA` or alternate pseudo-address contracts.
+   - Current LLVM codegen no longer selects `LA` for globals, and the manifests
+     plus lld reserve the split PC-relative relocation numbers. Emitting real
+     `%pcrel_hi`/`%pcrel_lo` MC fixups remains pending; the existing two-word
+     `AUIPC`/`R_LNP64_PC32` path is an interim scaffold, not the final object
+     contract.
    - Implement local-exec TLS first: `GET_PCR TLS_BASE`, TP-relative immediate
      add when encodable, or AUIPC+LD of an `R_LNP64_TLS_TPREL_SLOT64` offset
      slot followed by an add. General-dynamic and initial-exec TLS are future

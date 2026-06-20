@@ -8659,6 +8659,12 @@ mod tests {
         let mut numbers = std::collections::BTreeSet::new();
         let mut names = std::collections::BTreeSet::new();
 
+        assert!(roadmap.contains("no longer selects `LA` for globals"));
+        assert!(
+            roadmap
+                .contains("Emitting real\n     `%pcrel_hi`/`%pcrel_lo` MC fixups remains pending")
+        );
+        assert!(roadmap.contains("`AUIPC`/`R_LNP64_PC32` path is an interim scaffold"));
         assert_eq!(rows.len(), 17);
         assert_eq!(
             target_relocations.len(),
