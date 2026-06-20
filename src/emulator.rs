@@ -1352,7 +1352,7 @@ fn validate_exec_vma_words(words: &[u64]) -> Result<(u64, u64), String> {
     Ok((virtual_address, end))
 }
 
-fn validate_exec_fdr_grant_words(words: &[u64]) -> Result<(), String> {
+fn validate_exec_fdr_grant_words(words: &[u64]) -> Result<u64, String> {
     let slot = words[0];
     let kind = words[1];
     let rights = words[2];
@@ -1362,6 +1362,9 @@ fn validate_exec_fdr_grant_words(words: &[u64]) -> Result<(), String> {
     let preserve = words[7];
     if slot >= FDR_COUNT as u64 {
         return Err("exec-plan FDR grant slot is out of range".to_string());
+    }
+    if slot == MESSAGE_ENDPOINT_FD as u64 {
+        return Err("exec-plan FDR grant slot is reserved".to_string());
     }
     if kind == 0 {
         return Err("exec-plan FDR grant kind is missing".to_string());
@@ -1381,7 +1384,7 @@ fn validate_exec_fdr_grant_words(words: &[u64]) -> Result<(), String> {
     if preserve > 1 {
         return Err("exec-plan FDR preserve decision is not boolean".to_string());
     }
-    Ok(())
+    Ok(slot)
 }
 
 impl Machine {
@@ -1479,8 +1482,13 @@ impl Machine {
             vma_ranges.push(range);
             offset += EXEC_PLAN_VMA_WORDS;
         }
+        let mut fdr_slots = HashSet::with_capacity(fdr_count);
         for _ in 0..fdr_count {
-            validate_exec_fdr_grant_words(&words[offset..offset + EXEC_PLAN_FDR_GRANT_WORDS])?;
+            let slot =
+                validate_exec_fdr_grant_words(&words[offset..offset + EXEC_PLAN_FDR_GRANT_WORDS])?;
+            if !fdr_slots.insert(slot) {
+                return Err("exec-plan FDR grant slots duplicate".to_string());
+            }
             offset += EXEC_PLAN_FDR_GRANT_WORDS;
         }
         Ok(())
@@ -15214,6 +15222,51 @@ mod tests {
         let err = Machine::validate_exec_descriptor_words(&words).unwrap_err();
 
         assert!(err.contains("slot is out of range"), "{err}");
+    }
+
+    #[test]
+    fn emulator_rejects_exec_descriptor_fdr_grant_reserved_slot() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let mut words = encode_exec_descriptor(&descriptor);
+        let fdr_offset = EXEC_PLAN_HEADER_WORDS
+            + EXEC_PLAN_ENTRY_WORDS
+            + descriptor.vmas.len() * EXEC_PLAN_VMA_WORDS;
+        words[fdr_offset] = MESSAGE_ENDPOINT_FD as u64;
+
+        let err = Machine::validate_exec_descriptor_words(&words).unwrap_err();
+
+        assert!(err.contains("slot is reserved"), "{err}");
+    }
+
+    #[test]
+    fn emulator_rejects_exec_descriptor_duplicate_fdr_grant_slots() {
+        let mut plan = loader_exec_plan_fixture();
+        let duplicate = plan.fdr_grants[0];
+        plan.fdr_grants.push(duplicate);
+        let descriptor = build_exec_descriptor(
+            &plan,
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let words = encode_exec_descriptor(&descriptor);
+
+        let err = Machine::validate_exec_descriptor_words(&words).unwrap_err();
+
+        assert!(err.contains("FDR grant slots duplicate"), "{err}");
     }
 
     #[test]
