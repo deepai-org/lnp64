@@ -466,6 +466,16 @@ grep -q 'exit=0' "$sbase_fixture_root/tee-stdout.txt"
 grep -q '^tee via clang$' "$sbase_fixture_root/tee-copy.txt"
 printf 'real LLVM LNP64 run-elf sbase tee execution passed: %s\n' \
   target/llvm-lnp64-build/lnp64-sbase-tee-linked.elf
+printf 'copy via clang\n' >"$sbase_fixture_root/input/cp-source.txt"
+rm -f "$sbase_fixture_root/cp-copy.txt"
+"$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-cp-linked.elf \
+  >/dev/null
+sbase_cp_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+  target/llvm-lnp64-build/lnp64-sbase-cp-linked.elf cp input/cp-source.txt cp-copy.txt)"
+grep -q 'exit=0' <<<"$sbase_cp_output"
+cmp -s "$sbase_fixture_root/input/cp-source.txt" "$sbase_fixture_root/cp-copy.txt"
+printf 'real LLVM LNP64 run-elf sbase cp execution passed: %s\n' \
+  target/llvm-lnp64-build/lnp64-sbase-cp-linked.elf
 "$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-ls-linked.elf \
   >/dev/null
 sbase_ls_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \

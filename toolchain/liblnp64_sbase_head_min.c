@@ -1,8 +1,10 @@
+#include <dirent.h>
 #include <fcntl.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 typedef int Rune;
@@ -18,6 +20,7 @@ static FILE lnp64_head_stdout_file = {.fd = 1};
 static FILE lnp64_head_stderr_file = {.fd = 2};
 static FILE lnp64_head_files[4];
 static int lnp64_head_file_used[4];
+static struct dirent lnp64_head_dirent;
 
 FILE *stdin = &lnp64_head_stdin_file;
 FILE *stdout = &lnp64_head_stdout_file;
@@ -134,6 +137,8 @@ int fgetc(FILE *stream) {
 }
 
 int getc(FILE *stream) { return fgetc(stream); }
+
+int getchar(void) { return fgetc(stdin); }
 
 int ferror(FILE *stream) { return stream ? stream->error : 1; }
 
@@ -295,6 +300,55 @@ int printf(const char *format, ...) {
   return 0;
 }
 
+void xvprintf(const char *format, va_list ap) { lnp64_vprint(stderr, format, ap); }
+
+static void lnp64_sbuf_put(char *str, size_t size, size_t *pos, char ch) {
+  if (*pos + 1 < size)
+    str[*pos] = ch;
+  (*pos)++;
+}
+
+int vsnprintf(char *str, size_t size, const char *format, va_list ap) {
+  size_t pos = 0;
+  while (*format) {
+    if (*format != '%') {
+      lnp64_sbuf_put(str, size, &pos, *format++);
+      continue;
+    }
+    format++;
+    if (*format == '%') {
+      lnp64_sbuf_put(str, size, &pos, *format++);
+      continue;
+    }
+    if (*format == 's') {
+      const char *s = va_arg(ap, const char *);
+      if (!s)
+        s = "(null)";
+      while (*s)
+        lnp64_sbuf_put(str, size, &pos, *s++);
+      format++;
+      continue;
+    }
+    lnp64_sbuf_put(str, size, &pos, '%');
+    if (*format)
+      lnp64_sbuf_put(str, size, &pos, *format++);
+  }
+  if (size) {
+    size_t end = pos < size ? pos : size - 1;
+    str[end] = 0;
+  }
+  return (int)pos;
+}
+
+int snprintf(char *str, size_t size, const char *format, ...) {
+  va_list ap;
+  int ret;
+  va_start(ap, format);
+  ret = vsnprintf(str, size, format, ap);
+  va_end(ap);
+  return ret;
+}
+
 int vfprintf(FILE *stream, const char *format, va_list ap) {
   lnp64_vprint(stream, format, ap);
   return 0;
@@ -329,4 +383,42 @@ void enprintf(int status, const char *format, ...) {
   lnp64_vprint(stderr, format, ap);
   va_end(ap);
   exit(status);
+}
+
+size_t estrlcpy(char *dst, const char *src, size_t size) {
+  size_t len = strlen(src);
+  if (size) {
+    size_t copy = len < size - 1 ? len : size - 1;
+    memcpy(dst, src, copy);
+    dst[copy] = 0;
+  }
+  if (len >= size)
+    eprintf("strlcpy:");
+  return len;
+}
+
+size_t estrlcat(char *dst, const char *src, size_t size) {
+  size_t used = strlen(dst);
+  size_t len = used + strlen(src);
+  if (used < size) {
+    size_t room = size - used - 1;
+    size_t copy = strlen(src) < room ? strlen(src) : room;
+    memcpy(dst + used, src, copy);
+    dst[used + copy] = 0;
+  }
+  if (len >= size)
+    eprintf("strlcat:");
+  return len;
+}
+
+struct dirent *readdir(DIR *dirp) {
+  unsigned long status;
+  memset(&lnp64_head_dirent, 0, sizeof(lnp64_head_dirent));
+  __asm__ volatile("readdir_fd_dyn %1, %2\n\tmov %0, r1"
+                   : "=r"(status)
+                   : "r"((long)dirp), "r"(lnp64_head_dirent.d_name)
+                   : "memory");
+  if (status == 1)
+    return &lnp64_head_dirent;
+  return 0;
 }

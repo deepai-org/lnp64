@@ -25,6 +25,11 @@ int open(const char *path, int flags, ...) {
   return openat(AT_FDCWD, path, flags);
 }
 
+int creat(const char *path, mode_t mode) {
+  (void)mode;
+  return open(path, O_WRONLY | O_CREAT | O_TRUNC);
+}
+
 ssize_t read(int fd, void *buf, size_t len) {
   return (long)__lnp_pull((lnp64_cap_t)fd, (lnp64_word_t)buf, len);
 }

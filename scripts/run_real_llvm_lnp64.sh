@@ -5886,6 +5886,22 @@ test -s "$sbase_tee_elf"
 printf 'real LLVM LNP64 lld sbase tee link smoke passed: %s\n' \
   "$sbase_tee_elf"
 
+sbase_cp_elf="$build_dir/lnp64-sbase-cp-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
+  -o "$sbase_cp_elf" "$crt0_obj" "$build_dir/sbase-cp-clang-smoke.o" \
+  "$build_dir/sbase-libutil-cp-clang-smoke.o" \
+  "$build_dir/sbase-libutil-enmasse-clang-smoke.o" \
+  "$build_dir/sbase-libutil-fnck-clang-smoke.o" \
+  "$build_dir/sbase-libutil-concat-clang-smoke.o" \
+  "$build_dir/sbase-libutil-confirm-clang-smoke.o" \
+  "$build_dir/sbase-libutil-writeall-clang-smoke.o" \
+  "$sbase_head_support_impl_obj" "$libc_alloc_impl_obj" "$libc_fd_impl_obj" \
+  "$libc_meta_impl_obj" "$libc_path_impl_obj" "$libc_time_impl_obj" \
+  "$libc_string_impl_obj" "$libc_errno_impl_obj" "$libc_process_impl_obj"
+test -s "$sbase_cp_elf"
+printf 'real LLVM LNP64 lld sbase cp link smoke passed: %s\n' \
+  "$sbase_cp_elf"
+
 sbase_ls_elf="$build_dir/lnp64-sbase-ls-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$sbase_ls_elf" "$crt0_obj" "$build_dir/sbase-ls-clang-smoke.o" \

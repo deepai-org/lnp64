@@ -166,6 +166,14 @@ int mkdir(const char *path, mode_t mode) {
   return mkdirat(AT_FDCWD, path, mode);
 }
 
+int mknod(const char *path, mode_t mode, dev_t dev) {
+  (void)path;
+  (void)mode;
+  (void)dev;
+  lnp64_errno_store(ENOSYS);
+  return -1;
+}
+
 mode_t umask(mode_t mask) {
   mode_t old = lnp64_umask_value;
   lnp64_umask_value = mask & 0777;

@@ -1666,6 +1666,8 @@ mod tests {
             "sbase_tail_run_elf",
             "sbase_tee_static_link",
             "sbase_tee_run_elf",
+            "sbase_cp_static_link",
+            "sbase_cp_run_elf",
             "sbase_ls_static_link",
             "sbase_ls_run_elf",
             "sbase_find_static_link",
@@ -3050,6 +3052,7 @@ mod tests {
         assert!(!libc_fd_min.contains("typedef unsigned long size_t;"));
         assert!(libc_fd_min.contains("int openat(int dirfd, const char *path, int flags, ...)"));
         assert!(libc_fd_min.contains("int open(const char *path, int flags, ...)"));
+        assert!(libc_fd_min.contains("int creat(const char *path, mode_t mode)"));
         assert!(libc_fd_min.contains("ssize_t read(int fd, void *buf, size_t len)"));
         assert!(libc_fd_min.contains("ssize_t write(int fd, const void *buf, size_t len)"));
         assert!(libc_fd_min.contains("__lnp_pull"));
@@ -3081,6 +3084,8 @@ mod tests {
         assert!(libc_meta_min.contains("fcntl_fd_dyn"));
         assert!(libc_meta_min.contains("int access(const char *path, int mode)"));
         assert!(libc_meta_min.contains("static struct stat lnp64_access_stat"));
+        assert!(libc_meta_min.contains("int mknod(const char *path, mode_t mode, dev_t dev)"));
+        assert!(libc_meta_min.contains("lnp64_errno_store(ENOSYS)"));
         assert!(
             libc_meta_min.contains("lnp64_stat_path_at(AT_FDCWD, path, &lnp64_access_stat, 0)")
         );
@@ -3706,6 +3711,12 @@ mod tests {
         assert!(libc_sbase_head_min.contains("void *erealloc(void *ptr, size_t size)"));
         assert!(libc_sbase_head_min.contains("void *ecalloc(size_t count, size_t size)"));
         assert!(libc_sbase_head_min.contains("int charntorune(Rune *r"));
+        assert!(libc_sbase_head_min.contains("int snprintf(char *str, size_t size"));
+        assert!(libc_sbase_head_min.contains("size_t estrlcpy(char *dst"));
+        assert!(libc_sbase_head_min.contains("size_t estrlcat(char *dst"));
+        assert!(libc_sbase_head_min.contains("int getchar(void)"));
+        assert!(libc_sbase_head_min.contains("void xvprintf("));
+        assert!(libc_sbase_head_min.contains("struct dirent *readdir(DIR *dirp)"));
         assert!(libc_sbase_head_min.contains("void weprintf("));
         assert!(libc_sbase_head_min.contains("void enprintf("));
         assert!(libc_sbase_head_min.contains("int fprintf(FILE *stream"));
@@ -3755,6 +3766,15 @@ mod tests {
         assert!(real_llc.contains(r#""$sbase_head_support_impl_obj" "$libc_alloc_impl_obj""#));
         assert!(real_llc.contains(r#""$libc_signal_impl_obj" "$libc_string_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld sbase tee link smoke passed"));
+        assert!(real_llc.contains("lnp64-sbase-cp-linked.elf"));
+        assert!(real_llc.contains(r#""$build_dir/sbase-cp-clang-smoke.o" \"#));
+        assert!(real_llc.contains(r#""$build_dir/sbase-libutil-cp-clang-smoke.o" \"#));
+        assert!(real_llc.contains(r#""$build_dir/sbase-libutil-enmasse-clang-smoke.o" \"#));
+        assert!(real_llc.contains(r#""$build_dir/sbase-libutil-fnck-clang-smoke.o" \"#));
+        assert!(real_llc.contains(r#""$build_dir/sbase-libutil-confirm-clang-smoke.o" \"#));
+        assert!(real_llc.contains(r#""$build_dir/sbase-libutil-writeall-clang-smoke.o" \"#));
+        assert!(real_llc.contains(r#""$libc_meta_impl_obj" "$libc_path_impl_obj""#));
+        assert!(real_llc.contains("real LLVM LNP64 lld sbase cp link smoke passed"));
         assert!(real_llc.contains("lnp64-sbase-mkdir-linked.elf"));
         assert!(real_llc.contains(r#""$build_dir/sbase-mkdir-clang-smoke.o" \"#));
         assert!(real_llc.contains(r#""$sbase_fs_support_impl_obj" \"#));
@@ -4308,6 +4328,9 @@ mod tests {
         assert!(real_llc_docker.contains("tee tee-copy.txt"));
         assert!(real_llc_docker.contains("tee-stdout.txt"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase tee execution passed"));
+        assert!(real_llc_docker.contains("lnp64-sbase-cp-linked.elf"));
+        assert!(real_llc_docker.contains("cp input/cp-source.txt cp-copy.txt"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase cp execution passed"));
         assert!(real_llc_docker.contains("lnp64-sbase-ls-linked.elf"));
         assert!(real_llc_docker.contains("ls input"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase ls execution passed"));
@@ -4563,6 +4586,7 @@ mod tests {
             "real_sbase_uniq_execution",
             "real_sbase_tail_execution",
             "real_sbase_tee_execution",
+            "real_sbase_cp_execution",
             "real_sbase_ls_execution",
             "real_sbase_find_execution",
             "real_sbase_mkdir_execution",
@@ -4683,6 +4707,7 @@ mod tests {
             "real_sbase_uniq_execution",
             "real_sbase_tail_execution",
             "real_sbase_tee_execution",
+            "real_sbase_cp_execution",
             "real_sbase_ls_execution",
             "real_sbase_find_execution",
             "real_sbase_mkdir_execution",
@@ -6407,6 +6432,7 @@ mod tests {
             "lnp64-sbase-uniq-linked.elf",
             "lnp64-sbase-tail-linked.elf",
             "lnp64-sbase-tee-linked.elf",
+            "lnp64-sbase-cp-linked.elf",
             "lnp64-sbase-ls-linked.elf",
             "lnp64-sbase-find-linked.elf",
             "lnp64-sbase-mkdir-linked.elf",
@@ -6427,6 +6453,7 @@ mod tests {
             "real LLVM LNP64 run-elf sbase uniq execution passed",
             "real LLVM LNP64 run-elf sbase tail execution passed",
             "real LLVM LNP64 run-elf sbase tee execution passed",
+            "real LLVM LNP64 run-elf sbase cp execution passed",
             "real LLVM LNP64 run-elf sbase ls execution passed",
             "real LLVM LNP64 run-elf sbase find execution passed",
             "real LLVM LNP64 run-elf sbase mkdir execution passed",
