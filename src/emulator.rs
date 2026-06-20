@@ -13762,6 +13762,72 @@ mod tests {
     }
 
     #[test]
+    fn fork_clone_copies_vma_heap_metadata_and_isolates_memory() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+
+        let ptr = machine.alloc_heap(32, 16, true).unwrap();
+        machine.store_u64(ptr, 0x1111).unwrap();
+        let parent_heap_next = machine.process().unwrap().heap_next;
+        let parent_allocation = *machine.process().unwrap().allocations.get(&ptr).unwrap();
+        let parent_vmas = machine
+            .process()
+            .unwrap()
+            .vmas
+            .iter()
+            .map(|vma| (vma.start, vma.len, vma.prot, vma.guard))
+            .collect::<Vec<_>>();
+
+        machine
+            .clone_with_profile(CloneProfile::NewProcessCow, Reg(5), None)
+            .unwrap();
+        let child_tid = machine
+            .threads
+            .values()
+            .find(|thread| thread.pid == 2)
+            .unwrap()
+            .tid;
+        let child = machine.processes.get(&2).unwrap();
+
+        assert_eq!(child.heap_next, parent_heap_next);
+        let child_allocation = child.allocations.get(&ptr).unwrap();
+        assert_eq!(child_allocation.len, parent_allocation.len);
+        assert_eq!(child_allocation.domain_id, parent_allocation.domain_id);
+        assert_eq!(
+            child_allocation.guard_before,
+            parent_allocation.guard_before
+        );
+        assert_eq!(child_allocation.guard_after, parent_allocation.guard_after);
+        assert_eq!(
+            child
+                .vmas
+                .iter()
+                .map(|vma| (vma.start, vma.len, vma.prot, vma.guard))
+                .collect::<Vec<_>>(),
+            parent_vmas
+        );
+
+        machine.current_tid = child_tid;
+        assert_eq!(machine.load_u64(ptr).unwrap(), 0x1111);
+        machine.store_u64(ptr, 0x2222).unwrap();
+        let child_heap_next = machine.process().unwrap().heap_next;
+        let child_ptr = machine.alloc_heap(16, 16, false).unwrap();
+        assert_eq!(child_ptr, parent_heap_next);
+
+        machine.current_tid = 1;
+        assert_eq!(machine.load_u64(ptr).unwrap(), 0x1111);
+        assert_eq!(machine.process().unwrap().heap_next, parent_heap_next);
+        assert!(
+            !machine
+                .process()
+                .unwrap()
+                .allocations
+                .contains_key(&child_ptr)
+        );
+        assert!(machine.processes.get(&2).unwrap().heap_next > child_heap_next);
+    }
+
+    #[test]
     fn clone_profile_failures_do_not_allocate_contexts() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;

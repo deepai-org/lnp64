@@ -5917,7 +5917,7 @@ mod tests {
         );
         assert_eq!(
             groups["process_lifecycle_compat"].2, "partial",
-            "fork/exec lifecycle compatibility must stay partial until COW VMA/heap metadata semantics are complete"
+            "fork/exec lifecycle compatibility must stay partial until larger forked VMA and heap mutation stress exists"
         );
         assert!(shim_manifest.contains("userland/fork_wait_test_clang.c"));
         assert!(shim_manifest.contains("userland/elf_exec_test_clang.c"));
@@ -5928,11 +5928,16 @@ mod tests {
         assert!(libc_roadmap.contains("signal dispositions"));
         assert!(conformance.contains("fork_clone_inherits_signal_state_and_clears_pending_events"));
         assert!(conformance.contains("fork_clone_does_not_copy_in_flight_ipc_or_waiters"));
+        assert!(conformance.contains("fork_clone_copies_vma_heap_metadata_and_isolates_memory"));
         assert!(
             conformance
                 .contains("copied signal masks/dispositions with cleared child pending signals")
         );
         assert!(conformance.contains("no copied in-flight IPC inbox entries or waiter ownership"));
+        assert!(
+            conformance
+                .contains("copied VMA/heap metadata with independent post-fork memory writes")
+        );
         assert!(shim_manifest.contains("userland/poll_test_clang.c"));
         assert!(shim_manifest.contains("real LLVM LNP64 run-elf NetBSD poll child passed"));
         for evidence in [
