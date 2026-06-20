@@ -6515,17 +6515,22 @@ mod tests {
         );
         assert_eq!(
             categories["llvm_built_versions"].2,
-            "scripts/run_real_llvm_bootstrap_smokes.sh"
+            "scripts/run_real_llvm_lnp64_docker.sh"
         );
         assert!(
             categories["llvm_built_versions"]
                 .3
-                .contains("real_clang_object_gate")
+                .contains("real_clang_lld_run_elf_versions")
         );
         assert!(
             categories["llvm_built_versions"]
                 .3
-                .contains("fast_bootstrap_smoke")
+                .contains("all_tested_bootstrap_rows")
+        );
+        assert!(
+            categories["llvm_built_versions"]
+                .3
+                .contains("full_libc_replacement_pending")
         );
         assert_eq!(
             categories["llvm_package_tests"].2,
