@@ -44,6 +44,24 @@ run_top_program_logged() {
   fi
 }
 
+program_input="${1:-tests/rtl/programs/top_smoke.s}"
+if [[ ! -f "$program_input" ]]; then
+  printf 'missing top-level program input: %s\n' "$program_input" >&2
+  exit 1
+fi
+program_hex="$program_input"
+program_asm=""
+program_data_hex="${2:-}"
+if [[ -n "$program_data_hex" && ! -f "$program_data_hex" ]]; then
+  printf 'missing top-level program data hex input: %s\n' "$program_data_hex" >&2
+  exit 1
+fi
+if [[ "$program_input" == *.c ]]; then
+  printf '%s\n' "direct .c input to run_rtl_top_program_smoke.sh is retired" >&2
+  printf '%s\n' "use scripts/run_rtl_top_clang_smoke.sh or scripts/run_rtl_top_linked_llvm_smoke.sh for C inputs" >&2
+  exit 1
+fi
+
 if ! command -v verilator >/dev/null 2>&1; then
   printf '%s\n' "verilator is required for the RTL top-level program smoke gate" >&2
   exit 1
@@ -70,24 +88,6 @@ common_flags=(
 mapfile -t rtl_files < tests/rtl/top_program_filelist.f
 
 build_dir="$(rtl_build_dir "top_program_${top_program_tile_count}tile_${top_program_thread_context_count}ctx")"
-
-program_input="${1:-tests/rtl/programs/top_smoke.s}"
-if [[ ! -f "$program_input" ]]; then
-  printf 'missing top-level program input: %s\n' "$program_input" >&2
-  exit 1
-fi
-program_hex="$program_input"
-program_asm=""
-program_data_hex="${2:-}"
-if [[ -n "$program_data_hex" && ! -f "$program_data_hex" ]]; then
-  printf 'missing top-level program data hex input: %s\n' "$program_data_hex" >&2
-  exit 1
-fi
-if [[ "$program_input" == *.c ]]; then
-  printf '%s\n' "direct .c input to run_rtl_top_program_smoke.sh is retired" >&2
-  printf '%s\n' "use scripts/run_rtl_top_clang_smoke.sh or scripts/run_rtl_top_linked_llvm_smoke.sh for C inputs" >&2
-  exit 1
-fi
 if [[ "$program_input" == *.s ]]; then
   if [[ -n "$program_data_hex" ]]; then
     printf '%s\n' "explicit data hex is only supported for raw .hex top-level program inputs" >&2

@@ -6835,6 +6835,23 @@ mod tests {
             rtl_program_smoke
                 .contains("direct .c input to run_rtl_top_program_smoke.sh is retired")
         );
+        let rtl_direct_c_rejection = rtl_program_smoke
+            .find("direct .c input to run_rtl_top_program_smoke.sh is retired")
+            .expect("missing direct C rejection in RTL program smoke");
+        let rtl_verilator_probe = rtl_program_smoke
+            .find("command -v verilator")
+            .expect("missing Verilator probe in RTL program smoke");
+        let rtl_filelist_read = rtl_program_smoke
+            .find("mapfile -t rtl_files")
+            .expect("missing RTL filelist read in RTL program smoke");
+        assert!(
+            rtl_direct_c_rejection < rtl_verilator_probe,
+            "direct C input must be rejected before requiring Verilator"
+        );
+        assert!(
+            rtl_direct_c_rejection < rtl_filelist_read,
+            "direct C input must be rejected before reading RTL build inputs"
+        );
         assert!(rtl_program_smoke.contains("scripts/run_rtl_top_clang_smoke.sh"));
         assert!(rtl_program_smoke.contains("scripts/run_rtl_top_linked_llvm_smoke.sh"));
         assert!(rtl_program_smoke.contains("asm-flat-exec"));
