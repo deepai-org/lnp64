@@ -338,6 +338,14 @@ LNP64TargetLowering::LNP64TargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::ATOMIC_LOAD, MVT::i64, Legal);
   setOperationAction(ISD::ATOMIC_STORE, MVT::i64, Legal);
 
+  // Sub-word atomic loads/stores: custom-lower to plain zero-extending loads
+  // and truncating stores.  LNP64 is a single-process capability machine;
+  // relaxed atomics on sub-word types need no hardware support.
+  for (MVT VT : {MVT::i8, MVT::i16, MVT::i32}) {
+    setOperationAction(ISD::ATOMIC_LOAD,  VT, Custom);
+    setOperationAction(ISD::ATOMIC_STORE, VT, Custom);
+  }
+
   setOperationAction(ISD::GlobalAddress, MVT::i64, Custom);
   setOperationAction(ISD::BR_CC, MVT::i64, Custom);
   setOperationAction(ISD::BRCOND, MVT::Other, Custom);
@@ -461,6 +469,34 @@ SDValue LNP64TargetLowering::LowerOperation(SDValue Op,
     return DAG.getNode(LNP64ISD::BR_NE, DL, MVT::Other,
                        {Chain, Cond, Zero, Target});
   }
+  case ISD::ATOMIC_LOAD: {
+    // Sub-word atomic loads lower to plain zero-extending loads into i64.
+    llvm_unreachable("LowerOperation ATOMIC_LOAD reached");
+    auto *AN = cast<AtomicSDNode>(Op);
+    SDLoc DL(Op);
+    EVT MemVT = AN->getMemoryVT();
+    return DAG.getExtLoad(ISD::ZEXTLOAD, DL, MVT::i64, AN->getChain(),
+                          AN->getBasePtr(), AN->getPointerInfo(), MemVT,
+                          AN->getOriginalAlign(),
+                          AN->getMemOperand()->getFlags());
+  }
+  case ISD::ATOMIC_STORE: {
+    // Sub-word atomic stores lower to plain truncating stores.
+    // No multi-processor coherence is needed: a single-address-space
+    // capability machine with THREADSAFE=0 callers only needs store ordering,
+    // which the hardware provides naturally.
+    auto *AN = cast<AtomicSDNode>(Op);
+    SDLoc DL(Op);
+    SDValue Chain = AN->getChain();
+    SDValue Ptr   = AN->getBasePtr();
+    SDValue Val   = AN->getVal();
+    EVT MemVT = AN->getMemoryVT();
+    MachineMemOperand *MMO = AN->getMemOperand();
+    // Truncate the i64-extended value back down and emit a plain store.
+    if (Val.getValueType() != MemVT)
+      Val = DAG.getNode(ISD::TRUNCATE, DL, MemVT, Val);
+    return DAG.getStore(Chain, DL, Val, Ptr, MMO);
+  }
   case ISD::VASTART: {
     SDLoc DL(Op);
     SDValue Chain = Op.getOperand(0);
@@ -474,6 +510,37 @@ SDValue LNP64TargetLowering::LowerOperation(SDValue Op,
   }
   default:
     llvm_unreachable("unsupported LNP64 custom lowering opcode");
+  }
+}
+
+void LNP64TargetLowering::ReplaceNodeResults(SDNode *N,
+                                             SmallVectorImpl<SDValue> &Results,
+                                             SelectionDAG &DAG) const {
+  SDLoc DL(N);
+  switch (N->getOpcode()) {
+  case ISD::ATOMIC_LOAD: {
+    // Type promotion: sub-word atomic loads become i64 zext loads.
+    // Push a TRUNCATE back to the original (illegal) type so the type legalizer
+    // later calls PromoteIntOp_STORE on any spill stores, producing truncating
+    // stores (ST_W / ST_H / ST_B) rather than 8-byte ST that corrupts neighbors.
+    auto *AN = cast<AtomicSDNode>(N);
+    EVT MemVT = AN->getMemoryVT();
+    SDValue Load = DAG.getExtLoad(
+        ISD::ZEXTLOAD, DL, MVT::i64, AN->getChain(), AN->getBasePtr(),
+        AN->getPointerInfo(), MemVT, AN->getOriginalAlign(),
+        AN->getMemOperand()->getFlags());
+    // Truncate back to the original (illegal) type so downstream type
+    // legalization of STORE nodes emits truncating stores (st.w / st.h / st.b)
+    // rather than full 8-byte stores that corrupt adjacent stack slots.
+    SDValue Trunc = DAG.getNode(ISD::TRUNCATE, DL, N->getValueType(0),
+                                Load.getValue(0));
+    Results.push_back(DAG.getNode(ISD::TRUNCATE, DL, N->getValueType(0),
+                                  Load.getValue(0)));
+    Results.push_back(Load.getValue(1)); // chain
+    return;
+  }
+  default:
+    break;
   }
 }
 
