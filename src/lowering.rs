@@ -6452,6 +6452,17 @@ mod tests {
             "toolchain/liblnp64_pthread_min.c",
             "toolchain/liblnp64_sem_min.c",
             "toolchain/liblnp64_signal_min.c",
+            "userland/loader_target_clang.c",
+            "userland/elf_exec_test_clang.c",
+            "userland/fork_wait_test_clang.c",
+            "userland/thread_test_clang.c",
+            "userland/poll_test_clang.c",
+            "userland/signal_gate_test_clang.c",
+            "userland/signal_fault_test_clang.c",
+            "userland/timer_test_clang.c",
+            "userland/mmap_test_clang.c",
+            "userland/namespace_test_clang.c",
+            "userland/socket_loopback_test_clang.c",
             "toolchain/include/poll.h",
             "toolchain/include/pthread.h",
             "toolchain/include/search.h",
@@ -6987,6 +6998,11 @@ mod tests {
         assert_eq!(
             categories["asm_demos"].3,
             "legacy_assembler_smoke_only_C_coverage_lives_in_real_clang_lld_run_elf"
+        );
+        assert!(
+            categories["asm_demos"]
+                .1
+                .contains(&"demos/waitable_probe_no_consume.s")
         );
         assert!(run_demos.contains("legacy-assembler smoke demos only"));
         assert!(categories["c_tests"].3.contains("default_to_real_clang"));
