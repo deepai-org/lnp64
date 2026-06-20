@@ -1081,6 +1081,44 @@ mod tests {
             .collect()
     }
 
+    fn real_program_ladder_rows(
+        manifest: &str,
+    ) -> Vec<(&str, &str, Vec<&str>, &str, &str, Vec<&str>, &str)> {
+        manifest
+            .lines()
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(|line| {
+                let mut fields = line.splitn(7, '|');
+                let stage = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing real-program stage in {line}"));
+                let status = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing real-program status in {line}"));
+                let artifacts = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing real-program artifacts in {line}"))
+                    .split(',')
+                    .collect();
+                let gate = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing real-program gate in {line}"));
+                let goal = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing real-program goal in {line}"));
+                let focus = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing real-program focus in {line}"))
+                    .split(',')
+                    .collect();
+                let next_blocker = fields
+                    .next()
+                    .unwrap_or_else(|| panic!("missing real-program blocker in {line}"));
+                (stage, status, artifacts, gate, goal, focus, next_blocker)
+            })
+            .collect()
+    }
+
     fn conformance_gate_rows(manifest: &str) -> Vec<(&str, &str, Vec<&str>, &str, &str)> {
         manifest
             .lines()
@@ -1281,6 +1319,7 @@ mod tests {
             "libc_shim",
             "netbsd_layers",
             "conformance_gates",
+            "real_program_ladder",
             "isel",
             "llvm_bootstrap",
             "llvm_gates",
@@ -6826,6 +6865,209 @@ mod tests {
         assert_ne!(
             statuses["larger_userland_commands"], "bootstrap_gate",
             "larger NetBSD userland must not be treated as current bootstrap coverage"
+        );
+    }
+
+    #[test]
+    fn real_program_ladder_manifest_orders_lua_to_redis() {
+        let ladder_manifest = include_str!("../toolchain/lnp64_real_program_ladder.manifest");
+        let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
+        let conformance = include_str!("../conformance_matrix.md");
+        let netbsd_layers = include_str!("../toolchain/lnp64_netbsd_layers.manifest");
+        let libc_shim = include_str!("../toolchain/lnp64_libc_shim.manifest");
+        let gate_manifest = include_str!("../toolchain/lnp64_conformance_gates.manifest");
+        let rows = real_program_ladder_rows(ladder_manifest);
+        let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut seen = std::collections::BTreeSet::new();
+        let mut ordered_stages = Vec::new();
+        let mut statuses = std::collections::BTreeMap::new();
+        let mut artifacts_by_stage = std::collections::BTreeMap::new();
+        let mut gates = std::collections::BTreeMap::new();
+        let mut goals = std::collections::BTreeMap::new();
+        let mut focus_by_stage = std::collections::BTreeMap::new();
+        let mut blockers = std::collections::BTreeMap::new();
+
+        assert!(contract_index.contains(
+            "real_program_ladder|toolchain/lnp64_real_program_ladder.manifest|real_program_ladder_manifest_orders_lua_to_redis"
+        ));
+        assert!(conformance.contains("toolchain/lnp64_real_program_ladder.manifest"));
+        assert!(conformance.contains("| Redis upstream | not started |"));
+        assert!(conformance.contains("`COMPAT-PKG-008`"));
+        assert!(conformance.contains("NetBSD/POSIX personality closure"));
+        assert!(netbsd_layers.contains("process_signal_thread_compat"));
+        assert!(netbsd_layers.contains("rump_network_socket_personality"));
+        assert!(libc_shim.contains("pthread"));
+        assert!(gate_manifest.contains("netbsd_personality"));
+
+        for (stage, status, artifacts, gate, goal, focus, next_blocker) in rows {
+            assert!(seen.insert(stage), "duplicate real-program stage {stage}");
+            ordered_stages.push(stage);
+            statuses.insert(stage, status);
+            artifacts_by_stage.insert(stage, artifacts.clone());
+            gates.insert(stage, gate);
+            goals.insert(stage, goal);
+            focus_by_stage.insert(stage, focus.clone());
+            blockers.insert(stage, next_blocker);
+            assert!(
+                ["bootstrap_gate", "planned", "blocked"].contains(&status),
+                "unknown real-program ladder status {status} for {stage}"
+            );
+            assert!(
+                !artifacts.is_empty(),
+                "empty artifacts for real-program stage {stage}"
+            );
+            for artifact in artifacts {
+                if let Some(planned) = artifact.strip_prefix("planned:") {
+                    assert!(
+                        !planned.is_empty(),
+                        "empty planned artifact in real-program stage {stage}"
+                    );
+                } else {
+                    assert!(
+                        manifest_root.join(artifact).exists(),
+                        "real-program stage {stage} names missing artifact {artifact}"
+                    );
+                }
+            }
+            if let Some(planned_gate) = gate.strip_prefix("planned:") {
+                assert!(
+                    !planned_gate.is_empty(),
+                    "empty planned gate in real-program stage {stage}"
+                );
+            } else {
+                assert!(
+                    manifest_root.join(gate).exists(),
+                    "real-program stage {stage} names missing gate {gate}"
+                );
+            }
+            assert!(
+                !goal.is_empty(),
+                "empty goal for real-program stage {stage}"
+            );
+            assert!(
+                !focus.is_empty(),
+                "empty focus for real-program stage {stage}"
+            );
+            assert!(
+                !next_blocker.is_empty(),
+                "empty blocker for real-program stage {stage}"
+            );
+        }
+
+        assert_eq!(
+            ordered_stages,
+            vec![
+                "minimal_lua",
+                "sqlite_memory_file",
+                "netbsd_posix_personality_closure",
+                "tiny_network_daemons",
+                "redis_configured_build",
+                "redis_single_client",
+                "redis_persistence_fork",
+            ],
+            "real-program ladder must keep generic compatibility gates before Redis"
+        );
+        assert_eq!(statuses["minimal_lua"], "planned");
+        assert_eq!(statuses["sqlite_memory_file"], "blocked");
+        assert_eq!(
+            statuses["netbsd_posix_personality_closure"],
+            "bootstrap_gate"
+        );
+        assert_eq!(statuses["tiny_network_daemons"], "bootstrap_gate");
+        assert_eq!(statuses["redis_configured_build"], "blocked");
+        assert_eq!(statuses["redis_single_client"], "blocked");
+        assert_eq!(statuses["redis_persistence_fork"], "blocked");
+        assert_eq!(
+            gates["netbsd_posix_personality_closure"],
+            "scripts/run_netbsd_personality_system.sh"
+        );
+        assert_eq!(
+            gates["redis_configured_build"],
+            "planned:scripts/run_redis.sh"
+        );
+
+        for focus in [
+            "real_c_stack_calls",
+            "varargs_formatting",
+            "malloc_realloc_free",
+            "basic_stdio_write",
+        ] {
+            assert!(
+                focus_by_stage["minimal_lua"].contains(&focus),
+                "minimal Lua rung must keep focus item {focus}"
+            );
+        }
+        assert!(goals["minimal_lua"].contains("lua -e print_1_plus_2"));
+        assert!(goals["sqlite_memory_file"].contains(":memory:"));
+        assert!(goals["sqlite_memory_file"].contains("file-backed"));
+        assert!(focus_by_stage["sqlite_memory_file"].contains(&"file_semantics"));
+        assert!(focus_by_stage["sqlite_memory_file"].contains(&"durability_api"));
+        for artifact in [
+            "toolchain/lnp64_netbsd_layers.manifest",
+            "netbsd_personality_abi.md",
+            "scripts/run_netbsd_personality_system.sh",
+            "toolchain/lnp64_libc_shim.manifest",
+        ] {
+            assert!(
+                artifacts_by_stage["netbsd_posix_personality_closure"].contains(&artifact),
+                "NetBSD/POSIX closure stage must name artifact {artifact}"
+            );
+        }
+        for focus in [
+            "libpthread_libm_runtime",
+            "files_sockets_signals_timers",
+            "fork_waitpid_SIGCHLD",
+            "errno_fidelity",
+        ] {
+            assert!(
+                focus_by_stage["netbsd_posix_personality_closure"].contains(&focus),
+                "NetBSD/POSIX closure stage must keep focus item {focus}"
+            );
+        }
+        assert!(
+            blockers["netbsd_posix_personality_closure"].contains("close_personality_gaps"),
+            "NetBSD/POSIX closure must be the generic compatibility investment"
+        );
+        for focus in [
+            "socket_bind_listen_accept_connect",
+            "poll_select_epoll_kqueue",
+            "O_NONBLOCK",
+            "EINTR_EAGAIN_ECONNRESET",
+            "signal_shutdown",
+        ] {
+            assert!(
+                focus_by_stage["tiny_network_daemons"].contains(&focus),
+                "network-daemon rung must keep focus item {focus}"
+            );
+        }
+        assert!(goals["redis_configured_build"].contains("unmodified"));
+        for focus in [
+            "static_build",
+            "no_tls",
+            "no_modules",
+            "minimal_persistence",
+        ] {
+            assert!(
+                focus_by_stage["redis_configured_build"].contains(&focus),
+                "Redis configured build must keep strict profile item {focus}"
+            );
+        }
+        assert!(goals["redis_single_client"].contains("PING SET GET DEL"));
+        for focus in [
+            "file_durability",
+            "rename_tempfile",
+            "background_save",
+            "fork_waitpid_SIGCHLD",
+            "persistence_reload",
+        ] {
+            assert!(
+                focus_by_stage["redis_persistence_fork"].contains(&focus),
+                "Redis persistence rung must keep focus item {focus}"
+            );
+        }
+        assert!(
+            goals["redis_persistence_fork"].contains("temp rename fsync child handling"),
+            "Redis persistence rung must name the hard fork/persistence semantics"
         );
     }
 
