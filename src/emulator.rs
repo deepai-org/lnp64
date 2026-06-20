@@ -13702,6 +13702,66 @@ mod tests {
     }
 
     #[test]
+    fn fork_clone_does_not_copy_in_flight_ipc_or_waiters() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+
+        machine.process_mut().unwrap().inbox.push_back((10, 20));
+        machine.process_mut().unwrap().inbox.push_back((30, 40));
+        machine.fd_waiters.push(FdWaiter {
+            tid: 1,
+            fd: 0,
+            generation: machine.fd_generation(0).unwrap(),
+            mask: 0,
+            result: None,
+        });
+        machine.futex_waiters.entry(0x100).or_default().push_back(1);
+        machine
+            .thread_join_waiters
+            .entry(99)
+            .or_default()
+            .push_back(1);
+        machine.child_waiters.entry(1).or_default().push_back(1);
+
+        machine
+            .clone_with_profile(CloneProfile::NewProcessCow, Reg(5), None)
+            .unwrap();
+        let child_tid = machine
+            .threads
+            .values()
+            .find(|thread| thread.pid == 2)
+            .unwrap()
+            .tid;
+
+        assert_eq!(machine.process().unwrap().inbox.len(), 2);
+        assert!(machine.processes.get(&2).unwrap().inbox.is_empty());
+        assert!(
+            !machine
+                .fd_waiters
+                .iter()
+                .any(|waiter| waiter.tid == child_tid)
+        );
+        assert!(
+            !machine
+                .futex_waiters
+                .values()
+                .any(|waiters| waiters.contains(&child_tid))
+        );
+        assert!(
+            !machine
+                .thread_join_waiters
+                .values()
+                .any(|waiters| waiters.contains(&child_tid))
+        );
+        assert!(
+            !machine
+                .child_waiters
+                .values()
+                .any(|waiters| waiters.contains(&child_tid))
+        );
+    }
+
+    #[test]
     fn clone_profile_failures_do_not_allocate_contexts() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
