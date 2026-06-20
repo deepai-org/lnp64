@@ -187,7 +187,11 @@ run_rtl_proof_gate_batch \
 m4_witness="${TMPDIR:-/tmp}/lnp64_rtl_proof_m4_witness.json"
 LNP64_RTL_M4_WITNESS_OUT="$m4_witness" \
   scripts/check_rtl_m4_typed_commit_trace.py
+scripts/check_rtl_m4_witness.py "$m4_witness"
 scripts/test_rtl_m4_typed_commit_checker.py
+scripts/test_rtl_m4_witness_checker.py
+LNP64_RTL_M4_WITNESS_OUT="$m4_witness" \
+  bash scripts/run_rtl_m4_lean_witness_gate.sh
 
 m7_log="${TMPDIR:-/tmp}/lnp64_rtl_proof_m7.log"
 m7_witness="${TMPDIR:-/tmp}/lnp64_rtl_proof_m7_witness.json"

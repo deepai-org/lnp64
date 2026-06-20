@@ -226,10 +226,24 @@ def check_m4_typed_trace_contract(claim: dict) -> None:
         return
     trace_sources = claim.get("trace_sources", [])
     gate_scripts = claim.get("gate_scripts", [])
-    for name in ("scripts/check_rtl_m4_typed_commit_trace.py", "scripts/test_rtl_m4_typed_commit_checker.py"):
-        require(name in trace_sources, f"vma_memory_safety: missing M4 typed trace source {name}")
-        require(name in gate_scripts, f"vma_memory_safety: missing M4 typed trace gate {name}")
+    m4_artifacts = (
+        "scripts/check_rtl_m4_typed_commit_trace.py",
+        "scripts/test_rtl_m4_typed_commit_checker.py",
+        "scripts/check_rtl_m4_witness.py",
+        "scripts/run_rtl_m4_witness_gate.sh",
+        "scripts/test_rtl_m4_witness_checker.py",
+        "scripts/gen_m4_witness_lean.py",
+        "scripts/run_rtl_m4_lean_witness_gate.sh",
+    )
+    for name in m4_artifacts:
         require((ROOT / name).exists(), f"vma_memory_safety: missing M4 artifact {name}")
+        require(name in gate_scripts, f"vma_memory_safety: missing M4 gate {name}")
+    for name in (
+        "scripts/check_rtl_m4_typed_commit_trace.py",
+        "scripts/check_rtl_m4_witness.py",
+        "scripts/run_rtl_m4_lean_witness_gate.sh",
+    ):
+        require(name in trace_sources, f"vma_memory_safety: missing M4 trace source {name}")
     markers = claim.get("trace_markers", [])
     require(
         'TTRACE_M4 {\\"record\\":\\"m4_vma_commit\\"' in markers,
@@ -245,15 +259,19 @@ def check_m4_typed_trace_contract(claim: dict) -> None:
         "scripts/check_rtl_m4_typed_commit_trace.py" in known_gaps,
         "vma_memory_safety: known gap must record the M4 typed trace contract",
     )
+    require(
+        "scripts/run_rtl_m4_lean_witness_gate.sh" in known_gaps,
+        "vma_memory_safety: known gap must record the M4 Lean decode-faithfulness proof",
+    )
     proof_gate_text = check_file(RTL_PROOF_GATES, "RTL proof gate")
-    require(
-        "scripts/check_rtl_m4_typed_commit_trace.py" in proof_gate_text,
-        "RTL proof gate must run the M4 typed trace checker",
-    )
-    require(
-        "scripts/test_rtl_m4_typed_commit_checker.py" in proof_gate_text,
-        "RTL proof gate must run the M4 typed trace checker self-test",
-    )
+    for name in (
+        "scripts/check_rtl_m4_typed_commit_trace.py",
+        "scripts/test_rtl_m4_typed_commit_checker.py",
+        "scripts/check_rtl_m4_witness.py",
+        "scripts/test_rtl_m4_witness_checker.py",
+        "scripts/run_rtl_m4_lean_witness_gate.sh",
+    ):
+        require(name in proof_gate_text, f"RTL proof gate must run {name}")
 
 
 def check_file(path: Path, label: str) -> str:
