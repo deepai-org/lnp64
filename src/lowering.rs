@@ -4015,9 +4015,16 @@ mod tests {
             "OUTPUT_ARCH(lnp64)",
             "ENTRY(_start)",
             "PHDRS",
-            "PT_LOAD",
-            "PT_TLS",
-            "PT_NOTE",
+            "text PT_LOAD FLAGS(5);",
+            "rodata PT_LOAD FLAGS(4);",
+            "data PT_LOAD FLAGS(6);",
+            "tls PT_TLS FLAGS(4);",
+            "note PT_NOTE FLAGS(4);",
+            ". = 0x400000;",
+            "__lnp64_image_base = .;",
+            "__lnp64_image_end = .;",
+            "__lnp64_tls_start = .;",
+            "__lnp64_tls_end = .;",
             ".text",
             ".rodata",
             ".data",
@@ -4047,6 +4054,22 @@ mod tests {
                 "object format missing linked section {section}"
             );
         }
+        for permission_rule in [
+            "| `PF_R` | read |",
+            "| `PF_W` | read/write, non-executable |",
+            "| `PF_X` | read/execute, non-writable |",
+            "| `PF_W | PF_X` | rejected",
+        ] {
+            assert!(
+                object_format.contains(permission_rule),
+                "object format missing executable mapping rule {permission_rule}"
+            );
+        }
+        assert!(linker_script.contains("*(.note.GNU-stack)"));
+        assert!(
+            !linker_script.contains("FLAGS(7)"),
+            "static v0 linker script must not emit writable executable PHDRs"
+        );
         assert!(
             !linker_script.contains("PT_DYNAMIC"),
             "static v0 linker script must not emit PT_DYNAMIC"
