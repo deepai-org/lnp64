@@ -1423,6 +1423,7 @@ mod tests {
         let rows = llvm_gate_rows(gate_manifest);
         let mut gates = std::collections::BTreeSet::new();
         let mut commands = std::collections::BTreeMap::new();
+        let mut requirements_by_gate = std::collections::BTreeMap::new();
         let mut statuses = std::collections::BTreeMap::new();
         let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
 
@@ -1475,6 +1476,7 @@ mod tests {
         for (gate, command, requirements, status) in rows {
             assert!(gates.insert(gate), "duplicate llvm gate {gate}");
             commands.insert(gate, command);
+            requirements_by_gate.insert(gate, requirements.clone());
             statuses.insert(gate, status);
             assert!(
                 ["planned", "tested"].contains(&status),
@@ -1498,6 +1500,10 @@ mod tests {
         assert_eq!(statuses["real_mc_build"], "tested");
         assert_eq!(statuses["sysroot_package"], "tested");
         assert_eq!(statuses["simple_libc_gate"], "tested");
+        assert!(
+            requirements_by_gate["real_llc_build"].contains(&"packaged_sysroot"),
+            "full real LLVM gate must advertise the packaged sysroot it now builds and uses"
+        );
         for requirement in [
             "packaged_sysroot",
             "crt0_object",
@@ -1917,12 +1923,26 @@ mod tests {
         assert!(real_llc.contains("grep -q '.debug_frame'"));
         assert!(real_llc.contains("grep -q '.rela.debug_line'"));
         assert!(real_llc.contains("real LLVM LNP64 clang debug section smoke passed"));
+        assert!(real_llc.contains("sysroot=\"${LNP64_SYSROOT_DIR:-target/lnp64-sysroot}\""));
+        assert!(
+            real_llc.contains("lnp64_target_include_flags=(-I toolchain/include -I toolchain)")
+        );
+        assert!(real_llc.contains("scripts/package_lnp64_sysroot.sh"));
+        assert!(real_llc.contains(
+            "lnp64_target_include_flags=(-isystem \"$sysroot/usr/include\" -I toolchain)"
+        ));
+        assert!(real_llc.contains("\"${lnp64_target_include_flags[@]}\" -S \"$debug_line_c\""));
+        assert!(real_llc.contains("\"${lnp64_target_include_flags[@]}\" -c \"$debug_line_c\""));
         assert!(real_llc.contains("-c demos/hello.c"));
         assert!(real_llc.contains("hello-clang-smoke.o"));
+        assert!(real_llc.contains("\"${lnp64_target_include_flags[@]}\" \\\n  -c demos/hello.c"));
         assert!(real_llc.contains("hello-clang-smoke.dump"));
         assert!(real_llc.contains("real LLVM LNP64 clang hello object smoke passed"));
         assert!(real_llc.contains("-c demos/factorial.c"));
         assert!(real_llc.contains("factorial-clang-smoke.o"));
+        assert!(
+            real_llc.contains("\"${lnp64_target_include_flags[@]}\" \\\n  -c demos/factorial.c")
+        );
         assert!(real_llc.contains("factorial-clang-smoke.dump"));
         assert!(real_llc.contains("ld.w r"));
         assert!(real_llc.contains("st.w r"));

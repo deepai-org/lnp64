@@ -507,6 +507,16 @@ fi
 llc="$build_dir/bin/llc"
 clang="$build_dir/bin/clang"
 lld="$build_dir/bin/lld"
+sysroot="${LNP64_SYSROOT_DIR:-target/lnp64-sysroot}"
+lnp64_target_include_flags=(-I toolchain/include -I toolchain)
+if [[ "$gate" == "full" ]]; then
+  LNP64_CLANG="$clang" \
+  LNP64_LLVM_MC="$llvm_mc" \
+  LNP64_LLD="$lld" \
+  LNP64_SYSROOT_DIR="$sysroot" \
+    scripts/package_lnp64_sysroot.sh
+  lnp64_target_include_flags=(-isystem "$sysroot/usr/include" -I toolchain)
+fi
 "$llc" --version | sed -n '1,12p'
 
 smoke_ir="$(mktemp)"
@@ -823,13 +833,13 @@ C
 debug_line_asm="$build_dir/debug-line-clang-smoke.s"
 "$clang" --target=lnp64-unknown-none -O0 -g -gdwarf-5 -ffreestanding \
   -fno-pic -fno-jump-tables -fno-unwind-tables -fno-asynchronous-unwind-tables \
-  -I toolchain/include -I toolchain -S "$debug_line_c" -o "$debug_line_asm"
+  "${lnp64_target_include_flags[@]}" -S "$debug_line_c" -o "$debug_line_asm"
 grep -q '.cfi_def_cfa_offset' "$debug_line_asm"
 grep -q '.cfi_offset 32' "$debug_line_asm"
 debug_line_obj="$build_dir/debug-line-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -O0 -g -gdwarf-5 -ffreestanding \
   -fno-pic -fno-jump-tables -fno-unwind-tables -fno-asynchronous-unwind-tables \
-  -I toolchain/include -I toolchain -c "$debug_line_c" -o "$debug_line_obj"
+  "${lnp64_target_include_flags[@]}" -c "$debug_line_c" -o "$debug_line_obj"
 test -s "$debug_line_obj"
 debug_line_sections="$build_dir/debug-line-clang-smoke.sections"
 "$llvm_objdump" -h --triple=lnp64-unknown-none "$debug_line_obj" \
@@ -844,8 +854,7 @@ printf 'real LLVM LNP64 clang debug section smoke passed: %s\n' \
 hello_obj="$build_dir/hello-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
-  -Wno-implicit-function-declaration -I toolchain/include \
-  -I toolchain \
+  -Wno-implicit-function-declaration "${lnp64_target_include_flags[@]}" \
   -c demos/hello.c -o "$hello_obj"
 test -s "$hello_obj"
 hello_dump="$build_dir/hello-clang-smoke.dump"
@@ -857,8 +866,7 @@ printf 'real LLVM LNP64 clang hello object smoke passed: %s\n' "$hello_obj"
 factorial_obj="$build_dir/factorial-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
-  -Wno-implicit-function-declaration -I toolchain/include \
-  -I toolchain \
+  -Wno-implicit-function-declaration "${lnp64_target_include_flags[@]}" \
   -c demos/factorial.c -o "$factorial_obj"
 test -s "$factorial_obj"
 factorial_dump="$build_dir/factorial-clang-smoke.dump"
@@ -875,8 +883,7 @@ printf 'real LLVM LNP64 clang factorial object smoke passed: %s\n' \
 allocator_obj="$build_dir/allocator-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
-  -Wno-implicit-function-declaration -I toolchain/include \
-  -I toolchain \
+  -Wno-implicit-function-declaration "${lnp64_target_include_flags[@]}" \
   -c demos/allocator.c -o "$allocator_obj"
 test -s "$allocator_obj"
 allocator_dump="$build_dir/allocator-clang-smoke.dump"
@@ -893,8 +900,7 @@ printf 'real LLVM LNP64 clang allocator object smoke passed: %s\n' \
 fibonacci_obj="$build_dir/fibonacci-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
-  -Wno-implicit-function-declaration -I toolchain/include \
-  -I toolchain \
+  -Wno-implicit-function-declaration "${lnp64_target_include_flags[@]}" \
   -c demos/fibonacci.c -o "$fibonacci_obj"
 test -s "$fibonacci_obj"
 fibonacci_dump="$build_dir/fibonacci-clang-smoke.dump"
