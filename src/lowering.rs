@@ -8574,9 +8574,19 @@ mod tests {
     fn inline_asm_manifest_records_backend_constraints() {
         let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
         let inline_asm_manifest = include_str!("../toolchain/lnp64_inline_asm.manifest");
+        let clang_target = include_str!("../clang/lib/Basic/Targets/LNP64.cpp");
         let roadmap = include_str!("../toolchain_roadmap.md");
         let rows = inline_asm_rows(inline_asm_manifest);
         let mut constraints = std::collections::BTreeMap::new();
+        let assert_clang_names_range = |prefix: &str, end: usize| {
+            for index in 0..=end {
+                let name = format!(r#""{prefix}{index}""#);
+                assert!(
+                    clang_target.contains(&name),
+                    "Clang target register names missing {name}"
+                );
+            }
+        };
 
         assert_eq!(
             manifest_field(target_manifest, "inline_asm_contract"),
@@ -8614,6 +8624,23 @@ mod tests {
         );
         assert_eq!(constraints["m"], ("memory", "base_gpr_plus_signed_offset"));
         assert_eq!(constraints["i"], ("immediate", "signed_16_or_symbolic"));
+        assert_clang_names_range("r", 31);
+        assert_clang_names_range("fd", 255);
+        assert_clang_names_range("f", 31);
+        assert_clang_names_range("v", 15);
+        for pcr in constraints["p"].1.split(',') {
+            let name = format!(r#""{pcr}""#);
+            assert!(
+                clang_target.contains(&name),
+                "Clang target register names missing PCR {name}"
+            );
+        }
+        for constraint in ["case 'r'", "case 'f'", "case 'd'", "case 'v'", "case 'p'"] {
+            assert!(
+                clang_target.contains(constraint),
+                "Clang target missing inline asm constraint {constraint}"
+            );
+        }
         assert!(roadmap.contains("toolchain/lnp64_inline_asm.manifest"));
     }
 
