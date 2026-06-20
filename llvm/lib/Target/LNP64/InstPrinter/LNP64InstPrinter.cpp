@@ -238,6 +238,8 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
     return "chdir_path";
   case LNP64::GETCWD_PATH:
     return "getcwd_path";
+  case LNP64::READDIR_FD_DYN:
+    return "readdir_fd_dyn";
   case LNP64::CHMOD_PATH_AT:
     return "chmod_path_at";
   case LNP64::CHOWN_PATH_AT:
@@ -541,6 +543,7 @@ void LNP64InstPrinter::printInst(const MCInst *MI, uint64_t, StringRef Annot,
   case LNP64::MUNMAP:
   case LNP64::ALARM:
   case LNP64::GETCWD_PATH:
+  case LNP64::READDIR_FD_DYN:
   case LNP64::GET_PCR:
   case LNP64::OBJECT_CTL:
   case LNP64::DOMAIN_CTL:

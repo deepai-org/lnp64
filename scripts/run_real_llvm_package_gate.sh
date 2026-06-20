@@ -27,6 +27,7 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-sbase-basename-linked.elf"
         "$build_dir/lnp64-sbase-dirname-linked.elf"
         "$build_dir/lnp64-sbase-cat-linked.elf"
+        "$build_dir/lnp64-sbase-ls-linked.elf"
         "$build_dir/lnp64-sbase-mkdir-linked.elf"
         "$build_dir/lnp64-sbase-ln-linked.elf"
         "$build_dir/lnp64-sbase-chmod-linked.elf"
@@ -68,6 +69,7 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-sbase-basename-linked.elf"
         "$build_dir/lnp64-sbase-dirname-linked.elf"
         "$build_dir/lnp64-sbase-cat-linked.elf"
+        "$build_dir/lnp64-sbase-ls-linked.elf"
         "$build_dir/lnp64-sbase-mkdir-linked.elf"
         "$build_dir/lnp64-sbase-ln-linked.elf"
         "$build_dir/lnp64-sbase-chmod-linked.elf"
@@ -210,6 +212,14 @@ run_package() {
       grep -q 'exit=0' <<<"$sbase_cat_output"
       printf 'real LLVM LNP64 run-elf sbase cat execution passed: %s\n' \
         "$build_dir/lnp64-sbase-cat-linked.elf"
+      "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-ls-linked.elf" >/dev/null
+      local sbase_ls_output
+      sbase_ls_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+        "$build_dir/lnp64-sbase-ls-linked.elf" ls input)"
+      grep -q '^cat.txt$' <<<"$sbase_ls_output"
+      grep -q 'exit=0' <<<"$sbase_ls_output"
+      printf 'real LLVM LNP64 run-elf sbase ls execution passed: %s\n' \
+        "$build_dir/lnp64-sbase-ls-linked.elf"
       rm -rf "$sbase_fixture_root/made"
       "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-mkdir-linked.elf" >/dev/null
       local sbase_mkdir_output

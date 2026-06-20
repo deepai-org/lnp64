@@ -442,6 +442,7 @@ private:
             .Case("readlink_path_at", LNP64::READLINK_PATH_AT)
             .Case("chdir_path", LNP64::CHDIR_PATH)
             .Case("getcwd_path", LNP64::GETCWD_PATH)
+            .Case("readdir_fd_dyn", LNP64::READDIR_FD_DYN)
             .Case("chmod_path_at", LNP64::CHMOD_PATH_AT)
             .Case("chown_path_at", LNP64::CHOWN_PATH_AT)
             .Case("stat_path_at", LNP64::STAT_PATH_AT)
@@ -528,7 +529,8 @@ private:
         Opcode == LNP64::LNP64_KILL || Opcode == LNP64::ALARM ||
         Opcode == LNP64::GET_PCR ||
         Opcode == LNP64::STAT_FD_DYN || Opcode == LNP64::UTIME_FD_DYN ||
-        Opcode == LNP64::GETCWD_PATH || Opcode == LNP64::WAIT_PID)
+        Opcode == LNP64::GETCWD_PATH || Opcode == LNP64::READDIR_FD_DYN ||
+        Opcode == LNP64::WAIT_PID)
       return addRegReg(Inst, Operands);
     if (Opcode == LNP64::SET_PCR)
       return addRegPcrReg(Inst, Operands);

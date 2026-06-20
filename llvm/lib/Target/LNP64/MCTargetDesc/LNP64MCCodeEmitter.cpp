@@ -719,6 +719,11 @@ public:
                                getGPRNo(MI.getOperand(1))),
                OS);
       return;
+    case LNP64::READDIR_FD_DYN:
+      emitLE32(encodeFixed32RR(0xcf, getGPRNo(MI.getOperand(0)),
+                               getGPRNo(MI.getOperand(1))),
+               OS);
+      return;
     case LNP64::CHMOD_PATH_AT:
       emitLE32(encodeFixed32RRRR(0x7b, getGPRNo(MI.getOperand(0)),
                                  getGPRNo(MI.getOperand(1)),

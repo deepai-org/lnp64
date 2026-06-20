@@ -658,6 +658,11 @@ public:
       addReg(Instr, A);
       addReg(Instr, B);
       return MCDisassembler::Success;
+    case 0xcf:
+      Instr.setOpcode(LNP64::READDIR_FD_DYN);
+      addReg(Instr, A);
+      addReg(Instr, B);
+      return MCDisassembler::Success;
     case 0x7b:
       Instr.setOpcode(LNP64::CHMOD_PATH_AT);
       addReg(Instr, A);

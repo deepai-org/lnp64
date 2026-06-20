@@ -687,6 +687,7 @@ fn encode_flat_exec_instr(
             enc_rrrr(0x7c, *dir, *path, *uid, *gid),
             reg_tail(*flags),
         ]),
+        Instr::ReaddirFdDyn(fd, dirent_buf) => Ok(vec![enc_rrr(0xcf, *fd, *dirent_buf, Reg(0))]),
         Instr::FdCloseDyn(fd) => Ok(vec![enc_reg(0x6e, *fd)]),
         Instr::CloneSpawn(dst, entry, arg) => Ok(vec![enc_rrr(0x59, *dst, *entry, *arg)]),
         Instr::ThreadJoin(result, tid, retval) => Ok(vec![enc_rrr(0x5a, *result, *tid, *retval)]),

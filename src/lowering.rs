@@ -1343,6 +1343,7 @@ mod tests {
         let libc_sbase_recurse_min = include_str!("../toolchain/liblnp64_sbase_recurse_min.c");
         let libc_sbase_move_min = include_str!("../toolchain/liblnp64_sbase_move_min.c");
         let libc_sbase_time_min = include_str!("../toolchain/liblnp64_sbase_time_min.c");
+        let libc_sbase_ls_min = include_str!("../toolchain/liblnp64_sbase_ls_min.c");
         let elf_exec_test_clang = include_str!("../userland/elf_exec_test_clang.c");
         let spawn_task_clang = include_str!("../userland/spawn_task_clang.c");
         let gate_trace_test_clang = include_str!("../userland/gate_trace_test_clang.c");
@@ -1645,6 +1646,9 @@ mod tests {
             "clang_sbase_recurse_support_object",
             "clang_sbase_move_support_object",
             "clang_sbase_time_support_object",
+            "clang_sbase_ls_support_object",
+            "sbase_ls_static_link",
+            "sbase_ls_run_elf",
             "sbase_touch_static_link",
             "sbase_touch_run_elf",
             "sbase_mv_static_link",
@@ -3075,6 +3079,7 @@ mod tests {
         assert!(real_llc.contains("grep -q 'symlink_path_at r'"));
         assert!(real_llc.contains("grep -q 'readlink_path_at r'"));
         assert!(real_llc.contains("grep -q 'getcwd_path r'"));
+        assert!(real_llc.contains("grep -q 'readdir_fd_dyn r1, r2'"));
         assert!(real_llc.contains("grep -q 'chmod_path_at r'"));
         assert!(real_llc.contains("grep -q 'chown_path_at r'"));
         assert!(real_llc.contains("grep -q 'errno_get r'"));
@@ -3600,6 +3605,10 @@ mod tests {
         assert!(real_llc.contains("sbase-libutil-concat-clang-smoke.o"));
         assert!(real_llc.contains("sbase-libutil-writeall-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 lld sbase cat link smoke passed"));
+        assert!(real_llc.contains("lnp64-sbase-ls-linked.elf"));
+        assert!(real_llc.contains(r#""$build_dir/sbase-ls-clang-smoke.o" \"#));
+        assert!(real_llc.contains(r#""$sbase_ls_support_impl_obj" \"#));
+        assert!(real_llc.contains("real LLVM LNP64 lld sbase ls link smoke passed"));
         assert!(real_llc.contains("toolchain/liblnp64_sbase_fs_min.c"));
         assert!(libc_sbase_fs_min.contains("mode_t parsemode("));
         assert!(libc_sbase_fs_min.contains("int mkdirp("));
@@ -3627,6 +3636,13 @@ mod tests {
         assert!(libc_sbase_time_min.contains("char *strptime("));
         assert!(real_llc.contains("liblnp64-sbase-time-min.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang sbase time support object smoke passed"));
+        assert!(real_llc.contains("toolchain/liblnp64_sbase_ls_min.c"));
+        assert!(libc_sbase_ls_min.contains("struct dirent *readdir("));
+        assert!(libc_sbase_ls_min.contains("int printf("));
+        assert!(libc_sbase_ls_min.contains("char *estrdup("));
+        assert!(libc_sbase_ls_min.contains("int chartorune("));
+        assert!(real_llc.contains("liblnp64-sbase-ls-min.o"));
+        assert!(real_llc.contains("real LLVM LNP64 clang sbase ls support object smoke passed"));
         assert!(real_llc.contains("lnp64-sbase-mkdir-linked.elf"));
         assert!(real_llc.contains(r#""$build_dir/sbase-mkdir-clang-smoke.o" \"#));
         assert!(real_llc.contains(r#""$sbase_fs_support_impl_obj" \"#));
@@ -4149,6 +4165,9 @@ mod tests {
         assert!(real_llc_docker.contains("cat input/cat.txt"));
         assert!(real_llc_docker.contains("cat via clang"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase cat execution passed"));
+        assert!(real_llc_docker.contains("lnp64-sbase-ls-linked.elf"));
+        assert!(real_llc_docker.contains("ls input"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase ls execution passed"));
         assert!(real_llc_docker.contains("lnp64-sbase-mkdir-linked.elf"));
         assert!(real_llc_docker.contains("mkdir made"));
         assert!(real_llc_docker.contains("test -d \"$sbase_fixture_root/made\""));
@@ -4390,6 +4409,7 @@ mod tests {
             "real_sbase_basename_execution",
             "real_sbase_dirname_execution",
             "real_sbase_cat_execution",
+            "real_sbase_ls_execution",
             "real_sbase_mkdir_execution",
             "real_sbase_ln_execution",
             "real_sbase_chmod_execution",
@@ -4500,6 +4520,7 @@ mod tests {
             "real_sbase_basename_execution",
             "real_sbase_dirname_execution",
             "real_sbase_cat_execution",
+            "real_sbase_ls_execution",
             "real_sbase_mkdir_execution",
             "real_sbase_ln_execution",
             "real_sbase_chmod_execution",
@@ -6213,6 +6234,7 @@ mod tests {
         assert!(run_real_packages.contains("scripts/run_real_llvm_package_gate.sh"));
         assert!(run_real_packages.contains("real LLVM LNP64 package gate"));
         for sbase_elf in [
+            "lnp64-sbase-ls-linked.elf",
             "lnp64-sbase-mkdir-linked.elf",
             "lnp64-sbase-ln-linked.elf",
             "lnp64-sbase-chmod-linked.elf",
@@ -6223,6 +6245,7 @@ mod tests {
             assert!(run_real_package_gate.contains(sbase_elf));
         }
         for sbase_message in [
+            "real LLVM LNP64 run-elf sbase ls execution passed",
             "real LLVM LNP64 run-elf sbase mkdir execution passed",
             "real LLVM LNP64 run-elf sbase ln execution passed",
             "real LLVM LNP64 run-elf sbase chmod execution passed",
@@ -7363,6 +7386,7 @@ mod tests {
             "READLINK_PATH_AT",
             "CHDIR_PATH",
             "GETCWD_PATH",
+            "READDIR_FD_DYN",
             "CHMOD_PATH_AT",
             "CHOWN_PATH_AT",
         ] {
@@ -7418,6 +7442,7 @@ mod tests {
             ("readlink_path_at", "READLINK_PATH_AT"),
             ("chdir_path", "CHDIR_PATH"),
             ("getcwd_path", "GETCWD_PATH"),
+            ("readdir_fd_dyn", "READDIR_FD_DYN"),
             ("chmod_path_at", "CHMOD_PATH_AT"),
             ("chown_path_at", "CHOWN_PATH_AT"),
         ] {

@@ -691,6 +691,7 @@ def SYMLINK_PATH_AT : LNP64Status3<"symlink_path_at">;
 def READLINK_PATH_AT : LNP64Status4<"readlink_path_at">;
 def CHDIR_PATH : LNP64Status1<"chdir_path">;
 def GETCWD_PATH : LNP64Status2<"getcwd_path">;
+def READDIR_FD_DYN : LNP64Status2<"readdir_fd_dyn">;
 def CHMOD_PATH_AT : LNP64Status4<"chmod_path_at">;
 def CHOWN_PATH_AT : LNP64Status5<"chown_path_at">;
 def STAT_PATH_AT : LNP64Status4<"stat_path_at">;

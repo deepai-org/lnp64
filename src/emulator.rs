@@ -1990,6 +1990,7 @@ impl Machine {
             0xcc => Instr::FutexWake(a, b),
             0xcd => Instr::Fence,
             0xce => Instr::Isync(a, b, c),
+            0xcf => Instr::ReaddirFdDyn(a, b),
             0xa0 => Instr::Addi(a, b, imm14),
             0xa1 => Instr::Andi(a, b, imm14),
             0xa2 => Instr::Ori(a, b, imm14),
@@ -3196,7 +3197,13 @@ impl Machine {
             Instr::GetcwdPath(buf_reg, len_reg) => {
                 let buf = self.read_reg(buf_reg)?;
                 let len = self.read_reg(len_reg)? as usize;
-                let cwd = self.process()?.cwd.to_string_lossy().into_owned();
+                let cwd = match self.process_virtual_cwd() {
+                    Ok(cwd) => cwd,
+                    Err(errno) => {
+                        self.set_status_errno(errno)?;
+                        return Ok(true);
+                    }
+                };
                 let bytes = cwd.as_bytes();
                 let Some(required_len) = bytes.len().checked_add(1) else {
                     self.set_status_errno(34)?;
@@ -4590,6 +4597,22 @@ impl Machine {
     fn resolve_process_path(&self, path: &str) -> Result<String, String> {
         let process = self.process()?;
         self.resolve_process_path_from_base(&process.cwd, path)
+    }
+
+    fn process_virtual_cwd(&self) -> Result<String, u64> {
+        let process = self.process().map_err(|_| 5_u64)?;
+        let root = process.namespace_root.as_ref().ok_or(13_u64)?;
+        let cwd = normalize_path_lexical(&process.cwd);
+        let root = normalize_path_lexical(root);
+        if !cwd.starts_with(&root) {
+            return Err(13);
+        }
+        let relative = cwd.strip_prefix(&root).map_err(|_| 13_u64)?;
+        if relative.as_os_str().is_empty() {
+            Ok("/".to_string())
+        } else {
+            Ok(format!("/{}", relative.to_string_lossy()))
+        }
     }
 
     fn resolve_process_path_from_base(&self, base: &Path, path: &str) -> Result<String, String> {
@@ -14888,6 +14911,35 @@ mod tests {
         assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 14);
         assert_eq!(machine.read_bytes(boundary_out, 1).unwrap(), b"Z".to_vec());
+    }
+
+    #[test]
+    fn getcwd_path_reports_virtual_path_under_namespace_root() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("lnp64_getcwd_root_{unique}"));
+        let work = root.join("work");
+        fs::create_dir_all(&work).unwrap();
+        {
+            let process = machine.process_mut().unwrap();
+            process.namespace_root = Some(root.clone());
+            process.cwd = work;
+        }
+        let out = ARG_BASE + 0x1000;
+        machine.thread_mut().unwrap().regs[2] = out;
+        machine.thread_mut().unwrap().regs[3] = 64;
+
+        machine.exec(Instr::GetcwdPath(Reg(2), Reg(3))).unwrap();
+
+        assert_eq!(machine.thread().unwrap().regs[1], out);
+        assert_eq!(machine.process().unwrap().errno, 0);
+        assert_eq!(machine.read_c_string(out).unwrap(), "/work");
+
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

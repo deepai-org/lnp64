@@ -362,6 +362,7 @@ _start:
   readlink_path_at r13, r14, r15, r16
   chdir_path r17
   getcwd_path r18, r19
+  readdir_fd_dyn r1, r2
   chmod_path_at r20, r21, r22, r23
   chown_path_at r24, r25, r26, r27, r28
   ret
@@ -388,6 +389,7 @@ ASM
   grep -q 'readlink_path_at r13, r14, r15, r16' "$compat_meta_mc_dump"
   grep -q 'chdir_path r17' "$compat_meta_mc_dump"
   grep -q 'getcwd_path r18, r19' "$compat_meta_mc_dump"
+  grep -q 'readdir_fd_dyn r1, r2' "$compat_meta_mc_dump"
   grep -q 'chmod_path_at r20, r21, r22, r23' "$compat_meta_mc_dump"
   grep -q 'chown_path_at r24, r25, r26, r27, r28' "$compat_meta_mc_dump"
   printf 'real LLVM LNP64 llvm-mc compatibility metadata opcode smoke passed: %s\n' \
@@ -1467,6 +1469,25 @@ grep -q '<mktime>:' "$sbase_time_support_impl_dump"
 grep -q '<strptime>:' "$sbase_time_support_impl_dump"
 printf 'real LLVM LNP64 clang sbase time support object smoke passed: %s\n' \
   "$sbase_time_support_impl_obj"
+
+sbase_ls_support_impl_c="toolchain/liblnp64_sbase_ls_min.c"
+sbase_ls_support_impl_obj="$build_dir/liblnp64-sbase-ls-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin \
+  -fno-pic -fno-jump-tables -fno-unwind-tables \
+  -fno-asynchronous-unwind-tables -I toolchain/include -I third_party/sbase \
+  -c "$sbase_ls_support_impl_c" -o "$sbase_ls_support_impl_obj"
+test -s "$sbase_ls_support_impl_obj"
+sbase_ls_support_impl_dump="$build_dir/liblnp64-sbase-ls-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none \
+  "$sbase_ls_support_impl_obj" >"$sbase_ls_support_impl_dump"
+grep -q '<readdir>:' "$sbase_ls_support_impl_dump"
+grep -q '<printf>:' "$sbase_ls_support_impl_dump"
+grep -q '<snprintf>:' "$sbase_ls_support_impl_dump"
+grep -q '<ereallocarray>:' "$sbase_ls_support_impl_dump"
+grep -q '<estrdup>:' "$sbase_ls_support_impl_dump"
+grep -q '<chartorune>:' "$sbase_ls_support_impl_dump"
+printf 'real LLVM LNP64 clang sbase ls support object smoke passed: %s\n' \
+  "$sbase_ls_support_impl_obj"
 
 netcat_obj="$build_dir/netcat-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
@@ -4651,6 +4672,7 @@ _start:
   readlink_path_at r13, r14, r15, r16
   chdir_path r17
   getcwd_path r18, r19
+  readdir_fd_dyn r1, r2
   chmod_path_at r20, r21, r22, r23
   chown_path_at r24, r25, r26, r27, r28
   ret
@@ -4677,6 +4699,7 @@ grep -q 'symlink_path_at r10, r11, r12' "$compat_meta_mc_dump"
 grep -q 'readlink_path_at r13, r14, r15, r16' "$compat_meta_mc_dump"
 grep -q 'chdir_path r17' "$compat_meta_mc_dump"
 grep -q 'getcwd_path r18, r19' "$compat_meta_mc_dump"
+grep -q 'readdir_fd_dyn r1, r2' "$compat_meta_mc_dump"
 grep -q 'chmod_path_at r20, r21, r22, r23' "$compat_meta_mc_dump"
 grep -q 'chown_path_at r24, r25, r26, r27, r28' "$compat_meta_mc_dump"
 printf 'real LLVM LNP64 llvm-mc compatibility metadata opcode smoke passed: %s\n' \
@@ -5720,6 +5743,18 @@ sbase_cat_elf="$build_dir/lnp64-sbase-cat-linked.elf"
 test -s "$sbase_cat_elf"
 printf 'real LLVM LNP64 lld sbase cat link smoke passed: %s\n' \
   "$sbase_cat_elf"
+
+sbase_ls_elf="$build_dir/lnp64-sbase-ls-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
+  -o "$sbase_ls_elf" "$crt0_obj" "$build_dir/sbase-ls-clang-smoke.o" \
+  "$sbase_support_impl_obj" "$sbase_ls_support_impl_obj" \
+  "$sbase_time_support_impl_obj" "$libc_alloc_impl_obj" \
+  "$libc_fd_impl_obj" "$libc_meta_impl_obj" "$libc_time_impl_obj" \
+  "$libc_string_impl_obj" "$libc_sort_impl_obj" \
+  "$libc_errno_impl_obj" "$libc_process_impl_obj"
+test -s "$sbase_ls_elf"
+printf 'real LLVM LNP64 lld sbase ls link smoke passed: %s\n' \
+  "$sbase_ls_elf"
 
 sbase_mkdir_elf="$build_dir/lnp64-sbase-mkdir-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
