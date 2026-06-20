@@ -295,6 +295,16 @@ package lnp64_pkg;
     } lnp64_m12_storage_op_e;
 
     typedef enum logic [7:0] {
+        LNP64_M13_COMMIT_ENUMERATE        = 8'd1,
+        LNP64_M13_COMMIT_IOMMU_DMA        = 8'd2,
+        LNP64_M13_COMMIT_MSI              = 8'd3,
+        LNP64_M13_COMMIT_BUS_MASTER       = 8'd4,
+        LNP64_M13_COMMIT_STALE_BAR        = 8'd5,
+        LNP64_M13_COMMIT_MALFORMED_CONFIG = 8'd6,
+        LNP64_M13_COMMIT_RAW_AUTHORITY    = 8'd7
+    } lnp64_m13_pcie_op_e;
+
+    typedef enum logic [7:0] {
         LNP64_M10_COMMIT_BOOT_MEASURE  = 8'd1,
         LNP64_M10_COMMIT_ECC_CORRECT   = 8'd2,
         LNP64_M10_COMMIT_PARITY_POISON = 8'd3,
@@ -763,6 +773,34 @@ package lnp64_pkg;
         logic        no_raw_device_authority;
         logic        counts_exact;
     } lnp64_m12_state_projection_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] requester_id;
+        logic [31:0] bar_id;
+        logic [31:0] bar_generation;
+        logic [31:0] domain_id;
+        logic [31:0] iommu_context;
+        logic [31:0] dma_bytes;
+    } lnp64_m13_pcie_commit_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] completions;
+        logic [31:0] faults;
+        logic        device_enumerated;
+        logic        bar_capability_created;
+        logic        iommu_bound_to_domain;
+        logic        scoped_dma_completed;
+        logic        msi_event_delivered;
+        logic        unbound_bus_master_rejected;
+        logic        stale_bar_rejected;
+        logic        malformed_config_rejected;
+        logic        no_raw_pcie_authority;
+        logic        counts_exact;
+    } lnp64_m13_state_projection_t;
 
     typedef struct packed {
         logic [7:0]  op;

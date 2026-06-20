@@ -21,6 +21,9 @@ module lnp64_m13_tb;
     logic malformed_config_rejected;
     logic no_raw_pcie_authority;
     logic counts_exact;
+    logic typed_commit_valid;
+    lnp64_m13_pcie_commit_t typed_commit;
+    lnp64_m13_state_projection_t typed_state_projection;
 
     lnp64_m13_pcie_iommu dut(
         .clk(clk),
@@ -40,7 +43,10 @@ module lnp64_m13_tb;
         .stale_bar_rejected(stale_bar_rejected),
         .malformed_config_rejected(malformed_config_rejected),
         .no_raw_pcie_authority(no_raw_pcie_authority),
-        .counts_exact(counts_exact)
+        .counts_exact(counts_exact),
+        .typed_commit_valid(typed_commit_valid),
+        .typed_commit(typed_commit),
+        .typed_state_projection(typed_state_projection)
     );
 
     lnp64_m13_assertions assertions_i(
@@ -122,6 +128,46 @@ module lnp64_m13_tb;
                 );
                 default: $display("TRACE unknown code=%0d value=%0d", trace_code, trace_value);
             endcase
+        end
+        if (typed_commit_valid) begin
+            $display(
+                "TTRACE_M13 {\"record\":\"m13_pcie_commit\",\"op\":%0d,\"status\":%0d,\"requester_id\":%0d,\"bar_id\":%0d,\"bar_generation\":%0d,\"domain_id\":%0d,\"iommu_context\":%0d,\"dma_bytes\":%0d}",
+                typed_commit.op,
+                typed_commit.status,
+                typed_commit.requester_id,
+                typed_commit.bar_id,
+                typed_commit.bar_generation,
+                typed_commit.domain_id,
+                typed_commit.iommu_context,
+                typed_commit.dma_bytes
+            );
+            $display(
+                "TTRACE_M13_BITS {\"record\":\"m13_pcie_commit_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m13_pcie_commit_t),
+                typed_commit
+            );
+            $display(
+                "TTRACE_M13_STATE {\"record\":\"m13_state_projection\",\"op\":%0d,\"status\":%0d,\"completions\":%0d,\"faults\":%0d,\"device_enumerated\":%0d,\"bar_capability_created\":%0d,\"iommu_bound_to_domain\":%0d,\"scoped_dma_completed\":%0d,\"msi_event_delivered\":%0d,\"unbound_bus_master_rejected\":%0d,\"stale_bar_rejected\":%0d,\"malformed_config_rejected\":%0d,\"no_raw_pcie_authority\":%0d,\"counts_exact\":%0d}",
+                typed_state_projection.op,
+                typed_state_projection.status,
+                typed_state_projection.completions,
+                typed_state_projection.faults,
+                typed_state_projection.device_enumerated,
+                typed_state_projection.bar_capability_created,
+                typed_state_projection.iommu_bound_to_domain,
+                typed_state_projection.scoped_dma_completed,
+                typed_state_projection.msi_event_delivered,
+                typed_state_projection.unbound_bus_master_rejected,
+                typed_state_projection.stale_bar_rejected,
+                typed_state_projection.malformed_config_rejected,
+                typed_state_projection.no_raw_pcie_authority,
+                typed_state_projection.counts_exact
+            );
+            $display(
+                "TTRACE_M13_STATE_BITS {\"record\":\"m13_state_projection_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m13_state_projection_t),
+                typed_state_projection
+            );
         end
     end
 

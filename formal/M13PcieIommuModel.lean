@@ -173,4 +173,127 @@ theorem m13_counts_exact :
     afterBoot, boot, initialMachine
   ]
 
+/- Packed-bit decode machinery for the M13 PCIe/IOMMU typed commit and state
+   projection records. Mirrors the shared schema layout so the offline witness
+   bits can be decoded back to projection fields and proved faithful in Lean
+   with the kernel `decide` tactic (no native_decide, no axioms). -/
+
+structure PackedFieldLayout where
+  name : String
+  width : Nat
+  lsb : Nat
+  msb : Nat
+deriving DecidableEq, Repr
+
+def packedSchemaWidth (schema : List (String × Nat)) : Nat :=
+  schema.foldl (fun total field => total + field.2) 0
+
+def packedSchemaLayoutFrom : Nat -> List (String × Nat) -> List PackedFieldLayout
+  | _cursor, [] => []
+  | cursor, field :: rest =>
+      let lsb := cursor - field.2
+      { name := field.1, width := field.2, lsb := lsb, msb := cursor - 1 } ::
+        packedSchemaLayoutFrom lsb rest
+
+def packedSchemaLayout (schema : List (String × Nat)) : List PackedFieldLayout :=
+  packedSchemaLayoutFrom (packedSchemaWidth schema) schema
+
+def packedFieldWithinWidth (totalWidth : Nat) (field : PackedFieldLayout) : Bool :=
+  decide (field.width > 0) &&
+  decide (field.lsb + field.width = field.msb + 1) &&
+  decide (field.msb < totalWidth)
+
+def packedLayoutWithinWidth (totalWidth : Nat) (layout : List PackedFieldLayout) : Bool :=
+  layout.all (packedFieldWithinWidth totalWidth)
+
+def packedLayoutStartsAtWidth (totalWidth : Nat) : List PackedFieldLayout -> Bool
+  | [] => decide (totalWidth = 0)
+  | field :: _rest => decide (field.msb + 1 = totalWidth)
+
+def packedLayoutAdjacentContiguous : List PackedFieldLayout -> Bool
+  | [] => true
+  | _field :: [] => true
+  | first :: second :: rest =>
+      decide (first.lsb = second.msb + 1) &&
+      packedLayoutAdjacentContiguous (second :: rest)
+
+def packedLayoutEndsAtZero : List PackedFieldLayout -> Bool
+  | [] => true
+  | field :: [] => decide (field.lsb = 0)
+  | _field :: rest => packedLayoutEndsAtZero rest
+
+def packedLayoutCoversWidth (totalWidth : Nat) (layout : List PackedFieldLayout) : Bool :=
+  packedLayoutWithinWidth totalWidth layout &&
+  packedLayoutStartsAtWidth totalWidth layout &&
+  packedLayoutAdjacentContiguous layout &&
+  packedLayoutEndsAtZero layout
+
+def packedBitSlice (bits lsb width : Nat) : Nat :=
+  (bits / (2 ^ lsb)) % (2 ^ width)
+
+def packedFieldValue (bits : Nat) (field : PackedFieldLayout) : Nat :=
+  packedBitSlice bits field.lsb field.width
+
+def packedLayoutFieldValue
+    (bits : Nat)
+    (fieldName : String) : List PackedFieldLayout -> Option Nat
+  | [] => none
+  | field :: rest =>
+      if field.name == fieldName then
+        some (packedFieldValue bits field)
+      else
+        packedLayoutFieldValue bits fieldName rest
+
+def rtlM13CommitPackedSchema : List (String × Nat) :=
+  [ ("op", 8)
+  , ("status", 16)
+  , ("requester_id", 32)
+  , ("bar_id", 32)
+  , ("bar_generation", 32)
+  , ("domain_id", 32)
+  , ("iommu_context", 32)
+  , ("dma_bytes", 32) ]
+
+def rtlM13StateProjectionPackedSchema : List (String × Nat) :=
+  [ ("op", 8)
+  , ("status", 16)
+  , ("completions", 32)
+  , ("faults", 32)
+  , ("device_enumerated", 1)
+  , ("bar_capability_created", 1)
+  , ("iommu_bound_to_domain", 1)
+  , ("scoped_dma_completed", 1)
+  , ("msi_event_delivered", 1)
+  , ("unbound_bus_master_rejected", 1)
+  , ("stale_bar_rejected", 1)
+  , ("malformed_config_rejected", 1)
+  , ("no_raw_pcie_authority", 1)
+  , ("counts_exact", 1) ]
+
+def rtlM13CommitPackedLayout : List PackedFieldLayout :=
+  packedSchemaLayout rtlM13CommitPackedSchema
+
+def rtlM13StateProjectionPackedLayout : List PackedFieldLayout :=
+  packedSchemaLayout rtlM13StateProjectionPackedSchema
+
+theorem rtlM13CommitPackedSchema_width :
+    packedSchemaWidth rtlM13CommitPackedSchema = 216 := by
+  decide
+
+theorem rtlM13StateProjectionPackedSchema_width :
+    packedSchemaWidth rtlM13StateProjectionPackedSchema = 98 := by
+  decide
+
+theorem rtlM13CommitPackedLayout_covers_schema_width :
+    packedLayoutCoversWidth
+      (packedSchemaWidth rtlM13CommitPackedSchema)
+      rtlM13CommitPackedLayout = true := by
+  decide
+
+theorem rtlM13StateProjectionPackedLayout_covers_schema_width :
+    packedLayoutCoversWidth
+      (packedSchemaWidth rtlM13StateProjectionPackedSchema)
+      rtlM13StateProjectionPackedLayout = true := by
+  decide
+
 end Lnp64.M13
