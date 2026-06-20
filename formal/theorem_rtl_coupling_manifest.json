@@ -64,6 +64,8 @@
         {"file": "formal/M1TransitionInvariantModel.lean", "name": "rtl_m1_refinement_reject_full_post_failure_matches_commit_projection", "artifact_level": "transition_invariant"},
         {"file": "formal/M1TransitionInvariantModel.lean", "name": "rtl_m1_refinement_reject_stale_post_failure_matches_commit_projection", "artifact_level": "transition_invariant"},
         {"file": "formal/M1TransitionInvariantModel.lean", "name": "rtl_m1_refinement_cap_dup_denied_post_failure_matches_commit_projection", "artifact_level": "transition_invariant"},
+        {"file": "formal/M6TransitionInvariantModel.lean", "name": "m6_t3_stale_service_fails_closed_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M6TransitionInvariantModel.lean", "name": "m6_t3_installed_capability_narrowed_for_all_reachable", "artifact_level": "transition_invariant"},
         {"file": "formal/FormalTheoremsModel.lean", "name": "ft_capability_non_forgeability", "artifact_level": "coverage"}
       ],
       "rtl_modules": [
@@ -93,6 +95,8 @@
         {"file": "formal/M5DmaModel.lean", "name": "m5_revoked_generation_rejected", "artifact_level": "bounded_witness"},
         {"file": "formal/M11DdrMetadataModel.lean", "name": "m11_stale_generation_fails_closed", "artifact_level": "bounded_witness"},
         {"file": "formal/M11DdrMetadataModel.lean", "name": "m11_cross_domain_metadata_rejected", "artifact_level": "bounded_witness"},
+        {"file": "formal/M11TransitionInvariantModel.lean", "name": "m11_t3_stale_generation_fails_closed_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M11TransitionInvariantModel.lean", "name": "m11_t3_cross_domain_fails_closed_for_all_reachable", "artifact_level": "transition_invariant"},
         {"file": "formal/FormalTheoremsModel.lean", "name": "ft_revocation_soundness", "artifact_level": "coverage"}
       ],
       "rtl_modules": [
@@ -121,6 +125,8 @@
         {"file": "formal/M14TransitionInvariantModel.lean", "name": "m14_t3_policy_fail_closed_for_all_reachable", "artifact_level": "transition_invariant"},
         {"file": "formal/M12StorageBarrierModel.lean", "name": "m12_cross_domain_rejected", "artifact_level": "bounded_witness"},
         {"file": "formal/M12StorageBarrierModel.lean", "name": "m12_no_raw_device_authority", "artifact_level": "bounded_witness"},
+        {"file": "formal/M12TransitionInvariantModel.lean", "name": "m12_t3_cross_domain_fails_closed_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M12TransitionInvariantModel.lean", "name": "m12_t3_no_raw_device_authority_for_all_reachable", "artifact_level": "transition_invariant"},
         {"file": "formal/FormalTheoremsModel.lean", "name": "ft_resource_domain_containment", "artifact_level": "coverage"}
       ],
       "rtl_modules": [
@@ -150,6 +156,8 @@
         {"file": "formal/M5TransitionInvariantModel.lean", "name": "m5_t3_coherent_visibility_observed_for_all_reachable", "artifact_level": "transition_invariant"},
         {"file": "formal/M13PcieIommuModel.lean", "name": "m13_iommu_scoped_dma_safe", "artifact_level": "bounded_witness"},
         {"file": "formal/M13PcieIommuModel.lean", "name": "m13_no_raw_pcie_authority", "artifact_level": "bounded_witness"},
+        {"file": "formal/M13TransitionInvariantModel.lean", "name": "m13_t3_unbound_bus_master_fails_closed_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M13TransitionInvariantModel.lean", "name": "m13_t3_no_raw_pcie_authority_for_all_reachable", "artifact_level": "transition_invariant"},
         {"file": "formal/FormalTheoremsModel.lean", "name": "ft_dma_isolation", "artifact_level": "coverage"}
       ],
       "rtl_modules": [
@@ -179,6 +187,8 @@
         {"file": "formal/M4TransitionInvariantModel.lean", "name": "m4_t3_guard_access_faulted_for_all_reachable", "artifact_level": "transition_invariant"},
         {"file": "formal/M4TransitionInvariantModel.lean", "name": "m4_t3_stale_generation_rejected_for_all_reachable", "artifact_level": "transition_invariant"},
         {"file": "formal/M4TransitionInvariantModel.lean", "name": "m4_t3_cache_tlb_quiescent_before_authority_reuse_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M8TransitionInvariantModel.lean", "name": "m8_t3_double_free_fails_closed_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M8TransitionInvariantModel.lean", "name": "m8_t3_stale_pointer_fails_closed_for_all_reachable", "artifact_level": "transition_invariant"},
         {"file": "formal/FormalTheoremsModel.lean", "name": "ft_vma_memory_safety", "artifact_level": "coverage"}
       ],
       "rtl_modules": [
@@ -200,6 +210,8 @@
         {"file": "formal/S0Model.lean", "name": "s0_every_live_thread_has_exactly_one_scheduler_location", "artifact_level": "bounded_witness"},
         {"file": "formal/M7FutexAtomicModel.lean", "name": "m7_exactly_one_scheduler_location", "artifact_level": "bounded_witness"},
         {"file": "formal/M7TransitionInvariantModel.lean", "name": "m7_t3_exactly_one_scheduler_location_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M3TransitionInvariantModel.lean", "name": "m3_t3_stale_join_fails_closed_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M3TransitionInvariantModel.lean", "name": "m3_t3_join_consumes_exited_child_for_all_reachable", "artifact_level": "transition_invariant"},
         {"file": "formal/FormalTheoremsModel.lean", "name": "ft_scheduler_safety", "artifact_level": "coverage"}
       ],
       "rtl_modules": [
@@ -226,6 +238,8 @@
         {"file": "formal/M7TransitionInvariantModel.lean", "name": "m7_t3_wake_generation_matches_for_all_reachable", "artifact_level": "transition_invariant"},
         {"file": "formal/M15ObjectProfilesModel.lean", "name": "m15_queue_overflow_explicit", "artifact_level": "bounded_witness"},
         {"file": "formal/M15ObjectProfilesModel.lean", "name": "m15_counter_threshold_event", "artifact_level": "bounded_witness"},
+        {"file": "formal/M15TransitionInvariantModel.lean", "name": "m15_t3_queue_overflow_explicit_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M15TransitionInvariantModel.lean", "name": "m15_t3_stale_event_source_fails_closed_for_all_reachable", "artifact_level": "transition_invariant"},
         {"file": "formal/FormalTheoremsModel.lean", "name": "ft_no_lost_wakeups", "artifact_level": "coverage"}
       ],
       "rtl_modules": [
@@ -277,6 +291,8 @@
         {"file": "formal/M9ClassifierServiceletModel.lean", "name": "m9_termination_by_construction", "artifact_level": "bounded_witness"},
         {"file": "formal/M9ClassifierServiceletModel.lean", "name": "m9_no_authority_creation", "artifact_level": "bounded_witness"},
         {"file": "formal/M9ClassifierServiceletModel.lean", "name": "m9_no_arbitrary_memory_access", "artifact_level": "bounded_witness"},
+        {"file": "formal/M9TransitionInvariantModel.lean", "name": "m9_t3_budget_enforced_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M9TransitionInvariantModel.lean", "name": "m9_t3_no_authority_creation_for_all_reachable", "artifact_level": "transition_invariant"},
         {"file": "formal/FormalTheoremsModel.lean", "name": "ft_classifier_servicelet_safety", "artifact_level": "coverage"}
       ],
       "rtl_modules": [
@@ -299,6 +315,8 @@
         {"file": "formal/M10RasModel.lean", "name": "m10_adversarial_inputs_cannot_hang_owner_or_create_authority", "artifact_level": "bounded_witness"},
         {"file": "formal/M10RasModel.lean", "name": "m10_bounded_local_fault_reaches_terminal_path", "artifact_level": "bounded_witness"},
         {"file": "formal/M10RasModel.lean", "name": "m10_realtime_work_has_bounded_arbitration_progress", "artifact_level": "bounded_witness"},
+        {"file": "formal/M10TransitionInvariantModel.lean", "name": "m10_t3_parity_poison_fails_closed_for_all_reachable", "artifact_level": "transition_invariant"},
+        {"file": "formal/M10TransitionInvariantModel.lean", "name": "m10_t3_watchdog_reaches_degraded_reset_for_all_reachable", "artifact_level": "transition_invariant"},
         {"file": "formal/FormalTheoremsModel.lean", "name": "ft_global_progress_bounded_faults", "artifact_level": "coverage"}
       ],
       "rtl_modules": [
