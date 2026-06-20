@@ -1353,10 +1353,22 @@ fn validate_exec_vma_words(words: &[u64]) -> Result<(u64, u64), String> {
 }
 
 fn validate_exec_fdr_grant_words(words: &[u64]) -> Result<(), String> {
+    let slot = words[0];
+    let kind = words[1];
+    let rights = words[2];
     let source_cap = words[4];
     let source_generation = words[5];
     let close_on_exec = words[6];
     let preserve = words[7];
+    if slot >= FDR_COUNT as u64 {
+        return Err("exec-plan FDR grant slot is out of range".to_string());
+    }
+    if kind == 0 {
+        return Err("exec-plan FDR grant kind is missing".to_string());
+    }
+    if rights == 0 {
+        return Err("exec-plan FDR grant rights are missing".to_string());
+    }
     if source_cap == 0 {
         return Err("exec-plan FDR source capability is missing".to_string());
     }
@@ -15179,6 +15191,75 @@ mod tests {
         let err = Machine::validate_exec_descriptor_words(&words).unwrap_err();
 
         assert!(err.contains("lineage epoch"), "{err}");
+    }
+
+    #[test]
+    fn emulator_rejects_exec_descriptor_fdr_grant_slot_out_of_range() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let mut words = encode_exec_descriptor(&descriptor);
+        let fdr_offset = EXEC_PLAN_HEADER_WORDS
+            + EXEC_PLAN_ENTRY_WORDS
+            + descriptor.vmas.len() * EXEC_PLAN_VMA_WORDS;
+        words[fdr_offset] = FDR_COUNT as u64;
+
+        let err = Machine::validate_exec_descriptor_words(&words).unwrap_err();
+
+        assert!(err.contains("slot is out of range"), "{err}");
+    }
+
+    #[test]
+    fn emulator_rejects_exec_descriptor_fdr_grant_without_kind() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let mut words = encode_exec_descriptor(&descriptor);
+        let fdr_offset = EXEC_PLAN_HEADER_WORDS
+            + EXEC_PLAN_ENTRY_WORDS
+            + descriptor.vmas.len() * EXEC_PLAN_VMA_WORDS;
+        words[fdr_offset + 1] = 0;
+
+        let err = Machine::validate_exec_descriptor_words(&words).unwrap_err();
+
+        assert!(err.contains("grant kind"), "{err}");
+    }
+
+    #[test]
+    fn emulator_rejects_exec_descriptor_fdr_grant_without_rights() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let mut words = encode_exec_descriptor(&descriptor);
+        let fdr_offset = EXEC_PLAN_HEADER_WORDS
+            + EXEC_PLAN_ENTRY_WORDS
+            + descriptor.vmas.len() * EXEC_PLAN_VMA_WORDS;
+        words[fdr_offset + 2] = 0;
+
+        let err = Machine::validate_exec_descriptor_words(&words).unwrap_err();
+
+        assert!(err.contains("grant rights"), "{err}");
     }
 
     #[test]
