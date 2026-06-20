@@ -22,6 +22,55 @@ capability-delegated hypervisor described in `system_software_compatibility_road
   Port Contract below and undercuts the "this is what a correct port looks like"
   message to OS authors.
 
+## Completeness: this is a real, full port
+
+This is **not** a subset, a demo, or a "good enough" compatibility layer. The
+target is an honest, complete NetBSD port in which **essentially all
+NetBSD-compatible software runs correctly when compiled for LNP64** — the same
+binaries' worth of behavior you would expect on a stock NetBSD/amd64 or
+NetBSD/aarch64 machine.
+
+Concretely, "full" means:
+
+- **Complete libc and ABI.** The full real NetBSD libc, libpthread, libm, librt,
+  dynamic loader, and the complete syscall surface — not a curated subset. POSIX,
+  BSD extensions, signals, threads, and process semantics behave per NetBSD.
+- **Real subsystems, not fixtures.** Real FFS/UFS, tmpfs, NFS, and the VFS layer;
+  the real NetBSD TCP/IP stack and sockets; real device drivers — all as rump
+  components, with the *same code* NetBSD ships, not reimplementations.
+- **Full pkgsrc breadth.** The goal is that arbitrary pkgsrc software builds and
+  runs unmodified once retargeted to the LNP64 toolchain. If a normal NetBSD
+  program needs a facility, that facility must exist and be correct.
+- **No silent capability gaps.** Anything not yet done is tracked as an explicit
+  ladder rung with a gate, never quietly stubbed, faked, or `ENOSYS`-ed in a way
+  that lets broken software appear to pass.
+- **Fully enlightened system libraries, top to bottom.** The enlightenment is not
+  confined to the rump kernel seam. libc, libpthread, libm, librt, and the
+  dynamic loader are themselves enlightened: their primitives lower *directly*
+  onto native operations, not onto an emulated NetBSD syscall trap that is then
+  re-lowered. `malloc`/arenas → `ALLOC`/`MMAP`; threads/locks/condvars →
+  `CLONE`/`SCHED`/`LOCK_CMPXCHG`/`FUTEX_*`/`AWAIT_EX`; file/socket/pipe I/O →
+  FDRs + `PULL`/`PUSH`; `poll`/`select`/`epoll` → `WAITABLE_PROBE`/`AWAIT_EX`;
+  signals → gate delivery; cross-domain/service calls → `GATE_CALL`. A NetBSD
+  syscall number remains a valid, complete entry path (for unmodified binaries),
+  but the libc fast paths take the native route so the *whole stack*, not just
+  the kernel components, runs as a correct hardware-native port. Where a library
+  today bottoms out in a generic syscall, that is a tracked rung to enlighten,
+  not the intended end state.
+
+The Correct Port Contract below restricts only *who provides mechanism*
+(scheduler, allocator, page tables, DMA, permission checks → hardware), **never
+what functionality exists**. Every mechanism the contract forbids NetBSD from
+*reimplementing* is one LNP64 already provides and proves; behavior is preserved,
+not dropped. "Delete the run-queue" means *delegate* it, not lose scheduling.
+
+The only deliberate exclusions are mechanisms LNP64 owns by design (port-private
+page tables, a software run-queue, raw interrupt/DMA programming) — and those are
+*replaced* by native equivalents, so no software loses a capability because of
+them. Where exact NetBSD semantics and the native model genuinely diverge, the
+divergence is documented as a named, tested compatibility decision, not an
+undocumented gap.
+
 ## Why rump, not a monolithic MD port
 
 A monolithic NetBSD port brings its own run-queue, UVM, pmap, and locking — the
