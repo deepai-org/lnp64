@@ -2595,6 +2595,7 @@ mod tests {
         assert!(real_llc.contains("select(1, &readfds, &writefds, &exceptfds, &timeout)"));
         assert!(real_llc.contains("epoll_create1(0)"));
         assert!(real_llc.contains("epoll_ctl(ep, EPOLL_CTL_ADD, 0, &ev)"));
+        assert!(real_llc.contains("epoll_ctl(ep, EPOLL_CTL_MOD, 0, &ev)"));
         assert!(real_llc.contains("epoll_wait(ep, &out, 1, 0)"));
         assert!(real_llc.contains("epoll_ctl(ep, EPOLL_CTL_DEL, 0, 0)"));
         assert!(real_llc.contains("kqueue()"));
@@ -3098,7 +3099,9 @@ mod tests {
         assert!(poll_test_clang.contains("change.filter = EVFILT_READ"));
         assert!(poll_test_clang.contains("kevent(kq, &change, 1, 0, 0, &ktimeout)"));
         assert!(poll_test_clang.contains("kevent(kq, 0, 0, &kout, 1, &ktimeout)"));
+        assert!(poll_test_clang.contains("epoll_ctl(ep, EPOLL_CTL_MOD"));
         assert!(poll_test_clang.contains("epoll_ctl(ep, EPOLL_CTL_DEL"));
+        assert!(poll_test_clang.contains("out.data != read_cap + 1"));
         assert!(poll_test_clang.contains("change.flags = EV_DELETE"));
         assert!(!poll_test_clang.contains("typedef unsigned long nfds_t"));
         assert!(!poll_test_clang.contains("int poll(struct pollfd"));
@@ -5913,6 +5916,7 @@ mod tests {
             );
         }
         assert!(conformance.contains("| `kqueue`, `kevent` | partial |"));
+        assert!(conformance.contains("real-Clang `EPOLL_CTL_MOD` data replacement"));
         assert!(conformance.contains("EV_DELETE removes a registered readiness source"));
         assert!(conformance.contains("Broader filters, oneshot semantics"));
         assert!(conformance.contains("`COMPAT-STRESS-005` | poll/epoll races"));

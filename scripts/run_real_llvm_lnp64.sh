@@ -4264,13 +4264,17 @@ int main(void) {
   ev.data = 42;
   if (epoll_ctl(ep, EPOLL_CTL_ADD, 0, &ev) != 0)
     return 6;
-  if (epoll_wait(ep, &out, 1, 0) != 0)
+  ev.events = EPOLLIN;
+  ev.data = 84;
+  if (epoll_ctl(ep, EPOLL_CTL_MOD, 0, &ev) != 0)
     return 7;
-  if (epoll_ctl(ep, EPOLL_CTL_DEL, 0, 0) != 0)
+  if (epoll_wait(ep, &out, 1, 0) != 0)
     return 8;
+  if (epoll_ctl(ep, EPOLL_CTL_DEL, 0, 0) != 0)
+    return 9;
   kq = kqueue();
   if (kq < 0)
-    return 9;
+    return 10;
   change.ident = 0;
   change.filter = EVFILT_READ;
   change.flags = EV_ADD;
@@ -4278,10 +4282,10 @@ int main(void) {
   change.data = 0;
   change.udata = 0;
   if (kevent(kq, &change, 1, 0, 0, &ts) != 0)
-    return 10;
+    return 11;
   change.flags = EV_DELETE;
   if (kevent(kq, &change, 1, 0, 0, &ts) != 0)
-    return 11;
+    return 12;
   return 0;
 }
 C
