@@ -32,6 +32,20 @@ REQUIRED_LINKED_COVERAGE = {
     "tests/rtl/programs/top_linked_clone_join.c": {"thread_join"},
     "tests/rtl/programs/top_linked_rot13_native.c": {"push_pull", "free"},
 }
+M1_TOP_LEVEL_COVERED_KEYS = {
+    "cap_dup": ("LNP64_OP_CAP_DUP", "LNP64_M1_COMMIT_CAP_DUP"),
+    "cap_send": ("LNP64_OP_CAP_SEND", "LNP64_M1_COMMIT_CAP_SEND"),
+    "cap_recv": ("LNP64_OP_CAP_RECV", "LNP64_M1_COMMIT_CAP_RECV"),
+    "cap_revoke": ("LNP64_OP_CAP_REVOKE", "LNP64_M1_COMMIT_CAP_REVOKE"),
+}
+M1_STANDALONE_UNTIL_S1_KEYS = {
+    "reject_stale": ("LNP64_OP_PULL", "LNP64_M1_COMMIT_REJECT_STALE"),
+    "push": ("LNP64_OP_PUSH", "LNP64_M1_COMMIT_PUSH"),
+    "pull": ("LNP64_OP_PULL", "LNP64_M1_COMMIT_PULL"),
+    "reject_full": ("LNP64_OP_PUSH", "LNP64_M1_COMMIT_REJECT_FULL"),
+    "cap_dup_denied": ("LNP64_OP_CAP_DUP", "LNP64_M1_COMMIT_CAP_DUP_DENIED"),
+    "object_create": ("LNP64_OP_OBJECT_CTL", "LNP64_M1_COMMIT_OBJECT_CREATE"),
+}
 
 
 def fail(message: str) -> None:
@@ -84,6 +98,91 @@ def effective_gate_text(gate_path: str) -> str:
     return gate_text
 
 
+def require_m1_top_level_refinement_contract(manifest: dict[str, object]) -> None:
+    contract = manifest.get("m1_top_level_refinement")
+    require(isinstance(contract, dict), "manifest must document m1_top_level_refinement")
+    require(
+        contract.get("stage") == "top_level_cap_ops_retired_instruction_coupled",
+        "M1 top-level refinement stage must state cap-op-only coupling",
+    )
+    claim = contract.get("claim")
+    require(isinstance(claim, str) and "not T4" in claim, "M1 top-level claim must keep the non-T4 gap explicit")
+    require(contract.get("gate") == "scripts/run_rtl_m1_refinement_docker.sh", "M1 top-level contract must name the Docker refinement gate")
+    require(contract.get("checker") == "scripts/check_rtl_top_level_program_manifest.py", "M1 top-level contract must name this checker")
+    remaining_gap = contract.get("remaining_t4_gap")
+    require(
+        isinstance(remaining_gap, str) and "RTL-to-Lean bit-refinement" in remaining_gap,
+        "M1 top-level contract must state the remaining RTL-to-Lean bit-refinement gap",
+    )
+
+    schema = json.loads(text(ROOT / "rtl/schema/lnp64_shared_schema.json"))
+    schema_ops = {
+        entry["key"]: entry
+        for entry in schema["m1_typed_commit_contract"]["op_mappings"]
+    }
+    expected_keys = set(M1_TOP_LEVEL_COVERED_KEYS) | set(M1_STANDALONE_UNTIL_S1_KEYS)
+    require(
+        set(schema_ops) == expected_keys,
+        f"M1 top-level contract partition drifted from schema op mappings: schema={sorted(schema_ops)} expected={sorted(expected_keys)}",
+    )
+
+    covered = contract.get("covered_real_instruction_ops")
+    standalone = contract.get("standalone_until_s1_hooks")
+    require(isinstance(covered, list) and covered, "M1 contract must list covered top-level ops")
+    require(isinstance(standalone, list) and standalone, "M1 contract must list standalone-until-S1 ops")
+
+    def require_ops(entries: list[object], expected: dict[str, tuple[str, str]], label: str) -> None:
+        by_key = {}
+        for raw_entry in entries:
+            require(isinstance(raw_entry, dict), f"M1 {label} entry must be an object")
+            key = raw_entry.get("key")
+            require(isinstance(key, str), f"M1 {label} entry has invalid key")
+            require(key not in by_key, f"M1 {label} duplicates key {key}")
+            by_key[key] = raw_entry
+        require(set(by_key) == set(expected), f"M1 {label} keys drifted: saw={sorted(by_key)} expected={sorted(expected)}")
+        for key, (arch_opcode, commit_op) in expected.items():
+            entry = by_key[key]
+            require(entry.get("arch_opcode") == arch_opcode, f"M1 {label} {key} arch opcode drifted")
+            require(entry.get("commit_op") == commit_op, f"M1 {label} {key} commit op drifted")
+            require(
+                entry.get("lean_step") == schema_ops[key]["lean_transition"],
+                f"M1 {label} {key} Lean step drifted from shared schema",
+            )
+            if label == "standalone-until-S1":
+                missing_hook = entry.get("missing_hook")
+                missing_hook_is_explicit = (
+                    isinstance(missing_hook, str)
+                    and "does not yet emit schema-owned M1" in missing_hook
+                ) or (
+                    key == "cap_dup_denied"
+                    and isinstance(missing_hook, str)
+                    and "not yet emitted" in missing_hook
+                )
+                require(
+                    missing_hook_is_explicit,
+                    f"M1 standalone op {key} must explicitly state the missing top-level hook",
+                )
+
+    require_ops(covered, M1_TOP_LEVEL_COVERED_KEYS, "covered")
+    require_ops(standalone, M1_STANDALONE_UNTIL_S1_KEYS, "standalone-until-S1")
+
+    top_text = text(ROOT / "rtl/top/lnp64_top.sv")
+    smoke_text = text(ROOT / "scripts/run_rtl_top_program_smoke.sh")
+    for arch_opcode, commit_op in M1_TOP_LEVEL_COVERED_KEYS.values():
+        require(arch_opcode in top_text, f"lnp64_top must map covered M1 opcode {arch_opcode}")
+        require(commit_op in top_text, f"lnp64_top must emit covered M1 commit op {commit_op}")
+        require(arch_opcode in smoke_text, f"top-level comparator must map covered M1 opcode {arch_opcode}")
+        require(commit_op in smoke_text, f"top-level comparator must decode covered M1 commit op {commit_op}")
+    for key, (arch_opcode, commit_op) in M1_STANDALONE_UNTIL_S1_KEYS.items():
+        require(arch_opcode in smoke_text, f"shared comparator must know standalone-related arch opcode {arch_opcode} for {key}")
+        require(schema_ops[key]["sv"] == commit_op, f"schema must retain standalone M1 commit op {commit_op}")
+        if key not in {"cap_dup_denied"}:
+            require(
+                commit_op not in top_text,
+                f"standalone M1 op {key} is now present in lnp64_top; move it to covered_real_instruction_ops",
+            )
+
+
 def main() -> None:
     manifest = json.loads(text(MANIFEST))
     manifest_runner = text(ROOT / "scripts/run_rtl_top_program_manifest.sh")
@@ -111,6 +210,7 @@ def main() -> None:
     require(manifest.get("stage") == "feature_gated_plan", "manifest must be a feature-gated plan")
     require(manifest.get("top") == "rtl/top/lnp64_top.sv", "manifest must target lnp64_top")
     require((ROOT / "rtl/top/lnp64_top.sv").exists(), "lnp64_top is missing")
+    require_m1_top_level_refinement_contract(manifest)
 
     flat_hex_entries = manifest.get("flat_hex_programs")
     llvm_mc_entries = manifest.get("llvm_mc_programs")

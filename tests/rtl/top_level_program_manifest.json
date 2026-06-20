@@ -9,6 +9,27 @@
     "trace_target": "typed_transition_trace",
     "current_trace_stage": "string_trace_scaffold"
   },
+  "m1_top_level_refinement": {
+    "stage": "top_level_cap_ops_retired_instruction_coupled",
+    "claim": "M1 is transition-proven plus typed-trace/assertion coupled; top-level composed coverage currently applies only to cap-engine operations and is not T4.",
+    "gate": "scripts/run_rtl_m1_refinement_docker.sh",
+    "checker": "scripts/check_rtl_top_level_program_manifest.py",
+    "covered_real_instruction_ops": [
+      {"key": "cap_dup", "arch_opcode": "LNP64_OP_CAP_DUP", "commit_op": "LNP64_M1_COMMIT_CAP_DUP", "lean_step": "capDup"},
+      {"key": "cap_send", "arch_opcode": "LNP64_OP_CAP_SEND", "commit_op": "LNP64_M1_COMMIT_CAP_SEND", "lean_step": "capSend"},
+      {"key": "cap_recv", "arch_opcode": "LNP64_OP_CAP_RECV", "commit_op": "LNP64_M1_COMMIT_CAP_RECV", "lean_step": "capRecv"},
+      {"key": "cap_revoke", "arch_opcode": "LNP64_OP_CAP_REVOKE", "commit_op": "LNP64_M1_COMMIT_CAP_REVOKE", "lean_step": "capRevoke"}
+    ],
+    "standalone_until_s1_hooks": [
+      {"key": "reject_stale", "arch_opcode": "LNP64_OP_PULL", "commit_op": "LNP64_M1_COMMIT_REJECT_STALE", "lean_step": "rejectStale", "missing_hook": "queue/object fabric does not yet emit schema-owned M1 reject-stale commits into lnp64_top retire evidence"},
+      {"key": "push", "arch_opcode": "LNP64_OP_PUSH", "commit_op": "LNP64_M1_COMMIT_PUSH", "lean_step": "push", "missing_hook": "queue/object fabric does not yet emit schema-owned M1 push commits into lnp64_top retire evidence"},
+      {"key": "pull", "arch_opcode": "LNP64_OP_PULL", "commit_op": "LNP64_M1_COMMIT_PULL", "lean_step": "pull", "missing_hook": "queue/object fabric does not yet emit schema-owned M1 pull commits into lnp64_top retire evidence"},
+      {"key": "reject_full", "arch_opcode": "LNP64_OP_PUSH", "commit_op": "LNP64_M1_COMMIT_REJECT_FULL", "lean_step": "rejectFull", "missing_hook": "queue/object fabric does not yet emit schema-owned M1 reject-full commits into lnp64_top retire evidence"},
+      {"key": "cap_dup_denied", "arch_opcode": "LNP64_OP_CAP_DUP", "commit_op": "LNP64_M1_COMMIT_CAP_DUP_DENIED", "lean_step": "capDupDenied", "missing_hook": "top-level CAP_DUP denial is status-coupled under the retired cap opcode, not yet emitted as the standalone capDupDenied M1 commit op"},
+      {"key": "object_create", "arch_opcode": "LNP64_OP_OBJECT_CTL", "commit_op": "LNP64_M1_COMMIT_OBJECT_CREATE", "lean_step": "objectCreate", "missing_hook": "object-control fabric does not yet emit schema-owned M1 object-create commits into lnp64_top retire evidence"}
+    ],
+    "remaining_t4_gap": "No generated/formal RTL-to-Lean bit-refinement artifact yet proves every accepted top-level M1 packed commit and authority-bearing post-state projection equals the Lean post-state."
+  },
   "flat_hex_programs": [
     {
       "source": "tests/rtl/programs/top_smoke.s",
