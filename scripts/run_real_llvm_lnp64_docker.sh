@@ -412,6 +412,15 @@ fi
 grep -q 'exit=0' <<<"$sbase_head_output"
 printf 'real LLVM LNP64 run-elf sbase head execution passed: %s\n' \
   target/llvm-lnp64-build/lnp64-sbase-head-linked.elf
+printf 'same via clang\n' >"$sbase_fixture_root/input/cmp-a.txt"
+cp "$sbase_fixture_root/input/cmp-a.txt" "$sbase_fixture_root/input/cmp-b.txt"
+"$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-cmp-linked.elf \
+  >/dev/null
+sbase_cmp_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+  target/llvm-lnp64-build/lnp64-sbase-cmp-linked.elf cmp input/cmp-a.txt input/cmp-b.txt)"
+grep -q 'exit=0' <<<"$sbase_cmp_output"
+printf 'real LLVM LNP64 run-elf sbase cmp execution passed: %s\n' \
+  target/llvm-lnp64-build/lnp64-sbase-cmp-linked.elf
 "$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-ls-linked.elf \
   >/dev/null
 sbase_ls_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \

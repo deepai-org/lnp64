@@ -196,6 +196,32 @@ static void lnp64_vprint(FILE *stream, const char *format, va_list ap) {
       format++;
       continue;
     }
+    if (*format == 'z' && format[1] == 'u') {
+      size_t value = va_arg(ap, size_t);
+      char buf[32];
+      int pos = 0;
+      do {
+        buf[pos++] = (char)('0' + (value % 10));
+        value /= 10;
+      } while (value);
+      while (pos)
+        fputc(buf[--pos], stream);
+      format += 2;
+      continue;
+    }
+    if (*format == 'o') {
+      unsigned int value = va_arg(ap, unsigned int);
+      char buf[16];
+      int pos = 0;
+      do {
+        buf[pos++] = (char)('0' + (value & 7));
+        value >>= 3;
+      } while (value);
+      while (pos)
+        fputc(buf[--pos], stream);
+      format++;
+      continue;
+    }
     fputc('%', stream);
   }
 }
@@ -221,4 +247,12 @@ void eprintf(const char *format, ...) {
   lnp64_vprint(stderr, format, ap);
   va_end(ap);
   exit(1);
+}
+
+void enprintf(int status, const char *format, ...) {
+  va_list ap;
+  va_start(ap, format);
+  lnp64_vprint(stderr, format, ap);
+  va_end(ap);
+  exit(status);
 }

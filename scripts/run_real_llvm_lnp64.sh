@@ -1552,6 +1552,7 @@ grep -q '<getline>:' "$sbase_head_support_impl_dump"
 grep -q '<fopen>:' "$sbase_head_support_impl_dump"
 grep -q '<fshut>:' "$sbase_head_support_impl_dump"
 grep -q '<weprintf>:' "$sbase_head_support_impl_dump"
+grep -q '<enprintf>:' "$sbase_head_support_impl_dump"
 printf 'real LLVM LNP64 clang sbase head support object smoke passed: %s\n' \
   "$sbase_head_support_impl_obj"
 
@@ -5829,6 +5830,16 @@ sbase_head_elf="$build_dir/lnp64-sbase-head-linked.elf"
 test -s "$sbase_head_elf"
 printf 'real LLVM LNP64 lld sbase head link smoke passed: %s\n' \
   "$sbase_head_elf"
+
+sbase_cmp_elf="$build_dir/lnp64-sbase-cmp-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
+  -o "$sbase_cmp_elf" "$crt0_obj" "$build_dir/sbase-cmp-clang-smoke.o" \
+  "$sbase_head_support_impl_obj" "$libc_alloc_impl_obj" \
+  "$libc_fd_impl_obj" "$libc_string_impl_obj" "$libc_errno_impl_obj" \
+  "$libc_process_impl_obj"
+test -s "$sbase_cmp_elf"
+printf 'real LLVM LNP64 lld sbase cmp link smoke passed: %s\n' \
+  "$sbase_cmp_elf"
 
 sbase_ls_elf="$build_dir/lnp64-sbase-ls-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \

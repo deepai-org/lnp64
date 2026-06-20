@@ -29,6 +29,7 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-sbase-cat-linked.elf"
         "$build_dir/lnp64-sbase-wc-linked.elf"
         "$build_dir/lnp64-sbase-head-linked.elf"
+        "$build_dir/lnp64-sbase-cmp-linked.elf"
         "$build_dir/lnp64-sbase-ls-linked.elf"
         "$build_dir/lnp64-sbase-find-linked.elf"
         "$build_dir/lnp64-sbase-mkdir-linked.elf"
@@ -75,6 +76,7 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-sbase-cat-linked.elf"
         "$build_dir/lnp64-sbase-wc-linked.elf"
         "$build_dir/lnp64-sbase-head-linked.elf"
+        "$build_dir/lnp64-sbase-cmp-linked.elf"
         "$build_dir/lnp64-sbase-ls-linked.elf"
         "$build_dir/lnp64-sbase-find-linked.elf"
         "$build_dir/lnp64-sbase-mkdir-linked.elf"
@@ -243,6 +245,15 @@ run_package() {
       grep -q 'exit=0' <<<"$sbase_head_output"
       printf 'real LLVM LNP64 run-elf sbase head execution passed: %s\n' \
         "$build_dir/lnp64-sbase-head-linked.elf"
+      printf 'same via clang\n' >"$sbase_fixture_root/input/cmp-a.txt"
+      cp "$sbase_fixture_root/input/cmp-a.txt" "$sbase_fixture_root/input/cmp-b.txt"
+      "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-cmp-linked.elf" >/dev/null
+      local sbase_cmp_output
+      sbase_cmp_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+        "$build_dir/lnp64-sbase-cmp-linked.elf" cmp input/cmp-a.txt input/cmp-b.txt)"
+      grep -q 'exit=0' <<<"$sbase_cmp_output"
+      printf 'real LLVM LNP64 run-elf sbase cmp execution passed: %s\n' \
+        "$build_dir/lnp64-sbase-cmp-linked.elf"
       "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-ls-linked.elf" >/dev/null
       local sbase_ls_output
       sbase_ls_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
