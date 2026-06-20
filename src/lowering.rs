@@ -7009,6 +7009,11 @@ mod tests {
                 .1
                 .contains(&"demos/object_ctl_bad_profile_no_install.s")
         );
+        assert!(
+            categories["asm_demos"]
+                .1
+                .contains(&"demos/cap_dup_narrow_no_amplify.s")
+        );
         assert!(run_demos.contains("legacy-assembler smoke demos only"));
         assert!(categories["c_tests"].3.contains("default_to_real_clang"));
         for migrated_demo in [
@@ -7039,6 +7044,7 @@ mod tests {
         let readiness = include_str!("../feature_readiness.md");
         let waitable_demo = include_str!("../demos/waitable_probe_no_consume.s");
         let object_ctl_demo = include_str!("../demos/object_ctl_bad_profile_no_install.s");
+        let cap_dup_demo = include_str!("../demos/cap_dup_narrow_no_amplify.s");
         let conformance = include_str!("../toolchain/lnp64_conformance_gates.manifest");
         let top_program_manifest = include_str!("../tests/rtl/top_level_program_manifest.json");
 
@@ -7065,6 +7071,7 @@ mod tests {
         for feature in [
             "waitable_probe_no_consume",
             "object_ctl_bad_profile_no_install",
+            "cap_dup_narrow_no_amplify",
             "fdr_stale_generation_rejection",
             "real_clang_loader_exec",
             "libc_runtime_shim",
@@ -7082,10 +7089,13 @@ mod tests {
             "failed create must not mutate caller-visible FDR state",
             "Object/queue owner engine",
             "Object/FDR owner engine",
+            "M1 capability/FDR owner engine",
             "`fd3` read endpoint and `fd4` write endpoint",
             "requested `fd7` install slot",
+            "`fd1` source capability with duplicate authority",
             "FDR token generation",
             "`fd7` generation must not advance",
+            "`fd4` and `fd5` tokens carry generations",
             "typed_transition_trace",
             "retire_trace_and_final_state",
             "same source",
@@ -7126,13 +7136,31 @@ mod tests {
             );
         }
 
+        for demo_contract in [
+            "# Object touched: FDR capability metadata for duplicated fd tokens.",
+            "# Owner: M1 capability/FDR owner engine, not caller-side rights arithmetic.",
+            "# Authority: fd1 source capability with duplicate authority.",
+            "# Generation: fd4 and fd5 tokens carry generations for accepted duplicates.",
+            "# Trace: CAP_DUP accept, CAP_DUP reject, ERRNO_GET, CAP_DUP accept, EXIT are observable.",
+            "# Differential: same source runs under emulator and RTL top-program smoke input.",
+        ] {
+            assert!(
+                cap_dup_demo.contains(demo_contract),
+                "cap_dup stress demo must keep feature-readiness header: {demo_contract}"
+            );
+        }
+
         assert!(conformance.contains("demos/waitable_probe_no_consume.s"));
         assert!(conformance.contains("demos/object_ctl_bad_profile_no_install.s"));
+        assert!(conformance.contains("demos/cap_dup_narrow_no_amplify.s"));
         assert!(top_program_manifest.contains("\"trace_target\": \"typed_transition_trace\""));
         assert!(top_program_manifest.contains("demos/waitable_probe_no_consume.s"));
         assert!(top_program_manifest.contains("\"waitable_probe_no_consume\""));
         assert!(top_program_manifest.contains("demos/object_ctl_bad_profile_no_install.s"));
         assert!(top_program_manifest.contains("\"object_ctl_bad_profile_rejection\""));
+        assert!(top_program_manifest.contains("demos/cap_dup_narrow_no_amplify.s"));
+        assert!(top_program_manifest.contains("\"no_authority_amplification\""));
+        assert!(top_program_manifest.contains("tests/rtl/programs/top_cap_dup_no_amplify.s"));
         assert!(top_program_manifest.contains("\"status\": \"blocked_by_features\""));
         assert!(top_program_manifest.contains("tests/rtl/programs/top_waitable_probe.s"));
         assert!(top_program_manifest.contains("tests/rtl/programs/top_pipe_push_pull.s"));

@@ -649,6 +649,11 @@
       "status": "blocked_by_features"
     },
     {
+      "source": "demos/cap_dup_narrow_no_amplify.s",
+      "required_features": ["core", "fdr", "cap_dup", "cap_rights_narrowing", "no_authority_amplification", "errno", "data_labels", "write_fd", "exit"],
+      "status": "blocked_by_features"
+    },
+    {
       "source": "demos/system.s",
       "required_features": ["core", "signal_delivery", "sigaction", "kill", "sigret", "mmap", "load_ucode", "inb", "clone_spawn", "futex_wait", "futex_wake", "fork", "exec", "source_exec_image", "write_fd", "exit"],
       "status": "active",
