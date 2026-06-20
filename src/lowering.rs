@@ -1500,6 +1500,7 @@ mod tests {
                 "empty llvm gate requirements for {gate}"
             );
         }
+        assert_eq!(statuses["gate_driver"], "tested");
         assert_eq!(statuses["real_llc_build"], "tested");
         assert_eq!(statuses["real_mc_build"], "tested");
         assert_eq!(statuses["real_tblgen"], "tested");
