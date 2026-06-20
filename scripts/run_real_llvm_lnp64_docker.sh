@@ -407,6 +407,16 @@ grep -q 'exit=0' <<<"$sbase_ln_output"
 cmp -s "$sbase_fixture_root/input/cat.txt" "$sbase_fixture_root/linked.txt"
 printf 'real LLVM LNP64 run-elf sbase ln execution passed: %s\n' \
   target/llvm-lnp64-build/lnp64-sbase-ln-linked.elf
+printf 'move via clang\n' >"$sbase_fixture_root/move-source.txt"
+"$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-mv-linked.elf \
+  >/dev/null
+sbase_mv_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+  target/llvm-lnp64-build/lnp64-sbase-mv-linked.elf mv move-source.txt moved.txt)"
+grep -q 'exit=0' <<<"$sbase_mv_output"
+test ! -e "$sbase_fixture_root/move-source.txt"
+grep -q 'move via clang' "$sbase_fixture_root/moved.txt"
+printf 'real LLVM LNP64 run-elf sbase mv execution passed: %s\n' \
+  target/llvm-lnp64-build/lnp64-sbase-mv-linked.elf
 printf 'remove via clang\n' >"$sbase_fixture_root/remove.txt"
 "$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-rm-linked.elf \
   >/dev/null

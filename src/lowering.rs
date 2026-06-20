@@ -1341,6 +1341,7 @@ mod tests {
         let libc_sbase_min = include_str!("../toolchain/liblnp64_sbase_min.c");
         let libc_sbase_fs_min = include_str!("../toolchain/liblnp64_sbase_fs_min.c");
         let libc_sbase_recurse_min = include_str!("../toolchain/liblnp64_sbase_recurse_min.c");
+        let libc_sbase_move_min = include_str!("../toolchain/liblnp64_sbase_move_min.c");
         let elf_exec_test_clang = include_str!("../userland/elf_exec_test_clang.c");
         let spawn_task_clang = include_str!("../userland/spawn_task_clang.c");
         let gate_trace_test_clang = include_str!("../userland/gate_trace_test_clang.c");
@@ -1639,6 +1640,9 @@ mod tests {
             "sbase_ln_static_link",
             "sbase_ln_run_elf",
             "clang_sbase_recurse_support_object",
+            "clang_sbase_move_support_object",
+            "sbase_mv_static_link",
+            "sbase_mv_run_elf",
             "sbase_rm_static_link",
             "sbase_rm_run_elf",
             "userland_ucat_static_link",
@@ -3604,6 +3608,12 @@ mod tests {
         assert!(
             real_llc.contains("real LLVM LNP64 clang sbase recurse support object smoke passed")
         );
+        assert!(real_llc.contains("toolchain/liblnp64_sbase_move_min.c"));
+        assert!(libc_sbase_move_min.contains("int cp("));
+        assert!(libc_sbase_move_min.contains("void fnck("));
+        assert!(libc_sbase_move_min.contains("void enmasse("));
+        assert!(real_llc.contains("liblnp64-sbase-move-min.o"));
+        assert!(real_llc.contains("real LLVM LNP64 clang sbase move support object smoke passed"));
         assert!(real_llc.contains("lnp64-sbase-mkdir-linked.elf"));
         assert!(real_llc.contains(r#""$build_dir/sbase-mkdir-clang-smoke.o" \"#));
         assert!(real_llc.contains(r#""$sbase_fs_support_impl_obj" \"#));
@@ -3613,6 +3623,10 @@ mod tests {
         assert!(real_llc.contains(r#""$build_dir/sbase-ln-clang-smoke.o" \"#));
         assert!(real_llc.contains("liblnp64-path-min.o"));
         assert!(real_llc.contains("real LLVM LNP64 lld sbase ln link smoke passed"));
+        assert!(real_llc.contains("lnp64-sbase-mv-linked.elf"));
+        assert!(real_llc.contains(r#""$build_dir/sbase-mv-clang-smoke.o" \"#));
+        assert!(real_llc.contains(r#""$sbase_move_support_impl_obj" \"#));
+        assert!(real_llc.contains("real LLVM LNP64 lld sbase mv link smoke passed"));
         assert!(real_llc.contains("lnp64-sbase-rm-linked.elf"));
         assert!(real_llc.contains(r#""$build_dir/sbase-rm-clang-smoke.o" \"#));
         assert!(real_llc.contains(r#""$sbase_recurse_support_impl_obj" \"#));
@@ -4121,6 +4135,10 @@ mod tests {
         assert!(real_llc_docker.contains("ln input/cat.txt linked.txt"));
         assert!(real_llc_docker.contains("cmp -s \"$sbase_fixture_root/input/cat.txt\""));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase ln execution passed"));
+        assert!(real_llc_docker.contains("lnp64-sbase-mv-linked.elf"));
+        assert!(real_llc_docker.contains("mv move-source.txt moved.txt"));
+        assert!(real_llc_docker.contains("test ! -e \"$sbase_fixture_root/move-source.txt\""));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase mv execution passed"));
         assert!(real_llc_docker.contains("lnp64-sbase-rm-linked.elf"));
         assert!(real_llc_docker.contains("rm remove.txt"));
         assert!(real_llc_docker.contains("test ! -e \"$sbase_fixture_root/remove.txt\""));
@@ -4344,6 +4362,7 @@ mod tests {
             "real_sbase_cat_execution",
             "real_sbase_mkdir_execution",
             "real_sbase_ln_execution",
+            "real_sbase_mv_execution",
             "real_sbase_rm_execution",
             "real_errno_execution",
             "real_startup_execution",
@@ -4451,6 +4470,7 @@ mod tests {
             "real_sbase_cat_execution",
             "real_sbase_mkdir_execution",
             "real_sbase_ln_execution",
+            "real_sbase_mv_execution",
             "real_sbase_rm_execution",
             "real_intrinsic_push_execution",
             "real_intrinsic_control_execution",

@@ -1435,6 +1435,22 @@ grep -q '<rm>:' "$sbase_recurse_support_impl_dump"
 printf 'real LLVM LNP64 clang sbase recurse support object smoke passed: %s\n' \
   "$sbase_recurse_support_impl_obj"
 
+sbase_move_support_impl_c="toolchain/liblnp64_sbase_move_min.c"
+sbase_move_support_impl_obj="$build_dir/liblnp64-sbase-move-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin \
+  -fno-pic -fno-jump-tables -fno-unwind-tables \
+  -fno-asynchronous-unwind-tables -I toolchain/include -I third_party/sbase \
+  -c "$sbase_move_support_impl_c" -o "$sbase_move_support_impl_obj"
+test -s "$sbase_move_support_impl_obj"
+sbase_move_support_impl_dump="$build_dir/liblnp64-sbase-move-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none \
+  "$sbase_move_support_impl_obj" >"$sbase_move_support_impl_dump"
+grep -q '<cp>:' "$sbase_move_support_impl_dump"
+grep -q '<fnck>:' "$sbase_move_support_impl_dump"
+grep -q '<enmasse>:' "$sbase_move_support_impl_dump"
+printf 'real LLVM LNP64 clang sbase move support object smoke passed: %s\n' \
+  "$sbase_move_support_impl_obj"
+
 netcat_obj="$build_dir/netcat-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
@@ -5708,6 +5724,17 @@ sbase_ln_elf="$build_dir/lnp64-sbase-ln-linked.elf"
 test -s "$sbase_ln_elf"
 printf 'real LLVM LNP64 lld sbase ln link smoke passed: %s\n' \
   "$sbase_ln_elf"
+
+sbase_mv_elf="$build_dir/lnp64-sbase-mv-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
+  -o "$sbase_mv_elf" "$crt0_obj" "$build_dir/sbase-mv-clang-smoke.o" \
+  "$sbase_support_impl_obj" "$sbase_move_support_impl_obj" \
+  "$sbase_recurse_support_impl_obj" "$libc_fd_impl_obj" \
+  "$libc_meta_impl_obj" "$libc_string_impl_obj" "$libc_errno_impl_obj" \
+  "$libc_process_impl_obj"
+test -s "$sbase_mv_elf"
+printf 'real LLVM LNP64 lld sbase mv link smoke passed: %s\n' \
+  "$sbase_mv_elf"
 
 sbase_rm_elf="$build_dir/lnp64-sbase-rm-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
