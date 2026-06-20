@@ -14,10 +14,19 @@ M4 VMA/MMU, M5 DMA, M7 waitable/scheduler, and M14 Resource Domain now have
 transition-invariant proof slices; remaining work is to replace the rest of the
 coverage and
 bounded-witness artifacts with transition-invariant proofs and RTL refinement
-proofs for the full SystemVerilog chip and real architectural programs. The
-current theorem-to-RTL coupling rows remain T1 because their RTL coupling still
-uses string traces and assertion evidence; they are not T2 until typed
-transition traces exist.
+proofs for the full SystemVerilog chip and real architectural programs.
+
+Every engine slice M1-M15 now emits schema-owned typed commit and state
+projection records (`lnp64_m*_commit_t`/`lnp64_m*_state_projection_t` packed
+structs) per transition. Each is checked against an executable transition
+contract (`scripts/check_rtl_m*_typed_commit_trace.py`: op sequence, packed-bit
+faithfulness, per-op authority invariants), re-validated offline from a
+refinement witness artifact (`scripts/check_rtl_m*_witness.py`), and proved
+decode-faithful in Lean with the kernel `decide` tactic
+(`scripts/run_rtl_m*_lean_witness_gate.sh`, no `native_decide`, no axioms). The
+typed-transition-trace prerequisite for T2 therefore now exists for every slice;
+the remaining gap to T2/T4 is the existential RTL-to-Lean refinement step and
+whole-chip composition, not the typed traces themselves.
 
 The RTL/proof/synthesis/FPGA-smoke deliverables are represented by
 machine-checkable manifests and gates. The strict hardware audit is intentionally
