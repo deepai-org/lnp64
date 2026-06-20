@@ -18,7 +18,7 @@
 # fixed32_compat_metadata: transitional status-in-r1 compatibility metadata/time/fcntl helpers.
 # fixed32_compat_namespace: transitional status-in-r1 namespace/path compatibility helpers; five-register forms use a little-endian u32 tail carrying the fifth GPR id.
 constants|fixed32_constant|NOP,LI,MOV|none_or_gpr_immediate_or_gpr|R_LNP64_ABS64,R_LNP64_GOT64|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64AsmParser.cpp
-wide_constants|fixed32_reg_u32_tail|LA,LI32,AUIPC|gpr_dst,u32_payload|R_LNP64_ABS32,R_LNP64_PC32|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
+wide_constants|fixed32_reg_u32_tail|LA,LI32,AUIPC|gpr_dst,u32_payload|R_LNP64_ABS32,R_LNP64_PC32,R_LNP64_PCREL_HI20,R_LNP64_PCREL_LO12_I,R_LNP64_PCREL_LO12_LD,R_LNP64_TLS_TPREL_SLOT64|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp,LNP64MCAsmBackend.cpp
 integer_alu_rrr|fixed32_rrr|ADD,SUB,MUL,MULH,MULHU,MULHSU,DIV,UDIV,SREM,UREM,AND,OR,XOR,LSL,LSR,ASR|gpr_dst,gpr_lhs,gpr_rhs|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp
 integer_alu_rri|fixed32_rri_simm14|ADDI,ANDI,ORI,XORI,LSLI,LSRI,ASRI|gpr_dst,gpr_lhs,signed_imm14|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
 integer_alu_rr|fixed32_rr|NOT,CMP,CMPU,SEXT.B,SEXT.H,SEXT.W,ZEXT.B,ZEXT.H,ZEXT.W|gpr_lhs,gpr_rhs|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp

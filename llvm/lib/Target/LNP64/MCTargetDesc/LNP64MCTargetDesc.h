@@ -24,6 +24,10 @@ enum Fixups {
   fixup_lnp64_abs32 = FirstTargetFixupKind,
   fixup_lnp64_pcrel32,
   fixup_lnp64_branch26,
+  fixup_lnp64_pcrel_hi20,
+  fixup_lnp64_pcrel_lo12_i,
+  fixup_lnp64_pcrel_lo12_ld,
+  fixup_lnp64_tls_tprel_slot64,
   LastTargetFixupKind,
   NumTargetFixupKinds = LastTargetFixupKind - FirstTargetFixupKind
 };

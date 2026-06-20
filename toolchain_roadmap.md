@@ -296,8 +296,11 @@ NetBSD policy. Those remain loader, libc, and personality responsibilities.
      `AUIPC %pcrel_hi` plus `LD %pcrel_lo` for address/constant/TLS slots. Do
      not add backend-only `LA` or alternate pseudo-address contracts.
    - Current LLVM codegen no longer selects `LA` for globals, and the manifests
-     plus lld reserve the split PC-relative relocation numbers. Emitting real
-     `%pcrel_hi`/`%pcrel_lo` MC fixups remains pending; the existing two-word
+     plus lld reserve the split PC-relative relocation numbers. The LLVM MC
+     layer now declares target fixup kinds and object-writer relocation mapping
+     for `%pcrel_hi`, `%pcrel_lo` immediate/load forms, and local-exec TLS
+     offset slots. Emitting those fixups from SelectionDAG/asm parsing into
+     paired AUIPC+ADDI/LD sequences remains pending; the existing two-word
      `AUIPC`/`R_LNP64_PC32` path is an interim scaffold, not the final object
      contract.
    - Implement local-exec TLS first: `GET_PCR TLS_BASE`, TP-relative immediate

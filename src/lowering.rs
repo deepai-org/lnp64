@@ -5191,11 +5191,27 @@ mod tests {
         assert!(mc_desc.contains("RegisterMCAsmBackend"));
         assert!(mc_desc.contains("RegisterMCInstPrinter"));
         assert!(mc_desc_header.contains("fixup_lnp64_branch26"));
+        assert!(mc_desc_header.contains("fixup_lnp64_pcrel_hi20"));
+        assert!(mc_desc_header.contains("fixup_lnp64_pcrel_lo12_i"));
+        assert!(mc_desc_header.contains("fixup_lnp64_pcrel_lo12_ld"));
+        assert!(mc_desc_header.contains("fixup_lnp64_tls_tprel_slot64"));
         assert!(mc_asm_info.contains("MCAsmInfoELF"));
         assert!(mc_emitter.contains("createLNP64MCCodeEmitter"));
         assert!(mc_asm_backend.contains("createLNP64AsmBackend"));
         assert!(mc_asm_backend.contains("LNP64ELFObjectWriter"));
         assert!(mc_asm_backend.contains("R_LNP64_BRANCH26"));
+        for (fixup, relocation) in [
+            ("fixup_lnp64_pcrel_hi20", "R_LNP64_PCREL_HI20"),
+            ("fixup_lnp64_pcrel_lo12_i", "R_LNP64_PCREL_LO12_I"),
+            ("fixup_lnp64_pcrel_lo12_ld", "R_LNP64_PCREL_LO12_LD"),
+            ("fixup_lnp64_tls_tprel_slot64", "R_LNP64_TLS_TPREL_SLOT64"),
+        ] {
+            assert!(mc_asm_backend.contains(fixup), "MC backend missing {fixup}");
+            assert!(
+                mc_asm_backend.contains(relocation),
+                "MC backend missing relocation mapping {relocation}"
+            );
+        }
         assert!(inst_printer.contains("createLNP64MCInstPrinter"));
         assert!(inst_printer.contains("getLNP64Mnemonic"));
         assert!(inst_printer.contains("printMemOperand"));
@@ -7899,6 +7915,18 @@ mod tests {
         }
         assert!(groups["control_branch"].3.contains(&"R_LNP64_BRANCH26"));
         assert!(groups["control_branch"].3.contains(&"R_LNP64_PC32"));
+        assert!(groups["wide_constants"].3.contains(&"R_LNP64_PCREL_HI20"));
+        assert!(groups["wide_constants"].3.contains(&"R_LNP64_PCREL_LO12_I"));
+        assert!(
+            groups["wide_constants"]
+                .3
+                .contains(&"R_LNP64_PCREL_LO12_LD")
+        );
+        assert!(
+            groups["wide_constants"]
+                .3
+                .contains(&"R_LNP64_TLS_TPREL_SLOT64")
+        );
         assert!(
             groups["native_primitives"]
                 .3
@@ -8660,10 +8688,8 @@ mod tests {
         let mut names = std::collections::BTreeSet::new();
 
         assert!(roadmap.contains("no longer selects `LA` for globals"));
-        assert!(
-            roadmap
-                .contains("Emitting real\n     `%pcrel_hi`/`%pcrel_lo` MC fixups remains pending")
-        );
+        assert!(roadmap.contains("object-writer relocation mapping"));
+        assert!(roadmap.contains("Emitting those fixups from SelectionDAG/asm parsing"));
         assert!(roadmap.contains("`AUIPC`/`R_LNP64_PC32` path is an interim scaffold"));
         assert_eq!(rows.len(), 17);
         assert_eq!(

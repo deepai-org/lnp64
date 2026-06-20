@@ -50,6 +50,14 @@ public:
       return R_LNP64_PC32;
     case LNP64::fixup_lnp64_branch26:
       return R_LNP64_BRANCH26;
+    case LNP64::fixup_lnp64_pcrel_hi20:
+      return R_LNP64_PCREL_HI20;
+    case LNP64::fixup_lnp64_pcrel_lo12_i:
+      return R_LNP64_PCREL_LO12_I;
+    case LNP64::fixup_lnp64_pcrel_lo12_ld:
+      return R_LNP64_PCREL_LO12_LD;
+    case LNP64::fixup_lnp64_tls_tprel_slot64:
+      return R_LNP64_TLS_TPREL_SLOT64;
     default:
       llvm_unreachable("unknown LNP64 fixup kind");
     }
@@ -74,6 +82,10 @@ public:
         {"fixup_lnp64_abs32", 0, 32, 0},
         {"fixup_lnp64_pcrel32", 0, 32, MCFixupKindInfo::FKF_IsPCRel},
         {"fixup_lnp64_branch26", 0, 24, MCFixupKindInfo::FKF_IsPCRel},
+        {"fixup_lnp64_pcrel_hi20", 0, 20, MCFixupKindInfo::FKF_IsPCRel},
+        {"fixup_lnp64_pcrel_lo12_i", 0, 12, MCFixupKindInfo::FKF_IsPCRel},
+        {"fixup_lnp64_pcrel_lo12_ld", 0, 12, MCFixupKindInfo::FKF_IsPCRel},
+        {"fixup_lnp64_tls_tprel_slot64", 0, 64, 0},
     };
 
     if (Kind < FirstTargetFixupKind)
@@ -96,7 +108,12 @@ public:
                              const MCValue &) override {
     return Fixup.getKind() == MCFixupKind(LNP64::fixup_lnp64_abs32) ||
            Fixup.getKind() == MCFixupKind(LNP64::fixup_lnp64_branch26) ||
-           Fixup.getKind() == MCFixupKind(LNP64::fixup_lnp64_pcrel32);
+           Fixup.getKind() == MCFixupKind(LNP64::fixup_lnp64_pcrel32) ||
+           Fixup.getKind() == MCFixupKind(LNP64::fixup_lnp64_pcrel_hi20) ||
+           Fixup.getKind() == MCFixupKind(LNP64::fixup_lnp64_pcrel_lo12_i) ||
+           Fixup.getKind() == MCFixupKind(LNP64::fixup_lnp64_pcrel_lo12_ld) ||
+           Fixup.getKind() ==
+               MCFixupKind(LNP64::fixup_lnp64_tls_tprel_slot64);
   }
 
   void applyFixup(const MCAssembler &, const MCFixup &Fixup, const MCValue &,
