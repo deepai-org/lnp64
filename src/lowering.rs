@@ -6492,14 +6492,19 @@ mod tests {
         let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
         let roadmap = include_str!("../toolchain_roadmap.md");
         let personality_doc = include_str!("../netbsd_personality_abi.md");
+        let conformance = include_str!("../conformance_matrix.md");
         let system_gate = include_str!("../scripts/run_netbsd_personality_system.sh");
         let package_gate = include_str!("../scripts/run_real_llvm_package_gate.sh");
+        let run_real_packages = include_str!("../scripts/run_real_packages.sh");
+        let run_sbase = include_str!("../scripts/run_sbase.sh");
         let rows = netbsd_layer_rows(layers_manifest);
         let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let layers_path = manifest_field(target_manifest, "netbsd_layers_contract");
         let mut seen = std::collections::BTreeSet::new();
         let mut ordered_layers = Vec::new();
         let mut statuses = std::collections::BTreeMap::new();
+        let mut layer_artifacts = std::collections::BTreeMap::new();
+        let mut gates = std::collections::BTreeMap::new();
         let mut blockers = std::collections::BTreeMap::new();
 
         assert_eq!(layers_path, "toolchain/lnp64_netbsd_layers.manifest");
@@ -6526,6 +6531,8 @@ mod tests {
             assert!(seen.insert(layer), "duplicate NetBSD layer {layer}");
             ordered_layers.push(layer);
             statuses.insert(layer, status);
+            layer_artifacts.insert(layer, artifacts.clone());
+            gates.insert(layer, gate);
             blockers.insert(layer, next_blocker);
             assert!(
                 ["bootstrap_gate", "scaffolded", "planned", "blocked"].contains(&status),
@@ -6571,6 +6578,35 @@ mod tests {
         assert_eq!(statuses["rump_filesystem_components"], "scaffolded");
         assert_eq!(statuses["rump_network_socket_personality"], "scaffolded");
         assert_eq!(statuses["larger_userland_commands"], "planned");
+        assert_eq!(
+            gates["larger_userland_commands"], "scripts/run_real_packages.sh",
+            "larger NetBSD userland should remain delegated to the package gate"
+        );
+        for artifact in [
+            "scripts/run_sbase.sh",
+            "scripts/run_real_packages.sh",
+            "conformance_matrix.md",
+        ] {
+            assert!(
+                layer_artifacts["larger_userland_commands"].contains(&artifact),
+                "larger NetBSD userland row must name artifact {artifact}"
+            );
+        }
+        assert_eq!(
+            blockers["larger_userland_commands"], "clang_lld_static_elf_package_builds",
+            "larger NetBSD userland blocker should stay tied to Clang/lld static ELF packages"
+        );
+        assert!(run_real_packages.contains("scripts/run_real_llvm_package_gate.sh"));
+        assert!(run_sbase.contains("LNP64_LLVM_PACKAGE_FILTER=sbase"));
+        assert!(run_sbase.contains("scripts/run_real_llvm_package_gate.sh"));
+        assert!(package_gate.contains("lnp64-sbase-ls-linked.elf"));
+        assert!(package_gate.contains("real LLVM LNP64 run-elf sbase ls execution passed"));
+        assert!(
+            conformance.contains("| sbase subset | partial / passing current real-Clang smokes |")
+        );
+        assert!(
+            conformance.contains("`yes` is Clang/lld-linked and exec-plan validated but not run")
+        );
         assert!(
             blockers["fuller_machine_port"].contains("not_credible_yet"),
             "fuller machine port must remain blocked on rump services/static userland credibility"
