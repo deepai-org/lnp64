@@ -8884,6 +8884,7 @@ mod tests {
             "emulator_rejects_exec_descriptor_unsupported_vma_provenance",
             "emulator_rejects_exec_descriptor_executable_vma_without_image_text_provenance",
             "emulator_rejects_exec_descriptor_nonexecutable_vma_with_image_text_provenance",
+            "emulator_rejects_prepared_exec_vma_source_authority_mismatch_before_commit",
             "static_elf_loader_rejects_exec_descriptor_bad_measurements",
             "emulator_rejects_exec_descriptor_measurement_without_authority",
             "static_elf_loader_rejects_exec_descriptor_unknown_vma_mapping_flags",
@@ -8906,7 +8907,7 @@ mod tests {
             "submit_exec_plan row must name descriptor count/length fuzz evidence"
         );
         for remaining_gap in [
-            "external VMA source authority",
+            "external VMA source acquisition policy",
             "additional descriptor-shape fuzzing",
             "more relocation/linker diagnostics",
             "archive/library search behavior",
@@ -8922,6 +8923,7 @@ mod tests {
             "reserved mapping flags",
             "measurement authority",
             "descriptor count/length fuzzing",
+            "prepared VMA source-authority mismatch",
         ] {
             assert!(
                 conformance.contains(covered_rejection),

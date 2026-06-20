@@ -1217,6 +1217,9 @@ pub struct CommittedExecRetireRecord {
 pub struct PreparedExecVma {
     pub virtual_address: u64,
     pub protection: u64,
+    pub source_cap: u64,
+    pub source_generation: u64,
+    pub lineage_epoch: u64,
     pub bytes: Vec<u8>,
 }
 
@@ -1637,11 +1640,27 @@ impl Machine {
             let length = usize::try_from(record[1])
                 .map_err(|_| "exec-plan VMA length exceeds host usize".to_string())?;
             let protection = record[2];
+            let source_cap = record[5];
+            let source_generation = record[7];
+            let lineage_epoch = record[8];
             if prepared.virtual_address != virtual_address {
                 return Err("prepared VMA address does not match exec descriptor".to_string());
             }
             if prepared.protection != protection {
                 return Err("prepared VMA protection does not match exec descriptor".to_string());
+            }
+            if prepared.source_cap != source_cap {
+                return Err(
+                    "prepared VMA source capability does not match exec descriptor".to_string(),
+                );
+            }
+            if prepared.source_generation != source_generation {
+                return Err(
+                    "prepared VMA source generation does not match exec descriptor".to_string(),
+                );
+            }
+            if prepared.lineage_epoch != lineage_epoch {
+                return Err("prepared VMA lineage epoch does not match exec descriptor".to_string());
             }
             if prepared.bytes.len() != length {
                 return Err("prepared VMA length does not match exec descriptor".to_string());
@@ -5275,6 +5294,9 @@ impl Machine {
             .map(|(prepared_vma, descriptor_vma)| PreparedExecVma {
                 virtual_address: prepared_vma.virtual_address,
                 protection: descriptor_vma.protection,
+                source_cap: descriptor_vma.source_cap,
+                source_generation: descriptor_vma.source_generation,
+                lineage_epoch: descriptor_vma.lineage_epoch,
                 bytes: prepared_vma.bytes.clone(),
             })
             .collect::<Vec<_>>();
@@ -10374,11 +10396,17 @@ mod tests {
             PreparedExecVma {
                 virtual_address: 0x400000,
                 protection: EXEC_PLAN_VMA_PROT_READ | EXEC_PLAN_VMA_PROT_EXECUTE,
+                source_cap: 4,
+                source_generation: 5,
+                lineage_epoch: 6,
                 bytes: vec![0xaa; 0x1000],
             },
             PreparedExecVma {
                 virtual_address: 0x402000,
                 protection: EXEC_PLAN_VMA_PROT_READ | EXEC_PLAN_VMA_PROT_WRITE,
+                source_cap: 4,
+                source_generation: 5,
+                lineage_epoch: 6,
                 bytes: vec![0xbb; 0x1000],
             },
         ]
@@ -16216,6 +16244,63 @@ mod tests {
             .commit_exec_descriptor_memory_image(&words, &prepared_exec_vmas_fixture())
             .unwrap_err();
 
+        assert!(err.contains("lineage epoch"), "{err}");
+        assert_eq!(
+            &machine.process().unwrap().memory[ARG_BASE as usize..ARG_BASE as usize + 9],
+            b"old-image"
+        );
+    }
+
+    #[test]
+    fn emulator_rejects_prepared_exec_vma_source_authority_mismatch_before_commit() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                expected_domain_generation: 1,
+                expected_process_generation: 1,
+                expected_lineage_epoch: 1,
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let words = encode_exec_descriptor(&descriptor);
+
+        let mut prepared = prepared_exec_vmas_fixture();
+        prepared[0].source_cap = 3;
+        let mut machine = Machine::new(empty_program());
+        machine.write_bytes(ARG_BASE, b"old-image").unwrap();
+        let err = machine
+            .commit_exec_descriptor_memory_image(&words, &prepared)
+            .unwrap_err();
+        assert!(err.contains("source capability"), "{err}");
+        assert_eq!(
+            &machine.process().unwrap().memory[ARG_BASE as usize..ARG_BASE as usize + 9],
+            b"old-image"
+        );
+
+        let mut prepared = prepared_exec_vmas_fixture();
+        prepared[0].source_generation = 4;
+        let mut machine = Machine::new(empty_program());
+        machine.write_bytes(ARG_BASE, b"old-image").unwrap();
+        let err = machine
+            .commit_exec_descriptor_memory_image(&words, &prepared)
+            .unwrap_err();
+        assert!(err.contains("source generation"), "{err}");
+        assert_eq!(
+            &machine.process().unwrap().memory[ARG_BASE as usize..ARG_BASE as usize + 9],
+            b"old-image"
+        );
+
+        let mut prepared = prepared_exec_vmas_fixture();
+        prepared[0].lineage_epoch = 5;
+        let mut machine = Machine::new(empty_program());
+        machine.write_bytes(ARG_BASE, b"old-image").unwrap();
+        let err = machine
+            .commit_exec_descriptor_memory_image(&words, &prepared)
+            .unwrap_err();
         assert!(err.contains("lineage epoch"), "{err}");
         assert_eq!(
             &machine.process().unwrap().memory[ARG_BASE as usize..ARG_BASE as usize + 9],

@@ -1014,16 +1014,25 @@ fn build_flat_exec_machine(hex_words: &str, data: &[u8]) -> Result<Machine, Stri
         PreparedExecVma {
             virtual_address: ZERO_BASE,
             protection: PROT_READ | PROT_WRITE,
+            source_cap: 1,
+            source_generation: 1,
+            lineage_epoch: 1,
             bytes: zero_page,
         },
         PreparedExecVma {
             virtual_address: DATA_BASE,
             protection: PROT_READ | PROT_WRITE,
+            source_cap: 1,
+            source_generation: 1,
+            lineage_epoch: 1,
             bytes: data_page,
         },
         PreparedExecVma {
             virtual_address: TEXT_BASE,
             protection: PROT_READ | PROT_EXECUTE,
+            source_cap: 1,
+            source_generation: 1,
+            lineage_epoch: 1,
             bytes: text_page,
         },
     ];
@@ -1110,6 +1119,9 @@ fn build_elf_exec_probe(options: &ElfPlanOptions) -> Result<ElfExecProbe, String
         .map(|(prepared_vma, descriptor_vma)| PreparedExecVma {
             virtual_address: prepared_vma.virtual_address,
             protection: descriptor_vma.protection,
+            source_cap: descriptor_vma.source_cap,
+            source_generation: descriptor_vma.source_generation,
+            lineage_epoch: descriptor_vma.lineage_epoch,
             bytes: prepared_vma.bytes.clone(),
         })
         .collect::<Vec<_>>();
