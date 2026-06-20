@@ -3057,7 +3057,12 @@ mod tests {
         assert!(poll_test_clang.contains("#include <lnp64/intrinsics.h>"));
         assert!(poll_test_clang.contains("#include <poll.h>"));
         assert!(poll_test_clang.contains("#include <sys/epoll.h>"));
+        assert!(poll_test_clang.contains("#include <sys/event.h>"));
         assert!(poll_test_clang.contains("#include <sys/select.h>"));
+        assert!(poll_test_clang.contains("kqueue()"));
+        assert!(poll_test_clang.contains("change.filter = EVFILT_READ"));
+        assert!(poll_test_clang.contains("kevent(kq, &change, 1, 0, 0, &ktimeout)"));
+        assert!(poll_test_clang.contains("kevent(kq, 0, 0, &kout, 1, &ktimeout)"));
         assert!(!poll_test_clang.contains("typedef unsigned long nfds_t"));
         assert!(!poll_test_clang.contains("int poll(struct pollfd"));
         assert!(real_llc.contains("real LLVM LNP64 clang NetBSD poll child object passed"));
@@ -5768,8 +5773,10 @@ mod tests {
         }
         assert_eq!(
             groups["poll_select_epoll_kqueue"].2, "partial",
-            "kqueue/kevent must stay partial until real event-queue backend exists"
+            "broader kqueue filters and semantics must stay partial"
         );
+        assert!(shim_manifest.contains("userland/poll_test_clang.c"));
+        assert!(shim_manifest.contains("real LLVM LNP64 run-elf NetBSD poll child passed"));
         for group in [
             "startup_env_auxv",
             "errno_tls",

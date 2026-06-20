@@ -2,6 +2,7 @@
 
 #include <poll.h>
 #include <sys/epoll.h>
+#include <sys/event.h>
 #include <sys/select.h>
 #include <unistd.h>
 
@@ -64,7 +65,11 @@ int main(void) {
     struct timeval timeout = {0, 0};
     struct epoll_event ev;
     struct epoll_event out;
+    struct kevent change;
+    struct kevent kout;
+    struct timespec ktimeout = {0, 0};
     int ep;
+    int kq;
 
     if (queue_create(&read_cap, &write_cap) != 0)
         return 1;
@@ -108,15 +113,36 @@ int main(void) {
     if (pull_byte(read_cap, 'e') != 0)
         return 15;
 
+    kq = kqueue();
+    if (kq <= 0)
+        return 16;
+    change.ident = read_cap;
+    change.filter = EVFILT_READ;
+    change.flags = EV_ADD;
+    change.fflags = 0;
+    change.data = 0;
+    change.udata = (void *)(unsigned long)read_cap;
+    if (kevent(kq, &change, 1, 0, 0, &ktimeout) != 0)
+        return 17;
+    if (push_byte(write_cap, 'k') != 0)
+        return 18;
+    if (kevent(kq, 0, 0, &kout, 1, &ktimeout) != 1)
+        return 19;
+    if (kout.ident != read_cap || kout.filter != EVFILT_READ ||
+        kout.udata != (void *)(unsigned long)read_cap)
+        return 20;
+    if (pull_byte(read_cap, 'k') != 0)
+        return 21;
+
     pfd.fd = (int)read_cap;
     pfd.events = POLLIN;
     pfd.revents = 0;
     if (close((int)read_cap) != 0)
-        return 16;
+        return 22;
     if (poll(&pfd, 1, 0) != 1)
-        return 17;
+        return 23;
     if (pfd.revents != POLLNVAL)
-        return 18;
+        return 24;
 
     write(1, "poll_test ok\n", 13);
     return 0;
