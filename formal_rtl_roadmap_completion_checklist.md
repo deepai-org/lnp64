@@ -32,11 +32,23 @@ DMA confinement, scheduler single-location, no-lost-wakeups, gate-continuation
 uniqueness, servicelet containment, fault terminal progress). Checked by
 `scripts/run_rtl_whole_chip_composition_gate.sh` (wired into the proof gate).
 
-Remaining work is the existential RTL-to-Lean **refinement** step (a checked
-simulation relation from each engine's RTL clock step to its Lean `Step`, which
-would let the whole-chip invariant be discharged about the actual SystemVerilog
-rather than the executable transition mirror) and extending the composition to
-real multi-engine architectural programs.
+The RTL-to-Lean **refinement** step now has a worked, machine-checked template.
+`formal/M11RtlRefinement.lean` proves `refines_step` -- every well-formed emitted
+M11 typed-commit op is exactly one `Lnp64.M11Transition.Step` to the
+reconstructed post-state -- then `runTrace_reachable` (a well-formed emitted op
+trace is a `Reachable` Lean path) and `canonical_trace_refines` (the seed-0 op
+trace the RTL actually emits reaches a state satisfying the proved transition
+invariant). This closes the M11 chain end to end: RTL sim -> typed-commit
+contract check (Python) -> packed-bit decode-faithfulness (Lean) -> op-trace is
+a Reachable Lean path (Lean) -> transition invariant. Checked by
+`scripts/run_rtl_m11_refinement_gate.sh` (wired into the proof gate). The Verilog
+operational semantics is the only remaining trusted base on that chain.
+
+Remaining work is to replicate the M11 refinement template for the other
+fourteen engines (then lift it through `WholeChipComposition.lean` so the
+whole-chip invariant is discharged about every engine's emitted trace at once),
+and to extend the composition to real multi-engine architectural programs rather
+than per-engine seed-0 traces.
 
 Every engine slice M1-M15 now emits schema-owned typed commit and state
 projection records (`lnp64_m*_commit_t`/`lnp64_m*_state_projection_t` packed

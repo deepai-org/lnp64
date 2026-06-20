@@ -158,6 +158,10 @@ fi
 # conjunction of all fifteen engines' severe-goal transition invariants.
 bash scripts/run_rtl_whole_chip_composition_gate.sh
 
+# RTL-to-Lean refinement: the emitted M11 typed-commit op trace is a valid Lean
+# Step path reaching a state that satisfies the proved transition invariant.
+bash scripts/run_rtl_m11_refinement_gate.sh
+
 formal/m1_model.py >/dev/null
 formal/m2_gate_model.py >/dev/null
 formal/m3_process_model.py >/dev/null
