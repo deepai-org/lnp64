@@ -777,6 +777,7 @@ impl Vma {
 #[derive(Clone, Copy)]
 struct Allocation {
     len: usize,
+    domain_id: u64,
     guard_before: Option<u64>,
     guard_after: Option<u64>,
 }
@@ -1101,6 +1102,7 @@ struct CallContinuation {
 struct Thread {
     tid: u64,
     pid: u64,
+    domain_id: u64,
     thread_pointer: u64,
     regs: [u64; GPR_COUNT],
     fregs: [u64; FPR_COUNT],
@@ -1114,12 +1116,13 @@ struct Thread {
 }
 
 impl Thread {
-    fn new(tid: u64, pid: u64, stack_top: u64) -> Self {
+    fn new(tid: u64, pid: u64, domain_id: u64, stack_top: u64) -> Self {
         let mut regs = [0; GPR_COUNT];
         regs[31] = stack_top - CALL_FRAME_SIZE;
         Self {
             tid,
             pid,
+            domain_id,
             thread_pointer: 0,
             regs,
             fregs: [0; FPR_COUNT],
@@ -1365,7 +1368,7 @@ impl Machine {
         let root_tid = 1;
         let layout = ProcessLayout::for_process(root_pid, ROOT_DOMAIN_ID, true);
         let process = Process::new(root_pid, None, ROOT_DOMAIN_ID, program, layout);
-        let thread = Thread::new(root_tid, root_pid, layout.stack_top);
+        let thread = Thread::new(root_tid, root_pid, ROOT_DOMAIN_ID, layout.stack_top);
 
         let mut processes = HashMap::new();
         processes.insert(root_pid, process);
@@ -1473,9 +1476,10 @@ impl Machine {
         {
             let process = self.process()?;
             if expected_domain_generation != 0 {
+                let domain_id = self.current_domain_id()?;
                 let domain_generation = self
                     .domains
-                    .get(&process.domain_id)
+                    .get(&domain_id)
                     .ok_or_else(|| "exec-plan process domain is missing".to_string())?
                     .generation;
                 if domain_generation != expected_domain_generation {
@@ -1612,7 +1616,7 @@ impl Machine {
             let operand_imm = u64::from(committed_exec_trace_imm(raw_word, literal_word));
             let result_reg = committed_exec_result_reg(raw_word);
             let pid = self.thread()?.pid;
-            let domain_id = self.process()?.domain_id;
+            let domain_id = self.current_domain_id()?;
             let domain_gen = self
                 .domains
                 .get(&domain_id)
@@ -3578,7 +3582,7 @@ impl Machine {
                     }
                 };
                 let pid = self.thread()?.pid;
-                let domain_id = self.process()?.domain_id;
+                let domain_id = self.current_domain_id()?;
                 let aslr_enabled = self
                     .domains
                     .get(&domain_id)
@@ -3589,7 +3593,7 @@ impl Machine {
                 self.exec_process_image(program, layout)?;
                 let pid = self.thread()?.pid;
                 let tid = self.thread()?.tid;
-                *self.thread_mut()? = Thread::new(tid, pid, layout.stack_top);
+                *self.thread_mut()? = Thread::new(tid, pid, domain_id, layout.stack_top);
                 self.install_process_entry_page(pid, ARG_BASE, &entry_page)?;
             }
             Instr::Spawn(dst, entry) => {
@@ -4200,7 +4204,8 @@ impl Machine {
                 let child_pid = self.next_pid;
                 let child_tid = self.next_tid;
 
-                let child_process = self.process()?.fork_clone(child_pid)?;
+                let mut child_process = self.process()?.fork_clone(child_pid)?;
+                child_process.domain_id = self.current_domain_id()?;
                 let mut child_thread = self.thread()?.clone();
                 child_thread.pid = child_pid;
                 child_thread.tid = child_tid;
@@ -4801,6 +4806,7 @@ impl Machine {
             return Ok(-1i64 as u64);
         }
         let align = align.max(1).next_power_of_two();
+        let domain_id = self.current_domain_id()?;
         let addr = {
             let process = self.process_mut()?;
             let addr = if guarded {
@@ -4846,6 +4852,7 @@ impl Machine {
                 addr,
                 Allocation {
                     len,
+                    domain_id,
                     guard_before,
                     guard_after,
                 },
@@ -4995,7 +5002,8 @@ impl Machine {
         let thread_pointer = self.thread()?.thread_pointer;
         let entry = checked_host_usize(self.process()?.exec_entry_pc, "committed exec entry PC")?;
         let stack_top = self.process()?.stack_top;
-        let mut replacement = Thread::new(tid, pid, stack_top);
+        let domain_id = self.current_domain_id()?;
+        let mut replacement = Thread::new(tid, pid, domain_id, stack_top);
         replacement.regs[31] = stack_pointer;
         replacement.thread_pointer = thread_pointer;
         replacement.ip = entry;
@@ -7500,7 +7508,7 @@ impl Machine {
             result_reg: result,
             caller_domain_id,
         });
-        self.process_mut()?.domain_id = domain_id;
+        self.set_current_domain_id(domain_id)?;
         self.write_reg(Reg(1), arg0)?;
         self.write_reg(Reg(2), arg1)?;
         self.thread_mut()?.ip = entry;
@@ -7542,7 +7550,7 @@ impl Machine {
         arg0: u64,
         arg1: u64,
     ) -> Result<(), String> {
-        self.process_mut()?.domain_id = domain_id;
+        self.set_current_domain_id(domain_id)?;
         self.complete_reg_ok(result, 0)?;
         self.write_reg(Reg(1), arg0)?;
         self.write_reg(Reg(2), arg1)?;
@@ -7618,7 +7626,7 @@ impl Machine {
             return self.complete_reg_err(result, 1);
         }
         self.thread_mut()?.cap_call_stack.pop();
-        self.process_mut()?.domain_id = continuation.caller_domain_id;
+        self.set_current_domain_id(continuation.caller_domain_id)?;
         self.thread_mut()?.ip = continuation.return_ip;
         self.set_errno(0)?;
         self.write_reg(continuation.result_reg, value0)?;
@@ -7986,34 +7994,21 @@ impl Machine {
             return Err(11);
         }
         let pid = self.thread().map_err(|_| 3u64)?.pid;
-        let current_domain = self
-            .processes
-            .get(&pid)
-            .map(|process| process.domain_id)
-            .ok_or(3u64)?;
+        let current_domain = self.current_domain_id().map_err(|_| 3u64)?;
         let usage = self.process_usage(pid).ok_or(3u64)?;
         self.ensure_attach_budget(id, current_domain, &usage)?;
-        if let Some(process) = self.processes.get_mut(&pid) {
-            process.domain_id = id;
-        }
+        self.set_current_domain_id(id).map_err(|_| 3u64)?;
         Ok(0)
     }
 
     fn domain_ctl_detach_self(&mut self) -> Result<u64, u64> {
-        let pid = self.thread().map_err(|_| 3u64)?.pid;
-        let current = self
-            .processes
-            .get(&pid)
-            .map(|process| process.domain_id)
-            .ok_or(3u64)?;
+        let current = self.current_domain_id().map_err(|_| 3u64)?;
         let parent = self
             .domains
             .get(&current)
             .and_then(|domain| domain.parent)
             .unwrap_or(ROOT_DOMAIN_ID);
-        if let Some(process) = self.processes.get_mut(&pid) {
-            process.domain_id = parent;
-        }
+        self.set_current_domain_id(parent).map_err(|_| 3u64)?;
         Ok(parent)
     }
 
@@ -8052,7 +8047,23 @@ impl Machine {
     }
 
     fn current_domain_id(&self) -> Result<u64, String> {
-        Ok(self.process()?.domain_id)
+        Ok(self.effective_thread_domain_id(self.thread()?))
+    }
+
+    fn set_current_domain_id(&mut self, domain_id: u64) -> Result<(), String> {
+        self.thread_mut()?.domain_id = domain_id;
+        Ok(())
+    }
+
+    fn effective_thread_domain_id(&self, thread: &Thread) -> u64 {
+        if thread.domain_id != ROOT_DOMAIN_ID {
+            thread.domain_id
+        } else {
+            self.processes
+                .get(&thread.pid)
+                .map(|process| process.domain_id)
+                .unwrap_or(thread.domain_id)
+        }
     }
 
     fn require_domain_cap(&mut self, mask: u64) -> Result<(), String> {
@@ -8762,11 +8773,9 @@ impl Machine {
     fn park_domain_threads(&mut self, id: u64) {
         let mut kept_ready = VecDeque::new();
         while let Some(tid) = self.ready.pop_front() {
-            let parked = self
-                .threads
-                .get(&tid)
-                .and_then(|thread| self.processes.get(&thread.pid))
-                .is_some_and(|process| self.domain_is_descendant_or_self(process.domain_id, id));
+            let parked = self.threads.get(&tid).is_some_and(|thread| {
+                self.domain_is_descendant_or_self(self.effective_thread_domain_id(thread), id)
+            });
             if parked {
                 if !self.domain_parked.contains(&tid) {
                     self.domain_parked.push_back(tid);
@@ -8793,10 +8802,7 @@ impl Machine {
         let Some(thread) = self.threads.get(&tid) else {
             return Ok(false);
         };
-        let Some(process) = self.processes.get(&thread.pid) else {
-            return Ok(false);
-        };
-        Ok(self.domain_is_frozen_or_destroyed(process.domain_id))
+        Ok(self.domain_is_frozen_or_destroyed(self.effective_thread_domain_id(thread)))
     }
 
     fn domain_is_frozen_or_destroyed(&self, id: u64) -> bool {
@@ -8875,10 +8881,8 @@ impl Machine {
             }
         }
         for thread in self.threads.values() {
-            if let Some(process) = self.processes.get(&thread.pid) {
-                if self.domain_is_descendant_or_self(process.domain_id, id) {
-                    usage.pids = usage.pids.saturating_add(1);
-                }
+            if self.domain_is_descendant_or_self(self.effective_thread_domain_id(thread), id) {
+                usage.pids = usage.pids.saturating_add(1);
             }
         }
         usage
