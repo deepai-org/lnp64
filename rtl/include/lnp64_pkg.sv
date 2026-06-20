@@ -285,6 +285,16 @@ package lnp64_pkg;
     } lnp64_m11_ddr_op_e;
 
     typedef enum logic [7:0] {
+        LNP64_M12_COMMIT_BOOT_IMAGE     = 8'd1,
+        LNP64_M12_COMMIT_BLOCK_WRITE    = 8'd2,
+        LNP64_M12_COMMIT_BARRIER        = 8'd3,
+        LNP64_M12_COMMIT_STALE_OBJECT   = 8'd4,
+        LNP64_M12_COMMIT_CROSS_DOMAIN   = 8'd5,
+        LNP64_M12_COMMIT_MEDIA_FAULT    = 8'd6,
+        LNP64_M12_COMMIT_RAW_AUTHORITY  = 8'd7
+    } lnp64_m12_storage_op_e;
+
+    typedef enum logic [7:0] {
         LNP64_M10_COMMIT_BOOT_MEASURE  = 8'd1,
         LNP64_M10_COMMIT_ECC_CORRECT   = 8'd2,
         LNP64_M10_COMMIT_PARITY_POISON = 8'd3,
@@ -725,6 +735,34 @@ package lnp64_pkg;
         logic        barrier_quiescent;
         logic        counts_exact;
     } lnp64_m11_state_projection_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] object_id;
+        logic [31:0] object_generation;
+        logic [31:0] domain_id;
+        logic [31:0] barrier_id;
+        logic [31:0] block_index;
+        logic [31:0] data_value;
+    } lnp64_m12_storage_commit_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] completions;
+        logic [31:0] faults;
+        logic        boot_image_visible;
+        logic        block_object_authorized;
+        logic        block_write_completed;
+        logic        storage_barrier_issued;
+        logic        storage_barrier_quiescent;
+        logic        stale_object_rejected;
+        logic        cross_domain_rejected;
+        logic        media_fault_terminal;
+        logic        no_raw_device_authority;
+        logic        counts_exact;
+    } lnp64_m12_state_projection_t;
 
     typedef struct packed {
         logic [7:0]  op;

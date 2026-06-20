@@ -21,6 +21,9 @@ module lnp64_m12_tb;
     logic media_fault_terminal;
     logic no_raw_device_authority;
     logic counts_exact;
+    logic typed_commit_valid;
+    lnp64_m12_storage_commit_t typed_commit;
+    lnp64_m12_state_projection_t typed_state_projection;
 
     lnp64_m12_storage_barrier dut(
         .clk(clk),
@@ -40,7 +43,10 @@ module lnp64_m12_tb;
         .cross_domain_rejected(cross_domain_rejected),
         .media_fault_terminal(media_fault_terminal),
         .no_raw_device_authority(no_raw_device_authority),
-        .counts_exact(counts_exact)
+        .counts_exact(counts_exact),
+        .typed_commit_valid(typed_commit_valid),
+        .typed_commit(typed_commit),
+        .typed_state_projection(typed_state_projection)
     );
 
     lnp64_m12_assertions assertions_i(
@@ -121,6 +127,46 @@ module lnp64_m12_tb;
                 );
                 default: $display("TRACE unknown code=%0d value=%0d", trace_code, trace_value);
             endcase
+        end
+        if (typed_commit_valid) begin
+            $display(
+                "TTRACE_M12 {\"record\":\"m12_storage_commit\",\"op\":%0d,\"status\":%0d,\"object_id\":%0d,\"object_generation\":%0d,\"domain_id\":%0d,\"barrier_id\":%0d,\"block_index\":%0d,\"data_value\":%0d}",
+                typed_commit.op,
+                typed_commit.status,
+                typed_commit.object_id,
+                typed_commit.object_generation,
+                typed_commit.domain_id,
+                typed_commit.barrier_id,
+                typed_commit.block_index,
+                typed_commit.data_value
+            );
+            $display(
+                "TTRACE_M12_BITS {\"record\":\"m12_storage_commit_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m12_storage_commit_t),
+                typed_commit
+            );
+            $display(
+                "TTRACE_M12_STATE {\"record\":\"m12_state_projection\",\"op\":%0d,\"status\":%0d,\"completions\":%0d,\"faults\":%0d,\"boot_image_visible\":%0d,\"block_object_authorized\":%0d,\"block_write_completed\":%0d,\"storage_barrier_issued\":%0d,\"storage_barrier_quiescent\":%0d,\"stale_object_rejected\":%0d,\"cross_domain_rejected\":%0d,\"media_fault_terminal\":%0d,\"no_raw_device_authority\":%0d,\"counts_exact\":%0d}",
+                typed_state_projection.op,
+                typed_state_projection.status,
+                typed_state_projection.completions,
+                typed_state_projection.faults,
+                typed_state_projection.boot_image_visible,
+                typed_state_projection.block_object_authorized,
+                typed_state_projection.block_write_completed,
+                typed_state_projection.storage_barrier_issued,
+                typed_state_projection.storage_barrier_quiescent,
+                typed_state_projection.stale_object_rejected,
+                typed_state_projection.cross_domain_rejected,
+                typed_state_projection.media_fault_terminal,
+                typed_state_projection.no_raw_device_authority,
+                typed_state_projection.counts_exact
+            );
+            $display(
+                "TTRACE_M12_STATE_BITS {\"record\":\"m12_state_projection_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m12_state_projection_t),
+                typed_state_projection
+            );
         end
     end
 

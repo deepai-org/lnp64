@@ -279,6 +279,15 @@
       "LNP64_M11_COMMIT_ECC_SCRUB=8'd6",
       "LNP64_M11_COMMIT_BARRIER=8'd7"
     ],
+    "lnp64_m12_storage_op_e": [
+      "LNP64_M12_COMMIT_BOOT_IMAGE=8'd1",
+      "LNP64_M12_COMMIT_BLOCK_WRITE=8'd2",
+      "LNP64_M12_COMMIT_BARRIER=8'd3",
+      "LNP64_M12_COMMIT_STALE_OBJECT=8'd4",
+      "LNP64_M12_COMMIT_CROSS_DOMAIN=8'd5",
+      "LNP64_M12_COMMIT_MEDIA_FAULT=8'd6",
+      "LNP64_M12_COMMIT_RAW_AUTHORITY=8'd7"
+    ],
     "lnp64_m10_ras_op_e": [
       "LNP64_M10_COMMIT_BOOT_MEASURE=8'd1",
       "LNP64_M10_COMMIT_ECC_CORRECT=8'd2",
@@ -473,7 +482,9 @@
       "lnp64_m10_ras_commit_t",
       "lnp64_m10_state_projection_t",
       "lnp64_m11_ddr_commit_t",
-      "lnp64_m11_state_projection_t"
+      "lnp64_m11_state_projection_t",
+      "lnp64_m12_storage_commit_t",
+      "lnp64_m12_state_projection_t"
     ],
     "ras_and_attestation": [
       "lnp64_error_cancel_t",
@@ -504,6 +515,8 @@
     "lnp64_m2_state_projection_t": ["op:8", "status:16", "caller_loc:2", "callee_loc:2", "continuation_valid:1", "continuation_id:32", "continuation_generation:32", "delivered_faults:32", "continuation_unique:1", "sync_roundtrip_ok:1", "async_delivery_ok:1", "handoff_delivery_ok:1", "stale_continuation_rejected:1", "fault_delivery_gate_ok:1", "signal_compatibility_ok:1"],
     "lnp64_m11_ddr_commit_t": ["op:8", "status:16", "line_id:32", "line_generation:32", "domain_id:32", "metadata_epoch:32", "byte_len:32", "data_value:32"],
     "lnp64_m11_state_projection_t": ["op:8", "status:16", "completions:32", "faults:32", "metadata_allocated:1", "metadata_domain_bound:1", "ddr_write_completed:1", "ddr_read_completed:1", "read_matches_write:1", "stale_generation_rejected:1", "cross_domain_rejected:1", "ecc_scrubbed:1", "barrier_quiescent:1", "counts_exact:1"],
+    "lnp64_m12_storage_commit_t": ["op:8", "status:16", "object_id:32", "object_generation:32", "domain_id:32", "barrier_id:32", "block_index:32", "data_value:32"],
+    "lnp64_m12_state_projection_t": ["op:8", "status:16", "completions:32", "faults:32", "boot_image_visible:1", "block_object_authorized:1", "block_write_completed:1", "storage_barrier_issued:1", "storage_barrier_quiescent:1", "stale_object_rejected:1", "cross_domain_rejected:1", "media_fault_terminal:1", "no_raw_device_authority:1", "counts_exact:1"],
     "lnp64_m10_ras_commit_t": ["op:8", "status:16", "root_domain:32", "fault_count:32", "telemetry_reads:32", "audit_records:32", "quote_id:32", "reset_id:32"],
     "lnp64_m10_state_projection_t": ["op:8", "status:16", "fault_count:32", "telemetry_reads:32", "audit_records:32", "trace_writes:32", "trace_capacity:32", "boot_measured:1", "telemetry_fdr_present:1", "ecc_corrected:1", "parity_poison_faulted:1", "watchdog_timed_out:1", "local_reset_seen:1", "degraded_state:1", "telemetry_scoped:1", "telemetry_redacted:1", "trace_overflowed:1", "quote_measurement_bound:1", "quote_development_marked:1", "audit_recorded:1", "mls_denied:1", "debug_denied:1", "counts_exact:1"],
     "lnp64_m9_classifier_commit_t": ["op:8", "status:16", "program_id:32", "attachment_generation:32", "cycle_budget:32", "cycles_used:32", "queue_id:32", "mark:32"],
