@@ -270,6 +270,15 @@
       "LNP64_M2_COMMIT_FAULT_DELIVERY=8'd6",
       "LNP64_M2_COMMIT_SIGNAL_COMPAT=8'd7"
     ],
+    "lnp64_m9_classifier_op_e": [
+      "LNP64_M9_COMMIT_VERIFY_ACCEPT=8'd1",
+      "LNP64_M9_COMMIT_VERIFY_REJECT=8'd2",
+      "LNP64_M9_COMMIT_PACKET_STEER=8'd3",
+      "LNP64_M9_COMMIT_IPC_STEER=8'd4",
+      "LNP64_M9_COMMIT_ACTION_EMIT=8'd5",
+      "LNP64_M9_COMMIT_BUDGET_EXHAUST=8'd6",
+      "LNP64_M9_COMMIT_STALE_ATTACHMENT=8'd7"
+    ],
     "lnp64_m8_heap_op_e": [
       "LNP64_M8_COMMIT_ALLOC=8'd1",
       "LNP64_M8_COMMIT_ALLOC_SIZE=8'd2",
@@ -439,7 +448,9 @@
       "lnp64_m6_service_commit_t",
       "lnp64_m6_state_projection_t",
       "lnp64_m8_heap_commit_t",
-      "lnp64_m8_state_projection_t"
+      "lnp64_m8_state_projection_t",
+      "lnp64_m9_classifier_commit_t",
+      "lnp64_m9_state_projection_t"
     ],
     "ras_and_attestation": [
       "lnp64_error_cancel_t",
@@ -468,6 +479,8 @@
     "lnp64_m5_state_projection_t": ["op:8", "status:16", "dst_buffer_id:32", "dst_generation:32", "requester_domain:32", "dst_domain:32", "dst_rights:8", "dst_pinned:1", "completions:32", "dst_visible:1", "pin_completed:1", "unpin_completed:1", "copy_completed:1", "fill_completed:1", "permission_faulted:1", "revoke_rejected:1", "domain_isolation_enforced:1", "coherence_observed:1", "completions_exact:1"],
     "lnp64_m2_gate_commit_t": ["op:8", "status:16", "continuation_id:32", "continuation_generation:32", "caller_tid:32", "callee_tid:32", "mode:16"],
     "lnp64_m2_state_projection_t": ["op:8", "status:16", "caller_loc:2", "callee_loc:2", "continuation_valid:1", "continuation_id:32", "continuation_generation:32", "delivered_faults:32", "continuation_unique:1", "sync_roundtrip_ok:1", "async_delivery_ok:1", "handoff_delivery_ok:1", "stale_continuation_rejected:1", "fault_delivery_gate_ok:1", "signal_compatibility_ok:1"],
+    "lnp64_m9_classifier_commit_t": ["op:8", "status:16", "program_id:32", "attachment_generation:32", "cycle_budget:32", "cycles_used:32", "queue_id:32", "mark:32"],
+    "lnp64_m9_state_projection_t": ["op:8", "status:16", "attachment_generation:32", "packets:32", "ipc_records:32", "rejects:32", "cycle_budget:32", "cycles_used:32", "verifier_accepted:1", "verifier_rejected:1", "packet_steered:1", "ipc_steered:1", "action_emitted:1", "budget_enforced:1", "stale_attachment_rejected:1", "no_authority_created:1", "counts_exact:1"],
     "lnp64_m8_heap_commit_t": ["op:8", "status:16", "owner_tid:32", "pointer_generation:32", "heap_generation:32", "size_class:32", "heap_ptr:64"],
     "lnp64_m8_state_projection_t": ["op:8", "status:16", "pointer_generation:32", "owner_tid:32", "allocations:32", "frees:32", "allocated:1", "quarantined:1", "alloc_completed:1", "alloc_size_reported:1", "free_completed:1", "reuse_completed:1", "double_free_rejected:1", "stale_pointer_rejected:1", "cross_thread_handoff:1", "guard_faulted:1", "quarantine_observed:1", "heap_count_exact:1"],
     "lnp64_m6_service_commit_t": ["op:8", "status:16", "service_id:32", "op_id:32", "continuation_generation:32", "service_generation:32", "requested_rights:64", "returned_rights:64"],

@@ -273,11 +273,11 @@
       ],
       "rtl_witness_signals": ["verifier_accepted", "verifier_rejected", "no_authority_created", "budget_enforced"],
       "assertion_files": ["formal/rtl_assertions/lnp64_m9_assertions.sv"],
-      "trace_sources": ["rtl/sim/lnp64_m9_tb.sv", "formal/m9_classifier_servicelet_model.py"],
-      "trace_markers": ["TRACE verifier", "TRACE verifier_reject", "TRACE budget_exhaust"],
-      "gate_scripts": ["scripts/run_rtl_m9.sh", "scripts/run_rtl_random_cosim.sh"],
+      "trace_sources": ["rtl/sim/lnp64_m9_tb.sv", "formal/m9_classifier_servicelet_model.py", "scripts/check_rtl_m9_typed_commit_trace.py", "scripts/test_rtl_m9_typed_commit_checker.py", "scripts/check_rtl_m9_witness.py", "scripts/run_rtl_m9_witness_gate.sh", "scripts/gen_m9_witness_lean.py", "scripts/run_rtl_m9_lean_witness_gate.sh"],
+      "trace_markers": ["TRACE verifier", "TRACE verifier_reject", "TRACE budget_exhaust", "TTRACE_M9 {\\\"record\\\":\\\"m9_classifier_commit\\\"", "rtl m9 typed commit trace ok", "rtl m9 witness ok", "rtl m9 lean witness gate ok"],
+      "gate_scripts": ["scripts/run_rtl_m9.sh", "scripts/run_rtl_random_cosim.sh", "scripts/check_rtl_m9_typed_commit_trace.py", "scripts/test_rtl_m9_typed_commit_checker.py", "scripts/check_rtl_m9_witness.py", "scripts/run_rtl_m9_witness_gate.sh", "scripts/test_rtl_m9_witness_checker.py", "scripts/gen_m9_witness_lean.py", "scripts/run_rtl_m9_lean_witness_gate.sh"],
       "assumptions": ["servicelet ISA subset has no blocking or allocation instructions", "cycle budget is enforced by the lane"],
-      "known_gaps": ["Not T2 yet: typed transition traces and extracted typed servicelet semantics are missing; current witness is bounded model plus RTL assertions."]
+      "known_gaps": ["Not T2 yet: extracted typed servicelet semantics are still bounded; current witness is bounded model plus RTL assertions. The M9 classifier/servicelet path now emits schema-owned typed commit/state packed traces checked against the executable transition contract (scripts/check_rtl_m9_typed_commit_trace.py: op sequence, packed-bit faithfulness, per-op invariants, verifier reject, budget enforcement, and no-authority-created on action emit), is re-validated offline by scripts/check_rtl_m9_witness.py, and scripts/run_rtl_m9_lean_witness_gate.sh proves M9 packed-bit decode-faithfulness in Lean (kernel decide, no axioms)."]
     },
     {
       "id": "faults_terminal_progress",

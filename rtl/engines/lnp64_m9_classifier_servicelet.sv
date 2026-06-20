@@ -19,7 +19,10 @@ module lnp64_m9_classifier_servicelet (
     output logic budget_enforced,
     output logic stale_attachment_rejected,
     output logic no_authority_created,
-    output logic counts_exact
+    output logic counts_exact,
+    output logic typed_commit_valid,
+    output lnp64_m9_classifier_commit_t typed_commit,
+    output lnp64_m9_state_projection_t typed_state_projection
 );
     typedef enum logic [3:0] {
         C_RESET,
@@ -135,9 +138,47 @@ module lnp64_m9_classifier_servicelet (
         return seeded_cycle_budget(seed);
     endfunction
 
+    task automatic commit_m9(
+        input lnp64_m9_classifier_op_e op,
+        input logic [15:0] status,
+        input logic [31:0] queue_id,
+        input logic [31:0] mark
+    );
+        typed_commit_valid <= 1'b1;
+        typed_commit.op <= op;
+        typed_commit.status <= status;
+        typed_commit.program_id <= seeded_program_id(scenario_seed);
+        typed_commit.attachment_generation <= attachment_generation;
+        typed_commit.cycle_budget <= cycle_budget;
+        typed_commit.cycles_used <= cycles_used;
+        typed_commit.queue_id <= queue_id;
+        typed_commit.mark <= mark;
+    endtask
+
     always_comb begin
         no_authority_created = action_emitted && verifier_accepted;
         counts_exact = packets == 32'd1 && ipc_records == 32'd1 && rejects == 32'd2;
+    end
+
+    always_comb begin
+        typed_state_projection = '0;
+        typed_state_projection.op = typed_commit.op;
+        typed_state_projection.status = typed_commit.status;
+        typed_state_projection.attachment_generation = attachment_generation;
+        typed_state_projection.packets = packets;
+        typed_state_projection.ipc_records = ipc_records;
+        typed_state_projection.rejects = rejects;
+        typed_state_projection.cycle_budget = cycle_budget;
+        typed_state_projection.cycles_used = cycles_used;
+        typed_state_projection.verifier_accepted = verifier_accepted;
+        typed_state_projection.verifier_rejected = verifier_rejected;
+        typed_state_projection.packet_steered = packet_steered;
+        typed_state_projection.ipc_steered = ipc_steered;
+        typed_state_projection.action_emitted = action_emitted;
+        typed_state_projection.budget_enforced = budget_enforced;
+        typed_state_projection.stale_attachment_rejected = stale_attachment_rejected;
+        typed_state_projection.no_authority_created = no_authority_created;
+        typed_state_projection.counts_exact = counts_exact;
     end
 
     always_ff @(posedge clk or negedge reset_n) begin
@@ -147,6 +188,8 @@ module lnp64_m9_classifier_servicelet (
             trace_valid <= 1'b0;
             trace_code <= 8'd0;
             trace_value <= 64'd0;
+            typed_commit_valid <= 1'b0;
+            typed_commit <= '0;
             verifier_accepted <= 1'b0;
             verifier_rejected <= 1'b0;
             packet_steered <= 1'b0;
@@ -163,6 +206,7 @@ module lnp64_m9_classifier_servicelet (
             cycles_used <= 32'd0;
         end else begin
             trace_valid <= 1'b0;
+            typed_commit_valid <= 1'b0;
             unique case (state)
                 C_RESET: begin
                     if (start) begin
@@ -182,6 +226,7 @@ module lnp64_m9_classifier_servicelet (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd2;
                     trace_value <= {seeded_program_id(scenario_seed), seeded_instructions_trace(scenario_seed), 16'd1};
+                    commit_m9(LNP64_M9_COMMIT_VERIFY_ACCEPT, LNP64_STATUS_OK, 32'd0, 32'd0);
                     state <= C_VERIFY_REJECT;
                 end
                 C_VERIFY_REJECT: begin
@@ -190,6 +235,7 @@ module lnp64_m9_classifier_servicelet (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd3;
                     trace_value <= {48'd0, LNP64_ERR_EINVAL};
+                    commit_m9(LNP64_M9_COMMIT_VERIFY_REJECT, LNP64_ERR_EINVAL, 32'd0, 32'd0);
                     state <= C_PACKET_STEER;
                 end
                 C_PACKET_STEER: begin
@@ -203,6 +249,7 @@ module lnp64_m9_classifier_servicelet (
                             seeded_queue_id_trace(scenario_seed),
                             seeded_mark(scenario_seed)
                         };
+                        commit_m9(LNP64_M9_COMMIT_PACKET_STEER, LNP64_STATUS_OK, seeded_queue_id(scenario_seed), seeded_mark(scenario_seed));
                         state <= C_IPC_STEER;
                     end else begin
                         state <= C_DONE;
@@ -215,6 +262,7 @@ module lnp64_m9_classifier_servicelet (
                         trace_valid <= 1'b1;
                         trace_code <= 8'd5;
                         trace_value <= {seeded_service_id(scenario_seed), seeded_gate_id(scenario_seed)};
+                        commit_m9(LNP64_M9_COMMIT_IPC_STEER, LNP64_STATUS_OK, seeded_queue_id(scenario_seed), seeded_mark(scenario_seed));
                         state <= C_ACTION_EMIT;
                     end else begin
                         state <= C_DONE;
@@ -225,6 +273,7 @@ module lnp64_m9_classifier_servicelet (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd6;
                     trace_value <= {32'd2, 32'd1};
+                    commit_m9(LNP64_M9_COMMIT_ACTION_EMIT, LNP64_STATUS_OK, seeded_queue_id(scenario_seed), seeded_mark(scenario_seed));
                     state <= C_BUDGET_EXHAUST;
                 end
                 C_BUDGET_EXHAUST: begin
@@ -238,6 +287,7 @@ module lnp64_m9_classifier_servicelet (
                         seeded_cycles_used(scenario_seed),
                         LNP64_ERR_EAGAIN
                     };
+                    commit_m9(LNP64_M9_COMMIT_BUDGET_EXHAUST, LNP64_ERR_EAGAIN, 32'd0, 32'd0);
                     state <= C_STALE_ATTACHMENT;
                 end
                 C_STALE_ATTACHMENT: begin
@@ -247,6 +297,7 @@ module lnp64_m9_classifier_servicelet (
                         trace_valid <= 1'b1;
                         trace_code <= 8'd8;
                         trace_value <= {48'd0, LNP64_ERR_EREVOKED};
+                        commit_m9(LNP64_M9_COMMIT_STALE_ATTACHMENT, LNP64_ERR_EREVOKED, 32'd0, 32'd0);
                         state <= C_DONE;
                     end else begin
                         state <= C_DONE;

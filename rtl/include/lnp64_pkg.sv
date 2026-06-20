@@ -275,6 +275,16 @@ package lnp64_pkg;
     } lnp64_m2_gate_op_e;
 
     typedef enum logic [7:0] {
+        LNP64_M9_COMMIT_VERIFY_ACCEPT    = 8'd1,
+        LNP64_M9_COMMIT_VERIFY_REJECT    = 8'd2,
+        LNP64_M9_COMMIT_PACKET_STEER     = 8'd3,
+        LNP64_M9_COMMIT_IPC_STEER        = 8'd4,
+        LNP64_M9_COMMIT_ACTION_EMIT      = 8'd5,
+        LNP64_M9_COMMIT_BUDGET_EXHAUST   = 8'd6,
+        LNP64_M9_COMMIT_STALE_ATTACHMENT = 8'd7
+    } lnp64_m9_classifier_op_e;
+
+    typedef enum logic [7:0] {
         LNP64_M8_COMMIT_ALLOC             = 8'd1,
         LNP64_M8_COMMIT_ALLOC_SIZE        = 8'd2,
         LNP64_M8_COMMIT_FREE              = 8'd3,
@@ -666,6 +676,37 @@ package lnp64_pkg;
         logic        fault_delivery_gate_ok;
         logic        signal_compatibility_ok;
     } lnp64_m2_state_projection_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] program_id;
+        logic [31:0] attachment_generation;
+        logic [31:0] cycle_budget;
+        logic [31:0] cycles_used;
+        logic [31:0] queue_id;
+        logic [31:0] mark;
+    } lnp64_m9_classifier_commit_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] attachment_generation;
+        logic [31:0] packets;
+        logic [31:0] ipc_records;
+        logic [31:0] rejects;
+        logic [31:0] cycle_budget;
+        logic [31:0] cycles_used;
+        logic        verifier_accepted;
+        logic        verifier_rejected;
+        logic        packet_steered;
+        logic        ipc_steered;
+        logic        action_emitted;
+        logic        budget_enforced;
+        logic        stale_attachment_rejected;
+        logic        no_authority_created;
+        logic        counts_exact;
+    } lnp64_m9_state_projection_t;
 
     typedef struct packed {
         logic [7:0]  op;
