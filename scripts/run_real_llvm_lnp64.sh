@@ -1451,6 +1451,23 @@ grep -q '<enmasse>:' "$sbase_move_support_impl_dump"
 printf 'real LLVM LNP64 clang sbase move support object smoke passed: %s\n' \
   "$sbase_move_support_impl_obj"
 
+sbase_time_support_impl_c="toolchain/liblnp64_sbase_time_min.c"
+sbase_time_support_impl_obj="$build_dir/liblnp64-sbase-time-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin \
+  -fno-pic -fno-jump-tables -fno-unwind-tables \
+  -fno-asynchronous-unwind-tables -I toolchain/include -I third_party/sbase \
+  -c "$sbase_time_support_impl_c" -o "$sbase_time_support_impl_obj"
+test -s "$sbase_time_support_impl_obj"
+sbase_time_support_impl_dump="$build_dir/liblnp64-sbase-time-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none \
+  "$sbase_time_support_impl_obj" >"$sbase_time_support_impl_dump"
+grep -q '<estrtonum>:' "$sbase_time_support_impl_dump"
+grep -q '<localtime>:' "$sbase_time_support_impl_dump"
+grep -q '<mktime>:' "$sbase_time_support_impl_dump"
+grep -q '<strptime>:' "$sbase_time_support_impl_dump"
+printf 'real LLVM LNP64 clang sbase time support object smoke passed: %s\n' \
+  "$sbase_time_support_impl_obj"
+
 netcat_obj="$build_dir/netcat-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
@@ -5736,6 +5753,17 @@ sbase_chmod_elf="$build_dir/lnp64-sbase-chmod-linked.elf"
 test -s "$sbase_chmod_elf"
 printf 'real LLVM LNP64 lld sbase chmod link smoke passed: %s\n' \
   "$sbase_chmod_elf"
+
+sbase_touch_elf="$build_dir/lnp64-sbase-touch-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
+  -o "$sbase_touch_elf" "$crt0_obj" \
+  "$build_dir/sbase-touch-clang-smoke.o" \
+  "$sbase_support_impl_obj" "$sbase_time_support_impl_obj" \
+  "$libc_fd_impl_obj" "$libc_meta_impl_obj" "$libc_time_impl_obj" \
+  "$libc_string_impl_obj" "$libc_errno_impl_obj" "$libc_process_impl_obj"
+test -s "$sbase_touch_elf"
+printf 'real LLVM LNP64 lld sbase touch link smoke passed: %s\n' \
+  "$sbase_touch_elf"
 
 sbase_mv_elf="$build_dir/lnp64-sbase-mv-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \

@@ -416,6 +416,15 @@ grep -q 'exit=0' <<<"$sbase_chmod_output"
 test "$(stat -c '%a' "$sbase_fixture_root/chmod.txt")" = 700
 printf 'real LLVM LNP64 run-elf sbase chmod execution passed: %s\n' \
   target/llvm-lnp64-build/lnp64-sbase-chmod-linked.elf
+rm -f "$sbase_fixture_root/touched.txt"
+"$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-touch-linked.elf \
+  >/dev/null
+sbase_touch_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+  target/llvm-lnp64-build/lnp64-sbase-touch-linked.elf touch touched.txt)"
+grep -q 'exit=0' <<<"$sbase_touch_output"
+test -f "$sbase_fixture_root/touched.txt"
+printf 'real LLVM LNP64 run-elf sbase touch execution passed: %s\n' \
+  target/llvm-lnp64-build/lnp64-sbase-touch-linked.elf
 printf 'move via clang\n' >"$sbase_fixture_root/move-source.txt"
 "$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-mv-linked.elf \
   >/dev/null

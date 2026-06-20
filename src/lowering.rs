@@ -1342,6 +1342,7 @@ mod tests {
         let libc_sbase_fs_min = include_str!("../toolchain/liblnp64_sbase_fs_min.c");
         let libc_sbase_recurse_min = include_str!("../toolchain/liblnp64_sbase_recurse_min.c");
         let libc_sbase_move_min = include_str!("../toolchain/liblnp64_sbase_move_min.c");
+        let libc_sbase_time_min = include_str!("../toolchain/liblnp64_sbase_time_min.c");
         let elf_exec_test_clang = include_str!("../userland/elf_exec_test_clang.c");
         let spawn_task_clang = include_str!("../userland/spawn_task_clang.c");
         let gate_trace_test_clang = include_str!("../userland/gate_trace_test_clang.c");
@@ -1643,6 +1644,9 @@ mod tests {
             "sbase_chmod_run_elf",
             "clang_sbase_recurse_support_object",
             "clang_sbase_move_support_object",
+            "clang_sbase_time_support_object",
+            "sbase_touch_static_link",
+            "sbase_touch_run_elf",
             "sbase_mv_static_link",
             "sbase_mv_run_elf",
             "sbase_rm_static_link",
@@ -3616,6 +3620,13 @@ mod tests {
         assert!(libc_sbase_move_min.contains("void enmasse("));
         assert!(real_llc.contains("liblnp64-sbase-move-min.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang sbase move support object smoke passed"));
+        assert!(real_llc.contains("toolchain/liblnp64_sbase_time_min.c"));
+        assert!(libc_sbase_time_min.contains("long long estrtonum("));
+        assert!(libc_sbase_time_min.contains("struct tm *localtime("));
+        assert!(libc_sbase_time_min.contains("time_t mktime("));
+        assert!(libc_sbase_time_min.contains("char *strptime("));
+        assert!(real_llc.contains("liblnp64-sbase-time-min.o"));
+        assert!(real_llc.contains("real LLVM LNP64 clang sbase time support object smoke passed"));
         assert!(real_llc.contains("lnp64-sbase-mkdir-linked.elf"));
         assert!(real_llc.contains(r#""$build_dir/sbase-mkdir-clang-smoke.o" \"#));
         assert!(real_llc.contains(r#""$sbase_fs_support_impl_obj" \"#));
@@ -3630,6 +3641,10 @@ mod tests {
         assert!(real_llc.contains(r#""$sbase_fs_support_impl_obj" \"#));
         assert!(real_llc.contains(r#""$libc_fd_impl_obj" "$libc_string_impl_obj" \"#));
         assert!(real_llc.contains("real LLVM LNP64 lld sbase chmod link smoke passed"));
+        assert!(real_llc.contains("lnp64-sbase-touch-linked.elf"));
+        assert!(real_llc.contains(r#""$build_dir/sbase-touch-clang-smoke.o" \"#));
+        assert!(real_llc.contains(r#""$sbase_time_support_impl_obj" \"#));
+        assert!(real_llc.contains("real LLVM LNP64 lld sbase touch link smoke passed"));
         assert!(real_llc.contains("lnp64-sbase-mv-linked.elf"));
         assert!(real_llc.contains(r#""$build_dir/sbase-mv-clang-smoke.o" \"#));
         assert!(real_llc.contains(r#""$sbase_move_support_impl_obj" \"#));
@@ -4146,6 +4161,10 @@ mod tests {
         assert!(real_llc_docker.contains("chmod 700 chmod.txt"));
         assert!(real_llc_docker.contains("stat -c '%a'"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase chmod execution passed"));
+        assert!(real_llc_docker.contains("lnp64-sbase-touch-linked.elf"));
+        assert!(real_llc_docker.contains("touch touched.txt"));
+        assert!(real_llc_docker.contains("test -f \"$sbase_fixture_root/touched.txt\""));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase touch execution passed"));
         assert!(real_llc_docker.contains("lnp64-sbase-mv-linked.elf"));
         assert!(real_llc_docker.contains("mv move-source.txt moved.txt"));
         assert!(real_llc_docker.contains("test ! -e \"$sbase_fixture_root/move-source.txt\""));
@@ -4374,6 +4393,7 @@ mod tests {
             "real_sbase_mkdir_execution",
             "real_sbase_ln_execution",
             "real_sbase_chmod_execution",
+            "real_sbase_touch_execution",
             "real_sbase_mv_execution",
             "real_sbase_rm_execution",
             "real_errno_execution",
@@ -4483,6 +4503,7 @@ mod tests {
             "real_sbase_mkdir_execution",
             "real_sbase_ln_execution",
             "real_sbase_chmod_execution",
+            "real_sbase_touch_execution",
             "real_sbase_mv_execution",
             "real_sbase_rm_execution",
             "real_intrinsic_push_execution",
