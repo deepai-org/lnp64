@@ -268,7 +268,7 @@ def PseudoLINeg32 : LNP64ConstPseudo<"pseudo_li.neg32">;
 def : Pat<(i64 sneg32_imm:$imm), (PseudoLINeg32 sneg32_imm:$imm)>;
 def PseudoLI64 : LNP64ConstPseudo<"pseudo_li64">;
 def : Pat<(i64 wide64_imm:$imm), (PseudoLI64 wide64_imm:$imm)>;
-def : Pat<(i64 (LNP64wrapper tglobaladdr:$target)), (LA tglobaladdr:$target)>;
+def : Pat<(i64 (LNP64wrapper tglobaladdr:$target)), (AUIPC tglobaladdr:$target)>;
 
 def ADD : LNP64RRR<"add"> {
   let Pattern = [(set GPR:$rd, (add GPR:$rs1, GPR:$rs2))];

@@ -5534,6 +5534,8 @@ mod tests {
         assert!(instr_td.contains("def PseudoLINeg32"));
         assert!(instr_td.contains("let Size = 8"));
         assert!(instr_td.contains("(i64 (LNP64wrapper tglobaladdr:$target))"));
+        assert!(instr_td.contains("(AUIPC tglobaladdr:$target)"));
+        assert!(!instr_td.contains("(LA tglobaladdr:$target)"));
         assert!(instr_td.contains("(set GPR:$rd, uimm32_imm:$imm)"));
         assert!(instr_td.contains("(PseudoLINeg32 sneg32_imm:$imm)"));
         assert!(instr_td.contains("(PseudoLI64 wide64_imm:$imm)"));
