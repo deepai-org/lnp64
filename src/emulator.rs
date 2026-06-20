@@ -15565,7 +15565,10 @@ mod tests {
     fn emulator_rejects_exec_descriptor_duplicate_fdr_grant_slots() {
         let mut plan = loader_exec_plan_fixture();
         let duplicate = plan.fdr_grants[0];
-        plan.fdr_grants.push(duplicate);
+        plan.fdr_grants.push(StartupFdrDescriptor {
+            slot: duplicate.slot + 1,
+            ..duplicate
+        });
         let descriptor = build_exec_descriptor(
             &plan,
             ExecPlanDescriptorOptions {
@@ -15576,7 +15579,11 @@ mod tests {
             },
         )
         .unwrap();
-        let words = encode_exec_descriptor(&descriptor);
+        let mut words = encode_exec_descriptor(&descriptor);
+        let fdr_offset = EXEC_PLAN_HEADER_WORDS
+            + EXEC_PLAN_ENTRY_WORDS
+            + descriptor.vmas.len() * EXEC_PLAN_VMA_WORDS;
+        words[fdr_offset + EXEC_PLAN_FDR_GRANT_WORDS] = duplicate.slot;
 
         let err = Machine::validate_exec_descriptor_words(&words).unwrap_err();
 

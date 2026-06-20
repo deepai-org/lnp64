@@ -36,6 +36,8 @@ const LNP64_STARTUP_NOTE_MAGIC: &[u8; 8] = b"LNP64ST\0";
 const STARTUP_NOTE_HEADER_SIZE: usize = 64;
 const STARTUP_FDR_RECORD_SIZE: usize = 64;
 const MAX_STARTUP_FDRS: usize = 256;
+const MAX_EXEC_PLAN_FDR_SLOT: u64 = 256;
+const RESERVED_MESSAGE_ENDPOINT_FDR: u64 = MAX_EXEC_PLAN_FDR_SLOT - 1;
 const MAX_EXEC_PLAN_VMAS: usize = 256;
 const MAX_EXEC_PLAN_MEASUREMENTS: usize = 64;
 const EXEC_PLAN_HEADER_RECORD_SIZE: u64 = 72;
@@ -321,7 +323,18 @@ pub fn build_exec_descriptor(
             return Err("exec-plan VMA lineage epoch is required".to_string());
         }
     }
+    let mut fdr_slots = Vec::with_capacity(plan.fdr_grants.len());
     for grant in &plan.fdr_grants {
+        if grant.slot >= MAX_EXEC_PLAN_FDR_SLOT {
+            return Err("exec-plan FDR grant slot is out of range".to_string());
+        }
+        if grant.slot == RESERVED_MESSAGE_ENDPOINT_FDR {
+            return Err("exec-plan FDR grant slot is reserved".to_string());
+        }
+        if fdr_slots.contains(&grant.slot) {
+            return Err("exec-plan FDR grant slots duplicate".to_string());
+        }
+        fdr_slots.push(grant.slot);
         if grant.kind == 0 {
             return Err("exec-plan FDR grant kind is required".to_string());
         }
@@ -2349,6 +2362,33 @@ mod tests {
             missing_source_generation.contains("source generation"),
             "{missing_source_generation}"
         );
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_exec_descriptor_bad_fdr_grant_slots() {
+        let mut image = test_elf(&[text_phdr(), startup_note_phdr(192)]);
+        install_startup_note(&mut image, 2);
+        install_startup_fdr(&mut image, 0, 3, 9, 0xf0, 0, 0xabc, 0xdef, 0, 0);
+        install_startup_fdr(&mut image, 1, 4, 9, 0xf0, 0, 0xabc, 0xdef, 0, 0);
+        let mut plan = build_static_exec_plan(&image, LoaderOptions::default()).unwrap();
+        let descriptor_options = ExecPlanDescriptorOptions {
+            image_source_cap: 4,
+            image_source_generation: 5,
+            image_lineage_epoch: 6,
+            ..ExecPlanDescriptorOptions::default()
+        };
+
+        plan.fdr_grants[0].slot = MAX_EXEC_PLAN_FDR_SLOT;
+        let out_of_range = build_exec_descriptor(&plan, descriptor_options.clone()).unwrap_err();
+        assert!(out_of_range.contains("out of range"), "{out_of_range}");
+
+        plan.fdr_grants[0].slot = RESERVED_MESSAGE_ENDPOINT_FDR;
+        let reserved = build_exec_descriptor(&plan, descriptor_options.clone()).unwrap_err();
+        assert!(reserved.contains("reserved"), "{reserved}");
+
+        plan.fdr_grants[0].slot = 4;
+        let duplicate = build_exec_descriptor(&plan, descriptor_options).unwrap_err();
+        assert!(duplicate.contains("duplicate"), "{duplicate}");
     }
 
     #[test]
