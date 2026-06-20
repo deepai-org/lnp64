@@ -126,8 +126,13 @@ void LNP64::relocate(uint8_t *Loc, const Relocation &Rel, uint64_t Val) const {
     write64le(Loc, Val);
     return;
   case R_LNP64_ABS32:
-  case R_LNP64_PC32:
     write32le(Loc, Val);
+    return;
+  case R_LNP64_PC32:
+    // The relocation is stored in AUIPC's literal word at PC+4, while AUIPC
+    // adds the literal to the instruction PC. Adjust lld's S - (PC+4) value
+    // back to the architectural S - PC value.
+    write32le(Loc, Val + 4);
     return;
   case R_LNP64_BRANCH26:
     relocateBranch26(Loc, Val);

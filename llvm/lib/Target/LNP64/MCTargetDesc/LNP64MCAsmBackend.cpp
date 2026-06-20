@@ -133,7 +133,9 @@ public:
       write32(Data, Offset, static_cast<uint32_t>(Value));
       return;
     case LNP64::fixup_lnp64_pcrel32:
-      write32(Data, Offset, static_cast<uint32_t>(Value));
+      // The fixup lives in AUIPC's literal word at PC+4, but AUIPC executes
+      // relative to the instruction PC. Store S - PC, not S - (PC+4).
+      write32(Data, Offset, static_cast<uint32_t>(Value + 4));
       return;
     default:
       return;
