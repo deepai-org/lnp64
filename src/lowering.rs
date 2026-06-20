@@ -1346,6 +1346,7 @@ mod tests {
         let libc_sbase_time_min = include_str!("../toolchain/liblnp64_sbase_time_min.c");
         let libc_sbase_ls_min = include_str!("../toolchain/liblnp64_sbase_ls_min.c");
         let libc_sbase_find_min = include_str!("../toolchain/liblnp64_sbase_find_min.c");
+        let libc_sbase_accounts_min = include_str!("../toolchain/liblnp64_sbase_accounts_min.c");
         let elf_exec_test_clang = include_str!("../userland/elf_exec_test_clang.c");
         let spawn_task_clang = include_str!("../userland/spawn_task_clang.c");
         let gate_trace_test_clang = include_str!("../userland/gate_trace_test_clang.c");
@@ -1650,10 +1651,13 @@ mod tests {
             "clang_sbase_time_support_object",
             "clang_sbase_ls_support_object",
             "clang_sbase_find_support_object",
+            "clang_sbase_accounts_support_object",
             "sbase_ls_static_link",
             "sbase_ls_run_elf",
             "sbase_find_static_link",
             "sbase_find_run_elf",
+            "sbase_chown_static_link",
+            "sbase_chown_run_elf",
             "sbase_touch_static_link",
             "sbase_touch_run_elf",
             "sbase_mv_static_link",
@@ -3659,6 +3663,13 @@ mod tests {
         assert!(real_llc.contains(r#""$build_dir/sbase-find-clang-smoke.o" \"#));
         assert!(real_llc.contains(r#""$sbase_find_support_impl_obj" \"#));
         assert!(real_llc.contains("real LLVM LNP64 lld sbase find link smoke passed"));
+        assert!(real_llc.contains("toolchain/liblnp64_sbase_accounts_min.c"));
+        assert!(libc_sbase_accounts_min.contains("struct passwd *getpwnam("));
+        assert!(libc_sbase_accounts_min.contains("struct group *getgrnam("));
+        assert!(real_llc.contains("liblnp64-sbase-accounts-min.o"));
+        assert!(
+            real_llc.contains("real LLVM LNP64 clang sbase accounts support object smoke passed")
+        );
         assert!(real_llc.contains("lnp64-sbase-mkdir-linked.elf"));
         assert!(real_llc.contains(r#""$build_dir/sbase-mkdir-clang-smoke.o" \"#));
         assert!(real_llc.contains(r#""$sbase_fs_support_impl_obj" \"#));
@@ -3673,6 +3684,10 @@ mod tests {
         assert!(real_llc.contains(r#""$sbase_fs_support_impl_obj" \"#));
         assert!(real_llc.contains(r#""$libc_fd_impl_obj" "$libc_string_impl_obj" \"#));
         assert!(real_llc.contains("real LLVM LNP64 lld sbase chmod link smoke passed"));
+        assert!(real_llc.contains("lnp64-sbase-chown-linked.elf"));
+        assert!(real_llc.contains(r#""$build_dir/sbase-chown-clang-smoke.o" \"#));
+        assert!(real_llc.contains(r#""$sbase_accounts_support_impl_obj" \"#));
+        assert!(real_llc.contains("real LLVM LNP64 lld sbase chown link smoke passed"));
         assert!(real_llc.contains("lnp64-sbase-touch-linked.elf"));
         assert!(real_llc.contains(r#""$build_dir/sbase-touch-clang-smoke.o" \"#));
         assert!(real_llc.contains(r#""$sbase_time_support_impl_obj" \"#));
@@ -4196,6 +4211,10 @@ mod tests {
         assert!(real_llc_docker.contains("chmod 700 chmod.txt"));
         assert!(real_llc_docker.contains("stat -c '%a'"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase chmod execution passed"));
+        assert!(real_llc_docker.contains("lnp64-sbase-chown-linked.elf"));
+        assert!(real_llc_docker.contains("chown :\"$(id -g)\" chown.txt"));
+        assert!(real_llc_docker.contains("stat -c '%g'"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase chown execution passed"));
         assert!(real_llc_docker.contains("lnp64-sbase-touch-linked.elf"));
         assert!(real_llc_docker.contains("touch touched.txt"));
         assert!(real_llc_docker.contains("test -f \"$sbase_fixture_root/touched.txt\""));
@@ -4430,6 +4449,7 @@ mod tests {
             "real_sbase_mkdir_execution",
             "real_sbase_ln_execution",
             "real_sbase_chmod_execution",
+            "real_sbase_chown_execution",
             "real_sbase_touch_execution",
             "real_sbase_mv_execution",
             "real_sbase_rm_execution",
@@ -4542,6 +4562,7 @@ mod tests {
             "real_sbase_mkdir_execution",
             "real_sbase_ln_execution",
             "real_sbase_chmod_execution",
+            "real_sbase_chown_execution",
             "real_sbase_touch_execution",
             "real_sbase_mv_execution",
             "real_sbase_rm_execution",
@@ -6258,6 +6279,7 @@ mod tests {
             "lnp64-sbase-mkdir-linked.elf",
             "lnp64-sbase-ln-linked.elf",
             "lnp64-sbase-chmod-linked.elf",
+            "lnp64-sbase-chown-linked.elf",
             "lnp64-sbase-touch-linked.elf",
             "lnp64-sbase-mv-linked.elf",
             "lnp64-sbase-rm-linked.elf",
@@ -6270,6 +6292,7 @@ mod tests {
             "real LLVM LNP64 run-elf sbase mkdir execution passed",
             "real LLVM LNP64 run-elf sbase ln execution passed",
             "real LLVM LNP64 run-elf sbase chmod execution passed",
+            "real LLVM LNP64 run-elf sbase chown execution passed",
             "real LLVM LNP64 run-elf sbase touch execution passed",
             "real LLVM LNP64 run-elf sbase mv execution passed",
             "real LLVM LNP64 run-elf sbase rm execution passed",

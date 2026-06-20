@@ -1506,6 +1506,21 @@ grep -q '<ereallocarray>:' "$sbase_find_support_impl_dump"
 printf 'real LLVM LNP64 clang sbase find support object smoke passed: %s\n' \
   "$sbase_find_support_impl_obj"
 
+sbase_accounts_support_impl_c="toolchain/liblnp64_sbase_accounts_min.c"
+sbase_accounts_support_impl_obj="$build_dir/liblnp64-sbase-accounts-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin \
+  -fno-pic -fno-jump-tables -fno-unwind-tables \
+  -fno-asynchronous-unwind-tables -I toolchain/include \
+  -c "$sbase_accounts_support_impl_c" -o "$sbase_accounts_support_impl_obj"
+test -s "$sbase_accounts_support_impl_obj"
+sbase_accounts_support_impl_dump="$build_dir/liblnp64-sbase-accounts-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none \
+  "$sbase_accounts_support_impl_obj" >"$sbase_accounts_support_impl_dump"
+grep -q '<getpwnam>:' "$sbase_accounts_support_impl_dump"
+grep -q '<getgrnam>:' "$sbase_accounts_support_impl_dump"
+printf 'real LLVM LNP64 clang sbase accounts support object smoke passed: %s\n' \
+  "$sbase_accounts_support_impl_obj"
+
 netcat_obj="$build_dir/netcat-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
@@ -5817,6 +5832,19 @@ sbase_chmod_elf="$build_dir/lnp64-sbase-chmod-linked.elf"
 test -s "$sbase_chmod_elf"
 printf 'real LLVM LNP64 lld sbase chmod link smoke passed: %s\n' \
   "$sbase_chmod_elf"
+
+sbase_chown_elf="$build_dir/lnp64-sbase-chown-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
+  -o "$sbase_chown_elf" "$crt0_obj" \
+  "$build_dir/sbase-chown-clang-smoke.o" \
+  "$sbase_support_impl_obj" "$sbase_accounts_support_impl_obj" \
+  "$sbase_fs_support_impl_obj" "$sbase_recurse_support_impl_obj" \
+  "$sbase_time_support_impl_obj" "$libc_meta_impl_obj" \
+  "$libc_fd_impl_obj" "$libc_string_impl_obj" "$libc_errno_impl_obj" \
+  "$libc_process_impl_obj"
+test -s "$sbase_chown_elf"
+printf 'real LLVM LNP64 lld sbase chown link smoke passed: %s\n' \
+  "$sbase_chown_elf"
 
 sbase_touch_elf="$build_dir/lnp64-sbase-touch-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \

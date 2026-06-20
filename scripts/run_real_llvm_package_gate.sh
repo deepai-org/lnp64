@@ -32,6 +32,7 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-sbase-mkdir-linked.elf"
         "$build_dir/lnp64-sbase-ln-linked.elf"
         "$build_dir/lnp64-sbase-chmod-linked.elf"
+        "$build_dir/lnp64-sbase-chown-linked.elf"
         "$build_dir/lnp64-sbase-touch-linked.elf"
         "$build_dir/lnp64-sbase-mv-linked.elf"
         "$build_dir/lnp64-sbase-rm-linked.elf"
@@ -75,6 +76,7 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-sbase-mkdir-linked.elf"
         "$build_dir/lnp64-sbase-ln-linked.elf"
         "$build_dir/lnp64-sbase-chmod-linked.elf"
+        "$build_dir/lnp64-sbase-chown-linked.elf"
         "$build_dir/lnp64-sbase-touch-linked.elf"
         "$build_dir/lnp64-sbase-mv-linked.elf"
         "$build_dir/lnp64-sbase-rm-linked.elf"
@@ -258,6 +260,16 @@ run_package() {
       test "$(stat -c '%a' "$sbase_fixture_root/chmod.txt")" = 700
       printf 'real LLVM LNP64 run-elf sbase chmod execution passed: %s\n' \
         "$build_dir/lnp64-sbase-chmod-linked.elf"
+      printf 'chown via clang\n' >"$sbase_fixture_root/chown.txt"
+      chmod 644 "$sbase_fixture_root/chown.txt"
+      "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-chown-linked.elf" >/dev/null
+      local sbase_chown_output
+      sbase_chown_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+        "$build_dir/lnp64-sbase-chown-linked.elf" chown :"$(id -g)" chown.txt)"
+      grep -q 'exit=0' <<<"$sbase_chown_output"
+      test "$(stat -c '%g' "$sbase_fixture_root/chown.txt")" = "$(id -g)"
+      printf 'real LLVM LNP64 run-elf sbase chown execution passed: %s\n' \
+        "$build_dir/lnp64-sbase-chown-linked.elf"
       rm -f "$sbase_fixture_root/touched.txt"
       "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-touch-linked.elf" >/dev/null
       local sbase_touch_output

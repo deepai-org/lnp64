@@ -432,6 +432,16 @@ grep -q 'exit=0' <<<"$sbase_chmod_output"
 test "$(stat -c '%a' "$sbase_fixture_root/chmod.txt")" = 700
 printf 'real LLVM LNP64 run-elf sbase chmod execution passed: %s\n' \
   target/llvm-lnp64-build/lnp64-sbase-chmod-linked.elf
+printf 'chown via clang\n' >"$sbase_fixture_root/chown.txt"
+chmod 644 "$sbase_fixture_root/chown.txt"
+"$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-chown-linked.elf \
+  >/dev/null
+sbase_chown_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+  target/llvm-lnp64-build/lnp64-sbase-chown-linked.elf chown :"$(id -g)" chown.txt)"
+grep -q 'exit=0' <<<"$sbase_chown_output"
+test "$(stat -c '%g' "$sbase_fixture_root/chown.txt")" = "$(id -g)"
+printf 'real LLVM LNP64 run-elf sbase chown execution passed: %s\n' \
+  target/llvm-lnp64-build/lnp64-sbase-chown-linked.elf
 rm -f "$sbase_fixture_root/touched.txt"
 "$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-touch-linked.elf \
   >/dev/null
