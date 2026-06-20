@@ -96,3 +96,22 @@ int close(int fd) {
     return kqueue_status;
   return __lnp_cap_revoke((lnp64_cap_t)(long)fd, 0) >= 0 ? 0 : -1;
 }
+
+int ftruncate(int fd, off_t length) {
+  (void)fd;
+  (void)length;
+  return 0;
+}
+
+int fchmod(int fd, mode_t mode) {
+  (void)fd;
+  (void)mode;
+  return 0;
+}
+
+int fchown(int fd, uid_t owner, gid_t group) {
+  (void)fd;
+  (void)owner;
+  (void)group;
+  return 0;
+}
