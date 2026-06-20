@@ -4907,6 +4907,11 @@ mod tests {
             assert_eq!(stages[stage].0, "tested", "{stage} should be tested");
         }
         assert_eq!(stages["stdout_exit"].0, "partial");
+        assert_eq!(
+            stages["stdout_exit"].2,
+            "real_clang_stdout_exit_run_elf_smokes"
+        );
+        assert_eq!(stages["stdout_exit"].3, "needs_full_libc_runtime_packaging");
         assert!(roadmap.contains("The run-elf path is tested"));
     }
 

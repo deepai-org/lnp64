@@ -137,5 +137,5 @@ entry_state|tested|src/loader.rs,src/emulator.rs,psABI.md|exec_descriptor_startu
 exec_opcode_static_elf|tested|src/emulator.rs,src/loader.rs|committed_exec_opcode_loads_static_elf_child|none
 text_fetch_decode|tested|src/emulator.rs,toolchain/lnp64_mc_encoding.manifest|committed_exec_decodes_and_runs_native_heap_alloc_size_free|none
 compat_namespace_decode|tested|src/emulator.rs,toolchain/lnp64_mc_encoding.manifest|committed_exec_decodes_compatibility_metadata_opcodes|none
-stdout_exit|partial|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64_llvm_gates.manifest|hello from LNP64|needs_full_libc_runtime_packaging
+stdout_exit|partial|scripts/run_real_llvm_lnp64_docker.sh,toolchain/lnp64_llvm_gates.manifest|real_clang_stdout_exit_run_elf_smokes|needs_full_libc_runtime_packaging
 real_clang_loader_path|tested|toolchain/lnp64_llvm_gates.manifest,toolchain/lnp64_llvm_bootstrap.manifest|real LLVM LNP64 run-elf clang demo execution passed|none
