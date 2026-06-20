@@ -15452,6 +15452,70 @@ mod tests {
     }
 
     #[test]
+    fn emulator_rejects_exec_descriptor_unsupported_vma_provenance() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let mut words = encode_exec_descriptor(&descriptor);
+        words[17] = 99;
+
+        let err = Machine::validate_exec_descriptor_words(&words).unwrap_err();
+
+        assert!(err.contains("provenance is unsupported"), "{err}");
+    }
+
+    #[test]
+    fn emulator_rejects_exec_descriptor_executable_vma_without_image_text_provenance() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let mut words = encode_exec_descriptor(&descriptor);
+        words[17] = EXEC_PLAN_PROVENANCE_NON_EXECUTABLE;
+
+        let err = Machine::validate_exec_descriptor_words(&words).unwrap_err();
+
+        assert!(err.contains("lacks image-text provenance"), "{err}");
+    }
+
+    #[test]
+    fn emulator_rejects_exec_descriptor_nonexecutable_vma_with_image_text_provenance() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let mut words = encode_exec_descriptor(&descriptor);
+        let second_vma = EXEC_PLAN_HEADER_WORDS + EXEC_PLAN_ENTRY_WORDS + EXEC_PLAN_VMA_WORDS;
+        words[second_vma + 4] = EXEC_PLAN_PROVENANCE_IMAGE_TEXT;
+
+        let err = Machine::validate_exec_descriptor_words(&words).unwrap_err();
+
+        assert!(
+            err.contains("non-executable VMA uses executable provenance"),
+            "{err}"
+        );
+    }
+
+    #[test]
     fn emulator_rejects_exec_descriptor_fdr_grant_slot_out_of_range() {
         let descriptor = build_exec_descriptor(
             &loader_exec_plan_fixture(),
