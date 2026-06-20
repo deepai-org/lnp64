@@ -4,6 +4,7 @@ mod isa;
 mod loader;
 mod lowering;
 mod native;
+mod personality_lowering;
 
 use std::env;
 use std::fs;

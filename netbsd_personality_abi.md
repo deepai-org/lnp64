@@ -13,10 +13,12 @@ Clang/lld NetBSD package gate for this slice.
 gate: it boots `userland/netbsd_init_clang.c`, executes
 `userland/netbsd_sh_clang.c`, and runs the Clang/lld-built child program set
 through the real LLVM package gate.
-`src/lowering.rs` is the typed compatibility dispatch table for NetBSD/POSIX
-surfaces used by this gate. It also carries the initial NetBSD-current
-syscall-number subset for the gate's supported calls, routing them to the same
-compatibility surfaces instead of creating an emulator syscall escape.
+`src/personality_lowering.rs` is the typed compatibility dispatch table for
+NetBSD/POSIX surfaces used by this gate. `src/lowering.rs` temporarily carries
+the contract tests around that boundary. The production table also carries the
+initial NetBSD-current syscall-number subset for the gate's supported calls,
+routing them to the same compatibility surfaces instead of creating an emulator
+syscall escape.
 `toolchain/lnp64_netbsd_layers.manifest` is the checked layer-order contract:
 libc/userland smoke first, then rump filesystem, rump networking/socket
 personality, process/signal/thread compatibility, larger userland commands, and
@@ -45,7 +47,7 @@ only then a fuller machine port.
 | Gates/upcalls | rump service calls, cross-domain delivery | `OBJECT_CTL create call_gate`, `GATE_CALL`, `GATE_RETURN`; `CALL_CAP`/`RET_CAP` are source/profile spellings |
 | Resource domains | sandbox/container/rump service isolation | `DOMAIN_CTL` create/query/freeze/resume/attach/detach/destroy |
 
-The checked lowering table in `src/lowering.rs` covers cwd/root/openat, byte
+The checked lowering table in `src/personality_lowering.rs` covers cwd/root/openat, byte
 I/O, pipes, poll/select/epoll, fork/exec, pthreads, mmap, fd passing, sockets,
 timers, call gates, signals, Resource Domains, errno, and metadata operations.
 The initial NetBSD syscall-number dispatch subset covers the corresponding
