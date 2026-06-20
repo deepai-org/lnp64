@@ -191,6 +191,7 @@ LNP64_M7_TYPED_COMMIT_USE_EXISTING=1 \
   LNP64_M7_TYPED_COMMIT_LOG="$m7_log" \
   scripts/check_rtl_m7_typed_commit_trace.py
 scripts/test_rtl_m7_typed_commit_checker.py
+scripts/test_rtl_top_m1_witness_checker.py
 run_rtl_proof_gate_batch \
   scripts/run_rtl_m8.sh \
   scripts/run_rtl_m9.sh \

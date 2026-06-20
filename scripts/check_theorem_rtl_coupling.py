@@ -54,7 +54,8 @@ def module_exists(path: Path, module: str) -> bool:
     return re.search(rf"(?m)^\s*module\s+{re.escape(module)}\b", read_text(path)) is not None
 
 
-def check_m1_top_level_contract(claim_id: str) -> None:
+def check_m1_top_level_contract(claim: dict) -> None:
+    claim_id = claim.get("id")
     if claim_id != "no_forged_authority":
         return
     manifest = json.loads(check_file(TOP_LEVEL_PROGRAM_MANIFEST, "M1 top-level program manifest"))
@@ -83,6 +84,29 @@ def check_m1_top_level_contract(claim_id: str) -> None:
     require(
         isinstance(remaining_gap, str) and "RTL-to-Lean bit-refinement" in remaining_gap,
         "no_forged_authority: M1 top-level contract must keep the T4 bit-refinement gap explicit",
+    )
+
+    witness = contract.get("generated_witness_artifact")
+    require(isinstance(witness, dict), "no_forged_authority: missing generated witness artifact contract")
+    require(
+        witness.get("consumer") == "scripts/check_rtl_top_m1_witness.py",
+        "no_forged_authority: witness artifact must name the offline consumer",
+    )
+    require(
+        witness.get("shared_mirror") == "formal/m1_top_refinement.py",
+        "no_forged_authority: witness artifact must name the shared refinement mirror",
+    )
+
+    trace_sources = claim.get("trace_sources", [])
+    gate_scripts = claim.get("gate_scripts", [])
+    for source in ("formal/m1_top_refinement.py", "scripts/check_rtl_top_m1_witness.py"):
+        require(source in trace_sources, f"no_forged_authority: trace_sources must include {source}")
+    for gate in ("scripts/run_rtl_top_m1_witness_gate.sh", "scripts/check_rtl_top_m1_witness.py"):
+        require(gate in gate_scripts, f"no_forged_authority: gate_scripts must include {gate}")
+    known_gaps = " ".join(claim.get("known_gaps", []))
+    require(
+        "scripts/check_rtl_top_m1_witness.py" in known_gaps,
+        "no_forged_authority: known gap must record the offline witness re-check",
     )
 
 
@@ -146,7 +170,7 @@ def check_claim(claim: dict) -> None:
     claim_id = claim.get("id")
     require(isinstance(claim_id, str) and claim_id, "claim missing id")
     require(isinstance(claim.get("claim"), str) and claim["claim"], f"{claim_id}: missing claim text")
-    check_m1_top_level_contract(claim_id)
+    check_m1_top_level_contract(claim)
     check_m7_typed_trace_contract(claim)
 
     trust = claim.get("trust_level")

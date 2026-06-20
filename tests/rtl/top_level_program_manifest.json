@@ -18,7 +18,12 @@
       "env": "LNP64_RTL_TOP_M1_WITNESS_OUT",
       "schema": "lnp64_top_m1_refinement_witness_v1",
       "producer": "scripts/run_rtl_top_program_smoke.sh",
-      "contents": "checked top-level M1 commit, pre-state projection, post-state projection, packed bits, schema field order, schema widths, and canonical records hash"
+      "shared_mirror": "formal/m1_top_refinement.py",
+      "consumer": "scripts/check_rtl_top_m1_witness.py",
+      "consumer_self_test": "scripts/test_rtl_top_m1_witness_checker.py",
+      "gate": "scripts/run_rtl_top_m1_witness_gate.sh",
+      "contents": "checked top-level M1 commit, pre-state projection, post-state projection, packed bits, schema field order, schema widths, and canonical records hash",
+      "offline_recheck": "scripts/check_rtl_top_m1_witness.py re-validates the artifact against the shared executable refinement mirror without re-running the simulator: schema field order/widths, the canonical records hash, packed-bit faithfulness, and the M1 refinement step for every record"
     },
     "covered_real_instruction_ops": [
       {"key": "cap_dup", "arch_opcode": "LNP64_OP_CAP_DUP", "commit_op": "LNP64_M1_COMMIT_CAP_DUP", "lean_step": "capDup"},
@@ -33,7 +38,7 @@
       {"key": "cap_dup_denied", "arch_opcode": "LNP64_OP_CAP_DUP", "commit_op": "LNP64_M1_COMMIT_CAP_DUP_DENIED", "lean_step": "capDupDenied"}
     ],
     "standalone_until_s1_hooks": [],
-    "remaining_t4_gap": "Generated top-level M1 witness JSON exists for checked packed commits and authority-bearing pre/post projections, but no formal RTL-to-Lean bit-refinement proof artifact yet proves every accepted top-level M1 packed witness equals the Lean post-state."
+    "remaining_t4_gap": "The generated top-level M1 witness JSON is now re-validated offline by scripts/check_rtl_top_m1_witness.py against the shared executable refinement mirror (schema field order/widths, canonical records hash, packed-bit faithfulness, and the M1 refinement step for every record), but this is executable-level evidence; no formal RTL-to-Lean bit-refinement proof artifact yet proves every accepted top-level M1 packed witness equals the Lean post-state."
   },
   "flat_hex_programs": [
     {

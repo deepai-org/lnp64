@@ -122,6 +122,43 @@ def require_m1_top_level_refinement_contract(manifest: dict[str, object]) -> Non
         witness_artifact.get("producer") == "scripts/run_rtl_top_program_smoke.sh",
         "M1 generated witness artifact producer drifted",
     )
+    require(
+        witness_artifact.get("shared_mirror") == "formal/m1_top_refinement.py",
+        "M1 generated witness artifact must name the shared executable refinement mirror",
+    )
+    require(
+        witness_artifact.get("consumer") == "scripts/check_rtl_top_m1_witness.py",
+        "M1 generated witness artifact must name the offline witness consumer",
+    )
+    require(
+        witness_artifact.get("consumer_self_test") == "scripts/test_rtl_top_m1_witness_checker.py",
+        "M1 generated witness artifact must name the offline witness consumer self-test",
+    )
+    require(
+        witness_artifact.get("gate") == "scripts/run_rtl_top_m1_witness_gate.sh",
+        "M1 generated witness artifact must name the produce-and-check gate",
+    )
+    for artifact_file in (
+        "formal/m1_top_refinement.py",
+        "scripts/check_rtl_top_m1_witness.py",
+        "scripts/test_rtl_top_m1_witness_checker.py",
+        "scripts/run_rtl_top_m1_witness_gate.sh",
+    ):
+        require((ROOT / artifact_file).exists(), f"M1 witness artifact file is missing: {artifact_file}")
+    witness_gate_text = text(ROOT / "scripts/run_rtl_top_m1_witness_gate.sh")
+    require(
+        "scripts/check_rtl_top_m1_witness.py" in witness_gate_text,
+        "M1 witness gate must run the offline witness consumer",
+    )
+    require(
+        "scripts/test_rtl_top_m1_witness_checker.py" in witness_gate_text,
+        "M1 witness gate must run the offline witness consumer self-test",
+    )
+    m1_docker_gate_witness_text = text(ROOT / "scripts/run_rtl_m1_refinement_docker.sh")
+    require(
+        "scripts/run_rtl_top_m1_witness_gate.sh" in m1_docker_gate_witness_text,
+        "M1 Docker refinement gate must run the witness produce-and-check gate",
+    )
     remaining_gap = contract.get("remaining_t4_gap")
     require(
         isinstance(remaining_gap, str) and "formal RTL-to-Lean bit-refinement proof artifact" in remaining_gap,
@@ -217,12 +254,23 @@ def main() -> None:
     require("check_fabric_cmd_records" in smoke_gate_text, "shared top-level comparator must validate fabric command provenance records")
     require("RTL_M1_TOP_PRE_STATE" in smoke_gate_text, "shared top-level comparator must consume M1 pre-state projections")
     require("RTL_M1_TOP_STATE" in smoke_gate_text, "shared top-level comparator must consume M1 post-state projections")
-    require("check_top_m1_projection_matches_commit" in smoke_gate_text, "shared top-level comparator must check M1 commit/projection alignment")
-    require('f"{prefix}_domain_id"' in smoke_gate_text, "shared top-level comparator must check M1 projection domain fields")
-    require("CapRevoke" in smoke_gate_text, "shared top-level comparator must check CAP_REVOKE M1 behavior")
-    require("accepted without REVOKE right" in smoke_gate_text, "shared top-level comparator must reject CAP_REVOKE without authority")
-    require("did not publish revoked generation" in smoke_gate_text, "shared top-level comparator must require CAP_REVOKE revoked-generation evidence")
-    require("left root authority live" in smoke_gate_text, "shared top-level comparator must require CAP_REVOKE authority removal")
+    # The M1 refinement relation now lives in the shared executable mirror so the
+    # producer smoke and the offline witness consumer cannot drift.
+    require(
+        "from m1_top_refinement import" in smoke_gate_text,
+        "shared top-level comparator must import the M1 refinement mirror",
+    )
+    require(
+        "check_top_m1_refinement_step" in smoke_gate_text,
+        "shared top-level comparator must run the shared M1 refinement step",
+    )
+    mirror_text = text(ROOT / "formal/m1_top_refinement.py")
+    require("check_top_m1_projection_matches_commit" in mirror_text, "shared M1 refinement mirror must check commit/projection alignment")
+    require('f"{prefix}_domain_id"' in mirror_text, "shared M1 refinement mirror must check projection domain fields")
+    require("CapRevoke" in mirror_text, "shared M1 refinement mirror must check CAP_REVOKE M1 behavior")
+    require("accepted without REVOKE right" in mirror_text, "shared M1 refinement mirror must reject CAP_REVOKE without authority")
+    require("did not publish revoked generation" in mirror_text, "shared M1 refinement mirror must require CAP_REVOKE revoked-generation evidence")
+    require("left root authority live" in mirror_text, "shared M1 refinement mirror must require CAP_REVOKE authority removal")
     require("RTL_EVENT" in smoke_gate_text, "shared top-level comparator must consume top-level event records")
     require("cross_tile_wake" in smoke_gate_text, "shared top-level comparator must check cross-tile wake events")
     require("scheduler_wake_issue" in smoke_gate_text, "shared top-level comparator must tie cross-tile events to scheduler wake issue")

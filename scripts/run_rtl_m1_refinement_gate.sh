@@ -43,5 +43,6 @@ LNP64_M1_TYPED_COMMIT_USE_EXISTING=1 \
   scripts/check_rtl_m1_typed_commit_trace.py
 scripts/test_rtl_m1_typed_commit_checker.py
 scripts/test_rtl_m1_schema_checker.py
+scripts/test_rtl_top_m1_witness_checker.py
 
 printf '%s\n' "rtl m1 refinement gate ok"

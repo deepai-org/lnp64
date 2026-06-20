@@ -63,3 +63,10 @@ if [[ "${LNP64_M1_REFINEMENT_SKIP_TOP:-0}" != "1" ]]; then
   LNP64_RTL_TOP_PROGRAM_QUIET="${LNP64_RTL_TOP_PROGRAM_QUIET:-1}" \
     bash scripts/run_rtl_execution_fast_docker.sh
 fi
+
+if [[ "${LNP64_M1_REFINEMENT_SKIP_WITNESS:-0}" != "1" ]]; then
+  LNP64_RTL_FAST="${LNP64_RTL_FAST:-1}" \
+  LNP64_RTL_REUSE_BUILD="${LNP64_RTL_REUSE_BUILD:-1}" \
+  LNP64_RTL_SKIP_LINT="${LNP64_RTL_SKIP_LINT:-1}" \
+    bash scripts/run_rtl_top_m1_witness_gate.sh
+fi
