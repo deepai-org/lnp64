@@ -1637,6 +1637,8 @@ mod tests {
             "libc_test_fgets_eof_run_elf",
             "sbase_echo_static_link",
             "sbase_echo_run_elf",
+            "sbase_yes_static_link",
+            "sbase_yes_exec_plan",
             "sbase_path_static_link",
             "sbase_path_run_elf",
             "sbase_cat_static_link",
@@ -3643,6 +3645,9 @@ mod tests {
         assert!(real_llc.contains("lnp64-sbase-echo-linked.elf"));
         assert!(real_llc.contains(r#""$build_dir/sbase-echo-clang-smoke.o" \"#));
         assert!(real_llc.contains("real LLVM LNP64 lld sbase echo link smoke passed"));
+        assert!(real_llc.contains("lnp64-sbase-yes-linked.elf"));
+        assert!(real_llc.contains(r#""$build_dir/sbase-yes-clang-smoke.o" \"#));
+        assert!(real_llc.contains("real LLVM LNP64 lld sbase yes link smoke passed"));
         assert!(real_llc.contains("for sbase_path_cmd in basename dirname"));
         assert!(real_llc.contains("lnp64-sbase-$sbase_path_cmd-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld sbase path command link smoke passed"));
@@ -4354,6 +4359,13 @@ mod tests {
         assert!(real_llc_docker.contains("lnp64-sbase-echo-linked.elf"));
         assert!(real_llc_docker.contains("echo hello clang --expect 'hello clang'"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase echo execution passed"));
+        assert!(real_llc_docker.contains("lnp64-sbase-yes-linked.elf"));
+        assert!(
+            real_llc_docker.contains("elf-plan target/llvm-lnp64-build/lnp64-sbase-yes-linked.elf")
+        );
+        assert!(
+            real_llc_docker.contains("real LLVM LNP64 elf-plan sbase yes static boundary passed")
+        );
         assert!(real_llc_docker.contains("lnp64-sbase-basename-linked.elf"));
         assert!(real_llc_docker.contains("basename /usr/local/bin/clang --expect '^clang$'"));
         assert!(
@@ -4665,6 +4677,7 @@ mod tests {
             "real_socket_libc_execution",
             "real_netbsd_personality_clang_execution",
             "real_sbase_echo_execution",
+            "real_sbase_yes_exec_plan",
             "real_sbase_basename_execution",
             "real_sbase_dirname_execution",
             "real_sbase_cat_execution",
@@ -4791,6 +4804,7 @@ mod tests {
             "real_socket_libc_execution",
             "real_netbsd_personality_clang_execution",
             "real_sbase_echo_execution",
+            "real_sbase_yes_exec_plan",
             "real_sbase_basename_execution",
             "real_sbase_dirname_execution",
             "real_sbase_cat_execution",
@@ -6524,6 +6538,7 @@ mod tests {
         assert!(run_real_packages.contains("scripts/run_real_llvm_package_gate.sh"));
         assert!(run_real_packages.contains("real LLVM LNP64 package gate"));
         for sbase_elf in [
+            "lnp64-sbase-yes-linked.elf",
             "lnp64-sbase-wc-linked.elf",
             "lnp64-sbase-head-linked.elf",
             "lnp64-sbase-cmp-linked.elf",
@@ -6550,6 +6565,7 @@ mod tests {
             assert!(run_real_package_gate.contains(sbase_elf));
         }
         for sbase_message in [
+            "real LLVM LNP64 elf-plan sbase yes static boundary passed",
             "real LLVM LNP64 run-elf sbase wc execution passed",
             "real LLVM LNP64 run-elf sbase head execution passed",
             "real LLVM LNP64 run-elf sbase cmp execution passed",

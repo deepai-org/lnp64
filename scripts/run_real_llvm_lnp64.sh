@@ -5787,6 +5787,15 @@ test -s "$sbase_echo_elf"
 printf 'real LLVM LNP64 lld sbase echo link smoke passed: %s\n' \
   "$sbase_echo_elf"
 
+sbase_yes_elf="$build_dir/lnp64-sbase-yes-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
+  -o "$sbase_yes_elf" "$crt0_obj" "$build_dir/sbase-yes-clang-smoke.o" \
+  "$sbase_support_impl_obj" "$libc_fd_impl_obj" "$libc_string_impl_obj" \
+  "$libc_process_impl_obj"
+test -s "$sbase_yes_elf"
+printf 'real LLVM LNP64 lld sbase yes link smoke passed: %s\n' \
+  "$sbase_yes_elf"
+
 for sbase_path_cmd in basename dirname; do
   sbase_path_elf="$build_dir/lnp64-sbase-$sbase_path_cmd-linked.elf"
   "$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \

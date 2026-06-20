@@ -372,6 +372,10 @@ printf '%s\n' "real LLVM LNP64 run-elf NetBSD package/system gate passed"
 run_elf_report "real LLVM LNP64 run-elf sbase echo execution passed" \
   target/llvm-lnp64-build/lnp64-sbase-echo-linked.elf \
   echo hello clang --expect 'hello clang'
+"$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-yes-linked.elf \
+  >/dev/null
+printf 'real LLVM LNP64 elf-plan sbase yes static boundary passed: %s\n' \
+  target/llvm-lnp64-build/lnp64-sbase-yes-linked.elf
 run_elf_report "real LLVM LNP64 run-elf sbase basename execution passed" \
   target/llvm-lnp64-build/lnp64-sbase-basename-linked.elf \
   basename /usr/local/bin/clang --expect '^clang$'

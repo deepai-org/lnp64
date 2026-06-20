@@ -24,6 +24,7 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-inih-linked.elf"
         "$build_dir/lnp64-cwalk-linked.elf"
         "$build_dir/lnp64-sbase-echo-linked.elf"
+        "$build_dir/lnp64-sbase-yes-linked.elf"
         "$build_dir/lnp64-sbase-basename-linked.elf"
         "$build_dir/lnp64-sbase-dirname-linked.elf"
         "$build_dir/lnp64-sbase-cat-linked.elf"
@@ -81,6 +82,7 @@ for package in $(split_filters "$package_filter"); do
     sbase)
       needed_elfs+=(
         "$build_dir/lnp64-sbase-echo-linked.elf"
+        "$build_dir/lnp64-sbase-yes-linked.elf"
         "$build_dir/lnp64-sbase-basename-linked.elf"
         "$build_dir/lnp64-sbase-dirname-linked.elf"
         "$build_dir/lnp64-sbase-cat-linked.elf"
@@ -225,6 +227,9 @@ run_package() {
       run_elf_report "real LLVM LNP64 run-elf sbase echo execution passed" \
         "$build_dir/lnp64-sbase-echo-linked.elf" \
         echo hello clang --expect 'hello clang'
+      "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-yes-linked.elf" >/dev/null
+      printf 'real LLVM LNP64 elf-plan sbase yes static boundary passed: %s\n' \
+        "$build_dir/lnp64-sbase-yes-linked.elf"
       run_elf_report "real LLVM LNP64 run-elf sbase basename execution passed" \
         "$build_dir/lnp64-sbase-basename-linked.elf" \
         basename /usr/local/bin/clang --expect '^clang$'
