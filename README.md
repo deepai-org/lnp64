@@ -151,9 +151,8 @@ integration target for later proof slices. M1 capability/FDR refinement remains
 the authority template, but it should become reachable through real retired
 instructions rather than only isolated harness traces.
 
-The old in-repo Rust C frontend has been removed. C coverage now belongs on the
-real LLVM/Clang/lld toolchain plus the software loader that emits hardware
-`EXEC` plan descriptors.
+C coverage belongs on the real LLVM/Clang/lld toolchain plus the software
+loader that emits hardware `EXEC` plan descriptors.
 
 Architectural opcodes must be compiler-visible. A native operation is not frozen
 until the real LLVM MC layer can assemble, emit, disassemble, and expose it to C

@@ -91,8 +91,8 @@ def main() -> None:
     require("llvm_mc_programs" in manifest_runner, "manifest runner must include LLVM MC program entries")
     require("llvm_clang_programs" in manifest_runner, "manifest runner must include LLVM clang program entries")
     require("llvm_linked_programs" in manifest_runner, "manifest runner must include LLVM linked program entries")
-    require("compiler_flat_programs" not in manifest_runner, "manifest runner must not include removed frontend program entries")
-    require("compiler_generated_programs" not in manifest_runner, "manifest runner must not include removed frontend program entries")
+    require("compiler_flat_programs" not in manifest_runner, "manifest runner must use explicit LLVM and assembly program sections")
+    require("compiler_generated_programs" not in manifest_runner, "manifest runner must use explicit LLVM and assembly program sections")
     smoke_gate_text = text(ROOT / "scripts/run_rtl_top_program_smoke.sh")
     require("RTL_M1_TOP_PRE_STATE" in smoke_gate_text, "shared top-level comparator must consume M1 pre-state projections")
     require("RTL_M1_TOP_STATE" in smoke_gate_text, "shared top-level comparator must consume M1 post-state projections")
@@ -120,8 +120,8 @@ def main() -> None:
     require(isinstance(llvm_clang_entries, list) and llvm_clang_entries, "missing llvm_clang_programs")
     require(isinstance(llvm_linked_entries, list) and llvm_linked_entries, "missing llvm_linked_programs")
     require(isinstance(assembly_entries, list) and assembly_entries, "missing assembly_programs")
-    require("compiler_flat_programs" not in manifest, "removed frontend flat program section must stay deleted")
-    require("compiler_generated_programs" not in manifest, "removed frontend generated program section must stay deleted")
+    require("compiler_flat_programs" not in manifest, "manifest must use flat_hex_programs for prebuilt images")
+    require("compiler_generated_programs" not in manifest, "manifest must use LLVM-specific generated program sections")
     active_flat_hex = 0
     for entry in flat_hex_entries:
         require(isinstance(entry, dict), "flat hex entry must be an object")
