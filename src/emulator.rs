@@ -1252,6 +1252,7 @@ fn committed_exec_result_reg(raw_word: u32) -> Option<usize> {
         | 0x63..=0x65
         | 0x68
         | 0x6e
+        | 0x81..=0x82
         | 0xcb..=0xcd => None,
         _ => Some(((raw_word >> 19) & 0x1f) as usize),
     }
@@ -2007,6 +2008,9 @@ impl Machine {
             0x7d => Instr::Fork(a),
             0x7e => Instr::WaitPid(a, b),
             0x7f => Instr::Exec(a, b, c),
+            0x80 => Instr::Inb(a, b),
+            0x81 => Instr::Outb(a, b),
+            0x82 => Instr::LoadUcode(a, b),
             0xcb => Instr::FutexWait(a, b),
             0xcc => Instr::FutexWake(a, b),
             0xcd => Instr::Fence,

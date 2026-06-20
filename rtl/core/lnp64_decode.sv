@@ -265,6 +265,15 @@ module lnp64_decode (
             8'h65: begin
                 dec.opcode = LNP64_OP_SIGRET;
             end
+            8'h80: begin
+                dec.opcode = LNP64_OP_INB;
+            end
+            8'h81: begin
+                dec.opcode = LNP64_OP_OUTB;
+            end
+            8'h82: begin
+                dec.opcode = LNP64_OP_LOAD_UCODE;
+            end
             8'h47: begin
                 dec.opcode = LNP64_OP_ALLOC;
             end
@@ -545,6 +554,9 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_SIGACTION ||
             dec.opcode == LNP64_OP_KILL ||
             dec.opcode == LNP64_OP_SIGRET ||
+            dec.opcode == LNP64_OP_INB ||
+            dec.opcode == LNP64_OP_OUTB ||
+            dec.opcode == LNP64_OP_LOAD_UCODE ||
             dec.opcode == LNP64_OP_OPEN_FD ||
             dec.opcode == LNP64_OP_FD_CLOSE ||
             dec.opcode == LNP64_OP_WAITABLE_PROBE ||

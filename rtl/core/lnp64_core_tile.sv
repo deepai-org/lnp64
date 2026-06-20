@@ -165,6 +165,9 @@ module lnp64_core_tile #(
     logic signal_saved_cmp_greater;
     logic signal_saved_cmp_below;
     logic signal_saved_cmp_above;
+    logic ucode_port_valid;
+    logic [63:0] ucode_port_number;
+    logic [7:0] ucode_port_value;
     logic [63:0] sram [0:SRAM_WORDS-1];
     logic [63:0] initial_sram [0:SRAM_WORDS-1];
     logic [63:0] initial_data_sram [0:SRAM_WORDS-1];
@@ -185,6 +188,7 @@ module lnp64_core_tile #(
     localparam logic [63:0] SIGNAL_NUMBER_LIMIT = 64'd64;
     localparam logic [63:0] SIG_DFL_HANDLER = 64'd0;
     localparam logic [63:0] SIG_IGN_HANDLER = 64'd1;
+    localparam logic [63:0] UCODE_PORT_BLOB_LEN = 64'd11;
     localparam logic [63:0] OBJECT_OP_CREATE = LNP64_OBJECT_OP_CREATE;
     localparam logic [63:0] OBJECT_KIND_COUNTER = LNP64_OBJECT_KIND_COUNTER;
     localparam logic [63:0] OBJECT_KIND_QUEUE = LNP64_OBJECT_KIND_QUEUE;
@@ -547,6 +551,61 @@ module lnp64_core_tile #(
                 sram_read_word_or_zero = 64'd0;
             end
         end
+    endfunction
+
+    function automatic logic [7:0] sram_read_byte_or_zero(input logic [63:0] addr);
+        int unsigned idx;
+        logic [63:0] word;
+        begin
+            idx = sram_word_index(addr);
+            word = idx < SRAM_WORDS ? sram[idx] : 64'd0;
+            unique case (addr[2:0])
+                3'd0: sram_read_byte_or_zero = word[7:0];
+                3'd1: sram_read_byte_or_zero = word[15:8];
+                3'd2: sram_read_byte_or_zero = word[23:16];
+                3'd3: sram_read_byte_or_zero = word[31:24];
+                3'd4: sram_read_byte_or_zero = word[39:32];
+                3'd5: sram_read_byte_or_zero = word[47:40];
+                3'd6: sram_read_byte_or_zero = word[55:48];
+                default: sram_read_byte_or_zero = word[63:56];
+            endcase
+        end
+    endfunction
+
+    function automatic logic load_ucode_port_blob_valid(
+        input logic [63:0] addr,
+        input logic [63:0] len
+    );
+        begin
+            load_ucode_port_blob_valid =
+                len == UCODE_PORT_BLOB_LEN &&
+                sram_read_byte_or_zero(addr + 64'd0) == 8'h50 &&
+                sram_read_byte_or_zero(addr + 64'd1) == 8'h4f &&
+                sram_read_byte_or_zero(addr + 64'd2) == 8'h52 &&
+                sram_read_byte_or_zero(addr + 64'd3) == 8'h54 &&
+                sram_read_byte_or_zero(addr + 64'd4) == 8'h20 &&
+                sram_read_byte_or_zero(addr + 64'd5) >= 8'h30 &&
+                sram_read_byte_or_zero(addr + 64'd5) <= 8'h39 &&
+                sram_read_byte_or_zero(addr + 64'd6) == 8'h20 &&
+                sram_read_byte_or_zero(addr + 64'd7) >= 8'h30 &&
+                sram_read_byte_or_zero(addr + 64'd7) <= 8'h39 &&
+                sram_read_byte_or_zero(addr + 64'd8) >= 8'h30 &&
+                sram_read_byte_or_zero(addr + 64'd8) <= 8'h39 &&
+                sram_read_byte_or_zero(addr + 64'd9) >= 8'h30 &&
+                sram_read_byte_or_zero(addr + 64'd9) <= 8'h39 &&
+                sram_read_byte_or_zero(addr + 64'd10) == 8'h0a;
+        end
+    endfunction
+
+    function automatic logic [63:0] load_ucode_port_blob_port(input logic [63:0] addr);
+        load_ucode_port_blob_port = {56'd0, sram_read_byte_or_zero(addr + 64'd5) - 8'h30};
+    endfunction
+
+    function automatic logic [7:0] load_ucode_port_blob_value(input logic [63:0] addr);
+        load_ucode_port_blob_value =
+            ((sram_read_byte_or_zero(addr + 64'd7) - 8'h30) * 8'd100) +
+            ((sram_read_byte_or_zero(addr + 64'd8) - 8'h30) * 8'd10) +
+            (sram_read_byte_or_zero(addr + 64'd9) - 8'h30);
     endfunction
 
     function automatic logic [63:0] load_double_unaligned(input logic [63:0] addr);
@@ -1052,7 +1111,7 @@ module lnp64_core_tile #(
                 8'h00, 8'h1b, 8'h1c, 8'h1f, 8'h20, 8'h21, 8'h22, 8'h23,
                 8'h24, 8'h25, 8'h26, 8'h27, 8'h28, 8'h2a, 8'h33, 8'h34,
                 8'h35, 8'h37, 8'h39, 8'h3a, 8'h49, 8'h61, 8'h63,
-                8'h64, 8'h65, 8'h68, 8'h6e, 8'hcb, 8'hcc, 8'hcd:
+                8'h64, 8'h65, 8'h68, 8'h6e, 8'h81, 8'h82, 8'hcb, 8'hcc, 8'hcd:
                     flat_retire_result_valid = 1'b0;
                 default:
                     flat_retire_result_valid = 1'b1;
@@ -1326,6 +1385,12 @@ module lnp64_core_tile #(
                 LNP64_OP_SIGRET: begin
                     flat_retire_errno_value = signal_frame_valid ? LNP64_ERR_OK : LNP64_ERR_EINVAL;
                 end
+                LNP64_OP_LOAD_UCODE: begin
+                    flat_retire_errno_value = load_ucode_port_blob_valid(
+                        gpr[dec.rd],
+                        gpr[dec.rs1]
+                    ) ? LNP64_ERR_OK : LNP64_ERR_EINVAL;
+                end
                 LNP64_OP_PUSH: begin
                     if (gpr[dec.rs3] == 64'd0) begin
                         flat_retire_errno_value = LNP64_ERR_OK;
@@ -1549,6 +1614,13 @@ module lnp64_core_tile #(
                     end
                 end
                 LNP64_OP_SIGACTION: result = gpr[dec.rd];
+                LNP64_OP_INB: begin
+                    if (ucode_port_valid && ucode_port_number == gpr[dec.rs1]) begin
+                        result = {56'd0, ucode_port_value};
+                    end else begin
+                        result = 64'd0;
+                    end
+                end
                 LNP64_OP_PUSH: begin
                     if (gpr[dec.rs3] == 64'd0) begin
                         result = 64'd0;
@@ -2409,6 +2481,9 @@ module lnp64_core_tile #(
             signal_saved_cmp_greater <= 1'b0;
             signal_saved_cmp_below <= 1'b0;
             signal_saved_cmp_above <= 1'b0;
+            ucode_port_valid <= 1'b0;
+            ucode_port_number <= 64'd0;
+            ucode_port_value <= 8'd0;
             for (i = 0; i < 32; i = i + 1) begin
                 signal_saved_gpr[i] <= 64'd0;
             end
@@ -3893,6 +3968,42 @@ module lnp64_core_tile #(
                                     errno_reg <= LNP64_ERR_EINVAL;
                                     pc <= pc + 32'd1;
                                 end
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_INB: begin
+                                if (ucode_port_valid && ucode_port_number == gpr[dec.rs1]) begin
+                                    gpr[dec.rd] <= {56'd0, ucode_port_value};
+                                end else begin
+                                    gpr[dec.rd] <= 64'd0;
+                                end
+                                errno_reg <= LNP64_ERR_OK;
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_OUTB: begin
+                                ucode_port_valid <= 1'b1;
+                                ucode_port_number <= gpr[dec.rd];
+                                ucode_port_value <= gpr[dec.rs1][7:0];
+                                errno_reg <= LNP64_ERR_OK;
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_LOAD_UCODE: begin
+                                if (load_ucode_port_blob_valid(gpr[dec.rd], gpr[dec.rs1])) begin
+                                    ucode_port_valid <= 1'b1;
+                                    ucode_port_number <= load_ucode_port_blob_port(gpr[dec.rd]);
+                                    ucode_port_value <= load_ucode_port_blob_value(gpr[dec.rd]);
+                                    errno_reg <= LNP64_ERR_OK;
+                                end else begin
+                                    errno_reg <= LNP64_ERR_EINVAL;
+                                end
+                                pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
