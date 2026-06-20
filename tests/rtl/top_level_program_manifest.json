@@ -203,6 +203,14 @@
       "comparison": "retire_trace_and_final_state"
     },
     {
+      "source": "tests/rtl/programs/top_fork_child_exit.s",
+      "generated_flat_hex": "tests/rtl/programs/top_fork_child_exit.hex",
+      "required_features": ["core", "fork", "scheduler", "child_exit", "yield", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    },
+    {
       "source": "tests/rtl/programs/top_waitable_probe.s",
       "generated_flat_hex": "tests/rtl/programs/top_waitable_probe.hex",
       "required_features": ["core", "object_ctl_event_counter", "waitable_probe", "static_fd_read_write", "exit"],

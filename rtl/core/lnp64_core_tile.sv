@@ -122,6 +122,8 @@ module lnp64_core_tile #(
     lnp64_thread_sched_t thread_window_activate_context;
     logic scheduler_child_issue_valid;
     lnp64_thread_sched_t clone_child_context;
+    logic fork_child_activate_valid;
+    lnp64_thread_sched_t fork_child_context;
     logic thread_window_update_valid;
     logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] thread_window_update_slot;
     lnp64_thread_sched_t thread_window_update_context;
@@ -1667,6 +1669,10 @@ module lnp64_core_tile #(
                     result = (active_thread_slot == 1'b0 && !thread_active_mask[1] &&
                         domain_thread_budget_allows(active_thread_context.domain_id, 64'd1)) ?
                         64'd2 : 64'hffff_ffff_ffff_ffff;
+                LNP64_OP_FORK:
+                    result = (active_thread_slot == 1'b0 && !thread_active_mask[1] &&
+                        domain_thread_budget_allows(active_thread_context.domain_id, 64'd1)) ?
+                        64'd2 : 64'hffff_ffff_ffff_ffff;
                 LNP64_OP_JOIN: begin
                     if (gpr[dec.rs1] == active_tid) begin
                         result = 64'd35;
@@ -2005,6 +2011,23 @@ module lnp64_core_tile #(
         clone_child_context.effective_tile_mask = active_thread_context.effective_tile_mask;
         clone_child_context.migration_generation = active_thread_context.migration_generation;
         clone_child_context.active_location = TILE_ID[31:0];
+        fork_child_activate_valid =
+            state == CORE_EXEC &&
+            dec.supported &&
+            dec.opcode == LNP64_OP_FORK &&
+            active_thread_slot == 1'b0 &&
+            THREAD_CONTEXT_COUNT > 1 &&
+            !thread_active_mask[1] &&
+            !thread_completed_mask[1] &&
+            domain_thread_budget_allows(active_thread_context.domain_id, 64'd1);
+        fork_child_context = active_thread_context;
+        fork_child_context.pid = 32'd2;
+        fork_child_context.tid = 32'd2;
+        fork_child_context.tile_id = TILE_ID[31:0];
+        fork_child_context.domain_id = active_thread_context.domain_id;
+        fork_child_context.domain_gen = active_thread_context.domain_gen;
+        fork_child_context.state = 16'd1;
+        fork_child_context.active_location = TILE_ID[31:0];
         thread_window_update_valid =
             state == CORE_WAIT_RSP &&
             rsp_valid &&
@@ -2079,7 +2102,8 @@ module lnp64_core_tile #(
         thread_window_fault_valid = state == CORE_EXEC && !dec.supported;
         thread_window_fault_slot = active_thread_slot;
         switch_thread_slot = forced_thread_switch_valid ? forced_thread_switch_slot :
-            (scheduler_child_issue_valid ? THREAD_CONTEXT_INDEX_WIDTH'(1) : next_thread_slot);
+            ((scheduler_child_issue_valid || fork_child_activate_valid) ?
+                THREAD_CONTEXT_INDEX_WIDTH'(1) : next_thread_slot);
     end
 
     lnp64_thread_window #(
@@ -2093,9 +2117,10 @@ module lnp64_core_tile #(
         .seed_valid(thread_window_seed_valid),
         .seed_slot(thread_window_seed_slot),
         .seed_context(thread_window_seed_context),
-        .activate_valid(thread_window_activate_valid),
+        .activate_valid(thread_window_activate_valid || fork_child_activate_valid),
         .activate_slot(thread_window_activate_slot),
-        .activate_context(thread_window_activate_context),
+        .activate_context(fork_child_activate_valid ? fork_child_context :
+            thread_window_activate_context),
         .update_valid(thread_window_update_valid),
         .update_slot(thread_window_update_slot),
         .update_context(thread_window_update_context),
@@ -4104,6 +4129,49 @@ module lnp64_core_tile #(
                                         domain_thread_count[active_thread_context.domain_id - 32'd1] <=
                                             domain_thread_count[active_thread_context.domain_id - 32'd1] + 64'd1;
                                     end
+                                end else begin
+                                    gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= domain_thread_budget_allows(
+                                        active_thread_context.domain_id,
+                                        64'd1
+                                    ) ? LNP64_ERR_EAGAIN : LNP64_ERR_ENOMEM;
+                                end
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_FORK: begin
+                                if (fork_child_activate_valid) begin
+                                    for (i = 0; i < 32; i = i + 1) begin
+                                        thread_gpr[1][i] <= gpr[i];
+                                    end
+                                    thread_gpr[1][dec.rd[4:0]] <= 64'd0;
+                                    thread_gpr[1][0] <= 64'd0;
+                                    thread_pc[1] <= pc + 32'd1;
+                                    thread_return_stack_depth[1] <= return_stack_depth;
+                                    for (i = 0; i < RETURN_STACK_DEPTH; i = i + 1) begin
+                                        thread_return_stack[1][i] <= return_stack[i];
+                                    end
+                                    thread_link_register[1] <= link_register;
+                                    thread_pcr_tp[1] <= pcr_thread_pointer;
+                                    thread_cmp_zero[1] <= cmp_zero;
+                                    thread_cmp_negative[1] <= cmp_negative;
+                                    thread_cmp_greater[1] <= cmp_greater;
+                                    thread_cmp_below[1] <= cmp_below;
+                                    thread_cmp_above[1] <= cmp_above;
+                                    thread_exit_code[1] <= 64'd0;
+                                    thread_sleep_wait_valid[1] <= 1'b0;
+                                    thread_sleep_wait_ticks[1] <= 64'd0;
+                                    gpr[dec.rd] <= 64'd2;
+                                    errno_reg <= LNP64_ERR_OK;
+                                    if (active_thread_context.domain_id > 32'd0 &&
+                                        (active_thread_context.domain_id - 32'd1) < DOMAIN_SLOT_COUNT) begin
+                                        domain_thread_count[active_thread_context.domain_id - 32'd1] <=
+                                            domain_thread_count[active_thread_context.domain_id - 32'd1] + 64'd1;
+                                    end
+                                    forced_thread_switch_valid <= 1'b1;
+                                    forced_thread_switch_slot <= THREAD_CONTEXT_INDEX_WIDTH'(1);
                                 end else begin
                                     gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= domain_thread_budget_allows(

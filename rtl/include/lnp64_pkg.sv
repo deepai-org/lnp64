@@ -215,6 +215,7 @@ package lnp64_pkg;
         LNP64_OP_INB          = 16'h008d,
         LNP64_OP_OUTB         = 16'h008e,
         LNP64_OP_LOAD_UCODE   = 16'h008f,
+        LNP64_OP_FORK         = 16'h0090,
         LNP64_OP_UNSUPPORTED  = 16'h00ff
     } lnp64_opcode_e;
 

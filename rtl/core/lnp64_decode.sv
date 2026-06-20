@@ -310,6 +310,9 @@ module lnp64_decode (
             8'h72: begin
                 dec.opcode = LNP64_OP_AWAIT_EX;
             end
+            8'h7d: begin
+                dec.opcode = LNP64_OP_FORK;
+            end
             8'hc5: begin
                 dec.opcode = LNP64_OP_AMO_SWAP;
             end
@@ -573,6 +576,7 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_JOIN ||
             dec.opcode == LNP64_OP_FUTEX_WAIT ||
             dec.opcode == LNP64_OP_FUTEX_WAKE ||
+            dec.opcode == LNP64_OP_FORK ||
             dec.opcode == LNP64_OP_DMA_CTL ||
             dec.opcode == LNP64_OP_ENV_GET ||
             dec.opcode == LNP64_OP_READ_FD ||
