@@ -8398,6 +8398,36 @@ mod tests {
             requirements["provenance_authority"].2, "partial",
             "generation/lineage authority validation must not be overclaimed"
         );
+        for evidence in [
+            "emulator_rejects_exec_descriptor_vma_without_source_capability",
+            "emulator_rejects_exec_descriptor_vma_without_source_generation",
+            "emulator_rejects_exec_descriptor_vma_without_lineage_epoch",
+            "emulator_rejects_exec_descriptor_unsupported_vma_provenance",
+            "emulator_rejects_exec_descriptor_executable_vma_without_image_text_provenance",
+            "emulator_rejects_exec_descriptor_nonexecutable_vma_with_image_text_provenance",
+            "emulator_rejects_exec_descriptor_fdr_grant_stale_source_fd_generation_before_commit",
+            "emulator_rejects_exec_descriptor_stale_domain_generation_before_commit",
+            "emulator_rejects_exec_descriptor_stale_process_generation_before_commit",
+            "emulator_rejects_exec_descriptor_stale_lineage_epoch_before_commit",
+            "emulator_preserves_old_image_when_exec_descriptor_validation_fails",
+        ] {
+            assert!(
+                requirements["provenance_authority"].1.contains(&evidence),
+                "provenance authority row must name evidence {evidence}"
+            );
+        }
+        for remaining_gap in [
+            "external VMA source authority",
+            "richer descriptor-shape fuzzing",
+            "more relocation/linker diagnostics",
+            "archive/library search behavior",
+            "dynamic-linking policy tests",
+        ] {
+            assert!(
+                conformance.contains(remaining_gap),
+                "COMPAT-BIN-001 must keep provenance authority partial gap visible: {remaining_gap}"
+            );
+        }
         for requirement in [
             "parse_elf_headers",
             "apply_relocations",
