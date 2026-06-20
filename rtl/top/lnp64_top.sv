@@ -75,6 +75,7 @@ module lnp64_top #(
     logic [CORE_TILE_COUNT-1:0] scheduler_tile_faulted;
     logic [CORE_TILE_COUNT-1:0] sched_issue_valid;
     logic [CORE_TILE_COUNT*32-1:0] sched_issue_tid_flat;
+    logic sched_wake_issue_valid;
     logic sched_no_duplicate_issue;
     logic sched_tile1_schedulable_idle;
     logic sched_tile_fault_isolated;
@@ -344,7 +345,7 @@ module lnp64_top #(
                 .rsp_ready(core_rsp_ready_vec[tile_id]),
                 .rsp(core_rsp_vec[tile_id]),
                 .yielded(core_yielded_vec[tile_id]),
-                .wake_valid(wake_valid && tile_id == 0),
+                .wake_valid(sched_wake_issue_valid && tile_id == 0),
                 .done(core_done_vec[tile_id]),
                 .tile_reset_stable(tile_reset_stable[tile_id]),
                 .tile_idle(core_tile_idle[tile_id]),
@@ -743,14 +744,17 @@ module lnp64_top #(
         .clk(clk),
         .reset_n(logic_reset_n),
         .boot_valid(boot_valid),
-        .park_pid1(core_yielded_vec[0] && core_pid1_parked_vec[0]),
-        .wake_pid1(wake_valid),
+        .park_submit_valid(park_submit_valid_vec),
+        .park_submit_record(park_submit_record_vec),
+        .wake_event_valid(event_valid),
+        .wake_event(event_record),
         .tile_idle(core_tile_idle),
         .tile_running(core_tile_running),
         .tile_parked(core_tile_parked),
         .tile_faulted(scheduler_tile_faulted),
         .issue_valid(sched_issue_valid),
         .issue_tid_flat(sched_issue_tid_flat),
+        .wake_issue_valid(sched_wake_issue_valid),
         .exactly_one_location(pid1_exactly_one_location),
         .pid1_runnable(sched_pid1_runnable),
         .pid1_parked(sched_pid1_parked),
@@ -888,7 +892,7 @@ module lnp64_top #(
                 uart_seen <= 1'b1;
                 uart_byte_seen <= uart_byte;
             end
-            if (event_valid && event_record.status == LNP64_STATUS_EVENT && wake_valid && event_record.tile_id == 32'd0) begin
+            if (sched_wake_issue_valid) begin
                 event_woke_thread <= 1'b1;
             end
             if ((fault_valid && fault_record.fault_code == LNP64_ERR_EFAULT && fault_record.tile_id == 32'd1) ||

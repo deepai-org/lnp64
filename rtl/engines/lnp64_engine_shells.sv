@@ -333,14 +333,17 @@ module lnp64_scheduler #(
     input  logic clk,
     input  logic reset_n,
     input  logic boot_valid,
-    input  logic park_pid1,
-    input  logic wake_pid1,
+    input  logic [CORE_TILE_COUNT-1:0] park_submit_valid,
+    input  lnp64_thread_sched_t park_submit_record [CORE_TILE_COUNT],
+    input  logic wake_event_valid,
+    input  lnp64_event_t wake_event,
     input  logic [CORE_TILE_COUNT-1:0] tile_idle,
     input  logic [CORE_TILE_COUNT-1:0] tile_running,
     input  logic [CORE_TILE_COUNT-1:0] tile_parked,
     input  logic [CORE_TILE_COUNT-1:0] tile_faulted,
     output logic [CORE_TILE_COUNT-1:0] issue_valid,
     output logic [CORE_TILE_COUNT*32-1:0] issue_tid_flat,
+    output logic wake_issue_valid,
     output logic exactly_one_location,
     output logic pid1_runnable,
     output logic pid1_parked,
@@ -349,6 +352,30 @@ module lnp64_scheduler #(
     output logic tile_fault_isolated
 );
     integer sched_i;
+    integer sched_state_i;
+    lnp64_thread_sched_t pid1_record;
+
+    function automatic logic is_pid1_record(input lnp64_thread_sched_t record);
+        begin
+            is_pid1_record =
+                record.pid == 32'd1 &&
+                record.tid == 32'd1 &&
+                record.domain_id != 32'd0 &&
+                record.domain_gen != 32'd0 &&
+                record.migration_generation != 32'd0;
+        end
+    endfunction
+
+    function automatic logic is_pid1_wake(input lnp64_event_t wake_record);
+        begin
+            is_pid1_wake =
+                wake_record.pid == 32'd1 &&
+                wake_record.tid == 32'd1 &&
+                wake_record.domain_id == pid1_record.domain_id &&
+                wake_record.domain_gen == pid1_record.domain_gen &&
+                wake_record.status == LNP64_STATUS_EVENT;
+        end
+    endfunction
 
     always_comb begin
         issue_valid = '0;
@@ -369,31 +396,87 @@ module lnp64_scheduler #(
                 end
             end
         end
-        tile1_schedulable_idle = (CORE_TILE_COUNT > 1) && tile_idle[1] && !tile_running[1] && !tile_parked[1] && !tile_faulted[1];
-        tile_fault_isolated = (CORE_TILE_COUNT < 2) || !tile_faulted[1] || (issue_valid[0] && issue_tid_flat[31:0] == 32'd1);
+        tile1_schedulable_idle = (CORE_TILE_COUNT > 1) &&
+            tile_idle[1] && !tile_running[1] && !tile_parked[1] && !tile_faulted[1];
+        tile_fault_isolated = (CORE_TILE_COUNT < 2) || !tile_faulted[1] ||
+            (!tile_faulted[0] && (pid1_runnable || pid1_parked) && is_pid1_record(pid1_record));
+        wake_issue_valid = wake_event_valid && pid1_parked && is_pid1_wake(wake_event);
     end
 
     always_ff @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
             pid1_runnable <= 1'b0;
             pid1_parked <= 1'b0;
+            pid1_record <= '0;
             exactly_one_location <= 1'b0;
         end else begin
             if (boot_valid) begin
                 pid1_runnable <= 1'b1;
                 pid1_parked <= 1'b0;
+                pid1_record <= '0;
+                pid1_record.pid <= 32'd1;
+                pid1_record.tid <= 32'd1;
+                pid1_record.tile_id <= 32'd0;
+                pid1_record.domain_id <= 32'd1;
+                pid1_record.domain_gen <= 32'd1;
+                pid1_record.state <= 16'd1;
+                pid1_record.latency_class <= 16'd0;
+                pid1_record.wait_generation <= 32'd1;
+                pid1_record.weight_index <= 16'd0;
+                pid1_record.virtual_deadline <= 64'd0;
+                pid1_record.dispatch_eligible <= 1'b1;
+                pid1_record.effective_tile_mask <= CORE_TILE_COUNT >= 32 ?
+                    32'hffff_ffff : ((32'd1 << CORE_TILE_COUNT) - 32'd1);
+                pid1_record.migration_generation <= 32'd1;
+                pid1_record.active_location <= 32'd0;
             end
-            if (park_pid1) begin
-                pid1_runnable <= 1'b0;
-                pid1_parked <= 1'b1;
+
+            for (sched_state_i = 0; sched_state_i < CORE_TILE_COUNT; sched_state_i = sched_state_i + 1) begin
+                if (park_submit_valid[sched_state_i] &&
+                    is_pid1_record(park_submit_record[sched_state_i]) &&
+                    park_submit_record[sched_state_i].tile_id == sched_state_i[31:0]) begin
+                    pid1_runnable <= 1'b0;
+                    pid1_parked <= 1'b1;
+                    pid1_record <= park_submit_record[sched_state_i];
+                    pid1_record.state <= 16'd2;
+                    pid1_record.active_location <= park_submit_record[sched_state_i].tile_id;
+                end
             end
-            if (wake_pid1) begin
+
+            if (wake_event_valid && pid1_parked && is_pid1_wake(wake_event)) begin
                 pid1_runnable <= 1'b1;
                 pid1_parked <= 1'b0;
+                pid1_record.state <= 16'd1;
+                pid1_record.active_location <= wake_event.tile_id;
             end
             exactly_one_location <= pid1_runnable ^ pid1_parked;
         end
     end
+
+`ifndef SYNTHESIS
+    always_ff @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin
+        end else begin
+            if (pid1_runnable || pid1_parked) begin
+                assert (is_pid1_record(pid1_record))
+                    else $fatal(1, "SG-SCHED scheduler PID1 state missing typed metadata");
+            end
+            for (int unsigned assert_sched_i = 0; assert_sched_i < CORE_TILE_COUNT; assert_sched_i = assert_sched_i + 1) begin
+                if (park_submit_valid[assert_sched_i] &&
+                    is_pid1_record(park_submit_record[assert_sched_i])) begin
+                    assert (park_submit_record[assert_sched_i].tile_id == assert_sched_i[31:0])
+                        else $fatal(1, "SG-SCHED scheduler park record tile drift");
+                end
+            end
+            if (wake_issue_valid) begin
+                assert (pid1_parked && is_pid1_wake(wake_event))
+                    else $fatal(1, "SG-WAKE scheduler issued wake without valid parked state");
+            end
+            assert (no_duplicate_issue)
+                else $fatal(1, "SG-SCHED scheduler issued duplicate TID");
+        end
+    end
+`endif
 endmodule
 
 module lnp64_event_router (
@@ -411,6 +494,8 @@ module lnp64_event_router (
     output logic cross_tile_wake_valid,
     output logic [31:0] wake_counter
 );
+    logic synthetic_event_consumed;
+
     always_ff @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
             wake_valid <= 1'b0;
@@ -419,14 +504,19 @@ module lnp64_event_router (
             event_counter <= 32'd0;
             cross_tile_wake_valid <= 1'b0;
             wake_counter <= 32'd0;
+            synthetic_event_consumed <= 1'b0;
         end else begin
             wake_valid <= 1'b0;
             cross_tile_wake_valid <= 1'b0;
-            if (synthetic_event && pid1_parked && !event_valid) begin
+            if (!synthetic_event) begin
+                synthetic_event_consumed <= 1'b0;
+            end
+            if (synthetic_event && !synthetic_event_consumed && pid1_parked && !event_valid) begin
                 event_counter <= event_counter + 32'd1;
                 wake_counter <= wake_counter + 32'd1;
                 wake_valid <= 1'b1;
                 cross_tile_wake_valid <= source_tile_id != target_tile_id;
+                synthetic_event_consumed <= 1'b1;
                 event_valid <= 1'b1;
                 event_record.event_id <= event_counter + 32'd1;
                 event_record.tile_id <= target_tile_id;

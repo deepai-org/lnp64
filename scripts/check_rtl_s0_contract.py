@@ -224,12 +224,17 @@ REQUIRED_CHANNEL_PORTS = {
         "tlb_invalidate_ack",
     },
     "lnp64_scheduler": {
+        "park_submit_valid",
+        "park_submit_record",
+        "wake_event_valid",
+        "wake_event",
         "tile_idle",
         "tile_running",
         "tile_parked",
         "tile_faulted",
         "issue_valid",
         "issue_tid_flat",
+        "wake_issue_valid",
         "no_duplicate_issue",
         "tile1_schedulable_idle",
         "tile_fault_isolated",
@@ -799,6 +804,10 @@ def main() -> None:
         "SG-SCHED barrel skipped earlier virtual deadline",
         "SG-SCHED barrel selected a non-eligible context",
         "SG-SCHED resident context not eligible for this tile",
+        "SG-SCHED scheduler PID1 state missing typed metadata",
+        "SG-SCHED scheduler park record tile drift",
+        "SG-WAKE scheduler issued wake without valid parked state",
+        "SG-SCHED scheduler issued duplicate TID",
         "SG-SCHED engine command lost active thread metadata",
         "core_rsp.tile_id",
         "COHERENCE_DOMAIN_ID",
@@ -809,6 +818,7 @@ def main() -> None:
         "multicore_no_duplicate_tid",
         "cross_tile_wake_one",
         "tile_fault_isolated",
+        "synthetic_event_consumed",
     ):
         if marker not in source_text:
             fail(f"S0 RTL is missing multicore/topology/coherence marker: {marker}")
