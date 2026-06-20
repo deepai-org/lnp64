@@ -766,6 +766,8 @@ module lnp64_top #(
         .reset_n(logic_reset_n),
         .boot_valid(boot_valid),
         .boot_context(pid1_context),
+        .submit_valid(submit_valid_vec),
+        .submit_record(submit_record_vec),
         .park_submit_valid(park_submit_valid_vec),
         .park_submit_record(park_submit_record_vec),
         .wake_event_valid(event_valid),

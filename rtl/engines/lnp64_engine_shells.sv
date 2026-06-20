@@ -334,6 +334,8 @@ module lnp64_scheduler #(
     input  logic reset_n,
     input  logic boot_valid,
     input  lnp64_thread_sched_t boot_context,
+    input  logic [CORE_TILE_COUNT-1:0] submit_valid,
+    input  lnp64_thread_sched_t submit_record [CORE_TILE_COUNT],
     input  logic [CORE_TILE_COUNT-1:0] park_submit_valid,
     input  lnp64_thread_sched_t park_submit_record [CORE_TILE_COUNT],
     input  logic wake_event_valid,
@@ -356,15 +358,36 @@ module lnp64_scheduler #(
     integer sched_i;
     integer sched_state_i;
     lnp64_thread_sched_t pid1_record;
+    lnp64_thread_sched_t child_record;
+    logic child_runnable;
+
+    function automatic logic is_live_sched_record(input lnp64_thread_sched_t record);
+        begin
+            is_live_sched_record =
+                record.pid != 32'd0 &&
+                record.tid != 32'd0 &&
+                record.domain_id != 32'd0 &&
+                record.domain_gen != 32'd0 &&
+                record.migration_generation != 32'd0 &&
+                record.dispatch_eligible;
+        end
+    endfunction
 
     function automatic logic is_pid1_record(input lnp64_thread_sched_t record);
         begin
             is_pid1_record =
+                is_live_sched_record(record) &&
                 record.pid == 32'd1 &&
-                record.tid == 32'd1 &&
-                record.domain_id != 32'd0 &&
-                record.domain_gen != 32'd0 &&
-                record.migration_generation != 32'd0;
+                record.tid == 32'd1;
+        end
+    endfunction
+
+    function automatic logic is_child_record(input lnp64_thread_sched_t record);
+        begin
+            is_child_record =
+                is_live_sched_record(record) &&
+                record.pid == 32'd1 &&
+                record.tid == 32'd2;
         end
     endfunction
 
@@ -415,11 +438,15 @@ module lnp64_scheduler #(
             pid1_runnable <= 1'b0;
             pid1_parked <= 1'b0;
             pid1_record <= '0;
+            child_record <= '0;
+            child_runnable <= 1'b0;
             exactly_one_location <= 1'b0;
         end else begin
             if (boot_valid) begin
                 pid1_runnable <= 1'b1;
                 pid1_parked <= 1'b0;
+                child_runnable <= 1'b0;
+                child_record <= '0;
                 pid1_record <= boot_context;
                 pid1_record.state <= 16'd1;
                 pid1_record.tile_id <= 32'd0;
@@ -427,6 +454,21 @@ module lnp64_scheduler #(
             end
 
             for (sched_state_i = 0; sched_state_i < CORE_TILE_COUNT; sched_state_i = sched_state_i + 1) begin
+                if (submit_valid[sched_state_i] &&
+                    is_pid1_record(submit_record[sched_state_i]) &&
+                    submit_record[sched_state_i].tile_id == sched_state_i[31:0]) begin
+                    pid1_record <= submit_record[sched_state_i];
+                    pid1_record.state <= 16'd1;
+                    pid1_record.active_location <= submit_record[sched_state_i].tile_id;
+                end
+                if (submit_valid[sched_state_i] &&
+                    is_child_record(submit_record[sched_state_i]) &&
+                    submit_record[sched_state_i].tile_id == sched_state_i[31:0]) begin
+                    child_runnable <= 1'b1;
+                    child_record <= submit_record[sched_state_i];
+                    child_record.state <= 16'd1;
+                    child_record.active_location <= submit_record[sched_state_i].tile_id;
+                end
                 if (park_submit_valid[sched_state_i] &&
                     is_pid1_record(park_submit_record[sched_state_i]) &&
                     park_submit_record[sched_state_i].tile_id == sched_state_i[31:0]) begin
@@ -457,6 +499,13 @@ module lnp64_scheduler #(
                     else $fatal(1, "SG-SCHED scheduler PID1 state missing typed metadata");
             end
             for (int unsigned assert_sched_i = 0; assert_sched_i < CORE_TILE_COUNT; assert_sched_i = assert_sched_i + 1) begin
+                if (submit_valid[assert_sched_i]) begin
+                    assert (is_live_sched_record(submit_record[assert_sched_i]))
+                        else $fatal(1, "SG-SCHED scheduler submit record missing typed metadata");
+                    assert (submit_record[assert_sched_i].tile_id == assert_sched_i[31:0] &&
+                        submit_record[assert_sched_i].active_location == assert_sched_i[31:0])
+                        else $fatal(1, "SG-SCHED scheduler submit record tile drift");
+                end
                 if (park_submit_valid[assert_sched_i] &&
                     is_pid1_record(park_submit_record[assert_sched_i])) begin
                     assert (park_submit_record[assert_sched_i].tile_id == assert_sched_i[31:0])
@@ -475,6 +524,12 @@ module lnp64_scheduler #(
             if (wake_issue_valid) begin
                 assert (pid1_parked && is_pid1_wake(wake_event))
                     else $fatal(1, "SG-WAKE scheduler issued wake without valid parked state");
+            end
+            if (child_runnable) begin
+                assert (is_child_record(child_record))
+                    else $fatal(1, "SG-SCHED scheduler child state missing typed metadata");
+                assert (!pid1_runnable || child_record.tid != pid1_record.tid)
+                    else $fatal(1, "SG-SCHED scheduler duplicated runnable TID");
             end
             assert (no_duplicate_issue)
                 else $fatal(1, "SG-SCHED scheduler issued duplicate TID");
