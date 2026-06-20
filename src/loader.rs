@@ -332,6 +332,21 @@ pub fn build_exec_descriptor(
         }
     }
     for vma in &plan.vmas {
+        if vma.length == 0 {
+            return Err("exec-plan VMA length is zero".to_string());
+        }
+        if vma.zero_fill_length > vma.length {
+            return Err("exec-plan VMA zero-fill exceeds mapping length".to_string());
+        }
+        if vma.protection.write && vma.protection.execute {
+            return Err("exec-plan VMA requests writable executable mapping".to_string());
+        }
+        if vma.protection.execute && vma.executable_provenance != ExecutableProvenance::ImageText {
+            return Err("exec-plan executable VMA provenance is invalid".to_string());
+        }
+        if !vma.protection.execute && vma.executable_provenance == ExecutableProvenance::ImageText {
+            return Err("exec-plan non-executable VMA provenance is invalid".to_string());
+        }
         if vma.mapping_flags != 0 {
             return Err("exec-plan VMA mapping flags are unsupported".to_string());
         }
@@ -2341,6 +2356,45 @@ mod tests {
             missing_ref.contains("measurement reference"),
             "{missing_ref}"
         );
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_exec_descriptor_bad_vma_shape() {
+        let image = test_elf(&[text_phdr()]);
+        let plan = build_static_exec_plan(&image, LoaderOptions::default()).unwrap();
+        let descriptor_options = ExecPlanDescriptorOptions {
+            image_source_cap: 4,
+            image_source_generation: 5,
+            image_lineage_epoch: 6,
+            ..ExecPlanDescriptorOptions::default()
+        };
+
+        let mut zero_length = plan.clone();
+        zero_length.vmas[0].length = 0;
+        let err = build_exec_descriptor(&zero_length, descriptor_options.clone()).unwrap_err();
+        assert!(err.contains("VMA length"), "{err}");
+
+        let mut bad_zero_fill = plan.clone();
+        bad_zero_fill.vmas[0].zero_fill_length = bad_zero_fill.vmas[0].length + 1;
+        let err = build_exec_descriptor(&bad_zero_fill, descriptor_options.clone()).unwrap_err();
+        assert!(err.contains("zero-fill"), "{err}");
+
+        let mut wx = plan.clone();
+        wx.vmas[0].protection.write = true;
+        let err = build_exec_descriptor(&wx, descriptor_options.clone()).unwrap_err();
+        assert!(err.contains("writable executable"), "{err}");
+
+        let mut executable_provenance = plan.clone();
+        executable_provenance.vmas[0].executable_provenance = ExecutableProvenance::NonExecutable;
+        let err =
+            build_exec_descriptor(&executable_provenance, descriptor_options.clone()).unwrap_err();
+        assert!(err.contains("executable VMA provenance"), "{err}");
+
+        let mut non_executable_provenance = plan;
+        non_executable_provenance.vmas[0].protection.execute = false;
+        let err =
+            build_exec_descriptor(&non_executable_provenance, descriptor_options).unwrap_err();
+        assert!(err.contains("non-executable VMA provenance"), "{err}");
     }
 
     #[test]
