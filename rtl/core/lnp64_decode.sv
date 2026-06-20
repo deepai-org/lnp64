@@ -256,6 +256,15 @@ module lnp64_decode (
             8'h5b: begin
                 dec.opcode = LNP64_OP_DMA_CTL;
             end
+            8'h62: begin
+                dec.opcode = LNP64_OP_SIGACTION;
+            end
+            8'h64: begin
+                dec.opcode = LNP64_OP_KILL;
+            end
+            8'h65: begin
+                dec.opcode = LNP64_OP_SIGRET;
+            end
             8'h47: begin
                 dec.opcode = LNP64_OP_ALLOC;
             end
@@ -533,6 +542,9 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_SLEEP ||
             dec.opcode == LNP64_OP_MMAP ||
             dec.opcode == LNP64_OP_MPROTECT ||
+            dec.opcode == LNP64_OP_SIGACTION ||
+            dec.opcode == LNP64_OP_KILL ||
+            dec.opcode == LNP64_OP_SIGRET ||
             dec.opcode == LNP64_OP_OPEN_FD ||
             dec.opcode == LNP64_OP_FD_CLOSE ||
             dec.opcode == LNP64_OP_WAITABLE_PROBE ||

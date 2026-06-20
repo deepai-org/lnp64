@@ -209,6 +209,9 @@ package lnp64_pkg;
         LNP64_OP_AWAIT_EX     = 16'h0087,
         LNP64_OP_GET_PCR      = 16'h0088,
         LNP64_OP_SET_PCR      = 16'h0089,
+        LNP64_OP_SIGACTION    = 16'h008a,
+        LNP64_OP_KILL         = 16'h008b,
+        LNP64_OP_SIGRET       = 16'h008c,
         LNP64_OP_UNSUPPORTED  = 16'h00ff
     } lnp64_opcode_e;
 

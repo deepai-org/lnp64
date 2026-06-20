@@ -150,6 +150,21 @@ module lnp64_core_tile #(
     logic [63:0] pcr_uid;
     logic [63:0] pcr_gid;
     logic [63:0] pcr_sigmask;
+    logic signal_handler_valid;
+    logic signal_handler_ignore;
+    logic [63:0] signal_handler_signum;
+    logic [63:0] signal_handler_pc;
+    logic signal_frame_valid;
+    logic [31:0] signal_saved_pc;
+    logic [63:0] signal_saved_gpr [0:31];
+    logic [31:0] signal_saved_return_stack [0:RETURN_STACK_DEPTH-1];
+    logic [RETURN_STACK_INDEX_WIDTH:0] signal_saved_return_stack_depth;
+    logic [63:0] signal_saved_link_register;
+    logic signal_saved_cmp_zero;
+    logic signal_saved_cmp_negative;
+    logic signal_saved_cmp_greater;
+    logic signal_saved_cmp_below;
+    logic signal_saved_cmp_above;
     logic [63:0] sram [0:SRAM_WORDS-1];
     logic [63:0] initial_sram [0:SRAM_WORDS-1];
     logic [63:0] initial_data_sram [0:SRAM_WORDS-1];
@@ -167,6 +182,9 @@ module lnp64_core_tile #(
     localparam logic [63:0] FLAT_EXEC_CHILD_SP = FLAT_EXEC_INITIAL_SP - FLAT_EXEC_THREAD_STACK_STRIDE;
     localparam logic [63:0] FLAT_EXEC_CHILD_STACK_BASE_ADDR =
         FLAT_EXEC_STACK_BASE_ADDR - FLAT_EXEC_THREAD_STACK_STRIDE;
+    localparam logic [63:0] SIGNAL_NUMBER_LIMIT = 64'd64;
+    localparam logic [63:0] SIG_DFL_HANDLER = 64'd0;
+    localparam logic [63:0] SIG_IGN_HANDLER = 64'd1;
     localparam logic [63:0] OBJECT_OP_CREATE = LNP64_OBJECT_OP_CREATE;
     localparam logic [63:0] OBJECT_KIND_COUNTER = LNP64_OBJECT_KIND_COUNTER;
     localparam logic [63:0] OBJECT_KIND_QUEUE = LNP64_OBJECT_KIND_QUEUE;
@@ -1287,6 +1305,27 @@ module lnp64_core_tile #(
                 end
                 LNP64_OP_GATE_RETURN:
                     flat_retire_errno_value = call_continuation_valid ? LNP64_ERR_OK : LNP64_ERR_EINVAL;
+                LNP64_OP_SIGACTION: begin
+                    if (gpr[dec.rd] == 64'd0 || gpr[dec.rd] >= SIGNAL_NUMBER_LIMIT) begin
+                        flat_retire_errno_value = LNP64_ERR_EINVAL;
+                    end else begin
+                        flat_retire_errno_value = LNP64_ERR_OK;
+                    end
+                end
+                LNP64_OP_KILL: begin
+                    if (gpr[dec.rs1] == 64'd0 || gpr[dec.rs1] >= SIGNAL_NUMBER_LIMIT) begin
+                        flat_retire_errno_value = LNP64_ERR_EINVAL;
+                    end else if (gpr[dec.rd] != 64'd1) begin
+                        flat_retire_errno_value = 16'd3;
+                    end else if (signal_frame_valid) begin
+                        flat_retire_errno_value = LNP64_ERR_EAGAIN;
+                    end else begin
+                        flat_retire_errno_value = LNP64_ERR_OK;
+                    end
+                end
+                LNP64_OP_SIGRET: begin
+                    flat_retire_errno_value = signal_frame_valid ? LNP64_ERR_OK : LNP64_ERR_EINVAL;
+                end
                 LNP64_OP_PUSH: begin
                     if (gpr[dec.rs3] == 64'd0) begin
                         flat_retire_errno_value = LNP64_ERR_OK;
@@ -1509,6 +1548,7 @@ module lnp64_core_tile #(
                         result = 64'hffff_ffff_ffff_ffff;
                     end
                 end
+                LNP64_OP_SIGACTION: result = gpr[dec.rd];
                 LNP64_OP_PUSH: begin
                     if (gpr[dec.rs3] == 64'd0) begin
                         result = 64'd0;
@@ -2356,6 +2396,25 @@ module lnp64_core_tile #(
             pcr_uid <= 64'd0;
             pcr_gid <= 64'd0;
             pcr_sigmask <= 64'd0;
+            signal_handler_valid <= 1'b0;
+            signal_handler_ignore <= 1'b0;
+            signal_handler_signum <= 64'd0;
+            signal_handler_pc <= 64'd0;
+            signal_frame_valid <= 1'b0;
+            signal_saved_pc <= 32'd0;
+            signal_saved_return_stack_depth <= '0;
+            signal_saved_link_register <= 64'd0;
+            signal_saved_cmp_zero <= 1'b0;
+            signal_saved_cmp_negative <= 1'b0;
+            signal_saved_cmp_greater <= 1'b0;
+            signal_saved_cmp_below <= 1'b0;
+            signal_saved_cmp_above <= 1'b0;
+            for (i = 0; i < 32; i = i + 1) begin
+                signal_saved_gpr[i] <= 64'd0;
+            end
+            for (i = 0; i < RETURN_STACK_DEPTH; i = i + 1) begin
+                signal_saved_return_stack[i] <= 32'd0;
+            end
             for (i = 0; i < THREAD_CONTEXT_COUNT; i = i + 1) begin
                 thread_pc[i] <= 32'd0;
                 thread_return_stack_depth[i] <= '0;
@@ -3739,6 +3798,101 @@ module lnp64_core_tile #(
                                     end
                                 endcase
                                 pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_SIGACTION: begin
+                                if (gpr[dec.rd] == 64'd0 || gpr[dec.rd] >= SIGNAL_NUMBER_LIMIT) begin
+                                    gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EINVAL;
+                                end else if (gpr[dec.rs1] == SIG_DFL_HANDLER) begin
+                                    signal_handler_valid <= 1'b0;
+                                    signal_handler_ignore <= 1'b0;
+                                    signal_handler_signum <= 64'd0;
+                                    signal_handler_pc <= 64'd0;
+                                    gpr[1] <= 64'd0;
+                                    errno_reg <= LNP64_ERR_OK;
+                                end else begin
+                                    signal_handler_valid <= 1'b1;
+                                    signal_handler_ignore <= gpr[dec.rs1] == SIG_IGN_HANDLER;
+                                    signal_handler_signum <= gpr[dec.rd];
+                                    signal_handler_pc <= gpr[dec.rs1];
+                                    gpr[1] <= 64'd0;
+                                    errno_reg <= LNP64_ERR_OK;
+                                end
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_KILL: begin
+                                if (gpr[dec.rs1] == 64'd0 || gpr[dec.rs1] >= SIGNAL_NUMBER_LIMIT) begin
+                                    gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EINVAL;
+                                    pc <= pc + 32'd1;
+                                end else if (gpr[dec.rd] != 64'd1) begin
+                                    gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= 16'd3;
+                                    pc <= pc + 32'd1;
+                                end else if (signal_frame_valid) begin
+                                    gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EAGAIN;
+                                    pc <= pc + 32'd1;
+                                end else begin
+                                    gpr[1] <= 64'd0;
+                                    errno_reg <= LNP64_ERR_OK;
+                                    if (signal_handler_valid &&
+                                        signal_handler_signum == gpr[dec.rs1] &&
+                                        !signal_handler_ignore) begin
+                                        signal_frame_valid <= 1'b1;
+                                        signal_saved_pc <= pc + 32'd1;
+                                        for (i = 0; i < 32; i = i + 1) begin
+                                            signal_saved_gpr[i] <= gpr[i];
+                                        end
+                                        for (i = 0; i < RETURN_STACK_DEPTH; i = i + 1) begin
+                                            signal_saved_return_stack[i] <= return_stack[i];
+                                        end
+                                        signal_saved_return_stack_depth <= return_stack_depth;
+                                        signal_saved_link_register <= link_register;
+                                        signal_saved_cmp_zero <= cmp_zero;
+                                        signal_saved_cmp_negative <= cmp_negative;
+                                        signal_saved_cmp_greater <= cmp_greater;
+                                        signal_saved_cmp_below <= cmp_below;
+                                        signal_saved_cmp_above <= cmp_above;
+                                        gpr[1] <= gpr[dec.rs1];
+                                        pc <= flat_exec_pc_word(signal_handler_pc);
+                                    end else begin
+                                        pc <= pc + 32'd1;
+                                    end
+                                end
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_SIGRET: begin
+                                if (signal_frame_valid) begin
+                                    pc <= signal_saved_pc;
+                                    for (i = 0; i < 32; i = i + 1) begin
+                                        gpr[i] <= signal_saved_gpr[i];
+                                    end
+                                    for (i = 0; i < RETURN_STACK_DEPTH; i = i + 1) begin
+                                        return_stack[i] <= signal_saved_return_stack[i];
+                                    end
+                                    return_stack_depth <= signal_saved_return_stack_depth;
+                                    link_register <= signal_saved_link_register;
+                                    cmp_zero <= signal_saved_cmp_zero;
+                                    cmp_negative <= signal_saved_cmp_negative;
+                                    cmp_greater <= signal_saved_cmp_greater;
+                                    cmp_below <= signal_saved_cmp_below;
+                                    cmp_above <= signal_saved_cmp_above;
+                                    signal_frame_valid <= 1'b0;
+                                    errno_reg <= LNP64_ERR_OK;
+                                end else begin
+                                    gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                    errno_reg <= LNP64_ERR_EINVAL;
+                                    pc <= pc + 32'd1;
+                                end
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
