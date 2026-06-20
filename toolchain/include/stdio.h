@@ -15,6 +15,7 @@ typedef struct __lnp64_file FILE;
 #define SEEK_SET 0
 #define SEEK_CUR 1
 #define SEEK_END 2
+#define L_tmpnam 128
 
 extern FILE *stdin;
 extern FILE *stdout;
@@ -55,5 +56,7 @@ FILE *fdopen(int fd, const char *mode);
 FILE *fopen(const char *path, const char *mode);
 FILE *freopen(const char *path, const char *mode, FILE *stream);
 FILE *tmpfile(void);
+int remove(const char *filename);
+char *tmpnam(char *s);
 
 #endif

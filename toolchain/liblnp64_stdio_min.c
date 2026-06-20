@@ -729,3 +729,43 @@ void clearerr(FILE *stream) {
   stream->eof = 0;
   stream->error = 0;
 }
+
+int remove(const char *filename) {
+  /* Stub: not fully implemented yet */
+  (void)filename;
+  return -1;
+}
+
+int rename(const char *oldpath, const char *newpath) {
+  /* Stub: not fully implemented yet */
+  (void)oldpath;
+  (void)newpath;
+  return -1;
+}
+
+static unsigned long lnp64_rename_counter = 0;
+
+char *tmpnam(char *s) {
+  static char buffer[128];
+  char *result = s ? s : buffer;
+  lnp64_rename_counter++;
+  struct lnp64_snprintf_out out;
+  out.buf = result;
+  out.size = 128;
+  out.len = 0;
+  lnp64_out_string(&out, "/tmp/lnp64_");
+  lnp64_out_unsigned(&out, lnp64_rename_counter, 10);
+  if (out.size > 0) {
+    size_t nul = out.len < out.size ? out.len : out.size - 1;
+    result[nul] = 0;
+  }
+  return result;
+}
+
+int setvbuf(FILE *stream, char *buf, int mode, size_t size) {
+  (void)stream;
+  (void)buf;
+  (void)mode;
+  (void)size;
+  return 0;
+}

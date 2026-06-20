@@ -9,6 +9,7 @@ wait/wake, wake consumption, timer wait/expire, and stale-address rejection.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -33,6 +34,8 @@ M7_TID = 2
 
 COMMIT_RECORD = "lnp64_m7_sched_commit_t"
 STATE_RECORD = "lnp64_m7_state_projection_t"
+
+WITNESS_SCHEMA = "lnp64_m7_sched_refinement_witness_v1"
 COMMIT_NAME = "m7_sched_commit"
 STATE_NAME = "m7_state_projection"
 COMMIT_BITS_NAME = "m7_sched_commit_bits"
@@ -498,6 +501,72 @@ def check_transition_trace(
         check_projection(projection, state.as_projection(op, require_int(commit, "status")), index)
 
 
+def sha256_json(data: object) -> str:
+    payload = json.dumps(data, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(payload).hexdigest()
+
+
+def build_m7_witness_artifact(
+    commits: list[dict[str, int | str]],
+    commit_bits: list[str],
+    states: list[dict[str, int | str]],
+    state_bits: list[str],
+    commit_fields: tuple[str, ...],
+    commit_widths: tuple[int, ...],
+    state_fields: tuple[str, ...],
+    state_widths: tuple[int, ...],
+    ops: Ops,
+) -> dict:
+    records = []
+    for index, (commit, cbits, state, sbits) in enumerate(
+        zip(commits, commit_bits, states, state_bits, strict=True)
+    ):
+        records.append(
+            {
+                "index": index,
+                "op": commit["op"],
+                "status": commit["status"],
+                "commit": {field: commit[field] for field in commit_fields},
+                "commit_bits": cbits,
+                "state": {field: state[field] for field in state_fields},
+                "state_bits": sbits,
+            }
+        )
+    artifact = {
+        "schema": WITNESS_SCHEMA,
+        "commit_schema": {
+            "fields": list(commit_fields),
+            "widths": list(commit_widths),
+            "width": sum(commit_widths),
+        },
+        "state_schema": {
+            "fields": list(state_fields),
+            "widths": list(state_widths),
+            "width": sum(state_widths),
+        },
+        "ops": {
+            "cmpxchg_success": ops.cmpxchg_success,
+            "cmpxchg_fail": ops.cmpxchg_fail,
+            "futex_wait": ops.futex_wait,
+            "futex_wake": ops.futex_wake,
+            "timer_wait": ops.timer_wait,
+            "timer_expire": ops.timer_expire,
+            "consume_wake": ops.consume_wake,
+            "reject_stale_address": ops.reject_stale_address,
+        },
+        "record_count": len(records),
+        "records": records,
+    }
+    artifact["records_sha256"] = sha256_json(records)
+    return artifact
+
+
+def write_m7_witness_artifact(output_path: str, artifact: dict) -> None:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def main() -> int:
     commit_fields, commit_widths, state_fields, state_widths, ops = load_schema()
     check_m7_testbench_trace_source_contract()
@@ -511,6 +580,22 @@ def main() -> int:
     if len(commits) != len(states):
         fail(f"M7 commit count {len(commits)} != state projection count {len(states)}")
     check_transition_trace(commits, states, ops)
+
+    witness_out = os.environ.get("LNP64_RTL_M7_WITNESS_OUT")
+    if witness_out:
+        artifact = build_m7_witness_artifact(
+            commits,
+            commit_bits,
+            states,
+            state_bits,
+            commit_fields,
+            commit_widths,
+            state_fields,
+            state_widths,
+            ops,
+        )
+        write_m7_witness_artifact(witness_out, artifact)
+
     print("rtl m7 typed commit trace ok")
     return 0
 

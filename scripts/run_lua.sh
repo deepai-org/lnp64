@@ -87,7 +87,7 @@ done
 lua_units=(
   lapi lcode lctype ldebug ldo ldump lfunc lgc llex lmem lobject lopcodes
   lparser lstate lstring ltable ltm lundump lvm lzio
-  lauxlib lbaselib lcorolib lstrlib ltablib lutf8lib lmathlib liolib
+  lauxlib lbaselib lcorolib lstrlib ltablib lutf8lib lmathlib liolib loslib
   lua
 )
 
@@ -108,6 +108,8 @@ static const luaL_Reg lnp64_minimal_libs[] = {
     {LUA_COLIBNAME, luaopen_coroutine},
     {LUA_UTF8LIBNAME, luaopen_utf8},
     {LUA_MATHLIBNAME, luaopen_math},
+    {LUA_IOLIBNAME, luaopen_io},
+    {LUA_OSLIBNAME, luaopen_os},
     {NULL, NULL},
 };
 
