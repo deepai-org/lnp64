@@ -25,6 +25,7 @@ int socket(int domain, int type, int protocol);
 int bind(int fd, const void *addr, socklen_t len);
 int listen(int fd, int backlog);
 int accept(int fd, void *addr, socklen_t *len);
+int connect(int fd, const void *addr, socklen_t len);
 int poll(struct pollfd *fds, nfds_t nfds, int timeout);
 long recv(int fd, void *buf, size_t len, int flags);
 long send(int fd, const void *buf, size_t len, int flags);
@@ -49,8 +50,15 @@ static int handler(int client) {
   return 0;
 }
 
-int main(void) {
+static int self_test_arg(int argc, char **argv) {
+  return argc > 1 && argv[1][0] == '-' && argv[1][1] == '-' &&
+         argv[1][2] == 's';
+}
+
+int main(int argc, char **argv) {
   struct pollfd p[1];
+  int self_test = self_test_arg(argc, argv);
+  int probe = -1;
   int server = socket(AF_INET, SOCK_STREAM, 0);
   if (server < 0)
     return 1;
@@ -59,6 +67,16 @@ int main(void) {
   if (listen(server, 1) != 0)
     return 3;
   write(1, "httpd ready\n", 12);
+
+  if (self_test) {
+    probe = socket(AF_INET, SOCK_STREAM, 0);
+    if (probe < 0)
+      return 6;
+    if (connect(probe, "127.0.0.1:41066", 0) != 0)
+      return 7;
+    if (send(probe, "GET / HTTP/1.0\r\n\r\n", 18, MSG_NOSIGNAL) != 18)
+      return 8;
+  }
 
   p[0].fd = server;
   p[0].events = POLLIN;
@@ -70,5 +88,13 @@ int main(void) {
     return 4;
   if (handler(client) != 0)
     return 5;
+  if (self_test) {
+    char *reply = malloc(96);
+    if (!reply)
+      return 9;
+    if (recv(probe, reply, 96, 0) <= 0)
+      return 10;
+    write(1, "httpd self-test ok\n", 19);
+  }
   return 0;
 }

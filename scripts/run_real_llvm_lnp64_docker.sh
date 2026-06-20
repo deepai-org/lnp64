@@ -266,6 +266,21 @@ run_elf_report "real LLVM LNP64 run-elf signal libc execution passed" \
   target/llvm-lnp64-build/lnp64-signal-libc-linked.elf
 run_elf_report "real LLVM LNP64 run-elf socket libc execution passed" \
   target/llvm-lnp64-build/lnp64-socket-libc-linked.elf
+run_elf_report "real LLVM LNP64 run-elf netcat self-test passed" \
+  target/llvm-lnp64-build/lnp64-netcat-clang-linked.elf \
+  netcat --self-test --expect 'netcat self-test ok'
+httpd_fixture_root="target/llvm-lnp64-build/httpd-fixture-root"
+rm -rf "$httpd_fixture_root"
+mkdir -p "$httpd_fixture_root/demos"
+printf 'hello from httpd' >"$httpd_fixture_root/demos/index.html"
+"$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-httpd-clang-linked.elf \
+  >/dev/null
+httpd_output="$("$lnp64_bin" run-elf --namespace-root "$httpd_fixture_root" \
+  target/llvm-lnp64-build/lnp64-httpd-clang-linked.elf httpd --self-test)"
+grep -q 'httpd self-test ok' <<<"$httpd_output"
+grep -q 'exit=0' <<<"$httpd_output"
+printf 'real LLVM LNP64 run-elf httpd self-test passed: %s\n' \
+  target/llvm-lnp64-build/lnp64-httpd-clang-linked.elf
 run_elf_report "real LLVM LNP64 run-elf NetBSD personality clang smoke passed" \
   target/llvm-lnp64-build/lnp64-netbsd-personality-clang-linked.elf \
   'netbsd clang personality init' \

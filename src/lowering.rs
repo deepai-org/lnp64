@@ -1402,6 +1402,8 @@ mod tests {
             assert!(native_demo_source.contains("#include <lnp64/intrinsics.h>"));
             assert!(!native_demo_source.contains("#include \"lnp64_intrinsics.h\""));
         }
+        assert!(netcat_demo.contains("netcat self-test ok"));
+        assert!(httpd_demo.contains("httpd self-test ok"));
         let real_llc_lines: Vec<_> = real_llc.lines().collect();
         for (index, line) in real_llc_lines.iter().enumerate() {
             if line.trim_start().starts_with("-I toolchain ") && line.trim_end().ends_with('\\') {
@@ -1607,6 +1609,8 @@ mod tests {
             "jsmn_package_run_elf",
             "inih_package_run_elf",
             "cwalk_package_run_elf",
+            "netcat_demo_run_elf",
+            "httpd_demo_run_elf",
             "libc_test_argv_run_elf",
             "libc_test_env_run_elf",
             "libc_test_random_run_elf",
@@ -3890,6 +3894,11 @@ mod tests {
         assert!(real_llc.contains("lnp64-httpd-clang-linked.elf"));
         assert!(real_llc.contains(r#""$httpd_obj" "$libc_fd_impl_obj" \"#));
         assert!(real_llc.contains("real LLVM LNP64 lld httpd demo link smoke passed"));
+        assert!(real_llc_docker.contains("netcat --self-test --expect 'netcat self-test ok'"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf netcat self-test passed"));
+        assert!(real_llc_docker.contains("httpd-fixture-root"));
+        assert!(real_llc_docker.contains("httpd --self-test"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf httpd self-test passed"));
         assert!(real_llc.contains("lnp64-$demo-clang-linked.elf"));
         assert!(real_llc.contains(
             r#""$demo_obj" "$libc_fd_impl_obj" \
@@ -4675,6 +4684,8 @@ mod tests {
             "real_poll_select_epoll_kqueue_libc_execution",
             "real_signal_libc_execution",
             "real_socket_libc_execution",
+            "real_netcat_self_test_execution",
+            "real_httpd_self_test_execution",
             "real_netbsd_personality_clang_execution",
             "real_sbase_echo_execution",
             "real_sbase_yes_exec_plan",
@@ -4802,6 +4813,8 @@ mod tests {
             "real_poll_select_epoll_kqueue_libc_execution",
             "real_signal_libc_execution",
             "real_socket_libc_execution",
+            "real_netcat_self_test_execution",
+            "real_httpd_self_test_execution",
             "real_netbsd_personality_clang_execution",
             "real_sbase_echo_execution",
             "real_sbase_yes_exec_plan",
@@ -6537,6 +6550,11 @@ mod tests {
         assert!(run_all.contains("git diff --check"));
         assert!(run_real_packages.contains("scripts/run_real_llvm_package_gate.sh"));
         assert!(run_real_packages.contains("real LLVM LNP64 package gate"));
+        assert!(run_real_package_gate.contains("demos)"));
+        assert!(run_real_package_gate.contains("lnp64-netcat-clang-linked.elf"));
+        assert!(run_real_package_gate.contains("lnp64-httpd-clang-linked.elf"));
+        assert!(run_real_package_gate.contains("real LLVM LNP64 run-elf netcat self-test passed"));
+        assert!(run_real_package_gate.contains("real LLVM LNP64 run-elf httpd self-test passed"));
         for sbase_elf in [
             "lnp64-sbase-yes-linked.elf",
             "lnp64-sbase-wc-linked.elf",

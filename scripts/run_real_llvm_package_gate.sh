@@ -50,6 +50,8 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-sbase-touch-linked.elf"
         "$build_dir/lnp64-sbase-mv-linked.elf"
         "$build_dir/lnp64-sbase-rm-linked.elf"
+        "$build_dir/lnp64-netcat-clang-linked.elf"
+        "$build_dir/lnp64-httpd-clang-linked.elf"
         "$build_dir/lnp64-userland-ucat-linked.elf"
         "$build_dir/lnp64-userland-init-linked.elf"
         "$build_dir/lnp64-userland-lnpsh-linked.elf"
@@ -78,6 +80,12 @@ for package in $(split_filters "$package_filter"); do
       ;;
     zlib|natsort|jsmn|inih|cwalk)
       needed_elfs+=("$build_dir/lnp64-$package-linked.elf")
+      ;;
+    demos)
+      needed_elfs+=(
+        "$build_dir/lnp64-netcat-clang-linked.elf"
+        "$build_dir/lnp64-httpd-clang-linked.elf"
+      )
       ;;
     sbase)
       needed_elfs+=(
@@ -144,7 +152,7 @@ for package in $(split_filters "$package_filter"); do
       ;;
     *)
       printf 'unknown LNP64_LLVM_PACKAGE_FILTER item: %s\n' "$package" >&2
-      printf 'expected one or more of: all,zlib,natsort,jsmn,inih,cwalk,sbase,userland,netbsd\n' >&2
+      printf 'expected one or more of: all,zlib,natsort,jsmn,inih,cwalk,demos,sbase,userland,netbsd\n' >&2
       exit 2
       ;;
   esac
@@ -222,6 +230,23 @@ run_package() {
     zlib|natsort|jsmn|inih|cwalk)
       run_elf_report "real LLVM LNP64 run-elf $package package execution passed" \
         "$build_dir/lnp64-$package-linked.elf"
+      ;;
+    demos)
+      run_elf_report "real LLVM LNP64 run-elf netcat self-test passed" \
+        "$build_dir/lnp64-netcat-clang-linked.elf" \
+        netcat --self-test --expect 'netcat self-test ok'
+      local httpd_fixture_root="$build_dir/httpd-fixture-root"
+      rm -rf "$httpd_fixture_root"
+      mkdir -p "$httpd_fixture_root/demos"
+      printf 'hello from httpd' >"$httpd_fixture_root/demos/index.html"
+      "$lnp64_bin" elf-plan "$build_dir/lnp64-httpd-clang-linked.elf" >/dev/null
+      local httpd_output
+      httpd_output="$("$lnp64_bin" run-elf --namespace-root "$httpd_fixture_root" \
+        "$build_dir/lnp64-httpd-clang-linked.elf" httpd --self-test)"
+      grep -q 'httpd self-test ok' <<<"$httpd_output"
+      grep -q 'exit=0' <<<"$httpd_output"
+      printf 'real LLVM LNP64 run-elf httpd self-test passed: %s\n' \
+        "$build_dir/lnp64-httpd-clang-linked.elf"
       ;;
     sbase)
       run_elf_report "real LLVM LNP64 run-elf sbase echo execution passed" \
