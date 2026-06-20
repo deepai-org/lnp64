@@ -389,6 +389,15 @@ grep -q '^cat via clang$' <<<"$sbase_cat_output"
 grep -q 'exit=0' <<<"$sbase_cat_output"
 printf 'real LLVM LNP64 run-elf sbase cat execution passed: %s\n' \
   target/llvm-lnp64-build/lnp64-sbase-cat-linked.elf
+rm -rf "$sbase_fixture_root/made"
+"$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-mkdir-linked.elf \
+  >/dev/null
+sbase_mkdir_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+  target/llvm-lnp64-build/lnp64-sbase-mkdir-linked.elf mkdir made)"
+grep -q 'exit=0' <<<"$sbase_mkdir_output"
+test -d "$sbase_fixture_root/made"
+printf 'real LLVM LNP64 run-elf sbase mkdir execution passed: %s\n' \
+  target/llvm-lnp64-build/lnp64-sbase-mkdir-linked.elf
 userland_fixture_root="target/llvm-lnp64-build/userland-fixture-root"
 mkdir -p "$userland_fixture_root/dev" "$userland_fixture_root/etc"
 printf 'welcome from clang ucat\n' >"$userland_fixture_root/etc/motd"

@@ -87,6 +87,10 @@ void exit(int status) {
   _exit(status);
 }
 
+void abort(void) {
+  _exit(134);
+}
+
 int pid(void) {
   return (int)__lnp_get_pid();
 }

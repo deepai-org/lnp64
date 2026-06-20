@@ -1405,6 +1405,21 @@ grep -q '<eprintf>:' "$sbase_support_impl_dump"
 printf 'real LLVM LNP64 clang sbase support implementation object smoke passed: %s\n' \
   "$sbase_support_impl_obj"
 
+sbase_fs_support_impl_c="toolchain/liblnp64_sbase_fs_min.c"
+sbase_fs_support_impl_obj="$build_dir/liblnp64-sbase-fs-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin \
+  -fno-pic -fno-jump-tables -fno-unwind-tables \
+  -fno-asynchronous-unwind-tables -I toolchain/include -I third_party/sbase \
+  -c "$sbase_fs_support_impl_c" -o "$sbase_fs_support_impl_obj"
+test -s "$sbase_fs_support_impl_obj"
+sbase_fs_support_impl_dump="$build_dir/liblnp64-sbase-fs-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$sbase_fs_support_impl_obj" \
+  >"$sbase_fs_support_impl_dump"
+grep -q '<parsemode>:' "$sbase_fs_support_impl_dump"
+grep -q '<mkdirp>:' "$sbase_fs_support_impl_dump"
+printf 'real LLVM LNP64 clang sbase filesystem support object smoke passed: %s\n' \
+  "$sbase_fs_support_impl_obj"
+
 netcat_obj="$build_dir/netcat-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
@@ -5657,6 +5672,17 @@ sbase_cat_elf="$build_dir/lnp64-sbase-cat-linked.elf"
 test -s "$sbase_cat_elf"
 printf 'real LLVM LNP64 lld sbase cat link smoke passed: %s\n' \
   "$sbase_cat_elf"
+
+sbase_mkdir_elf="$build_dir/lnp64-sbase-mkdir-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
+  -o "$sbase_mkdir_elf" "$crt0_obj" \
+  "$build_dir/sbase-mkdir-clang-smoke.o" \
+  "$sbase_support_impl_obj" "$sbase_fs_support_impl_obj" \
+  "$libc_fd_impl_obj" "$libc_string_impl_obj" \
+  "$libc_meta_impl_obj" "$libc_errno_impl_obj" "$libc_process_impl_obj"
+test -s "$sbase_mkdir_elf"
+printf 'real LLVM LNP64 lld sbase mkdir link smoke passed: %s\n' \
+  "$sbase_mkdir_elf"
 
 netcat_elf="$build_dir/lnp64-netcat-clang-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \

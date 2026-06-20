@@ -8,6 +8,7 @@
 extern int lnp64_errno_store(int value);
 
 static struct stat lnp64_access_stat;
+static mode_t lnp64_umask_value = 022;
 
 enum {
   LNP64_FDR_TOKEN_MARKER = 1UL << 62,
@@ -163,6 +164,12 @@ int mkdirat(int dirfd, const char *path, mode_t mode) {
 
 int mkdir(const char *path, mode_t mode) {
   return mkdirat(AT_FDCWD, path, mode);
+}
+
+mode_t umask(mode_t mask) {
+  mode_t old = lnp64_umask_value;
+  lnp64_umask_value = mask & 0777;
+  return old;
 }
 
 int renameat(int olddirfd, const char *oldpath, int newdirfd,
