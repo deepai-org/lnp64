@@ -34,6 +34,13 @@ void *erealloc(void *ptr, size_t size) {
   return next;
 }
 
+void *ecalloc(size_t count, size_t size) {
+  void *ptr = calloc(count, size);
+  if (!ptr)
+    eprintf("calloc:");
+  return ptr;
+}
+
 int charntorune(Rune *r, const char *s, size_t n) {
   if (!r || !s || n == 0)
     return 0;

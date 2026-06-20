@@ -57,13 +57,6 @@ void *emalloc(size_t size) {
   return ptr;
 }
 
-void *ecalloc(size_t count, size_t size) {
-  void *ptr = calloc(count, size);
-  if (!ptr)
-    eprintf("calloc:");
-  return ptr;
-}
-
 void *erealloc(void *ptr, size_t size) {
   void *next = realloc(ptr, size);
   if (!next && size)

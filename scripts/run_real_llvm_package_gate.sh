@@ -33,6 +33,7 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-sbase-cksum-linked.elf"
         "$build_dir/lnp64-sbase-uniq-linked.elf"
         "$build_dir/lnp64-sbase-tail-linked.elf"
+        "$build_dir/lnp64-sbase-tee-linked.elf"
         "$build_dir/lnp64-sbase-ls-linked.elf"
         "$build_dir/lnp64-sbase-find-linked.elf"
         "$build_dir/lnp64-sbase-mkdir-linked.elf"
@@ -83,6 +84,7 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-sbase-cksum-linked.elf"
         "$build_dir/lnp64-sbase-uniq-linked.elf"
         "$build_dir/lnp64-sbase-tail-linked.elf"
+        "$build_dir/lnp64-sbase-tee-linked.elf"
         "$build_dir/lnp64-sbase-ls-linked.elf"
         "$build_dir/lnp64-sbase-find-linked.elf"
         "$build_dir/lnp64-sbase-mkdir-linked.elf"
@@ -293,6 +295,17 @@ run_package() {
       grep -q 'exit=0' <<<"$sbase_tail_output"
       printf 'real LLVM LNP64 run-elf sbase tail execution passed: %s\n' \
         "$build_dir/lnp64-sbase-tail-linked.elf"
+      rm -f "$sbase_fixture_root/tee-copy.txt"
+      "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-tee-linked.elf" >/dev/null
+      printf 'tee via clang\n' | "$lnp64_bin" run-elf \
+        --namespace-root "$sbase_fixture_root" \
+        "$build_dir/lnp64-sbase-tee-linked.elf" tee tee-copy.txt \
+        >"$sbase_fixture_root/tee-stdout.txt"
+      grep -q '^tee via clang$' "$sbase_fixture_root/tee-stdout.txt"
+      grep -q 'exit=0' "$sbase_fixture_root/tee-stdout.txt"
+      grep -q '^tee via clang$' "$sbase_fixture_root/tee-copy.txt"
+      printf 'real LLVM LNP64 run-elf sbase tee execution passed: %s\n' \
+        "$build_dir/lnp64-sbase-tee-linked.elf"
       "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-ls-linked.elf" >/dev/null
       local sbase_ls_output
       sbase_ls_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \

@@ -454,6 +454,18 @@ fi
 grep -q 'exit=0' <<<"$sbase_tail_output"
 printf 'real LLVM LNP64 run-elf sbase tail execution passed: %s\n' \
   target/llvm-lnp64-build/lnp64-sbase-tail-linked.elf
+rm -f "$sbase_fixture_root/tee-copy.txt"
+"$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-tee-linked.elf \
+  >/dev/null
+printf 'tee via clang\n' | "$lnp64_bin" run-elf \
+  --namespace-root "$sbase_fixture_root" \
+  target/llvm-lnp64-build/lnp64-sbase-tee-linked.elf tee tee-copy.txt \
+  >"$sbase_fixture_root/tee-stdout.txt"
+grep -q '^tee via clang$' "$sbase_fixture_root/tee-stdout.txt"
+grep -q 'exit=0' "$sbase_fixture_root/tee-stdout.txt"
+grep -q '^tee via clang$' "$sbase_fixture_root/tee-copy.txt"
+printf 'real LLVM LNP64 run-elf sbase tee execution passed: %s\n' \
+  target/llvm-lnp64-build/lnp64-sbase-tee-linked.elf
 "$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-ls-linked.elf \
   >/dev/null
 sbase_ls_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
