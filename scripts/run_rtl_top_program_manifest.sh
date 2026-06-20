@@ -6,11 +6,6 @@ cd "$root"
 
 scripts/check_rtl_top_level_program_manifest.py >/dev/null
 
-if [[ -z "${LNP64_BIN:-}" ]]; then
-  cargo build --quiet
-  export LNP64_BIN="$root/target/debug/lnp64"
-fi
-
 export LNP64_RTL_REUSE_BUILD="${LNP64_RTL_REUSE_BUILD:-1}"
 export LNP64_RTL_BUILD_ROOT="${LNP64_RTL_BUILD_ROOT:-$root/target/rtl-verilator}"
 export LNP64_RTL_TOP_PROGRAM_MAX_CYCLES="${LNP64_RTL_TOP_PROGRAM_MAX_CYCLES:-10000}"
@@ -79,6 +74,20 @@ PY
 if [[ "${#program_specs[@]}" -eq 0 ]]; then
   printf '%s\n' "no active top-level RTL programs selected" >&2
   exit 1
+fi
+
+for spec in "${program_specs[@]}"; do
+  IFS=$'\t' read -r program gate <<< "$spec"
+  if [[ "$program" == *.c && "$gate" == "scripts/run_rtl_top_program_smoke.sh" ]]; then
+    printf '%s\n' "direct .c input to run_rtl_top_program_manifest.sh is retired" >&2
+    printf '%s\n' "use manifest-owned LLVM clang/linked entries or scripts/run_rtl_top_linked_llvm_smoke.sh for C inputs" >&2
+    exit 1
+  fi
+done
+
+if [[ -z "${LNP64_BIN:-}" ]]; then
+  cargo build --quiet
+  export LNP64_BIN="$root/target/debug/lnp64"
 fi
 
 run_program_spec() {

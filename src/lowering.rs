@@ -6858,6 +6858,23 @@ mod tests {
             rtl_direct_c_rejection < rtl_filelist_read,
             "direct C input must be rejected before reading RTL build inputs"
         );
+        let rtl_manifest_no_selection = rtl_manifest_runner
+            .find("no active top-level RTL programs selected")
+            .expect("missing empty-selection rejection in RTL manifest runner");
+        let rtl_manifest_direct_c_rejection = rtl_manifest_runner
+            .find("direct .c input to run_rtl_top_program_manifest.sh is retired")
+            .expect("missing direct C rejection in RTL manifest runner");
+        let rtl_manifest_cargo_build = rtl_manifest_runner
+            .find("cargo build --quiet")
+            .expect("missing cargo build in RTL manifest runner");
+        assert!(
+            rtl_manifest_no_selection < rtl_manifest_cargo_build,
+            "empty manifest selections must fail before building the Rust binary"
+        );
+        assert!(
+            rtl_manifest_direct_c_rejection < rtl_manifest_cargo_build,
+            "retired direct C manifest inputs must fail before building the Rust binary"
+        );
         assert!(rtl_program_smoke.contains("scripts/run_rtl_top_clang_smoke.sh"));
         assert!(rtl_program_smoke.contains("scripts/run_rtl_top_linked_llvm_smoke.sh"));
         assert!(rtl_program_smoke.contains("asm-flat-exec"));
@@ -7344,6 +7361,10 @@ mod tests {
             "R_LNP64_FDR_DESC64",
             "R_LNP64_CAP_DESC64",
             "R_LNP64_CALLGATE64",
+            "R_LNP64_PCREL_HI20",
+            "R_LNP64_PCREL_LO12_I",
+            "R_LNP64_PCREL_LO12_LD",
+            "R_LNP64_TLS_TPREL_SLOT64",
         ] {
             assert!(
                 manifest_csv_contains(manifest, "relocations", relocation),
@@ -8633,7 +8654,7 @@ mod tests {
         let mut numbers = std::collections::BTreeSet::new();
         let mut names = std::collections::BTreeSet::new();
 
-        assert_eq!(rows.len(), 13);
+        assert_eq!(rows.len(), 17);
         assert_eq!(
             target_relocations.len(),
             rows.len(),
