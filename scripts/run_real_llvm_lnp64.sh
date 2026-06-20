@@ -14,6 +14,29 @@ fi
 jobs="${LNP64_LLVM_JOBS:-$default_jobs}"
 gate="${LNP64_LLVM_GATE:-full}"
 
+usage() {
+  cat <<'USAGE'
+usage: scripts/run_real_llvm_lnp64.sh
+
+Builds the local LNP64 LLVM/Clang/lld smoke toolchain. Select a smaller gate
+with LNP64_LLVM_GATE=mc or LNP64_LLVM_GATE=objects.
+USAGE
+}
+
+while (($#)); do
+  case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      printf 'unknown option: %s\n' "$1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
 case "$gate" in
   full|mc|objects) ;;
   *)
