@@ -193,8 +193,27 @@ int main(void) {
     if (kout.filter != 99 || !(kout.flags & EV_ERROR) || kout.data != 22 ||
         kout.udata != (void *)99)
         return 56;
+    change.ident = 77;
+    change.filter = EVFILT_USER;
+    change.flags = EV_ADD;
+    change.fflags = 0;
+    change.data = 0;
+    change.udata = (void *)77;
+    if (kevent(kq, &change, 1, 0, 0, &ktimeout) != 0)
+        return 57;
+    if (kevent(kq, 0, 0, &kout, 1, &ktimeout) != 0)
+        return 58;
+    change.fflags = NOTE_TRIGGER;
+    if (kevent(kq, &change, 1, &kout, 1, &ktimeout) != 1)
+        return 59;
+    if (kout.ident != 77 || kout.filter != EVFILT_USER ||
+        kout.fflags != NOTE_TRIGGER || kout.udata != (void *)77)
+        return 60;
+    if (kevent(kq, 0, 0, &kout, 1, &ktimeout) != 0)
+        return 61;
     change.ident = write_cap;
     change.filter = EVFILT_WRITE;
+    change.fflags = 0;
     change.flags = EV_ADD | EV_ONESHOT;
     change.udata = (void *)(unsigned long)write_cap;
     if (kevent(kq, &change, 1, 0, 0, &ktimeout) != 0)

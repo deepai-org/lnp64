@@ -8,10 +8,12 @@
 enum {
   LNP64_EVFILT_READ = -1,
   LNP64_EVFILT_WRITE = -2,
+  LNP64_EVFILT_USER = -10,
   LNP64_EV_ADD = 0x0001,
   LNP64_EV_DELETE = 0x0002,
   LNP64_EV_ONESHOT = 0x0010,
   LNP64_EV_ERROR = 0x4000,
+  LNP64_NOTE_TRIGGER = 0x01000000,
   LNP64_EPOLL_CTL_ADD = 1,
   LNP64_EPOLL_CTL_DEL = 2,
   LNP64_EPOLL_CTL_MOD = 3,
@@ -164,6 +166,7 @@ static int lnp64_kqueue_count;
 static unsigned long lnp64_kqueue_ident[LNP64_KQUEUE_MAX];
 static short lnp64_kqueue_filter[LNP64_KQUEUE_MAX];
 static unsigned short lnp64_kqueue_flags[LNP64_KQUEUE_MAX];
+static unsigned int lnp64_kqueue_fflags[LNP64_KQUEUE_MAX];
 static void *lnp64_kqueue_udata[LNP64_KQUEUE_MAX];
 
 int kqueue(void) {
@@ -195,12 +198,18 @@ static void lnp64_kqueue_remove_slot(int slot) {
   lnp64_kqueue_ident[slot] = lnp64_kqueue_ident[last];
   lnp64_kqueue_filter[slot] = lnp64_kqueue_filter[last];
   lnp64_kqueue_flags[slot] = lnp64_kqueue_flags[last];
+  lnp64_kqueue_fflags[slot] = lnp64_kqueue_fflags[last];
   lnp64_kqueue_udata[slot] = lnp64_kqueue_udata[last];
   lnp64_kqueue_count = last;
 }
 
+static int lnp64_kqueue_filter_supported(short filter) {
+  return filter == LNP64_EVFILT_READ || filter == LNP64_EVFILT_WRITE ||
+         filter == LNP64_EVFILT_USER;
+}
+
 static int lnp64_kqueue_apply_change(const struct kevent *change) {
-  if (lnp64_filter_events(change->filter) == 0)
+  if (!lnp64_kqueue_filter_supported(change->filter))
     return LNP64_EINVAL;
   int slot = lnp64_kqueue_find(change->ident, change->filter);
   if (change->flags & LNP64_EV_DELETE) {
@@ -220,6 +229,11 @@ static int lnp64_kqueue_apply_change(const struct kevent *change) {
   lnp64_kqueue_ident[slot] = change->ident;
   lnp64_kqueue_filter[slot] = change->filter;
   lnp64_kqueue_flags[slot] = change->flags;
+  if (change->filter == LNP64_EVFILT_USER &&
+      (change->fflags & LNP64_NOTE_TRIGGER))
+    lnp64_kqueue_fflags[slot] |= LNP64_NOTE_TRIGGER;
+  else
+    lnp64_kqueue_fflags[slot] = change->fflags;
   lnp64_kqueue_udata[slot] = change->udata;
   return 0;
 }
@@ -263,6 +277,23 @@ int kevent(int kq, const struct kevent *changelist, int nchanges,
 
   for (int i = 0; i < lnp64_kqueue_count && ready < nevents; i = i + 1) {
     lnp64_word_t mask = (lnp64_word_t)lnp64_filter_events(lnp64_kqueue_filter[i]);
+    if (lnp64_kqueue_filter[i] == LNP64_EVFILT_USER) {
+      if (!(lnp64_kqueue_fflags[i] & LNP64_NOTE_TRIGGER))
+        continue;
+      eventlist[ready].ident = lnp64_kqueue_ident[i];
+      eventlist[ready].filter = lnp64_kqueue_filter[i];
+      eventlist[ready].flags = 0;
+      eventlist[ready].fflags = LNP64_NOTE_TRIGGER;
+      eventlist[ready].data = 0;
+      eventlist[ready].udata = lnp64_kqueue_udata[i];
+      lnp64_kqueue_fflags[i] &= ~LNP64_NOTE_TRIGGER;
+      ready = ready + 1;
+      if (lnp64_kqueue_flags[i] & LNP64_EV_ONESHOT) {
+        lnp64_kqueue_remove_slot(i);
+        i = i - 1;
+      }
+      continue;
+    }
     if (mask == 0)
       continue;
     lnp64_word_t status =

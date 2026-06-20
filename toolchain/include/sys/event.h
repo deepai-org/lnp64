@@ -5,11 +5,14 @@
 
 #define EVFILT_READ (-1)
 #define EVFILT_WRITE (-2)
+#define EVFILT_USER (-10)
 
 #define EV_ADD 0x0001
 #define EV_DELETE 0x0002
 #define EV_ONESHOT 0x0010
 #define EV_ERROR 0x4000
+
+#define NOTE_TRIGGER 0x01000000
 
 struct kevent {
   unsigned long ident;
