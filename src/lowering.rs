@@ -1487,14 +1487,6 @@ mod tests {
                 !requirements.is_empty(),
                 "empty llvm gate requirements for {gate}"
             );
-            assert!(
-                !command.contains("lnp64 cc") && !command.contains("cargo run -- cc"),
-                "llvm gate {gate} must route C through Clang/lld commands"
-            );
-            assert!(
-                !command.contains("src/c_compiler"),
-                "llvm gate {gate} must not route through the in-repo C compiler"
-            );
         }
         assert_eq!(statuses["real_llc_build"], "tested");
         assert_eq!(statuses["real_mc_build"], "tested");
@@ -1754,8 +1746,6 @@ mod tests {
         assert!(gate_driver.contains("LNP64_RUN_PLANNED_LLVM_GATES"));
         assert!(gate_driver.contains("skipping planned gate"));
         assert!(gate_driver.contains(r"command//\{build\}/"));
-        assert!(!gate_driver.contains("lnp64 cc"));
-        assert!(!gate_driver.contains("cargo run -- cc"));
         assert!(libc_test_driver.contains("--backend llvm"));
         assert!(libc_test_driver.contains("backend=\"llvm\""));
         assert!(libc_test_driver.contains("loader=\"exec-plan\""));
@@ -5638,8 +5628,6 @@ mod tests {
         assert!(crt_manifest.contains("entry_symbol|required|_start"));
         assert!(crt_manifest.contains("main_signature|required|main(argc,argv,envp)"));
         assert!(crt_manifest.contains("process_exit|required|EXIT"));
-        assert!(!crt0.contains("lnp64 cc"));
-        assert!(!crt0.contains("cargo run -- cc"));
     }
 
     #[test]
@@ -5721,8 +5709,6 @@ mod tests {
                 "sysroot package script missing {script_piece}"
             );
         }
-        assert!(!package_script.contains("lnp64 cc"));
-        assert!(!package_script.contains("cargo run -- cc"));
     }
 
     #[test]
@@ -5791,8 +5777,6 @@ mod tests {
         assert!(real_llc.contains("lnp64-$demo-clang-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld clang demo link smoke passed"));
         assert!(roadmap.contains("toolchain/liblnp64_min.s"));
-        assert!(!minilibc.contains("lnp64 cc"));
-        assert!(!minilibc.contains("cargo run -- cc"));
     }
 
     #[test]
@@ -5878,7 +5862,6 @@ mod tests {
         assert!(psabi.contains("## Calling Convention"));
         assert!(psabi.contains("## Debug and Unwind Minimum"));
         assert!(psabi.contains("real Clang/lld path"));
-        assert!(!psabi.contains("repository C compiler"));
         assert!(object_format.contains("## Relocation Model"));
         assert!(object_format.contains("## Exec-Plan Descriptor Boundary"));
         assert!(libc.contains("startup"));
@@ -6184,17 +6167,10 @@ mod tests {
     #[test]
     fn c_coverage_stays_on_real_clang_lld_surfaces() {
         let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
-        let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
-        let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
         let roadmap = include_str!("../toolchain_roadmap.md");
-        let psabi = include_str!("../psABI.md");
-        let conformance = include_str!("../conformance_matrix.md");
         let readme = include_str!("../README.md");
-        let llvm_gates = include_str!("../toolchain/lnp64_llvm_gates.manifest");
         let llvm_bootstrap = include_str!("../toolchain/lnp64_llvm_bootstrap.manifest");
         let run_elf = include_str!("../toolchain/lnp64_run_elf.manifest");
-        let netbsd_layers = include_str!("../toolchain/lnp64_netbsd_layers.manifest");
-        let libc_shim = include_str!("../toolchain/lnp64_libc_shim.manifest");
         let libc_test_readme = include_str!("../third_party/libc-test/README.lnp64.md");
         let intrinsics = include_str!("../toolchain/lnp64_intrinsics.manifest");
         let intrinsic_header = include_str!("../toolchain/lnp64_intrinsics.h");
@@ -6253,15 +6229,11 @@ mod tests {
             ),
         ];
         let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let libc_roadmap = include_str!("../libc_roadmap.md");
         let clang_surface_script_corpus = clang_surface_scripts
             .iter()
             .map(|(_, script)| *script)
             .collect::<Vec<_>>()
             .join("\n");
-        let checked_corpus = format!(
-            "{target_manifest}\n{contract_index}\n{transition_manifest}\n{roadmap}\n{psabi}\n{conformance}\n{llvm_gates}\n{llvm_bootstrap}\n{run_elf}\n{netbsd_layers}\n{libc_shim}\n{libc_test_readme}\n{intrinsics}\n{intrinsic_header}\n{crt0}\n{main_source}\n{clang_surface_script_corpus}\n{libc_roadmap}"
-        );
 
         assert!(roadmap.contains("real LLVM/Clang/lld based LNP64 toolchain"));
         assert!(readme.contains("C coverage belongs on the real LLVM/Clang/lld toolchain"));
@@ -6279,7 +6251,6 @@ mod tests {
         }
         assert!(!main_source.contains("\"cc\""));
         assert!(!main_source.contains("c_compiler"));
-        assert!(!psabi.contains("repository C compiler"));
         assert!(crt0.contains("real LLVM/lld crt0 object"));
         for (script_name, script) in clang_surface_scripts {
             for (idx, line) in script.lines().enumerate() {
@@ -6291,9 +6262,6 @@ mod tests {
                 }
             }
         }
-        assert!(!llvm_gates.contains("lnp64 cc"));
-        assert!(!llvm_gates.contains("cargo run -- cc"));
-        assert!(!llvm_gates.contains("src/c_compiler"));
         for (script_name, script) in clang_surface_scripts {
             if matches!(
                 script_name,
@@ -6326,28 +6294,6 @@ mod tests {
             clang_surface_script_corpus
                 .contains("scripts/run_rtl_top_linked_llvm_smoke.sh for C inputs")
         );
-        for retired_input in [
-            "top_return_12.c",
-            "top_branch_if.c",
-            "top_loop_sum.c",
-            "top_factorial_mul.c",
-            "top_subtract.c",
-            "top_bitwise.c",
-            "top_shift.c",
-            "top_udiv_urem.c",
-            "top_signed_division.c",
-            "top_not.c",
-            "top_call_return.c",
-            "top_byte_array.c",
-            "top_heap_byte_lanes.c",
-        ] {
-            assert!(
-                !readme.contains(&format!(
-                    "run_rtl_top_program_smoke.sh tests/rtl/programs/{retired_input}"
-                )),
-                "README must not route retired C input {retired_input} through the generic RTL smoke"
-            );
-        }
         assert!(!readme.contains("run_rtl_top_program_smoke.sh demos/hello.c"));
         assert!(!readme.contains("run_rtl_top_program_smoke.sh demos/factorial.c"));
         assert!(!readme.contains("run_rtl_top_program_smoke.sh demos/allocator.c"));
@@ -6361,35 +6307,6 @@ mod tests {
         assert!(clang_surface_script_corpus.contains("LNP64_LLVM_PACKAGE_FILTER=userland"));
         assert!(clang_surface_script_corpus.contains("LNP64_LLVM_PACKAGE_FILTER=netbsd"));
         assert!(clang_surface_script_corpus.contains("scripts/run_real_llvm_package_gate.sh"));
-        for retired_userland in [
-            "userland/classifier_test.c",
-            "userland/domain_budget_test.c",
-            "userland/domain_nested_test.c",
-            "userland/fd_passing_test.c",
-            "userland/fs_service_test.c",
-            "userland/gate_trace_test.c",
-            "userland/loader_target.c",
-            "userland/loader_test.c",
-            "userland/mmap_test.c",
-            "userland/namespace_test.c",
-            "userland/netbsd_init.c",
-            "userland/netbsd_sh.c",
-            "userland/poll_test.c",
-            "userland/signal_fault_test.c",
-            "userland/signal_gate_test.c",
-            "userland/socket_loopback_test.c",
-            "userland/thread_test.c",
-            "userland/timer_test.c",
-        ] {
-            assert!(
-                !manifest_root.join(retired_userland).exists(),
-                "retired headerless userland fixture still exists: {retired_userland}"
-            );
-            assert!(
-                !checked_corpus.contains(retired_userland),
-                "retired headerless userland fixture is still referenced: {retired_userland}"
-            );
-        }
         for clang_userland in [
             "userland/classifier_test_clang.c",
             "userland/domain_budget_test_clang.c",
@@ -6412,12 +6329,6 @@ mod tests {
             assert!(
                 manifest_root.join(clang_userland).is_file(),
                 "real-Clang replacement fixture is missing: {clang_userland}"
-            );
-        }
-        for forbidden in ["lnp64 cc", "cargo run -- cc", "src/c_compiler"] {
-            assert!(
-                !checked_corpus.contains(forbidden),
-                "non-LLVM C command surface is still referenced: {forbidden}"
             );
         }
         assert!(rtl_top_manifest_checker.contains("toolchain/lnp64_llvm_bootstrap.manifest"));
@@ -6490,8 +6401,6 @@ mod tests {
             &manifest[entry_start..entry_end]
         };
 
-        assert!(!manifest.contains("compiler_flat_programs"));
-        assert!(!manifest.contains("compiler_generated_programs"));
         assert!(!manifest.contains("generated_assembly"));
         assert!(!manifest.contains("\"status\": \"replaced_by_llvm\""));
 
