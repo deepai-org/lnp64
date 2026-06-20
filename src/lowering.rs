@@ -6546,6 +6546,9 @@ mod tests {
         let run_userland = include_str!("../scripts/run_userland.sh");
         let run_netbsd_smoke = include_str!("../scripts/run_netbsd_personality_smoke.sh");
         let run_netbsd_system = include_str!("../scripts/run_netbsd_personality_system.sh");
+        let emulator_source = include_str!("emulator.rs");
+        let loader_source = include_str!("loader.rs");
+        let asm_source = include_str!("asm.rs");
         let rows = conformance_gate_rows(gate_manifest);
         let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let gate_path = manifest_field(target_manifest, "conformance_gate_contract");
@@ -6672,6 +6675,47 @@ mod tests {
             assert_eq!(
                 categories[category].0, "tested",
                 "{category} should be tested by current gates"
+            );
+        }
+        assert_eq!(
+            categories["randomized_emulator"].2,
+            "cargo test --quiet randomized_"
+        );
+        assert_eq!(
+            categories["randomized_emulator"].3,
+            "randomized_mmap_capability_domain_stress"
+        );
+        for test_name in [
+            "randomized_mmap_mprotect_and_guard_stress_preserves_permissions",
+            "randomized_capability_delegation_stress_preserves_authority",
+            "randomized_domain_lifecycle_stress_rejects_stale_handles",
+        ] {
+            assert!(
+                emulator_source.contains(test_name),
+                "randomized conformance gate filter must match {test_name}"
+            );
+        }
+        assert_eq!(
+            categories["adversarial_fault"].2,
+            "cargo test --quiet rejects_"
+        );
+        assert_eq!(
+            categories["adversarial_fault"].3,
+            "rejects_malformed_faulting_authority_broadening_and_precommit_side_effects"
+        );
+        for test_name in [
+            "rejects_raw_hardware_and_syscall_escape_opcodes",
+            "static_elf_loader_rejects_wrong_machine",
+            "static_elf_loader_rejects_writable_executable_loads",
+            "emulator_rejects_writable_executable_exec_descriptor_vma",
+            "mmap_rejects_unknown_protection_bits_without_vma_side_effects",
+            "div_rejects_locked_result_before_fault_event",
+        ] {
+            assert!(
+                [asm_source, loader_source, emulator_source]
+                    .iter()
+                    .any(|source| source.contains(test_name)),
+                "adversarial/fault conformance gate filter must match {test_name}"
             );
         }
 
