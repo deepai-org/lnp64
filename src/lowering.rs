@@ -6653,6 +6653,7 @@ mod tests {
         let run_userland = include_str!("../scripts/run_userland.sh");
         let run_netbsd_smoke = include_str!("../scripts/run_netbsd_personality_smoke.sh");
         let run_netbsd_system = include_str!("../scripts/run_netbsd_personality_system.sh");
+        let run_elf_manifest = include_str!("../toolchain/lnp64_run_elf.manifest");
         let emulator_source = include_str!("emulator.rs");
         let loader_source = include_str!("loader.rs");
         let asm_source = include_str!("asm.rs");
@@ -6739,6 +6740,11 @@ mod tests {
                 .1
                 .contains(&"scripts/run_real_llvm_lnp64_objects_docker.sh")
         );
+        assert!(
+            categories["llvm_built_versions"]
+                .1
+                .contains(&"toolchain/lnp64_run_elf.manifest")
+        );
         assert_eq!(
             categories["llvm_built_versions"].2,
             "scripts/run_real_llvm_lnp64_docker.sh"
@@ -6758,6 +6764,9 @@ mod tests {
                 .3
                 .contains("full_libc_replacement_pending")
         );
+        assert!(run_elf_manifest.contains("stdout_exit|partial"));
+        assert!(run_elf_manifest.contains("needs_full_libc_runtime_packaging"));
+        assert!(conformance.contains("stdout/exit compatibility row remains partial"));
         assert_eq!(
             categories["llvm_package_tests"].2,
             "scripts/run_real_llvm_lnp64_docker.sh"
