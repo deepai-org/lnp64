@@ -258,4 +258,128 @@ theorem m2_t3_signal_compatibility_safe_for_all_reachable {s : State} :
   intro hReach
   exact (reachable_invariant hReach).2.2.2.2.2.2.2
 
+/- Packed-bit decode model for the M2 gate/continuation witness.
+
+Mirrors the M1/M4/M5/M7 packed-bit machinery so the emitted lnp64_m2_gate_commit_t
+and lnp64_m2_state_projection_t bit vectors can be decode-checked against this
+Lean model. Every M2 field is a plain scalar/bool slice. -/
+
+structure PackedFieldLayout where
+  name : String
+  width : Nat
+  lsb : Nat
+  msb : Nat
+deriving DecidableEq, Repr
+
+def packedSchemaWidth (schema : List (String × Nat)) : Nat :=
+  schema.foldl (fun total field => total + field.2) 0
+
+def packedSchemaLayoutFrom : Nat -> List (String × Nat) -> List PackedFieldLayout
+  | _cursor, [] => []
+  | cursor, field :: rest =>
+      let lsb := cursor - field.2
+      { name := field.1, width := field.2, lsb := lsb, msb := cursor - 1 } ::
+        packedSchemaLayoutFrom lsb rest
+
+def packedSchemaLayout (schema : List (String × Nat)) : List PackedFieldLayout :=
+  packedSchemaLayoutFrom (packedSchemaWidth schema) schema
+
+def packedFieldWithinWidth (totalWidth : Nat) (field : PackedFieldLayout) : Bool :=
+  decide (field.width > 0) &&
+  decide (field.lsb + field.width = field.msb + 1) &&
+  decide (field.msb < totalWidth)
+
+def packedLayoutWithinWidth (totalWidth : Nat) (layout : List PackedFieldLayout) : Bool :=
+  layout.all (packedFieldWithinWidth totalWidth)
+
+def packedLayoutStartsAtWidth (totalWidth : Nat) : List PackedFieldLayout -> Bool
+  | [] => decide (totalWidth = 0)
+  | field :: _rest => decide (field.msb + 1 = totalWidth)
+
+def packedLayoutAdjacentContiguous : List PackedFieldLayout -> Bool
+  | [] => true
+  | _field :: [] => true
+  | first :: second :: rest =>
+      decide (first.lsb = second.msb + 1) &&
+      packedLayoutAdjacentContiguous (second :: rest)
+
+def packedLayoutEndsAtZero : List PackedFieldLayout -> Bool
+  | [] => true
+  | field :: [] => decide (field.lsb = 0)
+  | _field :: rest => packedLayoutEndsAtZero rest
+
+def packedLayoutCoversWidth (totalWidth : Nat) (layout : List PackedFieldLayout) : Bool :=
+  packedLayoutWithinWidth totalWidth layout &&
+  packedLayoutStartsAtWidth totalWidth layout &&
+  packedLayoutAdjacentContiguous layout &&
+  packedLayoutEndsAtZero layout
+
+def packedBitSlice (bits lsb width : Nat) : Nat :=
+  (bits / (2 ^ lsb)) % (2 ^ width)
+
+def packedFieldValue (bits : Nat) (field : PackedFieldLayout) : Nat :=
+  packedBitSlice bits field.lsb field.width
+
+def packedLayoutFieldValue
+    (bits : Nat)
+    (fieldName : String) : List PackedFieldLayout -> Option Nat
+  | [] => none
+  | field :: rest =>
+      if field.name == fieldName then
+        some (packedFieldValue bits field)
+      else
+        packedLayoutFieldValue bits fieldName rest
+
+def rtlM2CommitPackedSchema : List (String × Nat) :=
+  [ ("op", 8)
+  , ("status", 16)
+  , ("continuation_id", 32)
+  , ("continuation_generation", 32)
+  , ("caller_tid", 32)
+  , ("callee_tid", 32)
+  , ("mode", 16) ]
+
+def rtlM2StateProjectionPackedSchema : List (String × Nat) :=
+  [ ("op", 8)
+  , ("status", 16)
+  , ("caller_loc", 2)
+  , ("callee_loc", 2)
+  , ("continuation_valid", 1)
+  , ("continuation_id", 32)
+  , ("continuation_generation", 32)
+  , ("delivered_faults", 32)
+  , ("continuation_unique", 1)
+  , ("sync_roundtrip_ok", 1)
+  , ("async_delivery_ok", 1)
+  , ("handoff_delivery_ok", 1)
+  , ("stale_continuation_rejected", 1)
+  , ("fault_delivery_gate_ok", 1)
+  , ("signal_compatibility_ok", 1) ]
+
+def rtlM2CommitPackedLayout : List PackedFieldLayout :=
+  packedSchemaLayout rtlM2CommitPackedSchema
+
+def rtlM2StateProjectionPackedLayout : List PackedFieldLayout :=
+  packedSchemaLayout rtlM2StateProjectionPackedSchema
+
+theorem rtlM2CommitPackedSchema_width :
+    packedSchemaWidth rtlM2CommitPackedSchema = 168 := by
+  decide
+
+theorem rtlM2StateProjectionPackedSchema_width :
+    packedSchemaWidth rtlM2StateProjectionPackedSchema = 132 := by
+  decide
+
+theorem rtlM2CommitPackedLayout_covers_schema_width :
+    packedLayoutCoversWidth
+      (packedSchemaWidth rtlM2CommitPackedSchema)
+      rtlM2CommitPackedLayout = true := by
+  decide
+
+theorem rtlM2StateProjectionPackedLayout_covers_schema_width :
+    packedLayoutCoversWidth
+      (packedSchemaWidth rtlM2StateProjectionPackedSchema)
+      rtlM2StateProjectionPackedLayout = true := by
+  decide
+
 end Lnp64.M2Transition

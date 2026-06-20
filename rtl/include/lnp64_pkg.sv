@@ -264,6 +264,16 @@ package lnp64_pkg;
         LNP64_M5_COMMIT_COHERENCE_FLUSH  = 8'd8
     } lnp64_m5_dma_op_e;
 
+    typedef enum logic [7:0] {
+        LNP64_M2_COMMIT_SYNC_CALL      = 8'd1,
+        LNP64_M2_COMMIT_SYNC_RETURN    = 8'd2,
+        LNP64_M2_COMMIT_ASYNC_CALL     = 8'd3,
+        LNP64_M2_COMMIT_HANDOFF_CALL   = 8'd4,
+        LNP64_M2_COMMIT_STALE_RETURN   = 8'd5,
+        LNP64_M2_COMMIT_FAULT_DELIVERY = 8'd6,
+        LNP64_M2_COMMIT_SIGNAL_COMPAT  = 8'd7
+    } lnp64_m2_gate_op_e;
+
     typedef enum logic [15:0] {
         LNP64_STATUS_OK          = 16'h0000,
         LNP64_STATUS_ERROR       = 16'h0001,
@@ -587,6 +597,34 @@ package lnp64_pkg;
         logic        coherence_observed;
         logic        completions_exact;
     } lnp64_m5_state_projection_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] continuation_id;
+        logic [31:0] continuation_generation;
+        logic [31:0] caller_tid;
+        logic [31:0] callee_tid;
+        logic [15:0] mode;
+    } lnp64_m2_gate_commit_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [1:0]  caller_loc;
+        logic [1:0]  callee_loc;
+        logic        continuation_valid;
+        logic [31:0] continuation_id;
+        logic [31:0] continuation_generation;
+        logic [31:0] delivered_faults;
+        logic        continuation_unique;
+        logic        sync_roundtrip_ok;
+        logic        async_delivery_ok;
+        logic        handoff_delivery_ok;
+        logic        stale_continuation_rejected;
+        logic        fault_delivery_gate_ok;
+        logic        signal_compatibility_ok;
+    } lnp64_m2_state_projection_t;
 
     typedef struct packed {
         logic [31:0] object_id;

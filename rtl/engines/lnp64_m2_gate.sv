@@ -17,7 +17,10 @@ module lnp64_m2_gate (
     output logic handoff_delivery_ok,
     output logic stale_continuation_rejected,
     output logic fault_delivery_gate_ok,
-    output logic signal_compatibility_ok
+    output logic signal_compatibility_ok,
+    output logic typed_commit_valid,
+    output lnp64_m2_gate_commit_t typed_commit,
+    output lnp64_m2_state_projection_t typed_state_projection
 );
     typedef enum logic [3:0] {
         G_RESET,
@@ -87,9 +90,46 @@ module lnp64_m2_gate (
         return {12'd0, seed[23:20]} + 16'd3;
     endfunction
 
+    task automatic commit_m2(
+        input lnp64_m2_gate_op_e op,
+        input logic [15:0] status,
+        input logic [15:0] mode,
+        input logic [31:0] cont_gen
+    );
+        typed_commit_valid <= 1'b1;
+        typed_commit.op <= op;
+        typed_commit.status <= status;
+        typed_commit.continuation_id <= continuation_id;
+        typed_commit.continuation_generation <= cont_gen;
+        typed_commit.caller_tid <= caller_tid;
+        typed_commit.callee_tid <= callee_tid;
+        typed_commit.mode <= mode;
+    endtask
+
+    always_comb begin
+        typed_state_projection = '0;
+        typed_state_projection.op = typed_commit.op;
+        typed_state_projection.status = typed_commit.status;
+        typed_state_projection.caller_loc = caller_loc;
+        typed_state_projection.callee_loc = callee_loc;
+        typed_state_projection.continuation_valid = continuation_valid;
+        typed_state_projection.continuation_id = continuation_id;
+        typed_state_projection.continuation_generation = continuation_generation;
+        typed_state_projection.delivered_faults = delivered_faults;
+        typed_state_projection.continuation_unique = continuation_unique;
+        typed_state_projection.sync_roundtrip_ok = sync_roundtrip_ok;
+        typed_state_projection.async_delivery_ok = async_delivery_ok;
+        typed_state_projection.handoff_delivery_ok = handoff_delivery_ok;
+        typed_state_projection.stale_continuation_rejected = stale_continuation_rejected;
+        typed_state_projection.fault_delivery_gate_ok = fault_delivery_gate_ok;
+        typed_state_projection.signal_compatibility_ok = signal_compatibility_ok;
+    end
+
     always_ff @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
             state <= G_RESET;
+            typed_commit_valid <= 1'b0;
+            typed_commit <= '0;
             done <= 1'b0;
             trace_valid <= 1'b0;
             trace_code <= 8'd0;
@@ -111,6 +151,7 @@ module lnp64_m2_gate (
             delivered_faults <= 32'd0;
         end else begin
             trace_valid <= 1'b0;
+            typed_commit_valid <= 1'b0;
             unique case (state)
                 G_RESET: begin
                     if (start) begin
@@ -141,6 +182,7 @@ module lnp64_m2_gate (
                             seeded_continuation_id(scenario_seed),
                             MODE_SYNC
                         };
+                        commit_m2(LNP64_M2_COMMIT_SYNC_CALL, LNP64_STATUS_OK, MODE_SYNC, 32'd1);
                         state <= G_SYNC_RETURN;
                     end else begin
                         continuation_unique <= 1'b0;
@@ -159,6 +201,7 @@ module lnp64_m2_gate (
                         trace_valid <= 1'b1;
                         trace_code <= 8'd3;
                         trace_value <= {32'd0, seeded_continuation_id(scenario_seed)};
+                        commit_m2(LNP64_M2_COMMIT_SYNC_RETURN, LNP64_STATUS_OK, MODE_SYNC, 32'd2);
                         state <= G_ASYNC_CALL;
                     end else begin
                         state <= G_DONE;
@@ -172,6 +215,7 @@ module lnp64_m2_gate (
                         trace_valid <= 1'b1;
                         trace_code <= 8'd4;
                         trace_value <= {32'd0, seeded_async_target(scenario_seed), MODE_ASYNC};
+                        commit_m2(LNP64_M2_COMMIT_ASYNC_CALL, LNP64_STATUS_OK, MODE_ASYNC, 32'd2);
                         state <= G_HANDOFF_CALL;
                     end else begin
                         continuation_unique <= 1'b0;
@@ -186,6 +230,7 @@ module lnp64_m2_gate (
                         trace_valid <= 1'b1;
                         trace_code <= 8'd5;
                         trace_value <= {32'd0, seeded_handoff_target(scenario_seed), MODE_HANDOFF};
+                        commit_m2(LNP64_M2_COMMIT_HANDOFF_CALL, LNP64_STATUS_OK, MODE_HANDOFF, 32'd2);
                         state <= G_STALE_RETURN;
                     end else begin
                         continuation_unique <= 1'b0;
@@ -199,6 +244,7 @@ module lnp64_m2_gate (
                         trace_valid <= 1'b1;
                         trace_code <= 8'd6;
                         trace_value <= LNP64_ERR_EREVOKED;
+                        commit_m2(LNP64_M2_COMMIT_STALE_RETURN, LNP64_ERR_EREVOKED, MODE_SYNC, 32'd2);
                         state <= G_FAULT_DELIVERY;
                     end else begin
                         state <= G_DONE;
@@ -210,6 +256,7 @@ module lnp64_m2_gate (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd7;
                     trace_value <= LNP64_ERR_EFAULT;
+                    commit_m2(LNP64_M2_COMMIT_FAULT_DELIVERY, LNP64_ERR_EFAULT, MODE_SYNC, 32'd2);
                     state <= G_SIGNAL_COMPAT;
                 end
                 G_SIGNAL_COMPAT: begin
@@ -217,6 +264,7 @@ module lnp64_m2_gate (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd8;
                     trace_value <= 64'd0;
+                    commit_m2(LNP64_M2_COMMIT_SIGNAL_COMPAT, LNP64_STATUS_OK, MODE_SYNC, 32'd2);
                     state <= G_DONE;
                 end
                 G_DONE: begin

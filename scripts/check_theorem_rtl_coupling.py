@@ -323,6 +323,60 @@ def check_m5_typed_trace_contract(claim: dict) -> None:
         require(name in proof_gate_text, f"RTL proof gate must run {name}")
 
 
+def check_engine_typed_trace_contract(
+    claim: dict,
+    claim_id: str,
+    prefix: str,
+    commit_marker: str,
+    pass_marker: str,
+) -> None:
+    """Shared enforcement that a milestone slice carries the full typed-trace,
+    witness, and Lean decode-faithfulness apparatus and is wired into the gate."""
+    if claim.get("id") != claim_id:
+        return
+    trace_sources = claim.get("trace_sources", [])
+    gate_scripts = claim.get("gate_scripts", [])
+    artifacts = (
+        f"scripts/check_rtl_{prefix}_typed_commit_trace.py",
+        f"scripts/test_rtl_{prefix}_typed_commit_checker.py",
+        f"scripts/check_rtl_{prefix}_witness.py",
+        f"scripts/run_rtl_{prefix}_witness_gate.sh",
+        f"scripts/test_rtl_{prefix}_witness_checker.py",
+        f"scripts/gen_{prefix}_witness_lean.py",
+        f"scripts/run_rtl_{prefix}_lean_witness_gate.sh",
+    )
+    for name in artifacts:
+        require((ROOT / name).exists(), f"{claim_id}: missing {prefix} artifact {name}")
+        require(name in gate_scripts, f"{claim_id}: missing {prefix} gate {name}")
+    for name in (
+        f"scripts/check_rtl_{prefix}_typed_commit_trace.py",
+        f"scripts/check_rtl_{prefix}_witness.py",
+        f"scripts/run_rtl_{prefix}_lean_witness_gate.sh",
+    ):
+        require(name in trace_sources, f"{claim_id}: missing {prefix} trace source {name}")
+    markers = claim.get("trace_markers", [])
+    require(commit_marker in markers, f"{claim_id}: missing {prefix} typed commit trace marker")
+    require(pass_marker in markers, f"{claim_id}: missing {prefix} typed trace pass marker")
+    known_gaps = " ".join(claim.get("known_gaps", []))
+    require(
+        "typed transition traces" not in known_gaps,
+        f"{claim_id}: known gap still claims {prefix} typed transition traces are missing",
+    )
+    require(
+        f"scripts/run_rtl_{prefix}_lean_witness_gate.sh" in known_gaps,
+        f"{claim_id}: known gap must record the {prefix} Lean decode-faithfulness proof",
+    )
+    proof_gate_text = check_file(RTL_PROOF_GATES, "RTL proof gate")
+    for name in (
+        f"scripts/check_rtl_{prefix}_typed_commit_trace.py",
+        f"scripts/test_rtl_{prefix}_typed_commit_checker.py",
+        f"scripts/check_rtl_{prefix}_witness.py",
+        f"scripts/test_rtl_{prefix}_witness_checker.py",
+        f"scripts/run_rtl_{prefix}_lean_witness_gate.sh",
+    ):
+        require(name in proof_gate_text, f"RTL proof gate must run {name}")
+
+
 def check_file(path: Path, label: str) -> str:
     require(path.exists(), f"missing {label} {path}")
     require(path.stat().st_size > 0, f"empty {label} {path}")
@@ -337,6 +391,13 @@ def check_claim(claim: dict) -> None:
     check_m7_typed_trace_contract(claim)
     check_m4_typed_trace_contract(claim)
     check_m5_typed_trace_contract(claim)
+    check_engine_typed_trace_contract(
+        claim,
+        "gate_fault_delivery_safety",
+        "m2",
+        'TTRACE_M2 {\\"record\\":\\"m2_gate_commit\\"',
+        "rtl m2 typed commit trace ok",
+    )
 
     trust = claim.get("trust_level")
     require(trust in ALLOWED_TRUST_LEVELS, f"{claim_id}: invalid trust level {trust}")

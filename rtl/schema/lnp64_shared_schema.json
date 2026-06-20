@@ -261,6 +261,15 @@
       "LNP64_M5_COMMIT_DOMAIN_ISOLATION=8'd7",
       "LNP64_M5_COMMIT_COHERENCE_FLUSH=8'd8"
     ],
+    "lnp64_m2_gate_op_e": [
+      "LNP64_M2_COMMIT_SYNC_CALL=8'd1",
+      "LNP64_M2_COMMIT_SYNC_RETURN=8'd2",
+      "LNP64_M2_COMMIT_ASYNC_CALL=8'd3",
+      "LNP64_M2_COMMIT_HANDOFF_CALL=8'd4",
+      "LNP64_M2_COMMIT_STALE_RETURN=8'd5",
+      "LNP64_M2_COMMIT_FAULT_DELIVERY=8'd6",
+      "LNP64_M2_COMMIT_SIGNAL_COMPAT=8'd7"
+    ],
     "lnp64_status_e": [
       "LNP64_STATUS_OK=16'h0000",
       "LNP64_STATUS_ERROR=16'h0001",
@@ -383,7 +392,9 @@
       "lnp64_m4_vma_commit_t",
       "lnp64_m4_state_projection_t",
       "lnp64_m5_dma_commit_t",
-      "lnp64_m5_state_projection_t"
+      "lnp64_m5_state_projection_t",
+      "lnp64_m2_gate_commit_t",
+      "lnp64_m2_state_projection_t"
     ],
     "ras_and_attestation": [
       "lnp64_error_cancel_t",
@@ -410,6 +421,8 @@
     "lnp64_m4_state_projection_t": ["op:8", "status:16", "vma_id:32", "vma_generation:32", "permissions:8", "guard_page_valid:1", "tlb_valid:1", "mapping_created:1", "load_permitted:1", "store_rejected:1", "nx_faulted:1", "guard_faulted:1", "stale_vma_rejected:1", "tlb_invalidation_observed:1", "wx_enforced:1"],
     "lnp64_m5_dma_commit_t": ["op:8", "status:16", "src_buffer_id:32", "dst_buffer_id:32", "dst_generation:32", "requester_domain:32", "dst_domain:32", "dst_rights:8"],
     "lnp64_m5_state_projection_t": ["op:8", "status:16", "dst_buffer_id:32", "dst_generation:32", "requester_domain:32", "dst_domain:32", "dst_rights:8", "dst_pinned:1", "completions:32", "dst_visible:1", "pin_completed:1", "unpin_completed:1", "copy_completed:1", "fill_completed:1", "permission_faulted:1", "revoke_rejected:1", "domain_isolation_enforced:1", "coherence_observed:1", "completions_exact:1"],
+    "lnp64_m2_gate_commit_t": ["op:8", "status:16", "continuation_id:32", "continuation_generation:32", "caller_tid:32", "callee_tid:32", "mode:16"],
+    "lnp64_m2_state_projection_t": ["op:8", "status:16", "caller_loc:2", "callee_loc:2", "continuation_valid:1", "continuation_id:32", "continuation_generation:32", "delivered_faults:32", "continuation_unique:1", "sync_roundtrip_ok:1", "async_delivery_ok:1", "handoff_delivery_ok:1", "stale_continuation_rejected:1", "fault_delivery_gate_ok:1", "signal_compatibility_ok:1"],
     "lnp64_object_ref_t": ["object_id:32", "object_gen:32", "profile:16", "length:64", "bounds_base:64"],
     "lnp64_control_envelope_t": ["version:16", "profile:16", "byte_len:32", "selector:32", "service_generation:32", "payload_ptr:64"],
     "lnp64_domain_t": ["domain_id:32", "domain_gen:32", "parent_domain_id:32", "parent_domain_gen:32", "budget_limit:64", "budget_used:64", "lifecycle_state:16", "assurance_profile:16", "label_id:32"],

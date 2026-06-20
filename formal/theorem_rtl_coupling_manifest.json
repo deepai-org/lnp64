@@ -249,13 +249,13 @@
       "rtl_modules": [
         {"file": "rtl/engines/lnp64_m2_gate.sv", "module": "lnp64_m2_gate"}
       ],
-      "rtl_witness_signals": ["continuation_unique", "stale_continuation_rejected", "fault_delivery_gate_ok", "signal_compatibility_ok"],
+      "rtl_witness_signals": ["continuation_unique", "stale_continuation_rejected", "fault_delivery_gate_ok", "signal_compatibility_ok", "typed_commit_valid", "typed_commit", "typed_state_projection"],
       "assertion_files": ["formal/rtl_assertions/lnp64_m2_assertions.sv"],
-      "trace_sources": ["rtl/sim/lnp64_m2_tb.sv", "formal/m2_gate_model.py"],
-      "trace_markers": ["TRACE gate_call", "TRACE gate_return", "TRACE fault_delivery", "TRACE signal_compat"],
-      "gate_scripts": ["scripts/run_rtl_m2.sh", "scripts/run_rtl_random_cosim.sh"],
+      "trace_sources": ["rtl/sim/lnp64_m2_tb.sv", "formal/m2_gate_model.py", "scripts/check_rtl_m2_typed_commit_trace.py", "scripts/test_rtl_m2_typed_commit_checker.py", "scripts/check_rtl_m2_witness.py", "scripts/run_rtl_m2_witness_gate.sh", "scripts/gen_m2_witness_lean.py", "scripts/run_rtl_m2_lean_witness_gate.sh"],
+      "trace_markers": ["TRACE gate_call", "TRACE gate_return", "TRACE fault_delivery", "TRACE signal_compat", "TTRACE_M2 {\\\"record\\\":\\\"m2_gate_commit\\\"", "TTRACE_M2_BITS {\\\"record\\\":\\\"m2_gate_commit_bits\\\"", "TTRACE_M2_STATE {\\\"record\\\":\\\"m2_state_projection\\\"", "TTRACE_M2_STATE_BITS {\\\"record\\\":\\\"m2_state_projection_bits\\\"", "rtl m2 typed commit trace ok", "rtl m2 witness ok", "rtl m2 lean witness gate ok"],
+      "gate_scripts": ["scripts/run_rtl_m2.sh", "scripts/check_rtl_m2_typed_commit_trace.py", "scripts/test_rtl_m2_typed_commit_checker.py", "scripts/check_rtl_m2_witness.py", "scripts/run_rtl_m2_witness_gate.sh", "scripts/test_rtl_m2_witness_checker.py", "scripts/gen_m2_witness_lean.py", "scripts/run_rtl_m2_lean_witness_gate.sh", "scripts/run_rtl_random_cosim.sh"],
       "assumptions": ["the M2 slice models bounded gate queues and one active continuation", "compatibility signal masks are provided by the caller/domain policy"],
-      "known_gaps": ["Lean now includes an M2 gate/continuation transition-invariant proof slice, but typed transition traces and checked RTL-to-Lean refinement are still missing."]
+      "known_gaps": ["Lean now includes an M2 gate/continuation transition-invariant proof slice; the seed-0 gate path emits schema-owned typed commit/state packed traces checked against the executable transition contract (scripts/check_rtl_m2_typed_commit_trace.py: op sequence, packed-bit faithfulness, per-op invariants, continuation uniqueness in every projection, and sync-return continuation consumption); the witness is re-validated offline by scripts/check_rtl_m2_witness.py; and scripts/run_rtl_m2_lean_witness_gate.sh proves in Lean (kernel decide, no axioms) that every emitted commit/state packed bit vector decodes under the Lnp64.M2Transition decoders to the recorded values. Full async/handoff gate-queue refinement and the existential RTL-to-Lean refinement step are still missing."]
     },
     {
       "id": "servicelets_terminate_contained",

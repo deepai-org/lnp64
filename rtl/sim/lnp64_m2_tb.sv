@@ -18,6 +18,9 @@ module lnp64_m2_tb;
     logic stale_continuation_rejected;
     logic fault_delivery_gate_ok;
     logic signal_compatibility_ok;
+    logic typed_commit_valid;
+    lnp64_m2_gate_commit_t typed_commit;
+    lnp64_m2_state_projection_t typed_state_projection;
 
     lnp64_m2_gate dut(
         .clk(clk),
@@ -34,7 +37,10 @@ module lnp64_m2_tb;
         .handoff_delivery_ok(handoff_delivery_ok),
         .stale_continuation_rejected(stale_continuation_rejected),
         .fault_delivery_gate_ok(fault_delivery_gate_ok),
-        .signal_compatibility_ok(signal_compatibility_ok)
+        .signal_compatibility_ok(signal_compatibility_ok),
+        .typed_commit_valid(typed_commit_valid),
+        .typed_commit(typed_commit),
+        .typed_state_projection(typed_state_projection)
     );
 
     lnp64_m2_assertions assertions_i(
@@ -94,6 +100,46 @@ module lnp64_m2_tb;
                 8'd9: $display("TRACE done delivered_faults=%0d", trace_value[31:0]);
                 default: $display("TRACE unknown code=%0d value=%0d", trace_code, trace_value);
             endcase
+        end
+        if (typed_commit_valid) begin
+            $display(
+                "TTRACE_M2 {\"record\":\"m2_gate_commit\",\"op\":%0d,\"status\":%0d,\"continuation_id\":%0d,\"continuation_generation\":%0d,\"caller_tid\":%0d,\"callee_tid\":%0d,\"mode\":%0d}",
+                typed_commit.op,
+                typed_commit.status,
+                typed_commit.continuation_id,
+                typed_commit.continuation_generation,
+                typed_commit.caller_tid,
+                typed_commit.callee_tid,
+                typed_commit.mode
+            );
+            $display(
+                "TTRACE_M2_BITS {\"record\":\"m2_gate_commit_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m2_gate_commit_t),
+                typed_commit
+            );
+            $display(
+                "TTRACE_M2_STATE {\"record\":\"m2_state_projection\",\"op\":%0d,\"status\":%0d,\"caller_loc\":%0d,\"callee_loc\":%0d,\"continuation_valid\":%0d,\"continuation_id\":%0d,\"continuation_generation\":%0d,\"delivered_faults\":%0d,\"continuation_unique\":%0d,\"sync_roundtrip_ok\":%0d,\"async_delivery_ok\":%0d,\"handoff_delivery_ok\":%0d,\"stale_continuation_rejected\":%0d,\"fault_delivery_gate_ok\":%0d,\"signal_compatibility_ok\":%0d}",
+                typed_state_projection.op,
+                typed_state_projection.status,
+                typed_state_projection.caller_loc,
+                typed_state_projection.callee_loc,
+                typed_state_projection.continuation_valid,
+                typed_state_projection.continuation_id,
+                typed_state_projection.continuation_generation,
+                typed_state_projection.delivered_faults,
+                typed_state_projection.continuation_unique,
+                typed_state_projection.sync_roundtrip_ok,
+                typed_state_projection.async_delivery_ok,
+                typed_state_projection.handoff_delivery_ok,
+                typed_state_projection.stale_continuation_rejected,
+                typed_state_projection.fault_delivery_gate_ok,
+                typed_state_projection.signal_compatibility_ok
+            );
+            $display(
+                "TTRACE_M2_STATE_BITS {\"record\":\"m2_state_projection_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m2_state_projection_t),
+                typed_state_projection
+            );
         end
     end
 
