@@ -6334,9 +6334,15 @@ mod tests {
         assert!(psabi.contains("## Register Model"));
         assert!(psabi.contains("## Calling Convention"));
         assert!(psabi.contains("## Debug and Unwind Minimum"));
+        assert!(psabi.contains("LLVM/Clang, lld, loader, and"));
+        assert!(psabi.contains("libc/runtime process ABI"));
         assert!(psabi.contains("real Clang/lld path"));
         assert!(object_format.contains("## Relocation Model"));
         assert!(object_format.contains("## Exec-Plan Descriptor Boundary"));
+        assert!(object_format.contains("Clang/lld-produced static ELF execution"));
+        assert!(object_format.contains("bounded exec-plan path"));
+        assert!(!object_format.contains("current emulator still executes LNP64 assembly directly"));
+        assert!(!object_format.contains("target format for the future loader"));
         assert!(libc.contains("startup"));
         assert!(libc.contains("errno"));
         assert!(libc.contains("pthread"));

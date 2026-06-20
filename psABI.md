@@ -1,8 +1,8 @@
 # LNP64 psABI v0
 
-This document records the current emulator and C compiler process ABI. It is a
-compatibility contract for repository tests and package bring-up, not yet a
-final hardware ABI.
+This document records the current emulator, LLVM/Clang, lld, loader, and
+libc/runtime process ABI. It is a compatibility contract for repository tests
+and package bring-up, not yet a final hardware ABI.
 
 ## Scope
 

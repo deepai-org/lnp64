@@ -1,8 +1,9 @@
 # LNP64 Binary and Object Format v1
 
 This document defines the first software-loader ELF profile for LNP64. The
-current emulator still executes LNP64 assembly directly; this is the target
-format for the future loader and package toolchain.
+repository now supports both legacy assembly smoke execution and real
+Clang/lld-produced static ELF execution through `run-elf`; this format is the
+contract between the package toolchain, loader, and bounded exec-plan path.
 
 Hardware does not parse this format. ELF headers, program headers, dynamic
 linking, relocations, interpreters, shebang handling, library search, and
