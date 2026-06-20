@@ -2189,11 +2189,17 @@ module lnp64_core_tile #(
         cmd.tile_id = TILE_ID[31:0];
         cmd.opcode = pending_unsupported ? LNP64_OP_UNSUPPORTED : dec.opcode;
         cmd.profile = 16'd0;
+        cmd.provenance_id = next_op_id;
+        cmd.source_engine = LNP64_ENGINE_CORE;
+        cmd.destination_engine = LNP64_ENGINE_NONE;
+        cmd.object_home_bank = 32'd0;
+        cmd.reset_epoch = 32'd0;
         cmd.pid = active_thread_context.pid;
         cmd.tid = active_thread_context.tid;
         cmd.domain_id = active_thread_context.domain_id;
         cmd.domain_gen = active_thread_context.domain_gen;
         cmd.latency_class = active_thread_context.latency_class;
+        cmd.budget_class = active_thread_context.latency_class;
         cmd.wait_generation = active_thread_context.wait_generation;
         cmd.weight_index = active_thread_context.weight_index;
         cmd.virtual_deadline = active_thread_context.virtual_deadline;
@@ -2209,6 +2215,7 @@ module lnp64_core_tile #(
         cmd.arg_block_len = 64'd0;
         cmd.cancel_class = 16'd0;
         cmd.completion_target = 16'd1;
+        cmd.response_route = LNP64_RESPONSE_CORE_TILE;
         unique case (dec.opcode)
             LNP64_OP_CAP_DUP,
             LNP64_OP_CAP_SEND,
@@ -4380,12 +4387,16 @@ module lnp64_core_tile #(
                             cmd.domain_id == active_thread_context.domain_id &&
                             cmd.domain_gen == active_thread_context.domain_gen &&
                             cmd.latency_class == active_thread_context.latency_class &&
+                            cmd.budget_class == active_thread_context.latency_class &&
                             cmd.wait_generation == active_thread_context.wait_generation &&
                             cmd.weight_index == active_thread_context.weight_index &&
-                            cmd.virtual_deadline == active_thread_context.virtual_deadline)
+                            cmd.virtual_deadline == active_thread_context.virtual_deadline &&
+                            cmd.provenance_id == cmd.op_id &&
+                            cmd.source_engine == LNP64_ENGINE_CORE &&
+                            cmd.response_route == LNP64_RESPONSE_CORE_TILE)
                             else $fatal(
                                 1,
-                                "SG-SCHED engine command lost active thread metadata"
+                                "SG-SCHED engine command lost active thread metadata; SG-FABRIC provenance lost"
                             );
                     end
 `endif

@@ -271,8 +271,20 @@
       "LNP64_ENGINE_OBJECT=16'd1",
       "LNP64_ENGINE_FAULT=16'd2",
       "LNP64_ENGINE_WATCHDOG=16'd3",
+      "LNP64_ENGINE_CORE=16'd4",
+      "LNP64_ENGINE_DOMAIN=16'd5",
+      "LNP64_ENGINE_HEAP=16'd6",
+      "LNP64_ENGINE_VMA=16'd7",
+      "LNP64_ENGINE_DMA=16'd8",
+      "LNP64_ENGINE_ROUTER=16'd9",
       "LNP64_ENGINE_CAP=16'd10",
       "LNP64_ENGINE_UNSUPPORTED=16'd255"
+    ],
+    "lnp64_response_route_e": [
+      "LNP64_RESPONSE_NONE=16'd0",
+      "LNP64_RESPONSE_CORE_TILE=16'd1",
+      "LNP64_RESPONSE_COMPLETION=16'd2",
+      "LNP64_RESPONSE_FAULT_EVENT=16'd3"
     ],
     "lnp64_fdr_kind_e": [
       "LNP64_FDR_KIND_CLOSED=3'd0",
@@ -360,7 +372,7 @@
     ]
   },
   "records": {
-    "lnp64_cmd_t": ["op_id:32", "tile_id:32", "opcode:16", "profile:16", "pid:32", "tid:32", "domain_id:32", "domain_gen:32", "latency_class:16", "wait_generation:32", "weight_index:16", "virtual_deadline:64", "credential_snapshot_id:32", "result_reg:8", "rights_mask:64", "flags:64", "arg0:64", "arg1:64", "arg2:64", "arg3:64", "arg_block_ptr:64", "arg_block_len:64", "cancel_class:16", "completion_target:16"],
+    "lnp64_cmd_t": ["op_id:32", "tile_id:32", "opcode:16", "profile:16", "provenance_id:32", "source_engine:16", "destination_engine:16", "object_home_bank:32", "reset_epoch:32", "pid:32", "tid:32", "domain_id:32", "domain_gen:32", "latency_class:16", "budget_class:16", "wait_generation:32", "weight_index:16", "virtual_deadline:64", "credential_snapshot_id:32", "result_reg:8", "rights_mask:64", "flags:64", "arg0:64", "arg1:64", "arg2:64", "arg3:64", "arg_block_ptr:64", "arg_block_len:64", "cancel_class:16", "completion_target:16", "response_route:16"],
     "lnp64_rsp_t": ["op_id:32", "tile_id:32", "pid:32", "tid:32", "domain_id:32", "domain_gen:32", "result_reg:8", "result_value:64", "errno_value:16", "status:16", "event_mask:64"],
     "lnp64_completion_t": ["op_id:32", "tile_id:32", "pid:32", "tid:32", "domain_id:32", "domain_gen:32", "target:16", "status:16", "errno_value:16", "value:64"],
     "lnp64_event_t": ["event_id:32", "tile_id:32", "op_id:32", "pid:32", "tid:32", "domain_id:32", "domain_gen:32", "event_mask:64", "source:16", "status:16"],

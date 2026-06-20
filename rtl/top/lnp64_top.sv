@@ -125,6 +125,7 @@ module lnp64_top #(
     logic core_rsp_ready;
     lnp64_rsp_t core_rsp;
     logic [31:0] selected_cmd_tile;
+    logic [31:0] fabric_reset_epoch;
 
     logic [31:0] retired_count_vec [CORE_TILE_COUNT];
     logic [63:0] env_features_seen_vec [CORE_TILE_COUNT];
@@ -484,16 +485,61 @@ module lnp64_top #(
         if (!logic_reset_n) begin
             core_cmd_valid <= 1'b0;
             core_cmd <= '0;
+            fabric_reset_epoch <= 32'd1;
         end else begin
+            if (boot_valid && root_domain.domain_gen != 32'd0) begin
+                fabric_reset_epoch <= root_domain.domain_gen;
+            end
             if (core_cmd_valid && core_cmd_ready) begin
                 core_cmd_valid <= 1'b0;
             end
             if (!core_cmd_valid && selected_cmd_valid) begin
                 core_cmd_valid <= 1'b1;
                 core_cmd <= selected_cmd;
+                core_cmd.reset_epoch <= fabric_reset_epoch;
             end
         end
     end
+
+`ifndef SYNTHESIS
+    always_ff @(posedge clk or negedge logic_reset_n) begin
+        if (!logic_reset_n) begin
+        end else begin
+            if (core_cmd_valid && core_cmd_ready) begin
+                assert (core_cmd.source_engine == LNP64_ENGINE_CORE &&
+                    core_cmd.provenance_id == core_cmd.op_id &&
+                    core_cmd.response_route == LNP64_RESPONSE_CORE_TILE &&
+                    core_cmd.reset_epoch == fabric_reset_epoch &&
+                    core_cmd.reset_epoch != 32'd0)
+                    else $fatal(1, "SG-FABRIC top-level command lost provenance or reset epoch");
+            end
+            if (cap_cmd_valid && cap_cmd_ready) begin
+                assert (cap_cmd.destination_engine == LNP64_ENGINE_CAP)
+                    else $fatal(1, "SG-FABRIC cap command routed without cap owner stamp");
+            end
+            if (object_cmd_valid && object_cmd_ready) begin
+                assert (object_cmd.destination_engine == LNP64_ENGINE_OBJECT)
+                    else $fatal(1, "SG-FABRIC object command routed without object owner stamp");
+            end
+            if (domain_cmd_valid && domain_cmd_ready) begin
+                assert (domain_cmd.destination_engine == LNP64_ENGINE_DOMAIN)
+                    else $fatal(1, "SG-FABRIC domain command routed without domain owner stamp");
+            end
+            if (heap_cmd_valid && heap_cmd_ready) begin
+                assert (heap_cmd.destination_engine == LNP64_ENGINE_HEAP)
+                    else $fatal(1, "SG-FABRIC heap command routed without heap owner stamp");
+            end
+            if (vma_cmd_valid && vma_cmd_ready) begin
+                assert (vma_cmd.destination_engine == LNP64_ENGINE_VMA)
+                    else $fatal(1, "SG-FABRIC vma command routed without vma owner stamp");
+            end
+            if (dma_cmd_valid && dma_cmd_ready) begin
+                assert (dma_cmd.destination_engine == LNP64_ENGINE_DMA)
+                    else $fatal(1, "SG-FABRIC dma command routed without dma owner stamp");
+            end
+        end
+    end
+`endif
 
     integer rsp_i;
     always_comb begin

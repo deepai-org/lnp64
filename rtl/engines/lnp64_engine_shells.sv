@@ -152,6 +152,8 @@ module lnp64_engine_router (
     lnp64_rsp_t unsupported_rsp;
     logic unsupported_fault_valid;
     lnp64_fault_t unsupported_fault;
+    lnp64_cmd_t fault_cmd;
+    lnp64_cmd_t unsupported_cmd;
     logic [31:0] fault_accepts;
     logic [31:0] unsupported_accepts;
     logic [31:0] fault_faults;
@@ -175,19 +177,32 @@ module lnp64_engine_router (
         !route_heap && !route_vma && !route_dma && !route_fault;
 
     assign cap_cmd_valid = cmd_valid && route_cap;
-    assign cap_cmd = cmd;
     assign object_cmd_valid = cmd_valid && route_object;
-    assign object_cmd = cmd;
     assign domain_cmd_valid = cmd_valid && route_domain;
-    assign domain_cmd = cmd;
     assign heap_cmd_valid = cmd_valid && route_heap;
-    assign heap_cmd = cmd;
     assign vma_cmd_valid = cmd_valid && route_vma;
-    assign vma_cmd = cmd;
     assign dma_cmd_valid = cmd_valid && route_dma;
-    assign dma_cmd = cmd;
     assign fault_cmd_valid = cmd_valid && route_fault;
     assign unsupported_cmd_valid = cmd_valid && route_default;
+
+    always_comb begin
+        cap_cmd = cmd;
+        cap_cmd.destination_engine = LNP64_ENGINE_CAP;
+        object_cmd = cmd;
+        object_cmd.destination_engine = LNP64_ENGINE_OBJECT;
+        domain_cmd = cmd;
+        domain_cmd.destination_engine = LNP64_ENGINE_DOMAIN;
+        heap_cmd = cmd;
+        heap_cmd.destination_engine = LNP64_ENGINE_HEAP;
+        vma_cmd = cmd;
+        vma_cmd.destination_engine = LNP64_ENGINE_VMA;
+        dma_cmd = cmd;
+        dma_cmd.destination_engine = LNP64_ENGINE_DMA;
+        fault_cmd = cmd;
+        fault_cmd.destination_engine = LNP64_ENGINE_FAULT;
+        unsupported_cmd = cmd;
+        unsupported_cmd.destination_engine = LNP64_ENGINE_UNSUPPORTED;
+    end
 
     assign cmd_ready =
         route_cap ? cap_cmd_ready :
@@ -241,7 +256,7 @@ module lnp64_engine_router (
         .reset_n(reset_n),
         .cmd_valid(fault_cmd_valid),
         .cmd_ready(fault_cmd_ready),
-        .cmd(cmd),
+        .cmd(fault_cmd),
         .rsp_valid(fault_rsp_valid),
         .rsp_ready(fault_rsp_ready),
         .rsp(fault_rsp),
@@ -261,7 +276,7 @@ module lnp64_engine_router (
         .reset_n(reset_n),
         .cmd_valid(unsupported_cmd_valid),
         .cmd_ready(unsupported_cmd_ready),
-        .cmd(cmd),
+        .cmd(unsupported_cmd),
         .rsp_valid(unsupported_rsp_valid),
         .rsp_ready(unsupported_rsp_ready),
         .rsp(unsupported_rsp),

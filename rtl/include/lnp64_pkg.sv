@@ -274,9 +274,22 @@ package lnp64_pkg;
         LNP64_ENGINE_OBJECT     = 16'd1,
         LNP64_ENGINE_FAULT      = 16'd2,
         LNP64_ENGINE_WATCHDOG   = 16'd3,
+        LNP64_ENGINE_CORE       = 16'd4,
+        LNP64_ENGINE_DOMAIN     = 16'd5,
+        LNP64_ENGINE_HEAP       = 16'd6,
+        LNP64_ENGINE_VMA        = 16'd7,
+        LNP64_ENGINE_DMA        = 16'd8,
+        LNP64_ENGINE_ROUTER     = 16'd9,
         LNP64_ENGINE_CAP        = 16'd10,
         LNP64_ENGINE_UNSUPPORTED= 16'd255
     } lnp64_engine_e;
+
+    typedef enum logic [15:0] {
+        LNP64_RESPONSE_NONE        = 16'd0,
+        LNP64_RESPONSE_CORE_TILE   = 16'd1,
+        LNP64_RESPONSE_COMPLETION  = 16'd2,
+        LNP64_RESPONSE_FAULT_EVENT = 16'd3
+    } lnp64_response_route_e;
 
     typedef enum logic [15:0] {
         LNP64_LIFECYCLE_PURE_LOCAL        = 16'd0,
@@ -307,11 +320,17 @@ package lnp64_pkg;
         logic [31:0] tile_id;
         logic [15:0] opcode;
         logic [15:0] profile;
+        logic [31:0] provenance_id;
+        logic [15:0] source_engine;
+        logic [15:0] destination_engine;
+        logic [31:0] object_home_bank;
+        logic [31:0] reset_epoch;
         logic [31:0] pid;
         logic [31:0] tid;
         logic [31:0] domain_id;
         logic [31:0] domain_gen;
         logic [15:0] latency_class;
+        logic [15:0] budget_class;
         logic [31:0] wait_generation;
         logic [15:0] weight_index;
         logic [63:0] virtual_deadline;
@@ -327,6 +346,7 @@ package lnp64_pkg;
         logic [63:0] arg_block_len;
         logic [15:0] cancel_class;
         logic [15:0] completion_target;
+        logic [15:0] response_route;
     } lnp64_cmd_t;
 
     typedef struct packed {
