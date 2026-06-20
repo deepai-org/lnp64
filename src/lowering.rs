@@ -1287,6 +1287,7 @@ mod tests {
         let libc_test_driver = include_str!("../scripts/run_libc_test.sh");
         let real_tblgen = include_str!("../scripts/run_real_llvm_tblgen.sh");
         let real_tblgen_docker = include_str!("../scripts/run_real_llvm_tblgen_docker.sh");
+        let bootstrap_smokes = include_str!("../scripts/run_real_llvm_bootstrap_smokes.sh");
         let real_llc = include_str!("../scripts/run_real_llvm_lnp64.sh");
         let real_llc_docker = include_str!("../scripts/run_real_llvm_lnp64_docker.sh");
         let real_objects_docker = include_str!("../scripts/run_real_llvm_lnp64_objects_docker.sh");
@@ -1460,6 +1461,11 @@ mod tests {
         );
         assert!(
             manifest_root
+                .join("scripts/run_real_llvm_bootstrap_smokes.sh")
+                .is_file()
+        );
+        assert!(
+            manifest_root
                 .join("scripts/run_real_llvm_lnp64.sh")
                 .is_file()
         );
@@ -1506,6 +1512,22 @@ mod tests {
         assert_eq!(statuses["real_tblgen"], "tested");
         assert_eq!(statuses["sysroot_package"], "tested");
         assert_eq!(statuses["simple_libc_gate"], "tested");
+        for gate in [
+            "compile_hello",
+            "compile_arithmetic",
+            "compile_memory",
+            "compile_calls",
+            "assemble_crt0",
+            "link_static",
+            "inspect_exec_plan",
+            "run_through_loader",
+        ] {
+            assert_eq!(statuses[gate], "tested", "{gate} must be tested");
+            assert!(
+                commands[gate].contains("scripts/run_real_llvm_bootstrap_smokes.sh"),
+                "{gate} must use the narrow real LLVM bootstrap smoke script"
+            );
+        }
         assert!(
             requirements_by_gate["real_llc_build"].contains(&"packaged_sysroot"),
             "full real LLVM gate must advertise the packaged sysroot it now builds and uses"
@@ -1823,6 +1845,14 @@ mod tests {
         assert!(libc_test_driver.contains("--loader exec-plan"));
         assert!(libc_test_driver.contains("exec bash scripts/run_real_llvm_lnp64_docker.sh"));
         assert!(libc_test_driver.contains("llvm backend requires --loader exec-plan"));
+        assert!(bootstrap_smokes.contains("LNP64_BOOTSTRAP_CASES"));
+        assert!(bootstrap_smokes.contains("demos/hello.c"));
+        assert!(bootstrap_smokes.contains("demos/factorial.c"));
+        assert!(bootstrap_smokes.contains("demos/allocator.c"));
+        assert!(bootstrap_smokes.contains("demos/fibonacci.c"));
+        assert!(bootstrap_smokes.contains("elf-plan"));
+        assert!(bootstrap_smokes.contains("run-elf"));
+        assert!(bootstrap_smokes.contains("real LLVM bootstrap smokes passed"));
         assert!(real_tblgen.contains("llvm-tblgen"));
         assert!(real_tblgen.contains("llvm-config"));
         assert!(real_tblgen.contains("-gen-register-info"));
@@ -3926,15 +3956,17 @@ mod tests {
         assert!(llvm_dockerfile.contains("clang"));
         assert!(llvm_dockerfile.contains("lld"));
         assert!(
-            commands["link_static"].contains("-T toolchain/lnp64_static.ld"),
+            bootstrap_smokes.contains(r#"-T "$linker_script""#)
+                && bootstrap_smokes.contains("lnp64_static.ld")
+                && bootstrap_smokes.contains("scripts/package_lnp64_sysroot.sh"),
             "static link gate must use checked LNP64 linker script"
         );
         assert!(
-            commands["run_through_loader"].contains("lnp64 run-elf"),
+            bootstrap_smokes.contains("run-elf"),
             "execution gate must route through the checked run-elf boundary"
         );
         assert!(
-            commands["assemble_crt0"].contains("toolchain/crt0_lnp64.s"),
+            bootstrap_smokes.contains("crt0.o") && bootstrap_smokes.contains("run_crt0_smoke"),
             "crt0 gate must assemble checked startup stub"
         );
         for gate in [
@@ -3944,7 +3976,7 @@ mod tests {
             "compile_calls",
         ] {
             assert!(
-                commands[gate].contains("-I toolchain"),
+                bootstrap_smokes.contains("-I toolchain"),
                 "{gate} must include checked private intrinsic header path"
             );
         }

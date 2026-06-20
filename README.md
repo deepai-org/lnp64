@@ -180,6 +180,14 @@ Run the fast real LLVM object gate:
 bash scripts/run_real_llvm_lnp64_objects_docker.sh
 ```
 
+Run the narrow real LLVM bootstrap smoke after a Docker build has populated
+`target/llvm-lnp64-build`:
+
+```sh
+bash scripts/run_real_llvm_bootstrap_smokes.sh
+LNP64_BOOTSTRAP_CASES=hello bash scripts/run_real_llvm_bootstrap_smokes.sh
+```
+
 For manifest-driven LLVM checks, filter to the row you want instead of
 dry-running or executing the whole list:
 
@@ -247,6 +255,7 @@ Toolchain contracts:
 ```sh
 bash scripts/run_llvm_bootstrap_gates.sh --dry-run
 bash scripts/run_real_llvm_tblgen_docker.sh
+bash scripts/run_real_llvm_bootstrap_smokes.sh
 bash scripts/run_real_llvm_lnp64_mc_docker.sh
 bash scripts/run_real_llvm_lnp64_objects_docker.sh
 bash scripts/run_real_llvm_lnp64_docker.sh
@@ -256,6 +265,10 @@ bash scripts/run_toolchain_contracts.sh
 `scripts/run_llvm_bootstrap_gates.sh --run` executes manifest rows already
 marked `tested` and skips `planned` rows unless
 `LNP64_RUN_PLANNED_LLVM_GATES=1` is set.
+`scripts/run_real_llvm_bootstrap_smokes.sh` is the fast post-build loop for
+minimal Clang/lld/loader coverage: it rebuilds hello, arithmetic, memory, and
+calls with the existing real LLVM build, links them against the packaged crt0
+and libc shim objects, then runs `elf-plan` and `run-elf`.
 `scripts/run_real_llvm_lnp64_docker.sh` is the active LLVM porting gate: it
 builds upstream LLVM/Clang/lld in Docker with the in-tree LNP64 backend, links
 real Clang objects, and executes the linked ELFs with `lnp64 run-elf`.
