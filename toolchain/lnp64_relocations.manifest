@@ -13,3 +13,7 @@
 10,R_LNP64_FDR_DESC64,FDR_DESC_INDEX+A,supported_startup_fdr
 11,R_LNP64_CAP_DESC64,CAP_DESC_INDEX+A,planned_cap_descriptor_table
 12,R_LNP64_CALLGATE64,CALLGATE_DESC_INDEX+A,planned_callgate_descriptor_table
+13,R_LNP64_PCREL_HI20,pcrel_hi20(S+A),planned_pcrel_materialization
+14,R_LNP64_PCREL_LO12_I,pcrel_lo12_i(S+A),planned_pcrel_materialization
+15,R_LNP64_PCREL_LO12_LD,pcrel_lo12_ld(S+A),planned_pcrel_slot_materialization
+16,R_LNP64_TLS_TPREL_SLOT64,TLS_TP_OFFSET_SLOT64,planned_local_exec_tls_slot
