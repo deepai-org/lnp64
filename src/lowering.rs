@@ -1878,6 +1878,8 @@ mod tests {
         assert!(real_llc.contains("llvmorg-14.0.6"));
         assert!(real_llc.contains("LNP64_LLVM_GATE"));
         assert!(real_llc.contains("full|mc|objects"));
+        assert!(real_llc.contains("missing required tool for real LLVM LNP64 gate"));
+        assert!(real_llc.contains("for tool in git perl cmake ninja; do"));
         assert!(real_llc.contains("ninja -C \"$build_dir\" -j \"$jobs\" llvm-mc llvm-objdump"));
         assert!(
             real_llc

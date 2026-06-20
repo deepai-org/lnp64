@@ -23,6 +23,18 @@ case "$gate" in
     ;;
 esac
 
+require_tool() {
+  local tool="$1"
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    printf 'missing required tool for real LLVM LNP64 gate: %s\n' "$tool" >&2
+    exit 127
+  fi
+}
+
+for tool in git perl cmake ninja; do
+  require_tool "$tool"
+done
+
 rewrite_with_perl() {
   local file="$1"
   shift
