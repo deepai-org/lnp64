@@ -254,3 +254,18 @@ size_t strftime(char *s, size_t max, const char *format, const struct tm *tm) {
   s[len] = 0;
   return len;
 }
+
+int gettimeofday(struct timeval *tv, void *tz) {
+  (void)tz;
+  if (!tv)
+    return -1;
+  tv->tv_sec = lnp64_realtime_sec();
+  tv->tv_usec = lnp64_realtime_nsec() / 1000;
+  return 0;
+}
+
+int settimeofday(const struct timeval *tv, void *tz) {
+  (void)tv;
+  (void)tz;
+  return -1;
+}

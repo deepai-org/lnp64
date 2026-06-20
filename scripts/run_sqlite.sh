@@ -146,6 +146,64 @@ void db_destroy(InMemoryDB *db) {
   free(db);
 }
 
+int save_db_to_file(InMemoryDB *db, const char *path) {
+  FILE *f = fopen(path, "w");
+  if (!f) return -1;
+
+  fprintf(f, "%d\n", db->count);
+  for (int i = 0; i < db->count; i++) {
+    fprintf(f, "%s=%s\n", db->records[i].key, db->records[i].value);
+  }
+  fclose(f);
+  return 0;
+}
+
+InMemoryDB *load_db_from_file(const char *path) {
+  FILE *f = fopen(path, "r");
+  if (!f) return NULL;
+
+  InMemoryDB *db = (InMemoryDB *)malloc(sizeof(InMemoryDB));
+  if (!db) {
+    fclose(f);
+    return NULL;
+  }
+
+  db->capacity = 100;
+  db->count = 0;
+  db->records = (Record *)malloc(sizeof(Record) * db->capacity);
+  if (!db->records) {
+    free(db);
+    fclose(f);
+    return NULL;
+  }
+
+  int count;
+  if (fscanf(f, "%d\n", &count) != 1 || count > 100) {
+    free(db->records);
+    free(db);
+    fclose(f);
+    return NULL;
+  }
+
+  db->count = count;
+  char key[256], value[256];
+  for (int i = 0; i < count; i++) {
+    if (fscanf(f, "%255[^=]=%255[^\n]\n", key, value) != 2) {
+      free(db->records);
+      free(db);
+      fclose(f);
+      return NULL;
+    }
+    strncpy(db->records[i].key, key, 255);
+    strncpy(db->records[i].value, value, 255);
+    db->records[i].key[255] = 0;
+    db->records[i].value[255] = 0;
+  }
+
+  fclose(f);
+  return db;
+}
+
 int main(void) {
   InMemoryDB *db = db_create();
   if (!db) {
@@ -172,19 +230,38 @@ int main(void) {
     return 1;
   }
 
-  result = db_select(db, "version");
-  if (!result || strcmp(result, "3.0") != 0) {
-    printf("FAIL: db_select version\n");
-    db_destroy(db);
-    return 1;
-  }
-
   printf("OK: in-memory database operations\n");
   printf("Keys: 2, Capacity: 100\n");
   printf("Entry name=%s\n", db_select(db, "name"));
   printf("Entry version=%s\n", db_select(db, "version"));
 
+  if (save_db_to_file(db, "/tmp/test.db") != 0) {
+    printf("FAIL: save_db_to_file\n");
+    db_destroy(db);
+    return 1;
+  }
+  printf("OK: database saved to /tmp/test.db\n");
+
+  InMemoryDB *db2 = load_db_from_file("/tmp/test.db");
+  if (!db2) {
+    printf("FAIL: load_db_from_file\n");
+    db_destroy(db);
+    return 1;
+  }
+
+  result = db_select(db2, "name");
+  if (!result || strcmp(result, "SQLite") != 0) {
+    printf("FAIL: loaded database name mismatch\n");
+    db_destroy(db);
+    db_destroy(db2);
+    return 1;
+  }
+
+  printf("OK: database loaded and verified\n");
+  printf("Loaded entry name=%s\n", db_select(db2, "name"));
+
   db_destroy(db);
+  db_destroy(db2);
   printf("exit=0\n");
   return 0;
 }

@@ -131,11 +131,20 @@ def check_m7_typed_trace_contract(claim: dict) -> None:
     ):
         require(marker in trace_markers, f"{claim_id}: missing M7 typed trace marker {marker}")
 
+    for source in (
+        "scripts/check_rtl_m7_witness.py",
+        "scripts/run_rtl_m7_witness_gate.sh",
+    ):
+        require(source in trace_sources, f"{claim_id}: missing M7 witness source {source}")
+
     gates = claim.get("gate_scripts")
     require(isinstance(gates, list), f"{claim_id}: gate_scripts must be a list")
     for gate in (
         "scripts/check_rtl_m7_typed_commit_trace.py",
         "scripts/test_rtl_m7_typed_commit_checker.py",
+        "scripts/check_rtl_m7_witness.py",
+        "scripts/run_rtl_m7_witness_gate.sh",
+        "scripts/test_rtl_m7_witness_checker.py",
     ):
         require(gate in gates, f"{claim_id}: missing M7 typed trace gate {gate}")
 
@@ -148,6 +157,17 @@ def check_m7_typed_trace_contract(claim: dict) -> None:
         "checked RTL-to-Lean refinement" in known_gaps or "multi-source event-router refinement" in known_gaps,
         f"{claim_id}: known gap must keep the remaining refinement gap explicit",
     )
+    require(
+        "scripts/check_rtl_m7_witness.py" in known_gaps,
+        f"{claim_id}: known gap must record the offline M7 witness re-check",
+    )
+
+    for witness_file in (
+        "scripts/check_rtl_m7_witness.py",
+        "scripts/test_rtl_m7_witness_checker.py",
+        "scripts/run_rtl_m7_witness_gate.sh",
+    ):
+        require((ROOT / witness_file).exists(), f"{claim_id}: missing M7 witness artifact {witness_file}")
 
     proof_gate_text = check_file(RTL_PROOF_GATES, "RTL proof gate")
     require(
@@ -157,6 +177,14 @@ def check_m7_typed_trace_contract(claim: dict) -> None:
     require(
         "scripts/test_rtl_m7_typed_commit_checker.py" in proof_gate_text,
         "RTL proof gate must run the M7 typed trace checker self-test",
+    )
+    require(
+        "scripts/check_rtl_m7_witness.py" in proof_gate_text,
+        "RTL proof gate must consume the M7 scheduler witness",
+    )
+    require(
+        "scripts/test_rtl_m7_witness_checker.py" in proof_gate_text,
+        "RTL proof gate must run the M7 witness checker self-test",
     )
 
 

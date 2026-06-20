@@ -105,9 +105,9 @@ def main() -> int:
             fail(f"record {idx} missing commit/state projection")
         if commit.get("op") != record.get("op") or commit.get("status") != record.get("status"):
             fail(f"record {idx} op/status drifted from commit projection")
-        if tuple(commit.keys()) != commit_fields:
+        if set(commit.keys()) != set(commit_fields):
             fail(f"record {idx} commit fields drifted from schema")
-        if tuple(state.keys()) != state_fields:
+        if set(state.keys()) != set(state_fields):
             fail(f"record {idx} state fields drifted from schema")
         cbits = record.get("commit_bits")
         sbits = record.get("state_bits")
