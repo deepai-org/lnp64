@@ -23,7 +23,14 @@
       "consumer_self_test": "scripts/test_rtl_top_m1_witness_checker.py",
       "gate": "scripts/run_rtl_top_m1_witness_gate.sh",
       "contents": "checked top-level M1 commit, pre-state projection, post-state projection, packed bits, schema field order, schema widths, and canonical records hash",
-      "offline_recheck": "scripts/check_rtl_top_m1_witness.py re-validates the artifact against the shared executable refinement mirror without re-running the simulator: schema field order/widths, the canonical records hash, packed-bit faithfulness, and the M1 refinement step for every record"
+      "offline_recheck": "scripts/check_rtl_top_m1_witness.py re-validates the artifact against the shared executable refinement mirror without re-running the simulator: schema field order/widths, the canonical records hash, packed-bit faithfulness, and the M1 refinement step for every record",
+      "lean_decode_faithfulness": {
+        "generator": "scripts/gen_m1_witness_lean.py",
+        "gate": "scripts/run_rtl_m1_lean_witness_gate.sh",
+        "model": "formal/M1TransitionInvariantModel.lean",
+        "tactic": "decide",
+        "proves": "every emitted M1 commit/pre/post packed bit vector decodes, under the Lnp64.M1Transition packed-bit decoders, to exactly the recorded field values, op tag, and status tag -- checked by the Lean kernel (no native_decide, no axioms)"
+      }
     },
     "covered_real_instruction_ops": [
       {"key": "cap_dup", "arch_opcode": "LNP64_OP_CAP_DUP", "commit_op": "LNP64_M1_COMMIT_CAP_DUP", "lean_step": "capDup"},
@@ -38,7 +45,7 @@
       {"key": "cap_dup_denied", "arch_opcode": "LNP64_OP_CAP_DUP", "commit_op": "LNP64_M1_COMMIT_CAP_DUP_DENIED", "lean_step": "capDupDenied"}
     ],
     "standalone_until_s1_hooks": [],
-    "remaining_t4_gap": "The generated top-level M1 witness JSON is now re-validated offline by scripts/check_rtl_top_m1_witness.py against the shared executable refinement mirror (schema field order/widths, canonical records hash, packed-bit faithfulness, and the M1 refinement step for every record), but this is executable-level evidence; no formal RTL-to-Lean bit-refinement proof artifact yet proves every accepted top-level M1 packed witness equals the Lean post-state."
+    "remaining_t4_gap": "The generated top-level M1 witness JSON is re-validated offline by scripts/check_rtl_top_m1_witness.py against the shared executable refinement mirror, and scripts/run_rtl_m1_lean_witness_gate.sh now proves in Lean (kernel decide, no axioms) that every emitted commit/pre/post packed bit vector decodes under the Lnp64.M1Transition packed-bit decoders to exactly the recorded field/op/status values. The remaining T4 gap is the existential refinement step: a formal RTL-to-Lean bit-refinement proof artifact for the modeled-rights mask predicates and RtlM1RefinementStep (that each decoded pre/commit/post triple is an allowed Lean transition) does not yet exist per emitted record; that step is still established generically in Lean and per-record only by the executable/Python mirror."
   },
   "flat_hex_programs": [
     {

@@ -96,17 +96,36 @@ def check_m1_top_level_contract(claim: dict) -> None:
         witness.get("shared_mirror") == "formal/m1_top_refinement.py",
         "no_forged_authority: witness artifact must name the shared refinement mirror",
     )
+    lean_df = witness.get("lean_decode_faithfulness")
+    require(isinstance(lean_df, dict), "no_forged_authority: witness artifact must document Lean decode-faithfulness")
+    require(
+        lean_df.get("gate") == "scripts/run_rtl_m1_lean_witness_gate.sh",
+        "no_forged_authority: Lean decode-faithfulness must name its gate",
+    )
+    require(
+        lean_df.get("tactic") == "decide",
+        "no_forged_authority: Lean decode-faithfulness must use kernel decide",
+    )
 
     trace_sources = claim.get("trace_sources", [])
     gate_scripts = claim.get("gate_scripts", [])
     for source in ("formal/m1_top_refinement.py", "scripts/check_rtl_top_m1_witness.py"):
         require(source in trace_sources, f"no_forged_authority: trace_sources must include {source}")
-    for gate in ("scripts/run_rtl_top_m1_witness_gate.sh", "scripts/check_rtl_top_m1_witness.py"):
+    for gate in (
+        "scripts/run_rtl_top_m1_witness_gate.sh",
+        "scripts/check_rtl_top_m1_witness.py",
+        "scripts/run_rtl_m1_lean_witness_gate.sh",
+        "scripts/gen_m1_witness_lean.py",
+    ):
         require(gate in gate_scripts, f"no_forged_authority: gate_scripts must include {gate}")
     known_gaps = " ".join(claim.get("known_gaps", []))
     require(
         "scripts/check_rtl_top_m1_witness.py" in known_gaps,
         "no_forged_authority: known gap must record the offline witness re-check",
+    )
+    require(
+        "scripts/run_rtl_m1_lean_witness_gate.sh" in known_gaps,
+        "no_forged_authority: known gap must record the Lean decode-faithfulness proof",
     )
 
 

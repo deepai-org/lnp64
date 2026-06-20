@@ -138,13 +138,42 @@ def require_m1_top_level_refinement_contract(manifest: dict[str, object]) -> Non
         witness_artifact.get("gate") == "scripts/run_rtl_top_m1_witness_gate.sh",
         "M1 generated witness artifact must name the produce-and-check gate",
     )
+    lean_df = witness_artifact.get("lean_decode_faithfulness")
+    require(isinstance(lean_df, dict), "M1 witness artifact must document the Lean decode-faithfulness artifact")
+    require(
+        lean_df.get("generator") == "scripts/gen_m1_witness_lean.py",
+        "M1 Lean decode-faithfulness must name the generator",
+    )
+    require(
+        lean_df.get("gate") == "scripts/run_rtl_m1_lean_witness_gate.sh",
+        "M1 Lean decode-faithfulness must name the gate",
+    )
+    require(
+        lean_df.get("model") == "formal/M1TransitionInvariantModel.lean",
+        "M1 Lean decode-faithfulness must name the model",
+    )
+    require(
+        lean_df.get("tactic") == "decide",
+        "M1 Lean decode-faithfulness must use the kernel decide tactic",
+    )
     for artifact_file in (
         "formal/m1_top_refinement.py",
         "scripts/check_rtl_top_m1_witness.py",
         "scripts/test_rtl_top_m1_witness_checker.py",
         "scripts/run_rtl_top_m1_witness_gate.sh",
+        "scripts/gen_m1_witness_lean.py",
+        "scripts/run_rtl_m1_lean_witness_gate.sh",
     ):
         require((ROOT / artifact_file).exists(), f"M1 witness artifact file is missing: {artifact_file}")
+    lean_gate_text = text(ROOT / "scripts/run_rtl_m1_lean_witness_gate.sh")
+    require(
+        "scripts/gen_m1_witness_lean.py" in lean_gate_text,
+        "M1 Lean witness gate must run the generator",
+    )
+    require(
+        "native_decide" in lean_gate_text and "axiom|sorry|admit" in lean_gate_text,
+        "M1 Lean witness gate must reject native_decide/axiom/sorry/admit in generated proofs",
+    )
     witness_gate_text = text(ROOT / "scripts/run_rtl_top_m1_witness_gate.sh")
     require(
         "scripts/check_rtl_top_m1_witness.py" in witness_gate_text,
@@ -158,6 +187,10 @@ def require_m1_top_level_refinement_contract(manifest: dict[str, object]) -> Non
     require(
         "scripts/run_rtl_top_m1_witness_gate.sh" in m1_docker_gate_witness_text,
         "M1 Docker refinement gate must run the witness produce-and-check gate",
+    )
+    require(
+        "scripts/run_rtl_m1_lean_witness_gate.sh" in m1_docker_gate_witness_text,
+        "M1 Docker refinement gate must run the Lean witness decode-faithfulness gate",
     )
     remaining_gap = contract.get("remaining_t4_gap")
     require(

@@ -5,6 +5,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
 image="${LNP64_RTL_PROOF_IMAGE:-lnp64-rtl-proof}"
+exec_image="${LNP64_RTL_EXEC_IMAGE:-lnp64-rtl-exec}"
 lean_toolchain="${LNP64_LEAN_TOOLCHAIN:-stable}"
 build_gates="${LNP64_RTL_PROOF_BUILD_GATES:-0}"
 skip_build="${LNP64_RTL_PROOF_SKIP_BUILD:-0}"
@@ -65,8 +66,28 @@ if [[ "${LNP64_M1_REFINEMENT_SKIP_TOP:-0}" != "1" ]]; then
 fi
 
 if [[ "${LNP64_M1_REFINEMENT_SKIP_WITNESS:-0}" != "1" ]]; then
-  LNP64_RTL_FAST="${LNP64_RTL_FAST:-1}" \
-  LNP64_RTL_REUSE_BUILD="${LNP64_RTL_REUSE_BUILD:-1}" \
-  LNP64_RTL_SKIP_LINT="${LNP64_RTL_SKIP_LINT:-1}" \
+  # Produce + offline-recheck the top-level M1 witness inside the exec image
+  # (verilator + rust + python), writing build/ through the mounted repo.
+  docker run --rm \
+    -e CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/work/target/docker-rust}" \
+    -e LNP64_RTL_BUILD_ROOT="${LNP64_RTL_BUILD_ROOT:-/work/target/rtl-verilator-docker}" \
+    -e LNP64_RTL_FAST="${LNP64_RTL_FAST:-1}" \
+    -e LNP64_RTL_REUSE_BUILD="${LNP64_RTL_REUSE_BUILD:-1}" \
+    -e LNP64_RTL_SKIP_LINT="${LNP64_RTL_SKIP_LINT:-1}" \
+    -v "$root:/work" \
+    -w /work \
+    "$exec_image" \
     bash scripts/run_rtl_top_m1_witness_gate.sh
+fi
+
+if [[ "${LNP64_M1_REFINEMENT_SKIP_LEAN_WITNESS:-0}" != "1" ]]; then
+  # Decode-faithfulness of the emitted witness against the Lean decoders, run
+  # inside the proof image (which has lean). The witness JSON was produced by
+  # the exec-image witness step above and is shared through the mounted repo.
+  docker run --rm \
+    -e LNP64_REQUIRE_LEAN=1 \
+    -v "$root:/work" \
+    -w /work \
+    "$image" \
+    bash scripts/run_rtl_m1_lean_witness_gate.sh
 fi
