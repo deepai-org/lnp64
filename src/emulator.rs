@@ -15645,6 +15645,59 @@ mod tests {
     }
 
     #[test]
+    fn emulator_rejects_exec_descriptor_count_and_length_shape_fuzz() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let words = encode_exec_descriptor(&descriptor);
+
+        let mut bad_length = words.clone();
+        bad_length[1] += 8;
+        let err = Machine::validate_exec_descriptor_words(&bad_length).unwrap_err();
+        assert!(err.contains("total length is inconsistent"), "{err}");
+
+        let mut bad_vma_count = words.clone();
+        bad_vma_count[3] = EXEC_PLAN_MAX_VMAS as u64 + 1;
+        let err = Machine::validate_exec_descriptor_words(&bad_vma_count).unwrap_err();
+        assert!(
+            err.contains("VMA count exceeds architectural limit"),
+            "{err}"
+        );
+
+        let mut bad_fdr_count = words.clone();
+        bad_fdr_count[4] = EXEC_PLAN_MAX_FDR_GRANTS as u64 + 1;
+        let err = Machine::validate_exec_descriptor_words(&bad_fdr_count).unwrap_err();
+        assert!(
+            err.contains("FDR grant count exceeds architectural limit"),
+            "{err}"
+        );
+
+        let mut bad_measurement_count = words.clone();
+        bad_measurement_count[5] = EXEC_PLAN_MAX_MEASUREMENTS as u64 + 1;
+        let err = Machine::validate_exec_descriptor_words(&bad_measurement_count).unwrap_err();
+        assert!(
+            err.contains("measurement count exceeds architectural limit"),
+            "{err}"
+        );
+
+        let mut mismatched_record_count = words.clone();
+        mismatched_record_count[3] += 1;
+        let err = Machine::validate_exec_descriptor_words(&mismatched_record_count).unwrap_err();
+        assert!(err.contains("record counts do not match length"), "{err}");
+
+        let truncated = words[..EXEC_PLAN_HEADER_WORDS + EXEC_PLAN_ENTRY_WORDS - 1].to_vec();
+        let err = Machine::validate_exec_descriptor_words(&truncated).unwrap_err();
+        assert!(err.contains("descriptor is truncated"), "{err}");
+    }
+
+    #[test]
     fn emulator_rejects_exec_descriptor_measurement_without_authority() {
         let descriptor = build_exec_descriptor(
             &loader_exec_plan_fixture(),

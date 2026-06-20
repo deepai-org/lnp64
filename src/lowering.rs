@@ -8899,9 +8899,15 @@ mod tests {
                 "provenance authority row must name evidence {evidence}"
             );
         }
+        assert!(
+            requirements["submit_exec_plan"]
+                .1
+                .contains(&"emulator_rejects_exec_descriptor_count_and_length_shape_fuzz"),
+            "submit_exec_plan row must name descriptor count/length fuzz evidence"
+        );
         for remaining_gap in [
             "external VMA source authority",
-            "richer descriptor-shape fuzzing",
+            "additional descriptor-shape fuzzing",
             "more relocation/linker diagnostics",
             "archive/library search behavior",
             "dynamic-linking policy tests",
@@ -8915,6 +8921,7 @@ mod tests {
             "entry-PC executable-VMA validation",
             "reserved mapping flags",
             "measurement authority",
+            "descriptor count/length fuzzing",
         ] {
             assert!(
                 conformance.contains(covered_rejection),
