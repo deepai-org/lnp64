@@ -1218,6 +1218,12 @@ pub struct PreparedExecVma {
     pub bytes: Vec<u8>,
 }
 
+struct PreparedExecFdrGrant {
+    slot: usize,
+    handle: FdHandle,
+    capability: FdCapability,
+}
+
 fn checked_exec_count(value: u64, limit: usize, name: &str) -> Result<usize, String> {
     let count =
         usize::try_from(value).map_err(|_| format!("exec-plan {name} count exceeds host usize"))?;
@@ -1494,17 +1500,20 @@ impl Machine {
         Ok(())
     }
 
-    fn validate_exec_fdr_grant_authority(&self, words: &[u64]) -> Result<(), String> {
+    fn prepare_exec_fdr_grants(&self, words: &[u64]) -> Result<Vec<PreparedExecFdrGrant>, String> {
         let vma_count = checked_exec_count(words[3], EXEC_PLAN_MAX_VMAS, "VMA")?;
         let fdr_count = checked_exec_count(words[4], EXEC_PLAN_MAX_FDR_GRANTS, "FDR grant")?;
         let mut offset =
             EXEC_PLAN_HEADER_WORDS + EXEC_PLAN_ENTRY_WORDS + vma_count * EXEC_PLAN_VMA_WORDS;
         let process = self.process()?;
+        let mut grants = Vec::new();
         for _ in 0..fdr_count {
             let record = &words[offset..offset + EXEC_PLAN_FDR_GRANT_WORDS];
+            let slot = record[0] as usize;
             let rights = record[2];
             let source_cap = record[4];
             let source_generation = record[5];
+            let close_on_exec = record[6] != 0;
             if source_cap < FDR_COUNT as u64 {
                 let source_fd = source_cap as usize;
                 let current_generation = process
@@ -1532,10 +1541,31 @@ impl Machine {
                 if rights & !capability.rights != 0 {
                     return Err("exec-plan FDR grant source rights are insufficient".to_string());
                 }
+                if rights != capability.rights && !capability.narrowable {
+                    return Err(
+                        "exec-plan FDR grant source capability is not narrowable".to_string()
+                    );
+                }
+                let handle = process
+                    .fds
+                    .get(source_fd)
+                    .ok_or_else(|| "exec-plan FDR grant source handle is missing".to_string())?
+                    .clone_handle()?;
+                let mut granted_capability = capability;
+                granted_capability.rights = rights;
+                granted_capability.close_on_exec = close_on_exec;
+                granted_capability.narrowable =
+                    granted_capability.narrowable && !granted_capability.sealed;
+                granted_capability.revoked = false;
+                grants.push(PreparedExecFdrGrant {
+                    slot,
+                    handle,
+                    capability: granted_capability,
+                });
             }
             offset += EXEC_PLAN_FDR_GRANT_WORDS;
         }
-        Ok(())
+        Ok(grants)
     }
 
     pub fn commit_exec_descriptor_memory_image(
@@ -1568,7 +1598,7 @@ impl Machine {
                 return Err("exec-plan lineage epoch mismatch".to_string());
             }
         }
-        self.validate_exec_fdr_grant_authority(words)?;
+        let prepared_fdr_grants = self.prepare_exec_fdr_grants(words)?;
         let vma_count = checked_exec_count(words[3], EXEC_PLAN_MAX_VMAS, "VMA")?;
         if prepared_vmas.len() != vma_count {
             return Err("prepared VMA count does not match exec descriptor".to_string());
@@ -1618,6 +1648,12 @@ impl Machine {
             process.exec_entry_pc = entry_pc;
             process.exec_tls_base = tls_base;
             process.exec_startup_metadata_ptr = startup_metadata_ptr;
+        }
+        for grant in prepared_fdr_grants {
+            self.release_fd_locks_for_replacement(grant.slot)?;
+            self.install_fd_capability(grant.slot, grant.capability)?;
+            self.bump_fd_generation(grant.slot)?;
+            self.process_mut()?.fds[grant.slot] = grant.handle;
         }
         {
             let thread = self.thread_mut()?;
@@ -10212,14 +10248,21 @@ mod tests {
         encode_exec_descriptor(&descriptor)
     }
 
-    fn install_counter_source_fd(machine: &mut Machine, fd: usize, generation: u64, rights: u64) {
+    fn install_counter_source_fd(
+        machine: &mut Machine,
+        fd: usize,
+        generation: u64,
+        rights: u64,
+    ) -> Rc<RefCell<u64>> {
+        let counter = Rc::new(RefCell::new(0));
         let process = machine.process_mut().unwrap();
-        process.fds[fd] = FdHandle::Counter(Rc::new(RefCell::new(0)));
+        process.fds[fd] = FdHandle::Counter(Rc::clone(&counter));
         process.fd_generations[fd] = generation;
         process.fd_capabilities[fd] = FdCapability {
             rights,
             ..FdCapability::full(90)
         };
+        counter
     }
 
     fn encode_ri(opcode: u8, rd: usize, imm: i64) -> u32 {
@@ -15578,7 +15621,8 @@ mod tests {
     fn emulator_accepts_exec_descriptor_fdr_grant_live_source_fd_before_commit() {
         let words = exec_descriptor_with_fdr_source(8, 7, CAP_RIGHT_READ);
         let mut machine = Machine::new(empty_program());
-        install_counter_source_fd(&mut machine, 8, 7, CAP_RIGHT_READ | CAP_RIGHT_STAT);
+        let counter =
+            install_counter_source_fd(&mut machine, 8, 7, CAP_RIGHT_READ | CAP_RIGHT_STAT);
 
         machine
             .commit_exec_descriptor_memory_image(&words, &prepared_exec_vmas_fixture())
@@ -15588,6 +15632,32 @@ mod tests {
             &machine.process().unwrap().memory[0x400000..0x400008],
             &[0xaa; 8]
         );
+        let process = machine.process().unwrap();
+        match &process.fds[3] {
+            FdHandle::Counter(value) => assert!(Rc::ptr_eq(value, &counter)),
+            _ => panic!("expected startup FDR grant to install counter in destination slot"),
+        }
+        assert_eq!(process.fd_capabilities[3].rights, CAP_RIGHT_READ);
+        assert!(!process.fd_capabilities[3].close_on_exec);
+        assert!(!process.fd_capabilities[3].revoked);
+        assert_ne!(process.fd_generations[3], 1);
+    }
+
+    #[test]
+    fn emulator_installs_exec_descriptor_fdr_grant_close_on_exec_metadata() {
+        let mut words = exec_descriptor_with_fdr_source(8, 7, CAP_RIGHT_READ);
+        let fdr_offset = EXEC_PLAN_HEADER_WORDS
+            + EXEC_PLAN_ENTRY_WORDS
+            + loader_exec_plan_fixture().vmas.len() * EXEC_PLAN_VMA_WORDS;
+        words[fdr_offset + 6] = 1;
+        let mut machine = Machine::new(empty_program());
+        install_counter_source_fd(&mut machine, 8, 7, CAP_RIGHT_READ | CAP_RIGHT_STAT);
+
+        machine
+            .commit_exec_descriptor_memory_image(&words, &prepared_exec_vmas_fixture())
+            .unwrap();
+
+        assert!(machine.process().unwrap().fd_capabilities[3].close_on_exec);
     }
 
     #[test]
@@ -15639,6 +15709,25 @@ mod tests {
             .unwrap_err();
 
         assert!(err.contains("source rights are insufficient"), "{err}");
+        assert_eq!(
+            &machine.process().unwrap().memory[ARG_BASE as usize..ARG_BASE as usize + 9],
+            b"old-image"
+        );
+    }
+
+    #[test]
+    fn emulator_rejects_exec_descriptor_fdr_grant_non_narrowable_source_before_commit() {
+        let words = exec_descriptor_with_fdr_source(8, 7, CAP_RIGHT_READ);
+        let mut machine = Machine::new(empty_program());
+        install_counter_source_fd(&mut machine, 8, 7, CAP_RIGHT_READ | CAP_RIGHT_STAT);
+        machine.process_mut().unwrap().fd_capabilities[8].narrowable = false;
+        machine.write_bytes(ARG_BASE, b"old-image").unwrap();
+
+        let err = machine
+            .commit_exec_descriptor_memory_image(&words, &prepared_exec_vmas_fixture())
+            .unwrap_err();
+
+        assert!(err.contains("source capability is not narrowable"), "{err}");
         assert_eq!(
             &machine.process().unwrap().memory[ARG_BASE as usize..ARG_BASE as usize + 9],
             b"old-image"
