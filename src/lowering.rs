@@ -6343,7 +6343,11 @@ mod tests {
         assert!(conformance.contains("scripts/run_software_gates.sh"));
         assert!(conformance.contains("scripts/run_netbsd_personality_system.sh"));
         assert!(conformance.contains("the static software loader now parses ELF"));
+        assert!(conformance.contains("Static v1 software-loader ELF loading"));
         assert!(!conformance.contains("Implement a software ELF loader"));
+        assert!(
+            !conformance.contains("Full ELF loading, loader-produced architectural exec plans")
+        );
     }
 
     #[test]
