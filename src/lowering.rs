@@ -6342,6 +6342,8 @@ mod tests {
         assert!(libc.contains("pthread"));
         assert!(conformance.contains("scripts/run_software_gates.sh"));
         assert!(conformance.contains("scripts/run_netbsd_personality_system.sh"));
+        assert!(conformance.contains("the static software loader now parses ELF"));
+        assert!(!conformance.contains("Implement a software ELF loader"));
     }
 
     #[test]
@@ -6370,6 +6372,8 @@ mod tests {
         assert!(roadmap.contains("toolchain/lnp64_netbsd_layers.manifest"));
         assert!(personality_doc.contains("toolchain/lnp64_netbsd_layers.manifest"));
         assert!(personality_doc.contains("No full monolithic NetBSD kernel port"));
+        assert!(personality_doc.contains("ELF-to-exec-plan loading is now covered"));
+        assert!(!personality_doc.contains("full ELF-to-exec-plan loader remains future work"));
         assert!(system_gate.contains("LNP64_LLVM_PACKAGE_FILTER=netbsd"));
         assert!(system_gate.contains("scripts/run_real_llvm_package_gate.sh"));
         assert!(

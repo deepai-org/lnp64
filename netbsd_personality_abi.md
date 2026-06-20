@@ -132,8 +132,10 @@ fixed-record image, performs service-owned path walking, create, rename, link,
 unlink, metadata update, and an explicit flush/barrier through offset I/O, then
 reopens the image to verify persisted state. The loader test validates a
 service-owned `/etc/loader_target.execplan` record before forking and execing
-the planned target, keeping the compatibility decision in userland while the
-full ELF-to-exec-plan loader remains future work.
+the planned target, keeping the compatibility decision in userland. Static
+ELF-to-exec-plan loading is now covered by the shared `run-elf` loader path;
+broader NetBSD-derived rump loader integration and dynamic-loader policy remain
+future work.
 `signal_gate_test` covers masked compatibility delivery and child-exit
 `SIGCHLD` as native event delivery before ABI handler return.
 `signal_fault_test` covers a synchronous divide-by-zero hardware fault mapped
