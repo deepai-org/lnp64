@@ -4140,24 +4140,23 @@ module lnp64_thread_context (
     input  logic boot_valid,
     output lnp64_thread_sched_t pid1_context
 );
-    always_ff @(posedge clk or negedge reset_n) begin
-        if (!reset_n) begin
-            pid1_context <= '0;
-        end else if (boot_valid) begin
-            pid1_context.pid <= 32'd1;
-            pid1_context.tid <= 32'd1;
-            pid1_context.tile_id <= 32'd0;
-            pid1_context.domain_id <= 32'd1;
-            pid1_context.domain_gen <= 32'd1;
-            pid1_context.state <= 16'd1;
-            pid1_context.latency_class <= 16'd0;
-            pid1_context.wait_generation <= 32'd1;
-            pid1_context.weight_index <= 16'd0;
-            pid1_context.virtual_deadline <= 64'd0;
-            pid1_context.dispatch_eligible <= 1'b1;
-            pid1_context.effective_tile_mask <= 32'd1;
-            pid1_context.migration_generation <= 32'd1;
-            pid1_context.active_location <= 32'd1;
+    always_comb begin
+        pid1_context = '0;
+        if (reset_n && boot_valid) begin
+            pid1_context.pid = 32'd1;
+            pid1_context.tid = 32'd1;
+            pid1_context.tile_id = 32'd0;
+            pid1_context.domain_id = 32'd1;
+            pid1_context.domain_gen = 32'd1;
+            pid1_context.state = 16'd1;
+            pid1_context.latency_class = 16'd0;
+            pid1_context.wait_generation = 32'd1;
+            pid1_context.weight_index = 16'd0;
+            pid1_context.virtual_deadline = 64'd0;
+            pid1_context.dispatch_eligible = 1'b1;
+            pid1_context.effective_tile_mask = 32'd1;
+            pid1_context.migration_generation = 32'd1;
+            pid1_context.active_location = 32'd0;
         end
     end
 endmodule

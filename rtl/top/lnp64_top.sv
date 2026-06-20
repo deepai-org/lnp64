@@ -75,6 +75,7 @@ module lnp64_top #(
     logic [CORE_TILE_COUNT-1:0] scheduler_tile_faulted;
     logic [CORE_TILE_COUNT-1:0] sched_issue_valid;
     logic [CORE_TILE_COUNT*32-1:0] sched_issue_tid_flat;
+    lnp64_thread_sched_t sched_issue_record_vec [CORE_TILE_COUNT];
     logic sched_wake_issue_valid;
     logic sched_no_duplicate_issue;
     logic sched_tile1_schedulable_idle;
@@ -331,7 +332,14 @@ module lnp64_top #(
                 .release_core(
                     release_core &&
                     sched_issue_valid[tile_id] &&
-                    sched_issue_tid_flat[tile_id*32 +: 32] == 32'd1
+                    sched_issue_tid_flat[tile_id*32 +: 32] == sched_issue_record_vec[tile_id].tid &&
+                    sched_issue_record_vec[tile_id].pid == 32'd1 &&
+                    sched_issue_record_vec[tile_id].tid == 32'd1 &&
+                    sched_issue_record_vec[tile_id].tile_id == tile_id[31:0] &&
+                    sched_issue_record_vec[tile_id].active_location == tile_id[31:0] &&
+                    sched_issue_record_vec[tile_id].domain_id != 32'd0 &&
+                    sched_issue_record_vec[tile_id].domain_gen != 32'd0 &&
+                    sched_issue_record_vec[tile_id].dispatch_eligible
                 ),
                 .topology_tile_count(CORE_TILE_COUNT[31:0]),
                 .topology_enabled_tile_mask(ENABLED_TILE_MASK),
@@ -744,6 +752,7 @@ module lnp64_top #(
         .clk(clk),
         .reset_n(logic_reset_n),
         .boot_valid(boot_valid),
+        .boot_context(pid1_context),
         .park_submit_valid(park_submit_valid_vec),
         .park_submit_record(park_submit_record_vec),
         .wake_event_valid(event_valid),
@@ -754,6 +763,7 @@ module lnp64_top #(
         .tile_faulted(scheduler_tile_faulted),
         .issue_valid(sched_issue_valid),
         .issue_tid_flat(sched_issue_tid_flat),
+        .issue_record(sched_issue_record_vec),
         .wake_issue_valid(sched_wake_issue_valid),
         .exactly_one_location(pid1_exactly_one_location),
         .pid1_runnable(sched_pid1_runnable),

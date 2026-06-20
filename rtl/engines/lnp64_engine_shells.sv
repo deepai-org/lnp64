@@ -333,6 +333,7 @@ module lnp64_scheduler #(
     input  logic clk,
     input  logic reset_n,
     input  logic boot_valid,
+    input  lnp64_thread_sched_t boot_context,
     input  logic [CORE_TILE_COUNT-1:0] park_submit_valid,
     input  lnp64_thread_sched_t park_submit_record [CORE_TILE_COUNT],
     input  logic wake_event_valid,
@@ -343,6 +344,7 @@ module lnp64_scheduler #(
     input  logic [CORE_TILE_COUNT-1:0] tile_faulted,
     output logic [CORE_TILE_COUNT-1:0] issue_valid,
     output logic [CORE_TILE_COUNT*32-1:0] issue_tid_flat,
+    output lnp64_thread_sched_t issue_record [CORE_TILE_COUNT],
     output logic wake_issue_valid,
     output logic exactly_one_location,
     output logic pid1_runnable,
@@ -382,10 +384,15 @@ module lnp64_scheduler #(
         issue_tid_flat = '0;
         for (sched_i = 0; sched_i < CORE_TILE_COUNT; sched_i = sched_i + 1) begin
             issue_valid[sched_i] = 1'b0;
+            issue_record[sched_i] = '0;
         end
         if (pid1_runnable && !tile_faulted[0]) begin
             issue_valid[0] = 1'b1;
             issue_tid_flat[31:0] = 32'd1;
+            issue_record[0] = pid1_record;
+            issue_record[0].state = 16'd1;
+            issue_record[0].tile_id = 32'd0;
+            issue_record[0].active_location = 32'd0;
         end
 
         no_duplicate_issue = 1'b1;
@@ -413,21 +420,9 @@ module lnp64_scheduler #(
             if (boot_valid) begin
                 pid1_runnable <= 1'b1;
                 pid1_parked <= 1'b0;
-                pid1_record <= '0;
-                pid1_record.pid <= 32'd1;
-                pid1_record.tid <= 32'd1;
-                pid1_record.tile_id <= 32'd0;
-                pid1_record.domain_id <= 32'd1;
-                pid1_record.domain_gen <= 32'd1;
+                pid1_record <= boot_context;
                 pid1_record.state <= 16'd1;
-                pid1_record.latency_class <= 16'd0;
-                pid1_record.wait_generation <= 32'd1;
-                pid1_record.weight_index <= 16'd0;
-                pid1_record.virtual_deadline <= 64'd0;
-                pid1_record.dispatch_eligible <= 1'b1;
-                pid1_record.effective_tile_mask <= CORE_TILE_COUNT >= 32 ?
-                    32'hffff_ffff : ((32'd1 << CORE_TILE_COUNT) - 32'd1);
-                pid1_record.migration_generation <= 32'd1;
+                pid1_record.tile_id <= 32'd0;
                 pid1_record.active_location <= 32'd0;
             end
 
@@ -466,6 +461,15 @@ module lnp64_scheduler #(
                     is_pid1_record(park_submit_record[assert_sched_i])) begin
                     assert (park_submit_record[assert_sched_i].tile_id == assert_sched_i[31:0])
                         else $fatal(1, "SG-SCHED scheduler park record tile drift");
+                end
+                if (issue_valid[assert_sched_i]) begin
+                    assert (is_pid1_record(issue_record[assert_sched_i]))
+                        else $fatal(1, "SG-SCHED scheduler issue record missing typed metadata");
+                    assert (issue_record[assert_sched_i].tile_id == assert_sched_i[31:0] &&
+                        issue_record[assert_sched_i].active_location == assert_sched_i[31:0])
+                        else $fatal(1, "SG-SCHED scheduler issue record tile drift");
+                    assert (issue_record[assert_sched_i].dispatch_eligible)
+                        else $fatal(1, "SG-SCHED scheduler issued non-eligible record");
                 end
             end
             if (wake_issue_valid) begin
