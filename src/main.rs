@@ -700,11 +700,12 @@ fn encode_flat_exec_instr(
         Instr::FutexWait(addr, expected) => Ok(vec![enc_rrr(0xcb, *addr, *expected, Reg(0))]),
         Instr::FutexWake(addr, count) => Ok(vec![enc_rrr(0xcc, *addr, *count, Reg(0))]),
         Instr::Fork(dst) => Ok(vec![enc_reg(0x7d, *dst)]),
+        Instr::Exec(path, argv, envp) => Ok(vec![enc_rrr(0x7f, *path, *argv, *envp)]),
         Instr::Fence => Ok(vec![enc_reg(0xcd, Reg(0))]),
         Instr::Isync(result, addr, len) => Ok(vec![enc_rrr(0xce, *result, *addr, *len)]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/CALL_REG/LR_GET/LR_SET/RET, YIELD/SLEEP, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, OBJECT_CTL, DOMAIN_CTL, CAP_DUP/SEND/RECV/REVOKE, ERRNO_GET/SET, GET_PCR/SET_PCR, DMA_CTL, ENV_GET, MMAP/MPROTECT, SIGACTION/KILL/SIGRET, INB/OUTB/LOAD_UCODE, OPEN_FD_DYN/FD_CLOSE_DYN, namespace path compatibility ops, CLONE.SPAWN/THREAD_JOIN, FUTEX_WAIT/FUTEX_WAKE, FORK, READ_FD/WRITE_FD, PULL/PUSH, WAITABLE_PROBE, AWAIT/AWAIT_DYN/AWAIT_EX, CALL_CAP/CALL_CAP_DYN/RET_CAP, READ_FD_DYN/WRITE_FD_DYN, FENCE/ISYNC, AMO, LOCK.CMPXCHG, EXIT"
+            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/CALL_REG/LR_GET/LR_SET/RET, YIELD/SLEEP, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, OBJECT_CTL, DOMAIN_CTL, CAP_DUP/SEND/RECV/REVOKE, ERRNO_GET/SET, GET_PCR/SET_PCR, DMA_CTL, ENV_GET, MMAP/MPROTECT, SIGACTION/KILL/SIGRET, INB/OUTB/LOAD_UCODE, OPEN_FD_DYN/FD_CLOSE_DYN, namespace path compatibility ops, CLONE.SPAWN/THREAD_JOIN, FUTEX_WAIT/FUTEX_WAKE, FORK/EXEC, READ_FD/WRITE_FD, PULL/PUSH, WAITABLE_PROBE, AWAIT/AWAIT_DYN/AWAIT_EX, CALL_CAP/CALL_CAP_DYN/RET_CAP, READ_FD_DYN/WRITE_FD_DYN, FENCE/ISYNC, AMO, LOCK.CMPXCHG, EXIT"
         )),
     }
 }

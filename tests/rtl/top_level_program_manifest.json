@@ -211,6 +211,14 @@
       "comparison": "retire_trace_and_final_state"
     },
     {
+      "source": "tests/rtl/programs/top_exec_target.s",
+      "generated_flat_hex": "tests/rtl/programs/top_exec_target.hex",
+      "required_features": ["core", "exec", "source_exec_image", "write_fd", "exit"],
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
+    },
+    {
       "source": "tests/rtl/programs/top_waitable_probe.s",
       "generated_flat_hex": "tests/rtl/programs/top_waitable_probe.hex",
       "required_features": ["core", "object_ctl_event_counter", "waitable_probe", "static_fd_read_write", "exit"],

@@ -4,6 +4,9 @@ ucode: .string "PORT 9 123\n"
 system_msg: .string "system ok\n"
 futex_word: .quad 0
 sig_flag: .quad 0
+exec_argv: .quad exec_path
+           .quad 0
+exec_envp: .quad 0
 
 .text
   LI r1, handler
@@ -59,7 +62,9 @@ sig_flag: .quad 0
   BEQ child
   YIELD
   LI r23, exec_path
-  EXEC r23, r0
+  LI r24, exec_argv
+  LI r25, exec_envp
+  EXEC r23, r24, r25
 
 child:
   EXIT r0
@@ -71,8 +76,9 @@ waiter:
   EXIT r0
 
 handler:
+  LI r24, sig_flag
   LI r20, 1
-  ST sig_flag, r20
+  ST [r24, 0], r20
   SIGRET
 
 bad:

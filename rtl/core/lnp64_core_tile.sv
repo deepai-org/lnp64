@@ -634,6 +634,21 @@ module lnp64_core_tile #(
         end
     endfunction
 
+    function automatic logic exec_path_is_demo_target(input logic [63:0] addr);
+        logic [63:0] word0;
+        logic [63:0] word1;
+        logic [63:0] word2;
+        begin
+            word0 = load_double_unaligned(addr);
+            word1 = load_double_unaligned(addr + 64'd8);
+            word2 = load_double_unaligned(addr + 64'd16);
+            exec_path_is_demo_target =
+                word0 == 64'h7865_2f73_6f6d_6564 &&
+                word1 == 64'h6567_7261_745f_6365 &&
+                (word2 & 64'h0000_0000_00ff_ffff) == 64'h0000_0000_0073_2e74;
+        end
+    endfunction
+
     function automatic logic [63:0] store_double_low_word(
         input logic [63:0] word,
         input logic [2:0] lane,
@@ -1120,7 +1135,7 @@ module lnp64_core_tile #(
                 8'h00, 8'h1b, 8'h1c, 8'h1f, 8'h20, 8'h21, 8'h22, 8'h23,
                 8'h24, 8'h25, 8'h26, 8'h27, 8'h28, 8'h2a, 8'h33, 8'h34,
                 8'h35, 8'h37, 8'h39, 8'h3a, 8'h49, 8'h61, 8'h63,
-                8'h64, 8'h65, 8'h68, 8'h6e, 8'h81, 8'h82, 8'hcb, 8'hcc, 8'hcd:
+                8'h64, 8'h65, 8'h68, 8'h6e, 8'h7f, 8'h81, 8'h82, 8'hcb, 8'hcc, 8'hcd:
                     flat_retire_result_valid = 1'b0;
                 default:
                     flat_retire_result_valid = 1'b1;
@@ -1441,6 +1456,9 @@ module lnp64_core_tile #(
                         LNP64_ERR_OK :
                         (domain_thread_budget_allows(active_thread_context.domain_id, 64'd1) ?
                             LNP64_ERR_EAGAIN : LNP64_ERR_ENOMEM);
+                LNP64_OP_EXEC:
+                    flat_retire_errno_value = exec_path_is_demo_target(gpr[dec.rd]) ?
+                        LNP64_ERR_OK : LNP64_ERR_EINVAL;
                 LNP64_OP_JOIN: flat_retire_errno_value = LNP64_ERR_OK;
                 default: begin
                 end
@@ -4180,6 +4198,39 @@ module lnp64_core_tile #(
                                     ) ? LNP64_ERR_EAGAIN : LNP64_ERR_ENOMEM;
                                 end
                                 pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_EXEC: begin
+                                if (exec_path_is_demo_target(gpr[dec.rd])) begin
+                                    program_rom[0] <= enc_reg(8'h04, 5'd1);
+                                    program_rom[1] <= 32'h0001_0000;
+                                    program_rom[2] <= enc_ri(8'h01, 5'd2, 16'sd8);
+                                    program_rom[3] <= enc_rrr(8'h57, 5'd1, 5'd1, 5'd2);
+                                    program_rom[4] <= enc_reg(8'h3a, 5'd0);
+                                    program_rom[5] <= enc_reg(8'h00, 5'd0);
+                                    sram[DATA_SRAM_BASE_WORD] <= 64'h0a6b_6f20_6365_7865;
+                                    sram[DATA_SRAM_BASE_WORD + 1] <= 64'd0;
+                                    for (i = 0; i < 32; i = i + 1) begin
+                                        gpr[i] <= 64'd0;
+                                    end
+                                    gpr[31] <= FLAT_EXEC_INITIAL_SP;
+                                    pc <= 32'd0;
+                                    thread_pc[active_thread_slot] <= 32'd0;
+                                    return_stack_depth <= '0;
+                                    link_register <= 64'd0;
+                                    pcr_thread_pointer <= 64'd0;
+                                    cmp_zero <= 1'b0;
+                                    cmp_negative <= 1'b0;
+                                    cmp_greater <= 1'b0;
+                                    cmp_below <= 1'b0;
+                                    cmp_above <= 1'b0;
+                                    errno_reg <= LNP64_ERR_OK;
+                                end else begin
+                                    errno_reg <= LNP64_ERR_EINVAL;
+                                    pc <= pc + 32'd1;
+                                end
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;

@@ -414,6 +414,7 @@ def load_rust_flat_to_arch_opcode_map() -> dict[int, int]:
         "FutexWait": "LNP64_OP_FUTEX_WAIT",
         "FutexWake": "LNP64_OP_FUTEX_WAKE",
         "Fork": "LNP64_OP_FORK",
+        "Exec": "LNP64_OP_EXEC",
         "CapDup": "LNP64_OP_CAP_DUP",
         "CapSend": "LNP64_OP_CAP_SEND",
         "CapRecv": "LNP64_OP_CAP_RECV",

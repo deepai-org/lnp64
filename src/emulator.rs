@@ -70,6 +70,8 @@ const UTIME_NOW_LNP64: i64 = 1_073_741_823;
 const UTIME_OMIT_LNP64: i64 = 1_073_741_822;
 const LNP64_STAT_RECORD_SIZE: usize = 120;
 const ROOT_DOMAIN_ID: u64 = 1;
+const COMMITTED_FLAT_TEXT_BASE: u64 = 0x1000;
+const COMMITTED_FLAT_PAGE_SIZE: usize = 4096;
 const FLAT_EXEC_DOMAIN_BASELINE_BYTES: u64 = 0x42_3000;
 const MAX_RESOURCE_DOMAINS: usize = 4096;
 const MAX_DOMAIN_DEPTH: u64 = 16;
@@ -1258,6 +1260,7 @@ fn committed_exec_result_reg(raw_word: u32) -> Option<usize> {
         | 0x63..=0x65
         | 0x68
         | 0x6e
+        | 0x7f
         | 0x81..=0x82
         | 0xcb..=0xcd => None,
         _ => Some(((raw_word >> 19) & 0x1f) as usize),
@@ -3719,6 +3722,10 @@ impl Machine {
                     .map(|domain| domain.security.aslr_enabled)
                     .unwrap_or(true);
                 let layout = ProcessLayout::for_process(pid, domain_id, aslr_enabled);
+                if self.committed_exec_mode {
+                    self.exec_committed_source_program(program, layout, &args, &env)?;
+                    return Ok(true);
+                }
                 let entry_page = Self::build_process_entry_page(ARG_BASE, &args, &env)?;
                 self.exec_process_image(program, layout)?;
                 let pid = self.thread()?.pid;
@@ -5068,6 +5075,129 @@ impl Machine {
         self.close_on_exec_fds()?;
         self.process_mut()?.exec(program, layout);
         Ok(())
+    }
+
+    fn exec_committed_source_program(
+        &mut self,
+        program: Program,
+        layout: ProcessLayout,
+        args: &[String],
+        env: &[String],
+    ) -> Result<(), String> {
+        let text = Self::encode_committed_source_program(&program)?;
+        if text.len() > COMMITTED_FLAT_PAGE_SIZE {
+            return Err(format!(
+                "committed source EXEC image is too large: {} bytes > {COMMITTED_FLAT_PAGE_SIZE}",
+                text.len()
+            ));
+        }
+        if program.data.len() > COMMITTED_FLAT_PAGE_SIZE {
+            return Err(format!(
+                "committed source EXEC data image is too large: {} bytes > {COMMITTED_FLAT_PAGE_SIZE}",
+                program.data.len()
+            ));
+        }
+        let entry_page = Self::build_process_entry_page(ARG_BASE, args, env)?;
+        self.exec_process_image(program, layout)?;
+        {
+            let process = self.process_mut()?;
+            let text_start = COMMITTED_FLAT_TEXT_BASE as usize;
+            let text_end = text_start
+                .checked_add(COMMITTED_FLAT_PAGE_SIZE)
+                .ok_or_else(|| "committed source text range overflow".to_string())?;
+            if text_end > process.memory.len() {
+                return Err("committed source text exceeds process memory".to_string());
+            }
+            process.memory[text_start..text_end].fill(0);
+            process.memory[text_start..text_start + text.len()].copy_from_slice(&text);
+            process.vmas.push(Vma::anonymous(
+                COMMITTED_FLAT_TEXT_BASE,
+                COMMITTED_FLAT_PAGE_SIZE as u64,
+                EXEC_PLAN_VMA_PROT_READ | EXEC_PLAN_VMA_PROT_EXECUTE,
+            ));
+            process.exec_entry_pc = COMMITTED_FLAT_TEXT_BASE;
+            process.exec_tls_base = 0;
+            process.exec_startup_metadata_ptr = ARG_BASE;
+        }
+        self.install_committed_exec_runtime_vmas()?;
+        self.install_process_entry_page(self.thread()?.pid, ARG_BASE, &entry_page)?;
+
+        let pid = self.thread()?.pid;
+        let tid = self.thread()?.tid;
+        let domain_id = self.current_domain_id()?;
+        let stack_top = self.process()?.stack_top;
+        let mut replacement = Thread::new(tid, pid, domain_id, stack_top);
+        replacement.ip = checked_host_usize(COMMITTED_FLAT_TEXT_BASE, "committed source entry PC")?;
+        *self.thread_mut()? = replacement;
+        Ok(())
+    }
+
+    fn encode_committed_source_program(program: &Program) -> Result<Vec<u8>, String> {
+        fn enc_reg(opcode: u8, reg: Reg) -> u32 {
+            (u32::from(opcode) << 24) | (((reg.0 as u32) & 0x1f) << 19)
+        }
+
+        fn enc_ri(opcode: u8, rd: Reg, imm: i64) -> u32 {
+            (u32::from(opcode) << 24) | (((rd.0 as u32) & 0x1f) << 19) | ((imm as u32) & 0xffff)
+        }
+
+        fn enc_rrr(opcode: u8, rd: Reg, rs1: Reg, rs2: Reg) -> u32 {
+            (u32::from(opcode) << 24)
+                | (((rd.0 as u32) & 0x1f) << 19)
+                | (((rs1.0 as u32) & 0x1f) << 14)
+                | (((rs2.0 as u32) & 0x1f) << 9)
+        }
+
+        fn value_imm32(program: &Program, value: &Value) -> Result<i64, String> {
+            match value {
+                Value::Imm(imm) => i32::try_from(*imm)
+                    .map(i64::from)
+                    .map_err(|_| format!("committed source EXEC immediate out of range: {imm}")),
+                Value::Label(label) => {
+                    let value = program
+                        .data_labels
+                        .get(label)
+                        .copied()
+                        .ok_or_else(|| {
+                            format!(
+                                "committed source EXEC only supports data-label LI operands, got {label:?}"
+                            )
+                        })?;
+                    i32::try_from(value as i64).map(i64::from).map_err(|_| {
+                        format!("committed source EXEC label address out of range: {label:?}")
+                    })
+                }
+            }
+        }
+
+        let mut bytes = Vec::new();
+        for instr in &program.instructions {
+            let words = match instr {
+                Instr::Nop => vec![enc_reg(0x00, Reg(0))],
+                Instr::Li(rd, value) => {
+                    let imm = value_imm32(program, value)?;
+                    if (-32768..=32767).contains(&imm) {
+                        vec![enc_ri(0x01, *rd, imm)]
+                    } else {
+                        vec![enc_reg(0x04, *rd), imm as u32]
+                    }
+                }
+                Instr::WriteFd(fd, buf, len) => vec![enc_rrr(0x57, Reg(fd.0), *buf, *len)],
+                Instr::Exit(src) => vec![enc_reg(0x3a, *src)],
+                other => {
+                    return Err(format!(
+                        "committed source EXEC cannot encode child instruction {other:?}"
+                    ));
+                }
+            };
+            for word in words {
+                bytes.extend_from_slice(&word.to_le_bytes());
+            }
+        }
+        if bytes.is_empty() {
+            return Err("committed source EXEC image is empty".to_string());
+        }
+        Ok(bytes)
     }
 
     fn close_on_exec_fds(&mut self) -> Result<(), String> {
@@ -16249,6 +16379,51 @@ mod tests {
         assert_eq!(
             &machine.process().unwrap().memory[0x400000..0x400004],
             &0x3a00_0000u32.to_le_bytes()
+        );
+        assert_eq!(machine.run_committed_exec().unwrap(), 0);
+
+        let _ = fs::remove_file(child_path);
+    }
+
+    #[test]
+    fn committed_exec_opcode_loads_source_child_smoke() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let child_path = std::env::temp_dir().join(format!("lnp64_exec_source_child_{unique}.s"));
+        fs::write(
+            &child_path,
+            r#"
+            .data
+            msg: .string "exec ok\n"
+
+            .text
+              LI r1, msg
+              LI r2, 8
+              WRITE_FD fd1, r1, r2
+              EXIT r0
+            "#,
+        )
+        .unwrap();
+        let path = child_path.to_string_lossy();
+        let mut machine = Machine::new(empty_program());
+        machine
+            .write_bytes(ARG_BASE, path.as_bytes())
+            .and_then(|_| machine.write_bytes(ARG_BASE + path.len() as u64, &[0]))
+            .unwrap();
+        machine.thread_mut().unwrap().regs[1] = ARG_BASE;
+        machine.committed_exec_mode = true;
+
+        machine.exec(Instr::Exec(Reg(1), Reg(0), Reg(0))).unwrap();
+
+        assert_eq!(
+            machine.process().unwrap().exec_entry_pc,
+            COMMITTED_FLAT_TEXT_BASE
+        );
+        assert_eq!(
+            machine.thread().unwrap().ip,
+            COMMITTED_FLAT_TEXT_BASE as usize
         );
         assert_eq!(machine.run_committed_exec().unwrap(), 0);
 

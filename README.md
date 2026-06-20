@@ -455,6 +455,7 @@ bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_mulh.s
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_auipc_fence.s
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_half_word_load_store.s
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_amo.s
+bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_exec_target.s
 bash scripts/run_rtl_top_llvm_mc_smoke.sh
 bash scripts/run_rtl_top_clang_smoke.sh
 bash scripts/run_rtl_top_linked_llvm_smoke.sh
