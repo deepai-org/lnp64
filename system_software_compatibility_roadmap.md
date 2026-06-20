@@ -105,7 +105,9 @@ entries against the cross-cutting foundations, not the app.
    logging) — smallest, highest leverage. Implemented %f (fixed), %g (general),
    %e (scientific) format specifiers with precision parsing in snprintf. Lua
    `print(10/4)` => `2.5000000000000e+00` now works.
-2. Open Lua `math`/`io`/`os` + run a `.lua` script file.
+2. ✅ **DONE** Open Lua `math`/`io`/`os` + run a `.lua` script file. Math library
+   with trig functions (sin, cos, sqrt, etc.), io library for file I/O, os library
+   for time and file operations. Script files load and execute correctly.
 3. Start SQLite `:memory:`, surfacing the next batch of generic gaps (likely
    `-O1`/regalloc, more `printf`, larger frames).
 4. Loop foundations (`-O1` regalloc, loader/VFS) as SQLite demands them.
