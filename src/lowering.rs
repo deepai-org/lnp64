@@ -7422,7 +7422,31 @@ mod tests {
         assert!(top_manifest.contains("\"llvm_clang_programs\""));
         assert!(top_manifest.contains("\"llvm_linked_programs\""));
 
-        assert!(run_software.contains("bash scripts/run_real_packages.sh"));
+        for gate in [
+            "bash scripts/run_demos.sh",
+            "bash scripts/run_userland.sh",
+            "bash scripts/run_netbsd_personality_system.sh",
+            "bash scripts/run_real_packages.sh",
+        ] {
+            assert!(
+                run_software.contains(gate),
+                "software gate must invoke {gate}"
+            );
+        }
+        for (name, script) in [
+            ("run_real_packages", run_real_packages),
+            ("run_userland", run_userland),
+            ("run_netbsd", run_netbsd),
+        ] {
+            assert!(
+                !script.contains("scripts/run_demos.sh"),
+                "{name} must not route through legacy demo smokes"
+            );
+            assert!(
+                !script.contains("lnp64 run "),
+                "{name} must not use legacy assembler execution for C/package/userland coverage"
+            );
+        }
         assert!(run_real_packages.contains("scripts/run_real_llvm_package_gate.sh"));
         assert!(run_real_llvm.contains(r#""$clang" --target=lnp64-unknown-none"#));
         assert!(run_real_package_gate.contains("run-elf --namespace-root"));
