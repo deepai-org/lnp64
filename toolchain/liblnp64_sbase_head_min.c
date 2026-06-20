@@ -1,5 +1,6 @@
 #include <dirent.h>
 #include <fcntl.h>
+#include <regex.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -13,6 +14,10 @@ struct __lnp64_file {
   int fd;
   int eof;
   int error;
+  int memory;
+  const unsigned char *mem;
+  size_t mem_size;
+  size_t mem_pos;
 };
 
 static FILE lnp64_head_stdin_file = {.fd = 0};
@@ -155,7 +160,9 @@ int fflush(FILE *stream) {
 
 int fclose(FILE *stream) {
   int fd = lnp64_file_fd(stream);
-  if (fd > 2 && close(fd) < 0) {
+  if (stream && stream->memory) {
+    stream->memory = 0;
+  } else if (fd > 2 && close(fd) < 0) {
     stream->error = 1;
     return EOF;
   }
@@ -164,6 +171,9 @@ int fclose(FILE *stream) {
          i++) {
       if (stream == &lnp64_head_files[i]) {
         lnp64_head_file_used[i] = 0;
+        lnp64_head_files[i].mem = 0;
+        lnp64_head_files[i].mem_size = 0;
+        lnp64_head_files[i].mem_pos = 0;
         break;
       }
     }
@@ -193,6 +203,12 @@ int fputs(const char *s, FILE *stream) {
   return 0;
 }
 
+int puts(const char *s) {
+  if (fputs(s, stdout) == EOF)
+    return EOF;
+  return fputc('\n', stdout) == EOF ? EOF : 0;
+}
+
 size_t fwrite(const void *ptr, size_t size, size_t count, FILE *stream) {
   size_t bytes = size * count;
   int fd = lnp64_file_fd(stream);
@@ -211,6 +227,13 @@ size_t fwrite(const void *ptr, size_t size, size_t count, FILE *stream) {
 int fgetc(FILE *stream) {
   unsigned char ch;
   int fd = lnp64_file_fd(stream);
+  if (stream && stream->memory) {
+    if (stream->mem_pos >= stream->mem_size) {
+      stream->eof = 1;
+      return EOF;
+    }
+    return stream->mem[stream->mem_pos++];
+  }
   if (fd < 0) {
     if (stream)
       stream->error = 1;
@@ -272,10 +295,34 @@ FILE *fopen(const char *path, const char *mode) {
       lnp64_head_files[i].fd = fd;
       lnp64_head_files[i].eof = 0;
       lnp64_head_files[i].error = 0;
+      lnp64_head_files[i].memory = 0;
+      lnp64_head_files[i].mem = 0;
+      lnp64_head_files[i].mem_size = 0;
+      lnp64_head_files[i].mem_pos = 0;
       return &lnp64_head_files[i];
     }
   }
   close(fd);
+  return 0;
+}
+
+FILE *fmemopen(void *buf, size_t size, const char *mode) {
+  if (!buf || !mode || mode[0] != 'r')
+    return 0;
+  for (size_t i = 0; i < sizeof(lnp64_head_files) / sizeof(lnp64_head_files[0]);
+       i++) {
+    if (!lnp64_head_file_used[i]) {
+      lnp64_head_file_used[i] = 1;
+      lnp64_head_files[i].fd = -1;
+      lnp64_head_files[i].eof = 0;
+      lnp64_head_files[i].error = 0;
+      lnp64_head_files[i].memory = 1;
+      lnp64_head_files[i].mem = buf;
+      lnp64_head_files[i].mem_size = size;
+      lnp64_head_files[i].mem_pos = 0;
+      return &lnp64_head_files[i];
+    }
+  }
   return 0;
 }
 
@@ -323,6 +370,16 @@ ssize_t getline(char **lineptr, size_t *n, FILE *stream) {
 int fshut(FILE *stream, const char *name) {
   (void)name;
   return fclose(stream);
+}
+
+void efshut(FILE *stream, const char *name) {
+  if (fshut(stream, name) != 0)
+    eprintf("%s:", name);
+}
+
+void enfshut(int status, FILE *stream, const char *name) {
+  if (fshut(stream, name) != 0)
+    enprintf(status, "%s:", name);
 }
 
 static void lnp64_vprint(FILE *stream, const char *format, va_list ap) {
@@ -465,6 +522,15 @@ int snprintf(char *str, size_t size, const char *format, ...) {
   return ret;
 }
 
+int sprintf(char *str, const char *format, ...) {
+  va_list ap;
+  int ret;
+  va_start(ap, format);
+  ret = vsnprintf(str, (size_t)-1, format, ap);
+  va_end(ap);
+  return ret;
+}
+
 int vfprintf(FILE *stream, const char *format, va_list ap) {
   lnp64_vprint(stream, format, ap);
   return 0;
@@ -499,6 +565,84 @@ void enprintf(int status, const char *format, ...) {
   lnp64_vprint(stderr, format, ap);
   va_end(ap);
   exit(status);
+}
+
+static int lnp64_ascii_tolower(int ch) {
+  return (ch >= 'A' && ch <= 'Z') ? ch + ('a' - 'A') : ch;
+}
+
+int strcasecmp(const char *lhs, const char *rhs) {
+  while (*lhs || *rhs) {
+    int l = lnp64_ascii_tolower((unsigned char)*lhs++);
+    int r = lnp64_ascii_tolower((unsigned char)*rhs++);
+    if (l != r)
+      return l - r;
+  }
+  return 0;
+}
+
+char *xstrcasestr(const char *haystack, const char *needle) {
+  size_t needle_len = strlen(needle);
+  if (needle_len == 0)
+    return (char *)haystack;
+  for (; *haystack; haystack++) {
+    size_t i = 0;
+    while (i < needle_len && haystack[i] &&
+           lnp64_ascii_tolower((unsigned char)haystack[i]) ==
+               lnp64_ascii_tolower((unsigned char)needle[i])) {
+      i++;
+    }
+    if (i == needle_len)
+      return (char *)haystack;
+  }
+  return 0;
+}
+
+int regcomp(regex_t *preg, const char *pattern, int cflags) {
+  (void)pattern;
+  (void)cflags;
+  if (preg)
+    preg->re_nsub = 0;
+  return REG_BADPAT;
+}
+
+int regexec(const regex_t *preg, const char *string, size_t nmatch,
+            regmatch_t pmatch[], int eflags) {
+  (void)preg;
+  (void)string;
+  (void)nmatch;
+  (void)pmatch;
+  (void)eflags;
+  return REG_NOMATCH;
+}
+
+size_t regerror(int errcode, const regex_t *preg, char *errbuf,
+                size_t errbuf_size) {
+  const char *msg = errcode == REG_NOMATCH ? "no match" : "unsupported regex";
+  size_t len = strlen(msg);
+  (void)preg;
+  if (errbuf_size) {
+    size_t copy = len < errbuf_size - 1 ? len : errbuf_size - 1;
+    memcpy(errbuf, msg, copy);
+    errbuf[copy] = 0;
+  }
+  return len + 1;
+}
+
+void regfree(regex_t *preg) { (void)preg; }
+
+int enregcomp(int status, regex_t *preg, const char *pattern, int cflags) {
+  int ret = regcomp(preg, pattern, cflags);
+  if (ret != 0)
+    enprintf(status, "unsupported regex\n");
+  return ret;
+}
+
+int eregcomp(regex_t *preg, const char *pattern, int cflags) {
+  int ret = regcomp(preg, pattern, cflags);
+  if (ret != 0)
+    eprintf("unsupported regex\n");
+  return ret;
 }
 
 size_t estrlcpy(char *dst, const char *src, size_t size) {

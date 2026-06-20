@@ -38,6 +38,7 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-sbase-cut-linked.elf"
         "$build_dir/lnp64-sbase-tr-linked.elf"
         "$build_dir/lnp64-sbase-sort-linked.elf"
+        "$build_dir/lnp64-sbase-grep-linked.elf"
         "$build_dir/lnp64-sbase-ls-linked.elf"
         "$build_dir/lnp64-sbase-find-linked.elf"
         "$build_dir/lnp64-sbase-mkdir-linked.elf"
@@ -93,6 +94,7 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-sbase-cut-linked.elf"
         "$build_dir/lnp64-sbase-tr-linked.elf"
         "$build_dir/lnp64-sbase-sort-linked.elf"
+        "$build_dir/lnp64-sbase-grep-linked.elf"
         "$build_dir/lnp64-sbase-ls-linked.elf"
         "$build_dir/lnp64-sbase-find-linked.elf"
         "$build_dir/lnp64-sbase-mkdir-linked.elf"
@@ -354,6 +356,16 @@ run_package() {
       grep -q 'exit=0' <<<"$sbase_sort_output"
       printf 'real LLVM LNP64 run-elf sbase sort execution passed: %s\n' \
         "$build_dir/lnp64-sbase-sort-linked.elf"
+      printf 'alpha\nbeta\nalphabet\n' >"$sbase_fixture_root/input/grep.txt"
+      "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-grep-linked.elf" >/dev/null
+      local sbase_grep_output
+      sbase_grep_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+        "$build_dir/lnp64-sbase-grep-linked.elf" grep -F alpha input/grep.txt)"
+      test "$(sed -n '1p' <<<"$sbase_grep_output")" = alpha
+      test "$(sed -n '2p' <<<"$sbase_grep_output")" = alphabet
+      grep -q 'exit=0' <<<"$sbase_grep_output"
+      printf 'real LLVM LNP64 run-elf sbase grep fixed-string execution passed: %s\n' \
+        "$build_dir/lnp64-sbase-grep-linked.elf"
       "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-ls-linked.elf" >/dev/null
       local sbase_ls_output
       sbase_ls_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
