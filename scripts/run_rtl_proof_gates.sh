@@ -193,6 +193,15 @@ scripts/test_rtl_m4_witness_checker.py
 LNP64_RTL_M4_WITNESS_OUT="$m4_witness" \
   bash scripts/run_rtl_m4_lean_witness_gate.sh
 
+m5_witness="${TMPDIR:-/tmp}/lnp64_rtl_proof_m5_witness.json"
+LNP64_RTL_M5_WITNESS_OUT="$m5_witness" \
+  scripts/check_rtl_m5_typed_commit_trace.py
+scripts/check_rtl_m5_witness.py "$m5_witness"
+scripts/test_rtl_m5_typed_commit_checker.py
+scripts/test_rtl_m5_witness_checker.py
+LNP64_RTL_M5_WITNESS_OUT="$m5_witness" \
+  bash scripts/run_rtl_m5_lean_witness_gate.sh
+
 m7_log="${TMPDIR:-/tmp}/lnp64_rtl_proof_m7.log"
 m7_witness="${TMPDIR:-/tmp}/lnp64_rtl_proof_m7_witness.json"
 LNP64_COSIM_SEEDS="${LNP64_M7_TYPED_COMMIT_SEEDS:-0}" \

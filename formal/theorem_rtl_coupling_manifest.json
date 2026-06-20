@@ -148,13 +148,13 @@
         {"file": "rtl/engines/lnp64_m5_dma.sv", "module": "lnp64_m5_dma"},
         {"file": "rtl/engines/lnp64_engine_shells.sv", "module": "lnp64_dma_fabric"}
       ],
-      "rtl_witness_signals": ["pin_completed", "unpin_completed", "domain_isolation_enforced", "coherence_observed"],
+      "rtl_witness_signals": ["pin_completed", "unpin_completed", "domain_isolation_enforced", "coherence_observed", "typed_commit_valid", "typed_commit", "typed_state_projection"],
       "assertion_files": ["formal/rtl_assertions/lnp64_m5_assertions.sv"],
-      "trace_sources": ["rtl/sim/lnp64_m5_tb.sv", "formal/m5_dma_model.py", "tests/traces/rtl_cosim_manifest.json"],
-      "trace_markers": ["TRACE dma_pin", "TRACE dma_unpin", "TRACE domain_isolation", "TRACE coherence_flush"],
-      "gate_scripts": ["scripts/run_rtl_m5.sh", "scripts/run_rtl_random_cosim.sh"],
+      "trace_sources": ["rtl/sim/lnp64_m5_tb.sv", "formal/m5_dma_model.py", "tests/traces/rtl_cosim_manifest.json", "scripts/check_rtl_m5_typed_commit_trace.py", "scripts/test_rtl_m5_typed_commit_checker.py", "scripts/check_rtl_m5_witness.py", "scripts/run_rtl_m5_witness_gate.sh", "scripts/gen_m5_witness_lean.py", "scripts/run_rtl_m5_lean_witness_gate.sh"],
+      "trace_markers": ["TRACE dma_pin", "TRACE dma_unpin", "TRACE domain_isolation", "TRACE coherence_flush", "TTRACE_M5 {\\\"record\\\":\\\"m5_dma_commit\\\"", "TTRACE_M5_BITS {\\\"record\\\":\\\"m5_dma_commit_bits\\\"", "TTRACE_M5_STATE {\\\"record\\\":\\\"m5_state_projection\\\"", "TTRACE_M5_STATE_BITS {\\\"record\\\":\\\"m5_state_projection_bits\\\"", "rtl m5 typed commit trace ok", "rtl m5 witness ok", "rtl m5 lean witness gate ok"],
+      "gate_scripts": ["scripts/run_rtl_m5.sh", "scripts/check_rtl_m5_typed_commit_trace.py", "scripts/test_rtl_m5_typed_commit_checker.py", "scripts/check_rtl_m5_witness.py", "scripts/run_rtl_m5_witness_gate.sh", "scripts/test_rtl_m5_witness_checker.py", "scripts/gen_m5_witness_lean.py", "scripts/run_rtl_m5_lean_witness_gate.sh", "scripts/run_rtl_random_cosim.sh"],
       "assumptions": ["DMA buffers are the authority carrier", "coherence flush is the modeled visibility boundary"],
-      "known_gaps": ["Lean now includes an M5 DMA transition-invariant proof slice, but typed transition traces and full cache/TLB/DMA fabric refinement are still missing."]
+      "known_gaps": ["Lean now includes an M5 DMA transition-invariant proof slice; the seed-0 DMA path emits schema-owned typed commit/state packed traces checked against the executable transition contract (scripts/check_rtl_m5_typed_commit_trace.py: op sequence, packed-bit faithfulness, per-op invariants, and DMA confinement -- copy/fill only against a pinned buffer owned by the requesting domain with write rights); the witness is re-validated offline by scripts/check_rtl_m5_witness.py; and scripts/run_rtl_m5_lean_witness_gate.sh proves in Lean (kernel decide, no axioms) that every emitted commit/state packed bit vector decodes under the Lnp64.M5Transition decoders to the recorded values. Full cache/TLB/DMA fabric refinement and the existential RTL-to-Lean refinement step are still missing."]
     },
     {
       "id": "vma_memory_safety",

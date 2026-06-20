@@ -20,6 +20,9 @@ module lnp64_m5_tb;
     logic domain_isolation_enforced;
     logic coherence_observed;
     logic completions_exact;
+    logic typed_commit_valid;
+    lnp64_m5_dma_commit_t typed_commit;
+    lnp64_m5_state_projection_t typed_state_projection;
 
     lnp64_m5_dma dut(
         .clk(clk),
@@ -38,7 +41,10 @@ module lnp64_m5_tb;
         .revoke_rejected(revoke_rejected),
         .domain_isolation_enforced(domain_isolation_enforced),
         .coherence_observed(coherence_observed),
-        .completions_exact(completions_exact)
+        .completions_exact(completions_exact),
+        .typed_commit_valid(typed_commit_valid),
+        .typed_commit(typed_commit),
+        .typed_state_projection(typed_state_projection)
     );
 
     lnp64_m5_assertions assertions_i(
@@ -105,6 +111,51 @@ module lnp64_m5_tb;
                 8'd10: $display("TRACE done completions=%0d", trace_value[31:0]);
                 default: $display("TRACE unknown code=%0d value=%0d", trace_code, trace_value);
             endcase
+        end
+        if (typed_commit_valid) begin
+            $display(
+                "TTRACE_M5 {\"record\":\"m5_dma_commit\",\"op\":%0d,\"status\":%0d,\"src_buffer_id\":%0d,\"dst_buffer_id\":%0d,\"dst_generation\":%0d,\"requester_domain\":%0d,\"dst_domain\":%0d,\"dst_rights\":%0d}",
+                typed_commit.op,
+                typed_commit.status,
+                typed_commit.src_buffer_id,
+                typed_commit.dst_buffer_id,
+                typed_commit.dst_generation,
+                typed_commit.requester_domain,
+                typed_commit.dst_domain,
+                typed_commit.dst_rights
+            );
+            $display(
+                "TTRACE_M5_BITS {\"record\":\"m5_dma_commit_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m5_dma_commit_t),
+                typed_commit
+            );
+            $display(
+                "TTRACE_M5_STATE {\"record\":\"m5_state_projection\",\"op\":%0d,\"status\":%0d,\"dst_buffer_id\":%0d,\"dst_generation\":%0d,\"requester_domain\":%0d,\"dst_domain\":%0d,\"dst_rights\":%0d,\"dst_pinned\":%0d,\"completions\":%0d,\"dst_visible\":%0d,\"pin_completed\":%0d,\"unpin_completed\":%0d,\"copy_completed\":%0d,\"fill_completed\":%0d,\"permission_faulted\":%0d,\"revoke_rejected\":%0d,\"domain_isolation_enforced\":%0d,\"coherence_observed\":%0d,\"completions_exact\":%0d}",
+                typed_state_projection.op,
+                typed_state_projection.status,
+                typed_state_projection.dst_buffer_id,
+                typed_state_projection.dst_generation,
+                typed_state_projection.requester_domain,
+                typed_state_projection.dst_domain,
+                typed_state_projection.dst_rights,
+                typed_state_projection.dst_pinned,
+                typed_state_projection.completions,
+                typed_state_projection.dst_visible,
+                typed_state_projection.pin_completed,
+                typed_state_projection.unpin_completed,
+                typed_state_projection.copy_completed,
+                typed_state_projection.fill_completed,
+                typed_state_projection.permission_faulted,
+                typed_state_projection.revoke_rejected,
+                typed_state_projection.domain_isolation_enforced,
+                typed_state_projection.coherence_observed,
+                typed_state_projection.completions_exact
+            );
+            $display(
+                "TTRACE_M5_STATE_BITS {\"record\":\"m5_state_projection_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m5_state_projection_t),
+                typed_state_projection
+            );
         end
     end
 

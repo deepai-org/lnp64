@@ -251,6 +251,16 @@
       "LNP64_M4_COMMIT_STALE_REJECT=8'd6",
       "LNP64_M4_COMMIT_TLB_INVALIDATE=8'd7"
     ],
+    "lnp64_m5_dma_op_e": [
+      "LNP64_M5_COMMIT_PIN=8'd1",
+      "LNP64_M5_COMMIT_COPY=8'd2",
+      "LNP64_M5_COMMIT_FILL=8'd3",
+      "LNP64_M5_COMMIT_UNPIN=8'd4",
+      "LNP64_M5_COMMIT_PERMISSION_FAULT=8'd5",
+      "LNP64_M5_COMMIT_REVOKED_SUBMIT=8'd6",
+      "LNP64_M5_COMMIT_DOMAIN_ISOLATION=8'd7",
+      "LNP64_M5_COMMIT_COHERENCE_FLUSH=8'd8"
+    ],
     "lnp64_status_e": [
       "LNP64_STATUS_OK=16'h0000",
       "LNP64_STATUS_ERROR=16'h0001",
@@ -371,7 +381,9 @@
       "lnp64_service_txn_t",
       "lnp64_classifier_action_t",
       "lnp64_m4_vma_commit_t",
-      "lnp64_m4_state_projection_t"
+      "lnp64_m4_state_projection_t",
+      "lnp64_m5_dma_commit_t",
+      "lnp64_m5_state_projection_t"
     ],
     "ras_and_attestation": [
       "lnp64_error_cancel_t",
@@ -396,6 +408,8 @@
     "lnp64_m7_state_projection_t": ["op:8", "status:16", "tid:32", "location:16", "wait_generation:32", "atomic_word:32", "atomic_count:32", "cmpxchg_failure_explicit:1", "address_generation:32", "stale_address_generation:32", "domain_budget:32", "wait_cost:32", "wake_pending:1", "futex_wake_delivered:1", "timer_wake_delivered:1", "stale_address_rejected:1"],
     "lnp64_m4_vma_commit_t": ["op:8", "status:16", "vma_id:32", "vma_generation:32", "permissions:8", "fault_addr:64"],
     "lnp64_m4_state_projection_t": ["op:8", "status:16", "vma_id:32", "vma_generation:32", "permissions:8", "guard_page_valid:1", "tlb_valid:1", "mapping_created:1", "load_permitted:1", "store_rejected:1", "nx_faulted:1", "guard_faulted:1", "stale_vma_rejected:1", "tlb_invalidation_observed:1", "wx_enforced:1"],
+    "lnp64_m5_dma_commit_t": ["op:8", "status:16", "src_buffer_id:32", "dst_buffer_id:32", "dst_generation:32", "requester_domain:32", "dst_domain:32", "dst_rights:8"],
+    "lnp64_m5_state_projection_t": ["op:8", "status:16", "dst_buffer_id:32", "dst_generation:32", "requester_domain:32", "dst_domain:32", "dst_rights:8", "dst_pinned:1", "completions:32", "dst_visible:1", "pin_completed:1", "unpin_completed:1", "copy_completed:1", "fill_completed:1", "permission_faulted:1", "revoke_rejected:1", "domain_isolation_enforced:1", "coherence_observed:1", "completions_exact:1"],
     "lnp64_object_ref_t": ["object_id:32", "object_gen:32", "profile:16", "length:64", "bounds_base:64"],
     "lnp64_control_envelope_t": ["version:16", "profile:16", "byte_len:32", "selector:32", "service_generation:32", "payload_ptr:64"],
     "lnp64_domain_t": ["domain_id:32", "domain_gen:32", "parent_domain_id:32", "parent_domain_gen:32", "budget_limit:64", "budget_used:64", "lifecycle_state:16", "assurance_profile:16", "label_id:32"],

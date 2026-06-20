@@ -274,6 +274,55 @@ def check_m4_typed_trace_contract(claim: dict) -> None:
         require(name in proof_gate_text, f"RTL proof gate must run {name}")
 
 
+def check_m5_typed_trace_contract(claim: dict) -> None:
+    if claim.get("id") != "dma_confined":
+        return
+    trace_sources = claim.get("trace_sources", [])
+    gate_scripts = claim.get("gate_scripts", [])
+    m5_artifacts = (
+        "scripts/check_rtl_m5_typed_commit_trace.py",
+        "scripts/test_rtl_m5_typed_commit_checker.py",
+        "scripts/check_rtl_m5_witness.py",
+        "scripts/run_rtl_m5_witness_gate.sh",
+        "scripts/test_rtl_m5_witness_checker.py",
+        "scripts/gen_m5_witness_lean.py",
+        "scripts/run_rtl_m5_lean_witness_gate.sh",
+    )
+    for name in m5_artifacts:
+        require((ROOT / name).exists(), f"dma_confined: missing M5 artifact {name}")
+        require(name in gate_scripts, f"dma_confined: missing M5 gate {name}")
+    for name in (
+        "scripts/check_rtl_m5_typed_commit_trace.py",
+        "scripts/check_rtl_m5_witness.py",
+        "scripts/run_rtl_m5_lean_witness_gate.sh",
+    ):
+        require(name in trace_sources, f"dma_confined: missing M5 trace source {name}")
+    markers = claim.get("trace_markers", [])
+    require(
+        'TTRACE_M5 {\\"record\\":\\"m5_dma_commit\\"' in markers,
+        "dma_confined: missing M5 typed commit trace marker",
+    )
+    require("rtl m5 typed commit trace ok" in markers, "dma_confined: missing M5 typed trace pass marker")
+    known_gaps = " ".join(claim.get("known_gaps", []))
+    require(
+        "typed transition traces" not in known_gaps,
+        "dma_confined: known gap still claims M5 typed transition traces are missing",
+    )
+    require(
+        "scripts/run_rtl_m5_lean_witness_gate.sh" in known_gaps,
+        "dma_confined: known gap must record the M5 Lean decode-faithfulness proof",
+    )
+    proof_gate_text = check_file(RTL_PROOF_GATES, "RTL proof gate")
+    for name in (
+        "scripts/check_rtl_m5_typed_commit_trace.py",
+        "scripts/test_rtl_m5_typed_commit_checker.py",
+        "scripts/check_rtl_m5_witness.py",
+        "scripts/test_rtl_m5_witness_checker.py",
+        "scripts/run_rtl_m5_lean_witness_gate.sh",
+    ):
+        require(name in proof_gate_text, f"RTL proof gate must run {name}")
+
+
 def check_file(path: Path, label: str) -> str:
     require(path.exists(), f"missing {label} {path}")
     require(path.stat().st_size > 0, f"empty {label} {path}")
@@ -287,6 +336,7 @@ def check_claim(claim: dict) -> None:
     check_m1_top_level_contract(claim)
     check_m7_typed_trace_contract(claim)
     check_m4_typed_trace_contract(claim)
+    check_m5_typed_trace_contract(claim)
 
     trust = claim.get("trust_level")
     require(trust in ALLOWED_TRUST_LEVELS, f"{claim_id}: invalid trust level {trust}")

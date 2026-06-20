@@ -253,6 +253,17 @@ package lnp64_pkg;
         LNP64_M4_COMMIT_TLB_INVALIDATE = 8'd7
     } lnp64_m4_vma_op_e;
 
+    typedef enum logic [7:0] {
+        LNP64_M5_COMMIT_PIN              = 8'd1,
+        LNP64_M5_COMMIT_COPY             = 8'd2,
+        LNP64_M5_COMMIT_FILL             = 8'd3,
+        LNP64_M5_COMMIT_UNPIN            = 8'd4,
+        LNP64_M5_COMMIT_PERMISSION_FAULT = 8'd5,
+        LNP64_M5_COMMIT_REVOKED_SUBMIT   = 8'd6,
+        LNP64_M5_COMMIT_DOMAIN_ISOLATION = 8'd7,
+        LNP64_M5_COMMIT_COHERENCE_FLUSH  = 8'd8
+    } lnp64_m5_dma_op_e;
+
     typedef enum logic [15:0] {
         LNP64_STATUS_OK          = 16'h0000,
         LNP64_STATUS_ERROR       = 16'h0001,
@@ -543,6 +554,39 @@ package lnp64_pkg;
         logic        tlb_invalidation_observed;
         logic        wx_enforced;
     } lnp64_m4_state_projection_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] src_buffer_id;
+        logic [31:0] dst_buffer_id;
+        logic [31:0] dst_generation;
+        logic [31:0] requester_domain;
+        logic [31:0] dst_domain;
+        logic [7:0]  dst_rights;
+    } lnp64_m5_dma_commit_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] dst_buffer_id;
+        logic [31:0] dst_generation;
+        logic [31:0] requester_domain;
+        logic [31:0] dst_domain;
+        logic [7:0]  dst_rights;
+        logic        dst_pinned;
+        logic [31:0] completions;
+        logic        dst_visible;
+        logic        pin_completed;
+        logic        unpin_completed;
+        logic        copy_completed;
+        logic        fill_completed;
+        logic        permission_faulted;
+        logic        revoke_rejected;
+        logic        domain_isolation_enforced;
+        logic        coherence_observed;
+        logic        completions_exact;
+    } lnp64_m5_state_projection_t;
 
     typedef struct packed {
         logic [31:0] object_id;

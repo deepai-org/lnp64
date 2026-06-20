@@ -234,4 +234,133 @@ theorem m5_t3_completions_are_exact_for_all_reachable {s : State} :
   simp [completionCountMatches, hCopy, hFill] at hCount
   exact hCount
 
+/- Packed-bit decode model for the M5 DMA witness.
+
+Mirrors the M1/M4/M7 packed-bit machinery so the emitted lnp64_m5_dma_commit_t
+and lnp64_m5_state_projection_t bit vectors can be decode-checked against this
+Lean model. Every M5 field is a plain scalar/bool slice. -/
+
+structure PackedFieldLayout where
+  name : String
+  width : Nat
+  lsb : Nat
+  msb : Nat
+deriving DecidableEq, Repr
+
+def packedSchemaWidth (schema : List (String × Nat)) : Nat :=
+  schema.foldl (fun total field => total + field.2) 0
+
+def packedSchemaLayoutFrom : Nat -> List (String × Nat) -> List PackedFieldLayout
+  | _cursor, [] => []
+  | cursor, field :: rest =>
+      let lsb := cursor - field.2
+      { name := field.1, width := field.2, lsb := lsb, msb := cursor - 1 } ::
+        packedSchemaLayoutFrom lsb rest
+
+def packedSchemaLayout (schema : List (String × Nat)) : List PackedFieldLayout :=
+  packedSchemaLayoutFrom (packedSchemaWidth schema) schema
+
+def packedFieldWithinWidth (totalWidth : Nat) (field : PackedFieldLayout) : Bool :=
+  decide (field.width > 0) &&
+  decide (field.lsb + field.width = field.msb + 1) &&
+  decide (field.msb < totalWidth)
+
+def packedLayoutWithinWidth (totalWidth : Nat) (layout : List PackedFieldLayout) : Bool :=
+  layout.all (packedFieldWithinWidth totalWidth)
+
+def packedLayoutStartsAtWidth (totalWidth : Nat) : List PackedFieldLayout -> Bool
+  | [] => decide (totalWidth = 0)
+  | field :: _rest => decide (field.msb + 1 = totalWidth)
+
+def packedLayoutAdjacentContiguous : List PackedFieldLayout -> Bool
+  | [] => true
+  | _field :: [] => true
+  | first :: second :: rest =>
+      decide (first.lsb = second.msb + 1) &&
+      packedLayoutAdjacentContiguous (second :: rest)
+
+def packedLayoutEndsAtZero : List PackedFieldLayout -> Bool
+  | [] => true
+  | field :: [] => decide (field.lsb = 0)
+  | _field :: rest => packedLayoutEndsAtZero rest
+
+def packedLayoutCoversWidth (totalWidth : Nat) (layout : List PackedFieldLayout) : Bool :=
+  packedLayoutWithinWidth totalWidth layout &&
+  packedLayoutStartsAtWidth totalWidth layout &&
+  packedLayoutAdjacentContiguous layout &&
+  packedLayoutEndsAtZero layout
+
+def packedBitSlice (bits lsb width : Nat) : Nat :=
+  (bits / (2 ^ lsb)) % (2 ^ width)
+
+def packedFieldValue (bits : Nat) (field : PackedFieldLayout) : Nat :=
+  packedBitSlice bits field.lsb field.width
+
+def packedLayoutFieldValue
+    (bits : Nat)
+    (fieldName : String) : List PackedFieldLayout -> Option Nat
+  | [] => none
+  | field :: rest =>
+      if field.name == fieldName then
+        some (packedFieldValue bits field)
+      else
+        packedLayoutFieldValue bits fieldName rest
+
+def rtlM5CommitPackedSchema : List (String × Nat) :=
+  [ ("op", 8)
+  , ("status", 16)
+  , ("src_buffer_id", 32)
+  , ("dst_buffer_id", 32)
+  , ("dst_generation", 32)
+  , ("requester_domain", 32)
+  , ("dst_domain", 32)
+  , ("dst_rights", 8) ]
+
+def rtlM5StateProjectionPackedSchema : List (String × Nat) :=
+  [ ("op", 8)
+  , ("status", 16)
+  , ("dst_buffer_id", 32)
+  , ("dst_generation", 32)
+  , ("requester_domain", 32)
+  , ("dst_domain", 32)
+  , ("dst_rights", 8)
+  , ("dst_pinned", 1)
+  , ("completions", 32)
+  , ("dst_visible", 1)
+  , ("pin_completed", 1)
+  , ("unpin_completed", 1)
+  , ("copy_completed", 1)
+  , ("fill_completed", 1)
+  , ("permission_faulted", 1)
+  , ("revoke_rejected", 1)
+  , ("domain_isolation_enforced", 1)
+  , ("coherence_observed", 1)
+  , ("completions_exact", 1) ]
+
+def rtlM5CommitPackedLayout : List PackedFieldLayout :=
+  packedSchemaLayout rtlM5CommitPackedSchema
+
+def rtlM5StateProjectionPackedLayout : List PackedFieldLayout :=
+  packedSchemaLayout rtlM5StateProjectionPackedSchema
+
+theorem rtlM5CommitPackedSchema_width :
+    packedSchemaWidth rtlM5CommitPackedSchema = 192 := by
+  decide
+
+theorem rtlM5StateProjectionPackedSchema_width :
+    packedSchemaWidth rtlM5StateProjectionPackedSchema = 203 := by
+  decide
+
+theorem rtlM5CommitPackedLayout_covers_schema_width :
+    packedLayoutCoversWidth
+      (packedSchemaWidth rtlM5CommitPackedSchema)
+      rtlM5CommitPackedLayout = true := by
+  decide
+
+theorem rtlM5StateProjectionPackedLayout_covers_schema_width :
+    packedLayoutCoversWidth
+      (packedSchemaWidth rtlM5StateProjectionPackedSchema)
+      rtlM5StateProjectionPackedLayout = true := by
+  decide
+
 end Lnp64.M5Transition
