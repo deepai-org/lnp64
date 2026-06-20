@@ -1383,6 +1383,7 @@ mod tests {
         let netbsd_init_clang = include_str!("../userland/netbsd_init_clang.c");
         let netbsd_personality_clang = include_str!("../userland/netbsd_personality_clang_smoke.c");
         let netbsd_sh_clang = include_str!("../userland/netbsd_sh_clang.c");
+        let fork_wait_test_clang = include_str!("../userland/fork_wait_test_clang.c");
         let poll_test_clang = include_str!("../userland/poll_test_clang.c");
         let signal_gate_test_clang = include_str!("../userland/signal_gate_test_clang.c");
         let signal_fault_test_clang = include_str!("../userland/signal_fault_test_clang.c");
@@ -2036,7 +2037,7 @@ mod tests {
         assert!(real_llc.contains("debug-line-clang-smoke.o"));
         assert!(real_llc.contains("debug-line-clang-smoke.s"));
         assert!(real_llc.contains("-g -gdwarf-5"));
-        assert!(real_llc.contains("grep -q '.cfi_def_cfa_offset'"));
+        assert!(real_llc.contains(r#"grep -Eq '\.cfi_def_cfa_offset|\.cfi_def_cfa"#));
         assert!(real_llc.contains("grep -q '.cfi_offset 32'"));
         assert!(real_llc.contains("grep -q '.debug_info'"));
         assert!(real_llc.contains("grep -q '.debug_line'"));
@@ -2137,6 +2138,11 @@ mod tests {
         assert!(libc_process_min.contains("unsigned int getegid(void)"));
         assert!(libc_process_min.contains("__lnp_get_pid"));
         assert!(libc_process_min.contains("int fork(void)"));
+        assert!(libc_process_min.contains("int pthread_atfork("));
+        assert!(libc_process_min.contains("lnp64_run_atfork_prepare"));
+        assert!(libc_process_min.contains("lnp64_run_atfork_parent"));
+        assert!(libc_process_min.contains("lnp64_run_atfork_child"));
+        assert!(pthread_header.contains("int pthread_atfork("));
         assert!(libc_process_min.contains("int waitpid(int pid, int *status, int options)"));
         assert!(libc_process_min.contains("int execve(const char *path"));
         assert!(libc_process_min.contains("int execv(const char *path"));
@@ -3089,6 +3095,11 @@ mod tests {
         assert!(real_llc.contains("userland/fork_wait_test_clang.c"));
         assert!(real_llc.contains("netbsd-fork-wait-test-clang-smoke.o"));
         assert!(real_llc.contains(r#"grep -q 'call ' "$netbsd_fork_wait_test_dump""#));
+        assert!(fork_wait_test_clang.contains("#include <pthread.h>"));
+        assert!(fork_wait_test_clang.contains("pthread_atfork("));
+        assert!(fork_wait_test_clang.contains("atfork_prepare_count != 1"));
+        assert!(fork_wait_test_clang.contains("atfork_parent_count != 1"));
+        assert!(fork_wait_test_clang.contains("atfork_child_count != 0"));
         assert!(real_llc.contains("real LLVM LNP64 clang NetBSD fork/wait child object passed"));
         assert!(real_llc.contains("userland/thread_test_clang.c"));
         assert!(real_llc.contains("netbsd-thread-test-clang-smoke.o"));
@@ -5906,10 +5917,13 @@ mod tests {
         );
         assert_eq!(
             groups["process_lifecycle_compat"].2, "partial",
-            "fork/exec lifecycle compatibility must stay partial until atfork and signal-inheritance semantics are complete"
+            "fork/exec lifecycle compatibility must stay partial until signal-inheritance semantics are complete"
         );
         assert!(shim_manifest.contains("userland/fork_wait_test_clang.c"));
         assert!(shim_manifest.contains("userland/elf_exec_test_clang.c"));
+        assert!(shim_manifest.contains("pthread_atfork"));
+        assert!(shim_manifest.contains("atfork_handlers"));
+        assert!(shim_manifest.contains("toolchain/include/pthread.h"));
         assert!(libc_roadmap.contains("pthread_atfork"));
         assert!(libc_roadmap.contains("signal dispositions"));
         assert!(shim_manifest.contains("userland/poll_test_clang.c"));

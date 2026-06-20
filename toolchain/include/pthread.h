@@ -15,6 +15,8 @@ int pthread_join(pthread_t thread, void **retval);
 int pthread_detach(pthread_t thread);
 pthread_t pthread_self(void);
 void pthread_exit(void *retval);
+int pthread_atfork(void (*prepare)(void), void (*parent)(void),
+                   void (*child)(void));
 
 int pthread_key_create(pthread_key_t *key, void (*destructor)(void *));
 int pthread_key_delete(pthread_key_t key);

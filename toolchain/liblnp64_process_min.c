@@ -4,7 +4,9 @@
 
 enum {
   LNP64_E2BIG = 7,
+  LNP64_ENOMEM = 12,
   LNP64_EINVAL = 22,
+  LNP64_ATFORK_MAX = 16,
 };
 
 static char *lnp64_process_empty_environ[1];
@@ -27,9 +29,56 @@ static int lnp64_arch_errno_get(void) {
 static int lnp64_process_error(void) {
   int err = lnp64_arch_errno_get();
   if (err == 0)
-    err = 22;
+    err = LNP64_EINVAL;
   lnp64_errno_store(err);
   return -1;
+}
+
+static void (*lnp64_atfork_prepare[LNP64_ATFORK_MAX])(void);
+static void (*lnp64_atfork_parent[LNP64_ATFORK_MAX])(void);
+static void (*lnp64_atfork_child[LNP64_ATFORK_MAX])(void);
+static int lnp64_atfork_count;
+
+int pthread_atfork(void (*prepare)(void), void (*parent)(void),
+                   void (*child)(void)) {
+  int slot;
+  if (lnp64_atfork_count >= LNP64_ATFORK_MAX) {
+    lnp64_errno_store(LNP64_ENOMEM);
+    return -1;
+  }
+
+  slot = lnp64_atfork_count++;
+  lnp64_atfork_prepare[slot] = prepare;
+  lnp64_atfork_parent[slot] = parent;
+  lnp64_atfork_child[slot] = child;
+  return 0;
+}
+
+static void lnp64_run_atfork_prepare(void) {
+  int i;
+  for (i = lnp64_atfork_count; i > 0; --i) {
+    void (*handler)(void) = lnp64_atfork_prepare[i - 1];
+    if (handler)
+      handler();
+  }
+}
+
+static void lnp64_run_atfork_parent(void) {
+  int i;
+  for (i = 0; i < lnp64_atfork_count; ++i) {
+    void (*handler)(void) = lnp64_atfork_parent[i];
+    if (handler)
+      handler();
+  }
+}
+
+static void lnp64_run_atfork_child(void) {
+  int i;
+  for (i = 0; i < lnp64_atfork_count; ++i) {
+    void (*handler)(void) = lnp64_atfork_child[i];
+    if (handler)
+      handler();
+  }
 }
 
 static lnp64_word_t lnp64_fork_compat(void) {
@@ -120,9 +169,22 @@ unsigned int getegid(void) {
 }
 
 int fork(void) {
-  lnp64_word_t pid = lnp64_fork_compat();
-  if ((long)pid < 0)
-    return lnp64_process_error();
+  lnp64_word_t pid;
+
+  lnp64_run_atfork_prepare();
+  pid = lnp64_fork_compat();
+  if ((long)pid < 0) {
+    int err = lnp64_arch_errno_get();
+    if (err == 0)
+      err = LNP64_EINVAL;
+    lnp64_run_atfork_parent();
+    lnp64_errno_store(err);
+    return -1;
+  }
+  if (pid == 0)
+    lnp64_run_atfork_child();
+  else
+    lnp64_run_atfork_parent();
   return (int)pid;
 }
 
