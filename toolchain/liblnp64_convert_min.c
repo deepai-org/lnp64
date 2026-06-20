@@ -159,3 +159,21 @@ long atol(const char *nptr) {
 int atoi(const char *nptr) {
   return (int)strtol(nptr, 0, 10);
 }
+
+double strtod(const char *nptr, char **endptr) {
+  if (endptr)
+    *endptr = (char *)nptr;
+  return 0.0;
+}
+
+int __ltdf2(double lhs, double rhs) {
+  (void)lhs;
+  (void)rhs;
+  return 0;
+}
+
+int __gtdf2(double lhs, double rhs) {
+  (void)lhs;
+  (void)rhs;
+  return 0;
+}

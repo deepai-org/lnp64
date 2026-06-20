@@ -29,6 +29,7 @@ FILE *stderr = &lnp64_head_stderr_file;
 char *argv0;
 
 void eprintf(const char *format, ...);
+void enprintf(int status, const char *format, ...);
 
 void *erealloc(void *ptr, size_t size) {
   void *next = realloc(ptr, size);
@@ -41,6 +42,20 @@ void *ecalloc(size_t count, size_t size) {
   void *ptr = calloc(count, size);
   if (!ptr)
     eprintf("calloc:");
+  return ptr;
+}
+
+void *emalloc(size_t size) {
+  void *ptr = malloc(size);
+  if (!ptr)
+    eprintf("malloc:");
+  return ptr;
+}
+
+void *enmalloc(int status, size_t size) {
+  void *ptr = malloc(size);
+  if (!ptr)
+    enprintf(status, "malloc:");
   return ptr;
 }
 

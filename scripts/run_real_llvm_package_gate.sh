@@ -37,6 +37,7 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-sbase-cp-linked.elf"
         "$build_dir/lnp64-sbase-cut-linked.elf"
         "$build_dir/lnp64-sbase-tr-linked.elf"
+        "$build_dir/lnp64-sbase-sort-linked.elf"
         "$build_dir/lnp64-sbase-ls-linked.elf"
         "$build_dir/lnp64-sbase-find-linked.elf"
         "$build_dir/lnp64-sbase-mkdir-linked.elf"
@@ -91,6 +92,7 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-sbase-cp-linked.elf"
         "$build_dir/lnp64-sbase-cut-linked.elf"
         "$build_dir/lnp64-sbase-tr-linked.elf"
+        "$build_dir/lnp64-sbase-sort-linked.elf"
         "$build_dir/lnp64-sbase-ls-linked.elf"
         "$build_dir/lnp64-sbase-find-linked.elf"
         "$build_dir/lnp64-sbase-mkdir-linked.elf"
@@ -341,6 +343,17 @@ run_package() {
       grep -q 'exit=0' <<<"$sbase_tr_output"
       printf 'real LLVM LNP64 run-elf sbase tr execution passed: %s\n' \
         "$build_dir/lnp64-sbase-tr-linked.elf"
+      printf 'beta\nalpha\ngamma\n' >"$sbase_fixture_root/input/sort.txt"
+      "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-sort-linked.elf" >/dev/null
+      local sbase_sort_output
+      sbase_sort_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+        "$build_dir/lnp64-sbase-sort-linked.elf" sort input/sort.txt)"
+      test "$(sed -n '1p' <<<"$sbase_sort_output")" = alpha
+      test "$(sed -n '2p' <<<"$sbase_sort_output")" = beta
+      test "$(sed -n '3p' <<<"$sbase_sort_output")" = gamma
+      grep -q 'exit=0' <<<"$sbase_sort_output"
+      printf 'real LLVM LNP64 run-elf sbase sort execution passed: %s\n' \
+        "$build_dir/lnp64-sbase-sort-linked.elf"
       "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-ls-linked.elf" >/dev/null
       local sbase_ls_output
       sbase_ls_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
