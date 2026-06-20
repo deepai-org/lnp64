@@ -6691,7 +6691,7 @@ mod tests {
         );
         assert!(run_demos.contains("scripts/run_real_llvm_lnp64_docker.sh"));
         assert!(!run_demos.contains("demos/netbsd_personality_smoke.c"));
-        assert!(!run_demos.contains("include_legacy_c_frontend"));
+        assert!(!run_demos.contains(&["include", "legacy", "c", "frontend"].join("_")));
         assert!(run_demos.contains("for src in demos/*.s"));
         assert!(run_userland.contains("usage: scripts/run_userland.sh [--backend llvm]"));
         assert!(run_netbsd_smoke.contains("LNP64_LLVM_PACKAGE_FILTER=netbsd"));
@@ -6759,6 +6759,37 @@ mod tests {
         let rtl_manifest_runner = include_str!("../scripts/run_rtl_top_program_manifest.sh");
         let top_manifest = include_str!("../tests/rtl/top_level_program_manifest.json");
         let main_source = include_str!("main.rs");
+        let rust_sources = [
+            ("src/asm.rs", include_str!("asm.rs")),
+            ("src/emulator.rs", include_str!("emulator.rs")),
+            ("src/isa.rs", include_str!("isa.rs")),
+            ("src/loader.rs", include_str!("loader.rs")),
+            ("src/lowering.rs", include_str!("lowering.rs")),
+            ("src/main.rs", main_source),
+            ("src/native.rs", include_str!("native.rs")),
+        ];
+        let forbidden_frontend_hooks = [
+            ["c", "compiler"].join("_"),
+            ["compile", "c"].join("-"),
+            ["compile", "c"].join("_"),
+            ["include", "legacy", "c", "frontend"].join("_"),
+            ["run", "c"].join("-"),
+        ];
+        let contains_retired_hook = |source: &str, hook: &str| {
+            if hook.contains('-') {
+                source.contains(hook)
+            } else {
+                source
+                    .split(|ch: char| !(ch == '_' || ch.is_ascii_alphanumeric()))
+                    .any(|token| token == hook)
+            }
+        };
+        let retirement_evidence = [
+            "rust_sources_expose_no",
+            "c",
+            "compiler_and_legacy_scripts_reject_direct_c",
+        ]
+        .join("_");
         let rows: Vec<_> = retirement_manifest
             .lines()
             .filter(|line| !line.trim().is_empty() && !line.starts_with('#'))
@@ -6797,12 +6828,17 @@ mod tests {
         assert!(run_demos.contains("scripts/run_real_llvm_lnp64_docker.sh"));
         assert!(run_demos.contains("for src in demos/*.s"));
         assert!(!run_demos.contains("for src in demos/*.c"));
-        assert!(!run_demos.contains("include_legacy_c_frontend"));
-        assert!(!main_source.contains("c_compiler"));
-        assert!(!main_source.contains("compile-c"));
-        assert!(!main_source.contains("compile_c"));
-        assert!(!main_source.contains("run-c"));
+        assert!(!run_demos.contains(&["include", "legacy", "c", "frontend"].join("_")));
+        for (path, source) in rust_sources {
+            for forbidden in &forbidden_frontend_hooks {
+                assert!(
+                    !contains_retired_hook(source, forbidden),
+                    "{path} must not expose retired C frontend hook {forbidden}"
+                );
+            }
+        }
         assert!(retirement_manifest.contains("custom_c_frontend|removed|none"));
+        assert!(retirement_manifest.contains(&retirement_evidence));
         assert!(
             conformance_gates
                 .contains("legacy_assembler_smoke_only_C_coverage_lives_in_real_clang_lld_run_elf")
@@ -6919,7 +6955,7 @@ mod tests {
             assert!(intrinsic_header.contains(intrinsic));
         }
         assert!(!main_source.contains("\"cc\""));
-        assert!(!main_source.contains("c_compiler"));
+        assert!(!main_source.contains(&["c", "compiler"].join("_")));
         assert!(crt0.contains("real LLVM/lld crt0 object"));
         for (script_name, script) in clang_surface_scripts {
             for (idx, line) in script.lines().enumerate() {
