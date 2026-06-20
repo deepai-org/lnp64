@@ -6336,6 +6336,9 @@ mod tests {
         let conformance = include_str!("../conformance_matrix.md");
         let libc = include_str!("../libc_roadmap.md");
         let object_format = include_str!("../object_format.md");
+        let run_elf_manifest = include_str!("../toolchain/lnp64_run_elf.manifest");
+        let llvm_gates_manifest = include_str!("../toolchain/lnp64_llvm_gates.manifest");
+        let llvm_bootstrap_manifest = include_str!("../toolchain/lnp64_llvm_bootstrap.manifest");
         let rows = transition_rows(manifest);
         let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let mut phases = std::collections::BTreeMap::new();
@@ -6406,8 +6409,48 @@ mod tests {
 
         assert!(roadmap.contains("## First Acceptance Gates"));
         assert!(roadmap.contains("## Checked Transition Deliverables"));
+        assert_eq!(phases["minimal_llvm_clang_path"].0, "partial");
+        assert_eq!(
+            phases["minimal_llvm_clang_path"].2,
+            "llvm_bootstrap_manifest_names_first_clang_gate"
+        );
+        for artifact in [
+            "scripts/run_llvm_bootstrap_gates.sh",
+            "scripts/run_real_llvm_bootstrap_smokes.sh",
+            "scripts/package_lnp64_sysroot.sh",
+            "toolchain/lnp64_llvm_bootstrap.manifest",
+            "toolchain/lnp64_llvm_gates.manifest",
+            "toolchain/lnp64_run_elf.manifest",
+            "toolchain/lnp64_clang_driver.manifest",
+            "toolchain/lnp64_static.ld",
+            "toolchain/crt0_lnp64.s",
+            "toolchain/lnp64_sysroot.manifest",
+            "toolchain/liblnp64_fd_min.c",
+            "toolchain/liblnp64_process_min.c",
+            "toolchain/include/unistd.h",
+            "toolchain/lnp64_intrinsics.h",
+            "toolchain/include/lnp64/intrinsics.h",
+        ] {
+            assert!(
+                phases["minimal_llvm_clang_path"].1.contains(&artifact),
+                "minimal_llvm_clang_path is missing artifact {artifact}"
+            );
+        }
+        assert!(llvm_bootstrap_manifest.contains("hello"));
+        assert!(llvm_bootstrap_manifest.contains("arithmetic"));
+        assert!(llvm_bootstrap_manifest.contains("memory"));
+        assert!(llvm_bootstrap_manifest.contains("calls"));
+        assert!(llvm_gates_manifest.contains("scripts/run_real_llvm_lnp64_docker.sh"));
+        assert!(llvm_gates_manifest.contains("clang_scalar_compile"));
+        assert!(llvm_gates_manifest.contains("lld"));
+        assert!(llvm_gates_manifest.contains("static_link_smoke"));
+        assert!(llvm_gates_manifest.contains("real_clang_loader_path"));
+        assert!(run_elf_manifest.contains(
+            "stdout_exit|partial|scripts/run_real_llvm_lnp64_docker.sh,scripts/run_real_llvm_lnp64.sh,toolchain/liblnp64_fd_min.c,toolchain/liblnp64_process_min.c,toolchain/lnp64_llvm_gates.manifest|real_clang_stdout_exit_run_elf_smokes|needs_full_libc_runtime_packaging"
+        ));
         assert!(roadmap.contains("`minimal_llvm_clang_path` transition row remains partial"));
         assert!(roadmap.contains("bootstrap manifest rows are tested"));
+        assert!(roadmap.contains("smoke-only libc shim"));
         assert!(roadmap.contains("real Clang/lld and the software"));
         assert!(
             phases["minimal_llvm_clang_path"]
