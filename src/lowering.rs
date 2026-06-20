@@ -1347,6 +1347,7 @@ mod tests {
         let libc_sbase_ls_min = include_str!("../toolchain/liblnp64_sbase_ls_min.c");
         let libc_sbase_find_min = include_str!("../toolchain/liblnp64_sbase_find_min.c");
         let libc_sbase_accounts_min = include_str!("../toolchain/liblnp64_sbase_accounts_min.c");
+        let libc_sbase_wc_min = include_str!("../toolchain/liblnp64_sbase_wc_min.c");
         let elf_exec_test_clang = include_str!("../userland/elf_exec_test_clang.c");
         let spawn_task_clang = include_str!("../userland/spawn_task_clang.c");
         let gate_trace_test_clang = include_str!("../userland/gate_trace_test_clang.c");
@@ -1652,12 +1653,15 @@ mod tests {
             "clang_sbase_ls_support_object",
             "clang_sbase_find_support_object",
             "clang_sbase_accounts_support_object",
+            "clang_sbase_wc_support_object",
             "sbase_ls_static_link",
             "sbase_ls_run_elf",
             "sbase_find_static_link",
             "sbase_find_run_elf",
             "sbase_chown_static_link",
             "sbase_chown_run_elf",
+            "sbase_wc_static_link",
+            "sbase_wc_run_elf",
             "sbase_touch_static_link",
             "sbase_touch_run_elf",
             "sbase_mv_static_link",
@@ -3670,6 +3674,17 @@ mod tests {
         assert!(
             real_llc.contains("real LLVM LNP64 clang sbase accounts support object smoke passed")
         );
+        assert!(real_llc.contains("toolchain/liblnp64_sbase_wc_min.c"));
+        assert!(libc_sbase_wc_min.contains("int printf("));
+        assert!(libc_sbase_wc_min.contains("FILE *fopen("));
+        assert!(libc_sbase_wc_min.contains("int efgetrune("));
+        assert!(libc_sbase_wc_min.contains("int isspacerune("));
+        assert!(real_llc.contains("liblnp64-sbase-wc-min.o"));
+        assert!(real_llc.contains("real LLVM LNP64 clang sbase wc support object smoke passed"));
+        assert!(real_llc.contains("lnp64-sbase-wc-linked.elf"));
+        assert!(real_llc.contains(r#""$build_dir/sbase-wc-clang-smoke.o" \"#));
+        assert!(real_llc.contains(r#""$sbase_wc_support_impl_obj" \"#));
+        assert!(real_llc.contains("real LLVM LNP64 lld sbase wc link smoke passed"));
         assert!(real_llc.contains("lnp64-sbase-mkdir-linked.elf"));
         assert!(real_llc.contains(r#""$build_dir/sbase-mkdir-clang-smoke.o" \"#));
         assert!(real_llc.contains(r#""$sbase_fs_support_impl_obj" \"#));
@@ -4196,6 +4211,10 @@ mod tests {
         assert!(real_llc_docker.contains("cat input/cat.txt"));
         assert!(real_llc_docker.contains("cat via clang"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase cat execution passed"));
+        assert!(real_llc_docker.contains("lnp64-sbase-wc-linked.elf"));
+        assert!(real_llc_docker.contains("wc input/wc.txt"));
+        assert!(real_llc_docker.contains("^2 3 14 input/wc.txt$"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase wc execution passed"));
         assert!(real_llc_docker.contains("lnp64-sbase-ls-linked.elf"));
         assert!(real_llc_docker.contains("ls input"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase ls execution passed"));
@@ -4444,6 +4463,7 @@ mod tests {
             "real_sbase_basename_execution",
             "real_sbase_dirname_execution",
             "real_sbase_cat_execution",
+            "real_sbase_wc_execution",
             "real_sbase_ls_execution",
             "real_sbase_find_execution",
             "real_sbase_mkdir_execution",
@@ -4557,6 +4577,7 @@ mod tests {
             "real_sbase_basename_execution",
             "real_sbase_dirname_execution",
             "real_sbase_cat_execution",
+            "real_sbase_wc_execution",
             "real_sbase_ls_execution",
             "real_sbase_find_execution",
             "real_sbase_mkdir_execution",
@@ -6274,6 +6295,7 @@ mod tests {
         assert!(run_real_packages.contains("scripts/run_real_llvm_package_gate.sh"));
         assert!(run_real_packages.contains("real LLVM LNP64 package gate"));
         for sbase_elf in [
+            "lnp64-sbase-wc-linked.elf",
             "lnp64-sbase-ls-linked.elf",
             "lnp64-sbase-find-linked.elf",
             "lnp64-sbase-mkdir-linked.elf",
@@ -6287,6 +6309,7 @@ mod tests {
             assert!(run_real_package_gate.contains(sbase_elf));
         }
         for sbase_message in [
+            "real LLVM LNP64 run-elf sbase wc execution passed",
             "real LLVM LNP64 run-elf sbase ls execution passed",
             "real LLVM LNP64 run-elf sbase find execution passed",
             "real LLVM LNP64 run-elf sbase mkdir execution passed",

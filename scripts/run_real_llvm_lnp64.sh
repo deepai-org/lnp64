@@ -1521,6 +1521,23 @@ grep -q '<getgrnam>:' "$sbase_accounts_support_impl_dump"
 printf 'real LLVM LNP64 clang sbase accounts support object smoke passed: %s\n' \
   "$sbase_accounts_support_impl_obj"
 
+sbase_wc_support_impl_c="toolchain/liblnp64_sbase_wc_min.c"
+sbase_wc_support_impl_obj="$build_dir/liblnp64-sbase-wc-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin \
+  -fno-pic -fno-jump-tables -fno-unwind-tables \
+  -fno-asynchronous-unwind-tables -I toolchain/include -I third_party/sbase \
+  -c "$sbase_wc_support_impl_c" -o "$sbase_wc_support_impl_obj"
+test -s "$sbase_wc_support_impl_obj"
+sbase_wc_support_impl_dump="$build_dir/liblnp64-sbase-wc-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none \
+  "$sbase_wc_support_impl_obj" >"$sbase_wc_support_impl_dump"
+grep -q '<printf>:' "$sbase_wc_support_impl_dump"
+grep -q '<fopen>:' "$sbase_wc_support_impl_dump"
+grep -q '<efgetrune>:' "$sbase_wc_support_impl_dump"
+grep -q '<isspacerune>:' "$sbase_wc_support_impl_dump"
+printf 'real LLVM LNP64 clang sbase wc support object smoke passed: %s\n' \
+  "$sbase_wc_support_impl_obj"
+
 netcat_obj="$build_dir/netcat-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
@@ -5775,6 +5792,16 @@ sbase_cat_elf="$build_dir/lnp64-sbase-cat-linked.elf"
 test -s "$sbase_cat_elf"
 printf 'real LLVM LNP64 lld sbase cat link smoke passed: %s\n' \
   "$sbase_cat_elf"
+
+sbase_wc_elf="$build_dir/lnp64-sbase-wc-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
+  -o "$sbase_wc_elf" "$crt0_obj" "$build_dir/sbase-wc-clang-smoke.o" \
+  "$sbase_support_impl_obj" "$sbase_wc_support_impl_obj" \
+  "$libc_fd_impl_obj" "$libc_string_impl_obj" "$libc_errno_impl_obj" \
+  "$libc_process_impl_obj"
+test -s "$sbase_wc_elf"
+printf 'real LLVM LNP64 lld sbase wc link smoke passed: %s\n' \
+  "$sbase_wc_elf"
 
 sbase_ls_elf="$build_dir/lnp64-sbase-ls-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
