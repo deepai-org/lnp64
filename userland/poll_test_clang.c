@@ -193,6 +193,19 @@ int main(void) {
     if (kout.filter != 99 || !(kout.flags & EV_ERROR) || kout.data != 22 ||
         kout.udata != (void *)99)
         return 56;
+    change.ident = read_cap;
+    change.filter = EVFILT_READ;
+    change.flags = EV_ADD | EV_RECEIPT;
+    change.fflags = 0;
+    change.data = 0;
+    change.udata = (void *)123;
+    if (kevent(kq, &change, 1, &kout, 1, &ktimeout) != 1)
+        return 68;
+    if (!(kout.flags & EV_ERROR) || kout.data != 0 || kout.udata != (void *)123)
+        return 69;
+    change.flags = EV_DELETE;
+    if (kevent(kq, &change, 1, 0, 0, &ktimeout) != 0)
+        return 70;
     change.ident = 77;
     change.filter = EVFILT_USER;
     change.flags = EV_ADD;

@@ -14,6 +14,7 @@ enum {
   LNP64_EV_ENABLE = 0x0004,
   LNP64_EV_DISABLE = 0x0008,
   LNP64_EV_ONESHOT = 0x0010,
+  LNP64_EV_RECEIPT = 0x0040,
   LNP64_EV_ERROR = 0x4000,
   LNP64_NOTE_TRIGGER = 0x01000000,
   LNP64_EPOLL_CTL_ADD = 1,
@@ -273,11 +274,10 @@ int kevent(int kq, const struct kevent *changelist, int nchanges,
     if (!changelist)
       return -1;
     change_error = lnp64_kqueue_apply_change(&changelist[i]);
-    if (change_error != 0) {
+    if (change_error != 0 || (changelist[i].flags & LNP64_EV_RECEIPT)) {
       if (!eventlist || ready >= nevents)
         return -1;
-      lnp64_kqueue_write_error(&changelist[i], &eventlist[ready],
-                               change_error);
+      lnp64_kqueue_write_error(&changelist[i], &eventlist[ready], change_error);
       ready = ready + 1;
     }
   }
