@@ -10,6 +10,9 @@ module lnp64_thread_window #(
     input  logic clk,
     input  logic reset_n,
     input  logic advance_valid,
+    input  logic seed_valid,
+    input  logic [CONTEXT_INDEX_WIDTH-1:0] seed_slot,
+    input  lnp64_thread_sched_t seed_context,
     input  logic activate_valid,
     input  logic [CONTEXT_INDEX_WIDTH-1:0] activate_slot,
     input  lnp64_thread_sched_t activate_context,
@@ -161,6 +164,15 @@ module lnp64_thread_window #(
                 context_record_q[reset_ctx].active_location <= TILE_ID[31:0];
             end
         end else begin
+            if (seed_valid) begin
+                context_record_q[seed_slot] <= seed_context;
+                active_slot_q <= seed_slot;
+                context_active_q[seed_slot] <= 1'b1;
+                context_parked_q[seed_slot] <= 1'b0;
+                context_completed_q[seed_slot] <= 1'b0;
+                context_event_pending_q[seed_slot] <= 1'b0;
+                context_fault_pending_q[seed_slot] <= 1'b0;
+            end
             if (activate_valid) begin
                 context_record_q[activate_slot] <= activate_context;
                 context_active_q[activate_slot] <= 1'b1;
@@ -216,6 +228,19 @@ module lnp64_thread_window #(
                 else $fatal(1, "SG-SCHED barrel active slot out of range");
             assert (next_slot < CONTEXT_COUNT)
                 else $fatal(1, "SG-SCHED barrel next slot out of range");
+            if (seed_valid) begin
+                assert (seed_slot < CONTEXT_COUNT)
+                    else $fatal(1, "SG-SCHED seed slot out of range");
+                assert (seed_context.pid != 32'd0 &&
+                    seed_context.tid != 32'd0 &&
+                    seed_context.domain_id != 32'd0 &&
+                    seed_context.domain_gen != 32'd0 &&
+                    seed_context.dispatch_eligible)
+                    else $fatal(1, "SG-SCHED seed context missing scheduler metadata");
+                assert (seed_context.tile_id == TILE_ID[31:0] &&
+                    seed_context.active_location == TILE_ID[31:0])
+                    else $fatal(1, "SG-SCHED seed context tile drift");
+            end
             for (int unsigned assert_ctx = 0; assert_ctx < CONTEXT_COUNT; assert_ctx = assert_ctx + 1) begin
                 assert (!(context_active_q[assert_ctx] && context_parked_q[assert_ctx]))
                     else $fatal(1, "SG-SCHED context active and parked simultaneously");

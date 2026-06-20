@@ -341,6 +341,7 @@ module lnp64_top #(
                     sched_issue_record_vec[tile_id].domain_gen != 32'd0 &&
                     sched_issue_record_vec[tile_id].dispatch_eligible
                 ),
+                .issue_context(sched_issue_record_vec[tile_id]),
                 .topology_tile_count(CORE_TILE_COUNT[31:0]),
                 .topology_enabled_tile_mask(ENABLED_TILE_MASK),
                 .topology_coherence_domain_id(COHERENCE_DOMAIN_ID),

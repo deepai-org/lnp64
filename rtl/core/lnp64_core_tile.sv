@@ -14,6 +14,7 @@ module lnp64_core_tile #(
     input  logic reset_n,
     input  logic tile_enable,
     input  logic release_core,
+    input  lnp64_thread_sched_t issue_context,
     input  logic [31:0] topology_tile_count,
     input  logic [63:0] topology_enabled_tile_mask,
     input  logic [31:0] topology_coherence_domain_id,
@@ -111,6 +112,9 @@ module lnp64_core_tile #(
     logic [THREAD_CONTEXT_COUNT-1:0] thread_event_pending_mask;
     logic [THREAD_CONTEXT_COUNT-1:0] thread_fault_pending_mask;
     logic thread_window_advance_valid;
+    logic thread_window_seed_valid;
+    logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] thread_window_seed_slot;
+    lnp64_thread_sched_t thread_window_seed_context;
     logic thread_window_activate_valid;
     logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] thread_window_activate_slot;
     lnp64_thread_sched_t thread_window_activate_context;
@@ -1647,6 +1651,9 @@ module lnp64_core_tile #(
 
     always_comb begin
         thread_window_advance_valid = state == CORE_SWITCH;
+        thread_window_seed_valid = state == CORE_WAIT_RELEASE && tile_enable && release_core;
+        thread_window_seed_slot = '0;
+        thread_window_seed_context = issue_context;
         thread_window_activate_valid = state == CORE_EXEC &&
             dec.supported &&
             dec.opcode == LNP64_OP_CLONE &&
@@ -1700,6 +1707,9 @@ module lnp64_core_tile #(
         .clk(clk),
         .reset_n(reset_n),
         .advance_valid(thread_window_advance_valid),
+        .seed_valid(thread_window_seed_valid),
+        .seed_slot(thread_window_seed_slot),
+        .seed_context(thread_window_seed_context),
         .activate_valid(thread_window_activate_valid),
         .activate_slot(thread_window_activate_slot),
         .activate_context(thread_window_activate_context),
@@ -2214,7 +2224,7 @@ module lnp64_core_tile #(
                     if (tile_enable && release_core) begin
                         state <= CORE_EXEC;
                         submit_valid <= 1'b1;
-                        submit_record <= thread_submit_next;
+                        submit_record <= issue_context;
                         icache_invalidate <= 1'b1;
                     end
                 end

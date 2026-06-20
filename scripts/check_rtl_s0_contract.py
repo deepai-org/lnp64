@@ -194,6 +194,8 @@ REQUIRED_TELEMETRY_MODULES = [
 REQUIRED_CHANNEL_PORTS = {
     "lnp64_core_tile": {
         "tile_enable",
+        "release_core",
+        "issue_context",
         "topology_tile_count",
         "topology_enabled_tile_mask",
         "topology_coherence_domain_id",
@@ -774,6 +776,8 @@ def main() -> None:
         "context_event_pending_q",
         "context_fault_pending_q",
         "context_record_q",
+        "seed_valid",
+        "seed_context",
         "activate_context",
         "park_valid",
         "wake_valid",
@@ -783,6 +787,8 @@ def main() -> None:
         "complete_valid",
         "collect_valid",
         "advance_valid",
+        "SG-SCHED seed context missing scheduler metadata",
+        "SG-SCHED seed context tile drift",
         "SG-SCHED context active and parked simultaneously",
         "SG-WAKE completed context retained pending event",
         "SG-SCHED live context missing architectural metadata",
