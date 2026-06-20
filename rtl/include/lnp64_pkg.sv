@@ -275,6 +275,17 @@ package lnp64_pkg;
     } lnp64_m2_gate_op_e;
 
     typedef enum logic [7:0] {
+        LNP64_M8_COMMIT_ALLOC             = 8'd1,
+        LNP64_M8_COMMIT_ALLOC_SIZE        = 8'd2,
+        LNP64_M8_COMMIT_FREE              = 8'd3,
+        LNP64_M8_COMMIT_REUSE             = 8'd4,
+        LNP64_M8_COMMIT_DOUBLE_FREE       = 8'd5,
+        LNP64_M8_COMMIT_STALE_FREE        = 8'd6,
+        LNP64_M8_COMMIT_CROSS_THREAD_FREE = 8'd7,
+        LNP64_M8_COMMIT_GUARD_FAULT       = 8'd8
+    } lnp64_m8_heap_op_e;
+
+    typedef enum logic [7:0] {
         LNP64_M6_COMMIT_ENVELOPE         = 8'd1,
         LNP64_M6_COMMIT_NS_DISPATCH      = 8'd2,
         LNP64_M6_COMMIT_SERVICE_REQUEST  = 8'd3,
@@ -655,6 +666,37 @@ package lnp64_pkg;
         logic        fault_delivery_gate_ok;
         logic        signal_compatibility_ok;
     } lnp64_m2_state_projection_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] owner_tid;
+        logic [31:0] pointer_generation;
+        logic [31:0] heap_generation;
+        logic [31:0] size_class;
+        logic [63:0] heap_ptr;
+    } lnp64_m8_heap_commit_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] pointer_generation;
+        logic [31:0] owner_tid;
+        logic [31:0] allocations;
+        logic [31:0] frees;
+        logic        allocated;
+        logic        quarantined;
+        logic        alloc_completed;
+        logic        alloc_size_reported;
+        logic        free_completed;
+        logic        reuse_completed;
+        logic        double_free_rejected;
+        logic        stale_pointer_rejected;
+        logic        cross_thread_handoff;
+        logic        guard_faulted;
+        logic        quarantine_observed;
+        logic        heap_count_exact;
+    } lnp64_m8_state_projection_t;
 
     typedef struct packed {
         logic [7:0]  op;

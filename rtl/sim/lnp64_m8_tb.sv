@@ -21,6 +21,9 @@ module lnp64_m8_tb;
     logic guard_faulted;
     logic quarantine_observed;
     logic heap_count_exact;
+    logic typed_commit_valid;
+    lnp64_m8_heap_commit_t typed_commit;
+    lnp64_m8_state_projection_t typed_state_projection;
 
     lnp64_m8_heap dut(
         .clk(clk),
@@ -40,7 +43,10 @@ module lnp64_m8_tb;
         .cross_thread_handoff(cross_thread_handoff),
         .guard_faulted(guard_faulted),
         .quarantine_observed(quarantine_observed),
-        .heap_count_exact(heap_count_exact)
+        .heap_count_exact(heap_count_exact),
+        .typed_commit_valid(typed_commit_valid),
+        .typed_commit(typed_commit),
+        .typed_state_projection(typed_state_projection)
     );
 
     lnp64_m8_assertions assertions_i(
@@ -115,6 +121,49 @@ module lnp64_m8_tb;
                 );
                 default: $display("TRACE unknown code=%0d value=%0d", trace_code, trace_value);
             endcase
+        end
+        if (typed_commit_valid) begin
+            $display(
+                "TTRACE_M8 {\"record\":\"m8_heap_commit\",\"op\":%0d,\"status\":%0d,\"owner_tid\":%0d,\"pointer_generation\":%0d,\"heap_generation\":%0d,\"size_class\":%0d,\"heap_ptr\":%0d}",
+                typed_commit.op,
+                typed_commit.status,
+                typed_commit.owner_tid,
+                typed_commit.pointer_generation,
+                typed_commit.heap_generation,
+                typed_commit.size_class,
+                typed_commit.heap_ptr
+            );
+            $display(
+                "TTRACE_M8_BITS {\"record\":\"m8_heap_commit_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m8_heap_commit_t),
+                typed_commit
+            );
+            $display(
+                "TTRACE_M8_STATE {\"record\":\"m8_state_projection\",\"op\":%0d,\"status\":%0d,\"pointer_generation\":%0d,\"owner_tid\":%0d,\"allocations\":%0d,\"frees\":%0d,\"allocated\":%0d,\"quarantined\":%0d,\"alloc_completed\":%0d,\"alloc_size_reported\":%0d,\"free_completed\":%0d,\"reuse_completed\":%0d,\"double_free_rejected\":%0d,\"stale_pointer_rejected\":%0d,\"cross_thread_handoff\":%0d,\"guard_faulted\":%0d,\"quarantine_observed\":%0d,\"heap_count_exact\":%0d}",
+                typed_state_projection.op,
+                typed_state_projection.status,
+                typed_state_projection.pointer_generation,
+                typed_state_projection.owner_tid,
+                typed_state_projection.allocations,
+                typed_state_projection.frees,
+                typed_state_projection.allocated,
+                typed_state_projection.quarantined,
+                typed_state_projection.alloc_completed,
+                typed_state_projection.alloc_size_reported,
+                typed_state_projection.free_completed,
+                typed_state_projection.reuse_completed,
+                typed_state_projection.double_free_rejected,
+                typed_state_projection.stale_pointer_rejected,
+                typed_state_projection.cross_thread_handoff,
+                typed_state_projection.guard_faulted,
+                typed_state_projection.quarantine_observed,
+                typed_state_projection.heap_count_exact
+            );
+            $display(
+                "TTRACE_M8_STATE_BITS {\"record\":\"m8_state_projection_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m8_state_projection_t),
+                typed_state_projection
+            );
         end
     end
 

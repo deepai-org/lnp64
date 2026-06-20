@@ -20,7 +20,10 @@ module lnp64_m8_heap (
     output logic cross_thread_handoff,
     output logic guard_faulted,
     output logic quarantine_observed,
-    output logic heap_count_exact
+    output logic heap_count_exact,
+    output logic typed_commit_valid,
+    output lnp64_m8_heap_commit_t typed_commit,
+    output lnp64_m8_state_projection_t typed_state_projection
 );
     typedef enum logic [3:0] {
         H_RESET,
@@ -116,8 +119,46 @@ module lnp64_m8_heap (
         return seeded_pointer_generation(seed) + 32'd1;
     endfunction
 
+    task automatic commit_m8(
+        input lnp64_m8_heap_op_e op,
+        input logic [15:0] status,
+        input logic [31:0] size_class,
+        input logic [63:0] heap_ptr
+    );
+        typed_commit_valid <= 1'b1;
+        typed_commit.op <= op;
+        typed_commit.status <= status;
+        typed_commit.owner_tid <= owner_tid;
+        typed_commit.pointer_generation <= pointer_generation;
+        typed_commit.heap_generation <= heap_generation;
+        typed_commit.size_class <= size_class;
+        typed_commit.heap_ptr <= heap_ptr;
+    endtask
+
     always_comb begin
         heap_count_exact = allocations == 32'd2 && frees == 32'd2;
+    end
+
+    always_comb begin
+        typed_state_projection = '0;
+        typed_state_projection.op = typed_commit.op;
+        typed_state_projection.status = typed_commit.status;
+        typed_state_projection.pointer_generation = pointer_generation;
+        typed_state_projection.owner_tid = owner_tid;
+        typed_state_projection.allocations = allocations;
+        typed_state_projection.frees = frees;
+        typed_state_projection.allocated = allocated;
+        typed_state_projection.quarantined = quarantined;
+        typed_state_projection.alloc_completed = alloc_completed;
+        typed_state_projection.alloc_size_reported = alloc_size_reported;
+        typed_state_projection.free_completed = free_completed;
+        typed_state_projection.reuse_completed = reuse_completed;
+        typed_state_projection.double_free_rejected = double_free_rejected;
+        typed_state_projection.stale_pointer_rejected = stale_pointer_rejected;
+        typed_state_projection.cross_thread_handoff = cross_thread_handoff;
+        typed_state_projection.guard_faulted = guard_faulted;
+        typed_state_projection.quarantine_observed = quarantine_observed;
+        typed_state_projection.heap_count_exact = heap_count_exact;
     end
 
     always_ff @(posedge clk or negedge reset_n) begin
@@ -127,6 +168,8 @@ module lnp64_m8_heap (
             trace_valid <= 1'b0;
             trace_code <= 8'd0;
             trace_value <= 64'd0;
+            typed_commit_valid <= 1'b0;
+            typed_commit <= '0;
             alloc_completed <= 1'b0;
             alloc_size_reported <= 1'b0;
             free_completed <= 1'b0;
@@ -146,6 +189,7 @@ module lnp64_m8_heap (
             quarantined <= 1'b0;
         end else begin
             trace_valid <= 1'b0;
+            typed_commit_valid <= 1'b0;
             unique case (state)
                 H_RESET: begin
                     if (start) begin
@@ -174,6 +218,7 @@ module lnp64_m8_heap (
                         seeded_size_class_trace(scenario_seed),
                         seeded_heap_ptr(scenario_seed)
                     };
+                    commit_m8(LNP64_M8_COMMIT_ALLOC, LNP64_STATUS_OK, seeded_size_class(scenario_seed), {32'd0, seeded_heap_ptr(scenario_seed)});
                     state <= H_ALLOC_SIZE;
                 end
                 H_ALLOC_SIZE: begin
@@ -182,6 +227,7 @@ module lnp64_m8_heap (
                         trace_valid <= 1'b1;
                         trace_code <= 8'd3;
                         trace_value <= {seeded_heap_ptr(scenario_seed), seeded_size_class(scenario_seed)};
+                        commit_m8(LNP64_M8_COMMIT_ALLOC_SIZE, LNP64_STATUS_OK, seeded_size_class(scenario_seed), {32'd0, seeded_heap_ptr(scenario_seed)});
                         state <= H_FREE;
                     end else begin
                         state <= H_DONE;
@@ -198,6 +244,7 @@ module lnp64_m8_heap (
                         trace_valid <= 1'b1;
                         trace_code <= 8'd4;
                         trace_value <= {seeded_heap_ptr(scenario_seed), 16'd1, seeded_owner_tid_trace(scenario_seed)};
+                        commit_m8(LNP64_M8_COMMIT_FREE, LNP64_STATUS_OK, seeded_size_class(scenario_seed), {32'd0, seeded_heap_ptr(scenario_seed)});
                         state <= H_REUSE;
                     end else begin
                         state <= H_DONE;
@@ -217,6 +264,7 @@ module lnp64_m8_heap (
                             seeded_pointer_generation_trace(scenario_seed),
                             seeded_heap_ptr(scenario_seed)
                         };
+                        commit_m8(LNP64_M8_COMMIT_REUSE, LNP64_STATUS_OK, seeded_size_class(scenario_seed), {32'd0, seeded_heap_ptr(scenario_seed)});
                         state <= H_DOUBLE_FREE;
                     end else begin
                         state <= H_DONE;
@@ -227,6 +275,7 @@ module lnp64_m8_heap (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd6;
                     trace_value <= {48'd0, LNP64_ERR_EINVAL};
+                    commit_m8(LNP64_M8_COMMIT_DOUBLE_FREE, LNP64_ERR_EINVAL, 32'd0, 64'd0);
                     state <= H_STALE_FREE;
                 end
                 H_STALE_FREE: begin
@@ -235,6 +284,7 @@ module lnp64_m8_heap (
                         trace_valid <= 1'b1;
                         trace_code <= 8'd7;
                         trace_value <= {48'd0, LNP64_ERR_EREVOKED};
+                        commit_m8(LNP64_M8_COMMIT_STALE_FREE, LNP64_ERR_EREVOKED, 32'd0, 64'd0);
                         state <= H_CROSS_THREAD_FREE;
                     end else begin
                         state <= H_DONE;
@@ -249,6 +299,7 @@ module lnp64_m8_heap (
                         trace_valid <= 1'b1;
                         trace_code <= 8'd8;
                         trace_value <= {seeded_owner_tid_trace(scenario_seed), seeded_freer_tid_trace(scenario_seed), 32'd1};
+                        commit_m8(LNP64_M8_COMMIT_CROSS_THREAD_FREE, LNP64_STATUS_OK, 32'd0, 64'd0);
                         state <= H_GUARD_FAULT;
                     end else begin
                         state <= H_DONE;
@@ -259,6 +310,7 @@ module lnp64_m8_heap (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd9;
                     trace_value <= {48'd0, LNP64_ERR_EFAULT};
+                    commit_m8(LNP64_M8_COMMIT_GUARD_FAULT, LNP64_ERR_EFAULT, 32'd0, 64'd0);
                     state <= H_DONE;
                 end
                 H_DONE: begin

@@ -230,4 +230,131 @@ theorem m8_heap_counts_exact :
     allocChunk, initialMachine, chunk0
   ]
 
+/- Packed-bit decode model for the M8 heap witness.
+
+Mirrors the M1..M7/M14 packed-bit machinery so the emitted lnp64_m8_heap_commit_t
+and lnp64_m8_state_projection_t bit vectors can be decode-checked against this
+Lean model. Every M8 field is a plain scalar/bool slice. -/
+
+structure PackedFieldLayout where
+  name : String
+  width : Nat
+  lsb : Nat
+  msb : Nat
+deriving DecidableEq, Repr
+
+def packedSchemaWidth (schema : List (String × Nat)) : Nat :=
+  schema.foldl (fun total field => total + field.2) 0
+
+def packedSchemaLayoutFrom : Nat -> List (String × Nat) -> List PackedFieldLayout
+  | _cursor, [] => []
+  | cursor, field :: rest =>
+      let lsb := cursor - field.2
+      { name := field.1, width := field.2, lsb := lsb, msb := cursor - 1 } ::
+        packedSchemaLayoutFrom lsb rest
+
+def packedSchemaLayout (schema : List (String × Nat)) : List PackedFieldLayout :=
+  packedSchemaLayoutFrom (packedSchemaWidth schema) schema
+
+def packedFieldWithinWidth (totalWidth : Nat) (field : PackedFieldLayout) : Bool :=
+  decide (field.width > 0) &&
+  decide (field.lsb + field.width = field.msb + 1) &&
+  decide (field.msb < totalWidth)
+
+def packedLayoutWithinWidth (totalWidth : Nat) (layout : List PackedFieldLayout) : Bool :=
+  layout.all (packedFieldWithinWidth totalWidth)
+
+def packedLayoutStartsAtWidth (totalWidth : Nat) : List PackedFieldLayout -> Bool
+  | [] => decide (totalWidth = 0)
+  | field :: _rest => decide (field.msb + 1 = totalWidth)
+
+def packedLayoutAdjacentContiguous : List PackedFieldLayout -> Bool
+  | [] => true
+  | _field :: [] => true
+  | first :: second :: rest =>
+      decide (first.lsb = second.msb + 1) &&
+      packedLayoutAdjacentContiguous (second :: rest)
+
+def packedLayoutEndsAtZero : List PackedFieldLayout -> Bool
+  | [] => true
+  | field :: [] => decide (field.lsb = 0)
+  | _field :: rest => packedLayoutEndsAtZero rest
+
+def packedLayoutCoversWidth (totalWidth : Nat) (layout : List PackedFieldLayout) : Bool :=
+  packedLayoutWithinWidth totalWidth layout &&
+  packedLayoutStartsAtWidth totalWidth layout &&
+  packedLayoutAdjacentContiguous layout &&
+  packedLayoutEndsAtZero layout
+
+def packedBitSlice (bits lsb width : Nat) : Nat :=
+  (bits / (2 ^ lsb)) % (2 ^ width)
+
+def packedFieldValue (bits : Nat) (field : PackedFieldLayout) : Nat :=
+  packedBitSlice bits field.lsb field.width
+
+def packedLayoutFieldValue
+    (bits : Nat)
+    (fieldName : String) : List PackedFieldLayout -> Option Nat
+  | [] => none
+  | field :: rest =>
+      if field.name == fieldName then
+        some (packedFieldValue bits field)
+      else
+        packedLayoutFieldValue bits fieldName rest
+
+def rtlM8CommitPackedSchema : List (String × Nat) :=
+  [ ("op", 8)
+  , ("status", 16)
+  , ("owner_tid", 32)
+  , ("pointer_generation", 32)
+  , ("heap_generation", 32)
+  , ("size_class", 32)
+  , ("heap_ptr", 64) ]
+
+def rtlM8StateProjectionPackedSchema : List (String × Nat) :=
+  [ ("op", 8)
+  , ("status", 16)
+  , ("pointer_generation", 32)
+  , ("owner_tid", 32)
+  , ("allocations", 32)
+  , ("frees", 32)
+  , ("allocated", 1)
+  , ("quarantined", 1)
+  , ("alloc_completed", 1)
+  , ("alloc_size_reported", 1)
+  , ("free_completed", 1)
+  , ("reuse_completed", 1)
+  , ("double_free_rejected", 1)
+  , ("stale_pointer_rejected", 1)
+  , ("cross_thread_handoff", 1)
+  , ("guard_faulted", 1)
+  , ("quarantine_observed", 1)
+  , ("heap_count_exact", 1) ]
+
+def rtlM8CommitPackedLayout : List PackedFieldLayout :=
+  packedSchemaLayout rtlM8CommitPackedSchema
+
+def rtlM8StateProjectionPackedLayout : List PackedFieldLayout :=
+  packedSchemaLayout rtlM8StateProjectionPackedSchema
+
+theorem rtlM8CommitPackedSchema_width :
+    packedSchemaWidth rtlM8CommitPackedSchema = 216 := by
+  decide
+
+theorem rtlM8StateProjectionPackedSchema_width :
+    packedSchemaWidth rtlM8StateProjectionPackedSchema = 164 := by
+  decide
+
+theorem rtlM8CommitPackedLayout_covers_schema_width :
+    packedLayoutCoversWidth
+      (packedSchemaWidth rtlM8CommitPackedSchema)
+      rtlM8CommitPackedLayout = true := by
+  decide
+
+theorem rtlM8StateProjectionPackedLayout_covers_schema_width :
+    packedLayoutCoversWidth
+      (packedSchemaWidth rtlM8StateProjectionPackedSchema)
+      rtlM8StateProjectionPackedLayout = true := by
+  decide
+
 end Lnp64.M8
