@@ -8740,6 +8740,7 @@ mod tests {
             "emulator_rejects_exec_descriptor_vma_without_source_capability",
             "emulator_rejects_exec_descriptor_vma_without_source_generation",
             "emulator_rejects_exec_descriptor_vma_without_lineage_epoch",
+            "static_elf_loader_rejects_exec_descriptor_without_image_provenance",
             "emulator_rejects_exec_descriptor_unsupported_vma_provenance",
             "emulator_rejects_exec_descriptor_executable_vma_without_image_text_provenance",
             "emulator_rejects_exec_descriptor_nonexecutable_vma_with_image_text_provenance",

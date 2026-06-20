@@ -310,6 +310,17 @@ pub fn build_exec_descriptor(
     if options.measurements.len() > MAX_EXEC_PLAN_MEASUREMENTS {
         return Err("exec-plan measurement count exceeds architectural limit".to_string());
     }
+    if !plan.vmas.is_empty() {
+        if options.image_source_cap == 0 {
+            return Err("exec-plan VMA source capability is required".to_string());
+        }
+        if options.image_source_generation == 0 {
+            return Err("exec-plan VMA source generation is required".to_string());
+        }
+        if options.image_lineage_epoch == 0 {
+            return Err("exec-plan VMA lineage epoch is required".to_string());
+        }
+    }
     let total_length = exec_descriptor_total_length(
         plan.vmas.len(),
         plan.fdr_grants.len(),
@@ -2247,6 +2258,43 @@ mod tests {
         let err = build_exec_descriptor(&plan, ExecPlanDescriptorOptions::default()).unwrap_err();
 
         assert!(err.contains("VMA count"), "{err}");
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_exec_descriptor_without_image_provenance() {
+        let image = test_elf(&[text_phdr()]);
+        let plan = build_static_exec_plan(&image, LoaderOptions::default()).unwrap();
+
+        let missing_cap =
+            build_exec_descriptor(&plan, ExecPlanDescriptorOptions::default()).unwrap_err();
+        assert!(missing_cap.contains("source capability"), "{missing_cap}");
+
+        let missing_generation = build_exec_descriptor(
+            &plan,
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap_err();
+        assert!(
+            missing_generation.contains("source generation"),
+            "{missing_generation}"
+        );
+
+        let missing_lineage = build_exec_descriptor(
+            &plan,
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap_err();
+        assert!(
+            missing_lineage.contains("lineage epoch"),
+            "{missing_lineage}"
+        );
     }
 
     #[test]
