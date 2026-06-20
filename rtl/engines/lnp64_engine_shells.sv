@@ -1940,6 +1940,7 @@ module lnp64_domain_engine(
     localparam logic [63:0] DOMAIN_OP_FREEZE = 64'd4;
     localparam logic [63:0] DOMAIN_OP_RESUME = 64'd5;
     localparam logic [63:0] DOMAIN_OP_DESTROY = 64'd6;
+    localparam logic [63:0] DOMAIN_OP_ATTACH_SELF = 64'd7;
     localparam logic [63:0] DOMAIN_ROOT_ID = 64'd1;
     localparam logic [63:0] DOMAIN_QUERY_SIZE = 64'd200;
 
@@ -2139,12 +2140,16 @@ module lnp64_domain_engine(
                     rsp_reg.result_value <= 64'd0;
                     rsp_reg.errno_value <= LNP64_ERR_OK;
                     rsp_reg.status <= LNP64_STATUS_OK;
+                end else if (op == DOMAIN_OP_ATTACH_SELF && ref_live && !domain_frozen[ref_slot]) begin
+                    rsp_reg.result_value <= 64'd0;
+                    rsp_reg.errno_value <= LNP64_ERR_OK;
+                    rsp_reg.status <= LNP64_STATUS_OK;
                 end else if (op == DOMAIN_OP_CREATE) begin
                     rsp_reg.errno_value <= LNP64_ERR_EPERM;
                 end else if (op == DOMAIN_OP_QUERY || op == DOMAIN_OP_DESTROY) begin
                     rsp_reg.errno_value <= LNP64_ERR_ESTALE;
                 end else if (op == DOMAIN_OP_CONFIGURE || op == DOMAIN_OP_FREEZE ||
-                    op == DOMAIN_OP_RESUME) begin
+                    op == DOMAIN_OP_RESUME || op == DOMAIN_OP_ATTACH_SELF) begin
                     rsp_reg.errno_value <= LNP64_ERR_EPERM;
                 end
             end

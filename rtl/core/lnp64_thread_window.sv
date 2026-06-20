@@ -16,6 +16,9 @@ module lnp64_thread_window #(
     input  logic activate_valid,
     input  logic [CONTEXT_INDEX_WIDTH-1:0] activate_slot,
     input  lnp64_thread_sched_t activate_context,
+    input  logic update_valid,
+    input  logic [CONTEXT_INDEX_WIDTH-1:0] update_slot,
+    input  lnp64_thread_sched_t update_context,
     input  logic complete_valid,
     input  logic [CONTEXT_INDEX_WIDTH-1:0] complete_slot,
     input  logic collect_valid,
@@ -181,6 +184,9 @@ module lnp64_thread_window #(
                 context_event_pending_q[activate_slot] <= 1'b0;
                 context_fault_pending_q[activate_slot] <= 1'b0;
             end
+            if (update_valid) begin
+                context_record_q[update_slot] <= update_context;
+            end
             if (park_valid) begin
                 context_active_q[park_slot] <= 1'b0;
                 context_parked_q[park_slot] <= 1'b1;
@@ -240,6 +246,19 @@ module lnp64_thread_window #(
                 assert (seed_context.tile_id == TILE_ID[31:0] &&
                     seed_context.active_location == TILE_ID[31:0])
                     else $fatal(1, "SG-SCHED seed context tile drift");
+            end
+            if (update_valid) begin
+                assert (update_slot < CONTEXT_COUNT)
+                    else $fatal(1, "SG-SCHED update slot out of range");
+                assert (update_context.pid != 32'd0 &&
+                    update_context.tid != 32'd0 &&
+                    update_context.domain_id != 32'd0 &&
+                    update_context.domain_gen != 32'd0 &&
+                    update_context.dispatch_eligible)
+                    else $fatal(1, "SG-SCHED update context missing scheduler metadata");
+                assert (update_context.tile_id == TILE_ID[31:0] &&
+                    update_context.active_location == TILE_ID[31:0])
+                    else $fatal(1, "SG-SCHED update context tile drift");
             end
             for (int unsigned assert_ctx = 0; assert_ctx < CONTEXT_COUNT; assert_ctx = assert_ctx + 1) begin
                 assert (!(context_active_q[assert_ctx] && context_parked_q[assert_ctx]))

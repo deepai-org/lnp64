@@ -122,6 +122,9 @@ module lnp64_core_tile #(
     lnp64_thread_sched_t thread_window_activate_context;
     logic scheduler_child_issue_valid;
     lnp64_thread_sched_t clone_child_context;
+    logic thread_window_update_valid;
+    logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] thread_window_update_slot;
+    lnp64_thread_sched_t thread_window_update_context;
     logic thread_window_complete_valid;
     logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] thread_window_complete_slot;
     logic thread_window_collect_valid;
@@ -150,6 +153,7 @@ module lnp64_core_tile #(
     localparam logic [63:0] FLAT_EXEC_INITIAL_SP = 64'h0000_0000_0067_2000;
     localparam logic [63:0] FLAT_EXEC_STACK_BASE_ADDR = 64'h0000_0000_0067_0000;
     localparam logic [63:0] FLAT_EXEC_STACK_WINDOW_BYTES = 64'd16384;
+    localparam logic [63:0] FLAT_EXEC_DOMAIN_BASELINE_BYTES = 64'h0000_0000_0042_3000;
     localparam logic [63:0] FLAT_EXEC_CALL_FRAME_BYTES = 64'd0;
     localparam logic [63:0] FLAT_EXEC_THREAD_STACK_STRIDE = 64'h0000_0000_0004_0000;
     localparam logic [63:0] FLAT_EXEC_CHILD_SP = FLAT_EXEC_INITIAL_SP - FLAT_EXEC_THREAD_STACK_STRIDE;
@@ -172,6 +176,7 @@ module lnp64_core_tile #(
     localparam logic [63:0] DOMAIN_OP_FREEZE = 64'd4;
     localparam logic [63:0] DOMAIN_OP_RESUME = 64'd5;
     localparam logic [63:0] DOMAIN_OP_DESTROY = 64'd6;
+    localparam logic [63:0] DOMAIN_OP_ATTACH_SELF = 64'd7;
     localparam logic [63:0] DOMAIN_ROOT_ID = 64'd1;
     localparam logic [63:0] DOMAIN_QUERY_SIZE = 64'd200;
     localparam logic [63:0] DOMAIN_STATE_ACTIVE = 64'd0;
@@ -305,6 +310,9 @@ module lnp64_core_tile #(
     logic [63:0] domain_cap_mask [0:DOMAIN_SLOT_COUNT-1];
     logic [63:0] domain_upcall_mask [0:DOMAIN_SLOT_COUNT-1];
     logic [63:0] domain_child_count [0:DOMAIN_SLOT_COUNT-1];
+    logic [63:0] domain_memory_used [0:DOMAIN_SLOT_COUNT-1];
+    logic [63:0] domain_thread_count [0:DOMAIN_SLOT_COUNT-1];
+    logic [63:0] domain_fdr_count [0:DOMAIN_SLOT_COUNT-1];
     logic domain_frozen [0:DOMAIN_SLOT_COUNT-1];
     logic cap_queue_valid;
     logic [63:0] cap_queue_rights;
@@ -771,6 +779,65 @@ module lnp64_core_tile #(
             range_within = addr >= base &&
                 len <= extent &&
                 (addr - base) <= (extent - len);
+        end
+    endfunction
+
+    function automatic logic domain_descends_from(
+        input int unsigned subject_slot,
+        input int unsigned ancestor_slot
+    );
+        int unsigned cursor;
+        logic live_cursor;
+        begin
+            domain_descends_from = 1'b0;
+            cursor = subject_slot;
+            live_cursor = subject_slot < DOMAIN_SLOT_COUNT;
+            for (int unsigned depth_i = 0; depth_i < DOMAIN_SLOT_COUNT; depth_i = depth_i + 1) begin
+                if (live_cursor && cursor < DOMAIN_SLOT_COUNT && domain_valid[cursor]) begin
+                    if (cursor == ancestor_slot) begin
+                        domain_descends_from = 1'b1;
+                        live_cursor = 1'b0;
+                    end else if (domain_parent[cursor] > 64'd0 &&
+                        (domain_parent[cursor] - 64'd1) < DOMAIN_SLOT_COUNT) begin
+                        cursor = int'(domain_parent[cursor] - 64'd1);
+                    end else begin
+                        live_cursor = 1'b0;
+                    end
+                end
+            end
+        end
+    endfunction
+
+    function automatic logic [63:0] domain_query_memory_used(input int unsigned ancestor_slot);
+        begin
+            domain_query_memory_used = 64'd0;
+            for (int unsigned usage_i = 0; usage_i < DOMAIN_SLOT_COUNT; usage_i = usage_i + 1) begin
+                if (domain_descends_from(usage_i, ancestor_slot)) begin
+                    domain_query_memory_used = domain_query_memory_used + domain_memory_used[usage_i];
+                end
+            end
+        end
+    endfunction
+
+    function automatic logic [63:0] domain_query_thread_count(input int unsigned ancestor_slot);
+        begin
+            domain_query_thread_count = 64'd0;
+            for (int unsigned usage_i = 0; usage_i < DOMAIN_SLOT_COUNT; usage_i = usage_i + 1) begin
+                if (domain_descends_from(usage_i, ancestor_slot)) begin
+                    domain_query_thread_count = domain_query_thread_count + domain_thread_count[usage_i];
+                end
+            end
+        end
+    endfunction
+
+    function automatic logic [63:0] domain_query_fdr_count(input int unsigned ancestor_slot);
+        begin
+            domain_query_fdr_count = 64'd0;
+            for (int unsigned usage_i = 0; usage_i < DOMAIN_SLOT_COUNT; usage_i = usage_i + 1) begin
+                if (domain_descends_from(usage_i, ancestor_slot)) begin
+                    domain_query_fdr_count = domain_query_fdr_count + domain_fdr_count[usage_i];
+                end
+            end
         end
     endfunction
 
@@ -1692,6 +1759,19 @@ module lnp64_core_tile #(
         clone_child_context.effective_tile_mask = active_thread_context.effective_tile_mask;
         clone_child_context.migration_generation = active_thread_context.migration_generation;
         clone_child_context.active_location = TILE_ID[31:0];
+        thread_window_update_valid =
+            state == CORE_WAIT_RSP &&
+            rsp_valid &&
+            !pending_unsupported &&
+            dec.opcode == LNP64_OP_DOMAIN_CTL &&
+            domain_op == DOMAIN_OP_ATTACH_SELF &&
+            rsp.status == LNP64_STATUS_OK &&
+            rsp.errno_value == LNP64_ERR_OK &&
+            domain_ref_live;
+        thread_window_update_slot = active_thread_slot;
+        thread_window_update_context = active_thread_context;
+        thread_window_update_context.domain_id = domain_ref_id[31:0];
+        thread_window_update_context.domain_gen = domain_generation[domain_ref_slot][31:0];
         thread_window_complete_valid = state == CORE_EXEC &&
             dec.supported &&
             dec.opcode == LNP64_OP_EXIT;
@@ -1731,6 +1811,9 @@ module lnp64_core_tile #(
         .activate_valid(thread_window_activate_valid),
         .activate_slot(thread_window_activate_slot),
         .activate_context(thread_window_activate_context),
+        .update_valid(thread_window_update_valid),
+        .update_slot(thread_window_update_slot),
+        .update_context(thread_window_update_context),
         .complete_valid(thread_window_complete_valid),
         .complete_slot(thread_window_complete_slot),
         .collect_valid(thread_window_collect_valid),
@@ -2211,6 +2294,9 @@ module lnp64_core_tile #(
                 domain_cap_mask[i] <= i == 0 ? 64'hffff_ffff_ffff_ffff : 64'd0;
                 domain_upcall_mask[i] <= i == 0 ? 64'hffff_ffff_ffff_ffff : 64'd0;
                 domain_child_count[i] <= 64'd0;
+                domain_memory_used[i] <= i == 0 ? FLAT_EXEC_DOMAIN_BASELINE_BYTES : 64'd0;
+                domain_thread_count[i] <= i == 0 ? 64'd1 : 64'd0;
+                domain_fdr_count[i] <= i == 0 ? 64'd3 : 64'd0;
                 domain_frozen[i] <= 1'b0;
             end
             for (i = 0; i < SRAM_WORDS; i = i + 1) begin
@@ -3472,6 +3558,11 @@ module lnp64_core_tile #(
                                     errno_reg <= LNP64_ERR_OK;
                                     submit_valid <= 1'b1;
                                     submit_record <= clone_child_context;
+                                    if (active_thread_context.domain_id > 32'd0 &&
+                                        (active_thread_context.domain_id - 32'd1) < DOMAIN_SLOT_COUNT) begin
+                                        domain_thread_count[active_thread_context.domain_id - 32'd1] <=
+                                            domain_thread_count[active_thread_context.domain_id - 32'd1] + 64'd1;
+                                    end
                                 end else begin
                                     gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= LNP64_ERR_EAGAIN;
@@ -3509,6 +3600,12 @@ module lnp64_core_tile #(
                                     state <= CORE_DONE;
                                 end else begin
                                     thread_exit_code[active_thread_slot] <= gpr[dec.rd];
+                                    if (active_thread_context.domain_id > 32'd0 &&
+                                        (active_thread_context.domain_id - 32'd1) < DOMAIN_SLOT_COUNT &&
+                                        domain_thread_count[active_thread_context.domain_id - 32'd1] != 64'd0) begin
+                                        domain_thread_count[active_thread_context.domain_id - 32'd1] <=
+                                            domain_thread_count[active_thread_context.domain_id - 32'd1] - 64'd1;
+                                    end
                                     state <= CORE_SWITCH;
                                 end
                                 pc <= pc + 32'd1;
@@ -3882,16 +3979,36 @@ module lnp64_core_tile #(
                                     heap_alloc_valid[heap_alloc_next_slot] <= 1'b1;
                                     heap_alloc_next_slot <= heap_alloc_next_slot + 2'd1;
                                     heap_next <= rsp.result_value + alloc_len_u64(gpr[dec.rs1]);
+                                    if (active_thread_context.domain_id > 32'd0 &&
+                                        (active_thread_context.domain_id - 32'd1) < DOMAIN_SLOT_COUNT) begin
+                                        domain_memory_used[active_thread_context.domain_id - 32'd1] <=
+                                            domain_memory_used[active_thread_context.domain_id - 32'd1] +
+                                            alloc_len_u64(gpr[dec.rs1]);
+                                    end
                                 end else if (dec.opcode == LNP64_OP_ALLOC_EX) begin
                                     heap_alloc_ptr[heap_alloc_next_slot] <= rsp.result_value;
                                     heap_alloc_size[heap_alloc_next_slot] <= alloc_len_u64(gpr[dec.rs1]);
                                     heap_alloc_valid[heap_alloc_next_slot] <= 1'b1;
                                     heap_alloc_next_slot <= heap_alloc_next_slot + 2'd1;
                                     heap_next <= rsp.result_value + alloc_len_u64(gpr[dec.rs1]) + 64'd4096;
+                                    if (active_thread_context.domain_id > 32'd0 &&
+                                        (active_thread_context.domain_id - 32'd1) < DOMAIN_SLOT_COUNT) begin
+                                        domain_memory_used[active_thread_context.domain_id - 32'd1] <=
+                                            domain_memory_used[active_thread_context.domain_id - 32'd1] +
+                                            alloc_len_u64(gpr[dec.rs1]);
+                                    end
                                 end else if (dec.opcode == LNP64_OP_FREE) begin
                                     for (i = 0; i < 4; i = i + 1) begin
                                         if (heap_alloc_valid[i] && heap_alloc_ptr[i] == gpr[dec.rd]) begin
                                             heap_alloc_valid[i] <= 1'b0;
+                                            if (active_thread_context.domain_id > 32'd0 &&
+                                                (active_thread_context.domain_id - 32'd1) < DOMAIN_SLOT_COUNT &&
+                                                domain_memory_used[active_thread_context.domain_id - 32'd1] >=
+                                                    heap_alloc_size[i]) begin
+                                                domain_memory_used[active_thread_context.domain_id - 32'd1] <=
+                                                    domain_memory_used[active_thread_context.domain_id - 32'd1] -
+                                                    heap_alloc_size[i];
+                                            end
                                         end
                                     end
                                 end
@@ -4008,9 +4125,18 @@ module lnp64_core_tile #(
                                         domain_upcall_mask[domain_ref_slot]
                                     );
                                     store_double_unaligned_next(domain_argblock_addr + 64'd80, retired_count);
-                                    store_double_unaligned_next(domain_argblock_addr + 64'd88, 64'd0);
-                                    store_double_unaligned_next(domain_argblock_addr + 64'd96, 64'd1);
-                                    store_double_unaligned_next(domain_argblock_addr + 64'd104, 64'd3);
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd88,
+                                        domain_query_memory_used(domain_ref_slot)
+                                    );
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd96,
+                                        domain_query_thread_count(domain_ref_slot)
+                                    );
+                                    store_double_unaligned_next(
+                                        domain_argblock_addr + 64'd104,
+                                        domain_query_fdr_count(domain_ref_slot)
+                                    );
                                     store_double_unaligned_next(
                                         domain_argblock_addr + 64'd112,
                                         domain_destroyed[domain_ref_slot] ? DOMAIN_STATE_DESTROYED :
@@ -4084,6 +4210,25 @@ module lnp64_core_tile #(
                                         domain_child_count[domain_parent[domain_ref_slot] - 64'd1] <=
                                             domain_child_count[domain_parent[domain_ref_slot] - 64'd1] - 64'd1;
                                     end
+                                end else if (domain_op == DOMAIN_OP_ATTACH_SELF && domain_ref_live &&
+                                    !domain_frozen[domain_ref_slot]) begin
+                                    if (active_thread_context.domain_id > 32'd0 &&
+                                        (active_thread_context.domain_id - 32'd1) < DOMAIN_SLOT_COUNT &&
+                                        domain_thread_count[active_thread_context.domain_id - 32'd1] != 64'd0) begin
+                                        domain_thread_count[active_thread_context.domain_id - 32'd1] <=
+                                            domain_thread_count[active_thread_context.domain_id - 32'd1] - 64'd1;
+                                        if (domain_memory_used[active_thread_context.domain_id - 32'd1] >=
+                                            FLAT_EXEC_DOMAIN_BASELINE_BYTES) begin
+                                            domain_memory_used[active_thread_context.domain_id - 32'd1] <=
+                                                domain_memory_used[active_thread_context.domain_id - 32'd1] -
+                                                FLAT_EXEC_DOMAIN_BASELINE_BYTES;
+                                        end
+                                    end
+                                    domain_thread_count[domain_ref_slot] <=
+                                        domain_thread_count[domain_ref_slot] + 64'd1;
+                                    domain_memory_used[domain_ref_slot] <=
+                                        domain_memory_used[domain_ref_slot] +
+                                        FLAT_EXEC_DOMAIN_BASELINE_BYTES;
                                 end
                             end
                         end
