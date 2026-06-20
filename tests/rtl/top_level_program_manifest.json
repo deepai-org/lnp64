@@ -639,7 +639,9 @@
     {
       "source": "demos/waitable_probe_no_consume.s",
       "required_features": ["core", "object_ctl_queue_pipe", "waitable_probe_no_consume", "static_fd_read_write", "data_labels", "write_fd", "exit"],
-      "status": "blocked_by_features"
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
     },
     {
       "source": "demos/object_ctl_bad_profile_no_install.s",

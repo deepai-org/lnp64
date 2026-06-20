@@ -439,11 +439,14 @@ module lnp64_core_tile #(
     logic static_fd_is_memory_object;
     logic static_fd_is_event_counter;
     logic static_fd_is_timer;
+    int unsigned static_pipe_queue_slot;
+    logic [3:0] static_pipe_pull_len;
     int unsigned static_fd_buf_word_index;
     int unsigned static_fd_buf_next_word_index;
     logic [2:0] static_fd_buf_byte_lane;
     logic [63:0] static_fd_write_value;
     int unsigned await_fd;
+    int unsigned await_queue_slot;
     logic await_fd_in_range;
     logic await_fd_ready;
     logic [63:0] await_ex_argblock_addr;
@@ -1074,6 +1077,17 @@ module lnp64_core_tile #(
         end
     endfunction
 
+    function automatic int unsigned pipe_endpoint_queue_slot(input int unsigned fd);
+        begin
+            unique case (fd)
+                4: pipe_endpoint_queue_slot = 3;
+                6: pipe_endpoint_queue_slot = 5;
+                8: pipe_endpoint_queue_slot = 7;
+                default: pipe_endpoint_queue_slot = fd;
+            endcase
+        end
+    endfunction
+
     function automatic logic [63:0] fdr_token(input int unsigned fd);
         begin
             fdr_token = FDR_TOKEN_MARKER | (fdr_generation[fd] << 8) | {56'd0, fd[7:0]};
@@ -1320,12 +1334,16 @@ module lnp64_core_tile #(
                     if (gpr[dec.rs2] == 64'd0) begin
                         flat_retire_errno_value = LNP64_ERR_OK;
                     end else if (!static_fd_in_range || !fdr_valid[static_fd] ||
-                        !(static_fd_is_memory_object || static_fd_is_event_counter || static_fd_is_timer)) begin
+                        !(static_fd_is_memory_object || static_fd_is_event_counter ||
+                          static_fd_is_timer || fdr_kind[static_fd] == FDR_KIND_PIPE_READER)) begin
                         flat_retire_errno_value = LNP64_ERR_EBADF;
                     end else if (fdr_revoked[static_fd]) begin
                         flat_retire_errno_value = RTL_ERR_ESTALE;
                     end else if ((fdr_rights[static_fd] & 64'd1) == 64'd0) begin
                         flat_retire_errno_value = LNP64_ERR_EPERM;
+                    end else if (fdr_kind[static_fd] == FDR_KIND_PIPE_READER &&
+                        gpr[dec.rs2] > 64'd8) begin
+                        flat_retire_errno_value = LNP64_ERR_EINVAL;
                     end else begin
                         flat_retire_errno_value = LNP64_ERR_OK;
                     end
@@ -1333,13 +1351,20 @@ module lnp64_core_tile #(
                 LNP64_OP_WRITE_FD: begin
                     if (gpr[dec.rs2] == 64'd0) begin
                         flat_retire_errno_value = LNP64_ERR_OK;
-                    end else if (static_fd_is_event_counter || static_fd_is_timer || static_fd_is_memory_object) begin
+                    end else if (static_fd_is_event_counter || static_fd_is_timer ||
+                        static_fd_is_memory_object || fdr_kind[static_fd] == FDR_KIND_PIPE_WRITER) begin
                         if (!fdr_valid[static_fd]) begin
                             flat_retire_errno_value = LNP64_ERR_EBADF;
                         end else if (fdr_revoked[static_fd]) begin
                             flat_retire_errno_value = RTL_ERR_ESTALE;
                         end else if ((fdr_rights[static_fd] & 64'd2) == 64'd0) begin
                             flat_retire_errno_value = LNP64_ERR_EPERM;
+                        end else if (fdr_kind[static_fd] == FDR_KIND_PIPE_WRITER &&
+                            gpr[dec.rs2] > 64'd8) begin
+                            flat_retire_errno_value = LNP64_ERR_EINVAL;
+                        end else if (fdr_kind[static_fd] == FDR_KIND_PIPE_WRITER &&
+                            pipe_payload_valid[static_pipe_queue_slot]) begin
+                            flat_retire_errno_value = LNP64_ERR_EAGAIN;
                         end else begin
                             flat_retire_errno_value = LNP64_ERR_OK;
                         end
@@ -1578,9 +1603,18 @@ module lnp64_core_tile #(
                     if (gpr[dec.rs2] == 64'd0) begin
                         result = 64'd0;
                     end else if (!static_fd_in_range || !fdr_valid[static_fd] ||
-                        !(static_fd_is_memory_object || static_fd_is_event_counter || static_fd_is_timer) ||
+                        !(static_fd_is_memory_object || static_fd_is_event_counter ||
+                          static_fd_is_timer || fdr_kind[static_fd] == FDR_KIND_PIPE_READER) ||
                         fdr_revoked[static_fd] || ((fdr_rights[static_fd] & 64'd1) == 64'd0)) begin
                         result = 64'hffff_ffff_ffff_ffff;
+                    end else if (fdr_kind[static_fd] == FDR_KIND_PIPE_READER) begin
+                        if (gpr[dec.rs2] > 64'd8) begin
+                            result = 64'hffff_ffff_ffff_ffff;
+                        end else if (!pipe_payload_valid[static_pipe_queue_slot]) begin
+                            result = 64'd0;
+                        end else begin
+                            result = {60'd0, static_pipe_pull_len};
+                        end
                     end else if (static_fd_is_event_counter || static_fd_is_timer) begin
                         result = gpr[dec.rs2] < 64'd8 ? gpr[dec.rs2] : 64'd8;
                     end else if (!memory_object_byte_valid || memory_object_len == 64'd0) begin
@@ -1592,10 +1626,18 @@ module lnp64_core_tile #(
                 LNP64_OP_WRITE_FD: begin
                     if (gpr[dec.rs2] == 64'd0) begin
                         result = 64'd0;
-                    end else if (static_fd_is_event_counter || static_fd_is_timer || static_fd_is_memory_object) begin
+                    end else if (static_fd_is_event_counter || static_fd_is_timer ||
+                        static_fd_is_memory_object || fdr_kind[static_fd] == FDR_KIND_PIPE_WRITER) begin
                         if (!fdr_valid[static_fd] || fdr_revoked[static_fd] ||
                             ((fdr_rights[static_fd] & 64'd2) == 64'd0)) begin
                             result = 64'hffff_ffff_ffff_ffff;
+                        end else if (fdr_kind[static_fd] == FDR_KIND_PIPE_WRITER) begin
+                            if (gpr[dec.rs2] > 64'd8 ||
+                                pipe_payload_valid[static_pipe_queue_slot]) begin
+                                result = 64'hffff_ffff_ffff_ffff;
+                            end else begin
+                                result = gpr[dec.rs2];
+                            end
                         end else if (static_fd_is_event_counter || static_fd_is_timer) begin
                             result = gpr[dec.rs2] < 64'd8 ? gpr[dec.rs2] : 64'd8;
                         end else begin
@@ -1895,15 +1937,7 @@ module lnp64_core_tile #(
         end else begin
             pipe_fd = fdr_value_fd(gpr[dec.rs1]);
         end
-        if (pipe_fd == 4) begin
-            pipe_queue_slot = 3;
-        end else if (pipe_fd == 6) begin
-            pipe_queue_slot = 5;
-        end else if (pipe_fd == 8) begin
-            pipe_queue_slot = 7;
-        end else begin
-            pipe_queue_slot = pipe_fd;
-        end
+        pipe_queue_slot = pipe_endpoint_queue_slot(pipe_fd);
         pipe_fd_in_range = pipe_fd < FDR_SLOT_COUNT;
         pipe_fd_is_token = gpr[dec.rs1] >= 64'd256;
         pipe_fd_token_shape_valid = (gpr[dec.rs1] & FDR_TOKEN_MARKER) != 64'd0 &&
@@ -1963,6 +1997,16 @@ module lnp64_core_tile #(
             static_fd_is_timer = timer_valid &&
                 fdr_lineage[static_fd] == timer_lineage;
         end
+        static_pipe_queue_slot = pipe_endpoint_queue_slot(static_fd);
+        static_pipe_pull_len = 4'd0;
+        if (static_pipe_queue_slot < FDR_SLOT_COUNT &&
+            pipe_payload_valid[static_pipe_queue_slot]) begin
+            if (gpr[dec.rs2] < {60'd0, pipe_payload_len[static_pipe_queue_slot]}) begin
+                static_pipe_pull_len = gpr[dec.rs2][3:0];
+            end else begin
+                static_pipe_pull_len = pipe_payload_len[static_pipe_queue_slot];
+            end
+        end
         static_fd_buf_word_index = sram_word_index(gpr[dec.rs1]);
         static_fd_buf_next_word_index = sram_word_index(gpr[dec.rs1] + (64'd8 - {61'd0, gpr[dec.rs1][2:0]}));
         static_fd_buf_byte_lane = gpr[dec.rs1][2:0];
@@ -1976,12 +2020,16 @@ module lnp64_core_tile #(
         await_ex_mode = load_double_unaligned(await_ex_argblock_addr);
         await_ex_mask = load_double_unaligned(await_ex_argblock_addr + 64'd8);
         await_fd_in_range = await_fd < FDR_SLOT_COUNT;
+        await_queue_slot = pipe_endpoint_queue_slot(await_fd);
         await_fd_ready = 1'b0;
         if (await_fd_in_range && fdr_valid[await_fd] && !fdr_revoked[await_fd]) begin
             await_fd_ready =
                 (timer_valid && fdr_lineage[await_fd] == timer_lineage && timer_expirations != 64'd0) ||
                 (event_counter_valid && fdr_lineage[await_fd] == event_counter_lineage &&
-                    event_counter_value != 64'd0);
+                    event_counter_value != 64'd0) ||
+                (fdr_kind[await_fd] == FDR_KIND_PIPE_READER &&
+                    await_queue_slot < FDR_SLOT_COUNT &&
+                    pipe_payload_valid[await_queue_slot]);
         end
         if (raw_opcode == 8'h2f) begin
             call_gate_fd = dec.rs1;
@@ -3544,7 +3592,7 @@ module lnp64_core_tile #(
                                     errno_reg <= LNP64_ERR_OK;
                                 end else if (!static_fd_in_range || !fdr_valid[static_fd] ||
                                     !(static_fd_is_memory_object || static_fd_is_event_counter ||
-                                        static_fd_is_timer)) begin
+                                      static_fd_is_timer || fdr_kind[static_fd] == FDR_KIND_PIPE_READER)) begin
                                     gpr[1] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= LNP64_ERR_EBADF;
                                 end else if (fdr_revoked[static_fd]) begin
@@ -3553,6 +3601,35 @@ module lnp64_core_tile #(
                                 end else if ((fdr_rights[static_fd] & 64'd1) == 64'd0) begin
                                     gpr[1] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= LNP64_ERR_EPERM;
+                                end else if (fdr_kind[static_fd] == FDR_KIND_PIPE_READER) begin
+                                    if (gpr[dec.rs2] > 64'd8) begin
+                                        gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= LNP64_ERR_EINVAL;
+                                    end else if (!pipe_payload_valid[static_pipe_queue_slot]) begin
+                                        gpr[1] <= 64'd0;
+                                        errno_reg <= LNP64_ERR_OK;
+                                    end else begin
+                                        store_payload_unaligned_next(
+                                            gpr[dec.rs1],
+                                            pipe_payload_value[static_pipe_queue_slot],
+                                            static_pipe_pull_len
+                                        );
+                                        if (static_pipe_pull_len ==
+                                            pipe_payload_len[static_pipe_queue_slot]) begin
+                                            pipe_payload_valid[static_pipe_queue_slot] <= 1'b0;
+                                            pipe_payload_value[static_pipe_queue_slot] <= 64'd0;
+                                            pipe_payload_len[static_pipe_queue_slot] <= 4'd0;
+                                        end else begin
+                                            pipe_payload_value[static_pipe_queue_slot] <=
+                                                pipe_payload_value[static_pipe_queue_slot] >>
+                                                ({2'd0, static_pipe_pull_len} * 6'd8);
+                                            pipe_payload_len[static_pipe_queue_slot] <=
+                                                pipe_payload_len[static_pipe_queue_slot] -
+                                                static_pipe_pull_len;
+                                        end
+                                        gpr[1] <= {60'd0, static_pipe_pull_len};
+                                        errno_reg <= LNP64_ERR_OK;
+                                    end
                                 end else if (static_fd_is_event_counter) begin
                                     sram[static_fd_buf_word_index] <= store_double_low_word(
                                         sram[static_fd_buf_word_index],
@@ -3658,6 +3735,32 @@ module lnp64_core_tile #(
                                             static_fd_buf_byte_lane
                                         );
                                         gpr[1] <= 64'd1;
+                                        errno_reg <= LNP64_ERR_OK;
+                                    end
+                                end else if (fdr_kind[static_fd] == FDR_KIND_PIPE_WRITER) begin
+                                    if (!fdr_valid[static_fd]) begin
+                                        gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= LNP64_ERR_EBADF;
+                                    end else if (fdr_revoked[static_fd]) begin
+                                        gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= RTL_ERR_ESTALE;
+                                    end else if ((fdr_rights[static_fd] & 64'd2) == 64'd0) begin
+                                        gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= LNP64_ERR_EPERM;
+                                    end else if (gpr[dec.rs2] > 64'd8) begin
+                                        gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= LNP64_ERR_EINVAL;
+                                    end else if (pipe_payload_valid[static_pipe_queue_slot]) begin
+                                        gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                        errno_reg <= LNP64_ERR_EAGAIN;
+                                    end else begin
+                                        pipe_payload_valid[static_pipe_queue_slot] <= 1'b1;
+                                        pipe_payload_value[static_pipe_queue_slot] <=
+                                            static_fd_write_value &
+                                            low_bytes_mask(gpr[dec.rs2][3:0]);
+                                        pipe_payload_len[static_pipe_queue_slot] <=
+                                            gpr[dec.rs2][3:0];
+                                        gpr[1] <= gpr[dec.rs2];
                                         errno_reg <= LNP64_ERR_OK;
                                     end
                                 end else begin
