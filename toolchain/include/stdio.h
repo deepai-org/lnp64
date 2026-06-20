@@ -9,6 +9,12 @@ typedef struct __lnp64_file FILE;
 
 #define EOF (-1)
 #define BUFSIZ 1024
+#define _IONBF 0
+#define _IOLBF 1
+#define _IOFBF 2
+#define SEEK_SET 0
+#define SEEK_CUR 1
+#define SEEK_END 2
 
 extern FILE *stdin;
 extern FILE *stdout;

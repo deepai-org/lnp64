@@ -87,7 +87,7 @@ done
 lua_units=(
   lapi lcode lctype ldebug ldo ldump lfunc lgc llex lmem lobject lopcodes
   lparser lstate lstring ltable ltm lundump lvm lzio
-  lauxlib lbaselib lcorolib lstrlib ltablib lutf8lib lmathlib
+  lauxlib lbaselib lcorolib lstrlib ltablib lutf8lib lmathlib liolib
   lua
 )
 
