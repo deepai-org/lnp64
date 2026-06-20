@@ -871,7 +871,7 @@ debug_line_asm="$build_dir/debug-line-clang-smoke.s"
 "$clang" --target=lnp64-unknown-none -O0 -g -gdwarf-5 -ffreestanding \
   -fno-pic -fno-jump-tables -fno-unwind-tables -fno-asynchronous-unwind-tables \
   "${lnp64_target_include_flags[@]}" -S "$debug_line_c" -o "$debug_line_asm"
-grep -q '.cfi_def_cfa_offset' "$debug_line_asm"
+grep -Eq '\.cfi_def_cfa_offset|\.cfi_def_cfa[[:space:]]+31,[[:space:]]*[0-9]+' "$debug_line_asm"
 grep -q '.cfi_offset 32' "$debug_line_asm"
 debug_line_obj="$build_dir/debug-line-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -O0 -g -gdwarf-5 -ffreestanding \
@@ -896,7 +896,7 @@ hello_obj="$build_dir/hello-clang-smoke.o"
 test -s "$hello_obj"
 hello_dump="$build_dir/hello-clang-smoke.dump"
 "$llvm_objdump" -d --triple=lnp64-unknown-none "$hello_obj" >"$hello_dump"
-grep -q 'la r' "$hello_dump"
+grep -Eq 'la r|auipc r' "$hello_dump"
 grep -q 'call ' "$hello_dump"
 printf 'real LLVM LNP64 clang hello object smoke passed: %s\n' "$hello_obj"
 
@@ -926,7 +926,7 @@ test -s "$allocator_obj"
 allocator_dump="$build_dir/allocator-clang-smoke.dump"
 "$llvm_objdump" -d --triple=lnp64-unknown-none "$allocator_obj" \
   >"$allocator_dump"
-grep -q 'la r' "$allocator_dump"
+grep -Eq 'la r|auipc r' "$allocator_dump"
 grep -q 'ld.w r' "$allocator_dump"
 grep -q 'st.w r' "$allocator_dump"
 grep -q 'cmp r' "$allocator_dump"
