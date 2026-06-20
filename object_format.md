@@ -237,7 +237,8 @@ It is a bounded architecture record containing:
 - entry PC, initial SP, optional TLS base, and startup metadata pointer.
 - VMA records: target virtual address, length, protection, memory type,
   executable provenance class, source object/FDR capability, source offset,
-  source generation, lineage epoch, zero-fill length, and mapping flags.
+  source generation, lineage epoch, zero-fill length, and mapping flags
+  (reserved zero in v1).
 - startup FDR grants and close-on-exec/preserve decisions.
 - optional image measurement references for measured boot, audit, or
   attestation records.

@@ -331,6 +331,11 @@ pub fn build_exec_descriptor(
             return Err("exec-plan VMA lineage epoch is required".to_string());
         }
     }
+    for vma in &plan.vmas {
+        if vma.mapping_flags != 0 {
+            return Err("exec-plan VMA mapping flags are unsupported".to_string());
+        }
+    }
     let mut fdr_slots = Vec::with_capacity(plan.fdr_grants.len());
     for grant in &plan.fdr_grants {
         if grant.slot >= MAX_EXEC_PLAN_FDR_SLOT {
@@ -2336,6 +2341,26 @@ mod tests {
             missing_ref.contains("measurement reference"),
             "{missing_ref}"
         );
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_exec_descriptor_unknown_vma_mapping_flags() {
+        let image = test_elf(&[text_phdr()]);
+        let mut plan = build_static_exec_plan(&image, LoaderOptions::default()).unwrap();
+        plan.vmas[0].mapping_flags = 1;
+
+        let err = build_exec_descriptor(
+            &plan,
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap_err();
+
+        assert!(err.contains("mapping flags"), "{err}");
     }
 
     #[test]

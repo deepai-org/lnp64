@@ -1318,6 +1318,7 @@ fn validate_exec_vma_words(words: &[u64]) -> Result<(u64, u64), String> {
     let source_generation = words[7];
     let lineage_epoch = words[8];
     let zero_fill_length = words[9];
+    let mapping_flags = words[10];
     if length == 0 {
         return Err("exec-plan VMA length is zero".to_string());
     }
@@ -1357,6 +1358,9 @@ fn validate_exec_vma_words(words: &[u64]) -> Result<(u64, u64), String> {
     }
     if zero_fill_length > length {
         return Err("exec-plan VMA zero-fill exceeds mapping length".to_string());
+    }
+    if mapping_flags != 0 {
+        return Err("exec-plan VMA mapping flags are unsupported".to_string());
     }
     Ok((virtual_address, end))
 }
@@ -15402,6 +15406,28 @@ mod tests {
             missing_ref.contains("measurement reference"),
             "{missing_ref}"
         );
+    }
+
+    #[test]
+    fn emulator_rejects_exec_descriptor_unknown_vma_mapping_flags() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let mut words = encode_exec_descriptor(&descriptor);
+        let first_vma_mapping_flags =
+            EXEC_PLAN_HEADER_WORDS + EXEC_PLAN_ENTRY_WORDS + EXEC_PLAN_VMA_WORDS - 1;
+
+        words[first_vma_mapping_flags] = 1;
+        let err = Machine::validate_exec_descriptor_words(&words).unwrap_err();
+
+        assert!(err.contains("mapping flags"), "{err}");
     }
 
     #[test]

@@ -8715,6 +8715,7 @@ mod tests {
         );
         assert!(object_format.contains("entry PC, initial SP"));
         assert!(object_format.contains("VMA records: target virtual address"));
+        assert!(object_format.contains("mapping flags\n  (reserved zero in v1)"));
         assert!(object_format.contains("startup FDR grants"));
         assert!(object_format.contains("old image remains"));
     }
@@ -8816,6 +8817,8 @@ mod tests {
             "emulator_rejects_exec_descriptor_nonexecutable_vma_with_image_text_provenance",
             "static_elf_loader_rejects_exec_descriptor_bad_measurements",
             "emulator_rejects_exec_descriptor_measurement_without_authority",
+            "static_elf_loader_rejects_exec_descriptor_unknown_vma_mapping_flags",
+            "emulator_rejects_exec_descriptor_unknown_vma_mapping_flags",
             "emulator_rejects_exec_descriptor_fdr_grant_stale_source_fd_generation_before_commit",
             "emulator_rejects_exec_descriptor_stale_domain_generation_before_commit",
             "emulator_rejects_exec_descriptor_stale_process_generation_before_commit",
