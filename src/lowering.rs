@@ -4180,9 +4180,12 @@ mod tests {
         let emulator_source = include_str!("emulator.rs");
         let lowering_source = include_str!("lowering.rs");
         let real_llc_docker = include_str!("../scripts/run_real_llvm_lnp64_docker.sh");
+        let real_llc_runner = include_str!("../scripts/run_real_llvm_lnp64.sh");
         let bootstrap_smokes = include_str!("../scripts/run_real_llvm_bootstrap_smokes.sh");
+        let fd_shim_source = include_str!("../toolchain/liblnp64_fd_min.c");
+        let process_shim_source = include_str!("../toolchain/liblnp64_process_min.c");
         let evidence_corpus = format!(
-            "{main_source}\n{loader_source}\n{emulator_source}\n{lowering_source}\n{real_llc_docker}\n{bootstrap_smokes}"
+            "{main_source}\n{loader_source}\n{emulator_source}\n{lowering_source}\n{real_llc_docker}\n{real_llc_runner}\n{bootstrap_smokes}\n{fd_shim_source}\n{process_shim_source}"
         );
         let rows = run_elf_rows(run_elf_manifest);
         let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -4947,6 +4950,31 @@ mod tests {
             "real_clang_stdout_exit_run_elf_smokes"
         );
         assert_eq!(stages["stdout_exit"].3, "needs_full_libc_runtime_packaging");
+        for artifact in [
+            "scripts/run_real_llvm_lnp64_docker.sh",
+            "scripts/run_real_llvm_lnp64.sh",
+            "toolchain/liblnp64_fd_min.c",
+            "toolchain/liblnp64_process_min.c",
+            "toolchain/lnp64_llvm_gates.manifest",
+        ] {
+            assert!(
+                stages["stdout_exit"].1.contains(&artifact),
+                "stdout/exit partial row must name artifact {artifact}"
+            );
+        }
+        assert!(real_llc_runner.contains("const char msg[] = \"fd write ok\\n\";"));
+        assert!(real_llc_docker.contains("lnp64-write-linked.elf"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf write execution passed"));
+        assert!(fd_shim_source.contains("ssize_t write(int fd, const void *buf, size_t len)"));
+        assert!(fd_shim_source.contains("__lnp_push"));
+        assert!(process_shim_source.contains("void _exit(int status)"));
+        assert!(process_shim_source.contains("__lnp_exit"));
+        assert!(conformance.contains(
+            "stdout/exit compatibility row remains partial until the production libc/runtime path replaces the smoke-only shim"
+        ));
+        assert!(conformance.contains(
+            "Replace the smoke-only libc shim with Clang-built crt/libc runtime support"
+        ));
         assert!(roadmap.contains("The run-elf path is tested"));
     }
 
