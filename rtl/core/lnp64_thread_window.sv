@@ -41,6 +41,7 @@ module lnp64_thread_window #(
     int unsigned candidate_index;
     logic found_next;
     logic [63:0] best_virtual_deadline;
+    logic [63:0] candidate_virtual_deadline;
     logic [CONTEXT_INDEX_WIDTH-1:0] active_slot_q;
     logic [CONTEXT_COUNT-1:0] context_active_q;
     logic [CONTEXT_COUNT-1:0] context_parked_q;
@@ -55,6 +56,30 @@ module lnp64_thread_window #(
         begin
             context_dispatch_eligible = record.dispatch_eligible &&
                 ((record.effective_tile_mask & TILE_MASK_BIT) != 32'd0);
+        end
+    endfunction
+
+    function automatic logic [63:0] deadline_charge_for_weight(input logic [15:0] weight_index);
+        begin
+            unique case (weight_index[1:0])
+                2'd0: deadline_charge_for_weight = 64'd16;
+                2'd1: deadline_charge_for_weight = 64'd8;
+                2'd2: deadline_charge_for_weight = 64'd4;
+                default: deadline_charge_for_weight = 64'd2;
+            endcase
+        end
+    endfunction
+
+    function automatic logic [63:0] selection_virtual_deadline(
+        input lnp64_thread_sched_t record,
+        input logic is_advancing_active
+    );
+        begin
+            selection_virtual_deadline = record.virtual_deadline;
+            if (is_advancing_active) begin
+                selection_virtual_deadline = record.virtual_deadline +
+                    deadline_charge_for_weight(record.weight_index);
+            end
         end
     endfunction
 
@@ -80,6 +105,8 @@ module lnp64_thread_window #(
         end
 
         next_slot = active_slot_q;
+        candidate_index = 0;
+        candidate_virtual_deadline = '1;
         found_next = 1'b0;
         best_virtual_deadline = '1;
         for (int unsigned offset = 1; offset <= CONTEXT_COUNT; offset = offset + 1) begin
@@ -88,12 +115,17 @@ module lnp64_thread_window #(
                 candidate_index = candidate_index - CONTEXT_COUNT;
             end
             if (context_active_q[candidate_index] &&
-                context_dispatch_eligible(context_record[candidate_index]) &&
-                (!found_next ||
-                 context_record[candidate_index].virtual_deadline < best_virtual_deadline)) begin
-                next_slot = candidate_index[CONTEXT_INDEX_WIDTH-1:0];
-                best_virtual_deadline = context_record[candidate_index].virtual_deadline;
-                found_next = 1'b1;
+                context_dispatch_eligible(context_record[candidate_index])) begin
+                candidate_virtual_deadline = selection_virtual_deadline(
+                    context_record[candidate_index],
+                    advance_valid && candidate_index == active_index
+                );
+                if (!found_next ||
+                    candidate_virtual_deadline < best_virtual_deadline) begin
+                    next_slot = candidate_index[CONTEXT_INDEX_WIDTH-1:0];
+                    best_virtual_deadline = candidate_virtual_deadline;
+                    found_next = 1'b1;
+                end
             end
         end
 
@@ -166,6 +198,11 @@ module lnp64_thread_window #(
                 context_fault_pending_q[collect_slot] <= 1'b0;
             end
             if (advance_valid) begin
+                if (context_active_q[active_slot_q]) begin
+                    context_record_q[active_slot_q].virtual_deadline <=
+                        context_record_q[active_slot_q].virtual_deadline +
+                        deadline_charge_for_weight(context_record_q[active_slot_q].weight_index);
+                end
                 active_slot_q <= next_slot;
             end
         end
@@ -205,8 +242,13 @@ module lnp64_thread_window #(
                 if (context_active_q[assert_ctx]) begin
                     assert (context_dispatch_eligible(context_record[assert_ctx]))
                         else $fatal(1, "SG-SCHED resident context not eligible for this tile");
-                    assert (context_record[next_slot].virtual_deadline <=
-                        context_record[assert_ctx].virtual_deadline)
+                    assert (selection_virtual_deadline(
+                            context_record[next_slot],
+                            advance_valid && next_slot == active_index
+                        ) <= selection_virtual_deadline(
+                            context_record[assert_ctx],
+                            advance_valid && assert_ctx == active_index
+                        ))
                         else $fatal(1, "SG-SCHED barrel skipped earlier virtual deadline");
                 end
             end

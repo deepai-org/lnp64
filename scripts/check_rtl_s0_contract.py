@@ -794,6 +794,8 @@ def main() -> None:
         "SG-SCHED live context missing migration generation",
         "context_dispatch_eligible",
         "best_virtual_deadline",
+        "deadline_charge_for_weight",
+        "selection_virtual_deadline",
         "SG-SCHED barrel skipped earlier virtual deadline",
         "SG-SCHED barrel selected a non-eligible context",
         "SG-SCHED resident context not eligible for this tile",
