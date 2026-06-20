@@ -5948,6 +5948,17 @@ mod tests {
         assert!(shim_manifest.contains("toolchain/include/pthread.h"));
         assert!(libc_roadmap.contains("pthread_atfork"));
         assert!(libc_roadmap.contains("signal dispositions"));
+        assert!(
+            group_evidence["signals_as_events"]
+                .contains(&"sigret_rejects_stale_signal_frame_generation_without_restore"),
+            "signals_as_events row must name stale SIGRET generation evidence"
+        );
+        assert!(
+            conformance.contains("`SIGRET` signal-frame generation rejection")
+                || conformance.contains("stale `SIGRET` signal-frame generation rejection"),
+            "signal conformance must record SIGRET generation coverage"
+        );
+        assert!(conformance.contains("trusted user-visible `SIGRET` tokens"));
         assert!(conformance.contains("fork_clone_inherits_signal_state_and_clears_pending_events"));
         assert!(conformance.contains("fork_clone_does_not_copy_in_flight_ipc_or_waiters"));
         assert!(conformance.contains("fork_clone_copies_vma_heap_metadata_and_isolates_memory"));

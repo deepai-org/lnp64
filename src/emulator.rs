@@ -1087,6 +1087,7 @@ impl Process {
 
 #[derive(Clone)]
 struct SavedSignalContext {
+    generation: u64,
     ip: usize,
     lr: u64,
     regs: [u64; GPR_COUNT],
@@ -1115,6 +1116,7 @@ struct Thread {
     flags: Flags,
     return_stack: Vec<u64>,
     signal_stack: Vec<SavedSignalContext>,
+    signal_generation: u64,
     cap_call_stack: Vec<CallContinuation>,
 }
 
@@ -1135,6 +1137,7 @@ impl Thread {
             flags: Flags::default(),
             return_stack: Vec::new(),
             signal_stack: Vec::new(),
+            signal_generation: 1,
             cap_call_stack: Vec::new(),
         }
     }
@@ -4122,17 +4125,24 @@ impl Machine {
                 self.set_status_ok()?;
             }
             Instr::Sigret => {
+                let expected_generation = self.thread()?.signal_generation;
                 let saved = self
-                    .thread_mut()?
+                    .thread()?
                     .signal_stack
-                    .pop()
+                    .last()
+                    .cloned()
                     .ok_or_else(|| "SIGRET with empty signal stack".to_string())?;
+                if saved.generation != expected_generation {
+                    return Err("SIGRET signal frame generation mismatch".to_string());
+                }
+                self.thread_mut()?.signal_stack.pop();
                 let thread = self.thread_mut()?;
                 thread.ip = saved.ip;
                 thread.lr = saved.lr;
                 thread.regs = saved.regs;
                 thread.flags = saved.flags;
                 thread.return_stack = saved.return_stack;
+                thread.signal_generation = thread.signal_generation.wrapping_add(1).max(1);
             }
             Instr::LockCmpxchg(dst, addr_reg, expected, new_value) => {
                 Self::ensure_result_reg_writable(dst)?;
@@ -10162,6 +10172,7 @@ impl Machine {
                 let saved = {
                     let thread = self.thread()?;
                     SavedSignalContext {
+                        generation: thread.signal_generation,
                         ip: thread.ip,
                         lr: thread.lr,
                         regs: thread.regs,
@@ -14560,6 +14571,46 @@ mod tests {
         machine.deliver_signal_if_needed().unwrap();
         assert!(machine.process().unwrap().pending_events.is_empty());
         assert_eq!(machine.thread().unwrap().ip, 9);
+        assert_eq!(machine.thread().unwrap().signal_stack.len(), 1);
+    }
+
+    #[test]
+    fn sigret_rejects_stale_signal_frame_generation_without_restore() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        machine
+            .process_mut()
+            .unwrap()
+            .signal_handlers
+            .insert(2, SignalDisposition::Handler(7));
+        {
+            let thread = machine.thread_mut().unwrap();
+            thread.ip = 42;
+            thread.regs[2] = 99;
+        }
+
+        machine.queue_process_event(1, NativeEvent::kill_signal(2));
+        machine.deliver_signal_if_needed().unwrap();
+        let stale = machine.thread().unwrap().signal_stack[0].clone();
+        let delivered_generation = machine.thread().unwrap().signal_generation;
+
+        machine.exec(Instr::Sigret).unwrap();
+        assert_eq!(machine.thread().unwrap().ip, 42);
+        assert_eq!(machine.thread().unwrap().regs[2], 99);
+        assert!(machine.thread().unwrap().signal_stack.is_empty());
+        assert!(machine.thread().unwrap().signal_generation > delivered_generation);
+
+        {
+            let thread = machine.thread_mut().unwrap();
+            thread.signal_stack.push(stale);
+            thread.ip = 123;
+            thread.regs[2] = 456;
+        }
+        let err = machine.exec(Instr::Sigret).unwrap_err();
+
+        assert!(err.contains("signal frame generation"), "{err}");
+        assert_eq!(machine.thread().unwrap().ip, 123);
+        assert_eq!(machine.thread().unwrap().regs[2], 456);
         assert_eq!(machine.thread().unwrap().signal_stack.len(), 1);
     }
 
