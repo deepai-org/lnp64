@@ -138,7 +138,7 @@ scripts/check_formal_proof_manifest.py
 scripts/check_theorem_rtl_coupling.py
 scripts/check_formal_rtl_roadmap_audit.py
 
-if grep -RInE '(^|[^[:alnum:]_])(axiom|sorry|admit)([^[:alnum:]_]|$)' "${lean_files[@]}"; then
+if grep -RInE '(^|[^[:alnum:]_])(axiom|sorry|admit)([^[:alnum:]_]|$)' "${lean_files[@]}" formal/WholeChipComposition.lean; then
   printf '%s\n' "formal Lean files must not contain axiom, sorry, or admit" >&2
   exit 1
 fi
@@ -153,6 +153,10 @@ elif [[ "${LNP64_REQUIRE_LEAN:-0}" == "1" ]]; then
 else
   printf '%s\n' "lean not configured; skipping Lean syntax checks (set LNP64_REQUIRE_LEAN=1 to require them)"
 fi
+
+# Whole-chip composition: every reachable whole-chip state satisfies the
+# conjunction of all fifteen engines' severe-goal transition invariants.
+bash scripts/run_rtl_whole_chip_composition_gate.sh
 
 formal/m1_model.py >/dev/null
 formal/m2_gate_model.py >/dev/null

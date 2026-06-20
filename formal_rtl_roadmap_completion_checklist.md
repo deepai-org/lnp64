@@ -16,9 +16,27 @@ typed state, a `Step` relation, an inductive `Reachable`, a preserved
 fail-closed/containment guarantees hold in every reachable state (kernel
 tactics only -- no `sorry`/`admit`/`native_decide`). These are registered in
 `formal/proof_obligations_manifest.json` and checked by the proof gate.
-Remaining work is to lift these reachable-state invariants to full RTL-to-Lean
-refinement proofs for the whole SystemVerilog chip and real architectural
-programs.
+
+These per-engine invariants are now **composed into a whole-chip guarantee**.
+`formal/WholeChipComposition.lean` defines a `Chip` state (the product of all
+fifteen engine states), a `ChipStep` interleaving relation (one engine takes one
+typed step while the others hold), `ChipReachable`, and `chipInvariant` (the
+conjunction of all fifteen engines' invariants), then proves
+`whole_chip_severe_goals_hold_for_all_reachable : ChipReachable c -> chipInvariant
+c` -- i.e. **every reachable whole-chip state simultaneously satisfies every
+engine's severe-goal invariant** -- by lifting each engine's `invariant_step` to
+the composite (kernel tactics only). Per-severe-goal corollaries
+(`sg_*_whole_chip`) project the individual guarantees (no-forged-authority,
+revocation/generation safety, domain containment, VMA/heap memory safety,
+DMA confinement, scheduler single-location, no-lost-wakeups, gate-continuation
+uniqueness, servicelet containment, fault terminal progress). Checked by
+`scripts/run_rtl_whole_chip_composition_gate.sh` (wired into the proof gate).
+
+Remaining work is the existential RTL-to-Lean **refinement** step (a checked
+simulation relation from each engine's RTL clock step to its Lean `Step`, which
+would let the whole-chip invariant be discharged about the actual SystemVerilog
+rather than the executable transition mirror) and extending the composition to
+real multi-engine architectural programs.
 
 Every engine slice M1-M15 now emits schema-owned typed commit and state
 projection records (`lnp64_m*_commit_t`/`lnp64_m*_state_projection_t` packed
