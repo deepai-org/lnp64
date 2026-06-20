@@ -6358,6 +6358,7 @@ mod tests {
         let rtl_linked_llvm_smoke = include_str!("../scripts/run_rtl_top_linked_llvm_smoke.sh");
         let rtl_manifest_runner = include_str!("../scripts/run_rtl_top_program_manifest.sh");
         let top_manifest = include_str!("../tests/rtl/top_level_program_manifest.json");
+        let main_source = include_str!("main.rs");
         let rows: Vec<_> = retirement_manifest
             .lines()
             .filter(|line| !line.trim().is_empty() && !line.starts_with('#'))
@@ -6379,9 +6380,12 @@ mod tests {
         assert!(scopes.contains("legacy_assembly_smokes"));
         assert!(scopes.contains("rtl_flat_exec_smokes"));
         assert!(scopes.contains("software_package_gates"));
+        assert!(scopes.contains("custom_c_frontend"));
         for (_, status, artifacts, forbidden, evidence) in &rows {
             assert!(
-                *status == "allowed_smoke_generator" || *status == "real_toolchain_required",
+                *status == "allowed_smoke_generator"
+                    || *status == "real_toolchain_required"
+                    || *status == "removed",
                 "unknown retirement manifest status {status}"
             );
             assert!(!artifacts.is_empty());
@@ -6394,6 +6398,11 @@ mod tests {
         assert!(run_demos.contains("for src in demos/*.s"));
         assert!(!run_demos.contains("for src in demos/*.c"));
         assert!(!run_demos.contains("include_legacy_c_frontend"));
+        assert!(!main_source.contains("c_compiler"));
+        assert!(!main_source.contains("compile-c"));
+        assert!(!main_source.contains("compile_c"));
+        assert!(!main_source.contains("run-c"));
+        assert!(retirement_manifest.contains("custom_c_frontend|removed|none"));
         assert!(
             conformance_gates
                 .contains("legacy_assembler_smoke_only_C_coverage_lives_in_real_clang_lld_run_elf")

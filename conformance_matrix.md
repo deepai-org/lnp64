@@ -19,9 +19,9 @@ Aggregate gates:
   adversarial/fault tests, package tests, NetBSD personality gates, planned
   LLVM-built versions, and aggregate hygiene.
 - `toolchain/lnp64_toy_compiler_retirement.manifest` keeps the legacy
-  assembler/custom frontend path limited to assembly and RTL flat-exec smoke
-  generation; C, package, userland, and NetBSD coverage must use real
-  Clang/lld/run-elf gates.
+  assembler path limited to assembly and RTL flat-exec smoke generation,
+  records the custom Rust C frontend as removed, and requires C, package,
+  userland, and NetBSD coverage to use real Clang/lld/run-elf gates.
 - `scripts/run_software_gates.sh` runs the host Rust tests, toolchain contract
   checks, the planned LLVM gate dry-run, demos, userland, NetBSD personality
   smoke/system gates, and the real Clang/lld package gate.
