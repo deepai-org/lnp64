@@ -101,6 +101,11 @@ static void lnp64_out_signed(struct lnp64_snprintf_out *out, long long value) {
   lnp64_out_unsigned(out, magnitude, 10);
 }
 
+extern double __muldf3(double a, double b) __attribute__((weak));
+extern double __divdf3(double a, double b) __attribute__((weak));
+extern double __subdf3(double a, double b) __attribute__((weak));
+extern long long __fixdfdi(double a) __attribute__((weak));
+
 static void lnp64_out_double(struct lnp64_snprintf_out *out, double value,
                              int precision, char fmt) {
   union {
@@ -109,13 +114,15 @@ static void lnp64_out_double(struct lnp64_snprintf_out *out, double value,
   } bits;
   bits.d = value;
 
-  if (bits.u & 0x8000000000000000ULL)
+  int is_negative = (bits.u >> 63) & 1;
+  if (is_negative)
     lnp64_out_char(out, '-');
-  value = value < 0.0 ? -value : value;
 
   unsigned long long exp_bits = (bits.u >> 52) & 0x7ff;
+  unsigned long long mant_bits = bits.u & 0x000fffffffffffffULL;
+
   if (exp_bits == 0x7ff) {
-    if ((bits.u & 0x000fffffffffffffULL) != 0)
+    if (mant_bits != 0)
       lnp64_out_string(out, "nan");
     else
       lnp64_out_string(out, "inf");
@@ -125,21 +132,30 @@ static void lnp64_out_double(struct lnp64_snprintf_out *out, double value,
   if (precision < 0)
     precision = 6;
 
+  /* Make value positive for arithmetic */
+  if (is_negative)
+    bits.u ^= 0x8000000000000000ULL;
+  value = bits.d;
+
   if (fmt == 'f' || fmt == 'F') {
-    long long int_part = (long long)value;
-    double frac_part = value - (double)int_part;
+    long long int_part = __fixdfdi(value);
+    double frac_part = __subdf3(value, (double)int_part);
     lnp64_out_signed(out, int_part);
     lnp64_out_char(out, '.');
     for (int i = 0; i < precision; i++) {
-      frac_part *= 10.0;
-      long long digit = (long long)frac_part;
+      double digit_f = __muldf3(frac_part, 10.0);
+      long long digit_i = __fixdfdi(digit_f);
+      int digit = (int)digit_i;
+      if (digit < 0) digit = 0;
+      if (digit > 9) digit = 9;
       lnp64_out_char(out, '0' + (char)digit);
-      frac_part -= (double)digit;
+      frac_part = __subdf3(digit_f, (double)digit_i);
     }
   } else {
     char buffer[32];
     int len = 0;
-    if (value == 0.0) {
+
+    if (exp_bits == 0 && mant_bits == 0) {
       buffer[len++] = '0';
       if (precision > 0) {
         buffer[len++] = '.';
@@ -149,28 +165,37 @@ static void lnp64_out_double(struct lnp64_snprintf_out *out, double value,
     } else {
       int exp = 0;
       double mant = value;
-      while (mant >= 10.0 && exp < 308) {
-        mant /= 10.0;
-        exp++;
-      }
-      while (mant < 1.0 && exp > -308) {
-        mant *= 10.0;
-        exp--;
+
+      for (int iter = 0; iter < 400; iter++) {
+        union { double d; unsigned long long u; } m;
+        m.d = mant;
+        int e = (int)((m.u >> 52) & 0x7ff);
+        if (e == 0x7ff || (e != 0 && e != 0x3ff))
+          break;
+        if (e <= 0x3fe) {
+          mant = __muldf3(mant, 10.0);
+          exp--;
+        } else {
+          mant = __divdf3(mant, 10.0);
+          exp++;
+        }
+        if (exp > 308 || exp < -308)
+          break;
       }
 
-      long long digit = (long long)mant;
-      buffer[len++] = '0' + (char)digit;
-      double frac = mant - (double)digit;
+      long long digit_l = __fixdfdi(mant);
+      buffer[len++] = '0' + (char)digit_l;
+      double frac = __subdf3(mant, (double)digit_l);
 
       int digs = (fmt == 'g' || fmt == 'G') ? (precision - 1) : precision;
       if (digs > 0)
         buffer[len++] = '.';
 
       for (int i = 0; i < digs; i++) {
-        frac *= 10.0;
-        digit = (long long)frac;
-        buffer[len++] = '0' + (char)digit;
-        frac -= (double)digit;
+        double digit_f = __muldf3(frac, 10.0);
+        long long digit_i = __fixdfdi(digit_f);
+        buffer[len++] = '0' + (char)digit_i;
+        frac = __subdf3(digit_f, (double)digit_i);
       }
 
       if (fmt == 'e' || fmt == 'E' || fmt == 'g' || fmt == 'G') {
