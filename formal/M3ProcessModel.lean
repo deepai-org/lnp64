@@ -164,4 +164,131 @@ theorem m3_exec_cancel_terminal :
     initialMachine, parent0, childSlot0, execCancelReachesTerminal
   ]
 
+/- Packed-bit decode model for the M3 process/thread lifecycle witness.
+
+Mirrors the M1/M2/M4/M5/M7/M14 packed-bit machinery so the emitted
+lnp64_m3_process_commit_t and lnp64_m3_state_projection_t bit vectors can be
+decode-checked against this Lean model. Every M3 field is a plain scalar/bool
+slice. -/
+
+structure PackedFieldLayout where
+  name : String
+  width : Nat
+  lsb : Nat
+  msb : Nat
+deriving DecidableEq, Repr
+
+def packedSchemaWidth (schema : List (String × Nat)) : Nat :=
+  schema.foldl (fun total field => total + field.2) 0
+
+def packedSchemaLayoutFrom : Nat -> List (String × Nat) -> List PackedFieldLayout
+  | _cursor, [] => []
+  | cursor, field :: rest =>
+      let lsb := cursor - field.2
+      { name := field.1, width := field.2, lsb := lsb, msb := cursor - 1 } ::
+        packedSchemaLayoutFrom lsb rest
+
+def packedSchemaLayout (schema : List (String × Nat)) : List PackedFieldLayout :=
+  packedSchemaLayoutFrom (packedSchemaWidth schema) schema
+
+def packedFieldWithinWidth (totalWidth : Nat) (field : PackedFieldLayout) : Bool :=
+  decide (field.width > 0) &&
+  decide (field.lsb + field.width = field.msb + 1) &&
+  decide (field.msb < totalWidth)
+
+def packedLayoutWithinWidth (totalWidth : Nat) (layout : List PackedFieldLayout) : Bool :=
+  layout.all (packedFieldWithinWidth totalWidth)
+
+def packedLayoutStartsAtWidth (totalWidth : Nat) : List PackedFieldLayout -> Bool
+  | [] => decide (totalWidth = 0)
+  | field :: _rest => decide (field.msb + 1 = totalWidth)
+
+def packedLayoutAdjacentContiguous : List PackedFieldLayout -> Bool
+  | [] => true
+  | _field :: [] => true
+  | first :: second :: rest =>
+      decide (first.lsb = second.msb + 1) &&
+      packedLayoutAdjacentContiguous (second :: rest)
+
+def packedLayoutEndsAtZero : List PackedFieldLayout -> Bool
+  | [] => true
+  | field :: [] => decide (field.lsb = 0)
+  | _field :: rest => packedLayoutEndsAtZero rest
+
+def packedLayoutCoversWidth (totalWidth : Nat) (layout : List PackedFieldLayout) : Bool :=
+  packedLayoutWithinWidth totalWidth layout &&
+  packedLayoutStartsAtWidth totalWidth layout &&
+  packedLayoutAdjacentContiguous layout &&
+  packedLayoutEndsAtZero layout
+
+def packedBitSlice (bits lsb width : Nat) : Nat :=
+  (bits / (2 ^ lsb)) % (2 ^ width)
+
+def packedFieldValue (bits : Nat) (field : PackedFieldLayout) : Nat :=
+  packedBitSlice bits field.lsb field.width
+
+def packedLayoutFieldValue
+    (bits : Nat)
+    (fieldName : String) : List PackedFieldLayout -> Option Nat
+  | [] => none
+  | field :: rest =>
+      if field.name == fieldName then
+        some (packedFieldValue bits field)
+      else
+        packedLayoutFieldValue bits fieldName rest
+
+def rtlM3CommitPackedSchema : List (String × Nat) :=
+  [ ("op", 8)
+  , ("status", 16)
+  , ("parent_tid", 32)
+  , ("child_tid", 32)
+  , ("child_generation", 32)
+  , ("join_generation", 32)
+  , ("exec_epoch", 32)
+  , ("exit_code", 32) ]
+
+def rtlM3StateProjectionPackedSchema : List (String × Nat) :=
+  [ ("op", 8)
+  , ("status", 16)
+  , ("parent_state", 2)
+  , ("child_state", 2)
+  , ("parent_tid", 32)
+  , ("child_tid", 32)
+  , ("child_generation", 32)
+  , ("join_generation", 32)
+  , ("exec_epoch", 32)
+  , ("clone_created", 1)
+  , ("child_exit_signaled", 1)
+  , ("parent_join_completed", 1)
+  , ("exec_barrier_stopped_sibling", 1)
+  , ("stale_join_rejected", 1)
+  , ("exec_cancel_terminal", 1)
+  , ("exactly_one_thread_location", 1) ]
+
+def rtlM3CommitPackedLayout : List PackedFieldLayout :=
+  packedSchemaLayout rtlM3CommitPackedSchema
+
+def rtlM3StateProjectionPackedLayout : List PackedFieldLayout :=
+  packedSchemaLayout rtlM3StateProjectionPackedSchema
+
+theorem rtlM3CommitPackedSchema_width :
+    packedSchemaWidth rtlM3CommitPackedSchema = 216 := by
+  decide
+
+theorem rtlM3StateProjectionPackedSchema_width :
+    packedSchemaWidth rtlM3StateProjectionPackedSchema = 195 := by
+  decide
+
+theorem rtlM3CommitPackedLayout_covers_schema_width :
+    packedLayoutCoversWidth
+      (packedSchemaWidth rtlM3CommitPackedSchema)
+      rtlM3CommitPackedLayout = true := by
+  decide
+
+theorem rtlM3StateProjectionPackedLayout_covers_schema_width :
+    packedLayoutCoversWidth
+      (packedSchemaWidth rtlM3StateProjectionPackedSchema)
+      rtlM3StateProjectionPackedLayout = true := by
+  decide
+
 end Lnp64.M3

@@ -275,6 +275,15 @@ package lnp64_pkg;
     } lnp64_m2_gate_op_e;
 
     typedef enum logic [7:0] {
+        LNP64_M3_COMMIT_CLONE         = 8'd1,
+        LNP64_M3_COMMIT_CHILD_EXIT    = 8'd2,
+        LNP64_M3_COMMIT_PARENT_JOIN   = 8'd3,
+        LNP64_M3_COMMIT_EXEC_BARRIER  = 8'd4,
+        LNP64_M3_COMMIT_STALE_JOIN    = 8'd5,
+        LNP64_M3_COMMIT_EXEC_CANCEL   = 8'd6
+    } lnp64_m3_process_op_e;
+
+    typedef enum logic [7:0] {
         LNP64_M14_COMMIT_DELEGATE      = 8'd1,
         LNP64_M14_COMMIT_CREATE_CHILD  = 8'd2,
         LNP64_M14_COMMIT_EXCESS_BUDGET = 8'd3,
@@ -636,6 +645,36 @@ package lnp64_pkg;
         logic        fault_delivery_gate_ok;
         logic        signal_compatibility_ok;
     } lnp64_m2_state_projection_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] parent_tid;
+        logic [31:0] child_tid;
+        logic [31:0] child_generation;
+        logic [31:0] join_generation;
+        logic [31:0] exec_epoch;
+        logic [31:0] exit_code;
+    } lnp64_m3_process_commit_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [1:0]  parent_state;
+        logic [1:0]  child_state;
+        logic [31:0] parent_tid;
+        logic [31:0] child_tid;
+        logic [31:0] child_generation;
+        logic [31:0] join_generation;
+        logic [31:0] exec_epoch;
+        logic        clone_created;
+        logic        child_exit_signaled;
+        logic        parent_join_completed;
+        logic        exec_barrier_stopped_sibling;
+        logic        stale_join_rejected;
+        logic        exec_cancel_terminal;
+        logic        exactly_one_thread_location;
+    } lnp64_m3_state_projection_t;
 
     typedef struct packed {
         logic [7:0]  op;

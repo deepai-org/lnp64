@@ -17,7 +17,10 @@ module lnp64_m3_process (
     output logic exec_barrier_stopped_sibling,
     output logic stale_join_rejected,
     output logic exec_cancel_terminal,
-    output logic exactly_one_thread_location
+    output logic exactly_one_thread_location,
+    output logic typed_commit_valid,
+    output lnp64_m3_process_commit_t typed_commit,
+    output lnp64_m3_state_projection_t typed_state_projection
 );
     typedef enum logic [3:0] {
         P_RESET,
@@ -84,6 +87,42 @@ module lnp64_m3_process (
         return {30'd0, seed[21:20]} + 32'd1;
     endfunction
 
+    task automatic commit_m3(
+        input lnp64_m3_process_op_e op,
+        input logic [15:0] status,
+        input logic [31:0] exit_code
+    );
+        typed_commit_valid <= 1'b1;
+        typed_commit.op <= op;
+        typed_commit.status <= status;
+        typed_commit.parent_tid <= parent_tid;
+        typed_commit.child_tid <= child_tid;
+        typed_commit.child_generation <= child_generation;
+        typed_commit.join_generation <= join_generation;
+        typed_commit.exec_epoch <= exec_epoch;
+        typed_commit.exit_code <= exit_code;
+    endtask
+
+    always_comb begin
+        typed_state_projection = '0;
+        typed_state_projection.op = typed_commit.op;
+        typed_state_projection.status = typed_commit.status;
+        typed_state_projection.parent_state = parent_state;
+        typed_state_projection.child_state = child_state;
+        typed_state_projection.parent_tid = parent_tid;
+        typed_state_projection.child_tid = child_tid;
+        typed_state_projection.child_generation = child_generation;
+        typed_state_projection.join_generation = join_generation;
+        typed_state_projection.exec_epoch = exec_epoch;
+        typed_state_projection.clone_created = clone_created;
+        typed_state_projection.child_exit_signaled = child_exit_signaled;
+        typed_state_projection.parent_join_completed = parent_join_completed;
+        typed_state_projection.exec_barrier_stopped_sibling = exec_barrier_stopped_sibling;
+        typed_state_projection.stale_join_rejected = stale_join_rejected;
+        typed_state_projection.exec_cancel_terminal = exec_cancel_terminal;
+        typed_state_projection.exactly_one_thread_location = exactly_one_thread_location;
+    end
+
     always_comb begin
         exactly_one_thread_location =
             parent_state != T_UNUSED &&
@@ -98,6 +137,8 @@ module lnp64_m3_process (
             trace_valid <= 1'b0;
             trace_code <= 8'd0;
             trace_value <= 64'd0;
+            typed_commit_valid <= 1'b0;
+            typed_commit <= '0;
             clone_created <= 1'b0;
             child_exit_signaled <= 1'b0;
             parent_join_completed <= 1'b0;
@@ -115,6 +156,7 @@ module lnp64_m3_process (
             child_waitable_signaled <= 1'b0;
         end else begin
             trace_valid <= 1'b0;
+            typed_commit_valid <= 1'b0;
             unique case (state)
                 P_RESET: begin
                     if (start) begin
@@ -141,6 +183,7 @@ module lnp64_m3_process (
                         trace_valid <= 1'b1;
                         trace_code <= 8'd2;
                         trace_value <= {parent_tid, seeded_child_tid(scenario_seed)};
+                        commit_m3(LNP64_M3_COMMIT_CLONE, LNP64_STATUS_OK, 32'd0);
                         state <= P_CHILD_EXIT;
                     end else begin
                         state <= P_DONE;
@@ -155,6 +198,7 @@ module lnp64_m3_process (
                         trace_valid <= 1'b1;
                         trace_code <= 8'd3;
                         trace_value <= {child_tid, seeded_exit_code(scenario_seed)};
+                        commit_m3(LNP64_M3_COMMIT_CHILD_EXIT, LNP64_STATUS_OK, seeded_exit_code(scenario_seed));
                         state <= P_PARENT_JOIN;
                     end else begin
                         state <= P_DONE;
@@ -169,6 +213,7 @@ module lnp64_m3_process (
                         trace_valid <= 1'b1;
                         trace_code <= 8'd4;
                         trace_value <= {parent_tid[15:0], child_tid[15:0], child_exit_code};
+                        commit_m3(LNP64_M3_COMMIT_PARENT_JOIN, LNP64_STATUS_OK, child_exit_code);
                         state <= P_EXEC_BARRIER;
                     end else begin
                         state <= P_DONE;
@@ -180,6 +225,7 @@ module lnp64_m3_process (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd5;
                     trace_value <= {exec_epoch + 32'd1, seeded_siblings_stopped(scenario_seed)};
+                    commit_m3(LNP64_M3_COMMIT_EXEC_BARRIER, LNP64_STATUS_OK, 32'd0);
                     state <= P_STALE_JOIN;
                 end
                 P_STALE_JOIN: begin
@@ -188,6 +234,7 @@ module lnp64_m3_process (
                         trace_valid <= 1'b1;
                         trace_code <= 8'd6;
                         trace_value <= {48'd0, LNP64_ERR_EREVOKED};
+                        commit_m3(LNP64_M3_COMMIT_STALE_JOIN, LNP64_ERR_EREVOKED, 32'd0);
                         state <= P_EXEC_CANCEL;
                     end else begin
                         state <= P_DONE;
@@ -198,6 +245,7 @@ module lnp64_m3_process (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd7;
                     trace_value <= {48'd0, LNP64_ERR_ECANCELED};
+                    commit_m3(LNP64_M3_COMMIT_EXEC_CANCEL, LNP64_ERR_ECANCELED, 32'd0);
                     state <= P_DONE;
                 end
                 P_DONE: begin

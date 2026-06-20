@@ -18,6 +18,9 @@ module lnp64_m3_tb;
     logic stale_join_rejected;
     logic exec_cancel_terminal;
     logic exactly_one_thread_location;
+    logic typed_commit_valid;
+    lnp64_m3_process_commit_t typed_commit;
+    lnp64_m3_state_projection_t typed_state_projection;
 
     lnp64_m3_process dut(
         .clk(clk),
@@ -34,7 +37,10 @@ module lnp64_m3_tb;
         .exec_barrier_stopped_sibling(exec_barrier_stopped_sibling),
         .stale_join_rejected(stale_join_rejected),
         .exec_cancel_terminal(exec_cancel_terminal),
-        .exactly_one_thread_location(exactly_one_thread_location)
+        .exactly_one_thread_location(exactly_one_thread_location),
+        .typed_commit_valid(typed_commit_valid),
+        .typed_commit(typed_commit),
+        .typed_state_projection(typed_state_projection)
     );
 
     lnp64_m3_assertions assertions_i(
@@ -96,6 +102,48 @@ module lnp64_m3_tb;
                 );
                 default: $display("TRACE unknown code=%0d value=%0d", trace_code, trace_value);
             endcase
+        end
+        if (typed_commit_valid) begin
+            $display(
+                "TTRACE_M3 {\"record\":\"m3_process_commit\",\"op\":%0d,\"status\":%0d,\"parent_tid\":%0d,\"child_tid\":%0d,\"child_generation\":%0d,\"join_generation\":%0d,\"exec_epoch\":%0d,\"exit_code\":%0d}",
+                typed_commit.op,
+                typed_commit.status,
+                typed_commit.parent_tid,
+                typed_commit.child_tid,
+                typed_commit.child_generation,
+                typed_commit.join_generation,
+                typed_commit.exec_epoch,
+                typed_commit.exit_code
+            );
+            $display(
+                "TTRACE_M3_BITS {\"record\":\"m3_process_commit_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m3_process_commit_t),
+                typed_commit
+            );
+            $display(
+                "TTRACE_M3_STATE {\"record\":\"m3_state_projection\",\"op\":%0d,\"status\":%0d,\"parent_state\":%0d,\"child_state\":%0d,\"parent_tid\":%0d,\"child_tid\":%0d,\"child_generation\":%0d,\"join_generation\":%0d,\"exec_epoch\":%0d,\"clone_created\":%0d,\"child_exit_signaled\":%0d,\"parent_join_completed\":%0d,\"exec_barrier_stopped_sibling\":%0d,\"stale_join_rejected\":%0d,\"exec_cancel_terminal\":%0d,\"exactly_one_thread_location\":%0d}",
+                typed_state_projection.op,
+                typed_state_projection.status,
+                typed_state_projection.parent_state,
+                typed_state_projection.child_state,
+                typed_state_projection.parent_tid,
+                typed_state_projection.child_tid,
+                typed_state_projection.child_generation,
+                typed_state_projection.join_generation,
+                typed_state_projection.exec_epoch,
+                typed_state_projection.clone_created,
+                typed_state_projection.child_exit_signaled,
+                typed_state_projection.parent_join_completed,
+                typed_state_projection.exec_barrier_stopped_sibling,
+                typed_state_projection.stale_join_rejected,
+                typed_state_projection.exec_cancel_terminal,
+                typed_state_projection.exactly_one_thread_location
+            );
+            $display(
+                "TTRACE_M3_STATE_BITS {\"record\":\"m3_state_projection_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m3_state_projection_t),
+                typed_state_projection
+            );
         end
     end
 
