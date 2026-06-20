@@ -226,12 +226,71 @@ module lnp64_top_program_tb #(
         end
     endtask
 
+    task automatic display_fabric_cmd(
+        input lnp64_cmd_t cmd
+    );
+        begin
+            $display(
+                "RTL_FABRIC_CMD {\"record\":\"fabric_cmd\",\"op_id\":%0d,\"tile_id\":%0d,\"opcode\":%0d,\"profile\":%0d,\"provenance_id\":%0d,\"source_engine\":%0d,\"destination_engine\":%0d,\"object_home_bank\":%0d,\"reset_epoch\":%0d,\"pid\":%0d,\"tid\":%0d,\"domain_id\":%0d,\"domain_gen\":%0d,\"latency_class\":%0d,\"budget_class\":%0d,\"wait_generation\":%0d,\"weight_index\":%0d,\"virtual_deadline\":%0d,\"credential_snapshot_id\":%0d,\"result_reg\":%0d,\"rights_mask\":%0d,\"flags\":%0d,\"arg0\":%0d,\"arg1\":%0d,\"arg2\":%0d,\"arg3\":%0d,\"arg_block_ptr\":%0d,\"arg_block_len\":%0d,\"cancel_class\":%0d,\"completion_target\":%0d,\"response_route\":%0d}",
+                cmd.op_id,
+                cmd.tile_id,
+                cmd.opcode,
+                cmd.profile,
+                cmd.provenance_id,
+                cmd.source_engine,
+                cmd.destination_engine,
+                cmd.object_home_bank,
+                cmd.reset_epoch,
+                cmd.pid,
+                cmd.tid,
+                cmd.domain_id,
+                cmd.domain_gen,
+                cmd.latency_class,
+                cmd.budget_class,
+                cmd.wait_generation,
+                cmd.weight_index,
+                cmd.virtual_deadline,
+                cmd.credential_snapshot_id,
+                cmd.result_reg,
+                cmd.rights_mask,
+                cmd.flags,
+                cmd.arg0,
+                cmd.arg1,
+                cmd.arg2,
+                cmd.arg3,
+                cmd.arg_block_ptr,
+                cmd.arg_block_len,
+                cmd.cancel_class,
+                cmd.completion_target,
+                cmd.response_route
+            );
+        end
+    endtask
+
     integer trace_tile;
     always @(posedge clk) begin
         for (trace_tile = 0; trace_tile < TB_CORE_TILE_COUNT; trace_tile = trace_tile + 1) begin
             sampled_m1_pre_state[trace_tile] = dut.m1_pre_state_projection_vec[trace_tile];
         end
         #1;
+        if (dut.cap_cmd_valid && dut.cap_cmd_ready) begin
+            display_fabric_cmd(dut.cap_cmd);
+        end
+        if (dut.object_cmd_valid && dut.object_cmd_ready) begin
+            display_fabric_cmd(dut.object_cmd);
+        end
+        if (dut.domain_cmd_valid && dut.domain_cmd_ready) begin
+            display_fabric_cmd(dut.domain_cmd);
+        end
+        if (dut.heap_cmd_valid && dut.heap_cmd_ready) begin
+            display_fabric_cmd(dut.heap_cmd);
+        end
+        if (dut.vma_cmd_valid && dut.vma_cmd_ready) begin
+            display_fabric_cmd(dut.vma_cmd);
+        end
+        if (dut.dma_cmd_valid && dut.dma_cmd_ready) begin
+            display_fabric_cmd(dut.dma_cmd);
+        end
         for (trace_tile = 0; trace_tile < TB_CORE_TILE_COUNT; trace_tile = trace_tile + 1) begin
             if (dut.retire_submit_valid_vec[trace_tile]) begin
                 if (dut.retire_submit_record_vec[trace_tile].opcode == 8'hff) begin

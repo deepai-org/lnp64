@@ -637,6 +637,11 @@
     {"source": "demos/secure_jit.s", "generated_flat_hex": "demos/secure_jit.hex", "required_features": ["core", "vma", "mmap", "mprotect", "wx_refusal", "exec_provenance", "exit"], "status": "active", "rtl_gate": "scripts/run_rtl_top_program_smoke.sh", "comparison": "retire_trace_and_final_state"},
     {"source": "demos/stale_fd_token.s", "generated_flat_hex": "demos/stale_fd_token.hex", "required_features": ["core", "fdr", "open_fd_dyn", "fd_close_dyn", "dynamic_read", "generation_checks", "stale_token_rejection", "errno", "exit"], "status": "active", "rtl_gate": "scripts/run_rtl_top_program_smoke.sh", "comparison": "retire_trace_and_final_state"},
     {
+      "source": "demos/waitable_probe_no_consume.s",
+      "required_features": ["core", "object_ctl_queue_pipe", "waitable_probe_no_consume", "static_fd_read_write", "data_labels", "write_fd", "exit"],
+      "status": "blocked_by_features"
+    },
+    {
       "source": "demos/system.s",
       "required_features": ["core", "signal_delivery", "sigaction", "kill", "sigret", "mmap", "load_ucode", "inb", "clone_spawn", "futex_wait", "futex_wake", "fork", "exec", "source_exec_image", "write_fd", "exit"],
       "status": "active",

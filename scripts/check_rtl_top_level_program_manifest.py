@@ -194,6 +194,8 @@ def main() -> None:
     require("llvm_clang_programs" in manifest_runner, "manifest runner must include LLVM clang program entries")
     require("llvm_linked_programs" in manifest_runner, "manifest runner must include LLVM linked program entries")
     smoke_gate_text = text(ROOT / "scripts/run_rtl_top_program_smoke.sh")
+    require("RTL_FABRIC_CMD" in smoke_gate_text, "shared top-level comparator must consume fabric command provenance records")
+    require("check_fabric_cmd_records" in smoke_gate_text, "shared top-level comparator must validate fabric command provenance records")
     require("RTL_M1_TOP_PRE_STATE" in smoke_gate_text, "shared top-level comparator must consume M1 pre-state projections")
     require("RTL_M1_TOP_STATE" in smoke_gate_text, "shared top-level comparator must consume M1 post-state projections")
     require("check_top_m1_projection_matches_commit" in smoke_gate_text, "shared top-level comparator must check M1 commit/projection alignment")

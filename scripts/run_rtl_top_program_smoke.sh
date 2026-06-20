@@ -189,6 +189,15 @@ def load_records(path: str, prefix: str) -> list[dict]:
     return records
 
 
+def load_optional_records(path: str, prefix: str) -> list[dict]:
+    records = []
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            if line.startswith(prefix):
+                records.append(json.loads(line[len(prefix):]))
+    return records
+
+
 def load_m1_commit_schema() -> tuple[tuple[str, ...], tuple[int, ...]]:
     return load_schema_record("lnp64_m1_cap_commit_t")
 
@@ -209,6 +218,10 @@ def load_schema_record(record_name: str) -> tuple[tuple[str, ...], tuple[int, ..
         fields.append(field)
         widths.append(int(width))
     return tuple(fields), tuple(widths)
+
+
+def load_cmd_schema() -> tuple[tuple[str, ...], tuple[int, ...]]:
+    return load_schema_record("lnp64_cmd_t")
 
 
 def load_schema_enum_values(enum_name: str) -> dict[str, int]:
@@ -246,6 +259,56 @@ def load_m1_commit_op_values() -> dict[str, int]:
         "Pull": values["LNP64_M1_COMMIT_PULL"],
         "RejectFull": values["LNP64_M1_COMMIT_REJECT_FULL"],
     }
+
+
+def check_fabric_cmd_records(path: str) -> None:
+    fabric_records = load_optional_records(path, "RTL_FABRIC_CMD ")
+    if not fabric_records:
+        return
+    cmd_schema_fields, _ = load_cmd_schema()
+    engines = load_schema_enum_values("lnp64_engine_e")
+    routes = load_schema_enum_values("lnp64_response_route_e")
+    valid_destination_engines = {
+        engines["LNP64_ENGINE_CAP"],
+        engines["LNP64_ENGINE_OBJECT"],
+        engines["LNP64_ENGINE_DOMAIN"],
+        engines["LNP64_ENGINE_HEAP"],
+        engines["LNP64_ENGINE_VMA"],
+        engines["LNP64_ENGINE_DMA"],
+    }
+    for idx, record in enumerate(fabric_records):
+        if record.get("record") != "fabric_cmd":
+            raise SystemExit(f"fabric command {idx} has unexpected record {record.get('record')!r}")
+        missing = [field for field in cmd_schema_fields if field not in record]
+        if missing:
+            raise SystemExit(f"fabric command {idx} missing schema field(s): {missing}")
+        if record["source_engine"] != engines["LNP64_ENGINE_CORE"]:
+            raise SystemExit(f"fabric command {idx} source is not CORE: {record['source_engine']}")
+        if record["destination_engine"] not in valid_destination_engines:
+            raise SystemExit(
+                f"fabric command {idx} has invalid destination owner: "
+                f"{record['destination_engine']}"
+            )
+        if record["provenance_id"] != record["op_id"]:
+            raise SystemExit(
+                f"fabric command {idx} provenance/op_id mismatch: "
+                f"{record['provenance_id']} != {record['op_id']}"
+            )
+        if record["reset_epoch"] == 0:
+            raise SystemExit(f"fabric command {idx} has zero reset_epoch")
+        if record["response_route"] != routes["LNP64_RESPONSE_CORE_TILE"]:
+            raise SystemExit(
+                f"fabric command {idx} has unsupported response route: "
+                f"{record['response_route']}"
+            )
+        if record["budget_class"] != record["latency_class"]:
+            raise SystemExit(
+                f"fabric command {idx} budget/latency class mismatch: "
+                f"{record['budget_class']} != {record['latency_class']}"
+            )
+        for identity_field in ("pid", "tid", "domain_id", "domain_gen"):
+            if record[identity_field] == 0:
+                raise SystemExit(f"fabric command {idx} has zero {identity_field}")
 
 
 def load_arch_m1_opcode_map() -> dict[int, int]:
@@ -1067,6 +1130,8 @@ if rtl_retire != emulator_retire:
 
 if os.environ.get("LNP64_RTL_TOP_PROGRAM_CROSS_TILE_WAKE") == "1":
     check_cross_tile_wake_event(sys.argv[1])
+
+check_fabric_cmd_records(sys.argv[1])
 
 rtl_m1_top_commits = []
 rtl_m1_top_commit_bits = []
