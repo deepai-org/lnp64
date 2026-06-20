@@ -1793,7 +1793,7 @@ impl Machine {
                         errno,
                         status: 1,
                         event_id: 0,
-                        fault_id: 0,
+                        fault_id: 1,
                     });
                 continue;
             }
@@ -13825,6 +13825,102 @@ mod tests {
                 .contains_key(&child_ptr)
         );
         assert!(machine.processes.get(&2).unwrap().heap_next > child_heap_next);
+    }
+
+    #[test]
+    fn fork_clone_stresses_vma_heap_mutation_independence() {
+        let mut machine = Machine::new(empty_program());
+        machine.current_tid = 1;
+        let mut ptrs = Vec::new();
+
+        for idx in 0..6 {
+            let ptr = machine.alloc_heap(24 + idx * 8, 32, idx % 2 == 0).unwrap();
+            machine.store_u64(ptr, 0x1000 + idx as u64).unwrap();
+            ptrs.push(ptr);
+        }
+        let parent_heap_next = machine.process().unwrap().heap_next;
+        let parent_allocation_count = machine.process().unwrap().allocations.len();
+        let parent_vma_count = machine.process().unwrap().vmas.len();
+
+        machine
+            .clone_with_profile(CloneProfile::NewProcessCow, Reg(5), None)
+            .unwrap();
+        let child_tid = machine
+            .threads
+            .values()
+            .find(|thread| thread.pid == 2)
+            .unwrap()
+            .tid;
+        assert_eq!(
+            machine.processes.get(&2).unwrap().allocations.len(),
+            parent_allocation_count
+        );
+        assert_eq!(
+            machine.processes.get(&2).unwrap().vmas.len(),
+            parent_vma_count
+        );
+
+        machine.current_tid = child_tid;
+        for (idx, ptr) in ptrs.iter().copied().enumerate() {
+            assert_eq!(machine.load_u64(ptr).unwrap(), 0x1000 + idx as u64);
+            machine.store_u64(ptr, 0x2000 + idx as u64).unwrap();
+        }
+        machine.thread_mut().unwrap().regs[2] = ptrs[1];
+        machine.exec(Instr::Free(Reg(2))).unwrap();
+        let child_ptr = machine.alloc_heap(96, 32, true).unwrap();
+        assert!(
+            !machine
+                .process()
+                .unwrap()
+                .allocations
+                .contains_key(&ptrs[1])
+        );
+        assert!(
+            machine
+                .process()
+                .unwrap()
+                .allocations
+                .contains_key(&child_ptr)
+        );
+
+        machine.current_tid = 1;
+        for (idx, ptr) in ptrs.iter().copied().enumerate() {
+            assert_eq!(machine.load_u64(ptr).unwrap(), 0x1000 + idx as u64);
+        }
+        assert_eq!(machine.process().unwrap().heap_next, parent_heap_next);
+        assert!(
+            machine
+                .process()
+                .unwrap()
+                .allocations
+                .contains_key(&ptrs[1])
+        );
+        assert!(
+            !machine
+                .process()
+                .unwrap()
+                .allocations
+                .contains_key(&child_ptr)
+        );
+        machine.thread_mut().unwrap().regs[2] = ptrs[2];
+        machine.exec(Instr::Free(Reg(2))).unwrap();
+        assert!(
+            !machine
+                .process()
+                .unwrap()
+                .allocations
+                .contains_key(&ptrs[2])
+        );
+
+        machine.current_tid = child_tid;
+        assert_eq!(machine.load_u64(ptrs[2]).unwrap(), 0x2002);
+        assert!(
+            machine
+                .process()
+                .unwrap()
+                .allocations
+                .contains_key(&ptrs[2])
+        );
     }
 
     #[test]

@@ -5915,10 +5915,7 @@ mod tests {
             groups["poll_select_epoll_kqueue"].2, "partial",
             "broader kqueue filters and semantics must stay partial"
         );
-        assert_eq!(
-            groups["process_lifecycle_compat"].2, "partial",
-            "fork/exec lifecycle compatibility must stay partial until larger forked VMA and heap mutation stress exists"
-        );
+        assert_eq!(groups["process_lifecycle_compat"].2, "tested");
         assert!(shim_manifest.contains("userland/fork_wait_test_clang.c"));
         assert!(shim_manifest.contains("userland/elf_exec_test_clang.c"));
         assert!(shim_manifest.contains("pthread_atfork"));
@@ -5929,6 +5926,7 @@ mod tests {
         assert!(conformance.contains("fork_clone_inherits_signal_state_and_clears_pending_events"));
         assert!(conformance.contains("fork_clone_does_not_copy_in_flight_ipc_or_waiters"));
         assert!(conformance.contains("fork_clone_copies_vma_heap_metadata_and_isolates_memory"));
+        assert!(conformance.contains("fork_clone_stresses_vma_heap_mutation_independence"));
         assert!(
             conformance
                 .contains("copied signal masks/dispositions with cleared child pending signals")
@@ -5938,6 +5936,7 @@ mod tests {
             conformance
                 .contains("copied VMA/heap metadata with independent post-fork memory writes")
         );
+        assert!(conformance.contains("larger forked VMA and heap mutation independence"));
         assert!(shim_manifest.contains("userland/poll_test_clang.c"));
         assert!(shim_manifest.contains("real LLVM LNP64 run-elf NetBSD poll child passed"));
         for evidence in [
