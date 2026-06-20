@@ -6044,6 +6044,7 @@ mod tests {
             "jsmn",
             "inih_parse_string",
             "cwalk",
+            "simple_libc",
         ] {
             assert_eq!(statuses[case], "tested", "{case} should be tested");
         }
@@ -6074,7 +6075,6 @@ mod tests {
         assert_eq!(statuses["netbsd_personality_clang"], "partial");
         assert_eq!(statuses["netcat"], "partial");
         assert_eq!(statuses["httpd"], "partial");
-        assert_eq!(statuses["simple_libc"], "partial");
     }
 
     #[test]
