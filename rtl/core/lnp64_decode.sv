@@ -328,6 +328,12 @@ module lnp64_decode (
             8'hca: begin
                 dec.opcode = LNP64_OP_AMO_XOR;
             end
+            8'hcb: begin
+                dec.opcode = LNP64_OP_FUTEX_WAIT;
+            end
+            8'hcc: begin
+                dec.opcode = LNP64_OP_FUTEX_WAKE;
+            end
             8'hcd: begin
                 dec.opcode = LNP64_OP_FENCE;
             end
@@ -565,6 +571,8 @@ module lnp64_decode (
             dec.opcode == LNP64_OP_SET_PCR ||
             dec.opcode == LNP64_OP_CLONE ||
             dec.opcode == LNP64_OP_JOIN ||
+            dec.opcode == LNP64_OP_FUTEX_WAIT ||
+            dec.opcode == LNP64_OP_FUTEX_WAKE ||
             dec.opcode == LNP64_OP_DMA_CTL ||
             dec.opcode == LNP64_OP_ENV_GET ||
             dec.opcode == LNP64_OP_READ_FD ||

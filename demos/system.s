@@ -38,7 +38,7 @@ sig_flag: .quad 0
   LI r14, futex_word
   LI r15, 0
   LI r16, waiter
-  SPAWN r17, r16
+  CLONE.SPAWN r17, r16, r0
   YIELD
   LI r18, 1
   ST [r14, 0], r18

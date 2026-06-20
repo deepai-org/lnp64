@@ -145,6 +145,13 @@ module lnp64_core_tile #(
     logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] thread_sleep_wake_slot;
     logic thread_join_wait_park_valid;
     logic thread_join_child_exit_wake_valid;
+    logic futex_wait_valid;
+    logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] futex_wait_slot;
+    logic [63:0] futex_wait_addr;
+    logic futex_wait_park_valid;
+    logic futex_wake_valid;
+    logic forced_thread_switch_valid;
+    logic [THREAD_CONTEXT_INDEX_WIDTH-1:0] forced_thread_switch_slot;
     logic [31:0] active_tid;
     logic [63:0] pcr_thread_pointer;
     logic [63:0] pcr_uid;
@@ -2033,6 +2040,16 @@ module lnp64_core_tile #(
             dec.opcode == LNP64_OP_EXIT &&
             active_thread_slot != '0 &&
             thread_join_wait_valid;
+        futex_wait_park_valid = state == CORE_EXEC &&
+            dec.supported &&
+            dec.opcode == LNP64_OP_FUTEX_WAIT &&
+            load_double_unaligned(gpr[dec.rd]) == gpr[dec.rs1];
+        futex_wake_valid = state == CORE_EXEC &&
+            dec.supported &&
+            dec.opcode == LNP64_OP_FUTEX_WAKE &&
+            futex_wait_valid &&
+            gpr[dec.rs1] != 64'd0 &&
+            futex_wait_addr == gpr[dec.rd];
         thread_sleep_wake_valid = 1'b0;
         thread_sleep_wake_slot = '0;
         for (int unsigned sleep_ctx = 0; sleep_ctx < THREAD_CONTEXT_COUNT; sleep_ctx = sleep_ctx + 1) begin
@@ -2046,20 +2063,23 @@ module lnp64_core_tile #(
         thread_window_park_valid = (state == CORE_EXEC &&
             dec.supported &&
             dec.opcode == LNP64_OP_SLEEP) ||
-            thread_join_wait_park_valid;
+            thread_join_wait_park_valid ||
+            futex_wait_park_valid;
         thread_window_park_slot = active_thread_slot;
         thread_window_wake_valid =
             (wake_valid && !thread_sleep_wait_valid[0]) ||
             thread_join_child_exit_wake_valid ||
-            thread_sleep_wake_valid;
+            thread_sleep_wake_valid ||
+            futex_wake_valid;
         thread_window_wake_slot = thread_join_child_exit_wake_valid ? thread_join_wait_slot :
-            (thread_sleep_wake_valid ? thread_sleep_wake_slot : '0);
+            (thread_sleep_wake_valid ? thread_sleep_wake_slot :
+                (futex_wake_valid ? futex_wait_slot : '0));
         thread_window_event_valid = wake_valid && !thread_sleep_wait_valid[0];
         thread_window_event_slot = '0;
         thread_window_fault_valid = state == CORE_EXEC && !dec.supported;
         thread_window_fault_slot = active_thread_slot;
-        switch_thread_slot = scheduler_child_issue_valid ?
-            THREAD_CONTEXT_INDEX_WIDTH'(1) : next_thread_slot;
+        switch_thread_slot = forced_thread_switch_valid ? forced_thread_switch_slot :
+            (scheduler_child_issue_valid ? THREAD_CONTEXT_INDEX_WIDTH'(1) : next_thread_slot);
     end
 
     lnp64_thread_window #(
@@ -2085,6 +2105,8 @@ module lnp64_core_tile #(
         .collect_slot(thread_window_collect_slot),
         .park_valid(thread_window_park_valid),
         .park_slot(thread_window_park_slot),
+        .force_next_valid(forced_thread_switch_valid),
+        .force_next_slot(forced_thread_switch_slot),
         .wake_valid(thread_window_wake_valid),
         .wake_slot(thread_window_wake_slot),
         .event_valid(thread_window_event_valid),
@@ -2484,6 +2506,11 @@ module lnp64_core_tile #(
             ucode_port_valid <= 1'b0;
             ucode_port_number <= 64'd0;
             ucode_port_value <= 8'd0;
+            futex_wait_valid <= 1'b0;
+            futex_wait_slot <= '0;
+            futex_wait_addr <= 64'd0;
+            forced_thread_switch_valid <= 1'b0;
+            forced_thread_switch_slot <= '0;
             for (i = 0; i < 32; i = i + 1) begin
                 signal_saved_gpr[i] <= 64'd0;
             end
@@ -4004,6 +4031,32 @@ module lnp64_core_tile #(
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
+                            LNP64_OP_FUTEX_WAIT: begin
+                                if (load_double_unaligned(gpr[dec.rd]) == gpr[dec.rs1]) begin
+                                    futex_wait_valid <= 1'b1;
+                                    futex_wait_slot <= active_thread_slot;
+                                    futex_wait_addr <= gpr[dec.rd];
+                                end
+                                errno_reg <= LNP64_ERR_OK;
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_FUTEX_WAKE: begin
+                                if (futex_wait_valid &&
+                                    gpr[dec.rs1] != 64'd0 &&
+                                    futex_wait_addr == gpr[dec.rd]) begin
+                                    futex_wait_valid <= 1'b0;
+                                    forced_thread_switch_valid <= 1'b1;
+                                    forced_thread_switch_slot <= futex_wait_slot;
+                                end
+                                errno_reg <= LNP64_ERR_OK;
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
                             LNP64_OP_CLONE: begin
                                 if (active_thread_slot == 1'b0 && !thread_active_mask[1] &&
                                     domain_thread_budget_allows(
@@ -4107,6 +4160,8 @@ module lnp64_core_tile #(
                                             domain_thread_count[active_thread_context.domain_id - 32'd1] - 64'd1;
                                     end
                                     if (thread_join_wait_valid) begin
+                                        forced_thread_switch_valid <= 1'b1;
+                                        forced_thread_switch_slot <= thread_join_wait_slot;
                                         thread_join_wait_valid <= 1'b0;
                                     end
                                     state <= CORE_SWITCH;
@@ -4825,6 +4880,7 @@ module lnp64_core_tile #(
                 CORE_SWITCH: begin
                     cmd_valid <= 1'b0;
                     rsp_ready <= 1'b0;
+                    forced_thread_switch_valid <= 1'b0;
                     thread_pc[active_thread_slot] <= pc;
                     thread_return_stack_depth[active_thread_slot] <= return_stack_depth;
                     thread_link_register[active_thread_slot] <= link_register;

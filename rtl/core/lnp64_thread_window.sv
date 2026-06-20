@@ -25,6 +25,8 @@ module lnp64_thread_window #(
     input  logic [CONTEXT_INDEX_WIDTH-1:0] collect_slot,
     input  logic park_valid,
     input  logic [CONTEXT_INDEX_WIDTH-1:0] park_slot,
+    input  logic force_next_valid,
+    input  logic [CONTEXT_INDEX_WIDTH-1:0] force_next_slot,
     input  logic wake_valid,
     input  logic [CONTEXT_INDEX_WIDTH-1:0] wake_slot,
     input  logic event_valid,
@@ -228,7 +230,8 @@ module lnp64_thread_window #(
                         deadline_charge_for_weight(context_record_q[active_slot_q].weight_index);
                     context_event_pending_q[active_slot_q] <= 1'b0;
                 end
-                active_slot_q <= activate_valid ? activate_slot : next_slot;
+                active_slot_q <= force_next_valid ? force_next_slot :
+                    (activate_valid ? activate_slot : next_slot);
             end
         end
     end
@@ -253,6 +256,12 @@ module lnp64_thread_window #(
                 assert (seed_context.tile_id == TILE_ID[31:0] &&
                     seed_context.active_location == TILE_ID[31:0])
                     else $fatal(1, "SG-SCHED seed context tile drift");
+            end
+            if (force_next_valid) begin
+                assert (force_next_slot < CONTEXT_COUNT)
+                    else $fatal(1, "SG-SCHED forced next slot out of range");
+                assert (context_active_q[force_next_slot] || context_parked_q[force_next_slot])
+                    else $fatal(1, "SG-SCHED forced next slot is not live");
             end
             if (update_valid) begin
                 assert (update_slot < CONTEXT_COUNT)

@@ -411,6 +411,8 @@ def load_rust_flat_to_arch_opcode_map() -> dict[int, int]:
         "FdCloseDyn": "LNP64_OP_FD_CLOSE",
         "CloneSpawn": "LNP64_OP_CLONE",
         "ThreadJoin": "LNP64_OP_JOIN",
+        "FutexWait": "LNP64_OP_FUTEX_WAIT",
+        "FutexWake": "LNP64_OP_FUTEX_WAKE",
         "CapDup": "LNP64_OP_CAP_DUP",
         "CapSend": "LNP64_OP_CAP_SEND",
         "CapRecv": "LNP64_OP_CAP_RECV",
