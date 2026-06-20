@@ -5852,6 +5852,16 @@ test -s "$sbase_cksum_elf"
 printf 'real LLVM LNP64 lld sbase cksum link smoke passed: %s\n' \
   "$sbase_cksum_elf"
 
+sbase_uniq_elf="$build_dir/lnp64-sbase-uniq-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
+  -o "$sbase_uniq_elf" "$crt0_obj" "$build_dir/sbase-uniq-clang-smoke.o" \
+  "$sbase_head_support_impl_obj" "$sbase_time_support_impl_obj" \
+  "$libc_alloc_impl_obj" "$libc_fd_impl_obj" "$libc_string_impl_obj" \
+  "$libc_errno_impl_obj" "$libc_process_impl_obj"
+test -s "$sbase_uniq_elf"
+printf 'real LLVM LNP64 lld sbase uniq link smoke passed: %s\n' \
+  "$sbase_uniq_elf"
+
 sbase_ls_elf="$build_dir/lnp64-sbase-ls-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$sbase_ls_elf" "$crt0_obj" "$build_dir/sbase-ls-clang-smoke.o" \

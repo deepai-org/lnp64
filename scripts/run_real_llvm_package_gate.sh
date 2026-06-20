@@ -31,6 +31,7 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-sbase-head-linked.elf"
         "$build_dir/lnp64-sbase-cmp-linked.elf"
         "$build_dir/lnp64-sbase-cksum-linked.elf"
+        "$build_dir/lnp64-sbase-uniq-linked.elf"
         "$build_dir/lnp64-sbase-ls-linked.elf"
         "$build_dir/lnp64-sbase-find-linked.elf"
         "$build_dir/lnp64-sbase-mkdir-linked.elf"
@@ -79,6 +80,7 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-sbase-head-linked.elf"
         "$build_dir/lnp64-sbase-cmp-linked.elf"
         "$build_dir/lnp64-sbase-cksum-linked.elf"
+        "$build_dir/lnp64-sbase-uniq-linked.elf"
         "$build_dir/lnp64-sbase-ls-linked.elf"
         "$build_dir/lnp64-sbase-find-linked.elf"
         "$build_dir/lnp64-sbase-mkdir-linked.elf"
@@ -265,6 +267,16 @@ run_package() {
       grep -q 'exit=0' <<<"$sbase_cksum_output"
       printf 'real LLVM LNP64 run-elf sbase cksum execution passed: %s\n' \
         "$build_dir/lnp64-sbase-cksum-linked.elf"
+      printf 'alpha\nalpha\nbeta\nbeta\nalpha\n' >"$sbase_fixture_root/input/uniq.txt"
+      "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-uniq-linked.elf" >/dev/null
+      local sbase_uniq_output
+      sbase_uniq_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+        "$build_dir/lnp64-sbase-uniq-linked.elf" uniq input/uniq.txt)"
+      test "$(grep -c '^alpha$' <<<"$sbase_uniq_output")" -eq 2
+      test "$(grep -c '^beta$' <<<"$sbase_uniq_output")" -eq 1
+      grep -q 'exit=0' <<<"$sbase_uniq_output"
+      printf 'real LLVM LNP64 run-elf sbase uniq execution passed: %s\n' \
+        "$build_dir/lnp64-sbase-uniq-linked.elf"
       "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-ls-linked.elf" >/dev/null
       local sbase_ls_output
       sbase_ls_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \

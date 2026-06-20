@@ -23,6 +23,15 @@ FILE *stderr = &lnp64_head_stderr_file;
 
 char *argv0;
 
+void eprintf(const char *format, ...);
+
+void *erealloc(void *ptr, size_t size) {
+  void *next = realloc(ptr, size);
+  if (!next && size)
+    eprintf("realloc:");
+  return next;
+}
+
 static int lnp64_file_fd(FILE *stream) {
   if (!stream)
     return -1;
@@ -196,6 +205,28 @@ static void lnp64_vprint(FILE *stream, const char *format, va_list ap) {
       format++;
       continue;
     }
+    while (*format >= '0' && *format <= '9')
+      format++;
+    if (*format == 'l' && format[1] == 'd') {
+      long value = va_arg(ap, long);
+      unsigned long magnitude;
+      char buf[32];
+      int pos = 0;
+      if (value < 0) {
+        fputc('-', stream);
+        magnitude = (unsigned long)(-(value + 1)) + 1;
+      } else {
+        magnitude = (unsigned long)value;
+      }
+      do {
+        buf[pos++] = (char)('0' + (magnitude % 10));
+        magnitude /= 10;
+      } while (magnitude);
+      while (pos)
+        fputc(buf[--pos], stream);
+      format += 2;
+      continue;
+    }
     if (*format == 'z' && format[1] == 'u') {
       size_t value = va_arg(ap, size_t);
       char buf[32];
@@ -243,6 +274,19 @@ int printf(const char *format, ...) {
   va_list ap;
   va_start(ap, format);
   lnp64_vprint(stdout, format, ap);
+  va_end(ap);
+  return 0;
+}
+
+int vfprintf(FILE *stream, const char *format, va_list ap) {
+  lnp64_vprint(stream, format, ap);
+  return 0;
+}
+
+int fprintf(FILE *stream, const char *format, ...) {
+  va_list ap;
+  va_start(ap, format);
+  lnp64_vprint(stream, format, ap);
   va_end(ap);
   return 0;
 }

@@ -430,6 +430,16 @@ grep -q '^622224091 16 input/cksum.txt$' <<<"$sbase_cksum_output"
 grep -q 'exit=0' <<<"$sbase_cksum_output"
 printf 'real LLVM LNP64 run-elf sbase cksum execution passed: %s\n' \
   target/llvm-lnp64-build/lnp64-sbase-cksum-linked.elf
+printf 'alpha\nalpha\nbeta\nbeta\nalpha\n' >"$sbase_fixture_root/input/uniq.txt"
+"$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-uniq-linked.elf \
+  >/dev/null
+sbase_uniq_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+  target/llvm-lnp64-build/lnp64-sbase-uniq-linked.elf uniq input/uniq.txt)"
+test "$(grep -c '^alpha$' <<<"$sbase_uniq_output")" -eq 2
+test "$(grep -c '^beta$' <<<"$sbase_uniq_output")" -eq 1
+grep -q 'exit=0' <<<"$sbase_uniq_output"
+printf 'real LLVM LNP64 run-elf sbase uniq execution passed: %s\n' \
+  target/llvm-lnp64-build/lnp64-sbase-uniq-linked.elf
 "$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-ls-linked.elf \
   >/dev/null
 sbase_ls_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \

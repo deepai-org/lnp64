@@ -1660,6 +1660,8 @@ mod tests {
             "sbase_cmp_run_elf",
             "sbase_cksum_static_link",
             "sbase_cksum_run_elf",
+            "sbase_uniq_static_link",
+            "sbase_uniq_run_elf",
             "sbase_ls_static_link",
             "sbase_ls_run_elf",
             "sbase_find_static_link",
@@ -3697,9 +3699,13 @@ mod tests {
         assert!(libc_sbase_head_min.contains("ssize_t getline("));
         assert!(libc_sbase_head_min.contains("FILE *fopen("));
         assert!(libc_sbase_head_min.contains("int fshut("));
+        assert!(libc_sbase_head_min.contains("void *erealloc(void *ptr, size_t size)"));
         assert!(libc_sbase_head_min.contains("void weprintf("));
         assert!(libc_sbase_head_min.contains("void enprintf("));
+        assert!(libc_sbase_head_min.contains("int fprintf(FILE *stream"));
+        assert!(libc_sbase_head_min.contains("int vfprintf(FILE *stream"));
         assert!(libc_sbase_head_min.contains("*format == 'z' && format[1] == 'u'"));
+        assert!(libc_sbase_head_min.contains("*format == 'l' && format[1] == 'd'"));
         assert!(libc_sbase_head_min.contains("*format == 'u'"));
         assert!(libc_sbase_head_min.contains("*format == 'o'"));
         assert!(real_llc.contains("liblnp64-sbase-head-min.o"));
@@ -3717,8 +3723,16 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 lld sbase cmp link smoke passed"));
         assert!(real_llc.contains("lnp64-sbase-cksum-linked.elf"));
         assert!(real_llc.contains(r#""$build_dir/sbase-cksum-clang-smoke.o" \"#));
-        assert!(real_llc.contains(r#""$sbase_head_support_impl_obj" "$libc_alloc_impl_obj" "$libc_fd_impl_obj" \"#));
+        assert!(real_llc.contains(
+            r#""$sbase_head_support_impl_obj" "$libc_alloc_impl_obj" "$libc_fd_impl_obj" \"#
+        ));
         assert!(real_llc.contains("real LLVM LNP64 lld sbase cksum link smoke passed"));
+        assert!(real_llc.contains("lnp64-sbase-uniq-linked.elf"));
+        assert!(real_llc.contains(r#""$build_dir/sbase-uniq-clang-smoke.o" \"#));
+        assert!(
+            real_llc.contains(r#""$sbase_head_support_impl_obj" "$sbase_time_support_impl_obj" \"#)
+        );
+        assert!(real_llc.contains("real LLVM LNP64 lld sbase uniq link smoke passed"));
         assert!(real_llc.contains("lnp64-sbase-mkdir-linked.elf"));
         assert!(real_llc.contains(r#""$build_dir/sbase-mkdir-clang-smoke.o" \"#));
         assert!(real_llc.contains(r#""$sbase_fs_support_impl_obj" \"#));
@@ -4260,6 +4274,10 @@ mod tests {
         assert!(real_llc_docker.contains("cksum input/cksum.txt"));
         assert!(real_llc_docker.contains("^622224091 16 input/cksum.txt$"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase cksum execution passed"));
+        assert!(real_llc_docker.contains("lnp64-sbase-uniq-linked.elf"));
+        assert!(real_llc_docker.contains("uniq input/uniq.txt"));
+        assert!(real_llc_docker.contains("grep -c '^alpha$'"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase uniq execution passed"));
         assert!(real_llc_docker.contains("lnp64-sbase-ls-linked.elf"));
         assert!(real_llc_docker.contains("ls input"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase ls execution passed"));
@@ -4512,6 +4530,7 @@ mod tests {
             "real_sbase_head_execution",
             "real_sbase_cmp_execution",
             "real_sbase_cksum_execution",
+            "real_sbase_uniq_execution",
             "real_sbase_ls_execution",
             "real_sbase_find_execution",
             "real_sbase_mkdir_execution",
@@ -4629,6 +4648,7 @@ mod tests {
             "real_sbase_head_execution",
             "real_sbase_cmp_execution",
             "real_sbase_cksum_execution",
+            "real_sbase_uniq_execution",
             "real_sbase_ls_execution",
             "real_sbase_find_execution",
             "real_sbase_mkdir_execution",
@@ -6350,6 +6370,7 @@ mod tests {
             "lnp64-sbase-head-linked.elf",
             "lnp64-sbase-cmp-linked.elf",
             "lnp64-sbase-cksum-linked.elf",
+            "lnp64-sbase-uniq-linked.elf",
             "lnp64-sbase-ls-linked.elf",
             "lnp64-sbase-find-linked.elf",
             "lnp64-sbase-mkdir-linked.elf",
@@ -6367,6 +6388,7 @@ mod tests {
             "real LLVM LNP64 run-elf sbase head execution passed",
             "real LLVM LNP64 run-elf sbase cmp execution passed",
             "real LLVM LNP64 run-elf sbase cksum execution passed",
+            "real LLVM LNP64 run-elf sbase uniq execution passed",
             "real LLVM LNP64 run-elf sbase ls execution passed",
             "real LLVM LNP64 run-elf sbase find execution passed",
             "real LLVM LNP64 run-elf sbase mkdir execution passed",
