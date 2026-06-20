@@ -1639,6 +1639,8 @@ mod tests {
             "sbase_mkdir_run_elf",
             "sbase_ln_static_link",
             "sbase_ln_run_elf",
+            "sbase_chmod_static_link",
+            "sbase_chmod_run_elf",
             "clang_sbase_recurse_support_object",
             "clang_sbase_move_support_object",
             "sbase_mv_static_link",
@@ -3623,6 +3625,11 @@ mod tests {
         assert!(real_llc.contains(r#""$build_dir/sbase-ln-clang-smoke.o" \"#));
         assert!(real_llc.contains("liblnp64-path-min.o"));
         assert!(real_llc.contains("real LLVM LNP64 lld sbase ln link smoke passed"));
+        assert!(real_llc.contains("lnp64-sbase-chmod-linked.elf"));
+        assert!(real_llc.contains(r#""$build_dir/sbase-chmod-clang-smoke.o" \"#));
+        assert!(real_llc.contains(r#""$sbase_fs_support_impl_obj" \"#));
+        assert!(real_llc.contains(r#""$libc_fd_impl_obj" "$libc_string_impl_obj" \"#));
+        assert!(real_llc.contains("real LLVM LNP64 lld sbase chmod link smoke passed"));
         assert!(real_llc.contains("lnp64-sbase-mv-linked.elf"));
         assert!(real_llc.contains(r#""$build_dir/sbase-mv-clang-smoke.o" \"#));
         assert!(real_llc.contains(r#""$sbase_move_support_impl_obj" \"#));
@@ -4135,6 +4142,10 @@ mod tests {
         assert!(real_llc_docker.contains("ln input/cat.txt linked.txt"));
         assert!(real_llc_docker.contains("cmp -s \"$sbase_fixture_root/input/cat.txt\""));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase ln execution passed"));
+        assert!(real_llc_docker.contains("lnp64-sbase-chmod-linked.elf"));
+        assert!(real_llc_docker.contains("chmod 700 chmod.txt"));
+        assert!(real_llc_docker.contains("stat -c '%a'"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase chmod execution passed"));
         assert!(real_llc_docker.contains("lnp64-sbase-mv-linked.elf"));
         assert!(real_llc_docker.contains("mv move-source.txt moved.txt"));
         assert!(real_llc_docker.contains("test ! -e \"$sbase_fixture_root/move-source.txt\""));
@@ -4362,6 +4373,7 @@ mod tests {
             "real_sbase_cat_execution",
             "real_sbase_mkdir_execution",
             "real_sbase_ln_execution",
+            "real_sbase_chmod_execution",
             "real_sbase_mv_execution",
             "real_sbase_rm_execution",
             "real_errno_execution",
@@ -4470,6 +4482,7 @@ mod tests {
             "real_sbase_cat_execution",
             "real_sbase_mkdir_execution",
             "real_sbase_ln_execution",
+            "real_sbase_chmod_execution",
             "real_sbase_mv_execution",
             "real_sbase_rm_execution",
             "real_intrinsic_push_execution",

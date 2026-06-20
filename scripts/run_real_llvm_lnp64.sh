@@ -5725,6 +5725,18 @@ test -s "$sbase_ln_elf"
 printf 'real LLVM LNP64 lld sbase ln link smoke passed: %s\n' \
   "$sbase_ln_elf"
 
+sbase_chmod_elf="$build_dir/lnp64-sbase-chmod-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
+  -o "$sbase_chmod_elf" "$crt0_obj" \
+  "$build_dir/sbase-chmod-clang-smoke.o" \
+  "$sbase_support_impl_obj" "$sbase_fs_support_impl_obj" \
+  "$sbase_recurse_support_impl_obj" "$libc_meta_impl_obj" \
+  "$libc_fd_impl_obj" "$libc_string_impl_obj" "$libc_errno_impl_obj" \
+  "$libc_process_impl_obj"
+test -s "$sbase_chmod_elf"
+printf 'real LLVM LNP64 lld sbase chmod link smoke passed: %s\n' \
+  "$sbase_chmod_elf"
+
 sbase_mv_elf="$build_dir/lnp64-sbase-mv-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$sbase_mv_elf" "$crt0_obj" "$build_dir/sbase-mv-clang-smoke.o" \
