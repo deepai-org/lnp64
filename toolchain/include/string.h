@@ -28,5 +28,10 @@ char *strrchr(const char *s, int c);
 size_t strspn(const char *s, const char *accept);
 char *strstr(const char *haystack, const char *needle);
 char *strtok(char *str, const char *delim);
+int strcasecmp(const char *a, const char *b);
+int strncasecmp(const char *a, const char *b, size_t n);
+size_t strnlen(const char *s, size_t maxlen);
+char *strndup(const char *s, size_t n);
+char *strdup(const char *s);
 
 #endif

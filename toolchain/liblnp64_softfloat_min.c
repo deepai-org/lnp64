@@ -459,6 +459,11 @@ uint64_t __fixunsdfdi(double a) {
   return frac >> (-e);
 }
 
+uint32_t __fixunsdfsi(double a) {
+  uint64_t v = __fixunsdfdi(a);
+  return v > 0xffffffffULL ? 0xffffffffu : (uint32_t)v;
+}
+
 float __truncdfsf2(double a) {
   uint64_t sign;
   int exp, cls;

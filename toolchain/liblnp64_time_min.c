@@ -270,3 +270,39 @@ int settimeofday(const struct timeval *tv, void *tz) {
   (void)tz;
   return -1;
 }
+
+#include <sys/time.h>
+
+int getitimer(int which, struct itimerval *value) {
+  (void)which;
+  if (value) {
+    value->it_interval.tv_sec = 0; value->it_interval.tv_usec = 0;
+    value->it_value.tv_sec = 0; value->it_value.tv_usec = 0;
+  }
+  return 0;
+}
+
+int setitimer(int which, const struct itimerval *value, struct itimerval *ovalue) {
+  (void)which; (void)value;
+  if (ovalue) {
+    ovalue->it_interval.tv_sec = 0; ovalue->it_interval.tv_usec = 0;
+    ovalue->it_value.tv_sec = 0; ovalue->it_value.tv_usec = 0;
+  }
+  return 0;
+}
+
+char *ctime(const time_t *timer) {
+  (void)timer;
+  return "Thu Jan  1 00:00:00 1970\n";
+}
+
+char *asctime(const struct tm *tm) {
+  (void)tm;
+  return "Thu Jan  1 00:00:00 1970\n";
+}
+
+struct tm *localtime_r(const time_t *timer, struct tm *result) {
+  struct tm *r = localtime(timer);
+  if (r && result) *result = *r;
+  return result;
+}

@@ -6,6 +6,11 @@
 #define EXIT_FAILURE 1
 #define EXIT_SUCCESS 0
 
+#define RAND_MAX 2147483647
+
+int rand(void);
+void srand(unsigned int seed);
+
 void abort(void);
 int clearenv(void);
 void exit(int status);
@@ -30,9 +35,16 @@ int abs(int value);
 long labs(long value);
 long long llabs(long long value);
 double strtod(const char *nptr, char **endptr);
+double strtold(const char *nptr, char **endptr);
 long strtol(const char *nptr, char **endptr, int base);
 unsigned long strtoul(const char *nptr, char **endptr, int base);
 long long strtoll(const char *nptr, char **endptr, int base);
 unsigned long long strtoull(const char *nptr, char **endptr, int base);
+int system(const char *command);
+void *bsearch(const void *key, const void *base, size_t nmemb, size_t size,
+              int (*compar)(const void *, const void *));
+int atexit(void (*function)(void));
+long long atoll(const char *nptr);
+char *realpath(const char *path, char *resolved);
 
 #endif

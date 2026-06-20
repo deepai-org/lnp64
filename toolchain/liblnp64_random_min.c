@@ -58,3 +58,6 @@ char *setstate(char *state) {
   lnp64_random_current = state;
   return previous;
 }
+
+int rand(void) { return (int)random(); }
+void srand(unsigned int seed) { srandom(seed); }

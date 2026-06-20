@@ -736,13 +736,6 @@ int remove(const char *filename) {
   return -1;
 }
 
-int rename(const char *oldpath, const char *newpath) {
-  /* Stub: not fully implemented yet */
-  (void)oldpath;
-  (void)newpath;
-  return -1;
-}
-
 static unsigned long lnp64_rename_counter = 0;
 
 char *tmpnam(char *s) {
@@ -768,4 +761,20 @@ int setvbuf(FILE *stream, char *buf, int mode, size_t size) {
   (void)mode;
   (void)size;
   return 0;
+}
+
+FILE *popen(const char *command, const char *type) {
+  (void)command; (void)type; return 0;
+}
+int pclose(FILE *stream) { (void)stream; return -1; }
+int sscanf(const char *str, const char *format, ...) {
+  (void)str; (void)format; return 0;
+}
+int vsprintf(char *str, const char *format, va_list ap) {
+  return vsnprintf(str, 0x7fffffff, format, ap);
+}
+int scanf(const char *format, ...) { (void)format; return 0; }
+void perror(const char *s) {
+  if (s && *s) { fputs(s, stderr); fputs(": ", stderr); }
+  fputs("error\n", stderr);
 }

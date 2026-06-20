@@ -7,6 +7,13 @@ size_t strlen(const char *s) {
   return n;
 }
 
+size_t strnlen(const char *s, size_t maxlen) {
+  size_t n = 0;
+  while (n < maxlen && s[n] != 0)
+    n++;
+  return n;
+}
+
 void *memcpy(void *dst, const void *src, size_t len) {
   unsigned char *d = dst;
   const unsigned char *s = src;
@@ -99,6 +106,14 @@ char *strncpy(char *dst, const char *src, size_t len) {
     dst[i] = 0;
     i = i + 1;
   }
+  return dst;
+}
+
+char *strcat(char *dst, const char *src) {
+  size_t d = strlen(dst);
+  size_t i = 0;
+  while (src[i]) { dst[d + i] = src[i]; i++; }
+  dst[d + i] = 0;
   return dst;
 }
 
@@ -290,4 +305,42 @@ int toupper(int ch) {
   if (islower(ch))
     return ch - ('a' - 'A');
   return ch;
+}
+
+int strcasecmp(const char *a, const char *b) {
+  while (*a && *b) {
+    int ca = tolower((unsigned char)*a);
+    int cb = tolower((unsigned char)*b);
+    if (ca != cb) return ca - cb;
+    a++; b++;
+  }
+  return tolower((unsigned char)*a) - tolower((unsigned char)*b);
+}
+
+int strncasecmp(const char *a, const char *b, size_t n) {
+  while (n-- && *a && *b) {
+    int ca = tolower((unsigned char)*a);
+    int cb = tolower((unsigned char)*b);
+    if (ca != cb) return ca - cb;
+    a++; b++;
+  }
+  if (!n) return 0;
+  return tolower((unsigned char)*a) - tolower((unsigned char)*b);
+}
+
+char *strdup(const char *s) {
+  size_t len = strlen(s) + 1;
+  char *p = malloc(len);
+  if (p) memcpy(p, s, len);
+  return p;
+}
+
+char *strndup(const char *s, size_t n) {
+  size_t len = strnlen(s, n);
+  char *p = malloc(len + 1);
+  if (p) {
+    memcpy(p, s, len);
+    p[len] = '\0';
+  }
+  return p;
 }

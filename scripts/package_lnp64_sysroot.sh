@@ -102,4 +102,19 @@ smoke_output="$("$lnp64_bin" run-elf "$smoke_elf")"
 grep -q 'sysroot smoke' <<<"$smoke_output"
 grep -q 'exit=0' <<<"$smoke_output"
 printf 'LNP64 sysroot run-elf smoke passed: %s\n' "$smoke_elf"
+
+# Build a liblnp64.a archive from the core (non-sbase) object files
+# so programs can link against a single archive without duplicate-symbol errors.
+liblnp64_a="$sysroot/usr/lib/lnp64/liblnp64.a"
+rm -f "$liblnp64_a"
+core_objs=()
+for obj in "$sysroot/usr/lib/lnp64"/liblnp64-*-min.o; do
+  base=$(basename "$obj")
+  # Skip sbase objects — they contain full programs with their own main-helpers
+  case "$base" in liblnp64-sbase-*) continue;; esac
+  core_objs+=("$obj")
+done
+llvm-ar rcs "$liblnp64_a" "${core_objs[@]}"
+printf 'LNP64 liblnp64.a built: %d objects\n' "${#core_objs[@]}"
+
 printf 'LNP64 sysroot packaged: %s\n' "$sysroot"

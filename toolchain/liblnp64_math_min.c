@@ -299,3 +299,64 @@ double acos(double x) {
     return NAN;
   return 1.5707963267948966 - asin(x);
 }
+
+long long llrint(double x) {
+  return (long long)(x + (x >= 0.0 ? 0.5 : -0.5));
+}
+
+long lrint(double x) {
+  return (long)(x + (x >= 0.0 ? 0.5 : -0.5));
+}
+
+double round(double x) {
+  return x >= 0.0 ? floor(x + 0.5) : ceil(x - 0.5);
+}
+
+double sinh(double x) {
+  double e = exp(x);
+  double ne = exp(-x);
+  return (e - ne) * 0.5;
+}
+double cosh(double x) {
+  double e = exp(x);
+  double ne = exp(-x);
+  return (e + ne) * 0.5;
+}
+double tanh(double x) {
+  double e2x = exp(2.0 * x);
+  return (e2x - 1.0) / (e2x + 1.0);
+}
+double modf(double x, double *iptr) {
+  double i = trunc(x);
+  if (iptr) *iptr = i;
+  return x - i;
+}
+double fmin(double a, double b) { return a < b ? a : b; }
+double fmax(double a, double b) { return a > b ? a : b; }
+double cbrt(double x) { return x >= 0 ? pow(x, 1.0/3.0) : -pow(-x, 1.0/3.0); }
+double exp2(double x) { return pow(2.0, x); }
+double expm1(double x) { return exp(x) - 1.0; }
+double log1p(double x) { return log(1.0 + x); }
+double erf(double x) {
+  /* Abramowitz & Stegun approximation */
+  double t = 1.0 / (1.0 + 0.3275911 * (x < 0 ? -x : x));
+  double p = ((((1.061405429*t - 1.453152027)*t) + 1.421413741)*t
+              - 0.284496736)*t + 0.254829592;
+  double r = 1.0 - p * t * exp(-(x*x));
+  return x < 0 ? -r : r;
+}
+double erfc(double x) { return 1.0 - erf(x); }
+double hypot(double x, double y) { return sqrt(x*x + y*y); }
+
+/* float variants */
+float sinf(float x)  { return (float)sin((double)x); }
+float cosf(float x)  { return (float)cos((double)x); }
+float sqrtf(float x) { return (float)sqrt((double)x); }
+float fabsf(float x) { return x < 0 ? -x : x; }
+float floorf(float x){ return (float)floor((double)x); }
+float ceilf(float x) { return (float)ceil((double)x); }
+float roundf(float x){ return (float)round((double)x); }
+float powf(float x, float y) { return (float)pow((double)x,(double)y); }
+float fmodf(float x, float y){ return (float)fmod((double)x,(double)y); }
+float expf(float x)  { return (float)exp((double)x); }
+float logf(float x)  { return (float)log((double)x); }

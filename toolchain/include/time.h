@@ -42,8 +42,14 @@ time_t time(time_t *timer);
 clock_t clock(void);
 int clock_gettime(int clockid, struct timespec *tp);
 struct tm *localtime(const time_t *timer);
+struct tm *localtime_r(const time_t *timer, struct tm *result);
+struct tm *gmtime(const time_t *timer);
+struct tm *gmtime_r(const time_t *timer, struct tm *result);
 time_t mktime(struct tm *tm);
+double difftime(time_t t1, time_t t0);
 char *strptime(const char *s, const char *format, struct tm *tm);
 size_t strftime(char *s, size_t max, const char *format, const struct tm *tm);
+char *ctime(const time_t *timer);
+char *asctime(const struct tm *tm);
 
 #endif

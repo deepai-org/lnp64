@@ -128,3 +128,19 @@ long recv(int fd, void *buf, size_t len, int flags) {
   return lnp64_complete_status((long)__lnp_pull(
       (lnp64_cap_t)(unsigned long)fd, (lnp64_word_t)buf, len));
 }
+
+#include <unistd.h>
+
+int pipe(int pipefd[2]) {
+  int sv[2];
+  sv[0] = socket(AF_UNIX, SOCK_STREAM, 0);
+  sv[1] = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (sv[0] < 0 || sv[1] < 0) return -1;
+  pipefd[0] = sv[0]; pipefd[1] = sv[1];
+  return 0;
+}
+
+int pipe2(int pipefd[2], int flags) {
+  (void)flags;
+  return pipe(pipefd);
+}

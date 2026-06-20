@@ -330,10 +330,14 @@ LNP64TargetLowering::LNP64TargetLowering(const TargetMachine &TM,
                           ISD::ROTR, ISD::BSWAP})
     setOperationAction(Opcode, MVT::i64, Legal);
 
+  // LNP64 is a single-process capability machine; lower all atomic RMW
+  // operations to plain load / op / store sequences.  No hardware support
+  // for LL/SC or CAS is needed because there is only one coherent domain.
   for (unsigned Opcode : {ISD::ATOMIC_SWAP, ISD::ATOMIC_LOAD_ADD,
-                          ISD::ATOMIC_LOAD_AND, ISD::ATOMIC_LOAD_OR,
-                          ISD::ATOMIC_LOAD_XOR, ISD::ATOMIC_CMP_SWAP})
-    setOperationAction(Opcode, MVT::i64, Legal);
+                          ISD::ATOMIC_LOAD_SUB, ISD::ATOMIC_LOAD_AND,
+                          ISD::ATOMIC_LOAD_OR,  ISD::ATOMIC_LOAD_XOR,
+                          ISD::ATOMIC_LOAD_NAND, ISD::ATOMIC_CMP_SWAP})
+    setOperationAction(Opcode, MVT::i64, Custom);
 
   setOperationAction(ISD::ATOMIC_LOAD, MVT::i64, Legal);
   setOperationAction(ISD::ATOMIC_STORE, MVT::i64, Legal);
@@ -342,10 +346,13 @@ LNP64TargetLowering::LNP64TargetLowering(const TargetMachine &TM,
   // and truncating stores.  LNP64 is a single-process capability machine;
   // relaxed atomics on sub-word types need no hardware support.
   for (MVT VT : {MVT::i8, MVT::i16, MVT::i32}) {
-    setOperationAction(ISD::ATOMIC_LOAD,  VT, Custom);
+    setOperationAction(ISD::ATOMIC_LOAD, VT, Custom);
     setOperationAction(ISD::ATOMIC_STORE, VT, Custom);
   }
 
+  setOperationAction(ISD::DYNAMIC_STACKALLOC, MVT::i64, Custom);
+  setOperationAction(ISD::STACKSAVE,         MVT::Other, Custom);
+  setOperationAction(ISD::STACKRESTORE,      MVT::Other, Custom);
   setOperationAction(ISD::GlobalAddress, MVT::i64, Custom);
   setOperationAction(ISD::BR_CC, MVT::i64, Custom);
   setOperationAction(ISD::BRCOND, MVT::Other, Custom);
@@ -441,6 +448,37 @@ LNP64TargetLowering::getRegForInlineAsmConstraint(
 SDValue LNP64TargetLowering::LowerOperation(SDValue Op,
                                             SelectionDAG &DAG) const {
   switch (Op.getOpcode()) {
+  case ISD::STACKSAVE: {
+    SDLoc DL(Op);
+    SDValue Chain = Op.getOperand(0);
+    SDValue SP = DAG.getCopyFromReg(Chain, DL, LNP64::R31, MVT::i64);
+    return DAG.getMergeValues({SP, SP.getValue(1)}, DL);
+  }
+  case ISD::STACKRESTORE: {
+    SDLoc DL(Op);
+    SDValue Chain = Op.getOperand(0);
+    SDValue SP    = Op.getOperand(1);
+    return DAG.getCopyToReg(Chain, DL, LNP64::R31, SP);
+  }
+  case ISD::DYNAMIC_STACKALLOC: {
+    SDLoc DL(Op);
+    SDValue Chain = Op.getOperand(0);
+    SDValue Size  = Op.getOperand(1);
+    SDValue Align = Op.getOperand(2);
+    unsigned AlignVal = cast<ConstantSDNode>(Align)->getZExtValue();
+    if (AlignVal < 8) AlignVal = 8; // LNP64 min stack alignment
+    // Round size up to alignment: size = (size + align-1) & ~(align-1)
+    SDValue AlignMask = DAG.getConstant(AlignVal - 1, DL, MVT::i64);
+    SDValue AlignM1   = DAG.getConstant(AlignVal - 1, DL, MVT::i64);
+    SDValue Rounded = DAG.getNode(ISD::AND, DL, MVT::i64,
+                        DAG.getNode(ISD::ADD, DL, MVT::i64, Size, AlignM1),
+                        DAG.getNOT(DL, AlignMask, MVT::i64));
+    // SP = SP - rounded_size; result = new SP
+    SDValue SP = DAG.getCopyFromReg(Chain, DL, LNP64::R31, MVT::i64);
+    SDValue NewSP = DAG.getNode(ISD::SUB, DL, MVT::i64, SP, Rounded);
+    Chain = DAG.getCopyToReg(SP.getValue(1), DL, LNP64::R31, NewSP);
+    return DAG.getMergeValues({NewSP, Chain}, DL);
+  }
   case ISD::GlobalAddress: {
     auto *G = cast<GlobalAddressSDNode>(Op);
     SDLoc DL(Op);
@@ -471,7 +509,6 @@ SDValue LNP64TargetLowering::LowerOperation(SDValue Op,
   }
   case ISD::ATOMIC_LOAD: {
     // Sub-word atomic loads lower to plain zero-extending loads into i64.
-    llvm_unreachable("LowerOperation ATOMIC_LOAD reached");
     auto *AN = cast<AtomicSDNode>(Op);
     SDLoc DL(Op);
     EVT MemVT = AN->getMemoryVT();
@@ -497,6 +534,61 @@ SDValue LNP64TargetLowering::LowerOperation(SDValue Op,
       Val = DAG.getNode(ISD::TRUNCATE, DL, MemVT, Val);
     return DAG.getStore(Chain, DL, Val, Ptr, MMO);
   }
+  case ISD::ATOMIC_SWAP:
+  case ISD::ATOMIC_LOAD_ADD:
+  case ISD::ATOMIC_LOAD_SUB:
+  case ISD::ATOMIC_LOAD_AND:
+  case ISD::ATOMIC_LOAD_OR:
+  case ISD::ATOMIC_LOAD_XOR:
+  case ISD::ATOMIC_LOAD_NAND: {
+    // Single-threaded lowering: old = load(ptr); store(ptr, old OP val); return old
+    SDLoc DL(Op);
+    auto *AN = cast<AtomicSDNode>(Op);
+    SDValue Chain = AN->getChain();
+    SDValue Ptr   = AN->getBasePtr();
+    SDValue Val   = AN->getVal();
+    MachineMemOperand *MMO = AN->getMemOperand();
+    SDValue Old = DAG.getLoad(MVT::i64, DL, Chain, Ptr,
+                              AN->getPointerInfo(), AN->getOriginalAlign());
+    SDValue NewVal;
+    unsigned OC = Op.getOpcode();
+    if (OC == ISD::ATOMIC_SWAP)
+      NewVal = Val;
+    else if (OC == ISD::ATOMIC_LOAD_ADD)
+      NewVal = DAG.getNode(ISD::ADD,  DL, MVT::i64, Old, Val);
+    else if (OC == ISD::ATOMIC_LOAD_SUB)
+      NewVal = DAG.getNode(ISD::SUB,  DL, MVT::i64, Old, Val);
+    else if (OC == ISD::ATOMIC_LOAD_AND)
+      NewVal = DAG.getNode(ISD::AND,  DL, MVT::i64, Old, Val);
+    else if (OC == ISD::ATOMIC_LOAD_OR)
+      NewVal = DAG.getNode(ISD::OR,   DL, MVT::i64, Old, Val);
+    else if (OC == ISD::ATOMIC_LOAD_XOR)
+      NewVal = DAG.getNode(ISD::XOR,  DL, MVT::i64, Old, Val);
+    else /* NAND */
+      NewVal = DAG.getNode(ISD::XOR, DL, MVT::i64,
+                           DAG.getNode(ISD::AND, DL, MVT::i64, Old, Val),
+                           DAG.getAllOnesConstant(DL, MVT::i64));
+    SDValue St = DAG.getStore(Old.getValue(1), DL, NewVal, Ptr, MMO);
+    return DAG.getMergeValues({Old, St}, DL);
+  }
+  case ISD::ATOMIC_CMP_SWAP: {
+    // Single-threaded CAS: if *ptr == cmp, write swap; always return old value.
+    SDLoc DL(Op);
+    auto *AN = cast<AtomicSDNode>(Op);
+    SDValue Chain = AN->getChain();
+    SDValue Ptr   = AN->getBasePtr();
+    SDValue Cmp   = AN->getOperand(2);
+    SDValue Swap  = AN->getOperand(3);
+    MachineMemOperand *MMO = AN->getMemOperand();
+    SDValue Old = DAG.getLoad(MVT::i64, DL, Chain, Ptr,
+                              AN->getPointerInfo(), AN->getOriginalAlign());
+    // Select: old == cmp ? swap : old
+    SDValue IsEq = DAG.getSetCC(DL, MVT::i64, Old, Cmp, ISD::SETEQ);
+    SDValue NewVal = DAG.getNode(ISD::SELECT, DL, MVT::i64, IsEq, Swap, Old);
+    SDValue St = DAG.getStore(Old.getValue(1), DL, NewVal, Ptr, MMO);
+    // CAS returns (old, success_bit, chain); model as (old, chain)
+    return DAG.getMergeValues({Old, St}, DL);
+  }
   case ISD::VASTART: {
     SDLoc DL(Op);
     SDValue Chain = Op.getOperand(0);
@@ -519,21 +611,17 @@ void LNP64TargetLowering::ReplaceNodeResults(SDNode *N,
   SDLoc DL(N);
   switch (N->getOpcode()) {
   case ISD::ATOMIC_LOAD: {
-    // Type promotion: sub-word atomic loads become i64 zext loads.
+    // Called during type promotion: sub-word atomic loads become i64 zext loads.
     // Push a TRUNCATE back to the original (illegal) type so the type legalizer
     // later calls PromoteIntOp_STORE on any spill stores, producing truncating
-    // stores (ST_W / ST_H / ST_B) rather than 8-byte ST that corrupts neighbors.
+    // stores (ST_W / ST_H / ST_B) rather than full 8-byte ST that corrupts
+    // adjacent stack slots.
     auto *AN = cast<AtomicSDNode>(N);
     EVT MemVT = AN->getMemoryVT();
     SDValue Load = DAG.getExtLoad(
         ISD::ZEXTLOAD, DL, MVT::i64, AN->getChain(), AN->getBasePtr(),
         AN->getPointerInfo(), MemVT, AN->getOriginalAlign(),
         AN->getMemOperand()->getFlags());
-    // Truncate back to the original (illegal) type so downstream type
-    // legalization of STORE nodes emits truncating stores (st.w / st.h / st.b)
-    // rather than full 8-byte stores that corrupt adjacent stack slots.
-    SDValue Trunc = DAG.getNode(ISD::TRUNCATE, DL, N->getValueType(0),
-                                Load.getValue(0));
     Results.push_back(DAG.getNode(ISD::TRUNCATE, DL, N->getValueType(0),
                                   Load.getValue(0)));
     Results.push_back(Load.getValue(1)); // chain

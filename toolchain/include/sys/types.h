@@ -2,6 +2,7 @@
 #define LNP64_SYS_TYPES_H
 
 #include <stddef.h>
+#include <endian.h>
 
 typedef long blkcnt_t;
 typedef long blksize_t;

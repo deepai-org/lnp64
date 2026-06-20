@@ -13,4 +13,7 @@ typedef unsigned long jmp_buf[LNP64_JMPBUF_WORDS];
 int setjmp(jmp_buf env) __attribute__((returns_twice));
 void longjmp(jmp_buf env, int value) __attribute__((noreturn));
 
+#define _setjmp  setjmp
+#define _longjmp longjmp
+
 #endif

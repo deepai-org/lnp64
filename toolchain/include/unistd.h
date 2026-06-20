@@ -16,6 +16,9 @@
 #define _SC_ARG_MAX 0
 #define _SC_LOGIN_NAME_MAX 1
 #define _POSIX_ARG_MAX 4096
+#define _SC_PAGESIZE 30
+#define _SC_PAGE_SIZE _SC_PAGESIZE
+#define _SC_NPROCESSORS_ONLN 84
 
 #define SEEK_SET 0
 #define SEEK_CUR 1
@@ -64,5 +67,33 @@ unsigned int sleep(unsigned int seconds);
 int usleep(unsigned int usec);
 int symlink(const char *target, const char *linkpath);
 ssize_t write(int fd, const void *buf, size_t count);
+int fdatasync(int fd);
+int fsync(int fd);
+int nanosleep(const void *req, void *rem);
+int truncate(const char *path, off_t length);
+int utimes(const char *filename, const void *times);
+int pipe(int pipefd[2]);
+int pipe2(int pipefd[2], int flags);
+int dup(int oldfd);
+int dup2(int oldfd, int newfd);
+int isatty(int fd);
+int gethostname(char *name, size_t len);
+int sethostname(const char *name, size_t len);
+unsigned int sleep(unsigned int seconds);
+int usleep(unsigned int usec);
+unsigned int alarm(unsigned int seconds);
+int chown(const char *path, uid_t owner, gid_t group);
+int lchown(const char *path, uid_t owner, gid_t group);
+int symlink(const char *target, const char *linkpath);
+ssize_t readlink(const char *path, char *buf, size_t bufsiz);
+int access(const char *path, int mode);
+char *getcwd(char *buf, size_t size);
+int chdir(const char *path);
+int rmdir(const char *path);
+
+#define F_OK 0
+#define X_OK 1
+#define W_OK 2
+#define R_OK 4
 
 #endif

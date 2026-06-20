@@ -162,3 +162,207 @@ int pthread_setspecific(pthread_key_t key, const void *value) {
   lnp64_thread_specific[slot][key] = (void *)value;
   return 0;
 }
+
+/* Futex-based mutex: state 0=free, 1=locked, 2=locked+waiters */
+#include <lnp64/futex.h>
+
+int pthread_mutex_init(pthread_mutex_t *m, const pthread_mutexattr_t *a) {
+  (void)a;
+  if (!m) return EINVAL;
+  __atomic_store_n(&m->__opaque, 0, __ATOMIC_SEQ_CST);
+  return 0;
+}
+int pthread_mutex_destroy(pthread_mutex_t *m) { (void)m; return 0; }
+
+int pthread_mutex_lock(pthread_mutex_t *m) {
+  if (!m) return EINVAL;
+  unsigned long expected = 0;
+  if (__atomic_compare_exchange_n(&m->__opaque, &expected, 1, 0,
+                                  __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
+    return 0;
+  /* Slow path: mark waiters, sleep until state becomes 0 */
+  while (1) {
+    /* Set state to 2 (locked+waiters), sleep if it was already locked */
+    unsigned long old = __atomic_exchange_n(&m->__opaque, 2, __ATOMIC_SEQ_CST);
+    if (old == 0) return 0; /* Was free, we grabbed it */
+    futex_wait(&m->__opaque, 2);
+    /* On wake the state may be 0 (someone unlocked), retry */
+  }
+}
+
+int pthread_mutex_trylock(pthread_mutex_t *m) {
+  if (!m) return EINVAL;
+  unsigned long expected = 0;
+  if (__atomic_compare_exchange_n(&m->__opaque, &expected, 1, 0,
+                                  __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
+    return 0;
+  return EBUSY;
+}
+
+int pthread_mutex_unlock(pthread_mutex_t *m) {
+  if (!m) return EINVAL;
+  unsigned long old = __atomic_exchange_n(&m->__opaque, 0, __ATOMIC_SEQ_CST);
+  if (old == 2) futex_wake(&m->__opaque, 1);
+  return 0;
+}
+
+int pthread_mutexattr_init(pthread_mutexattr_t *a) {
+  if (a) a->__opaque = 0; return 0;
+}
+int pthread_mutexattr_destroy(pthread_mutexattr_t *a) { (void)a; return 0; }
+int pthread_mutexattr_settype(pthread_mutexattr_t *a, int t) {
+  (void)a; (void)t; return 0;
+}
+
+/* Futex-based condvar: __opaque is a sequence counter.
+ * wait: snapshot seq, unlock mutex, wait on futex if seq unchanged, relock.
+ * signal/broadcast: bump seq, wake 1 or all. */
+int pthread_cond_init(pthread_cond_t *c, const pthread_condattr_t *a) {
+  (void)a;
+  if (!c) return EINVAL;
+  __atomic_store_n(&c->__opaque, 0, __ATOMIC_SEQ_CST);
+  return 0;
+}
+int pthread_cond_destroy(pthread_cond_t *c) { (void)c; return 0; }
+
+int pthread_cond_wait(pthread_cond_t *c, pthread_mutex_t *m) {
+  if (!c || !m) return EINVAL;
+  unsigned long seq = __atomic_load_n(&c->__opaque, __ATOMIC_SEQ_CST);
+  pthread_mutex_unlock(m);
+  futex_wait(&c->__opaque, seq);
+  pthread_mutex_lock(m);
+  return 0;
+}
+
+int pthread_cond_timedwait(pthread_cond_t *c, pthread_mutex_t *m,
+                           const struct timespec *t) {
+  (void)t;
+  return pthread_cond_wait(c, m);
+}
+
+int pthread_cond_signal(pthread_cond_t *c) {
+  if (!c) return EINVAL;
+  __atomic_fetch_add(&c->__opaque, 1, __ATOMIC_SEQ_CST);
+  futex_wake(&c->__opaque, 1);
+  return 0;
+}
+int pthread_cond_broadcast(pthread_cond_t *c) {
+  if (!c) return EINVAL;
+  __atomic_fetch_add(&c->__opaque, 1, __ATOMIC_SEQ_CST);
+  futex_wake(&c->__opaque, (unsigned long)-1);
+  return 0;
+}
+
+/* Simple futex-based rwlock: positive = #readers, -1 = write-locked */
+int pthread_rwlock_init(pthread_rwlock_t *l, const pthread_rwlockattr_t *a) {
+  (void)a;
+  if (!l) return EINVAL;
+  __atomic_store_n(&l->__opaque, 0, __ATOMIC_SEQ_CST);
+  return 0;
+}
+int pthread_rwlock_destroy(pthread_rwlock_t *l) { (void)l; return 0; }
+
+int pthread_rwlock_rdlock(pthread_rwlock_t *l) {
+  if (!l) return EINVAL;
+  while (1) {
+    unsigned long v = __atomic_load_n(&l->__opaque, __ATOMIC_SEQ_CST);
+    if (v != (unsigned long)-1) {
+      if (__atomic_compare_exchange_n(&l->__opaque, &v, v+1, 0,
+                                      __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
+        return 0;
+    } else {
+      futex_wait(&l->__opaque, (unsigned long)-1);
+    }
+  }
+}
+int pthread_rwlock_tryrdlock(pthread_rwlock_t *l) {
+  if (!l) return EINVAL;
+  unsigned long v = __atomic_load_n(&l->__opaque, __ATOMIC_SEQ_CST);
+  if (v == (unsigned long)-1) return EBUSY;
+  if (__atomic_compare_exchange_n(&l->__opaque, &v, v+1, 0,
+                                  __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
+    return 0;
+  return EBUSY;
+}
+int pthread_rwlock_wrlock(pthread_rwlock_t *l) {
+  if (!l) return EINVAL;
+  while (1) {
+    unsigned long expected = 0;
+    if (__atomic_compare_exchange_n(&l->__opaque, &expected, (unsigned long)-1, 0,
+                                    __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
+      return 0;
+    futex_wait(&l->__opaque, expected);
+  }
+}
+int pthread_rwlock_trywrlock(pthread_rwlock_t *l) {
+  if (!l) return EINVAL;
+  unsigned long expected = 0;
+  if (__atomic_compare_exchange_n(&l->__opaque, &expected, (unsigned long)-1, 0,
+                                  __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
+    return 0;
+  return EBUSY;
+}
+int pthread_rwlock_unlock(pthread_rwlock_t *l) {
+  if (!l) return EINVAL;
+  unsigned long v = __atomic_load_n(&l->__opaque, __ATOMIC_SEQ_CST);
+  if (v == (unsigned long)-1) {
+    __atomic_store_n(&l->__opaque, 0, __ATOMIC_SEQ_CST);
+  } else {
+    __atomic_fetch_sub(&l->__opaque, 1, __ATOMIC_SEQ_CST);
+  }
+  futex_wake(&l->__opaque, 1);
+  return 0;
+}
+
+int pthread_once(pthread_once_t *once, void (*init)(void)) {
+  if (!once) return EINVAL;
+  unsigned long expected = 0;
+  if (__atomic_compare_exchange_n(&once->__opaque, &expected, 1, 0,
+                                  __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
+    init();
+  return 0;
+}
+
+int pthread_spin_init(pthread_spinlock_t *l, int p) {
+  (void)p;
+  if (l) __atomic_store_n(l, 0, __ATOMIC_SEQ_CST);
+  return 0;
+}
+int pthread_spin_destroy(pthread_spinlock_t *l) { (void)l; return 0; }
+int pthread_spin_lock(pthread_spinlock_t *l) {
+  if (!l) return EINVAL;
+  while (__atomic_exchange_n(l, 1, __ATOMIC_SEQ_CST) != 0)
+    __lnp_yield();
+  return 0;
+}
+int pthread_spin_unlock(pthread_spinlock_t *l) {
+  if (!l) return EINVAL;
+  __atomic_store_n(l, 0, __ATOMIC_SEQ_CST);
+  return 0;
+}
+
+int pthread_sigmask(int how, const void *set, void *oldset) {
+  (void)how; (void)set; (void)oldset; return 0;
+}
+int pthread_setcancelstate(int state, int *oldstate) {
+  (void)state; (void)oldstate; return 0;
+}
+
+int pthread_cancel(pthread_t thread) { (void)thread; return 0; }
+
+int pthread_attr_init(pthread_attr_t *a) {
+  if (a) a->__opaque = 0; return 0;
+}
+int pthread_attr_destroy(pthread_attr_t *a) { (void)a; return 0; }
+int pthread_attr_getstacksize(const pthread_attr_t *a, size_t *sz) {
+  (void)a; if (sz) *sz = 65536; return 0;
+}
+int pthread_attr_setstacksize(pthread_attr_t *a, size_t sz) {
+  (void)a; (void)sz; return 0;
+}
+int pthread_attr_setdetachstate(pthread_attr_t *a, int state) {
+  (void)a; (void)state; return 0;
+}
+int pthread_attr_getdetachstate(const pthread_attr_t *a, int *state) {
+  (void)a; if (state) *state = 0; return 0;
+}

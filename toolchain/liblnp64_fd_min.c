@@ -115,3 +115,65 @@ int fchown(int fd, uid_t owner, gid_t group) {
   (void)group;
   return 0;
 }
+
+int fsync(int fd) {
+  (void)fd;
+  return 0;
+}
+
+int fdatasync(int fd) {
+  (void)fd;
+  return 0;
+}
+
+int nanosleep(const void *req, void *rem) {
+  (void)req;
+  (void)rem;
+  __lnp_yield();
+  return 0;
+}
+
+int utimes(const char *filename, const void *times) {
+  (void)filename;
+  (void)times;
+  return 0;
+}
+
+int truncate(const char *path, off_t length) {
+  (void)path;
+  (void)length;
+  return 0;
+}
+
+long sysconf(int name) {
+  if (name == 30 /* _SC_PAGESIZE */)
+    return 4096;
+  if (name == 84 /* _SC_NPROCESSORS_ONLN */)
+    return 1;
+  return -1;
+}
+
+
+#include <sys/uio.h>
+long readv(int fd, const struct iovec *iov, int iovcnt) {
+  long total = 0;
+  for (int i = 0; i < iovcnt; i++) {
+    long n = read(fd, iov[i].iov_base, iov[i].iov_len);
+    if (n < 0) return total > 0 ? total : n;
+    total += n;
+    if ((size_t)n < iov[i].iov_len) break;
+  }
+  return total;
+}
+
+long writev(int fd, const struct iovec *iov, int iovcnt) {
+  long total = 0;
+  for (int i = 0; i < iovcnt; i++) {
+    long n = write(fd, iov[i].iov_base, iov[i].iov_len);
+    if (n < 0) return total > 0 ? total : n;
+    total += n;
+    if ((size_t)n < iov[i].iov_len) break;
+  }
+  return total;
+}
+

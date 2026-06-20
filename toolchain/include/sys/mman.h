@@ -9,10 +9,13 @@
 #define PROT_WRITE 0x2
 #define PROT_EXEC 0x4
 
+#define MAP_SHARED 0x01
 #define MAP_PRIVATE 0x02
+#define MAP_FIXED 0x10
 #define MAP_ANONYMOUS 0x20
 #define MAP_ANON MAP_ANONYMOUS
 #define MAP_FAILED ((void *)~0UL)
+#define MAP_NORESERVE 0x4000
 
 void *mmap(void *addr, size_t len, int prot, int flags, int fd, off_t offset);
 int mprotect(void *addr, size_t len, int prot);

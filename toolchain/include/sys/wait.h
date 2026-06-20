@@ -3,6 +3,10 @@
 
 #include <sys/types.h>
 
+#define WNOHANG   1
+#define WUNTRACED 2
+#define WCONTINUED 8
+
 #define WIFEXITED(status) ((status) < 128)
 #define WEXITSTATUS(status) (status)
 #define WIFSIGNALED(status) ((status) >= 128)

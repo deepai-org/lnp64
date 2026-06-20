@@ -9,6 +9,7 @@ typedef struct __lnp64_file FILE;
 
 #define EOF (-1)
 #define BUFSIZ 1024
+#define FILENAME_MAX 1024
 #define _IONBF 0
 #define _IOLBF 1
 #define _IOFBF 2
@@ -58,5 +59,15 @@ FILE *freopen(const char *path, const char *mode, FILE *stream);
 FILE *tmpfile(void);
 int remove(const char *filename);
 char *tmpnam(char *s);
+int setvbuf(FILE *stream, char *buf, int mode, size_t size);
+int setbuf_fn(FILE *stream, char *buf);
+FILE *popen(const char *command, const char *type);
+int pclose(FILE *stream);
+int sscanf(const char *str, const char *format, ...);
+int vsprintf(char *str, const char *format, va_list ap);
+int vsscanf(const char *str, const char *format, va_list ap);
+int scanf(const char *format, ...);
+int perror_fn(const char *s);
+void perror(const char *s);
 
 #endif

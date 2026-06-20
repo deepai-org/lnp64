@@ -1,3 +1,4 @@
+#include <lnp64/intrinsics.h>
 #include <errno.h>
 #include <dirent.h>
 #include <fcntl.h>
@@ -151,6 +152,22 @@ int closedir(DIR *dirp) {
     return -1;
   }
   return close((int)(long)dirp);
+}
+
+static struct dirent lnp64_readdir_ent;
+
+struct dirent *readdir(DIR *dirp) {
+  if (!dirp) return 0;
+  /* Each read from the directory fd returns one null-terminated name */
+  unsigned long n = (unsigned long)__lnp_pull(
+      (lnp64_cap_t)(long)dirp,
+      (lnp64_word_t)lnp64_readdir_ent.d_name,
+      sizeof(lnp64_readdir_ent.d_name) - 1);
+  if ((long)n <= 0) return 0;
+  lnp64_readdir_ent.d_name[n] = '\0';
+  lnp64_readdir_ent.d_ino = 0;
+  lnp64_readdir_ent.d_type = 0;
+  return &lnp64_readdir_ent;
 }
 
 int mkdirat(int dirfd, const char *path, mode_t mode) {

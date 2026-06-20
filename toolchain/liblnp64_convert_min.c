@@ -160,6 +160,10 @@ long atol(const char *nptr) {
   return strtol(nptr, 0, 10);
 }
 
+long long atoll(const char *nptr) {
+  return strtoll(nptr, 0, 10);
+}
+
 int atoi(const char *nptr) {
   return (int)strtol(nptr, 0, 10);
 }
@@ -204,4 +208,30 @@ __attribute__((weak)) int __ltdf2(double lhs, double rhs) {
 __attribute__((weak)) int __gtdf2(double lhs, double rhs) {
   int c = lnp64_convert_dcmp(lhs, rhs);
   return c == 2 ? -1 : c;
+}
+
+/* strtold: LNP64 has no 80-bit extended float; map to double */
+double strtold(const char *nptr, char **endptr) {
+  return strtod(nptr, endptr);
+}
+
+void *bsearch(const void *key, const void *base, size_t nmemb, size_t size,
+              int (*cmp)(const void *, const void *)) {
+  size_t lo = 0, hi = nmemb;
+  while (lo < hi) {
+    size_t mid = lo + (hi - lo) / 2;
+    int r = cmp(key, (const char *)base + mid * size);
+    if (r == 0) return (void *)((const char *)base + mid * size);
+    if (r < 0) hi = mid; else lo = mid + 1;
+  }
+  return 0;
+}
+int atexit(void (*function)(void)) { (void)function; return 0; }
+char *realpath(const char *path, char *resolved) {
+  if (!resolved) return 0;
+  size_t len = 0;
+  while (path[len]) len++;
+  if (len >= 4096) return 0;
+  for (size_t i = 0; i <= len; i++) resolved[i] = path[i];
+  return resolved;
 }

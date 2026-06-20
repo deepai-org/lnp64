@@ -171,3 +171,13 @@ int unsetenv(const char *name) {
   lnp64_environ_slots[out] = 0;
   return 0;
 }
+
+void __assert_fail(const char *expr, const char *file, int line, const char *func) {
+  (void)func;
+  /* Print assertion failure and abort */
+  extern int fprintf(void *, const char *, ...);
+  extern void *stderr;
+  extern void abort(void);
+  fprintf(stderr, "Assertion failed: %s (%s:%d)\n", expr, file, line);
+  abort();
+}
