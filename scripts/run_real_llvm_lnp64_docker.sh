@@ -421,6 +421,15 @@ sbase_cmp_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" 
 grep -q 'exit=0' <<<"$sbase_cmp_output"
 printf 'real LLVM LNP64 run-elf sbase cmp execution passed: %s\n' \
   target/llvm-lnp64-build/lnp64-sbase-cmp-linked.elf
+printf 'cksum via clang\n' >"$sbase_fixture_root/input/cksum.txt"
+"$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-cksum-linked.elf \
+  >/dev/null
+sbase_cksum_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+  target/llvm-lnp64-build/lnp64-sbase-cksum-linked.elf cksum input/cksum.txt)"
+grep -q '^622224091 16 input/cksum.txt$' <<<"$sbase_cksum_output"
+grep -q 'exit=0' <<<"$sbase_cksum_output"
+printf 'real LLVM LNP64 run-elf sbase cksum execution passed: %s\n' \
+  target/llvm-lnp64-build/lnp64-sbase-cksum-linked.elf
 "$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-ls-linked.elf \
   >/dev/null
 sbase_ls_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \

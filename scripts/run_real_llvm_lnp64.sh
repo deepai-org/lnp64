@@ -5841,6 +5841,17 @@ test -s "$sbase_cmp_elf"
 printf 'real LLVM LNP64 lld sbase cmp link smoke passed: %s\n' \
   "$sbase_cmp_elf"
 
+sbase_cksum_elf="$build_dir/lnp64-sbase-cksum-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
+  -o "$sbase_cksum_elf" "$crt0_obj" \
+  "$build_dir/sbase-cksum-clang-smoke.o" \
+  "$sbase_head_support_impl_obj" "$libc_alloc_impl_obj" "$libc_fd_impl_obj" \
+  "$libc_string_impl_obj" "$libc_errno_impl_obj" \
+  "$libc_process_impl_obj"
+test -s "$sbase_cksum_elf"
+printf 'real LLVM LNP64 lld sbase cksum link smoke passed: %s\n' \
+  "$sbase_cksum_elf"
+
 sbase_ls_elf="$build_dir/lnp64-sbase-ls-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$sbase_ls_elf" "$crt0_obj" "$build_dir/sbase-ls-clang-smoke.o" \

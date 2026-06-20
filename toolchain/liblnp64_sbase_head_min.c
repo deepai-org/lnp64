@@ -209,6 +209,19 @@ static void lnp64_vprint(FILE *stream, const char *format, va_list ap) {
       format += 2;
       continue;
     }
+    if (*format == 'u') {
+      unsigned int value = va_arg(ap, unsigned int);
+      char buf[16];
+      int pos = 0;
+      do {
+        buf[pos++] = (char)('0' + (value % 10));
+        value /= 10;
+      } while (value);
+      while (pos)
+        fputc(buf[--pos], stream);
+      format++;
+      continue;
+    }
     if (*format == 'o') {
       unsigned int value = va_arg(ap, unsigned int);
       char buf[16];
