@@ -28,6 +28,7 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-sbase-dirname-linked.elf"
         "$build_dir/lnp64-sbase-cat-linked.elf"
         "$build_dir/lnp64-sbase-wc-linked.elf"
+        "$build_dir/lnp64-sbase-head-linked.elf"
         "$build_dir/lnp64-sbase-ls-linked.elf"
         "$build_dir/lnp64-sbase-find-linked.elf"
         "$build_dir/lnp64-sbase-mkdir-linked.elf"
@@ -73,6 +74,7 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-sbase-dirname-linked.elf"
         "$build_dir/lnp64-sbase-cat-linked.elf"
         "$build_dir/lnp64-sbase-wc-linked.elf"
+        "$build_dir/lnp64-sbase-head-linked.elf"
         "$build_dir/lnp64-sbase-ls-linked.elf"
         "$build_dir/lnp64-sbase-find-linked.elf"
         "$build_dir/lnp64-sbase-mkdir-linked.elf"
@@ -227,6 +229,20 @@ run_package() {
       grep -q 'exit=0' <<<"$sbase_wc_output"
       printf 'real LLVM LNP64 run-elf sbase wc execution passed: %s\n' \
         "$build_dir/lnp64-sbase-wc-linked.elf"
+      printf 'alpha\nbeta\ngamma\n' >"$sbase_fixture_root/input/head.txt"
+      "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-head-linked.elf" >/dev/null
+      local sbase_head_output
+      sbase_head_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+        "$build_dir/lnp64-sbase-head-linked.elf" head -n 2 input/head.txt)"
+      grep -q '^alpha$' <<<"$sbase_head_output"
+      grep -q '^beta$' <<<"$sbase_head_output"
+      if grep -q '^gamma$' <<<"$sbase_head_output"; then
+        printf 'sbase head printed too many lines\n' >&2
+        exit 1
+      fi
+      grep -q 'exit=0' <<<"$sbase_head_output"
+      printf 'real LLVM LNP64 run-elf sbase head execution passed: %s\n' \
+        "$build_dir/lnp64-sbase-head-linked.elf"
       "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-ls-linked.elf" >/dev/null
       local sbase_ls_output
       sbase_ls_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \

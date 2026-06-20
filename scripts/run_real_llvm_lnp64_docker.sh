@@ -398,6 +398,20 @@ grep -q '^2 3 14 input/wc.txt$' <<<"$sbase_wc_output"
 grep -q 'exit=0' <<<"$sbase_wc_output"
 printf 'real LLVM LNP64 run-elf sbase wc execution passed: %s\n' \
   target/llvm-lnp64-build/lnp64-sbase-wc-linked.elf
+printf 'alpha\nbeta\ngamma\n' >"$sbase_fixture_root/input/head.txt"
+"$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-head-linked.elf \
+  >/dev/null
+sbase_head_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+  target/llvm-lnp64-build/lnp64-sbase-head-linked.elf head -n 2 input/head.txt)"
+grep -q '^alpha$' <<<"$sbase_head_output"
+grep -q '^beta$' <<<"$sbase_head_output"
+if grep -q '^gamma$' <<<"$sbase_head_output"; then
+  printf 'sbase head printed too many lines\n' >&2
+  exit 1
+fi
+grep -q 'exit=0' <<<"$sbase_head_output"
+printf 'real LLVM LNP64 run-elf sbase head execution passed: %s\n' \
+  target/llvm-lnp64-build/lnp64-sbase-head-linked.elf
 "$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-ls-linked.elf \
   >/dev/null
 sbase_ls_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \

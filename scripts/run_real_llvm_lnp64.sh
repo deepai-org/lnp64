@@ -1538,6 +1538,23 @@ grep -q '<isspacerune>:' "$sbase_wc_support_impl_dump"
 printf 'real LLVM LNP64 clang sbase wc support object smoke passed: %s\n' \
   "$sbase_wc_support_impl_obj"
 
+sbase_head_support_impl_c="toolchain/liblnp64_sbase_head_min.c"
+sbase_head_support_impl_obj="$build_dir/liblnp64-sbase-head-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin \
+  -fno-pic -fno-jump-tables -fno-unwind-tables \
+  -fno-asynchronous-unwind-tables -I toolchain/include -I third_party/sbase \
+  -c "$sbase_head_support_impl_c" -o "$sbase_head_support_impl_obj"
+test -s "$sbase_head_support_impl_obj"
+sbase_head_support_impl_dump="$build_dir/liblnp64-sbase-head-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none \
+  "$sbase_head_support_impl_obj" >"$sbase_head_support_impl_dump"
+grep -q '<getline>:' "$sbase_head_support_impl_dump"
+grep -q '<fopen>:' "$sbase_head_support_impl_dump"
+grep -q '<fshut>:' "$sbase_head_support_impl_dump"
+grep -q '<weprintf>:' "$sbase_head_support_impl_dump"
+printf 'real LLVM LNP64 clang sbase head support object smoke passed: %s\n' \
+  "$sbase_head_support_impl_obj"
+
 netcat_obj="$build_dir/netcat-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
@@ -5802,6 +5819,16 @@ sbase_wc_elf="$build_dir/lnp64-sbase-wc-linked.elf"
 test -s "$sbase_wc_elf"
 printf 'real LLVM LNP64 lld sbase wc link smoke passed: %s\n' \
   "$sbase_wc_elf"
+
+sbase_head_elf="$build_dir/lnp64-sbase-head-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
+  -o "$sbase_head_elf" "$crt0_obj" "$build_dir/sbase-head-clang-smoke.o" \
+  "$sbase_head_support_impl_obj" "$sbase_time_support_impl_obj" \
+  "$libc_alloc_impl_obj" "$libc_fd_impl_obj" "$libc_string_impl_obj" \
+  "$libc_errno_impl_obj" "$libc_process_impl_obj"
+test -s "$sbase_head_elf"
+printf 'real LLVM LNP64 lld sbase head link smoke passed: %s\n' \
+  "$sbase_head_elf"
 
 sbase_ls_elf="$build_dir/lnp64-sbase-ls-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
