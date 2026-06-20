@@ -446,28 +446,21 @@ bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_amo.s
 bash scripts/run_rtl_top_llvm_mc_smoke.sh
 bash scripts/run_rtl_top_clang_smoke.sh
 bash scripts/run_rtl_top_linked_llvm_smoke.sh
-bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_return_12.c
-bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_branch_if.c
-bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_loop_sum.c
-bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_factorial_mul.c
-bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_subtract.c
-bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_bitwise.c
-bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_shift.c
-bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_udiv_urem.c
-bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_signed_division.c
-bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_not.c
-bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_call_return.c
-bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_byte_array.c
-bash scripts/run_rtl_top_program_smoke.sh demos/ping_pong.c
-bash scripts/run_rtl_top_program_smoke.sh demos/allocator.c
+bash scripts/run_rtl_top_linked_llvm_smoke.sh tests/rtl/programs/top_linked_main.c
+bash scripts/run_rtl_top_linked_llvm_smoke.sh tests/rtl/programs/top_linked_loop_branch.c
+bash scripts/run_rtl_top_linked_llvm_smoke.sh tests/rtl/programs/top_linked_factorial_mul.c
+bash scripts/run_rtl_top_linked_llvm_smoke.sh tests/rtl/programs/top_linked_bitwise_shift.c
+bash scripts/run_rtl_top_linked_llvm_smoke.sh tests/rtl/programs/top_linked_divrem.c
+bash scripts/run_rtl_top_linked_llvm_smoke.sh tests/rtl/programs/top_linked_byte_array.c
+bash scripts/run_rtl_top_linked_llvm_smoke.sh tests/rtl/programs/top_linked_heap_byte_lanes.c
+bash scripts/run_rtl_top_linked_llvm_smoke.sh tests/rtl/programs/top_linked_clone_join.c
+bash scripts/run_rtl_top_linked_llvm_smoke.sh tests/rtl/programs/top_linked_allocator_native.c
 bash scripts/run_rtl_top_program_smoke.sh demos/allocator_native.s
 bash scripts/run_rtl_top_program_smoke.sh demos/env_get.s
 bash scripts/run_rtl_top_program_smoke.sh demos/exec_target.s
 bash scripts/run_rtl_top_program_smoke.sh demos/dma_copy.s
 bash scripts/run_rtl_top_program_smoke.sh demos/revoked_dma_buffer.s
 bash scripts/run_rtl_top_program_smoke.sh demos/guarded_heap_overflow.s
-bash scripts/run_rtl_top_program_smoke.sh demos/factorial.c
-bash scripts/run_rtl_top_program_smoke.sh demos/hello.c
 bash scripts/run_rtl_top_program_smoke.sh demos/memory_order.s
 cargo run -- asm-flat-exec tests/rtl/programs/top_smoke.s -o /tmp/top_smoke.hex
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_smoke.hex
@@ -483,11 +476,11 @@ bash scripts/run_rtl_proof_gates.sh
 bash scripts/run_rtl_synth_gates.sh
 ```
 
-The current execution-first top-level smoke that exercises a compiler-generated
+The current execution-first top-level smoke that exercises an LLVM-linked
 two-thread queue path is:
 
 ```sh
-LNP64_RTL_TOP_PROGRAM_QUIET=1 LNP64_RTL_TOP_PROGRAM_MAX_CYCLES=50000 bash scripts/run_rtl_top_program_smoke.sh demos/ping_pong.c
+LNP64_RTL_TOP_PROGRAM_QUIET=1 LNP64_RTL_TOP_PROGRAM_MAX_CYCLES=50000 bash scripts/run_rtl_top_linked_llvm_smoke.sh tests/rtl/programs/top_linked_clone_join.c
 ```
 
 After one normal top-program run has rebuilt the Verilator binary, reuse it for
@@ -495,7 +488,7 @@ fast checks:
 
 ```sh
 LNP64_RTL_TOP_PROGRAM_QUIET=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_TOP_PROGRAM_MAX_CYCLES=5000 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_smoke.s
-LNP64_RTL_TOP_PROGRAM_QUIET=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_TOP_PROGRAM_MAX_CYCLES=5000 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_call_return.c
+LNP64_RTL_TOP_PROGRAM_QUIET=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_TOP_PROGRAM_MAX_CYCLES=5000 bash scripts/run_rtl_top_linked_llvm_smoke.sh tests/rtl/programs/top_linked_loop_branch.c
 ```
 
 `scripts/run_rtl_top_program_manifest.sh` builds the top-level Verilator
@@ -512,7 +505,7 @@ LNP64_RTL_FAST=1 LNP64_RTL_TOP_PROGRAM_TILE_COUNT=2 LNP64_RTL_REUSE_BUILD=1 LNP6
 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_SKIP_LINT=1 LNP64_RTL_TOP_PROGRAM_JOBS=4 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_manifest.sh
 LNP64_RTL_FAST=1 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_TOP_PROGRAM_JOBS=4 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_manifest.sh
 LNP64_RTL_FAST=1 LNP64_RTL_TOP_PROGRAM_FILTER='*linked*' bash scripts/run_rtl_top_program_manifest.sh
-LNP64_RTL_FAST=1 LNP64_RTL_TOP_PROGRAM_FILTER='demos/*.s top_heap_byte_lanes.c' bash scripts/run_rtl_top_program_manifest.sh
+LNP64_RTL_FAST=1 LNP64_RTL_TOP_PROGRAM_FILTER='demos/*.s top_linked_heap_byte_lanes.c' bash scripts/run_rtl_top_program_manifest.sh
 LNP64_RTL_FAST=1 LNP64_RTL_TOP_PROGRAM_FILTER='top_dma_revoke_stale.s' bash scripts/run_rtl_top_program_manifest.sh
 LNP64_RTL_TOP_PROGRAM_TILE_COUNT=4 LNP64_RTL_TOP_PROGRAM_QUIET=1 LNP64_RTL_REUSE_BUILD=0 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_cap_transfer_valid.s
 LNP64_RTL_TOP_PROGRAM_QUIET=1 LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT="$PWD/target/rtl-verilator" bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_dma_revoke_stale.s
@@ -527,8 +520,8 @@ LNP64_RTL_REUSE_BUILD=1 LNP64_RTL_TOP_PROGRAM_SKIP_BUILD=1 LNP64_RTL_BUILD_ROOT=
 ```
 
 The third command above is the current full active top-level manifest loop: it
-reuses the 2-tile Verilator build and has been used to run 83 active assembly,
-LLVM MC, clang, linked LLVM, demo, and compiler-generated programs through
+reuses the 2-tile Verilator build and has been used to run 73 active assembly,
+LLVM MC, clang, linked LLVM, and demo programs through
 `lnp64_top` against the emulator comparator. Use
 `LNP64_RTL_TOP_PROGRAM_TILE_COUNT=4` for the supported four-tile stress shape;
 tile-count-specific builds live in separate Verilator object directories.
@@ -548,7 +541,7 @@ for comparison but only print the final pass line. Set
 `LNP64_RTL_TOP_PROGRAM_QUIET=0` when you need live retire-record output.
 Parallel top-program workers build their own program images outside the shared
 Verilator build lock; the lock only protects the reusable
-`lnp64_top_program_tb` binary. This keeps assembler/C-to-hex prep concurrent
+`lnp64_top_program_tb` binary. This keeps assembler/LLVM image prep concurrent
 when `LNP64_RTL_TOP_PROGRAM_JOBS` is greater than one.
 
 Individual top-level program smokes default to `10000` cycles, matching the
@@ -556,12 +549,12 @@ manifest runner. For longer exploratory programs, raise the simulation retire
 limit without changing the RTL testbench:
 
 ```sh
-LNP64_RTL_TOP_PROGRAM_MAX_CYCLES=2000 bash scripts/run_rtl_top_program_smoke.sh demos/rot13.c
-LNP64_RTL_TOP_PROGRAM_MAX_CYCLES=10000 bash scripts/run_rtl_top_program_smoke.sh demos/json_parser.c
+LNP64_RTL_TOP_PROGRAM_MAX_CYCLES=2000 bash scripts/run_rtl_top_linked_llvm_smoke.sh tests/rtl/programs/top_linked_rot13_native.c
+LNP64_RTL_TOP_PROGRAM_MAX_CYCLES=10000 bash scripts/run_rtl_top_linked_llvm_smoke.sh tests/rtl/programs/top_linked_json_parser_native.c
 ```
 
 The top-level program manifest runner uses the same `10000`-cycle default so
-longer active compiler-generated demos stay in the recurring gate.
+longer active LLVM-linked demos stay in the recurring gate.
 
 `scripts/run_rtl_top_linked_llvm_smoke.sh` is the first narrow linked-ELF
 top-level RTL gate. It builds a clang object, links it with LNP64 lld using a
