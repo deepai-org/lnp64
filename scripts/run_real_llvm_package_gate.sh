@@ -32,6 +32,7 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-sbase-cmp-linked.elf"
         "$build_dir/lnp64-sbase-cksum-linked.elf"
         "$build_dir/lnp64-sbase-uniq-linked.elf"
+        "$build_dir/lnp64-sbase-tail-linked.elf"
         "$build_dir/lnp64-sbase-ls-linked.elf"
         "$build_dir/lnp64-sbase-find-linked.elf"
         "$build_dir/lnp64-sbase-mkdir-linked.elf"
@@ -81,6 +82,7 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-sbase-cmp-linked.elf"
         "$build_dir/lnp64-sbase-cksum-linked.elf"
         "$build_dir/lnp64-sbase-uniq-linked.elf"
+        "$build_dir/lnp64-sbase-tail-linked.elf"
         "$build_dir/lnp64-sbase-ls-linked.elf"
         "$build_dir/lnp64-sbase-find-linked.elf"
         "$build_dir/lnp64-sbase-mkdir-linked.elf"
@@ -277,6 +279,20 @@ run_package() {
       grep -q 'exit=0' <<<"$sbase_uniq_output"
       printf 'real LLVM LNP64 run-elf sbase uniq execution passed: %s\n' \
         "$build_dir/lnp64-sbase-uniq-linked.elf"
+      printf 'one\ntwo\nthree\nfour\n' >"$sbase_fixture_root/input/tail.txt"
+      "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-tail-linked.elf" >/dev/null
+      local sbase_tail_output
+      sbase_tail_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+        "$build_dir/lnp64-sbase-tail-linked.elf" tail -n 2 input/tail.txt)"
+      grep -q '^three$' <<<"$sbase_tail_output"
+      grep -q '^four$' <<<"$sbase_tail_output"
+      if grep -q '^two$' <<<"$sbase_tail_output"; then
+        printf 'sbase tail printed too many lines\n' >&2
+        exit 1
+      fi
+      grep -q 'exit=0' <<<"$sbase_tail_output"
+      printf 'real LLVM LNP64 run-elf sbase tail execution passed: %s\n' \
+        "$build_dir/lnp64-sbase-tail-linked.elf"
       "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-ls-linked.elf" >/dev/null
       local sbase_ls_output
       sbase_ls_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \

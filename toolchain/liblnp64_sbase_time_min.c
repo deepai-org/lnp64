@@ -7,6 +7,8 @@
 
 static struct tm lnp64_tm;
 
+long long llabs(long long value) { return value < 0 ? -value : value; }
+
 long long estrtonum(const char *s, long long min, long long max) {
   long long sign = 1;
   long long value = 0;

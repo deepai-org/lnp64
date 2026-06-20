@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+typedef int Rune;
+
 struct __lnp64_file {
   int fd;
   int eof;
@@ -30,6 +32,14 @@ void *erealloc(void *ptr, size_t size) {
   if (!next && size)
     eprintf("realloc:");
   return next;
+}
+
+int charntorune(Rune *r, const char *s, size_t n) {
+  if (!r || !s || n == 0)
+    return 0;
+  unsigned char ch = (unsigned char)s[0];
+  *r = ch < 0x80 ? (Rune)ch : 0xfffd;
+  return 1;
 }
 
 static int lnp64_file_fd(FILE *stream) {

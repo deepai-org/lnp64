@@ -5862,6 +5862,19 @@ test -s "$sbase_uniq_elf"
 printf 'real LLVM LNP64 lld sbase uniq link smoke passed: %s\n' \
   "$sbase_uniq_elf"
 
+sbase_tail_elf="$build_dir/lnp64-sbase-tail-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
+  -o "$sbase_tail_elf" "$crt0_obj" "$build_dir/sbase-tail-clang-smoke.o" \
+  "$sbase_head_support_impl_obj" "$sbase_time_support_impl_obj" \
+  "$build_dir/sbase-libutil-concat-clang-smoke.o" \
+  "$build_dir/sbase-libutil-writeall-clang-smoke.o" \
+  "$libc_alloc_impl_obj" "$libc_fd_impl_obj" "$libc_meta_impl_obj" \
+  "$libc_time_impl_obj" "$libc_string_impl_obj" "$libc_errno_impl_obj" \
+  "$libc_process_impl_obj"
+test -s "$sbase_tail_elf"
+printf 'real LLVM LNP64 lld sbase tail link smoke passed: %s\n' \
+  "$sbase_tail_elf"
+
 sbase_ls_elf="$build_dir/lnp64-sbase-ls-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$sbase_ls_elf" "$crt0_obj" "$build_dir/sbase-ls-clang-smoke.o" \

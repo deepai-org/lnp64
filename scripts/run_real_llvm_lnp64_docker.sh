@@ -440,6 +440,20 @@ test "$(grep -c '^beta$' <<<"$sbase_uniq_output")" -eq 1
 grep -q 'exit=0' <<<"$sbase_uniq_output"
 printf 'real LLVM LNP64 run-elf sbase uniq execution passed: %s\n' \
   target/llvm-lnp64-build/lnp64-sbase-uniq-linked.elf
+printf 'one\ntwo\nthree\nfour\n' >"$sbase_fixture_root/input/tail.txt"
+"$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-tail-linked.elf \
+  >/dev/null
+sbase_tail_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+  target/llvm-lnp64-build/lnp64-sbase-tail-linked.elf tail -n 2 input/tail.txt)"
+grep -q '^three$' <<<"$sbase_tail_output"
+grep -q '^four$' <<<"$sbase_tail_output"
+if grep -q '^two$' <<<"$sbase_tail_output"; then
+  printf 'sbase tail printed too many lines\n' >&2
+  exit 1
+fi
+grep -q 'exit=0' <<<"$sbase_tail_output"
+printf 'real LLVM LNP64 run-elf sbase tail execution passed: %s\n' \
+  target/llvm-lnp64-build/lnp64-sbase-tail-linked.elf
 "$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-ls-linked.elf \
   >/dev/null
 sbase_ls_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
