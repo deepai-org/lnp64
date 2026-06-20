@@ -1,6 +1,7 @@
 .data
 ok_msg: .string "domain pressure ok\n"
 dom: .zero 208
+worker_retval: .quad 0
 
 .text
   LI r10, dom
@@ -90,9 +91,10 @@ baseline_child_counts:
   CMP r24, r1
   BNE bad
 
-  FORK r25
-  CMP r25, r0
-  BEQ pressure_worker
+  LI r1, pressure_worker
+  CLONE.SPAWN r25, r1, r0
+  CMP r25, r11
+  BEQ bad
 
 parent_queries:
   LI r1, 4
@@ -128,6 +130,21 @@ parent_queries:
   LI r1, 1
   LI r29, 53
   CMP r24, r1
+  BNE bad
+
+  LI r13, worker_retval
+join_worker:
+  THREAD_JOIN r23, r25, r13
+  CMP r23, r0
+  BEQ joined_worker
+  LI r1, 1
+  SLEEP r1
+  CMP r0, r0
+  BEQ join_worker
+joined_worker:
+  LD r24, [r13, 0]
+  LI r29, 54
+  CMP r24, r0
   BNE bad
 
 freeze_resume_subtree:
@@ -231,8 +248,11 @@ pressure_worker:
   LI r29, 81
   CMP r27, r11
   BEQ bad
-  LI r1, 160
-  SLEEP r1
+  LI r28, 80
+worker_delay:
+  ADDI r28, r28, -1
+  CMP r28, r0
+  BNE worker_delay
   FREE r27
   EXIT r0
 
