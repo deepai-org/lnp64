@@ -1494,6 +1494,50 @@ impl Machine {
         Ok(())
     }
 
+    fn validate_exec_fdr_grant_authority(&self, words: &[u64]) -> Result<(), String> {
+        let vma_count = checked_exec_count(words[3], EXEC_PLAN_MAX_VMAS, "VMA")?;
+        let fdr_count = checked_exec_count(words[4], EXEC_PLAN_MAX_FDR_GRANTS, "FDR grant")?;
+        let mut offset =
+            EXEC_PLAN_HEADER_WORDS + EXEC_PLAN_ENTRY_WORDS + vma_count * EXEC_PLAN_VMA_WORDS;
+        let process = self.process()?;
+        for _ in 0..fdr_count {
+            let record = &words[offset..offset + EXEC_PLAN_FDR_GRANT_WORDS];
+            let rights = record[2];
+            let source_cap = record[4];
+            let source_generation = record[5];
+            if source_cap < FDR_COUNT as u64 {
+                let source_fd = source_cap as usize;
+                let current_generation = process
+                    .fd_generations
+                    .get(source_fd)
+                    .copied()
+                    .ok_or_else(|| "exec-plan FDR grant source fd is out of range".to_string())?;
+                if current_generation != source_generation {
+                    return Err("exec-plan FDR grant source generation mismatch".to_string());
+                }
+                if matches!(process.fds.get(source_fd), Some(FdHandle::Closed) | None) {
+                    return Err("exec-plan FDR grant source capability is closed".to_string());
+                }
+                let capability =
+                    process
+                        .fd_capabilities
+                        .get(source_fd)
+                        .copied()
+                        .ok_or_else(|| {
+                            "exec-plan FDR grant source capability is missing".to_string()
+                        })?;
+                if capability.revoked {
+                    return Err("exec-plan FDR grant source capability is revoked".to_string());
+                }
+                if rights & !capability.rights != 0 {
+                    return Err("exec-plan FDR grant source rights are insufficient".to_string());
+                }
+            }
+            offset += EXEC_PLAN_FDR_GRANT_WORDS;
+        }
+        Ok(())
+    }
+
     pub fn commit_exec_descriptor_memory_image(
         &mut self,
         words: &[u64],
@@ -1524,6 +1568,7 @@ impl Machine {
                 return Err("exec-plan lineage epoch mismatch".to_string());
             }
         }
+        self.validate_exec_fdr_grant_authority(words)?;
         let vma_count = checked_exec_count(words[3], EXEC_PLAN_MAX_VMAS, "VMA")?;
         if prepared_vmas.len() != vma_count {
             return Err("prepared VMA count does not match exec descriptor".to_string());
@@ -10145,6 +10190,38 @@ mod tests {
         ]
     }
 
+    fn exec_descriptor_with_fdr_source(
+        source_fd: usize,
+        source_generation: u64,
+        rights: u64,
+    ) -> Vec<u64> {
+        let mut plan = loader_exec_plan_fixture();
+        plan.fdr_grants[0].object_id = source_fd as u64;
+        plan.fdr_grants[0].generation = source_generation;
+        plan.fdr_grants[0].rights = rights;
+        let descriptor = build_exec_descriptor(
+            &plan,
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        encode_exec_descriptor(&descriptor)
+    }
+
+    fn install_counter_source_fd(machine: &mut Machine, fd: usize, generation: u64, rights: u64) {
+        let process = machine.process_mut().unwrap();
+        process.fds[fd] = FdHandle::Counter(Rc::new(RefCell::new(0)));
+        process.fd_generations[fd] = generation;
+        process.fd_capabilities[fd] = FdCapability {
+            rights,
+            ..FdCapability::full(90)
+        };
+    }
+
     fn encode_ri(opcode: u8, rd: usize, imm: i64) -> u32 {
         (u32::from(opcode) << 24) | (((rd as u32) & 0x1f) << 19) | ((imm as u32) & 0xffff)
     }
@@ -15491,6 +15568,77 @@ mod tests {
             .unwrap_err();
 
         assert!(err.contains("lineage epoch"), "{err}");
+        assert_eq!(
+            &machine.process().unwrap().memory[ARG_BASE as usize..ARG_BASE as usize + 9],
+            b"old-image"
+        );
+    }
+
+    #[test]
+    fn emulator_accepts_exec_descriptor_fdr_grant_live_source_fd_before_commit() {
+        let words = exec_descriptor_with_fdr_source(8, 7, CAP_RIGHT_READ);
+        let mut machine = Machine::new(empty_program());
+        install_counter_source_fd(&mut machine, 8, 7, CAP_RIGHT_READ | CAP_RIGHT_STAT);
+
+        machine
+            .commit_exec_descriptor_memory_image(&words, &prepared_exec_vmas_fixture())
+            .unwrap();
+
+        assert_eq!(
+            &machine.process().unwrap().memory[0x400000..0x400008],
+            &[0xaa; 8]
+        );
+    }
+
+    #[test]
+    fn emulator_rejects_exec_descriptor_fdr_grant_stale_source_fd_generation_before_commit() {
+        let words = exec_descriptor_with_fdr_source(8, 6, CAP_RIGHT_READ);
+        let mut machine = Machine::new(empty_program());
+        install_counter_source_fd(&mut machine, 8, 7, CAP_RIGHT_READ | CAP_RIGHT_STAT);
+        machine.write_bytes(ARG_BASE, b"old-image").unwrap();
+
+        let err = machine
+            .commit_exec_descriptor_memory_image(&words, &prepared_exec_vmas_fixture())
+            .unwrap_err();
+
+        assert!(err.contains("source generation mismatch"), "{err}");
+        assert_eq!(
+            &machine.process().unwrap().memory[ARG_BASE as usize..ARG_BASE as usize + 9],
+            b"old-image"
+        );
+    }
+
+    #[test]
+    fn emulator_rejects_exec_descriptor_fdr_grant_revoked_source_fd_before_commit() {
+        let words = exec_descriptor_with_fdr_source(8, 7, CAP_RIGHT_READ);
+        let mut machine = Machine::new(empty_program());
+        install_counter_source_fd(&mut machine, 8, 7, CAP_RIGHT_READ | CAP_RIGHT_STAT);
+        machine.process_mut().unwrap().fd_capabilities[8].revoked = true;
+        machine.write_bytes(ARG_BASE, b"old-image").unwrap();
+
+        let err = machine
+            .commit_exec_descriptor_memory_image(&words, &prepared_exec_vmas_fixture())
+            .unwrap_err();
+
+        assert!(err.contains("source capability is revoked"), "{err}");
+        assert_eq!(
+            &machine.process().unwrap().memory[ARG_BASE as usize..ARG_BASE as usize + 9],
+            b"old-image"
+        );
+    }
+
+    #[test]
+    fn emulator_rejects_exec_descriptor_fdr_grant_source_fd_without_rights_before_commit() {
+        let words = exec_descriptor_with_fdr_source(8, 7, CAP_RIGHT_READ | CAP_RIGHT_WRITE);
+        let mut machine = Machine::new(empty_program());
+        install_counter_source_fd(&mut machine, 8, 7, CAP_RIGHT_READ);
+        machine.write_bytes(ARG_BASE, b"old-image").unwrap();
+
+        let err = machine
+            .commit_exec_descriptor_memory_image(&words, &prepared_exec_vmas_fixture())
+            .unwrap_err();
+
+        assert!(err.contains("source rights are insufficient"), "{err}");
         assert_eq!(
             &machine.process().unwrap().memory[ARG_BASE as usize..ARG_BASE as usize + 9],
             b"old-image"
