@@ -5803,6 +5803,7 @@ mod tests {
             "string_ctype",
             "numeric_conversion",
             "process_identity",
+            "process_lifecycle_compat",
             "random_state",
             "path_helpers",
             "search_helpers",
@@ -5825,6 +5826,14 @@ mod tests {
             groups["poll_select_epoll_kqueue"].2, "partial",
             "broader kqueue filters and semantics must stay partial"
         );
+        assert_eq!(
+            groups["process_lifecycle_compat"].2, "partial",
+            "fork/exec lifecycle compatibility must stay partial until atfork and signal-inheritance semantics are complete"
+        );
+        assert!(shim_manifest.contains("userland/fork_wait_test_clang.c"));
+        assert!(shim_manifest.contains("userland/elf_exec_test_clang.c"));
+        assert!(libc_roadmap.contains("pthread_atfork"));
+        assert!(libc_roadmap.contains("signal dispositions"));
         assert!(shim_manifest.contains("userland/poll_test_clang.c"));
         assert!(shim_manifest.contains("real LLVM LNP64 run-elf NetBSD poll child passed"));
         for group in [
@@ -5886,6 +5895,11 @@ mod tests {
                     "pid", "getpid", "getppid", "getuid", "geteuid", "getgid", "getegid",
                 ],
                 vec!["GET_PCR"],
+            ),
+            (
+                "process_lifecycle_compat",
+                vec!["_exit", "fork", "waitpid", "execve", "execvp"],
+                vec!["EXIT", "FORK", "WAIT_PID", "EXEC", "errno_tls"],
             ),
             (
                 "random_state",
