@@ -607,6 +607,7 @@ module lnp64_event_router (
     output logic [31:0] wake_counter
 );
     logic synthetic_event_consumed;
+    logic synthetic_event_pending;
 
     always_ff @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
@@ -617,18 +618,25 @@ module lnp64_event_router (
             cross_tile_wake_valid <= 1'b0;
             wake_counter <= 32'd0;
             synthetic_event_consumed <= 1'b0;
+            synthetic_event_pending <= 1'b0;
         end else begin
             wake_valid <= 1'b0;
             cross_tile_wake_valid <= 1'b0;
-            if (!synthetic_event) begin
+            if (!synthetic_event && !synthetic_event_pending) begin
                 synthetic_event_consumed <= 1'b0;
             end
-            if (synthetic_event && !synthetic_event_consumed && pid1_parked && !event_valid) begin
+            if (synthetic_event && !synthetic_event_consumed) begin
+                synthetic_event_pending <= 1'b1;
+                synthetic_event_consumed <= 1'b1;
+            end
+            if ((synthetic_event_pending || (synthetic_event && !synthetic_event_consumed)) &&
+                pid1_parked && !event_valid) begin
                 event_counter <= event_counter + 32'd1;
                 wake_counter <= wake_counter + 32'd1;
                 wake_valid <= 1'b1;
                 cross_tile_wake_valid <= source_tile_id != target_tile_id;
                 synthetic_event_consumed <= 1'b1;
+                synthetic_event_pending <= 1'b0;
                 event_valid <= 1'b1;
                 event_record.event_id <= event_counter + 32'd1;
                 event_record.tile_id <= target_tile_id;
@@ -1513,11 +1521,12 @@ module lnp64_cap_engine(
                         ((dup_rights & ~fdr_rights[src_fd]) != 64'd0)) begin
                         rsp_reg.errno_value <= LNP64_ERR_EPERM;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
+                        m1_commit_reg.op <= LNP64_M1_COMMIT_CAP_DUP_DENIED;
                         m1_commit_reg.status <= LNP64_ERR_EPERM;
                         m1_pre_state_projection_reg <= build_m1_state_projection(
-                            LNP64_M1_COMMIT_CAP_DUP, LNP64_ERR_EPERM, src_fd, dst_fd);
+                            LNP64_M1_COMMIT_CAP_DUP_DENIED, LNP64_ERR_EPERM, src_fd, dst_fd);
                         m1_state_projection_reg <= build_m1_state_projection(
-                            LNP64_M1_COMMIT_CAP_DUP, LNP64_ERR_EPERM, src_fd, dst_fd);
+                            LNP64_M1_COMMIT_CAP_DUP_DENIED, LNP64_ERR_EPERM, src_fd, dst_fd);
                     end else begin
                         next_generation = fdr_generation[dst_fd] + 64'd1;
                         fdr_valid[dst_fd] <= 1'b1;
@@ -2188,12 +2197,17 @@ module lnp64_object_engine(
     output logic [31:0] cap_sync_single_fd,
     output logic [2:0] cap_sync_single_kind,
     output logic [63:0] cap_sync_single_lineage,
+    output logic m1_commit_valid,
+    output lnp64_m1_cap_commit_t m1_commit,
+    output lnp64_m1_state_projection_t m1_pre_state_projection,
+    output lnp64_m1_state_projection_t m1_state_projection,
     output logic [31:0] telemetry_counter,
     output logic [31:0] fault_counter
 );
     localparam logic [63:0] OBJECT_LINEAGE_CALL_GATE_BASE = 64'd1281;
     localparam logic [63:0] OBJECT_LINEAGE_MEMORY_OBJECT = 64'd513;
     localparam logic [63:0] OBJECT_LINEAGE_DMA_BUFFER = 64'd1281;
+    localparam logic [31:0] OBJECT_CREATED_GENERATION = 32'd1;
     localparam logic [63:0] CALL_MODE_SYNC = 64'd0;
     localparam logic [63:0] CALL_MODE_ASYNC = 64'd1;
     localparam logic [63:0] CALL_MODE_HANDOFF = 64'd2;
@@ -2202,6 +2216,10 @@ module lnp64_object_engine(
 
     logic have_rsp;
     lnp64_rsp_t rsp_reg;
+    logic m1_commit_valid_reg;
+    lnp64_m1_cap_commit_t m1_commit_reg;
+    lnp64_m1_state_projection_t m1_pre_state_projection_reg;
+    lnp64_m1_state_projection_t m1_state_projection_reg;
     logic fdr_valid [0:LNP64_FDR_SLOT_COUNT-1];
     int unsigned pipe_alloc_reader_fd;
     int unsigned pipe_alloc_writer_fd;
@@ -2210,6 +2228,10 @@ module lnp64_object_engine(
     assign cmd_ready = reset_n && !have_rsp;
     assign rsp_valid = have_rsp;
     assign rsp = rsp_reg;
+    assign m1_commit_valid = m1_commit_valid_reg;
+    assign m1_commit = m1_commit_reg;
+    assign m1_pre_state_projection = m1_pre_state_projection_reg;
+    assign m1_state_projection = m1_state_projection_reg;
 
     integer scan_i;
     always_comb begin
@@ -2225,11 +2247,63 @@ module lnp64_object_engine(
         end
     end
 
+    function automatic lnp64_m1_cap_commit_t build_object_m1_commit(
+        input lnp64_cmd_t accepted_cmd,
+        input logic [31:0] fd,
+        input logic [63:0] lineage,
+        input logic [15:0] status
+    );
+        lnp64_m1_cap_commit_t commit;
+        begin
+            commit = '0;
+            commit.op = LNP64_M1_COMMIT_OBJECT_CREATE;
+            commit.object_id = fd + 32'd1;
+            commit.object_gen = OBJECT_CREATED_GENERATION;
+            commit.fdr_gen = OBJECT_CREATED_GENERATION;
+            commit.domain_id = accepted_cmd.domain_id;
+            commit.domain_gen = accepted_cmd.domain_gen;
+            commit.rights_mask = status == LNP64_ERR_OK ? LNP64_CAP_RIGHT_ALL : 64'd0;
+            commit.lineage_epoch = status == LNP64_ERR_OK ? lineage[31:0] : 32'd0;
+            commit.sealed = 1'b0;
+            commit.status = status;
+            build_object_m1_commit = commit;
+        end
+    endfunction
+
+    function automatic lnp64_m1_state_projection_t build_object_m1_projection(
+        input lnp64_m1_cap_commit_t commit,
+        input logic created
+    );
+        lnp64_m1_state_projection_t projection;
+        begin
+            projection = '0;
+            projection.op = commit.op;
+            projection.status = commit.status;
+            if (created && commit.status == LNP64_ERR_OK) begin
+                projection.object_gen = commit.object_gen;
+                projection.created_object_created = 1'b1;
+                projection.created_object_gen = commit.object_gen;
+                projection.minted_valid = 1'b1;
+                projection.minted_object_id = commit.object_id;
+                projection.minted_generation = commit.fdr_gen;
+                projection.minted_domain_id = commit.domain_id;
+                projection.minted_lineage_epoch = commit.lineage_epoch;
+                projection.minted_sealed = commit.sealed;
+                projection.minted_rights = commit.rights_mask;
+            end
+            build_object_m1_projection = projection;
+        end
+    endfunction
+
     integer i;
     always_ff @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
             have_rsp <= 1'b0;
             rsp_reg <= '0;
+            m1_commit_valid_reg <= 1'b0;
+            m1_commit_reg <= '0;
+            m1_pre_state_projection_reg <= '0;
+            m1_state_projection_reg <= '0;
             telemetry_counter <= 32'd0;
             fault_counter <= 32'd0;
             cap_sync_valid <= 1'b0;
@@ -2247,6 +2321,7 @@ module lnp64_object_engine(
             cap_sync_single_valid <= 1'b0;
             if (have_rsp && rsp_ready) begin
                 have_rsp <= 1'b0;
+                m1_commit_valid_reg <= 1'b0;
             end
             if (cmd_valid && cmd_ready) begin : accept_cmd
                 int unsigned reader_fd;
@@ -2254,10 +2329,17 @@ module lnp64_object_engine(
                 int unsigned single_fd;
                 logic explicit_pair_valid;
                 logic auto_pair_valid;
+                logic [63:0] object_lineage;
+                lnp64_m1_cap_commit_t object_m1_commit_next;
 
                 have_rsp <= 1'b1;
+                m1_commit_valid_reg <= cmd.opcode == LNP64_OP_OBJECT_CTL;
                 telemetry_counter <= telemetry_counter + 32'd1;
                 rsp_reg <= '0;
+                object_m1_commit_next = build_object_m1_commit(cmd, 32'd0, 64'd0, LNP64_ERR_EINVAL);
+                m1_commit_reg <= object_m1_commit_next;
+                m1_pre_state_projection_reg <= build_object_m1_projection(object_m1_commit_next, 1'b0);
+                m1_state_projection_reg <= build_object_m1_projection(object_m1_commit_next, 1'b0);
                 rsp_reg.op_id <= cmd.op_id;
                 rsp_reg.tile_id <= cmd.tile_id;
                 rsp_reg.pid <= cmd.pid;
@@ -2293,6 +2375,12 @@ module lnp64_object_engine(
                         cap_sync_valid <= 1'b1;
                         cap_sync_reader_fd <= reader_fd[31:0];
                         cap_sync_writer_fd <= writer_fd[31:0];
+                        object_lineage = 64'd257 + {32'd0, reader_fd[31:0]};
+                        object_m1_commit_next =
+                            build_object_m1_commit(cmd, reader_fd[31:0], object_lineage, LNP64_ERR_OK);
+                        m1_commit_reg <= object_m1_commit_next;
+                        m1_pre_state_projection_reg <= build_object_m1_projection(object_m1_commit_next, 1'b0);
+                        m1_state_projection_reg <= build_object_m1_projection(object_m1_commit_next, 1'b1);
                     end else begin
                         rsp_reg.errno_value <= LNP64_ERR_EINVAL;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
@@ -2318,6 +2406,12 @@ module lnp64_object_engine(
                         cap_sync_single_fd <= single_fd[31:0];
                         cap_sync_single_kind <= LNP64_FDR_KIND_CALL_GATE;
                         cap_sync_single_lineage <= OBJECT_LINEAGE_CALL_GATE_BASE + {32'd0, single_fd[31:0]};
+                        object_lineage = OBJECT_LINEAGE_CALL_GATE_BASE + {32'd0, single_fd[31:0]};
+                        object_m1_commit_next =
+                            build_object_m1_commit(cmd, single_fd[31:0], object_lineage, LNP64_ERR_OK);
+                        m1_commit_reg <= object_m1_commit_next;
+                        m1_pre_state_projection_reg <= build_object_m1_projection(object_m1_commit_next, 1'b0);
+                        m1_state_projection_reg <= build_object_m1_projection(object_m1_commit_next, 1'b1);
                     end else begin
                         rsp_reg.errno_value <= LNP64_ERR_EINVAL;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
@@ -2336,6 +2430,11 @@ module lnp64_object_engine(
                         cap_sync_single_fd <= single_fd[31:0];
                         cap_sync_single_kind <= LNP64_FDR_KIND_GENERIC;
                         cap_sync_single_lineage <= 64'd769;
+                        object_m1_commit_next =
+                            build_object_m1_commit(cmd, single_fd[31:0], 64'd769, LNP64_ERR_OK);
+                        m1_commit_reg <= object_m1_commit_next;
+                        m1_pre_state_projection_reg <= build_object_m1_projection(object_m1_commit_next, 1'b0);
+                        m1_state_projection_reg <= build_object_m1_projection(object_m1_commit_next, 1'b1);
                     end else begin
                         rsp_reg.errno_value <= LNP64_ERR_EINVAL;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
@@ -2353,6 +2452,11 @@ module lnp64_object_engine(
                         cap_sync_single_fd <= single_fd[31:0];
                         cap_sync_single_kind <= LNP64_FDR_KIND_GENERIC;
                         cap_sync_single_lineage <= 64'd1025;
+                        object_m1_commit_next =
+                            build_object_m1_commit(cmd, single_fd[31:0], 64'd1025, LNP64_ERR_OK);
+                        m1_commit_reg <= object_m1_commit_next;
+                        m1_pre_state_projection_reg <= build_object_m1_projection(object_m1_commit_next, 1'b0);
+                        m1_state_projection_reg <= build_object_m1_projection(object_m1_commit_next, 1'b1);
                     end else begin
                         rsp_reg.errno_value <= LNP64_ERR_EINVAL;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
@@ -2370,6 +2474,11 @@ module lnp64_object_engine(
                         cap_sync_single_fd <= single_fd[31:0];
                         cap_sync_single_kind <= LNP64_FDR_KIND_GENERIC;
                         cap_sync_single_lineage <= OBJECT_LINEAGE_MEMORY_OBJECT;
+                        object_m1_commit_next =
+                            build_object_m1_commit(cmd, single_fd[31:0], OBJECT_LINEAGE_MEMORY_OBJECT, LNP64_ERR_OK);
+                        m1_commit_reg <= object_m1_commit_next;
+                        m1_pre_state_projection_reg <= build_object_m1_projection(object_m1_commit_next, 1'b0);
+                        m1_state_projection_reg <= build_object_m1_projection(object_m1_commit_next, 1'b1);
                     end else begin
                         rsp_reg.errno_value <= LNP64_ERR_EINVAL;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
@@ -2391,9 +2500,19 @@ module lnp64_object_engine(
                         cap_sync_single_fd <= single_fd[31:0];
                         cap_sync_single_kind <= LNP64_FDR_KIND_GENERIC;
                         cap_sync_single_lineage <= OBJECT_LINEAGE_DMA_BUFFER;
+                        object_m1_commit_next =
+                            build_object_m1_commit(cmd, single_fd[31:0], OBJECT_LINEAGE_DMA_BUFFER, LNP64_ERR_OK);
+                        m1_commit_reg <= object_m1_commit_next;
+                        m1_pre_state_projection_reg <= build_object_m1_projection(object_m1_commit_next, 1'b0);
+                        m1_state_projection_reg <= build_object_m1_projection(object_m1_commit_next, 1'b1);
                     end else begin
                         rsp_reg.errno_value <= LNP64_ERR_EFAULT;
                         rsp_reg.status <= LNP64_STATUS_ERROR;
+                        object_m1_commit_next =
+                            build_object_m1_commit(cmd, 32'd0, 64'd0, LNP64_ERR_EFAULT);
+                        m1_commit_reg <= object_m1_commit_next;
+                        m1_pre_state_projection_reg <= build_object_m1_projection(object_m1_commit_next, 1'b0);
+                        m1_state_projection_reg <= build_object_m1_projection(object_m1_commit_next, 1'b0);
                     end
                 end
             end

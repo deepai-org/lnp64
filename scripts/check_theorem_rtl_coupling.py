@@ -22,6 +22,8 @@ INDEX = Path(
         str(ROOT / "formal/theorem_rtl_coupling_index.md"),
     )
 )
+TOP_LEVEL_PROGRAM_MANIFEST = ROOT / "tests/rtl/top_level_program_manifest.json"
+RTL_PROOF_GATES = ROOT / "scripts/run_rtl_proof_gates.sh"
 ALLOWED_TRUST_LEVELS = {"T0", "T1", "T2", "T3", "T4", "T5"}
 ALLOWED_ARTIFACT_LEVELS = {
     "coverage",
@@ -52,6 +54,88 @@ def module_exists(path: Path, module: str) -> bool:
     return re.search(rf"(?m)^\s*module\s+{re.escape(module)}\b", read_text(path)) is not None
 
 
+def check_m1_top_level_contract(claim_id: str) -> None:
+    if claim_id != "no_forged_authority":
+        return
+    manifest = json.loads(check_file(TOP_LEVEL_PROGRAM_MANIFEST, "M1 top-level program manifest"))
+    contract = manifest.get("m1_top_level_refinement")
+    require(isinstance(contract, dict), "no_forged_authority: missing M1 top-level refinement contract")
+    covered = contract.get("covered_real_instruction_ops")
+    standalone = contract.get("standalone_until_s1_hooks")
+    require(isinstance(covered, list), "no_forged_authority: M1 top-level covered ops must be a list")
+    require(standalone == [], "no_forged_authority: M1 top-level standalone hooks must stay empty")
+    covered_keys = {entry.get("key") for entry in covered if isinstance(entry, dict)}
+    required = {
+        "cap_dup",
+        "cap_send",
+        "cap_recv",
+        "cap_revoke",
+        "reject_stale",
+        "push",
+        "pull",
+        "reject_full",
+        "object_create",
+        "cap_dup_denied",
+    }
+    missing = sorted(required - covered_keys)
+    require(not missing, f"no_forged_authority: M1 top-level contract missing covered op(s): {missing}")
+    remaining_gap = contract.get("remaining_t4_gap")
+    require(
+        isinstance(remaining_gap, str) and "RTL-to-Lean bit-refinement" in remaining_gap,
+        "no_forged_authority: M1 top-level contract must keep the T4 bit-refinement gap explicit",
+    )
+
+
+def check_m7_typed_trace_contract(claim: dict) -> None:
+    claim_id = claim.get("id")
+    if claim_id not in {"scheduler_single_location", "no_lost_wakeups"}:
+        return
+    trace_sources = claim.get("trace_sources")
+    require(isinstance(trace_sources, list), f"{claim_id}: trace_sources must be a list")
+    for source in (
+        "scripts/check_rtl_m7_typed_commit_trace.py",
+        "scripts/test_rtl_m7_typed_commit_checker.py",
+    ):
+        require(source in trace_sources, f"{claim_id}: missing M7 typed trace source {source}")
+
+    trace_markers = claim.get("trace_markers")
+    require(isinstance(trace_markers, list), f"{claim_id}: trace_markers must be a list")
+    for marker in (
+        'TTRACE_M7 {\\"record\\":\\"m7_sched_commit\\"',
+        'TTRACE_M7_STATE {\\"record\\":\\"m7_state_projection\\"',
+        "rtl m7 typed commit trace ok",
+    ):
+        require(marker in trace_markers, f"{claim_id}: missing M7 typed trace marker {marker}")
+
+    gates = claim.get("gate_scripts")
+    require(isinstance(gates, list), f"{claim_id}: gate_scripts must be a list")
+    for gate in (
+        "scripts/check_rtl_m7_typed_commit_trace.py",
+        "scripts/test_rtl_m7_typed_commit_checker.py",
+    ):
+        require(gate in gates, f"{claim_id}: missing M7 typed trace gate {gate}")
+
+    known_gaps = " ".join(claim.get("known_gaps", []))
+    require(
+        "typed transition traces" not in known_gaps,
+        f"{claim_id}: known gap still claims M7 typed transition traces are missing",
+    )
+    require(
+        "checked RTL-to-Lean refinement" in known_gaps or "multi-source event-router refinement" in known_gaps,
+        f"{claim_id}: known gap must keep the remaining refinement gap explicit",
+    )
+
+    proof_gate_text = check_file(RTL_PROOF_GATES, "RTL proof gate")
+    require(
+        "scripts/check_rtl_m7_typed_commit_trace.py" in proof_gate_text,
+        "RTL proof gate must run the M7 typed trace checker",
+    )
+    require(
+        "scripts/test_rtl_m7_typed_commit_checker.py" in proof_gate_text,
+        "RTL proof gate must run the M7 typed trace checker self-test",
+    )
+
+
 def check_file(path: Path, label: str) -> str:
     require(path.exists(), f"missing {label} {path}")
     require(path.stat().st_size > 0, f"empty {label} {path}")
@@ -62,6 +146,8 @@ def check_claim(claim: dict) -> None:
     claim_id = claim.get("id")
     require(isinstance(claim_id, str) and claim_id, "claim missing id")
     require(isinstance(claim.get("claim"), str) and claim["claim"], f"{claim_id}: missing claim text")
+    check_m1_top_level_contract(claim_id)
+    check_m7_typed_trace_contract(claim)
 
     trust = claim.get("trust_level")
     require(trust in ALLOWED_TRUST_LEVELS, f"{claim_id}: invalid trust level {trust}")

@@ -41,11 +41,10 @@ M1_TOP_LEVEL_COVERED_KEYS = {
     "push": ("LNP64_OP_PUSH", "LNP64_M1_COMMIT_PUSH"),
     "pull": ("LNP64_OP_PULL", "LNP64_M1_COMMIT_PULL"),
     "reject_full": ("LNP64_OP_PUSH", "LNP64_M1_COMMIT_REJECT_FULL"),
-}
-M1_STANDALONE_UNTIL_S1_KEYS = {
-    "cap_dup_denied": ("LNP64_OP_CAP_DUP", "LNP64_M1_COMMIT_CAP_DUP_DENIED"),
     "object_create": ("LNP64_OP_OBJECT_CTL", "LNP64_M1_COMMIT_OBJECT_CREATE"),
+    "cap_dup_denied": ("LNP64_OP_CAP_DUP", "LNP64_M1_COMMIT_CAP_DUP_DENIED"),
 }
+M1_STANDALONE_UNTIL_S1_KEYS = {}
 
 
 def fail(message: str) -> None:
@@ -109,9 +108,23 @@ def require_m1_top_level_refinement_contract(manifest: dict[str, object]) -> Non
     require(isinstance(claim, str) and "not T4" in claim, "M1 top-level claim must keep the non-T4 gap explicit")
     require(contract.get("gate") == "scripts/run_rtl_m1_refinement_docker.sh", "M1 top-level contract must name the Docker refinement gate")
     require(contract.get("checker") == "scripts/check_rtl_top_level_program_manifest.py", "M1 top-level contract must name this checker")
+    witness_artifact = contract.get("generated_witness_artifact")
+    require(isinstance(witness_artifact, dict), "M1 top-level contract must document the generated witness artifact")
+    require(
+        witness_artifact.get("env") == "LNP64_RTL_TOP_M1_WITNESS_OUT",
+        "M1 generated witness artifact env drifted",
+    )
+    require(
+        witness_artifact.get("schema") == "lnp64_top_m1_refinement_witness_v1",
+        "M1 generated witness artifact schema drifted",
+    )
+    require(
+        witness_artifact.get("producer") == "scripts/run_rtl_top_program_smoke.sh",
+        "M1 generated witness artifact producer drifted",
+    )
     remaining_gap = contract.get("remaining_t4_gap")
     require(
-        isinstance(remaining_gap, str) and "RTL-to-Lean bit-refinement" in remaining_gap,
+        isinstance(remaining_gap, str) and "formal RTL-to-Lean bit-refinement proof artifact" in remaining_gap,
         "M1 top-level contract must state the remaining RTL-to-Lean bit-refinement gap",
     )
 
@@ -129,7 +142,7 @@ def require_m1_top_level_refinement_contract(manifest: dict[str, object]) -> Non
     covered = contract.get("covered_real_instruction_ops")
     standalone = contract.get("standalone_until_s1_hooks")
     require(isinstance(covered, list) and covered, "M1 contract must list covered top-level ops")
-    require(isinstance(standalone, list) and standalone, "M1 contract must list standalone-until-S1 ops")
+    require(isinstance(standalone, list), "M1 contract must list standalone-until-S1 ops")
 
     def require_ops(entries: list[object], expected: dict[str, tuple[str, str]], label: str) -> None:
         by_key = {}
@@ -169,6 +182,12 @@ def require_m1_top_level_refinement_contract(manifest: dict[str, object]) -> Non
     top_text = text(ROOT / "rtl/top/lnp64_top.sv")
     smoke_text = text(ROOT / "scripts/run_rtl_top_program_smoke.sh")
     m1_docker_gate_text = text(ROOT / "scripts/run_rtl_m1_refinement_docker.sh")
+    require("LNP64_RTL_TOP_M1_WITNESS_OUT" in smoke_text, "top-level smoke must expose generated M1 witness artifact output")
+    require("lnp64_top_m1_refinement_witness_v1" in smoke_text, "top-level smoke must label generated M1 witness artifacts")
+    require("records_sha256" in smoke_text, "top-level smoke must hash generated M1 witness records")
+    require("commit_bits" in smoke_text, "top-level smoke must include packed commit bits in generated M1 witnesses")
+    require("pre_state_bits" in smoke_text, "top-level smoke must include packed pre-state bits in generated M1 witnesses")
+    require("post_state_bits" in smoke_text, "top-level smoke must include packed post-state bits in generated M1 witnesses")
     require("top_pipe_push_pull.s" in m1_docker_gate_text, "M1 Docker gate must include dynamic pipe PUSH/PULL top-level coverage")
     require("top_pipe_static_push_pull.s" in m1_docker_gate_text, "M1 Docker gate must include static pipe PUSH/PULL top-level coverage")
     for arch_opcode, commit_op in M1_TOP_LEVEL_COVERED_KEYS.values():

@@ -1816,7 +1816,7 @@ module lnp64_core_tile #(
         program_rom[5]  = enc_mem(8'h30, 5'd4, 5'd0, 14'sd0);
         program_rom[6]  = enc_branch(8'h20, 24'sd2);
         program_rom[7]  = enc_ri(8'h01, 5'd5, 16'sd99);
-        program_rom[8]  = enc_reg(8'h06, 5'd0);
+        program_rom[8]  = enc_reg(8'h07, 5'd0);
         program_rom[9]  = enc_rrrr(8'h56, 5'd6, 5'd0, 5'd0, 5'd0);
         program_rom[10] = enc_ri(8'h01, 5'd9, 16'sd13);
         program_rom[11] = enc_reg(8'h39, 5'd9);
@@ -5132,7 +5132,7 @@ module lnp64_core_tile #(
                         if (!pending_unsupported &&
                             dec.opcode == LNP64_OP_OBJECT_CTL &&
                             rsp.status == LNP64_STATUS_ERROR &&
-                            rsp.errno_value == LNP64_ERR_EPERM) begin
+                            rsp.errno_value != LNP64_ERR_OK) begin
                             object_stub_failed_closed <= 1'b1;
                         end
                         if (pending_unsupported &&

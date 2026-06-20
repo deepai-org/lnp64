@@ -163,6 +163,7 @@ fi
 run_top_program_logged "$emulator_log" "${emulator_cmd[@]}"
 
 python3 - "$sim_log" "$emulator_log" <<'PY'
+import hashlib
 import json
 import os
 import re
@@ -251,6 +252,7 @@ def load_m1_commit_op_values() -> dict[str, int]:
     values = load_schema_enum_values("lnp64_m1_commit_op_e")
     return {
         "CapDup": values["LNP64_M1_COMMIT_CAP_DUP"],
+        "CapDupDenied": values["LNP64_M1_COMMIT_CAP_DUP_DENIED"],
         "CapSend": values["LNP64_M1_COMMIT_CAP_SEND"],
         "CapRecv": values["LNP64_M1_COMMIT_CAP_RECV"],
         "CapRevoke": values["LNP64_M1_COMMIT_CAP_REVOKE"],
@@ -258,6 +260,7 @@ def load_m1_commit_op_values() -> dict[str, int]:
         "Push": values["LNP64_M1_COMMIT_PUSH"],
         "Pull": values["LNP64_M1_COMMIT_PULL"],
         "RejectFull": values["LNP64_M1_COMMIT_REJECT_FULL"],
+        "ObjectCreate": values["LNP64_M1_COMMIT_OBJECT_CREATE"],
     }
 
 
@@ -319,6 +322,7 @@ def load_arch_m1_opcode_map() -> dict[int, int]:
         opcodes["LNP64_OP_CAP_SEND"]: commit_ops["CapSend"],
         opcodes["LNP64_OP_CAP_RECV"]: commit_ops["CapRecv"],
         opcodes["LNP64_OP_CAP_REVOKE"]: commit_ops["CapRevoke"],
+        opcodes["LNP64_OP_OBJECT_CTL"]: commit_ops["ObjectCreate"],
         opcodes["LNP64_OP_PUSH"]: commit_ops["Push"],
         opcodes["LNP64_OP_PULL"]: commit_ops["Pull"],
     }
@@ -330,6 +334,8 @@ def expected_m1_op_for_retire(
     commit_ops: dict[str, int],
 ) -> int:
     op = arch_opcode_to_m1_op[retire["arch_opcode"]]
+    if op == commit_ops["CapDup"] and retire["errno"] == 1:
+        return commit_ops["CapDupDenied"]
     if op == commit_ops["Push"] and retire["errno"] == 11:
         return commit_ops["RejectFull"]
     if op == commit_ops["Pull"] and retire["errno"] == 116:
@@ -736,6 +742,66 @@ def require_top_state_records(
                 )
 
 
+def sha256_json(data: object) -> str:
+    payload = json.dumps(data, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(payload).hexdigest()
+
+
+def write_top_m1_witness_artifact(
+    output_path: str,
+    sim_log: str,
+    commits: list[dict],
+    commit_bits: list[dict],
+    pre_states: list[dict],
+    pre_state_bits: list[dict],
+    post_states: list[dict],
+    post_state_bits: list[dict],
+    commit_fields: tuple[str, ...],
+    commit_widths: tuple[int, ...],
+    state_fields: tuple[str, ...],
+    state_widths: tuple[int, ...],
+) -> None:
+    witness_records = []
+    for index, (commit, commit_bit, pre_state, pre_bit, post_state, post_bit) in enumerate(
+        zip(commits, commit_bits, pre_states, pre_state_bits, post_states, post_state_bits, strict=True)
+    ):
+        witness_records.append(
+            {
+                "index": index,
+                "pc": commit["pc"],
+                "tile_id": commit["tile_id"],
+                "op": commit["op"],
+                "status": commit["status"],
+                "commit": {field: commit[field] for field in commit_fields},
+                "commit_bits": commit_bit["bits"],
+                "pre_state": {field: pre_state[field] for field in state_fields},
+                "pre_state_bits": pre_bit["bits"],
+                "post_state": {field: post_state[field] for field in state_fields},
+                "post_state_bits": post_bit["bits"],
+            }
+        )
+    artifact = {
+        "schema": "lnp64_top_m1_refinement_witness_v1",
+        "source_log": str(Path(sim_log).name),
+        "commit_schema": {
+            "fields": list(commit_fields),
+            "widths": list(commit_widths),
+            "width": sum(commit_widths),
+        },
+        "state_schema": {
+            "fields": list(state_fields),
+            "widths": list(state_widths),
+            "width": sum(state_widths),
+        },
+        "commit_count": len(commits),
+        "records": witness_records,
+    }
+    artifact["records_sha256"] = sha256_json(witness_records)
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def rights_subset(child: int, parent: int) -> bool:
     return (child & ~parent) == 0
 
@@ -1021,6 +1087,14 @@ def check_top_m1_refinement_step(
             raise SystemExit(f"top-level M1 capRevoke {idx} left root authority live")
         return
 
+    if op == commit_ops["ObjectCreate"]:
+        if post_state["created_object_created"] != 1:
+            raise SystemExit(f"top-level M1 objectCreate {idx} did not mark created object")
+        if post_state["minted_valid"] != 1:
+            raise SystemExit(f"top-level M1 objectCreate {idx} did not mint a cap")
+        check_top_m1_projection_matches_commit("minted", commit, post_state, idx, "objectCreate")
+        return
+
     if op == commit_ops["Push"]:
         if pre_state["root_rights"] & TOP_RIGHT_PUSH == 0:
             raise SystemExit(f"top-level M1 push {idx} accepted without PUSH right")
@@ -1276,6 +1350,23 @@ for idx, (commit, pre_state, post_state) in enumerate(
         post_state,
         commit_ops,
         authority_projection_fields,
+    )
+
+witness_out = os.environ.get("LNP64_RTL_TOP_M1_WITNESS_OUT")
+if witness_out:
+    write_top_m1_witness_artifact(
+        witness_out,
+        sys.argv[1],
+        rtl_m1_top_commits,
+        rtl_m1_top_commit_bits,
+        rtl_m1_top_pre_states,
+        rtl_m1_top_pre_state_bits,
+        rtl_m1_top_states,
+        rtl_m1_top_state_bits,
+        m1_schema_fields,
+        m1_schema_widths,
+        m1_state_fields,
+        m1_state_widths,
     )
 PY
 

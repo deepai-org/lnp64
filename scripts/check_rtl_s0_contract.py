@@ -105,6 +105,7 @@ REQUIRED_S0_OPCODES = [
     "LNP64_OP_LD",
     "LNP64_OP_ST",
     "LNP64_OP_YIELD",
+    "LNP64_OP_SLEEP",
     "LNP64_OP_ENV_GET",
     "LNP64_OP_GET_ERRNO",
     "LNP64_OP_SET_ERRNO",
@@ -121,7 +122,7 @@ REQUIRED_S0_ROM_OPCODES = [
     "LNP64_OP_JMP",
     "LNP64_OP_LD",
     "LNP64_OP_ST",
-    "LNP64_OP_YIELD",
+    "LNP64_OP_SLEEP",
     "LNP64_OP_ENV_GET",
     "LNP64_OP_GET_ERRNO",
     "LNP64_OP_SET_ERRNO",
@@ -137,6 +138,7 @@ REQUIRED_S0_PROGRAM_ENCODINGS = {
     "LNP64_OP_LD": r"enc_mem\s*\(\s*8'h30\b",
     "LNP64_OP_ST": r"enc_mem\s*\(\s*8'h33\b",
     "LNP64_OP_YIELD": r"enc_reg\s*\(\s*8'h06\b",
+    "LNP64_OP_SLEEP": r"enc_reg\s*\(\s*8'h07\b",
     "LNP64_OP_ENV_GET": r"enc_rrrr\s*\(\s*8'h56\b",
     "LNP64_OP_GET_ERRNO": r"enc_reg\s*\(\s*8'h38\b",
     "LNP64_OP_SET_ERRNO": r"enc_reg\s*\(\s*8'h39\b",
@@ -763,6 +765,19 @@ def main() -> None:
     if "(env_features_seen & REQUIRED_S0_FEATURE_MASK) == REQUIRED_S0_FEATURE_MASK" not in source_text:
         fail("lnp64_top does not require the complete S0 feature mask from ENV_GET")
 
+    object_fail_closed_match = re.search(
+        r"dec\.opcode\s*==\s*LNP64_OP_OBJECT_CTL(?P<body>.*?)object_stub_failed_closed\s*<=\s*1'b1",
+        source_text,
+        re.S,
+    )
+    if not object_fail_closed_match:
+        fail("S0 object fail-closed evidence is missing from the core response path")
+    object_fail_closed_body = object_fail_closed_match.group("body")
+    if "rsp.status == LNP64_STATUS_ERROR" not in object_fail_closed_body:
+        fail("S0 object fail-closed evidence must require an object-engine error response")
+    if "rsp.errno_value != LNP64_ERR_OK" not in object_fail_closed_body:
+        fail("S0 object fail-closed evidence must accept any non-OK object-engine errno")
+
     for marker in (
         "parameter int CORE_TILE_COUNT = 2",
         "parameter int CORE_THREAD_CONTEXT_COUNT = 2",
@@ -848,6 +863,7 @@ def main() -> None:
         "cross_tile_wake_one",
         "tile_fault_isolated",
         "synthetic_event_consumed",
+        "synthetic_event_pending",
     ):
         if marker not in source_text:
             fail(f"S0 RTL is missing multicore/topology/coherence marker: {marker}")

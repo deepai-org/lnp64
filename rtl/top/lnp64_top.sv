@@ -100,13 +100,17 @@ module lnp64_top #(
     lnp64_m1_cap_commit_t m1_commit_vec [CORE_TILE_COUNT];
     lnp64_m1_cap_commit_t core_m1_commit_vec [CORE_TILE_COUNT];
     lnp64_m1_cap_commit_t cap_m1_commit_latched_vec [CORE_TILE_COUNT];
+    lnp64_m1_cap_commit_t object_m1_commit_latched_vec [CORE_TILE_COUNT];
     logic [CORE_TILE_COUNT-1:0] cap_m1_commit_latched_valid_vec;
+    logic [CORE_TILE_COUNT-1:0] object_m1_commit_latched_valid_vec;
     lnp64_m1_state_projection_t m1_pre_state_projection_vec [CORE_TILE_COUNT];
     lnp64_m1_state_projection_t m1_state_projection_vec [CORE_TILE_COUNT];
     lnp64_m1_state_projection_t core_m1_pre_state_projection_vec [CORE_TILE_COUNT];
     lnp64_m1_state_projection_t core_m1_state_projection_vec [CORE_TILE_COUNT];
     lnp64_m1_state_projection_t cap_m1_pre_state_projection_latched_vec [CORE_TILE_COUNT];
     lnp64_m1_state_projection_t cap_m1_state_projection_latched_vec [CORE_TILE_COUNT];
+    lnp64_m1_state_projection_t object_m1_pre_state_projection_latched_vec [CORE_TILE_COUNT];
+    lnp64_m1_state_projection_t object_m1_state_projection_latched_vec [CORE_TILE_COUNT];
     lnp64_thread_sched_t park_submit_record_vec [CORE_TILE_COUNT];
     lnp64_thread_sched_t submit_record_vec [CORE_TILE_COUNT];
     logic [CORE_TILE_COUNT-1:0] icache_invalidate_vec;
@@ -183,6 +187,10 @@ module lnp64_top #(
     logic object_rsp_valid;
     logic object_rsp_ready;
     lnp64_rsp_t object_rsp;
+    logic object_m1_commit_valid;
+    lnp64_m1_cap_commit_t object_m1_commit;
+    lnp64_m1_state_projection_t object_m1_pre_state_projection;
+    lnp64_m1_state_projection_t object_m1_state_projection;
     logic domain_cmd_valid;
     logic domain_cmd_ready;
     lnp64_cmd_t domain_cmd;
@@ -293,12 +301,25 @@ module lnp64_top #(
         end
     endfunction
 
+    function automatic logic top_m1_retire_is_object_op(input lnp64_retire_submit_t retire);
+        begin
+            unique case (retire.arch_opcode)
+                LNP64_OP_OBJECT_CTL: top_m1_retire_is_object_op = 1'b1;
+                default: top_m1_retire_is_object_op = 1'b0;
+            endcase
+        end
+    endfunction
+
     function automatic logic [7:0] top_m1_commit_op_for_retire(
         input lnp64_retire_submit_t retire
     );
         begin
             unique case (retire.arch_opcode)
-                LNP64_OP_CAP_DUP: top_m1_commit_op_for_retire = LNP64_M1_COMMIT_CAP_DUP;
+                LNP64_OP_OBJECT_CTL: top_m1_commit_op_for_retire = LNP64_M1_COMMIT_OBJECT_CREATE;
+                LNP64_OP_CAP_DUP: begin
+                    top_m1_commit_op_for_retire = retire.errno == LNP64_ERR_EPERM ?
+                        LNP64_M1_COMMIT_CAP_DUP_DENIED : LNP64_M1_COMMIT_CAP_DUP;
+                end
                 LNP64_OP_CAP_SEND: top_m1_commit_op_for_retire = LNP64_M1_COMMIT_CAP_SEND;
                 LNP64_OP_CAP_RECV: top_m1_commit_op_for_retire = LNP64_M1_COMMIT_CAP_RECV;
                 LNP64_OP_CAP_REVOKE: top_m1_commit_op_for_retire = LNP64_M1_COMMIT_CAP_REVOKE;
@@ -418,19 +439,28 @@ module lnp64_top #(
                 .raw_authority_visible(core_raw_authority_visible_vec[tile_id])
             );
             logic cap_m1_projection_live;
+            logic object_m1_projection_live;
 
             assign cap_m1_projection_live =
                 cap_rsp_valid && cap_rsp_ready && cap_m1_commit_valid &&
                 cap_rsp.tile_id == tile_id[31:0];
+            assign object_m1_projection_live =
+                object_rsp_valid && object_rsp_ready && object_m1_commit_valid &&
+                object_rsp.tile_id == tile_id[31:0];
             assign m1_commit_valid_vec[tile_id] =
                 retire_submit_valid_vec[tile_id] &&
                 (
+                    (object_m1_commit_latched_valid_vec[tile_id] &&
+                        top_m1_retire_is_object_op(retire_submit_record_vec[tile_id])) ||
                     (cap_m1_commit_latched_valid_vec[tile_id] &&
                         top_m1_retire_is_cap_op(retire_submit_record_vec[tile_id])) ||
                     (core_m1_commit_valid_vec[tile_id] &&
                         top_m1_retire_is_core_op(retire_submit_record_vec[tile_id]))
                 );
             assign m1_commit_vec[tile_id] =
+                (object_m1_commit_latched_valid_vec[tile_id] &&
+                    top_m1_retire_is_object_op(retire_submit_record_vec[tile_id])) ?
+                    object_m1_commit_latched_vec[tile_id] :
                 (cap_m1_commit_latched_valid_vec[tile_id] &&
                     top_m1_retire_is_cap_op(retire_submit_record_vec[tile_id])) ?
                     cap_m1_commit_latched_vec[tile_id] :
@@ -438,12 +468,20 @@ module lnp64_top #(
                     top_m1_retire_is_core_op(retire_submit_record_vec[tile_id])) ?
                     core_m1_commit_vec[tile_id] : '0;
             assign m1_pre_state_projection_vec[tile_id] =
+                object_m1_projection_live ? object_m1_pre_state_projection :
+                (object_m1_commit_latched_valid_vec[tile_id] &&
+                    top_m1_retire_is_object_op(retire_submit_record_vec[tile_id])) ?
+                    object_m1_pre_state_projection_latched_vec[tile_id] :
                 cap_m1_projection_live ? cap_m1_pre_state_projection :
                 (cap_m1_commit_latched_valid_vec[tile_id] &&
                     top_m1_retire_is_cap_op(retire_submit_record_vec[tile_id])) ?
                     cap_m1_pre_state_projection_latched_vec[tile_id] :
                 core_m1_pre_state_projection_vec[tile_id];
             assign m1_state_projection_vec[tile_id] =
+                object_m1_projection_live ? object_m1_state_projection :
+                (object_m1_commit_latched_valid_vec[tile_id] &&
+                    top_m1_retire_is_object_op(retire_submit_record_vec[tile_id])) ?
+                    object_m1_state_projection_latched_vec[tile_id] :
                 cap_m1_projection_live ? cap_m1_state_projection :
                 (cap_m1_commit_latched_valid_vec[tile_id] &&
                     top_m1_retire_is_cap_op(retire_submit_record_vec[tile_id])) ?
@@ -557,15 +595,20 @@ module lnp64_top #(
     always_ff @(posedge clk or negedge logic_reset_n) begin
         if (!logic_reset_n) begin
             cap_m1_commit_latched_valid_vec <= '0;
+            object_m1_commit_latched_valid_vec <= '0;
             for (m1_latch_i = 0; m1_latch_i < CORE_TILE_COUNT; m1_latch_i = m1_latch_i + 1) begin
                 cap_m1_commit_latched_vec[m1_latch_i] <= '0;
                 cap_m1_pre_state_projection_latched_vec[m1_latch_i] <= '0;
                 cap_m1_state_projection_latched_vec[m1_latch_i] <= '0;
+                object_m1_commit_latched_vec[m1_latch_i] <= '0;
+                object_m1_pre_state_projection_latched_vec[m1_latch_i] <= '0;
+                object_m1_state_projection_latched_vec[m1_latch_i] <= '0;
             end
         end else begin
             for (m1_latch_i = 0; m1_latch_i < CORE_TILE_COUNT; m1_latch_i = m1_latch_i + 1) begin
                 if (m1_commit_valid_vec[m1_latch_i]) begin
                     cap_m1_commit_latched_valid_vec[m1_latch_i] <= 1'b0;
+                    object_m1_commit_latched_valid_vec[m1_latch_i] <= 1'b0;
                 end
             end
             if (cap_rsp_valid && cap_rsp_ready && cap_m1_commit_valid &&
@@ -579,6 +622,18 @@ module lnp64_top #(
                 cap_m1_pre_state_projection_latched_vec[cap_rsp.tile_id] <=
                     cap_m1_pre_state_projection;
                 cap_m1_state_projection_latched_vec[cap_rsp.tile_id] <= cap_m1_state_projection;
+            end
+            if (object_rsp_valid && object_rsp_ready && object_m1_commit_valid &&
+                object_rsp.tile_id < CORE_TILE_COUNT[31:0]) begin
+`ifndef SYNTHESIS
+                assert (!object_m1_commit_latched_valid_vec[object_rsp.tile_id])
+                    else $fatal(1, "SG-AUTH M1 object-engine commit overwrote unconsumed top-level evidence");
+`endif
+                object_m1_commit_latched_valid_vec[object_rsp.tile_id] <= 1'b1;
+                object_m1_commit_latched_vec[object_rsp.tile_id] <= object_m1_commit;
+                object_m1_pre_state_projection_latched_vec[object_rsp.tile_id] <=
+                    object_m1_pre_state_projection;
+                object_m1_state_projection_latched_vec[object_rsp.tile_id] <= object_m1_state_projection;
             end
         end
     end
@@ -668,6 +723,11 @@ module lnp64_top #(
                     assert (top_m1_retire_is_cap_op(retire_submit_record_vec[m1_assert_i]))
                         else $fatal(1, "SG-AUTH M1 pending evidence was bypassed by non-cap retire");
                 end
+                if (object_m1_commit_latched_valid_vec[m1_assert_i] &&
+                    retire_submit_valid_vec[m1_assert_i]) begin
+                    assert (top_m1_retire_is_object_op(retire_submit_record_vec[m1_assert_i]))
+                        else $fatal(1, "SG-AUTH M1 pending evidence was bypassed by non-object retire");
+                end
                 if (core_m1_commit_valid_vec[m1_assert_i] &&
                     retire_submit_valid_vec[m1_assert_i]) begin
                     assert (top_m1_retire_is_core_op(retire_submit_record_vec[m1_assert_i]))
@@ -677,6 +737,7 @@ module lnp64_top #(
                     assert (retire_submit_valid_vec[m1_assert_i])
                         else $fatal(1, "SG-AUTH M1 commit was not tied to a tile-local retired instruction");
                     assert (
+                        top_m1_retire_is_object_op(retire_submit_record_vec[m1_assert_i]) ||
                         top_m1_retire_is_cap_op(retire_submit_record_vec[m1_assert_i]) ||
                         top_m1_retire_is_core_op(retire_submit_record_vec[m1_assert_i])
                     ) else $fatal(1, "SG-AUTH M1 commit was not tied to a retired M1 instruction");
@@ -684,6 +745,11 @@ module lnp64_top #(
                         cap_m1_commit_latched_valid_vec[m1_assert_i] &&
                         core_m1_commit_valid_vec[m1_assert_i]
                     )) else $fatal(1, "SG-AUTH M1 retire had duplicate cap/core evidence owners");
+                    assert (!(
+                        object_m1_commit_latched_valid_vec[m1_assert_i] &&
+                        (cap_m1_commit_latched_valid_vec[m1_assert_i] ||
+                         core_m1_commit_valid_vec[m1_assert_i])
+                    )) else $fatal(1, "SG-AUTH M1 retire had duplicate object/cap/core evidence owners");
                     assert (m1_commit_vec[m1_assert_i].op ==
                         top_m1_commit_op_for_retire(retire_submit_record_vec[m1_assert_i]))
                         else $fatal(1, "SG-AUTH M1 commit op drifted from retired opcode");
@@ -695,6 +761,10 @@ module lnp64_top #(
                     if (top_m1_retire_is_cap_op(retire_submit_record_vec[m1_assert_i])) begin
                         assert (cap_m1_commit_latched_valid_vec[m1_assert_i])
                             else $fatal(1, "SG-AUTH M1 cap retire lacked cap-engine-owned commit");
+                    end
+                    if (top_m1_retire_is_object_op(retire_submit_record_vec[m1_assert_i])) begin
+                        assert (object_m1_commit_latched_valid_vec[m1_assert_i])
+                            else $fatal(1, "SG-AUTH M1 object retire lacked object-engine-owned commit");
                     end
                     if (top_m1_retire_is_core_op(retire_submit_record_vec[m1_assert_i])) begin
                         assert (core_m1_commit_valid_vec[m1_assert_i])
@@ -771,6 +841,24 @@ module lnp64_top #(
                                 assert (m1_state_projection_vec[m1_assert_i].revoked_generation ==
                                     m1_commit_vec[m1_assert_i].fdr_gen)
                                     else $fatal(1, "SG-AUTH M1 capRevoke revoked-generation witness drifted from commit");
+                            end
+                            LNP64_M1_COMMIT_OBJECT_CREATE: begin
+                                assert (m1_state_projection_vec[m1_assert_i].created_object_created)
+                                    else $fatal(1, "SG-AUTH M1 objectCreate did not publish created-object witness");
+                                assert (m1_state_projection_vec[m1_assert_i].minted_valid)
+                                    else $fatal(1, "SG-AUTH M1 objectCreate did not publish minted-cap witness");
+                                assert (m1_state_projection_vec[m1_assert_i].minted_object_id ==
+                                    m1_commit_vec[m1_assert_i].object_id)
+                                    else $fatal(1, "SG-AUTH M1 objectCreate minted object id drifted from object-engine commit");
+                                assert (m1_state_projection_vec[m1_assert_i].minted_generation ==
+                                    m1_commit_vec[m1_assert_i].fdr_gen)
+                                    else $fatal(1, "SG-AUTH M1 objectCreate minted generation drifted from object-engine commit");
+                                assert (m1_state_projection_vec[m1_assert_i].minted_rights ==
+                                    m1_commit_vec[m1_assert_i].rights_mask)
+                                    else $fatal(1, "SG-AUTH M1 objectCreate minted rights drifted from object-engine commit");
+                                assert (m1_state_projection_vec[m1_assert_i].minted_lineage_epoch ==
+                                    m1_commit_vec[m1_assert_i].lineage_epoch)
+                                    else $fatal(1, "SG-AUTH M1 objectCreate minted lineage drifted from object-engine commit");
                             end
                             default: begin
                             end
@@ -949,7 +1037,7 @@ module lnp64_top #(
 
     lnp64_cap_engine cap_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(cap_cmd_valid), .cmd_ready(cap_cmd_ready), .cmd(cap_cmd), .object_cap_sync_valid(object_cap_sync_valid), .object_cap_sync_reader_fd(object_cap_sync_reader_fd), .object_cap_sync_writer_fd(object_cap_sync_writer_fd), .object_cap_sync_single_valid(object_cap_sync_single_valid), .object_cap_sync_single_fd(object_cap_sync_single_fd), .object_cap_sync_single_kind(object_cap_sync_single_kind), .object_cap_sync_single_lineage(object_cap_sync_single_lineage), .rsp_valid(cap_rsp_valid), .rsp_ready(cap_rsp_ready), .rsp(cap_rsp), .m1_commit_valid(cap_m1_commit_valid), .m1_commit(cap_m1_commit), .m1_pre_state_projection(cap_m1_pre_state_projection), .m1_state_projection(cap_m1_state_projection), .telemetry_counter(), .fault_counter());
     lnp64_domain_engine domain_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(domain_cmd_valid), .cmd_ready(domain_cmd_ready), .cmd(domain_cmd), .rsp_valid(domain_rsp_valid), .rsp_ready(domain_rsp_ready), .rsp(domain_rsp), .telemetry_counter(), .fault_counter());
-    lnp64_object_engine object_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(object_cmd_valid), .cmd_ready(object_cmd_ready), .cmd(object_cmd), .rsp_valid(object_rsp_valid), .rsp_ready(object_rsp_ready), .rsp(object_rsp), .cap_sync_valid(object_cap_sync_valid), .cap_sync_reader_fd(object_cap_sync_reader_fd), .cap_sync_writer_fd(object_cap_sync_writer_fd), .cap_sync_single_valid(object_cap_sync_single_valid), .cap_sync_single_fd(object_cap_sync_single_fd), .cap_sync_single_kind(object_cap_sync_single_kind), .cap_sync_single_lineage(object_cap_sync_single_lineage), .telemetry_counter(), .fault_counter());
+    lnp64_object_engine object_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(object_cmd_valid), .cmd_ready(object_cmd_ready), .cmd(object_cmd), .rsp_valid(object_rsp_valid), .rsp_ready(object_rsp_ready), .rsp(object_rsp), .cap_sync_valid(object_cap_sync_valid), .cap_sync_reader_fd(object_cap_sync_reader_fd), .cap_sync_writer_fd(object_cap_sync_writer_fd), .cap_sync_single_valid(object_cap_sync_single_valid), .cap_sync_single_fd(object_cap_sync_single_fd), .cap_sync_single_kind(object_cap_sync_single_kind), .cap_sync_single_lineage(object_cap_sync_single_lineage), .m1_commit_valid(object_m1_commit_valid), .m1_commit(object_m1_commit), .m1_pre_state_projection(object_m1_pre_state_projection), .m1_state_projection(object_m1_state_projection), .telemetry_counter(), .fault_counter());
     lnp64_gate_engine gate_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());
     lnp64_process_engine process_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(1'b0), .cmd_ready(), .cmd(zero_cmd), .rsp_valid(), .rsp_ready(1'b1), .rsp(), .telemetry_counter(), .fault_counter());
     lnp64_vma_engine vma_i(.clk(clk), .reset_n(logic_reset_n), .cmd_valid(vma_cmd_valid), .cmd_ready(vma_cmd_ready), .cmd(vma_cmd), .rsp_valid(vma_rsp_valid), .rsp_ready(vma_rsp_ready), .rsp(vma_rsp), .telemetry_counter(), .fault_counter());
