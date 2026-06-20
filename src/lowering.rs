@@ -6553,6 +6553,11 @@ mod tests {
         assert!(run_real_package_gate.contains("demos)"));
         assert!(run_real_package_gate.contains("lnp64-netcat-clang-linked.elf"));
         assert!(run_real_package_gate.contains("lnp64-httpd-clang-linked.elf"));
+        assert!(
+            run_real_package_gate.contains(
+                "for selected in zlib natsort jsmn inih cwalk demos sbase userland netbsd"
+            )
+        );
         assert!(run_real_package_gate.contains("real LLVM LNP64 run-elf netcat self-test passed"));
         assert!(run_real_package_gate.contains("real LLVM LNP64 run-elf httpd self-test passed"));
         for sbase_elf in [

@@ -722,7 +722,7 @@ run_package() {
         "$build_dir/lnp64-netbsd-init-linked.elf"
       ;;
     all)
-      for selected in zlib natsort jsmn inih cwalk sbase userland netbsd; do
+      for selected in zlib natsort jsmn inih cwalk demos sbase userland netbsd; do
         run_package "$selected"
       done
       ;;
