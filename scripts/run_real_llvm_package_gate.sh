@@ -27,6 +27,12 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-sbase-basename-linked.elf"
         "$build_dir/lnp64-sbase-dirname-linked.elf"
         "$build_dir/lnp64-sbase-cat-linked.elf"
+        "$build_dir/lnp64-sbase-mkdir-linked.elf"
+        "$build_dir/lnp64-sbase-ln-linked.elf"
+        "$build_dir/lnp64-sbase-chmod-linked.elf"
+        "$build_dir/lnp64-sbase-touch-linked.elf"
+        "$build_dir/lnp64-sbase-mv-linked.elf"
+        "$build_dir/lnp64-sbase-rm-linked.elf"
         "$build_dir/lnp64-userland-ucat-linked.elf"
         "$build_dir/lnp64-userland-init-linked.elf"
         "$build_dir/lnp64-userland-lnpsh-linked.elf"
@@ -62,6 +68,12 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-sbase-basename-linked.elf"
         "$build_dir/lnp64-sbase-dirname-linked.elf"
         "$build_dir/lnp64-sbase-cat-linked.elf"
+        "$build_dir/lnp64-sbase-mkdir-linked.elf"
+        "$build_dir/lnp64-sbase-ln-linked.elf"
+        "$build_dir/lnp64-sbase-chmod-linked.elf"
+        "$build_dir/lnp64-sbase-touch-linked.elf"
+        "$build_dir/lnp64-sbase-mv-linked.elf"
+        "$build_dir/lnp64-sbase-rm-linked.elf"
       )
       ;;
     userland)
@@ -198,6 +210,62 @@ run_package() {
       grep -q 'exit=0' <<<"$sbase_cat_output"
       printf 'real LLVM LNP64 run-elf sbase cat execution passed: %s\n' \
         "$build_dir/lnp64-sbase-cat-linked.elf"
+      rm -rf "$sbase_fixture_root/made"
+      "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-mkdir-linked.elf" >/dev/null
+      local sbase_mkdir_output
+      sbase_mkdir_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+        "$build_dir/lnp64-sbase-mkdir-linked.elf" mkdir made)"
+      grep -q 'exit=0' <<<"$sbase_mkdir_output"
+      test -d "$sbase_fixture_root/made"
+      printf 'real LLVM LNP64 run-elf sbase mkdir execution passed: %s\n' \
+        "$build_dir/lnp64-sbase-mkdir-linked.elf"
+      rm -f "$sbase_fixture_root/linked.txt"
+      "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-ln-linked.elf" >/dev/null
+      local sbase_ln_output
+      sbase_ln_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+        "$build_dir/lnp64-sbase-ln-linked.elf" ln input/cat.txt linked.txt)"
+      grep -q 'exit=0' <<<"$sbase_ln_output"
+      cmp -s "$sbase_fixture_root/input/cat.txt" "$sbase_fixture_root/linked.txt"
+      printf 'real LLVM LNP64 run-elf sbase ln execution passed: %s\n' \
+        "$build_dir/lnp64-sbase-ln-linked.elf"
+      printf 'chmod via clang\n' >"$sbase_fixture_root/chmod.txt"
+      chmod 644 "$sbase_fixture_root/chmod.txt"
+      "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-chmod-linked.elf" >/dev/null
+      local sbase_chmod_output
+      sbase_chmod_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+        "$build_dir/lnp64-sbase-chmod-linked.elf" chmod 700 chmod.txt)"
+      grep -q 'exit=0' <<<"$sbase_chmod_output"
+      test "$(stat -c '%a' "$sbase_fixture_root/chmod.txt")" = 700
+      printf 'real LLVM LNP64 run-elf sbase chmod execution passed: %s\n' \
+        "$build_dir/lnp64-sbase-chmod-linked.elf"
+      rm -f "$sbase_fixture_root/touched.txt"
+      "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-touch-linked.elf" >/dev/null
+      local sbase_touch_output
+      sbase_touch_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+        "$build_dir/lnp64-sbase-touch-linked.elf" touch touched.txt)"
+      grep -q 'exit=0' <<<"$sbase_touch_output"
+      test -f "$sbase_fixture_root/touched.txt"
+      printf 'real LLVM LNP64 run-elf sbase touch execution passed: %s\n' \
+        "$build_dir/lnp64-sbase-touch-linked.elf"
+      printf 'move via clang\n' >"$sbase_fixture_root/move-source.txt"
+      "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-mv-linked.elf" >/dev/null
+      local sbase_mv_output
+      sbase_mv_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+        "$build_dir/lnp64-sbase-mv-linked.elf" mv move-source.txt moved.txt)"
+      grep -q 'exit=0' <<<"$sbase_mv_output"
+      test ! -e "$sbase_fixture_root/move-source.txt"
+      grep -q '^move via clang$' "$sbase_fixture_root/moved.txt"
+      printf 'real LLVM LNP64 run-elf sbase mv execution passed: %s\n' \
+        "$build_dir/lnp64-sbase-mv-linked.elf"
+      printf 'remove via clang\n' >"$sbase_fixture_root/remove.txt"
+      "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-rm-linked.elf" >/dev/null
+      local sbase_rm_output
+      sbase_rm_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+        "$build_dir/lnp64-sbase-rm-linked.elf" rm remove.txt)"
+      grep -q 'exit=0' <<<"$sbase_rm_output"
+      test ! -e "$sbase_fixture_root/remove.txt"
+      printf 'real LLVM LNP64 run-elf sbase rm execution passed: %s\n' \
+        "$build_dir/lnp64-sbase-rm-linked.elf"
       ;;
     userland)
       local userland_fixture_root="$build_dir/userland-fixture-root"

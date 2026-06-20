@@ -6212,6 +6212,26 @@ mod tests {
         assert!(run_all.contains("git diff --check"));
         assert!(run_real_packages.contains("scripts/run_real_llvm_package_gate.sh"));
         assert!(run_real_packages.contains("real LLVM LNP64 package gate"));
+        for sbase_elf in [
+            "lnp64-sbase-mkdir-linked.elf",
+            "lnp64-sbase-ln-linked.elf",
+            "lnp64-sbase-chmod-linked.elf",
+            "lnp64-sbase-touch-linked.elf",
+            "lnp64-sbase-mv-linked.elf",
+            "lnp64-sbase-rm-linked.elf",
+        ] {
+            assert!(run_real_package_gate.contains(sbase_elf));
+        }
+        for sbase_message in [
+            "real LLVM LNP64 run-elf sbase mkdir execution passed",
+            "real LLVM LNP64 run-elf sbase ln execution passed",
+            "real LLVM LNP64 run-elf sbase chmod execution passed",
+            "real LLVM LNP64 run-elf sbase touch execution passed",
+            "real LLVM LNP64 run-elf sbase mv execution passed",
+            "real LLVM LNP64 run-elf sbase rm execution passed",
+        ] {
+            assert!(run_real_package_gate.contains(sbase_message));
+        }
         assert!(run_real_package_gate.contains("netbsd)"));
         assert!(run_real_package_gate.contains("lnp64-netbsd-init-linked.elf"));
         assert!(run_real_package_gate.contains("lnp64-netbsd-sh-linked.elf"));
