@@ -4393,11 +4393,11 @@ if [[ "$gate" == "objects" ]]; then
   exit 0
 fi
 
-crt0_obj="$build_dir/crt0-smoke.o"
+crt0_smoke_obj="$build_dir/crt0-smoke.o"
 "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj toolchain/crt0_lnp64.s \
-  -o "$crt0_obj"
-test -s "$crt0_obj"
-printf 'real LLVM LNP64 llvm-mc crt0 smoke passed: %s\n' "$crt0_obj"
+  -o "$crt0_smoke_obj"
+test -s "$crt0_smoke_obj"
+printf 'real LLVM LNP64 llvm-mc crt0 smoke passed: %s\n' "$crt0_smoke_obj"
 
 minilibc_obj="$build_dir/liblnp64-min-smoke.o"
 "$llvm_mc" -triple=lnp64-unknown-none -filetype=obj toolchain/liblnp64_min.s \
@@ -4764,149 +4764,154 @@ grep -q 'free r3' "$heap_dump"
 printf 'real LLVM LNP64 native heap opcode smoke passed: %s\n' "$heap_obj"
 
 crt0_dump="$build_dir/crt0-smoke.dump"
-"$llvm_objdump" -d --triple=lnp64-unknown-none "$crt0_obj" >"$crt0_dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none "$crt0_smoke_obj" >"$crt0_dump"
 grep -q 'errno_set r0' "$crt0_dump"
 grep -q 'exit r1' "$crt0_dump"
 printf 'real LLVM LNP64 llvm-objdump crt0 decode smoke passed: %s\n' \
   "$crt0_dump"
 
+linker_script="$sysroot/usr/lib/lnp64/lnp64_static.ld"
+crt0_obj="$sysroot/usr/lib/lnp64/crt0.o"
+test -s "$linker_script"
+test -s "$crt0_obj"
+
 linked_elf="$build_dir/lnp64-linked-smoke.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$linked_elf" "$crt0_obj" "$main_obj"
 test -s "$linked_elf"
 printf 'real LLVM LNP64 lld static link smoke passed: %s\n' "$linked_elf"
 
 heap_elf="$build_dir/lnp64-native-heap-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$heap_elf" "$crt0_obj" "$heap_obj"
 test -s "$heap_elf"
 printf 'real LLVM LNP64 lld native heap link smoke passed: %s\n' "$heap_elf"
 
 intrinsic_push_elf="$build_dir/lnp64-intrinsic-push-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$intrinsic_push_elf" "$crt0_obj" "$intrinsic_push_obj"
 test -s "$intrinsic_push_elf"
 printf 'real LLVM LNP64 lld intrinsic push link smoke passed: %s\n' \
   "$intrinsic_push_elf"
 
 intrinsic_await_elf="$build_dir/lnp64-intrinsic-await-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$intrinsic_await_elf" "$crt0_obj" "$intrinsic_await_obj"
 test -s "$intrinsic_await_elf"
 printf 'real LLVM LNP64 lld intrinsic await link smoke passed: %s\n' \
   "$intrinsic_await_elf"
 
 intrinsic_call_elf="$build_dir/lnp64-intrinsic-call-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$intrinsic_call_elf" "$crt0_obj" "$intrinsic_call_obj"
 test -s "$intrinsic_call_elf"
 printf 'real LLVM LNP64 lld intrinsic call link smoke passed: %s\n' \
   "$intrinsic_call_elf"
 
 intrinsic_gate_return_elf="$build_dir/lnp64-intrinsic-gate-return-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$intrinsic_gate_return_elf" "$crt0_obj" "$intrinsic_gate_return_obj"
 test -s "$intrinsic_gate_return_elf"
 printf 'real LLVM LNP64 lld intrinsic gate return link smoke passed: %s\n' \
   "$intrinsic_gate_return_elf"
 
 intrinsic_ctl_elf="$build_dir/lnp64-intrinsic-control-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$intrinsic_ctl_elf" "$crt0_obj" "$intrinsic_ctl_obj"
 test -s "$intrinsic_ctl_elf"
 printf 'real LLVM LNP64 lld intrinsic control link smoke passed: %s\n' \
   "$intrinsic_ctl_elf"
 
 intrinsic_cap_elf="$build_dir/lnp64-intrinsic-cap-control-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$intrinsic_cap_elf" "$crt0_obj" "$intrinsic_cap_obj"
 test -s "$intrinsic_cap_elf"
 printf 'real LLVM LNP64 lld intrinsic capability control link smoke passed: %s\n' \
   "$intrinsic_cap_elf"
 
 intrinsic_mmap_elf="$build_dir/lnp64-intrinsic-mmap-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$intrinsic_mmap_elf" "$crt0_obj" "$intrinsic_mmap_obj"
 test -s "$intrinsic_mmap_elf"
 printf 'real LLVM LNP64 lld intrinsic mmap link smoke passed: %s\n' \
   "$intrinsic_mmap_elf"
 
 intrinsic_get_pcr_elf="$build_dir/lnp64-intrinsic-get-pcr-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$intrinsic_get_pcr_elf" "$crt0_obj" "$intrinsic_get_pcr_obj"
 test -s "$intrinsic_get_pcr_elf"
 printf 'real LLVM LNP64 lld intrinsic GET_PCR link smoke passed: %s\n' \
   "$intrinsic_get_pcr_elf"
 
 intrinsic_set_pcr_elf="$build_dir/lnp64-intrinsic-set-pcr-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$intrinsic_set_pcr_elf" "$crt0_obj" "$intrinsic_set_pcr_obj"
 test -s "$intrinsic_set_pcr_elf"
 printf 'real LLVM LNP64 lld intrinsic SET_PCR link smoke passed: %s\n' \
   "$intrinsic_set_pcr_elf"
 
 intrinsic_openat_elf="$build_dir/lnp64-intrinsic-openat-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$intrinsic_openat_elf" "$crt0_obj" "$intrinsic_openat_obj"
 test -s "$intrinsic_openat_elf"
 printf 'real LLVM LNP64 lld intrinsic OPEN_AT link smoke passed: %s\n' \
   "$intrinsic_openat_elf"
 
 intrinsic_clone_elf="$build_dir/lnp64-intrinsic-clone-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$intrinsic_clone_elf" "$crt0_obj" "$intrinsic_clone_obj"
 test -s "$intrinsic_clone_elf"
 printf 'real LLVM LNP64 lld intrinsic CLONE link smoke passed: %s\n' \
   "$intrinsic_clone_elf"
 
 intrinsic_amo_elf="$build_dir/lnp64-intrinsic-amo-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$intrinsic_amo_elf" "$crt0_obj" "$intrinsic_amo_obj"
 test -s "$intrinsic_amo_elf"
 printf 'real LLVM LNP64 lld intrinsic AMO link smoke passed: %s\n' \
   "$intrinsic_amo_elf"
 
 c11_atomic_elf="$build_dir/lnp64-c11-atomic-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$c11_atomic_elf" "$crt0_obj" "$c11_atomic_obj"
 test -s "$c11_atomic_elf"
 printf 'real LLVM LNP64 lld C11 atomic link smoke passed: %s\n' \
   "$c11_atomic_elf"
 
 inline_asm_elf="$build_dir/lnp64-inline-asm-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$inline_asm_elf" "$crt0_obj" "$inline_asm_obj"
 test -s "$inline_asm_elf"
 printf 'real LLVM LNP64 lld inline asm link smoke passed: %s\n' \
   "$inline_asm_elf"
 
 exit_elf="$build_dir/lnp64-exit-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$exit_elf" "$crt0_obj" "$exit_obj" "$libc_process_impl_obj"
 test -s "$exit_elf"
 printf 'real LLVM LNP64 lld exit link smoke passed: %s\n' "$exit_elf"
 
 errno_elf="$build_dir/lnp64-errno-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$errno_elf" "$crt0_obj" "$errno_obj" "$libc_errno_impl_obj"
 test -s "$errno_elf"
 printf 'real LLVM LNP64 lld errno link smoke passed: %s\n' "$errno_elf"
 
 argc_elf="$build_dir/lnp64-argc-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$argc_elf" "$crt0_obj" "$argc_obj"
 test -s "$argc_elf"
 printf 'real LLVM LNP64 lld argc link smoke passed: %s\n' "$argc_elf"
 
 startup_elf="$build_dir/lnp64-startup-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$startup_elf" "$crt0_obj" "$startup_obj"
 test -s "$startup_elf"
 printf 'real LLVM LNP64 lld startup argv/envp link smoke passed: %s\n' \
   "$startup_elf"
 
 getauxval_elf="$build_dir/lnp64-getauxval-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$getauxval_elf" "$crt0_obj" "$getauxval_obj" "$libc_startup_impl_obj" \
   "$libc_errno_impl_obj"
 test -s "$getauxval_elf"
@@ -4914,7 +4919,7 @@ printf 'real LLVM LNP64 lld getauxval link smoke passed: %s\n' \
   "$getauxval_elf"
 
 libc_test_argv_elf="$build_dir/lnp64-libc-test-argv-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_argv_elf" "$crt0_obj" "$libc_test_argv_obj" \
   "$libc_test_print_obj" "$libc_stdio_impl_obj" "$libc_fd_impl_obj"
 test -s "$libc_test_argv_elf"
@@ -4922,7 +4927,7 @@ printf 'real LLVM LNP64 lld libc-test argv link smoke passed: %s\n' \
   "$libc_test_argv_elf"
 
 libc_test_env_elf="$build_dir/lnp64-libc-test-env-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_env_elf" "$crt0_obj" "$libc_test_env_obj" \
   "$libc_test_print_obj" "$libc_startup_impl_obj" "$libc_string_impl_obj" \
   "$libc_errno_impl_obj" "$libc_fd_impl_obj"
@@ -4931,7 +4936,7 @@ printf 'real LLVM LNP64 lld libc-test env link smoke passed: %s\n' \
   "$libc_test_env_elf"
 
 libc_test_random_elf="$build_dir/lnp64-libc-test-random-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_random_elf" "$crt0_obj" "$libc_test_random_obj" \
   "$libc_test_print_obj" "$libc_random_impl_obj" "$libc_fd_impl_obj"
 test -s "$libc_test_random_elf"
@@ -4939,97 +4944,97 @@ printf 'real LLVM LNP64 lld libc-test random link smoke passed: %s\n' \
   "$libc_test_random_elf"
 
 scalar_arith_elf="$build_dir/lnp64-scalar-arith-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$scalar_arith_elf" "$crt0_obj" "$scalar_arith_obj"
 test -s "$scalar_arith_elf"
 printf 'real LLVM LNP64 lld scalar arithmetic link smoke passed: %s\n' \
   "$scalar_arith_elf"
 
 high_mul_elf="$build_dir/lnp64-high-mul-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$high_mul_elf" "$crt0_obj" "$high_mul_obj"
 test -s "$high_mul_elf"
 printf 'real LLVM LNP64 lld high-multiply link smoke passed: %s\n' \
   "$high_mul_elf"
 
 scalar_extend_elf="$build_dir/lnp64-scalar-extend-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$scalar_extend_elf" "$crt0_obj" "$scalar_extend_obj"
 test -s "$scalar_extend_elf"
 printf 'real LLVM LNP64 lld scalar extension link smoke passed: %s\n' \
   "$scalar_extend_elf"
 
 bitmanip_elf="$build_dir/lnp64-bitmanip-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$bitmanip_elf" "$crt0_obj" "$bitmanip_obj"
 test -s "$bitmanip_elf"
 printf 'real LLVM LNP64 lld bit-manip link smoke passed: %s\n' \
   "$bitmanip_elf"
 
 csel_elf="$build_dir/lnp64-csel-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$csel_elf" "$crt0_obj" "$csel_obj"
 test -s "$csel_elf"
 printf 'real LLVM LNP64 lld csel link smoke passed: %s\n' "$csel_elf"
 
 call_clobber_elf="$build_dir/lnp64-call-clobber-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$call_clobber_elf" "$crt0_obj" "$call_clobber_obj"
 test -s "$call_clobber_elf"
 printf 'real LLVM LNP64 lld call-clobber link smoke passed: %s\n' \
   "$call_clobber_elf"
 
 compare_elf="$build_dir/lnp64-compare-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$compare_elf" "$crt0_obj" "$compare_obj"
 test -s "$compare_elf"
 printf 'real LLVM LNP64 lld comparison link smoke passed: %s\n' \
   "$compare_elf"
 
 unsigned_compare_elf="$build_dir/lnp64-unsigned-compare-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$unsigned_compare_elf" "$crt0_obj" "$unsigned_compare_obj"
 test -s "$unsigned_compare_elf"
 printf 'real LLVM LNP64 lld unsigned comparison link smoke passed: %s\n' \
   "$unsigned_compare_elf"
 
 signed_load_elf="$build_dir/lnp64-signed-load-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$signed_load_elf" "$crt0_obj" "$signed_load_obj"
 test -s "$signed_load_elf"
 printf 'real LLVM LNP64 lld signed-load link smoke passed: %s\n' \
   "$signed_load_elf"
 
 wide_const_elf="$build_dir/lnp64-wide-const-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$wide_const_elf" "$crt0_obj" "$wide_const_obj"
 test -s "$wide_const_elf"
 printf 'real LLVM LNP64 lld wide-constant link smoke passed: %s\n' \
   "$wide_const_elf"
 
 stack_aggregate_elf="$build_dir/lnp64-stack-aggregate-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$stack_aggregate_elf" "$crt0_obj" "$stack_aggregate_obj"
 test -s "$stack_aggregate_elf"
 printf 'real LLVM LNP64 lld stack aggregate link smoke passed: %s\n' \
   "$stack_aggregate_elf"
 
 stack_args_elf="$build_dir/lnp64-stack-args-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$stack_args_elf" "$crt0_obj" "$stack_args_obj"
 test -s "$stack_args_elf"
 printf 'real LLVM LNP64 lld stack-argument link smoke passed: %s\n' \
   "$stack_args_elf"
 
 libc_string_elf="$build_dir/lnp64-libc-string-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_string_elf" "$crt0_obj" "$libc_string_obj" "$libc_string_impl_obj"
 test -s "$libc_string_elf"
 printf 'real LLVM LNP64 lld minilibc string link smoke passed: %s\n' \
   "$libc_string_elf"
 
 convert_elf="$build_dir/lnp64-convert-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$convert_elf" "$crt0_obj" "$convert_obj" "$libc_convert_impl_obj" \
   "$libc_errno_impl_obj"
 test -s "$convert_elf"
@@ -5037,7 +5042,7 @@ printf 'real LLVM LNP64 lld numeric conversion link smoke passed: %s\n' \
   "$convert_elf"
 
 path_elf="$build_dir/lnp64-path-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$path_elf" "$crt0_obj" "$path_obj" "$libc_path_impl_obj" \
   "$libc_string_impl_obj"
 test -s "$path_elf"
@@ -5045,7 +5050,7 @@ printf 'real LLVM LNP64 lld path helper link smoke passed: %s\n' \
   "$path_elf"
 
 search_elf="$build_dir/lnp64-search-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$search_elf" "$crt0_obj" "$search_obj" "$libc_search_impl_obj" \
   "$libc_string_impl_obj"
 test -s "$search_elf"
@@ -5053,7 +5058,7 @@ printf 'real LLVM LNP64 lld search helper link smoke passed: %s\n' \
   "$search_elf"
 
 sort_elf="$build_dir/lnp64-sort-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$sort_elf" "$crt0_obj" "$sort_obj" "$libc_sort_impl_obj" \
   "$libc_string_impl_obj"
 test -s "$sort_elf"
@@ -5061,7 +5066,7 @@ printf 'real LLVM LNP64 lld sort helper link smoke passed: %s\n' \
   "$sort_elf"
 
 zlib_elf="$build_dir/lnp64-zlib-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$zlib_elf" "$crt0_obj" "$zlib_smoke_obj" "$zlib_adler_obj" \
   "$zlib_crc_obj" "$libc_string_impl_obj"
 test -s "$zlib_elf"
@@ -5069,7 +5074,7 @@ printf 'real LLVM LNP64 lld zlib package link smoke passed: %s\n' \
   "$zlib_elf"
 
 natsort_elf="$build_dir/lnp64-natsort-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$natsort_elf" "$crt0_obj" "$natsort_smoke_obj" "$natsort_impl_obj" \
   "$libc_string_impl_obj"
 test -s "$natsort_elf"
@@ -5077,21 +5082,21 @@ printf 'real LLVM LNP64 lld natsort package link smoke passed: %s\n' \
   "$natsort_elf"
 
 jsmn_elf="$build_dir/lnp64-jsmn-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$jsmn_elf" "$crt0_obj" "$jsmn_smoke_obj"
 test -s "$jsmn_elf"
 printf 'real LLVM LNP64 lld jsmn package link smoke passed: %s\n' \
   "$jsmn_elf"
 
 inih_elf="$build_dir/lnp64-inih-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$inih_elf" "$crt0_obj" "$inih_smoke_obj" "$libc_string_impl_obj"
 test -s "$inih_elf"
 printf 'real LLVM LNP64 lld inih package link smoke passed: %s\n' \
   "$inih_elf"
 
 cwalk_elf="$build_dir/lnp64-cwalk-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$cwalk_elf" "$crt0_obj" "$cwalk_smoke_obj" "$cwalk_impl_obj" \
   "$libc_string_impl_obj"
 test -s "$cwalk_elf"
@@ -5099,7 +5104,7 @@ printf 'real LLVM LNP64 lld cwalk package link smoke passed: %s\n' \
   "$cwalk_elf"
 
 libc_test_ctype_elf="$build_dir/lnp64-libc-test-ctype-bounded-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_ctype_elf" "$crt0_obj" "$libc_test_ctype_obj" \
   "$libc_test_print_obj" "$libc_string_impl_obj" "$libc_fd_impl_obj"
 test -s "$libc_test_ctype_elf"
@@ -5107,7 +5112,7 @@ printf 'real LLVM LNP64 lld libc-test ctype_bounded link smoke passed: %s\n' \
   "$libc_test_ctype_elf"
 
 libc_test_string_elf="$build_dir/lnp64-libc-test-string-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_string_elf" "$crt0_obj" "$libc_test_string_obj" \
   "$libc_test_print_obj" "$libc_string_impl_obj" "$libc_fd_impl_obj"
 test -s "$libc_test_string_elf"
@@ -5115,7 +5120,7 @@ printf 'real LLVM LNP64 lld libc-test string link smoke passed: %s\n' \
   "$libc_test_string_elf"
 
 libc_test_memcpy_bounded_elf="$build_dir/lnp64-libc-test-string-memcpy-bounded-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_memcpy_bounded_elf" "$crt0_obj" "$libc_test_memcpy_bounded_obj" \
   "$libc_test_print_obj" "$libc_string_impl_obj" "$libc_fd_impl_obj"
 test -s "$libc_test_memcpy_bounded_elf"
@@ -5123,7 +5128,7 @@ printf 'real LLVM LNP64 lld libc-test string_memcpy_bounded link smoke passed: %
   "$libc_test_memcpy_bounded_elf"
 
 libc_test_memmove_bounded_elf="$build_dir/lnp64-libc-test-string-memmove-bounded-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_memmove_bounded_elf" "$crt0_obj" "$libc_test_memmove_bounded_obj" \
   "$libc_test_print_obj" "$libc_string_impl_obj" "$libc_fd_impl_obj"
 test -s "$libc_test_memmove_bounded_elf"
@@ -5131,7 +5136,7 @@ printf 'real LLVM LNP64 lld libc-test string_memmove_bounded link smoke passed: 
   "$libc_test_memmove_bounded_elf"
 
 libc_test_memmem_elf="$build_dir/lnp64-libc-test-string-memmem-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_memmem_elf" "$crt0_obj" "$libc_test_memmem_obj" \
   "$libc_test_print_obj" "$libc_string_impl_obj" "$libc_fd_impl_obj"
 test -s "$libc_test_memmem_elf"
@@ -5139,7 +5144,7 @@ printf 'real LLVM LNP64 lld libc-test string_memmem link smoke passed: %s\n' \
   "$libc_test_memmem_elf"
 
 libc_test_strchr_elf="$build_dir/lnp64-libc-test-string-strchr-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_strchr_elf" "$crt0_obj" "$libc_test_strchr_obj" \
   "$libc_test_print_obj" "$libc_string_impl_obj" "$libc_fd_impl_obj"
 test -s "$libc_test_strchr_elf"
@@ -5147,7 +5152,7 @@ printf 'real LLVM LNP64 lld libc-test string_strchr link smoke passed: %s\n' \
   "$libc_test_strchr_elf"
 
 libc_test_strcspn_elf="$build_dir/lnp64-libc-test-string-strcspn-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_strcspn_elf" "$crt0_obj" "$libc_test_strcspn_obj" \
   "$libc_test_print_obj" "$libc_string_impl_obj" "$libc_fd_impl_obj"
 test -s "$libc_test_strcspn_elf"
@@ -5155,7 +5160,7 @@ printf 'real LLVM LNP64 lld libc-test string_strcspn link smoke passed: %s\n' \
   "$libc_test_strcspn_elf"
 
 libc_test_strstr_elf="$build_dir/lnp64-libc-test-string-strstr-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_strstr_elf" "$crt0_obj" "$libc_test_strstr_obj" \
   "$libc_test_print_obj" "$libc_string_impl_obj" "$libc_fd_impl_obj"
 test -s "$libc_test_strstr_elf"
@@ -5163,7 +5168,7 @@ printf 'real LLVM LNP64 lld libc-test string_strstr link smoke passed: %s\n' \
   "$libc_test_strstr_elf"
 
 libc_test_udiv_elf="$build_dir/lnp64-libc-test-udiv-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_udiv_elf" "$crt0_obj" "$libc_test_udiv_obj" \
   "$libc_test_print_obj" "$libc_fd_impl_obj"
 test -s "$libc_test_udiv_elf"
@@ -5171,7 +5176,7 @@ printf 'real LLVM LNP64 lld libc-test udiv link smoke passed: %s\n' \
   "$libc_test_udiv_elf"
 
 libc_test_basename_elf="$build_dir/lnp64-libc-test-basename-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_basename_elf" "$crt0_obj" "$libc_test_basename_obj" \
   "$libc_test_print_obj" "$libc_string_impl_obj" "$libc_path_impl_obj" \
   "$libc_fd_impl_obj"
@@ -5180,7 +5185,7 @@ printf 'real LLVM LNP64 lld libc-test basename link smoke passed: %s\n' \
   "$libc_test_basename_elf"
 
 libc_test_dirname_elf="$build_dir/lnp64-libc-test-dirname-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_dirname_elf" "$crt0_obj" "$libc_test_dirname_obj" \
   "$libc_test_print_obj" "$libc_string_impl_obj" "$libc_path_impl_obj" \
   "$libc_fd_impl_obj"
@@ -5189,7 +5194,7 @@ printf 'real LLVM LNP64 lld libc-test dirname link smoke passed: %s\n' \
   "$libc_test_dirname_elf"
 
 libc_test_strtol_elf="$build_dir/lnp64-libc-test-strtol-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_strtol_elf" "$crt0_obj" "$libc_test_strtol_obj" \
   "$libc_test_print_obj" "$libc_convert_impl_obj" "$libc_errno_impl_obj" \
   "$libc_fd_impl_obj"
@@ -5198,7 +5203,7 @@ printf 'real LLVM LNP64 lld libc-test strtol link smoke passed: %s\n' \
   "$libc_test_strtol_elf"
 
 libc_test_clock_gettime_elf="$build_dir/lnp64-libc-test-clock-gettime-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_clock_gettime_elf" "$crt0_obj" "$libc_test_clock_gettime_obj" \
   "$libc_test_print_obj" "$libc_time_impl_obj" "$libc_errno_impl_obj" \
   "$libc_fd_impl_obj"
@@ -5207,7 +5212,7 @@ printf 'real LLVM LNP64 lld libc-test clock_gettime link smoke passed: %s\n' \
   "$libc_test_clock_gettime_elf"
 
 libc_test_access_bounded_elf="$build_dir/lnp64-libc-test-access-bounded-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_access_bounded_elf" "$crt0_obj" \
   "$libc_test_access_bounded_obj" "$libc_test_print_obj" \
   "$libc_meta_impl_obj" "$libc_fd_impl_obj" "$libc_errno_impl_obj"
@@ -5216,7 +5221,7 @@ printf 'real LLVM LNP64 lld libc-test access_bounded link smoke passed: %s\n' \
   "$libc_test_access_bounded_elf"
 
 libc_test_stat_elf="$build_dir/lnp64-libc-test-stat-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_stat_elf" "$crt0_obj" "$libc_test_stat_obj" \
   "$libc_test_print_obj" "$libc_stdio_impl_obj" "$libc_meta_impl_obj" \
   "$libc_fd_impl_obj" "$libc_errno_impl_obj" "$libc_time_impl_obj" \
@@ -5226,7 +5231,7 @@ printf 'real LLVM LNP64 lld libc-test stat link smoke passed: %s\n' \
   "$libc_test_stat_elf"
 
 libc_test_utime_elf="$build_dir/lnp64-libc-test-utime-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_utime_elf" "$crt0_obj" "$libc_test_utime_obj" \
   "$libc_test_print_obj" "$libc_stdio_impl_obj" "$libc_meta_impl_obj" \
   "$libc_fd_impl_obj" "$libc_errno_impl_obj" "$libc_time_impl_obj" \
@@ -5236,7 +5241,7 @@ printf 'real LLVM LNP64 lld libc-test utime link smoke passed: %s\n' \
   "$libc_test_utime_elf"
 
 libc_test_ungetc_elf="$build_dir/lnp64-libc-test-ungetc-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_ungetc_elf" "$crt0_obj" "$libc_test_ungetc_obj" \
   "$libc_test_print_obj" "$libc_stdio_impl_obj" "$libc_string_impl_obj" \
   "$libc_fd_impl_obj" "$libc_errno_impl_obj"
@@ -5245,7 +5250,7 @@ printf 'real LLVM LNP64 lld libc-test ungetc link smoke passed: %s\n' \
   "$libc_test_ungetc_elf"
 
 libc_test_fdopen_elf="$build_dir/lnp64-libc-test-fdopen-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_fdopen_elf" "$crt0_obj" "$libc_test_fdopen_obj" \
   "$libc_test_print_obj" "$libc_stdio_impl_obj" "$libc_string_impl_obj" \
   "$libc_fd_impl_obj" "$libc_errno_impl_obj"
@@ -5254,7 +5259,7 @@ printf 'real LLVM LNP64 lld libc-test fdopen link smoke passed: %s\n' \
   "$libc_test_fdopen_elf"
 
 libc_test_fcntl_basic_elf="$build_dir/lnp64-libc-test-fcntl-basic-bounded-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_fcntl_basic_elf" "$crt0_obj" \
   "$libc_test_fcntl_basic_obj" "$libc_test_print_obj" \
   "$libc_stdio_impl_obj" "$libc_meta_impl_obj" "$libc_fd_impl_obj" \
@@ -5264,7 +5269,7 @@ printf 'real LLVM LNP64 lld libc-test fcntl_basic_bounded link smoke passed: %s\
   "$libc_test_fcntl_basic_elf"
 
 libc_test_fcntl_elf="$build_dir/lnp64-libc-test-fcntl-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_fcntl_elf" "$crt0_obj" "$libc_test_fcntl_obj" \
   "$libc_test_print_obj" "$libc_stdio_impl_obj" "$libc_meta_impl_obj" \
   "$libc_fd_impl_obj" "$libc_process_impl_obj" "$libc_errno_impl_obj" \
@@ -5274,7 +5279,7 @@ printf 'real LLVM LNP64 lld libc-test fcntl link smoke passed: %s\n' \
   "$libc_test_fcntl_elf"
 
 libc_test_pthread_tsd_elf="$build_dir/lnp64-libc-test-pthread-tsd-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_pthread_tsd_elf" "$crt0_obj" \
   "$libc_test_pthread_tsd_obj" "$libc_test_print_obj" \
   "$libc_pthread_impl_obj" "$libc_alloc_impl_obj" "$libc_string_impl_obj" \
@@ -5284,7 +5289,7 @@ printf 'real LLVM LNP64 lld libc-test pthread_tsd link smoke passed: %s\n' \
   "$libc_test_pthread_tsd_elf"
 
 libc_test_sem_init_elf="$build_dir/lnp64-libc-test-sem-init-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_sem_init_elf" "$crt0_obj" \
   "$libc_test_sem_init_obj" "$libc_test_print_obj" \
   "$libc_pthread_impl_obj" "$libc_sem_impl_obj" "$libc_futex_impl_obj" \
@@ -5295,7 +5300,7 @@ printf 'real LLVM LNP64 lld libc-test sem_init link smoke passed: %s\n' \
   "$libc_test_sem_init_elf"
 
 libc_test_qsort_bounded_elf="$build_dir/lnp64-libc-test-qsort-bounded-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_qsort_bounded_elf" "$crt0_obj" "$libc_test_qsort_bounded_obj" \
   "$libc_test_print_obj" "$libc_sort_impl_obj" "$libc_string_impl_obj" \
   "$libc_fd_impl_obj"
@@ -5304,7 +5309,7 @@ printf 'real LLVM LNP64 lld libc-test qsort_bounded link smoke passed: %s\n' \
   "$libc_test_qsort_bounded_elf"
 
 libc_test_search_insque_elf="$build_dir/lnp64-libc-test-search-insque-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_search_insque_elf" "$crt0_obj" "$libc_test_search_insque_obj" \
   "$libc_test_print_obj" "$libc_search_impl_obj" "$libc_alloc_impl_obj" \
   "$libc_string_impl_obj" "$libc_fd_impl_obj"
@@ -5313,7 +5318,7 @@ printf 'real LLVM LNP64 lld libc-test search_insque link smoke passed: %s\n' \
   "$libc_test_search_insque_elf"
 
 libc_test_search_lsearch_elf="$build_dir/lnp64-libc-test-search-lsearch-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_search_lsearch_elf" "$crt0_obj" \
   "$libc_test_search_lsearch_obj" "$libc_test_print_obj" \
   "$libc_search_impl_obj" "$libc_string_impl_obj" "$libc_fd_impl_obj"
@@ -5322,7 +5327,7 @@ printf 'real LLVM LNP64 lld libc-test search_lsearch link smoke passed: %s\n' \
   "$libc_test_search_lsearch_elf"
 
 libc_test_malloc_0_elf="$build_dir/lnp64-libc-test-malloc-0-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_malloc_0_elf" "$crt0_obj" "$libc_test_malloc_0_obj" \
   "$libc_test_print_obj" "$libc_alloc_impl_obj" "$libc_string_impl_obj" \
   "$libc_fd_impl_obj"
@@ -5331,7 +5336,7 @@ printf 'real LLVM LNP64 lld libc-test malloc-0 link smoke passed: %s\n' \
   "$libc_test_malloc_0_elf"
 
 libc_test_fgets_eof_elf="$build_dir/lnp64-libc-test-fgets-eof-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$libc_test_fgets_eof_elf" "$crt0_obj" "$libc_test_fgets_eof_obj" \
   "$libc_test_print_obj" "$libc_stdio_impl_obj" "$libc_string_impl_obj" \
   "$libc_fd_impl_obj"
@@ -5340,7 +5345,7 @@ printf 'real LLVM LNP64 lld libc-test fgets-eof link smoke passed: %s\n' \
   "$libc_test_fgets_eof_elf"
 
 calloc_elf="$build_dir/lnp64-calloc-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$calloc_elf" "$crt0_obj" "$calloc_obj" "$libc_alloc_impl_obj" \
   "$libc_string_impl_obj"
 test -s "$calloc_elf"
@@ -5348,7 +5353,7 @@ printf 'real LLVM LNP64 lld calloc link smoke passed: %s\n' \
   "$calloc_elf"
 
 realloc_elf="$build_dir/lnp64-realloc-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$realloc_elf" "$crt0_obj" "$realloc_obj" "$libc_alloc_impl_obj" \
   "$libc_string_impl_obj"
 test -s "$realloc_elf"
@@ -5356,21 +5361,21 @@ printf 'real LLVM LNP64 lld realloc link smoke passed: %s\n' \
   "$realloc_elf"
 
 read_elf="$build_dir/lnp64-read-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$read_elf" "$crt0_obj" "$read_obj" "$libc_fd_impl_obj"
 test -s "$read_elf"
 printf 'real LLVM LNP64 lld read link smoke passed: %s\n' \
   "$read_elf"
 
 write_elf="$build_dir/lnp64-write-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$write_elf" "$crt0_obj" "$write_obj" "$libc_fd_impl_obj"
 test -s "$write_elf"
 printf 'real LLVM LNP64 lld write link smoke passed: %s\n' \
   "$write_elf"
 
 userland_ucat_elf="$build_dir/lnp64-userland-ucat-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$userland_ucat_elf" "$crt0_obj" "$userland_ucat_obj" \
   "$libc_fd_impl_obj"
 test -s "$userland_ucat_elf"
@@ -5378,7 +5383,7 @@ printf 'real LLVM LNP64 lld userland ucat link smoke passed: %s\n' \
   "$userland_ucat_elf"
 
 userland_init_elf="$build_dir/lnp64-userland-init-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$userland_init_elf" "$crt0_obj" "$userland_init_obj" \
   "$libc_fd_impl_obj"
 test -s "$userland_init_elf"
@@ -5386,7 +5391,7 @@ printf 'real LLVM LNP64 lld userland init link smoke passed: %s\n' \
   "$userland_init_elf"
 
 userland_lnpsh_elf="$build_dir/lnp64-userland-lnpsh-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$userland_lnpsh_elf" "$crt0_obj" "$userland_lnpsh_obj" \
   "$libc_fd_impl_obj"
 test -s "$userland_lnpsh_elf"
@@ -5394,7 +5399,7 @@ printf 'real LLVM LNP64 lld userland lnpsh link smoke passed: %s\n' \
   "$userland_lnpsh_elf"
 
 userland_spawn_elf="$build_dir/lnp64-userland-spawn-task-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$userland_spawn_elf" "$crt0_obj" "$userland_spawn_obj" \
   "$libc_fd_impl_obj"
 test -s "$userland_spawn_elf"
@@ -5402,7 +5407,7 @@ printf 'real LLVM LNP64 lld userland spawn task link smoke passed: %s\n' \
   "$userland_spawn_elf"
 
 netbsd_init_elf="$build_dir/lnp64-netbsd-init-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$netbsd_init_elf" "$crt0_obj" "$netbsd_init_obj" \
   "$libc_process_impl_obj" "$libc_errno_impl_obj" "$libc_fd_impl_obj" \
   "$libc_startup_impl_obj"
@@ -5411,7 +5416,7 @@ printf 'real LLVM LNP64 lld NetBSD init link passed: %s\n' \
   "$netbsd_init_elf"
 
 netbsd_sh_elf="$build_dir/lnp64-netbsd-sh-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$netbsd_sh_elf" "$crt0_obj" "$netbsd_sh_obj" \
   "$libc_process_impl_obj" "$libc_errno_impl_obj" "$libc_fd_impl_obj" \
   "$libc_meta_impl_obj" "$libc_startup_impl_obj"
@@ -5420,7 +5425,7 @@ printf 'real LLVM LNP64 lld NetBSD shell link passed: %s\n' \
   "$netbsd_sh_elf"
 
 netbsd_loader_target_elf="$build_dir/lnp64-netbsd-loader-target-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$netbsd_loader_target_elf" "$crt0_obj" "$netbsd_loader_target_obj" \
   "$libc_fd_impl_obj"
 test -s "$netbsd_loader_target_elf"
@@ -5428,7 +5433,7 @@ printf 'real LLVM LNP64 lld NetBSD loader target child link passed: %s\n' \
   "$netbsd_loader_target_elf"
 
 netbsd_elf_exec_test_elf="$build_dir/lnp64-netbsd-elf-exec-test-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$netbsd_elf_exec_test_elf" "$crt0_obj" "$netbsd_elf_exec_test_obj" \
   "$libc_process_impl_obj" "$libc_errno_impl_obj" "$libc_fd_impl_obj" \
   "$libc_startup_impl_obj"
@@ -5437,7 +5442,7 @@ printf 'real LLVM LNP64 lld NetBSD ELF exec parent link passed: %s\n' \
   "$netbsd_elf_exec_test_elf"
 
 netbsd_fork_wait_test_elf="$build_dir/lnp64-netbsd-fork-wait-test-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$netbsd_fork_wait_test_elf" "$crt0_obj" "$netbsd_fork_wait_test_obj" \
   "$libc_process_impl_obj" "$libc_errno_impl_obj" "$libc_fd_impl_obj"
 test -s "$netbsd_fork_wait_test_elf"
@@ -5445,7 +5450,7 @@ printf 'real LLVM LNP64 lld NetBSD fork/wait child link passed: %s\n' \
   "$netbsd_fork_wait_test_elf"
 
 netbsd_thread_test_elf="$build_dir/lnp64-netbsd-thread-test-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$netbsd_thread_test_elf" "$crt0_obj" "$netbsd_thread_test_obj" \
   "$libc_pthread_impl_obj" "$libc_alloc_impl_obj" "$libc_string_impl_obj" \
   "$libc_fd_impl_obj"
@@ -5454,7 +5459,7 @@ printf 'real LLVM LNP64 lld NetBSD thread child link passed: %s\n' \
   "$netbsd_thread_test_elf"
 
 netbsd_poll_test_elf="$build_dir/lnp64-netbsd-poll-test-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$netbsd_poll_test_elf" "$crt0_obj" "$netbsd_poll_test_obj" \
   "$libc_poll_impl_obj" "$libc_fd_impl_obj"
 test -s "$netbsd_poll_test_elf"
@@ -5462,7 +5467,7 @@ printf 'real LLVM LNP64 lld NetBSD poll child link passed: %s\n' \
   "$netbsd_poll_test_elf"
 
 netbsd_signal_gate_test_elf="$build_dir/lnp64-netbsd-signal-gate-test-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$netbsd_signal_gate_test_elf" "$crt0_obj" "$netbsd_signal_gate_test_obj" \
   "$libc_signal_impl_obj" "$libc_fd_impl_obj"
 test -s "$netbsd_signal_gate_test_elf"
@@ -5470,7 +5475,7 @@ printf 'real LLVM LNP64 lld NetBSD signal gate child link passed: %s\n' \
   "$netbsd_signal_gate_test_elf"
 
 netbsd_signal_fault_test_elf="$build_dir/lnp64-netbsd-signal-fault-test-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$netbsd_signal_fault_test_elf" "$crt0_obj" "$netbsd_signal_fault_test_obj" \
   "$libc_signal_impl_obj" "$libc_fd_impl_obj"
 test -s "$netbsd_signal_fault_test_elf"
@@ -5478,7 +5483,7 @@ printf 'real LLVM LNP64 lld NetBSD signal fault child link passed: %s\n' \
   "$netbsd_signal_fault_test_elf"
 
 netbsd_timer_test_elf="$build_dir/lnp64-netbsd-timer-test-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$netbsd_timer_test_elf" "$crt0_obj" "$netbsd_timer_test_obj" \
   "$libc_time_impl_obj" "$libc_signal_impl_obj" "$libc_poll_impl_obj" \
   "$libc_fd_impl_obj" "$libc_errno_impl_obj"
@@ -5487,7 +5492,7 @@ printf 'real LLVM LNP64 lld NetBSD timer child link passed: %s\n' \
   "$netbsd_timer_test_elf"
 
 netbsd_mmap_test_elf="$build_dir/lnp64-netbsd-mmap-test-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$netbsd_mmap_test_elf" "$crt0_obj" "$netbsd_mmap_test_obj" \
   "$libc_vma_impl_obj" "$libc_errno_impl_obj" "$libc_fd_impl_obj"
 test -s "$netbsd_mmap_test_elf"
@@ -5495,7 +5500,7 @@ printf 'real LLVM LNP64 lld NetBSD mmap child link passed: %s\n' \
   "$netbsd_mmap_test_elf"
 
 netbsd_fd_passing_test_elf="$build_dir/lnp64-netbsd-fd-passing-test-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$netbsd_fd_passing_test_elf" "$crt0_obj" "$netbsd_fd_passing_test_obj" \
   "$libc_fd_impl_obj"
 test -s "$netbsd_fd_passing_test_elf"
@@ -5503,7 +5508,7 @@ printf 'real LLVM LNP64 lld NetBSD fd passing child link passed: %s\n' \
   "$netbsd_fd_passing_test_elf"
 
 netbsd_namespace_test_elf="$build_dir/lnp64-netbsd-namespace-test-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$netbsd_namespace_test_elf" "$crt0_obj" "$netbsd_namespace_test_obj" \
   "$libc_fd_impl_obj" "$libc_meta_impl_obj" "$libc_errno_impl_obj"
 test -s "$netbsd_namespace_test_elf"
@@ -5511,7 +5516,7 @@ printf 'real LLVM LNP64 lld NetBSD namespace child link passed: %s\n' \
   "$netbsd_namespace_test_elf"
 
 netbsd_fs_service_test_elf="$build_dir/lnp64-netbsd-fs-service-test-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$netbsd_fs_service_test_elf" "$crt0_obj" "$netbsd_fs_service_test_obj" \
   "$libc_fd_impl_obj" "$libc_alloc_impl_obj" "$libc_string_impl_obj"
 test -s "$netbsd_fs_service_test_elf"
@@ -5519,7 +5524,7 @@ printf 'real LLVM LNP64 lld NetBSD fs service child link passed: %s\n' \
   "$netbsd_fs_service_test_elf"
 
 netbsd_classifier_test_elf="$build_dir/lnp64-netbsd-classifier-test-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$netbsd_classifier_test_elf" "$crt0_obj" "$netbsd_classifier_test_obj" \
   "$libc_poll_impl_obj" "$libc_fd_impl_obj"
 test -s "$netbsd_classifier_test_elf"
@@ -5531,7 +5536,7 @@ printf 'real LLVM LNP64 lld NetBSD classifier child link passed: %s\n' \
   "$netbsd_classifier_test_elf"
 
 netbsd_socket_loopback_test_elf="$build_dir/lnp64-netbsd-socket-loopback-test-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$netbsd_socket_loopback_test_elf" "$crt0_obj" \
   "$netbsd_socket_loopback_test_obj" "$libc_socket_impl_obj" \
   "$libc_poll_impl_obj" "$libc_fd_impl_obj" "$libc_errno_impl_obj"
@@ -5540,7 +5545,7 @@ printf 'real LLVM LNP64 lld NetBSD socket loopback child link passed: %s\n' \
   "$netbsd_socket_loopback_test_elf"
 
 netbsd_gate_trace_test_elf="$build_dir/lnp64-netbsd-gate-trace-test-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$netbsd_gate_trace_test_elf" "$crt0_obj" "$netbsd_gate_trace_test_obj" \
   "$libc_fd_impl_obj"
 test -s "$netbsd_gate_trace_test_elf"
@@ -5548,7 +5553,7 @@ printf 'real LLVM LNP64 lld NetBSD gate trace child link passed: %s\n' \
   "$netbsd_gate_trace_test_elf"
 
 netbsd_domain_nested_test_elf="$build_dir/lnp64-netbsd-domain-nested-test-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$netbsd_domain_nested_test_elf" "$crt0_obj" \
   "$netbsd_domain_nested_test_obj" "$libc_fd_impl_obj"
 test -s "$netbsd_domain_nested_test_elf"
@@ -5556,7 +5561,7 @@ printf 'real LLVM LNP64 lld NetBSD domain nested child link passed: %s\n' \
   "$netbsd_domain_nested_test_elf"
 
 netbsd_domain_budget_test_elf="$build_dir/lnp64-netbsd-domain-budget-test-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$netbsd_domain_budget_test_elf" "$crt0_obj" \
   "$netbsd_domain_budget_test_obj" "$libc_fd_impl_obj"
 test -s "$netbsd_domain_budget_test_elf"
@@ -5564,7 +5569,7 @@ printf 'real LLVM LNP64 lld NetBSD domain budget child link passed: %s\n' \
   "$netbsd_domain_budget_test_elf"
 
 meta_libc_elf="$build_dir/lnp64-meta-libc-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$meta_libc_elf" "$crt0_obj" "$meta_libc_obj" "$libc_meta_impl_obj" \
   "$libc_fd_impl_obj" "$libc_errno_impl_obj"
 test -s "$meta_libc_elf"
@@ -5572,7 +5577,7 @@ printf 'real LLVM LNP64 lld metadata libc link smoke passed: %s\n' \
   "$meta_libc_elf"
 
 mmap_libc_elf="$build_dir/lnp64-mmap-libc-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$mmap_libc_elf" "$crt0_obj" "$mmap_libc_obj" "$libc_vma_impl_obj" \
   "$libc_errno_impl_obj"
 test -s "$mmap_libc_elf"
@@ -5580,21 +5585,21 @@ printf 'real LLVM LNP64 lld mmap libc link smoke passed: %s\n' \
   "$mmap_libc_elf"
 
 futex_libc_elf="$build_dir/lnp64-futex-libc-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$futex_libc_elf" "$crt0_obj" "$futex_libc_obj" "$libc_futex_impl_obj"
 test -s "$futex_libc_elf"
 printf 'real LLVM LNP64 lld futex libc link smoke passed: %s\n' \
   "$futex_libc_elf"
 
 poll_libc_elf="$build_dir/lnp64-poll-libc-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$poll_libc_elf" "$crt0_obj" "$poll_libc_obj" "$libc_poll_impl_obj"
 test -s "$poll_libc_elf"
 printf 'real LLVM LNP64 lld poll/select/epoll/kqueue libc link smoke passed: %s\n' \
   "$poll_libc_elf"
 
 signal_libc_elf="$build_dir/lnp64-signal-libc-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$signal_libc_elf" "$crt0_obj" "$signal_libc_obj" \
   "$libc_signal_impl_obj"
 test -s "$signal_libc_elf"
@@ -5602,7 +5607,7 @@ printf 'real LLVM LNP64 lld signal libc link smoke passed: %s\n' \
   "$signal_libc_elf"
 
 socket_libc_elf="$build_dir/lnp64-socket-libc-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$socket_libc_elf" "$crt0_obj" "$socket_libc_obj" \
   "$libc_socket_impl_obj" "$libc_errno_impl_obj"
 test -s "$socket_libc_elf"
@@ -5610,7 +5615,7 @@ printf 'real LLVM LNP64 lld socket libc link smoke passed: %s\n' \
   "$socket_libc_elf"
 
 netbsd_personality_clang_elf="$build_dir/lnp64-netbsd-personality-clang-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$netbsd_personality_clang_elf" "$crt0_obj" \
   "$netbsd_personality_clang_obj" "$libc_fd_impl_obj" \
   "$libc_vma_impl_obj" "$libc_poll_impl_obj" "$libc_signal_impl_obj" \
@@ -5621,7 +5626,7 @@ printf 'real LLVM LNP64 lld NetBSD personality clang smoke link passed: %s\n' \
   "$netbsd_personality_clang_elf"
 
 sbase_echo_elf="$build_dir/lnp64-sbase-echo-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$sbase_echo_elf" "$crt0_obj" "$build_dir/sbase-echo-clang-smoke.o" \
   "$sbase_support_impl_obj" "$libc_fd_impl_obj" "$libc_string_impl_obj" \
   "$libc_process_impl_obj"
@@ -5631,7 +5636,7 @@ printf 'real LLVM LNP64 lld sbase echo link smoke passed: %s\n' \
 
 for sbase_path_cmd in basename dirname; do
   sbase_path_elf="$build_dir/lnp64-sbase-$sbase_path_cmd-linked.elf"
-  "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  "$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
     -o "$sbase_path_elf" "$crt0_obj" \
     "$build_dir/sbase-$sbase_path_cmd-clang-smoke.o" \
     "$sbase_support_impl_obj" "$libc_fd_impl_obj" "$libc_string_impl_obj" \
@@ -5643,7 +5648,7 @@ printf 'real LLVM LNP64 lld sbase path command link smoke passed: %s %s\n' \
   "$build_dir/lnp64-sbase-dirname-linked.elf"
 
 sbase_cat_elf="$build_dir/lnp64-sbase-cat-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$sbase_cat_elf" "$crt0_obj" "$build_dir/sbase-cat-clang-smoke.o" \
   "$build_dir/sbase-libutil-concat-clang-smoke.o" \
   "$build_dir/sbase-libutil-writeall-clang-smoke.o" \
@@ -5654,7 +5659,7 @@ printf 'real LLVM LNP64 lld sbase cat link smoke passed: %s\n' \
   "$sbase_cat_elf"
 
 netcat_elf="$build_dir/lnp64-netcat-clang-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$netcat_elf" "$crt0_obj" "$netcat_obj" "$libc_fd_impl_obj" \
   "$libc_alloc_impl_obj" "$libc_string_impl_obj" "$libc_poll_impl_obj" \
   "$libc_socket_impl_obj" "$libc_errno_impl_obj"
@@ -5663,7 +5668,7 @@ printf 'real LLVM LNP64 lld netcat demo link smoke passed: %s\n' \
   "$netcat_elf"
 
 httpd_elf="$build_dir/lnp64-httpd-clang-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$httpd_elf" "$crt0_obj" "$httpd_obj" "$libc_fd_impl_obj" \
   "$libc_alloc_impl_obj" "$libc_string_impl_obj" "$libc_poll_impl_obj" \
   "$libc_socket_impl_obj" "$libc_errno_impl_obj"
@@ -5672,7 +5677,7 @@ printf 'real LLVM LNP64 lld httpd demo link smoke passed: %s\n' \
   "$httpd_elf"
 
 indirect_call_elf="$build_dir/lnp64-indirect-call-linked.elf"
-"$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$indirect_call_elf" "$crt0_obj" "$indirect_call_obj"
 test -s "$indirect_call_elf"
 printf 'real LLVM LNP64 lld indirect call link smoke passed: %s\n' \
@@ -5681,7 +5686,7 @@ printf 'real LLVM LNP64 lld indirect call link smoke passed: %s\n' \
 for demo in hello factorial allocator fibonacci pcr cat json-parser rot13 producer-consumer parallel-hash sqlite-lite ping-pong; do
   demo_obj="$build_dir/$demo-clang-smoke.o"
   demo_elf="$build_dir/lnp64-$demo-clang-linked.elf"
-  "$lld" -flavor gnu -static -m elf64lnp64 -T toolchain/lnp64_static.ld \
+  "$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
     -o "$demo_elf" "$crt0_obj" "$demo_obj" "$libc_fd_impl_obj" \
     "$libc_alloc_impl_obj" "$libc_string_impl_obj" "$libc_process_impl_obj" \
     "$libc_futex_impl_obj"

@@ -3383,11 +3383,14 @@ mod tests {
         assert!(real_llc.contains("--triple=lnp64-unknown-none"));
         assert!(real_llc.contains("errno_set r0"));
         assert!(real_llc.contains("exit r1"));
+        assert!(real_llc.contains("crt0_smoke_obj=\"$build_dir/crt0-smoke.o\""));
         assert!(real_llc.contains("real LLVM LNP64 llvm-objdump crt0 decode smoke passed"));
         assert!(real_llc.contains("native-heap-smoke.o"));
         assert!(real_llc.contains("alloc_ex r3, r1, r2"));
         assert!(real_llc.contains("real LLVM LNP64 native heap opcode smoke passed"));
-        assert!(real_llc.contains("-T toolchain/lnp64_static.ld"));
+        assert!(real_llc.contains("linker_script=\"$sysroot/usr/lib/lnp64/lnp64_static.ld\""));
+        assert!(real_llc.contains("crt0_obj=\"$sysroot/usr/lib/lnp64/crt0.o\""));
+        assert!(real_llc.contains("-T \"$linker_script\""));
         assert!(real_llc.contains("real LLVM LNP64 lld static link smoke passed"));
         assert!(real_llc.contains("lnp64-native-heap-linked.elf"));
         assert!(real_llc.contains("real LLVM LNP64 lld native heap link smoke passed"));
