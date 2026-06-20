@@ -168,6 +168,16 @@ int kqueue(void) {
   return LNP64_KQUEUE_FD;
 }
 
+int lnp64_kqueue_close(int fd) {
+  if (fd != LNP64_KQUEUE_FD)
+    return -2;
+  if (!lnp64_kqueue_created)
+    return -1;
+  lnp64_kqueue_created = 0;
+  lnp64_kqueue_count = 0;
+  return 0;
+}
+
 static int lnp64_kqueue_find(unsigned long ident, short filter) {
   for (int i = 0; i < lnp64_kqueue_count; i = i + 1) {
     if (lnp64_kqueue_ident[i] == ident && lnp64_kqueue_filter[i] == filter)

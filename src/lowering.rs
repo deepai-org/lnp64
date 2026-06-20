@@ -2578,6 +2578,7 @@ mod tests {
         assert!(libc_poll_min.contains("int epoll_ctl(int epfd, int op, int fd"));
         assert!(libc_poll_min.contains("int epoll_wait(int epfd"));
         assert!(libc_poll_min.contains("int kqueue(void)"));
+        assert!(libc_poll_min.contains("int lnp64_kqueue_close(int fd)"));
         assert!(libc_poll_min.contains("int kevent(int kq"));
         assert!(libc_poll_min.contains("__lnp_await"));
         assert!(poll_header.contains("struct pollfd"));
@@ -3124,6 +3125,8 @@ mod tests {
         assert!(poll_test_clang.contains("kevent(kq, &change, 1, 0, 0, &ktimeout) != -1"));
         assert!(poll_test_clang.contains("change.filter = EVFILT_WRITE"));
         assert!(poll_test_clang.contains("kout.filter != EVFILT_WRITE"));
+        assert!(poll_test_clang.contains("close(kq) != 0"));
+        assert!(poll_test_clang.contains("kevent(kq, 0, 0, &kout, 1, &ktimeout) != -1"));
         assert!(!poll_test_clang.contains("typedef unsigned long nfds_t"));
         assert!(!poll_test_clang.contains("int poll(struct pollfd"));
         assert!(real_llc.contains("real LLVM LNP64 clang NetBSD poll child object passed"));
@@ -3184,6 +3187,7 @@ mod tests {
         assert!(libc_fd_min.contains("LNP64_FDR_TOKEN_MARKER"));
         assert!(libc_fd_min.contains("LNP64_FDR_TOKEN_INDEX_MASK"));
         assert!(libc_fd_min.contains("int close(int fd)"));
+        assert!(libc_fd_min.contains("lnp64_kqueue_close(fd)"));
         assert!(libc_fd_min.contains("__lnp_cap_revoke"));
         assert!(real_llc.contains("liblnp64-fd-min.o"));
         assert!(
@@ -5956,7 +5960,8 @@ mod tests {
         assert!(conformance.contains("EV_DELETE removes a registered readiness source"));
         assert!(conformance.contains("EV_ONESHOT removes a source after first delivery"));
         assert!(conformance.contains("unsupported filter registrations fail closed"));
-        assert!(conformance.contains("Broader filters, detailed error reporting"));
+        assert!(conformance.contains("`close(kq)` invalidates the process-local kqueue"));
+        assert!(conformance.contains("Broader filters and detailed error reporting"));
         assert!(conformance.contains("`COMPAT-STRESS-005` | poll/epoll races"));
         for group in [
             "startup_env_auxv",

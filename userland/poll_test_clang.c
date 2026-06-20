@@ -200,6 +200,15 @@ int main(void) {
         return 49;
     if (kevent(kq, 0, 0, &kout, 1, &ktimeout) != 0)
         return 50;
+    if (close(kq) != 0)
+        return 51;
+    if (kevent(kq, 0, 0, &kout, 1, &ktimeout) != -1)
+        return 52;
+    kq = kqueue();
+    if (kq <= 0)
+        return 53;
+    if (kevent(kq, 0, 0, &kout, 1, &ktimeout) != 0)
+        return 54;
 
     pfd.fd = (int)read_cap;
     pfd.events = POLLIN;

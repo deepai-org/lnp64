@@ -10,6 +10,11 @@ enum {
 
 static unsigned long lnp64_mkstemp_counter;
 
+__attribute__((weak)) int lnp64_kqueue_close(int fd) {
+  (void)fd;
+  return -2;
+}
+
 int openat(int dirfd, const char *path, int flags, ...) {
   lnp64_word_t result =
       __lnp_openat((lnp64_cap_t)(long)dirfd, (lnp64_word_t)path,
@@ -86,5 +91,8 @@ int mkstemp(char *template) {
 }
 
 int close(int fd) {
+  int kqueue_status = lnp64_kqueue_close(fd);
+  if (kqueue_status != -2)
+    return kqueue_status;
   return __lnp_cap_revoke((lnp64_cap_t)(long)fd, 0) >= 0 ? 0 : -1;
 }
