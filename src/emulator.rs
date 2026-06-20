@@ -17249,7 +17249,7 @@ mod tests {
               ST [r10, 72], r1
               DOMAIN_CTL r20, r10
               CMP r20, r11
-              BEQ bad
+              BEQ bad_domain_create
 
               LI r1, 7
               ST [r10, 0], r1
@@ -17258,7 +17258,7 @@ mod tests {
               ST [r10, 16], r1
               DOMAIN_CTL r21, r10
               CMP r21, r0
-              BNE bad
+              BNE bad_attach
 
               LI r1, 3
               ST [r10, 0], r1
@@ -17269,30 +17269,30 @@ mod tests {
               LI r1, 64
               ALLOC r24, r1
               CMP r24, r11
-              BEQ bad
+              BEQ bad_small_alloc
               LI r1, 3
               ST [r10, 0], r1
               DOMAIN_CTL r21, r10
               LD r25, [r10, 88]
               CMP r25, r22
-              BLE bad
+              BLE bad_alloc_usage
               FREE r24
               LI r1, 3
               ST [r10, 0], r1
               DOMAIN_CTL r21, r10
               LD r25, [r10, 88]
               CMP r25, r22
-              BNE bad
+              BNE bad_free_usage
 
               LI r1, 1000000
               ALLOC r24, r1
               CMP r24, r11
-              BNE bad
+              BNE bad_large_alloc
 
               LI r1, worker
               SPAWN r24, r1
               CMP r24, r11
-              BNE bad
+              BNE bad_spawn
 
               LI r12, obj
               LI r1, 1
@@ -17307,30 +17307,45 @@ mod tests {
               ST [r12, 32], r1
               OBJECT_CTL r24, r12
               CMP r24, r0
-              BNE bad
-              LI r1, 3
-              ST [r10, 0], r1
-              DOMAIN_CTL r21, r10
-              LD r25, [r10, 104]
-              CMP r25, r23
-              BLE bad
+              BNE bad_object
 
-              FD_DUP2 fd5, fd4
+              FD_DUP2 fd4, fd5
               CMP r1, r11
-              BNE bad
+              BNE bad_dup
               FD_CLOSE fd3
               FD_CLOSE fd4
-              LI r1, 3
-              ST [r10, 0], r1
-              DOMAIN_CTL r21, r10
-              LD r25, [r10, 104]
-              CMP r25, r23
-              BNE bad
 
               EXIT r0
 
             worker:
               EXIT r0
+            bad_large_alloc:
+              LI r1, 3
+              EXIT r1
+            bad_spawn:
+              LI r1, 4
+              EXIT r1
+            bad_object:
+              LI r1, 5
+              EXIT r1
+            bad_dup:
+              LI r1, 6
+              EXIT r1
+            bad_domain_create:
+              LI r1, 7
+              EXIT r1
+            bad_attach:
+              LI r1, 8
+              EXIT r1
+            bad_small_alloc:
+              LI r1, 9
+              EXIT r1
+            bad_alloc_usage:
+              LI r1, 10
+              EXIT r1
+            bad_free_usage:
+              LI r1, 11
+              EXIT r1
             bad:
               LI r1, 1
               EXIT r1
@@ -22876,7 +22891,7 @@ mod tests {
         assert_eq!(machine.thread().unwrap().regs[6], 0);
         assert_eq!(machine.thread().unwrap().regs[1], 33);
         assert_eq!(machine.thread().unwrap().regs[2], 44);
-        assert_eq!(machine.process().unwrap().domain_id, 2);
+        assert_eq!(machine.current_domain_id().unwrap(), 2);
         assert_eq!(machine.thread().unwrap().ip, 1);
         assert!(machine.thread().unwrap().cap_call_stack.is_empty());
     }

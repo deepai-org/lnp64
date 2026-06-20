@@ -4058,6 +4058,7 @@ mod tests {
         let target_manifest = include_str!("../toolchain/lnp64_target.manifest");
         let driver_manifest = include_str!("../toolchain/lnp64_clang_driver.manifest");
         let gate_manifest = include_str!("../toolchain/lnp64_llvm_gates.manifest");
+        let real_llvm_runner = include_str!("../scripts/run_real_llvm_lnp64.sh");
         let contract_index = include_str!("../toolchain/lnp64_contracts.manifest");
         let transition_manifest = include_str!("../toolchain/lnp64_transition.manifest");
         let roadmap = include_str!("../toolchain_roadmap.md");
@@ -4129,15 +4130,16 @@ mod tests {
             "active_real_backend"
         );
 
-        assert!(gate_manifest.contains("clang --target=lnp64-unknown-none"));
-        assert!(gate_manifest.contains(
-            "-ffreestanding -fno-pic -fno-jump-tables -isystem target/lnp64-sysroot/usr/include -I toolchain"
-        ));
-        assert!(gate_manifest.contains("llvm-mc -triple=lnp64-unknown-none"));
-        assert!(gate_manifest.contains("toolchain/crt0_lnp64.s"));
-        assert!(gate_manifest.contains("ld.lld -static -m elf64lnp64"));
-        assert!(gate_manifest.contains("-T toolchain/lnp64_static.ld"));
-        assert!(gate_manifest.contains("lnp64 elf-plan"));
+        assert!(
+            gate_manifest.contains("real_llc_build|bash scripts/run_real_llvm_lnp64_docker.sh")
+        );
+        assert!(real_llvm_runner.contains("\"$clang\" --target=lnp64-unknown-none"));
+        assert!(real_llvm_runner.contains("-ffreestanding -fno-pic -fno-jump-tables"));
+        assert!(real_llvm_runner.contains("\"$llvm_mc\" -triple=lnp64-unknown-none"));
+        assert!(real_llvm_runner.contains("toolchain/crt0_lnp64.s"));
+        assert!(real_llvm_runner.contains("\"$lld\" -flavor gnu -static -m elf64lnp64"));
+        assert!(real_llvm_runner.contains("lnp64_static.ld"));
+        assert!(gate_manifest.contains("inspect_exec_plan|LNP64_BOOTSTRAP_CASES=hello"));
     }
 
     #[test]
