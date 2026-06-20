@@ -11,9 +11,13 @@ enum {
   LNP64_EV_ADD = 0x0001,
   LNP64_EV_DELETE = 0x0002,
   LNP64_EV_ONESHOT = 0x0010,
+  LNP64_EV_ERROR = 0x4000,
   LNP64_EPOLL_CTL_ADD = 1,
   LNP64_EPOLL_CTL_DEL = 2,
   LNP64_EPOLL_CTL_MOD = 3,
+  LNP64_ENOENT = 2,
+  LNP64_EINVAL = 22,
+  LNP64_ENOMEM = 12,
   LNP64_EPOLL_FD = 64,
   LNP64_EPOLL_MAX = 16,
   LNP64_KQUEUE_FD = 65,
@@ -197,19 +201,19 @@ static void lnp64_kqueue_remove_slot(int slot) {
 
 static int lnp64_kqueue_apply_change(const struct kevent *change) {
   if (lnp64_filter_events(change->filter) == 0)
-    return -1;
+    return LNP64_EINVAL;
   int slot = lnp64_kqueue_find(change->ident, change->filter);
   if (change->flags & LNP64_EV_DELETE) {
     if (slot < 0)
-      return -1;
+      return LNP64_ENOENT;
     lnp64_kqueue_remove_slot(slot);
     return 0;
   }
   if (!(change->flags & LNP64_EV_ADD))
-    return -1;
+    return LNP64_EINVAL;
   if (slot < 0) {
     if (lnp64_kqueue_count >= LNP64_KQUEUE_MAX)
-      return -1;
+      return LNP64_ENOMEM;
     slot = lnp64_kqueue_count;
     lnp64_kqueue_count = lnp64_kqueue_count + 1;
   }
@@ -218,6 +222,16 @@ static int lnp64_kqueue_apply_change(const struct kevent *change) {
   lnp64_kqueue_flags[slot] = change->flags;
   lnp64_kqueue_udata[slot] = change->udata;
   return 0;
+}
+
+static void lnp64_kqueue_write_error(const struct kevent *change,
+                                     struct kevent *event, int error) {
+  event->ident = change->ident;
+  event->filter = change->filter;
+  event->flags = LNP64_EV_ERROR;
+  event->fflags = 0;
+  event->data = error;
+  event->udata = change->udata;
 }
 
 int kevent(int kq, const struct kevent *changelist, int nchanges,
@@ -231,12 +245,21 @@ int kevent(int kq, const struct kevent *changelist, int nchanges,
     return -1;
 
   for (int i = 0; i < nchanges; i = i + 1) {
-    if (!changelist || lnp64_kqueue_apply_change(&changelist[i]) != 0)
+    int change_error;
+    if (!changelist)
       return -1;
+    change_error = lnp64_kqueue_apply_change(&changelist[i]);
+    if (change_error != 0) {
+      if (!eventlist || ready >= nevents)
+        return -1;
+      lnp64_kqueue_write_error(&changelist[i], &eventlist[ready],
+                               change_error);
+      ready = ready + 1;
+    }
   }
 
   if (!eventlist || nevents == 0)
-    return 0;
+    return ready;
 
   for (int i = 0; i < lnp64_kqueue_count && ready < nevents; i = i + 1) {
     lnp64_word_t mask = (lnp64_word_t)lnp64_filter_events(lnp64_kqueue_filter[i]);

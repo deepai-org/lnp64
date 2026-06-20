@@ -187,6 +187,12 @@ int main(void) {
     change.udata = 0;
     if (kevent(kq, &change, 1, 0, 0, &ktimeout) != -1)
         return 46;
+    change.udata = (void *)99;
+    if (kevent(kq, &change, 1, &kout, 1, &ktimeout) != 1)
+        return 55;
+    if (kout.filter != 99 || !(kout.flags & EV_ERROR) || kout.data != 22 ||
+        kout.udata != (void *)99)
+        return 56;
     change.ident = write_cap;
     change.filter = EVFILT_WRITE;
     change.flags = EV_ADD | EV_ONESHOT;

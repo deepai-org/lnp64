@@ -2579,6 +2579,7 @@ mod tests {
         assert!(libc_poll_min.contains("int epoll_wait(int epfd"));
         assert!(libc_poll_min.contains("int kqueue(void)"));
         assert!(libc_poll_min.contains("int lnp64_kqueue_close(int fd)"));
+        assert!(libc_poll_min.contains("lnp64_kqueue_write_error"));
         assert!(libc_poll_min.contains("int kevent(int kq"));
         assert!(libc_poll_min.contains("__lnp_await"));
         assert!(poll_header.contains("struct pollfd"));
@@ -2592,6 +2593,7 @@ mod tests {
         assert!(sys_event_header.contains("struct kevent"));
         assert!(sys_event_header.contains("#define EVFILT_READ"));
         assert!(sys_event_header.contains("#define EV_ONESHOT"));
+        assert!(sys_event_header.contains("#define EV_ERROR"));
         assert!(sys_event_header.contains("int kevent(int kq"));
         assert!(real_llc.contains("#include <poll.h>"));
         assert!(real_llc.contains("#include <sys/epoll.h>"));
@@ -3123,6 +3125,8 @@ mod tests {
         assert!(poll_test_clang.contains("change.flags = EV_DELETE"));
         assert!(poll_test_clang.contains("change.filter = 99"));
         assert!(poll_test_clang.contains("kevent(kq, &change, 1, 0, 0, &ktimeout) != -1"));
+        assert!(poll_test_clang.contains("kout.flags & EV_ERROR"));
+        assert!(poll_test_clang.contains("kout.data != 22"));
         assert!(poll_test_clang.contains("change.filter = EVFILT_WRITE"));
         assert!(poll_test_clang.contains("kout.filter != EVFILT_WRITE"));
         assert!(poll_test_clang.contains("close(kq) != 0"));
@@ -5960,8 +5964,9 @@ mod tests {
         assert!(conformance.contains("EV_DELETE removes a registered readiness source"));
         assert!(conformance.contains("EV_ONESHOT removes a source after first delivery"));
         assert!(conformance.contains("unsupported filter registrations fail closed"));
+        assert!(conformance.contains("report `EV_ERROR`/`EINVAL`"));
         assert!(conformance.contains("`close(kq)` invalidates the process-local kqueue"));
-        assert!(conformance.contains("Broader filters and detailed error reporting"));
+        assert!(conformance.contains("Broader filters remain partial"));
         assert!(conformance.contains("`COMPAT-STRESS-005` | poll/epoll races"));
         for group in [
             "startup_env_auxv",

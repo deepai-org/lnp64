@@ -9,6 +9,7 @@
 #define EV_ADD 0x0001
 #define EV_DELETE 0x0002
 #define EV_ONESHOT 0x0010
+#define EV_ERROR 0x4000
 
 struct kevent {
   unsigned long ident;
