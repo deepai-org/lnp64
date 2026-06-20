@@ -6186,6 +6186,7 @@ mod tests {
         let roadmap = include_str!("../toolchain_roadmap.md");
         let psabi = include_str!("../psABI.md");
         let conformance = include_str!("../conformance_matrix.md");
+        let readme = include_str!("../README.md");
         let llvm_gates = include_str!("../toolchain/lnp64_llvm_gates.manifest");
         let llvm_bootstrap = include_str!("../toolchain/lnp64_llvm_bootstrap.manifest");
         let run_elf = include_str!("../toolchain/lnp64_run_elf.manifest");
@@ -6326,6 +6327,46 @@ mod tests {
         assert!(!removed_frontend_script_corpus.contains("LNP64_RTL_TOP_PROGRAM_C_BACKEND=toy"));
         assert!(!removed_frontend_script_corpus.contains("cc --toy-bootstrap"));
         assert!(!removed_frontend_script_corpus.contains("--legacy-toy"));
+        assert!(
+            removed_frontend_script_corpus
+                .contains("direct .c input to run_rtl_top_program_smoke.sh is retired")
+        );
+        assert!(
+            removed_frontend_script_corpus
+                .contains("scripts/run_rtl_top_linked_llvm_smoke.sh for C inputs")
+        );
+        for retired_input in [
+            "top_return_12.c",
+            "top_branch_if.c",
+            "top_loop_sum.c",
+            "top_factorial_mul.c",
+            "top_subtract.c",
+            "top_bitwise.c",
+            "top_shift.c",
+            "top_udiv_urem.c",
+            "top_signed_division.c",
+            "top_not.c",
+            "top_call_return.c",
+            "top_byte_array.c",
+            "top_heap_byte_lanes.c",
+        ] {
+            assert!(
+                !readme.contains(&format!(
+                    "run_rtl_top_program_smoke.sh tests/rtl/programs/{retired_input}"
+                )),
+                "README must not route retired C input {retired_input} through the generic RTL smoke"
+            );
+        }
+        assert!(!readme.contains("run_rtl_top_program_smoke.sh demos/hello.c"));
+        assert!(!readme.contains("run_rtl_top_program_smoke.sh demos/factorial.c"));
+        assert!(!readme.contains("run_rtl_top_program_smoke.sh demos/allocator.c"));
+        assert!(!readme.contains("run_rtl_top_program_smoke.sh demos/ping_pong.c"));
+        assert!(readme.contains(
+            "run_rtl_top_linked_llvm_smoke.sh tests/rtl/programs/top_linked_loop_branch.c"
+        ));
+        assert!(readme.contains(
+            "run_rtl_top_linked_llvm_smoke.sh tests/rtl/programs/top_linked_clone_join.c"
+        ));
         assert!(removed_frontend_script_corpus.contains("LNP64_LLVM_PACKAGE_FILTER=userland"));
         assert!(removed_frontend_script_corpus.contains("LNP64_LLVM_PACKAGE_FILTER=netbsd"));
         assert!(removed_frontend_script_corpus.contains("scripts/run_real_llvm_package_gate.sh"));
