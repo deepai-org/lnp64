@@ -277,4 +277,137 @@ theorem m10_counts_exact :
     poisonParity, afterEcc, correctEcc, afterBoot, boot, initialMachine
   ]
 
+/- Packed-bit decode model for the M10 RAS witness.
+
+Mirrors the M1..M9/M14 packed-bit machinery so the emitted lnp64_m10_ras_commit_t
+and lnp64_m10_state_projection_t bit vectors can be decode-checked against this
+Lean model. Every M10 field is a plain scalar/bool slice. -/
+
+structure PackedFieldLayout where
+  name : String
+  width : Nat
+  lsb : Nat
+  msb : Nat
+deriving DecidableEq, Repr
+
+def packedSchemaWidth (schema : List (String × Nat)) : Nat :=
+  schema.foldl (fun total field => total + field.2) 0
+
+def packedSchemaLayoutFrom : Nat -> List (String × Nat) -> List PackedFieldLayout
+  | _cursor, [] => []
+  | cursor, field :: rest =>
+      let lsb := cursor - field.2
+      { name := field.1, width := field.2, lsb := lsb, msb := cursor - 1 } ::
+        packedSchemaLayoutFrom lsb rest
+
+def packedSchemaLayout (schema : List (String × Nat)) : List PackedFieldLayout :=
+  packedSchemaLayoutFrom (packedSchemaWidth schema) schema
+
+def packedFieldWithinWidth (totalWidth : Nat) (field : PackedFieldLayout) : Bool :=
+  decide (field.width > 0) &&
+  decide (field.lsb + field.width = field.msb + 1) &&
+  decide (field.msb < totalWidth)
+
+def packedLayoutWithinWidth (totalWidth : Nat) (layout : List PackedFieldLayout) : Bool :=
+  layout.all (packedFieldWithinWidth totalWidth)
+
+def packedLayoutStartsAtWidth (totalWidth : Nat) : List PackedFieldLayout -> Bool
+  | [] => decide (totalWidth = 0)
+  | field :: _rest => decide (field.msb + 1 = totalWidth)
+
+def packedLayoutAdjacentContiguous : List PackedFieldLayout -> Bool
+  | [] => true
+  | _field :: [] => true
+  | first :: second :: rest =>
+      decide (first.lsb = second.msb + 1) &&
+      packedLayoutAdjacentContiguous (second :: rest)
+
+def packedLayoutEndsAtZero : List PackedFieldLayout -> Bool
+  | [] => true
+  | field :: [] => decide (field.lsb = 0)
+  | _field :: rest => packedLayoutEndsAtZero rest
+
+def packedLayoutCoversWidth (totalWidth : Nat) (layout : List PackedFieldLayout) : Bool :=
+  packedLayoutWithinWidth totalWidth layout &&
+  packedLayoutStartsAtWidth totalWidth layout &&
+  packedLayoutAdjacentContiguous layout &&
+  packedLayoutEndsAtZero layout
+
+def packedBitSlice (bits lsb width : Nat) : Nat :=
+  (bits / (2 ^ lsb)) % (2 ^ width)
+
+def packedFieldValue (bits : Nat) (field : PackedFieldLayout) : Nat :=
+  packedBitSlice bits field.lsb field.width
+
+def packedLayoutFieldValue
+    (bits : Nat)
+    (fieldName : String) : List PackedFieldLayout -> Option Nat
+  | [] => none
+  | field :: rest =>
+      if field.name == fieldName then
+        some (packedFieldValue bits field)
+      else
+        packedLayoutFieldValue bits fieldName rest
+
+def rtlM10CommitPackedSchema : List (String × Nat) :=
+  [ ("op", 8)
+  , ("status", 16)
+  , ("root_domain", 32)
+  , ("fault_count", 32)
+  , ("telemetry_reads", 32)
+  , ("audit_records", 32)
+  , ("quote_id", 32)
+  , ("reset_id", 32) ]
+
+def rtlM10StateProjectionPackedSchema : List (String × Nat) :=
+  [ ("op", 8)
+  , ("status", 16)
+  , ("fault_count", 32)
+  , ("telemetry_reads", 32)
+  , ("audit_records", 32)
+  , ("trace_writes", 32)
+  , ("trace_capacity", 32)
+  , ("boot_measured", 1)
+  , ("telemetry_fdr_present", 1)
+  , ("ecc_corrected", 1)
+  , ("parity_poison_faulted", 1)
+  , ("watchdog_timed_out", 1)
+  , ("local_reset_seen", 1)
+  , ("degraded_state", 1)
+  , ("telemetry_scoped", 1)
+  , ("telemetry_redacted", 1)
+  , ("trace_overflowed", 1)
+  , ("quote_measurement_bound", 1)
+  , ("quote_development_marked", 1)
+  , ("audit_recorded", 1)
+  , ("mls_denied", 1)
+  , ("debug_denied", 1)
+  , ("counts_exact", 1) ]
+
+def rtlM10CommitPackedLayout : List PackedFieldLayout :=
+  packedSchemaLayout rtlM10CommitPackedSchema
+
+def rtlM10StateProjectionPackedLayout : List PackedFieldLayout :=
+  packedSchemaLayout rtlM10StateProjectionPackedSchema
+
+theorem rtlM10CommitPackedSchema_width :
+    packedSchemaWidth rtlM10CommitPackedSchema = 216 := by
+  decide
+
+theorem rtlM10StateProjectionPackedSchema_width :
+    packedSchemaWidth rtlM10StateProjectionPackedSchema = 200 := by
+  decide
+
+theorem rtlM10CommitPackedLayout_covers_schema_width :
+    packedLayoutCoversWidth
+      (packedSchemaWidth rtlM10CommitPackedSchema)
+      rtlM10CommitPackedLayout = true := by
+  decide
+
+theorem rtlM10StateProjectionPackedLayout_covers_schema_width :
+    packedLayoutCoversWidth
+      (packedSchemaWidth rtlM10StateProjectionPackedSchema)
+      rtlM10StateProjectionPackedLayout = true := by
+  decide
+
 end Lnp64.M10

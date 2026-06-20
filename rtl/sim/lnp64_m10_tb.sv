@@ -27,6 +27,9 @@ module lnp64_m10_tb;
     logic mls_denied;
     logic debug_denied;
     logic counts_exact;
+    logic typed_commit_valid;
+    lnp64_m10_ras_commit_t typed_commit;
+    lnp64_m10_state_projection_t typed_state_projection;
 
     lnp64_m10_ras dut(
         .clk(clk),
@@ -52,7 +55,10 @@ module lnp64_m10_tb;
         .audit_recorded(audit_recorded),
         .mls_denied(mls_denied),
         .debug_denied(debug_denied),
-        .counts_exact(counts_exact)
+        .counts_exact(counts_exact),
+        .typed_commit_valid(typed_commit_valid),
+        .typed_commit(typed_commit),
+        .typed_state_projection(typed_state_projection)
     );
 
     lnp64_m10_assertions assertions_i(
@@ -137,6 +143,55 @@ module lnp64_m10_tb;
                 );
                 default: $display("TRACE unknown code=%0d value=%0d", trace_code, trace_value);
             endcase
+        end
+        if (typed_commit_valid) begin
+            $display(
+                "TTRACE_M10 {\"record\":\"m10_ras_commit\",\"op\":%0d,\"status\":%0d,\"root_domain\":%0d,\"fault_count\":%0d,\"telemetry_reads\":%0d,\"audit_records\":%0d,\"quote_id\":%0d,\"reset_id\":%0d}",
+                typed_commit.op,
+                typed_commit.status,
+                typed_commit.root_domain,
+                typed_commit.fault_count,
+                typed_commit.telemetry_reads,
+                typed_commit.audit_records,
+                typed_commit.quote_id,
+                typed_commit.reset_id
+            );
+            $display(
+                "TTRACE_M10_BITS {\"record\":\"m10_ras_commit_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m10_ras_commit_t),
+                typed_commit
+            );
+            $display(
+                "TTRACE_M10_STATE {\"record\":\"m10_state_projection\",\"op\":%0d,\"status\":%0d,\"fault_count\":%0d,\"telemetry_reads\":%0d,\"audit_records\":%0d,\"trace_writes\":%0d,\"trace_capacity\":%0d,\"boot_measured\":%0d,\"telemetry_fdr_present\":%0d,\"ecc_corrected\":%0d,\"parity_poison_faulted\":%0d,\"watchdog_timed_out\":%0d,\"local_reset_seen\":%0d,\"degraded_state\":%0d,\"telemetry_scoped\":%0d,\"telemetry_redacted\":%0d,\"trace_overflowed\":%0d,\"quote_measurement_bound\":%0d,\"quote_development_marked\":%0d,\"audit_recorded\":%0d,\"mls_denied\":%0d,\"debug_denied\":%0d,\"counts_exact\":%0d}",
+                typed_state_projection.op,
+                typed_state_projection.status,
+                typed_state_projection.fault_count,
+                typed_state_projection.telemetry_reads,
+                typed_state_projection.audit_records,
+                typed_state_projection.trace_writes,
+                typed_state_projection.trace_capacity,
+                typed_state_projection.boot_measured,
+                typed_state_projection.telemetry_fdr_present,
+                typed_state_projection.ecc_corrected,
+                typed_state_projection.parity_poison_faulted,
+                typed_state_projection.watchdog_timed_out,
+                typed_state_projection.local_reset_seen,
+                typed_state_projection.degraded_state,
+                typed_state_projection.telemetry_scoped,
+                typed_state_projection.telemetry_redacted,
+                typed_state_projection.trace_overflowed,
+                typed_state_projection.quote_measurement_bound,
+                typed_state_projection.quote_development_marked,
+                typed_state_projection.audit_recorded,
+                typed_state_projection.mls_denied,
+                typed_state_projection.debug_denied,
+                typed_state_projection.counts_exact
+            );
+            $display(
+                "TTRACE_M10_STATE_BITS {\"record\":\"m10_state_projection_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m10_state_projection_t),
+                typed_state_projection
+            );
         end
     end
 

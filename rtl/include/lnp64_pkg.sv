@@ -275,6 +275,17 @@ package lnp64_pkg;
     } lnp64_m2_gate_op_e;
 
     typedef enum logic [7:0] {
+        LNP64_M10_COMMIT_BOOT_MEASURE  = 8'd1,
+        LNP64_M10_COMMIT_ECC_CORRECT   = 8'd2,
+        LNP64_M10_COMMIT_PARITY_POISON = 8'd3,
+        LNP64_M10_COMMIT_WATCHDOG      = 8'd4,
+        LNP64_M10_COMMIT_TELEMETRY_READ = 8'd5,
+        LNP64_M10_COMMIT_TRACE_RING    = 8'd6,
+        LNP64_M10_COMMIT_QUOTE         = 8'd7,
+        LNP64_M10_COMMIT_AUDIT_MLS     = 8'd8
+    } lnp64_m10_ras_op_e;
+
+    typedef enum logic [7:0] {
         LNP64_M9_COMMIT_VERIFY_ACCEPT    = 8'd1,
         LNP64_M9_COMMIT_VERIFY_REJECT    = 8'd2,
         LNP64_M9_COMMIT_PACKET_STEER     = 8'd3,
@@ -676,6 +687,43 @@ package lnp64_pkg;
         logic        fault_delivery_gate_ok;
         logic        signal_compatibility_ok;
     } lnp64_m2_state_projection_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] root_domain;
+        logic [31:0] fault_count;
+        logic [31:0] telemetry_reads;
+        logic [31:0] audit_records;
+        logic [31:0] quote_id;
+        logic [31:0] reset_id;
+    } lnp64_m10_ras_commit_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] fault_count;
+        logic [31:0] telemetry_reads;
+        logic [31:0] audit_records;
+        logic [31:0] trace_writes;
+        logic [31:0] trace_capacity;
+        logic        boot_measured;
+        logic        telemetry_fdr_present;
+        logic        ecc_corrected;
+        logic        parity_poison_faulted;
+        logic        watchdog_timed_out;
+        logic        local_reset_seen;
+        logic        degraded_state;
+        logic        telemetry_scoped;
+        logic        telemetry_redacted;
+        logic        trace_overflowed;
+        logic        quote_measurement_bound;
+        logic        quote_development_marked;
+        logic        audit_recorded;
+        logic        mls_denied;
+        logic        debug_denied;
+        logic        counts_exact;
+    } lnp64_m10_state_projection_t;
 
     typedef struct packed {
         logic [7:0]  op;

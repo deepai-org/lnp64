@@ -26,7 +26,10 @@ module lnp64_m10_ras (
     output logic audit_recorded,
     output logic mls_denied,
     output logic debug_denied,
-    output logic counts_exact
+    output logic counts_exact,
+    output logic typed_commit_valid,
+    output lnp64_m10_ras_commit_t typed_commit,
+    output lnp64_m10_state_projection_t typed_state_projection
 );
     typedef enum logic [3:0] {
         R_RESET,
@@ -143,10 +146,52 @@ module lnp64_m10_ras (
         return seeded_audit_label(seed);
     endfunction
 
+    task automatic commit_m10(
+        input lnp64_m10_ras_op_e op,
+        input logic [15:0] status
+    );
+        typed_commit_valid <= 1'b1;
+        typed_commit.op <= op;
+        typed_commit.status <= status;
+        typed_commit.root_domain <= seeded_root_domain(scenario_seed);
+        typed_commit.fault_count <= fault_count;
+        typed_commit.telemetry_reads <= telemetry_reads;
+        typed_commit.audit_records <= audit_records;
+        typed_commit.quote_id <= seeded_quote_id(scenario_seed);
+        typed_commit.reset_id <= seeded_reset_id(scenario_seed);
+    endtask
+
     always_comb begin
         counts_exact = fault_count == 32'd2 &&
             telemetry_reads == 32'd1 &&
             audit_records == 32'd1;
+    end
+
+    always_comb begin
+        typed_state_projection = '0;
+        typed_state_projection.op = typed_commit.op;
+        typed_state_projection.status = typed_commit.status;
+        typed_state_projection.fault_count = fault_count;
+        typed_state_projection.telemetry_reads = telemetry_reads;
+        typed_state_projection.audit_records = audit_records;
+        typed_state_projection.trace_writes = trace_writes;
+        typed_state_projection.trace_capacity = trace_capacity;
+        typed_state_projection.boot_measured = boot_measured;
+        typed_state_projection.telemetry_fdr_present = telemetry_fdr_present;
+        typed_state_projection.ecc_corrected = ecc_corrected;
+        typed_state_projection.parity_poison_faulted = parity_poison_faulted;
+        typed_state_projection.watchdog_timed_out = watchdog_timed_out;
+        typed_state_projection.local_reset_seen = local_reset_seen;
+        typed_state_projection.degraded_state = degraded_state;
+        typed_state_projection.telemetry_scoped = telemetry_scoped;
+        typed_state_projection.telemetry_redacted = telemetry_redacted;
+        typed_state_projection.trace_overflowed = trace_overflowed;
+        typed_state_projection.quote_measurement_bound = quote_measurement_bound;
+        typed_state_projection.quote_development_marked = quote_development_marked;
+        typed_state_projection.audit_recorded = audit_recorded;
+        typed_state_projection.mls_denied = mls_denied;
+        typed_state_projection.debug_denied = debug_denied;
+        typed_state_projection.counts_exact = counts_exact;
     end
 
     always_ff @(posedge clk or negedge reset_n) begin
@@ -156,6 +201,8 @@ module lnp64_m10_ras (
             trace_valid <= 1'b0;
             trace_code <= 8'd0;
             trace_value <= 64'd0;
+            typed_commit_valid <= 1'b0;
+            typed_commit <= '0;
             boot_measured <= 1'b0;
             telemetry_fdr_present <= 1'b0;
             ecc_corrected <= 1'b0;
@@ -181,6 +228,7 @@ module lnp64_m10_ras (
             quote_record <= '0;
         end else begin
             trace_valid <= 1'b0;
+            typed_commit_valid <= 1'b0;
             unique case (state)
                 R_RESET: begin
                     if (start) begin
@@ -202,6 +250,7 @@ module lnp64_m10_ras (
                         seeded_measurement_trace(scenario_seed),
                         seeded_telemetry_fdr_trace(scenario_seed)
                     };
+                    commit_m10(LNP64_M10_COMMIT_BOOT_MEASURE, LNP64_STATUS_OK);
                     state <= R_ECC_CORRECT;
                 end
                 R_ECC_CORRECT: begin
@@ -216,6 +265,7 @@ module lnp64_m10_ras (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd2;
                     trace_value <= {32'd0, seeded_ecc_corrections(scenario_seed)};
+                    commit_m10(LNP64_M10_COMMIT_ECC_CORRECT, LNP64_STATUS_OK);
                     state <= R_PARITY_POISON;
                 end
                 R_PARITY_POISON: begin
@@ -224,6 +274,7 @@ module lnp64_m10_ras (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd3;
                     trace_value <= {32'd1, seeded_fault_trace(scenario_seed), LNP64_ERR_EIO};
+                    commit_m10(LNP64_M10_COMMIT_PARITY_POISON, LNP64_ERR_EIO);
                     state <= R_WATCHDOG_TIMEOUT;
                 end
                 R_WATCHDOG_TIMEOUT: begin
@@ -242,6 +293,7 @@ module lnp64_m10_ras (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd4;
                     trace_value <= {seeded_reset_id(scenario_seed), 32'd1};
+                    commit_m10(LNP64_M10_COMMIT_WATCHDOG, LNP64_STATUS_OK);
                     state <= R_TELEMETRY_READ;
                 end
                 R_TELEMETRY_READ: begin
@@ -251,6 +303,7 @@ module lnp64_m10_ras (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd5;
                     trace_value <= {16'd1, seeded_counters_visible_trace(scenario_seed), 32'd1};
+                    commit_m10(LNP64_M10_COMMIT_TELEMETRY_READ, LNP64_STATUS_OK);
                     state <= R_TRACE_RING;
                 end
                 R_TRACE_RING: begin
@@ -265,6 +318,7 @@ module lnp64_m10_ras (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd6;
                     trace_value <= {seeded_trace_writes(scenario_seed), 32'd1};
+                    commit_m10(LNP64_M10_COMMIT_TRACE_RING, LNP64_STATUS_OK);
                     state <= R_QUOTE_STUB;
                 end
                 R_QUOTE_STUB: begin
@@ -279,6 +333,7 @@ module lnp64_m10_ras (
                         seeded_measurement_trace(scenario_seed),
                         16'd1
                     };
+                    commit_m10(LNP64_M10_COMMIT_QUOTE, LNP64_STATUS_OK);
                     state <= R_AUDIT_MLS;
                 end
                 R_AUDIT_MLS: begin
@@ -289,6 +344,7 @@ module lnp64_m10_ras (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd8;
                     trace_value <= {seeded_audit_label_trace(scenario_seed), 32'd1, LNP64_ERR_EPERM};
+                    commit_m10(LNP64_M10_COMMIT_AUDIT_MLS, LNP64_ERR_EPERM);
                     state <= R_DONE;
                 end
                 R_DONE: begin

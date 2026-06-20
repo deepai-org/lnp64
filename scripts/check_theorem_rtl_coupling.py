@@ -433,6 +433,13 @@ def check_claim(claim: dict) -> None:
         'TTRACE_M9 {\\"record\\":\\"m9_classifier_commit\\"',
         "rtl m9 typed commit trace ok",
     )
+    check_engine_typed_trace_contract(
+        claim,
+        "faults_terminal_progress",
+        "m10",
+        'TTRACE_M10 {\\"record\\":\\"m10_ras_commit\\"',
+        "rtl m10 typed commit trace ok",
+    )
 
     trust = claim.get("trust_level")
     require(trust in ALLOWED_TRUST_LEVELS, f"{claim_id}: invalid trust level {trust}")
