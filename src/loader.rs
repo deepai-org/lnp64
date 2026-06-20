@@ -331,10 +331,15 @@ pub fn build_exec_descriptor(
             return Err("exec-plan VMA lineage epoch is required".to_string());
         }
     }
+    let mut entry_in_executable_vma = false;
     for vma in &plan.vmas {
         if vma.length == 0 {
             return Err("exec-plan VMA length is zero".to_string());
         }
+        let vma_end = vma
+            .virtual_address
+            .checked_add(vma.length)
+            .ok_or_else(|| "exec-plan VMA range overflows".to_string())?;
         if vma.zero_fill_length > vma.length {
             return Err("exec-plan VMA zero-fill exceeds mapping length".to_string());
         }
@@ -350,6 +355,15 @@ pub fn build_exec_descriptor(
         if vma.mapping_flags != 0 {
             return Err("exec-plan VMA mapping flags are unsupported".to_string());
         }
+        if vma.protection.execute
+            && plan.entry.entry_pc >= vma.virtual_address
+            && plan.entry.entry_pc < vma_end
+        {
+            entry_in_executable_vma = true;
+        }
+    }
+    if !plan.vmas.is_empty() && !entry_in_executable_vma {
+        return Err("exec-plan entry PC is not inside an executable VMA".to_string());
     }
     let mut fdr_slots = Vec::with_capacity(plan.fdr_grants.len());
     for grant in &plan.fdr_grants {
@@ -2395,6 +2409,27 @@ mod tests {
         let err =
             build_exec_descriptor(&non_executable_provenance, descriptor_options).unwrap_err();
         assert!(err.contains("non-executable VMA provenance"), "{err}");
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_exec_descriptor_entry_outside_executable_vma() {
+        let image = test_elf(&[text_phdr()]);
+        let mut plan = build_static_exec_plan(&image, LoaderOptions::default()).unwrap();
+        plan.vmas[0].protection.execute = false;
+        plan.vmas[0].executable_provenance = ExecutableProvenance::NonExecutable;
+
+        let err = build_exec_descriptor(
+            &plan,
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap_err();
+
+        assert!(err.contains("entry PC"), "{err}");
     }
 
     #[test]

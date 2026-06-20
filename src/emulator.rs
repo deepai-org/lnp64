@@ -1627,6 +1627,7 @@ impl Machine {
             return Err("prepared VMA count does not match exec descriptor".to_string());
         }
 
+        let entry_pc = words[9];
         let mut replacement_memory = vec![0; MEMORY_SIZE];
         let mut replacement_vmas = Vec::with_capacity(vma_count);
         let mut offset = EXEC_PLAN_HEADER_WORDS + EXEC_PLAN_ENTRY_WORDS;
@@ -1657,8 +1658,15 @@ impl Machine {
             replacement_vmas.push(Vma::anonymous(virtual_address, record[1], protection));
             offset += EXEC_PLAN_VMA_WORDS;
         }
+        let entry_in_executable_vma = replacement_vmas.iter().any(|vma| {
+            vma.prot & EXEC_PLAN_VMA_PROT_EXECUTE != 0
+                && entry_pc >= vma.start
+                && entry_pc < vma.start.saturating_add(vma.len)
+        });
+        if !entry_in_executable_vma {
+            return Err("exec-plan entry PC is not inside an executable VMA".to_string());
+        }
 
-        let entry_pc = words[9];
         let initial_sp = words[10];
         let tls_base = words[11];
         let startup_metadata_ptr = words[12];
@@ -16008,6 +16016,35 @@ mod tests {
             .unwrap_err();
 
         assert!(err.contains("source capability is not narrowable"), "{err}");
+        assert_eq!(
+            &machine.process().unwrap().memory[ARG_BASE as usize..ARG_BASE as usize + 9],
+            b"old-image"
+        );
+    }
+
+    #[test]
+    fn emulator_rejects_exec_descriptor_entry_outside_executable_vma_before_commit() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                expected_lineage_epoch: 1,
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let mut words = encode_exec_descriptor(&descriptor);
+        words[9] = 0x402000;
+        let mut machine = Machine::new(empty_program());
+        machine.write_bytes(ARG_BASE, b"old-image").unwrap();
+
+        let err = machine
+            .commit_exec_descriptor_memory_image(&words, &prepared_exec_vmas_fixture())
+            .unwrap_err();
+
+        assert!(err.contains("entry PC"), "{err}");
         assert_eq!(
             &machine.process().unwrap().memory[ARG_BASE as usize..ARG_BASE as usize + 9],
             b"old-image"
