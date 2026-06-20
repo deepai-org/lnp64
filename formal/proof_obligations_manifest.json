@@ -190,6 +190,16 @@
         "m15_event_source_generation_safe",
         "m15_gate_continuation_unique",
         "m15_counts_exact"
+      ],
+      "additional_lean_files": [
+        {
+          "lean_file": "formal/M15TransitionInvariantModel.lean",
+          "theorems": [
+            "m15_t3_queue_overflow_explicit_for_all_reachable",
+            "m15_t3_stale_event_source_fails_closed_for_all_reachable",
+            "m15_t3_gate_continuation_unique_for_all_reachable"
+          ]
+        }
       ]
     },
     {
@@ -253,6 +263,14 @@
             "m4_tlb_invalidation_observed",
             "m4_wx_enforced"
           ]
+        },
+        {
+          "lean_file": "formal/M8TransitionInvariantModel.lean",
+          "theorems": [
+            "m8_t3_double_free_fails_closed_for_all_reachable",
+            "m8_t3_stale_pointer_fails_closed_for_all_reachable",
+            "m8_t3_guard_fault_quarantined_for_all_reachable"
+          ]
         }
       ]
     },
@@ -281,6 +299,16 @@
         "m9_ipc_steering_works",
         "m9_action_authorized_no_authority",
         "m9_budget_enforced"
+      ],
+      "additional_lean_files": [
+        {
+          "lean_file": "formal/M9TransitionInvariantModel.lean",
+          "theorems": [
+            "m9_t3_budget_enforced_for_all_reachable",
+            "m9_t3_stale_attachment_fails_closed_for_all_reachable",
+            "m9_t3_no_authority_creation_for_all_reachable"
+          ]
+        }
       ]
     },
     {
@@ -367,6 +395,14 @@
           "theorems": [
             "m3_exec_cancel_terminal"
           ]
+        },
+        {
+          "lean_file": "formal/M3TransitionInvariantModel.lean",
+          "theorems": [
+            "m3_t3_join_consumes_exited_child_for_all_reachable",
+            "m3_t3_stale_join_fails_closed_for_all_reachable",
+            "m3_t3_exec_cancel_reaches_terminal_for_all_reachable"
+          ]
         }
       ]
     },
@@ -452,6 +488,30 @@
             "m13_no_raw_pcie_authority",
             "m13_counts_exact"
           ]
+        },
+        {
+          "lean_file": "formal/M11TransitionInvariantModel.lean",
+          "theorems": [
+            "m11_t3_stale_generation_fails_closed_for_all_reachable",
+            "m11_t3_cross_domain_fails_closed_for_all_reachable",
+            "m11_t3_line_validly_bound_for_all_reachable"
+          ]
+        },
+        {
+          "lean_file": "formal/M12TransitionInvariantModel.lean",
+          "theorems": [
+            "m12_t3_stale_object_fails_closed_for_all_reachable",
+            "m12_t3_cross_domain_fails_closed_for_all_reachable",
+            "m12_t3_no_raw_device_authority_for_all_reachable"
+          ]
+        },
+        {
+          "lean_file": "formal/M13TransitionInvariantModel.lean",
+          "theorems": [
+            "m13_t3_unbound_bus_master_fails_closed_for_all_reachable",
+            "m13_t3_stale_bar_fails_closed_for_all_reachable",
+            "m13_t3_no_raw_pcie_authority_for_all_reachable"
+          ]
         }
       ]
     },
@@ -489,6 +549,23 @@
             "m6_service_cancel_terminal",
             "m6_stale_service_rejected",
             "m6_crash_completion_recorded"
+          ]
+        },
+        {
+          "lean_file": "formal/M10TransitionInvariantModel.lean",
+          "theorems": [
+            "m10_t3_parity_poison_fails_closed_for_all_reachable",
+            "m10_t3_watchdog_reaches_degraded_reset_for_all_reachable",
+            "m10_t3_audit_mls_fails_closed_for_all_reachable",
+            "m10_t3_no_authority_created_for_all_reachable"
+          ]
+        },
+        {
+          "lean_file": "formal/M6TransitionInvariantModel.lean",
+          "theorems": [
+            "m6_t3_stale_service_fails_closed_for_all_reachable",
+            "m6_t3_installed_capability_narrowed_for_all_reachable",
+            "m6_t3_service_cancel_terminal_for_all_reachable"
           ]
         }
       ]

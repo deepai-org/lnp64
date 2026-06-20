@@ -106,22 +106,31 @@ lean_files=(
   formal/M2GateModel.lean
   formal/M2TransitionInvariantModel.lean
   formal/M3ProcessModel.lean
+  formal/M3TransitionInvariantModel.lean
   formal/M4VmaModel.lean
   formal/M4TransitionInvariantModel.lean
   formal/M5DmaModel.lean
   formal/M5TransitionInvariantModel.lean
   formal/M6ServiceModel.lean
+  formal/M6TransitionInvariantModel.lean
   formal/M7FutexAtomicModel.lean
   formal/M7TransitionInvariantModel.lean
   formal/M8HeapModel.lean
+  formal/M8TransitionInvariantModel.lean
   formal/M9ClassifierServiceletModel.lean
+  formal/M9TransitionInvariantModel.lean
   formal/M10RasModel.lean
+  formal/M10TransitionInvariantModel.lean
   formal/M11DdrMetadataModel.lean
+  formal/M11TransitionInvariantModel.lean
   formal/M12StorageBarrierModel.lean
+  formal/M12TransitionInvariantModel.lean
   formal/M13PcieIommuModel.lean
+  formal/M13TransitionInvariantModel.lean
   formal/M14ResourceDomainPolicyModel.lean
   formal/M14TransitionInvariantModel.lean
   formal/M15ObjectProfilesModel.lean
+  formal/M15TransitionInvariantModel.lean
   formal/FormalTheoremsModel.lean
 )
 

@@ -9,12 +9,16 @@ in this environment.
 Current completion status: incomplete for the full roadmap. The Docker-backed
 RTL/proof/synthesis/FPGA-smoke scope is implemented and passing.
 `formal_theorems.md` has checked Lean coverage artifacts through
-`formal/FormalTheoremsModel.lean`. M1 capability/FDR, M2 gate/continuation,
-M4 VMA/MMU, M5 DMA, M7 waitable/scheduler, and M14 Resource Domain now have
-transition-invariant proof slices; remaining work is to replace the rest of the
-coverage and
-bounded-witness artifacts with transition-invariant proofs and RTL refinement
-proofs for the full SystemVerilog chip and real architectural programs.
+`formal/FormalTheoremsModel.lean`. Every engine slice M1-M15 now has a
+transition-invariant proof slice (`formal/M*TransitionInvariantModel.lean`):
+typed state, a `Step` relation, an inductive `Reachable`, a preserved
+`invariant`, and `*_t3_*_for_all_reachable` theorems proving the engine's
+fail-closed/containment guarantees hold in every reachable state (kernel
+tactics only -- no `sorry`/`admit`/`native_decide`). These are registered in
+`formal/proof_obligations_manifest.json` and checked by the proof gate.
+Remaining work is to lift these reachable-state invariants to full RTL-to-Lean
+refinement proofs for the whole SystemVerilog chip and real architectural
+programs.
 
 Every engine slice M1-M15 now emits schema-owned typed commit and state
 projection records (`lnp64_m*_commit_t`/`lnp64_m*_state_projection_t` packed
