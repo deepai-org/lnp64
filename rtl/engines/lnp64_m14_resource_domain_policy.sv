@@ -19,7 +19,10 @@ module lnp64_m14_resource_domain_policy (
     output logic destroyed_dispatch_rejected,
     output logic usage_rollup_valid,
     output logic policy_fail_closed,
-    output logic counts_exact
+    output logic counts_exact,
+    output logic typed_commit_valid,
+    output lnp64_m14_domain_commit_t typed_commit,
+    output lnp64_m14_state_projection_t typed_state_projection
 );
     typedef enum logic [3:0] {
         S_RESET,
@@ -125,9 +128,50 @@ module lnp64_m14_resource_domain_policy (
         return {31'd0, seed[31]} + 32'd1;
     endfunction
 
+    task automatic commit_m14(
+        input lnp64_m14_domain_op_e op,
+        input logic [15:0] status,
+        input logic [31:0] child_budget,
+        input logic [31:0] parent_budget,
+        input logic [63:0] requested_rights,
+        input logic [63:0] delegated_rights
+    );
+        typed_commit_valid <= 1'b1;
+        typed_commit.op <= op;
+        typed_commit.status <= status;
+        typed_commit.root_domain <= seeded_root_domain(scenario_seed);
+        typed_commit.child_domain <= seeded_child_domain(scenario_seed);
+        typed_commit.child_budget <= child_budget;
+        typed_commit.parent_budget <= parent_budget;
+        typed_commit.requested_rights <= requested_rights;
+        typed_commit.delegated_rights <= delegated_rights;
+    endtask
+
+    always_comb begin
+        typed_state_projection = '0;
+        typed_state_projection.op = typed_commit.op;
+        typed_state_projection.status = typed_commit.status;
+        typed_state_projection.root_domain = seeded_root_domain(scenario_seed);
+        typed_state_projection.child_domain = seeded_child_domain(scenario_seed);
+        typed_state_projection.delegated_caps = delegated_caps;
+        typed_state_projection.failures = failures;
+        typed_state_projection.parent_used = parent_used;
+        typed_state_projection.child_rights_subset_parent = child_rights_subset_parent;
+        typed_state_projection.child_budget_within_parent = child_budget_within_parent;
+        typed_state_projection.excess_budget_rejected = excess_budget_rejected;
+        typed_state_projection.frozen_dispatch_rejected = frozen_dispatch_rejected;
+        typed_state_projection.resumed_dispatch_allowed = resumed_dispatch_allowed;
+        typed_state_projection.destroyed_dispatch_rejected = destroyed_dispatch_rejected;
+        typed_state_projection.usage_rollup_valid = usage_rollup_valid;
+        typed_state_projection.policy_fail_closed = policy_fail_closed;
+        typed_state_projection.counts_exact = counts_exact;
+    end
+
     always_ff @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
             state <= S_RESET;
+            typed_commit_valid <= 1'b0;
+            typed_commit <= '0;
             done <= 1'b0;
             trace_valid <= 1'b0;
             trace_code <= 8'd0;
@@ -146,6 +190,7 @@ module lnp64_m14_resource_domain_policy (
             parent_used <= 32'd0;
         end else begin
             trace_valid <= 1'b0;
+            typed_commit_valid <= 1'b0;
             unique case (state)
                 S_RESET: begin
                     if (start) begin
@@ -165,6 +210,8 @@ module lnp64_m14_resource_domain_policy (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd2;
                     trace_value <= {seeded_requested_rights_low(scenario_seed), delegated_child_rights_low()};
+                    commit_m14(LNP64_M14_COMMIT_DELEGATE, LNP64_STATUS_OK, 32'd0, 32'd0,
+                        seeded_requested_rights(scenario_seed), {32'd0, delegated_child_rights_low()});
                     state <= S_CREATE_CHILD;
                 end
                 S_CREATE_CHILD: begin
@@ -172,6 +219,9 @@ module lnp64_m14_resource_domain_policy (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd3;
                     trace_value <= {seeded_child_budget(scenario_seed), seeded_parent_budget(scenario_seed)};
+                    commit_m14(LNP64_M14_COMMIT_CREATE_CHILD, LNP64_STATUS_OK,
+                        seeded_child_budget(scenario_seed), seeded_parent_budget(scenario_seed),
+                        seeded_requested_rights(scenario_seed), {32'd0, delegated_child_rights_low()});
                     state <= S_EXCESS_BUDGET;
                 end
                 S_EXCESS_BUDGET: begin
@@ -180,6 +230,9 @@ module lnp64_m14_resource_domain_policy (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd4;
                     trace_value <= {seeded_parent_budget(scenario_seed) + 32'd1, seeded_parent_budget(scenario_seed)};
+                    commit_m14(LNP64_M14_COMMIT_EXCESS_BUDGET, LNP64_ERR_EPERM,
+                        seeded_parent_budget(scenario_seed) + 32'd1, seeded_parent_budget(scenario_seed),
+                        seeded_requested_rights(scenario_seed), {32'd0, delegated_child_rights_low()});
                     state <= S_FREEZE;
                 end
                 S_FREEZE: begin
@@ -188,6 +241,8 @@ module lnp64_m14_resource_domain_policy (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd5;
                     trace_value <= {seeded_child_domain(scenario_seed), 16'd0, LNP64_ERR_EAGAIN};
+                    commit_m14(LNP64_M14_COMMIT_FREEZE, LNP64_ERR_EAGAIN, 32'd0, 32'd0,
+                        seeded_requested_rights(scenario_seed), {32'd0, delegated_child_rights_low()});
                     state <= S_RESUME;
                 end
                 S_RESUME: begin
@@ -195,6 +250,8 @@ module lnp64_m14_resource_domain_policy (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd6;
                     trace_value <= {seeded_child_domain(scenario_seed), 32'd1};
+                    commit_m14(LNP64_M14_COMMIT_RESUME, LNP64_STATUS_OK, 32'd0, 32'd0,
+                        seeded_requested_rights(scenario_seed), {32'd0, delegated_child_rights_low()});
                     state <= S_USAGE;
                 end
                 S_USAGE: begin
@@ -203,6 +260,8 @@ module lnp64_m14_resource_domain_policy (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd7;
                     trace_value <= {seeded_child_used(scenario_seed), seeded_sibling_used(scenario_seed)};
+                    commit_m14(LNP64_M14_COMMIT_USAGE, LNP64_STATUS_OK, 32'd0, 32'd0,
+                        seeded_requested_rights(scenario_seed), {32'd0, delegated_child_rights_low()});
                     state <= S_DESTROY;
                 end
                 S_DESTROY: begin
@@ -211,6 +270,8 @@ module lnp64_m14_resource_domain_policy (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd8;
                     trace_value <= {seeded_child_domain(scenario_seed), 16'd2, LNP64_ERR_EREVOKED};
+                    commit_m14(LNP64_M14_COMMIT_DESTROY, LNP64_ERR_EREVOKED, 32'd0, 32'd0,
+                        seeded_requested_rights(scenario_seed), {32'd0, delegated_child_rights_low()});
                     state <= S_POLICY;
                 end
                 S_POLICY: begin
@@ -218,6 +279,8 @@ module lnp64_m14_resource_domain_policy (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd9;
                     trace_value <= {seeded_policy_mask_low(scenario_seed), seeded_policy_label(scenario_seed)};
+                    commit_m14(LNP64_M14_COMMIT_POLICY, LNP64_STATUS_OK, 32'd0, 32'd0,
+                        seeded_requested_rights(scenario_seed), {32'd0, delegated_child_rights_low()});
                     state <= S_DONE;
                 end
                 S_DONE: begin

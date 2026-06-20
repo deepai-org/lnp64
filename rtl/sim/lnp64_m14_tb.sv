@@ -20,6 +20,9 @@ module lnp64_m14_tb;
     logic usage_rollup_valid;
     logic policy_fail_closed;
     logic counts_exact;
+    logic typed_commit_valid;
+    lnp64_m14_domain_commit_t typed_commit;
+    lnp64_m14_state_projection_t typed_state_projection;
 
     lnp64_m14_resource_domain_policy dut(
         .clk(clk),
@@ -38,7 +41,10 @@ module lnp64_m14_tb;
         .destroyed_dispatch_rejected(destroyed_dispatch_rejected),
         .usage_rollup_valid(usage_rollup_valid),
         .policy_fail_closed(policy_fail_closed),
-        .counts_exact(counts_exact)
+        .counts_exact(counts_exact),
+        .typed_commit_valid(typed_commit_valid),
+        .typed_commit(typed_commit),
+        .typed_state_projection(typed_state_projection)
     );
 
     lnp64_m14_assertions assertions_i(
@@ -128,6 +134,48 @@ module lnp64_m14_tb;
                 );
                 default: $display("TRACE unknown code=%0d value=%0d", trace_code, trace_value);
             endcase
+        end
+        if (typed_commit_valid) begin
+            $display(
+                "TTRACE_M14 {\"record\":\"m14_domain_commit\",\"op\":%0d,\"status\":%0d,\"root_domain\":%0d,\"child_domain\":%0d,\"child_budget\":%0d,\"parent_budget\":%0d,\"requested_rights\":%0d,\"delegated_rights\":%0d}",
+                typed_commit.op,
+                typed_commit.status,
+                typed_commit.root_domain,
+                typed_commit.child_domain,
+                typed_commit.child_budget,
+                typed_commit.parent_budget,
+                typed_commit.requested_rights,
+                typed_commit.delegated_rights
+            );
+            $display(
+                "TTRACE_M14_BITS {\"record\":\"m14_domain_commit_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m14_domain_commit_t),
+                typed_commit
+            );
+            $display(
+                "TTRACE_M14_STATE {\"record\":\"m14_state_projection\",\"op\":%0d,\"status\":%0d,\"root_domain\":%0d,\"child_domain\":%0d,\"delegated_caps\":%0d,\"failures\":%0d,\"parent_used\":%0d,\"child_rights_subset_parent\":%0d,\"child_budget_within_parent\":%0d,\"excess_budget_rejected\":%0d,\"frozen_dispatch_rejected\":%0d,\"resumed_dispatch_allowed\":%0d,\"destroyed_dispatch_rejected\":%0d,\"usage_rollup_valid\":%0d,\"policy_fail_closed\":%0d,\"counts_exact\":%0d}",
+                typed_state_projection.op,
+                typed_state_projection.status,
+                typed_state_projection.root_domain,
+                typed_state_projection.child_domain,
+                typed_state_projection.delegated_caps,
+                typed_state_projection.failures,
+                typed_state_projection.parent_used,
+                typed_state_projection.child_rights_subset_parent,
+                typed_state_projection.child_budget_within_parent,
+                typed_state_projection.excess_budget_rejected,
+                typed_state_projection.frozen_dispatch_rejected,
+                typed_state_projection.resumed_dispatch_allowed,
+                typed_state_projection.destroyed_dispatch_rejected,
+                typed_state_projection.usage_rollup_valid,
+                typed_state_projection.policy_fail_closed,
+                typed_state_projection.counts_exact
+            );
+            $display(
+                "TTRACE_M14_STATE_BITS {\"record\":\"m14_state_projection_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m14_state_projection_t),
+                typed_state_projection
+            );
         end
     end
 

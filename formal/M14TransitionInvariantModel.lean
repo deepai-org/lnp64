@@ -243,4 +243,131 @@ theorem m14_t3_policy_fail_closed_for_all_reachable {s : State} :
   intro hReach
   exact (reachable_invariant hReach).2.2.2.2.2.2
 
+/- Packed-bit decode model for the M14 Resource Domain witness.
+
+Mirrors the M1/M2/M4/M5/M7 packed-bit machinery so the emitted
+lnp64_m14_domain_commit_t and lnp64_m14_state_projection_t bit vectors can be
+decode-checked against this Lean model. Every M14 field is a plain scalar/bool
+slice. -/
+
+structure PackedFieldLayout where
+  name : String
+  width : Nat
+  lsb : Nat
+  msb : Nat
+deriving DecidableEq, Repr
+
+def packedSchemaWidth (schema : List (String × Nat)) : Nat :=
+  schema.foldl (fun total field => total + field.2) 0
+
+def packedSchemaLayoutFrom : Nat -> List (String × Nat) -> List PackedFieldLayout
+  | _cursor, [] => []
+  | cursor, field :: rest =>
+      let lsb := cursor - field.2
+      { name := field.1, width := field.2, lsb := lsb, msb := cursor - 1 } ::
+        packedSchemaLayoutFrom lsb rest
+
+def packedSchemaLayout (schema : List (String × Nat)) : List PackedFieldLayout :=
+  packedSchemaLayoutFrom (packedSchemaWidth schema) schema
+
+def packedFieldWithinWidth (totalWidth : Nat) (field : PackedFieldLayout) : Bool :=
+  decide (field.width > 0) &&
+  decide (field.lsb + field.width = field.msb + 1) &&
+  decide (field.msb < totalWidth)
+
+def packedLayoutWithinWidth (totalWidth : Nat) (layout : List PackedFieldLayout) : Bool :=
+  layout.all (packedFieldWithinWidth totalWidth)
+
+def packedLayoutStartsAtWidth (totalWidth : Nat) : List PackedFieldLayout -> Bool
+  | [] => decide (totalWidth = 0)
+  | field :: _rest => decide (field.msb + 1 = totalWidth)
+
+def packedLayoutAdjacentContiguous : List PackedFieldLayout -> Bool
+  | [] => true
+  | _field :: [] => true
+  | first :: second :: rest =>
+      decide (first.lsb = second.msb + 1) &&
+      packedLayoutAdjacentContiguous (second :: rest)
+
+def packedLayoutEndsAtZero : List PackedFieldLayout -> Bool
+  | [] => true
+  | field :: [] => decide (field.lsb = 0)
+  | _field :: rest => packedLayoutEndsAtZero rest
+
+def packedLayoutCoversWidth (totalWidth : Nat) (layout : List PackedFieldLayout) : Bool :=
+  packedLayoutWithinWidth totalWidth layout &&
+  packedLayoutStartsAtWidth totalWidth layout &&
+  packedLayoutAdjacentContiguous layout &&
+  packedLayoutEndsAtZero layout
+
+def packedBitSlice (bits lsb width : Nat) : Nat :=
+  (bits / (2 ^ lsb)) % (2 ^ width)
+
+def packedFieldValue (bits : Nat) (field : PackedFieldLayout) : Nat :=
+  packedBitSlice bits field.lsb field.width
+
+def packedLayoutFieldValue
+    (bits : Nat)
+    (fieldName : String) : List PackedFieldLayout -> Option Nat
+  | [] => none
+  | field :: rest =>
+      if field.name == fieldName then
+        some (packedFieldValue bits field)
+      else
+        packedLayoutFieldValue bits fieldName rest
+
+def rtlM14CommitPackedSchema : List (String × Nat) :=
+  [ ("op", 8)
+  , ("status", 16)
+  , ("root_domain", 32)
+  , ("child_domain", 32)
+  , ("child_budget", 32)
+  , ("parent_budget", 32)
+  , ("requested_rights", 64)
+  , ("delegated_rights", 64) ]
+
+def rtlM14StateProjectionPackedSchema : List (String × Nat) :=
+  [ ("op", 8)
+  , ("status", 16)
+  , ("root_domain", 32)
+  , ("child_domain", 32)
+  , ("delegated_caps", 32)
+  , ("failures", 32)
+  , ("parent_used", 32)
+  , ("child_rights_subset_parent", 1)
+  , ("child_budget_within_parent", 1)
+  , ("excess_budget_rejected", 1)
+  , ("frozen_dispatch_rejected", 1)
+  , ("resumed_dispatch_allowed", 1)
+  , ("destroyed_dispatch_rejected", 1)
+  , ("usage_rollup_valid", 1)
+  , ("policy_fail_closed", 1)
+  , ("counts_exact", 1) ]
+
+def rtlM14CommitPackedLayout : List PackedFieldLayout :=
+  packedSchemaLayout rtlM14CommitPackedSchema
+
+def rtlM14StateProjectionPackedLayout : List PackedFieldLayout :=
+  packedSchemaLayout rtlM14StateProjectionPackedSchema
+
+theorem rtlM14CommitPackedSchema_width :
+    packedSchemaWidth rtlM14CommitPackedSchema = 280 := by
+  decide
+
+theorem rtlM14StateProjectionPackedSchema_width :
+    packedSchemaWidth rtlM14StateProjectionPackedSchema = 193 := by
+  decide
+
+theorem rtlM14CommitPackedLayout_covers_schema_width :
+    packedLayoutCoversWidth
+      (packedSchemaWidth rtlM14CommitPackedSchema)
+      rtlM14CommitPackedLayout = true := by
+  decide
+
+theorem rtlM14StateProjectionPackedLayout_covers_schema_width :
+    packedLayoutCoversWidth
+      (packedSchemaWidth rtlM14StateProjectionPackedSchema)
+      rtlM14StateProjectionPackedLayout = true := by
+  decide
+
 end Lnp64.M14Transition

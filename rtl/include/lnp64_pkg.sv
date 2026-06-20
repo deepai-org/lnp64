@@ -274,6 +274,17 @@ package lnp64_pkg;
         LNP64_M2_COMMIT_SIGNAL_COMPAT  = 8'd7
     } lnp64_m2_gate_op_e;
 
+    typedef enum logic [7:0] {
+        LNP64_M14_COMMIT_DELEGATE      = 8'd1,
+        LNP64_M14_COMMIT_CREATE_CHILD  = 8'd2,
+        LNP64_M14_COMMIT_EXCESS_BUDGET = 8'd3,
+        LNP64_M14_COMMIT_FREEZE        = 8'd4,
+        LNP64_M14_COMMIT_RESUME        = 8'd5,
+        LNP64_M14_COMMIT_USAGE         = 8'd6,
+        LNP64_M14_COMMIT_DESTROY       = 8'd7,
+        LNP64_M14_COMMIT_POLICY        = 8'd8
+    } lnp64_m14_domain_op_e;
+
     typedef enum logic [15:0] {
         LNP64_STATUS_OK          = 16'h0000,
         LNP64_STATUS_ERROR       = 16'h0001,
@@ -625,6 +636,36 @@ package lnp64_pkg;
         logic        fault_delivery_gate_ok;
         logic        signal_compatibility_ok;
     } lnp64_m2_state_projection_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] root_domain;
+        logic [31:0] child_domain;
+        logic [31:0] child_budget;
+        logic [31:0] parent_budget;
+        logic [63:0] requested_rights;
+        logic [63:0] delegated_rights;
+    } lnp64_m14_domain_commit_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] root_domain;
+        logic [31:0] child_domain;
+        logic [31:0] delegated_caps;
+        logic [31:0] failures;
+        logic [31:0] parent_used;
+        logic        child_rights_subset_parent;
+        logic        child_budget_within_parent;
+        logic        excess_budget_rejected;
+        logic        frozen_dispatch_rejected;
+        logic        resumed_dispatch_allowed;
+        logic        destroyed_dispatch_rejected;
+        logic        usage_rollup_valid;
+        logic        policy_fail_closed;
+        logic        counts_exact;
+    } lnp64_m14_state_projection_t;
 
     typedef struct packed {
         logic [31:0] object_id;

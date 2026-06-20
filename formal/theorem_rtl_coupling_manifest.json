@@ -122,13 +122,13 @@
         {"file": "rtl/engines/lnp64_m14_resource_domain_policy.sv", "module": "lnp64_m14_resource_domain_policy"},
         {"file": "rtl/engines/lnp64_engine_shells.sv", "module": "lnp64_domain_engine"}
       ],
-      "rtl_witness_signals": ["child_rights_subset_parent", "child_budget_within_parent", "policy_fail_closed"],
+      "rtl_witness_signals": ["child_rights_subset_parent", "child_budget_within_parent", "policy_fail_closed", "typed_commit_valid", "typed_commit", "typed_state_projection"],
       "assertion_files": ["formal/rtl_assertions/lnp64_m14_assertions.sv"],
-      "trace_sources": ["rtl/sim/lnp64_m14_tb.sv", "formal/m14_resource_domain_policy_model.py"],
-      "trace_markers": ["TRACE delegate", "child_rights=", "TRACE policy"],
-      "gate_scripts": ["scripts/run_rtl_m14.sh", "scripts/run_rtl_random_cosim.sh"],
+      "trace_sources": ["rtl/sim/lnp64_m14_tb.sv", "formal/m14_resource_domain_policy_model.py", "scripts/check_rtl_m14_typed_commit_trace.py", "scripts/test_rtl_m14_typed_commit_checker.py", "scripts/check_rtl_m14_witness.py", "scripts/run_rtl_m14_witness_gate.sh", "scripts/gen_m14_witness_lean.py", "scripts/run_rtl_m14_lean_witness_gate.sh"],
+      "trace_markers": ["TRACE delegate", "child_rights=", "TRACE policy", "TTRACE_M14 {\\\"record\\\":\\\"m14_domain_commit\\\"", "TTRACE_M14_BITS {\\\"record\\\":\\\"m14_domain_commit_bits\\\"", "TTRACE_M14_STATE {\\\"record\\\":\\\"m14_state_projection\\\"", "TTRACE_M14_STATE_BITS {\\\"record\\\":\\\"m14_state_projection_bits\\\"", "rtl m14 typed commit trace ok", "rtl m14 witness ok", "rtl m14 lean witness gate ok"],
+      "gate_scripts": ["scripts/run_rtl_m14.sh", "scripts/check_rtl_m14_typed_commit_trace.py", "scripts/test_rtl_m14_typed_commit_checker.py", "scripts/check_rtl_m14_witness.py", "scripts/run_rtl_m14_witness_gate.sh", "scripts/test_rtl_m14_witness_checker.py", "scripts/gen_m14_witness_lean.py", "scripts/run_rtl_m14_lean_witness_gate.sh", "scripts/run_rtl_random_cosim.sh"],
       "assumptions": ["parent domain budget is authoritative", "policy masks are immutable during a checked transition"],
-      "known_gaps": ["Lean now includes an M14 Resource Domain transition-invariant proof slice, but typed transition traces and cross-engine T4 composition/refinement are still missing."]
+      "known_gaps": ["Lean now includes an M14 Resource Domain transition-invariant proof slice; the seed-0 domain path emits schema-owned typed commit/state packed traces checked against the executable transition contract (scripts/check_rtl_m14_typed_commit_trace.py: op sequence, packed-bit faithfulness, per-op invariants, monotonic delegation -- delegated rights never exceed requested -- in every projection, and child-budget confinement); the witness is re-validated offline by scripts/check_rtl_m14_witness.py; and scripts/run_rtl_m14_lean_witness_gate.sh proves in Lean (kernel decide, no axioms) that every emitted commit/state packed bit vector decodes under the Lnp64.M14Transition decoders to the recorded values. Cross-engine T4 composition/refinement and the existential RTL-to-Lean refinement step are still missing."]
     },
     {
       "id": "dma_confined",
