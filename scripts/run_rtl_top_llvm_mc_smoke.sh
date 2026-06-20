@@ -4,8 +4,23 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
-llvm_mc="${LLVM_MC:-target/llvm-lnp64-build/bin/llvm-mc}"
-llvm_objdump="${LLVM_OBJDUMP:-target/llvm-lnp64-build/bin/llvm-objdump}"
+pick_llvm_tool() {
+  local configured="$1"
+  local target_path="$2"
+  local build_path="$3"
+  if [[ -n "$configured" ]]; then
+    printf '%s\n' "$configured"
+  elif [[ -x "$target_path" ]]; then
+    printf '%s\n' "$target_path"
+  else
+    printf '%s\n' "$build_path"
+  fi
+}
+
+llvm_mc="$(pick_llvm_tool "${LLVM_MC:-}" \
+  target/llvm-lnp64-build/bin/llvm-mc build/llvm-lnp64-build/bin/llvm-mc)"
+llvm_objdump="$(pick_llvm_tool "${LLVM_OBJDUMP:-}" \
+  target/llvm-lnp64-build/bin/llvm-objdump build/llvm-lnp64-build/bin/llvm-objdump)"
 source_asm="${1:-tests/rtl/programs/top_llvm_mc_exit.s}"
 
 if [[ ! -x "$llvm_mc" || ! -x "$llvm_objdump" ]]; then

@@ -4,9 +4,25 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
-clang="${LLVM_CLANG:-target/llvm-lnp64-build/bin/clang}"
-lld="${LLVM_LLD:-target/llvm-lnp64-build/bin/lld}"
-llvm_mc="${LLVM_MC:-target/llvm-lnp64-build/bin/llvm-mc}"
+pick_llvm_tool() {
+  local configured="$1"
+  local target_path="$2"
+  local build_path="$3"
+  if [[ -n "$configured" ]]; then
+    printf '%s\n' "$configured"
+  elif [[ -x "$target_path" ]]; then
+    printf '%s\n' "$target_path"
+  else
+    printf '%s\n' "$build_path"
+  fi
+}
+
+clang="$(pick_llvm_tool "${LLVM_CLANG:-}" \
+  target/llvm-lnp64-build/bin/clang build/llvm-lnp64-build/bin/clang)"
+lld="$(pick_llvm_tool "${LLVM_LLD:-}" \
+  target/llvm-lnp64-build/bin/lld build/llvm-lnp64-build/bin/lld)"
+llvm_mc="$(pick_llvm_tool "${LLVM_MC:-}" \
+  target/llvm-lnp64-build/bin/llvm-mc build/llvm-lnp64-build/bin/llvm-mc)"
 source_c="${1:-tests/rtl/programs/top_linked_exit.c}"
 
 if [[ ! -x "$clang" || ! -x "$lld" || ! -x "$llvm_mc" ]]; then
