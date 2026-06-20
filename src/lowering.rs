@@ -4145,8 +4145,9 @@ mod tests {
         let emulator_source = include_str!("emulator.rs");
         let lowering_source = include_str!("lowering.rs");
         let real_llc_docker = include_str!("../scripts/run_real_llvm_lnp64_docker.sh");
+        let bootstrap_smokes = include_str!("../scripts/run_real_llvm_bootstrap_smokes.sh");
         let evidence_corpus = format!(
-            "{main_source}\n{loader_source}\n{emulator_source}\n{lowering_source}\n{real_llc_docker}"
+            "{main_source}\n{loader_source}\n{emulator_source}\n{lowering_source}\n{real_llc_docker}\n{bootstrap_smokes}"
         );
         let rows = run_elf_rows(run_elf_manifest);
         let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -4162,7 +4163,9 @@ mod tests {
         assert!(transition_manifest.contains("toolchain/lnp64_run_elf.manifest"));
         assert!(roadmap.contains("toolchain/lnp64_run_elf.manifest"));
         assert!(conformance.contains("toolchain/lnp64_run_elf.manifest"));
-        assert!(gate_manifest.contains("lnp64 run-elf"));
+        assert!(gate_manifest.contains("scripts/run_real_llvm_bootstrap_smokes.sh"));
+        assert!(bootstrap_smokes.contains("elf-plan"));
+        assert!(bootstrap_smokes.contains("run-elf"));
         assert!(real_llc_docker.contains("cargo build --quiet --bin lnp64"));
         assert!(real_llc_docker.contains(r#""$lnp64_bin" elf-plan"#));
         assert!(real_llc_docker.contains(r#""$lnp64_bin" run-elf"#));
@@ -4661,6 +4664,7 @@ mod tests {
             "cli_surface",
             "real_clang_lld_probe",
             "real_clang_demo_execution",
+            "real_clang_bootstrap_smoke",
             "real_native_heap_execution",
             "real_libc_test_ctype_execution",
             "real_libc_test_string_execution",
@@ -4791,6 +4795,7 @@ mod tests {
             "cli_surface",
             "real_clang_lld_probe",
             "real_clang_demo_execution",
+            "real_clang_bootstrap_smoke",
             "real_native_heap_execution",
             "real_libc_test_ctype_execution",
             "real_libc_test_string_execution",
@@ -6546,16 +6551,26 @@ mod tests {
         assert!(
             categories["llvm_built_versions"]
                 .1
+                .contains(&"scripts/run_real_llvm_bootstrap_smokes.sh")
+        );
+        assert!(
+            categories["llvm_built_versions"]
+                .1
                 .contains(&"scripts/run_real_llvm_lnp64_objects_docker.sh")
         );
         assert_eq!(
             categories["llvm_built_versions"].2,
-            "scripts/run_real_llvm_lnp64_docker.sh"
+            "scripts/run_real_llvm_bootstrap_smokes.sh"
         );
         assert!(
             categories["llvm_built_versions"]
                 .3
                 .contains("real_clang_object_gate")
+        );
+        assert!(
+            categories["llvm_built_versions"]
+                .3
+                .contains("fast_bootstrap_smoke")
         );
         assert_eq!(
             categories["llvm_package_tests"].2,
@@ -6670,8 +6685,9 @@ mod tests {
                 .contains("real LLVM LNP64 run-elf NetBSD init/shell system passed")
         );
         assert!(
-            run_real_package_gate
-                .contains("for selected in zlib natsort jsmn inih cwalk sbase userland netbsd")
+            run_real_package_gate.contains(
+                "for selected in zlib natsort jsmn inih cwalk demos sbase userland netbsd"
+            )
         );
         assert!(run_demos.contains("scripts/run_real_llvm_lnp64_docker.sh"));
         assert!(!run_demos.contains("demos/netbsd_personality_smoke.c"));
