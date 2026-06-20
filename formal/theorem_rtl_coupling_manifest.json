@@ -91,19 +91,22 @@
         {"file": "formal/M1TransitionInvariantModel.lean", "name": "m1_t3_stale_generation_cannot_authorize_work_for_all_reachable", "artifact_level": "transition_invariant"},
         {"file": "formal/M1TransitionInvariantModel.lean", "name": "m1_t3_revoked_caps_cannot_revive_for_all_reachable", "artifact_level": "transition_invariant"},
         {"file": "formal/M5DmaModel.lean", "name": "m5_revoked_generation_rejected", "artifact_level": "bounded_witness"},
+        {"file": "formal/M11DdrMetadataModel.lean", "name": "m11_stale_generation_fails_closed", "artifact_level": "bounded_witness"},
+        {"file": "formal/M11DdrMetadataModel.lean", "name": "m11_cross_domain_metadata_rejected", "artifact_level": "bounded_witness"},
         {"file": "formal/FormalTheoremsModel.lean", "name": "ft_revocation_soundness", "artifact_level": "coverage"}
       ],
       "rtl_modules": [
         {"file": "rtl/engines/lnp64_m1_pingpong.sv", "module": "lnp64_m1_pingpong"},
-        {"file": "rtl/engines/lnp64_m5_dma.sv", "module": "lnp64_m5_dma"}
+        {"file": "rtl/engines/lnp64_m5_dma.sv", "module": "lnp64_m5_dma"},
+        {"file": "rtl/engines/lnp64_m11_ddr_metadata.sv", "module": "lnp64_m11_ddr_metadata"}
       ],
-      "rtl_witness_signals": ["stale_generation_rejected", "revoke_rejected", "typed_commit.op", "typed_commit.object_gen", "typed_commit.fdr_gen", "typed_commit.status", "LNP64_M1_COMMIT_CAP_REVOKE", "LNP64_M1_COMMIT_REJECT_STALE"],
-      "assertion_files": ["formal/rtl_assertions/lnp64_m1_assertions.sv", "formal/rtl_assertions/lnp64_m5_assertions.sv"],
-      "trace_sources": ["rtl/sim/lnp64_m1_tb.sv", "scripts/check_rtl_m1_typed_commit_trace.py", "rtl/sim/lnp64_m5_tb.sv", "formal/m5_dma_model.py"],
-      "trace_markers": ["TRACE stale_pull", "TRACE revoked_submit", "ERR_EREVOKED"],
-      "gate_scripts": ["scripts/run_rtl_m1.sh", "scripts/check_rtl_m1_typed_commit_trace.py", "scripts/run_rtl_m5.sh", "scripts/run_rtl_random_cosim.sh"],
+      "rtl_witness_signals": ["stale_generation_rejected", "revoke_rejected", "typed_commit.op", "typed_commit.object_gen", "typed_commit.fdr_gen", "typed_commit.status", "LNP64_M1_COMMIT_CAP_REVOKE", "LNP64_M1_COMMIT_REJECT_STALE", "cross_domain_rejected", "metadata_domain_bound"],
+      "assertion_files": ["formal/rtl_assertions/lnp64_m1_assertions.sv", "formal/rtl_assertions/lnp64_m5_assertions.sv", "formal/rtl_assertions/lnp64_m11_assertions.sv"],
+      "trace_sources": ["rtl/sim/lnp64_m1_tb.sv", "scripts/check_rtl_m1_typed_commit_trace.py", "rtl/sim/lnp64_m5_tb.sv", "formal/m5_dma_model.py", "rtl/sim/lnp64_m11_tb.sv", "formal/m11_ddr_metadata_model.py", "scripts/check_rtl_m11_typed_commit_trace.py", "scripts/test_rtl_m11_typed_commit_checker.py", "scripts/check_rtl_m11_witness.py", "scripts/run_rtl_m11_witness_gate.sh", "scripts/gen_m11_witness_lean.py", "scripts/run_rtl_m11_lean_witness_gate.sh"],
+      "trace_markers": ["TRACE stale_pull", "TRACE revoked_submit", "ERR_EREVOKED", "TTRACE_M11 {\\\"record\\\":\\\"m11_ddr_commit\\\"", "rtl m11 typed commit trace ok", "rtl m11 witness ok", "rtl m11 lean witness gate ok"],
+      "gate_scripts": ["scripts/run_rtl_m1.sh", "scripts/check_rtl_m1_typed_commit_trace.py", "scripts/run_rtl_m5.sh", "scripts/run_rtl_random_cosim.sh", "scripts/run_rtl_m11.sh", "scripts/check_rtl_m11_typed_commit_trace.py", "scripts/test_rtl_m11_typed_commit_checker.py", "scripts/check_rtl_m11_witness.py", "scripts/run_rtl_m11_witness_gate.sh", "scripts/test_rtl_m11_witness_checker.py", "scripts/gen_m11_witness_lean.py", "scripts/run_rtl_m11_lean_witness_gate.sh"],
       "assumptions": ["generation fields are carried on command/response records", "revocation is observed before new authority-bearing work"],
-      "known_gaps": ["M1 now has schema-backed typed revoke/rejectStale commit records at the RTL module boundary and local RTL assertions, but full lineage/revocation refinement across all object classes is still missing."]
+      "known_gaps": ["M1 now has schema-backed typed revoke/rejectStale commit records at the RTL module boundary and local RTL assertions, but full lineage/revocation refinement across all object classes is still missing.", "The M11 DDR/metadata path now emits schema-owned typed commit/state packed traces checked against the executable transition contract (scripts/check_rtl_m11_typed_commit_trace.py: op sequence, packed-bit faithfulness, per-op invariants -- metadata domain-binding, DDR read-after-write, stale-generation EREVOKED rejection, cross-domain EPERM rejection, ECC scrub fail-closed), is re-validated offline by scripts/check_rtl_m11_witness.py, and scripts/run_rtl_m11_lean_witness_gate.sh proves M11 packed-bit decode-faithfulness in Lean (kernel decide, no axioms)."]
     },
     {
       "id": "domain_containment",

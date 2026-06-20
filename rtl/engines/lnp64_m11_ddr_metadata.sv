@@ -20,7 +20,10 @@ module lnp64_m11_ddr_metadata (
     output logic cross_domain_rejected,
     output logic ecc_scrubbed,
     output logic barrier_quiescent,
-    output logic counts_exact
+    output logic counts_exact,
+    output logic typed_commit_valid,
+    output lnp64_m11_ddr_commit_t typed_commit,
+    output lnp64_m11_state_projection_t typed_state_projection
 );
     typedef enum logic [3:0] {
         D_RESET,
@@ -130,8 +133,42 @@ module lnp64_m11_ddr_metadata (
         return seeded_ecc_corrections(seed);
     endfunction
 
+    task automatic commit_m11(
+        input lnp64_m11_ddr_op_e op,
+        input logic [15:0] status,
+        input logic [31:0] data_value
+    );
+        typed_commit_valid <= 1'b1;
+        typed_commit.op <= op;
+        typed_commit.status <= status;
+        typed_commit.line_id <= seeded_line_id(scenario_seed);
+        typed_commit.line_generation <= seeded_line_gen(scenario_seed);
+        typed_commit.domain_id <= seeded_root_domain(scenario_seed);
+        typed_commit.metadata_epoch <= seeded_metadata_epoch(scenario_seed);
+        typed_commit.byte_len <= seeded_byte_len(scenario_seed);
+        typed_commit.data_value <= data_value;
+    endtask
+
     always_comb begin
         counts_exact = completions == 32'd2 && faults == 32'd3;
+    end
+
+    always_comb begin
+        typed_state_projection = '0;
+        typed_state_projection.op = typed_commit.op;
+        typed_state_projection.status = typed_commit.status;
+        typed_state_projection.completions = completions;
+        typed_state_projection.faults = faults;
+        typed_state_projection.metadata_allocated = metadata_allocated;
+        typed_state_projection.metadata_domain_bound = metadata_domain_bound;
+        typed_state_projection.ddr_write_completed = ddr_write_completed;
+        typed_state_projection.ddr_read_completed = ddr_read_completed;
+        typed_state_projection.read_matches_write = read_matches_write;
+        typed_state_projection.stale_generation_rejected = stale_generation_rejected;
+        typed_state_projection.cross_domain_rejected = cross_domain_rejected;
+        typed_state_projection.ecc_scrubbed = ecc_scrubbed;
+        typed_state_projection.barrier_quiescent = barrier_quiescent;
+        typed_state_projection.counts_exact = counts_exact;
     end
 
     always_ff @(posedge clk or negedge reset_n) begin
@@ -141,6 +178,8 @@ module lnp64_m11_ddr_metadata (
             trace_valid <= 1'b0;
             trace_code <= 8'd0;
             trace_value <= 64'd0;
+            typed_commit_valid <= 1'b0;
+            typed_commit <= '0;
             metadata_allocated <= 1'b0;
             metadata_domain_bound <= 1'b0;
             ddr_write_completed <= 1'b0;
@@ -156,6 +195,7 @@ module lnp64_m11_ddr_metadata (
             metadata_entry <= '0;
         end else begin
             trace_valid <= 1'b0;
+            typed_commit_valid <= 1'b0;
             unique case (state)
                 D_RESET: begin
                     if (start) begin
@@ -197,6 +237,7 @@ module lnp64_m11_ddr_metadata (
                         seeded_root_domain_trace(scenario_seed),
                         seeded_metadata_epoch_trace(scenario_seed)
                     };
+                    commit_m11(LNP64_M11_COMMIT_METADATA_ALLOC, LNP64_STATUS_OK, 32'd0);
                     state <= D_DDR_WRITE;
                 end
                 D_DDR_WRITE: begin
@@ -210,6 +251,7 @@ module lnp64_m11_ddr_metadata (
                         seeded_byte_len_trace(scenario_seed),
                         seeded_data_value(scenario_seed)
                     };
+                    commit_m11(LNP64_M11_COMMIT_DDR_WRITE, LNP64_STATUS_OK, seeded_data_value(scenario_seed));
                     state <= D_DDR_READ;
                 end
                 D_DDR_READ: begin
@@ -223,6 +265,7 @@ module lnp64_m11_ddr_metadata (
                         seeded_data_value(scenario_seed),
                         16'd1
                     };
+                    commit_m11(LNP64_M11_COMMIT_DDR_READ, LNP64_STATUS_OK, seeded_data_value(scenario_seed));
                     state <= D_STALE_SUBMIT;
                 end
                 D_STALE_SUBMIT: begin
@@ -236,6 +279,7 @@ module lnp64_m11_ddr_metadata (
                         16'd0,
                         LNP64_ERR_EREVOKED
                     };
+                    commit_m11(LNP64_M11_COMMIT_STALE_SUBMIT, LNP64_ERR_EREVOKED, 32'd0);
                     state <= D_CROSS_DOMAIN;
                 end
                 D_CROSS_DOMAIN: begin
@@ -248,6 +292,7 @@ module lnp64_m11_ddr_metadata (
                         16'd0,
                         LNP64_ERR_EPERM
                     };
+                    commit_m11(LNP64_M11_COMMIT_CROSS_DOMAIN, LNP64_ERR_EPERM, 32'd0);
                     state <= D_ECC_SCRUB;
                 end
                 D_ECC_SCRUB: begin
@@ -261,6 +306,7 @@ module lnp64_m11_ddr_metadata (
                         seeded_ecc_corrections_trace(scenario_seed),
                         LNP64_ERR_EIO
                     };
+                    commit_m11(LNP64_M11_COMMIT_ECC_SCRUB, LNP64_ERR_EIO, 32'd0);
                     state <= D_BARRIER;
                 end
                 D_BARRIER: begin
@@ -268,6 +314,7 @@ module lnp64_m11_ddr_metadata (
                     trace_valid <= 1'b1;
                     trace_code <= 8'd8;
                     trace_value <= {seeded_line_id(scenario_seed), 32'd1};
+                    commit_m11(LNP64_M11_COMMIT_BARRIER, LNP64_STATUS_OK, 32'd0);
                     state <= D_DONE;
                 end
                 D_DONE: begin

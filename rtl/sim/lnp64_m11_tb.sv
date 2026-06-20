@@ -21,6 +21,9 @@ module lnp64_m11_tb;
     logic ecc_scrubbed;
     logic barrier_quiescent;
     logic counts_exact;
+    logic typed_commit_valid;
+    lnp64_m11_ddr_commit_t typed_commit;
+    lnp64_m11_state_projection_t typed_state_projection;
 
     lnp64_m11_ddr_metadata dut(
         .clk(clk),
@@ -40,7 +43,10 @@ module lnp64_m11_tb;
         .cross_domain_rejected(cross_domain_rejected),
         .ecc_scrubbed(ecc_scrubbed),
         .barrier_quiescent(barrier_quiescent),
-        .counts_exact(counts_exact)
+        .counts_exact(counts_exact),
+        .typed_commit_valid(typed_commit_valid),
+        .typed_commit(typed_commit),
+        .typed_state_projection(typed_state_projection)
     );
 
     lnp64_m11_assertions assertions_i(
@@ -123,6 +129,46 @@ module lnp64_m11_tb;
                 );
                 default: $display("TRACE unknown code=%0d value=%0d", trace_code, trace_value);
             endcase
+        end
+        if (typed_commit_valid) begin
+            $display(
+                "TTRACE_M11 {\"record\":\"m11_ddr_commit\",\"op\":%0d,\"status\":%0d,\"line_id\":%0d,\"line_generation\":%0d,\"domain_id\":%0d,\"metadata_epoch\":%0d,\"byte_len\":%0d,\"data_value\":%0d}",
+                typed_commit.op,
+                typed_commit.status,
+                typed_commit.line_id,
+                typed_commit.line_generation,
+                typed_commit.domain_id,
+                typed_commit.metadata_epoch,
+                typed_commit.byte_len,
+                typed_commit.data_value
+            );
+            $display(
+                "TTRACE_M11_BITS {\"record\":\"m11_ddr_commit_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m11_ddr_commit_t),
+                typed_commit
+            );
+            $display(
+                "TTRACE_M11_STATE {\"record\":\"m11_state_projection\",\"op\":%0d,\"status\":%0d,\"completions\":%0d,\"faults\":%0d,\"metadata_allocated\":%0d,\"metadata_domain_bound\":%0d,\"ddr_write_completed\":%0d,\"ddr_read_completed\":%0d,\"read_matches_write\":%0d,\"stale_generation_rejected\":%0d,\"cross_domain_rejected\":%0d,\"ecc_scrubbed\":%0d,\"barrier_quiescent\":%0d,\"counts_exact\":%0d}",
+                typed_state_projection.op,
+                typed_state_projection.status,
+                typed_state_projection.completions,
+                typed_state_projection.faults,
+                typed_state_projection.metadata_allocated,
+                typed_state_projection.metadata_domain_bound,
+                typed_state_projection.ddr_write_completed,
+                typed_state_projection.ddr_read_completed,
+                typed_state_projection.read_matches_write,
+                typed_state_projection.stale_generation_rejected,
+                typed_state_projection.cross_domain_rejected,
+                typed_state_projection.ecc_scrubbed,
+                typed_state_projection.barrier_quiescent,
+                typed_state_projection.counts_exact
+            );
+            $display(
+                "TTRACE_M11_STATE_BITS {\"record\":\"m11_state_projection_bits\",\"width\":%0d,\"bits\":\"%0h\"}",
+                $bits(lnp64_m11_state_projection_t),
+                typed_state_projection
+            );
         end
     end
 

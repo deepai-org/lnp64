@@ -177,4 +177,127 @@ theorem m11_counts_exact :
     afterBoot, boot, initialMachine
   ]
 
+/- Packed-bit decode machinery for the M11 DDR/metadata typed commit and state
+   projection records. Mirrors the shared schema layout so the offline witness
+   bits can be decoded back to projection fields and proved faithful in Lean
+   with the kernel `decide` tactic (no native_decide, no axioms). -/
+
+structure PackedFieldLayout where
+  name : String
+  width : Nat
+  lsb : Nat
+  msb : Nat
+deriving DecidableEq, Repr
+
+def packedSchemaWidth (schema : List (String × Nat)) : Nat :=
+  schema.foldl (fun total field => total + field.2) 0
+
+def packedSchemaLayoutFrom : Nat -> List (String × Nat) -> List PackedFieldLayout
+  | _cursor, [] => []
+  | cursor, field :: rest =>
+      let lsb := cursor - field.2
+      { name := field.1, width := field.2, lsb := lsb, msb := cursor - 1 } ::
+        packedSchemaLayoutFrom lsb rest
+
+def packedSchemaLayout (schema : List (String × Nat)) : List PackedFieldLayout :=
+  packedSchemaLayoutFrom (packedSchemaWidth schema) schema
+
+def packedFieldWithinWidth (totalWidth : Nat) (field : PackedFieldLayout) : Bool :=
+  decide (field.width > 0) &&
+  decide (field.lsb + field.width = field.msb + 1) &&
+  decide (field.msb < totalWidth)
+
+def packedLayoutWithinWidth (totalWidth : Nat) (layout : List PackedFieldLayout) : Bool :=
+  layout.all (packedFieldWithinWidth totalWidth)
+
+def packedLayoutStartsAtWidth (totalWidth : Nat) : List PackedFieldLayout -> Bool
+  | [] => decide (totalWidth = 0)
+  | field :: _rest => decide (field.msb + 1 = totalWidth)
+
+def packedLayoutAdjacentContiguous : List PackedFieldLayout -> Bool
+  | [] => true
+  | _field :: [] => true
+  | first :: second :: rest =>
+      decide (first.lsb = second.msb + 1) &&
+      packedLayoutAdjacentContiguous (second :: rest)
+
+def packedLayoutEndsAtZero : List PackedFieldLayout -> Bool
+  | [] => true
+  | field :: [] => decide (field.lsb = 0)
+  | _field :: rest => packedLayoutEndsAtZero rest
+
+def packedLayoutCoversWidth (totalWidth : Nat) (layout : List PackedFieldLayout) : Bool :=
+  packedLayoutWithinWidth totalWidth layout &&
+  packedLayoutStartsAtWidth totalWidth layout &&
+  packedLayoutAdjacentContiguous layout &&
+  packedLayoutEndsAtZero layout
+
+def packedBitSlice (bits lsb width : Nat) : Nat :=
+  (bits / (2 ^ lsb)) % (2 ^ width)
+
+def packedFieldValue (bits : Nat) (field : PackedFieldLayout) : Nat :=
+  packedBitSlice bits field.lsb field.width
+
+def packedLayoutFieldValue
+    (bits : Nat)
+    (fieldName : String) : List PackedFieldLayout -> Option Nat
+  | [] => none
+  | field :: rest =>
+      if field.name == fieldName then
+        some (packedFieldValue bits field)
+      else
+        packedLayoutFieldValue bits fieldName rest
+
+def rtlM11CommitPackedSchema : List (String × Nat) :=
+  [ ("op", 8)
+  , ("status", 16)
+  , ("line_id", 32)
+  , ("line_generation", 32)
+  , ("domain_id", 32)
+  , ("metadata_epoch", 32)
+  , ("byte_len", 32)
+  , ("data_value", 32) ]
+
+def rtlM11StateProjectionPackedSchema : List (String × Nat) :=
+  [ ("op", 8)
+  , ("status", 16)
+  , ("completions", 32)
+  , ("faults", 32)
+  , ("metadata_allocated", 1)
+  , ("metadata_domain_bound", 1)
+  , ("ddr_write_completed", 1)
+  , ("ddr_read_completed", 1)
+  , ("read_matches_write", 1)
+  , ("stale_generation_rejected", 1)
+  , ("cross_domain_rejected", 1)
+  , ("ecc_scrubbed", 1)
+  , ("barrier_quiescent", 1)
+  , ("counts_exact", 1) ]
+
+def rtlM11CommitPackedLayout : List PackedFieldLayout :=
+  packedSchemaLayout rtlM11CommitPackedSchema
+
+def rtlM11StateProjectionPackedLayout : List PackedFieldLayout :=
+  packedSchemaLayout rtlM11StateProjectionPackedSchema
+
+theorem rtlM11CommitPackedSchema_width :
+    packedSchemaWidth rtlM11CommitPackedSchema = 216 := by
+  decide
+
+theorem rtlM11StateProjectionPackedSchema_width :
+    packedSchemaWidth rtlM11StateProjectionPackedSchema = 98 := by
+  decide
+
+theorem rtlM11CommitPackedLayout_covers_schema_width :
+    packedLayoutCoversWidth
+      (packedSchemaWidth rtlM11CommitPackedSchema)
+      rtlM11CommitPackedLayout = true := by
+  decide
+
+theorem rtlM11StateProjectionPackedLayout_covers_schema_width :
+    packedLayoutCoversWidth
+      (packedSchemaWidth rtlM11StateProjectionPackedSchema)
+      rtlM11StateProjectionPackedLayout = true := by
+  decide
+
 end Lnp64.M11

@@ -275,6 +275,16 @@ package lnp64_pkg;
     } lnp64_m2_gate_op_e;
 
     typedef enum logic [7:0] {
+        LNP64_M11_COMMIT_METADATA_ALLOC = 8'd1,
+        LNP64_M11_COMMIT_DDR_WRITE      = 8'd2,
+        LNP64_M11_COMMIT_DDR_READ       = 8'd3,
+        LNP64_M11_COMMIT_STALE_SUBMIT   = 8'd4,
+        LNP64_M11_COMMIT_CROSS_DOMAIN   = 8'd5,
+        LNP64_M11_COMMIT_ECC_SCRUB      = 8'd6,
+        LNP64_M11_COMMIT_BARRIER        = 8'd7
+    } lnp64_m11_ddr_op_e;
+
+    typedef enum logic [7:0] {
         LNP64_M10_COMMIT_BOOT_MEASURE  = 8'd1,
         LNP64_M10_COMMIT_ECC_CORRECT   = 8'd2,
         LNP64_M10_COMMIT_PARITY_POISON = 8'd3,
@@ -687,6 +697,34 @@ package lnp64_pkg;
         logic        fault_delivery_gate_ok;
         logic        signal_compatibility_ok;
     } lnp64_m2_state_projection_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] line_id;
+        logic [31:0] line_generation;
+        logic [31:0] domain_id;
+        logic [31:0] metadata_epoch;
+        logic [31:0] byte_len;
+        logic [31:0] data_value;
+    } lnp64_m11_ddr_commit_t;
+
+    typedef struct packed {
+        logic [7:0]  op;
+        logic [15:0] status;
+        logic [31:0] completions;
+        logic [31:0] faults;
+        logic        metadata_allocated;
+        logic        metadata_domain_bound;
+        logic        ddr_write_completed;
+        logic        ddr_read_completed;
+        logic        read_matches_write;
+        logic        stale_generation_rejected;
+        logic        cross_domain_rejected;
+        logic        ecc_scrubbed;
+        logic        barrier_quiescent;
+        logic        counts_exact;
+    } lnp64_m11_state_projection_t;
 
     typedef struct packed {
         logic [7:0]  op;
