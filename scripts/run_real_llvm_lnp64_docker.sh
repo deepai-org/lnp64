@@ -397,6 +397,14 @@ grep -q '^cat.txt$' <<<"$sbase_ls_output"
 grep -q 'exit=0' <<<"$sbase_ls_output"
 printf 'real LLVM LNP64 run-elf sbase ls execution passed: %s\n' \
   target/llvm-lnp64-build/lnp64-sbase-ls-linked.elf
+"$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-find-linked.elf \
+  >/dev/null
+sbase_find_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+  target/llvm-lnp64-build/lnp64-sbase-find-linked.elf find input -name cat.txt -print)"
+grep -q '^input/cat.txt$' <<<"$sbase_find_output"
+grep -q 'exit=0' <<<"$sbase_find_output"
+printf 'real LLVM LNP64 run-elf sbase find execution passed: %s\n' \
+  target/llvm-lnp64-build/lnp64-sbase-find-linked.elf
 rm -rf "$sbase_fixture_root/made"
 "$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-mkdir-linked.elf \
   >/dev/null

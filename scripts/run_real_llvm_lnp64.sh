@@ -1489,6 +1489,23 @@ grep -q '<chartorune>:' "$sbase_ls_support_impl_dump"
 printf 'real LLVM LNP64 clang sbase ls support object smoke passed: %s\n' \
   "$sbase_ls_support_impl_obj"
 
+sbase_find_support_impl_c="toolchain/liblnp64_sbase_find_min.c"
+sbase_find_support_impl_obj="$build_dir/liblnp64-sbase-find-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin \
+  -fno-pic -fno-jump-tables -fno-unwind-tables \
+  -fno-asynchronous-unwind-tables -I toolchain/include -I third_party/sbase \
+  -c "$sbase_find_support_impl_c" -o "$sbase_find_support_impl_obj"
+test -s "$sbase_find_support_impl_obj"
+sbase_find_support_impl_dump="$build_dir/liblnp64-sbase-find-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none \
+  "$sbase_find_support_impl_obj" >"$sbase_find_support_impl_dump"
+grep -q '<fnmatch>:' "$sbase_find_support_impl_dump"
+grep -q '<readdir>:' "$sbase_find_support_impl_dump"
+grep -q '<sysconf>:' "$sbase_find_support_impl_dump"
+grep -q '<ereallocarray>:' "$sbase_find_support_impl_dump"
+printf 'real LLVM LNP64 clang sbase find support object smoke passed: %s\n' \
+  "$sbase_find_support_impl_obj"
+
 netcat_obj="$build_dir/netcat-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
@@ -5755,6 +5772,18 @@ sbase_ls_elf="$build_dir/lnp64-sbase-ls-linked.elf"
 test -s "$sbase_ls_elf"
 printf 'real LLVM LNP64 lld sbase ls link smoke passed: %s\n' \
   "$sbase_ls_elf"
+
+sbase_find_elf="$build_dir/lnp64-sbase-find-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
+  -o "$sbase_find_elf" "$crt0_obj" "$build_dir/sbase-find-clang-smoke.o" \
+  "$sbase_support_impl_obj" "$sbase_find_support_impl_obj" \
+  "$sbase_fs_support_impl_obj" \
+  "$libc_alloc_impl_obj" "$libc_fd_impl_obj" "$libc_meta_impl_obj" \
+  "$libc_path_impl_obj" "$libc_time_impl_obj" "$libc_string_impl_obj" \
+  "$libc_convert_impl_obj" "$libc_errno_impl_obj" "$libc_process_impl_obj"
+test -s "$sbase_find_elf"
+printf 'real LLVM LNP64 lld sbase find link smoke passed: %s\n' \
+  "$sbase_find_elf"
 
 sbase_mkdir_elf="$build_dir/lnp64-sbase-mkdir-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
