@@ -475,6 +475,7 @@ bash scripts/run_rtl_top_program_smoke.sh demos/dma_copy.s
 bash scripts/run_rtl_top_program_smoke.sh demos/revoked_dma_buffer.s
 bash scripts/run_rtl_top_program_smoke.sh demos/guarded_heap_overflow.s
 bash scripts/run_rtl_top_program_smoke.sh demos/memory_order.s
+bash scripts/run_rtl_top_program_smoke.sh demos/system.s
 cargo run -- asm-flat-exec tests/rtl/programs/top_smoke.s -o /tmp/top_smoke.hex
 bash scripts/run_rtl_top_program_smoke.sh tests/rtl/programs/top_smoke.hex
 bash scripts/run_rtl_m1.sh

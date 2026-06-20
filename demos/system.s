@@ -45,8 +45,8 @@ exec_envp: .quad 0
   YIELD
   LI r18, 1
   ST [r14, 0], r18
-  FUTEX_WAKE r14, r18
   LI r26, 3
+  FUTEX_WAKE r14, r18
   SLEEP r26
   LD r19, [r14, 0]
   LI r21, 2

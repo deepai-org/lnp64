@@ -416,6 +416,7 @@ fn flat_exec_instr_word_len(program: &Program, instr: &Instr) -> usize {
         Instr::Li(_, Value::Label(label)) if program.data_labels.contains_key(label) => 2,
         Instr::Ld(_, MemRef::Label(_), _) => 3,
         Instr::Auipc(_, _) => 2,
+        Instr::Mmap(_, _, _, _, _, _) => 2,
         Instr::LinkPathAt(_, _, _, _, _) | Instr::ChownPathAt(_, _, _, _, _) => 2,
         _ => 1,
     }
@@ -1640,6 +1641,33 @@ mod tests {
             )
         );
         assert_eq!(data_hex, "00000000000a6b6f\n");
+    }
+
+    #[test]
+    fn asm_flat_exec_counts_mmap_tail_word_for_later_labels() {
+        let source = r#"
+            .text
+              LI r1, handler
+              LI r2, 16
+              LI r3, 3
+              MMAP r4, r0, r2, r3, fd0, r0
+            handler:
+              EXIT r0
+        "#;
+        let program = Program::parse(source).unwrap();
+        let hex = encode_flat_exec_hex(&program).unwrap();
+
+        assert_eq!(
+            hex,
+            concat!(
+                "01081018\n",
+                "01100010\n",
+                "01180003\n",
+                "6a2008c0\n",
+                "6b000000\n",
+                "3a000000\n",
+            )
+        );
     }
 
     #[test]

@@ -2036,11 +2036,10 @@ module lnp64_core_tile #(
             active_thread_slot == 1'b0 &&
             THREAD_CONTEXT_COUNT > 1 &&
             !thread_active_mask[1] &&
-            !thread_completed_mask[1] &&
             domain_thread_budget_allows(active_thread_context.domain_id, 64'd1);
         fork_child_context = active_thread_context;
         fork_child_context.pid = 32'd2;
-        fork_child_context.tid = 32'd2;
+        fork_child_context.tid = thread_completed_mask[1] ? 32'd3 : 32'd2;
         fork_child_context.tile_id = TILE_ID[31:0];
         fork_child_context.domain_id = active_thread_context.domain_id;
         fork_child_context.domain_gen = active_thread_context.domain_gen;
@@ -4282,6 +4281,9 @@ module lnp64_core_tile #(
                                         forced_thread_switch_valid <= 1'b1;
                                         forced_thread_switch_slot <= thread_join_wait_slot;
                                         thread_join_wait_valid <= 1'b0;
+                                    end else begin
+                                        forced_thread_switch_valid <= 1'b1;
+                                        forced_thread_switch_slot <= '0;
                                     end
                                     state <= CORE_SWITCH;
                                 end
