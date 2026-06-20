@@ -70,6 +70,30 @@ pub enum NativePrimitive {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetBsdDeniedEscape {
+    RawInterrupt,
+    RawMmio,
+    RawDma,
+    RawPageTable,
+    HiddenSchedulerAuthority,
+    UntypedSyscall,
+    CapabilityMinting,
+}
+
+pub const NETBSD_PERSONALITY_DENIED_ESCAPES: &[(NetBsdDeniedEscape, &str)] = &[
+    (NetBsdDeniedEscape::RawInterrupt, "raw interrupt"),
+    (NetBsdDeniedEscape::RawMmio, "MMIO"),
+    (NetBsdDeniedEscape::RawDma, "raw DMA"),
+    (NetBsdDeniedEscape::RawPageTable, "raw page table"),
+    (
+        NetBsdDeniedEscape::HiddenSchedulerAuthority,
+        "hidden scheduler authority",
+    ),
+    (NetBsdDeniedEscape::UntypedSyscall, "syscall escape"),
+    (NetBsdDeniedEscape::CapabilityMinting, "capability minting"),
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CompatibilityLowering {
     pub surface: CompatSurface,
     pub native: &'static [NativePrimitive],
@@ -9527,6 +9551,9 @@ mod tests {
 
     #[test]
     fn netbsd_system_gate_canonical_native_primitives_cover_runner_requirements() {
+        let personality_abi = include_str!("../netbsd_personality_abi.md");
+        let system_gate = include_str!("../scripts/run_netbsd_personality_system.sh");
+
         fn gate_has(
             surfaces: &[CompatSurface],
             mut required: impl FnMut(&NativePrimitive) -> bool,
@@ -9599,6 +9626,17 @@ mod tests {
             == NativePrimitive::EventDelivery));
         assert!(gate_has(&surfaces, |primitive| *primitive
             == NativePrimitive::AbiSignalFrame));
+        assert!(
+            system_gate.contains(
+                "netbsd_system_gate_canonical_native_primitives_cover_runner_requirements"
+            )
+        );
+        for (_, token) in NETBSD_PERSONALITY_DENIED_ESCAPES {
+            assert!(
+                personality_abi.contains(token),
+                "NetBSD ABI doc must keep denied escape visible: {token}"
+            );
+        }
     }
 
     #[test]
