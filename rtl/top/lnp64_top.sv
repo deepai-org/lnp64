@@ -568,6 +568,18 @@ module lnp64_top #(
         if (!logic_reset_n) begin
         end else begin
             for (m1_assert_i = 0; m1_assert_i < CORE_TILE_COUNT; m1_assert_i = m1_assert_i + 1) begin
+                if (submit_valid_vec[m1_assert_i]) begin
+                    assert (submit_record_vec[m1_assert_i].pid != 32'd0 &&
+                        submit_record_vec[m1_assert_i].tid != 32'd0 &&
+                        submit_record_vec[m1_assert_i].domain_id != 32'd0 &&
+                        submit_record_vec[m1_assert_i].domain_gen != 32'd0 &&
+                        submit_record_vec[m1_assert_i].migration_generation != 32'd0 &&
+                        submit_record_vec[m1_assert_i].dispatch_eligible)
+                        else $fatal(1, "SG-SCHED top-level submit record missing typed metadata");
+                    assert (submit_record_vec[m1_assert_i].tile_id == m1_assert_i[31:0] &&
+                        submit_record_vec[m1_assert_i].active_location == m1_assert_i[31:0])
+                        else $fatal(1, "SG-SCHED top-level submit record tile drift");
+                end
                 if (cap_m1_commit_latched_valid_vec[m1_assert_i] &&
                     retire_submit_valid_vec[m1_assert_i]) begin
                     assert (top_m1_retire_is_cap_op(retire_submit_record_vec[m1_assert_i]))

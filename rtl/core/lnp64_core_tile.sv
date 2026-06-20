@@ -3420,6 +3420,16 @@ module lnp64_core_tile #(
                             end
                             LNP64_OP_CLONE: begin
                                 if (active_thread_slot == 1'b0 && !thread_active_mask[1]) begin
+`ifndef SYNTHESIS
+                                    assert (thread_window_activate_valid &&
+                                        thread_window_activate_context.tid == 32'd2 &&
+                                        thread_window_activate_context.pid == active_thread_context.pid &&
+                                        thread_window_activate_context.domain_id == active_thread_context.domain_id &&
+                                        thread_window_activate_context.domain_gen == active_thread_context.domain_gen &&
+                                        thread_window_activate_context.tile_id == TILE_ID[31:0] &&
+                                        thread_window_activate_context.active_location == TILE_ID[31:0])
+                                        else $fatal(1, "SG-SCHED clone submit did not match activated child context");
+`endif
                                     for (i = 0; i < 32; i = i + 1) begin
                                         thread_gpr[1][i] <= gpr[i];
                                     end
@@ -3441,6 +3451,8 @@ module lnp64_core_tile #(
                                     thread_exit_code[1] <= 64'd0;
                                     gpr[dec.rd] <= 64'd2;
                                     errno_reg <= LNP64_ERR_OK;
+                                    submit_valid <= 1'b1;
+                                    submit_record <= thread_window_activate_context;
                                 end else begin
                                     gpr[dec.rd] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= LNP64_ERR_EAGAIN;
