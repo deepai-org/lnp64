@@ -5778,6 +5778,7 @@ mod tests {
         let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let shim_path = manifest_field(target_manifest, "libc_shim_contract");
         let mut groups = std::collections::BTreeMap::new();
+        let mut group_evidence = std::collections::BTreeMap::new();
 
         assert_eq!(shim_path, "toolchain/lnp64_libc_shim.manifest");
         assert!(manifest_root.join(shim_path).is_file());
@@ -5797,6 +5798,10 @@ mod tests {
                     )
                     .is_none(),
                 "duplicate libc shim group {group}"
+            );
+            assert!(
+                group_evidence.insert(group, evidence.clone()).is_none(),
+                "duplicate libc shim evidence group {group}"
             );
             assert!(
                 ["tested", "partial", "planned"].contains(&status),
@@ -5864,6 +5869,20 @@ mod tests {
         assert!(libc_roadmap.contains("signal dispositions"));
         assert!(shim_manifest.contains("userland/poll_test_clang.c"));
         assert!(shim_manifest.contains("real LLVM LNP64 run-elf NetBSD poll child passed"));
+        for evidence in [
+            "toolchain/liblnp64_poll_min.c",
+            "userland/poll_test_clang.c",
+            "real LLVM LNP64 run-elf poll/select/epoll/kqueue libc execution passed",
+            "real LLVM LNP64 run-elf NetBSD poll child passed",
+        ] {
+            assert!(
+                group_evidence["poll_select_epoll_kqueue"].contains(&evidence),
+                "poll/select/epoll/kqueue row must name evidence {evidence}"
+            );
+        }
+        assert!(conformance.contains("| `kqueue`, `kevent` | partial |"));
+        assert!(conformance.contains("Broader filters, delete/oneshot semantics"));
+        assert!(conformance.contains("`COMPAT-STRESS-005` | poll/epoll races"));
         for group in [
             "startup_env_auxv",
             "errno_tls",
