@@ -2584,6 +2584,7 @@ mod tests {
         assert!(sys_epoll_header.contains("int epoll_ctl(int epfd"));
         assert!(sys_event_header.contains("struct kevent"));
         assert!(sys_event_header.contains("#define EVFILT_READ"));
+        assert!(sys_event_header.contains("#define EV_ONESHOT"));
         assert!(sys_event_header.contains("int kevent(int kq"));
         assert!(real_llc.contains("#include <poll.h>"));
         assert!(real_llc.contains("#include <sys/epoll.h>"));
@@ -2601,6 +2602,7 @@ mod tests {
         assert!(real_llc.contains("kqueue()"));
         assert!(real_llc.contains("change.filter = EVFILT_READ"));
         assert!(real_llc.contains("change.flags = EV_ADD"));
+        assert!(real_llc.contains("change.flags = EV_ADD | EV_ONESHOT"));
         assert!(real_llc.contains("change.flags = EV_DELETE"));
         assert!(real_llc.contains("kevent(kq, &change, 1, 0, 0, &ts)"));
         assert!(real_llc.contains("poll-libc-clang-smoke.o"));
@@ -3102,6 +3104,7 @@ mod tests {
         assert!(poll_test_clang.contains("epoll_ctl(ep, EPOLL_CTL_MOD"));
         assert!(poll_test_clang.contains("epoll_ctl(ep, EPOLL_CTL_DEL"));
         assert!(poll_test_clang.contains("out.data != read_cap + 1"));
+        assert!(poll_test_clang.contains("change.flags = EV_ADD | EV_ONESHOT"));
         assert!(poll_test_clang.contains("change.flags = EV_DELETE"));
         assert!(!poll_test_clang.contains("typedef unsigned long nfds_t"));
         assert!(!poll_test_clang.contains("int poll(struct pollfd"));
@@ -5918,7 +5921,8 @@ mod tests {
         assert!(conformance.contains("| `kqueue`, `kevent` | partial |"));
         assert!(conformance.contains("real-Clang `EPOLL_CTL_MOD` data replacement"));
         assert!(conformance.contains("EV_DELETE removes a registered readiness source"));
-        assert!(conformance.contains("Broader filters, oneshot semantics"));
+        assert!(conformance.contains("EV_ONESHOT removes a source after first delivery"));
+        assert!(conformance.contains("Broader filters, error reporting"));
         assert!(conformance.contains("`COMPAT-STRESS-005` | poll/epoll races"));
         for group in [
             "startup_env_auxv",

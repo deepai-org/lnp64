@@ -163,6 +163,25 @@ int main(void) {
         return 36;
     if (pull_byte(read_cap, 'q') != 0)
         return 37;
+    change.flags = EV_ADD | EV_ONESHOT;
+    change.udata = (void *)(unsigned long)(read_cap + 1);
+    if (kevent(kq, &change, 1, 0, 0, &ktimeout) != 0)
+        return 38;
+    if (push_byte(write_cap, 'o') != 0)
+        return 39;
+    if (kevent(kq, 0, 0, &kout, 1, &ktimeout) != 1)
+        return 40;
+    if (kout.ident != read_cap || kout.filter != EVFILT_READ ||
+        kout.udata != (void *)(unsigned long)(read_cap + 1))
+        return 41;
+    if (pull_byte(read_cap, 'o') != 0)
+        return 42;
+    if (push_byte(write_cap, 'x') != 0)
+        return 43;
+    if (kevent(kq, 0, 0, &kout, 1, &ktimeout) != 0)
+        return 44;
+    if (pull_byte(read_cap, 'x') != 0)
+        return 45;
 
     pfd.fd = (int)read_cap;
     pfd.events = POLLIN;

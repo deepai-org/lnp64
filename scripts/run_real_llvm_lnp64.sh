@@ -4283,9 +4283,12 @@ int main(void) {
   change.udata = 0;
   if (kevent(kq, &change, 1, 0, 0, &ts) != 0)
     return 11;
-  change.flags = EV_DELETE;
+  change.flags = EV_ADD | EV_ONESHOT;
   if (kevent(kq, &change, 1, 0, 0, &ts) != 0)
     return 12;
+  change.flags = EV_DELETE;
+  if (kevent(kq, &change, 1, 0, 0, &ts) != 0)
+    return 13;
   return 0;
 }
 C

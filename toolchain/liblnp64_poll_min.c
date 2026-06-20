@@ -10,6 +10,7 @@ enum {
   LNP64_EVFILT_WRITE = -2,
   LNP64_EV_ADD = 0x0001,
   LNP64_EV_DELETE = 0x0002,
+  LNP64_EV_ONESHOT = 0x0010,
   LNP64_EPOLL_CTL_ADD = 1,
   LNP64_EPOLL_CTL_DEL = 2,
   LNP64_EPOLL_CTL_MOD = 3,
@@ -158,6 +159,7 @@ static int lnp64_kqueue_created;
 static int lnp64_kqueue_count;
 static unsigned long lnp64_kqueue_ident[LNP64_KQUEUE_MAX];
 static short lnp64_kqueue_filter[LNP64_KQUEUE_MAX];
+static unsigned short lnp64_kqueue_flags[LNP64_KQUEUE_MAX];
 static void *lnp64_kqueue_udata[LNP64_KQUEUE_MAX];
 
 int kqueue(void) {
@@ -174,16 +176,21 @@ static int lnp64_kqueue_find(unsigned long ident, short filter) {
   return -1;
 }
 
+static void lnp64_kqueue_remove_slot(int slot) {
+  int last = lnp64_kqueue_count - 1;
+  lnp64_kqueue_ident[slot] = lnp64_kqueue_ident[last];
+  lnp64_kqueue_filter[slot] = lnp64_kqueue_filter[last];
+  lnp64_kqueue_flags[slot] = lnp64_kqueue_flags[last];
+  lnp64_kqueue_udata[slot] = lnp64_kqueue_udata[last];
+  lnp64_kqueue_count = last;
+}
+
 static int lnp64_kqueue_apply_change(const struct kevent *change) {
   int slot = lnp64_kqueue_find(change->ident, change->filter);
   if (change->flags & LNP64_EV_DELETE) {
     if (slot < 0)
       return -1;
-    int last = lnp64_kqueue_count - 1;
-    lnp64_kqueue_ident[slot] = lnp64_kqueue_ident[last];
-    lnp64_kqueue_filter[slot] = lnp64_kqueue_filter[last];
-    lnp64_kqueue_udata[slot] = lnp64_kqueue_udata[last];
-    lnp64_kqueue_count = last;
+    lnp64_kqueue_remove_slot(slot);
     return 0;
   }
   if (!(change->flags & LNP64_EV_ADD))
@@ -196,6 +203,7 @@ static int lnp64_kqueue_apply_change(const struct kevent *change) {
   }
   lnp64_kqueue_ident[slot] = change->ident;
   lnp64_kqueue_filter[slot] = change->filter;
+  lnp64_kqueue_flags[slot] = change->flags;
   lnp64_kqueue_udata[slot] = change->udata;
   return 0;
 }
@@ -232,6 +240,10 @@ int kevent(int kq, const struct kevent *changelist, int nchanges,
       eventlist[ready].data = 0;
       eventlist[ready].udata = lnp64_kqueue_udata[i];
       ready = ready + 1;
+      if (lnp64_kqueue_flags[i] & LNP64_EV_ONESHOT) {
+        lnp64_kqueue_remove_slot(i);
+        i = i - 1;
+      }
     }
   }
 
