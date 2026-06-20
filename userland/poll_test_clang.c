@@ -211,6 +211,25 @@ int main(void) {
         return 60;
     if (kevent(kq, 0, 0, &kout, 1, &ktimeout) != 0)
         return 61;
+    change.ident = read_cap;
+    change.filter = EVFILT_READ;
+    change.fflags = 0;
+    change.flags = EV_ADD | EV_DISABLE;
+    change.udata = (void *)(unsigned long)(read_cap + 2);
+    if (kevent(kq, &change, 1, 0, 0, &ktimeout) != 0)
+        return 62;
+    if (push_byte(write_cap, 'v') != 0)
+        return 63;
+    if (kevent(kq, 0, 0, &kout, 1, &ktimeout) != 0)
+        return 64;
+    change.flags = EV_ENABLE;
+    if (kevent(kq, &change, 1, &kout, 1, &ktimeout) != 1)
+        return 65;
+    if (kout.ident != read_cap || kout.filter != EVFILT_READ ||
+        kout.udata != (void *)(unsigned long)(read_cap + 2))
+        return 66;
+    if (pull_byte(read_cap, 'v') != 0)
+        return 67;
     change.ident = write_cap;
     change.filter = EVFILT_WRITE;
     change.fflags = 0;

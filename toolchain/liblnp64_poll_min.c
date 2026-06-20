@@ -11,6 +11,8 @@ enum {
   LNP64_EVFILT_USER = -10,
   LNP64_EV_ADD = 0x0001,
   LNP64_EV_DELETE = 0x0002,
+  LNP64_EV_ENABLE = 0x0004,
+  LNP64_EV_DISABLE = 0x0008,
   LNP64_EV_ONESHOT = 0x0010,
   LNP64_EV_ERROR = 0x4000,
   LNP64_NOTE_TRIGGER = 0x01000000,
@@ -218,6 +220,14 @@ static int lnp64_kqueue_apply_change(const struct kevent *change) {
     lnp64_kqueue_remove_slot(slot);
     return 0;
   }
+  if (slot >= 0 && (change->flags & (LNP64_EV_ENABLE | LNP64_EV_DISABLE))) {
+    if (change->flags & LNP64_EV_DISABLE)
+      lnp64_kqueue_flags[slot] |= LNP64_EV_DISABLE;
+    if (change->flags & LNP64_EV_ENABLE)
+      lnp64_kqueue_flags[slot] &= (unsigned short)~LNP64_EV_DISABLE;
+    if (!(change->flags & LNP64_EV_ADD))
+      return 0;
+  }
   if (!(change->flags & LNP64_EV_ADD))
     return LNP64_EINVAL;
   if (slot < 0) {
@@ -277,6 +287,8 @@ int kevent(int kq, const struct kevent *changelist, int nchanges,
 
   for (int i = 0; i < lnp64_kqueue_count && ready < nevents; i = i + 1) {
     lnp64_word_t mask = (lnp64_word_t)lnp64_filter_events(lnp64_kqueue_filter[i]);
+    if (lnp64_kqueue_flags[i] & LNP64_EV_DISABLE)
+      continue;
     if (lnp64_kqueue_filter[i] == LNP64_EVFILT_USER) {
       if (!(lnp64_kqueue_fflags[i] & LNP64_NOTE_TRIGGER))
         continue;

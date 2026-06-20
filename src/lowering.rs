@@ -2581,6 +2581,8 @@ mod tests {
         assert!(libc_poll_min.contains("int lnp64_kqueue_close(int fd)"));
         assert!(libc_poll_min.contains("lnp64_kqueue_write_error"));
         assert!(libc_poll_min.contains("LNP64_EVFILT_USER"));
+        assert!(libc_poll_min.contains("LNP64_EV_ENABLE"));
+        assert!(libc_poll_min.contains("LNP64_EV_DISABLE"));
         assert!(libc_poll_min.contains("LNP64_NOTE_TRIGGER"));
         assert!(libc_poll_min.contains("int kevent(int kq"));
         assert!(libc_poll_min.contains("__lnp_await"));
@@ -2595,6 +2597,8 @@ mod tests {
         assert!(sys_event_header.contains("struct kevent"));
         assert!(sys_event_header.contains("#define EVFILT_READ"));
         assert!(sys_event_header.contains("#define EVFILT_USER"));
+        assert!(sys_event_header.contains("#define EV_ENABLE"));
+        assert!(sys_event_header.contains("#define EV_DISABLE"));
         assert!(sys_event_header.contains("#define EV_ONESHOT"));
         assert!(sys_event_header.contains("#define EV_ERROR"));
         assert!(sys_event_header.contains("#define NOTE_TRIGGER"));
@@ -3126,6 +3130,8 @@ mod tests {
         assert!(poll_test_clang.contains("epoll_ctl(ep, EPOLL_CTL_DEL"));
         assert!(poll_test_clang.contains("out.data != read_cap + 1"));
         assert!(poll_test_clang.contains("change.flags = EV_ADD | EV_ONESHOT"));
+        assert!(poll_test_clang.contains("change.flags = EV_ADD | EV_DISABLE"));
+        assert!(poll_test_clang.contains("change.flags = EV_ENABLE"));
         assert!(poll_test_clang.contains("change.flags = EV_DELETE"));
         assert!(poll_test_clang.contains("change.filter = 99"));
         assert!(poll_test_clang.contains("kevent(kq, &change, 1, 0, 0, &ktimeout) != -1"));
@@ -5969,6 +5975,8 @@ mod tests {
         assert!(conformance.contains("real-Clang `EPOLL_CTL_MOD` data replacement"));
         assert!(conformance.contains("EVFILT_READ and EVFILT_WRITE readiness"));
         assert!(conformance.contains("EV_DELETE removes a registered readiness source"));
+        assert!(conformance.contains("EV_DISABLE suppresses delivery without removing"));
+        assert!(conformance.contains("EV_ENABLE resumes delivery"));
         assert!(conformance.contains("EV_ONESHOT removes a source after first delivery"));
         assert!(
             conformance.contains("EVFILT_USER/NOTE_TRIGGER runs as a process-local trigger source")
