@@ -8051,7 +8051,11 @@ impl Machine {
     }
 
     fn set_current_domain_id(&mut self, domain_id: u64) -> Result<(), String> {
+        let pid = self.thread()?.pid;
         self.thread_mut()?.domain_id = domain_id;
+        if let Some(process) = self.processes.get_mut(&pid) {
+            process.domain_id = domain_id;
+        }
         Ok(())
     }
 
@@ -8864,10 +8868,16 @@ impl Machine {
             }
         }
         for process in self.processes.values() {
+            let allocation_memory = process
+                .allocations
+                .values()
+                .fold(0u64, |usage, allocation| {
+                    usage.saturating_add(Self::allocation_memory_usage(allocation))
+                });
             if self.domain_is_descendant_or_self(process.domain_id, id) {
-                usage.memory = usage
-                    .memory
-                    .saturating_add(Self::process_memory_usage(process));
+                usage.memory = usage.memory.saturating_add(
+                    Self::process_memory_usage(process).saturating_sub(allocation_memory),
+                );
                 usage.fdrs = usage.fdrs.saturating_add(
                     process
                         .fds
@@ -8878,6 +8888,13 @@ impl Machine {
                         })
                         .count() as u64,
                 );
+            }
+            for allocation in process.allocations.values() {
+                if self.domain_is_descendant_or_self(allocation.domain_id, id) {
+                    usage.memory = usage
+                        .memory
+                        .saturating_add(Self::allocation_memory_usage(allocation));
+                }
             }
         }
         for thread in self.threads.values() {
@@ -8917,6 +8934,12 @@ impl Machine {
                 }
             },
         )
+    }
+
+    fn allocation_memory_usage(allocation: &Allocation) -> u64 {
+        let guard_bytes = u64::from(allocation.guard_before.is_some())
+            + u64::from(allocation.guard_after.is_some());
+        (allocation.len as u64).saturating_add(guard_bytes.saturating_mul(4096))
     }
 
     fn ensure_attach_budget(
