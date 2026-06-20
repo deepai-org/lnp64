@@ -1396,6 +1396,18 @@ fn validate_exec_fdr_grant_words(words: &[u64]) -> Result<u64, String> {
     Ok(slot)
 }
 
+fn validate_exec_measurement_words(words: &[u64]) -> Result<(), String> {
+    let algorithm = words[0];
+    let measurement_ref = words[1];
+    if algorithm == 0 {
+        return Err("exec-plan measurement algorithm is missing".to_string());
+    }
+    if measurement_ref == 0 {
+        return Err("exec-plan measurement reference is missing".to_string());
+    }
+    Ok(())
+}
+
 impl Machine {
     pub fn new(program: Program) -> Self {
         let root_pid = 1;
@@ -1499,6 +1511,10 @@ impl Machine {
                 return Err("exec-plan FDR grant slots duplicate".to_string());
             }
             offset += EXEC_PLAN_FDR_GRANT_WORDS;
+        }
+        for _ in 0..measurement_count {
+            validate_exec_measurement_words(&words[offset..offset + EXEC_PLAN_MEASUREMENT_WORDS])?;
+            offset += EXEC_PLAN_MEASUREMENT_WORDS;
         }
         Ok(())
     }
@@ -10211,9 +10227,9 @@ fn parse_num(text: &str) -> Result<u64, String> {
 mod tests {
     use super::*;
     use crate::loader::{
-        ExecEntry, ExecPlan, ExecPlanDescriptorOptions, ExecutableProvenance, MemoryType,
-        StartupFdrDescriptor, VmaProtection, VmaRecord, build_exec_descriptor,
-        encode_exec_descriptor,
+        ExecEntry, ExecPlan, ExecPlanDescriptorOptions, ExecPlanMeasurementDescriptor,
+        ExecutableProvenance, MemoryType, StartupFdrDescriptor, VmaProtection, VmaRecord,
+        build_exec_descriptor, encode_exec_descriptor,
     };
 
     struct TestRng(u64);
@@ -15349,6 +15365,43 @@ mod tests {
         let words = encode_exec_descriptor(&descriptor);
 
         Machine::validate_exec_descriptor_words(&words).unwrap();
+    }
+
+    #[test]
+    fn emulator_rejects_exec_descriptor_measurement_without_authority() {
+        let descriptor = build_exec_descriptor(
+            &loader_exec_plan_fixture(),
+            ExecPlanDescriptorOptions {
+                image_source_cap: 4,
+                image_source_generation: 5,
+                image_lineage_epoch: 6,
+                measurements: vec![ExecPlanMeasurementDescriptor {
+                    algorithm: 1,
+                    measurement_ref: 2,
+                    manifest_ref: 3,
+                    attestation_ref: 4,
+                }],
+                ..ExecPlanDescriptorOptions::default()
+            },
+        )
+        .unwrap();
+        let mut words = encode_exec_descriptor(&descriptor);
+        let measurement_offset = words.len() - EXEC_PLAN_MEASUREMENT_WORDS;
+
+        words[measurement_offset] = 0;
+        let missing_algorithm = Machine::validate_exec_descriptor_words(&words).unwrap_err();
+        assert!(
+            missing_algorithm.contains("measurement algorithm"),
+            "{missing_algorithm}"
+        );
+
+        words[measurement_offset] = 1;
+        words[measurement_offset + 1] = 0;
+        let missing_ref = Machine::validate_exec_descriptor_words(&words).unwrap_err();
+        assert!(
+            missing_ref.contains("measurement reference"),
+            "{missing_ref}"
+        );
     }
 
     #[test]

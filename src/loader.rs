@@ -312,6 +312,14 @@ pub fn build_exec_descriptor(
     if options.measurements.len() > MAX_EXEC_PLAN_MEASUREMENTS {
         return Err("exec-plan measurement count exceeds architectural limit".to_string());
     }
+    for measurement in &options.measurements {
+        if measurement.algorithm == 0 {
+            return Err("exec-plan measurement algorithm is required".to_string());
+        }
+        if measurement.measurement_ref == 0 {
+            return Err("exec-plan measurement reference is required".to_string());
+        }
+    }
     if !plan.vmas.is_empty() {
         if options.image_source_cap == 0 {
             return Err("exec-plan VMA source capability is required".to_string());
@@ -2285,6 +2293,49 @@ mod tests {
         let err = build_exec_descriptor(&plan, ExecPlanDescriptorOptions::default()).unwrap_err();
 
         assert!(err.contains("VMA count"), "{err}");
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_exec_descriptor_bad_measurements() {
+        let image = test_elf(&[text_phdr()]);
+        let plan = build_static_exec_plan(&image, LoaderOptions::default()).unwrap();
+        let descriptor_options = ExecPlanDescriptorOptions {
+            image_source_cap: 4,
+            image_source_generation: 5,
+            image_lineage_epoch: 6,
+            measurements: vec![ExecPlanMeasurementDescriptor {
+                algorithm: 0,
+                measurement_ref: 2,
+                manifest_ref: 3,
+                attestation_ref: 4,
+            }],
+            ..ExecPlanDescriptorOptions::default()
+        };
+
+        let missing_algorithm =
+            build_exec_descriptor(&plan, descriptor_options.clone()).unwrap_err();
+        assert!(
+            missing_algorithm.contains("measurement algorithm"),
+            "{missing_algorithm}"
+        );
+
+        let missing_ref = build_exec_descriptor(
+            &plan,
+            ExecPlanDescriptorOptions {
+                measurements: vec![ExecPlanMeasurementDescriptor {
+                    algorithm: 1,
+                    measurement_ref: 0,
+                    manifest_ref: 3,
+                    attestation_ref: 4,
+                }],
+                ..descriptor_options
+            },
+        )
+        .unwrap_err();
+        assert!(
+            missing_ref.contains("measurement reference"),
+            "{missing_ref}"
+        );
     }
 
     #[test]

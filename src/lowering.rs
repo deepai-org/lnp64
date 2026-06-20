@@ -8814,6 +8814,8 @@ mod tests {
             "emulator_rejects_exec_descriptor_unsupported_vma_provenance",
             "emulator_rejects_exec_descriptor_executable_vma_without_image_text_provenance",
             "emulator_rejects_exec_descriptor_nonexecutable_vma_with_image_text_provenance",
+            "static_elf_loader_rejects_exec_descriptor_bad_measurements",
+            "emulator_rejects_exec_descriptor_measurement_without_authority",
             "emulator_rejects_exec_descriptor_fdr_grant_stale_source_fd_generation_before_commit",
             "emulator_rejects_exec_descriptor_stale_domain_generation_before_commit",
             "emulator_rejects_exec_descriptor_stale_process_generation_before_commit",
