@@ -44,6 +44,15 @@ void *ecalloc(size_t count, size_t size) {
   return ptr;
 }
 
+void *ereallocarray(void *ptr, size_t count, size_t size) {
+  if (size && count > ((size_t)-1) / size)
+    eprintf("reallocarray:");
+  void *next = realloc(ptr, count * size);
+  if (!next && count && size)
+    eprintf("reallocarray:");
+  return next;
+}
+
 int charntorune(Rune *r, const char *s, size_t n) {
   if (!r || !s || n == 0)
     return 0;
@@ -420,5 +429,46 @@ struct dirent *readdir(DIR *dirp) {
                    : "memory");
   if (status == 1)
     return &lnp64_head_dirent;
+  return 0;
+}
+
+int fullrune(const char *s, size_t n) {
+  (void)s;
+  return n > 0;
+}
+
+size_t unescape(char *s) {
+  char *dst = s;
+  char *src = s;
+  while (*src) {
+    if (*src == '\\' && src[1]) {
+      src++;
+      if (*src == 'n')
+        *dst++ = '\n';
+      else if (*src == 't')
+        *dst++ = '\t';
+      else
+        *dst++ = *src;
+      src++;
+      continue;
+    }
+    *dst++ = *src++;
+  }
+  *dst = 0;
+  return (size_t)(dst - s);
+}
+
+void *xmemmem(const void *haystack, size_t haystacklen, const void *needle,
+              size_t needlelen) {
+  const unsigned char *h = haystack;
+  const unsigned char *n = needle;
+  if (needlelen == 0)
+    return (void *)h;
+  if (haystacklen < needlelen)
+    return 0;
+  for (size_t i = 0; i <= haystacklen - needlelen; i++) {
+    if (!memcmp(h + i, n, needlelen))
+      return (void *)(h + i);
+  }
   return 0;
 }

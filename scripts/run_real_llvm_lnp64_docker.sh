@@ -476,6 +476,16 @@ grep -q 'exit=0' <<<"$sbase_cp_output"
 cmp -s "$sbase_fixture_root/input/cp-source.txt" "$sbase_fixture_root/cp-copy.txt"
 printf 'real LLVM LNP64 run-elf sbase cp execution passed: %s\n' \
   target/llvm-lnp64-build/lnp64-sbase-cp-linked.elf
+printf 'alpha\tone\nbeta\ttwo\n' >"$sbase_fixture_root/input/cut.txt"
+"$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-cut-linked.elf \
+  >/dev/null
+sbase_cut_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+  target/llvm-lnp64-build/lnp64-sbase-cut-linked.elf cut -f 2 input/cut.txt)"
+grep -q '^one$' <<<"$sbase_cut_output"
+grep -q '^two$' <<<"$sbase_cut_output"
+grep -q 'exit=0' <<<"$sbase_cut_output"
+printf 'real LLVM LNP64 run-elf sbase cut execution passed: %s\n' \
+  target/llvm-lnp64-build/lnp64-sbase-cut-linked.elf
 "$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-ls-linked.elf \
   >/dev/null
 sbase_ls_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \

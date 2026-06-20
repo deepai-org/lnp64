@@ -5902,6 +5902,16 @@ test -s "$sbase_cp_elf"
 printf 'real LLVM LNP64 lld sbase cp link smoke passed: %s\n' \
   "$sbase_cp_elf"
 
+sbase_cut_elf="$build_dir/lnp64-sbase-cut-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
+  -o "$sbase_cut_elf" "$crt0_obj" "$build_dir/sbase-cut-clang-smoke.o" \
+  "$sbase_head_support_impl_obj" "$libc_alloc_impl_obj" \
+  "$libc_fd_impl_obj" "$libc_convert_impl_obj" "$libc_string_impl_obj" \
+  "$libc_errno_impl_obj" "$libc_process_impl_obj"
+test -s "$sbase_cut_elf"
+printf 'real LLVM LNP64 lld sbase cut link smoke passed: %s\n' \
+  "$sbase_cut_elf"
+
 sbase_ls_elf="$build_dir/lnp64-sbase-ls-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$sbase_ls_elf" "$crt0_obj" "$build_dir/sbase-ls-clang-smoke.o" \

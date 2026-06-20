@@ -35,6 +35,7 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-sbase-tail-linked.elf"
         "$build_dir/lnp64-sbase-tee-linked.elf"
         "$build_dir/lnp64-sbase-cp-linked.elf"
+        "$build_dir/lnp64-sbase-cut-linked.elf"
         "$build_dir/lnp64-sbase-ls-linked.elf"
         "$build_dir/lnp64-sbase-find-linked.elf"
         "$build_dir/lnp64-sbase-mkdir-linked.elf"
@@ -87,6 +88,7 @@ for package in $(split_filters "$package_filter"); do
         "$build_dir/lnp64-sbase-tail-linked.elf"
         "$build_dir/lnp64-sbase-tee-linked.elf"
         "$build_dir/lnp64-sbase-cp-linked.elf"
+        "$build_dir/lnp64-sbase-cut-linked.elf"
         "$build_dir/lnp64-sbase-ls-linked.elf"
         "$build_dir/lnp64-sbase-find-linked.elf"
         "$build_dir/lnp64-sbase-mkdir-linked.elf"
@@ -318,6 +320,16 @@ run_package() {
       cmp -s "$sbase_fixture_root/input/cp-source.txt" "$sbase_fixture_root/cp-copy.txt"
       printf 'real LLVM LNP64 run-elf sbase cp execution passed: %s\n' \
         "$build_dir/lnp64-sbase-cp-linked.elf"
+      printf 'alpha\tone\nbeta\ttwo\n' >"$sbase_fixture_root/input/cut.txt"
+      "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-cut-linked.elf" >/dev/null
+      local sbase_cut_output
+      sbase_cut_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+        "$build_dir/lnp64-sbase-cut-linked.elf" cut -f 2 input/cut.txt)"
+      grep -q '^one$' <<<"$sbase_cut_output"
+      grep -q '^two$' <<<"$sbase_cut_output"
+      grep -q 'exit=0' <<<"$sbase_cut_output"
+      printf 'real LLVM LNP64 run-elf sbase cut execution passed: %s\n' \
+        "$build_dir/lnp64-sbase-cut-linked.elf"
       "$lnp64_bin" elf-plan "$build_dir/lnp64-sbase-ls-linked.elf" >/dev/null
       local sbase_ls_output
       sbase_ls_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \

@@ -1668,6 +1668,8 @@ mod tests {
             "sbase_tee_run_elf",
             "sbase_cp_static_link",
             "sbase_cp_run_elf",
+            "sbase_cut_static_link",
+            "sbase_cut_run_elf",
             "sbase_ls_static_link",
             "sbase_ls_run_elf",
             "sbase_find_static_link",
@@ -3710,7 +3712,11 @@ mod tests {
         assert!(libc_sbase_head_min.contains("int fshut("));
         assert!(libc_sbase_head_min.contains("void *erealloc(void *ptr, size_t size)"));
         assert!(libc_sbase_head_min.contains("void *ecalloc(size_t count, size_t size)"));
+        assert!(libc_sbase_head_min.contains("void *ereallocarray(void *ptr"));
         assert!(libc_sbase_head_min.contains("int charntorune(Rune *r"));
+        assert!(libc_sbase_head_min.contains("int fullrune(const char *s, size_t n)"));
+        assert!(libc_sbase_head_min.contains("size_t unescape(char *s)"));
+        assert!(libc_sbase_head_min.contains("void *xmemmem("));
         assert!(libc_sbase_head_min.contains("int snprintf(char *str, size_t size"));
         assert!(libc_sbase_head_min.contains("size_t estrlcpy(char *dst"));
         assert!(libc_sbase_head_min.contains("size_t estrlcat(char *dst"));
@@ -3775,6 +3781,10 @@ mod tests {
         assert!(real_llc.contains(r#""$build_dir/sbase-libutil-writeall-clang-smoke.o" \"#));
         assert!(real_llc.contains(r#""$libc_meta_impl_obj" "$libc_path_impl_obj""#));
         assert!(real_llc.contains("real LLVM LNP64 lld sbase cp link smoke passed"));
+        assert!(real_llc.contains("lnp64-sbase-cut-linked.elf"));
+        assert!(real_llc.contains(r#""$build_dir/sbase-cut-clang-smoke.o" \"#));
+        assert!(real_llc.contains(r#""$libc_fd_impl_obj" "$libc_convert_impl_obj""#));
+        assert!(real_llc.contains("real LLVM LNP64 lld sbase cut link smoke passed"));
         assert!(real_llc.contains("lnp64-sbase-mkdir-linked.elf"));
         assert!(real_llc.contains(r#""$build_dir/sbase-mkdir-clang-smoke.o" \"#));
         assert!(real_llc.contains(r#""$sbase_fs_support_impl_obj" \"#));
@@ -4331,6 +4341,9 @@ mod tests {
         assert!(real_llc_docker.contains("lnp64-sbase-cp-linked.elf"));
         assert!(real_llc_docker.contains("cp input/cp-source.txt cp-copy.txt"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase cp execution passed"));
+        assert!(real_llc_docker.contains("lnp64-sbase-cut-linked.elf"));
+        assert!(real_llc_docker.contains("cut -f 2 input/cut.txt"));
+        assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase cut execution passed"));
         assert!(real_llc_docker.contains("lnp64-sbase-ls-linked.elf"));
         assert!(real_llc_docker.contains("ls input"));
         assert!(real_llc_docker.contains("real LLVM LNP64 run-elf sbase ls execution passed"));
@@ -4587,6 +4600,7 @@ mod tests {
             "real_sbase_tail_execution",
             "real_sbase_tee_execution",
             "real_sbase_cp_execution",
+            "real_sbase_cut_execution",
             "real_sbase_ls_execution",
             "real_sbase_find_execution",
             "real_sbase_mkdir_execution",
@@ -4708,6 +4722,7 @@ mod tests {
             "real_sbase_tail_execution",
             "real_sbase_tee_execution",
             "real_sbase_cp_execution",
+            "real_sbase_cut_execution",
             "real_sbase_ls_execution",
             "real_sbase_find_execution",
             "real_sbase_mkdir_execution",
@@ -6433,6 +6448,7 @@ mod tests {
             "lnp64-sbase-tail-linked.elf",
             "lnp64-sbase-tee-linked.elf",
             "lnp64-sbase-cp-linked.elf",
+            "lnp64-sbase-cut-linked.elf",
             "lnp64-sbase-ls-linked.elf",
             "lnp64-sbase-find-linked.elf",
             "lnp64-sbase-mkdir-linked.elf",
@@ -6454,6 +6470,7 @@ mod tests {
             "real LLVM LNP64 run-elf sbase tail execution passed",
             "real LLVM LNP64 run-elf sbase tee execution passed",
             "real LLVM LNP64 run-elf sbase cp execution passed",
+            "real LLVM LNP64 run-elf sbase cut execution passed",
             "real LLVM LNP64 run-elf sbase ls execution passed",
             "real LLVM LNP64 run-elf sbase find execution passed",
             "real LLVM LNP64 run-elf sbase mkdir execution passed",
