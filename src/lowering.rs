@@ -6345,6 +6345,13 @@ mod tests {
         assert!(roadmap.contains("## Checked Transition Deliverables"));
         assert!(roadmap.contains("`minimal_llvm_clang_path` row is now partial"));
         assert!(roadmap.contains("real Clang/lld and the software"));
+        assert!(
+            phases["minimal_llvm_clang_path"]
+                .1
+                .contains(&"scripts/run_real_llvm_bootstrap_smokes.sh")
+        );
+        assert!(roadmap.contains("scripts/run_real_llvm_bootstrap_smokes.sh"));
+        assert!(roadmap.contains("all current rows in the manifest are tested"));
         assert!(psabi.contains("## Register Model"));
         assert!(psabi.contains("## Calling Convention"));
         assert!(psabi.contains("## Debug and Unwind Minimum"));
