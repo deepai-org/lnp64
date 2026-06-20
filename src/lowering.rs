@@ -6026,55 +6026,9 @@ mod tests {
         ] {
             assert!(cases.contains(case), "missing llvm bootstrap case {case}");
         }
-        for case in [
-            "hello",
-            "arithmetic",
-            "memory",
-            "calls",
-            "pcr",
-            "cat",
-            "json_parser",
-            "rot13",
-            "producer_consumer",
-            "parallel_hash",
-            "sqlite_lite",
-            "ping_pong",
-            "zlib_checksum",
-            "natsort",
-            "jsmn",
-            "inih_parse_string",
-            "cwalk",
-            "simple_libc",
-        ] {
-            assert_eq!(statuses[case], "tested", "{case} should be tested");
+        for (case, status) in statuses {
+            assert_eq!(status, "tested", "{case} should be tested");
         }
-        assert_eq!(statuses["sbase_commands"], "partial");
-        assert_eq!(statuses["userland_ucat"], "partial");
-        assert_eq!(statuses["userland_init"], "partial");
-        assert_eq!(statuses["userland_lnpsh"], "partial");
-        assert_eq!(statuses["userland_spawn_task"], "partial");
-        assert_eq!(statuses["netbsd_init_root"], "partial");
-        assert_eq!(statuses["netbsd_shell_root"], "partial");
-        assert_eq!(statuses["netbsd_loader_target_child"], "partial");
-        assert_eq!(statuses["netbsd_elf_exec_parent"], "partial");
-        assert_eq!(statuses["netbsd_fork_wait_child"], "partial");
-        assert_eq!(statuses["netbsd_thread_child"], "partial");
-        assert_eq!(statuses["netbsd_poll_child"], "partial");
-        assert_eq!(statuses["netbsd_signal_gate_child"], "partial");
-        assert_eq!(statuses["netbsd_signal_fault_child"], "partial");
-        assert_eq!(statuses["netbsd_timer_child"], "partial");
-        assert_eq!(statuses["netbsd_mmap_child"], "partial");
-        assert_eq!(statuses["netbsd_fd_passing_child"], "partial");
-        assert_eq!(statuses["netbsd_namespace_child"], "partial");
-        assert_eq!(statuses["netbsd_fs_service_child"], "partial");
-        assert_eq!(statuses["netbsd_classifier_child"], "partial");
-        assert_eq!(statuses["netbsd_socket_loopback_child"], "partial");
-        assert_eq!(statuses["netbsd_gate_trace_child"], "partial");
-        assert_eq!(statuses["netbsd_domain_nested_child"], "partial");
-        assert_eq!(statuses["netbsd_domain_budget_child"], "partial");
-        assert_eq!(statuses["netbsd_personality_clang"], "partial");
-        assert_eq!(statuses["netcat"], "partial");
-        assert_eq!(statuses["httpd"], "partial");
     }
 
     #[test]
@@ -6348,7 +6302,8 @@ mod tests {
 
         assert!(roadmap.contains("## First Acceptance Gates"));
         assert!(roadmap.contains("## Checked Transition Deliverables"));
-        assert!(roadmap.contains("`minimal_llvm_clang_path` row is now partial"));
+        assert!(roadmap.contains("`minimal_llvm_clang_path` transition row remains partial"));
+        assert!(roadmap.contains("bootstrap manifest rows are tested"));
         assert!(roadmap.contains("real Clang/lld and the software"));
         assert!(
             phases["minimal_llvm_clang_path"]
