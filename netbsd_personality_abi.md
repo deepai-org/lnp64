@@ -160,4 +160,9 @@ propagates through the nested tree.
 - Replace the remaining fixed-record exec-plan fixtures with a software loader
   for NetBSD-like userland images.
 - Import small NetBSD-derived libc/userland components once the ABI smoke stays
-  stable under this gate.
+  stable under this gate. This is now planned as a full **rump/anykernel** real
+  NetBSD port (real drivers/fs/net/libc/userland over a native `rumpuser`+MD
+  seam, hardware keeping scheduler/allocator/caps); see
+  `netbsd_rump_port_roadmap.md` for the Correct Port Contract, the hook→native
+  lowering table, and the R0–R7 milestone ladder. The clean-room personality
+  here stays as the ABI oracle and negative gate while real code is imported.

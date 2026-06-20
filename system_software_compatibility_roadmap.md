@@ -111,3 +111,14 @@ entries against the cross-cutting foundations, not the app.
 3. Start SQLite `:memory:`, surfacing the next batch of generic gaps (likely
    `-O1`/regalloc, more `printf`, larger frames).
 4. Loop foundations (`-O1` regalloc, loader/VFS) as SQLite demands them.
+
+## Real NetBSD rump port (system/host track)
+
+The app ladder above proves *userspace* breadth. The parallel system track is a
+real **NetBSD rump/anykernel port** that becomes the top-level FPGA host and the
+capability-delegated hypervisor substrate (host and guests are the same correct
+port). It uses real NetBSD drivers/fs/net/libc/userland over a native
+`rumpuser`+MD seam so the hardware keeps the scheduler, allocator, memory, and
+capability machinery. First target: the `rumpuser` seam + real NetBSD libc. See
+`netbsd_rump_port_roadmap.md` for the Correct Port Contract, the
+hook→native-op lowering table, the R0–R7 milestones, and the FPGA driver set.

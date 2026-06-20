@@ -124,6 +124,12 @@ Software compatibility:
 - `conformance_matrix.md`: POSIX/libc/package status and compatibility gaps.
 - `libc_roadmap.md`: libc/runtime integration plan.
 - `netbsd_personality_abi.md`: NetBSD-like personality boundary and smoke gate.
+- `netbsd_rump_port_roadmap.md`: plan to replace the clean-room personality with
+  a real NetBSD rump/anykernel port over a native `rumpuser`+MD seam, as the
+  correct-port host/guest substrate.
+- `linux_enlightened_port_roadmap.md`: later track for a correct Linux port via
+  LKL over the same native seam, plus how the deep "delete and delegate" version
+  could reach mainline through `arch/`/`pv_ops`/`sched_ext`.
 - `psABI.md`: process ABI, calling convention, signal/gate frame, FDR
   inheritance, and loader boundary.
 - `object_format.md`: static ELF/software-loader profile and exec-plan boundary.
