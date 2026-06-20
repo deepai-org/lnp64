@@ -6452,7 +6452,18 @@ mod tests {
             "toolchain/liblnp64_pthread_min.c",
             "toolchain/liblnp64_sem_min.c",
             "toolchain/liblnp64_signal_min.c",
+            "toolchain/include/poll.h",
+            "toolchain/include/pthread.h",
+            "toolchain/include/search.h",
+            "toolchain/include/semaphore.h",
+            "toolchain/include/stdarg.h",
+            "toolchain/include/stddef.h",
+            "toolchain/include/stdint.h",
+            "toolchain/include/sys/epoll.h",
+            "toolchain/include/sys/event.h",
+            "toolchain/include/sys/select.h",
             "toolchain/include/unistd.h",
+            "toolchain/include/lnp64/futex.h",
             "toolchain/lnp64_intrinsics.h",
             "toolchain/include/lnp64/intrinsics.h",
         ] {
@@ -6477,6 +6488,8 @@ mod tests {
         assert!(roadmap.contains("bootstrap manifest rows are tested"));
         assert!(roadmap.contains("smoke-only libc shim"));
         assert!(roadmap.contains("real Clang/lld and the software"));
+        assert!(roadmap.contains("poll,pthread"));
+        assert!(roadmap.contains("sys/epoll,sys/event,sys/mman,sys/select"));
         assert!(
             phases["minimal_llvm_clang_path"]
                 .1
