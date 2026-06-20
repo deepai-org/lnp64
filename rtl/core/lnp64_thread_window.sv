@@ -195,7 +195,13 @@ module lnp64_thread_window #(
             if (wake_valid) begin
                 context_active_q[wake_slot] <= 1'b1;
                 context_parked_q[wake_slot] <= 1'b0;
-                context_event_pending_q[wake_slot] <= 1'b1;
+                if (context_record_q[wake_slot].virtual_deadline <
+                    context_record_q[active_slot_q].virtual_deadline +
+                        (deadline_charge_for_weight(context_record_q[active_slot_q].weight_index) << 1)) begin
+                    context_record_q[wake_slot].virtual_deadline <=
+                        context_record_q[active_slot_q].virtual_deadline +
+                        (deadline_charge_for_weight(context_record_q[active_slot_q].weight_index) << 1);
+                end
             end
             if (event_valid) begin
                 context_event_pending_q[event_slot] <= 1'b1;

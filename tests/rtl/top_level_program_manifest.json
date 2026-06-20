@@ -499,7 +499,9 @@
     {
       "source": "demos/domain_pressure.s",
       "required_features": ["core", "resource_domain", "accounting", "clone_spawn", "thread_join", "barrel_window", "thread_final_state_parity"],
-      "status": "blocked_by_features"
+      "status": "active",
+      "rtl_gate": "scripts/run_rtl_top_program_smoke.sh",
+      "comparison": "retire_trace_and_final_state"
     },
     {
       "source": "demos/env_get.s",

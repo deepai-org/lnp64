@@ -70,6 +70,7 @@ const UTIME_NOW_LNP64: i64 = 1_073_741_823;
 const UTIME_OMIT_LNP64: i64 = 1_073_741_822;
 const LNP64_STAT_RECORD_SIZE: usize = 120;
 const ROOT_DOMAIN_ID: u64 = 1;
+const FLAT_EXEC_DOMAIN_BASELINE_BYTES: u64 = 0x42_3000;
 const MAX_RESOURCE_DOMAINS: usize = 4096;
 const MAX_DOMAIN_DEPTH: u64 = 16;
 
@@ -1664,6 +1665,22 @@ impl Machine {
             })?;
             if keep_ready && self.threads.contains_key(&tid) {
                 self.wake_thread(tid);
+            }
+            if matches!(instr, Instr::ThreadJoin(..))
+                && self
+                    .threads
+                    .get(&tid)
+                    .is_some_and(|thread| thread.ip as u64 <= pc)
+            {
+                continue;
+            }
+            if !keep_ready
+                && self
+                    .threads
+                    .get(&tid)
+                    .is_some_and(|thread| thread.ip as u64 == pc)
+            {
+                continue;
             }
             let regs = self
                 .threads
@@ -8051,11 +8068,7 @@ impl Machine {
     }
 
     fn set_current_domain_id(&mut self, domain_id: u64) -> Result<(), String> {
-        let pid = self.thread()?.pid;
         self.thread_mut()?.domain_id = domain_id;
-        if let Some(process) = self.processes.get_mut(&pid) {
-            process.domain_id = domain_id;
-        }
         Ok(())
     }
 
@@ -8898,8 +8911,14 @@ impl Machine {
             }
         }
         for thread in self.threads.values() {
-            if self.domain_is_descendant_or_self(self.effective_thread_domain_id(thread), id) {
+            let thread_domain_id = self.effective_thread_domain_id(thread);
+            if self.domain_is_descendant_or_self(thread_domain_id, id) {
                 usage.pids = usage.pids.saturating_add(1);
+                if thread_domain_id != ROOT_DOMAIN_ID {
+                    usage.memory = usage
+                        .memory
+                        .saturating_add(FLAT_EXEC_DOMAIN_BASELINE_BYTES);
+                }
             }
         }
         usage
@@ -9354,15 +9373,20 @@ impl Machine {
         let tid = self.current_tid;
         let pid = self.thread()?.pid;
         let parent_pid = self.process()?.parent_pid;
-        self.last_exit_regs = self.threads.get(&tid).map(|thread| thread.regs);
-        self.last_exit_errno = self.processes.get(&pid).map(|process| process.errno);
-        self.last_exit_mem0 = self.processes.get(&pid).and_then(|process| {
-            process
-                .memory
-                .get(0..8)
-                .and_then(|bytes| bytes.try_into().ok().map(u64::from_le_bytes))
-        });
-        self.last_exit_mem_checksum = self.processes.get(&pid).map(flat_exec_memory_checksum);
+        let record_final_snapshot =
+            !self.committed_exec_mode || tid == 1 || self.last_exit_regs.is_none();
+        if record_final_snapshot {
+            self.last_exit_regs = self.threads.get(&tid).map(|thread| thread.regs);
+            self.last_exit_errno = self.processes.get(&pid).map(|process| process.errno);
+            self.last_exit_mem0 = self.processes.get(&pid).and_then(|process| {
+                process
+                    .memory
+                    .get(0..8)
+                    .and_then(|bytes| bytes.try_into().ok().map(u64::from_le_bytes))
+            });
+            self.last_exit_mem_checksum = self.processes.get(&pid).map(flat_exec_memory_checksum);
+            self.last_exit = code;
+        }
         self.threads.remove(&tid);
         if !self.detached_threads.remove(&tid) {
             self.completed_threads.insert(tid, code as u64);
@@ -9373,7 +9397,6 @@ impl Machine {
             }
         }
         self.remove_thread_wait_state(tid);
-        self.last_exit = code;
         if !self.threads.values().any(|thread| thread.pid == pid) {
             self.advisory_locks.retain(|_, lock| lock.owner_pid != pid);
             self.processes.remove(&pid);
