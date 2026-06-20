@@ -321,6 +321,20 @@ pub fn build_exec_descriptor(
             return Err("exec-plan VMA lineage epoch is required".to_string());
         }
     }
+    for grant in &plan.fdr_grants {
+        if grant.kind == 0 {
+            return Err("exec-plan FDR grant kind is required".to_string());
+        }
+        if grant.rights == 0 {
+            return Err("exec-plan FDR grant rights are required".to_string());
+        }
+        if grant.object_id == 0 {
+            return Err("exec-plan FDR grant source capability is required".to_string());
+        }
+        if grant.generation == 0 {
+            return Err("exec-plan FDR grant source generation is required".to_string());
+        }
+    }
     let total_length = exec_descriptor_total_length(
         plan.vmas.len(),
         plan.fdr_grants.len(),
@@ -2294,6 +2308,46 @@ mod tests {
         assert!(
             missing_lineage.contains("lineage epoch"),
             "{missing_lineage}"
+        );
+    }
+
+    #[test]
+    fn static_elf_loader_rejects_exec_descriptor_without_fdr_grant_authority() {
+        let mut image = test_elf(&[text_phdr(), startup_note_phdr(128)]);
+        install_startup_note(&mut image, 1);
+        install_startup_fdr(&mut image, 0, 3, 0, 0xf0, 0, 0xabc, 0xdef, 0, 0);
+        let mut plan = build_static_exec_plan(&image, LoaderOptions::default()).unwrap();
+        let descriptor_options = ExecPlanDescriptorOptions {
+            image_source_cap: 4,
+            image_source_generation: 5,
+            image_lineage_epoch: 6,
+            ..ExecPlanDescriptorOptions::default()
+        };
+
+        let missing_kind = build_exec_descriptor(&plan, descriptor_options.clone()).unwrap_err();
+        assert!(missing_kind.contains("grant kind"), "{missing_kind}");
+
+        plan.fdr_grants[0].kind = 9;
+        plan.fdr_grants[0].rights = 0;
+        let missing_rights = build_exec_descriptor(&plan, descriptor_options.clone()).unwrap_err();
+        assert!(missing_rights.contains("grant rights"), "{missing_rights}");
+
+        plan.fdr_grants[0].rights = 0xf0;
+        plan.fdr_grants[0].object_id = 0;
+        let missing_source_cap =
+            build_exec_descriptor(&plan, descriptor_options.clone()).unwrap_err();
+        assert!(
+            missing_source_cap.contains("source capability"),
+            "{missing_source_cap}"
+        );
+
+        plan.fdr_grants[0].object_id = 0xabc;
+        plan.fdr_grants[0].generation = 0;
+        let missing_source_generation =
+            build_exec_descriptor(&plan, descriptor_options).unwrap_err();
+        assert!(
+            missing_source_generation.contains("source generation"),
+            "{missing_source_generation}"
         );
     }
 
