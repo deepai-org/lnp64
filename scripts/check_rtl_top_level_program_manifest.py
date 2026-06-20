@@ -37,12 +37,12 @@ M1_TOP_LEVEL_COVERED_KEYS = {
     "cap_send": ("LNP64_OP_CAP_SEND", "LNP64_M1_COMMIT_CAP_SEND"),
     "cap_recv": ("LNP64_OP_CAP_RECV", "LNP64_M1_COMMIT_CAP_RECV"),
     "cap_revoke": ("LNP64_OP_CAP_REVOKE", "LNP64_M1_COMMIT_CAP_REVOKE"),
-}
-M1_STANDALONE_UNTIL_S1_KEYS = {
     "reject_stale": ("LNP64_OP_PULL", "LNP64_M1_COMMIT_REJECT_STALE"),
     "push": ("LNP64_OP_PUSH", "LNP64_M1_COMMIT_PUSH"),
     "pull": ("LNP64_OP_PULL", "LNP64_M1_COMMIT_PULL"),
     "reject_full": ("LNP64_OP_PUSH", "LNP64_M1_COMMIT_REJECT_FULL"),
+}
+M1_STANDALONE_UNTIL_S1_KEYS = {
     "cap_dup_denied": ("LNP64_OP_CAP_DUP", "LNP64_M1_COMMIT_CAP_DUP_DENIED"),
     "object_create": ("LNP64_OP_OBJECT_CTL", "LNP64_M1_COMMIT_OBJECT_CREATE"),
 }
@@ -102,8 +102,8 @@ def require_m1_top_level_refinement_contract(manifest: dict[str, object]) -> Non
     contract = manifest.get("m1_top_level_refinement")
     require(isinstance(contract, dict), "manifest must document m1_top_level_refinement")
     require(
-        contract.get("stage") == "top_level_cap_ops_retired_instruction_coupled",
-        "M1 top-level refinement stage must state cap-op-only coupling",
+        contract.get("stage") == "top_level_cap_and_queue_ops_retired_instruction_coupled",
+        "M1 top-level refinement stage must state cap-and-queue coupling",
     )
     claim = contract.get("claim")
     require(isinstance(claim, str) and "not T4" in claim, "M1 top-level claim must keep the non-T4 gap explicit")
@@ -168,6 +168,9 @@ def require_m1_top_level_refinement_contract(manifest: dict[str, object]) -> Non
 
     top_text = text(ROOT / "rtl/top/lnp64_top.sv")
     smoke_text = text(ROOT / "scripts/run_rtl_top_program_smoke.sh")
+    m1_docker_gate_text = text(ROOT / "scripts/run_rtl_m1_refinement_docker.sh")
+    require("top_pipe_push_pull.s" in m1_docker_gate_text, "M1 Docker gate must include dynamic pipe PUSH/PULL top-level coverage")
+    require("top_pipe_static_push_pull.s" in m1_docker_gate_text, "M1 Docker gate must include static pipe PUSH/PULL top-level coverage")
     for arch_opcode, commit_op in M1_TOP_LEVEL_COVERED_KEYS.values():
         require(arch_opcode in top_text, f"lnp64_top must map covered M1 opcode {arch_opcode}")
         require(commit_op in top_text, f"lnp64_top must emit covered M1 commit op {commit_op}")

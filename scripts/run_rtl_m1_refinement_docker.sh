@@ -58,7 +58,7 @@ if [[ "${LNP64_M1_REFINEMENT_SKIP_TOP:-0}" != "1" ]]; then
   LNP64_RTL_FAST="${LNP64_RTL_FAST:-1}" \
   LNP64_RTL_REUSE_BUILD="${LNP64_RTL_REUSE_BUILD:-1}" \
   LNP64_RTL_SKIP_LINT="${LNP64_RTL_SKIP_LINT:-1}" \
-  LNP64_RTL_TOP_PROGRAM_FILTER="${LNP64_M1_REFINEMENT_TOP_FILTER:-*top_cap* demos/capability_transfer.s}" \
+  LNP64_RTL_TOP_PROGRAM_FILTER="${LNP64_M1_REFINEMENT_TOP_FILTER:-*top_cap* tests/rtl/programs/top_pipe_push_pull.s tests/rtl/programs/top_pipe_static_push_pull.s demos/capability_transfer.s}" \
   LNP64_RTL_TOP_PROGRAM_JOBS="${LNP64_RTL_TOP_PROGRAM_JOBS:-auto}" \
   LNP64_RTL_TOP_PROGRAM_QUIET="${LNP64_RTL_TOP_PROGRAM_QUIET:-1}" \
     bash scripts/run_rtl_execution_fast_docker.sh

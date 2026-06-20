@@ -241,6 +241,10 @@ def load_m1_commit_op_values() -> dict[str, int]:
         "CapSend": values["LNP64_M1_COMMIT_CAP_SEND"],
         "CapRecv": values["LNP64_M1_COMMIT_CAP_RECV"],
         "CapRevoke": values["LNP64_M1_COMMIT_CAP_REVOKE"],
+        "RejectStale": values["LNP64_M1_COMMIT_REJECT_STALE"],
+        "Push": values["LNP64_M1_COMMIT_PUSH"],
+        "Pull": values["LNP64_M1_COMMIT_PULL"],
+        "RejectFull": values["LNP64_M1_COMMIT_REJECT_FULL"],
     }
 
 
@@ -252,7 +256,22 @@ def load_arch_m1_opcode_map() -> dict[int, int]:
         opcodes["LNP64_OP_CAP_SEND"]: commit_ops["CapSend"],
         opcodes["LNP64_OP_CAP_RECV"]: commit_ops["CapRecv"],
         opcodes["LNP64_OP_CAP_REVOKE"]: commit_ops["CapRevoke"],
+        opcodes["LNP64_OP_PUSH"]: commit_ops["Push"],
+        opcodes["LNP64_OP_PULL"]: commit_ops["Pull"],
     }
+
+
+def expected_m1_op_for_retire(
+    retire: dict,
+    arch_opcode_to_m1_op: dict[int, int],
+    commit_ops: dict[str, int],
+) -> int:
+    op = arch_opcode_to_m1_op[retire["arch_opcode"]]
+    if op == commit_ops["Push"] and retire["errno"] == 11:
+        return commit_ops["RejectFull"]
+    if op == commit_ops["Pull"] and retire["errno"] == 116:
+        return commit_ops["RejectStale"]
+    return op
 
 
 def load_flat_exec_m1_opcode_map() -> dict[int, int]:
@@ -789,6 +808,22 @@ def check_top_m1_non_ok_transition(
         raise SystemExit(f"top-level M1 non-OK commit {idx} did not mark explicit full queue")
 
 
+def check_top_m1_authority_projection_unchanged(
+    transition: str,
+    idx: int,
+    pre_state: dict,
+    post_state: dict,
+    authority_projection_fields: tuple[str, ...],
+) -> None:
+    drift = [
+        (field, pre_state[field], post_state[field])
+        for field in authority_projection_fields
+        if pre_state[field] != post_state[field]
+    ]
+    if drift:
+        raise SystemExit(f"top-level M1 {transition} {idx} changed authority projection: {drift}")
+
+
 def check_top_m1_refinement_step(
     idx: int,
     commit: dict,
@@ -923,6 +958,32 @@ def check_top_m1_refinement_step(
             raise SystemExit(f"top-level M1 capRevoke {idx} left root authority live")
         return
 
+    if op == commit_ops["Push"]:
+        if pre_state["root_rights"] & TOP_RIGHT_PUSH == 0:
+            raise SystemExit(f"top-level M1 push {idx} accepted without PUSH right")
+        check_top_m1_projection_matches_commit("root", commit, pre_state, idx, "push")
+        check_top_m1_authority_projection_unchanged(
+            "push",
+            idx,
+            pre_state,
+            post_state,
+            authority_projection_fields,
+        )
+        return
+
+    if op == commit_ops["Pull"]:
+        if pre_state["consumer_rights"] & TOP_RIGHT_PULL == 0:
+            raise SystemExit(f"top-level M1 pull {idx} accepted without PULL right")
+        check_top_m1_projection_matches_commit("consumer", commit, pre_state, idx, "pull")
+        check_top_m1_authority_projection_unchanged(
+            "pull",
+            idx,
+            pre_state,
+            post_state,
+            authority_projection_fields,
+        )
+        return
+
     raise SystemExit(f"top-level M1 accepted unsupported transition op {op}")
 
 
@@ -1030,11 +1091,11 @@ with open(sys.argv[1], encoding="utf-8") as handle:
 load_flat_exec_m1_opcode_map()
 arch_opcode_to_m1_op = load_arch_m1_opcode_map()
 commit_ops = load_m1_commit_op_values()
-cap_retire = [record for record in rtl_retire if record["arch_opcode"] in arch_opcode_to_m1_op]
-if len(rtl_m1_top_commits) != len(cap_retire):
+m1_retire = [record for record in rtl_retire if record["arch_opcode"] in arch_opcode_to_m1_op]
+if len(rtl_m1_top_commits) != len(m1_retire):
     raise SystemExit(
         "top-level M1 commit trace count mismatch: "
-        f"cap_retire={len(cap_retire)} commits={len(rtl_m1_top_commits)}"
+        f"m1_retire={len(m1_retire)} commits={len(rtl_m1_top_commits)}"
     )
 if len(rtl_m1_top_commit_bits) != len(rtl_m1_top_commits):
     raise SystemExit(
@@ -1058,13 +1119,14 @@ commit_required_fields = (
 )
 m1_schema_fields, m1_schema_widths = load_m1_commit_schema()
 expected_m1_commit_width = sum(m1_schema_widths)
-for idx, (commit, retire) in enumerate(zip(rtl_m1_top_commits, cap_retire)):
+for idx, (commit, retire) in enumerate(zip(rtl_m1_top_commits, m1_retire)):
     missing = [field for field in commit_required_fields if field not in commit]
     if missing:
         raise SystemExit(f"top-level M1 commit {idx} missing required field(s): {missing}")
     if commit["record"] != "m1_cap_commit":
         raise SystemExit(f"top-level M1 commit {idx} has unexpected record {commit['record']!r}")
-    if commit["op"] != arch_opcode_to_m1_op[retire["arch_opcode"]]:
+    expected_op = expected_m1_op_for_retire(retire, arch_opcode_to_m1_op, commit_ops)
+    if commit["op"] != expected_op:
         raise SystemExit(
             f"top-level M1 commit {idx} op mismatch: commit={commit['op']} "
             f"retire_opcode={retire['opcode']} retire_arch_opcode={retire['arch_opcode']}"

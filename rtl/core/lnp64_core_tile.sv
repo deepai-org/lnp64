@@ -1089,8 +1089,24 @@ module lnp64_core_tile #(
                 LNP64_OP_CAP_DUP, LNP64_OP_CAP_RECV: begin
                     m1_current_consumer_fd = cap_dst_fd_in_range ? cap_dst_fd : 0;
                 end
+                LNP64_OP_PUSH, LNP64_OP_PULL: begin
+                    m1_current_consumer_fd = pipe_fd_in_range ? pipe_fd : 0;
+                end
                 default: begin
                     m1_current_consumer_fd = cap_src_fd_in_range ? cap_src_fd : 0;
+                end
+            endcase
+        end
+    endfunction
+
+    function automatic int unsigned m1_current_root_fd;
+        begin
+            unique case (dec.opcode)
+                LNP64_OP_PUSH, LNP64_OP_PULL: begin
+                    m1_current_root_fd = pipe_fd_in_range ? pipe_fd : 0;
+                end
+                default: begin
+                    m1_current_root_fd = cap_src_fd_in_range ? cap_src_fd : 0;
                 end
             endcase
         end
@@ -1171,7 +1187,7 @@ module lnp64_core_tile #(
                 projection.object_gen = fdr_generation[root_fd][31:0];
                 projection.root_object_id = fdr_lineage[root_fd][31:0];
                 projection.root_generation = fdr_generation[root_fd][31:0];
-                projection.root_domain_id = 32'd1;
+                projection.root_domain_id = active_thread_context.domain_id;
                 projection.root_lineage_epoch = fdr_lineage[root_fd][31:0];
                 projection.root_sealed = 1'b0;
                 projection.root_rights = (fdr_valid[root_fd] && !fdr_revoked[root_fd]) ?
@@ -1183,7 +1199,7 @@ module lnp64_core_tile #(
             if (consumer_fd < FDR_SLOT_COUNT) begin
                 projection.consumer_object_id = fdr_lineage[consumer_fd][31:0];
                 projection.consumer_generation = fdr_generation[consumer_fd][31:0];
-                projection.consumer_domain_id = 32'd2;
+                projection.consumer_domain_id = active_thread_context.domain_id;
                 projection.consumer_lineage_epoch = fdr_lineage[consumer_fd][31:0];
                 projection.consumer_sealed = 1'b0;
                 projection.consumer_rights = (fdr_valid[consumer_fd] && !fdr_revoked[consumer_fd]) ?
@@ -2288,6 +2304,14 @@ module lnp64_core_tile #(
             LNP64_OP_CAP_SEND: m1_commit_next.op = LNP64_M1_COMMIT_CAP_SEND;
             LNP64_OP_CAP_RECV: m1_commit_next.op = LNP64_M1_COMMIT_CAP_RECV;
             LNP64_OP_CAP_REVOKE: m1_commit_next.op = LNP64_M1_COMMIT_CAP_REVOKE;
+            LNP64_OP_PUSH: begin
+                m1_commit_next.op = flat_retire_errno_value(dec.opcode) == LNP64_ERR_EAGAIN ?
+                    LNP64_M1_COMMIT_REJECT_FULL : LNP64_M1_COMMIT_PUSH;
+            end
+            LNP64_OP_PULL: begin
+                m1_commit_next.op = flat_retire_errno_value(dec.opcode) == RTL_ERR_ESTALE ?
+                    LNP64_M1_COMMIT_REJECT_STALE : LNP64_M1_COMMIT_PULL;
+            end
             default: m1_commit_next.op = 8'd0;
         endcase
         m1_commit_next.domain_id = active_thread_context.domain_id;
@@ -2404,6 +2428,16 @@ module lnp64_core_tile #(
                     m1_commit_next.lineage_epoch = fdr_lineage[cap_src_fd][31:0];
                 end
             end
+            LNP64_OP_PUSH, LNP64_OP_PULL: begin
+                m1_commit_next.status = flat_retire_errno_value(dec.opcode);
+                if (pipe_fd_in_range) begin
+                    m1_commit_next.object_id = fdr_lineage[pipe_fd][31:0];
+                    m1_commit_next.object_gen = fdr_generation[pipe_fd][31:0];
+                    m1_commit_next.fdr_gen = fdr_generation[pipe_fd][31:0];
+                    m1_commit_next.rights_mask = fdr_rights[pipe_fd];
+                    m1_commit_next.lineage_epoch = fdr_lineage[pipe_fd][31:0];
+                end
+            end
             default: begin
             end
         endcase
@@ -2413,7 +2447,7 @@ module lnp64_core_tile #(
         m1_pre_state_projection = build_m1_state_projection(
             m1_commit_next.op,
             m1_commit_next.status,
-            cap_src_fd_in_range ? cap_src_fd : 0,
+            m1_current_root_fd(),
             m1_current_consumer_fd()
         );
         m1_state_projection = build_m1_state_projection(
@@ -3794,6 +3828,10 @@ module lnp64_core_tile #(
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
+                                m1_commit_valid <= 1'b1;
+                                m1_commit <= m1_commit_next;
+                                m1_projection_root_fd <= pipe_fd_in_range ? pipe_fd : 0;
+                                m1_projection_consumer_fd <= pipe_fd_in_range ? pipe_fd : 0;
                             end
                             LNP64_OP_PULL: begin
                                 if (gpr[dec.rs3] == 64'd0) begin
@@ -3850,6 +3888,10 @@ module lnp64_core_tile #(
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
+                                m1_commit_valid <= 1'b1;
+                                m1_commit <= m1_commit_next;
+                                m1_projection_root_fd <= pipe_fd_in_range ? pipe_fd : 0;
+                                m1_projection_consumer_fd <= pipe_fd_in_range ? pipe_fd : 0;
                             end
                             LNP64_OP_SET_ERRNO: begin
                                 errno_reg <= gpr[dec.rd][15:0];
