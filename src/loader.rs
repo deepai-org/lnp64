@@ -2136,6 +2136,32 @@ mod tests {
     }
 
     #[test]
+    fn static_elf_loader_rejects_malformed_rela_section_shapes() {
+        let mut bad_entry_size = test_elf(&[text_phdr()]);
+        install_rela_section(&mut bad_entry_size, 0x400000, R_LNP64_RELATIVE, 0);
+        put_u64(&mut bad_entry_size, 0x300 + 56, 16);
+        let err = load_static_elf(&mut bad_entry_size, LoaderOptions::default()).unwrap_err();
+        assert!(err.contains("RELA entry size"), "{err}");
+
+        let mut misaligned_size = test_elf(&[text_phdr()]);
+        install_rela_section(&mut misaligned_size, 0x400000, R_LNP64_RELATIVE, 0);
+        put_u64(&mut misaligned_size, 0x300 + 32, ELF64_RELA_SIZE as u64 + 1);
+        let err = load_static_elf(&mut misaligned_size, LoaderOptions::default()).unwrap_err();
+        assert!(
+            err.contains("RELA section size is not entry-aligned"),
+            "{err}"
+        );
+
+        let mut truncated = test_elf(&[text_phdr()]);
+        install_rela_section(&mut truncated, 0x400000, R_LNP64_RELATIVE, 0);
+        let truncated_offset = truncated.len() as u64 - 8;
+        put_u64(&mut truncated, 0x300 + 24, truncated_offset);
+        put_u64(&mut truncated, 0x300 + 32, ELF64_RELA_SIZE as u64);
+        let err = load_static_elf(&mut truncated, LoaderOptions::default()).unwrap_err();
+        assert!(err.contains("RELA section is truncated"), "{err}");
+    }
+
+    #[test]
     fn static_elf_loader_parses_startup_note_descriptors() {
         let mut image = test_elf(&[
             text_phdr(),

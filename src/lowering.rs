@@ -8906,10 +8906,16 @@ mod tests {
                 .contains(&"emulator_rejects_exec_descriptor_count_and_length_shape_fuzz"),
             "submit_exec_plan row must name descriptor count/length fuzz evidence"
         );
+        assert!(
+            requirements["apply_relocations"]
+                .1
+                .contains(&"static_elf_loader_rejects_malformed_rela_section_shapes"),
+            "apply_relocations row must name malformed RELA section evidence"
+        );
         for remaining_gap in [
             "external VMA source acquisition policy",
             "additional descriptor-shape fuzzing",
-            "more relocation/linker diagnostics",
+            "additional relocation/linker diagnostics",
             "archive/library search behavior",
             "dynamic-linking policy tests",
         ] {
@@ -8924,6 +8930,7 @@ mod tests {
             "measurement authority",
             "descriptor count/length fuzzing",
             "prepared VMA source-authority mismatch",
+            "malformed RELA section diagnostics",
         ] {
             assert!(
                 conformance.contains(covered_rejection),
