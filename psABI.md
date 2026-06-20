@@ -139,10 +139,12 @@ The static crt0 startup stub initializes C `main` parameters from this page:
 - `envp` is the first pointer slot after the null `argv` terminator.
 - `environ`, when referenced, is initialized to the same `envp` pointer.
 
-Static Clang/lld links use `toolchain/crt0_lnp64.s` as the checked crt0 object
-source. It defines `_start`, loads `argc`, `argv`, and `envp` from the startup
-page, clears TLS errno state, calls `main`, and exits through `EXIT`. Custom
-runtime profiles may still provide their own `_start`, but hosted C coverage is
+Static Clang/lld driver defaults use
+`target/lnp64-sysroot/usr/lib/lnp64/crt0.o` as the packaged crt0 object.
+`toolchain/crt0_lnp64.s` remains the checked source contract for that object.
+It defines `_start`, loads `argc`, `argv`, and `envp` from the startup page,
+clears TLS errno state, calls `main`, and exits through `EXIT`. Custom runtime
+profiles may still provide their own `_start`, but hosted C coverage is
 crt0/libc/runtime modeled rather than compiler-emitted startup.
 
 ## Auxv and Environment Metadata

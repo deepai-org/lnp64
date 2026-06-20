@@ -21,13 +21,19 @@ void getLNP64TargetFeatures(const Driver &, const llvm::Triple &,
 void addLNP64TargetArgs(const ArgList &, ArgStringList &CmdArgs) {
   CmdArgs.push_back("-ffreestanding");
   CmdArgs.push_back("-fno-pic");
+  CmdArgs.push_back("-isystem");
+  CmdArgs.push_back("target/lnp64-sysroot/usr/include");
   CmdArgs.push_back("-I");
   CmdArgs.push_back("toolchain");
 }
 
-const char *getLNP64Crt0() { return "toolchain/crt0_lnp64.s"; }
+const char *getLNP64Crt0() {
+  return "target/lnp64-sysroot/usr/lib/lnp64/crt0.o";
+}
 const char *getLNP64Emulation() { return "elf64lnp64"; }
-const char *getLNP64LinkerScript() { return "toolchain/lnp64_static.ld"; }
+const char *getLNP64LinkerScript() {
+  return "target/lnp64-sysroot/usr/lib/lnp64/lnp64_static.ld";
+}
 
 } // end namespace lnp64
 } // end namespace tools

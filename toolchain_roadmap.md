@@ -79,7 +79,8 @@ checked source files for those tiny C shim objects.
 `toolchain/lnp64_intrinsics.h` is the initial checked private C shim header for
 native `__lnp_*` calls.
 `toolchain/lnp64_clang_driver.manifest` records the planned Clang/lld driver
-defaults for the first backend bring-up.
+defaults for the first backend bring-up, including packaged sysroot headers,
+the packaged `crt0.o`, and the packaged static linker script.
 Until LNP64 jump-table lowering is implemented, the checked real LLVM Clang
 gates compile freestanding C with `-fno-jump-tables`; this avoids accidental
 SelectionDAG jump-table emission while keeping ordinary branch lowering under

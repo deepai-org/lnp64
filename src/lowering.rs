@@ -3713,7 +3713,8 @@ mod tests {
             "-ffreestanding",
             "-fno-pic",
             "-fno-jump-tables",
-            "-Itoolchain/include",
+            "-isystem",
+            "target/lnp64-sysroot/usr/include",
             "-Itoolchain",
         ] {
             assert!(
@@ -3738,7 +3739,7 @@ mod tests {
             "-m",
             "elf64lnp64",
             "-T",
-            "toolchain/lnp64_static.ld",
+            "target/lnp64-sysroot/usr/lib/lnp64/lnp64_static.ld",
         ] {
             assert!(
                 manifest_csv_contains(driver_manifest, "linker_flags", flag),
@@ -3747,11 +3748,11 @@ mod tests {
         }
         assert_eq!(
             manifest_field(driver_manifest, "crt0"),
-            "toolchain/crt0_lnp64.s"
+            "target/lnp64-sysroot/usr/lib/lnp64/crt0.o"
         );
         assert_eq!(
             manifest_field(driver_manifest, "intrinsic_header"),
-            "toolchain/include/lnp64/intrinsics.h"
+            "target/lnp64-sysroot/usr/include/lnp64/intrinsics.h"
         );
         assert_eq!(
             manifest_field(driver_manifest, "loader_probe"),
@@ -3763,7 +3764,9 @@ mod tests {
         );
 
         assert!(gate_manifest.contains("clang --target=lnp64-unknown-none"));
-        assert!(gate_manifest.contains("-ffreestanding -fno-pic -fno-jump-tables -I toolchain"));
+        assert!(gate_manifest.contains(
+            "-ffreestanding -fno-pic -fno-jump-tables -isystem target/lnp64-sysroot/usr/include -I toolchain"
+        ));
         assert!(gate_manifest.contains("llvm-mc -triple=lnp64-unknown-none"));
         assert!(gate_manifest.contains("toolchain/crt0_lnp64.s"));
         assert!(gate_manifest.contains("ld.lld -static -m elf64lnp64"));
@@ -5095,9 +5098,10 @@ mod tests {
             );
         }
         assert!(clang_driver.contains("getLNP64TargetCPU"));
-        assert!(clang_driver.contains("toolchain/crt0_lnp64.s"));
+        assert!(clang_driver.contains("target/lnp64-sysroot/usr/include"));
+        assert!(clang_driver.contains("target/lnp64-sysroot/usr/lib/lnp64/crt0.o"));
         assert!(clang_driver.contains("elf64lnp64"));
-        assert!(clang_driver.contains("toolchain/lnp64_static.ld"));
+        assert!(clang_driver.contains("target/lnp64-sysroot/usr/lib/lnp64/lnp64_static.ld"));
         assert!(lld_arch.contains("getLNP64TargetInfo"));
         assert!(lld_arch.contains("copyRel = R_LNP64_NONE"));
         assert!(lld_arch.contains("relativeRel = R_LNP64_RELATIVE"));
@@ -5162,7 +5166,8 @@ mod tests {
         assert!(mc_test.contains("XFAIL: *"));
         assert!(clang_driver_test.contains("--target=lnp64-unknown-none"));
         assert!(clang_driver_test.contains("elf64lnp64"));
-        assert!(clang_driver_test.contains("toolchain/crt0_lnp64.s"));
+        assert!(clang_driver_test.contains("target/lnp64-sysroot/usr/include"));
+        assert!(clang_driver_test.contains("target/lnp64-sysroot/usr/lib/lnp64/crt0.o"));
         assert!(clang_driver_test.contains("XFAIL: *"));
     }
 
@@ -7935,7 +7940,9 @@ mod tests {
         assert!(contracts["process_exit"].contains(&"EXIT"));
 
         assert!(psabi_doc.contains("The static crt0 startup stub initializes C `main`"));
-        assert!(psabi_doc.contains("Static Clang/lld links use `toolchain/crt0_lnp64.s`"));
+        assert!(psabi_doc.contains(
+            "Static Clang/lld driver defaults use\n`target/lnp64-sysroot/usr/lib/lnp64/crt0.o`"
+        ));
         assert!(roadmap.contains("toolchain/lnp64_crt_startup.manifest"));
     }
 
