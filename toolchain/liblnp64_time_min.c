@@ -2,6 +2,7 @@
 
 #include <errno.h>
 #include <time.h>
+#include <sys/time.h>
 
 enum {
   LNP64_OBJECT_KIND_TIMER = 6,
