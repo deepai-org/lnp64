@@ -27,6 +27,10 @@ enum : uint32_t {
   R_LNP64_FDR_DESC64 = 10,
   R_LNP64_CAP_DESC64 = 11,
   R_LNP64_CALLGATE64 = 12,
+  R_LNP64_PCREL_HI20 = 13,
+  R_LNP64_PCREL_LO12_I = 14,
+  R_LNP64_PCREL_LO12_LD = 15,
+  R_LNP64_TLS_TPREL_SLOT64 = 16,
 };
 
 static bool isInt(int64_t Value, unsigned Bits) {
@@ -90,10 +94,14 @@ RelExpr LNP64::getRelExpr(RelType Type, const Symbol &,
     return R_ABS;
   case R_LNP64_PC32:
   case R_LNP64_BRANCH26:
+  case R_LNP64_PCREL_HI20:
+  case R_LNP64_PCREL_LO12_I:
+  case R_LNP64_PCREL_LO12_LD:
     return R_PC;
   case R_LNP64_GOT64:
     return R_GOT;
   case R_LNP64_TLS_TPREL64:
+  case R_LNP64_TLS_TPREL_SLOT64:
     return R_TPREL;
   case R_LNP64_TLS_DTPREL64:
     return R_DTPREL;
@@ -110,6 +118,7 @@ void LNP64::relocate(uint8_t *Loc, const Relocation &Rel, uint64_t Val) const {
   case R_LNP64_GLOB_DAT:
   case R_LNP64_RELATIVE:
   case R_LNP64_TLS_TPREL64:
+  case R_LNP64_TLS_TPREL_SLOT64:
   case R_LNP64_TLS_DTPREL64:
   case R_LNP64_FDR_DESC64:
   case R_LNP64_CAP_DESC64:
@@ -122,6 +131,12 @@ void LNP64::relocate(uint8_t *Loc, const Relocation &Rel, uint64_t Val) const {
     return;
   case R_LNP64_BRANCH26:
     relocateBranch26(Loc, Val);
+    return;
+  case R_LNP64_PCREL_HI20:
+  case R_LNP64_PCREL_LO12_I:
+  case R_LNP64_PCREL_LO12_LD:
+    error(getErrorLocation(Loc) +
+          "split PC-relative LNP64 relocations are not implemented yet");
     return;
   default:
     error(getErrorLocation(Loc) + "unknown LNP64 relocation");

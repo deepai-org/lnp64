@@ -8645,6 +8645,9 @@ mod tests {
         let relocation_manifest = include_str!("../toolchain/lnp64_relocations.manifest");
         let object_format = include_str!("../object_format.md");
         let loader_source = include_str!("loader.rs");
+        let llvm_mc_backend =
+            include_str!("../llvm/lib/Target/LNP64/MCTargetDesc/LNP64MCAsmBackend.cpp");
+        let lld_backend = include_str!("../lld/ELF/Arch/LNP64.cpp");
         let roadmap = include_str!("../toolchain_roadmap.md");
         let rows = relocation_rows(relocation_manifest);
         let target_relocations: std::collections::BTreeSet<_> =
@@ -8680,6 +8683,16 @@ mod tests {
                 target_relocations.contains(name),
                 "relocation manifest {name} is missing from target manifest"
             );
+            assert!(
+                lld_backend.contains(name),
+                "relocation manifest {name} is missing from lld LNP64 backend"
+            );
+            if *number >= 13 {
+                assert!(
+                    llvm_mc_backend.contains(name),
+                    "planned relocation {name} is missing from LLVM MC backend"
+                );
+            }
             if loader_status.starts_with("supported_") {
                 assert!(
                     loader_source.contains(&format!("const {name}:")),

@@ -19,6 +19,10 @@ enum : unsigned {
   R_LNP64_ABS32 = 2,
   R_LNP64_PC32 = 3,
   R_LNP64_BRANCH26 = 4,
+  R_LNP64_PCREL_HI20 = 13,
+  R_LNP64_PCREL_LO12_I = 14,
+  R_LNP64_PCREL_LO12_LD = 15,
+  R_LNP64_TLS_TPREL_SLOT64 = 16,
 };
 
 class LNP64ELFObjectWriter final : public MCELFObjectTargetWriter {
