@@ -1503,6 +1503,8 @@ mod tests {
             "crt0_object",
             "target_headers",
             "libc_shim_objects",
+            "sysroot_static_link",
+            "sysroot_run_elf",
             "clang_zlib_adler32_object",
             "clang_zlib_crc32_object",
             "clang_zlib_package_object",
@@ -5659,6 +5661,8 @@ mod tests {
             "linker_script|usr/lib/lnp64/lnp64_static.ld|toolchain/lnp64_static.ld|generated",
             "legacy_minilibc_object|usr/lib/lnp64/liblnp64_min.o|toolchain/liblnp64_min.s|generated",
             "libc_shim_objects|usr/lib/lnp64/liblnp64-*.o|toolchain/liblnp64_*_min.c|generated",
+            "sysroot_static_link|target/lnp64-sysroot-smoke/sysroot-smoke.elf|scripts/package_lnp64_sysroot.sh|tested",
+            "sysroot_run_elf|target/lnp64-sysroot-smoke/sysroot-smoke.elf|lnp64 run-elf|tested",
         ] {
             assert!(
                 sysroot_manifest.contains(row),
@@ -5667,6 +5671,7 @@ mod tests {
         }
         for script_piece in [
             "LNP64_SYSROOT_DIR:-target/lnp64-sysroot",
+            "LNP64_SYSROOT_SMOKE_DIR:-target/lnp64-sysroot-smoke",
             "mkdir -p \"$sysroot/usr/include\" \"$sysroot/usr/lib/lnp64\"",
             "cp -a toolchain/include/. \"$sysroot/usr/include/\"",
             "cp -a toolchain/lnp64_intrinsics.h \"$sysroot/usr/lnp64_intrinsics.h\"",
@@ -5676,6 +5681,16 @@ mod tests {
             "base=\"${base//_/-}\"",
             "-I \"$sysroot/usr/include\" -I toolchain",
             "\"$sysroot/usr/lib/lnp64/${base}-min.o\"",
+            "sysroot-smoke.c",
+            "\"$lld\" -flavor gnu -static -m elf64lnp64",
+            "-T \"$sysroot/usr/lib/lnp64/lnp64_static.ld\"",
+            "\"$sysroot/usr/lib/lnp64/crt0.o\"",
+            "\"$sysroot/usr/lib/lnp64/liblnp64-fd-min.o\"",
+            "\"$lnp64_bin\" elf-plan \"$smoke_elf\"",
+            "\"$lnp64_bin\" run-elf \"$smoke_elf\"",
+            "grep -q 'sysroot smoke'",
+            "grep -q 'exit=0'",
+            "LNP64 sysroot run-elf smoke passed",
         ] {
             assert!(
                 package_script.contains(script_piece),

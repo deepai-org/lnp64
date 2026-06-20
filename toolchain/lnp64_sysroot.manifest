@@ -8,3 +8,5 @@ crt0_object|usr/lib/lnp64/crt0.o|toolchain/crt0_lnp64.s|generated
 linker_script|usr/lib/lnp64/lnp64_static.ld|toolchain/lnp64_static.ld|generated
 legacy_minilibc_object|usr/lib/lnp64/liblnp64_min.o|toolchain/liblnp64_min.s|generated
 libc_shim_objects|usr/lib/lnp64/liblnp64-*.o|toolchain/liblnp64_*_min.c|generated
+sysroot_static_link|target/lnp64-sysroot-smoke/sysroot-smoke.elf|scripts/package_lnp64_sysroot.sh|tested
+sysroot_run_elf|target/lnp64-sysroot-smoke/sysroot-smoke.elf|lnp64 run-elf|tested
