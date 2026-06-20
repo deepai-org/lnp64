@@ -1420,6 +1420,21 @@ grep -q '<mkdirp>:' "$sbase_fs_support_impl_dump"
 printf 'real LLVM LNP64 clang sbase filesystem support object smoke passed: %s\n' \
   "$sbase_fs_support_impl_obj"
 
+sbase_recurse_support_impl_c="toolchain/liblnp64_sbase_recurse_min.c"
+sbase_recurse_support_impl_obj="$build_dir/liblnp64-sbase-recurse-min.o"
+"$clang" --target=lnp64-unknown-none -ffreestanding -fno-builtin \
+  -fno-pic -fno-jump-tables -fno-unwind-tables \
+  -fno-asynchronous-unwind-tables -I toolchain/include -I third_party/sbase \
+  -c "$sbase_recurse_support_impl_c" -o "$sbase_recurse_support_impl_obj"
+test -s "$sbase_recurse_support_impl_obj"
+sbase_recurse_support_impl_dump="$build_dir/liblnp64-sbase-recurse-min.dump"
+"$llvm_objdump" -d --triple=lnp64-unknown-none \
+  "$sbase_recurse_support_impl_obj" >"$sbase_recurse_support_impl_dump"
+grep -q '<recurse>:' "$sbase_recurse_support_impl_dump"
+grep -q '<rm>:' "$sbase_recurse_support_impl_dump"
+printf 'real LLVM LNP64 clang sbase recurse support object smoke passed: %s\n' \
+  "$sbase_recurse_support_impl_obj"
+
 netcat_obj="$build_dir/netcat-clang-smoke.o"
 "$clang" --target=lnp64-unknown-none -ffreestanding -fno-pic -fno-jump-tables \
   -fno-unwind-tables -fno-asynchronous-unwind-tables \
@@ -5693,6 +5708,16 @@ sbase_ln_elf="$build_dir/lnp64-sbase-ln-linked.elf"
 test -s "$sbase_ln_elf"
 printf 'real LLVM LNP64 lld sbase ln link smoke passed: %s\n' \
   "$sbase_ln_elf"
+
+sbase_rm_elf="$build_dir/lnp64-sbase-rm-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
+  -o "$sbase_rm_elf" "$crt0_obj" "$build_dir/sbase-rm-clang-smoke.o" \
+  "$sbase_support_impl_obj" "$sbase_recurse_support_impl_obj" \
+  "$libc_fd_impl_obj" "$libc_meta_impl_obj" "$libc_string_impl_obj" \
+  "$libc_errno_impl_obj" "$libc_process_impl_obj"
+test -s "$sbase_rm_elf"
+printf 'real LLVM LNP64 lld sbase rm link smoke passed: %s\n' \
+  "$sbase_rm_elf"
 
 netcat_elf="$build_dir/lnp64-netcat-clang-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \

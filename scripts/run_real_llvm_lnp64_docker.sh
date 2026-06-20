@@ -407,6 +407,15 @@ grep -q 'exit=0' <<<"$sbase_ln_output"
 cmp -s "$sbase_fixture_root/input/cat.txt" "$sbase_fixture_root/linked.txt"
 printf 'real LLVM LNP64 run-elf sbase ln execution passed: %s\n' \
   target/llvm-lnp64-build/lnp64-sbase-ln-linked.elf
+printf 'remove via clang\n' >"$sbase_fixture_root/remove.txt"
+"$lnp64_bin" elf-plan target/llvm-lnp64-build/lnp64-sbase-rm-linked.elf \
+  >/dev/null
+sbase_rm_output="$("$lnp64_bin" run-elf --namespace-root "$sbase_fixture_root" \
+  target/llvm-lnp64-build/lnp64-sbase-rm-linked.elf rm remove.txt)"
+grep -q 'exit=0' <<<"$sbase_rm_output"
+test ! -e "$sbase_fixture_root/remove.txt"
+printf 'real LLVM LNP64 run-elf sbase rm execution passed: %s\n' \
+  target/llvm-lnp64-build/lnp64-sbase-rm-linked.elf
 userland_fixture_root="target/llvm-lnp64-build/userland-fixture-root"
 mkdir -p "$userland_fixture_root/dev" "$userland_fixture_root/etc"
 printf 'welcome from clang ucat\n' >"$userland_fixture_root/etc/motd"
