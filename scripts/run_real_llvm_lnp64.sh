@@ -5684,6 +5684,16 @@ test -s "$sbase_mkdir_elf"
 printf 'real LLVM LNP64 lld sbase mkdir link smoke passed: %s\n' \
   "$sbase_mkdir_elf"
 
+sbase_ln_elf="$build_dir/lnp64-sbase-ln-linked.elf"
+"$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
+  -o "$sbase_ln_elf" "$crt0_obj" "$build_dir/sbase-ln-clang-smoke.o" \
+  "$sbase_support_impl_obj" "$libc_fd_impl_obj" "$libc_meta_impl_obj" \
+  "$libc_path_impl_obj" "$libc_string_impl_obj" "$libc_errno_impl_obj" \
+  "$libc_process_impl_obj"
+test -s "$sbase_ln_elf"
+printf 'real LLVM LNP64 lld sbase ln link smoke passed: %s\n' \
+  "$sbase_ln_elf"
+
 netcat_elf="$build_dir/lnp64-netcat-clang-linked.elf"
 "$lld" -flavor gnu -static -m elf64lnp64 -T "$linker_script" \
   -o "$netcat_elf" "$crt0_obj" "$netcat_obj" "$libc_fd_impl_obj" \
