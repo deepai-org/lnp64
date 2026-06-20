@@ -1502,6 +1502,7 @@ mod tests {
         }
         assert_eq!(statuses["real_llc_build"], "tested");
         assert_eq!(statuses["real_mc_build"], "tested");
+        assert_eq!(statuses["real_tblgen"], "tested");
         assert_eq!(statuses["sysroot_package"], "tested");
         assert_eq!(statuses["simple_libc_gate"], "tested");
         assert!(
@@ -1827,6 +1828,11 @@ mod tests {
         assert!(real_tblgen.contains("-gen-instr-info"));
         assert!(real_tblgen.contains("-gen-callingconv"));
         assert!(real_tblgen.contains("-gen-subtarget"));
+        assert!(real_tblgen.contains("LNP64GenRegisterInfo.inc"));
+        assert!(real_tblgen.contains("LNP64GenInstrInfo.inc"));
+        assert!(real_tblgen.contains("LNP64GenCallingConv.inc"));
+        assert!(real_tblgen.contains("LNP64GenSubtargetInfo.inc"));
+        assert!(real_tblgen.contains("real LLVM TableGen outputs written to"));
         assert!(real_tblgen_docker.contains("Dockerfile.llvm"));
         assert!(real_tblgen_docker.contains("scripts/run_real_llvm_tblgen.sh"));
         assert!(real_tblgen_docker.contains("LNP64_LLVM_DOCKER_SKIP_BUILD"));
