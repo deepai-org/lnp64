@@ -24,8 +24,14 @@ static uint64_t getRASaveSize(const MachineFunction &MF) {
 }
 
 static uint64_t getRASaveOffset(const MachineFunction &MF) {
-  return MF.getFrameInfo().hasCalls() ? MF.getFrameInfo().getMaxCallFrameSize()
-                                      : 0;
+  // The prologue reserves RASaveSize (8) bytes ON TOP of the PEI frame
+  // (StackSize = getStackSize() + RASaveSize). PEI lays out all locals,
+  // spills, and the reserved outgoing-call-frame in [0, getStackSize()) (SP-
+  // relative), so the RA slot must sit in the reserved top bytes at offset
+  // getStackSize() -- not getMaxCallFrameSize(), which is 0 for leaf-arg calls
+  // and aliases the first local (eliminateFrameIndex resolves objects with the
+  // same getStackSize() base).
+  return MF.getFrameInfo().hasCalls() ? MF.getFrameInfo().getStackSize() : 0;
 }
 
 static void emitCFI(MachineFunction &MF, MachineBasicBlock &MBB,
