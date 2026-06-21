@@ -1518,8 +1518,8 @@ mod tests {
         assert!(errno_header.contains("int *__errno_location(void);"));
         assert!(errno_header.contains("#define errno (*__errno_location())"));
         for signal_define in [
-            "#define SIGINT 2",
-            "#define SIGFPE 8",
+            "#define SIGINT  2",
+            "#define SIGFPE  8",
             "#define SIGSEGV 11",
             "#define SIGALRM 14",
             "#define SIGTERM 15",
@@ -4593,20 +4593,20 @@ mod tests {
         assert!(registers_td.contains(r#"sequence "FD%u", 0, 255"#));
         assert!(registers_td.contains("class LNP64GPR<bits<16> Enc"));
         assert!(calling_td.contains("CC_LNP64"));
-        assert!(calling_td.contains("R1, R2, R3, R4, R5, R6"));
+        assert!(calling_td.contains("R2, R3, R4, R5, R6, R7, R8, R9"));
         assert!(calling_td.contains("iPTR"));
         for opcode in [
             "ADD",
-            "LI32",
+            "LIU",
             "LD",
-            "CALL",
+            "JAL",
             "YIELD",
-            "LR_GET",
-            "LR_SET",
+            "AUIPC",
+            "JALR",
             "RET",
-            "CSET_EQ",
-            "CSET_ULT",
-            "CMPU",
+            "SLT",
+            "SLTU",
+            "BLTU",
             "ERRNO_SET",
             "FORK",
             "WAIT_PID",
@@ -4669,20 +4669,23 @@ mod tests {
         assert!(mc_desc.contains("RegisterMCCodeEmitter"));
         assert!(mc_desc.contains("RegisterMCAsmBackend"));
         assert!(mc_desc.contains("RegisterMCInstPrinter"));
-        assert!(mc_desc_header.contains("fixup_lnp64_branch26"));
-        assert!(mc_desc_header.contains("fixup_lnp64_pcrel_hi20"));
-        assert!(mc_desc_header.contains("fixup_lnp64_pcrel_lo12_i"));
-        assert!(mc_desc_header.contains("fixup_lnp64_pcrel_lo12_ld"));
+        assert!(mc_desc_header.contains("fixup_lnp64_branch"));
+        assert!(mc_desc_header.contains("fixup_lnp64_auipc"));
+        assert!(mc_desc_header.contains("fixup_lnp64_jump"));
+        assert!(mc_desc_header.contains("fixup_lnp64_pcrel32"));
+        assert!(mc_desc_header.contains("fixup_lnp64_abs32"));
         assert!(mc_desc_header.contains("fixup_lnp64_tls_tprel_slot64"));
         assert!(mc_asm_info.contains("MCAsmInfoELF"));
         assert!(mc_emitter.contains("createLNP64MCCodeEmitter"));
         assert!(mc_asm_backend.contains("createLNP64AsmBackend"));
         assert!(mc_asm_backend.contains("LNP64ELFObjectWriter"));
-        assert!(mc_asm_backend.contains("R_LNP64_BRANCH26"));
+        assert!(mc_asm_backend.contains("R_LNP64_BRANCH"));
         for (fixup, relocation) in [
-            ("fixup_lnp64_pcrel_hi20", "R_LNP64_PCREL_HI20"),
-            ("fixup_lnp64_pcrel_lo12_i", "R_LNP64_PCREL_LO12_I"),
-            ("fixup_lnp64_pcrel_lo12_ld", "R_LNP64_PCREL_LO12_LD"),
+            ("fixup_lnp64_auipc", "R_LNP64_AUIPC"),
+            ("fixup_lnp64_branch", "R_LNP64_BRANCH"),
+            ("fixup_lnp64_jump", "R_LNP64_JUMP"),
+            ("fixup_lnp64_pcrel32", "R_LNP64_PC32"),
+            ("fixup_lnp64_abs32", "R_LNP64_ABS32"),
             ("fixup_lnp64_tls_tprel_slot64", "R_LNP64_TLS_TPREL_SLOT64"),
         ] {
             assert!(mc_asm_backend.contains(fixup), "MC backend missing {fixup}");
@@ -4697,28 +4700,24 @@ mod tests {
         assert!(inst_printer.contains("errno_set"));
         assert!(inst_printer.contains("fork"));
         assert!(inst_printer.contains("wait_pid"));
-        assert!(inst_printer.contains("cset.eq"));
-        assert!(inst_printer.contains("cset.ult"));
+        assert!(inst_printer.contains("slt"));
+        assert!(inst_printer.contains("sltu"));
         assert!(inst_printer.contains("case LNP64::EXIT"));
         assert!(inst_printer.contains("case LNP64::MMAP"));
         assert!(inst_printer.contains("case LNP64::MUNMAP"));
         assert!(inst_printer.contains("case LNP64::MPROTECT"));
         assert!(inst_printer.contains("case LNP64::ENV_GET"));
-        assert!(inst_printer.contains("case LNP64::LA"));
         assert!(inst_printer.contains("case LNP64::AUIPC"));
-        assert!(inst_printer.contains("case LNP64::LI32"));
+        assert!(inst_printer.contains("case LNP64::LIU"));
         assert!(inst_printer.contains("case LNP64::YIELD"));
-        assert!(inst_printer.contains("call_reg"));
-        assert!(inst_printer.contains("lr_get"));
-        assert!(inst_printer.contains("lr_set"));
+        assert!(inst_printer.contains("jalr"));
+        assert!(inst_printer.contains("lr.d"));
+        assert!(inst_printer.contains("sc.d"));
         assert!(mc_emitter.contains("case LNP64::AND"));
-        assert!(mc_emitter.contains("case LNP64::CMP"));
-        assert!(mc_emitter.contains("case LNP64::CMPU"));
-        assert!(mc_emitter.contains("case LNP64::CSET_EQ"));
-        assert!(mc_emitter.contains("case LNP64::CSET_ULT"));
-        assert!(mc_emitter.contains("case LNP64::LA"));
+        assert!(mc_emitter.contains("case LNP64::SLT"));
+        assert!(mc_emitter.contains("case LNP64::SLTU"));
         assert!(mc_emitter.contains("case LNP64::AUIPC"));
-        assert!(mc_emitter.contains("case LNP64::LI32"));
+        assert!(mc_emitter.contains("case LNP64::LIU"));
         assert!(mc_emitter.contains("case LNP64::MMAP"));
         assert!(mc_emitter.contains("case LNP64::MUNMAP"));
         assert!(mc_emitter.contains("case LNP64::MPROTECT"));
@@ -4728,30 +4727,27 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::FORK"));
         assert!(mc_emitter.contains("case LNP64::WAIT_PID"));
         assert!(mc_emitter.contains("case LNP64::YIELD"));
-        assert!(mc_emitter.contains("fixup_lnp64_pcrel32"));
-        assert!(mc_emitter.contains("fixup_lnp64_abs32"));
-        assert!(mc_emitter.contains("case LNP64::LD_W"));
-        assert!(mc_emitter.contains("case LNP64::LD_H"));
-        assert!(mc_emitter.contains("case LNP64::ST_B"));
-        assert!(mc_emitter.contains("case LNP64::ST_H"));
-        assert!(mc_emitter.contains("not implemented yet"));
-        assert!(mc_emitter.contains("isInt<14>(Offset)"));
+        assert!(mc_emitter.contains("fixup_lnp64_auipc"));
+        assert!(mc_emitter.contains("fixup_lnp64_branch"));
+        assert!(mc_emitter.contains("fixup_lnp64_jump"));
+        assert!(mc_emitter.contains("case LNP64::LWU"));
+        assert!(mc_emitter.contains("case LNP64::LHU"));
+        assert!(mc_emitter.contains("case LNP64::SB"));
+        assert!(mc_emitter.contains("case LNP64::SH"));
+        assert!(mc_emitter.contains("not implemented"));
         assert!(asm_parser.contains("LLVMInitializeLNP64AsmParser"));
         assert!(asm_parser.contains("RegisterMCAsmParser"));
         assert!(asm_parser.contains("tryParseRegister"));
         assert!(asm_parser.contains("parseImmediateOrMemory"));
         assert!(asm_parser.contains("buildInstruction"));
-        assert!(asm_parser.contains(r#".Case("la", LNP64::LA)"#));
         assert!(asm_parser.contains(r#".Case("auipc", LNP64::AUIPC)"#));
-        assert!(asm_parser.contains(r#".Case("li32", LNP64::LI32)"#));
+        assert!(asm_parser.contains(r#".Case("liu", LNP64::LIU)"#));
         assert!(asm_parser.contains(r#".Case("yield", LNP64::YIELD)"#));
         assert!(asm_parser.contains("Opcode == LNP64::YIELD"));
-        assert!(asm_parser.contains(r#".Case("call", LNP64::CALL)"#));
-        assert!(asm_parser.contains(r#".Case("lr_get", LNP64::LR_GET)"#));
-        assert!(asm_parser.contains(r#".Case("lr_set", LNP64::LR_SET)"#));
-        assert!(asm_parser.contains(r#".Case("cset.eq", LNP64::CSET_EQ)"#));
-        assert!(asm_parser.contains(r#".Case("cmpu", LNP64::CMPU)"#));
-        assert!(asm_parser.contains(r#".Case("cset.ult", LNP64::CSET_ULT)"#));
+        assert!(asm_parser.contains(r#".Case("jal", LNP64::JAL)"#));
+        assert!(asm_parser.contains(r#".Case("jalr", LNP64::JALR)"#));
+        assert!(asm_parser.contains(r#".Case("slt", LNP64::SLT)"#));
+        assert!(asm_parser.contains(r#".Case("sltu", LNP64::SLTU)"#));
         assert!(asm_parser.contains(r#".Case("errno_get", LNP64::ERRNO_GET)"#));
         assert!(asm_parser.contains(r#".Case("errno_set", LNP64::ERRNO_SET)"#));
         assert!(asm_parser.contains(r#".Case("fork", LNP64::FORK)"#));
@@ -4767,7 +4763,7 @@ mod tests {
         assert!(asm_parser.contains(r#".Case("open_at", LNP64::OPEN_AT)"#));
         assert!(asm_parser.contains(r#".Case("clone.spawn", LNP64::CLONE_SPAWN)"#));
         assert!(asm_parser.contains(r#".Case("thread_join", LNP64::THREAD_JOIN)"#));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::YIELD)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::YIELD)"));
         assert!(instr_td.contains("def OPEN_AT : LNP64Native4"));
         assert!(instr_td.contains("def FORK : LNP64RuntimeGet"));
         assert!(instr_td.contains("def WAIT_PID : LNP64RR"));
@@ -4775,50 +4771,44 @@ mod tests {
         assert!(instr_td.contains("def THREAD_JOIN : LNP64RRR"));
         assert!(instr_td.contains("def GET_PCR : LNP64PcrGet"));
         assert!(instr_td.contains("def SET_PCR : LNP64PcrSet"));
-        assert!(asm_parser.contains(r#".Case("ld.w", LNP64::LD_W)"#));
-        assert!(asm_parser.contains(r#".Case("ld.h", LNP64::LD_H)"#));
+        assert!(asm_parser.contains(r#".Case("lwu", LNP64::LWU)"#));
+        assert!(asm_parser.contains(r#".Case("lhu", LNP64::LHU)"#));
         assert!(disassembler.contains("LLVMInitializeLNP64Disassembler"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::FORK)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::WAIT_PID)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::FORK)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::WAIT_PID)"));
         assert!(disassembler.contains("RegisterMCDisassembler"));
-        assert!(disassembler.contains("readLE32"));
+        assert!(disassembler.contains("readLE64"));
         assert!(disassembler.contains("ArrayRef<uint8_t> Bytes"));
         assert!(!disassembler.contains("MemoryObject"));
         assert!(disassembler.contains("case 0x10"));
-        assert!(disassembler.contains("case 0x03"));
         assert!(disassembler.contains("case 0x04"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::LA)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::AUIPC)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::LI32)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::ADD)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::AND)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::CMP)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::CMPU)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::CSET_EQ)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::CSET_ULT)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::CALL)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::CALL_REG)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::LR_GET)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::LR_SET)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::ERRNO_GET)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::ERRNO_SET)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::EXIT)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::MMAP)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::MUNMAP)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::MPROTECT)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::ENV_GET)"));
+        assert!(disassembler.contains("case 0x05"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::AUIPC)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::LIU)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::ADD)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::AND)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::SLT)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::SLTU)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::JAL)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::JALR)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::ERRNO_GET)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::ERRNO_SET)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::EXIT)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::MMAP)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::MUNMAP)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::MPROTECT)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::ENV_GET)"));
         assert!(disassembler.contains("case 0x54"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::GET_PCR)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::SET_PCR)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::OPEN_AT)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::CLONE_SPAWN)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::THREAD_JOIN)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::LD_W)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::LD_H)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::ST_B)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::ST_H)"));
-        assert!(disassembler.contains("SignExtend64<14>"));
-        assert!(disassembler.contains("decodeBranchTarget"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::GET_PCR)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::SET_PCR)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::OPEN_AT)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::CLONE_SPAWN)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::THREAD_JOIN)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::LWU)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::LHU)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::SB)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::SH)"));
+        assert!(disassembler.contains("SignExtend64<32>"));
         assert!(disassembler.contains("MCDisassembler::Fail"));
         assert!(target_machine.contains("LLVMInitializeLNP64Target"));
         assert!(target_machine.contains("LLVMInitializeLNP64AsmPrinter"));
@@ -4839,13 +4829,13 @@ mod tests {
         assert!(dag_isel.contains("ISD::SEXTLOAD"));
         assert!(dag_isel.contains("ISD::EXTLOAD"));
         assert!(dag_isel.contains("MemVT == MVT::i1"));
-        assert!(dag_isel.contains("LNP64::PseudoLD_SW"));
-        assert!(dag_isel.contains("LNP64::PseudoLD_SH"));
-        assert!(dag_isel.contains("LNP64::PseudoLD_SB"));
-        assert!(dag_isel.contains("LNP64::LD_W"));
-        assert!(dag_isel.contains("LNP64::ST_W"));
-        assert!(dag_isel.contains("LNP64::ST_H"));
-        assert!(dag_isel.contains("LNP64::ST_B"));
+        assert!(dag_isel.contains("LNP64::LW"));
+        assert!(dag_isel.contains("LNP64::LH"));
+        assert!(dag_isel.contains("LNP64::LB"));
+        assert!(dag_isel.contains("LNP64::LWU"));
+        assert!(dag_isel.contains("LNP64::SW"));
+        assert!(dag_isel.contains("LNP64::SH"));
+        assert!(dag_isel.contains("LNP64::SB"));
         assert!(asm_printer.contains("RegisterAsmPrinter<LNP64AsmPrinter>"));
         assert!(asm_printer.contains("void LNP64AsmPrinter::emitInstruction"));
         assert!(asm_printer.contains("PrintAsmOperand"));
@@ -4858,7 +4848,7 @@ mod tests {
         assert!(inst_printer.contains("return \"clone.spawn\""));
         assert!(inst_printer.contains("case LNP64::THREAD_JOIN"));
         assert!(inst_printer.contains("return \"thread_join\""));
-        assert!(inst_printer.contains("case LNP64::OPEN_AT:\n  case LNP64::PULL:"));
+        assert!(inst_printer.contains("case LNP64::PULL: return \"pull\""));
         assert!(inst_printer.contains("OS << \"PID\""));
         assert!(inst_printer.contains("OS << \"SIGMASK\""));
         assert!(asm_printer.contains("PrintAsmMemoryOperand"));
@@ -4870,15 +4860,11 @@ mod tests {
         assert!(isel.contains("addRegisterClass(MVT::i64"));
         assert!(isel.contains("ISD::ADD"));
         assert!(isel.contains("ISD::SDIV"));
-        assert!(isel.contains("setOperationAction(ISD::BR_CC, MVT::i64, Custom)"));
         assert!(isel.contains("setOperationAction(ISD::BRCOND, MVT::Other, Custom)"));
-        assert!(isel.contains("getLNP64CSetInstr"));
-        assert!(isel.contains("isLNP64UnsignedSetCCPseudo"));
-        assert!(isel.contains("LNP64::PseudoLINeg32"));
+        assert!(isel.contains("getBranchForCC"));
         assert!(isel.contains("LNP64::PseudoLI64"));
-        assert!(isel.contains("TII.get(LNP64::LI32)"));
-        assert!(isel.contains("TII.get(LNP64::LSLI)"));
-        assert!(isel.contains("TII.get(LNP64::OR)"));
+        assert!(isel.contains("TII.get(LNP64::LI)"));
+        assert!(isel.contains("TII.get(LNP64::LIU)"));
         assert!(isel.contains("LNP64GenCallingConv.inc"));
         assert!(isel.contains("LowerOperation"));
         assert!(isel.contains("setOperationAction(ISD::GlobalAddress, MVT::i64, Custom)"));
@@ -4886,20 +4872,12 @@ mod tests {
         assert!(isel.contains("LNP64ISD::WRAPPER"));
         assert!(isel.contains("ISD::BR_CC"));
         assert!(isel.contains("ISD::BRCOND"));
-        assert!(isel.contains("DAG.getNode(LNP64ISD::BR_NE"));
-        assert!(
-            isel.contains(
-                "LNP64 conditional branch lowering only supports integer comparisons today"
-            )
-        );
         assert!(isel.contains("EmitInstrWithCustomInserter"));
-        assert!(isel.contains("LNP64::PseudoBEQ"));
-        assert!(isel.contains("LNP64::PseudoBULT"));
-        assert!(isel.contains("isLNP64UnsignedBranchPseudo"));
-        assert!(isel.contains("BuildMI(*BB, MI, DL, TII.get(CmpOpcode))"));
-        assert!(isel.contains("isLNP64UnsignedBranchPseudo(MI.getOpcode()) ? LNP64::CMPU"));
-        assert!(isel.contains("TII.get(getLNP64CSetInstr(MI.getOpcode()))"));
-        assert!(isel.contains("BuildMI(*BB, MI, DL, TII.get(BranchOpcode))"));
+        assert!(isel.contains("LNP64::PseudoSELECT_CC"));
+        assert!(isel.contains("LNP64::BEQ"));
+        assert!(isel.contains("LNP64::BLTU"));
+        assert!(isel.contains("getBranchForCC(CC, SwapOps)"));
+        assert!(isel.contains("TII.get(BrOpc)"));
         assert!(isel.contains("LowerFormalArguments"));
         assert!(isel.contains("CCInfo.AnalyzeFormalArguments(Ins, CC_LNP64)"));
         assert!(isel.contains("CreateFixedObject"));
@@ -4917,9 +4895,9 @@ mod tests {
         assert!(isel.contains("indirect call callee must lower to an i64 register"));
         assert!(isel.contains("ISD::ATOMIC_LOAD"));
         assert!(isel.contains("ISD::ATOMIC_STORE"));
-        assert!(isel.contains("ISD::ATOMIC_LOAD_ADD"));
-        assert!(isel.contains("ISD::ATOMIC_LOAD_XOR"));
-        assert!(isel.contains("ISD::ATOMIC_CMP_SWAP"));
+        assert!(isel.contains("setMaxAtomicSizeInBitsSupported(64)"));
+        assert!(isel.contains("AtomicExpansionKind::LLSC"));
+        assert!(isel.contains("shouldExpandAtomicRMWInIR"));
         assert!(isel.contains("LNP64ISD::CALL"));
         assert!(isel.contains("CalleeName == \"__lnp_await\" || CalleeName == \"__lnp_call\""));
         assert!(
@@ -4943,8 +4921,6 @@ mod tests {
         assert!(isel.contains("setLoadExtAction(ISD::SEXTLOAD, MVT::i64, MemVT, Legal)"));
         assert!(isel.contains("setLoadExtAction(ISD::EXTLOAD, MVT::i64, MemVT, Legal)"));
         assert!(instr_td.contains("zextloadi1"));
-        assert!(isel.contains("getLNP64SignedLoadInstr"));
-        assert!(isel.contains("getLNP64SignExtendInstr"));
         assert!(isel.contains("setTruncStoreAction(MVT::i64, MemVT, Legal)"));
         assert!(isel.contains("LNP64TargetLowering::getConstraintType"));
         assert!(isel.contains("return C_RegisterClass"));
@@ -4965,8 +4941,7 @@ mod tests {
         assert!(isel_header.contains("getConstraintType"));
         assert!(isel_header.contains("getRegForInlineAsmConstraint"));
         assert!(isel_header.contains("EmitInstrWithCustomInserter"));
-        assert!(isel_header.contains("BR_EQ"));
-        assert!(isel_header.contains("BR_ULT"));
+        assert!(isel_header.contains("SELECT_CC"));
         assert!(isel_header.contains("LowerFormalArguments"));
         assert!(isel_header.contains("LowerReturn"));
         assert!(isel_header.contains("LowerCall"));
@@ -4980,38 +4955,30 @@ mod tests {
         assert!(isel_header.contains("PUSH"));
         assert!(isel_header.contains("WRAPPER"));
         assert!(isel_header.contains("RET_FLAG"));
-        assert!(instr_td.contains("def simm16_imm"));
-        assert!(instr_td.contains("def simm14_imm"));
-        assert!(instr_td.contains("def uimm32_imm"));
-        assert!(instr_td.contains("def sneg32_imm"));
+        assert!(instr_td.contains("def simm32_imm"));
+        assert!(instr_td.contains("def simm32_i64_imm"));
         assert!(instr_td.contains("def wide64_imm"));
         assert!(instr_td.contains("def all_ones_imm"));
         assert!(instr_td.contains("def brtarget : Operand<OtherVT>"));
-        assert!(instr_td.contains("(ins brtarget:$target)"));
-        assert!(instr_td.contains("def SDT_LNP64BrCC"));
-        assert!(instr_td.contains("def LNP64breq"));
-        assert!(instr_td.contains("def LNP64brne"));
-        assert!(instr_td.contains("def LNP64brult"));
-        assert!(instr_td.contains("class LNP64CondBranchPseudo"));
-        assert!(instr_td.contains("class LNP64SetCCPseudo"));
-        assert!(instr_td.contains("class LNP64SignedLoadPseudo"));
-        assert!(instr_td.contains("class LNP64FrameAddrPseudo"));
-        assert!(instr_td.contains("def CSET_EQ"));
-        assert!(instr_td.contains("def CSET_ULT"));
-        assert!(instr_td.contains("def PseudoLD_SB"));
+        assert!(instr_td.contains("(ins GPR:$rs1, GPR:$rs2, brtarget:$target)"));
+        assert!(instr_td.contains("(brcc SETEQ"));
+        assert!(instr_td.contains("def BEQ"));
+        assert!(instr_td.contains("def BNE"));
+        assert!(instr_td.contains("def BLTU"));
+        assert!(instr_td.contains("class LNP64Branch"));
+        assert!(instr_td.contains("def SLT"));
+        assert!(instr_td.contains("def SLTI"));
+        assert!(instr_td.contains("def LB"));
         assert!(instr_td.contains("def PseudoFRAMEADDR"));
         assert!(instr_td.contains("usesCustomInserter = 1"));
-        assert!(instr_td.contains("def PseudoBEQ"));
-        assert!(instr_td.contains("def PseudoBULT"));
-        assert!(instr_td.contains("(PseudoBEQ GPR:$lhs, GPR:$rhs, bb:$target)"));
-        assert!(instr_td.contains("(PseudoBULT GPR:$lhs, GPR:$rhs, bb:$target)"));
-        assert!(instr_td.contains("(PseudoCSETEQ GPR:$lhs, GPR:$rhs)"));
-        assert!(instr_td.contains("(PseudoCSETULT GPR:$lhs, GPR:$rhs)"));
-        assert!(instr_td.contains("(PseudoCSETNEI GPR:$lhs, simm16_imm:$rhs)"));
-        assert!(instr_td.contains("(PseudoCSETUGEI GPR:$lhs, simm16_imm:$rhs)"));
-        assert!(instr_td.contains("(i64 (sextloadi8 (add GPR:$base, simm14_imm:$offset)))"));
-        assert!(instr_td.contains("(i64 (extloadi16 (add GPR:$base, simm14_imm:$offset)))"));
-        assert!(instr_td.contains("(PseudoLD_SH GPR:$base, simm14_imm:$offset)"));
+        assert!(instr_td.contains("def PseudoSELECT_CC"));
+        assert!(instr_td.contains("(brcc SETEQ, GPR:$a, GPR:$b, bb:$t), (BEQ GPR:$a, GPR:$b, bb:$t)"));
+        assert!(instr_td.contains("(brcc SETULT, GPR:$a, GPR:$b, bb:$t), (BLTU GPR:$a, GPR:$b, bb:$t)"));
+        assert!(instr_td.contains("(setcc GPR:$rs, simm32_i64_imm:$imm, SETLT)"));
+        assert!(instr_td.contains("(setcc GPR:$rs, simm32_i64_imm:$imm, SETULT)"));
+        assert!(instr_td.contains("(i64 (sextloadi8 (add GPR:$base, simm32_imm:$offset)))"));
+        assert!(instr_td.contains("(i64 (extloadi16 (add GPR:$base, simm32_imm:$offset)))"));
+        assert!(instr_td.contains("(LH GPR:$base, simm32_imm:$offset)"));
         assert!(instr_td.contains("def LNP64retflag"));
         assert!(instr_td.contains("def SDT_LNP64Call"));
         assert!(instr_td.contains("SDTypeProfile<0, -1, []>"));
@@ -5022,17 +4989,15 @@ mod tests {
         assert!(instr_td.contains("def LNP64pull"));
         assert!(instr_td.contains("def LNP64push"));
         assert!(instr_td.contains("def LNP64wrapper"));
-        assert!(instr_td.contains("(set GPR:$rd, simm16_imm:$imm)"));
-        assert!(instr_td.contains("def LA"));
+        assert!(instr_td.contains("(add GPR:$rs, simm32_i64_imm:$imm)"));
         assert!(instr_td.contains("def AUIPC"));
-        assert!(instr_td.contains("def LI32"));
-        assert!(instr_td.contains("def PseudoLINeg32"));
+        assert!(instr_td.contains("def LI "));
+        assert!(instr_td.contains("def LIU "));
+        assert!(instr_td.contains("def PseudoLI64"));
         assert!(instr_td.contains("let Size = 8"));
         assert!(instr_td.contains("(i64 (LNP64wrapper tglobaladdr:$target))"));
         assert!(instr_td.contains("(AUIPC tglobaladdr:$target)"));
         assert!(!instr_td.contains("(LA tglobaladdr:$target)"));
-        assert!(instr_td.contains("(set GPR:$rd, uimm32_imm:$imm)"));
-        assert!(instr_td.contains("(PseudoLINeg32 sneg32_imm:$imm)"));
         assert!(instr_td.contains("(PseudoLI64 wide64_imm:$imm)"));
         assert!(instr_td.contains("(set GPR:$rd, (add GPR:$rs1, GPR:$rs2))"));
         assert!(instr_td.contains("(set GPR:$rd, (xor GPR:$rs, all_ones_imm))"));
@@ -5041,25 +5006,24 @@ mod tests {
         assert!(instr_td.contains("(LNP64call tglobaladdr:$target)"));
         assert!(instr_td.contains("(LNP64call texternalsym:$target)"));
         assert!(instr_td.contains("(LNP64call GPR:$target)"));
-        assert!(instr_td.contains("(i64 (load (add GPR:$base, simm14_imm:$offset)))"));
-        assert!(instr_td.contains("(i64 (zextloadi32 (add GPR:$base, simm14_imm:$offset)))"));
-        assert!(instr_td.contains("(i64 (zextloadi16 (add GPR:$base, simm14_imm:$offset)))"));
-        assert!(instr_td.contains("(i64 (zextloadi8 (add GPR:$base, simm14_imm:$offset)))"));
-        assert!(instr_td.contains("(ST GPR:$rs, GPR:$base, simm14_imm:$offset)"));
-        assert!(instr_td.contains("(ST_W GPR:$rs, GPR:$base, simm14_imm:$offset)"));
-        assert!(instr_td.contains("(ST_H GPR:$rs, GPR:$base, simm14_imm:$offset)"));
-        assert!(instr_td.contains("(ST_B GPR:$rs, GPR:$base, simm14_imm:$offset)"));
+        assert!(instr_td.contains("(i64 (load (add GPR:$base, simm32_imm:$offset)))"));
+        assert!(instr_td.contains("(i64 (zextloadi32 (add GPR:$base, simm32_imm:$offset)))"));
+        assert!(instr_td.contains("(i64 (zextloadi16 (add GPR:$base, simm32_imm:$offset)))"));
+        assert!(instr_td.contains("(i64 (zextloadi8 (add GPR:$base, simm32_imm:$offset)))"));
+        assert!(instr_td.contains("(SD GPR:$rs, GPR:$base, simm32_imm:$offset)"));
+        assert!(instr_td.contains("(SW GPR:$rs, GPR:$base, simm32_imm:$offset)"));
+        assert!(instr_td.contains("(SH GPR:$rs, GPR:$base, simm32_imm:$offset)"));
+        assert!(instr_td.contains("(SB GPR:$rs, GPR:$base, simm32_imm:$offset)"));
         assert!(instr_td.contains("(LNP64domainctl GPR:$arg)"));
         assert!(instr_td.contains("(LNP64gatecall GPR:$cap, GPR:$arg0, GPR:$arg1)"));
         assert!(instr_td.contains("(LNP64objectctl GPR:$arg)"));
         assert!(instr_td.contains("(LNP64pull GPR:$cap, GPR:$arg0, GPR:$arg1)"));
         assert!(instr_td.contains("(LNP64push GPR:$cap, GPR:$arg0, GPR:$arg1)"));
         assert!(instr_td.contains("isReturn = 1"));
-        assert!(instr_td.contains("Defs = [LR, R1, R2"));
-        assert!(instr_td.contains("R28, R29]"));
-        assert!(instr_td.contains("Defs = [FLAGS]"));
-        assert!(instr_td.contains("Uses = [LR]"));
-        assert!(instr_td.contains("Uses = [FLAGS]"));
+        assert!(instr_td.contains("Defs = [R1, R2"));
+        assert!(!instr_td.contains("Defs = [FLAGS]"));
+        assert!(!instr_td.contains("Uses = [FLAGS]"));
+        assert!(instr_td.contains("Uses = [R1]"));
         assert!(instr_td.contains("let Pattern = [(LNP64retflag)]"));
         assert!(instr_td.contains("isBranch = 1"));
         assert!(instr_td.contains("ADJCALLSTACKDOWN"));
@@ -5079,25 +5043,24 @@ mod tests {
         assert!(frame.contains("Align(16)"));
         assert!(frame.contains("emitSPAdjust"));
         assert!(frame.contains("LNP64::R30"));
-        assert!(frame.contains("TII.get(LNP64::LI32)"));
+        assert!(frame.contains("TII.get(LNP64::LI)"));
         assert!(frame.contains("stack adjustment exceeds 32-bit materialization"));
         assert!(frame.contains("TII.get(Amount < 0 ? LNP64::SUB : LNP64::ADD)"));
         assert!(frame.contains("MCCFIInstruction::cfiDefCfa"));
         assert!(frame.contains("LNP64DwarfSP = 31"));
-        assert!(frame.contains("LNP64DwarfLR = 32"));
+        assert!(frame.contains("LNP64DwarfRA = 1"));
         assert!(frame.contains("MCCFIInstruction::createOffset"));
         assert!(frame.contains("TargetOpcode::CFI_INSTRUCTION"));
-        assert!(frame.contains("LNP64DwarfLR,"));
+        assert!(frame.contains("LNP64DwarfRA,"));
         assert!(reginfo.contains("Reserved.set(LNP64::R0)"));
-        assert!(reginfo.contains("Reserved.set(LNP64::R30)"));
+        assert!(reginfo.contains("Reserved.set(LNP64::R31)"));
         assert!(reginfo.contains("eliminateFrameIndex"));
         assert!(reginfo.contains("void LNP64RegisterInfo::eliminateFrameIndex"));
         assert!(reginfo.contains("ChangeToRegister(LNP64::R31"));
         assert!(reginfo.contains("LNP64::PseudoFRAMEADDR"));
-        assert!(reginfo.contains("LNP64 frame address offset exceeds signed-16 LI range"));
         assert!(reginfo.contains("TII.get(LNP64::ADD)"));
         assert!(reginfo.contains("MFI.getObjectOffset"));
-        assert!(reginfo.contains("isInt<14>(Offset)"));
+        assert!(reginfo.contains("Load/store displacements are 32-bit signed in v2"));
         assert!(reginfo.contains("NoCalleeSaved"));
         assert!(clang_target.contains("resetDataLayout(\"e-m:e-p:64:64-i64:64-n64-S128\")"));
         assert!(clang_target.contains("__LNP64__"));
@@ -5668,18 +5631,18 @@ mod tests {
             "_start:",
             ".globl _start",
             ".type _start,@function",
-            "LI r7, 0x7000",
-            "LI r8, 0x100",
-            "MUL r7, r7, r8",
-            "LD r1, 0(r7)",
-            "LI r2, 8",
-            "ADD r2, r7, r2",
-            "MUL r3, r1, r8",
-            "ADD r3, r3, r2",
-            "ADD r3, r3, r8",
-            "ERRNO_SET r0",
-            "CALL main",
-            "EXIT r1",
+            "li r7, 0x7000",
+            "li r8, 0x100",
+            "mul r7, r7, r8",
+            "ld r1, 0(r7)",
+            "li r2, 8",
+            "add r2, r7, r2",
+            "mul r3, r1, r8",
+            "add r3, r3, r2",
+            "add r3, r3, r8",
+            "errno_set r0",
+            "jal r1, main",
+            "exit r1",
         ] {
             assert!(crt0.contains(required), "crt0 missing {required}");
         }
@@ -5783,46 +5746,46 @@ mod tests {
         for required in [
             ".globl write",
             "write:",
-            "PUSH r1, r1, r2, r3",
+            "push r1, r1, r2, r3",
             ".globl read",
             "read:",
-            "PULL r1, r1, r2, r3",
+            "pull r1, r1, r2, r3",
             ".globl alloc",
             "alloc:",
-            "ALLOC r1, r1",
+            "alloc r1, r1",
             ".globl malloc",
             "malloc:",
-            "CALL alloc",
+            "jal r1, alloc",
             ".globl calloc",
             "calloc:",
-            "CALL memset",
+            "jal r1, memset",
             ".globl realloc",
             "realloc:",
-            "ALLOC_SIZE r3, r2",
-            "CALL memcpy",
+            "alloc_size r3, r2",
+            "jal r1, memcpy",
             ".globl free",
             "free:",
-            "FREE r1",
-            "LI r1, 0",
+            "free r1",
+            "li r1, 0",
             ".globl strlen",
             "strlen:",
-            "LD.B r3, 0(r2)",
+            "lbu r3, 0(r2)",
             ".globl memcpy",
             "memcpy:",
-            "ST.B r7, 0(r1)",
+            "sb r7, 0(r1)",
             ".globl memmove",
             "memmove:",
             "memmove_backward_loop:",
-            "CALL memcpy",
+            "jal r1, memcpy",
             ".globl memcmp",
             "memcmp:",
             "memcmp_diff:",
             ".globl memset",
             "memset:",
-            "ST.B r2, 0(r1)",
+            "sb r2, 0(r1)",
             ".globl _exit",
             "_exit:",
-            "EXIT r1",
+            "exit r1",
             ".globl exit",
             "exit:",
             "__lnp64_min_realloc_old:",
@@ -6225,9 +6188,9 @@ mod tests {
             "real_program_ladder|toolchain/lnp64_real_program_ladder.manifest|real_program_ladder_manifest_orders_lua_to_redis"
         ));
         assert!(conformance.contains("toolchain/lnp64_real_program_ladder.manifest"));
-        assert!(conformance.contains("| Redis upstream | not started |"));
+        assert!(conformance.contains("| Redis upstream | passing (Phase E smoke gate) |"));
         assert!(conformance.contains("`COMPAT-PKG-008`"));
-        assert!(conformance.contains("NetBSD/POSIX personality closure"));
+        assert!(conformance.contains("NetBSD personality system gate"));
         assert!(netbsd_layers.contains("process_signal_thread_compat"));
         assert!(netbsd_layers.contains("rump_network_socket_personality"));
         assert!(libc_shim.contains("pthread"));
@@ -6302,7 +6265,7 @@ mod tests {
             "real-program ladder must keep generic compatibility gates before Redis"
         );
         assert_eq!(statuses["minimal_lua"], "tested");
-        assert_eq!(statuses["sqlite_memory_file"], "blocked");
+        assert_eq!(statuses["sqlite_memory_file"], "bootstrap_gate");
         assert_eq!(
             statuses["netbsd_posix_personality_closure"],
             "bootstrap_gate"
@@ -6333,7 +6296,7 @@ mod tests {
             );
         }
         assert!(goals["minimal_lua"].contains("lua -e print_1_plus_2"));
-        assert!(goals["sqlite_memory_file"].contains(":memory:"));
+        assert!(goals["sqlite_memory_file"].contains("in-memory database"));
         assert!(goals["sqlite_memory_file"].contains("file-backed"));
         assert!(focus_by_stage["sqlite_memory_file"].contains(&"file_semantics"));
         assert!(focus_by_stage["sqlite_memory_file"].contains(&"durability_api"));
@@ -7560,7 +7523,6 @@ mod tests {
             "R_LNP64_ABS64",
             "R_LNP64_ABS32",
             "R_LNP64_PC32",
-            "R_LNP64_BRANCH26",
             "R_LNP64_GOT64",
             "R_LNP64_GLOB_DAT",
             "R_LNP64_RELATIVE",
@@ -7569,10 +7531,10 @@ mod tests {
             "R_LNP64_FDR_DESC64",
             "R_LNP64_CAP_DESC64",
             "R_LNP64_CALLGATE64",
-            "R_LNP64_PCREL_HI20",
-            "R_LNP64_PCREL_LO12_I",
-            "R_LNP64_PCREL_LO12_LD",
             "R_LNP64_TLS_TPREL_SLOT64",
+            "R_LNP64_AUIPC",
+            "R_LNP64_BRANCH",
+            "R_LNP64_JUMP",
         ] {
             assert!(
                 manifest_csv_contains(manifest, "relocations", relocation),
@@ -8015,15 +7977,15 @@ mod tests {
         assert!(roadmap.contains("toolchain/lnp64_mc_encoding.manifest"));
         assert!(conformance.contains("toolchain/lnp64_mc_encoding.manifest"));
         assert!(filemap.contains("LNP64MCCodeEmitter.cpp"));
-        assert!(mc_manifest.contains("fixed32_no_operand"));
-        assert!(mc_manifest.contains("opcode[31:24]"));
-        assert!(mc_manifest.contains("fixed32_rrr"));
-        assert!(mc_manifest.contains("fixed32_rri_simm14"));
-        assert!(mc_manifest.contains("fixed32_mem_base_simm"));
-        assert!(mc_manifest.contains("simm24_words[23:0]"));
-        assert!(mc_manifest.contains("fixed32_mmap_bootstrap_control"));
-        assert!(mc_manifest.contains("fixed32_env_get_control"));
-        assert!(mc_manifest.contains("fixed32_pcr_control"));
+        assert!(mc_manifest.contains("fixed64_no_operand"));
+        assert!(mc_manifest.contains("opcode[63:56]"));
+        assert!(mc_manifest.contains("fixed64_rrr"));
+        assert!(mc_manifest.contains("fixed64_rri_simm32"));
+        assert!(mc_manifest.contains("fixed64_mem_base_simm"));
+        assert!(mc_manifest.contains("imm32[40:9]"));
+        assert!(mc_manifest.contains("fixed64_mmap_bootstrap_control"));
+        assert!(mc_manifest.contains("fixed64_env_get_control"));
+        assert!(mc_manifest.contains("fixed64_pcr_control"));
         assert!(mc_manifest.contains("Final __lnp_mmap remains blocked"));
         assert!(mc_manifest.contains("F9 argument-block encoding"));
 
@@ -8038,8 +8000,8 @@ mod tests {
                 "duplicate MC encoding group {group}"
             );
             assert!(
-                format.starts_with("fixed32_"),
-                "initial MC group {group} must use a fixed32 format class"
+                format.starts_with("fixed64_"),
+                "v2 MC group {group} must use a fixed64 format class"
             );
             assert!(!opcodes.is_empty(), "empty MC opcode group {group}");
             assert!(!operands.is_empty(), "empty MC operands for {group}");
@@ -8103,15 +8065,11 @@ mod tests {
                 }
             }
         }
-        assert!(groups["control_branch"].3.contains(&"R_LNP64_BRANCH26"));
+        assert!(groups["control_branch"].3.contains(&"R_LNP64_BRANCH"));
         assert!(groups["control_branch"].3.contains(&"R_LNP64_PC32"));
-        assert!(groups["wide_constants"].3.contains(&"R_LNP64_PCREL_HI20"));
-        assert!(groups["wide_constants"].3.contains(&"R_LNP64_PCREL_LO12_I"));
-        assert!(
-            groups["wide_constants"]
-                .3
-                .contains(&"R_LNP64_PCREL_LO12_LD")
-        );
+        assert!(groups["control_jump"].3.contains(&"R_LNP64_JUMP"));
+        assert!(groups["wide_constants"].3.contains(&"R_LNP64_AUIPC"));
+        assert!(groups["wide_constants"].3.contains(&"R_LNP64_PC32"));
         assert!(
             groups["wide_constants"]
                 .3
@@ -8131,27 +8089,27 @@ mod tests {
         assert!(groups["native_capability_rr"].1.contains(&"CAP_SEND"));
         assert!(groups["native_capability_rr"].1.contains(&"CAP_RECV"));
         assert!(groups["native_capability_rr"].1.contains(&"CAP_REVOKE"));
-        assert!(groups["clone_control"].0.contains("fixed32_clone_control"));
+        assert!(groups["clone_control"].0.contains("fixed64_clone_control"));
         assert!(groups["clone_control"].1.contains(&"CLONE.SPAWN"));
         assert!(groups["clone_control"].1.contains(&"THREAD_JOIN"));
         assert!(
             groups["compat_process_control"]
                 .0
-                .contains("fixed32_compat_process")
+                .contains("fixed64_compat_process")
         );
         assert!(groups["compat_process_control"].1.contains(&"FORK"));
         assert!(groups["compat_process_control"].1.contains(&"WAIT_PID"));
         assert!(groups["compat_process_control"].1.contains(&"EXEC"));
         assert!(mc_emitter.contains("case LNP64::EXEC:"));
-        assert!(mc_emitter.contains("encodeFixed32RRR(0x7f"));
+        assert!(mc_emitter.contains("rType(0x7f"));
         assert!(asm_parser.contains(".Case(\"exec\", LNP64::EXEC)"));
         assert!(inst_printer.contains("case LNP64::EXEC:"));
         assert!(disassembler.contains("case 0x7f:"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::EXEC)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::EXEC)"));
         assert!(
             groups["compat_metadata_control"]
                 .0
-                .contains("fixed32_compat_metadata")
+                .contains("fixed64_compat_metadata")
         );
         assert!(
             groups["compat_metadata_control"]
@@ -8227,15 +8185,15 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::UTIME_FD_DYN"));
         assert!(mc_emitter.contains("case LNP64::FCNTL_FD_DYN"));
         assert!(mc_emitter.contains("case LNP64::FD_SEEK_DYN"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::CLONE_SPAWN)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::THREAD_JOIN)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::UNLINK_PATH_AT)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::STAT_PATH_AT)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::STAT_FD_DYN)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::UTIME_PATH_AT)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::UTIME_FD_DYN)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::FCNTL_FD_DYN)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::FD_SEEK_DYN)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::CLONE_SPAWN)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::THREAD_JOIN)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::UNLINK_PATH_AT)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::STAT_PATH_AT)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::STAT_FD_DYN)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::UTIME_PATH_AT)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::UTIME_FD_DYN)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::FCNTL_FD_DYN)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::FD_SEEK_DYN)"));
         for (mnemonic, opcode) in [
             ("open_dir_dyn", "OPEN_DIR_DYN"),
             ("mkdir_path_at", "MKDIR_PATH_AT"),
@@ -8252,7 +8210,7 @@ mod tests {
             assert!(asm_parser.contains(&format!(r#".Case("{mnemonic}", LNP64::{opcode})"#)));
             assert!(inst_printer.contains(&format!(r#"return "{mnemonic}";"#)));
             assert!(mc_emitter.contains(&format!("case LNP64::{opcode}")));
-            assert!(disassembler.contains(&format!("Instr.setOpcode(LNP64::{opcode})")));
+            assert!(disassembler.contains(&format!("MI.setOpcode(LNP64::{opcode})")));
         }
         assert!(asm_parser.contains(r#".Case("cap_send", LNP64::CAP_SEND)"#));
         assert!(asm_parser.contains(r#".Case("cap_recv", LNP64::CAP_RECV)"#));
@@ -8262,25 +8220,23 @@ mod tests {
         assert!(inst_printer.contains(r#"return "cap_recv";"#));
         assert!(inst_printer.contains(r#"return "cap_dup";"#));
         assert!(inst_printer.contains(r#"return "cap_revoke";"#));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::CAP_SEND)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::CAP_RECV)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::CAP_DUP)"));
-        assert!(disassembler.contains("Instr.setOpcode(LNP64::CAP_REVOKE)"));
-        assert!(mc_emitter.contains("encodeFixed32NoOperand"));
-        assert!(mc_emitter.contains("encodeFixed32RI"));
-        assert!(mc_emitter.contains("encodeFixed32RR"));
-        assert!(mc_emitter.contains("encodeFixed32RRR"));
-        assert!(mc_emitter.contains("encodeFixed32RRI"));
-        assert!(mc_emitter.contains("encodeFixed32Mem"));
-        assert!(mc_emitter.contains("encodeFixed32Branch"));
-        assert!(mc_emitter.contains("encodeFixed32BranchOperand"));
-        assert!(mc_emitter.contains("fixup_lnp64_branch26"));
-        assert!(mc_emitter.contains("encodeFixed32Reg"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::CAP_SEND)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::CAP_RECV)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::CAP_DUP)"));
+        assert!(disassembler.contains("MI.setOpcode(LNP64::CAP_REVOKE)"));
+        assert!(mc_emitter.contains("op("));
+        assert!(mc_emitter.contains("imm32At"));
+        assert!(mc_emitter.contains("rType"));
+        assert!(mc_emitter.contains("iType"));
+        assert!(mc_emitter.contains("sType"));
+        assert!(mc_emitter.contains("emitBranch"));
+        assert!(mc_emitter.contains("emitJump"));
+        assert!(mc_emitter.contains("fixup_lnp64_branch"));
         assert!(mc_emitter.contains("case LNP64::NOP"));
         assert!(mc_emitter.contains("case LNP64::YIELD"));
         assert!(mc_emitter.contains("case LNP64::RET"));
         assert!(mc_emitter.contains("case LNP64::LI"));
-        assert!(mc_emitter.contains("case LNP64::LI32"));
+        assert!(mc_emitter.contains("case LNP64::LIU"));
         assert!(mc_emitter.contains("case LNP64::ADD"));
         assert!(mc_emitter.contains("case LNP64::ADDI"));
         assert!(mc_emitter.contains("case LNP64::UDIV"));
@@ -8288,29 +8244,25 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::UREM"));
         assert!(mc_emitter.contains("case LNP64::MULH"));
         assert!(mc_emitter.contains("case LNP64::MULHSU"));
-        assert!(mc_emitter.contains("case LNP64::AMO_SWAP"));
-        assert!(mc_emitter.contains("case LNP64::AMO_OR"));
-        assert!(mc_emitter.contains("case LNP64::AMO_XOR"));
-        assert!(mc_emitter.contains("case LNP64::LOCK_CMPXCHG"));
+        assert!(mc_emitter.contains("case LNP64::LR_D"));
+        assert!(mc_emitter.contains("case LNP64::SC_D"));
         assert!(mc_emitter.contains("case LNP64::FUTEX_WAIT"));
         assert!(mc_emitter.contains("case LNP64::FUTEX_WAKE"));
         assert!(mc_emitter.contains("case LNP64::FENCE"));
         assert!(mc_emitter.contains("case LNP64::ISYNC"));
         assert!(mc_emitter.contains("case LNP64::ENV_GET"));
-        assert!(mc_emitter.contains("encodeFixed32RRRR"));
         assert!(mc_emitter.contains("case LNP64::SEXT_B"));
         assert!(mc_emitter.contains("case LNP64::ZEXT_W"));
         assert!(mc_emitter.contains("case LNP64::CLZ"));
         assert!(mc_emitter.contains("case LNP64::BSWAP64"));
-        assert!(mc_emitter.contains("case LNP64::CSEL_GT"));
-        assert!(mc_emitter.contains("case LNP64::CSEL_ULT"));
-        assert!(mc_emitter.contains("case LNP64::CALL"));
-        assert!(mc_emitter.contains("case LNP64::CALL_REG"));
-        assert!(mc_emitter.contains("case LNP64::LR_GET"));
-        assert!(mc_emitter.contains("case LNP64::LR_SET"));
-        assert!(mc_emitter.contains("case LNP64::CMPU"));
-        assert!(mc_emitter.contains("case LNP64::CSET_ULT"));
-        assert!(mc_emitter.contains("case LNP64::CSET_EQ"));
+        assert!(mc_emitter.contains("case LNP64::SLT"));
+        assert!(mc_emitter.contains("case LNP64::SLTU"));
+        assert!(mc_emitter.contains("case LNP64::SLTI"));
+        assert!(mc_emitter.contains("case LNP64::JAL"));
+        assert!(mc_emitter.contains("case LNP64::JALR"));
+        assert!(mc_emitter.contains("case LNP64::AUIPC"));
+        assert!(mc_emitter.contains("case LNP64::BEQ"));
+        assert!(mc_emitter.contains("case LNP64::BLTU"));
         assert!(mc_emitter.contains("case LNP64::ERRNO_GET"));
         assert!(mc_emitter.contains("case LNP64::ERRNO_SET"));
         assert!(mc_emitter.contains("case LNP64::EXIT"));
@@ -8328,18 +8280,14 @@ mod tests {
         assert!(mc_emitter.contains("case LNP64::CAP_DUP"));
         assert!(mc_emitter.contains("case LNP64::CAP_REVOKE"));
         assert!(mc_emitter.contains("case LNP64::LD"));
-        assert!(mc_emitter.contains("case LNP64::ST"));
-        assert!(mc_emitter.contains("encodeFixed32NoOperand(0x00)"));
-        assert!(mc_emitter.contains("encodeFixed32NoOperand(0x06)"));
-        assert!(mc_emitter.contains("encodeFixed32NoOperand(0x1f)"));
-        assert!(mc_emitter.contains("emitLE32"));
+        assert!(mc_emitter.contains("case LNP64::SD"));
+        assert!(mc_emitter.contains("op(0x00)"));
+        assert!(mc_emitter.contains("op(0x06)"));
+        assert!(mc_emitter.contains("emitLE64"));
         assert!(mc_asm_backend.contains("getRelocType"));
-        assert!(mc_asm_backend.contains("fixup_lnp64_branch26"));
+        assert!(mc_asm_backend.contains("fixup_lnp64_branch"));
         assert!(mc_asm_backend.contains("writeNopData"));
-        assert!(lld_arch.contains("relocateBranch26"));
         assert!(lld_arch.contains("read32le(Loc)"));
-        assert!(lld_arch.contains("R_LNP64_BRANCH26 out of range"));
-        assert!(!lld_arch.contains("R_LNP64_BRANCH26 is not encoded yet"));
     }
 
     #[test]
@@ -8589,12 +8537,12 @@ mod tests {
         assert_eq!(manifest_field(psabi_manifest, "vr_count"), "16");
         assert_eq!(manifest_field(psabi_manifest, "zero_register"), "r0");
         assert_eq!(manifest_field(psabi_manifest, "stack_pointer"), "r31");
-        assert_eq!(manifest_field(psabi_manifest, "link_register"), "LR");
-        assert_eq!(manifest_field(psabi_manifest, "argument_gprs"), "r1-r6");
-        assert_eq!(manifest_field(psabi_manifest, "return_gprs"), "r1");
+        assert_eq!(manifest_field(psabi_manifest, "link_register"), "r1");
+        assert_eq!(manifest_field(psabi_manifest, "argument_gprs"), "r2-r9");
+        assert_eq!(manifest_field(psabi_manifest, "return_gprs"), "r2");
         assert_eq!(
             manifest_field(psabi_manifest, "caller_clobbered_gprs"),
-            "r1-r29"
+            "r1-r30"
         );
         assert_eq!(manifest_field(psabi_manifest, "callee_saved_gprs"), "none");
         assert_eq!(manifest_field(psabi_manifest, "backend_scratch_gpr"), "r30");
@@ -8630,11 +8578,11 @@ mod tests {
         ));
 
         assert!(
-            psabi_doc.contains("Integer and pointer arguments are passed in `r1` through `r6`.")
+            psabi_doc.contains("Integer and pointer arguments are passed in `r2` through `r9`.")
         );
-        assert!(psabi_doc.contains("Return values are placed in `r1`."));
-        assert!(psabi_doc.contains("`r30` is reserved as a backend scratch register"));
-        assert!(psabi_doc.contains("`r1` through `r29` as caller-clobbered"));
+        assert!(psabi_doc.contains("Return values are placed in `r2`."));
+        assert!(psabi_doc.contains("`r1` is the return address (`ra`)"));
+        assert!(psabi_doc.contains("`r1` through `r30` as caller-clobbered"));
         assert!(psabi_doc.contains("callee-saved GPR set in the v0 ABI"));
         assert!(psabi_doc.contains("Additional fixed arguments are passed"));
         assert!(psabi_doc.contains("`r31` points at the current thread's stack/local region."));
@@ -8696,34 +8644,25 @@ mod tests {
         assert_eq!(classes["fpr"].0, manifest_field(target_manifest, "fpr"));
         assert_eq!(classes["vr"].0, manifest_field(target_manifest, "vr"));
         assert_eq!(classes["gpr"].1, "64");
-        assert_eq!(classes["gpr"].2, "r1-r29");
+        assert_eq!(classes["gpr"].2, "r1-r30");
         assert!(classes["gpr"].3.contains(&"r0"));
-        assert!(classes["gpr"].3.contains(&"r30"));
         assert!(
             classes["gpr"]
                 .3
                 .contains(&manifest_field(psabi_manifest, "stack_pointer"))
         );
-        assert!(
-            classes["special"]
-                .0
-                .split(',')
-                .any(|value| value == manifest_field(psabi_manifest, "link_register"))
-        );
+        // v2: the link register (ra) is an ordinary GPR (r1), not a SPECIAL reg.
+        assert_eq!(manifest_field(psabi_manifest, "link_register"), "r1");
+        assert!(classes["gpr"].2.split('-').any(|value| value == "r1"));
+        // v2 dissolved the SPECIAL LR/FLAGS; only TP remains in the namespace.
         assert!(
             classes["special"]
                 .0
                 .split(',')
                 .any(|value| value == manifest_field(psabi_manifest, "thread_pointer_pcr"))
         );
-        assert!(
-            classes["special"]
-                .0
-                .split(',')
-                .any(|value| value == "FLAGS")
-        );
-        assert!(classes["special"].3.contains(&"FLAGS"));
-        assert!(classes["special"].4.contains("hidden_compare_flags"));
+        assert!(!classes["special"].0.split(',').any(|value| value == "FLAGS"));
+        assert!(!classes["special"].0.split(',').any(|value| value == "LR"));
 
         for pcr in [
             "PID",
@@ -8752,7 +8691,7 @@ mod tests {
                 );
             }
         }
-        for register in ["r0-r31", "LR", "TP"] {
+        for register in ["r0-r31", "TP"] {
             assert!(manifest_csv_contains(
                 debug_unwind_manifest,
                 "register_numbers",
@@ -8789,7 +8728,7 @@ mod tests {
             manifest_field(debug_unwind_manifest, "line_table_decode"),
             "blocked_until_debug_relocation_decoding"
         );
-        for register in ["r0-r31", "LR", "TP"] {
+        for register in ["r0-r31", "TP"] {
             assert!(manifest_csv_contains(
                 debug_unwind_manifest,
                 "register_numbers",
@@ -8802,12 +8741,12 @@ mod tests {
         );
         assert_eq!(
             manifest_field(debug_unwind_manifest, "dwarf_register_map"),
-            "r0-r31:0-31,LR:32,TP:33"
+            "r0-r31:0-31,TP:33"
         );
         assert_eq!(manifest_field(debug_unwind_manifest, "cfa_register"), "r31");
         assert_eq!(
             manifest_field(debug_unwind_manifest, "return_address"),
-            "LR"
+            "r1"
         );
         assert_eq!(
             manifest_field(debug_unwind_manifest, "cfi"),
@@ -8823,12 +8762,12 @@ mod tests {
         );
 
         assert!(psabi_doc.contains("## Debug and Unwind Minimum"));
-        assert!(psabi_doc.contains("`LR` as `32`, and `TP` as `33`"));
+        assert!(psabi_doc.contains("`r1` (ra) as DWARF register `1`, and `TP` as `33`"));
         assert!(psabi_doc.contains("`r31` as the CFA stack register"));
         assert!(psabi_doc.contains("There is no v0 language exception runtime"));
         assert!(roadmap.contains("toolchain/lnp64_debug_unwind.manifest"));
         assert!(frame_lowering.contains("LNP64DwarfSP = 31"));
-        assert!(frame_lowering.contains("LNP64DwarfLR = 32"));
+        assert!(frame_lowering.contains("LNP64DwarfRA = 1"));
         assert!(frame_lowering.contains("MCCFIInstruction::cfiDefCfa"));
         assert!(frame_lowering.contains("MCCFIInstruction::createOffset"));
         assert!(frame_lowering.contains("TargetOpcode::CFI_INSTRUCTION"));
@@ -8990,7 +8929,7 @@ mod tests {
         );
         assert!(roadmap.contains("the existing two-word `AUIPC`/"));
         assert!(roadmap.contains("`R_LNP64_PC32` path is an interim scaffold"));
-        assert_eq!(rows.len(), 17);
+        assert_eq!(rows.len(), 16);
         assert_eq!(
             target_relocations.len(),
             rows.len(),
@@ -9016,14 +8955,19 @@ mod tests {
                 target_relocations.contains(name),
                 "relocation manifest {name} is missing from target manifest"
             );
-            assert!(
-                lld_backend.contains(name),
-                "relocation manifest {name} is missing from lld LNP64 backend"
-            );
             if *number >= 13 {
+                // Relocations 13+ are the v2 LLVM MC backend code fixups (AUIPC /
+                // instruction-count BRANCH / JUMP); they must be emitted by the
+                // MC asm backend's getRelocType mapping.
                 assert!(
                     llvm_mc_backend.contains(name),
-                    "planned relocation {name} is missing from LLVM MC backend"
+                    "v2 MC fixup relocation {name} is missing from LLVM MC backend"
+                );
+            } else {
+                // Relocations 0-12 are resolved by the in-tree loader/lld.
+                assert!(
+                    lld_backend.contains(name),
+                    "relocation manifest {name} is missing from lld LNP64 backend"
                 );
             }
             if loader_status.starts_with("supported_") {

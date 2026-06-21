@@ -1,47 +1,53 @@
-# LNP64 MC encoding contract v0.
+# LNP64 MC encoding contract v2.
 # Pipe-delimited fields: group|format|opcodes|operands|relocations|llvm_surface
-# fixed32_no_operand: opcode[31:24], reserved[23:0]=0; implemented first for NOP and RET
-# fixed32_ri: opcode[31:24], rd[23:19], reserved[18:16], imm16[15:0]
-# fixed32_reg_u32_tail: opcode[31:24], rd[23:19], reserved[18:0], followed by little-endian imm32/address payload
-# fixed32_rr: opcode[31:24], rd[23:19], rs[18:14], reserved[13:0]
-# fixed32_rrr: opcode[31:24], rd[23:19], rs1[18:14], rs2[13:9], reserved[8:0]
-# fixed32_rri_simm14: opcode[31:24], rd[23:19], rs[18:14], simm14[13:0]
-# fixed32_mem_base_simm: opcode[31:24], reg[23:19], base[18:14], simm14[13:0]
-# fixed32_branch26: opcode[31:24], simm24_words[23:0]; encodes aligned signed 26-bit byte displacement
-# fixed32_reg_or_none: opcode[31:24], reg[23:19], reserved[18:0] or all reserved for RET
-# fixed32_native4: opcode[31:24], rd[23:19], cap[18:14], arg0[13:9], arg1[8:4], reserved[3:0]
-# fixed32_clone_control: clone/thread control opcodes using fixed32_rrr.
-# fixed32_mmap_bootstrap_control: compact LLVM bootstrap VMA control form.
+# All v2 instructions are fixed 64-bit words, one major opcode in [63:56].
+# Register slots: rd[55:51], rs1[50:46], rs2[45:41], rs3[40:36], rs4[35:31],
+# rs5[30:26]. imm32 sits below the lowest used register slot per format
+# (I: [45:14]; S/B: [40:9]; U/J: [50:19]). Reserved bits are zero.
+# fixed64_no_operand: opcode[63:56], reserved=0; e.g. NOP, RET, YIELD, FENCE.
+# fixed64_u_imm32: opcode[63:56], rd[55:51], imm32[50:19] (U-type); LI/LIU/AUIPC.
+# fixed64_rrr: opcode[63:56], rd, rs1, rs2 (R-type).
+# fixed64_rri_simm32: opcode[63:56], rd, rs1, imm32[45:14] (I-type).
+# fixed64_mem_base_simm: I-type loads (rd, rs1(base), imm32) and S-type stores
+#   (rs1(base), rs2(src), imm32[40:9]).
+# fixed64_branch: B-type opcode[63:56], rs1, rs2, imm32[40:9] (instr-count <<3).
+# fixed64_jump: J-type opcode[63:56], rd, imm32[50:19] (instr-count <<3).
+# fixed64_reg_or_none: opcode[63:56], optional rd/rs slots, reserved otherwise.
+# fixed64_native6: R-type with up to six register slots; native primitives.
+# fixed64_clone_control: clone/thread control opcodes using fixed64_native6.
+# fixed64_mmap_bootstrap_control: compact LLVM bootstrap VMA control form.
+# fixed64_env_get_control: ENV_GET result/key/index/len register form.
+# fixed64_pcr_control: GET_PCR/SET_PCR with a 5-bit PCR selector in the rs1 slot.
+# fixed64_compat_process: transitional status-in-r2 process compatibility helpers.
+# fixed64_compat_metadata: transitional status-in-r2 metadata/time/fcntl helpers.
+# fixed64_compat_namespace: transitional namespace/path compatibility helpers;
+#   five-register forms place the fifth GPR in the rs4 slot (no trailing word).
 # Final __lnp_mmap remains blocked on the F9 argument-block encoding described
 # in hardware_design.md section 17.
-# fixed32_cset: opcode[31:24], rd[23:19], reserved[18:0]; materializes current FLAGS as 0/1
-# fixed32_compat_metadata: transitional status-in-r1 compatibility metadata/time/fcntl helpers.
-# fixed32_compat_namespace: transitional status-in-r1 namespace/path compatibility helpers; five-register forms use a little-endian u32 tail carrying the fifth GPR id.
-constants|fixed32_constant|NOP,LI,MOV|none_or_gpr_immediate_or_gpr|R_LNP64_ABS64,R_LNP64_GOT64|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64AsmParser.cpp
-wide_constants|fixed32_reg_u32_tail|LA,LI32,AUIPC|gpr_dst,u32_payload|R_LNP64_ABS32,R_LNP64_PC32,R_LNP64_PCREL_HI20,R_LNP64_PCREL_LO12_I,R_LNP64_PCREL_LO12_LD,R_LNP64_TLS_TPREL_SLOT64|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp,LNP64MCAsmBackend.cpp
-integer_alu_rrr|fixed32_rrr|ADD,SUB,MUL,MULH,MULHU,MULHSU,DIV,UDIV,SREM,UREM,AND,OR,XOR,LSL,LSR,ASR|gpr_dst,gpr_lhs,gpr_rhs|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp
-integer_alu_rri|fixed32_rri_simm14|ADDI,ANDI,ORI,XORI,LSLI,LSRI,ASRI|gpr_dst,gpr_lhs,signed_imm14|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
-integer_alu_rr|fixed32_rr|NOT,CMP,CMPU,SEXT.B,SEXT.H,SEXT.W,ZEXT.B,ZEXT.H,ZEXT.W|gpr_lhs,gpr_rhs|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
-integer_select|fixed32_rrr|CSEL.EQ,CSEL.NE,CSEL.LT,CSEL.GT,CSEL.LE,CSEL.GE,CSEL.ULT,CSEL.UGT,CSEL.ULE,CSEL.UGE|gpr_dst,gpr_true,gpr_false|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
-integer_bitmanip_rr|fixed32_rr|CLZ,CTZ,POPCNT,BSWAP16,BSWAP32,BSWAP64|gpr_dst,gpr_src|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
-integer_bitmanip_rrr|fixed32_rrr|ROL,ROR|gpr_dst,gpr_lhs,gpr_rhs|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
-integer_compare_value|fixed32_cset|CSET.EQ,CSET.NE,CSET.LT,CSET.GT,CSET.LE,CSET.GE,CSET.ULT,CSET.UGT,CSET.ULE,CSET.UGE|gpr_dst|none|LNP64InstrInfo.td,LNP64ISelLowering.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
-control_branch|fixed32_branch26|JMP,BEQ,BNE,BLT,BGT,BLE,BGE,CALL|pc_relative_target|R_LNP64_BRANCH26,R_LNP64_PC32|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64MCAsmBackend.cpp,LNP64AsmParser.cpp
-control_register|fixed32_reg_or_none|CALL_REG,LR_GET,LR_SET,RET|gpr_target_or_link_register_or_none|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp
-runtime_control|fixed32_reg_or_none|ERRNO_GET,ERRNO_SET,EXIT|gpr_status_or_errno|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp
-compat_process_control|fixed32_compat_process|FORK,WAIT_PID,EXEC|FORK:gpr_result;WAIT_PID:gpr_status,gpr_pid;EXEC:gpr_path,gpr_argv,gpr_envp|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
-memory|fixed32_mem_base_simm|LD,LD.W,LD.H,LD.B,ST,ST.W,ST.H,ST.B|gpr,base_gpr,signed_offset|R_LNP64_ABS64,R_LNP64_PC32|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64AsmParser.cpp
-barrier|fixed32_misc|FENCE,ISYNC|none_or_gpr_triple|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp
-atomics|fixed32_atomic|LOCK.CMPXCHG,AMO.SWAP,AMO.ADD,AMO.AND,AMO.OR,AMO.XOR,FUTEX_WAIT,FUTEX_WAKE|gpr_memory_or_wait_operands|none|LNP64InstrInfo.td,LNP64ISelLowering.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
-heap_rr|fixed32_rr|ALLOC,ALLOC_SIZE|gpr_dst,gpr_size_or_ptr|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
-heap_rrr|fixed32_rrr|ALLOC_EX|gpr_dst,gpr_size,gpr_align|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
-heap_reg|fixed32_reg_or_none|FREE|gpr_ptr|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
-mmap_bootstrap_control|fixed32_mmap_bootstrap_control|MMAP,MUNMAP,MPROTECT|MMAP/MPROTECT:gpr_result,gpr_addr,gpr_len,gpr_prot;MUNMAP:gpr_result,gpr_addr|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
-env_get_control|fixed32_env_get_control|ENV_GET|gpr_result,gpr_key,gpr_index_or_buf,gpr_len_or_flags|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
-pcr_control|fixed32_pcr_control|GET_PCR,SET_PCR|GET_PCR:gpr_dst,pcr_name;SET_PCR:gpr_result,pcr_name,gpr_src|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
-native_primitives|fixed32_native4|OPEN_AT,PULL,PUSH,AWAIT,GATE_CALL,GATE_RETURN|gpr_result,gpr_cap,gpr_arg0,gpr_arg1|R_LNP64_CAP_DESC64,R_LNP64_CALLGATE64|LNP64InstrInfo.td,LNP64ISelLowering.cpp,LNP64AsmParser.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64InstPrinter.cpp
-clone_control|fixed32_clone_control|CLONE.SPAWN,THREAD_JOIN|CLONE.SPAWN:gpr_result,gpr_entry,gpr_arg;THREAD_JOIN:gpr_result,gpr_tid,gpr_retval_ptr|none|LNP64InstrInfo.td,LNP64AsmParser.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64InstPrinter.cpp
-compat_metadata_control|fixed32_compat_metadata|STAT_PATH_AT,STAT_FD_DYN,UTIME_PATH_AT,UTIME_FD_DYN,FCNTL_FD_DYN,FD_SEEK_DYN,UNLINK_PATH_AT|STAT_PATH_AT:gpr_statbuf,gpr_dir,gpr_path,gpr_flags;STAT_FD_DYN:gpr_statbuf,gpr_fd;UTIME_PATH_AT:gpr_dir,gpr_path,gpr_times,gpr_flags;UTIME_FD_DYN:gpr_fd,gpr_times;FCNTL_FD_DYN:gpr_fd,gpr_cmd,gpr_arg;FD_SEEK_DYN:gpr_fd,gpr_offset,gpr_whence;UNLINK_PATH_AT:gpr_dir,gpr_path,gpr_flags|none|LNP64InstrInfo.td,LNP64AsmParser.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64InstPrinter.cpp
-compat_namespace_control|fixed32_compat_namespace|OPEN_DIR_DYN,MKDIR_PATH_AT,RENAME_PATH_AT,LINK_PATH_AT,SYMLINK_PATH_AT,READLINK_PATH_AT,CHDIR_PATH,GETCWD_PATH,READDIR_FD_DYN,CHMOD_PATH_AT,CHOWN_PATH_AT|OPEN_DIR_DYN:gpr_result,gpr_path,gpr_flags;MKDIR_PATH_AT:gpr_dir,gpr_path,gpr_mode;RENAME_PATH_AT:gpr_old_dir,gpr_old_path,gpr_new_dir,gpr_new_path;LINK_PATH_AT:gpr_old_dir,gpr_old_path,gpr_new_dir,gpr_new_path,gpr_flags;SYMLINK_PATH_AT:gpr_target,gpr_dir,gpr_link_path;READLINK_PATH_AT:gpr_dir,gpr_path,gpr_buf,gpr_len;CHDIR_PATH:gpr_path;GETCWD_PATH:gpr_buf,gpr_len;READDIR_FD_DYN:gpr_fd,gpr_dirent_buf;CHMOD_PATH_AT:gpr_dir,gpr_path,gpr_mode,gpr_flags;CHOWN_PATH_AT:gpr_dir,gpr_path,gpr_uid,gpr_gid,gpr_flags|none|LNP64InstrInfo.td,LNP64AsmParser.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64InstPrinter.cpp
-native_control_rr|fixed32_rr|OBJECT_CTL,DOMAIN_CTL|gpr_result,gpr_argblock|none|LNP64InstrInfo.td,LNP64ISelLowering.cpp,LNP64AsmParser.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64InstPrinter.cpp
-native_capability_rr|fixed32_rr|CAP_DUP,CAP_SEND,CAP_RECV,CAP_REVOKE|gpr_result,gpr_argblock|none|LNP64InstrInfo.td,LNP64AsmParser.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64InstPrinter.cpp
+constants|fixed64_u_imm32|NOP,LI,MOV,AUIPC|none_or_gpr_immediate_or_gpr|R_LNP64_ABS64,R_LNP64_GOT64|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64AsmParser.cpp
+wide_constants|fixed64_u_imm32|LIU|gpr_dst,gpr_src,imm32_high|R_LNP64_ABS32,R_LNP64_PC32,R_LNP64_AUIPC,R_LNP64_TLS_TPREL_SLOT64|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp,LNP64MCAsmBackend.cpp
+integer_alu_rrr|fixed64_rrr|ADD,SUB,MUL,MULH,MULHU,MULHSU,DIV,UDIV,SREM,UREM,AND,OR,XOR,LSL,LSR,ASR,SLT,SLTU|gpr_dst,gpr_lhs,gpr_rhs|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp
+integer_alu_rri|fixed64_rri_simm32|ADDI,ANDI,ORI,XORI,LSLI,LSRI,ASRI|gpr_dst,gpr_lhs,signed_imm32|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
+integer_unary_rr|fixed64_rrr|NOT,SEXT.B,SEXT.H,SEXT.W,ZEXT.B,ZEXT.H,ZEXT.W,CLZ,CTZ,POPCNT,BSWAP16,BSWAP32,BSWAP64|gpr_dst,gpr_src|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
+integer_bitmanip_rrr|fixed64_rrr|ROL,ROR|gpr_dst,gpr_lhs,gpr_rhs|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
+integer_compare_value|fixed64_rri_simm32|SLTI,SLTIU|gpr_dst,gpr_lhs,signed_imm32|none|LNP64InstrInfo.td,LNP64ISelLowering.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
+control_branch|fixed64_branch|BEQ,BNE,BLT,BGE,BLTU,BGEU|gpr_lhs,gpr_rhs,pc_relative_target|R_LNP64_BRANCH,R_LNP64_PC32|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64MCAsmBackend.cpp,LNP64AsmParser.cpp
+control_jump|fixed64_jump|JMP,JAL,JALR,CALL|gpr_link_or_target,pc_relative_target|R_LNP64_JUMP,R_LNP64_PC32|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64MCAsmBackend.cpp,LNP64AsmParser.cpp
+control_register|fixed64_reg_or_none|RET|gpr_target_or_none|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp
+runtime_control|fixed64_reg_or_none|ERRNO_GET,ERRNO_SET,EXIT|gpr_status_or_errno|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp
+compat_process_control|fixed64_compat_process|FORK,WAIT_PID,EXEC|FORK:gpr_result;WAIT_PID:gpr_status,gpr_pid;EXEC:gpr_path,gpr_argv,gpr_envp|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
+memory|fixed64_mem_base_simm|LD,LWU,LHU,LBU,LW,LH,LB,SD,SW,SH,SB|gpr,base_gpr,signed_offset|R_LNP64_ABS64,R_LNP64_PC32|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64AsmParser.cpp
+barrier|fixed64_no_operand|FENCE,ISYNC|none_or_gpr_triple|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp
+atomics|fixed64_atomic|LR.D,SC.D,FUTEX_WAIT,FUTEX_WAKE|gpr_memory_or_wait_operands|none|LNP64InstrInfo.td,LNP64ISelLowering.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
+heap_rr|fixed64_rrr|ALLOC,ALLOC_SIZE|gpr_dst,gpr_size_or_ptr|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
+heap_rrr|fixed64_rrr|ALLOC_EX|gpr_dst,gpr_size,gpr_align|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
+heap_reg|fixed64_reg_or_none|FREE|gpr_ptr|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
+mmap_bootstrap_control|fixed64_mmap_bootstrap_control|MMAP,MUNMAP,MPROTECT|MMAP/MPROTECT:gpr_result,gpr_addr,gpr_len,gpr_prot;MUNMAP:gpr_result,gpr_addr|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
+env_get_control|fixed64_env_get_control|ENV_GET|gpr_result,gpr_key,gpr_index_or_buf,gpr_len_or_flags|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
+pcr_control|fixed64_pcr_control|GET_PCR,SET_PCR|GET_PCR:gpr_dst,pcr_name;SET_PCR:gpr_result,pcr_name,gpr_src|none|LNP64InstrInfo.td,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64AsmParser.cpp,LNP64InstPrinter.cpp
+native_primitives|fixed64_native6|OPEN_AT,PULL,PUSH,AWAIT,GATE_CALL,GATE_RETURN|gpr_result,gpr_cap,gpr_arg0,gpr_arg1|R_LNP64_CAP_DESC64,R_LNP64_CALLGATE64|LNP64InstrInfo.td,LNP64ISelLowering.cpp,LNP64AsmParser.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64InstPrinter.cpp
+clone_control|fixed64_clone_control|CLONE.SPAWN,THREAD_JOIN|CLONE.SPAWN:gpr_result,gpr_entry,gpr_arg;THREAD_JOIN:gpr_result,gpr_tid,gpr_retval_ptr|none|LNP64InstrInfo.td,LNP64AsmParser.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64InstPrinter.cpp
+compat_metadata_control|fixed64_compat_metadata|STAT_PATH_AT,STAT_FD_DYN,UTIME_PATH_AT,UTIME_FD_DYN,FCNTL_FD_DYN,FD_SEEK_DYN,UNLINK_PATH_AT|STAT_PATH_AT:gpr_statbuf,gpr_dir,gpr_path,gpr_flags;STAT_FD_DYN:gpr_statbuf,gpr_fd;UTIME_PATH_AT:gpr_dir,gpr_path,gpr_times,gpr_flags;UTIME_FD_DYN:gpr_fd,gpr_times;FCNTL_FD_DYN:gpr_fd,gpr_cmd,gpr_arg;FD_SEEK_DYN:gpr_fd,gpr_offset,gpr_whence;UNLINK_PATH_AT:gpr_dir,gpr_path,gpr_flags|none|LNP64InstrInfo.td,LNP64AsmParser.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64InstPrinter.cpp
+compat_namespace_control|fixed64_compat_namespace|OPEN_DIR_DYN,MKDIR_PATH_AT,RENAME_PATH_AT,LINK_PATH_AT,SYMLINK_PATH_AT,READLINK_PATH_AT,CHDIR_PATH,GETCWD_PATH,READDIR_FD_DYN,CHMOD_PATH_AT,CHOWN_PATH_AT|OPEN_DIR_DYN:gpr_result,gpr_path,gpr_flags;MKDIR_PATH_AT:gpr_dir,gpr_path,gpr_mode;RENAME_PATH_AT:gpr_old_dir,gpr_old_path,gpr_new_dir,gpr_new_path;LINK_PATH_AT:gpr_old_dir,gpr_old_path,gpr_new_dir,gpr_new_path,gpr_flags;SYMLINK_PATH_AT:gpr_target,gpr_dir,gpr_link_path;READLINK_PATH_AT:gpr_dir,gpr_path,gpr_buf,gpr_len;CHDIR_PATH:gpr_path;GETCWD_PATH:gpr_buf,gpr_len;READDIR_FD_DYN:gpr_fd,gpr_dirent_buf;CHMOD_PATH_AT:gpr_dir,gpr_path,gpr_mode,gpr_flags;CHOWN_PATH_AT:gpr_dir,gpr_path,gpr_uid,gpr_gid,gpr_flags|none|LNP64InstrInfo.td,LNP64AsmParser.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64InstPrinter.cpp
+native_control_rr|fixed64_rrr|OBJECT_CTL,DOMAIN_CTL|gpr_result,gpr_argblock|none|LNP64InstrInfo.td,LNP64ISelLowering.cpp,LNP64AsmParser.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64InstPrinter.cpp
+native_capability_rr|fixed64_rrr|CAP_DUP,CAP_SEND,CAP_RECV,CAP_REVOKE|gpr_result,gpr_argblock|none|LNP64InstrInfo.td,LNP64AsmParser.cpp,LNP64MCCodeEmitter.cpp,LNP64Disassembler.cpp,LNP64InstPrinter.cpp

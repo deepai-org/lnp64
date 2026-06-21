@@ -114,19 +114,18 @@ Provisional relocation numbers:
 | 1 | `R_LNP64_ABS64` | `S + A` |
 | 2 | `R_LNP64_ABS32` | low 32 bits of `S + A`; overflow is an error |
 | 3 | `R_LNP64_PC32` | `S + A - P`; overflow is an error |
-| 4 | `R_LNP64_BRANCH26` | branch target byte displacement from `P`; must be instruction aligned and in signed 26-bit range, encoded as a signed 24-bit word displacement |
-| 5 | `R_LNP64_GOT64` | address of GOT entry for `S + A` |
-| 6 | `R_LNP64_GLOB_DAT` | `S + A` for data/code pointer slots |
-| 7 | `R_LNP64_RELATIVE` | `B + A` |
-| 8 | `R_LNP64_TLS_TPREL64` | TLS offset from thread pointer |
-| 9 | `R_LNP64_TLS_DTPREL64` | TLS offset from module TLS base |
-| 10 | `R_LNP64_FDR_DESC64` | startup FDR descriptor-table index plus addend |
-| 11 | `R_LNP64_CAP_DESC64` | startup capability descriptor-table index plus addend |
-| 12 | `R_LNP64_CALLGATE64` | call-gate descriptor-table index plus addend |
-| 13 | `R_LNP64_PCREL_HI20` | high relocation for `AUIPC rd, %pcrel_hi(S + A)` |
-| 14 | `R_LNP64_PCREL_LO12_I` | low relocation for `ADDI rd, rd, %pcrel_lo(S + A)` |
-| 15 | `R_LNP64_PCREL_LO12_LD` | low relocation for `LD rd, base, %pcrel_lo(slot)` |
-| 16 | `R_LNP64_TLS_TPREL_SLOT64` | 64-bit local-exec TLS offset slot loaded through AUIPC+LD |
+| 4 | `R_LNP64_GOT64` | address of GOT entry for `S + A` |
+| 5 | `R_LNP64_GLOB_DAT` | `S + A` for data/code pointer slots |
+| 6 | `R_LNP64_RELATIVE` | `B + A` |
+| 7 | `R_LNP64_TLS_TPREL64` | TLS offset from thread pointer |
+| 8 | `R_LNP64_TLS_DTPREL64` | TLS offset from module TLS base |
+| 9 | `R_LNP64_FDR_DESC64` | startup FDR descriptor-table index plus addend |
+| 10 | `R_LNP64_CAP_DESC64` | startup capability descriptor-table index plus addend |
+| 11 | `R_LNP64_CALLGATE64` | call-gate descriptor-table index plus addend |
+| 12 | `R_LNP64_TLS_TPREL_SLOT64` | 64-bit local-exec TLS offset slot loaded through AUIPC+LD |
+| 13 | `R_LNP64_AUIPC` | v2 `AUIPC rd, imm32`: `rd = P + sext32(S + A - P)`; one 64-bit word, byte-granular pc-relative high part |
+| 14 | `R_LNP64_BRANCH` | v2 B-type: instruction-count displacement `(S + A - P) >> 3`; must be 8-byte aligned and in range |
+| 15 | `R_LNP64_JUMP` | v2 J-type: instruction-count displacement `(S + A - P) >> 3`; must be 8-byte aligned and in range |
 
 Variables:
 

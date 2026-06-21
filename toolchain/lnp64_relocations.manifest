@@ -1,19 +1,22 @@
 # LNP64 relocation manifest v2.
 # CSV: number,name,calculation_key,loader_status
+# Relocations 0-12 are the data/symbol/descriptor/TLS relocs the loader and lld
+# resolve. Relocations 13-15 are the v2 MC backend code fixups emitted by the
+# LLVM LNP64 code emitter -- AUIPC pc-relative and instruction-count BRANCH/JUMP
+# -- matching the LNP64MCTargetDesc.h fixup enum (fixup_lnp64_auipc/branch/jump).
 0,R_LNP64_NONE,none,supported_noop
 1,R_LNP64_ABS64,S+A,supported_symbolless
 2,R_LNP64_ABS32,low32(S+A);overflow,supported_symbolless
 3,R_LNP64_PC32,S+A-P;overflow,planned_symbol_resolution
-4,R_LNP64_BRANCH26,branch26_P_S_A;aligned;range,planned_branch_encoding
-5,R_LNP64_GOT64,GOT(S+A),planned_got_model
-6,R_LNP64_GLOB_DAT,S+A,supported_symbolless
-7,R_LNP64_RELATIVE,B+A,supported_relative
-8,R_LNP64_TLS_TPREL64,TLS_TP_OFFSET,supported_symbolless_tls
-9,R_LNP64_TLS_DTPREL64,TLS_MODULE_OFFSET,supported_symbolless_tls
-10,R_LNP64_FDR_DESC64,FDR_DESC_INDEX+A,supported_startup_fdr
-11,R_LNP64_CAP_DESC64,CAP_DESC_INDEX+A,planned_cap_descriptor_table
-12,R_LNP64_CALLGATE64,CALLGATE_DESC_INDEX+A,planned_callgate_descriptor_table
-13,R_LNP64_PCREL_HI20,pcrel_hi20(S+A),planned_pcrel_materialization
-14,R_LNP64_PCREL_LO12_I,pcrel_lo12_i(S+A),planned_pcrel_materialization
-15,R_LNP64_PCREL_LO12_LD,pcrel_lo12_ld(S+A),planned_pcrel_slot_materialization
-16,R_LNP64_TLS_TPREL_SLOT64,TLS_TP_OFFSET_SLOT64,planned_local_exec_tls_slot
+4,R_LNP64_GOT64,GOT(S+A),planned_got_model
+5,R_LNP64_GLOB_DAT,S+A,supported_symbolless
+6,R_LNP64_RELATIVE,B+A,supported_relative
+7,R_LNP64_TLS_TPREL64,TLS_TP_OFFSET,supported_symbolless_tls
+8,R_LNP64_TLS_DTPREL64,TLS_MODULE_OFFSET,supported_symbolless_tls
+9,R_LNP64_FDR_DESC64,FDR_DESC_INDEX+A,supported_startup_fdr
+10,R_LNP64_CAP_DESC64,CAP_DESC_INDEX+A,planned_cap_descriptor_table
+11,R_LNP64_CALLGATE64,CALLGATE_DESC_INDEX+A,planned_callgate_descriptor_table
+12,R_LNP64_TLS_TPREL_SLOT64,TLS_TP_OFFSET_SLOT64,planned_local_exec_tls_slot
+13,R_LNP64_AUIPC,auipc_pcrel32(S+A-P),planned_pcrel_materialization
+14,R_LNP64_BRANCH,branch_words(P_S_A);aligned;range,planned_branch_encoding
+15,R_LNP64_JUMP,jump_words(P_S_A);aligned;range,planned_jump_encoding

@@ -1,8 +1,11 @@
-# LNP64 register-class manifest v0.
+# LNP64 register-class manifest v2.
 # Pipe-delimited fields: class|values|width|allocatable|reserved|role|debug
-gpr|r0-r31|64|r1-r29|r0,r30,r31|integer_pointer_status_backend_scratch_r30|dwarf_gpr_r0_r31
+# v2 dissolved the v1 SPECIAL class: the LR link register and FLAGS condition
+# codes are deleted; the return address (ra) is r1, comparisons write GPRs.
+# r1 (ra) and r30 (reclaimed) are allocatable; r0 (zero) and r31 (sp) are reserved.
+gpr|r0-r31|64|r1-r30|r0,r31|integer_pointer_status_ra_r1|dwarf_gpr_r0_r31
 fdr|fd0-fd255|capability|fd0-fd255|none|authority_object_slots|not_address_unwind_registers
 fpr|f0-f31|implementation_defined|f0-f31|none|future_floating_point|dwarf_fpr_f0_f31
 vr|v0-v15|implementation_defined|v0-v15|none|future_vector|dwarf_vr_v0_v15
 pcr|PID,PPID,TID,TP,UID,GID,SIGMASK,SIGPENDING,REALTIME_SEC,REALTIME_NSEC,CRED_PROFILE,CRED_HANDLE|64_control|named_only|none|process_thread_metadata|named_pseudo_registers
-special|LR,TP,FLAGS|64|LR,TP|FLAGS|return_address_thread_pointer_and_hidden_compare_flags|dwarf_special_lr_tp
+special|TP|64|none|none|thread_pointer_only_lr_and_flags_deleted_in_v2|dwarf_special_tp

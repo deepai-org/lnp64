@@ -27,9 +27,15 @@ The v0 psABI covers:
 
 `r0` reads as zero. Writes to `r0` are ignored.
 
-`r30` is reserved as a backend scratch register for compiler-generated
-sequences such as stack adjustment. Portable v0 code should not treat it as an
-allocatable C register.
+`r1` is the return address (`ra`). v2 dissolves the v1 `LR` special register and
+`FLAGS`; the link lives in an ordinary GPR. `CALL sym` is `JAL r1, sym`
+(`r1 = PC + 8`), `CALL rs` is `JALR r1, rs, 0`, and `RET` is `JALR r0, r1, 0`.
+Non-leaf functions spill and reload `r1` with ordinary `SD`/`LD` like any GPR;
+there is no `LR_GET`/`LR_SET` bridge.
+
+`r30` is a general allocatable GPR in v2 (reclaimed from its v1 backend-scratch
+role); the compiler may still use it transiently inside a prologue/epilogue for
+stack-adjustment materialization.
 
 `r31` is the stack pointer for compiler-generated locals and spills. The current
 emulator protects `r31` from ordinary `write_reg` updates; the hardware design
@@ -37,10 +43,11 @@ allows it to be ordinary thread state with MMU-enforced bounds. Code that needs
 portable v0 behavior should treat `r31` as runtime-owned and should not write it
 directly.
 
-`LR` is a thread-local link register outside the numbered GPR file. `CALL` and
-`CALL_REG` set `LR = PC + 8`; `RET` jumps to `LR`. `LR_GET` and `LR_SET`
-are the architectural spill/reload bridge between `LR` and ordinary GPR-backed
-stack slots for non-leaf functions.
+There is no architectural `FLAGS`/condition-code register: comparisons write a
+GPR (`SLT`/`SLTU`/`SLTI`/`SLTIU`) and branches read GPRs
+(`BEQ`/`BNE`/`BLT`/`BGE`/`BLTU`/`BGEU`). All instructions are fixed 64-bit words;
+the PC advances by 8. Atomics use hardware `LR.D`/`SC.D` load-reserved /
+store-conditional, not faked load/op/store.
 
 ## Data Model
 
@@ -63,28 +70,29 @@ are used across object or domain boundaries.
 
 ## Calling Convention
 
-Integer and pointer arguments are passed in `r1` through `r6`.
+Integer and pointer arguments are passed in `r2` through `r9`.
 
-LLVM lowering assigns at most the first six integer or pointer arguments to
-`r1..r6` before `CALL` or `CALL_REG`. Additional fixed arguments are passed in
-16-byte-aligned stack argument slots. For variadic calls, non-fixed arguments
-are copied into the caller stack argument area for the callee's `va_start` and
-`va_arg` support.
+LLVM lowering assigns at most the first eight integer or pointer arguments to
+`r2..r9` before `JAL`/`JALR` (the `CALL` pseudo).
+Additional fixed arguments are passed in 16-byte-aligned stack argument slots.
+For variadic calls, non-fixed
+arguments are copied into the caller stack argument area for the callee's
+`va_start` and `va_arg` support.
 
-Return values are placed in `r1`. Multi-register returns are not part of the C
+Return values are placed in `r2`. Multi-register returns are not part of the C
 ABI yet. Cross-domain gate profiles use bounded return registers through native
 `GATE_RETURN`; `RET_CAP` is the source-level call-profile spelling.
 
-The v0 C ABI treats `r1` through `r29` as caller-clobbered. There is no
-callee-saved GPR set in the v0 ABI. Runtimes that need stable register
-state across calls must spill it explicitly.
+The v0 C ABI treats `r1` through `r30` as caller-clobbered (including the `ra`
+register `r1`). There is no callee-saved GPR set in the v0 ABI. Runtimes that
+need stable register state across calls must spill it explicitly.
 
 ## Nonlocal Jumps
 
 `setjmp` and `longjmp` are libc/psABI operations over ordinary user-visible
 thread context. A plain `jmp_buf` may save only the state required to resume
-the same live C thread image: `r31` as the stack pointer, `LR` as the return
-link, any future psABI callee-preserved GPRs, and user-visible FDR or
+the same live C thread image: `r31` as the stack pointer, `r1` as the return
+link (`ra`), any future psABI callee-preserved GPRs, and user-visible FDR or
 capability register values only if a future psABI explicitly makes them part
 of the calling convention.
 
@@ -102,8 +110,8 @@ generation, process/image generation, and stack-bounds generation checks. When
 stable selectors expose those generations, `setjmp` must capture them and
 `longjmp` must cheaply validate them before restoring context; validation
 failure aborts or faults rather than continuing. In v0 those words are reserved
-and zeroed by the minimal shim, while `r31` and `LR` are the active restored
-state.
+and zeroed by the minimal shim, while `r31` and `r1` (the `ra` return link) are
+the active restored state.
 
 Corrupting `jmp_buf` remains C undefined behavior, but hardware must not treat
 arbitrary bytes as freshly minted authority. Restored capability-like values are
@@ -115,16 +123,21 @@ restore a signal mask.
 
 ## Address Materialization
 
-All compiler-generated symbol materialization uses one explicit sequence:
+v2 instructions are fixed 64-bit words, so a full 32-bit immediate is inline.
+Compiler-generated materialization uses:
 
-- direct address: `AUIPC rd, %pcrel_hi(symbol)` followed by
-  `ADDI rd, rd, %pcrel_lo(symbol)`;
-- address, constant, descriptor, or TLS offset through a slot:
-  `AUIPC tmp, %pcrel_hi(slot)` followed by `LD rd, tmp, %pcrel_lo(slot)`.
+- small signed constant: `LI rd, imm32` (the assembler spelling of
+  `ADDI rd, r0, imm32`); full 64-bit literal: `LI rd, lo32` then
+  `LIU rd, rd, hi32`;
+- direct address / PC-relative: `AUIPC rd, imm32` (one word,
+  `rd = PC + sext32(imm32)`, relocated by `R_LNP64_AUIPC`) followed by an
+  `ADDI`/`LD` against the formed base;
+- descriptor or TLS offset through a slot: `AUIPC tmp, slot` followed by
+  `LD rd, tmp, off`.
 
-Assembler `LA` is permitted only as a source macro that expands to the direct
-AUIPC+ADDI sequence before object emission. LLVM, lld, object tests, and the
-loader must use the explicit relocation pair from `object_format.md`; they must
+There is no `LA` instruction and no two-word `AUIPC`/`LI32`. LLVM, lld, object
+tests, and the loader use the `R_LNP64_AUIPC` / instruction-count
+`R_LNP64_BRANCH` / `R_LNP64_JUMP` relocations from `object_format.md`; they must
 not create a second pseudo-address contract.
 
 ## Stack and Local Storage
@@ -145,10 +158,12 @@ or variadic arguments; non-leaf functions spill `LR` through `LR_GET`/`LR_SET`.
 ## Debug and Unwind Minimum
 
 The initial LLVM target should emit DWARF line tables and register mappings for
-GPR `r0`-`r31`, `LR`, and `TP`. DWARF register numbers are `r0`-`r31` as
-`0`-`31`, `LR` as `32`, and `TP` as `33`. Non-leaf functions should carry
-call-frame information sufficient to recover `r31` as the CFA stack register and
-`LR` as the return address. There is no v0 language exception runtime and
+GPR `r0`-`r31` and `TP`. DWARF register numbers are `r0`-`r31` as
+`0`-`31`, `r1` (ra) as DWARF register `1`, and `TP` as `33`. (v2 dissolved the
+v1 `LR` special register; the return address lives in `r1`.) Non-leaf functions
+should carry call-frame information sufficient to recover
+`r31` as the CFA stack register and `r1` as the return address.
+There is no v0 language exception runtime and
 `.eh_frame` is not required for the first static C target. POSIX signal and
 gate-delivery frames unwind through the psABI signal frame described below.
 
