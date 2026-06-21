@@ -16,9 +16,21 @@ engines=(
   m13
 )
 
+# Small engine-shell "does what it says" proofs: <name> <shell module...>
+shell_proofs=(
+  "fail_closed lnp64_fail_closed_engine"
+  "watchdog lnp64_watchdog"
+)
+
 for engine in "${engines[@]}"; do
   printf '\n========== formal: %s ==========\n' "$engine"
   bash scripts/run_rtl_formal.sh "$engine"
+done
+
+for proof in "${shell_proofs[@]}"; do
+  printf '\n========== shell formal: %s ==========\n' "${proof%% *}"
+  # shellcheck disable=SC2086
+  bash scripts/run_rtl_shell_formal.sh $proof
 done
 
 printf '%s\n' "rtl formal gates ok"

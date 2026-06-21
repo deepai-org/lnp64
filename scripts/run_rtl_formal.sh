@@ -57,16 +57,19 @@ fi
 
 overall=0
 
+# yosys-smtbmc prints its progress spinner to stderr; route it to a log so the
+# captured verdict stays clean.
 printf '== %s formal: BMC (depth %s, %s) ==\n' "$engine" "$depth" "$solver"
-if yosys-smtbmc -s "$solver" -t "$depth" --dump-vcd "$work/${engine}_bmc.vcd" "$smt2"; then
+if yosys-smtbmc -s "$solver" -t "$depth" --dump-vcd "$work/${engine}_bmc.vcd" "$smt2" 2>"$work/${engine}_bmc.err"; then
   printf '%s formal BMC: PASS (no severe-goal assertion violated within depth %s)\n' "$engine" "$depth"
 else
-  printf '%s formal BMC: FAIL (counterexample)\n' "$engine" >&2
+  printf '%s formal BMC: FAIL (counterexample)\n' "$engine"
+  grep -aE "Assert failed|BMC failed|^## *[0-9].*(step|Assert)" "$work/${engine}_bmc.err" | grep -avE "Checking assertions in step" | tail -20 || true
   overall=1
 fi
 
 printf '== %s formal: temporal k-induction (%s) ==\n' "$engine" "$solver"
-if yosys-smtbmc -s "$solver" -i -t "$depth" "$smt2"; then
+if yosys-smtbmc -s "$solver" -i -t "$depth" "$smt2" 2>"$work/${engine}_ind.err"; then
   printf '%s formal induction: PASS (severe goals hold for all reachable states)\n' "$engine"
 else
   printf '%s formal induction: INCONCLUSIVE (BMC bound remains the guarantee)\n' "$engine"
