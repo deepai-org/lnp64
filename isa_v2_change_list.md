@@ -67,6 +67,39 @@ several decisions above and adds its own:
 | D2 | Two assembler memory syntaxes (`[base,off]` in the Rust asm vs `off(base)` in LLVM) — unify on one grammar | **pending** |
 | D3 | `MULHSU` defined but pattern-less (unselectable) — wire a pattern or drop it | **pending (minor)** |
 
+## Execution status (final reconciliation)
+
+**Done + validated:** A1-A6, B1-B3, C1-C4, E1 (callee-saved), E2 (TableGen MC
+encoder — byte-identical), E6 (uniform SchedModel), E7 (rematerializable
+LI/AUIPC). B4 recorded (transparent-cache direction; no RTL change this pass).
+Full docker gate green (sysroot smoke exit=0); cargo 471/2; RTL cosim byte-exact.
+
+**Resolved as already-clean / intentional (no change needed):**
+- E10 — the v1 `LNP64ISD::BR_*` custom branch nodes are already gone; v2
+  reg-compare branches are pattern-matched.
+- E11 — pattern-less native/syscall instructions already default to
+  `hasSideEffects=1` (conservatively correct); the loads/stores infer
+  mayLoad/mayStore from patterns. Explicit annotation adds no correctness.
+- E3/E9 — remaining `EmitInstrWithCustomInserter` users are necessary: the
+  `SELECT` diamond (v2 has no native select) and `PseudoLI64`. The 9
+  `setOperationAction(Custom)` are legitimate (GlobalAddress, VASTART,
+  stackalloc, sub-word atomics, BRCOND→BR_CC→branch is a standard idiom).
+- D1 — the bootstrap-form instructions (`mmap_bootstrap` 0x60 vs `mmap` 0x6a
+  with fd) are semantically distinct (anonymous early-boot vs fd-backed), not
+  redundant duality. Both are legitimate.
+- D3 — `MULHSU` is pattern-less because LLVM has no generic `mulhsu` SDNode to
+  match; it remains assembler/intrinsic-accessible by design.
+- The calling convention is already `CCState`/TableGen-driven.
+
+**Deferred with rationale (optional future polish, not required for clean):**
+- E8 — reclaim `r30` via the RegisterScavenger. Reserving a scratch register is
+  a clean, common production-backend pattern; the scavenger reclaim is +1
+  register against real frame-lowering risk (we just stabilized the RA-spill
+  aliasing). Deferred deliberately.
+- D2 — unify the two assembler memory syntaxes (`[base,off]` Rust asm vs
+  `off(base)` LLVM). The LLVM side is already the standard form; this is a
+  Rust-toolchain consistency item, separable from LLVM cleanliness.
+
 ## Decisions (locked)
 
 - **A4 / E1 — Callee-saved class: YES.** `r2`–`r9` args, `r10`–`r17` + `r28`–`r29`
