@@ -736,14 +736,19 @@ the thread context; cache coherence handles memory visibility.
 
 ## 6. Fixed Instruction Encoding
 
-> **Implementation note (v1).** The 64-bit format described in the rest of this
-> section is the original aspirational design. The encoding that is actually
-> implemented and verified by the v1 toolchain -- the LLVM backend
-> (`LNP64MCCodeEmitter`), the reference emulator (`src/emulator.rs`), the
-> typed-trace checkers, and the Coq/Koika models -- is the **32-bit fixed**
-> layout documented in §6.0 below. Where §6.1-§6.2 disagree with §6.0, §6.0 is
-> authoritative for the shipped ISA; the 64-bit material is retained as design
-> rationale and is slated for reconciliation.
+> **CANONICAL ENCODING: ISA v2.** The instruction encoding is now defined,
+> authoritatively, by [`isa_v2_design.md`](isa_v2_design.md) §2 (the 64-bit
+> fixed formats) and [`isa_v2_opcodes.md`](isa_v2_opcodes.md) (the opcode/field
+> table that the LLVM backend, the reference emulator, the RTL decode, and the
+> generated Coq decode all implement). v2 is a **fixed 64-bit** ISA: every
+> instruction is exactly one 8-byte word, all operands are in registers, there
+> is no `FLAGS` register, the return address is a normal GPR (`r1`), and atomics
+> are LR/SC.
+>
+> The §6.0–§6.2 material below is **superseded v1 content** (the old 32-bit
+> attempt and the earlier aspirational variable-width 64-bit sketch) and is
+> retained only until the docs-finalization pass deletes it. Do not implement
+> against §6.0–§6.2; implement against the two v2 specs above.
 
 ### 6.0 Binary encoding (as implemented)
 
