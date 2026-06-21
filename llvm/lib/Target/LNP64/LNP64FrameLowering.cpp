@@ -43,6 +43,9 @@ static void emitSPAdjust(MachineFunction &MF, MachineBasicBlock &MBB,
   const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
   uint64_t Magnitude =
       Amount < 0 ? uint64_t(-(Amount + 1)) + 1 : uint64_t(Amount);
+  // LI carries a signed-16 immediate (bits[15:0]); a wider magnitude must go
+  // through LI32. Do not "tighten" this to isInt<14> -- that is the RRI/mem
+  // immediate width, not LI's.
   if (isInt<16>(int64_t(Magnitude))) {
     BuildMI(MBB, I, DL, TII.get(LNP64::LI), LNP64::R30).addImm(Magnitude);
   } else {

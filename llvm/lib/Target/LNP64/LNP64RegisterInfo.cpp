@@ -63,6 +63,7 @@ void LNP64RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
     if (Offset == 0) {
       BuildMI(MBB, MI, DL, TII.get(LNP64::MOV), Dst).addReg(LNP64::R31);
     } else if (isInt<16>(Offset)) {
+      // LI materializes a signed-16 immediate; wider needs LI32.
       BuildMI(MBB, MI, DL, TII.get(LNP64::LI), LNP64::R30).addImm(Offset);
       BuildMI(MBB, MI, DL, TII.get(LNP64::ADD), Dst)
           .addReg(LNP64::R31)
@@ -82,6 +83,7 @@ void LNP64RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   // directly.  Materialise the full address in R30 (the reserved scratch
   // register) and use R30+0 as the effective address instead.
   if (!isInt<14>(Offset)) {
+    // LI materializes a signed-16 immediate; wider needs LI32.
     if (isInt<16>(Offset)) {
       BuildMI(MBB, II, DL, TII.get(LNP64::LI), LNP64::R30).addImm(Offset);
     } else {

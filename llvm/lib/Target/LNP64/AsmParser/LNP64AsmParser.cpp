@@ -9,6 +9,7 @@
 #include "llvm/MC/MCParser/MCTargetAsmParser.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/TargetRegistry.h"
+#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/SMLoc.h"
 
 #include <memory>
@@ -607,7 +608,8 @@ private:
     if (Operands.size() != 3 || !Reg || !Imm || !Reg->isReg() ||
         !Imm->isImmValue())
       return false;
-    if (Imm->getImm() < -32768 || Imm->getImm() > 32767)
+    // LI carries a signed-16 immediate in bits[15:0].
+    if (!isInt<16>(Imm->getImm()))
       return false;
     Inst.addOperand(MCOperand::createReg(Reg->getReg()));
     Inst.addOperand(MCOperand::createImm(Imm->getImm()));
@@ -645,7 +647,9 @@ private:
     if (Operands.size() != 4 || !A || !B || !Imm || !A->isReg() ||
         !B->isReg() || !Imm->isImmValue())
       return false;
-    if (Imm->getImm() < -8192 || Imm->getImm() > 8191)
+    // Register-immediate ALU forms (ADDI/ANDI/...) encode a signed-14
+    // immediate in bits[13:0]; reject anything wider rather than truncate.
+    if (!isInt<14>(Imm->getImm()))
       return false;
     Inst.addOperand(MCOperand::createReg(A->getReg()));
     Inst.addOperand(MCOperand::createReg(B->getReg()));
@@ -719,6 +723,11 @@ private:
     const LNP64Operand *Mem = getOp(Operands, 2);
     if (Operands.size() != 3 || !Reg || !Mem || !Reg->isReg() ||
         !Mem->isMem())
+      return false;
+    // Memory offsets encode a signed-14 displacement in bits[13:0]; reject
+    // anything wider here so the assembler gives a clean diagnostic instead
+    // of tripping the report_fatal_error in the MC encoder.
+    if (!isInt<14>(Mem->getImm()))
       return false;
     Inst.addOperand(MCOperand::createReg(Reg->getReg()));
     Inst.addOperand(MCOperand::createReg(Mem->getBaseReg()));

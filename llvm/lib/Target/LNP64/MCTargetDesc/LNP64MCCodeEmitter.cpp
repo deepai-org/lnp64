@@ -22,6 +22,13 @@ static uint32_t encodeFixed32NoOperand(uint8_t Opcode) {
 }
 
 static uint32_t encodeFixed32RI(uint8_t Opcode, unsigned Rd, int64_t Imm) {
+  // LI layout: opcode[31:24], Rd[23:19], reserved[18:16] (must decode as 0),
+  // signed-16 immediate[15:0]. The reserved gap exists because LI has no
+  // source register where the RRI forms place Rs[18:14]. ISel only matches
+  // simm16_imm, but the asm parser and direct MCInst construction can reach
+  // here with any value -- fail loudly rather than silently truncate.
+  if (!isInt<16>(Imm))
+    report_fatal_error("LNP64 LI immediate does not fit in signed 16 bits");
   return (uint32_t(Opcode) << 24) | ((Rd & 0x1f) << 19) |
          (uint32_t(Imm) & 0xffff);
 }
@@ -43,16 +50,22 @@ static uint32_t encodeFixed32RRR(uint8_t Opcode, unsigned Rd, unsigned Rs1,
 
 static uint32_t encodeFixed32RRI(uint8_t Opcode, unsigned Rd, unsigned Rs,
                                  int64_t Imm) {
+  // report_fatal_error (not llvm_unreachable): the latter compiles to
+  // __builtin_unreachable() under -DNDEBUG, turning an out-of-range immediate
+  // into silent UB / a truncated encoding in release builds.
   if (!isInt<14>(Imm))
-    llvm_unreachable("expected signed-14 LNP64 immediate");
+    report_fatal_error("LNP64 register-immediate operand does not fit in "
+                       "signed 14 bits");
   return (uint32_t(Opcode) << 24) | ((Rd & 0x1f) << 19) |
          ((Rs & 0x1f) << 14) | (uint32_t(Imm) & 0x3fff);
 }
 
 static uint32_t encodeFixed32Mem(uint8_t Opcode, unsigned Reg, unsigned Base,
                                  int64_t Offset) {
+  // report_fatal_error (not llvm_unreachable): see encodeFixed32RRI -- a
+  // release build must not silently truncate an out-of-range memory offset.
   if (!isInt<14>(Offset))
-    llvm_unreachable("expected signed-14 LNP64 memory offset");
+    report_fatal_error("LNP64 memory offset does not fit in signed 14 bits");
   return (uint32_t(Opcode) << 24) | ((Reg & 0x1f) << 19) |
          ((Base & 0x1f) << 14) | (uint32_t(Offset) & 0x3fff);
 }

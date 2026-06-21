@@ -121,8 +121,12 @@ class LNP64RRR<string Mnemonic>
     : LNP64Inst<(outs GPR:$rd), (ins GPR:$rs1, GPR:$rs2), Mnemonic,
                 "\t$rd, $rs1, $rs2">;
 
+// Register-immediate ALU forms encode the immediate in bits[13:0] (the RRR
+// source slot Rs2[13:9] and below). The operand is therefore signed-14, not
+// signed-16; the ISel patterns already gate on simm14_i64_imm. (LNP64RI / LI
+// is the signed-16 form -- it has no Rs and uses bits[15:0].)
 class LNP64RRI<string Mnemonic>
-    : LNP64Inst<(outs GPR:$rd), (ins GPR:$rs, simm16:$imm), Mnemonic,
+    : LNP64Inst<(outs GPR:$rd), (ins GPR:$rs, simm14:$imm), Mnemonic,
                 "\t$rd, $rs, $imm">;
 
 class LNP64Cmp<string Mnemonic>
