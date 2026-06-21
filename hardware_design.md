@@ -800,7 +800,7 @@ early with a dedicated compare/branch unit in decode where possible; the maximum
 same-TID squash window is 1-2 issue slots. There is no branch prediction and no
 microcode.
 
-`ISYNC` uses F8: `a=result_dst`, `b=addr_or_fd`, `c=len`, `d=reserved`,
+`ISYNC` takes register operands: `a=result_dst`, `b=addr_or_fd`, `c=len`, `d=reserved`,
 `imm16=range/object flags`. It triggers instruction-cache invalidation for a
 range or mapped executable object using the same invalidation fabric already
 used by `EXEC`, page remap, and permission changes. It is required for in-place
@@ -1589,7 +1589,7 @@ Common object invariants:
   Capability Engine after rights, generation, lineage, and Resource Domain
   checks.
 
-`OBJECT_CTL` uses F9. Its v1 argument block is versioned and names:
+`OBJECT_CTL` takes a pointer to an argument block. The block is versioned and names:
 
 - object type/profile: `counter`, `queue`, `memory_object`, `event/completion`,
   `timer`, `call_gate`, `dma_buffer`, or `dma_completion`.
@@ -1613,7 +1613,7 @@ The current emulator subset uses these v1 scalar constants:
 - call-gate mode `2`: handoff without a return continuation.
 - call-gate flag bit `0`: capability-marked scalar arguments are permitted.
 
-`DMA_CTL` uses F9. Its v1 argument block is versioned and names:
+`DMA_CTL` takes a pointer to an argument block. The block is versioned and names:
 
 - operation: copy, fill, scatter/gather copy, checksum, or hash profile.
 - source address/object and destination address/object.
@@ -1663,13 +1663,13 @@ call. Cold creation still allocates domains, VMAs, namespaces, FDR tables, and
 budgets. The goal is to make hot calls into an already-provisioned thread or
 domain close to a protected procedure call or hardware thread handoff.
 
-`GATE_CALL` / source-level `CALL_CAP` uses F8:
+`GATE_CALL` / source-level `CALL_CAP` takes register operands:
 
 ```text
 a=result_dst, b=call_gate_fd, c=arg0, d=arg1, imm16=flags
 ```
 
-`GATE_RETURN` / source-level `RET_CAP` or `SIGRET` uses F8:
+`GATE_RETURN` / source-level `RET_CAP` or `SIGRET` takes register operands:
 
 ```text
 a=result_dst, b=value0, c=value1, d=reserved, imm16=flags
@@ -1843,7 +1843,7 @@ FDRs are the security boundary, so capability movement is architectural.
 
 `CAP_DUP`:
 
-- uses F9.
+- takes a pointer to an argument block.
 - duplicates an FDR capability within the same process FDR table.
 - may narrow rights, event masks, allowed ranges, or mapping permissions.
 - may seal the duplicate when requested and permitted by the source rights.
@@ -1851,7 +1851,7 @@ FDRs are the security boundary, so capability movement is architectural.
 
 `CAP_SEND` and `CAP_RECV`:
 
-- use F9.
+- take a pointer to an argument block.
 - transfer or copy an FDR capability over a pipe, socket, message channel, or
   supervisor control FDR that permits capability passing.
 - capability payloads are delivered out-of-band beside ordinary message bytes,
@@ -1864,7 +1864,7 @@ FDRs are the security boundary, so capability movement is architectural.
 
 `CAP_REVOKE`:
 
-- uses F9.
+- takes a pointer to an argument block.
 - requests revocation of a revocable capability lineage.
 - prevents new operations from starting through revoked descendants.
 - emits compact invalidation events for active FDR caches, event-source slots,
@@ -2321,7 +2321,7 @@ writes.
 
 `OBJECT_CTL`:
 
-- uses F9.
+- takes a pointer to an argument block.
 - consumes the typed control envelope from Section 12.3.
 - creates, configures, queries, resets, or destroys generic hardware-owned
   waitable/capability objects.
@@ -2338,7 +2338,7 @@ writes.
 
 `DMA_CTL`:
 
-- uses F9.
+- takes a pointer to an argument block.
 - submits bulk memory/object operations to the DMA Fabric.
 - covers memory-to-memory copy, fill, scatter/gather copy, and optional
   checksum/hash profiles.
@@ -2349,7 +2349,7 @@ writes.
 
 `DOMAIN_CTL`:
 
-- uses F9.
+- takes a pointer to an argument block.
 - consumes the typed control envelope from Section 12.3 plus a domain-profile
   payload when needed.
 - creates, configures, queries, freezes, resumes, or destroys nested Resource
@@ -2366,7 +2366,7 @@ writes.
 
 `SUPERVISOR_CTL`:
 
-- uses F9.
+- takes a pointer to an argument block.
 - is retained as a narrower source-level alias/profile over `DOMAIN_CTL` for
   delegated supervisor/upcall domains.
 - installs upcall policy for opcode events, namespace delegation, permission
@@ -3063,7 +3063,7 @@ FDR operand conventions:
   namespace FDRs: `mkdirat`, `unlinkat`, `renameat`, `linkat`, `symlinkat`,
   `readlinkat`, `chdir`, delegation, mount/profile controls, and storage
   barrier profiles.
-- `DUP`: uses F7/F9 as needed and always names an encoded result register. It
+- `DUP`: takes its operands in registers (with an argument block when needed) and always names an encoded result register. It
   may overwrite explicit destination descriptors only when the opcode variant
   says so.
 - source-level `pipe()` lowers to `OBJECT_CTL create queue(profile=pipe)` plus
@@ -3197,7 +3197,7 @@ Each thread entry contains:
 
 `CLONE`:
 
-- uses F8 or F9 depending on flag complexity.
+- takes its operands in registers, with a pointer to an argument block when the operand set does not fit, depending on flag complexity.
 - creates a new thread or process according to an explicit clone profile and
   bounded share/copy flags.
 - is the native primitive. POSIX `fork()` is only one constrained compatibility
@@ -3257,7 +3257,7 @@ the atomic clone transition and defined inherited state.
 
 `THREAD_JOIN`:
 
-- uses F8: `a=result_dst`, `b=target_tid_reg`, `c=retval_ptr_reg`.
+- takes register operands: `a=result_dst`, `b=target_tid_reg`, `c=retval_ptr_reg`.
 - waits on a same-process thread completion record.
 - parks the caller in the scheduler rather than spinning when the target thread
   is still live.
@@ -3267,7 +3267,7 @@ the atomic clone transition and defined inherited state.
 
 `EXEC`:
 
-- validates the F9 argument block and copies/pins the bounded exec-plan
+- validates the argument block and copies/pins the bounded exec-plan
   descriptor before any irrevocable state replacement.
 - enters a process-wide exec barrier.
 - prevents new threads from being spawned in the process.
@@ -3304,7 +3304,7 @@ exec barrier and the old image continues with an error in `r_result`. After that
 point the old image no longer exists; later page-fill, startup, or fetch faults
 are faults of the new image and use the normal signal/termination path.
 
-`EXEC` uses F9 with this v1 argument block:
+`EXEC` takes a pointer to this argument block:
 
 ```text
 u32 version
@@ -3356,7 +3356,7 @@ replacement.
 
 `ALARM`:
 
-- uses F2: `a=result_dst`, `b=seconds_reg`.
+- takes register operands: `a=result_dst`, `b=seconds_reg`.
 - resets the calling process's POSIX alarm timer and returns the previous
   remaining whole seconds.
 - when it expires, the timer wheel enqueues `SIGALRM` for the process and wakes
@@ -3374,7 +3374,7 @@ replacement.
 
 `MMAP` is a real hardware VMA operation.
 
-`MMAP` uses F9 with this v1 argument block:
+`MMAP` takes a pointer to this argument block:
 
 ```text
 u32 version
@@ -3663,7 +3663,7 @@ domain/deadline/cancellation metadata.
 
 `ALLOC`:
 
-- uses F2: `a=result_dst`, `b=size_reg`.
+- takes register operands: `a=result_dst`, `b=size_reg`.
 - allocates from the current process's default heap.
 - returns a virtual pointer in `result_dst`, or a negative architectural error.
 - reports `ENOMEM` for domain/system memory pressure, `EINVAL` for invalid
@@ -3675,7 +3675,7 @@ domain/deadline/cancellation metadata.
 
 `FREE`:
 
-- uses F2: `a=result_dst`, `b=ptr_reg`.
+- takes register operands: `a=result_dst`, `b=ptr_reg`.
 - frees an exact pointer previously returned by `ALLOC` or `ALLOC_EX`.
 - returns `0` on success or a negative architectural error.
 - detects invalid pointers and double free when heap metadata is intact; v1
@@ -3686,7 +3686,7 @@ domain/deadline/cancellation metadata.
 
 `ALLOC_SIZE`:
 
-- uses F2: `a=result_dst`, `b=ptr_reg`.
+- takes register operands: `a=result_dst`, `b=ptr_reg`.
 - reads Heap Engine metadata for an exact allocation pointer.
 - returns the allocation's usable byte extent in `result_dst`.
 - returns `0` for null.
@@ -3696,7 +3696,7 @@ domain/deadline/cancellation metadata.
 
 `ALLOC_EX`:
 
-- uses F9 with an argument block for runtime-quality allocation requests.
+- takes a pointer to an argument block for runtime-quality allocation requests.
 - supports size, alignment, flags, memory type, allocation class/tag, arena id,
   locality hints, shared-memory eligibility, DMA/pinning eligibility, and
   debug/hardening hints.
@@ -3708,7 +3708,7 @@ domain/deadline/cancellation metadata.
 - returns `ENOMEM`, `EINVAL`, `EPERM`, or `EFAULT` for pressure, malformed
   requests, disallowed policy, or unreadable argument blocks.
 
-`ALLOC_EX` v1 argument block:
+`ALLOC_EX` argument block:
 
 ```text
 u32 version
@@ -4026,7 +4026,7 @@ small metadata record to a user buffer. It is for libc, loaders, language
 runtimes, and compatibility personalities; it is not a replacement for immediate
 operands or literal loads.
 
-`ENV_GET` uses F8:
+`ENV_GET` takes register operands:
 
 ```text
 a=result_dst, b=key_reg, c=index_or_buf_reg, d=len_or_flags_reg, imm16=variant
