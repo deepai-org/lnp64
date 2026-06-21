@@ -35,4 +35,14 @@ for proof in "${shell_proofs[@]}"; do
   bash scripts/run_rtl_shell_formal.sh $proof
 done
 
+# Minimal-viable-system whole-chip proofs (mediation, bounded progress).
+mvs_proofs=(
+  mediation
+  progress
+)
+for proof in "${mvs_proofs[@]}"; do
+  printf '\n========== mvs formal: %s ==========\n' "$proof"
+  bash scripts/run_rtl_mvs_formal.sh "$proof"
+done
+
 printf '%s\n' "rtl formal gates ok"
