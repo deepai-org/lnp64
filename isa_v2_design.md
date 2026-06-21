@@ -63,24 +63,28 @@ are 5 bits (GPR 0..31). The PC advances by 8; all instruction addresses are
 +--------+------+------+------+------+------+-----------------------------+
 | opcode |  rd  | rs1  | rs2  | rs3  | rs4  |  rs5(5) | reserved-zero(26) |  R-type (up to 6 regs)
 +--------+------+------+------+------+------+-----------------------------+
-| opcode |  rd  | rs1  |              imm32 (sign-extended)  | resv(14)   |  I-type (rd, rs1, imm32)
-+--------+------+------+-------------------------------------+------------+
-| opcode | rs1(base) | rs2(src) |        imm32 (sign-extended) | resv(14) |  S-type (store)
-+--------+-----------+----------+-----------------------------+----------+
-| opcode | rs1  | rs2  |     imm32 (instr-count offset, <<3)  | resv(14)  |  B-type (branch)
-+--------+------+------+-------------------------------------+-----------+
-| opcode |  rd  |              imm32 (sign-extended)        |  reserved   |  U-type (AUIPC)
-+--------+------+-------------------------------------------+-------------+
-| opcode |  rd  |        imm32 (instr-count offset, <<3)    |  reserved   |  J-type (JAL)
-+--------+------+-------------------------------------------+-------------+
+| opcode |  rd  | rs1  |       imm32 [45:14] (sign-extended)  | resv(14)  |  I-type (rd, rs1, imm32)
++--------+------+------+--------------------------------------+-----------+
+| opcode | rd=0 | rs1(base) | rs2(src) |   imm32 [40:9] (sign-ext) | resv(9)  |  S-type (store)
++--------+------+-----------+----------+---------------------------+----------+
+| opcode | rd=0 | rs1  | rs2  |   imm32 [40:9] (instr-count, <<3) | resv(9)  |  B-type (branch)
++--------+------+------+------+----------------------------------+----------+
+| opcode |  rd  |        imm32 [50:19] (sign-extended)       |  resv(19)  |  U-type (AUIPC)
++--------+------+--------------------------------------------+------------+
+| opcode |  rd  |     imm32 [50:19] (instr-count offset, <<3)|  resv(19)  |  J-type (JAL)
++--------+------+--------------------------------------------+------------+
 ```
 
 Field rules:
 
-- Register slots occupy fixed positions: `rd[55:51]`, `rs1[50:46]`,
-  `rs2[45:41]`, `rs3[40:36]`, `rs4[35:31]`, `rs5[30:26]`. A format that does not
-  use a slot leaves it **reserved-zero**.
-- `imm32` is a 32-bit field, sign-extended to 64 bits for arithmetic / offsets.
+- Register slots occupy fixed positions regardless of role: `rd[55:51]`,
+  `rs1[50:46]`, `rs2[45:41]`, `rs3[40:36]`, `rs4[35:31]`, `rs5[30:26]`. A format
+  that does not use a slot leaves it **reserved-zero** — including the `rd` slot
+  for S/B-type. So `rd`, `rs1`, `rs2` are extracted identically for every
+  instruction; only the immediate position varies by format.
+- `imm32` is a 32-bit field sitting immediately below the lowest register slot
+  the format uses (I: `[45:14]`; S/B: `[40:9]`; U/J: `[50:19]`), sign-extended
+  to 64 bits for arithmetic / offsets.
 - **Control-transfer offsets are instruction-counts, not bytes.** Because every
   instruction is exactly 8 bytes and 8-aligned, the low 3 bits of any valid
   target offset are always zero. B-type and J-type therefore encode
