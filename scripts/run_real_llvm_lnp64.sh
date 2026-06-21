@@ -816,8 +816,10 @@ csel_obj="$build_dir/csel-clang-smoke.o"
 test -s "$csel_obj"
 csel_dump="$build_dir/csel-clang-smoke.dump"
 "$llvm_objdump" -d --triple=lnp64-unknown-none "$csel_obj" >"$csel_dump"
-grep -q 'csel.gt r' "$csel_dump"
-grep -q 'csel.ult r' "$csel_dump"
+# v2 lowers `select` via compare+branch (PseudoSELECT_CC): slt/sltu + bne, not csel.
+grep -q 'slt r' "$csel_dump"
+grep -q 'sltu r' "$csel_dump"
+grep -q 'bne r' "$csel_dump"
 printf 'real LLVM LNP64 clang csel object smoke passed: %s\n' "$csel_obj"
 
 call_clobber_c="$build_dir/call-clobber-smoke.c"
@@ -904,7 +906,8 @@ factorial_dump="$build_dir/factorial-clang-smoke.dump"
 grep -q 'ld.w r' "$factorial_dump"
 grep -q 'st.w r' "$factorial_dump"
 grep -q 'mul r' "$factorial_dump"
-grep -q 'cmp r' "$factorial_dump"
+# v2 lowers the loop comparison to a direct compare-branch (blt), not cmp.
+grep -q 'blt r' "$factorial_dump"
 grep -q 'call ' "$factorial_dump"
 printf 'real LLVM LNP64 clang factorial object smoke passed: %s\n' \
   "$factorial_obj"
@@ -921,7 +924,8 @@ allocator_dump="$build_dir/allocator-clang-smoke.dump"
 grep -Eq 'la r|auipc r' "$allocator_dump"
 grep -q 'ld.w r' "$allocator_dump"
 grep -q 'st.w r' "$allocator_dump"
-grep -q 'cmp r' "$allocator_dump"
+# v2 lowers the comparison to a direct compare-branch (beq), not cmp.
+grep -q 'beq r' "$allocator_dump"
 grep -q 'call ' "$allocator_dump"
 printf 'real LLVM LNP64 clang allocator object smoke passed: %s\n' \
   "$allocator_obj"
@@ -1012,7 +1016,9 @@ producer_consumer_dump="$build_dir/producer-consumer-clang-smoke.dump"
   >"$producer_consumer_dump"
 grep -q 'clone.spawn r' "$producer_consumer_dump"
 grep -q 'thread_join r' "$producer_consumer_dump"
-grep -q 'lock.cmpxchg r' "$producer_consumer_dump"
+# v2 lowers compare_exchange to an lr.d/sc.d loop, not lock.cmpxchg.
+grep -q 'lr.d r' "$producer_consumer_dump"
+grep -q 'sc.d r' "$producer_consumer_dump"
 printf 'real LLVM LNP64 clang producer consumer demo object smoke passed: %s\n' \
   "$producer_consumer_obj"
 
@@ -1028,7 +1034,9 @@ parallel_hash_dump="$build_dir/parallel-hash-clang-smoke.dump"
   >"$parallel_hash_dump"
 grep -q 'clone.spawn r' "$parallel_hash_dump"
 grep -q 'thread_join r' "$parallel_hash_dump"
-grep -q 'amo.add r' "$parallel_hash_dump"
+# v2 lowers atomic RMW to lr.d/sc.d loops, not amo.*.
+grep -q 'lr.d r' "$parallel_hash_dump"
+grep -q 'sc.d r' "$parallel_hash_dump"
 printf 'real LLVM LNP64 clang parallel hash demo object smoke passed: %s\n' \
   "$parallel_hash_obj"
 
@@ -1045,7 +1053,9 @@ sqlite_lite_dump="$build_dir/sqlite-lite-clang-smoke.dump"
 grep -q 'mmap r' "$sqlite_lite_dump"
 grep -q 'clone.spawn r' "$sqlite_lite_dump"
 grep -q 'thread_join r' "$sqlite_lite_dump"
-grep -q 'lock.cmpxchg r' "$sqlite_lite_dump"
+# v2 lowers compare_exchange to an lr.d/sc.d loop, not lock.cmpxchg.
+grep -q 'lr.d r' "$sqlite_lite_dump"
+grep -q 'sc.d r' "$sqlite_lite_dump"
 grep -q 'fence' "$sqlite_lite_dump"
 printf 'real LLVM LNP64 clang sqlite lite demo object smoke passed: %s\n' \
   "$sqlite_lite_obj"
@@ -1972,11 +1982,9 @@ test -s "$intrinsic_amo_obj"
 intrinsic_amo_dump="$build_dir/intrinsic-amo-clang-smoke.dump"
 "$llvm_objdump" -d --triple=lnp64-unknown-none "$intrinsic_amo_obj" \
   >"$intrinsic_amo_dump"
-grep -q 'amo.add r' "$intrinsic_amo_dump"
-grep -q 'amo.and r' "$intrinsic_amo_dump"
-grep -q 'amo.or r' "$intrinsic_amo_dump"
-grep -q 'amo.xor r' "$intrinsic_amo_dump"
-grep -q 'amo.swap r' "$intrinsic_amo_dump"
+# v2 lnp64_intrinsics.h __lnp_amo_* are lr.d/sc.d loops, not amo.*.
+grep -q 'lr.d r' "$intrinsic_amo_dump"
+grep -q 'sc.d r' "$intrinsic_amo_dump"
 printf 'real LLVM LNP64 clang intrinsic AMO object smoke passed: %s\n' \
   "$intrinsic_amo_obj"
 
@@ -2066,12 +2074,10 @@ test -s "$c11_atomic_obj"
 c11_atomic_dump="$build_dir/c11-atomic-clang-smoke.dump"
 "$llvm_objdump" -d --triple=lnp64-unknown-none "$c11_atomic_obj" \
   >"$c11_atomic_dump"
-grep -q 'amo.add r' "$c11_atomic_dump"
-grep -q 'amo.and r' "$c11_atomic_dump"
-grep -q 'amo.or r' "$c11_atomic_dump"
-grep -q 'amo.xor r' "$c11_atomic_dump"
-grep -q 'amo.swap r' "$c11_atomic_dump"
-grep -q 'lock.cmpxchg r' "$c11_atomic_dump"
+# v2 lowers C11 atomic RMW and compare_exchange to lr.d/sc.d loops,
+# not amo.*/lock.cmpxchg.
+grep -q 'lr.d r' "$c11_atomic_dump"
+grep -q 'sc.d r' "$c11_atomic_dump"
 printf 'real LLVM LNP64 clang C11 atomic object smoke passed: %s\n' \
   "$c11_atomic_obj"
 
@@ -2309,7 +2315,9 @@ libc_sem_impl_dump="$build_dir/liblnp64-sem-min.dump"
   >"$libc_sem_impl_dump"
 grep -q 'futex_wait r' "$libc_sem_impl_dump"
 grep -q 'futex_wake r' "$libc_sem_impl_dump"
-grep -q 'lock.cmpxchg r' "$libc_sem_impl_dump"
+# v2 lowers compare_exchange to an lr.d/sc.d loop, not lock.cmpxchg.
+grep -q 'lr.d r' "$libc_sem_impl_dump"
+grep -q 'sc.d r' "$libc_sem_impl_dump"
 printf 'real LLVM LNP64 clang minilibc semaphore implementation object smoke passed: %s\n' \
   "$libc_sem_impl_obj"
 
@@ -2464,9 +2472,11 @@ test -s "$compare_obj"
 compare_dump="$build_dir/compare-clang-smoke.dump"
 "$llvm_objdump" -d --triple=lnp64-unknown-none "$compare_obj" \
   >"$compare_dump"
-grep -q 'cset.eq' "$compare_dump"
-grep -q 'cset.ne' "$compare_dump"
-grep -q 'cset.lt' "$compare_dump"
+# v2 lowers setcc to slt/sltu/slti/sltiu idioms, not cset:
+# eq -> xor + sltiu r,r,1 (seq); ne -> xor + sltu r,r0,r (sne); lt -> slt.
+grep -q 'sltiu r' "$compare_dump"
+grep -q 'sltu r' "$compare_dump"
+grep -q 'slt r' "$compare_dump"
 printf 'real LLVM LNP64 clang comparison object smoke passed: %s\n' \
   "$compare_obj"
 
@@ -2509,12 +2519,11 @@ test -s "$unsigned_compare_obj"
 unsigned_compare_dump="$build_dir/unsigned-compare-clang-smoke.dump"
 "$llvm_objdump" -d --triple=lnp64-unknown-none "$unsigned_compare_obj" \
   >"$unsigned_compare_dump"
-grep -q 'cmpu r' "$unsigned_compare_dump"
-grep -q 'cset.ult' "$unsigned_compare_dump"
-grep -q 'cset.ugt' "$unsigned_compare_dump"
-grep -q 'cset.ule' "$unsigned_compare_dump"
-grep -q 'cset.uge' "$unsigned_compare_dump"
-grep -q 'bge ' "$unsigned_compare_dump"
+# v2 lowers unsigned setcc to sltu (with xori r,r,1 for ule/uge) and
+# unsigned branches to sltu + bne, not cmpu/cset/bge.
+grep -q 'sltu r' "$unsigned_compare_dump"
+grep -q 'xori r' "$unsigned_compare_dump"
+grep -q 'bne r' "$unsigned_compare_dump"
 printf 'real LLVM LNP64 clang unsigned comparison object smoke passed: %s\n' \
   "$unsigned_compare_obj"
 

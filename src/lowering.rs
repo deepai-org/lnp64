@@ -1348,8 +1348,9 @@ mod tests {
         assert!(real_llc.contains("grep -q 'bswap64 r'"));
         assert!(real_llc.contains("real LLVM LNP64 clang bit-manip object smoke passed"));
         assert!(real_llc.contains("csel-clang-smoke.o"));
-        assert!(real_llc.contains("grep -q 'csel.gt r'"));
-        assert!(real_llc.contains("grep -q 'csel.ult r'"));
+        assert!(real_llc.contains("grep -q 'slt r' \"$csel_dump\""));
+        assert!(real_llc.contains("grep -q 'sltu r' \"$csel_dump\""));
+        assert!(real_llc.contains("grep -q 'bne r' \"$csel_dump\""));
         assert!(real_llc.contains("real LLVM LNP64 clang csel object smoke passed"));
         assert!(real_llc.contains("call-clobber-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang call-clobber object smoke passed"));
@@ -1387,11 +1388,12 @@ mod tests {
         assert!(real_llc.contains("ld.w r"));
         assert!(real_llc.contains("st.w r"));
         assert!(real_llc.contains("mul r"));
-        assert!(real_llc.contains("cmp r"));
+        assert!(real_llc.contains("grep -q 'blt r'"));
         assert!(real_llc.contains("real LLVM LNP64 clang factorial object smoke passed"));
         assert!(real_llc.contains("-c demos/allocator.c"));
         assert!(real_llc.contains("allocator-clang-smoke.o"));
         assert!(real_llc.contains("allocator-clang-smoke.dump"));
+        assert!(real_llc.contains("grep -q 'beq r' \"$allocator_dump\""));
         assert!(real_llc.contains("real LLVM LNP64 clang allocator object smoke passed"));
         assert!(real_llc.contains("-c demos/fibonacci.c"));
         assert!(real_llc.contains("fibonacci-clang-smoke.o"));
@@ -1433,9 +1435,8 @@ mod tests {
             real_llc.contains("real LLVM LNP64 lld intrinsic capability control link smoke passed")
         );
         assert!(real_llc.contains("intrinsic-amo-clang-smoke.o"));
-        assert!(real_llc.contains("amo.add r"));
-        assert!(real_llc.contains("amo.xor r"));
-        assert!(real_llc.contains("amo.swap r"));
+        assert!(real_llc.contains("grep -q 'lr.d r' \"$intrinsic_amo_dump\""));
+        assert!(real_llc.contains("grep -q 'sc.d r' \"$intrinsic_amo_dump\""));
         assert!(real_llc.contains("real LLVM LNP64 clang intrinsic AMO object smoke passed"));
         assert!(real_llc.contains("c11-atomic-clang-smoke.o"));
         assert!(real_llc.contains("__atomic_load_n"));
@@ -1443,7 +1444,8 @@ mod tests {
         assert!(real_llc.contains("__atomic_fetch_add"));
         assert!(real_llc.contains("__atomic_fetch_xor"));
         assert!(real_llc.contains("__atomic_compare_exchange_n"));
-        assert!(real_llc.contains("grep -q 'lock.cmpxchg r'"));
+        assert!(real_llc.contains("grep -q 'lr.d r' \"$c11_atomic_dump\""));
+        assert!(real_llc.contains("grep -q 'sc.d r' \"$c11_atomic_dump\""));
         assert!(real_llc.contains("real LLVM LNP64 clang C11 atomic object smoke passed"));
         assert!(real_llc.contains("exit-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang exit object smoke passed"));
@@ -3027,13 +3029,15 @@ mod tests {
         assert!(real_llc.contains("-c demos/producer_consumer.c"));
         assert!(real_llc.contains("grep -q 'clone.spawn r'"));
         assert!(real_llc.contains("grep -q 'thread_join r'"));
-        assert!(real_llc.contains("grep -q 'lock.cmpxchg r'"));
+        assert!(real_llc.contains("grep -q 'lr.d r' \"$producer_consumer_dump\""));
+        assert!(real_llc.contains("grep -q 'sc.d r' \"$producer_consumer_dump\""));
         assert!(
             real_llc.contains("real LLVM LNP64 clang producer consumer demo object smoke passed")
         );
         assert!(real_llc.contains("parallel-hash-clang-smoke.o"));
         assert!(real_llc.contains("-c demos/parallel_hash.c"));
-        assert!(real_llc.contains("grep -q 'amo.add r'"));
+        assert!(real_llc.contains("grep -q 'lr.d r' \"$parallel_hash_dump\""));
+        assert!(real_llc.contains("grep -q 'sc.d r' \"$parallel_hash_dump\""));
         assert!(real_llc.contains("real LLVM LNP64 clang parallel hash demo object smoke passed"));
         assert!(real_llc.contains("sqlite-lite-clang-smoke.o"));
         assert!(real_llc.contains("-c demos/sqlite_lite.c"));
