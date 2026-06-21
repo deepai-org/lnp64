@@ -793,6 +793,44 @@ engine itself under exhaustive FPV would require a formal-only abstraction of it
 data path so the solver is not burdened by payload arithmetic the severe-goal
 properties never read.
 
+### Foundational assurance program (seL4-grade, fabrication-ready)
+
+The MVS/yosys/SVA work above is **bug-finding and regression scaffolding**, not a
+fabrication-grade assurance artifact: it proves scattered safety properties on
+*models* via an *unverified* toolchain (yosys frontend + z3). seL4-grade /
+mask-set-grade trust requires *one refinement* of the *actual design* against an
+abstract spec, in a *foundational* prover, with a *verified path to silicon*.
+The chosen substrate is **Kami/Kôika in Coq** (a rule-based HDL with formal
+semantics in Coq and a Verilog backend), so "the thing proven" equals "the thing
+fabricated".
+
+Status by phase:
+
+- **Phase 0 -- spec + toolchain (done).** `proofs/coq/CapSpec.v` is the abstract
+  capability-machine spec with the security theorems (`no_forged_authority`,
+  `writes_confined_to_root`, `two_tenant_isolation`) proven over all reachable
+  states by an inductive invariant in Coq's kernel; `coqchk` reports **no axioms
+  assumed**. `Dockerfile.coq-koika` builds native arm64 Coq 8.18 + Kôika; the
+  Kôika -> Verilog extraction (`cuttlec`) is validated to produce real
+  synthesizable RTL. `scripts/run_coq_proofs.sh` gates coqc + coqchk.
+- **Phase 1 -- foundational vertical slice (next).** Implement the mediation
+  choke point in Kôika; prove in Coq that it refines `CapSpec`; extract its
+  Verilog; cross-check that extracted Verilog with the existing SVA harness (so
+  the two layers agree). This proves the *approach* end to end before scaling.
+- **Phase 2 -- scale to the whole chip.** Bring the arbiter/fabric, tagged
+  memory, capability derivation, wait/wake, and reset domains under one Kôika
+  design and one refinement against an extended spec; discharge composition.
+- **Phase 3 -- toolchain trust to silicon.** Kôika extraction soundness; RTL<->
+  netlist logical equivalence (LEC); **DFT/scan** must be proven not to bypass
+  mediation (or excluded by contract in functional mode); CDC; clock gating.
+- **Phase 4 -- physical boundary.** State the digital-abstraction assumptions
+  (timing met, no fault injection, side-channels scoped out), as seL4 states its
+  hardware/boot assumptions.
+
+The MVS SVA proofs remain valuable as the fast invariant-discovery and
+regression layer feeding the foundational proofs, but they are explicitly the
+scaffolding, not the deliverable.
+
 ### Human-Auditable Evidence
 
 The proof system must also be legible. A casual technical observer should be
