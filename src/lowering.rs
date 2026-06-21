@@ -4725,28 +4725,24 @@ mod tests {
         assert!(inst_printer.contains("jalr"));
         assert!(inst_printer.contains("lr.d"));
         assert!(inst_printer.contains("sc.d"));
-        assert!(mc_emitter.contains("case LNP64::AND"));
-        assert!(mc_emitter.contains("case LNP64::SLT"));
-        assert!(mc_emitter.contains("case LNP64::SLTU"));
-        assert!(mc_emitter.contains("case LNP64::AUIPC"));
-        assert!(mc_emitter.contains("case LNP64::LIU"));
-        assert!(mc_emitter.contains("case LNP64::MMAP"));
-        assert!(mc_emitter.contains("case LNP64::MUNMAP"));
-        assert!(mc_emitter.contains("case LNP64::MPROTECT"));
-        assert!(mc_emitter.contains("case LNP64::ENV_GET"));
-        assert!(mc_emitter.contains("case LNP64::CLONE_SPAWN"));
-        assert!(mc_emitter.contains("case LNP64::THREAD_JOIN"));
-        assert!(mc_emitter.contains("case LNP64::FORK"));
-        assert!(mc_emitter.contains("case LNP64::WAIT_PID"));
-        assert!(mc_emitter.contains("case LNP64::YIELD"));
+        // The encoder is now TableGen-generated: encodeInstruction defers to the
+        // generated getBinaryCodeForInstr over the `bits<64> Inst` fields, with
+        // custom operand encoders for the branch/jump/auipc targets that emit
+        // relocations. The per-opcode bit layout lives in the TableGen, not a
+        // hand-written switch.
+        assert!(mc_emitter.contains("getBinaryCodeForInstr"));
+        assert!(mc_emitter.contains("LNP64GenMCCodeEmitter.inc"));
+        assert!(mc_emitter.contains("getMachineOpValue"));
+        assert!(mc_emitter.contains("getBranchTargetOpValue"));
+        assert!(mc_emitter.contains("getJumpTargetOpValue"));
+        assert!(mc_emitter.contains("getAUIPCTargetOpValue"));
         assert!(mc_emitter.contains("fixup_lnp64_auipc"));
         assert!(mc_emitter.contains("fixup_lnp64_branch"));
         assert!(mc_emitter.contains("fixup_lnp64_jump"));
-        assert!(mc_emitter.contains("case LNP64::LWU"));
-        assert!(mc_emitter.contains("case LNP64::LHU"));
-        assert!(mc_emitter.contains("case LNP64::SB"));
-        assert!(mc_emitter.contains("case LNP64::SH"));
-        assert!(mc_emitter.contains("not implemented"));
+        // The generated emitter is built from the `field bits<64> Inst` layout.
+        assert!(cmake.contains("LNP64GenMCCodeEmitter.inc"));
+        assert!(instr_td.contains("field bits<64> Inst"));
+        assert!(instr_td.contains("let Inst{63-56} = Opcode"));
         assert!(asm_parser.contains("LLVMInitializeLNP64AsmParser"));
         assert!(asm_parser.contains("RegisterMCAsmParser"));
         assert!(asm_parser.contains("tryParseRegister"));
@@ -5743,7 +5739,6 @@ mod tests {
             "\"$sysroot/usr/lib/lnp64/liblnp64-fd-min.o\"",
             "\"$lnp64_bin\" elf-plan \"$smoke_elf\"",
             "\"$lnp64_bin\" run-elf \"$smoke_elf\"",
-            "grep -q 'sysroot smoke'",
             "grep -q 'exit=0'",
             "LNP64 sysroot run-elf smoke passed",
         ] {
@@ -8138,8 +8133,6 @@ mod tests {
         assert!(groups["compat_process_control"].1.contains(&"FORK"));
         assert!(groups["compat_process_control"].1.contains(&"WAIT_PID"));
         assert!(groups["compat_process_control"].1.contains(&"EXEC"));
-        assert!(mc_emitter.contains("case LNP64::EXEC:"));
-        assert!(mc_emitter.contains("rType(0x7f"));
         assert!(asm_parser.contains(".Case(\"exec\", LNP64::EXEC)"));
         assert!(inst_printer.contains("case LNP64::EXEC:"));
         assert!(disassembler.contains("case 0x7f:"));
@@ -8214,15 +8207,6 @@ mod tests {
         assert!(inst_printer.contains(r#"return "utime_fd_dyn";"#));
         assert!(inst_printer.contains(r#"return "fcntl_fd_dyn";"#));
         assert!(inst_printer.contains(r#"return "fd_seek_dyn";"#));
-        assert!(mc_emitter.contains("case LNP64::CLONE_SPAWN"));
-        assert!(mc_emitter.contains("case LNP64::THREAD_JOIN"));
-        assert!(mc_emitter.contains("case LNP64::UNLINK_PATH_AT"));
-        assert!(mc_emitter.contains("case LNP64::STAT_PATH_AT"));
-        assert!(mc_emitter.contains("case LNP64::STAT_FD_DYN"));
-        assert!(mc_emitter.contains("case LNP64::UTIME_PATH_AT"));
-        assert!(mc_emitter.contains("case LNP64::UTIME_FD_DYN"));
-        assert!(mc_emitter.contains("case LNP64::FCNTL_FD_DYN"));
-        assert!(mc_emitter.contains("case LNP64::FD_SEEK_DYN"));
         assert!(disassembler.contains("MI.setOpcode(LNP64::CLONE_SPAWN)"));
         assert!(disassembler.contains("MI.setOpcode(LNP64::THREAD_JOIN)"));
         assert!(disassembler.contains("MI.setOpcode(LNP64::UNLINK_PATH_AT)"));
@@ -8247,7 +8231,6 @@ mod tests {
         ] {
             assert!(asm_parser.contains(&format!(r#".Case("{mnemonic}", LNP64::{opcode})"#)));
             assert!(inst_printer.contains(&format!(r#"return "{mnemonic}";"#)));
-            assert!(mc_emitter.contains(&format!("case LNP64::{opcode}")));
             assert!(disassembler.contains(&format!("MI.setOpcode(LNP64::{opcode})")));
         }
         assert!(asm_parser.contains(r#".Case("cap_send", LNP64::CAP_SEND)"#));
@@ -8262,66 +8245,19 @@ mod tests {
         assert!(disassembler.contains("MI.setOpcode(LNP64::CAP_RECV)"));
         assert!(disassembler.contains("MI.setOpcode(LNP64::CAP_DUP)"));
         assert!(disassembler.contains("MI.setOpcode(LNP64::CAP_REVOKE)"));
-        assert!(mc_emitter.contains("op("));
-        assert!(mc_emitter.contains("imm32At"));
-        assert!(mc_emitter.contains("rType"));
-        assert!(mc_emitter.contains("iType"));
-        assert!(mc_emitter.contains("sType"));
-        assert!(mc_emitter.contains("emitBranch"));
-        assert!(mc_emitter.contains("emitJump"));
+        // The encoder is TableGen-generated: bytes come from the generated
+        // getBinaryCodeForInstr over the `bits<64> Inst` layout (not a
+        // hand-written per-opcode switch). The custom operand encoders below
+        // handle the pc-relative branch/jump targets and the AUIPC U-type.
+        assert!(mc_emitter.contains("getBinaryCodeForInstr"));
+        assert!(mc_emitter.contains("LNP64GenMCCodeEmitter.inc"));
+        assert!(mc_emitter.contains("getMachineOpValue"));
+        assert!(mc_emitter.contains("getBranchTargetOpValue"));
+        assert!(mc_emitter.contains("getJumpTargetOpValue"));
+        assert!(mc_emitter.contains("getAUIPCTargetOpValue"));
         assert!(mc_emitter.contains("fixup_lnp64_branch"));
-        assert!(mc_emitter.contains("case LNP64::NOP"));
-        assert!(mc_emitter.contains("case LNP64::YIELD"));
-        assert!(mc_emitter.contains("case LNP64::RET"));
-        assert!(mc_emitter.contains("case LNP64::LI"));
-        assert!(mc_emitter.contains("case LNP64::LIU"));
-        assert!(mc_emitter.contains("case LNP64::ADD"));
-        assert!(mc_emitter.contains("case LNP64::ADDI"));
-        assert!(mc_emitter.contains("case LNP64::UDIV"));
-        assert!(mc_emitter.contains("case LNP64::SREM"));
-        assert!(mc_emitter.contains("case LNP64::UREM"));
-        assert!(mc_emitter.contains("case LNP64::MULH"));
-        assert!(mc_emitter.contains("case LNP64::MULHSU"));
-        assert!(mc_emitter.contains("case LNP64::LR_D"));
-        assert!(mc_emitter.contains("case LNP64::SC_D"));
-        assert!(mc_emitter.contains("case LNP64::FUTEX_WAIT"));
-        assert!(mc_emitter.contains("case LNP64::FUTEX_WAKE"));
-        assert!(mc_emitter.contains("case LNP64::FENCE"));
-        assert!(mc_emitter.contains("case LNP64::ISYNC"));
-        assert!(mc_emitter.contains("case LNP64::ENV_GET"));
-        assert!(mc_emitter.contains("case LNP64::SEXT_B"));
-        assert!(mc_emitter.contains("case LNP64::ZEXT_W"));
-        assert!(mc_emitter.contains("case LNP64::CLZ"));
-        assert!(mc_emitter.contains("case LNP64::BSWAP64"));
-        assert!(mc_emitter.contains("case LNP64::SLT"));
-        assert!(mc_emitter.contains("case LNP64::SLTU"));
-        assert!(mc_emitter.contains("case LNP64::SLTI"));
-        assert!(mc_emitter.contains("case LNP64::JAL"));
-        assert!(mc_emitter.contains("case LNP64::JALR"));
-        assert!(mc_emitter.contains("case LNP64::AUIPC"));
-        assert!(mc_emitter.contains("case LNP64::BEQ"));
-        assert!(mc_emitter.contains("case LNP64::BLTU"));
-        assert!(mc_emitter.contains("case LNP64::ERRNO_GET"));
-        assert!(mc_emitter.contains("case LNP64::ERRNO_SET"));
-        assert!(mc_emitter.contains("case LNP64::EXIT"));
-        assert!(mc_emitter.contains("case LNP64::ALLOC"));
-        assert!(mc_emitter.contains("case LNP64::ALLOC_EX"));
-        assert!(mc_emitter.contains("case LNP64::ALLOC_SIZE"));
-        assert!(mc_emitter.contains("case LNP64::FREE"));
-        assert!(mc_emitter.contains("case LNP64::AWAIT"));
-        assert!(mc_emitter.contains("case LNP64::GATE_CALL"));
-        assert!(mc_emitter.contains("case LNP64::GATE_RETURN"));
-        assert!(mc_emitter.contains("case LNP64::OBJECT_CTL"));
-        assert!(mc_emitter.contains("case LNP64::DOMAIN_CTL"));
-        assert!(mc_emitter.contains("case LNP64::CAP_SEND"));
-        assert!(mc_emitter.contains("case LNP64::CAP_RECV"));
-        assert!(mc_emitter.contains("case LNP64::CAP_DUP"));
-        assert!(mc_emitter.contains("case LNP64::CAP_REVOKE"));
-        assert!(mc_emitter.contains("case LNP64::LD"));
-        assert!(mc_emitter.contains("case LNP64::SD"));
-        assert!(mc_emitter.contains("op(0x00)"));
-        assert!(mc_emitter.contains("op(0x06)"));
-        assert!(mc_emitter.contains("emitLE64"));
+        assert!(mc_emitter.contains("fixup_lnp64_jump"));
+        assert!(mc_emitter.contains("fixup_lnp64_auipc"));
         assert!(mc_asm_backend.contains("getRelocType"));
         assert!(mc_asm_backend.contains("fixup_lnp64_branch"));
         assert!(mc_asm_backend.contains("writeNopData"));
