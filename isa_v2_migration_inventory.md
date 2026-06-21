@@ -140,3 +140,38 @@ migration complete.
 - **Highest-risk-to-forget (compiles clean, breaks at link/run time):** MC
   fixup kinds (§2), lld relocations (§4), clang inline-asm register roles (§3),
   and the hand `.s` save-sets (§6).
+
+## Migration status (executed)
+
+The v1→v2 migration has been executed across every layer. Summary as committed:
+
+| Layer | State | Validation |
+| --- | --- | --- |
+| Canonical opcode contract (`isa_v2_opcodes.md`) | done | — |
+| LLVM backend (.td, ISel, MC, AsmParser, fixups) | done | docker MC gate green; sample encodings hand-verified |
+| Atomic LL/SC lowering (AtomicExpand + emit hooks) | done | i64 atomics lower to lr.d/sc.d, no Cannot-select |
+| Rust emulator + toolchain (reference oracle) | done | `cargo test` 471 pass / 2 pre-existing fail |
+| Conformance manifests + psABI + object_format | done | cargo conformance tests green |
+| RTL (decode, core, pkg, schema, programs) | done | verilator lint clean; RTL↔emulator cosim byte-exact; dead FLAGS/enum removed; LR/SC reservation added |
+| clang frontend + lld linker | done | frontend/linker objects compile; v2 reloc set |
+| Atomic + syscall intrinsics (`lnp64_intrinsics.h`) | done | amo.* → C11 atomic builtins (LL/SC) |
+| Hand-written asm (crt0, setjmp, 21 demos) | done | assemble + emulator rc=0 |
+| Codegen + MC smokes | done | csel/cset/compare reconciled to v2; runtime-verified |
+| Docs (`hardware_design.md`) | done | v1 encoding + F-format taxonomy purged |
+| Formal (Coq `CapSpec`/`CapImpl`, Koika) | n/a | abstract; no v1 ISA trace to remove |
+
+**Whole-repo v1 sweep is clean** — no `cmp/cmpu/cset/csel/amo.*/lock.cmpxchg/lr_get/lr_set/li32/la/BRANCH26/PCREL_HI20/FLAGS` tokens remain in any source layer outside the canonical opcode table (which intentionally records the removed set) and the design/migration docs (which discuss the v1→v2 transition).
+
+### Known residuals (not v2 regressions; verified pre-existing)
+- `emulator::tests::clone_profile_failures_do_not_allocate_contexts` and
+  `stale_dynamic_fd_waiter_reports_error_result` fail identically on the pre-v2
+  baseline — unrelated to the ISA change.
+- RTL program `top_futex_wake` SIGSEGVs in the emulator flat-exec path on the
+  original committed `.hex` too — a pre-existing flat-exec/clone-stack limitation.
+
+### Full sysroot gate (toolchain completeness)
+The full docker gate compiles the libc sysroot; closing the atomics regression
+unblocked it past the pthread/string libs. Remaining work is v2 toolchain
+completeness (adding the few bootstrap-form instructions — e.g. `mmap_bootstrap`
+opcode 0x60 — the libc needs but the backend had not yet exposed), tracked
+separately from the v1→v2 migration itself.
