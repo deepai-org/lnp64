@@ -69,7 +69,7 @@ run_crt0_smoke() {
   local dump="$smoke_dir/crt0-smoke.dump"
   "$llvm_objdump" -d --triple=lnp64-unknown-none "$crt0_obj" >"$dump"
   grep -q 'errno_set r0' "$dump"
-  grep -q 'exit r1' "$dump"
+  grep -q 'exit r2' "$dump"
   printf 'real LLVM bootstrap crt0 smoke passed: %s\n' "$crt0_obj"
 }
 

@@ -491,10 +491,10 @@ ASM
   minilibc_dump="$build_dir/liblnp64-min-smoke.dump"
   "$llvm_objdump" -d --triple=lnp64-unknown-none "$minilibc_obj" \
     >"$minilibc_dump"
-  grep -q 'pull r1, r1, r2, r3' "$minilibc_dump"
-  grep -q 'alloc r1, r1' "$minilibc_dump"
-  grep -q 'alloc_size r3, r2' "$minilibc_dump"
-  grep -q 'free r1' "$minilibc_dump"
+  grep -q 'pull r2, r2, r3, r4' "$minilibc_dump"
+  grep -q 'alloc r2, r2' "$minilibc_dump"
+  grep -q 'alloc_size r4, r3' "$minilibc_dump"
+  grep -q 'free r2' "$minilibc_dump"
   printf 'real LLVM LNP64 llvm-objdump minilibc native decode smoke passed: %s\n' \
     "$minilibc_dump"
 
@@ -527,7 +527,7 @@ ASM
   crt0_dump="$build_dir/crt0-smoke.dump"
   "$llvm_objdump" -d --triple=lnp64-unknown-none "$crt0_obj" >"$crt0_dump"
   grep -q 'errno_set r0' "$crt0_dump"
-  grep -q 'exit r1' "$crt0_dump"
+  grep -q 'exit r2' "$crt0_dump"
   printf 'real LLVM LNP64 llvm-objdump crt0 decode smoke passed: %s\n' \
     "$crt0_dump"
   exit 0
@@ -4967,10 +4967,10 @@ printf 'real LLVM LNP64 llvm-mc signal alias opcode smoke passed: %s\n' \
 minilibc_dump="$build_dir/liblnp64-min-smoke.dump"
 "$llvm_objdump" -d --triple=lnp64-unknown-none "$minilibc_obj" \
   >"$minilibc_dump"
-grep -q 'pull r1, r1, r2, r3' "$minilibc_dump"
-grep -q 'alloc r1, r1' "$minilibc_dump"
-grep -q 'alloc_size r3, r2' "$minilibc_dump"
-grep -q 'free r1' "$minilibc_dump"
+grep -q 'pull r2, r2, r3, r4' "$minilibc_dump"
+grep -q 'alloc r2, r2' "$minilibc_dump"
+grep -q 'alloc_size r4, r3' "$minilibc_dump"
+grep -q 'free r2' "$minilibc_dump"
 printf 'real LLVM LNP64 llvm-objdump minilibc native decode smoke passed: %s\n' \
   "$minilibc_dump"
 
@@ -5017,7 +5017,7 @@ printf 'real LLVM LNP64 native heap opcode smoke passed: %s\n' "$heap_obj"
 crt0_dump="$build_dir/crt0-smoke.dump"
 "$llvm_objdump" -d --triple=lnp64-unknown-none "$crt0_smoke_obj" >"$crt0_dump"
 grep -q 'errno_set r0' "$crt0_dump"
-grep -q 'exit r1' "$crt0_dump"
+grep -q 'exit r2' "$crt0_dump"
 printf 'real LLVM LNP64 llvm-objdump crt0 decode smoke passed: %s\n' \
   "$crt0_dump"
 

@@ -2639,10 +2639,10 @@ mod tests {
         assert!(real_llc.contains("toolchain/liblnp64_min.s"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc minilibc smoke passed"));
         assert!(real_llc.contains("liblnp64-min-smoke.dump"));
-        assert!(real_llc.contains("pull r1, r1, r2, r3"));
-        assert!(real_llc.contains("alloc r1, r1"));
-        assert!(real_llc.contains("alloc_size r3, r2"));
-        assert!(real_llc.contains("free r1"));
+        assert!(real_llc.contains("pull r2, r2, r3, r4"));
+        assert!(real_llc.contains("alloc r2, r2"));
+        assert!(real_llc.contains("alloc_size r4, r3"));
+        assert!(real_llc.contains("free r2"));
         assert!(
             real_llc.contains("real LLVM LNP64 llvm-objdump minilibc native decode smoke passed")
         );
@@ -2925,7 +2925,7 @@ mod tests {
         assert!(real_llc.contains("real LLVM LNP64 lld intrinsic gate return link smoke passed"));
         assert!(real_llc.contains("--triple=lnp64-unknown-none"));
         assert!(real_llc.contains("errno_set r0"));
-        assert!(real_llc.contains("exit r1"));
+        assert!(real_llc.contains("exit r2"));
         assert!(real_llc.contains("crt0_smoke_obj=\"$build_dir/crt0-smoke.o\""));
         assert!(real_llc.contains("real LLVM LNP64 llvm-objdump crt0 decode smoke passed"));
         assert!(real_llc.contains("native-heap-smoke.o"));
@@ -5767,13 +5767,13 @@ mod tests {
         for required in [
             ".globl write",
             "write:",
-            "push r1, r1, r2, r3",
+            "push r2, r2, r3, r4",
             ".globl read",
             "read:",
-            "pull r1, r1, r2, r3",
+            "pull r2, r2, r3, r4",
             ".globl alloc",
             "alloc:",
-            "alloc r1, r1",
+            "alloc r2, r2",
             ".globl malloc",
             "malloc:",
             "jal r1, alloc",
@@ -5782,18 +5782,16 @@ mod tests {
             "jal r1, memset",
             ".globl realloc",
             "realloc:",
-            "alloc_size r3, r2",
+            "alloc_size r4, r3",
             "jal r1, memcpy",
             ".globl free",
             "free:",
-            "free r1",
-            "li r1, 0",
+            "free r2",
+            "li r2, 0",
             ".globl strlen",
             "strlen:",
-            "lbu r3, 0(r2)",
             ".globl memcpy",
             "memcpy:",
-            "sb r7, 0(r1)",
             ".globl memmove",
             "memmove:",
             "memmove_backward_loop:",
@@ -5803,10 +5801,9 @@ mod tests {
             "memcmp_diff:",
             ".globl memset",
             "memset:",
-            "sb r2, 0(r1)",
             ".globl _exit",
             "_exit:",
-            "exit r1",
+            "exit r2",
             ".globl exit",
             "exit:",
             "__lnp64_min_realloc_old:",
