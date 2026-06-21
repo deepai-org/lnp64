@@ -103,7 +103,7 @@ public:
     case 0x01:
       Instr.setOpcode(LNP64::LI);
       addReg(Instr, A);
-      addImm(Instr, SignExtend64<14>(Word & 0x3fff));
+      addImm(Instr, SignExtend64<16>(Word & 0xffff));
       return MCDisassembler::Success;
     case 0x02:
       Instr.setOpcode(LNP64::MOV);

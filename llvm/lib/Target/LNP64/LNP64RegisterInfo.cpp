@@ -54,19 +54,21 @@ void LNP64RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
       MI.getOperand(FIOperandNum + 1).isImm())
     Offset += MI.getOperand(FIOperandNum + 1).getImm();
 
-  if (MI.getOpcode() == LNP64::PseudoFRAMEADDR) {
-    if (!isInt<16>(Offset))
-      llvm_unreachable(
-          "LNP64 frame address offset exceeds signed-16 LI range");
+  const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
+  MachineBasicBlock &MBB = *MI.getParent();
+  DebugLoc DL = MI.getDebugLoc();
 
-    const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
-    MachineBasicBlock &MBB = *MI.getParent();
-    DebugLoc DL = MI.getDebugLoc();
+  if (MI.getOpcode() == LNP64::PseudoFRAMEADDR) {
     Register Dst = MI.getOperand(0).getReg();
     if (Offset == 0) {
       BuildMI(MBB, MI, DL, TII.get(LNP64::MOV), Dst).addReg(LNP64::R31);
-    } else {
+    } else if (isInt<16>(Offset)) {
       BuildMI(MBB, MI, DL, TII.get(LNP64::LI), LNP64::R30).addImm(Offset);
+      BuildMI(MBB, MI, DL, TII.get(LNP64::ADD), Dst)
+          .addReg(LNP64::R31)
+          .addReg(LNP64::R30);
+    } else {
+      BuildMI(MBB, MI, DL, TII.get(LNP64::LI32), LNP64::R30).addImm(Offset);
       BuildMI(MBB, MI, DL, TII.get(LNP64::ADD), Dst)
           .addReg(LNP64::R31)
           .addReg(LNP64::R30);
@@ -75,8 +77,25 @@ void LNP64RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
     return;
   }
 
-  if (!isInt<14>(Offset))
-    llvm_unreachable("LNP64 frame index offset exceeds signed-14 memory field");
+  // ST/LD instructions use a 14-bit signed offset field.  When the frame
+  // index resolves to an offset outside [-8192, 8191], we cannot encode it
+  // directly.  Materialise the full address in R30 (the reserved scratch
+  // register) and use R30+0 as the effective address instead.
+  if (!isInt<14>(Offset)) {
+    if (isInt<16>(Offset)) {
+      BuildMI(MBB, II, DL, TII.get(LNP64::LI), LNP64::R30).addImm(Offset);
+    } else {
+      BuildMI(MBB, II, DL, TII.get(LNP64::LI32), LNP64::R30).addImm(Offset);
+    }
+    BuildMI(MBB, II, DL, TII.get(LNP64::ADD), LNP64::R30)
+        .addReg(LNP64::R30)
+        .addReg(LNP64::R31);
+    MI.getOperand(FIOperandNum).ChangeToRegister(LNP64::R30, false);
+    if (FIOperandNum + 1 < MI.getNumOperands() &&
+        MI.getOperand(FIOperandNum + 1).isImm())
+      MI.getOperand(FIOperandNum + 1).ChangeToImmediate(0);
+    return;
+  }
 
   MI.getOperand(FIOperandNum).ChangeToRegister(LNP64::R31, false);
   if (FIOperandNum + 1 < MI.getNumOperands() &&
