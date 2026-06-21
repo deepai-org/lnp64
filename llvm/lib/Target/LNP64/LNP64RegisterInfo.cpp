@@ -23,8 +23,13 @@ LNP64RegisterInfo::LNP64RegisterInfo() : LNP64GenRegisterInfo(LNP64::R1) {}
 BitVector LNP64RegisterInfo::getReservedRegs(const MachineFunction &) const {
   BitVector Reserved(getNumRegs());
   Reserved.set(LNP64::R0);  // hardwired zero
+  Reserved.set(LNP64::R1);  // ra -- dedicated return-address link register
   Reserved.set(LNP64::R31); // stack pointer
-  // r30 is reclaimed in v2 (general allocatable). r1 (ra) stays allocatable.
+  // r1 is a dedicated link register, NOT a general allocatable temp: it holds
+  // the return address live-in (placed by the caller's jal) and is read by
+  // `ret` (= jalr r0, r1, 0). If it were allocatable, the register allocator
+  // would reuse it as a scratch in leaf functions (which do not save it) and
+  // clobber the return address before `ret`. r30 is reclaimed (allocatable).
   return Reserved;
 }
 
