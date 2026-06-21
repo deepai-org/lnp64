@@ -47,6 +47,18 @@ several decisions above and adds its own:
 | E4 | **No instruction duality / special cases** (D1 bootstrap forms) — fewer opcodes the backend must special-case = cleaner tables. | see D1 |
 | E5 | Standard frame lowering — once E1 lands, the manual `r1` prologue spill folds into the generic callee-saved-spill path; delete the bespoke code. | **pending (after E1)** |
 
+## E (cont.) — further LLVM-cleanliness levers (from a grounded backend review)
+
+| # | Change | Why / status |
+| --- | --- | --- |
+| E6 | **Uniform `SchedMachineModel` (1-cycle, in-order).** None exists today. A trivial uniform model both *is* clean and **encodes the B3 uniform-timing decision into the backend** (every instruction = 1 cycle). The scheduler stops guessing. | **pending — high value, aligns with B3** |
+| E7 | **`isReMaterializable` + `isAsCheapAsAMove` on `LI`/`MOV`/`AUIPC`.** None set today, so the allocator *spills* constants instead of rematerializing them. Standard clean-backend hygiene + better codegen. | **pending** |
+| E8 | **Reclaim `r30` via the RegisterScavenger.** `r30` is reserved purely as a hard-coded scratch for SP-adjust / frame-index materialization (4 sites). Same waste as the old `r1` issue — a clean backend scavenges instead of reserving a GPR. Frees a register. | **pending** |
+| E9 | **Cut `setOperationAction(..., Custom)` (9 today).** `BRCOND` and `SELECT` are custom C++ lowering that can become tablegen patterns now that compares/branches are reg-based; audit the rest (GlobalAddress/VASTART/stackalloc are legitimately custom). Fewer Customs = less C++. | **pending (audit)** |
+| E10 | **Drop the `LNP64ISD::BR_*` custom branch nodes** in favor of `br_cc`/`brcond` pattern selection where feasible — deletes ~10 custom SDNodes + their lowering. | **pending (audit; overlaps E3/E9)** |
+| E11 | **Correct `mayLoad`/`mayStore`/`hasSideEffects` on the native/syscall/FDR instructions.** TableGen can't infer these for pattern-less instructions; getting them right is correctness *and* required before a `SchedMachineModel` (E6) is meaningful. | **pending (audit)** |
+| — | Calling convention already `CCState`/TableGen-driven (`CC_LNP64`) | **already clean** |
+
 ## D. Smaller warts
 
 | # | Item | Status |
