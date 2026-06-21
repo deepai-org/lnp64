@@ -20,6 +20,8 @@ engines=(
 shell_proofs=(
   "fail_closed lnp64_fail_closed_engine"
   "watchdog lnp64_watchdog"
+  "policy_engine lnp64_policy_engine"
+  "completion_router lnp64_completion_router"
 )
 
 for engine in "${engines[@]}"; do
