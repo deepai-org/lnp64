@@ -182,10 +182,11 @@ static inline void __lnp_yield(void) {
 }
 
 /* Sleep for exactly 1 tick (~10ms in emulator).
- * Encoded as Sleep(r0) = opcode 0x07, reg 0 = 32-bit word 0x07000000 (LE).
- * r0 is always 0; emulator applies .max(1), so this always sleeps 1 tick. */
+ * Encoded as Sleep(r0) = opcode 0x07 in the top byte of the 64-bit word
+ * (0x0700000000000000 LE). r0 is always 0; the emulator applies .max(1),
+ * so this always sleeps 1 tick. */
 static inline void __lnp_sleep_1tick(void) {
-  __asm__ volatile(".long 0x07000000" : : : "memory");
+  __asm__ volatile(".quad 0x0700000000000000" : : : "memory");
 }
 
 static inline lnp64_word_t __lnp_cap_dup(lnp64_cap_t source_cap,
@@ -319,9 +320,12 @@ static inline void __lnp_exit(lnp64_word_t status) {
 
 static inline lnp64_word_t __lnp_amo_swap(volatile lnp64_word_t *addr,
                                           lnp64_word_t value) {
-  lnp64_word_t old;
-  __asm__ volatile("amo.swap %0, %1, %2"
-                   : "=r"(old)
+  lnp64_word_t old, status;
+  __asm__ volatile("1:\n\t"
+                   "lr.d %0, (%2)\n\t"
+                   "sc.d %1, %3, (%2)\n\t"
+                   "bne %1, r0, 1b"
+                   : "=&r"(old), "=&r"(status)
                    : "r"((lnp64_word_t)addr), "r"(value)
                    : "memory");
   return old;
@@ -329,9 +333,13 @@ static inline lnp64_word_t __lnp_amo_swap(volatile lnp64_word_t *addr,
 
 static inline lnp64_word_t __lnp_amo_add(volatile lnp64_word_t *addr,
                                          lnp64_word_t value) {
-  lnp64_word_t old;
-  __asm__ volatile("amo.add %0, %1, %2"
-                   : "=r"(old)
+  lnp64_word_t old, newval, status;
+  __asm__ volatile("1:\n\t"
+                   "lr.d %0, (%3)\n\t"
+                   "add %1, %0, %4\n\t"
+                   "sc.d %2, %1, (%3)\n\t"
+                   "bne %2, r0, 1b"
+                   : "=&r"(old), "=&r"(newval), "=&r"(status)
                    : "r"((lnp64_word_t)addr), "r"(value)
                    : "memory");
   return old;
@@ -339,19 +347,27 @@ static inline lnp64_word_t __lnp_amo_add(volatile lnp64_word_t *addr,
 
 static inline lnp64_word_t __lnp_amo_and(volatile lnp64_word_t *addr,
                                          lnp64_word_t value) {
-  lnp64_word_t old;
-  __asm__ volatile("amo.and %0, %1, %2"
-                   : "=r"(old)
+  lnp64_word_t old, newval, status;
+  __asm__ volatile("1:\n\t"
+                   "lr.d %0, (%3)\n\t"
+                   "and %1, %0, %4\n\t"
+                   "sc.d %2, %1, (%3)\n\t"
+                   "bne %2, r0, 1b"
+                   : "=&r"(old), "=&r"(newval), "=&r"(status)
                    : "r"((lnp64_word_t)addr), "r"(value)
                    : "memory");
   return old;
 }
 
 static inline lnp64_word_t __lnp_amo_or(volatile lnp64_word_t *addr,
-                                        lnp64_word_t value) {
-  lnp64_word_t old;
-  __asm__ volatile("amo.or %0, %1, %2"
-                   : "=r"(old)
+                                         lnp64_word_t value) {
+  lnp64_word_t old, newval, status;
+  __asm__ volatile("1:\n\t"
+                   "lr.d %0, (%3)\n\t"
+                   "or %1, %0, %4\n\t"
+                   "sc.d %2, %1, (%3)\n\t"
+                   "bne %2, r0, 1b"
+                   : "=&r"(old), "=&r"(newval), "=&r"(status)
                    : "r"((lnp64_word_t)addr), "r"(value)
                    : "memory");
   return old;
@@ -359,9 +375,13 @@ static inline lnp64_word_t __lnp_amo_or(volatile lnp64_word_t *addr,
 
 static inline lnp64_word_t __lnp_amo_xor(volatile lnp64_word_t *addr,
                                          lnp64_word_t value) {
-  lnp64_word_t old;
-  __asm__ volatile("amo.xor %0, %1, %2"
-                   : "=r"(old)
+  lnp64_word_t old, newval, status;
+  __asm__ volatile("1:\n\t"
+                   "lr.d %0, (%3)\n\t"
+                   "xor %1, %0, %4\n\t"
+                   "sc.d %2, %1, (%3)\n\t"
+                   "bne %2, r0, 1b"
+                   : "=&r"(old), "=&r"(newval), "=&r"(status)
                    : "r"((lnp64_word_t)addr), "r"(value)
                    : "memory");
   return old;

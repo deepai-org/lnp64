@@ -33,10 +33,10 @@ __lnp_mmap_bootstrap|MMAP|addr_or_errno|addr_hint,len,prot
 __lnp_munmap_bootstrap|MUNMAP|status_or_errno|addr
 __lnp_mprotect_bootstrap|MPROTECT|status_or_errno|addr,len,prot
 __lnp_exit|EXIT|noreturn|status
-__lnp_amo_swap|AMO.SWAP|old_value|addr,value
-__lnp_amo_add|AMO.ADD|old_value|addr,value
-__lnp_amo_and|AMO.AND|old_value|addr,value
-__lnp_amo_or|AMO.OR|old_value|addr,value
-__lnp_amo_xor|AMO.XOR|old_value|addr,value
+__lnp_amo_swap|LR.D|old_value|addr,value
+__lnp_amo_add|LR.D|old_value|addr,value
+__lnp_amo_and|LR.D|old_value|addr,value
+__lnp_amo_or|LR.D|old_value|addr,value
+__lnp_amo_xor|LR.D|old_value|addr,value
 __lnp_futex_wait|FUTEX_WAIT|status_or_errno|addr,expected
 __lnp_futex_wake|FUTEX_WAKE|woken_or_errno|addr,count

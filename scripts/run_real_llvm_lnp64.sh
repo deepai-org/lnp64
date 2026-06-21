@@ -2572,7 +2572,7 @@ test -s "$wide_const_obj"
 wide_const_dump="$build_dir/wide-const-clang-smoke.dump"
 "$llvm_objdump" -d --triple=lnp64-unknown-none "$wide_const_obj" \
   >"$wide_const_dump"
-grep -q 'li32 r' "$wide_const_dump"
+grep -q 'liu r' "$wide_const_dump"
 printf 'real LLVM LNP64 clang wide-constant object smoke passed: %s\n' \
   "$wide_const_obj"
 
@@ -4620,7 +4620,7 @@ test -s "$large_frame_obj"
 large_frame_dump="$build_dir/large-frame-clang-smoke.dump"
 "$llvm_objdump" -d --triple=lnp64-unknown-none "$large_frame_obj" \
   >"$large_frame_dump"
-grep -q 'li32 r30' "$large_frame_dump"
+grep -q 'li r30' "$large_frame_dump"
 grep -q 'sub r31, r31, r30' "$large_frame_dump"
 grep -q 'add r31, r31, r30' "$large_frame_dump"
 printf 'real LLVM LNP64 clang large-frame object smoke passed: %s\n' \

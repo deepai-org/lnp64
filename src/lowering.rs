@@ -2620,7 +2620,7 @@ mod tests {
         assert!(real_llc.contains("stack-args-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang stack-argument object smoke passed"));
         assert!(real_llc.contains("large-frame-clang-smoke.o"));
-        assert!(real_llc.contains("grep -q 'li32 r30'"));
+        assert!(real_llc.contains("grep -q 'li r30'"));
         assert!(real_llc.contains("grep -q 'sub r31, r31, r30'"));
         assert!(real_llc.contains("grep -q 'add r31, r31, r30'"));
         assert!(real_llc.contains("real LLVM LNP64 clang large-frame object smoke passed"));
