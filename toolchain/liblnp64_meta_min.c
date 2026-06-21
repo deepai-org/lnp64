@@ -46,7 +46,7 @@ static int lnp64_stat_path_at(int dirfd, const char *path, struct stat *st,
                               int flags) {
   unsigned long status;
   unsigned long native_flags = lnp64_at_flags(flags);
-  __asm__ volatile("stat_path_at %1, %2, %3, %4\n\tmov %0, r1"
+  __asm__ volatile("stat_path_at %1, %2, %3, %4\n\tmov %0, r2"
                    : "=r"(status)
                    : "r"(st), "r"((long)dirfd), "r"(path), "r"(native_flags)
                    : "memory");
@@ -83,7 +83,7 @@ int lstat(const char *path, struct stat *st) {
 
 int fstat(int fd, struct stat *st) {
   unsigned long status;
-  __asm__ volatile("stat_fd_dyn %1, %2\n\tmov %0, r1"
+  __asm__ volatile("stat_fd_dyn %1, %2\n\tmov %0, r2"
                    : "=r"(status)
                    : "r"(st), "r"((long)fd)
                    : "memory");
@@ -94,7 +94,7 @@ int utimensat(int dirfd, const char *path, const struct timespec times[2],
               int flags) {
   unsigned long status;
   unsigned long native_flags = lnp64_at_flags(flags);
-  __asm__ volatile("utime_path_at %1, %2, %3, %4\n\tmov %0, r1"
+  __asm__ volatile("utime_path_at %1, %2, %3, %4\n\tmov %0, r2"
                    : "=r"(status)
                    : "r"((long)dirfd), "r"(path), "r"(times),
                      "r"(native_flags)
@@ -104,7 +104,7 @@ int utimensat(int dirfd, const char *path, const struct timespec times[2],
 
 int futimens(int fd, const struct timespec times[2]) {
   unsigned long status;
-  __asm__ volatile("utime_fd_dyn %1, %2\n\tmov %0, r1"
+  __asm__ volatile("utime_fd_dyn %1, %2\n\tmov %0, r2"
                    : "=r"(status)
                    : "r"((long)fd), "r"(times)
                    : "memory");
@@ -113,7 +113,7 @@ int futimens(int fd, const struct timespec times[2]) {
 
 int chdir(const char *path) {
   unsigned long status;
-  __asm__ volatile("chdir_path %1\n\tmov %0, r1"
+  __asm__ volatile("chdir_path %1\n\tmov %0, r2"
                    : "=r"(status)
                    : "r"(path)
                    : "memory");
@@ -126,7 +126,7 @@ char *getcwd(char *buf, size_t size) {
     lnp64_errno_store(EINVAL);
     return 0;
   }
-  __asm__ volatile("getcwd_path %1, %2\n\tmov %0, r1"
+  __asm__ volatile("getcwd_path %1, %2\n\tmov %0, r2"
                    : "=r"(status)
                    : "r"(buf), "r"((long)size)
                    : "memory");
@@ -172,7 +172,7 @@ struct dirent *readdir(DIR *dirp) {
 
 int mkdirat(int dirfd, const char *path, mode_t mode) {
   unsigned long status;
-  __asm__ volatile("mkdir_path_at %1, %2, %3\n\tmov %0, r1"
+  __asm__ volatile("mkdir_path_at %1, %2, %3\n\tmov %0, r2"
                    : "=r"(status)
                    : "r"((long)dirfd), "r"(path), "r"((long)mode)
                    : "memory");
@@ -200,7 +200,7 @@ mode_t umask(mode_t mask) {
 int renameat(int olddirfd, const char *oldpath, int newdirfd,
              const char *newpath) {
   unsigned long status;
-  __asm__ volatile("rename_path_at %1, %2, %3, %4\n\tmov %0, r1"
+  __asm__ volatile("rename_path_at %1, %2, %3, %4\n\tmov %0, r2"
                    : "=r"(status)
                    : "r"((long)olddirfd), "r"(oldpath), "r"((long)newdirfd),
                      "r"(newpath)
@@ -215,7 +215,7 @@ int rename(const char *oldpath, const char *newpath) {
 int linkat(int olddirfd, const char *oldpath, int newdirfd,
            const char *newpath, int flags) {
   unsigned long status;
-  __asm__ volatile("link_path_at %1, %2, %3, %4, %5\n\tmov %0, r1"
+  __asm__ volatile("link_path_at %1, %2, %3, %4, %5\n\tmov %0, r2"
                    : "=r"(status)
                    : "r"((long)olddirfd), "r"(oldpath), "r"((long)newdirfd),
                      "r"(newpath), "r"((long)flags)
@@ -225,7 +225,7 @@ int linkat(int olddirfd, const char *oldpath, int newdirfd,
 
 int symlinkat(const char *target, int newdirfd, const char *linkpath) {
   unsigned long status;
-  __asm__ volatile("symlink_path_at %1, %2, %3\n\tmov %0, r1"
+  __asm__ volatile("symlink_path_at %1, %2, %3\n\tmov %0, r2"
                    : "=r"(status)
                    : "r"(target), "r"((long)newdirfd), "r"(linkpath)
                    : "memory");
@@ -238,7 +238,7 @@ int symlink(const char *target, const char *linkpath) {
 
 ssize_t readlinkat(int dirfd, const char *path, char *buf, size_t bufsiz) {
   unsigned long status;
-  __asm__ volatile("readlink_path_at %1, %2, %3, %4\n\tmov %0, r1"
+  __asm__ volatile("readlink_path_at %1, %2, %3, %4\n\tmov %0, r2"
                    : "=r"(status)
                    : "r"((long)dirfd), "r"(path), "r"(buf), "r"((long)bufsiz)
                    : "memory");
@@ -251,7 +251,7 @@ ssize_t readlink(const char *path, char *buf, size_t bufsiz) {
 
 int fchmodat(int dirfd, const char *path, mode_t mode, int flags) {
   unsigned long status;
-  __asm__ volatile("chmod_path_at %1, %2, %3, %4\n\tmov %0, r1"
+  __asm__ volatile("chmod_path_at %1, %2, %3, %4\n\tmov %0, r2"
                    : "=r"(status)
                    : "r"((long)dirfd), "r"(path), "r"((long)mode),
                      "r"(lnp64_at_flags(flags))
@@ -267,7 +267,7 @@ int fchownat(int dirfd, const char *path, uid_t owner, gid_t group, int flags) {
   unsigned long status;
   long native_owner = owner == (uid_t)-1 ? -1L : (long)owner;
   long native_group = group == (gid_t)-1 ? -1L : (long)group;
-  __asm__ volatile("chown_path_at %1, %2, %3, %4, %5\n\tmov %0, r1"
+  __asm__ volatile("chown_path_at %1, %2, %3, %4, %5\n\tmov %0, r2"
                    : "=r"(status)
                    : "r"((long)dirfd), "r"(path), "r"(native_owner),
                      "r"(native_group), "r"(lnp64_at_flags(flags))
@@ -300,7 +300,7 @@ int fcntl(int fd, int cmd, ...) {
     arg = (unsigned long)va_arg(ap, struct flock *);
     va_end(ap);
   }
-  __asm__ volatile("fcntl_fd_dyn %1, %2, %3\n\tmov %0, r1"
+  __asm__ volatile("fcntl_fd_dyn %1, %2, %3\n\tmov %0, r2"
                    : "=r"(status)
                    : "r"((long)fd), "r"((long)cmd), "r"(arg)
                    : "memory");

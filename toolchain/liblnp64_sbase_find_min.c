@@ -133,7 +133,7 @@ void clearerr(FILE *stream) { (void)stream; }
 struct dirent *readdir(DIR *dirp) {
   unsigned long status;
   memset(&lnp64_find_dirent, 0, sizeof(lnp64_find_dirent));
-  __asm__ volatile("readdir_fd_dyn %1, %2\n\tmov %0, r1"
+  __asm__ volatile("readdir_fd_dyn %1, %2\n\tmov %0, r2"
                    : "=r"(status)
                    : "r"((long)dirp), "r"(lnp64_find_dirent.d_name)
                    : "memory");

@@ -744,7 +744,7 @@ size_t estrlcat(char *dst, const char *src, size_t size) {
 struct dirent *readdir(DIR *dirp) {
   unsigned long status;
   memset(&lnp64_head_dirent, 0, sizeof(lnp64_head_dirent));
-  __asm__ volatile("readdir_fd_dyn %1, %2\n\tmov %0, r1"
+  __asm__ volatile("readdir_fd_dyn %1, %2\n\tmov %0, r2"
                    : "=r"(status)
                    : "r"((long)dirp), "r"(lnp64_head_dirent.d_name)
                    : "memory");

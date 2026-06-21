@@ -18,4 +18,5 @@ _start:
   add r3, r3, r8
   errno_set r0
   jal r1, main
-  exit r1
+  # v2 ABI: main returns its value in r2 (the return-value register); r1 is ra.
+  exit r2

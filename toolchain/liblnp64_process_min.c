@@ -91,7 +91,7 @@ static lnp64_word_t lnp64_wait_pid_compat(lnp64_word_t pid,
                                           lnp64_word_t *status_out) {
   lnp64_word_t status;
   lnp64_word_t op_status;
-  __asm__ volatile("wait_pid %0, %2\n\tmov %1, r1"
+  __asm__ volatile("wait_pid %0, %2\n\tmov %1, r2"
                    : "=r"(status), "=r"(op_status)
                    : "r"(pid)
                    : "memory");

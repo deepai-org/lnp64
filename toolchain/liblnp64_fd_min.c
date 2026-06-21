@@ -58,7 +58,7 @@ ssize_t write(int fd, const void *buf, size_t len) {
 
 off_t lseek(int fd, off_t offset, int whence) {
   unsigned long result;
-  __asm__ volatile("fd_seek_dyn %1, %2, %3\n\tmov %0, r1"
+  __asm__ volatile("fd_seek_dyn %1, %2, %3\n\tmov %0, r2"
                    : "=r"(result)
                    : "r"((long)fd), "r"(offset), "r"((long)whence)
                    : "memory");
@@ -67,7 +67,7 @@ off_t lseek(int fd, off_t offset, int whence) {
 
 int unlinkat(int dirfd, const char *path, int flags) {
   unsigned long result;
-  __asm__ volatile("unlink_path_at %1, %2, %3\n\tmov %0, r1"
+  __asm__ volatile("unlink_path_at %1, %2, %3\n\tmov %0, r2"
                    : "=r"(result)
                    : "r"((long)dirfd), "r"(path), "r"((long)flags)
                    : "memory");

@@ -5647,7 +5647,7 @@ mod tests {
             "add r3, r3, r8",
             "errno_set r0",
             "jal r1, main",
-            "exit r1",
+            "exit r2",
         ] {
             assert!(crt0.contains(required), "crt0 missing {required}");
         }

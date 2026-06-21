@@ -1238,7 +1238,9 @@ fn checked_host_usize(value: u64, name: &str) -> Result<usize, String> {
 fn committed_exec_result_reg(raw_word: u64) -> Option<usize> {
     let opcode = (raw_word >> 56) as u8;
     match opcode {
-        0x2d | 0x57 | 0x5c..=0x5f | 0x67 | 0x69 | 0x6b | 0x6c => Some(1),
+        // v2 ABI: these implicit-result syscalls/native ops return in r2 (the
+        // return-value register); r1 is the return-address (link) register.
+        0x2d | 0x57 | 0x5c..=0x5f | 0x67 | 0x69 | 0x6b | 0x6c => Some(2),
         0x00
         | 0x20..=0x26 // jmp + reg-compare branches (no rd)
         | 0x33..=0x35
@@ -2756,8 +2758,7 @@ impl Machine {
                 self.require_domain_cap(DOMAIN_CAP_IO)?;
                 let addr = self.read_reg(buf)?;
                 let len = self.read_reg(len)? as usize;
-                self.write_fd_index(fd.0, addr, len)?;
-                self.write_reg(result, self.read_reg(Reg(1))?)?;
+                self.write_fd_index_to(result, fd.0, addr, len)?;
             }
             Instr::PushDyn(result, fd_reg, buf, len) => {
                 Self::ensure_result_reg_writable(result)?;
@@ -2772,8 +2773,7 @@ impl Machine {
                 };
                 let addr = self.read_reg(buf)?;
                 let len = self.read_reg(len)? as usize;
-                self.write_fd_index(fd, addr, len)?;
-                self.write_reg(result, self.read_reg(Reg(1))?)?;
+                self.write_fd_index_to(result, fd, addr, len)?;
             }
             Instr::Await(result, fd, mask) => {
                 Self::ensure_result_reg_writable(result)?;
@@ -2913,7 +2913,6 @@ impl Machine {
                             let token = self.fd_token(fd)?;
                             self.set_errno(0)?;
                             self.write_reg(dst_reg, token)?;
-                            self.write_reg(Reg(1), token)?;
                         }
                         None => self.write_reg(dst_reg, -1i64 as u64)?,
                     },
@@ -2943,7 +2942,6 @@ impl Machine {
                             let token = self.fd_token(fd)?;
                             self.set_errno(0)?;
                             self.write_reg(dst_reg, token)?;
-                            self.write_reg(Reg(1), token)?;
                         }
                         None => self.write_reg(dst_reg, -1i64 as u64)?,
                     },
@@ -2991,7 +2989,6 @@ impl Machine {
                             let token = self.fd_token(fd)?;
                             self.set_errno(0)?;
                             self.write_reg(dst_reg, token)?;
-                            self.write_reg(Reg(1), token)?;
                         }
                         None => self.write_reg(dst_reg, -1i64 as u64)?,
                     },
@@ -4495,11 +4492,13 @@ impl Machine {
     }
 
     fn complete_ok(&mut self, value: u64) -> Result<(), String> {
-        self.complete_reg_ok(Reg(1), value)
+        // v2 ABI: the default syscall/native return-value register is r2.
+        // r1 is the return-address (link) register and must not be clobbered.
+        self.complete_reg_ok(Reg(2), value)
     }
 
     fn complete_err(&mut self, errno: u64) -> Result<(), String> {
-        self.complete_reg_err(Reg(1), errno)
+        self.complete_reg_err(Reg(2), errno)
     }
 
     fn complete_reg_ok(&mut self, result: Reg, value: u64) -> Result<(), String> {
@@ -4535,6 +4534,10 @@ impl Machine {
 
     fn set_status_io_error(&mut self, err: io::Error) -> Result<(), String> {
         self.set_status_errno(Self::errno_from_io(&err))
+    }
+
+    fn set_status_io_error_reg(&mut self, result: Reg, err: io::Error) -> Result<(), String> {
+        self.complete_reg_err(result, Self::errno_from_io(&err))
     }
 
     fn resolve_process_path_or_errno(&mut self, path: &str) -> Result<Option<String>, String> {
@@ -5506,6 +5509,17 @@ impl Machine {
     }
 
     fn write_fd_index(&mut self, fd: usize, addr: u64, len: usize) -> Result<(), String> {
+        // v2 ABI default: results land in r2 (the return-value register).
+        self.write_fd_index_to(Reg(2), fd, addr, len)
+    }
+
+    fn write_fd_index_to(
+        &mut self,
+        result_reg: Reg,
+        fd: usize,
+        addr: u64,
+        len: usize,
+    ) -> Result<(), String> {
         if self.ensure_fd_right(fd, CAP_RIGHT_WRITE).is_err() {
             return Ok(());
         }
@@ -5514,7 +5528,7 @@ impl Machine {
             self.process()?.fds.get(fd),
             Some(FdHandle::MemoryObject { .. })
         ) {
-            return self.write_memory_object_fd_index(fd, &data);
+            return self.write_memory_object_fd_index_to(result_reg, fd, &data);
         }
         let mut wake_fd_waiters = false;
         let result = match &mut self.process_mut()?.fds[fd] {
@@ -5605,17 +5619,22 @@ impl Machine {
         };
         match result {
             Ok(()) => {
-                self.complete_ok(data.len() as u64)?;
+                self.complete_reg_ok(result_reg, data.len() as u64)?;
                 if wake_fd_waiters {
                     self.poll_fd_waiters();
                 }
             }
-            Err(err) => self.set_status_io_error(err)?,
+            Err(err) => self.set_status_io_error_reg(result_reg, err)?,
         }
         Ok(())
     }
 
-    fn write_memory_object_fd_index(&mut self, fd: usize, data: &[u8]) -> Result<(), String> {
+    fn write_memory_object_fd_index_to(
+        &mut self,
+        result_reg: Reg,
+        fd: usize,
+        data: &[u8],
+    ) -> Result<(), String> {
         let (object, start) = {
             let process = self.process()?;
             match process.fds.get(fd) {
@@ -5625,18 +5644,18 @@ impl Machine {
             }
         };
         let Some(end) = start.checked_add(data.len()) else {
-            self.set_status_errno(12)?;
+            self.complete_reg_err(result_reg, 12)?;
             return Ok(());
         };
         if end > MEMORY_SIZE {
-            self.set_status_errno(12)?;
+            self.complete_reg_err(result_reg, 12)?;
             return Ok(());
         }
         let current_len = object.borrow().len();
         let growth = end.saturating_sub(current_len);
         if growth != 0 {
             if let Err(errno) = self.ensure_domain_budget_errno(growth as u64, 0, 0, 0) {
-                self.set_status_errno(errno)?;
+                self.complete_reg_err(result_reg, errno)?;
                 return Ok(());
             }
         }
@@ -5652,7 +5671,7 @@ impl Machine {
             FdHandle::MemoryObject { pos, .. } => *pos = end,
             _ => return Err("fd is not a memory object".to_string()),
         }
-        self.complete_ok(data.len() as u64)
+        self.complete_reg_ok(result_reg, data.len() as u64)
     }
 
     fn pwrite_fd_index(
@@ -5715,10 +5734,10 @@ impl Machine {
                 *pos += 1;
             }
             self.set_errno(0)?;
-            self.write_reg(Reg(1), 1)?;
-        } else if self.read_reg(Reg(1))? != -1i64 as u64 {
+            self.write_reg(Reg(2), 1)?;
+        } else if self.read_reg(Reg(2))? != -1i64 as u64 {
             self.set_errno(0)?;
-            self.write_reg(Reg(1), 0)?;
+            self.write_reg(Reg(2), 0)?;
         }
         Ok(())
     }
@@ -5867,7 +5886,7 @@ impl Machine {
     }
 
     fn mprotect_range(&mut self, addr: u64, len: u64, prot: u64) -> Result<(), String> {
-        self.mprotect_range_result(Reg(1), addr, len, prot)
+        self.mprotect_range_result(Reg(2), addr, len, prot)
     }
 
     fn mprotect_range_result(
@@ -10857,7 +10876,7 @@ mod tests {
         machine.write_bytes(payload, b"xy").unwrap();
         machine.write_fd_index(5, payload, 2).unwrap();
 
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 12);
         assert_eq!(object.borrow().len(), 8);
         match &machine.process().unwrap().fds[5] {
@@ -10891,7 +10910,7 @@ mod tests {
         machine.write_bytes(payload, b"z").unwrap();
         machine.write_fd_index(5, payload, 1).unwrap();
 
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 12);
         assert_eq!(object.borrow().len(), 8);
         match &machine.process().unwrap().fds[5] {
@@ -10948,7 +10967,7 @@ mod tests {
         machine.write_bytes(payload, b"x").unwrap();
         machine.write_fd_index(4, payload, 1).unwrap();
 
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 11);
         assert_eq!(queue.borrow().bytes.len(), PIPE_BUFFER_BYTE_LIMIT);
         queue.borrow_mut().bytes.pop_front();
@@ -11001,7 +11020,7 @@ mod tests {
 
         assert!(machine.ready.contains(&1));
         assert!(machine.fd_waiters.is_empty());
-        assert_eq!(machine.thread().unwrap().regs[1], 1);
+        assert_eq!(machine.thread().unwrap().regs[2], 1);
         assert_eq!(machine.thread().unwrap().regs[8], 0);
         assert_eq!(machine.process().unwrap().errno, 0);
         assert_eq!(
@@ -11035,7 +11054,7 @@ mod tests {
         assert_eq!(*event_counter.borrow(), 2);
         assert!(machine.ready.contains(&1));
         assert!(machine.fd_waiters.is_empty());
-        assert_eq!(machine.thread().unwrap().regs[1], 8);
+        assert_eq!(machine.thread().unwrap().regs[2], 8);
         assert_eq!(machine.thread().unwrap().regs[8], 0);
         assert_eq!(machine.process().unwrap().errno, 0);
         assert_eq!(
@@ -11436,34 +11455,36 @@ mod tests {
     fn msg_send_reports_missing_target_and_full_inbox() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
-        machine.thread_mut().unwrap().regs[2] = 99;
+        // v2 ABI: status lands in r2, so keep the pid operand in a separate
+        // register (r5) to avoid the result clobbering the target pid.
+        machine.thread_mut().unwrap().regs[5] = 99;
         machine.thread_mut().unwrap().regs[3] = 10;
         machine.thread_mut().unwrap().regs[4] = 20;
 
         machine
-            .exec(Instr::MsgSend(Reg(2), Reg(3), Reg(4)))
+            .exec(Instr::MsgSend(Reg(5), Reg(3), Reg(4)))
             .unwrap();
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 3);
         assert!(machine.process().unwrap().inbox.is_empty());
 
         for _ in 0..PROCESS_INBOX_LIMIT {
             machine.process_mut().unwrap().inbox.push_back((1, 2));
         }
-        machine.thread_mut().unwrap().regs[2] = 1;
+        machine.thread_mut().unwrap().regs[5] = 1;
         machine
-            .exec(Instr::MsgSend(Reg(2), Reg(3), Reg(4)))
+            .exec(Instr::MsgSend(Reg(5), Reg(3), Reg(4)))
             .unwrap();
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 11);
         assert_eq!(machine.process().unwrap().inbox.len(), PROCESS_INBOX_LIMIT);
 
         machine.process_mut().unwrap().inbox.clear();
         machine.set_errno(123).unwrap();
         machine
-            .exec(Instr::MsgSend(Reg(2), Reg(3), Reg(4)))
+            .exec(Instr::MsgSend(Reg(5), Reg(3), Reg(4)))
             .unwrap();
-        assert_eq!(machine.thread().unwrap().regs[1], 0);
+        assert_eq!(machine.thread().unwrap().regs[2], 0);
         assert_eq!(machine.process().unwrap().errno, 0);
         assert_eq!(machine.process().unwrap().inbox.front(), Some(&(10, 20)));
     }
@@ -13514,11 +13535,12 @@ mod tests {
         machine.current_tid = 1;
         machine.complete_ok(123).unwrap();
         assert_eq!(machine.process().unwrap().errno, 0);
-        assert_eq!(machine.thread().unwrap().regs[1], 123);
+        // v2 ABI: default syscall result register is r2, not r1 (r1 = ra).
+        assert_eq!(machine.thread().unwrap().regs[2], 123);
 
         machine.complete_err(22).unwrap();
         assert_eq!(machine.process().unwrap().errno, 22);
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
     }
 
     #[test]
@@ -13985,7 +14007,7 @@ mod tests {
         machine.thread_mut().unwrap().regs[2] = 0;
         machine.thread_mut().unwrap().regs[3] = 99;
         assert!(machine.exec(Instr::Sigaction(Reg(2), Reg(3))).unwrap());
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 22);
         assert!(!machine.process().unwrap().signal_handlers.contains_key(&0));
         assert!(matches!(
@@ -14023,7 +14045,7 @@ mod tests {
         machine.thread_mut().unwrap().regs[4] = 1;
         machine.thread_mut().unwrap().regs[5] = SIGNAL_NUMBER_LIMIT;
         assert!(machine.exec(Instr::Kill(Reg(4), Reg(5))).unwrap());
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 22);
         assert!(machine.process().unwrap().pending_events.is_empty());
     }
@@ -14056,7 +14078,7 @@ mod tests {
         machine.thread_mut().unwrap().regs[4] = 99;
         machine.thread_mut().unwrap().regs[5] = 2;
         assert!(machine.exec(Instr::Kill(Reg(4), Reg(5))).unwrap());
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 3);
         assert!(machine.process().unwrap().pending_events.is_empty());
 
@@ -14071,7 +14093,7 @@ mod tests {
         machine.thread_mut().unwrap().regs[4] = 1;
         machine.thread_mut().unwrap().regs[5] = 2;
         assert!(machine.exec(Instr::Kill(Reg(4), Reg(5))).unwrap());
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 11);
         assert_eq!(
             machine.process().unwrap().pending_events.len(),
@@ -14081,7 +14103,7 @@ mod tests {
         machine.process_mut().unwrap().pending_events.clear();
         machine.set_errno(123).unwrap();
         assert!(machine.exec(Instr::Kill(Reg(4), Reg(5))).unwrap());
-        assert_eq!(machine.thread().unwrap().regs[1], 0);
+        assert_eq!(machine.thread().unwrap().regs[2], 0);
         assert_eq!(machine.process().unwrap().errno, 0);
         assert!(matches!(
             machine.process().unwrap().pending_events.front(),
@@ -14657,7 +14679,7 @@ mod tests {
 
         machine.fcntl_fd_index(5, 0, 10).unwrap();
 
-        assert_eq!(machine.thread().unwrap().regs[1], 11);
+        assert_eq!(machine.thread().unwrap().regs[2], 11);
         assert_eq!(machine.process().unwrap().errno, 0);
         assert!(matches!(
             machine.process().unwrap().fds[11],
@@ -14669,7 +14691,7 @@ mod tests {
         );
 
         machine.fcntl_fd_index(5, 0, FDR_COUNT as u64).unwrap();
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 22);
     }
 
@@ -14899,7 +14921,7 @@ mod tests {
 
         machine.exec(Instr::ChdirPath(Reg(1))).unwrap();
 
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 13);
         assert_eq!(machine.process().unwrap().cwd, original_cwd);
     }
@@ -14922,7 +14944,7 @@ mod tests {
 
         machine.exec(Instr::MkdirPath(Reg(1), Reg(0))).unwrap();
 
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 13);
         assert!(!host_path.exists());
         let _ = fs::remove_dir_all(host_path);
@@ -14946,7 +14968,7 @@ mod tests {
 
         machine.exec(Instr::UnlinkPath(Reg(1))).unwrap();
 
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 13);
         assert!(host_path.exists());
         let _ = fs::remove_file(host_path);
@@ -14976,7 +14998,7 @@ mod tests {
 
         machine.exec(Instr::RenamePath(Reg(1), Reg(2))).unwrap();
 
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 13);
         assert!(old_path.exists());
         assert!(!new_path.exists());
@@ -15009,7 +15031,7 @@ mod tests {
 
         machine.exec(Instr::SymlinkPath(Reg(1), Reg(2))).unwrap();
 
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 13);
         assert!(!link_path.exists());
         let _ = fs::remove_file(link_path);
@@ -15042,7 +15064,7 @@ mod tests {
             .exec(Instr::LinkPath(Reg(1), Reg(2), Reg(3)))
             .unwrap();
 
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 13);
         assert!(old_path.exists());
         assert!(!new_path.exists());
@@ -15068,7 +15090,7 @@ mod tests {
             .exec(Instr::StatPath(Reg(2), Reg(1), Reg(3)))
             .unwrap();
 
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 13);
         assert_eq!(
             machine.read_bytes(statbuf, sentinel.len()).unwrap(),
@@ -15094,7 +15116,7 @@ mod tests {
             .exec(Instr::ReadlinkPath(Reg(1), Reg(2), Reg(3)))
             .unwrap();
 
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 13);
         assert_eq!(machine.read_bytes(out, sentinel.len()).unwrap(), sentinel);
     }
@@ -15132,11 +15154,13 @@ mod tests {
         let path = ARG_BASE + 0x1000;
         machine.write_bytes(path, b"Cargo.toml\0").unwrap();
         machine.thread_mut().unwrap().regs[1] = AT_FDCWD_VALUE;
-        machine.thread_mut().unwrap().regs[2] = path;
+        // v2 ABI: the result lands in r2, so keep the path argument in r6 to
+        // avoid the error result clobbering the path between the two opens.
+        machine.thread_mut().unwrap().regs[6] = path;
         machine.thread_mut().unwrap().regs[3] = 0;
 
         machine
-            .exec(Instr::OpenAtDyn(Reg(4), Reg(1), Reg(2), Reg(3)))
+            .exec(Instr::OpenAtDyn(Reg(4), Reg(1), Reg(6), Reg(3)))
             .unwrap();
 
         assert_eq!(machine.thread().unwrap().regs[4], -1i64 as u64);
@@ -15162,7 +15186,7 @@ mod tests {
         machine.thread_mut().unwrap().regs[1] = 10;
 
         machine
-            .exec(Instr::OpenAtDyn(Reg(5), Reg(1), Reg(2), Reg(3)))
+            .exec(Instr::OpenAtDyn(Reg(5), Reg(1), Reg(6), Reg(3)))
             .unwrap();
 
         assert_eq!(machine.thread().unwrap().regs[5], -1i64 as u64);
@@ -15564,7 +15588,7 @@ mod tests {
 
         machine.exec(Instr::GetcwdPath(Reg(2), Reg(3))).unwrap();
 
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 14);
         assert_eq!(machine.read_bytes(boundary_out, 1).unwrap(), b"Z".to_vec());
     }
@@ -15591,7 +15615,7 @@ mod tests {
 
         machine.exec(Instr::GetcwdPath(Reg(2), Reg(3))).unwrap();
 
-        assert_eq!(machine.thread().unwrap().regs[1], out);
+        assert_eq!(machine.thread().unwrap().regs[2], out);
         assert_eq!(machine.process().unwrap().errno, 0);
         assert_eq!(machine.read_c_string(out).unwrap(), "/work");
 
@@ -17151,7 +17175,7 @@ mod tests {
         assert!(machine.exec(Instr::Exec(Reg(1), Reg(2), Reg(3))).unwrap());
         let _ = fs::remove_file(bad_path.as_ref());
         assert_eq!(machine.process().unwrap().errno, 8);
-        assert_eq!(machine.read_reg(Reg(1)).unwrap(), -1i64 as u64);
+        assert_eq!(machine.read_reg(Reg(2)).unwrap(), -1i64 as u64);
         assert!(matches!(
             machine.process().unwrap().program.instructions.first(),
             Some(Instr::Nop)
@@ -17182,7 +17206,7 @@ mod tests {
         assert!(machine.exec(Instr::Exec(Reg(1), Reg(2), Reg(3))).unwrap());
 
         assert_eq!(machine.process().unwrap().errno, 13);
-        assert_eq!(machine.read_reg(Reg(1)).unwrap(), -1i64 as u64);
+        assert_eq!(machine.read_reg(Reg(2)).unwrap(), -1i64 as u64);
         assert!(matches!(
             machine.process().unwrap().program.instructions.first(),
             Some(Instr::Nop)
@@ -17473,12 +17497,12 @@ mod tests {
               BNE r16, r17, bad
 
               FD_DUP2 fd5, fd4
-              BNE r1, r0, bad
+              BNE r2, r0, bad
               LI r12, dup_msg
               LI r13, 1
               WRITE_FD fd5, r12, r13
               READ_FD fd3, r15, r13
-              BNE r1, r13, bad
+              BNE r2, r13, bad
               LD.B r16, [r15, 0]
               LI r17, 33
               BNE r16, r17, bad
@@ -17486,7 +17510,7 @@ mod tests {
 
               LI r18, 0
               WAIT_PID r19, r18
-              BNE r1, r0, bad
+              BNE r2, r0, bad
               FREE r4
               EXIT r0
             bad:
@@ -17514,18 +17538,18 @@ mod tests {
               LI r1, path
               LI r2, 4
               OPEN_FD fd3, r1, r2
-              BNE r1, r0, bad
+              BNE r2, r0, bad
 
               LI r3, patch
               LI r4, 2
               LI r5, 2
               PWRITE_FD fd3, r3, r4, r5
-              BNE r1, r4, bad
+              BNE r2, r4, bad
 
               LI r6, 6
               ALLOC r7, r6
               PREAD_FD fd3, r7, r6, r0
-              BNE r1, r6, bad
+              BNE r2, r6, bad
               LD.B r8, [r7, 0]
               LI r9, 97
               BNE r8, r9, bad
@@ -18016,7 +18040,7 @@ mod tests {
               BNE r24, r0, bad_object
 
               FD_DUP2 fd4, fd5
-              BNE r1, r11, bad_dup
+              BNE r2, r11, bad_dup
               FD_CLOSE fd3
               FD_CLOSE fd4
 
@@ -19564,7 +19588,7 @@ mod tests {
             .exec(Instr::ReadFdDyn(Reg(6), Reg(7), Reg(8)))
             .unwrap();
         assert_eq!(machine.process().unwrap().errno, 116);
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
     }
 
     #[test]
@@ -19605,13 +19629,13 @@ mod tests {
         let original_generation = machine.fd_generation(7).unwrap();
 
         assert!(machine.exec(Instr::FdClose(FdReg(7))).unwrap());
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 9);
         assert_eq!(machine.fd_generation(7).unwrap(), original_generation);
 
         machine.thread_mut().unwrap().regs[2] = 7;
         assert!(machine.exec(Instr::FdCloseDyn(Reg(2))).unwrap());
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 9);
         assert_eq!(machine.fd_generation(7).unwrap(), original_generation);
     }
@@ -19693,7 +19717,7 @@ mod tests {
         }
 
         assert_eq!(machine.read_fd_index(3, ARG_BASE, 8).unwrap(), None);
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 1);
 
         machine.thread_mut().unwrap().regs[4] = 3;
@@ -19703,7 +19727,7 @@ mod tests {
         machine
             .exec(Instr::ReadFdDyn(Reg(4), Reg(5), Reg(6)))
             .unwrap();
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 1);
     }
 
@@ -20613,7 +20637,7 @@ mod tests {
 
         machine.exec(Instr::WaitPid(Reg(4), Reg(2))).unwrap();
 
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
         assert_eq!(machine.process().unwrap().errno, 10);
         assert_eq!(machine.thread().unwrap().regs[4], 0);
     }
@@ -20933,7 +20957,7 @@ mod tests {
             .exec(Instr::ReadFdDyn(Reg(6), Reg(7), Reg(8)))
             .unwrap();
         assert_eq!(machine.process().unwrap().errno, 0);
-        assert_eq!(machine.thread().unwrap().regs[1], 4);
+        assert_eq!(machine.thread().unwrap().regs[2], 4);
 
         machine.store_u64(arg, sealed).unwrap();
         machine.store_u64(arg + 8, 0).unwrap();
@@ -20994,7 +21018,7 @@ mod tests {
             .exec(Instr::ReadFdDyn(Reg(6), Reg(7), Reg(8)))
             .unwrap();
         assert_eq!(machine.process().unwrap().errno, 116);
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
     }
 
     #[test]
@@ -21304,7 +21328,7 @@ mod tests {
         machine
             .exec(Instr::ReadFdDyn(Reg(11), Reg(12), Reg(13)))
             .unwrap();
-        assert_eq!(machine.thread().unwrap().regs[1], 1);
+        assert_eq!(machine.thread().unwrap().regs[2], 1);
         assert_eq!(machine.process().unwrap().errno, 0);
     }
 
@@ -21456,7 +21480,7 @@ mod tests {
             .exec(Instr::ReadFdDyn(Reg(9), Reg(10), Reg(11)))
             .unwrap();
         assert_eq!(machine.process().unwrap().errno, 116);
-        assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+        assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
     }
 
     #[test]
@@ -22878,7 +22902,7 @@ mod tests {
                 .exec(Instr::ReadFdDyn(Reg(5), Reg(6), Reg(7)))
                 .unwrap();
             assert_eq!(machine.process().unwrap().errno, 0);
-            assert_eq!(machine.thread().unwrap().regs[1], 1);
+            assert_eq!(machine.thread().unwrap().regs[2], 1);
 
             machine.store_u64(arg, child).unwrap();
             machine.store_u64(arg + 8, 0).unwrap();
@@ -22921,7 +22945,7 @@ mod tests {
                 .exec(Instr::ReadFdDyn(Reg(14), Reg(15), Reg(16)))
                 .unwrap();
             assert_eq!(machine.process().unwrap().errno, 116);
-            assert_eq!(machine.thread().unwrap().regs[1], -1i64 as u64);
+            assert_eq!(machine.thread().unwrap().regs[2], -1i64 as u64);
         }
     }
 
