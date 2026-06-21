@@ -2627,9 +2627,12 @@ mod tests {
         assert!(real_llc.contains("stack-args-clang-smoke.o"));
         assert!(real_llc.contains("real LLVM LNP64 clang stack-argument object smoke passed"));
         assert!(real_llc.contains("large-frame-clang-smoke.o"));
-        assert!(real_llc.contains("grep -q 'li r30'"));
-        assert!(real_llc.contains("grep -q 'sub r31, r31, r30'"));
-        assert!(real_llc.contains("grep -q 'add r31, r31, r30'"));
+        // v2/E8: large frames adjust the SP with a single ADDI (full signed-32
+        // immediate), not a `li r30; sub` scratch sequence -- and r30 never
+        // appears (it is a normal allocatable GPR, not a reserved scratch).
+        assert!(real_llc.contains("grep -q 'addi r31, r31, -40008'"));
+        assert!(real_llc.contains("grep -q 'addi r31, r31, 40008'"));
+        assert!(real_llc.contains("! grep -q 'r30'"));
         assert!(real_llc.contains("real LLVM LNP64 clang large-frame object smoke passed"));
         assert!(real_llc.contains("toolchain/crt0_lnp64.s"));
         assert!(real_llc.contains("real LLVM LNP64 llvm-mc crt0 smoke passed"));
@@ -4827,7 +4830,10 @@ mod tests {
         assert!(dag_isel.contains("LNP64GenDAGISel.inc"));
         assert!(dag_isel.contains("SelectCode(Node)"));
         assert!(dag_isel.contains("SelectFrameIndexValue"));
-        assert!(dag_isel.contains("LNP64::PseudoFRAMEADDR"));
+        // A bare frame-index value selects to `addi rd, <fi>, 0` in place
+        // (SelectNodeTo), resolved by the generic eliminateFrameIndex path --
+        // no dedicated frame-address pseudo.
+        assert!(dag_isel.contains("SelectNodeTo(Node, LNP64::ADDI"));
         assert!(dag_isel.contains("SelectFrameIndexLoad"));
         assert!(dag_isel.contains("SelectFrameIndexStore"));
         assert!(dag_isel.contains("getTargetFrameIndex"));
@@ -4974,7 +4980,6 @@ mod tests {
         assert!(instr_td.contains("def SLT"));
         assert!(instr_td.contains("def SLTI"));
         assert!(instr_td.contains("def LB"));
-        assert!(instr_td.contains("def PseudoFRAMEADDR"));
         assert!(instr_td.contains("usesCustomInserter = 1"));
         assert!(instr_td.contains("def PseudoSELECT_CC"));
         assert!(instr_td.contains("(brcc SETEQ, GPR:$a, GPR:$b, bb:$t), (BEQ GPR:$a, GPR:$b, bb:$t)"));
@@ -5028,7 +5033,7 @@ mod tests {
         assert!(instr_td.contains("Defs = [R1, R2"));
         // Calls clobber only caller-saved GPRs; the callee-saved set
         // s0..s9 = r18..r27 is preserved and must not be in the call Defs list.
-        assert!(instr_td.contains("R15, R16, R17, R28, R29] in {"));
+        assert!(instr_td.contains("R15, R16, R17, R28, R29, R30] in {"));
         assert!(isel.contains("getCallPreservedMask"));
         assert!(isel.contains("DAG.getRegisterMask(Mask)"));
         assert!(reginfo.contains("CSR_LNP64_RegMask"));
@@ -5053,10 +5058,11 @@ mod tests {
         assert!(frame.contains("/*LocalAreaOffset=*/0"));
         assert!(frame.contains("Align(16)"));
         assert!(frame.contains("emitSPAdjust"));
-        assert!(frame.contains("LNP64::R30"));
-        assert!(frame.contains("TII.get(LNP64::LI)"));
-        assert!(frame.contains("stack adjustment exceeds 32-bit materialization"));
-        assert!(frame.contains("TII.get(Amount < 0 ? LNP64::SUB : LNP64::ADD)"));
+        // E8: SP adjusted by a single ADDI (full signed-32 immediate), no
+        // scratch register, no SUB/ADD-with-materialized-magnitude.
+        assert!(frame.contains("TII.get(LNP64::ADDI)"));
+        assert!(frame.contains("stack adjustment exceeds 32-bit immediate"));
+        assert!(!frame.contains("LNP64::R30"));
         assert!(frame.contains("MCCFIInstruction::cfiDefCfa"));
         assert!(frame.contains("LNP64DwarfSP = 31"));
         assert!(frame.contains("LNP64DwarfRA = 1"));
@@ -5067,11 +5073,13 @@ mod tests {
         assert!(reginfo.contains("Reserved.set(LNP64::R31)"));
         assert!(reginfo.contains("eliminateFrameIndex"));
         assert!(reginfo.contains("void LNP64RegisterInfo::eliminateFrameIndex"));
+        // Frame indices (loads, stores, and the `addi rd, <fi>, 0` frame-
+        // address form) are resolved uniformly: base operand -> r31, following
+        // immediate -> resolved offset. No PseudoFRAMEADDR, no scratch register.
         assert!(reginfo.contains("ChangeToRegister(LNP64::R31"));
-        assert!(reginfo.contains("LNP64::PseudoFRAMEADDR"));
-        assert!(reginfo.contains("TII.get(LNP64::ADD)"));
+        assert!(reginfo.contains("ChangeToImmediate(Offset)"));
         assert!(reginfo.contains("MFI.getObjectOffset"));
-        assert!(reginfo.contains("Load/store displacements are 32-bit signed in v2"));
+        assert!(reginfo.contains("32-bit signed"));
         // v2 callee-saved set s0..s9 = r18..r27.
         assert!(reginfo.contains("getCalleeSavedRegs"));
         assert!(reginfo.contains("LNP64::R18"));
@@ -8519,7 +8527,10 @@ mod tests {
             manifest_field(psabi_manifest, "callee_saved_gprs"),
             "r18-r27"
         );
-        assert_eq!(manifest_field(psabi_manifest, "backend_scratch_gpr"), "r30");
+        // v2/E8: no backend scratch register -- ADDI's 32-bit immediate adjusts
+        // SP / forms frame addresses directly. r30 is an ordinary allocatable
+        // caller-clobbered temporary, so the manifest carries no such field.
+        assert!(!psabi_manifest.contains("backend_scratch_gpr"));
         assert_eq!(
             manifest_field(psabi_manifest, "entry_page_base"),
             "0x700000"
@@ -8557,7 +8568,7 @@ mod tests {
         assert!(psabi_doc.contains("Return values are placed in `r2`."));
         assert!(psabi_doc.contains("`r1` is the return address (`ra`)"));
         assert!(psabi_doc.contains("callee-saved (preserved) GPR set `s0`-`s9` =\n`r18`-`r27`"));
-        assert!(psabi_doc.contains("`r2`-`r17` and `r28`-`r29`"));
+        assert!(psabi_doc.contains("`r2`-`r17` and `r28`-`r30`"));
         assert!(psabi_doc.contains("Additional fixed arguments are passed"));
         assert!(psabi_doc.contains("`r31` points at the current thread's stack/local region."));
         assert!(psabi_doc.contains("The thread pointer is read and written through the `TP` PCR."));
@@ -8618,18 +8629,22 @@ mod tests {
         assert_eq!(classes["fpr"].0, manifest_field(target_manifest, "fpr"));
         assert_eq!(classes["vr"].0, manifest_field(target_manifest, "vr"));
         assert_eq!(classes["gpr"].1, "64");
-        assert_eq!(classes["gpr"].2, "r1-r29");
+        // v2/E8: allocatable r2-r30; reserved r0 (zero), r1 (ra) and r31 (sp).
+        // r30 is now an ordinary allocatable temporary (no backend scratch).
+        assert_eq!(classes["gpr"].2, "r2-r30");
         assert!(classes["gpr"].3.contains(&"r0"));
-        // r30 (backend scratch) is reserved, not allocatable.
-        assert!(classes["gpr"].3.contains(&"r30"));
+        assert!(classes["gpr"].3.contains(&"r1"));
+        assert!(!classes["gpr"].3.contains(&"r30"));
         assert!(
             classes["gpr"]
                 .3
                 .contains(&manifest_field(psabi_manifest, "stack_pointer"))
         );
-        // v2: the link register (ra) is an ordinary GPR (r1), not a SPECIAL reg.
+        // v2: the link register (ra) is r1, a dedicated reserved link register
+        // (held out of allocation so leaf functions cannot clobber the return
+        // address), not a SPECIAL reg and not an allocatable temporary.
         assert_eq!(manifest_field(psabi_manifest, "link_register"), "r1");
-        assert!(classes["gpr"].2.split('-').any(|value| value == "r1"));
+        assert!(classes["gpr"].3.contains(&"r1"));
         // v2 dissolved the SPECIAL LR/FLAGS; only TP remains in the namespace.
         assert!(
             classes["special"]

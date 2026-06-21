@@ -24,17 +24,15 @@ BitVector LNP64RegisterInfo::getReservedRegs(const MachineFunction &) const {
   BitVector Reserved(getNumRegs());
   Reserved.set(LNP64::R0);  // hardwired zero
   Reserved.set(LNP64::R1);  // ra -- dedicated return-address link register
-  Reserved.set(LNP64::R30); // backend scratch (prologue/epilogue, frame index)
   Reserved.set(LNP64::R31); // stack pointer
   // r1 is a dedicated link register, NOT a general allocatable temp: it holds
   // the return address live-in (placed by the caller's jal) and is read by
   // `ret` (= jalr r0, r1, 0). If it were allocatable, the register allocator
   // would reuse it as a scratch in leaf functions (which do not save it) and
-  // clobber the return address before `ret`. r30 is the dedicated backend
-  // scratch: emitPrologue/emitEpilogue and eliminateFrameIndex materialize
-  // stack offsets and frame addresses into it (`li r30, imm; add ...`). It is
-  // NOT callee-saved, so if it were allocatable the register allocator could
-  // park a value live across a call in r30 and the callee would clobber it.
+  // clobber the return address before `ret`. r30 is a normal allocatable
+  // caller-saved GPR: prologue/epilogue SP adjustment and frame-address
+  // computation use ADDI's 32-bit immediate directly, so no scratch register
+  // is reserved.
   return Reserved;
 }
 
@@ -76,27 +74,14 @@ void LNP64RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
       MI.getOperand(FIOperandNum + 1).isImm())
     Offset += MI.getOperand(FIOperandNum + 1).getImm();
 
-  const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
-  MachineBasicBlock &MBB = *MI.getParent();
-  DebugLoc DL = MI.getDebugLoc();
-
-  if (MI.getOpcode() == LNP64::PseudoFRAMEADDR) {
-    Register Dst = MI.getOperand(0).getReg();
-    if (Offset == 0) {
-      BuildMI(MBB, MI, DL, TII.get(LNP64::MOV), Dst).addReg(LNP64::R31);
-    } else {
-      // Load/store displacements are 32-bit signed in v2, so LI always fits.
-      BuildMI(MBB, MI, DL, TII.get(LNP64::LI), LNP64::R30).addImm(Offset);
-      BuildMI(MBB, MI, DL, TII.get(LNP64::ADD), Dst)
-          .addReg(LNP64::R31)
-          .addReg(LNP64::R30);
-    }
-    MI.eraseFromParent();
-    return;
-  }
-
-  // v2 load/store offsets are 32-bit signed; frame offsets never overflow in
-  // practice, so the v1 large-offset r30 scratch-address path is deleted.
+  // Frame-index operands are resolved uniformly: the base operand becomes r31
+  // (sp) and the following immediate becomes the resolved offset. This covers
+  // loads/stores (LD/SD/...) and the `addi rd, <fi>, 0` frame-address form
+  // emitted by SelectFrameIndexValue -- ADDI's 32-bit immediate computes the
+  // frame address directly, so no scratch register and no dedicated pseudo are
+  // needed. v2 load/store offsets are 32-bit signed; frame offsets never
+  // overflow in practice, so the v1 large-offset r30 scratch-address path is
+  // deleted.
   MI.getOperand(FIOperandNum).ChangeToRegister(LNP64::R31, false);
   if (FIOperandNum + 1 < MI.getNumOperands() &&
       MI.getOperand(FIOperandNum + 1).isImm())

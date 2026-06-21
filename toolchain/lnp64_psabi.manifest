@@ -13,7 +13,6 @@ argument_gprs=r2-r9
 return_gprs=r2
 caller_clobbered_gprs=r1-r17,r28-r30
 callee_saved_gprs=r18-r27
-backend_scratch_gpr=r30
 stack_alignment=16
 local_first_offset=8
 entry_page_base=0x700000

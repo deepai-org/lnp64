@@ -92,10 +92,6 @@ Full docker gate green (sysroot smoke exit=0); cargo 471/2; RTL cosim byte-exact
 - The calling convention is already `CCState`/TableGen-driven.
 
 **Deferred with rationale (optional future polish, not required for clean):**
-- E8 — reclaim `r30` via the RegisterScavenger. Reserving a scratch register is
-  a clean, common production-backend pattern; the scavenger reclaim is +1
-  register against real frame-lowering risk (we just stabilized the RA-spill
-  aliasing). Deferred deliberately.
 - D2 — unify the two assembler memory syntaxes (`[base,off]` Rust asm vs
   `off(base)` LLVM). The LLVM side is already the standard form; this is a
   Rust-toolchain consistency item, separable from LLVM cleanliness.

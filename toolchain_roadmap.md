@@ -198,10 +198,11 @@ frame-index base and zero offset.
 `LNP64RegisterInfo` now rewrites frame-index operands to `R31` plus the stack
 object offset and frame size, giving those stack-slot instructions a first
 SP-relative lowering path.
-Frame lowering now reserves `r30` as a backend scratch register and emits
-stack adjustments with `LI`/`LI32 r30, size` plus `SUB`/`ADD` on `r31`.
-Non-leaf frames spill/restore `LR` with `LR_GET`/`LR_SET` and emit the v0
-minimum DWARF CFI for the CFA offset and saved `LR` slot. Varargs, stack
+Frame lowering reserves no scratch register: v2's `ADDI` carries a full
+signed-32 immediate, so stack adjustments are a single `addi r31, r31, ±size`
+and `r30` is an ordinary allocatable GPR. Non-leaf frames spill/restore the
+return address `r1` (ra) with ordinary `SD`/`LD` and emit the v0 minimum DWARF
+CFI for the CFA offset and saved `ra` slot. Varargs, stack
 returns, aggregate ABI corners, large frame-index offsets, and broader
 call-frame stress remain bring-up blockers.
 `LNP64InstrInfo.td` now carries operand-bearing TableGen classes for integer

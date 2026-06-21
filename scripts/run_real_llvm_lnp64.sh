@@ -4629,9 +4629,12 @@ test -s "$large_frame_obj"
 large_frame_dump="$build_dir/large-frame-clang-smoke.dump"
 "$llvm_objdump" -d --triple=lnp64-unknown-none "$large_frame_obj" \
   >"$large_frame_dump"
-grep -q 'li r30' "$large_frame_dump"
-grep -q 'sub r31, r31, r30' "$large_frame_dump"
-grep -q 'add r31, r31, r30' "$large_frame_dump"
+# v2/E8: a large frame is adjusted with a single ADDI carrying the full signed
+# 32-bit immediate -- no `li r30; sub r31, r31, r30` materialize-into-scratch
+# sequence, and no reserved scratch register (r30 is a normal allocatable GPR).
+grep -q 'addi r31, r31, -40008' "$large_frame_dump"
+grep -q 'addi r31, r31, 40008' "$large_frame_dump"
+! grep -q 'r30' "$large_frame_dump"
 printf 'real LLVM LNP64 clang large-frame object smoke passed: %s\n' \
   "$large_frame_obj"
 

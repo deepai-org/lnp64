@@ -15,7 +15,7 @@ def RetCC_LNP64 : CallingConv<[
 // v2 callee-saved (preserved) GPR set: s0..s9 = r18..r27. A callee that uses
 // any of these must save/restore it; the register allocator may keep
 // cross-call values here instead of spilling to the stack. r0 (zero),
-// r1 (ra), r30 (backend scratch) and r31 (sp) are not part of this set; every
-// other GPR (r2..r17, r28, r29) is call-clobbered (caller-saved).
+// r1 (ra) and r31 (sp) are not part of this set; every other GPR
+// (r2..r17, r28, r29, r30) is call-clobbered (caller-saved).
 def CSR_LNP64 : CalleeSavedRegs<(add R18, R19, R20, R21, R22, R23, R24, R25,
                                      R26, R27)>;

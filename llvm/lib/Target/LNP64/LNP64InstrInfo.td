@@ -161,12 +161,6 @@ class LNP64MemLoad<string Mnemonic>
   let Inst{45-14} = offset;
 }
 
-class LNP64FrameAddrPseudo<string Mnemonic>
-    : LNP64Inst<(outs GPR:$rd), (ins GPR:$base, simm32:$offset), Mnemonic,
-                "\t$rd, $offset($base)"> {
-  let isPseudo = 1;
-}
-
 // S-type store: rs(src), imm32(base). base->rs1 slot, src->rs2 slot.
 class LNP64MemStore<string Mnemonic>
     : LNP64Inst<(outs), (ins GPR:$rs, GPR:$base, simm32:$offset), Mnemonic,
@@ -461,15 +455,14 @@ def : Pat<(brcc SETUGE, GPR:$a, GPR:$b, bb:$t), (BGEU GPR:$a, GPR:$b, bb:$t)>;
 
 // JAL: J-type. rd = pc+8; pc += off. call sym -> jal r1, sym.
 // A call clobbers the caller-saved GPRs only: r1 (ra) and the temporaries
-// r2..r17, r28, r29. The callee-saved set s0..s9 = r18..r27 is preserved and
-// must NOT appear here (listing it would force PEI to save all of r18..r27 on
-// every call and prevent the allocator from keeping cross-call values in
-// s-registers). r30 (backend scratch) is reserved, so it need not be listed.
-// The precise clobber set is also carried by the call-preserved regmask
-// (getCallPreservedMask / CSR_LNP64) attached in LowerCall.
+// r2..r17, r28, r29, r30. The callee-saved set s0..s9 = r18..r27 is preserved
+// and must NOT appear here (listing it would force PEI to save all of r18..r27
+// on every call and prevent the allocator from keeping cross-call values in
+// s-registers). The precise clobber set is also carried by the call-preserved
+// regmask (getCallPreservedMask / CSR_LNP64) attached in LowerCall.
 let isCall = 1,
     Defs = [R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12, R13, R14,
-            R15, R16, R17, R28, R29] in {
+            R15, R16, R17, R28, R29, R30] in {
 def JAL : LNP64Inst<(outs GPR:$rd), (ins calltarget:$target), "jal",
                     "\t$rd, $target"> {
   bits<5> rd;
@@ -543,7 +536,6 @@ def LHU : LNP64MemLoad<"lhu"> { let Opcode = 0x36; }
 def LW : LNP64MemLoad<"lw"> { let Opcode = 0x05; }
 def LB : LNP64MemLoad<"lb"> { let Opcode = 0x08; }
 def LH : LNP64MemLoad<"lh"> { let Opcode = 0x09; }
-def PseudoFRAMEADDR : LNP64FrameAddrPseudo<"pseudo_frameaddr">;
 def SD : LNP64MemStore<"sd"> { let Opcode = 0x33; }
 def SW : LNP64MemStore<"sw"> { let Opcode = 0x34; }
 def SB : LNP64MemStore<"sb"> { let Opcode = 0x35; }

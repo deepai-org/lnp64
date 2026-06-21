@@ -33,11 +33,12 @@ The v0 psABI covers:
 Non-leaf functions spill and reload `r1` with ordinary `SD`/`LD` like any GPR;
 there is no `LR_GET`/`LR_SET` bridge.
 
-`r30` is the dedicated backend scratch register: it is reserved (not
-register-allocated) and is used by the compiler to materialize stack-adjustment
-immediates and frame addresses in prologues, epilogues, and frame-index
-expansion. Because it is caller-clobbered and not callee-saved, no value that
-must survive a call is kept in `r30`.
+`r30` is an ordinary allocatable caller-clobbered GPR. v2's `ADDI` carries a
+full signed-32 immediate, so the compiler adjusts the stack pointer and computes
+frame addresses with a single `ADDI` (e.g. `addi r31, r31, -N`) directly in
+prologues, epilogues, and frame-index expansion -- no materialize-into-scratch
+sequence and so no register reserved for it. Only `r0` (zero), `r1` (ra) and
+`r31` (sp) are held out of allocation.
 
 `r31` is the stack pointer for compiler-generated locals and spills. The current
 emulator protects `r31` from ordinary `write_reg` updates; the hardware design
@@ -89,11 +90,12 @@ The v2 C ABI defines a callee-saved (preserved) GPR set `s0`-`s9` =
 `r18`-`r27`: a callee that uses any of these must save it on entry and restore
 it before returning, so the register allocator may keep values live across a
 call in an `s`-register instead of spilling them to the stack. Every other
-caller-visible GPR is caller-clobbered: `r2`-`r17` and `r28`-`r29` (the integer
-argument/return and temporary registers), plus the `ra` register `r1` and the
-`r30` backend scratch register. Callers that need a caller-clobbered register's
-value to survive a call must spill it explicitly. `r0` (zero) and `r31` (sp)
-are not part of either set.
+caller-visible GPR is caller-clobbered: `r2`-`r17` and `r28`-`r30` (the integer
+argument/return and temporary registers, `r30` now being an ordinary allocatable
+temporary). The `ra` register `r1` is held out of allocation and saved/restored
+by non-leaf prologues. Callers that need a caller-clobbered register's value to
+survive a call must spill it explicitly. `r0` (zero) and `r31` (sp) are not part
+of either set.
 
 ## Nonlocal Jumps
 

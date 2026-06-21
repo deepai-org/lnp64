@@ -38,10 +38,14 @@ bool LNP64DAGToDAGISel::SelectFrameIndexValue(SDNode *Node) {
   SDLoc DL(Node);
   SDValue Base = CurDAG->getTargetFrameIndex(FI->getIndex(), MVT::i64);
   SDValue Offset = CurDAG->getTargetConstant(0, DL, MVT::i64);
-  SDNode *Selected =
-      CurDAG->getMachineNode(LNP64::PseudoFRAMEADDR, DL, MVT::i64,
-                             {Base, Offset});
-  ReplaceNode(Node, Selected);
+  // Select a bare frame-index value to `addi rd, <fi>, 0`. The frame-index
+  // operand is resolved by the generic eliminateFrameIndex path (rs1 -> r31,
+  // imm -> resolved offset), so no dedicated pseudo is needed. Use SelectNodeTo
+  // (in-place mutation) rather than getMachineNode + ReplaceNode: the latter
+  // left dead, self-referential nodes (`%x = OP %x, 0`) for address-of values
+  // that turned out unused -- those have a *register* base, so PEI's isFI()
+  // check skipped them and they reached the encoder unexpanded.
+  CurDAG->SelectNodeTo(Node, LNP64::ADDI, MVT::i64, Base, Offset);
   return true;
 }
 

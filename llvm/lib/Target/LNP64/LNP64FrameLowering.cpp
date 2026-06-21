@@ -55,16 +55,14 @@ static void emitSPAdjust(MachineFunction &MF, MachineBasicBlock &MBB,
     return;
 
   const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
-  uint64_t Magnitude =
-      Amount < 0 ? uint64_t(-(Amount + 1)) + 1 : uint64_t(Amount);
-  // li materializes a full signed-32 immediate in one v2 word.
-  if (!isInt<32>(int64_t(Magnitude)))
-    llvm_unreachable("LNP64 stack adjustment exceeds 32-bit materialization");
-  BuildMI(MBB, I, DL, TII.get(LNP64::LI), LNP64::R30).addImm(Magnitude);
-  BuildMI(MBB, I, DL, TII.get(Amount < 0 ? LNP64::SUB : LNP64::ADD),
-          LNP64::R31)
+  // ADDI carries a full signed-32 immediate in one v2 word, so the stack
+  // pointer is adjusted in a single instruction -- no materialize-into-scratch
+  // and no reserved scratch register needed (negative Amount subtracts).
+  if (!isInt<32>(Amount))
+    llvm_unreachable("LNP64 stack adjustment exceeds 32-bit immediate");
+  BuildMI(MBB, I, DL, TII.get(LNP64::ADDI), LNP64::R31)
       .addReg(LNP64::R31)
-      .addReg(LNP64::R30);
+      .addImm(Amount);
 }
 
 LNP64FrameLowering::LNP64FrameLowering()
