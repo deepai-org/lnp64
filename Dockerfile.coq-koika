@@ -1,0 +1,45 @@
+# LNP64 foundational hardware-proof toolchain: Coq 8.18 + Kôika (arm64-native).
+#
+# Kôika (MIT mit-plv/koika) is a rule-based HDL embedded in Coq with formal
+# semantics and a Verilog backend (cuttlec). It lets us prove a refinement
+# against an abstract spec in Coq's kernel and extract Verilog whose semantics
+# match the proof -- the "seL4 for hardware" substrate. Built natively for arm64
+# (the official coqorg/coq image is amd64-only and segfaults under QEMU here).
+FROM debian:bookworm
+
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates git make m4 patch unzip bzip2 rsync \
+        gcc g++ pkg-config libgmp-dev perl \
+        opam \
+    && rm -rf /var/lib/apt/lists/*
+
+# Native OCaml 4.14.2 switch (Koika's supported compiler).
+RUN opam init --disable-sandboxing -y --bare \
+    && opam switch create lnp64 ocaml-base-compiler.4.14.2 \
+    && opam clean -a
+
+# Coq 8.18 + Koika's OCaml dependencies (versions resolved by opam against the
+# OCaml 4.14.2 switch; the koika README pins are stale).
+RUN opam install -y \
+        coq.8.18.0 \
+        dune \
+        base \
+        core \
+        core_unix \
+        stdio \
+        parsexp \
+        hashcons \
+        zarith \
+    && opam clean -a
+
+# Build Kôika from source against that switch (let --deps-only fill any gaps).
+RUN git clone --depth 1 https://github.com/mit-plv/koika /opt/koika \
+    && eval $(opam env) \
+    && (opam install -y --deps-only /opt/koika/koika.opam || true) \
+    && make -C /opt/koika -j"$(nproc)"
+
+ENV KOIKA=/opt/koika
+WORKDIR /work
+CMD ["bash"]
