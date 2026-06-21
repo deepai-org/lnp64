@@ -136,20 +136,40 @@ entire `EmitInstrWithCustomInserter` compare/select/branch glue, and the
 `SELECT`→`SELECT_CC` expansion. `setcc`/`br_cc`/`select_cc` become ordinary
 pattern matches. Formal impact: `FLAGS` leaves `MachineState`.
 
-### 3.2 PC-relative loads and capabilities — Option A (CHERI-style PCC)
+### 3.2 PC-relative loads and capabilities — Option A (read+execute literal pools)
 
 `AUIPC rd, imm32` is defined as `rd = PC + sext64(imm32)` (PC of the AUIPC
-instruction). The Program-Counter Capability (PCC) carries **both Execute and
-Read** permission and bounds covering `.text` + adjacent `.rodata` literal
-pools; an `AUIPC`-formed address within PCC bounds authorizes the subsequent
-`LD`. The loader/OS grants PCC read+execute over the code+rodata range at image
-entry.
+instruction). The subsequent `LD` of a literal is authorized by the **Read
+permission on the literal-pool region** — *not* by a program-counter capability.
 
-Rationale: literal pools are "just" PC-relative loads (standard LLVM
-constant-island mechanism), and the bounds check is a single PCC interval test
-in the proof. (Option B — execute-only PCC with an explicit `.rodata` capability
-register — is recorded as future hardening, **not** v2.) The PCC is new
-architectural state, defined in §4.5 (there is no `PCC` register in v1).
+> Verified against the implementation (2026-06-21). There is **no PCC / program-
+> counter-capability register** anywhere in LNP64 — `grep` over the emulator,
+> RTL, and Coq finds none. Authorization is POSIX-style per-region `R/W/X`:
+> - **Emulator** (the reference oracle): instruction fetch checks the execute
+>   bit (`emulator.rs:9628`); a data load checks the read bit (`:9557`). The
+>   loader enforces **W^X** — it rejects write∧execute (`:1337`) but **permits
+>   read∧execute**. So a region mapped `R+X` serves both fetch and `LD`, and a
+>   literal-pool load succeeds on the strength of the read bit alone.
+> - **RTL**: an 8-bit `permissions` field with `load_permitted` /
+>   `permission_faulted` (`lnp64_pkg.sv:647,660,695`) — a per-descriptor
+>   permission model that expresses the same R/X distinction.
+
+v2 therefore mandates: the literal-pool region (in `.text` mapped `R+X`, or an
+adjacent `.rodata` mapped `R`) carries **Read** permission, and the **W^X**
+invariant is preserved (code + rodata are never writable). No new architectural
+register is introduced. Backend impact is nil — LLVM emits the ordinary
+`AUIPC + LD` constant-island sequence.
+
+(Option B — execute-only code with literals confined to a separate
+read-only `.rodata`, no read permission on `.text` — is also expressible in the
+same R/W/X model and is recorded as future hardening, **not** v2.)
+
+> Phase-1 proof gap (record now): the Coq capability model (`CapSpec.v`) proves
+> **write** confinement only — "an address range plus a write permission"
+> (`CapSpec.v:16`). It models no read or fetch permission. Covering PC-relative
+> literal loads in the formal security argument requires extending the Coq
+> `Step`/`MachineState` with read + fetch permission. This is new proof scope,
+> not a v2 encoding detail.
 
 ### 3.3 Branch range — relaxation no longer required
 
@@ -261,27 +281,32 @@ namespace and defines **no** FP/vector instructions; a future extension owns
 them. Listed here so the decoder/proof treats their space as reserved, not
 undefined.
 
-### 4.5 PCC — program-counter capability (resolves the §3.2 gap)
+### 4.5 Code/rodata authorization — no PCC; reuse the R/W/X model
 
-There is no `PCC` register in v1. v2 introduces the PCC as **implicit
-architectural state** (alongside the PC), *not* a numbered or GPR-allocatable
-register:
+v2 introduces **no** program-counter capability and **no** new register. As
+verified in §3.2, LNP64 has no PCC; instruction fetch and PC-relative literal
+loads are authorized by the existing per-region `R/W/X` permissions:
 
-- PCC bounds + permissions gate instruction fetch and authorize `AUIPC`-relative
-  literal loads within range (§3.2, read+execute).
-- Set by the loader/OS at image entry and on capability-domain transfer
-  (`GATE_CALL`/`GATE_RETURN`); not written by ordinary instructions.
-- In `MachineState` it is a record `{ base; bound; perms }` (§5), not an entry
-  in `regs`, keeping the GPR-file proof unchanged and the check a single
-  interval+permission test.
+- The code + literal-pool region is mapped `R+X` (or code `X` with literals in
+  an adjacent `R` `.rodata`).
+- Fetch requires the execute bit; the literal `LD` requires the read bit; the
+  loader's **W^X** invariant keeps the region non-writable.
+
+This keeps the GPR file and the register-file proof completely unchanged. The
+only formal-model work is extending the capability model with read/fetch
+permission (§3.2 Phase-1 gap), which lives in the existing capability state, not
+in a new PC-bound register.
 
 ## 5. Formal-model deltas (Coq/Kami `MachineState`)
 
 - **Remove** `flags`.
 - **Remove** the separate `LR` field; return address lives in `regs[1]`.
 - **Add** `reservation_addr : option word` (§3.4).
-- **Add** `pcc : { base; bound; perms }` as implicit state next to `pc` (§4.5),
-  if not already modeled.
+- **Extend the capability model with read + fetch permission.** Today
+  `CapSpec.v` proves write confinement only (an address range + a write
+  permission); covering instruction fetch and PC-relative literal loads (§3.2)
+  needs read/fetch permission added to the existing capability state. **No PCC
+  register is added** — there is none in the machine (§4.5).
 - **Decode** is a total function `word64 -> option instr`, fixed width, no
   inter-word state — bounded-progress in the fetch/decode FSM is immediate.
 - **Execute** reads all operands from registers; one instruction = one
@@ -325,7 +350,8 @@ One coherent batch, layered so each layer validates against the one before it
 6. **RTL** (`rtl/`) + **Koika core** — 64-bit fetch/decode and the v2 opcode
    table; update the mediation core.
 7. **Coq/Kami** — regenerate `decode` from the `.td`; update `MachineState`
-   (remove `flags`/`LR`, add `reservation_addr`/`pcc`). Phase 1 starting point.
+   (remove `flags`/`LR`, add `reservation_addr`, extend the capability model
+   with read/fetch permission — no PCC register). Phase 1 starting point.
 8. **Docs** — replace `hardware_design.md` §6 (both the legacy 64-bit-word
    format *and* the §6.0 32-bit description) with this spec's §2 encoding.
 
