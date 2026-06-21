@@ -17,10 +17,9 @@ namespace {
 // toolchain/lnp64_relocations.manifest and object_format.md exactly.
 //
 // Numbers 0-12 are the data / symbol / descriptor / TLS relocations the loader
-// and lld resolve. Numbers 13-15 are the v2 MC backend code fixups emitted by
-// the LLVM LNP64 code emitter (AUIPC pc-relative high part and instruction-count
-// BRANCH / JUMP). The v1 relocs (BRANCH26, PCREL_HI20, PCREL_LO12_I,
-// PCREL_LO12_LD) are removed.
+// and lld resolve. Numbers 13-15 are the MC backend code fixups emitted by the
+// LLVM LNP64 code emitter: AUIPC (PC-relative high part, byte granular) and the
+// instruction-count BRANCH / JUMP offsets for the fixed 64-bit instruction word.
 enum : uint32_t {
   R_LNP64_NONE = 0,
   R_LNP64_ABS64 = 1,
