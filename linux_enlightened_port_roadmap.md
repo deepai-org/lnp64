@@ -89,6 +89,10 @@ rather than forked.
 - **L0 — LKL bring-up.** `lkl_host_operations` on the native seam; boot LKL, run a
   trivial Linux syscall. Hosted-compatibility payload, not yet enlightened.
 - **L1 — real Linux fs (ext4) + TCP/IP** as LKL components in Resource Domains.
+- **L1.5 — enlightened libc + distro recompile.** Port musl (`arch/lnp64`) to
+  emit native ops + an LNP64 vDSO for the fast paths; recompile a small distro
+  (Buildroot-style) so userspace inherits enlightenment unmodified. Add a Go
+  runtime `syscall` port for the one ecosystem that bypasses libc.
 - **L2 — multiprocess via the native process faction.** Real fork/exec Linux
   userland over hardware domains + the shared process service (reused from the
   NetBSD R1.5 work), not single-instance LKL.
@@ -102,6 +106,40 @@ rather than forked.
   machine, two real OSes sharing the hardware scheduler/allocator/caps. Only the
   pieces that have reached L3 are "enlightened"; the rest run as hosted payload
   until they do.
+
+## Userspace and the distro: enlighten libc, recompile the rest
+
+Enlightenment is not only a kernel-side job, but userspace does **not** mean
+hand-porting thousands of packages. The lever is **libc**.
+
+- **Enlighten libc once; the distro inherits it.** Applications call
+  `malloc`/`pthread_*`/`open`/`poll`/`mmap` — they do not issue syscalls
+  themselves. If libc lowers those onto native ops (same rule as everywhere:
+  *mechanism* → direct instruction, vDSO-style; *policy* → typed `GATE_CALL` into
+  the owning service), then every package above libc becomes enlightened **just by
+  recompiling, unmodified**. No per-library work.
+- **It rides libc's existing per-arch port mechanism — no upstream required.**
+  glibc has `sysdeps/<arch>`, musl has `arch/<arch>`; the syscall layer is already
+  architecture-pluggable. An LNP64 port that emits native ops instead of the
+  generic trap is a normal libc port that lives in **your distro**. **musl is the
+  preferred target** (small, one clean syscall chokepoint); glibc is doable but
+  heavier (NPTL/IFUNC/larger sysdeps surface). Optionally upstream to musl later —
+  low-stakes, unlike the kernel pieces.
+- **vDSO is the maintainer-friendly framing for the fast paths.** Linux already
+  ships a vDSO (userspace `clock_gettime` with no trap today). An LNP64 vDSO that
+  turns more former-syscalls into direct instructions *extends an accepted
+  mechanism* rather than inventing one.
+- **The only userspace needing separate work: runtimes that bypass libc.** The
+  big one is **Go** (its runtime issues raw syscalls directly — needs a `syscall`/
+  runtime port); plus the occasional statically-inlined-syscall program. Rust,
+  C/C++, Python, etc. go through libc and are covered automatically.
+
+**Upstreaming asymmetry (your assumption, confirmed):** upstream the *kernel*
+delegation (`arch/lnp64` + `pv_ops` + `sched_ext` + DMA/IOMMU) because it must be
+maintainable in-tree; keep *userspace* enlightenment in your distro via the libc
+port + LLVM target + loader, then **recompile the whole distro**
+(Buildroot/Yocto/Gentoo-style). The targeted enlightenment set is small —
+**libc + toolchain/loader + Go's runtime** — and everything else just rebuilds.
 
 ## Relationship to the NetBSD track
 
