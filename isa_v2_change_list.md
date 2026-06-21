@@ -55,6 +55,22 @@ several decisions above and adds its own:
 | D2 | Two assembler memory syntaxes (`[base,off]` in the Rust asm vs `off(base)` in LLVM) — unify on one grammar | **pending** |
 | D3 | `MULHSU` defined but pattern-less (unselectable) — wire a pattern or drop it | **pending (minor)** |
 
+## Decisions (locked)
+
+- **A4 / E1 — Callee-saved class: YES.** `r2`–`r9` args, `r10`–`r17` + `r28`–`r29`
+  temps, **`r18`–`r27` callee-saved (`s0`–`s9`)**. setjmp save-set updated (C4).
+- **E2 — TableGen-declarative MC layer: YES, now.** Retire the hand-written
+  `MCCodeEmitter`/`AsmParser`; `bits<64> Inst` → generated encode/decode/match.
+- **A5 — Signal-handler arg → `r2`** (consistent C handler ABI + A3).
+- **B3 — Uniform timing: YES.** In-order, non-speculative; remove the RTL
+  return-address/branch predictor. `ret` reads `r1` at fixed cost.
+- **B4 — Memory model: transparent cache.** Scratchpad-explicit would need a
+  compiler that doesn't exist. Accept the split: **deterministic non-speculative
+  core + cached memory** (loads vary, pipeline does not). Cache side-channel
+  partitioning is a later hardening pass, not a v1 blocker. (No immediate RTL
+  change — the current flat-SRAM model is the placeholder until a cache is
+  designed; the decision is the *direction*, away from scratchpad.)
+
 ## Already validated end-to-end
 Full v2 toolchain builds, the libc sysroot compiles + links, and the `write()`
 sysroot smoke runs to `exit=0` (no SIGSEGV); `cargo` 471/2 (2 pre-existing);
