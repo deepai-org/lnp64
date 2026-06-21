@@ -52,6 +52,7 @@ mvs_proofs=(
   fabric
   tags
   channels
+  waitpipe
 )
 for proof in "${mvs_proofs[@]}"; do
   printf '\n========== mvs formal: %s ==========\n' "$proof"
