@@ -15,18 +15,22 @@ if ! command -v coqc >/dev/null 2>&1; then
   exit 1
 fi
 
+# Shared logical load path so cross-file `Require Import CapSpec` resolves.
+COQ_R=(-R proofs/coq "")
+
 coq_files=(
   proofs/coq/CapSpec.v
+  proofs/coq/CapImpl.v
 )
 
 for f in "${coq_files[@]}"; do
   printf '== coqc %s ==\n' "$f"
-  coqc "$f"
+  coqc "${COQ_R[@]}" "$f"
 done
 
 printf '== coqchk (kernel re-check + axiom report) ==\n'
 vos=()
 for f in "${coq_files[@]}"; do vos+=("${f%.v}.vo"); done
-coqchk -silent -o "${vos[@]}"
+coqchk "${COQ_R[@]}" -silent -o "${vos[@]}"
 
 printf '%s\n' "coq proofs ok"
