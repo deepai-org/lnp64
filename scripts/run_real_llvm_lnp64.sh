@@ -263,7 +263,7 @@ ASM
   .text
   .globl _start
 _start:
-  mmap r1, r2, r3, r4
+  mmap r1, r2, r3, r4, r5, r6
   munmap r5, r6
   mprotect r7, r8, r9, r10
   ret
@@ -275,7 +275,7 @@ ASM
   mmap_mc_dump="$build_dir/mmap-mc-smoke.dump"
   "$llvm_objdump" -d --triple=lnp64-unknown-none "$mmap_mc_obj" \
     >"$mmap_mc_dump"
-  grep -q 'mmap r1, r2, r3, r4' "$mmap_mc_dump"
+  grep -q 'mmap r1, r2, r3, r4, r5, r6' "$mmap_mc_dump"
   grep -q 'munmap r5, r6' "$mmap_mc_dump"
   grep -q 'mprotect r7, r8, r9, r10' "$mmap_mc_dump"
   printf 'real LLVM LNP64 llvm-mc mmap opcode smoke passed: %s\n' \
@@ -460,12 +460,8 @@ ASM
   .text
   .globl _start
 _start:
-  amo.swap r1, r2, r3
-  amo.add r4, r5, r6
-  amo.and r7, r8, r9
-  amo.or r10, r11, r12
-  lock.cmpxchg r13, r14, r15, r16
-  amo.xor r17, r18, r19
+  lr.d r1, (r2)
+  sc.d r3, r4, (r5)
   futex_wait r20, r21
   futex_wake r22, r23
   fence
@@ -483,12 +479,8 @@ ASM
   atomic_mc_dump="$build_dir/atomic-mc-smoke.dump"
   "$llvm_objdump" -d --triple=lnp64-unknown-none "$atomic_mc_obj" \
     >"$atomic_mc_dump"
-  grep -q 'amo.swap r1, r2, r3' "$atomic_mc_dump"
-  grep -q 'amo.add r4, r5, r6' "$atomic_mc_dump"
-  grep -q 'amo.and r7, r8, r9' "$atomic_mc_dump"
-  grep -q 'amo.or r10, r11, r12' "$atomic_mc_dump"
-  grep -q 'lock.cmpxchg r13, r14, r15, r16' "$atomic_mc_dump"
-  grep -q 'amo.xor r17, r18, r19' "$atomic_mc_dump"
+  grep -q 'lr.d r1, (r2)' "$atomic_mc_dump"
+  grep -q 'sc.d r3, r4, (r5)' "$atomic_mc_dump"
   grep -q 'futex_wait r20, r21' "$atomic_mc_dump"
   grep -q 'futex_wake r22, r23' "$atomic_mc_dump"
   grep -q 'fence' "$atomic_mc_dump"

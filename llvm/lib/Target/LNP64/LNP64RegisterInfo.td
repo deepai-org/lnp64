@@ -38,15 +38,15 @@ def REALTIME_NSEC : LNP64PCR<9, "REALTIME_NSEC">;
 def CRED_PROFILE : LNP64PCR<10, "CRED_PROFILE">;
 def CRED_HANDLE : LNP64PCR<11, "CRED_HANDLE">;
 
-def LR : LNP64Reg<0x100, "LR">;
-def FLAGS : LNP64Reg<0x101, "FLAGS">;
-
+// v2: one uniform GPR file. r1 is the return address (ra); the v1 LR and FLAGS
+// SPECIAL registers are gone. r30 is reclaimed as a general allocatable GPR;
+// only r0 (zero) and r31 (sp) stay out of allocation.
 def GPR : RegisterClass<"LNP64", [i64], 64,
   (add R0, R1, R2, R3, R4, R5, R6, R7,
        R8, R9, R10, R11, R12, R13, R14, R15,
        R16, R17, R18, R19, R20, R21, R22, R23,
        R24, R25, R26, R27, R28, R29, R30, R31)> {
-  let AltOrders = [(sub GPR, R0, R30, R31)];
+  let AltOrders = [(sub GPR, R0, R31)];
   let AltOrderSelect = [{
     return 1;
   }];
@@ -58,5 +58,3 @@ def VR : RegisterClass<"LNP64", [v2i64], 128, (sequence "V%u", 0, 15)>;
 def PCR : RegisterClass<"LNP64", [i64], 64,
   (add PID, PPID, TID, TP, UID, GID, SIGMASK, SIGPENDING,
        REALTIME_SEC, REALTIME_NSEC, CRED_PROFILE, CRED_HANDLE)>;
-
-def SPECIAL : RegisterClass<"LNP64", [i64], 64, (add LR, TP, FLAGS)>;

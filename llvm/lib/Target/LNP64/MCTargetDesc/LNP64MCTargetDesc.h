@@ -21,12 +21,16 @@ Target &getTheLNP64Target();
 
 namespace LNP64 {
 enum Fixups {
-  fixup_lnp64_abs32 = FirstTargetFixupKind,
+  // B-type compare-and-branch: imm32 field at bit 9, PC-relative, the stored
+  // value is (S - PC) >> 3 (instruction-count offset).
+  fixup_lnp64_branch = FirstTargetFixupKind,
+  // J-type jump/jal: imm32 field at bit 19, PC-relative, value (S - PC) >> 3.
+  fixup_lnp64_jump,
+  // U-type AUIPC: imm32 field at bit 19, PC-relative, byte granularity.
+  fixup_lnp64_auipc,
+  // I-type JALR low / call-target absolute helpers (byte granularity).
+  fixup_lnp64_abs32,
   fixup_lnp64_pcrel32,
-  fixup_lnp64_branch26,
-  fixup_lnp64_pcrel_hi20,
-  fixup_lnp64_pcrel_lo12_i,
-  fixup_lnp64_pcrel_lo12_ld,
   fixup_lnp64_tls_tprel_slot64,
   LastTargetFixupKind,
   NumTargetFixupKinds = LastTargetFixupKind - FirstTargetFixupKind

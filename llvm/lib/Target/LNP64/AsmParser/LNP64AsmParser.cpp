@@ -232,6 +232,9 @@ private:
     if (getLexer().is(AsmToken::Integer) || getLexer().is(AsmToken::Minus))
       return parseImmediateOrMemory(Operands);
 
+    if (getLexer().is(AsmToken::LParen))
+      return parseBareMemory(Operands);
+
     return Error(getLexer().getTok().getLoc(),
                  "expected register, immediate, or memory operand");
   }
@@ -243,6 +246,22 @@ private:
       return true;
     Operands.push_back(
         LNP64Operand::createExpr(ExprValue, Start, getLexer().getTok().getLoc()));
+    return false;
+  }
+
+  // Parse "(rN)" with an implicit zero displacement (lr.d / sc.d base form).
+  bool parseBareMemory(OperandVector &Operands) {
+    SMLoc Start = getLexer().getTok().getLoc();
+    getParser().Lex(); // eat '('
+    unsigned BaseRegNo = 0;
+    SMLoc BS, BE;
+    if (ParseRegister(BaseRegNo, BS, BE))
+      return Error(getLexer().getTok().getLoc(), "expected base register");
+    if (!getLexer().is(AsmToken::RParen))
+      return Error(getLexer().getTok().getLoc(), "expected ')'");
+    SMLoc End = getLexer().getTok().getEndLoc();
+    getParser().Lex();
+    Operands.push_back(LNP64Operand::createMem(0, BaseRegNo, Start, End));
     return false;
   }
 
@@ -319,8 +338,7 @@ private:
         StringSwitch<unsigned>(Mnemonic)
             .Case("nop", LNP64::NOP)
             .Case("li", LNP64::LI)
-            .Case("li32", LNP64::LI32)
-            .Case("la", LNP64::LA)
+            .Case("liu", LNP64::LIU)
             .Case("auipc", LNP64::AUIPC)
             .Case("mov", LNP64::MOV)
             .Case("add", LNP64::ADD)
@@ -334,12 +352,8 @@ private:
             .Case("udiv", LNP64::UDIV)
             .Case("srem", LNP64::SREM)
             .Case("urem", LNP64::UREM)
-            .Case("amo.swap", LNP64::AMO_SWAP)
-            .Case("amo.add", LNP64::AMO_ADD)
-            .Case("amo.and", LNP64::AMO_AND)
-            .Case("amo.or", LNP64::AMO_OR)
-            .Case("amo.xor", LNP64::AMO_XOR)
-            .Case("lock.cmpxchg", LNP64::LOCK_CMPXCHG)
+            .Case("lr.d", LNP64::LR_D)
+            .Case("sc.d", LNP64::SC_D)
             .Case("fence", LNP64::FENCE)
             .Case("fence.acq", LNP64::FENCE)
             .Case("fence.rel", LNP64::FENCE)
@@ -355,12 +369,16 @@ private:
             .Case("xor", LNP64::XOR)
             .Case("xori", LNP64::XORI)
             .Case("not", LNP64::NOT)
-            .Case("lsl", LNP64::LSL)
-            .Case("lsli", LNP64::LSLI)
-            .Case("lsr", LNP64::LSR)
-            .Case("lsri", LNP64::LSRI)
-            .Case("asr", LNP64::ASR)
-            .Case("asri", LNP64::ASRI)
+            .Case("sll", LNP64::SLL)
+            .Case("slli", LNP64::SLLI)
+            .Case("srl", LNP64::SRL)
+            .Case("srli", LNP64::SRLI)
+            .Case("sra", LNP64::SRA)
+            .Case("srai", LNP64::SRAI)
+            .Case("slt", LNP64::SLT)
+            .Case("sltu", LNP64::SLTU)
+            .Case("slti", LNP64::SLTI)
+            .Case("sltiu", LNP64::SLTIU)
             .Case("sext.b", LNP64::SEXT_B)
             .Case("sext.h", LNP64::SEXT_H)
             .Case("sext.w", LNP64::SEXT_W)
@@ -375,39 +393,15 @@ private:
             .Case("bswap16", LNP64::BSWAP16)
             .Case("bswap32", LNP64::BSWAP32)
             .Case("bswap64", LNP64::BSWAP64)
-            .Case("cmp", LNP64::CMP)
-            .Case("cmpu", LNP64::CMPU)
-            .Case("cset.eq", LNP64::CSET_EQ)
-            .Case("cset.ne", LNP64::CSET_NE)
-            .Case("cset.lt", LNP64::CSET_LT)
-            .Case("cset.gt", LNP64::CSET_GT)
-            .Case("cset.le", LNP64::CSET_LE)
-            .Case("cset.ge", LNP64::CSET_GE)
-            .Case("cset.ult", LNP64::CSET_ULT)
-            .Case("cset.ugt", LNP64::CSET_UGT)
-            .Case("cset.ule", LNP64::CSET_ULE)
-            .Case("cset.uge", LNP64::CSET_UGE)
-            .Case("csel.eq", LNP64::CSEL_EQ)
-            .Case("csel.ne", LNP64::CSEL_NE)
-            .Case("csel.lt", LNP64::CSEL_LT)
-            .Case("csel.gt", LNP64::CSEL_GT)
-            .Case("csel.le", LNP64::CSEL_LE)
-            .Case("csel.ge", LNP64::CSEL_GE)
-            .Case("csel.ult", LNP64::CSEL_ULT)
-            .Case("csel.ugt", LNP64::CSEL_UGT)
-            .Case("csel.ule", LNP64::CSEL_ULE)
-            .Case("csel.uge", LNP64::CSEL_UGE)
             .Case("jmp", LNP64::JMP)
             .Case("beq", LNP64::BEQ)
             .Case("bne", LNP64::BNE)
             .Case("blt", LNP64::BLT)
-            .Case("bgt", LNP64::BGT)
-            .Case("ble", LNP64::BLE)
             .Case("bge", LNP64::BGE)
-            .Case("call", LNP64::CALL)
-            .Case("call_reg", LNP64::CALL_REG)
-            .Case("lr_get", LNP64::LR_GET)
-            .Case("lr_set", LNP64::LR_SET)
+            .Case("bltu", LNP64::BLTU)
+            .Case("bgeu", LNP64::BGEU)
+            .Case("jal", LNP64::JAL)
+            .Case("jalr", LNP64::JALR)
             .Case("ret", LNP64::RET)
             .Case("errno_get", LNP64::ERRNO_GET)
             .Case("errno_set", LNP64::ERRNO_SET)
@@ -464,13 +458,16 @@ private:
             .Case("gate_call", LNP64::GATE_CALL)
             .Case("gate_return", LNP64::GATE_RETURN)
             .Case("ld", LNP64::LD)
-            .Case("ld.w", LNP64::LD_W)
-            .Case("ld.h", LNP64::LD_H)
-            .Case("ld.b", LNP64::LD_B)
-            .Case("st", LNP64::ST)
-            .Case("st.w", LNP64::ST_W)
-            .Case("st.h", LNP64::ST_H)
-            .Case("st.b", LNP64::ST_B)
+            .Case("lwu", LNP64::LWU)
+            .Case("lhu", LNP64::LHU)
+            .Case("lbu", LNP64::LBU)
+            .Case("lw", LNP64::LW)
+            .Case("lh", LNP64::LH)
+            .Case("lb", LNP64::LB)
+            .Case("sd", LNP64::SD)
+            .Case("sw", LNP64::SW)
+            .Case("sh", LNP64::SH)
+            .Case("sb", LNP64::SB)
             .Default(0);
 
     if (Opcode == 0)
@@ -483,8 +480,7 @@ private:
 
     if (Opcode == LNP64::LI)
       return addRegImm(Inst, Operands);
-    if (Opcode == LNP64::LA || Opcode == LNP64::AUIPC ||
-        Opcode == LNP64::LI32)
+    if (Opcode == LNP64::AUIPC)
       return addRegAddress(Inst, Operands);
     if (Opcode == LNP64::MOV || Opcode == LNP64::NOT ||
         Opcode == LNP64::SEXT_B || Opcode == LNP64::SEXT_H ||
@@ -496,8 +492,10 @@ private:
       return addRegReg(Inst, Operands);
     if (Opcode == LNP64::ADDI || Opcode == LNP64::ANDI ||
         Opcode == LNP64::ORI || Opcode == LNP64::XORI ||
-        Opcode == LNP64::LSLI || Opcode == LNP64::LSRI ||
-        Opcode == LNP64::ASRI)
+        Opcode == LNP64::SLLI || Opcode == LNP64::SRLI ||
+        Opcode == LNP64::SRAI || Opcode == LNP64::SLTI ||
+        Opcode == LNP64::SLTIU || Opcode == LNP64::LIU ||
+        Opcode == LNP64::JALR)
       return addRegRegImm(Inst, Operands);
     if (Opcode == LNP64::ADD || Opcode == LNP64::SUB ||
         Opcode == LNP64::MUL || Opcode == LNP64::DIV ||
@@ -505,27 +503,19 @@ private:
         Opcode == LNP64::UREM || Opcode == LNP64::MULH ||
         Opcode == LNP64::MULHU || Opcode == LNP64::MULHSU ||
         Opcode == LNP64::CLONE_SPAWN || Opcode == LNP64::THREAD_JOIN ||
-        Opcode == LNP64::EXEC ||
-        Opcode == LNP64::AMO_SWAP || Opcode == LNP64::AMO_ADD ||
-        Opcode == LNP64::AMO_AND || Opcode == LNP64::AMO_OR ||
-        Opcode == LNP64::AMO_XOR || Opcode == LNP64::ISYNC ||
+        Opcode == LNP64::EXEC || Opcode == LNP64::ISYNC ||
         Opcode == LNP64::AND || Opcode == LNP64::OR ||
-        Opcode == LNP64::XOR || Opcode == LNP64::LSL ||
-        Opcode == LNP64::LSR || Opcode == LNP64::ASR ||
-        Opcode == LNP64::ROL || Opcode == LNP64::ROR ||
-        Opcode == LNP64::CSEL_EQ || Opcode == LNP64::CSEL_NE ||
-        Opcode == LNP64::CSEL_LT || Opcode == LNP64::CSEL_GT ||
-        Opcode == LNP64::CSEL_LE || Opcode == LNP64::CSEL_GE ||
-        Opcode == LNP64::CSEL_ULT || Opcode == LNP64::CSEL_UGT ||
-        Opcode == LNP64::CSEL_ULE || Opcode == LNP64::CSEL_UGE)
+        Opcode == LNP64::XOR || Opcode == LNP64::SLL ||
+        Opcode == LNP64::SRL || Opcode == LNP64::SRA ||
+        Opcode == LNP64::SLT || Opcode == LNP64::SLTU ||
+        Opcode == LNP64::ROL || Opcode == LNP64::ROR)
       return addRegRegReg(Inst, Operands);
     if (Opcode == LNP64::FCNTL_FD_DYN || Opcode == LNP64::FD_SEEK_DYN ||
         Opcode == LNP64::OPEN_DIR_DYN || Opcode == LNP64::MKDIR_PATH_AT ||
         Opcode == LNP64::UNLINK_PATH_AT ||
         Opcode == LNP64::SYMLINK_PATH_AT)
       return addRegRegReg(Inst, Operands);
-    if (Opcode == LNP64::CMP || Opcode == LNP64::CMPU ||
-        Opcode == LNP64::FUTEX_WAIT || Opcode == LNP64::FUTEX_WAKE ||
+    if (Opcode == LNP64::FUTEX_WAIT || Opcode == LNP64::FUTEX_WAKE ||
         Opcode == LNP64::MUNMAP || Opcode == LNP64::SIGACTION ||
         Opcode == LNP64::LNP64_KILL || Opcode == LNP64::ALARM ||
         Opcode == LNP64::GET_PCR ||
@@ -533,21 +523,20 @@ private:
         Opcode == LNP64::GETCWD_PATH || Opcode == LNP64::READDIR_FD_DYN ||
         Opcode == LNP64::WAIT_PID)
       return addRegReg(Inst, Operands);
+    if (Opcode == LNP64::LR_D)
+      return addLrD(Inst, Operands);
+    if (Opcode == LNP64::SC_D)
+      return addScD(Inst, Operands);
     if (Opcode == LNP64::SET_PCR)
       return addRegPcrReg(Inst, Operands);
-    if (Opcode == LNP64::JMP || Opcode == LNP64::BEQ ||
-        Opcode == LNP64::BNE || Opcode == LNP64::BLT ||
-        Opcode == LNP64::BGT || Opcode == LNP64::BLE ||
-        Opcode == LNP64::BGE || Opcode == LNP64::CALL)
+    if (Opcode == LNP64::BEQ || Opcode == LNP64::BNE ||
+        Opcode == LNP64::BLT || Opcode == LNP64::BGE ||
+        Opcode == LNP64::BLTU || Opcode == LNP64::BGEU)
+      return addBranch3(Inst, Operands);
+    if (Opcode == LNP64::JMP)
       return addBranchTarget(Inst, Operands);
-    if (Opcode == LNP64::CALL_REG || Opcode == LNP64::LR_GET ||
-        Opcode == LNP64::LR_SET || Opcode == LNP64::CSET_EQ ||
-        Opcode == LNP64::CSET_NE || Opcode == LNP64::CSET_LT ||
-        Opcode == LNP64::CSET_GT || Opcode == LNP64::CSET_LE ||
-        Opcode == LNP64::CSET_GE || Opcode == LNP64::CSET_ULT ||
-        Opcode == LNP64::CSET_UGT || Opcode == LNP64::CSET_ULE ||
-        Opcode == LNP64::CSET_UGE)
-      return addReg(Inst, Operands);
+    if (Opcode == LNP64::JAL)
+      return addRegAddress(Inst, Operands);
     if (Opcode == LNP64::ERRNO_GET || Opcode == LNP64::ERRNO_SET ||
         Opcode == LNP64::FORK || Opcode == LNP64::EXIT || Opcode == LNP64::FREE ||
         Opcode == LNP64::SIGMASK_SET || Opcode == LNP64::CHDIR_PATH)
@@ -560,10 +549,8 @@ private:
       return addRegReg(Inst, Operands);
     if (Opcode == LNP64::ALLOC_EX)
       return addRegRegReg(Inst, Operands);
-    if (Opcode == LNP64::LOCK_CMPXCHG)
-      return addRegRegRegReg(Inst, Operands);
     if (Opcode == LNP64::AWAIT || Opcode == LNP64::GATE_CALL ||
-        Opcode == LNP64::GATE_RETURN || Opcode == LNP64::MMAP ||
+        Opcode == LNP64::GATE_RETURN ||
         Opcode == LNP64::MPROTECT || Opcode == LNP64::ENV_GET ||
         Opcode == LNP64::OPEN_AT || Opcode == LNP64::PULL ||
         Opcode == LNP64::PUSH || Opcode == LNP64::STAT_PATH_AT ||
@@ -573,11 +560,14 @@ private:
       return addRegRegRegReg(Inst, Operands);
     if (Opcode == LNP64::LINK_PATH_AT || Opcode == LNP64::CHOWN_PATH_AT)
       return addRegRegRegRegReg(Inst, Operands);
-    if (Opcode == LNP64::LD || Opcode == LNP64::LD_W ||
-        Opcode == LNP64::LD_H || Opcode == LNP64::LD_B)
+    if (Opcode == LNP64::MMAP)
+      return addRegN(Inst, Operands, 6);
+    if (Opcode == LNP64::LD || Opcode == LNP64::LWU ||
+        Opcode == LNP64::LHU || Opcode == LNP64::LBU ||
+        Opcode == LNP64::LW || Opcode == LNP64::LH || Opcode == LNP64::LB)
       return addLoad(Inst, Operands);
-    if (Opcode == LNP64::ST || Opcode == LNP64::ST_W ||
-        Opcode == LNP64::ST_H || Opcode == LNP64::ST_B)
+    if (Opcode == LNP64::SD || Opcode == LNP64::SW ||
+        Opcode == LNP64::SH || Opcode == LNP64::SB)
       return addStore(Inst, Operands);
 
     return false;
@@ -608,11 +598,68 @@ private:
     if (Operands.size() != 3 || !Reg || !Imm || !Reg->isReg() ||
         !Imm->isImmValue())
       return false;
-    // LI carries a signed-16 immediate in bits[15:0].
-    if (!isInt<16>(Imm->getImm()))
+    // li carries a full signed-32 immediate in v2.
+    if (!isInt<32>(Imm->getImm()))
       return false;
     Inst.addOperand(MCOperand::createReg(Reg->getReg()));
     Inst.addOperand(MCOperand::createImm(Imm->getImm()));
+    return true;
+  }
+
+  // Branch: rs1, rs2, target.
+  static bool addBranch3(MCInst &Inst, const OperandVector &Operands) {
+    const LNP64Operand *A = getOp(Operands, 1);
+    const LNP64Operand *B = getOp(Operands, 2);
+    const LNP64Operand *T = getOp(Operands, 3);
+    if (Operands.size() != 4 || !A || !B || !T || !A->isReg() || !B->isReg() ||
+        !T->isImm())
+      return false;
+    Inst.addOperand(MCOperand::createReg(A->getReg()));
+    Inst.addOperand(MCOperand::createReg(B->getReg()));
+    if (T->isExprValue())
+      Inst.addOperand(MCOperand::createExpr(T->getExpr()));
+    else
+      Inst.addOperand(MCOperand::createImm(T->getImm()));
+    return true;
+  }
+
+  // lr.d rd, (rs1).
+  static bool addLrD(MCInst &Inst, const OperandVector &Operands) {
+    const LNP64Operand *Rd = getOp(Operands, 1);
+    const LNP64Operand *Mem = getOp(Operands, 2);
+    if (Operands.size() != 3 || !Rd || !Mem || !Rd->isReg() || !Mem->isMem() ||
+        Mem->getImm() != 0)
+      return false;
+    Inst.addOperand(MCOperand::createReg(Rd->getReg()));
+    Inst.addOperand(MCOperand::createReg(Mem->getBaseReg()));
+    return true;
+  }
+
+  // sc.d rd, rs2, (rs1): the third operand is a memory form "(rs1)" with no
+  // displacement.
+  static bool addScD(MCInst &Inst, const OperandVector &Operands) {
+    const LNP64Operand *Rd = getOp(Operands, 1);
+    const LNP64Operand *Rs2 = getOp(Operands, 2);
+    const LNP64Operand *Mem = getOp(Operands, 3);
+    if (Operands.size() != 4 || !Rd || !Rs2 || !Mem || !Rd->isReg() ||
+        !Rs2->isReg() || !Mem->isMem() || Mem->getImm() != 0)
+      return false;
+    Inst.addOperand(MCOperand::createReg(Rd->getReg()));
+    Inst.addOperand(MCOperand::createReg(Rs2->getReg()));
+    Inst.addOperand(MCOperand::createReg(Mem->getBaseReg()));
+    return true;
+  }
+
+  // N register operands.
+  static bool addRegN(MCInst &Inst, const OperandVector &Operands, unsigned N) {
+    if (Operands.size() != N + 1)
+      return false;
+    for (unsigned I = 1; I <= N; ++I) {
+      const LNP64Operand *Op = getOp(Operands, I);
+      if (!Op || !Op->isReg())
+        return false;
+      Inst.addOperand(MCOperand::createReg(Op->getReg()));
+    }
     return true;
   }
 
@@ -647,9 +694,8 @@ private:
     if (Operands.size() != 4 || !A || !B || !Imm || !A->isReg() ||
         !B->isReg() || !Imm->isImmValue())
       return false;
-    // Register-immediate ALU forms (ADDI/ANDI/...) encode a signed-14
-    // immediate in bits[13:0]; reject anything wider rather than truncate.
-    if (!isInt<14>(Imm->getImm()))
+    // v2 I-type immediates are a full signed-32.
+    if (!isInt<32>(Imm->getImm()))
       return false;
     Inst.addOperand(MCOperand::createReg(A->getReg()));
     Inst.addOperand(MCOperand::createReg(B->getReg()));
@@ -724,10 +770,8 @@ private:
     if (Operands.size() != 3 || !Reg || !Mem || !Reg->isReg() ||
         !Mem->isMem())
       return false;
-    // Memory offsets encode a signed-14 displacement in bits[13:0]; reject
-    // anything wider here so the assembler gives a clean diagnostic instead
-    // of tripping the report_fatal_error in the MC encoder.
-    if (!isInt<14>(Mem->getImm()))
+    // v2 load/store displacements are a full signed-32.
+    if (!isInt<32>(Mem->getImm()))
       return false;
     Inst.addOperand(MCOperand::createReg(Reg->getReg()));
     Inst.addOperand(MCOperand::createReg(Mem->getBaseReg()));

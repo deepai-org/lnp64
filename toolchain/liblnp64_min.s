@@ -1,207 +1,196 @@
-# LNP64 minimal libc smoke stubs v0.
+# LNP64 minimal libc smoke stubs v2.
 # These stubs exist only to prove real Clang objects can be statically linked
-# by lld before the native libc/runtime implementation is ready.
+# by lld before the native libc/runtime implementation is ready. v2 ISA.
 
 .text
 .globl write
 .type write,@function
 write:
-  PUSH r1, r1, r2, r3
-  RET
+  push r1, r1, r2, r3
+  ret
 
 .globl read
 .type read,@function
 read:
-  PULL r1, r1, r2, r3
-  RET
+  pull r1, r1, r2, r3
+  ret
 
 .globl alloc
 .type alloc,@function
 alloc:
-  ALLOC r1, r1
-  RET
+  alloc r1, r1
+  ret
 
 .globl malloc
 .type malloc,@function
 malloc:
-  CALL alloc
-  RET
+  jal r1, alloc
+  ret
 
 .globl calloc
 .type calloc,@function
 calloc:
-  MUL r8, r1, r2
-  MOV r1, r8
-  CALL malloc
-  MOV r2, r0
-  MOV r3, r8
-  CALL memset
-  RET
+  mul r8, r1, r2
+  mov r1, r8
+  jal r1, malloc
+  mov r2, r0
+  mov r3, r8
+  jal r1, memset
+  ret
 
 .globl realloc
 .type realloc,@function
 realloc:
-  CMP r1, r0
-  BEQ realloc_malloc
-  CMP r2, r0
-  BEQ realloc_free
-  LA r4, __lnp64_min_realloc_old
-  ST r1, 0(r4)
-  LA r4, __lnp64_min_realloc_size
-  ST r2, 0(r4)
-  MOV r1, r2
-  CALL malloc
-  CMP r1, r0
-  BEQ realloc_done
-  LA r4, __lnp64_min_realloc_new
-  ST r1, 0(r4)
-  LA r4, __lnp64_min_realloc_old
-  LD r2, 0(r4)
-  ALLOC_SIZE r3, r2
-  LA r4, __lnp64_min_realloc_size
-  LD r5, 0(r4)
-  CMPU r3, r5
-  BLE realloc_copy
-  MOV r3, r5
+  beq r1, r0, realloc_malloc
+  beq r2, r0, realloc_free
+  auipc r4, __lnp64_min_realloc_old
+  sd r1, 0(r4)
+  auipc r4, __lnp64_min_realloc_size
+  sd r2, 0(r4)
+  mov r1, r2
+  jal r1, malloc
+  beq r1, r0, realloc_done
+  auipc r4, __lnp64_min_realloc_new
+  sd r1, 0(r4)
+  auipc r4, __lnp64_min_realloc_old
+  ld r2, 0(r4)
+  alloc_size r3, r2
+  auipc r4, __lnp64_min_realloc_size
+  ld r5, 0(r4)
+  bgeu r5, r3, realloc_copy
+  mov r3, r5
 realloc_copy:
-  LA r4, __lnp64_min_realloc_new
-  LD r1, 0(r4)
-  CALL memcpy
-  LA r4, __lnp64_min_realloc_old
-  LD r1, 0(r4)
-  CALL free
-  LA r4, __lnp64_min_realloc_new
-  LD r1, 0(r4)
-  RET
+  auipc r4, __lnp64_min_realloc_new
+  ld r1, 0(r4)
+  jal r1, memcpy
+  auipc r4, __lnp64_min_realloc_old
+  ld r1, 0(r4)
+  jal r1, free
+  auipc r4, __lnp64_min_realloc_new
+  ld r1, 0(r4)
+  ret
 realloc_malloc:
-  MOV r1, r2
-  CALL malloc
-  RET
+  mov r1, r2
+  jal r1, malloc
+  ret
 realloc_free:
-  CALL free
-  RET
+  jal r1, free
+  ret
 realloc_done:
-  RET
+  ret
 
 .globl free
 .type free,@function
 free:
-  FREE r1
-  LI r1, 0
-  RET
+  free r1
+  li r1, 0
+  ret
 
 .globl strlen
 .type strlen,@function
 strlen:
-  MOV r2, r1
-  LI r1, 0
-  LI r4, 1
+  mov r2, r1
+  li r1, 0
+  li r4, 1
 strlen_loop:
-  LD.B r3, 0(r2)
-  CMP r3, r0
-  BEQ strlen_done
-  ADD r1, r1, r4
-  ADD r2, r2, r4
-  JMP strlen_loop
+  lbu r3, 0(r2)
+  beq r3, r0, strlen_done
+  add r1, r1, r4
+  add r2, r2, r4
+  jmp strlen_loop
 strlen_done:
-  RET
+  ret
 
 .globl memcpy
 .type memcpy,@function
 memcpy:
-  MOV r4, r1
-  LI r5, 0
-  LI r6, 1
+  mov r4, r1
+  li r5, 0
+  li r6, 1
 memcpy_loop:
-  CMPU r5, r3
-  BGE memcpy_done
-  LD.B r7, 0(r2)
-  ST.B r7, 0(r1)
-  ADD r1, r1, r6
-  ADD r2, r2, r6
-  ADD r5, r5, r6
-  JMP memcpy_loop
+  bgeu r5, r3, memcpy_done
+  lbu r7, 0(r2)
+  sb r7, 0(r1)
+  add r1, r1, r6
+  add r2, r2, r6
+  add r5, r5, r6
+  jmp memcpy_loop
 memcpy_done:
-  MOV r1, r4
-  RET
+  mov r1, r4
+  ret
 
 .globl memmove
 .type memmove,@function
 memmove:
-  MOV r4, r1
-  CMPU r1, r2
-  BLE memmove_forward
-  ADD r1, r1, r3
-  ADD r2, r2, r3
-  LI r5, 0
-  LI r6, 1
+  mov r4, r1
+  bgeu r2, r1, memmove_forward
+  add r1, r1, r3
+  add r2, r2, r3
+  li r5, 0
+  li r6, 1
 memmove_backward_loop:
-  CMPU r5, r3
-  BGE memmove_done
-  SUB r1, r1, r6
-  SUB r2, r2, r6
-  LD.B r7, 0(r2)
-  ST.B r7, 0(r1)
-  ADD r5, r5, r6
-  JMP memmove_backward_loop
+  bgeu r5, r3, memmove_done
+  sub r1, r1, r6
+  sub r2, r2, r6
+  lbu r7, 0(r2)
+  sb r7, 0(r1)
+  add r5, r5, r6
+  jmp memmove_backward_loop
 memmove_forward:
-  CALL memcpy
-  RET
+  jal r1, memcpy
+  ret
 memmove_done:
-  MOV r1, r4
-  RET
+  mov r1, r4
+  ret
 
 .globl memcmp
 .type memcmp,@function
 memcmp:
-  LI r4, 0
-  LI r5, 1
+  li r4, 0
+  li r5, 1
 memcmp_loop:
-  CMPU r4, r3
-  BGE memcmp_equal
-  LD.B r6, 0(r1)
-  LD.B r7, 0(r2)
-  CMPU r6, r7
-  BNE memcmp_diff
-  ADD r1, r1, r5
-  ADD r2, r2, r5
-  ADD r4, r4, r5
-  JMP memcmp_loop
+  bgeu r4, r3, memcmp_equal
+  lbu r6, 0(r1)
+  lbu r7, 0(r2)
+  bne r6, r7, memcmp_diff
+  add r1, r1, r5
+  add r2, r2, r5
+  add r4, r4, r5
+  jmp memcmp_loop
 memcmp_diff:
-  SUB r1, r6, r7
-  RET
+  sub r1, r6, r7
+  ret
 memcmp_equal:
-  LI r1, 0
-  RET
+  li r1, 0
+  ret
 
 .globl memset
 .type memset,@function
 memset:
-  MOV r4, r1
-  LI r5, 0
-  LI r6, 1
+  mov r4, r1
+  li r5, 0
+  li r6, 1
 memset_loop:
-  CMPU r5, r3
-  BGE memset_done
-  ST.B r2, 0(r1)
-  ADD r1, r1, r6
-  ADD r5, r5, r6
-  JMP memset_loop
+  bgeu r5, r3, memset_done
+  sb r2, 0(r1)
+  add r1, r1, r6
+  add r5, r5, r6
+  jmp memset_loop
 memset_done:
-  MOV r1, r4
-  RET
+  mov r1, r4
+  ret
 
 .globl _exit
 .type _exit,@function
 _exit:
-  EXIT r1
-  RET
+  exit r1
+  ret
 
 .globl exit
 .type exit,@function
 exit:
-  EXIT r1
-  RET
+  exit r1
+  ret
 
 .bss
 .globl __lnp64_min_realloc_old

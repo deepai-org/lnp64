@@ -14,5 +14,5 @@ LNP64MCAsmInfo::LNP64MCAsmInfo(const Triple &, const MCTargetOptions &) {
   ExceptionsType = ExceptionHandling::DwarfCFI;
   UsesELFSectionDirectiveForBSS = true;
   SupportsDebugInformation = true;
-  MinInstAlignment = 4;
+  MinInstAlignment = 8;
 }

@@ -59,23 +59,23 @@ bool LNP64DAGToDAGISel::SelectFrameIndexLoad(SDNode *Node) {
   if (MemVT == MVT::i64 && Load->getExtensionType() == ISD::NON_EXTLOAD)
     Opcode = LNP64::LD;
   else if (MemVT == MVT::i32 && Load->getExtensionType() == ISD::SEXTLOAD)
-    Opcode = LNP64::PseudoLD_SW;
+    Opcode = LNP64::LW;
   else if (MemVT == MVT::i16 && Load->getExtensionType() == ISD::SEXTLOAD)
-    Opcode = LNP64::PseudoLD_SH;
+    Opcode = LNP64::LH;
   else if (MemVT == MVT::i8 && Load->getExtensionType() == ISD::SEXTLOAD)
-    Opcode = LNP64::PseudoLD_SB;
+    Opcode = LNP64::LB;
   else if (MemVT == MVT::i32 &&
            (Load->getExtensionType() == ISD::ZEXTLOAD ||
             Load->getExtensionType() == ISD::EXTLOAD))
-    Opcode = LNP64::LD_W;
+    Opcode = LNP64::LWU;
   else if (MemVT == MVT::i16 &&
            (Load->getExtensionType() == ISD::ZEXTLOAD ||
             Load->getExtensionType() == ISD::EXTLOAD))
-    Opcode = LNP64::LD_H;
+    Opcode = LNP64::LHU;
   else if ((MemVT == MVT::i1 || MemVT == MVT::i8) &&
            (Load->getExtensionType() == ISD::ZEXTLOAD ||
             Load->getExtensionType() == ISD::EXTLOAD))
-    Opcode = LNP64::LD_B;
+    Opcode = LNP64::LBU;
   else
     return false;
 
@@ -102,13 +102,13 @@ bool LNP64DAGToDAGISel::SelectFrameIndexStore(SDNode *Node) {
   unsigned Opcode;
   EVT MemVT = Store->getMemoryVT();
   if (MemVT == MVT::i64 && !Store->isTruncatingStore())
-    Opcode = LNP64::ST;
+    Opcode = LNP64::SD;
   else if (MemVT == MVT::i32 && Store->isTruncatingStore())
-    Opcode = LNP64::ST_W;
+    Opcode = LNP64::SW;
   else if (MemVT == MVT::i16 && Store->isTruncatingStore())
-    Opcode = LNP64::ST_H;
+    Opcode = LNP64::SH;
   else if ((MemVT == MVT::i1 || MemVT == MVT::i8) && Store->isTruncatingStore())
-    Opcode = LNP64::ST_B;
+    Opcode = LNP64::SB;
   else
     return false;
 

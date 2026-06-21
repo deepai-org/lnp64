@@ -26,7 +26,7 @@ static MCInstrInfo *createLNP64MCInstrInfo() {
 
 static MCRegisterInfo *createLNP64MCRegisterInfo(const Triple &) {
   MCRegisterInfo *X = new MCRegisterInfo();
-  InitLNP64MCRegisterInfo(X, LNP64::LR);
+  InitLNP64MCRegisterInfo(X, LNP64::R1);
   return X;
 }
 

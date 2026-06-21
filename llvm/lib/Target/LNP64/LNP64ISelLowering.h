@@ -12,16 +12,6 @@ class LNP64Subtarget;
 namespace LNP64ISD {
 enum NodeType : unsigned {
   FIRST_NUMBER = ISD::BUILTIN_OP_END,
-  BR_EQ,
-  BR_GE,
-  BR_GT,
-  BR_LE,
-  BR_LT,
-  BR_NE,
-  BR_UGE,
-  BR_UGT,
-  BR_ULE,
-  BR_ULT,
   CALL,
   AWAIT,
   DOMAIN_CTL,
@@ -31,6 +21,7 @@ enum NodeType : unsigned {
   PULL,
   PUSH,
   WRAPPER,
+  SELECT_CC,
   RET_FLAG,
 };
 }
@@ -41,6 +32,10 @@ public:
                                const LNP64Subtarget &STI);
 
   const char *getTargetNodeName(unsigned Opcode) const override;
+  AtomicExpansionKind
+  shouldExpandAtomicRMWInIR(AtomicRMWInst *RMW) const override;
+  AtomicExpansionKind
+  shouldExpandAtomicCmpXchgInIR(AtomicCmpXchgInst *CI) const override;
   ConstraintType getConstraintType(StringRef Constraint) const override;
   std::pair<unsigned, const TargetRegisterClass *>
   getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,

@@ -24,239 +24,6 @@ static StringRef getDirectCalleeName(SDValue Callee) {
   return StringRef();
 }
 
-static unsigned getLNP64BranchOpcode(ISD::CondCode CC) {
-  switch (CC) {
-  case ISD::SETEQ:
-    return LNP64ISD::BR_EQ;
-  case ISD::SETNE:
-    return LNP64ISD::BR_NE;
-  case ISD::SETLT:
-    return LNP64ISD::BR_LT;
-  case ISD::SETGT:
-    return LNP64ISD::BR_GT;
-  case ISD::SETLE:
-    return LNP64ISD::BR_LE;
-  case ISD::SETGE:
-    return LNP64ISD::BR_GE;
-  case ISD::SETULT:
-    return LNP64ISD::BR_ULT;
-  case ISD::SETUGT:
-    return LNP64ISD::BR_UGT;
-  case ISD::SETULE:
-    return LNP64ISD::BR_ULE;
-  case ISD::SETUGE:
-    return LNP64ISD::BR_UGE;
-  default:
-    llvm_unreachable(
-        "LNP64 conditional branch lowering only supports integer comparisons today");
-  }
-}
-
-static unsigned getLNP64BranchInstr(unsigned Opcode) {
-  switch (Opcode) {
-  case LNP64::PseudoBEQ:
-    return LNP64::BEQ;
-  case LNP64::PseudoBNE:
-    return LNP64::BNE;
-  case LNP64::PseudoBLT:
-    return LNP64::BLT;
-  case LNP64::PseudoBGT:
-    return LNP64::BGT;
-  case LNP64::PseudoBLE:
-    return LNP64::BLE;
-  case LNP64::PseudoBGE:
-  case LNP64::PseudoBUGE:
-    return LNP64::BGE;
-  case LNP64::PseudoBULT:
-    return LNP64::BLT;
-  case LNP64::PseudoBUGT:
-    return LNP64::BGT;
-  case LNP64::PseudoBULE:
-    return LNP64::BLE;
-  default:
-    llvm_unreachable("expected LNP64 conditional branch pseudo");
-  }
-}
-
-static bool isLNP64UnsignedBranchPseudo(unsigned Opcode) {
-  switch (Opcode) {
-  case LNP64::PseudoBULT:
-  case LNP64::PseudoBUGT:
-  case LNP64::PseudoBULE:
-  case LNP64::PseudoBUGE:
-    return true;
-  default:
-    return false;
-  }
-}
-
-static unsigned getLNP64CSetInstr(unsigned Opcode) {
-  switch (Opcode) {
-  case LNP64::PseudoCSETEQ:
-  case LNP64::PseudoCSETEQI:
-    return LNP64::CSET_EQ;
-  case LNP64::PseudoCSETNE:
-  case LNP64::PseudoCSETNEI:
-    return LNP64::CSET_NE;
-  case LNP64::PseudoCSETLT:
-  case LNP64::PseudoCSETLTI:
-    return LNP64::CSET_LT;
-  case LNP64::PseudoCSETGT:
-  case LNP64::PseudoCSETGTI:
-    return LNP64::CSET_GT;
-  case LNP64::PseudoCSETLE:
-  case LNP64::PseudoCSETLEI:
-    return LNP64::CSET_LE;
-  case LNP64::PseudoCSETGE:
-  case LNP64::PseudoCSETGEI:
-    return LNP64::CSET_GE;
-  case LNP64::PseudoCSETULT:
-  case LNP64::PseudoCSETULTI:
-    return LNP64::CSET_ULT;
-  case LNP64::PseudoCSETUGT:
-  case LNP64::PseudoCSETUGTI:
-    return LNP64::CSET_UGT;
-  case LNP64::PseudoCSETULE:
-  case LNP64::PseudoCSETULEI:
-    return LNP64::CSET_ULE;
-  case LNP64::PseudoCSETUGE:
-  case LNP64::PseudoCSETUGEI:
-    return LNP64::CSET_UGE;
-  default:
-    llvm_unreachable("expected LNP64 setcc pseudo");
-  }
-}
-
-static unsigned getLNP64CSelectInstr(unsigned Opcode) {
-  switch (Opcode) {
-  case LNP64::PseudoCSELEQ:
-    return LNP64::CSEL_EQ;
-  case LNP64::PseudoCSELNE:
-    return LNP64::CSEL_NE;
-  case LNP64::PseudoCSELLT:
-    return LNP64::CSEL_LT;
-  case LNP64::PseudoCSELGT:
-    return LNP64::CSEL_GT;
-  case LNP64::PseudoCSELLE:
-    return LNP64::CSEL_LE;
-  case LNP64::PseudoCSELGE:
-    return LNP64::CSEL_GE;
-  case LNP64::PseudoCSELULT:
-    return LNP64::CSEL_ULT;
-  case LNP64::PseudoCSELUGT:
-    return LNP64::CSEL_UGT;
-  case LNP64::PseudoCSELULE:
-    return LNP64::CSEL_ULE;
-  case LNP64::PseudoCSELUGE:
-    return LNP64::CSEL_UGE;
-  default:
-    llvm_unreachable("expected LNP64 selectcc pseudo");
-  }
-}
-
-static bool isLNP64SetCCImmPseudo(unsigned Opcode) {
-  switch (Opcode) {
-  case LNP64::PseudoCSETEQI:
-  case LNP64::PseudoCSETNEI:
-  case LNP64::PseudoCSETLTI:
-  case LNP64::PseudoCSETGTI:
-  case LNP64::PseudoCSETLEI:
-  case LNP64::PseudoCSETGEI:
-  case LNP64::PseudoCSETULTI:
-  case LNP64::PseudoCSETUGTI:
-  case LNP64::PseudoCSETULEI:
-  case LNP64::PseudoCSETUGEI:
-    return true;
-  default:
-    return false;
-  }
-}
-
-static bool isLNP64SetCCPseudo(unsigned Opcode) {
-  switch (Opcode) {
-  case LNP64::PseudoCSETEQ:
-  case LNP64::PseudoCSETNE:
-  case LNP64::PseudoCSETLT:
-  case LNP64::PseudoCSETGT:
-  case LNP64::PseudoCSETLE:
-  case LNP64::PseudoCSETGE:
-  case LNP64::PseudoCSETEQI:
-  case LNP64::PseudoCSETNEI:
-  case LNP64::PseudoCSETLTI:
-  case LNP64::PseudoCSETGTI:
-  case LNP64::PseudoCSETLEI:
-  case LNP64::PseudoCSETGEI:
-  case LNP64::PseudoCSETULT:
-  case LNP64::PseudoCSETUGT:
-  case LNP64::PseudoCSETULE:
-  case LNP64::PseudoCSETUGE:
-  case LNP64::PseudoCSETULTI:
-  case LNP64::PseudoCSETUGTI:
-  case LNP64::PseudoCSETULEI:
-  case LNP64::PseudoCSETUGEI:
-    return true;
-  default:
-    return false;
-  }
-}
-
-static bool isLNP64SelectCCPseudo(unsigned Opcode) {
-  switch (Opcode) {
-  case LNP64::PseudoCSELEQ:
-  case LNP64::PseudoCSELNE:
-  case LNP64::PseudoCSELLT:
-  case LNP64::PseudoCSELGT:
-  case LNP64::PseudoCSELLE:
-  case LNP64::PseudoCSELGE:
-  case LNP64::PseudoCSELULT:
-  case LNP64::PseudoCSELUGT:
-  case LNP64::PseudoCSELULE:
-  case LNP64::PseudoCSELUGE:
-    return true;
-  default:
-    return false;
-  }
-}
-
-static bool isLNP64UnsignedSetCCPseudo(unsigned Opcode) {
-  switch (Opcode) {
-  case LNP64::PseudoCSETULT:
-  case LNP64::PseudoCSETUGT:
-  case LNP64::PseudoCSETULE:
-  case LNP64::PseudoCSETUGE:
-  case LNP64::PseudoCSETULTI:
-  case LNP64::PseudoCSETUGTI:
-  case LNP64::PseudoCSETULEI:
-  case LNP64::PseudoCSETUGEI:
-    return true;
-  default:
-    return false;
-  }
-}
-
-static bool isLNP64UnsignedSelectCCPseudo(unsigned Opcode) {
-  switch (Opcode) {
-  case LNP64::PseudoCSELULT:
-  case LNP64::PseudoCSELUGT:
-  case LNP64::PseudoCSELULE:
-  case LNP64::PseudoCSELUGE:
-    return true;
-  default:
-    return false;
-  }
-}
-
-static bool isLNP64SignedLoadPseudo(unsigned Opcode) {
-  switch (Opcode) {
-  case LNP64::PseudoLD_SB:
-  case LNP64::PseudoLD_SH:
-  case LNP64::PseudoLD_SW:
-    return true;
-  default:
-    return false;
-  }
-}
-
 static SDValue adjustArgToLocVT(SelectionDAG &DAG, const SDLoc &DL,
                                 const CCValAssign &VA, SDValue Arg) {
   switch (VA.getLocInfo()) {
@@ -289,32 +56,6 @@ static SDValue adjustArgToValVT(SelectionDAG &DAG, const SDLoc &DL,
   return Arg;
 }
 
-static unsigned getLNP64SignedLoadInstr(unsigned Opcode) {
-  switch (Opcode) {
-  case LNP64::PseudoLD_SB:
-    return LNP64::LD_B;
-  case LNP64::PseudoLD_SH:
-    return LNP64::LD_H;
-  case LNP64::PseudoLD_SW:
-    return LNP64::LD_W;
-  default:
-    llvm_unreachable("expected LNP64 signed load pseudo");
-  }
-}
-
-static unsigned getLNP64SignExtendInstr(unsigned Opcode) {
-  switch (Opcode) {
-  case LNP64::PseudoLD_SB:
-    return LNP64::SEXT_B;
-  case LNP64::PseudoLD_SH:
-    return LNP64::SEXT_H;
-  case LNP64::PseudoLD_SW:
-    return LNP64::SEXT_W;
-  default:
-    llvm_unreachable("expected LNP64 signed load pseudo");
-  }
-}
-
 LNP64TargetLowering::LNP64TargetLowering(const TargetMachine &TM,
                                          const LNP64Subtarget &STI)
     : TargetLowering(TM) {
@@ -327,24 +68,16 @@ LNP64TargetLowering::LNP64TargetLowering(const TargetMachine &TM,
                           ISD::SHL, ISD::SRL, ISD::SRA, ISD::MULHS,
                           ISD::MULHU, ISD::CTLZ, ISD::CTLZ_ZERO_UNDEF, ISD::CTTZ,
                           ISD::CTTZ_ZERO_UNDEF, ISD::CTPOP, ISD::ROTL,
-                          ISD::ROTR, ISD::BSWAP})
+                          ISD::ROTR, ISD::BSWAP, ISD::SETCC, ISD::BR_CC})
     setOperationAction(Opcode, MVT::i64, Legal);
 
-  // LNP64 is a single-process capability machine; lower all atomic RMW
-  // operations to plain load / op / store sequences.  No hardware support
-  // for LL/SC or CAS is needed because there is only one coherent domain.
-  for (unsigned Opcode : {ISD::ATOMIC_SWAP, ISD::ATOMIC_LOAD_ADD,
-                          ISD::ATOMIC_LOAD_SUB, ISD::ATOMIC_LOAD_AND,
-                          ISD::ATOMIC_LOAD_OR,  ISD::ATOMIC_LOAD_XOR,
-                          ISD::ATOMIC_LOAD_NAND, ISD::ATOMIC_CMP_SWAP})
-    setOperationAction(Opcode, MVT::i64, Custom);
-
+  // v2 has honest hardware LR/SC. Let the generic AtomicExpand pass turn every
+  // atomicrmw / cmpxchg into an LR/SC retry loop (RISC-V model). Word-sized
+  // atomic load/store are plain ordered memory ops.
+  setMaxAtomicSizeInBitsSupported(64);
+  setMinCmpXchgSizeInBits(32);
   setOperationAction(ISD::ATOMIC_LOAD, MVT::i64, Legal);
   setOperationAction(ISD::ATOMIC_STORE, MVT::i64, Legal);
-
-  // Sub-word atomic loads/stores: custom-lower to plain zero-extending loads
-  // and truncating stores.  LNP64 is a single-process capability machine;
-  // relaxed atomics on sub-word types need no hardware support.
   for (MVT VT : {MVT::i8, MVT::i16, MVT::i32}) {
     setOperationAction(ISD::ATOMIC_LOAD, VT, Custom);
     setOperationAction(ISD::ATOMIC_STORE, VT, Custom);
@@ -354,11 +87,9 @@ LNP64TargetLowering::LNP64TargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::STACKSAVE,         MVT::Other, Custom);
   setOperationAction(ISD::STACKRESTORE,      MVT::Other, Custom);
   setOperationAction(ISD::GlobalAddress, MVT::i64, Custom);
-  setOperationAction(ISD::BR_CC, MVT::i64, Custom);
   setOperationAction(ISD::BRCOND, MVT::Other, Custom);
-  // We only match SELECT_CC (selectcc) patterns; expand bare SELECT nodes
-  // (produced by DAG combines) into SELECT_CC against zero so they select.
-  setOperationAction(ISD::SELECT, MVT::i64, Expand);
+  setOperationAction(ISD::SELECT, MVT::i64, Custom);
+  setOperationAction(ISD::SELECT_CC, MVT::i64, Expand);
   setOperationAction(ISD::VASTART, MVT::Other, Custom);
   setOperationAction(ISD::VAARG, MVT::Other, Expand);
   setOperationAction(ISD::VACOPY, MVT::Other, Expand);
@@ -375,26 +106,6 @@ LNP64TargetLowering::LNP64TargetLowering(const TargetMachine &TM,
 
 const char *LNP64TargetLowering::getTargetNodeName(unsigned Opcode) const {
   switch (Opcode) {
-  case LNP64ISD::BR_EQ:
-    return "LNP64ISD::BR_EQ";
-  case LNP64ISD::BR_GE:
-    return "LNP64ISD::BR_GE";
-  case LNP64ISD::BR_GT:
-    return "LNP64ISD::BR_GT";
-  case LNP64ISD::BR_LE:
-    return "LNP64ISD::BR_LE";
-  case LNP64ISD::BR_LT:
-    return "LNP64ISD::BR_LT";
-  case LNP64ISD::BR_NE:
-    return "LNP64ISD::BR_NE";
-  case LNP64ISD::BR_UGE:
-    return "LNP64ISD::BR_UGE";
-  case LNP64ISD::BR_UGT:
-    return "LNP64ISD::BR_UGT";
-  case LNP64ISD::BR_ULE:
-    return "LNP64ISD::BR_ULE";
-  case LNP64ISD::BR_ULT:
-    return "LNP64ISD::BR_ULT";
   case LNP64ISD::CALL:
     return "LNP64ISD::CALL";
   case LNP64ISD::AWAIT:
@@ -413,11 +124,24 @@ const char *LNP64TargetLowering::getTargetNodeName(unsigned Opcode) const {
     return "LNP64ISD::PUSH";
   case LNP64ISD::WRAPPER:
     return "LNP64ISD::WRAPPER";
+  case LNP64ISD::SELECT_CC:
+    return "LNP64ISD::SELECT_CC";
   case LNP64ISD::RET_FLAG:
     return "LNP64ISD::RET_FLAG";
   default:
     return nullptr;
   }
+}
+
+// v2 atomics: expand atomicrmw / cmpxchg into LR/SC loops.
+TargetLowering::AtomicExpansionKind
+LNP64TargetLowering::shouldExpandAtomicRMWInIR(AtomicRMWInst *) const {
+  return AtomicExpansionKind::LLSC;
+}
+
+TargetLowering::AtomicExpansionKind
+LNP64TargetLowering::shouldExpandAtomicCmpXchgInIR(AtomicCmpXchgInst *) const {
+  return AtomicExpansionKind::LLSC;
 }
 
 TargetLowering::ConstraintType
@@ -467,13 +191,11 @@ SDValue LNP64TargetLowering::LowerOperation(SDValue Op,
     SDValue Align = Op.getOperand(2);
     unsigned AlignVal = cast<ConstantSDNode>(Align)->getZExtValue();
     if (AlignVal < 8) AlignVal = 8; // LNP64 min stack alignment
-    // Round size up to alignment: size = (size + align-1) & ~(align-1)
     SDValue AlignMask = DAG.getConstant(AlignVal - 1, DL, MVT::i64);
     SDValue AlignM1   = DAG.getConstant(AlignVal - 1, DL, MVT::i64);
     SDValue Rounded = DAG.getNode(ISD::AND, DL, MVT::i64,
                         DAG.getNode(ISD::ADD, DL, MVT::i64, Size, AlignM1),
                         DAG.getNOT(DL, AlignMask, MVT::i64));
-    // SP = SP - rounded_size; result = new SP
     SDValue SP = DAG.getCopyFromReg(Chain, DL, LNP64::R31, MVT::i64);
     SDValue NewSP = DAG.getNode(ISD::SUB, DL, MVT::i64, SP, Rounded);
     Chain = DAG.getCopyToReg(SP.getValue(1), DL, LNP64::R31, NewSP);
@@ -487,14 +209,19 @@ SDValue LNP64TargetLowering::LowerOperation(SDValue Op,
     return DAG.getNode(LNP64ISD::WRAPPER, DL,
                        getPointerTy(DAG.getDataLayout()), Target);
   }
-  case ISD::BR_CC: {
-    SDValue Chain = Op.getOperand(0);
-    auto *CC = cast<CondCodeSDNode>(Op.getOperand(1));
-    SDValue LHS = Op.getOperand(2);
-    SDValue RHS = Op.getOperand(3);
-    SDValue Target = Op.getOperand(4);
-    return DAG.getNode(getLNP64BranchOpcode(CC->get()), SDLoc(Op), MVT::Other,
-                       {Chain, LHS, RHS, Target});
+  case ISD::SELECT: {
+    // Lower to an LNP64ISD::SELECT_CC against zero, expanded by the custom
+    // inserter into a branch diamond. Operands: (cond, true, false).
+    SDLoc DL(Op);
+    SDValue Cond = Op.getOperand(0);
+    SDValue TrueV = Op.getOperand(1);
+    SDValue FalseV = Op.getOperand(2);
+    if (Cond.getValueType() != MVT::i64)
+      Cond = DAG.getNode(ISD::ZERO_EXTEND, DL, MVT::i64, Cond);
+    SDValue Zero = DAG.getConstant(0, DL, MVT::i64);
+    SDValue CC = DAG.getConstant(ISD::SETNE, DL, MVT::i64);
+    SDValue Ops[] = {Cond, Zero, CC, TrueV, FalseV};
+    return DAG.getNode(LNP64ISD::SELECT_CC, DL, MVT::i64, Ops);
   }
   case ISD::BRCOND: {
     SDLoc DL(Op);
@@ -504,11 +231,10 @@ SDValue LNP64TargetLowering::LowerOperation(SDValue Op,
     if (Cond.getValueType() != MVT::i64)
       Cond = DAG.getNode(ISD::ZERO_EXTEND, DL, MVT::i64, Cond);
     SDValue Zero = DAG.getConstant(0, DL, MVT::i64);
-    return DAG.getNode(LNP64ISD::BR_NE, DL, MVT::Other,
-                       {Chain, Cond, Zero, Target});
+    return DAG.getNode(ISD::BR_CC, DL, MVT::Other,
+                       {Chain, DAG.getCondCode(ISD::SETNE), Cond, Zero, Target});
   }
   case ISD::ATOMIC_LOAD: {
-    // Sub-word atomic loads lower to plain zero-extending loads into i64.
     auto *AN = cast<AtomicSDNode>(Op);
     SDLoc DL(Op);
     EVT MemVT = AN->getMemoryVT();
@@ -518,10 +244,6 @@ SDValue LNP64TargetLowering::LowerOperation(SDValue Op,
                           AN->getMemOperand()->getFlags());
   }
   case ISD::ATOMIC_STORE: {
-    // Sub-word atomic stores lower to plain truncating stores.
-    // No multi-processor coherence is needed: a single-address-space
-    // capability machine with THREADSAFE=0 callers only needs store ordering,
-    // which the hardware provides naturally.
     auto *AN = cast<AtomicSDNode>(Op);
     SDLoc DL(Op);
     SDValue Chain = AN->getChain();
@@ -529,65 +251,9 @@ SDValue LNP64TargetLowering::LowerOperation(SDValue Op,
     SDValue Val   = AN->getVal();
     EVT MemVT = AN->getMemoryVT();
     MachineMemOperand *MMO = AN->getMemOperand();
-    // Truncate the i64-extended value back down and emit a plain store.
     if (Val.getValueType() != MemVT)
       Val = DAG.getNode(ISD::TRUNCATE, DL, MemVT, Val);
     return DAG.getStore(Chain, DL, Val, Ptr, MMO);
-  }
-  case ISD::ATOMIC_SWAP:
-  case ISD::ATOMIC_LOAD_ADD:
-  case ISD::ATOMIC_LOAD_SUB:
-  case ISD::ATOMIC_LOAD_AND:
-  case ISD::ATOMIC_LOAD_OR:
-  case ISD::ATOMIC_LOAD_XOR:
-  case ISD::ATOMIC_LOAD_NAND: {
-    // Single-threaded lowering: old = load(ptr); store(ptr, old OP val); return old
-    SDLoc DL(Op);
-    auto *AN = cast<AtomicSDNode>(Op);
-    SDValue Chain = AN->getChain();
-    SDValue Ptr   = AN->getBasePtr();
-    SDValue Val   = AN->getVal();
-    MachineMemOperand *MMO = AN->getMemOperand();
-    SDValue Old = DAG.getLoad(MVT::i64, DL, Chain, Ptr,
-                              AN->getPointerInfo(), AN->getOriginalAlign());
-    SDValue NewVal;
-    unsigned OC = Op.getOpcode();
-    if (OC == ISD::ATOMIC_SWAP)
-      NewVal = Val;
-    else if (OC == ISD::ATOMIC_LOAD_ADD)
-      NewVal = DAG.getNode(ISD::ADD,  DL, MVT::i64, Old, Val);
-    else if (OC == ISD::ATOMIC_LOAD_SUB)
-      NewVal = DAG.getNode(ISD::SUB,  DL, MVT::i64, Old, Val);
-    else if (OC == ISD::ATOMIC_LOAD_AND)
-      NewVal = DAG.getNode(ISD::AND,  DL, MVT::i64, Old, Val);
-    else if (OC == ISD::ATOMIC_LOAD_OR)
-      NewVal = DAG.getNode(ISD::OR,   DL, MVT::i64, Old, Val);
-    else if (OC == ISD::ATOMIC_LOAD_XOR)
-      NewVal = DAG.getNode(ISD::XOR,  DL, MVT::i64, Old, Val);
-    else /* NAND */
-      NewVal = DAG.getNode(ISD::XOR, DL, MVT::i64,
-                           DAG.getNode(ISD::AND, DL, MVT::i64, Old, Val),
-                           DAG.getAllOnesConstant(DL, MVT::i64));
-    SDValue St = DAG.getStore(Old.getValue(1), DL, NewVal, Ptr, MMO);
-    return DAG.getMergeValues({Old, St}, DL);
-  }
-  case ISD::ATOMIC_CMP_SWAP: {
-    // Single-threaded CAS: if *ptr == cmp, write swap; always return old value.
-    SDLoc DL(Op);
-    auto *AN = cast<AtomicSDNode>(Op);
-    SDValue Chain = AN->getChain();
-    SDValue Ptr   = AN->getBasePtr();
-    SDValue Cmp   = AN->getOperand(2);
-    SDValue Swap  = AN->getOperand(3);
-    MachineMemOperand *MMO = AN->getMemOperand();
-    SDValue Old = DAG.getLoad(MVT::i64, DL, Chain, Ptr,
-                              AN->getPointerInfo(), AN->getOriginalAlign());
-    // Select: old == cmp ? swap : old
-    SDValue IsEq = DAG.getSetCC(DL, MVT::i64, Old, Cmp, ISD::SETEQ);
-    SDValue NewVal = DAG.getNode(ISD::SELECT, DL, MVT::i64, IsEq, Swap, Old);
-    SDValue St = DAG.getStore(Old.getValue(1), DL, NewVal, Ptr, MMO);
-    // CAS returns (old, success_bit, chain); model as (old, chain)
-    return DAG.getMergeValues({Old, St}, DL);
   }
   case ISD::VASTART: {
     SDLoc DL(Op);
@@ -611,11 +277,6 @@ void LNP64TargetLowering::ReplaceNodeResults(SDNode *N,
   SDLoc DL(N);
   switch (N->getOpcode()) {
   case ISD::ATOMIC_LOAD: {
-    // Called during type promotion: sub-word atomic loads become i64 zext loads.
-    // Push a TRUNCATE back to the original (illegal) type so the type legalizer
-    // later calls PromoteIntOp_STORE on any spill stores, producing truncating
-    // stores (ST_W / ST_H / ST_B) rather than full 8-byte ST that corrupts
-    // adjacent stack slots.
     auto *AN = cast<AtomicSDNode>(N);
     EVT MemVT = AN->getMemoryVT();
     SDValue Load = DAG.getExtLoad(
@@ -632,23 +293,30 @@ void LNP64TargetLowering::ReplaceNodeResults(SDNode *N,
   }
 }
 
+// Map an integer condition code + (lhs,rhs) into a compare-and-branch opcode
+// that LNP64 implements natively, swapping operands where needed.
+static unsigned getBranchForCC(ISD::CondCode CC, bool &SwapOps) {
+  SwapOps = false;
+  switch (CC) {
+  case ISD::SETEQ:  return LNP64::BEQ;
+  case ISD::SETNE:  return LNP64::BNE;
+  case ISD::SETLT:  return LNP64::BLT;
+  case ISD::SETGE:  return LNP64::BGE;
+  case ISD::SETULT: return LNP64::BLTU;
+  case ISD::SETUGE: return LNP64::BGEU;
+  case ISD::SETGT:  SwapOps = true; return LNP64::BLT;
+  case ISD::SETLE:  SwapOps = true; return LNP64::BGE;
+  case ISD::SETUGT: SwapOps = true; return LNP64::BLTU;
+  case ISD::SETULE: SwapOps = true; return LNP64::BGEU;
+  default:
+    llvm_unreachable("LNP64 select only supports integer comparisons");
+  }
+}
+
 MachineBasicBlock *LNP64TargetLowering::EmitInstrWithCustomInserter(
     MachineInstr &MI, MachineBasicBlock *BB) const {
   const TargetInstrInfo &TII = *BB->getParent()->getSubtarget().getInstrInfo();
   DebugLoc DL = MI.getDebugLoc();
-
-  if (MI.getOpcode() == LNP64::PseudoLINeg32) {
-    MachineFunction *MF = BB->getParent();
-    MachineRegisterInfo &MRI = MF->getRegInfo();
-    Register Magnitude = MRI.createVirtualRegister(&LNP64::GPRRegClass);
-    int64_t Value = MI.getOperand(1).getImm();
-    BuildMI(*BB, MI, DL, TII.get(LNP64::LI32), Magnitude).addImm(-Value);
-    BuildMI(*BB, MI, DL, TII.get(LNP64::SUB), MI.getOperand(0).getReg())
-        .addReg(LNP64::R0)
-        .addReg(Magnitude);
-    MI.eraseFromParent();
-    return BB;
-  }
 
   if (MI.getOpcode() == LNP64::PseudoLI64) {
     MachineFunction *MF = BB->getParent();
@@ -656,90 +324,56 @@ MachineBasicBlock *LNP64TargetLowering::EmitInstrWithCustomInserter(
     uint64_t Value = static_cast<uint64_t>(MI.getOperand(1).getImm());
     uint32_t Hi = static_cast<uint32_t>(Value >> 32);
     uint32_t Lo = static_cast<uint32_t>(Value);
-    Register HiReg = MRI.createVirtualRegister(&LNP64::GPRRegClass);
-    Register Shifted = MRI.createVirtualRegister(&LNP64::GPRRegClass);
-
-    BuildMI(*BB, MI, DL, TII.get(LNP64::LI32), HiReg).addImm(Hi);
-    BuildMI(*BB, MI, DL, TII.get(LNP64::LSLI), Shifted)
-        .addReg(HiReg)
-        .addImm(32);
-    if (Lo == 0) {
-      BuildMI(*BB, MI, DL, TII.get(LNP64::MOV), MI.getOperand(0).getReg())
-          .addReg(Shifted);
-    } else {
-      Register LoReg = MRI.createVirtualRegister(&LNP64::GPRRegClass);
-      BuildMI(*BB, MI, DL, TII.get(LNP64::LI32), LoReg).addImm(Lo);
-      BuildMI(*BB, MI, DL, TII.get(LNP64::OR), MI.getOperand(0).getReg())
-          .addReg(Shifted)
-          .addReg(LoReg);
-    }
+    Register LoReg = MRI.createVirtualRegister(&LNP64::GPRRegClass);
+    BuildMI(*BB, MI, DL, TII.get(LNP64::LI), LoReg).addImm(int32_t(Lo));
+    BuildMI(*BB, MI, DL, TII.get(LNP64::LIU), MI.getOperand(0).getReg())
+        .addReg(LoReg)
+        .addImm(int32_t(Hi));
     MI.eraseFromParent();
     return BB;
   }
 
-  if (isLNP64SignedLoadPseudo(MI.getOpcode())) {
+  if (MI.getOpcode() == LNP64::PseudoSELECT_CC) {
+    // operands: dst, lhs, rhs, cc(imm), trueV, falseV
     MachineFunction *MF = BB->getParent();
-    MachineRegisterInfo &MRI = MF->getRegInfo();
-    Register Loaded = MRI.createVirtualRegister(&LNP64::GPRRegClass);
+    const BasicBlock *LLVM_BB = BB->getBasicBlock();
+    MachineFunction::iterator It = ++BB->getIterator();
 
-    BuildMI(*BB, MI, DL, TII.get(getLNP64SignedLoadInstr(MI.getOpcode())),
-            Loaded)
-        .add(MI.getOperand(1))
-        .add(MI.getOperand(2));
-    BuildMI(*BB, MI, DL, TII.get(getLNP64SignExtendInstr(MI.getOpcode())),
+    MachineBasicBlock *HeadMBB = BB;
+    MachineBasicBlock *IfFalseMBB = MF->CreateMachineBasicBlock(LLVM_BB);
+    MachineBasicBlock *TailMBB = MF->CreateMachineBasicBlock(LLVM_BB);
+    MF->insert(It, IfFalseMBB);
+    MF->insert(It, TailMBB);
+    TailMBB->splice(TailMBB->begin(), HeadMBB,
+                    std::next(MachineBasicBlock::iterator(MI)), HeadMBB->end());
+    TailMBB->transferSuccessorsAndUpdatePHIs(HeadMBB);
+    HeadMBB->addSuccessor(IfFalseMBB);
+    HeadMBB->addSuccessor(TailMBB);
+
+    ISD::CondCode CC = (ISD::CondCode)MI.getOperand(3).getImm();
+    bool SwapOps = false;
+    unsigned BrOpc = getBranchForCC(CC, SwapOps);
+    Register LHS = MI.getOperand(1).getReg();
+    Register RHS = MI.getOperand(2).getReg();
+    // Branch to TailMBB (taking trueV) when the condition holds.
+    BuildMI(HeadMBB, DL, TII.get(BrOpc))
+        .addReg(SwapOps ? RHS : LHS)
+        .addReg(SwapOps ? LHS : RHS)
+        .addMBB(TailMBB);
+
+    IfFalseMBB->addSuccessor(TailMBB);
+
+    BuildMI(*TailMBB, TailMBB->begin(), DL, TII.get(LNP64::PHI),
             MI.getOperand(0).getReg())
-        .addReg(Loaded);
+        .addReg(MI.getOperand(4).getReg())
+        .addMBB(HeadMBB)
+        .addReg(MI.getOperand(5).getReg())
+        .addMBB(IfFalseMBB);
     MI.eraseFromParent();
-    return BB;
+    return TailMBB;
   }
 
-  if (isLNP64SetCCPseudo(MI.getOpcode())) {
-    unsigned CmpOpcode =
-        isLNP64UnsignedSetCCPseudo(MI.getOpcode()) ? LNP64::CMPU : LNP64::CMP;
-    MachineFunction *MF = BB->getParent();
-    MachineRegisterInfo &MRI = MF->getRegInfo();
-    if (isLNP64SetCCImmPseudo(MI.getOpcode())) {
-      Register RHS = MRI.createVirtualRegister(&LNP64::GPRRegClass);
-      BuildMI(*BB, MI, DL, TII.get(LNP64::LI), RHS)
-          .addImm(MI.getOperand(2).getImm());
-      BuildMI(*BB, MI, DL, TII.get(CmpOpcode))
-          .add(MI.getOperand(1))
-          .addReg(RHS);
-    } else {
-      BuildMI(*BB, MI, DL, TII.get(CmpOpcode))
-          .add(MI.getOperand(1))
-          .add(MI.getOperand(2));
-    }
-    BuildMI(*BB, MI, DL, TII.get(getLNP64CSetInstr(MI.getOpcode())),
-            MI.getOperand(0).getReg());
-    MI.eraseFromParent();
-    return BB;
-  }
-
-  if (isLNP64SelectCCPseudo(MI.getOpcode())) {
-    unsigned CmpOpcode =
-        isLNP64UnsignedSelectCCPseudo(MI.getOpcode()) ? LNP64::CMPU : LNP64::CMP;
-    BuildMI(*BB, MI, DL, TII.get(CmpOpcode))
-        .add(MI.getOperand(1))
-        .add(MI.getOperand(2));
-    BuildMI(*BB, MI, DL, TII.get(getLNP64CSelectInstr(MI.getOpcode())),
-            MI.getOperand(0).getReg())
-        .add(MI.getOperand(3))
-        .add(MI.getOperand(4));
-    MI.eraseFromParent();
-    return BB;
-  }
-
-  unsigned BranchOpcode = getLNP64BranchInstr(MI.getOpcode());
-  unsigned CmpOpcode =
-      isLNP64UnsignedBranchPseudo(MI.getOpcode()) ? LNP64::CMPU : LNP64::CMP;
-
-  BuildMI(*BB, MI, DL, TII.get(CmpOpcode))
-      .add(MI.getOperand(0))
-      .add(MI.getOperand(1));
-  BuildMI(*BB, MI, DL, TII.get(BranchOpcode)).add(MI.getOperand(2));
-  MI.eraseFromParent();
-  return BB;
+  llvm_unreachable("unexpected LNP64 custom inserter pseudo");
 }
 
 SDValue LNP64TargetLowering::LowerFormalArguments(

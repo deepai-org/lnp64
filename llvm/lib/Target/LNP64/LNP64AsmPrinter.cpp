@@ -81,10 +81,6 @@ static void printLNP64AsmReg(raw_ostream &OS, Register Reg) {
     OS << "r" << unsigned(Reg - LNP64::R0);
     return;
   }
-  if (Reg == LNP64::LR) {
-    OS << "lr";
-    return;
-  }
   if (Reg == LNP64::TP) {
     OS << "tp";
     return;

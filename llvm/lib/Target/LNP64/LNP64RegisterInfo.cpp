@@ -15,19 +15,16 @@ using namespace llvm;
 #define GET_REGINFO_TARGET_DESC
 #include "LNP64GenRegisterInfo.inc"
 
-static uint64_t getLRSaveSize(const MachineFunction &MF) {
-  return MF.getFrameInfo().hasCalls() ? 8 : 0;
-}
-
-LNP64RegisterInfo::LNP64RegisterInfo() : LNP64GenRegisterInfo(LNP64::LR) {}
+// In v2 the return address is a normal callee-saved GPR (r1), spilled in the
+// prologue like any other; there is no separate save slot beyond the stack
+// frame the spill code allocates.
+LNP64RegisterInfo::LNP64RegisterInfo() : LNP64GenRegisterInfo(LNP64::R1) {}
 
 BitVector LNP64RegisterInfo::getReservedRegs(const MachineFunction &) const {
   BitVector Reserved(getNumRegs());
-  Reserved.set(LNP64::R0);
-  Reserved.set(LNP64::R30);
-  Reserved.set(LNP64::R31);
-  Reserved.set(LNP64::LR);
-  Reserved.set(LNP64::TP);
+  Reserved.set(LNP64::R0);  // hardwired zero
+  Reserved.set(LNP64::R31); // stack pointer
+  // r30 is reclaimed in v2 (general allocatable). r1 (ra) stays allocatable.
   return Reserved;
 }
 
@@ -48,8 +45,7 @@ void LNP64RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   MachineFunction &MF = *MI.getParent()->getParent();
   const MachineFrameInfo &MFI = MF.getFrameInfo();
   int FrameIndex = MI.getOperand(FIOperandNum).getIndex();
-  int64_t Offset =
-      MFI.getObjectOffset(FrameIndex) + MFI.getStackSize() + getLRSaveSize(MF);
+  int64_t Offset = MFI.getObjectOffset(FrameIndex) + MFI.getStackSize();
   if (FIOperandNum + 1 < MI.getNumOperands() &&
       MI.getOperand(FIOperandNum + 1).isImm())
     Offset += MI.getOperand(FIOperandNum + 1).getImm();
@@ -62,14 +58,9 @@ void LNP64RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
     Register Dst = MI.getOperand(0).getReg();
     if (Offset == 0) {
       BuildMI(MBB, MI, DL, TII.get(LNP64::MOV), Dst).addReg(LNP64::R31);
-    } else if (isInt<16>(Offset)) {
-      // LI materializes a signed-16 immediate; wider needs LI32.
-      BuildMI(MBB, MI, DL, TII.get(LNP64::LI), LNP64::R30).addImm(Offset);
-      BuildMI(MBB, MI, DL, TII.get(LNP64::ADD), Dst)
-          .addReg(LNP64::R31)
-          .addReg(LNP64::R30);
     } else {
-      BuildMI(MBB, MI, DL, TII.get(LNP64::LI32), LNP64::R30).addImm(Offset);
+      // Load/store displacements are 32-bit signed in v2, so LI always fits.
+      BuildMI(MBB, MI, DL, TII.get(LNP64::LI), LNP64::R30).addImm(Offset);
       BuildMI(MBB, MI, DL, TII.get(LNP64::ADD), Dst)
           .addReg(LNP64::R31)
           .addReg(LNP64::R30);
@@ -78,27 +69,8 @@ void LNP64RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
     return;
   }
 
-  // ST/LD instructions use a 14-bit signed offset field.  When the frame
-  // index resolves to an offset outside [-8192, 8191], we cannot encode it
-  // directly.  Materialise the full address in R30 (the reserved scratch
-  // register) and use R30+0 as the effective address instead.
-  if (!isInt<14>(Offset)) {
-    // LI materializes a signed-16 immediate; wider needs LI32.
-    if (isInt<16>(Offset)) {
-      BuildMI(MBB, II, DL, TII.get(LNP64::LI), LNP64::R30).addImm(Offset);
-    } else {
-      BuildMI(MBB, II, DL, TII.get(LNP64::LI32), LNP64::R30).addImm(Offset);
-    }
-    BuildMI(MBB, II, DL, TII.get(LNP64::ADD), LNP64::R30)
-        .addReg(LNP64::R30)
-        .addReg(LNP64::R31);
-    MI.getOperand(FIOperandNum).ChangeToRegister(LNP64::R30, false);
-    if (FIOperandNum + 1 < MI.getNumOperands() &&
-        MI.getOperand(FIOperandNum + 1).isImm())
-      MI.getOperand(FIOperandNum + 1).ChangeToImmediate(0);
-    return;
-  }
-
+  // v2 load/store offsets are 32-bit signed; frame offsets never overflow in
+  // practice, so the v1 large-offset r30 scratch-address path is deleted.
   MI.getOperand(FIOperandNum).ChangeToRegister(LNP64::R31, false);
   if (FIOperandNum + 1 < MI.getNumOperands() &&
       MI.getOperand(FIOperandNum + 1).isImm())

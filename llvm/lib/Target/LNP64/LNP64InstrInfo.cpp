@@ -32,7 +32,7 @@ void LNP64InstrInfo::storeRegToStackSlot(
   DebugLoc DL;
   if (I != MBB.end())
     DL = I->getDebugLoc();
-  BuildMI(MBB, I, DL, get(LNP64::ST))
+  BuildMI(MBB, I, DL, get(LNP64::SD))
       .addReg(SrcReg, getKillRegState(IsKill))
       .addFrameIndex(FrameIndex)
       .addImm(0);

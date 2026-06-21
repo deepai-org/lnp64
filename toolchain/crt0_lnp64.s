@@ -1,21 +1,21 @@
-# LNP64 crt0 startup stub v0.
+# LNP64 crt0 startup stub v2.
 # Contract source for the real LLVM/lld crt0 object used by static Clang-linked
-# run-elf smokes.
+# run-elf smokes. v2 ISA: fixed 64-bit instructions, r1 = ra.
 
 .text
 .globl _start
 .type _start,@function
 _start:
-  LI r7, 0x7000
-  LI r8, 0x100
-  MUL r7, r7, r8
-  LD r1, 0(r7)
-  LI r2, 8
-  ADD r2, r7, r2
-  LI r8, 8
-  MUL r3, r1, r8
-  ADD r3, r3, r2
-  ADD r3, r3, r8
-  ERRNO_SET r0
-  CALL main
-  EXIT r1
+  li r7, 0x7000
+  li r8, 0x100
+  mul r7, r7, r8
+  ld r1, 0(r7)
+  li r2, 8
+  add r2, r7, r2
+  li r8, 8
+  mul r3, r1, r8
+  add r3, r3, r2
+  add r3, r3, r8
+  errno_set r0
+  jal r1, main
+  exit r1

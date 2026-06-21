@@ -18,10 +18,9 @@ enum : unsigned {
   R_LNP64_ABS64 = 1,
   R_LNP64_ABS32 = 2,
   R_LNP64_PC32 = 3,
-  R_LNP64_BRANCH26 = 4,
-  R_LNP64_PCREL_HI20 = 13,
-  R_LNP64_PCREL_LO12_I = 14,
-  R_LNP64_PCREL_LO12_LD = 15,
+  R_LNP64_BRANCH = 4,    // B-type, (S-PC)>>3, field at bit 9
+  R_LNP64_JUMP = 5,      // J-type, (S-PC)>>3, field at bit 19
+  R_LNP64_AUIPC = 6,     // U-type, (S-PC), field at bit 19
   R_LNP64_TLS_TPREL_SLOT64 = 16,
 };
 
@@ -44,18 +43,16 @@ public:
     }
 
     switch (static_cast<unsigned>(Fixup.getKind())) {
+    case LNP64::fixup_lnp64_branch:
+      return R_LNP64_BRANCH;
+    case LNP64::fixup_lnp64_jump:
+      return R_LNP64_JUMP;
+    case LNP64::fixup_lnp64_auipc:
+      return R_LNP64_AUIPC;
     case LNP64::fixup_lnp64_abs32:
       return R_LNP64_ABS32;
     case LNP64::fixup_lnp64_pcrel32:
       return R_LNP64_PC32;
-    case LNP64::fixup_lnp64_branch26:
-      return R_LNP64_BRANCH26;
-    case LNP64::fixup_lnp64_pcrel_hi20:
-      return R_LNP64_PCREL_HI20;
-    case LNP64::fixup_lnp64_pcrel_lo12_i:
-      return R_LNP64_PCREL_LO12_I;
-    case LNP64::fixup_lnp64_pcrel_lo12_ld:
-      return R_LNP64_PCREL_LO12_LD;
     case LNP64::fixup_lnp64_tls_tprel_slot64:
       return R_LNP64_TLS_TPREL_SLOT64;
     default:
@@ -78,13 +75,14 @@ public:
   }
 
   const MCFixupKindInfo &getFixupKindInfo(MCFixupKind Kind) const override {
+    // All v2 fixups patch a 32-bit immediate field inside the 64-bit word; the
+    // field bit-offset within the word is given as TargetOffset.
     static const MCFixupKindInfo Infos[LNP64::NumTargetFixupKinds] = {
+        {"fixup_lnp64_branch", 9, 32, MCFixupKindInfo::FKF_IsPCRel},
+        {"fixup_lnp64_jump", 19, 32, MCFixupKindInfo::FKF_IsPCRel},
+        {"fixup_lnp64_auipc", 19, 32, MCFixupKindInfo::FKF_IsPCRel},
         {"fixup_lnp64_abs32", 0, 32, 0},
         {"fixup_lnp64_pcrel32", 0, 32, MCFixupKindInfo::FKF_IsPCRel},
-        {"fixup_lnp64_branch26", 0, 24, MCFixupKindInfo::FKF_IsPCRel},
-        {"fixup_lnp64_pcrel_hi20", 0, 20, MCFixupKindInfo::FKF_IsPCRel},
-        {"fixup_lnp64_pcrel_lo12_i", 0, 12, MCFixupKindInfo::FKF_IsPCRel},
-        {"fixup_lnp64_pcrel_lo12_ld", 0, 12, MCFixupKindInfo::FKF_IsPCRel},
         {"fixup_lnp64_tls_tprel_slot64", 0, 64, 0},
     };
 
@@ -106,45 +104,52 @@ public:
 
   bool shouldForceRelocation(const MCAssembler &, const MCFixup &Fixup,
                              const MCValue &) override {
-    return Fixup.getKind() == MCFixupKind(LNP64::fixup_lnp64_abs32) ||
-           Fixup.getKind() == MCFixupKind(LNP64::fixup_lnp64_branch26) ||
-           Fixup.getKind() == MCFixupKind(LNP64::fixup_lnp64_pcrel32) ||
-           Fixup.getKind() == MCFixupKind(LNP64::fixup_lnp64_pcrel_hi20) ||
-           Fixup.getKind() == MCFixupKind(LNP64::fixup_lnp64_pcrel_lo12_i) ||
-           Fixup.getKind() == MCFixupKind(LNP64::fixup_lnp64_pcrel_lo12_ld) ||
-           Fixup.getKind() ==
-               MCFixupKind(LNP64::fixup_lnp64_tls_tprel_slot64);
+    switch (static_cast<unsigned>(Fixup.getKind())) {
+    case LNP64::fixup_lnp64_branch:
+    case LNP64::fixup_lnp64_jump:
+    case LNP64::fixup_lnp64_auipc:
+    case LNP64::fixup_lnp64_abs32:
+    case LNP64::fixup_lnp64_pcrel32:
+    case LNP64::fixup_lnp64_tls_tprel_slot64:
+      return true;
+    default:
+      return false;
+    }
   }
 
   void applyFixup(const MCAssembler &, const MCFixup &Fixup, const MCValue &,
                   MutableArrayRef<char> Data, uint64_t Value, bool,
                   const MCSubtargetInfo *) const override {
     unsigned Offset = Fixup.getOffset();
-    if (Offset + 4 > Data.size())
+    if (Offset + 8 > Data.size())
       return;
 
+    uint64_t Word = read64(Data, Offset);
     switch (static_cast<unsigned>(Fixup.getKind())) {
-    case LNP64::fixup_lnp64_branch26:
-      write32(Data, Offset,
-              (read32(Data, Offset) & 0xff000000) |
-                  (static_cast<uint32_t>(Value / 4) & 0x00ffffff));
-      return;
-    case LNP64::fixup_lnp64_abs32:
-      write32(Data, Offset, static_cast<uint32_t>(Value));
-      return;
-    case LNP64::fixup_lnp64_pcrel32:
-      // The fixup lives in AUIPC's literal word at PC+4, but AUIPC executes
-      // relative to the instruction PC. Store S - PC, not S - (PC+4).
-      write32(Data, Offset, static_cast<uint32_t>(Value + 4));
-      return;
+    case LNP64::fixup_lnp64_branch: {
+      uint32_t Field = uint32_t(int64_t(Value) >> 3);
+      Word |= (uint64_t(Field) << 9);
+      break;
+    }
+    case LNP64::fixup_lnp64_jump: {
+      uint32_t Field = uint32_t(int64_t(Value) >> 3);
+      Word |= (uint64_t(Field) << 19);
+      break;
+    }
+    case LNP64::fixup_lnp64_auipc: {
+      uint32_t Field = uint32_t(Value);
+      Word |= (uint64_t(Field) << 19);
+      break;
+    }
     default:
       return;
     }
+    write64(Data, Offset, Word);
   }
 
   bool writeNopData(raw_ostream &OS, uint64_t Count,
                     const MCSubtargetInfo *) const override {
-    if (Count % 4 != 0)
+    if (Count % 8 != 0)
       return false;
     for (uint64_t I = 0; I != Count; ++I)
       OS << '\0';
@@ -152,18 +157,17 @@ public:
   }
 
 private:
-  static uint32_t read32(MutableArrayRef<char> Data, unsigned Offset) {
-    return uint8_t(Data[Offset]) | (uint32_t(uint8_t(Data[Offset + 1])) << 8) |
-           (uint32_t(uint8_t(Data[Offset + 2])) << 16) |
-           (uint32_t(uint8_t(Data[Offset + 3])) << 24);
+  static uint64_t read64(MutableArrayRef<char> Data, unsigned Offset) {
+    uint64_t V = 0;
+    for (unsigned I = 0; I < 8; ++I)
+      V |= uint64_t(uint8_t(Data[Offset + I])) << (8 * I);
+    return V;
   }
 
-  static void write32(MutableArrayRef<char> Data, unsigned Offset,
-                      uint32_t Value) {
-    Data[Offset] = char(Value);
-    Data[Offset + 1] = char(Value >> 8);
-    Data[Offset + 2] = char(Value >> 16);
-    Data[Offset + 3] = char(Value >> 24);
+  static void write64(MutableArrayRef<char> Data, unsigned Offset,
+                      uint64_t Value) {
+    for (unsigned I = 0; I < 8; ++I)
+      Data[Offset + I] = char(Value >> (8 * I));
   }
 };
 

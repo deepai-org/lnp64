@@ -14,15 +14,18 @@
 using namespace llvm;
 
 static constexpr unsigned LNP64DwarfSP = 31;
-static constexpr unsigned LNP64DwarfLR = 32;
+// v2: the return address lives in r1 (no separate LR register).
+static constexpr unsigned LNP64DwarfRA = 1;
 
-static uint64_t getLRSaveSize(const MachineFunction &MF) {
+// In v2 r1 (ra) is a normal callee-saved GPR. Save it when the function makes
+// calls (and therefore clobbers r1).
+static uint64_t getRASaveSize(const MachineFunction &MF) {
   return MF.getFrameInfo().hasCalls() ? 8 : 0;
 }
 
-static uint64_t getLRSaveOffset(const MachineFunction &MF) {
+static uint64_t getRASaveOffset(const MachineFunction &MF) {
   return MF.getFrameInfo().hasCalls() ? MF.getFrameInfo().getMaxCallFrameSize()
-                                     : 0;
+                                      : 0;
 }
 
 static void emitCFI(MachineFunction &MF, MachineBasicBlock &MBB,
@@ -43,16 +46,10 @@ static void emitSPAdjust(MachineFunction &MF, MachineBasicBlock &MBB,
   const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
   uint64_t Magnitude =
       Amount < 0 ? uint64_t(-(Amount + 1)) + 1 : uint64_t(Amount);
-  // LI carries a signed-16 immediate (bits[15:0]); a wider magnitude must go
-  // through LI32. Do not "tighten" this to isInt<14> -- that is the RRI/mem
-  // immediate width, not LI's.
-  if (isInt<16>(int64_t(Magnitude))) {
-    BuildMI(MBB, I, DL, TII.get(LNP64::LI), LNP64::R30).addImm(Magnitude);
-  } else {
-    if (!isUInt<32>(Magnitude))
-      llvm_unreachable("LNP64 stack adjustment exceeds 32-bit materialization");
-    BuildMI(MBB, I, DL, TII.get(LNP64::LI32), LNP64::R30).addImm(Magnitude);
-  }
+  // li materializes a full signed-32 immediate in one v2 word.
+  if (!isInt<32>(int64_t(Magnitude)))
+    llvm_unreachable("LNP64 stack adjustment exceeds 32-bit materialization");
+  BuildMI(MBB, I, DL, TII.get(LNP64::LI), LNP64::R30).addImm(Magnitude);
   BuildMI(MBB, I, DL, TII.get(Amount < 0 ? LNP64::SUB : LNP64::ADD),
           LNP64::R31)
       .addReg(LNP64::R31)
@@ -64,41 +61,40 @@ LNP64FrameLowering::LNP64FrameLowering()
 
 void LNP64FrameLowering::emitPrologue(MachineFunction &MF,
                                       MachineBasicBlock &MBB) const {
-  const uint64_t LRSaveSize = getLRSaveSize(MF);
-  uint64_t StackSize = MF.getFrameInfo().getStackSize() + LRSaveSize;
+  const uint64_t RASaveSize = getRASaveSize(MF);
+  uint64_t StackSize = MF.getFrameInfo().getStackSize() + RASaveSize;
   MachineBasicBlock::iterator I = MBB.begin();
   emitSPAdjust(MF, MBB, I, DebugLoc(), -int64_t(StackSize));
   if (StackSize != 0)
     emitCFI(MF, MBB, I, DebugLoc(),
             MCCFIInstruction::cfiDefCfa(nullptr, LNP64DwarfSP, StackSize));
 
-  if (LRSaveSize != 0) {
+  if (RASaveSize != 0) {
     const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
-    const int64_t LRSaveOffsetFromCFA =
-        int64_t(getLRSaveOffset(MF)) - int64_t(StackSize);
-    BuildMI(MBB, I, DebugLoc(), TII.get(LNP64::LR_GET), LNP64::R30);
-    BuildMI(MBB, I, DebugLoc(), TII.get(LNP64::ST))
-        .addReg(LNP64::R30)
+    const int64_t RASaveOffsetFromCFA =
+        int64_t(getRASaveOffset(MF)) - int64_t(StackSize);
+    // Spill r1 (ra) like any callee-saved GPR.
+    BuildMI(MBB, I, DebugLoc(), TII.get(LNP64::SD))
+        .addReg(LNP64::R1)
         .addReg(LNP64::R31)
-        .addImm(getLRSaveOffset(MF));
+        .addImm(getRASaveOffset(MF));
     emitCFI(MF, MBB, I, DebugLoc(),
-            MCCFIInstruction::createOffset(nullptr, LNP64DwarfLR,
-                                           LRSaveOffsetFromCFA));
+            MCCFIInstruction::createOffset(nullptr, LNP64DwarfRA,
+                                           RASaveOffsetFromCFA));
   }
 }
 
 void LNP64FrameLowering::emitEpilogue(MachineFunction &MF,
                                       MachineBasicBlock &MBB) const {
-  const uint64_t LRSaveSize = getLRSaveSize(MF);
-  uint64_t StackSize = MF.getFrameInfo().getStackSize() + LRSaveSize;
+  const uint64_t RASaveSize = getRASaveSize(MF);
+  uint64_t StackSize = MF.getFrameInfo().getStackSize() + RASaveSize;
   MachineBasicBlock::iterator I = MBB.getFirstTerminator();
 
-  if (LRSaveSize != 0) {
+  if (RASaveSize != 0) {
     const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
-    BuildMI(MBB, I, DebugLoc(), TII.get(LNP64::LD), LNP64::R30)
+    BuildMI(MBB, I, DebugLoc(), TII.get(LNP64::LD), LNP64::R1)
         .addReg(LNP64::R31)
-        .addImm(getLRSaveOffset(MF));
-    BuildMI(MBB, I, DebugLoc(), TII.get(LNP64::LR_SET)).addReg(LNP64::R30);
+        .addImm(getRASaveOffset(MF));
   }
   emitSPAdjust(MF, MBB, I, DebugLoc(), int64_t(StackSize));
 }
