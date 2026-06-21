@@ -1,5 +1,6 @@
 #include <lnp64/intrinsics.h>
 
+#include <unistd.h>
 #include <poll.h>
 #include <sys/epoll.h>
 #include <sys/event.h>
@@ -41,30 +42,42 @@ static lnp64_word_t lnp64_poll_timeout_word(int timeout) {
 
 int poll(struct pollfd *fds, nfds_t nfds, int timeout) {
   int ready = 0;
-  lnp64_word_t timeout_word = lnp64_poll_timeout_word(timeout);
 
   if (!fds && nfds != 0)
     return -1;
 
-  for (nfds_t i = 0; i < nfds; i = i + 1) {
+  /* First non-blocking scan */
+  for (nfds_t i = 0; i < nfds; i++) {
     lnp64_word_t events = (lnp64_word_t)(unsigned short)fds[i].events;
     fds[i].revents = 0;
-    if (fds[i].fd < 0)
+    if (fds[i].fd < 0 || events == 0)
       continue;
-    if (events == 0)
-      continue;
-    lnp64_word_t status =
-        __lnp_await((lnp64_cap_t)(unsigned long)fds[i].fd, events, timeout_word);
-    if (status == (lnp64_word_t)-1) {
+    lnp64_word_t rv = __lnp_await((lnp64_cap_t)(unsigned long)fds[i].fd, events, 0);
+    if ((long)rv < 0) {
       fds[i].revents = LNP64_POLLNVAL;
-      ready = ready + 1;
-    } else if (status == 0) {
-      fds[i].revents = (short)events;
-      ready = ready + 1;
+      ready++;
+    } else if (rv != 0) {
+      fds[i].revents = (short)rv;
+      ready++;
     }
   }
+  if (ready > 0 || timeout == 0)
+    return ready;
 
-  return ready;
+  /* Blocking phase: sleep 1 tick (~10ms) and rescan all fds non-blocking. */
+  for (;;) {
+    __lnp_sleep_1tick();
+    int n = 0;
+    for (nfds_t j = 0; j < nfds; j++) {
+      lnp64_word_t ev = (lnp64_word_t)(unsigned short)fds[j].events;
+      fds[j].revents = 0;
+      if (fds[j].fd < 0 || ev == 0) continue;
+      lnp64_word_t rv = __lnp_await((lnp64_cap_t)(unsigned long)fds[j].fd, ev, 0);
+      if ((long)rv < 0) { fds[j].revents = LNP64_POLLNVAL; n++; }
+      else if (rv != 0) { fds[j].revents = (short)rv; n++; }
+    }
+    if (n > 0) return n;
+  }
 }
 
 static int lnp64_filter_events(short filter) {
@@ -89,12 +102,16 @@ static int lnp64_epoll_fd[LNP64_EPOLL_MAX];
 static unsigned int lnp64_epoll_events[LNP64_EPOLL_MAX];
 static unsigned long lnp64_epoll_data[LNP64_EPOLL_MAX];
 
-int epoll_create1(int flags) {
-  if (flags != 0)
-    return -1;
+int epoll_create(int size) {
+  (void)size;
   lnp64_epoll_created = 1;
   lnp64_epoll_count = 0;
   return LNP64_EPOLL_FD;
+}
+
+int epoll_create1(int flags) {
+  (void)flags;
+  return epoll_create(0);
 }
 
 static int lnp64_epoll_find(int fd) {
@@ -141,27 +158,44 @@ int epoll_ctl(int epfd, int op, int fd, struct epoll_event *event) {
 
 int epoll_wait(int epfd, struct epoll_event *events, int maxevents,
                int timeout) {
-  int ready = 0;
-  lnp64_word_t timeout_word = lnp64_poll_timeout_word(timeout);
-
   if (!lnp64_epoll_created || epfd != LNP64_EPOLL_FD || !events ||
       maxevents < 0)
     return -1;
 
-  for (int i = 0; i < lnp64_epoll_count && ready < maxevents; i = i + 1) {
+  /* First pass: non-blocking scan of all registered fds (timeout=0)
+   * __lnp_await with timeout=0 returns revents mask (non-zero = ready) */
+  int ready = 0;
+  for (int i = 0; i < lnp64_epoll_count && ready < maxevents; i++) {
     lnp64_word_t mask = (lnp64_word_t)lnp64_epoll_events[i];
-    if (mask == 0)
-      continue;
-    lnp64_word_t status = __lnp_await(
-        (lnp64_cap_t)(unsigned long)lnp64_epoll_fd[i], mask, timeout_word);
-    if (status == 0) {
+    if (mask == 0) continue;
+    lnp64_word_t revents = __lnp_await(
+        (lnp64_cap_t)(unsigned long)lnp64_epoll_fd[i], mask, 0);
+    if (revents != 0 && (long)revents >= 0) {
       events[ready].events = lnp64_epoll_events[i];
       events[ready].data = lnp64_epoll_data[i];
-      ready = ready + 1;
+      ready++;
     }
   }
+  if (ready > 0 || timeout == 0)
+    return ready;
 
-  return ready;
+  /* Second pass: sleep 1 tick and rescan all fds non-blocking. */
+  for (;;) {
+    __lnp_sleep_1tick();
+    int n = 0;
+    for (int j = 0; j < lnp64_epoll_count && n < maxevents; j++) {
+      lnp64_word_t m = (lnp64_word_t)lnp64_epoll_events[j];
+      if (m == 0) continue;
+      lnp64_word_t rv = __lnp_await(
+          (lnp64_cap_t)(unsigned long)lnp64_epoll_fd[j], m, 0);
+      if (rv != 0 && (long)rv >= 0) {
+        events[n].events = lnp64_epoll_events[j];
+        events[n].data = lnp64_epoll_data[j];
+        n++;
+      }
+    }
+    if (n > 0) return n;
+  }
 }
 
 static int lnp64_kqueue_created;
@@ -354,37 +388,63 @@ static lnp64_word_t lnp64_select_timeout_word(const struct timeval *timeout) {
 
 int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
            struct timeval *timeout) {
-  int ready = 0;
   lnp64_word_t timeout_word = lnp64_select_timeout_word(timeout);
 
   if (nfds < 0 || nfds > 1024)
     return -1;
 
+  /* Save original sets — non-blocking scan clears non-ready fds in place,
+   * and we need the originals for the blocking retry loop. */
+  fd_set orig_rfds, orig_wfds;
+  if (readfds)  orig_rfds = *readfds;
+  if (writefds) orig_wfds = *writefds;
+
+  /* Non-blocking scan: __lnp_await(fd, mask, 0) returns >0 if ready, 0 if not */
+  int ready = 0;
   for (int fd = 0; fd < nfds; fd = fd + 1) {
     lnp64_word_t events = 0;
-    if (lnp64_fd_isset(fd, readfds))
-      events |= LNP64_POLLIN;
-    if (lnp64_fd_isset(fd, writefds))
-      events |= LNP64_POLLOUT;
-    if (lnp64_fd_isset(fd, exceptfds))
-      events |= LNP64_POLLERR;
+    if (readfds  && lnp64_fd_isset(fd, readfds))  events |= LNP64_POLLIN;
+    if (writefds && lnp64_fd_isset(fd, writefds)) events |= LNP64_POLLOUT;
+    if (exceptfds && lnp64_fd_isset(fd, exceptfds)) events |= LNP64_POLLERR;
     if (events == 0)
       continue;
-
-    lnp64_word_t status = __lnp_await((lnp64_cap_t)(unsigned long)fd, events,
-                                      timeout_word);
-    if (status == (lnp64_word_t)-1) {
-      lnp64_fd_clear(fd, readfds);
-      lnp64_fd_clear(fd, writefds);
-      lnp64_fd_clear(fd, exceptfds);
-    } else if (status == 0) {
+    lnp64_word_t rv = __lnp_await((lnp64_cap_t)(unsigned long)fd, events, 0);
+    if ((long)rv > 0) {
       ready = ready + 1;
     } else {
-      lnp64_fd_clear(fd, readfds);
-      lnp64_fd_clear(fd, writefds);
-      lnp64_fd_clear(fd, exceptfds);
+      if (readfds)  lnp64_fd_clear(fd, readfds);
+      if (writefds) lnp64_fd_clear(fd, writefds);
+      if (exceptfds) lnp64_fd_clear(fd, exceptfds);
     }
   }
+  if (ready > 0 || timeout_word == 0)
+    return ready;
 
-  return ready;
+  /* Blocking phase: sleep 1 tick (~10ms) and rescan all fds non-blocking.
+   * This correctly handles select() with multiple fds (e.g. a pipe + a
+   * TcpListener) without blocking forever on whichever happens to come first
+   * in the fd set. */
+  for (;;) {
+    __lnp_sleep_1tick();
+    if (readfds)  *readfds  = orig_rfds;
+    if (writefds) *writefds = orig_wfds;
+    int n = 0;
+    for (int j = 0; j < nfds; j = j + 1) {
+      lnp64_word_t ev = 0;
+      if (readfds  && lnp64_fd_isset(j, &orig_rfds)) ev |= LNP64_POLLIN;
+      if (writefds && lnp64_fd_isset(j, &orig_wfds)) ev |= LNP64_POLLOUT;
+      if (ev == 0)
+        continue;
+      lnp64_word_t s = __lnp_await((lnp64_cap_t)(unsigned long)j, ev, 0);
+      if ((long)s > 0) {
+        n = n + 1;
+      } else {
+        if (readfds)  lnp64_fd_clear(j, readfds);
+        if (writefds) lnp64_fd_clear(j, writefds);
+        if (exceptfds) lnp64_fd_clear(j, exceptfds);
+      }
+    }
+    if (n > 0)
+      return n;
+  }
 }

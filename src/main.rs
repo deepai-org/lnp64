@@ -640,7 +640,7 @@ fn encode_flat_exec_instr(
         Instr::WriteFd(fd, buf, len) => Ok(vec![enc_rrr(0x57, Reg(fd.0), *buf, *len)]),
         Instr::ReadFd(fd, buf, len) => Ok(vec![enc_rrr(0x2d, Reg(fd.0), *buf, *len)]),
         Instr::Await(result, fd, mask) => Ok(vec![enc_rrr(0x2e, *result, Reg(fd.0), *mask)]),
-        Instr::AwaitDyn(result, fd_reg, mask) => Ok(vec![enc_rrr(0x4d, *result, *fd_reg, *mask)]),
+        Instr::AwaitDyn(result, fd_reg, mask, timeout) => Ok(vec![enc_rrrr(0x4d, *result, *fd_reg, *mask, *timeout)]),
         Instr::AwaitEx(result, fd, argblock) => {
             Ok(vec![enc_rrr(0x71, *result, Reg(fd.0), *argblock)])
         }

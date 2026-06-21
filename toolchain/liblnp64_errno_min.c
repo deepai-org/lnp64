@@ -1,4 +1,4 @@
-static int lnp64_errno_slot;
+int lnp64_errno_slot;
 static int lnp64_errno_initialized;
 
 static int lnp64_errno_get(void) {

@@ -10,6 +10,17 @@ enum {
 
 static unsigned long lnp64_mkstemp_counter;
 
+/* Weak reference: present when linked with liblnp64_errno_min.o. */
+extern __attribute__((weak)) int lnp64_errno_slot;
+
+/* Sync the hardware errno register into the C errno slot. */
+static void lnp64_sync_errno_slot(void) {
+  unsigned long hw;
+  __asm__ volatile("errno_get %0" : "=r"(hw) : : "memory");
+  if (&lnp64_errno_slot)
+    lnp64_errno_slot = (int)hw;
+}
+
 __attribute__((weak)) int lnp64_kqueue_close(int fd) {
   (void)fd;
   return -2;
@@ -19,8 +30,10 @@ int openat(int dirfd, const char *path, int flags, ...) {
   lnp64_word_t result =
       __lnp_openat((lnp64_cap_t)(long)dirfd, (lnp64_word_t)path,
                    (lnp64_word_t)flags, 0);
-  if ((long)result < 0)
-    return (int)(long)result;
+  if ((long)result < 0) {
+    lnp64_sync_errno_slot();
+    return -1;
+  }
   if (result & LNP64_FDR_TOKEN_MARKER)
     return (int)(result & LNP64_FDR_TOKEN_INDEX_MASK);
   return (int)result;

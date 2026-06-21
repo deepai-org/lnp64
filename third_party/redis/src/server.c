@@ -30,6 +30,7 @@
 #include "server.h"
 #include "monotonic.h"
 #include "cluster.h"
+
 #include "slowlog.h"
 #include "bio.h"
 #include "latency.h"
@@ -6905,31 +6906,20 @@ int main(int argc, char **argv) {
     setlocale(LC_COLLATE,"");
     tzset(); /* Populates 'timezone' global. */
     zmalloc_set_oom_handler(redisOutOfMemoryHandler);
-
-    /* To achieve entropy, in case of containers, their time() and getpid() can
-     * be the same. But value of tv_usec is fast enough to make the difference */
     gettimeofday(&tv,NULL);
     srand(time(NULL)^getpid()^tv.tv_usec);
     srandom(time(NULL)^getpid()^tv.tv_usec);
     init_genrand64(((long long) tv.tv_sec * 1000000 + tv.tv_usec) ^ getpid());
     crc64_init();
-
-    /* Store umask value. Because umask(2) only offers a set-and-get API we have
-     * to reset it and restore it back. We do this early to avoid a potential
-     * race condition with threads that could be creating files or directories.
-     */
     umask(server.umask = umask(0777));
-
     uint8_t hashseed[16];
     getRandomBytes(hashseed,sizeof(hashseed));
     dictSetHashFunctionSeed(hashseed);
-
     char *exec_name = strrchr(argv[0], '/');
     if (exec_name == NULL) exec_name = argv[0];
     server.sentinel_mode = checkForSentinelMode(argc,argv, exec_name);
     initServerConfig();
-    ACLInit(); /* The ACL subsystem must be initialized ASAP because the
-                  basic networking code and client creation depends on it. */
+    ACLInit();
     moduleInitModulesSystem();
     tlsInit();
 

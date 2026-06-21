@@ -326,8 +326,12 @@ impl Parser {
                 Instr::Await(reg(&args[0])?, fd(&args[1])?, reg(&args[2])?)
             }
             "AWAIT_DYN" => {
-                arity(3)?;
-                Instr::AwaitDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
+                if args.len() == 4 {
+                    Instr::AwaitDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?, reg(&args[3])?)
+                } else {
+                    arity(3)?;
+                    Instr::AwaitDyn(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?, Reg(0))
+                }
             }
             "AWAIT_EX" => {
                 arity(3)?;

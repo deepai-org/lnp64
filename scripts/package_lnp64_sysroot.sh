@@ -114,7 +114,7 @@ for obj in "$sysroot/usr/lib/lnp64"/liblnp64-*-min.o; do
   case "$base" in liblnp64-sbase-*) continue;; esac
   core_objs+=("$obj")
 done
-llvm-ar rcs "$liblnp64_a" "${core_objs[@]}"
+(command -v llvm-ar >/dev/null && llvm-ar rcs "$liblnp64_a" "${core_objs[@]}") || ar rcs "$liblnp64_a" "${core_objs[@]}"
 printf 'LNP64 liblnp64.a built: %d objects\n' "${#core_objs[@]}"
 
 printf 'LNP64 sysroot packaged: %s\n' "$sysroot"

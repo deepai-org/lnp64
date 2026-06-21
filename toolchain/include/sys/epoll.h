@@ -15,9 +15,12 @@ struct epoll_event {
   unsigned long data;
 };
 
+int epoll_create(int size);
 int epoll_create1(int flags);
 int epoll_ctl(int epfd, int op, int fd, struct epoll_event *event);
 int epoll_wait(int epfd, struct epoll_event *events, int maxevents,
                int timeout);
+
+#define EPOLL_CLOEXEC 0x80000
 
 #endif

@@ -41,7 +41,7 @@ for src in "$LUA_SRC"/*.c; do
     echo "  WARN: Lua $base failed (continuing)"
   fi
 done
-llvm-ar rcs "$OUT_DIR/liblua.a" "$OUT_DIR/lua"/*.o
+ar rcs "$OUT_DIR/liblua.a" "$OUT_DIR/lua"/*.o
 echo "  Lua built: $lua_ok objects"
 
 echo "=== Building hdr_histogram ==="
@@ -56,7 +56,7 @@ for src in "$HDR_SRC"/*.c; do
   fi
 done
 if [ $hdr_ok -gt 0 ]; then
-  llvm-ar rcs "$OUT_DIR/libhdr.a" "$OUT_DIR/hdr"/*.o
+  ar rcs "$OUT_DIR/libhdr.a" "$OUT_DIR/hdr"/*.o
   echo "  hdr_histogram built: $hdr_ok objects"
 fi
 

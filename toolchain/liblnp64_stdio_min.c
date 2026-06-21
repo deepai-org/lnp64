@@ -152,66 +152,140 @@ static void lnp64_out_double(struct lnp64_snprintf_out *out, double value,
       frac_part = __subdf3(digit_f, (double)digit_i);
     }
   } else {
-    char buffer[32];
+    char buffer[64];
     int len = 0;
 
     if (exp_bits == 0 && mant_bits == 0) {
       buffer[len++] = '0';
-      if (precision > 0) {
+      if (fmt == 'f' || fmt == 'F') {
+        if (precision > 0) {
+          buffer[len++] = '.';
+          for (int i = 0; i < precision; i++)
+            buffer[len++] = '0';
+        }
+      }
+      /* for e/g, just "0" or "0e+00" */
+      if (fmt == 'e' || fmt == 'E') {
         buffer[len++] = '.';
-        for (int i = 0; i < precision; i++)
-          buffer[len++] = '0';
+        for (int i = 0; i < precision; i++) buffer[len++] = '0';
+        buffer[len++] = (fmt == 'E') ? 'E' : 'e';
+        buffer[len++] = '+'; buffer[len++] = '0'; buffer[len++] = '0';
       }
     } else {
+      /* normalize: find exp so that mant in [1, 10) and value = mant * 10^exp */
       int exp = 0;
       double mant = value;
 
-      for (int iter = 0; iter < 400; iter++) {
-        union { double d; unsigned long long u; } m;
-        m.d = mant;
-        int e = (int)((m.u >> 52) & 0x7ff);
-        if (e == 0x7ff || (e != 0 && e != 0x3ff))
-          break;
-        if (e <= 0x3fe) {
-          mant = __muldf3(mant, 10.0);
-          exp--;
-        } else {
-          mant = __divdf3(mant, 10.0);
-          exp++;
-        }
-        if (exp > 308 || exp < -308)
-          break;
+      /* coarse: use powers of 10 to get mant in [1, 10) */
+      if (mant >= 1.0e16) {
+        while (mant >= 1.0e8 && exp < 300) { mant = __divdf3(mant, 1.0e8); exp += 8; }
+      }
+      if (mant < 1.0e-8) {
+        while (mant < 1.0e-8 && exp > -300) { mant = __muldf3(mant, 1.0e8); exp -= 8; }
+      }
+      for (int iter = 0; iter < 40; iter++) {
+        if (mant >= 10.0) { mant = __divdf3(mant, 10.0); exp++; }
+        else if (mant < 1.0) { mant = __muldf3(mant, 10.0); exp--; }
+        else break;
       }
 
-      long long digit_l = __fixdfdi(mant);
-      buffer[len++] = '0' + (char)digit_l;
-      double frac = __subdf3(mant, (double)digit_l);
-
-      int digs = (fmt == 'g' || fmt == 'G') ? (precision - 1) : precision;
-      if (digs > 0)
-        buffer[len++] = '.';
-
-      for (int i = 0; i < digs; i++) {
-        double digit_f = __muldf3(frac, 10.0);
-        long long digit_i = __fixdfdi(digit_f);
-        buffer[len++] = '0' + (char)digit_i;
-        frac = __subdf3(digit_f, (double)digit_i);
+      /* collect significant digits */
+      char digits[32];
+      int ndigits = 0;
+      int sig = (fmt == 'g' || fmt == 'G') ? precision : precision + 1;
+      if (sig < 1) sig = 1;
+      double cur = mant;
+      for (int i = 0; i < sig; i++) {
+        long long d = __fixdfdi(cur);
+        if (d < 0) d = 0; if (d > 9) d = 9;
+        digits[ndigits++] = (char)d;
+        cur = __muldf3(__subdf3(cur, (double)d), 10.0);
+      }
+      /* round last digit */
+      long long r = __fixdfdi(cur);
+      if (r >= 5) {
+        for (int i = ndigits - 1; i >= 0; i--) {
+          digits[i]++;
+          if (digits[i] <= 9) break;
+          digits[i] = 0;
+          if (i == 0) {
+            /* carry propagated out: shift digits, increment exp */
+            for (int j = ndigits - 1; j > 0; j--) digits[j] = digits[j-1];
+            digits[0] = 1; exp++;
+          }
+        }
       }
 
-      if (fmt == 'e' || fmt == 'E' || fmt == 'g' || fmt == 'G') {
-        buffer[len++] = (fmt == 'E' || fmt == 'G') ? 'E' : 'e';
-        if (exp < 0) {
-          buffer[len++] = '-';
-          exp = -exp;
+      if (fmt == 'g' || fmt == 'G') {
+        /* C standard: use %e if exp < -4 or exp >= precision; else %f-like */
+        /* exp here is the power-of-10 exponent of the leading digit */
+        int use_exp = (exp < -4 || exp >= precision);
+        if (use_exp) {
+          /* scientific: digits[0] . digits[1..] e+exp */
+          buffer[len++] = '0' + digits[0];
+          /* count trailing non-zero digits to strip */
+          int last = ndigits - 1;
+          while (last > 0 && digits[last] == 0) last--;
+          if (last > 0) {
+            buffer[len++] = '.';
+            for (int i = 1; i <= last; i++)
+              buffer[len++] = '0' + digits[i];
+          }
+          buffer[len++] = (fmt == 'G') ? 'E' : 'e';
+          if (exp < 0) { buffer[len++] = '-'; exp = -exp; }
+          else buffer[len++] = '+';
+          if (exp < 10) buffer[len++] = '0';
+          if (exp >= 100) buffer[len++] = '0' + (exp / 100);
+          if (exp >= 10)  buffer[len++] = '0' + ((exp / 10) % 10);
+          buffer[len++] = '0' + (exp % 10);
         } else {
-          buffer[len++] = '+';
+          /* decimal: like %f with (precision - 1 - exp) fractional digits */
+          int frac_digits = precision - 1 - exp;
+          if (frac_digits < 0) frac_digits = 0;
+          /* integer part: digits[0..exp] */
+          if (exp < 0) {
+            buffer[len++] = '0';
+            if (frac_digits > 0) {
+              buffer[len++] = '.';
+              for (int i = 0; i < -exp - 1 && i < frac_digits; i++)
+                buffer[len++] = '0';
+              int di = 0;
+              for (int i = -exp - 1; i < frac_digits; i++, di++) {
+                buffer[len++] = (di < ndigits) ? '0' + digits[di] : '0';
+              }
+            }
+          } else {
+            for (int i = 0; i <= exp && i < ndigits; i++)
+              buffer[len++] = '0' + digits[i];
+            for (int i = ndigits; i <= exp; i++) buffer[len++] = '0';
+            if (frac_digits > 0) {
+              buffer[len++] = '.';
+              for (int i = exp + 1; i < ndigits && (i - exp - 1) < frac_digits; i++)
+                buffer[len++] = '0' + digits[i];
+              int written = (ndigits - exp - 1);
+              if (written < 0) written = 0;
+              for (int i = written; i < frac_digits; i++) buffer[len++] = '0';
+            }
+          }
+          /* strip trailing zeros (and possibly dot) */
+          while (len > 1 && buffer[len-1] == '0') len--;
+          if (len > 0 && buffer[len-1] == '.') len--;
         }
-        if (exp < 10)
-          buffer[len++] = '0';
-        if (exp >= 100)
-          buffer[len++] = '0' + (exp / 100);
-        if (exp >= 10)
-          buffer[len++] = '0' + ((exp / 10) % 10);
+      } else {
+        /* %e / %E */
+        buffer[len++] = '0' + digits[0];
+        if (precision > 0) {
+          buffer[len++] = '.';
+          for (int i = 1; i <= precision && i < ndigits; i++)
+            buffer[len++] = '0' + digits[i];
+          for (int i = ndigits; i <= precision; i++) buffer[len++] = '0';
+        }
+        buffer[len++] = (fmt == 'E') ? 'E' : 'e';
+        if (exp < 0) { buffer[len++] = '-'; exp = -exp; }
+        else buffer[len++] = '+';
+        if (exp < 10) buffer[len++] = '0';
+        if (exp >= 100) buffer[len++] = '0' + (exp / 100);
+        if (exp >= 10)  buffer[len++] = '0' + ((exp / 10) % 10);
         buffer[len++] = '0' + (exp % 10);
       }
     }

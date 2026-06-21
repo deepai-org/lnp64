@@ -1734,7 +1734,7 @@ impl Machine {
 
         let mut steps = 0usize;
         while !self.threads.is_empty() {
-            if steps > 10_000_000 {
+            if steps > 2_000_000_000 {
                 return Err("committed exec step limit exceeded".to_string());
             }
             steps += 1;
@@ -2108,7 +2108,7 @@ impl Machine {
             0x4a => Instr::AllocEx(a, b, c),
             0x4b => Instr::ObjectCtl(a, b),
             0x4c => Instr::DomainCtl(a, b),
-            0x4d => Instr::AwaitDyn(a, b, c),
+            0x4d => Instr::AwaitDyn(a, b, c, d),
             0x4e => Instr::CallCapDyn(a, b, c, Reg(((word >> 4) & 0x1f) as usize)),
             0x4f => Instr::RetCap(a, b, c),
             0x50 => Instr::CapDup(a, b),
@@ -2447,7 +2447,7 @@ impl Machine {
                 {
                     return Err("hardware runqueue deadlock: no ready threads".to_string());
                 }
-                if !self.fd_waiters.is_empty() {
+                if !self.fd_waiters.is_empty() || !self.sleepers.is_empty() {
                     thread::sleep(Duration::from_millis(10));
                 }
                 continue;
@@ -2884,10 +2884,11 @@ impl Machine {
                 }
                 self.complete_reg_ok(result, 0)?;
             }
-            Instr::AwaitDyn(result, fd_reg, mask) => {
+            Instr::AwaitDyn(result, fd_reg, mask, timeout_reg) => {
                 Self::ensure_result_reg_writable(result)?;
                 let fd = self.read_reg(fd_reg)?;
                 let mask = self.read_reg(mask)?;
+                let timeout = self.read_reg(timeout_reg)?;
                 let Some(fd) = self.checked_fd_index(fd)? else {
                     self.complete_reg_err(result, 9)?;
                     return Ok(true);
@@ -2895,12 +2896,15 @@ impl Machine {
                 let Some(ready) = self.await_fd_ready_or_error(result, fd, mask)? else {
                     return Ok(true);
                 };
-                if !ready {
+                if !ready && timeout != 0 {
+                    /* blocking: suspend until fd is ready */
                     self.push_fd_waiter(fd, mask, Some(result))?;
                     self.ready.retain(|tid| *tid != self.current_tid);
                     return Ok(false);
                 }
-                self.complete_reg_ok(result, 0)?;
+                /* timeout==0 non-blocking OR already ready: return revents mask */
+                let revents = self.poll_fd_index_mask_raw(fd, mask)?;
+                self.complete_reg_ok(result, revents)?;
             }
             Instr::AwaitEx(result, fd, argblock) => {
                 Self::ensure_result_reg_writable(result)?;
@@ -2983,7 +2987,7 @@ impl Machine {
                         self.install_fd_capability(dst.0, capability)?;
                         self.set_status_ok()?;
                     }
-                    Err(_) => self.set_status_errno(5)?,
+                    Err(e) => self.set_status_errno(Self::errno_from_io(&e))?,
                 }
             }
             Instr::OpenFdDyn(dst_reg, path_reg, flags_reg) => {
@@ -3009,9 +3013,9 @@ impl Machine {
                         }
                         None => self.write_reg(dst_reg, -1i64 as u64)?,
                     },
-                    Err(_) => {
+                    Err(e) => {
                         self.write_reg(dst_reg, -1i64 as u64)?;
-                        self.set_status_errno(5)?;
+                        self.set_status_errno(Self::errno_from_io(&e))?;
                     }
                 }
             }
@@ -3039,9 +3043,9 @@ impl Machine {
                         }
                         None => self.write_reg(dst_reg, -1i64 as u64)?,
                     },
-                    Err(_) => {
+                    Err(e) => {
                         self.write_reg(dst_reg, -1i64 as u64)?;
-                        self.set_status_errno(5)?;
+                        self.set_status_errno(Self::errno_from_io(&e))?;
                     }
                 }
             }
@@ -4421,15 +4425,16 @@ impl Machine {
                     return Ok(());
                 };
                 let tid = self.next_tid;
+                // In committed-exec mode, new threads get stacks allocated ABOVE the
+                // process stack_top (into high memory) so they never overlap ELF segments.
+                // tid=2 gets [stack_top, stack_top+STRIDE], tid=3 gets [stack_top+STRIDE, ...], etc.
+                // In non-committed mode, stacks go downward from stack_top as before.
                 let child_stack = if self.committed_exec_mode {
                     let stack_top = self.process()?.stack_top;
                     tid.checked_sub(1)
                         .and_then(|index| index.checked_mul(THREAD_STACK_STRIDE))
-                        .and_then(|offset| {
-                            stack_top
-                                .checked_sub(CALL_FRAME_SIZE)
-                                .and_then(|base| base.checked_sub(offset))
-                        })
+                        .and_then(|offset| stack_top.checked_add(offset))
+                        .and_then(|top| top.checked_add(THREAD_STACK_STRIDE))
                 } else {
                     let stack_top = self.process()?.stack_top;
                     tid.checked_sub(1)
@@ -4450,21 +4455,45 @@ impl Machine {
                 } else {
                     CALL_FRAME_SIZE
                 };
-                if self
-                    .ensure_mapped(child_stack, frame_size as usize, true)
-                    .is_err()
-                {
-                    self.set_status_errno(12)?;
-                    self.write_reg(dst, -1i64 as u64)?;
-                    return Ok(());
+                // Map a VMA for the new thread's stack if not already covered.
+                let (stack_vma_start, stack_vma_len) = if self.committed_exec_mode {
+                    // stack grows downward from child_stack; VMA covers the full stride below it.
+                    (child_stack.saturating_sub(THREAD_STACK_STRIDE), THREAD_STACK_STRIDE)
+                } else {
+                    (child_stack.saturating_sub(THREAD_STACK_STRIDE - CALL_FRAME_SIZE), THREAD_STACK_STRIDE)
+                };
+                let already_mapped = self
+                    .process()?
+                    .vmas
+                    .iter()
+                    .any(|v| v.contains(child_stack, frame_size as usize));
+                if !already_mapped {
+                    let end = (stack_vma_start + stack_vma_len) as usize;
+                    if end > self.process()?.memory.len() {
+                        self.set_status_errno(12)?;
+                        self.write_reg(dst, -1i64 as u64)?;
+                        return Ok(());
+                    }
+                    self.process_mut()?.vmas.push(Vma::anonymous(stack_vma_start, stack_vma_len, 0b11));
+                }
+                // Only validate and write the call frame when one was actually reserved.
+                if frame_size > 0 {
+                    if self
+                        .ensure_mapped(child_stack, frame_size as usize, true)
+                        .is_err()
+                    {
+                        self.set_status_errno(12)?;
+                        self.write_reg(dst, -1i64 as u64)?;
+                        return Ok(());
+                    }
+                    let thread_return = self.process()?.program.instructions.len() as u64;
+                    self.store_u64(child_stack, thread_return)?;
                 }
                 let mut child = self.thread()?.clone();
                 child.tid = tid;
                 child.thread_pointer = 0;
                 child.ip = entry as usize;
                 child.regs[31] = child_stack;
-                let thread_return = self.process()?.program.instructions.len() as u64;
-                self.store_u64(child.regs[31], thread_return)?;
                 self.next_tid += 1;
                 self.threads.insert(tid, child);
                 self.ready.push_back(tid);
@@ -4504,7 +4533,7 @@ impl Machine {
             .ok_or_else(|| format!("missing process {pid}"))
     }
 
-    fn open_fd_handle(path: &str, flags: u64) -> Result<FdHandle, String> {
+    fn open_fd_handle(path: &str, flags: u64) -> Result<FdHandle, io::Error> {
         const POSIX_O_WRONLY: u64 = 0x0001;
         const POSIX_O_RDWR: u64 = 0x0002;
         const POSIX_O_CREAT: u64 = 0x0040;
@@ -4517,12 +4546,9 @@ impl Machine {
         if let Some(addr) = path.strip_prefix("tcp-listen:") {
             let addr = addr
                 .parse::<SocketAddr>()
-                .map_err(|err| format!("OPEN_FD TCP listener address {addr:?}: {err}"))?;
-            let listener = TcpListener::bind(addr)
-                .map_err(|err| format!("OPEN_FD TCP listener {addr:?}: {err}"))?;
-            listener
-                .set_nonblocking(true)
-                .map_err(|err| format!("OPEN_FD TCP nonblocking {addr:?}: {err}"))?;
+                .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err.to_string()))?;
+            let listener = TcpListener::bind(addr)?;
+            listener.set_nonblocking(true)?;
             Ok(FdHandle::TcpListener {
                 listener,
                 pending: None,
@@ -4560,7 +4586,7 @@ impl Machine {
             } else {
                 File::open(path)
             }
-            .map_err(|err| format!("OPEN_FD {path:?}: {err}"))?;
+            ?;
             Ok(FdHandle::File(file))
         }
     }
@@ -5077,6 +5103,13 @@ impl Machine {
                 .position(|candidate| matches!(candidate, FdHandle::Closed))
         };
         if let Some(fd) = fd {
+            let handle_name = match &handle {
+                FdHandle::TcpSocket { .. } => "TcpSocket", FdHandle::TcpListener { .. } => "TcpListener",
+                FdHandle::TcpStream(_) => "TcpStream", FdHandle::PipeReader(_) => "PipeReader",
+                FdHandle::PipeWriter(_) => "PipeWriter", FdHandle::File(_) => "File",
+                FdHandle::EventCounter { .. } => "EventCounter", FdHandle::Counter(_) => "Counter",
+                _ => "other" };
+            eprintln!("[emu] alloc_fd_handle -> fd={} handle={}", fd, handle_name);
             self.bump_fd_generation(fd)?;
             self.process_mut()?.fds[fd] = handle;
             let capability = self.fresh_fd_capability();
@@ -7491,13 +7524,46 @@ impl Machine {
         Ok(())
     }
 
+    /// Decode a socket address argument from an argblock.
+    /// Supports two formats:
+    ///   1. Legacy/native: addr_ptr points to a C string "ip:port" (len == 0)
+    ///   2. POSIX: addr_ptr points to a struct sockaddr_in (len >= 8, family byte == 2)
+    fn decode_socket_addr(&mut self, addr_ptr: u64, len: u64) -> Result<String, u64> {
+        // POSIX sockaddr_in: bytes are [sin_len, sin_family=2, port_hi, port_lo, ip0, ip1, ip2, ip3, ...]
+        if len >= 8 {
+            let fam = self.load_width(addr_ptr.wrapping_add(1), Width::Byte)
+                .map_err(|_| 14u64)? as u8;
+            if fam == 2 {
+                // sin_port at offset 2 (big-endian u16)
+                let ph = self.load_width(addr_ptr.wrapping_add(2), Width::Byte).map_err(|_| 14u64)? as u16;
+                let pl = self.load_width(addr_ptr.wrapping_add(3), Width::Byte).map_err(|_| 14u64)? as u16;
+                let port = (ph << 8) | pl;
+                // sin_addr at offset 4 (4 bytes, network byte order = big-endian)
+                let a = self.load_width(addr_ptr.wrapping_add(4), Width::Byte).map_err(|_| 14u64)? as u8;
+                let b = self.load_width(addr_ptr.wrapping_add(5), Width::Byte).map_err(|_| 14u64)? as u8;
+                let c = self.load_width(addr_ptr.wrapping_add(6), Width::Byte).map_err(|_| 14u64)? as u8;
+                let d = self.load_width(addr_ptr.wrapping_add(7), Width::Byte).map_err(|_| 14u64)? as u8;
+                let ip = if a == 0 && b == 0 && c == 0 && d == 0 {
+                    "0.0.0.0".to_string()
+                } else {
+                    format!("{a}.{b}.{c}.{d}")
+                };
+                return Ok(format!("{ip}:{port}"));
+            }
+        }
+        // Legacy: C string
+        let s = self.read_c_string(addr_ptr).map_err(|_| 14u64)?;
+        s.parse::<std::net::SocketAddr>().map_err(|_| 22u64)?;
+        Ok(s)
+    }
+
     fn object_ctl_socket_bind(&mut self, argblock: u64) -> Result<u64, u64> {
         let fd_value = self.load_u64_offset(argblock, 24).map_err(|_| 14u64)?;
         let addr_ptr = self.load_u64_offset(argblock, 40).map_err(|_| 14u64)?;
+        let addr_len = self.load_u64_offset(argblock, 48).map_err(|_| 14u64)?;
         let fd = self.decode_fd_value(fd_value)?;
         self.fd_right_errno(fd, CAP_RIGHT_WRITE)?;
-        let addr = self.read_c_string(addr_ptr).map_err(|_| 14u64)?;
-        let addr = addr.parse::<SocketAddr>().map_err(|_| 22u64)?.to_string();
+        let addr = self.decode_socket_addr(addr_ptr, addr_len)?;
         match &mut self.process_mut().map_err(|_| 3u64)?.fds[fd] {
             FdHandle::TcpSocket { bound_addr, .. } => {
                 *bound_addr = Some(addr);
@@ -7519,6 +7585,7 @@ impl Machine {
             _ => return Err(22),
         };
         let listener = TcpListener::bind(&addr).map_err(|_| 98u64)?;
+        eprintln!("[emu] socket_listen: fd={} bound to {}", fd, addr);
         listener.set_nonblocking(true).map_err(|_| 5u64)?;
         self.process_mut().map_err(|_| 3u64)?.fds[fd] = FdHandle::TcpListener {
             listener,
@@ -7531,6 +7598,7 @@ impl Machine {
     fn object_ctl_socket_connect(&mut self, argblock: u64) -> Result<u64, u64> {
         let fd_value = self.load_u64_offset(argblock, 24).map_err(|_| 14u64)?;
         let addr_ptr = self.load_u64_offset(argblock, 40).map_err(|_| 14u64)?;
+        let addr_len = self.load_u64_offset(argblock, 48).map_err(|_| 14u64)?;
         let fd = self.decode_fd_value(fd_value)?;
         self.fd_right_errno(fd, CAP_RIGHT_READ | CAP_RIGHT_WRITE | CAP_RIGHT_POLL)?;
         if !matches!(
@@ -7539,8 +7607,8 @@ impl Machine {
         ) {
             return Err(22);
         }
-        let addr = self.read_c_string(addr_ptr).map_err(|_| 14u64)?;
-        let addr = addr.parse::<SocketAddr>().map_err(|_| 22u64)?;
+        let addr_str = self.decode_socket_addr(addr_ptr, addr_len)?;
+        let addr = addr_str.parse::<SocketAddr>().map_err(|_| 22u64)?;
         let stream = TcpStream::connect(addr).map_err(|_| 111u64)?;
         stream.set_nonblocking(true).map_err(|_| 5u64)?;
         self.process_mut().map_err(|_| 3u64)?.fds[fd] = FdHandle::TcpStream(stream);
@@ -7736,6 +7804,13 @@ impl Machine {
         let Some(fd) = fd else {
             return Err(24);
         };
+        let handle_name = match &handle {
+            FdHandle::TcpSocket { .. } => "TcpSocket", FdHandle::TcpListener { .. } => "TcpListener",
+            FdHandle::TcpStream(_) => "TcpStream", FdHandle::PipeReader(_) => "PipeReader",
+            FdHandle::PipeWriter(_) => "PipeWriter", FdHandle::File(_) => "File",
+            FdHandle::EventCounter { .. } => "EventCounter", FdHandle::Counter(_) => "Counter",
+            _ => "other" };
+        eprintln!("[emu] install_object_fd auto -> fd={} handle={}", fd, handle_name);
         self.bump_fd_generation(fd).map_err(|_| 9u64)?;
         self.process_mut().map_err(|_| 3u64)?.fds[fd] = handle;
         let capability = self.fresh_fd_capability();
@@ -9826,16 +9901,25 @@ impl Machine {
 
     fn poll_fd_waiters(&mut self) {
         let waiters = std::mem::take(&mut self.fd_waiters);
+        let had_waiters = !waiters.is_empty();
+        if had_waiters {
+            eprintln!("[emu] poll_fd_waiters: {} waiters", waiters.len());
+        }
         for waiter in waiters {
+            eprintln!("[emu] checking waiter fd={} mask={}", waiter.fd, waiter.mask);
             let state = self
                 .with_thread_process(waiter.tid, |machine| {
                     if !machine.fd_generation_matches(waiter.fd, waiter.generation)? {
+                        eprintln!("[emu] fd={} stale generation", waiter.fd);
                         return Ok(FdWaiterState::Stale);
                     }
                     if let Err(errno) = machine.fd_right_errno(waiter.fd, CAP_RIGHT_POLL) {
+                        eprintln!("[emu] fd={} right error errno={}", waiter.fd, errno);
                         return Ok(FdWaiterState::Error(errno));
                     }
-                    if machine.fd_ready_for_mask(waiter.fd, waiter.mask)? {
+                    let ready = machine.fd_ready_for_mask(waiter.fd, waiter.mask)?;
+                    eprintln!("[emu] fd={} mask={} ready={}", waiter.fd, waiter.mask, ready);
+                    if ready {
                         Ok(FdWaiterState::Ready)
                     } else {
                         Ok(FdWaiterState::Pending)
@@ -10018,6 +10102,10 @@ impl Machine {
             return Ok(!self.process()?.inbox.is_empty());
         }
         let handle = &mut self.process_mut()?.fds[fd];
+        eprintln!("[emu] fd_read_ready fd={} handle_type={}", fd, match handle {
+            FdHandle::Closed => "Closed", FdHandle::TcpListener { .. } => "TcpListener",
+            FdHandle::TcpStream(_) => "TcpStream", FdHandle::TcpSocket { .. } => "TcpSocket",
+            _ => "other" });
         match handle {
             FdHandle::Stdin
             | FdHandle::File(_)
@@ -10034,16 +10122,24 @@ impl Machine {
                 if pending.is_some() {
                     return Ok(true);
                 }
+                eprintln!("[emu] fd_read_ready TcpListener: calling accept()");
                 match listener.accept() {
-                    Ok((stream, _)) => {
+                    Ok((stream, addr)) => {
+                        eprintln!("[emu] fd_read_ready TcpListener: accept Ok from {addr}");
                         stream
                             .set_nonblocking(false)
                             .map_err(|err| format!("TCP accepted stream blocking failed: {err}"))?;
                         *pending = Some(stream);
                         Ok(true)
                     }
-                    Err(err) if err.kind() == io::ErrorKind::WouldBlock => Ok(false),
-                    Err(err) => Err(format!("TCP accept failed: {err}")),
+                    Err(err) => {
+                        eprintln!("[emu] fd_read_ready TcpListener: accept err kind={:?}", err.kind());
+                        if err.kind() == io::ErrorKind::WouldBlock {
+                            Ok(false)
+                        } else {
+                            Err(format!("TCP accept failed: {err}"))
+                        }
+                    }
                 }
             }
             FdHandle::TcpStream(stream) => {
@@ -13663,10 +13759,11 @@ mod tests {
 
         let first_child_sp = machine.threads.get(&2).unwrap().regs[31];
         let second_child_sp = machine.threads.get(&3).unwrap().regs[31];
-        assert!(first_child_sp < parent_sp);
-        assert!(second_child_sp < first_child_sp);
+        // In committed-exec mode threads go above stack_top to avoid ELF segments.
+        assert!(first_child_sp > parent_sp);
+        assert!(second_child_sp > first_child_sp);
         assert_eq!(
-            first_child_sp - second_child_sp,
+            second_child_sp - first_child_sp,
             THREAD_STACK_STRIDE,
             "committed-exec thread stacks must have enough space for LLVM frames"
         );
@@ -19349,9 +19446,9 @@ mod tests {
     fn tcp_listener_endpoint_rejects_non_numeric_addresses() {
         let err = match Machine::open_fd_handle("tcp-listen:localhost:0", 0) {
             Ok(_) => panic!("expected non-numeric listener address rejection"),
-            Err(err) => err,
+            Err(e) => e,
         };
-        assert!(err.contains("TCP listener address"), "{err}");
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput, "{err}");
     }
 
     #[test]
@@ -19866,7 +19963,7 @@ mod tests {
         machine.thread_mut().unwrap().regs[3] = POLLIN_MASK;
 
         let keep_ready = machine
-            .exec(Instr::AwaitDyn(Reg(5), Reg(2), Reg(3)))
+            .exec(Instr::AwaitDyn(Reg(5), Reg(2), Reg(3), Reg(0)))
             .unwrap();
         assert!(!keep_ready);
         assert_eq!(machine.fd_waiters.len(), 1);
@@ -19909,7 +20006,7 @@ mod tests {
         machine.thread_mut().unwrap().regs[7] = POLLIN_MASK;
 
         let keep_ready = machine
-            .exec(Instr::AwaitDyn(Reg(8), Reg(6), Reg(7)))
+            .exec(Instr::AwaitDyn(Reg(8), Reg(6), Reg(7), Reg(0)))
             .unwrap();
         assert!(keep_ready);
         assert!(machine.fd_waiters.is_empty());
@@ -20183,7 +20280,7 @@ mod tests {
         machine.thread_mut().unwrap().regs[7] = 7;
         machine.thread_mut().unwrap().regs[8] = POLLIN_MASK;
         let keep_ready = machine
-            .exec(Instr::AwaitDyn(Reg(9), Reg(7), Reg(8)))
+            .exec(Instr::AwaitDyn(Reg(9), Reg(7), Reg(8), Reg(0)))
             .unwrap();
         assert!(keep_ready);
         assert!(machine.fd_waiters.is_empty());

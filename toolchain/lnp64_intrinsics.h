@@ -181,6 +181,13 @@ static inline void __lnp_yield(void) {
   __asm__ volatile("yield" : : : "memory");
 }
 
+/* Sleep for exactly 1 tick (~10ms in emulator).
+ * Encoded as Sleep(r0) = opcode 0x07, reg 0 = 32-bit word 0x07000000 (LE).
+ * r0 is always 0; emulator applies .max(1), so this always sleeps 1 tick. */
+static inline void __lnp_sleep_1tick(void) {
+  __asm__ volatile(".long 0x07000000" : : : "memory");
+}
+
 static inline lnp64_word_t __lnp_cap_dup(lnp64_cap_t source_cap,
                                          lnp64_word_t rights,
                                          lnp64_word_t flags) {

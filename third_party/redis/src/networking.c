@@ -1822,7 +1822,7 @@ client *lookupClientByID(uint64_t id) {
  * and 'nwritten' is an output parameter, it means how many bytes server write
  * to client. */
 static int _writevToClient(client *c, ssize_t *nwritten) {
-    struct iovec iov[IOV_MAX];
+    static struct iovec iov[IOV_MAX];
     int iovcnt = 0;
     size_t iov_bytes_len = 0;
     /* If the static reply buffer is not empty, 

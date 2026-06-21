@@ -64,5 +64,26 @@ int *__errno_location(void);
 #define EPROTONOSUPPORT 93
 #define EOPNOTSUPP 95
 #define EAFNOSUPPORT 97
+#define EDOM         33
+#define EOVERFLOW    75
+#define EBADMSG      74
+#define EILSEQ       84
+#define ENODATA      61
+#define ENOSR        63
+#define ENOSTR       60
+#define ETIME        62
+#define ENOTRECOVERABLE 131
+#define EOWNERDEAD   130
+#define ECANCELED    125
+#define ENOTSOCK     88
+#define EDESTADDRREQ 89
+#define ENOPROTOOPT  92
+#define ENETRESET    102
+#define ETOOMANYREFS 109
+#define EHOSTDOWN    112
+#define ESTALE         116
+#define ESOCKTNOSUPPORT 94
+#define EPFNOSUPPORT   96
+#define EREMOTE        66
 
 #endif

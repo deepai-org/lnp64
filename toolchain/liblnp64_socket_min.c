@@ -1,6 +1,7 @@
 #include <lnp64/intrinsics.h>
 
 #include <sys/socket.h>
+#include <netinet/in.h>
 
 enum {
   LNP64_OBJECT_OP_CREATE = 1,
@@ -60,10 +61,32 @@ int socket(int domain, int type, int protocol) {
   return (int)lnp64_complete_status((long)__lnp_object_ctl((lnp64_word_t)record));
 }
 
+/* LNP64 emulator bind/connect expect a C string "a.b.c.d:port" */
+static void lnp64_fmt_uint(char *buf, unsigned int v, int *pos) {
+  if (v >= 100) { buf[(*pos)++] = '0' + (char)(v / 100); v %= 100; }
+  if (v >= 10)  { buf[(*pos)++] = '0' + (char)(v / 10);  v %= 10; }
+  buf[(*pos)++] = '0' + (char)v;
+}
+
+/* Convert struct sockaddr_in to "ip:port\0" in buf (needs >=24 bytes) */
+static int lnp64_sockaddr_to_str(const void *addr_v, char *buf) {
+  const struct sockaddr_in *sa = (const struct sockaddr_in *)addr_v;
+  unsigned int ip = ntohl(sa->sin_addr.s_addr);
+  unsigned int port = ntohs(sa->sin_port);
+  int pos = 0;
+  lnp64_fmt_uint(buf, (ip >> 24) & 0xff, &pos); buf[pos++] = '.';
+  lnp64_fmt_uint(buf, (ip >> 16) & 0xff, &pos); buf[pos++] = '.';
+  lnp64_fmt_uint(buf, (ip >>  8) & 0xff, &pos); buf[pos++] = '.';
+  lnp64_fmt_uint(buf,  ip        & 0xff, &pos); buf[pos++] = ':';
+  lnp64_fmt_uint(buf, port,              &pos);
+  buf[pos] = '\0';
+  return pos;
+}
+
 int bind(int fd, const void *addr, socklen_t len) {
   (void)len;
   return lnp64_socket_ctl(LNP64_OBJECT_OP_SOCKET_BIND, fd, 0,
-                          (lnp64_word_t)addr, 0);
+                          (lnp64_word_t)addr, (lnp64_word_t)len);
 }
 
 int listen(int fd, int backlog) {
@@ -72,9 +95,8 @@ int listen(int fd, int backlog) {
 }
 
 int connect(int fd, const void *addr, socklen_t len) {
-  (void)len;
   return lnp64_socket_ctl(LNP64_OBJECT_OP_SOCKET_CONNECT, fd, 0,
-                          (lnp64_word_t)addr, 0);
+                          (lnp64_word_t)addr, (lnp64_word_t)len);
 }
 
 int accept(int fd, void *addr, socklen_t *len) {
@@ -132,11 +154,24 @@ long recv(int fd, void *buf, size_t len, int flags) {
 #include <unistd.h>
 
 int pipe(int pipefd[2]) {
-  int sv[2];
-  sv[0] = socket(AF_UNIX, SOCK_STREAM, 0);
-  sv[1] = socket(AF_UNIX, SOCK_STREAM, 0);
-  if (sv[0] < 0 || sv[1] < 0) return -1;
-  pipefd[0] = sv[0]; pipefd[1] = sv[1];
+  /* Use native LNP64 pipe: ObjectKind::Queue=2, ObjectProfile::Pipe=1 */
+  lnp64_word_t record[9];
+  record[0] = LNP64_OBJECT_OP_CREATE;
+  record[1] = 2; /* ObjectKind::Queue */
+  record[2] = 1; /* ObjectProfile::Pipe */
+  record[3] = 0; /* desired read fd (0 = auto) */
+  record[4] = 0; /* desired write fd (0 = auto) */
+  record[5] = 0;
+  record[6] = 0;
+  record[7] = 0;
+  record[8] = 0;
+  long ret = (long)__lnp_object_ctl((lnp64_word_t)record);
+  if (ret < 0) {
+    lnp64_errno_store(lnp64_errno_load());
+    return -1;
+  }
+  pipefd[0] = (int)(unsigned int)(unsigned long)record[3];
+  pipefd[1] = (int)(unsigned int)(unsigned long)record[4];
   return 0;
 }
 
