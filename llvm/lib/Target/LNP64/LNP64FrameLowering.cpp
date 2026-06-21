@@ -17,8 +17,13 @@ static constexpr unsigned LNP64DwarfSP = 31;
 // v2: the return address lives in r1 (no separate LR register).
 static constexpr unsigned LNP64DwarfRA = 1;
 
-// In v2 r1 (ra) is a normal callee-saved GPR. Save it when the function makes
-// calls (and therefore clobbers r1).
+// In v2 r1 (ra) is a dedicated link register, saved here in the prologue when
+// the function makes calls. The s0..s9 (r18..r27) callee-saved GPRs are NOT
+// handled here: the generic PrologueEpilogueInserter spills/restores whichever
+// of them a function clobbers via storeRegToStackSlot/loadRegFromStackSlot
+// (their frame objects live inside [0, getStackSize())). The ra slot lives in
+// the reserved RASaveSize bytes ON TOP at offset getStackSize(), so it never
+// aliases the PEI-laid-out CSR save area, locals, or spills.
 static uint64_t getRASaveSize(const MachineFunction &MF) {
   return MF.getFrameInfo().hasCalls() ? 8 : 0;
 }

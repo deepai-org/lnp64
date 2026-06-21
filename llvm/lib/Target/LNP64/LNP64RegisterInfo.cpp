@@ -24,19 +24,40 @@ BitVector LNP64RegisterInfo::getReservedRegs(const MachineFunction &) const {
   BitVector Reserved(getNumRegs());
   Reserved.set(LNP64::R0);  // hardwired zero
   Reserved.set(LNP64::R1);  // ra -- dedicated return-address link register
+  Reserved.set(LNP64::R30); // backend scratch (prologue/epilogue, frame index)
   Reserved.set(LNP64::R31); // stack pointer
   // r1 is a dedicated link register, NOT a general allocatable temp: it holds
   // the return address live-in (placed by the caller's jal) and is read by
   // `ret` (= jalr r0, r1, 0). If it were allocatable, the register allocator
   // would reuse it as a scratch in leaf functions (which do not save it) and
-  // clobber the return address before `ret`. r30 is reclaimed (allocatable).
+  // clobber the return address before `ret`. r30 is the dedicated backend
+  // scratch: emitPrologue/emitEpilogue and eliminateFrameIndex materialize
+  // stack offsets and frame addresses into it (`li r30, imm; add ...`). It is
+  // NOT callee-saved, so if it were allocatable the register allocator could
+  // park a value live across a call in r30 and the callee would clobber it.
   return Reserved;
 }
 
 const MCPhysReg *
 LNP64RegisterInfo::getCalleeSavedRegs(const MachineFunction *) const {
-  static const MCPhysReg NoCalleeSaved[] = {0};
-  return NoCalleeSaved;
+  // v2 ABI callee-saved set s0..s9 = r18..r27. The generic
+  // PrologueEpilogueInserter spills/restores whichever of these a function
+  // actually clobbers. r1 (ra) is handled by the bespoke prologue spill in
+  // LNP64FrameLowering and is intentionally NOT listed here.
+  static const MCPhysReg CalleeSaved[] = {
+      LNP64::R18, LNP64::R19, LNP64::R20, LNP64::R21, LNP64::R22,
+      LNP64::R23, LNP64::R24, LNP64::R25, LNP64::R26, LNP64::R27, 0};
+  return CalleeSaved;
+}
+
+const uint32_t *
+LNP64RegisterInfo::getCallPreservedMask(const MachineFunction &,
+                                        CallingConv::ID) const {
+  // The TableGen CSR_LNP64 def generates this regmask: bits set = preserved
+  // across a call (r18..r27). Attaching it to call instructions tells the
+  // register allocator that everything else is clobbered, so it can keep
+  // cross-call values in s-registers instead of spilling them.
+  return CSR_LNP64_RegMask;
 }
 
 Register LNP64RegisterInfo::getFrameRegister(const MachineFunction &) const {

@@ -310,10 +310,16 @@ def : Pat<(brcc SETULE, GPR:$a, GPR:$b, bb:$t), (BGEU GPR:$b, GPR:$a, bb:$t)>;
 def : Pat<(brcc SETUGE, GPR:$a, GPR:$b, bb:$t), (BGEU GPR:$a, GPR:$b, bb:$t)>;
 
 // JAL: J-type. rd = pc+8; pc += off. call sym -> jal r1, sym.
+// A call clobbers the caller-saved GPRs only: r1 (ra) and the temporaries
+// r2..r17, r28, r29. The callee-saved set s0..s9 = r18..r27 is preserved and
+// must NOT appear here (listing it would force PEI to save all of r18..r27 on
+// every call and prevent the allocator from keeping cross-call values in
+// s-registers). r30 (backend scratch) is reserved, so it need not be listed.
+// The precise clobber set is also carried by the call-preserved regmask
+// (getCallPreservedMask / CSR_LNP64) attached in LowerCall.
 let isCall = 1,
     Defs = [R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12, R13, R14,
-            R15, R16, R17, R18, R19, R20, R21, R22, R23, R24, R25, R26, R27,
-            R28, R29] in {
+            R15, R16, R17, R28, R29] in {
 def JAL : LNP64Inst<(outs GPR:$rd), (ins calltarget:$target), "jal",
                     "\t$rd, $target">;
 def JALR : LNP64Inst<(outs GPR:$rd), (ins GPR:$rs1, simm32:$imm), "jalr",

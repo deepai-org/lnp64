@@ -33,9 +33,11 @@ The v0 psABI covers:
 Non-leaf functions spill and reload `r1` with ordinary `SD`/`LD` like any GPR;
 there is no `LR_GET`/`LR_SET` bridge.
 
-`r30` is a general allocatable GPR in v2 (reclaimed from its v1 backend-scratch
-role); the compiler may still use it transiently inside a prologue/epilogue for
-stack-adjustment materialization.
+`r30` is the dedicated backend scratch register: it is reserved (not
+register-allocated) and is used by the compiler to materialize stack-adjustment
+immediates and frame addresses in prologues, epilogues, and frame-index
+expansion. Because it is caller-clobbered and not callee-saved, no value that
+must survive a call is kept in `r30`.
 
 `r31` is the stack pointer for compiler-generated locals and spills. The current
 emulator protects `r31` from ordinary `write_reg` updates; the hardware design
@@ -83,16 +85,23 @@ Return values are placed in `r2`. Multi-register returns are not part of the C
 ABI yet. Cross-domain gate profiles use bounded return registers through native
 `GATE_RETURN`; `RET_CAP` is the source-level call-profile spelling.
 
-The v0 C ABI treats `r1` through `r30` as caller-clobbered (including the `ra`
-register `r1`). There is no callee-saved GPR set in the v0 ABI. Runtimes that
-need stable register state across calls must spill it explicitly.
+The v2 C ABI defines a callee-saved (preserved) GPR set `s0`-`s9` =
+`r18`-`r27`: a callee that uses any of these must save it on entry and restore
+it before returning, so the register allocator may keep values live across a
+call in an `s`-register instead of spilling them to the stack. Every other
+caller-visible GPR is caller-clobbered: `r2`-`r17` and `r28`-`r29` (the integer
+argument/return and temporary registers), plus the `ra` register `r1` and the
+`r30` backend scratch register. Callers that need a caller-clobbered register's
+value to survive a call must spill it explicitly. `r0` (zero) and `r31` (sp)
+are not part of either set.
 
 ## Nonlocal Jumps
 
 `setjmp` and `longjmp` are libc/psABI operations over ordinary user-visible
 thread context. A plain `jmp_buf` may save only the state required to resume
 the same live C thread image: `r31` as the stack pointer, `r1` as the return
-link (`ra`), any future psABI callee-preserved GPRs, and user-visible FDR or
+link (`ra`), the callee-preserved GPRs `s0`-`s9` = `r18`-`r27` (so that a
+`longjmp` reinstates the caller's saved register state), and user-visible FDR or
 capability register values only if a future psABI explicitly makes them part
 of the calling convention.
 

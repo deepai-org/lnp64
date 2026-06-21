@@ -6,7 +6,10 @@
 #define LNP64_JMPBUF_STACK_COOKIE 2
 #define LNP64_JMPBUF_STACK_POINTER 3
 #define LNP64_JMPBUF_LINK_REGISTER 4
-#define LNP64_JMPBUF_WORDS 5
+/* Callee-saved set s0..s9 = r18..r27 occupy words 5..14. */
+#define LNP64_JMPBUF_CALLEE_SAVED_BASE 5
+#define LNP64_JMPBUF_CALLEE_SAVED_COUNT 10
+#define LNP64_JMPBUF_WORDS 15
 
 typedef unsigned long jmp_buf[LNP64_JMPBUF_WORDS];
 

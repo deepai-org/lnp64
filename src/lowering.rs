@@ -1456,6 +1456,13 @@ mod tests {
         assert!(setjmp_header.contains("LNP64_JMPBUF_THREAD_COOKIE"));
         assert!(setjmp_header.contains("LNP64_JMPBUF_STACK_POINTER"));
         assert!(setjmp_header.contains("LNP64_JMPBUF_LINK_REGISTER"));
+        assert!(setjmp_header.contains("LNP64_JMPBUF_CALLEE_SAVED_BASE"));
+        assert!(setjmp_header.contains("LNP64_JMPBUF_WORDS 15"));
+        // longjmp must restore the callee-saved set s0..s9 = r18..r27.
+        assert!(libc_setjmp_min.contains("SD r18, 40(r2)"));
+        assert!(libc_setjmp_min.contains("SD r27, 112(r2)"));
+        assert!(libc_setjmp_min.contains("LD r18, 40(r2)"));
+        assert!(libc_setjmp_min.contains("LD r27, 112(r2)"));
         assert!(setjmp_header.contains("__attribute__((returns_twice))"));
         assert!(setjmp_header.contains("__attribute__((noreturn))"));
         assert!(real_llc.contains("toolchain/liblnp64_setjmp_min.s"));
@@ -5026,6 +5033,12 @@ mod tests {
         assert!(instr_td.contains("(LNP64push GPR:$cap, GPR:$arg0, GPR:$arg1)"));
         assert!(instr_td.contains("isReturn = 1"));
         assert!(instr_td.contains("Defs = [R1, R2"));
+        // Calls clobber only caller-saved GPRs; the callee-saved set
+        // s0..s9 = r18..r27 is preserved and must not be in the call Defs list.
+        assert!(instr_td.contains("R15, R16, R17, R28, R29] in {"));
+        assert!(isel.contains("getCallPreservedMask"));
+        assert!(isel.contains("DAG.getRegisterMask(Mask)"));
+        assert!(reginfo.contains("CSR_LNP64_RegMask"));
         assert!(!instr_td.contains("Defs = [FLAGS]"));
         assert!(!instr_td.contains("Uses = [FLAGS]"));
         assert!(instr_td.contains("Uses = [R1]"));
@@ -5066,7 +5079,10 @@ mod tests {
         assert!(reginfo.contains("TII.get(LNP64::ADD)"));
         assert!(reginfo.contains("MFI.getObjectOffset"));
         assert!(reginfo.contains("Load/store displacements are 32-bit signed in v2"));
-        assert!(reginfo.contains("NoCalleeSaved"));
+        // v2 callee-saved set s0..s9 = r18..r27.
+        assert!(reginfo.contains("getCalleeSavedRegs"));
+        assert!(reginfo.contains("LNP64::R18"));
+        assert!(reginfo.contains("LNP64::R27"));
         assert!(clang_target.contains("resetDataLayout(\"e-m:e-p:64:64-i64:64-n64-S128\")"));
         assert!(clang_target.contains("__LNP64__"));
         assert!(clang_target_header.contains("getTargetBuiltins()"));
@@ -8567,9 +8583,12 @@ mod tests {
         assert_eq!(manifest_field(psabi_manifest, "return_gprs"), "r2");
         assert_eq!(
             manifest_field(psabi_manifest, "caller_clobbered_gprs"),
-            "r1-r30"
+            "r1-r17,r28-r30"
         );
-        assert_eq!(manifest_field(psabi_manifest, "callee_saved_gprs"), "none");
+        assert_eq!(
+            manifest_field(psabi_manifest, "callee_saved_gprs"),
+            "r18-r27"
+        );
         assert_eq!(manifest_field(psabi_manifest, "backend_scratch_gpr"), "r30");
         assert_eq!(
             manifest_field(psabi_manifest, "entry_page_base"),
@@ -8607,8 +8626,8 @@ mod tests {
         );
         assert!(psabi_doc.contains("Return values are placed in `r2`."));
         assert!(psabi_doc.contains("`r1` is the return address (`ra`)"));
-        assert!(psabi_doc.contains("`r1` through `r30` as caller-clobbered"));
-        assert!(psabi_doc.contains("callee-saved GPR set in the v0 ABI"));
+        assert!(psabi_doc.contains("callee-saved (preserved) GPR set `s0`-`s9` =\n`r18`-`r27`"));
+        assert!(psabi_doc.contains("`r2`-`r17` and `r28`-`r29`"));
         assert!(psabi_doc.contains("Additional fixed arguments are passed"));
         assert!(psabi_doc.contains("`r31` points at the current thread's stack/local region."));
         assert!(psabi_doc.contains("The thread pointer is read and written through the `TP` PCR."));
@@ -8669,8 +8688,10 @@ mod tests {
         assert_eq!(classes["fpr"].0, manifest_field(target_manifest, "fpr"));
         assert_eq!(classes["vr"].0, manifest_field(target_manifest, "vr"));
         assert_eq!(classes["gpr"].1, "64");
-        assert_eq!(classes["gpr"].2, "r1-r30");
+        assert_eq!(classes["gpr"].2, "r1-r29");
         assert!(classes["gpr"].3.contains(&"r0"));
+        // r30 (backend scratch) is reserved, not allocatable.
+        assert!(classes["gpr"].3.contains(&"r30"));
         assert!(
             classes["gpr"]
                 .3

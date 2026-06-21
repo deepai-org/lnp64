@@ -589,6 +589,16 @@ LNP64TargetLowering::LowerCall(CallLoweringInfo &CLI,
   for (auto &RegAndValue : RegsToPass)
     Ops.push_back(
         DAG.getRegister(RegAndValue.first, RegAndValue.second.getValueType()));
+
+  // Attach the call-preserved regmask (callee-saved set s0..s9 = r18..r27) so
+  // the register allocator knows exactly which registers the call clobbers and
+  // can keep cross-call values live in the preserved s-registers.
+  const LNP64RegisterInfo *TRI =
+      MF.getSubtarget<LNP64Subtarget>().getRegisterInfo();
+  const uint32_t *Mask = TRI->getCallPreservedMask(MF, CLI.CallConv);
+  assert(Mask && "missing call-preserved regmask");
+  Ops.push_back(DAG.getRegisterMask(Mask));
+
   if (Glue)
     Ops.push_back(Glue);
 
