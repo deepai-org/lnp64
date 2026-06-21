@@ -48,6 +48,7 @@ mvs_proofs=(
   revocation
   derivation
   waitwake
+  reset_iso
 )
 for proof in "${mvs_proofs[@]}"; do
   printf '\n========== mvs formal: %s ==========\n' "$proof"
