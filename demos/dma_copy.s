@@ -6,8 +6,7 @@ obj: .zero 64
   LI r29, -1
   LI r1, 32
   ALLOC r3, r1
-  CMP r3, r29
-  BEQ bad
+  BEQ r3, r29, bad
 
 create_dma_buffer:
   LI r10, obj
@@ -22,8 +21,7 @@ create_dma_buffer:
   LI r1, 32
   ST [r10, 48], r1
   OBJECT_CTL r4, r10
-  CMP r4, r29
-  BEQ bad
+  BEQ r4, r29, bad
 
 copy_within_buffer:
   LI r5, 90
@@ -37,11 +35,9 @@ copy_within_buffer:
   ST [r10, 24], r6
   ST [r10, 32], r4
   DMA_CTL r8, r10
-  CMP r8, r6
-  BNE bad
+  BNE r8, r6, bad
   LD r9, [r7, 0]
-  CMP r9, r5
-  BNE bad
+  BNE r9, r5, bad
 
 reject_out_of_scope_destination:
   LI r1, 40
@@ -53,12 +49,10 @@ reject_out_of_scope_destination:
   ST [r10, 24], r6
   ST [r10, 32], r4
   DMA_CTL r8, r10
-  CMP r8, r29
-  BNE bad
+  BNE r8, r29, bad
   ERRNO_GET r11
   LI r1, 14
-  CMP r11, r1
-  BNE bad
+  BNE r11, r1, bad
 
 done:
   LI r1, ok_msg

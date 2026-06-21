@@ -30,8 +30,7 @@ create_pipe_queue:
   ST [r10, 32], r1
   ST [r10, 40], r0
   OBJECT_CTL r11, r10
-  CMP r11, r0
-  BNE bad
+  BNE r11, r0, bad
 
 push_payload:
   LI r12, payload
@@ -39,31 +38,25 @@ push_payload:
   LI r1, 42
   ST [r12, 0], r1
   WRITE_FD fd4, r12, r13
-  CMP r1, r13
-  BNE bad
+  BNE r1, r13, bad
 
 probe_ready_twice:
   WAITABLE_PROBE r14, fd3, r20
-  CMP r14, r20
-  BNE bad
+  BNE r14, r20, bad
   WAITABLE_PROBE r15, fd3, r20
-  CMP r15, r20
-  BNE bad
+  BNE r15, r20, bad
 
 pull_after_probes:
   LI r16, out
   READ_FD fd3, r16, r13
-  CMP r1, r13
-  BNE bad
+  BNE r1, r13, bad
   LD r17, [r16, 0]
   LI r18, 42
-  CMP r17, r18
-  BNE bad
+  BNE r17, r18, bad
 
 probe_empty_after_pull:
   WAITABLE_PROBE r19, fd3, r20
-  CMP r19, r0
-  BNE bad
+  BNE r19, r0, bad
 
 done:
   LI r1, ok_msg

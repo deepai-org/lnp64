@@ -6,8 +6,7 @@ obj: .zero 64
   LI r29, -1
   LI r1, 16
   ALLOC r3, r1
-  CMP r3, r29
-  BEQ bad
+  BEQ r3, r29, bad
 
 create_dma_buffer:
   LI r10, obj
@@ -22,8 +21,7 @@ create_dma_buffer:
   LI r1, 16
   ST [r10, 48], r1
   OBJECT_CTL r4, r10
-  CMP r4, r29
-  BEQ bad
+  BEQ r4, r29, bad
 
 dma_before_revoke:
   LI r1, 2
@@ -36,14 +34,12 @@ dma_before_revoke:
   ST [r10, 32], r4
   DMA_CTL r5, r10
   LI r1, 1
-  CMP r5, r1
-  BNE bad
+  BNE r5, r1, bad
 
 revoke_buffer:
   ST [r10, 0], r4
   CAP_REVOKE r6, r10
-  CMP r6, r0
-  BLE bad
+  BLE r6, r0, bad
 
 dma_after_revoke:
   LI r1, 2
@@ -55,12 +51,10 @@ dma_after_revoke:
   ST [r10, 24], r1
   ST [r10, 32], r4
   DMA_CTL r7, r10
-  CMP r7, r29
-  BNE bad
+  BNE r7, r29, bad
   ERRNO_GET r8
   LI r1, 116
-  CMP r8, r1
-  BNE bad
+  BNE r8, r1, bad
 
 done:
   LI r1, ok_msg

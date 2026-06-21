@@ -25,8 +25,7 @@ create_sandbox:
   ST [r10, 64], r1
   ST [r10, 72], r0
   DOMAIN_CTL r20, r10
-  CMP r20, r29
-  BEQ bad
+  BEQ r20, r29, bad
 
 query_sandbox:
   LI r1, 3
@@ -36,12 +35,10 @@ query_sandbox:
   ST [r10, 16], r1
   DOMAIN_CTL r21, r10
   LI r1, 200
-  CMP r21, r1
-  BNE bad
+  BNE r21, r1, bad
   LD r22, [r10, 64]
   LI r1, 2
-  CMP r22, r1
-  BNE bad
+  BNE r22, r1, bad
 
 reject_broader_child:
   LI r1, 1
@@ -62,8 +59,7 @@ reject_broader_child:
   ST [r10, 64], r1
   ST [r10, 72], r0
   DOMAIN_CTL r23, r10
-  CMP r23, r29
-  BNE bad
+  BNE r23, r29, bad
 
 done:
   LI r1, ok_msg

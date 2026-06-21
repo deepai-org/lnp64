@@ -7,15 +7,13 @@ dma: .zero 40
   LI r1, 32
   LI r2, 64
   ALLOC_EX r3, r1, r2
-  CMP r3, r29
-  BEQ bad
+  BEQ r3, r29, bad
 
 in_bounds_write:
   LI r4, 123
   ST [r3, 0], r4
   LD r5, [r3, 0]
-  CMP r5, r4
-  BNE bad
+  BNE r5, r4, bad
 
 guarded_overflow_dma:
   LI r10, dma
@@ -30,12 +28,10 @@ guarded_overflow_dma:
   ST [r10, 24], r1
   ST [r10, 32], r0
   DMA_CTL r7, r10
-  CMP r7, r29
-  BNE bad
+  BNE r7, r29, bad
   ERRNO_GET r8
   LI r1, 14
-  CMP r8, r1
-  BNE bad
+  BNE r8, r1, bad
 
 done:
   LI r1, ok_msg

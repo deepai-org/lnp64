@@ -15,20 +15,16 @@ ok_msg: .string "ok pcr_readonly_no_mutate\n"
 check_writable_tp:
   LI r20, 0x1234
   SET_PCR r21, TP, r20
-  CMP r21, r0
-  BNE bad
+  BNE r21, r0, bad
   GET_PCR r22, TP
-  CMP r22, r20
-  BNE bad
+  BNE r22, r20, bad
 
 check_writable_sigmask:
   LI r20, 0x55
   SET_PCR r21, SIGMASK, r20
-  CMP r21, r0
-  BNE bad
+  BNE r21, r0, bad
   GET_PCR r22, SIGMASK
-  CMP r22, r20
-  BNE bad
+  BNE r22, r20, bad
 
 check_readonly_pid_no_mutate:
   GET_PCR r23, PID
@@ -36,26 +32,20 @@ check_readonly_pid_no_mutate:
   LI r28, 77
   ERRNO_SET r28
   SET_PCR r25, PID, r24
-  CMP r25, r29
-  BNE bad
+  BNE r25, r29, bad
   GET_PCR r26, PID
-  CMP r26, r23
-  BNE bad
+  BNE r26, r23, bad
   ERRNO_GET r27
-  CMP r27, r28
-  BNE bad
+  BNE r27, r28, bad
 
 check_readonly_tid_no_mutate:
   GET_PCR r23, TID
   SET_PCR r25, TID, r24
-  CMP r25, r29
-  BNE bad
+  BNE r25, r29, bad
   GET_PCR r26, TID
-  CMP r26, r23
-  BNE bad
+  BNE r26, r23, bad
   ERRNO_GET r27
-  CMP r27, r28
-  BNE bad
+  BNE r27, r28, bad
 
 done:
   LI r1, ok_msg

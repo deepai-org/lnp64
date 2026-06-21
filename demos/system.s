@@ -17,8 +17,7 @@ exec_envp: .quad 0
   YIELD
   LD r20, sig_flag
   LI r4, 1
-  CMP r20, r4
-  BNE bad
+  BNE r20, r4, bad
 
   LI r5, 16
   LI r25, 3
@@ -26,8 +25,7 @@ exec_envp: .quad 0
   LI r7, 99
   ST [r6, 0], r7
   LD r8, [r6, 0]
-  CMP r8, r7
-  BNE bad
+  BNE r8, r7, bad
 
   LI r9, ucode
   LI r10, 11
@@ -35,8 +33,7 @@ exec_envp: .quad 0
   LI r11, 9
   INB r12, r11
   LI r13, 123
-  CMP r12, r13
-  BNE bad
+  BNE r12, r13, bad
 
   LI r14, futex_word
   LI r15, 0
@@ -50,16 +47,14 @@ exec_envp: .quad 0
   SLEEP r26
   LD r19, [r14, 0]
   LI r21, 2
-  CMP r19, r21
-  BNE bad
+  BNE r19, r21, bad
 
   LI r1, system_msg
   LI r2, 10
   WRITE_FD fd1, r1, r2
 
   FORK r22
-  CMP r22, r0
-  BEQ child
+  BEQ r22, r0, child
   YIELD
   LI r23, exec_path
   LI r24, exec_argv

@@ -26,21 +26,17 @@ create_pipe_queue:
   ST [r10, 32], r1
   ST [r10, 40], r0
   OBJECT_CTL r11, r10
-  CMP r11, r29
-  BEQ bad
+  BEQ r11, r29, bad
   LI r12, pipe_msg
   LI r13, 1
   PUSH r14, fd4, r12, r13
-  CMP r14, r13
-  BNE bad
+  BNE r14, r13, bad
   LI r15, pipe_out
   PULL r14, fd3, r15, r13
-  CMP r14, r13
-  BNE bad
+  BNE r14, r13, bad
   LD.B r16, [r15, 0]
   LI r17, 81
-  CMP r16, r17
-  BNE bad
+  BNE r16, r17, bad
 
 create_event_counter:
   LI r1, 1
@@ -54,22 +50,18 @@ create_event_counter:
   ST [r10, 40], r0
   ST [r10, 48], r0
   OBJECT_CTL r11, r10
-  CMP r11, r29
-  BEQ bad
+  BEQ r11, r29, bad
   LI r12, event_val
   LI r13, 8
   WRITE_FD fd5, r12, r13
   ERRNO_GET r18
-  CMP r18, r0
-  BNE bad
+  BNE r18, r0, bad
   LI r12, event_out
   READ_FD fd5, r12, r13
-  CMP r1, r13
-  BNE bad
+  BNE r1, r13, bad
   LD r19, [r12, 0]
   LI r20, 5
-  CMP r19, r20
-  BNE bad
+  BNE r19, r20, bad
 
 create_timer:
   LI r1, 1
@@ -82,8 +74,7 @@ create_timer:
   ST [r10, 32], r0
   ST [r10, 40], r0
   OBJECT_CTL r11, r10
-  CMP r11, r29
-  BEQ bad
+  BEQ r11, r29, bad
   LI r12, timer_ticks
   LI r13, 8
   WRITE_FD fd6, r12, r13
@@ -91,11 +82,9 @@ create_timer:
   SLEEP r21
   LI r12, timer_out
   READ_FD fd6, r12, r13
-  CMP r1, r13
-  BNE bad
+  BNE r1, r13, bad
   LD r22, [r12, 0]
-  CMP r22, r0
-  BLE bad
+  BLE r22, r0, bad
 
 create_memory_object:
   LI r1, 1
@@ -109,13 +98,11 @@ create_memory_object:
   LI r1, 16
   ST [r10, 40], r1
   OBJECT_CTL r11, r10
-  CMP r11, r29
-  BEQ bad
+  BEQ r11, r29, bad
   LI r12, mem_msg
   LI r13, 1
   WRITE_FD fd7, r12, r13
-  CMP r1, r13
-  BNE bad
+  BNE r1, r13, bad
 
 create_call_gate:
   LI r1, 1
@@ -133,17 +120,14 @@ create_call_gate:
   ST [r10, 56], r0
   ST [r10, 64], r0
   OBJECT_CTL r11, r10
-  CMP r11, r29
-  BEQ bad
+  BEQ r11, r29, bad
   LI r1, 7
   LI r2, 9
   CALL_CAP r23, fd8, r1, r2
   LI r24, 16
-  CMP r23, r24
-  BNE bad
+  BNE r23, r24, bad
   LI r24, 9
-  CMP r30, r24
-  BNE bad
+  BNE r30, r24, bad
 
 done:
   LI r1, ok_msg

@@ -26,8 +26,7 @@ create_vm:
   LI r1, 15
   ST [r10, 72], r1
   DOMAIN_CTL r20, r10
-  CMP r20, r28
-  BEQ bad
+  BEQ r20, r28, bad
 
 nested_vm:
   LI r1, 1
@@ -49,8 +48,7 @@ nested_vm:
   LI r1, 7
   ST [r10, 72], r1
   DOMAIN_CTL r21, r10
-  CMP r21, r28
-  BEQ bad
+  BEQ r21, r28, bad
 
 create_container:
   LI r1, 1
@@ -72,8 +70,7 @@ create_container:
   LI r1, 3
   ST [r10, 72], r1
   DOMAIN_CTL r22, r10
-  CMP r22, r28
-  BEQ bad
+  BEQ r22, r28, bad
 
 nested_container:
   LI r1, 1
@@ -96,8 +93,7 @@ nested_container:
   LI r1, 1
   ST [r10, 72], r1
   DOMAIN_CTL r23, r10
-  CMP r23, r28
-  BEQ bad
+  BEQ r23, r28, bad
 
 create_sandbox:
   LI r1, 1
@@ -119,8 +115,7 @@ create_sandbox:
   LI r1, 1
   ST [r10, 72], r1
   DOMAIN_CTL r24, r10
-  CMP r24, r28
-  BEQ bad
+  BEQ r24, r28, bad
 
 nested_sandbox:
   LI r1, 1
@@ -143,8 +138,7 @@ nested_sandbox:
   LI r1, 1
   ST [r10, 72], r1
   DOMAIN_CTL r25, r10
-  CMP r25, r28
-  BEQ bad
+  BEQ r25, r28, bad
 
 check_nested_vm:
   LI r1, 3
@@ -154,15 +148,12 @@ check_nested_vm:
   ST [r10, 16], r1
   DOMAIN_CTL r26, r10
   LI r1, 200
-  CMP r26, r1
-  BNE bad
+  BNE r26, r1, bad
   LD r26, [r10, 120]
-  CMP r26, r20
-  BNE bad
+  BNE r26, r20, bad
   LD r26, [r10, 128]
   LI r1, 2
-  CMP r26, r1
-  BNE bad
+  BNE r26, r1, bad
 
 check_nested_container_freezer:
   LI r1, 4
@@ -171,8 +162,7 @@ check_nested_container_freezer:
   LI r1, 1
   ST [r10, 16], r1
   DOMAIN_CTL r26, r10
-  CMP r26, r0
-  BNE bad
+  BNE r26, r0, bad
   LI r1, 3
   ST [r10, 0], r1
   ST [r10, 8], r23
@@ -181,16 +171,14 @@ check_nested_container_freezer:
   DOMAIN_CTL r26, r10
   LD r26, [r10, 112]
   LI r1, 1
-  CMP r26, r1
-  BNE bad
+  BNE r26, r1, bad
   LI r1, 5
   ST [r10, 0], r1
   ST [r10, 8], r22
   LI r1, 1
   ST [r10, 16], r1
   DOMAIN_CTL r26, r10
-  CMP r26, r0
-  BNE bad
+  BNE r26, r0, bad
 
 check_sandbox_revocation:
   LI r1, 2
@@ -207,8 +195,7 @@ check_sandbox_revocation:
   ST [r10, 64], r1
   ST [r10, 72], r0
   DOMAIN_CTL r26, r10
-  CMP r26, r0
-  BNE bad
+  BNE r26, r0, bad
   LI r1, 3
   ST [r10, 0], r1
   ST [r10, 8], r25
@@ -217,8 +204,7 @@ check_sandbox_revocation:
   DOMAIN_CTL r26, r10
   LD r26, [r10, 64]
   LI r1, 3
-  CMP r26, r1
-  BNE bad
+  BNE r26, r1, bad
 
 check_monotonic_limit_reject:
   LI r1, 1
@@ -241,8 +227,7 @@ check_monotonic_limit_reject:
   LI r1, 1
   ST [r10, 72], r1
   DOMAIN_CTL r26, r10
-  CMP r26, r28
-  BNE bad
+  BNE r26, r28, bad
 
 check_stale_generation_reject:
   LI r1, 6
@@ -251,13 +236,11 @@ check_stale_generation_reject:
   LI r1, 1
   ST [r10, 16], r1
   DOMAIN_CTL r26, r10
-  CMP r26, r0
-  BNE bad
+  BNE r26, r0, bad
   LI r1, 3
   ST [r10, 0], r1
   DOMAIN_CTL r26, r10
-  CMP r26, r28
-  BNE bad
+  BNE r26, r28, bad
 
 done:
   LI r1, ok_msg

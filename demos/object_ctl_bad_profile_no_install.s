@@ -27,23 +27,19 @@ bad_profile_create:
   ST [r10, 32], r0
   ST [r10, 40], r0
   OBJECT_CTL r11, r10
-  CMP r11, r29
-  BNE bad
+  BNE r11, r29, bad
   ERRNO_GET r12
   LI r13, 22
-  CMP r12, r13
-  BNE bad
+  BNE r12, r13, bad
 
 fd7_was_not_installed:
   LI r14, out
   LI r15, 1
   READ_FD fd7, r14, r15
-  CMP r1, r29
-  BNE bad
+  BNE r1, r29, bad
   ERRNO_GET r16
   LI r17, 9
-  CMP r16, r17
-  BNE bad
+  BNE r16, r17, bad
 
 done:
   LI r1, ok_msg

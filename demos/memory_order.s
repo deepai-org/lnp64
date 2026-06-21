@@ -8,34 +8,38 @@ ok_msg: .string "memory order ok\n"
 
 isync_forms:
   ISYNC r4, r5
-  CMP r1, r0
-  BNE bad
+  BNE r1, r0, bad
   ISYNC r11, r4, r5
-  CMP r11, r0
-  BNE bad
+  BNE r11, r0, bad
 
 successful_cmpxchg:
   FENCE
   LI r6, 41
   LI r7, 42
-  LOCK.CMPXCHG r8, r4, r6, r7
-  CMP r8, r6
-  BNE bad
+succ_retry:
+  LR.D r8, r4
+  BNE r8, r6, succ_done
+  SC.D r12, r7, r4
+  BNE r12, r0, succ_retry
+succ_done:
+  BNE r8, r6, bad
   LD r9, [r4, 0]
-  CMP r9, r7
-  BNE bad
+  BNE r9, r7, bad
 
 failed_cmpxchg:
   FENCE
   LI r6, 41
   LI r7, 99
-  LOCK.CMPXCHG r8, r4, r6, r7
+fail_retry:
+  LR.D r8, r4
+  BNE r8, r6, fail_done
+  SC.D r12, r7, r4
+  BNE r12, r0, fail_retry
+fail_done:
   LI r10, 42
-  CMP r8, r10
-  BNE bad
+  BNE r8, r10, bad
   LD r9, [r4, 0]
-  CMP r9, r10
-  BNE bad
+  BNE r9, r10, bad
 
 done:
   LI r1, ok_msg

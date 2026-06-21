@@ -8,8 +8,7 @@ map_rw:
   LI r9, 4096
   LI r2, 3
   MMAP r3, r0, r9, r2, fd0, r0
-  CMP r3, r29
-  BEQ bad
+  BEQ r3, r29, bad
   LI r4, 144
   ST [r3, 0], r4
 
@@ -17,19 +16,16 @@ protect_rx:
   LI r5, 5
   MPROTECT r3, r9, r5
   ERRNO_GET r6
-  CMP r6, r0
-  BNE bad
+  BNE r6, r0, bad
   ISYNC r8, r3, r9
-  CMP r8, r0
-  BNE bad
+  BNE r8, r0, bad
 
 reject_wx:
   LI r5, 6
   MPROTECT r3, r9, r5
   ERRNO_GET r6
   LI r7, 1
-  CMP r6, r7
-  BNE bad
+  BNE r6, r7, bad
 
 done:
   LI r1, ok_msg
