@@ -10141,7 +10141,7 @@ impl Machine {
                 };
                 let thread = self.thread_mut()?;
                 thread.signal_stack.push(saved);
-                thread.regs[1] = signum;
+                thread.regs[2] = signum;
                 thread.ip = handler;
                 self.reservation_addr = None;
             }
@@ -14225,7 +14225,7 @@ mod tests {
         machine.deliver_signal_if_needed().unwrap();
         assert!(machine.process().unwrap().pending_events.is_empty());
         assert_eq!(machine.thread().unwrap().ip, 7);
-        assert_eq!(machine.thread().unwrap().regs[1], 2);
+        assert_eq!(machine.thread().unwrap().regs[2], 2);
         assert_eq!(machine.thread().unwrap().signal_stack.len(), 1);
     }
 

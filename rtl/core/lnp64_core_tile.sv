@@ -7,7 +7,6 @@ module lnp64_core_tile #(
     parameter int TILE_ID = 0,
     parameter int PROGRAM_WORDS = 1024,
     parameter int SRAM_WORDS = 4224,
-    parameter int RETURN_STACK_DEPTH = 64,
     parameter int THREAD_CONTEXT_COUNT = 2
 ) (
     input  logic clk,
@@ -86,15 +85,11 @@ module lnp64_core_tile #(
     logic [7:0] raw_opcode;
     logic [31:0] pc;
     logic [31:0] next_op_id;
-    localparam int RETURN_STACK_INDEX_WIDTH = $clog2(RETURN_STACK_DEPTH);
     localparam int THREAD_CONTEXT_INDEX_WIDTH =
         THREAD_CONTEXT_COUNT <= 1 ? 1 : $clog2(THREAD_CONTEXT_COUNT);
     logic [63:0] gpr [0:31];
     logic [63:0] thread_gpr [0:THREAD_CONTEXT_COUNT-1][0:31];
     logic [31:0] thread_pc [0:THREAD_CONTEXT_COUNT-1];
-    logic [31:0] thread_return_stack [0:THREAD_CONTEXT_COUNT-1][0:RETURN_STACK_DEPTH-1];
-    logic [RETURN_STACK_INDEX_WIDTH:0] thread_return_stack_depth [0:THREAD_CONTEXT_COUNT-1];
-    logic [63:0] thread_link_register [0:THREAD_CONTEXT_COUNT-1];
     logic [63:0] thread_pcr_tp [0:THREAD_CONTEXT_COUNT-1];
     logic [63:0] thread_exit_code [0:THREAD_CONTEXT_COUNT-1];
     lnp64_thread_sched_t active_thread_context;
@@ -161,9 +156,6 @@ module lnp64_core_tile #(
     logic signal_frame_valid;
     logic [31:0] signal_saved_pc;
     logic [63:0] signal_saved_gpr [0:31];
-    logic [31:0] signal_saved_return_stack [0:RETURN_STACK_DEPTH-1];
-    logic [RETURN_STACK_INDEX_WIDTH:0] signal_saved_return_stack_depth;
-    logic [63:0] signal_saved_link_register;
     logic ucode_port_valid;
     logic [63:0] ucode_port_number;
     logic [7:0] ucode_port_value;
@@ -237,10 +229,6 @@ module lnp64_core_tile #(
     // LR/SC reservation state (v2 atomics)
     logic reservation_valid;
     logic [63:0] reservation_addr;
-    localparam logic [RETURN_STACK_INDEX_WIDTH:0] RETURN_STACK_DEPTH_VALUE = RETURN_STACK_DEPTH;
-    logic [31:0] return_stack [0:RETURN_STACK_DEPTH-1];
-    logic [RETURN_STACK_INDEX_WIDTH:0] return_stack_depth;
-    logic [63:0] link_register;
     logic pending_unsupported;
     logic [31:0] command_pc;
     logic [63:0] mem_addr;
@@ -1596,7 +1584,7 @@ module lnp64_core_tile #(
                     result = {32'd0, gpr[dec.rs1][7:0], gpr[dec.rs1][15:8],
                         gpr[dec.rs1][23:16], gpr[dec.rs1][31:24]};
                 LNP64_OP_BSWAP64: result = bswap64(gpr[dec.rs1]);
-                LNP64_OP_LR_GET: result = link_register;
+                LNP64_OP_LR_GET: result = 64'd0;
                 LNP64_OP_LD: begin
                     if (topology_record_valid && mem_addr == topology_record_base) begin
                         result = 64'd1;
@@ -2644,8 +2632,6 @@ module lnp64_core_tile #(
             errno_reg <= LNP64_ERR_OK;
             reservation_valid <= 1'b0;
             reservation_addr <= 64'd0;
-            return_stack_depth <= '0;
-            link_register <= 64'd0;
             pcr_thread_pointer <= 64'd0;
             pcr_uid <= 64'd0;
             pcr_gid <= 64'd0;
@@ -2656,8 +2642,6 @@ module lnp64_core_tile #(
             signal_handler_pc <= 64'd0;
             signal_frame_valid <= 1'b0;
             signal_saved_pc <= 32'd0;
-            signal_saved_return_stack_depth <= '0;
-            signal_saved_link_register <= 64'd0;
             ucode_port_valid <= 1'b0;
             ucode_port_number <= 64'd0;
             ucode_port_value <= 8'd0;
@@ -2669,21 +2653,13 @@ module lnp64_core_tile #(
             for (i = 0; i < 32; i = i + 1) begin
                 signal_saved_gpr[i] <= 64'd0;
             end
-            for (i = 0; i < RETURN_STACK_DEPTH; i = i + 1) begin
-                signal_saved_return_stack[i] <= 32'd0;
-            end
             for (i = 0; i < THREAD_CONTEXT_COUNT; i = i + 1) begin
                 thread_pc[i] <= 32'd0;
-                thread_return_stack_depth[i] <= '0;
-                thread_link_register[i] <= 64'd0;
                 thread_pcr_tp[i] <= 64'd0;
                 thread_exit_code[i] <= 64'd0;
                 thread_sleep_wait_ticks[i] <= 64'd0;
                 for (j = 0; j < 32; j = j + 1) begin
                     thread_gpr[i][j] <= 64'd0;
-                end
-                for (j = 0; j < RETURN_STACK_DEPTH; j = j + 1) begin
-                    thread_return_stack[i][j] <= 32'd0;
                 end
             end
             pending_unsupported <= 1'b0;
@@ -3222,10 +3198,6 @@ module lnp64_core_tile #(
                             end
                             // v2: jal rd, off -> rd = byte(pc+8); pc += off.
                             LNP64_OP_JAL: begin
-                                if (return_stack_depth < RETURN_STACK_DEPTH_VALUE) begin
-                                    return_stack[return_stack_depth[RETURN_STACK_INDEX_WIDTH-1:0]] <= pc + 32'd1;
-                                    return_stack_depth <= return_stack_depth + {{RETURN_STACK_INDEX_WIDTH{1'b0}}, 1'b1};
-                                end
                                 if (dec.rd[4:0] != 5'd0) begin
                                     gpr[dec.rd] <= flat_exec_addr(pc + 32'd1);
                                 end
@@ -4082,14 +4054,9 @@ module lnp64_core_tile #(
                                         for (i = 0; i < 32; i = i + 1) begin
                                             signal_saved_gpr[i] <= gpr[i];
                                         end
-                                        for (i = 0; i < RETURN_STACK_DEPTH; i = i + 1) begin
-                                            signal_saved_return_stack[i] <= return_stack[i];
-                                        end
-                                        signal_saved_return_stack_depth <= return_stack_depth;
-                                        signal_saved_link_register <= link_register;
                                         // Signal entry invalidates any LR/SC reservation.
                                         reservation_valid <= 1'b0;
-                                        gpr[1] <= gpr[dec.rs1];
+                                        gpr[2] <= gpr[dec.rs1];
                                         pc <= flat_exec_pc_word(signal_handler_pc);
                                     end else begin
                                         pc <= pc + 32'd1;
@@ -4105,11 +4072,6 @@ module lnp64_core_tile #(
                                     for (i = 0; i < 32; i = i + 1) begin
                                         gpr[i] <= signal_saved_gpr[i];
                                     end
-                                    for (i = 0; i < RETURN_STACK_DEPTH; i = i + 1) begin
-                                        return_stack[i] <= signal_saved_return_stack[i];
-                                    end
-                                    return_stack_depth <= signal_saved_return_stack_depth;
-                                    link_register <= signal_saved_link_register;
                                     reservation_valid <= 1'b0;
                                     signal_frame_valid <= 1'b0;
                                     errno_reg <= LNP64_ERR_OK;
@@ -4208,11 +4170,6 @@ module lnp64_core_tile #(
                                     thread_gpr[1][31] <= FLAT_EXEC_CHILD_SP;
                                     thread_gpr[1][0] <= 64'd0;
                                     thread_pc[1] <= flat_exec_pc_word(gpr[dec.rs1]);
-                                    thread_return_stack_depth[1] <= '0;
-                                    for (i = 0; i < RETURN_STACK_DEPTH; i = i + 1) begin
-                                        thread_return_stack[1][i] <= 32'd0;
-                                    end
-                                    thread_link_register[1] <= 64'd0;
                                     thread_pcr_tp[1] <= 64'd0;
                                     thread_exit_code[1] <= 64'd0;
                                     thread_sleep_wait_valid[1] <= 1'b0;
@@ -4246,11 +4203,6 @@ module lnp64_core_tile #(
                                     thread_gpr[1][dec.rd[4:0]] <= 64'd0;
                                     thread_gpr[1][0] <= 64'd0;
                                     thread_pc[1] <= pc + 32'd1;
-                                    thread_return_stack_depth[1] <= return_stack_depth;
-                                    for (i = 0; i < RETURN_STACK_DEPTH; i = i + 1) begin
-                                        thread_return_stack[1][i] <= return_stack[i];
-                                    end
-                                    thread_link_register[1] <= link_register;
                                     thread_pcr_tp[1] <= pcr_thread_pointer;
                                     thread_exit_code[1] <= 64'd0;
                                     thread_sleep_wait_valid[1] <= 1'b0;
@@ -4292,8 +4244,6 @@ module lnp64_core_tile #(
                                     gpr[31] <= FLAT_EXEC_INITIAL_SP;
                                     pc <= 32'd0;
                                     thread_pc[active_thread_slot] <= 32'd0;
-                                    return_stack_depth <= '0;
-                                    link_register <= 64'd0;
                                     pcr_thread_pointer <= 64'd0;
                                     reservation_valid <= 1'b0;
                                     errno_reg <= LNP64_ERR_OK;
@@ -5078,27 +5028,17 @@ module lnp64_core_tile #(
                     rsp_ready <= 1'b0;
                     forced_thread_switch_valid <= 1'b0;
                     thread_pc[active_thread_slot] <= pc;
-                    thread_return_stack_depth[active_thread_slot] <= return_stack_depth;
-                    thread_link_register[active_thread_slot] <= link_register;
                     thread_pcr_tp[active_thread_slot] <= pcr_thread_pointer;
                     for (i = 0; i < 32; i = i + 1) begin
                         thread_gpr[active_thread_slot][i] <= gpr[i];
                     end
-                    for (i = 0; i < RETURN_STACK_DEPTH; i = i + 1) begin
-                        thread_return_stack[active_thread_slot][i] <= return_stack[i];
-                    end
                     if (switch_thread_slot != active_thread_slot) begin
                         pc <= thread_pc[switch_thread_slot];
-                        return_stack_depth <= thread_return_stack_depth[switch_thread_slot];
-                        link_register <= thread_link_register[switch_thread_slot];
                         pcr_thread_pointer <= thread_pcr_tp[switch_thread_slot];
                         // Context switch invalidates any LR/SC reservation.
                         reservation_valid <= 1'b0;
                         for (i = 0; i < 32; i = i + 1) begin
                             gpr[i] <= thread_gpr[switch_thread_slot][i];
-                        end
-                        for (i = 0; i < RETURN_STACK_DEPTH; i = i + 1) begin
-                            return_stack[i] <= thread_return_stack[switch_thread_slot][i];
                         end
                     end
                     state <= CORE_EXEC;
