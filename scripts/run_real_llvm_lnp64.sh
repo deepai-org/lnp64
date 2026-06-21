@@ -4902,7 +4902,8 @@ _start:
   amo.add r4, r5, r6
   amo.and r7, r8, r9
   amo.or r10, r11, r12
-  lock.cmpxchg r13, r14, r15, r16
+  lr.d r13, (r14)
+  sc.d r15, r16, (r14)
   amo.xor r17, r18, r19
   futex_wait r20, r21
   futex_wake r22, r23
@@ -4925,7 +4926,8 @@ grep -q 'amo.swap r1, r2, r3' "$atomic_mc_dump"
 grep -q 'amo.add r4, r5, r6' "$atomic_mc_dump"
 grep -q 'amo.and r7, r8, r9' "$atomic_mc_dump"
 grep -q 'amo.or r10, r11, r12' "$atomic_mc_dump"
-grep -q 'lock.cmpxchg r13, r14, r15, r16' "$atomic_mc_dump"
+grep -q 'lr.d r13, (r14)' "$atomic_mc_dump"
+grep -q 'sc.d r15, r16, (r14)' "$atomic_mc_dump"
 grep -q 'amo.xor r17, r18, r19' "$atomic_mc_dump"
 grep -q 'futex_wait r20, r21' "$atomic_mc_dump"
 grep -q 'futex_wake r22, r23' "$atomic_mc_dump"

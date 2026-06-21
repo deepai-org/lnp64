@@ -9,6 +9,8 @@
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/SelectionDAG.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/InlineAsm.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
 
@@ -142,6 +144,44 @@ LNP64TargetLowering::shouldExpandAtomicRMWInIR(AtomicRMWInst *) const {
 TargetLowering::AtomicExpansionKind
 LNP64TargetLowering::shouldExpandAtomicCmpXchgInIR(AtomicCmpXchgInst *) const {
   return AtomicExpansionKind::LLSC;
+}
+
+// LL/SC emit hooks for the generic AtomicExpand pass (RISC-V LLSC model).
+// The hardware exposes LR.D / SC.D; the cleanest mechanism for this backend
+// (which has no target Intrinsics.td infrastructure) is to emit a single
+// lr.d / sc.d via inline asm. AtomicExpandPass wraps these in the retry loop.
+Value *LNP64TargetLowering::emitLoadLinked(IRBuilderBase &Builder, Type *ValueTy,
+                                           Value *Addr,
+                                           AtomicOrdering Ord) const {
+  Type *Int64Ty = Builder.getInt64Ty();
+  // Addr is a pointer; lr.d takes the address in a GPR and loads 64 bits.
+  FunctionType *FTy = FunctionType::get(Int64Ty, {Addr->getType()},
+                                        /*isVarArg=*/false);
+  InlineAsm *IA = InlineAsm::get(FTy, "lr.d $0, ($1)", "=&r,r,~{memory}",
+                                 /*hasSideEffects=*/true);
+  Value *Loaded = Builder.CreateCall(IA, {Addr});
+  if (ValueTy->getPrimitiveSizeInBits() < 64)
+    Loaded = Builder.CreateTrunc(Loaded, ValueTy);
+  return Loaded;
+}
+
+Value *LNP64TargetLowering::emitStoreConditional(IRBuilderBase &Builder,
+                                                 Value *Val, Value *Addr,
+                                                 AtomicOrdering Ord) const {
+  Type *Int64Ty = Builder.getInt64Ty();
+  if (Val->getType()->getPrimitiveSizeInBits() < 64)
+    Val = Builder.CreateZExt(Val, Int64Ty);
+  // sc.d $0, $2, ($1): $0 = status (0 = success, 1 = fail), $1 = addr, $2 = val.
+  // AtomicExpandPass compares the result against an i32 zero, so return i32.
+  Type *Int32Ty = Builder.getInt32Ty();
+  FunctionType *FTy =
+      FunctionType::get(Int32Ty, {Addr->getType(), Int64Ty},
+                        /*isVarArg=*/false);
+  InlineAsm *IA = InlineAsm::get(FTy, "sc.d $0, $2, ($1)", "=&r,r,r,~{memory}",
+                                 /*hasSideEffects=*/true);
+  // AtomicExpandPass expects a non-zero value to mean failure; sc.d already
+  // returns 1 on failure / 0 on success, which is exactly that convention.
+  return Builder.CreateCall(IA, {Addr, Val});
 }
 
 TargetLowering::ConstraintType

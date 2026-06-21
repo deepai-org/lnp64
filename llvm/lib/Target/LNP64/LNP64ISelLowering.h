@@ -36,6 +36,10 @@ public:
   shouldExpandAtomicRMWInIR(AtomicRMWInst *RMW) const override;
   AtomicExpansionKind
   shouldExpandAtomicCmpXchgInIR(AtomicCmpXchgInst *CI) const override;
+  Value *emitLoadLinked(IRBuilderBase &Builder, Type *ValueTy, Value *Addr,
+                        AtomicOrdering Ord) const override;
+  Value *emitStoreConditional(IRBuilderBase &Builder, Value *Val, Value *Addr,
+                              AtomicOrdering Ord) const override;
   ConstraintType getConstraintType(StringRef Constraint) const override;
   std::pair<unsigned, const TargetRegisterClass *>
   getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,

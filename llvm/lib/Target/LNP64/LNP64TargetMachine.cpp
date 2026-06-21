@@ -1,5 +1,6 @@
 #include "LNP64TargetMachine.h"
 #include "LNP64.h"
+#include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
 #include "llvm/MC/TargetRegistry.h"
@@ -20,6 +21,7 @@ public:
     return getTM<LNP64TargetMachine>();
   }
 
+  void addIRPasses() override;
   bool addInstSelector() override;
 };
 
@@ -48,6 +50,13 @@ LNP64TargetMachine::LNP64TargetMachine(
 
 TargetPassConfig *LNP64TargetMachine::createPassConfig(PassManagerBase &PM) {
   return new LNP64PassConfig(*this, PM);
+}
+
+void LNP64PassConfig::addIRPasses() {
+  // v2 atomics are expanded to LR.D/SC.D loops in IR (RISC-V LLSC model);
+  // the generic AtomicExpand pass drives emitLoadLinked/emitStoreConditional.
+  addPass(createAtomicExpandPass());
+  TargetPassConfig::addIRPasses();
 }
 
 bool LNP64PassConfig::addInstSelector() {

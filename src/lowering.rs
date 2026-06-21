@@ -1321,7 +1321,8 @@ mod tests {
         assert!(real_llc.contains("atomic-mc-smoke.o"));
         assert!(real_llc.contains("amo.swap r1, r2, r3"));
         assert!(real_llc.contains("amo.or r10, r11, r12"));
-        assert!(real_llc.contains("lock.cmpxchg r13, r14, r15, r16"));
+        assert!(real_llc.contains("lr.d r13, (r14)"));
+        assert!(real_llc.contains("sc.d r15, r16, (r14)"));
         assert!(real_llc.contains("amo.xor r17, r18, r19"));
         assert!(real_llc.contains("futex_wait r20, r21"));
         assert!(real_llc.contains("futex_wake r22, r23"));
@@ -7742,6 +7743,26 @@ mod tests {
                     assert!(
                         real_llc.contains(name),
                         "record-builder intrinsic {name} lacks real LLVM smoke coverage"
+                    );
+                }
+                "c11_atomic_lowered" => {
+                    // v2: the LLVM backend expands C11 atomic builtins into
+                    // LR.D/SC.D loops, so these intrinsics are plain C builtins
+                    // (no hand-written inline asm) and the real-LLVM smoke proves
+                    // they lower to lr.d/sc.d.
+                    assert_eq!(blocker, "none", "atomic intrinsic {name} has blocker");
+                    assert!(
+                        intrinsic_header.contains("static inline")
+                            && intrinsic_header.contains(name),
+                        "atomic intrinsic {name} is missing from the intrinsic header"
+                    );
+                    assert!(
+                        intrinsic_header.contains("__atomic_"),
+                        "atomic intrinsic {name} must use a C11 atomic builtin"
+                    );
+                    assert!(
+                        real_llc.contains("lr.d r") && real_llc.contains("sc.d r"),
+                        "atomic intrinsic {name} lacks lr.d/sc.d real LLVM smoke coverage"
                     );
                 }
                 "pending_encoding" | "pending_argblock" | "pending_libc_record_builder" => {

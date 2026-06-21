@@ -318,73 +318,31 @@ static inline void __lnp_exit(lnp64_word_t status) {
   __asm__ volatile("exit %0" : : "r"(status) : "memory");
 }
 
+/* v2: the LLVM backend expands C11 atomics into LR.D/SC.D loops, so these
+ * map directly onto compiler atomic builtins (no hand-written LR/SC asm). */
 static inline lnp64_word_t __lnp_amo_swap(volatile lnp64_word_t *addr,
                                           lnp64_word_t value) {
-  lnp64_word_t old, status;
-  __asm__ volatile("1:\n\t"
-                   "lr.d %0, (%2)\n\t"
-                   "sc.d %1, %3, (%2)\n\t"
-                   "bne %1, r0, 1b"
-                   : "=&r"(old), "=&r"(status)
-                   : "r"((lnp64_word_t)addr), "r"(value)
-                   : "memory");
-  return old;
+  return __atomic_exchange_n(addr, value, __ATOMIC_SEQ_CST);
 }
 
 static inline lnp64_word_t __lnp_amo_add(volatile lnp64_word_t *addr,
                                          lnp64_word_t value) {
-  lnp64_word_t old, newval, status;
-  __asm__ volatile("1:\n\t"
-                   "lr.d %0, (%3)\n\t"
-                   "add %1, %0, %4\n\t"
-                   "sc.d %2, %1, (%3)\n\t"
-                   "bne %2, r0, 1b"
-                   : "=&r"(old), "=&r"(newval), "=&r"(status)
-                   : "r"((lnp64_word_t)addr), "r"(value)
-                   : "memory");
-  return old;
+  return __atomic_fetch_add(addr, value, __ATOMIC_SEQ_CST);
 }
 
 static inline lnp64_word_t __lnp_amo_and(volatile lnp64_word_t *addr,
                                          lnp64_word_t value) {
-  lnp64_word_t old, newval, status;
-  __asm__ volatile("1:\n\t"
-                   "lr.d %0, (%3)\n\t"
-                   "and %1, %0, %4\n\t"
-                   "sc.d %2, %1, (%3)\n\t"
-                   "bne %2, r0, 1b"
-                   : "=&r"(old), "=&r"(newval), "=&r"(status)
-                   : "r"((lnp64_word_t)addr), "r"(value)
-                   : "memory");
-  return old;
+  return __atomic_fetch_and(addr, value, __ATOMIC_SEQ_CST);
 }
 
 static inline lnp64_word_t __lnp_amo_or(volatile lnp64_word_t *addr,
                                          lnp64_word_t value) {
-  lnp64_word_t old, newval, status;
-  __asm__ volatile("1:\n\t"
-                   "lr.d %0, (%3)\n\t"
-                   "or %1, %0, %4\n\t"
-                   "sc.d %2, %1, (%3)\n\t"
-                   "bne %2, r0, 1b"
-                   : "=&r"(old), "=&r"(newval), "=&r"(status)
-                   : "r"((lnp64_word_t)addr), "r"(value)
-                   : "memory");
-  return old;
+  return __atomic_fetch_or(addr, value, __ATOMIC_SEQ_CST);
 }
 
 static inline lnp64_word_t __lnp_amo_xor(volatile lnp64_word_t *addr,
                                          lnp64_word_t value) {
-  lnp64_word_t old, newval, status;
-  __asm__ volatile("1:\n\t"
-                   "lr.d %0, (%3)\n\t"
-                   "xor %1, %0, %4\n\t"
-                   "sc.d %2, %1, (%3)\n\t"
-                   "bne %2, r0, 1b"
-                   : "=&r"(old), "=&r"(newval), "=&r"(status)
-                   : "r"((lnp64_word_t)addr), "r"(value)
-                   : "memory");
-  return old;
+  return __atomic_fetch_xor(addr, value, __ATOMIC_SEQ_CST);
 }
 
 static inline lnp64_word_t __lnp_futex_wait(volatile lnp64_word_t *addr,
