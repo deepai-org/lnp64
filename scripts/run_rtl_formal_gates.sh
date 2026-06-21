@@ -49,6 +49,7 @@ mvs_proofs=(
   derivation
   waitwake
   reset_iso
+  fabric
 )
 for proof in "${mvs_proofs[@]}"; do
   printf '\n========== mvs formal: %s ==========\n' "$proof"
