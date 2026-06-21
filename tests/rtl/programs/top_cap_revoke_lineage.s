@@ -14,16 +14,14 @@ dup_revoke_rights_to_fd4:
   ST [r10, 16], r1
   ST [r10, 24], r0
   CAP_DUP r11, r10
-  CMP r11, r29
-  BEQ bad
+  BEQ r11, r29, bad
 
 revoke_source_lineage:
   LI r1, 1
   ST [r10, 0], r1
   CAP_REVOKE r12, r10
   LI r1, 1
-  CMP r12, r1
-  BLE bad
+  BLE r12, r1, bad
 
 old_child_token_rejected:
   ST [r10, 0], r11
@@ -32,12 +30,10 @@ old_child_token_rejected:
   ST [r10, 16], r0
   ST [r10, 24], r0
   CAP_DUP r13, r10
-  CMP r13, r29
-  BNE bad
+  BNE r13, r29, bad
   ERRNO_GET r14
   LI r1, 116
-  CMP r14, r1
-  BNE bad
+  BNE r14, r1, bad
 
 done:
   EXIT r0

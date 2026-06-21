@@ -95,11 +95,6 @@ module lnp64_core_tile #(
     logic [31:0] thread_return_stack [0:THREAD_CONTEXT_COUNT-1][0:RETURN_STACK_DEPTH-1];
     logic [RETURN_STACK_INDEX_WIDTH:0] thread_return_stack_depth [0:THREAD_CONTEXT_COUNT-1];
     logic [63:0] thread_link_register [0:THREAD_CONTEXT_COUNT-1];
-    logic thread_cmp_zero [0:THREAD_CONTEXT_COUNT-1];
-    logic thread_cmp_negative [0:THREAD_CONTEXT_COUNT-1];
-    logic thread_cmp_greater [0:THREAD_CONTEXT_COUNT-1];
-    logic thread_cmp_below [0:THREAD_CONTEXT_COUNT-1];
-    logic thread_cmp_above [0:THREAD_CONTEXT_COUNT-1];
     logic [63:0] thread_pcr_tp [0:THREAD_CONTEXT_COUNT-1];
     logic [63:0] thread_exit_code [0:THREAD_CONTEXT_COUNT-1];
     lnp64_thread_sched_t active_thread_context;
@@ -169,11 +164,6 @@ module lnp64_core_tile #(
     logic [31:0] signal_saved_return_stack [0:RETURN_STACK_DEPTH-1];
     logic [RETURN_STACK_INDEX_WIDTH:0] signal_saved_return_stack_depth;
     logic [63:0] signal_saved_link_register;
-    logic signal_saved_cmp_zero;
-    logic signal_saved_cmp_negative;
-    logic signal_saved_cmp_greater;
-    logic signal_saved_cmp_below;
-    logic signal_saved_cmp_above;
     logic ucode_port_valid;
     logic [63:0] ucode_port_number;
     logic [7:0] ucode_port_value;
@@ -244,11 +234,9 @@ module lnp64_core_tile #(
     localparam int unsigned CHILD_STACK_SRAM_BASE_WORD =
         STACK_SRAM_BASE_WORD + (FLAT_EXEC_STACK_WINDOW_BYTES >> 3);
     logic [15:0] errno_reg;
-    logic cmp_zero;
-    logic cmp_negative;
-    logic cmp_greater;
-    logic cmp_below;
-    logic cmp_above;
+    // LR/SC reservation state (v2 atomics)
+    logic reservation_valid;
+    logic [63:0] reservation_addr;
     localparam logic [RETURN_STACK_INDEX_WIDTH:0] RETURN_STACK_DEPTH_VALUE = RETURN_STACK_DEPTH;
     logic [31:0] return_stack [0:RETURN_STACK_DEPTH-1];
     logic [RETURN_STACK_INDEX_WIDTH:0] return_stack_depth;
@@ -1207,9 +1195,12 @@ module lnp64_core_tile #(
 
     function automatic logic flat_retire_result_valid(input logic [7:0] opcode);
         begin
+            // Opcodes that do NOT write a destination register (result_valid=0).
+            // v2: SLT/SLTU (0x1b/0x1c) and JAL/JALR (0x27/0x28) now write rd, so
+            // they are NOT listed here (unlike v1 cmp/cmpu/call/call_reg).
             unique case (opcode)
-                8'h00, 8'h1b, 8'h1c, 8'h1f, 8'h20, 8'h21, 8'h22, 8'h23,
-                8'h24, 8'h25, 8'h26, 8'h27, 8'h28, 8'h2a, 8'h33, 8'h34,
+                8'h00, 8'h20, 8'h21, 8'h22, 8'h23,
+                8'h24, 8'h25, 8'h26, 8'h33, 8'h34,
                 8'h35, 8'h37, 8'h39, 8'h3a, 8'h49, 8'h61, 8'h63,
                 8'h64, 8'h65, 8'h68, 8'h6e, 8'h7f, 8'h81, 8'h82, 8'hcb, 8'hcc, 8'hcd:
                     flat_retire_result_valid = 1'b0;
@@ -1281,24 +1272,6 @@ module lnp64_core_tile #(
                 status == LNP64_ERR_EPERM || status == LNP64_ERR_EBADF;
             projection.full_was_explicit = status == LNP64_ERR_EAGAIN;
             build_m1_state_projection = projection;
-        end
-    endfunction
-
-    function automatic logic csel_condition(input logic [15:0] opcode);
-        begin
-            unique case (opcode)
-                LNP64_OP_CSEL_EQ, LNP64_OP_CSET_EQ: csel_condition = cmp_zero;
-                LNP64_OP_CSEL_NE, LNP64_OP_CSET_NE: csel_condition = !cmp_zero;
-                LNP64_OP_CSEL_LT, LNP64_OP_CSET_LT: csel_condition = cmp_negative;
-                LNP64_OP_CSEL_GT, LNP64_OP_CSET_GT: csel_condition = cmp_greater;
-                LNP64_OP_CSEL_LE, LNP64_OP_CSET_LE: csel_condition = cmp_zero || cmp_negative;
-                LNP64_OP_CSEL_GE, LNP64_OP_CSET_GE: csel_condition = cmp_zero || cmp_greater;
-                LNP64_OP_CSEL_ULT, LNP64_OP_CSET_ULT: csel_condition = cmp_below;
-                LNP64_OP_CSEL_UGT, LNP64_OP_CSET_UGT: csel_condition = cmp_above;
-                LNP64_OP_CSEL_ULE, LNP64_OP_CSET_ULE: csel_condition = cmp_zero || cmp_below;
-                LNP64_OP_CSEL_UGE, LNP64_OP_CSET_UGE: csel_condition = cmp_zero || cmp_above;
-                default: csel_condition = 1'b0;
-            endcase
         end
     endfunction
 
@@ -1620,14 +1593,6 @@ module lnp64_core_tile #(
                     result = {32'd0, gpr[dec.rs1][7:0], gpr[dec.rs1][15:8],
                         gpr[dec.rs1][23:16], gpr[dec.rs1][31:24]};
                 LNP64_OP_BSWAP64: result = bswap64(gpr[dec.rs1]);
-                LNP64_OP_CSEL_EQ, LNP64_OP_CSEL_NE, LNP64_OP_CSEL_LT, LNP64_OP_CSEL_GT,
-                LNP64_OP_CSEL_LE, LNP64_OP_CSEL_GE, LNP64_OP_CSEL_ULT, LNP64_OP_CSEL_UGT,
-                LNP64_OP_CSEL_ULE, LNP64_OP_CSEL_UGE:
-                    result = csel_condition(dec.opcode) ? gpr[dec.rs1] : gpr[dec.rs2];
-                LNP64_OP_CSET_EQ, LNP64_OP_CSET_NE, LNP64_OP_CSET_LT, LNP64_OP_CSET_GT,
-                LNP64_OP_CSET_LE, LNP64_OP_CSET_GE, LNP64_OP_CSET_ULT, LNP64_OP_CSET_UGT,
-                LNP64_OP_CSET_ULE, LNP64_OP_CSET_UGE:
-                    result = {63'd0, csel_condition(dec.opcode)};
                 LNP64_OP_LR_GET: result = link_register;
                 LNP64_OP_LD: begin
                     if (topology_record_valid && mem_addr == topology_record_base) begin
@@ -1647,9 +1612,11 @@ module lnp64_core_tile #(
                 LNP64_OP_LD_W: result = load_word_lane(sram[mem_sram_word_index], mem_word_upper);
                 LNP64_OP_LD_H: result = load_half_lane(sram[mem_sram_word_index], mem_half_lane);
                 LNP64_OP_LD_B: result = load_byte_lane(sram[mem_sram_word_index], mem_byte_lane);
-                LNP64_OP_AMO_SWAP, LNP64_OP_AMO_ADD, LNP64_OP_AMO_AND,
-                LNP64_OP_AMO_OR, LNP64_OP_AMO_XOR, LNP64_OP_LOCK_CMPXCHG:
+                LNP64_OP_LR_D:
                     result = sram[sram_word_index(gpr[dec.rs1])];
+                LNP64_OP_SC_D:
+                    result = (reservation_valid && reservation_addr == gpr[dec.rs1])
+                        ? 64'd0 : 64'd1;
                 LNP64_OP_ENV_GET: result = env_get_value(gpr[dec.rs1]);
                 LNP64_OP_OPEN_FD:
                     result = file_open_available ?
@@ -2672,11 +2639,8 @@ module lnp64_core_tile #(
             unsupported_failed_closed <= 1'b0;
             raw_authority_visible <= 1'b0;
             errno_reg <= LNP64_ERR_OK;
-            cmp_zero <= 1'b0;
-            cmp_negative <= 1'b0;
-            cmp_greater <= 1'b0;
-            cmp_below <= 1'b0;
-            cmp_above <= 1'b0;
+            reservation_valid <= 1'b0;
+            reservation_addr <= 64'd0;
             return_stack_depth <= '0;
             link_register <= 64'd0;
             pcr_thread_pointer <= 64'd0;
@@ -2691,11 +2655,6 @@ module lnp64_core_tile #(
             signal_saved_pc <= 32'd0;
             signal_saved_return_stack_depth <= '0;
             signal_saved_link_register <= 64'd0;
-            signal_saved_cmp_zero <= 1'b0;
-            signal_saved_cmp_negative <= 1'b0;
-            signal_saved_cmp_greater <= 1'b0;
-            signal_saved_cmp_below <= 1'b0;
-            signal_saved_cmp_above <= 1'b0;
             ucode_port_valid <= 1'b0;
             ucode_port_number <= 64'd0;
             ucode_port_value <= 8'd0;
@@ -2714,11 +2673,6 @@ module lnp64_core_tile #(
                 thread_pc[i] <= 32'd0;
                 thread_return_stack_depth[i] <= '0;
                 thread_link_register[i] <= 64'd0;
-                thread_cmp_zero[i] <= 1'b0;
-                thread_cmp_negative[i] <= 1'b0;
-                thread_cmp_greater[i] <= 1'b0;
-                thread_cmp_below[i] <= 1'b0;
-                thread_cmp_above[i] <= 1'b0;
                 thread_pcr_tp[i] <= 64'd0;
                 thread_exit_code[i] <= 64'd0;
                 thread_sleep_wait_ticks[i] <= 64'd0;
@@ -3217,60 +3171,6 @@ module lnp64_core_tile #(
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
-                            LNP64_OP_CMP: begin
-                                cmp_zero <= gpr[dec.rd] == gpr[dec.rs1];
-                                cmp_negative <= $signed(gpr[dec.rd]) < $signed(gpr[dec.rs1]);
-                                cmp_greater <= $signed(gpr[dec.rd]) > $signed(gpr[dec.rs1]);
-                                cmp_below <= gpr[dec.rd] < gpr[dec.rs1];
-                                cmp_above <= gpr[dec.rd] > gpr[dec.rs1];
-                                pc <= pc + 32'd1;
-                                retired_count <= retired_count + 32'd1;
-                                retire_submit_valid <= 1'b1;
-                                retire_submit_record <= retire_submit_next;
-                            end
-                            LNP64_OP_CMPU: begin
-                                cmp_zero <= gpr[dec.rd] == gpr[dec.rs1];
-                                cmp_negative <= 1'b0;
-                                cmp_greater <= 1'b0;
-                                cmp_below <= gpr[dec.rd] < gpr[dec.rs1];
-                                cmp_above <= gpr[dec.rd] > gpr[dec.rs1];
-                                pc <= pc + 32'd1;
-                                retired_count <= retired_count + 32'd1;
-                                retire_submit_valid <= 1'b1;
-                                retire_submit_record <= retire_submit_next;
-                            end
-                            LNP64_OP_CSEL_EQ,
-                            LNP64_OP_CSEL_NE,
-                            LNP64_OP_CSEL_LT,
-                            LNP64_OP_CSEL_GT,
-                            LNP64_OP_CSEL_LE,
-                            LNP64_OP_CSEL_GE,
-                            LNP64_OP_CSEL_ULT,
-                            LNP64_OP_CSEL_UGT,
-                            LNP64_OP_CSEL_ULE,
-                            LNP64_OP_CSEL_UGE: begin
-                                gpr[dec.rd] <= csel_condition(dec.opcode) ? gpr[dec.rs1] : gpr[dec.rs2];
-                                pc <= pc + 32'd1;
-                                retired_count <= retired_count + 32'd1;
-                                retire_submit_valid <= 1'b1;
-                                retire_submit_record <= retire_submit_next;
-                            end
-                            LNP64_OP_CSET_EQ,
-                            LNP64_OP_CSET_NE,
-                            LNP64_OP_CSET_LT,
-                            LNP64_OP_CSET_GT,
-                            LNP64_OP_CSET_LE,
-                            LNP64_OP_CSET_GE,
-                            LNP64_OP_CSET_ULT,
-                            LNP64_OP_CSET_UGT,
-                            LNP64_OP_CSET_ULE,
-                            LNP64_OP_CSET_UGE: begin
-                                gpr[dec.rd] <= {63'd0, csel_condition(dec.opcode)};
-                                pc <= pc + 32'd1;
-                                retired_count <= retired_count + 32'd1;
-                                retire_submit_valid <= 1'b1;
-                                retire_submit_record <= retire_submit_next;
-                            end
                             // v2: unconditional jump; J-type instruction-count
                             // offset (pc is an instruction index).
                             LNP64_OP_JMP: begin
@@ -3464,6 +3364,10 @@ module lnp64_core_tile #(
                                         gpr[dec.rs2]
                                     );
                                 end
+                                if (reservation_valid &&
+                                    sram_word_index(reservation_addr) == mem_sram_word_index) begin
+                                    reservation_valid <= 1'b0;
+                                end
                                 dcache_writeback <= 1'b1;
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
@@ -3472,6 +3376,10 @@ module lnp64_core_tile #(
                             end
                             LNP64_OP_ST_W: begin
                                 sram[mem_sram_word_index] <= store_word_lane(sram[mem_sram_word_index], mem_word_upper, gpr[dec.rs2][31:0]);
+                                if (reservation_valid &&
+                                    sram_word_index(reservation_addr) == mem_sram_word_index) begin
+                                    reservation_valid <= 1'b0;
+                                end
                                 dcache_writeback <= 1'b1;
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
@@ -3480,6 +3388,10 @@ module lnp64_core_tile #(
                             end
                             LNP64_OP_ST_H: begin
                                 sram[mem_sram_word_index] <= store_half_lane(sram[mem_sram_word_index], mem_half_lane, gpr[dec.rs2][15:0]);
+                                if (reservation_valid &&
+                                    sram_word_index(reservation_addr) == mem_sram_word_index) begin
+                                    reservation_valid <= 1'b0;
+                                end
                                 dcache_writeback <= 1'b1;
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
@@ -3488,63 +3400,38 @@ module lnp64_core_tile #(
                             end
                             LNP64_OP_ST_B: begin
                                 sram[mem_sram_word_index] <= store_byte_lane(sram[mem_sram_word_index], mem_byte_lane, gpr[dec.rs2][7:0]);
-                                dcache_writeback <= 1'b1;
-                                pc <= pc + 32'd1;
-                                retired_count <= retired_count + 32'd1;
-                                retire_submit_valid <= 1'b1;
-                                retire_submit_record <= retire_submit_next;
-                            end
-                            LNP64_OP_AMO_SWAP: begin
-                                gpr[dec.rd] <= sram[sram_word_index(gpr[dec.rs1])];
-                                sram[sram_word_index(gpr[dec.rs1])] <= gpr[dec.rs2];
-                                dcache_writeback <= 1'b1;
-                                pc <= pc + 32'd1;
-                                retired_count <= retired_count + 32'd1;
-                                retire_submit_valid <= 1'b1;
-                                retire_submit_record <= retire_submit_next;
-                            end
-                            LNP64_OP_AMO_ADD: begin
-                                gpr[dec.rd] <= sram[sram_word_index(gpr[dec.rs1])];
-                                sram[sram_word_index(gpr[dec.rs1])] <= sram[sram_word_index(gpr[dec.rs1])] + gpr[dec.rs2];
-                                dcache_writeback <= 1'b1;
-                                pc <= pc + 32'd1;
-                                retired_count <= retired_count + 32'd1;
-                                retire_submit_valid <= 1'b1;
-                                retire_submit_record <= retire_submit_next;
-                            end
-                            LNP64_OP_AMO_AND: begin
-                                gpr[dec.rd] <= sram[sram_word_index(gpr[dec.rs1])];
-                                sram[sram_word_index(gpr[dec.rs1])] <= sram[sram_word_index(gpr[dec.rs1])] & gpr[dec.rs2];
-                                dcache_writeback <= 1'b1;
-                                pc <= pc + 32'd1;
-                                retired_count <= retired_count + 32'd1;
-                                retire_submit_valid <= 1'b1;
-                                retire_submit_record <= retire_submit_next;
-                            end
-                            LNP64_OP_AMO_OR: begin
-                                gpr[dec.rd] <= sram[sram_word_index(gpr[dec.rs1])];
-                                sram[sram_word_index(gpr[dec.rs1])] <= sram[sram_word_index(gpr[dec.rs1])] | gpr[dec.rs2];
-                                dcache_writeback <= 1'b1;
-                                pc <= pc + 32'd1;
-                                retired_count <= retired_count + 32'd1;
-                                retire_submit_valid <= 1'b1;
-                                retire_submit_record <= retire_submit_next;
-                            end
-                            LNP64_OP_AMO_XOR: begin
-                                gpr[dec.rd] <= sram[sram_word_index(gpr[dec.rs1])];
-                                sram[sram_word_index(gpr[dec.rs1])] <= sram[sram_word_index(gpr[dec.rs1])] ^ gpr[dec.rs2];
-                                dcache_writeback <= 1'b1;
-                                pc <= pc + 32'd1;
-                                retired_count <= retired_count + 32'd1;
-                                retire_submit_valid <= 1'b1;
-                                retire_submit_record <= retire_submit_next;
-                            end
-                            LNP64_OP_LOCK_CMPXCHG: begin
-                                gpr[dec.rd] <= sram[sram_word_index(gpr[dec.rs1])];
-                                if (sram[sram_word_index(gpr[dec.rs1])] == gpr[dec.rs2]) begin
-                                    sram[sram_word_index(gpr[dec.rs1])] <= gpr[dec.rs3];
-                                    dcache_writeback <= 1'b1;
+                                if (reservation_valid &&
+                                    sram_word_index(reservation_addr) == mem_sram_word_index) begin
+                                    reservation_valid <= 1'b0;
                                 end
+                                dcache_writeback <= 1'b1;
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_LR_D: begin
+                                // Load-reserved: rd = mem64[rs1]; arm reservation.
+                                gpr[dec.rd] <= sram[sram_word_index(gpr[dec.rs1])];
+                                reservation_valid <= 1'b1;
+                                reservation_addr <= gpr[dec.rs1];
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_SC_D: begin
+                                // Store-conditional: succeed iff reservation valid
+                                // and address matches; rd=0 on success, 1 on fail.
+                                if (reservation_valid && reservation_addr == gpr[dec.rs1]) begin
+                                    sram[sram_word_index(gpr[dec.rs1])] <= gpr[dec.rs2];
+                                    dcache_writeback <= 1'b1;
+                                    gpr[dec.rd] <= 64'd0;
+                                end else begin
+                                    gpr[dec.rd] <= 64'd1;
+                                end
+                                // SC always clears the reservation.
+                                reservation_valid <= 1'b0;
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
@@ -4206,11 +4093,8 @@ module lnp64_core_tile #(
                                         end
                                         signal_saved_return_stack_depth <= return_stack_depth;
                                         signal_saved_link_register <= link_register;
-                                        signal_saved_cmp_zero <= cmp_zero;
-                                        signal_saved_cmp_negative <= cmp_negative;
-                                        signal_saved_cmp_greater <= cmp_greater;
-                                        signal_saved_cmp_below <= cmp_below;
-                                        signal_saved_cmp_above <= cmp_above;
+                                        // Signal entry invalidates any LR/SC reservation.
+                                        reservation_valid <= 1'b0;
                                         gpr[1] <= gpr[dec.rs1];
                                         pc <= flat_exec_pc_word(signal_handler_pc);
                                     end else begin
@@ -4232,11 +4116,7 @@ module lnp64_core_tile #(
                                     end
                                     return_stack_depth <= signal_saved_return_stack_depth;
                                     link_register <= signal_saved_link_register;
-                                    cmp_zero <= signal_saved_cmp_zero;
-                                    cmp_negative <= signal_saved_cmp_negative;
-                                    cmp_greater <= signal_saved_cmp_greater;
-                                    cmp_below <= signal_saved_cmp_below;
-                                    cmp_above <= signal_saved_cmp_above;
+                                    reservation_valid <= 1'b0;
                                     signal_frame_valid <= 1'b0;
                                     errno_reg <= LNP64_ERR_OK;
                                 end else begin
@@ -4340,11 +4220,6 @@ module lnp64_core_tile #(
                                     end
                                     thread_link_register[1] <= 64'd0;
                                     thread_pcr_tp[1] <= 64'd0;
-                                    thread_cmp_zero[1] <= 1'b0;
-                                    thread_cmp_negative[1] <= 1'b0;
-                                    thread_cmp_greater[1] <= 1'b0;
-                                    thread_cmp_below[1] <= 1'b0;
-                                    thread_cmp_above[1] <= 1'b0;
                                     thread_exit_code[1] <= 64'd0;
                                     thread_sleep_wait_valid[1] <= 1'b0;
                                     thread_sleep_wait_ticks[1] <= 64'd0;
@@ -4383,11 +4258,6 @@ module lnp64_core_tile #(
                                     end
                                     thread_link_register[1] <= link_register;
                                     thread_pcr_tp[1] <= pcr_thread_pointer;
-                                    thread_cmp_zero[1] <= cmp_zero;
-                                    thread_cmp_negative[1] <= cmp_negative;
-                                    thread_cmp_greater[1] <= cmp_greater;
-                                    thread_cmp_below[1] <= cmp_below;
-                                    thread_cmp_above[1] <= cmp_above;
                                     thread_exit_code[1] <= 64'd0;
                                     thread_sleep_wait_valid[1] <= 1'b0;
                                     thread_sleep_wait_ticks[1] <= 64'd0;
@@ -4431,11 +4301,7 @@ module lnp64_core_tile #(
                                     return_stack_depth <= '0;
                                     link_register <= 64'd0;
                                     pcr_thread_pointer <= 64'd0;
-                                    cmp_zero <= 1'b0;
-                                    cmp_negative <= 1'b0;
-                                    cmp_greater <= 1'b0;
-                                    cmp_below <= 1'b0;
-                                    cmp_above <= 1'b0;
+                                    reservation_valid <= 1'b0;
                                     errno_reg <= LNP64_ERR_OK;
                                 end else begin
                                     errno_reg <= LNP64_ERR_EINVAL;
@@ -5221,11 +5087,6 @@ module lnp64_core_tile #(
                     thread_return_stack_depth[active_thread_slot] <= return_stack_depth;
                     thread_link_register[active_thread_slot] <= link_register;
                     thread_pcr_tp[active_thread_slot] <= pcr_thread_pointer;
-                    thread_cmp_zero[active_thread_slot] <= cmp_zero;
-                    thread_cmp_negative[active_thread_slot] <= cmp_negative;
-                    thread_cmp_greater[active_thread_slot] <= cmp_greater;
-                    thread_cmp_below[active_thread_slot] <= cmp_below;
-                    thread_cmp_above[active_thread_slot] <= cmp_above;
                     for (i = 0; i < 32; i = i + 1) begin
                         thread_gpr[active_thread_slot][i] <= gpr[i];
                     end
@@ -5237,11 +5098,8 @@ module lnp64_core_tile #(
                         return_stack_depth <= thread_return_stack_depth[switch_thread_slot];
                         link_register <= thread_link_register[switch_thread_slot];
                         pcr_thread_pointer <= thread_pcr_tp[switch_thread_slot];
-                        cmp_zero <= thread_cmp_zero[switch_thread_slot];
-                        cmp_negative <= thread_cmp_negative[switch_thread_slot];
-                        cmp_greater <= thread_cmp_greater[switch_thread_slot];
-                        cmp_below <= thread_cmp_below[switch_thread_slot];
-                        cmp_above <= thread_cmp_above[switch_thread_slot];
+                        // Context switch invalidates any LR/SC reservation.
+                        reservation_valid <= 1'b0;
                         for (i = 0; i < 32; i = i + 1) begin
                             gpr[i] <= thread_gpr[switch_thread_slot][i];
                         end

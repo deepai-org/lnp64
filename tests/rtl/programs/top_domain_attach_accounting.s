@@ -24,8 +24,7 @@ create_domain:
   ST [r10, 64], r1
   ST [r10, 72], r1
   DOMAIN_CTL r20, r10
-  CMP r20, r11
-  BEQ bad
+  BEQ r20, r11, bad
 
 attach_self:
   LI r1, 7
@@ -34,8 +33,7 @@ attach_self:
   LI r1, 1
   ST [r10, 16], r1
   DOMAIN_CTL r21, r10
-  CMP r21, r0
-  BNE bad
+  BNE r21, r0, bad
 
 query_baseline:
   LI r1, 3
@@ -47,14 +45,12 @@ query_baseline:
   LD r25, [r10, 88]
   LD r24, [r10, 96]
   LI r1, 1
-  CMP r24, r1
-  BNE bad
+  BNE r24, r1, bad
 
 charge_memory:
   LI r1, 64
   ALLOC r22, r1
-  CMP r22, r11
-  BEQ bad
+  BEQ r22, r11, bad
 
 query_charged:
   LI r1, 3
@@ -64,12 +60,10 @@ query_charged:
   ST [r10, 16], r1
   DOMAIN_CTL r21, r10
   LD r23, [r10, 88]
-  CMP r23, r25
-  BLE bad
+  BLE r23, r25, bad
   LD r24, [r10, 96]
   LI r1, 1
-  CMP r24, r1
-  BNE bad
+  BNE r24, r1, bad
 
 release_memory:
   FREE r22
@@ -80,8 +74,7 @@ release_memory:
   ST [r10, 16], r1
   DOMAIN_CTL r21, r10
   LD r23, [r10, 88]
-  CMP r23, r25
-  BNE bad
+  BNE r23, r25, bad
   LI r23, 0
   LI r25, 0
   EXIT r0

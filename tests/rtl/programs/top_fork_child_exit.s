@@ -1,7 +1,6 @@
 .text
   FORK r2
-  CMP r2, r0
-  BEQ child
+  BEQ r2, r0, child
   YIELD
   LI r3, 2
   EXIT r0

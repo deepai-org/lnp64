@@ -14,8 +14,7 @@ create_read_dup_child:
   ST [r10, 16], r1
   ST [r10, 24], r0
   CAP_DUP r11, r10
-  CMP r11, r29
-  BEQ bad
+  BEQ r11, r29, bad
 
 reject_broader_rights:
   ST [r10, 0], r11
@@ -25,12 +24,10 @@ reject_broader_rights:
   ST [r10, 16], r1
   ST [r10, 24], r0
   CAP_DUP r12, r10
-  CMP r12, r29
-  BNE bad
+  BNE r12, r29, bad
   ERRNO_GET r13
   LI r1, 1
-  CMP r13, r1
-  BNE bad
+  BNE r13, r1, bad
 
 allow_further_narrowing:
   ST [r10, 0], r11
@@ -40,8 +37,7 @@ allow_further_narrowing:
   ST [r10, 16], r1
   ST [r10, 24], r0
   CAP_DUP r14, r10
-  CMP r14, r29
-  BEQ bad
+  BEQ r14, r29, bad
 
 done:
   EXIT r0

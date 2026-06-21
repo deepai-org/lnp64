@@ -20,8 +20,7 @@ create_pipe_queue:
   ST [r10, 32], r1
   ST [r10, 40], r0
   OBJECT_CTL r11, r10
-  CMP r11, r0
-  BNE bad
+  BNE r11, r0, bad
 
 make_nontransferable_payload:
   LI r1, 1
@@ -32,8 +31,7 @@ make_nontransferable_payload:
   ST [r20, 16], r1
   ST [r20, 24], r0
   CAP_DUP r12, r20
-  CMP r12, r29
-  BEQ bad
+  BEQ r12, r29, bad
 
 send_denied_without_transfer_right:
   LI r1, 4
@@ -42,12 +40,10 @@ send_denied_without_transfer_right:
   ST [r20, 16], r0
   ST [r20, 24], r0
   CAP_SEND r13, r20
-  CMP r13, r29
-  BNE bad
+  BNE r13, r29, bad
   ERRNO_GET r14
   LI r1, 1
-  CMP r14, r1
-  BNE bad
+  BNE r14, r1, bad
 
 queue_stayed_empty:
   LI r1, 3
@@ -57,12 +53,10 @@ queue_stayed_empty:
   ST [r20, 16], r0
   ST [r20, 24], r0
   CAP_RECV r15, r20
-  CMP r15, r29
-  BNE bad
+  BNE r15, r29, bad
   ERRNO_GET r16
   LI r1, 11
-  CMP r16, r1
-  BNE bad
+  BNE r16, r1, bad
 
 done:
   EXIT r0

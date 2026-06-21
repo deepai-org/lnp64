@@ -20,29 +20,25 @@ create_ready_event_counter:
   ST [r10, 40], r1
   ST [r10, 48], r0
   OBJECT_CTL r11, r10
-  CMP r11, r29
-  BEQ bad
+  BEQ r11, r29, bad
 
 probe_mode_ready:
   ST [r22, 0], r0
   ST [r22, 8], r20
   AWAIT_EX r12, fd4, r22
-  CMP r12, r20
-  BNE bad
+  BNE r12, r20, bad
 
 zero_timeout_dynamic_no_ready:
   LI r12, 80
   LI r13, 8
   READ_FD fd4, r12, r13
-  CMP r1, r13
-  BNE bad
+  BNE r1, r13, bad
   LI r1, 1
   ST [r22, 0], r1
   ST [r22, 8], r20
   LI r16, 4
   AWAIT_EX r17, r16, r22
-  CMP r17, r0
-  BNE bad
+  BNE r17, r0, bad
 
 invalid_mode:
   LI r1, 99
@@ -50,8 +46,7 @@ invalid_mode:
   ST [r22, 8], r20
   AWAIT_EX r18, fd4, r22
   LI r1, -22
-  CMP r18, r1
-  BNE bad
+  BNE r18, r1, bad
 
 done:
   EXIT r0

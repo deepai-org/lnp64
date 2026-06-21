@@ -9,8 +9,7 @@ sig_flag: .quad 0
   KILL r3, r2
   LD r4, sig_flag
   LI r5, 1
-  CMP r4, r5
-  BNE bad
+  BNE r4, r5, bad
   EXIT r0
 
 handler:

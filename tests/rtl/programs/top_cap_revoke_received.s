@@ -20,8 +20,7 @@ create_pipe_queue:
   ST [r10, 32], r1
   ST [r10, 40], r0
   OBJECT_CTL r11, r10
-  CMP r11, r0
-  BNE bad
+  BNE r11, r0, bad
 
 send_stdout_cap:
   LI r1, 4
@@ -32,8 +31,7 @@ send_stdout_cap:
   ST [r20, 24], r0
   CAP_SEND r12, r20
   LI r1, 1
-  CMP r12, r1
-  BNE bad
+  BNE r12, r1, bad
 
 receive_capability:
   LI r1, 3
@@ -43,8 +41,7 @@ receive_capability:
   ST [r20, 16], r0
   ST [r20, 24], r0
   CAP_RECV r13, r20
-  CMP r13, r29
-  BEQ bad
+  BEQ r13, r29, bad
 
 revoke_source_lineage:
   LI r1, 1
@@ -53,8 +50,7 @@ revoke_source_lineage:
   ST [r20, 16], r0
   ST [r20, 24], r0
   CAP_REVOKE r14, r20
-  CMP r14, r29
-  BEQ bad
+  BEQ r14, r29, bad
 
 received_token_is_stale:
   ST [r20, 0], r13
@@ -63,12 +59,10 @@ received_token_is_stale:
   ST [r20, 16], r0
   ST [r20, 24], r0
   CAP_DUP r15, r20
-  CMP r15, r29
-  BNE bad
+  BNE r15, r29, bad
   ERRNO_GET r16
   LI r1, 116
-  CMP r16, r1
-  BNE bad
+  BNE r16, r1, bad
 
 done:
   EXIT r0

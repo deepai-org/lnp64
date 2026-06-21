@@ -16,11 +16,9 @@ child_result: .quad 0
   THREAD_JOIN r22, r17, r23
   LD r19, [r14, 0]
   LI r21, 2
-  CMP r19, r21
-  BNE bad
+  BNE r19, r21, bad
   LD r24, [r23, 0]
-  CMP r24, r0
-  BNE bad
+  BNE r24, r0, bad
   EXIT r0
 
 waiter:

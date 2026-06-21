@@ -13,8 +13,7 @@ dup_stdout_to_fd4:
   ST [r10, 16], r0
   ST [r10, 24], r0
   CAP_DUP r11, r10
-  CMP r11, r29
-  BEQ bad
+  BEQ r11, r29, bad
 
 bump_fd4_generation:
   LI r1, 1
@@ -24,10 +23,8 @@ bump_fd4_generation:
   ST [r10, 16], r0
   ST [r10, 24], r0
   CAP_DUP r12, r10
-  CMP r12, r29
-  BEQ bad
-  CMP r12, r11
-  BEQ bad
+  BEQ r12, r29, bad
+  BEQ r12, r11, bad
 
 old_token_rejected:
   ST [r10, 0], r11
@@ -36,12 +33,10 @@ old_token_rejected:
   ST [r10, 16], r0
   ST [r10, 24], r0
   CAP_DUP r13, r10
-  CMP r13, r29
-  BNE bad
+  BNE r13, r29, bad
   ERRNO_GET r14
   LI r1, 116
-  CMP r14, r1
-  BNE bad
+  BNE r14, r1, bad
 
 done:
   EXIT r0

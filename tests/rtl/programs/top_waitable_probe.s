@@ -15,39 +15,32 @@ create_ready_event_counter:
   ST [r10, 40], r1
   ST [r10, 48], r0
   OBJECT_CTL r11, r10
-  CMP r11, r29
-  BEQ bad
+  BEQ r11, r29, bad
 
 probe_static_ready:
   WAITABLE_PROBE r12, fd4, r20
-  CMP r12, r20
-  BNE bad
+  BNE r12, r20, bad
 
 probe_dynamic_ready:
   LI r16, 4
   WAITABLE_PROBE r17, r16, r20
-  CMP r17, r20
-  BNE bad
+  BNE r17, r20, bad
 
 drain_and_probe_empty:
   LI r12, 80
   LI r13, 8
   READ_FD fd4, r12, r13
-  CMP r1, r13
-  BNE bad
+  BNE r1, r13, bad
   WAITABLE_PROBE r18, fd4, r20
-  CMP r18, r0
-  BNE bad
+  BNE r18, r0, bad
 
 probe_closed_fd_error:
   WAITABLE_PROBE r19, fd7, r20
   LI r1, -9
-  CMP r19, r1
-  BNE bad
+  BNE r19, r1, bad
   ERRNO_GET r21
   LI r1, 9
-  CMP r21, r1
-  BNE bad
+  BNE r21, r1, bad
 
 done:
   EXIT r0

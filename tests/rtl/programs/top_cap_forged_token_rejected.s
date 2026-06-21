@@ -19,12 +19,10 @@ forged_token_rejected:
   ST [r10, 16], r0
   ST [r10, 24], r0
   CAP_DUP r12, r10
-  CMP r12, r29
-  BNE bad
+  BNE r12, r29, bad
   ERRNO_GET r13
   LI r1, 116
-  CMP r13, r1
-  BNE bad
+  BNE r13, r1, bad
 
 failed_dup_did_not_install_fd6:
   LI r1, 6
@@ -34,12 +32,10 @@ failed_dup_did_not_install_fd6:
   ST [r10, 16], r0
   ST [r10, 24], r0
   CAP_DUP r14, r10
-  CMP r14, r29
-  BNE bad
+  BNE r14, r29, bad
   ERRNO_GET r15
   LI r1, 9
-  CMP r15, r1
-  BNE bad
+  BNE r15, r1, bad
 
 done:
   EXIT r0

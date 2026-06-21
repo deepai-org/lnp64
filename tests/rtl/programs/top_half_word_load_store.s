@@ -14,12 +14,15 @@
   LI r10, 0x55aaabcd
   LI r11, 1
   LI r12, 0
-  CMP r3, r8
-  CSEL.EQ r13, r11, r12
-  CMP r5, r9
-  CSEL.EQ r14, r11, r12
+  ; v2: r13 = (r3 == r8) ? 1 : 0
+  SUB r28, r3, r8
+  SLTIU r13, r28, 1
+  ; v2: r14 = (r5 == r9) ? 1 : 0
+  SUB r28, r5, r9
+  SLTIU r14, r28, 1
   ADD r13, r13, r14
-  CMP r7, r10
-  CSEL.EQ r15, r11, r12
+  ; v2: r15 = (r7 == r10) ? 1 : 0
+  SUB r28, r7, r10
+  SLTIU r15, r28, 1
   ADD r13, r13, r15
   EXIT r13

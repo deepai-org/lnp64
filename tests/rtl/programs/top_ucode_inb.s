@@ -8,16 +8,14 @@ ucode: .string "PORT 9 123\n"
   LI r3, 9
   INB r4, r3
   LI r5, 123
-  CMP r4, r5
-  BNE bad
+  BNE r4, r5, bad
 
   LI r6, 7
   LI r7, 42
   OUTB r6, r7
   INB r8, r6
   LI r9, 42
-  CMP r8, r9
-  BNE bad
+  BNE r8, r9, bad
 
   EXIT r0
 
