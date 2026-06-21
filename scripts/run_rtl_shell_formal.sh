@@ -61,7 +61,7 @@ yosys -ql "$work/yosys.log" -p \
 
 overall=0
 printf '== %s shell formal: BMC (depth %s, %s) ==\n' "$name" "$depth" "$solver"
-if yosys-smtbmc -s "$solver" -t "$depth" --dump-vcd "$work/${name}.vcd" "$smt2" 2>"$work/bmc.err"; then
+if yosys-smtbmc --unroll -s "$solver" -t "$depth" --dump-vcd "$work/${name}.vcd" "$smt2" 2>"$work/bmc.err"; then
   printf '%s shell formal BMC: PASS\n' "$name"
 else
   printf '%s shell formal BMC: FAIL\n' "$name"
@@ -70,7 +70,7 @@ else
 fi
 
 printf '== %s shell formal: temporal k-induction (%s) ==\n' "$name" "$solver"
-if yosys-smtbmc -s "$solver" -i -t "$depth" "$smt2" 2>"$work/ind.err"; then
+if yosys-smtbmc --unroll -s "$solver" -i -t "$depth" "$smt2" 2>"$work/ind.err"; then
   printf '%s shell formal induction: PASS\n' "$name"
 else
   printf '%s shell formal induction: INCONCLUSIVE\n' "$name"

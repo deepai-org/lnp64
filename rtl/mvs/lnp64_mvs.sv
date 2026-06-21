@@ -41,7 +41,8 @@ module lnp64_mvs (
     output logic [15:0] mem_waddr,
     output logic [1:0]  granted_id,
     output logic        grant_valid,
-    output logic        cap_authorized
+    output logic        cap_authorized,
+    output logic [1:0]  arb_rr          // round-robin pointer (for lock-step proofs)
 );
     // ---- Round-robin arbiter (3 -> 1) with debug stall as backpressure ----
     logic [1:0] rr;  // index to favor first this round
@@ -109,6 +110,7 @@ module lnp64_mvs (
     // reaches this except through the checker above.
     assign mem_we    = cap_authorized;
     assign mem_waddr = sel_addr;
+    assign arb_rr    = rr;
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin

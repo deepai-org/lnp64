@@ -35,7 +35,7 @@ yosys -ql "$work/yosys.log" -p \
 
 overall=0
 printf '== MVS %s: BMC (depth %s, %s) ==\n' "$proof" "$depth" "$solver"
-if yosys-smtbmc -s "$solver" -t "$depth" --dump-vcd "$work/mvs_${proof}.vcd" "$smt2" 2>"$work/bmc.err"; then
+if yosys-smtbmc --unroll -s "$solver" -t "$depth" --dump-vcd "$work/mvs_${proof}.vcd" "$smt2" 2>"$work/bmc.err"; then
   printf 'MVS %s BMC: PASS\n' "$proof"
 else
   printf 'MVS %s BMC: FAIL\n' "$proof"
@@ -44,7 +44,7 @@ else
 fi
 
 printf '== MVS %s: temporal k-induction (%s) ==\n' "$proof" "$solver"
-if yosys-smtbmc -s "$solver" -i -t "$depth" "$smt2" 2>"$work/ind.err"; then
+if yosys-smtbmc --unroll -s "$solver" -i -t "$depth" "$smt2" 2>"$work/ind.err"; then
   printf 'MVS %s induction: PASS\n' "$proof"
 else
   printf 'MVS %s induction: INCONCLUSIVE\n' "$proof"

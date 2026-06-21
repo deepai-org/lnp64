@@ -39,6 +39,7 @@ done
 mvs_proofs=(
   mediation
   progress
+  noninterference
 )
 for proof in "${mvs_proofs[@]}"; do
   printf '\n========== mvs formal: %s ==========\n' "$proof"
