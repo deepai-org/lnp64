@@ -693,6 +693,49 @@ sharing real fabric/state (the cross-engine interactions the per-engine
 wrappers and the Lean composition both omit), and (3) the Verilog operational
 semantics remaining the trusted base unless a verified-Verilog path is adopted.
 
+### Provability-first MVS for the hardest whole-chip goals
+
+The two hardest systemic goals -- **unbypassable whole-chip mediation** (no
+debug/reset/fabric path alters memory without the capability checker) and
+**bounded progress/totality** (every request serviced in bounded time; no FSM
+hangs) -- are proven directly on RTL via a **minimal viable system**, not by
+scaling the per-engine slices. `rtl/mvs/lnp64_mvs.sv` is a self-contained core:
+CPU + DMA in-band initiators and an out-of-band debug/reset agent contend through
+a round-robin arbiter and a single, structurally unbypassable capability-checker
+choke point, with rights keyed on the *hardwired* initiator id (authority cannot
+be claimed by a requester-supplied value). Two SVA proofs are model-checked with
+`yosys-smtbmc` (BMC + temporal k-induction, all inputs):
+
+- mediation (`rtl/formal/lnp64_mvs_mediation_formal.sv`): every memory write is
+  capability-authorized, the debug agent can never write, initiators are
+  page-confined, every write is attributed to an in-band initiator.
+- bounded progress (`rtl/formal/lnp64_mvs_progress_formal.sv`): bounded liveness
+  encoded as a safety watchdog -- an unhalted request is granted within the
+  round-robin bound; debug-halt halts (no grant while stalled); arbiter decode
+  is total.
+
+Scaling up means adding initiators that obey the same proven ready/valid +
+capability interface contract, not rewriting the proof. Planned MVS extensions:
+a two-copy non-interference miter (debug/reset inputs provably cannot influence
+the authority/write decision -- the real "no covert flow" property), capability
+revocation (a revoked generation can never write), and reset isolation
+(resetting one component cannot corrupt another's authority). The methodology is
+the one recommended for these goals (atomic-rule / guarded design, structural
+choke point, bounded arbiter, park/fault defaults), realized in plain SV on the
+existing yosys + SVA + smtbmc stack rather than adopting BlueSpec.
+
+**Honest tooling note on the per-engine slices.** M1-M15 embed a seed-driven LCG
+multiplier in their transition relation; with the open-source SMT backend,
+exhaustive model-checking of the full engine converges only for the
+narrower-constant cases (M12, M13 pass BMC + k-induction; M11 and the wider ones
+do not). The whole-chip security/progress guarantees are therefore carried by
+the MVS (shaped for provability) plus the small engine-shell proofs
+(fail-closed, watchdog, policy engine, completion router), while the engines
+retain their typed-trace + Lean transition-invariant evidence. Bringing an
+engine itself under exhaustive FPV would require a formal-only abstraction of its
+data path so the solver is not burdened by payload arithmetic the severe-goal
+properties never read.
+
 ### Human-Auditable Evidence
 
 The proof system must also be legible. A casual technical observer should be
