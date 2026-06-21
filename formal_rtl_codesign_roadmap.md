@@ -715,14 +715,43 @@ be claimed by a requester-supplied value). Two SVA proofs are model-checked with
   is total.
 
 Scaling up means adding initiators that obey the same proven ready/valid +
-capability interface contract, not rewriting the proof. Planned MVS extensions:
-a two-copy non-interference miter (debug/reset inputs provably cannot influence
-the authority/write decision -- the real "no covert flow" property), capability
-revocation (a revoked generation can never write), and reset isolation
-(resetting one component cannot corrupt another's authority). The methodology is
-the one recommended for these goals (atomic-rule / guarded design, structural
-choke point, bounded arbiter, park/fault defaults), realized in plain SV on the
-existing yosys + SVA + smtbmc stack rather than adopting BlueSpec.
+capability interface contract, not rewriting the proof. The MVS suite now proves,
+on the actual RTL (each BMC + temporal k-induction, all adversarial inputs, via
+`scripts/run_rtl_mvs_formal.sh` + `scripts/run_rtl_formal_gates.sh`):
+
+- **mediation** -- no path bypasses the capability checker; the out-of-band
+  debug agent can never write; initiators are page-confined.
+- **bounded progress / totality** -- granted within the round-robin bound;
+  debug-halt halts; arbiter decode total.
+- **non-interference** (two-copy miter) -- debug/reset tamper content cannot flow
+  into the authority/write decision (the "no covert flow" property).
+- **capability revocation** -- a write needs a live capability; revocation is
+  permanent; a revoked initiator can never write again.
+- **dynamic capability derivation** -- a held capability is always a subset of
+  its root and derivation is strictly non-widening (no forged authority during
+  execution); writes are confined to the root.
+- **hardware wait/wake** -- the scheduler never selects a parked thread; an event
+  wakes exactly the targeted thread; no wakeup is lost (a parked thread and a
+  pending wake never coexist).
+- **reset isolation** (two-copy miter) -- resetting one component cannot change
+  another component's local state, capability, or writes.
+
+The methodology is the one recommended for these goals (atomic-rule / guarded
+design, structural choke point, bounded arbiter, park/fault defaults), realized
+in plain SV on the existing yosys + SVA + smtbmc stack rather than adopting
+BlueSpec. (Tooling note: yosys-smtbmc's z3 *incremental* mode stalls on the
+multi-copy miters and the multiplier-laden engines; `--unroll` -- one
+non-incremental query -- dispatches them in well under a second, and is used by
+all formal runners.)
+
+**Hardware/software bridge.** `formal/MvsHwSwBridge.lean` takes the
+model-checked SVA facts (mediation, derivation) as a `HwContract` hypothesis
+structure -- not a Lean axiom, so it is a clean conditional proof -- and derives
+`two_tenant_memory_safety`: given the RTL contract and a kernel that grants two
+tenants disjoint capabilities, neither tenant can ever write into the other's
+memory. This is the explicit hardware-to-software guarantee: prove the SVA on the
+silicon, assume exactly those facts in Lean, conclude the OS-level isolation
+property.
 
 **Honest tooling note on the per-engine slices.** M1-M15 embed a seed-driven LCG
 multiplier in their transition relation; with the open-source SMT backend,
