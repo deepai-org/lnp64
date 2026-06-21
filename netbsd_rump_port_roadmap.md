@@ -8,6 +8,16 @@ It is the concrete realization of the "import NetBSD-derived components" open
 work in `netbsd_personality_abi.md`, and the host/guest substrate for the
 capability-delegated hypervisor described in `system_software_compatibility_roadmap.md`.
 
+**Scope: this is an accessory software-compatibility track, not part of the
+formal proof surface.** The port *consumes* hardware whose properties are proven
+elsewhere (the severe goals, the M1–M15 refinement work); it does not itself
+carry theorems. Its evidence is software gates, checkers, and the negative
+trace-token gate — not Lean slices or RTL assertions. The "severe goal" columns
+below name the *hardware property the port relies on*, not a proof obligation the
+port owns. Keep formal effort on the hardware/ISA; treat this port as a
+high-value demonstrator that the proven machine runs real system software
+correctly.
+
 ## Decision
 
 - **Shape: three-way split, not "rump only."** The kernel work is divided across
@@ -157,8 +167,11 @@ the failing gate *is* the argument to OS authors.
 ## The seam: rumpuser + NetBSD MD hooks → native ops
 
 NetBSD already abstracts drivers from hardware via `bus_space`/`bus_dma`, and the
-rump base via `rumpuser`. A correct port implements only this hook set; the
-unmodified code above it inherits the discipline.
+rump base via `rumpuser`. A correct port implements this hook set **plus the
+native process faction below**; the unmodified NetBSD code above both inherits the
+discipline.
+
+The rump / MD seam:
 
 | NetBSD / rump hook | Correct LNP64 lowering | Severe goal earned |
 | --- | --- | --- |
@@ -173,16 +186,38 @@ unmodified code above it inherits the discipline.
 | `intr_establish` | interrupt-as-waitable (`AWAIT_EX` on an IRQ event) | interrupt-abstracted / bounded latency |
 | vfs / fd table | FDRs, `PULL`/`PUSH`, generation/narrowing | no forged authority |
 
+The native process faction (owner #2 — what rump does not provide):
+
+| Process-faction surface | Correct LNP64 lowering | Severe goal earned |
+| --- | --- | --- |
+| `fork` (address space + COW) | `CLONE profile=new_process_cow` over VMA-engine COW | memory authority |
+| `exec` | `EXEC` plan/commit boundary | no forged authority |
+| process threads | `CLONE profile=new_thread_shared_vm` / `SPAWN` | scheduler/wait correctness |
+| file-backed mmap fault | VMA-engine fault → `GATE_CALL` to fs service to fill page | memory authority (see realtime risk) |
+| signals | `GATE_CTL`/`GATE_MASK_SET`/`GATE_DELIVER`/`GATE_RETURN` | bounded hardware behavior |
+| `ptrace` / debug | **explicit delegated debug capability** over the target domain — never ambient | evidence honesty (debug ≠ hidden authority) |
+
+**Confinement of the process service itself.** Owner #2 brokers operations that
+touch more than one domain (COW setup across parent/child, cross-process signal
+delivery, `exec`, `ptrace`). It must perform each one **only through capabilities
+its caller delegated for that operation**, holding no ambient cross-domain
+authority. Otherwise the "thin" process service silently becomes the monolith we
+claim not to have, breaking domain confinement. Its authority is itself a tracked,
+gated invariant.
+
 ## Milestone ladder
 
 Aligned to the governing method (fix every gap in the lowest correct layer;
 drive everything through `lnp64_top`-reachable paths and a checker/manifest).
 
-- **R0 — rumpuser seam + real NetBSD libc (first target).** Implement the
-  `rumpuser` hypercall layer + minimal MD hooks against native ops. Build real
-  NetBSD libc with Clang/lld and run a trivial rump component (e.g. rump_syscall
-  open/read/write) over it. Beachhead: first real NetBSD code executing. Replaces
-  the clean-room shim incrementally, ladder-rung by ladder-rung.
+- **R0a — rumpuser seam + a libc-free rump component (first target).** Implement
+  the `rumpuser` hypercall layer + minimal MD hooks against native ops, and run a
+  trivial rump component (e.g. a `rump_syscall` open/read/write path) with no
+  libc dependency. Beachhead: first real NetBSD code executing, smallest possible.
+- **R0b — real NetBSD libc.** Build the full real NetBSD libc with Clang/lld over
+  the R0a seam. Split from R0a on purpose: libc is large, so it should not gate
+  the very first proof-of-seam. Begins replacing the clean-room shim incrementally,
+  ladder-rung by ladder-rung.
 - **R1 — rump VFS + FFS.** Real NetBSD FFS as a rump filesystem service in a
   Resource Domain, over an object-backed block FDR. Retires the fixed-record
   service-owned image fixture.
@@ -199,10 +234,14 @@ drive everything through `lnp64_top`-reachable paths and a checker/manifest).
 - **R3 — host role.** A supervisor rump instance holds device + domain authority
   and carves child domains with memory-object + scheduler-reservation caps.
 - **R4 — enlightened guest.** The same rump port runs inside a child domain on
-  only delegated capabilities. Host and guest are the same binary.
+  only delegated capabilities. Host and guest share one image/codebase and
+  component format, differing only in which components and capabilities they hold.
 - **R5 — scheduler-reservation delegation.** Guest admits its threads under a
-  delegated RT budget/class; prove no double scheduling and inherited bounded
-  service.
+  delegated RT budget/class; demonstrate *no double scheduling* and inherited
+  bounded service via gates/tests (no run-queue in the port, observed admission
+  under the reservation). This is software validation, not a formal proof — the
+  realtime *guarantee* belongs to the already-proven hardware scheduler, which
+  this port merely consumes.
 - **R6 — device-as-service + IOMMU.** Host re-exports a real driver to the guest
   via an IOMMU-scoped DMA window + `GATE_CALL`; revoked window fails closed
   (seed: `demos/revoked_dma_buffer.s`).
@@ -226,7 +265,10 @@ assumption behind "all software runs":
   fault path, COW-on-fork, `msync`, `madvise`, and `MAP_FIXED`/overcommit
   behavior must be specified against the VMA engine, since there are no
   port-private page tables to fall back on. This is where "no port page tables"
-  gets stress-tested; R1.5 owns it.
+  gets stress-tested; R1.5 owns it. Note the realtime interaction: a fault
+  serviced by a userspace fs service is not inherently bounded-latency, so such
+  threads run under the best-effort class, not a hard realtime reservation, unless
+  the pages are pre-faulted/pinned — itself a named decision.
 - **Anything else where native and NetBSD semantics differ** is documented as a
   named decision with a test, never an undocumented gap.
 
