@@ -1220,7 +1220,7 @@ module lnp64_core_tile #(
                 // return-value register). r1 is the return-address (link)
                 // register and must never receive a syscall/native result.
                 8'h2d, 8'h57, 8'h5c, 8'h5d, 8'h5e, 8'h5f,
-                8'h67, 8'h69, 8'h6b, 8'h6c: flat_retire_result_reg = 8'd2;
+                8'h62, 8'h64, 8'h67, 8'h69, 8'h6b, 8'h6c: flat_retire_result_reg = 8'd2;
                 default: flat_retire_result_reg = raw_result_reg;
             endcase
         end
@@ -4036,21 +4036,21 @@ module lnp64_core_tile #(
                             end
                             LNP64_OP_SIGACTION: begin
                                 if (gpr[dec.rd] == 64'd0 || gpr[dec.rd] >= SIGNAL_NUMBER_LIMIT) begin
-                                    gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                    gpr[2] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= LNP64_ERR_EINVAL;
                                 end else if (gpr[dec.rs1] == SIG_DFL_HANDLER) begin
                                     signal_handler_valid <= 1'b0;
                                     signal_handler_ignore <= 1'b0;
                                     signal_handler_signum <= 64'd0;
                                     signal_handler_pc <= 64'd0;
-                                    gpr[1] <= 64'd0;
+                                    gpr[2] <= 64'd0;
                                     errno_reg <= LNP64_ERR_OK;
                                 end else begin
                                     signal_handler_valid <= 1'b1;
                                     signal_handler_ignore <= gpr[dec.rs1] == SIG_IGN_HANDLER;
                                     signal_handler_signum <= gpr[dec.rd];
                                     signal_handler_pc <= gpr[dec.rs1];
-                                    gpr[1] <= 64'd0;
+                                    gpr[2] <= 64'd0;
                                     errno_reg <= LNP64_ERR_OK;
                                 end
                                 pc <= pc + 32'd1;
@@ -4060,19 +4060,19 @@ module lnp64_core_tile #(
                             end
                             LNP64_OP_KILL: begin
                                 if (gpr[dec.rs1] == 64'd0 || gpr[dec.rs1] >= SIGNAL_NUMBER_LIMIT) begin
-                                    gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                    gpr[2] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= LNP64_ERR_EINVAL;
                                     pc <= pc + 32'd1;
                                 end else if (gpr[dec.rd] != 64'd1) begin
-                                    gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                    gpr[2] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= 16'd3;
                                     pc <= pc + 32'd1;
                                 end else if (signal_frame_valid) begin
-                                    gpr[1] <= 64'hffff_ffff_ffff_ffff;
+                                    gpr[2] <= 64'hffff_ffff_ffff_ffff;
                                     errno_reg <= LNP64_ERR_EAGAIN;
                                     pc <= pc + 32'd1;
                                 end else begin
-                                    gpr[1] <= 64'd0;
+                                    gpr[2] <= 64'd0;
                                     errno_reg <= LNP64_ERR_OK;
                                     if (signal_handler_valid &&
                                         signal_handler_signum == gpr[dec.rs1] &&
