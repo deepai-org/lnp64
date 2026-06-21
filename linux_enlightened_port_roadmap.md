@@ -141,6 +141,32 @@ port + LLVM target + loader, then **recompile the whole distro**
 (Buildroot/Yocto/Gentoo-style). The targeted enlightenment set is small —
 **libc + toolchain/loader + Go's runtime** — and everything else just rebuilds.
 
+## Distro upstreaming targets (who accepts weird arches)
+
+We expect to upstream the userspace port into a few receptive distros rather than
+carry a private one forever. Best fits, given our **musl + LLVM** choices:
+
+- **Tier 1 — musl/LLVM, experiment-friendly (best fit):**
+  - **Chimera Linux** — musl *and* an LLVM/Clang system toolchain, portability-
+    first. Our toolchain choices are its defaults; the closest natural home.
+  - **Alpine Linux** — musl, very large package set, adds arches readily; highest-
+    leverage musl distro.
+  - **Void Linux** — independent, musl option, experiment-friendly.
+  - **Adélie Linux** — musl, portability/odd-hardware focused.
+- **Tier 2 — formal ports / secondary-architecture channels (glibc; built to
+  absorb new arches):**
+  - **Debian Ports** (debian-ports.org) — canonical home for unofficial arches.
+  - **Fedora secondary architectures** — where RISC-V matured (SIG + koji).
+  - **openSUSE** via the Open Build Service — cheap to add arches.
+  - **Gentoo** — source-based; new arch via keywords/profiles is trivial to carry.
+- **Tier 3 — bring-up build systems, not upstream distros (use first):**
+  Buildroot, Yocto, OpenWrt, NixOS.
+
+Suggested path: bring up in **Buildroot**, make **Chimera or Alpine** the first
+real musl/LLVM upstream, and use **Debian Ports / Fedora secondary** as the
+glibc-world official channels. (Distro receptiveness shifts over time; confirm
+current arch/port policy before committing to any one.)
+
 ## Relationship to the NetBSD track
 
 Do NetBSD rump first. It proves the native-op seam, the Correct Port Contract,
