@@ -1081,7 +1081,6 @@ struct SavedSignalContext {
     generation: u64,
     ip: usize,
     regs: [u64; GPR_COUNT],
-    return_stack: Vec<u64>,
 }
 
 #[derive(Clone)]
@@ -1101,7 +1100,6 @@ struct Thread {
     fregs: [u64; FPR_COUNT],
     vregs: [u128; VR_COUNT],
     ip: usize,
-    return_stack: Vec<u64>,
     signal_stack: Vec<SavedSignalContext>,
     signal_generation: u64,
     cap_call_stack: Vec<CallContinuation>,
@@ -1120,7 +1118,6 @@ impl Thread {
             fregs: [0; FPR_COUNT],
             vregs: [0; VR_COUNT],
             ip: 0,
-            return_stack: Vec::new(),
             signal_stack: Vec::new(),
             signal_generation: 1,
             cap_call_stack: Vec::new(),
@@ -2644,19 +2641,14 @@ impl Machine {
             Instr::Jal(rd, target) => {
                 let ret = self.thread()?.ip as u64;
                 let ip = self.resolve_target(target)?;
-                self.thread_mut()?.return_stack.push(ret);
                 self.write_alu_reg(rd, ret)?;
                 self.thread_mut()?.ip = ip;
             }
             Instr::Jalr(rd, rs1, imm) => {
                 let ret = self.thread()?.ip as u64;
+                // The return target is the link register (r1 for `ret`), read
+                // directly -- no return-address predictor/stack (uniform timing).
                 let target = self.read_reg(rs1)?.wrapping_add(imm as u64);
-                // `ret` (jalr r0, r1, 0) consumes a return-stack frame.
-                if rd.0 == 0 {
-                    self.thread_mut()?.return_stack.pop();
-                } else {
-                    self.thread_mut()?.return_stack.push(ret);
-                }
                 self.write_alu_reg(rd, ret)?;
                 self.thread_mut()?.ip = target as usize;
             }
@@ -4045,7 +4037,6 @@ impl Machine {
                 let thread = self.thread_mut()?;
                 thread.ip = saved.ip;
                 thread.regs = saved.regs;
-                thread.return_stack = saved.return_stack;
                 thread.signal_generation = thread.signal_generation.wrapping_add(1).max(1);
                 self.reservation_addr = None;
             }
@@ -10136,7 +10127,6 @@ impl Machine {
                         generation: thread.signal_generation,
                         ip: thread.ip,
                         regs: thread.regs,
-                        return_stack: thread.return_stack.clone(),
                     }
                 };
                 let thread = self.thread_mut()?;
@@ -10489,7 +10479,9 @@ mod tests {
     }
 
     #[test]
-    fn jalr_ret_pops_return_stack() {
+    fn jalr_ret_jumps_to_link_register() {
+        // ret (jalr r0, r1, 0) takes its target from r1 at fixed cost -- no
+        // return-address predictor/stack. Overwriting r1 redirects the return.
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
         machine.committed_exec_mode = true;
@@ -10497,12 +10489,10 @@ mod tests {
         machine.thread_mut().unwrap().regs[31] = 0;
 
         machine.exec(Instr::Jal(Reg(1), Target::Address(3))).unwrap();
-        // overwrite r1 then ret to it.
         machine.thread_mut().unwrap().regs[1] = 11;
         machine.exec(Instr::Jalr(Reg(0), Reg(1), 0)).unwrap();
 
         assert_eq!(machine.thread().unwrap().ip, 11);
-        assert!(machine.thread().unwrap().return_stack.is_empty());
     }
 
     fn create_pipe_pair(machine: &mut Machine, read_fd: u64, write_fd: u64) -> (u64, u64) {

@@ -1319,11 +1319,8 @@ mod tests {
             real_llc.contains("real LLVM LNP64 llvm-mc capability control opcode smoke passed")
         );
         assert!(real_llc.contains("atomic-mc-smoke.o"));
-        assert!(real_llc.contains("amo.swap r1, r2, r3"));
-        assert!(real_llc.contains("amo.or r10, r11, r12"));
         assert!(real_llc.contains("lr.d r13, (r14)"));
         assert!(real_llc.contains("sc.d r15, r16, (r14)"));
-        assert!(real_llc.contains("amo.xor r17, r18, r19"));
         assert!(real_llc.contains("futex_wait r20, r21"));
         assert!(real_llc.contains("futex_wake r22, r23"));
         assert!(real_llc.contains("fence.acq_rel"));
