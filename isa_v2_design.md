@@ -67,11 +67,11 @@ are 5 bits (GPR 0..31). The PC advances by 8; all instruction addresses are
 +--------+------+------+-------------------------------------+------------+
 | opcode | rs1(base) | rs2(src) |        imm32 (sign-extended) | resv(14) |  S-type (store)
 +--------+-----------+----------+-----------------------------+----------+
-| opcode | rs1  | rs2  |        imm32 (byte offset, x1, 8-aligned) | resv  |  B-type (branch)
-+--------+------+------+-------------------------------------------+------+
-| opcode |  rd  |              imm32 (sign-extended)        |  reserved   |  U-type (LUI/LIU/AUIPC)
+| opcode | rs1  | rs2  |     imm32 (instr-count offset, <<3)  | resv(14)  |  B-type (branch)
++--------+------+------+-------------------------------------+-----------+
+| opcode |  rd  |              imm32 (sign-extended)        |  reserved   |  U-type (AUIPC)
 +--------+------+-------------------------------------------+-------------+
-| opcode |  rd  |          imm32 (byte offset, 8-aligned)   |  reserved   |  J-type (JAL)
+| opcode |  rd  |        imm32 (instr-count offset, <<3)    |  reserved   |  J-type (JAL)
 +--------+------+-------------------------------------------+-------------+
 ```
 
@@ -81,6 +81,13 @@ Field rules:
   `rs2[45:41]`, `rs3[40:36]`, `rs4[35:31]`, `rs5[30:26]`. A format that does not
   use a slot leaves it **reserved-zero**.
 - `imm32` is a 32-bit field, sign-extended to 64 bits for arithmetic / offsets.
+- **Control-transfer offsets are instruction-counts, not bytes.** Because every
+  instruction is exactly 8 bytes and 8-aligned, the low 3 bits of any valid
+  target offset are always zero. B-type and J-type therefore encode
+  `offset >> 3`: the hardware target is `PC + (sext64(imm32) << 3)`, giving a
+  **±16 GiB** reach and wasting no immediate bits on the always-zero low bits.
+  (`AUIPC` is the exception — see §3.2: it forms *data* addresses with byte
+  granularity and adds `sext64(imm32)` directly.)
 - All **reserved** bits must be zero; the decoder rejects non-zero reserved bits
   (this keeps the encoding space closed for the proof and free for future use).
 - The R-type's 6 register slots cover every wide-operand instruction natively —
@@ -91,11 +98,17 @@ Field rules:
 
 A 64-bit word holds a full 32-bit immediate inline, so:
 
-- **≤32-bit signed:** `LI rd, imm32` — one instruction. (Replaces v1's `LI` +
-  8-byte `LI32`; there is no `LUI`+`ADDI` carry dance.)
-- **Full 64-bit literal:** `LI rd, lo32` ; `LIU rd, hi32` (`LIU` writes the
-  upper 32 bits, leaving the lower 32 intact) — two instructions, each one
-  word. Used only for non-address 64-bit constants.
+- **≤32-bit signed:** `LI rd, imm32` — one instruction, the assembler spelling
+  of `ADDI rd, r0, imm32` (`rd = sext64(imm32)`). (Replaces v1's `LI` + 8-byte
+  `LI32`; there is no `LUI`+`ADDI` carry dance, and no `LUI` instruction at all.)
+- **Full 64-bit literal:** `LI rd, lo32` ; `LIU rd, rd, hi32` — two
+  instructions, each one word. `LIU` is an **I-type** instruction with an
+  explicit source:
+  `LIU rd, rs1, imm32  →  rd = (rs1 & 0x0000_0000_FFFF_FFFF) | (uint64(imm32) << 32)`.
+  It reads `rs1` through the normal source-operand port and writes `rd` — there
+  is **no** read-modify-write of the destination, so sources stay sources and
+  destinations stay destinations (clean pipeline, clean Coq `Execute`). Used
+  only for non-address 64-bit constants.
 - **Address-of-global / PC-relative 64-bit:** `AUIPC rt, imm32` ;
   `LD rd, lo(rt)` against a `.rodata` literal, or `AUIPC`+`ADDI`-equivalent for
   in-range PIC. This is the common path for pointers.
@@ -140,8 +153,8 @@ architectural state, defined in §4.5 (there is no `PCC` register in v1).
 
 ### 3.3 Branch range — relaxation no longer required
 
-With a 32-bit branch offset (B-type) and a 32-bit jump offset (J-type),
-conditional branches and calls reach ±2 GB directly. The generic
+With instruction-count branch/jump offsets (§2, `imm32 << 3`), conditional
+branches and calls reach ±16 GiB directly. The generic
 `BranchRelaxation` pass and its semantics-preservation proof obligation are
 **not needed**. We still implement `analyzeBranch` / `insertBranch` /
 `removeBranch` / `reverseBranchCondition` (LLVM requires them for basic
