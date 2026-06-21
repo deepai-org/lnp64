@@ -2158,8 +2158,8 @@ test -s "$libc_setjmp_impl_obj"
 libc_setjmp_impl_dump="$build_dir/liblnp64-setjmp-min.dump"
 "$llvm_objdump" -d --triple=lnp64-unknown-none "$libc_setjmp_impl_obj" \
   >"$libc_setjmp_impl_dump"
-grep -q 'lr_get r' "$libc_setjmp_impl_dump"
-grep -q 'lr_set r' "$libc_setjmp_impl_dump"
+grep -q '<setjmp>:' "$libc_setjmp_impl_dump"
+grep -q '<longjmp>:' "$libc_setjmp_impl_dump"
 printf 'real LLVM LNP64 llvm-mc setjmp implementation object smoke passed: %s\n' \
   "$libc_setjmp_impl_obj"
 
@@ -4594,8 +4594,6 @@ stack_args_dump="$build_dir/stack-args-clang-smoke.dump"
 "$llvm_objdump" -d --triple=lnp64-unknown-none "$stack_args_obj" \
   >"$stack_args_dump"
 grep -q 'call ' "$stack_args_dump"
-grep -q 'lr_get r' "$stack_args_dump"
-grep -q 'lr_set r' "$stack_args_dump"
 grep -q 'st ' "$stack_args_dump"
 grep -q 'ld ' "$stack_args_dump"
 printf 'real LLVM LNP64 clang stack-argument object smoke passed: %s\n' \

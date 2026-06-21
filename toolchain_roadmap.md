@@ -142,7 +142,7 @@ The
 disassembler decodes that same initial fixed32 subset for future `llvm-mc`
 round trips. The MC layer now has target fixup kinds and object-writer
 relocation mapping for branch/data relocations, and the lld scaffold can patch
-`R_LNP64_BRANCH26` into the aligned signed branch field.
+`R_LNP64_BRANCH` into the aligned instruction-count branch field.
 The first SelectionDAG patterns now select signed-16 constant materialization
 through `LI`, simple i64 ALU operations (`add`/`sub`/`mul`/signed `div`,
 bitwise ops including `xor allones` to `NOT`, and shifts), and i64
@@ -291,18 +291,18 @@ NetBSD policy. Those remain loader, libc, and personality responsibilities.
 5. Implement relocations and lld integration.
    - Absolute, PC-relative branch/call, GOT-like static PIE, TLS, and data
      relocations.
-   - Use one symbol materialization contract everywhere:
-     `AUIPC %pcrel_hi` plus `ADDI %pcrel_lo` for direct addresses, or
-     `AUIPC %pcrel_hi` plus `LD %pcrel_lo` for address/constant/TLS slots. Do
-     not add backend-only `LA` or alternate pseudo-address contracts.
+   - Use one symbol materialization contract everywhere: a single v2 `AUIPC`
+     carrying `R_LNP64_AUIPC` for direct addresses, or `AUIPC` plus a plain `LD`
+     for address/constant/TLS slots. Do not add backend-only `LA` or alternate
+     pseudo-address contracts.
    - Current LLVM codegen no longer selects `LA` for globals, and the manifests
-     plus lld reserve the split PC-relative relocation numbers. The LLVM MC
-     layer now declares target fixup kinds and object-writer relocation mapping
-     for `%pcrel_hi`, `%pcrel_lo` immediate/load forms, and local-exec TLS
-     offset slots. Emitting those fixups from SelectionDAG/asm parsing into
-     paired AUIPC+ADDI/LD sequences and finalizing the lld low-relocation
-     pair-binding rule remain pending; the existing two-word `AUIPC`/
-     `R_LNP64_PC32` path is an interim scaffold, not the final object contract.
+     plus lld carry the v2 `R_LNP64_AUIPC`/`R_LNP64_BRANCH`/`R_LNP64_JUMP`
+     relocation numbers. The LLVM MC layer declares target fixup kinds and
+     object-writer relocation mapping for the single-word AUIPC form and the
+     instruction-count branch/jump fixups. Emitting those fixups from
+     SelectionDAG/asm parsing into single-word `R_LNP64_AUIPC` sequences is in
+     place; the single-word `AUIPC` form is the final object contract, resolved
+     as `P + sext32(S + A - P)` with no low-relocation pair to bind.
    - Implement local-exec TLS first: `GET_PCR TLS_BASE`, TP-relative immediate
      add when encodable, or AUIPC+LD of an `R_LNP64_TLS_TPREL_SLOT64` offset
      slot followed by an add. General-dynamic and initial-exec TLS are future

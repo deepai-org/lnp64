@@ -1456,16 +1456,16 @@ mod tests {
         assert!(setjmp_header.contains("__attribute__((returns_twice))"));
         assert!(setjmp_header.contains("__attribute__((noreturn))"));
         assert!(real_llc.contains("toolchain/liblnp64_setjmp_min.s"));
-        assert!(libc_setjmp_min.contains("LR_GET r2"));
-        assert!(libc_setjmp_min.contains("LR_SET r4"));
-        assert!(libc_setjmp_min.contains("ADD r31, r3, r0"));
-        assert!(libc_setjmp_min.contains("ST r0, 0(r1)"));
-        assert!(libc_setjmp_min.contains("ST r0, 8(r1)"));
-        assert!(libc_setjmp_min.contains("ST r0, 16(r1)"));
-        assert!(libc_setjmp_min.contains("BNE longjmp_value_ready"));
+        assert!(libc_setjmp_min.contains("SD [r2, 32], r1"));
+        assert!(libc_setjmp_min.contains("MOV r1, r5"));
+        assert!(libc_setjmp_min.contains("ADD r31, r4, r0"));
+        assert!(libc_setjmp_min.contains("SD [r2, 0], r0"));
+        assert!(libc_setjmp_min.contains("SD [r2, 8], r0"));
+        assert!(libc_setjmp_min.contains("SD [r2, 16], r0"));
+        assert!(libc_setjmp_min.contains("BNE r3, r0, longjmp_value_ready"));
         assert!(real_llc.contains("liblnp64-setjmp-min.o"));
-        assert!(real_llc.contains("grep -q 'lr_get r'"));
-        assert!(real_llc.contains("grep -q 'lr_set r'"));
+        assert!(real_llc.contains("grep -q '<setjmp>:'"));
+        assert!(real_llc.contains("grep -q '<longjmp>:'"));
         assert!(real_llc.contains("real LLVM LNP64 clang setjmp object smoke passed"));
         assert!(
             real_llc.contains("real LLVM LNP64 llvm-mc setjmp implementation object smoke passed")
@@ -5090,7 +5090,7 @@ mod tests {
             "R_LNP64_RELATIVE",
             "R_LNP64_TLS_TPREL64",
             "R_LNP64_FDR_DESC64",
-            "R_LNP64_BRANCH26",
+            "R_LNP64_BRANCH",
         ] {
             assert!(lld_arch.contains(reloc), "lld arch missing {reloc}");
         }
@@ -5394,8 +5394,8 @@ mod tests {
                 "nonlocal_jump",
                 vec!["setjmp", "longjmp", "jmp_buf"],
                 vec![
-                    "LR_GET",
-                    "LR_SET",
+                    "load_store",
+                    "link_register_r1",
                     "stack_pointer_restore",
                     "user_context_only",
                     "validation_cookies_reserved",
@@ -8287,7 +8287,7 @@ mod tests {
         assert!(mc_asm_backend.contains("getRelocType"));
         assert!(mc_asm_backend.contains("fixup_lnp64_branch"));
         assert!(mc_asm_backend.contains("writeNopData"));
-        assert!(lld_arch.contains("read32le(Loc)"));
+        assert!(lld_arch.contains("read64le(Loc)"));
     }
 
     #[test]
@@ -8919,16 +8919,14 @@ mod tests {
 
         assert!(roadmap.contains("no longer selects `LA` for globals"));
         assert!(roadmap.contains("object-writer relocation mapping"));
-        assert!(roadmap.contains("Emitting those fixups from SelectionDAG/asm parsing"));
-        assert!(roadmap.contains("lld low-relocation\n     pair-binding rule"));
-        assert!(object_format.contains("Linker pair binding"));
-        assert!(object_format.contains("nearest-preceding `R_LNP64_PCREL_HI20` rule"));
-        assert!(object_format.contains("lld must reject the\n  split PC-relative forms"));
-        assert!(
-            lld_backend.contains("split PC-relative LNP64 relocations are not implemented yet")
-        );
-        assert!(roadmap.contains("the existing two-word `AUIPC`/"));
-        assert!(roadmap.contains("`R_LNP64_PC32` path is an interim scaffold"));
+        assert!(roadmap.contains("Emitting those fixups from\n     SelectionDAG/asm parsing"));
+        assert!(roadmap.contains("instruction-count branch/jump fixups"));
+        assert!(object_format.contains("There is no split high/low pair"));
+        assert!(object_format.contains("no companion `ADDI`/`LD` low relocation"));
+        assert!(object_format.contains("there is no linker pair-binding question"));
+        assert!(lld_backend.contains("case R_LNP64_AUIPC"));
+        assert!(roadmap.contains("the single-word `AUIPC` form is the final object contract"));
+        assert!(roadmap.contains("resolved\n     as `P + sext32(S + A - P)`"));
         assert_eq!(rows.len(), 16);
         assert_eq!(
             target_relocations.len(),

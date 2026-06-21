@@ -13,24 +13,31 @@ using namespace lld::elf;
 
 namespace {
 
+// LNP64 ISA v2 relocation numbers. These match
+// toolchain/lnp64_relocations.manifest and object_format.md exactly.
+//
+// Numbers 0-12 are the data / symbol / descriptor / TLS relocations the loader
+// and lld resolve. Numbers 13-15 are the v2 MC backend code fixups emitted by
+// the LLVM LNP64 code emitter (AUIPC pc-relative high part and instruction-count
+// BRANCH / JUMP). The v1 relocs (BRANCH26, PCREL_HI20, PCREL_LO12_I,
+// PCREL_LO12_LD) are removed.
 enum : uint32_t {
   R_LNP64_NONE = 0,
   R_LNP64_ABS64 = 1,
   R_LNP64_ABS32 = 2,
   R_LNP64_PC32 = 3,
-  R_LNP64_BRANCH26 = 4,
-  R_LNP64_GOT64 = 5,
-  R_LNP64_GLOB_DAT = 6,
-  R_LNP64_RELATIVE = 7,
-  R_LNP64_TLS_TPREL64 = 8,
-  R_LNP64_TLS_DTPREL64 = 9,
-  R_LNP64_FDR_DESC64 = 10,
-  R_LNP64_CAP_DESC64 = 11,
-  R_LNP64_CALLGATE64 = 12,
-  R_LNP64_PCREL_HI20 = 13,
-  R_LNP64_PCREL_LO12_I = 14,
-  R_LNP64_PCREL_LO12_LD = 15,
-  R_LNP64_TLS_TPREL_SLOT64 = 16,
+  R_LNP64_GOT64 = 4,
+  R_LNP64_GLOB_DAT = 5,
+  R_LNP64_RELATIVE = 6,
+  R_LNP64_TLS_TPREL64 = 7,
+  R_LNP64_TLS_DTPREL64 = 8,
+  R_LNP64_FDR_DESC64 = 9,
+  R_LNP64_CAP_DESC64 = 10,
+  R_LNP64_CALLGATE64 = 11,
+  R_LNP64_TLS_TPREL_SLOT64 = 12,
+  R_LNP64_AUIPC = 13,
+  R_LNP64_BRANCH = 14,
+  R_LNP64_JUMP = 15,
 };
 
 static bool isInt(int64_t Value, unsigned Bits) {
@@ -39,22 +46,36 @@ static bool isInt(int64_t Value, unsigned Bits) {
   return Value >= Min && Value <= Max;
 }
 
-static void relocateBranch26(uint8_t *Loc, uint64_t Val) {
+// LNP64 v2 instructions are fixed 64-bit words, 8-byte aligned. The 32-bit
+// immediate fields used by code relocations live at a fixed bit offset inside
+// that word:
+//   B-type (branch): imm32 at bit 9   (just above rs2[45:41]? no -- imm[40:9])
+//   J-type (jump):   imm32 at bit 19  (imm[50:19])
+//   U-type (auipc):  imm32 at bit 19  (imm[50:19])
+// We read the 64-bit little-endian word, OR the field into place, and write it
+// back. The fixup-emitted instruction word has the field zeroed.
+static uint64_t read64(const uint8_t *Loc) { return read64le(Loc); }
+static void patchField(uint8_t *Loc, unsigned Shift, uint32_t Field) {
+  uint64_t Word = read64(Loc);
+  Word |= (uint64_t(Field) << Shift);
+  write64le(Loc, Word);
+}
+
+// Write a sign-extended instruction-count displacement into a 32-bit immediate
+// field at the given bit offset. The architectural value is (S + A - P) >> 3.
+static void relocateInstCount(uint8_t *Loc, uint64_t Val, unsigned Shift,
+                              const char *Name) {
   int64_t Delta = static_cast<int64_t>(Val);
-  if (Delta % 4 != 0) {
-    error(getErrorLocation(Loc) + "R_LNP64_BRANCH26 target is not aligned");
+  if (Delta % 8 != 0) {
+    error(getErrorLocation(Loc) + Twine(Name) + " target is not 8-byte aligned");
     return;
   }
-
-  int64_t Scaled = Delta / 4;
-  if (!isInt(Scaled, 24)) {
-    error(getErrorLocation(Loc) + "R_LNP64_BRANCH26 out of range");
+  int64_t Words = Delta >> 3;
+  if (!isInt(Words, 32)) {
+    error(getErrorLocation(Loc) + Twine(Name) + " out of range");
     return;
   }
-
-  uint32_t Word = read32le(Loc);
-  write32le(Loc, (Word & 0xff000000) |
-                     (static_cast<uint32_t>(Scaled) & 0x00ffffff));
+  patchField(Loc, Shift, static_cast<uint32_t>(Words));
 }
 
 class LNP64 final : public TargetInfo {
@@ -89,14 +110,12 @@ RelExpr LNP64::getRelExpr(RelType Type, const Symbol &,
   case R_LNP64_FDR_DESC64:
   case R_LNP64_CAP_DESC64:
   case R_LNP64_CALLGATE64:
-    return R_ABS;
   case R_LNP64_RELATIVE:
     return R_ABS;
   case R_LNP64_PC32:
-  case R_LNP64_BRANCH26:
-  case R_LNP64_PCREL_HI20:
-  case R_LNP64_PCREL_LO12_I:
-  case R_LNP64_PCREL_LO12_LD:
+  case R_LNP64_AUIPC:
+  case R_LNP64_BRANCH:
+  case R_LNP64_JUMP:
     return R_PC;
   case R_LNP64_GOT64:
     return R_GOT;
@@ -123,25 +142,37 @@ void LNP64::relocate(uint8_t *Loc, const Relocation &Rel, uint64_t Val) const {
   case R_LNP64_FDR_DESC64:
   case R_LNP64_CAP_DESC64:
   case R_LNP64_CALLGATE64:
+    // 64-bit data / descriptor / TLS slots: raw 64-bit value (S + A, B + A,
+    // or a descriptor index + addend computed by lld's R_ABS/R_TPREL path).
     write64le(Loc, Val);
     return;
   case R_LNP64_ABS32:
+    // low 32 bits of S + A.
     write32le(Loc, Val);
     return;
   case R_LNP64_PC32:
-    // The relocation is stored in AUIPC's literal word at PC+4, while AUIPC
-    // adds the literal to the instruction PC. Adjust lld's S - (PC+4) value
-    // back to the architectural S - PC value.
-    write32le(Loc, Val + 4);
+    // S + A - P, 32-bit pc-relative data word, raw bytes.
+    write32le(Loc, Val);
     return;
-  case R_LNP64_BRANCH26:
-    relocateBranch26(Loc, Val);
+  case R_LNP64_AUIPC:
+    // U-type AUIPC high part: rd = PC + sext32(S + A - P). The byte delta
+    // (S + A - P) goes into the U-type imm32 field at bit 19 [50:19].
+    // lld supplies Val = S + A - P for R_PC.
+    if (!isInt(static_cast<int64_t>(Val), 32)) {
+      error(getErrorLocation(Loc) + "R_LNP64_AUIPC out of range");
+      return;
+    }
+    patchField(Loc, 19, static_cast<uint32_t>(static_cast<int64_t>(Val)));
     return;
-  case R_LNP64_PCREL_HI20:
-  case R_LNP64_PCREL_LO12_I:
-  case R_LNP64_PCREL_LO12_LD:
-    error(getErrorLocation(Loc) +
-          "split PC-relative LNP64 relocations are not implemented yet");
+  case R_LNP64_BRANCH:
+    // B-type instruction-count displacement (S + A - P) >> 3 into imm32 at
+    // bit 9 [40:9].
+    relocateInstCount(Loc, Val, 9, "R_LNP64_BRANCH");
+    return;
+  case R_LNP64_JUMP:
+    // J-type instruction-count displacement (S + A - P) >> 3 into imm32 at
+    // bit 19 [50:19].
+    relocateInstCount(Loc, Val, 19, "R_LNP64_JUMP");
     return;
   default:
     error(getErrorLocation(Loc) + "unknown LNP64 relocation");

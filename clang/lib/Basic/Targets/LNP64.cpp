@@ -48,7 +48,11 @@ static const char *const GCCRegNames[] = {
     "f24", "f25", "f26", "f27", "f28", "f29", "f30", "f31",
     "v0",  "v1",  "v2",  "v3",  "v4",  "v5",  "v6",  "v7",
     "v8",  "v9",  "v10", "v11", "v12", "v13", "v14", "v15",
-    "LR",  "TP",  "PID", "PPID", "TID", "UID", "GID", "SIGMASK",
+    // ISA v2 control/credential register names. The v1 architectural link
+    // register "LR" and FLAGS are removed: in v2 the return address lives in
+    // r1 (ra) and there is no FLAGS register. r30 is a reclaimed GPR and r31
+    // is the stack pointer; both are covered by the r0-r31 GPR names above.
+    "TP",  "PID", "PPID", "TID", "UID", "GID", "SIGMASK",
     "SIGPENDING", "REALTIME_SEC", "REALTIME_NSEC", "CRED_PROFILE",
     "CRED_HANDLE"};
 
@@ -72,6 +76,9 @@ void LNP64TargetInfo::getTargetDefines(const LangOptions &,
   Builder.defineMacro("__LNP64__");
   Builder.defineMacro("__lnp64__");
   Builder.defineMacro("__ELF__");
+  // ISA version: v2 is the current architecture (fixed 64-bit instructions,
+  // r1=ra/r2-r9 args/r2 return/r31=sp ABI, no LR/FLAGS registers).
+  Builder.defineMacro("__LNP64_ISA_VERSION__", "2");
 }
 
 bool LNP64TargetInfo::isValidCPUName(StringRef Name) const {
@@ -96,7 +103,14 @@ ArrayRef<const char *> LNP64TargetInfo::getGCCRegNames() const {
 }
 
 ArrayRef<TargetInfo::GCCRegAlias> LNP64TargetInfo::getGCCRegAliases() const {
-  return {};
+  // ISA v2 ABI register-name aliases for inline asm. r0=zero, r1=ra (return
+  // address; replaces the removed v1 LR register), r2=ret/first-arg, r31=sp.
+  static const TargetInfo::GCCRegAlias Aliases[] = {
+      {{"zero"}, "r0"},
+      {{"ra"}, "r1"},
+      {{"sp"}, "r31"},
+  };
+  return llvm::makeArrayRef(Aliases);
 }
 
 bool LNP64TargetInfo::validateAsmConstraint(

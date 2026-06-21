@@ -141,20 +141,22 @@ domain or boot manifest.
 
 Canonical symbol materialization:
 
-- Direct symbol address: `AUIPC rd, R_LNP64_PCREL_HI20(symbol+addend)`;
-  `ADDI rd, rd, R_LNP64_PCREL_LO12_I(symbol+addend)`.
-- Symbol address or constant via slot: `AUIPC tmp, R_LNP64_PCREL_HI20(slot)`;
-  `LD rd, tmp, R_LNP64_PCREL_LO12_LD(slot)`, where the slot contains an
-  `ABS64`, `GLOB_DAT`, `RELATIVE`, descriptor, or TLS offset relocation.
-- Assembler `LA` is only a source macro for the direct two-instruction sequence.
-  Object files, LLVM backend code, lld, and loader tests must use the explicit
-  AUIPC relocation pair.
-- Linker pair binding for `R_LNP64_PCREL_LO12_I` and
-  `R_LNP64_PCREL_LO12_LD` is not finalized yet. Until the psABI chooses
-  whether the low relocation binds by a named high relocation, a relocation
-  group, or a nearest-preceding `R_LNP64_PCREL_HI20` rule, lld must reject the
-  split PC-relative forms instead of applying an approximate per-relocation
-  `S + A - P` calculation.
+- Direct symbol address: a single v2 `AUIPC rd, imm32` carrying an
+  `R_LNP64_AUIPC(symbol+addend)` relocation, computing `rd = P + sext32(S + A -
+  P)` in one 64-bit word. There is no split high/low pair: AUIPC is self-
+  contained and byte-granular, so no companion `ADDI`/`LD` low relocation is
+  emitted.
+- Symbol address or constant via slot: `AUIPC tmp, R_LNP64_AUIPC(slot)`;
+  `LD rd, tmp, 0`, where the slot itself contains an `ABS64`, `GLOB_DAT`,
+  `RELATIVE`, descriptor, or TLS offset relocation. The load offset is a plain
+  immediate, not a relocation.
+- Assembler `LA` is only a source macro for the single AUIPC materialization.
+  Object files, LLVM backend code, lld, and loader tests use the explicit
+  single-word `R_LNP64_AUIPC` relocation.
+- Because `R_LNP64_AUIPC` resolves on its own word as `P + sext32(S + A - P)`,
+  there is no linker pair-binding question: lld applies it per-relocation with
+  range checking and never needs to associate a low relocation with a preceding
+  high relocation.
 - Local-exec TLS address: `GET_PCR r_base, TLS_BASE`; materialize a signed
   TP-relative offset either directly when the backend can prove it fits the
   immediate form, or via an `R_LNP64_TLS_TPREL_SLOT64` slot loaded with
