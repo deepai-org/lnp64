@@ -51,6 +51,7 @@ mvs_proofs=(
   reset_iso
   fabric
   tags
+  channels
 )
 for proof in "${mvs_proofs[@]}"; do
   printf '\n========== mvs formal: %s ==========\n' "$proof"
