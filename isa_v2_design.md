@@ -117,6 +117,10 @@ single PCC interval test in the proof. (Option B — execute-only PCC with an
 explicit `.rodata` capability register — is recorded as a future hardening step
 but is **not** v2.)
 
+Note: the PCC is a *new* piece of architectural state — there is no `PCC`
+register in the v1 register files. Its representation (implicit, not a numbered
+register) is specified in §4.5.
+
 ### 3.3 Branch relaxation — trust LLVM's generic pass
 
 The ±32 KiB conditional reach (§2) means large functions overflow B-type. We do
@@ -159,11 +163,28 @@ Add `LB`/`LH`/`LW` (sign-extending) alongside `LBU`/`LHU`/`LWU` (zero-extending)
 and `LD` (64-bit). Deletes the v1 `PseudoLD_SB/SH/SW` → `LD_B`+`SEXT_B`
 two-instruction custom inserter. Stores: `SB`/`SH`/`SW`/`SD`.
 
-## 4. Register file and ABI
+## 4. Register files and ABI
+
+LNP64 is a large register machine with **five** architectural register classes.
+v2 only restructures the GPR file and deletes the two `SPECIAL` registers
+(`LR`, `FLAGS`); the capability (FDR), control (PCR), and unimplemented
+(FPR/VR) files are explicitly accounted for below so nothing is silently
+dropped. Inventory (v1 → v2):
+
+| Class | v1 members | Width | v2 disposition |
+| --- | --- | --- | --- |
+| GPR | `r0`-`r31` | 64 | restructured ABI (§4.1) |
+| FDR | `fd0`-`fd255` (256) | capability slot | **retained, unchanged** (§4.2) |
+| PCR | 12 control regs | 64 | **retained, unchanged** (§4.3) |
+| FPR | `f0`-`f31` | 64 | **retained, deferred** — no instructions (§4.4) |
+| VR | `v0`-`v15` | 128 | **retained, deferred** — no instructions (§4.4) |
+| SPECIAL | `LR`, `TP`, `FLAGS` | 64 | **dissolved** — `LR`→`r1`, `FLAGS` deleted, `TP` is a PCR (§4.1/4.3) |
+
+### 4.1 GPR file and integer ABI
 
 One uniform GPR file `r0..r31`, all allocatable except the fixed roles below.
-`FLAGS` and the separate `LR` register are **deleted** from the register info.
-`TP` remains a PCR (thread pointer is a legitimate architectural register).
+The v1 `LR` and `FLAGS` registers are deleted from the register info, so the
+`SPECIAL` register class is removed entirely.
 
 | Reg | v2 role | v1 role | Change |
 | --- | --- | --- | --- |
@@ -173,6 +194,11 @@ One uniform GPR file `r0..r31`, all allocatable except the fixed roles below.
 | `r31` | stack pointer (`sp`) | stack pointer | unchanged |
 | `LR` (special) | *deleted* | thread-local link reg | folded into `r1` |
 | `FLAGS` (special) | *deleted* | condition codes | removed (§3.1) |
+
+The `GPR` register class's `AltOrders` changes from `(sub GPR, R0, R30, R31)`
+to `(sub GPR, R0, R31)` — `r30` rejoins the allocation order, and `r0`/`r31`
+stay out. `r1` remains allocatable (it is caller-saved / clobbered by calls
+like RISC-V `ra`, not reserved).
 
 Call/return become ordinary, allocator-visible operations:
 
@@ -188,13 +214,75 @@ callee-saved GPR — the v1 `LR_GET`/`LR_SET`→`r30` bounce is deleted, and
 > minimal C runtime's save/restore set must be updated in the same batch. `sp`
 > stays `r31` to minimize churn in the rest of the backend.
 
+### 4.2 FDR — capability / descriptor file (the part v2 must NOT break)
+
+`fd0`-`fd255` are the 256 hardware-owned capability and descriptor slots. They
+are **not** integer/pointer GPRs, are **not** part of the C integer ABI, and
+are never targeted by ordinary codegen — they are produced and consumed only by
+the capability/descriptor instructions (`OPEN_AT`, `PULL`, `PUSH`, `CAP_DUP`,
+`CAP_SEND`, `CAP_RECV`, `CAP_REVOKE`, `GATE_CALL`, …). v2 leaves the FDR file,
+its width, and those instructions **unchanged**. The condition-code and
+link-register surgery does not touch them.
+
+Two interactions to pin down explicitly because the capability file is where
+the security model lives:
+
+- **LR/SC (§3.4) operates on GPR-addressed memory, not on FDR slots.** The
+  reservation is over a data address reachable through an ordinary memory
+  capability; capability-slot mutation continues to go through the dedicated
+  `CAP_*` instructions, which are not atomic-RMW and need no reservation.
+- **PCC (see §4.5).** The capability authorizing PC-relative literal loads is
+  the program-counter capability, which is *not* one of the FDR slots — see
+  §4.5, which closes the gap that §3.2 left open.
+
+### 4.3 PCR — process / control registers
+
+The 12 control registers — `PID`, `PPID`, `TID`, `TP`, `UID`, `GID`,
+`SIGMASK`, `SIGPENDING`, `REALTIME_SEC`, `REALTIME_NSEC`, `CRED_PROFILE`,
+`CRED_HANDLE` — are **retained unchanged** and remain accessed only through
+`GET_PCR rd, pcr` and `SET_PCR rd, pcr, rs`. In the v2 32-bit encoding these
+carry a 5-bit PCR selector in the `rs1` slot (`[18:14]`); 12 of 32 selector
+values are defined, the rest reserved. `TP` (thread pointer) is read/written
+here, as the psABI TLS section already assumes; it is no longer also exposed
+via the dissolved `SPECIAL` class.
+
+### 4.4 FPR / VR — present but unimplemented
+
+`f0`-`f31` (FPR, 64-bit) and `v0`-`v15` (VR, 128-bit) exist in the register
+info but have **no instructions** in v1 and are not in the C ABI. v2 keeps the
+register classes as reserved namespace and defines **no** FP or vector
+instructions; a future extension owns them. They are listed here only so the
+decoder/proof can treat their encoding space as reserved rather than undefined.
+
+### 4.5 PCC — program-counter capability (resolves the §3.2 gap)
+
+§3.2 referenced a PCC that has **no register definition in v1** — there is no
+`PCC` in any register file today. v2 introduces the PCC as **implicit
+architectural state** (alongside the PC itself), *not* a numbered or
+GPR-allocatable register:
+
+- The PCC bounds + permissions gate instruction fetch and authorize
+  `AUIPC`-relative literal loads that fall within its range (§3.2, Option A:
+  read+execute).
+- It is set by the loader/OS at image entry and on capability-domain transfer
+  (`GATE_CALL`/`GATE_RETURN`); it is not written by ordinary instructions.
+- In `MachineState` it is a single record `{ base; bound; perms }` (§5), not an
+  entry in `regs`. This keeps the GPR file proof unchanged and the PCC check a
+  single interval+permission test.
+
 ## 5. Formal-model deltas (Coq/Kami `MachineState`)
 
 - **Remove** `flags`.
-- **Add** `reservation_addr : option word`.
+- **Remove** the separate `LR` field; return address lives in `regs[1]`.
+- **Add** `reservation_addr : option word` (§3.4).
+- **Add** `pcc : { base; bound; perms }` as implicit state next to `pc` (§4.5),
+  if not already modeled.
 - **Decode** becomes a total function `word -> option instr` with no second-word
   dependency; bounded-progress in the decoder FSM follows directly.
-- `LR` field removed; return address lives in `regs[1]`.
+- **Unchanged register state:** the GPR file (`regs[0..31]`, with `regs[0]`
+  fixed to zero), the FDR capability file, the 12 PCRs, and the reserved
+  FPR/VR namespace all carry over from v1 untouched. Only `flags` and `LR`
+  leave; only `reservation_addr` and the explicit `pcc` record arrive.
 
 ## 6. TableGen as the single encoding source
 
