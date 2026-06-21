@@ -90,15 +90,31 @@ Biggest hand-port; gates every layer below it.
 
 ## 8. Koika — `proofs/koika/lnp64_mediation.v`
 
-The mediation choke point; update if it references opcodes/decode.
+**Verified abstract (no v1 ISA trace).** 113 lines; models capability
+registers / mediation, not scalar instruction decode or opcodes. Nothing to
+remove for the v1→v2 migration. (Renumbering or extending it is Phase-1
+refinement work, not v1 cleanup.)
 
 ## 9. Coq — `proofs/coq/`
 
-- `CapSpec.v` / `CapImpl.v` — `MachineState`: remove `flags`/`LR`, add
-  `reservation_addr`, **extend the capability model with read/fetch permission**
-  (today it is write-confinement only — the gap found during PCC verification).
-- **New** `scripts/td_to_coq_decode.py` — generate the Coq `decode` from the
-  `.td` so compiler and proof share one bit-pattern source.
+**Verified abstract (no v1 ISA trace).** `CapSpec.v` / `CapImpl.v` model
+capabilities as `{lo, hi, w}` with four abstract ops (Write/Derive/Revoke/Nop).
+There is **no concrete instruction encoding, register file, `FLAGS`, `LR`, or
+`decode` function** in the Coq layer, so there is nothing v1-specific to remove.
+Design §5's "regenerate decode / `MachineState` delta (remove flags/LR, add
+reservation_addr)" describes a **future concrete model that does not exist
+yet** — it is not part of the v1→v2 mechanical migration.
+
+Genuine v2 Coq work, all **additive / deferred Phase-1 scope** (out of scope for
+"leave no trace of v1"):
+
+- Extend the `Cap` record with read/execute permission to support §3.2's
+  PCC-less literal-load authorization (the gap found during PCC verification).
+- **New** `scripts/td_to_coq_decode.py` — generate a Coq `decode` from the `.td`
+  once a concrete decoder model is introduced.
+
+These are tracked here for completeness but are NOT required to call the v1→v2
+migration complete.
 
 ## 10. Conformance harness + witnesses
 
