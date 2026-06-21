@@ -753,6 +753,34 @@ memory. This is the explicit hardware-to-software guarantee: prove the SVA on th
 silicon, assume exactly those facts in Lean, conclude the OS-level isolation
 property.
 
+**Real-chip realism hardening.** The first MVS proofs were single-cycle,
+register-only idealizations; four of them were strengthened to model the
+mechanisms that actually break these guarantees on a pipelined SoC (core logic
+only; caches/side-channels out of scope):
+
+- **In-flight revocation** (`lnp64_mvs_fabric`): a real depth-3 request FIFO sits
+  between the initiator boundary and memory, and the capability check is moved to
+  the MEMORY ENDPOINT (re-evaluated with the current capability at dequeue), so a
+  revoke blocks a write that is already in flight -- not just one issued after the
+  revoke.
+- **Memory-resident capability forgery** (`lnp64_mvs_tags`): each word carries a
+  1-bit hardware tag; an integer store clears it, a capability store sets it, and
+  a CapLoad yields a valid capability only from a tagged word -- so raw integer
+  data written to RAM and then CapLoaded is never a valid capability.
+- **Request/response deadlock** (`lnp64_mvs_channels`): two channels with an
+  acyclic flow-control ordering -- responses drain independent of the request
+  channel; requests are admitted only with reserved response-buffer space -- so
+  the protocol cannot deadlock.
+- **Check-then-sleep race** (`lnp64_mvs_waitpipe`): an explicit
+  evaluate->commit->park pipeline with a pending-event buffer proves an event
+  arriving in the commit window aborts the park (no lost wakeup mid-pipeline),
+  rather than assuming atomic parking.
+
+These remove the most load-bearing idealizations; the MVS is still a model (real
+fabric width, multiple targets, and full pipeline depth are the next realism
+steps), but the proofs now bind the mechanisms that matter, not a zero-latency
+abstraction.
+
 **Honest tooling note on the per-engine slices.** M1-M15 embed a seed-driven LCG
 multiplier in their transition relation; with the open-source SMT backend,
 exhaustive model-checking of the full engine converges only for the
