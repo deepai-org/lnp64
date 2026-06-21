@@ -12,8 +12,13 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
 engines=(
+  m8
+  m9
+  m10
+  m11
   m12
   m13
+  m15
 )
 
 # Small engine-shell "does what it says" proofs: <name> <shell module...>
