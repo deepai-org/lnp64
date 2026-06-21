@@ -262,7 +262,8 @@ natively in one word, removing the v1 trailing-word hack. Interactions:
 
 - **LR/SC operates on GPR-addressed memory, not FDR slots.** Capability-slot
   mutation stays in the `CAP_*` instructions (not atomic-RMW; no reservation).
-- **PCC** is not an FDR slot — see §4.5.
+- **Code/rodata fetch+read authorization** is not an FDR slot either — it uses
+  the per-region `R/W/X` permission model, see §4.5.
 
 ### 4.3 PCR — process / control registers
 
