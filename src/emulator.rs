@@ -381,15 +381,6 @@ unsafe extern "C" {
     fn futimens(fd: c_int, times: *const HostTimespec) -> c_int;
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-struct Flags {
-    zero: bool,
-    negative: bool,
-    greater: bool,
-    below: bool,
-    above: bool,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct FileLockKey {
     dev: u64,
@@ -1089,9 +1080,7 @@ impl Process {
 struct SavedSignalContext {
     generation: u64,
     ip: usize,
-    lr: u64,
     regs: [u64; GPR_COUNT],
-    flags: Flags,
     return_stack: Vec<u64>,
 }
 
@@ -1112,8 +1101,6 @@ struct Thread {
     fregs: [u64; FPR_COUNT],
     vregs: [u128; VR_COUNT],
     ip: usize,
-    lr: u64,
-    flags: Flags,
     return_stack: Vec<u64>,
     signal_stack: Vec<SavedSignalContext>,
     signal_generation: u64,
@@ -1133,8 +1120,6 @@ impl Thread {
             fregs: [0; FPR_COUNT],
             vregs: [0; VR_COUNT],
             ip: 0,
-            lr: 0,
-            flags: Flags::default(),
             return_stack: Vec::new(),
             signal_stack: Vec::new(),
             signal_generation: 1,
@@ -1190,6 +1175,9 @@ pub struct Machine {
     last_exit_errno: Option<u64>,
     committed_exec_retire_trace: Vec<CommittedExecRetireRecord>,
     committed_exec_mode: bool,
+    // v2 LR/SC reservation address (per-machine; cleared on store to the
+    // reserved address and on context switch / trap).
+    reservation_addr: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1247,16 +1235,12 @@ fn checked_host_usize(value: u64, name: &str) -> Result<usize, String> {
     usize::try_from(value).map_err(|_| format!("{name} exceeds host usize"))
 }
 
-fn committed_exec_result_reg(raw_word: u32) -> Option<usize> {
-    let opcode = (raw_word >> 24) as u8;
+fn committed_exec_result_reg(raw_word: u64) -> Option<usize> {
+    let opcode = (raw_word >> 56) as u8;
     match opcode {
         0x2d | 0x57 | 0x5c..=0x5f | 0x67 | 0x69 | 0x6b | 0x6c => Some(1),
         0x00
-        | 0x1b
-        | 0x1c
-        | 0x1f
-        | 0x20..=0x28
-        | 0x2a
+        | 0x20..=0x26 // jmp + reg-compare branches (no rd)
         | 0x33..=0x35
         | 0x37
         | 0x39
@@ -1269,17 +1253,19 @@ fn committed_exec_result_reg(raw_word: u32) -> Option<usize> {
         | 0x7f
         | 0x81..=0x82
         | 0xcb..=0xcd => None,
-        _ => Some(((raw_word >> 19) & 0x1f) as usize),
+        _ => Some(((raw_word >> 51) & 0x1f) as usize),
     }
 }
 
-fn committed_exec_trace_imm(raw_word: u32, literal_word: Option<u32>) -> u32 {
-    let opcode = (raw_word >> 24) as u8;
+fn committed_exec_trace_imm(raw_word: u64) -> u64 {
+    let opcode = (raw_word >> 56) as u8;
     match opcode {
-        0x03 | 0x04 | 0xd0 => literal_word.unwrap_or_default(),
-        0x01 => sign_extend(raw_word & 0xffff, 16) as u32,
-        0x20..=0x27 => sign_extend(raw_word & 0x00ff_ffff, 24) as u32,
-        _ => sign_extend(raw_word & 0x3fff, 14) as u32,
+        // U/J-type imm32 [50:19]
+        0xd0 | 0x20 | 0x27 => sign_extend((raw_word >> 19) & 0xffff_ffff, 32) as u64,
+        // S/B-type imm32 [40:9]
+        0x21..=0x26 | 0x33..=0x35 | 0x37 => sign_extend((raw_word >> 9) & 0xffff_ffff, 32) as u64,
+        // I-type imm32 [45:14]
+        _ => sign_extend((raw_word >> 14) & 0xffff_ffff, 32) as u64,
     }
 }
 
@@ -1305,9 +1291,9 @@ fn flat_exec_memory_checksum(process: &Process) -> u64 {
     checksum
 }
 
-fn sign_extend(value: u32, bits: u32) -> i64 {
+fn sign_extend(value: u64, bits: u32) -> i64 {
     let shift = 64 - bits;
-    ((u64::from(value) << shift) as i64) >> shift
+    ((value << shift) as i64) >> shift
 }
 
 fn align_up_page(value: u64) -> u64 {
@@ -1466,6 +1452,7 @@ impl Machine {
             last_exit_errno: None,
             committed_exec_retire_trace: Vec::new(),
             committed_exec_mode: false,
+            reservation_addr: None,
         }
     }
 
@@ -1756,6 +1743,9 @@ impl Machine {
             if !self.threads.contains_key(&tid) {
                 continue;
             }
+            if self.current_tid != tid {
+                self.reservation_addr = None;
+            }
             self.current_tid = tid;
             if self.thread_domain_frozen(tid)? {
                 if !self.domain_parked.contains(&tid) {
@@ -1768,16 +1758,13 @@ impl Machine {
                 continue;
             }
             let pc = self.thread()?.ip as u64;
-            let raw_word = self.load_exec_u32(pc)?;
-            let opcode = (raw_word >> 24) as u8;
-            let literal_word = matches!(opcode, 0x03 | 0x04 | 0xd0)
-                .then(|| self.load_exec_u32(pc + 4))
-                .transpose()?;
-            let operand_rd = ((raw_word >> 19) & 0x1f) as u64;
-            let operand_rs1 = ((raw_word >> 14) & 0x1f) as u64;
-            let operand_rs2 = ((raw_word >> 9) & 0x1f) as u64;
-            let operand_rs3 = ((raw_word >> 4) & 0x1f) as u64;
-            let operand_imm = u64::from(committed_exec_trace_imm(raw_word, literal_word));
+            let raw_word = self.load_exec_u64(pc)?;
+            let opcode = (raw_word >> 56) as u8;
+            let operand_rd = ((raw_word >> 51) & 0x1f) as u64;
+            let operand_rs1 = ((raw_word >> 46) & 0x1f) as u64;
+            let operand_rs2 = ((raw_word >> 41) & 0x1f) as u64;
+            let operand_rs3 = ((raw_word >> 36) & 0x1f) as u64;
+            let operand_imm = committed_exec_trace_imm(raw_word);
             let result_reg = committed_exec_result_reg(raw_word);
             let pid = self.thread()?.pid;
             let domain_id = self.current_domain_id()?;
@@ -1965,18 +1952,24 @@ impl Machine {
         if let Some(fault) = self.committed_exec_fetch_fault(pc)? {
             return Err(fault);
         }
-        let word = self.load_exec_u32(pc)?;
-        let opcode = (word >> 24) as u8;
-        let a = Reg(((word >> 19) & 0x1f) as usize);
-        let b = Reg(((word >> 14) & 0x1f) as usize);
-        let c = Reg(((word >> 9) & 0x1f) as usize);
-        let d = Reg(((word >> 4) & 0x1f) as usize);
-        let imm16 = sign_extend(word & 0xffff, 16);
-        let imm14 = sign_extend(word & 0x3fff, 14);
-        let branch_target = || {
-            let delta = sign_extend(word & 0x00ff_ffff, 24) * 4;
-            Target::Address(pc.wrapping_add(delta as u64) as usize)
+        let word = self.load_exec_u64(pc)?;
+        let opcode = (word >> 56) as u8;
+        let a = Reg(((word >> 51) & 0x1f) as usize); // rd
+        let b = Reg(((word >> 46) & 0x1f) as usize); // rs1
+        let c = Reg(((word >> 41) & 0x1f) as usize); // rs2
+        let d = Reg(((word >> 36) & 0x1f) as usize); // rs3
+        let e = Reg(((word >> 31) & 0x1f) as usize); // rs4
+        let f = Reg(((word >> 26) & 0x1f) as usize); // rs5
+        // imm32 fields per format.
+        let imm_i = sign_extend(((word >> 14) & 0xffff_ffff) as u32 as u64, 32); // I-type [45:14]
+        let imm_s = sign_extend(((word >> 9) & 0xffff_ffff) as u32 as u64, 32); // S/B-type [40:9]
+        let imm_u = sign_extend(((word >> 19) & 0xffff_ffff) as u32 as u64, 32); // U/J-type [50:19]
+        // Control-transfer offsets are instruction counts; PC advances by 8.
+        let bj_target = |delta_words: i64| {
+            Target::Address(pc.wrapping_add((delta_words << 3) as u64) as usize)
         };
+        let branch_target_b = || bj_target(imm_s);
+        let branch_target_j = || bj_target(imm_u);
         let pcr_operand = |bits: u32| -> Result<Pcr, String> {
             match bits & 0x1f {
                 0 => Ok(Pcr::Pid),
@@ -1998,25 +1991,14 @@ impl Machine {
         };
         let instr = match opcode {
             0x00 => Instr::Nop,
-            0x01 => Instr::Li(a, Value::Imm(imm16)),
             0x02 => Instr::Mov(a, b),
-            0x03 => {
-                let addr = self.load_exec_u32(pc + 4)? as i64;
-                return Ok((Instr::Li(a, Value::Imm(addr)), pc + 8));
-            }
-            0x04 => {
-                let value = self.load_exec_u32(pc + 4)? as i64;
-                return Ok((Instr::Li(a, Value::Imm(value)), pc + 8));
-            }
+            0x04 => Instr::Liu(a, b, imm_i),
             0x06 => Instr::Yield,
             0x07 => Instr::Sleep(a),
-            0xd0 => {
-                let offset = sign_extend(self.load_exec_u32(pc + 4)?, 32);
-                return Ok((
-                    Instr::Li(a, Value::Imm(pc.wrapping_add(offset as u64) as i64)),
-                    pc + 8,
-                ));
-            }
+            0xd0 => Instr::Auipc(a, Value::Imm(imm_u)),
+            0x05 => Instr::LdS(a, MemRef::BaseOffset(b, imm_i), Width::Word),
+            0x08 => Instr::LdS(a, MemRef::BaseOffset(b, imm_i), Width::Byte),
+            0x09 => Instr::LdS(a, MemRef::BaseOffset(b, imm_i), Width::Half),
             0x10 => Instr::Add(a, b, c),
             0x11 => Instr::Sub(a, b, c),
             0x12 => Instr::Mul(a, b, c),
@@ -2028,80 +2010,37 @@ impl Machine {
             0x18 => Instr::Lsl(a, b, c),
             0x19 => Instr::Lsr(a, b, c),
             0x1a => Instr::Asr(a, b, c),
-            0x1b => Instr::Cmp(a, b),
-            0x1c => Instr::Cmpu(a, b),
-            0x1f => Instr::Ret,
-            0x20 => Instr::Jmp(branch_target()),
-            0x21 => Instr::Branch(Condition::Eq, branch_target()),
-            0x22 => Instr::Branch(Condition::Ne, branch_target()),
-            0x23 => Instr::Branch(Condition::Lt, branch_target()),
-            0x24 => Instr::Branch(Condition::Gt, branch_target()),
-            0x25 => Instr::Branch(Condition::Le, branch_target()),
-            0x26 => Instr::Branch(Condition::Ge, branch_target()),
-            0x27 => Instr::Call(branch_target()),
-            0x28 => Instr::CallReg(a),
-            0x29 => Instr::LrGet(a),
-            0x2a => Instr::LrSet(a),
-            0x2b => Instr::Pull(a, FdReg(b.0), c, Reg(((word >> 4) & 0x1f) as usize)),
-            0x2c => Instr::Push(a, FdReg(b.0), c, Reg(((word >> 4) & 0x1f) as usize)),
+            0x1b => Instr::Slt(a, b, c),
+            0x1c => Instr::Sltu(a, b, c),
+            0x1d => Instr::Slti(a, b, imm_i),
+            0x1e => Instr::Sltiu(a, b, imm_i),
+            0x20 => Instr::Jmp(branch_target_j()),
+            0x21 => Instr::Beq(b, c, branch_target_b()),
+            0x22 => Instr::Bne(b, c, branch_target_b()),
+            0x23 => Instr::Blt(b, c, branch_target_b()),
+            0x24 => Instr::Bge(b, c, branch_target_b()),
+            0x25 => Instr::Bltu(b, c, branch_target_b()),
+            0x26 => Instr::Bgeu(b, c, branch_target_b()),
+            0x27 => Instr::Jal(a, branch_target_j()),
+            0x28 => Instr::Jalr(a, b, imm_i),
+            0x2b => Instr::Pull(a, FdReg(b.0), c, d),
+            0x2c => Instr::Push(a, FdReg(b.0), c, d),
             0x2d => Instr::ReadFd(FdReg(a.0), b, c),
             0x2e => Instr::Await(a, FdReg(b.0), c),
-            0x2f => Instr::CallCap(a, FdReg(b.0), c, Reg(((word >> 4) & 0x1f) as usize)),
-            0x30 => Instr::Ld(
-                a,
-                MemRef::BaseOffset(b, sign_extend(word & 0x3fff, 14)),
-                Width::Double,
-            ),
-            0x31 => Instr::Ld(
-                a,
-                MemRef::BaseOffset(b, sign_extend(word & 0x3fff, 14)),
-                Width::Word,
-            ),
-            0x32 => Instr::Ld(
-                a,
-                MemRef::BaseOffset(b, sign_extend(word & 0x3fff, 14)),
-                Width::Byte,
-            ),
-            0x33 => Instr::St(
-                MemRef::BaseOffset(b, sign_extend(word & 0x3fff, 14)),
-                a,
-                Width::Double,
-            ),
-            0x34 => Instr::St(
-                MemRef::BaseOffset(b, sign_extend(word & 0x3fff, 14)),
-                a,
-                Width::Word,
-            ),
-            0x35 => Instr::St(
-                MemRef::BaseOffset(b, sign_extend(word & 0x3fff, 14)),
-                a,
-                Width::Byte,
-            ),
-            0x36 => Instr::Ld(
-                a,
-                MemRef::BaseOffset(b, sign_extend(word & 0x3fff, 14)),
-                Width::Half,
-            ),
-            0x37 => Instr::St(
-                MemRef::BaseOffset(b, sign_extend(word & 0x3fff, 14)),
-                a,
-                Width::Half,
-            ),
+            0x2f => Instr::CallCap(a, FdReg(b.0), c, d),
+            0x30 => Instr::Ld(a, MemRef::BaseOffset(b, imm_i), Width::Double),
+            0x31 => Instr::Ld(a, MemRef::BaseOffset(b, imm_i), Width::Word),
+            0x32 => Instr::Ld(a, MemRef::BaseOffset(b, imm_i), Width::Byte),
+            0x33 => Instr::St(MemRef::BaseOffset(b, imm_s), c, Width::Double),
+            0x34 => Instr::St(MemRef::BaseOffset(b, imm_s), c, Width::Word),
+            0x35 => Instr::St(MemRef::BaseOffset(b, imm_s), c, Width::Byte),
+            0x36 => Instr::Ld(a, MemRef::BaseOffset(b, imm_i), Width::Half),
+            0x37 => Instr::St(MemRef::BaseOffset(b, imm_s), c, Width::Half),
             0x38 => Instr::ErrnoGet(a),
             0x39 => Instr::ErrnoSet(a),
             0x3a => Instr::Exit(a),
-            0x3b => Instr::PullDyn(a, b, c, Reg(((word >> 4) & 0x1f) as usize)),
-            0x3c => Instr::PushDyn(a, b, c, Reg(((word >> 4) & 0x1f) as usize)),
-            0x3d => Instr::Cset(a, Condition::Eq),
-            0x3e => Instr::Cset(a, Condition::Ne),
-            0x3f => Instr::Cset(a, Condition::Lt),
-            0x40 => Instr::Cset(a, Condition::Gt),
-            0x41 => Instr::Cset(a, Condition::Le),
-            0x42 => Instr::Cset(a, Condition::Ge),
-            0x43 => Instr::Cset(a, Condition::Ult),
-            0x44 => Instr::Cset(a, Condition::Ugt),
-            0x45 => Instr::Cset(a, Condition::Ule),
-            0x46 => Instr::Cset(a, Condition::Uge),
+            0x3b => Instr::PullDyn(a, b, c, d),
+            0x3c => Instr::PushDyn(a, b, c, d),
             0x47 => Instr::Alloc(a, b),
             0x48 => Instr::AllocSize(a, b),
             0x49 => Instr::Free(a),
@@ -2109,14 +2048,14 @@ impl Machine {
             0x4b => Instr::ObjectCtl(a, b),
             0x4c => Instr::DomainCtl(a, b),
             0x4d => Instr::AwaitDyn(a, b, c, d),
-            0x4e => Instr::CallCapDyn(a, b, c, Reg(((word >> 4) & 0x1f) as usize)),
+            0x4e => Instr::CallCapDyn(a, b, c, d),
             0x4f => Instr::RetCap(a, b, c),
             0x50 => Instr::CapDup(a, b),
             0x51 => Instr::CapSend(a, b),
             0x52 => Instr::CapRecv(a, b),
             0x53 => Instr::CapRevoke(a, b),
-            0x54 => Instr::GetPcr(a, pcr_operand((word >> 14) & 0x1f)?),
-            0x55 => Instr::SetPcr(a, pcr_operand((word >> 14) & 0x1f)?, c),
+            0x54 => Instr::GetPcr(a, pcr_operand((word >> 46) as u32 & 0x1f)?),
+            0x55 => Instr::SetPcr(a, pcr_operand((word >> 46) as u32 & 0x1f)?, c),
             0x56 => Instr::EnvGet(a, b, c, d),
             0x57 => Instr::WriteFd(FdReg(a.0), b, c),
             0x58 => Instr::OpenAtDyn(a, b, c, d),
@@ -2137,12 +2076,7 @@ impl Machine {
             0x67 => Instr::FcntlFdDyn(a, b, c),
             0x68 => Instr::Alarm(a, b),
             0x69 => Instr::FdSeekDyn(a, b, c),
-            0x6a => {
-                let next = self.load_exec_u32(pc + 4)?;
-                let fd = FdReg(((next >> 19) & 0x1f) as usize);
-                let offset = Reg(((next >> 14) & 0x1f) as usize);
-                return Ok((Instr::Mmap(a, b, c, d, fd, offset), pc + 8));
-            }
+            0x6a => Instr::Mmap(a, b, c, d, FdReg(e.0), f),
             0x6b => Instr::UnlinkPathAt(a, b, c),
             0x6c => Instr::Mprotect(a, b, c),
             0x6d => Instr::OpenFdDyn(a, b, c),
@@ -2154,19 +2088,13 @@ impl Machine {
             0x73 => Instr::OpenDirDyn(a, b, c),
             0x74 => Instr::MkdirPathAt(a, b, c),
             0x75 => Instr::RenamePathAt(a, b, c, d),
-            0x76 => {
-                let flags = Reg((self.load_exec_u32(pc + 4)? & 0x1f) as usize);
-                return Ok((Instr::LinkPathAt(a, b, c, d, flags), pc + 8));
-            }
+            0x76 => Instr::LinkPathAt(a, b, c, d, e),
             0x77 => Instr::SymlinkPathAt(a, b, c),
             0x78 => Instr::ReadlinkPathAt(a, b, c, d),
             0x79 => Instr::ChdirPath(a),
             0x7a => Instr::GetcwdPath(a, b),
             0x7b => Instr::ChmodPathAt(a, b, c, d),
-            0x7c => {
-                let flags = Reg((self.load_exec_u32(pc + 4)? & 0x1f) as usize);
-                return Ok((Instr::ChownPathAt(a, b, c, d, flags), pc + 8));
-            }
+            0x7c => Instr::ChownPathAt(a, b, c, d, e),
             0x7d => Instr::Fork(a),
             0x7e => Instr::WaitPid(a, b),
             0x7f => Instr::Exec(a, b, c),
@@ -2178,13 +2106,13 @@ impl Machine {
             0xcd => Instr::Fence,
             0xce => Instr::Isync(a, b, c),
             0xcf => Instr::ReaddirFdDyn(a, b),
-            0xa0 => Instr::Addi(a, b, imm14),
-            0xa1 => Instr::Andi(a, b, imm14),
-            0xa2 => Instr::Ori(a, b, imm14),
-            0xa3 => Instr::Xori(a, b, imm14),
-            0xa4 => Instr::Lsli(a, b, imm14),
-            0xa5 => Instr::Lsri(a, b, imm14),
-            0xa6 => Instr::Asri(a, b, imm14),
+            0xa0 => Instr::Addi(a, b, imm_i),
+            0xa1 => Instr::Andi(a, b, imm_i),
+            0xa2 => Instr::Ori(a, b, imm_i),
+            0xa3 => Instr::Xori(a, b, imm_i),
+            0xa4 => Instr::Lsli(a, b, imm_i),
+            0xa5 => Instr::Lsri(a, b, imm_i),
+            0xa6 => Instr::Asri(a, b, imm_i),
             0xa7 => Instr::Udiv(a, b, c),
             0xa8 => Instr::Srem(a, b, c),
             0xa9 => Instr::Urem(a, b, c),
@@ -2205,37 +2133,23 @@ impl Machine {
             0xb8 => Instr::Bswap16(a, b),
             0xb9 => Instr::Bswap32(a, b),
             0xba => Instr::Bswap64(a, b),
-            0xbb => Instr::Csel(a, b, c, Condition::Eq),
-            0xbc => Instr::Csel(a, b, c, Condition::Ne),
-            0xbd => Instr::Csel(a, b, c, Condition::Lt),
-            0xbe => Instr::Csel(a, b, c, Condition::Gt),
-            0xbf => Instr::Csel(a, b, c, Condition::Le),
-            0xc0 => Instr::Csel(a, b, c, Condition::Ge),
-            0xc1 => Instr::Csel(a, b, c, Condition::Ult),
-            0xc2 => Instr::Csel(a, b, c, Condition::Ugt),
-            0xc3 => Instr::Csel(a, b, c, Condition::Ule),
-            0xc4 => Instr::Csel(a, b, c, Condition::Uge),
-            0xc5 => Instr::AmoSwap(a, b, c),
-            0xc6 => Instr::AmoAdd(a, b, c),
-            0xc7 => Instr::AmoAnd(a, b, c),
-            0xc8 => Instr::AmoOr(a, b, c),
-            0xc9 => Instr::LockCmpxchg(a, b, c, d),
-            0xca => Instr::AmoXor(a, b, c),
+            0xc5 => Instr::LrD(a, b),
+            0xc6 => Instr::ScD(a, c, b),
             other => {
                 return Err(format!(
                     "unsupported committed exec opcode 0x{other:02x} at 0x{pc:x}"
                 ));
             }
         };
-        Ok((instr, pc + 4))
+        Ok((instr, pc + 8))
     }
 
-    fn load_exec_u32(&mut self, pc: u64) -> Result<u32, String> {
+    fn load_exec_u64(&mut self, pc: u64) -> Result<u64, String> {
         if let Some(fault) = self.committed_exec_fetch_fault(pc)? {
             return Err(fault);
         }
-        let bytes = self.read_bytes(pc, 4)?;
-        Ok(u32::from_le_bytes(bytes.try_into().unwrap()))
+        let bytes = self.read_bytes(pc, 8)?;
+        Ok(u64::from_le_bytes(bytes.try_into().unwrap()))
     }
 
     pub fn set_args(&mut self, args: &[String]) -> Result<(), String> {
@@ -2455,6 +2369,9 @@ impl Machine {
             if !self.threads.contains_key(&tid) {
                 continue;
             }
+            if self.current_tid != tid {
+                self.reservation_addr = None;
+            }
             self.current_tid = tid;
             if self.thread_domain_frozen(tid)? {
                 if !self.domain_parked.contains(&tid) {
@@ -2659,141 +2576,128 @@ impl Machine {
             Instr::Bswap64(dst, src) => {
                 self.write_alu_reg(dst, self.read_reg(src)?.swap_bytes())?
             }
-            Instr::Cmp(a, b) => {
-                let lhs_raw = self.read_reg(a)?;
-                let rhs_raw = self.read_reg(b)?;
-                let lhs = lhs_raw as i64;
-                let rhs = rhs_raw as i64;
-                self.thread_mut()?.flags = Flags {
-                    zero: lhs == rhs,
-                    negative: lhs < rhs,
-                    greater: lhs > rhs,
-                    below: lhs_raw < rhs_raw,
-                    above: lhs_raw > rhs_raw,
-                };
+            Instr::Slt(dst, a, b) => {
+                let v = u64::from((self.read_reg(a)? as i64) < (self.read_reg(b)? as i64));
+                self.write_alu_reg(dst, v)?;
             }
-            Instr::Cmpu(a, b) => {
-                let lhs = self.read_reg(a)?;
-                let rhs = self.read_reg(b)?;
-                self.thread_mut()?.flags = Flags {
-                    zero: lhs == rhs,
-                    negative: lhs < rhs,
-                    greater: lhs > rhs,
-                    below: lhs < rhs,
-                    above: lhs > rhs,
-                };
+            Instr::Sltu(dst, a, b) => {
+                let v = u64::from(self.read_reg(a)? < self.read_reg(b)?);
+                self.write_alu_reg(dst, v)?;
             }
-            Instr::Cset(dst, condition) => {
-                let value = u64::from(self.condition(condition)?);
-                self.write_alu_reg(dst, value)?;
+            Instr::Slti(dst, a, imm) => {
+                let v = u64::from((self.read_reg(a)? as i64) < imm);
+                self.write_alu_reg(dst, v)?;
             }
-            Instr::Csel(dst, true_src, false_src, condition) => {
-                let src = if self.condition(condition)? {
-                    true_src
-                } else {
-                    false_src
-                };
-                self.write_alu_reg(dst, self.read_reg(src)?)?;
+            Instr::Sltiu(dst, a, imm) => {
+                let v = u64::from(self.read_reg(a)? < (imm as u64));
+                self.write_alu_reg(dst, v)?;
+            }
+            Instr::Liu(dst, src, imm) => {
+                let lo = self.read_reg(src)? & 0xffff_ffff;
+                self.write_alu_reg(dst, lo | ((imm as u32 as u64) << 32))?;
             }
             Instr::Jmp(target) => {
                 let ip = self.resolve_target(target)?;
                 self.thread_mut()?.ip = ip;
             }
-            Instr::Branch(condition, target) => {
-                if self.condition(condition)? {
+            Instr::Beq(a, b, target) => {
+                if self.read_reg(a)? == self.read_reg(b)? {
                     let ip = self.resolve_target(target)?;
                     self.thread_mut()?.ip = ip;
                 }
             }
-            Instr::Call(target) => {
-                let ret = self.thread()?.ip as u64;
-                let frame_size = if self.committed_exec_mode {
-                    COMMITTED_EXEC_CALL_FRAME_SIZE
-                } else {
-                    CALL_FRAME_SIZE
-                };
-                let legacy_sp = self.thread()?.regs[31].wrapping_sub(frame_size);
-                if std::env::var_os("LNP64_TRACE_CALLS").is_some() {
-                    let thread = self.thread()?;
-                    eprintln!(
-                        "CALL {target:?} ret={ret} sp={:#x} r1={} r2={} r3={}",
-                        thread.regs[31], thread.regs[1], thread.regs[2], thread.regs[3]
-                    );
+            Instr::Bne(a, b, target) => {
+                if self.read_reg(a)? != self.read_reg(b)? {
+                    let ip = self.resolve_target(target)?;
+                    self.thread_mut()?.ip = ip;
                 }
+            }
+            Instr::Blt(a, b, target) => {
+                if (self.read_reg(a)? as i64) < (self.read_reg(b)? as i64) {
+                    let ip = self.resolve_target(target)?;
+                    self.thread_mut()?.ip = ip;
+                }
+            }
+            Instr::Bge(a, b, target) => {
+                if (self.read_reg(a)? as i64) >= (self.read_reg(b)? as i64) {
+                    let ip = self.resolve_target(target)?;
+                    self.thread_mut()?.ip = ip;
+                }
+            }
+            Instr::Bltu(a, b, target) => {
+                if self.read_reg(a)? < self.read_reg(b)? {
+                    let ip = self.resolve_target(target)?;
+                    self.thread_mut()?.ip = ip;
+                }
+            }
+            Instr::Bgeu(a, b, target) => {
+                if self.read_reg(a)? >= self.read_reg(b)? {
+                    let ip = self.resolve_target(target)?;
+                    self.thread_mut()?.ip = ip;
+                }
+            }
+            // v2: the link is a normal GPR (r1). `ip` already advanced past this
+            // instruction, so it is the return address (pc+8 in committed mode,
+            // next index in structural mode).
+            Instr::Jal(rd, target) => {
+                let ret = self.thread()?.ip as u64;
                 let ip = self.resolve_target(target)?;
-                if self.committed_exec_mode {
-                    self.thread_mut()?.regs[31] = legacy_sp;
-                } else {
-                    self.store_u64(legacy_sp, ret)?;
-                    self.thread_mut()?.regs[31] = legacy_sp;
-                }
-                self.thread_mut()?.lr = ret;
                 self.thread_mut()?.return_stack.push(ret);
+                self.write_alu_reg(rd, ret)?;
                 self.thread_mut()?.ip = ip;
             }
-            Instr::CallReg(target) => {
-                let ip = self.read_reg(target)? as usize;
+            Instr::Jalr(rd, rs1, imm) => {
                 let ret = self.thread()?.ip as u64;
-                let frame_size = if self.committed_exec_mode {
-                    COMMITTED_EXEC_CALL_FRAME_SIZE
+                let target = self.read_reg(rs1)?.wrapping_add(imm as u64);
+                // `ret` (jalr r0, r1, 0) consumes a return-stack frame.
+                if rd.0 == 0 {
+                    self.thread_mut()?.return_stack.pop();
                 } else {
-                    CALL_FRAME_SIZE
-                };
-                let legacy_sp = self.thread()?.regs[31].wrapping_sub(frame_size);
-                if std::env::var_os("LNP64_TRACE_CALLS").is_some() {
-                    let thread = self.thread()?;
-                    eprintln!(
-                        "CALL_REG {ip} ret={ret} sp={:#x} r1={} r2={} r3={}",
-                        thread.regs[31], thread.regs[1], thread.regs[2], thread.regs[3]
-                    );
+                    self.thread_mut()?.return_stack.push(ret);
                 }
-                if self.committed_exec_mode {
-                    self.thread_mut()?.regs[31] = legacy_sp;
-                } else {
-                    self.store_u64(legacy_sp, ret)?;
-                    self.thread_mut()?.regs[31] = legacy_sp;
-                }
-                self.thread_mut()?.lr = ret;
-                self.thread_mut()?.return_stack.push(ret);
-                self.thread_mut()?.ip = ip;
+                self.write_alu_reg(rd, ret)?;
+                self.thread_mut()?.ip = target as usize;
             }
-            Instr::LrGet(dst) => {
-                let lr = self.thread()?.lr;
-                self.write_alu_reg(dst, lr)?;
+            Instr::LrD(dst, addr) => {
+                let addr = self.read_reg(addr)?;
+                let value = self.load_u64(addr)?;
+                self.reservation_addr = Some(addr);
+                self.write_alu_reg(dst, value)?;
             }
-            Instr::LrSet(src) => {
+            Instr::ScD(dst, src, addr) => {
+                let addr = self.read_reg(addr)?;
                 let value = self.read_reg(src)?;
-                self.thread_mut()?.lr = value;
-            }
-            Instr::Ret => {
-                let next = if self.committed_exec_mode {
-                    let thread = self.thread_mut()?;
-                    let next = thread.lr;
-                    thread.return_stack.pop();
-                    thread.regs[31] = thread.regs[31].wrapping_add(COMMITTED_EXEC_CALL_FRAME_SIZE);
-                    next
-                } else {
-                    let sp = self.thread()?.regs[31];
-                    let next = self.load_u64(sp)?;
-                    let thread = self.thread_mut()?;
-                    thread.return_stack.pop();
-                    thread.regs[31] = sp.wrapping_add(CALL_FRAME_SIZE);
-                    next
-                };
-                if std::env::var_os("LNP64_TRACE_CALLS").is_some() {
-                    let sp = self.thread()?.regs[31];
-                    eprintln!("RET next={next} sp={sp:#x}");
+                let success = self.reservation_addr == Some(addr);
+                if success {
+                    self.store_u64(addr, value)?;
                 }
-                self.thread_mut()?.ip = next as usize;
+                self.reservation_addr = None;
+                self.write_alu_reg(dst, u64::from(!success))?;
             }
             Instr::Ld(dst, mem, width) => {
                 let addr = self.resolve_mem(mem)?;
                 let value = self.load_width(addr, width)?;
                 self.write_reg(dst, value)?;
             }
+            Instr::LdS(dst, mem, width) => {
+                let addr = self.resolve_mem(mem)?;
+                let raw = self.load_width(addr, width)?;
+                let value = match width {
+                    Width::Byte => sign_extend(raw, 8) as u64,
+                    Width::Half => sign_extend(raw, 16) as u64,
+                    Width::Word => sign_extend(raw, 32) as u64,
+                    Width::Double => raw,
+                };
+                self.write_reg(dst, value)?;
+            }
             Instr::St(mem, src, width) => {
                 let addr = self.resolve_mem(mem)?;
                 self.store_width(addr, self.read_reg(src)?, width)?;
+                if let Some(reserved) = self.reservation_addr {
+                    if reserved == addr {
+                        self.reservation_addr = None;
+                    }
+                }
             }
             Instr::Pull(result, fd, buf, len) => {
                 Self::ensure_result_reg_writable(result)?;
@@ -4143,55 +4047,10 @@ impl Machine {
                 self.thread_mut()?.signal_stack.pop();
                 let thread = self.thread_mut()?;
                 thread.ip = saved.ip;
-                thread.lr = saved.lr;
                 thread.regs = saved.regs;
-                thread.flags = saved.flags;
                 thread.return_stack = saved.return_stack;
                 thread.signal_generation = thread.signal_generation.wrapping_add(1).max(1);
-            }
-            Instr::LockCmpxchg(dst, addr_reg, expected, new_value) => {
-                Self::ensure_result_reg_writable(dst)?;
-                let addr = self.read_reg(addr_reg)?;
-                let current = self.load_u64(addr)?;
-                if current == self.read_reg(expected)? {
-                    self.store_u64(addr, self.read_reg(new_value)?)?;
-                }
-                self.write_reg(dst, current)?;
-            }
-            Instr::AmoSwap(dst, addr_reg, value_reg) => {
-                Self::ensure_result_reg_writable(dst)?;
-                let addr = self.read_reg(addr_reg)?;
-                let current = self.load_u64(addr)?;
-                self.store_u64(addr, self.read_reg(value_reg)?)?;
-                self.write_reg(dst, current)?;
-            }
-            Instr::AmoAdd(dst, addr_reg, value_reg) => {
-                Self::ensure_result_reg_writable(dst)?;
-                let addr = self.read_reg(addr_reg)?;
-                let current = self.load_u64(addr)?;
-                self.store_u64(addr, current.wrapping_add(self.read_reg(value_reg)?))?;
-                self.write_reg(dst, current)?;
-            }
-            Instr::AmoAnd(dst, addr_reg, value_reg) => {
-                Self::ensure_result_reg_writable(dst)?;
-                let addr = self.read_reg(addr_reg)?;
-                let current = self.load_u64(addr)?;
-                self.store_u64(addr, current & self.read_reg(value_reg)?)?;
-                self.write_reg(dst, current)?;
-            }
-            Instr::AmoOr(dst, addr_reg, value_reg) => {
-                Self::ensure_result_reg_writable(dst)?;
-                let addr = self.read_reg(addr_reg)?;
-                let current = self.load_u64(addr)?;
-                self.store_u64(addr, current | self.read_reg(value_reg)?)?;
-                self.write_reg(dst, current)?;
-            }
-            Instr::AmoXor(dst, addr_reg, value_reg) => {
-                Self::ensure_result_reg_writable(dst)?;
-                let addr = self.read_reg(addr_reg)?;
-                let current = self.load_u64(addr)?;
-                self.store_u64(addr, current ^ self.read_reg(value_reg)?)?;
-                self.write_reg(dst, current)?;
+                self.reservation_addr = None;
             }
             Instr::FutexWait(addr_reg, expected_reg) => {
                 let addr = self.read_reg(addr_reg)?;
@@ -5224,19 +5083,24 @@ impl Machine {
     }
 
     fn encode_committed_source_program(program: &Program) -> Result<Vec<u8>, String> {
-        fn enc_reg(opcode: u8, reg: Reg) -> u32 {
-            (u32::from(opcode) << 24) | (((reg.0 as u32) & 0x1f) << 19)
+        // v2 64-bit encoders.
+        fn enc_reg(opcode: u8, reg: Reg) -> u64 {
+            ((opcode as u64) << 56) | (((reg.0 as u64) & 0x1f) << 51)
         }
 
-        fn enc_ri(opcode: u8, rd: Reg, imm: i64) -> u32 {
-            (u32::from(opcode) << 24) | (((rd.0 as u32) & 0x1f) << 19) | ((imm as u32) & 0xffff)
+        // I-type: rd, rs1, imm32 at [45:14].
+        fn enc_i(opcode: u8, rd: Reg, rs1: Reg, imm: i64) -> u64 {
+            ((opcode as u64) << 56)
+                | (((rd.0 as u64) & 0x1f) << 51)
+                | (((rs1.0 as u64) & 0x1f) << 46)
+                | (((imm as u32 as u64) & 0xffff_ffff) << 14)
         }
 
-        fn enc_rrr(opcode: u8, rd: Reg, rs1: Reg, rs2: Reg) -> u32 {
-            (u32::from(opcode) << 24)
-                | (((rd.0 as u32) & 0x1f) << 19)
-                | (((rs1.0 as u32) & 0x1f) << 14)
-                | (((rs2.0 as u32) & 0x1f) << 9)
+        fn enc_rrr(opcode: u8, rd: Reg, rs1: Reg, rs2: Reg) -> u64 {
+            ((opcode as u64) << 56)
+                | (((rd.0 as u64) & 0x1f) << 51)
+                | (((rs1.0 as u64) & 0x1f) << 46)
+                | (((rs2.0 as u64) & 0x1f) << 41)
         }
 
         fn value_imm32(program: &Program, value: &Value) -> Result<i64, String> {
@@ -5266,12 +5130,9 @@ impl Machine {
             let words = match instr {
                 Instr::Nop => vec![enc_reg(0x00, Reg(0))],
                 Instr::Li(rd, value) => {
+                    // v2: `li rd, imm32` = `addi rd, r0, imm32` (one word).
                     let imm = value_imm32(program, value)?;
-                    if (-32768..=32767).contains(&imm) {
-                        vec![enc_ri(0x01, *rd, imm)]
-                    } else {
-                        vec![enc_reg(0x04, *rd), imm as u32]
-                    }
+                    vec![enc_i(0xa0, *rd, Reg(0), imm)]
                 }
                 Instr::WriteFd(fd, buf, len) => vec![enc_rrr(0x57, Reg(fd.0), *buf, *len)],
                 Instr::Exit(src) => vec![enc_reg(0x3a, *src)],
@@ -9418,22 +9279,6 @@ impl Machine {
         Ok(())
     }
 
-    fn condition(&self, condition: Condition) -> Result<bool, String> {
-        let flags = self.thread()?.flags;
-        Ok(match condition {
-            Condition::Eq => flags.zero,
-            Condition::Ne => !flags.zero,
-            Condition::Lt => flags.negative,
-            Condition::Gt => flags.greater,
-            Condition::Le => flags.zero || flags.negative,
-            Condition::Ge => flags.zero || flags.greater,
-            Condition::Ult => flags.below,
-            Condition::Ugt => flags.above,
-            Condition::Ule => flags.zero || flags.below,
-            Condition::Uge => flags.zero || flags.above,
-        })
-    }
-
     fn resolve_value(&self, value: Value) -> Result<u64, String> {
         match value {
             Value::Imm(v) => Ok(v as u64),
@@ -10271,9 +10116,7 @@ impl Machine {
                     SavedSignalContext {
                         generation: thread.signal_generation,
                         ip: thread.ip,
-                        lr: thread.lr,
                         regs: thread.regs,
-                        flags: thread.flags,
                         return_stack: thread.return_stack.clone(),
                     }
                 };
@@ -10281,6 +10124,7 @@ impl Machine {
                 thread.signal_stack.push(saved);
                 thread.regs[1] = signum;
                 thread.ip = handler;
+                self.reservation_addr = None;
             }
             None => {
                 if signum != SIGCHLD {
@@ -10427,7 +10271,8 @@ mod tests {
         put_test_u64(&mut image, phdr + 32, 16);
         put_test_u64(&mut image, phdr + 40, 16);
         put_test_u64(&mut image, phdr + 48, 4096);
-        put_test_u32(&mut image, 0x100, 0x3a00_0000);
+        // v2: EXIT r0 is one 64-bit word, opcode 0x3a in the high byte.
+        put_test_u64(&mut image, 0x100, 0x3a00_0000_0000_0000);
         image
     }
 
@@ -10559,84 +10404,84 @@ mod tests {
         counter
     }
 
-    fn encode_ri(opcode: u8, rd: usize, imm: i64) -> u32 {
-        (u32::from(opcode) << 24) | (((rd as u32) & 0x1f) << 19) | ((imm as u32) & 0xffff)
+    // v2 64-bit test encoders. Register slots: rd[55:51] rs1[50:46] rs2[45:41]
+    // rs3[40:36]. I-type imm32 sits at [45:14].
+    fn encode_ri(opcode: u8, rd: usize, imm: i64) -> u64 {
+        // `li`-style I-type with rs1 = r0 (imm in [45:14]).
+        ((opcode as u64) << 56)
+            | (((rd as u64) & 0x1f) << 51)
+            | (((imm as u32 as u64) & 0xffff_ffff) << 14)
     }
 
-    fn encode_rrr(opcode: u8, rd: usize, lhs: usize, rhs: usize) -> u32 {
-        (u32::from(opcode) << 24)
-            | (((rd as u32) & 0x1f) << 19)
-            | (((lhs as u32) & 0x1f) << 14)
-            | (((rhs as u32) & 0x1f) << 9)
+    fn encode_rrr(opcode: u8, rd: usize, lhs: usize, rhs: usize) -> u64 {
+        ((opcode as u64) << 56)
+            | (((rd as u64) & 0x1f) << 51)
+            | (((lhs as u64) & 0x1f) << 46)
+            | (((rhs as u64) & 0x1f) << 41)
     }
 
-    fn encode_rrrr(opcode: u8, rd: usize, a: usize, b: usize, c: usize) -> u32 {
-        encode_rrr(opcode, rd, a, b) | (((c as u32) & 0x1f) << 4)
+    fn encode_rrrr(opcode: u8, rd: usize, a: usize, b: usize, c: usize) -> u64 {
+        encode_rrr(opcode, rd, a, b) | (((c as u64) & 0x1f) << 36)
     }
 
-    fn encode_rr(opcode: u8, rd: usize, rs: usize) -> u32 {
-        (u32::from(opcode) << 24) | (((rd as u32) & 0x1f) << 19) | (((rs as u32) & 0x1f) << 14)
+    fn encode_rrrrr(opcode: u8, rd: usize, a: usize, b: usize, c: usize, d: usize) -> u64 {
+        encode_rrrr(opcode, rd, a, b, c) | (((d as u64) & 0x1f) << 31)
     }
 
-    fn encode_reg(opcode: u8, reg: usize) -> u32 {
-        (u32::from(opcode) << 24) | (((reg as u32) & 0x1f) << 19)
+    fn encode_rr(opcode: u8, rd: usize, rs: usize) -> u64 {
+        ((opcode as u64) << 56) | (((rd as u64) & 0x1f) << 51) | (((rs as u64) & 0x1f) << 46)
     }
 
-    fn put_instruction(bytes: &mut [u8], offset: usize, instruction: u32) {
-        bytes[offset..offset + 4].copy_from_slice(&instruction.to_le_bytes());
+    fn encode_reg(opcode: u8, reg: usize) -> u64 {
+        ((opcode as u64) << 56) | (((reg as u64) & 0x1f) << 51)
+    }
+
+    // Callers pass legacy 4-byte offsets (instruction index * 4); v2 words are
+    // 8 bytes, so place the word at index*8 = offset*2.
+    fn put_instruction(bytes: &mut [u8], offset: usize, instruction: u64) {
+        let byte_offset = offset * 2;
+        bytes[byte_offset..byte_offset + 8].copy_from_slice(&instruction.to_le_bytes());
     }
 
     #[test]
-    fn call_ret_uses_link_register_without_implicit_stack_frame() {
+    fn jal_jalr_use_link_register_r1_without_implicit_stack_frame() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
         machine.committed_exec_mode = true;
         machine.thread_mut().unwrap().ip = 7;
         machine.thread_mut().unwrap().regs[31] = 0;
 
-        machine.exec(Instr::Call(Target::Address(3))).unwrap();
-
+        // jal r1, 3  -> r1 = pc(after) = 7, ip = 3.
+        machine.exec(Instr::Jal(Reg(1), Target::Address(3))).unwrap();
         assert_eq!(machine.thread().unwrap().regs[31], 0);
-        assert_eq!(machine.thread().unwrap().lr, 7);
+        assert_eq!(machine.thread().unwrap().regs[1], 7);
         assert_eq!(machine.thread().unwrap().ip, 3);
 
-        machine.exec(Instr::LrGet(Reg(2))).unwrap();
-        assert_eq!(machine.thread().unwrap().regs[2], 7);
-
-        machine.exec(Instr::Ret).unwrap();
-        assert_eq!(machine.thread().unwrap().regs[31], 0);
+        // ret = jalr r0, r1, 0 -> ip = r1 = 7.
+        machine.exec(Instr::Jalr(Reg(0), Reg(1), 0)).unwrap();
         assert_eq!(machine.thread().unwrap().ip, 7);
 
-        machine.thread_mut().unwrap().regs[2] = 11;
-        machine.exec(Instr::LrSet(Reg(2))).unwrap();
-        machine.exec(Instr::Ret).unwrap();
-        assert_eq!(machine.thread().unwrap().regs[31], 0);
-        assert_eq!(machine.thread().unwrap().ip, 11);
-
+        // jalr r1, r2, 0 (indirect call) -> ip = r2, r1 = return.
         machine.thread_mut().unwrap().ip = 9;
         machine.thread_mut().unwrap().regs[2] = 0;
-
-        machine.exec(Instr::CallReg(Reg(2))).unwrap();
-
-        assert_eq!(machine.thread().unwrap().regs[31], 0);
-        assert_eq!(machine.thread().unwrap().lr, 9);
+        machine.exec(Instr::Jalr(Reg(1), Reg(2), 0)).unwrap();
+        assert_eq!(machine.thread().unwrap().regs[1], 9);
         assert_eq!(machine.thread().unwrap().ip, 0);
     }
 
     #[test]
-    fn committed_exec_ret_honors_lr_set_with_live_return_stack() {
+    fn jalr_ret_pops_return_stack() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
         machine.committed_exec_mode = true;
         machine.thread_mut().unwrap().ip = 7;
         machine.thread_mut().unwrap().regs[31] = 0;
 
-        machine.exec(Instr::Call(Target::Address(3))).unwrap();
-        machine.thread_mut().unwrap().regs[2] = 11;
-        machine.exec(Instr::LrSet(Reg(2))).unwrap();
-        machine.exec(Instr::Ret).unwrap();
+        machine.exec(Instr::Jal(Reg(1), Target::Address(3))).unwrap();
+        // overwrite r1 then ret to it.
+        machine.thread_mut().unwrap().regs[1] = 11;
+        machine.exec(Instr::Jalr(Reg(0), Reg(1), 0)).unwrap();
 
-        assert_eq!(machine.thread().unwrap().regs[31], 0);
         assert_eq!(machine.thread().unwrap().ip, 11);
         assert!(machine.thread().unwrap().return_stack.is_empty());
     }
@@ -14533,31 +14378,24 @@ mod tests {
         assert!(machine.exec(Instr::Bswap32(Reg(18), Reg(5))).unwrap());
         assert_eq!(machine.thread().unwrap().regs[18], 0x0706_0504);
 
-        assert!(machine.exec(Instr::Cmp(Reg(2), Reg(3))).unwrap());
-        assert!(
-            machine
-                .exec(Instr::Csel(Reg(19), Reg(2), Reg(3), Condition::Gt))
-                .unwrap()
-        );
-        assert_eq!(machine.thread().unwrap().regs[19], 10);
+        // v2: SLT replaces the FLAGS compare. r3(3) < r2(10) => 1.
+        assert!(machine.exec(Instr::Slt(Reg(19), Reg(3), Reg(2))).unwrap());
+        assert_eq!(machine.thread().unwrap().regs[19], 1);
+        assert!(machine.exec(Instr::Slt(Reg(19), Reg(2), Reg(3))).unwrap());
+        assert_eq!(machine.thread().unwrap().regs[19], 0);
 
+        // v2: LR.D/SC.D replace AMO. r9 = ARG_BASE.
         machine.store_u64(ARG_BASE, 5).unwrap();
-        assert!(
-            machine
-                .exec(Instr::AmoAdd(Reg(20), Reg(9), Reg(3)))
-                .unwrap()
-        );
+        assert!(machine.exec(Instr::LrD(Reg(20), Reg(9))).unwrap());
         assert_eq!(machine.thread().unwrap().regs[20], 5);
-        assert_eq!(machine.load_u64(ARG_BASE).unwrap(), 8);
-        machine.thread_mut().unwrap().regs[4] = 0xf0;
-        machine.store_u64(ARG_BASE, 0xaa).unwrap();
-        assert!(
-            machine
-                .exec(Instr::AmoXor(Reg(21), Reg(9), Reg(4)))
-                .unwrap()
-        );
-        assert_eq!(machine.thread().unwrap().regs[21], 0xaa);
-        assert_eq!(machine.load_u64(ARG_BASE).unwrap(), 0x5a);
+        // SC.D rd, rs2, (rs1): store r2 to (r9), success => rd = 0.
+        assert!(machine.exec(Instr::ScD(Reg(21), Reg(2), Reg(9))).unwrap());
+        assert_eq!(machine.thread().unwrap().regs[21], 0);
+        assert_eq!(machine.load_u64(ARG_BASE).unwrap(), 10);
+        // A second SC.D without a fresh reservation fails => rd = 1.
+        assert!(machine.exec(Instr::ScD(Reg(22), Reg(3), Reg(9))).unwrap());
+        assert_eq!(machine.thread().unwrap().regs[22], 1);
+        assert_eq!(machine.load_u64(ARG_BASE).unwrap(), 10);
     }
 
     #[test]
@@ -15799,15 +15637,13 @@ mod tests {
               LI r2, 1
             loop:
               LI r3, 1
-              CMP r1, r3
-              BLE done
+              BGE r3, r1, done
               MUL r2, r2, r1
               SUB r1, r1, r3
               JMP loop
             done:
               LI r3, 120
-              CMP r2, r3
-              BNE bad
+              BNE r2, r3, bad
               EXIT r0
             bad:
               LI r1, 1
@@ -16746,7 +16582,7 @@ mod tests {
         .unwrap();
         let words = encode_exec_descriptor(&descriptor);
         let mut text = vec![0; 0x1000];
-        put_instruction(&mut text, 0, encode_ri(0x01, 1, 16));
+        put_instruction(&mut text, 0, encode_ri(0xa0, 1, 16));
         put_instruction(&mut text, 4, encode_rrr(0x11, 31, 31, 1));
         put_instruction(&mut text, 8, encode_rrr(0x10, 31, 31, 1));
         put_instruction(&mut text, 12, encode_reg(0x3a, 0));
@@ -16806,7 +16642,7 @@ mod tests {
         .unwrap();
         let words = encode_exec_descriptor(&descriptor);
         let mut text = vec![0; 0x1000];
-        put_instruction(&mut text, 0, encode_ri(0x01, 1, 16));
+        put_instruction(&mut text, 0, encode_ri(0xa0, 1, 16));
         put_instruction(&mut text, 4, encode_rr(0x47, 2, 1));
         put_instruction(&mut text, 8, encode_rr(0x48, 3, 2));
         put_instruction(&mut text, 12, encode_rrr(0x11, 1, 3, 1));
@@ -16838,11 +16674,11 @@ mod tests {
         .unwrap();
         let words = encode_exec_descriptor(&descriptor);
         let mut text = vec![0; 0x1000];
-        put_instruction(&mut text, 0, encode_ri(0x01, 1, 4096));
-        put_instruction(&mut text, 4, encode_ri(0x01, 2, 3));
-        put_instruction(&mut text, 8, encode_ri(0x01, 7, 4096));
+        put_instruction(&mut text, 0, encode_ri(0xa0, 1, 4096));
+        put_instruction(&mut text, 4, encode_ri(0xa0, 2, 3));
+        put_instruction(&mut text, 8, encode_ri(0xa0, 7, 4096));
         put_instruction(&mut text, 12, encode_rrrr(0x60, 3, 7, 1, 2));
-        put_instruction(&mut text, 16, encode_ri(0x01, 4, 1));
+        put_instruction(&mut text, 16, encode_ri(0xa0, 4, 1));
         put_instruction(&mut text, 20, encode_rrrr(0x66, 5, 3, 1, 4));
         put_instruction(&mut text, 24, encode_rr(0x61, 6, 3));
         put_instruction(&mut text, 28, encode_reg(0x3a, 6));
@@ -16872,9 +16708,9 @@ mod tests {
         .unwrap();
         let words = encode_exec_descriptor(&descriptor);
         let mut text = vec![0; 0x1000];
-        put_instruction(&mut text, 0, encode_ri(0x01, 2, ENV_KEY_PAGE_SIZE as i64));
+        put_instruction(&mut text, 0, encode_ri(0xa0, 2, ENV_KEY_PAGE_SIZE as i64));
         put_instruction(&mut text, 4, encode_rrrr(0x56, 1, 2, 0, 0));
-        put_instruction(&mut text, 8, encode_ri(0x01, 3, ASLR_PAGE as i64));
+        put_instruction(&mut text, 8, encode_ri(0xa0, 3, ASLR_PAGE as i64));
         put_instruction(&mut text, 12, encode_rrr(0x11, 1, 1, 3));
         put_instruction(&mut text, 16, encode_reg(0x3a, 1));
         let mut prepared = prepared_exec_vmas_fixture();
@@ -16903,13 +16739,12 @@ mod tests {
         .unwrap();
         let words = encode_exec_descriptor(&descriptor);
         let mut text = vec![0; 0x1000];
-        put_instruction(&mut text, 0, encode_reg(0x03, 1));
-        put_instruction(&mut text, 4, 0x402000);
-        put_instruction(&mut text, 8, encode_rr(0x50, 2, 1));
-        put_instruction(&mut text, 12, encode_rr(0x51, 3, 1));
-        put_instruction(&mut text, 16, encode_rr(0x52, 4, 1));
-        put_instruction(&mut text, 20, encode_rr(0x53, 5, 1));
-        put_instruction(&mut text, 24, encode_reg(0x3a, 0));
+        put_instruction(&mut text, 0, encode_ri(0xa0, 1, 0x402000));
+        put_instruction(&mut text, 4, encode_rr(0x50, 2, 1));
+        put_instruction(&mut text, 8, encode_rr(0x51, 3, 1));
+        put_instruction(&mut text, 12, encode_rr(0x52, 4, 1));
+        put_instruction(&mut text, 16, encode_rr(0x53, 5, 1));
+        put_instruction(&mut text, 20, encode_reg(0x3a, 0));
         let mut prepared = prepared_exec_vmas_fixture();
         prepared[0].bytes = text;
         let mut machine = Machine::new(empty_program());
@@ -16936,33 +16771,32 @@ mod tests {
         .unwrap();
         let words = encode_exec_descriptor(&descriptor);
         let mut text = vec![0; 0x1000];
-        put_instruction(&mut text, 0, encode_reg(0x03, 2));
-        put_instruction(&mut text, 4, 0x402000);
-        put_instruction(&mut text, 8, encode_reg(0x03, 3));
-        put_instruction(&mut text, 12, 0x402100);
-        put_instruction(&mut text, 16, encode_ri(0x01, 4, -100));
-        put_instruction(&mut text, 20, encode_ri(0x01, 5, 0));
-        put_instruction(&mut text, 24, encode_rrrr(0x5c, 2, 4, 3, 5));
-        put_instruction(&mut text, 28, encode_ri(0x01, 6, 99));
-        put_instruction(&mut text, 32, encode_rr(0x5d, 2, 6));
-        put_instruction(&mut text, 36, encode_rrrr(0x5e, 4, 3, 0, 5));
-        put_instruction(&mut text, 40, encode_rr(0x5f, 6, 0));
-        put_instruction(&mut text, 44, encode_ri(0x01, 7, 1));
-        put_instruction(&mut text, 48, encode_rrr(0x67, 6, 7, 0));
-        put_instruction(&mut text, 52, encode_rrr(0x73, 8, 3, 5));
-        put_instruction(&mut text, 56, encode_rrr(0x74, 4, 3, 5));
-        put_instruction(&mut text, 60, encode_rrr(0x6b, 4, 3, 5));
-        put_instruction(&mut text, 64, encode_rrrr(0x75, 4, 3, 4, 3));
-        put_instruction(&mut text, 68, encode_rrrr(0x76, 4, 3, 4, 3));
-        put_instruction(&mut text, 72, 5);
-        put_instruction(&mut text, 76, encode_rrr(0x77, 3, 4, 3));
-        put_instruction(&mut text, 80, encode_rrrr(0x78, 4, 3, 2, 5));
-        put_instruction(&mut text, 84, encode_reg(0x79, 3));
-        put_instruction(&mut text, 88, encode_rr(0x7a, 2, 5));
-        put_instruction(&mut text, 92, encode_rrrr(0x7b, 4, 3, 5, 5));
-        put_instruction(&mut text, 96, encode_rrrr(0x7c, 4, 3, 5, 5));
-        put_instruction(&mut text, 100, 5);
-        put_instruction(&mut text, 104, encode_reg(0x3a, 0));
+        // v2: `la` becomes a single-word `addi rd, r0, addr`; the 5-register
+        // path ops (0x76 link_path_at, 0x7c chown_path_at) are single words
+        // with the 5th operand in the rs4 slot (no trailing word).
+        put_instruction(&mut text, 0, encode_ri(0xa0, 2, 0x402000));
+        put_instruction(&mut text, 4, encode_ri(0xa0, 3, 0x402100));
+        put_instruction(&mut text, 8, encode_ri(0xa0, 4, -100));
+        put_instruction(&mut text, 12, encode_ri(0xa0, 5, 0));
+        put_instruction(&mut text, 16, encode_rrrr(0x5c, 2, 4, 3, 5));
+        put_instruction(&mut text, 20, encode_ri(0xa0, 6, 99));
+        put_instruction(&mut text, 24, encode_rr(0x5d, 2, 6));
+        put_instruction(&mut text, 28, encode_rrrr(0x5e, 4, 3, 0, 5));
+        put_instruction(&mut text, 32, encode_rr(0x5f, 6, 0));
+        put_instruction(&mut text, 36, encode_ri(0xa0, 7, 1));
+        put_instruction(&mut text, 40, encode_rrr(0x67, 6, 7, 0));
+        put_instruction(&mut text, 44, encode_rrr(0x73, 8, 3, 5));
+        put_instruction(&mut text, 48, encode_rrr(0x74, 4, 3, 5));
+        put_instruction(&mut text, 52, encode_rrr(0x6b, 4, 3, 5));
+        put_instruction(&mut text, 56, encode_rrrr(0x75, 4, 3, 4, 3));
+        put_instruction(&mut text, 60, encode_rrrrr(0x76, 4, 3, 4, 3, 5));
+        put_instruction(&mut text, 64, encode_rrr(0x77, 3, 4, 3));
+        put_instruction(&mut text, 68, encode_rrrr(0x78, 4, 3, 2, 5));
+        put_instruction(&mut text, 72, encode_reg(0x79, 3));
+        put_instruction(&mut text, 76, encode_rr(0x7a, 2, 5));
+        put_instruction(&mut text, 80, encode_rrrr(0x7b, 4, 3, 5, 5));
+        put_instruction(&mut text, 84, encode_rrrrr(0x7c, 4, 3, 5, 5, 5));
+        put_instruction(&mut text, 88, encode_reg(0x3a, 0));
         let mut prepared = prepared_exec_vmas_fixture();
         prepared[0].bytes = text;
         prepared[1].bytes[0x100] = b'.';
@@ -16992,7 +16826,7 @@ mod tests {
         .unwrap();
         let words = encode_exec_descriptor(&descriptor);
         let mut text = vec![0; 0x1000];
-        put_instruction(&mut text, 0, 0xff00_0000);
+        put_instruction(&mut text, 0, 0xff00_0000_0000_0000);
         let mut prepared = prepared_exec_vmas_fixture();
         prepared[0].bytes = text;
         let mut machine = Machine::new(empty_program());
@@ -17062,19 +16896,15 @@ mod tests {
               LI r10, 0x700000
               LD r2, [r10, 0]
               LI r3, 2
-              CMP r2, r3
-              BNE bad
+              BNE r2, r3, bad
               LI r4, 0x700020
               LD r5, [r4, 0]
-              CMP r5, r0
-              BEQ bad
+              BEQ r5, r0, bad
               LD.B r6, [r5, 0]
               LI r7, 75
-              CMP r6, r7
-              BNE bad
+              BNE r6, r7, bad
               LD r8, [r4, 8]
-              CMP r8, r0
-              BNE bad
+              BNE r8, r0, bad
               EXIT r0
             bad:
               LI r1, 1
@@ -17134,8 +16964,8 @@ mod tests {
         assert_eq!(machine.process().unwrap().exec_entry_pc, 0x400000);
         assert_eq!(machine.thread().unwrap().ip, 0x400000);
         assert_eq!(
-            &machine.process().unwrap().memory[0x400000..0x400004],
-            &0x3a00_0000u32.to_le_bytes()
+            &machine.process().unwrap().memory[0x400000..0x400008],
+            &0x3a00_0000_0000_0000u64.to_le_bytes()
         );
         assert_eq!(machine.run_committed_exec().unwrap(), 0);
 
@@ -17578,52 +17408,42 @@ mod tests {
             .text
               GET_PCR r1, PID
               LI r2, 1
-              CMP r1, r2
-              BNE bad
+              BNE r1, r2, bad
               LI r29, -1
               GET_PCR r20, CRED_PROFILE
-              CMP r20, r0
-              BNE bad
+              BNE r20, r0, bad
               GET_PCR r20, CRED_HANDLE
-              CMP r20, r0
-              BNE bad
+              BNE r20, r0, bad
               LI r30, 77
               ERRNO_SET r30
               SET_PCR r21, CRED_PROFILE, r2
-              CMP r21, r29
-              BNE bad
+              BNE r21, r29, bad
               ERRNO_GET r23
-              CMP r23, r30
-              BNE bad
+              BNE r23, r30, bad
               SET_PCR r22, CRED_HANDLE, r2
-              CMP r22, r29
-              BNE bad
+              BNE r22, r29, bad
               ERRNO_GET r23
-              CMP r23, r30
-              BNE bad
+              BNE r23, r30, bad
 
               LI r3, 16
               ALLOC r4, r3
-              CMP r4, r0
-              BEQ bad
+              BEQ r4, r0, bad
 
               LI r5, 41
               ST [r4, 0], r5
               LI r6, 41
               LI r7, 42
-              LOCK.CMPXCHG r8, r4, r6, r7
+              LR.D r8, r4
+              SC.D r24, r7, r4
               LD r9, [r4, 0]
-              CMP r9, r7
-              BNE bad
+              BNE r9, r7, bad
 
               MSG_SEND r1, r6, r7
               AWAIT r0, fd255, r0
               PULL r10, fd255, r0, r0
               MOV r11, r30
-              CMP r10, r6
-              BNE bad
-              CMP r11, r7
-              BNE bad
+              BNE r10, r6, bad
+              BNE r11, r7, bad
 
               LI r12, pipe_msg
               LI r13, 2
@@ -17639,42 +17459,34 @@ mod tests {
               LI r19, 4
               ST [r18, 32], r19
               OBJECT_CTL r19, r18
-              CMP r19, r0
-              BNE bad
+              BNE r19, r0, bad
               PUSH r19, fd4, r12, r13
               LI r14, 2
               ALLOC r15, r14
               PULL r19, fd3, r15, r14
-              CMP r19, r14
-              BNE bad
+              BNE r19, r14, bad
               LD.B r16, [r15, 0]
               LI r17, 104
-              CMP r16, r17
-              BNE bad
+              BNE r16, r17, bad
               LD.B r16, [r15, 1]
               LI r17, 105
-              CMP r16, r17
-              BNE bad
+              BNE r16, r17, bad
 
               FD_DUP2 fd5, fd4
-              CMP r1, r0
-              BNE bad
+              BNE r1, r0, bad
               LI r12, dup_msg
               LI r13, 1
               WRITE_FD fd5, r12, r13
               READ_FD fd3, r15, r13
-              CMP r1, r13
-              BNE bad
+              BNE r1, r13, bad
               LD.B r16, [r15, 0]
               LI r17, 33
-              CMP r16, r17
-              BNE bad
+              BNE r16, r17, bad
               FREE r15
 
               LI r18, 0
               WAIT_PID r19, r18
-              CMP r1, r0
-              BNE bad
+              BNE r1, r0, bad
               FREE r4
               EXIT r0
             bad:
@@ -17702,37 +17514,30 @@ mod tests {
               LI r1, path
               LI r2, 4
               OPEN_FD fd3, r1, r2
-              CMP r1, r0
-              BNE bad
+              BNE r1, r0, bad
 
               LI r3, patch
               LI r4, 2
               LI r5, 2
               PWRITE_FD fd3, r3, r4, r5
-              CMP r1, r4
-              BNE bad
+              BNE r1, r4, bad
 
               LI r6, 6
               ALLOC r7, r6
               PREAD_FD fd3, r7, r6, r0
-              CMP r1, r6
-              BNE bad
+              BNE r1, r6, bad
               LD.B r8, [r7, 0]
               LI r9, 97
-              CMP r8, r9
-              BNE bad
+              BNE r8, r9, bad
               LD.B r8, [r7, 2]
               LI r9, 88
-              CMP r8, r9
-              BNE bad
+              BNE r8, r9, bad
               LD.B r8, [r7, 3]
               LI r9, 89
-              CMP r8, r9
-              BNE bad
+              BNE r8, r9, bad
               LD.B r8, [r7, 5]
               LI r9, 102
-              CMP r8, r9
-              BNE bad
+              BNE r8, r9, bad
               FREE r7
               EXIT r0
             bad:
@@ -17766,22 +17571,18 @@ mod tests {
               LI r11, times
               LI r12, 0
               UTIME_PATH r10, r11, r12
-              CMP r1, r0
-              BNE bad
+              BNE r1, r0, bad
 
               LI r13, 4
               OPEN_FD fd3, r10, r13
-              CMP r1, r0
-              BNE bad
+              BNE r1, r0, bad
 
               UTIME_FD fd3, r11
-              CMP r1, r0
-              BNE bad
+              BNE r1, r0, bad
 
               LI r14, 3
               UTIME_FD_DYN r14, r11
-              CMP r1, r0
-              BNE bad
+              BNE r1, r0, bad
 
               EXIT r0
             bad:
@@ -17912,9 +17713,8 @@ mod tests {
               YIELD
               LD r20, sig_flag
               LI r4, 1
-              CMP r20, r4
               LI r1, 2
-              BNE bad
+              BNE r20, r4, bad
 
               LI r5, 16
               LI r25, 3
@@ -17922,9 +17722,8 @@ mod tests {
               LI r7, 99
               ST [r6, 0], r7
               LD r8, [r6, 0]
-              CMP r8, r7
               LI r1, 3
-              BNE bad
+              BNE r8, r7, bad
 
               LI r9, ucode
               LI r10, 11
@@ -17932,9 +17731,8 @@ mod tests {
               LI r11, 9
               INB r12, r11
               LI r13, 123
-              CMP r12, r13
               LI r1, 4
-              BNE bad
+              BNE r12, r13, bad
 
               LI r14, futex_word
               LI r15, 0
@@ -17948,13 +17746,11 @@ mod tests {
               SLEEP r26
               LD r19, [r14, 0]
               LI r21, 2
-              CMP r19, r21
               MOV r1, r19
-              BNE bad
+              BNE r19, r21, bad
 
               FORK r22
-              CMP r22, r0
-              BEQ child
+              BEQ r22, r0, child
               YIELD
               LI r23, exec_path
               EXEC r23, r0
@@ -18017,8 +17813,7 @@ mod tests {
               LI r1, 7
               ST [r10, 72], r1
               DOMAIN_CTL r20, r10
-              CMP r20, r12
-              BEQ bad
+              BEQ r20, r12, bad
 
               LI r1, 1
               ST [r10, 0], r1
@@ -18039,8 +17834,7 @@ mod tests {
               LI r1, 1
               ST [r10, 72], r1
               DOMAIN_CTL r21, r10
-              CMP r21, r12
-              BEQ bad
+              BEQ r21, r12, bad
 
               LI r1, 3
               ST [r10, 0], r1
@@ -18049,15 +17843,12 @@ mod tests {
               ST [r10, 16], r1
               DOMAIN_CTL r22, r10
               LI r1, 200
-              CMP r22, r1
-              BNE bad
+              BNE r22, r1, bad
               LD r23, [r10, 120]
-              CMP r23, r20
-              BNE bad
+              BNE r23, r20, bad
               LD r23, [r10, 128]
               LI r1, 2
-              CMP r23, r1
-              BNE bad
+              BNE r23, r1, bad
 
               LI r1, 1
               ST [r10, 0], r1
@@ -18078,8 +17869,7 @@ mod tests {
               LI r1, 1
               ST [r10, 72], r1
               DOMAIN_CTL r24, r10
-              CMP r24, r12
-              BNE bad
+              BNE r24, r12, bad
 
               LI r1, 4
               ST [r10, 0], r1
@@ -18087,20 +17877,17 @@ mod tests {
               LI r1, 1
               ST [r10, 16], r1
               DOMAIN_CTL r24, r10
-              CMP r24, r0
-              BNE bad
+              BNE r24, r0, bad
               LI r1, 3
               ST [r10, 0], r1
               DOMAIN_CTL r24, r10
               LD r25, [r10, 112]
               LI r1, 1
-              CMP r25, r1
-              BNE bad
+              BNE r25, r1, bad
               LI r1, 5
               ST [r10, 0], r1
               DOMAIN_CTL r24, r10
-              CMP r24, r0
-              BNE bad
+              BNE r24, r0, bad
 
               LI r1, 7
               ST [r10, 0], r1
@@ -18108,22 +17895,19 @@ mod tests {
               LI r1, 1
               ST [r10, 16], r1
               DOMAIN_CTL r24, r10
-              CMP r24, r0
-              BNE bad
+              BNE r24, r0, bad
               LI r1, 3
               ST [r10, 0], r1
               ST [r10, 8], r20
               DOMAIN_CTL r24, r10
               LD r25, [r10, 96]
               LI r1, 1
-              CMP r25, r1
-              BNE bad
+              BNE r25, r1, bad
               LI r1, 8
               ST [r10, 0], r1
               DOMAIN_CTL r24, r10
               LI r1, 1
-              CMP r24, r1
-              BNE bad
+              BNE r24, r1, bad
 
               LI r1, 6
               ST [r10, 0], r1
@@ -18131,13 +17915,11 @@ mod tests {
               LI r1, 1
               ST [r10, 16], r1
               DOMAIN_CTL r24, r10
-              CMP r24, r0
-              BNE bad
+              BNE r24, r0, bad
               LI r1, 3
               ST [r10, 0], r1
               DOMAIN_CTL r24, r10
-              CMP r24, r12
-              BNE bad
+              BNE r24, r12, bad
 
               EXIT r0
             bad:
@@ -18180,8 +17962,7 @@ mod tests {
               ST [r10, 64], r1
               ST [r10, 72], r1
               DOMAIN_CTL r20, r10
-              CMP r20, r11
-              BEQ bad_domain_create
+              BEQ r20, r11, bad_domain_create
 
               LI r1, 7
               ST [r10, 0], r1
@@ -18189,8 +17970,7 @@ mod tests {
               LI r1, 1
               ST [r10, 16], r1
               DOMAIN_CTL r21, r10
-              CMP r21, r0
-              BNE bad_attach
+              BNE r21, r0, bad_attach
 
               LI r1, 3
               ST [r10, 0], r1
@@ -18200,31 +17980,26 @@ mod tests {
 
               LI r1, 64
               ALLOC r24, r1
-              CMP r24, r11
-              BEQ bad_small_alloc
+              BEQ r24, r11, bad_small_alloc
               LI r1, 3
               ST [r10, 0], r1
               DOMAIN_CTL r21, r10
               LD r25, [r10, 88]
-              CMP r25, r22
-              BLE bad_alloc_usage
+              BLE r25, r22, bad_alloc_usage
               FREE r24
               LI r1, 3
               ST [r10, 0], r1
               DOMAIN_CTL r21, r10
               LD r25, [r10, 88]
-              CMP r25, r22
-              BNE bad_free_usage
+              BNE r25, r22, bad_free_usage
 
               LI r1, 1000000
               ALLOC r24, r1
-              CMP r24, r11
-              BNE bad_large_alloc
+              BNE r24, r11, bad_large_alloc
 
               LI r1, worker
               SPAWN r24, r1
-              CMP r24, r11
-              BNE bad_spawn
+              BNE r24, r11, bad_spawn
 
               LI r12, obj
               LI r1, 1
@@ -18238,12 +18013,10 @@ mod tests {
               LI r1, 4
               ST [r12, 32], r1
               OBJECT_CTL r24, r12
-              CMP r24, r0
-              BNE bad_object
+              BNE r24, r0, bad_object
 
               FD_DUP2 fd4, fd5
-              CMP r1, r11
-              BNE bad_dup
+              BNE r1, r11, bad_dup
               FD_CLOSE fd3
               FD_CLOSE fd4
 
@@ -20457,21 +20230,25 @@ mod tests {
     }
 
     #[test]
-    fn lock_cmpxchg_rejects_locked_result_before_store() {
+    fn sc_d_without_reservation_fails_and_leaves_memory() {
         let mut machine = Machine::new(empty_program());
         machine.current_tid = 1;
         let addr = ARG_BASE + 0x180;
         machine.store_u64(addr, 7).unwrap();
         machine.thread_mut().unwrap().regs[2] = addr;
-        machine.thread_mut().unwrap().regs[3] = 7;
         machine.thread_mut().unwrap().regs[4] = 9;
 
-        let err = machine
-            .exec(Instr::LockCmpxchg(Reg(31), Reg(2), Reg(3), Reg(4)))
-            .unwrap_err();
-
-        assert!(err.contains("hardware-locked stack pointer"), "{err}");
+        // No prior LR.D, so the reservation is invalid: SC.D fails (rd = 1) and
+        // memory is unchanged.
+        assert!(machine.exec(Instr::ScD(Reg(5), Reg(4), Reg(2))).unwrap());
+        assert_eq!(machine.thread().unwrap().regs[5], 1);
         assert_eq!(machine.load_u64(addr).unwrap(), 7);
+
+        // After LR.D the reservation is valid: SC.D succeeds (rd = 0).
+        assert!(machine.exec(Instr::LrD(Reg(6), Reg(2))).unwrap());
+        assert!(machine.exec(Instr::ScD(Reg(7), Reg(4), Reg(2))).unwrap());
+        assert_eq!(machine.thread().unwrap().regs[7], 0);
+        assert_eq!(machine.load_u64(addr).unwrap(), 9);
     }
 
     #[test]
@@ -23411,8 +23188,7 @@ mod tests {
               ST [r10, 64], r1
               ST [r10, 72], r1
               DOMAIN_CTL r20, r10
-              CMP r20, r11
-              BEQ bad
+              BEQ r20, r11, bad
 
               LI r12, obj
               LI r1, 1
@@ -23427,18 +23203,15 @@ mod tests {
               LI r1, service
               ST [r12, 40], r1
               OBJECT_CTL r21, r12
-              CMP r21, r11
-              BEQ bad
+              BEQ r21, r11, bad
 
               LI r1, 7
               LI r2, 9
               CALL_CAP r22, fd3, r1, r2
               LI r23, 16
-              CMP r22, r23
-              BNE bad
+              BNE r22, r23, bad
               LI r23, 9
-              CMP r30, r23
-              BNE bad
+              BNE r30, r23, bad
               EXIT r0
 
             service:

@@ -172,10 +172,6 @@ impl Parser {
                 arity(2)?;
                 Instr::Li(reg(&args[0])?, value(&args[1]))
             }
-            "LI32" => {
-                arity(2)?;
-                Instr::Li(reg(&args[0])?, value(&args[1]))
-            }
             "AUIPC" => {
                 arity(2)?;
                 Instr::Auipc(reg(&args[0])?, value(&args[1]))
@@ -225,72 +221,62 @@ impl Parser {
             "BSWAP16" => alu2(&args, Instr::Bswap16)?,
             "BSWAP32" => alu2(&args, Instr::Bswap32)?,
             "BSWAP64" => alu2(&args, Instr::Bswap64)?,
-            "CMP" => {
-                arity(2)?;
-                Instr::Cmp(reg(&args[0])?, reg(&args[1])?)
-            }
-            "CMPU" => {
-                arity(2)?;
-                Instr::Cmpu(reg(&args[0])?, reg(&args[1])?)
-            }
-            "CSET.EQ" => cset(&args, Condition::Eq)?,
-            "CSET.NE" => cset(&args, Condition::Ne)?,
-            "CSET.LT" => cset(&args, Condition::Lt)?,
-            "CSET.GT" => cset(&args, Condition::Gt)?,
-            "CSET.LE" => cset(&args, Condition::Le)?,
-            "CSET.GE" => cset(&args, Condition::Ge)?,
-            "CSET.ULT" => cset(&args, Condition::Ult)?,
-            "CSET.UGT" => cset(&args, Condition::Ugt)?,
-            "CSET.ULE" => cset(&args, Condition::Ule)?,
-            "CSET.UGE" => cset(&args, Condition::Uge)?,
-            "CSEL.EQ" => csel(&args, Condition::Eq)?,
-            "CSEL.NE" => csel(&args, Condition::Ne)?,
-            "CSEL.LT" => csel(&args, Condition::Lt)?,
-            "CSEL.GT" => csel(&args, Condition::Gt)?,
-            "CSEL.LE" => csel(&args, Condition::Le)?,
-            "CSEL.GE" => csel(&args, Condition::Ge)?,
-            "CSEL.ULT" => csel(&args, Condition::Ult)?,
-            "CSEL.UGT" => csel(&args, Condition::Ugt)?,
-            "CSEL.ULE" => csel(&args, Condition::Ule)?,
-            "CSEL.UGE" => csel(&args, Condition::Uge)?,
+            "SLT" => alu3(&args, Instr::Slt)?,
+            "SLTU" => alu3(&args, Instr::Sltu)?,
+            "SLTI" => alu_imm(&args, Instr::Slti)?,
+            "SLTIU" => alu_imm(&args, Instr::Sltiu)?,
+            "LIU" => alu_imm(&args, Instr::Liu)?,
             "JMP" => {
                 arity(1)?;
                 Instr::Jmp(target(&args[0]))
             }
-            "BEQ" => branch(&args, Condition::Eq)?,
-            "BNE" => branch(&args, Condition::Ne)?,
-            "BLT" => branch(&args, Condition::Lt)?,
-            "BGT" => branch(&args, Condition::Gt)?,
-            "BLE" => branch(&args, Condition::Le)?,
-            "BGE" => branch(&args, Condition::Ge)?,
+            "BEQ" => branch(&args, Instr::Beq)?,
+            "BNE" => branch(&args, Instr::Bne)?,
+            "BLT" => branch(&args, Instr::Blt)?,
+            "BGE" => branch(&args, Instr::Bge)?,
+            "BLTU" => branch(&args, Instr::Bltu)?,
+            "BGEU" => branch(&args, Instr::Bgeu)?,
+            // assembler aliases: bgt/ble swap operands.
+            "BGT" => branch(&args, Instr::Blt).map(swap_branch_operands)?,
+            "BLE" => branch(&args, Instr::Bge).map(swap_branch_operands)?,
+            "BGTU" => branch(&args, Instr::Bltu).map(swap_branch_operands)?,
+            "BLEU" => branch(&args, Instr::Bgeu).map(swap_branch_operands)?,
+            "JAL" => {
+                arity(2)?;
+                Instr::Jal(reg(&args[0])?, target(&args[1]))
+            }
+            "JALR" => {
+                arity(3)?;
+                Instr::Jalr(reg(&args[0])?, reg(&args[1])?, parse_i64(&args[2])?)
+            }
+            // `call sym` = `jal r1, sym`; `ret` = `jalr r0, r1, 0`.
             "CALL" => {
                 arity(1)?;
-                Instr::Call(target(&args[0]))
-            }
-            "CALL_REG" => {
-                arity(1)?;
-                Instr::CallReg(reg(&args[0])?)
-            }
-            "LR_GET" => {
-                arity(1)?;
-                Instr::LrGet(reg(&args[0])?)
-            }
-            "LR_SET" => {
-                arity(1)?;
-                Instr::LrSet(reg(&args[0])?)
+                Instr::Jal(Reg(1), target(&args[0]))
             }
             "RET" => {
                 arity(0)?;
-                Instr::Ret
+                Instr::Jalr(Reg(0), Reg(1), 0)
+            }
+            "LR.D" => {
+                arity(2)?;
+                Instr::LrD(reg(&args[0])?, reg(&args[1])?)
+            }
+            "SC.D" => {
+                arity(3)?;
+                Instr::ScD(reg(&args[0])?, reg(&args[1])?, reg(&args[2])?)
             }
             "LD" | "LD.D" => load(&args, Width::Double)?,
-            "LD.W" => load(&args, Width::Word)?,
-            "LD.H" => load(&args, Width::Half)?,
-            "LD.B" => load(&args, Width::Byte)?,
-            "ST" | "ST.D" => store(&args, Width::Double)?,
-            "ST.W" => store(&args, Width::Word)?,
-            "ST.H" => store(&args, Width::Half)?,
-            "ST.B" => store(&args, Width::Byte)?,
+            "LWU" | "LD.W" => load(&args, Width::Word)?,
+            "LHU" | "LD.H" => load(&args, Width::Half)?,
+            "LBU" | "LD.B" => load(&args, Width::Byte)?,
+            "LW" => load_signed(&args, Width::Word)?,
+            "LH" => load_signed(&args, Width::Half)?,
+            "LB" => load_signed(&args, Width::Byte)?,
+            "SD" | "ST" | "ST.D" => store(&args, Width::Double)?,
+            "SW" | "ST.W" => store(&args, Width::Word)?,
+            "SH" | "ST.H" => store(&args, Width::Half)?,
+            "SB" | "ST.B" => store(&args, Width::Byte)?,
             "FENCE" | "FENCE.ACQ" | "FENCE.REL" | "FENCE.ACQ_REL" | "FENCE.SC" => {
                 arity(0)?;
                 Instr::Fence
@@ -766,20 +752,6 @@ impl Parser {
                 arity(0)?;
                 Instr::Sigret
             }
-            "LOCK.CMPXCHG" => {
-                arity(4)?;
-                Instr::LockCmpxchg(
-                    reg(&args[0])?,
-                    reg(&args[1])?,
-                    reg(&args[2])?,
-                    reg(&args[3])?,
-                )
-            }
-            "AMO.SWAP" => alu3(&args, Instr::AmoSwap)?,
-            "AMO.ADD" => alu3(&args, Instr::AmoAdd)?,
-            "AMO.AND" => alu3(&args, Instr::AmoAnd)?,
-            "AMO.OR" => alu3(&args, Instr::AmoOr)?,
-            "AMO.XOR" => alu3(&args, Instr::AmoXor)?,
             "FUTEX_WAIT" => {
                 arity(2)?;
                 Instr::FutexWait(reg(&args[0])?, reg(&args[1])?)
@@ -914,30 +886,25 @@ fn vec3(args: &[String], ctor: fn(VReg, VReg, VReg) -> Instr) -> Result<Instr, S
     Ok(ctor(vreg(&args[0])?, vreg(&args[1])?, vreg(&args[2])?))
 }
 
-fn branch(args: &[String], condition: Condition) -> Result<Instr, String> {
-    if args.len() != 1 {
-        return Err(format!("branch expects 1 operand, got {}", args.len()));
-    }
-    Ok(Instr::Branch(condition, target(&args[0])))
-}
-
-fn cset(args: &[String], condition: Condition) -> Result<Instr, String> {
-    if args.len() != 1 {
-        return Err(format!("cset expects 1 operand, got {}", args.len()));
-    }
-    Ok(Instr::Cset(reg(&args[0])?, condition))
-}
-
-fn csel(args: &[String], condition: Condition) -> Result<Instr, String> {
+// v2 reg-compare branch: `b** rs1, rs2, target`.
+fn branch(args: &[String], ctor: fn(Reg, Reg, Target) -> Instr) -> Result<Instr, String> {
     if args.len() != 3 {
-        return Err(format!("csel expects 3 operands, got {}", args.len()));
+        return Err(format!("branch expects 3 operands, got {}", args.len()));
     }
-    Ok(Instr::Csel(
-        reg(&args[0])?,
-        reg(&args[1])?,
-        reg(&args[2])?,
-        condition,
-    ))
+    Ok(ctor(reg(&args[0])?, reg(&args[1])?, target(&args[2])))
+}
+
+// bgt/ble (and unsigned) are operand-swapped spellings of blt/bge.
+fn swap_branch_operands(instr: Instr) -> Instr {
+    match instr {
+        Instr::Beq(a, b, t) => Instr::Beq(b, a, t),
+        Instr::Bne(a, b, t) => Instr::Bne(b, a, t),
+        Instr::Blt(a, b, t) => Instr::Blt(b, a, t),
+        Instr::Bge(a, b, t) => Instr::Bge(b, a, t),
+        Instr::Bltu(a, b, t) => Instr::Bltu(b, a, t),
+        Instr::Bgeu(a, b, t) => Instr::Bgeu(b, a, t),
+        other => other,
+    }
 }
 
 fn load(args: &[String], width: Width) -> Result<Instr, String> {
@@ -945,6 +912,13 @@ fn load(args: &[String], width: Width) -> Result<Instr, String> {
         return Err(format!("load expects 2 operands, got {}", args.len()));
     }
     Ok(Instr::Ld(reg(&args[0])?, mem(&args[1])?, width))
+}
+
+fn load_signed(args: &[String], width: Width) -> Result<Instr, String> {
+    if args.len() != 2 {
+        return Err(format!("load expects 2 operands, got {}", args.len()));
+    }
+    Ok(Instr::LdS(reg(&args[0])?, mem(&args[1])?, width))
 }
 
 fn store(args: &[String], width: Width) -> Result<Instr, String> {
@@ -1426,9 +1400,9 @@ mod tests {
               POPCNT r20, r21
               ROL r22, r23, r24
               BSWAP64 r25, r26
-              CSEL.NE r27, r28, r29
-              AMO.ADD r30, r1, r2
-              AMO.XOR r4, r5, r6
+              SLT r27, r28, r29
+              LR.D r30, r1
+              SC.D r4, r5, r6
               FENCE.SC
             "#,
         )
@@ -1483,15 +1457,15 @@ mod tests {
         ));
         assert!(matches!(
             program.instructions[12],
-            Instr::Csel(Reg(27), Reg(28), Reg(29), Condition::Ne)
+            Instr::Slt(Reg(27), Reg(28), Reg(29))
         ));
         assert!(matches!(
             program.instructions[13],
-            Instr::AmoAdd(Reg(30), Reg(1), Reg(2))
+            Instr::LrD(Reg(30), Reg(1))
         ));
         assert!(matches!(
             program.instructions[14],
-            Instr::AmoXor(Reg(4), Reg(5), Reg(6))
+            Instr::ScD(Reg(4), Reg(5), Reg(6))
         ));
         assert!(matches!(program.instructions[15], Instr::Fence));
     }

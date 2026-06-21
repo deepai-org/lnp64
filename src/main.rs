@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 use asm::Program;
 use emulator::{Machine, PreparedExecVma};
-use isa::{Condition, Instr, MemRef, Pcr, Reg, Target, Value, Width};
+use isa::{Instr, MemRef, Pcr, Reg, Target, Value, Width};
 use loader::{
     ExecEntry, ExecPlan, ExecPlanDescriptorOptions, ExecutableProvenance, LoaderOptions,
     MemoryType, VmaProtection, VmaRecord,
@@ -292,7 +292,7 @@ fn encode_flat_exec_hex(program: &Program) -> Result<String, String> {
     let mut out = String::new();
     for (pc, instr) in program.instructions.iter().enumerate() {
         for word in encode_flat_exec_instr(program, &word_pcs, pc, instr)? {
-            out.push_str(&format!("{word:08x}\n"));
+            out.push_str(&format!("{word:016x}\n"));
         }
     }
     if out.is_empty() {
@@ -328,13 +328,13 @@ fn flat_text_bytes_to_hex(text: &[u8]) -> Result<String, String> {
         return Err("flat exec image is empty".to_string());
     }
     let mut padded = text.to_vec();
-    while padded.len() % 4 != 0 {
+    while padded.len() % 8 != 0 {
         padded.push(0);
     }
     let mut out = String::new();
-    for chunk in padded.chunks_exact(4) {
-        let word = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-        out.push_str(&format!("{word:08x}\n"));
+    for chunk in padded.chunks_exact(8) {
+        let word = u64::from_le_bytes(chunk.try_into().unwrap());
+        out.push_str(&format!("{word:016x}\n"));
     }
     Ok(out)
 }
@@ -411,14 +411,10 @@ fn flat_exec_word_pcs(program: &Program) -> Vec<usize> {
     pcs
 }
 
-fn flat_exec_instr_word_len(program: &Program, instr: &Instr) -> usize {
+fn flat_exec_instr_word_len(_program: &Program, instr: &Instr) -> usize {
     match instr {
-        Instr::Li(_, Value::Imm(imm)) if imm16(*imm, "LI immediate").is_err() => 2,
-        Instr::Li(_, Value::Label(label)) if program.data_labels.contains_key(label) => 2,
-        Instr::Ld(_, MemRef::Label(_), _) => 3,
-        Instr::Auipc(_, _) => 2,
-        Instr::Mmap(_, _, _, _, _, _) => 2,
-        Instr::LinkPathAt(_, _, _, _, _) | Instr::ChownPathAt(_, _, _, _, _) => 2,
+        // `ld rd, label` is an assembler pseudo: `li rd, label` then `ld rd, (rd)`.
+        Instr::Ld(_, MemRef::Label(_), _) | Instr::LdS(_, MemRef::Label(_), _) => 2,
         _ => 1,
     }
 }
@@ -428,19 +424,17 @@ fn encode_flat_exec_instr(
     word_pcs: &[usize],
     pc: usize,
     instr: &Instr,
-) -> Result<Vec<u32>, String> {
+) -> Result<Vec<u64>, String> {
     match instr {
         Instr::Nop => Ok(vec![enc_reg(0x00, Reg(0))]),
         Instr::Li(rd, value) => encode_flat_exec_li(program, word_pcs, *rd, value),
+        Instr::Liu(rd, rs1, imm) => Ok(vec![enc_i(0x04, *rd, *rs1, imm32(*imm, "LIU immediate")?)]),
         Instr::Auipc(rd, value) => encode_flat_exec_auipc(*rd, value),
         Instr::Mov(rd, rs1) => Ok(vec![enc_rrr(0x02, *rd, *rs1, Reg(0))]),
         Instr::Add(rd, rs1, rs2) => Ok(vec![enc_rrr(0x10, *rd, *rs1, *rs2)]),
-        Instr::Addi(rd, rs1, imm) => Ok(vec![enc_mem(
-            0xa0,
-            *rd,
-            *rs1,
-            imm14(*imm, "ADDI immediate")?,
-        )]),
+        Instr::Addi(rd, rs1, imm) => {
+            Ok(vec![enc_i(0xa0, *rd, *rs1, imm32(*imm, "ADDI immediate")?)])
+        }
         Instr::Sub(rd, rs1, rs2) => Ok(vec![enc_rrr(0x11, *rd, *rs1, *rs2)]),
         Instr::Mul(rd, rs1, rs2) => Ok(vec![enc_rrr(0x12, *rd, *rs1, *rs2)]),
         Instr::Mulh(rd, rs1, rs2) => Ok(vec![enc_rrr(0xaa, *rd, *rs1, *rs2)]),
@@ -451,48 +445,30 @@ fn encode_flat_exec_instr(
         Instr::Srem(rd, rs1, rs2) => Ok(vec![enc_rrr(0xa8, *rd, *rs1, *rs2)]),
         Instr::Urem(rd, rs1, rs2) => Ok(vec![enc_rrr(0xa9, *rd, *rs1, *rs2)]),
         Instr::And(rd, rs1, rs2) => Ok(vec![enc_rrr(0x14, *rd, *rs1, *rs2)]),
-        Instr::Andi(rd, rs1, imm) => Ok(vec![enc_mem(
-            0xa1,
-            *rd,
-            *rs1,
-            imm14(*imm, "ANDI immediate")?,
-        )]),
+        Instr::Andi(rd, rs1, imm) => {
+            Ok(vec![enc_i(0xa1, *rd, *rs1, imm32(*imm, "ANDI immediate")?)])
+        }
         Instr::Or(rd, rs1, rs2) => Ok(vec![enc_rrr(0x15, *rd, *rs1, *rs2)]),
-        Instr::Ori(rd, rs1, imm) => Ok(vec![enc_mem(
-            0xa2,
-            *rd,
-            *rs1,
-            imm14(*imm, "ORI immediate")?,
-        )]),
+        Instr::Ori(rd, rs1, imm) => {
+            Ok(vec![enc_i(0xa2, *rd, *rs1, imm32(*imm, "ORI immediate")?)])
+        }
         Instr::Xor(rd, rs1, rs2) => Ok(vec![enc_rrr(0x16, *rd, *rs1, *rs2)]),
-        Instr::Xori(rd, rs1, imm) => Ok(vec![enc_mem(
-            0xa3,
-            *rd,
-            *rs1,
-            imm14(*imm, "XORI immediate")?,
-        )]),
+        Instr::Xori(rd, rs1, imm) => {
+            Ok(vec![enc_i(0xa3, *rd, *rs1, imm32(*imm, "XORI immediate")?)])
+        }
         Instr::Not(rd, rs1) => Ok(vec![enc_rrr(0x17, *rd, *rs1, Reg(0))]),
         Instr::Lsl(rd, rs1, rs2) => Ok(vec![enc_rrr(0x18, *rd, *rs1, *rs2)]),
-        Instr::Lsli(rd, rs1, imm) => Ok(vec![enc_mem(
-            0xa4,
-            *rd,
-            *rs1,
-            imm14(*imm, "LSLI immediate")?,
-        )]),
+        Instr::Lsli(rd, rs1, imm) => {
+            Ok(vec![enc_i(0xa4, *rd, *rs1, imm32(*imm, "SLLI immediate")?)])
+        }
         Instr::Lsr(rd, rs1, rs2) => Ok(vec![enc_rrr(0x19, *rd, *rs1, *rs2)]),
-        Instr::Lsri(rd, rs1, imm) => Ok(vec![enc_mem(
-            0xa5,
-            *rd,
-            *rs1,
-            imm14(*imm, "LSRI immediate")?,
-        )]),
+        Instr::Lsri(rd, rs1, imm) => {
+            Ok(vec![enc_i(0xa5, *rd, *rs1, imm32(*imm, "SRLI immediate")?)])
+        }
         Instr::Asr(rd, rs1, rs2) => Ok(vec![enc_rrr(0x1a, *rd, *rs1, *rs2)]),
-        Instr::Asri(rd, rs1, imm) => Ok(vec![enc_mem(
-            0xa6,
-            *rd,
-            *rs1,
-            imm14(*imm, "ASRI immediate")?,
-        )]),
+        Instr::Asri(rd, rs1, imm) => {
+            Ok(vec![enc_i(0xa6, *rd, *rs1, imm32(*imm, "SRAI immediate")?)])
+        }
         Instr::SextB(rd, rs1) => Ok(vec![enc_rrr(0xad, *rd, *rs1, Reg(0))]),
         Instr::SextH(rd, rs1) => Ok(vec![enc_rrr(0xae, *rd, *rs1, Reg(0))]),
         Instr::SextW(rd, rs1) => Ok(vec![enc_rrr(0xaf, *rd, *rs1, Reg(0))]),
@@ -507,105 +483,97 @@ fn encode_flat_exec_instr(
         Instr::Bswap16(rd, rs1) => Ok(vec![enc_rrr(0xb8, *rd, *rs1, Reg(0))]),
         Instr::Bswap32(rd, rs1) => Ok(vec![enc_rrr(0xb9, *rd, *rs1, Reg(0))]),
         Instr::Bswap64(rd, rs1) => Ok(vec![enc_rrr(0xba, *rd, *rs1, Reg(0))]),
-        Instr::Cmpu(lhs, rhs) => Ok(vec![enc_rrr(0x1c, *lhs, *rhs, Reg(0))]),
-        Instr::Cset(rd, condition) => Ok(vec![enc_reg(flat_exec_cset_opcode(*condition), *rd)]),
-        Instr::Csel(rd, true_src, false_src, condition) => Ok(vec![enc_rrr(
-            flat_exec_csel_opcode(*condition)?,
-            *rd,
-            *true_src,
-            *false_src,
-        )]),
-        Instr::Cmp(lhs, rhs) => Ok(vec![enc_rrr(0x1b, *lhs, *rhs, Reg(0))]),
-        Instr::Ret => Ok(vec![enc_reg(0x1f, Reg(0))]),
-        Instr::Jmp(target) => Ok(vec![enc_branch(
-            0x20,
-            branch_delta(program, word_pcs, pc, target)?,
-        )]),
-        Instr::Branch(condition, target) => Ok(vec![enc_branch(
-            flat_exec_branch_opcode(*condition)?,
-            branch_delta(program, word_pcs, pc, target)?,
-        )]),
-        Instr::Call(target) => Ok(vec![enc_branch(
-            0x27,
-            branch_delta(program, word_pcs, pc, target)?,
-        )]),
-        Instr::CallReg(target) => Ok(vec![enc_reg(0x28, *target)]),
-        Instr::LrGet(dst) => Ok(vec![enc_reg(0x29, *dst)]),
-        Instr::LrSet(src) => Ok(vec![enc_reg(0x2a, *src)]),
+        Instr::Slt(rd, rs1, rs2) => Ok(vec![enc_rrr(0x1b, *rd, *rs1, *rs2)]),
+        Instr::Sltu(rd, rs1, rs2) => Ok(vec![enc_rrr(0x1c, *rd, *rs1, *rs2)]),
+        Instr::Slti(rd, rs1, imm) => {
+            Ok(vec![enc_i(0x1d, *rd, *rs1, imm32(*imm, "SLTI immediate")?)])
+        }
+        Instr::Sltiu(rd, rs1, imm) => {
+            Ok(vec![enc_i(0x1e, *rd, *rs1, imm32(*imm, "SLTIU immediate")?)])
+        }
+        Instr::Jmp(target) => Ok(vec![enc_j(0x20, Reg(0), branch_delta(program, word_pcs, pc, target)?)]),
+        Instr::Jal(rd, target) => {
+            Ok(vec![enc_j(0x27, *rd, branch_delta(program, word_pcs, pc, target)?)])
+        }
+        Instr::Jalr(rd, rs1, imm) => Ok(vec![enc_i(0x28, *rd, *rs1, imm32(*imm, "JALR offset")?)]),
+        Instr::Beq(rs1, rs2, target) => {
+            Ok(vec![enc_b(0x21, *rs1, *rs2, branch_delta(program, word_pcs, pc, target)?)])
+        }
+        Instr::Bne(rs1, rs2, target) => {
+            Ok(vec![enc_b(0x22, *rs1, *rs2, branch_delta(program, word_pcs, pc, target)?)])
+        }
+        Instr::Blt(rs1, rs2, target) => {
+            Ok(vec![enc_b(0x23, *rs1, *rs2, branch_delta(program, word_pcs, pc, target)?)])
+        }
+        Instr::Bge(rs1, rs2, target) => {
+            Ok(vec![enc_b(0x24, *rs1, *rs2, branch_delta(program, word_pcs, pc, target)?)])
+        }
+        Instr::Bltu(rs1, rs2, target) => {
+            Ok(vec![enc_b(0x25, *rs1, *rs2, branch_delta(program, word_pcs, pc, target)?)])
+        }
+        Instr::Bgeu(rs1, rs2, target) => {
+            Ok(vec![enc_b(0x26, *rs1, *rs2, branch_delta(program, word_pcs, pc, target)?)])
+        }
+        Instr::LrD(rd, rs1) => Ok(vec![enc_rrr(0xc5, *rd, *rs1, Reg(0))]),
+        Instr::ScD(rd, rs2, rs1) => Ok(vec![enc_rrr(0xc6, *rd, *rs1, *rs2)]),
         Instr::Yield => Ok(vec![enc_reg(0x06, Reg(0))]),
         Instr::Sleep(ticks) => Ok(vec![enc_reg(0x07, *ticks)]),
-        Instr::Ld(rd, MemRef::BaseOffset(base, offset), Width::Double) => Ok(vec![enc_mem(
-            0x30,
-            *rd,
-            *base,
-            imm14(*offset, "LD offset")?,
-        )]),
-        Instr::Ld(rd, MemRef::BaseOffset(base, offset), Width::Word) => Ok(vec![enc_mem(
-            0x31,
-            *rd,
-            *base,
-            imm14(*offset, "LD.W offset")?,
-        )]),
-        Instr::Ld(rd, MemRef::BaseOffset(base, offset), Width::Half) => Ok(vec![enc_mem(
-            0x36,
-            *rd,
-            *base,
-            imm14(*offset, "LD.H offset")?,
-        )]),
-        Instr::Ld(rd, MemRef::BaseOffset(base, offset), Width::Byte) => Ok(vec![enc_mem(
-            0x32,
-            *rd,
-            *base,
-            imm14(*offset, "LD.B offset")?,
-        )]),
-        Instr::Ld(rd, MemRef::Label(label), width) => {
+        Instr::Ld(rd, MemRef::BaseOffset(base, offset), Width::Double) => {
+            Ok(vec![enc_i(0x30, *rd, *base, imm32(*offset, "LD offset")?)])
+        }
+        Instr::Ld(rd, MemRef::BaseOffset(base, offset), Width::Word) => {
+            Ok(vec![enc_i(0x31, *rd, *base, imm32(*offset, "LWU offset")?)])
+        }
+        Instr::Ld(rd, MemRef::BaseOffset(base, offset), Width::Half) => {
+            Ok(vec![enc_i(0x36, *rd, *base, imm32(*offset, "LHU offset")?)])
+        }
+        Instr::Ld(rd, MemRef::BaseOffset(base, offset), Width::Byte) => {
+            Ok(vec![enc_i(0x32, *rd, *base, imm32(*offset, "LBU offset")?)])
+        }
+        Instr::LdS(rd, MemRef::BaseOffset(base, offset), Width::Word) => {
+            Ok(vec![enc_i(0x05, *rd, *base, imm32(*offset, "LW offset")?)])
+        }
+        Instr::LdS(rd, MemRef::BaseOffset(base, offset), Width::Byte) => {
+            Ok(vec![enc_i(0x08, *rd, *base, imm32(*offset, "LB offset")?)])
+        }
+        Instr::LdS(rd, MemRef::BaseOffset(base, offset), Width::Half) => {
+            Ok(vec![enc_i(0x09, *rd, *base, imm32(*offset, "LH offset")?)])
+        }
+        Instr::LdS(_, _, Width::Double) => {
+            Err("LD.D has no sign-extending form".to_string())
+        }
+        Instr::Ld(rd, MemRef::Label(label), width) | Instr::LdS(rd, MemRef::Label(label), width) => {
             let mut words =
                 encode_flat_exec_li(program, word_pcs, *rd, &Value::Label(label.clone()))?;
-            let opcode = match width {
-                Width::Double => 0x30,
-                Width::Word => 0x31,
-                Width::Half => 0x36,
-                Width::Byte => 0x32,
+            let signed = matches!(instr, Instr::LdS(..));
+            let opcode = match (width, signed) {
+                (Width::Double, _) => 0x30,
+                (Width::Word, false) => 0x31,
+                (Width::Half, false) => 0x36,
+                (Width::Byte, false) => 0x32,
+                (Width::Word, true) => 0x05,
+                (Width::Byte, true) => 0x08,
+                (Width::Half, true) => 0x09,
             };
-            words.push(enc_mem(opcode, *rd, *rd, 0));
+            words.push(enc_i(opcode, *rd, *rd, 0));
             Ok(words)
         }
-        Instr::St(MemRef::BaseOffset(base, offset), src, Width::Double) => Ok(vec![enc_mem(
-            0x33,
-            *src,
-            *base,
-            imm14(*offset, "ST offset")?,
-        )]),
-        Instr::St(MemRef::BaseOffset(base, offset), src, Width::Word) => Ok(vec![enc_mem(
-            0x34,
-            *src,
-            *base,
-            imm14(*offset, "ST.W offset")?,
-        )]),
-        Instr::St(MemRef::BaseOffset(base, offset), src, Width::Half) => Ok(vec![enc_mem(
-            0x37,
-            *src,
-            *base,
-            imm14(*offset, "ST.H offset")?,
-        )]),
-        Instr::St(MemRef::BaseOffset(base, offset), src, Width::Byte) => Ok(vec![enc_mem(
-            0x35,
-            *src,
-            *base,
-            imm14(*offset, "ST.B offset")?,
-        )]),
+        Instr::St(MemRef::BaseOffset(base, offset), src, Width::Double) => {
+            Ok(vec![enc_s(0x33, *base, *src, imm32(*offset, "SD offset")?)])
+        }
+        Instr::St(MemRef::BaseOffset(base, offset), src, Width::Word) => {
+            Ok(vec![enc_s(0x34, *base, *src, imm32(*offset, "SW offset")?)])
+        }
+        Instr::St(MemRef::BaseOffset(base, offset), src, Width::Half) => {
+            Ok(vec![enc_s(0x37, *base, *src, imm32(*offset, "SH offset")?)])
+        }
+        Instr::St(MemRef::BaseOffset(base, offset), src, Width::Byte) => {
+            Ok(vec![enc_s(0x35, *base, *src, imm32(*offset, "SB offset")?)])
+        }
         Instr::Alloc(rd, bytes) => Ok(vec![enc_rrr(0x47, *rd, *bytes, Reg(0))]),
         Instr::AllocSize(rd, ptr) => Ok(vec![enc_rrr(0x48, *rd, *ptr, Reg(0))]),
         Instr::Free(ptr) => Ok(vec![enc_reg(0x49, *ptr)]),
         Instr::AllocEx(rd, bytes, align) => Ok(vec![enc_rrr(0x4a, *rd, *bytes, *align)]),
-        Instr::AmoSwap(dst, addr, value) => Ok(vec![enc_rrr(0xc5, *dst, *addr, *value)]),
-        Instr::AmoAdd(dst, addr, value) => Ok(vec![enc_rrr(0xc6, *dst, *addr, *value)]),
-        Instr::AmoAnd(dst, addr, value) => Ok(vec![enc_rrr(0xc7, *dst, *addr, *value)]),
-        Instr::AmoOr(dst, addr, value) => Ok(vec![enc_rrr(0xc8, *dst, *addr, *value)]),
-        Instr::LockCmpxchg(dst, addr, expected, new_value) => {
-            Ok(vec![enc_rrrr(0xc9, *dst, *addr, *expected, *new_value)])
-        }
-        Instr::AmoXor(dst, addr, value) => Ok(vec![enc_rrr(0xca, *dst, *addr, *value)]),
         Instr::ObjectCtl(result, argblock) => Ok(vec![enc_rrr(0x4b, *result, *argblock, Reg(0))]),
         Instr::CapDup(result, argblock) => Ok(vec![enc_rrr(0x50, *result, *argblock, Reg(0))]),
         Instr::CapSend(result, argblock) => Ok(vec![enc_rrr(0x51, *result, *argblock, Reg(0))]),
@@ -626,10 +594,10 @@ fn encode_flat_exec_instr(
             *index_or_buf,
             *len_or_flags,
         )]),
-        Instr::Mmap(dst, hint, len, prot, fd, offset) => Ok(vec![
-            enc_rrrr(0x6a, *dst, *hint, *len, *prot),
-            enc_rrr(0x6b, Reg(fd.0), *offset, Reg(0)),
-        ]),
+        Instr::Mmap(dst, hint, len, prot, fd, offset) => {
+            // v2: single 64-bit word; fd→rs4, offset→rs5.
+            Ok(vec![slots(0x6a, *dst, *hint, *len, *prot, Reg(fd.0), *offset)])
+        }
         Instr::Mprotect(addr, len, prot) => Ok(vec![enc_rrr(0x6c, *addr, *len, *prot)]),
         Instr::Sigaction(signum, handler) => Ok(vec![enc_rrr(0x62, *signum, *handler, Reg(0))]),
         Instr::Kill(pid, signum) => Ok(vec![enc_rrr(0x64, *pid, *signum, Reg(0))]),
@@ -676,10 +644,9 @@ fn encode_flat_exec_instr(
         Instr::RenamePathAt(old_dir, old_path, new_dir, new_path) => Ok(vec![enc_rrrr(
             0x75, *old_dir, *old_path, *new_dir, *new_path,
         )]),
-        Instr::LinkPathAt(old_dir, old_path, new_dir, new_path, flags) => Ok(vec![
-            enc_rrrr(0x76, *old_dir, *old_path, *new_dir, *new_path),
-            reg_tail(*flags),
-        ]),
+        Instr::LinkPathAt(old_dir, old_path, new_dir, new_path, flags) => Ok(vec![enc_rrrrr(
+            0x76, *old_dir, *old_path, *new_dir, *new_path, *flags,
+        )]),
         Instr::SymlinkPathAt(target, dir, link_path) => {
             Ok(vec![enc_rrr(0x77, *target, *dir, *link_path)])
         }
@@ -691,10 +658,9 @@ fn encode_flat_exec_instr(
         Instr::ChmodPathAt(dir, path, mode, flags) => {
             Ok(vec![enc_rrrr(0x7b, *dir, *path, *mode, *flags)])
         }
-        Instr::ChownPathAt(dir, path, uid, gid, flags) => Ok(vec![
-            enc_rrrr(0x7c, *dir, *path, *uid, *gid),
-            reg_tail(*flags),
-        ]),
+        Instr::ChownPathAt(dir, path, uid, gid, flags) => Ok(vec![enc_rrrrr(
+            0x7c, *dir, *path, *uid, *gid, *flags,
+        )]),
         Instr::ReaddirFdDyn(fd, dirent_buf) => Ok(vec![enc_rrr(0xcf, *fd, *dirent_buf, Reg(0))]),
         Instr::FdCloseDyn(fd) => Ok(vec![enc_reg(0x6e, *fd)]),
         Instr::CloneSpawn(dst, entry, arg) => Ok(vec![enc_rrr(0x59, *dst, *entry, *arg)]),
@@ -707,7 +673,7 @@ fn encode_flat_exec_instr(
         Instr::Isync(result, addr, len) => Ok(vec![enc_rrr(0xce, *result, *addr, *len)]),
         Instr::Exit(src) => Ok(vec![enc_reg(0x3a, *src)]),
         other => Err(format!(
-            "asm-flat-exec cannot encode {other:?}; supported subset is NOP, LI, AUIPC, MOV, ADD/ADDI, SUB, MUL/MULH/MULHU/MULHSU, DIV, UDIV/UREM/SREM, AND/ANDI/OR/ORI/XORI/NOT, LSL/LSLI/LSR/LSRI/ASR/ASRI, SEXT/ZEXT, CLZ/CTZ/POPCNT, ROL/ROR, BSWAP, CMP/CMPU, CSET, CSEL, JMP/CALL/CALL_REG/LR_GET/LR_SET/RET, YIELD/SLEEP, signed conditional branch, LD/ST.D, LD/ST.W, LD/ST.H, LD/ST.B, ALLOC/ALLOC_EX/ALLOC_SIZE/FREE, OBJECT_CTL, DOMAIN_CTL, CAP_DUP/SEND/RECV/REVOKE, ERRNO_GET/SET, GET_PCR/SET_PCR, DMA_CTL, ENV_GET, MMAP/MPROTECT, SIGACTION/KILL/SIGRET, INB/OUTB/LOAD_UCODE, OPEN_FD_DYN/FD_CLOSE_DYN, namespace path compatibility ops, CLONE.SPAWN/THREAD_JOIN, FUTEX_WAIT/FUTEX_WAKE, FORK/EXEC, READ_FD/WRITE_FD, PULL/PUSH, WAITABLE_PROBE, AWAIT/AWAIT_DYN/AWAIT_EX, CALL_CAP/CALL_CAP_DYN/RET_CAP, READ_FD_DYN/WRITE_FD_DYN, FENCE/ISYNC, AMO, LOCK.CMPXCHG, EXIT"
+            "asm-flat-exec cannot encode {other:?} into a v2 64-bit word"
         )),
     }
 }
@@ -729,68 +695,23 @@ fn pcr_selector(pcr: Pcr) -> Result<usize, String> {
     }
 }
 
+// v2: `li rd, imm32` is the assembler alias for `addi rd, r0, imm32` (one word).
 fn encode_flat_exec_li(
     program: &Program,
     word_pcs: &[usize],
     rd: Reg,
     value: &Value,
-) -> Result<Vec<u32>, String> {
+) -> Result<Vec<u64>, String> {
     let imm = value_imm32(program, word_pcs, value)?;
-    if let Ok(small) = imm16(imm, "LI immediate") {
-        Ok(vec![enc_ri(0x01, rd, small)])
-    } else {
-        Ok(vec![enc_reg(0x04, rd), imm as u32])
-    }
+    Ok(vec![enc_i(0xa0, rd, Reg(0), imm)])
 }
 
-fn encode_flat_exec_auipc(rd: Reg, value: &Value) -> Result<Vec<u32>, String> {
+// v2: `auipc rd, imm32` is one U-type word: rd = pc + sext32(imm).
+fn encode_flat_exec_auipc(rd: Reg, value: &Value) -> Result<Vec<u64>, String> {
     let imm = value_imm32_without_labels(value)?;
-    Ok(vec![enc_reg(0xd0, rd), imm as u32])
+    Ok(vec![enc_u(0xd0, rd, imm)])
 }
 
-fn flat_exec_branch_opcode(condition: Condition) -> Result<u8, String> {
-    match condition {
-        Condition::Eq => Ok(0x21),
-        Condition::Ne => Ok(0x22),
-        Condition::Lt => Ok(0x23),
-        Condition::Gt => Ok(0x24),
-        Condition::Le => Ok(0x25),
-        Condition::Ge => Ok(0x26),
-        other => Err(format!(
-            "asm-flat-exec does not yet encode unsigned branch condition {other:?}"
-        )),
-    }
-}
-
-fn flat_exec_csel_opcode(condition: Condition) -> Result<u8, String> {
-    match condition {
-        Condition::Eq => Ok(0xbb),
-        Condition::Ne => Ok(0xbc),
-        Condition::Lt => Ok(0xbd),
-        Condition::Gt => Ok(0xbe),
-        Condition::Le => Ok(0xbf),
-        Condition::Ge => Ok(0xc0),
-        Condition::Ult => Ok(0xc1),
-        Condition::Ugt => Ok(0xc2),
-        Condition::Ule => Ok(0xc3),
-        Condition::Uge => Ok(0xc4),
-    }
-}
-
-fn flat_exec_cset_opcode(condition: Condition) -> u8 {
-    match condition {
-        Condition::Eq => 0x3d,
-        Condition::Ne => 0x3e,
-        Condition::Lt => 0x3f,
-        Condition::Gt => 0x40,
-        Condition::Le => 0x41,
-        Condition::Ge => 0x42,
-        Condition::Ult => 0x43,
-        Condition::Ugt => 0x44,
-        Condition::Ule => 0x45,
-        Condition::Uge => 0x46,
-    }
-}
 
 fn value_imm32(program: &Program, word_pcs: &[usize], value: &Value) -> Result<i64, String> {
     const TEXT_BASE: u64 = 0x1000;
@@ -804,7 +725,7 @@ fn value_imm32(program: &Program, word_pcs: &[usize], value: &Value) -> Result<i
                     .get(text_pc)
                     .copied()
                     .ok_or_else(|| format!("label {label:?} has out-of-range text pc {text_pc}"))?;
-                TEXT_BASE + (word_pc as u64 * 4)
+                TEXT_BASE + (word_pc as u64 * 8)
             } else {
                 return Err(format!("unknown label immediate {label:?}"));
             };
@@ -844,17 +765,12 @@ fn branch_delta(
         .get(pc)
         .copied()
         .ok_or_else(|| format!("branch source out of range: {pc}"))?;
-    imm24(
+    // v2: control-transfer offsets are instruction counts; each instruction is
+    // one 64-bit word, so the word-pc delta is the instruction count directly.
+    imm32(
         target_word_pc as i64 - current_word_pc as i64,
-        "branch delta",
+        "branch delta (instruction count)",
     )
-}
-
-fn imm16(value: i64, name: &str) -> Result<i64, String> {
-    if !(-32768..=32767).contains(&value) {
-        return Err(format!("{name} out of signed 16-bit range: {value}"));
-    }
-    Ok(value)
 }
 
 fn imm32(value: i64, name: &str) -> Result<i64, String> {
@@ -864,52 +780,70 @@ fn imm32(value: i64, name: &str) -> Result<i64, String> {
     Ok(value)
 }
 
-fn imm14(value: i64, name: &str) -> Result<i64, String> {
-    if !(-8192..=8191).contains(&value) {
-        return Err(format!("{name} out of signed 14-bit range: {value}"));
-    }
-    Ok(value)
+// --- v2 64-bit encoders. Slots: rd[55:51] rs1[50:46] rs2[45:41] rs3[40:36]
+// rs4[35:31] rs5[30:26]. imm32 sits below the lowest used register slot.
+fn slots(opcode: u8, rd: Reg, rs1: Reg, rs2: Reg, rs3: Reg, rs4: Reg, rs5: Reg) -> u64 {
+    ((opcode as u64) << 56)
+        | (((rd.0 as u64) & 0x1f) << 51)
+        | (((rs1.0 as u64) & 0x1f) << 46)
+        | (((rs2.0 as u64) & 0x1f) << 41)
+        | (((rs3.0 as u64) & 0x1f) << 36)
+        | (((rs4.0 as u64) & 0x1f) << 31)
+        | (((rs5.0 as u64) & 0x1f) << 26)
 }
 
-fn imm24(value: i64, name: &str) -> Result<i64, String> {
-    if !(-8_388_608..=8_388_607).contains(&value) {
-        return Err(format!("{name} out of signed 24-bit range: {value}"));
-    }
-    Ok(value)
+fn enc_reg(opcode: u8, rd: Reg) -> u64 {
+    slots(opcode, rd, Reg(0), Reg(0), Reg(0), Reg(0), Reg(0))
 }
 
-fn enc_ri(opcode: u8, rd: Reg, imm: i64) -> u32 {
-    (u32::from(opcode) << 24) | (((rd.0 as u32) & 0x1f) << 19) | ((imm as u32) & 0xffff)
+fn enc_rrr(opcode: u8, rd: Reg, rs1: Reg, rs2: Reg) -> u64 {
+    slots(opcode, rd, rs1, rs2, Reg(0), Reg(0), Reg(0))
 }
 
-fn enc_rrr(opcode: u8, rd: Reg, rs1: Reg, rs2: Reg) -> u32 {
-    (u32::from(opcode) << 24)
-        | (((rd.0 as u32) & 0x1f) << 19)
-        | (((rs1.0 as u32) & 0x1f) << 14)
-        | (((rs2.0 as u32) & 0x1f) << 9)
+fn enc_rrrr(opcode: u8, rd: Reg, rs1: Reg, rs2: Reg, rs3: Reg) -> u64 {
+    slots(opcode, rd, rs1, rs2, rs3, Reg(0), Reg(0))
 }
 
-fn enc_rrrr(opcode: u8, rd: Reg, rs1: Reg, rs2: Reg, rs3: Reg) -> u32 {
-    enc_rrr(opcode, rd, rs1, rs2) | (((rs3.0 as u32) & 0x1f) << 4)
+fn enc_rrrrr(opcode: u8, rd: Reg, rs1: Reg, rs2: Reg, rs3: Reg, rs4: Reg) -> u64 {
+    slots(opcode, rd, rs1, rs2, rs3, rs4, Reg(0))
 }
 
-fn reg_tail(reg: Reg) -> u32 {
-    (reg.0 as u32) & 0x1f
+// I-type: rd, rs1, imm32 at [45:14].
+fn enc_i(opcode: u8, rd: Reg, rs1: Reg, imm: i64) -> u64 {
+    ((opcode as u64) << 56)
+        | (((rd.0 as u64) & 0x1f) << 51)
+        | (((rs1.0 as u64) & 0x1f) << 46)
+        | (((imm as u32 as u64) & 0xffff_ffff) << 14)
 }
 
-fn enc_mem(opcode: u8, reg_a: Reg, base: Reg, imm: i64) -> u32 {
-    (u32::from(opcode) << 24)
-        | (((reg_a.0 as u32) & 0x1f) << 19)
-        | (((base.0 as u32) & 0x1f) << 14)
-        | ((imm as u32) & 0x3fff)
+// S-type: rd-slot=0, rs1(base), rs2(src), imm32 at [40:9].
+fn enc_s(opcode: u8, base: Reg, src: Reg, imm: i64) -> u64 {
+    ((opcode as u64) << 56)
+        | (((base.0 as u64) & 0x1f) << 46)
+        | (((src.0 as u64) & 0x1f) << 41)
+        | (((imm as u32 as u64) & 0xffff_ffff) << 9)
 }
 
-fn enc_reg(opcode: u8, reg: Reg) -> u32 {
-    (u32::from(opcode) << 24) | (((reg.0 as u32) & 0x1f) << 19)
+// B-type: rd-slot=0, rs1, rs2, imm32 (instr-count) at [40:9].
+fn enc_b(opcode: u8, rs1: Reg, rs2: Reg, delta_words: i64) -> u64 {
+    ((opcode as u64) << 56)
+        | (((rs1.0 as u64) & 0x1f) << 46)
+        | (((rs2.0 as u64) & 0x1f) << 41)
+        | (((delta_words as u32 as u64) & 0xffff_ffff) << 9)
 }
 
-fn enc_branch(opcode: u8, delta_words: i64) -> u32 {
-    (u32::from(opcode) << 24) | ((delta_words as u32) & 0x00ff_ffff)
+// U-type: rd, imm32 at [50:19].
+fn enc_u(opcode: u8, rd: Reg, imm: i64) -> u64 {
+    ((opcode as u64) << 56)
+        | (((rd.0 as u64) & 0x1f) << 51)
+        | (((imm as u32 as u64) & 0xffff_ffff) << 19)
+}
+
+// J-type: rd, imm32 (instr-count) at [50:19].
+fn enc_j(opcode: u8, rd: Reg, delta_words: i64) -> u64 {
+    ((opcode as u64) << 56)
+        | (((rd.0 as u64) & 0x1f) << 51)
+        | (((delta_words as u32 as u64) & 0xffff_ffff) << 19)
 }
 
 fn build_flat_exec_machine(hex_words: &str, data: &[u8]) -> Result<Machine, String> {
@@ -1053,7 +987,7 @@ fn flat_hex_words_to_bytes(hex_words: &str) -> Result<Vec<u8>, String> {
             .strip_prefix("0x")
             .or_else(|| line.strip_prefix("0X"))
             .unwrap_or(line);
-        let word = u32::from_str_radix(word_text, 16)
+        let word = u64::from_str_radix(word_text, 16)
             .map_err(|err| format!("invalid hex word on line {}: {err}", idx + 1))?;
         bytes.extend_from_slice(&word.to_le_bytes());
     }
@@ -1393,10 +1327,7 @@ mod tests {
 
         let (hex, data_hex) = encode_elf_flat_exec_images(&path).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!("3a000000\n", "00000000\n", "00000000\n", "00000000\n",)
-        );
+        assert_eq!(hex, concat!("3a00000000000000\n", "0000000000000000\n",));
         assert_eq!(data_hex, "");
 
         let _ = fs::remove_file(path);
@@ -1421,21 +1352,7 @@ mod tests {
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "01080007\n",
-                "01100005\n",
-                "10184400\n",
-                "33180000\n",
-                "30200000\n",
-                "20000002\n",
-                "01280063\n",
-                "01500002\n",
-                "56328000\n",
-                "3a200000\n",
-            )
-        );
+        assert_eq!(hex, "a00800000001c000\na010000000014000\n1018440000000000\n3300060000000000\n3020000000000000\n2000000000100000\na02800000018c000\na050000000008000\n5632800000000000\n3a20000000000000\n");
     }
 
     #[test]
@@ -1449,7 +1366,7 @@ mod tests {
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(hex, concat!("06000000\n", "01080000\n", "3a080000\n",));
+        assert_eq!(hex, "0600000000000000\na008000000000000\n3a08000000000000\n");
     }
 
     #[test]
@@ -1467,18 +1384,7 @@ mod tests {
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "54080000\n",
-                "54108000\n",
-                "5418c000\n",
-                "01201000\n",
-                "5530c800\n",
-                "5428c000\n",
-                "3a000000\n",
-            )
-        );
+        assert_eq!(hex, "5408000000000000\n5410800000000000\n5418c00000000000\na020000004000000\n5530c80000000000\n5428c00000000000\n3a00000000000000\n");
     }
 
     #[test]
@@ -1500,24 +1406,7 @@ mod tests {
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "73088600\n",
-                "74214c00\n",
-                "753a12a0\n",
-                "765b1ae0\n",
-                "0000000f\n",
-                "77846400\n",
-                "789d2b60\n",
-                "79b80000\n",
-                "7ac64000\n",
-                "7bd6f9d0\n",
-                "7c088640\n",
-                "00000005\n",
-                "3a000000\n",
-            )
-        );
+        assert_eq!(hex, "7308860000000000\n74214c0000000000\n753a12a000000000\n765b1ae780000000\n7784640000000000\n789d2b6000000000\n79b8000000000000\n7ac6400000000000\n7bd6f9d000000000\n7c08864280000000\n3a00000000000000\n");
     }
 
     #[test]
@@ -1536,19 +1425,7 @@ mod tests {
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "01200004\n",
-                "01600050\n",
-                "01680001\n",
-                "3c0918d0\n",
-                "01180003\n",
-                "01780058\n",
-                "3b08ded0\n",
-                "3a080000\n",
-            )
-        );
+        assert_eq!(hex, "a020000000010000\na060000000140000\na068000000004000\n3c0918d000000000\na01800000000c000\na078000000160000\n3b08ded000000000\n3a08000000000000\n");
     }
 
     #[test]
@@ -1564,16 +1441,7 @@ mod tests {
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "01600050\n",
-                "01680001\n",
-                "2c7118d0\n",
-                "2b80ded0\n",
-                "3a800000\n",
-            )
-        );
+        assert_eq!(hex, "a060000000140000\na068000000004000\n2c7118d000000000\n2b80ded000000000\n3a80000000000000\n");
     }
 
     #[test]
@@ -1589,16 +1457,7 @@ mod tests {
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "01600050\n",
-                "01680001\n",
-                "572b1a00\n",
-                "2d339a00\n",
-                "3a080000\n",
-            )
-        );
+        assert_eq!(hex, "a060000000140000\na068000000004000\n572b1a0000000000\n2d339a0000000000\n3a08000000000000\n");
     }
 
     #[test]
@@ -1614,16 +1473,7 @@ mod tests {
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "01800004\n",
-                "01a00001\n",
-                "2e70e800\n",
-                "4d8c2800\n",
-                "3a880000\n",
-            )
-        );
+        assert_eq!(hex, "a080000000010000\na0a0000000004000\n2e70e80000000000\n4d8c280000000000\n3a88000000000000\n");
     }
 
     #[test]
@@ -1642,22 +1492,12 @@ mod tests {
         let hex = encode_flat_exec_hex(&program).unwrap();
         let data_hex = encode_flat_exec_data_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "04080000\n",
-                "00010000\n",
-                "04100000\n",
-                "00010004\n",
-                "57084400\n",
-                "3a000000\n",
-            )
-        );
+        assert_eq!(hex, "a008000040000000\na010000040010000\n5708440000000000\n3a00000000000000\n");
         assert_eq!(data_hex, "00000000000a6b6f\n");
     }
 
     #[test]
-    fn asm_flat_exec_counts_mmap_tail_word_for_later_labels() {
+    fn asm_flat_exec_encodes_single_word_mmap_with_later_label() {
         let source = r#"
             .text
               LI r1, handler
@@ -1670,27 +1510,16 @@ mod tests {
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "01081014\n",
-                "01100010\n",
-                "01180003\n",
-                "6a200430\n",
-                "6b000000\n",
-                "3a000000\n",
-            )
-        );
+        assert_eq!(hex, "a008000004080000\na010000000040000\na01800000000c000\n6a20043000000000\n3a00000000000000\n");
     }
 
     #[test]
-    fn asm_flat_exec_encodes_cmp_and_signed_branch_subset() {
+    fn asm_flat_exec_encodes_reg_compare_branch_subset() {
         let source = r#"
             .text
               LI r1, 3
               LI r2, 3
-              CMP r1, r2
-              BEQ equal
+              BEQ r1, r2, equal
               LI r3, 4
               JMP done
             equal:
@@ -1701,19 +1530,7 @@ mod tests {
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "01080003\n",
-                "01100003\n",
-                "1b088000\n",
-                "21000003\n",
-                "01180004\n",
-                "20000002\n",
-                "01180011\n",
-                "3a180000\n",
-            )
-        );
+        assert_eq!(hex, "a00800000000c000\na01000000000c000\n2100440000000600\na018000000010000\n2000000000100000\na018000000044000\n3a18000000000000\n");
     }
 
     #[test]
@@ -1728,10 +1545,7 @@ mod tests {
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!("01080006\n", "01100007\n", "12184400\n", "3a180000\n",)
-        );
+        assert_eq!(hex, "a008000000018000\na01000000001c000\n1218440000000000\n3a18000000000000\n");
     }
 
     #[test]
@@ -1746,10 +1560,7 @@ mod tests {
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!("01080009\n", "01100004\n", "11184400\n", "3a180000\n",)
-        );
+        assert_eq!(hex, "a008000000024000\na010000000010000\n1118440000000000\n3a18000000000000\n");
     }
 
     #[test]
@@ -1766,17 +1577,7 @@ mod tests {
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "0108000a\n",
-                "0110000c\n",
-                "14184400\n",
-                "16204400\n",
-                "1528c800\n",
-                "3a280000\n",
-            )
-        );
+        assert_eq!(hex, "a008000000028000\na010000000030000\n1418440000000000\n1620440000000000\n1528c80000000000\n3a28000000000000\n");
     }
 
     #[test]
@@ -1793,17 +1594,7 @@ mod tests {
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "01080003\n",
-                "01100001\n",
-                "18184400\n",
-                "19204400\n",
-                "1028c800\n",
-                "3a280000\n",
-            )
-        );
+        assert_eq!(hex, "a00800000000c000\na010000000004000\n1818440000000000\n1920440000000000\n1028c80000000000\n3a28000000000000\n");
     }
 
     #[test]
@@ -1826,23 +1617,7 @@ mod tests {
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "01080008\n",
-                "a0104005\n",
-                "a118800f\n",
-                "a220c020\n",
-                "a3290007\n",
-                "a4314001\n",
-                "a5398002\n",
-                "0140fff8\n",
-                "a64a0001\n",
-                "a052400b\n",
-                "1059d400\n",
-                "3a580000\n",
-            )
-        );
+        assert_eq!(hex, "a008000000020000\na010400000014000\na11880000003c000\na220c00000080000\na32900000001c000\na431400000004000\na539800000008000\na0403ffffffe0000\na64a000000004000\na05240000002c000\n1059d40000000000\n3a58000000000000\n");
     }
 
     #[test]
@@ -1869,29 +1644,7 @@ mod tests {
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "010800ff\n",
-                "ad104000\n",
-                "a0108002\n",
-                "b0184000\n",
-                "04200000\n",
-                "0000ffff\n",
-                "ae290000\n",
-                "a0294003\n",
-                "b1310000\n",
-                "04380000\n",
-                "ffffffff\n",
-                "af41c000\n",
-                "a0420004\n",
-                "b249c000\n",
-                "10508a00\n",
-                "10529000\n",
-                "a0528006\n",
-                "3a500000\n",
-            )
-        );
+        assert_eq!(hex, "a0080000003fc000\nad10400000000000\na010800000008000\nb018400000000000\na02000003fffc000\nae29000000000000\na02940000000c000\nb131000000000000\na0383fffffffc000\naf41c00000000000\na042000000010000\nb249c00000000000\n10508a0000000000\n1052900000000000\na052800000018000\n3a50000000000000\n");
     }
 
     #[test]
@@ -1931,199 +1684,39 @@ mod tests {
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "01080010\n",
-                "b3104000\n",
-                "a010bfc9\n",
-                "b4184000\n",
-                "01200f0f\n",
-                "b5210000\n",
-                "a0213ffb\n",
-                "01280001\n",
-                "01300008\n",
-                "b6394c00\n",
-                "b741cc00\n",
-                "01481234\n",
-                "b8524000\n",
-                "a152800f\n",
-                "04580000\n",
-                "12345678\n",
-                "b95ac000\n",
-                "a55ac018\n",
-                "a15ac00f\n",
-                "016000ff\n",
-                "ba630000\n",
-                "a5630038\n",
-                "a163000f\n",
-                "10688600\n",
-                "106b4800\n",
-                "106b5000\n",
-                "106b5400\n",
-                "106b5600\n",
-                "106b5800\n",
-                "3a680000\n",
-            )
-        );
+        assert_eq!(hex, "a008000000040000\nb310400000000000\na010bffffff24000\nb418400000000000\na020000003c3c000\nb521000000000000\na0213ffffffec000\na028000000004000\na030000000020000\nb6394c0000000000\nb741cc0000000000\na0480000048d0000\nb852400000000000\na15280000003c000\na058048d159e0000\nb95ac00000000000\na55ac00000060000\na15ac0000003c000\na0600000003fc000\nba63000000000000\na5630000000e0000\na16300000003c000\n1068860000000000\n106b480000000000\n106b500000000000\n106b540000000000\n106b560000000000\n106b580000000000\n3a68000000000000\n");
     }
 
     #[test]
-    fn asm_flat_exec_encodes_cmpu_csel_subset() {
+    fn asm_flat_exec_encodes_slt_subset() {
         let source = r#"
             .text
               LI r1, 5
               LI r2, 9
-              LI r3, 1
-              LI r4, 2
-              LI r5, 4
-              LI r6, 8
-              CMP r1, r2
-              CSEL.LT r7, r3, r4
-              CSEL.GT r8, r3, r4
-              CSEL.LE r9, r5, r6
-              CSEL.GE r10, r5, r6
-              LI r11, 16
-              LI r12, 32
-              CMP r1, r1
-              CSEL.EQ r13, r11, r12
-              CSEL.NE r14, r11, r12
-              LI r15, -1
-              LI r16, 1
-              CMPU r15, r16
-              LI r17, 64
-              LI r18, 128
-              LI r19, 256
-              LI r21, 512
-              CSEL.ULT r22, r17, r18
-              CSEL.UGT r23, r17, r18
-              CSEL.ULE r24, r19, r21
-              CSEL.UGE r25, r19, r21
-              ADD r26, r7, r8
-              ADD r26, r26, r9
-              ADD r26, r26, r10
-              ADD r26, r26, r13
-              ADD r26, r26, r14
-              ADD r26, r26, r22
-              ADD r26, r26, r23
-              ADD r26, r26, r24
-              ADD r26, r26, r25
-              EXIT r26
+              SLT r3, r1, r2
+              SLTU r4, r1, r2
+              SLTI r5, r1, 7
+              SLTIU r6, r1, 7
+              EXIT r3
         "#;
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "01080005\n",
-                "01100009\n",
-                "01180001\n",
-                "01200002\n",
-                "01280004\n",
-                "01300008\n",
-                "1b088000\n",
-                "bd38c800\n",
-                "be40c800\n",
-                "bf494c00\n",
-                "c0514c00\n",
-                "01580010\n",
-                "01600020\n",
-                "1b084000\n",
-                "bb6ad800\n",
-                "bc72d800\n",
-                "0178ffff\n",
-                "01800001\n",
-                "1c7c0000\n",
-                "01880040\n",
-                "01900080\n",
-                "01980100\n",
-                "01a80200\n",
-                "c1b46400\n",
-                "c2bc6400\n",
-                "c3c4ea00\n",
-                "c4ccea00\n",
-                "10d1d000\n",
-                "10d69200\n",
-                "10d69400\n",
-                "10d69a00\n",
-                "10d69c00\n",
-                "10d6ac00\n",
-                "10d6ae00\n",
-                "10d6b000\n",
-                "10d6b200\n",
-                "3ad00000\n",
-            )
-        );
+        assert_eq!(hex, "a008000000014000\na010000000024000\n1b18440000000000\n1c20440000000000\n1d2840000001c000\n1e3040000001c000\n3a18000000000000\n");
     }
 
     #[test]
-    fn asm_flat_exec_encodes_cset_subset() {
+    fn asm_flat_exec_encodes_liu_subset() {
         let source = r#"
             .text
-              LI r1, 5
-              LI r2, 9
-              CMP r1, r2
-              CSET.LT r3
-              CSET.GT r4
-              CSET.LE r5
-              CSET.GE r6
-              CMP r1, r1
-              CSET.EQ r7
-              CSET.NE r8
-              LI r15, -1
-              LI r16, 1
-              CMPU r15, r16
-              CSET.ULT r9
-              CSET.UGT r10
-              CSET.ULE r11
-              CSET.UGE r12
-              ADD r13, r3, r4
-              ADD r13, r13, r5
-              ADD r13, r13, r6
-              ADD r13, r13, r7
-              ADD r13, r13, r8
-              ADD r13, r13, r9
-              ADD r13, r13, r10
-              ADD r13, r13, r11
-              ADD r13, r13, r12
-              EXIT r13
+              LI r1, 1
+              LIU r1, r1, 2
+              EXIT r1
         "#;
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "01080005\n",
-                "01100009\n",
-                "1b088000\n",
-                "3f180000\n",
-                "40200000\n",
-                "41280000\n",
-                "42300000\n",
-                "1b084000\n",
-                "3d380000\n",
-                "3e400000\n",
-                "0178ffff\n",
-                "01800001\n",
-                "1c7c0000\n",
-                "43480000\n",
-                "44500000\n",
-                "45580000\n",
-                "46600000\n",
-                "1068c800\n",
-                "106b4a00\n",
-                "106b4c00\n",
-                "106b4e00\n",
-                "106b5000\n",
-                "106b5200\n",
-                "106b5400\n",
-                "106b5600\n",
-                "106b5800\n",
-                "3a680000\n",
-            )
-        );
+        assert_eq!(hex, "a008000000004000\n0408400000008000\n3a08000000000000\n");
     }
 
     #[test]
@@ -2140,64 +1733,16 @@ mod tests {
               MULH r6, r5, r1
               MULHSU r7, r5, r1
               MULHU r8, r5, r1
-              LI r9, 1
-              LI r10, -1
-              LI r11, 0xffffffff
-              LI r12, 0
-              CMP r3, r9
-              CSEL.EQ r13, r9, r12
-              CMP r4, r9
-              CSEL.EQ r14, r9, r12
-              ADD r13, r13, r14
-              CMP r6, r10
-              CSEL.EQ r15, r9, r12
-              ADD r13, r13, r15
-              CMP r7, r10
-              CSEL.EQ r16, r9, r12
-              ADD r13, r13, r16
-              CMP r8, r11
-              CSEL.EQ r17, r9, r12
-              ADD r13, r13, r17
+              ADD r13, r3, r4
+              ADD r13, r13, r6
+              ADD r13, r13, r7
+              ADD r13, r13, r8
               EXIT r13
         "#;
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "01080001\n",
-                "a4084020\n",
-                "02104000\n",
-                "aa184400\n",
-                "ab204400\n",
-                "0128ffff\n",
-                "a4294020\n",
-                "aa314200\n",
-                "ac394200\n",
-                "ab414200\n",
-                "01480001\n",
-                "0150ffff\n",
-                "04580000\n",
-                "ffffffff\n",
-                "01600000\n",
-                "1b1a4000\n",
-                "bb6a5800\n",
-                "1b224000\n",
-                "bb725800\n",
-                "106b5c00\n",
-                "1b328000\n",
-                "bb7a5800\n",
-                "106b5e00\n",
-                "1b3a8000\n",
-                "bb825800\n",
-                "106b6000\n",
-                "1b42c000\n",
-                "bb8a5800\n",
-                "106b6200\n",
-                "3a680000\n",
-            )
-        );
+        assert_eq!(hex, "a008000000004000\na408400000080000\n0210400000000000\naa18440000000000\nab20440000000000\na0283fffffffc000\na429400000080000\naa31420000000000\nac39420000000000\nab41420000000000\n1068c80000000000\n106b4c0000000000\n106b4e0000000000\n106b500000000000\n3a68000000000000\n");
     }
 
     #[test]
@@ -2207,40 +1752,12 @@ mod tests {
               AUIPC r3, 0
               FENCE.SC
               AUIPC r4, 8
-              LI r1, 1
-              LI r2, 0
-              LI r5, 4096
-              CMP r3, r5
-              CSEL.EQ r6, r1, r2
-              LI r7, 4116
-              CMP r4, r7
-              CSEL.EQ r8, r1, r2
-              ADD r9, r6, r8
-              EXIT r9
+              EXIT r3
         "#;
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "d0180000\n",
-                "00000000\n",
-                "cd000000\n",
-                "d0200000\n",
-                "00000008\n",
-                "01080001\n",
-                "01100000\n",
-                "01281000\n",
-                "1b194000\n",
-                "bb304400\n",
-                "01381014\n",
-                "1b21c000\n",
-                "bb404400\n",
-                "10499000\n",
-                "3a480000\n",
-            )
-        );
+        assert_eq!(hex, "d018000000000000\ncd00000000000000\nd020000000400000\n3a18000000000000\n");
     }
 
     #[test]
@@ -2257,58 +1774,14 @@ mod tests {
               LI r6, 0x55aa
               ST.H [r1, 6], r6
               LD.W r7, [r1, 4]
-              LI r8, 0x12345678
-              LI r9, 0xabcd
-              LI r10, 0x55aaabcd
-              LI r11, 1
-              LI r12, 0
-              CMP r3, r8
-              CSEL.EQ r13, r11, r12
-              CMP r5, r9
-              CSEL.EQ r14, r11, r12
-              ADD r13, r13, r14
-              CMP r7, r10
-              CSEL.EQ r15, r11, r12
-              ADD r13, r13, r15
+              ADD r13, r3, r5
+              ADD r13, r13, r7
               EXIT r13
         "#;
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "01080000\n",
-                "04100000\n",
-                "12345678\n",
-                "34104000\n",
-                "31184000\n",
-                "04200000\n",
-                "0000abcd\n",
-                "37204004\n",
-                "36284004\n",
-                "013055aa\n",
-                "37304006\n",
-                "31384004\n",
-                "04400000\n",
-                "12345678\n",
-                "04480000\n",
-                "0000abcd\n",
-                "04500000\n",
-                "55aaabcd\n",
-                "01580001\n",
-                "01600000\n",
-                "1b1a0000\n",
-                "bb6ad800\n",
-                "1b2a4000\n",
-                "bb72d800\n",
-                "106b5c00\n",
-                "1b3a8000\n",
-                "bb7ad800\n",
-                "106b5e00\n",
-                "3a680000\n",
-            )
-        );
+        assert_eq!(hex, "a008000000000000\na010048d159e0000\n3400440000000000\n3118400000000000\na02000002af34000\n3700480000000800\n3628400000010000\na0300000156a8000\n37004c0000000c00\n3138400000010000\n1068ca0000000000\n106b4e0000000000\n3a68000000000000\n");
     }
 
     #[test]
@@ -2325,17 +1798,7 @@ mod tests {
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "01080011\n",
-                "01100005\n",
-                "a7184400\n",
-                "a9204400\n",
-                "1028c800\n",
-                "3a280000\n",
-            )
-        );
+        assert_eq!(hex, "a008000000044000\na010000000014000\na718440000000000\na920440000000000\n1028c80000000000\n3a28000000000000\n");
     }
 
     #[test]
@@ -2352,17 +1815,7 @@ mod tests {
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "01080011\n",
-                "01100005\n",
-                "13184400\n",
-                "a8204400\n",
-                "1028c800\n",
-                "3a280000\n",
-            )
-        );
+        assert_eq!(hex, "a008000000044000\na010000000014000\n1318440000000000\na820440000000000\n1028c80000000000\n3a28000000000000\n");
     }
 
     #[test]
@@ -2376,11 +1829,11 @@ mod tests {
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(hex, concat!("01080007\n", "17104000\n", "3a100000\n",));
+        assert_eq!(hex, "a00800000001c000\n1710400000000000\n3a10000000000000\n");
     }
 
     #[test]
-    fn asm_flat_exec_encodes_wide_li_and_word_branch_subset() {
+    fn asm_flat_exec_encodes_li_imm32_and_jmp_subset() {
         let source = r#"
             .text
               LI r1, 4294967295
@@ -2392,16 +1845,7 @@ mod tests {
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "04080000\n",
-                "ffffffff\n",
-                "20000002\n",
-                "01100001\n",
-                "3a080000\n",
-            )
-        );
+        assert_eq!(hex, "a0083fffffffc000\n2000000000100000\na010000000004000\n3a08000000000000\n");
     }
 
     #[test]
@@ -2412,9 +1856,7 @@ mod tests {
               CALL add2
               EXIT r1
             add2:
-              LR_GET r3
-              LR_SET r3
-              CALL_REG r3
+              JALR r4, r3, 0
               LI r2, 2
               ADD r1, r1, r2
               RET
@@ -2422,20 +1864,7 @@ mod tests {
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "01080005\n",
-                "27000002\n",
-                "3a080000\n",
-                "29180000\n",
-                "2a180000\n",
-                "28180000\n",
-                "01100002\n",
-                "10084400\n",
-                "1f000000\n",
-            )
-        );
+        assert_eq!(hex, "a008000000014000\n2708000000100000\n3a08000000000000\n2820c00000000000\na010000000008000\n1008440000000000\n2800400000000000\n");
     }
 
     #[test]
@@ -2456,21 +1885,7 @@ mod tests {
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "01080002\n",
-                "47104000\n",
-                "48288000\n",
-                "01180041\n",
-                "35188000\n",
-                "32208000\n",
-                "49100000\n",
-                "01300010\n",
-                "4a398200\n",
-                "3a200000\n",
-            )
-        );
+        assert_eq!(hex, "a008000000008000\n4710400000000000\n4828800000000000\na018000000104000\n3500860000000000\n3220800000000000\n4910000000000000\na030000000040000\n4a39820000000000\n3a20000000000000\n");
     }
 
     #[test]
@@ -2481,52 +1896,27 @@ mod tests {
               LI r2, 8
               ISYNC r3, r1, r2
               LI r4, 41
-              LI r5, 42
-              LOCK.CMPXCHG r6, r1, r4, r5
-              EXIT r6
+              EXIT r4
         "#;
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "01080000\n",
-                "01100008\n",
-                "ce184400\n",
-                "01200029\n",
-                "0128002a\n",
-                "c9304850\n",
-                "3a300000\n",
-            )
-        );
+        assert_eq!(hex, "a008000000000000\na010000000020000\nce18440000000000\na0200000000a4000\n3a20000000000000\n");
     }
 
     #[test]
-    fn asm_flat_exec_encodes_amo_subset() {
+    fn asm_flat_exec_encodes_lr_sc_subset() {
         let source = r#"
             .text
-              AMO.SWAP r4, r1, r2
-              AMO.ADD r5, r1, r3
-              AMO.AND r6, r1, r4
-              AMO.OR r7, r1, r5
-              AMO.XOR r8, r1, r6
-              EXIT r8
+              LI r1, 0
+              LR.D r4, r1
+              SC.D r5, r2, r1
+              EXIT r5
         "#;
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "c5204400\n",
-                "c6284600\n",
-                "c7304800\n",
-                "c8384a00\n",
-                "ca404c00\n",
-                "3a400000\n",
-            )
-        );
+        assert_eq!(hex, "a008000000000000\nc520400000000000\nc628440000000000\n3a28000000000000\n");
     }
 
     #[test]
@@ -2544,18 +1934,7 @@ mod tests {
         let program = Program::parse(source).unwrap();
         let hex = encode_flat_exec_hex(&program).unwrap();
 
-        assert_eq!(
-            hex,
-            concat!(
-                "4b228000\n",
-                "502a8000\n",
-                "51328000\n",
-                "523a8000\n",
-                "53328000\n",
-                "5b3a8000\n",
-                "3a380000\n",
-            )
-        );
+        assert_eq!(hex, "4b22800000000000\n502a800000000000\n5132800000000000\n523a800000000000\n5332800000000000\n5b3a800000000000\n3a38000000000000\n");
     }
 
     fn minimal_static_elf() -> Vec<u8> {
@@ -2595,8 +1974,9 @@ mod tests {
 
     fn minimal_static_exit_elf_at(vaddr: u64) -> Vec<u8> {
         let mut image = minimal_static_elf_at(vaddr);
-        put_u32(&mut image, 0x100, 0x3a00_0000);
-        image[0x104..0x110].fill(0);
+        // v2: EXIT r0 is one 64-bit word, opcode 0x3a in the high byte.
+        put_u64(&mut image, 0x100, 0x3a00_0000_0000_0000);
+        image[0x108..0x110].fill(0);
         image
     }
 
