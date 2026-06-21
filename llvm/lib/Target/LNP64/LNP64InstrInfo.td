@@ -307,6 +307,9 @@ def LI : LNP64Inst<(outs GPR:$rd), (ins simm32:$imm), "li", "\t$rd, $imm"> {
   let Inst{55-51} = rd;
   let Inst{45-14} = imm;
   let Pattern = [(set GPR:$rd, simm32_imm:$imm)];
+  // Constant with no register inputs: rematerialize instead of spill/reload.
+  let isReMaterializable = 1;
+  let isAsCheapAsAMove = 1;
 }
 def MOV : LNP64RR<"mov"> { let Opcode = 0xa0; }  // addi rd, rs, 0
 def AUIPC : LNP64Inst<(outs GPR:$rd), (ins auipctarget:$target), "auipc",
@@ -316,6 +319,9 @@ def AUIPC : LNP64Inst<(outs GPR:$rd), (ins auipctarget:$target), "auipc",
   let Opcode = 0xd0;
   let Inst{55-51} = rd;
   let Inst{50-19} = target;  // U-type imm32 [50:19]
+  // PC-relative address with no register inputs: rematerializable.
+  let isReMaterializable = 1;
+  let isAsCheapAsAMove = 1;
 }
 def LIU : LNP64RRI<"liu"> { let Opcode = 0x04; }
 def : Pat<(i64 (LNP64wrapper tglobaladdr:$target)), (AUIPC tglobaladdr:$target)>;
