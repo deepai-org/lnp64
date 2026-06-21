@@ -29,8 +29,9 @@ work="$(mktemp -d "/tmp/lnp64-mvs-${proof}-XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 smt2="$work/${top}.smt2"
 
+mvs_sources=(rtl/mvs/*.sv)
 yosys -ql "$work/yosys.log" -p \
-  "read_verilog -formal -sv rtl/mvs/lnp64_mvs.sv ${wrapper}; prep -top ${top}; flatten; opt -full; opt_clean -purge; async2sync; dffunmap; opt_clean -purge; write_smt2 -wires ${smt2}"
+  "read_verilog -formal -sv ${mvs_sources[*]} ${wrapper}; prep -top ${top}; flatten; opt -full; opt_clean -purge; async2sync; dffunmap; opt_clean -purge; write_smt2 -wires ${smt2}"
 [[ -s "$smt2" ]] || { printf 'rtl mvs %s: no SMT2 model\n' "$proof" >&2; exit 1; }
 
 overall=0
