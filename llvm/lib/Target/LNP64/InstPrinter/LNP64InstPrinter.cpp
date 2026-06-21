@@ -84,6 +84,8 @@ static const char *getLNP64Mnemonic(unsigned Opcode) {
   case LNP64::MMAP: return "mmap";
   case LNP64::MUNMAP: return "munmap";
   case LNP64::MPROTECT: return "mprotect";
+  case LNP64::MMAP_BOOTSTRAP: return "mmap_bootstrap";
+  case LNP64::MPROTECT_BOOTSTRAP: return "mprotect_bootstrap";
   case LNP64::GET_PCR: return "get_pcr";
   case LNP64::SET_PCR: return "set_pcr";
   case LNP64::SIGACTION: return "sigaction";

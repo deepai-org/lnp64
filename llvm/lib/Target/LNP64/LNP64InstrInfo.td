@@ -474,6 +474,13 @@ def MMAP : LNP64Inst<(outs GPR:$rd),
 def MUNMAP : LNP64Native2<"munmap">;
 def MPROTECT : LNP64Inst<(outs GPR:$rd), (ins GPR:$addr, GPR:$len, GPR:$prot),
                          "mprotect", "\t$rd, $addr, $len, $prot">;
+def MMAP_BOOTSTRAP : LNP64Inst<(outs GPR:$rd),
+                               (ins GPR:$addr, GPR:$len, GPR:$prot),
+                               "mmap_bootstrap", "\t$rd, $addr, $len, $prot">;
+def MPROTECT_BOOTSTRAP : LNP64Inst<(outs GPR:$rd),
+                                   (ins GPR:$addr, GPR:$len, GPR:$prot),
+                                   "mprotect_bootstrap",
+                                   "\t$rd, $addr, $len, $prot">;
 def SIGACTION : LNP64Signal2<"sigaction">;
 def SIGMASK_SET : LNP64Signal1<"sigmask_set">;
 def LNP64_KILL : LNP64Signal2<"kill">;

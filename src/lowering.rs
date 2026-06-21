@@ -1459,12 +1459,12 @@ mod tests {
         assert!(setjmp_header.contains("__attribute__((returns_twice))"));
         assert!(setjmp_header.contains("__attribute__((noreturn))"));
         assert!(real_llc.contains("toolchain/liblnp64_setjmp_min.s"));
-        assert!(libc_setjmp_min.contains("SD [r2, 32], r1"));
+        assert!(libc_setjmp_min.contains("SD r1, 32(r2)"));
         assert!(libc_setjmp_min.contains("MOV r1, r5"));
         assert!(libc_setjmp_min.contains("ADD r31, r4, r0"));
-        assert!(libc_setjmp_min.contains("SD [r2, 0], r0"));
-        assert!(libc_setjmp_min.contains("SD [r2, 8], r0"));
-        assert!(libc_setjmp_min.contains("SD [r2, 16], r0"));
+        assert!(libc_setjmp_min.contains("SD r0, 0(r2)"));
+        assert!(libc_setjmp_min.contains("SD r0, 8(r2)"));
+        assert!(libc_setjmp_min.contains("SD r0, 16(r2)"));
         assert!(libc_setjmp_min.contains("BNE r3, r0, longjmp_value_ready"));
         assert!(real_llc.contains("liblnp64-setjmp-min.o"));
         assert!(real_llc.contains("grep -q '<setjmp>:'"));

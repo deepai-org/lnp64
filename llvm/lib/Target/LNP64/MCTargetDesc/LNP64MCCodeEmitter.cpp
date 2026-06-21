@@ -342,6 +342,8 @@ public:
       break;
     case LNP64::MUNMAP: W = rType(0x61, MI, 2); break;
     case LNP64::MPROTECT: W = rType(0x6c, MI, 4); break;
+    case LNP64::MMAP_BOOTSTRAP: W = rType(0x60, MI, 4); break;
+    case LNP64::MPROTECT_BOOTSTRAP: W = rType(0x66, MI, 4); break;
     case LNP64::SIGACTION: W = rType(0x62, MI, 2); break;
     case LNP64::SIGMASK_SET: W = rType(0x63, MI, 1); break;
     case LNP64::LNP64_KILL: W = rType(0x64, MI, 2); break;

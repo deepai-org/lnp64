@@ -11,19 +11,19 @@
 .globl setjmp
 .type setjmp,@function
 setjmp:
-  SD [r2, 0], r0
-  SD [r2, 8], r0
-  SD [r2, 16], r0
-  SD [r2, 24], r31
-  SD [r2, 32], r1
+  SD r0, 0(r2)
+  SD r0, 8(r2)
+  SD r0, 16(r2)
+  SD r31, 24(r2)
+  SD r1, 32(r2)
   LI r2, 0
   RET
 
 .globl longjmp
 .type longjmp,@function
 longjmp:
-  LD r4, [r2, 24]
-  LD r5, [r2, 32]
+  LD r4, 24(r2)
+  LD r5, 32(r2)
   BNE r3, r0, longjmp_value_ready
   LI r3, 1
 longjmp_value_ready:

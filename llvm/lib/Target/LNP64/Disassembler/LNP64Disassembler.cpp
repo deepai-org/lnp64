@@ -204,6 +204,8 @@ public:
       return Success;
     case 0x61: MI.setOpcode(LNP64::MUNMAP); R(RD); R(RS1); return Success;
     case 0x6c: MI.setOpcode(LNP64::MPROTECT); R(RD); R(RS1); R(RS2); R(RS3); return Success;
+    case 0x60: MI.setOpcode(LNP64::MMAP_BOOTSTRAP); R(RD); R(RS1); R(RS2); R(RS3); return Success;
+    case 0x66: MI.setOpcode(LNP64::MPROTECT_BOOTSTRAP); R(RD); R(RS1); R(RS2); R(RS3); return Success;
     case 0x62: MI.setOpcode(LNP64::SIGACTION); R(RD); R(RS1); return Success;
     case 0x63: MI.setOpcode(LNP64::SIGMASK_SET); R(RD); return Success;
     case 0x64: MI.setOpcode(LNP64::LNP64_KILL); R(RD); R(RS1); return Success;

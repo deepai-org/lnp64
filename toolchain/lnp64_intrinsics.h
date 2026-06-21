@@ -253,7 +253,7 @@ static inline void *__lnp_mmap_bootstrap(lnp64_word_t addr_hint,
                                          lnp64_word_t len,
                                          lnp64_word_t prot) {
   lnp64_word_t addr;
-  __asm__ volatile("mmap %0, %1, %2, %3"
+  __asm__ volatile("mmap_bootstrap %0, %1, %2, %3"
                    : "=r"(addr)
                    : "r"(addr_hint), "r"(len), "r"(prot)
                    : "memory");
@@ -273,7 +273,7 @@ static inline lnp64_word_t __lnp_mprotect_bootstrap(void *addr,
                                                     lnp64_word_t len,
                                                     lnp64_word_t prot) {
   lnp64_word_t status;
-  __asm__ volatile("mprotect %0, %1, %2, %3"
+  __asm__ volatile("mprotect_bootstrap %0, %1, %2, %3"
                    : "=r"(status)
                    : "r"((lnp64_word_t)addr), "r"(len), "r"(prot)
                    : "memory");

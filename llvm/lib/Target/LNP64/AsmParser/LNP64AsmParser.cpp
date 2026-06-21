@@ -416,6 +416,8 @@ private:
             .Case("mmap", LNP64::MMAP)
             .Case("munmap", LNP64::MUNMAP)
             .Case("mprotect", LNP64::MPROTECT)
+            .Case("mmap_bootstrap", LNP64::MMAP_BOOTSTRAP)
+            .Case("mprotect_bootstrap", LNP64::MPROTECT_BOOTSTRAP)
             .Case("get_pcr", LNP64::GET_PCR)
             .Case("set_pcr", LNP64::SET_PCR)
             .Case("sigaction", LNP64::SIGACTION)
@@ -551,7 +553,8 @@ private:
       return addRegRegReg(Inst, Operands);
     if (Opcode == LNP64::AWAIT || Opcode == LNP64::GATE_CALL ||
         Opcode == LNP64::GATE_RETURN ||
-        Opcode == LNP64::MPROTECT || Opcode == LNP64::ENV_GET ||
+        Opcode == LNP64::MPROTECT || Opcode == LNP64::MMAP_BOOTSTRAP ||
+        Opcode == LNP64::MPROTECT_BOOTSTRAP || Opcode == LNP64::ENV_GET ||
         Opcode == LNP64::OPEN_AT || Opcode == LNP64::PULL ||
         Opcode == LNP64::PUSH || Opcode == LNP64::STAT_PATH_AT ||
         Opcode == LNP64::UTIME_PATH_AT || Opcode == LNP64::RENAME_PATH_AT ||

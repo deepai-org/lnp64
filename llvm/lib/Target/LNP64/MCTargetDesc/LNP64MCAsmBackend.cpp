@@ -14,14 +14,18 @@ using namespace llvm;
 
 namespace {
 
+// These numbers MUST match the R_LNP64_* enum in lld/ELF/Arch/LNP64.cpp.
+// 4/5/6 there are dynamic relocs (GOT64/GLOB_DAT/RELATIVE); the code fixups
+// the emitter produces are 13 (AUIPC), 14 (BRANCH), 15 (JUMP), with the TLS
+// slot at 12.
 enum : unsigned {
   R_LNP64_ABS64 = 1,
   R_LNP64_ABS32 = 2,
   R_LNP64_PC32 = 3,
-  R_LNP64_BRANCH = 4,    // B-type, (S-PC)>>3, field at bit 9
-  R_LNP64_JUMP = 5,      // J-type, (S-PC)>>3, field at bit 19
-  R_LNP64_AUIPC = 6,     // U-type, (S-PC), field at bit 19
-  R_LNP64_TLS_TPREL_SLOT64 = 16,
+  R_LNP64_TLS_TPREL_SLOT64 = 12,
+  R_LNP64_AUIPC = 13,    // U-type, (S-PC), field at bit 19
+  R_LNP64_BRANCH = 14,   // B-type, (S-PC)>>3, field at bit 9
+  R_LNP64_JUMP = 15,     // J-type, (S-PC)>>3, field at bit 19
 };
 
 class LNP64ELFObjectWriter final : public MCELFObjectTargetWriter {
