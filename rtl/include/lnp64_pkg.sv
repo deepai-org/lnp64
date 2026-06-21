@@ -216,6 +216,22 @@ package lnp64_pkg;
         LNP64_OP_OUTB         = 16'h008e,
         LNP64_OP_LOAD_UCODE   = 16'h008f,
         LNP64_OP_FORK         = 16'h0090,
+        // --- ISA v2 additions (decode emits these; legacy ids above kept so
+        // the as-yet-unmigrated execute paths in lnp64_core_tile.sv still
+        // compile). ---
+        LNP64_OP_SLT          = 16'h0091,
+        LNP64_OP_SLTU         = 16'h0092,
+        LNP64_OP_SLTI         = 16'h0093,
+        LNP64_OP_SLTIU        = 16'h0094,
+        LNP64_OP_LIU          = 16'h0095,
+        LNP64_OP_JAL          = 16'h0096,
+        LNP64_OP_JALR         = 16'h0097,
+        LNP64_OP_LR_D         = 16'h0098,
+        LNP64_OP_SC_D         = 16'h0099,
+        LNP64_OP_BRANCH_LTU   = 16'h009a,
+        LNP64_OP_BRANCH_GEU   = 16'h009b,
+        LNP64_OP_AUIPC        = 16'h009c,
+        LNP64_OP_LW           = 16'h009d,
         LNP64_OP_UNSUPPORTED  = 16'h00ff
     } lnp64_opcode_e;
 
@@ -1075,6 +1091,8 @@ package lnp64_pkg;
         logic [7:0] rs1;
         logic [7:0] rs2;
         logic [7:0] rs3;
+        logic [7:0] rs4;
+        logic [7:0] rs5;
         logic [31:0] imm;
         logic supported;
     } lnp64_decode_t;
@@ -1150,7 +1168,7 @@ package lnp64_pkg;
         logic [7:0]  operand_rs1;
         logic [7:0]  operand_rs2;
         logic [7:0]  operand_rs3;
-        logic [31:0] operand_imm;
+        logic [63:0] operand_imm;
         logic        result_valid;
         logic [7:0]  result_reg;
         logic [63:0] result_value;

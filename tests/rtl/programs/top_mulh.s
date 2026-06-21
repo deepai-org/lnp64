@@ -1,4 +1,7 @@
 .text
+  ; ISA v2 port: the v1 CMP/CSEL.EQ counting idiom is replaced by the RISC-V
+  ; SEQ idiom (sub; sltiu rd, tmp, 1) which yields 1 iff the two values are
+  ; equal, then the matches are summed -- identical observable result.
   LI r1, 1
   LSLI r1, r1, 32
   MOV r2, r1
@@ -13,18 +16,18 @@
   LI r10, -1
   LI r11, 0xffffffff
   LI r12, 0
-  CMP r3, r9
-  CSEL.EQ r13, r9, r12
-  CMP r4, r9
-  CSEL.EQ r14, r9, r12
+  SUB r20, r3, r9
+  SLTIU r13, r20, 1
+  SUB r20, r4, r9
+  SLTIU r14, r20, 1
   ADD r13, r13, r14
-  CMP r6, r10
-  CSEL.EQ r15, r9, r12
+  SUB r20, r6, r10
+  SLTIU r15, r20, 1
   ADD r13, r13, r15
-  CMP r7, r10
-  CSEL.EQ r16, r9, r12
+  SUB r20, r7, r10
+  SLTIU r16, r20, 1
   ADD r13, r13, r16
-  CMP r8, r11
-  CSEL.EQ r17, r9, r12
+  SUB r20, r8, r11
+  SLTIU r17, r20, 1
   ADD r13, r13, r17
   EXIT r13

@@ -82,7 +82,7 @@ module lnp64_core_tile #(
 
     core_state_e state;
     lnp64_decode_t dec;
-    logic [31:0] instr;
+    logic [63:0] instr;
     logic [7:0] raw_opcode;
     logic [31:0] pc;
     logic [31:0] next_op_id;
@@ -180,7 +180,7 @@ module lnp64_core_tile #(
     logic [63:0] sram [0:SRAM_WORDS-1];
     logic [63:0] initial_sram [0:SRAM_WORDS-1];
     logic [63:0] initial_data_sram [0:SRAM_WORDS-1];
-    logic [31:0] program_rom [0:PROGRAM_WORDS-1];
+    logic [63:0] program_rom [0:PROGRAM_WORDS-1];
     localparam logic [63:0] HEAP_ARCH_BASE = 64'h0000_0000_0010_f000;
     localparam logic [63:0] MMAP_ARCH_BASE = 64'h0000_0000_0020_e000;
     localparam logic [63:0] FLAT_DATA_BASE_ADDR = 64'h0000_0000_0001_0000;
@@ -468,54 +468,91 @@ module lnp64_core_tile #(
 
     lnp64_decode decode_i(.instr(instr), .dec(dec));
 
-    function automatic logic [31:0] enc_ri(
-        input logic [7:0] opcode,
-        input logic [4:0] rd,
-        input logic signed [15:0] imm
-    );
-        enc_ri = {opcode, rd, 3'd0, imm[15:0]};
-    endfunction
-
-    function automatic logic [31:0] enc_rrr(
-        input logic [7:0] opcode,
-        input logic [4:0] rd,
-        input logic [4:0] rs1,
-        input logic [4:0] rs2
-    );
-        enc_rrr = {opcode, rd, rs1, rs2, 9'd0};
-    endfunction
-
-    function automatic logic [31:0] enc_rrrr(
+    // --- ISA v2 64-bit instruction encoders. Slots: opcode[63:56] rd[55:51]
+    // rs1[50:46] rs2[45:41] rs3[40:36] rs4[35:31] rs5[30:26]; the 32-bit
+    // immediate sits below the lowest register slot the format uses
+    // (I:[45:14], S/B:[40:9], U/J:[50:19]). ---
+    function automatic logic [63:0] enc_slots(
         input logic [7:0] opcode,
         input logic [4:0] rd,
         input logic [4:0] rs1,
         input logic [4:0] rs2,
         input logic [4:0] rs3
     );
-        enc_rrrr = {opcode, rd, rs1, rs2, rs3, 4'd0};
+        enc_slots = {opcode, rd, rs1, rs2, rs3, 31'd0};
     endfunction
 
-    function automatic logic [31:0] enc_mem(
+    // I-type: rd, rs1, imm32 at [45:14].
+    function automatic logic [63:0] enc_ri(
+        input logic [7:0] opcode,
+        input logic [4:0] rd,
+        input logic signed [31:0] imm
+    );
+        enc_ri = {opcode, rd, 5'd0, imm[31:0], 14'd0};
+    endfunction
+
+    function automatic logic [63:0] enc_rrr(
+        input logic [7:0] opcode,
+        input logic [4:0] rd,
+        input logic [4:0] rs1,
+        input logic [4:0] rs2
+    );
+        enc_rrr = enc_slots(opcode, rd, rs1, rs2, 5'd0);
+    endfunction
+
+    function automatic logic [63:0] enc_rrrr(
+        input logic [7:0] opcode,
+        input logic [4:0] rd,
+        input logic [4:0] rs1,
+        input logic [4:0] rs2,
+        input logic [4:0] rs3
+    );
+        enc_rrrr = enc_slots(opcode, rd, rs1, rs2, rs3);
+    endfunction
+
+    // I-type load: rd, base(rs1), imm32 at [45:14].
+    function automatic logic [63:0] enc_mem(
         input logic [7:0] opcode,
         input logic [4:0] reg_a,
         input logic [4:0] base,
-        input logic signed [13:0] imm
+        input logic signed [31:0] imm
     );
-        enc_mem = {opcode, reg_a, base, imm[13:0]};
+        enc_mem = {opcode, reg_a, base, imm[31:0], 9'd0};
     endfunction
 
-    function automatic logic [31:0] enc_reg(
+    // S-type store: base(rs1), src(rs2), imm32 at [40:9]; rd slot = 0.
+    function automatic logic [63:0] enc_store(
+        input logic [7:0] opcode,
+        input logic [4:0] base,
+        input logic [4:0] src,
+        input logic signed [31:0] imm
+    );
+        enc_store = {opcode, 5'd0, base, src, imm[31:0], 9'd0};
+    endfunction
+
+    function automatic logic [63:0] enc_reg(
         input logic [7:0] opcode,
         input logic [4:0] reg_a
     );
-        enc_reg = {opcode, reg_a, 19'd0};
+        enc_reg = enc_slots(opcode, reg_a, 5'd0, 5'd0, 5'd0);
     endfunction
 
-    function automatic logic [31:0] enc_branch(
+    // J-type branch/jump: instruction-count offset at [50:19] (imm32, <<3 in HW).
+    function automatic logic [63:0] enc_branch(
         input logic [7:0] opcode,
-        input logic signed [23:0] delta_words
+        input logic signed [31:0] delta_words
     );
-        enc_branch = {opcode, delta_words[23:0]};
+        enc_branch = {opcode, 5'd0, delta_words[31:0], 19'd0};
+    endfunction
+
+    // B-type branch: rs1, rs2, instruction-count offset at [40:9].
+    function automatic logic [63:0] enc_bcc(
+        input logic [7:0] opcode,
+        input logic [4:0] rs1,
+        input logic [4:0] rs2,
+        input logic signed [31:0] delta_words
+    );
+        enc_bcc = {opcode, 5'd0, rs1, rs2, delta_words[31:0], 9'd0};
     endfunction
 
     function automatic int unsigned sram_word_index(input logic [63:0] addr);
@@ -541,13 +578,14 @@ module lnp64_core_tile #(
         end
     endfunction
 
+    // v2: instructions are 8 bytes, 8-aligned; pc is an instruction index.
     function automatic logic [63:0] flat_exec_addr(input logic [31:0] pc_word);
-        flat_exec_addr = FLAT_EXEC_BASE_ADDR + {30'd0, pc_word, 2'd0};
+        flat_exec_addr = FLAT_EXEC_BASE_ADDR + {29'd0, pc_word, 3'd0};
     endfunction
 
     function automatic logic [31:0] flat_exec_pc_word(input logic [63:0] addr);
         if (addr >= FLAT_EXEC_BASE_ADDR) begin
-            flat_exec_pc_word = (addr - FLAT_EXEC_BASE_ADDR) >> 2;
+            flat_exec_pc_word = (addr - FLAT_EXEC_BASE_ADDR) >> 3;
         end else begin
             flat_exec_pc_word = addr[31:0];
         end
@@ -1142,20 +1180,28 @@ module lnp64_core_tile #(
         end
     endfunction
 
-    function automatic logic [31:0] flat_retire_operand_imm(
-        input logic [7:0] opcode,
-        input logic [31:0] word,
-        input logic [31:0] literal
+    // v2: 32-bit immediate, position fixed per format.
+    //   I-type [45:14]; S/B-type [40:9]; U/J-type [50:19].
+    // Sign-extended to 64 bits to match the reference emulator's u64 trace.
+    function automatic logic [63:0] flat_retire_operand_imm(
+        input logic [7:0]  opcode,
+        input logic [63:0] word
     );
+        logic [31:0] imm32;
         begin
             unique case (opcode)
-                8'h03, 8'h04, 8'hd0: flat_retire_operand_imm = literal;
-                8'h01: flat_retire_operand_imm = {{16{word[15]}}, word[15:0]};
-                8'h20, 8'h21, 8'h22, 8'h23, 8'h24, 8'h25, 8'h26, 8'h27:
-                    flat_retire_operand_imm = {{8{word[23]}}, word[23:0]};
+                // U/J-type: jmp, jal, auipc.
+                8'h20, 8'h27, 8'hd0:
+                    imm32 = word[50:19];
+                // S-type stores and B-type branches.
+                8'h33, 8'h34, 8'h35, 8'h37,
+                8'h21, 8'h22, 8'h23, 8'h24, 8'h25, 8'h26:
+                    imm32 = word[40:9];
+                // I-type (default): addi/andi/.../loads/jalr/liu/slti.
                 default:
-                    flat_retire_operand_imm = {{18{word[13]}}, word[13:0]};
+                    imm32 = word[45:14];
             endcase
+            flat_retire_operand_imm = {{32{imm32[31]}}, imm32};
         end
     endfunction
 
@@ -1510,15 +1556,26 @@ module lnp64_core_tile #(
     function automatic logic [63:0] flat_retire_result_value(input logic [15:0] opcode);
         logic [63:0] result;
         logic [7:0] trace_result_reg;
+        logic [63:0] lw_word;
         begin
+            lw_word = load_word_lane(sram[mem_sram_word_index], mem_word_upper);
             trace_result_reg = flat_retire_result_reg(raw_opcode, dec.rd);
             result = gpr[trace_result_reg[4:0]];
             unique case (opcode)
-                LNP64_OP_LI32: result = {{32{dec.imm[31]}}, dec.imm};
-                LNP64_OP_LI32_LITERAL, LNP64_OP_LA_LITERAL: result = {32'd0, program_rom[pc + 32'd1]};
-                LNP64_OP_AUIPC_LITERAL:
-                    result = FLAT_EXEC_BASE_ADDR + {30'd0, pc, 2'd0} +
-                        {{32{program_rom[pc + 32'd1][31]}}, program_rom[pc + 32'd1]};
+                // v2: liu rd,rs1,imm32 -> (rs1 & low32) | (imm32 << 32).
+                LNP64_OP_LIU: result = {dec.imm, gpr[dec.rs1][31:0]};
+                // v2: auipc is a single word; rd = pc(byte) + sext32(imm32).
+                LNP64_OP_AUIPC:
+                    result = FLAT_EXEC_BASE_ADDR + {29'd0, pc, 3'd0} +
+                        {{32{dec.imm[31]}}, dec.imm};
+                // v2: set-less-than into a GPR.
+                LNP64_OP_SLT:  result = {63'd0, ($signed(gpr[dec.rs1]) < $signed(gpr[dec.rs2]))};
+                LNP64_OP_SLTU: result = {63'd0, (gpr[dec.rs1] < gpr[dec.rs2])};
+                LNP64_OP_SLTI: result =
+                    {63'd0, ($signed(gpr[dec.rs1]) < $signed({{32{dec.imm[31]}}, dec.imm}))};
+                LNP64_OP_SLTIU: result =
+                    {63'd0, (gpr[dec.rs1] < {{32{dec.imm[31]}}, dec.imm})};
+                LNP64_OP_LW: result = {{32{lw_word[31]}}, lw_word[31:0]};
                 LNP64_OP_ISYNC: result = 64'd0;
                 LNP64_OP_MOV: result = gpr[dec.rs1];
                 LNP64_OP_ADD: result = gpr[dec.rs1] + gpr[dec.rs2];
@@ -1808,20 +1865,22 @@ module lnp64_core_tile #(
             initial_sram[sram_i] = 64'd0;
             initial_data_sram[sram_i] = 64'd0;
         end
+        // v2 default program mirrors tests/rtl/programs/top_smoke.s assembled
+        // by the v2 toolchain. LI is addi rd,r0,imm32 (0xa0).
         program_rom[0]  = enc_reg(8'h00, 5'd0);
-        program_rom[1]  = enc_ri(8'h01, 5'd1, 16'sd7);
-        program_rom[2]  = enc_ri(8'h01, 5'd2, 16'sd5);
-        program_rom[3]  = enc_rrr(8'h10, 5'd3, 5'd1, 5'd2);
-        program_rom[4]  = enc_mem(8'h33, 5'd3, 5'd0, 14'sd0);
-        program_rom[5]  = enc_mem(8'h30, 5'd4, 5'd0, 14'sd0);
-        program_rom[6]  = enc_branch(8'h20, 24'sd2);
-        program_rom[7]  = enc_ri(8'h01, 5'd5, 16'sd99);
-        program_rom[8]  = enc_reg(8'h07, 5'd0);
-        program_rom[9]  = enc_rrrr(8'h56, 5'd6, 5'd0, 5'd0, 5'd0);
-        program_rom[10] = enc_ri(8'h01, 5'd9, 16'sd13);
-        program_rom[11] = enc_reg(8'h39, 5'd9);
-        program_rom[12] = enc_reg(8'h38, 5'd7);
-        program_rom[13] = enc_rrr(8'h4b, 5'd8, 5'd0, 5'd0);
+        program_rom[1]  = enc_ri(8'ha0, 5'd1, 32'sd7);            // LI r1,7
+        program_rom[2]  = enc_ri(8'ha0, 5'd2, 32'sd5);            // LI r2,5
+        program_rom[3]  = enc_rrr(8'h10, 5'd3, 5'd1, 5'd2);       // ADD r3,r1,r2
+        program_rom[4]  = enc_store(8'h33, 5'd0, 5'd3, 32'sd0);   // ST [r0,0],r3
+        program_rom[5]  = enc_mem(8'h30, 5'd4, 5'd0, 32'sd0);     // LD r4,[r0,0]
+        program_rom[6]  = enc_branch(8'h20, 32'sd2);              // JMP after_skip
+        program_rom[7]  = enc_ri(8'ha0, 5'd5, 32'sd99);           // LI r5,99
+        program_rom[8]  = enc_ri(8'ha0, 5'd10, 32'sd2);           // LI r10,2
+        program_rom[9]  = enc_rrrr(8'h56, 5'd6, 5'd10, 5'd0, 5'd0); // ENV_GET r6,r10,r0,r0
+        program_rom[10] = enc_reg(8'h3a, 5'd4);                   // EXIT r4
+        program_rom[11] = enc_reg(8'h00, 5'd0);
+        program_rom[12] = enc_reg(8'h00, 5'd0);
+        program_rom[13] = enc_reg(8'h00, 5'd0);
         program_rom[14] = enc_reg(8'hff, 5'd9);
 `ifndef SYNTHESIS
         if ($value$plusargs("lnp64_program_hex=%s", program_hex_path)) begin
@@ -1836,7 +1895,7 @@ module lnp64_core_tile #(
     always_comb begin
         if (pc < PROGRAM_WORDS[31:0]) begin
             instr = program_rom[pc];
-            raw_opcode = program_rom[pc][31:24];
+            raw_opcode = program_rom[pc][63:56];
         end else begin
             instr = enc_reg(8'hff, 5'd0);
             raw_opcode = 8'hff;
@@ -2317,8 +2376,9 @@ module lnp64_core_tile #(
                 cmd.arg0 = gpr[dec.rs1];
                 cmd.arg1 = gpr[dec.rs2];
                 cmd.arg2 = gpr[dec.rs3];
-                cmd.arg3 = {59'd0, program_rom[pc + 32'd1][23:19]};
-                cmd.flags = gpr[program_rom[pc + 32'd1][18:14]];
+                // v2: single word; fd->rs4, off->rs5 (no trailing word).
+                cmd.arg3 = {59'd0, dec.rs4[4:0]};
+                cmd.flags = gpr[dec.rs5];
             end
             LNP64_OP_MPROTECT: begin
                 cmd.result_reg = 8'd1;
@@ -2530,7 +2590,10 @@ module lnp64_core_tile #(
         retire_submit_next.tid = active_thread_context.tid;
         retire_submit_next.domain_id = active_thread_context.domain_id;
         retire_submit_next.domain_gen = active_thread_context.domain_gen;
-        retire_submit_next.pc = pc;
+        // The reference emulator reports retire PC in 4-byte units (ip += 2 per
+        // 8-byte instruction); RTL pc is a word index, so scale by 2 at the
+        // trace boundary to keep the cosim retire trace identical.
+        retire_submit_next.pc = pc << 1;
         retire_submit_next.opcode = raw_opcode;
         retire_submit_next.arch_opcode = dec.opcode;
         retire_submit_next.action = 16'd1;
@@ -2540,8 +2603,7 @@ module lnp64_core_tile #(
         retire_submit_next.operand_rs3 = dec.rs3;
         retire_submit_next.operand_imm = flat_retire_operand_imm(
             raw_opcode,
-            instr,
-            pc + 32'd1 < PROGRAM_WORDS[31:0] ? program_rom[pc + 32'd1] : 32'd0
+            instr
         );
         retire_submit_next.result_valid = flat_retire_result_valid(raw_opcode);
         retire_submit_next.result_reg = flat_retire_result_reg(raw_opcode, dec.rd);
@@ -2824,30 +2886,47 @@ module lnp64_core_tile #(
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
-                            LNP64_OP_LI32: begin
-                                gpr[dec.rd] <= {{32{dec.imm[31]}}, dec.imm};
+                            // v2: liu rd,rs1,imm32 (single word).
+                            LNP64_OP_LIU: begin
+                                gpr[dec.rd] <= {dec.imm, gpr[dec.rs1][31:0]};
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
-                            LNP64_OP_LI32_LITERAL: begin
-                                gpr[dec.rd] <= {32'd0, program_rom[pc + 32'd1]};
-                                pc <= pc + 32'd2;
+                            // v2: auipc rd,imm32 (single word, byte-relative).
+                            LNP64_OP_AUIPC: begin
+                                gpr[dec.rd] <= FLAT_EXEC_BASE_ADDR + {29'd0, pc, 3'd0} + {{32{dec.imm[31]}}, dec.imm};
+                                pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
-                            LNP64_OP_LA_LITERAL: begin
-                                gpr[dec.rd] <= {32'd0, program_rom[pc + 32'd1]};
-                                pc <= pc + 32'd2;
+                            // v2: set-less-than (write GPR, replaces FLAGS).
+                            LNP64_OP_SLT: begin
+                                gpr[dec.rd] <= {63'd0, ($signed(gpr[dec.rs1]) < $signed(gpr[dec.rs2]))};
+                                pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
-                            LNP64_OP_AUIPC_LITERAL: begin
-                                gpr[dec.rd] <= FLAT_EXEC_BASE_ADDR + {30'd0, pc, 2'd0} + {{32{program_rom[pc + 32'd1][31]}}, program_rom[pc + 32'd1]};
-                                pc <= pc + 32'd2;
+                            LNP64_OP_SLTU: begin
+                                gpr[dec.rd] <= {63'd0, (gpr[dec.rs1] < gpr[dec.rs2])};
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_SLTI: begin
+                                gpr[dec.rd] <= {63'd0, ($signed(gpr[dec.rs1]) < $signed({{32{dec.imm[31]}}, dec.imm}))};
+                                pc <= pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_SLTIU: begin
+                                gpr[dec.rd] <= {63'd0, (gpr[dec.rs1] < {{32{dec.imm[31]}}, dec.imm})};
+                                pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
@@ -3192,94 +3271,73 @@ module lnp64_core_tile #(
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
+                            // v2: unconditional jump; J-type instruction-count
+                            // offset (pc is an instruction index).
                             LNP64_OP_JMP: begin
                                 pc <= pc + dec.imm;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
+                            // v2: compare-and-branch read two GPRs directly
+                            // (rs1, rs2) and target pc+imm; no FLAGS.
                             LNP64_OP_BRANCH_EQ: begin
-                                pc <= cmp_zero ? pc + dec.imm : pc + 32'd1;
+                                pc <= (gpr[dec.rs1] == gpr[dec.rs2]) ? pc + dec.imm : pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_BRANCH_NE: begin
-                                pc <= !cmp_zero ? pc + dec.imm : pc + 32'd1;
+                                pc <= (gpr[dec.rs1] != gpr[dec.rs2]) ? pc + dec.imm : pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_BRANCH_LT: begin
-                                pc <= cmp_negative ? pc + dec.imm : pc + 32'd1;
-                                retired_count <= retired_count + 32'd1;
-                                retire_submit_valid <= 1'b1;
-                                retire_submit_record <= retire_submit_next;
-                            end
-                            LNP64_OP_BRANCH_GT: begin
-                                pc <= cmp_greater ? pc + dec.imm : pc + 32'd1;
-                                retired_count <= retired_count + 32'd1;
-                                retire_submit_valid <= 1'b1;
-                                retire_submit_record <= retire_submit_next;
-                            end
-                            LNP64_OP_BRANCH_LE: begin
-                                pc <= (cmp_zero || cmp_negative) ? pc + dec.imm : pc + 32'd1;
+                                pc <= ($signed(gpr[dec.rs1]) < $signed(gpr[dec.rs2])) ? pc + dec.imm : pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_BRANCH_GE: begin
-                                pc <= (cmp_zero || cmp_greater) ? pc + dec.imm : pc + 32'd1;
+                                pc <= ($signed(gpr[dec.rs1]) >= $signed(gpr[dec.rs2])) ? pc + dec.imm : pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
-                            LNP64_OP_CALL: begin
+                            LNP64_OP_BRANCH_LTU: begin
+                                pc <= (gpr[dec.rs1] < gpr[dec.rs2]) ? pc + dec.imm : pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            LNP64_OP_BRANCH_GEU: begin
+                                pc <= (gpr[dec.rs1] >= gpr[dec.rs2]) ? pc + dec.imm : pc + 32'd1;
+                                retired_count <= retired_count + 32'd1;
+                                retire_submit_valid <= 1'b1;
+                                retire_submit_record <= retire_submit_next;
+                            end
+                            // v2: jal rd, off -> rd = byte(pc+8); pc += off.
+                            LNP64_OP_JAL: begin
                                 if (return_stack_depth < RETURN_STACK_DEPTH_VALUE) begin
                                     return_stack[return_stack_depth[RETURN_STACK_INDEX_WIDTH-1:0]] <= pc + 32'd1;
                                     return_stack_depth <= return_stack_depth + {{RETURN_STACK_INDEX_WIDTH{1'b0}}, 1'b1};
                                 end
-                                gpr[31] <= gpr[31] - FLAT_EXEC_CALL_FRAME_BYTES;
-                                link_register <= flat_exec_addr(pc + 32'd1);
+                                if (dec.rd[4:0] != 5'd0) begin
+                                    gpr[dec.rd] <= flat_exec_addr(pc + 32'd1);
+                                end
                                 pc <= pc + dec.imm;
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
                             end
-                            LNP64_OP_CALL_REG: begin
-                                if (return_stack_depth < RETURN_STACK_DEPTH_VALUE) begin
-                                    return_stack[return_stack_depth[RETURN_STACK_INDEX_WIDTH-1:0]] <= pc + 32'd1;
-                                    return_stack_depth <= return_stack_depth + {{RETURN_STACK_INDEX_WIDTH{1'b0}}, 1'b1};
+                            // v2: jalr rd, rs1, imm -> rd = byte(pc+8);
+                            // pc = rs1 + sext(imm). ret = jalr r0,r1,0.
+                            LNP64_OP_JALR: begin
+                                if (dec.rd[4:0] != 5'd0) begin
+                                    gpr[dec.rd] <= flat_exec_addr(pc + 32'd1);
                                 end
-                                gpr[31] <= gpr[31] - FLAT_EXEC_CALL_FRAME_BYTES;
-                                link_register <= flat_exec_addr(pc + 32'd1);
-                                pc <= flat_exec_pc_word(gpr[dec.rd]);
-                                retired_count <= retired_count + 32'd1;
-                                retire_submit_valid <= 1'b1;
-                                retire_submit_record <= retire_submit_next;
-                            end
-                            LNP64_OP_LR_GET: begin
-                                gpr[dec.rd] <= link_register;
-                                pc <= pc + 32'd1;
-                                retired_count <= retired_count + 32'd1;
-                                retire_submit_valid <= 1'b1;
-                                retire_submit_record <= retire_submit_next;
-                            end
-                            LNP64_OP_LR_SET: begin
-                                link_register <= gpr[dec.rd];
-                                pc <= pc + 32'd1;
-                                retired_count <= retired_count + 32'd1;
-                                retire_submit_valid <= 1'b1;
-                                retire_submit_record <= retire_submit_next;
-                            end
-                            LNP64_OP_RET: begin
-                                if (return_stack_depth != '0) begin
-                                    pc <= return_stack[return_stack_depth[RETURN_STACK_INDEX_WIDTH-1:0] - {{(RETURN_STACK_INDEX_WIDTH-1){1'b0}}, 1'b1}];
-                                    return_stack_depth <= return_stack_depth - {{RETURN_STACK_INDEX_WIDTH{1'b0}}, 1'b1};
-                                end else begin
-                                    pc <= flat_exec_pc_word(link_register);
-                                end
-                                gpr[31] <= gpr[31] + FLAT_EXEC_CALL_FRAME_BYTES;
+                                pc <= flat_exec_pc_word(gpr[dec.rs1] + {{32{dec.imm[31]}}, dec.imm});
                                 retired_count <= retired_count + 32'd1;
                                 retire_submit_valid <= 1'b1;
                                 retire_submit_record <= retire_submit_next;
@@ -3393,16 +3451,17 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_ST: begin
+                                // v2 S-type: store source is rs2 (rd slot=0).
                                 sram[mem_sram_word_index] <= store_double_low_word(
                                     sram[mem_sram_word_index],
                                     mem_byte_lane,
-                                    gpr[dec.rd]
+                                    gpr[dec.rs2]
                                 );
                                 if (mem_byte_lane != 3'd0) begin
                                     sram[mem_sram_next_word_index] <= store_double_high_word(
                                         sram[mem_sram_next_word_index],
                                         mem_byte_lane,
-                                        gpr[dec.rd]
+                                        gpr[dec.rs2]
                                     );
                                 end
                                 dcache_writeback <= 1'b1;
@@ -3412,7 +3471,7 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_ST_W: begin
-                                sram[mem_sram_word_index] <= store_word_lane(sram[mem_sram_word_index], mem_word_upper, gpr[dec.rd][31:0]);
+                                sram[mem_sram_word_index] <= store_word_lane(sram[mem_sram_word_index], mem_word_upper, gpr[dec.rs2][31:0]);
                                 dcache_writeback <= 1'b1;
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
@@ -3420,7 +3479,7 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_ST_H: begin
-                                sram[mem_sram_word_index] <= store_half_lane(sram[mem_sram_word_index], mem_half_lane, gpr[dec.rd][15:0]);
+                                sram[mem_sram_word_index] <= store_half_lane(sram[mem_sram_word_index], mem_half_lane, gpr[dec.rs2][15:0]);
                                 dcache_writeback <= 1'b1;
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
@@ -3428,7 +3487,7 @@ module lnp64_core_tile #(
                                 retire_submit_record <= retire_submit_next;
                             end
                             LNP64_OP_ST_B: begin
-                                sram[mem_sram_word_index] <= store_byte_lane(sram[mem_sram_word_index], mem_byte_lane, gpr[dec.rd][7:0]);
+                                sram[mem_sram_word_index] <= store_byte_lane(sram[mem_sram_word_index], mem_byte_lane, gpr[dec.rs2][7:0]);
                                 dcache_writeback <= 1'b1;
                                 pc <= pc + 32'd1;
                                 retired_count <= retired_count + 32'd1;
