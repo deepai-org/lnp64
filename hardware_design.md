@@ -736,9 +736,55 @@ the thread context; cache coherence handles memory visibility.
 
 ## 6. Fixed Instruction Encoding
 
-Every instruction is exactly 64 bits.
+> **Implementation note (v1).** The 64-bit format described in the rest of this
+> section is the original aspirational design. The encoding that is actually
+> implemented and verified by the v1 toolchain -- the LLVM backend
+> (`LNP64MCCodeEmitter`), the reference emulator (`src/emulator.rs`), the
+> typed-trace checkers, and the Coq/Koika models -- is the **32-bit fixed**
+> layout documented in §6.0 below. Where §6.1-§6.2 disagree with §6.0, §6.0 is
+> authoritative for the shipped ISA; the 64-bit material is retained as design
+> rationale and is slated for reconciliation.
 
-Common fields:
+### 6.0 Binary encoding (as implemented)
+
+Every instruction is exactly **32 bits**, little-endian. The opcode occupies the
+high byte; the destination register, when present, occupies bits[23:19]:
+
+```text
+31:24  opcode (8 bits)
+23:19  rd / first register (5 bits, GPR 0..31)
+18:14  rs / second register (5 bits)
+13:9   rs2 / third register (5 bits)
+ 8:4   rs3 / fourth register (5 bits)
+```
+
+Immediate and offset fields overlay the low register slots:
+
+```text
+RRI ALU  (ADDI, ANDI, ORI, XORI, LSLI, LSRI, ASRI):
+  opcode[31:24], rd[23:19], rs[18:14], simm14[13:0]
+LI:
+  opcode[31:24], rd[23:19], reserved[18:16] (must decode as 0), simm16[15:0]
+LD / ST:
+  opcode[31:24], reg[23:19], base[18:14], simm14[13:0]   (offset, signed)
+Branch / call (JMP, Bcc, CALL):
+  opcode[31:24], simm24[23:0]   (target = pc + sext(simm24) * 4)
+```
+
+Key consequences, enforced by the assembler and MC encoder:
+
+- `LI` carries a **signed-16** immediate in bits[15:0]; bits[18:16] are a
+  reserved gap (LI has no `rs` field where the RRI forms place it). Constants
+  outside signed-16 are materialized via `LI32` (a 4-byte opcode word followed
+  by a 32-bit literal word).
+- The register-immediate ALU forms carry a **signed-14** immediate, *not*
+  signed-16 -- the low 14 bits are all that remain after `rd` and `rs`.
+- `LD`/`ST` displacements are **signed-14**; the register allocator spills to a
+  materialized address in the scratch register when a frame offset does not fit.
+- Branch targets are word-aligned by construction (the 24-bit field is scaled
+  by 4).
+
+Common fields (64-bit aspirational design):
 
 ```text
 63:56  opcode
